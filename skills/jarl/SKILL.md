@@ -118,6 +118,15 @@ Testing, stress and research sessions are the same loop with a different mix: so
 issues (they test, they probe, they read) while others take issues down. The stream never waits for
 the other side.
 
+### Worker branches
+
+A worker's branch is `jarl/NNN-slug`: the issue number and the issue's own slug, so two workers can
+never share a name and a branch reads as its issue. Such a branch exists only in the clone running
+the loop: it is cut from the feature branch, merged back into it by the merger with `--no-ff` and a
+message naming the issue, and deleted together with its worktree. **It is never pushed** — the
+feature branch is the only branch of this loop that ever leaves the machine, and only on the user's
+word. Two loops sharing one clone prefix the branch with the feature branch's last path segment.
+
 ### The worker's brief
 
 ```
