@@ -400,20 +400,25 @@ export function cmdCheck(root, rawId, flags) {
   return { id: issue.id, branch: flags.branch, base, mergeBase, changed, items, ok: items.every((i) => i.ok) };
 }
 
+// Every jarl/* branch, plus every branch some worktree has checked out that is not the base: a
+// worker that never renamed its branch still did the work, and a listing that hides it would
+// hide a report. Such a branch is marked unnamed so the merger renames it before merging.
 export function cmdBranches(root, flags) {
   const base = flags.base || defaultBase(root);
-  const names = (git(root, ['branch', '--list', 'jarl/*', '--format=%(refname:short)']) || '').split('\n').filter(Boolean);
+  const named = (git(root, ['branch', '--list', 'jarl/*', '--format=%(refname:short)']) || '').split('\n').filter(Boolean);
   const worktrees = (git(root, ['worktree', 'list', '--porcelain']) || '').split('\n\n').map((b) => {
     const path = /^worktree (.*)$/m.exec(b)?.[1];
     const branch = /^branch refs\/heads\/(.*)$/m.exec(b)?.[1];
     return { path, branch };
   }).filter((w) => w.branch);
-  return names.map((name) => {
+  const mainPath = git(root, ['rev-parse', '--show-toplevel']);
+  const extra = worktrees.filter((w) => w.branch !== base && !named.includes(w.branch) && w.path !== mainPath).map((w) => w.branch);
+  return [...named, ...extra].map((name) => {
     const mb = git(root, ['merge-base', base, name]);
     const ahead = mb ? Number(git(root, ['rev-list', '--count', `${mb}..${name}`]) || 0) : null;
     const wt = worktrees.find((w) => w.branch === name);
     const dirty = wt ? (git(wt.path, ['status', '--porcelain']) || '').split('\n').filter(Boolean).length : null;
-    return { branch: name, ahead, worktree: wt ? wt.path : null, dirty };
+    return { branch: name, ahead, worktree: wt ? wt.path : null, dirty, unnamed: !name.startsWith('jarl/') };
   });
 }
 
@@ -529,7 +534,7 @@ function main() {
       case 'review': out = cmdReview(root, rest[0], rest[1], rest[2]); text = `${out.id} review ${out.verdict}`; break;
       case 'round': out = cmdRound(root, rest[0], rest[1]); text = out.takeover ? `${out.id} round ${out.round} — takeover:\n\n${out.block}` : `${out.id} round ${out.round} of ${ROUNDS_BEFORE_TAKEOVER} before a takeover`; break;
       case 'check': out = cmdCheck(root, rest[0], flags); text = out.items.map((i) => `${i.ok ? '✓' : '✗'} ${i.name} — ${i.note}`).join('\n'); break;
-      case 'branches': out = cmdBranches(root, flags); text = out.length ? out.map((b) => `${b.branch}  +${b.ahead ?? '?'}  ${b.worktree ? `${b.worktree}${b.dirty ? ` (${b.dirty} uncommitted)` : ' (clean)'}` : '(no worktree)'}`).join('\n') : '(no jarl/* branches)'; break;
+      case 'branches': out = cmdBranches(root, flags); text = out.length ? out.map((b) => `${b.branch}  +${b.ahead ?? '?'}  ${b.worktree ? `${b.worktree}${b.dirty ? ` (${b.dirty} uncommitted)` : ' (clean)'}` : '(no worktree)'}${b.unnamed ? '  UNNAMED — rename to jarl/NNN-slug before merging' : ''}`).join('\n') : '(no worker branches)'; break;
       case 'ask': out = cmdAsk(root, rest[0], flags); text = `asked a-${out.id}`; break;
       case 'answer': out = cmdAnswer(root, rest[0], rest[1]); text = `answered a-${out.id}`; break;
       case 'handoff': if (rest[0] === 'write') { out = cmdHandoffWrite(root, flags); text = `handoff written · ${out.inFlight} in flight · ${out.waiting} waiting on the user`; } else { out = { text: cmdHandoffRead(root) }; text = out.text; } break;

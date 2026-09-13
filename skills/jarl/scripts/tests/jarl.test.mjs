@@ -146,3 +146,18 @@ test('a round after an approve spends the approve', () => {
   jarl(root, 'review', '001', 'approve', 'fixed');
   jarl(root, 'set', '001', 'done');
 });
+
+test('branches lists a worktree branch a worker never renamed, marked unnamed', () => {
+  const root = repo();
+  const g = (...a) => execFileSync('git', a, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  execFileSync('rm', ['-rf', join(root, '.git')]);
+  g('init', '-q', '-b', 'feature'); g('config', 'user.email', 't@t'); g('config', 'user.name', 't');
+  execFileSync('bash', ['-c', `cd ${root} && echo a > a.txt && git add -A && git commit -qm base`]);
+  jarl(root, 'init', 'goal');
+  execFileSync('bash', ['-c', `cd ${root} && git add -A && git commit -qm jarl && git worktree add -q -b worktree-agent-x ${root}/.wt-x && cd ${root}/.wt-x && echo b > b.txt && git add -A && git commit -qm work`]);
+  const rows = JSON.parse(jarl(root, 'branches', '--base', 'feature', '--json'));
+  const row = rows.find((r) => r.branch === 'worktree-agent-x');
+  assert.ok(row, 'the unnamed worktree branch is listed');
+  assert.equal(row.ahead, 1); assert.equal(row.unnamed, true);
+  assert.match(jarl(root, 'branches', '--base', 'feature'), /UNNAMED/);
+});

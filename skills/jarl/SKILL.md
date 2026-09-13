@@ -47,7 +47,7 @@ node "${CLAUDE_PLUGIN_ROOT:-.claude/skills/jarl}/scripts/jarl.mjs" <command>
 | `review <id> approve\|changes "<findings>"` | the reviewer's verdict, written to the journal; `done` refuses without an approve newer than the last round |
 | `round <id> "<what failed>"` | one red round on the issue; the third prints a takeover block for a fresh worker |
 | `check <id> --branch <b>` | a worker branch before merge: commits beyond the base, diff inside the declared files, test files removed, assertions before and after — numbers, never a verdict |
-| `branches` | every `jarl/NNN-*` branch with its commits beyond the base and its worktree state — a branch with commits is a report whether or not the worker said so |
+| `branches` | every `jarl/NNN-*` branch, and every other branch a worktree has checked out (marked UNNAMED when a worker never renamed its branch), with commits beyond the base and worktree state — a branch with commits is a report whether or not the worker said so |
 | `ask "<question>" [--issue NNN]` · `answer <id> "<answer>"` | questions only the user can answer; open ones show in `status`; an answer becomes a ruling |
 | `handoff write --summary "<s>" [--next "<n>"]...` · `handoff read` | the state of intent between sessions: what is in flight, what waits on the user, what comes next |
 | `log "<event>"` · `decide <slug> "<ruling>"` | the journal and the rulings |
@@ -182,7 +182,8 @@ push, never resolve a conflict by picking a side blindly, never weaken a test or
 For each branch the jarl names (or that `jarl.mjs branches` shows with commits beyond the base):
 1. `jarl.mjs check <id> --branch <b>`; read the diff (`git diff <feature-branch>...<b>`); a worker
    worktree with an uncommitted but complete diff is committed on its branch first, with a log line
-   saying the merger committed it. A branch without an approving review (`jarl.mjs set` will refuse
+   saying the merger committed it; a branch the worker never renamed (UNNAMED in `branches`) is
+   renamed to `jarl/NNN-slug` in its worktree (`git branch -m`) before anything else. A branch without an approving review (`jarl.mjs set` will refuse
    `done` without one) waits for the reviewer; it is not the merger's call.
 2. `git merge --no-ff <b>` into the feature branch. A conflict: resolve only when one side is plainly
    a superset or the hunks are independent; otherwise abort the merge and report the files.
