@@ -122,7 +122,7 @@ test('check reads a worker branch: commits, declared files, removed tests, asser
   execFileSync('bash', ['-c', `cd ${root} && echo 'export const a = 1;' > src/a.mjs && printf 'assert.equal(1,1);\\nassert.equal(2,2);\\n' > tests/a.test.mjs && git add -A && git commit -qm base`]);
   jarl(root, 'init', 'goal');
   jarl(root, 'new', 'change a', '--files', 'src/a.mjs,tests/a.test.mjs');
-  execFileSync('bash', ['-c', `cd ${root} && git add -A && git commit -qm jarl && git checkout -qb jarl/001-change-a && echo 'export const a = 2;' > src/a.mjs && printf 'assert.equal(1,1);\\n' > tests/a.test.mjs && echo x > src/b.mjs && echo '- entry' >> CHANGELOG.md && echo 'assert.ok(true);' > tests/new.test.mjs && git add -A && git commit -qm work && git checkout -q feature`]);
+  execFileSync('bash', ['-c', `cd ${root} && git add -A && git commit -qm jarl && git checkout -qb jarl/001-change-a && echo 'export const a = 2;' > src/a.mjs && printf 'assert.equal(1,1);\\n' > tests/a.test.mjs && echo x > src/b.mjs && echo '- entry' >> CHANGELOG.md && echo 'export {};' > tests/new.test.mjs && git add -A && git commit -qm work && git checkout -q feature`]);
   let out;
   try { jarl(root, 'check', '001', '--branch', 'jarl/001-change-a', '--base', 'feature', '--json'); } catch (e) { out = JSON.parse(e.stdout); }
   assert.equal(out.ok, false);
