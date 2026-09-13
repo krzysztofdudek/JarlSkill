@@ -44,6 +44,10 @@ test('status moves only with a log line; done needs evidence; dropped needs a re
   assert.match(refuses(root, 'set', '001', 'dropped'), /needs a reason/);
   jarl(root, 'set', '001', 'in-progress', 'worker raised');
   jarl(root, 'evidence', '001', 'npm test → 12 pass, 0 fail');
+  assert.match(refuses(root, 'set', '001', 'done'), /no approving review/);
+  jarl(root, 'review', '001', 'changes', 'Important: the new test never goes red');
+  assert.match(refuses(root, 'set', '001', 'done'), /no approving review/);
+  jarl(root, 'review', '001', 'approve', 'read the diff; test red before, green after');
   jarl(root, 'set', '001', 'done');
   const log = readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
   assert.match(log, /001 → in-progress · worker raised/);
@@ -127,4 +131,17 @@ test('check reads a worker branch: commits, declared files, removed tests, asser
   assert.match(byName['diff inside declared files'].note, /src\/b\.mjs/);
   assert.equal(byName['assertions in touched tests'].note, '2 → 1');
   assert.equal(byName['test files'].ok, true);
+});
+
+test('a round after an approve spends the approve', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'thing');
+  jarl(root, 'evidence', '001', 'suite green');
+  jarl(root, 'review', '001', 'approve', 'fine');
+  jarl(root, 'round', '001', 'merger: suite red after merge');
+  assert.match(refuses(root, 'set', '001', 'done'), /no approving review/);
+  assert.match(refuses(root, 'review', '001', 'maybe', 'x'), /approve\|changes/);
+  jarl(root, 'review', '001', 'approve', 'fixed');
+  jarl(root, 'set', '001', 'done');
 });

@@ -31,6 +31,7 @@ commands:
   files <id> p,q,...                             declare the files the issue touches
   evidence <id> "<what was run and what it printed>"
   next [--limit n]                               open issues that do not share a file with any in-progress one
+  review <id> approve|changes "<findings>"     the reviewer's verdict; "done" needs an approve newer than the last round
   round <id> "<what failed>"                     one red round; after three prints the takeover block for a fresh worker
   check <id> --branch <b> [--base <feature-branch>]
                                                  commits beyond the base, diff inside the declared files, and the
@@ -222,6 +223,7 @@ export function cmdSet(root, rawId, status, why) {
   need(issue, `no such issue: ${rawId}`);
   need(status !== 'dropped' || why, 'dropped needs a reason: jarl.mjs set <id> dropped "<why>"');
   need(status !== 'done' || issue.sections.evidence?.trim(), `${issue.id} has no evidence yet — record it first: jarl.mjs evidence ${issue.id} "<what was run and what it printed>"`);
+  need(status !== 'done' || reviewState(root, issue.id).approved, `${issue.id} has no approving review newer than its last round — a fresh reviewer reads the issue and the diff first: jarl.mjs review ${issue.id} approve|changes "<findings>"`);
   let text = readFileSync(issue.file, 'utf8');
   text = setField(text, 'Status', status);
   if (status === 'dropped') text = setSection(text, 'Evidence', `Dropped: ${why}`);
@@ -299,6 +301,32 @@ export function cmdClose(root, flags) {
   return { removed: jarlDir(root), leftOpen: left.map((i) => i.id) };
 }
 
+
+// ---- review ----------------------------------------------------------------------------------
+
+// The latest review and the latest round, by their position in the journal: a round after an
+// approve means the approve is spent and the branch needs fresh eyes.
+export function reviewState(root, id) {
+  const path = join(jarlDir(root), 'log.md');
+  if (!existsSync(path)) return { approved: false, lastReview: null };
+  const lines = readFileSync(path, 'utf8').split('\n');
+  let lastReview = null; let lastReviewAt = -1; let lastRoundAt = -1;
+  lines.forEach((l, i) => {
+    const m = new RegExp(`· ${id} review (approve|changes) · `).exec(l);
+    if (m) { lastReview = m[1]; lastReviewAt = i; }
+    if (l.includes(`· ${id} round `)) lastRoundAt = i;
+  });
+  return { approved: lastReview === 'approve' && lastReviewAt > lastRoundAt, lastReview };
+}
+
+export function cmdReview(root, rawId, verdict, findings) {
+  need(verdict === 'approve' || verdict === 'changes', 'review requires approve|changes');
+  need(findings, 'review requires "<findings>" — what was read and what was found, even when nothing');
+  const issue = findIssue(root, rawId);
+  need(issue, `no such issue: ${rawId}`);
+  appendLog(root, `${issue.id} review ${verdict} · ${findings.split('\n')[0]}`);
+  return { id: issue.id, verdict };
+}
 
 // ---- rounds, branches, checks ------------------------------------------------------------------
 
@@ -495,6 +523,7 @@ function main() {
       case 'files': out = cmdFiles(root, rest[0], rest[1]); text = `${out.id} files: ${out.files.join(', ') || '(none)'}`; break;
       case 'evidence': out = cmdEvidence(root, rest[0], rest[1]); text = `${out.id} evidence recorded`; break;
       case 'next': out = cmdNext(root, flags); text = out.length ? out.map((r) => (r.ready ? `${r.id}  P${r.priority}  ${r.title}` : `${r.id}  P${r.priority}  ${r.title}  (waits on ${r.waitsOn.join(', ')})`)).join('\n') : '(nothing open)'; break;
+      case 'review': out = cmdReview(root, rest[0], rest[1], rest[2]); text = `${out.id} review ${out.verdict}`; break;
       case 'round': out = cmdRound(root, rest[0], rest[1]); text = out.takeover ? `${out.id} round ${out.round} — takeover:\n\n${out.block}` : `${out.id} round ${out.round} of ${ROUNDS_BEFORE_TAKEOVER} before a takeover`; break;
       case 'check': out = cmdCheck(root, rest[0], flags); text = out.items.map((i) => `${i.ok ? '✓' : '✗'} ${i.name} — ${i.note}`).join('\n'); break;
       case 'branches': out = cmdBranches(root, flags); text = out.length ? out.map((b) => `${b.branch}  +${b.ahead ?? '?'}  ${b.worktree ? `${b.worktree}${b.dirty ? ` (${b.dirty} uncommitted)` : ' (clean)'}` : '(no worktree)'}`).join('\n') : '(no jarl/* branches)'; break;

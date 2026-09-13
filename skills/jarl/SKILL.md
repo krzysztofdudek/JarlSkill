@@ -44,6 +44,7 @@ node "${CLAUDE_PLUGIN_ROOT:-.claude/skills/jarl}/scripts/jarl.mjs" <command>
 | `tag <id> +a -b` · `prio <id> 1\|2\|3` · `files <id> p,q` | header fields |
 | `evidence <id> "<what was run and what it printed>"` | fills the Evidence section |
 | `next [--limit n]` | open issues that share no file with any in-progress one — what can run in parallel now |
+| `review <id> approve\|changes "<findings>"` | the reviewer's verdict, written to the journal; `done` refuses without an approve newer than the last round |
 | `round <id> "<what failed>"` | one red round on the issue; the third prints a takeover block for a fresh worker |
 | `check <id> --branch <b>` | a worker branch before merge: commits beyond the base, diff inside the declared files, test files removed, assertions before and after — numbers, never a verdict |
 | `branches` | every `jarl/NNN-*` branch with its commits beyond the base and its worktree state — a branch with commits is a report whether or not the worker said so |
@@ -104,10 +105,13 @@ Every turn, in this order:
    verifiers need none — on the model the issue names — set it explicitly on every spawn, never inherited —
    and tell the worker it spawns nothing itself. The brief is below; the issue file is pasted into it
    verbatim, and after three red rounds the takeover block from `round` goes in too, for a fresh worker.
-5. **Verify.** A worker's report is a hypothesis until you have seen the diff, run `check`, run the
-   repository's own check yourself, and reproduced the acceptance line. New tests must be red before the
-   change and green after; a test that was never red proves nothing. A removed test file or a falling
-   assertion count is a question to the user, not a merge.
+5. **Review.** A worker's report is a hypothesis. A **fresh one-shot reviewer** — never the worker,
+   never the merger — reads the issue and the diff and answers with the review discipline's three
+   words: Critical, Important, Minor. Critical or Important is `review <id> changes "…"` and a round
+   back to the worker; Minor alone is `review <id> approve "…"` with the minor points in the findings,
+   never a bounce. The reviewer checks that the new test was red before the change and green after,
+   that the acceptance line is met literally, and that nothing outside the issue moved. The reviewer's
+   brief is below.
 6. **Merge.** The merger (below) does it: into the feature branch with a merge commit that names
    the issue, then `evidence <id> "…"`, `set <id> done`, worktree and branch removed. Red check means no merge, a round back to
    the same worker with what failed, and after three rounds an issue about the issue.
@@ -148,6 +152,17 @@ You spawn no agents of your own.
 <the issue file, verbatim>
 ```
 
+### The reviewer's brief
+
+```
+You are the reviewer of issue NNN on branch jarl/NNN-slug of <repo root>. Read-only; spawn nothing.
+Read the issue file, then `git diff <feature-branch>...jarl/NNN-slug`. Answer three questions with
+evidence: does the diff meet the acceptance line literally; was the new test red before the change
+and green after (check out the parent and run it if you must); did anything outside the issue's
+scope move. Rank every finding Critical / Important / Minor. Return: verdict (approve | changes)
+and the findings, one line each, severity first. Minor findings alone are an approve.
+```
+
 ### The merger
 
 Verifying and merging eats context, and the jarl's context is the scarcest thing in the loop. So
@@ -164,7 +179,8 @@ push, never resolve a conflict by picking a side blindly, never weaken a test or
 For each branch the jarl names (or that `jarl.mjs branches` shows with commits beyond the base):
 1. `jarl.mjs check <id> --branch <b>`; read the diff (`git diff <feature-branch>...<b>`); a worker
    worktree with an uncommitted but complete diff is committed on its branch first, with a log line
-   saying the merger committed it.
+   saying the merger committed it. A branch without an approving review (`jarl.mjs set` will refuse
+   `done` without one) waits for the reviewer; it is not the merger's call.
 2. `git merge --no-ff <b>` into the feature branch. A conflict: resolve only when one side is plainly
    a superset or the hunks are independent; otherwise abort the merge and report the files.
 3. Run the repository's own check in the foreground and wait for it. Red: `git reset --hard` to the
