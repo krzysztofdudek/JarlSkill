@@ -263,12 +263,19 @@ running is writing into a tree another process is also writing into; that is the
 sole-committer rule exists to prevent, and it has produced a rewritten HEAD in practice, not just
 in theory.
 
+The reeve does not guess which mode it is in. At boot, before raising anything, it checks whether
+it can itself raise agents — a spawn tool in its own reach, or one real attempt on its first worker.
+If it can, it holds every worker, reviewer and merger itself, exactly as above. If it cannot, it
+reports `no-spawn` to the jarl in one line and the relay below begins for the rest of the loop.
+
 On a platform where an agent raised by the jarl cannot raise agents of its own, the split stays and
 only the spawning moves: the reeve writes every brief to a file and sends the jarl one line per
 spawn (`spawn <role> <id> tier=… worktree=… brief=<path>`); the jarl spawns from that line without
 reading the brief; every raised agent writes its report to a file and ends with one line naming it;
-the jarl forwards that one line to the reeve. The jarl's context then carries pointers, not briefs
-and reports.
+the jarl forwards that one line to the reeve. A second round for the same worker, or feeding the
+merger again, is a resume, not a new spawn — the reeve sends `resume <id> brief=<path>` instead, and
+the jarl resumes that same agent without reading the brief. The jarl's context then carries
+pointers, not briefs and reports.
 
 ## Which model sits where
 
