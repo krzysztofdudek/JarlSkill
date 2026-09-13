@@ -1,6 +1,6 @@
 # Jarl
 
-**Your feature branch has more issues than one agent can hold in its head.** Jarl makes the agent direct the work instead of doing it alone.
+**Your feature branch has more issues than one agent can hold in its head, so it fixes one, forgets two, and loses the third in the diff.** Jarl makes the agent direct a crew instead of working alone.
 
 Invoke it on a branch and the agent becomes the **jarl** of that branch: everything anybody sees becomes an issue in a committed `.jarl/` directory, one worker per issue works in its own worktree, nothing merges without evidence the jarl has reproduced itself, and the last commit before the branch merges to main removes the whole directory. Nothing ships, nothing lingers.
 
