@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The reeve now checks, at boot, whether it can raise agents of its own before assuming it can; if not, it tells the jarl and the file-relay fallback takes over for the rest of the loop.
 - The file-relay fallback now also covers resuming a worker or a merger for a second round, not only the first spawn.
 
+### Fixed
+- `check` no longer flags an in-scope change as outside its declared files when an issue names a file relative to a subdirectory (a plugin's own skill body, say) rather than the repository root.
+
 ## [0.1.0] - 2026-09-13
 
 ### Added

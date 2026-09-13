@@ -134,6 +134,22 @@ test('check reads a worker branch: commits, declared files, removed tests, asser
   assert.equal(byName['test files'].ok, true);
 });
 
+test('check matches a declared file relative to a subdirectory, not just the repo root', () => {
+  const root = repo();
+  const g = (...a) => execFileSync('git', a, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  execFileSync('rm', ['-rf', join(root, '.git')]);
+  g('init', '-q', '-b', 'feature');
+  g('config', 'user.email', 't@t'); g('config', 'user.name', 't');
+  mkdirSync(join(root, 'skills', 'x'), { recursive: true });
+  execFileSync('bash', ['-c', `cd ${root} && echo one > skills/x/SKILL.md && git add -A && git commit -qm base`]);
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'change the skill body', '--files', 'SKILL.md');
+  execFileSync('bash', ['-c', `cd ${root} && git add -A && git commit -qm jarl && git checkout -qb jarl/001-change-the-skill-body && echo two > skills/x/SKILL.md && git add -A && git commit -qm work && git checkout -q feature`]);
+  const out = JSON.parse(jarl(root, 'check', '001', '--branch', 'jarl/001-change-the-skill-body', '--base', 'feature', '--json'));
+  const byName = Object.fromEntries(out.items.map((i) => [i.name, i]));
+  assert.equal(byName['diff inside declared files'].ok, true, byName['diff inside declared files'].note);
+});
+
 test('a round after an approve spends the approve', () => {
   const root = repo();
   jarl(root, 'init', 'goal');

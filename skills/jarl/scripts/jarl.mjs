@@ -425,7 +425,14 @@ export function cmdCheck(root, rawId, flags) {
   // A change proves itself with a test and announces itself in the changelog, so neither is ever
   // "outside" the issue: the scope check is about source, not about the two files every issue touches.
   const alwaysInScope = (f) => isTestFile(f) || /(^|\/)CHANGELOG\.md$/i.test(f);
-  const outside = issue.files.length ? changed.filter((f) => !alwaysInScope(f) && !issue.files.some((d) => f === d || f.startsWith(d.replace(/\/?$/, '/')))) : [];
+  // A declared file may be repo-relative (the common case) or relative to some subdirectory the
+  // issue itself is scoped to (e.g. a plugin's own skill body); a diff path matches either way —
+  // as a root-relative prefix, or as a path suffix ending at a "/" boundary.
+  const pathMatches = (f, d) => {
+    const dd = d.replace(/\/+$/, '');
+    return f === dd || f.startsWith(`${dd}/`) || f.endsWith(`/${dd}`);
+  };
+  const outside = issue.files.length ? changed.filter((f) => !alwaysInScope(f) && !issue.files.some((d) => pathMatches(f, d))) : [];
   const testsBase = (git(root, ['ls-tree', '-r', '--name-only', mergeBase]) || '').split('\n').filter(isTestFile);
   const testsTip = (git(root, ['ls-tree', '-r', '--name-only', flags.branch]) || '').split('\n').filter(isTestFile);
   const removedTests = testsBase.filter((f) => !testsTip.includes(f));
