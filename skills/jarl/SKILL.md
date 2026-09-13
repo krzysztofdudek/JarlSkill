@@ -218,6 +218,16 @@ Before the feature branch merges to `main`, in this order:
 
 Merging and pushing are the user's word, never yours.
 
+## Which model sits where
+
+Opening the loop — reading the repository whole, writing the goal, the first rulings and the first
+issues — is the one part that needs the strongest model in the room. The loop itself is clerical
+work over a tool that refuses what is wrong: a cheaper capable model runs it, hands out issues,
+reads reports and keeps the journal, and hands the loop back to the strong model only for a
+research issue, a gap the goal did not foresee, or a question the user answered in a way that
+changes the goal. Workers, readers, reviewers and the merger run on the cheaper tier unless an
+issue's own `Model:` says otherwise. Say which tier is running at every handoff.
+
 ## Talking to the user
 
 One sentence of state at boot: how many open, how many in flight, what you do first. "How is it going"
