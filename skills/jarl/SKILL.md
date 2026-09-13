@@ -140,7 +140,9 @@ Your scope is the issue below and nothing else. Anything else you see goes into 
 "Found", never into the diff.
 Prove the change: a test that is red before and green after, then the repository's own check green.
 Run that check once, in the foreground, and wait for it — never in the background, never behind a
-monitor; if it is slow, give the command a long timeout. The merger runs it again on the merged
+monitor. Give the shell tool its own timeout parameter long enough for the whole run (ten minutes
+is usual); a run that outlives the tool's default timeout is moved to the background and you will
+sit waiting for a notification that is not a report. The merger runs it again on the merged
 result and that run is the one that counts, so do not loop on it. A report that says "waiting for
 the test run" is not a report.
 Commit on your branch. Never push. Never touch another branch. Never weaken a test, a check, a rule
@@ -183,8 +185,9 @@ For each branch the jarl names (or that `jarl.mjs branches` shows with commits b
    `done` without one) waits for the reviewer; it is not the merger's call.
 2. `git merge --no-ff <b>` into the feature branch. A conflict: resolve only when one side is plainly
    a superset or the hunks are independent; otherwise abort the merge and report the files.
-3. Run the repository's own check in the foreground and wait for it. Red: `git reset --hard` to the
-   pre-merge commit, `jarl.mjs round <id> "<what failed>"`, report.
+3. Run the repository's own check in the foreground, with the shell tool's own timeout parameter set
+   for the whole run, and wait for it. Red: `git reset --hard` to the pre-merge commit,
+   `jarl.mjs round <id> "<what failed>"`, report.
 4. Green: `jarl.mjs evidence <id> "<check summary line, merge sha>"`, `jarl.mjs set <id> done`,
    remove the worktree and the branch, `jarl.mjs log "merged <id> <sha>"`.
 Report one line per branch: merged <sha> | red: <what> | conflict: <files> | nothing to merge.
