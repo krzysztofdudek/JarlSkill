@@ -218,14 +218,26 @@ Before the feature branch merges to `main`, in this order:
 
 Merging and pushing are the user's word, never yours.
 
+## The reeve: handing the loop down
+
+The jarl's context is spent best on the client and on judgement, so once the loop is open the
+jarl raises **one long-lived reeve** on the standard tier and hands it the loop. The reeve runs
+this skill exactly as the jarl would — boot, file, pick, raise workers and reviewers, keep the
+merger fed, write the handoff — with one difference: it never talks to the user. It reports to the
+jarl, in one line, on four occasions only: a research issue or a gap the goal did not foresee; a
+question the user answered in a way that changes the goal; every few merges, the counts; and an
+empty queue. The jarl stays the one who answers the client and rules on what the reeve raises.
+Everything the reeve raises is its own to reach — a worker, a reviewer, a merger — so the reeve
+holds all of them and the jarl holds the reeve. Its brief is this whole skill, plus the repository,
+the feature branch, the absolute path of the tool, and the four occasions above.
+
 ## Which model sits where
 
 Opening the loop — reading the repository whole, writing the goal, the first rulings and the first
 issues — is the one part that needs the strongest model in the room. The loop itself is clerical
-work over a tool that refuses what is wrong: a cheaper capable model runs it, hands out issues,
-reads reports and keeps the journal, and hands the loop back to the strong model only for a
-research issue, a gap the goal did not foresee, or a question the user answered in a way that
-changes the goal. Workers, readers, reviewers and the merger run on the standard tier unless an
+work over a tool that refuses what is wrong: the reeve, on the standard tier, runs it, hands out
+issues, reads reports and keeps the journal, and hands back to the jarl only on the four occasions
+above. Workers, readers, reviewers and the merger run on the standard tier unless an
 issue's own `Tier:` says otherwise. Say which tier is running at every handoff.
 
 ## Talking to the user
