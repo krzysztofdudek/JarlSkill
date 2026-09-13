@@ -138,13 +138,11 @@ You are worker <name> on issue NNN of branch <feature-branch>, in worktree <path
 FIRST ACTION: git merge <feature-branch>; git status must be clean afterwards — if not, stop and report.
 Your scope is the issue below and nothing else. Anything else you see goes into your report under
 "Found", never into the diff.
-Prove the change: a test that is red before and green after, then the repository's own check green.
-Run that check once, in the foreground, and wait for it — never in the background, never behind a
-monitor. Give the shell tool its own timeout parameter long enough for the whole run (ten minutes
-is usual); a run that outlives the tool's default timeout is moved to the background and you will
-sit waiting for a notification that is not a report. The merger runs it again on the merged
-result and that run is the one that counts, so do not loop on it. A report that says "waiting for
-the test run" is not a report.
+Prove the change: a test that is red before and green after. Run the test files your change touches,
+in the foreground, with the shell tool's own timeout parameter set (a run that outlives the tool's
+default timeout is moved to the background and you will sit waiting for a notification that is not
+a report). Do not run the repository's whole check yourself: the merger runs it on the merged result
+and that run is the one that counts. A report that says "waiting for the test run" is not a report.
 Commit on your branch. Never push. Never touch another branch. Never weaken a test, a check, a rule
 or a hook — if the issue seems to need that, stop and report.
 Report in under 200 words: what changed, the evidence (commands and what they printed),
