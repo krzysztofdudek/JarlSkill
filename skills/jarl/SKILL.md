@@ -46,7 +46,7 @@ node "${CLAUDE_PLUGIN_ROOT:-.claude/skills/jarl}/scripts/jarl.mjs" <command>
 | `next [--limit n]` | open issues that share no file with any in-progress one — what can run in parallel now |
 | `review <id> approve\|changes "<findings>"` | the reviewer's verdict; `changes` needs a finding ranked Critical or Important in the text — Minor alone cannot bounce a branch, it rides an approve into evidence; `done` refuses without an approve newer than the last round |
 | `round <id> "<what failed>"` | one red round on the issue; the third prints a takeover block for a fresh worker |
-| `check <id> --branch <b>` | a worker branch before merge: commits beyond the base, diff inside the declared files, test files removed, assertions before and after — numbers, never a verdict |
+| `check <id> --branch <b>` | a worker branch before merge: commits beyond the base, diff inside the declared files, test files removed, assertions before and after, each item's own ok/not — read the items, not just the exit code; a script gate can use the exit code (0 clean, 2 something failed), a reader should not stop there |
 | `branches` | every `jarl/NNN-*` branch, and every other branch a worktree has checked out (marked UNNAMED when a worker never renamed its branch), with commits beyond the base and worktree state — a branch with commits is a report whether or not the worker said so |
 | `ask "<question>" --kind stop\|stuck\|lower\|charter [--target x] [--issue NNN]` · `answer <id> "<answer>"` | questions only the user can answer, in a closed set of kinds — `stop` halts everything, `stuck` blocks one issue, `lower` weakens something protected (`--target` names it), `charter` questions the goal; open ones show in `status`; an answer becomes a ruling |
 | `handoff write --summary "<s>" [--next "<n>"]...` · `handoff read` | the state of intent between sessions: what is in flight, what waits on the user, what comes next |
@@ -158,11 +158,15 @@ You spawn no agents of your own.
 ### The reviewer's brief
 
 ```
-You are the reviewer of issue NNN on branch jarl/NNN-slug of <repo root>. Read-only; spawn nothing.
+You are the reviewer of issue NNN on branch jarl/NNN-slug of <repo root>. Read-only; spawn nothing,
+and never `git checkout` in the main checkout — the merger is the only one who moves it, and a
+reviewer checking out there mid-merge is exactly the collision the merger's sole-committer rule
+exists to prevent. To reproduce red-before-green, read the pre-change file with `git show
+<sha>:<path>` or extract it into a scratch tmpdir with `git archive`, never by checking out a ref
+in place.
 Read the issue file, then `git diff <feature-branch>...jarl/NNN-slug`. Answer three questions with
 evidence: does the diff meet the acceptance line literally; was the new test red before the change
-and green after (check out the parent and run it if you must); did anything outside the issue's
-scope move. Rank every finding Critical / Important / Minor. Return: verdict (approve | changes)
+and green after; did anything outside the issue's scope move. Rank every finding Critical / Important / Minor. Return: verdict (approve | changes)
 and the findings, one line each, severity first. Minor findings alone are an approve.
 ```
 
