@@ -161,3 +161,15 @@ test('branches lists a worktree branch a worker never renamed, marked unnamed', 
   assert.equal(row.ahead, 1); assert.equal(row.unnamed, true);
   assert.match(jarl(root, 'branches', '--base', 'feature'), /UNNAMED/);
 });
+
+test('evidence accepts free text or structured rows; rows are readable back', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'thing');
+  jarl(root, 'evidence', '001', '--ran', 'npm test', '--saw', '12 pass, 0 fail');
+  jarl(root, 'evidence', '001', '--ran', 'node --test tests/a.test.mjs', '--saw', '3 pass');
+  assert.match(jarl(root, 'show', '001'), /\*\*ran:\*\* npm test · \*\*saw:\*\* 12 pass, 0 fail/);
+  assert.match(refuses(root, 'evidence', '001', '--ran', 'x'), /needs both --ran/);
+  jarl(root, 'review', '001', 'approve', 'fine');
+  jarl(root, 'set', '001', 'done');
+});

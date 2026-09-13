@@ -22,6 +22,8 @@ commands:
   init "<goal>"                                  create .jarl/ on this branch with the goal
   new "<title>" [--kind k] [--prio 1|2|3] [--tier standard|strong] [--tags a,b] [--files p,q] [--found-by who]
                                                  file an issue under the next free number
+  evidence <id> "<text>" | --ran "<command>" --saw "<what it printed>"
+                                                 append a free-text note, or one checkable row (repeatable)
   list [--status s] [--kind k] [--tag t] [--prio p] [--grep re] [--all]
                                                  open and in-progress by default; --all for every status
   show <id>                                      print one issue
@@ -29,7 +31,6 @@ commands:
   tag <id> +a -b ...                             add and remove tags
   prio <id> 1|2|3                                set priority
   files <id> p,q,...                             declare the files the issue touches
-  evidence <id> "<what was run and what it printed>"
   next [--limit n]                               open issues that do not share a file with any in-progress one
   review <id> approve|changes "<findings>"     the reviewer's verdict; "done" needs an approve newer than the last round
   round <id> "<what failed>"                     one red round; after three prints the takeover block for a fresh worker
@@ -261,10 +262,37 @@ export function cmdFiles(root, rawId, list) {
   return { id: issue.id, files };
 }
 
-export function cmdEvidence(root, rawId, text) {
-  need(text, 'evidence requires "<what was run and what it printed>"');
+export function evidenceRows(issue) {
+  const text = (issue.sections.evidence || '');
+  const rows = [];
+  for (const line of text.split('\n')) {
+    const m = /^- \*\*ran:\*\*\s*(.*?)\s*·\s*\*\*saw:\*\*\s*(.*)$/.exec(line.trim());
+    if (m) rows.push({ ran: m[1], saw: m[2] });
+  }
+  return rows;
+}
+
+export function acceptanceLineCount(issue) {
+  const text = issue.sections.acceptance || '';
+  return text.split('\n').map((l) => l.trim()).filter((l) => l.length > 0).length;
+}
+
+// evidence <id> "<text>" appends free text (a merge sha, a one-line note); evidence <id> --ran
+// "<command>" --saw "<what it printed>" appends one checkable row instead — repeatable, one row
+// per acceptance line. Both land in the same section; `set done` only counts rows, and a free-text
+// evidence block with zero rows still satisfies it (not every issue's proof is a command).
+export function cmdEvidence(root, rawId, text, flags) {
   const issue = findIssue(root, rawId);
   need(issue, `no such issue: ${rawId}`);
+  if (flags && (flags.ran !== undefined || flags.saw !== undefined)) {
+    need(flags.ran && flags.saw, 'a row needs both --ran "<command>" and --saw "<what it printed>"');
+    const row = `- **ran:** ${flags.ran} · **saw:** ${flags.saw}`;
+    const current = (issue.sections.evidence || '').trim();
+    writeFileSync(issue.file, setSection(readFileSync(issue.file, 'utf8'), 'Evidence', current ? `${current}\n${row}` : row));
+    appendLog(root, `${issue.id} evidence row · ${flags.ran}`);
+    return { id: issue.id, row: { ran: flags.ran, saw: flags.saw } };
+  }
+  need(text, 'evidence requires "<what was run and what it printed>", or --ran "<command>" --saw "<what it printed>"');
   writeFileSync(issue.file, setSection(readFileSync(issue.file, 'utf8'), 'Evidence', text));
   appendLog(root, `${issue.id} evidence · ${text.split('\n')[0]}`);
   return { id: issue.id };
@@ -529,7 +557,7 @@ function main() {
       case 'tag': out = cmdTag(root, rest[0], rest.slice(1)); text = `${out.id} tags: ${out.tags.join(', ') || '(none)'}`; break;
       case 'prio': out = cmdPrio(root, rest[0], rest[1]); text = `${out.id} priority ${out.priority}`; break;
       case 'files': out = cmdFiles(root, rest[0], rest[1]); text = `${out.id} files: ${out.files.join(', ') || '(none)'}`; break;
-      case 'evidence': out = cmdEvidence(root, rest[0], rest[1]); text = `${out.id} evidence recorded`; break;
+      case 'evidence': out = cmdEvidence(root, rest[0], rest[1], flags); text = out.row ? `${out.id} evidence row recorded` : `${out.id} evidence recorded`; break;
       case 'next': out = cmdNext(root, flags); text = out.length ? out.map((r) => (r.ready ? `${r.id}  P${r.priority}  ${r.title}` : `${r.id}  P${r.priority}  ${r.title}  (waits on ${r.waitsOn.join(', ')})`)).join('\n') : '(nothing open)'; break;
       case 'review': out = cmdReview(root, rest[0], rest[1], rest[2]); text = `${out.id} review ${out.verdict}`; break;
       case 'round': out = cmdRound(root, rest[0], rest[1]); text = out.takeover ? `${out.id} round ${out.round} — takeover:\n\n${out.block}` : `${out.id} round ${out.round} of ${ROUNDS_BEFORE_TAKEOVER} before a takeover`; break;

@@ -42,7 +42,7 @@ node "${CLAUDE_PLUGIN_ROOT:-.claude/skills/jarl}/scripts/jarl.mjs" <command>
 | `show <id>` · `status` | one issue · one line of counts |
 | `set <id> <status> "<why>"` | changes status and writes the log line in one move; `done` needs evidence on file, `dropped` needs a reason |
 | `tag <id> +a -b` · `prio <id> 1\|2\|3` · `files <id> p,q` | header fields |
-| `evidence <id> "<what was run and what it printed>"` | fills the Evidence section |
+| `evidence <id> "<text>"` \| `evidence <id> --ran "<command>" --saw "<what it printed>"` | a free-text note, or one checkable row (repeatable) — `--ran`/`--saw` when the proof is a command, free text when it is not |
 | `next [--limit n]` | open issues that share no file with any in-progress one — what can run in parallel now |
 | `review <id> approve\|changes "<findings>"` | the reviewer's verdict, written to the journal; `done` refuses without an approve newer than the last round |
 | `round <id> "<what failed>"` | one red round on the issue; the third prints a takeover block for a fresh worker |
