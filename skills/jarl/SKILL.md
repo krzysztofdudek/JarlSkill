@@ -170,7 +170,10 @@ the jarl raises **one long-lived merger** — a cheaper capable model, no worktr
 only agent besides the jarl allowed in the main checkout — and hands it every branch that comes
 back. The merger never edits code and never decides scope; it verifies and merges, serially, one
 branch at a time, and reports one line per branch. When a merger exists the jarl merges nothing
-itself. Its brief:
+itself, and **the merger is the only committer in the main checkout**: everybody else writes
+`.jarl/` through the tool and never runs a commit there — two committers in one checkout, one of
+them mid-merge, is how a conflict swallows the other's files. The merger commits `.jarl/` together
+with every merge, so the loop's state always rides the code it describes. Its brief:
 
 ```
 You are the merger of branch <feature-branch> in <repo root>; the tool is <absolute path to jarl.mjs>.
@@ -187,7 +190,9 @@ For each branch the jarl names (or that `jarl.mjs branches` shows with commits b
    for the whole run, and wait for it. Red: `git reset --hard` to the pre-merge commit,
    `jarl.mjs round <id> "<what failed>"`, report.
 4. Green: `jarl.mjs evidence <id> "<check summary line, merge sha>"`, `jarl.mjs set <id> done`,
-   remove the worktree and the branch, `jarl.mjs log "merged <id> <sha>"`.
+   remove the worktree and the branch, `jarl.mjs log "merged <id> <sha>"`, then commit `.jarl/`
+   (everything in it, including what the reeve wrote meanwhile) on the feature branch — you are its
+   only committer.
 Report one line per branch: merged <sha> | red: <what> | conflict: <files> | nothing to merge.
 Spawn no agents.
 ```
