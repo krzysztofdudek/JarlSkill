@@ -13,14 +13,14 @@ import { fileURLToPath } from 'node:url';
 export const STATUSES = ['open', 'in-progress', 'done', 'dropped'];
 export const KINDS = ['bug', 'gap', 'cleanup', 'docs', 'test', 'research', 'process'];
 export const PRIORITIES = ['1', '2', '3'];
-export const MODELS = ['sonnet', 'opus'];
+export const TIERS = ['standard', 'strong'];
 const ROUNDS_BEFORE_TAKEOVER = 3;
 
 const USAGE = `usage: jarl.mjs <command> [options]
 
 commands:
   init "<goal>"                                  create .jarl/ on this branch with the goal
-  new "<title>" [--kind k] [--prio 1|2|3] [--model sonnet|opus] [--tags a,b] [--files p,q] [--found-by who]
+  new "<title>" [--kind k] [--prio 1|2|3] [--tier standard|strong] [--tags a,b] [--files p,q] [--found-by who]
                                                  file an issue under the next free number
   list [--status s] [--kind k] [--tag t] [--prio p] [--grep re] [--all]
                                                  open and in-progress by default; --all for every status
@@ -90,7 +90,7 @@ export function parseIssue(text, file) {
   issue.status = issue.fields.status || 'open';
   issue.kind = issue.fields.kind || '';
   issue.priority = issue.fields.priority || '2';
-  issue.model = issue.fields.model || 'sonnet';
+  issue.tier = issue.fields.tier || 'standard';
   issue.tags = (issue.fields.tags || '').split(',').map((s) => s.trim()).filter(Boolean);
   issue.files = (issue.fields.files || '').split(',').map((s) => s.trim()).filter(Boolean);
   return issue;
@@ -125,13 +125,13 @@ function setSection(text, name, body) {
   return `${text.replace(/\s*$/, '')}\n\n## ${name}\n${body.trim()}\n`;
 }
 
-export function renderIssue({ id, title, kind, priority, model, tags, files, foundBy }) {
+export function renderIssue({ id, title, kind, priority, tier, tags, files, foundBy }) {
   return `# ${id} · ${title}
 
 **Status:** open
 **Kind:** ${kind}
 **Priority:** ${priority}
-**Model:** ${model}
+**Tier:** ${tier}
 **Tags:** ${tags.join(', ')}
 **Files:** ${files.join(', ')}
 **Found by:** ${foundBy}
@@ -188,13 +188,13 @@ export function cmdNew(root, title, flags) {
   need(KINDS.includes(kind), `--kind must be one of: ${KINDS.join(', ')}`);
   const priority = String(flags.prio || '2');
   need(PRIORITIES.includes(priority), '--prio must be 1, 2 or 3');
-  const model = String(flags.model || 'sonnet');
-  need(MODELS.includes(model), `--model must be one of: ${MODELS.join(', ')}`);
+  const tier = String(flags.tier || 'standard');
+  need(TIERS.includes(tier), `--tier must be one of: ${TIERS.join(', ')} — the tier of model the worker is raised on, mapped to a model by the platform running the loop`);
   const issues = loadIssues(root);
   const id = String(issues.reduce((m, i) => Math.max(m, Number(i.id)), 0) + 1).padStart(3, '0');
   const file = join(issuesDir(root), `${id}-${slugify(title)}.md`);
   writeFileSync(file, renderIssue({
-    id, title, kind, priority, model,
+    id, title, kind, priority, tier,
     tags: splitList(flags.tags), files: splitList(flags.files), foundBy: flags['found-by'] || 'jarl',
   }));
   appendLog(root, `filed ${id} · ${title}`);

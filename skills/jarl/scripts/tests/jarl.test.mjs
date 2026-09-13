@@ -85,12 +85,12 @@ test('decide refuses a duplicate slug; close refuses while open, removes when cl
   assert.equal(existsSync(join(root, '.jarl')), false);
 });
 
-test('model field, rounds and takeover, asks and answers, handoff, report', () => {
+test('tier field, rounds and takeover, asks and answers, handoff, report', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
-  assert.match(refuses(root, 'new', 'x', '--model', 'haiku'), /--model must be one of/);
-  jarl(root, 'new', 'hard thing', '--model', 'opus', '--found-by', 'tester, running the suite');
-  assert.match(jarl(root, 'show', '001'), /\*\*Model:\*\* opus/);
+  assert.match(refuses(root, 'new', 'x', '--tier', 'huge'), /--tier must be one of/);
+  jarl(root, 'new', 'hard thing', '--tier', 'strong', '--found-by', 'tester, running the suite');
+  assert.match(jarl(root, 'show', '001'), /\*\*Tier:\*\* strong/);
   assert.match(jarl(root, 'round', '001', 'suite red'), /round 1 of 3/);
   jarl(root, 'round', '001', 'still red');
   const r = JSON.parse(jarl(root, 'round', '001', 'red again', '--json'));

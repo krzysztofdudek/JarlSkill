@@ -37,7 +37,7 @@ node "${CLAUDE_PLUGIN_ROOT:-.claude/skills/jarl}/scripts/jarl.mjs" <command>
 | Command | What it does |
 |---|---|
 | `init "<goal>"` | creates `.jarl/` on this branch with the goal |
-| `new "<title>" [--kind k] [--prio 1\|2\|3] [--tags a,b] [--files p,q] [--found-by who]` | files an issue under the next free number |
+| `new "<title>" [--kind k] [--prio 1\|2\|3] [--tier standard\|strong] [--tags a,b] [--files p,q] [--found-by who]` | files an issue under the next free number |
 | `list [--status s] [--kind k] [--tag t] [--prio p] [--grep re] [--all]` | open and in-progress by default, sorted by priority |
 | `show <id>` · `status` | one issue · one line of counts |
 | `set <id> <status> "<why>"` | changes status and writes the log line in one move; `done` needs evidence on file, `dropped` needs a reason |
@@ -65,7 +65,7 @@ a worker's brief carries the absolute path to the tool.
 **Status:** open | in-progress | done | dropped
 **Kind:** bug | gap | cleanup | docs | test | research | process
 **Priority:** 1 | 2 | 3
-**Model:** sonnet | opus — the model the worker is raised on; explicit in the file, never implied
+**Tier:** standard | strong — the tier of model the worker is raised on, explicit in the file, never implied; the platform running the loop maps a tier to one of its own models
 **Tags:** comma, separated
 **Files:** the files it touches, comma separated — what `next` uses to keep workers apart
 **Found by:** who, doing what
@@ -102,7 +102,7 @@ Every turn, in this order:
 4. **Raise a worker.** One worker per issue, in its own worktree, on branch `jarl/NNN-slug` cut from
    the feature branch — every agent that may write anything, a research issue's worker included,
    gets its own worktree; only the jarl works in the main checkout, and read-only readers and
-   verifiers need none — on the model the issue names — set it explicitly on every spawn, never inherited —
+   verifiers need none — on the tier the issue names — set it explicitly on every spawn, never inherited —
    and tell the worker it spawns nothing itself. The brief is below; the issue file is pasted into it
    verbatim, and after three red rounds the takeover block from `round` goes in too, for a fresh worker.
 5. **Review.** A worker's report is a hypothesis. A **fresh one-shot reviewer** — never the worker,
@@ -225,8 +225,8 @@ issues — is the one part that needs the strongest model in the room. The loop 
 work over a tool that refuses what is wrong: a cheaper capable model runs it, hands out issues,
 reads reports and keeps the journal, and hands the loop back to the strong model only for a
 research issue, a gap the goal did not foresee, or a question the user answered in a way that
-changes the goal. Workers, readers, reviewers and the merger run on the cheaper tier unless an
-issue's own `Model:` says otherwise. Say which tier is running at every handoff.
+changes the goal. Workers, readers, reviewers and the merger run on the standard tier unless an
+issue's own `Tier:` says otherwise. Say which tier is running at every handoff.
 
 ## Talking to the user
 
