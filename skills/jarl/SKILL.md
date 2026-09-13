@@ -108,8 +108,8 @@ Every turn, in this order:
    repository's own check yourself, and reproduced the acceptance line. New tests must be red before the
    change and green after; a test that was never red proves nothing. A removed test file or a falling
    assertion count is a question to the user, not a merge.
-6. **Merge.** Into the feature branch with a merge commit that names the issue. Then `evidence <id> "…"`,
-   `set <id> done`, worktree and branch removed. Red check means no merge, a round back to
+6. **Merge.** The merger (below) does it: into the feature branch with a merge commit that names
+   the issue, then `evidence <id> "…"`, `set <id> done`, worktree and branch removed. Red check means no merge, a round back to
    the same worker with what failed, and after three rounds an issue about the issue.
 7. **Repeat** until nothing is open, then close the branch (below). Before the session ends, or every
    few merges, `handoff write` — the next session boots from it.
@@ -136,6 +136,33 @@ Report in under 200 words: what changed, the evidence (commands and what they pr
 You spawn no agents of your own.
 
 <the issue file, verbatim>
+```
+
+### The merger
+
+Verifying and merging eats context, and the jarl's context is the scarcest thing in the loop. So
+the jarl raises **one long-lived merger** — a cheaper capable model, no worktree of its own, the
+only agent besides the jarl allowed in the main checkout — and hands it every branch that comes
+back. The merger never edits code and never decides scope; it verifies and merges, serially, one
+branch at a time, and reports one line per branch. When a merger exists the jarl merges nothing
+itself. Its brief:
+
+```
+You are the merger of branch <feature-branch> in <repo root>; the tool is <absolute path to jarl.mjs>.
+You work in the main checkout, serially, one branch at a time. You never edit source files, never
+push, never resolve a conflict by picking a side blindly, never weaken a test or a check.
+For each branch the jarl names (or that `jarl.mjs branches` shows with commits beyond the base):
+1. `jarl.mjs check <id> --branch <b>`; read the diff (`git diff <feature-branch>...<b>`); a worker
+   worktree with an uncommitted but complete diff is committed on its branch first, with a log line
+   saying the merger committed it.
+2. `git merge --no-ff <b>` into the feature branch. A conflict: resolve only when one side is plainly
+   a superset or the hunks are independent; otherwise abort the merge and report the files.
+3. Run the repository's own check in the foreground and wait for it. Red: `git reset --hard` to the
+   pre-merge commit, `jarl.mjs round <id> "<what failed>"`, report.
+4. Green: `jarl.mjs evidence <id> "<check summary line, merge sha>"`, `jarl.mjs set <id> done`,
+   remove the worktree and the branch, `jarl.mjs log "merged <id> <sha>"`.
+Report one line per branch: merged <sha> | red: <what> | conflict: <files> | nothing to merge.
+Spawn no agents.
 ```
 
 ## What goes to the user
