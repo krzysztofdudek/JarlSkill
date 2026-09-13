@@ -198,6 +198,10 @@ For each branch the jarl names (or that `jarl.mjs branches` shows with commits b
    (everything in it, including what the reeve wrote meanwhile) on the feature branch — you are its
    only committer.
 Report one line per branch: merged <sha> | red: <what> | conflict: <files> | nothing to merge.
+When several approved branches wait and their declared files do not overlap, merge them one after
+another and run the check once for the batch; a red batch is rolled back whole (`git reset --keep`
+to the commit before the first merge) and re-done one branch at a time, so the red one is found and
+the green ones still land. Never batch two branches that touch the same file.
 Spawn no agents.
 ```
 
