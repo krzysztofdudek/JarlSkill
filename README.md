@@ -9,9 +9,9 @@ Invoke it on a branch and the agent becomes the **jarl** of that branch: everyth
 /plugin install jarl@jarl-marketplace
 ```
 
-Run both, then `/reload-plugins` to activate it in this session (or restart Claude Code). No config, no API key. Then `/jarl <goal>` on a feature branch, or just start a session on a branch that already carries `.jarl/` — the skill resumes on its own.
+Run both, then `/reload-plugins` to activate it in this session (or restart Claude Code). Needs Node.js on your `PATH`; no config, no API key. Then `/jarl <goal>` on a feature branch, or just start a session on a branch that already carries `.jarl/` — the skill resumes on its own.
 
-> MIT licensed · single markdown file · works with any agent that reads skills · part of the [Yggdrasil family](#the-yggdrasil-family) · [full skill body](skills/jarl/SKILL.md)
+> MIT licensed · one markdown file and one zero-dependency Node tool · works with any agent that reads skills · part of the [Yggdrasil family](#the-yggdrasil-family) · [full skill body](skills/jarl/SKILL.md)
 
 ---
 
@@ -86,21 +86,21 @@ ln -s "$(pwd)/JarlSkill" ~/.cursor/plugins/local/jarl
 
 Then reload Cursor (**Developer: Reload Window**). Or drop the single file into `~/.cursor/skills/jarl/SKILL.md` (user-level) or `.cursor/skills/jarl/SKILL.md` (project-level).
 
-### Single-file drop-in (any agent)
+### Drop-in (any agent)
 
-The whole skill is one frontmatter-tagged markdown file: [`skills/jarl/SKILL.md`](skills/jarl/SKILL.md). Copy it into your agent's skill directory.
+The whole skill is the [`skills/jarl/`](skills/jarl/) directory: one frontmatter-tagged markdown file and one Node tool. Copy the directory into your agent's skill directory; Node on your `PATH` is the only requirement.
 
-- **Claude Code, user-level:** `~/.claude/skills/jarl/SKILL.md`
-- **Claude Code, project-level:** `.claude/skills/jarl/SKILL.md` in your repo
+- **Claude Code, user-level:** `~/.claude/skills/jarl/`
+- **Claude Code, project-level:** `.claude/skills/jarl/` in your repo
 - **Other agents:** wherever your tool reads markdown skills
 
-Nothing else in this repo affects behavior — all of it lives in that one file.
+Nothing else in this repo affects behavior — all of it lives in that directory.
 
 ---
 
 ## What it doesn't claim
 
-Jarl is a working loop, not a guarantee. It does not enforce architecture, it does not gate a merge with a machine check, and it does not hold a client's charter — that is [Horde](https://github.com/krzysztofdudek/Horde), with the graph and the rails. Jarl is what you use when a branch needs more hands than one agent and no rails yet: the same words as Horde, none of the machinery. The state is four kinds of markdown file on the branch; the discipline is the agent's.
+Jarl is a working loop, not a guarantee. It does not enforce architecture, it does not gate a merge with a machine check, and it does not hold a client's charter — that is [Horde](https://github.com/krzysztofdudek/Horde), with the graph and the rails. Jarl is what you use when a branch needs more hands than one agent and no rails yet: the same words as Horde, none of the machinery. The state is four kinds of markdown file on the branch, moved by one small tool; the discipline is the agent's.
 
 ---
 
@@ -113,9 +113,9 @@ Because the next session has to pick up where this one stopped, and an agent's m
 </details>
 
 <details>
-<summary><b>Why no scripts?</b></summary>
+<summary><b>Why one script, and why so small?</b></summary>
 
-Jarl is the light version. Four markdown files and a rule that a status which changed without a log line did not change. When the bookkeeping needs a tool set, a gate and a charter, that is the moment to move to Horde — the vocabulary carries over unchanged.
+Jarl is the light version. Four markdown files and one rule: a status that changed without a log line did not change. The tool exists so that rule is enforced rather than promised — it files, lists, searches, moves a status with its reason, records evidence, says what can run in parallel and closes the loop. When the bookkeeping needs a gate and a charter, that is the moment to move to Horde — the vocabulary carries over unchanged.
 </details>
 
 <details>

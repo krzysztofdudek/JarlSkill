@@ -11,7 +11,7 @@ spend their trust on a guess.
 
 Jarl is the light version of Horde. Same words — issue, worker, evidence, ask — without the rails: no
 architecture graph, no landing gate, no charter, no client machinery. A branch, a directory of issues,
-a loop. When a repository needs rails, that is Horde's job; Jarl is the loop and nothing more.
+one tool, a loop. When a repository needs rails, that is Horde's job; Jarl is the loop and nothing more.
 
 ## The one place
 
@@ -23,9 +23,38 @@ Everything lives in `.jarl/` on the **feature branch**, committed with the work,
 | `.jarl/goal.md` | Why this branch exists, in one paragraph; the standing assumptions; the rules that apply here. Written once at the start, amended only with the user's word. | jarl |
 | `.jarl/decisions.md` | Rulings, append-only: `## YYYY-MM-DD · slug` and the ruling. Read before deciding anything; never re-derive a ruling that is here. | jarl |
 | `.jarl/issues/NNN-slug.md` | One issue per file, numbered in filing order from 001. Format below. | jarl (header, status), worker (evidence) |
-| `.jarl/log.md` | The journal, append-only, one line per event: filed, started, done, dropped, merged, asked, decided. Dated. | everyone, through the jarl |
+| `.jarl/log.md` | The journal, append-only, one dated line per event: filed, started, done, dropped, merged, asked, decided. | everyone, through the jarl |
 
-No scripts. The files are the state. A status that changes without a line in the log did not change.
+Markdown is the source of truth, and **one tool moves it**: `scripts/jarl.mjs` (Node, zero
+dependencies). Every status change, tag, priority, ruling and log line goes through it, never through
+a hand edit — a status that changed without a log line did not change, and the tool is what makes that
+true rather than promised. Run it as:
+
+```
+node "${CLAUDE_PLUGIN_ROOT:-.claude/skills/jarl}/scripts/jarl.mjs" <command>
+```
+
+| Command | What it does |
+|---|---|
+| `init "<goal>"` | creates `.jarl/` on this branch with the goal |
+| `new "<title>" [--kind k] [--prio 1\|2\|3] [--tags a,b] [--files p,q] [--found-by who]` | files an issue under the next free number |
+| `list [--status s] [--kind k] [--tag t] [--prio p] [--grep re] [--all]` | open and in-progress by default, sorted by priority |
+| `show <id>` · `status` | one issue · one line of counts |
+| `set <id> <status> "<why>"` | changes status and writes the log line in one move; `done` needs evidence on file, `dropped` needs a reason |
+| `tag <id> +a -b` · `prio <id> 1\|2\|3` · `files <id> p,q` | header fields |
+| `evidence <id> "<what was run and what it printed>"` | fills the Evidence section |
+| `next [--limit n]` | open issues that share no file with any in-progress one — what can run in parallel now |
+| `round <id> "<what failed>"` | one red round on the issue; the third prints a takeover block for a fresh worker |
+| `check <id> --branch <b>` | a worker branch before merge: commits beyond the base, diff inside the declared files, test files removed, assertions before and after — numbers, never a verdict |
+| `branches` | every `jarl/NNN-*` branch with its commits beyond the base and its worktree state — a branch with commits is a report whether or not the worker said so |
+| `ask "<question>" [--issue NNN]` · `answer <id> "<answer>"` | questions only the user can answer; open ones show in `status`; an answer becomes a ruling |
+| `handoff write --summary "<s>" [--next "<n>"]...` · `handoff read` | the state of intent between sessions: what is in flight, what waits on the user, what comes next |
+| `log "<event>"` · `decide <slug> "<ruling>"` | the journal and the rulings |
+| `report` | done, dropped with reasons, still open, found along the way — the material for the changelog |
+| `close [--force]` | refuses while anything is open or in progress; otherwise removes `.jarl/` |
+
+Every command takes `--json` and `--help`. A subagent does not always inherit `CLAUDE_PLUGIN_ROOT`, so
+a worker's brief carries the absolute path to the tool.
 
 ### An issue
 
@@ -34,6 +63,10 @@ No scripts. The files are the state. A status that changes without a line in the
 
 **Status:** open | in-progress | done | dropped
 **Kind:** bug | gap | cleanup | docs | test | research | process
+**Priority:** 1 | 2 | 3
+**Model:** sonnet | opus — the model the worker is raised on; explicit in the file, never implied
+**Tags:** comma, separated
+**Files:** the files it touches, comma separated — what `next` uses to keep workers apart
 **Found by:** who, doing what
 **Where:** file:line, or the command and what it printed
 
@@ -57,24 +90,27 @@ and files new issues; it never edits code.
 
 Every turn, in this order:
 
-1. **Boot.** Read `goal.md`, `decisions.md`, the tail of `log.md`; list issues by status; look at the
-   branches (`git branch --list 'jarl/*'`) — a worker branch with commits beyond the feature branch is
-   a report, whether or not the worker said so.
+1. **Boot.** `handoff read`, then `goal.md`, `decisions.md`, the tail of `log.md`, `status`, `list`, and
+   `branches` — a worker branch with commits beyond the feature branch is a report, whether or not the
+   worker said so. Open questions come first: the user may have answered one since.
 2. **File.** Anything anybody saw becomes an issue before anything else happens. Nobody fixes on the
    side. A worker reports what it found; the jarl files it, so numbers never collide.
-3. **Pick.** Open issues whose files do not overlap run in parallel; overlapping ones run in series.
-   Severity first, then whatever unblocks the most.
+3. **Pick.** `jarl.mjs next` lists what can run now: open issues whose files do not overlap with anything
+   in progress. Priority first, then whatever unblocks the most. `set <id> in-progress "<who>"` before
+   raising the worker.
 4. **Raise a worker.** One worker per issue, in its own worktree, on branch `jarl/NNN-slug` cut from
-   the feature branch. Set the model explicitly on every spawn — a cheaper capable model for mechanical
-   work, a stronger one for hard synthesis — and tell the worker it spawns nothing itself. The brief is
-   below; the issue file is pasted into it verbatim.
-5. **Verify.** A worker's report is a hypothesis until you have seen the diff, run the repository's own
-   check yourself, and reproduced the acceptance line. New tests must be red before the change and green
-   after; a test that was never red proves nothing.
-6. **Merge.** Into the feature branch with a merge commit that names the issue. Then: status `done`,
-   evidence filled, one log line, worktree and branch removed. Red check means no merge, a round back to
+   the feature branch, on the model the issue names — set it explicitly on every spawn, never inherited —
+   and tell the worker it spawns nothing itself. The brief is below; the issue file is pasted into it
+   verbatim, and after three red rounds the takeover block from `round` goes in too, for a fresh worker.
+5. **Verify.** A worker's report is a hypothesis until you have seen the diff, run `check`, run the
+   repository's own check yourself, and reproduced the acceptance line. New tests must be red before the
+   change and green after; a test that was never red proves nothing. A removed test file or a falling
+   assertion count is a question to the user, not a merge.
+6. **Merge.** Into the feature branch with a merge commit that names the issue. Then `evidence <id> "…"`,
+   `set <id> done`, worktree and branch removed. Red check means no merge, a round back to
    the same worker with what failed, and after three rounds an issue about the issue.
-7. **Repeat** until nothing is open, then close the branch (below).
+7. **Repeat** until nothing is open, then close the branch (below). Before the session ends, or every
+   few merges, `handoff write` — the next session boots from it.
 
 Testing, stress and research sessions are the same loop with a different mix: some workers produce
 issues (they test, they probe, they read) while others take issues down. The stream never waits for
@@ -108,16 +144,19 @@ Decide yourself inside the goal. Stop and ask when:
 - the work would reach outside the session — a push, a release, a cost.
 
 Ask well: where you are, what you found, the options with trade-offs, your recommendation. Never an
-open "what should I do". Record the answer in `decisions.md` and one line in the log.
+open "what should I do". File it with `ask`, keep the rest of the loop moving, and record the answer
+with `answer` — it becomes a ruling in `decisions.md`.
 
 ## Closing the branch
 
 Before the feature branch merges to `main`, in this order:
 
 1. Every issue is `done` with evidence, or `dropped` with a reason, or listed to the user as still open.
-2. The repository's changelog carries every user-visible change, in the register the repository asks for.
+2. `report` is the material: the repository's changelog carries every user-visible change from it, in the
+   register the repository asks for.
 3. The repository's own check is green on the branch tip.
-4. The last commit removes `.jarl/` entirely. `main` never carries it.
+4. `jarl.mjs close` removes `.jarl/` — it refuses while anything is still open — and that removal is the
+   last commit. `main` never carries the directory.
 
 Merging and pushing are the user's word, never yours.
 
