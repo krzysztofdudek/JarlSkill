@@ -1,0 +1,25 @@
+{
+  "name": "jarl",
+  "version": "0.1.0",
+  "description": "Skill that turns your coding agent into the director of a feature branch: a committed issue loop where everything seen becomes an issue, a worker per issue works in its own worktree, evidence decides what merges, and the loop leaves no trace on main.",
+  "author": {
+    "name": "Krzysztof Dudek",
+    "url": "https://github.com/krzysztofdudek"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/krzysztofdudek/JarlSkill",
+  "repository": "https://github.com/krzysztofdudek/JarlSkill.git",
+  "keywords": [
+    "jarl",
+    "claude-code",
+    "claude-code-plugin",
+    "claude-skill",
+    "ai-coding",
+    "coding-agents",
+    "multi-agent",
+    "issue-loop",
+    "subagents",
+    "feature-branch",
+    "agentic-workflow"
+  ]
+}
