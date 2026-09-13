@@ -381,7 +381,10 @@ export function cmdCheck(root, rawId, flags) {
   need(mergeBase, `no merge base between ${base} and ${flags.branch}`);
   const commits = (git(root, ['rev-list', '--count', `${mergeBase}..${flags.branch}`]) || '0');
   const changed = (git(root, ['diff', '--name-only', `${mergeBase}..${flags.branch}`]) || '').split('\n').filter(Boolean);
-  const outside = issue.files.length ? changed.filter((f) => !issue.files.some((d) => f === d || f.startsWith(d.replace(/\/?$/, '/')))) : [];
+  // A change proves itself with a test and announces itself in the changelog, so neither is ever
+  // "outside" the issue: the scope check is about source, not about the two files every issue touches.
+  const alwaysInScope = (f) => isTestFile(f) || /(^|\/)CHANGELOG\.md$/i.test(f);
+  const outside = issue.files.length ? changed.filter((f) => !alwaysInScope(f) && !issue.files.some((d) => f === d || f.startsWith(d.replace(/\/?$/, '/')))) : [];
   const testsBase = (git(root, ['ls-tree', '-r', '--name-only', mergeBase]) || '').split('\n').filter(isTestFile);
   const testsTip = (git(root, ['ls-tree', '-r', '--name-only', flags.branch]) || '').split('\n').filter(isTestFile);
   const removedTests = testsBase.filter((f) => !testsTip.includes(f));
