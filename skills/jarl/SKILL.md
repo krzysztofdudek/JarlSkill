@@ -234,6 +234,13 @@ Everything the reeve raises is its own to reach — a worker, a reviewer, a merg
 holds all of them and the jarl holds the reeve. Its brief is this whole skill, plus the repository,
 the feature branch, the absolute path of the tool, and the four occasions above.
 
+On a platform where an agent raised by the jarl cannot raise agents of its own, the split stays and
+only the spawning moves: the reeve writes every brief to a file and sends the jarl one line per
+spawn (`spawn <role> <id> tier=… worktree=… brief=<path>`); the jarl spawns from that line without
+reading the brief; every raised agent writes its report to a file and ends with one line naming it;
+the jarl forwards that one line to the reeve. The jarl's context then carries pointers, not briefs
+and reports.
+
 ## Which model sits where
 
 Opening the loop — reading the repository whole, writing the goal, the first rulings and the first
