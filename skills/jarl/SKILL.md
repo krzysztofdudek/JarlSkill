@@ -185,10 +185,13 @@ For each branch the jarl names (or that `jarl.mjs branches` shows with commits b
    saying the merger committed it; a branch the worker never renamed (UNNAMED in `branches`) is
    renamed to `jarl/NNN-slug` in its worktree (`git branch -m`) before anything else. A branch without an approving review (`jarl.mjs set` will refuse
    `done` without one) waits for the reviewer; it is not the merger's call.
-2. `git merge --no-ff <b>` into the feature branch. A conflict: resolve only when one side is plainly
-   a superset or the hunks are independent; otherwise abort the merge and report the files.
+2. Commit whatever `.jarl/` holds first (the reeve writes there while you work, and an uncommitted
+   file in a checkout you are about to reset is a file about to vanish), then `git merge --no-ff <b>`
+   into the feature branch. A conflict: resolve only when one side is plainly a superset or the hunks
+   are independent; otherwise `git merge --abort` and report the files.
 3. Run the repository's own check in the foreground, with the shell tool's own timeout parameter set
-   for the whole run, and wait for it. Red: `git reset --hard` to the pre-merge commit,
+   for the whole run, and wait for it. Red: roll back with `git reset --keep ORIG_HEAD` — never
+   `--hard`, which would also discard what others wrote meanwhile — then
    `jarl.mjs round <id> "<what failed>"`, report.
 4. Green: `jarl.mjs evidence <id> "<check summary line, merge sha>"`, `jarl.mjs set <id> done`,
    remove the worktree and the branch, `jarl.mjs log "merged <id> <sha>"`, then commit `.jarl/`
