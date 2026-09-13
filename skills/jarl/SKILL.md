@@ -144,7 +144,10 @@ default timeout is moved to the background and you will sit waiting for a notifi
 a report). Do not run the repository's whole check yourself: the merger runs it on the merged result
 and that run is the one that counts. A report that says "waiting for the test run" is not a report.
 Commit on your branch. Never push. Never touch another branch. Never weaken a test, a check, a rule
-or a hook — if the issue seems to need that, stop and report.
+or a hook — if the issue seems to need that, stop and report. To hold work aside while you check a
+red-before state, copy the file to a scratch path (a tmpdir), never `git stash` — the stash list is
+one shared list across every worktree of this repository, and a worker that stashes while another
+does the same can pop the wrong entry.
 Report in under 200 words: what changed, the evidence (commands and what they printed),
 "Found" (new issues, if any), and `git log -1 --oneline` of your commit.
 You spawn no agents of your own.
