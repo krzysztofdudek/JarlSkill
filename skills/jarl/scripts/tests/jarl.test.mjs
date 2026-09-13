@@ -173,3 +173,27 @@ test('evidence accepts free text or structured rows; rows are readable back', ()
   jarl(root, 'review', '001', 'approve', 'fine');
   jarl(root, 'set', '001', 'done');
 });
+
+test('ask kinds are closed; lower needs a target', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  assert.match(refuses(root, 'ask', 'what now', '--kind', 'panic'), /--kind must be one of/);
+  assert.match(refuses(root, 'ask', 'weaken what', '--kind', 'lower'), /--target is required for kind lower/);
+  const a = JSON.parse(jarl(root, 'ask', 'drop this test?', '--kind', 'lower', '--target', 'coverage-check', '--json'));
+  assert.equal(a.kind, 'lower');
+  const asks = JSON.parse(jarl(root, 'ask', 'plain question', '--json'));
+  assert.equal(asks.kind, 'stuck');
+  assert.match(refuses(root, 'ask', 'x', '--kind', 'stop', '--target', 'y'), /--target has no meaning/);
+});
+
+test('review changes requires a Critical or Important finding; Minor alone is rejected', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'thing');
+  assert.match(refuses(root, 'review', '001', 'changes', 'looks a bit off'), /needs at least one finding ranked/);
+  assert.match(refuses(root, 'review', '001', 'changes', 'Minor: naming could be better'), /Minor alone goes to evidence/);
+  jarl(root, 'review', '001', 'changes', 'Important: the new test never goes red');
+  jarl(root, 'evidence', '001', 'fixed');
+  jarl(root, 'review', '001', 'approve', 'Minor: could still tidy the naming, but fine to land');
+  jarl(root, 'set', '001', 'done');
+});

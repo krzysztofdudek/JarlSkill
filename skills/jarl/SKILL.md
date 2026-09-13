@@ -44,11 +44,11 @@ node "${CLAUDE_PLUGIN_ROOT:-.claude/skills/jarl}/scripts/jarl.mjs" <command>
 | `tag <id> +a -b` · `prio <id> 1\|2\|3` · `files <id> p,q` | header fields |
 | `evidence <id> "<text>"` \| `evidence <id> --ran "<command>" --saw "<what it printed>"` | a free-text note, or one checkable row (repeatable) — `--ran`/`--saw` when the proof is a command, free text when it is not |
 | `next [--limit n]` | open issues that share no file with any in-progress one — what can run in parallel now |
-| `review <id> approve\|changes "<findings>"` | the reviewer's verdict, written to the journal; `done` refuses without an approve newer than the last round |
+| `review <id> approve\|changes "<findings>"` | the reviewer's verdict; `changes` needs a finding ranked Critical or Important in the text — Minor alone cannot bounce a branch, it rides an approve into evidence; `done` refuses without an approve newer than the last round |
 | `round <id> "<what failed>"` | one red round on the issue; the third prints a takeover block for a fresh worker |
 | `check <id> --branch <b>` | a worker branch before merge: commits beyond the base, diff inside the declared files, test files removed, assertions before and after — numbers, never a verdict |
 | `branches` | every `jarl/NNN-*` branch, and every other branch a worktree has checked out (marked UNNAMED when a worker never renamed its branch), with commits beyond the base and worktree state — a branch with commits is a report whether or not the worker said so |
-| `ask "<question>" [--issue NNN]` · `answer <id> "<answer>"` | questions only the user can answer; open ones show in `status`; an answer becomes a ruling |
+| `ask "<question>" --kind stop\|stuck\|lower\|charter [--target x] [--issue NNN]` · `answer <id> "<answer>"` | questions only the user can answer, in a closed set of kinds — `stop` halts everything, `stuck` blocks one issue, `lower` weakens something protected (`--target` names it), `charter` questions the goal; open ones show in `status`; an answer becomes a ruling |
 | `handoff write --summary "<s>" [--next "<n>"]...` · `handoff read` | the state of intent between sessions: what is in flight, what waits on the user, what comes next |
 | `log "<event>"` · `decide <slug> "<ruling>"` | the journal and the rulings |
 | `report` | done, dropped with reasons, still open, found along the way — the material for the changelog |

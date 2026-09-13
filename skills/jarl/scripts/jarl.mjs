@@ -14,6 +14,7 @@ export const STATUSES = ['open', 'in-progress', 'done', 'dropped'];
 export const KINDS = ['bug', 'gap', 'cleanup', 'docs', 'test', 'research', 'process'];
 export const PRIORITIES = ['1', '2', '3'];
 export const TIERS = ['standard', 'strong'];
+export const ASK_KINDS = ['stop', 'stuck', 'lower', 'charter'];
 const ROUNDS_BEFORE_TAKEOVER = 3;
 
 const USAGE = `usage: jarl.mjs <command> [options]
@@ -38,7 +39,9 @@ commands:
                                                  commits beyond the base, diff inside the declared files, and the
                                                  change in test files and assertions — numbers, never a verdict
   branches [--base <feature-branch>]             every jarl/NNN-* branch: commits beyond the base, worktree state
-  ask "<question>" [--issue NNN]                 a question the user has to answer; listed at boot until answered
+  ask "<question>" [--kind stop|stuck|lower|charter] [--target x] [--issue NNN]
+                                                 a question the user has to answer; lower needs --target;
+                                                 listed at boot until answered
   answer <id> "<answer>"                         records the answer as a ruling and closes the question
   handoff write --summary "<s>" [--next "<n>"]... | read
                                                  the state of intent between sessions
@@ -347,13 +350,23 @@ export function reviewState(root, id) {
   return { approved: lastReview === 'approve' && lastReviewAt > lastRoundAt, lastReview };
 }
 
+const SEVERITIES = ['Critical', 'Important', 'Minor'];
+
+// A "changes" verdict names at least one Critical or Important finding — Minor alone never bounces
+// a branch back to a worker, it goes to evidence and the branch still merges (the review discipline's
+// own rule, enforced here rather than left to a reviewer's judgement).
 export function cmdReview(root, rawId, verdict, findings) {
   need(verdict === 'approve' || verdict === 'changes', 'review requires approve|changes');
   need(findings, 'review requires "<findings>" — what was read and what was found, even when nothing');
   const issue = findIssue(root, rawId);
   need(issue, `no such issue: ${rawId}`);
+  const severities = SEVERITIES.filter((s) => findings.includes(s));
+  if (verdict === 'changes') {
+    need(severities.length > 0, `"changes" needs at least one finding ranked ${SEVERITIES.join('/')} — name the severity, not just the problem`);
+    need(severities.some((s) => s !== 'Minor'), '"changes" needs a Critical or Important finding — Minor alone goes to evidence on an approve, it never bounces a branch');
+  }
   appendLog(root, `${issue.id} review ${verdict} · ${findings.split('\n')[0]}`);
-  return { id: issue.id, verdict };
+  return { id: issue.id, verdict, severities };
 }
 
 // ---- rounds, branches, checks ------------------------------------------------------------------
@@ -453,24 +466,29 @@ export function cmdBranches(root, flags) {
 // ---- questions to the user and the handoff --------------------------------------------------
 
 function asksPath(root) { return join(jarlDir(root), 'asks.md'); }
-const ASK_RE = /^- \*\*a-(\d{3})\*\* \((open|answered)\)(?: · issue (\d{3}))? · (.*)$/;
+const ASK_RE = /^- \*\*a-(\d{3})\*\* \((open|answered)\)(?: · (stop|stuck|lower|charter))?(?: · target (\S+))?(?: · issue (\d{3}))? · (.*)$/;
 
 export function loadAsks(root) {
   const path = asksPath(root);
   if (!existsSync(path)) return [];
   return readFileSync(path, 'utf8').split('\n').map((l) => ASK_RE.exec(l)).filter(Boolean)
-    .map((m) => ({ id: m[1], state: m[2], issue: m[3] || null, question: m[4] }));
+    .map((m) => ({ id: m[1], state: m[2], kind: m[3] || null, target: m[4] || null, issue: m[5] || null, question: m[6] }));
 }
 
 export function cmdAsk(root, question, flags) {
   need(question, 'ask requires "<question>"');
+  const kind = String(flags.kind || 'stuck');
+  need(ASK_KINDS.includes(kind), `--kind must be one of: ${ASK_KINDS.join(', ')} — stop (halt everything), stuck (this issue only), lower (weaken something protected, needs a target), charter (the goal itself)`);
+  need(kind !== 'lower' || flags.target, '--target is required for kind lower — nothing to weaken without naming it');
+  need(kind === 'lower' || !flags.target, `--target has no meaning for kind "${kind}" — only lower names something to weaken`);
   const asks = loadAsks(root);
   const id = String(asks.reduce((m, a) => Math.max(m, Number(a.id)), 0) + 1).padStart(3, '0');
   const path = asksPath(root);
   if (!existsSync(path)) writeFileSync(path, '# Questions to the user\n\n');
-  appendFileSync(path, `- **a-${id}** (open)${flags.issue ? ` · issue ${String(flags.issue).padStart(3, '0')}` : ''} · ${question}\n`);
-  appendLog(root, `asked a-${id} · ${question}`);
-  return { id, question };
+  const target = kind === 'lower' ? ` · target ${flags.target}` : '';
+  appendFileSync(path, `- **a-${id}** (open) · ${kind}${target}${flags.issue ? ` · issue ${String(flags.issue).padStart(3, '0')}` : ''} · ${question}\n`);
+  appendLog(root, `asked a-${id} (${kind}) · ${question}`);
+  return { id, question, kind };
 }
 
 export function cmdAnswer(root, rawId, answer) {
