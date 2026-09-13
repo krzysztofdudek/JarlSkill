@@ -203,7 +203,9 @@ For each branch the jarl names (or that `jarl.mjs branches` shows with commits b
 4. Green: `jarl.mjs evidence <id> "<check summary line, merge sha>"`, `jarl.mjs set <id> done`,
    remove the worktree and the branch, `jarl.mjs log "merged <id> <sha>"`, then commit `.jarl/`
    (everything in it, including what the reeve wrote meanwhile) on the feature branch — you are its
-   only committer.
+   only committer. Before moving to the next branch, `jarl.mjs show <id>` and confirm it reads
+   `done` — a write that silently failed to land is worse than one that never ran, and it has
+   happened.
 Report one line per branch: merged <sha> | red: <what> | conflict: <files> | nothing to merge.
 When several approved branches wait and their declared files do not overlap, merge them one after
 another and run the check once for the batch; a red batch is rolled back whole (`git reset --keep`
