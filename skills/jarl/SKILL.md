@@ -99,7 +99,9 @@ Every turn, in this order:
    in progress. Priority first, then whatever unblocks the most. `set <id> in-progress "<who>"` before
    raising the worker.
 4. **Raise a worker.** One worker per issue, in its own worktree, on branch `jarl/NNN-slug` cut from
-   the feature branch, on the model the issue names — set it explicitly on every spawn, never inherited —
+   the feature branch — every agent that may write anything, a research issue's worker included,
+   gets its own worktree; only the jarl works in the main checkout, and read-only readers and
+   verifiers need none — on the model the issue names — set it explicitly on every spawn, never inherited —
    and tell the worker it spawns nothing itself. The brief is below; the issue file is pasted into it
    verbatim, and after three red rounds the takeover block from `round` goes in too, for a fresh worker.
 5. **Verify.** A worker's report is a hypothesis until you have seen the diff, run `check`, run the
