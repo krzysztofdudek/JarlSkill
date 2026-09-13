@@ -254,6 +254,15 @@ Everything the reeve raises is its own to reach — a worker, a reviewer, a merg
 holds all of them and the jarl holds the reeve. Its brief is this whole skill, plus the repository,
 the feature branch, the absolute path of the tool, and the four occasions above.
 
+A merger's report is the only signal that it has stopped touching the main checkout — not a delay,
+not an assumption that it "must be done by now", not a status the loop tracks some other way. The
+main checkout has exactly one writer at a time: while a merger's report is outstanding, nobody —
+not the reeve, not the jarl — runs a git command there or treats its work as settled, and no second
+merger is raised into it. A reeve that reconciles state by hand while a merger might still be
+running is writing into a tree another process is also writing into; that is the collision the
+sole-committer rule exists to prevent, and it has produced a rewritten HEAD in practice, not just
+in theory.
+
 On a platform where an agent raised by the jarl cannot raise agents of its own, the split stays and
 only the spawning moves: the reeve writes every brief to a file and sends the jarl one line per
 spawn (`spawn <role> <id> tier=… worktree=… brief=<path>`); the jarl spawns from that line without
