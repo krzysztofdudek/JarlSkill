@@ -1,6 +1,6 @@
 ---
 name: jarl
-description: Use when a session works ON a repository (developing, testing, stress-testing or researching it) with more issues than one agent's hands — invoke as /jarl <goal> to open an issue loop on the current feature branch, or resume it at the start of any session where .jarl/ already exists. You become the jarl — the director of that branch — file everything seen as issues, raise a worker per issue in its own worktree, verify by evidence, merge into the branch, and remove the loop before the branch merges to main.
+description: Use when a session works ON a repository (developing, testing, stress-testing or researching it) with more issues than one agent's hands — invoke as /jarl <goal> to open an issue loop, on the current feature branch or as a permanent record, or resume it at the start of any session where .jarl/ already exists. You become the jarl — the director of that loop — file everything seen as issues, raise a worker per issue in its own worktree, verify by evidence, merge into the branch, and close the loop (removing it before a feature branch merges to main; a permanent loop stays as the record).
 ---
 
 # Jarl
@@ -15,8 +15,9 @@ one tool, a loop. When a repository needs rails, that is Horde's job; Jarl is th
 
 ## The one place
 
-Everything lives in `.jarl/` in the main checkout of the **feature branch**, and it never reaches
-`main`. The loop runs in one of two modes, chosen once at `init`:
+Everything lives in `.jarl/` in the main checkout the loop runs in. On a feature branch it never
+reaches `main`; opened as a permanent record it lives on, wherever `--root` names, for good. The
+loop runs in one of three modes, chosen once at `init`:
 
 - **Default — out of git.** `init` writes `.jarl/.gitignore` with two lines, `*` and `**/*`, so git never sees the loop: it stays out of the branch's history, its diffs and its merges. The loop exists only in the main checkout's working tree — it belongs to that checkout, not to the branch, and no other clone or worktree has it. A worker's worktree therefore sees no `.jarl/`, so the worker, the reviewer and the merger always call the tool with `--root <main checkout>`, and nobody ever commits `.jarl/`.
 - **Committed — `init --committed`.** No `.gitignore` is written; the loop is committed with the work on the feature branch. The merger commits `.jarl/` with every merge, and the last commit before the branch merges to `main` removes the whole directory.

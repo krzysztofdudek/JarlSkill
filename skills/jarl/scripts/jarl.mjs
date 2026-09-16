@@ -210,7 +210,7 @@ export function cmdInit(root, goal, flags = {}) {
   need(flags.committed === undefined || flags.committed === true, '--committed takes no value — put the goal first: init "<goal>" --committed');
   need(flags.permanent === undefined || flags.permanent === true, '--permanent takes no value — put the goal first: init "<goal>" --permanent');
   need(goal, 'init requires "<goal>"');
-  need(!existsSync(jarlDir(root)), '.jarl/ already exists on this branch — resume it, do not re-init');
+  need(!existsSync(jarlDir(root)), '.jarl/ already exists here — resume it, do not re-init');
   const permanent = flags.permanent === true;
   const committed = flags.committed === true || permanent;
   mkdirSync(issuesDir(root), { recursive: true });
