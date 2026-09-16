@@ -50,7 +50,7 @@ node "${CLAUDE_PLUGIN_ROOT:-.claude/skills/jarl}/scripts/jarl.mjs" <command>
 | `set <id> <status> "<why>"` | changes status and writes the log line in one move; `done` needs evidence on file, `dropped` needs a reason |
 | `tag <id> +a -b` · `prio <id> 1\|2\|3` · `files <id> p,q` · `repo <id> <path>` | header fields |
 | `evidence <id> "<text>"` \| `evidence <id> --ran "<command>" --saw "<what it printed>"` | appends a free-text note, or one checkable row per `--ran`/`--saw` pair (repeat the pair for more rows, in one call or several) — `--ran`/`--saw` when the proof is a command, free text when it is not; nothing already recorded is ever replaced |
-| `next [--limit n]` | open issues that share no file with any in-progress one — what can run in parallel now |
+| `next [--limit n]` | open issues that share no file with any in-progress one — what can run in parallel now; a file is its repository and its path, so the same path in two repositories never holds an issue back |
 | `review <id> approve\|changes "<findings>"` | the reviewer's verdict; `changes` needs a finding ranked Critical or Important in the text — Minor alone cannot bounce a branch, it rides an approve into evidence; `done` refuses without an approve newer than the last round |
 | `round <id> "<what failed>"` | one red round on the issue; the third prints a takeover block for a fresh worker |
 | `check <id> --branch <b> [--repo <path>]` | a worker branch before merge: commits beyond the base, diff inside the declared files, test files removed, assertions before and after, each item's own ok/not — read the items, not just the exit code; a script gate can use the exit code (0 clean, 2 something failed), a reader should not stop there. Read in `--repo`, else in the repository the issue's **Repo:** names, else in the loop's own |
@@ -75,7 +75,7 @@ looks for `.jarl/` in whatever checkout it is run from, and a worktree has none 
 **Priority:** 1 | 2 | 3
 **Tier:** standard | strong — the tier of model the worker is raised on, explicit in the file, never implied; the platform running the loop maps a tier to one of its own models
 **Tags:** comma, separated
-**Files:** the files it touches, comma separated — what `next` uses to keep workers apart
+**Files:** the files it touches, comma separated — what `next` uses to keep workers apart; when **Repo:** is set, each starts with that repository's directory name (`tool/src/a.mjs`)
 **Repo:** only when the code lives in another repository than the loop — the path to that repository's main checkout
 **Found by:** who, doing what
 **Where:** file:line, or the command and what it printed
@@ -147,7 +147,8 @@ it was cut with, which nobody writes — the loop's live state is the main check
 A loop can keep its issues in one repository while its workers change another: a repository of plans and notes directing work in the code beside it, or one loop directing several repositories at once. The loop stays where `.jarl/` lives, in either mode, and every role still reaches it with `--root` pointing there. The code side moves to the other repository:
 
 - **The issue names it.** `new --repo <path>` writes **Repo:** into the issue; `repo <id> <path>` sets it on an issue already filed. The path is that repository's main checkout. A relative path is read from the loop's root (the directory holding `.jarl/`), never from wherever the tool is called, so every role resolves it the same. An issue without **Repo:** is read in the loop's own repository, as always.
-- **`check` reads there.** Commits, files and assertions come from the worker branch in that repository, against its current branch as the base; `--repo <path>` on one call does the same and wins over the field. The issue's **Files:** are relative to that repository.
+- **Its files carry the repository's name.** Each file in **Files:** starts with that repository's directory name — the last segment of the **Repo:** path — and goes on with the path inside it: **Repo:** `../tool` → **Files:** `tool/src/a.mjs, tool/CHANGELOG.md`. A reader of the issue sees where each file lives, and `next` reads a file as its repository and its path: `CHANGELOG.md` in two repositories never holds an issue back, two repositories that share a directory name are still told apart by their **Repo:**, and two issues on the same file in one repository still wait for each other. An issue without **Repo:** writes its paths without a name, as in a single-repository loop.
+- **`check` reads there.** Commits, files and assertions come from the worker branch in that repository, against its current branch as the base; `--repo <path>` on one call does the same and wins over the field. The repository's name is dropped from each declared file, and the path after it is matched against the branch's changed files.
 - **`branches` reads there with `--repo <path>`.** Without it, it lists the loop's own repository only, so at boot run it once per repository the open issues name.
 - **The worker, the reviewer and the merger work there.** The worker's worktree and its `jarl/NNN-slug` branch are cut in that repository from its own feature branch, and that is the branch the brief names; the reviewer diffs there; the merger merges and runs the check in that repository's main checkout. `.jarl/` never enters that repository.
 - **`handoff write`** records that repository's head beside the loop's own.
