@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [18, 24]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Configure git identity
+        run: |
+          git config --global user.email "ci@jarlskill.local"
+          git config --global user.name "JarlSkill CI"
+          git config --global init.defaultBranch main
+
+      - name: Run tests
+        working-directory: skills/jarl/scripts
+        run: npm test
