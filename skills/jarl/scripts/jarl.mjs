@@ -62,9 +62,12 @@ commands:
   decide <slug> "<ruling>"                       append a ruling; refuses a duplicate slug
   status                                         one line: open, in flight, done, dropped, open questions
   report                                         what was done, dropped and found — ready for the changelog
+  mode permanent                                 switch an existing committed loop to the permanent mode, with a
+                                                 log line; refuses a default-mode loop (out of git — a permanent
+                                                 record must be committed) and an already-permanent one
   close [--force]                                refuse while anything is open or in progress; else remove .jarl/
-                                                 — a permanent loop (see init --permanent) is kept instead: it
-                                                 logs the close and the directory stays as the record
+                                                 — a permanent loop (see init --permanent, or mode permanent) is
+                                                 kept instead: it logs the close and the directory stays as the record
 
 options: --json  --help  --root <repo root>
 
@@ -395,6 +398,23 @@ export function cmdStatus(root) {
   return c;
 }
 
+// A loop opened before the permanent mode existed, or opened --committed, has no way to become the
+// permanent record other than this: init is the only command that writes .jarl/.permanent for a new
+// loop, and mode is the only other one, for an existing one — it never touches .jarl/.gitignore, so a
+// default-mode loop (out of git) cannot be switched in place: a permanent record must be committed,
+// and only init decides that. Idempotent it is not: running it twice on an already-permanent loop
+// refuses clearly instead of silently doing nothing, so a session never mistakes a no-op for a check.
+export function cmdMode(root, mode) {
+  need(mode, 'mode requires a target: jarl.mjs mode permanent');
+  need(mode === 'permanent', `mode only supports "permanent" today: jarl.mjs mode permanent (got "${mode}")`);
+  need(existsSync(jarlDir(root)), 'no .jarl/ here');
+  need(!existsSync(join(jarlDir(root), '.gitignore')), 'this loop is out of git (default mode) — a permanent record must be committed, and only init decides .jarl/.gitignore, so there is no in-place switch. Start a fresh loop with: jarl.mjs init "<goal>" --permanent');
+  need(!existsSync(join(jarlDir(root), '.permanent')), 'already a permanent record (.jarl/.permanent exists) — nothing to do');
+  writeFileSync(join(jarlDir(root), '.permanent'), PERMANENT_MARKER);
+  appendLog(root, 'mode → permanent · no longer tied to a feature branch; close now keeps the directory instead of removing it');
+  return { permanent: true };
+}
+
 export function cmdClose(root, flags) {
   need(existsSync(jarlDir(root)), 'no .jarl/ here');
   const left = loadIssues(root).filter((i) => i.status === 'open' || i.status === 'in-progress');
@@ -696,6 +716,7 @@ function main() {
       case 'log': need(rest[0], 'log requires "<event>"'); appendLog(root, rest[0]); out = { logged: rest[0] }; text = 'logged'; break;
       case 'decide': need(rest[0] && rest[1], 'decide requires <slug> "<ruling>"'); appendDecision(root, rest[0], rest[1]); appendLog(root, `decided ${rest[0]}`); out = { slug: rest[0] }; text = `decided ${rest[0]}`; break;
       case 'status': out = cmdStatus(root); text = `open ${out.open} · in flight ${out['in-progress']} · done ${out.done} · dropped ${out.dropped} · questions ${out.questions}`; break;
+      case 'mode': out = cmdMode(root, rest[0]); text = 'now permanent · no longer tied to a feature branch; close keeps the directory'; break;
       case 'close': out = cmdClose(root, flags); text = out.kept ? `kept ${out.kept} · closed as a permanent record` : `removed ${out.removed}`; break;
       default: throw new Error(`unknown command: ${cmd}\n${USAGE}`);
     }

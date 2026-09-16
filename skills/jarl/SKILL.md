@@ -24,8 +24,14 @@ loop runs in one of three modes, chosen once at `init`:
 - **Permanent — `init --permanent`.** No `.gitignore` either — a record that must survive is always committed — and `init` additionally writes `.jarl/.permanent`, so a later session reads the mode from the loop itself rather than being told. This loop does not live on a feature branch at all: it lives wherever `--root` points, kept as a standing record, for example a repository that keeps one loop per release as that release's record, driving work in other repositories. Everything above — the four files, the issue format, the roles, the tool — is the same; only closing differs, in [Closing the branch](#closing-the-branch) below.
 
 A loop with `.jarl/.gitignore` is in the default mode; one without it is committed, and one that also
-carries `.jarl/.permanent` is the permanent mode. Only `init` decides — no other command adds or
-removes these files, so a loop opened before a mode existed keeps behaving as it did. Four things:
+carries `.jarl/.permanent` is the permanent mode. Only `init` decides the mode of a new loop — no other
+command touches `.jarl/.gitignore`, so a loop opened before a mode existed keeps behaving as it did.
+`mode permanent` is the one exception: it turns an *existing, committed* loop into the permanent mode
+in place, for a loop opened before 005 or opened `--committed` — the release loop that drove 6.1.0 was
+exactly this case. It refuses a default-mode loop (out of git): a permanent record must be committed,
+and there is no in-place way to add git tracking to one, so start a fresh loop with `init --permanent`
+instead. It refuses an already-permanent loop too, clearly, rather than silently doing nothing. See the
+command table below. Four things:
 
 | Path | What | Who writes |
 |---|---|---|
@@ -61,6 +67,7 @@ node "${CLAUDE_PLUGIN_ROOT:-.claude/skills/jarl}/scripts/jarl.mjs" <command>
 | `handoff write --summary "<s>" [--next "<n>"]...` · `handoff read` | the state of intent between sessions: what is in flight, what waits on the user, what comes next; the header records the loop's head and the head of every other repository an unfinished issue names |
 | `log "<event>"` · `decide <slug> "<ruling>"` | the journal and the rulings |
 | `report` | done, dropped with reasons, still open, found along the way — the material for the changelog |
+| `mode permanent` | turns an existing, committed loop into the permanent mode, with a log line — for a loop opened before the mode existed, or opened `--committed`; refuses a default-mode loop (out of git — a permanent record must be committed) and an already-permanent loop |
 | `close [--force]` | refuses while anything is open or in progress; otherwise removes `.jarl/` — in the permanent mode it keeps the directory instead and logs the close |
 
 Every command takes `--json` and `--help`. A subagent does not always inherit `CLAUDE_PLUGIN_ROOT`, so
@@ -214,7 +221,15 @@ sees `.jarl/`, so the merger never commits it. Its brief:
 
 ```
 You are the merger of branch <feature-branch> in <repo root>; the tool is <absolute path to jarl.mjs>,
-always called with `--root <repo root>`. The loop is in the <default | committed> mode.
+always called with `--root <repo root>`. The loop is in the <default | committed | permanent> mode. In
+the permanent mode `.jarl/` is committed exactly as in the committed mode, and that commit is never
+later stripped — there is no last commit before a merge to `main` that removes it, because a permanent
+loop is never merged to `main` and never closed by removing `.jarl/`. Merging itself does not otherwise
+differ: an issue that names another repository (**Repo:**) still merges there, into that repository's
+own current branch, exactly as in every other mode — a permanent loop has no feature branch of its own,
+so it holds no worker branches to merge unless an issue names none, in which case it merges directly
+into whatever branch the loop's root already sits on (there is no throwaway feature branch of the
+loop's own to merge into and later discard).
 When an issue's **Repo:** names another repository, its branch, its merge and its check live in that
 repository's main checkout — run git and the check there, list its branches with
 `jarl.mjs branches --repo <path>`; `jarl.mjs check` reads there on its own; `.jarl/`, `--root` and,
