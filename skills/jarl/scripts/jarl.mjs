@@ -24,8 +24,9 @@ commands:
                                                  (* and **/*) so git never sees the loop, and every role working
                                                  outside the main checkout passes --root <main checkout>;
                                                  --committed writes no .gitignore: the loop is committed with the work
-  new "<title>" [--kind k] [--prio 1|2|3] [--tier standard|strong] [--tags a,b] [--files p,q] [--found-by who]
-                                                 file an issue under the next free number
+  new "<title>" [--kind k] [--prio 1|2|3] [--tier standard|strong] [--tags a,b] [--files p,q] [--repo <path>] [--found-by who]
+                                                 file an issue under the next free number; --repo names the repository
+                                                 its code lives in when that is not the loop's own (see --repo below)
   evidence <id> "<text>" | --ran "<command>" --saw "<what it printed>"
                                                  append a free-text note, or one checkable row per --ran/--saw pair (repeatable)
   list [--status s] [--kind k] [--tag t] [--prio p] [--grep re] [--all]
@@ -35,26 +36,36 @@ commands:
   tag <id> +a -b ...                             add and remove tags
   prio <id> 1|2|3                                set priority
   files <id> p,q,...                             declare the files the issue touches
+  repo <id> <path>                               name the repository the issue's code lives in
   next [--limit n]                               open issues that do not share a file with any in-progress one
   review <id> approve|changes "<findings>"     the reviewer's verdict; "done" needs an approve newer than the last round
   round <id> "<what failed>"                     one red round; after three prints the takeover block for a fresh worker
-  check <id> --branch <b> [--base <feature-branch>]
+  check <id> --branch <b> [--base <feature-branch>] [--repo <path>]
                                                  commits beyond the base, diff inside the declared files, and the
-                                                 change in test files and assertions — numbers, never a verdict
-  branches [--base <feature-branch>]             every jarl/NNN-* branch: commits beyond the base, worktree state
+                                                 change in test files and assertions — numbers, never a verdict;
+                                                 read in --repo, else the issue's Repo, else the loop's own repository
+  branches [--base <feature-branch>] [--repo <path>]
+                                                 every jarl/NNN-* branch: commits beyond the base, worktree state;
+                                                 read in --repo, else the loop's own repository
   ask "<question>" [--kind stop|stuck|lower|charter] [--target x] [--issue NNN]
                                                  a question the user has to answer; lower needs --target;
                                                  listed at boot until answered
   answer <id> "<answer>"                         records the answer as a ruling and closes the question
   handoff write --summary "<s>" [--next "<n>"]... | read
-                                                 the state of intent between sessions
+                                                 the state of intent between sessions; the header records the loop's
+                                                 head and the head of every repository an unfinished issue names
   log "<event>"                                  append one dated line to the journal
   decide <slug> "<ruling>"                       append a ruling; refuses a duplicate slug
   status                                         one line: open, in flight, done, dropped, open questions
   report                                         what was done, dropped and found — ready for the changelog
   close [--force]                                refuse while anything is open or in progress; else remove .jarl/
 
-options: --json  --help  --root <repo root>`;
+options: --json  --help  --root <repo root>
+
+--repo <path>: the checkout of another repository, for a loop that keeps its issues in one repository
+while its workers change another. Branches, the base (that checkout's current branch), diffs and
+assertions are then read there; the issue's files are declared relative to it. A relative path is
+read from the loop's root (the directory holding .jarl/), so it means the same from any worktree.`;
 
 // ---- where -------------------------------------------------------------------------------------
 
@@ -132,7 +143,7 @@ function setSection(text, name, body) {
   return `${text.replace(/\s*$/, '')}\n\n## ${name}\n${body.trim()}\n`;
 }
 
-export function renderIssue({ id, title, kind, priority, tier, tags, files, foundBy }) {
+export function renderIssue({ id, title, kind, priority, tier, tags, files, repo, foundBy }) {
   return `# ${id} · ${title}
 
 **Status:** open
@@ -141,7 +152,7 @@ export function renderIssue({ id, title, kind, priority, tier, tags, files, foun
 **Tier:** ${tier}
 **Tags:** ${tags.join(', ')}
 **Files:** ${files.join(', ')}
-**Found by:** ${foundBy}
+${repo ? `**Repo:** ${repo}\n` : ''}**Found by:** ${foundBy}
 **Where:**
 
 ## What
@@ -206,12 +217,13 @@ export function cmdNew(root, title, flags) {
   need(PRIORITIES.includes(priority), '--prio must be 1, 2 or 3');
   const tier = String(flags.tier || 'standard');
   need(TIERS.includes(tier), `--tier must be one of: ${TIERS.join(', ')} — the tier of model the worker is raised on, mapped to a model by the platform running the loop`);
+  if (flags.repo !== undefined) repoOf(root, flags.repo);
   const issues = loadIssues(root);
   const id = String(issues.reduce((m, i) => Math.max(m, Number(i.id)), 0) + 1).padStart(3, '0');
   const file = join(issuesDir(root), `${id}-${slugify(title)}.md`);
   writeFileSync(file, renderIssue({
     id, title, kind, priority, tier,
-    tags: splitList(flags.tags), files: splitList(flags.files), foundBy: flags['found-by'] || 'jarl',
+    tags: splitList(flags.tags), files: splitList(flags.files), repo: flags.repo, foundBy: flags['found-by'] || 'jarl',
   }));
   appendLog(root, `filed ${id} · ${title}`);
   return { id, file };
@@ -275,6 +287,15 @@ export function cmdFiles(root, rawId, list) {
   const files = splitList(list);
   writeFileSync(issue.file, setField(readFileSync(issue.file, 'utf8'), 'Files', files.join(', ')));
   return { id: issue.id, files };
+}
+
+export function cmdRepo(root, rawId, path) {
+  const issue = findIssue(root, rawId);
+  need(issue, `no such issue: ${rawId}`);
+  need(path !== undefined, 'repo requires <path> — the checkout of the repository the issue\'s code lives in');
+  repoOf(root, path);
+  writeFileSync(issue.file, setField(readFileSync(issue.file, 'utf8'), 'Repo', path));
+  return { id: issue.id, repo: path };
 }
 
 export function evidenceRows(issue) {
@@ -393,6 +414,19 @@ function git(root, args) {
   try { return execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { return null; }
 }
 
+// Where git runs for an issue's code. A loop may keep its issues in one repository while its workers
+// change another; that other repository is named by --repo on the command or by the issue's Repo
+// field. A relative path is read from the loop's root, not the caller's directory, because workers,
+// reviewers and the merger call the tool from different checkouts with the same --root. Naming
+// nothing keeps git where the loop lives, as it always was.
+export function repoOf(root, named) {
+  if (named === undefined || named === '') return root;
+  need(typeof named === 'string', '--repo takes one path — the checkout of the repository the code lives in');
+  const repo = resolve(root, named);
+  need(git(repo, ['rev-parse', '--git-dir']) !== null, `not a git repository: ${repo} (a relative --repo or Repo path is read from the loop's root, ${root})`);
+  return repo;
+}
+
 export function roundsOf(root, id) {
   const path = join(jarlDir(root), 'log.md');
   if (!existsSync(path)) return 0;
@@ -433,13 +467,15 @@ export function cmdCheck(root, rawId, flags) {
   const issue = findIssue(root, rawId);
   need(issue, `no such issue: ${rawId}`);
   need(flags.branch, 'check requires --branch <worker branch>');
-  const base = flags.base || defaultBase(root);
-  const tip = git(root, ['rev-parse', '--verify', flags.branch]);
-  need(tip, `no such branch: ${flags.branch}`);
-  const mergeBase = git(root, ['merge-base', base, flags.branch]);
-  need(mergeBase, `no merge base between ${base} and ${flags.branch}`);
-  const commits = (git(root, ['rev-list', '--count', `${mergeBase}..${flags.branch}`]) || '0');
-  const changed = (git(root, ['diff', '--name-only', `${mergeBase}..${flags.branch}`]) || '').split('\n').filter(Boolean);
+  const repo = repoOf(root, flags.repo ?? issue.fields.repo);
+  const where = repo === root ? '' : ` in ${repo}`;
+  const base = flags.base || defaultBase(repo);
+  const tip = git(repo, ['rev-parse', '--verify', flags.branch]);
+  need(tip, `no such branch: ${flags.branch}${where}`);
+  const mergeBase = git(repo, ['merge-base', base, flags.branch]);
+  need(mergeBase, `no merge base between ${base} and ${flags.branch}${where}`);
+  const commits = (git(repo, ['rev-list', '--count', `${mergeBase}..${flags.branch}`]) || '0');
+  const changed = (git(repo, ['diff', '--name-only', `${mergeBase}..${flags.branch}`]) || '').split('\n').filter(Boolean);
   // A change proves itself with a test and announces itself in the changelog, so neither is ever
   // "outside" the issue: the scope check is about source, not about the two files every issue touches.
   const alwaysInScope = (f) => isTestFile(f) || /(^|\/)CHANGELOG\.md$/i.test(f);
@@ -451,37 +487,39 @@ export function cmdCheck(root, rawId, flags) {
     return f === dd || f.startsWith(`${dd}/`) || f.endsWith(`/${dd}`);
   };
   const outside = issue.files.length ? changed.filter((f) => !alwaysInScope(f) && !issue.files.some((d) => pathMatches(f, d))) : [];
-  const testsBase = (git(root, ['ls-tree', '-r', '--name-only', mergeBase]) || '').split('\n').filter(isTestFile);
-  const testsTip = (git(root, ['ls-tree', '-r', '--name-only', flags.branch]) || '').split('\n').filter(isTestFile);
+  const testsBase = (git(repo, ['ls-tree', '-r', '--name-only', mergeBase]) || '').split('\n').filter(isTestFile);
+  const testsTip = (git(repo, ['ls-tree', '-r', '--name-only', flags.branch]) || '').split('\n').filter(isTestFile);
   const removedTests = testsBase.filter((f) => !testsTip.includes(f));
   const touchedTests = changed.filter(isTestFile);
-  const assertsBase = countAsserts(root, mergeBase, [...new Set([...touchedTests, ...removedTests])]);
-  const assertsTip = countAsserts(root, flags.branch, touchedTests);
+  const assertsBase = countAsserts(repo, mergeBase, [...new Set([...touchedTests, ...removedTests])]);
+  const assertsTip = countAsserts(repo, flags.branch, touchedTests);
   const items = [
     { name: 'commits beyond base', ok: Number(commits) > 0, note: `${commits} commit(s) on ${flags.branch} beyond ${mergeBase.slice(0, 7)}` },
     { name: 'diff inside declared files', ok: outside.length === 0, note: issue.files.length ? (outside.length ? `outside ${issue.files.join(', ')}: ${outside.join(', ')}` : `${changed.length} file(s), all inside`) : 'no files declared on the issue — nothing to bound the diff by' },
     { name: 'test files', ok: removedTests.length === 0, note: removedTests.length ? `removed: ${removedTests.join(', ')}` : `${testsTip.length} on the branch, ${touchedTests.length} touched, none removed` },
     { name: 'assertions in touched tests', ok: assertsTip >= assertsBase, note: `${assertsBase} → ${assertsTip}` },
   ];
-  return { id: issue.id, branch: flags.branch, base, mergeBase, changed, items, ok: items.every((i) => i.ok) };
+  return { id: issue.id, branch: flags.branch, repo, base, mergeBase, changed, items, ok: items.every((i) => i.ok) };
 }
 
 // Every jarl/* branch, plus every branch some worktree has checked out that is not the base: a
 // worker that never renamed its branch still did the work, and a listing that hides it would
 // hide a report. Such a branch is marked unnamed so the merger renames it before merging.
+// With --repo, all of it is read in that repository, for a loop whose workers change another one.
 export function cmdBranches(root, flags) {
-  const base = flags.base || defaultBase(root);
-  const named = (git(root, ['branch', '--list', 'jarl/*', '--format=%(refname:short)']) || '').split('\n').filter(Boolean);
-  const worktrees = (git(root, ['worktree', 'list', '--porcelain']) || '').split('\n\n').map((b) => {
+  const repo = repoOf(root, flags.repo);
+  const base = flags.base || defaultBase(repo);
+  const named = (git(repo, ['branch', '--list', 'jarl/*', '--format=%(refname:short)']) || '').split('\n').filter(Boolean);
+  const worktrees = (git(repo, ['worktree', 'list', '--porcelain']) || '').split('\n\n').map((b) => {
     const path = /^worktree (.*)$/m.exec(b)?.[1];
     const branch = /^branch refs\/heads\/(.*)$/m.exec(b)?.[1];
     return { path, branch };
   }).filter((w) => w.branch);
-  const mainPath = git(root, ['rev-parse', '--show-toplevel']);
+  const mainPath = git(repo, ['rev-parse', '--show-toplevel']);
   const extra = worktrees.filter((w) => w.branch !== base && !named.includes(w.branch) && w.path !== mainPath).map((w) => w.branch);
   return [...named, ...extra].map((name) => {
-    const mb = git(root, ['merge-base', base, name]);
-    const ahead = mb ? Number(git(root, ['rev-list', '--count', `${mb}..${name}`]) || 0) : null;
+    const mb = git(repo, ['merge-base', base, name]);
+    const ahead = mb ? Number(git(repo, ['rev-list', '--count', `${mb}..${name}`]) || 0) : null;
     const wt = worktrees.find((w) => w.branch === name);
     const dirty = wt ? (git(wt.path, ['status', '--porcelain']) || '').split('\n').filter(Boolean).length : null;
     return { branch: name, ahead, worktree: wt ? wt.path : null, dirty, unnamed: !name.startsWith('jarl/') };
@@ -536,9 +574,12 @@ export function cmdHandoffWrite(root, flags) {
   const inFlight = loadIssues(root).filter((i) => i.status === 'in-progress').map((i) => `${i.id} ${i.title}`);
   const open = loadAsks(root).filter((a) => a.state === 'open').map((a) => `a-${a.id} ${a.question}`);
   const next = [].concat(flags.next || []).filter(Boolean);
-  const head = git(root, ['rev-parse', '--short', 'HEAD']) || '?';
-  const branch = git(root, ['rev-parse', '--abbrev-ref', 'HEAD']) || '?';
-  const text = `# Handoff\n\n**At:** ${stamp()} · **Head:** ${branch}@${head}\n\n## Summary\n${flags.summary}\n\n## In flight\n${inFlight.map((s) => `- ${s}`).join('\n') || '- (nothing)'}\n\n## Waiting on the user\n${open.map((s) => `- ${s}`).join('\n') || '- (nothing)'}\n\n## Next\n${next.map((s) => `- ${s}`).join('\n') || '- (nothing recorded)'}\n`;
+  const headOf = (dir) => `${git(dir, ['rev-parse', '--abbrev-ref', 'HEAD']) || '?'}@${git(dir, ['rev-parse', '--short', 'HEAD']) || '?'}`;
+  // Where each other repository an unfinished issue names stands, beside the loop's own head: in a
+  // loop whose workers change another repository, that head is the one the next session resumes from.
+  const repos = [...new Set(loadIssues(root).filter((i) => i.status === 'open' || i.status === 'in-progress').map((i) => i.fields.repo).filter(Boolean))];
+  const heads = repos.map((r) => ` · **Head in ${r}:** ${headOf(resolve(root, r))}`).join('');
+  const text = `# Handoff\n\n**At:** ${stamp()} · **Head:** ${headOf(root)}${heads}\n\n## Summary\n${flags.summary}\n\n## In flight\n${inFlight.map((s) => `- ${s}`).join('\n') || '- (nothing)'}\n\n## Waiting on the user\n${open.map((s) => `- ${s}`).join('\n') || '- (nothing)'}\n\n## Next\n${next.map((s) => `- ${s}`).join('\n') || '- (nothing recorded)'}\n`;
   writeFileSync(handoffPath(root), text);
   appendLog(root, `handoff · ${flags.summary.split('\n')[0]}`);
   return { path: handoffPath(root), inFlight: inFlight.length, waiting: open.length };
@@ -600,11 +641,12 @@ function main() {
       case 'tag': out = cmdTag(root, rest[0], rest.slice(1)); text = `${out.id} tags: ${out.tags.join(', ') || '(none)'}`; break;
       case 'prio': out = cmdPrio(root, rest[0], rest[1]); text = `${out.id} priority ${out.priority}`; break;
       case 'files': out = cmdFiles(root, rest[0], rest[1]); text = `${out.id} files: ${out.files.join(', ') || '(none)'}`; break;
+      case 'repo': out = cmdRepo(root, rest[0], rest[1]); text = `${out.id} repo: ${out.repo}`; break;
       case 'evidence': out = cmdEvidence(root, rest[0], rest[1], flags); text = out.rows ? `${out.id} evidence row${out.rows.length > 1 ? 's' : ''} recorded` : `${out.id} evidence recorded`; break;
       case 'next': out = cmdNext(root, flags); text = out.length ? out.map((r) => (r.ready ? `${r.id}  P${r.priority}  ${r.title}` : `${r.id}  P${r.priority}  ${r.title}  (waits on ${r.waitsOn.join(', ')})`)).join('\n') : '(nothing open)'; break;
       case 'review': out = cmdReview(root, rest[0], rest[1], rest[2]); text = `${out.id} review ${out.verdict}`; break;
       case 'round': out = cmdRound(root, rest[0], rest[1]); text = out.takeover ? `${out.id} round ${out.round} — takeover:\n\n${out.block}` : `${out.id} round ${out.round} of ${ROUNDS_BEFORE_TAKEOVER} before a takeover`; break;
-      case 'check': out = cmdCheck(root, rest[0], flags); text = out.items.map((i) => `${i.ok ? '✓' : '✗'} ${i.name} — ${i.note}`).join('\n'); break;
+      case 'check': out = cmdCheck(root, rest[0], flags); text = `${out.repo === root ? '' : `in ${out.repo}\n`}${out.items.map((i) => `${i.ok ? '✓' : '✗'} ${i.name} — ${i.note}`).join('\n')}`; break;
       case 'branches': out = cmdBranches(root, flags); text = out.length ? out.map((b) => `${b.branch}  +${b.ahead ?? '?'}  ${b.worktree ? `${b.worktree}${b.dirty ? ` (${b.dirty} uncommitted)` : ' (clean)'}` : '(no worktree)'}${b.unnamed ? '  UNNAMED — rename to jarl/NNN-slug before merging' : ''}`).join('\n') : '(no worker branches)'; break;
       case 'ask': out = cmdAsk(root, rest[0], flags); text = `asked a-${out.id}`; break;
       case 'answer': out = cmdAnswer(root, rest[0], rest[1]); text = `answered a-${out.id}`; break;

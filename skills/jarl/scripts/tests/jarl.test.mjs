@@ -262,6 +262,63 @@ test('init --committed writes no .gitignore and git sees the loop; an existing l
   assert.equal(existsSync(join(root, '.jarl', '.gitignore')), false, 'no command after init adds the ignore file to a loop that has none');
 });
 
+// A loop that keeps its issues in one repository while its workers change another: two real
+// repositories side by side, the loop in "hub" on main, the code and the worker branch in "tool" on feature.
+test('check, branches and handoff read the repository an issue names, not the loop\'s own, in both loop modes', () => {
+  for (const committed of [false, true]) {
+    const parent = mkdtempSync(join(tmpdir(), 'jarl-two-'));
+    const hub = join(parent, 'hub'); const tool = join(parent, 'tool');
+    mkdirSync(hub); mkdirSync(tool);
+    const sh = (cwd, script) => execFileSync('bash', ['-c', script], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+    const setup = (b) => `git init -q -b ${b} && git config user.email t@t && git config user.name t && git config core.excludesFile /dev/null`;
+    sh(hub, `${setup('main')} && echo notes > notes.md && git add -A && git commit -qm base`);
+    sh(tool, `${setup('feature')} && mkdir src tests && echo 'export const a = 1;' > src/a.mjs && printf 'assert.equal(1,1);\\n' > tests/a.test.mjs && git add -A && git commit -qm base`);
+    jarl(hub, 'init', 'goal', ...(committed ? ['--committed'] : []));
+    jarl(hub, 'new', 'change a', '--files', 'src/a.mjs,tests/a.test.mjs', '--repo', '../tool');
+    jarl(hub, 'new', 'other', '--files', 'src/a.mjs');
+    if (committed) sh(hub, 'git add -A && git commit -qm jarl');
+    sh(tool, `git worktree add -q -b jarl/001-change-a ${parent}/wt-001 && cd ${parent}/wt-001 && echo 'export const a = 2;' > src/a.mjs && printf 'assert.equal(1,1);\\nassert.equal(2,2);\\n' > tests/a.test.mjs && git add -A && git commit -qm work`);
+    const mode = committed ? 'committed' : 'default';
+
+    // The issue's Repo field: the branch, its base and its files all come from the tool repository.
+    const out = JSON.parse(jarl(hub, 'check', '001', '--branch', 'jarl/001-change-a', '--json'));
+    const byName = Object.fromEntries(out.items.map((i) => [i.name, i]));
+    assert.equal(out.base, 'feature', `${mode}: the base is the tool repository's current branch, not the hub's`);
+    assert.equal(out.mergeBase, sh(tool, 'git rev-parse feature'), mode);
+    assert.equal(byName['commits beyond base'].ok, true, byName['commits beyond base'].note);
+    assert.match(byName['commits beyond base'].note, /^1 commit\(s\) on jarl\/001-change-a/);
+    assert.deepEqual(out.changed, ['src/a.mjs', 'tests/a.test.mjs']);
+    assert.equal(byName['diff inside declared files'].ok, true, byName['diff inside declared files'].note);
+    assert.equal(byName['assertions in touched tests'].note, '1 → 2');
+    assert.equal(out.ok, true, mode);
+    assert.match(jarl(hub, 'show', '001'), /^\*\*Repo:\*\* \.\.\/tool$/m);
+    assert.doesNotMatch(jarl(hub, 'show', '002'), /\*\*Repo:\*\*/, 'an issue that names no repository carries no Repo line');
+
+    // --repo on the command does the same for an issue that names no repository; without it, the loop's own repository is read, as before.
+    assert.match(refuses(hub, 'check', '002', '--branch', 'jarl/001-change-a'), /no such branch/);
+    assert.equal(JSON.parse(jarl(hub, 'check', '002', '--branch', 'jarl/001-change-a', '--repo', '../tool', '--json')).ok, true, mode);
+    assert.match(refuses(hub, 'check', '001', '--branch', 'jarl/001-change-a', '--repo', '../nowhere'), /not a git repository/);
+    jarl(hub, 'repo', '002', '../tool');
+    assert.match(jarl(hub, 'show', '002'), /^\*\*Repo:\*\* \.\.\/tool$/m);
+    assert.equal(JSON.parse(jarl(hub, 'check', '002', '--branch', 'jarl/001-change-a', '--json')).base, 'feature', mode);
+
+    // branches lists the worker branch in the tool repository, and the hub's own listing stays empty.
+    const rows = JSON.parse(jarl(hub, 'branches', '--repo', '../tool', '--json'));
+    assert.deepEqual(rows.map((r) => r.branch), ['jarl/001-change-a'], mode);
+    assert.equal(rows[0].ahead, 1);
+    assert.ok(rows[0].worktree.endsWith('wt-001'), rows[0].worktree);
+    assert.equal(rows[0].dirty, 0);
+    assert.deepEqual(JSON.parse(jarl(hub, 'branches', '--json')), [], `${mode}: the hub itself has no worker branches`);
+
+    // The handoff records where the tool repository stands, beside the hub's own head.
+    jarl(hub, 'set', '001', 'in-progress', 'worker raised in tool');
+    jarl(hub, 'handoff', 'write', '--summary', 'one in flight in tool');
+    assert.match(jarl(hub, 'handoff', 'read'), new RegExp(`\\*\\*Head:\\*\\* main@[0-9a-f]+ · \\*\\*Head in \\.\\./tool:\\*\\* feature@${sh(tool, 'git rev-parse --short feature')}`));
+
+    assert.equal(sh(tool, 'git status --porcelain --untracked-files=all'), '', `${mode}: the loop never writes into the tool repository`);
+  }
+});
+
 test('ask kinds are closed; lower needs a target', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
