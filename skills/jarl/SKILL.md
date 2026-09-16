@@ -1,6 +1,6 @@
 ---
 name: jarl
-description: Use when a session works ON a repository (developing, testing, stress-testing or researching it) with more issues than one agent's hands — invoke as /jarl <goal> to open a committed issue loop on the current feature branch, or resume it at the start of any session where .jarl/ already exists on the branch. You become the jarl — the director of that branch — file everything seen as issues, raise a worker per issue in its own worktree, verify by evidence, merge into the branch, and remove the loop before the branch merges to main.
+description: Use when a session works ON a repository (developing, testing, stress-testing or researching it) with more issues than one agent's hands — invoke as /jarl <goal> to open an issue loop on the current feature branch, or resume it at the start of any session where .jarl/ already exists. You become the jarl — the director of that branch — file everything seen as issues, raise a worker per issue in its own worktree, verify by evidence, merge into the branch, and remove the loop before the branch merges to main.
 ---
 
 # Jarl
@@ -15,8 +15,15 @@ one tool, a loop. When a repository needs rails, that is Horde's job; Jarl is th
 
 ## The one place
 
-Everything lives in `.jarl/` on the **feature branch**, committed with the work, and it never reaches
-`main`: the last commit before the branch merges removes the whole directory. Four things:
+Everything lives in `.jarl/` in the main checkout of the **feature branch**, and it never reaches
+`main`. The loop runs in one of two modes, chosen once at `init`:
+
+- **Default — out of git.** `init` writes `.jarl/.gitignore` with two lines, `*` and `**/*`, so git never sees the loop: it stays out of the branch's history, its diffs and its merges. The loop exists only in the main checkout's working tree — it belongs to that checkout, not to the branch, and no other clone or worktree has it. A worker's worktree therefore sees no `.jarl/`, so the worker, the reviewer and the merger always call the tool with `--root <main checkout>`, and nobody ever commits `.jarl/`.
+- **Committed — `init --committed`.** No `.gitignore` is written; the loop is committed with the work on the feature branch, for a repository that keeps its loop as a permanent record in its history. The merger commits `.jarl/` with every merge, and the last commit before the branch merges to `main` removes the whole directory.
+
+A loop with `.jarl/.gitignore` is in the default mode; one without it is committed. Only `init`
+decides — no other command adds or removes that file, so a loop opened before the modes existed
+stays committed. Four things:
 
 | Path | What | Who writes |
 |---|---|---|
@@ -36,7 +43,7 @@ node "${CLAUDE_PLUGIN_ROOT:-.claude/skills/jarl}/scripts/jarl.mjs" <command>
 
 | Command | What it does |
 |---|---|
-| `init "<goal>"` | creates `.jarl/` on this branch with the goal |
+| `init "<goal>" [--committed]` | creates `.jarl/` with the goal and a `.gitignore` that keeps the loop out of git; `--committed` writes no `.gitignore`, so the loop is committed with the work |
 | `new "<title>" [--kind k] [--prio 1\|2\|3] [--tier standard\|strong] [--tags a,b] [--files p,q] [--found-by who]` | files an issue under the next free number |
 | `list [--status s] [--kind k] [--tag t] [--prio p] [--grep re] [--all]` | open and in-progress by default, sorted by priority |
 | `show <id>` · `status` | one issue · one line of counts |
@@ -55,7 +62,8 @@ node "${CLAUDE_PLUGIN_ROOT:-.claude/skills/jarl}/scripts/jarl.mjs" <command>
 | `close [--force]` | refuses while anything is open or in progress; otherwise removes `.jarl/` |
 
 Every command takes `--json` and `--help`. A subagent does not always inherit `CLAUDE_PLUGIN_ROOT`, so
-a worker's brief carries the absolute path to the tool.
+a worker's brief carries the absolute path to the tool, and every brief carries the absolute path of the main checkout for `--root`: without it the tool
+looks for `.jarl/` in whatever checkout it is run from, and a worktree has none of its own (default mode) or only the copy it was cut with (committed mode).
 
 ### An issue
 
@@ -130,6 +138,8 @@ the loop: it is cut from the feature branch, merged back into it by the merger w
 message naming the issue, and deleted together with its worktree. **It is never pushed** — the
 feature branch is the only branch of this loop that ever leaves the machine, and only on the user's
 word. Two loops sharing one clone prefix the branch with the feature branch's last path segment.
+In the default mode a worker branch never carries `.jarl/`; in the committed mode it carries the copy
+it was cut with, which nobody writes — the loop's live state is the main checkout's, reached with `--root`.
 
 ### The worker's brief
 
@@ -138,6 +148,8 @@ You are worker <name> on issue NNN of branch <feature-branch>, in worktree <path
 FIRST ACTION: git merge <feature-branch>; git status must be clean afterwards — if not, stop and report.
 Your scope is the issue below and nothing else. Anything else you see goes into your report under
 "Found", never into the diff.
+The loop's tool is <absolute path to jarl.mjs>; call it only with `--root <main checkout>` — your
+worktree has no live `.jarl/` of its own — and never add `.jarl/` to your branch.
 Prove the change: a test that is red before and green after. Run the test files your change touches,
 in the foreground, with the shell tool's own timeout parameter set (a run that outlives the tool's
 default timeout is moved to the background and you will sit waiting for a notification that is not
@@ -158,13 +170,15 @@ You spawn no agents of your own.
 ### The reviewer's brief
 
 ```
-You are the reviewer of issue NNN on branch jarl/NNN-slug of <repo root>. Read-only; spawn nothing,
+You are the reviewer of issue NNN on branch jarl/NNN-slug of <repo root>. The loop's tool is
+<absolute path to jarl.mjs>, always called with `--root <repo root>` (in the default mode the issue
+exists only there, never in git). Read-only; spawn nothing,
 and never `git checkout` in the main checkout — the merger is the only one who moves it, and a
 reviewer checking out there mid-merge is exactly the collision the merger's sole-committer rule
 exists to prevent. To reproduce red-before-green, read the pre-change file with `git show
 <sha>:<path>` or extract it into a scratch tmpdir with `git archive`, never by checking out a ref
 in place.
-Read the issue file, then `git diff <feature-branch>...jarl/NNN-slug`. Answer three questions with
+Read the issue (`jarl.mjs show NNN --root <repo root>`), then `git diff <feature-branch>...jarl/NNN-slug`. Answer three questions with
 evidence: does the diff meet the acceptance line literally; was the new test red before the change
 and green after; did anything outside the issue's scope move. Rank every finding Critical / Important / Minor. Return: verdict (approve | changes)
 and the findings, one line each, severity first. Minor findings alone are an approve.
@@ -179,11 +193,13 @@ back. The merger never edits code and never decides scope; it verifies and merge
 branch at a time, and reports one line per branch. When a merger exists the jarl merges nothing
 itself, and **the merger is the only committer in the main checkout**: everybody else writes
 `.jarl/` through the tool and never runs a commit there — two committers in one checkout, one of
-them mid-merge, is how a conflict swallows the other's files. The merger commits `.jarl/` together
-with every merge, so the loop's state always rides the code it describes. Its brief:
+them mid-merge, is how a conflict swallows the other's files. In the committed mode the merger commits `.jarl/` together
+with every merge, so the loop's state always rides the code it describes; in the default mode git never
+sees `.jarl/`, so the merger never commits it. Its brief:
 
 ```
-You are the merger of branch <feature-branch> in <repo root>; the tool is <absolute path to jarl.mjs>.
+You are the merger of branch <feature-branch> in <repo root>; the tool is <absolute path to jarl.mjs>,
+always called with `--root <repo root>`. The loop is in the <default | committed> mode.
 You work in the main checkout, serially, one branch at a time. You never edit source files, never
 push, never resolve a conflict by picking a side blindly, never weaken a test or a check.
 For each branch the jarl names (or that `jarl.mjs branches` shows with commits beyond the base):
@@ -191,9 +207,12 @@ For each branch the jarl names (or that `jarl.mjs branches` shows with commits b
    worktree with an uncommitted but complete diff is committed on its branch first, with a log line
    saying the merger committed it; a branch the worker never renamed (UNNAMED in `branches`) is
    renamed to `jarl/NNN-slug` in its worktree (`git branch -m`) before anything else. A branch without an approving review (`jarl.mjs set` will refuse
-   `done` without one) waits for the reviewer; it is not the merger's call.
-2. Commit whatever `.jarl/` holds first (the reeve writes there while you work, and an uncommitted
-   file in a checkout you are about to reset is a file about to vanish), then `git merge --no-ff <b>`
+   `done` without one) waits for the reviewer; it is not the merger's call. In the default mode a
+   branch whose diff touches `.jarl/` is not merged — git treats the ignored loop as expendable and
+   would overwrite it — it is reported.
+2. In the committed mode, commit whatever `.jarl/` holds first (the reeve writes there while you work, and an uncommitted
+   file in a checkout you are about to reset is a file about to vanish); in the default mode there is
+   nothing to commit, and neither a merge nor a reset touches the ignored loop. Then `git merge --no-ff <b>`
    into the feature branch. A conflict: resolve only when one side is plainly a superset or the hunks
    are independent; otherwise `git merge --abort` and report the files.
 3. Run the repository's own check in the foreground, with the shell tool's own timeout parameter set
@@ -201,9 +220,10 @@ For each branch the jarl names (or that `jarl.mjs branches` shows with commits b
    `--hard`, which would also discard what others wrote meanwhile — then
    `jarl.mjs round <id> "<what failed>"`, report.
 4. Green: `jarl.mjs evidence <id> "<check summary line, merge sha>"`, `jarl.mjs set <id> done`,
-   remove the worktree and the branch, `jarl.mjs log "merged <id> <sha>"`, then commit `.jarl/`
-   (everything in it, including what the reeve wrote meanwhile) on the feature branch — you are its
-   only committer. Before moving to the next branch, `jarl.mjs show <id>` and confirm it reads
+   remove the worktree and the branch, `jarl.mjs log "merged <id> <sha>"`, then, in the committed
+   mode only, commit `.jarl/` (everything in it, including what the reeve wrote meanwhile) on the
+   feature branch — you are its only committer; in the default mode `.jarl/` is never committed.
+   Before moving to the next branch, `jarl.mjs show <id>` and confirm it reads
    `done` — a write that silently failed to land is worse than one that never ran, and it has
    happened.
 Report one line per branch: merged <sha> | red: <what> | conflict: <files> | nothing to merge.
@@ -236,8 +256,9 @@ Before the feature branch merges to `main`, in this order:
 2. `report` is the material: the repository's changelog carries every user-visible change from it, in the
    register the repository asks for.
 3. The repository's own check is green on the branch tip.
-4. `jarl.mjs close` removes `.jarl/` — it refuses while anything is still open — and that removal is the
-   last commit. `main` never carries the directory.
+4. `jarl.mjs close` removes `.jarl/` — it refuses while anything is still open. In the committed mode
+   that removal is the last commit, so `main` never carries the directory; in the default mode there
+   is nothing to commit — git never saw it.
 
 Merging and pushing are the user's word, never yours.
 

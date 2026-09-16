@@ -2,14 +2,14 @@
 
 **Your feature branch has more issues than one agent can hold in its head, so it fixes one, forgets two, and loses the third in the diff.** Jarl makes the agent direct a crew instead of working alone.
 
-Invoke it on a branch and the agent becomes the **jarl** of that branch: everything anybody sees becomes an issue in a committed `.jarl/` directory, one worker per issue works in its own worktree, nothing merges without evidence the jarl has reproduced itself, and the last commit before the branch merges to main removes the whole directory. Nothing ships, nothing lingers.
+Invoke it on a branch and the agent becomes the **jarl** of that branch: everything anybody sees becomes an issue in a `.jarl/` directory that git never sees, one worker per issue works in its own worktree, nothing merges without evidence the jarl has reproduced itself, and closing the loop removes the whole directory. Nothing ships, nothing lingers. A repository that wants the loop in its history opens it committed instead ([both modes in the FAQ](#faq)).
 
 ```
 /plugin marketplace add krzysztofdudek/JarlSkill
 /plugin install jarl@jarl-marketplace
 ```
 
-Run both, then `/reload-plugins` to activate it in this session (or restart Claude Code). Needs Node.js on your `PATH`; no config, no API key. Then `/jarl <goal>` on a feature branch, or just start a session on a branch that already carries `.jarl/` — the skill resumes on its own.
+Run both, then `/reload-plugins` to activate it in this session (or restart Claude Code). Needs Node.js on your `PATH`; no config, no API key. Then `/jarl <goal>` on a feature branch, or just start a session in a checkout that already carries `.jarl/` — the skill resumes on its own.
 
 > MIT licensed · one markdown file and one zero-dependency Node tool · works with any agent that reads skills · part of the [Yggdrasil family](#the-yggdrasil-family) · [full skill body](skills/jarl/SKILL.md)
 
@@ -23,7 +23,7 @@ The jarl writes `.jarl/goal.md`, reads the fixtures, and files what it sees: thr
 
 A worker reports done. The jarl does not take its word: it reads the diff, runs the test suite itself, checks that the new test was red before the change, and only then merges into the branch with a commit that names the issue. One worker reports something else it noticed in passing — the jarl files issue 006 rather than letting the worker fix it on the side.
 
-When nothing is open, the jarl closes the branch: changelog carries every user-visible change, the suite is green on the tip, and the last commit deletes `.jarl/`. Merging and pushing wait for your word.
+When nothing is open, the jarl closes the branch: changelog carries every user-visible change, the suite is green on the tip, and `.jarl/` is deleted — git never saw it, so the branch carries no trace. Merging and pushing wait for your word.
 
 ---
 
@@ -100,16 +100,18 @@ Nothing else in this repo affects behavior — all of it lives in that directory
 
 ## What it doesn't claim
 
-Jarl is a working loop, not a guarantee. It does not enforce architecture, it does not gate a merge with a machine check, and it does not hold a client's charter — that is [Horde](https://github.com/krzysztofdudek/Horde), with the graph and the rails. Jarl is what you use when a branch needs more hands than one agent and no rails yet: the same words as Horde, none of the machinery. The state is four kinds of markdown file on the branch, moved by one small tool; the discipline is the agent's.
+Jarl is a working loop, not a guarantee. It does not enforce architecture, it does not gate a merge with a machine check, and it does not hold a client's charter — that is [Horde](https://github.com/krzysztofdudek/Horde), with the graph and the rails. Jarl is what you use when a branch needs more hands than one agent and no rails yet: the same words as Horde, none of the machinery. The state is four kinds of markdown file in `.jarl/`, moved by one small tool; the discipline is the agent's.
 
 ---
 
 ## FAQ
 
 <details>
-<summary><b>Why commit the issues at all?</b></summary>
+<summary><b>Is the loop committed to git?</b></summary>
 
-Because the next session has to pick up where this one stopped, and an agent's memory does not survive a session. The files are the state: goal, decisions, issues, log. They travel with the branch and disappear with the last commit before it merges.
+Not by default. The files are the state — goal, decisions, issues, log — so the next session picks up where this one stopped, because an agent's memory does not survive a session. By default they sit in your main checkout next to the work and git ignores them, so they never show up in the branch's history, diffs or merges. A worktree cannot see an ignored directory, so the workers, the reviewers and the merger all call the tool with `--root <main checkout>`, and the merger never commits the loop.
+
+Open the loop with `init "<goal>" --committed` when the repository should keep its loop as a permanent record in its history: the files are committed with the work at every merge, travel with the branch, and the last commit before it merges to main removes them. A loop that is already open keeps the mode it was opened in.
 </details>
 
 <details>
@@ -149,7 +151,7 @@ Four add-ons attach to the agent rather than to the graph, and each works alone.
 | **[Ratatoskr](https://github.com/krzysztofdudek/RatatoskrSkill)** | request → intent | Keeps the agent talking to you in plain words, not code. |
 | **[Urd](https://github.com/krzysztofdudek/UrdSkill)** | intent → code | When the spec is ambiguous, it consults the source of truth and asks, it doesn't guess. |
 | **[Researcher](https://github.com/krzysztofdudek/ResearcherSkill)** | code → measured result | Point it at a metric and it runs experiments, hypotheses kept and discarded. |
-| **Jarl** (this one) | issues → merged branch | Directs a feature branch: a committed issue loop, a worker per issue, evidence before merge, no trace on main. |
+| **Jarl** (this one) | issues → merged branch | Directs a feature branch: an issue loop, a worker per issue, evidence before merge, no trace on main. |
 
 ## License
 

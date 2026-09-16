@@ -20,7 +20,10 @@ const ROUNDS_BEFORE_TAKEOVER = 3;
 const USAGE = `usage: jarl.mjs <command> [options]
 
 commands:
-  init "<goal>"                                  create .jarl/ on this branch with the goal
+  init "<goal>" [--committed]                    create .jarl/ with the goal; by default it also writes .jarl/.gitignore
+                                                 (* and **/*) so git never sees the loop, and every role working
+                                                 outside the main checkout passes --root <main checkout>;
+                                                 --committed writes no .gitignore: the loop is committed with the work
   new "<title>" [--kind k] [--prio 1|2|3] [--tier standard|strong] [--tags a,b] [--files p,q] [--found-by who]
                                                  file an issue under the next free number
   evidence <id> "<text>" | --ran "<command>" --saw "<what it printed>"
@@ -174,15 +177,24 @@ export function appendDecision(root, slug, ruling) {
 
 function need(cond, msg) { if (!cond) throw new Error(msg); }
 
-export function cmdInit(root, goal) {
+// By default the loop stays out of git: .jarl/.gitignore ignores everything under .jarl/, itself
+// included, so the loop never shows in the branch's history, diffs or merges. --committed writes no
+// ignore file and the loop is committed with the work. Only init decides this; no other command
+// adds or removes the ignore file, so a loop opened before this existed is left as it is.
+export const JARL_GITIGNORE = '*\n**/*\n';
+
+export function cmdInit(root, goal, flags = {}) {
+  need(flags.committed === undefined || flags.committed === true, '--committed takes no value — put the goal first: init "<goal>" --committed');
   need(goal, 'init requires "<goal>"');
   need(!existsSync(jarlDir(root)), '.jarl/ already exists on this branch — resume it, do not re-init');
+  const committed = flags.committed === true;
   mkdirSync(issuesDir(root), { recursive: true });
+  if (!committed) writeFileSync(join(jarlDir(root), '.gitignore'), JARL_GITIGNORE);
   writeFileSync(join(jarlDir(root), 'goal.md'), `# Goal\n\n${goal.trim()}\n\n## Assumptions\n\n## Rules that apply here\n`);
   writeFileSync(join(jarlDir(root), 'decisions.md'), '# Decisions\n');
   writeFileSync(join(jarlDir(root), 'log.md'), '# Log\n\n');
   appendLog(root, `opened · ${goal.trim()}`);
-  return { dir: jarlDir(root) };
+  return { dir: jarlDir(root), committed };
 }
 
 export function cmdNew(root, title, flags) {
@@ -580,7 +592,7 @@ function main() {
   let text;
   try {
     switch (cmd) {
-      case 'init': out = cmdInit(root, rest[0]); text = `opened ${out.dir}`; break;
+      case 'init': out = cmdInit(root, rest[0], flags); text = `opened ${out.dir} · ${out.committed ? 'committed with the work' : 'kept out of git'}`; break;
       case 'new': out = cmdNew(root, rest[0], flags); text = `filed ${out.id} · ${out.file}`; break;
       case 'list': out = cmdList(root, flags); text = renderList(out); break;
       case 'show': { const i = findIssue(root, rest[0]); need(i, `no such issue: ${rest[0]}`); out = i; text = readFileSync(i.file, 'utf8'); break; }

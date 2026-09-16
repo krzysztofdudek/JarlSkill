@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- The loop's files now stay out of git by default: opening a loop tells git to ignore them, so they no longer appear in your branch's history, diffs or merges, and the branch carries nothing of the loop to main. Workers, reviewers and the merger reach the loop by pointing the tool at the main checkout, and the merger no longer commits it. To keep the loop in the repository's history instead, open it with `--committed`: it is then committed with the work and removed before the branch merges to main, as before. Loops already open are left as they are.
 - The reeve now checks, at boot, whether it can raise agents of its own before assuming it can; if not, it tells the jarl and the file-relay fallback takes over for the rest of the loop.
 - The file-relay fallback now also covers resuming a worker or a merger for a second round, not only the first spawn.
 

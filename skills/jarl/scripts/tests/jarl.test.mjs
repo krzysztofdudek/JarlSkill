@@ -120,7 +120,7 @@ test('check reads a worker branch: commits, declared files, removed tests, asser
   g('config', 'user.email', 't@t'); g('config', 'user.name', 't');
   mkdirSync(join(root, 'src')); mkdirSync(join(root, 'tests'));
   execFileSync('bash', ['-c', `cd ${root} && echo 'export const a = 1;' > src/a.mjs && printf 'assert.equal(1,1);\\nassert.equal(2,2);\\n' > tests/a.test.mjs && git add -A && git commit -qm base`]);
-  jarl(root, 'init', 'goal');
+  jarl(root, 'init', 'goal', '--committed');
   jarl(root, 'new', 'change a', '--files', 'src/a.mjs,tests/a.test.mjs');
   execFileSync('bash', ['-c', `cd ${root} && git add -A && git commit -qm jarl && git checkout -qb jarl/001-change-a && echo 'export const a = 2;' > src/a.mjs && printf 'assert.equal(1,1);\\n' > tests/a.test.mjs && echo x > src/b.mjs && echo '- entry' >> CHANGELOG.md && echo 'export {};' > tests/new.test.mjs && git add -A && git commit -qm work && git checkout -q feature`]);
   let out;
@@ -142,7 +142,7 @@ test('check matches a declared file relative to a subdirectory, not just the rep
   g('config', 'user.email', 't@t'); g('config', 'user.name', 't');
   mkdirSync(join(root, 'skills', 'x'), { recursive: true });
   execFileSync('bash', ['-c', `cd ${root} && echo one > skills/x/SKILL.md && git add -A && git commit -qm base`]);
-  jarl(root, 'init', 'goal');
+  jarl(root, 'init', 'goal', '--committed');
   jarl(root, 'new', 'change the skill body', '--files', 'SKILL.md');
   execFileSync('bash', ['-c', `cd ${root} && git add -A && git commit -qm jarl && git checkout -qb jarl/001-change-the-skill-body && echo two > skills/x/SKILL.md && git add -A && git commit -qm work && git checkout -q feature`]);
   const out = JSON.parse(jarl(root, 'check', '001', '--branch', 'jarl/001-change-the-skill-body', '--base', 'feature', '--json'));
@@ -169,7 +169,7 @@ test('branches lists a worktree branch a worker never renamed, marked unnamed', 
   execFileSync('rm', ['-rf', join(root, '.git')]);
   g('init', '-q', '-b', 'feature'); g('config', 'user.email', 't@t'); g('config', 'user.name', 't');
   execFileSync('bash', ['-c', `cd ${root} && echo a > a.txt && git add -A && git commit -qm base`]);
-  jarl(root, 'init', 'goal');
+  jarl(root, 'init', 'goal', '--committed');
   execFileSync('bash', ['-c', `cd ${root} && git add -A && git commit -qm jarl && git worktree add -q -b worktree-agent-x ${root}/.wt-x && cd ${root}/.wt-x && echo b > b.txt && git add -A && git commit -qm work`]);
   const rows = JSON.parse(jarl(root, 'branches', '--base', 'feature', '--json'));
   const row = rows.find((r) => r.branch === 'worktree-agent-x');
@@ -219,6 +219,47 @@ test('repeated --ran/--saw in one call produce one row per pair, not a comma-joi
   assert.match(log, /001 evidence row · cmd two$/m);
   assert.match(refuses(root, 'evidence', '001', '--ran', 'a', '--ran', 'b', '--saw', 'only one'), /must repeat the same number of times/);
   assert.match(refuses(root, 'evidence', '001', '--ran', '--saw', 'x'), /needs both --ran/);
+});
+
+// A real repository, not the fake .git directory repo() makes: these tests ask git itself what it sees.
+function gitRepo() {
+  const dir = mkdtempSync(join(tmpdir(), 'jarl-git-'));
+  const g = (...a) => execFileSync('git', a, { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  g('init', '-q', '-b', 'feature');
+  g('config', 'user.email', 't@t'); g('config', 'user.name', 't');
+  g('config', 'core.excludesFile', '/dev/null');
+  execFileSync('bash', ['-c', `cd ${dir} && echo a > a.txt && git add -A && git commit -qm base`]);
+  return { dir, g };
+}
+
+test('init keeps the loop out of git by default: .jarl/.gitignore holds exactly * and **/*', () => {
+  const { dir: root, g } = gitRepo();
+  jarl(root, 'init', 'goal');
+  assert.equal(readFileSync(join(root, '.jarl', '.gitignore'), 'utf8'), '*\n**/*\n');
+  jarl(root, 'new', 'thing', '--files', 'a.txt');
+  jarl(root, 'evidence', '001', '--ran', 'npm test', '--saw', '1 pass');
+  jarl(root, 'evidence', '001', 'merged abc1234');
+  assert.equal(g('status', '--porcelain'), '', 'git status shows nothing from .jarl/');
+  assert.equal(g('status', '--porcelain', '--untracked-files=all'), '', 'not even file by file');
+  g('add', '-A');
+  assert.equal(g('ls-files', '.jarl'), '', 'git add -A stages nothing from .jarl/');
+});
+
+test('init --committed writes no .gitignore and git sees the loop; an existing loop is never given one', () => {
+  const { dir: root, g } = gitRepo();
+  const opened = JSON.parse(jarl(root, 'init', 'goal', '--committed', '--json'));
+  assert.equal(opened.committed, true);
+  assert.match(refuses(gitRepo().dir, 'init', '--committed', 'goal'), /--committed takes no value/);
+  assert.equal(existsSync(join(root, '.jarl', '.gitignore')), false);
+  jarl(root, 'new', 'thing');
+  jarl(root, 'evidence', '001', 'note');
+  const seen = g('status', '--porcelain', '--untracked-files=all');
+  assert.match(seen, /^\?\? \.jarl\/goal\.md$/m);
+  assert.match(seen, /^\?\? \.jarl\/issues\/001-thing\.md$/m);
+  g('add', '-A');
+  assert.match(g('ls-files', '.jarl'), /\.jarl\/log\.md/);
+  assert.match(refuses(root, 'init', 'again'), /already exists/);
+  assert.equal(existsSync(join(root, '.jarl', '.gitignore')), false, 'no command after init adds the ignore file to a loop that has none');
 });
 
 test('ask kinds are closed; lower needs a target', () => {
