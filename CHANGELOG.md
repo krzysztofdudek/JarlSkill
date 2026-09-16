@@ -13,8 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - `check` no longer flags an in-scope change as outside its declared files when an issue names a file relative to a subdirectory (a plugin's own skill body, say) rather than the repository root.
-- `evidence` given free text no longer erases evidence already recorded on the issue — it now adds to it.
-- `evidence` given several `--ran`/`--saw` pairs in one call now records one row per pair, instead of merging every command and every result into a single unreadable row.
+- Free-text evidence is now added after what the issue already holds. Before, it replaced the whole evidence section, so the merger's note after a merge erased the proof the worker had recorded.
+- Several `--ran`/`--saw` pairs in one `evidence` call now become one row each, instead of one unreadable row with every command and every result joined by commas. A `--ran` or `--saw` given without a value is refused instead of written down.
 
 ## [0.1.0] - 2026-09-13
 

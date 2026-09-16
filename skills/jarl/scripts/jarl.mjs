@@ -24,7 +24,7 @@ commands:
   new "<title>" [--kind k] [--prio 1|2|3] [--tier standard|strong] [--tags a,b] [--files p,q] [--found-by who]
                                                  file an issue under the next free number
   evidence <id> "<text>" | --ran "<command>" --saw "<what it printed>"
-                                                 append a free-text note, or one checkable row (repeatable)
+                                                 append a free-text note, or one checkable row per --ran/--saw pair (repeatable)
   list [--status s] [--kind k] [--tag t] [--prio p] [--grep re] [--all]
                                                  open and in-progress by default; --all for every status
   show <id>                                      print one issue
@@ -281,22 +281,24 @@ export function acceptanceLineCount(issue) {
 }
 
 // evidence <id> "<text>" appends free text (a merge sha, a one-line note); evidence <id> --ran
-// "<command>" --saw "<what it printed>" appends one checkable row instead — repeatable, one row
-// per acceptance line. Both land in the same section; `set done` only counts rows, and a free-text
-// evidence block with zero rows still satisfies it (not every issue's proof is a command).
+// "<command>" --saw "<what it printed>" appends one checkable row per pair instead — repeat the pair,
+// in one call or across calls, one row per acceptance line. Both append to the same section, never
+// replace it: the merger's free-text note lands after the worker's rows. `set done` needs the section
+// non-empty, rows or not (not every issue's proof is a command).
 export function cmdEvidence(root, rawId, text, flags) {
   const issue = findIssue(root, rawId);
   need(issue, `no such issue: ${rawId}`);
   if (flags && (flags.ran !== undefined || flags.saw !== undefined)) {
-    need(flags.ran && flags.saw, 'a row needs both --ran "<command>" and --saw "<what it printed>"');
-    const rans = [].concat(flags.ran);
-    const saws = [].concat(flags.saw);
+    const rans = [].concat(flags.ran ?? []);
+    const saws = [].concat(flags.saw ?? []);
+    need(rans.length && saws.length && [...rans, ...saws].every((v) => typeof v === 'string' && v.trim()), 'a row needs both --ran "<command>" and --saw "<what it printed>", each with a value');
     need(rans.length === saws.length, `--ran and --saw must repeat the same number of times (got ${rans.length} --ran, ${saws.length} --saw)`);
-    const rows = rans.map((ran, i) => `- **ran:** ${ran} · **saw:** ${saws[i]}`);
+    const rows = rans.map((ran, i) => ({ ran, saw: saws[i] }));
+    const lines = rows.map((r) => `- **ran:** ${r.ran} · **saw:** ${r.saw}`).join('\n');
     const current = (issue.sections.evidence || '').trim();
-    writeFileSync(issue.file, setSection(readFileSync(issue.file, 'utf8'), 'Evidence', current ? `${current}\n${rows.join('\n')}` : rows.join('\n')));
-    appendLog(root, `${issue.id} evidence row · ${rans.join('; ')}`);
-    return { id: issue.id, rows: rans.map((ran, i) => ({ ran, saw: saws[i] })) };
+    writeFileSync(issue.file, setSection(readFileSync(issue.file, 'utf8'), 'Evidence', current ? `${current}\n${lines}` : lines));
+    for (const r of rows) appendLog(root, `${issue.id} evidence row · ${r.ran}`);
+    return { id: issue.id, rows };
   }
   need(text, 'evidence requires "<what was run and what it printed>", or --ran "<command>" --saw "<what it printed>"');
   const current = (issue.sections.evidence || '').trim();

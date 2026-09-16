@@ -42,7 +42,7 @@ node "${CLAUDE_PLUGIN_ROOT:-.claude/skills/jarl}/scripts/jarl.mjs" <command>
 | `show <id>` · `status` | one issue · one line of counts |
 | `set <id> <status> "<why>"` | changes status and writes the log line in one move; `done` needs evidence on file, `dropped` needs a reason |
 | `tag <id> +a -b` · `prio <id> 1\|2\|3` · `files <id> p,q` | header fields |
-| `evidence <id> "<text>"` \| `evidence <id> --ran "<command>" --saw "<what it printed>"` | a free-text note, or one checkable row (repeatable) — `--ran`/`--saw` when the proof is a command, free text when it is not |
+| `evidence <id> "<text>"` \| `evidence <id> --ran "<command>" --saw "<what it printed>"` | appends a free-text note, or one checkable row per `--ran`/`--saw` pair (repeat the pair for more rows, in one call or several) — `--ran`/`--saw` when the proof is a command, free text when it is not; nothing already recorded is ever replaced |
 | `next [--limit n]` | open issues that share no file with any in-progress one — what can run in parallel now |
 | `review <id> approve\|changes "<findings>"` | the reviewer's verdict; `changes` needs a finding ranked Critical or Important in the text — Minor alone cannot bounce a branch, it rides an approve into evidence; `done` refuses without an approve newer than the last round |
 | `round <id> "<what failed>"` | one red round on the issue; the third prints a takeover block for a fresh worker |

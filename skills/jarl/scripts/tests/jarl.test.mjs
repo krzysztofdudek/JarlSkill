@@ -197,8 +197,13 @@ test('free-text evidence appends, it never overwrites earlier evidence', () => {
   jarl(root, 'evidence', '001', 'first note');
   jarl(root, 'evidence', '001', 'second note');
   const shown = jarl(root, 'show', '001');
-  assert.match(shown, /first note/);
-  assert.match(shown, /second note/);
+  assert.ok(shown.indexOf('first note') > -1 && shown.indexOf('first note') < shown.indexOf('second note'), 'both notes kept, in order');
+  jarl(root, 'new', 'merged thing');
+  jarl(root, 'evidence', '002', '--ran', 'npm test', '--saw', '12 pass');
+  jarl(root, 'evidence', '002', 'check green, merged abc1234');
+  const merged = jarl(root, 'show', '002');
+  assert.match(merged, /\*\*ran:\*\* npm test · \*\*saw:\*\* 12 pass/, "the worker's row survives the merger's note");
+  assert.match(merged, /merged abc1234/);
 });
 
 test('repeated --ran/--saw in one call produce one row per pair, not a comma-joined mess', () => {
@@ -207,10 +212,13 @@ test('repeated --ran/--saw in one call produce one row per pair, not a comma-joi
   jarl(root, 'new', 'thing');
   jarl(root, 'evidence', '001', '--ran', 'cmd one', '--saw', 'result one', '--ran', 'cmd two', '--saw', 'result two');
   const shown = jarl(root, 'show', '001');
-  assert.match(shown, /\*\*ran:\*\* cmd one · \*\*saw:\*\* result one/);
-  assert.match(shown, /\*\*ran:\*\* cmd two · \*\*saw:\*\* result two/);
-  assert.doesNotMatch(shown, /cmd one,cmd two/);
+  assert.match(shown, /^- \*\*ran:\*\* cmd one · \*\*saw:\*\* result one$/m);
+  assert.match(shown, /^- \*\*ran:\*\* cmd two · \*\*saw:\*\* result two$/m);
+  const log = readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
+  assert.match(log, /001 evidence row · cmd one$/m);
+  assert.match(log, /001 evidence row · cmd two$/m);
   assert.match(refuses(root, 'evidence', '001', '--ran', 'a', '--ran', 'b', '--saw', 'only one'), /must repeat the same number of times/);
+  assert.match(refuses(root, 'evidence', '001', '--ran', '--saw', 'x'), /needs both --ran/);
 });
 
 test('ask kinds are closed; lower needs a target', () => {
