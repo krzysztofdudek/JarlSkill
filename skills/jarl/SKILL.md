@@ -44,19 +44,19 @@ node "${CLAUDE_PLUGIN_ROOT:-.claude/skills/jarl}/scripts/jarl.mjs" <command>
 | Command | What it does |
 |---|---|
 | `init "<goal>" [--committed]` | creates `.jarl/` with the goal and a `.gitignore` that keeps the loop out of git; `--committed` writes no `.gitignore`, so the loop is committed with the work |
-| `new "<title>" [--kind k] [--prio 1\|2\|3] [--tier standard\|strong] [--tags a,b] [--files p,q] [--found-by who]` | files an issue under the next free number |
+| `new "<title>" [--kind k] [--prio 1\|2\|3] [--tier standard\|strong] [--tags a,b] [--files p,q] [--repo <path>] [--found-by who]` | files an issue under the next free number; `--repo` names the repository its code lives in when that is not the loop's own (see [Code in another repository](#code-in-another-repository)) |
 | `list [--status s] [--kind k] [--tag t] [--prio p] [--grep re] [--all]` | open and in-progress by default, sorted by priority |
 | `show <id>` · `status` | one issue · one line of counts |
 | `set <id> <status> "<why>"` | changes status and writes the log line in one move; `done` needs evidence on file, `dropped` needs a reason |
-| `tag <id> +a -b` · `prio <id> 1\|2\|3` · `files <id> p,q` | header fields |
+| `tag <id> +a -b` · `prio <id> 1\|2\|3` · `files <id> p,q` · `repo <id> <path>` | header fields |
 | `evidence <id> "<text>"` \| `evidence <id> --ran "<command>" --saw "<what it printed>"` | appends a free-text note, or one checkable row per `--ran`/`--saw` pair (repeat the pair for more rows, in one call or several) — `--ran`/`--saw` when the proof is a command, free text when it is not; nothing already recorded is ever replaced |
 | `next [--limit n]` | open issues that share no file with any in-progress one — what can run in parallel now |
 | `review <id> approve\|changes "<findings>"` | the reviewer's verdict; `changes` needs a finding ranked Critical or Important in the text — Minor alone cannot bounce a branch, it rides an approve into evidence; `done` refuses without an approve newer than the last round |
 | `round <id> "<what failed>"` | one red round on the issue; the third prints a takeover block for a fresh worker |
-| `check <id> --branch <b>` | a worker branch before merge: commits beyond the base, diff inside the declared files, test files removed, assertions before and after, each item's own ok/not — read the items, not just the exit code; a script gate can use the exit code (0 clean, 2 something failed), a reader should not stop there |
-| `branches` | every `jarl/NNN-*` branch, and every other branch a worktree has checked out (marked UNNAMED when a worker never renamed its branch), with commits beyond the base and worktree state — a branch with commits is a report whether or not the worker said so |
+| `check <id> --branch <b> [--repo <path>]` | a worker branch before merge: commits beyond the base, diff inside the declared files, test files removed, assertions before and after, each item's own ok/not — read the items, not just the exit code; a script gate can use the exit code (0 clean, 2 something failed), a reader should not stop there. Read in `--repo`, else in the repository the issue's **Repo:** names, else in the loop's own |
+| `branches [--repo <path>]` | every `jarl/NNN-*` branch, and every other branch a worktree has checked out (marked UNNAMED when a worker never renamed its branch), with commits beyond the base and worktree state — a branch with commits is a report whether or not the worker said so. Read in `--repo`, else in the loop's own repository |
 | `ask "<question>" --kind stop\|stuck\|lower\|charter [--target x] [--issue NNN]` · `answer <id> "<answer>"` | questions only the user can answer, in a closed set of kinds — `stop` halts everything, `stuck` blocks one issue, `lower` weakens something protected (`--target` names it), `charter` questions the goal; open ones show in `status`; an answer becomes a ruling |
-| `handoff write --summary "<s>" [--next "<n>"]...` · `handoff read` | the state of intent between sessions: what is in flight, what waits on the user, what comes next |
+| `handoff write --summary "<s>" [--next "<n>"]...` · `handoff read` | the state of intent between sessions: what is in flight, what waits on the user, what comes next; the header records the loop's head and the head of every other repository an unfinished issue names |
 | `log "<event>"` · `decide <slug> "<ruling>"` | the journal and the rulings |
 | `report` | done, dropped with reasons, still open, found along the way — the material for the changelog |
 | `close [--force]` | refuses while anything is open or in progress; otherwise removes `.jarl/` |
@@ -76,6 +76,7 @@ looks for `.jarl/` in whatever checkout it is run from, and a worktree has none 
 **Tier:** standard | strong — the tier of model the worker is raised on, explicit in the file, never implied; the platform running the loop maps a tier to one of its own models
 **Tags:** comma, separated
 **Files:** the files it touches, comma separated — what `next` uses to keep workers apart
+**Repo:** only when the code lives in another repository than the loop — the path to that repository's main checkout
 **Found by:** who, doing what
 **Where:** file:line, or the command and what it printed
 
@@ -141,6 +142,16 @@ word. Two loops sharing one clone prefix the branch with the feature branch's la
 In the default mode a worker branch never carries `.jarl/`; in the committed mode it carries the copy
 it was cut with, which nobody writes — the loop's live state is the main checkout's, reached with `--root`.
 
+### Code in another repository
+
+A loop can keep its issues in one repository while its workers change another: a repository of plans and notes directing work in the code beside it, or one loop directing several repositories at once. The loop stays where `.jarl/` lives, in either mode, and every role still reaches it with `--root` pointing there. The code side moves to the other repository:
+
+- **The issue names it.** `new --repo <path>` writes **Repo:** into the issue; `repo <id> <path>` sets it on an issue already filed. The path is that repository's main checkout. A relative path is read from the loop's root (the directory holding `.jarl/`), never from wherever the tool is called, so every role resolves it the same. An issue without **Repo:** is read in the loop's own repository, as always.
+- **`check` reads there.** Commits, files and assertions come from the worker branch in that repository, against its current branch as the base; `--repo <path>` on one call does the same and wins over the field. The issue's **Files:** are relative to that repository.
+- **`branches` reads there with `--repo <path>`.** Without it, it lists the loop's own repository only, so at boot run it once per repository the open issues name.
+- **The worker, the reviewer and the merger work there.** The worker's worktree and its `jarl/NNN-slug` branch are cut in that repository from its own feature branch, and that is the branch the brief names; the reviewer diffs there; the merger merges and runs the check in that repository's main checkout. `.jarl/` never enters that repository.
+- **`handoff write`** records that repository's head beside the loop's own.
+
 ### The worker's brief
 
 ```
@@ -178,7 +189,8 @@ reviewer checking out there mid-merge is exactly the collision the merger's sole
 exists to prevent. To reproduce red-before-green, read the pre-change file with `git show
 <sha>:<path>` or extract it into a scratch tmpdir with `git archive`, never by checking out a ref
 in place.
-Read the issue (`jarl.mjs show NNN --root <repo root>`), then `git diff <feature-branch>...jarl/NNN-slug`. Answer three questions with
+Read the issue (`jarl.mjs show NNN --root <repo root>`), then `git diff <feature-branch>...jarl/NNN-slug` — in
+the repository the issue's **Repo:** names when it names one, the loop's own otherwise. Answer three questions with
 evidence: does the diff meet the acceptance line literally; was the new test red before the change
 and green after; did anything outside the issue's scope move. Rank every finding Critical / Important / Minor. Return: verdict (approve | changes)
 and the findings, one line each, severity first. Minor findings alone are an approve.
@@ -200,6 +212,10 @@ sees `.jarl/`, so the merger never commits it. Its brief:
 ```
 You are the merger of branch <feature-branch> in <repo root>; the tool is <absolute path to jarl.mjs>,
 always called with `--root <repo root>`. The loop is in the <default | committed> mode.
+When an issue's **Repo:** names another repository, its branch, its merge and its check live in that
+repository's main checkout — run git and the check there, list its branches with
+`jarl.mjs branches --repo <path>`; `jarl.mjs check` reads there on its own; `.jarl/`, `--root` and,
+in the committed mode, the commit of `.jarl/` stay in <repo root>.
 You work in the main checkout, serially, one branch at a time. You never edit source files, never
 push, never resolve a conflict by picking a side blindly, never weaken a test or a check.
 For each branch the jarl names (or that `jarl.mjs branches` shows with commits beyond the base):
