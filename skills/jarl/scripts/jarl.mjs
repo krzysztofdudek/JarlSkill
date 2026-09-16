@@ -20,10 +20,13 @@ const ROUNDS_BEFORE_TAKEOVER = 3;
 const USAGE = `usage: jarl.mjs <command> [options]
 
 commands:
-  init "<goal>" [--committed]                    create .jarl/ with the goal; by default it also writes .jarl/.gitignore
+  init "<goal>" [--committed] [--permanent]      create .jarl/ with the goal; by default it also writes .jarl/.gitignore
                                                  (* and **/*) so git never sees the loop, and every role working
                                                  outside the main checkout passes --root <main checkout>;
-                                                 --committed writes no .gitignore: the loop is committed with the work
+                                                 --committed writes no .gitignore: the loop is committed with the work;
+                                                 --permanent also writes no .gitignore, marks the loop with
+                                                 .jarl/.permanent, and is not tied to a feature branch: close (below)
+                                                 keeps the directory instead of removing it
   new "<title>" [--kind k] [--prio 1|2|3] [--tier standard|strong] [--tags a,b] [--files p,q] [--repo <path>] [--found-by who]
                                                  file an issue under the next free number; --repo names the repository
                                                  its code lives in when that is not the loop's own (see --repo below)
@@ -60,6 +63,8 @@ commands:
   status                                         one line: open, in flight, done, dropped, open questions
   report                                         what was done, dropped and found — ready for the changelog
   close [--force]                                refuse while anything is open or in progress; else remove .jarl/
+                                                 — a permanent loop (see init --permanent) is kept instead: it
+                                                 logs the close and the directory stays as the record
 
 options: --json  --help  --root <repo root>
 
@@ -193,22 +198,29 @@ function need(cond, msg) { if (!cond) throw new Error(msg); }
 
 // By default the loop stays out of git: .jarl/.gitignore ignores everything under .jarl/, itself
 // included, so the loop never shows in the branch's history, diffs or merges. --committed writes no
-// ignore file and the loop is committed with the work. Only init decides this; no other command
-// adds or removes the ignore file, so a loop opened before this existed is left as it is.
+// ignore file and the loop is committed with the work. --permanent also writes no ignore file — a
+// permanent record must be committed to survive — and additionally writes .jarl/.permanent, so a
+// later session can tell the mode from the loop itself without being told: close (below) reads that
+// marker and keeps the directory instead of removing it. Only init decides any of this; no other
+// command adds or removes these files, so a loop opened before a mode existed keeps behaving as it did.
 export const JARL_GITIGNORE = '*\n**/*\n';
+export const PERMANENT_MARKER = 'This loop is a permanent record: it is not tied to a feature branch, and `close` never removes this directory. See SKILL.md.\n';
 
 export function cmdInit(root, goal, flags = {}) {
   need(flags.committed === undefined || flags.committed === true, '--committed takes no value — put the goal first: init "<goal>" --committed');
+  need(flags.permanent === undefined || flags.permanent === true, '--permanent takes no value — put the goal first: init "<goal>" --permanent');
   need(goal, 'init requires "<goal>"');
   need(!existsSync(jarlDir(root)), '.jarl/ already exists on this branch — resume it, do not re-init');
-  const committed = flags.committed === true;
+  const permanent = flags.permanent === true;
+  const committed = flags.committed === true || permanent;
   mkdirSync(issuesDir(root), { recursive: true });
   if (!committed) writeFileSync(join(jarlDir(root), '.gitignore'), JARL_GITIGNORE);
+  if (permanent) writeFileSync(join(jarlDir(root), '.permanent'), PERMANENT_MARKER);
   writeFileSync(join(jarlDir(root), 'goal.md'), `# Goal\n\n${goal.trim()}\n\n## Assumptions\n\n## Rules that apply here\n`);
   writeFileSync(join(jarlDir(root), 'decisions.md'), '# Decisions\n');
   writeFileSync(join(jarlDir(root), 'log.md'), '# Log\n\n');
   appendLog(root, `opened · ${goal.trim()}`);
-  return { dir: jarlDir(root), committed };
+  return { dir: jarlDir(root), committed, permanent };
 }
 
 export function cmdNew(root, title, flags) {
@@ -387,8 +399,14 @@ export function cmdClose(root, flags) {
   need(existsSync(jarlDir(root)), 'no .jarl/ here');
   const left = loadIssues(root).filter((i) => i.status === 'open' || i.status === 'in-progress');
   need(flags.force || left.length === 0, `${left.length} issue(s) still open or in progress: ${left.map((i) => i.id).join(', ')} — set each done or dropped, or report them to the user and run with --force`);
+  // A permanent loop is a record, not a stage cleared before a merge: close leaves the directory in
+  // place and logs the close instead of removing it, so --root still finds the loop afterwards.
+  if (existsSync(join(jarlDir(root), '.permanent'))) {
+    appendLog(root, 'closed · kept as a permanent record');
+    return { removed: null, kept: jarlDir(root), leftOpen: left.map((i) => i.id) };
+  }
   rmSync(jarlDir(root), { recursive: true, force: true });
-  return { removed: jarlDir(root), leftOpen: left.map((i) => i.id) };
+  return { removed: jarlDir(root), kept: null, leftOpen: left.map((i) => i.id) };
 }
 
 
@@ -656,7 +674,7 @@ function main() {
   let text;
   try {
     switch (cmd) {
-      case 'init': out = cmdInit(root, rest[0], flags); text = `opened ${out.dir} · ${out.committed ? 'committed with the work' : 'kept out of git'}`; break;
+      case 'init': out = cmdInit(root, rest[0], flags); text = `opened ${out.dir} · ${out.permanent ? 'permanent record, no branch' : out.committed ? 'committed with the work' : 'kept out of git'}`; break;
       case 'new': out = cmdNew(root, rest[0], flags); text = `filed ${out.id} · ${out.file}`; break;
       case 'list': out = cmdList(root, flags); text = renderList(out); break;
       case 'show': { const i = findIssue(root, rest[0]); need(i, `no such issue: ${rest[0]}`); out = i; text = readFileSync(i.file, 'utf8'); break; }
@@ -678,7 +696,7 @@ function main() {
       case 'log': need(rest[0], 'log requires "<event>"'); appendLog(root, rest[0]); out = { logged: rest[0] }; text = 'logged'; break;
       case 'decide': need(rest[0] && rest[1], 'decide requires <slug> "<ruling>"'); appendDecision(root, rest[0], rest[1]); appendLog(root, `decided ${rest[0]}`); out = { slug: rest[0] }; text = `decided ${rest[0]}`; break;
       case 'status': out = cmdStatus(root); text = `open ${out.open} · in flight ${out['in-progress']} · done ${out.done} · dropped ${out.dropped} · questions ${out.questions}`; break;
-      case 'close': out = cmdClose(root, flags); text = `removed ${out.removed}`; break;
+      case 'close': out = cmdClose(root, flags); text = out.kept ? `kept ${out.kept} · closed as a permanent record` : `removed ${out.removed}`; break;
       default: throw new Error(`unknown command: ${cmd}\n${USAGE}`);
     }
   } catch (e) {
