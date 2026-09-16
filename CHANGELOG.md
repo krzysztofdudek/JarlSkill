@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- A loop can now keep its issues in one repository while its workers change another. Name the other repository when you file an issue (or later, on the issue), or on the command itself, and checking a worker's branch before merge looks there: its commits, files and test assertions, compared against that repository's own current branch. Listing worker branches can look there too, and the handoff between sessions records where that repository stands. A relative path means the same from every checkout the loop's roles work in. Loops that work in a single repository behave exactly as before.
+
 ### Changed
 - The loop's files now stay out of git by default: opening a loop tells git to ignore them, so they no longer appear in your branch's history, diffs or merges, and the branch carries nothing of the loop to main. Workers, reviewers and the merger reach the loop by pointing the tool at the main checkout, and the merger no longer commits it. To keep the loop in the repository's history instead, open it with `--committed`: it is then committed with the work and removed before the branch merges to main, as before. Loops already open are left as they are.
 - The reeve now checks, at boot, whether it can raise agents of its own before assuming it can; if not, it tells the jarl and the file-relay fallback takes over for the rest of the loop.
