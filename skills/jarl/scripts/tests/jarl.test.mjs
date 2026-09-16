@@ -319,6 +319,62 @@ test('check, branches and handoff read the repository an issue names, not the lo
   }
 });
 
+// Real repositories beside a hub that holds the loop; each is a git repository on its own branch.
+function reposBeside(...names) {
+  const parent = mkdtempSync(join(tmpdir(), 'jarl-many-'));
+  const sh = (cwd, script) => execFileSync('bash', ['-c', script], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  const dirs = {};
+  for (const name of ['hub', ...names]) {
+    const dir = join(parent, name);
+    mkdirSync(dir, { recursive: true });
+    sh(dir, `git init -q -b ${name === 'hub' ? 'main' : 'feature'} && git config user.email t@t && git config user.name t && git config core.excludesFile /dev/null && mkdir src tests && echo 'export const a = 1;' > src/a.mjs && echo 'export const b = 1;' > src/b.mjs && printf 'assert.equal(1,1);\\n' > tests/a.test.mjs && echo '# Changelog' > CHANGELOG.md && git add -A && git commit -qm base`);
+    dirs[name] = dir;
+  }
+  return { parent, sh, ...dirs };
+}
+
+// In a loop over several repositories, an issue that names one writes its files with that
+// repository's directory name first. A file is its repository and its path there.
+test('next keeps the same path in two repositories apart and still holds a collision inside one', () => {
+  const { hub } = reposBeside('tool', 'other', 'vendor/tool');
+  jarl(hub, 'init', 'goal');
+  jarl(hub, 'new', 'in flight in tool', '--repo', '../tool', '--files', 'tool/CHANGELOG.md,tool/src/a.mjs');
+  jarl(hub, 'new', 'same changelog path, other repository', '--repo', '../other', '--files', 'other/CHANGELOG.md');
+  jarl(hub, 'new', 'same changelog path, a second repository also named tool', '--repo', '../vendor/tool', '--files', 'tool/CHANGELOG.md');
+  jarl(hub, 'new', 'same source file, same repository', '--repo', '../tool/', '--files', 'tool/src/a.mjs');
+  jarl(hub, 'new', 'the hub\'s own changelog', '--files', 'CHANGELOG.md');
+  jarl(hub, 'new', 'other repository again, behind the first one there', '--repo', '../other', '--files', 'other/CHANGELOG.md');
+  jarl(hub, 'set', '001', 'in-progress', 'worker raised in tool');
+  const rows = JSON.parse(jarl(hub, 'next', '--json'));
+  assert.deepEqual(rows.filter((r) => r.ready).map((r) => r.id), ['002', '003', '005'], 'the same path in another repository never waits');
+  assert.deepEqual(rows.find((r) => r.id === '004').waitsOn, ['tool/src/a.mjs'], 'the same file in the same repository still waits, however the Repo path is spelled');
+  assert.deepEqual(rows.find((r) => r.id === '006').waitsOn, ['other/CHANGELOG.md'], 'two open issues on one file in one repository do not both run');
+  assert.match(jarl(hub, 'next'), /^004 {2}P2 {2}same source file, same repository {2}\(waits on tool\/src\/a\.mjs\)$/m);
+});
+
+test('check matches a changed file against the files an issue declares in its own repository', () => {
+  const { parent, sh, hub, tool } = reposBeside('tool');
+  jarl(hub, 'init', 'goal');
+  jarl(hub, 'new', 'change a in tool', '--repo', '../tool', '--files', 'tool/src/a.mjs');
+  jarl(hub, 'new', 'change b in tool', '--repo', '../tool', '--files', 'tool/src/b.mjs');
+  sh(tool, `git worktree add -q -b jarl/001-change-a-in-tool ${parent}/wt-001 && cd ${parent}/wt-001 && echo 'export const a = 2;' > src/a.mjs && printf 'assert.equal(1,1);\\nassert.equal(2,2);\\n' > tests/a.test.mjs && echo '- a' >> CHANGELOG.md && git add -A && git commit -qm work`);
+
+  const out = JSON.parse(jarl(hub, 'check', '001', '--branch', 'jarl/001-change-a-in-tool', '--json'));
+  const byName = Object.fromEntries(out.items.map((i) => [i.name, i]));
+  assert.deepEqual(out.changed, ['CHANGELOG.md', 'src/a.mjs', 'tests/a.test.mjs']);
+  assert.equal(byName['diff inside declared files'].ok, true, byName['diff inside declared files'].note);
+  assert.equal(byName['diff inside declared files'].note, '3 file(s), all inside');
+  assert.equal(out.ok, true);
+  assert.match(jarl(hub, 'check', '001', '--branch', 'jarl/001-change-a-in-tool'), /^✓ diff inside declared files — 3 file\(s\), all inside$/m);
+
+  // Dropping the name does not widen the scope: another file of the same repository stays outside.
+  let other;
+  try { jarl(hub, 'check', '002', '--branch', 'jarl/001-change-a-in-tool', '--json'); } catch (e) { other = JSON.parse(e.stdout); }
+  const otherByName = Object.fromEntries(other.items.map((i) => [i.name, i]));
+  assert.equal(otherByName['diff inside declared files'].ok, false);
+  assert.equal(otherByName['diff inside declared files'].note, 'outside tool/src/b.mjs: src/a.mjs');
+});
+
 test('ask kinds are closed; lower needs a target', () => {
   const root = repo();
   jarl(root, 'init', 'goal');

@@ -7,7 +7,7 @@
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, appendFileSync, rmSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { join, resolve, dirname } from 'node:path';
+import { join, resolve, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const STATUSES = ['open', 'in-progress', 'done', 'dropped'];
@@ -37,7 +37,8 @@ commands:
   prio <id> 1|2|3                                set priority
   files <id> p,q,...                             declare the files the issue touches
   repo <id> <path>                               name the repository the issue's code lives in
-  next [--limit n]                               open issues that do not share a file with any in-progress one
+  next [--limit n]                               open issues that do not share a file with any in-progress one;
+                                                 a file is its repository and its path (see --repo below)
   review <id> approve|changes "<findings>"     the reviewer's verdict; "done" needs an approve newer than the last round
   round <id> "<what failed>"                     one red round; after three prints the takeover block for a fresh worker
   check <id> --branch <b> [--base <feature-branch>] [--repo <path>]
@@ -64,8 +65,10 @@ options: --json  --help  --root <repo root>
 
 --repo <path>: the checkout of another repository, for a loop that keeps its issues in one repository
 while its workers change another. Branches, the base (that checkout's current branch), diffs and
-assertions are then read there; the issue's files are declared relative to it. A relative path is
-read from the loop's root (the directory holding .jarl/), so it means the same from any worktree.`;
+assertions are then read there. A relative path is read from the loop's root (the directory holding
+.jarl/), so it means the same from any worktree. An issue that names a repository writes each of its
+files with that repository's directory name first (tool/src/a.mjs for Repo ../tool): next then keeps
+the same path in two repositories apart, and check matches the path after the name.`;
 
 // ---- where -------------------------------------------------------------------------------------
 
@@ -340,15 +343,32 @@ export function cmdEvidence(root, rawId, text, flags) {
   return { id: issue.id };
 }
 
+// A declared file is a repository and a path inside it. An issue that names no repository declares
+// paths in the loop's own, as a single-repository loop always has. An issue that names one writes
+// each file with that repository's directory name first — tool/src/a.mjs for Repo ../tool — so a
+// reader of the Files line sees where each file lives and the same path in two repositories reads
+// as two files; the name is dropped to get the path inside the repository. An entry that does not
+// start with the name is taken as a path inside the repository already, so two spellings of one
+// file still meet in next rather than passing each other.
+export function fileAt(root, issue, declared) {
+  if (!issue.fields.repo) return { repo: root, path: declared };
+  const repo = resolve(root, issue.fields.repo);
+  const name = basename(repo);
+  return { repo, path: name && declared.startsWith(`${name}/`) ? declared.slice(name.length + 1) : declared };
+}
+
 export function cmdNext(root, flags) {
   const issues = loadIssues(root);
-  const busy = new Set(issues.filter((i) => i.status === 'in-progress').flatMap((i) => i.files));
-  const taken = new Set(busy);
+  // Files are compared as (repository, path) pairs: the same path in two repositories never holds
+  // an issue back, the same file in one repository always does, however its Repo path is spelled.
+  const keysOf = (i) => i.files.map((f) => { const at = fileAt(root, i, f); return { f, key: `${at.repo}\n${at.path}` }; });
+  const taken = new Set(issues.filter((i) => i.status === 'in-progress').flatMap((i) => keysOf(i).map((k) => k.key)));
   const out = [];
   for (const i of issues.filter((x) => x.status === 'open').sort((a, b) => a.priority.localeCompare(b.priority) || a.id.localeCompare(b.id))) {
-    const clash = i.files.filter((f) => taken.has(f));
+    const keys = keysOf(i);
+    const clash = keys.filter((k) => taken.has(k.key)).map((k) => k.f);
     if (clash.length) { out.push({ id: i.id, title: i.title, priority: i.priority, waitsOn: clash }); continue; }
-    i.files.forEach((f) => taken.add(f));
+    keys.forEach((k) => taken.add(k.key));
     out.push({ id: i.id, title: i.title, priority: i.priority, files: i.files, ready: true });
   }
   const limit = Number(flags.limit) || Infinity;
@@ -486,7 +506,10 @@ export function cmdCheck(root, rawId, flags) {
     const dd = d.replace(/\/+$/, '');
     return f === dd || f.startsWith(`${dd}/`) || f.endsWith(`/${dd}`);
   };
-  const outside = issue.files.length ? changed.filter((f) => !alwaysInScope(f) && !issue.files.some((d) => pathMatches(f, d))) : [];
+  // The diff's paths are inside the repository read, so a file the issue declares with its
+  // repository's name first is matched by the path after that name.
+  const declared = issue.files.map((d) => fileAt(root, issue, d).path);
+  const outside = issue.files.length ? changed.filter((f) => !alwaysInScope(f) && !declared.some((d) => pathMatches(f, d))) : [];
   const testsBase = (git(repo, ['ls-tree', '-r', '--name-only', mergeBase]) || '').split('\n').filter(isTestFile);
   const testsTip = (git(repo, ['ls-tree', '-r', '--name-only', flags.branch]) || '').split('\n').filter(isTestFile);
   const removedTests = testsBase.filter((f) => !testsTip.includes(f));
