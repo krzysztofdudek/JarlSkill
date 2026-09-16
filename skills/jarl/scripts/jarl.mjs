@@ -289,14 +289,18 @@ export function cmdEvidence(root, rawId, text, flags) {
   need(issue, `no such issue: ${rawId}`);
   if (flags && (flags.ran !== undefined || flags.saw !== undefined)) {
     need(flags.ran && flags.saw, 'a row needs both --ran "<command>" and --saw "<what it printed>"');
-    const row = `- **ran:** ${flags.ran} · **saw:** ${flags.saw}`;
+    const rans = [].concat(flags.ran);
+    const saws = [].concat(flags.saw);
+    need(rans.length === saws.length, `--ran and --saw must repeat the same number of times (got ${rans.length} --ran, ${saws.length} --saw)`);
+    const rows = rans.map((ran, i) => `- **ran:** ${ran} · **saw:** ${saws[i]}`);
     const current = (issue.sections.evidence || '').trim();
-    writeFileSync(issue.file, setSection(readFileSync(issue.file, 'utf8'), 'Evidence', current ? `${current}\n${row}` : row));
-    appendLog(root, `${issue.id} evidence row · ${flags.ran}`);
-    return { id: issue.id, row: { ran: flags.ran, saw: flags.saw } };
+    writeFileSync(issue.file, setSection(readFileSync(issue.file, 'utf8'), 'Evidence', current ? `${current}\n${rows.join('\n')}` : rows.join('\n')));
+    appendLog(root, `${issue.id} evidence row · ${rans.join('; ')}`);
+    return { id: issue.id, rows: rans.map((ran, i) => ({ ran, saw: saws[i] })) };
   }
   need(text, 'evidence requires "<what was run and what it printed>", or --ran "<command>" --saw "<what it printed>"');
-  writeFileSync(issue.file, setSection(readFileSync(issue.file, 'utf8'), 'Evidence', text));
+  const current = (issue.sections.evidence || '').trim();
+  writeFileSync(issue.file, setSection(readFileSync(issue.file, 'utf8'), 'Evidence', current ? `${current}\n\n${text}` : text));
   appendLog(root, `${issue.id} evidence · ${text.split('\n')[0]}`);
   return { id: issue.id };
 }
@@ -582,7 +586,7 @@ function main() {
       case 'tag': out = cmdTag(root, rest[0], rest.slice(1)); text = `${out.id} tags: ${out.tags.join(', ') || '(none)'}`; break;
       case 'prio': out = cmdPrio(root, rest[0], rest[1]); text = `${out.id} priority ${out.priority}`; break;
       case 'files': out = cmdFiles(root, rest[0], rest[1]); text = `${out.id} files: ${out.files.join(', ') || '(none)'}`; break;
-      case 'evidence': out = cmdEvidence(root, rest[0], rest[1], flags); text = out.row ? `${out.id} evidence row recorded` : `${out.id} evidence recorded`; break;
+      case 'evidence': out = cmdEvidence(root, rest[0], rest[1], flags); text = out.rows ? `${out.id} evidence row${out.rows.length > 1 ? 's' : ''} recorded` : `${out.id} evidence recorded`; break;
       case 'next': out = cmdNext(root, flags); text = out.length ? out.map((r) => (r.ready ? `${r.id}  P${r.priority}  ${r.title}` : `${r.id}  P${r.priority}  ${r.title}  (waits on ${r.waitsOn.join(', ')})`)).join('\n') : '(nothing open)'; break;
       case 'review': out = cmdReview(root, rest[0], rest[1], rest[2]); text = `${out.id} review ${out.verdict}`; break;
       case 'round': out = cmdRound(root, rest[0], rest[1]); text = out.takeover ? `${out.id} round ${out.round} — takeover:\n\n${out.block}` : `${out.id} round ${out.round} of ${ROUNDS_BEFORE_TAKEOVER} before a takeover`; break;

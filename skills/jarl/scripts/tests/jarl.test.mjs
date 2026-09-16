@@ -190,6 +190,29 @@ test('evidence accepts free text or structured rows; rows are readable back', ()
   jarl(root, 'set', '001', 'done');
 });
 
+test('free-text evidence appends, it never overwrites earlier evidence', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'thing');
+  jarl(root, 'evidence', '001', 'first note');
+  jarl(root, 'evidence', '001', 'second note');
+  const shown = jarl(root, 'show', '001');
+  assert.match(shown, /first note/);
+  assert.match(shown, /second note/);
+});
+
+test('repeated --ran/--saw in one call produce one row per pair, not a comma-joined mess', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'thing');
+  jarl(root, 'evidence', '001', '--ran', 'cmd one', '--saw', 'result one', '--ran', 'cmd two', '--saw', 'result two');
+  const shown = jarl(root, 'show', '001');
+  assert.match(shown, /\*\*ran:\*\* cmd one · \*\*saw:\*\* result one/);
+  assert.match(shown, /\*\*ran:\*\* cmd two · \*\*saw:\*\* result two/);
+  assert.doesNotMatch(shown, /cmd one,cmd two/);
+  assert.match(refuses(root, 'evidence', '001', '--ran', 'a', '--ran', 'b', '--saw', 'only one'), /must repeat the same number of times/);
+});
+
 test('ask kinds are closed; lower needs a target', () => {
   const root = repo();
   jarl(root, 'init', 'goal');

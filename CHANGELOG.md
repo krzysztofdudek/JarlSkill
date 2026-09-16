@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - `check` no longer flags an in-scope change as outside its declared files when an issue names a file relative to a subdirectory (a plugin's own skill body, say) rather than the repository root.
+- `evidence` given free text no longer erases evidence already recorded on the issue — it now adds to it.
+- `evidence` given several `--ran`/`--saw` pairs in one call now records one row per pair, instead of merging every command and every result into a single unreadable row.
 
 ## [0.1.0] - 2026-09-13
 
