@@ -1,6 +1,6 @@
 ---
 name: jarl
-description: Use when a session works ON a repository (developing, testing, stress-testing or researching it) with more issues than one agent's hands — invoke as /jarl <goal> to open an issue loop on the current feature branch, or resume it at the start of any session where .jarl/ already exists. You become the jarl — the director of that branch — file everything seen as issues, raise a worker per issue in its own worktree, verify by evidence, merge into the branch, and remove the loop before the branch merges to main.
+description: Use when a session works ON a repository (developing, testing, stress-testing or researching it) with more issues than one agent's hands — invoke as /jarl <goal> to open an issue loop, on the current feature branch or as a permanent record, or resume it at the start of any session where .jarl/ already exists. You become the jarl — the director of that loop — file everything seen as issues, raise a worker per issue in its own worktree, verify by evidence, merge into the branch, and close the loop (removing it before a feature branch merges to main; a permanent loop stays as the record).
 ---
 
 # Jarl
@@ -15,15 +15,17 @@ one tool, a loop. When a repository needs rails, that is Horde's job; Jarl is th
 
 ## The one place
 
-Everything lives in `.jarl/` in the main checkout of the **feature branch**, and it never reaches
-`main`. The loop runs in one of two modes, chosen once at `init`:
+Everything lives in `.jarl/` in the main checkout the loop runs in. On a feature branch it never
+reaches `main`; opened as a permanent record it lives on, wherever `--root` names, for good. The
+loop runs in one of three modes, chosen once at `init`:
 
 - **Default — out of git.** `init` writes `.jarl/.gitignore` with two lines, `*` and `**/*`, so git never sees the loop: it stays out of the branch's history, its diffs and its merges. The loop exists only in the main checkout's working tree — it belongs to that checkout, not to the branch, and no other clone or worktree has it. A worker's worktree therefore sees no `.jarl/`, so the worker, the reviewer and the merger always call the tool with `--root <main checkout>`, and nobody ever commits `.jarl/`.
-- **Committed — `init --committed`.** No `.gitignore` is written; the loop is committed with the work on the feature branch, for a repository that keeps its loop as a permanent record in its history. The merger commits `.jarl/` with every merge, and the last commit before the branch merges to `main` removes the whole directory.
+- **Committed — `init --committed`.** No `.gitignore` is written; the loop is committed with the work on the feature branch. The merger commits `.jarl/` with every merge, and the last commit before the branch merges to `main` removes the whole directory.
+- **Permanent — `init --permanent`.** No `.gitignore` either — a record that must survive is always committed — and `init` additionally writes `.jarl/.permanent`, so a later session reads the mode from the loop itself rather than being told. This loop does not live on a feature branch at all: it lives wherever `--root` points, kept as a standing record, for example a repository that keeps one loop per release as that release's record, driving work in other repositories. Everything above — the four files, the issue format, the roles, the tool — is the same; only closing differs, in [Closing the branch](#closing-the-branch) below.
 
-A loop with `.jarl/.gitignore` is in the default mode; one without it is committed. Only `init`
-decides — no other command adds or removes that file, so a loop opened before the modes existed
-stays committed. Four things:
+A loop with `.jarl/.gitignore` is in the default mode; one without it is committed, and one that also
+carries `.jarl/.permanent` is the permanent mode. Only `init` decides — no other command adds or
+removes these files, so a loop opened before a mode existed keeps behaving as it did. Four things:
 
 | Path | What | Who writes |
 |---|---|---|
@@ -43,7 +45,7 @@ node "${CLAUDE_PLUGIN_ROOT:-.claude/skills/jarl}/scripts/jarl.mjs" <command>
 
 | Command | What it does |
 |---|---|
-| `init "<goal>" [--committed]` | creates `.jarl/` with the goal and a `.gitignore` that keeps the loop out of git; `--committed` writes no `.gitignore`, so the loop is committed with the work |
+| `init "<goal>" [--committed] [--permanent]` | creates `.jarl/` with the goal and a `.gitignore` that keeps the loop out of git; `--committed` writes no `.gitignore`, so the loop is committed with the work; `--permanent` also writes no `.gitignore`, adds `.jarl/.permanent`, and opens the loop with no feature branch of its own — see [The one place](#the-one-place) |
 | `new "<title>" [--kind k] [--prio 1\|2\|3] [--tier standard\|strong] [--tags a,b] [--files p,q] [--repo <path>] [--found-by who]` | files an issue under the next free number; `--repo` names the repository its code lives in when that is not the loop's own (see [Code in another repository](#code-in-another-repository)) |
 | `list [--status s] [--kind k] [--tag t] [--prio p] [--grep re] [--all]` | open and in-progress by default, sorted by priority |
 | `show <id>` · `status` | one issue · one line of counts |
@@ -59,7 +61,7 @@ node "${CLAUDE_PLUGIN_ROOT:-.claude/skills/jarl}/scripts/jarl.mjs" <command>
 | `handoff write --summary "<s>" [--next "<n>"]...` · `handoff read` | the state of intent between sessions: what is in flight, what waits on the user, what comes next; the header records the loop's head and the head of every other repository an unfinished issue names |
 | `log "<event>"` · `decide <slug> "<ruling>"` | the journal and the rulings |
 | `report` | done, dropped with reasons, still open, found along the way — the material for the changelog |
-| `close [--force]` | refuses while anything is open or in progress; otherwise removes `.jarl/` |
+| `close [--force]` | refuses while anything is open or in progress; otherwise removes `.jarl/` — in the permanent mode it keeps the directory instead and logs the close |
 
 Every command takes `--json` and `--help`. A subagent does not always inherit `CLAUDE_PLUGIN_ROOT`, so
 a worker's brief carries the absolute path to the tool, and every brief carries the absolute path of the main checkout for `--root`: without it the tool
@@ -278,6 +280,16 @@ Before the feature branch merges to `main`, in this order:
    is nothing to commit — git never saw it.
 
 Merging and pushing are the user's word, never yours.
+
+### Closing a permanent loop
+
+A loop opened with `init --permanent` has no feature branch to close, so this section applies with
+one difference, at step 4: nothing above it changes — every issue still needs to be `done` or
+`dropped` before closing, `report` still feeds the changelog, the repository's own check still needs
+to be green. But `jarl.mjs close` in this mode never removes `.jarl/`: it refuses exactly as above
+while anything is open or in progress, and once clean it appends a closing line to `log.md` and
+leaves the directory in place — the record `--root` named stays where it was, for the next release,
+or the next session, to read.
 
 ## The reeve: handing the loop down
 

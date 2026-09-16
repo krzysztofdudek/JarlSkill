@@ -262,6 +262,34 @@ test('init --committed writes no .gitignore and git sees the loop; an existing l
   assert.equal(existsSync(join(root, '.jarl', '.gitignore')), false, 'no command after init adds the ignore file to a loop that has none');
 });
 
+test('init --permanent commits the loop and marks it as a record; close then keeps the directory but still refuses while open', () => {
+  const root = repo();
+  const opened = JSON.parse(jarl(root, 'init', 'goal', '--permanent', '--json'));
+  assert.equal(opened.committed, true, 'a permanent record is always committed, like --committed');
+  assert.equal(opened.permanent, true);
+  assert.equal(existsSync(join(root, '.jarl', '.gitignore')), false);
+  assert.equal(existsSync(join(root, '.jarl', '.permanent')), true, 'the marker a later session reads to tell the mode');
+  assert.match(refuses(repo(), 'init', '--permanent', 'goal'), /--permanent takes no value/);
+  jarl(root, 'new', 'thing');
+  assert.match(refuses(root, 'close'), /still open/, 'the open-issue refusal is unchanged in the permanent mode');
+  jarl(root, 'set', '001', 'dropped', 'out of scope');
+  jarl(root, 'close');
+  assert.equal(existsSync(join(root, '.jarl')), true, 'a permanent loop keeps its directory once clean');
+  assert.equal(existsSync(join(root, '.jarl', 'issues', '001-thing.md')), true);
+  assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /closed · kept as a permanent record/);
+});
+
+test('a branch loop, default or --committed, still removes the directory on close', () => {
+  for (const args of [[], ['--committed']]) {
+    const root = repo();
+    jarl(root, 'init', 'goal', ...args);
+    jarl(root, 'new', 'thing');
+    jarl(root, 'set', '001', 'dropped', 'out of scope');
+    jarl(root, 'close');
+    assert.equal(existsSync(join(root, '.jarl')), false);
+  }
+});
+
 // A loop that keeps its issues in one repository while its workers change another: two real
 // repositories side by side, the loop in "hub" on main, the code and the worker branch in "tool" on feature.
 test('check, branches and handoff read the repository an issue names, not the loop\'s own, in both loop modes', () => {
