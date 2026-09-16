@@ -279,6 +279,36 @@ test('init --permanent commits the loop and marks it as a record; close then kee
   assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /closed · kept as a permanent record/);
 });
 
+test('mode permanent turns an existing committed loop into a permanent record; a committed loop becomes permanent and close then keeps it', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal', '--committed');
+  assert.equal(existsSync(join(root, '.jarl', '.permanent')), false, 'committed, not yet permanent');
+  const out = JSON.parse(jarl(root, 'mode', 'permanent', '--json'));
+  assert.equal(out.permanent, true);
+  assert.equal(existsSync(join(root, '.jarl', '.permanent')), true);
+  assert.equal(existsSync(join(root, '.jarl', '.gitignore')), false, 'still committed, as it always was');
+  assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /mode → permanent/);
+  jarl(root, 'new', 'thing');
+  jarl(root, 'set', '001', 'dropped', 'out of scope');
+  jarl(root, 'close');
+  assert.equal(existsSync(join(root, '.jarl')), true, 'a loop switched to permanent keeps its directory on close, like one opened with init --permanent');
+  assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /closed · kept as a permanent record/);
+});
+
+test('mode permanent refuses a default-mode loop (out of git) and explains why', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  assert.equal(existsSync(join(root, '.jarl', '.gitignore')), true);
+  assert.match(refuses(root, 'mode', 'permanent'), /out of git.*must be committed/s);
+  assert.equal(existsSync(join(root, '.jarl', '.permanent')), false, 'refused, nothing written');
+});
+
+test('mode permanent on an already permanent loop refuses clearly instead of silently repeating', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal', '--permanent');
+  assert.match(refuses(root, 'mode', 'permanent'), /already a permanent record/);
+});
+
 test('a branch loop, default or --committed, still removes the directory on close', () => {
   for (const args of [[], ['--committed']]) {
     const root = repo();
