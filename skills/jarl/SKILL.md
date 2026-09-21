@@ -167,6 +167,8 @@ A loop can keep its issues in one repository while its workers change another: a
 ```
 You are worker <name> on issue NNN of branch <feature-branch>, in worktree <path>, on branch jarl/NNN-slug.
 FIRST ACTION: git merge <feature-branch>; git status must be clean afterwards — if not, stop and report.
+If your worktree was made for you by the platform and starts on a branch it named, RENAME that branch
+(`git branch -m jarl/NNN-slug`); never create a second branch beside it, which leaves the first one behind.
 Your scope is the issue below and nothing else. Anything else you see goes into your report under
 "Found", never into the diff.
 The loop's tool is <absolute path to jarl.mjs>; call it only with `--root <main checkout>` — your
@@ -254,7 +256,10 @@ For each branch the jarl names (or that `jarl.mjs branches` shows with commits b
    `--hard`, which would also discard what others wrote meanwhile — then
    `jarl.mjs round <id> "<what failed>"`, report.
 4. Green: `jarl.mjs evidence <id> "<check summary line, merge sha>"`, `jarl.mjs set <id> done`,
-   remove the worktree and the branch, `jarl.mjs log "merged <id> <sha>"`, then, in the committed
+   remove the worktree and the branch — `jarl/NNN-slug` AND, when the worker began on a branch of another
+   name and made `jarl/NNN-slug` beside it instead of renaming it, that original branch too (read it off
+   `git worktree list` before removing the worktree, and off `jarl.mjs branches`; a branch left behind is a
+   dead branch someone cleans up by hand) — `jarl.mjs log "merged <id> <sha>"`, then, in the committed
    mode only, commit `.jarl/` (everything in it, including what the reeve wrote meanwhile) on the
    feature branch — you are its only committer; in the default mode `.jarl/` is never committed.
    Before moving to the next branch, `jarl.mjs show <id>` and confirm it reads
