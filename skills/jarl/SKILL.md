@@ -55,7 +55,7 @@ node "${CLAUDE_PLUGIN_ROOT:-.claude/skills/jarl}/scripts/jarl.mjs" <command>
 | `new "<title>" [--kind k] [--prio 1\|2\|3] [--tier standard\|strong] [--tags a,b] [--files p,q] [--repo <path>] [--found-by who]` | files an issue under the next free number; `--repo` names the repository its code lives in when that is not the loop's own (see [Code in another repository](#code-in-another-repository)) |
 | `list [--status s] [--kind k] [--tag t] [--prio p] [--grep re] [--all]` | open and in-progress by default, sorted by priority |
 | `show <id>` · `status` | one issue · one line of counts |
-| `set <id> <status> "<why>"` | changes status and writes the log line in one move; `done` needs evidence on file, `dropped` needs a reason |
+| `set <id> <status> "<why>"` | changes status and writes the log line in one move; `done` needs evidence on file, `dropped` and `deferred` need a reason (`deferred` is work that waits, not work that is gone: the default `list` hides it, `list --status deferred` shows it, `status` and `report` count it apart, and `close` says what it leaves waiting) |
 | `tag <id> +a -b` · `prio <id> 1\|2\|3` · `files <id> p,q` · `repo <id> <path>` | header fields |
 | `evidence <id> "<text>"` \| `evidence <id> --ran "<command>" --saw "<what it printed>"` | appends a free-text note, or one checkable row per `--ran`/`--saw` pair (repeat the pair for more rows, in one call or several) — `--ran`/`--saw` when the proof is a command, free text when it is not; nothing already recorded is ever replaced |
 | `next [--limit n]` | open issues that share no file with any in-progress one — what can run in parallel now; a file is its repository and its path, so the same path in two repositories never holds an issue back |
@@ -66,7 +66,7 @@ node "${CLAUDE_PLUGIN_ROOT:-.claude/skills/jarl}/scripts/jarl.mjs" <command>
 | `ask "<question>" --kind stop\|stuck\|lower\|charter [--target x] [--issue NNN]` · `answer <id> "<answer>"` | questions only the user can answer, in a closed set of kinds — `stop` halts everything, `stuck` blocks one issue, `lower` weakens something protected (`--target` names it), `charter` questions the goal; open ones show in `status`; an answer becomes a ruling |
 | `handoff write --summary "<s>" [--next "<n>"]...` · `handoff read` | the state of intent between sessions: what is in flight, what waits on the user, what comes next; the header records the loop's head and the head of every other repository an unfinished issue names |
 | `log "<event>"` · `decide <slug> "<ruling>"` | the journal and the rulings |
-| `report` | done, dropped with reasons, still open, found along the way — the material for the changelog |
+| `report` | done, dropped and deferred with reasons, still open, found along the way — the material for the changelog |
 | `mode permanent` | turns an existing, committed loop into the permanent mode, with a log line — for a loop opened before the mode existed, or opened `--committed`; refuses a default-mode loop (out of git — a permanent record must be committed) and an already-permanent loop |
 | `close [--force]` | refuses while anything is open or in progress; otherwise removes `.jarl/` — in the permanent mode it keeps the directory instead and logs the close |
 
@@ -79,7 +79,7 @@ looks for `.jarl/` in whatever checkout it is run from, and a worktree has none 
 ```
 # NNN · title
 
-**Status:** open | in-progress | done | dropped
+**Status:** open | in-progress | done | dropped | deferred
 **Kind:** bug | gap | cleanup | docs | test | research | process
 **Priority:** 1 | 2 | 3
 **Tier:** standard | strong — the tier of model the worker is raised on, explicit in the file, never implied; the platform running the loop maps a tier to one of its own models
@@ -102,7 +102,7 @@ Checkable. A test name, a command and its expected output, a sentence that is tr
 Filled at done: the command that was run and what it printed, the test that is green, the commit.
 ```
 
-`dropped` always carries a reason under **Evidence**. A `research` issue produces a written result
+`dropped` and `deferred` always carry a reason under **Evidence**, after whatever was already written there. A `research` issue produces a written result
 and files new issues; it never edits code.
 
 ## The loop
@@ -286,7 +286,7 @@ with `answer` — it becomes a ruling in `decisions.md`.
 
 Before the feature branch merges to `main`, in this order:
 
-1. Every issue is `done` with evidence, or `dropped` with a reason, or listed to the user as still open.
+1. Every issue is `done` with evidence, or `dropped` or `deferred` with a reason, or listed to the user as still open.
 2. `report` is the material: the repository's changelog carries every user-visible change from it, in the
    register the repository asks for.
 3. The repository's own check is green on the branch tip.
