@@ -158,6 +158,48 @@ test('a repository is named by its root, not a subdirectory of it, and the Repo 
   assert.match(refuses(hub, 'repo', '001', '--clear'), /no Repo field/);
 });
 
+// Files are compared as (repository, path) pairs; three ways the pair used to be read wrongly, each silently.
+test('the repository name in Files: --repo strips it like the field does, an inner directory of the same name is not stripped, and a repository is one repository however its path is spelled', () => {
+  const parent = mkdtempSync(join(tmpdir(), 'jarl-name-'));
+  const hub = join(parent, 'hub'); const tool = join(parent, 'tool'); const app = join(parent, 'app');
+  mkdirSync(hub); mkdirSync(join(tool, 'src'), { recursive: true }); mkdirSync(join(app, 'app'), { recursive: true });
+  const sh = (cwd, script) => execFileSync('bash', ['-c', script], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  const setup = (b) => `git init -q -b ${b} && git config user.email t@t && git config user.name t`;
+  sh(hub, `${setup('main')} && echo notes > notes.md && git add -A && git commit -qm base`);
+  sh(tool, `${setup('feature')} && echo x > src/a.mjs && git add -A && git commit -qm base`);
+  sh(app, `${setup('feature')} && echo x > app/x.mjs && git add -A && git commit -qm base`);
+  sh(tool, `git worktree add -q -b jarl/001-a ${parent}/wt-001 && cd ${parent}/wt-001 && echo y > src/a.mjs && git commit -qam change`);
+  jarl(hub, 'init', 'goal');
+
+  // 1. `check --repo` on an issue with no Repo field strips the name as the field would: tool/src/a.mjs is src/a.mjs.
+  jarl(hub, 'new', 'change a', '--files', 'tool/src/a.mjs');
+  const byRepoFlag = JSON.parse(jarl(hub, 'check', '001', '--branch', 'jarl/001-a', '--repo', '../tool', '--json'));
+  const scope = byRepoFlag.items.find((i) => i.name === 'diff inside declared files');
+  assert.equal(scope.ok, true, scope.note);
+
+  // 2. In a repository that has a directory of its own name, the prefix is required: `app/app/x.mjs` is app/x.mjs
+  // inside the repository app, and `app/x.mjs` already IS that path, so the two meet in next instead of passing.
+  jarl(hub, 'new', 'first on app/x', '--files', 'app/app/x.mjs', '--repo', '../app');
+  jarl(hub, 'new', 'second on app/x', '--files', 'app/x.mjs', '--repo', '../app');
+  jarl(hub, 'set', '002', 'in-progress', 'worker raised');
+  const next = JSON.parse(jarl(hub, 'next', '--json'));
+  assert.deepEqual(next.find((r) => r.id === '003').waitsOn, ['app/x.mjs'], 'the same file in one repository always holds an issue back');
+
+  // 3. One repository however its path is spelled: through a symlink, and (where the file system ignores case) in
+  // another case.
+  const spellings = ['../link'];
+  execFileSync('ln', ['-s', tool, join(parent, 'link')]);
+  if (existsSync(join(parent, 'TOOL'))) spellings.push('../TOOL');
+  jarl(hub, 'new', 'holds src/a.mjs', '--files', 'tool/src/b.mjs', '--repo', '../tool');
+  jarl(hub, 'set', '004', 'in-progress', 'worker raised');
+  spellings.forEach((spelling, k) => {
+    const id = String(5 + k).padStart(3, '0');
+    jarl(hub, 'new', `spelled ${spelling}`, '--files', `${spelling.replace('../', '')}/src/b.mjs`, '--repo', spelling);
+    const row = JSON.parse(jarl(hub, 'next', '--json')).find((r) => r.id === id);
+    assert.ok(row && row.waitsOn, `${spelling}: the same repository, so the same file, so it waits`);
+  });
+});
+
 test('status moves only with a log line; done needs evidence; dropped needs a reason', () => {
   const root = repo();
   jarl(root, 'init', 'goal');

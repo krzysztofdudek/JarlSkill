@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The file-relay fallback now also covers resuming a worker or a merger for a second round, not only the first spawn.
 
 ### Fixed
+- In a loop that spans repositories, three cases of the repository name in **Files:** were read wrongly and silently. `check --repo` on an issue with no **Repo:** field now strips the name as the field does; in a repository that has a directory of its own name, `app/x.mjs` is no longer shortened to `x.mjs` (the prefix is required there, `app/app/x.mjs`), so `next` no longer misses a collision; and a repository spelled through a symlink or in another case is one repository, not two.
 - A repository named for an issue (`--repo`, or the **Repo:** field) must now be the repository's root: a subdirectory of it is refused with the root to give instead. Before, its paths were read from the wrong place, so `check` could miss a removed test. The worker's brief also says that with a **Repo:** field the feature branch and worktree are in that repository.
 - The merger now removes the branch a worker began on as well as `jarl/NNN-slug` when the two differ, and the worker's brief tells it to rename the platform's branch (`git branch -m`) instead of creating a second one. Before, a worker in a platform-made worktree left its original branch behind after every merge.
 - Dropping an issue no longer wipes what was already written under its Evidence. The reason is added as one more line, and `report` still prints only the reason for a dropped issue.

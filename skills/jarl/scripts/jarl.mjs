@@ -5,7 +5,7 @@
 // .jarl/issues/NNN-slug.md per issue. This script only reads and writes those files, so anything
 // it does can be checked by opening them. Zero dependencies, Node 18+.
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, appendFileSync, rmSync, realpathSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, appendFileSync, rmSync, realpathSync, statSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join, resolve, dirname, basename, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -398,11 +398,32 @@ export function cmdEvidence(root, rawId, text, flags) {
 // as two files; the name is dropped to get the path inside the repository. An entry that does not
 // start with the name is taken as a path inside the repository already, so two spellings of one
 // file still meet in next rather than passing each other.
+//
+// One case is ambiguous and is decided by a rule, not by a guess: a repository that has a directory of
+// its own name inside it (repository `app` with `app/x.mjs`). There `app/x.mjs` already IS the path
+// inside the repository, so the prefix is required — `app/app/x.mjs` is the same file written with it —
+// and an entry starting with `app/` but not `app/app/` is never stripped.
+//
+// A repository is one repository however its path is spelled: the pair's repository is its canonical
+// path (symlinks resolved, and the case the file system holds where it ignores case).
+export function canonical(path) {
+  try { return realpathSync.native(path); } catch { return resolve(path); }
+}
+
 export function fileAt(root, issue, declared) {
   if (!issue.fields.repo) return { repo: root, path: declared };
-  const repo = resolve(root, issue.fields.repo);
-  const name = basename(repo);
-  return { repo, path: name && declared.startsWith(`${name}/`) ? declared.slice(name.length + 1) : declared };
+  const spelled = resolve(root, issue.fields.repo);
+  const repo = canonical(spelled);
+  // The name written in front of a path is the repository's own directory name, or the name its Repo path
+  // spells (a symlink or another case of it): either reads as the same prefix.
+  const names = [...new Set([basename(repo), basename(spelled)].filter(Boolean))];
+  for (const name of names) {
+    let inner = false;
+    try { inner = statSync(join(repo, name)).isDirectory(); } catch { inner = false; }
+    if (inner) { if (declared.startsWith(`${name}/${name}/`)) return { repo, path: declared.slice(name.length + 1) }; continue; }
+    if (declared.startsWith(`${name}/`)) return { repo, path: declared.slice(name.length + 1) };
+  }
+  return { repo, path: declared };
 }
 
 export function cmdNext(root, flags) {
@@ -520,7 +541,7 @@ export function repoOf(root, named) {
   // A subdirectory of a repository is not the repository: the paths git reports are relative to its root, so a
   // declared file or a removed test would be read from the wrong place and go unseen.
   const top = git(repo, ['rev-parse', '--show-toplevel']);
-  need(top !== null && realpathSync(top) === realpathSync(repo), `${repo} is inside the repository at ${top}, not its root — name the root: ${relative(realpathSync(root), top ? realpathSync(top) : realpathSync(repo)) || '.'}`);
+  need(top !== null && canonical(top) === canonical(repo), `${repo} is inside the repository at ${top}, not its root — name the root: ${relative(canonical(root), canonical(top || repo)) || '.'}`);
   return repo;
 }
 
@@ -585,7 +606,9 @@ export function cmdCheck(root, rawId, flags) {
   };
   // The diff's paths are inside the repository read, so a file the issue declares with its
   // repository's name first is matched by the path after that name.
-  const declared = issue.files.map((d) => fileAt(root, issue, d).path);
+  // `--repo` on the command reads the paths as the issue's own Repo field would.
+  const named = flags.repo !== undefined ? { ...issue, fields: { ...issue.fields, repo: flags.repo } } : issue;
+  const declared = issue.files.map((d) => fileAt(root, named, d).path);
   const outside = issue.files.length ? changed.filter((f) => !alwaysInScope(f) && !declared.some((d) => pathMatches(f, d))) : [];
   const testsBase = (git(repo, ['ls-tree', '-r', '--name-only', mergeBase]) || '').split('\n').filter(isTestFile);
   const testsTip = (git(repo, ['ls-tree', '-r', '--name-only', flags.branch]) || '').split('\n').filter(isTestFile);
@@ -615,14 +638,14 @@ export function cmdBranches(root, flags) {
 }
 
 function loopRepos(root) {
-  const seen = new Map([[realpathSync(root), root]]);
+  const seen = new Map([[canonical(root), root]]);
   for (const issue of loadIssues(root)) {
     if (issue.status !== 'open' && issue.status !== 'in-progress') continue;
     const named = issue.fields.repo;
     if (!named) continue;
     let repo;
     try { repo = repoOf(root, named); } catch { continue; }   // a Repo path that no longer resolves is not the boot's to refuse
-    const real = realpathSync(repo);
+    const real = canonical(repo);
     if (!seen.has(real)) seen.set(real, repo);
   }
   return [...seen.values()];
