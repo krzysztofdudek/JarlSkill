@@ -45,6 +45,24 @@ test('slugify keeps the letters NFKD does not decompose: ł, ø, ß and the like
   assert.equal(slugify('ł'), 'l');
 });
 
+test('dropping an issue keeps the evidence already written, and the report prints only the reason', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'thing that goes away');
+  jarl(root, 'evidence', '001', 'tried a fix, saw it hang');
+  jarl(root, 'set', '001', 'dropped', 'the client said not now');
+  const shown = jarl(root, 'show', '001');
+  assert.match(shown, /tried a fix, saw it hang/, 'the evidence written before the drop is still there');
+  assert.match(shown, /Dropped: the client said not now/);
+  const report = jarl(root, 'report');
+  assert.match(report, /## Dropped \(1\)\n- 001 thing that goes away — the client said not now/);
+  assert.doesNotMatch(report, /tried a fix/, 'the report carries the reason, not the notes');
+  // An issue with no evidence yet reads the same as before.
+  jarl(root, 'new', 'never started');
+  jarl(root, 'set', '002', 'dropped', 'duplicate of 001');
+  assert.match(jarl(root, 'report'), /- 002 never started — duplicate of 001/);
+});
+
 test('status moves only with a log line; done needs evidence; dropped needs a reason', () => {
   const root = repo();
   jarl(root, 'init', 'goal');

@@ -277,7 +277,11 @@ export function cmdSet(root, rawId, status, why) {
   need(status !== 'done' || reviewState(root, issue.id).approved, `${issue.id} has no approving review newer than its last round — a fresh reviewer reads the issue and the diff first: jarl.mjs review ${issue.id} approve|changes "<findings>"`);
   let text = readFileSync(issue.file, 'utf8');
   text = setField(text, 'Status', status);
-  if (status === 'dropped') text = setSection(text, 'Evidence', `Dropped: ${why}`);
+  // What was already written under Evidence stays: a drop is one more line in the history, not a reset of it.
+  if (status === 'dropped') {
+    const written = (issue.sections.evidence || '').trim();
+    text = setSection(text, 'Evidence', written ? `${written}\n\nDropped: ${why}` : `Dropped: ${why}`);
+  }
   writeFileSync(issue.file, text);
   appendLog(root, `${issue.id} → ${status}${why ? ` · ${why}` : ''}`);
   return { id: issue.id, status };
@@ -655,6 +659,14 @@ export function cmdHandoffRead(root) {
   return existsSync(handoffPath(root)) ? readFileSync(handoffPath(root), 'utf8') : 'fresh start — no handoff recorded';
 }
 
+// The reason an issue was dropped: the last "Dropped: ..." line of its Evidence, whatever notes were
+// written before it. Evidence with no such line (an older file) is read whole.
+function droppedReason(evidence) {
+  const text = (evidence || '').trim();
+  const last = [...text.matchAll(/^Dropped:\s*(.*)$/gm)].pop();
+  return last ? last[1].trim() : text;
+}
+
 export function cmdReport(root) {
   const issues = loadIssues(root);
   const done = issues.filter((i) => i.status === 'done');
@@ -663,7 +675,7 @@ export function cmdReport(root) {
   const found = issues.filter((i) => i.fields['found by'] && !/^jarl\b/i.test(i.fields['found by']));
   const goal = existsSync(join(jarlDir(root), 'goal.md')) ? readFileSync(join(jarlDir(root), 'goal.md'), 'utf8').split('\n').slice(2).find((l) => l.trim()) || '' : '';
   const lines = [`# Report`, '', goal, '', `## Done (${done.length})`, ...done.map((i) => `- ${i.id} ${i.title} (${i.kind})`),
-    '', `## Dropped (${dropped.length})`, ...dropped.map((i) => `- ${i.id} ${i.title} — ${(i.sections.evidence || '').trim().replace(/^Dropped:\s*/, '')}`),
+    '', `## Dropped (${dropped.length})`, ...dropped.map((i) => `- ${i.id} ${i.title} — ${droppedReason(i.sections.evidence)}`),
     '', `## Still open (${left.length})`, ...left.map((i) => `- ${i.id} ${i.title} (${i.status})`),
     '', `## Found along the way (${found.length})`, ...found.map((i) => `- ${i.id} ${i.title} — ${i.fields['found by']}`)];
   return { done: done.length, dropped: dropped.length, left: left.length, found: found.length, text: lines.join('\n') + '\n' };
