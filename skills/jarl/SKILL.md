@@ -168,6 +168,7 @@ A loop can keep its issues in one repository while its workers change another: a
 
 ```
 You are worker <name> on issue NNN of branch <feature-branch>, in worktree <path>, on branch jarl/NNN-slug.
+(When the issue carries a **Repo:** field, <feature-branch>, <path> and the branch are all in THAT repository, not in the loop's own: run git and the repository's check there.)
 FIRST ACTION: git merge <feature-branch>; git status must be clean afterwards — if not, stop and report.
 If your worktree was made for you by the platform and starts on a branch it named, RENAME that branch
 (`git branch -m jarl/NNN-slug`); never create a second branch beside it, which leaves the first one behind.
