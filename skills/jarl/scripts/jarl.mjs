@@ -97,8 +97,13 @@ function stamp() { return new Date().toISOString().replace('T', ' ').slice(0, 16
 
 // ---- issues ------------------------------------------------------------------------------------
 
+// Letters Unicode does not decompose into a base letter and an accent (ł, ø, đ, ß, æ, þ...) would be
+// dropped as punctuation and leave a hole in the name ("gałęzi" -> "ga-ezi"), so they are spelled out first.
+const UNDECOMPOSED = {
+  'ł': 'l', 'ø': 'o', 'đ': 'd', 'ð': 'd', 'ħ': 'h', 'ı': 'i', 'ŧ': 't', 'ß': 'ss', 'æ': 'ae', 'œ': 'oe', 'þ': 'th',
+};
 export function slugify(title) {
-  return title.toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '')
+  return title.toLowerCase().replace(/[łøđðħıŧßæœþ]/g, (c) => UNDECOMPOSED[c]).normalize('NFKD').replace(/[̀-ͯ]/g, '')
     .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'issue';
 }
 

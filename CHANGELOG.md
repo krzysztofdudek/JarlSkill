@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The file-relay fallback now also covers resuming a worker or a merger for a second round, not only the first spawn.
 
 ### Fixed
+- An issue title with a letter Unicode does not decompose, such as the Polish `ł`, now gives a readable file name: `gałęzi` becomes `galezi`, not `ga-ezi`. The same goes for `ø`, `ß`, `đ`, `æ` and a few others. Existing files are not renamed.
 - `check` no longer flags an in-scope change as outside its declared files when an issue names a file relative to a subdirectory (a plugin's own skill body, say) rather than the repository root.
 - Free-text evidence is now added after what the issue already holds. Before, it replaced the whole evidence section, so the merger's note after a merge erased the proof the worker had recorded.
 - Several `--ran`/`--saw` pairs in one `evidence` call now become one row each, instead of one unreadable row with every command and every result joined by commas. A `--ran` or `--saw` given without a value is refused instead of written down.
