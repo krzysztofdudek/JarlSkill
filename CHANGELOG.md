@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The file-relay fallback now also covers resuming a worker or a merger for a second round, not only the first spawn.
 
 ### Fixed
+- The merger now removes the branch a worker began on as well as `jarl/NNN-slug` when the two differ, and the worker's brief tells it to rename the platform's branch (`git branch -m`) instead of creating a second one. Before, a worker in a platform-made worktree left its original branch behind after every merge.
 - Dropping an issue no longer wipes what was already written under its Evidence. The reason is added as one more line, and `report` still prints only the reason for a dropped issue.
 - An issue title with a letter Unicode does not decompose, such as the Polish `ł`, now gives a readable file name: `gałęzi` becomes `galezi`, not `ga-ezi`. The same goes for `ø`, `ß`, `đ`, `æ` and a few others. Existing files are not renamed.
 - `check` no longer flags an in-scope change as outside its declared files when an issue names a file relative to a subdirectory (a plugin's own skill body, say) rather than the repository root.
