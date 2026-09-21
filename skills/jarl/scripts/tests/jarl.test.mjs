@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
@@ -92,6 +92,46 @@ test('deferred is its own status: it needs a reason, stays out of the default li
   jarl(root, 'set', '002', 'dropped', 'no longer needed');
   const closed = JSON.parse(jarl(root, 'close', '--json'));
   assert.deepEqual(closed.deferred, ['001']);
+});
+
+// In the default mode the loop lives in the main checkout and a worktree cannot see it. The tool used to need
+// `--root <main checkout>` from every worktree; now a run in a worktree of a repository whose main checkout
+// holds a loop finds that loop by itself, and an explicit --root still wins.
+function gitRepoWithWorktree() {
+  const main = mkdtempSync(join(tmpdir(), 'jarl-main-'));
+  const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' };
+  const git = (cwd, ...args) => execFileSync('git', args, { cwd, env, encoding: 'utf8' }).trim();
+  git(main, 'init', '-q', '-b', 'feature');
+  writeFileSync(join(main, 'a.txt'), 'a\n');
+  git(main, 'add', '-A');
+  git(main, 'commit', '-q', '-m', 'init');
+  const wt = join(mkdtempSync(join(tmpdir(), 'jarl-wt-')), 'worker');
+  git(main, 'worktree', 'add', '-q', '-b', 'jarl/001-thing', wt);
+  return { main, wt, git };
+}
+const jarlIn = (cwd, ...args) => execFileSync(process.execPath, [SCRIPT, ...args], { cwd, encoding: 'utf8' }).trim();
+
+test('a run in a worktree finds the loop in the main checkout by itself, and an explicit --root still wins', () => {
+  const { main, wt, git } = gitRepoWithWorktree();
+  jarl(main, 'init', 'goal');
+  jarl(main, 'new', 'thing to fix');
+  // No --root: the worktree has no .jarl/ of its own, the main checkout does.
+  assert.match(jarlIn(wt, 'list'), /thing to fix/);
+  assert.equal(JSON.parse(jarlIn(wt, 'show', '001', '--json')).title, 'thing to fix');
+  jarlIn(wt, 'evidence', '001', 'ran it in the worktree');
+  assert.match(jarl(main, 'show', '001'), /ran it in the worktree/, 'the write landed in the main checkout\'s loop');
+  // check and branches read the repository from there too.
+  git(wt, 'commit', '-q', '--allow-empty', '-m', 'worker change');
+  assert.match(jarlIn(wt, 'branches'), /jarl\/001-thing/);
+  const checked = JSON.parse(jarlIn(wt, 'check', '001', '--branch', 'jarl/001-thing', '--json'));
+  assert.match(checked.items.find((i) => i.name === 'commits beyond base').note, /1 commit\(s\) on jarl\/001-thing beyond/);
+  // Explicit --root wins, even one that has no loop.
+  const elsewhere = repo();
+  assert.match(String(refuses(elsewhere, 'new', 'x')), /no \.jarl\//);
+  assert.match(execFileSync(process.execPath, [SCRIPT, 'list', '--root', main], { cwd: wt, encoding: 'utf8' }), /thing to fix/);
+  // A worktree of a repository whose main checkout has no loop still says so plainly.
+  const bare = gitRepoWithWorktree();
+  assert.throws(() => execFileSync(process.execPath, [SCRIPT, 'new', 'x'], { cwd: bare.wt, encoding: 'utf8', stdio: 'pipe' }), (e) => /no \.jarl\//.test(String(e.stderr)));
 });
 
 test('status moves only with a log line; done needs evidence; dropped needs a reason', () => {

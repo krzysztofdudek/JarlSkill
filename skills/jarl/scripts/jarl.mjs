@@ -80,14 +80,28 @@ the same path in two repositories apart, and check matches the path after the na
 
 // ---- where -------------------------------------------------------------------------------------
 
+// The checkout a run belongs to: the nearest directory with a `.git`. In the default mode the loop is out of
+// git and lives only in the main checkout, which a worktree cannot see; so when that directory is a worktree
+// (its `.git` is a file) that holds no loop of its own, and the repository's main checkout does, the main
+// checkout is the root. An explicit --root never comes through here.
 export function findRoot(from = process.cwd()) {
   let dir = resolve(from);
   for (;;) {
-    if (existsSync(join(dir, '.git'))) return dir;
+    if (existsSync(join(dir, '.git'))) return mainCheckoutWithLoop(dir) || dir;
     const up = dirname(dir);
     if (up === dir) return resolve(from);
     dir = up;
   }
+}
+function mainCheckoutWithLoop(dir) {
+  if (existsSync(jarlDir(dir))) return null;
+  let common;
+  try {
+    common = execFileSync('git', ['rev-parse', '--git-common-dir'], { cwd: dir, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+  } catch { return null; }
+  const commonDir = resolve(dir, common);
+  const main = basename(commonDir) === '.git' ? dirname(commonDir) : null;
+  return main && main !== dir && existsSync(jarlDir(main)) ? main : null;
 }
 export function jarlDir(root) { return join(root, '.jarl'); }
 export function issuesDir(root) { return join(jarlDir(root), 'issues'); }
