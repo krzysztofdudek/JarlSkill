@@ -36,6 +36,15 @@ test('init, new, list, show', () => {
   assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /filed 001/);
 });
 
+test('slugify keeps the letters NFKD does not decompose: ł, ø, ß and the like become their plain-Latin spelling, not a hole', async () => {
+  const { slugify } = await import(new URL('../jarl.mjs', import.meta.url).href);
+  assert.equal(slugify('gałęzi całą dosłownie'), 'galezi-cala-doslownie');
+  assert.equal(slugify('Øresund straße'), 'oresund-strasse');
+  assert.equal(slugify('Ærø đường þing'), 'aero-duong-thing');
+  assert.equal(slugify('plain ASCII stays'), 'plain-ascii-stays');
+  assert.equal(slugify('ł'), 'l');
+});
+
 test('status moves only with a log line; done needs evidence; dropped needs a reason', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
