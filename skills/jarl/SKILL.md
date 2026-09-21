@@ -237,7 +237,10 @@ repository's main checkout — run git and the check there, list its branches wi
 `jarl.mjs branches --repo <path>`; `jarl.mjs check` reads there on its own; `.jarl/`, `--root` and,
 in the committed mode, the commit of `.jarl/` stay in <repo root>.
 You work in the main checkout, serially, one branch at a time. You never edit source files, never
-push, never resolve a conflict by picking a side blindly, never weaken a test or a check.
+push a worker's branch, never push anything the loop's rules do not allow (see "Standing permission
+to push" in the jarl's own instructions: when `goal.md` or a ruling gives it, the merger's brief says
+so and names the feature branch), never resolve a conflict by picking a side blindly, never weaken a
+test or a check.
 For each branch the jarl names (or that `jarl.mjs branches` shows with commits beyond the base):
 1. `jarl.mjs check <id> --branch <b>`; read the diff (`git diff <feature-branch>...<b>`); a worker
    worktree with an uncommitted but complete diff is committed on its branch first, with a log line
@@ -300,6 +303,16 @@ Before the feature branch merges to `main`, in this order:
    is nothing to commit — git never saw it.
 
 Merging and pushing are the user's word, never yours.
+
+### Standing permission to push the feature branch
+
+Some loops have that word already, for good: the user has said the loop commits and pushes the
+feature branch as it goes (a release loop that keeps `release/<version>` on the remote, say). That
+permission is a rule of the loop, so it is written where the loop's rules live: a line in `goal.md`'s
+rules, or a ruling in `decisions.md` quoting the user's words, naming the branch it covers. With it
+on file, the merger's brief says so: after a green merge into the feature branch, push that branch.
+A worker's branch `jarl/NNN-slug` is never pushed, with or without it, and nothing beyond the
+feature branch is covered by it. Without such a line, a push is still the user's word each time.
 
 ### Closing a permanent loop
 
