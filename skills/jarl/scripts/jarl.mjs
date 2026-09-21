@@ -5,7 +5,7 @@
 // .jarl/issues/NNN-slug.md per issue. This script only reads and writes those files, so anything
 // it does can be checked by opening them. Zero dependencies, Node 18+.
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, appendFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, appendFileSync, rmSync, realpathSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join, resolve, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -596,8 +596,29 @@ export function cmdCheck(root, rawId, flags) {
 // worker that never renamed its branch still did the work, and a listing that hides it would
 // hide a report. Such a branch is marked unnamed so the merger renames it before merging.
 // With --repo, all of it is read in that repository, for a loop whose workers change another one.
+// Worker branches in one repository, or — with no --repo — in the loop's own repository and in every repository
+// an open or in-progress issue names, each row carrying the repository's name. The boot reads this to see a worker
+// branch with commits as a report, and in a loop whose issues point at other repositories that is where they are.
 export function cmdBranches(root, flags) {
-  const repo = repoOf(root, flags.repo);
+  const repos = flags.repo !== undefined ? [repoOf(root, flags.repo)] : loopRepos(root);
+  return repos.flatMap((repo) => branchesIn(root, repo, flags));
+}
+
+function loopRepos(root) {
+  const seen = new Map([[realpathSync(root), root]]);
+  for (const issue of loadIssues(root)) {
+    if (issue.status !== 'open' && issue.status !== 'in-progress') continue;
+    const named = issue.fields.repo;
+    if (!named) continue;
+    let repo;
+    try { repo = repoOf(root, named); } catch { continue; }   // a Repo path that no longer resolves is not the boot's to refuse
+    const real = realpathSync(repo);
+    if (!seen.has(real)) seen.set(real, repo);
+  }
+  return [...seen.values()];
+}
+
+function branchesIn(root, repo, flags) {
   const base = flags.base || defaultBase(repo);
   const named = (git(repo, ['branch', '--list', 'jarl/*', '--format=%(refname:short)']) || '').split('\n').filter(Boolean);
   const worktrees = (git(repo, ['worktree', 'list', '--porcelain']) || '').split('\n\n').map((b) => {
@@ -612,7 +633,7 @@ export function cmdBranches(root, flags) {
     const ahead = mb ? Number(git(repo, ['rev-list', '--count', `${mb}..${name}`]) || 0) : null;
     const wt = worktrees.find((w) => w.branch === name);
     const dirty = wt ? (git(wt.path, ['status', '--porcelain']) || '').split('\n').filter(Boolean).length : null;
-    return { branch: name, ahead, worktree: wt ? wt.path : null, dirty, unnamed: !name.startsWith('jarl/') };
+    return { repo: basename(repo), branch: name, ahead, worktree: wt ? wt.path : null, dirty, unnamed: !name.startsWith('jarl/') };
   });
 }
 
@@ -747,7 +768,7 @@ function main() {
       case 'review': out = cmdReview(root, rest[0], rest[1], rest[2]); text = `${out.id} review ${out.verdict}`; break;
       case 'round': out = cmdRound(root, rest[0], rest[1]); text = out.takeover ? `${out.id} round ${out.round} — takeover:\n\n${out.block}` : `${out.id} round ${out.round} of ${ROUNDS_BEFORE_TAKEOVER} before a takeover`; break;
       case 'check': out = cmdCheck(root, rest[0], flags); text = `${out.repo === root ? '' : `in ${out.repo}\n`}${out.items.map((i) => `${i.ok ? '✓' : '✗'} ${i.name} — ${i.note}`).join('\n')}`; break;
-      case 'branches': out = cmdBranches(root, flags); text = out.length ? out.map((b) => `${b.branch}  +${b.ahead ?? '?'}  ${b.worktree ? `${b.worktree}${b.dirty ? ` (${b.dirty} uncommitted)` : ' (clean)'}` : '(no worktree)'}${b.unnamed ? '  UNNAMED — rename to jarl/NNN-slug before merging' : ''}`).join('\n') : '(no worker branches)'; break;
+      case 'branches': out = cmdBranches(root, flags); text = out.length ? out.map((b) => `${b.repo !== basename(root) ? `[${b.repo}] ` : ''}${b.branch}  +${b.ahead ?? '?'}  ${b.worktree ? `${b.worktree}${b.dirty ? ` (${b.dirty} uncommitted)` : ' (clean)'}` : '(no worktree)'}${b.unnamed ? '  UNNAMED — rename to jarl/NNN-slug before merging' : ''}`).join('\n') : '(no worker branches)'; break;
       case 'ask': out = cmdAsk(root, rest[0], flags); text = `asked a-${out.id}`; break;
       case 'answer': out = cmdAnswer(root, rest[0], rest[1]); text = `answered a-${out.id}`; break;
       case 'handoff': if (rest[0] === 'write') { out = cmdHandoffWrite(root, flags); text = `handoff written · ${out.inFlight} in flight · ${out.waiting} waiting on the user`; } else { out = { text: cmdHandoffRead(root) }; text = out.text; } break;
