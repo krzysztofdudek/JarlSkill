@@ -71,8 +71,10 @@ node "${CLAUDE_PLUGIN_ROOT:-.claude/skills/jarl}/scripts/jarl.mjs" <command>
 | `close [--force]` | refuses while anything is open or in progress; otherwise removes `.jarl/` — in the permanent mode it keeps the directory instead and logs the close |
 
 Every command takes `--json` and `--help`. A subagent does not always inherit `CLAUDE_PLUGIN_ROOT`, so
-a worker's brief carries the absolute path to the tool, and every brief carries the absolute path of the main checkout for `--root`: without it the tool
-looks for `.jarl/` in whatever checkout it is run from, and a worktree has none of its own (default mode) or only the copy it was cut with (committed mode).
+a worker's brief carries the absolute path to the tool. Run from a worktree of the repository whose main checkout holds the loop, the tool finds the
+loop there by itself (default mode: the worktree has none of its own); `--root` still wins when given, and every brief carries the absolute path of
+the loop's checkout for it anyway, because a loop that lives in another repository (a hub directing code elsewhere) is not found from the code's worktree,
+and in committed mode a worktree holds only the copy it was cut with.
 
 ### An issue
 
@@ -171,7 +173,7 @@ If your worktree was made for you by the platform and starts on a branch it name
 (`git branch -m jarl/NNN-slug`); never create a second branch beside it, which leaves the first one behind.
 Your scope is the issue below and nothing else. Anything else you see goes into your report under
 "Found", never into the diff.
-The loop's tool is <absolute path to jarl.mjs>; call it only with `--root <main checkout>` — your
+The loop's tool is <absolute path to jarl.mjs>; call it with `--root <main checkout>` (from a worktree of the same repository it finds the loop by itself, but pass it anyway) — your
 worktree has no live `.jarl/` of its own — and never add `.jarl/` to your branch.
 Prove the change: a test that is red before and green after. Run the test files your change touches,
 in the foreground, with the shell tool's own timeout parameter set (a run that outlives the tool's
