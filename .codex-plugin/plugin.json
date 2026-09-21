@@ -1,7 +1,7 @@
 {
   "name": "jarl",
   "version": "0.1.0",
-  "description": "Skill that turns your coding agent into the director of a feature branch: a committed issue loop where everything seen becomes an issue, a worker per issue works in its own worktree, evidence decides what merges, and the loop leaves no trace on main.",
+  "description": "Skill that turns your coding agent into the director of a feature branch: an issue loop (kept out of git by default, committed when you ask) where everything seen becomes an issue, a worker per issue works in its own worktree, evidence decides what merges, and the loop leaves no trace on main.",
   "author": {
     "name": "Krzysztof Dudek",
     "url": "https://github.com/krzysztofdudek"
