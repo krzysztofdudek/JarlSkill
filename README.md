@@ -109,9 +109,15 @@ Jarl is a working loop, not a guarantee. It does not enforce architecture, it do
 <details>
 <summary><b>Is the loop committed to git?</b></summary>
 
-Not by default. The files are the state — goal, decisions, issues, log — so the next session picks up where this one stopped, because an agent's memory does not survive a session. By default they sit in your main checkout next to the work and git ignores them, so they never show up in the branch's history, diffs or merges. A worktree cannot see an ignored directory, so the workers, the reviewers and the merger all call the tool with `--root <main checkout>`, and the merger never commits the loop.
+Not by default. The files are the state — goal, decisions, issues, log — so the next session picks up where this one stopped, because an agent's memory does not survive a session. By default they sit in your main checkout next to the work and git ignores them, so they never show up in the branch's history, diffs or merges. That also means the loop exists only in that one checkout: another clone, or the same repository on another machine, does not have it. A worktree cannot see an ignored directory, so the workers, the reviewers and the merger all call the tool with `--root <main checkout>`, and the merger never commits the loop.
 
 Open the loop with `init "<goal>" --committed` when the repository should keep its loop as a permanent record in its history: the files are committed with the work at every merge, travel with the branch, and the last commit before it merges to main removes them. A loop that is already open keeps the mode it was opened in.
+</details>
+
+<details>
+<summary><b>Can the issues live in one repository while the code is in another?</b></summary>
+
+Yes. Name the other repository when you file an issue (`new "<title>" --repo <path>`, or `repo <id> <path>` later) and the loop keeps the issue where it is while the worker, the reviewer and the merger work in that repository, on its own feature branch. Files are then listed with the repository's name first (`tool/src/a.mjs`), so `next` still keeps two workers off the same file across repositories, and `check` and `branches` look in the repository the issue names. This is how a release that spans several repositories keeps one backlog in one place.
 </details>
 
 <details>
