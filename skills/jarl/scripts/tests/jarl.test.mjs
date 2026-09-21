@@ -464,7 +464,18 @@ test('check, branches and handoff read the repository an issue names, not the lo
     assert.equal(rows[0].ahead, 1);
     assert.ok(rows[0].worktree.endsWith('wt-001'), rows[0].worktree);
     assert.equal(rows[0].dirty, 0);
+    assert.equal(rows[0].repo, 'tool');
+    // With no --repo, branches looks in the loop's own repository and in every repository an open issue names,
+    // each row carrying the repository's name: the hub has no worker branches of its own, the tool repository has one.
+    const all = JSON.parse(jarl(hub, 'branches', '--json'));
+    assert.deepEqual(all.map((r) => [r.repo, r.branch]), [['tool', 'jarl/001-change-a']], `${mode}: the worker branch in the tool repository is seen from the hub`);
+    assert.match(jarl(hub, 'branches'), /^\[tool\] jarl\/001-change-a  \+1 /, mode);
+    // Once nothing open or in progress names the tool repository any more, the hub is left with its own.
+    jarl(hub, 'set', '001', 'dropped', 'not needed');
+    jarl(hub, 'set', '002', 'dropped', 'not needed');
     assert.deepEqual(JSON.parse(jarl(hub, 'branches', '--json')), [], `${mode}: the hub itself has no worker branches`);
+    jarl(hub, 'set', '001', 'open', 'back');
+    jarl(hub, 'set', '002', 'open', 'back');
 
     // The handoff records where the tool repository stands, beside the hub's own head.
     jarl(hub, 'set', '001', 'in-progress', 'worker raised in tool');
