@@ -134,6 +134,30 @@ test('a run in a worktree finds the loop in the main checkout by itself, and an 
   assert.throws(() => execFileSync(process.execPath, [SCRIPT, 'new', 'x'], { cwd: bare.wt, encoding: 'utf8', stdio: 'pipe' }), (e) => /no \.jarl\//.test(String(e.stderr)));
 });
 
+test('a repository is named by its root, not a subdirectory of it, and the Repo field can be cleared', () => {
+  const parent = mkdtempSync(join(tmpdir(), 'jarl-repo-'));
+  const hub = join(parent, 'hub'); const tool = join(parent, 'tool');
+  mkdirSync(hub); mkdirSync(join(tool, 'src'), { recursive: true });
+  const sh = (cwd, script) => execFileSync('bash', ['-c', script], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  const setup = (b) => `git init -q -b ${b} && git config user.email t@t && git config user.name t`;
+  sh(hub, `${setup('main')} && echo notes > notes.md && git add -A && git commit -qm base`);
+  sh(tool, `${setup('feature')} && echo 'x' > src/a.mjs && git add -A && git commit -qm base`);
+  jarl(hub, 'init', 'goal');
+  jarl(hub, 'new', 'change a', '--files', 'src/a.mjs');
+  // A subdirectory of a repository is not the repository: its paths would be read from the wrong place, so a
+  // removed test file would go unseen. Refused everywhere a repository is named, naming the root to give instead.
+  assert.match(refuses(hub, 'repo', '001', '../tool/src'), /is inside the repository at .*tool, not its root — name the root: \.\.\/tool/);
+  assert.match(refuses(hub, 'new', 'other', '--repo', '../tool/src'), /not its root/);
+  assert.match(refuses(hub, 'branches', '--repo', '../tool/src'), /not its root/);
+  assert.match(refuses(hub, 'check', '001', '--branch', 'feature', '--repo', '../tool/src'), /not its root/);
+  // The root itself is fine, and the field can be cleared again.
+  jarl(hub, 'repo', '001', '../tool');
+  assert.match(jarl(hub, 'show', '001'), /^\*\*Repo:\*\* \.\.\/tool$/m);
+  assert.match(jarl(hub, 'repo', '001', '--clear'), /001 repo: cleared/);
+  assert.doesNotMatch(jarl(hub, 'show', '001'), /\*\*Repo:\*\*/);
+  assert.match(refuses(hub, 'repo', '001', '--clear'), /no Repo field/);
+});
+
 test('status moves only with a log line; done needs evidence; dropped needs a reason', () => {
   const root = repo();
   jarl(root, 'init', 'goal');

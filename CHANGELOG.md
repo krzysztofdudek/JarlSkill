@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `repo <id> --clear` removes an issue's **Repo:** field again.
 - Run from a worktree of a repository whose main checkout holds the loop, the tool now finds that loop by itself, so a worker or reviewer no longer has to pass `--root <main checkout>` to be understood. Before, the same call answered as if there were no loop at all. `--root` still wins when given, and a loop that lives in another repository is still reached with it.
 - An issue can be deferred: `set <id> deferred "<why>"` for work that waits on someone, as opposed to work that is gone. The default list leaves it out (`list --status deferred` or `--all` shows it), `status` and `report` count it apart from dropped, and `close` names what it leaves waiting instead of treating it as finished or abandoned.
 - A loop can now be opened as a permanent record instead of tied to a feature branch: open it with `--permanent` and it lives for good wherever you point it — a repository that keeps one loop per release as that release's record, say, directing work in other repositories over time. Closing it still refuses while anything is open or in progress, exactly as before; once everything is settled, it no longer deletes the loop, it stays as the record.
@@ -23,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The file-relay fallback now also covers resuming a worker or a merger for a second round, not only the first spawn.
 
 ### Fixed
+- A repository named for an issue (`--repo`, or the **Repo:** field) must now be the repository's root: a subdirectory of it is refused with the root to give instead. Before, its paths were read from the wrong place, so `check` could miss a removed test. The worker's brief also says that with a **Repo:** field the feature branch and worktree are in that repository.
 - The merger now removes the branch a worker began on as well as `jarl/NNN-slug` when the two differ, and the worker's brief tells it to rename the platform's branch (`git branch -m`) instead of creating a second one. Before, a worker in a platform-made worktree left its original branch behind after every merge.
 - Dropping an issue no longer wipes what was already written under its Evidence. The reason is added as one more line, and `report` still prints only the reason for a dropped issue.
 - An issue title with a letter Unicode does not decompose, such as the Polish `ł`, now gives a readable file name: `gałęzi` becomes `galezi`, not `ga-ezi`. The same goes for `ø`, `ß`, `đ`, `æ` and a few others. Existing files are not renamed.

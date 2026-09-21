@@ -7,7 +7,7 @@
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, appendFileSync, rmSync, realpathSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { join, resolve, dirname, basename } from 'node:path';
+import { join, resolve, dirname, basename, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const STATUSES = ['open', 'in-progress', 'done', 'dropped', 'deferred'];
@@ -39,7 +39,7 @@ commands:
   tag <id> +a -b ...                             add and remove tags
   prio <id> 1|2|3                                set priority
   files <id> p,q,...                             declare the files the issue touches
-  repo <id> <path>                               name the repository the issue's code lives in
+  repo <id> <path> | <id> --clear                name the repository (its root) the issue's code lives in, or remove the field
   next [--limit n]                               open issues that do not share a file with any in-progress one;
                                                  a file is its repository and its path (see --repo below)
   review <id> approve|changes "<findings>"     the reviewer's verdict; "done" needs an approve newer than the last round
@@ -334,10 +334,16 @@ export function cmdFiles(root, rawId, list) {
   return { id: issue.id, files };
 }
 
-export function cmdRepo(root, rawId, path) {
+export function cmdRepo(root, rawId, path, { clear = false } = {}) {
   const issue = findIssue(root, rawId);
   need(issue, `no such issue: ${rawId}`);
-  need(path !== undefined, 'repo requires <path> — the checkout of the repository the issue\'s code lives in');
+  if (clear) {
+    need(issue.fields.repo, `${issue.id} has no Repo field to clear`);
+    const text = readFileSync(issue.file, 'utf8').replace(/^\*\*Repo:\*\*.*\n/m, '');
+    writeFileSync(issue.file, text);
+    return { id: issue.id, repo: null, cleared: true };
+  }
+  need(path !== undefined, 'repo requires <path> — the checkout of the repository the issue\'s code lives in (or --clear to remove the field)');
   repoOf(root, path);
   writeFileSync(issue.file, setField(readFileSync(issue.file, 'utf8'), 'Repo', path));
   return { id: issue.id, repo: path };
@@ -511,6 +517,10 @@ export function repoOf(root, named) {
   need(typeof named === 'string', '--repo takes one path — the checkout of the repository the code lives in');
   const repo = resolve(root, named);
   need(git(repo, ['rev-parse', '--git-dir']) !== null, `not a git repository: ${repo} (a relative --repo or Repo path is read from the loop's root, ${root})`);
+  // A subdirectory of a repository is not the repository: the paths git reports are relative to its root, so a
+  // declared file or a removed test would be read from the wrong place and go unseen.
+  const top = git(repo, ['rev-parse', '--show-toplevel']);
+  need(top !== null && realpathSync(top) === realpathSync(repo), `${repo} is inside the repository at ${top}, not its root — name the root: ${relative(realpathSync(root), top ? realpathSync(top) : realpathSync(repo)) || '.'}`);
   return repo;
 }
 
@@ -762,7 +772,7 @@ function main() {
       case 'tag': out = cmdTag(root, rest[0], rest.slice(1)); text = `${out.id} tags: ${out.tags.join(', ') || '(none)'}`; break;
       case 'prio': out = cmdPrio(root, rest[0], rest[1]); text = `${out.id} priority ${out.priority}`; break;
       case 'files': out = cmdFiles(root, rest[0], rest[1]); text = `${out.id} files: ${out.files.join(', ') || '(none)'}`; break;
-      case 'repo': out = cmdRepo(root, rest[0], rest[1]); text = `${out.id} repo: ${out.repo}`; break;
+      case 'repo': out = cmdRepo(root, rest[0], rest[1], { clear: flags.clear === true }); text = `${out.id} repo: ${out.cleared ? 'cleared' : out.repo}`; break;
       case 'evidence': out = cmdEvidence(root, rest[0], rest[1], flags); text = out.rows ? `${out.id} evidence row${out.rows.length > 1 ? 's' : ''} recorded` : `${out.id} evidence recorded`; break;
       case 'next': out = cmdNext(root, flags); text = out.length ? out.map((r) => (r.ready ? `${r.id}  P${r.priority}  ${r.title}` : `${r.id}  P${r.priority}  ${r.title}  (waits on ${r.waitsOn.join(', ')})`)).join('\n') : '(nothing open)'; break;
       case 'review': out = cmdReview(root, rest[0], rest[1], rest[2]); text = `${out.id} review ${out.verdict}`; break;
