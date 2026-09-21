@@ -10,7 +10,7 @@ import { execFileSync } from 'node:child_process';
 import { join, resolve, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const STATUSES = ['open', 'in-progress', 'done', 'dropped'];
+export const STATUSES = ['open', 'in-progress', 'done', 'dropped', 'deferred'];
 export const KINDS = ['bug', 'gap', 'cleanup', 'docs', 'test', 'research', 'process'];
 export const PRIORITIES = ['1', '2', '3'];
 export const TIERS = ['standard', 'strong'];
@@ -60,8 +60,8 @@ commands:
                                                  head and the head of every repository an unfinished issue names
   log "<event>"                                  append one dated line to the journal
   decide <slug> "<ruling>"                       append a ruling; refuses a duplicate slug
-  status                                         one line: open, in flight, done, dropped, open questions
-  report                                         what was done, dropped and found — ready for the changelog
+  status                                         one line: open, in flight, done, dropped, deferred, open questions
+  report                                         what was done, dropped, deferred and found — ready for the changelog
   mode permanent                                 switch an existing committed loop to the permanent mode, with a
                                                  log line; refuses a default-mode loop (out of git — a permanent
                                                  record must be committed) and an already-permanent one
@@ -256,6 +256,7 @@ function splitList(v) { return String(v || '').split(',').map((s) => s.trim()).f
 
 export function cmdList(root, flags) {
   let rows = loadIssues(root);
+  // Deferred work waits, so the default list does not show it: --status deferred or --all does.
   if (!flags.all && !flags.status) rows = rows.filter((i) => i.status === 'open' || i.status === 'in-progress');
   if (flags.status) rows = rows.filter((i) => i.status === flags.status);
   if (flags.kind) rows = rows.filter((i) => i.kind === flags.kind);
@@ -273,14 +274,17 @@ export function cmdSet(root, rawId, status, why) {
   const issue = findIssue(root, rawId);
   need(issue, `no such issue: ${rawId}`);
   need(status !== 'dropped' || why, 'dropped needs a reason: jarl.mjs set <id> dropped "<why>"');
+  need(status !== 'deferred' || why, 'deferred needs a reason: jarl.mjs set <id> deferred "<why>" — work that waits, not work that is gone');
   need(status !== 'done' || issue.sections.evidence?.trim(), `${issue.id} has no evidence yet — record it first: jarl.mjs evidence ${issue.id} "<what was run and what it printed>"`);
   need(status !== 'done' || reviewState(root, issue.id).approved, `${issue.id} has no approving review newer than its last round — a fresh reviewer reads the issue and the diff first: jarl.mjs review ${issue.id} approve|changes "<findings>"`);
   let text = readFileSync(issue.file, 'utf8');
   text = setField(text, 'Status', status);
-  // What was already written under Evidence stays: a drop is one more line in the history, not a reset of it.
-  if (status === 'dropped') {
+  // What was already written under Evidence stays: a drop or a deferral is one more line in the history,
+  // not a reset of it.
+  if (status === 'dropped' || status === 'deferred') {
     const written = (issue.sections.evidence || '').trim();
-    text = setSection(text, 'Evidence', written ? `${written}\n\nDropped: ${why}` : `Dropped: ${why}`);
+    const line = `${status === 'dropped' ? 'Dropped' : 'Deferred'}: ${why}`;
+    text = setSection(text, 'Evidence', written ? `${written}\n\n${line}` : line);
   }
   writeFileSync(issue.file, text);
   appendLog(root, `${issue.id} → ${status}${why ? ` · ${why}` : ''}`);
@@ -401,7 +405,7 @@ export function cmdNext(root, flags) {
 }
 
 export function cmdStatus(root) {
-  const c = { open: 0, 'in-progress': 0, done: 0, dropped: 0 };
+  const c = { open: 0, 'in-progress': 0, done: 0, dropped: 0, deferred: 0 };
   for (const i of loadIssues(root)) c[i.status] = (c[i.status] || 0) + 1;
   c.questions = loadAsks(root).filter((a) => a.state === 'open').length;
   return c;
@@ -430,12 +434,14 @@ export function cmdClose(root, flags) {
   need(flags.force || left.length === 0, `${left.length} issue(s) still open or in progress: ${left.map((i) => i.id).join(', ')} — set each done or dropped, or report them to the user and run with --force`);
   // A permanent loop is a record, not a stage cleared before a merge: close leaves the directory in
   // place and logs the close instead of removing it, so --root still finds the loop afterwards.
+  // Deferred work is not open, so it does not hold the close — but the close says it leaves it waiting.
+  const deferred = loadIssues(root).filter((i) => i.status === 'deferred').map((i) => i.id);
   if (existsSync(join(jarlDir(root), '.permanent'))) {
-    appendLog(root, 'closed · kept as a permanent record');
-    return { removed: null, kept: jarlDir(root), leftOpen: left.map((i) => i.id) };
+    appendLog(root, `closed · kept as a permanent record${deferred.length ? ` · ${deferred.length} deferred still waiting: ${deferred.join(', ')}` : ''}`);
+    return { removed: null, kept: jarlDir(root), leftOpen: left.map((i) => i.id), deferred };
   }
   rmSync(jarlDir(root), { recursive: true, force: true });
-  return { removed: jarlDir(root), kept: null, leftOpen: left.map((i) => i.id) };
+  return { removed: jarlDir(root), kept: null, leftOpen: left.map((i) => i.id), deferred };
 }
 
 
@@ -659,11 +665,11 @@ export function cmdHandoffRead(root) {
   return existsSync(handoffPath(root)) ? readFileSync(handoffPath(root), 'utf8') : 'fresh start — no handoff recorded';
 }
 
-// The reason an issue was dropped: the last "Dropped: ..." line of its Evidence, whatever notes were
-// written before it. Evidence with no such line (an older file) is read whole.
-function droppedReason(evidence) {
+// The reason an issue was dropped or deferred: the last "Dropped: ..." / "Deferred: ..." line of its Evidence,
+// whatever notes were written before it. Evidence with no such line (an older file) is read whole.
+function statusReason(evidence, word) {
   const text = (evidence || '').trim();
-  const last = [...text.matchAll(/^Dropped:\s*(.*)$/gm)].pop();
+  const last = [...text.matchAll(new RegExp(`^${word}:\\s*(.*)$`, 'gm'))].pop();
   return last ? last[1].trim() : text;
 }
 
@@ -671,14 +677,16 @@ export function cmdReport(root) {
   const issues = loadIssues(root);
   const done = issues.filter((i) => i.status === 'done');
   const dropped = issues.filter((i) => i.status === 'dropped');
+  const deferred = issues.filter((i) => i.status === 'deferred');
   const left = issues.filter((i) => i.status === 'open' || i.status === 'in-progress');
   const found = issues.filter((i) => i.fields['found by'] && !/^jarl\b/i.test(i.fields['found by']));
   const goal = existsSync(join(jarlDir(root), 'goal.md')) ? readFileSync(join(jarlDir(root), 'goal.md'), 'utf8').split('\n').slice(2).find((l) => l.trim()) || '' : '';
   const lines = [`# Report`, '', goal, '', `## Done (${done.length})`, ...done.map((i) => `- ${i.id} ${i.title} (${i.kind})`),
-    '', `## Dropped (${dropped.length})`, ...dropped.map((i) => `- ${i.id} ${i.title} — ${droppedReason(i.sections.evidence)}`),
+    '', `## Dropped (${dropped.length})`, ...dropped.map((i) => `- ${i.id} ${i.title} — ${statusReason(i.sections.evidence, 'Dropped')}`),
+    '', `## Deferred (${deferred.length})`, ...deferred.map((i) => `- ${i.id} ${i.title} — ${statusReason(i.sections.evidence, 'Deferred')}`),
     '', `## Still open (${left.length})`, ...left.map((i) => `- ${i.id} ${i.title} (${i.status})`),
     '', `## Found along the way (${found.length})`, ...found.map((i) => `- ${i.id} ${i.title} — ${i.fields['found by']}`)];
-  return { done: done.length, dropped: dropped.length, left: left.length, found: found.length, text: lines.join('\n') + '\n' };
+  return { done: done.length, dropped: dropped.length, deferred: deferred.length, left: left.length, found: found.length, text: lines.join('\n') + '\n' };
 }
 
 // ---- main --------------------------------------------------------------------------------------
@@ -732,9 +740,9 @@ function main() {
       case 'report': out = cmdReport(root); text = out.text; break;
       case 'log': need(rest[0], 'log requires "<event>"'); appendLog(root, rest[0]); out = { logged: rest[0] }; text = 'logged'; break;
       case 'decide': need(rest[0] && rest[1], 'decide requires <slug> "<ruling>"'); appendDecision(root, rest[0], rest[1]); appendLog(root, `decided ${rest[0]}`); out = { slug: rest[0] }; text = `decided ${rest[0]}`; break;
-      case 'status': out = cmdStatus(root); text = `open ${out.open} · in flight ${out['in-progress']} · done ${out.done} · dropped ${out.dropped} · questions ${out.questions}`; break;
+      case 'status': out = cmdStatus(root); text = `open ${out.open} · in flight ${out['in-progress']} · done ${out.done} · dropped ${out.dropped} · deferred ${out.deferred} · questions ${out.questions}`; break;
       case 'mode': out = cmdMode(root, rest[0]); text = 'now permanent · no longer tied to a feature branch; close keeps the directory'; break;
-      case 'close': out = cmdClose(root, flags); text = out.kept ? `kept ${out.kept} · closed as a permanent record` : `removed ${out.removed}`; break;
+      case 'close': out = cmdClose(root, flags); text = (out.kept ? `kept ${out.kept} · closed as a permanent record` : `removed ${out.removed}`) + (out.deferred.length ? ` · ${out.deferred.length} deferred still waiting: ${out.deferred.join(', ')}` : ''); break;
       default: throw new Error(`unknown command: ${cmd}\n${USAGE}`);
     }
   } catch (e) {

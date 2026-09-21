@@ -63,6 +63,37 @@ test('dropping an issue keeps the evidence already written, and the report print
   assert.match(jarl(root, 'report'), /- 002 never started — duplicate of 001/);
 });
 
+test('deferred is its own status: it needs a reason, stays out of the default list, is counted apart and reported apart', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'waits for the client');
+  jarl(root, 'new', 'still to do');
+  jarl(root, 'new', 'gone for good');
+  assert.match(refuses(root, 'set', '001', 'deferred'), /deferred needs a reason/);
+  jarl(root, 'evidence', '001', 'half a fix on a branch');
+  jarl(root, 'set', '001', 'deferred', 'the client wants to decide first');
+  jarl(root, 'set', '003', 'dropped', 'duplicate');
+  // Not in the default list, in --status deferred and in --all.
+  assert.doesNotMatch(jarl(root, 'list'), /waits for the client/);
+  assert.match(jarl(root, 'list', '--status', 'deferred'), /waits for the client/);
+  assert.match(jarl(root, 'list', '--all'), /waits for the client/);
+  // Counted apart from open and dropped.
+  const status = JSON.parse(jarl(root, 'status', '--json'));
+  assert.equal(status.deferred, 1);
+  assert.equal(status.dropped, 1);
+  assert.equal(status.open, 1);
+  assert.match(jarl(root, 'status'), /deferred 1/);
+  // Reported apart, with the reason, and the evidence already written stays.
+  const report = jarl(root, 'report');
+  assert.match(report, /## Deferred \(1\)\n- 001 waits for the client — the client wants to decide first/);
+  assert.match(report, /## Dropped \(1\)\n- 003 gone for good — duplicate/);
+  assert.match(jarl(root, 'show', '001'), /half a fix on a branch/);
+  // A loop with only deferred work left can close, and says what it leaves waiting.
+  jarl(root, 'set', '002', 'dropped', 'no longer needed');
+  const closed = JSON.parse(jarl(root, 'close', '--json'));
+  assert.deepEqual(closed.deferred, ['001']);
+});
+
 test('status moves only with a log line; done needs evidence; dropped needs a reason', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
