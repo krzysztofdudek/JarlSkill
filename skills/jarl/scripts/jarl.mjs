@@ -5,7 +5,7 @@
 // .jarl/issues/NNN-slug.md per issue. This script only reads and writes those files, so anything
 // it does can be checked by opening them. Zero dependencies, Node 18+.
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, appendFileSync, rmSync, realpathSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, appendFileSync, rmSync, realpathSync, statSync, renameSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join, resolve, dirname, basename, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -60,7 +60,11 @@ commands:
                                                  head and the head of every repository an unfinished issue names
   log "<event>"                                  append one dated line to the journal
   decide <slug> "<ruling>"                       append a ruling; refuses a duplicate slug
-  status                                         one line: open, in flight, done, dropped, deferred, open questions
+  status                                         the goal, when the loop opened and last moved, then one line:
+                                                 open, in flight, done, dropped, deferred, open questions
+  archive "<slug>"                               put the current loop away under .jarl/archive/<yyyy.mm.dd>-<slug>/,
+                                                 keeping the archive and the mode markers, so init can open a
+                                                 new loop here in the same mode
   report                                         what was done, dropped, deferred and found — ready for the changelog
   mode permanent                                 switch an existing committed loop to the permanent mode, with a
                                                  log line; refuses a default-mode loop (out of git — a permanent
@@ -232,12 +236,22 @@ export function cmdInit(root, goal, flags = {}) {
   need(flags.committed === undefined || flags.committed === true, '--committed takes no value — put the goal first: init "<goal>" --committed');
   need(flags.permanent === undefined || flags.permanent === true, '--permanent takes no value — put the goal first: init "<goal>" --permanent');
   need(goal, 'init requires "<goal>"');
-  need(!existsSync(jarlDir(root)), '.jarl/ already exists here — resume it, do not re-init');
-  const permanent = flags.permanent === true;
-  const committed = flags.committed === true || permanent;
+  need(!hasLiveLoop(root), '.jarl/ already exists here with a live loop — resume it, or archive it first: jarl.mjs archive "<slug>"');
+  // A .jarl/ left behind by `archive` holds only archive/ and the mode markers, and the new loop
+  // keeps that mode: the markers are the loop's own record of how it lives in git.
+  const archived = existsSync(jarlDir(root));
+  let permanent = flags.permanent === true;
+  let committed = flags.committed === true || permanent;
+  if (archived) {
+    const kept = existsSync(join(jarlDir(root), '.permanent')) ? 'permanent' : existsSync(join(jarlDir(root), '.gitignore')) ? 'default' : 'committed';
+    const asked = permanent ? 'permanent' : committed ? 'committed' : null;
+    need(asked === null || asked === kept, `this .jarl/ keeps its archived loops in the ${kept} mode, and a new loop here keeps that mode — run init without --${asked}`);
+    permanent = kept === 'permanent';
+    committed = kept !== 'default';
+  }
   mkdirSync(issuesDir(root), { recursive: true });
-  if (!committed) writeFileSync(join(jarlDir(root), '.gitignore'), JARL_GITIGNORE);
-  if (permanent) writeFileSync(join(jarlDir(root), '.permanent'), PERMANENT_MARKER);
+  if (!archived && !committed) writeFileSync(join(jarlDir(root), '.gitignore'), JARL_GITIGNORE);
+  if (!archived && permanent) writeFileSync(join(jarlDir(root), '.permanent'), PERMANENT_MARKER);
   writeFileSync(join(jarlDir(root), 'goal.md'), `# Goal\n\n${goal.trim()}\n\n## Assumptions\n\n## Rules that apply here\n`);
   writeFileSync(join(jarlDir(root), 'decisions.md'), '# Decisions\n');
   writeFileSync(join(jarlDir(root), 'log.md'), '# Log\n\n');
@@ -245,9 +259,44 @@ export function cmdInit(root, goal, flags = {}) {
   return { dir: jarlDir(root), committed, permanent };
 }
 
+// A live loop is one with a goal; a .jarl/ holding only archive/ and the mode markers has none.
+export function hasLiveLoop(root) {
+  return existsSync(join(jarlDir(root), 'goal.md'));
+}
+
+// The refusal for a command that needs a live loop: no .jarl/ at all, or one holding only archives.
+function needLiveLoop(root, next) {
+  need(existsSync(jarlDir(root)), `no .jarl/ here${next}`);
+  need(hasLiveLoop(root), `no live loop here — .jarl/ holds only archived loops${next}`);
+}
+
+// What stays in .jarl/ when a loop is archived: the archive itself and the markers that say how the
+// loop lives in git, so the next loop opened here keeps the same mode.
+const ARCHIVE_KEEPS = new Set(['archive', '.gitignore', '.permanent']);
+
+// archive "<slug>" — put the current loop away under .jarl/archive/<yyyy.mm.dd>-<slug>/ so a new one
+// can be opened here with init. Everything but the archive and the mode markers moves: issues, goal,
+// decisions, log, handoff. Open work is not a refusal (archiving is how a session sets old work
+// aside), but the result names it, and the loop's own log records the move before it goes.
+export function cmdArchive(root, slug) {
+  need(slug, 'archive requires "<slug>" — a short name for the loop being put away');
+  need(hasLiveLoop(root), existsSync(jarlDir(root)) ? 'no loop to archive here — .jarl/ holds only earlier archives; open one with: jarl.mjs init "<goal>"' : 'no .jarl/ here');
+  const name = `${today().replace(/-/g, '.')}-${slugify(slug)}`;
+  const dest = join(jarlDir(root), 'archive', name);
+  need(!existsSync(dest), `.jarl/archive/${name} already exists — pick another slug`);
+  const left = loadIssues(root).filter((i) => i.status === 'open' || i.status === 'in-progress').map((i) => i.id);
+  appendLog(root, `archived → .jarl/archive/${name}${left.length ? ` · ${left.length} still open or in progress: ${left.join(', ')}` : ''}`);
+  mkdirSync(dest, { recursive: true });
+  for (const entry of readdirSync(jarlDir(root))) {
+    if (ARCHIVE_KEEPS.has(entry)) continue;
+    renameSync(join(jarlDir(root), entry), join(dest, entry));
+  }
+  return { archived: dest, leftOpen: left };
+}
+
 export function cmdNew(root, title, flags) {
   need(title, 'new requires "<title>"');
-  need(existsSync(jarlDir(root)), 'no .jarl/ here — run: jarl.mjs init "<goal>"');
+  needLiveLoop(root, ' — run: jarl.mjs init "<goal>"');
   const kind = flags.kind || 'bug';
   need(KINDS.includes(kind), `--kind must be one of: ${KINDS.join(', ')}`);
   const priority = String(flags.prio || '2');
@@ -449,6 +498,16 @@ export function cmdStatus(root) {
   const c = { open: 0, 'in-progress': 0, done: 0, dropped: 0, deferred: 0 };
   for (const i of loadIssues(root)) c[i.status] = (c[i.status] || 0) + 1;
   c.questions = loadAsks(root).filter((a) => a.state === 'open').length;
+  // What a session needs to decide between continuing this loop and archiving it: the goal, when the
+  // loop was opened, and when anything last happened in it — all read from its own files.
+  const goalPath = join(jarlDir(root), 'goal.md');
+  c.goal = existsSync(goalPath) ? (readFileSync(goalPath, 'utf8').split('\n').slice(2).find((l) => l.trim()) || '').trim() : null;
+  const logPath = join(jarlDir(root), 'log.md');
+  const stamps = existsSync(logPath) ? [...readFileSync(logPath, 'utf8').matchAll(/^- (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) · /gm)].map((m) => m[1]) : [];
+  c.opened = stamps[0] || null;
+  c.lastActivity = stamps[stamps.length - 1] || null;
+  const archiveDir = join(jarlDir(root), 'archive');
+  c.archived = existsSync(archiveDir) ? readdirSync(archiveDir).length : 0;
   return c;
 }
 
@@ -461,7 +520,7 @@ export function cmdStatus(root) {
 export function cmdMode(root, mode) {
   need(mode, 'mode requires a target: jarl.mjs mode permanent');
   need(mode === 'permanent', `mode only supports "permanent" today: jarl.mjs mode permanent (got "${mode}")`);
-  need(existsSync(jarlDir(root)), 'no .jarl/ here');
+  needLiveLoop(root, '');
   need(!existsSync(join(jarlDir(root), '.gitignore')), 'this loop is out of git (default mode) — a permanent record must be committed, and only init decides .jarl/.gitignore, so there is no in-place switch. Start a fresh loop with: jarl.mjs init "<goal>" --permanent');
   need(!existsSync(join(jarlDir(root), '.permanent')), 'already a permanent record (.jarl/.permanent exists) — nothing to do');
   writeFileSync(join(jarlDir(root), '.permanent'), PERMANENT_MARKER);
@@ -470,7 +529,7 @@ export function cmdMode(root, mode) {
 }
 
 export function cmdClose(root, flags) {
-  need(existsSync(jarlDir(root)), 'no .jarl/ here');
+  needLiveLoop(root, '');
   const left = loadIssues(root).filter((i) => i.status === 'open' || i.status === 'in-progress');
   need(flags.force || left.length === 0, `${left.length} issue(s) still open or in progress: ${left.map((i) => i.id).join(', ')} — set each done or dropped, or report them to the user and run with --force`);
   // A permanent loop is a record, not a stage cleared before a merge: close leaves the directory in
@@ -808,7 +867,8 @@ function main() {
       case 'report': out = cmdReport(root); text = out.text; break;
       case 'log': need(rest[0], 'log requires "<event>"'); appendLog(root, rest[0]); out = { logged: rest[0] }; text = 'logged'; break;
       case 'decide': need(rest[0] && rest[1], 'decide requires <slug> "<ruling>"'); appendDecision(root, rest[0], rest[1]); appendLog(root, `decided ${rest[0]}`); out = { slug: rest[0] }; text = `decided ${rest[0]}`; break;
-      case 'status': out = cmdStatus(root); text = `open ${out.open} · in flight ${out['in-progress']} · done ${out.done} · dropped ${out.dropped} · deferred ${out.deferred} · questions ${out.questions}`; break;
+      case 'status': out = cmdStatus(root); text = `${out.goal ? `goal: ${out.goal}\nopened ${out.opened || '?'} · last activity ${out.lastActivity || '?'}${out.archived ? ` · ${out.archived} archived loop(s)` : ''}\n` : ''}open ${out.open} · in flight ${out['in-progress']} · done ${out.done} · dropped ${out.dropped} · deferred ${out.deferred} · questions ${out.questions}`; break;
+      case 'archive': out = cmdArchive(root, rest[0]); text = `archived → ${out.archived}${out.leftOpen.length ? ` · ${out.leftOpen.length} still open or in progress: ${out.leftOpen.join(', ')}` : ''} · open a new loop with: jarl.mjs init "<goal>"`; break;
       case 'mode': out = cmdMode(root, rest[0]); text = 'now permanent · no longer tied to a feature branch; close keeps the directory'; break;
       case 'close': out = cmdClose(root, flags); text = (out.kept ? `kept ${out.kept} · closed as a permanent record` : `removed ${out.removed}`) + (out.deferred.length ? ` · ${out.deferred.length} deferred still waiting: ${out.deferred.join(', ')}` : ''); break;
       default: throw new Error(`unknown command: ${cmd}\n${USAGE}`);
