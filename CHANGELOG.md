@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `archive "<slug>"` puts the current loop away under `.jarl/archive/<yyyy.mm.dd>-<slug>/` so a new one can be opened in the same place. Everything moves except the archive and the mode markers, so `init` then opens the next loop in the same mode (and refuses a flag that contradicts it). Before, a finished loop had to be deleted or moved by hand, because `init` refused any existing `.jarl/`.
+- `status` now also prints the loop's goal, when it was opened and when anything last happened in it, and SKILL.md tells the agent to ask once, at a session's first contact with an existing loop, whether to continue it or archive it.
 - `repo <id> --clear` removes an issue's **Repo:** field again.
 - Run from a worktree of a repository whose main checkout holds the loop, the tool now finds that loop by itself, so a worker or reviewer no longer has to pass `--root <main checkout>` to be understood. Before, the same call answered as if there were no loop at all. `--root` still wins when given, and a loop that lives in another repository is still reached with it.
 - An issue can be deferred: `set <id> deferred "<why>"` for work that waits on someone, as opposed to work that is gone. The default list leaves it out (`list --status deferred` or `--all` shows it), `status` and `report` count it apart from dropped, and `close` names what it leaves waiting instead of treating it as finished or abandoned.

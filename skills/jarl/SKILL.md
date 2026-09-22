@@ -54,7 +54,8 @@ node "${CLAUDE_PLUGIN_ROOT:-.claude/skills/jarl}/scripts/jarl.mjs" <command>
 | `init "<goal>" [--committed] [--permanent]` | creates `.jarl/` with the goal and a `.gitignore` that keeps the loop out of git; `--committed` writes no `.gitignore`, so the loop is committed with the work; `--permanent` also writes no `.gitignore`, adds `.jarl/.permanent`, and opens the loop with no feature branch of its own — see [The one place](#the-one-place) |
 | `new "<title>" [--kind k] [--prio 1\|2\|3] [--tier standard\|strong] [--tags a,b] [--files p,q] [--repo <path>] [--found-by who]` | files an issue under the next free number; `--repo` names the repository its code lives in when that is not the loop's own (see [Code in another repository](#code-in-another-repository)) |
 | `list [--status s] [--kind k] [--tag t] [--prio p] [--grep re] [--all]` | open and in-progress by default, sorted by priority |
-| `show <id>` · `status` | one issue · one line of counts |
+| `show <id>` · `status` | one issue · the loop's goal, when it was opened and when anything last happened, then one line of counts |
+| `archive "<slug>"` | puts the current loop away under `.jarl/archive/<yyyy.mm.dd>-<slug>/` — issues, goal, decisions, log and handoff — and leaves the archive and the mode markers (`.gitignore`, `.permanent`), so the next `init` here opens a new loop in the same mode; open work does not refuse it, but the result and the archived log name it |
 | `set <id> <status> "<why>"` | changes status and writes the log line in one move; `done` needs evidence on file, `dropped` and `deferred` need a reason (`deferred` is work that waits, not work that is gone: the default `list` hides it, `list --status deferred` shows it, `status` and `report` count it apart, and `close` says what it leaves waiting) |
 | `tag <id> +a -b` · `prio <id> 1\|2\|3` · `files <id> p,q` · `repo <id> <path>` | header fields |
 | `evidence <id> "<text>"` \| `evidence <id> --ran "<command>" --saw "<what it printed>"` | appends a free-text note, or one checkable row per `--ran`/`--saw` pair (repeat the pair for more rows, in one call or several) — `--ran`/`--saw` when the proof is a command, free text when it is not; nothing already recorded is ever replaced |
@@ -111,6 +112,10 @@ and files new issues; it never edits code.
 
 Every turn, in this order:
 
+0. **Continue or archive — once per session.** When a session first meets a `.jarl/` that already holds
+   a loop, run `status` (goal, when it was opened, last activity) and ask the user once whether this
+   session continues that loop or archives it (`archive "<slug>"`, then `init "<goal>"`). Ask only at
+   that first contact, never again on each `new` or `evidence` in the same work.
 1. **Boot.** `handoff read`, then `goal.md`, `decisions.md`, the tail of `log.md`, `status`, `list`, and
    `branches` — a worker branch with commits beyond the feature branch is a report, whether or not the
    worker said so. Open questions come first: the user may have answered one since.

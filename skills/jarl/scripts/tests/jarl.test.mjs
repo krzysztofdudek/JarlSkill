@@ -631,3 +631,43 @@ test('review changes requires a Critical or Important finding; Minor alone is re
   jarl(root, 'review', '001', 'approve', 'Minor: could still tidy the naming, but fine to land');
   jarl(root, 'set', '001', 'done');
 });
+
+// A loop is put away with `archive`, not deleted, and a new one opens in its place. Everything but
+// the archive and the mode markers moves, so the next loop keeps the same way of living in git.
+test('archive puts the loop away under .jarl/archive/<date>-<slug>/, and init opens a new one in the same mode', () => {
+  const root = repo();
+  jarl(root, 'init', 'first goal');
+  jarl(root, 'new', 'left unfinished');
+  assert.match(refuses(root, 'init', 'second goal'), /archive it first: jarl\.mjs archive/);
+
+  const out = JSON.parse(jarl(root, 'archive', 'first round', '--json'));
+  const day = new Date().toISOString().slice(0, 10).replace(/-/g, '.');
+  assert.equal(out.archived, join(root, '.jarl', 'archive', `${day}-first-round`));
+  assert.deepEqual(out.leftOpen, ['001']);
+  for (const f of ['goal.md', 'log.md', 'decisions.md', 'issues']) {
+    assert.ok(existsSync(join(out.archived, f)), `${f} moved into the archive`);
+    assert.ok(!existsSync(join(root, '.jarl', f)), `${f} is no longer live`);
+  }
+  assert.match(readFileSync(join(out.archived, 'log.md'), 'utf8'), /archived → \.jarl\/archive\/.*first-round · 1 still open or in progress: 001/);
+  assert.equal(readFileSync(join(root, '.jarl', '.gitignore'), 'utf8'), '*\n**/*\n', 'the mode marker stays');
+
+  assert.match(refuses(root, 'new', 'into nothing'), /no live loop here — \.jarl\/ holds only archived loops/);
+  assert.match(refuses(root, 'close'), /no live loop here/);
+  assert.match(refuses(root, 'archive', 'again'), /holds only earlier archives/);
+
+  assert.match(jarl(root, 'init', 'second goal'), /kept out of git/);
+  assert.match(jarl(root, 'new', 'fresh work'), /filed 001/);
+  const status = jarl(root, 'status');
+  assert.match(status, /^goal: second goal$/m);
+  assert.match(status, /opened \d{4}-\d{2}-\d{2} \d{2}:\d{2} · last activity \d{4}-\d{2}-\d{2} \d{2}:\d{2} · 1 archived loop\(s\)/);
+});
+
+test('a new loop after an archive keeps the archived mode, and a flag that contradicts it is refused', () => {
+  const root = repo();
+  jarl(root, 'init', 'record', '--permanent');
+  jarl(root, 'archive', 'one');
+  assert.ok(existsSync(join(root, '.jarl', '.permanent')));
+  assert.match(refuses(root, 'init', 'next', '--committed'), /keeps its archived loops in the permanent mode/);
+  assert.match(jarl(root, 'init', 'next'), /permanent record/);
+  assert.match(refuses(root, 'archive', 'one'), /pick another slug|already exists/);
+});
