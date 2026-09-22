@@ -49,6 +49,14 @@ true rather than promised. Run it as:
 node "${CLAUDE_PLUGIN_ROOT:-.claude/skills/jarl}/scripts/jarl.mjs" <command>
 ```
 
+If that file does not exist where the command runs, the path belongs to another machine: VS Code
+attached to a dev container, for one, hands the agent the host's install path, which the container
+cannot see. Do not work around the tool. Find the copy this environment has: the directory this
+`SKILL.md` was read from, plus `scripts/jarl.mjs`, when that directory exists here; otherwise search
+once, `find ~ /workspaces -path '*skills/jarl/scripts/jarl.mjs' 2>/dev/null | head -1`. Use the
+absolute path it gives for the rest of the session, and hand that same path to every role you raise.
+If there is no copy at all, say so and stop: the loop's state moves only through the tool.
+
 | Command | What it does |
 |---|---|
 | `init "<goal>" [--committed] [--permanent]` | creates `.jarl/` with the goal and a `.gitignore` that keeps the loop out of git; `--committed` writes no `.gitignore`, so the loop is committed with the work; `--permanent` also writes no `.gitignore`, adds `.jarl/.permanent`, and opens the loop with no feature branch of its own — see [The one place](#the-one-place) |
