@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- A portable Agent Plugins 1.0 manifest, `plugin.json` at the repository root, which Copilot and Codex read before any host-specific manifest. The host manifests stay for Claude Code, Cursor and older Copilot and Codex, with the same name, version and description.
 - `archive "<slug>"` puts the current loop away under `.jarl/archive/<yyyy.mm.dd>-<slug>/` so a new one can be opened in the same place. Everything moves except the archive and the mode markers, so `init` then opens the next loop in the same mode (and refuses a flag that contradicts it). Before, a finished loop had to be deleted or moved by hand, because `init` refused any existing `.jarl/`.
 - `status` now also prints the loop's goal, when it was opened and when anything last happened in it, and SKILL.md tells the agent to ask once, at a session's first contact with an existing loop, whether to continue it or archive it.
 - `repo <id> --clear` removes an issue's **Repo:** field again.
