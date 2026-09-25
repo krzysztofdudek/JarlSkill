@@ -24,8 +24,8 @@ commands:
   init "<goal>" [--committed] [--permanent]      create .jarl/ with the goal; by default it also writes .jarl/.gitignore
                                                  (* and **/*) so git never sees the loop, and every role working
                                                  outside the main checkout passes --root <main checkout>;
-                                                 --committed writes no .gitignore: the loop is committed with the work;
-                                                 --permanent also writes no .gitignore, marks the loop with
+                                                 --committed ignores only the write lock and temporary files: the loop
+                                                 is committed with the work; --permanent is committed too, marks it with
                                                  .jarl/.permanent, and is not tied to a feature branch: close (below)
                                                  keeps the directory instead of removing it
   new "<title>" [--kind k] [--prio 1|2|3] [--tier standard|strong] [--tags a,b] [--files p,q] [--repo <path>] [--found-by who]
@@ -159,6 +159,9 @@ function lockIsStale(text, mtimeMs) {
 export function withLock(root, fn) {
   // Before init there is no .jarl/ to guard and nothing in it to lose: init runs unguarded.
   if (held > 0 || !existsSync(jarlDir(root))) return fn();
+  // A committed loop from before the narrow ignore file existed gets it here, before the first lock is written.
+  const ignore = join(jarlDir(root), '.gitignore');
+  if (!existsSync(ignore)) writeAtomic(ignore, JARL_GITIGNORE_COMMITTED);
   const path = lockPath(root);
   const mine = `${process.pid} ${hostname()} ${new Date().toISOString()}\n`;
   const until = Date.now() + LOCK_WAIT_MS;
@@ -323,9 +326,20 @@ function need(cond, msg) { if (!cond) throw new Error(msg); }
 // ignore file and the loop is committed with the work. --permanent also writes no ignore file — a
 // permanent record must be committed to survive — and additionally writes .jarl/.permanent, so a
 // later session can tell the mode from the loop itself without being told: close (below) reads that
-// marker and keeps the directory instead of removing it. Only init decides any of this; no other
-// command adds or removes these files, so a loop opened before a mode existed keeps behaving as it did.
+// marker and keeps the directory instead of removing it. Only init decides any of this, so a loop opened
+// before a mode existed keeps behaving as it did.
+//
+// A committed or permanent loop still gets a narrow .jarl/.gitignore: it ignores only the lock and the
+// temporary files a write leaves for a moment (see withLock), so a `git add .jarl` made while a call runs
+// never commits them. init writes it; a committed loop opened before it existed is given it by its first
+// write under the lock. The mode is read from what the file ignores, not from whether it exists: only the
+// default mode's file ignores everything (a line `*`).
 export const JARL_GITIGNORE = '*\n**/*\n';
+export const JARL_GITIGNORE_COMMITTED = '# jarl: the loop is committed; only the write lock and half-written temporary files stay out of git\n/.lock\n/.lock.stale-*\n.*.tmp\n';
+export function outOfGit(root) {
+  const path = join(jarlDir(root), '.gitignore');
+  return existsSync(path) && readFileSync(path, 'utf8').split('\n').some((l) => l.trim() === '*');
+}
 export const PERMANENT_MARKER = 'This loop is a permanent record: it is not tied to a feature branch, and `close` never removes this directory. See SKILL.md.\n';
 
 export function cmdInit(root, goal, flags = {}) {
@@ -339,14 +353,14 @@ export function cmdInit(root, goal, flags = {}) {
   let permanent = flags.permanent === true;
   let committed = flags.committed === true || permanent;
   if (archived) {
-    const kept = existsSync(join(jarlDir(root), '.permanent')) ? 'permanent' : existsSync(join(jarlDir(root), '.gitignore')) ? 'default' : 'committed';
+    const kept = existsSync(join(jarlDir(root), '.permanent')) ? 'permanent' : outOfGit(root) ? 'default' : 'committed';
     const asked = permanent ? 'permanent' : committed ? 'committed' : null;
     need(asked === null || asked === kept, `this .jarl/ keeps its archived loops in the ${kept} mode, and a new loop here keeps that mode — run init without --${asked}`);
     permanent = kept === 'permanent';
     committed = kept !== 'default';
   }
   mkdirSync(issuesDir(root), { recursive: true });
-  if (!archived && !committed) writeAtomic(join(jarlDir(root), '.gitignore'), JARL_GITIGNORE);
+  if (!archived) writeAtomic(join(jarlDir(root), '.gitignore'), committed ? JARL_GITIGNORE_COMMITTED : JARL_GITIGNORE);
   if (!archived && permanent) writeAtomic(join(jarlDir(root), '.permanent'), PERMANENT_MARKER);
   writeAtomic(join(jarlDir(root), 'goal.md'), `# Goal\n\n${goal.trim()}\n\n## Assumptions\n\n## Rules that apply here\n`);
   writeAtomic(join(jarlDir(root), 'decisions.md'), '# Decisions\n');
@@ -657,7 +671,8 @@ export function cmdStatus(root) {
 
 // A loop opened before the permanent mode existed, or opened --committed, has no way to become the
 // permanent record other than this: init is the only command that writes .jarl/.permanent for a new
-// loop, and mode is the only other one, for an existing one — it never touches .jarl/.gitignore, so a
+// loop, and mode is the only other one, for an existing one — it never turns the default mode's ignore-everything
+// .jarl/.gitignore into the committed one, so a
 // default-mode loop (out of git) cannot be switched in place: a permanent record must be committed,
 // and only init decides that. Idempotent it is not: running it twice on an already-permanent loop
 // refuses clearly instead of silently doing nothing, so a session never mistakes a no-op for a check.
@@ -665,7 +680,7 @@ export function cmdMode(root, mode) {
   need(mode, 'mode requires a target: jarl.mjs mode permanent');
   need(mode === 'permanent', `mode only supports "permanent" today: jarl.mjs mode permanent (got "${mode}")`);
   needLiveLoop(root, '');
-  need(!existsSync(join(jarlDir(root), '.gitignore')), 'this loop is out of git (default mode) — a permanent record must be committed, and only init decides .jarl/.gitignore, so there is no in-place switch. Start a fresh loop with: jarl.mjs init "<goal>" --permanent');
+  need(!outOfGit(root), 'this loop is out of git (default mode) — a permanent record must be committed, and only init decides .jarl/.gitignore, so there is no in-place switch. Start a fresh loop with: jarl.mjs init "<goal>" --permanent');
   need(!existsSync(join(jarlDir(root), '.permanent')), 'already a permanent record (.jarl/.permanent exists) — nothing to do');
   writeAtomic(join(jarlDir(root), '.permanent'), PERMANENT_MARKER);
   appendLog(root, 'mode → permanent · no longer tied to a feature branch; close now keeps the directory instead of removing it');

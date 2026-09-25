@@ -7,6 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
+const { JARL_GITIGNORE_COMMITTED } = await import(new URL('../jarl.mjs', import.meta.url).href);
 
 function repo() {
   const dir = mkdtempSync(join(tmpdir(), 'jarl-'));
@@ -409,7 +410,7 @@ test('init keeps the loop out of git by default: .jarl/.gitignore holds exactly 
   assert.equal(g('ls-files', '.jarl'), '', 'git add -A stages nothing from .jarl/');
 });
 
-test('init --committed writes no .gitignore and git sees the loop; an existing loop is never given one', () => {
+test('init --committed ignores only the lock and temporary files, and git sees the loop', () => {
   const { dir: root, g } = gitRepo();
   const opened = JSON.parse(jarl(root, 'init', 'goal', '--committed', '--json'));
   assert.equal(opened.committed, true);
@@ -418,7 +419,7 @@ test('init --committed writes no .gitignore and git sees the loop; an existing l
   assert.equal(JSON.parse(jarl(before, 'init', '--committed', 'goal first', '--json')).committed, true);
   assert.match(readFileSync(join(before, '.jarl', 'goal.md'), 'utf8'), /goal first/);
   assert.match(refuses(gitRepo().dir, 'init', 'goal', '--committed=yes'), /--committed takes no value/);
-  assert.equal(existsSync(join(root, '.jarl', '.gitignore')), false);
+  assert.equal(readFileSync(join(root, '.jarl', '.gitignore'), 'utf8'), JARL_GITIGNORE_COMMITTED);
   jarl(root, 'new', 'thing');
   jarl(root, 'evidence', '001', 'note');
   const seen = g('status', '--porcelain', '--untracked-files=all');
@@ -427,7 +428,7 @@ test('init --committed writes no .gitignore and git sees the loop; an existing l
   g('add', '-A');
   assert.match(g('ls-files', '.jarl'), /\.jarl\/log\.md/);
   assert.match(refuses(root, 'init', 'again'), /already exists/);
-  assert.equal(existsSync(join(root, '.jarl', '.gitignore')), false, 'no command after init adds the ignore file to a loop that has none');
+  assert.equal(readFileSync(join(root, '.jarl', '.gitignore'), 'utf8'), JARL_GITIGNORE_COMMITTED, 'no command widens it to the default mode');
 });
 
 test('init --permanent commits the loop and marks it as a record; close then keeps the directory but still refuses while open', () => {
@@ -435,7 +436,7 @@ test('init --permanent commits the loop and marks it as a record; close then kee
   const opened = JSON.parse(jarl(root, 'init', 'goal', '--permanent', '--json'));
   assert.equal(opened.committed, true, 'a permanent record is always committed, like --committed');
   assert.equal(opened.permanent, true);
-  assert.equal(existsSync(join(root, '.jarl', '.gitignore')), false);
+  assert.equal(readFileSync(join(root, '.jarl', '.gitignore'), 'utf8'), JARL_GITIGNORE_COMMITTED, 'committed: only the lock and temporary files are ignored');
   assert.equal(existsSync(join(root, '.jarl', '.permanent')), true, 'the marker a later session reads to tell the mode');
   assert.equal(JSON.parse(jarl(repo(), 'init', '--permanent', 'goal', '--json')).permanent, true, 'the goal after --permanent is the goal');
   assert.match(refuses(repo(), 'init', 'goal', '--permanent=yes'), /--permanent takes no value/);
@@ -455,7 +456,7 @@ test('mode permanent turns an existing committed loop into a permanent record; a
   const out = JSON.parse(jarl(root, 'mode', 'permanent', '--json'));
   assert.equal(out.permanent, true);
   assert.equal(existsSync(join(root, '.jarl', '.permanent')), true);
-  assert.equal(existsSync(join(root, '.jarl', '.gitignore')), false, 'still committed, as it always was');
+  assert.equal(readFileSync(join(root, '.jarl', '.gitignore'), 'utf8'), JARL_GITIGNORE_COMMITTED, 'still committed, as it always was');
   assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /mode → permanent/);
   jarl(root, 'new', 'thing');
   jarl(root, 'set', '001', 'dropped', 'out of scope');
@@ -816,4 +817,38 @@ test('a bulk call with one bad id, or one issue failing its precondition, writes
   assert.match(refuses(root, 'prio', '5-2', '1'), /runs backwards/);
   assert.notEqual(before(), snap, 'the evidence and review above did land');
   assert.doesNotMatch(jarl(root, 'show', '2'), /note/);
+});
+
+test('a committed loop keeps the lock and temporary files out of git; an older committed loop is given the narrow ignore file by its first write', () => {
+  for (const mode of ['--committed', '--permanent']) {
+    const { dir: root, g } = gitRepo();
+    jarl(root, 'init', 'goal', mode);
+    jarl(root, 'new', 'thing');
+    // What a `git add .jarl` sees in the middle of a call: the lock, a stale lock moved aside, temp files.
+    writeFileSync(join(root, '.jarl', '.lock'), '1 host 2026-01-01\n');
+    writeFileSync(join(root, '.jarl', '.lock.stale-42'), '');
+    writeFileSync(join(root, '.jarl', '.log.md.123.tmp'), '');
+    writeFileSync(join(root, '.jarl', 'issues', '.002.123.tmp'), '');
+    g('add', '-A');
+    const staged = g('ls-files', '.jarl').split('\n');
+    assert.ok(staged.includes('.jarl/.gitignore') && staged.includes('.jarl/issues/001-thing.md') && staged.includes('.jarl/log.md'), `${mode}: the loop is committed`);
+    assert.deepEqual(staged.filter((f) => /lock|\.tmp$/.test(f)), [], `${mode}: the lock and temp files are not`);
+  }
+  // A committed loop opened before the narrow file existed has no ignore file at all.
+  const root = repo();
+  jarl(root, 'init', 'goal', '--committed');
+  execFileSync('rm', [join(root, '.jarl', '.gitignore')]);
+  jarl(root, 'new', 'thing');
+  assert.equal(readFileSync(join(root, '.jarl', '.gitignore'), 'utf8'), JARL_GITIGNORE_COMMITTED);
+  // The mode reads the same: still committed, so mode permanent works, and an archive keeps the mode.
+  jarl(root, 'mode', 'permanent');
+  jarl(root, 'set', '1', 'dropped', 'x');
+  jarl(root, 'archive', 'first');
+  assert.equal(JSON.parse(jarl(root, 'init', 'next', '--json')).permanent, true);
+  // The default mode's file is still the ignore-everything one, and mode permanent still refuses it.
+  const out = repo();
+  jarl(out, 'init', 'goal');
+  jarl(out, 'new', 'thing');
+  assert.equal(readFileSync(join(out, '.jarl', '.gitignore'), 'utf8'), '*\n**/*\n');
+  assert.match(refuses(out, 'mode', 'permanent'), /out of git/);
 });

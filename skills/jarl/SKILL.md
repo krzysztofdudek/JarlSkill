@@ -20,12 +20,14 @@ reaches `main`; opened as a permanent record it lives on, wherever `--root` name
 loop runs in one of three modes, chosen once at `init`:
 
 - **Default — out of git.** `init` writes `.jarl/.gitignore` with two lines, `*` and `**/*`, so git never sees the loop: it stays out of the branch's history, its diffs and its merges. The loop exists only in the main checkout's working tree — it belongs to that checkout, not to the branch, and no other clone or worktree has it. A worker's worktree therefore sees no `.jarl/`, so the worker, the reviewer and the merger always call the tool with `--root <main checkout>`, and nobody ever commits `.jarl/`.
-- **Committed — `init --committed`.** No `.gitignore` is written; the loop is committed with the work on the feature branch. The merger commits `.jarl/` with every merge, and the last commit before the branch merges to `main` removes the whole directory.
-- **Permanent — `init --permanent`.** No `.gitignore` either — a record that must survive is always committed — and `init` additionally writes `.jarl/.permanent`, so a later session reads the mode from the loop itself rather than being told. This loop does not live on a feature branch at all: it lives wherever `--root` points, kept as a standing record, for example a repository that keeps one loop per release as that release's record, driving work in other repositories. Everything above — the four files, the issue format, the roles, the tool — is the same; only closing differs, in [Closing the branch](#closing-the-branch) below.
+- **Committed — `init --committed`.** `.jarl/.gitignore` ignores only the tool's write lock and the temporary files a write leaves for an instant (`/.lock`, `/.lock.stale-*`, `.*.tmp`), so a `git add` made while a call runs never commits them; the loop itself is committed with the work on the feature branch. The merger commits `.jarl/` with every merge, and the last commit before the branch merges to `main` removes the whole directory.
+- **Permanent — `init --permanent`.** Committed the same way, with the same narrow `.gitignore` — a record that must survive is always committed — and `init` additionally writes `.jarl/.permanent`, so a later session reads the mode from the loop itself rather than being told. This loop does not live on a feature branch at all: it lives wherever `--root` points, kept as a standing record, for example a repository that keeps one loop per release as that release's record, driving work in other repositories. Everything above — the four files, the issue format, the roles, the tool — is the same; only closing differs, in [Closing the branch](#closing-the-branch) below.
 
-A loop with `.jarl/.gitignore` is in the default mode; one without it is committed, and one that also
-carries `.jarl/.permanent` is the permanent mode. Only `init` decides the mode of a new loop — no other
-command touches `.jarl/.gitignore`, so a loop opened before a mode existed keeps behaving as it did.
+A loop whose `.jarl/.gitignore` ignores everything (a line `*`) is in the default mode; one without that
+line, or with no ignore file at all, is committed, and one that also carries `.jarl/.permanent` is the
+permanent mode. Only `init` decides the mode of a new loop. A committed loop opened before the narrow
+ignore file existed is given it by its first write, which changes nothing about its mode; no command
+ever turns one mode's ignore file into the other's.
 `mode permanent` is the one exception: it turns an *existing, committed* loop into the permanent mode
 in place, for a loop opened before 005 or opened `--committed` — the release loop that drove 6.1.0 was
 exactly this case. It refuses a default-mode loop (out of git): a permanent record must be committed,
@@ -59,7 +61,7 @@ If there is no copy at all, say so and stop: the loop's state moves only through
 
 | Command | What it does |
 |---|---|
-| `init "<goal>" [--committed] [--permanent]` | creates `.jarl/` with the goal and a `.gitignore` that keeps the loop out of git; `--committed` writes no `.gitignore`, so the loop is committed with the work; `--permanent` also writes no `.gitignore`, adds `.jarl/.permanent`, and opens the loop with no feature branch of its own — see [The one place](#the-one-place) |
+| `init "<goal>" [--committed] [--permanent]` | creates `.jarl/` with the goal and a `.gitignore` that keeps the loop out of git; `--committed` writes a `.gitignore` that ignores only the write lock and temporary files, so the loop is committed with the work; `--permanent` is committed the same way, adds `.jarl/.permanent`, and opens the loop with no feature branch of its own — see [The one place](#the-one-place) |
 | `new "<title>" [--kind k] [--prio 1\|2\|3] [--tier standard\|strong] [--tags a,b] [--files p,q] [--repo <path>] [--found-by who]` | files an issue under the next free number; `--repo` names the repository its code lives in when that is not the loop's own (see [Code in another repository](#code-in-another-repository)) |
 | `list [--status s] [--kind k] [--tag t] [--prio p] [--grep re] [--all]` | open and in-progress by default, sorted by priority |
 | `show <id>` · `status` | one issue · the loop's goal, when it was opened and when anything last happened, then one line of counts |
