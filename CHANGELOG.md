@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `evidence`, `review`, `set`, `tag` and `prio` take several issues at once, as one comma list with ranges (`12,13,14` or `203-206,209`). Every issue and every precondition is checked first, so the call changes all of them or none, and each issue still gets its own log line. Closing a package of issues merged together takes four calls instead of four per issue.
+
+### Fixed
+- Parallel calls no longer lose each other's writes. Before, workers, reviewers and the merger writing at the same moment could drop evidence rows and log lines, fail with "no such issue" on a half-written file, or file two issues under the same number. Every command that writes now waits its turn behind a lock, taken over automatically when the process holding it is gone, and every file is replaced whole.
+- A value that starts with `--` is kept as the value of the flag before it: `--ran "--help"` records the row instead of printing the usage and exiting with success, and `--saw "--- FAIL"` works. A note or title that itself starts with `--` goes after a bare `--`, and `--flag=value` is accepted.
+- A misspelt or unknown flag is refused with the list of flags the command takes, and so are extra arguments, instead of being silently ignored.
+
+### Changed
+- `init --committed "<goal>"` and `init --permanent "<goal>"` (the flag before the goal) now open the loop. Before, the flag took the goal as its value and the command refused.
+- A committed or permanent loop now carries a small ignore file that keeps only the write lock and half-written temporary files out of git, so committing the loop while a call runs never commits them. A committed loop opened with an earlier version gets the file on its next write. The loop itself is still committed, and the mode is unchanged.
+
 ## [0.2.0] - 2026-09-25
 
 ### Added
