@@ -1277,8 +1277,9 @@ function readFindings(file, flags = {}) {
 }
 
 // An issue filed before Source existed often names its finding. That issue is found, never guessed at, and
-// only where an issue says what it is about: its title and its What, Why and Acceptance — never a header field
-// (`**Priority:** 2` is not finding 2) and never Evidence (notes about other work). An id that reads as unique
+// mainly where an issue says what it is about: its title and its What, Why and Acceptance — never a header
+// field (`**Priority:** 2` is not finding 2). Evidence (notes about other work, too) counts only under the
+// strict rule in inEvidence below. An id that reads as unique
 // on its own (jarl-2-B2: a dash, and at least 8 characters) is enough by itself. A short one (F1, C1, 2) or one
 // from the angles shape needs its report named in the same issue too: the report directory's name, or the
 // <angle>/<id> key. A title naming the finding wins, else the one issue whose body does; two candidates are
@@ -1300,7 +1301,11 @@ function mentionOf(issues, finding, dir) {
   const byTitle = legacy.filter((i) => named(i.title) || (bare.test(i.title) && report.test(bodyOf(i))));
   if (byTitle.length === 1) return { issue: byTitle[0] };
   if (byTitle.length > 1) return { ambiguous: byTitle.map((i) => i.id) };
-  const byBody = legacy.filter((i) => namedWithReport(bodyOf(i)));
+  // Evidence counts under the strictest rule only: an id that reads as unique on its own, on an Evidence line
+  // that also names the report (a package issue's "Source: <report dir>/report.md … Ids: a-b-01, a-b-02").
+  const inEvidence = (i) => !finding.angle && uniqueLooking(finding.localId)
+    && (i.sections.evidence || '').split('\n').some((l) => bare.test(l) && report.test(l));
+  const byBody = legacy.filter((i) => namedWithReport(bodyOf(i)) || inEvidence(i));
   if (byBody.length === 1) return { issue: byBody[0] };
   return byBody.length ? { ambiguous: byBody.map((i) => i.id) } : {};
 }

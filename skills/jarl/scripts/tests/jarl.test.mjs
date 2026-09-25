@@ -1146,3 +1146,18 @@ test('import never takes a short id, a header field or Evidence for a mention of
   const a2 = JSON.parse(jarl(root, 'import', angles, '--source', 'r-angles', '--dry-run', '--json'));
   assert.deepEqual(a2.mentioned.map((m) => m.issue), ['005']);
 });
+
+test('import adopts a package issue whose Evidence names the report and lists the ids; short ids and other lines never match there', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'minor package');
+  jarl(root, 'evidence', '1', 'Source: core/research/2026-09-25-x-audit/report.md §3, findings.json area a. Ids: area-a-01, area-a-02, F1');
+  jarl(root, 'new', 'other work');
+  jarl(root, 'evidence', '2', 'touches area-a-03 as well');                                  // unique id, report not on the line
+  jarl(root, 'evidence', '2', 'see core/research/2026-09-25-x-audit/report.md');
+  const file = findingsDir([{ id: 'area-a-01', title: 'a' }, { id: 'area-a-02', title: 'b' }, { id: 'area-a-03', title: 'c' }, { id: 'F1', title: 'd' }]);
+  const o = JSON.parse(jarl(root, 'import', file, '--source', 'core/research/2026-09-25-x-audit', '--adopt', '--json'));
+  assert.deepEqual(o.adopted.map((x) => [x.finding, x.issue]), [['area-a-01', '001'], ['area-a-02', '001']]);
+  assert.deepEqual(o.filed.map((f) => f.finding), ['area-a-03', 'F1']);
+  assert.match(jarl(root, 'import', file, '--source', 'core/research/2026-09-25-x-audit'), /filed 0 · already filed 4/);
+});
