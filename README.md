@@ -33,9 +33,9 @@ When nothing is open, the jarl closes the branch: changelog carries every user-v
 |---|---|
 | **Files** everything seen as an issue before anything is touched | no side fixes, no "while I'm here" |
 | **Picks** what runs in parallel by which files it touches | overlapping issues run in series |
-| **Raises** one worker per issue in its own worktree, model set explicitly | workers spawn nothing of their own |
+| **Raises** one worker per issue, or per package of small neighbouring issues, in its own worktree, model set explicitly; each in-progress issue records who works on it, where and since when | workers spawn nothing of their own; a stale lease is shown, never taken over |
 | **Verifies** by reproducing the acceptance line and the red-before, green-after test | a worker's report is a hypothesis |
-| **Merges** into the branch on evidence, with a commit that names the issue | three red rounds become an issue about the issue |
+| **Merges** into the branch on evidence, with a commit that names the issue, and records the merge sha and CI state as fields | three red rounds become an issue about the issue |
 | **Asks you** when a protection would weaken, the goal would change, or work reaches outside the session | never a guess on a decision that is yours |
 | **Closes** the branch: changelog, green check, `.jarl/` removed | main never carries the loop |
 
@@ -117,7 +117,7 @@ Open the loop with `init "<goal>" --committed` when the loop should travel with 
 <details>
 <summary><b>Can the issues live in one repository while the code is in another?</b></summary>
 
-Yes. Name the other repository when you file an issue (`new "<title>" --repo <path>`, or `repo <id> <path>` later) and the loop keeps the issue where it is while the worker, the reviewer and the merger work in that repository, on its own feature branch. Files are then listed with the repository's name first (`tool/src/a.mjs`), so `next` still keeps two workers off the same file across repositories, and `check` and `branches` look in the repository the issue names. This is how a release that spans several repositories keeps one backlog in one place.
+Yes. Name the other repository when you file an issue (`new "<title>" --repo <path>`, or `repo <id> <path>` later) and the loop keeps the issue where it is while the worker, the reviewer and the merger work in that repository, on its own feature branch. Files are then listed with the repository's name first (`tool/src/a.mjs`), so `next` still keeps two workers off the same file across repositories, and `check` and `branches` look in the repository the issue names. This is how a release that spans several repositories keeps one backlog in one place. A loop kept committed in the planning repository names its own uncommitted files in `status`, the handoff and `close`, because no merge in that repository commits it for you.
 </details>
 
 <details>

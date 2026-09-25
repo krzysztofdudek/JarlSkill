@@ -67,24 +67,25 @@ If there is no copy at all, say so and stop: the loop's state moves only through
 | `import <findings.json> [--source <dir>] [--kind k] [--prio p] [--tier t] [--tags a,b] [--repo <path>] [--found-by who] [--only <ids>] [--adopt] [--dry-run]` · `sources [<findings.json>...] [--source <dir>]` · `source <id> <dir>#<id>,...` | research findings into issues, once each, and the coverage view — see [From research to issues](#from-research-to-issues) |
 | `after <id> <ids>` · `after <id> --clear` | the issues this one waits on (**After:**): `next` does not offer it until each of them is done or dropped, and `status` counts it as waiting instead of open or in flight; a chain that would come back to the issue is refused |
 | `list [--status s] [--kind k] [--tag t] [--prio p] [--grep re] [--all]` | open and in-progress by default, sorted by priority |
-| `show <id>` · `status` | one issue · the loop's goal, when it was opened and when anything last happened, then one line of counts (open, in flight, waiting, done, dropped, deferred, questions, to ratify), then the choices awaiting ratification, the waiting issues and the issues in flight with no acceptance line |
+| `show <id>` · `status [--stale-hours n]` | one issue · the loop's goal, when it was opened, when anything last happened and how old the handoff is (stale when the loop moved on after it), then one line of counts (open, in flight, waiting, done, dropped, deferred, questions, to ratify, merged with CI pending or red), then the choices awaiting ratification, the stale leases, the merges waiting on CI, the waiting issues, the issues in flight with no acceptance line and, in a committed or permanent loop, how many loop files git has not committed |
 | `archive "<slug>"` | puts the current loop away under `.jarl/archive/<yyyy.mm.dd>-<slug>/` — issues, goal, decisions, log and handoff — and leaves the archive and the mode markers (`.gitignore`, `.permanent`), so the next `init` here opens a new loop in the same mode; open work does not refuse it, but the result and the archived log name it |
-| `set <ids> <status> "<why>"` | changes status and writes the log line in one move; `done` needs evidence on file (and notes on stderr, never refusing, an issue with no acceptance line or with fewer `--ran`/`--saw` rows than acceptance lines), `dropped` and `deferred` need a reason (`deferred` is work that waits, not work that is gone: the default `list` hides it, `list --status deferred` shows it, `status` and `report` count it apart, and `close` says what it leaves waiting) |
+| `set <ids> <status> "<why>" [--branch <b>] [--worker <name>] [--worktree <path>]` | changes status and writes the log line in one move; `in-progress` writes the lease (see [Packages and leases](#packages-and-leases)); `done` needs evidence on file (and notes on stderr, never refusing, an issue with no acceptance line, with fewer `--ran`/`--saw` rows than acceptance lines, or with a recorded merge whose CI is not green yet), `dropped` and `deferred` need a reason (`deferred` is work that waits, not work that is gone: the default `list` hides it, `list --status deferred` shows it, `status` and `report` count it apart, and `close` says what it leaves waiting) |
 | `tag <ids> +a -b` · `prio <ids> 1\|2\|3` · `files <id> p,q` · `repo <id> <path>` | header fields |
 | `evidence <ids> "<text>"` \| `evidence <ids> --ran "<command>" --saw "<what it printed>"` | appends a free-text note, or one checkable row per `--ran`/`--saw` pair (repeat the pair for more rows, in one call or several) — `--ran`/`--saw` when the proof is a command, free text when it is not; nothing already recorded is ever replaced |
 | `next [--limit n]` | open issues that share no file with any in-progress one and whose **After:** issues are all done or dropped — what can run in parallel now; a file is its repository and its path, so the same path in two repositories never holds an issue back; an issue offered with no acceptance line is marked `(no acceptance yet)` |
 | `review <ids> approve\|changes "<findings>"` | the reviewer's verdict; `changes` needs a finding ranked Critical or Important in the text — Minor alone cannot bounce a branch, it rides an approve into evidence; `done` refuses without an approve newer than the last round; the output repeats the issue's acceptance, so the verdict is read against it |
 | `round <id> "<what failed>"` | one red round on the issue; the third prints a takeover block for a fresh worker |
-| `check <id> --branch <b> [--repo <path>]` | a worker branch before merge: commits beyond the base, diff inside the declared files, test files removed, assertions before and after, each item's own ok/not — read the items, not just the exit code; a script gate can use the exit code (0 clean, 2 something failed), a reader should not stop there. Read in `--repo`, else in the repository the issue's **Repo:** names, else in the loop's own |
-| `branches [--repo <path>]` | with no `--repo`, in the loop's own repository and in every repository an open or in-progress issue names (rows of another repository are labelled `[name]`); with it, in that one repository: every `jarl/NNN-*` branch, and every other branch a worktree has checked out (marked UNNAMED when a worker never renamed its branch), with commits beyond the base and worktree state — a branch with commits is a report whether or not the worker said so. Read in `--repo`, else in the loop's own repository |
+| `merged <ids> --sha <sha> [--ci pending\|green\|red\|none] [--repo <path>]` · `merged <ids> --ci <state>` | the merge as fields, not prose: **Merged:** the sha (and where, with `--repo`), **CI:** `pending` unless given (`none`: the repository has no CI to wait for), and a log line per issue; `--ci` alone moves the CI state of issues that already record a merge; a sha the repository does not know is noted, never refused. `status` counts `merged, CI pending`, `report` prints the sha per done issue |
+| `check [<id>] --branch <b> [--repo <path>]` | a worker branch before merge — with no id, the package on it: the diff is bounded by the union of **Files** of every issue that records **Branch:** `<b>`, so a shared branch passes in one call: commits beyond the base, diff inside the declared files, test files removed, assertions before and after, each item's own ok/not — read the items, not just the exit code; a script gate can use the exit code (0 clean, 2 something failed), a reader should not stop there. Read in `--repo`, else in the repository the issue's **Repo:** names, else in the loop's own |
+| `branches [--repo <path>] [--stale-hours n]` | each branch with the issues it carries (`jarl/163-packages → 163, 164, 165`), `STALE` when a lease on it looks wrong and `DONE → delete` when every issue on it is settled and its work is in the base; with no `--repo`, in the loop's own repository and in every repository an open or in-progress issue names (rows of another repository are labelled `[name]`); with it, in that one repository: every `jarl/NNN-*` branch, and every other branch a worktree has checked out (marked UNNAMED when a worker never renamed its branch), with commits beyond the base and worktree state — a branch with commits is a report whether or not the worker said so. Read in `--repo`, else in the loop's own repository |
 | `ask "<question>" --kind stop\|stuck\|lower\|charter\|ratify [--target x] [--issue NNN]` · `answer <id> "<answer>"` | questions only the user can answer, in a closed set of kinds — `stop` halts everything, `stuck` blocks one issue, `lower` weakens something protected (`--target` names it), `charter` questions the goal, `ratify` is a choice already made under a mandate that waits for the user's word and blocks nothing (see [What goes to the user](#what-goes-to-the-user)); open ones show in `status`; an answer becomes a ruling, and with `--issue` it is written into that issue's evidence too |
-| `handoff write --summary "<s>" [--next "<n>"]...` · `handoff read` | the state of intent between sessions: what is in flight, what waits on the user, what comes next; the header records the loop's head and the head of every other repository an unfinished issue names |
+| `handoff write --summary "<s>" [--next "<n>"]...` · `handoff read` | the state of intent between sessions: what is in flight, what waits on the user, what comes next; the header records the loop's head and the head of every other repository an unfinished issue names. `read` prints the summary and next as written, then how old they are — `STALE by 3d` when the loop moved on after them, how many log lines and issues changed since, which recorded heads moved — and computes in flight, the waits, the open questions and the ratify items live instead of trusting the snapshot |
 | `log "<event>"` · `decide <slug> "<ruling>" [--settles <ids>]` | the journal and the rulings; `--settles` names the issues a ruling settles and writes the ruling into each one's evidence, leaving its status to `set` |
 | `report` | done, dropped and deferred with reasons, still open, found along the way — the material for the changelog |
 | `mode permanent` | turns an existing, committed loop into the permanent mode, with a log line — for a loop opened before the mode existed, or opened `--committed`; refuses a default-mode loop (out of git — a permanent record must be committed) and an already-permanent loop |
-| `close [--force]` | refuses while anything is open or in progress; otherwise removes `.jarl/` — in the permanent mode it keeps the directory instead and logs the close |
+| `close [--force]` | refuses while anything is open or in progress; otherwise removes `.jarl/` — in the permanent mode it keeps the directory instead and logs the close; in a committed or permanent loop it names the loop files git has not committed |
 
-`<ids>` on `evidence`, `review`, `set`, `tag` and `prio` is one id or several, written as one comma list with ranges: `12,13,14` or `203-206,209`. The tool resolves every id and checks every precondition before it writes anything, so a package of issues merged together closes in four calls (evidence, review, evidence of the merge, `set done`) instead of four per issue, and one missing id or one issue not ready for `done` leaves all of them untouched. Each issue still gets its own log line.
+`<ids>` on `evidence`, `review`, `set`, `tag`, `prio` and `merged` is one id or several, written as one comma list with ranges: `12,13,14` or `203-206,209`. The tool resolves every id and checks every precondition before it writes anything, so a package of issues merged together closes in four calls (evidence, review, evidence of the merge, `set done`) instead of four per issue, and one missing id or one issue not ready for `done` leaves all of them untouched. Each issue still gets its own log line.
 
 A flag a command does not take is refused with the list of the ones it does, never ignored. A value flag takes the next argument whatever it starts with, so `--ran "--help"` or `--saw "--- FAIL"` records the row; `--flag=value` works too. A note or a title that itself starts with `--` goes after a bare `--` (`evidence 012 -- "--json drops a key"`), and every flag, `--root` included, goes before that `--`: arguments beyond what a command reads are refused, so a stray `--root` can never be dropped silently.
 
@@ -112,6 +113,9 @@ and in committed mode a worktree holds only the copy it was cut with.
 **Found by:** who, doing what
 **Source:** only when it comes from research — <report dir>#<finding id>, several comma separated
 **Where:** file:line, or the command and what it printed
+**Branch:** only once it is in progress with --branch — the worker branch it is done on, shared by a package; kept after done
+**Worker:** · **Worktree:** · **Since:** the lease, only while in progress — who, where, since when (UTC)
+**Merged:** · **CI:** only once `merged` records it — the sha (and where), and pending | green | red | none
 
 ## What
 One paragraph: the fact.
@@ -132,6 +136,18 @@ and files new issues; it never edits code.
 **File the body with the issue.** `new` takes `--where`, `--what`, `--why` and `--acceptance` (one checkable line per flag), so an issue is written whole in the call that files it; `body <id>` fills or replaces them later. None of it is required, and an issue filed without it reads exactly as before, but an issue with no acceptance line gives the worker nothing to prove and the reviewer nothing to check. So the tool says so without refusing anything: `next` marks such an issue `(no acceptance yet)`, `status` lists the in-progress ones that have none, and `set done` notes it on stderr, together with an issue that has fewer `--ran`/`--saw` rows than acceptance lines (none included). Fill it (`body <id> --acceptance "…"`) before `set <id> in-progress`.
 
 **An issue that waits on another says so.** `after <id> <ids>` (or `new --after`) records **After:**. `next` never offers it while any of those issues is still open, in progress or deferred, and `status` counts it as waiting, not as open or in flight, so "in flight" keeps meaning that someone is working on it. Do not park a blocked issue in `in-progress`. It is ordering and bookkeeping, not a schedule: no computed plan, no critical path. A ruling that settles issues names them, `decide <slug> "…" --settles <ids>`, and the ruling is written into each one's evidence. Closing the issue is still `set`, and `done` does not count a `Ruling …`, `Dropped:` or `Deferred:` line as evidence of the work.
+
+### Packages and leases
+
+The unit of work is often a **package**: two to ten small issues that touch neighbouring files, handed to one worker on one branch. That is a first-class shape, not a workaround. `set 163-168 in-progress "<who>" --branch jarl/163-packages --worker <name> --worktree <path>` writes one lease on every issue in the call: **Branch:**, **Worker:**, **Worktree:** and **Since:** (the moment, UTC). `set <ids> in-progress` without the flags still writes **Since:**. Leaving in-progress (done, dropped, deferred, open) removes Worker, Worktree and Since and keeps Branch, the record of where the work was done. An issue from before these fields reads exactly as before.
+
+- `check --branch jarl/163-packages` with no id bounds the diff by the union of the **Files** of every issue that records that branch (in progress or done), so the package passes in one call. `check <id> --branch …` still bounds it by that one issue.
+- `branches` prints each branch with the issues on it. It marks a lease **STALE** when the worktree it names is gone, the branch it names is gone (listed as `GONE`), or the lease is older than `--stale-hours` (default 6) while the branch has no commit that recent. It marks a branch **DONE → delete** when every issue on it is done or dropped and its work is in the base (the branch is an ancestor of it, or every done issue records its merge). `status` lists the same stale leases.
+- A stale lease is shown for the jarl to act on — ask the worker, re-raise, or set the issues back to `open`. Nothing expires and nothing is taken over automatically: that is Horde's territory.
+
+**A merge is a field.** After merging, the merger runs `merged <ids> --sha <merge sha>` (`--repo <path>` when it landed in another repository than the issue's), which records **Merged:** and **CI:** `pending` with one log line per issue, then `merged <ids> --ci green|red` when CI reports (`--ci none` for a repository with no CI). `status` counts `merged, CI pending N` and `CI red N`. `set done` on an issue whose CI is not green says so on stderr and closes it anyway — it records, it never gates the landing.
+
+**A committed loop commits itself.** In the committed and permanent modes, `status`, `handoff write`, `handoff read` and `close` name how many loop files git has not committed (`git status` of `.jarl/` in the loop's repository). A loop whose code lives in another repository has no merge in its own repository to ride on, so without this the record in git contradicts itself. The count is silent in the default mode and outside a git repository.
 
 ### From research to issues
 
@@ -160,7 +176,7 @@ Every turn, in this order:
    a loop, run `status` (goal, when it was opened, last activity) and ask the user once whether this
    session continues that loop or archives it (`archive "<slug>"`, then `init "<goal>"`). Ask only at
    that first contact, never again on each `new` or `evidence` in the same work.
-1. **Boot.** `handoff read`, then `goal.md`, `decisions.md`, the tail of `log.md`, `status`, `list`, and
+1. **Boot.** `handoff read` (a handoff marked STALE is a pointer, not the state: trust the live parts it prints), then `goal.md`, `decisions.md`, the tail of `log.md`, `status`, `list`, and
    `branches` — a worker branch with commits beyond the feature branch is a report, whether or not the
    worker said so. Open questions come first: the user may have answered one since.
 2. **File.** Anything anybody saw becomes an issue before anything else happens. Nobody fixes on the
@@ -168,8 +184,10 @@ Every turn, in this order:
 3. **Pick.** `jarl.mjs next` lists what can run now: open issues whose files do not overlap with anything
    in progress and whose **After:** issues are settled. Priority first, then whatever unblocks the most.
    An issue marked `(no acceptance yet)` gets its acceptance line first (`body <id> --acceptance`).
-   `set <id> in-progress "<who>"` before raising the worker.
-4. **Raise a worker.** One worker per issue, in its own worktree, on branch `jarl/NNN-slug` cut from
+   `set <ids> in-progress "<who>" --branch jarl/NNN-slug --worker <name> --worktree <path>` before
+   raising the worker — one issue, or a package of small neighbouring ones on one branch (see
+   [Packages and leases](#packages-and-leases)).
+4. **Raise a worker.** One worker per issue or per package, in its own worktree, on branch `jarl/NNN-slug` (NNN the package's first issue) cut from
    the feature branch — every agent that may write anything, a research issue's worker included,
    gets its own worktree; only the jarl works in the main checkout, and read-only readers and
    verifiers need none — on the tier the issue names — set it explicitly on every spawn, never inherited —
@@ -296,7 +314,7 @@ to push" in the jarl's own instructions: when `goal.md` or a ruling gives it, th
 so and names the feature branch), never resolve a conflict by picking a side blindly, never weaken a
 test or a check.
 For each branch the jarl names (or that `jarl.mjs branches` shows with commits beyond the base):
-1. `jarl.mjs check <id> --branch <b>`; read the diff (`git diff <feature-branch>...<b>`); a worker
+1. `jarl.mjs check <id> --branch <b>` (`jarl.mjs check --branch <b>` for a package); read the diff (`git diff <feature-branch>...<b>`); a worker
    worktree with an uncommitted but complete diff is committed on its branch first, with a log line
    saying the merger committed it; a branch the worker never renamed (UNNAMED in `branches`) is
    renamed to `jarl/NNN-slug` in its worktree (`git branch -m`) before anything else. A branch without an approving review (`jarl.mjs set` will refuse
@@ -312,13 +330,16 @@ For each branch the jarl names (or that `jarl.mjs branches` shows with commits b
    for the whole run, and wait for it. Red: roll back with `git reset --keep ORIG_HEAD` — never
    `--hard`, which would also discard what others wrote meanwhile — then
    `jarl.mjs round <id> "<what failed>"`, report.
-4. Green: `jarl.mjs evidence <id> "<check summary line, merge sha>"`, `jarl.mjs set <id> done`,
+4. Green: `jarl.mjs merged <ids> --sha <merge sha>` (`--ci none` when the repository has no CI; else
+   `jarl.mjs merged <ids> --ci green|red` once it reports), `jarl.mjs evidence <id> "<check summary line, merge sha>"`, `jarl.mjs set <id> done`,
    remove the worktree and the branch — `jarl/NNN-slug` AND, when the worker began on a branch of another
    name and made `jarl/NNN-slug` beside it instead of renaming it, that original branch too (read it off
    `git worktree list` before removing the worktree, and off `jarl.mjs branches`; a branch left behind is a
-   dead branch someone cleans up by hand) — `jarl.mjs log "merged <id> <sha>"`, then, in the committed
-   mode only, commit `.jarl/` (everything in it, including what the reeve wrote meanwhile) on the
-   feature branch — you are its only committer; in the default mode `.jarl/` is never committed.
+   dead branch someone cleans up by hand; `jarl.mjs branches` marks it `DONE → delete`) — then, in the committed
+   and permanent modes only, commit `.jarl/` (everything in it, including what the reeve wrote meanwhile) on the
+   feature branch — you are its only committer; in the default mode `.jarl/` is never committed. When the
+   merge happened in another repository, commit `.jarl/` in the loop's repository after recording it: nothing
+   else will, and `status` counts the loop files left uncommitted.
    Before moving to the next branch, `jarl.mjs show <id>` and confirm it reads
    `done` — a write that silently failed to land is worse than one that never ran. The tool locks
    and refuses loudly now, but a call whose exit code nobody read is still a write nobody saw.
