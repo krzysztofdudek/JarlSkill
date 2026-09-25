@@ -909,3 +909,255 @@ test('a command refused by the parser or its own checks does not backfill the ig
   jarl(root, 'new', 'thing');
   assert.equal(readFileSync(join(root, '.jarl', '.gitignore'), 'utf8'), JARL_GITIGNORE_COMMITTED, 'the first write that lands backfills it');
 });
+
+// ---- bodies, research import, ratify, After ----------------------------------------------------------
+
+test('new writes the body at filing time, body replaces it later, and neither is required', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'with a body', '--where', 'src/a.mjs:12', '--what', 'the parser drops the last row', '--why', 'exports lose data',
+    '--acceptance', 'npm test -- parser passes', '--acceptance', 'fixture 3 exports 10 rows');
+  const shown = jarl(root, 'show', '001');
+  assert.match(shown, /^\*\*Where:\*\* src\/a\.mjs:12$/m);
+  assert.match(shown, /## What\nthe parser drops the last row\n\n## Why\nexports lose data\n\n## Acceptance\n- npm test -- parser passes\n- fixture 3 exports 10 rows\n\n## Evidence/);
+  // A body line that looks like a heading stays inside its section.
+  jarl(root, 'body', '1', '--what', 'line one\n## not a section');
+  const issue = JSON.parse(jarl(root, 'show', '1', '--json'));
+  assert.match(issue.sections.what, /line one\n\\## not a section/);
+  assert.equal(Object.keys(issue.sections).join(','), 'what,why,acceptance,evidence');
+  assert.match(refuses(root, 'body', '1'), /at least one of/);
+  // A bare ## line is escaped too.
+  jarl(root, 'body', '1', '--why', 'a\n##\nb');
+  assert.match(JSON.parse(jarl(root, 'show', '1', '--json')).sections.why, /^a\n\\##\nb/);
+  assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /001 body · what/);
+  // Without any of it, an issue reads exactly as before.
+  jarl(root, 'new', 'bare');
+  assert.match(jarl(root, 'show', '2'), /\*\*Where:\*\*\n\n## What\n\n\n## Why\n\n\n## Acceptance\n\n\n## Evidence$/);
+});
+
+test('next and status flag work with no acceptance line, done says so on stderr, review echoes the acceptance', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'no acceptance');
+  jarl(root, 'new', 'has acceptance', '--acceptance', 'a', '--acceptance', 'b');
+  const next = JSON.parse(jarl(root, 'next', '--json'));
+  assert.equal(next[0].noAcceptance, true); assert.equal(next[1].noAcceptance, undefined);
+  assert.match(jarl(root, 'next'), /001 {2}P2 {2}no acceptance {2}\(no acceptance yet\)/);
+  jarl(root, 'set', '1,2', 'in-progress', 'raised');
+  assert.match(jarl(root, 'status'), /in flight with no acceptance line: 001$/m);
+  assert.match(jarl(root, 'review', '2', 'approve', 'fine'), /002 review approve · acceptance: - a \/ - b/);
+  jarl(root, 'evidence', '2', '--ran', 'x', '--saw', 'y');
+  const r = execFileSync(process.execPath, [SCRIPT, 'set', '2', 'done', 'merged', '--root', root], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  assert.equal(r.trim(), '002 → done', 'stdout is unchanged');
+  const child = (() => { try { return execFileSync('bash', ['-c', `node ${SCRIPT} review 1 approve ok --root ${root} >/dev/null && node ${SCRIPT} evidence 1 note --root ${root} >/dev/null && node ${SCRIPT} set 1 done m --root ${root} 2>&1 >/dev/null`], { encoding: 'utf8' }); } catch (e) { return String(e.stdout); } })();
+  assert.match(child, /note: 001 no acceptance line on file/, 'done is never refused for it, only noted');
+});
+
+const FLAT = [
+  { id: 'jarl-2-B2', kind: 'defect', priority: 'high', title: 'issues have no body', where: 'jarl.mjs:297', evidence: 'ran new, saw an empty What', proposal: 'add --what', effort: 'S' },
+  { id: 'jarl-2-B5', kind: 'opportunity', priority: 'low', title: 'no After relation', where: 'jarl.mjs:478', evidence: 'e', proposal: 'p', effort: 'M' },
+];
+
+function findingsDir(json) {
+  const dir = mkdtempSync(join(tmpdir(), 'report-2026-09-25-'));
+  writeFileSync(join(dir, 'findings.json'), JSON.stringify(json));
+  return join(dir, 'findings.json');
+}
+
+test('import files one issue per finding with a Source, never twice, and keeps Evidence empty', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  const file = findingsDir(FLAT);
+  const dry = JSON.parse(jarl(root, 'import', file, '--source', 'core/research/2026-09-25-jarl', '--dry-run', '--json'));
+  assert.equal(dry.filed.length, 2); assert.equal(JSON.parse(jarl(root, 'list', '--all', '--json')).length, 0, 'a dry run files nothing');
+  const out = JSON.parse(jarl(root, 'import', file, '--source', 'core/research/2026-09-25-jarl', '--tags', 'research', '--json'));
+  assert.deepEqual(out.filed.map((f) => [f.id, f.finding, f.kind, f.priority]), [['001', 'jarl-2-B2', 'bug', '1'], ['002', 'jarl-2-B5', 'gap', '3']]);
+  const one = JSON.parse(jarl(root, 'show', '1', '--json'));
+  assert.equal(one.fields.source, 'core/research/2026-09-25-jarl#jarl-2-B2');
+  assert.equal(one.fields.where, 'jarl.mjs:297');
+  assert.deepEqual(one.tags, ['research']);
+  assert.match(one.sections.what, /ran new, saw an empty What/);
+  assert.match(one.sections.why, /Effort \(the finding's estimate\): S/);
+  assert.match(one.sections.acceptance, /Proposed by the finding .*add --what/);
+  assert.equal(one.sections.evidence.trim(), '', 'nothing in Evidence: done still needs real evidence');
+  // A re-run files nothing; a hand-filed issue with --source counts as filed too.
+  assert.match(jarl(root, 'import', file, '--source', 'core/research/2026-09-25-jarl'), /filed 0 · already filed 2/);
+  jarl(root, 'new', 'by hand', '--source', 'core/research/2026-09-25-other#X-1');
+  assert.match(refuses(root, 'new', 'bad', '--source', 'no-hash'), /a source is <report dir>#<finding id>/);
+  // Flags override the mapping.
+  const file2 = findingsDir([{ id: 'Q-1', title: 'q', priority: 'high' }]);
+  const o2 = JSON.parse(jarl(root, 'import', file2, '--source', 'r2', '--kind', 'docs', '--prio', '3', '--json'));
+  assert.deepEqual([o2.filed[0].kind, o2.filed[0].priority], ['docs', '3']);
+  const sources = jarl(root, 'sources', file, '--source', 'core/research/2026-09-25-jarl');
+  assert.match(sources, /^core\/research\/2026-09-25-jarl · 2 finding\(s\) · 2 filed · 0 unfiled · issues: open 2$/m);
+  assert.match(sources, /^ {2}jarl-2-B2 {2}001 open$/m);
+  const all = JSON.parse(jarl(root, 'sources', '--json'));
+  assert.deepEqual(all.map((r) => r.source).sort(), ['core/research/2026-09-25-jarl', 'core/research/2026-09-25-other', 'r2']);
+});
+
+test('import reads the angles shape and the results/kept shape; refuses a finding with no id or a repeated one', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  const angles = findingsDir([
+    { angle: 'first-hour', summary: 's', surviving: [{ id: 'F1', title: 'a', severity: 'major', where: 'w', evidence: 'e', adopter_impact: 'hurts', suggested_fix: 'fix it' }], refuted: [] },
+    { angle: 'ci', summary: 's', surviving: [{ id: 'F1', title: 'b', severity: 'minor' }], refuted: [] },
+  ]);
+  const a = JSON.parse(jarl(root, 'import', angles, '--source', 'r-angles', '--json'));
+  assert.deepEqual(a.filed.map((f) => [f.finding, f.priority]), [['first-hour/F1', '2'], ['ci/F1', '3']]);
+  assert.match(JSON.parse(jarl(root, 'show', '1', '--json')).sections.why, /hurts/);
+  const kept = findingsDir({ results: [{ area: 'check', summary: 's', kept: [{ id: 'check-F1', severity: 'minor', surfaces: 'docs', claim: 'The gate is all-or-nothing. More text.', truth: 'It is per node.', evidence: 'docs:135', fix: 'reword' }], dropped: [] }] });
+  const k = JSON.parse(jarl(root, 'import', kept, '--source', 'r-kept', '--json'));
+  assert.equal(k.filed[0].title, 'The gate is all-or-nothing.');
+  const shown = JSON.parse(jarl(root, 'show', k.filed[0].id, '--json'));
+  assert.match(shown.sections.what, /Claim: The gate[\s\S]*Truth: It is per node\.[\s\S]*docs:135/);
+  assert.equal(shown.fields.where, 'docs');
+  assert.match(refuses(root, 'import', findingsDir([{ title: 'no id' }])), /has no id/);
+  assert.match(refuses(root, 'import', findingsDir([{ id: 'A' }, { id: 'A' }])), /appears twice/);
+  assert.match(refuses(root, 'import', findingsDir({ nope: 1 })), /not a findings file/);
+});
+
+test('import --adopt links older issues that name the finding, once, without filing a duplicate', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'Jarl: bodies (jarl-2-B2)');
+  jarl(root, 'new', 'minor package');
+  jarl(root, 'body', '2', '--what', 'covers jarl-2-B5 and jarl-9-Z9');
+  const file = findingsDir([...FLAT, { id: 'jarl-9-Z9', title: 'z' }, { id: 'jarl-2-B20', title: 'no one names me' }]);
+  assert.match(jarl(root, 'import', file, '--source', 'r'), /filed 1 · already filed 0 · named by an issue without Source 3/);
+  const o = JSON.parse(jarl(root, 'import', file, '--source', 'r', '--adopt', '--json'));
+  assert.deepEqual(o.adopted.map((a) => [a.finding, a.issue]), [['jarl-2-B2', '001'], ['jarl-2-B5', '002'], ['jarl-9-Z9', '002']]);
+  assert.equal(JSON.parse(jarl(root, 'show', '2', '--json')).fields.source, 'r#jarl-2-B5, r#jarl-9-Z9');
+  assert.match(jarl(root, 'import', file, '--source', 'r'), /filed 0 · already filed 4/);
+});
+
+test('ask --kind ratify blocks nothing, is listed in status and the handoff, and its answer lands on the issue', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'limit raised');
+  jarl(root, 'set', '1', 'in-progress', 'w');
+  assert.match(jarl(root, 'ask', 'raised the prompt limit to 96000 under the mandate', '--kind', 'ratify', '--issue', '1'), /filed a-001 for ratification · blocks nothing/);
+  assert.match(refuses(root, 'ask', 'x', '--kind', 'ratify', '--issue', '9'), /no such issue: 9/);
+  const st = jarl(root, 'status');
+  assert.match(st, /questions 0 · to ratify 1/);
+  assert.match(st, /^ratify a-001 \(issue 001\) · raised the prompt limit/m);
+  jarl(root, 'handoff', 'write', '--summary', 's');
+  assert.match(jarl(root, 'handoff', 'read'), /## Waiting on the user\n- \(nothing\)\n\n## Decided under mandate, awaiting ratification\n- a-001 \(issue 001\) raised/);
+  // It holds nothing back: next, done.
+  jarl(root, 'review', '1', 'approve', 'ok');
+  jarl(root, 'evidence', '1', 'merged');
+  jarl(root, 'set', '1', 'done', 'merged');
+  jarl(root, 'answer', 'a-001', 'ratified');
+  assert.match(jarl(root, 'show', '1'), /Ruling ask-001 \(ratify\): ratified/);
+  assert.match(jarl(root, 'status'), /questions 0$/m);
+});
+
+test('After holds an issue out of next and counts it as waiting; decide --settles writes the ruling into issues', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  for (const t of ['release', 'cleanup', 'profile', 'numbers']) jarl(root, 'new', t);
+  jarl(root, 'new', 'after the release', '--after', '1');
+  jarl(root, 'set', '2,3', 'in-progress', 'raised');
+  jarl(root, 'after', '2', '1'); jarl(root, 'after', '3', '1');
+  assert.match(jarl(root, 'status'), /open 2 · in flight 0 · waiting 3 ·/);
+  const st = JSON.parse(jarl(root, 'status', '--json'));
+  assert.deepEqual([st.open, st['in-progress'], st.waiting], [3, 2, 3], 'the status counts stay counts of statuses');
+  const next = jarl(root, 'next');
+  assert.match(next, /^005 {2}P2 {2}after the release {2}\(after 001\)$/m);
+  assert.match(next, /^001 {2}P2 {2}release/m);
+  assert.match(refuses(root, 'after', '1', '5'), /would close a cycle/);
+  assert.match(refuses(root, 'after', '1', '1'), /cannot wait on itself/);
+  assert.match(refuses(root, 'new', 'x', '--after', '99'), /no such issue: 099/);
+  jarl(root, 'set', '1', 'dropped', 'not this release');
+  assert.match(jarl(root, 'status'), /in flight 2 · done/);
+  assert.doesNotMatch(jarl(root, 'next'), /\(after/);
+  jarl(root, 'after', '5', '--clear');
+  assert.equal(JSON.parse(jarl(root, 'show', '5', '--json')).fields.after, undefined);
+  // A ruling names what it settles: the ruling goes into each issue's evidence, the status stays.
+  assert.match(jarl(root, 'decide', 'numbers', 'the core ships on one number', '--settles', '4'), /decided numbers · written into 004/);
+  const four = JSON.parse(jarl(root, 'show', '4', '--json'));
+  assert.equal(four.status, 'open');
+  assert.match(four.sections.evidence, /Ruling numbers: the core ships on one number/);
+  assert.match(readFileSync(join(root, '.jarl', 'decisions.md'), 'utf8'), /the core ships on one number\n\n\*\*Settles:\*\* 004/);
+  assert.match(refuses(root, 'decide', 'other', 'x', '--settles', '4,77'), /no such issue: 077/);
+  assert.doesNotMatch(readFileSync(join(root, '.jarl', 'decisions.md'), 'utf8'), /other/, 'a refused ruling writes nothing');
+});
+
+test('an issue file from before these fields reads and moves unchanged', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  const old = '# 001 · old one\n\n**Status:** open\n**Kind:** bug\n**Priority:** 1\n**Tier:** standard\n**Tags:** \n**Files:** a.mjs\n**Found by:** jarl\n**Where:**\n\n## What\n\n\n## Why\n\n\n## Acceptance\n\n\n## Evidence\n\n';
+  writeFileSync(join(root, '.jarl', 'issues', '001-old-one.md'), old);
+  const i = JSON.parse(jarl(root, 'show', '1', '--json'));
+  assert.deepEqual([i.after, i.sources], [[], []]);
+  assert.match(jarl(root, 'next'), /^001 {2}P1 {2}old one/);
+  assert.match(jarl(root, 'status'), /open 1 · in flight 0 · done 0/);
+  jarl(root, 'source', '1', 'r#A-1');
+  assert.match(readFileSync(join(root, '.jarl', 'issues', '001-old-one.md'), 'utf8'), /\*\*Where:\*\*\n\*\*Source:\*\* r#A-1\n\n## What/);
+});
+
+test('replacement patterns in user text are written as they are: $1, $&, $\' and $` never expand', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'dollars', '--what', 'w');
+  jarl(root, 'body', '1', '--why', "use $' here and $` and $& and $1");
+  jarl(root, 'evidence', '1', "saw $' and $1");
+  jarl(root, 'evidence', '1', "then $& too");
+  const text = jarl(root, 'show', '1');
+  assert.equal((text.match(/^## /gm) || []).length, 4, 'no section duplicated');
+  const i = JSON.parse(jarl(root, 'show', '1', '--json'));
+  assert.equal(i.sections.why.trim(), "use $' here and $` and $& and $1");
+  assert.equal(i.sections.evidence.trim(), "saw $' and $1\n\nthen $& too");
+});
+
+test('done: a ruling or a drop reason alone is not evidence; a proposal is not an acceptance line; 0 rows is noted', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'settled', '--acceptance', 'npm test passes');
+  jarl(root, 'decide', 'rule', 'keep it', '--settles', '1');
+  jarl(root, 'review', '1', 'approve', 'ok');
+  assert.match(refuses(root, 'set', '1', 'done', 'x'), /001 has no evidence yet/);
+  jarl(root, 'evidence', '1', 'merged abc');
+  const r = (() => { try { return execFileSync('bash', ['-c', `node ${SCRIPT} set 1 done m --root ${root} 2>&1`], { encoding: 'utf8' }); } catch (e) { return String(e.stdout); } })();
+  assert.match(r, /note: 001 1 acceptance line\(s\), 0 --ran\/--saw row\(s\)/);
+  const file = findingsDir([{ id: 'jarl-3-X1', title: 'x', proposal: 'do it' }]);
+  const o = JSON.parse(jarl(root, 'import', file, '--source', 'r', '--json'));
+  const next = JSON.parse(jarl(root, 'next', '--json')).find((x) => x.id === o.filed[0].id);
+  assert.equal(next.noAcceptance, true, 'the copied proposal is not an acceptance line yet');
+  assert.deepEqual([next.waitsOn, next.after], [[], []], 'every next row carries both lists');
+});
+
+test('import never takes a short id, a header field or Evidence for a mention of the finding', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'unrelated F1 in a title', '--what', 'see F4 and C1 here');   // short ids in prose, no report named
+  jarl(root, 'new', 'another', '--prio', '2');                                    // **Priority:** 2
+  jarl(root, 'new', 'notes');
+  jarl(root, 'evidence', '3', 'also touches jarl-2-B2');                          // named only in Evidence
+  jarl(root, 'new', 'package', '--what', 'from report-x: F7 and C9');              // short id with its report named
+  const file = findingsDir([{ id: 'F1', title: 'a' }, { id: 'F4', title: 'b' }, { id: 'C1', title: 'c' }, { id: '2', title: 'd' }, { id: 'jarl-2-B2', title: 'e' }, { id: 'F7', title: 'f' }]);
+  const o = JSON.parse(jarl(root, 'import', file, '--source', 'core/research/report-x', '--adopt', '--dry-run', '--json'));
+  assert.deepEqual(o.adopted.map((a) => [a.finding, a.issue]), [['F7', '004']]);
+  assert.deepEqual(o.filed.map((f) => f.finding), ['F1', 'F4', 'C1', '2', 'jarl-2-B2']);
+  // The angles shape: a bare id needs its <angle>/<id> or its report; the angle name is slugified into the key.
+  const angles = findingsDir([{ angle: 'First Hour', surviving: [{ id: 'prime-teaches-removed-verdict', title: 'p' }] }]);
+  const a = JSON.parse(jarl(root, 'import', angles, '--source', 'r-angles', '--dry-run', '--json'));
+  assert.equal(a.filed[0].finding, 'first-hour/prime-teaches-removed-verdict');
+  jarl(root, 'new', 'names it', '--what', 'first-hour/prime-teaches-removed-verdict');
+  const a2 = JSON.parse(jarl(root, 'import', angles, '--source', 'r-angles', '--dry-run', '--json'));
+  assert.deepEqual(a2.mentioned.map((m) => m.issue), ['005']);
+});
+
+test('import adopts a package issue whose Evidence names the report and lists the ids; short ids and other lines never match there', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'minor package');
+  jarl(root, 'evidence', '1', 'Source: core/research/2026-09-25-x-audit/report.md §3, findings.json area a. Ids: area-a-01, area-a-02, F1');
+  jarl(root, 'new', 'other work');
+  jarl(root, 'evidence', '2', 'touches area-a-03 as well');                                  // unique id, report not on the line
+  jarl(root, 'evidence', '2', 'see core/research/2026-09-25-x-audit/report.md');
+  const file = findingsDir([{ id: 'area-a-01', title: 'a' }, { id: 'area-a-02', title: 'b' }, { id: 'area-a-03', title: 'c' }, { id: 'F1', title: 'd' }]);
+  const o = JSON.parse(jarl(root, 'import', file, '--source', 'core/research/2026-09-25-x-audit', '--adopt', '--json'));
+  assert.deepEqual(o.adopted.map((x) => [x.finding, x.issue]), [['area-a-01', '001'], ['area-a-02', '001']]);
+  assert.deepEqual(o.filed.map((f) => f.finding), ['area-a-03', 'F1']);
+  assert.match(jarl(root, 'import', file, '--source', 'core/research/2026-09-25-x-audit'), /filed 0 · already filed 4/);
+});
