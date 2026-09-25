@@ -64,11 +64,11 @@ If there is no copy at all, say so and stop: the loop's state moves only through
 | `list [--status s] [--kind k] [--tag t] [--prio p] [--grep re] [--all]` | open and in-progress by default, sorted by priority |
 | `show <id>` · `status` | one issue · the loop's goal, when it was opened and when anything last happened, then one line of counts |
 | `archive "<slug>"` | puts the current loop away under `.jarl/archive/<yyyy.mm.dd>-<slug>/` — issues, goal, decisions, log and handoff — and leaves the archive and the mode markers (`.gitignore`, `.permanent`), so the next `init` here opens a new loop in the same mode; open work does not refuse it, but the result and the archived log name it |
-| `set <id> <status> "<why>"` | changes status and writes the log line in one move; `done` needs evidence on file, `dropped` and `deferred` need a reason (`deferred` is work that waits, not work that is gone: the default `list` hides it, `list --status deferred` shows it, `status` and `report` count it apart, and `close` says what it leaves waiting) |
-| `tag <id> +a -b` · `prio <id> 1\|2\|3` · `files <id> p,q` · `repo <id> <path>` | header fields |
-| `evidence <id> "<text>"` \| `evidence <id> --ran "<command>" --saw "<what it printed>"` | appends a free-text note, or one checkable row per `--ran`/`--saw` pair (repeat the pair for more rows, in one call or several) — `--ran`/`--saw` when the proof is a command, free text when it is not; nothing already recorded is ever replaced |
+| `set <ids> <status> "<why>"` | changes status and writes the log line in one move; `done` needs evidence on file, `dropped` and `deferred` need a reason (`deferred` is work that waits, not work that is gone: the default `list` hides it, `list --status deferred` shows it, `status` and `report` count it apart, and `close` says what it leaves waiting) |
+| `tag <ids> +a -b` · `prio <ids> 1\|2\|3` · `files <id> p,q` · `repo <id> <path>` | header fields |
+| `evidence <ids> "<text>"` \| `evidence <ids> --ran "<command>" --saw "<what it printed>"` | appends a free-text note, or one checkable row per `--ran`/`--saw` pair (repeat the pair for more rows, in one call or several) — `--ran`/`--saw` when the proof is a command, free text when it is not; nothing already recorded is ever replaced |
 | `next [--limit n]` | open issues that share no file with any in-progress one — what can run in parallel now; a file is its repository and its path, so the same path in two repositories never holds an issue back |
-| `review <id> approve\|changes "<findings>"` | the reviewer's verdict; `changes` needs a finding ranked Critical or Important in the text — Minor alone cannot bounce a branch, it rides an approve into evidence; `done` refuses without an approve newer than the last round |
+| `review <ids> approve\|changes "<findings>"` | the reviewer's verdict; `changes` needs a finding ranked Critical or Important in the text — Minor alone cannot bounce a branch, it rides an approve into evidence; `done` refuses without an approve newer than the last round |
 | `round <id> "<what failed>"` | one red round on the issue; the third prints a takeover block for a fresh worker |
 | `check <id> --branch <b> [--repo <path>]` | a worker branch before merge: commits beyond the base, diff inside the declared files, test files removed, assertions before and after, each item's own ok/not — read the items, not just the exit code; a script gate can use the exit code (0 clean, 2 something failed), a reader should not stop there. Read in `--repo`, else in the repository the issue's **Repo:** names, else in the loop's own |
 | `branches [--repo <path>]` | with no `--repo`, in the loop's own repository and in every repository an open or in-progress issue names (rows of another repository are labelled `[name]`); with it, in that one repository: every `jarl/NNN-*` branch, and every other branch a worktree has checked out (marked UNNAMED when a worker never renamed its branch), with commits beyond the base and worktree state — a branch with commits is a report whether or not the worker said so. Read in `--repo`, else in the loop's own repository |
@@ -78,6 +78,12 @@ If there is no copy at all, say so and stop: the loop's state moves only through
 | `report` | done, dropped and deferred with reasons, still open, found along the way — the material for the changelog |
 | `mode permanent` | turns an existing, committed loop into the permanent mode, with a log line — for a loop opened before the mode existed, or opened `--committed`; refuses a default-mode loop (out of git — a permanent record must be committed) and an already-permanent loop |
 | `close [--force]` | refuses while anything is open or in progress; otherwise removes `.jarl/` — in the permanent mode it keeps the directory instead and logs the close |
+
+`<ids>` on `evidence`, `review`, `set`, `tag` and `prio` is one id or several, written as one comma list with ranges: `12,13,14` or `203-206,209`. The tool resolves every id and checks every precondition before it writes anything, so a package of issues merged together closes in four calls (evidence, review, evidence of the merge, `set done`) instead of four per issue, and one missing id or one issue not ready for `done` leaves all of them untouched. Each issue still gets its own log line.
+
+A flag a command does not take is refused with the list of the ones it does, never ignored. A value flag takes the next argument whatever it starts with, so `--ran "--help"` or `--saw "--- FAIL"` records the row; `--flag=value` works too. A note or a title that itself starts with `--` goes after a bare `--` (`evidence 012 -- "--json drops a key"`), and every flag, `--root` included, goes before that `--`: arguments beyond what a command reads are refused, so a stray `--root` can never be dropped silently.
+
+Every command that writes holds `.jarl/.lock` while it runs, and every file is replaced whole, so the workers, reviewers and the merger can all call the tool at the same moment without losing each other's rows, log lines or issue numbers. A lock whose holder process is gone is taken over by the next call; a live holder that does not let go within 20 seconds makes the call fail with nothing written: retry it. Never delete the lock by hand while a jarl.mjs call may still be running.
 
 Every command takes `--json` and `--help`. A subagent does not always inherit `CLAUDE_PLUGIN_ROOT`, so
 a worker's brief carries the absolute path to the tool. Run from a worktree of the repository whose main checkout holds the loop, the tool finds the
@@ -282,8 +288,8 @@ For each branch the jarl names (or that `jarl.mjs branches` shows with commits b
    mode only, commit `.jarl/` (everything in it, including what the reeve wrote meanwhile) on the
    feature branch — you are its only committer; in the default mode `.jarl/` is never committed.
    Before moving to the next branch, `jarl.mjs show <id>` and confirm it reads
-   `done` — a write that silently failed to land is worse than one that never ran, and it has
-   happened.
+   `done` — a write that silently failed to land is worse than one that never ran. The tool locks
+   and refuses loudly now, but a call whose exit code nobody read is still a write nobody saw.
 Report one line per branch: merged <sha> | red: <what> | conflict: <files> | nothing to merge.
 When several approved branches wait and their declared files do not overlap, merge them one after
 another and run the check once for the batch; a red batch is rolled back whole (`git reset --keep`

@@ -413,7 +413,11 @@ test('init --committed writes no .gitignore and git sees the loop; an existing l
   const { dir: root, g } = gitRepo();
   const opened = JSON.parse(jarl(root, 'init', 'goal', '--committed', '--json'));
   assert.equal(opened.committed, true);
-  assert.match(refuses(gitRepo().dir, 'init', '--committed', 'goal'), /--committed takes no value/);
+  // --committed takes no value, so the goal after it is the goal, not the flag's value.
+  const before = gitRepo().dir;
+  assert.equal(JSON.parse(jarl(before, 'init', '--committed', 'goal first', '--json')).committed, true);
+  assert.match(readFileSync(join(before, '.jarl', 'goal.md'), 'utf8'), /goal first/);
+  assert.match(refuses(gitRepo().dir, 'init', 'goal', '--committed=yes'), /--committed takes no value/);
   assert.equal(existsSync(join(root, '.jarl', '.gitignore')), false);
   jarl(root, 'new', 'thing');
   jarl(root, 'evidence', '001', 'note');
@@ -433,7 +437,8 @@ test('init --permanent commits the loop and marks it as a record; close then kee
   assert.equal(opened.permanent, true);
   assert.equal(existsSync(join(root, '.jarl', '.gitignore')), false);
   assert.equal(existsSync(join(root, '.jarl', '.permanent')), true, 'the marker a later session reads to tell the mode');
-  assert.match(refuses(repo(), 'init', '--permanent', 'goal'), /--permanent takes no value/);
+  assert.equal(JSON.parse(jarl(repo(), 'init', '--permanent', 'goal', '--json')).permanent, true, 'the goal after --permanent is the goal');
+  assert.match(refuses(repo(), 'init', 'goal', '--permanent=yes'), /--permanent takes no value/);
   jarl(root, 'new', 'thing');
   assert.match(refuses(root, 'close'), /still open/, 'the open-issue refusal is unchanged in the permanent mode');
   jarl(root, 'set', '001', 'dropped', 'out of scope');
@@ -670,4 +675,145 @@ test('a new loop after an archive keeps the archived mode, and a flag that contr
   assert.match(refuses(root, 'init', 'next', '--committed'), /keeps its archived loops in the permanent mode/);
   assert.match(jarl(root, 'init', 'next'), /permanent record/);
   assert.match(refuses(root, 'archive', 'one'), /pick another slug|already exists/);
+});
+
+// ---- concurrency: one writer at a time -------------------------------------------------------
+
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+const jarlAsync = (root, ...args) => promisify(execFile)(process.execPath, [SCRIPT, ...args, '--root', root], { encoding: 'utf8' });
+
+test('20 parallel evidence calls land 20 rows and 20 log lines; 10 parallel new calls get 10 distinct numbers', async () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'target');
+  await Promise.all(Array.from({ length: 20 }, (_, n) => jarlAsync(root, 'evidence', '001', '--ran', `w${n}`, '--saw', 'ok')));
+  const shown = jarl(root, 'show', '001');
+  assert.equal((shown.match(/^- \*\*ran:\*\* w\d+ · \*\*saw:\*\* ok$/gm) || []).length, 20);
+  const log = readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
+  assert.equal((log.match(/· 001 evidence row · w\d+$/gm) || []).length, 20);
+  const filed = await Promise.all(Array.from({ length: 10 }, (_, n) => jarlAsync(root, 'new', `parallel ${n}`, '--json')));
+  const ids = filed.map((r) => JSON.parse(r.stdout).id);
+  assert.equal(new Set(ids).size, 10, `distinct ids, got ${ids.join(' ')}`);
+  assert.deepEqual([...ids].sort(), ['002', '003', '004', '005', '006', '007', '008', '009', '010', '011']);
+  assert.equal(existsSync(join(root, '.jarl', '.lock')), false, 'the lock is released after every call');
+  const { readdirSync } = await import('node:fs');
+  assert.deepEqual(readdirSync(join(root, '.jarl', 'issues')).filter((f) => f.endsWith('.tmp')), [], 'no temporary file is left behind');
+});
+
+test('a lock left by a process that is gone is broken; a live holder makes the caller fail loudly, writing nothing', async () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'target');
+  const lock = join(root, '.jarl', '.lock');
+  const { hostname } = await import('node:os');
+  // A pid that cannot be running (above the kernel's pid range).
+  writeFileSync(lock, `99999999 ${hostname()} 2026-01-01T00:00:00.000Z\n`);
+  jarl(root, 'evidence', '001', 'after a crash');
+  assert.match(jarl(root, 'show', '001'), /after a crash/);
+  assert.equal(existsSync(lock), false);
+  // A live holder (this test's own process) that does not let go: the call waits out its limit, then refuses.
+  const { withLock } = await import(new URL('../jarl.mjs', import.meta.url).href);
+  writeFileSync(lock, `${process.pid} ${hostname()} ${new Date().toISOString()}\n`);
+  const env = { ...process.env, JARL_LOCK_WAIT_MS: '300' };
+  let err;
+  try { execFileSync(process.execPath, [SCRIPT, 'evidence', '001', 'blocked', '--root', root], { encoding: 'utf8', env, stdio: 'pipe' }); } catch (e) { err = e; }
+  assert.ok(err, 'a held lock refuses instead of writing without it');
+  assert.match(String(err.stderr), new RegExp(`\\.jarl/\\.lock is held by another jarl\\.mjs \\(${process.pid} .*\\) — nothing was written`));
+  assert.doesNotMatch(jarl(root, 'show', '001'), /blocked/);
+  assert.equal(typeof withLock, 'function');
+});
+
+// ---- the argument parser ---------------------------------------------------------------------
+
+test('a value flag takes the next argument whatever it starts with; -- ends the flags; unknown flags are refused', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'target');
+  // --ran "--help" is a row, not a request for the usage text.
+  assert.equal(jarl(root, 'evidence', '001', '--ran', '--help', '--saw', 'usage'), '001 evidence row recorded');
+  jarl(root, 'evidence', '001', '--ran', 'yg check', '--saw', '--- FAIL: 3 pairs');
+  jarl(root, 'evidence', '001', '--ran=go test ./...', '--saw=ok=all');
+  const raw = (...args) => execFileSync(process.execPath, [SCRIPT, '--root', root, ...args], { encoding: 'utf8' }).trim();
+  raw('evidence', '001', '--', '--json prints ok');
+  // A --root written after the bare -- is an argument, and a surplus one is refused rather than dropped.
+  assert.match(refuses(root, 'evidence', '001', '--', 'x'), /unexpected: "--root".*flags such as --root go before it/s);
+  assert.match(refuses(root, 'set', '1', '2', 'done', 'why'), /set takes at most 3 arguments — unexpected: "why".*12,13/s);
+  const shown = jarl(root, 'show', '001');
+  assert.match(shown, /^- \*\*ran:\*\* --help · \*\*saw:\*\* usage$/m);
+  assert.match(shown, /^- \*\*ran:\*\* yg check · \*\*saw:\*\* --- FAIL: 3 pairs$/m);
+  assert.match(shown, /^- \*\*ran:\*\* go test \.\/\.\.\. · \*\*saw:\*\* ok=all$/m);
+  assert.match(shown, /^--json prints ok$/m);
+  assert.match(raw('new', '--', '--json output drops key'), /^filed 002 /);
+  // Refused loudly, naming what the command takes.
+  assert.match(refuses(root, 'new', 'd', '--kidn', 'gap'), /unknown flag --kidn for new — it takes .*--kind/);
+  assert.match(refuses(root, 'evidence', '001', '--json prints ok'), /unknown flag --json prints ok for evidence.*bare --/s);
+  assert.throws(() => raw('evidence', '001', '--ran'), (e) => /--ran needs a value/.test(String(e.stderr)));
+  assert.match(refuses(root, 'new', 'x', '--kind', 'bug', '--kind', 'gap'), /--kind given twice/);
+  assert.match(refuses(root, 'list', '--all=yes'), /--all takes no value/);
+  assert.match(refuses(root, 'evidence', '001', 'note', '--ran', 'a', '--saw', 'b'), /not both/);
+  assert.match(refuses(root, '--kind', 'bug', 'new', 'x'), /before the command/);
+  assert.match(refuses(root, 'frobnicate'), /unknown command: frobnicate/);
+  // Nothing refused above wrote anything.
+  assert.equal(JSON.parse(jarl(root, 'list', '--all', '--json')).length, 2);
+  // --help still prints the usage when it is a flag of its own.
+  assert.match(jarl(root, 'list', '--help'), /^usage: jarl\.mjs/);
+});
+
+test('every flag the usage text names is one its command accepts', async () => {
+  const { COMMAND_FLAGS } = await import(new URL('../jarl.mjs', import.meta.url).href);
+  const usage = readFileSync(SCRIPT, 'utf8').split('const USAGE = `')[1].split('`;')[0];
+  for (const line of usage.split('\n')) {
+    const m = /^ {2}([a-z]+) /.exec(line);
+    if (!m || !COMMAND_FLAGS[m[1]]) continue;
+    for (const [, flag] of line.matchAll(/--([a-z][a-z-]*)/g)) {
+      assert.ok(Object.hasOwn(COMMAND_FLAGS[m[1]], flag) || ['json', 'help', 'root'].includes(flag), `${m[1]} --${flag} is in the usage but not accepted`);
+    }
+  }
+});
+
+// ---- bulk ids ------------------------------------------------------------------------------------
+
+test('evidence, review, set, tag and prio take a comma list with ranges, all or nothing, one log line per issue', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  for (const t of ['a', 'b', 'c', 'd', 'e']) jarl(root, 'new', t);
+  // A four-issue package closes in four calls.
+  assert.equal(jarl(root, 'evidence', '1-3,5', '--ran', 'npm test', '--saw', 'pass 40'), '001 evidence row recorded\n002 evidence row recorded\n003 evidence row recorded\n005 evidence row recorded');
+  jarl(root, 'review', '1-3,5', 'approve', 'read the diff, nothing found');
+  jarl(root, 'evidence', '001,002,003,005', 'merged abc1234');
+  assert.equal(jarl(root, 'set', '1-3,5', 'done', 'merged abc1234'), '001 → done\n002 → done\n003 → done\n005 → done');
+  const rows = JSON.parse(jarl(root, 'list', '--all', '--json'));
+  assert.deepEqual(rows.filter((r) => r.status === 'done').map((r) => r.id), ['001', '002', '003', '005']);
+  const log = readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
+  assert.equal((log.match(/· 00[1235] → done · merged abc1234$/gm) || []).length, 4, 'one log line per issue');
+  assert.equal((log.match(/· 00[1235] review approve · /gm) || []).length, 4);
+  // tag and prio.
+  jarl(root, 'tag', '4,5', '+later', '-none');
+  jarl(root, 'prio', '4-5', '1');
+  const [d, e] = ['004', '005'].map((id) => jarl(root, 'show', id));
+  for (const t of [d, e]) { assert.match(t, /^\*\*Tags:\*\* later$/m); assert.match(t, /^\*\*Priority:\*\* 1$/m); }
+  // A JSON caller gets an array for a list, the old object for one id.
+  assert.ok(Array.isArray(JSON.parse(jarl(root, 'prio', '4,5', '2', '--json'))));
+  assert.equal(JSON.parse(jarl(root, 'prio', '4', '3', '--json')).id, '004');
+});
+
+test('a bulk call with one bad id, or one issue failing its precondition, writes nothing at all', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  for (const t of ['a', 'b']) jarl(root, 'new', t);
+  const before = () => [readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), jarl(root, 'show', '1'), jarl(root, 'show', '2')].join('\n');
+  const snap = before();
+  assert.match(refuses(root, 'evidence', '1,2,9', 'note'), /no such issue: 009 — nothing was written/);
+  assert.match(refuses(root, 'tag', '1-3', '+x'), /no such issue: 003/);
+  assert.match(refuses(root, 'set', '1,2', 'bogus'), /status must be one of/);
+  // 001 is ready for done, 002 is not: neither moves.
+  jarl(root, 'evidence', '1', 'proof');
+  jarl(root, 'review', '1', 'approve', 'fine');
+  assert.match(refuses(root, 'set', '1,2', 'done'), /002 has no evidence yet.*nothing was written/s);
+  assert.match(jarl(root, 'show', '1'), /^\*\*Status:\*\* open$/m);
+  assert.match(refuses(root, 'prio', '1,x', '1'), /not an issue id: "x"/);
+  assert.match(refuses(root, 'prio', '5-2', '1'), /runs backwards/);
+  assert.notEqual(before(), snap, 'the evidence and review above did land');
+  assert.doesNotMatch(jarl(root, 'show', '2'), /note/);
 });

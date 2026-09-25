@@ -5,8 +5,9 @@
 // .jarl/issues/NNN-slug.md per issue. This script only reads and writes those files, so anything
 // it does can be checked by opening them. Zero dependencies, Node 18+.
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, appendFileSync, rmSync, realpathSync, statSync, renameSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, rmSync, realpathSync, statSync, renameSync, openSync, closeSync, writeSync, unlinkSync, linkSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import { hostname } from 'node:os';
 import { join, resolve, dirname, basename, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -30,19 +31,19 @@ commands:
   new "<title>" [--kind k] [--prio 1|2|3] [--tier standard|strong] [--tags a,b] [--files p,q] [--repo <path>] [--found-by who]
                                                  file an issue under the next free number; --repo names the repository
                                                  its code lives in when that is not the loop's own (see --repo below)
-  evidence <id> "<text>" | --ran "<command>" --saw "<what it printed>"
+  evidence <ids> "<text>" | --ran "<command>" --saw "<what it printed>"
                                                  append a free-text note, or one checkable row per --ran/--saw pair (repeatable)
   list [--status s] [--kind k] [--tag t] [--prio p] [--grep re] [--all]
                                                  open and in-progress by default; --all for every status
   show <id>                                      print one issue
-  set <id> <status> "<why>"                      change status; writes the log line in the same move
-  tag <id> +a -b ...                             add and remove tags
-  prio <id> 1|2|3                                set priority
+  set <ids> <status> "<why>"                     change status; writes the log line in the same move
+  tag <ids> +a -b ...                            add and remove tags
+  prio <ids> 1|2|3                               set priority
   files <id> p,q,...                             declare the files the issue touches
   repo <id> <path> | <id> --clear                name the repository (its root) the issue's code lives in, or remove the field
   next [--limit n]                               open issues that do not share a file with any in-progress one;
                                                  a file is its repository and its path (see --repo below)
-  review <id> approve|changes "<findings>"     the reviewer's verdict; "done" needs an approve newer than the last round
+  review <ids> approve|changes "<findings>"      the reviewer's verdict; "done" needs an approve newer than the last round
   round <id> "<what failed>"                     one red round; after three prints the takeover block for a fresh worker
   check <id> --branch <b> [--base <feature-branch>] [--repo <path>]
                                                  commits beyond the base, diff inside the declared files, and the
@@ -74,6 +75,20 @@ commands:
                                                  kept instead: it logs the close and the directory stays as the record
 
 options: --json  --help  --root <repo root>
+
+<ids> (evidence, review, set, tag, prio): one id, or several as one comma list with ranges — 12,13,14 or
+203-206,209. Every id and every precondition is checked before anything is written, so the call lands on
+all of them or on none, with one log line per issue.
+
+Flags: a flag the command does not take is an error. A value flag takes the next argument whatever it
+starts with (--ran "--help" records a row), or inline as --flag=value. A bare -- ends the flags: put a
+note or a title that starts with -- after it, and every flag (--root too) before it. Words beyond what a
+command reads are an error.
+
+Writes: every command that writes holds .jarl/.lock while it runs (the holder's pid, host and time are
+inside), so parallel calls from workers, reviewers and the merger queue instead of losing each other's
+writes; a lock whose holder is gone is taken over, a live one that does not let go within 20 s fails the
+call with nothing written. Files are replaced whole, never half-written.
 
 --repo <path>: the checkout of another repository, for a loop that keeps its issues in one repository
 while its workers change another. Branches, the base (that checkout's current branch), diffs and
@@ -112,6 +127,84 @@ export function issuesDir(root) { return join(jarlDir(root), 'issues'); }
 
 function today() { return new Date().toISOString().slice(0, 10); }
 function stamp() { return new Date().toISOString().replace('T', ' ').slice(0, 16); }
+
+// ---- one writer at a time ------------------------------------------------------------------------
+
+// Workers, reviewers and the merger all write through this tool with the same --root, often at the same
+// moment. Every command that writes therefore runs under .jarl/.lock, taken with the exclusive-create flag
+// so exactly one process holds it; the holder's pid, host and start time are written inside it. A lock
+// whose holder is gone (same host, pid not running) or that is older than LOCK_STALE_MS is broken and
+// taken over; a caller that cannot get it within LOCK_WAIT_MS fails loudly, naming the holder, rather than
+// writing without it. And every file is written whole to a temporary file beside it and renamed into
+// place, so a reader that takes no lock (list, show) never sees half a file.
+export const LOCK_STALE_MS = 30_000;
+export const LOCK_WAIT_MS = Number(process.env.JARL_LOCK_WAIT_MS) || 20_000;   // the variable is a test knob
+const SLEEPER = new Int32Array(new SharedArrayBuffer(4));
+function sleep(ms) { Atomics.wait(SLEEPER, 0, 0, ms); }
+function lockPath(root) { return join(jarlDir(root), '.lock'); }
+let held = 0;   // re-entrant within one process: a command that calls another write takes the lock once
+
+// Stale: on this host, a holder whose pid no longer runs (or, against pid reuse, one older than ten minutes);
+// from another host (a shared checkout) or with no readable holder, one older than LOCK_STALE_MS.
+function lockIsStale(text, mtimeMs) {
+  const [pid, host] = text.split('\n')[0].split(' ');
+  const age = Date.now() - mtimeMs;
+  if (host === hostname() && Number(pid) > 0) {
+    try { process.kill(Number(pid), 0); } catch (e) { if (e.code === 'ESRCH') return true; }
+    return age > 10 * 60_000;
+  }
+  return age > LOCK_STALE_MS;
+}
+
+export function withLock(root, fn) {
+  // Before init there is no .jarl/ to guard and nothing in it to lose: init runs unguarded.
+  if (held > 0 || !existsSync(jarlDir(root))) return fn();
+  const path = lockPath(root);
+  const mine = `${process.pid} ${hostname()} ${new Date().toISOString()}\n`;
+  const until = Date.now() + LOCK_WAIT_MS;
+  for (;;) {
+    try {
+      const fd = openSync(path, 'wx');
+      try { writeSync(fd, mine); } finally { closeSync(fd); }
+      break;
+    } catch (e) {
+      if (e.code === 'ENOENT') throw new Error(`no .jarl/ here any more — the loop was closed or archived while this command waited (${jarlDir(root)})`);
+      if (e.code !== 'EEXIST') throw e;
+    }
+    let text = ''; let mtimeMs = Date.now();
+    try { text = readFileSync(path, 'utf8'); mtimeMs = statSync(path).mtimeMs; } catch { continue; }   // released meanwhile
+    if (lockIsStale(text, mtimeMs)) {
+      // Break it by moving it aside and checking it is still the lock judged stale: a live holder that
+      // took the lock in between gets it back (link never overwrites), so it is never stolen.
+      const aside = `${path}.stale-${process.pid}`;
+      try { renameSync(path, aside); } catch { continue; }
+      let moved = '';
+      try { moved = readFileSync(aside, 'utf8'); } catch { /* gone */ }
+      if (moved !== text) { try { linkSync(aside, path); } catch { /* another holder already */ } }
+      try { unlinkSync(aside); } catch { /* gone */ }
+      continue;
+    }
+    if (Date.now() > until) throw new Error(`.jarl/.lock is held by another jarl.mjs (${text.trim() || 'holder unknown'}) — nothing was written; retry, or remove ${path} if that process is gone`);
+    sleep(10 + Math.floor(Math.random() * 40));
+  }
+  held += 1;
+  try { return fn(); } finally {
+    held -= 1;
+    // Release only a lock that is still this one: close removes .jarl/ with it, and a lock broken as stale
+    // may already belong to someone else.
+    try { if (readFileSync(path, 'utf8') === mine) unlinkSync(path); } catch { /* removed with .jarl/ */ }
+  }
+}
+
+// Written whole beside the target, then renamed over it: a reader sees the old file or the new one.
+export function writeAtomic(path, text) {
+  const tmp = join(dirname(path), `.${basename(path)}.${process.pid}.tmp`);
+  writeFileSync(tmp, text);
+  renameSync(tmp, path);
+}
+function appendAtomic(path, header, text) {
+  writeAtomic(path, (existsSync(path) ? readFileSync(path, 'utf8') : header) + text);
+}
 
 // ---- issues ------------------------------------------------------------------------------------
 
@@ -206,16 +299,19 @@ ${repo ? `**Repo:** ${repo}\n` : ''}**Found by:** ${foundBy}
 // ---- journal and decisions ----------------------------------------------------------------------
 
 export function appendLog(root, event) {
-  const path = join(jarlDir(root), 'log.md');
-  if (!existsSync(path)) writeFileSync(path, '# Log\n\n');
-  appendFileSync(path, `- ${stamp()} · ${event}\n`);
+  appendLogLines(root, [event]);
+}
+// Several lines in one write: a bulk command's lines land together or not at all.
+export function appendLogLines(root, events) {
+  const at = stamp();
+  appendAtomic(join(jarlDir(root), 'log.md'), '# Log\n\n', events.map((e) => `- ${at} · ${e}\n`).join(''));
 }
 
 export function appendDecision(root, slug, ruling) {
   const path = join(jarlDir(root), 'decisions.md');
   const existing = existsSync(path) ? readFileSync(path, 'utf8') : '# Decisions\n';
   if (new RegExp(`^## \\d{4}-\\d{2}-\\d{2} · ${slug}\\s*$`, 'm').test(existing)) throw new Error(`duplicate slug: ${slug}`);
-  writeFileSync(path, `${existing.replace(/\s*$/, '')}\n\n## ${today()} · ${slug}\n${ruling.trim()}\n`);
+  writeAtomic(path, `${existing.replace(/\s*$/, '')}\n\n## ${today()} · ${slug}\n${ruling.trim()}\n`);
 }
 
 // ---- commands ----------------------------------------------------------------------------------
@@ -250,11 +346,11 @@ export function cmdInit(root, goal, flags = {}) {
     committed = kept !== 'default';
   }
   mkdirSync(issuesDir(root), { recursive: true });
-  if (!archived && !committed) writeFileSync(join(jarlDir(root), '.gitignore'), JARL_GITIGNORE);
-  if (!archived && permanent) writeFileSync(join(jarlDir(root), '.permanent'), PERMANENT_MARKER);
-  writeFileSync(join(jarlDir(root), 'goal.md'), `# Goal\n\n${goal.trim()}\n\n## Assumptions\n\n## Rules that apply here\n`);
-  writeFileSync(join(jarlDir(root), 'decisions.md'), '# Decisions\n');
-  writeFileSync(join(jarlDir(root), 'log.md'), '# Log\n\n');
+  if (!archived && !committed) writeAtomic(join(jarlDir(root), '.gitignore'), JARL_GITIGNORE);
+  if (!archived && permanent) writeAtomic(join(jarlDir(root), '.permanent'), PERMANENT_MARKER);
+  writeAtomic(join(jarlDir(root), 'goal.md'), `# Goal\n\n${goal.trim()}\n\n## Assumptions\n\n## Rules that apply here\n`);
+  writeAtomic(join(jarlDir(root), 'decisions.md'), '# Decisions\n');
+  writeAtomic(join(jarlDir(root), 'log.md'), '# Log\n\n');
   appendLog(root, `opened · ${goal.trim()}`);
   return { dir: jarlDir(root), committed, permanent };
 }
@@ -272,7 +368,7 @@ function needLiveLoop(root, next) {
 
 // What stays in .jarl/ when a loop is archived: the archive itself and the markers that say how the
 // loop lives in git, so the next loop opened here keeps the same mode.
-const ARCHIVE_KEEPS = new Set(['archive', '.gitignore', '.permanent']);
+const ARCHIVE_KEEPS = new Set(['archive', '.gitignore', '.permanent', '.lock']);
 
 // archive "<slug>" — put the current loop away under .jarl/archive/<yyyy.mm.dd>-<slug>/ so a new one
 // can be opened here with init. Everything but the archive and the mode markers moves: issues, goal,
@@ -304,15 +400,27 @@ export function cmdNew(root, title, flags) {
   const tier = String(flags.tier || 'standard');
   need(TIERS.includes(tier), `--tier must be one of: ${TIERS.join(', ')} — the tier of model the worker is raised on, mapped to a model by the platform running the loop`);
   if (flags.repo !== undefined) repoOf(root, flags.repo);
-  const issues = loadIssues(root);
-  const id = String(issues.reduce((m, i) => Math.max(m, Number(i.id)), 0) + 1).padStart(3, '0');
-  const file = join(issuesDir(root), `${id}-${slugify(title)}.md`);
-  writeFileSync(file, renderIssue({
-    id, title, kind, priority, tier,
-    tags: splitList(flags.tags), files: splitList(flags.files), repo: flags.repo, foundBy: flags['found-by'] || 'jarl',
-  }));
-  appendLog(root, `filed ${id} · ${title}`);
-  return { id, file };
+  // The number is claimed by creating the file with a link, which never overwrites: when another
+  // writer got there first (the lock makes that rare, not impossible — a hand-made file, a stale
+  // lock broken early), the next number is tried instead of two issues sharing one.
+  const dir = issuesDir(root);
+  const taken = () => readdirSync(dir).map((f) => /^(\d{3,})-.*\.md$/.exec(f)).filter(Boolean).map((m) => Number(m[1]));
+  let n = taken().reduce((m, x) => Math.max(m, x), 0) + 1;
+  for (let tries = 0; ; tries += 1) {
+    const id = String(n).padStart(3, '0');
+    const file = join(dir, `${id}-${slugify(title)}.md`);
+    const tmp = join(dir, `.${id}.${process.pid}.tmp`);
+    writeFileSync(tmp, renderIssue({
+      id, title, kind, priority, tier,
+      tags: splitList(flags.tags), files: splitList(flags.files), repo: flags.repo, foundBy: flags['found-by'] || 'jarl',
+    }));
+    let claimed = !taken().includes(n);
+    if (claimed) { try { linkSync(tmp, file); } catch (e) { if (e.code !== 'EEXIST') { unlinkSync(tmp); throw e; } claimed = false; } }
+    unlinkSync(tmp);
+    if (claimed) { appendLog(root, `filed ${id} · ${title}`); return { id, file }; }
+    need(tries < 100, 'could not claim a free issue number after 100 tries');
+    n = Math.max(n + 1, taken().reduce((m, x) => Math.max(m, x), 0) + 1);
+  }
 }
 
 function splitList(v) { return String(v || '').split(',').map((s) => s.trim()).filter(Boolean); }
@@ -332,54 +440,90 @@ export function cmdList(root, flags) {
   return rows.sort((a, b) => a.priority.localeCompare(b.priority) || a.id.localeCompare(b.id));
 }
 
-export function cmdSet(root, rawId, status, why) {
+// Bulk ids: evidence, review, set, tag and prio take one id or several — a comma list with ranges,
+// `12,13,14` or `203-206,209` (no spaces: one argument, like --tags a,b). Every id is resolved and every
+// precondition checked before anything is written, so a call either lands on all of them or on none;
+// each issue still gets its own log line.
+const MAX_BULK = 200;
+export function expandIds(raw) {
+  need(raw !== undefined && String(raw).trim() !== '', 'an issue id is required — one id, or several as a comma list with ranges: 12,13 or 203-206,209');
+  const out = [];
+  for (const part of String(raw).split(',').map((p) => p.trim().replace(/^#/, ''))) {
+    const range = /^(\d+)-#?(\d+)$/.exec(part);
+    if (range) {
+      const [a, b] = [Number(range[1]), Number(range[2])];
+      need(a <= b, `range ${part} runs backwards — write it low-high`);
+      need(b - a < MAX_BULK, `range ${part} spans more than ${MAX_BULK} issues`);
+      for (let n = a; n <= b; n += 1) out.push(String(n).padStart(3, '0'));
+    } else {
+      need(/^\d+$/.test(part), `not an issue id: "${part}" — ids are numbers, several as a comma list with ranges: 12,13 or 203-206,209`);
+      out.push(part.padStart(3, '0'));
+    }
+  }
+  return [...new Set(out)];
+}
+function isBulk(raw) { return /[,-]/.test(String(raw ?? '')); }
+function issuesFor(root, rawIds) {
+  const ids = expandIds(rawIds);
+  const all = loadIssues(root);
+  const missing = ids.filter((id) => !all.some((i) => i.id === id));
+  need(missing.length === 0, `no such issue: ${missing.join(', ')}${ids.length > 1 ? ' — nothing was written' : ''}`);
+  return ids.map((id) => all.find((i) => i.id === id));
+}
+// One id in, the same object as always out; a list in, an array of them.
+function oneOrMany(rawIds, results) { return isBulk(rawIds) ? results : results[0]; }
+
+export function cmdSet(root, rawIds, status, why) {
   need(STATUSES.includes(status), `status must be one of: ${STATUSES.join(', ')}`);
-  const issue = findIssue(root, rawId);
-  need(issue, `no such issue: ${rawId}`);
+  const issues = issuesFor(root, rawIds);
   need(status !== 'dropped' || why, 'dropped needs a reason: jarl.mjs set <id> dropped "<why>"');
   need(status !== 'deferred' || why, 'deferred needs a reason: jarl.mjs set <id> deferred "<why>" — work that waits, not work that is gone');
-  need(status !== 'done' || issue.sections.evidence?.trim(), `${issue.id} has no evidence yet — record it first: jarl.mjs evidence ${issue.id} "<what was run and what it printed>"`);
-  need(status !== 'done' || reviewState(root, issue.id).approved, `${issue.id} has no approving review newer than its last round — a fresh reviewer reads the issue and the diff first: jarl.mjs review ${issue.id} approve|changes "<findings>"`);
-  let text = readFileSync(issue.file, 'utf8');
-  text = setField(text, 'Status', status);
-  // What was already written under Evidence stays: a drop or a deferral is one more line in the history,
-  // not a reset of it.
-  if (status === 'dropped' || status === 'deferred') {
-    const written = (issue.sections.evidence || '').trim();
-    const line = `${status === 'dropped' ? 'Dropped' : 'Deferred'}: ${why}`;
-    text = setSection(text, 'Evidence', written ? `${written}\n\n${line}` : line);
+  const nothing = issues.length > 1 ? ' — nothing was written' : '';
+  for (const issue of issues) {
+    need(status !== 'done' || issue.sections.evidence?.trim(), `${issue.id} has no evidence yet — record it first: jarl.mjs evidence ${issue.id} "<what was run and what it printed>"${nothing}`);
+    need(status !== 'done' || reviewState(root, issue.id).approved, `${issue.id} has no approving review newer than its last round — a fresh reviewer reads the issue and the diff first: jarl.mjs review ${issue.id} approve|changes "<findings>"${nothing}`);
   }
-  writeFileSync(issue.file, text);
-  appendLog(root, `${issue.id} → ${status}${why ? ` · ${why}` : ''}`);
-  return { id: issue.id, status };
+  const writes = issues.map((issue) => {
+    let text = readFileSync(issue.file, 'utf8');
+    text = setField(text, 'Status', status);
+    // What was already written under Evidence stays: a drop or a deferral is one more line in the history,
+    // not a reset of it.
+    if (status === 'dropped' || status === 'deferred') {
+      const written = (issue.sections.evidence || '').trim();
+      const line = `${status === 'dropped' ? 'Dropped' : 'Deferred'}: ${why}`;
+      text = setSection(text, 'Evidence', written ? `${written}\n\n${line}` : line);
+    }
+    return { issue, text };
+  });
+  for (const w of writes) writeAtomic(w.issue.file, w.text);
+  appendLogLines(root, issues.map((issue) => `${issue.id} → ${status}${why ? ` · ${why}` : ''}`));
+  return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, status })));
 }
 
-export function cmdTag(root, rawId, ops) {
-  const issue = findIssue(root, rawId);
-  need(issue, `no such issue: ${rawId}`);
-  const tags = new Set(issue.tags);
-  for (const op of ops) {
-    if (op.startsWith('+')) tags.add(op.slice(1));
-    else if (op.startsWith('-')) tags.delete(op.slice(1));
-    else throw new Error(`tags are +name or -name, not "${op}"`);
-  }
-  writeFileSync(issue.file, setField(readFileSync(issue.file, 'utf8'), 'Tags', [...tags].sort().join(', ')));
-  return { id: issue.id, tags: [...tags].sort() };
+export function cmdTag(root, rawIds, ops) {
+  const issues = issuesFor(root, rawIds);
+  for (const op of ops) need(/^[+-]./.test(op), `tags are +name or -name, not "${op}"`);
+  const results = issues.map((issue) => {
+    const tags = new Set(issue.tags);
+    for (const op of ops) { if (op.startsWith('+')) tags.add(op.slice(1)); else tags.delete(op.slice(1)); }
+    return { issue, tags: [...tags].sort() };
+  });
+  for (const r of results) writeAtomic(r.issue.file, setField(readFileSync(r.issue.file, 'utf8'), 'Tags', r.tags.join(', ')));
+  return oneOrMany(rawIds, results.map((r) => ({ id: r.issue.id, tags: r.tags })));
 }
 
-export function cmdPrio(root, rawId, prio) {
+export function cmdPrio(root, rawIds, prio) {
   need(PRIORITIES.includes(String(prio)), 'priority is 1, 2 or 3');
-  const issue = findIssue(root, rawId);
-  need(issue, `no such issue: ${rawId}`);
-  writeFileSync(issue.file, setField(readFileSync(issue.file, 'utf8'), 'Priority', String(prio)));
-  return { id: issue.id, priority: String(prio) };
+  const issues = issuesFor(root, rawIds);
+  for (const issue of issues) writeAtomic(issue.file, setField(readFileSync(issue.file, 'utf8'), 'Priority', String(prio)));
+  return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, priority: String(prio) })));
 }
 
 export function cmdFiles(root, rawId, list) {
   const issue = findIssue(root, rawId);
   need(issue, `no such issue: ${rawId}`);
   const files = splitList(list);
-  writeFileSync(issue.file, setField(readFileSync(issue.file, 'utf8'), 'Files', files.join(', ')));
+  writeAtomic(issue.file, setField(readFileSync(issue.file, 'utf8'), 'Files', files.join(', ')));
   return { id: issue.id, files };
 }
 
@@ -389,12 +533,12 @@ export function cmdRepo(root, rawId, path, { clear = false } = {}) {
   if (clear) {
     need(issue.fields.repo, `${issue.id} has no Repo field to clear`);
     const text = readFileSync(issue.file, 'utf8').replace(/^\*\*Repo:\*\*.*\n/m, '');
-    writeFileSync(issue.file, text);
+    writeAtomic(issue.file, text);
     return { id: issue.id, repo: null, cleared: true };
   }
   need(path !== undefined, 'repo requires <path> — the checkout of the repository the issue\'s code lives in (or --clear to remove the field)');
   repoOf(root, path);
-  writeFileSync(issue.file, setField(readFileSync(issue.file, 'utf8'), 'Repo', path));
+  writeAtomic(issue.file, setField(readFileSync(issue.file, 'utf8'), 'Repo', path));
   return { id: issue.id, repo: path };
 }
 
@@ -418,26 +562,26 @@ export function acceptanceLineCount(issue) {
 // in one call or across calls, one row per acceptance line. Both append to the same section, never
 // replace it: the merger's free-text note lands after the worker's rows. `set done` needs the section
 // non-empty, rows or not (not every issue's proof is a command).
-export function cmdEvidence(root, rawId, text, flags) {
-  const issue = findIssue(root, rawId);
-  need(issue, `no such issue: ${rawId}`);
+export function cmdEvidence(root, rawIds, text, flags) {
+  let rows = null;
   if (flags && (flags.ran !== undefined || flags.saw !== undefined)) {
     const rans = [].concat(flags.ran ?? []);
     const saws = [].concat(flags.saw ?? []);
     need(rans.length && saws.length && [...rans, ...saws].every((v) => typeof v === 'string' && v.trim()), 'a row needs both --ran "<command>" and --saw "<what it printed>", each with a value');
     need(rans.length === saws.length, `--ran and --saw must repeat the same number of times (got ${rans.length} --ran, ${saws.length} --saw)`);
-    const rows = rans.map((ran, i) => ({ ran, saw: saws[i] }));
-    const lines = rows.map((r) => `- **ran:** ${r.ran} · **saw:** ${r.saw}`).join('\n');
-    const current = (issue.sections.evidence || '').trim();
-    writeFileSync(issue.file, setSection(readFileSync(issue.file, 'utf8'), 'Evidence', current ? `${current}\n${lines}` : lines));
-    for (const r of rows) appendLog(root, `${issue.id} evidence row · ${r.ran}`);
-    return { id: issue.id, rows };
+    need(text === undefined, `evidence takes free text or --ran/--saw rows, not both (got "${text}" as well) — a value starting with -- goes after a bare --`);
+    rows = rans.map((ran, i) => ({ ran, saw: saws[i] }));
+  } else {
+    need(text, 'evidence requires "<what was run and what it printed>", or --ran "<command>" --saw "<what it printed>"');
   }
-  need(text, 'evidence requires "<what was run and what it printed>", or --ran "<command>" --saw "<what it printed>"');
-  const current = (issue.sections.evidence || '').trim();
-  writeFileSync(issue.file, setSection(readFileSync(issue.file, 'utf8'), 'Evidence', current ? `${current}\n\n${text}` : text));
-  appendLog(root, `${issue.id} evidence · ${text.split('\n')[0]}`);
-  return { id: issue.id };
+  const issues = issuesFor(root, rawIds);
+  const added = rows ? rows.map((r) => `- **ran:** ${r.ran} · **saw:** ${r.saw}`).join('\n') : text;
+  for (const issue of issues) {
+    const current = (issue.sections.evidence || '').trim();
+    writeAtomic(issue.file, setSection(readFileSync(issue.file, 'utf8'), 'Evidence', current ? `${current}${rows ? '\n' : '\n\n'}${added}` : added));
+  }
+  appendLogLines(root, issues.flatMap((issue) => (rows ? rows.map((r) => `${issue.id} evidence row · ${r.ran}`) : [`${issue.id} evidence · ${text.split('\n')[0]}`])));
+  return oneOrMany(rawIds, issues.map((issue) => (rows ? { id: issue.id, rows } : { id: issue.id })));
 }
 
 // A declared file is a repository and a path inside it. An issue that names no repository declares
@@ -523,7 +667,7 @@ export function cmdMode(root, mode) {
   needLiveLoop(root, '');
   need(!existsSync(join(jarlDir(root), '.gitignore')), 'this loop is out of git (default mode) — a permanent record must be committed, and only init decides .jarl/.gitignore, so there is no in-place switch. Start a fresh loop with: jarl.mjs init "<goal>" --permanent');
   need(!existsSync(join(jarlDir(root), '.permanent')), 'already a permanent record (.jarl/.permanent exists) — nothing to do');
-  writeFileSync(join(jarlDir(root), '.permanent'), PERMANENT_MARKER);
+  writeAtomic(join(jarlDir(root), '.permanent'), PERMANENT_MARKER);
   appendLog(root, 'mode → permanent · no longer tied to a feature branch; close now keeps the directory instead of removing it');
   return { permanent: true };
 }
@@ -567,18 +711,17 @@ const SEVERITIES = ['Critical', 'Important', 'Minor'];
 // A "changes" verdict names at least one Critical or Important finding — Minor alone never bounces
 // a branch back to a worker, it goes to evidence and the branch still merges (the review discipline's
 // own rule, enforced here rather than left to a reviewer's judgement).
-export function cmdReview(root, rawId, verdict, findings) {
+export function cmdReview(root, rawIds, verdict, findings) {
   need(verdict === 'approve' || verdict === 'changes', 'review requires approve|changes');
   need(findings, 'review requires "<findings>" — what was read and what was found, even when nothing');
-  const issue = findIssue(root, rawId);
-  need(issue, `no such issue: ${rawId}`);
+  const issues = issuesFor(root, rawIds);
   const severities = SEVERITIES.filter((s) => findings.includes(s));
   if (verdict === 'changes') {
     need(severities.length > 0, `"changes" needs at least one finding ranked ${SEVERITIES.join('/')} — name the severity, not just the problem`);
     need(severities.some((s) => s !== 'Minor'), '"changes" needs a Critical or Important finding — Minor alone goes to evidence on an approve, it never bounces a branch');
   }
-  appendLog(root, `${issue.id} review ${verdict} · ${findings.split('\n')[0]}`);
-  return { id: issue.id, verdict, severities };
+  appendLogLines(root, issues.map((issue) => `${issue.id} review ${verdict} · ${findings.split('\n')[0]}`));
+  return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, verdict, severities })));
 }
 
 // ---- rounds, branches, checks ------------------------------------------------------------------
@@ -750,9 +893,8 @@ export function cmdAsk(root, question, flags) {
   const asks = loadAsks(root);
   const id = String(asks.reduce((m, a) => Math.max(m, Number(a.id)), 0) + 1).padStart(3, '0');
   const path = asksPath(root);
-  if (!existsSync(path)) writeFileSync(path, '# Questions to the user\n\n');
   const target = kind === 'lower' ? ` · target ${flags.target}` : '';
-  appendFileSync(path, `- **a-${id}** (open) · ${kind}${target}${flags.issue ? ` · issue ${String(flags.issue).padStart(3, '0')}` : ''} · ${question}\n`);
+  appendAtomic(path, '# Questions to the user\n\n', `- **a-${id}** (open) · ${kind}${target}${flags.issue ? ` · issue ${String(flags.issue).padStart(3, '0')}` : ''} · ${question}\n`);
   appendLog(root, `asked a-${id} (${kind}) · ${question}`);
   return { id, question, kind };
 }
@@ -765,7 +907,7 @@ export function cmdAnswer(root, rawId, answer) {
   need(ask.state === 'open', `a-${id} is already answered`);
   appendDecision(root, `ask-${id}`, `**Question:** ${ask.question}\n**Answer:** ${answer}`);
   const path = asksPath(root);
-  writeFileSync(path, readFileSync(path, 'utf8').replace(`- **a-${id}** (open)`, `- **a-${id}** (answered)`));
+  writeAtomic(path, readFileSync(path, 'utf8').replace(`- **a-${id}** (open)`, `- **a-${id}** (answered)`));
   appendLog(root, `answered a-${id} · ${answer.split('\n')[0]}`);
   return { id, answer };
 }
@@ -783,7 +925,7 @@ export function cmdHandoffWrite(root, flags) {
   const repos = [...new Set(loadIssues(root).filter((i) => i.status === 'open' || i.status === 'in-progress').map((i) => i.fields.repo).filter(Boolean))];
   const heads = repos.map((r) => ` · **Head in ${r}:** ${headOf(resolve(root, r))}`).join('');
   const text = `# Handoff\n\n**At:** ${stamp()} · **Head:** ${headOf(root)}${heads}\n\n## Summary\n${flags.summary}\n\n## In flight\n${inFlight.map((s) => `- ${s}`).join('\n') || '- (nothing)'}\n\n## Waiting on the user\n${open.map((s) => `- ${s}`).join('\n') || '- (nothing)'}\n\n## Next\n${next.map((s) => `- ${s}`).join('\n') || '- (nothing recorded)'}\n`;
-  writeFileSync(handoffPath(root), text);
+  writeAtomic(handoffPath(root), text);
   appendLog(root, `handoff · ${flags.summary.split('\n')[0]}`);
   return { path: handoffPath(root), inFlight: inFlight.length, waiting: open.length };
 }
@@ -818,46 +960,123 @@ export function cmdReport(root) {
 
 // ---- main --------------------------------------------------------------------------------------
 
+// Every flag a command accepts, and what it takes: 'bool' takes no value, 'value' takes exactly one,
+// 'many' may repeat (one value each time). A value flag always consumes the next argument, whatever it
+// starts with — `--ran "--help"` records a row whose command is --help — or takes it inline as
+// --flag=value. A bare `--` ends the flags: everything after it is positional, so a free-text note or
+// a title that starts with -- goes there. A flag the command does not know is an error that names the
+// ones it does, never silently dropped.
+const GLOBAL_FLAGS = { json: 'bool', help: 'bool', root: 'value' };
+export const COMMAND_FLAGS = {
+  init: { committed: 'bool', permanent: 'bool' },
+  new: { kind: 'value', prio: 'value', tier: 'value', tags: 'value', files: 'value', repo: 'value', 'found-by': 'value' },
+  evidence: { ran: 'many', saw: 'many' },
+  list: { status: 'value', kind: 'value', tag: 'value', prio: 'value', grep: 'value', all: 'bool' },
+  show: {}, set: {}, tag: {}, prio: {}, files: {},
+  repo: { clear: 'bool' },
+  next: { limit: 'value' },
+  review: {}, round: {},
+  check: { branch: 'value', base: 'value', repo: 'value' },
+  branches: { base: 'value', repo: 'value' },
+  ask: { kind: 'value', target: 'value', issue: 'value' },
+  answer: {},
+  handoff: { summary: 'value', next: 'many' },
+  log: {}, decide: {}, status: {}, archive: {}, report: {}, mode: {},
+  close: { force: 'bool' },
+};
+
 export function parseArgs(argv) {
   const positional = [];
   const flags = {};
+  let cmd;
+  let rest = false;
+  const table = () => ({ ...GLOBAL_FLAGS, ...(COMMAND_FLAGS[cmd] || {}) });
+  const named = (t) => Object.keys(t).map((k) => `--${k}`).join(', ');
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
-    if (a.startsWith('--')) {
-      const k = a.slice(2);
-      const next = argv[i + 1];
-      if (next !== undefined && !next.startsWith('--')) { flags[k] = flags[k] === undefined ? next : [].concat(flags[k], next); i += 1; } else flags[k] = true;
-    } else positional.push(a);
+    if (rest || !a.startsWith('--') || a.length === 2) {
+      if (a === '--' && !rest) { rest = true; continue; }
+      positional.push(a);
+      if (cmd === undefined) {
+        cmd = a;
+        need(COMMAND_FLAGS[cmd], `unknown command: ${cmd}\n${USAGE}`);
+      }
+      continue;
+    }
+    const eq = a.indexOf('=');
+    const name = eq === -1 ? a.slice(2) : a.slice(2, eq);
+    const inline = eq === -1 ? undefined : a.slice(eq + 1);
+    const t = table();
+    const kind = Object.hasOwn(t, name) ? t[name] : undefined;
+    if (kind === undefined) {
+      const where = cmd === undefined ? `before the command — only ${named(GLOBAL_FLAGS)} may come before it` : `for ${cmd} — it takes ${named(t)}`;
+      throw new Error(`unknown flag ${a} ${where}. A value that starts with -- goes after a bare --, e.g. evidence 001 -- "--json prints ok"`);
+    }
+    if (kind === 'bool') {
+      need(inline === undefined, `--${name} takes no value`);
+      flags[name] = true;
+      continue;
+    }
+    let value = inline;
+    if (value === undefined) {
+      need(i + 1 < argv.length, `--${name} needs a value`);
+      value = argv[i + 1];
+      i += 1;
+    }
+    if (kind === 'many') flags[name] = flags[name] === undefined ? value : [].concat(flags[name], value);
+    else {
+      need(flags[name] === undefined, `--${name} given twice — it takes one value`);
+      flags[name] = value;
+    }
+  }
+  // Words beyond what the command reads are an error, not dropped: after a bare -- that is also where a
+  // --root written last would land, and a call that silently lost its --root would write to another loop.
+  if (cmd !== undefined && Object.hasOwn(ARITY, cmd)) {
+    const extra = positional.slice(1 + ARITY[cmd]);
+    need(extra.length === 0, `${cmd} takes at most ${ARITY[cmd]} argument${ARITY[cmd] === 1 ? '' : 's'} — unexpected: ${extra.map((x) => JSON.stringify(x)).join(' ')}${rest ? ' (everything after a bare -- is an argument, so flags such as --root go before it)' : ''}; several ids are one argument: 12,13 or 203-206`);
   }
   return { positional, flags };
 }
+// How many arguments each command reads after its name (tag takes any number of +a -b after the id).
+const ARITY = {
+  init: 1, new: 1, evidence: 2, list: 0, show: 1, set: 3, prio: 2, files: 2, repo: 2, next: 0, review: 3, round: 2,
+  check: 1, branches: 0, ask: 1, answer: 2, handoff: 1, log: 1, decide: 2, status: 0, archive: 1, report: 0, mode: 1, close: 0,
+};
 
 function renderList(rows) {
   if (rows.length === 0) return '(none)';
   return rows.map((i) => `${i.id}  P${i.priority}  ${i.status.padEnd(11)} ${i.kind.padEnd(8)} ${i.title}${i.tags.length ? `  [${i.tags.join(', ')}]` : ''}`).join('\n');
 }
 
+// The commands that write: each runs under .jarl/.lock (see withLock).
+const MUTATING = new Set(['init', 'new', 'set', 'tag', 'prio', 'files', 'repo', 'evidence', 'review', 'round', 'ask', 'answer', 'handoff', 'log', 'decide', 'archive', 'mode', 'close']);
+
 function main() {
-  const { positional, flags } = parseArgs(process.argv.slice(2));
+  let parsed;
+  try { parsed = parseArgs(process.argv.slice(2)); } catch (e) { console.error(e.message); process.exit(1); }
+  const { positional, flags } = parsed;
   const [cmd, ...rest] = positional;
   if (!cmd || flags.help) { console.log(USAGE); process.exit(cmd ? 0 : 1); }
   const root = flags.root ? resolve(flags.root) : findRoot();
   let out;
   let text;
+  const each = (o, f) => [].concat(o).map(f).join('\n');
+  const writes = MUTATING.has(cmd) && !(cmd === 'handoff' && rest[0] !== 'write');
   try {
+    (writes ? (fn) => withLock(root, fn) : (fn) => fn())(() => {
     switch (cmd) {
       case 'init': out = cmdInit(root, rest[0], flags); text = `opened ${out.dir} · ${out.permanent ? 'permanent record, no branch' : out.committed ? 'committed with the work' : 'kept out of git'}`; break;
       case 'new': out = cmdNew(root, rest[0], flags); text = `filed ${out.id} · ${out.file}`; break;
       case 'list': out = cmdList(root, flags); text = renderList(out); break;
       case 'show': { const i = findIssue(root, rest[0]); need(i, `no such issue: ${rest[0]}`); out = i; text = readFileSync(i.file, 'utf8'); break; }
-      case 'set': out = cmdSet(root, rest[0], rest[1], rest[2]); text = `${out.id} → ${out.status}`; break;
-      case 'tag': out = cmdTag(root, rest[0], rest.slice(1)); text = `${out.id} tags: ${out.tags.join(', ') || '(none)'}`; break;
-      case 'prio': out = cmdPrio(root, rest[0], rest[1]); text = `${out.id} priority ${out.priority}`; break;
+      case 'set': out = cmdSet(root, rest[0], rest[1], rest[2]); text = each(out, (o) => `${o.id} → ${o.status}`); break;
+      case 'tag': out = cmdTag(root, rest[0], rest.slice(1)); text = each(out, (o) => `${o.id} tags: ${o.tags.join(', ') || '(none)'}`); break;
+      case 'prio': out = cmdPrio(root, rest[0], rest[1]); text = each(out, (o) => `${o.id} priority ${o.priority}`); break;
       case 'files': out = cmdFiles(root, rest[0], rest[1]); text = `${out.id} files: ${out.files.join(', ') || '(none)'}`; break;
       case 'repo': out = cmdRepo(root, rest[0], rest[1], { clear: flags.clear === true }); text = `${out.id} repo: ${out.cleared ? 'cleared' : out.repo}`; break;
-      case 'evidence': out = cmdEvidence(root, rest[0], rest[1], flags); text = out.rows ? `${out.id} evidence row${out.rows.length > 1 ? 's' : ''} recorded` : `${out.id} evidence recorded`; break;
+      case 'evidence': out = cmdEvidence(root, rest[0], rest[1], flags); text = each(out, (o) => (o.rows ? `${o.id} evidence row${o.rows.length > 1 ? 's' : ''} recorded` : `${o.id} evidence recorded`)); break;
       case 'next': out = cmdNext(root, flags); text = out.length ? out.map((r) => (r.ready ? `${r.id}  P${r.priority}  ${r.title}` : `${r.id}  P${r.priority}  ${r.title}  (waits on ${r.waitsOn.join(', ')})`)).join('\n') : '(nothing open)'; break;
-      case 'review': out = cmdReview(root, rest[0], rest[1], rest[2]); text = `${out.id} review ${out.verdict}`; break;
+      case 'review': out = cmdReview(root, rest[0], rest[1], rest[2]); text = each(out, (o) => `${o.id} review ${o.verdict}`); break;
       case 'round': out = cmdRound(root, rest[0], rest[1]); text = out.takeover ? `${out.id} round ${out.round} — takeover:\n\n${out.block}` : `${out.id} round ${out.round} of ${ROUNDS_BEFORE_TAKEOVER} before a takeover`; break;
       case 'check': out = cmdCheck(root, rest[0], flags); text = `${out.repo === root ? '' : `in ${out.repo}\n`}${out.items.map((i) => `${i.ok ? '✓' : '✗'} ${i.name} — ${i.note}`).join('\n')}`; break;
       case 'branches': out = cmdBranches(root, flags); text = out.length ? out.map((b) => `${b.repo !== basename(root) ? `[${b.repo}] ` : ''}${b.branch}  +${b.ahead ?? '?'}  ${b.worktree ? `${b.worktree}${b.dirty ? ` (${b.dirty} uncommitted)` : ' (clean)'}` : '(no worktree)'}${b.unnamed ? '  UNNAMED — rename to jarl/NNN-slug before merging' : ''}`).join('\n') : '(no worker branches)'; break;
@@ -873,6 +1092,7 @@ function main() {
       case 'close': out = cmdClose(root, flags); text = (out.kept ? `kept ${out.kept} · closed as a permanent record` : `removed ${out.removed}`) + (out.deferred.length ? ` · ${out.deferred.length} deferred still waiting: ${out.deferred.join(', ')}` : ''); break;
       default: throw new Error(`unknown command: ${cmd}\n${USAGE}`);
     }
+    });
   } catch (e) {
     console.error(e.message);
     process.exit(1);
