@@ -15,7 +15,7 @@ export const STATUSES = ['open', 'in-progress', 'done', 'dropped', 'deferred'];
 export const KINDS = ['bug', 'gap', 'cleanup', 'docs', 'test', 'research', 'process'];
 export const PRIORITIES = ['1', '2', '3'];
 export const TIERS = ['standard', 'strong'];
-export const ASK_KINDS = ['stop', 'stuck', 'lower', 'charter'];
+export const ASK_KINDS = ['stop', 'stuck', 'lower', 'charter', 'ratify'];
 const ROUNDS_BEFORE_TAKEOVER = 3;
 
 const USAGE = `usage: jarl.mjs <command> [options]
@@ -29,8 +29,24 @@ commands:
                                                  .jarl/.permanent, and is not tied to a feature branch: close (below)
                                                  keeps the directory instead of removing it
   new "<title>" [--kind k] [--prio 1|2|3] [--tier standard|strong] [--tags a,b] [--files p,q] [--repo <path>] [--found-by who]
+      [--where "<w>"] [--what "<w>"] [--why "<w>"] [--acceptance "<line>"]... [--source <dir>#<id>,...] [--after <ids>]
                                                  file an issue under the next free number; --repo names the repository
-                                                 its code lives in when that is not the loop's own (see --repo below)
+                                                 its code lives in when that is not the loop's own (see --repo below);
+                                                 --what, --why and --acceptance (one per line, repeatable) write the body,
+                                                 --source names the finding(s) it comes from, --after the issues it waits on
+  body <id> [--where "<w>"] [--what "<w>"] [--why "<w>"] [--acceptance "<line>"]...
+                                                 set or replace the Where field and the What, Why, Acceptance sections
+  import <findings.json> [--source <dir>] [--kind k] [--prio 1|2|3] [--tier t] [--tags a,b] [--repo <path>]
+      [--found-by who] [--only <finding ids>] [--adopt] [--dry-run]
+                                                 one issue per finding, with Source: <dir>#<finding id>; a finding
+                                                 whose Source is already on an issue is skipped, so a re-run files
+                                                 nothing twice; --dry-run prints what it would file; --adopt writes
+                                                 Source onto an older issue that names the finding id but has none
+  sources [<findings.json>...] [--source <dir>]  per report: its findings, the issues filed from them and their
+                                                 status; with a findings file, the findings nobody filed too
+  source <id> <dir>#<id>,...                     set the Source field of an issue filed by hand
+  after <id> <ids> | <id> --clear                the issues this one waits on: next does not offer it until each is
+                                                 done or dropped, and status counts it as waiting
   evidence <ids> "<text>" | --ran "<command>" --saw "<what it printed>"
                                                  append a free-text note, or one checkable row per --ran/--saw pair (repeatable)
   list [--status s] [--kind k] [--tag t] [--prio p] [--grep re] [--all]
@@ -41,8 +57,9 @@ commands:
   prio <ids> 1|2|3                               set priority
   files <id> p,q,...                             declare the files the issue touches
   repo <id> <path> | <id> --clear                name the repository (its root) the issue's code lives in, or remove the field
-  next [--limit n]                               open issues that do not share a file with any in-progress one;
-                                                 a file is its repository and its path (see --repo below)
+  next [--limit n]                               open issues that do not share a file with any in-progress one and
+                                                 whose After issues are done or dropped; a file is its repository and
+                                                 its path (see --repo below); one with no acceptance line is marked
   review <ids> approve|changes "<findings>"      the reviewer's verdict; "done" needs an approve newer than the last round
   round <id> "<what failed>"                     one red round; after three prints the takeover block for a fresh worker
   check <id> --branch <b> [--base <feature-branch>] [--repo <path>]
@@ -52,17 +69,21 @@ commands:
   branches [--base <feature-branch>] [--repo <path>]
                                                  every jarl/NNN-* branch: commits beyond the base, worktree state;
                                                  read in --repo, else the loop's own repository
-  ask "<question>" [--kind stop|stuck|lower|charter] [--target x] [--issue NNN]
+  ask "<question>" [--kind stop|stuck|lower|charter|ratify] [--target x] [--issue NNN]
                                                  a question the user has to answer; lower needs --target;
-                                                 listed at boot until answered
+                                                 listed at boot until answered; ratify is a choice already made
+                                                 under a mandate, awaiting the user's word, and blocks nothing
   answer <id> "<answer>"                         records the answer as a ruling and closes the question
   handoff write --summary "<s>" [--next "<n>"]... | read
                                                  the state of intent between sessions; the header records the loop's
                                                  head and the head of every repository an unfinished issue names
   log "<event>"                                  append one dated line to the journal
-  decide <slug> "<ruling>"                       append a ruling; refuses a duplicate slug
+  decide <slug> "<ruling>" [--settles <ids>]    append a ruling; refuses a duplicate slug; --settles writes the
+                                                 ruling into each named issue's evidence (its status is unchanged)
   status                                         the goal, when the loop opened and last moved, then one line:
-                                                 open, in flight, done, dropped, deferred, open questions
+                                                 open, in flight, waiting, done, dropped, deferred, open questions,
+                                                 to ratify; then the choices awaiting ratification and the issues
+                                                 in flight with no acceptance line
   archive "<slug>"                               put the current loop away under .jarl/archive/<yyyy.mm.dd>-<slug>/,
                                                  keeping the archive and the mode markers, so init can open a
                                                  new loop here in the same mode
@@ -264,6 +285,9 @@ export function parseIssue(text, file) {
   issue.tier = issue.fields.tier || 'standard';
   issue.tags = (issue.fields.tags || '').split(',').map((s) => s.trim()).filter(Boolean);
   issue.files = (issue.fields.files || '').split(',').map((s) => s.trim()).filter(Boolean);
+  // Both fields are newer than most loops: an issue without them reads as waiting on nothing and filed from no finding.
+  issue.after = splitList(issue.fields.after).map((x) => x.replace(/^#/, '').padStart(3, '0'));
+  issue.sources = splitList(issue.fields.source);
   return issue;
 }
 
@@ -280,12 +304,17 @@ export function findIssue(root, rawId) {
 }
 
 function setField(text, name, value) {
-  const re = new RegExp(`^\\*\\*${name}:\\*\\*.*$`, 'm');
-  if (re.test(text)) return text.replace(re, `**${name}:** ${value}`);
-  // insert after the last field line of the header
+  // Only the header holds fields: a line in a section body that looks like one (a pasted finding) is text.
   const lines = text.split('\n');
   let last = 0;
-  for (let i = 1; i < lines.length; i += 1) { if (FIELD_RE.test(lines[i])) last = i; else if (lines[i].startsWith('## ')) break; }
+  for (let i = 1; i < lines.length; i += 1) {
+    if (lines[i].startsWith('## ')) break;
+    const f = FIELD_RE.exec(lines[i]);
+    if (!f) continue;
+    if (f[1] === name) { lines[i] = `**${name}:** ${value}`; return lines.join('\n'); }
+    last = i;
+  }
+  // insert after the last field line of the header
   lines.splice(last + 1, 0, `**${name}:** ${value}`);
   return lines.join('\n');
 }
@@ -296,8 +325,23 @@ function setSection(text, name, body) {
   return `${text.replace(/\s*$/, '')}\n\n## ${name}\n${body.trim()}\n`;
 }
 
-export function renderIssue({ id, title, kind, priority, tier, tags, files, repo, foundBy }) {
-  return `# ${id} · ${title}
+// A body written into a section must not open a section of its own: a line starting with ## would end it
+// early and the rest would land under a heading nobody reads. Such a line is escaped (\##), which renders
+// the same and parses as text.
+export function bodyText(v) {
+  return String(v ?? '').replace(/\r\n?/g, '\n').split('\n').map((l) => l.replace(/^(\s*)(#+\s)/, '$1\\$2')).join('\n').trim();
+}
+// A header field is one line.
+function fieldText(v) { return String(v ?? '').replace(/\s+/g, ' ').trim(); }
+// --acceptance repeats, one checkable line each; several become a list.
+export function acceptanceText(v) {
+  const lines = [].concat(v ?? []).map(bodyText).filter(Boolean);
+  return lines.length > 1 ? lines.map((l) => `- ${l}`).join('\n') : (lines[0] || '');
+}
+
+export function renderIssue({ id, title, kind, priority, tier, tags, files, repo, foundBy, where = '', what = '', why = '', acceptance = '', source = [], after = [] }) {
+  const body = (t) => (t ? `${t}\n` : '\n');
+  return `# ${id} · ${fieldText(title)}
 
 **Status:** open
 **Kind:** ${kind}
@@ -305,18 +349,15 @@ export function renderIssue({ id, title, kind, priority, tier, tags, files, repo
 **Tier:** ${tier}
 **Tags:** ${tags.join(', ')}
 **Files:** ${files.join(', ')}
-${repo ? `**Repo:** ${repo}\n` : ''}**Found by:** ${foundBy}
-**Where:**
+${repo ? `**Repo:** ${repo}\n` : ''}${after.length ? `**After:** ${after.join(', ')}\n` : ''}**Found by:** ${fieldText(foundBy)}
+${source.length ? `**Source:** ${source.join(', ')}\n` : ''}**Where:**${where ? ` ${fieldText(where)}` : ''}
 
 ## What
-
-
+${body(what)}
 ## Why
-
-
+${body(why)}
 ## Acceptance
-
-
+${body(acceptance)}
 ## Evidence
 
 `;
@@ -453,6 +494,8 @@ export function cmdNew(root, title, flags) {
   const tier = String(flags.tier || 'standard');
   need(TIERS.includes(tier), `--tier must be one of: ${TIERS.join(', ')} — the tier of model the worker is raised on, mapped to a model by the platform running the loop`);
   if (flags.repo !== undefined) repoOf(root, flags.repo);
+  const source = sourceList(flags.source);
+  const after = flags.after !== undefined ? afterList(root, null, flags.after) : [];
   // The number is claimed by creating the file with a link, which never overwrites: when another
   // writer got there first (the lock makes that rare, not impossible — a hand-made file, a stale
   // lock broken early), the next number is tried instead of two issues sharing one.
@@ -466,6 +509,7 @@ export function cmdNew(root, title, flags) {
     writeFileSync(tmp, renderIssue({
       id, title, kind, priority, tier,
       tags: splitList(flags.tags), files: splitList(flags.files), repo: flags.repo, foundBy: flags['found-by'] || 'jarl',
+      where: flags.where, what: bodyText(flags.what), why: bodyText(flags.why), acceptance: acceptanceText(flags.acceptance), source, after,
     }));
     let claimed = !taken().includes(n);
     if (claimed) { try { claimed = claimFile(tmp, file); } catch (e) { unlinkSync(tmp); throw e; } }
@@ -477,6 +521,87 @@ export function cmdNew(root, title, flags) {
 }
 
 function splitList(v) { return String(v || '').split(',').map((s) => s.trim()).filter(Boolean); }
+
+// A Source entry names one finding for good: the report's directory (dated, so unique) and the finding's id
+// inside it, <dir>#<id>. Several are one comma list.
+export function sourceList(v) {
+  const list = splitList(v);
+  for (const s of list) need(/^[^#\s]+#[^#\s]+$/.test(s), `a source is <report dir>#<finding id>, e.g. core/research/2026-09-25-jarl#jarl-2-B2 — not "${s}"`);
+  return list;
+}
+
+// The issues one waits on: each must exist and not be the issue itself, and the chain must not come back to
+// it — a cycle would leave every issue in it waiting for good with nothing to say so.
+function afterList(root, selfId, raw) {
+  const ids = expandIds(raw);
+  const all = loadIssues(root);
+  const missing = ids.filter((id) => !all.some((i) => i.id === id));
+  need(missing.length === 0, `no such issue: ${missing.join(', ')}`);
+  need(!selfId || !ids.includes(selfId), `${selfId} cannot wait on itself`);
+  if (selfId) {
+    const byId = new Map(all.map((i) => [i.id, i]));
+    const seen = new Set();
+    const stack = [...ids];
+    while (stack.length) {
+      const id = stack.pop();
+      need(id !== selfId, `${selfId} after ${ids.join(', ')} would close a cycle: that chain of After already leads back to ${selfId}, so none of them would ever be offered`);
+      if (seen.has(id)) continue;
+      seen.add(id);
+      stack.push(...(byId.get(id)?.after || []));
+    }
+  }
+  return ids;
+}
+
+// The After issues not yet settled: done and dropped settle; open, in progress and deferred do not.
+// An After id with no issue behind it (removed by hand) holds nothing back.
+export function waitingOn(issue, byId) {
+  return issue.after.filter((id) => byId.has(id) && !['done', 'dropped'].includes(byId.get(id).status));
+}
+
+// body <id> — the Where field and the What, Why and Acceptance sections, set or replaced. Evidence is never
+// written here: it is the record of what was done, appended by evidence, never replaced.
+export function cmdBody(root, rawId, flags) {
+  const issue = findIssue(root, rawId);
+  need(issue, `no such issue: ${rawId}`);
+  const parts = ['where', 'what', 'why', 'acceptance'].filter((k) => flags[k] !== undefined);
+  need(parts.length, 'body needs at least one of --where, --what, --why, --acceptance');
+  let text = readFileSync(issue.file, 'utf8');
+  if (flags.where !== undefined) text = setField(text, 'Where', fieldText(flags.where));
+  if (flags.what !== undefined) text = setSection(text, 'What', bodyText(flags.what));
+  if (flags.why !== undefined) text = setSection(text, 'Why', bodyText(flags.why));
+  if (flags.acceptance !== undefined) text = setSection(text, 'Acceptance', acceptanceText(flags.acceptance));
+  writeAtomic(issue.file, text);
+  appendLog(root, `${issue.id} body · ${parts.join(', ')}`);
+  return { id: issue.id, set: parts };
+}
+
+export function cmdSource(root, rawId, list) {
+  const issue = findIssue(root, rawId);
+  need(issue, `no such issue: ${rawId}`);
+  const sources = sourceList(list);
+  need(sources.length, 'source requires <report dir>#<finding id>[,...]');
+  writeAtomic(issue.file, setField(readFileSync(issue.file, 'utf8'), 'Source', sources.join(', ')));
+  appendLog(root, `${issue.id} source · ${sources.join(', ')}`);
+  return { id: issue.id, sources };
+}
+
+export function cmdAfter(root, rawId, raw, { clear = false } = {}) {
+  const issue = findIssue(root, rawId);
+  need(issue, `no such issue: ${rawId}`);
+  if (clear) {
+    need(raw === undefined, 'after takes either <ids> or --clear, not both');
+    need(issue.fields.after !== undefined, `${issue.id} has no After field to clear`);
+    writeAtomic(issue.file, readFileSync(issue.file, 'utf8').replace(/^\*\*After:\*\*.*\n/m, ''));
+    appendLog(root, `${issue.id} after · cleared`);
+    return { id: issue.id, after: [], cleared: true };
+  }
+  need(raw !== undefined, 'after requires <ids> — the issues this one waits on (or --clear)');
+  const ids = afterList(root, issue.id, raw);
+  writeAtomic(issue.file, setField(readFileSync(issue.file, 'utf8'), 'After', ids.join(', ')));
+  appendLog(root, `${issue.id} after ${ids.join(', ')}`);
+  return { id: issue.id, after: ids };
+}
 
 export function cmdList(root, flags) {
   let rows = loadIssues(root);
@@ -550,7 +675,16 @@ export function cmdSet(root, rawIds, status, why) {
   });
   for (const w of writes) writeAtomic(w.issue.file, w.text);
   appendLogLines(root, issues.map((issue) => `${issue.id} → ${status}${why ? ` · ${why}` : ''}`));
-  return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, status })));
+  return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, status, ...(status === 'done' ? doneNote(issue) : {}) })));
+}
+
+// Said, never refused: done closes an issue whose acceptance is missing, or has more lines than the
+// --ran/--saw rows recorded, but the output says so, so the gap is seen by whoever closed it.
+function doneNote(issue) {
+  const lines = acceptanceLineCount(issue);
+  if (!lines) return { note: 'no acceptance line on file' };
+  const rows = evidenceRows(issue).length;
+  return rows && rows < lines ? { note: `${lines} acceptance line(s), ${rows} --ran/--saw row(s)` } : {};
 }
 
 export function cmdTag(root, rawIds, ops) {
@@ -678,13 +812,19 @@ export function cmdNext(root, flags) {
   // an issue back, the same file in one repository always does, however its Repo path is spelled.
   const keysOf = (i) => i.files.map((f) => { const at = fileAt(root, i, f); return { f, key: `${at.repo}\n${at.path}` }; });
   const taken = new Set(issues.filter((i) => i.status === 'in-progress').flatMap((i) => keysOf(i).map((k) => k.key)));
+  const byId = new Map(issues.map((i) => [i.id, i]));
   const out = [];
   for (const i of issues.filter((x) => x.status === 'open').sort((a, b) => a.priority.localeCompare(b.priority) || a.id.localeCompare(b.id))) {
+    // An issue whose After issues are not all done or dropped is never offered, whatever its files.
+    const after = waitingOn(i, byId);
+    if (after.length) { out.push({ id: i.id, title: i.title, priority: i.priority, after }); continue; }
     const keys = keysOf(i);
     const clash = keys.filter((k) => taken.has(k.key)).map((k) => k.f);
     if (clash.length) { out.push({ id: i.id, title: i.title, priority: i.priority, waitsOn: clash }); continue; }
     keys.forEach((k) => taken.add(k.key));
-    out.push({ id: i.id, title: i.title, priority: i.priority, files: i.files, ready: true });
+    // Offered, but flagged: a worker raised on an issue with no acceptance line has nothing to prove, and
+    // the reviewer nothing to check it against. Fill it with body --acceptance before raising one.
+    out.push({ id: i.id, title: i.title, priority: i.priority, files: i.files, ready: true, ...(acceptanceLineCount(i) ? {} : { noAcceptance: true }) });
   }
   const limit = Number(flags.limit) || Infinity;
   let n = 0;
@@ -693,8 +833,22 @@ export function cmdNext(root, flags) {
 
 export function cmdStatus(root) {
   const c = { open: 0, 'in-progress': 0, done: 0, dropped: 0, deferred: 0 };
-  for (const i of loadIssues(root)) c[i.status] = (c[i.status] || 0) + 1;
-  c.questions = loadAsks(root).filter((a) => a.state === 'open').length;
+  const issues = loadIssues(root);
+  for (const i of issues) c[i.status] = (c[i.status] || 0) + 1;
+  // open and in-progress stay the counts of those statuses; waiting is the part of them whose After issues
+  // are not settled yet, so "in flight" in the text line means someone is working on it.
+  const byId = new Map(issues.map((i) => [i.id, i]));
+  const unfinished = issues.filter((i) => i.status === 'open' || i.status === 'in-progress');
+  c.waitingIds = unfinished.filter((i) => waitingOn(i, byId).length).map((i) => i.id);
+  c.waiting = c.waitingIds.length;
+  c.inFlight = unfinished.filter((i) => i.status === 'in-progress' && !c.waitingIds.includes(i.id)).length;
+  c.ready = unfinished.filter((i) => i.status === 'open' && !c.waitingIds.includes(i.id)).length;
+  c.noAcceptance = issues.filter((i) => i.status === 'in-progress' && !acceptanceLineCount(i)).map((i) => i.id);
+  const asks = loadAsks(root).filter((a) => a.state === 'open');
+  // A ratify item blocks nothing, so it is not counted among the questions the loop waits on.
+  c.questions = asks.filter((a) => a.kind !== 'ratify').length;
+  c.toRatify = asks.filter((a) => a.kind === 'ratify');
+  c.ratify = c.toRatify.length;
   // What a session needs to decide between continuing this loop and archiving it: the goal, when the
   // loop was opened, and when anything last happened in it — all read from its own files.
   const goalPath = join(jarlDir(root), 'goal.md');
@@ -775,7 +929,9 @@ export function cmdReview(root, rawIds, verdict, findings) {
     need(severities.some((s) => s !== 'Minor'), '"changes" needs a Critical or Important finding — Minor alone goes to evidence on an approve, it never bounces a branch');
   }
   appendLogLines(root, issues.map((issue) => `${issue.id} review ${verdict} · ${findings.split('\n')[0]}`));
-  return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, verdict, severities })));
+  // The verdict comes back with the acceptance it was given against, so a reviewer (and the merger reading
+  // the output) sees what the approve claims is met — or that there was nothing to meet.
+  return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, verdict, severities, acceptance: (issue.sections.acceptance || '').trim() })));
 }
 
 // ---- rounds, branches, checks ------------------------------------------------------------------
@@ -929,7 +1085,7 @@ function branchesIn(root, repo, flags) {
 // ---- questions to the user and the handoff --------------------------------------------------
 
 function asksPath(root) { return join(jarlDir(root), 'asks.md'); }
-const ASK_RE = /^- \*\*a-(\d{3})\*\* \((open|answered)\)(?: · (stop|stuck|lower|charter))?(?: · target (\S+))?(?: · issue (\d{3}))? · (.*)$/;
+const ASK_RE = /^- \*\*a-(\d{3})\*\* \((open|answered)\)(?: · (stop|stuck|lower|charter|ratify))?(?: · target (\S+))?(?: · issue (\d{3}))? · (.*)$/;
 
 export function loadAsks(root) {
   const path = asksPath(root);
@@ -941,7 +1097,8 @@ export function loadAsks(root) {
 export function cmdAsk(root, question, flags) {
   need(question, 'ask requires "<question>"');
   const kind = String(flags.kind || 'stuck');
-  need(ASK_KINDS.includes(kind), `--kind must be one of: ${ASK_KINDS.join(', ')} — stop (halt everything), stuck (this issue only), lower (weaken something protected, needs a target), charter (the goal itself)`);
+  need(ASK_KINDS.includes(kind), `--kind must be one of: ${ASK_KINDS.join(', ')} — stop (halt everything), stuck (this issue only), lower (weaken something protected, needs a target), charter (the goal itself), ratify (a choice already made under a mandate, awaiting the user's word; blocks nothing)`);
+  if (flags.issue !== undefined) need(findIssue(root, flags.issue), `no such issue: ${flags.issue}`);
   need(kind !== 'lower' || flags.target, '--target is required for kind lower — nothing to weaken without naming it');
   need(kind === 'lower' || !flags.target, `--target has no meaning for kind "${kind}" — only lower names something to weaken`);
   const asks = loadAsks(root);
@@ -963,7 +1120,30 @@ export function cmdAnswer(root, rawId, answer) {
   const path = asksPath(root);
   writeAtomic(path, readFileSync(path, 'utf8').replace(`- **a-${id}** (open)`, `- **a-${id}** (answered)`));
   appendLog(root, `answered a-${id} · ${answer.split('\n')[0]}`);
-  return { id, answer };
+  // The issue the question was about carries the answer too, so reading the issue is enough.
+  const issue = ask.issue ? findIssue(root, ask.issue) : null;
+  if (issue) appendRuling(root, [issue], `Ruling ask-${id}${ask.kind ? ` (${ask.kind})` : ''}: ${answer.split('\n')[0]}`);
+  return { id, answer, ...(issue ? { issue: issue.id } : {}) };
+}
+
+// A ruling written into issues' Evidence, after what is there, with one log line each. The status is left
+// alone: a ruling may settle the question and still leave work, and done keeps its own preconditions.
+function appendRuling(root, issues, line) {
+  for (const issue of issues) {
+    const text = readFileSync(issue.file, 'utf8');
+    const current = (parseIssue(text, issue.file).sections.evidence || '').trim();
+    writeAtomic(issue.file, setSection(text, 'Evidence', current ? `${current}\n\n${line}` : line));
+  }
+  appendLogLines(root, issues.map((issue) => `${issue.id} evidence · ${line}`));
+}
+
+export function cmdDecide(root, slug, ruling, flags = {}) {
+  need(slug && ruling, 'decide requires <slug> "<ruling>"');
+  const settles = flags.settles !== undefined ? issuesFor(root, flags.settles) : [];
+  appendDecision(root, slug, settles.length ? `${ruling.trim()}\n\n**Settles:** ${settles.map((i) => i.id).join(', ')}` : ruling);
+  appendLog(root, `decided ${slug}`);
+  if (settles.length) appendRuling(root, settles, `Ruling ${slug}: ${ruling.trim().split('\n')[0]}`);
+  return { slug, settles: settles.map((i) => i.id) };
 }
 
 function handoffPath(root) { return join(jarlDir(root), 'handoff.md'); }
@@ -971,17 +1151,21 @@ function handoffPath(root) { return join(jarlDir(root), 'handoff.md'); }
 export function cmdHandoffWrite(root, flags) {
   need(typeof flags.summary === 'string' && flags.summary, 'handoff write requires --summary "<s>"');
   const inFlight = loadIssues(root).filter((i) => i.status === 'in-progress').map((i) => `${i.id} ${i.title}`);
-  const open = loadAsks(root).filter((a) => a.state === 'open').map((a) => `a-${a.id} ${a.question}`);
+  const byId = new Map(loadIssues(root).map((i) => [i.id, i]));
+  const inFlightLines = loadIssues(root).filter((i) => i.status === 'in-progress').map((i) => { const w = waitingOn(i, byId); return `${i.id} ${i.title}${w.length ? ` (waits on ${w.join(', ')})` : ''}`; });
+  const asks = loadAsks(root).filter((a) => a.state === 'open');
+  const open = asks.filter((a) => a.kind !== 'ratify').map((a) => `a-${a.id} ${a.question}`);
+  const ratify = asks.filter((a) => a.kind === 'ratify').map((a) => `a-${a.id}${a.issue ? ` (issue ${a.issue})` : ''} ${a.question}`);
   const next = [].concat(flags.next || []).filter(Boolean);
   const headOf = (dir) => `${git(dir, ['rev-parse', '--abbrev-ref', 'HEAD']) || '?'}@${git(dir, ['rev-parse', '--short', 'HEAD']) || '?'}`;
   // Where each other repository an unfinished issue names stands, beside the loop's own head: in a
   // loop whose workers change another repository, that head is the one the next session resumes from.
   const repos = [...new Set(loadIssues(root).filter((i) => i.status === 'open' || i.status === 'in-progress').map((i) => i.fields.repo).filter(Boolean))];
   const heads = repos.map((r) => ` · **Head in ${r}:** ${headOf(resolve(root, r))}`).join('');
-  const text = `# Handoff\n\n**At:** ${stamp()} · **Head:** ${headOf(root)}${heads}\n\n## Summary\n${flags.summary}\n\n## In flight\n${inFlight.map((s) => `- ${s}`).join('\n') || '- (nothing)'}\n\n## Waiting on the user\n${open.map((s) => `- ${s}`).join('\n') || '- (nothing)'}\n\n## Next\n${next.map((s) => `- ${s}`).join('\n') || '- (nothing recorded)'}\n`;
+  const text = `# Handoff\n\n**At:** ${stamp()} · **Head:** ${headOf(root)}${heads}\n\n## Summary\n${flags.summary}\n\n## In flight\n${inFlightLines.map((s) => `- ${s}`).join('\n') || '- (nothing)'}\n\n## Waiting on the user\n${open.map((s) => `- ${s}`).join('\n') || '- (nothing)'}\n\n${ratify.length ? `## Decided under mandate, awaiting ratification\n${ratify.map((s) => `- ${s}`).join('\n')}\n\n` : ''}## Next\n${next.map((s) => `- ${s}`).join('\n') || '- (nothing recorded)'}\n`;
   writeAtomic(handoffPath(root), text);
   appendLog(root, `handoff · ${flags.summary.split('\n')[0]}`);
-  return { path: handoffPath(root), inFlight: inFlight.length, waiting: open.length };
+  return { path: handoffPath(root), inFlight: inFlight.length, waiting: open.length, ratify: ratify.length };
 }
 
 export function cmdHandoffRead(root) {
@@ -1012,6 +1196,180 @@ export function cmdReport(root) {
   return { done: done.length, dropped: dropped.length, deferred: deferred.length, left: left.length, found: found.length, text: lines.join('\n') + '\n' };
 }
 
+// ---- research findings into issues ----------------------------------------------------------------
+
+// A research round leaves a findings.json beside its report. import turns each finding into one issue whose
+// **Source:** is <report dir>#<finding id>: the report directory is dated, so the pair names that finding for
+// good, and a re-run skips every finding whose Source an issue already carries. The mapping (SKILL.md, "From
+// research to issues") reads three shapes: a flat array of findings; an array of angles, each with its
+// surviving findings under `surviving`; and { results: [{ area, kept: [...] }] }. A finding without an id
+// cannot be keyed, so the file is refused whole.
+const KIND_OF = { defect: 'bug', inconsistency: 'bug', risk: 'gap', opportunity: 'gap' };
+const PRIO_OF = { blocker: '1', critical: '1', high: '1', medium: '2', major: '2', important: '2', low: '3', minor: '3' };
+
+export function findingsOf(json) {
+  let list;
+  // In the angles shape an id is unique only inside its angle (two angles may each have an F1), so the key
+  // is <angle>/<id> there, always — never only when two collide, which would change a key once a later
+  // edit of the file added a twin.
+  if (Array.isArray(json) && json.some((x) => x && Array.isArray(x.surviving))) {
+    list = json.flatMap((x) => (x.surviving || []).map((f) => (f && f.id !== undefined && x.angle ? { ...f, id: `${x.angle}/${f.id}`, localId: String(f.id) } : f)));
+  } else if (Array.isArray(json)) list = json;
+  else if (json && Array.isArray(json.results)) list = json.results.flatMap((r) => r.kept || []);
+  else if (json && Array.isArray(json.findings)) list = json.findings;
+  else throw new Error('not a findings file this tool reads: expected an array of findings, an array of angles with `surviving`, or { results: [{ kept }] } — see SKILL.md, "From research to issues"');
+  const seen = new Set();
+  const out = list.map((f, n) => {
+    need(f && typeof f === 'object' && (typeof f.id === 'string' || typeof f.id === 'number') && String(f.id).trim(), `finding #${n + 1} has no id — every finding needs one to be filed once and only once; nothing was filed`);
+    const id = String(f.id).trim();
+    need(!/[\s,#]/.test(id), `finding id "${id}" holds a space, a comma or a # — it cannot be a Source key; nothing was filed`);
+    need(!seen.has(id), `finding id ${id} appears twice in the file; nothing was filed`);
+    seen.add(id);
+    const claim = typeof f.claim === 'string' ? f.claim : '';
+    const title = String(f.title || claim.split(/(?<=[.!?])\s/)[0] || id).replace(/\s+/g, ' ').trim();
+    const kindRaw = String(f.kind || '').toLowerCase();
+    const prioRaw = String(f.priority ?? f.severity ?? '').toLowerCase();
+    const why = [f.impact, f.adopter_impact].filter((x) => typeof x === 'string' && x.trim()).join('\n\n');
+    const proposal = [f.proposal, f.suggested_fix, f.fix].find((x) => typeof x === 'string' && x.trim());
+    return {
+      id,
+      localId: f.localId || id,
+      title: title.length > 140 ? `${title.slice(0, 139)}…` : title,
+      kind: KINDS.includes(kindRaw) ? kindRaw : (KIND_OF[kindRaw] || 'bug'),
+      priority: PRIORITIES.includes(prioRaw) ? prioRaw : (PRIO_OF[prioRaw] || '2'),
+      where: String(f.where || f.surfaces || ''),
+      what: [claim && `Claim: ${claim}`, typeof f.truth === 'string' && f.truth && `Truth: ${f.truth}`, typeof f.evidence === 'string' ? f.evidence : ''].filter(Boolean).join('\n\n'),
+      why: [why, f.effort && `Effort (the finding's estimate): ${f.effort}`].filter(Boolean).join('\n\n'),
+      acceptance: proposal ? `Proposed by the finding — make it checkable before a worker starts: ${proposal}` : '',
+    };
+  });
+  // What an older issue would have written to name the finding: its own id, or the bare id inside its angle
+  // when no other angle uses the same one.
+  const local = new Map();
+  for (const f of out) local.set(f.localId, (local.get(f.localId) || 0) + 1);
+  return out.map((f) => ({ ...f, mention: local.get(f.localId) === 1 ? f.localId : f.id }));
+}
+
+// The report directory a findings file belongs to, as its Source spells it: the path from the root of the
+// repository holding it (core/research/2026-09-25-jarl), so every loop that imports it writes the same key;
+// the directory's own name outside a repository.
+export function reportDirOf(file) {
+  const dir = dirname(resolve(file));
+  const top = git(dir, ['rev-parse', '--show-toplevel']);
+  const rel = top ? relative(canonical(top), canonical(dir)).split('\\').join('/') : '';
+  return rel && !rel.startsWith('..') ? rel : basename(dir);
+}
+
+function readFindings(file, flags = {}) {
+  need(file, 'a findings file is required: jarl.mjs import <findings.json>');
+  need(existsSync(file), `no such file: ${file}`);
+  let json;
+  try { json = JSON.parse(readFileSync(file, 'utf8')); } catch (e) { throw new Error(`${file} is not JSON: ${e.message}`); }
+  const dir = flags.source !== undefined ? String(flags.source).replace(/\/+$/, '') : reportDirOf(file);
+  need(dir && !/[\s,#]/.test(dir), `--source is the report directory alone, with no space, comma or # in it (got "${dir}")`);
+  return { dir, findings: findingsOf(json) };
+}
+
+// An issue filed before Source existed often names its finding in the title or the evidence. That issue is
+// found, never guessed at: a title naming the id wins, else the one body that names it; two candidates are
+// reported as ambiguous and left alone.
+function mentionOf(issues, id) {
+  const re = new RegExp(`(^|[^A-Za-z0-9-])${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^A-Za-z0-9-]|$)`);
+  const legacy = issues.filter((i) => i.fields.source === undefined);
+  const byTitle = legacy.filter((i) => re.test(i.title));
+  if (byTitle.length === 1) return { issue: byTitle[0] };
+  if (byTitle.length > 1) return { ambiguous: byTitle.map((i) => i.id) };
+  const byBody = legacy.filter((i) => re.test(readFileSync(i.file, 'utf8')));
+  if (byBody.length === 1) return { issue: byBody[0] };
+  return byBody.length ? { ambiguous: byBody.map((i) => i.id) } : {};
+}
+
+function bySource(issues) {
+  const map = new Map();
+  for (const i of issues) for (const s of i.sources) map.set(s, [...(map.get(s) || []), i]);
+  return map;
+}
+
+export function cmdImport(root, file, flags) {
+  needLiveLoop(root, ' — run: jarl.mjs init "<goal>"');
+  const { dir, findings } = readFindings(file, flags);
+  if (flags.kind !== undefined) need(KINDS.includes(flags.kind), `--kind must be one of: ${KINDS.join(', ')}`);
+  if (flags.prio !== undefined) need(PRIORITIES.includes(String(flags.prio)), '--prio must be 1, 2 or 3');
+  if (flags.tier !== undefined) need(TIERS.includes(String(flags.tier)), `--tier must be one of: ${TIERS.join(', ')}`);
+  if (flags.repo !== undefined) repoOf(root, flags.repo);
+  let chosen = findings;
+  if (flags.only !== undefined) {
+    const only = splitList(flags.only);
+    const unknown = only.filter((id) => !findings.some((f) => f.id === id));
+    need(unknown.length === 0, `not in ${file}: ${unknown.join(', ')}`);
+    chosen = findings.filter((f) => only.includes(f.id));
+  }
+  const issues = loadIssues(root);
+  const filedAs = bySource(issues);
+  const out = { source: dir, findings: findings.length, considered: chosen.length, filed: [], already: [], adopted: [], mentioned: [], ambiguous: [], dryRun: flags['dry-run'] === true };
+  const toFile = [];
+  for (const f of chosen) {
+    const key = `${dir}#${f.id}`;
+    if (filedAs.has(key)) { out.already.push({ finding: f.id, issues: filedAs.get(key).map((i) => i.id) }); continue; }
+    const m = mentionOf(issues, f.mention);
+    if (m.ambiguous) { out.ambiguous.push({ finding: f.id, issues: m.ambiguous }); continue; }
+    if (m.issue) {
+      if (flags.adopt === true) out.adopted.push({ finding: f.id, issue: m.issue.id, key });
+      else out.mentioned.push({ finding: f.id, issue: m.issue.id });
+      continue;
+    }
+    toFile.push({ f, key });
+  }
+  if (out.dryRun) {
+    out.filed = toFile.map(({ f, key }) => ({ id: null, finding: f.id, source: key, title: f.title, kind: flags.kind || f.kind, priority: String(flags.prio || f.priority) }));
+    return out;
+  }
+  // One older issue may name several findings (a package of minor ones): its Source gets all of them, once.
+  const adopt = new Map();
+  for (const a of out.adopted) adopt.set(a.issue, [...(adopt.get(a.issue) || []), a.key]);
+  for (const [id, keys] of adopt) cmdSource(root, id, [...(findIssue(root, id).sources), ...keys].join(','));
+  for (const { f, key } of toFile) {
+    const r = cmdNew(root, f.title, {
+      kind: flags.kind || f.kind, prio: flags.prio || f.priority, tier: flags.tier, tags: flags.tags, repo: flags.repo,
+      'found-by': flags['found-by'] || `research ${dir}`, where: f.where, what: f.what, why: f.why, acceptance: f.acceptance || undefined, source: key,
+    });
+    out.filed.push({ id: r.id, finding: f.id, source: key, title: f.title, kind: flags.kind || f.kind, priority: String(flags.prio || f.priority) });
+  }
+  appendLog(root, `imported ${dir} · ${out.filed.length} filed, ${out.already.length} already filed${out.adopted.length ? `, ${out.adopted.length} adopted` : ''}${out.mentioned.length ? `, ${out.mentioned.length} named by an issue without Source` : ''}${out.ambiguous.length ? `, ${out.ambiguous.length} ambiguous` : ''}`);
+  return out;
+}
+
+// sources — per report: its findings, the issues filed from them and where those stand. With findings files,
+// every finding in them is listed, the unfiled ones too; without, only what the issues' Source fields name.
+export function cmdSources(root, files, flags = {}) {
+  const issues = loadIssues(root);
+  const filedAs = bySource(issues);
+  const reports = new Map();   // dir -> ordered finding ids
+  const add = (dir, id) => { if (!reports.has(dir)) reports.set(dir, []); if (!reports.get(dir).includes(id)) reports.get(dir).push(id); };
+  need(files.length <= 1 || flags.source === undefined, '--source names one report directory: give one findings file with it');
+  const mentionKey = new Map();
+  for (const file of files) { const { dir, findings } = readFindings(file, flags); findings.forEach((f) => { add(dir, f.id); mentionKey.set(`${dir}#${f.id}`, f.mention); }); }
+  for (const key of filedAs.keys()) { const at = key.indexOf('#'); add(key.slice(0, at), key.slice(at + 1)); }
+  const fromFile = new Set();
+  for (const file of files) fromFile.add(readFindings(file, flags).dir);
+  return [...reports.entries()].map(([dir, ids]) => {
+    const rows = ids.map((id) => {
+      const on = filedAs.get(`${dir}#${id}`) || [];
+      if (on.length) return { finding: id, issues: on.map((i) => ({ id: i.id, status: i.status })) };
+      const m = mentionKey.has(`${dir}#${id}`) ? mentionOf(issues, mentionKey.get(`${dir}#${id}`)) : {};
+      return { finding: id, issues: [], ...(m.issue ? { mentionedBy: [m.issue.id] } : m.ambiguous ? { mentionedBy: m.ambiguous } : {}) };
+    });
+    const distinct = [...new Map(rows.flatMap((r) => r.issues).map((i) => [i.id, i])).values()];
+    const byStatus = {};
+    for (const i of distinct) byStatus[i.status] = (byStatus[i.status] || 0) + 1;
+    return {
+      source: dir, findings: fromFile.has(dir) ? ids.length : null, filed: rows.filter((r) => r.issues.length).length,
+      mentioned: rows.filter((r) => !r.issues.length && r.mentionedBy).length, unfiled: rows.filter((r) => !r.issues.length && !r.mentionedBy).length,
+      issues: byStatus, rows,
+    };
+  });
+}
+
 // ---- main --------------------------------------------------------------------------------------
 
 // Every flag a command accepts, and what it takes: 'bool' takes no value, 'value' takes exactly one,
@@ -1023,7 +1381,18 @@ export function cmdReport(root) {
 const GLOBAL_FLAGS = { json: 'bool', help: 'bool', root: 'value' };
 export const COMMAND_FLAGS = {
   init: { committed: 'bool', permanent: 'bool' },
-  new: { kind: 'value', prio: 'value', tier: 'value', tags: 'value', files: 'value', repo: 'value', 'found-by': 'value' },
+  new: {
+    kind: 'value', prio: 'value', tier: 'value', tags: 'value', files: 'value', repo: 'value', 'found-by': 'value',
+    where: 'value', what: 'value', why: 'value', acceptance: 'many', source: 'value', after: 'value',
+  },
+  body: { where: 'value', what: 'value', why: 'value', acceptance: 'many' },
+  import: {
+    source: 'value', kind: 'value', prio: 'value', tier: 'value', tags: 'value', repo: 'value', 'found-by': 'value',
+    only: 'value', adopt: 'bool', 'dry-run': 'bool',
+  },
+  sources: { source: 'value' },
+  source: {},
+  after: { clear: 'bool' },
   evidence: { ran: 'many', saw: 'many' },
   list: { status: 'value', kind: 'value', tag: 'value', prio: 'value', grep: 'value', all: 'bool' },
   show: {}, set: {}, tag: {}, prio: {}, files: {},
@@ -1035,7 +1404,7 @@ export const COMMAND_FLAGS = {
   ask: { kind: 'value', target: 'value', issue: 'value' },
   answer: {},
   handoff: { summary: 'value', next: 'many' },
-  log: {}, decide: {}, status: {}, archive: {}, report: {}, mode: {},
+  log: {}, decide: { settles: 'value' }, status: {}, archive: {}, report: {}, mode: {},
   close: { force: 'bool' },
 };
 
@@ -1095,7 +1464,40 @@ export function parseArgs(argv) {
 const ARITY = {
   init: 1, new: 1, evidence: 2, list: 0, show: 1, set: 3, prio: 2, files: 2, repo: 2, next: 0, review: 3, round: 2,
   check: 1, branches: 0, ask: 1, answer: 2, handoff: 1, log: 1, decide: 2, status: 0, archive: 1, report: 0, mode: 1, close: 0,
+  body: 1, import: 1, source: 2, after: 2,
 };
+
+function renderStatus(o) {
+  const head = o.goal ? `goal: ${o.goal}\nopened ${o.opened || '?'} · last activity ${o.lastActivity || '?'}${o.archived ? ` · ${o.archived} archived loop(s)` : ''}\n` : '';
+  const line = `open ${o.ready} · in flight ${o.inFlight}${o.waiting ? ` · waiting ${o.waiting}` : ''} · done ${o.done} · dropped ${o.dropped} · deferred ${o.deferred} · questions ${o.questions}${o.ratify ? ` · to ratify ${o.ratify}` : ''}`;
+  const more = [
+    ...o.toRatify.map((a) => `ratify a-${a.id}${a.issue ? ` (issue ${a.issue})` : ''} · ${a.question}`),
+    ...(o.waiting ? [`waiting (After not settled): ${o.waitingIds.join(', ')}`] : []),
+    ...(o.noAcceptance.length ? [`in flight with no acceptance line: ${o.noAcceptance.join(', ')}`] : []),
+  ];
+  return `${head}${line}${more.length ? `\n${more.join('\n')}` : ''}`;
+}
+
+function renderImport(o) {
+  const head = `${o.source}: ${o.findings} finding(s)${o.considered !== o.findings ? `, ${o.considered} chosen` : ''} · ${o.dryRun ? 'would file' : 'filed'} ${o.filed.length} · already filed ${o.already.length}${o.adopted.length ? ` · adopted ${o.adopted.length}` : ''}${o.mentioned.length ? ` · named by an issue without Source ${o.mentioned.length} (--adopt links them)` : ''}${o.ambiguous.length ? ` · ambiguous ${o.ambiguous.length}` : ''}`;
+  const rows = [
+    ...o.filed.map((f) => `${o.dryRun ? 'would file' : `filed ${f.id}`} · ${f.finding} · ${f.kind} P${f.priority} · ${f.title}`),
+    ...o.adopted.map((a) => `adopted ${a.issue} · ${a.finding}`),
+    ...o.mentioned.map((m) => `named by ${m.issue} · ${m.finding}`),
+    ...o.ambiguous.map((m) => `ambiguous · ${m.finding} · named by ${m.issues.join(', ')}`),
+  ];
+  return [head, ...rows].join('\n');
+}
+
+function renderSources(reports) {
+  if (!reports.length) return '(no issue carries a Source, and no findings file was given)';
+  return reports.map((r) => {
+    const st = Object.entries(r.issues).map(([k, v]) => `${k} ${v}`).join(', ');
+    const head = `${r.source} · ${r.findings === null ? '' : `${r.findings} finding(s) · `}${r.filed} filed${r.mentioned ? ` · ${r.mentioned} named by an issue without Source` : ''}${r.findings === null ? '' : ` · ${r.unfiled} unfiled`}${st ? ` · issues: ${st}` : ''}`;
+    const rows = r.rows.map((x) => `  ${x.finding}  ${x.issues.length ? x.issues.map((i) => `${i.id} ${i.status}`).join(', ') : x.mentionedBy ? `named by ${x.mentionedBy.join(', ')} (no Source)` : 'unfiled'}`);
+    return [head, ...rows].join('\n');
+  }).join('\n\n');
+}
 
 function renderList(rows) {
   if (rows.length === 0) return '(none)';
@@ -1103,7 +1505,7 @@ function renderList(rows) {
 }
 
 // The commands that write: each runs under .jarl/.lock (see withLock).
-const MUTATING = new Set(['init', 'new', 'set', 'tag', 'prio', 'files', 'repo', 'evidence', 'review', 'round', 'ask', 'answer', 'handoff', 'log', 'decide', 'archive', 'mode', 'close']);
+const MUTATING = new Set(['init', 'new', 'body', 'import', 'source', 'after', 'set', 'tag', 'prio', 'files', 'repo', 'evidence', 'review', 'round', 'ask', 'answer', 'handoff', 'log', 'decide', 'archive', 'mode', 'close']);
 
 function main() {
   let parsed;
@@ -1114,6 +1516,7 @@ function main() {
   const root = flags.root ? resolve(flags.root) : findRoot();
   let out;
   let text;
+  let warn = [];   // said on stderr, so a caller reading stdout sees the same lines as before
   const each = (o, f) => [].concat(o).map(f).join('\n');
   const writes = MUTATING.has(cmd) && !(cmd === 'handoff' && rest[0] !== 'write');
   try {
@@ -1121,26 +1524,31 @@ function main() {
     switch (cmd) {
       case 'init': out = cmdInit(root, rest[0], flags); text = `opened ${out.dir} · ${out.permanent ? 'permanent record, no branch' : out.committed ? 'committed with the work' : 'kept out of git'}`; break;
       case 'new': out = cmdNew(root, rest[0], flags); text = `filed ${out.id} · ${out.file}`; break;
+      case 'body': out = cmdBody(root, rest[0], flags); text = `${out.id} body: ${out.set.join(', ')}`; break;
+      case 'source': out = cmdSource(root, rest[0], rest[1]); text = `${out.id} source: ${out.sources.join(', ')}`; break;
+      case 'after': out = cmdAfter(root, rest[0], rest[1], { clear: flags.clear === true }); text = `${out.id} after: ${out.cleared ? 'cleared' : out.after.join(', ')}`; break;
+      case 'import': out = cmdImport(root, rest[0], flags); text = renderImport(out); break;
+      case 'sources': out = cmdSources(root, rest, flags); text = renderSources(out); break;
       case 'list': out = cmdList(root, flags); text = renderList(out); break;
       case 'show': { const i = findIssue(root, rest[0]); need(i, `no such issue: ${rest[0]}`); out = i; text = readFileSync(i.file, 'utf8'); break; }
-      case 'set': out = cmdSet(root, rest[0], rest[1], rest[2]); text = each(out, (o) => `${o.id} → ${o.status}`); break;
+      case 'set': out = cmdSet(root, rest[0], rest[1], rest[2]); text = each(out, (o) => `${o.id} → ${o.status}`); warn = [].concat(out).filter((o) => o.note).map((o) => `note: ${o.id} ${o.note}`); break;
       case 'tag': out = cmdTag(root, rest[0], rest.slice(1)); text = each(out, (o) => `${o.id} tags: ${o.tags.join(', ') || '(none)'}`); break;
       case 'prio': out = cmdPrio(root, rest[0], rest[1]); text = each(out, (o) => `${o.id} priority ${o.priority}`); break;
       case 'files': out = cmdFiles(root, rest[0], rest[1]); text = `${out.id} files: ${out.files.join(', ') || '(none)'}`; break;
       case 'repo': out = cmdRepo(root, rest[0], rest[1], { clear: flags.clear === true }); text = `${out.id} repo: ${out.cleared ? 'cleared' : out.repo}`; break;
       case 'evidence': out = cmdEvidence(root, rest[0], rest[1], flags); text = each(out, (o) => (o.rows ? `${o.id} evidence row${o.rows.length > 1 ? 's' : ''} recorded` : `${o.id} evidence recorded`)); break;
-      case 'next': out = cmdNext(root, flags); text = out.length ? out.map((r) => (r.ready ? `${r.id}  P${r.priority}  ${r.title}` : `${r.id}  P${r.priority}  ${r.title}  (waits on ${r.waitsOn.join(', ')})`)).join('\n') : '(nothing open)'; break;
-      case 'review': out = cmdReview(root, rest[0], rest[1], rest[2]); text = each(out, (o) => `${o.id} review ${o.verdict}`); break;
+      case 'next': out = cmdNext(root, flags); text = out.length ? out.map((r) => (r.ready ? `${r.id}  P${r.priority}  ${r.title}${r.noAcceptance ? '  (no acceptance yet)' : ''}` : r.after ? `${r.id}  P${r.priority}  ${r.title}  (after ${r.after.join(', ')})` : `${r.id}  P${r.priority}  ${r.title}  (waits on ${r.waitsOn.join(', ')})`)).join('\n') : '(nothing open)'; break;
+      case 'review': out = cmdReview(root, rest[0], rest[1], rest[2]); text = each(out, (o) => `${o.id} review ${o.verdict} · acceptance: ${o.acceptance ? o.acceptance.split('\n').join(' / ') : '(none on file)'}`); break;
       case 'round': out = cmdRound(root, rest[0], rest[1]); text = out.takeover ? `${out.id} round ${out.round} — takeover:\n\n${out.block}` : `${out.id} round ${out.round} of ${ROUNDS_BEFORE_TAKEOVER} before a takeover`; break;
       case 'check': out = cmdCheck(root, rest[0], flags); text = `${out.repo === root ? '' : `in ${out.repo}\n`}${out.items.map((i) => `${i.ok ? '✓' : '✗'} ${i.name} — ${i.note}`).join('\n')}`; break;
       case 'branches': out = cmdBranches(root, flags); text = out.length ? out.map((b) => `${b.repo !== basename(root) ? `[${b.repo}] ` : ''}${b.branch}  +${b.ahead ?? '?'}  ${b.worktree ? `${b.worktree}${b.dirty ? ` (${b.dirty} uncommitted)` : ' (clean)'}` : '(no worktree)'}${b.unnamed ? '  UNNAMED — rename to jarl/NNN-slug before merging' : ''}`).join('\n') : '(no worker branches)'; break;
-      case 'ask': out = cmdAsk(root, rest[0], flags); text = `asked a-${out.id}`; break;
-      case 'answer': out = cmdAnswer(root, rest[0], rest[1]); text = `answered a-${out.id}`; break;
+      case 'ask': out = cmdAsk(root, rest[0], flags); text = out.kind === 'ratify' ? `filed a-${out.id} for ratification · blocks nothing` : `asked a-${out.id}`; break;
+      case 'answer': out = cmdAnswer(root, rest[0], rest[1]); text = `answered a-${out.id}${out.issue ? ` · written into ${out.issue}` : ''}`; break;
       case 'handoff': if (rest[0] === 'write') { out = cmdHandoffWrite(root, flags); text = `handoff written · ${out.inFlight} in flight · ${out.waiting} waiting on the user`; } else { out = { text: cmdHandoffRead(root) }; text = out.text; } break;
       case 'report': out = cmdReport(root); text = out.text; break;
       case 'log': need(rest[0], 'log requires "<event>"'); appendLog(root, rest[0]); out = { logged: rest[0] }; text = 'logged'; break;
-      case 'decide': need(rest[0] && rest[1], 'decide requires <slug> "<ruling>"'); appendDecision(root, rest[0], rest[1]); appendLog(root, `decided ${rest[0]}`); out = { slug: rest[0] }; text = `decided ${rest[0]}`; break;
-      case 'status': out = cmdStatus(root); text = `${out.goal ? `goal: ${out.goal}\nopened ${out.opened || '?'} · last activity ${out.lastActivity || '?'}${out.archived ? ` · ${out.archived} archived loop(s)` : ''}\n` : ''}open ${out.open} · in flight ${out['in-progress']} · done ${out.done} · dropped ${out.dropped} · deferred ${out.deferred} · questions ${out.questions}`; break;
+      case 'decide': out = cmdDecide(root, rest[0], rest[1], flags); text = `decided ${out.slug}${out.settles.length ? ` · written into ${out.settles.join(', ')}` : ''}`; break;
+      case 'status': out = cmdStatus(root); text = renderStatus(out); break;
       case 'archive': out = cmdArchive(root, rest[0]); text = `archived → ${out.archived}${out.leftOpen.length ? ` · ${out.leftOpen.length} still open or in progress: ${out.leftOpen.join(', ')}` : ''} · open a new loop with: jarl.mjs init "<goal>"`; break;
       case 'mode': out = cmdMode(root, rest[0]); text = 'now permanent · no longer tied to a feature branch; close keeps the directory'; break;
       case 'close': out = cmdClose(root, flags); text = (out.kept ? `kept ${out.kept} · closed as a permanent record` : `removed ${out.removed}`) + (out.deferred.length ? ` · ${out.deferred.length} deferred still waiting: ${out.deferred.join(', ')}` : ''); break;
@@ -1152,6 +1560,7 @@ function main() {
     process.exit(1);
   }
   console.log(flags.json ? JSON.stringify(out, null, 2) : text);
+  for (const w of warn) console.error(w);
   if (cmd === 'check' && !out.ok) process.exit(2);
 }
 

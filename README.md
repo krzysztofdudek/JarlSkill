@@ -121,6 +121,12 @@ Yes. Name the other repository when you file an issue (`new "<title>" --repo <pa
 </details>
 
 <details>
+<summary><b>Can a research report become issues?</b></summary>
+
+Yes. `import <findings.json>` files one issue per finding, with its body filled in and a **Source:** that names the report and the finding, and a second run files nothing twice. `sources` then shows, per report, which findings became which issues and where they stand, and which ones nobody filed. [The mapping is in the skill](skills/jarl/SKILL.md#from-research-to-issues).
+</details>
+
+<details>
 <summary><b>Why one script, and why so small?</b></summary>
 
 Jarl is the light version. Four markdown files and one rule: a status that changed without a log line did not change. The tool exists so that rule is enforced rather than promised — it files, lists, searches, moves a status with its reason, records evidence, says what can run in parallel and closes the loop. When the bookkeeping needs a gate and a charter, that is the moment to move to Horde — the vocabulary carries over unchanged.

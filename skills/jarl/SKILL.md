@@ -62,21 +62,24 @@ If there is no copy at all, say so and stop: the loop's state moves only through
 | Command | What it does |
 |---|---|
 | `init "<goal>" [--committed] [--permanent]` | creates `.jarl/` with the goal and a `.gitignore` that keeps the loop out of git; `--committed` writes a `.gitignore` that ignores only the write lock and temporary files, so the loop is committed with the work; `--permanent` is committed the same way, adds `.jarl/.permanent`, and opens the loop with no feature branch of its own — see [The one place](#the-one-place) |
-| `new "<title>" [--kind k] [--prio 1\|2\|3] [--tier standard\|strong] [--tags a,b] [--files p,q] [--repo <path>] [--found-by who]` | files an issue under the next free number; `--repo` names the repository its code lives in when that is not the loop's own (see [Code in another repository](#code-in-another-repository)) |
+| `new "<title>" [--kind k] [--prio 1\|2\|3] [--tier standard\|strong] [--tags a,b] [--files p,q] [--repo <path>] [--found-by who] [--where w] [--what w] [--why w] [--acceptance line]... [--source <dir>#<id>] [--after <ids>]` | files an issue under the next free number; `--repo` names the repository its code lives in when that is not the loop's own (see [Code in another repository](#code-in-another-repository)); `--where`, `--what`, `--why` and `--acceptance` (repeat it, one checkable line each) write the body in the same call, `--source` names the research finding it comes from, `--after` the issues it waits on |
+| `body <id> [--where w] [--what w] [--why w] [--acceptance line]...` | sets or replaces the **Where:** field and the What, Why and Acceptance sections of a filed issue, with a log line; Evidence is never written here |
+| `import <findings.json> [--source <dir>] [--kind k] [--prio p] [--tier t] [--tags a,b] [--repo <path>] [--found-by who] [--only <ids>] [--adopt] [--dry-run]` · `sources [<findings.json>...] [--source <dir>]` · `source <id> <dir>#<id>,...` | research findings into issues, once each, and the coverage view — see [From research to issues](#from-research-to-issues) |
+| `after <id> <ids>` · `after <id> --clear` | the issues this one waits on (**After:**): `next` does not offer it until each of them is done or dropped, and `status` counts it as waiting instead of open or in flight; a chain that would come back to the issue is refused |
 | `list [--status s] [--kind k] [--tag t] [--prio p] [--grep re] [--all]` | open and in-progress by default, sorted by priority |
-| `show <id>` · `status` | one issue · the loop's goal, when it was opened and when anything last happened, then one line of counts |
+| `show <id>` · `status` | one issue · the loop's goal, when it was opened and when anything last happened, then one line of counts (open, in flight, waiting, done, dropped, deferred, questions, to ratify), then the choices awaiting ratification, the waiting issues and the issues in flight with no acceptance line |
 | `archive "<slug>"` | puts the current loop away under `.jarl/archive/<yyyy.mm.dd>-<slug>/` — issues, goal, decisions, log and handoff — and leaves the archive and the mode markers (`.gitignore`, `.permanent`), so the next `init` here opens a new loop in the same mode; open work does not refuse it, but the result and the archived log name it |
-| `set <ids> <status> "<why>"` | changes status and writes the log line in one move; `done` needs evidence on file, `dropped` and `deferred` need a reason (`deferred` is work that waits, not work that is gone: the default `list` hides it, `list --status deferred` shows it, `status` and `report` count it apart, and `close` says what it leaves waiting) |
+| `set <ids> <status> "<why>"` | changes status and writes the log line in one move; `done` needs evidence on file (and notes on stderr, never refusing, an issue with no acceptance line or with fewer `--ran`/`--saw` rows than acceptance lines), `dropped` and `deferred` need a reason (`deferred` is work that waits, not work that is gone: the default `list` hides it, `list --status deferred` shows it, `status` and `report` count it apart, and `close` says what it leaves waiting) |
 | `tag <ids> +a -b` · `prio <ids> 1\|2\|3` · `files <id> p,q` · `repo <id> <path>` | header fields |
 | `evidence <ids> "<text>"` \| `evidence <ids> --ran "<command>" --saw "<what it printed>"` | appends a free-text note, or one checkable row per `--ran`/`--saw` pair (repeat the pair for more rows, in one call or several) — `--ran`/`--saw` when the proof is a command, free text when it is not; nothing already recorded is ever replaced |
-| `next [--limit n]` | open issues that share no file with any in-progress one — what can run in parallel now; a file is its repository and its path, so the same path in two repositories never holds an issue back |
-| `review <ids> approve\|changes "<findings>"` | the reviewer's verdict; `changes` needs a finding ranked Critical or Important in the text — Minor alone cannot bounce a branch, it rides an approve into evidence; `done` refuses without an approve newer than the last round |
+| `next [--limit n]` | open issues that share no file with any in-progress one and whose **After:** issues are all done or dropped — what can run in parallel now; a file is its repository and its path, so the same path in two repositories never holds an issue back; an issue offered with no acceptance line is marked `(no acceptance yet)` |
+| `review <ids> approve\|changes "<findings>"` | the reviewer's verdict; `changes` needs a finding ranked Critical or Important in the text — Minor alone cannot bounce a branch, it rides an approve into evidence; `done` refuses without an approve newer than the last round; the output repeats the issue's acceptance, so the verdict is read against it |
 | `round <id> "<what failed>"` | one red round on the issue; the third prints a takeover block for a fresh worker |
 | `check <id> --branch <b> [--repo <path>]` | a worker branch before merge: commits beyond the base, diff inside the declared files, test files removed, assertions before and after, each item's own ok/not — read the items, not just the exit code; a script gate can use the exit code (0 clean, 2 something failed), a reader should not stop there. Read in `--repo`, else in the repository the issue's **Repo:** names, else in the loop's own |
 | `branches [--repo <path>]` | with no `--repo`, in the loop's own repository and in every repository an open or in-progress issue names (rows of another repository are labelled `[name]`); with it, in that one repository: every `jarl/NNN-*` branch, and every other branch a worktree has checked out (marked UNNAMED when a worker never renamed its branch), with commits beyond the base and worktree state — a branch with commits is a report whether or not the worker said so. Read in `--repo`, else in the loop's own repository |
-| `ask "<question>" --kind stop\|stuck\|lower\|charter [--target x] [--issue NNN]` · `answer <id> "<answer>"` | questions only the user can answer, in a closed set of kinds — `stop` halts everything, `stuck` blocks one issue, `lower` weakens something protected (`--target` names it), `charter` questions the goal; open ones show in `status`; an answer becomes a ruling |
+| `ask "<question>" --kind stop\|stuck\|lower\|charter\|ratify [--target x] [--issue NNN]` · `answer <id> "<answer>"` | questions only the user can answer, in a closed set of kinds — `stop` halts everything, `stuck` blocks one issue, `lower` weakens something protected (`--target` names it), `charter` questions the goal, `ratify` is a choice already made under a mandate that waits for the user's word and blocks nothing (see [What goes to the user](#what-goes-to-the-user)); open ones show in `status`; an answer becomes a ruling, and with `--issue` it is written into that issue's evidence too |
 | `handoff write --summary "<s>" [--next "<n>"]...` · `handoff read` | the state of intent between sessions: what is in flight, what waits on the user, what comes next; the header records the loop's head and the head of every other repository an unfinished issue names |
-| `log "<event>"` · `decide <slug> "<ruling>"` | the journal and the rulings |
+| `log "<event>"` · `decide <slug> "<ruling>" [--settles <ids>]` | the journal and the rulings; `--settles` names the issues a ruling settles and writes the ruling into each one's evidence, leaving its status to `set` |
 | `report` | done, dropped and deferred with reasons, still open, found along the way — the material for the changelog |
 | `mode permanent` | turns an existing, committed loop into the permanent mode, with a log line — for a loop opened before the mode existed, or opened `--committed`; refuses a default-mode loop (out of git — a permanent record must be committed) and an already-permanent loop |
 | `close [--force]` | refuses while anything is open or in progress; otherwise removes `.jarl/` — in the permanent mode it keeps the directory instead and logs the close |
@@ -105,7 +108,9 @@ and in committed mode a worktree holds only the copy it was cut with.
 **Tags:** comma, separated
 **Files:** the files it touches, comma separated — what `next` uses to keep workers apart; when **Repo:** is set, each starts with that repository's directory name (`tool/src/a.mjs`)
 **Repo:** only when the code lives in another repository than the loop — the path to that repository's main checkout
+**After:** only when it waits on other issues — their ids; `next` holds it until each is done or dropped
 **Found by:** who, doing what
+**Source:** only when it comes from research — <report dir>#<finding id>, several comma separated
 **Where:** file:line, or the command and what it printed
 
 ## What
@@ -124,6 +129,29 @@ Filled at done: the command that was run and what it printed, the test that is g
 `dropped` and `deferred` always carry a reason under **Evidence**, after whatever was already written there. A `research` issue produces a written result
 and files new issues; it never edits code.
 
+**File the body with the issue.** `new` takes `--where`, `--what`, `--why` and `--acceptance` (one checkable line per flag), so an issue is written whole in the call that files it; `body <id>` fills or replaces them later. None of it is required, and an issue filed without it reads exactly as before, but an issue with no acceptance line gives the worker nothing to prove and the reviewer nothing to check. So the tool says so without refusing anything: `next` marks such an issue `(no acceptance yet)`, `status` lists the in-progress ones that have none, and `set done` notes it on stderr. Fill it (`body <id> --acceptance "…"`) before `set <id> in-progress`.
+
+**An issue that waits on another says so.** `after <id> <ids>` (or `new --after`) records **After:**. `next` never offers it while any of those issues is still open, in progress or deferred, and `status` counts it as waiting, not as open or in flight, so "in flight" keeps meaning that someone is working on it. Do not park a blocked issue in `in-progress`. It is ordering and bookkeeping, not a schedule: no computed plan, no critical path. A ruling that settles issues names them, `decide <slug> "…" --settles <ids>`, and the ruling is written into each one's evidence. Closing the issue is still `set`.
+
+### From research to issues
+
+A research round leaves a `findings.json` beside its report. `import <findings.json>` files one issue per finding, and each carries **Source:** `<report dir>#<finding id>`. The report directory is dated, so that pair names one finding for good. The directory is the one holding the file, written from the root of its repository (`core/research/2026-09-25-jarl`), or given with `--source <dir>`. Import is idempotent. A finding whose Source an issue already carries is skipped, so a re-run files nothing twice. A finding named in the title or body of an older issue that has no **Source:** is not filed again either: `import` reports it, and `--adopt` writes the Source onto that issue. When two issues name it, import reports it as ambiguous and leaves both alone. `--dry-run` prints what it would do, and `--only <ids>` takes part of the file. `--kind`, `--prio`, `--tier`, `--tags`, `--repo` and `--found-by` replace the mapped values for every issue filed.
+
+Three shapes are read: a flat array of findings; an array of angles, each with its findings under `surviving`; and `{ "results": [{ "area", "kept": [...] }] }`. In the angles shape an id is unique only inside its angle, so the key there is always `<angle>/<id>`. Every finding needs an id, and a repeated id refuses the whole file. The mapping:
+
+| Issue | From the finding |
+|---|---|
+| title | `title`, else the first sentence of `claim`, else the id |
+| **Kind:** | `kind` when it is one of the loop's kinds; `defect` and `inconsistency` → bug, `risk` and `opportunity` → gap, anything else → bug |
+| **Priority:** | `priority`, else `severity`: `blocker`, `critical`, `high` → 1; `medium`, `major`, `important` → 2; `low`, `minor` → 3; 1, 2 or 3 as they are; anything else → 2 |
+| **Where:** | `where`, else `surfaces` |
+| What | `Claim:` `claim`, `Truth:` `truth`, then `evidence` |
+| Why | `impact` or `adopter_impact`, and the finding's `effort` estimate |
+| Acceptance | `proposal`, `suggested_fix` or `fix`, as one line marked as the finding's proposal. Rewrite it into something checkable before a worker starts. |
+| Evidence | nothing. `done` still needs evidence of the work. |
+
+`sources [<findings.json>...]` is the coverage view. Per report it shows the findings, how many were filed, the unfiled ones (when the file is given) and the status of the issues filed from them, with one row per finding. A finding deliberately left unfiled is recorded as a ruling that names it, never as silence. An issue filed by hand from a finding takes `new --source` or `source <id> <dir>#<id>`.
+
 ## The loop
 
 Every turn, in this order:
@@ -138,8 +166,9 @@ Every turn, in this order:
 2. **File.** Anything anybody saw becomes an issue before anything else happens. Nobody fixes on the
    side. A worker reports what it found; the jarl files it, so numbers never collide.
 3. **Pick.** `jarl.mjs next` lists what can run now: open issues whose files do not overlap with anything
-   in progress. Priority first, then whatever unblocks the most. `set <id> in-progress "<who>"` before
-   raising the worker.
+   in progress and whose **After:** issues are settled. Priority first, then whatever unblocks the most.
+   An issue marked `(no acceptance yet)` gets its acceptance line first (`body <id> --acceptance`).
+   `set <id> in-progress "<who>"` before raising the worker.
 4. **Raise a worker.** One worker per issue, in its own worktree, on branch `jarl/NNN-slug` cut from
    the feature branch — every agent that may write anything, a research issue's worker included,
    gets its own worktree; only the jarl works in the main checkout, and read-only readers and
@@ -227,7 +256,8 @@ exists to prevent. To reproduce red-before-green, read the pre-change file with 
 in place.
 Read the issue (`jarl.mjs show NNN --root <repo root>`), then `git diff <feature-branch>...jarl/NNN-slug` — in
 the repository the issue's **Repo:** names when it names one, the loop's own otherwise. Answer three questions with
-evidence: does the diff meet the acceptance line literally; was the new test red before the change
+evidence: does the diff meet the acceptance line literally (quote it in the findings; an issue with none is
+itself a finding); was the new test red before the change
 and green after; did anything outside the issue's scope move. Rank every finding Critical / Important / Minor. Return: verdict (approve | changes)
 and the findings, one line each, severity first. Minor findings alone are an approve.
 ```
@@ -313,6 +343,14 @@ Decide yourself inside the goal. Stop and ask when:
 Ask well: where you are, what you found, the options with trade-offs, your recommendation. Never an
 open "what should I do". File it with `ask`, keep the rest of the loop moving, and record the answer
 with `answer` — it becomes a ruling in `decisions.md`.
+
+**Decided under a mandate.** When the user has handed the loop a mandate to decide on its own ("decide
+and go on, I'll look later") and it decides something that is the user's (from the list above), the
+choice is always filed as `ask --kind ratify [--issue NNN] "<what was decided, and why>"`, never left in
+evidence prose. A ratify item blocks nothing: the work goes on, `next` and `done` ignore it. It is
+listed in `status` (`to ratify N`, one line each) and under its own heading in the handoff until the
+user answers. `answer` records the answer as a ruling and writes it into the issue's evidence. When the
+user rejects the choice, file the undoing as a new issue.
 
 ## Closing the branch
 
