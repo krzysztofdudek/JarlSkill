@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-25
+
 ### Added
 - A portable Agent Plugins 1.0 manifest, `plugin.json` at the repository root, which Copilot and Codex read before any host-specific manifest. The host manifests stay for Claude Code, Cursor and older Copilot and Codex, with the same name, version and description.
 - `archive "<slug>"` puts the current loop away under `.jarl/archive/<yyyy.mm.dd>-<slug>/` so a new one can be opened in the same place. Everything moves except the archive and the mode markers, so `init` then opens the next loop in the same mode (and refuses a flag that contradicts it). Before, a finished loop had to be deleted or moved by hand, because `init` refused any existing `.jarl/`.
@@ -46,5 +48,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Three standing helpers the loop raises so the director's own context is spent on the client: a reeve that runs the loop day to day and reports back on four occasions only, a fresh reviewer per branch, and a merger that verifies and merges one branch at a time. Worker branches are named by issue and never leave the machine.
 - Installable as a Claude Code plugin, a GitHub Copilot CLI plugin, a Codex CLI plugin and a Cursor plugin, or as a single file dropped into any agent's skill directory.
 
-[Unreleased]: https://github.com/krzysztofdudek/JarlSkill/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/krzysztofdudek/JarlSkill/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/krzysztofdudek/JarlSkill/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/krzysztofdudek/JarlSkill/releases/tag/v0.1.0
