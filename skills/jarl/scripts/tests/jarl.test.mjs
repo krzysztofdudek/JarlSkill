@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, existsSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdtempSync, mkdirSync, readFileSync, existsSync, writeFileSync, readdirSync, rmSync } from 'node:fs';
+import { join, basename } from 'node:path';
 import { tmpdir } from 'node:os';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
@@ -541,7 +541,7 @@ test('check, branches and handoff read the repository an issue names, not the lo
     // each row carrying the repository's name: the hub has no worker branches of its own, the tool repository has one.
     const all = JSON.parse(jarl(hub, 'branches', '--json'));
     assert.deepEqual(all.map((r) => [r.repo, r.branch]), [['tool', 'jarl/001-change-a']], `${mode}: the worker branch in the tool repository is seen from the hub`);
-    assert.match(jarl(hub, 'branches'), /^\[tool\] jarl\/001-change-a  \+1 /, mode);
+    assert.match(jarl(hub, 'branches'), /^\[tool\] jarl\/001-change-a → 001  \+1 /, mode);
     // Once nothing open or in progress names the tool repository any more, the hub is left with its own.
     jarl(hub, 'set', '001', 'dropped', 'not needed');
     jarl(hub, 'set', '002', 'dropped', 'not needed');
@@ -1160,4 +1160,242 @@ test('import adopts a package issue whose Evidence names the report and lists th
   assert.deepEqual(o.adopted.map((x) => [x.finding, x.issue]), [['area-a-01', '001'], ['area-a-02', '001']]);
   assert.deepEqual(o.filed.map((f) => f.finding), ['area-a-03', 'F1']);
   assert.match(jarl(root, 'import', file, '--source', 'core/research/2026-09-25-x-audit'), /filed 0 · already filed 4/);
+});
+
+// ---- packages, leases, merges, record hygiene -------------------------------------------------------
+
+function gitLoop(...initFlags) {
+  const root = mkdtempSync(join(tmpdir(), 'jarl-pkg-'));
+  const sh = (script, cwd = root) => execFileSync('bash', ['-c', script], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  sh('git init -q -b main && git config user.email t@t && git config user.name t && git config core.excludesFile /dev/null && echo a > a.txt && echo b > b.txt && echo c > c.txt && git add -A && git commit -qm base');
+  jarl(root, 'init', 'goal', ...initFlags);
+  return { root, sh };
+}
+function withStderr(root, ...args) {
+  const r = spawnSync(process.execPath, [SCRIPT, ...args, '--root', root], { encoding: 'utf8' });
+  return { status: r.status, stdout: r.stdout.trim(), stderr: r.stderr.trim() };
+}
+function editIssue(root, id, fn) {
+  const dir = join(root, '.jarl', 'issues');
+  const file = join(dir, readdirSync(dir).find((f) => f.startsWith(`${id}-`)));
+  writeFileSync(file, fn(readFileSync(file, 'utf8')));
+}
+
+test('a package is one lease on one branch: set records it, check --branch bounds the diff by the union, branches maps it', () => {
+  const { root, sh } = gitLoop();
+  jarl(root, 'new', 'one', '--files', 'a.txt');
+  jarl(root, 'new', 'two', '--files', 'b.txt');
+  jarl(root, 'new', 'three', '--files', 'c.txt');
+  const wt = join(root, '..', `${basename(root)}-wt`);
+  assert.match(jarl(root, 'set', '1-2', 'in-progress', 'package raised', '--branch', 'jarl/001-pkg', '--worker', 'w1', '--worktree', wt), /^001 → in-progress · jarl\/001-pkg · w1\n002 → in-progress · jarl\/001-pkg · w1$/);
+  const shown = jarl(root, 'show', '2');
+  assert.match(shown, /^\*\*Branch:\*\* jarl\/001-pkg$/m);
+  assert.match(shown, /^\*\*Worker:\*\* w1$/m);
+  assert.match(shown, new RegExp(`^\\*\\*Worktree:\\*\\* ${wt.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}$`, 'm'));
+  assert.match(shown, /^\*\*Since:\*\* \d{4}-\d{2}-\d{2} \d{2}:\d{2}$/m);
+  assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /002 → in-progress · package raised · branch jarl\/001-pkg · worker w1 · worktree /);
+  assert.match(refuses(root, 'set', '3', 'open', 'x', '--branch', 'b'), /--branch goes with in-progress only/);
+
+  sh(`git worktree add -q -b jarl/001-pkg ${wt} && cd ${wt} && echo A > a.txt && echo B > b.txt && git commit -qam work`);
+  // One issue alone still fails for the files of the other; the package passes in one call.
+  const alone = withStderr(root, 'check', '001', '--branch', 'jarl/001-pkg');
+  assert.equal(alone.status, 2);
+  assert.match(alone.stdout, /✗ diff inside declared files — outside a\.txt: b\.txt/);
+  const pkg = JSON.parse(jarl(root, 'check', '--branch', 'jarl/001-pkg', '--json'));
+  assert.equal(pkg.ok, true, JSON.stringify(pkg.items));
+  assert.deepEqual([pkg.id, pkg.ids], [null, ['001', '002']]);
+  assert.match(jarl(root, 'check', '--branch', 'jarl/001-pkg'), /^package 001, 002 on jarl\/001-pkg\n/);
+  assert.match(refuses(root, 'check', '--branch', 'jarl/none'), /no issue records branch jarl\/none/);
+
+  const rows = JSON.parse(jarl(root, 'branches', '--json'));
+  assert.deepEqual(rows.map((r) => [r.branch, r.issues, r.stale, r.deletable]), [['jarl/001-pkg', ['001', '002'], [], false]]);
+  assert.match(jarl(root, 'branches'), /^jarl\/001-pkg → 001, 002  \+1 /);
+  assert.doesNotMatch(jarl(root, 'status'), /stale/);
+});
+
+test('stale leases are shown, never acted on: worktree gone, branch gone, idle', () => {
+  const { root, sh } = gitLoop();
+  jarl(root, 'new', 'one', '--files', 'a.txt');
+  jarl(root, 'new', 'two', '--files', 'b.txt');
+  jarl(root, 'new', 'three', '--files', 'c.txt');
+  const wt = join(root, '..', `${basename(root)}-wt`);
+  jarl(root, 'set', '1', 'in-progress', 'w', '--branch', 'jarl/001-one', '--worker', 'w1', '--worktree', wt);
+  sh(`git worktree add -q -b jarl/001-one ${wt} && cd ${wt} && echo A > a.txt && git commit -qam work`);
+  jarl(root, 'set', '2', 'in-progress', 'w', '--branch', 'jarl/002-never-made');
+  jarl(root, 'set', '3', 'in-progress', 'w');
+  editIssue(root, '003', (t) => t.replace(/^\*\*Since:\*\* .*$/m, '**Since:** 2026-01-01 00:00'));
+  // The 2026-09-21 loss: a worktree deleted under a live lease.
+  rmSync(wt, { recursive: true, force: true });
+  const st = JSON.parse(jarl(root, 'status', '--json'));
+  assert.deepEqual(st.stale.map((x) => x.id), ['001', '002', '003']);
+  assert.match(st.stale[0].problems[0], /^worktree gone: /);
+  assert.match(st.stale[1].problems[0], /^branch gone: jarl\/002-never-made$/);
+  assert.match(st.stale[2].problems[0], /^idle \d+d: lease since 2026-01-01 00:00$/);
+  const text = jarl(root, 'status');
+  assert.match(text, /^stale 001 · worktree gone: /m);
+  assert.match(text, /^stale 003 · idle /m);
+  // A lease younger than --stale-hours is not idle; the lease is only shown, the issue stays in progress.
+  assert.equal(JSON.parse(jarl(root, 'status', '--stale-hours', '1000000', '--json')).stale.length, 2);
+  assert.match(refuses(root, 'status', '--stale-hours', 'soon'), /--stale-hours takes a positive number/);
+  const br = jarl(root, 'branches');
+  assert.match(br, /^jarl\/001-one → 001  \+1  \S+ \(gone\)  STALE: 001 worktree gone: /m);
+  assert.match(br, /^jarl\/002-never-made → 002  GONE  STALE: 002 branch gone: jarl\/002-never-made$/m);
+  assert.equal(JSON.parse(jarl(root, 'show', '1', '--json')).status, 'in-progress');
+  // Leaving in-progress removes the lease and keeps the branch.
+  jarl(root, 'set', '3', 'open', 'back to the queue');
+  const three = jarl(root, 'show', '3');
+  assert.doesNotMatch(three, /\*\*(Worker|Worktree|Since):\*\*/);
+});
+
+test('merged records the sha and CI as fields; status counts CI pending; done notes it, never refuses; branches marks done → delete', () => {
+  const { root, sh } = gitLoop();
+  jarl(root, 'new', 'one', '--files', 'a.txt', '--acceptance', 'a is A');
+  jarl(root, 'new', 'two', '--files', 'b.txt', '--acceptance', 'b is B');
+  jarl(root, 'set', '1,2', 'in-progress', 'w', '--branch', 'jarl/001-pkg', '--worker', 'w1');
+  sh('git checkout -q -b jarl/001-pkg && echo A > a.txt && echo B > b.txt && git commit -qam work && git checkout -q main && git merge -q --no-ff -m "merge 001-002" jarl/001-pkg');
+  const sha = sh('git rev-parse --short HEAD');
+  assert.match(refuses(root, 'merged', '1'), /merged needs --sha/);
+  assert.match(refuses(root, 'merged', '1', '--sha', 'nothex!'), /--sha is a commit id/);
+  assert.match(refuses(root, 'merged', '1', '--ci', 'green'), /001 records no merge yet/);
+  assert.match(refuses(root, 'merged', '1', '--sha', sha, '--ci', 'blue'), /--ci must be one of: pending, green, red, none/);
+  assert.equal(jarl(root, 'merged', '1,2', '--sha', sha), `001, 002 merged ${sha} · CI pending`);
+  assert.match(jarl(root, 'show', '1'), new RegExp(`^\\*\\*Merged:\\*\\* ${sha}\\n\\*\\*CI:\\*\\* pending$`, 'm'));
+  assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), new RegExp(`002 merged ${sha} · CI pending`));
+  const st = jarl(root, 'status');
+  assert.match(st, /· merged, CI pending 2/);
+  assert.match(st, /^merged, CI pending: 001, 002$/m);
+  // An unknown sha is recorded as given, with a note.
+  assert.match(withStderr(root, 'merged', '1', '--sha', 'deadbeef').stderr, /deadbeef is not a commit in/);
+  jarl(root, 'merged', '1', '--sha', sha);
+  jarl(root, 'review', '1,2', 'approve', 'ok');
+  jarl(root, 'evidence', '1,2', '--ran', 'check', '--saw', 'green');
+  const done = withStderr(root, 'set', '1,2', 'done', 'merged');
+  assert.equal(done.status, 0);
+  assert.match(done.stderr, new RegExp(`note: 001 merged ${sha}, CI pending`));
+  assert.doesNotMatch(jarl(root, 'show', '1'), /\*\*(Worker|Since):\*\*/, 'done ends the lease');
+  assert.match(jarl(root, 'show', '1'), /^\*\*Branch:\*\* jarl\/001-pkg$/m, 'done keeps the branch');
+  jarl(root, 'merged', '1,2', '--ci', 'green');
+  assert.doesNotMatch(jarl(root, 'status'), /CI pending/);
+  assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /001 CI green/);
+  assert.match(jarl(root, 'report'), new RegExp(`- 001 one \\(bug\\) · merged ${sha}`));
+  assert.match(jarl(root, 'branches'), /^jarl\/001-pkg → 001, 002  \+0  \(no worktree\)  DONE → delete$/m);
+  // A red CI is counted apart.
+  jarl(root, 'merged', '2', '--ci', 'red');
+  assert.match(jarl(root, 'status'), /· CI red 1/);
+});
+
+test('a committed loop names the loop files git has not committed in status, handoff and close; the default mode stays silent', () => {
+  const { root, sh } = gitLoop('--permanent');
+  sh('git add -A && git commit -qm loop');
+  assert.equal(JSON.parse(jarl(root, 'status', '--json')).uncommitted, 0);
+  assert.doesNotMatch(jarl(root, 'status'), /not committed/);
+  jarl(root, 'new', 'one');
+  assert.match(jarl(root, 'status'), /^2 loop file\(s\) not committed — commit \.jarl\/ in the loop's repository$/m);
+  assert.match(jarl(root, 'handoff', 'write', '--summary', 's'), /· 3 loop file\(s\) not committed$/);
+  jarl(root, 'set', '1', 'dropped', 'no');
+  assert.match(jarl(root, 'close'), /closed as a permanent record · 3 loop file\(s\) not committed — commit \.jarl\//);
+  sh('git add -A && git commit -qm record');
+  assert.equal(JSON.parse(jarl(root, 'status', '--json')).uncommitted, 0);
+
+  const dflt = gitLoop();
+  jarl(dflt.root, 'new', 'one');
+  assert.equal(JSON.parse(jarl(dflt.root, 'status', '--json')).uncommitted, null);
+  const loose = repo();   // not a git repository at all
+  jarl(loose, 'init', 'goal', '--committed');
+  jarl(loose, 'new', 'one');
+  assert.equal(JSON.parse(jarl(loose, 'status', '--json')).uncommitted, null);
+});
+
+test('handoff read computes the mechanical parts live and says how old the written part is', () => {
+  const { root, sh } = gitLoop();
+  jarl(root, 'new', 'one');
+  jarl(root, 'new', 'two');
+  jarl(root, 'handoff', 'write', '--summary', 'the plan', '--next', 'raise two');
+  const fresh = jarl(root, 'handoff', 'read');
+  assert.match(fresh, /^written \d+m ago · 0 log line\(s\) and 0 issue\(s\) changed since$/m);
+  assert.doesNotMatch(fresh, /STALE/);
+  // Written three days before the loop's last line: stale; what moved since is read now, not from the file.
+  const path = join(root, '.jarl', 'handoff.md');
+  writeFileSync(path, readFileSync(path, 'utf8').replace(/^\*\*At:\*\* \S+ \S+/m, '**At:** 2026-01-01 00:00'));
+  jarl(root, 'set', '2', 'in-progress', 'raised', '--branch', 'jarl/002-two', '--worker', 'w2');
+  jarl(root, 'ask', 'which way?', '--kind', 'stuck', '--issue', '1');
+  sh('echo x > x.txt && git add x.txt && git commit -qm more');
+  const h = jarl(root, 'handoff', 'read');
+  assert.match(h, /^written \d+d ago · STALE by \d+d: last activity \S+ \S+ · \d+ log line\(s\) and 2 issue\(s\) changed since · heads moved: \. \(main@[0-9a-f]+ → main@[0-9a-f]+\)$/m);
+  assert.match(h, /## Summary\nthe plan\n/);
+  assert.match(h, /## In flight\n- 002 two · branch jarl\/002-two · worker w2 · since /);
+  assert.match(h, /## Waiting on the user\n- a-001 which way\?/);
+  assert.match(h, /## Next\n- raise two/);
+  assert.equal(readFileSync(path, 'utf8').includes('002 two'), false, 'the file itself is not rewritten by a read');
+  const st = JSON.parse(jarl(root, 'status', '--json'));
+  assert.equal(st.handoff.stale, true);
+  assert.match(jarl(root, 'status'), /last activity \S+ \S+ · handoff \d+d old \(stale by \d+d\)/);
+  const js = JSON.parse(jarl(root, 'handoff', 'read', '--json'));
+  assert.equal(js.handoff.issuesChangedSince, 2);
+});
+
+test('issues and handoffs from before leases and merges read unchanged', () => {
+  const { root } = gitLoop();
+  const old = '# 001 · old one\n\n**Status:** in-progress\n**Kind:** bug\n**Priority:** 1\n**Tier:** standard\n**Tags:** \n**Files:** a.txt\n**Found by:** jarl\n**Where:**\n\n## What\n\n\n## Why\n\n\n## Acceptance\n\n\n## Evidence\n\n';
+  writeFileSync(join(root, '.jarl', 'issues', '001-old-one.md'), old);
+  writeFileSync(join(root, '.jarl', 'handoff.md'), '# Handoff\n\n**At:** 2026-01-01 00:00 · **Head:** main@abc1234\n\n## Summary\nold\n\n## In flight\n- 999 gone\n\n## Waiting on the user\n- (nothing)\n\n## Next\n- (nothing recorded)\n');
+  const st = JSON.parse(jarl(root, 'status', '--json'));
+  assert.deepEqual([st.stale, st.ciPending, st.ciRed], [[], [], []]);
+  assert.equal(readFileSync(join(root, '.jarl', 'issues', '001-old-one.md'), 'utf8'), old, 'reading never writes');
+  const h = jarl(root, 'handoff', 'read');
+  assert.match(h, /## In flight\n- 001 old one\n/);
+  assert.doesNotMatch(h, /999 gone/);
+  assert.deepEqual(JSON.parse(jarl(root, 'branches', '--json')), []);
+});
+
+test('DONE → delete needs the branch tip in the base, or in every recorded merge, and a clean worktree; a number-only match trusts ancestry alone', () => {
+  const { root, sh } = gitLoop();
+  const mark = (branch) => JSON.parse(jarl(root, 'branches', '--json')).find((r) => r.branch === branch)?.done ?? null;
+  const close = (id) => { jarl(root, 'review', id, 'approve', 'ok'); jarl(root, 'evidence', id, 'merged'); jarl(root, 'set', id, 'done', 'merged'); };
+  // Merged elsewhere (a release branch, not the base): the tip is in the recorded merge, so it can go.
+  jarl(root, 'new', 'elsewhere', '--files', 'a.txt');
+  jarl(root, 'set', '1', 'in-progress', 'w', '--branch', 'jarl/001-else');
+  sh('git checkout -q -b jarl/001-else && echo A > a.txt && git commit -qam w && git checkout -q -b rel main && git merge -q --no-ff -m m jarl/001-else && git checkout -q main');
+  jarl(root, 'merged', '1', '--sha', sh('git rev-parse rel'));
+  close('1');
+  assert.equal(mark('jarl/001-else'), 'delete');
+  // A commit on the branch after the merge: the record no longer covers it.
+  sh('git checkout -q jarl/001-else && echo AA > a.txt && git commit -qam later && git checkout -q main');
+  assert.equal(mark('jarl/001-else'), 'unverified');
+  assert.match(jarl(root, 'branches'), /^jarl\/001-else → 001 .*DONE \(merged by record, branch not in base\) — verify$/m);
+  // A squash merge, then an extra commit: never taken as merged.
+  jarl(root, 'new', 'squashed', '--files', 'b.txt');
+  jarl(root, 'set', '2', 'in-progress', 'w', '--branch', 'jarl/002-sq');
+  sh('git checkout -q -b jarl/002-sq && echo B > b.txt && git commit -qam w && git checkout -q main && git merge -q --squash jarl/002-sq && git commit -qm squash && git checkout -q jarl/002-sq && echo BB > b.txt && git commit -qam extra && git checkout -q main');
+  jarl(root, 'merged', '2', '--sha', sh('git rev-parse HEAD'));
+  close('2');
+  assert.equal(mark('jarl/002-sq'), 'unverified');
+  // An issue from before Branch, matched by the branch's number only: a recorded merge is not trusted there.
+  jarl(root, 'new', 'legacy', '--files', 'c.txt');
+  sh('git checkout -q -b jarl/003-legacy && echo C > c.txt && git commit -qam w && git checkout -q -b rel3 main && git merge -q --no-ff -m m jarl/003-legacy && git checkout -q main');
+  jarl(root, 'merged', '3', '--sha', sh('git rev-parse rel3'));
+  close('3');
+  assert.equal(mark('jarl/003-legacy'), null);
+  // In the base, but its worktree holds uncommitted files.
+  jarl(root, 'new', 'dirty', '--files', 'd.txt');
+  const wt = join(root, '..', `${basename(root)}-wt4`);
+  jarl(root, 'set', '4', 'in-progress', 'w', '--branch', 'jarl/004-dirty', '--worktree', wt);
+  sh(`git worktree add -q -b jarl/004-dirty ${wt} && cd ${wt} && echo D > d.txt && git add d.txt && git commit -qm w && echo scratch > notes.txt`);
+  sh('git merge -q --no-ff -m m4 jarl/004-dirty');
+  close('4');
+  assert.equal(mark('jarl/004-dirty'), 'dirty');
+  assert.match(jarl(root, 'branches'), /^jarl\/004-dirty → 004 .*\(1 uncommitted\)  DONE \(worktree dirty\)$/m);
+  rmSync(join(wt, 'notes.txt'));
+  assert.equal(mark('jarl/004-dirty'), 'delete');
+});
+
+test('outside a git repository a Branch lease is not reported gone; handoff read counts what came after its own log line', () => {
+  const loose = repo();
+  jarl(loose, 'init', 'goal');
+  jarl(loose, 'new', 'one');
+  jarl(loose, 'set', '1', 'in-progress', 'w', '--branch', 'jarl/001-one');
+  assert.deepEqual(JSON.parse(jarl(loose, 'status', '--json')).stale, []);
+  jarl(loose, 'handoff', 'write', '--summary', 's');
+  jarl(loose, 'new', 'two');
+  assert.match(jarl(loose, 'handoff', 'read'), /· 1 log line\(s\) and 1 issue\(s\) changed since/, 'a line in the same minute as the handoff still counts');
 });
