@@ -1347,3 +1347,55 @@ test('issues and handoffs from before leases and merges read unchanged', () => {
   assert.doesNotMatch(h, /999 gone/);
   assert.deepEqual(JSON.parse(jarl(root, 'branches', '--json')), []);
 });
+
+test('DONE → delete needs the branch tip in the base, or in every recorded merge, and a clean worktree; a number-only match trusts ancestry alone', () => {
+  const { root, sh } = gitLoop();
+  const mark = (branch) => JSON.parse(jarl(root, 'branches', '--json')).find((r) => r.branch === branch)?.done ?? null;
+  const close = (id) => { jarl(root, 'review', id, 'approve', 'ok'); jarl(root, 'evidence', id, 'merged'); jarl(root, 'set', id, 'done', 'merged'); };
+  // Merged elsewhere (a release branch, not the base): the tip is in the recorded merge, so it can go.
+  jarl(root, 'new', 'elsewhere', '--files', 'a.txt');
+  jarl(root, 'set', '1', 'in-progress', 'w', '--branch', 'jarl/001-else');
+  sh('git checkout -q -b jarl/001-else && echo A > a.txt && git commit -qam w && git checkout -q -b rel main && git merge -q --no-ff -m m jarl/001-else && git checkout -q main');
+  jarl(root, 'merged', '1', '--sha', sh('git rev-parse rel'));
+  close('1');
+  assert.equal(mark('jarl/001-else'), 'delete');
+  // A commit on the branch after the merge: the record no longer covers it.
+  sh('git checkout -q jarl/001-else && echo AA > a.txt && git commit -qam later && git checkout -q main');
+  assert.equal(mark('jarl/001-else'), 'unverified');
+  assert.match(jarl(root, 'branches'), /^jarl\/001-else → 001 .*DONE \(merged by record, branch not in base\) — verify$/m);
+  // A squash merge, then an extra commit: never taken as merged.
+  jarl(root, 'new', 'squashed', '--files', 'b.txt');
+  jarl(root, 'set', '2', 'in-progress', 'w', '--branch', 'jarl/002-sq');
+  sh('git checkout -q -b jarl/002-sq && echo B > b.txt && git commit -qam w && git checkout -q main && git merge -q --squash jarl/002-sq && git commit -qm squash && git checkout -q jarl/002-sq && echo BB > b.txt && git commit -qam extra && git checkout -q main');
+  jarl(root, 'merged', '2', '--sha', sh('git rev-parse HEAD'));
+  close('2');
+  assert.equal(mark('jarl/002-sq'), 'unverified');
+  // An issue from before Branch, matched by the branch's number only: a recorded merge is not trusted there.
+  jarl(root, 'new', 'legacy', '--files', 'c.txt');
+  sh('git checkout -q -b jarl/003-legacy && echo C > c.txt && git commit -qam w && git checkout -q -b rel3 main && git merge -q --no-ff -m m jarl/003-legacy && git checkout -q main');
+  jarl(root, 'merged', '3', '--sha', sh('git rev-parse rel3'));
+  close('3');
+  assert.equal(mark('jarl/003-legacy'), null);
+  // In the base, but its worktree holds uncommitted files.
+  jarl(root, 'new', 'dirty', '--files', 'd.txt');
+  const wt = join(root, '..', `${basename(root)}-wt4`);
+  jarl(root, 'set', '4', 'in-progress', 'w', '--branch', 'jarl/004-dirty', '--worktree', wt);
+  sh(`git worktree add -q -b jarl/004-dirty ${wt} && cd ${wt} && echo D > d.txt && git add d.txt && git commit -qm w && echo scratch > notes.txt`);
+  sh('git merge -q --no-ff -m m4 jarl/004-dirty');
+  close('4');
+  assert.equal(mark('jarl/004-dirty'), 'dirty');
+  assert.match(jarl(root, 'branches'), /^jarl\/004-dirty → 004 .*\(1 uncommitted\)  DONE \(worktree dirty\)$/m);
+  rmSync(join(wt, 'notes.txt'));
+  assert.equal(mark('jarl/004-dirty'), 'delete');
+});
+
+test('outside a git repository a Branch lease is not reported gone; handoff read counts what came after its own log line', () => {
+  const loose = repo();
+  jarl(loose, 'init', 'goal');
+  jarl(loose, 'new', 'one');
+  jarl(loose, 'set', '1', 'in-progress', 'w', '--branch', 'jarl/001-one');
+  assert.deepEqual(JSON.parse(jarl(loose, 'status', '--json')).stale, []);
+  jarl(loose, 'handoff', 'write', '--summary', 's');
+  jarl(loose, 'new', 'two');
+  assert.match(jarl(loose, 'handoff', 'read'), /· 1 log line\(s\) and 1 issue\(s\) changed since/, 'a line in the same minute as the handoff still counts');
+});

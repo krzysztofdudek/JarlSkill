@@ -1280,7 +1280,8 @@ export function leaseProblems(root, issue, hours = STALE_HOURS, now = Date.now()
   if (f.branch) {
     let repo = null;
     try { repo = repoOf(root, f.repo); } catch { repo = null; }
-    if (repo) {
+    // Outside a git repository there is no branch to find, gone or not.
+    if (repo && git(repo, ['rev-parse', '--git-dir']) !== null) {
       if (git(repo, ['rev-parse', '--verify', '--quiet', `refs/heads/${f.branch}`]) === null) out.push(`branch gone: ${f.branch}`);
       else lastCommit = Number(git(repo, ['log', '-1', '--format=%ct', f.branch])) * 1000 || null;
     }
@@ -1291,6 +1292,27 @@ export function leaseProblems(root, issue, hours = STALE_HOURS, now = Date.now()
     out.push(`idle ${ago(now - since)}: lease since ${f.since}${lastCommit ? `, last commit ${ago(now - lastCommit)} ago` : ''}`);
   }
   return out;
+}
+
+// Whether a branch whose issues are all settled (done or dropped, at least one done) can go. 'delete': its tip
+// is in the base — an ancestor of it, or of every merge sha its done issues record (a squash or a merge made
+// elsewhere) — and its worktree holds nothing uncommitted. 'dirty': it would be, but its worktree has
+// uncommitted files. 'unverified': its issues record merges but the branch has commits none of them contain
+// (work after the merge, or a squash). A branch matched only by its jarl/NNN- number, with no Branch field
+// behind it, is judged by ancestry alone: a number is too weak to trust a recorded merge for. Null otherwise.
+function doneMark(repo, base, name, on, dirty) {
+  const settled = on.length > 0 && on.every((i) => i.status === 'done' || i.status === 'dropped') && on.some((i) => i.status === 'done');
+  if (!settled) return null;
+  const inBase = git(repo, ['merge-base', '--is-ancestor', name, base]) !== null;
+  let byRecord = false;
+  if (!inBase) {
+    const recorded = on.every((i) => i.fields.branch === name);
+    const done = on.filter((i) => i.status === 'done');
+    if (!recorded || !done.every((i) => mergedOf(i))) return null;
+    byRecord = done.every((i) => git(repo, ['merge-base', '--is-ancestor', name, mergedOf(i).sha]) !== null);
+    if (!byRecord) return 'unverified';
+  }
+  return dirty ? 'dirty' : 'delete';
 }
 
 function branchesIn(root, repo, flags, issues = loadIssues(root), hours = STALE_HOURS) {
@@ -1319,15 +1341,14 @@ function branchesIn(root, repo, flags, issues = loadIssues(root), hours = STALE_
     const stale = on.flatMap((i) => leaseProblems(root, i, hours).map((p) => `${i.id} ${p}`));
     // Done → delete: every issue it carries is done or dropped (at least one done), and its work is in the
     // base — the branch is an ancestor of it, or every done issue records its merge.
-    const settled = on.length > 0 && on.every((i) => i.status === 'done' || i.status === 'dropped') && on.some((i) => i.status === 'done');
-    const merged = settled && (git(repo, ['merge-base', '--is-ancestor', name, base]) !== null || on.filter((i) => i.status === 'done').every((i) => mergedOf(i)));
-    return { repo: basename(repo), branch: name, ahead, worktree: wt ? wt.path : null, ...(wtGone ? { worktreeGone: true } : {}), dirty, unnamed: !name.startsWith('jarl/') && !leased.includes(name), issues: on.map((i) => i.id), stale, deletable: Boolean(merged) };
+    const done = doneMark(repo, base, name, on, dirty);
+    return { repo: basename(repo), branch: name, ahead, worktree: wt ? wt.path : null, ...(wtGone ? { worktreeGone: true } : {}), dirty, unnamed: !name.startsWith('jarl/') && !leased.includes(name), issues: on.map((i) => i.id), stale, done, deletable: done === 'delete' };
   });
   // An in-progress issue whose recorded branch is not in the repository any more: a lease with nothing under it.
   const gone = leased.filter((b) => !exists(b)).map((name) => {
     const on = issuesOnBranch(root, issues, real, name);
     const stale = on.flatMap((i) => leaseProblems(root, i, hours).map((p) => `${i.id} ${p}`));
-    return { repo: basename(repo), branch: name, ahead: null, worktree: null, dirty: null, unnamed: false, issues: on.map((i) => i.id), stale, deletable: false, missing: true };
+    return { repo: basename(repo), branch: name, ahead: null, worktree: null, dirty: null, unnamed: false, issues: on.map((i) => i.id), stale, done: null, deletable: false, missing: true };
   }).filter((r) => r.stale.length);
   return [...rows, ...gone];
 }
@@ -1467,7 +1488,11 @@ export function cmdHandoffRead(root) {
   const last = logLines.length ? logLines[logLines.length - 1][1] : null;
   const age = handoffAge(root, last);
   const atMs = parseStamp(age?.at);
-  const since = atMs === null ? [] : logLines.filter((m) => parseStamp(m[1]) > atMs);
+  // What came after the handoff: the lines after its own `handoff · ` line (the last one stamped with its At);
+  // a handoff with no such line (edited by hand, or from elsewhere) falls back to the lines stamped later.
+  let own = -1;
+  logLines.forEach((m, n) => { if (m[1] === age?.at && m[2].startsWith('handoff · ')) own = n; });
+  const since = own >= 0 ? logLines.slice(own + 1) : atMs === null ? [] : logLines.filter((m) => parseStamp(m[1]) > atMs);
   const changed = new Set(since.map((m) => /^(?:filed |asked |answered )?(\d{3})\b/.exec(m[2])?.[1]).filter(Boolean));
   // The heads it recorded against where they stand now.
   const moved = [];
@@ -1885,7 +1910,7 @@ function main() {
       case 'round': out = cmdRound(root, rest[0], rest[1]); text = out.takeover ? `${out.id} round ${out.round} — takeover:\n\n${out.block}` : `${out.id} round ${out.round} of ${ROUNDS_BEFORE_TAKEOVER} before a takeover`; break;
       case 'merged': out = cmdMerged(root, rest[0], flags); text = `${out.ids.join(', ')} ${out.sha ? `merged ${out.sha}` : 'merge'} · CI ${out.ci}`; warn = out.notes.map((n) => `note: ${n}`); break;
       case 'check': out = cmdCheck(root, rest[0], flags); text = `${out.id === null ? `package ${out.ids.join(', ')} on ${out.branch}\n` : ''}${out.repo === root ? '' : `in ${out.repo}\n`}${out.items.map((i) => `${i.ok ? '✓' : '✗'} ${i.name} — ${i.note}`).join('\n')}`; break;
-      case 'branches': out = cmdBranches(root, flags); text = out.length ? out.map((b) => `${b.repo !== basename(root) ? `[${b.repo}] ` : ''}${b.branch}${b.issues.length ? ` → ${b.issues.join(', ')}` : ''}  ${b.missing ? 'GONE' : `+${b.ahead ?? '?'}  ${b.worktree ? `${b.worktree}${b.worktreeGone ? ' (gone)' : b.dirty ? ` (${b.dirty} uncommitted)` : ' (clean)'}` : '(no worktree)'}`}${b.unnamed ? '  UNNAMED — rename to jarl/NNN-slug before merging' : ''}${b.deletable ? '  DONE → delete' : ''}${b.stale.length ? `  STALE: ${b.stale.join('; ')}` : ''}`).join('\n') : '(no worker branches)'; break;
+      case 'branches': out = cmdBranches(root, flags); text = out.length ? out.map((b) => `${b.repo !== basename(root) ? `[${b.repo}] ` : ''}${b.branch}${b.issues.length ? ` → ${b.issues.join(', ')}` : ''}  ${b.missing ? 'GONE' : `+${b.ahead ?? '?'}  ${b.worktree ? `${b.worktree}${b.worktreeGone ? ' (gone)' : b.dirty ? ` (${b.dirty} uncommitted)` : ' (clean)'}` : '(no worktree)'}`}${b.unnamed ? '  UNNAMED — rename to jarl/NNN-slug before merging' : ''}${{ delete: '  DONE → delete', dirty: '  DONE (worktree dirty)', unverified: '  DONE (merged by record, branch not in base) — verify' }[b.done] || ''}${b.stale.length ? `  STALE: ${b.stale.join('; ')}` : ''}`).join('\n') : '(no worker branches)'; break;
       case 'ask': out = cmdAsk(root, rest[0], flags); text = out.kind === 'ratify' ? `filed a-${out.id} for ratification · blocks nothing` : `asked a-${out.id}`; break;
       case 'answer': out = cmdAnswer(root, rest[0], rest[1]); text = `answered a-${out.id}${out.issue ? ` · written into ${out.issue}` : ''}`; break;
       case 'handoff': if (rest[0] === 'write') { out = cmdHandoffWrite(root, flags); text = `handoff written · ${out.inFlight} in flight · ${out.waiting} waiting on the user${out.uncommitted ? ` · ${out.uncommitted} loop file(s) not committed` : ''}`; } else { out = cmdHandoffRead(root); text = out.text; } break;
