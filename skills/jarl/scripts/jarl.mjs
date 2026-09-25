@@ -133,35 +133,61 @@ function stamp() { return new Date().toISOString().replace('T', ' ').slice(0, 16
 // Workers, reviewers and the merger all write through this tool with the same --root, often at the same
 // moment. Every command that writes therefore runs under .jarl/.lock, taken with the exclusive-create flag
 // so exactly one process holds it; the holder's pid, host and start time are written inside it. A lock
-// whose holder is gone (same host, pid not running) or that is older than LOCK_STALE_MS is broken and
-// taken over; a caller that cannot get it within LOCK_WAIT_MS fails loudly, naming the holder, rather than
-// writing without it. And every file is written whole to a temporary file beside it and renamed into
-// place, so a reader that takes no lock (list, show) never sees half a file.
-export const LOCK_STALE_MS = 30_000;
+// whose holder is gone is broken and taken over (see lockIsStale); a caller that cannot get it within
+// LOCK_WAIT_MS fails loudly, naming the holder, rather than writing without it. And every file is written
+// whole to a temporary file beside it and renamed into place, so a reader that takes no lock (list, show)
+// never sees half a file.
+export const LOCK_STALE_MS = 30_000;          // a lock from another host, or one whose holder cannot be read
+export const LOCK_REUSED_PID_MS = 10 * 60_000; // a lock on this host whose pid runs, against pid reuse
+export const LOCK_EMPTY_MS = 2_000;            // a lock with nothing in it: its holder died between create and write
+export const LOCK_BREAK_STALE_MS = 5_000;      // a breaker's own lock (below), left by a breaker that died
 export const LOCK_WAIT_MS = Number(process.env.JARL_LOCK_WAIT_MS) || 20_000;   // the variable is a test knob
 const SLEEPER = new Int32Array(new SharedArrayBuffer(4));
 function sleep(ms) { Atomics.wait(SLEEPER, 0, 0, ms); }
 function lockPath(root) { return join(jarlDir(root), '.lock'); }
 let held = 0;   // re-entrant within one process: a command that calls another write takes the lock once
 
-// Stale: on this host, a holder whose pid no longer runs (or, against pid reuse, one older than ten minutes);
-// from another host (a shared checkout) or with no readable holder, one older than LOCK_STALE_MS.
+// Stale: empty and older than LOCK_EMPTY_MS; on this host, a holder whose pid no longer runs (or, against pid
+// reuse, one older than LOCK_REUSED_PID_MS); from another host (a shared checkout) or with an unreadable
+// holder, one older than LOCK_STALE_MS.
 function lockIsStale(text, mtimeMs) {
-  const [pid, host] = text.split('\n')[0].split(' ');
   const age = Date.now() - mtimeMs;
+  if (!text.trim()) return age > LOCK_EMPTY_MS;
+  const [pid, host] = text.split('\n')[0].split(' ');
   if (host === hostname() && Number(pid) > 0) {
     try { process.kill(Number(pid), 0); } catch (e) { if (e.code === 'ESRCH') return true; }
-    return age > 10 * 60_000;
+    return age > LOCK_REUSED_PID_MS;
   }
   return age > LOCK_STALE_MS;
+}
+
+// Breaking a stale lock is itself serialized, behind .jarl/.lock.break (exclusive create): only its holder
+// may remove .lock, and only when .lock still holds exactly the content judged stale. A live lock is never
+// moved or renamed, so a fresh holder that took the lock meanwhile keeps it. A breaker that died leaves
+// .lock.break behind; it is removed once older than LOCK_BREAK_STALE_MS (breaking takes milliseconds).
+function breakStaleLock(root, stale) {
+  const brk = join(jarlDir(root), '.lock.break');
+  const mine = `${process.pid} ${hostname()} ${new Date().toISOString()}\n`;
+  try {
+    const fd = openSync(brk, 'wx');
+    try { writeSync(fd, mine); } finally { closeSync(fd); }
+  } catch (e) {
+    if (e.code !== 'EEXIST') return;
+    try { if (Date.now() - statSync(brk).mtimeMs > LOCK_BREAK_STALE_MS) unlinkSync(brk); } catch { /* gone */ }
+    return;
+  }
+  try {
+    let now = null;
+    try { now = readFileSync(lockPath(root), 'utf8'); } catch { /* released meanwhile */ }
+    if (now === stale) unlinkSync(lockPath(root));
+  } catch { /* released meanwhile */ } finally {
+    try { if (readFileSync(brk, 'utf8') === mine) unlinkSync(brk); } catch { /* gone */ }
+  }
 }
 
 export function withLock(root, fn) {
   // Before init there is no .jarl/ to guard and nothing in it to lose: init runs unguarded.
   if (held > 0 || !existsSync(jarlDir(root))) return fn();
-  // A committed loop from before the narrow ignore file existed gets it here, before the first lock is written.
-  const ignore = join(jarlDir(root), '.gitignore');
-  if (!existsSync(ignore)) writeAtomic(ignore, JARL_GITIGNORE_COMMITTED);
   const path = lockPath(root);
   const mine = `${process.pid} ${hostname()} ${new Date().toISOString()}\n`;
   const until = Date.now() + LOCK_WAIT_MS;
@@ -176,22 +202,19 @@ export function withLock(root, fn) {
     }
     let text = ''; let mtimeMs = Date.now();
     try { text = readFileSync(path, 'utf8'); mtimeMs = statSync(path).mtimeMs; } catch { continue; }   // released meanwhile
-    if (lockIsStale(text, mtimeMs)) {
-      // Break it by moving it aside and checking it is still the lock judged stale: a live holder that
-      // took the lock in between gets it back (link never overwrites), so it is never stolen.
-      const aside = `${path}.stale-${process.pid}`;
-      try { renameSync(path, aside); } catch { continue; }
-      let moved = '';
-      try { moved = readFileSync(aside, 'utf8'); } catch { /* gone */ }
-      if (moved !== text) { try { linkSync(aside, path); } catch { /* another holder already */ } }
-      try { unlinkSync(aside); } catch { /* gone */ }
-      continue;
-    }
+    if (lockIsStale(text, mtimeMs)) { breakStaleLock(root, text); sleep(1 + Math.floor(Math.random() * 5)); continue; }
     if (Date.now() > until) throw new Error(`.jarl/.lock is held by another jarl.mjs (${text.trim() || 'holder unknown'}) — nothing was written; retry, or remove ${path} if that process is gone`);
     sleep(10 + Math.floor(Math.random() * 40));
   }
   held += 1;
-  try { return fn(); } finally {
+  try {
+    const out = fn();
+    // A committed loop from before the narrow ignore file existed gets it here: under the lock, and only
+    // after a command that wrote (a refused one writes nothing). close may have removed .jarl/ meanwhile.
+    const ignore = join(jarlDir(root), '.gitignore');
+    if (existsSync(jarlDir(root)) && !existsSync(ignore)) writeAtomic(ignore, JARL_GITIGNORE_COMMITTED);
+    return out;
+  } finally {
     held -= 1;
     // Release only a lock that is still this one: close removes .jarl/ with it, and a lock broken as stale
     // may already belong to someone else.
@@ -322,9 +345,9 @@ export function appendDecision(root, slug, ruling) {
 function need(cond, msg) { if (!cond) throw new Error(msg); }
 
 // By default the loop stays out of git: .jarl/.gitignore ignores everything under .jarl/, itself
-// included, so the loop never shows in the branch's history, diffs or merges. --committed writes no
-// ignore file and the loop is committed with the work. --permanent also writes no ignore file — a
-// permanent record must be committed to survive — and additionally writes .jarl/.permanent, so a
+// included, so the loop never shows in the branch's history, diffs or merges. --committed writes the
+// narrow ignore file below instead and the loop is committed with the work. --permanent is committed the
+// same way — a permanent record must be committed to survive — and additionally writes .jarl/.permanent, so a
 // later session can tell the mode from the loop itself without being told: close (below) reads that
 // marker and keeps the directory instead of removing it. Only init decides any of this, so a loop opened
 // before a mode existed keeps behaving as it did.
@@ -335,7 +358,7 @@ function need(cond, msg) { if (!cond) throw new Error(msg); }
 // write under the lock. The mode is read from what the file ignores, not from whether it exists: only the
 // default mode's file ignores everything (a line `*`).
 export const JARL_GITIGNORE = '*\n**/*\n';
-export const JARL_GITIGNORE_COMMITTED = '# jarl: the loop is committed; only the write lock and half-written temporary files stay out of git\n/.lock\n/.lock.stale-*\n.*.tmp\n';
+export const JARL_GITIGNORE_COMMITTED = '# jarl: the loop is committed; only the write lock and half-written temporary files stay out of git\n/.lock\n/.lock.break\n.*.tmp\n';
 export function outOfGit(root) {
   const path = join(jarlDir(root), '.gitignore');
   return existsSync(path) && readFileSync(path, 'utf8').split('\n').some((l) => l.trim() === '*');
@@ -382,7 +405,7 @@ function needLiveLoop(root, next) {
 
 // What stays in .jarl/ when a loop is archived: the archive itself and the markers that say how the
 // loop lives in git, so the next loop opened here keeps the same mode.
-const ARCHIVE_KEEPS = new Set(['archive', '.gitignore', '.permanent', '.lock']);
+const ARCHIVE_KEEPS = new Set(['archive', '.gitignore', '.permanent', '.lock', '.lock.break']);
 
 // archive "<slug>" — put the current loop away under .jarl/archive/<yyyy.mm.dd>-<slug>/ so a new one
 // can be opened here with init. Everything but the archive and the mode markers moves: issues, goal,
@@ -402,6 +425,22 @@ export function cmdArchive(root, slug) {
     renameSync(join(jarlDir(root), entry), join(dest, entry));
   }
   return { archived: dest, leftOpen: left };
+}
+
+// Put a written temporary file in place under a name that must not exist yet: a hard link never overwrites,
+// so it is the claim. On a file system without hard links, an exclusive create and a copy of the content
+// do the same (the lock already keeps other writers out; readers may see the file an instant before it
+// is complete). False when the name is taken.
+const NO_LINKS = new Set(['EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'ENOSYS', 'EXDEV']);
+export function claimFile(tmp, file, link = linkSync) {
+  try { link(tmp, file); return true; } catch (e) {
+    if (e.code === 'EEXIST') return false;
+    if (!NO_LINKS.has(e.code)) throw e;
+  }
+  let fd;
+  try { fd = openSync(file, 'wx'); } catch (e) { if (e.code === 'EEXIST') return false; throw e; }
+  try { writeSync(fd, readFileSync(tmp)); } finally { closeSync(fd); }
+  return true;
 }
 
 export function cmdNew(root, title, flags) {
@@ -429,7 +468,7 @@ export function cmdNew(root, title, flags) {
       tags: splitList(flags.tags), files: splitList(flags.files), repo: flags.repo, foundBy: flags['found-by'] || 'jarl',
     }));
     let claimed = !taken().includes(n);
-    if (claimed) { try { linkSync(tmp, file); } catch (e) { if (e.code !== 'EEXIST') { unlinkSync(tmp); throw e; } claimed = false; } }
+    if (claimed) { try { claimed = claimFile(tmp, file); } catch (e) { unlinkSync(tmp); throw e; } }
     unlinkSync(tmp);
     if (claimed) { appendLog(root, `filed ${id} · ${title}`); return { id, file }; }
     need(tries < 100, 'could not claim a free issue number after 100 tries');

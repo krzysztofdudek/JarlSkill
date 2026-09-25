@@ -826,7 +826,7 @@ test('a committed loop keeps the lock and temporary files out of git; an older c
     jarl(root, 'new', 'thing');
     // What a `git add .jarl` sees in the middle of a call: the lock, a stale lock moved aside, temp files.
     writeFileSync(join(root, '.jarl', '.lock'), '1 host 2026-01-01\n');
-    writeFileSync(join(root, '.jarl', '.lock.stale-42'), '');
+    writeFileSync(join(root, '.jarl', '.lock.break'), '');
     writeFileSync(join(root, '.jarl', '.log.md.123.tmp'), '');
     writeFileSync(join(root, '.jarl', 'issues', '.002.123.tmp'), '');
     g('add', '-A');
@@ -851,4 +851,61 @@ test('a committed loop keeps the lock and temporary files out of git; an older c
   jarl(out, 'new', 'thing');
   assert.equal(readFileSync(join(out, '.jarl', '.gitignore'), 'utf8'), '*\n**/*\n');
   assert.match(refuses(out, 'mode', 'permanent'), /out of git/);
+});
+
+test('many callers on a lock left by a dead process: one breaks it, none loses a row; an empty lock is broken after two seconds', async () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'target');
+  const { hostname } = await import('node:os');
+  const { utimesSync, readdirSync } = await import('node:fs');
+  const lock = join(root, '.jarl', '.lock');
+  writeFileSync(lock, `99999999 ${hostname()} 2026-01-01T00:00:00.000Z\n`);
+  await Promise.all(Array.from({ length: 20 }, (_, n) => jarlAsync(root, 'evidence', '001', '--ran', `b${n}`, '--saw', 'ok')));
+  assert.equal((jarl(root, 'show', '001').match(/^- \*\*ran:\*\* b\d+ · /gm) || []).length, 20);
+  assert.equal((readFileSync(join(root, '.jarl', 'log.md'), 'utf8').match(/· 001 evidence row · b\d+$/gm) || []).length, 20);
+  assert.deepEqual(readdirSync(join(root, '.jarl')).filter((f) => f.startsWith('.lock')), [], 'neither the lock nor the breaker lock is left');
+  // A holder that died between creating the lock and writing its name: empty, and broken once two seconds old.
+  writeFileSync(lock, '');
+  const old = new Date(Date.now() - 5_000);
+  utimesSync(lock, old, old);
+  const t0 = Date.now();
+  jarl(root, 'evidence', '001', 'after an empty lock');
+  assert.ok(Date.now() - t0 < 10_000, 'well inside the wait limit');
+  assert.match(jarl(root, 'show', '001'), /after an empty lock/);
+  // A breaker that died holding the breaker lock does not block for good.
+  writeFileSync(lock, `99999999 ${hostname()} 2026-01-01T00:00:00.000Z\n`);
+  writeFileSync(join(root, '.jarl', '.lock.break'), '');
+  const older = new Date(Date.now() - 60_000);
+  utimesSync(join(root, '.jarl', '.lock.break'), older, older);
+  jarl(root, 'evidence', '001', 'after a dead breaker');
+  assert.match(jarl(root, 'show', '001'), /after a dead breaker/);
+});
+
+test('new claims its file with a hard link, and without hard links falls back to an exclusive create', async () => {
+  const { claimFile } = await import(new URL('../jarl.mjs', import.meta.url).href);
+  const dir = mkdtempSync(join(tmpdir(), 'jarl-claim-'));
+  const tmp = join(dir, '.tmp'); writeFileSync(tmp, 'body');
+  const noLinks = () => { const e = new Error('no links'); e.code = 'EPERM'; throw e; };
+  assert.equal(claimFile(tmp, join(dir, '001-a.md'), noLinks), true);
+  assert.equal(readFileSync(join(dir, '001-a.md'), 'utf8'), 'body');
+  assert.equal(claimFile(tmp, join(dir, '001-a.md'), noLinks), false, 'a taken name is not overwritten');
+  assert.equal(claimFile(tmp, join(dir, '002-b.md')), true);
+  assert.equal(claimFile(tmp, join(dir, '002-b.md')), false);
+  const other = () => { const e = new Error('disk'); e.code = 'EIO'; throw e; };
+  assert.throws(() => claimFile(tmp, join(dir, '003-c.md'), other), /disk/);
+});
+
+test('a command refused by the parser or its own checks does not backfill the ignore file', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal', '--committed');
+  execFileSync('rm', [join(root, '.jarl', '.gitignore')]);
+  refuses(root, 'evidence', '001', '--bogus');
+  assert.equal(existsSync(join(root, '.jarl', '.gitignore')), false, 'the parser refused before any lock');
+  refuses(root, 'set', '999', 'done');
+  assert.equal(existsSync(join(root, '.jarl', '.gitignore')), false, 'a command refused under the lock writes nothing');
+  jarl(root, 'list');
+  assert.equal(existsSync(join(root, '.jarl', '.gitignore')), false, 'a read takes no lock and writes nothing');
+  jarl(root, 'new', 'thing');
+  assert.equal(readFileSync(join(root, '.jarl', '.gitignore'), 'utf8'), JARL_GITIGNORE_COMMITTED, 'the first write that lands backfills it');
 });
