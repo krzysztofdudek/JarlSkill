@@ -926,6 +926,9 @@ test('new writes the body at filing time, body replaces it later, and neither is
   assert.match(issue.sections.what, /line one\n\\## not a section/);
   assert.equal(Object.keys(issue.sections).join(','), 'what,why,acceptance,evidence');
   assert.match(refuses(root, 'body', '1'), /at least one of/);
+  // A bare ## line is escaped too.
+  jarl(root, 'body', '1', '--why', 'a\n##\nb');
+  assert.match(JSON.parse(jarl(root, 'show', '1', '--json')).sections.why, /^a\n\\##\nb/);
   assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /001 body · what/);
   // Without any of it, an issue reads exactly as before.
   jarl(root, 'new', 'bare');
@@ -1018,7 +1021,7 @@ test('import --adopt links older issues that name the finding, once, without fil
   jarl(root, 'init', 'goal');
   jarl(root, 'new', 'Jarl: bodies (jarl-2-B2)');
   jarl(root, 'new', 'minor package');
-  jarl(root, 'evidence', '2', 'covers jarl-2-B5 and jarl-9-Z9');
+  jarl(root, 'body', '2', '--what', 'covers jarl-2-B5 and jarl-9-Z9');
   const file = findingsDir([...FLAT, { id: 'jarl-9-Z9', title: 'z' }, { id: 'jarl-2-B20', title: 'no one names me' }]);
   assert.match(jarl(root, 'import', file, '--source', 'r'), /filed 1 · already filed 0 · named by an issue without Source 3/);
   const o = JSON.parse(jarl(root, 'import', file, '--source', 'r', '--adopt', '--json'));
@@ -1090,4 +1093,56 @@ test('an issue file from before these fields reads and moves unchanged', () => {
   assert.match(jarl(root, 'status'), /open 1 · in flight 0 · done 0/);
   jarl(root, 'source', '1', 'r#A-1');
   assert.match(readFileSync(join(root, '.jarl', 'issues', '001-old-one.md'), 'utf8'), /\*\*Where:\*\*\n\*\*Source:\*\* r#A-1\n\n## What/);
+});
+
+test('replacement patterns in user text are written as they are: $1, $&, $\' and $` never expand', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'dollars', '--what', 'w');
+  jarl(root, 'body', '1', '--why', "use $' here and $` and $& and $1");
+  jarl(root, 'evidence', '1', "saw $' and $1");
+  jarl(root, 'evidence', '1', "then $& too");
+  const text = jarl(root, 'show', '1');
+  assert.equal((text.match(/^## /gm) || []).length, 4, 'no section duplicated');
+  const i = JSON.parse(jarl(root, 'show', '1', '--json'));
+  assert.equal(i.sections.why.trim(), "use $' here and $` and $& and $1");
+  assert.equal(i.sections.evidence.trim(), "saw $' and $1\n\nthen $& too");
+});
+
+test('done: a ruling or a drop reason alone is not evidence; a proposal is not an acceptance line; 0 rows is noted', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'settled', '--acceptance', 'npm test passes');
+  jarl(root, 'decide', 'rule', 'keep it', '--settles', '1');
+  jarl(root, 'review', '1', 'approve', 'ok');
+  assert.match(refuses(root, 'set', '1', 'done', 'x'), /001 has no evidence yet/);
+  jarl(root, 'evidence', '1', 'merged abc');
+  const r = (() => { try { return execFileSync('bash', ['-c', `node ${SCRIPT} set 1 done m --root ${root} 2>&1`], { encoding: 'utf8' }); } catch (e) { return String(e.stdout); } })();
+  assert.match(r, /note: 001 1 acceptance line\(s\), 0 --ran\/--saw row\(s\)/);
+  const file = findingsDir([{ id: 'jarl-3-X1', title: 'x', proposal: 'do it' }]);
+  const o = JSON.parse(jarl(root, 'import', file, '--source', 'r', '--json'));
+  const next = JSON.parse(jarl(root, 'next', '--json')).find((x) => x.id === o.filed[0].id);
+  assert.equal(next.noAcceptance, true, 'the copied proposal is not an acceptance line yet');
+  assert.deepEqual([next.waitsOn, next.after], [[], []], 'every next row carries both lists');
+});
+
+test('import never takes a short id, a header field or Evidence for a mention of the finding', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'unrelated F1 in a title', '--what', 'see F4 and C1 here');   // short ids in prose, no report named
+  jarl(root, 'new', 'another', '--prio', '2');                                    // **Priority:** 2
+  jarl(root, 'new', 'notes');
+  jarl(root, 'evidence', '3', 'also touches jarl-2-B2');                          // named only in Evidence
+  jarl(root, 'new', 'package', '--what', 'from report-x: F7 and C9');              // short id with its report named
+  const file = findingsDir([{ id: 'F1', title: 'a' }, { id: 'F4', title: 'b' }, { id: 'C1', title: 'c' }, { id: '2', title: 'd' }, { id: 'jarl-2-B2', title: 'e' }, { id: 'F7', title: 'f' }]);
+  const o = JSON.parse(jarl(root, 'import', file, '--source', 'core/research/report-x', '--adopt', '--dry-run', '--json'));
+  assert.deepEqual(o.adopted.map((a) => [a.finding, a.issue]), [['F7', '004']]);
+  assert.deepEqual(o.filed.map((f) => f.finding), ['F1', 'F4', 'C1', '2', 'jarl-2-B2']);
+  // The angles shape: a bare id needs its <angle>/<id> or its report; the angle name is slugified into the key.
+  const angles = findingsDir([{ angle: 'First Hour', surviving: [{ id: 'prime-teaches-removed-verdict', title: 'p' }] }]);
+  const a = JSON.parse(jarl(root, 'import', angles, '--source', 'r-angles', '--dry-run', '--json'));
+  assert.equal(a.filed[0].finding, 'first-hour/prime-teaches-removed-verdict');
+  jarl(root, 'new', 'names it', '--what', 'first-hour/prime-teaches-removed-verdict');
+  const a2 = JSON.parse(jarl(root, 'import', angles, '--source', 'r-angles', '--dry-run', '--json'));
+  assert.deepEqual(a2.mentioned.map((m) => m.issue), ['005']);
 });

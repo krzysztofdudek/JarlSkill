@@ -321,7 +321,8 @@ function setField(text, name, value) {
 
 function setSection(text, name, body) {
   const re = new RegExp(`(^##\\s+${name}\\s*$\\n)([\\s\\S]*?)(?=^##\\s|(?![\\s\\S]))`, 'mi');
-  if (re.test(text)) return text.replace(re, `$1${body.trim()}\n\n`);
+  // A function replacer: user text is inserted as it is, never read for $1, $& or $' patterns.
+  if (re.test(text)) return text.replace(re, (_, head) => `${head}${body.trim()}\n\n`);
   return `${text.replace(/\s*$/, '')}\n\n## ${name}\n${body.trim()}\n`;
 }
 
@@ -329,7 +330,7 @@ function setSection(text, name, body) {
 // early and the rest would land under a heading nobody reads. Such a line is escaped (\##), which renders
 // the same and parses as text.
 export function bodyText(v) {
-  return String(v ?? '').replace(/\r\n?/g, '\n').split('\n').map((l) => l.replace(/^(\s*)(#+\s)/, '$1\\$2')).join('\n').trim();
+  return String(v ?? '').replace(/\r\n?/g, '\n').split('\n').map((l) => l.replace(/^(\s*)(#+)(?=\s|$)/, (_, sp, h) => `${sp}\\${h}`)).join('\n').trim();
 }
 // A header field is one line.
 function fieldText(v) { return String(v ?? '').replace(/\s+/g, ' ').trim(); }
@@ -658,7 +659,7 @@ export function cmdSet(root, rawIds, status, why) {
   need(status !== 'deferred' || why, 'deferred needs a reason: jarl.mjs set <id> deferred "<why>" — work that waits, not work that is gone');
   const nothing = issues.length > 1 ? ' — nothing was written' : '';
   for (const issue of issues) {
-    need(status !== 'done' || issue.sections.evidence?.trim(), `${issue.id} has no evidence yet — record it first: jarl.mjs evidence ${issue.id} "<what was run and what it printed>"${nothing}`);
+    need(status !== 'done' || workEvidence(issue), `${issue.id} has no evidence yet — record it first: jarl.mjs evidence ${issue.id} "<what was run and what it printed>"${nothing}`);
     need(status !== 'done' || reviewState(root, issue.id).approved, `${issue.id} has no approving review newer than its last round — a fresh reviewer reads the issue and the diff first: jarl.mjs review ${issue.id} approve|changes "<findings>"${nothing}`);
   }
   const writes = issues.map((issue) => {
@@ -684,7 +685,7 @@ function doneNote(issue) {
   const lines = acceptanceLineCount(issue);
   if (!lines) return { note: 'no acceptance line on file' };
   const rows = evidenceRows(issue).length;
-  return rows && rows < lines ? { note: `${lines} acceptance line(s), ${rows} --ran/--saw row(s)` } : {};
+  return rows < lines ? { note: `${lines} acceptance line(s), ${rows} --ran/--saw row(s)` } : {};
 }
 
 export function cmdTag(root, rawIds, ops) {
@@ -739,9 +740,17 @@ export function evidenceRows(issue) {
   return rows;
 }
 
+// A finding's proposal copied in by import is not yet an acceptance line: it waits to be made checkable.
+export const PROPOSED = 'Proposed by the finding';
 export function acceptanceLineCount(issue) {
   const text = issue.sections.acceptance || '';
-  return text.split('\n').map((l) => l.trim()).filter((l) => l.length > 0).length;
+  return text.split('\n').map((l) => l.trim().replace(/^- /, '')).filter((l) => l.length > 0 && !l.startsWith(PROPOSED)).length;
+}
+
+// What counts as evidence of the work for done: not a ruling written in by decide or answer, and not the
+// reason of an earlier drop or deferral.
+export function workEvidence(issue) {
+  return (issue.sections.evidence || '').split('\n').filter((l) => !/^\s*(Ruling\b|Dropped:|Deferred:)/.test(l)).join('\n').trim();
 }
 
 // evidence <id> "<text>" appends free text (a merge sha, a one-line note); evidence <id> --ran
@@ -817,14 +826,14 @@ export function cmdNext(root, flags) {
   for (const i of issues.filter((x) => x.status === 'open').sort((a, b) => a.priority.localeCompare(b.priority) || a.id.localeCompare(b.id))) {
     // An issue whose After issues are not all done or dropped is never offered, whatever its files.
     const after = waitingOn(i, byId);
-    if (after.length) { out.push({ id: i.id, title: i.title, priority: i.priority, after }); continue; }
+    if (after.length) { out.push({ id: i.id, title: i.title, priority: i.priority, after, waitsOn: [] }); continue; }
     const keys = keysOf(i);
     const clash = keys.filter((k) => taken.has(k.key)).map((k) => k.f);
-    if (clash.length) { out.push({ id: i.id, title: i.title, priority: i.priority, waitsOn: clash }); continue; }
+    if (clash.length) { out.push({ id: i.id, title: i.title, priority: i.priority, waitsOn: clash, after: [] }); continue; }
     keys.forEach((k) => taken.add(k.key));
     // Offered, but flagged: a worker raised on an issue with no acceptance line has nothing to prove, and
     // the reviewer nothing to check it against. Fill it with body --acceptance before raising one.
-    out.push({ id: i.id, title: i.title, priority: i.priority, files: i.files, ready: true, ...(acceptanceLineCount(i) ? {} : { noAcceptance: true }) });
+    out.push({ id: i.id, title: i.title, priority: i.priority, files: i.files, ready: true, waitsOn: [], after: [], ...(acceptanceLineCount(i) ? {} : { noAcceptance: true }) });
   }
   const limit = Number(flags.limit) || Infinity;
   let n = 0;
@@ -1213,7 +1222,7 @@ export function findingsOf(json) {
   // is <angle>/<id> there, always — never only when two collide, which would change a key once a later
   // edit of the file added a twin.
   if (Array.isArray(json) && json.some((x) => x && Array.isArray(x.surviving))) {
-    list = json.flatMap((x) => (x.surviving || []).map((f) => (f && f.id !== undefined && x.angle ? { ...f, id: `${x.angle}/${f.id}`, localId: String(f.id) } : f)));
+    list = json.flatMap((x) => (x.surviving || []).map((f) => (f && f.id !== undefined && x.angle ? { ...f, id: `${slugify(String(x.angle))}/${f.id}`, localId: String(f.id), angle: slugify(String(x.angle)) } : f)));
   } else if (Array.isArray(json)) list = json;
   else if (json && Array.isArray(json.results)) list = json.results.flatMap((r) => r.kept || []);
   else if (json && Array.isArray(json.findings)) list = json.findings;
@@ -1234,20 +1243,17 @@ export function findingsOf(json) {
     return {
       id,
       localId: f.localId || id,
+      angle: f.angle || null,
       title: title.length > 140 ? `${title.slice(0, 139)}…` : title,
       kind: KINDS.includes(kindRaw) ? kindRaw : (KIND_OF[kindRaw] || 'bug'),
       priority: PRIORITIES.includes(prioRaw) ? prioRaw : (PRIO_OF[prioRaw] || '2'),
       where: String(f.where || f.surfaces || ''),
       what: [claim && `Claim: ${claim}`, typeof f.truth === 'string' && f.truth && `Truth: ${f.truth}`, typeof f.evidence === 'string' ? f.evidence : ''].filter(Boolean).join('\n\n'),
       why: [why, f.effort && `Effort (the finding's estimate): ${f.effort}`].filter(Boolean).join('\n\n'),
-      acceptance: proposal ? `Proposed by the finding — make it checkable before a worker starts: ${proposal}` : '',
+      acceptance: proposal ? `${PROPOSED} — make it checkable before a worker starts: ${proposal}` : '',
     };
   });
-  // What an older issue would have written to name the finding: its own id, or the bare id inside its angle
-  // when no other angle uses the same one.
-  const local = new Map();
-  for (const f of out) local.set(f.localId, (local.get(f.localId) || 0) + 1);
-  return out.map((f) => ({ ...f, mention: local.get(f.localId) === 1 ? f.localId : f.id }));
+  return out;
 }
 
 // The report directory a findings file belongs to, as its Source spells it: the path from the root of the
@@ -1270,16 +1276,31 @@ function readFindings(file, flags = {}) {
   return { dir, findings: findingsOf(json) };
 }
 
-// An issue filed before Source existed often names its finding in the title or the evidence. That issue is
-// found, never guessed at: a title naming the id wins, else the one body that names it; two candidates are
+// An issue filed before Source existed often names its finding. That issue is found, never guessed at, and
+// only where an issue says what it is about: its title and its What, Why and Acceptance — never a header field
+// (`**Priority:** 2` is not finding 2) and never Evidence (notes about other work). An id that reads as unique
+// on its own (jarl-2-B2: a dash, and at least 8 characters) is enough by itself. A short one (F1, C1, 2) or one
+// from the angles shape needs its report named in the same issue too: the report directory's name, or the
+// <angle>/<id> key. A title naming the finding wins, else the one issue whose body does; two candidates are
 // reported as ambiguous and left alone.
-function mentionOf(issues, id) {
-  const re = new RegExp(`(^|[^A-Za-z0-9-])${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^A-Za-z0-9-]|$)`);
+function uniqueLooking(id) { return id.includes('-') && id.length >= 8; }
+function tokenRe(s) { return new RegExp(`(^|[^A-Za-z0-9-])${s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}([^A-Za-z0-9-]|$)`); }
+function mentionOf(issues, finding, dir) {
+  const own = tokenRe(finding.id);
+  const bare = tokenRe(finding.localId);
+  const report = tokenRe(basename(dir));
+  const named = (text) => {
+    if (own.test(text) && finding.id !== finding.localId) return true;   // <angle>/<id> written out
+    if (!bare.test(text)) return false;
+    return !finding.angle && uniqueLooking(finding.localId);
+  };
+  const namedWithReport = (text) => named(text) || (bare.test(text) && report.test(text));
   const legacy = issues.filter((i) => i.fields.source === undefined);
-  const byTitle = legacy.filter((i) => re.test(i.title));
+  const bodyOf = (i) => [i.title, i.sections.what, i.sections.why, i.sections.acceptance].filter(Boolean).join('\n');
+  const byTitle = legacy.filter((i) => named(i.title) || (bare.test(i.title) && report.test(bodyOf(i))));
   if (byTitle.length === 1) return { issue: byTitle[0] };
   if (byTitle.length > 1) return { ambiguous: byTitle.map((i) => i.id) };
-  const byBody = legacy.filter((i) => re.test(readFileSync(i.file, 'utf8')));
+  const byBody = legacy.filter((i) => namedWithReport(bodyOf(i)));
   if (byBody.length === 1) return { issue: byBody[0] };
   return byBody.length ? { ambiguous: byBody.map((i) => i.id) } : {};
 }
@@ -1311,7 +1332,7 @@ export function cmdImport(root, file, flags) {
   for (const f of chosen) {
     const key = `${dir}#${f.id}`;
     if (filedAs.has(key)) { out.already.push({ finding: f.id, issues: filedAs.get(key).map((i) => i.id) }); continue; }
-    const m = mentionOf(issues, f.mention);
+    const m = mentionOf(issues, f, dir);
     if (m.ambiguous) { out.ambiguous.push({ finding: f.id, issues: m.ambiguous }); continue; }
     if (m.issue) {
       if (flags.adopt === true) out.adopted.push({ finding: f.id, issue: m.issue.id, key });
@@ -1348,7 +1369,7 @@ export function cmdSources(root, files, flags = {}) {
   const add = (dir, id) => { if (!reports.has(dir)) reports.set(dir, []); if (!reports.get(dir).includes(id)) reports.get(dir).push(id); };
   need(files.length <= 1 || flags.source === undefined, '--source names one report directory: give one findings file with it');
   const mentionKey = new Map();
-  for (const file of files) { const { dir, findings } = readFindings(file, flags); findings.forEach((f) => { add(dir, f.id); mentionKey.set(`${dir}#${f.id}`, f.mention); }); }
+  for (const file of files) { const { dir, findings } = readFindings(file, flags); findings.forEach((f) => { add(dir, f.id); mentionKey.set(`${dir}#${f.id}`, f); }); }
   for (const key of filedAs.keys()) { const at = key.indexOf('#'); add(key.slice(0, at), key.slice(at + 1)); }
   const fromFile = new Set();
   for (const file of files) fromFile.add(readFindings(file, flags).dir);
@@ -1356,7 +1377,7 @@ export function cmdSources(root, files, flags = {}) {
     const rows = ids.map((id) => {
       const on = filedAs.get(`${dir}#${id}`) || [];
       if (on.length) return { finding: id, issues: on.map((i) => ({ id: i.id, status: i.status })) };
-      const m = mentionKey.has(`${dir}#${id}`) ? mentionOf(issues, mentionKey.get(`${dir}#${id}`)) : {};
+      const m = mentionKey.has(`${dir}#${id}`) ? mentionOf(issues, mentionKey.get(`${dir}#${id}`), dir) : {};
       return { finding: id, issues: [], ...(m.issue ? { mentionedBy: [m.issue.id] } : m.ambiguous ? { mentionedBy: m.ambiguous } : {}) };
     });
     const distinct = [...new Map(rows.flatMap((r) => r.issues).map((i) => [i.id, i])).values()];
@@ -1537,7 +1558,7 @@ function main() {
       case 'files': out = cmdFiles(root, rest[0], rest[1]); text = `${out.id} files: ${out.files.join(', ') || '(none)'}`; break;
       case 'repo': out = cmdRepo(root, rest[0], rest[1], { clear: flags.clear === true }); text = `${out.id} repo: ${out.cleared ? 'cleared' : out.repo}`; break;
       case 'evidence': out = cmdEvidence(root, rest[0], rest[1], flags); text = each(out, (o) => (o.rows ? `${o.id} evidence row${o.rows.length > 1 ? 's' : ''} recorded` : `${o.id} evidence recorded`)); break;
-      case 'next': out = cmdNext(root, flags); text = out.length ? out.map((r) => (r.ready ? `${r.id}  P${r.priority}  ${r.title}${r.noAcceptance ? '  (no acceptance yet)' : ''}` : r.after ? `${r.id}  P${r.priority}  ${r.title}  (after ${r.after.join(', ')})` : `${r.id}  P${r.priority}  ${r.title}  (waits on ${r.waitsOn.join(', ')})`)).join('\n') : '(nothing open)'; break;
+      case 'next': out = cmdNext(root, flags); text = out.length ? out.map((r) => (r.ready ? `${r.id}  P${r.priority}  ${r.title}${r.noAcceptance ? '  (no acceptance yet)' : ''}` : r.after.length ? `${r.id}  P${r.priority}  ${r.title}  (after ${r.after.join(', ')})` : `${r.id}  P${r.priority}  ${r.title}  (waits on ${r.waitsOn.join(', ')})`)).join('\n') : '(nothing open)'; break;
       case 'review': out = cmdReview(root, rest[0], rest[1], rest[2]); text = each(out, (o) => `${o.id} review ${o.verdict} · acceptance: ${o.acceptance ? o.acceptance.split('\n').join(' / ') : '(none on file)'}`); break;
       case 'round': out = cmdRound(root, rest[0], rest[1]); text = out.takeover ? `${out.id} round ${out.round} — takeover:\n\n${out.block}` : `${out.id} round ${out.round} of ${ROUNDS_BEFORE_TAKEOVER} before a takeover`; break;
       case 'check': out = cmdCheck(root, rest[0], flags); text = `${out.repo === root ? '' : `in ${out.repo}\n`}${out.items.map((i) => `${i.ok ? '✓' : '✗'} ${i.name} — ${i.note}`).join('\n')}`; break;
