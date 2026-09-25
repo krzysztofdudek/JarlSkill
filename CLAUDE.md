@@ -9,6 +9,7 @@ Jarl is an add-on in the Yggdrasil family: it attaches to the agent, not to the 
 ## Plugin scaffolding
 
 Layout mirrors the sibling repos (UrdSkill, RatatoskrSkill, ResearcherSkill):
+- `plugin.json` at the repository root — the portable Agent Plugins 1.0 manifest, which Copilot and Codex read before any host-specific one. Same name, version and description as the host manifests; version in lockstep.
 - `.claude-plugin/plugin.json` — plugin manifest. `version` MUST match the latest released version in `CHANGELOG.md` and is bumped together with it.
 - `.claude-plugin/marketplace.json` — single-plugin marketplace listing for Claude Code (`/plugin install jarl@jarl-marketplace`). Codex discovers the marketplace from the same file.
 - `.github/plugin/marketplace.json` — the listing GitHub Copilot CLI reads; carries `version` and the `skills` array. Its `version` MUST be kept in lockstep with `plugin.json`.
@@ -18,7 +19,7 @@ Layout mirrors the sibling repos (UrdSkill, RatatoskrSkill, ResearcherSkill):
 
 Script paths inside `SKILL.md` are written as `${CLAUDE_PLUGIN_ROOT:-.claude/skills/jarl}/scripts/jarl.mjs`, as Horde does, so a marketplace install and a manual drop-in both resolve.
 
-When bumping version, update the `version` in all four manifests in lockstep with the CHANGELOG section header.
+When bumping version, update the `version` in all five manifests (the root `plugin.json` and the four host manifests) in lockstep with the CHANGELOG section header.
 
 ## Versioning
 
@@ -27,7 +28,7 @@ This project uses [Semantic Versioning](https://semver.org/) and maintains a [CH
 When the user says "bump version":
 1. Move `[Unreleased]` entries in `CHANGELOG.md` into a new version section with today's date
 2. Update the comparison links at the bottom of `CHANGELOG.md`
-3. Update the `version` in `.claude-plugin/plugin.json`, `.github/plugin/marketplace.json` (plugin entry), `.codex-plugin/plugin.json`, and `.cursor-plugin/plugin.json` to match
+3. Update the `version` in the root `plugin.json`, `.claude-plugin/plugin.json`, `.github/plugin/marketplace.json` (plugin entry), `.codex-plugin/plugin.json`, and `.cursor-plugin/plugin.json` to match
 4. Commit the bump and push to `main` — that's it.
 
 Do not create or push tags manually. The `.github/workflows/release.yml` workflow runs on every push to `main`, reads the top version from `CHANGELOG.md`, and if `v<version>` does not already exist it creates the tag, pushes it, and publishes a GitHub Release with notes extracted from the matching changelog section.
