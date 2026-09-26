@@ -129,7 +129,7 @@ Yes. `import <findings.json>` files one issue per finding, with its body filled 
 <details>
 <summary><b>What does closing an issue take?</b></summary>
 
-Evidence recorded since the issue was started (a note written when it was filed does not count) and an approving review, named with `--by`, that no later round or reopen has spent. The tool refuses an approve by the issue's own worker, and `status` and `report` say who reviewed the done work: a fresh reviewer, the jarl, or nobody recorded. It gates the record only; nothing stops code from landing.
+At least one `--ran`/`--saw` evidence row — the command that was run and what it printed — recorded after the issue was last started or reopened (after its filing, when it was never started); a free-text note never counts on its own, so a note written when the issue was filed cannot close it. And an approving review, named with `--by`, that no later round, restart or reopen has spent. The tool refuses an approve by the issue's own worker, and `status` and `report` say who reviewed the done work: a fresh reviewer, the jarl, or nobody recorded. It gates the record only; nothing stops code from landing.
 </details>
 
 <details>
