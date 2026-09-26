@@ -210,7 +210,7 @@ test('status moves only with a log line; done needs evidence; dropped needs a re
   jarl(root, 'set', '001', 'in-progress', 'worker raised');
   jarl(root, 'evidence', '001', 'npm test → 12 pass, 0 fail');
   assert.match(refuses(root, 'set', '001', 'done'), /no approving review/);
-  jarl(root, 'review', '001', 'changes', 'Important: the new test never goes red');
+  jarl(root, 'review', '001', 'changes', '--by', 'rev', 'Important: the new test never goes red');
   assert.match(refuses(root, 'set', '001', 'done'), /no approving review/);
   jarl(root, 'review', '001', 'approve', '--by', 'rev', 'read the diff; test red before, green after');
   jarl(root, 'set', '001', 'done');
@@ -631,9 +631,9 @@ test('review changes requires a Critical or Important finding; Minor alone is re
   const root = repo();
   jarl(root, 'init', 'goal');
   jarl(root, 'new', 'thing');
-  assert.match(refuses(root, 'review', '001', 'changes', 'looks a bit off'), /needs at least one finding ranked/);
-  assert.match(refuses(root, 'review', '001', 'changes', 'Minor: naming could be better'), /Minor alone goes to evidence/);
-  jarl(root, 'review', '001', 'changes', 'Important: the new test never goes red');
+  assert.match(refuses(root, 'review', '001', 'changes', '--by', 'rev', 'looks a bit off'), /needs at least one finding ranked/);
+  assert.match(refuses(root, 'review', '001', 'changes', '--by', 'rev', 'Minor: naming could be better'), /Minor alone goes to evidence/);
+  jarl(root, 'review', '001', 'changes', '--by', 'rev', 'Important: the new test never goes red');
   jarl(root, 'evidence', '001', 'fixed');
   jarl(root, 'review', '001', 'approve', '--by', 'rev', 'Minor: could still tidy the naming, but fine to land');
   jarl(root, 'set', '001', 'done');

@@ -82,8 +82,8 @@ commands:
   next [--limit n]                               open issues that do not share a file with any in-progress one and
                                                  whose After issues are done or dropped; a file is its repository and
                                                  its path (see --repo below); one with no acceptance line is marked
-  review <ids> approve|changes "<findings>" [--by <reviewer>]
-                                                 the reviewer's verdict; an approve needs --by, recorded with its kind
+  review <ids> approve|changes --by <reviewer> "<findings>"
+                                                 the reviewer's verdict; --by is required, recorded with its kind
                                                  (fresh; coordinator for jarl; self for the issue's worker — refused on
                                                  an approve); "done" needs an approve newer than the last round and reopen
   round <id> "<what failed>"                     one red round; after three prints the takeover block for a fresh worker
@@ -1239,14 +1239,14 @@ const SEVERITIES = ['Critical', 'Important', 'Minor'];
 // a branch back to a worker, it goes to evidence and the branch still merges (the review discipline's
 // own rule, enforced here rather than left to a reviewer's judgement).
 //
-// --by names the reviewer, and an approve needs it: the line records the name and its kind (fresh, coordinator,
+// --by names the reviewer, and every verdict needs it: the line records the name and its kind (fresh, coordinator,
 // self). An approve by the issue's own worker — its Worker field, or the worker of its last lease — is refused:
 // a self-approve is not a review.
 export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
   need(verdict === 'approve' || verdict === 'changes', 'review requires approve|changes');
   need(findings, 'review requires "<findings>" — what was read and what was found, even when nothing');
   need(flags.by === undefined || fieldText(flags.by), '--by needs a value — the reviewer\'s name');
-  need(verdict !== 'approve' || flags.by !== undefined, 'an approve needs --by <reviewer> — who read the diff: a fresh reviewer\'s name, or jarl when the loop\'s director reviewed it');
+  need(flags.by !== undefined, `a verdict needs --by <reviewer> — who read the diff: a fresh reviewer's name, or jarl when the loop's director reviewed it`);
   const issues = issuesFor(root, rawIds);
   const severities = SEVERITIES.filter((s) => findings.includes(s));
   if (verdict === 'changes') {

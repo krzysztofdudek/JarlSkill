@@ -68,14 +68,14 @@ test('review: an approve needs --by, a self-approve by the worker is refused, an
   const root = loop();
   jarl(root, 'new', 'a'); jarl(root, 'new', 'b');
   jarl(root, 'set', '1,2', 'in-progress', 'pkg', '--worker', 'opus-worker-3', '--branch', 'jarl/001-pkg');
-  assert.match(refuses(root, 'review', '1', 'approve', 'fine'), /an approve needs --by/);
+  assert.match(refuses(root, 'review', '1', 'approve', 'fine'), /a verdict needs --by/);
   assert.match(refuses(root, 'review', '1-2', 'approve', '--by', 'Opus-Worker-3', 'fine'), /001: an approve by Opus-Worker-3 is a self-approve \(opus-worker-3 is the issue's worker\).*nothing was written/);
   assert.match(refuses(root, 'review', '1', 'approve', '--by', 'self', 'fine'), /self-approve/);
   const log = () => readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
   assert.doesNotMatch(log(), /review approve/, 'a refused approve writes nothing');
-  // A changes verdict may come from anyone, with or without --by.
+  // A changes verdict needs --by too, and may come from the worker: it is recorded, not refused.
   jarl(root, 'review', '1', 'changes', '--by', 'opus-worker-3', 'Important: a self-check found a hole');
-  jarl(root, 'review', '1', 'changes', 'Important: old form still works');
+  assert.match(refuses(root, 'review', '1', 'changes', 'Important: no reviewer named'), /a verdict needs --by/);
   assert.equal(jarl(root, 'review', '1,2', 'approve', '--by', 'fresh-opus', 'read it'), '001 review approve by fresh-opus (fresh) · acceptance: (none on file)\n002 review approve by fresh-opus (fresh) · acceptance: (none on file)');
   assert.match(log(), /001 review approve · by fresh-opus \(fresh\) · read it/);
   assert.match(jarl(root, 'review', '2', 'approve', '--by', 'jarl', 'also read'), /by jarl \(coordinator\)/);
