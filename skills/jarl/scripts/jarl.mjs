@@ -38,14 +38,20 @@ commands:
                                                  .jarl/.permanent, and is not tied to a feature branch: close (below)
                                                  keeps the directory instead of removing it
   new "<title>" [--kind k] [--prio 1|2|3] [--tier standard|strong] [--tags a,b] [--files p,q] [--repo <path>] [--found-by who]
-      [--where "<w>"] [--what "<w>"] [--why "<w>"] [--acceptance "<line>"]... [--source <dir>#<id>,...] [--after <ids>]
+      [--where "<w>"] [--what "<w>"] [--why "<w>"] [--acceptance "<line>"]... [--changelog "<entry>"]...
+      [--source <dir>#<id>,...] [--after <ids>] [--template <name>]
                                                  file an issue under the next free number; --repo names the repository
                                                  its code lives in when that is not the loop's own, several as one comma
                                                  list (see --repo below);
                                                  --what, --why and --acceptance (one per line, repeatable) write the body,
-                                                 --source names the finding(s) it comes from, --after the issues it waits on
-  body <id> [--where "<w>"] [--what "<w>"] [--why "<w>"] [--acceptance "<line>"]...
-                                                 set or replace the Where field and the What, Why, Acceptance sections
+                                                 --source names the finding(s) it comes from, --after the issues it waits on;
+                                                 --changelog (repeatable) is the issue's changelog entry, "Added: …" etc.;
+                                                 --template reads .jarl/templates/<name>.md: its Kind, Priority, Tier, Tags
+                                                 and Files are defaults and its What, Why, Acceptance and Changelog the body,
+                                                 each replaced by the flag when given
+  body <id> [--where "<w>"] [--what "<w>"] [--why "<w>"] [--acceptance "<line>"]... [--changelog "<entry>"]...
+                                                 set or replace the Where field and the What, Why, Acceptance and
+                                                 Changelog sections
   import <findings.json> [--source <dir>] [--kind k] [--prio 1|2|3] [--tier t] [--tags a,b] [--repo <path>]
       [--found-by who] [--only <finding ids>] [--adopt] [--dry-run]
                                                  one issue per finding, with Source: <dir>#<finding id>; a finding
@@ -119,24 +125,34 @@ commands:
                                                  named issue's evidence (its status is unchanged)
   decisions [--live]                             the rulings with who ruled and what superseded them; --live only
                                                  those still in force
-  status [--stale-hours n]                       the goal, when the loop opened and last moved, the handoff's age,
+  status [--stale-hours n] [--by repo|tag|kind|prio]
+                                                 the goal, when the loop opened and last moved, the handoff's age,
                                                  then one line: open, in flight, waiting, done, dropped, deferred,
                                                  open questions, to ratify, merged with CI pending or red; then who
                                                  reviewed the done work (fresh, coordinator, self, unrecorded); then the
                                                  choices awaiting ratification, stale leases, the issues in flight
                                                  with no acceptance line, and — committed loops — the loop files
-                                                 git has not committed
+                                                 git has not committed; --by adds the five status counts per
+                                                 repository, tag, kind or priority
   archive "<slug>"                               put the current loop away under .jarl/archive/<yyyy.mm.dd>-<slug>/,
-                                                 keeping the archive and the mode markers, so init can open a
-                                                 new loop here in the same mode
+                                                 keeping the archive, the mode markers and .jarl/templates/, so init
+                                                 can open a new loop here in the same mode
   report [--found]                               what was done (per repository when it spans several), who reviewed it,
                                                  dropped, deferred and still open — ready for the changelog; --found adds
-                                                 the issues found by someone other than the jarl
+                                                 the issues found by someone other than the jarl; --json also carries
+                                                 one row per issue (see SKILL.md, "Views for dashboards")
   tips                                           read-only: per repository the loop's issues name (open, in progress,
                                                  recently merged), the tip of each worker branch in flight, the release
                                                  branch and main, ahead/behind their upstream as last fetched, and — when
                                                  gh is on PATH — the CI of a tip its upstream holds (else "not pushed");
                                                  nothing is fetched or written
+  queue [--repo <path>] [--base <b>]             read-only: the branches waiting for the merger — an open or in-progress
+                                                 issue on it holds a live approve and the branch is ahead of its base —
+                                                 in the order they were approved, per repository, cut into batches whose
+                                                 declared files do not overlap; it runs no check and refuses nothing
+  changelog <ids> [--repo <path>]                print the issues' ## Changelog entries grouped by section (Added,
+                                                 Changed, Deprecated, Removed, Fixed, Security), ready to paste under
+                                                 [Unreleased]; per repository when they span several; reads only
   mode permanent                                 switch an existing committed loop to the permanent mode, with a
                                                  log line; refuses a default-mode loop (out of git — a permanent
                                                  record must be committed) and an already-permanent one
@@ -389,6 +405,9 @@ function setSection(text, name, body) {
   const re = new RegExp(`(^##\\s+${name}\\s*$\\n)([\\s\\S]*?)(?=^##\\s|(?![\\s\\S]))`, 'mi');
   // A function replacer: user text is inserted as it is, never read for $1, $& or $' patterns.
   if (re.test(text)) return text.replace(re, (_, head) => `${head}${body.trim()}\n\n`);
+  // A new section other than Evidence goes before Evidence, which stays last: the record of the work.
+  const evidence = /^## Evidence\s*$/m.exec(text);
+  if (name !== 'Evidence' && evidence) return `${text.slice(0, evidence.index)}## ${name}\n${body.trim()}\n\n${text.slice(evidence.index)}`;
   return `${text.replace(/\s*$/, '')}\n\n## ${name}\n${body.trim()}\n`;
 }
 
@@ -406,7 +425,26 @@ export function acceptanceText(v) {
   return lines.length > 1 ? lines.map((l) => `- ${l}`).join('\n') : (lines[0] || '');
 }
 
-export function renderIssue({ id, title, kind, priority, tier, tags, files, repo, foundBy, where = '', what = '', why = '', acceptance = '', source = [], after = [] }) {
+// --changelog repeats, one entry each: the line the repository's changelog gets for this issue, optionally opened by
+// its Keep a Changelog section (`Added: …`). An entry is one line, like a changelog bullet; several become a list.
+export const CHANGELOG_SECTIONS = ['Added', 'Changed', 'Deprecated', 'Removed', 'Fixed', 'Security'];
+export function changelogText(v) {
+  const lines = [].concat(v ?? []).map(fieldText).filter(Boolean).map((l) => l.replace(/^-\s+/, ''));
+  // A section with nothing after it would print an empty bullet under that heading: refused, not guessed at.
+  for (const l of lines) need(!new RegExp(`^(${CHANGELOG_SECTIONS.join('|')}):\\s*$`, 'i').test(l), `changelog entry "${l}" has no text — write the line after the section: --changelog "${l.replace(/:\s*$/, '')}: <what changed>"`);
+  return lines.map((l) => `- ${l}`).join('\n');
+}
+// The entries of an issue's ## Changelog section, each with its section: the one it opens with, else Fixed for a bug
+// and Changed for anything else.
+export function changelogEntries(issue) {
+  const fallback = issue.kind === 'bug' ? 'Fixed' : 'Changed';
+  return (issue.sections.changelog || '').split('\n').map((l) => l.trim().replace(/^-\s+/, '')).filter(Boolean).map((l) => {
+    const m = new RegExp(`^(${CHANGELOG_SECTIONS.join('|')}):\\s*(.*)$`, 'i').exec(l);
+    return m && m[2] ? { section: CHANGELOG_SECTIONS.find((x) => x.toLowerCase() === m[1].toLowerCase()), text: m[2] } : { section: fallback, text: l };
+  });
+}
+
+export function renderIssue({ id, title, kind, priority, tier, tags, files, repo, foundBy, where = '', what = '', why = '', acceptance = '', source = [], after = [], changelog = '' }) {
   const body = (t) => (t ? `${t}\n` : '\n');
   return `# ${id} · ${fieldText(title)}
 
@@ -425,7 +463,7 @@ ${body(what)}
 ${body(why)}
 ## Acceptance
 ${body(acceptance)}
-## Evidence
+${changelog ? `## Changelog\n${changelog}\n\n` : ''}## Evidence
 
 `;
 }
@@ -561,9 +599,10 @@ function needLiveLoop(root, next) {
   need(hasLiveLoop(root), `no live loop here — .jarl/ holds only archived loops${next}`);
 }
 
-// What stays in .jarl/ when a loop is archived: the archive itself and the markers that say how the
-// loop lives in git, so the next loop opened here keeps the same mode.
-const ARCHIVE_KEEPS = new Set(['archive', '.gitignore', '.permanent', '.lock', '.lock.break']);
+// What stays in .jarl/ when a loop is archived: the archive itself, the markers that say how the loop lives in
+// git, so the next loop opened here keeps the same mode, and the issue templates, which belong to the place, not
+// to one loop.
+const ARCHIVE_KEEPS = new Set(['archive', 'templates', '.gitignore', '.permanent', '.lock', '.lock.break']);
 
 // archive "<slug>" — put the current loop away under .jarl/archive/<yyyy.mm.dd>-<slug>/ so a new one
 // can be opened here with init. Everything but the archive and the mode markers moves: issues, goal,
@@ -601,9 +640,41 @@ export function claimFile(tmp, file, link = linkSync) {
   return true;
 }
 
-export function cmdNew(root, title, flags) {
+// A template is .jarl/templates/<name>.md: an issue file without a number — header fields (Kind, Priority, Tier, Tags,
+// Files) as defaults and What, Why, Acceptance and Changelog sections as the body. A flag given on the call wins over
+// the template, field by field and section by section. Templates are the loop's own and outlive it: archive keeps them.
+export const TEMPLATE_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
+export function templatesDir(root) { return join(jarlDir(root), 'templates'); }
+export function readTemplate(root, name) {
+  need(typeof name === 'string' && TEMPLATE_RE.test(name), `a template is named by letters, digits and . _ - (the file .jarl/templates/<name>.md) — not "${name}"`);
+  const path = join(templatesDir(root), `${name}.md`);
+  if (!existsSync(path)) {
+    const have = existsSync(templatesDir(root)) ? readdirSync(templatesDir(root)).filter((f) => f.endsWith('.md')).map((f) => f.slice(0, -3)) : [];
+    throw new Error(`no template ${name} in ${templatesDir(root)} — ${have.length ? `templates here: ${have.join(', ')}` : 'none here yet; write one as an issue file without a number (see SKILL.md, "Templates")'}`);
+  }
+  // The template is read as an issue whose title line may be anything: only its fields and sections count. A template
+  // that starts straight with a field has no title line, so that first field is read as a field, not dropped.
+  const raw = readFileSync(path, 'utf8').replace(/\r\n?/g, '\n');
+  const t = parseIssue(FIELD_RE.test(raw.split('\n')[0]) ? `# template\n${raw}` : raw, path);
+  const section = (k) => (t.sections[k] !== undefined && t.sections[k].trim() ? t.sections[k].trim() : undefined);
+  return {
+    kind: t.fields.kind || undefined, prio: t.fields.priority || undefined, tier: t.fields.tier || undefined,
+    tags: t.fields.tags || undefined, files: t.fields.files || undefined,
+    what: section('what'), why: section('why'), acceptance: section('acceptance'), changelog: section('changelog'),
+  };
+}
+
+export function cmdNew(root, title, rawFlags) {
   need(title, 'new requires "<title>"');
   needLiveLoop(root, ' — run: jarl.mjs init "<goal>"');
+  let flags = rawFlags;
+  let fromTemplate = {};
+  if (rawFlags.template !== undefined) {
+    const t = readTemplate(root, rawFlags.template);
+    fromTemplate = t;
+    flags = { ...rawFlags };
+    for (const k of ['kind', 'prio', 'tier', 'tags', 'files', 'what', 'why']) if (flags[k] === undefined && t[k] !== undefined) flags[k] = t[k];
+  }
   const kind = flags.kind || 'bug';
   need(KINDS.includes(kind), `--kind must be one of: ${KINDS.join(', ')}`);
   const priority = String(flags.prio || '2');
@@ -626,12 +697,15 @@ export function cmdNew(root, title, flags) {
     writeFileSync(tmp, renderIssue({
       id, title, kind, priority, tier,
       tags: splitList(flags.tags), files: splitList(flags.files), repo: repos.join(', '), foundBy: flags['found-by'] || 'jarl',
-      where: flags.where, what: bodyText(flags.what), why: bodyText(flags.why), acceptance: acceptanceText(flags.acceptance), source, after,
+      where: flags.where, what: bodyText(flags.what), why: bodyText(flags.why), source, after,
+      // A template's Acceptance and Changelog are taken as written (a list already); a flag replaces them.
+      acceptance: flags.acceptance !== undefined ? acceptanceText(flags.acceptance) : bodyText(fromTemplate.acceptance),
+      changelog: flags.changelog !== undefined ? changelogText(flags.changelog) : bodyText(fromTemplate.changelog),
     }));
     let claimed = !taken().includes(n);
     if (claimed) { try { claimed = claimFile(tmp, file); } catch (e) { unlinkSync(tmp); throw e; } }
     unlinkSync(tmp);
-    if (claimed) { appendLog(root, `filed ${id} · ${title}`); return { id, file }; }
+    if (claimed) { appendLog(root, `filed ${id} · ${title}${rawFlags.template !== undefined ? ` · template ${rawFlags.template}` : ''}`); return { id, file, ...(rawFlags.template !== undefined ? { template: rawFlags.template } : {}) }; }
     need(tries < 100, 'could not claim a free issue number after 100 tries');
     n = Math.max(n + 1, taken().reduce((m, x) => Math.max(m, x), 0) + 1);
   }
@@ -681,13 +755,14 @@ export function waitingOn(issue, byId) {
 export function cmdBody(root, rawId, flags) {
   const issue = findIssue(root, rawId);
   need(issue, `no such issue: ${rawId}`);
-  const parts = ['where', 'what', 'why', 'acceptance'].filter((k) => flags[k] !== undefined);
-  need(parts.length, 'body needs at least one of --where, --what, --why, --acceptance');
+  const parts = ['where', 'what', 'why', 'acceptance', 'changelog'].filter((k) => flags[k] !== undefined);
+  need(parts.length, 'body needs at least one of --where, --what, --why, --acceptance, --changelog');
   let text = readFileSync(issue.file, 'utf8');
   if (flags.where !== undefined) text = setField(text, 'Where', fieldText(flags.where));
   if (flags.what !== undefined) text = setSection(text, 'What', bodyText(flags.what));
   if (flags.why !== undefined) text = setSection(text, 'Why', bodyText(flags.why));
   if (flags.acceptance !== undefined) text = setSection(text, 'Acceptance', acceptanceText(flags.acceptance));
+  if (flags.changelog !== undefined) text = setSection(text, 'Changelog', changelogText(flags.changelog));
   writeAtomic(issue.file, text);
   appendLog(root, `${issue.id} body · ${parts.join(', ')}`);
   return { id: issue.id, set: parts };
@@ -1112,8 +1187,20 @@ export function cmdStatus(root, flags = {}) {
   c.reviews = reviewSplit(root, issues);
   const files = uncommittedLoopFiles(root);
   c.uncommitted = files === null ? null : files.length;
+  // --by: the same five counts per repository, tag, kind or priority — a dashboard's table, read from the issues.
+  if (flags.by !== undefined) {
+    need(STATUS_BY.includes(flags.by), `--by is one of: ${STATUS_BY.join(', ')} (got "${flags.by}")`);
+    const keysOf = { repo: (i) => repoNames(root, i), tag: (i) => (i.tags.length ? i.tags : ['(none)']), kind: (i) => [i.kind || '(none)'], prio: (i) => [i.priority] }[flags.by];
+    const groups = {};
+    for (const i of issues) for (const k of keysOf(i)) {
+      const g = (groups[k] = groups[k] || { open: 0, 'in-progress': 0, done: 0, dropped: 0, deferred: 0 });
+      if (Object.hasOwn(g, i.status)) g[i.status] += 1;
+    }
+    c.by = { key: flags.by, groups: Object.fromEntries(Object.keys(groups).sort().map((k) => [k, groups[k]])) };
+  }
   return c;
 }
+export const STATUS_BY = ['repo', 'tag', 'kind', 'prio'];
 
 // A loop opened before the permanent mode existed, or opened --committed, has no way to become the
 // permanent record other than this: init is the only command that writes .jarl/.permanent for a new
@@ -1683,6 +1770,111 @@ function renderTips(o) {
   return lines.join('\n') || '(no repository)';
 }
 
+// ---- the merge queue: derived, never stored --------------------------------------------------------
+
+// queue [--repo <path>] [--base <b>] — read-only: the branches waiting for the merger. A branch is in the queue when
+// an unsettled issue on it (open or in progress) holds a live approve — one no round, restart or reopen has spent,
+// by someone other than its worker (the same reading as the done gate) — and the branch has commits its base does
+// not, so it is not merged yet. Rows are ordered by approval (the latest live approve on the branch, then the log's
+// order) and, per repository, cut into batches the way the merger's brief batches: a branch joins the current batch
+// while its declared files share none with it, and starts the next one otherwise. It computes, holds no lock and
+// writes nothing; it runs no check and refuses no merge — that is Horde's land.
+export function cmdQueue(root, flags = {}) {
+  const issues = loadIssues(root);
+  const journal = journalById(root);
+  const unsettled = issues.filter((i) => i.status === 'open' || i.status === 'in-progress');
+  const gate = new Map(unsettled.map((i) => [i.id, gateState(root, i.id, journal.get(i.id) || [])]));
+  const approved = unsettled.filter((i) => gate.get(i.id).approved);
+  const repos = flags.repo !== undefined ? [repoOf(root, flags.repo)] : loopRepos(root, issues);
+  const out = [];
+  for (const repo of repos) {
+    if (git(repo, ['rev-parse', '--git-dir']) === null) continue;
+    const real = canonical(repo);
+    const base = flags.base || defaultBase(repo);
+    const exists = (b) => git(repo, ['rev-parse', '--verify', '--quiet', `refs/heads/${b}`]) !== null;
+    // The branch an approved issue is on: its Branch field, else — for an issue from before the field — the one
+    // jarl/NNN-* branch carrying its number.
+    const branchOf = (i) => {
+      if (i.fields.branch) return exists(i.fields.branch) ? i.fields.branch : null;
+      const legacy = (git(repo, ['branch', '--list', `jarl/${i.id}-*`, `jarl/*/${i.id}-*`, '--format=%(refname:short)']) || '').split('\n').filter(Boolean);
+      return legacy.length === 1 ? legacy[0] : null;
+    };
+    const branches = new Map();
+    for (const i of approved.filter((x) => issueRepos(root, x).includes(real))) {
+      const b = branchOf(i);
+      if (b && b !== base) branches.set(b, [...(branches.get(b) || []), i]);
+    }
+    const rows = [];
+    for (const [branch, on] of branches) {
+      const mb = git(repo, ['merge-base', base, branch]);
+      const ahead = mb ? Number(git(repo, ['rev-list', '--count', `${mb}..${branch}`]) || 0) : null;
+      if (!ahead) continue;   // nothing its base lacks: merged already, or never worked on
+      const others = issuesOnBranch(root, unsettled, real, branch).filter((i) => !on.includes(i));
+      const approves = on.map((i) => gate.get(i.id).lastApprove);
+      const last = approves.reduce((a, b) => (!a || b.n > a.n ? b : a), null);
+      const files = [...new Set(on.concat(others).flatMap((i) => i.files.map((f) => { const at = fileAt(root, i, f); return canonical(at.repo) === real ? at.path : null; }).filter(Boolean)))];
+      rows.push({ branch, issues: on.map((i) => i.id), waitingReview: others.map((i) => i.id), ready: others.length === 0, ahead, approvedAt: last.at, by: last.by, files, n: last.n });
+    }
+    rows.sort((a, b) => a.n - b.n);
+    // Batches: consecutive rows whose declared files do not meet. A row with no files declared rides alone —
+    // nothing says what it touches.
+    let batch = 0; let taken = null;
+    for (const r of rows) {
+      if (!taken || !r.files.length || r.files.some((f) => taken.has(f))) { batch += 1; taken = new Set(); }
+      r.files.forEach((f) => taken.add(f));
+      if (!r.files.length) taken = null;
+      r.batch = batch;
+      delete r.n;
+    }
+    out.push({ repo: basename(real), path: repo, base, rows });
+  }
+  return { repos: out };
+}
+
+function renderQueue(o) {
+  const lines = [];
+  for (const r of o.repos) {
+    if (!r.rows.length && o.repos.length > 1) continue;
+    lines.push(`[${r.repo}] into ${r.base}`);
+    if (!r.rows.length) lines.push('  (nothing approved waits to be merged)');
+    r.rows.forEach((x, n) => {
+      lines.push(`  ${n + 1}. ${x.branch} → ${x.issues.join(', ')}  +${x.ahead}  approved ${x.approvedAt}${x.by ? ` by ${x.by}` : ''}  batch ${x.batch}${x.ready ? '' : `  (waiting for review: ${x.waitingReview.join(', ')})`}`);
+    });
+  }
+  return lines.join('\n') || '(nothing approved waits to be merged)';
+}
+
+// ---- changelog fragments -----------------------------------------------------------------------------
+
+// changelog <ids> [--repo <path>] — the ## Changelog entries of those issues, grouped by Keep a Changelog section in
+// its order, ready to paste under [Unreleased] at merge time; one block per repository when the issues span several
+// (an issue naming two is printed under each), or only the one --repo names. Workers record their line on the issue
+// (new/body --changelog) instead of editing CHANGELOG.md, so parallel branches stop conflicting there; whoever merges
+// writes the file once. Reads only.
+export function cmdChangelog(root, rawIds, flags = {}) {
+  need(rawIds !== undefined, 'changelog requires <ids> — the issues whose fragments to print, e.g. 284,288 or 203-206');
+  const issues = issuesFor(root, rawIds);
+  // --repo is matched by the repository itself (its resolved root), never by its folder name alone.
+  const only = flags.repo !== undefined ? topOf(canonical(repoOf(root, flags.repo))) : null;
+  const byRepo = {};
+  const missing = [];
+  for (const i of issues) {
+    const entries = changelogEntries(i);
+    if (!entries.length) { missing.push(i.id); continue; }
+    if (only && !issueTops(root, i).includes(only)) continue;
+    const names = only ? [basename(only)] : repoNames(root, i);
+    for (const r of names) {
+      const sec = (byRepo[r] = byRepo[r] || {});
+      for (const e of entries) (sec[e.section] = sec[e.section] || []).push(e.text);
+    }
+  }
+  const order = (sec) => Object.fromEntries(CHANGELOG_SECTIONS.filter((k) => sec[k]).map((k) => [k, sec[k]]));
+  const repos = Object.keys(byRepo).sort();
+  const block = (sec) => CHANGELOG_SECTIONS.filter((k) => sec[k]).map((k) => `### ${k}\n${sec[k].map((t) => `- ${t}`).join('\n')}`).join('\n\n');
+  const text = repos.length > 1 ? repos.map((r) => `## ${r}\n\n${block(byRepo[r])}`).join('\n\n') : repos.length ? block(byRepo[repos[0]]) : '';
+  return { ids: issues.map((i) => i.id), missing, repos: Object.fromEntries(repos.map((r) => [r, order(byRepo[r])])), ...(repos.length <= 1 ? { sections: repos.length ? order(byRepo[repos[0]]) : {} } : {}), text };
+}
+
 // ---- questions to the user and the handoff --------------------------------------------------
 
 function asksPath(root) { return join(jarlDir(root), 'asks.md'); }
@@ -1891,14 +2083,22 @@ export function cmdReport(root, flags = {}) {
   const row = (i) => `- ${i.id} ${i.title} (${i.kind})${mergedOf(i) ? ` · merged ${mergedOf(i).sha}${mergedOf(i).repo ? ` in ${mergedOf(i).repo}` : ''}` : ''}`;
   const repos = Object.keys(byRepo).sort();
   const doneLines = repos.length > 1 ? repos.flatMap((r) => ['', `### ${r} (${byRepo[r].length})`, ...byRepo[r].map(row)]) : done.map(row);
-  const split = reviewSplit(root, issues);
+  const journal = journalById(root);
+  const split = reviewSplit(root, issues, journal);
+  // One row per issue, for a host that renders its own dashboard from --json: the same fields a reader of the
+  // issue would look up, with the last approve (who, which kind, when).
+  const rows = issues.map((i) => {
+    const m = mergedOf(i);
+    const a = gateState(root, i.id, journal.get(i.id) || []).lastApprove;
+    return { id: i.id, title: i.title, status: i.status, kind: i.kind, priority: i.priority, tier: i.tier, tags: i.tags, repos: repoNames(root, i), branch: i.fields.branch || null, after: i.after, sources: i.sources, merged: m ? m.sha : null, ci: m ? m.ci : null, review: a ? { by: a.by, kind: a.kind, at: a.at } : null };
+  });
   const lines = [`# Report`, '', goal, '', `## Done (${done.length})`, ...(done.length ? [`Reviewed by: ${renderSplit(split)}`] : []), ...doneLines,
     '', `## Dropped (${dropped.length})`, ...dropped.map((i) => `- ${i.id} ${i.title} — ${statusReason(i.sections.evidence, 'Dropped')}`),
     '', `## Deferred (${deferred.length})`, ...deferred.map((i) => `- ${i.id} ${i.title} — ${statusReason(i.sections.evidence, 'Deferred')}`),
     '', `## Still open (${left.length})`, ...left.map((i) => `- ${i.id} ${i.title} (${i.status})`),
     ...(flags.found ? ['', `## Found along the way (${found.length})`, ...found.map((i) => `- ${i.id} ${i.title} — ${i.fields['found by']}`)] : [])];
   return { done: done.length, dropped: dropped.length, deferred: deferred.length, left: left.length, found: found.length, reviews: split,
-    byRepo: Object.fromEntries(repos.map((r) => [r, byRepo[r].map((i) => i.id)])), text: lines.join('\n') + '\n' };
+    byRepo: Object.fromEntries(repos.map((r) => [r, byRepo[r].map((i) => i.id)])), issues: rows, text: lines.join('\n') + '\n' };
 }
 
 // ---- research findings into issues ----------------------------------------------------------------
@@ -2105,9 +2305,9 @@ export const COMMAND_FLAGS = {
   init: { committed: 'bool', permanent: 'bool' },
   new: {
     kind: 'value', prio: 'value', tier: 'value', tags: 'value', files: 'value', repo: 'value', 'found-by': 'value',
-    where: 'value', what: 'value', why: 'value', acceptance: 'many', source: 'value', after: 'value',
+    where: 'value', what: 'value', why: 'value', acceptance: 'many', source: 'value', after: 'value', changelog: 'many', template: 'value',
   },
-  body: { where: 'value', what: 'value', why: 'value', acceptance: 'many' },
+  body: { where: 'value', what: 'value', why: 'value', acceptance: 'many', changelog: 'many' },
   import: {
     source: 'value', kind: 'value', prio: 'value', tier: 'value', tags: 'value', repo: 'value', 'found-by': 'value',
     only: 'value', adopt: 'bool', 'dry-run': 'bool',
@@ -2128,7 +2328,8 @@ export const COMMAND_FLAGS = {
   answer: {},
   handoff: { summary: 'value', next: 'many' },
   log: {}, decide: { settles: 'value', by: 'value', supersedes: 'value' }, decisions: { live: 'bool' },
-  status: { 'stale-hours': 'value' }, archive: {}, report: { found: 'bool' }, tips: {}, mode: {},
+  status: { 'stale-hours': 'value', by: 'value' }, archive: {}, report: { found: 'bool' }, tips: {}, mode: {},
+  queue: { repo: 'value', base: 'value' }, changelog: { repo: 'value' },
   close: { force: 'bool' },
 };
 
@@ -2188,14 +2389,17 @@ export function parseArgs(argv) {
 const ARITY = {
   init: 1, new: 1, evidence: 2, list: 0, show: 1, set: 3, prio: 2, files: 2, repo: 2, next: 0, review: 3, round: 2,
   check: 1, branches: 0, ask: 1, answer: 2, handoff: 1, log: 1, decide: 2, decisions: 0, tips: 0, status: 0, archive: 1, report: 0, mode: 1, close: 0,
-  body: 1, import: 1, source: 2, after: 2, merged: 1,
+  body: 1, import: 1, source: 2, after: 2, merged: 1, queue: 0, changelog: 1,
 };
 
 function renderStatus(o) {
   const hand = o.handoff && o.handoff.at ? ` · handoff ${ago(o.handoff.ageMs)} old${o.handoff.stale ? ` (stale by ${ago(o.handoff.staleByMs)})` : ''}` : '';
   const head = o.goal ? `goal: ${o.goal}\nopened ${o.opened || '?'} · last activity ${o.lastActivity || '?'}${hand}${o.archived ? ` · ${o.archived} archived loop(s)` : ''}\n` : '';
   const line = `open ${o.ready} · in flight ${o.inFlight}${o.waiting ? ` · waiting ${o.waiting}` : ''} · done ${o.done} · dropped ${o.dropped} · deferred ${o.deferred} · questions ${o.questions}${o.ratify ? ` · to ratify ${o.ratify}` : ''}${o.ciPending.length ? ` · merged, CI pending ${o.ciPending.length}` : ''}${o.ciRed.length ? ` · CI red ${o.ciRed.length}` : ''}`;
+  const width = o.by ? Math.max(...Object.keys(o.by.groups).map((k) => k.length), 1) : 0;
+  const by = o.by ? [`by ${o.by.key}:`, ...Object.entries(o.by.groups).map(([k, g]) => `  ${k.padEnd(width)}  open ${g.open} · in flight ${g['in-progress']} · done ${g.done} · dropped ${g.dropped} · deferred ${g.deferred}`)] : [];
   const more = [
+    ...by,
     ...o.stale.map((x) => `stale ${x.id} · ${x.problems.join('; ')}`),
     ...(o.ciPending.length ? [`merged, CI pending: ${o.ciPending.join(', ')}`] : []),
     ...(o.ciRed.length ? [`merged, CI red: ${o.ciRed.join(', ')}`] : []),
@@ -2282,6 +2486,8 @@ function main() {
       case 'decisions': out = cmdDecisions(root, flags); text = out.length ? out.map((d) => `${d.date} · ${d.slug}${d.by ? ` · by ${d.by}` : ''}${d.supersededBy ? ` · SUPERSEDED by ${d.supersededBy}` : ''}${d.supersedes ? ` · supersedes ${d.supersedes}` : ''} — ${(d.ruling.split('\n').find((l) => l.trim()) || '').slice(0, 160)}`).join('\n') : '(no rulings)'; break;
       case 'status': out = cmdStatus(root, flags); text = renderStatus(out); break;
       case 'tips': out = cmdTips(root); text = renderTips(out); break;
+      case 'queue': out = cmdQueue(root, flags); text = renderQueue(out); break;
+      case 'changelog': out = cmdChangelog(root, rest[0], flags); text = out.text || '(no changelog fragment on these issues)'; warn = out.missing.length ? [`note: no changelog fragment: ${out.missing.join(', ')} — record one with: jarl.mjs body <id> --changelog "Added: …"`] : []; break;
       case 'archive': out = cmdArchive(root, rest[0]); text = `archived → ${out.archived}${out.leftOpen.length ? ` · ${out.leftOpen.length} still open or in progress: ${out.leftOpen.join(', ')}` : ''} · open a new loop with: jarl.mjs init "<goal>"`; break;
       case 'mode': out = cmdMode(root, rest[0]); text = 'now permanent · no longer tied to a feature branch; close keeps the directory'; break;
       case 'close': out = cmdClose(root, flags); text = (out.kept ? `kept ${out.kept} · closed as a permanent record` : `removed ${out.removed}`) + (out.deferred.length ? ` · ${out.deferred.length} deferred still waiting: ${out.deferred.join(', ')}` : '') + (out.uncommitted ? ` · ${out.uncommitted} loop file(s) not committed${out.kept ? ' — commit .jarl/' : ' before the removal'}` : ''); break;

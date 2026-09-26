@@ -102,6 +102,8 @@ Nothing else in this repo affects behavior — all of it lives in that directory
 
 Jarl is a working loop, not a guarantee. It does not enforce architecture, it does not gate a merge with a machine check, and it does not hold a client's charter — that is [Horde](https://github.com/krzysztofdudek/Horde), with the graph and the rails. Jarl is what you use when a branch needs more hands than one agent and no rails yet: the same words as Horde, none of the machinery. The state is four kinds of markdown file in `.jarl/`, moved by one small tool; the discipline is the agent's.
 
+Jarl records, derives and displays; it never blocks code from landing. So it will not grow a merge queue that runs your check and refuses the merge, a `done` that waits for green CI, leases that expire and are taken over, a release mode that refuses to tag, or a planner that computes waves. Each of those is a rail, and rails are Horde's. [The list, and what stays on Jarl's side, is in the skill](skills/jarl/SKILL.md#what-jarl-will-not-grow).
+
 ---
 
 ## FAQ
@@ -124,6 +126,18 @@ Yes. Name the other repository when you file an issue (`new "<title>" --repo <pa
 <summary><b>Can a research report become issues?</b></summary>
 
 Yes. `import <findings.json>` files one issue per finding, with its body filled in and a **Source:** that names the report and the finding, and a second run files nothing twice. `sources` then shows, per report, which findings became which issues and where they stand, and which ones nobody filed. [The mapping is in the skill](skills/jarl/SKILL.md#from-research-to-issues).
+</details>
+
+<details>
+<summary><b>How does the merger know what to merge, and why don't the changelogs conflict?</b></summary>
+
+`queue` lists the branches waiting to merge, computed from the record each time: an issue on the branch is approved by a fresh review, and the branch has commits its base does not. They come in the order they were approved, cut into batches whose declared files do not overlap. It runs nothing and refuses nothing. The changelog is the one file every branch touches, so a worker does not edit it: it records its entry on the issue (`body <id> --changelog "Added: …"`), and at merge time `changelog <ids>` prints the entries of those issues grouped by section, ready to paste under `[Unreleased]`. Your repository's layout does not change.
+</details>
+
+<details>
+<summary><b>Can I get a dashboard or a release checklist out of it?</b></summary>
+
+Out of the record, yes, as outputs rather than new modes. `status --by repo|tag|kind|prio` counts per group, and `status --json`, `report --json` (one row per issue), `queue --json` and `tips --json` have documented, stable shapes, so a page or a script renders the dashboard. A checklist that repeats (a release, a triage) is an issue template in `.jarl/templates/<name>.md`, filed with `new "<title>" --template <name>` and chained with `--after`, one issue per phase. [Both are in the skill](skills/jarl/SKILL.md#views-for-dashboards).
 </details>
 
 <details>
