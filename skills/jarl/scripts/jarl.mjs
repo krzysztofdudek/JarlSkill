@@ -40,7 +40,8 @@ commands:
   new "<title>" [--kind k] [--prio 1|2|3] [--tier standard|strong] [--tags a,b] [--files p,q] [--repo <path>] [--found-by who]
       [--where "<w>"] [--what "<w>"] [--why "<w>"] [--acceptance "<line>"]... [--source <dir>#<id>,...] [--after <ids>]
                                                  file an issue under the next free number; --repo names the repository
-                                                 its code lives in when that is not the loop's own (see --repo below);
+                                                 its code lives in when that is not the loop's own, several as one comma
+                                                 list (see --repo below);
                                                  --what, --why and --acceptance (one per line, repeatable) write the body,
                                                  --source names the finding(s) it comes from, --after the issues it waits on
   body <id> [--where "<w>"] [--what "<w>"] [--why "<w>"] [--acceptance "<line>"]...
@@ -66,7 +67,9 @@ commands:
                                                  writes Since (and Branch, Worker, Worktree when given) — one lease
                                                  for every id, so a package shares it; leaving in-progress removes
                                                  Worker, Worktree and Since and keeps Branch; done notes a merge
-                                                 whose CI is not green yet
+                                                 whose CI is not green yet; done needs evidence logged since the issue
+                                                 last went in progress (or was reopened, or — never in progress — was
+                                                 filed) and an approve not spent by a round or a reopen
   merged <ids> --sha <sha> [--ci pending|green|red|none] [--repo <path>] | <ids> --ci <state>
                                                  the merge as fields: Merged (sha, and where with --repo) and CI
                                                  (pending unless given; none: no CI to wait for), and a log line;
@@ -74,11 +77,15 @@ commands:
   tag <ids> +a -b ...                            add and remove tags
   prio <ids> 1|2|3                               set priority
   files <id> p,q,...                             declare the files the issue touches
-  repo <id> <path> | <id> --clear                name the repository (its root) the issue's code lives in, or remove the field
+  repo <id> <path>[,<path>...] | <id> --clear    name the repository (its root) the issue's code lives in — several as one
+                                                 comma list — or remove the field
   next [--limit n]                               open issues that do not share a file with any in-progress one and
                                                  whose After issues are done or dropped; a file is its repository and
                                                  its path (see --repo below); one with no acceptance line is marked
-  review <ids> approve|changes "<findings>"      the reviewer's verdict; "done" needs an approve newer than the last round
+  review <ids> approve|changes "<findings>" [--by <reviewer>]
+                                                 the reviewer's verdict; an approve needs --by, recorded with its kind
+                                                 (fresh; coordinator for jarl; self for the issue's worker — refused on
+                                                 an approve); "done" needs an approve newer than the last round and reopen
   round <id> "<what failed>"                     one red round; after three prints the takeover block for a fresh worker
   check [<id>] --branch <b> [--base <feature-branch>] [--repo <path>]
                                                  commits beyond the base, diff inside the declared files, and the
@@ -104,18 +111,30 @@ commands:
                                                  the loop moved on after it), what changed since, the heads that
                                                  moved, and in flight, waits, questions and ratify items read live
   log "<event>"                                  append one dated line to the journal
-  decide <slug> "<ruling>" [--settles <ids>]    append a ruling; refuses a duplicate slug; --settles writes the
-                                                 ruling into each named issue's evidence (its status is unchanged)
+  decide <slug> "<ruling>" [--by who] [--supersedes <slug>] [--settles <ids>]
+                                                 append a ruling (slug: letters, digits, . _ -); refuses a duplicate slug;
+                                                 --by records who ruled (default owner); --supersedes marks the earlier
+                                                 ruling "Superseded by" in place; --settles writes the ruling into each
+                                                 named issue's evidence (its status is unchanged)
+  decisions [--live]                             the rulings with who ruled and what superseded them; --live only
+                                                 those still in force
   status [--stale-hours n]                       the goal, when the loop opened and last moved, the handoff's age,
                                                  then one line: open, in flight, waiting, done, dropped, deferred,
-                                                 open questions, to ratify, merged with CI pending or red; then the
+                                                 open questions, to ratify, merged with CI pending or red; then who
+                                                 reviewed the done work (fresh, coordinator, self, unrecorded); then the
                                                  choices awaiting ratification, stale leases, the issues in flight
                                                  with no acceptance line, and — committed loops — the loop files
                                                  git has not committed
   archive "<slug>"                               put the current loop away under .jarl/archive/<yyyy.mm.dd>-<slug>/,
                                                  keeping the archive and the mode markers, so init can open a
                                                  new loop here in the same mode
-  report                                         what was done, dropped, deferred and found — ready for the changelog
+  report [--found]                               what was done (per repository when it spans several), who reviewed it,
+                                                 dropped, deferred and still open — ready for the changelog; --found adds
+                                                 the issues found by someone other than the jarl
+  tips                                           read-only: per repository the loop's issues name (open, in progress,
+                                                 recently merged), the tip of each worker branch in flight, the release
+                                                 branch and main, ahead/behind their upstream as last fetched, and — when
+                                                 gh is on PATH — the CI of that commit; nothing is fetched or written
   mode permanent                                 switch an existing committed loop to the permanent mode, with a
                                                  log line; refuses a default-mode loop (out of git — a permanent
                                                  record must be committed) and an already-permanent one
@@ -144,7 +163,9 @@ while its workers change another. Branches, the base (that checkout's current br
 assertions are then read there. A relative path is read from the loop's root (the directory holding
 .jarl/), so it means the same from any worktree. An issue that names a repository writes each of its
 files with that repository's directory name first (tool/src/a.mjs for Repo ../tool): next then keeps
-the same path in two repositories apart, and check matches the path after the name.`;
+the same path in two repositories apart, and check matches the path after the name. An issue may name
+several repositories (Repo: ../tool, ../lib): each file then starts with the name of the one it is in
+(one with no such name is in the first), and check on it takes --repo to say which one to read.`;
 
 // ---- where -------------------------------------------------------------------------------------
 
@@ -418,11 +439,54 @@ export function appendLogLines(root, events) {
   appendAtomic(join(jarlDir(root), 'log.md'), '# Log\n\n', events.map((e) => `- ${at} · ${e}\n`).join(''));
 }
 
-export function appendDecision(root, slug, ruling) {
+// A ruling's slug names it for good: letters, digits, and . _ - inside, at most 80 characters. It is compared
+// as a string, never read as a pattern, so `q.r` and `qxr` are two slugs and a slug with any character in it
+// cannot break the reading.
+export const SLUG_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
+const DECISION_HEAD = /^## (\d{4}-\d{2}-\d{2}) · (.+?)\s*$/;
+
+// decisions.md read back: one entry per `## <date> · <slug>` heading, with its ruling, who ruled (**By:**, none
+// on rulings from before the field), what it supersedes and what superseded it.
+export function loadDecisions(root) {
+  const path = join(jarlDir(root), 'decisions.md');
+  if (!existsSync(path)) return [];
+  const out = [];
+  for (const line of readFileSync(path, 'utf8').split('\n')) {
+    const h = DECISION_HEAD.exec(line);
+    if (h) { out.push({ date: h[1], slug: h[2], body: [] }); continue; }
+    if (out.length) out[out.length - 1].body.push(line);
+  }
+  return out.map((d) => {
+    const field = (name) => d.body.map((l) => new RegExp(`^\\*\\*${name}:\\*\\*\\s*(.*)$`).exec(l)).filter(Boolean).map((m) => m[1].trim());
+    const ruling = d.body.filter((l) => !/^\*\*(By|Supersedes|Superseded by|Settles):\*\*/.test(l)).join('\n').trim();
+    const sup = field('Superseded by').pop();
+    return { date: d.date, slug: d.slug, ruling, by: field('By').pop() || null, supersedes: field('Supersedes').pop() || null, supersededBy: sup ? sup.split(/\s/)[0] : null, settles: splitList(field('Settles').pop()) };
+  });
+}
+
+export function appendDecision(root, slug, ruling, { by, supersedes } = {}) {
+  need(typeof slug === 'string' && SLUG_RE.test(slug), `a ruling's slug is letters, digits and . _ - (starting with a letter or digit, at most 80 characters) — not "${slug}"; e.g. ${slugify(String(slug || 'ruling'))}`);
   const path = join(jarlDir(root), 'decisions.md');
   const existing = existsSync(path) ? readFileSync(path, 'utf8') : '# Decisions\n';
-  if (new RegExp(`^## \\d{4}-\\d{2}-\\d{2} · ${slug}\\s*$`, 'm').test(existing)) throw new Error(`duplicate slug: ${slug}`);
-  writeAtomic(path, `${existing.replace(/\s*$/, '')}\n\n## ${today()} · ${slug}\n${ruling.trim()}\n`);
+  const all = loadDecisions(root);
+  need(!all.some((d) => d.slug === slug), `duplicate slug: ${slug} — a ruling that replaces it takes a new slug and --supersedes ${slug}`);
+  let text = existing;
+  if (supersedes !== undefined) {
+    need(typeof supersedes === 'string' && supersedes !== slug, '--supersedes names the slug of an earlier ruling');
+    const old = all.find((d) => d.slug === supersedes);
+    need(old, `no ruling ${supersedes} in decisions.md to supersede`);
+    need(!old.supersededBy, `${supersedes} is already superseded by ${old.supersededBy} — supersede that one instead`);
+    // The mark goes at the end of the old ruling's own section, by lines: the text is never read as a pattern.
+    const lines = text.split('\n');
+    const at = lines.findIndex((l) => { const h = DECISION_HEAD.exec(l); return h && h[2] === supersedes; });
+    let end = lines.findIndex((l, n) => n > at && l.startsWith('## '));
+    if (end === -1) end = lines.length;
+    while (end - 1 > at && lines[end - 1].trim() === '') end -= 1;
+    lines.splice(end, 0, `**Superseded by:** ${slug} (${today()})`);
+    text = lines.join('\n');
+  }
+  const meta = [by ? `**By:** ${fieldText(by)}` : null, supersedes !== undefined ? `**Supersedes:** ${supersedes}` : null].filter(Boolean).join('\n');
+  writeAtomic(path, `${text.replace(/\s*$/, '')}\n\n## ${today()} · ${slug}\n${bodyText(ruling)}\n${meta ? `\n${meta}\n` : ''}`);
 }
 
 // ---- commands ----------------------------------------------------------------------------------
@@ -537,7 +601,7 @@ export function cmdNew(root, title, flags) {
   need(PRIORITIES.includes(priority), '--prio must be 1, 2 or 3');
   const tier = String(flags.tier || 'standard');
   need(TIERS.includes(tier), `--tier must be one of: ${TIERS.join(', ')} — the tier of model the worker is raised on, mapped to a model by the platform running the loop`);
-  if (flags.repo !== undefined) repoOf(root, flags.repo);
+  const repos = flags.repo !== undefined ? repoList(root, flags.repo) : [];
   const source = sourceList(flags.source);
   const after = flags.after !== undefined ? afterList(root, null, flags.after) : [];
   // The number is claimed by creating the file with a link, which never overwrites: when another
@@ -552,7 +616,7 @@ export function cmdNew(root, title, flags) {
     const tmp = join(dir, `.${id}.${process.pid}.tmp`);
     writeFileSync(tmp, renderIssue({
       id, title, kind, priority, tier,
-      tags: splitList(flags.tags), files: splitList(flags.files), repo: flags.repo, foundBy: flags['found-by'] || 'jarl',
+      tags: splitList(flags.tags), files: splitList(flags.files), repo: repos.join(', '), foundBy: flags['found-by'] || 'jarl',
       where: flags.where, what: bodyText(flags.what), why: bodyText(flags.why), acceptance: acceptanceText(flags.acceptance), source, after,
     }));
     let claimed = !taken().includes(n);
@@ -704,9 +768,9 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   need(status !== 'dropped' || why, 'dropped needs a reason: jarl.mjs set <id> dropped "<why>"');
   need(status !== 'deferred' || why, 'deferred needs a reason: jarl.mjs set <id> deferred "<why>" — work that waits, not work that is gone');
   const nothing = issues.length > 1 ? ' — nothing was written' : '';
-  for (const issue of issues) {
-    need(status !== 'done' || workEvidence(issue), `${issue.id} has no evidence yet — record it first: jarl.mjs evidence ${issue.id} "<what was run and what it printed>"${nothing}`);
-    need(status !== 'done' || reviewState(root, issue.id).approved, `${issue.id} has no approving review newer than its last round — a fresh reviewer reads the issue and the diff first: jarl.mjs review ${issue.id} approve|changes "<findings>"${nothing}`);
+  if (status === 'done') {
+    const journal = journalById(root);
+    for (const issue of issues) need(!doneRefusal(root, issue, journal), `${doneRefusal(root, issue, journal)}${nothing}`);
   }
   // One lease for the whole call: every issue in a package gets the same Branch, Worker, Worktree and Since.
   // A relative worktree path is read from the loop's root, like --repo, so it means the same from anywhere.
@@ -736,6 +800,18 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   const leaseNote = [flags.branch !== undefined && `branch ${fieldText(flags.branch)}`, flags.worker !== undefined && `worker ${fieldText(flags.worker)}`, worktree !== undefined && `worktree ${worktree}`].filter(Boolean).join(' · ');
   appendLogLines(root, issues.map((issue) => `${issue.id} → ${status}${why ? ` · ${why}` : ''}${leaseNote ? ` · ${leaseNote}` : ''}`));
   return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, status, ...(status === 'in-progress' ? { since, ...(flags.branch !== undefined ? { branch: fieldText(flags.branch) } : {}), ...(flags.worker !== undefined ? { worker: fieldText(flags.worker) } : {}), ...(worktree !== undefined ? { worktree } : {}) } : {}), ...(status === 'done' ? doneNote(issue) : {}) })));
+}
+
+// Why an issue may not go done, or null when it may: work evidence on file, some of it logged since the issue
+// last went in progress (or was reopened, or — never in progress — was filed), and a live approve by someone
+// other than its worker (see gateState). It gates only the record: nothing here stops code from landing.
+export function doneRefusal(root, issue, journal = journalById(root)) {
+  const g = gateState(root, issue.id, journal.get(issue.id) || []);
+  if (!workEvidence(issue)) return `${issue.id} has no evidence yet — record it first: jarl.mjs evidence ${issue.id} "<what was run and what it printed>"`;
+  if (g.tracked && !g.evidenceSince) return `${issue.id} has no evidence recorded since it was ${g.anchor.what === 'filed' ? 'filed' : `moved → ${g.anchor.what}`} (${g.anchor.at}) — a note written before that (at filing, or before a reopen) is not proof of the work: jarl.mjs evidence ${issue.id} --ran "<command>" --saw "<what it printed>"`;
+  if (g.selfApproved) return `${issue.id}'s last approve is by its own worker — a self-approve does not count as review: jarl.mjs review ${issue.id} approve --by <fresh reviewer|jarl> "<findings>"`;
+  if (!g.approved) return `${issue.id} has no approving review newer than its last round${g.tracked ? ' or reopen' : ''} — a fresh reviewer reads the issue and the diff first: jarl.mjs review ${issue.id} approve|changes --by <reviewer> "<findings>"`;
+  return null;
 }
 
 // Said, never refused: done closes an issue whose acceptance is missing, or has more lines than the
@@ -781,13 +857,16 @@ export function cmdMerged(root, rawIds, flags) {
   const notes = [];
   if (sha) {
     // Where the sha should be: --repo, else each issue's Repo, else the loop's own repository.
+    // An issue naming several repositories is noted only when the sha is in none of them.
     const checked = new Set();
     for (const issue of issues) {
-      let repo = repoPath;
-      if (!repo) { try { repo = repoOf(root, issue.fields.repo); } catch { repo = null; } }
-      if (!repo || checked.has(repo)) continue;
-      checked.add(repo);
-      if (git(repo, ['rev-parse', '--git-dir']) !== null && git(repo, ['cat-file', '-e', `${sha}^{commit}`]) === null) notes.push(`${sha} is not a commit in ${repo} (yet) — recorded as given`);
+      let repos = repoPath ? [repoPath] : [];
+      if (!repoPath) for (const n of (reposNamed(issue).length ? reposNamed(issue) : [undefined])) { try { repos.push(repoOf(root, n)); } catch { /* gone */ } }
+      repos = repos.filter((r) => git(r, ['rev-parse', '--git-dir']) !== null);
+      const key = repos.join('\n');
+      if (!repos.length || checked.has(key)) continue;
+      checked.add(key);
+      if (repos.every((r) => git(r, ['cat-file', '-e', `${sha}^{commit}`]) === null)) notes.push(`${sha} is not a commit in ${repos.join(' or ')} (yet) — recorded as given`);
     }
   }
   for (const issue of issues) {
@@ -836,10 +915,10 @@ export function cmdRepo(root, rawId, path, { clear = false } = {}) {
     writeAtomic(issue.file, text);
     return { id: issue.id, repo: null, cleared: true };
   }
-  need(path !== undefined, 'repo requires <path> — the checkout of the repository the issue\'s code lives in (or --clear to remove the field)');
-  repoOf(root, path);
-  writeAtomic(issue.file, setField(readFileSync(issue.file, 'utf8'), 'Repo', path));
-  return { id: issue.id, repo: path };
+  need(path !== undefined, 'repo requires <path> — the checkout of the repository the issue\'s code lives in, several as one comma list (or --clear to remove the field)');
+  const repos = repoList(root, path);
+  writeAtomic(issue.file, setField(readFileSync(issue.file, 'utf8'), 'Repo', repos.join(', ')));
+  return { id: issue.id, repo: repos.join(', '), repos };
 }
 
 export function evidenceRows(issue) {
@@ -912,8 +991,15 @@ export function canonical(path) {
 }
 
 export function fileAt(root, issue, declared) {
-  if (!issue.fields.repo) return { repo: root, path: declared };
-  const spelled = resolve(root, issue.fields.repo);
+  const named = splitList(issue.fields.repo);
+  if (!named.length) return { repo: root, path: declared };
+  // Several repositories: the one whose name the entry starts with; an entry that starts with none of them is
+  // a path in the first one named.
+  for (const r of named) { const hit = prefixedIn(root, r, declared); if (hit) return hit; }
+  return { repo: canonical(resolve(root, named[0])), path: declared };
+}
+function prefixedIn(root, named, declared) {
+  const spelled = resolve(root, named);
   const repo = canonical(spelled);
   // The name written in front of a path is the repository's own directory name, or the name its Repo path
   // spells (a symlink or another case of it): either reads as the same prefix.
@@ -924,7 +1010,19 @@ export function fileAt(root, issue, declared) {
     if (inner) { if (declared.startsWith(`${name}/${name}/`)) return { repo, path: declared.slice(name.length + 1) }; continue; }
     if (declared.startsWith(`${name}/`)) return { repo, path: declared.slice(name.length + 1) };
   }
-  return { repo, path: declared };
+  return null;
+}
+
+// The repositories an issue names, as written: its Repo field, one path or a comma list. Empty for an issue
+// whose code lives in the loop's own repository.
+export function reposNamed(issue) { return splitList(issue.fields.repo); }
+// A --repo value on new, import and repo: one path or a comma list, each the root of a git repository.
+function repoList(root, v) {
+  need(typeof v === 'string', '--repo takes one path, or several as one comma list');
+  const list = splitList(v);
+  need(list.length, '--repo needs a path');
+  for (const r of list) repoOf(root, r);
+  return list;
 }
 
 export function cmdNext(root, flags) {
@@ -1000,6 +1098,7 @@ export function cmdStatus(root, flags = {}) {
   c.ciPending = live.filter((i) => mergedOf(i)?.ci === 'pending').map((i) => i.id);
   c.ciRed = live.filter((i) => mergedOf(i)?.ci === 'red').map((i) => i.id);
   c.handoff = handoffAge(root, c.lastActivity);
+  c.reviews = reviewSplit(root, issues);
   const files = uncommittedLoopFiles(root);
   c.uncommitted = files === null ? null : files.length;
   return c;
@@ -1044,41 +1143,129 @@ export function cmdClose(root, flags) {
 }
 
 
-// ---- review ----------------------------------------------------------------------------------
+// ---- review and the done gate --------------------------------------------------------------------
 
-// The latest review and the latest round, by their position in the journal: a round after an
-// approve means the approve is spent and the branch needs fresh eyes.
-export function reviewState(root, id) {
+// The journal, one event per dated line, grouped by the issue each line is about (`NNN …`, or `filed NNN …`).
+// Read once per command: the done gate, the review split and tips all read it.
+export function journalById(root) {
   const path = join(jarlDir(root), 'log.md');
-  if (!existsSync(path)) return { approved: false, lastReview: null };
-  const lines = readFileSync(path, 'utf8').split('\n');
-  let lastReview = null; let lastReviewAt = -1; let lastRoundAt = -1;
-  lines.forEach((l, i) => {
-    const m = new RegExp(`· ${id} review (approve|changes) · `).exec(l);
-    if (m) { lastReview = m[1]; lastReviewAt = i; }
-    if (l.includes(`· ${id} round `)) lastRoundAt = i;
+  const map = new Map();
+  if (!existsSync(path)) return map;
+  readFileSync(path, 'utf8').split('\n').forEach((l, n) => {
+    const m = /^- (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) · (.*)$/.exec(l);
+    if (!m) return;
+    const id = /^(?:filed )?(\d{3})\b/.exec(m[2])?.[1];
+    if (!id) return;
+    if (!map.has(id)) map.set(id, []);
+    map.get(id).push({ n, at: m[1], text: m[2] });
   });
-  return { approved: lastReview === 'approve' && lastReviewAt > lastRoundAt, lastReview };
+  return map;
 }
+
+// Who reviewed, as a kind: the loop's own director (jarl, coordinator), the issue's worker (self), anyone
+// else (fresh). A name is compared without case and surrounding space.
+export const REVIEWER_KINDS = ['fresh', 'coordinator', 'self'];
+export function reviewerKind(by, worker) {
+  const b = fieldText(by).toLowerCase();
+  if (b === 'self' || (worker && b === fieldText(worker).toLowerCase())) return 'self';
+  if (b === 'jarl' || b === 'coordinator' || b === 'reeve') return 'coordinator';
+  return 'fresh';
+}
+const REVIEW_LINE = /^\d{3} review (approve|changes) · (?:by (.+?) \((fresh|coordinator|self)\) · )?/;
+
+// The done gate, read from the journal for one issue. Replaying its lines in order:
+// - the evidence anchor is the last move into in-progress from another status, or a reopen (done or
+//   in-progress back to open), or — for an issue that never went in progress — its filing; only evidence
+//   logged after it counts for done, so a note written when the issue was filed, or before a reopen, is not
+//   proof of the work;
+// - an approve is spent by a later round, by any move out of done, and by a reopen, and an approve by the
+//   issue's own worker (self) never counts;
+// - `tracked` is false for an issue the journal has no filing and no status move for (a hand-made file, a
+//   loop older than the log format): the gate then reads the issue's Evidence section alone, as it always did.
+export function gateState(root, id, events = journalById(root).get(id) || []) {
+  let status = null; let anchor = null; let cut = -1; let worker = null;
+  const evidence = []; const reviews = [];
+  for (const e of events) {
+    if (e.text.startsWith(`filed ${id} `)) { status = 'open'; anchor = e; continue; }
+    const move = new RegExp(`^${id} → (${STATUSES.join('|')})\\b`).exec(e.text);
+    if (move) {
+      const prev = status; status = move[1];
+      if (status === 'in-progress' && prev !== 'in-progress') anchor = e;
+      if (status === 'open' && (prev === 'done' || prev === 'in-progress')) { anchor = e; cut = e.n; }
+      if (prev === 'done' && status !== 'done') cut = e.n;
+      if (status === 'in-progress') { const w = / · worker (.+?)(?: · worktree |$)/.exec(e.text); if (w) worker = w[1]; }
+      continue;
+    }
+    if (e.text.startsWith(`${id} round `)) { cut = e.n; continue; }
+    const r = REVIEW_LINE.exec(e.text);
+    if (r) { reviews.push({ n: e.n, at: e.at, verdict: r[1], by: r[2] || null, kind: r[3] || null }); continue; }
+    if (e.text.startsWith(`${id} evidence row · `) || (e.text.startsWith(`${id} evidence · `) && !/^Ruling\b/.test(e.text.slice(`${id} evidence · `.length)))) evidence.push(e);
+  }
+  const last = reviews[reviews.length - 1] || null;
+  const live = last && last.verdict === 'approve' && last.n > cut ? last : null;
+  return {
+    tracked: anchor !== null,
+    anchor: anchor ? { at: anchor.at, what: anchor.text.startsWith('filed ') ? 'filed' : anchor.text.slice(id.length + 1).split(' · ')[0].replace(/^→ /, '') } : null,
+    evidenceSince: anchor ? evidence.filter((e) => e.n > anchor.n).length : evidence.length,
+    lastReview: last ? last.verdict : null,
+    lastApprove: [...reviews].reverse().find((r) => r.verdict === 'approve') || null,
+    approved: Boolean(live && live.kind !== 'self'),
+    selfApproved: Boolean(live && live.kind === 'self'),
+    worker,
+  };
+}
+
+// The latest review against the rounds and reopens after it (kept for callers of the older shape).
+export function reviewState(root, id) {
+  const g = gateState(root, id);
+  return { approved: g.approved, lastReview: g.lastReview };
+}
+
+// Who reviewed the done issues: the kind of each one's last approve, and how many carry no reviewer at all
+// (approved before --by existed). Shown by status and report, never acted on.
+export function reviewSplit(root, issues = loadIssues(root), journal = journalById(root)) {
+  const split = { fresh: 0, coordinator: 0, self: 0, unrecorded: 0 };
+  for (const i of issues.filter((x) => x.status === 'done')) {
+    const a = gateState(root, i.id, journal.get(i.id) || []).lastApprove;
+    split[a && a.kind ? a.kind : 'unrecorded'] += 1;
+  }
+  return split;
+}
+function renderSplit(s) { return `fresh ${s.fresh} · coordinator ${s.coordinator} · self ${s.self}${s.unrecorded ? ` · unrecorded ${s.unrecorded}` : ''}`; }
 
 const SEVERITIES = ['Critical', 'Important', 'Minor'];
 
 // A "changes" verdict names at least one Critical or Important finding — Minor alone never bounces
 // a branch back to a worker, it goes to evidence and the branch still merges (the review discipline's
 // own rule, enforced here rather than left to a reviewer's judgement).
-export function cmdReview(root, rawIds, verdict, findings) {
+//
+// --by names the reviewer, and an approve needs it: the line records the name and its kind (fresh, coordinator,
+// self). An approve by the issue's own worker — its Worker field, or the worker of its last lease — is refused:
+// a self-approve is not a review.
+export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
   need(verdict === 'approve' || verdict === 'changes', 'review requires approve|changes');
   need(findings, 'review requires "<findings>" — what was read and what was found, even when nothing');
+  need(flags.by === undefined || fieldText(flags.by), '--by needs a value — the reviewer\'s name');
+  need(verdict !== 'approve' || flags.by !== undefined, 'an approve needs --by <reviewer> — who read the diff: a fresh reviewer\'s name, or jarl when the loop\'s director reviewed it');
   const issues = issuesFor(root, rawIds);
   const severities = SEVERITIES.filter((s) => findings.includes(s));
   if (verdict === 'changes') {
     need(severities.length > 0, `"changes" needs at least one finding ranked ${SEVERITIES.join('/')} — name the severity, not just the problem`);
     need(severities.some((s) => s !== 'Minor'), '"changes" needs a Critical or Important finding — Minor alone goes to evidence on an approve, it never bounces a branch');
   }
-  appendLogLines(root, issues.map((issue) => `${issue.id} review ${verdict} · ${findings.split('\n')[0]}`));
+  const by = flags.by !== undefined ? fieldText(flags.by) : null;
+  const journal = by ? journalById(root) : null;
+  const kinds = issues.map((issue) => {
+    if (!by) return null;
+    const worker = issue.fields.worker || gateState(root, issue.id, journal.get(issue.id) || []).worker;
+    const kind = reviewerKind(by, worker);
+    need(verdict !== 'approve' || kind !== 'self', `${issue.id}: an approve by ${by} is a self-approve${worker ? ` (${worker} is the issue's worker)` : ''} and does not count as review — a fresh reviewer, or the jarl, reads the diff${issues.length > 1 ? ' — nothing was written' : ''}`);
+    return kind;
+  });
+  appendLogLines(root, issues.map((issue, n) => `${issue.id} review ${verdict} · ${by ? `by ${by} (${kinds[n]}) · ` : ''}${findings.split('\n')[0]}`));
   // The verdict comes back with the acceptance it was given against, so a reviewer (and the merger reading
   // the output) sees what the approve claims is met — or that there was nothing to meet.
-  return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, verdict, severities, acceptance: (issue.sections.acceptance || '').trim() })));
+  return oneOrMany(rawIds, issues.map((issue, n) => ({ id: issue.id, verdict, ...(by ? { by, kind: kinds[n] } : {}), severities, acceptance: (issue.sections.acceptance || '').trim() })));
 }
 
 // ---- rounds, branches, checks ------------------------------------------------------------------
@@ -1151,16 +1338,18 @@ export function cmdCheck(root, rawId, flags) {
     need(pkg.length, `no issue records branch ${flags.branch} — name one (check <id> --branch ${flags.branch}), or record the package: set <ids> in-progress --branch ${flags.branch}`);
     if (flags.repo === undefined) {
       const repos = new Map();
-      for (const i of pkg) { const r = canonical(resolve(root, i.fields.repo || '.')); repos.set(r, [...(repos.get(r) || []), i.id]); }
+      for (const i of pkg) for (const n of (reposNamed(i).length ? reposNamed(i) : ['.'])) { const r = canonical(resolve(root, n)); repos.set(r, [...(repos.get(r) || []), i.id]); }
       need(repos.size === 1, `the issues on ${flags.branch} name different repositories (${[...repos.values()].map((ids) => ids.join(', ')).join(' | ')}) — check them one by one, or pass --repo`);
     }
   } else {
     const issue = findIssue(root, rawId);
     need(issue, `no such issue: ${rawId}`);
     pkg = [issue];
+    need(flags.repo !== undefined || reposNamed(issue).length <= 1, `${issue.id} names several repositories (${reposNamed(issue).join(', ')}) — check one at a time with --repo <path>`);
   }
   const issue = pkg[0];
-  const repo = repoOf(root, flags.repo ?? issue.fields.repo);
+  const repo = repoOf(root, flags.repo ?? reposNamed(issue)[0]);
+  const realRepo = canonical(repo);
   const where = repo === root ? '' : ` in ${repo}`;
   const base = flags.base || defaultBase(repo);
   const tip = git(repo, ['rev-parse', '--verify', flags.branch]);
@@ -1182,11 +1371,14 @@ export function cmdCheck(root, rawId, flags) {
   // The diff's paths are inside the repository read, so a file the issue declares with its
   // repository's name first is matched by the path after that name.
   // `--repo` on the command reads the paths as the issue's own Repo field would.
-  const named = (i) => (flags.repo !== undefined ? { ...i, fields: { ...i.fields, repo: flags.repo } } : i);
-  const declaredFiles = [...new Set(pkg.flatMap((i) => i.files))];
-  const declared = pkg.flatMap((i) => i.files.map((d) => fileAt(root, named(i), d).path));
+  // An issue that names several repositories bounds the diff by the files it declares in the one read here.
+  const listsRepo = (i) => reposNamed(i).some((n) => canonical(resolve(root, n)) === realRepo);
+  const named = (i) => (flags.repo !== undefined && !listsRepo(i) ? { ...i, fields: { ...i.fields, repo: flags.repo } } : i);
+  const here = pkg.flatMap((i) => i.files.map((d) => ({ d, at: fileAt(root, named(i), d) }))).filter((x) => canonical(x.at.repo) === realRepo);
+  const declaredFiles = [...new Set(here.map((x) => x.d))];
+  const declared = here.map((x) => x.at.path);
   const outside = declaredFiles.length ? changed.filter((f) => !alwaysInScope(f) && !declared.some((d) => pathMatches(f, d))) : [];
-  const noFiles = pkg.length > 1 ? pkg.filter((i) => !i.files.length).map((i) => i.id) : [];
+  const noFiles = pkg.length > 1 ? pkg.filter((i) => !here.some((x) => i.files.includes(x.d))).map((i) => i.id) : [];
   const testsBase = (git(repo, ['ls-tree', '-r', '--name-only', mergeBase]) || '').split('\n').filter(isTestFile);
   const testsTip = (git(repo, ['ls-tree', '-r', '--name-only', flags.branch]) || '').split('\n').filter(isTestFile);
   const removedTests = testsBase.filter((f) => !testsTip.includes(f));
@@ -1230,12 +1422,12 @@ function loopRepos(root, issues = loadIssues(root)) {
   for (const issue of issues) {
     const unfinished = issue.status === 'open' || issue.status === 'in-progress';
     if (!unfinished && !(issue.fields.branch && issue.status !== 'dropped')) continue;
-    const named = issue.fields.repo;
-    if (!named) continue;
-    let repo;
-    try { repo = repoOf(root, named); } catch { continue; }   // a Repo path that no longer resolves is not the boot's to refuse
-    const real = canonical(repo);
-    if (!seen.has(real)) seen.set(real, repo);
+    for (const named of reposNamed(issue)) {
+      let repo;
+      try { repo = repoOf(root, named); } catch { continue; }   // a Repo path that no longer resolves is not the boot's to refuse
+      const real = canonical(repo);
+      if (!seen.has(real)) seen.set(real, repo);
+    }
   }
   return [...seen.values()];
 }
@@ -1243,9 +1435,13 @@ function loopRepos(root, issues = loadIssues(root)) {
 // The repository an issue's code lives in, canonical; null when its Repo path no longer resolves. Resolved
 // once per spelling of the path in a run: a loop of hundreds of issues names a handful of repositories.
 const REPO_OF = new Map();
-function issueRepo(root, issue) {
+function issueRepos(root, issue) {
   const key = `${root}\n${issue.fields.repo || ''}`;
-  if (!REPO_OF.has(key)) { let r = null; try { r = canonical(repoOf(root, issue.fields.repo)); } catch { r = null; } REPO_OF.set(key, r); }
+  if (!REPO_OF.has(key)) {
+    const out = [];
+    for (const n of (reposNamed(issue).length ? reposNamed(issue) : [undefined])) { try { out.push(canonical(repoOf(root, n))); } catch { /* no longer resolves */ } }
+    REPO_OF.set(key, out);
+  }
   return REPO_OF.get(key);
 }
 
@@ -1253,7 +1449,7 @@ function issueRepo(root, issue) {
 // from before the field — the one whose number the branch's jarl/NNN-* name carries.
 function issuesOnBranch(root, issues, realRepo, name) {
   const legacy = /^jarl\/(?:[^/]+\/)?(\d{3})-/.exec(name)?.[1] || /^[^/]+\/jarl\/(\d{3})-/.exec(name)?.[1];
-  return issues.filter((i) => issueRepo(root, i) === realRepo && (i.fields.branch ? i.fields.branch === name : i.id === legacy));
+  return issues.filter((i) => issueRepos(root, i).includes(realRepo) && (i.fields.branch ? i.fields.branch === name : i.id === legacy));
 }
 
 function parseStamp(s) {
@@ -1278,13 +1474,13 @@ export function leaseProblems(root, issue, hours = STALE_HOURS, now = Date.now()
   if (f.worktree && !existsSync(f.worktree)) out.push(`worktree gone: ${f.worktree}`);
   let lastCommit = null;
   if (f.branch) {
-    let repo = null;
-    try { repo = repoOf(root, f.repo); } catch { repo = null; }
-    // Outside a git repository there is no branch to find, gone or not.
-    if (repo && git(repo, ['rev-parse', '--git-dir']) !== null) {
-      if (git(repo, ['rev-parse', '--verify', '--quiet', `refs/heads/${f.branch}`]) === null) out.push(`branch gone: ${f.branch}`);
-      else lastCommit = Number(git(repo, ['log', '-1', '--format=%ct', f.branch])) * 1000 || null;
-    }
+    // Outside a git repository there is no branch to find, gone or not. An issue naming several repositories
+    // keeps its branch while any of them has it.
+    const repos = [];
+    for (const n of (reposNamed(issue).length ? reposNamed(issue) : [undefined])) { try { const r = repoOf(root, n); if (git(r, ['rev-parse', '--git-dir']) !== null) repos.push(r); } catch { /* gone */ } }
+    const having = repos.filter((r) => git(r, ['rev-parse', '--verify', '--quiet', `refs/heads/${f.branch}`]) !== null);
+    if (repos.length && !having.length) out.push(`branch gone: ${f.branch}`);
+    for (const r of having) { const t = Number(git(r, ['log', '-1', '--format=%ct', f.branch])) * 1000 || null; if (t && (!lastCommit || t > lastCommit)) lastCommit = t; }
   }
   const since = parseStamp(f.since);
   const limit = hours * 3_600_000;
@@ -1326,7 +1522,7 @@ function branchesIn(root, repo, flags, issues = loadIssues(root), hours = STALE_
   }).filter((w) => w.branch);
   const mainPath = git(repo, ['rev-parse', '--show-toplevel']);
   // A branch some issue records as its Branch is listed whatever its name: a package's shared branch.
-  const leased = [...new Set(issues.filter((i) => i.fields.branch && i.status !== 'dropped' && issueRepo(root, i) === real).map((i) => i.fields.branch))];
+  const leased = [...new Set(issues.filter((i) => i.fields.branch && i.status !== 'dropped' && issueRepos(root, i).includes(real)).map((i) => i.fields.branch))];
   const exists = (b) => git(repo, ['rev-parse', '--verify', '--quiet', `refs/heads/${b}`]) !== null;
   const recorded = leased.filter((b) => !named.includes(b) && b !== base && exists(b));
   const extra = worktrees.filter((w) => w.branch !== base && !named.includes(w.branch) && !recorded.includes(w.branch) && w.path !== mainPath).map((w) => w.branch);
@@ -1351,6 +1547,113 @@ function branchesIn(root, repo, flags, issues = loadIssues(root), hours = STALE_
     return { repo: basename(repo), branch: name, ahead: null, worktree: null, dirty: null, unnamed: false, issues: on.map((i) => i.id), stale, done: null, deletable: false, missing: true };
   }).filter((r) => r.stale.length);
   return [...rows, ...gone];
+}
+
+// ---- tips: where each repository's branches stand, and their CI -----------------------------------
+
+// A merge counts as recent for tips while its CI is pending or red, or for this long after its log line.
+export const TIPS_RECENT_MS = 7 * 24 * 3_600_000;
+
+// gh, when it is on PATH (JARL_GH names another binary: a test knob). Null when it cannot be run: tips then
+// says nothing about CI rather than guessing.
+let GH;
+function ghBin() {
+  if (GH !== undefined) return GH;
+  const bin = process.env.JARL_GH || 'gh';
+  try { execFileSync(bin, ['--version'], { stdio: ['ignore', 'ignore', 'ignore'], timeout: 10_000 }); GH = bin; } catch { GH = null; }
+  return GH;
+}
+// The CI runs for one commit, summed up: pending while any run is not completed, red when any concluded
+// otherwise than success, skipped or neutral, green when all did, none when no run exists. Null without gh or
+// when gh fails (not logged in, no remote on GitHub): unknown, never red.
+export function ciOf(repo, sha) {
+  const bin = ghBin();
+  if (!bin) return null;
+  let runs;
+  try {
+    runs = JSON.parse(execFileSync(bin, ['run', 'list', '--commit', sha, '--json', 'conclusion,status,databaseId,workflowName', '--limit', '20'], { cwd: repo, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 30_000 }));
+  } catch { return null; }
+  if (!Array.isArray(runs)) return null;
+  const pending = runs.filter((r) => r.status && r.status !== 'completed');
+  const bad = runs.filter((r) => r.status === 'completed' && !['success', 'skipped', 'neutral'].includes(r.conclusion));
+  const state = !runs.length ? 'none' : pending.length ? 'pending' : bad.length ? 'red' : 'green';
+  const pick = bad[0] || pending[0] || runs[0];
+  return { state, runs: runs.length, ...(pick ? { run: pick.databaseId ?? null, workflow: pick.workflowName ?? null, conclusion: pick.conclusion || pick.status || null } : {}) };
+}
+
+// tips — read-only: for the loop's own repository and every repository an open, in-progress or recently merged
+// issue names, the tip of each branch that matters there — the feature branches its in-progress issues record,
+// the branch its checkout is on (the release branch), and main — with ahead/behind against its upstream as last
+// fetched (nothing is fetched), and, when gh is on PATH, the CI of that exact commit. It never gates anything.
+export function cmdTips(root) {
+  const issues = loadIssues(root);
+  const journal = journalById(root);
+  const now = Date.now();
+  const recent = (i) => {
+    const m = mergedOf(i);
+    if (!m || i.status === 'dropped') return false;
+    if (m.ci === 'pending' || m.ci === 'red') return true;
+    const line = [...(journal.get(i.id) || [])].reverse().find((e) => e.text.startsWith(`${i.id} merged `));
+    const at = line ? parseStamp(line.at) : null;
+    return at !== null && now - at <= TIPS_RECENT_MS;
+  };
+  const named = issues.filter((i) => i.status === 'open' || i.status === 'in-progress' || recent(i));
+  const repos = new Map([[canonical(root), root]]);
+  for (const i of named) {
+    const m = mergedOf(i);
+    for (const n of [...reposNamed(i), ...(m && m.repo ? [m.repo] : [])]) { try { const r = repoOf(root, n); if (!repos.has(canonical(r))) repos.set(canonical(r), r); } catch { /* gone */ } }
+  }
+  const out = [];
+  for (const [real, repo] of repos) {
+    if (git(repo, ['rev-parse', '--git-dir']) === null) continue;
+    const current = git(repo, ['rev-parse', '--abbrev-ref', 'HEAD']);
+    const exists = (b) => git(repo, ['rev-parse', '--verify', '--quiet', `refs/heads/${b}`]) !== null;
+    const main = ['main', 'master'].find(exists) || null;
+    const feature = [...new Set(issues.filter((i) => i.status === 'in-progress' && i.fields.branch && issueRepos(root, i).includes(real)).map((i) => i.fields.branch))];
+    const wanted = [...feature.map((b) => ({ role: 'feature', branch: b })), ...(current && current !== 'HEAD' ? [{ role: 'release', branch: current }] : []), ...(main ? [{ role: 'main', branch: main }] : [])];
+    const seen = new Set();
+    const rows = [];
+    for (const w of wanted) {
+      if (seen.has(w.branch)) continue;
+      seen.add(w.branch);
+      if (!exists(w.branch)) { rows.push({ ...w, sha: null, missing: true }); continue; }
+      const sha = git(repo, ['rev-parse', w.branch]);
+      // A worker branch cut with tracking of the release branch has no upstream of its own: only a remote branch
+      // of the same name counts as where it was pushed.
+      let upstream = git(repo, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', `${w.branch}@{upstream}`]);
+      if (upstream && w.role === 'feature' && !upstream.endsWith(`/${w.branch}`)) upstream = null;
+      let ahead = null; let behind = null; let against = null;
+      if (upstream) {
+        const lr = (git(repo, ['rev-list', '--left-right', '--count', `${w.branch}...${upstream}`]) || '').split(/\s+/).map(Number);
+        [ahead, behind] = lr; against = upstream;
+      } else if (w.role === 'feature' && current && current !== w.branch) {
+        const lr = (git(repo, ['rev-list', '--left-right', '--count', `${w.branch}...${current}`]) || '').split(/\s+/).map(Number);
+        [ahead, behind] = lr; against = current;
+      }
+      const on = w.role === 'feature' ? issues.filter((i) => i.fields.branch === w.branch && i.status === 'in-progress' && issueRepos(root, i).includes(real)).map((i) => i.id) : [];
+      // CI runs on what was pushed: a branch with no upstream has none to ask about.
+      const ci = upstream ? ciOf(repo, sha) : null;
+      rows.push({ ...w, sha: sha.slice(0, 12), upstream: upstream || null, against, ahead, behind, ...(on.length ? { issues: on } : {}), ...(ci ? { ci } : {}) });
+    }
+    const merged = named.filter((i) => mergedOf(i) && issueRepos(root, i).includes(real)).map((i) => ({ id: i.id, sha: mergedOf(i).sha, ci: mergedOf(i).ci }));
+    out.push({ repo: basename(real), path: repo, rows, ...(merged.length ? { merged } : {}) });
+  }
+  return { gh: ghBin() !== null, repos: out };
+}
+
+function renderTips(o) {
+  const lines = [];
+  for (const r of o.repos) {
+    lines.push(`[${r.repo}] ${r.path}`);
+    for (const x of r.rows) {
+      if (x.missing) { lines.push(`  ${x.role.padEnd(8)} ${x.branch}  GONE`); continue; }
+      const ab = x.against ? `  ${x.ahead === 0 && x.behind === 0 ? `= ${x.against}` : `+${x.ahead}/-${x.behind} vs ${x.against}`}` : '  (no upstream)';
+      const ci = x.ci ? `  ci ${x.ci.state}${x.ci.run ? ` (run ${x.ci.run}${x.ci.workflow ? ` ${x.ci.workflow}` : ''})` : ''}` : '';
+      lines.push(`  ${x.role.padEnd(8)} ${x.branch} ${x.sha}${ab}${ci}${x.issues ? `  → ${x.issues.join(', ')}` : ''}`);
+    }
+    for (const m of r.merged || []) lines.push(`  merged   ${m.id} ${m.sha} · CI ${m.ci || 'not recorded'}`);
+  }
+  return lines.join('\n') || '(no repository)';
 }
 
 // ---- questions to the user and the handoff --------------------------------------------------
@@ -1387,7 +1690,7 @@ export function cmdAnswer(root, rawId, answer) {
   const ask = loadAsks(root).find((a) => a.id === id);
   need(ask, `no such question: a-${id}`);
   need(ask.state === 'open', `a-${id} is already answered`);
-  appendDecision(root, `ask-${id}`, `**Question:** ${ask.question}\n**Answer:** ${answer}`);
+  appendDecision(root, `ask-${id}`, `**Question:** ${ask.question}\n**Answer:** ${answer}`, { by: 'owner' });
   const path = asksPath(root);
   writeAtomic(path, readFileSync(path, 'utf8').replace(`- **a-${id}** (open)`, `- **a-${id}** (answered)`));
   appendLog(root, `answered a-${id} · ${answer.split('\n')[0]}`);
@@ -1408,13 +1711,26 @@ function appendRuling(root, issues, line) {
   appendLogLines(root, issues.map((issue) => `${issue.id} evidence · ${line}`));
 }
 
+// decide <slug> "<ruling>" [--by who] [--supersedes <slug>] [--settles <ids>]: the ruling, who ruled (the owner
+// unless --by says otherwise: jarl for a choice the loop made under a mandate), the earlier ruling it replaces —
+// marked **Superseded by:** in place, so a reader of decisions.md, and decisions --live, see it is no longer in
+// force — and the issues it settles.
 export function cmdDecide(root, slug, ruling, flags = {}) {
   need(slug && ruling, 'decide requires <slug> "<ruling>"');
+  need(flags.by === undefined || fieldText(flags.by), '--by needs a value — who ruled: owner, jarl, or a name');
+  const by = flags.by !== undefined ? fieldText(flags.by) : 'owner';
   const settles = flags.settles !== undefined ? issuesFor(root, flags.settles) : [];
-  appendDecision(root, slug, settles.length ? `${ruling.trim()}\n\n**Settles:** ${settles.map((i) => i.id).join(', ')}` : ruling);
-  appendLog(root, `decided ${slug}`);
+  appendDecision(root, slug, settles.length ? `${ruling.trim()}\n\n**Settles:** ${settles.map((i) => i.id).join(', ')}` : ruling, { by, supersedes: flags.supersedes });
+  appendLog(root, `decided ${slug} · by ${by}${flags.supersedes !== undefined ? ` · supersedes ${flags.supersedes}` : ''}`);
   if (settles.length) appendRuling(root, settles, `Ruling ${slug}: ${ruling.trim().split('\n')[0]}`);
-  return { slug, settles: settles.map((i) => i.id) };
+  return { slug, by, supersedes: flags.supersedes ?? null, settles: settles.map((i) => i.id) };
+}
+
+// decisions [--live]: the rulings, oldest first, each with who ruled and what superseded it; --live leaves out
+// the superseded ones — what a session reads at boot as the rulings in force.
+export function cmdDecisions(root, flags = {}) {
+  const all = loadDecisions(root);
+  return flags.live ? all.filter((d) => !d.supersededBy) : all;
 }
 
 function handoffPath(root) { return join(jarlDir(root), 'handoff.md'); }
@@ -1442,7 +1758,7 @@ export function cmdHandoffWrite(root, flags) {
   const next = [].concat(flags.next || []).filter(Boolean);
   // Where each other repository an unfinished issue names stands, beside the loop's own head: in a
   // loop whose workers change another repository, that head is the one the next session resumes from.
-  const repos = [...new Set(issues.filter((i) => i.status === 'open' || i.status === 'in-progress').map((i) => i.fields.repo).filter(Boolean))];
+  const repos = [...new Set(issues.filter((i) => i.status === 'open' || i.status === 'in-progress').flatMap(reposNamed))];
   const heads = repos.map((r) => ` · **Head in ${r}:** ${headOf(resolve(root, r))}`).join('');
   const text = `# Handoff\n\n**At:** ${stamp()} · **Head:** ${headOf(root)}${heads}\n\n## Summary\n${flags.summary}\n\n## In flight\n${list(inFlight)}\n\n## Waiting on the user\n${list(open)}\n\n${ratify.length ? `## Decided under mandate, awaiting ratification\n${list(ratify)}\n\n` : ''}## Next\n${list(next, '- (nothing recorded)')}\n`;
   writeAtomic(handoffPath(root), text);
@@ -1525,7 +1841,17 @@ function statusReason(evidence, word) {
   return last ? last[1].trim() : text;
 }
 
-export function cmdReport(root) {
+// The repository an issue's work counts under in the report: the directory name of each repository it names,
+// or the loop's own.
+function repoNames(root, issue) {
+  const named = reposNamed(issue);
+  return named.length ? [...new Set(named.map((n) => basename(canonical(resolve(root, n)))))] : [basename(canonical(root))];
+}
+
+// report [--found]: done (per repository when the done work spans more than one — an issue naming several is
+// listed under each, for each repository's changelog), dropped, deferred, still open, and who reviewed the done
+// work; --found adds the issues someone other than the jarl found.
+export function cmdReport(root, flags = {}) {
   const issues = loadIssues(root);
   const done = issues.filter((i) => i.status === 'done');
   const dropped = issues.filter((i) => i.status === 'dropped');
@@ -1533,12 +1859,19 @@ export function cmdReport(root) {
   const left = issues.filter((i) => i.status === 'open' || i.status === 'in-progress');
   const found = issues.filter((i) => i.fields['found by'] && !/^jarl\b/i.test(i.fields['found by']));
   const goal = existsSync(join(jarlDir(root), 'goal.md')) ? readFileSync(join(jarlDir(root), 'goal.md'), 'utf8').split('\n').slice(2).find((l) => l.trim()) || '' : '';
-  const lines = [`# Report`, '', goal, '', `## Done (${done.length})`, ...done.map((i) => `- ${i.id} ${i.title} (${i.kind})${mergedOf(i) ? ` · merged ${mergedOf(i).sha}${mergedOf(i).repo ? ` in ${mergedOf(i).repo}` : ''}` : ''}`),
+  const byRepo = {};
+  for (const i of done) for (const r of repoNames(root, i)) (byRepo[r] = byRepo[r] || []).push(i);
+  const row = (i) => `- ${i.id} ${i.title} (${i.kind})${mergedOf(i) ? ` · merged ${mergedOf(i).sha}${mergedOf(i).repo ? ` in ${mergedOf(i).repo}` : ''}` : ''}`;
+  const repos = Object.keys(byRepo).sort();
+  const doneLines = repos.length > 1 ? repos.flatMap((r) => ['', `### ${r} (${byRepo[r].length})`, ...byRepo[r].map(row)]) : done.map(row);
+  const split = reviewSplit(root, issues);
+  const lines = [`# Report`, '', goal, '', `## Done (${done.length})`, ...(done.length ? [`Reviewed by: ${renderSplit(split)}`] : []), ...doneLines,
     '', `## Dropped (${dropped.length})`, ...dropped.map((i) => `- ${i.id} ${i.title} — ${statusReason(i.sections.evidence, 'Dropped')}`),
     '', `## Deferred (${deferred.length})`, ...deferred.map((i) => `- ${i.id} ${i.title} — ${statusReason(i.sections.evidence, 'Deferred')}`),
     '', `## Still open (${left.length})`, ...left.map((i) => `- ${i.id} ${i.title} (${i.status})`),
-    '', `## Found along the way (${found.length})`, ...found.map((i) => `- ${i.id} ${i.title} — ${i.fields['found by']}`)];
-  return { done: done.length, dropped: dropped.length, deferred: deferred.length, left: left.length, found: found.length, text: lines.join('\n') + '\n' };
+    ...(flags.found ? ['', `## Found along the way (${found.length})`, ...found.map((i) => `- ${i.id} ${i.title} — ${i.fields['found by']}`)] : [])];
+  return { done: done.length, dropped: dropped.length, deferred: deferred.length, left: left.length, found: found.length, reviews: split,
+    byRepo: Object.fromEntries(repos.map((r) => [r, byRepo[r].map((i) => i.id)])), text: lines.join('\n') + '\n' };
 }
 
 // ---- research findings into issues ----------------------------------------------------------------
@@ -1658,7 +1991,7 @@ export function cmdImport(root, file, flags) {
   if (flags.kind !== undefined) need(KINDS.includes(flags.kind), `--kind must be one of: ${KINDS.join(', ')}`);
   if (flags.prio !== undefined) need(PRIORITIES.includes(String(flags.prio)), '--prio must be 1, 2 or 3');
   if (flags.tier !== undefined) need(TIERS.includes(String(flags.tier)), `--tier must be one of: ${TIERS.join(', ')}`);
-  if (flags.repo !== undefined) repoOf(root, flags.repo);
+  if (flags.repo !== undefined) repoList(root, flags.repo);
   let chosen = findings;
   if (flags.only !== undefined) {
     const only = splitList(flags.only);
@@ -1760,14 +2093,15 @@ export const COMMAND_FLAGS = {
   show: {}, set: { branch: 'value', worker: 'value', worktree: 'value' }, tag: {}, prio: {}, files: {},
   repo: { clear: 'bool' },
   next: { limit: 'value' },
-  review: {}, round: {},
+  review: { by: 'value' }, round: {},
   check: { branch: 'value', base: 'value', repo: 'value' },
   branches: { base: 'value', repo: 'value', 'stale-hours': 'value' },
   merged: { sha: 'value', ci: 'value', repo: 'value' },
   ask: { kind: 'value', target: 'value', issue: 'value' },
   answer: {},
   handoff: { summary: 'value', next: 'many' },
-  log: {}, decide: { settles: 'value' }, status: { 'stale-hours': 'value' }, archive: {}, report: {}, mode: {},
+  log: {}, decide: { settles: 'value', by: 'value', supersedes: 'value' }, decisions: { live: 'bool' },
+  status: { 'stale-hours': 'value' }, archive: {}, report: { found: 'bool' }, tips: {}, mode: {},
   close: { force: 'bool' },
 };
 
@@ -1826,7 +2160,7 @@ export function parseArgs(argv) {
 // How many arguments each command reads after its name (tag takes any number of +a -b after the id).
 const ARITY = {
   init: 1, new: 1, evidence: 2, list: 0, show: 1, set: 3, prio: 2, files: 2, repo: 2, next: 0, review: 3, round: 2,
-  check: 1, branches: 0, ask: 1, answer: 2, handoff: 1, log: 1, decide: 2, status: 0, archive: 1, report: 0, mode: 1, close: 0,
+  check: 1, branches: 0, ask: 1, answer: 2, handoff: 1, log: 1, decide: 2, decisions: 0, tips: 0, status: 0, archive: 1, report: 0, mode: 1, close: 0,
   body: 1, import: 1, source: 2, after: 2, merged: 1,
 };
 
@@ -1838,6 +2172,7 @@ function renderStatus(o) {
     ...o.stale.map((x) => `stale ${x.id} · ${x.problems.join('; ')}`),
     ...(o.ciPending.length ? [`merged, CI pending: ${o.ciPending.join(', ')}`] : []),
     ...(o.ciRed.length ? [`merged, CI red: ${o.ciRed.join(', ')}`] : []),
+    ...(o.done ? [`done reviewed by: ${renderSplit(o.reviews)}`] : []),
     ...(o.uncommitted ? [`${o.uncommitted} loop file(s) not committed — commit .jarl/ in the loop's repository`] : []),
     ...o.toRatify.map((a) => `ratify a-${a.id}${a.issue ? ` (issue ${a.issue})` : ''} · ${a.question}`),
     ...(o.waiting ? [`waiting (After not settled): ${o.waitingIds.join(', ')}`] : []),
@@ -1906,7 +2241,7 @@ function main() {
       case 'repo': out = cmdRepo(root, rest[0], rest[1], { clear: flags.clear === true }); text = `${out.id} repo: ${out.cleared ? 'cleared' : out.repo}`; break;
       case 'evidence': out = cmdEvidence(root, rest[0], rest[1], flags); text = each(out, (o) => (o.rows ? `${o.id} evidence row${o.rows.length > 1 ? 's' : ''} recorded` : `${o.id} evidence recorded`)); break;
       case 'next': out = cmdNext(root, flags); text = out.length ? out.map((r) => (r.ready ? `${r.id}  P${r.priority}  ${r.title}${r.noAcceptance ? '  (no acceptance yet)' : ''}` : r.after.length ? `${r.id}  P${r.priority}  ${r.title}  (after ${r.after.join(', ')})` : `${r.id}  P${r.priority}  ${r.title}  (waits on ${r.waitsOn.join(', ')})`)).join('\n') : '(nothing open)'; break;
-      case 'review': out = cmdReview(root, rest[0], rest[1], rest[2]); text = each(out, (o) => `${o.id} review ${o.verdict} · acceptance: ${o.acceptance ? o.acceptance.split('\n').join(' / ') : '(none on file)'}`); break;
+      case 'review': out = cmdReview(root, rest[0], rest[1], rest[2], flags); text = each(out, (o) => `${o.id} review ${o.verdict}${o.by ? ` by ${o.by} (${o.kind})` : ''} · acceptance: ${o.acceptance ? o.acceptance.split('\n').join(' / ') : '(none on file)'}`); break;
       case 'round': out = cmdRound(root, rest[0], rest[1]); text = out.takeover ? `${out.id} round ${out.round} — takeover:\n\n${out.block}` : `${out.id} round ${out.round} of ${ROUNDS_BEFORE_TAKEOVER} before a takeover`; break;
       case 'merged': out = cmdMerged(root, rest[0], flags); text = `${out.ids.join(', ')} ${out.sha ? `merged ${out.sha}` : 'merge'} · CI ${out.ci}`; warn = out.notes.map((n) => `note: ${n}`); break;
       case 'check': out = cmdCheck(root, rest[0], flags); text = `${out.id === null ? `package ${out.ids.join(', ')} on ${out.branch}\n` : ''}${out.repo === root ? '' : `in ${out.repo}\n`}${out.items.map((i) => `${i.ok ? '✓' : '✗'} ${i.name} — ${i.note}`).join('\n')}`; break;
@@ -1914,10 +2249,12 @@ function main() {
       case 'ask': out = cmdAsk(root, rest[0], flags); text = out.kind === 'ratify' ? `filed a-${out.id} for ratification · blocks nothing` : `asked a-${out.id}`; break;
       case 'answer': out = cmdAnswer(root, rest[0], rest[1]); text = `answered a-${out.id}${out.issue ? ` · written into ${out.issue}` : ''}`; break;
       case 'handoff': if (rest[0] === 'write') { out = cmdHandoffWrite(root, flags); text = `handoff written · ${out.inFlight} in flight · ${out.waiting} waiting on the user${out.uncommitted ? ` · ${out.uncommitted} loop file(s) not committed` : ''}`; } else { out = cmdHandoffRead(root); text = out.text; } break;
-      case 'report': out = cmdReport(root); text = out.text; break;
+      case 'report': out = cmdReport(root, flags); text = out.text; break;
       case 'log': need(rest[0], 'log requires "<event>"'); appendLog(root, rest[0]); out = { logged: rest[0] }; text = 'logged'; break;
-      case 'decide': out = cmdDecide(root, rest[0], rest[1], flags); text = `decided ${out.slug}${out.settles.length ? ` · written into ${out.settles.join(', ')}` : ''}`; break;
+      case 'decide': out = cmdDecide(root, rest[0], rest[1], flags); text = `decided ${out.slug} · by ${out.by}${out.supersedes ? ` · supersedes ${out.supersedes}` : ''}${out.settles.length ? ` · written into ${out.settles.join(', ')}` : ''}`; break;
+      case 'decisions': out = cmdDecisions(root, flags); text = out.length ? out.map((d) => `${d.date} · ${d.slug}${d.by ? ` · by ${d.by}` : ''}${d.supersededBy ? ` · SUPERSEDED by ${d.supersededBy}` : ''}${d.supersedes ? ` · supersedes ${d.supersedes}` : ''} — ${(d.ruling.split('\n').find((l) => l.trim()) || '').slice(0, 160)}`).join('\n') : '(no rulings)'; break;
       case 'status': out = cmdStatus(root, flags); text = renderStatus(out); break;
+      case 'tips': out = cmdTips(root); text = renderTips(out); break;
       case 'archive': out = cmdArchive(root, rest[0]); text = `archived → ${out.archived}${out.leftOpen.length ? ` · ${out.leftOpen.length} still open or in progress: ${out.leftOpen.join(', ')}` : ''} · open a new loop with: jarl.mjs init "<goal>"`; break;
       case 'mode': out = cmdMode(root, rest[0]); text = 'now permanent · no longer tied to a feature branch; close keeps the directory'; break;
       case 'close': out = cmdClose(root, flags); text = (out.kept ? `kept ${out.kept} · closed as a permanent record` : `removed ${out.removed}`) + (out.deferred.length ? ` · ${out.deferred.length} deferred still waiting: ${out.deferred.join(', ')}` : '') + (out.uncommitted ? ` · ${out.uncommitted} loop file(s) not committed${out.kept ? ' — commit .jarl/' : ' before the removal'}` : ''); break;

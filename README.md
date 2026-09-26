@@ -117,13 +117,19 @@ Open the loop with `init "<goal>" --committed` when the loop should travel with 
 <details>
 <summary><b>Can the issues live in one repository while the code is in another?</b></summary>
 
-Yes. Name the other repository when you file an issue (`new "<title>" --repo <path>`, or `repo <id> <path>` later) and the loop keeps the issue where it is while the worker, the reviewer and the merger work in that repository, on its own feature branch. Files are then listed with the repository's name first (`tool/src/a.mjs`), so `next` still keeps two workers off the same file across repositories, and `check` and `branches` look in the repository the issue names. This is how a release that spans several repositories keeps one backlog in one place. A loop kept committed in the planning repository names its own uncommitted files in `status`, the handoff and `close`, because no merge in that repository commits it for you.
+Yes. Name the other repository when you file an issue (`new "<title>" --repo <path>`, or `repo <id> <path>` later) and the loop keeps the issue where it is while the worker, the reviewer and the merger work in that repository, on its own feature branch. Files are then listed with the repository's name first (`tool/src/a.mjs`), so `next` still keeps two workers off the same file across repositories, and `check` and `branches` look in the repository the issue names. This is how a release that spans several repositories keeps one backlog in one place. An issue whose change spans several repositories names them all (`--repo ../tool,../lib`), `report` groups the done work per repository for each one's changelog, and `tips` shows, read-only, where each repository's worker branches, release branch and `main` stand against their remotes and, when `gh` is installed, the CI of each tip. A loop kept committed in the planning repository names its own uncommitted files in `status`, the handoff and `close`, because no merge in that repository commits it for you.
 </details>
 
 <details>
 <summary><b>Can a research report become issues?</b></summary>
 
 Yes. `import <findings.json>` files one issue per finding, with its body filled in and a **Source:** that names the report and the finding, and a second run files nothing twice. `sources` then shows, per report, which findings became which issues and where they stand, and which ones nobody filed. [The mapping is in the skill](skills/jarl/SKILL.md#from-research-to-issues).
+</details>
+
+<details>
+<summary><b>What does closing an issue take?</b></summary>
+
+Evidence recorded since the issue was started (a note written when it was filed does not count) and an approving review, named with `--by`, that no later round or reopen has spent. The tool refuses an approve by the issue's own worker, and `status` and `report` say who reviewed the done work: a fresh reviewer, the jarl, or nobody recorded. It gates the record only; nothing stops code from landing.
 </details>
 
 <details>
