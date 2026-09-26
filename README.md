@@ -131,7 +131,7 @@ Yes. `import <findings.json>` files one issue per finding, with its body filled 
 <details>
 <summary><b>How does the merger know what to merge, and why don't the changelogs conflict?</b></summary>
 
-`queue` lists the branches waiting to merge, computed from the record each time: an issue on the branch is approved by a fresh review, and the branch has commits its base does not. They come in the order they were approved, cut into batches whose declared files do not overlap. It runs nothing and refuses nothing. The changelog is the one file every branch touches, so a worker does not edit it: it records its entry on the issue (`body <id> --changelog "Added: …"`), and at merge time `changelog <ids>` prints the entries of those issues grouped by section, ready to paste under `[Unreleased]`. Your repository's layout does not change.
+`queue` lists the branches waiting to merge, computed from the record each time: an issue on the branch holds an approve from a fresh reviewer (the jarl's own approve does not count), and the branch has commits its base does not. They come in the order they were approved, cut into batches whose declared files do not overlap. It runs nothing and refuses nothing. The changelog is the one file every branch touches, so a worker does not edit it: it records its entry on the issue (`body <id> --changelog "Added: …"`), and at merge time `changelog <ids>` prints the entries of those issues grouped by section, ready to paste under `[Unreleased]`. Your repository's layout does not change.
 </details>
 
 <details>
@@ -143,7 +143,7 @@ Out of the record, yes, as outputs rather than new modes. `status --by repo|tag|
 <details>
 <summary><b>What does closing an issue take?</b></summary>
 
-At least one `--ran`/`--saw` evidence row — the command that was run and what it printed — recorded after the issue was last started or reopened (after its filing, when it was never started); a free-text note never counts on its own, so a note written when the issue was filed cannot close it. And an approving review, named with `--by`, that no later round, restart or reopen has spent. The tool refuses an approve by the issue's own worker, and `status` and `report` say who reviewed the done work: a fresh reviewer, the jarl, or nobody recorded. It gates the record only; nothing stops code from landing.
+At least one `--ran`/`--saw` evidence row — the command that was run and what it printed — recorded after the issue was last started or reopened (after its filing, when it was never started); a free-text note never counts on its own, so a note written when the issue was filed cannot close it. And an approving review, named with `--by`, that no later round, restart or reopen has spent. The tool refuses an approve by the issue's own worker, and `status` and `report` say who reviewed the done work: a fresh reviewer, the jarl, or nobody recorded. When the issue carries code, meaning it records a branch or a merge, the approve must come from a fresh reviewer: an agent that neither wrote the code nor runs the loop. The jarl's own approve (`--by jarl`, `coordinator`, `reeve`, the loop's name, or a name a `Coordinators:` line in `goal.md` lists) is recorded but does not close it, and its branch stays out of `queue`. An issue with no branch and no merge, such as a ruling or a document, still closes on the jarl's approve. `merged` records a merge that had no fresh review and says so loudly. It gates the record only; nothing stops code from landing.
 </details>
 
 <details>
