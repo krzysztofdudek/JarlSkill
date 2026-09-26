@@ -161,9 +161,9 @@ It is a view, not a gate: it runs no check, holds no lock, refuses no merge and 
 
 ### Changelog fragments
 
-Parallel branches that each add a line to `CHANGELOG.md` under `[Unreleased]` conflict at nearly every merge, in the one place every issue touches. So the entry lives on the issue until the merge: the worker records it with `body <id> --changelog "Added: …"` (repeat the flag for more lines; the jarl can file it with `new --changelog`), and never edits `CHANGELOG.md` on its branch. An entry opens with its Keep a Changelog section — `Added:`, `Changed:`, `Deprecated:`, `Removed:`, `Fixed:` or `Security:` — and one without goes under Fixed for a `bug` and Changed for anything else. An issue with no user-visible change has no Changelog section.
+Parallel branches that each add a line to `CHANGELOG.md` under `[Unreleased]` conflict at nearly every merge, in the one place every issue touches. So the entry lives on the issue until the merge: the worker records it with `body <id> --changelog "Added: …"` (repeat the flag for more lines; the jarl can file it with `new --changelog`), and leaves `CHANGELOG.md` alone on its branch — unless the repository's own rules (its CLAUDE.md, AGENTS.md or a hook) require the entry to come with the change, in which case it edits the file as those rules say and records the fragment too. An entry opens with its Keep a Changelog section — `Added:`, `Changed:`, `Deprecated:`, `Removed:`, `Fixed:` or `Security:` — and one without goes under Fixed for a `bug` and Changed for anything else. An issue with no user-visible change has no Changelog section.
 
-`changelog <ids>` prints the entries of those issues grouped by section, in Keep a Changelog order, ready to paste under `[Unreleased]`; when the issues span several repositories it prints one block per repository (an issue naming two appears in both), and `--repo <path>` keeps one. An issue without an entry is named on stderr. The merger writes `CHANGELOG.md` once, after the merge (or the batch) is green, in its own commit on the feature branch. Nothing changes in the repository's layout: the fragment is a section of the issue, and the repository keeps its one changelog. A loop whose workers already edit `CHANGELOG.md` keeps working as before; `check` still counts a changelog edit as in scope.
+`changelog <ids>` prints the entries of those issues grouped by section, in Keep a Changelog order, ready to paste under `[Unreleased]`; when the issues span several repositories it prints one block per repository (an issue naming two appears in both), and `--repo <path>` keeps one. An issue without an entry is named on stderr. The merger writes `CHANGELOG.md` once, after the merge (or the batch) is green, in its own commit on the feature branch: the entries are material, edited into the register the repository asks for and merged into an existing `[Unreleased]` entry when they cover the same feature, as in [Closing the branch](#closing-the-branch). Nothing changes in the repository's layout: the fragment is a section of the issue, and the repository keeps its one changelog. A loop whose workers already edit `CHANGELOG.md` keeps working as before; `check` still counts a changelog edit as in scope.
 
 **A committed loop commits itself.** In the committed and permanent modes, `status`, `handoff write`, `handoff read` and `close` name how many loop files git has not committed (`git status` of `.jarl/` in the loop's repository). A loop whose code lives in another repository has no merge in its own repository to ride on, so without this the record in git contradicts itself. The count is silent in the default mode and outside a git repository.
 
@@ -188,7 +188,7 @@ Three shapes are read: a flat array of findings; an array of angles, each with i
 
 ### Templates
 
-An issue that is filed again and again in the same shape — a release phase, a triage of a bug report, a dependency bump — is written once as a template: `.jarl/templates/<name>.md`, an issue file without a number. Its header fields **Kind:**, **Priority:**, **Tier:**, **Tags:** and **Files:** are defaults, and its What, Why, Acceptance and Changelog sections are the body. `new "<title>" --template <name>` files an issue from it; any flag given on the call replaces the template's value, field by field and section by section. The first line of the template is ignored, and a name is letters, digits and `. _ -`. Templates belong to the place, not to one loop: `archive` leaves them in `.jarl/`. In the default mode they are out of git like the rest of the loop, and `close` removes them with it.
+An issue that is filed again and again in the same shape — a release phase, a triage of a bug report, a dependency bump — is written once as a template: `.jarl/templates/<name>.md`, an issue file without a number. Its header fields **Kind:**, **Priority:**, **Tier:**, **Tags:** and **Files:** are defaults, and its What, Why, Acceptance and Changelog sections are the body. `new "<title>" --template <name>` files an issue from it; any flag given on the call replaces the template's value, field by field and section by section. The first line is a title and is ignored, unless it is already a field (`**Kind:** process`), which is read as one; a name is letters, digits and `. _ -`. Templates belong to the place, not to one loop: `archive` leaves them in `.jarl/`. In the default mode they are out of git like the rest of the loop, and `close` removes them with it.
 
 A release checklist is issues filed from a template, not a mode. The checklist lives where the release procedure lives (for a family of repositories, in the skill that runs its releases), and the loop files one issue per phase, chained with `--after`, so `next` sequences them and `status` counts them like any other work:
 
@@ -305,9 +305,10 @@ Your scope is the issue below and nothing else. Anything else you see goes into 
 "Found", never into the diff.
 The loop's tool is <absolute path to jarl.mjs>; call it with `--root <main checkout>` (from a worktree of the same repository it finds the loop by itself, but pass it anyway) — your
 worktree has no live `.jarl/` of its own — and never add `.jarl/` to your branch.
-If the change is user-visible and the repository keeps a CHANGELOG.md, do not edit it: record the entry on the issue,
-`jarl.mjs body NNN --changelog "Added: …" --root <main checkout>` (Changed, Fixed, … — one flag per line); the merger
-writes the changelog.
+If the change is user-visible, record its changelog entry on the issue:
+`jarl.mjs body NNN --changelog "Added: …" --root <main checkout>` (Changed, Fixed, … — one flag per line). Edit
+CHANGELOG.md on your branch as well only where the repository's own rules (its CLAUDE.md, AGENTS.md or hooks) require
+the entry to come with the change; otherwise leave CHANGELOG.md to the merger.
 Prove the change: a test that is red before and green after. Run the test files your change touches,
 in the foreground, with the shell tool's own timeout parameter set (a run that outlives the tool's
 default timeout is moved to the background and you will sit waiting for a notification that is not
@@ -405,9 +406,10 @@ batches), or that `jarl.mjs branches` shows with commits beyond the base:
    feature branch — you are its only committer; in the default mode `.jarl/` is never committed. When the
    merge happened in another repository, commit `.jarl/` in the loop's repository after recording it: nothing
    else will, and `status` counts the loop files left uncommitted.
-   When the issues carry changelog entries, `jarl.mjs changelog <ids> --repo <path>` prints them; paste them under
-   `[Unreleased]` in that repository's CHANGELOG.md, verbatim, and commit that file alone ("changelog: <ids>") —
-   the one file you write, and only from the tool's output.
+   When the issues carry changelog entries and the branch did not already add them, `jarl.mjs changelog <ids> --repo
+   <path>` prints them; paste them under `[Unreleased]` in that repository's CHANGELOG.md, edited into the register
+   the repository asks for, merged into an existing `[Unreleased]` entry when they cover the same feature, and commit
+   that file alone ("changelog: <ids>") — the one file you write.
    Before moving to the next branch, `jarl.mjs show <id>` and confirm it reads
    `done` — a write that silently failed to land is worse than one that never ran. The tool locks
    and refuses loudly now, but a call whose exit code nobody read is still a write nobody saw.

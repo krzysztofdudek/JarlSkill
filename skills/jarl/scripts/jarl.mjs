@@ -429,7 +429,10 @@ export function acceptanceText(v) {
 // its Keep a Changelog section (`Added: …`). An entry is one line, like a changelog bullet; several become a list.
 export const CHANGELOG_SECTIONS = ['Added', 'Changed', 'Deprecated', 'Removed', 'Fixed', 'Security'];
 export function changelogText(v) {
-  return [].concat(v ?? []).map(fieldText).filter(Boolean).map((l) => `- ${l.replace(/^-\s+/, '')}`).join('\n');
+  const lines = [].concat(v ?? []).map(fieldText).filter(Boolean).map((l) => l.replace(/^-\s+/, ''));
+  // A section with nothing after it would print an empty bullet under that heading: refused, not guessed at.
+  for (const l of lines) need(!new RegExp(`^(${CHANGELOG_SECTIONS.join('|')}):\\s*$`, 'i').test(l), `changelog entry "${l}" has no text — write the line after the section: --changelog "${l.replace(/:\s*$/, '')}: <what changed>"`);
+  return lines.map((l) => `- ${l}`).join('\n');
 }
 // The entries of an issue's ## Changelog section, each with its section: the one it opens with, else Fixed for a bug
 // and Changed for anything else.
@@ -649,8 +652,10 @@ export function readTemplate(root, name) {
     const have = existsSync(templatesDir(root)) ? readdirSync(templatesDir(root)).filter((f) => f.endsWith('.md')).map((f) => f.slice(0, -3)) : [];
     throw new Error(`no template ${name} in ${templatesDir(root)} — ${have.length ? `templates here: ${have.join(', ')}` : 'none here yet; write one as an issue file without a number (see SKILL.md, "Templates")'}`);
   }
-  // The template is read as an issue whose first line may be anything: only its fields and sections count.
-  const t = parseIssue(readFileSync(path, 'utf8').replace(/\r\n?/g, '\n'), path);
+  // The template is read as an issue whose title line may be anything: only its fields and sections count. A template
+  // that starts straight with a field has no title line, so that first field is read as a field, not dropped.
+  const raw = readFileSync(path, 'utf8').replace(/\r\n?/g, '\n');
+  const t = parseIssue(FIELD_RE.test(raw.split('\n')[0]) ? `# template\n${raw}` : raw, path);
   const section = (k) => (t.sections[k] !== undefined && t.sections[k].trim() ? t.sections[k].trim() : undefined);
   return {
     kind: t.fields.kind || undefined, prio: t.fields.priority || undefined, tier: t.fields.tier || undefined,
@@ -1849,14 +1854,16 @@ function renderQueue(o) {
 export function cmdChangelog(root, rawIds, flags = {}) {
   need(rawIds !== undefined, 'changelog requires <ids> — the issues whose fragments to print, e.g. 284,288 or 203-206');
   const issues = issuesFor(root, rawIds);
-  const only = flags.repo !== undefined ? basename(topOf(canonical(repoOf(root, flags.repo)))) : null;
+  // --repo is matched by the repository itself (its resolved root), never by its folder name alone.
+  const only = flags.repo !== undefined ? topOf(canonical(repoOf(root, flags.repo))) : null;
   const byRepo = {};
   const missing = [];
   for (const i of issues) {
     const entries = changelogEntries(i);
     if (!entries.length) { missing.push(i.id); continue; }
-    for (const r of repoNames(root, i)) {
-      if (only && r !== only) continue;
+    if (only && !issueTops(root, i).includes(only)) continue;
+    const names = only ? [basename(only)] : repoNames(root, i);
+    for (const r of names) {
       const sec = (byRepo[r] = byRepo[r] || {});
       for (const e of entries) (sec[e.section] = sec[e.section] || []).push(e.text);
     }

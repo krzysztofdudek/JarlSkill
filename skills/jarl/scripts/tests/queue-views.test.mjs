@@ -138,6 +138,10 @@ test('changelog: fragments recorded on the issue print grouped for [Unreleased];
   jarl(root, 'body', '2', '--changelog', 'Fixed: something else.');
   assert.equal(jarl(root, 'changelog', '2'), '### Fixed\n- something else.');
   assert.match(refuses(root, 'changelog'), /changelog requires <ids>/);
+  // A section with nothing after it is refused, on new and on body, and nothing is written.
+  assert.match(refuses(root, 'body', '2', '--changelog', 'Removed:'), /changelog entry "Removed:" has no text/);
+  assert.match(refuses(root, 'new', 'x', '--changelog', 'fixed:  '), /has no text/);
+  assert.equal(jarl(root, 'changelog', '2'), '### Fixed\n- something else.');
 });
 
 test('changelog: an issue naming several repositories prints under each; --repo keeps one', () => {
@@ -150,6 +154,11 @@ test('changelog: an issue naming several repositories prints under each; --repo 
   const all = jarl(dirs.hub, 'changelog', '1,2');
   assert.match(all, /^## lib\n\n### Added\n- both\.\n\n## tool\n\n### Added\n- both\.\n- tool\.$/);
   assert.equal(jarl(dirs.hub, 'changelog', '1,2', '--repo', '../lib'), '### Added\n- both.');
+  // --repo is matched by the repository itself, not by its folder name: another repository named lib is not it.
+  const other = join(parent, 'elsewhere', 'lib');
+  mkdirSync(other, { recursive: true });
+  sh(other, 'git init -q -b main && git commit -q --allow-empty -m base');
+  assert.equal(jarl(dirs.hub, 'changelog', '1,2', '--repo', '../elsewhere/lib'), '(no changelog fragment on these issues)');
 });
 
 // ---- 289: templates ------------------------------------------------------------------------------
@@ -170,6 +179,10 @@ test('new --template reads .jarl/templates/<name>.md: its fields are defaults, i
   assert.match(jarl(root, 'show', '2'), /\*\*Kind:\*\* docs[\s\S]*\*\*After:\*\* 001/);
   assert.match(refuses(root, 'new', 'x', '--template', 'nope'), /no template nope in .*templates — templates here: release-phase/);
   assert.match(refuses(root, 'new', 'x', '--template', '../goal'), /a template is named by letters, digits/);
+  // A template whose first line is already a field keeps that field.
+  writeFileSync(join(root, '.jarl', 'templates', 'bare.md'), '**Kind:** docs\n**Tags:** t\n\n## What\nw\n');
+  jarl(root, 'new', 'bare one', '--template', 'bare');
+  assert.match(jarl(root, 'show', '3'), /\*\*Kind:\*\* docs[\s\S]*\*\*Tags:\*\* t/);
   // Templates outlive the loop: archive leaves them for the next one.
   jarl(root, 'archive', 'first');
   assert.ok(existsSync(join(root, '.jarl', 'templates', 'release-phase.md')));
