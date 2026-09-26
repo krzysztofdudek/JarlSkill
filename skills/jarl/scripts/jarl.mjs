@@ -91,8 +91,11 @@ commands:
                                                  its path (see --repo below); one with no acceptance line is marked
   review <ids> approve|changes --by <reviewer> "<findings>"
                                                  the reviewer's verdict; --by is required, recorded with its kind
-                                                 (fresh; coordinator for jarl; self for the issue's worker — refused on
-                                                 an approve); "done" needs an approve newer than the last round and reopen
+                                                 (self for the issue's worker or "self" — refused on an approve;
+                                                 coordinator for coordinator, jarl, reeve, the loop's own name and
+                                                 names on a "Coordinators:" line in goal.md; fresh for anyone else);
+                                                 "done" needs an approve newer than the last round and reopen, and a
+                                                 fresh one when the issue carries code (a Branch or Merged field)
   round <id> "<what failed>"                     one red round; after three prints the takeover block for a fresh worker
   check [<id>] --branch <b> [--base <feature-branch>] [--repo <path>]
                                                  commits beyond the base, diff inside the declared files, and the
@@ -888,16 +891,26 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
 
 // Why an issue may not go done, or null when it may: at least one --ran/--saw evidence row logged since the issue
 // last went in progress (or was reopened, or — never in progress — was filed; free-text notes never count alone), and a live approve by someone
-// other than its worker (see gateState). It gates only the record: nothing here stops code from landing.
+// other than its worker (see gateState) — by a fresh reviewer when the issue carries code (a Branch or Merged field;
+// see carriesCode). It gates only the record: nothing here stops code from landing.
 export function doneRefusal(root, issue, journal = journalById(root)) {
   const g = gateState(root, issue.id, journal.get(issue.id) || []);
   const how = `jarl.mjs evidence ${issue.id} --ran "<command>" --saw "<what it printed>"`;
   if (!workEvidence(issue)) return `${issue.id} has no evidence yet — record it first: ${how}`;
   if (!g.tracked && !evidenceRows(issue).length) return `${issue.id} has no --ran/--saw evidence row — a free-text note alone is not proof of the work: ${how}`;
   if (g.tracked && !g.rowsSince) return `${issue.id} has no --ran/--saw evidence row recorded since it was ${g.anchor.what === 'filed' ? 'filed' : `moved → ${g.anchor.what}`} (${g.anchor.at}) — a free-text note, or a row written before that (before a start or a reopen), is not proof of the work: ${how}`;
-  if (g.selfApproved) return `${issue.id}'s last approve is by its own worker — a self-approve does not count as review: jarl.mjs review ${issue.id} approve --by <fresh reviewer|jarl> "<findings>"`;
+  const code = carriesCode(issue);
+  if (g.selfApproved) return `${issue.id}'s last approve is by its own worker — a self-approve does not count as review: jarl.mjs review ${issue.id} approve --by <${code ? 'fresh reviewer' : 'fresh reviewer|jarl'}> "<findings>"`;
   if (!g.approved) return `${issue.id} has no approving review newer than its last round${g.tracked ? ' or reopen' : ''} — a fresh reviewer reads the issue and the diff first: jarl.mjs review ${issue.id} approve|changes --by <reviewer> "<findings>"`;
+  if (code && !g.fresh) return `${issue.id} ${freshRuleText(issue, g.live)}: jarl.mjs review ${issue.id} approve|changes --by <fresh reviewer> "<findings>"`;
   return null;
+}
+
+// The fresh-review rule, said the same way by done, review and merged: an issue that carries code (a Branch or a
+// Merged field) needs its live approve from a fresh reviewer — an agent that neither wrote the code nor runs the loop.
+function freshRuleText(issue, live) {
+  const who = live && live.by ? `${live.by} (${live.kind})` : 'a reviewer not recorded (an approve from before --by)';
+  return `carries code (${issue.fields.merged ? 'Merged' : 'Branch'} is recorded) and its live approve is by ${who} — the fresh-review rule: a code issue needs an approve from a fresh reviewer, an agent that neither wrote the code nor runs the loop; a coordinator's approve does not clear it`;
 }
 
 // Said, never refused: done closes an issue whose acceptance is missing, or has more lines than the
@@ -953,6 +966,16 @@ export function cmdMerged(root, rawIds, flags) {
       if (!repos.length || checked.has(key)) continue;
       checked.add(key);
       if (repos.every((r) => git(r, ['cat-file', '-e', `${sha}^{commit}`]) === null)) notes.push(`${sha} is not a commit in ${repos.join(' or ')} (yet) — recorded as given`);
+    }
+  }
+  // Said, never refused: a merge is a fact, and recording it is not the place to stop it. A merge whose issue holds
+  // no fresh approve went in without the fresh review the rule asks for, and the note says so loudly.
+  if (sha) {
+    const journal = journalById(root);
+    const coordinators = coordinatorNames(root);
+    for (const issue of issues) {
+      const g = gateState(root, issue.id, journal.get(issue.id) || [], coordinators);
+      if (!g.fresh) notes.push(`MERGED WITHOUT A FRESH REVIEW — ${issue.id} ${g.live ? freshRuleText({ fields: { merged: sha } }, g.live) : 'holds no live approve at all (none, or spent by a later round, restart or reopen) — the fresh-review rule: a code issue needs an approve from a fresh reviewer before it merges'}; recorded as given, get the fresh review now: jarl.mjs review ${issue.id} approve|changes --by <fresh reviewer> "<findings>"`);
     }
   }
   for (const issue of issues) {
@@ -1260,15 +1283,34 @@ export function journalById(root) {
   return map;
 }
 
-// Who reviewed, as a kind: the loop's own director (jarl, coordinator), the issue's worker (self), anyone
-// else (fresh). A name is compared without case and surrounding space.
+// Who reviewed, as a kind: the issue's worker or the word self (self); the loop's own director — coordinator,
+// jarl, reeve, the loop's own name (the directory holding .jarl/) and any name goal.md declares on a
+// `Coordinators: a, b` line (coordinator); anyone else (fresh). A name is compared without case and surrounding space.
 export const REVIEWER_KINDS = ['fresh', 'coordinator', 'self'];
-export function reviewerKind(by, worker) {
+export const BASE_COORDINATORS = ['coordinator', 'jarl', 'reeve'];
+export function reviewerKind(by, worker, coordinators = BASE_COORDINATORS) {
   const b = fieldText(by).toLowerCase();
   if (b === 'self' || (worker && b === fieldText(worker).toLowerCase())) return 'self';
-  if (b === 'jarl' || b === 'coordinator' || b === 'reeve') return 'coordinator';
+  if (coordinators.some((c) => fieldText(c).toLowerCase() === b)) return 'coordinator';
   return 'fresh';
 }
+// The names that review as the loop's director in this loop: the fixed three, the loop's own name, and the names
+// a `Coordinators:` line in goal.md lists (comma separated; as a plain line, a list item, or in bold).
+export function coordinatorNames(root) {
+  const names = [...BASE_COORDINATORS, basename(resolve(root))];
+  const goal = join(jarlDir(root), 'goal.md');
+  if (existsSync(goal)) {
+    for (const line of readFileSync(goal, 'utf8').split('\n')) {
+      const m = /^\s*(?:[-*]\s+)?(?:\*\*)?coordinators:(?:\*\*)?\s*(.+)$/i.exec(line);
+      if (m) names.push(...m[1].split(',').map((n) => fieldText(n.replace(/\*\*/g, ''))).filter(Boolean));
+    }
+  }
+  return names;
+}
+const KIND_WEIGHT = { fresh: 0, coordinator: 1, self: 2 };
+// An issue carries code when it records a branch or a merge. Only then does done (and the merge queue) need a
+// fresh approve; an issue with neither — a ruling, a note, a hub document — is still cleared by the coordinator.
+export function carriesCode(issue) { return Boolean(fieldText(issue.fields.branch) || fieldText(issue.fields.merged)); }
 const REVIEW_LINE = /^\d{3} review (approve|changes) · (?:by (.+?) \((fresh|coordinator|self)\) · )?/;
 
 // The done gate, read from the journal for one issue. Replaying its lines in order:
@@ -1280,7 +1322,7 @@ const REVIEW_LINE = /^\d{3} review (approve|changes) · (?:by (.+?) \((fresh|coo
 //   issue's own worker (self) never counts;
 // - `tracked` is false for an issue the journal has no filing and no status move for (a hand-made file, a
 //   loop older than the log format): the gate then needs a --ran/--saw row in its Evidence section.
-export function gateState(root, id, events = journalById(root).get(id) || []) {
+export function gateState(root, id, events = journalById(root).get(id) || [], coordinators = coordinatorNames(root)) {
   let status = null; let anchor = null; let cut = -1; let worker = null;
   const evidence = []; const reviews = [];
   for (const e of events) {
@@ -1297,7 +1339,14 @@ export function gateState(root, id, events = journalById(root).get(id) || []) {
     }
     if (e.text.startsWith(`${id} round `)) { cut = e.n; continue; }
     const r = REVIEW_LINE.exec(e.text);
-    if (r) { reviews.push({ n: e.n, at: e.at, verdict: r[1], by: r[2] || null, kind: r[3] || null }); continue; }
+    if (r) {
+      // The kind is the one recorded, or the one today's names give, whichever is stricter: a name goal.md
+      // declares as a coordinator after its approve was logged as fresh does not stay fresh.
+      let kind = r[3] || null;
+      if (kind && r[2]) { const now = reviewerKind(r[2], worker, coordinators); if (KIND_WEIGHT[now] > KIND_WEIGHT[kind]) kind = now; }
+      reviews.push({ n: e.n, at: e.at, verdict: r[1], by: r[2] || null, kind });
+      continue;
+    }
     if (e.text.startsWith(`${id} evidence row · `)) evidence.push(e);
   }
   const last = reviews[reviews.length - 1] || null;
@@ -1310,6 +1359,8 @@ export function gateState(root, id, events = journalById(root).get(id) || []) {
     lastApprove: [...reviews].reverse().find((r) => r.verdict === 'approve') || null,
     approved: Boolean(live && live.kind !== 'self'),
     selfApproved: Boolean(live && live.kind === 'self'),
+    fresh: Boolean(live && live.kind === 'fresh'),
+    live,
     worker,
   };
 }
@@ -1354,17 +1405,21 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
   }
   const by = flags.by !== undefined ? fieldText(flags.by) : null;
   const journal = by ? journalById(root) : null;
+  const coordinators = coordinatorNames(root);
   const kinds = issues.map((issue) => {
     if (!by) return null;
     const worker = issue.fields.worker || gateState(root, issue.id, journal.get(issue.id) || []).worker;
-    const kind = reviewerKind(by, worker);
+    const kind = reviewerKind(by, worker, coordinators);
     need(verdict !== 'approve' || kind !== 'self', `${issue.id}: an approve by ${by} is a self-approve${worker ? ` (${worker} is the issue's worker)` : ''} and does not count as review — a fresh reviewer, or the jarl, reads the diff${issues.length > 1 ? ' — nothing was written' : ''}`);
     return kind;
   });
   appendLogLines(root, issues.map((issue, n) => `${issue.id} review ${verdict} · ${by ? `by ${by} (${kinds[n]}) · ` : ''}${findings.split('\n')[0]}`));
+  // Recorded, never refused: a coordinator's approve on a code issue is a fact of the record, but it does not clear
+  // the issue for done or the merge queue — the output says so at once.
+  const noteOf = (issue, n) => (verdict === 'approve' && kinds[n] === 'coordinator' && carriesCode(issue) ? { note: `${issue.id} carries code and ${by} is a coordinator — the fresh-review rule: this approve is recorded but does not clear it for done or the merge queue; a fresh reviewer's approve does` } : {});
   // The verdict comes back with the acceptance it was given against, so a reviewer (and the merger reading
   // the output) sees what the approve claims is met — or that there was nothing to meet.
-  return oneOrMany(rawIds, issues.map((issue, n) => ({ id: issue.id, verdict, ...(by ? { by, kind: kinds[n] } : {}), severities, acceptance: (issue.sections.acceptance || '').trim() })));
+  return oneOrMany(rawIds, issues.map((issue, n) => ({ id: issue.id, verdict, ...(by ? { by, kind: kinds[n] } : {}), severities, acceptance: (issue.sections.acceptance || '').trim(), ...noteOf(issue, n) })));
 }
 
 // ---- rounds, branches, checks ------------------------------------------------------------------
@@ -1774,7 +1829,7 @@ function renderTips(o) {
 
 // queue [--repo <path>] [--base <b>] — read-only: the branches waiting for the merger. A branch is in the queue when
 // an unsettled issue on it (open or in progress) holds a live approve — one no round, restart or reopen has spent,
-// by someone other than its worker (the same reading as the done gate) — and the branch has commits its base does
+// by a fresh reviewer (the done gate's reading for an issue that carries code) — and the branch has commits its base does
 // not, so it is not merged yet. Rows are ordered by approval (the latest live approve on the branch, then the log's
 // order) and, per repository, cut into batches the way the merger's brief batches: a branch joins the current batch
 // while its declared files share none with it, and starts the next one otherwise. It computes, holds no lock and
@@ -1783,8 +1838,11 @@ export function cmdQueue(root, flags = {}) {
   const issues = loadIssues(root);
   const journal = journalById(root);
   const unsettled = issues.filter((i) => i.status === 'open' || i.status === 'in-progress');
-  const gate = new Map(unsettled.map((i) => [i.id, gateState(root, i.id, journal.get(i.id) || [])]));
-  const approved = unsettled.filter((i) => gate.get(i.id).approved);
+  const coordinators = coordinatorNames(root);
+  const gate = new Map(unsettled.map((i) => [i.id, gateState(root, i.id, journal.get(i.id) || [], coordinators)]));
+  // Every issue in the queue sits on a branch, so it carries code: only a fresh approve puts it there (the
+  // fresh-review rule). One cleared by a coordinator alone waits, listed with its package as waiting for review.
+  const approved = unsettled.filter((i) => gate.get(i.id).fresh);
   const repos = flags.repo !== undefined ? [repoOf(root, flags.repo)] : loopRepos(root, issues);
   const out = [];
   for (const repo of repos) {
@@ -2472,7 +2530,7 @@ function main() {
       case 'repo': out = cmdRepo(root, rest[0], rest[1], { clear: flags.clear === true }); text = `${out.id} repo: ${out.cleared ? 'cleared' : out.repo}`; break;
       case 'evidence': out = cmdEvidence(root, rest[0], rest[1], flags); text = each(out, (o) => (o.rows ? `${o.id} evidence row${o.rows.length > 1 ? 's' : ''} recorded` : `${o.id} evidence recorded`)); break;
       case 'next': out = cmdNext(root, flags); text = out.length ? out.map((r) => (r.ready ? `${r.id}  P${r.priority}  ${r.title}${r.noAcceptance ? '  (no acceptance yet)' : ''}` : r.after.length ? `${r.id}  P${r.priority}  ${r.title}  (after ${r.after.join(', ')})` : `${r.id}  P${r.priority}  ${r.title}  (waits on ${r.waitsOn.join(', ')})`)).join('\n') : '(nothing open)'; break;
-      case 'review': out = cmdReview(root, rest[0], rest[1], rest[2], flags); text = each(out, (o) => `${o.id} review ${o.verdict}${o.by ? ` by ${o.by} (${o.kind})` : ''} · acceptance: ${o.acceptance ? o.acceptance.split('\n').join(' / ') : '(none on file)'}`); break;
+      case 'review': out = cmdReview(root, rest[0], rest[1], rest[2], flags); text = each(out, (o) => `${o.id} review ${o.verdict}${o.by ? ` by ${o.by} (${o.kind})` : ''} · acceptance: ${o.acceptance ? o.acceptance.split('\n').join(' / ') : '(none on file)'}`); warn = [].concat(out).filter((o) => o.note).map((o) => `note: ${o.note}`); break;
       case 'round': out = cmdRound(root, rest[0], rest[1]); text = out.takeover ? `${out.id} round ${out.round} — takeover:\n\n${out.block}` : `${out.id} round ${out.round} of ${ROUNDS_BEFORE_TAKEOVER} before a takeover`; break;
       case 'merged': out = cmdMerged(root, rest[0], flags); text = `${out.ids.join(', ')} ${out.sha ? `merged ${out.sha}` : 'merge'} · CI ${out.ci}`; warn = out.notes.map((n) => `note: ${n}`); break;
       case 'check': out = cmdCheck(root, rest[0], flags); text = `${out.id === null ? `package ${out.ids.join(', ')} on ${out.branch}\n` : ''}${out.repo === root ? '' : `in ${out.repo}\n`}${out.items.map((i) => `${i.ok ? '✓' : '✗'} ${i.name} — ${i.note}`).join('\n')}`; break;
