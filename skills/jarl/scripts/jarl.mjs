@@ -323,6 +323,47 @@ export const COMMAND_ARGS = {
   decide: ['slug', 'ruling'], decisions: [], status: [], archive: ['slug'], report: [], tips: [], queue: [],
   changelog: ['ids'], mode: ['mode'], close: [], profile: ['file?'],
 };
+// One sentence per command: what it does, the MCP tool's whole description after "WRITES the loop." or "Read-only.".
+// The rest of what a command takes and does is its block of USAGE, which the jarl_help tool and --help print.
+export const COMMAND_SUMMARY = {
+  init: 'Open a loop: create .jarl/ with the goal, out of git by default, committed or permanent when asked.',
+  new: 'File an issue under the next free number, with its fields and its What, Why and Acceptance.',
+  body: 'Set or replace an issue\'s Where field and its What, Why, Acceptance, Changelog and profile sections.',
+  import: 'File one issue per finding of a findings file, skipping findings already filed.',
+  sources: 'Per findings report: its findings, the issues filed from them and their status.',
+  source: 'Set the Source field of an issue filed by hand.',
+  after: 'Set or clear the issues this one waits on before next offers it.',
+  evidence: 'Append a free-text note, or checkable rows of what ran and what it printed, to issues.',
+  list: 'List the issues, the unfinished ones by default, filtered by status, kind, tag, priority or a field.',
+  show: 'Print one issue.',
+  set: 'Change the status of issues, with the reason logged, or set a field the profile declares.',
+  merged: 'Record a merge (sha, repository, CI state) on issues, or move the CI state of issues already merged.',
+  tag: 'Add and remove tags on issues.',
+  prio: 'Set the priority of issues.',
+  files: 'Declare the files an issue touches.',
+  repo: 'Name the repository (or several) an issue\'s code lives in, or clear it.',
+  next: 'The open issues ready to dispatch: no file shared with work in progress, every After issue settled.',
+  review: 'Record a reviewer\'s verdict (approve or changes) on issues, with the reviewer and the findings.',
+  round: 'Record one red round on an issue; after three it prints the takeover block for a fresh worker.',
+  check: 'Measure a worker branch against its base: commits, diff inside the declared files, test changes; numbers, never a verdict.',
+  branches: 'Every worker branch with its issues, commits beyond the base, worktree state, stale leases and done branches.',
+  ask: 'File a question the user has to answer (stop, stuck, lower, charter or ratify).',
+  answer: 'Record the user\'s answer to a question as a ruling and close the question.',
+  resume: 'The boot: everything a session picks the loop up from, assembled live.',
+  handoff: 'read: resume plus an old handoff file as history; write: retired, writes nothing.',
+  log: 'Append one dated line to the loop\'s journal.',
+  decide: 'Append a ruling, optionally superseding one, settling issues or covering an area of code.',
+  decisions: 'The rulings with who ruled and what superseded them.',
+  status: 'The goal, the counts by status, the reviews, stale leases and what awaits ratification.',
+  archive: 'Put the current loop away under .jarl/archive/ so a new one can open here.',
+  report: 'What was done, dropped, deferred and still open, ready for the changelog, with the loop metrics.',
+  tips: 'Per repository the loop names: the tips of worker, release and main branches, ahead/behind and CI; fetches nothing.',
+  queue: 'The branches waiting for the merger, in approval order, cut into batches whose files do not overlap.',
+  changelog: 'Print the issues\' changelog entries grouped by section, ready to paste under [Unreleased].',
+  mode: 'Switch a committed loop to the permanent mode.',
+  profile: 'The loop\'s profile (statuses, fields, sections), or a profile file checked against the schema.',
+  close: 'Close the loop when nothing is open or in progress, filing the ratification batch first.',
+};
 const ARITY = Object.fromEntries(Object.entries(COMMAND_ARGS).filter(([, a]) => !a.some((n) => n.endsWith('...'))).map(([c, a]) => [c, a.length]));
 
 // The commands that write: each runs under .jarl/.lock (see withLock).

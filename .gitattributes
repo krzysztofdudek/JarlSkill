@@ -1,6 +1,8 @@
 # Normalize line endings to LF in the repository; let git decide text vs binary.
 * text=auto eol=lf
 
-# The Runes vendoring tool is checked byte for byte against its pin (skills/jarl/scripts/vendor/runes.pin.json),
-# so no checkout may touch its line endings. The fragment blocks in SKILL.md need no entry: their check ignores CRLF.
+# The vendored Runes copy and the vendoring tool are checked byte for byte against their pin
+# (skills/jarl/scripts/vendor/runes.pin.json), so no checkout may touch their line endings. The fragment blocks in
+# SKILL.md need no entry: their check ignores CRLF.
+skills/jarl/scripts/vendor/runes/** -text linguist-vendored
 skills/jarl/scripts/runes.mjs -text
