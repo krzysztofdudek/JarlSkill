@@ -86,9 +86,15 @@ ln -s "$(pwd)/JarlSkill" ~/.cursor/plugins/local/jarl
 
 Then reload Cursor (**Developer: Reload Window**). Or drop the single file into `~/.cursor/skills/jarl/SKILL.md` (user-level) or `.cursor/skills/jarl/SKILL.md` (project-level).
 
+### The MCP tools
+
+A plugin install also starts an MCP server, `jarl`, with nothing to configure: Claude Code reads it from `.mcp.json`, and hosts that follow the Agent Plugins spec (Copilot) from `mcp.json`. Every command of the tool is an MCP tool — `jarl_resume`, `jarl_status`, `jarl_new`, `jarl_set`, `jarl_evidence` and the rest, the ones that write included — with the same arguments and flags as fields, and the skill calls these instead of running a script. Each tool's description says whether it writes. They are generated from the command line's own table and run the same code under the same lock, so the two never disagree; a test fails the build if a command or a flag has no matching tool or field.
+
+A call reaches the loop its `root` field names; without it, the one `JARL_ROOT` names in the server's environment; without that, the loop found from the directory the session started in. With a drop-in copy, register the server yourself if your agent speaks MCP (for Claude Code: `claude mcp add jarl -- node /absolute/path/to/skills/jarl/scripts/jarl-mcp.mjs`), or let the skill use the command line, which it falls back to whenever the tools are not there.
+
 ### Drop-in (any agent)
 
-The whole skill is the [`skills/jarl/`](skills/jarl/) directory: one frontmatter-tagged markdown file and one Node tool. Copy the directory into your agent's skill directory; Node on your `PATH` is the only requirement.
+The whole skill is the [`skills/jarl/`](skills/jarl/) directory: one frontmatter-tagged markdown file, one Node tool and the MCP server over it. Copy the directory into your agent's skill directory; Node on your `PATH` is the only requirement.
 
 - **Claude Code, user-level:** `~/.claude/skills/jarl/`
 - **Claude Code, project-level:** `.claude/skills/jarl/` in your repo
