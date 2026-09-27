@@ -102,7 +102,7 @@ test('the loop root: the field, else JARL_ROOT, else the loop found from the wor
   mkdirSync(join(dir, '.git'));
   mkdirSync(join(dir, 'sub'));
   assert.equal(mcp.rootFor({ root: '/x/y' }, { JARL_ROOT: '/a' }, dir), resolve('/x/y'));
-  assert.equal(mcp.rootFor({}, { JARL_ROOT: '/a' }, dir), '/a');
+  assert.equal(mcp.rootFor({}, { JARL_ROOT: '/a' }, dir), resolve('/a'));
   assert.equal(mcp.rootFor({}, {}, join(dir, 'sub')), dir);
 });
 
