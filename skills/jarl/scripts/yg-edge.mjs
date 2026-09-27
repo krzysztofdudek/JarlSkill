@@ -2,6 +2,9 @@
 //
 // A ruling about a whole area of code (`decide --area <type>`) that the user ratified is written into that type's
 // decision log in Yggdrasil (`yg log add --type <type>`), so an agent touching any other file of the type reads it.
+// When the ruling names a rule of the graph (`decide --area <type> --rule <id>`), the user's yes is also written into
+// that rule's own log as a ratification (`yg log add --aspect <id> --ratify --by <who>`): what lets the rule stand
+// enforced on the types it reaches, and what clears Yggdrasil's type-law-unratified for it.
 // The edge is optional: it is taken only when the loop's repository holds a Yggdrasil graph (.yggdrasil/) and a
 // working yg answers the probe `npx --no-install yg --version`. Without either, nothing is written and the ruling
 // stays in decisions.md, as every ruling does. A write that fails is reported, never retried and never fatal.
@@ -38,8 +41,9 @@ function command() {
 
 // One run, output captured. On Windows a bare command name (npx is npx.cmd there) runs only through the shell (cmd.exe),
 // so the command line is built as one string, every word in double quotes. No word may hold what cmd.exe would read
-// inside quotes (a quote, %, !, a line break): writeAreaDecision passes only a checked type name, a checked timestamp,
-// flags and a temporary file path, and the ruling's text goes through that file, never the command line.
+// inside quotes (a quote, %, !, a line break): writeAreaDecision and writeRuleRatification pass only a checked type
+// name or rule id, a checked timestamp, a checked name, flags and a temporary file path, and the ruling's text goes
+// through that file, never the command line.
 const SHELL_UNSAFE = /["%!\r\n]/;
 function run(cwd, args, timeout) {
   const { file, pre } = command();
@@ -71,6 +75,7 @@ function failure(e) {
 // holds is checked again here, because a hand edit of that file could put anything there.
 const TYPE_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
 const DATETIME_RE = /^\d{4}-\d\d-\d\dT[0-9:.]+Z$/;
+const RULE_RE = /^(?!.*(?:^|\/)\.{1,2}(?:\/|$))[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/;
 
 export function writeAreaDecision(root, { type, text, supersedes = null }) {
   if (!TYPE_RE.test(String(type))) return { state: 'skipped', reason: `"${type}" is not a type name yg takes (one word of letters, digits and . _ -)` };
@@ -87,6 +92,43 @@ export function writeAreaDecision(root, { type, text, supersedes = null }) {
     const out = run(repo, args, WRITE_MS);
     const datetime = /Timestamp:\s*(\S+)/.exec(out)?.[1] || null;
     return { state: 'written', repo, datetime };
+  } catch (e) {
+    return { state: 'failed', repo, reason: failure(e), retry };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// Who admitted the rule, as the ratification names them: the person the graph's repository commits as (git
+// user.name), who is the user answering the batch; "the owner" when git names nobody. A name cmd.exe would read inside
+// quotes, or one of no letters, is not passed: "the owner" stands for it.
+const NAME_RE = /^[^"%!\r\n\x00-\x1f]{1,120}$/u;
+function ratifier(repo) {
+  let name = '';
+  try { name = execFileSync('git', ['config', 'user.name'], { cwd: repo, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { /* none set */ }
+  return NAME_RE.test(name) && /\p{L}/u.test(name) ? name : 'the owner';
+}
+
+// Writes the ratification of one rule (the ruleRatification an answer hands back) into the rule's own log. The types
+// and the version admitted are Yggdrasil's to read from the graph, never Jarl's to say. The answer has the shapes of
+// writeAreaDecision's, and a written one also names who it says admitted the rule (by). yg refuses a rule it does not
+// know (aspect-not-found) and one no type reaches (aspect-ratify-no-type): the refusal is passed on with the command
+// to run by hand. Entries a graph upgrade recorded for rules already in force name the graph, not a person; Jarl never
+// reads them as the user's word and never skips a write because one is there.
+export function writeRuleRatification(root, { rule, text }) {
+  if (!RULE_RE.test(String(rule))) return { state: 'skipped', reason: `"${rule}" is not a rule id yg takes (segments of letters, digits and . _ - joined by /)` };
+  const repo = graphRepo(root);
+  if (!repo) return { state: 'skipped', reason: `no ${GRAPH_DIR}/ in the loop's repository` };
+  try { run(repo, ['--version'], PROBE_MS); } catch { return { state: 'skipped', reason: `${GRAPH_DIR}/ found, but no working yg answers \`npx --no-install yg --version\` there` }; }
+  const by = ratifier(repo);
+  const dir = mkdtempSync(join(tmpdir(), 'jarl-rule-'));
+  const file = join(dir, 'ratification.md');
+  const retry = `yg log add --aspect ${rule} --ratify --by '${by}' --reason '<what was admitted>'`;
+  try {
+    writeFileSync(file, `${text.trim()}\n`);
+    const out = run(repo, ['log', 'add', '--aspect', rule, '--ratify', '--by', by, '--reason-file', file], WRITE_MS);
+    const datetime = /Timestamp:\s*(\S+)/.exec(out)?.[1] || null;
+    return { state: 'written', repo, datetime, by };
   } catch (e) {
     return { state: 'failed', repo, reason: failure(e), retry };
   } finally {
