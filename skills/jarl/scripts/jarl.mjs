@@ -27,7 +27,7 @@ export const HANDOFF_STALE_MS = 60 * 60_000;
 // is where the work was, which branches and check --branch still read after done.
 const LEASE_FIELDS = ['Worker', 'Worktree', 'Since'];
 
-const USAGE = `usage: jarl.mjs <command> [options]
+export const USAGE = `usage: jarl.mjs <command> [options]
 
 commands:
   init "<goal>" [--committed] [--permanent]      create .jarl/ with the goal; by default it also writes .jarl/.gitignore
@@ -2542,7 +2542,7 @@ export function cmdSources(root, files, flags = {}) {
 // --flag=value. A bare `--` ends the flags: everything after it is positional, so a free-text note or
 // a title that starts with -- goes there. A flag the command does not know is an error that names the
 // ones it does, never silently dropped.
-const GLOBAL_FLAGS = { json: 'bool', help: 'bool', root: 'value' };
+export const GLOBAL_FLAGS = { json: 'bool', help: 'bool', root: 'value' };
 export const COMMAND_FLAGS = {
   init: { committed: 'bool', permanent: 'bool' },
   new: {
@@ -2628,12 +2628,20 @@ export function parseArgs(argv) {
   }
   return { positional, flags };
 }
-// How many arguments each command reads after its name (tag takes any number of +a -b after the id).
-const ARITY = {
-  init: 1, new: 1, evidence: 2, list: 0, show: 1, set: 3, prio: 2, files: 2, repo: 2, next: 0, review: 3, round: 2,
-  check: 1, branches: 0, ask: 1, answer: 2, handoff: 1, resume: 0, log: 1, decide: 2, decisions: 0, tips: 0, status: 0, archive: 1, report: 0, mode: 1, close: 0,
-  body: 1, import: 1, source: 2, after: 2, merged: 1, queue: 0, changelog: 1,
+// The arguments each command reads after its name, in order, named: the MCP server (jarl-mcp.mjs) turns each
+// name into a field of that command's tool, so this table and COMMAND_FLAGS are the one source of both the
+// CLI and the tools. A name ending in ? may be left out; one ending in ... takes any number of words (tag's
+// +a -b, sources' findings files) and has no upper bound. A command's arity is how many names it has.
+export const COMMAND_ARGS = {
+  init: ['goal'], new: ['title'], body: ['id'], import: ['file'], sources: ['files...'], source: ['id', 'refs'],
+  after: ['id', 'ids?'], evidence: ['ids', 'text?'], list: [], show: ['id'], set: ['ids', 'status', 'why?'],
+  merged: ['ids'], tag: ['ids', 'ops...'], prio: ['ids', 'priority'], files: ['id', 'paths'], repo: ['id', 'path?'],
+  next: [], review: ['ids', 'verdict', 'findings'], round: ['id', 'what'], check: ['id?'], branches: [],
+  ask: ['question'], answer: ['id', 'answer'], resume: [], handoff: ['action?'], log: ['event'],
+  decide: ['slug', 'ruling'], decisions: [], status: [], archive: ['slug'], report: [], tips: [], queue: [],
+  changelog: ['ids'], mode: ['mode'], close: [],
 };
+const ARITY = Object.fromEntries(Object.entries(COMMAND_ARGS).filter(([, a]) => !a.some((n) => n.endsWith('...'))).map(([c, a]) => [c, a.length]));
 
 function renderStatus(o) {
   const head = o.goal ? `goal: ${o.goal}\nopened ${o.opened || '?'} · last activity ${o.lastActivity || '?'}${o.archived ? ` · ${o.archived} archived loop(s)` : ''}\n` : '';
@@ -2681,7 +2689,7 @@ function renderList(rows) {
 }
 
 // The commands that write: each runs under .jarl/.lock (see withLock).
-const MUTATING = new Set(['init', 'new', 'body', 'import', 'source', 'after', 'set', 'merged', 'tag', 'prio', 'files', 'repo', 'evidence', 'review', 'round', 'ask', 'answer', 'log', 'decide', 'archive', 'mode', 'close']);
+export const MUTATING = new Set(['init', 'new', 'body', 'import', 'source', 'after', 'set', 'merged', 'tag', 'prio', 'files', 'repo', 'evidence', 'review', 'round', 'ask', 'answer', 'log', 'decide', 'archive', 'mode', 'close']);
 
 function main() {
   let parsed;
