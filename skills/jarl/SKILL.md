@@ -11,7 +11,9 @@ spend their trust on a guess.
 
 Jarl is the light version of Horde. Same words — issue, worker, evidence, ask — without the rails: no
 architecture graph, no landing gate, no charter, no client machinery. A branch, a directory of issues,
-one tool, a loop. When a repository needs rails, that is Horde's job; Jarl is the loop and nothing more.
+one tool, a loop. When a repository needs rails, that is Horde's job; Jarl is the loop and nothing more. A loop may
+be opened with a profile, data that names its statuses and fields (see [Profiles](#profiles)); Jarl reads the profile
+and never grows rails of its own (see [What Jarl will not grow](#what-jarl-will-not-grow)).
 
 ## The one place
 
@@ -47,7 +49,7 @@ Markdown is the source of truth, and **one tool moves it**: `scripts/jarl.mjs` (
 **Call it through its MCP tools.** Installed as a plugin, Jarl starts an MCP server named `jarl` by itself, and every command of the tool is an MCP tool: `jarl_` and the command's name — `jarl_resume`, `jarl_status`, `jarl_new`, `jarl_set`, `jarl_evidence`, `jarl_review` and the rest, every one of them, the writing ones included — plus `jarl_help`, which prints the usage text. They are the same commands run by the same code, with the same checks and the same lock, not a second implementation. Every tool's description starts by saying whether it writes: `WRITES the loop` or `Read-only`. This skill writes each command the way the tool's usage does (`set <ids> <status> "<why>" [--branch <b>]`), because that one table is what both the CLI and the tools are built from. A tool takes the same things as fields:
 
 - each `--flag` is the field of the same name without the dashes; a flag that takes no value is `true`; a repeatable flag (`--acceptance`, `--changelog`, `--ran`, `--saw`, `--next`) is a list, one item per repetition, and `ran` and `saw` pair up by position. The flag fields: `init` committed, permanent, profile · `new` kind, prio, tier, tags, files, repo, found-by, where, what, why, acceptance, source, after, changelog, template, field, section · `body` where, what, why, acceptance, changelog, section · `import` source, kind, prio, tier, tags, repo, found-by, only, adopt, dry-run, field · `sources` source · `after` clear · `evidence` ran, saw · `list` status, kind, tag, prio, grep, where, all · `set` branch, worker, worktree · `repo` clear · `next` limit · `review` by · `check` branch, base, repo · `branches` base, repo, stale-hours · `merged` sha, ci, repo · `ask` kind, target, issue · `resume` log, ready, ci · `handoff` summary, next, log, ready, ci · `decide` settles, by, supersedes · `decisions` live · `status` stale-hours, by · `report` found · `queue` repo, base · `changelog` repo · `close` force;
-- each argument is the field this list names, in the order the usage writes them: `init` goal · `new` title · `body` id · `import` file · `sources` files · `source` id, refs · `after` id, ids · `evidence` ids, text · `show` id · `set` ids, status, why · `merged` ids · `tag` ids, ops · `prio` ids, priority · `files` id, paths · `repo` id, path · `review` ids, verdict, findings · `round` id, what · `check` id · `ask` question · `answer` id, answer · `handoff` action · `log` event · `decide` slug, ruling · `archive` slug · `changelog` ids · `mode` mode · `profile` file (`sources` and `tag` take a list: the findings files, the `+a`/`-b` operations); `import`'s `file`, `sources`' `files`, `init`'s `profile` and `profile`'s `file` must be absolute paths, because the server does not run in your working directory, and a relative one is refused; an argument the usage shows in brackets may be left out, but not one that comes before another you give;
+- each argument is the field this list names, in the order the usage writes them: `init` goal · `new` title · `body` id · `import` file · `sources` files · `source` id, refs · `after` id, ids · `evidence` ids, text · `show` id · `set` ids, status, why · `merged` ids · `tag` ids, ops · `prio` ids, priority · `files` id, paths · `repo` id, path · `review` ids, verdict, findings · `round` id, what · `check` id · `ask` question · `answer` id, answer · `handoff` action · `log` event · `decide` slug, ruling · `archive` slug · `changelog` ids · `mode` mode · `profile` file (`sources` and `tag` take a list: the findings files, the `+a`/`-b` operations; `set`'s `status` may instead name a field the loop's profile declares, and `why` is then its value); `import`'s `file`, `sources`' `files`, `init`'s `profile` and `profile`'s `file` must be absolute paths, because the server does not run in your working directory, and a relative one is refused; an argument the usage shows in brackets may be left out, but not one that comes before another you give;
 - every tool takes `json` (true answers with what `--json` prints) and `root` (what `--root` is: the checkout that holds `.jarl/`, as an absolute path — a relative or empty one is refused).
 
 The answer is the text the command prints; a note the command prints on stderr comes as a second block. A refusal comes back as an error result with its reason, and nothing was written; a `check` that found something wrong comes back as an error result too, with its items (the CLI's exit code 2). A value that starts with `--` is just a value in a field. A missing required field, a field the command does not take, or one of the wrong type is refused before anything runs. When a call gave no `root`, the answer ends with a block naming the loop it reached.
@@ -148,6 +150,8 @@ Only when the change is user-visible: `- Added: …` (or Changed, Deprecated, Re
 Filled at done: the command that was run and what it printed, the test that is green, the commit.
 ```
 
+These are the built-in statuses, kinds and tiers. A loop opened with a [profile](#profiles) carries the statuses, kinds, tiers, fields and sections its profile names instead.
+
 `dropped` and `deferred` always carry a reason under **Evidence**, after whatever was already written there. A `research` issue produces a written result
 and files new issues; it never edits code.
 
@@ -230,6 +234,51 @@ jarl_new { title: "Release 7.0.0 · C: tags and CI", template: "release-phase", 
 ```
 
 Each acceptance line is one step, and `set done` notes a phase closed with fewer `--ran`/`--saw` rows than steps. Nothing here tags, releases or refuses anything; see [What Jarl will not grow](#what-jarl-will-not-grow).
+
+### Profiles
+
+A loop may be opened with a profile: `init "<goal>" --profile <file>` checks the file and stores it as `.jarl/profile.json`; `profile` prints the loop's profile, and `profile <file>` checks a file without touching the loop. A profile is data. It says which statuses an issue moves through and what each one means to the tool, which header fields and sections its issues carry, and the heading their acceptance lives under. A loop with no profile runs on the built-in one, the five statuses above, and behaves exactly as it always did. A composer that runs on Jarl (Horde is the one this was made for) brings its own profile; a loop you open by hand rarely needs one.
+
+```json
+{
+  "jarl-profile": 1,
+  "name": "house",
+  "statuses": {
+    "proposed": [],
+    "queued":   ["dispatchable"],
+    "running":  ["holds-claim"],
+    "landed":   ["holds-claim"],
+    "merged":   ["settles-dependents", "terminal", "closes-record"],
+    "blocked":  [],
+    "dropped":  ["terminal", "needs-reason"]
+  },
+  "initial": "proposed",
+  "fields": {
+    "Kind":   { "enum": ["feature", "fix", "chore"], "default": "feature" },
+    "Area-2": { "enum": ["core", "cli"], "required": true },
+    "Class":  { "default": "b" }
+  },
+  "sections": ["Plan"],
+  "acceptance-heading": "Acceptance — evidence"
+}
+```
+
+What a status means is said by its flags, never by its name:
+
+| Flag | What the tool does with it | Built in |
+|---|---|---|
+| `dispatchable` | `next` offers the issue | open |
+| `holds-claim` | the issue holds its files against the others and carries the lease: a move into it writes Since (and Branch, Worker, Worktree when given), leaving it removes the lease | in-progress |
+| `settles-dependents` | the issue no longer holds back the issues that wait on it with After | done, dropped |
+| `terminal` | finished business: `list` hides it by default, `close` and `archive` do not wait for it | done, dropped, deferred |
+| `closes-record` | a move into it passes the done gate (evidence since the claim, a live approve, fresh for code), and `status`, `report` and `review` count it as done work | done |
+| `needs-reason` | a move into it needs a reason, written under Evidence as `<Status>: <why>` | dropped, deferred |
+
+A status is at most one of `dispatchable`, `holds-claim` and `terminal`, and `closes-record` is terminal too. A profile needs at least one dispatchable, one holds-claim and one terminal status. A new issue starts in `initial`, else in the first status listed, which may not be terminal or hold the claim; a status with no flags is one an issue waits in (a proposal not yet accepted, a block), counted by name and never offered. A few views keep reading two built-in words as they always did: `branches` and `tips` pass over a status named `dropped`, and `close` names the issues left in a status named `deferred`.
+
+Fields: a name is letters, digits, spaces and dashes (`Area-2`). A field may carry `enum` (its values), `default` and `required`. `new` writes every declared field after **Where:** (the `--field "<Name>=<value>"` given, else the template's, else the default; a required one with none is refused, and a value outside the enum is refused), `list` and `resume` show the ones an issue holds, `set <ids> <field> "<value>"` writes one on several issues at once (the second argument is then the field, not a status, so a field may not share a name with a status), `list --where <field>=<value>` filters on any header field, and `status --by <field>` counts per value. Declaring `Kind` or `Tier` with an `enum` replaces their built-in values. The fields the tool writes itself (Status, Priority, Tags, Files, Repo, After, Found by, Source, Where, Branch, Worker, Worktree, Since, Merged, CI) cannot be declared. Sections: extra headings, written after the acceptance and filled with `new`/`body --section "<Heading>=<text>"`. `acceptance-heading` names the heading the loop's issues keep their acceptance under; it counts exactly as `## Acceptance` does, and `body --acceptance` writes under whichever of the two the issue has.
+
+A key the schema does not name is refused, so a profile written for a later Jarl fails loudly here instead of being half-read, and a profile file broken by hand refuses every command rather than falling back to the built-in one. `archive` takes the profile away with the loop. With a profile, `status --json` counts every status the profile names, `report --json` adds `statuses` (the count per status), `resume --json` rows of work in flight and ready carry `fields`, and the text of `status` and `resume` names the profile.
 
 ### Views for dashboards
 
@@ -546,15 +595,15 @@ the loop works.
 
 ## What Jarl will not grow
 
-Jarl records, derives and displays; it never blocks code from landing. Every scale request is measured against that line. On Jarl's side: filing and importing issues, refusals at the level of the record (a `done` without evidence or a fresh approve, a self-approve, a cycle of After), review provenance, read-only views (`resume`, `status`, `report`, `tips`, `queue`, `branches`), ordering by After, branch packages, leases that are shown and never expire, merges and CI recorded as fields, changelog fragments, templates. Past the line, and so Horde's, not Jarl's:
+Jarl records, derives and displays; it never blocks code from landing. Every scale request is measured against that line. On Jarl's side: filing and importing issues, refusals at the level of the record (a `done` without evidence or a fresh approve, a self-approve, a cycle of After), review provenance, read-only views (`resume`, `status`, `report`, `tips`, `queue`, `branches`), ordering by After, branch packages, leases that are shown and never expire, merges and CI recorded as fields, changelog fragments, templates, and a profile that says, as data, which statuses and fields a loop's issues carry. Jarl itself ships none of the following, and a loop without a profile has none of them:
 
-1. **A merge queue that runs the repository's check and refuses the merge.** `queue` lists; it never lands anything. Running the check and saying no is Horde's land.
-2. **A `done` that waits for green CI.** CI is recorded and noted (`set done` says when it is not green), never required: a CI-gated `done` is a landing gate in all but name.
+1. **A merge queue that runs the repository's check and refuses the merge.** `queue` lists; it never lands anything.
+2. **A `done` that waits for green CI.** CI is recorded and noted (`set done` says when it is not green), never required.
 3. **Leases that expire or are taken over automatically, or territory locks across loops.** A stale lease is shown for the jarl to act on; nothing moves by itself.
 4. **A release mode that refuses to tag or release.** A release checklist is issues filed from a template; the procedure belongs to the skill that runs releases, and the tags to each repository's own release workflow.
-5. **A computed wave or critical-path planner.** `next` offers what can run now; After is ordering and bookkeeping, not a schedule.
+5. **A computed schedule or critical-path planner.** `next` offers what can run now; After is ordering and bookkeeping, not a schedule.
 
-A request that needs any of these needs Horde's rails, not a bigger Jarl.
+The line holds for Jarl's own code, not for everything a loop may run. Jarl has no gate, no planner and no lease that acts, and it will not grow one. A profile, written by a composer such as Horde, may install such things as commands of its own, and Jarl then runs them where the profile says and records what they answer, without knowing what they mean. Today a profile carries statuses, fields and sections only; the commands it may install (which work shares territory, what a move into a status requires, what happens after a write) come in later releases, one extension point at a time. A request for one of the five above is a request for such a composer and its profile, not for a bigger Jarl.
 
 ## Boundary with other skills
 
