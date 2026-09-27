@@ -4,7 +4,7 @@
 //
 // Markdown is the source of truth: .jarl/goal.md, .jarl/decisions.md, .jarl/log.md and one
 // .jarl/issues/NNN-slug.md per issue. This module only reads and writes those files, so anything
-// it does can be checked by opening them. Zero dependencies, Node 18+.
+// it does can be checked by opening them. Zero dependencies, Node 22+.
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, rmSync, realpathSync, statSync, renameSync, openSync, closeSync, writeSync, unlinkSync, linkSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';

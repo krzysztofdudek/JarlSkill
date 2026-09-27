@@ -16,7 +16,7 @@
 // - Every call that writes holds .jarl/.lock for its whole length (re-entrant: a caller already inside withLock keeps
 //   its own), and every file is written whole (writeAtomic). Every call starts from empty per-call caches, so a
 //   process that lives long sees disk and git as they are now, exactly as a fresh CLI process would.
-// Zero dependencies, Node 18+.
+// Zero dependencies, Node 22+.
 import { resolve } from 'node:path';
 import * as L from './jarl-lib.mjs';
 

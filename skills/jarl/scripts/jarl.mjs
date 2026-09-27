@@ -3,7 +3,7 @@
 //
 // Markdown is the source of truth: .jarl/goal.md, .jarl/decisions.md, .jarl/log.md and one
 // .jarl/issues/NNN-slug.md per issue. This script only reads and writes those files, so anything
-// it does can be checked by opening them. Zero dependencies, Node 18+.
+// it does can be checked by opening them. Zero dependencies, Node 22+.
 //
 // What is here: the usage text, the flag and argument tables, the parser and dispatch — one command, run and rendered.
 // Every operation on the record goes through record.mjs, the stable surface another tool may vendor; the rest of the

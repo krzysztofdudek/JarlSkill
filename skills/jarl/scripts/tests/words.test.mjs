@@ -9,8 +9,8 @@ import { fileURLToPath } from 'node:url';
 
 const FILES = ['../jarl.mjs', '../jarl-lib.mjs', '../record.mjs', '../jarl-mcp.mjs'];
 const FORBIDDEN = /\b(wave|architect|node)/gi;
-// The runtime, and only as written here: the shebang, an import from a node: built-in module, and "Node 18+".
-const RUNTIME = [/^#!\/usr\/bin\/env node$/, /'node:[a-z_]+'/g, /\bNode 18\+/g];
+// The runtime, and only as written here: the shebang, an import from a node: built-in module, and "Node 22+".
+const RUNTIME = [/^#!\/usr\/bin\/env node$/, /'node:[a-z_]+'/g, /\bNode 22\+/g];
 
 test('the word test: jarl.mjs, jarl-lib.mjs, record.mjs and jarl-mcp.mjs never use wave, architect or node, beyond the Node.js runtime', () => {
   for (const f of FILES) {
@@ -29,7 +29,7 @@ test('the word test catches what it guards against, and the allow-list stays tha
   const scrub = (line) => RUNTIME.reduce((s, re) => s.replace(re, ''), line).match(FORBIDDEN) || [];
   assert.deepEqual(scrub("import { x } from 'node:fs';"), []);
   assert.deepEqual(scrub('#!/usr/bin/env node'), []);
-  assert.deepEqual(scrub('// Zero dependencies, Node 18+.'), []);
+  assert.deepEqual(scrub('// Zero dependencies, Node 22+.'), []);
   assert.deepEqual(scrub('const node = issue.fields.node;'), ['node', 'node']);
   assert.deepEqual(scrub('// the next wave closes'), ['wave']);
   assert.deepEqual(scrub('the architecture graph'), ['architect']);
