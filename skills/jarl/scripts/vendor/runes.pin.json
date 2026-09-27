@@ -1,0 +1,33 @@
+{
+  "source": "https://github.com/krzysztofdudek/Runes.git",
+  "dest": "runes",
+  "paths": [
+    "dist/version.mjs"
+  ],
+  "tool": {
+    "path": "../runes.mjs",
+    "sha256": "4ab51bcf8e5e61f946d95a1f8fd344a0299a3c026d5ca4094294a0311fd12f4d"
+  },
+  "fragments": [
+    {
+      "name": "mcp-first",
+      "target": "../../SKILL.md",
+      "sha256": "ed635d4cd89ef1adfd007aeeb743f4976e37b91d8fd25db7bbac28dee9f0ce0b"
+    },
+    {
+      "name": "evidence",
+      "target": "../../SKILL.md",
+      "sha256": "f27c64bf57fd48730a12865c51f1c95bf5bc74e46a8ca6d45e4c144ce3b26288"
+    },
+    {
+      "name": "worker-worktree",
+      "target": "../../SKILL.md",
+      "sha256": "c0b49ef13956153d5ece99a0ce6e1fed0a8c797dcc8fd522f0990fd70b2823dc"
+    }
+  ],
+  "tag": "v0.1.2",
+  "commit": "008c6136cfaafa89d2589ed81b4515bca2554da5",
+  "files": {
+    "dist/version.mjs": "d2202ac11c18f43897ae4817a7158c83f602c510a0a326032086fa4d49f9e179"
+  }
+}
