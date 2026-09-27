@@ -251,8 +251,26 @@ export const BUILTIN_STATUSES = {
 export const PROFILE_VERSION = 1;
 // The keys a profile file may hold. A key this list does not name is refused, so a profile written for a later
 // Jarl fails loudly here instead of being half-read.
-export const PROFILE_KEYS = ['jarl-profile', 'name', 'statuses', 'initial', 'fields', 'sections', 'acceptance-heading'];
+export const PROFILE_KEYS = ['jarl-profile', 'format', 'name', 'statuses', 'initial', 'fields', 'sections', 'acceptance-heading', 'external-scheduler', 'done-gate'];
 export const PROFILE_FIELD_KEYS = ['enum', 'default', 'required'];
+// A status written as an object instead of a list of flags: { "flags": [...], "set-by": "record" | "any" }.
+export const PROFILE_STATUS_KEYS = ['flags', 'set-by'];
+// Who may move an issue into a status: anyone ('any', the default), or only a library call through record.mjs
+// ('record') — the command line and the MCP tools are refused, so a composer's own gate (a veto held by one of its roles) cannot
+// be walked around with a set.
+export const SET_BY = ['any', 'record'];
+// The format of the record (the issue files, the log, the rulings) this Jarl reads and writes. A profile may state the
+// format it was written for; one this Jarl does not know is refused before anything else, so a vendored copy and an
+// installed Jarl that drifted apart stop loudly instead of half-reading each other's loop.
+export const RECORD_FORMAT = 1;
+export const RECORD_FORMATS = Object.freeze([1]);
+// The done gate a loop runs on: the built-in one (approve: fresh — a live approve by someone other than the worker,
+// from a fresh reviewer when the issue carries code) and no merge required. A profile may ask for a landed merge
+// (requires-merged) and, only with it, give up the approve (approve: none): the merge gate that landed it is then the
+// check, and Jarl records what it did.
+export const DONE_GATE_KEYS = ['approve', 'requires-merged'];
+export const DONE_GATE_APPROVE = ['fresh', 'none'];
+export const DEFAULT_DONE_GATE = Object.freeze({ approve: 'fresh', 'requires-merged': false });
 // Header fields the tool itself writes and reads: a profile cannot declare them. Kind and Tier are built in too, but
 // a profile may declare them to replace their values (an enum, and a default).
 export const TOOL_FIELDS = ['Status', 'Priority', 'Tags', 'Files', 'Repo', 'After', 'Found by', 'Source', 'Where', 'Branch', 'Worker', 'Worktree', 'Since', 'Merged', 'CI'];
@@ -275,18 +293,32 @@ export function validateProfile(json, where = 'the profile') {
   const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
   const oneLine = (v) => typeof v === 'string' && v.trim() !== '' && !/[\r\n]/.test(v);
   if (!isObj(json)) throw new Error(`${where} is not a JSON object`);
+  // The record format first, and alone: a profile written for another format may mean anything by its other keys.
+  if (json.format !== undefined && !RECORD_FORMATS.includes(json.format)) {
+    throw new Error(`${where} is written for record format ${JSON.stringify(json.format)}, and this Jarl reads format ${RECORD_FORMATS.join(', ')} — use the Jarl the loop was opened with (a vendored copy and the installed one must agree), or upgrade this one`);
+  }
   for (const k of Object.keys(json)) if (!PROFILE_KEYS.includes(k)) say(`unknown key "${k}" — a profile takes ${PROFILE_KEYS.join(', ')}`);
   if (json['jarl-profile'] !== PROFILE_VERSION) say(`"jarl-profile" must be ${PROFILE_VERSION} (the profile format this Jarl reads)`);
   if (json.name !== undefined && !(typeof json.name === 'string' && PROFILE_NAME_RE.test(json.name))) say('"name" is letters, digits and . _ - (starting with a letter or digit, at most 80 characters)');
   // statuses: { "<name>": ["<flag>", ...] }, in the order they are shown.
+  // A status is a list of flags, or { "flags": [...], "set-by": "record" } when it says who may move an issue into it.
   const statuses = [];
   const flagsOf = new Map();
+  const setBy = new Map();
   if (!isObj(json.statuses) || !Object.keys(json.statuses).length) say('"statuses" must be an object naming at least one status: { "<status>": ["<flag>", ...] }');
   else {
-    for (const [name, flags] of Object.entries(json.statuses)) {
+    for (const [name, spec] of Object.entries(json.statuses)) {
       if (!PROFILE_STATUS_RE.test(name)) { say(`status "${name}" must be lower-case letters, digits and - (starting with a letter, at most 40 characters)`); continue; }
       if (RESERVED_STATUS_NAMES.includes(name)) { say(`status "${name}" is a name the views use for something else — the reserved names are ${RESERVED_STATUS_NAMES.join(', ')}`); continue; }
-      if (!Array.isArray(flags) || !flags.every((f) => typeof f === 'string')) { say(`status "${name}" takes a list of flags (${STATUS_FLAGS.join(', ')}), [] for none`); continue; }
+      let flags = spec;
+      if (isObj(spec)) {
+        const unknown = Object.keys(spec).filter((k) => !PROFILE_STATUS_KEYS.includes(k));
+        if (unknown.length) { say(`status "${name}": unknown key "${unknown[0]}" — a status written as an object takes ${PROFILE_STATUS_KEYS.join(', ')}`); continue; }
+        if (spec['set-by'] !== undefined && !SET_BY.includes(spec['set-by'])) { say(`status "${name}": "set-by" is one of ${SET_BY.join(', ')} (record: only a library call through record.mjs moves an issue into it, never jarl set)`); continue; }
+        flags = spec.flags === undefined ? [] : spec.flags;
+        setBy.set(name, spec['set-by'] || 'any');
+      }
+      if (!Array.isArray(flags) || !flags.every((f) => typeof f === 'string')) { say(`status "${name}" takes a list of flags (${STATUS_FLAGS.join(', ')}), [] for none — or { "flags": [...], "set-by": "record" }`); continue; }
       for (const f of flags) if (!STATUS_FLAGS.includes(f)) say(`status "${name}": unknown flag "${f}" — the flags are ${STATUS_FLAGS.join(', ')}`);
       if (new Set(flags).size !== flags.length) say(`status "${name}" names a flag twice`);
       const set = new Set(flags);
@@ -349,13 +381,35 @@ export function validateProfile(json, where = 'the profile') {
     else if ([...BUILTIN_SECTIONS.filter((b) => b !== 'Acceptance'), ...sections].some((b) => b.toLowerCase() === h.toLowerCase())) say(`"acceptance-heading" "${h}" is already the heading of another section`);
     else if (h.toLowerCase() !== 'acceptance') acceptance = h;
   }
+  // external-scheduler: the command the loop's own scheduler is run by, shown in place of what next and queue compute.
+  let scheduler = null;
+  if (json['external-scheduler'] !== undefined) {
+    const x = json['external-scheduler'];
+    if (!oneLine(x) || x.length > 200) say('"external-scheduler" is the one-line command that schedules this loop\'s work (at most 200 characters), shown by next, queue, status and resume in place of their own ready list');
+    else scheduler = x.trim();
+  }
+  // done-gate: { "approve": "fresh" | "none", "requires-merged": true | false }.
+  let doneGate = DEFAULT_DONE_GATE;
+  if (json['done-gate'] !== undefined) {
+    const g = json['done-gate'];
+    if (!isObj(g)) say('"done-gate" is an object: { "approve": "fresh" | "none", "requires-merged": true | false }');
+    else {
+      const before = bad.length;
+      for (const k of Object.keys(g)) if (!DONE_GATE_KEYS.includes(k)) say(`"done-gate": unknown key "${k}" — it takes ${DONE_GATE_KEYS.join(', ')}`);
+      if (g.approve !== undefined && !DONE_GATE_APPROVE.includes(g.approve)) say(`"done-gate": "approve" is one of ${DONE_GATE_APPROVE.join(', ')}`);
+      if (g['requires-merged'] !== undefined && typeof g['requires-merged'] !== 'boolean') say('"done-gate": "requires-merged" is true or false');
+      const gate = { approve: g.approve ?? DEFAULT_DONE_GATE.approve, 'requires-merged': g['requires-merged'] ?? DEFAULT_DONE_GATE['requires-merged'] };
+      if (gate.approve === 'none' && gate['requires-merged'] !== true) say('"done-gate": "approve": "none" is allowed only with "requires-merged": true — with neither an approve nor a landed merge, nothing would stand behind a closed issue');
+      if (bad.length === before) doneGate = Object.freeze(gate);
+    }
+  }
   if (bad.length) throw new Error(`${where} is not a valid profile:\n- ${bad.join('\n- ')}`);
-  return makeProfile({ name: json.name || 'custom', statuses: statuses.map((s) => [s, [...flagsOf.get(s)]]), initial, fields, sections, acceptance, declared: true });
+  return makeProfile({ name: json.name || 'custom', statuses: statuses.map((s) => [s, [...flagsOf.get(s)]]), initial, fields, sections, acceptance, declared: true, setBy, scheduler, doneGate, format: json.format ?? RECORD_FORMAT });
 }
 
 // The profile as the tool reads it: flags looked up by status, the values Kind and Tier may take and their defaults,
 // the declared fields in order.
-function makeProfile({ name, statuses, initial, fields = [], sections = [], acceptance = null, declared }) {
+function makeProfile({ name, statuses, initial, fields = [], sections = [], acceptance = null, declared, setBy = new Map(), scheduler = null, doneGate = DEFAULT_DONE_GATE, format = RECORD_FORMAT }) {
   const flags = new Map(statuses.map(([s, f]) => [s, new Set(f)]));
   const kind = fields.find((f) => f.key === 'kind');
   const tier = fields.find((f) => f.key === 'tier');
@@ -363,6 +417,8 @@ function makeProfile({ name, statuses, initial, fields = [], sections = [], acce
   const tiers = tier ? tier.enum : TIERS;
   const p = {
     name, declared, initial, sections, acceptance,
+    // The record format, the command of an external scheduler (null: next and queue compute their own), the done gate.
+    format, scheduler, doneGate,
     statuses: statuses.map(([s]) => s),
     kinds, kindDefault: kind && kind.default ? kind.default : kinds[0],
     tiers, tierDefault: tier && tier.default ? tier.default : tiers[0],
@@ -372,6 +428,8 @@ function makeProfile({ name, statuses, initial, fields = [], sections = [], acce
     is: (status, flag) => Boolean(flags.get(status)?.has(flag)),
     with: (flag) => statuses.map(([s]) => s).filter((s) => flags.get(s).has(flag)),
     flagsOf: (status) => [...(flags.get(status) || [])],
+    // Who may move an issue into the status: 'any', or 'record' (a library call only, never jarl set).
+    setBy: (status) => setBy.get(status) || 'any',
   };
   // In play: offered or worked on (built-in: open, in-progress).
   p.active = (s) => p.is(s, 'dispatchable') || p.is(s, 'holds-claim');
@@ -417,19 +475,23 @@ export function readProfileFile(file) {
 export function describeProfile(p) {
   return {
     name: p.name, declared: p.declared, initial: p.initial,
-    statuses: p.statuses.map((s) => ({ name: s, flags: p.flagsOf(s) })),
+    statuses: p.statuses.map((s) => ({ name: s, flags: p.flagsOf(s), ...(p.setBy(s) !== 'any' ? { setBy: p.setBy(s) } : {}) })),
     fields: p.declaredFields ? p.declaredFields.map((f) => ({ name: f.name, enum: f.enum, default: f.default, required: f.required })) : [],
     kinds: p.kinds, tiers: p.tiers, sections: p.sections, acceptanceHeading: p.acceptance || 'Acceptance',
+    format: p.format, externalScheduler: p.scheduler, doneGate: { ...p.doneGate },
   };
 }
 export function renderProfile(d) {
   const lines = [`profile ${d.name}${d.declared ? '' : ' (no .jarl/profile.json: the built-in one)'}`, 'statuses:'];
-  for (const s of d.statuses) lines.push(`  ${s.name}${s.name === d.initial ? ' (initial)' : ''}${s.flags.length ? `  ${s.flags.join(', ')}` : ''}`);
+  for (const s of d.statuses) lines.push(`  ${s.name}${s.name === d.initial ? ' (initial)' : ''}${s.flags.length ? `  ${s.flags.join(', ')}` : ''}${s.setBy === 'record' ? '  (set by the record only, never jarl set)' : ''}`);
   lines.push(`kind: ${d.kinds.join(' | ')}`, `tier: ${d.tiers.join(' | ')}`);
   const own = d.fields.filter((f) => !['kind', 'tier'].includes(f.name.toLowerCase()));
   if (own.length) lines.push('fields:', ...own.map((f) => `  ${f.name}${f.enum ? `: ${f.enum.join(' | ')}` : ''}${f.default ? ` (default ${f.default})` : ''}${f.required ? ' (required)' : ''}`));
   if (d.sections.length) lines.push(`sections: ${d.sections.join(', ')}`);
   if (d.acceptanceHeading !== 'Acceptance') lines.push(`acceptance heading: ${d.acceptanceHeading}`);
+  if (d.externalScheduler) lines.push(`external scheduler: ${d.externalScheduler} (next and queue show it instead of their own list)`);
+  if (d.doneGate.approve !== 'fresh' || d.doneGate['requires-merged']) lines.push(`done gate: approve ${d.doneGate.approve}${d.doneGate['requires-merged'] ? ' · requires a merge in the base' : ''}`);
+  lines.push(`record format: ${d.format}`);
   return lines.join('\n');
 }
 export function cmdProfile(root, file) {
@@ -1060,8 +1122,7 @@ const REASON_TEXT = {
 export function reasonWord(status) { return status.charAt(0).toUpperCase() + status.slice(1); }
 
 // Who asked for the move: 'cli' — the command line and the MCP tools over it, which always say so — or 'record', a
-// library call through record.mjs (the default). Carried on every set today; a profile key marking a status as set only
-// by the record (a later release) will refuse 'cli' for that status.
+// library call through record.mjs (the default). A status the profile marks "set-by": "record" refuses 'cli'.
 export const SET_CALLERS = ['cli', 'record'];
 let lastCaller = null;
 // The caller the last set ran as, refused or not: for the suite, which checks that the command line says 'cli'.
@@ -1075,6 +1136,7 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   // set <ids> <field> <value>: a field the profile declares (Kind and Tier too, when it declares them), not a status.
   if (!profile.statuses.includes(status) && status !== undefined && profile.field(status)) return setDeclaredField(root, rawIds, profile.field(status), why, flags);
   need(profile.statuses.includes(status), `status must be one of: ${profile.statuses.join(', ')}${profile.declaredFields.length ? ` — or a field this loop's profile declares: ${profile.declaredFields.map((f) => f.name).join(', ')}` : ''}`);
+  need(caller !== 'cli' || profile.setBy(status) !== 'record', `${status} is set by the record only — this loop's profile (${profile.name}) marks it "set-by": "record", so jarl set and the MCP tools cannot move an issue into it; the tool that runs the loop does${profile.scheduler ? ` (${profile.scheduler})` : ''}`);
   const holds = profile.is(status, 'holds-claim');
   const lease = ['branch', 'worker', 'worktree'].filter((k) => flags[k] !== undefined);
   need(!lease.length || holds, `--${lease[0]} goes with ${profile.with('holds-claim').join(' or ')} only — it records who works on the issue and where`);
@@ -1082,10 +1144,14 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   const issues = issuesFor(root, rawIds);
   need(!profile.is(status, 'needs-reason') || why, REASON_TEXT[status] || `${status} needs a reason: jarl.mjs set <id> ${status} "<why>"`);
   const nothing = issues.length > 1 ? ' — nothing was written' : '';
+  // base: the branch the composer landed the merge into, for the done gate's requires-merged (else the branch checked
+  // out). A library call only: the command line has no --base, and dispatch never passes one through.
+  need(flags.base === undefined || caller === 'record', 'base is named by a library call through record.mjs only — the command line checks against the branch checked out');
+  need(flags.base === undefined || (typeof flags.base === 'string' && fieldText(flags.base) !== '' && !flags.base.startsWith('-')), 'base names a branch or ref — the one the merge landed in');
   if (profile.is(status, 'closes-record')) {
     const journal = journalById(root);
     const allIssues = loadIssues(root);
-    for (const issue of issues) { const refusal = doneRefusal(root, issue, journal, allIssues); need(!refusal, `${refusal}${nothing}`); }
+    for (const issue of issues) { const refusal = doneRefusal(root, issue, journal, allIssues, { base: flags.base }); need(!refusal, `${refusal}${nothing}`); }
   }
   // One lease for the whole call: every issue in a package gets the same Branch, Worker, Worktree and Since.
   // A relative worktree path is read from the loop's root, like --repo, so it means the same from anywhere.
@@ -1136,17 +1202,44 @@ function setDeclaredField(root, rawIds, field, value, flags) {
 // last went in progress (or was reopened, or — never in progress — was filed; free-text notes never count alone), and a live approve by someone
 // other than its worker (see gateState) — by a fresh reviewer when the issue carries code (a Branch or Merged field;
 // see carriesCode). It gates only the record: nothing here stops code from landing.
-export function doneRefusal(root, issue, journal = journalById(root), issues = loadIssues(root)) {
+// A profile's done-gate changes the last two: requires-merged also asks for a recorded merge whose sha is in the base
+// (see mergeRefusal), and approve: none (allowed only with requires-merged) drops the approve — the gate that landed
+// the merge stands behind the issue instead of a reviewer. The evidence rows are asked for either way.
+export function doneRefusal(root, issue, journal = journalById(root), issues = loadIssues(root), { base } = {}) {
+  const profile = loadProfile(root);
   const g = gateState(root, issue.id, journal.get(issue.id) || [], coordinatorNames(root), issues, journal);
   const how = `jarl.mjs evidence ${issue.id} --ran "<command>" --saw "<what it printed>"`;
-  if (!workEvidence(issue, loadProfile(root))) return `${issue.id} has no evidence yet — record it first: ${how}`;
+  if (!workEvidence(issue, profile)) return `${issue.id} has no evidence yet — record it first: ${how}`;
   if (!g.tracked && !evidenceRows(issue).length) return `${issue.id} has no --ran/--saw evidence row — a free-text note alone is not proof of the work: ${how}`;
   if (g.tracked && !g.rowsSince) return `${issue.id} has no --ran/--saw evidence row recorded since it was ${g.anchor.what === 'filed' ? 'filed' : `moved → ${g.anchor.what}`} (${g.anchor.at}) — a free-text note, or a row written before that (before a start or a reopen), is not proof of the work: ${how}`;
+  if (profile.doneGate['requires-merged']) { const m = mergeRefusal(root, issue, base); if (m) return m; }
+  if (profile.doneGate.approve === 'none') return null;
   const code = carriesCode(issue);
   if (g.selfApproved) return `${issue.id}'s live approve is by a worker of this issue or its branch — a self-approve does not count as review: jarl.mjs review ${issue.id} approve --by <${code ? 'fresh reviewer' : 'fresh reviewer|jarl'}> "<findings>"`;
   if (!g.approved) return `${issue.id} has no approving review newer than its last round${g.tracked ? ' or reopen' : ''} — a fresh reviewer reads the issue and the diff first: jarl.mjs review ${issue.id} approve|changes --by <reviewer> "<findings>"`;
   if (code && !g.fresh) return `${issue.id} ${freshRuleText(issue, g.live)}: jarl.mjs review ${issue.id} approve|changes --by <fresh reviewer> "<findings>"`;
   return null;
+}
+
+// The done gate's requires-merged: the issue records a merge (merged --sha) and that commit is in the base — the branch
+// checked out where the merge was recorded (Merged's "in <repo>", else the issue's Repo, else the loop's own
+// repository), or the branch a library caller names as opts.base (a composer that lands into a branch nobody has
+// checked out, such as a team branch, names it). A sha the repository does not know, or one not reachable from the
+// base, is refused: a merge recorded is not a merge landed until the base holds it.
+function mergeRefusal(root, issue, base) {
+  const m = mergedOf(issue);
+  const gate = 'this loop\'s profile closes an issue only on a landed merge (done-gate "requires-merged": true)';
+  if (!m) return `${issue.id} records no merge — ${gate}: jarl.mjs merged ${issue.id} --sha <sha> once it has landed`;
+  let repos = [];
+  for (const n of m.repo ? [m.repo] : (reposNamed(issue).length ? reposNamed(issue) : [undefined])) { try { repos.push(repoOf(root, n)); } catch { /* not a repository here */ } }
+  repos = repos.filter((r) => isGitRepo(r));
+  if (!repos.length) return `${issue.id} records Merged ${m.sha}, but no repository it names is a git repository here — ${gate}, and the merge cannot be checked`;
+  const ref = base === undefined ? 'HEAD' : base;
+  if (base !== undefined && repos.every((r) => git(r, ['rev-parse', '--verify', '--quiet', `${base}^{commit}`]) === null)) return `${issue.id}: the base ${base} is not a branch or commit in ${repos.join(' or ')} — ${gate}, and the merge cannot be checked`;
+  const landed = repos.some((r) => git(r, ['merge-base', '--is-ancestor', m.sha, ref]) !== null);
+  if (landed) return null;
+  const where = repos.map((r) => `${base === undefined ? defaultBase(r) : base} in ${r}`).join(' or ');
+  return `${issue.id} records Merged ${m.sha}, which is not in the base (${where}) — ${gate}; merge it, or record the sha that landed: jarl.mjs merged ${issue.id} --sha <sha>`;
 }
 
 // The fresh-review rule, said the same way by done, review and merged: an issue that carries code (a Branch or a
@@ -1213,7 +1306,8 @@ export function cmdMerged(root, rawIds, flags) {
   }
   // Said, never refused: a merge is a fact, and recording it is not the place to stop it. A merge whose issue holds
   // no fresh approve went in without the fresh review the rule asks for, and the note says so loudly.
-  if (sha) {
+  // Under a done gate with no approve (approve: none), the merge gate stands behind the issue, and no reviewer is owed.
+  if (sha && loadProfile(root).doneGate.approve !== 'none') {
     const journal = journalById(root);
     const coordinators = coordinatorNames(root);
     const allIssues = loadIssues(root);
@@ -1380,8 +1474,15 @@ function repoList(root, v) {
   return list;
 }
 
+// The words next, queue, status and resume say in place of what they would compute, on a loop whose profile names an
+// external scheduler: Jarl does not know that scheduler's edges (ports, leases, holds), so a ready list of its own would
+// offer work the loop's real scheduler holds back.
+export function schedulerNote(cmd) { return `scheduling is led by the composer: ${cmd}`; }
+
+// next — on a loop with an external scheduler, { scheduler, note } and no list: Jarl computes nothing it cannot know.
 export function cmdNext(root, flags) {
   const profile = loadProfile(root);
+  if (profile.scheduler) return { scheduler: profile.scheduler, note: schedulerNote(profile.scheduler) };
   const issues = loadIssues(root);
   // Files are compared as (repository, path) pairs: the same path in two repositories never holds
   // an issue back, the same file in one repository always does, however its Repo path is spelled.
@@ -1438,7 +1539,10 @@ export function cmdStatus(root, flags = {}) {
   c.waitingIds = unfinished.filter((i) => waitingOn(i, byId, profile).length).map((i) => i.id);
   c.waiting = c.waitingIds.length;
   c.inFlight = unfinished.filter((i) => profile.is(i.status, 'holds-claim') && !c.waitingIds.includes(i.id)).length;
-  c.ready = unfinished.filter((i) => profile.is(i.status, 'dispatchable') && !c.waitingIds.includes(i.id)).length;
+  // Ready is Jarl's own reckoning (dispatchable, After settled); under an external scheduler it is not Jarl's to count:
+  // null, and scheduler names who counts it.
+  c.ready = profile.scheduler ? null : unfinished.filter((i) => profile.is(i.status, 'dispatchable') && !c.waitingIds.includes(i.id)).length;
+  if (profile.scheduler) c.scheduler = profile.scheduler;
   c.noAcceptance = issues.filter((i) => profile.is(i.status, 'holds-claim') && !acceptanceLineCount(i)).map((i) => i.id);
   const asks = loadAsks(root).filter((a) => a.state === 'open');
   // A ratify item blocks nothing, so it is not counted among the questions the loop waits on.
@@ -1722,6 +1826,12 @@ export function reviewSplit(root, issues = loadIssues(root), journal = journalBy
     split[a && a.kind ? a.kind : 'unrecorded'] += 1;
   }
   return split;
+}
+// Who stands behind the closed issues: the reviewers, by kind — or, under a done gate with no approve, the merge that
+// landed each one, with whatever reviews were recorded all the same.
+function gateLine(profile, split, label) {
+  if (profile.doneGate.approve !== 'none') return `${label}: ${renderSplit(split)}`;
+  return `closed on a merge in the base, no approve required (this loop's done gate) · reviews recorded: ${renderSplit(split)}`;
 }
 function renderSplit(s) { return `fresh ${s.fresh} · coordinator ${s.coordinator} · self ${s.self}${s.unrecorded ? ` · unrecorded ${s.unrecorded}` : ''}`; }
 
@@ -2241,9 +2351,12 @@ export function renderTips(o) {
 // while its declared files share none with it, and starts the next one otherwise. It computes, holds no lock and
 // writes nothing; it runs no check and refuses no merge — that is Horde's land.
 export function cmdQueue(root, flags = {}) {
+  const profile = loadProfile(root);
+  // Under an external scheduler the merge order is its own (and with approve: none no fresh approve would ever queue
+  // anything): { scheduler, note, repos: [] }.
+  if (profile.scheduler) return { scheduler: profile.scheduler, note: schedulerNote(profile.scheduler), repos: [] };
   const issues = loadIssues(root);
   const journal = journalById(root);
-  const profile = loadProfile(root);
   // Only work in play (offered or worked on): an issue waiting in a status with no such flag (a proposal, a block) is
   // never queued for merge.
   const unsettled = issues.filter((i) => profile.active(i.status));
@@ -2301,6 +2414,7 @@ export function cmdQueue(root, flags = {}) {
 }
 
 export function renderQueue(o) {
+  if (o.scheduler) return o.note;
   const lines = [];
   for (const r of o.repos) {
     if (!r.rows.length && o.repos.length > 1) continue;
@@ -2485,7 +2599,8 @@ export function cmdResume(root, flags = {}) {
     ...(holds(i) ? { branch: i.fields.branch || null, worker: i.fields.worker || null, since: i.fields.since || null, stale: stale.get(i.id) || [] } : {}),
   }));
   const asks = loadAsks(root).filter((a) => a.state === 'open');
-  const next = cmdNext(root, {});
+  const scheduled = profile.scheduler !== null;
+  const next = scheduled ? [] : cmdNext(root, {});
   const ready = next.filter((r) => r.ready);
   // Open, not waiting on After, and still not offered: a file it declares is taken by work in flight (or by a ready
   // issue ahead of it). Ready and held together are the open count on the status line.
@@ -2498,7 +2613,8 @@ export function cmdResume(root, flags = {}) {
     goal: status.goal, opened: status.opened, lastActivity: status.lastActivity, archived: status.archived, status,
     rulings, inFlight, waiting,
     questions: asks.filter((a) => a.kind !== 'ratify'), ratify: asks.filter((a) => a.kind === 'ratify'),
-    held, next: ready.slice(0, readyN).map((r) => ({ id: r.id, title: r.title, priority: r.priority, ...(r.noAcceptance ? { noAcceptance: true } : {}), ...declared(byId.get(r.id)) })), readyTotal: ready.length,
+    held, next: ready.slice(0, readyN).map((r) => ({ id: r.id, title: r.title, priority: r.priority, ...(r.noAcceptance ? { noAcceptance: true } : {}), ...declared(byId.get(r.id)) })), readyTotal: scheduled ? null : ready.length,
+    ...(scheduled ? { scheduler: profile.scheduler } : {}),
     queue: cmdQueue(root), merged, tips: cmdTips(root, { ci: flags.ci === true }),
     uncommitted: uncommittedLoopFiles(root),
     log: logN ? logLines.slice(-logN).map((l) => l.slice(2)) : null,
@@ -2542,8 +2658,10 @@ export function renderResume(o, profile = DEFAULT_PROFILE) {
     ...sec(`Questions to the user (${o.questions.length})`, o.questions.map((a) => `- a-${a.id} (${a.kind || 'stuck'})${a.issue ? ` issue ${a.issue}` : ''} · ${a.question}`), '- (nothing)'),
     ...sec(`To ratify (${o.ratify.length})`, o.ratify.map((a) => `- a-${a.id}${a.issue ? ` (issue ${a.issue})` : ''} · ${a.question}`)),
     ...sec(`Held — files in flight (${o.held.length})`, o.held.map((x) => `- ${x.id}  P${x.priority}  ${short(x.title)} (${x.files.join(', ')} held by ${x.heldBy.join(', ')})`)),
-    ...sec(`Next ready (${o.next.length} of ${o.readyTotal})`, o.next.map((r) => `- ${r.id}  P${r.priority}  ${short(r.title)}${shownFields(r)}${r.noAcceptance ? '  (no acceptance yet)' : ''}`), '- (nothing ready)'),
-    ...sec('Merge queue', queue, '- (nothing approved waits to be merged)'),
+    ...(o.scheduler ? sec('Next ready and merge queue', [`- ${schedulerNote(o.scheduler)}`]) : [
+      ...sec(`Next ready (${o.next.length} of ${o.readyTotal})`, o.next.map((r) => `- ${r.id}  P${r.priority}  ${short(r.title)}${shownFields(r)}${r.noAcceptance ? '  (no acceptance yet)' : ''}`), '- (nothing ready)'),
+      ...sec('Merge queue', queue, '- (nothing approved waits to be merged)'),
+    ]),
     ...sec(`Merged, CI pending or red (${o.merged.length})`, o.merged.map((m) => `- ${m.id} ${m.sha}${m.repo ? ` in ${m.repo}` : ''} · CI ${m.ci}`)),
     ...sec(`Tips${o.tips.ci ? '' : ' (CI not asked — --ci asks gh)'}`, tips),
     ...(files.length ? sec(`Loop files not committed (${files.length}) — commit .jarl/`, [...files.slice(0, 20).map((f) => `- ${f}`), ...(files.length > 20 ? [`- … ${files.length - 20} more`] : [])]) : []),
@@ -2619,7 +2737,7 @@ export function cmdReport(root, flags = {}) {
     const a = gateState(root, i.id, journal.get(i.id) || [], coordinators, issues, journal).live;
     return { id: i.id, title: i.title, status: i.status, kind: i.kind, priority: i.priority, tier: i.tier, tags: i.tags, repos: repoNames(root, i), branch: i.fields.branch || null, after: i.after, sources: i.sources, merged: m ? m.sha : null, ci: m ? m.ci : null, review: a ? { by: a.by, kind: a.kind, at: a.at } : null };
   });
-  const lines = [`# Report`, '', goal, '', `## Done (${done.length})`, ...(done.length ? [`Reviewed by: ${renderSplit(split)}`] : []), ...doneLines,
+  const lines = [`# Report`, '', goal, '', `## Done (${done.length})`, ...(done.length ? [gateLine(profile, split, 'Reviewed by')] : []), ...doneLines,
     ...closedOther.flatMap((st) => {
       const on = issues.filter((i) => i.status === st);
       return ['', `## ${reasonWord(st)} (${on.length})`, ...on.map((i) => `- ${i.id} ${i.title}${profile.is(st, 'needs-reason') ? ` — ${statusReason(i.sections.evidence, reasonWord(st))}` : ''}`)];
@@ -2835,7 +2953,9 @@ function countOf(o, st) { return (o.statuses || o)[st] || 0; }
 function countsLine(o, profile) {
   const ready = profile.with('dispatchable');
   const rest = profile.statuses.filter((st) => !profile.active(st)).map((st) => ` · ${st} ${countOf(o, st)}`).join('');
-  return `${ready.length === 1 ? ready[0] : 'ready'} ${o.ready} · in flight ${o.inFlight}${o.waiting ? ` · waiting ${o.waiting}` : ''}${rest} · questions ${o.questions}${o.ratify ? ` · to ratify ${o.ratify}` : ''}${o.ciPending.length ? ` · merged, CI pending ${o.ciPending.length}` : ''}${o.ciRed.length ? ` · CI red ${o.ciRed.length}` : ''}`;
+  // Under an external scheduler Jarl does not reckon readiness: each dispatchable status by its own count instead.
+  const head = o.scheduler ? ready.map((st) => `${st} ${countOf(o, st)}`).join(' · ') : `${ready.length === 1 ? ready[0] : 'ready'} ${o.ready}`;
+  return `${head} · in flight ${o.inFlight}${o.waiting ? ` · waiting ${o.waiting}` : ''}${rest} · questions ${o.questions}${o.ratify ? ` · to ratify ${o.ratify}` : ''}${o.ciPending.length ? ` · merged, CI pending ${o.ciPending.length}` : ''}${o.ciRed.length ? ` · CI red ${o.ciRed.length}` : ''}`;
 }
 const statusLabel = (st) => (st === 'in-progress' ? 'in flight' : st);
 
@@ -2845,11 +2965,12 @@ export function renderStatus(o, profile = DEFAULT_PROFILE) {
   const width = o.by ? Math.max(...Object.keys(o.by.groups).map((k) => k.length), 1) : 0;
   const by = o.by ? [`by ${o.by.key}:`, ...Object.entries(o.by.groups).map(([k, g]) => `  ${k.padEnd(width)}  ${profile.statuses.map((st) => `${statusLabel(st)} ${g[st]}`).join(' · ')}`)] : [];
   const more = [
+    ...(o.scheduler ? [schedulerNote(o.scheduler)] : []),
     ...by,
     ...o.stale.map((x) => `stale ${x.id} · ${x.problems.join('; ')}`),
     ...(o.ciPending.length ? [`merged, CI pending: ${o.ciPending.join(', ')}`] : []),
     ...(o.ciRed.length ? [`merged, CI red: ${o.ciRed.join(', ')}`] : []),
-    ...(profile.with('closes-record').some((st) => countOf(o, st)) ? [`done reviewed by: ${renderSplit(o.reviews)}`] : []),
+    ...(profile.with('closes-record').some((st) => countOf(o, st)) ? [gateLine(profile, o.reviews, 'done reviewed by')] : []),
     ...(o.uncommitted ? [`${o.uncommitted} loop file(s) not committed — commit .jarl/ in the loop's repository`] : []),
     ...o.toRatify.map((a) => `ratify a-${a.id}${a.issue ? ` (issue ${a.issue})` : ''} · ${a.question}`),
     ...(o.waiting ? [`waiting (After not settled): ${o.waitingIds.join(', ')}`] : []),

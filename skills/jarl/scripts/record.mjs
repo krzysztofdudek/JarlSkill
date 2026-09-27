@@ -59,8 +59,10 @@ export function evidenceRows(issue) { return L.evidenceRows(issue); }
 // A profile, as loadProfile, validateProfile, readProfileFile and DEFAULT_PROFILE give it, is contract in these fields:
 //   name, declared (false for the built-in one), initial, statuses (in order), kinds, kindDefault, tiers, tierDefault,
 //   fields (the extra header fields: [{ name, key, enum, default, required }]), sections (extra headings), acceptance
-//   (the acceptance heading, or null for "Acceptance"), and the questions is(status, flag), with(flag), flagsOf(status),
-//   active(status), unfinished(status), field(name). Any other key is not. describeProfile gives the plain-data form.
+//   (the acceptance heading, or null for "Acceptance"), format (the record format, 1), scheduler (the external
+//   scheduler's command, or null), doneGate ({ approve: 'fresh'|'none', 'requires-merged': boolean }), and the questions
+//   is(status, flag), with(flag), flagsOf(status), setBy(status) ('any' or 'record'), active(status),
+//   unfinished(status), field(name). Any other key is not. describeProfile gives the plain-data form.
 // DEFAULT_PROFILE and STATUS_FLAGS (the six flags, in order) are frozen, lists included; treat every profile as read-only.
 export const PROFILE_VERSION = L.PROFILE_VERSION;
 export const STATUS_FLAGS = L.STATUS_FLAGS;
@@ -83,8 +85,11 @@ export function newIssue(root, title, opts = {}) { return write(root, () => L.cm
 // A move into a status, checked against the profile: needs-reason wants `why`, closes-record passes the done gate,
 // holds-claim writes the lease from opts { branch, worker, worktree }, leaving it removes the lease.
 // opts.caller says who asks: 'record' (the default for a library call) or 'cli' (what the command line and the MCP tools
-// always pass). A status the profile marks "set-by": "record" (a later profile key) will refuse 'cli'; a library caller
-// that acts for a person at the command line passes 'cli' too. setField takes the same opts.caller.
+// always pass). A status the profile marks "set-by": "record" refuses 'cli'; a library caller that acts for a person at
+// the command line passes 'cli' too. setField takes the same opts.caller. The profile's done-gate decides what a move
+// into closes-record asks for (requires-merged: a recorded merge the base holds; approve: 'none': no approve). The base
+// is the branch checked out in the merge's repository, or opts.base (a branch or ref, library callers only) when the
+// composer landed the merge into a branch that is not checked out there.
 export function setStatus(root, ids, status, why, opts = {}) {
   return write(root, () => {
     const profile = L.loadProfile(root);
