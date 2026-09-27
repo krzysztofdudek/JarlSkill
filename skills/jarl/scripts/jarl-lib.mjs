@@ -3438,7 +3438,8 @@ export function mergeDecisionsTexts(base, ours, theirs) {
   const text = `${[pre, ...out].filter((s) => s !== '').join('\n\n')}\n`;
   if (!conflicts.length) return { ok: true, text };
   // A conflict found only by the successor scan leaves no marker of its own: mark the whole merge, so git stops.
-  return { ok: false, conflicts, text: text.includes('\n<<<<<<< ours\n') || text.startsWith('<<<<<<< ours\n') ? text : `<<<<<<< ours\n${ours}=======\n${theirs}>>>>>>> theirs\n` };
+  const line = (x) => (x === '' || x.endsWith('\n') ? x : `${x}\n`);
+  return { ok: false, conflicts, text: text.includes('\n<<<<<<< ours\n') || text.startsWith('<<<<<<< ours\n') ? text : `<<<<<<< ours\n${line(ours)}=======\n${line(theirs)}>>>>>>> theirs\n` };
 }
 
 // The command git runs for the decisions driver, as the loop's repository records it in its local configuration.
@@ -3448,7 +3449,19 @@ export function mergeDecisionsTexts(base, ours, theirs) {
 // every platform (Git for Windows ships one); a Windows path is written with forward slashes, which that shell reads.
 export function decisionsDriverCommand(runtime = process.execPath, script = JARL_SCRIPT) {
   const q = (p) => `"${String(p).replace(/\\/g, '/').replace(/(["$`])/g, '\\$1')}"`;
-  return `if [ -f ${q(runtime)} ] && [ -f ${q(script)} ]; then ${q(runtime)} ${q(script)} merge-driver decisions %O %A %B; else git merge-file -L ours -L base -L theirs %A %O %B; fi`;
+  return `if [ -f ${q(runtime)} ] && [ -f ${q(script)} ]; then ${guardedDriver(`${q(runtime)} ${q(script)} merge-driver decisions %O %A %B`)}; else ${TEXT_MERGE}; fi`;
+}
+
+// git's own three-way text merge with conflict markers, over %A: what git does with no driver.
+const TEXT_MERGE = 'git merge-file -L ours -L base -L theirs %A %O %B';
+
+// A driver program run so that it can never leave ours alone as the answer: a program that is there but does not
+// start (a runtime too old for it, a half-finished upgrade, a Yggdrasil CLI with no merge-driver command) exits
+// non-zero without writing, and git would keep ours with no markers. A non-zero exit that left no conflict markers in
+// %A therefore gets git's text merge; a driver's own refusal writes its markers first and is kept. POSIX sh and grep,
+// which git's shell has on every platform.
+function guardedDriver(run) {
+  return `${run}; s=$?; if [ $s -ne 0 ] && ! grep -q '^<<<<<<< ' %A; then ${TEXT_MERGE}; exit 1; fi; exit $s`;
 }
 export const JARL_SCRIPT = join(dirname(fileURLToPath(import.meta.url)), 'jarl.mjs');
 
@@ -3490,7 +3503,7 @@ export function mergeFlags({ yg } = {}) {
   const pairs = [['merge.jarl-decisions.name', 'jarl decisions.md'], ['merge.jarl-decisions.driver', decisionsDriverCommand()]];
   if (yg) {
     for (const kind of ['log', 'lock']) {
-      pairs.push([`merge.yg-${kind}.name`, `Yggdrasil ${kind}`], [`merge.yg-${kind}.driver`, `${yg} merge-driver ${kind} %O %A %B %P`]);
+      pairs.push([`merge.yg-${kind}.name`, `Yggdrasil ${kind}`], [`merge.yg-${kind}.driver`, guardedDriver(`${yg} merge-driver ${kind} %O %A %B %P`)]);
     }
   }
   return pairs.map(([k, v]) => `-c ${sq(`${k}=${v}`)}`).join(' ');
