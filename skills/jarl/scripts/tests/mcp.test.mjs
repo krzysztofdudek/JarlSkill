@@ -338,3 +338,7 @@ test('a JSON-RPC response from the client gets no answer; a malformed request st
   assert.equal(out[0].error.code, -32600);
   assert.deepEqual(out[1].result, {});
 });
+
+test('jarl_set says that its status field may name a declared field, with why as the value', () => {
+  assert.match(byName.jarl_set.description, /The "status" field may instead name a field the loop's profile declares \(see jarl_profile\), and "why" is then that field's value/);
+});
