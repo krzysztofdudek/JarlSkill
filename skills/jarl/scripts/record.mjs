@@ -87,7 +87,9 @@ export function newIssue(root, title, opts = {}) { return write(root, () => L.cm
 // opts.caller says who asks: 'record' (the default for a library call) or 'cli' (what the command line and the MCP tools
 // always pass). A status the profile marks "set-by": "record" refuses 'cli'; a library caller that acts for a person at
 // the command line passes 'cli' too. setField takes the same opts.caller. The profile's done-gate decides what a move
-// into closes-record asks for (requires-merged: a recorded merge the base holds; approve: 'none': no approve).
+// into closes-record asks for (requires-merged: a recorded merge the base holds; approve: 'none': no approve). The base
+// is the branch checked out in the merge's repository, or opts.base (a branch or ref, library callers only) when the
+// composer landed the merge into a branch that is not checked out there.
 export function setStatus(root, ids, status, why, opts = {}) {
   return write(root, () => {
     const profile = L.loadProfile(root);

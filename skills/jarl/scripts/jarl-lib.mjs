@@ -1103,10 +1103,14 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   const issues = issuesFor(root, rawIds);
   need(!profile.is(status, 'needs-reason') || why, REASON_TEXT[status] || `${status} needs a reason: jarl.mjs set <id> ${status} "<why>"`);
   const nothing = issues.length > 1 ? ' — nothing was written' : '';
+  // base: the branch the composer landed the merge into, for the done gate's requires-merged (else the branch checked
+  // out). A library call only: the command line has no --base, and dispatch never passes one through.
+  need(flags.base === undefined || caller === 'record', 'base is named by a library call through record.mjs only — the command line checks against the branch checked out');
+  need(flags.base === undefined || (typeof flags.base === 'string' && fieldText(flags.base) !== '' && !flags.base.startsWith('-')), 'base names a branch or ref — the one the merge landed in');
   if (profile.is(status, 'closes-record')) {
     const journal = journalById(root);
     const allIssues = loadIssues(root);
-    for (const issue of issues) { const refusal = doneRefusal(root, issue, journal, allIssues); need(!refusal, `${refusal}${nothing}`); }
+    for (const issue of issues) { const refusal = doneRefusal(root, issue, journal, allIssues, { base: flags.base }); need(!refusal, `${refusal}${nothing}`); }
   }
   // One lease for the whole call: every issue in a package gets the same Branch, Worker, Worktree and Since.
   // A relative worktree path is read from the loop's root, like --repo, so it means the same from anywhere.
@@ -1160,14 +1164,14 @@ function setDeclaredField(root, rawIds, field, value, flags) {
 // A profile's done-gate changes the last two: requires-merged also asks for a recorded merge whose sha is in the base
 // (see mergeRefusal), and approve: none (allowed only with requires-merged) drops the approve — the gate that landed
 // the merge stands behind the issue instead of a reviewer. The evidence rows are asked for either way.
-export function doneRefusal(root, issue, journal = journalById(root), issues = loadIssues(root)) {
+export function doneRefusal(root, issue, journal = journalById(root), issues = loadIssues(root), { base } = {}) {
   const profile = loadProfile(root);
   const g = gateState(root, issue.id, journal.get(issue.id) || [], coordinatorNames(root), issues, journal);
   const how = `jarl.mjs evidence ${issue.id} --ran "<command>" --saw "<what it printed>"`;
   if (!workEvidence(issue, profile)) return `${issue.id} has no evidence yet — record it first: ${how}`;
   if (!g.tracked && !evidenceRows(issue).length) return `${issue.id} has no --ran/--saw evidence row — a free-text note alone is not proof of the work: ${how}`;
   if (g.tracked && !g.rowsSince) return `${issue.id} has no --ran/--saw evidence row recorded since it was ${g.anchor.what === 'filed' ? 'filed' : `moved → ${g.anchor.what}`} (${g.anchor.at}) — a free-text note, or a row written before that (before a start or a reopen), is not proof of the work: ${how}`;
-  if (profile.doneGate['requires-merged']) { const m = mergeRefusal(root, issue); if (m) return m; }
+  if (profile.doneGate['requires-merged']) { const m = mergeRefusal(root, issue, base); if (m) return m; }
   if (profile.doneGate.approve === 'none') return null;
   const code = carriesCode(issue);
   if (g.selfApproved) return `${issue.id}'s live approve is by a worker of this issue or its branch — a self-approve does not count as review: jarl.mjs review ${issue.id} approve --by <${code ? 'fresh reviewer' : 'fresh reviewer|jarl'}> "<findings>"`;
@@ -1178,9 +1182,10 @@ export function doneRefusal(root, issue, journal = journalById(root), issues = l
 
 // The done gate's requires-merged: the issue records a merge (merged --sha) and that commit is in the base — the branch
 // checked out where the merge was recorded (Merged's "in <repo>", else the issue's Repo, else the loop's own
-// repository). A sha the repository does not know, or one not reachable from its checked-out branch, is refused: a
-// merge recorded is not a merge landed until the base holds it.
-function mergeRefusal(root, issue) {
+// repository), or the branch a library caller names as opts.base (a composer that lands into a branch nobody has
+// checked out, such as a team branch, names it). A sha the repository does not know, or one not reachable from the
+// base, is refused: a merge recorded is not a merge landed until the base holds it.
+function mergeRefusal(root, issue, base) {
   const m = mergedOf(issue);
   const gate = 'this loop\'s profile closes an issue only on a landed merge (done-gate "requires-merged": true)';
   if (!m) return `${issue.id} records no merge — ${gate}: jarl.mjs merged ${issue.id} --sha <sha> once it has landed`;
@@ -1188,9 +1193,11 @@ function mergeRefusal(root, issue) {
   for (const n of m.repo ? [m.repo] : (reposNamed(issue).length ? reposNamed(issue) : [undefined])) { try { repos.push(repoOf(root, n)); } catch { /* not a repository here */ } }
   repos = repos.filter((r) => isGitRepo(r));
   if (!repos.length) return `${issue.id} records Merged ${m.sha}, but no repository it names is a git repository here — ${gate}, and the merge cannot be checked`;
-  const landed = repos.some((r) => git(r, ['merge-base', '--is-ancestor', m.sha, 'HEAD']) !== null);
+  const ref = base === undefined ? 'HEAD' : base;
+  if (base !== undefined && repos.every((r) => git(r, ['rev-parse', '--verify', '--quiet', `${base}^{commit}`]) === null)) return `${issue.id}: the base ${base} is not a branch or commit in ${repos.join(' or ')} — ${gate}, and the merge cannot be checked`;
+  const landed = repos.some((r) => git(r, ['merge-base', '--is-ancestor', m.sha, ref]) !== null);
   if (landed) return null;
-  const where = repos.map((r) => `${defaultBase(r)} in ${r}`).join(' or ');
+  const where = repos.map((r) => `${base === undefined ? defaultBase(r) : base} in ${r}`).join(' or ');
   return `${issue.id} records Merged ${m.sha}, which is not in the base (${where}) — ${gate}; merge it, or record the sha that landed: jarl.mjs merged ${issue.id} --sha <sha>`;
 }
 

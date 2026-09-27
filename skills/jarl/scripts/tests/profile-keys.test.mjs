@@ -172,6 +172,26 @@ test('done-gate requires-merged: no merge, or a merge the base does not hold, is
   assert.match(reason(() => R.setStatus(root, '002', 'merged')), /records Merged deadbeef, which is not in the base/);
 });
 
+test('done-gate requires-merged: a composer landing into a branch nobody has checked out names it as base; the command line cannot', () => {
+  // Horde lands a ticket into its team branch in a throwaway tree and moves the ref: the checkout stays on main, so the
+  // branch checked out is the wrong base, and the composer names the one it landed into.
+  const { repo, root } = mission();
+  jarl(root, 'new', 'ticket');
+  R.setStatus(root, '001', 'queued');
+  jarl(root, 'set', '001', 'running', '--branch', 'h1-t001', '--worker', 'w1');
+  jarl(root, 'evidence', '001', '--ran', 'land', '--saw', 'green');
+  sh(repo, 'git branch h1/team && git checkout -q -b h1-t001 && echo 2 > src/a.mjs && git commit -qam work && git checkout -q h1/team && git merge -q --no-ff -m land h1-t001 && git checkout -q main');
+  const landed = sh(repo, 'git rev-parse h1/team');
+  R.recordMerged(root, '001', { sha: landed, ci: 'none' });
+  assert.match(reason(() => R.setStatus(root, '001', 'merged')), /which is not in the base \(main in /);
+  assert.match(reason(() => R.setStatus(root, '001', 'merged', undefined, { base: 'h1/nope' })), /the base h1\/nope is not a branch or commit/);
+  // The command line has no --base, and a base handed to dispatch (as an MCP call would) is refused, not honoured.
+  assert.match(refuses(root, 'set', '001', 'dropped', 'x', '--base', 'h1/team'), /unknown flag --base/);
+  assert.throws(() => CLI.dispatch(root, 'set', ['001', 'dropped', 'x'], { base: 'h1/team' }), /base is named by a library call through record\.mjs only/);
+  assert.equal(R.findIssue(root, '001').status, 'running', 'a refusal writes nothing');
+  assert.equal(R.setStatus(root, '001', 'merged', undefined, { base: 'h1/team' }).status, 'merged');
+});
+
 test('done-gate requires-merged with approve fresh: the landed merge and the fresh approve are both asked for', () => {
   const { repo, root } = mission({ ...HORDE, name: 'both', 'external-scheduler': undefined, 'done-gate': { approve: 'fresh', 'requires-merged': true }, statuses: { ...HORDE.statuses, merged: ['settles-dependents', 'terminal', 'closes-record'] } });
   jarl(root, 'new', 'ticket');
