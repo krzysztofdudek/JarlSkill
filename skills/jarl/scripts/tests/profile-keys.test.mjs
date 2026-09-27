@@ -10,6 +10,8 @@ import { tmpdir } from 'node:os';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
+import { sh } from './portable.mjs';
+
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 const R = await import('../record.mjs');
 const CLI = await import('../jarl.mjs');
@@ -29,7 +31,6 @@ function refuses(root, ...args) {
   assert.notEqual(r.status, 0, `expected a refusal: ${args.join(' ')}`);
   return r.stderr;
 }
-const sh = (cwd, script) => execFileSync('bash', ['-c', script], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 function file(obj) {
   const f = join(mkdtempSync(join(tmpdir(), 'jarl-keys-file-')), 'profile.json');
   writeFileSync(f, typeof obj === 'string' ? obj : JSON.stringify(obj, null, 2));
