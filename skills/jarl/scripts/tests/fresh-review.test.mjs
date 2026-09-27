@@ -4,7 +4,7 @@
 // and says so loudly, never refusing.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -131,4 +131,92 @@ test('merged without a fresh approve is recorded and said loudly; with one, noth
   assert.doesNotMatch(r2.stderr, /MERGED WITHOUT A FRESH REVIEW/);
   // --ci alone moves the CI state and says nothing about the review.
   assert.doesNotMatch(jarl(root, 'merged', a, '--ci', 'green').stderr, /FRESH REVIEW/);
+});
+
+// ---- issue 370: self spans every lease an issue (or its branch package) has ever had --------------------------
+
+test('self spans a takeover: the worker before a hand-over is still self, not only the latest lease', () => {
+  const root = loop();
+  const id = /filed (\d{3})/.exec(jarl(root, 'new', 'takeover').stdout)[1];
+  jarl(root, 'set', id, 'in-progress', 'go', '--branch', `jarl/${id}-x`, '--worker', 'w1');
+  // A hand-over: re-leased to a different worker without ever leaving in-progress (a takeover after rounds
+  // works the same way — the issue keeps its identity, only Worker changes).
+  jarl(root, 'set', id, 'in-progress', 'handed over', '--worker', 'w2');
+  jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'pass');
+  assert.match(refuses(root, 'review', id, 'approve', '--by', 'w1', 'looks fine'), /self-approve/);
+  assert.match(refuses(root, 'review', id, 'approve', '--by', 'W2', 'looks fine'), /self-approve/);
+  assert.match(jarl(root, 'review', id, 'approve', '--by', 'opus-reviewer-9', 'read it').stdout, /by opus-reviewer-9 \(fresh\)/);
+});
+
+test('self spans a package: an issue folded into a branch with no --worker of its own inherits self from the branch\'s other issue', () => {
+  const root = loop();
+  const a = /filed (\d{3})/.exec(jarl(root, 'new', 'a').stdout)[1];
+  const b = /filed (\d{3})/.exec(jarl(root, 'new', 'b').stdout)[1];
+  jarl(root, 'set', a, 'in-progress', 'go', '--branch', 'jarl/pkg-x', '--worker', 'w1');
+  // b joins the same branch later, recording only --branch — the package's one shared lease, not a fresh one.
+  jarl(root, 'set', b, 'in-progress', 'joins the package', '--branch', 'jarl/pkg-x');
+  jarl(root, 'evidence', b, '--ran', 'npm test', '--saw', 'pass');
+  assert.match(refuses(root, 'review', b, 'approve', '--by', 'w1', 'looks fine'), /self-approve/);
+  assert.match(jarl(root, 'review', b, 'approve', '--by', 'opus-reviewer-9', 'read it').stdout, /by opus-reviewer-9 \(fresh\)/);
+});
+
+// ---- issue 370: a later coordinator approve does not spend an earlier, still-live fresh approve ----------------
+
+test('a later coordinator approve does not spend an earlier, still-live fresh approve', () => {
+  const root = loop();
+  const id = codeIssue(root);
+  jarl(root, 'review', id, 'approve', '--by', 'opus-reviewer-4', 'read it');
+  const r = jarl(root, 'review', id, 'approve', '--by', 'jarl', 'also looked, formality');
+  assert.match(r.stdout, /by jarl \(coordinator\)/);
+  // This particular approve is still noted as not clearing it by itself — but the earlier fresh one already did.
+  assert.match(r.stderr, /this approve is recorded but does not clear it for done or the merge queue/);
+  // The fresh approve from before is still live: done clears on it, not blocked by the later coordinator's own.
+  assert.match(jarl(root, 'set', id, 'done').stdout, new RegExp(`${id} → done`));
+});
+
+test('queue: a fresh approve stays live in the queue after a later coordinator approve', () => {
+  const root = loop();
+  const id = codeIssue(root);
+  const wt = mkdtempSync(join(tmpdir(), 'jarl-wt-'));
+  sh(root, `git worktree add -q -b jarl/${id}-x ${wt} feature`);
+  sh(wt, 'echo change >> a.mjs && git add -A && git commit -qm work');
+  jarl(root, 'review', id, 'approve', '--by', 'opus-reviewer-5', 'ok');
+  jarl(root, 'review', id, 'approve', '--by', 'coordinator', 'formality');
+  const rows = JSON.parse(jarl(root, 'queue', '--json').stdout).repos[0].rows;
+  assert.deepEqual(rows.map((r) => r.issues), [[id]]);
+  assert.equal(rows[0].by, 'opus-reviewer-5');
+});
+
+// ---- issue 370 review: status/report must stay near-linear in issue count -------------------------------------
+
+// Fast, subprocess-free setup: clone one real issue's rendered file N times (editing only the header's id), so
+// timing measures the CLI's own per-command cost, not N process spawns. Every clone is done — report walks every
+// issue, status (through reviewSplit) walks every done one, so both exercise gateState once per issue.
+function seedDone(n) {
+  const root = loop();
+  const dir = join(root, '.jarl', 'issues');
+  jarl(root, 'new', 'sample');
+  const file = join(dir, readdirSync(dir)[0]);
+  const template = readFileSync(file, 'utf8').replace(/^\*\*Status:\*\* .*$/m, '**Status:** done');
+  writeFileSync(file, template);
+  for (let i = 2; i <= n; i += 1) {
+    const id = String(i).padStart(3, '0');
+    writeFileSync(join(dir, `${id}-sample.md`), template.replace(/^# 001 ·/, `# ${id} ·`));
+  }
+  return root;
+}
+function timeStatusAndReport(n) {
+  const root = seedDone(n);
+  const t0 = Date.now();
+  jarl(root, 'status');
+  jarl(root, 'report');
+  return Date.now() - t0;
+}
+
+test('status and report stay roughly linear in issue count (guards the O(n^2) self-scope lookup fixed in issue 370)', () => {
+  const small = timeStatusAndReport(100);
+  const big = timeStatusAndReport(400);   // 4x the issues
+  // Linear cost roughly quadruples; the O(n^2) this guards against (every gateState call reloading every issue
+  // file and the whole journal) would grow ~16x. Generous slack keeps this from flaking on a loaded machine.
+  assert.ok(big < small * 8 + 800, `status+report should scale roughly linearly, not quadratically: ${small}ms at 100 issues vs ${big}ms at 400 issues`);
 });

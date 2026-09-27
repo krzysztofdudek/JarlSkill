@@ -857,7 +857,8 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   const nothing = issues.length > 1 ? ' — nothing was written' : '';
   if (status === 'done') {
     const journal = journalById(root);
-    for (const issue of issues) need(!doneRefusal(root, issue, journal), `${doneRefusal(root, issue, journal)}${nothing}`);
+    const allIssues = loadIssues(root);
+    for (const issue of issues) need(!doneRefusal(root, issue, journal, allIssues), `${doneRefusal(root, issue, journal, allIssues)}${nothing}`);
   }
   // One lease for the whole call: every issue in a package gets the same Branch, Worker, Worktree and Since.
   // A relative worktree path is read from the loop's root, like --repo, so it means the same from anywhere.
@@ -893,14 +894,14 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
 // last went in progress (or was reopened, or — never in progress — was filed; free-text notes never count alone), and a live approve by someone
 // other than its worker (see gateState) — by a fresh reviewer when the issue carries code (a Branch or Merged field;
 // see carriesCode). It gates only the record: nothing here stops code from landing.
-export function doneRefusal(root, issue, journal = journalById(root)) {
-  const g = gateState(root, issue.id, journal.get(issue.id) || []);
+export function doneRefusal(root, issue, journal = journalById(root), issues = loadIssues(root)) {
+  const g = gateState(root, issue.id, journal.get(issue.id) || [], coordinatorNames(root), issues, journal);
   const how = `jarl.mjs evidence ${issue.id} --ran "<command>" --saw "<what it printed>"`;
   if (!workEvidence(issue)) return `${issue.id} has no evidence yet — record it first: ${how}`;
   if (!g.tracked && !evidenceRows(issue).length) return `${issue.id} has no --ran/--saw evidence row — a free-text note alone is not proof of the work: ${how}`;
   if (g.tracked && !g.rowsSince) return `${issue.id} has no --ran/--saw evidence row recorded since it was ${g.anchor.what === 'filed' ? 'filed' : `moved → ${g.anchor.what}`} (${g.anchor.at}) — a free-text note, or a row written before that (before a start or a reopen), is not proof of the work: ${how}`;
   const code = carriesCode(issue);
-  if (g.selfApproved) return `${issue.id}'s last approve is by its own worker — a self-approve does not count as review: jarl.mjs review ${issue.id} approve --by <${code ? 'fresh reviewer' : 'fresh reviewer|jarl'}> "<findings>"`;
+  if (g.selfApproved) return `${issue.id}'s live approve is by a worker of this issue or its branch — a self-approve does not count as review: jarl.mjs review ${issue.id} approve --by <${code ? 'fresh reviewer' : 'fresh reviewer|jarl'}> "<findings>"`;
   if (!g.approved) return `${issue.id} has no approving review newer than its last round${g.tracked ? ' or reopen' : ''} — a fresh reviewer reads the issue and the diff first: jarl.mjs review ${issue.id} approve|changes --by <reviewer> "<findings>"`;
   if (code && !g.fresh) return `${issue.id} ${freshRuleText(issue, g.live)}: jarl.mjs review ${issue.id} approve|changes --by <fresh reviewer> "<findings>"`;
   return null;
@@ -973,8 +974,9 @@ export function cmdMerged(root, rawIds, flags) {
   if (sha) {
     const journal = journalById(root);
     const coordinators = coordinatorNames(root);
+    const allIssues = loadIssues(root);
     for (const issue of issues) {
-      const g = gateState(root, issue.id, journal.get(issue.id) || [], coordinators);
+      const g = gateState(root, issue.id, journal.get(issue.id) || [], coordinators, allIssues, journal);
       if (!g.fresh) notes.push(`MERGED WITHOUT A FRESH REVIEW — ${issue.id} ${g.live ? freshRuleText({ fields: { merged: sha } }, g.live) : 'holds no live approve at all (none, or spent by a later round, restart or reopen) — the fresh-review rule: a code issue needs an approve from a fresh reviewer before it merges'}; recorded as given, get the fresh review now: jarl.mjs review ${issue.id} approve|changes --by <fresh reviewer> "<findings>"`);
     }
   }
@@ -1283,14 +1285,17 @@ export function journalById(root) {
   return map;
 }
 
-// Who reviewed, as a kind: the issue's worker or the word self (self); the loop's own director — coordinator,
-// jarl, reeve, the loop's own name (the directory holding .jarl/) and any name goal.md declares on a
-// `Coordinators: a, b` line (coordinator); anyone else (fresh). A name is compared without case and surrounding space.
+// Who reviewed, as a kind: the word self, or anyone who has ever held the issue's lease — its own worker across
+// every takeover, and the worker of any other issue sharing its Branch (a package, or an issue folded into the
+// same branch later) — is self too; the loop's own director — coordinator, jarl, reeve, the loop's own name (the
+// directory holding .jarl/) and any name goal.md declares on a `Coordinators: a, b` line (coordinator); anyone
+// else (fresh). A name is compared without case and surrounding space. `worker` is a name, or a set of them.
 export const REVIEWER_KINDS = ['fresh', 'coordinator', 'self'];
 export const BASE_COORDINATORS = ['coordinator', 'jarl', 'reeve'];
 export function reviewerKind(by, worker, coordinators = BASE_COORDINATORS) {
   const b = fieldText(by).toLowerCase();
-  if (b === 'self' || (worker && b === fieldText(worker).toLowerCase())) return 'self';
+  const workers = worker == null ? [] : typeof worker === 'string' ? [worker] : [...worker];
+  if (b === 'self' || workers.some((w) => b === fieldText(w).toLowerCase())) return 'self';
   if (coordinators.some((c) => fieldText(c).toLowerCase() === b)) return 'coordinator';
   return 'fresh';
 }
@@ -1313,17 +1318,72 @@ const KIND_WEIGHT = { fresh: 0, coordinator: 1, self: 2 };
 export function carriesCode(issue) { return Boolean(fieldText(issue.fields.branch) || fieldText(issue.fields.merged)); }
 const REVIEW_LINE = /^\d{3} review (approve|changes) · (?:by (.+?) \((fresh|coordinator|self)\) · )?/;
 
+// Every worker one issue's own journal has ever named on an in-progress move — a takeover replaces Worker but
+// is still the same issue, so every lease across every round counts, not only the latest.
+function leaseWorkers(events) {
+  const workers = new Set();
+  for (const e of events) {
+    if (!/^\d{3} → in-progress\b/.test(e.text)) continue;
+    const w = / · worker (.+?)(?: · worktree |$)/.exec(e.text);
+    if (w) workers.add(fieldText(w[1]));
+  }
+  return workers;
+}
+
+// Every worker ever leased on a Branch, across every issue that records it — built once per set of issues (a
+// package leased once for several issues, or one folded into the branch later by a bare `set <ids> in-progress
+// --branch <b>` with no --worker of its own, is still one branch). Cached by the `issues` array's identity, so a
+// caller that loads the issues once and hands the same array to every gateState call in a loop (status, report,
+// queue) builds this exactly once, not once per issue — the earlier version rebuilt it (and reloaded every issue
+// file and the whole journal) on every call, making a scan over N issues cost O(N²).
+const BRANCH_WORKERS = new WeakMap();
+function branchWorkers(issues, journal) {
+  let map = BRANCH_WORKERS.get(issues);
+  if (map) return map;
+  map = new Map();
+  for (const i of issues) {
+    const branch = fieldText(i.fields.branch);
+    if (!branch) continue;
+    const set = map.get(branch) || new Set();
+    for (const w of leaseWorkers(journal.get(i.id) || [])) set.add(w);
+    if (i.fields.worker) set.add(fieldText(i.fields.worker));
+    map.set(branch, set);
+  }
+  BRANCH_WORKERS.set(issues, map);
+  return map;
+}
+
+// The full self scope for one issue: everyone its own lease has ever named, plus everyone named on another issue
+// that shares its Branch (see branchWorkers). Self-review is refused for any of them, not only the id's own
+// latest lease. Pure and cheap: no I/O, so it costs nothing extra when called once per issue in a loop.
+function selfWorkers(events, issue, branches) {
+  const self = leaseWorkers(events);
+  if (issue && issue.fields.worker) self.add(fieldText(issue.fields.worker));
+  const branch = issue && fieldText(issue.fields.branch);
+  if (branch && branches.has(branch)) for (const w of branches.get(branch)) self.add(w);
+  return self;
+}
+
 // The done gate, read from the journal for one issue. Replaying its lines in order:
 // - the evidence anchor is the last move into in-progress from another status, or a reopen (done or
 //   in-progress back to open), or — for an issue that never went in progress — its filing; only --ran/--saw
 //   rows logged after it count for done (a free-text note never does), so nothing written when the issue was
 //   filed, or before a restart or a reopen, is proof of the work;
-// - an approve is spent by a later round, by any move out of done, by a reopen and by a (re)start into in-progress, and an approve by the
-//   issue's own worker (self) never counts;
+// - an approve by anyone who has ever held the issue's lease (self — see selfWorkers) never counts;
+// - the live approve is the strongest one (fresh over coordinator over self) among those since whatever last
+//   reset the issue — a round, a reopen, a restart into in-progress (cut), or a later "changes" verdict still
+//   waiting on its own approve. A later, weaker approve never spends an earlier, still-live one: only those
+//   resets do — a coordinator's approve recorded after a live fresh one does not undo it;
 // - `tracked` is false for an issue the journal has no filing and no status move for (a hand-made file, a
 //   loop older than the log format): the gate then needs a --ran/--saw row in its Evidence section.
-export function gateState(root, id, events = journalById(root).get(id) || [], coordinators = coordinatorNames(root)) {
-  let status = null; let anchor = null; let cut = -1; let worker = null;
+//
+// `issues` and `journal` are for the self scope's branch lookup only, and default to a fresh load — fine for a
+// single call, but a caller reading the gate for many issues (status, report, queue) must load them once and
+// pass the same array and map to every call, so branchWorkers (see above) builds its map once, not per issue.
+export function gateState(root, id, events = journalById(root).get(id) || [], coordinators = coordinatorNames(root), issues = loadIssues(root), journal = journalById(root)) {
+  const issue = issues.find((i) => i.id === id) || null;
+  const self = selfWorkers(events, issue, branchWorkers(issues, journal));
+  let status = null; let anchor = null; let cut = -1;
   const evidence = []; const reviews = [];
   for (const e of events) {
     if (e.text.startsWith(`filed ${id} `)) { status = 'open'; anchor = e; continue; }
@@ -1334,23 +1394,33 @@ export function gateState(root, id, events = journalById(root).get(id) || [], co
       if (status === 'in-progress' && prev !== 'in-progress') { anchor = e; cut = e.n; }
       if (status === 'open' && (prev === 'done' || prev === 'in-progress')) { anchor = e; cut = e.n; }
       if (prev === 'done' && status !== 'done') cut = e.n;
-      if (status === 'in-progress') { const w = / · worker (.+?)(?: · worktree |$)/.exec(e.text); if (w) worker = w[1]; }
       continue;
     }
     if (e.text.startsWith(`${id} round `)) { cut = e.n; continue; }
     const r = REVIEW_LINE.exec(e.text);
     if (r) {
       // The kind is the one recorded, or the one today's names give, whichever is stricter: a name goal.md
-      // declares as a coordinator after its approve was logged as fresh does not stay fresh.
+      // declares as a coordinator after its approve was logged as fresh does not stay fresh, and a name that
+      // turns out to have ever held the lease (self) does not stay fresh or coordinator either.
       let kind = r[3] || null;
-      if (kind && r[2]) { const now = reviewerKind(r[2], worker, coordinators); if (KIND_WEIGHT[now] > KIND_WEIGHT[kind]) kind = now; }
+      if (kind && r[2]) { const now = reviewerKind(r[2], self, coordinators); if (KIND_WEIGHT[now] > KIND_WEIGHT[kind]) kind = now; }
       reviews.push({ n: e.n, at: e.at, verdict: r[1], by: r[2] || null, kind });
       continue;
     }
     if (e.text.startsWith(`${id} evidence row · `)) evidence.push(e);
   }
   const last = reviews[reviews.length - 1] || null;
-  const live = last && last.verdict === 'approve' && last.n > cut ? last : null;
+  // Only approves logged after the last "changes" verdict are even candidates — a changes still needs its own
+  // approve, as before. Among those, and past cut, the strongest kind wins, tie-broken by the more recent.
+  let sinceChanges = reviews;
+  for (let i = reviews.length - 1; i >= 0; i -= 1) { if (reviews[i].verdict === 'changes') { sinceChanges = reviews.slice(i + 1); break; } }
+  let live = null;
+  for (const r of sinceChanges) {
+    if (r.verdict !== 'approve' || r.n <= cut) continue;
+    const rw = KIND_WEIGHT[r.kind] ?? Infinity;
+    const lw = live ? (KIND_WEIGHT[live.kind] ?? Infinity) : Infinity;
+    if (!live || rw < lw || (rw === lw && r.n > live.n)) live = r;
+  }
   return {
     tracked: anchor !== null,
     anchor: anchor ? { at: anchor.at, what: anchor.text.startsWith('filed ') ? 'filed' : anchor.text.slice(id.length + 1).split(' · ')[0].replace(/^→ /, '') } : null,
@@ -1361,7 +1431,7 @@ export function gateState(root, id, events = journalById(root).get(id) || [], co
     selfApproved: Boolean(live && live.kind === 'self'),
     fresh: Boolean(live && live.kind === 'fresh'),
     live,
-    worker,
+    workers: self,
   };
 }
 
@@ -1375,8 +1445,11 @@ export function reviewState(root, id) {
 // (approved before --by existed). Shown by status and report, never acted on.
 export function reviewSplit(root, issues = loadIssues(root), journal = journalById(root)) {
   const split = { fresh: 0, coordinator: 0, self: 0, unrecorded: 0 };
+  const coordinators = coordinatorNames(root);
   for (const i of issues.filter((x) => x.status === 'done')) {
-    const a = gateState(root, i.id, journal.get(i.id) || []).lastApprove;
+    // The live approve — the one that actually cleared the issue — not simply the last one recorded: a later
+    // coordinator (or self) approve does not make an already-cleared issue read as coordinator- or self-reviewed.
+    const a = gateState(root, i.id, journal.get(i.id) || [], coordinators, issues, journal).live;
     split[a && a.kind ? a.kind : 'unrecorded'] += 1;
   }
   return split;
@@ -1405,12 +1478,18 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
   }
   const by = flags.by !== undefined ? fieldText(flags.by) : null;
   const journal = by ? journalById(root) : null;
+  // The full issue list, not just the ones under review: a sibling elsewhere on the same Branch still counts
+  // for self (see gateState/branchWorkers), and loading it once here keeps a package review call linear.
+  const allIssues = by ? loadIssues(root) : null;
   const coordinators = coordinatorNames(root);
   const kinds = issues.map((issue) => {
     if (!by) return null;
-    const worker = issue.fields.worker || gateState(root, issue.id, journal.get(issue.id) || []).worker;
-    const kind = reviewerKind(by, worker, coordinators);
-    need(verdict !== 'approve' || kind !== 'self', `${issue.id}: an approve by ${by} is a self-approve${worker ? ` (${worker} is the issue's worker)` : ''} and does not count as review — a fresh reviewer, or the jarl, reads the diff${issues.length > 1 ? ' — nothing was written' : ''}`);
+    // Self is everyone who has ever held this issue's lease — its own worker across every takeover, and the
+    // worker of any other issue sharing its Branch (a package) — not only its current Worker field.
+    const self = [...gateState(root, issue.id, journal.get(issue.id) || [], coordinators, allIssues, journal).workers];
+    const kind = reviewerKind(by, self, coordinators);
+    const who = self.length === 1 ? `${self[0]} is the issue's worker` : self.length > 1 ? `${self.join(', ')} have all held ${issue.id}'s lease` : '';
+    need(verdict !== 'approve' || kind !== 'self', `${issue.id}: an approve by ${by} is a self-approve${who ? ` (${who})` : ''} and does not count as review — a fresh reviewer, or the jarl, reads the diff${issues.length > 1 ? ' — nothing was written' : ''}`);
     return kind;
   });
   appendLogLines(root, issues.map((issue, n) => `${issue.id} review ${verdict} · ${by ? `by ${by} (${kinds[n]}) · ` : ''}${findings.split('\n')[0]}`));
@@ -1839,7 +1918,7 @@ export function cmdQueue(root, flags = {}) {
   const journal = journalById(root);
   const unsettled = issues.filter((i) => i.status === 'open' || i.status === 'in-progress');
   const coordinators = coordinatorNames(root);
-  const gate = new Map(unsettled.map((i) => [i.id, gateState(root, i.id, journal.get(i.id) || [], coordinators)]));
+  const gate = new Map(unsettled.map((i) => [i.id, gateState(root, i.id, journal.get(i.id) || [], coordinators, issues, journal)]));
   // Every issue in the queue sits on a branch, so it carries code: only a fresh approve puts it there (the
   // fresh-review rule). One cleared by a coordinator alone waits, listed with its package as waiting for review.
   const approved = unsettled.filter((i) => gate.get(i.id).fresh);
@@ -1868,7 +1947,9 @@ export function cmdQueue(root, flags = {}) {
       const ahead = mb ? Number(git(repo, ['rev-list', '--count', `${mb}..${branch}`]) || 0) : null;
       if (!ahead) continue;   // nothing its base lacks: merged already, or never worked on
       const others = issuesOnBranch(root, unsettled, real, branch).filter((i) => !on.includes(i));
-      const approves = on.map((i) => gate.get(i.id).lastApprove);
+      // The live approve, not simply the last one recorded: a later coordinator approve does not spend an
+      // earlier, still-live fresh approve, so the row still credits the fresh reviewer who actually cleared it.
+      const approves = on.map((i) => gate.get(i.id).live);
       const last = approves.reduce((a, b) => (!a || b.n > a.n ? b : a), null);
       const files = [...new Set(on.concat(others).flatMap((i) => i.files.map((f) => { const at = fileAt(root, i, f); return canonical(at.repo) === real ? at.path : null; }).filter(Boolean)))];
       rows.push({ branch, issues: on.map((i) => i.id), waitingReview: others.map((i) => i.id), ready: others.length === 0, ahead, approvedAt: last.at, by: last.by, files, n: last.n });
@@ -2143,11 +2224,13 @@ export function cmdReport(root, flags = {}) {
   const doneLines = repos.length > 1 ? repos.flatMap((r) => ['', `### ${r} (${byRepo[r].length})`, ...byRepo[r].map(row)]) : done.map(row);
   const journal = journalById(root);
   const split = reviewSplit(root, issues, journal);
+  const coordinators = coordinatorNames(root);
   // One row per issue, for a host that renders its own dashboard from --json: the same fields a reader of the
-  // issue would look up, with the last approve (who, which kind, when).
+  // issue would look up, with the live approve (who, which kind, when) — the one that actually cleared it, not
+  // simply the last one recorded.
   const rows = issues.map((i) => {
     const m = mergedOf(i);
-    const a = gateState(root, i.id, journal.get(i.id) || []).lastApprove;
+    const a = gateState(root, i.id, journal.get(i.id) || [], coordinators, issues, journal).live;
     return { id: i.id, title: i.title, status: i.status, kind: i.kind, priority: i.priority, tier: i.tier, tags: i.tags, repos: repoNames(root, i), branch: i.fields.branch || null, after: i.after, sources: i.sources, merged: m ? m.sha : null, ci: m ? m.ci : null, review: a ? { by: a.by, kind: a.kind, at: a.at } : null };
   });
   const lines = [`# Report`, '', goal, '', `## Done (${done.length})`, ...(done.length ? [`Reviewed by: ${renderSplit(split)}`] : []), ...doneLines,

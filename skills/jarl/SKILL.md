@@ -37,7 +37,7 @@ command table below. Four things:
 
 | Path | What | Who writes |
 |---|---|---|
-| `.jarl/goal.md` | Why this branch exists, in one paragraph; the standing assumptions; the rules that apply here. Written once at the start, amended only with the user's word. | jarl |
+| `.jarl/goal.md` | Why this branch exists, in one paragraph; the standing assumptions; the rules that apply here. Written once at the start, amended only with the user's word. A `Coordinators: a, b` line (plain, a list item, or bold) names extra reviewers who count as `coordinator` rather than `fresh`, alongside `coordinator`, `jarl`, `reeve` and the loop's own name — the directory holding `.jarl/` — which count as coordinators without being declared. | jarl |
 | `.jarl/decisions.md` | Rulings: `## YYYY-MM-DD · slug`, the ruling, **By:** who ruled. New rulings are appended and a ruling's text is never edited; the one change the tool makes to an earlier entry is `decide --supersedes`, which adds a **Superseded by:** line to its closing block. Read before deciding anything; never re-derive a ruling that is here. A ruling marked **Superseded by:** is no longer in force — the one that superseded it is; `decisions --live` lists only the rulings in force. | jarl |
 | `.jarl/issues/NNN-slug.md` | One issue per file, numbered in filing order from 001. Format below. | jarl (header, status), worker (evidence) |
 | `.jarl/log.md` | The journal, append-only, one dated line per event: filed, started, done, dropped, merged, asked, decided. | everyone, through the jarl |
@@ -237,9 +237,7 @@ Every turn, in this order:
    a loop, run `status` (goal, when it was opened, last activity) and ask the user once whether this
    session continues that loop or archives it (`archive "<slug>"`, then `init "<goal>"`). Ask only at
    that first contact, never again on each `new` or `evidence` in the same work.
-1. **Boot.** `handoff read` (a handoff marked STALE is a pointer, not the state: trust the live parts it prints), then `goal.md`, `decisions --live` (the rulings in force), the tail of `log.md`, `status`, `list`, `tips` when the loop's issues name other repositories, `queue`, and
-   `branches` — a worker branch with commits beyond the feature branch is a report, whether or not the
-   worker said so. Open questions come first: the user may have answered one since.
+1. **Boot.** `handoff read` (a handoff marked STALE is a pointer, not the state: trust the live parts it prints), then `goal.md`, `decisions --live` (the rulings in force), the tail of `log.md`, `status`, `list`, `tips` when the loop's issues name other repositories, `queue`, and `branches` — a worker branch with commits beyond the feature branch is a report, whether or not the worker said so. Open questions come first: the user may have answered one since.
 2. **File.** Anything anybody saw becomes an issue before anything else happens. Nobody fixes on the
    side. A worker reports what it found; the jarl files it, so numbers never collide.
 3. **Pick.** `jarl.mjs next` lists what can run now: open issues whose files do not overlap with anything
@@ -254,17 +252,7 @@ Every turn, in this order:
    verifiers need none — on the tier the issue names — set it explicitly on every spawn, never inherited —
    and tell the worker it spawns nothing itself. The brief is below; the issue file is pasted into it
    verbatim, and after three red rounds the takeover block from `round` goes in too, for a fresh worker.
-5. **Review.** A worker's report is a hypothesis. A **fresh one-shot reviewer** — never the worker,
-   never the merger — reads the issue and the diff and answers with the review discipline's three
-   words: Critical, Important, Minor. Critical or Important is `review <id> changes --by <reviewer> "…"` and a round
-   back to the worker; Minor alone is `review <id> approve --by <reviewer> "…"` with the minor points in the findings,
-   never a bounce. `--by` names who reviewed; the tool refuses an approve by the issue's worker. **A code
-   issue — one that records a Branch or a Merged field — needs a fresh reviewer**: an agent that neither
-   wrote the code nor runs the loop. The jarl's or the reeve's own approve is recorded but does not clear
-   it for `done` or the merge queue; only issues with no code (a ruling, a document) close on it. So the
-   jarl raises a reviewer for every branch, however small. The reviewer checks that the new test was red before the change and green after,
-   that the acceptance line is met literally, and that nothing outside the issue moved. The reviewer's
-   brief is below.
+5. **Review.** A worker's report is a hypothesis. A **fresh one-shot reviewer** — never the worker, never the merger — reads the issue and the diff and answers with the review discipline's three words: Critical, Important, Minor. Critical or Important is `review <id> changes --by <reviewer> "…"` and a round back to the worker; Minor alone is `review <id> approve --by <reviewer> "…"` with the minor points in the findings, never a bounce. `--by` names who reviewed; the tool refuses an approve by the issue's worker. **A code issue — one that records a Branch or a Merged field — needs a fresh reviewer**: an agent that neither wrote the code nor runs the loop. The jarl's or the reeve's own approve is recorded but does not clear it for `done` or the merge queue; only issues with no code (a ruling, a document) close on it. So the jarl raises a reviewer for every branch, however small. The reviewer checks that the new test was red before the change and green after, that the acceptance line is met literally, and that nothing outside the issue moved. The reviewer's brief is below.
 6. **Merge.** The merger (below) does it: into the feature branch with a merge commit that names
    the issue, then `evidence <id> --ran "<check>" --saw "<what it printed, merge sha>"`, `set <id> done`, worktree and branch removed. Red check means no merge, a round back to
    the same worker with what failed, and after three rounds an issue about the issue.
@@ -384,14 +372,7 @@ so and names the feature branch), never resolve a conflict by picking a side bli
 test or a check.
 For each branch the jarl names, or that `jarl.mjs queue` lists (approved, ahead of its base, in merge order and
 batches), or that `jarl.mjs branches` shows with commits beyond the base:
-1. `jarl.mjs check <id> --branch <b>` (`jarl.mjs check --branch <b>` for a package); read the diff (`git diff <feature-branch>...<b>`); a worker
-   worktree with an uncommitted but complete diff is committed on its branch first, with a log line
-   saying the merger committed it; a branch the worker never renamed (UNNAMED in `branches`) is
-   renamed to `jarl/NNN-slug` in its worktree (`git branch -m`) before anything else. A branch without a fresh reviewer's approve (`jarl.mjs set` will refuse
-   `done` without one, and a coordinator's approve does not count for a branch) waits for the reviewer; it is not the merger's call.
-   If you merge one anyway, `jarl.mjs merged` says so loudly — report it. In the default mode a
-   branch whose diff touches `.jarl/` is not merged — git treats the ignored loop as expendable and
-   would overwrite it — it is reported.
+1. `jarl.mjs check <id> --branch <b>` (`jarl.mjs check --branch <b>` for a package); read the diff (`git diff <feature-branch>...<b>`); a worker worktree with an uncommitted but complete diff is committed on its branch first, with a log line saying the merger committed it; a branch the worker never renamed (UNNAMED in `branches`) is renamed to `jarl/NNN-slug` in its worktree (`git branch -m`) before anything else. A branch without a fresh reviewer's approve (`jarl.mjs set` will refuse `done` without one, and a coordinator's approve does not count for a branch) waits for the reviewer; it is not the merger's call. If you merge one anyway, `jarl.mjs merged` says so loudly — report it. In the default mode a branch whose diff touches `.jarl/` is not merged — git treats the ignored loop as expendable and would overwrite it — it is reported.
 2. In the committed mode, commit whatever `.jarl/` holds first (the reeve writes there while you work, and an uncommitted
    file in a checkout you are about to reset is a file about to vanish); in the default mode there is
    nothing to commit, and neither a merge nor a reset touches the ignored loop. Then `git merge --no-ff <b>`
