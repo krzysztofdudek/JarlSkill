@@ -657,7 +657,8 @@ function setField(text, name, value) {
     if (lines[i].startsWith('## ')) break;
     const f = FIELD_RE.exec(lines[i]);
     if (!f) continue;
-    if (f[1] === name) { lines[i] = `**${name}:** ${value}`; return lines.join('\n'); }
+    // Compared without case, as parseIssue reads names: **status:** written by hand is the Status field, not a second one.
+    if (f[1].toLowerCase() === name.toLowerCase()) { lines[i] = `**${name}:** ${value}`; return lines.join('\n'); }
     last = i;
   }
   // insert after the last field line of the header
@@ -674,7 +675,7 @@ function removeFields(text, names) {
   for (const line of lines.slice(1)) {
     if (line.startsWith('## ')) inHeader = false;
     const f = inHeader ? FIELD_RE.exec(line) : null;
-    if (f && names.includes(f[1])) continue;
+    if (f && names.some((n) => n.toLowerCase() === f[1].toLowerCase())) continue;
     out.push(line);
   }
   return out.join('\n');

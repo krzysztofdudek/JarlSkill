@@ -526,3 +526,17 @@ test('queue takes only work in play: a proposed or blocked issue with a fresh ap
   assert.deepEqual(rows.map((r) => r.branch), ['feat/a']);
 });
 
+test('setField matches a field name without case: a hand-written **status:** is replaced, not doubled', () => {
+  const root = repo();
+  jarl(root, 'init', 'g');
+  jarl(root, 'new', 'a');
+  const path = join(root, '.jarl', 'issues', '001-a.md');
+  writeFileSync(path, readFileSync(path, 'utf8').replace('**Status:** open', '**status:** open').replace('**Tags:** ', '**tags:** x'));
+  jarl(root, 'set', '1', 'deferred', 'later');
+  jarl(root, 'tag', '1', '+y');
+  const text = readFileSync(path, 'utf8');
+  assert.equal((text.match(/^\*\*status:\*\*/gim) || []).length, 1);
+  assert.match(text, /^\*\*Status:\*\* deferred$/m);
+  assert.equal((text.match(/^\*\*tags:\*\*/gim) || []).length, 1);
+  assert.match(text, /^\*\*Tags:\*\* x, y$/m);
+});
