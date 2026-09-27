@@ -77,7 +77,20 @@ export const LOCK_WAIT_MS = Number(process.env.JARL_LOCK_WAIT_MS) || 20_000;   /
 const SLEEPER = new Int32Array(new SharedArrayBuffer(4));
 function sleep(ms) { Atomics.wait(SLEEPER, 0, 0, ms); }
 function lockPath(root) { return join(jarlDir(root), '.lock'); }
-let held = 0;   // re-entrant within one process: a command that calls another write takes the lock once
+// Re-entrant per loop, never across loops: a command that calls another write on the same loop takes that loop's lock
+// once, and a write to another loop from inside it takes the other loop's own lock. Keyed by the loop's directory
+// with symlinks resolved, so two spellings of one root are one lock.
+const HELD = new Map();
+function lockKey(root) { try { return realpathSync.native(jarlDir(root)); } catch { return resolve(jarlDir(root)); } }
+// fn runs synchronously under the lock. A function that returns a promise would run its awaited part after the lock
+// is released, so it is refused: an async function before it runs, any other that hands back a promise when it does.
+const ASYNC_REFUSAL = 'withLock takes a synchronous function: the lock is released when it returns, so an async function (or one returning a promise) would write after the release — do the async work first, then call withLock with the writes';
+function isThenable(v) { return v !== null && (typeof v === 'object' || typeof v === 'function') && typeof v.then === 'function'; }
+function runSync(fn) {
+  const out = fn();
+  if (isThenable(out)) throw new Error(ASYNC_REFUSAL);
+  return out;
+}
 
 // Stale: empty and older than LOCK_EMPTY_MS; on this host, a holder whose pid no longer runs (or, against pid
 // reuse, one older than LOCK_REUSED_PID_MS); from another host (a shared checkout) or with an unreadable
@@ -117,9 +130,14 @@ function breakStaleLock(root, stale) {
   }
 }
 
+// Waiting for a lock held elsewhere blocks the whole thread (Atomics.wait), for up to LOCK_WAIT_MS (20 s): the
+// tool is synchronous by design, so a caller with an event loop to keep alive should call it off that loop.
 export function withLock(root, fn) {
+  if (typeof fn !== 'function' || fn.constructor?.name === 'AsyncFunction') throw new Error(ASYNC_REFUSAL);
   // Before init there is no .jarl/ to guard and nothing in it to lose: init runs unguarded.
-  if (held > 0 || !existsSync(jarlDir(root))) return fn();
+  if (!existsSync(jarlDir(root))) return runSync(fn);
+  const key = lockKey(root);
+  if (HELD.get(key) > 0) return runSync(fn);
   const path = lockPath(root);
   const mine = `${process.pid} ${hostname()} ${new Date().toISOString()}\n`;
   const until = Date.now() + LOCK_WAIT_MS;
@@ -138,16 +156,16 @@ export function withLock(root, fn) {
     if (Date.now() > until) throw new Error(`.jarl/.lock is held by another jarl.mjs (${text.trim() || 'holder unknown'}) — nothing was written; retry, or remove ${path} if that process is gone`);
     sleep(10 + Math.floor(Math.random() * 40));
   }
-  held += 1;
+  HELD.set(key, 1);
   try {
-    const out = fn();
+    const out = runSync(fn);
     // A committed loop from before the narrow ignore file existed gets it here: under the lock, and only
     // after a command that wrote (a refused one writes nothing). close may have removed .jarl/ meanwhile.
     const ignore = join(jarlDir(root), '.gitignore');
     if (existsSync(jarlDir(root)) && !existsSync(ignore)) writeAtomic(ignore, JARL_GITIGNORE_COMMITTED);
     return out;
   } finally {
-    held -= 1;
+    HELD.delete(key);
     // Release only a lock that is still this one: close removes .jarl/ with it, and a lock broken as stale
     // may already belong to someone else.
     try { if (readFileSync(path, 'utf8') === mine) unlinkSync(path); } catch { /* removed with .jarl/ */ }
