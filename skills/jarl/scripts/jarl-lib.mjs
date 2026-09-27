@@ -740,17 +740,19 @@ export function loadDecisions(root) {
     const sup = field('Superseded by').pop();
     const reach = field('Reach').pop();
     const typeLog = /^(\S+) · (\S+)/.exec(field('Type log').pop() || '');
+    const ruleLog = /^(\S+) · (\S+)/.exec(field('Rule log').pop() || '');
     const first = (name) => (field(name).pop() || '').split(/\s/)[0] || null;
     return {
       date: d.date, slug: d.slug, ruling, by: field('By').pop() || null, supersedes: field('Supersedes').pop() || null, supersededBy: sup ? sup.split(/\s/)[0] : null, settles: splitList(field('Settles').pop()),
-      area: field('Area').pop() || null, reach: reach !== undefined && /^\d+$/.test(reach) ? Number(reach) : null,
+      area: field('Area').pop() || null, reach: reach !== undefined && /^\d+$/.test(reach) ? Number(reach) : null, rule: field('Rule').pop() || null,
       ratified: first('Ratified'), rejected: first('Rejected'), typeLog: typeLog ? { type: typeLog[1], datetime: typeLog[2] } : null,
+      ruleLog: ruleLog ? { rule: ruleLog[1], datetime: ruleLog[2] } : null,
     };
   });
 }
-// The fields the tool writes into a ruling's closing block. Area and Reach come with the ruling (decide --area,
-// --reach); Superseded by, Ratified, Rejected and Type log are added to an earlier ruling in place, later.
-const DECISION_META = /^\*\*(By|Supersedes|Superseded by|Settles|Area|Reach|Ratified|Rejected|Type log):\*\*\s*(.*)$/;
+// The fields the tool writes into a ruling's closing block. Area, Reach and Rule come with the ruling (decide --area,
+// --reach, --rule); Superseded by, Ratified, Rejected, Type log and Rule log are added to an earlier ruling in place, later.
+const DECISION_META = /^\*\*(By|Supersedes|Superseded by|Settles|Area|Reach|Rule|Ratified|Rejected|Type log|Rule log):\*\*\s*(.*)$/;
 
 // A field line added at the end of one ruling's own section, by lines: the text is never read as a pattern.
 function markDecision(root, slug, line) {
@@ -765,7 +767,7 @@ function markDecision(root, slug, line) {
   writeAtomic(path, lines.join('\n'));
 }
 
-export function appendDecision(root, slug, ruling, { by, supersedes, area, reach } = {}) {
+export function appendDecision(root, slug, ruling, { by, supersedes, area, reach, rule } = {}) {
   need(typeof slug === 'string' && SLUG_RE.test(slug), `a ruling's slug is letters, digits and . _ - (starting with a letter or digit, at most 80 characters) — not "${slug}"; e.g. ${slugify(String(slug || 'ruling'))}`);
   const path = join(jarlDir(root), 'decisions.md');
   const existing = existsSync(path) ? readText(path) : '# Decisions\n';
@@ -786,7 +788,7 @@ export function appendDecision(root, slug, ruling, { by, supersedes, area, reach
     lines.splice(end, 0, `**Superseded by:** ${slug} (${today()})`);
     text = lines.join('\n');
   }
-  const meta = [by ? `**By:** ${fieldText(by)}` : null, supersedes !== undefined ? `**Supersedes:** ${supersedes}` : null, area ? `**Area:** ${area}` : null, reach !== undefined && reach !== null ? `**Reach:** ${reach}` : null].filter(Boolean).join('\n');
+  const meta = [by ? `**By:** ${fieldText(by)}` : null, supersedes !== undefined ? `**Supersedes:** ${supersedes}` : null, area ? `**Area:** ${area}` : null, reach !== undefined && reach !== null ? `**Reach:** ${reach}` : null, rule ? `**Rule:** ${rule}` : null].filter(Boolean).join('\n');
   writeAtomic(path, `${text.replace(/\s*$/, '')}\n\n## ${today()} · ${slug}\n${bodyText(ruling)}\n${meta ? `\n${meta}\n` : ''}`);
 }
 
@@ -2719,11 +2721,21 @@ export function cmdAsk(root, question, flags) {
 }
 
 // The one word that answers a ratification: the first word of the answer, without case or trailing punctuation.
+// "no" is not among them: it is English no and colloquial Polish yes ("no tak", "no"), so it decides nothing alone —
+// the word after it decides ("no tak" ratifies, "no nie" rejects), and a bare "no" is refused with a request for
+// tak or nie rather than read as a rejection the user may not have meant.
 export const RATIFY_WORDS = ['yes', 'ok', 'ratify', 'ratified', 'accept', 'accepted', 'approve', 'approved', 'tak'];
-export const REJECT_WORDS = ['no', 'reject', 'rejected', 'nie'];
+export const REJECT_WORDS = ['reject', 'rejected', 'nie'];
+export const AMBIGUOUS_WORDS = ['no'];
 function ratifyVerdict(answer) {
-  const w = String(answer).trim().split(/\s+/)[0].toLowerCase().replace(/[.,;:!]+$/, '');
-  return RATIFY_WORDS.includes(w) ? 'ratified' : REJECT_WORDS.includes(w) ? 'rejected' : null;
+  const words = String(answer).trim().split(/\s+/).map((w) => w.toLowerCase().replace(/[.,;:!?]+$/, ''));
+  const verdict = (w) => (RATIFY_WORDS.includes(w) ? 'ratified' : REJECT_WORDS.includes(w) ? 'rejected' : null);
+  return AMBIGUOUS_WORDS.includes(words[0]) ? verdict(words[1] || '') : verdict(words[0]);
+}
+function ratifyRefusal(id, ruling, answer) {
+  const first = String(answer).trim().split(/\s+/)[0].toLowerCase().replace(/[.,;:!?]+$/, '');
+  if (AMBIGUOUS_WORDS.includes(first)) return `a-${id} ratifies ruling ${ruling}: "${first}" is English no and colloquial Polish yes, so it decides nothing — answer tak or nie (yes or reject)`;
+  return `a-${id} ratifies ruling ${ruling}: the answer starts with one word — ${RATIFY_WORDS.join(', ')} to ratify it, ${REJECT_WORDS.join(', ')} to reject it`;
 }
 
 export function cmdAnswer(root, rawId, answer) {
@@ -2732,11 +2744,11 @@ export function cmdAnswer(root, rawId, answer) {
   const ask = loadAsks(root).find((a) => a.id === id);
   need(ask, `no such question: a-${id}`);
   need(ask.state === 'open', `a-${id} is already answered`);
-  // A batch item asks about one area ruling, and its answer says one word first: yes or no.
+  // A batch item asks about one area ruling, and its answer says one word first: yes or reject (tak or nie).
   const rulings = ask.ruling ? loadDecisions(root) : [];
   const ruling = ask.ruling ? rulings.find((d) => d.slug === ask.ruling) : null;
   const verdict = ask.ruling ? ratifyVerdict(answer) : null;
-  need(!ask.ruling || verdict, `a-${id} ratifies ruling ${ask.ruling}: the answer starts with one word — ${RATIFY_WORDS.join(', ')} to ratify it, ${REJECT_WORDS.join(', ')} to reject it`);
+  need(!ask.ruling || verdict, ask.ruling && !verdict ? ratifyRefusal(id, ask.ruling, answer) : '');
   need(!ask.ruling || ruling, `a-${id} ratifies ruling ${ask.ruling}, which is no longer in decisions.md`);
   appendDecision(root, `ask-${id}`, `**Question:** ${ask.question}\n**Answer:** ${answer}`, { by: 'owner' });
   const path = asksPath(root);
@@ -2751,19 +2763,24 @@ export function cmdAnswer(root, rawId, answer) {
 }
 
 // A ratification answered: the ruling is marked in place. A ratified area ruling hands back the entry for the type's
-// decision log (typeDecision: { type, text, supersedes }) — what the command line writes through yg-edge.mjs, the one
-// place in Jarl that reaches another tool, and what a composer standing on record.mjs may write with its own code.
-// This module never writes it: it reads and writes the loop's files only.
+// decision log (typeDecision: { type, text, supersedes }) and, when it names a rule of the graph (decide --rule), the
+// ratification of that rule (ruleRatification: { rule, text }) — what the command line writes through yg-edge.mjs,
+// the one place in Jarl that reaches another tool, and what a composer standing on record.mjs may write with its own
+// code. This module never writes either: it reads and writes the loop's files only.
 function ratify(root, ruling, rulings, verdict, askId) {
   markDecision(root, ruling.slug, `**${verdict === 'ratified' ? 'Ratified' : 'Rejected'}:** a-${askId} (${today()})`);
   appendLog(root, `${verdict} ${ruling.slug} · a-${askId}${ruling.area ? ` · area ${ruling.area}` : ''}`);
-  const out = { ruling: ruling.slug, verdict, typeDecision: null, typeLog: null };
+  const out = { ruling: ruling.slug, verdict, typeDecision: null, typeLog: null, ruleRatification: null, ruleLog: null };
   if (verdict !== 'ratified' || !ruling.area) return out;
-  if (ruling.supersededBy) return { ...out, typeLog: { state: 'skipped', reason: `superseded by ${ruling.supersededBy}, whose own item asks about it` } };
+  if (ruling.supersededBy) {
+    const skipped = { state: 'skipped', reason: `superseded by ${ruling.supersededBy}, whose own item asks about it` };
+    return { ...out, typeLog: skipped, ...(ruling.rule ? { ruleLog: skipped } : {}) };
+  }
   // The ruling it replaces, when its entry is in the same type's log, is replaced there too.
   const prior = ruling.supersedes ? rulings.find((d) => d.slug === ruling.supersedes) : null;
   const supersedes = prior && prior.typeLog && prior.typeLog.type === ruling.area ? prior.typeLog.datetime : null;
-  return { ...out, typeDecision: { type: ruling.area, text: `${ruling.ruling}\n\n(ratified: ${ruling.slug}, a-${askId})`, supersedes } };
+  const text = `${ruling.ruling}\n\n(ratified: ${ruling.slug}, a-${askId})`;
+  return { ...out, typeDecision: { type: ruling.area, text, supersedes }, ...(ruling.rule ? { ruleRatification: { rule: ruling.rule, text } } : {}) };
 }
 
 // What became of a ratified area ruling's entry in the type's decision log, recorded: a written one marks the ruling
@@ -2775,6 +2792,17 @@ export function recordTypeLog(root, slug, decision, result) {
     appendLog(root, `${slug} written into the decision log of type ${decision.type}${decision.supersedes ? ` · supersedes ${decision.supersedes}` : ''}`);
   } else if (result.state === 'failed') {
     appendLog(root, `${slug} NOT written into the decision log of type ${decision.type} · ${result.reason}`);
+  }
+}
+
+// What became of a ratified ruling's rule ratification in the rule's own log, recorded the same way: a written one
+// marks the ruling **Rule log:** <rule> · <datetime>; a failed one is a log line.
+export function recordRuleLog(root, slug, ratification, result) {
+  if (result.state === 'written') {
+    markDecision(root, slug, `**Rule log:** ${ratification.rule} · ${result.datetime || 'unknown'}`);
+    appendLog(root, `${slug} ratified rule ${ratification.rule} in its own log · by ${result.by}`);
+  } else if (result.state === 'failed') {
+    appendLog(root, `${slug} did NOT ratify rule ${ratification.rule} in its own log · ${result.reason}`);
   }
 }
 
@@ -2799,18 +2827,23 @@ export function cmdDecide(root, slug, ruling, flags = {}) {
   need(flags.area === undefined || AREA_RE.test(String(flags.area)), `--area names the type of code the ruling reaches, as the repository's graph names it: one word of letters, digits and . _ - (got "${flags.area}")`);
   need(flags.reach === undefined || flags.area !== undefined, '--reach counts the files of the --area type — it needs --area');
   need(flags.reach === undefined || /^\d+$/.test(String(flags.reach)), `--reach is how many files the area holds, a whole number (got "${flags.reach}")`);
+  need(flags.rule === undefined || flags.area !== undefined, '--rule names the rule of the graph the ruling admits on the --area type — it needs --area');
+  need(flags.rule === undefined || RULE_RE.test(String(flags.rule)), `--rule names a rule as the repository's graph names it: its id, segments of letters, digits and . _ - joined by / (got "${flags.rule}")`);
   const by = flags.by !== undefined ? fieldText(flags.by) : 'owner';
   const settles = flags.settles !== undefined ? issuesFor(root, flags.settles) : [];
   const area = flags.area !== undefined ? String(flags.area) : null;
   const reach = flags.reach !== undefined ? Number(flags.reach) : null;
-  appendDecision(root, slug, settles.length ? `${ruling.trim()}\n\n**Settles:** ${settles.map((i) => i.id).join(', ')}` : ruling, { by, supersedes: flags.supersedes, area, reach });
-  appendLog(root, `decided ${slug} · by ${by}${flags.supersedes !== undefined ? ` · supersedes ${flags.supersedes}` : ''}${area ? ` · area ${area}${reach !== null ? ` (${reach} files)` : ''}` : ''}`);
+  const rule = flags.rule !== undefined ? String(flags.rule) : null;
+  appendDecision(root, slug, settles.length ? `${ruling.trim()}\n\n**Settles:** ${settles.map((i) => i.id).join(', ')}` : ruling, { by, supersedes: flags.supersedes, area, reach, rule });
+  appendLog(root, `decided ${slug} · by ${by}${flags.supersedes !== undefined ? ` · supersedes ${flags.supersedes}` : ''}${area ? ` · area ${area}${reach !== null ? ` (${reach} files)` : ''}${rule ? ` · rule ${rule}` : ''}` : ''}`);
   if (settles.length) appendRuling(root, settles, `Ruling ${slug}: ${ruling.trim().split('\n')[0]}`);
-  return { slug, by, supersedes: flags.supersedes ?? null, settles: settles.map((i) => i.id), ...(area ? { area, reach } : {}) };
+  return { slug, by, supersedes: flags.supersedes ?? null, settles: settles.map((i) => i.id), ...(area ? { area, reach, ...(rule ? { rule } : {}) } : {}) };
 }
 
 // A type name as the repository's graph takes it for a log: one path segment.
 export const AREA_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
+// A rule id as the graph names it: path segments of the same letters, none of them . or .., joined by /.
+export const RULE_RE = /^(?!.*(?:^|\/)\.{1,2}(?:\/|$))[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/;
 
 // ---- the ratification batch: area rulings the user admits when the loop closes -----------------------------
 
@@ -2839,12 +2872,15 @@ export function ratificationBatch(root) {
   const room = Math.max(0, RATIFY_BATCH - pending.length);
   const filed = candidates.slice(0, room).map((d) => {
     const reach = d.reach !== null ? `${d.reach} file${d.reach === 1 ? '' : 's'}` : 'files not counted';
-    return cmdAsk(root, `area ${d.area} · ${reach} · ${d.slug}: "${firstSentence(d.ruling)}" — yes to admit it into the type's decisions, no to leave it a ruling of this loop`, { kind: 'ratify', ruling: d.slug }).id;
+    // A rule's ratification admits it, as it stands now, on every type the graph has it reach — Yggdrasil reads them,
+    // not Jarl — so the question says so: a yes about one area must not pass for consent to less than it gives.
+    const scope = d.rule ? `, and to ratify rule ${d.rule} as it stands now on every type the graph has it reach (not only ${d.area})` : '';
+    return cmdAsk(root, `area ${d.area}${d.rule ? ` · rule ${d.rule}` : ''} · ${reach} · ${d.slug}: "${firstSentence(d.ruling)}" — yes (tak) to admit it into the type's decisions${scope}, reject (nie) to leave it a ruling of this loop`, { kind: 'ratify', ruling: d.slug }).id;
   });
   const bySlug = new Map(rulings.map((d) => [d.slug, d]));
   const items = loadAsks(root).filter((a) => a.ruling && a.state === 'open').map((a) => {
     const d = bySlug.get(a.ruling);
-    return { ask: `a-${a.id}`, ruling: a.ruling, area: d?.area ?? null, reach: d?.reach ?? null, question: a.question };
+    return { ask: `a-${a.id}`, ruling: a.ruling, area: d?.area ?? null, reach: d?.reach ?? null, rule: d?.rule ?? null, question: a.question };
   });
   return { items, filed: filed.map((id) => `a-${id}`), waiting: candidates.length - filed.length };
 }
