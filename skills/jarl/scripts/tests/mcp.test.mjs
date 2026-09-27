@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 
 const SERVER = fileURLToPath(new URL('../jarl-mcp.mjs', import.meta.url));
 const CLI_SOURCE = readFileSync(fileURLToPath(new URL('../jarl.mjs', import.meta.url)), 'utf8');
+const PLUGIN = fileURLToPath(new URL('../../../../', import.meta.url));
 const { COMMAND_ARGS, COMMAND_FLAGS, GLOBAL_FLAGS, MUTATING, parseArgs } = await import('../jarl.mjs');
 const mcp = await import('../jarl-mcp.mjs');
 
@@ -201,6 +202,24 @@ test('a check that fails is the CLI exit 2: isError, with the items', () => {
   const r = mcp.callTool('jarl_check', { id: '1', branch: 'jarl/001-t', root });
   assert.equal(r.isError, true);
   assert.match(r.content[0].text, /✗/);
+});
+
+test('the plugin starts the server by itself: .mcp.json and the portable mcp.json name the same guarded server', () => {
+  const claude = JSON.parse(readFileSync(join(PLUGIN, '.mcp.json'), 'utf8')).mcpServers.jarl;
+  const portable = JSON.parse(readFileSync(join(PLUGIN, 'mcp.json'), 'utf8'));
+  assert.equal(portable.$schema, 'https://agent-plugins.org/schemas/1.0.0/mcp.schema.json');
+  const p = portable.mcpServers.jarl;
+  assert.equal(claude.command, 'node');
+  assert.equal(p.command, 'node');
+  assert.equal(claude.args[0], '-e');
+  assert.equal(claude.args[1], p.args[1], 'the same guard');
+  assert.equal(claude.args[2], '${CLAUDE_PLUGIN_ROOT}/skills/jarl/scripts/jarl-mcp.mjs');
+  assert.equal(p.args[2], '${PLUGIN_ROOT}/skills/jarl/scripts/jarl-mcp.mjs');
+  assert.ok(existsSync(join(PLUGIN, 'skills/jarl/scripts/jarl-mcp.mjs')));
+  // A plugin path the environment cannot reach (a host path inside a container): one stderr line, exit 0.
+  const out = execSync(`"${process.execPath}" -e '${claude.args[1].replace(/'/g, "'\\''")}' /no/such/jarl-mcp.mjs 2>&1; echo "exit $?"`, { encoding: 'utf8' });
+  assert.match(out, /^jarl: \/no\/such\/jarl-mcp\.mjs is not reachable from this environment/);
+  assert.match(out, /exit 0/);
 });
 
 test('concurrent writes: calls sent at once to one server, and to two servers on one loop, lose nothing', async () => {
