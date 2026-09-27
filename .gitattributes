@@ -6,3 +6,6 @@
 # SKILL.md need no entry: their check ignores CRLF.
 skills/jarl/scripts/vendor/runes/** -text linguist-vendored
 skills/jarl/scripts/runes.mjs -text
+
+# Every change adds its lines under [Unreleased]; only a release writes a version heading, so a union never interleaves two sections.
+/CHANGELOG.md merge=union

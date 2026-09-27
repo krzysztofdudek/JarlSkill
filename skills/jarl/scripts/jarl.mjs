@@ -19,6 +19,7 @@ import {
   cmdProfile, cmdArchive, cmdList, cmdNext, cmdMode, cmdClose, cmdCheck, cmdBranches, cmdTips, cmdQueue,
   cmdChangelog, cmdHandoffRead, cmdHandoffWrite, cmdReport, cmdImport, cmdSources,
   renderProfile, renderTips, renderQueue, renderResume, renderStatus, renderImport, renderSources, renderList, recordTypeLog,
+  runDecisionsDriver, mergeFlags,
 } from './jarl-lib.mjs';
 import { writeAreaDecision } from './yg-edge.mjs';
 
@@ -192,6 +193,15 @@ commands:
                                                  --type) when the repository has a graph and a working yg
 
 options: --json  --help  --root <repo root>
+
+git merges (not loop commands: no --root, no lock, no tool of the MCP server):
+  merge-driver decisions <base> <ours> <theirs>  the driver git runs for .jarl/decisions.md (%O %A %B): the rulings of
+                                                 both sides block by block, written over <ours>, exit 0; conflict
+                                                 markers and exit 1 for a ruling both sides superseded, a slug both
+                                                 sides added, a ruling both sides rewrote; .jarl/log.md merges by union
+  merge-driver flags [--yg "<yg command>"]       the -c settings a merger puts between git and merge on every merge,
+                                                 so the drivers run whatever the clone holds: the decisions driver, and
+                                                 with --yg Yggdrasil's log and lock drivers too
 
 <ids> (evidence, review, set, tag, prio, merged): one id, or several as one comma list with ranges — 12,13,14 or
 203-206,209. Every id and every precondition is checked before anything is written, so the call lands on
@@ -369,7 +379,24 @@ const ARITY = Object.fromEntries(Object.entries(COMMAND_ARGS).filter(([, a]) => 
 // The commands that write: each runs under .jarl/.lock (see withLock).
 export const MUTATING = new Set(['init', 'new', 'body', 'import', 'source', 'after', 'set', 'merged', 'tag', 'prio', 'files', 'repo', 'evidence', 'review', 'round', 'ask', 'answer', 'log', 'decide', 'archive', 'mode', 'close']);
 
+// git's side of the loop: the merge driver git runs, and the settings a merger passes it. Neither reads a loop.
+function mergeDriverMain(args) {
+  const [what, ...rest] = args;
+  if (what === 'decisions' && rest.length === 3) {
+    const r = runDecisionsDriver(rest[0], rest[1], rest[2]);
+    for (const c of r.conflicts) console.error(`jarl: decisions.md conflict — ${c}`);
+    process.exit(r.code);
+  }
+  if (what === 'flags' && (rest.length === 0 || (rest.length === 2 && rest[0] === '--yg'))) {
+    console.log(mergeFlags({ yg: rest[1] }));
+    process.exit(0);
+  }
+  console.error('usage: jarl.mjs merge-driver decisions <base> <ours> <theirs> | merge-driver flags [--yg "<yg command>"]');
+  process.exit(1);
+}
+
 function main() {
+  if (process.argv[2] === 'merge-driver') mergeDriverMain(process.argv.slice(3));
   let parsed;
   try { parsed = parseArgs(process.argv.slice(2)); } catch (e) { console.error(e.message); process.exit(1); }
   const { positional, flags } = parsed;
