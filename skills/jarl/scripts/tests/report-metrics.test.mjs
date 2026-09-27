@@ -153,7 +153,21 @@ test('the metrics are read from the journal and the issues, with the numbers a r
   assert.equal(fu.noData, null);
   assert.match(out.text, /^reopened: 1 issue\(s\), 1 time\(s\): 001 · n 7$/m);
   assert.match(out.text, /^red CI after merge: 1 of 1 settled \(100%\): 001 · pending 1 · no CI 1$/m);
-  assert.match(out.text, /^follow-ups within 7 days \(Found by names the closed issue\): 1 of 3 closed \(33\.3%\): 001 ← 005/m);
+  assert.deepEqual({ windowClosed: fu.windowClosed, with: fu.windowClosedWithFollowUps, share: fu.share, open: fu.windowOpen }, { windowClosed: 3, with: 1, share: 0.333, open: 0 });
+  assert.match(out.text, /^follow-ups within 7 days \(Found by names the closed issue\): 1 of 3 closed: 001 ← 005 · share 1 of 3 whose 7 days have passed \(33\.3%\)$/m);
+  // A week and a bit after 001 first closed (09-01 11:30), 002 (09-01 13:00) and 003 (09-02 10:00) are still inside their
+  // window: the share is taken over 001 alone, never over closes that have not had their 7 days.
+  const early = L.loopMetrics(dir, undefined, undefined, Date.parse('2026-09-08T12:00:00Z')).followUps;
+  assert.deepEqual({ windowClosed: early.windowClosed, with: early.windowClosedWithFollowUps, share: early.share, open: early.windowOpen, all: early.withFollowUps }, { windowClosed: 1, with: 1, share: 1, open: 2, all: 1 });
+  const none = L.loopMetrics(dir, undefined, undefined, Date.parse('2026-09-03T12:00:00Z')).followUps;
+  assert.deepEqual({ windowClosed: none.windowClosed, share: none.share, open: none.windowOpen }, { windowClosed: 0, share: null, open: 3 });
+});
+
+test('status --json keeps every earlier key in its place: check comes last', () => {
+  const dir = loop();
+  const keys = Object.keys(json(dir, 'status'));
+  assert.equal(keys[keys.length - 1], 'check');
+  assert.equal(keys[keys.length - 2], 'uncommitted');
 });
 
 test('the library reads the same metrics the report prints', () => {
