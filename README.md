@@ -9,7 +9,7 @@ Invoke it on a branch and the agent becomes the **jarl** of that branch: everyth
 /plugin install jarl@jarl-marketplace
 ```
 
-Run both, then `/reload-plugins` to activate it in this session (or restart Claude Code). Needs Node.js on your `PATH`; no config, no API key. Then `/jarl <goal>` on a feature branch, or just start a session in a checkout that already carries `.jarl/` — the skill resumes on its own.
+Run both, then `/reload-plugins` to activate it in this session (or restart Claude Code). Needs Node.js 22 or later on your `PATH`; no config, no API key. Then `/jarl <goal>` on a feature branch, or just start a session in a checkout that already carries `.jarl/` — the skill resumes on its own.
 
 > MIT licensed · one markdown file and one zero-dependency Node tool · works with any agent that reads skills · part of the [Yggdrasil family](#the-yggdrasil-family) · [full skill body](skills/jarl/SKILL.md)
 
@@ -94,13 +94,15 @@ A call reaches the loop its `root` field names; without it, the one `JARL_ROOT` 
 
 ### Drop-in (any agent)
 
-The whole skill is the [`skills/jarl/`](skills/jarl/) directory: one frontmatter-tagged markdown file, one Node tool and the MCP server over it. Copy the directory into your agent's skill directory; Node on your `PATH` is the only requirement.
+The whole skill is the [`skills/jarl/`](skills/jarl/) directory: one frontmatter-tagged markdown file, one Node tool and the MCP server over it. Copy the directory into your agent's skill directory; Node 22 or later on your `PATH` is the only requirement.
 
 - **Claude Code, user-level:** `~/.claude/skills/jarl/`
 - **Claude Code, project-level:** `.claude/skills/jarl/` in your repo
 - **Other agents:** wherever your tool reads markdown skills
 
 Nothing else in this repo affects behavior — all of it lives in that directory.
+
+**For tool authors.** `skills/jarl/scripts/record.mjs` is the one stable surface another tool may vendor to read and write a Jarl loop: an enumerated list of exports under the contract version `RECORD_API` (`jarl-record/1`), vendored together with `jarl-lib.mjs`. Nothing else is a contract — not `jarl.mjs`, whose exports are internal, and not `jarl-lib.mjs`. See [the record as a library](skills/jarl/SKILL.md#the-record-as-a-library).
 
 ---
 

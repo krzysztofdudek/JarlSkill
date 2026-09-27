@@ -19,7 +19,7 @@
 // sessions' servers) every writing command holds .jarl/.lock exactly as the CLI does.
 //
 // Wire format: newline-delimited JSON-RPC 2.0 on stdin/stdout (MCP stdio transport); stderr is for diagnostics.
-// Zero dependencies, Node 18+.
+// Zero dependencies, Node 22+.
 import { createInterface } from 'node:readline';
 import { readFileSync, realpathSync } from 'node:fs';
 import { resolve, isAbsolute } from 'node:path';
