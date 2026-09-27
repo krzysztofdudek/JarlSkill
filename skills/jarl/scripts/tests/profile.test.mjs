@@ -317,3 +317,129 @@ test('a profile that spells out the built-in statuses reads exactly as no profil
   const b = sameWork(spelled);
   for (const k of Object.keys(a)) assert.equal(b[k], a[k], `${k} prints the same`);
 });
+
+// ---- declared fields and sections ----
+
+const FIELDED = {
+  ...HOUSE,
+  fields: {
+    Kind: { enum: ['feature', 'fix', 'chore'], default: 'feature' },
+    Tier: { enum: ['standard', 'strong', 'max'] },
+    'Area-2': { enum: ['core', 'cli'], required: true },
+    Class: { default: 'b' },
+    Note: {},
+  },
+  sections: ['Plan', 'Ports'],
+  'acceptance-heading': 'Acceptance — evidence',
+};
+function fieldedLoop() {
+  const root = repo();
+  jarl(root, 'init', 'g', '--profile', profileFile(FIELDED));
+  return root;
+}
+
+test('new writes the declared fields after Where, the extra sections after Acceptance, under the profile\'s heading', () => {
+  const root = fieldedLoop();
+  assert.match(refuses(root, 'new', 't'), /Area-2 is required by this loop's profile — give it: --field "Area-2=<value>" \(one of: core, cli\)/);
+  assert.match(refuses(root, 'new', 't', '--field', 'Area-2=web'), /Area-2 must be one of: core, cli \(got "web"\)/);
+  assert.match(refuses(root, 'new', 't', '--field', 'Bogus=1'), /Bogus is not a field this loop's profile declares — it declares Area-2, Class, Note/);
+  assert.match(refuses(root, 'new', 't', '--field', 'Area-2'), /--field takes <name>=<value>/);
+  assert.match(refuses(root, 'new', 't', '--kind', 'bug', '--field', 'area-2=core'), /--kind must be one of: feature, fix, chore/);
+  jarl(root, 'new', 'a thing', '--field', 'area-2=core', '--section', 'Plan=first this\nthen that', '--acceptance', 'it runs', '--tier', 'max');
+  const file = readFileSync(join(root, '.jarl', 'issues', '001-a-thing.md'), 'utf8');
+  assert.equal(file, '# 001 · a thing\n\n**Status:** proposed\n**Kind:** feature\n**Priority:** 2\n**Tier:** max\n**Tags:** \n**Files:** \n**Found by:** jarl\n**Where:**\n**Area-2:** core\n**Class:** b\n**Note:**\n\n## What\n\n\n## Why\n\n\n## Acceptance — evidence\nit runs\n\n## Plan\nfirst this\nthen that\n\n## Ports\n\n\n## Evidence\n\n');
+  const shown = JSON.parse(jarl(root, 'show', '1', '--json'));
+  assert.equal(shown.fields['area-2'], 'core');
+  assert.equal(shown.sections.acceptance, 'it runs\n\n', 'the aliased heading reads as the acceptance');
+  assert.doesNotMatch(jarl(root, 'next'), /no acceptance/);
+});
+
+test('an issue written with the aliased heading by another tool counts its acceptance lines', () => {
+  const root = fieldedLoop();
+  jarl(root, 'new', 'x', '--field', 'Area-2=cli');
+  jarl(root, 'set', '1', 'queued', 'ok');
+  const path = join(root, '.jarl', 'issues', '001-x.md');
+  writeFileSync(path, readFileSync(path, 'utf8').replace('## Acceptance — evidence\n\n', '## Acceptance — evidence\n- one\n- two\n'));
+  jarl(root, 'set', '1', 'running', 'go');
+  assert.deepEqual(JSON.parse(jarl(root, 'status', '--json')).noAcceptance, []);
+  jarl(root, 'body', '1', '--acceptance', 'three', '--section', 'Ports=in: a; out: b');
+  const text = readFileSync(path, 'utf8');
+  assert.match(text, /## Acceptance — evidence\nthree\n\n## Plan/, 'body writes under the heading the file has');
+  assert.doesNotMatch(text, /^## Acceptance$/m);
+  assert.match(text, /## Ports\n+in: a; out: b\n/);
+  assert.match(refuses(root, 'body', '1', '--section', 'Why=x'), /Why is not a section this loop's profile declares — it declares Plan, Ports/);
+});
+
+test('set <ids> <field> <value> writes a declared field, checked against its values, one log line per issue', () => {
+  const root = fieldedLoop();
+  jarl(root, 'new', 'a', '--field', 'Area-2=core');
+  jarl(root, 'new', 'b', '--field', 'Area-2=core');
+  assert.equal(jarl(root, 'set', '1,2', 'area-2', 'cli'), '001 Area-2: cli\n002 Area-2: cli');
+  assert.match(refuses(root, 'set', '1', 'Area-2', 'web'), /Area-2 must be one of: core, cli/);
+  assert.match(refuses(root, 'set', '1', 'Area-2', ''), /Area-2 cannot be empty/);
+  assert.match(refuses(root, 'set', '1', 'Area-2'), /the value is required/);
+  jarl(root, 'set', '1', 'Note', 'see the thread');
+  jarl(root, 'set', '1', 'kind', 'fix');
+  const shown = jarl(root, 'show', '1');
+  assert.match(shown, /\*\*Kind:\*\* fix/);
+  assert.match(shown, /\*\*Note:\*\* see the thread/);
+  assert.match(refuses(root, 'set', '1', 'kind', 'bug'), /Kind must be one of: feature, fix, chore/);
+  assert.match(refuses(root, 'set', '1', 'Note', 'x', '--worker', 'w'), /--worker goes with a status, not with the field Note/);
+  assert.match(refuses(root, 'set', '1', 'Files', 'x'), /status must be one of: .* — or a field this loop's profile declares: Kind, Tier, Area-2, Class, Note/);
+  assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /· 001 field Area-2 · cli\n.*· 002 field Area-2 · cli\n/);
+  // A field line is not a status move: the done gate's replay does not read it as one.
+  assert.equal(JSON.parse(jarl(root, 'show', '1', '--json')).status, 'proposed');
+});
+
+test('list --where filters on any header field; list and resume show the declared fields; status --by takes one', () => {
+  const root = fieldedLoop();
+  jarl(root, 'new', 'a', '--field', 'Area-2=core');
+  jarl(root, 'new', 'b', '--field', 'Area-2=cli', '--kind', 'fix');
+  jarl(root, 'new', 'c', '--field', 'Area-2=cli');
+  jarl(root, 'set', '1,2,3', 'queued', 'ok');
+  const ids = (...w) => JSON.parse(jarl(root, 'list', ...w.flatMap((x) => ['--where', x]), '--json')).map((i) => i.id);
+  assert.deepEqual(ids('area-2=cli'), ['002', '003']);
+  assert.deepEqual(ids('Area-2=cli', 'kind=fix'), ['002']);
+  assert.deepEqual(ids('status=queued'), ['001', '002', '003']);
+  assert.deepEqual(ids('Note='), ['001', '002', '003'], 'an empty value matches an empty field');
+  assert.match(refuses(root, 'list', '--where', 'bogus=1'), /--where names a header field — one of: .*Area-2, Class, Note \(got "bogus"\)/);
+  assert.match(refuses(root, 'list', '--where', 'nothing'), /--where takes <field>=<value>/);
+  assert.match(jarl(root, 'list'), /^001 {2}P2 {2}queued {6}feature {2}a {2}Area-2=core Class=b$/m);
+  jarl(root, 'set', '2', 'running', 'go', '--worker', 'w');
+  const resume = JSON.parse(jarl(root, 'resume', '--json'));
+  assert.deepEqual(resume.inFlight[0].fields, { 'Area-2': 'cli', Class: 'b' });
+  assert.deepEqual(resume.next.map((r) => r.fields['Area-2']), ['core', 'cli']);
+  assert.match(jarl(root, 'resume'), /- 002 b · Area-2=cli Class=b · worker w/);
+  assert.match(jarl(root, 'status', '--by', 'area-2'), /by area-2:\n {2}cli +proposed 0 · queued 1 · running 1 .*\n {2}core +proposed 0 · queued 1/);
+  assert.match(refuses(root, 'status', '--by', 'bogus'), /--by is one of: repo, tag, kind, prio, area-2, class, note/);
+});
+
+test('a template fills declared fields and sections; import takes --field and files under the profile\'s kinds', () => {
+  const root = fieldedLoop();
+  mkdirSync(join(root, '.jarl', 'templates'));
+  writeFileSync(join(root, '.jarl', 'templates', 'area.md'), '# t\n\n**Area-2:** cli\n\n## Plan\nthe usual plan\n\n## Acceptance — evidence\n- it holds\n');
+  jarl(root, 'new', 'from template', '--template', 'area');
+  const t = JSON.parse(jarl(root, 'show', '1', '--json'));
+  assert.equal(t.fields['area-2'], 'cli');
+  assert.equal(t.sections.plan.trim(), 'the usual plan');
+  assert.equal(t.sections.acceptance.trim(), '- it holds');
+  const f = join(mkdtempSync(join(tmpdir(), 'jarl-findings-')), 'findings.json');
+  writeFileSync(f, JSON.stringify([{ id: 'F1', title: 'one', kind: 'defect' }]));
+  assert.match(refuses(root, 'import', f), /Area-2 is required/);
+  jarl(root, 'import', f, '--field', 'Area-2=core');
+  const i = JSON.parse(jarl(root, 'show', '2', '--json'));
+  assert.equal(i.kind, 'feature', 'a finding\'s kind the profile does not name files under its default kind');
+  assert.equal(i.fields['area-2'], 'core');
+});
+
+test('no profile: --field, --section and a field in place of a status are refused; --where works on the built-in fields', () => {
+  const root = repo();
+  jarl(root, 'init', 'g');
+  assert.match(refuses(root, 'new', 't', '--field', 'A=1'), /this loop's profile declares no fields — --field names one/);
+  assert.match(refuses(root, 'new', 't', '--section', 'Plan=x'), /declares no sections/);
+  jarl(root, 'new', 'a', '--kind', 'gap');
+  jarl(root, 'new', 'b');
+  assert.match(refuses(root, 'set', '1', 'kind', 'gap'), /^status must be one of: open, in-progress, done, dropped, deferred\n$/);
+  assert.deepEqual(JSON.parse(jarl(root, 'list', '--where', 'kind=gap', '--json')).map((i) => i.id), ['001']);
+  assert.equal(jarl(root, 'list'), '001  P2  open        gap      a\n002  P2  open        bug      b');
+});

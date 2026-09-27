@@ -42,7 +42,7 @@ commands:
                                                  profile file (see profile below) and stores it as .jarl/profile.json
   new "<title>" [--kind k] [--prio 1|2|3] [--tier standard|strong] [--tags a,b] [--files p,q] [--repo <path>] [--found-by who]
       [--where "<w>"] [--what "<w>"] [--why "<w>"] [--acceptance "<line>"]... [--changelog "<entry>"]...
-      [--source <dir>#<id>,...] [--after <ids>] [--template <name>]
+      [--source <dir>#<id>,...] [--after <ids>] [--template <name>] [--field "<Name>=<value>"]... [--section "<Heading>=<text>"]...
                                                  file an issue under the next free number; --repo names the repository
                                                  its code lives in when that is not the loop's own, several as one comma
                                                  list (see --repo below);
@@ -51,12 +51,15 @@ commands:
                                                  --changelog (repeatable) is the issue's changelog entry, "Added: …" etc.;
                                                  --template reads .jarl/templates/<name>.md: its Kind, Priority, Tier, Tags
                                                  and Files are defaults and its What, Why, Acceptance and Changelog the body,
-                                                 each replaced by the flag when given
+                                                 each replaced by the flag when given; --field and --section
+                                                 (repeatable) write the fields and sections the loop's profile declares
+                                                 (a field's default when not given; a required one must be given)
   body <id> [--where "<w>"] [--what "<w>"] [--why "<w>"] [--acceptance "<line>"]... [--changelog "<entry>"]...
+      [--section "<Heading>=<text>"]...
                                                  set or replace the Where field and the What, Why, Acceptance and
-                                                 Changelog sections
+                                                 Changelog sections, and a section the profile declares
   import <findings.json> [--source <dir>] [--kind k] [--prio 1|2|3] [--tier t] [--tags a,b] [--repo <path>]
-      [--found-by who] [--only <finding ids>] [--adopt] [--dry-run]
+      [--found-by who] [--only <finding ids>] [--adopt] [--dry-run] [--field "<Name>=<value>"]...
                                                  one issue per finding, with Source: <dir>#<finding id>; a finding
                                                  whose Source is already on an issue is skipped, so a re-run files
                                                  nothing twice; --dry-run prints what it would file; --adopt writes
@@ -68,10 +71,11 @@ commands:
                                                  done or dropped, and status counts it as waiting
   evidence <ids> "<text>" | --ran "<command>" --saw "<what it printed>"
                                                  append a free-text note, or one checkable row per --ran/--saw pair (repeatable)
-  list [--status s] [--kind k] [--tag t] [--prio p] [--grep re] [--all]
-                                                 open and in-progress by default; --all for every status
+  list [--status s] [--kind k] [--tag t] [--prio p] [--grep re] [--where "<field>=<value>"]... [--all]
+                                                 the issues not finished (open and in-progress) by default; --all for
+                                                 every status; --where keeps those whose header field holds the value
   show <id>                                      print one issue
-  set <ids> <status> "<why>" [--branch <b>] [--worker <name>] [--worktree <path>]
+  set <ids> <status> "<why>" [--branch <b>] [--worker <name>] [--worktree <path>] | <ids> <field> "<value>"
                                                  change status; writes the log line in the same move; in-progress
                                                  writes Since (and Branch, Worker, Worktree when given) — one lease
                                                  for every id, so a package shares it; leaving in-progress removes
@@ -79,7 +83,9 @@ commands:
                                                  whose CI is not green yet; done needs evidence logged since the issue
                                                  last went in progress (or was reopened, or — never in progress — was
                                                  filed) as a --ran/--saw row — a free-text note never counts alone —
-                                                 and an approve not spent by a round, a restart or a reopen
+                                                 and an approve not spent by a round, a restart or a reopen; with a
+                                                 field the loop's profile declares in place of the status, writes
+                                                 that field (checked against its values) on every id
   merged <ids> --sha <sha> [--ci pending|green|red|none] [--repo <path>] | <ids> --ci <state>
                                                  the merge as fields: Merged (sha, and where with --repo) and CI
                                                  (pending unless given; none: no CI to wait for), and a log line;
@@ -136,15 +142,15 @@ commands:
                                                  named issue's evidence (its status is unchanged)
   decisions [--live]                             the rulings with who ruled and what superseded them; --live only
                                                  those still in force
-  status [--stale-hours n] [--by repo|tag|kind|prio]
+  status [--stale-hours n] [--by repo|tag|kind|prio|<field>]
                                                  the goal, when the loop opened and last moved,
                                                  then one line: open, in flight, waiting, done, dropped, deferred,
                                                  open questions, to ratify, merged with CI pending or red; then who
                                                  reviewed the done work (fresh, coordinator, self, unrecorded); then the
                                                  choices awaiting ratification, stale leases, the issues in flight
                                                  with no acceptance line, and — committed loops — the loop files
-                                                 git has not committed; --by adds the five status counts per
-                                                 repository, tag, kind or priority
+                                                 git has not committed; --by adds the status counts per
+                                                 repository, tag, kind, priority or a field the profile declares
   archive "<slug>"                               put the current loop away under .jarl/archive/<yyyy.mm.dd>-<slug>/,
                                                  keeping the archive, the mode markers and .jarl/templates/, so init
                                                  can open a new loop here in the same mode
@@ -557,7 +563,9 @@ export function slugify(title) {
     .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'issue';
 }
 
-const FIELD_RE = /^\*\*([A-Za-z ]+):\*\*\s*(.*)$/;
+// A header field: **Name:** value. A name is letters, digits, spaces and dashes, so a profile's fields (Area-2) read
+// as fields; the built-in ones are letters and spaces only.
+const FIELD_RE = /^\*\*([A-Za-z0-9 -]+):\*\*\s*(.*)$/;
 
 export function parseIssue(text, file) {
   const lines = text.split('\n');
@@ -591,9 +599,43 @@ export function loadIssues(root) {
     .map((f) => withProfile(parseIssue(readFileSync(join(dir, f), 'utf8'), join(dir, f)), profile));
 }
 // An issue read under the loop's profile: one written with no Status starts where the profile's issues start.
+// Its acceptance is read under the profile's heading as under ## Acceptance, so every view that counts acceptance
+// lines (next, status, done, review) sees it.
 function withProfile(issue, profile) {
-  if (profile.declared && issue.fields.status === undefined) issue.status = profile.initial;
+  if (!profile.declared) return issue;
+  if (issue.fields.status === undefined) issue.status = profile.initial;
+  const alias = profile.acceptance && profile.acceptance.toLowerCase();
+  if (alias && issue.sections[alias] !== undefined && issue.sections.acceptance === undefined) issue.sections.acceptance = issue.sections[alias];
   return issue;
+}
+// The heading an issue's acceptance is written under: the one the file already has, else the profile's.
+function acceptanceHeading(issue, profile) {
+  if (profile.acceptance && issue.sections[profile.acceptance.toLowerCase()] !== undefined) return profile.acceptance;
+  if (/^##\s+Acceptance\s*$/m.test(readFileSync(issue.file, 'utf8'))) return 'Acceptance';
+  return profile.acceptance || 'Acceptance';
+}
+
+// A declared field's value, checked: one line, one of its enum values when it has them. Kind and Tier are checked
+// against the profile's values the same way.
+export function fieldValue(profile, field, raw) {
+  const v = fieldText(raw);
+  const f = typeof field === 'string' ? profile.field(field) : field;
+  if (f && f.enum && v !== '') need(f.enum.includes(v), `${f.name} must be one of: ${f.enum.join(', ')} (got "${v}")`);
+  return v;
+}
+// Name=value pairs from a repeatable flag (--field, --section), each name one the profile declares.
+function namedPairs(list, flag, known, what) {
+  const out = new Map();
+  for (const item of [].concat(list ?? [])) {
+    const at = String(item).indexOf('=');
+    need(at > 0, `--${flag} takes <name>=<value> (got "${item}")`);
+    const name = String(item).slice(0, at).trim();
+    const hit = known.find((k) => k.toLowerCase() === name.toLowerCase());
+    need(hit, known.length ? `${name} is not a ${what} this loop's profile declares — it declares ${known.join(', ')}` : `this loop's profile declares no ${what}s — --${flag} names one (see: jarl.mjs profile)`);
+    need(!out.has(hit), `--${flag} names ${hit} twice`);
+    out.set(hit, String(item).slice(at + 1));
+  }
+  return out;
 }
 
 export function findIssue(root, rawId) {
@@ -633,7 +675,8 @@ function removeFields(text, names) {
 }
 
 function setSection(text, name, body) {
-  const re = new RegExp(`(^##\\s+${name}\\s*$\\n)([\\s\\S]*?)(?=^##\\s|(?![\\s\\S]))`, 'mi');
+  // A heading may hold any character (a profile's "Acceptance — evidence"): it is matched as it is written.
+  const re = new RegExp(`(^##\\s+${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$\\n)([\\s\\S]*?)(?=^##\\s|(?![\\s\\S]))`, 'mi');
   // A function replacer: user text is inserted as it is, never read for $1, $& or $' patterns.
   if (re.test(text)) return text.replace(re, (_, head) => `${head}${body.trim()}\n\n`);
   // A new section other than Evidence goes before Evidence, which stays last: the record of the work.
@@ -675,8 +718,13 @@ export function changelogEntries(issue) {
   });
 }
 
-export function renderIssue({ id, title, status = 'open', kind, priority, tier, tags, files, repo, foundBy, where = '', what = '', why = '', acceptance = '', source = [], after = [], changelog = '' }) {
+// fields: the profile's declared fields, [name, value] in its order, each written after Where (empty when not given).
+// sections: the profile's extra sections, [heading, body], written after Acceptance. acceptanceHeading: the heading the
+// acceptance goes under. Without them the file is what it always was.
+export function renderIssue({ id, title, status = 'open', kind, priority, tier, tags, files, repo, foundBy, where = '', what = '', why = '', acceptance = '', source = [], after = [], changelog = '', fields = [], sections = [], acceptanceHeading = 'Acceptance' }) {
   const body = (t) => (t ? `${t}\n` : '\n');
+  const declared = fields.map(([n, v]) => `**${n}:**${v ? ` ${v}` : ''}\n`).join('');
+  const extra = sections.map(([h, t]) => `## ${h}\n${body(t)}\n`).join('');
   return `# ${id} · ${fieldText(title)}
 
 **Status:** ${status}
@@ -687,14 +735,14 @@ export function renderIssue({ id, title, status = 'open', kind, priority, tier, 
 **Files:** ${files.join(', ')}
 ${repo ? `**Repo:** ${repo}\n` : ''}${after.length ? `**After:** ${after.join(', ')}\n` : ''}**Found by:** ${fieldText(foundBy)}
 ${source.length ? `**Source:** ${source.join(', ')}\n` : ''}**Where:**${where ? ` ${fieldText(where)}` : ''}
-
+${declared}
 ## What
 ${body(what)}
 ## Why
 ${body(why)}
-## Acceptance
+## ${acceptanceHeading}
 ${body(acceptance)}
-${changelog ? `## Changelog\n${changelog}\n\n` : ''}## Evidence
+${extra}${changelog ? `## Changelog\n${changelog}\n\n` : ''}## Evidence
 
 `;
 }
@@ -896,6 +944,8 @@ export function readTemplate(root, name) {
     kind: t.fields.kind || undefined, prio: t.fields.priority || undefined, tier: t.fields.tier || undefined,
     tags: t.fields.tags || undefined, files: t.fields.files || undefined,
     what: section('what'), why: section('why'), acceptance: section('acceptance'), changelog: section('changelog'),
+    // Every field and section as read, for the ones a loop's profile declares (see cmdNew).
+    allFields: t.fields, section,
   };
 }
 
@@ -911,6 +961,18 @@ export function cmdNew(root, title, rawFlags) {
     for (const k of ['kind', 'prio', 'tier', 'tags', 'files', 'what', 'why']) if (flags[k] === undefined && t[k] !== undefined) flags[k] = t[k];
   }
   const profile = loadProfile(root);
+  // The profile's fields and sections: a flag's value, else the template's, else the field's default. A required
+  // field with none of them is refused; a value outside a field's enum is refused.
+  const given = namedPairs(flags.field, 'field', profile.fields.map((f) => f.name), 'field');
+  const fields = profile.fields.map((f) => {
+    const raw = given.has(f.name) ? given.get(f.name) : fromTemplate.allFields?.[f.key] || f.default || '';
+    const v = fieldValue(profile, f, raw);
+    need(!f.required || v, `${f.name} is required by this loop's profile — give it: --field "${f.name}=<value>"${f.enum ? ` (one of: ${f.enum.join(', ')})` : ''}`);
+    return [f.name, v];
+  });
+  const givenSections = namedPairs(flags.section, 'section', profile.sections, 'section');
+  const sections = profile.sections.map((h) => [h, givenSections.has(h) ? bodyText(givenSections.get(h)) : bodyText(fromTemplate.section?.(h.toLowerCase()))]);
+  if (profile.acceptance && fromTemplate.acceptance === undefined && fromTemplate.section) fromTemplate.acceptance = fromTemplate.section(profile.acceptance.toLowerCase());
   const kind = flags.kind || profile.kindDefault;
   need(profile.kinds.includes(kind), `--kind must be one of: ${profile.kinds.join(', ')}`);
   const priority = String(flags.prio || '2');
@@ -931,7 +993,7 @@ export function cmdNew(root, title, rawFlags) {
     const file = join(dir, `${id}-${slugify(title)}.md`);
     const tmp = join(dir, `.${id}.${process.pid}.tmp`);
     writeFileSync(tmp, renderIssue({
-      id, title, status: profile.initial, kind, priority, tier,
+      id, title, status: profile.initial, kind, priority, tier, fields, sections, acceptanceHeading: profile.acceptance || 'Acceptance',
       tags: splitList(flags.tags), files: splitList(flags.files), repo: repos.join(', '), foundBy: flags['found-by'] || 'jarl',
       where: flags.where, what: bodyText(flags.what), why: bodyText(flags.why), source, after,
       // A template's Acceptance and Changelog are taken as written (a list already); a flag replaces them.
@@ -992,17 +1054,21 @@ export function waitingOn(issue, byId, profile = DEFAULT_PROFILE) {
 export function cmdBody(root, rawId, flags) {
   const issue = findIssue(root, rawId);
   need(issue, `no such issue: ${rawId}`);
-  const parts = ['where', 'what', 'why', 'acceptance', 'changelog'].filter((k) => flags[k] !== undefined);
-  need(parts.length, 'body needs at least one of --where, --what, --why, --acceptance, --changelog');
+  const profile = loadProfile(root);
+  const parts = ['where', 'what', 'why', 'acceptance', 'changelog', 'section'].filter((k) => flags[k] !== undefined);
+  need(parts.length, 'body needs at least one of --where, --what, --why, --acceptance, --changelog, --section');
+  const sections = namedPairs(flags.section, 'section', profile.sections, 'section');
   let text = readFileSync(issue.file, 'utf8');
   if (flags.where !== undefined) text = setField(text, 'Where', fieldText(flags.where));
   if (flags.what !== undefined) text = setSection(text, 'What', bodyText(flags.what));
   if (flags.why !== undefined) text = setSection(text, 'Why', bodyText(flags.why));
-  if (flags.acceptance !== undefined) text = setSection(text, 'Acceptance', acceptanceText(flags.acceptance));
+  if (flags.acceptance !== undefined) text = setSection(text, acceptanceHeading(issue, profile), acceptanceText(flags.acceptance));
+  for (const [h, v] of sections) text = setSection(text, h, bodyText(v));
   if (flags.changelog !== undefined) text = setSection(text, 'Changelog', changelogText(flags.changelog));
   writeAtomic(issue.file, text);
-  appendLog(root, `${issue.id} body · ${parts.join(', ')}`);
-  return { id: issue.id, set: parts };
+  const named = parts.flatMap((k) => (k === 'section' ? [...sections.keys()] : [k]));
+  appendLog(root, `${issue.id} body · ${named.join(', ')}`);
+  return { id: issue.id, set: named };
 }
 
 export function cmdSource(root, rawId, list) {
@@ -1042,6 +1108,17 @@ export function cmdList(root, flags) {
   if (flags.kind) rows = rows.filter((i) => i.kind === flags.kind);
   if (flags.tag) rows = rows.filter((i) => i.tags.includes(flags.tag));
   if (flags.prio) rows = rows.filter((i) => i.priority === String(flags.prio));
+  // --where <field>=<value> (repeatable, all must hold): any header field — the tool's own, Kind, Tier or one the
+  // profile declares — compared as written, without case in the name. An empty value matches an empty field.
+  for (const w of [].concat(flags.where ?? [])) {
+    const at = String(w).indexOf('=');
+    need(at > 0, `--where takes <field>=<value> (got "${w}")`);
+    const name = String(w).slice(0, at).trim().toLowerCase();
+    const known = [...TOOL_FIELDS, 'Kind', 'Tier', ...profile.fields.map((f) => f.name)];
+    need(known.some((k) => k.toLowerCase() === name), `--where names a header field — one of: ${known.join(', ')} (got "${name}")`);
+    const value = fieldText(String(w).slice(at + 1));
+    rows = rows.filter((i) => (name === 'status' ? i.status : fieldText(i.fields[name])) === value);
+  }
   if (flags.grep) {
     const re = new RegExp(flags.grep, 'i');
     rows = rows.filter((i) => re.test(readFileSync(i.file, 'utf8')));
@@ -1092,7 +1169,9 @@ export function reasonWord(status) { return status.charAt(0).toUpperCase() + sta
 
 export function cmdSet(root, rawIds, status, why, flags = {}) {
   const profile = loadProfile(root);
-  need(profile.statuses.includes(status), `status must be one of: ${profile.statuses.join(', ')}`);
+  // set <ids> <field> <value>: a field the profile declares (Kind and Tier too, when it declares them), not a status.
+  if (!profile.statuses.includes(status) && status !== undefined && profile.field(status)) return setDeclaredField(root, rawIds, profile.field(status), why, flags);
+  need(profile.statuses.includes(status), `status must be one of: ${profile.statuses.join(', ')}${profile.declaredFields.length ? ` — or a field this loop's profile declares: ${profile.declaredFields.map((f) => f.name).join(', ')}` : ''}`);
   const holds = profile.is(status, 'holds-claim');
   const lease = ['branch', 'worker', 'worktree'].filter((k) => flags[k] !== undefined);
   need(!lease.length || holds, `--${lease[0]} goes with ${profile.with('holds-claim').join(' or ')} only — it records who works on the issue and where`);
@@ -1133,6 +1212,21 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   const leaseNote = [flags.branch !== undefined && `branch ${fieldText(flags.branch)}`, flags.worker !== undefined && `worker ${fieldText(flags.worker)}`, worktree !== undefined && `worktree ${worktree}`].filter(Boolean).join(' · ');
   appendLogLines(root, issues.map((issue) => `${issue.id} → ${status}${why ? ` · ${why}` : ''}${leaseNote ? ` · ${leaseNote}` : ''}`));
   return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, status, ...(holds ? { since, ...(flags.branch !== undefined ? { branch: fieldText(flags.branch) } : {}), ...(flags.worker !== undefined ? { worker: fieldText(flags.worker) } : {}), ...(worktree !== undefined ? { worktree } : {}) } : {}), ...(profile.is(status, 'closes-record') ? doneNote(issue) : {}) })));
+}
+
+// set <ids> <field> <value>: one declared field written on every issue in the call (checked against its enum first),
+// with one log line each. An empty value clears it, unless the field is required (or is Kind or Tier).
+function setDeclaredField(root, rawIds, field, value, flags) {
+  const lease = ['branch', 'worker', 'worktree'].filter((k) => flags[k] !== undefined);
+  need(!lease.length, `--${lease[0]} goes with a status, not with the field ${field.name}`);
+  need(value !== undefined, `set <ids> ${field.name} "<value>" — the value is required${field.enum ? ` (one of: ${field.enum.join(', ')})` : ''}`);
+  const profile = loadProfile(root);
+  const v = fieldValue(profile, field, value);
+  need(v || (!field.required && !field.builtin), `${field.name} cannot be empty${field.enum ? ` — one of: ${field.enum.join(', ')}` : ''}`);
+  const issues = issuesFor(root, rawIds);
+  for (const issue of issues) writeAtomic(issue.file, setField(readFileSync(issue.file, 'utf8'), field.name, v));
+  appendLogLines(root, issues.map((issue) => `${issue.id} field ${field.name} · ${v || '(cleared)'}`));
+  return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, field: field.name, value: v })));
 }
 
 // Why an issue may not go done, or null when it may: at least one --ran/--saw evidence row logged since the issue
@@ -1466,14 +1560,16 @@ export function cmdStatus(root, flags = {}) {
   c.uncommitted = files === null ? null : files.length;
   // --by: the same five counts per repository, tag, kind or priority — a dashboard's table, read from the issues.
   if (flags.by !== undefined) {
-    need(STATUS_BY.includes(flags.by), `--by is one of: ${STATUS_BY.join(', ')} (got "${flags.by}")`);
-    const keysOf = { repo: (i) => repoNames(root, i), tag: (i) => (i.tags.length ? i.tags : ['(none)']), kind: (i) => [i.kind || '(none)'], prio: (i) => [i.priority] }[flags.by];
+    // Or a field the profile declares: one group per value it holds.
+    const declared = profile.fields.find((f) => f.key === String(flags.by).toLowerCase());
+    need(STATUS_BY.includes(flags.by) || declared, `--by is one of: ${[...STATUS_BY, ...profile.fields.map((f) => f.key)].join(', ')} (got "${flags.by}")`);
+    const keysOf = declared ? (i) => [fieldText(i.fields[declared.key]) || '(none)'] : { repo: (i) => repoNames(root, i), tag: (i) => (i.tags.length ? i.tags : ['(none)']), kind: (i) => [i.kind || '(none)'], prio: (i) => [i.priority] }[flags.by];
     const groups = {};
     for (const i of issues) for (const k of keysOf(i)) {
       const g = (groups[k] = groups[k] || Object.fromEntries(profile.statuses.map((st) => [st, 0])));
       if (Object.hasOwn(g, i.status)) g[i.status] += 1;
     }
-    c.by = { key: flags.by, groups: Object.fromEntries(Object.keys(groups).sort().map((k) => [k, groups[k]])) };
+    c.by = { key: declared ? declared.key : flags.by, groups: Object.fromEntries(Object.keys(groups).sort().map((k) => [k, groups[k]])) };
   }
   return c;
 }
@@ -2462,9 +2558,11 @@ export function cmdResume(root, flags = {}) {
   // settled is waiting, in progress or not, so each section's count is the number on the counts line.
   const unsettled = (i) => waitingOn(i, byId, profile).length > 0;
   const holds = (i) => profile.is(i.status, 'holds-claim');
+  // Under a profile that declares fields, each row carries the ones the issue holds (fields: { Name: value }).
+  const declared = (i) => (profile.fields.length ? { fields: Object.fromEntries(profile.fields.map((f) => [f.name, fieldText(i.fields[f.key])]).filter(([, v]) => v)) } : {});
   const inFlight = issues.filter((i) => holds(i) && !unsettled(i)).map((i) => ({
     id: i.id, title: i.title, branch: i.fields.branch || null, worker: i.fields.worker || null, since: i.fields.since || null,
-    stale: stale.get(i.id) || [],
+    stale: stale.get(i.id) || [], ...declared(i),
   }));
   const waiting = issues.filter((i) => profile.active(i.status) && unsettled(i)).map((i) => ({
     id: i.id, title: i.title, status: i.status, after: waitingOn(i, byId, profile),
@@ -2484,7 +2582,7 @@ export function cmdResume(root, flags = {}) {
     goal: status.goal, opened: status.opened, lastActivity: status.lastActivity, archived: status.archived, status,
     rulings, inFlight, waiting,
     questions: asks.filter((a) => a.kind !== 'ratify'), ratify: asks.filter((a) => a.kind === 'ratify'),
-    held, next: ready.slice(0, readyN).map((r) => ({ id: r.id, title: r.title, priority: r.priority, ...(r.noAcceptance ? { noAcceptance: true } : {}) })), readyTotal: ready.length,
+    held, next: ready.slice(0, readyN).map((r) => ({ id: r.id, title: r.title, priority: r.priority, ...(r.noAcceptance ? { noAcceptance: true } : {}), ...declared(byId.get(r.id)) })), readyTotal: ready.length,
     queue: cmdQueue(root), merged, tips: cmdTips(root, { ci: flags.ci === true }),
     uncommitted: uncommittedLoopFiles(root),
     log: logN ? logLines.slice(-logN).map((l) => l.slice(2)) : null,
@@ -2493,6 +2591,7 @@ export function cmdResume(root, flags = {}) {
 }
 
 export function renderResume(o, profile = DEFAULT_PROFILE) {
+  const shownFields = (x) => (x.fields && Object.keys(x.fields).length ? ` · ${Object.entries(x.fields).map(([n, v]) => `${n}=${v}`).join(' ')}` : '');
   const sec = (title, lines, none) => (lines.length ? [`## ${title}`, ...lines, ''] : none === undefined ? [] : [`## ${title}`, none, '']);
   const lease = (x) => [x.branch && `branch ${x.branch}`, x.worker && `worker ${x.worker}`, x.since && `since ${x.since}`].filter(Boolean).join(' · ');
   const st = o.status;
@@ -2522,12 +2621,12 @@ export function renderResume(o, profile = DEFAULT_PROFILE) {
   return [
     ...head,
     ...sec(`Rulings in force (${o.rulings.length})`, o.rulings.map((d) => `- ${d.date} · ${d.slug}${d.by ? ` · by ${d.by}` : ''} — ${short(d.line)}`), '- (none)'),
-    ...sec(`In flight (${o.inFlight.length})`, o.inFlight.map((x) => `- ${x.id} ${short(x.title)}${lease(x) ? ` · ${lease(x)}` : ''}${x.stale.length ? ` · STALE: ${x.stale.join('; ')}` : ''}`), '- (nothing)'),
+    ...sec(`In flight (${o.inFlight.length})`, o.inFlight.map((x) => `- ${x.id} ${short(x.title)}${shownFields(x)}${lease(x) ? ` · ${lease(x)}` : ''}${x.stale.length ? ` · STALE: ${x.stale.join('; ')}` : ''}`), '- (nothing)'),
     ...sec(`Waiting — After not settled (${o.waiting.length})`, o.waiting.map((x) => `- ${x.id} ${short(x.title)} (after ${x.after.join(', ')})${x.stale !== undefined ? ` · ${x.status === 'in-progress' ? 'in progress' : x.status}${lease(x) ? ` · ${lease(x)}` : ''}${x.stale.length ? ` · STALE: ${x.stale.join('; ')}` : ''}` : ''}`)),
     ...sec(`Questions to the user (${o.questions.length})`, o.questions.map((a) => `- a-${a.id} (${a.kind || 'stuck'})${a.issue ? ` issue ${a.issue}` : ''} · ${a.question}`), '- (nothing)'),
     ...sec(`To ratify (${o.ratify.length})`, o.ratify.map((a) => `- a-${a.id}${a.issue ? ` (issue ${a.issue})` : ''} · ${a.question}`)),
     ...sec(`Held — files in flight (${o.held.length})`, o.held.map((x) => `- ${x.id}  P${x.priority}  ${short(x.title)} (${x.files.join(', ')} held by ${x.heldBy.join(', ')})`)),
-    ...sec(`Next ready (${o.next.length} of ${o.readyTotal})`, o.next.map((r) => `- ${r.id}  P${r.priority}  ${short(r.title)}${r.noAcceptance ? '  (no acceptance yet)' : ''}`), '- (nothing ready)'),
+    ...sec(`Next ready (${o.next.length} of ${o.readyTotal})`, o.next.map((r) => `- ${r.id}  P${r.priority}  ${short(r.title)}${shownFields(r)}${r.noAcceptance ? '  (no acceptance yet)' : ''}`), '- (nothing ready)'),
     ...sec('Merge queue', queue, '- (nothing approved waits to be merged)'),
     ...sec(`Merged, CI pending or red (${o.merged.length})`, o.merged.map((m) => `- ${m.id} ${m.sha}${m.repo ? ` in ${m.repo}` : ''} · CI ${m.ci}`)),
     ...sec(`Tips${o.tips.ci ? '' : ' (CI not asked — --ci asks gh)'}`, tips),
@@ -2772,7 +2871,7 @@ export function cmdImport(root, file, flags) {
   for (const { f, key } of toFile) {
     const r = cmdNew(root, f.title, {
       kind: flags.kind || f.kind, prio: flags.prio || f.priority, tier: flags.tier, tags: flags.tags, repo: flags.repo,
-      'found-by': flags['found-by'] || `research ${dir}`, where: f.where, what: f.what, why: f.why, acceptance: f.acceptance || undefined, source: key,
+      field: flags.field, 'found-by': flags['found-by'] || `research ${dir}`, where: f.where, what: f.what, why: f.why, acceptance: f.acceptance || undefined, source: key,
     });
     out.filed.push({ id: r.id, finding: f.id, source: key, title: f.title, kind: flags.kind || f.kind, priority: String(flags.prio || f.priority) });
   }
@@ -2825,17 +2924,18 @@ export const COMMAND_FLAGS = {
   new: {
     kind: 'value', prio: 'value', tier: 'value', tags: 'value', files: 'value', repo: 'value', 'found-by': 'value',
     where: 'value', what: 'value', why: 'value', acceptance: 'many', source: 'value', after: 'value', changelog: 'many', template: 'value',
+    field: 'many', section: 'many',
   },
-  body: { where: 'value', what: 'value', why: 'value', acceptance: 'many', changelog: 'many' },
+  body: { where: 'value', what: 'value', why: 'value', acceptance: 'many', changelog: 'many', section: 'many' },
   import: {
     source: 'value', kind: 'value', prio: 'value', tier: 'value', tags: 'value', repo: 'value', 'found-by': 'value',
-    only: 'value', adopt: 'bool', 'dry-run': 'bool',
+    only: 'value', adopt: 'bool', 'dry-run': 'bool', field: 'many',
   },
   sources: { source: 'value' },
   source: {},
   after: { clear: 'bool' },
   evidence: { ran: 'many', saw: 'many' },
-  list: { status: 'value', kind: 'value', tag: 'value', prio: 'value', grep: 'value', all: 'bool' },
+  list: { status: 'value', kind: 'value', tag: 'value', prio: 'value', grep: 'value', where: 'many', all: 'bool' },
   show: {}, set: { branch: 'value', worker: 'value', worktree: 'value' }, tag: {}, prio: {}, files: {},
   repo: { clear: 'bool' },
   next: { limit: 'value' },
@@ -2969,9 +3069,13 @@ function renderSources(reports) {
   }).join('\n\n');
 }
 
-function renderList(rows) {
+// The profile's declared fields an issue holds a value for, as Name=value — shown by list and resume.
+function declaredShown(i, profile) {
+  return profile.fields.map((f) => [f.name, fieldText(i.fields[f.key])]).filter(([, v]) => v).map(([n, v]) => `${n}=${v}`).join(' ');
+}
+function renderList(rows, profile = DEFAULT_PROFILE) {
   if (rows.length === 0) return '(none)';
-  return rows.map((i) => `${i.id}  P${i.priority}  ${i.status.padEnd(11)} ${i.kind.padEnd(8)} ${i.title}${i.tags.length ? `  [${i.tags.join(', ')}]` : ''}`).join('\n');
+  return rows.map((i) => { const d = declaredShown(i, profile); return `${i.id}  P${i.priority}  ${i.status.padEnd(11)} ${i.kind.padEnd(8)} ${i.title}${i.tags.length ? `  [${i.tags.join(', ')}]` : ''}${d ? `  ${d}` : ''}`; }).join('\n');
 }
 
 // The commands that write: each runs under .jarl/.lock (see withLock).
@@ -3015,9 +3119,9 @@ export function dispatch(root, cmd, rest, flags) {
       case 'after': out = cmdAfter(root, rest[0], rest[1], { clear: flags.clear === true }); text = `${out.id} after: ${out.cleared ? 'cleared' : out.after.join(', ')}`; break;
       case 'import': out = cmdImport(root, rest[0], flags); text = renderImport(out); break;
       case 'sources': out = cmdSources(root, rest, flags); text = renderSources(out); break;
-      case 'list': out = cmdList(root, flags); text = renderList(out); break;
+      case 'list': out = cmdList(root, flags); text = renderList(out, loadProfile(root)); break;
       case 'show': { const i = findIssue(root, rest[0]); need(i, `no such issue: ${rest[0]}`); out = i; text = readFileSync(i.file, 'utf8'); break; }
-      case 'set': out = cmdSet(root, rest[0], rest[1], rest[2], flags); text = each(out, (o) => `${o.id} → ${o.status}${o.branch ? ` · ${o.branch}` : ''}${o.worker ? ` · ${o.worker}` : ''}`); warn = [].concat(out).filter((o) => o.note).map((o) => `note: ${o.id} ${o.note}`); break;
+      case 'set': out = cmdSet(root, rest[0], rest[1], rest[2], flags); text = each(out, (o) => (o.field ? `${o.id} ${o.field}: ${o.value || '(cleared)'}` : `${o.id} → ${o.status}${o.branch ? ` · ${o.branch}` : ''}${o.worker ? ` · ${o.worker}` : ''}`)); warn = [].concat(out).filter((o) => o.note).map((o) => `note: ${o.id} ${o.note}`); break;
       case 'tag': out = cmdTag(root, rest[0], rest.slice(1)); text = each(out, (o) => `${o.id} tags: ${o.tags.join(', ') || '(none)'}`); break;
       case 'prio': out = cmdPrio(root, rest[0], rest[1]); text = each(out, (o) => `${o.id} priority ${o.priority}`); break;
       case 'files': out = cmdFiles(root, rest[0], rest[1]); text = `${out.id} files: ${out.files.join(', ') || '(none)'}`; break;
