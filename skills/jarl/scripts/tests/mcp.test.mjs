@@ -241,3 +241,11 @@ test('concurrent writes: calls sent at once to one server, and to two servers on
     assert.ok(!existsSync(join(root, '.jarl', '.lock')), 'the lock is released after the last write');
   } finally { await Promise.all([a.stop(), b.stop()]); }
 });
+
+test('SKILL.md names every argument field the tools take, and sends the agent to the tools first', () => {
+  const skill = readFileSync(fileURLToPath(new URL('../../SKILL.md', import.meta.url)), 'utf8');
+  const line = Object.entries(COMMAND_ARGS).filter(([, a]) => a.length).map(([c, a]) => `\`${c}\` ${a.map(mcp.argName).join(', ')}`).join(' · ');
+  assert.ok(skill.includes(line), `SKILL.md lists the argument fields as:\n${line}`);
+  assert.match(skill, /\*\*Call it through its MCP tools\.\*\*/);
+  assert.match(skill, /### The CLI, when the tools are not there/);
+});

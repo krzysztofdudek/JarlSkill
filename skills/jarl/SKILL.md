@@ -19,7 +19,7 @@ Everything lives in `.jarl/` in the main checkout the loop runs in. On a feature
 reaches `main`; opened as a permanent record it lives on, wherever `--root` names, for good. The
 loop runs in one of three modes, chosen once at `init`:
 
-- **Default — out of git.** `init` writes `.jarl/.gitignore` with two lines, `*` and `**/*`, so git never sees the loop: it stays out of the branch's history, its diffs and its merges. The loop exists only in the main checkout's working tree — it belongs to that checkout, not to the branch, and no other clone or worktree has it. A worker's worktree therefore sees no `.jarl/`, so the worker, the reviewer and the merger always call the tool with `--root <main checkout>`, and nobody ever commits `.jarl/`.
+- **Default — out of git.** `init` writes `.jarl/.gitignore` with two lines, `*` and `**/*`, so git never sees the loop: it stays out of the branch's history, its diffs and its merges. The loop exists only in the main checkout's working tree — it belongs to that checkout, not to the branch, and no other clone or worktree has it. A worker's worktree therefore sees no `.jarl/`, so the worker, the reviewer and the merger always pass the main checkout as `root` (`--root` on the CLI), and nobody ever commits `.jarl/`.
 - **Committed — `init --committed`.** `.jarl/.gitignore` ignores only the tool's write lock and the temporary files a write leaves for an instant (`/.lock`, `/.lock.break`, `.*.tmp`), so a `git add` made while a call runs never commits them; the loop itself is committed with the work on the feature branch. The merger commits `.jarl/` with every merge, and the last commit before the branch merges to `main` removes the whole directory.
 - **Permanent — `init --permanent`.** Committed the same way, with the same narrow `.gitignore` — a record that must survive is always committed — and `init` additionally writes `.jarl/.permanent`, so a later session reads the mode from the loop itself rather than being told. This loop does not live on a feature branch at all: it lives wherever `--root` points, kept as a standing record, for example a repository that keeps one loop per release as that release's record, driving work in other repositories. Everything above — the four files, the issue format, the roles, the tool — is the same; only closing differs, in [Closing the branch](#closing-the-branch) below.
 
@@ -42,22 +42,17 @@ command table below. Four things:
 | `.jarl/issues/NNN-slug.md` | One issue per file, numbered in filing order from 001. Format below. | jarl (header, status), worker (evidence) |
 | `.jarl/log.md` | The journal, append-only, one dated line per event: filed, started, done, dropped, merged, asked, decided. | everyone, through the jarl |
 
-Markdown is the source of truth, and **one tool moves it**: `scripts/jarl.mjs` (Node, zero
-dependencies). Every status change, tag, priority, ruling and log line goes through it, never through
-a hand edit — a status that changed without a log line did not change, and the tool is what makes that
-true rather than promised. Run it as:
+Markdown is the source of truth, and **one tool moves it**: `scripts/jarl.mjs` (Node, zero dependencies). Every status change, tag, priority, ruling and log line goes through it, never through a hand edit — a status that changed without a log line did not change, and the tool is what makes that true rather than promised.
 
-```
-node "${CLAUDE_PLUGIN_ROOT:-.claude/skills/jarl}/scripts/jarl.mjs" <command>
-```
+**Call it through its MCP tools.** Installed as a plugin, Jarl starts an MCP server named `jarl` by itself, and every command of the tool is an MCP tool: `jarl_` and the command's name — `jarl_resume`, `jarl_status`, `jarl_new`, `jarl_set`, `jarl_evidence`, `jarl_review` and the rest, every one of them, the writing ones included — plus `jarl_help`, which prints the usage text. They are the same commands run by the same code, with the same checks and the same lock, not a second implementation. Every tool's description starts by saying whether it writes: `WRITES the loop` or `Read-only`. This skill writes each command the way the tool's usage does (`set <ids> <status> "<why>" [--branch <b>]`), because that one table is what both the CLI and the tools are built from. A tool takes the same things as fields:
 
-If that file does not exist where the command runs, the path belongs to another machine: VS Code
-attached to a dev container, for one, hands the agent the host's install path, which the container
-cannot see. Do not work around the tool. Find the copy this environment has: the directory this
-`SKILL.md` was read from, plus `scripts/jarl.mjs`, when that directory exists here; otherwise search
-once, `find ~ /workspaces -path '*skills/jarl/scripts/jarl.mjs' 2>/dev/null | head -1`. Use the
-absolute path it gives for the rest of the session, and hand that same path to every role you raise.
-If there is no copy at all, say so and stop: the loop's state moves only through the tool.
+- each `--flag` is the field of the same name without the dashes (`kind`, `found-by`, `dry-run`, `stale-hours`); a flag that takes no value is `true`; a repeatable flag (`--acceptance`, `--changelog`, `--ran`, `--saw`) is a list, one item per repetition, and `ran` and `saw` pair up by position;
+- each argument is the field this list names, in the order the usage writes them: `init` goal · `new` title · `body` id · `import` file · `sources` files · `source` id, refs · `after` id, ids · `evidence` ids, text · `show` id · `set` ids, status, why · `merged` ids · `tag` ids, ops · `prio` ids, priority · `files` id, paths · `repo` id, path · `review` ids, verdict, findings · `round` id, what · `check` id · `ask` question · `answer` id, answer · `handoff` action · `log` event · `decide` slug, ruling · `archive` slug · `changelog` ids · `mode` mode (`sources` and `tag` take a list: the findings files, the `+a`/`-b` operations); an argument the usage shows in brackets may be left out, but not one that comes before another you give;
+- every tool takes `json` (true answers with what `--json` prints) and `root` (what `--root` is: the checkout that holds `.jarl/`, as an absolute path).
+
+The answer is the text the command prints; a note the command prints on stderr comes as a second block. A refusal comes back as an error result with its reason, and nothing was written; a `check` that found something wrong comes back as an error result too, with its items (the CLI's exit code 2). A value that starts with `--` is just a value in a field.
+
+**Which loop a call reaches:** its `root` field; without it, the server's `JARL_ROOT` environment variable (set it in the server's configuration to pin one loop); without that, the loop found from the directory the host started the server in — the session's project — the way the CLI finds it from its own working directory. The server lives as long as the session, not in the worktree a role works in, so every brief says to pass `root` on every call (see [The CLI, when the tools are not there](#the-cli-when-the-tools-are-not-there) for the same rule on the command line).
 
 | Command | What it does |
 |---|---|
@@ -91,12 +86,28 @@ If there is no copy at all, say so and stop: the loop's state moves only through
 
 `<ids>` on `evidence`, `review`, `set`, `tag`, `prio` and `merged` is one id or several, written as one comma list with ranges: `12,13,14` or `203-206,209`. The tool resolves every id and checks every precondition before it writes anything, so a package of issues merged together closes in four calls (evidence, review, evidence of the merge, `set done`) instead of four per issue, and one missing id or one issue not ready for `done` leaves all of them untouched. Each issue still gets its own log line.
 
+Every command that writes holds `.jarl/.lock` while it runs, and every file is replaced whole, so the workers, reviewers and the merger can all call the tool at the same moment — through the tools or the CLI, from one session or several — without losing each other's rows, log lines or issue numbers. One server runs its calls one at a time, in the order they came; against every other writer (another session's server, a CLI call) the lock decides. A lock is taken over when its holder is gone: on the same machine, as soon as the holder's process no longer runs; a lock left empty (the holder died between creating and filling it) after 2 seconds; a lock from another machine sharing the checkout, or one whose holder cannot be read, only after 30 seconds; and a lock whose process id is running again, against a reused id, after 10 minutes. A call waits at most 20 seconds and then fails with nothing written, naming the holder: retry it. So the first call after a crash on another machine can fail once before the 30 seconds pass, and one after a reused process id waits out the 10 minutes or needs the lock removed by hand. Breaking a stale lock is itself serialized (`.jarl/.lock.break`), so it never hands the lock to two callers. Never delete the lock by hand while a call may still be running.
+
+### The CLI, when the tools are not there
+
+A session with no `jarl_*` tools — the skill copied into an agent's skill directory rather than installed as a plugin, a host without MCP, a subagent its host gave no MCP tools — runs the same commands through the script, with the same effect:
+
+```
+node "${CLAUDE_PLUGIN_ROOT:-.claude/skills/jarl}/scripts/jarl.mjs" <command>
+```
+
+If that file does not exist where the command runs, the path belongs to another machine: VS Code
+attached to a dev container, for one, hands the agent the host's install path, which the container
+cannot see. Do not work around the tool. Find the copy this environment has: the directory this
+`SKILL.md` was read from, plus `scripts/jarl.mjs`, when that directory exists here; otherwise search
+once, `find ~ /workspaces -path '*skills/jarl/scripts/jarl.mjs' 2>/dev/null | head -1`. Use the
+absolute path it gives for the rest of the session, and hand that same path to every role you raise.
+If there is no copy at all, say so and stop: the loop's state moves only through the tool.
+
 A flag a command does not take is refused with the list of the ones it does, never ignored. A value flag takes the next argument whatever it starts with, so `--ran "--help"` or `--saw "--- FAIL"` records the row; `--flag=value` works too. A note or a title that itself starts with `--` goes after a bare `--` (`evidence 012 -- "--json drops a key"`), and every flag, `--root` included, goes before that `--`: arguments beyond what a command reads are refused, so a stray `--root` can never be dropped silently.
 
-Every command that writes holds `.jarl/.lock` while it runs, and every file is replaced whole, so the workers, reviewers and the merger can all call the tool at the same moment without losing each other's rows, log lines or issue numbers. A lock is taken over when its holder is gone: on the same machine, as soon as the holder's process no longer runs; a lock left empty (the holder died between creating and filling it) after 2 seconds; a lock from another machine sharing the checkout, or one whose holder cannot be read, only after 30 seconds; and a lock whose process id is running again, against a reused id, after 10 minutes. A call waits at most 20 seconds and then fails with nothing written, naming the holder: retry it. So the first call after a crash on another machine can fail once before the 30 seconds pass, and one after a reused process id waits out the 10 minutes or needs the lock removed by hand. Breaking a stale lock is itself serialized (`.jarl/.lock.break`), so it never hands the lock to two callers. Never delete the lock by hand while a jarl.mjs call may still be running.
-
 Every command takes `--json` and `--help`. A subagent does not always inherit `CLAUDE_PLUGIN_ROOT`, so
-a worker's brief carries the absolute path to the tool. Run from a worktree of the repository whose main checkout holds the loop, the tool finds the
+a worker's brief carries the absolute path to the script as well as the tools. Run from a worktree of the repository whose main checkout holds the loop, the script finds the
 loop there by itself (default mode: the worktree has none of its own); `--root` still wins when given, and every brief carries the absolute path of
 the loop's checkout for it anyway, because a loop that lives in another repository (a hub directing code elsewhere) is not found from the code's worktree,
 and in committed mode a worktree holds only the copy it was cut with.
@@ -213,16 +224,16 @@ A phase skipped here is found by a user after the tag.
 ```
 
 ```
-jarl.mjs new "Release 7.0.0 · A: freeze and dry run" --template release-phase --acceptance "dry run prints no finding" --acceptance "every repository's release branch is cut"
-jarl.mjs new "Release 7.0.0 · B: versions and changelogs" --template release-phase --after 301
-jarl.mjs new "Release 7.0.0 · C: tags and CI" --template release-phase --after 302
+jarl_new { title: "Release 7.0.0 · A: freeze and dry run", template: "release-phase", acceptance: ["dry run prints no finding", "every repository's release branch is cut"] }
+jarl_new { title: "Release 7.0.0 · B: versions and changelogs", template: "release-phase", after: "301" }
+jarl_new { title: "Release 7.0.0 · C: tags and CI", template: "release-phase", after: "302" }
 ```
 
 Each acceptance line is one step, and `set done` notes a phase closed with fewer `--ran`/`--saw` rows than steps. Nothing here tags, releases or refuses anything; see [What Jarl will not grow](#what-jarl-will-not-grow).
 
 ### Views for dashboards
 
-Jarl ships no UI. A dashboard, a release board or a weekly summary is rendered by the host (a page, an artifact, a script) from the JSON the tool already prints, so every number on it comes from the record. Every command takes `--json`. The shapes below are stable: keys are added over time and never renamed or removed without a note in the changelog.
+Jarl ships no UI. A dashboard, a release board or a weekly summary is rendered by the host (a page, an artifact, a script) from the JSON the tool already prints, so every number on it comes from the record. Every command takes `--json` (the `json` field of its tool). The shapes below are stable: keys are added over time and never renamed or removed without a note in the changelog.
 
 - **`status --json`**: `open`, `in-progress`, `done`, `dropped`, `deferred` (counts per status); `ready` (open, not waiting), `inFlight` (in progress, not waiting), `waiting` and `waitingIds` (After not settled); `noAcceptance` (in-progress ids with no acceptance line); `questions` (open asks that are not ratify), `ratify` and `toRatify` (`[{ id, state, kind, target, issue, question }]`); `goal`, `opened`, `lastActivity` (log stamps, `YYYY-MM-DD HH:MM` UTC), `archived` (how many archived loops); `stale` (`[{ id, problems: [text] }]`); `ciPending`, `ciRed` (ids); `handoff` (the age of a legacy `.jarl/handoff.md`: `{ at, ageMs, staleByMs, stale }`, or null when there is none); `reviews` (`{ fresh, coordinator, self, unrecorded }`); `uncommitted` (count, or null outside the committed modes). With `--by repo|tag|kind|prio`, also `by: { key, groups: { <name>: { open, in-progress, done, dropped, deferred } } }` — an issue naming two repositories, or carrying two tags, counts in each group; an untagged one under `(none)`.
 - **`report --json`**: `done`, `dropped`, `deferred`, `left`, `found` (counts); `reviews` (as above); `byRepo` (`{ <repo>: [done ids] }`); `text` (the report as printed); `issues`, one row per issue: `{ id, title, status, kind, priority, tier, tags, repos, branch, after, sources, merged, ci, review }`, where `repos` are the repository names it counts under, `merged` the recorded sha or null, `ci` its state or null, and `review` the last approve as `{ by, kind, at }` (by and kind null for an approve from before `--by`) or null.
@@ -242,7 +253,7 @@ Every turn, in this order:
 1. **Boot.** `resume` — one command, the whole state, read live (see [Resuming a loop](#resuming-a-loop)). Then `branches` for each repository the in-flight issues name: a worker branch with commits beyond the feature branch is a report, whether or not the worker said so. Open questions come first: the user may have answered one since. Read `goal.md` whole, an issue with `show`, or older log lines only when the section in `resume` is not enough.
 2. **File.** Anything anybody saw becomes an issue before anything else happens. Nobody fixes on the
    side. A worker reports what it found; the jarl files it, so numbers never collide.
-3. **Pick.** `jarl.mjs next` lists what can run now: open issues whose files do not overlap with anything
+3. **Pick.** `next` lists what can run now: open issues whose files do not overlap with anything
    in progress and whose **After:** issues are settled. Priority first, then whatever unblocks the most.
    An issue marked `(no acceptance yet)` gets its acceptance line first (`body <id> --acceptance`).
    `set <ids> in-progress "<who>" --branch jarl/NNN-slug --worker <name> --worktree <path>` before
@@ -310,10 +321,11 @@ If your worktree was made for you by the platform and starts on a branch it name
 (`git branch -m jarl/NNN-slug`); never create a second branch beside it, which leaves the first one behind.
 Your scope is the issue below and nothing else. Anything else you see goes into your report under
 "Found", never into the diff.
-The loop's tool is <absolute path to jarl.mjs>; call it with `--root <main checkout>` (from a worktree of the same repository it finds the loop by itself, but pass it anyway) — your
-worktree has no live `.jarl/` of its own — and never add `.jarl/` to your branch.
+The loop's tools are the jarl MCP tools (jarl_show, jarl_evidence, jarl_body, …); pass root: "<main checkout>"
+on every call — your worktree has no live `.jarl/` of its own — and never add `.jarl/` to your branch. If your
+session has no jarl_* tools, run the same commands as `node <absolute path to jarl.mjs> <command> --root <main checkout>`.
 If the change is user-visible, record its changelog entry on the issue:
-`jarl.mjs body NNN --changelog "Added: …" --root <main checkout>` (Changed, Fixed, … — one flag per line). Edit
+jarl_body { id: "NNN", changelog: ["Added: …"], root: "<main checkout>" } (Changed, Fixed, … — one item per line). Edit
 CHANGELOG.md on your branch as well only where the repository's own rules (its CLAUDE.md, AGENTS.md or hooks) require
 the entry to come with the change; otherwise leave CHANGELOG.md to the merger.
 Prove the change: a test that is red before and green after. Run the test files your change touches,
@@ -336,15 +348,16 @@ You spawn no agents of your own.
 ### The reviewer's brief
 
 ```
-You are the reviewer of issue NNN on branch jarl/NNN-slug of <repo root>. The loop's tool is
-<absolute path to jarl.mjs>, always called with `--root <repo root>` (in the default mode the issue
-exists only there, never in git). Read-only; spawn nothing,
+You are the reviewer of issue NNN on branch jarl/NNN-slug of <repo root>. The loop's tools are the jarl
+MCP tools, always called with root: "<repo root>" (in the default mode the issue exists only there, never in
+git); with no jarl_* tools in your session, `node <absolute path to jarl.mjs> <command> --root <repo root>`.
+Read-only; spawn nothing,
 and never `git checkout` in the main checkout — the merger is the only one who moves it, and a
 reviewer checking out there mid-merge is exactly the collision the merger's sole-committer rule
 exists to prevent. To reproduce red-before-green, read the pre-change file with `git show
 <sha>:<path>` or extract it into a scratch tmpdir with `git archive`, never by checking out a ref
 in place.
-Read the issue (`jarl.mjs show NNN --root <repo root>`), then `git diff <feature-branch>...jarl/NNN-slug` — in
+Read the issue (jarl_show { id: "NNN", root: "<repo root>" }), then `git diff <feature-branch>...jarl/NNN-slug` — in
 the repository the issue's **Repo:** names when it names one, the loop's own otherwise. Answer three questions with
 evidence: does the diff meet the acceptance line literally (quote it in the findings; an issue with none is
 itself a finding); was the new test red before the change
@@ -366,8 +379,9 @@ with every merge, so the loop's state always rides the code it describes; in the
 sees `.jarl/`, so the merger never commits it. Its brief:
 
 ```
-You are the merger of branch <feature-branch> in <repo root>; the tool is <absolute path to jarl.mjs>,
-always called with `--root <repo root>`. The loop is in the <default | committed | permanent> mode. In
+You are the merger of branch <feature-branch> in <repo root>; the loop's tools are the jarl MCP tools, always
+called with root: "<repo root>" (with no jarl_* tools in your session, `node <absolute path to jarl.mjs>
+<command> --root <repo root>`); below, `jarl_x a --f v` is the tool jarl_x with those fields. The loop is in the <default | committed | permanent> mode. In
 the permanent mode `.jarl/` is committed exactly as in the committed mode, and that commit is never
 later stripped — there is no last commit before a merge to `main` that removes it, because a permanent
 loop is never merged to `main` and never closed by removing `.jarl/`. Merging itself does not otherwise
@@ -378,16 +392,16 @@ into whatever branch the loop's root already sits on (there is no throwaway feat
 loop's own to merge into and later discard).
 When an issue's **Repo:** names another repository, its branch, its merge and its check live in that
 repository's main checkout — run git and the check there, list its branches with
-`jarl.mjs branches --repo <path>`; `jarl.mjs check` reads there on its own; `.jarl/`, `--root` and,
+`jarl_branches --repo <path>`; `jarl_check` reads there on its own; `.jarl/`, `root` and,
 in the committed mode, the commit of `.jarl/` stay in <repo root>.
 You work in the main checkout, serially, one branch at a time. You never edit source files, never
 push a worker's branch, never push anything the loop's rules do not allow (see "Standing permission
 to push" in the jarl's own instructions: when `goal.md` or a ruling gives it, the merger's brief says
 so and names the feature branch), never resolve a conflict by picking a side blindly, never weaken a
 test or a check.
-For each branch the jarl names, or that `jarl.mjs queue` lists (approved, ahead of its base, in merge order and
-batches), or that `jarl.mjs branches` shows with commits beyond the base:
-1. `jarl.mjs check <id> --branch <b>` (`jarl.mjs check --branch <b>` for a package); read the diff (`git diff <feature-branch>...<b>`); a worker worktree with an uncommitted but complete diff is committed on its branch first, with a log line saying the merger committed it; a branch the worker never renamed (UNNAMED in `branches`) is renamed to `jarl/NNN-slug` in its worktree (`git branch -m`) before anything else. A branch without a fresh reviewer's approve (`jarl.mjs set` will refuse `done` without one, and a coordinator's approve does not count for a branch) waits for the reviewer; it is not the merger's call. If you merge one anyway, `jarl.mjs merged` says so loudly — report it. In the default mode a branch whose diff touches `.jarl/` is not merged — git treats the ignored loop as expendable and would overwrite it — it is reported.
+For each branch the jarl names, or that `jarl_queue` lists (approved, ahead of its base, in merge order and
+batches), or that `jarl_branches` shows with commits beyond the base:
+1. `jarl_check <id> --branch <b>` (`jarl_check --branch <b>` for a package); read the diff (`git diff <feature-branch>...<b>`); a worker worktree with an uncommitted but complete diff is committed on its branch first, with a log line saying the merger committed it; a branch the worker never renamed (UNNAMED in `branches`) is renamed to `jarl/NNN-slug` in its worktree (`git branch -m`) before anything else. A branch without a fresh reviewer's approve (`jarl_set` will refuse `done` without one, and a coordinator's approve does not count for a branch) waits for the reviewer; it is not the merger's call. If you merge one anyway, `jarl_merged` says so loudly — report it. In the default mode a branch whose diff touches `.jarl/` is not merged — git treats the ignored loop as expendable and would overwrite it — it is reported.
 2. In the committed mode, commit whatever `.jarl/` holds first (the reeve writes there while you work, and an uncommitted
    file in a checkout you are about to reset is a file about to vanish); in the default mode there is
    nothing to commit, and neither a merge nor a reset touches the ignored loop. Then `git merge --no-ff <b>`
@@ -396,24 +410,24 @@ batches), or that `jarl.mjs branches` shows with commits beyond the base:
 3. Run the repository's own check in the foreground, with the shell tool's own timeout parameter set
    for the whole run, and wait for it. Red: roll back with `git reset --keep ORIG_HEAD` — never
    `--hard`, which would also discard what others wrote meanwhile — then
-   `jarl.mjs round <id> "<what failed>"`, report.
-4. Green: `jarl.mjs merged <ids> --sha <merge sha>` (`--ci none` when the repository has no CI; else
-   `jarl.mjs merged <ids> --ci green|red` once it reports), `jarl.mjs evidence <id> --ran "<the check command>" --saw "<its summary line, merge sha>"`, `jarl.mjs set <id> done`,
+   `jarl_round <id> "<what failed>"`, report.
+4. Green: `jarl_merged <ids> --sha <merge sha>` (`--ci none` when the repository has no CI; else
+   `jarl_merged <ids> --ci green|red` once it reports), `jarl_evidence <id> --ran "<the check command>" --saw "<its summary line, merge sha>"`, `jarl_set <id> done`,
    remove the worktree and the branch — `jarl/NNN-slug` AND, when the worker began on a branch of another
    name and made `jarl/NNN-slug` beside it instead of renaming it, that original branch too (read it off
-   `git worktree list` before removing the worktree, and off `jarl.mjs branches`; a branch left behind is a
-   dead branch someone cleans up by hand; `jarl.mjs branches` marks it `DONE → delete`) — then, in the committed
+   `git worktree list` before removing the worktree, and off `jarl_branches`; a branch left behind is a
+   dead branch someone cleans up by hand; `jarl_branches` marks it `DONE → delete`) — then, in the committed
    and permanent modes only, commit `.jarl/` (everything in it, including what the reeve wrote meanwhile) on the
    feature branch — you are its only committer; in the default mode `.jarl/` is never committed. When the
    merge happened in another repository, commit `.jarl/` in the loop's repository after recording it: nothing
    else will, and `status` counts the loop files left uncommitted.
-   When the issues carry changelog entries and the branch did not already add them, `jarl.mjs changelog <ids> --repo
+   When the issues carry changelog entries and the branch did not already add them, `jarl_changelog <ids> --repo
    <path>` prints them; paste them under `[Unreleased]` in that repository's CHANGELOG.md, edited into the register
    the repository asks for, merged into an existing `[Unreleased]` entry when they cover the same feature, and commit
    that file alone ("changelog: <ids>") — the one file you write.
-   Before moving to the next branch, `jarl.mjs show <id>` and confirm it reads
+   Before moving to the next branch, `jarl_show <id>` and confirm it reads
    `done` — a write that silently failed to land is worse than one that never ran. The tool locks
-   and refuses loudly now, but a call whose exit code nobody read is still a write nobody saw.
+   and refuses loudly now, but a call whose error result (or exit code) nobody read is still a write nobody saw.
 Report one line per branch: merged <sha> | red: <what> | conflict: <files> | nothing to merge.
 When several approved branches wait and their declared files do not overlap, merge them one after
 another and run the check once for the batch; a red batch is rolled back whole (`git reset --keep`
@@ -453,7 +467,7 @@ Before the feature branch merges to `main`, in this order:
    register the repository asks for; entries still on issues (see [Changelog fragments](#changelog-fragments)) are
    printed by `changelog <ids>`.
 3. The repository's own check is green on the branch tip.
-4. `jarl.mjs close` removes `.jarl/` — it refuses while anything is still open. In the committed mode
+4. `jarl_close` removes `.jarl/` — it refuses while anything is still open. In the committed mode
    that removal is the last commit, so `main` never carries the directory; in the default mode there
    is nothing to commit — git never saw it.
 
@@ -474,7 +488,7 @@ feature branch is covered by it. Without such a line, a push is still the user's
 A loop opened with `init --permanent` has no feature branch to close, so this section applies with
 one difference, at step 4: nothing above it changes — every issue still needs to be `done` or
 `dropped` before closing, `report` still feeds the changelog, the repository's own check still needs
-to be green. But `jarl.mjs close` in this mode never removes `.jarl/`: it refuses exactly as above
+to be green. But `jarl_close` in this mode never removes `.jarl/`: it refuses exactly as above
 while anything is open or in progress, and once clean it appends a closing line to `log.md` and
 leaves the directory in place — the record `--root` named stays where it was, for the next release,
 or the next session, to read.
@@ -490,7 +504,7 @@ question the user answered in a way that changes the goal; every few merges, the
 empty queue. The jarl stays the one who answers the client and rules on what the reeve raises.
 Everything the reeve raises is its own to reach — a worker, a reviewer, a merger — so the reeve
 holds all of them and the jarl holds the reeve. Its brief is this whole skill, plus the repository,
-the feature branch, the absolute path of the tool, and the four occasions above.
+the feature branch, the absolute path of the script for a session without the jarl tools, and the four occasions above.
 
 A merger's report is the only signal that it has stopped touching the main checkout — not a delay,
 not an assumption that it "must be done by now", not a status the loop tracks some other way. The
