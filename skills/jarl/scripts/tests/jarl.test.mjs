@@ -1,9 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, existsSync, writeFileSync, readdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, existsSync, writeFileSync, readdirSync, rmSync, symlinkSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync, spawnSync } from 'node:child_process';
+import { sh, NO_EXCLUDES } from './portable.mjs';
 import { fileURLToPath } from 'node:url';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
@@ -139,7 +140,6 @@ test('a repository is named by its root, not a subdirectory of it, and the Repo 
   const parent = mkdtempSync(join(tmpdir(), 'jarl-repo-'));
   const hub = join(parent, 'hub'); const tool = join(parent, 'tool');
   mkdirSync(hub); mkdirSync(join(tool, 'src'), { recursive: true });
-  const sh = (cwd, script) => execFileSync('bash', ['-c', script], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
   const setup = (b) => `git init -q -b ${b} && git config user.email t@t && git config user.name t`;
   sh(hub, `${setup('main')} && echo notes > notes.md && git add -A && git commit -qm base`);
   sh(tool, `${setup('feature')} && echo 'x' > src/a.mjs && git add -A && git commit -qm base`);
@@ -164,7 +164,6 @@ test('the repository name in Files: --repo strips it like the field does, an inn
   const parent = mkdtempSync(join(tmpdir(), 'jarl-name-'));
   const hub = join(parent, 'hub'); const tool = join(parent, 'tool'); const app = join(parent, 'app');
   mkdirSync(hub); mkdirSync(join(tool, 'src'), { recursive: true }); mkdirSync(join(app, 'app'), { recursive: true });
-  const sh = (cwd, script) => execFileSync('bash', ['-c', script], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
   const setup = (b) => `git init -q -b ${b} && git config user.email t@t && git config user.name t`;
   sh(hub, `${setup('main')} && echo notes > notes.md && git add -A && git commit -qm base`);
   sh(tool, `${setup('feature')} && echo x > src/a.mjs && git add -A && git commit -qm base`);
@@ -189,7 +188,7 @@ test('the repository name in Files: --repo strips it like the field does, an inn
   // 3. One repository however its path is spelled: through a symlink, and (where the file system ignores case) in
   // another case.
   const spellings = ['../link'];
-  execFileSync('ln', ['-s', tool, join(parent, 'link')]);
+  symlinkSync(tool, join(parent, 'link'), 'junction');   // a junction on Windows: no privilege needed
   if (existsSync(join(parent, 'TOOL'))) spellings.push('../TOOL');
   jarl(hub, 'new', 'holds src/a.mjs', '--files', 'tool/src/b.mjs', '--repo', '../tool');
   jarl(hub, 'set', '004', 'in-progress', 'worker raised');
@@ -280,14 +279,14 @@ test('tier field, rounds and takeover, asks and answers, handoff, report', () =>
 test('check reads a worker branch: commits, declared files, removed tests, assertions', () => {
   const root = repo();
   const g = (...a) => execFileSync('git', a, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-  execFileSync('rm', ['-rf', join(root, '.git')]);
+  rmSync(join(root, '.git'), { recursive: true, force: true });
   g('init', '-q', '-b', 'feature');
   g('config', 'user.email', 't@t'); g('config', 'user.name', 't');
   mkdirSync(join(root, 'src')); mkdirSync(join(root, 'tests'));
-  execFileSync('bash', ['-c', `cd ${root} && echo 'export const a = 1;' > src/a.mjs && printf 'assert.equal(1,1);\\nassert.equal(2,2);\\n' > tests/a.test.mjs && git add -A && git commit -qm base`]);
+  sh(root, `echo 'export const a = 1;' > src/a.mjs && printf 'assert.equal(1,1);\\nassert.equal(2,2);\\n' > tests/a.test.mjs && git add -A && git commit -qm base`);
   jarl(root, 'init', 'goal', '--committed');
   jarl(root, 'new', 'change a', '--files', 'src/a.mjs,tests/a.test.mjs');
-  execFileSync('bash', ['-c', `cd ${root} && git add -A && git commit -qm jarl && git checkout -qb jarl/001-change-a && echo 'export const a = 2;' > src/a.mjs && printf 'assert.equal(1,1);\\n' > tests/a.test.mjs && echo x > src/b.mjs && echo '- entry' >> CHANGELOG.md && echo 'export {};' > tests/new.test.mjs && git add -A && git commit -qm work && git checkout -q feature`]);
+  sh(root, `git add -A && git commit -qm jarl && git checkout -qb jarl/001-change-a && echo 'export const a = 2;' > src/a.mjs && printf 'assert.equal(1,1);\\n' > tests/a.test.mjs && echo x > src/b.mjs && echo '- entry' >> CHANGELOG.md && echo 'export {};' > tests/new.test.mjs && git add -A && git commit -qm work && git checkout -q feature`);
   let out;
   try { jarl(root, 'check', '001', '--branch', 'jarl/001-change-a', '--base', 'feature', '--json'); } catch (e) { out = JSON.parse(e.stdout); }
   assert.equal(out.ok, false);
@@ -302,14 +301,14 @@ test('check reads a worker branch: commits, declared files, removed tests, asser
 test('check matches a declared file relative to a subdirectory, not just the repo root', () => {
   const root = repo();
   const g = (...a) => execFileSync('git', a, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-  execFileSync('rm', ['-rf', join(root, '.git')]);
+  rmSync(join(root, '.git'), { recursive: true, force: true });
   g('init', '-q', '-b', 'feature');
   g('config', 'user.email', 't@t'); g('config', 'user.name', 't');
   mkdirSync(join(root, 'skills', 'x'), { recursive: true });
-  execFileSync('bash', ['-c', `cd ${root} && echo one > skills/x/SKILL.md && git add -A && git commit -qm base`]);
+  sh(root, `echo one > skills/x/SKILL.md && git add -A && git commit -qm base`);
   jarl(root, 'init', 'goal', '--committed');
   jarl(root, 'new', 'change the skill body', '--files', 'SKILL.md');
-  execFileSync('bash', ['-c', `cd ${root} && git add -A && git commit -qm jarl && git checkout -qb jarl/001-change-the-skill-body && echo two > skills/x/SKILL.md && git add -A && git commit -qm work && git checkout -q feature`]);
+  sh(root, `git add -A && git commit -qm jarl && git checkout -qb jarl/001-change-the-skill-body && echo two > skills/x/SKILL.md && git add -A && git commit -qm work && git checkout -q feature`);
   const out = JSON.parse(jarl(root, 'check', '001', '--branch', 'jarl/001-change-the-skill-body', '--base', 'feature', '--json'));
   const byName = Object.fromEntries(out.items.map((i) => [i.name, i]));
   assert.equal(byName['diff inside declared files'].ok, true, byName['diff inside declared files'].note);
@@ -331,11 +330,11 @@ test('a round after an approve spends the approve', () => {
 test('branches lists a worktree branch a worker never renamed, marked unnamed', () => {
   const root = repo();
   const g = (...a) => execFileSync('git', a, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-  execFileSync('rm', ['-rf', join(root, '.git')]);
+  rmSync(join(root, '.git'), { recursive: true, force: true });
   g('init', '-q', '-b', 'feature'); g('config', 'user.email', 't@t'); g('config', 'user.name', 't');
-  execFileSync('bash', ['-c', `cd ${root} && echo a > a.txt && git add -A && git commit -qm base`]);
+  sh(root, `echo a > a.txt && git add -A && git commit -qm base`);
   jarl(root, 'init', 'goal', '--committed');
-  execFileSync('bash', ['-c', `cd ${root} && git add -A && git commit -qm jarl && git worktree add -q -b worktree-agent-x ${root}/.wt-x && cd ${root}/.wt-x && echo b > b.txt && git add -A && git commit -qm work`]);
+  sh(root, `git add -A && git commit -qm jarl && git worktree add -q -b worktree-agent-x ${root}/.wt-x && cd ${root}/.wt-x && echo b > b.txt && git add -A && git commit -qm work`);
   const rows = JSON.parse(jarl(root, 'branches', '--base', 'feature', '--json'));
   const row = rows.find((r) => r.branch === 'worktree-agent-x');
   assert.ok(row, 'the unnamed worktree branch is listed');
@@ -392,8 +391,8 @@ function gitRepo() {
   const g = (...a) => execFileSync('git', a, { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   g('init', '-q', '-b', 'feature');
   g('config', 'user.email', 't@t'); g('config', 'user.name', 't');
-  g('config', 'core.excludesFile', '/dev/null');
-  execFileSync('bash', ['-c', `cd ${dir} && echo a > a.txt && git add -A && git commit -qm base`]);
+  g('config', 'core.excludesFile', NO_EXCLUDES);
+  sh(dir, `echo a > a.txt && git add -A && git commit -qm base`);
   return { dir, g };
 }
 
@@ -497,7 +496,6 @@ test('check, branches and handoff read the repository an issue names, not the lo
     const parent = mkdtempSync(join(tmpdir(), 'jarl-two-'));
     const hub = join(parent, 'hub'); const tool = join(parent, 'tool');
     mkdirSync(hub); mkdirSync(tool);
-    const sh = (cwd, script) => execFileSync('bash', ['-c', script], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
     const setup = (b) => `git init -q -b ${b} && git config user.email t@t && git config user.name t && git config core.excludesFile /dev/null`;
     sh(hub, `${setup('main')} && echo notes > notes.md && git add -A && git commit -qm base`);
     sh(tool, `${setup('feature')} && mkdir src tests && echo 'export const a = 1;' > src/a.mjs && printf 'assert.equal(1,1);\\n' > tests/a.test.mjs && git add -A && git commit -qm base`);
@@ -562,7 +560,6 @@ test('check, branches and handoff read the repository an issue names, not the lo
 // Real repositories beside a hub that holds the loop; each is a git repository on its own branch.
 function reposBeside(...names) {
   const parent = mkdtempSync(join(tmpdir(), 'jarl-many-'));
-  const sh = (cwd, script) => execFileSync('bash', ['-c', script], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
   const dirs = {};
   for (const name of ['hub', ...names]) {
     const dir = join(parent, name);
@@ -838,7 +835,7 @@ test('a committed loop keeps the lock and temporary files out of git; an older c
   // A committed loop opened before the narrow file existed has no ignore file at all.
   const root = repo();
   jarl(root, 'init', 'goal', '--committed');
-  execFileSync('rm', [join(root, '.jarl', '.gitignore')]);
+  rmSync(join(root, '.jarl', '.gitignore'));
   jarl(root, 'new', 'thing');
   assert.equal(readFileSync(join(root, '.jarl', '.gitignore'), 'utf8'), JARL_GITIGNORE_COMMITTED);
   // The mode reads the same: still committed, so mode permanent works, and an archive keeps the mode.
@@ -900,7 +897,7 @@ test('new claims its file with a hard link, and without hard links falls back to
 test('a command refused by the parser or its own checks does not backfill the ignore file', () => {
   const root = repo();
   jarl(root, 'init', 'goal', '--committed');
-  execFileSync('rm', [join(root, '.jarl', '.gitignore')]);
+  rmSync(join(root, '.jarl', '.gitignore'));
   refuses(root, 'evidence', '001', '--bogus');
   assert.equal(existsSync(join(root, '.jarl', '.gitignore')), false, 'the parser refused before any lock');
   refuses(root, 'set', '999', 'done');
@@ -950,7 +947,7 @@ test('next and status flag work with no acceptance line, done says so on stderr,
   jarl(root, 'evidence', '2', '--ran', 'x', '--saw', 'y');
   const r = execFileSync(process.execPath, [SCRIPT, 'set', '2', 'done', 'merged', '--root', root], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   assert.equal(r.trim(), '002 → done', 'stdout is unchanged');
-  const child = (() => { try { return execFileSync('bash', ['-c', `node ${SCRIPT} review 1 approve --by rev ok --root ${root} >/dev/null && node ${SCRIPT} evidence 1 --ran t --saw ok --root ${root} >/dev/null && node ${SCRIPT} set 1 done m --root ${root} 2>&1 >/dev/null`], { encoding: 'utf8' }); } catch (e) { return String(e.stdout); } })();
+  const child = (() => { try { return sh(tmpdir(), `node ${SCRIPT} review 1 approve --by rev ok --root ${root} >/dev/null && node ${SCRIPT} evidence 1 --ran t --saw ok --root ${root} >/dev/null && node ${SCRIPT} set 1 done m --root ${root} 2>&1 >/dev/null`); } catch (e) { return String(e.stdout); } })();
   assert.match(child, /note: 001 no acceptance line on file/, 'done is never refused for it, only noted');
 });
 
@@ -1119,7 +1116,7 @@ test('done: a ruling, a drop reason or a free-text note alone is not evidence; a
   jarl(root, 'evidence', '1', 'merged abc');
   assert.match(refuses(root, 'set', '1', 'done', 'x'), /001 has no --ran\/--saw evidence row recorded since it was filed/);
   jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'pass');
-  const r = (() => { try { return execFileSync('bash', ['-c', `node ${SCRIPT} set 1 done m --root ${root} 2>&1`], { encoding: 'utf8' }); } catch (e) { return String(e.stdout); } })();
+  const r = (() => { try { return sh(tmpdir(), `node ${SCRIPT} set 1 done m --root ${root} 2>&1`); } catch (e) { return String(e.stdout); } })();
   assert.match(r, /note: 001 2 acceptance line\(s\), 1 --ran\/--saw row\(s\)/);
   const file = findingsDir([{ id: 'jarl-3-X1', title: 'x', proposal: 'do it' }]);
   const o = JSON.parse(jarl(root, 'import', file, '--source', 'r', '--json'));
@@ -1168,10 +1165,10 @@ test('import adopts a package issue whose Evidence names the report and lists th
 
 function gitLoop(...initFlags) {
   const root = mkdtempSync(join(tmpdir(), 'jarl-pkg-'));
-  const sh = (script, cwd = root) => execFileSync('bash', ['-c', script], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-  sh('git init -q -b main && git config user.email t@t && git config user.name t && git config core.excludesFile /dev/null && echo a > a.txt && echo b > b.txt && echo c > c.txt && git add -A && git commit -qm base');
+  const run = (script, cwd = root) => sh(cwd, script);
+  run('git init -q -b main && git config user.email t@t && git config user.name t && git config core.excludesFile /dev/null && echo a > a.txt && echo b > b.txt && echo c > c.txt && git add -A && git commit -qm base');
   jarl(root, 'init', 'goal', ...initFlags);
-  return { root, sh };
+  return { root, sh: run };
 }
 function withStderr(root, ...args) {
   const r = spawnSync(process.execPath, [SCRIPT, ...args, '--root', root], { encoding: 'utf8' });

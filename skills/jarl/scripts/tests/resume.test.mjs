@@ -1,10 +1,11 @@
 // resume: the state a session picks the loop up from, assembled live; handoff write retired (issue 423).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, readdirSync, existsSync, chmodSync, cpSync, statSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, readdirSync, existsSync, cpSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync, spawnSync } from 'node:child_process';
+import { sh, ghStub } from './portable.mjs';
 import { fileURLToPath } from 'node:url';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
@@ -18,19 +19,12 @@ function jarl(root, ...args) {
   if (r.status !== 0) throw new Error(`jarl ${args.join(' ')} failed: ${r.stderr}`);
   return r.stdout;
 }
-const sh = (cwd, script) => execFileSync('bash', ['-c', script], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 // Every file under .jarl/ with its contents: a read-only command leaves this exactly as it was.
 function snapshot(root) {
   const out = {};
   const walk = (dir, rel) => { for (const f of readdirSync(dir)) { const p = join(dir, f); if (statSync(p).isDirectory()) walk(p, `${rel}${f}/`); else out[`${rel}${f}`] = readFileSync(p, 'utf8'); } };
   walk(join(root, '.jarl'), '');
   return out;
-}
-function ghStub(dir) {
-  const bin = join(dir, 'gh-stub');
-  writeFileSync(bin, `#!/bin/sh\nif [ "$1" = "--version" ]; then echo stub; exit 0; fi\necho "$@" >> "${join(dir, 'gh-calls')}"\necho '[{"conclusion":"success","status":"completed","databaseId":7,"workflowName":"CI"}]'\n`);
-  chmodSync(bin, 0o755);
-  return bin;
 }
 
 // A hub holding a committed loop and a tool repository beside it with a remote, so every section has something in it.

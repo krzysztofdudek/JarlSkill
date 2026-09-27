@@ -9,7 +9,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, rmSync, realpathSync, statSync, renameSync, openSync, closeSync, writeSync, unlinkSync, linkSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { hostname } from 'node:os';
-import { join, resolve, dirname, basename, relative } from 'node:path';
+import { join, resolve, dirname, basename, relative, isAbsolute } from 'node:path';
 
 // The built-in statuses, kinds and tiers: what a loop with no profile uses (see "the profile" below).
 export const STATUSES = ['open', 'in-progress', 'done', 'dropped', 'deferred'];
@@ -52,7 +52,8 @@ function mainCheckoutWithLoop(dir) {
   } catch { return null; }
   const commonDir = resolve(dir, common);
   const main = basename(commonDir) === '.git' ? dirname(commonDir) : null;
-  return main && main !== dir && existsSync(jarlDir(main)) ? main : null;
+  // canonical on both sides: git prints C:/x/.git where the path module spells C:\x, and a drive letter's case may differ.
+  return main && canonical(main) !== canonical(dir) && existsSync(jarlDir(main)) ? main : null;
 }
 export function jarlDir(root) { return join(root, '.jarl'); }
 export function issuesDir(root) { return join(jarlDir(root), 'issues'); }
@@ -123,10 +124,10 @@ function breakStaleLock(root, stale) {
   }
   try {
     let now = null;
-    try { now = readFileSync(lockPath(root), 'utf8'); } catch { /* released meanwhile */ }
+    try { now = readText(lockPath(root)); } catch { /* released meanwhile */ }
     if (now === stale) unlinkSync(lockPath(root));
   } catch { /* released meanwhile */ } finally {
-    try { if (readFileSync(brk, 'utf8') === mine) unlinkSync(brk); } catch { /* gone */ }
+    try { if (readText(brk) === mine) unlinkSync(brk); } catch { /* gone */ }
   }
 }
 
@@ -148,10 +149,16 @@ export function withLock(root, fn) {
       break;
     } catch (e) {
       if (e.code === 'ENOENT') throw new Error(`no .jarl/ here any more — the loop was closed or archived while this command waited (${jarlDir(root)})`);
-      if (e.code !== 'EEXIST') throw e;
+      // Windows: a lock just released is "delete pending" while another process still has it open (a waiter reading
+      // it), and creating it again is refused with EPERM until that handle closes — a busy lock, not an error.
+      if (!(e.code === 'EEXIST' || (process.platform === 'win32' && RENAME_BUSY.has(e.code)))) throw e;
     }
     let text = ''; let mtimeMs = Date.now();
-    try { text = readFileSync(path, 'utf8'); mtimeMs = statSync(path).mtimeMs; } catch { continue; }   // released meanwhile
+    try { text = readText(path); mtimeMs = statSync(path).mtimeMs; } catch {   // released meanwhile
+      if (Date.now() > until) throw new Error(`.jarl/.lock could not be taken within ${LOCK_WAIT_MS} ms — nothing was written; retry`);
+      sleep(1 + Math.floor(Math.random() * 5));
+      continue;
+    }
     if (lockIsStale(text, mtimeMs)) { breakStaleLock(root, text); sleep(1 + Math.floor(Math.random() * 5)); continue; }
     if (Date.now() > until) throw new Error(`.jarl/.lock is held by another jarl.mjs (${text.trim() || 'holder unknown'}) — nothing was written; retry, or remove ${path} if that process is gone`);
     sleep(10 + Math.floor(Math.random() * 40));
@@ -168,7 +175,36 @@ export function withLock(root, fn) {
     HELD.delete(key);
     // Release only a lock that is still this one: close removes .jarl/ with it, and a lock broken as stale
     // may already belong to someone else.
-    try { if (readFileSync(path, 'utf8') === mine) unlinkSync(path); } catch { /* removed with .jarl/ */ }
+    try { if (readText(path) === mine) unlinkSync(path); } catch { /* removed with .jarl/ */ }
+  }
+}
+
+// Whether argv1 (process.argv[1]) names the script self: compared as real paths, and without case on Windows, so a
+// plugin root spelled with another drive-letter case (c:\ against C:\), or reached through a symlink or a junction,
+// still counts as this script. The CLI and the MCP server both start only when this holds.
+export function isEntry(argv1, self, platform = process.platform) {
+  if (!argv1) return false;
+  const real = (p) => { try { return realpathSync.native(p); } catch { return resolve(p); } };
+  const [a, b] = [real(resolve(argv1)), real(self)];
+  return platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
+}
+
+// Every text file the loop keeps is read with its line endings as LF: a loop is committed, and a Windows checkout
+// with core.autocrlf (or an editor there) hands it back with CRLF, which every line-based parser here would misread.
+export function readText(path) { return readFileSync(path, 'utf8').replace(/\r\n?/g, '\n'); }
+
+// Windows refuses a rename onto (or of) a file another process holds open — a reader without the lock, a virus
+// scanner, the search indexer — with EPERM, EACCES or EBUSY, for the moment that handle stays open. Such a rename
+// is retried for up to RENAME_RETRY_MS before the error is let through; everywhere else the first error is final.
+export const RENAME_RETRY_MS = 2_000;
+const RENAME_BUSY = new Set(['EPERM', 'EACCES', 'EBUSY']);
+export function renameRetry(from, to, rename = renameSync, platform = process.platform) {
+  const until = Date.now() + RENAME_RETRY_MS;
+  for (let wait = 5; ; wait = Math.min(wait * 2, 100)) {
+    try { rename(from, to); return; } catch (e) {
+      if (platform !== 'win32' || !RENAME_BUSY.has(e.code) || Date.now() > until) throw e;
+      sleep(wait);
+    }
   }
 }
 
@@ -176,10 +212,10 @@ export function withLock(root, fn) {
 export function writeAtomic(path, text) {
   const tmp = join(dirname(path), `.${basename(path)}.${process.pid}.tmp`);
   writeFileSync(tmp, text);
-  renameSync(tmp, path);
+  try { renameRetry(tmp, path); } catch (e) { try { unlinkSync(tmp); } catch { /* gone */ } throw e; }
 }
 function appendAtomic(path, header, text) {
-  writeAtomic(path, (existsSync(path) ? readFileSync(path, 'utf8') : header) + text);
+  writeAtomic(path, (existsSync(path) ? readText(path) : header) + text);
 }
 
 // ---- the profile: what a loop's issues carry and what its statuses mean ----------------------------
@@ -364,7 +400,7 @@ export function loadProfile(root) {
   const hit = PROFILES.get(path);
   if (hit && hit.key === key) return hit.profile;
   let json;
-  try { json = JSON.parse(readFileSync(path, 'utf8')); } catch (e) { throw new Error(`${path} is not JSON: ${e.message}`); }
+  try { json = JSON.parse(readText(path)); } catch (e) { throw new Error(`${path} is not JSON: ${e.message}`); }
   const profile = validateProfile(json, path);
   PROFILES.set(path, { key, profile });
   return profile;
@@ -373,7 +409,7 @@ export function readProfileFile(file) {
   need(typeof file === 'string' && file.trim(), '--profile needs the path of a profile file');
   need(existsSync(file), `no such profile file: ${file}`);
   let json;
-  try { json = JSON.parse(readFileSync(file, 'utf8')); } catch (e) { throw new Error(`${file} is not JSON: ${e.message}`); }
+  try { json = JSON.parse(readText(file)); } catch (e) { throw new Error(`${file} is not JSON: ${e.message}`); }
   return { json, profile: validateProfile(json, file) };
 }
 
@@ -446,7 +482,7 @@ export function loadIssues(root) {
   if (!existsSync(dir)) return [];
   const profile = loadProfile(root);
   return readdirSync(dir).filter((f) => /^\d{3}-.*\.md$/.test(f)).sort()
-    .map((f) => withProfile(parseIssue(readFileSync(join(dir, f), 'utf8'), join(dir, f)), profile));
+    .map((f) => withProfile(parseIssue(readText(join(dir, f)), join(dir, f)), profile));
 }
 // An issue read under the loop's profile: one written with no Status starts where the profile's issues start.
 // Its acceptance is read under the profile's heading as under ## Acceptance, so every view that counts acceptance
@@ -461,7 +497,7 @@ function withProfile(issue, profile) {
 // The heading an issue's acceptance is written under: the one the file already has, else the profile's.
 function acceptanceHeading(issue, profile) {
   if (profile.acceptance && issue.sections[profile.acceptance.toLowerCase()] !== undefined) return profile.acceptance;
-  if (/^##\s+Acceptance\s*$/m.test(readFileSync(issue.file, 'utf8'))) return 'Acceptance';
+  if (/^##\s+Acceptance\s*$/m.test(readText(issue.file))) return 'Acceptance';
   return profile.acceptance || 'Acceptance';
 }
 
@@ -621,7 +657,7 @@ export function loadDecisions(root) {
   const path = join(jarlDir(root), 'decisions.md');
   if (!existsSync(path)) return [];
   const out = [];
-  for (const line of readFileSync(path, 'utf8').split('\n')) {
+  for (const line of readText(path).split('\n')) {
     const h = DECISION_HEAD.exec(line);
     if (h) { out.push({ date: h[1], slug: h[2], body: [] }); continue; }
     if (out.length) out[out.length - 1].body.push(line);
@@ -644,7 +680,7 @@ export function loadDecisions(root) {
 export function appendDecision(root, slug, ruling, { by, supersedes } = {}) {
   need(typeof slug === 'string' && SLUG_RE.test(slug), `a ruling's slug is letters, digits and . _ - (starting with a letter or digit, at most 80 characters) — not "${slug}"; e.g. ${slugify(String(slug || 'ruling'))}`);
   const path = join(jarlDir(root), 'decisions.md');
-  const existing = existsSync(path) ? readFileSync(path, 'utf8') : '# Decisions\n';
+  const existing = existsSync(path) ? readText(path) : '# Decisions\n';
   const all = loadDecisions(root);
   need(!all.some((d) => d.slug === slug), `duplicate slug: ${slug} — a ruling that replaces it takes a new slug and --supersedes ${slug}`);
   let text = existing;
@@ -687,7 +723,7 @@ export const JARL_GITIGNORE = '*\n**/*\n';
 export const JARL_GITIGNORE_COMMITTED = '# jarl: the loop is committed; only the write lock and half-written temporary files stay out of git\n/.lock\n/.lock.break\n.*.tmp\n';
 export function outOfGit(root) {
   const path = join(jarlDir(root), '.gitignore');
-  return existsSync(path) && readFileSync(path, 'utf8').split('\n').some((l) => l.trim() === '*');
+  return existsSync(path) && readText(path).split('\n').some((l) => l.trim() === '*');
 }
 export const PERMANENT_MARKER = 'This loop is a permanent record: it is not tied to a feature branch, and `close` never removes this directory. See SKILL.md.\n';
 
@@ -753,7 +789,7 @@ export function cmdArchive(root, slug) {
   mkdirSync(dest, { recursive: true });
   for (const entry of readdirSync(jarlDir(root))) {
     if (ARCHIVE_KEEPS.has(entry)) continue;
-    renameSync(join(jarlDir(root), entry), join(dest, entry));
+    renameRetry(join(jarlDir(root), entry), join(dest, entry));
   }
   return { archived: dest, leftOpen: left };
 }
@@ -788,7 +824,7 @@ export function readTemplate(root, name) {
   }
   // The template is read as an issue whose title line may be anything: only its fields and sections count. A template
   // that starts straight with a field has no title line, so that first field is read as a field, not dropped.
-  const raw = readFileSync(path, 'utf8').replace(/\r\n?/g, '\n');
+  const raw = readText(path);
   const t = parseIssue(FIELD_RE.test(raw.split('\n')[0]) ? `# template\n${raw}` : raw, path);
   const section = (k) => (t.sections[k] !== undefined && t.sections[k].trim() ? t.sections[k].trim() : undefined);
   return {
@@ -845,7 +881,7 @@ export function cmdNew(root, title, rawFlags) {
     const tmp = join(dir, `.${id}.${process.pid}.tmp`);
     writeFileSync(tmp, renderIssue({
       id, title, status: profile.initial, kind, priority, tier, fields, sections, acceptanceHeading: profile.acceptance || 'Acceptance',
-      tags: splitList(flags.tags), files: splitList(flags.files), repo: repos.join(', '), foundBy: flags['found-by'] || 'jarl',
+      tags: splitList(flags.tags), files: pathList(flags.files), repo: repos.join(', '), foundBy: flags['found-by'] || 'jarl',
       where: flags.where, what: bodyText(flags.what), why: bodyText(flags.why), source, after,
       // A template's Acceptance and Changelog are taken as written (a list already); a flag replaces them.
       acceptance: flags.acceptance !== undefined ? acceptanceText(flags.acceptance) : bodyText(fromTemplate.acceptance),
@@ -861,6 +897,11 @@ export function cmdNew(root, title, rawFlags) {
 }
 
 function splitList(v) { return String(v || '').split(',').map((s) => s.trim()).filter(Boolean); }
+// A path written into an issue (Files, Repo) is read on every OS the loop is checked out on, and git names files with
+// '/' everywhere: a path given on Windows is stored with '/' (C:\a\b → C:/a/b, which Windows reads the same). Elsewhere a
+// backslash is an ordinary file-name character and is kept.
+export function portablePath(p, platform = process.platform) { return platform === 'win32' ? p.replace(/\\/g, '/') : p; }
+function pathList(v) { return splitList(v).map((p) => portablePath(p)); }
 
 // A Source entry names one finding for good: the report's directory (dated, so unique) and the finding's id
 // inside it, <dir>#<id>. Several are one comma list.
@@ -909,7 +950,7 @@ export function cmdBody(root, rawId, flags) {
   const parts = ['where', 'what', 'why', 'acceptance', 'changelog', 'section'].filter((k) => flags[k] !== undefined);
   need(parts.length, 'body needs at least one of --where, --what, --why, --acceptance, --changelog, --section');
   const sections = namedPairs(flags.section, 'section', profile.sections, 'section');
-  let text = readFileSync(issue.file, 'utf8');
+  let text = readText(issue.file);
   if (flags.where !== undefined) text = setField(text, 'Where', fieldText(flags.where));
   if (flags.what !== undefined) text = setSection(text, 'What', bodyText(flags.what));
   if (flags.why !== undefined) text = setSection(text, 'Why', bodyText(flags.why));
@@ -927,7 +968,7 @@ export function cmdSource(root, rawId, list) {
   need(issue, `no such issue: ${rawId}`);
   const sources = sourceList(list);
   need(sources.length, 'source requires <report dir>#<finding id>[,...]');
-  writeAtomic(issue.file, setField(readFileSync(issue.file, 'utf8'), 'Source', sources.join(', ')));
+  writeAtomic(issue.file, setField(readText(issue.file), 'Source', sources.join(', ')));
   appendLog(root, `${issue.id} source · ${sources.join(', ')}`);
   return { id: issue.id, sources };
 }
@@ -938,13 +979,13 @@ export function cmdAfter(root, rawId, raw, { clear = false } = {}) {
   if (clear) {
     need(raw === undefined, 'after takes either <ids> or --clear, not both');
     need(issue.fields.after !== undefined, `${issue.id} has no After field to clear`);
-    writeAtomic(issue.file, readFileSync(issue.file, 'utf8').replace(/^\*\*After:\*\*.*\n/m, ''));
+    writeAtomic(issue.file, readText(issue.file).replace(/^\*\*After:\*\*.*\n/m, ''));
     appendLog(root, `${issue.id} after · cleared`);
     return { id: issue.id, after: [], cleared: true };
   }
   need(raw !== undefined, 'after requires <ids> — the issues this one waits on (or --clear)');
   const ids = afterList(root, issue.id, raw);
-  writeAtomic(issue.file, setField(readFileSync(issue.file, 'utf8'), 'After', ids.join(', ')));
+  writeAtomic(issue.file, setField(readText(issue.file), 'After', ids.join(', ')));
   appendLog(root, `${issue.id} after ${ids.join(', ')}`);
   return { id: issue.id, after: ids };
 }
@@ -972,7 +1013,7 @@ export function cmdList(root, flags) {
   }
   if (flags.grep) {
     const re = new RegExp(flags.grep, 'i');
-    rows = rows.filter((i) => re.test(readFileSync(i.file, 'utf8')));
+    rows = rows.filter((i) => re.test(readText(i.file)));
   }
   return rows.sort((a, b) => a.priority.localeCompare(b.priority) || a.id.localeCompare(b.id));
 }
@@ -1051,7 +1092,7 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   const since = stamp();
   const worktree = flags.worktree !== undefined ? resolve(root, fieldText(flags.worktree)) : undefined;
   const writes = issues.map((issue) => {
-    let text = readFileSync(issue.file, 'utf8');
+    let text = readText(issue.file);
     text = setField(text, 'Status', status);
     if (holds) {
       if (flags.branch !== undefined) text = setField(text, 'Branch', fieldText(flags.branch));
@@ -1086,7 +1127,7 @@ function setDeclaredField(root, rawIds, field, value, flags) {
   const v = fieldValue(profile, field, value);
   need(v || (!field.required && !field.builtin), `${field.name} cannot be empty${field.enum ? ` — one of: ${field.enum.join(', ')}` : ''}`);
   const issues = issuesFor(root, rawIds);
-  for (const issue of issues) writeAtomic(issue.file, setField(readFileSync(issue.file, 'utf8'), field.name, v));
+  for (const issue of issues) writeAtomic(issue.file, setField(readText(issue.file), field.name, v));
   appendLogLines(root, issues.map((issue) => `${issue.id} field ${field.name} · ${v || '(cleared)'}`));
   return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, field: field.name, value: v })));
 }
@@ -1182,7 +1223,7 @@ export function cmdMerged(root, rawIds, flags) {
     }
   }
   for (const issue of issues) {
-    let text = readFileSync(issue.file, 'utf8');
+    let text = readText(issue.file);
     if (sha) text = setField(text, 'Merged', `${sha}${flags.repo !== undefined ? ` in ${fieldText(flags.repo)}` : ''}`);
     text = setField(text, 'CI', ci);
     writeAtomic(issue.file, text);
@@ -1199,22 +1240,22 @@ export function cmdTag(root, rawIds, ops) {
     for (const op of ops) { if (op.startsWith('+')) tags.add(op.slice(1)); else tags.delete(op.slice(1)); }
     return { issue, tags: [...tags].sort() };
   });
-  for (const r of results) writeAtomic(r.issue.file, setField(readFileSync(r.issue.file, 'utf8'), 'Tags', r.tags.join(', ')));
+  for (const r of results) writeAtomic(r.issue.file, setField(readText(r.issue.file), 'Tags', r.tags.join(', ')));
   return oneOrMany(rawIds, results.map((r) => ({ id: r.issue.id, tags: r.tags })));
 }
 
 export function cmdPrio(root, rawIds, prio) {
   need(PRIORITIES.includes(String(prio)), 'priority is 1, 2 or 3');
   const issues = issuesFor(root, rawIds);
-  for (const issue of issues) writeAtomic(issue.file, setField(readFileSync(issue.file, 'utf8'), 'Priority', String(prio)));
+  for (const issue of issues) writeAtomic(issue.file, setField(readText(issue.file), 'Priority', String(prio)));
   return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, priority: String(prio) })));
 }
 
 export function cmdFiles(root, rawId, list) {
   const issue = findIssue(root, rawId);
   need(issue, `no such issue: ${rawId}`);
-  const files = splitList(list);
-  writeAtomic(issue.file, setField(readFileSync(issue.file, 'utf8'), 'Files', files.join(', ')));
+  const files = pathList(list);
+  writeAtomic(issue.file, setField(readText(issue.file), 'Files', files.join(', ')));
   return { id: issue.id, files };
 }
 
@@ -1223,13 +1264,13 @@ export function cmdRepo(root, rawId, path, { clear = false } = {}) {
   need(issue, `no such issue: ${rawId}`);
   if (clear) {
     need(issue.fields.repo, `${issue.id} has no Repo field to clear`);
-    const text = readFileSync(issue.file, 'utf8').replace(/^\*\*Repo:\*\*.*\n/m, '');
+    const text = readText(issue.file).replace(/^\*\*Repo:\*\*.*\n/m, '');
     writeAtomic(issue.file, text);
     return { id: issue.id, repo: null, cleared: true };
   }
   need(path !== undefined, 'repo requires <path> — the checkout of the repository the issue\'s code lives in, several as one comma list (or --clear to remove the field)');
   const repos = repoList(root, path);
-  writeAtomic(issue.file, setField(readFileSync(issue.file, 'utf8'), 'Repo', repos.join(', ')));
+  writeAtomic(issue.file, setField(readText(issue.file), 'Repo', repos.join(', ')));
   return { id: issue.id, repo: repos.join(', '), repos };
 }
 
@@ -1279,7 +1320,7 @@ export function cmdEvidence(root, rawIds, text, flags) {
   const added = rows ? rows.map((r) => `- **ran:** ${r.ran} · **saw:** ${r.saw}`).join('\n') : text;
   for (const issue of issues) {
     const current = (issue.sections.evidence || '').trim();
-    writeAtomic(issue.file, setSection(readFileSync(issue.file, 'utf8'), 'Evidence', current ? `${current}${rows ? '\n' : '\n\n'}${added}` : added));
+    writeAtomic(issue.file, setSection(readText(issue.file), 'Evidence', current ? `${current}${rows ? '\n' : '\n\n'}${added}` : added));
   }
   appendLogLines(root, issues.flatMap((issue) => (rows ? rows.map((r) => `${issue.id} evidence row · ${r.ran}`) : [`${issue.id} evidence · ${text.split('\n')[0]}`])));
   return oneOrMany(rawIds, issues.map((issue) => (rows ? { id: issue.id, rows } : { id: issue.id })));
@@ -1333,7 +1374,7 @@ export function reposNamed(issue) { return splitList(issue.fields.repo); }
 // A --repo value on new, import and repo: one path or a comma list, each the root of a git repository.
 function repoList(root, v) {
   need(typeof v === 'string', '--repo takes one path, or several as one comma list');
-  const list = splitList(v);
+  const list = pathList(v);
   need(list.length, '--repo needs a path');
   for (const r of list) repoOf(root, r);
   return list;
@@ -1407,9 +1448,9 @@ export function cmdStatus(root, flags = {}) {
   // What a session needs to decide between continuing this loop and archiving it: the goal, when the
   // loop was opened, and when anything last happened in it — all read from its own files.
   const goalPath = join(jarlDir(root), 'goal.md');
-  c.goal = existsSync(goalPath) ? (readFileSync(goalPath, 'utf8').split('\n').slice(2).find((l) => l.trim()) || '').trim() : null;
+  c.goal = existsSync(goalPath) ? (readText(goalPath).split('\n').slice(2).find((l) => l.trim()) || '').trim() : null;
   const logPath = join(jarlDir(root), 'log.md');
-  const stamps = existsSync(logPath) ? [...readFileSync(logPath, 'utf8').matchAll(/^- (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) · /gm)].map((m) => m[1]) : [];
+  const stamps = existsSync(logPath) ? [...readText(logPath).matchAll(/^- (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) · /gm)].map((m) => m[1]) : [];
   c.opened = stamps[0] || null;
   c.lastActivity = stamps[stamps.length - 1] || null;
   const archiveDir = join(jarlDir(root), 'archive');
@@ -1489,7 +1530,7 @@ export function journalById(root) {
   const path = join(jarlDir(root), 'log.md');
   const map = new Map();
   if (!existsSync(path)) return map;
-  readFileSync(path, 'utf8').split('\n').forEach((l, n) => {
+  readText(path).split('\n').forEach((l, n) => {
     const m = /^- (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) · (.*)$/.exec(l);
     if (!m) return;
     const id = /^(?:filed )?(\d{3})\b/.exec(m[2])?.[1];
@@ -1520,7 +1561,7 @@ export function coordinatorNames(root) {
   const names = [...BASE_COORDINATORS, basename(resolve(root))];
   const goal = join(jarlDir(root), 'goal.md');
   if (existsSync(goal)) {
-    for (const line of readFileSync(goal, 'utf8').split('\n')) {
+    for (const line of readText(goal).split('\n')) {
       const m = /^\s*(?:[-*]\s+)?(?:\*\*)?coordinators:(?:\*\*)?\s*(.+)$/i.exec(line);
       if (m) names.push(...m[1].split(',').map((n) => fieldText(n.replace(/\*\*/g, ''))).filter(Boolean));
     }
@@ -1788,7 +1829,7 @@ export function repoOf(root, named) {
   // A subdirectory of a repository is not the repository: the paths git reports are relative to its root, so a
   // declared file or a removed test would be read from the wrong place and go unseen.
   const top = git(repo, ['rev-parse', '--show-toplevel']);
-  need(top !== null && canonical(top) === canonical(repo), `${repo} is inside the repository at ${top}, not its root — name the root: ${relative(canonical(root), canonical(top || repo)) || '.'}`);
+  need(top !== null && canonical(top) === canonical(repo), `${repo} is inside the repository at ${top}, not its root — name the root: ${portablePath(relative(canonical(root), canonical(top || repo))) || '.'}`);
   RESOLVED.set(key, repo);
   return repo;
 }
@@ -1796,7 +1837,7 @@ export function repoOf(root, named) {
 export function roundsOf(root, id) {
   const path = join(jarlDir(root), 'log.md');
   if (!existsSync(path)) return 0;
-  return readFileSync(path, 'utf8').split('\n').filter((l) => l.includes(`· ${id} round `)).length;
+  return readText(path).split('\n').filter((l) => l.includes(`· ${id} round `)).length;
 }
 
 export function cmdRound(root, rawId, what) {
@@ -1806,7 +1847,7 @@ export function cmdRound(root, rawId, what) {
   const n = roundsOf(root, issue.id) + 1;
   appendLog(root, `${issue.id} round ${n} · ${what}`);
   const takeover = n >= ROUNDS_BEFORE_TAKEOVER;
-  const log = readFileSync(join(jarlDir(root), 'log.md'), 'utf8').split('\n').filter((l) => l.includes(`· ${issue.id} `)).join('\n');
+  const log = readText(join(jarlDir(root), 'log.md')).split('\n').filter((l) => l.includes(`· ${issue.id} `)).join('\n');
   const block = takeover ? `## Takeover\n\nA prior worker attempted issue ${issue.id} ${n} times; the issue is yours now. Its rounds so far:\n\n\`\`\`\n${log}\n\`\`\`\n` : null;
   return { id: issue.id, round: n, takeover, block };
 }
@@ -2072,7 +2113,8 @@ function issueTops(root, issue) { return issueRepos(root, issue).map(topOf); }
 export const TIPS_RECENT_MS = 7 * 24 * 3_600_000;
 
 // gh, when it is on PATH (JARL_GH names another binary: a test knob). Null when it cannot be run: tips then
-// says nothing about CI rather than guessing.
+// says nothing about CI rather than guessing. A JARL_GH ending in .js, .mjs or .cjs is run by process.execPath, so a stub
+// works the same on every OS: Windows runs no shebang script, and no .cmd shim without a shell.
 let GH;
 // Every cache a command fills, emptied before the next one (see dispatch).
 export function resetCaches() {
@@ -2082,8 +2124,11 @@ export function resetCaches() {
 function ghBin() {
   if (GH !== undefined) return GH;
   const bin = process.env.JARL_GH || 'gh';
-  try { execFileSync(bin, ['--version'], { stdio: ['ignore', 'ignore', 'ignore'], timeout: 10_000 }); GH = bin; } catch { GH = null; }
+  try { runGh(bin, ['--version'], { stdio: ['ignore', 'ignore', 'ignore'], timeout: 10_000 }); GH = bin; } catch { GH = null; }
   return GH;
+}
+function runGh(bin, args, opts) {
+  return /\.[cm]?js$/i.test(bin) ? execFileSync(process.execPath, [bin, ...args], opts) : execFileSync(bin, args, opts);
 }
 // The CI runs for one commit, summed up: pending while any run is not completed, red when any concluded
 // otherwise than success, skipped or neutral, green when all did, none when no run exists. Null without gh or
@@ -2093,7 +2138,7 @@ export function ciOf(repo, sha) {
   if (!bin) return null;
   let runs;
   try {
-    runs = JSON.parse(execFileSync(bin, ['run', 'list', '--commit', sha, '--json', 'conclusion,status,databaseId,workflowName', '--limit', '20'], { cwd: repo, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 30_000 }));
+    runs = JSON.parse(runGh(bin, ['run', 'list', '--commit', sha, '--json', 'conclusion,status,databaseId,workflowName', '--limit', '20'], { cwd: repo, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 30_000 }));
   } catch { return null; }
   if (!Array.isArray(runs)) return null;
   const pending = runs.filter((r) => r.status && r.status !== 'completed');
@@ -2307,7 +2352,7 @@ const ASK_RE = /^- \*\*a-(\d{3})\*\* \((open|answered)\)(?: · (stop|stuck|lower
 export function loadAsks(root) {
   const path = asksPath(root);
   if (!existsSync(path)) return [];
-  return readFileSync(path, 'utf8').split('\n').map((l) => ASK_RE.exec(l)).filter(Boolean)
+  return readText(path).split('\n').map((l) => ASK_RE.exec(l)).filter(Boolean)
     .map((m) => ({ id: m[1], state: m[2], kind: m[3] || null, target: m[4] || null, issue: m[5] || null, question: m[6] }));
 }
 
@@ -2335,7 +2380,7 @@ export function cmdAnswer(root, rawId, answer) {
   need(ask.state === 'open', `a-${id} is already answered`);
   appendDecision(root, `ask-${id}`, `**Question:** ${ask.question}\n**Answer:** ${answer}`, { by: 'owner' });
   const path = asksPath(root);
-  writeAtomic(path, readFileSync(path, 'utf8').replace(`- **a-${id}** (open)`, `- **a-${id}** (answered)`));
+  writeAtomic(path, readText(path).replace(`- **a-${id}** (open)`, `- **a-${id}** (answered)`));
   appendLog(root, `answered a-${id} · ${answer.split('\n')[0]}`);
   // The issue the question was about carries the answer too, so reading the issue is enough.
   const issue = ask.issue ? findIssue(root, ask.issue) : null;
@@ -2347,7 +2392,7 @@ export function cmdAnswer(root, rawId, answer) {
 // alone: a ruling may settle the question and still leave work, and done keeps its own preconditions.
 function appendRuling(root, issues, line) {
   for (const issue of issues) {
-    const text = readFileSync(issue.file, 'utf8');
+    const text = readText(issue.file);
     const current = (parseIssue(text, issue.file).sections.evidence || '').trim();
     writeAtomic(issue.file, setSection(text, 'Evidence', current ? `${current}\n\n${line}` : line));
   }
@@ -2390,7 +2435,7 @@ function handoffPath(root) { return join(jarlDir(root), 'handoff.md'); }
 // moved on for more than HANDOFF_STALE_MS after it was written. Null when there is no handoff file.
 export function handoffAge(root, lastActivity, now = Date.now()) {
   if (!existsSync(handoffPath(root))) return null;
-  const text = readFileSync(handoffPath(root), 'utf8');
+  const text = readText(handoffPath(root));
   const at = /^\*\*At:\*\* (\d{4}-\d{2}-\d{2} \d{2}:\d{2})/m.exec(text)?.[1] || null;
   const atMs = parseStamp(at);
   if (atMs === null) return { at: null, ageMs: null, staleByMs: null, stale: false };
@@ -2447,7 +2492,7 @@ export function cmdResume(root, flags = {}) {
   const held = next.filter((r) => !r.ready && !r.after.length).map((r) => ({ id: r.id, title: r.title, priority: r.priority, files: r.waitsOn, heldBy: r.heldBy }));
   const merged = issues.filter((i) => status.ciPending.includes(i.id) || status.ciRed.includes(i.id)).map((i) => ({ id: i.id, title: i.title, ...mergedOf(i) }));
   const logPath = join(jarlDir(root), 'log.md');
-  const logLines = existsSync(logPath) ? readFileSync(logPath, 'utf8').split('\n').filter((l) => /^- \d{4}-\d{2}-\d{2} \d{2}:\d{2} · /.test(l)) : [];
+  const logLines = existsSync(logPath) ? readText(logPath).split('\n').filter((l) => /^- \d{4}-\d{2}-\d{2} \d{2}:\d{2} · /.test(l)) : [];
   const legacy = handoffAge(root, status.lastActivity);
   return {
     goal: status.goal, opened: status.opened, lastActivity: status.lastActivity, archived: status.archived, status,
@@ -2512,7 +2557,7 @@ export function renderResume(o, profile = DEFAULT_PROFILE) {
 export function cmdHandoffRead(root, flags = {}) {
   const out = cmdResume(root, flags);
   if (!existsSync(handoffPath(root))) return { ...out, history: null, text: renderResume(out, loadProfile(root)) };
-  const written = readFileSync(handoffPath(root), 'utf8');
+  const written = readText(handoffPath(root));
   const body = written.split('\n').filter((l) => !/^#\s+Handoff\s*$/.test(l)).map((l) => (/^#{1,5}\s/.test(l) ? `#${l}` : l)).join('\n').trim();
   const h = out.legacyHandoff;
   const when = h && h.at ? `written ${h.at}, ${ago(h.ageMs)} ago` : 'written at an unknown time';
@@ -2557,7 +2602,7 @@ export function cmdReport(root, flags = {}) {
   // Deferred), with the reason a needs-reason status carries.
   const closedOther = profile.statuses.filter((st) => profile.is(st, 'terminal') && !profile.is(st, 'closes-record'));
   const found = issues.filter((i) => i.fields['found by'] && !/^jarl\b/i.test(i.fields['found by']));
-  const goal = existsSync(join(jarlDir(root), 'goal.md')) ? readFileSync(join(jarlDir(root), 'goal.md'), 'utf8').split('\n').slice(2).find((l) => l.trim()) || '' : '';
+  const goal = existsSync(join(jarlDir(root), 'goal.md')) ? readText(join(jarlDir(root), 'goal.md')).split('\n').slice(2).find((l) => l.trim()) || '' : '';
   const byRepo = {};
   for (const i of done) for (const r of repoNames(root, i)) (byRepo[r] = byRepo[r] || []).push(i);
   const row = (i) => `- ${i.id} ${i.title} (${i.kind})${mergedOf(i) ? ` · merged ${mergedOf(i).sha}${mergedOf(i).repo ? ` in ${mergedOf(i).repo}` : ''}` : ''}`;
@@ -2644,14 +2689,15 @@ export function reportDirOf(file) {
   const dir = dirname(resolve(file));
   const top = git(dir, ['rev-parse', '--show-toplevel']);
   const rel = top ? relative(canonical(top), canonical(dir)).split('\\').join('/') : '';
-  return rel && !rel.startsWith('..') ? rel : basename(dir);
+  // On Windows a path on another drive has no relative spelling: relative() gives it back absolute.
+  return rel && !rel.startsWith('..') && !isAbsolute(rel) ? rel : basename(dir);
 }
 
 function readFindings(file, flags = {}) {
   need(file, 'a findings file is required: jarl.mjs import <findings.json>');
   need(existsSync(file), `no such file: ${file}`);
   let json;
-  try { json = JSON.parse(readFileSync(file, 'utf8')); } catch (e) { throw new Error(`${file} is not JSON: ${e.message}`); }
+  try { json = JSON.parse(readText(file)); } catch (e) { throw new Error(`${file} is not JSON: ${e.message}`); }
   const dir = flags.source !== undefined ? String(flags.source).replace(/\/+$/, '') : reportDirOf(file);
   need(dir && !/[\s,#]/.test(dir), `--source is the report directory alone, with no space, comma or # in it (got "${dir}")`);
   return { dir, findings: findingsOf(json) };

@@ -24,7 +24,7 @@ import { createInterface } from 'node:readline';
 import { readFileSync } from 'node:fs';
 import { resolve, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { COMMAND_ARGS, COMMAND_FLAGS, GLOBAL_FLAGS, MUTATING, USAGE, parseArgs, dispatch, findRoot } from './jarl.mjs';
+import { COMMAND_ARGS, COMMAND_FLAGS, GLOBAL_FLAGS, MUTATING, USAGE, parseArgs, dispatch, findRoot, isEntry as isEntryOf } from './jarl.mjs';
 
 export const PROTOCOL_VERSION = '2025-06-18';
 // The versions this server can speak: it uses nothing a later one added beyond tool annotations, which an
@@ -276,4 +276,7 @@ function serve() {
   process.on('uncaughtException', (e) => console.error('[jarl-mcp] uncaught:', e?.stack || e));
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) serve();
+// Run as the server only when this file is the script the process was started with (isEntry in jarl-lib.mjs: real
+// paths, without case on Windows — a mismatch would leave the server silent, and the client waiting on it).
+export function isEntry(argv1, self = fileURLToPath(import.meta.url), platform = process.platform) { return isEntryOf(argv1, self, platform); }
+if (isEntry(process.argv[1])) serve();

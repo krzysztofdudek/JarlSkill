@@ -2,10 +2,11 @@
 // repositories (278) and the read-only tips view (282).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, readdirSync, chmodSync, appendFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, readdirSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
+import { sh, ghStub } from './portable.mjs';
 import { fileURLToPath } from 'node:url';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
@@ -30,7 +31,6 @@ function loop() {
   jarl(dir, 'init', 'goal');
   return dir;
 }
-const sh = (cwd, script) => execFileSync('bash', ['-c', script], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 function reposBeside(...names) {
   const parent = mkdtempSync(join(tmpdir(), 'jarl-multi-'));
   const dirs = {};
@@ -227,13 +227,6 @@ test('an issue may name several repositories: files per repository, next keeps t
 });
 
 // ---- 282: tips -------------------------------------------------------------------------------------
-
-function ghStub(dir, runs) {
-  const bin = join(dir, 'gh-stub');
-  writeFileSync(bin, `#!/bin/sh\nif [ "$1" = "--version" ]; then echo stub; exit 0; fi\necho "$@" >> "${join(dir, 'gh-calls')}"\ncat <<'JSON'\n${JSON.stringify(runs)}\nJSON\n`);
-  chmodSync(bin, 0o755);
-  return bin;
-}
 
 test('tips: branch tips against their upstream, CI from gh for pushed commits, nothing about CI without gh; it writes nothing', () => {
   const { parent, hub, tool } = reposBeside('tool');

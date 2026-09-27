@@ -4,9 +4,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-import { spawn, execSync } from 'node:child_process';
+import { spawn, spawnSync, execFileSync } from 'node:child_process';
+import { sh } from './portable.mjs';
 import { fileURLToPath } from 'node:url';
 
 const SERVER = fileURLToPath(new URL('../jarl-mcp.mjs', import.meta.url));
@@ -100,8 +101,8 @@ test('the loop root: the field, else JARL_ROOT, else the loop found from the wor
   const dir = mkdtempSync(join(tmpdir(), 'jarl-mcp-root-'));
   mkdirSync(join(dir, '.git'));
   mkdirSync(join(dir, 'sub'));
-  assert.equal(mcp.rootFor({ root: '/x/y' }, { JARL_ROOT: '/a' }, dir), '/x/y');
-  assert.equal(mcp.rootFor({}, { JARL_ROOT: '/a' }, dir), '/a');
+  assert.equal(mcp.rootFor({ root: '/x/y' }, { JARL_ROOT: '/a' }, dir), resolve('/x/y'));
+  assert.equal(mcp.rootFor({}, { JARL_ROOT: '/a' }, dir), resolve('/a'));
   assert.equal(mcp.rootFor({}, {}, join(dir, 'sub')), dir);
 });
 
@@ -210,10 +211,10 @@ test('smoke: JARL_ROOT in the server config names the loop when a call gives no 
 
 test('a check that fails is the CLI exit 2: isError, with the items', () => {
   const root = mkdtempSync(join(tmpdir(), 'jarl-mcp-check-'));
-  execSync('git init -q -b feature && git config user.email t@t && git config user.name t && git config core.excludesFile /dev/null && echo 1 > a.mjs && git add -A && git commit -qm base', { cwd: root });
+  sh(root, 'git init -q -b feature && git config user.email t@t && git config user.name t && git config core.excludesFile /dev/null && echo 1 > a.mjs && git add -A && git commit -qm base');
   mcp.callTool('jarl_init', { goal: 'g', root });
   mcp.callTool('jarl_new', { title: 't', files: 'a.mjs', root });
-  execSync('git checkout -q -b jarl/001-t && echo 2 > b.mjs && git add -A && git commit -qm change && git checkout -q feature', { cwd: root });
+  sh(root, 'git checkout -q -b jarl/001-t && echo 2 > b.mjs && git add -A && git commit -qm change && git checkout -q feature');
   const r = mcp.callTool('jarl_check', { id: '1', branch: 'jarl/001-t', root });
   assert.equal(r.isError, true);
   assert.match(r.content[0].text, /✗/);
@@ -232,9 +233,10 @@ test('the plugin starts the server by itself: .mcp.json and the portable mcp.jso
   assert.equal(p.args[2], '${PLUGIN_ROOT}/skills/jarl/scripts/jarl-mcp.mjs');
   assert.ok(existsSync(join(PLUGIN, 'skills/jarl/scripts/jarl-mcp.mjs')));
   // A plugin path the environment cannot reach (a host path inside a container): one stderr line, exit 0.
-  const out = execSync(`"${process.execPath}" -e '${claude.args[1].replace(/'/g, "'\\''")}' /no/such/jarl-mcp.mjs 2>&1; echo "exit $?"`, { encoding: 'utf8' });
-  assert.match(out, /^jarl: \/no\/such\/jarl-mcp\.mjs is not reachable from this environment/);
-  assert.match(out, /exit 0/);
+  // Run with its arguments as an array, as a host starts it: no shell's quoting in between, on any OS.
+  const r = spawnSync(process.execPath, ['-e', claude.args[1], '/no/such/jarl-mcp.mjs'], { encoding: 'utf8' });
+  assert.match(r.stderr, /^jarl: \/no\/such\/jarl-mcp\.mjs is not reachable from this environment/);
+  assert.equal(r.status, 0);
 });
 
 test('concurrent writes: calls sent at once to one server, and to two servers on one loop, lose nothing', async () => {
@@ -360,10 +362,10 @@ test('with json: true, the answer is exactly one text block holding the JSON, wh
 
   // check's exit 2 (a failed check) with json: true: still one block, isError true, the JSON with its items.
   const c = mkdtempSync(join(tmpdir(), 'jarl-mcp-json-check-'));
-  execSync('git init -q -b feature && git config user.email t@t && git config user.name t && git config core.excludesFile /dev/null && echo 1 > a.mjs && git add -A && git commit -qm base', { cwd: c });
+  sh(c, 'git init -q -b feature && git config user.email t@t && git config user.name t && git config core.excludesFile /dev/null && echo 1 > a.mjs && git add -A && git commit -qm base');
   mcp.callTool('jarl_init', { goal: 'g', root: c });
   mcp.callTool('jarl_new', { title: 't', files: 'a.mjs', root: c });
-  execSync('git checkout -q -b jarl/001-t && echo 2 > b.mjs && git add -A && git commit -qm change && git checkout -q feature', { cwd: c });
+  sh(c, 'git checkout -q -b jarl/001-t && echo 2 > b.mjs && git add -A && git commit -qm change && git checkout -q feature');
   const failedCheck = mcp.callTool('jarl_check', { id: '1', branch: 'jarl/001-t', root: c, json: true });
   assert.equal(failedCheck.isError, true);
   assert.equal(failedCheck.content.length, 1);
@@ -384,7 +386,7 @@ test('a JSON-RPC response from the client gets no answer; a malformed request st
     { jsonrpc: '2.0', id: 92 },
     { jsonrpc: '2.0', id: 93, method: 'ping' },
   ].map((m) => JSON.stringify(m)).join('\n');
-  const out = execSync(`"${process.execPath}" "${SERVER}"`, { input: `${lines}\n`, encoding: 'utf8' }).trim().split('\n').map((l) => JSON.parse(l));
+  const out = execFileSync(process.execPath, [SERVER], { input: `${lines}\n`, encoding: 'utf8' }).trim().split('\n').map((l) => JSON.parse(l));
   assert.deepEqual(out.map((m) => m.id), [92, 93]);
   assert.equal(out[0].error.code, -32600);
   assert.deepEqual(out[1].result, {});

@@ -7,7 +7,8 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { tmpdir } from 'node:os';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
+import { sh } from './portable.mjs';
 import { fileURLToPath } from 'node:url';
 import { reviewerKind, coordinatorNames, BASE_COORDINATORS } from '../jarl.mjs';
 
@@ -27,7 +28,6 @@ function refuses(root, ...args) {
   assert.notEqual(r.status, 0, `expected a refusal: ${args.join(' ')}`);
   return r.stderr;
 }
-const sh = (cwd, script) => execFileSync('bash', ['-c', script], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 function loop() {
   const dir = mkdtempSync(join(tmpdir(), 'jarl-fresh-'));
   sh(dir, 'git init -q -b feature && git config user.email t@t && git config user.name t && git config core.excludesFile /dev/null && echo 1 > a.mjs && git add -A && git commit -qm base');
