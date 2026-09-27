@@ -28,7 +28,7 @@ export const PROTOCOL_VERSION = '2025-06-18';
 export const PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 // The fields that name a file on disk: read against the server's working directory, which is not the caller's,
 // so they must be absolute.
-const PATH_FIELDS = { import: ['file'], sources: ['files'] };
+export const PATH_FIELDS = { import: ['file'], sources: ['files'], init: ['profile'], profile: ['file'] };
 function version() {
   // The plugin's manifest, when the skill runs from a plugin install; a drop-in copy has none.
   try { return JSON.parse(readFileSync(new URL('../../../plugin.json', import.meta.url), 'utf8')).version || '0.0.0'; } catch { return '0.0.0'; }

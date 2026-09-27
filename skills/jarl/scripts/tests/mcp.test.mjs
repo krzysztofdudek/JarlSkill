@@ -38,7 +38,7 @@ test('parity: the tool set is the one this release documents — adding or remov
   assert.deepEqual(TOOLS.map((t) => t.name).sort(), [
     'after', 'answer', 'archive', 'ask', 'body', 'branches', 'changelog', 'check', 'close', 'decide', 'decisions',
     'evidence', 'files', 'handoff', 'help', 'import', 'init', 'list', 'log', 'merged', 'mode', 'new', 'next', 'prio',
-    'queue', 'repo', 'report', 'resume', 'review', 'round', 'set', 'show', 'source', 'sources', 'status', 'tag', 'tips',
+    'profile', 'queue', 'repo', 'report', 'resume', 'review', 'round', 'set', 'show', 'source', 'sources', 'status', 'tag', 'tips',
   ].map(mcp.toolName));
 });
 
@@ -76,7 +76,9 @@ test('parity: every field reaches the CLI parser as the flag or argument it name
     }
     const wantFlags = {};
     for (const [f, kind] of Object.entries(COMMAND_FLAGS[cmd])) {
-      if (kind === 'bool') { input[f] = true; wantFlags[f] = true; } else if (kind === 'many') { input[f] = ['--a', 'b=c']; wantFlags[f] = ['--a', 'b=c']; } else { input[f] = '--v=1'; wantFlags[f] = '--v=1'; }
+      // A flag naming a file on disk must be absolute, like the findings paths.
+      const v = (mcp.PATH_FIELDS[cmd] || []).includes(f) ? '/--v=1' : '--v=1';
+      if (kind === 'bool') { input[f] = true; wantFlags[f] = true; } else if (kind === 'many') { input[f] = ['--a', 'b=c']; wantFlags[f] = ['--a', 'b=c']; } else { input[f] = v; wantFlags[f] = v; }
     }
     input.json = true; wantFlags.json = true;
     const { positional, flags } = parseArgs(mcp.argvFor(cmd, input));
