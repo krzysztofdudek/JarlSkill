@@ -15,6 +15,7 @@ Layout mirrors the sibling repos (UrdSkill, RatatoskrSkill, ResearcherSkill):
 - `.github/plugin/marketplace.json` — the listing GitHub Copilot CLI reads; carries `version` and the `skills` array. Its `version` MUST be kept in lockstep with `plugin.json`.
 - `.codex-plugin/plugin.json` — manifest for OpenAI Codex CLI, bundling the skill via `"skills": "./skills/"`. Version in lockstep.
 - `.cursor-plugin/plugin.json` — manifest for Cursor (single-plugin-at-root; `skills/jarl/` is auto-discovered). Version in lockstep.
+- `.mcp.json` (Claude Code, `${CLAUDE_PLUGIN_ROOT}`) and `mcp.json` (the portable Agent Plugins config, `${PLUGIN_ROOT}`) — start the MCP server `skills/jarl/scripts/jarl-mcp.mjs` on install, behind the same `node -e` guard Grain uses. The server holds no behaviour of its own: its tools are generated from the CLI's tables and run through `dispatch()`.
 - `skills/jarl/SKILL.md` — the canonical skill body; `skills/jarl/scripts/jarl.mjs` — its one tool, tested by `cd skills/jarl/scripts && npm test`. Editing these IS editing the skill.
 
 Script paths inside `SKILL.md` are written as `${CLAUDE_PLUGIN_ROOT:-.claude/skills/jarl}/scripts/jarl.mjs`, as Horde does, so a marketplace install and a manual drop-in both resolve.
