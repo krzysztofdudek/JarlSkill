@@ -339,7 +339,9 @@ function main() {
 function setCommand(root, ids, name, value, flags) {
   const profile = R.loadProfile(root);
   const field = name !== undefined && !profile.statuses.includes(name) && profile.field(name);
-  return field ? R.setField(root, ids, name, value, flags) : R.setStatus(root, ids, name, value, flags);
+  // The command line (and the MCP tools, which run through dispatch) always sets as caller 'cli'.
+  const opts = { ...flags, caller: 'cli' };
+  return field ? R.setField(root, ids, name, value, opts) : R.setStatus(root, ids, name, value, opts);
 }
 
 // One command, run: its result (what --json prints), its text and the notes said on stderr. Throws on a refusal.

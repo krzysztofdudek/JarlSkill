@@ -1013,7 +1013,18 @@ const REASON_TEXT = {
 // The line a needs-reason status writes under Evidence: its name with a capital, then the reason (Dropped: …).
 export function reasonWord(status) { return status.charAt(0).toUpperCase() + status.slice(1); }
 
+// Who asked for the move: 'cli' — the command line and the MCP tools over it, which always say so — or 'record', a
+// library call through record.mjs (the default). Carried on every set today; a profile key marking a status as set only
+// by the record (a later release) will refuse 'cli' for that status.
+export const SET_CALLERS = ['cli', 'record'];
+let lastCaller = null;
+// The caller the last set ran as, refused or not: for the suite, which checks that the command line says 'cli'.
+export function lastSetCaller() { return lastCaller; }
+
 export function cmdSet(root, rawIds, status, why, flags = {}) {
+  const caller = flags.caller ?? 'record';
+  need(SET_CALLERS.includes(caller), `caller must be one of: ${SET_CALLERS.join(', ')} (got "${caller}")`);
+  lastCaller = caller;
   const profile = loadProfile(root);
   // set <ids> <field> <value>: a field the profile declares (Kind and Tier too, when it declares them), not a status.
   if (!profile.statuses.includes(status) && status !== undefined && profile.field(status)) return setDeclaredField(root, rawIds, profile.field(status), why, flags);

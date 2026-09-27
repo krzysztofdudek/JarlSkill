@@ -69,6 +69,9 @@ export function writeAtomic(path, text) { return L.writeAtomic(path, text); }
 export function newIssue(root, title, opts = {}) { return write(root, () => L.cmdNew(root, title, opts)); }
 // A move into a status, checked against the profile: needs-reason wants `why`, closes-record passes the done gate,
 // holds-claim writes the lease from opts { branch, worker, worktree }, leaving it removes the lease.
+// opts.caller says who asks: 'record' (the default for a library call) or 'cli' (what the command line and the MCP tools
+// always pass). A status the profile marks "set-by": "record" (a later profile key) will refuse 'cli'; a library caller
+// that acts for a person at the command line passes 'cli' too. setField takes the same opts.caller.
 export function setStatus(root, ids, status, why, opts = {}) {
   return write(root, () => {
     const profile = L.loadProfile(root);
