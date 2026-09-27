@@ -1283,14 +1283,17 @@ export function journalById(root) {
   return map;
 }
 
-// Who reviewed, as a kind: the issue's worker or the word self (self); the loop's own director — coordinator,
-// jarl, reeve, the loop's own name (the directory holding .jarl/) and any name goal.md declares on a
-// `Coordinators: a, b` line (coordinator); anyone else (fresh). A name is compared without case and surrounding space.
+// Who reviewed, as a kind: the word self, or anyone who has ever held the issue's lease — its own worker across
+// every takeover, and the worker of any other issue sharing its Branch (a package, or an issue folded into the
+// same branch later) — is self too; the loop's own director — coordinator, jarl, reeve, the loop's own name (the
+// directory holding .jarl/) and any name goal.md declares on a `Coordinators: a, b` line (coordinator); anyone
+// else (fresh). A name is compared without case and surrounding space. `worker` is a name, or a set of them.
 export const REVIEWER_KINDS = ['fresh', 'coordinator', 'self'];
 export const BASE_COORDINATORS = ['coordinator', 'jarl', 'reeve'];
 export function reviewerKind(by, worker, coordinators = BASE_COORDINATORS) {
   const b = fieldText(by).toLowerCase();
-  if (b === 'self' || (worker && b === fieldText(worker).toLowerCase())) return 'self';
+  const workers = worker == null ? [] : typeof worker === 'string' ? [worker] : [...worker];
+  if (b === 'self' || workers.some((w) => b === fieldText(w).toLowerCase())) return 'self';
   if (coordinators.some((c) => fieldText(c).toLowerCase() === b)) return 'coordinator';
   return 'fresh';
 }
@@ -1313,17 +1316,53 @@ const KIND_WEIGHT = { fresh: 0, coordinator: 1, self: 2 };
 export function carriesCode(issue) { return Boolean(fieldText(issue.fields.branch) || fieldText(issue.fields.merged)); }
 const REVIEW_LINE = /^\d{3} review (approve|changes) · (?:by (.+?) \((fresh|coordinator|self)\) · )?/;
 
+// Every worker one issue's own journal has ever named on an in-progress move — a takeover replaces Worker but
+// is still the same issue, so every lease across every round counts, not only the latest.
+function leaseWorkers(events) {
+  const workers = new Set();
+  for (const e of events) {
+    if (!/^\d{3} → in-progress\b/.test(e.text)) continue;
+    const w = / · worker (.+?)(?: · worktree |$)/.exec(e.text);
+    if (w) workers.add(fieldText(w[1]));
+  }
+  return workers;
+}
+
+// The full self scope for an issue: everyone its own lease has ever named, plus everyone named on another issue
+// that shares its Branch — a package leased once for several issues, or one folded into the branch later by a
+// bare `set <ids> in-progress --branch <b>` with no --worker of its own. Self-review is refused for any of them,
+// not only the id's own latest lease.
+function selfWorkers(root, id, events, issues = loadIssues(root)) {
+  const self = leaseWorkers(events);
+  const issue = issues.find((i) => i.id === id);
+  if (issue && issue.fields.worker) self.add(fieldText(issue.fields.worker));
+  const branch = issue && fieldText(issue.fields.branch);
+  if (branch) {
+    const journal = journalById(root);
+    for (const sib of issues) {
+      if (sib.id === id || fieldText(sib.fields.branch) !== branch) continue;
+      for (const w of leaseWorkers(journal.get(sib.id) || [])) self.add(w);
+      if (sib.fields.worker) self.add(fieldText(sib.fields.worker));
+    }
+  }
+  return self;
+}
+
 // The done gate, read from the journal for one issue. Replaying its lines in order:
 // - the evidence anchor is the last move into in-progress from another status, or a reopen (done or
 //   in-progress back to open), or — for an issue that never went in progress — its filing; only --ran/--saw
 //   rows logged after it count for done (a free-text note never does), so nothing written when the issue was
 //   filed, or before a restart or a reopen, is proof of the work;
-// - an approve is spent by a later round, by any move out of done, by a reopen and by a (re)start into in-progress, and an approve by the
-//   issue's own worker (self) never counts;
+// - an approve by anyone who has ever held the issue's lease (self — see selfWorkers) never counts;
+// - the live approve is the strongest one (fresh over coordinator over self) among those since whatever last
+//   reset the issue — a round, a reopen, a restart into in-progress (cut), or a later "changes" verdict still
+//   waiting on its own approve. A later, weaker approve never spends an earlier, still-live one: only those
+//   resets do — a coordinator's approve recorded after a live fresh one does not undo it;
 // - `tracked` is false for an issue the journal has no filing and no status move for (a hand-made file, a
 //   loop older than the log format): the gate then needs a --ran/--saw row in its Evidence section.
 export function gateState(root, id, events = journalById(root).get(id) || [], coordinators = coordinatorNames(root)) {
-  let status = null; let anchor = null; let cut = -1; let worker = null;
+  const self = selfWorkers(root, id, events);
+  let status = null; let anchor = null; let cut = -1;
   const evidence = []; const reviews = [];
   for (const e of events) {
     if (e.text.startsWith(`filed ${id} `)) { status = 'open'; anchor = e; continue; }
@@ -1334,23 +1373,33 @@ export function gateState(root, id, events = journalById(root).get(id) || [], co
       if (status === 'in-progress' && prev !== 'in-progress') { anchor = e; cut = e.n; }
       if (status === 'open' && (prev === 'done' || prev === 'in-progress')) { anchor = e; cut = e.n; }
       if (prev === 'done' && status !== 'done') cut = e.n;
-      if (status === 'in-progress') { const w = / · worker (.+?)(?: · worktree |$)/.exec(e.text); if (w) worker = w[1]; }
       continue;
     }
     if (e.text.startsWith(`${id} round `)) { cut = e.n; continue; }
     const r = REVIEW_LINE.exec(e.text);
     if (r) {
       // The kind is the one recorded, or the one today's names give, whichever is stricter: a name goal.md
-      // declares as a coordinator after its approve was logged as fresh does not stay fresh.
+      // declares as a coordinator after its approve was logged as fresh does not stay fresh, and a name that
+      // turns out to have ever held the lease (self) does not stay fresh or coordinator either.
       let kind = r[3] || null;
-      if (kind && r[2]) { const now = reviewerKind(r[2], worker, coordinators); if (KIND_WEIGHT[now] > KIND_WEIGHT[kind]) kind = now; }
+      if (kind && r[2]) { const now = reviewerKind(r[2], self, coordinators); if (KIND_WEIGHT[now] > KIND_WEIGHT[kind]) kind = now; }
       reviews.push({ n: e.n, at: e.at, verdict: r[1], by: r[2] || null, kind });
       continue;
     }
     if (e.text.startsWith(`${id} evidence row · `)) evidence.push(e);
   }
   const last = reviews[reviews.length - 1] || null;
-  const live = last && last.verdict === 'approve' && last.n > cut ? last : null;
+  // Only approves logged after the last "changes" verdict are even candidates — a changes still needs its own
+  // approve, as before. Among those, and past cut, the strongest kind wins, tie-broken by the more recent.
+  let sinceChanges = reviews;
+  for (let i = reviews.length - 1; i >= 0; i -= 1) { if (reviews[i].verdict === 'changes') { sinceChanges = reviews.slice(i + 1); break; } }
+  let live = null;
+  for (const r of sinceChanges) {
+    if (r.verdict !== 'approve' || r.n <= cut) continue;
+    const rw = KIND_WEIGHT[r.kind] ?? Infinity;
+    const lw = live ? (KIND_WEIGHT[live.kind] ?? Infinity) : Infinity;
+    if (!live || rw < lw || (rw === lw && r.n > live.n)) live = r;
+  }
   return {
     tracked: anchor !== null,
     anchor: anchor ? { at: anchor.at, what: anchor.text.startsWith('filed ') ? 'filed' : anchor.text.slice(id.length + 1).split(' · ')[0].replace(/^→ /, '') } : null,
@@ -1361,7 +1410,7 @@ export function gateState(root, id, events = journalById(root).get(id) || [], co
     selfApproved: Boolean(live && live.kind === 'self'),
     fresh: Boolean(live && live.kind === 'fresh'),
     live,
-    worker,
+    workers: self,
   };
 }
 
@@ -1408,9 +1457,12 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
   const coordinators = coordinatorNames(root);
   const kinds = issues.map((issue) => {
     if (!by) return null;
-    const worker = issue.fields.worker || gateState(root, issue.id, journal.get(issue.id) || []).worker;
-    const kind = reviewerKind(by, worker, coordinators);
-    need(verdict !== 'approve' || kind !== 'self', `${issue.id}: an approve by ${by} is a self-approve${worker ? ` (${worker} is the issue's worker)` : ''} and does not count as review — a fresh reviewer, or the jarl, reads the diff${issues.length > 1 ? ' — nothing was written' : ''}`);
+    // Self is everyone who has ever held this issue's lease — its own worker across every takeover, and the
+    // worker of any other issue sharing its Branch (a package) — not only its current Worker field.
+    const self = [...gateState(root, issue.id, journal.get(issue.id) || []).workers];
+    const kind = reviewerKind(by, self, coordinators);
+    const who = self.length === 1 ? `${self[0]} is the issue's worker` : self.length > 1 ? `${self.join(', ')} have all held ${issue.id}'s lease` : '';
+    need(verdict !== 'approve' || kind !== 'self', `${issue.id}: an approve by ${by} is a self-approve${who ? ` (${who})` : ''} and does not count as review — a fresh reviewer, or the jarl, reads the diff${issues.length > 1 ? ' — nothing was written' : ''}`);
     return kind;
   });
   appendLogLines(root, issues.map((issue, n) => `${issue.id} review ${verdict} · ${by ? `by ${by} (${kinds[n]}) · ` : ''}${findings.split('\n')[0]}`));
@@ -1868,7 +1920,9 @@ export function cmdQueue(root, flags = {}) {
       const ahead = mb ? Number(git(repo, ['rev-list', '--count', `${mb}..${branch}`]) || 0) : null;
       if (!ahead) continue;   // nothing its base lacks: merged already, or never worked on
       const others = issuesOnBranch(root, unsettled, real, branch).filter((i) => !on.includes(i));
-      const approves = on.map((i) => gate.get(i.id).lastApprove);
+      // The live approve, not simply the last one recorded: a later coordinator approve does not spend an
+      // earlier, still-live fresh approve, so the row still credits the fresh reviewer who actually cleared it.
+      const approves = on.map((i) => gate.get(i.id).live);
       const last = approves.reduce((a, b) => (!a || b.n > a.n ? b : a), null);
       const files = [...new Set(on.concat(others).flatMap((i) => i.files.map((f) => { const at = fileAt(root, i, f); return canonical(at.repo) === real ? at.path : null; }).filter(Boolean)))];
       rows.push({ branch, issues: on.map((i) => i.id), waitingReview: others.map((i) => i.id), ready: others.length === 0, ahead, approvedAt: last.at, by: last.by, files, n: last.n });
