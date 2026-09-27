@@ -424,6 +424,7 @@ export function validateProfile(json, where = 'the profile') {
     if (statuses.length && !some('dispatchable')) say('no status is dispatchable — next would never offer anything');
     if (statuses.length && !some('holds-claim')) say('no status holds-claim — no issue could ever be worked on');
     if (statuses.length && !some('terminal')) say('no status is terminal — the loop could never close');
+    if (statuses.length && !some('settles-dependents')) say('no status settles-dependents — an issue waiting on another with After would wait for good');
   }
   let initial = statuses[0];
   if (json.initial !== undefined) {

@@ -466,6 +466,11 @@ test('a status may not take a name the views use; the refusal lists the reserved
   assert.ok(J.RESERVED_STATUS_NAMES.every((n) => !J.STATUSES.includes(n)), 'no built-in status is reserved');
 });
 
+test('a profile must have a status that settles dependents, or every After would wait for good', () => {
+  assert.throws(() => J.validateProfile({ 'jarl-profile': 1, statuses: { a: ['dispatchable'], b: ['holds-claim'], c: ['terminal', 'closes-record'] } }), /no status settles-dependents — an issue waiting on another with After would wait for good/);
+  assert.doesNotThrow(() => J.validateProfile({ 'jarl-profile': 1, statuses: { a: ['dispatchable'], b: ['holds-claim'], c: ['terminal', 'settles-dependents'] } }));
+});
+
 test('no profile: status --json keeps the five counts at the top level and has no statuses key', () => {
   const root = repo();
   jarl(root, 'init', 'g');
