@@ -204,7 +204,7 @@ function appendAtomic(path, header, text) {
 // - needs-reason        a move into it needs a reason, written under Evidence as "<Status>: <why>" (built-in: dropped,
 //                       deferred).
 // A status is at most one of dispatchable, holds-claim and terminal; closes-record is terminal too.
-export const STATUS_FLAGS = ['dispatchable', 'holds-claim', 'settles-dependents', 'terminal', 'closes-record', 'needs-reason'];
+export const STATUS_FLAGS = Object.freeze(['dispatchable', 'holds-claim', 'settles-dependents', 'terminal', 'closes-record', 'needs-reason']);
 export const BUILTIN_STATUSES = {
   open: ['dispatchable'],
   'in-progress': ['holds-claim'],
@@ -346,7 +346,12 @@ function makeProfile({ name, statuses, initial, fields = [], sections = [], acce
   return p;
 }
 
-export const DEFAULT_PROFILE = makeProfile({ name: 'built-in', statuses: Object.entries(BUILTIN_STATUSES), initial: 'open', declared: false });
+// Frozen, with every list it holds: it is shared by every loop without a profile, and record.mjs hands it out.
+export const DEFAULT_PROFILE = freezeProfile(makeProfile({ name: 'built-in', statuses: Object.entries(BUILTIN_STATUSES), initial: 'open', declared: false }));
+function freezeProfile(p) {
+  for (const v of Object.values(p)) if (Array.isArray(v)) { v.forEach((x) => (x && typeof x === 'object' ? Object.freeze(x) : x)); Object.freeze(v); }
+  return Object.freeze(p);
+}
 
 // The loop's profile: .jarl/profile.json when there is one, else the built-in. Read once per state of the file (a
 // command reads it many times). A profile file that does not validate is a refusal, never a silent fallback.

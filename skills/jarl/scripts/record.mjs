@@ -49,6 +49,12 @@ export function evidenceRows(issue) { return L.evidenceRows(issue); }
 
 // ---- the profile ----------------------------------------------------------------------------------
 
+// A profile, as loadProfile, validateProfile, readProfileFile and DEFAULT_PROFILE give it, is contract in these fields:
+//   name, declared (false for the built-in one), initial, statuses (in order), kinds, kindDefault, tiers, tierDefault,
+//   fields (the extra header fields: [{ name, key, enum, default, required }]), sections (extra headings), acceptance
+//   (the acceptance heading, or null for "Acceptance"), and the questions is(status, flag), with(flag), flagsOf(status),
+//   active(status), unfinished(status), field(name). Any other key is not. describeProfile gives the plain-data form.
+// DEFAULT_PROFILE and STATUS_FLAGS (the six flags, in order) are frozen, lists included; treat every profile as read-only.
 export const PROFILE_VERSION = L.PROFILE_VERSION;
 export const STATUS_FLAGS = L.STATUS_FLAGS;
 export const DEFAULT_PROFILE = L.DEFAULT_PROFILE;

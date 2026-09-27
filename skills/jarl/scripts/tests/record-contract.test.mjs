@@ -213,3 +213,13 @@ test('set says who asked: the command line and the MCP tools pass caller cli, a 
     assert.throws(() => CLI.parseArgs(['set', '1', 'open', '--caller', 'record']), /unknown flag --caller/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
+
+test('the shared values record.mjs hands out are frozen, and a profile carries the fields the contract names', () => {
+  assert.ok(Object.isFrozen(R.STATUS_FLAGS));
+  assert.deepEqual([...R.STATUS_FLAGS], ['dispatchable', 'holds-claim', 'settles-dependents', 'terminal', 'closes-record', 'needs-reason']);
+  assert.ok(Object.isFrozen(R.DEFAULT_PROFILE));
+  for (const k of ['statuses', 'kinds', 'tiers', 'fields', 'sections']) assert.ok(Object.isFrozen(R.DEFAULT_PROFILE[k]), k);
+  assert.throws(() => { 'use strict'; R.STATUS_FLAGS.push('x'); }, TypeError);
+  for (const k of ['name', 'declared', 'initial', 'statuses', 'kinds', 'kindDefault', 'tiers', 'tierDefault', 'fields', 'sections', 'acceptance']) assert.ok(Object.hasOwn(R.DEFAULT_PROFILE, k), k);
+  for (const k of ['is', 'with', 'flagsOf', 'active', 'unfinished', 'field']) assert.equal(typeof R.DEFAULT_PROFILE[k], 'function', k);
+});
