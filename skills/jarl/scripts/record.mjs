@@ -122,10 +122,14 @@ export function review(root, ids, verdict, findings, opts = {}) { return write(r
 // opts { sha, ci, repo }.
 export function recordMerged(root, ids, opts = {}) { return write(root, () => L.cmdMerged(root, ids, opts)); }
 export function addRound(root, id, what) { return write(root, () => L.cmdRound(root, id, what)); }
-// opts { by, supersedes, settles }.
+// opts { by, supersedes, settles, area, reach }.
 export function decide(root, slug, ruling, opts = {}) { return write(root, () => L.cmdDecide(root, slug, ruling, opts)); }
 // opts { kind, target, issue }.
 export function ask(root, question, opts = {}) { return write(root, () => L.cmdAsk(root, question, opts)); }
+// A ratify item from the close's batch names an area ruling: its answer starts with yes or no and marks that ruling
+// Ratified or Rejected; the result then carries { ruling, verdict, typeDecision, typeLog }. A ratified area ruling's
+// typeDecision ({ type, text, supersedes }) is the entry for the type's decision log: the command line writes it
+// (yg-edge.mjs); this library never does, so a composer writes it with its own code or leaves it.
 export function answer(root, id, text) { return write(root, () => L.cmdAnswer(root, id, text)); }
 export function appendLog(root, event) {
   return write(root, () => { L.need(event, 'log requires "<event>"'); L.appendLog(root, event); return { logged: event }; });

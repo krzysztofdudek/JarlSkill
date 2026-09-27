@@ -18,8 +18,9 @@ import {
   ROUNDS_BEFORE_TAKEOVER, need, resetCaches, withLock, readText, isEntry,
   cmdProfile, cmdArchive, cmdList, cmdNext, cmdMode, cmdClose, cmdCheck, cmdBranches, cmdTips, cmdQueue,
   cmdChangelog, cmdHandoffRead, cmdHandoffWrite, cmdReport, cmdImport, cmdSources,
-  renderProfile, renderTips, renderQueue, renderResume, renderStatus, renderImport, renderSources, renderList,
+  renderProfile, renderTips, renderQueue, renderResume, renderStatus, renderImport, renderSources, renderList, recordTypeLog,
 } from './jarl-lib.mjs';
+import { writeAreaDecision } from './yg-edge.mjs';
 
 export * from './jarl-lib.mjs';
 
@@ -130,11 +131,13 @@ commands:
                                                  write: retired — writes nothing, says so and exits 0 (the state is
                                                  assembled live; intent lives in priorities, After and rulings)
   log "<event>"                                  append one dated line to the journal
-  decide <slug> "<ruling>" [--by who] [--supersedes <slug>] [--settles <ids>]
+  decide <slug> "<ruling>" [--by who] [--supersedes <slug>] [--settles <ids>] [--area <type> [--reach n]]
                                                  append a ruling (slug: letters, digits, . _ -); refuses a duplicate slug;
                                                  --by records who ruled (default owner); --supersedes marks the earlier
                                                  ruling "Superseded by" in place; --settles writes the ruling into each
-                                                 named issue's evidence (its status is unchanged)
+                                                 named issue's evidence (its status is unchanged); --area marks a ruling
+                                                 about a whole type of code, --reach how many files that type holds:
+                                                 close puts it to the user for ratification
   decisions [--live]                             the rulings with who ruled and what superseded them; --live only
                                                  those still in force
   status [--stale-hours n] [--by repo|tag|kind|prio|<field>]
@@ -174,9 +177,14 @@ commands:
                                                  Tier, the fields and sections its issues carry and the heading of their
                                                  acceptance; the built-in one when the loop has none; with a file, that
                                                  file checked against the profile schema instead
-  close [--force]                                refuse while anything is open or in progress; else remove .jarl/
+  close [--force] [--batch]                      refuse while anything is open or in progress; else remove .jarl/
                                                  — a permanent loop (see init --permanent, or mode permanent) is
-                                                 kept instead: it logs the close and the directory stays as the record
+                                                 kept instead: it logs the close and the directory stays as the record;
+                                                 first it files the ratification batch — at most 10 area rulings, widest
+                                                 reach first, each a ratify item answered yes or no — and never waits
+                                                 for it; --batch files the batch only and closes nothing; a ratified
+                                                 area ruling is written into the type's decision log (yg log add
+                                                 --type) when the repository has a graph and a working yg
 
 options: --json  --help  --root <repo root>
 
@@ -239,10 +247,10 @@ export const COMMAND_FLAGS = {
   answer: {},
   resume: { log: 'value', ready: 'value', ci: 'bool' },
   handoff: { summary: 'value', next: 'many', log: 'value', ready: 'value', ci: 'bool' },
-  log: {}, decide: { settles: 'value', by: 'value', supersedes: 'value' }, decisions: { live: 'bool' },
+  log: {}, decide: { settles: 'value', by: 'value', supersedes: 'value', area: 'value', reach: 'value' }, decisions: { live: 'bool' },
   status: { 'stale-hours': 'value', by: 'value' }, archive: {}, report: { found: 'bool' }, tips: {}, mode: {},
   queue: { repo: 'value', base: 'value' }, changelog: { repo: 'value' },
-  close: { force: 'bool' }, profile: {},
+  close: { force: 'bool', batch: 'bool' }, profile: {},
 };
 
 export function parseArgs(argv) {
@@ -333,6 +341,20 @@ function main() {
   if (cmd === 'check' && !out.ok) process.exit(2);
 }
 
+// The ratification batch as close prints it: one line per item, then what became of the ones nobody answered.
+function renderBatch(batch, loop) {
+  if (!batch.items.length && !batch.waiting) return loop === 'open' ? 'no area ruling awaits ratification' : '';
+  const head = `\nto ratify (${batch.items.length}${batch.waiting ? `, ${batch.waiting} more at the next close` : ''}) — answer each with yes or no: jarl.mjs answer <a-id> "yes"`;
+  const tail = { open: 'nothing closed; the loop goes on', kept: 'unanswered items stay open in the record', removed: 'unanswered, they left with the loop as its own rulings' }[loop];
+  return `${head}\n${batch.items.map((i) => `- ${i.ask} · ${i.question}`).join('\n')}\n${tail}`;
+}
+function renderTypeLog(t) {
+  if (!t) return '';
+  if (t.state === 'written') return ` · written into the type's decision log${t.datetime ? ` (${t.datetime})` : ''}`;
+  if (t.state === 'skipped') return ` · not written into a type log: ${t.reason}`;
+  return ` · NOT written into the type log: ${t.reason}`;
+}
+
 // set <ids> <status> [why] or set <ids> <field> <value>: a name the profile declares as a field (and not as a status)
 // is a field; anything else is a status, refused by setStatus with the CLI's own words when it names neither.
 function setCommand(root, ids, name, value, flags) {
@@ -378,7 +400,7 @@ export function dispatch(root, cmd, rest, flags) {
       case 'check': out = cmdCheck(root, rest[0], flags); text = `${out.id === null ? `package ${out.ids.join(', ')} on ${out.branch}\n` : ''}${out.repo === root ? '' : `in ${out.repo}\n`}${out.items.map((i) => `${i.ok ? '✓' : '✗'} ${i.name} — ${i.note}`).join('\n')}`; break;
       case 'branches': out = cmdBranches(root, flags); text = out.length ? out.map((b) => `${b.repo !== basename(root) ? `[${b.repo}] ` : ''}${b.branch}${b.issues.length ? ` → ${b.issues.join(', ')}` : ''}  ${b.missing ? 'GONE' : `+${b.ahead ?? '?'}  ${b.worktree ? `${b.worktree}${b.worktreeGone ? ' (gone)' : b.dirty ? ` (${b.dirty} uncommitted)` : ' (clean)'}` : '(no worktree)'}`}${b.unnamed ? '  UNNAMED — rename to jarl/NNN-slug before merging' : ''}${{ delete: '  DONE → delete', dirty: '  DONE (worktree dirty)', unverified: '  DONE (merged by record, branch not in base) — verify' }[b.done] || ''}${b.stale.length ? `  STALE: ${b.stale.join('; ')}` : ''}`).join('\n') : '(no worker branches)'; break;
       case 'ask': out = R.ask(root, rest[0], flags); text = out.kind === 'ratify' ? `filed a-${out.id} for ratification · blocks nothing` : `asked a-${out.id}`; break;
-      case 'answer': out = R.answer(root, rest[0], rest[1]); text = `answered a-${out.id}${out.issue ? ` · written into ${out.issue}` : ''}`; break;
+      case 'answer': out = R.answer(root, rest[0], rest[1]); break;   // text below: the type log is written outside the lock
       case 'resume': out = R.resumeData(root, flags); text = renderResume(out, R.loadProfile(root)); break;
       case 'handoff':
         need(rest[0] === undefined || rest[0] === 'read' || rest[0] === 'write', `handoff takes read or write (got "${rest[0]}") — the state is assembled live by resume`);
@@ -386,8 +408,8 @@ export function dispatch(root, cmd, rest, flags) {
         break;
       case 'report': out = cmdReport(root, flags); text = out.text; break;
       case 'log': out = R.appendLog(root, rest[0]); text = 'logged'; break;
-      case 'decide': out = R.decide(root, rest[0], rest[1], flags); text = `decided ${out.slug} · by ${out.by}${out.supersedes ? ` · supersedes ${out.supersedes}` : ''}${out.settles.length ? ` · written into ${out.settles.join(', ')}` : ''}`; break;
-      case 'decisions': out = R.decisions(root, flags); text = out.length ? out.map((d) => `${d.date} · ${d.slug}${d.by ? ` · by ${d.by}` : ''}${d.supersededBy ? ` · SUPERSEDED by ${d.supersededBy}` : ''}${d.supersedes ? ` · supersedes ${d.supersedes}` : ''} — ${(d.ruling.split('\n').find((l) => l.trim()) || '').slice(0, 160)}`).join('\n') : '(no rulings)'; break;
+      case 'decide': out = R.decide(root, rest[0], rest[1], flags); text = `decided ${out.slug} · by ${out.by}${out.supersedes ? ` · supersedes ${out.supersedes}` : ''}${out.settles.length ? ` · written into ${out.settles.join(', ')}` : ''}${out.area ? ` · area ${out.area}${out.reach !== null ? ` (${out.reach} file${out.reach === 1 ? '' : 's'})` : ''} · put to ratification at close` : ''}`; break;
+      case 'decisions': out = R.decisions(root, flags); text = out.length ? out.map((d) => `${d.date} · ${d.slug}${d.by ? ` · by ${d.by}` : ''}${d.area ? ` · area ${d.area}${d.ratified ? ' ratified' : d.rejected ? ' rejected' : ''}` : ''}${d.supersededBy ? ` · SUPERSEDED by ${d.supersededBy}` : ''}${d.supersedes ? ` · supersedes ${d.supersedes}` : ''} — ${(d.ruling.split('\n').find((l) => l.trim()) || '').slice(0, 160)}`).join('\n') : '(no rulings)'; break;
       case 'status': out = R.statusData(root, flags); text = renderStatus(out, R.loadProfile(root)); break;
       case 'tips': out = cmdTips(root); text = renderTips(out); break;
       case 'queue': out = cmdQueue(root, flags); text = renderQueue(out); break;
@@ -395,10 +417,20 @@ export function dispatch(root, cmd, rest, flags) {
       case 'archive': out = cmdArchive(root, rest[0]); text = `archived → ${out.archived}${out.leftOpen.length ? ` · ${out.leftOpen.length} still open or in progress: ${out.leftOpen.join(', ')}` : ''} · open a new loop with: jarl.mjs init "<goal>"`; break;
       case 'mode': out = cmdMode(root, rest[0]); text = 'now permanent · no longer tied to a feature branch; close keeps the directory'; break;
       case 'profile': out = cmdProfile(root, rest[0]); text = renderProfile(out); break;
-      case 'close': out = cmdClose(root, flags); text = (out.kept ? `kept ${out.kept} · closed as a permanent record` : `removed ${out.removed}`) + (out.deferred.length ? ` · ${out.deferred.length} deferred still waiting: ${out.deferred.join(', ')}` : '') + (out.uncommitted ? ` · ${out.uncommitted} loop file(s) not committed${out.kept ? ' — commit .jarl/' : ' before the removal'}` : ''); break;
+      case 'close': out = cmdClose(root, flags); text = out.closed ? (out.kept ? `kept ${out.kept} · closed as a permanent record` : `removed ${out.removed}`) + (out.deferred.length ? ` · ${out.deferred.length} deferred still waiting: ${out.deferred.join(', ')}` : '') + (out.uncommitted ? ` · ${out.uncommitted} loop file(s) not committed${out.kept ? ' — commit .jarl/' : ' before the removal'}` : '') + renderBatch(out.batch, out.kept ? 'kept' : 'removed') : renderBatch(out.batch, 'open').trimStart(); break;
       default: throw new Error(`unknown command: ${cmd}\n${USAGE}`);
     }
     });
+  }
+  // A ratified area ruling goes to the type's decision log after the answer is recorded and the lock let go: the
+  // probe and the write run another tool, which may take a while, and other writers of the loop must not wait on it.
+  if (cmd === 'answer') {
+    if (out.typeDecision) {
+      out.typeLog = writeAreaDecision(root, out.typeDecision);
+      try { withLock(root, () => recordTypeLog(root, out.ruling, out.typeDecision, out.typeLog)); } catch (e) { warn.push(`note: what became of ${out.ruling} in the type log was not recorded in the loop: ${e.message}`); }
+    }
+    text = `answered a-${out.id}${out.issue ? ` · written into ${out.issue}` : ''}${out.verdict ? ` · ${out.ruling} ${out.verdict}${renderTypeLog(out.typeLog)}` : ''}`;
+    if (out.typeLog?.state === 'failed') warn.push(`note: ${out.ruling} stays a ruling of this loop; write it by hand in ${out.typeLog.repo}: ${out.typeLog.retry} (add --supersedes <datetime> or --adds when yg lists decisions in force)`);
   }
   return { out, text, warn };
 }
