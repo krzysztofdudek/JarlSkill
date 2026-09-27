@@ -11,7 +11,7 @@
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
 
 const GRAPH_DIR = '.yggdrasil';
 // The test knob: JARL_YG names the command that stands in for `npx --no-install yg` (a script ending in .js, .mjs or
@@ -36,14 +36,20 @@ function command() {
   return { file: 'npx', pre: ['--no-install', 'yg'] };
 }
 
-// One run, output captured. On Windows a bare command name (npx is npx.cmd there) needs the shell, so every word is
-// quoted for it; the words are a type name, a flag, a timestamp and a temporary file path, none holding a quote.
+// One run, output captured. On Windows a bare command name (npx is npx.cmd there) runs only through the shell (cmd.exe),
+// so the command line is built as one string, every word in double quotes. No word may hold what cmd.exe would read
+// inside quotes (a quote, %, !, a line break): writeAreaDecision passes only a checked type name, a checked timestamp,
+// flags and a temporary file path, and the ruling's text goes through that file, never the command line.
+const SHELL_UNSAFE = /["%!\r\n]/;
 function run(cwd, args, timeout) {
   const { file, pre } = command();
   const all = [...pre, ...args];
   const opts = { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout, env: { ...process.env, NO_COLOR: '1', FORCE_COLOR: '0' } };
   if (process.platform === 'win32' && file !== process.execPath) {
-    return execFileSync(`"${file}"`, all.map((a) => `"${a}"`), { ...opts, shell: true, windowsHide: true });
+    const words = [file, ...all];
+    const bad = words.find((w) => SHELL_UNSAFE.test(w));
+    if (bad !== undefined) throw new Error(`refused to pass ${JSON.stringify(bad)} through the Windows shell`);
+    return execSync(words.map((w) => `"${w}"`).join(' '), { ...opts, windowsHide: true });
   }
   return execFileSync(file, all, opts);
 }
@@ -61,7 +67,14 @@ function failure(e) {
 // A type log that already holds decisions in force refuses an entry that says nothing about them (Yggdrasil's own
 // guard): Jarl passes that refusal on with the decisions it listed, and the person writing it by hand chooses
 // --supersedes or --adds, having seen them.
+// A type name as a graph takes it (one path segment), and an entry's timestamp as yg prints it: what decisions.md
+// holds is checked again here, because a hand edit of that file could put anything there.
+const TYPE_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
+const DATETIME_RE = /^\d{4}-\d\d-\d\dT[0-9:.]+Z$/;
+
 export function writeAreaDecision(root, { type, text, supersedes = null }) {
+  if (!TYPE_RE.test(String(type))) return { state: 'skipped', reason: `"${type}" is not a type name yg takes (one word of letters, digits and . _ -)` };
+  if (supersedes !== null && !DATETIME_RE.test(String(supersedes))) supersedes = null;
   const repo = graphRepo(root);
   if (!repo) return { state: 'skipped', reason: `no ${GRAPH_DIR}/ in the loop's repository` };
   try { run(repo, ['--version'], PROBE_MS); } catch { return { state: 'skipped', reason: `${GRAPH_DIR}/ found, but no working yg answers \`npx --no-install yg --version\` there` }; }

@@ -25,6 +25,12 @@ appendFileSync(${JSON.stringify(join(dir, 'calls.jsonl'))}, JSON.stringify({ arg
 const mode = ${JSON.stringify(mode)};
 if (mode === 'dead') process.exit(1);
 if (args[0] === '--version') { console.log('6.1.0'); process.exit(0); }
+if (mode === 'writer') {
+  // Another writer of the loop while the type log is being written: it must not find the loop's lock held.
+  const { spawnSync } = await import('child_process');
+  const r = spawnSync(process.execPath, [${JSON.stringify(SCRIPT)}, 'log', 'meanwhile', '--root', process.env.JARL_TEST_ROOT], { encoding: 'utf8', env: { ...process.env, JARL_LOCK_WAIT_MS: '300' } });
+  appendFileSync(${JSON.stringify(join(dir, 'calls.jsonl'))}, JSON.stringify({ args: ['meanwhile'], status: r.status, stderr: r.stderr }) + '\\n');
+}
 if (mode === 'refuse') { console.error("error[type-not-found]: node type '" + args[3] + "' is not defined"); process.exit(1); }
 console.log('Added log entry to .yggdrasil/types/' + args[3] + '/log.md');
 console.log('Timestamp: 2026-09-27T10:00:0' + (readFileSync(${JSON.stringify(join(dir, 'calls.jsonl'))}, 'utf8').trim().split('\\n').length) + '.000Z');
@@ -224,4 +230,35 @@ test('the library never reaches another tool: record.mjs answer hands back the t
     if (before === undefined) delete process.env.JARL_YG; else process.env.JARL_YG = before;
   }
   assert.deepEqual(yg.calls(), []);
+});
+
+test('the type log is written with the loop lock let go: another writer of the loop does not wait on yg', () => {
+  const yg = stub('writer');
+  const root = loop({ graph: true });
+  const env = { JARL_YG: yg.bin, JARL_TEST_ROOT: root };
+  jarl(root, env, 'decide', 'r', 'A rule.', '--area', 'svc', '--reach', '2');
+  jarl(root, env, 'close', '--batch');
+  assert.equal(json(root, env, 'answer', 'a-001', 'yes').typeLog.state, 'written');
+  const meanwhile = yg.calls().find((c) => c.args[0] === 'meanwhile');
+  assert.equal(meanwhile.status, 0, meanwhile.stderr);
+  assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /meanwhile[\s\S]*r written into the decision log of type svc/);
+});
+
+test('what decisions.md holds is checked again before it reaches yg: a bad type is never sent, a bad timestamp never superseded', async () => {
+  const { writeAreaDecision } = await import('../yg-edge.mjs');
+  const yg = stub();
+  const root = mkdtempSync(join(tmpdir(), 'jarl-edge-'));
+  mkdirSync(join(root, '.yggdrasil'));
+  const before = process.env.JARL_YG;
+  process.env.JARL_YG = yg.bin;
+  try {
+    const bad = writeAreaDecision(root, { type: 'svc" & calc & "', text: 'x', supersedes: null });
+    assert.equal(bad.state, 'skipped');
+    assert.deepEqual(yg.calls(), []);
+    const out = writeAreaDecision(root, { type: 'svc', text: 'x', supersedes: 'unknown' });
+    assert.equal(out.state, 'written');
+    assert.ok(!yg.calls().some((c) => c.args.includes('--supersedes')));
+  } finally {
+    if (before === undefined) delete process.env.JARL_YG; else process.env.JARL_YG = before;
+  }
 });

@@ -400,7 +400,7 @@ export function dispatch(root, cmd, rest, flags) {
       case 'check': out = cmdCheck(root, rest[0], flags); text = `${out.id === null ? `package ${out.ids.join(', ')} on ${out.branch}\n` : ''}${out.repo === root ? '' : `in ${out.repo}\n`}${out.items.map((i) => `${i.ok ? '✓' : '✗'} ${i.name} — ${i.note}`).join('\n')}`; break;
       case 'branches': out = cmdBranches(root, flags); text = out.length ? out.map((b) => `${b.repo !== basename(root) ? `[${b.repo}] ` : ''}${b.branch}${b.issues.length ? ` → ${b.issues.join(', ')}` : ''}  ${b.missing ? 'GONE' : `+${b.ahead ?? '?'}  ${b.worktree ? `${b.worktree}${b.worktreeGone ? ' (gone)' : b.dirty ? ` (${b.dirty} uncommitted)` : ' (clean)'}` : '(no worktree)'}`}${b.unnamed ? '  UNNAMED — rename to jarl/NNN-slug before merging' : ''}${{ delete: '  DONE → delete', dirty: '  DONE (worktree dirty)', unverified: '  DONE (merged by record, branch not in base) — verify' }[b.done] || ''}${b.stale.length ? `  STALE: ${b.stale.join('; ')}` : ''}`).join('\n') : '(no worker branches)'; break;
       case 'ask': out = R.ask(root, rest[0], flags); text = out.kind === 'ratify' ? `filed a-${out.id} for ratification · blocks nothing` : `asked a-${out.id}`; break;
-      case 'answer': out = R.answer(root, rest[0], rest[1]); if (out.typeDecision) { out.typeLog = writeAreaDecision(root, out.typeDecision); recordTypeLog(root, out.ruling, out.typeDecision, out.typeLog); } text = `answered a-${out.id}${out.issue ? ` · written into ${out.issue}` : ''}${out.verdict ? ` · ${out.ruling} ${out.verdict}${renderTypeLog(out.typeLog)}` : ''}`; if (out.typeLog?.state === 'failed') warn = [`note: ${out.ruling} stays a ruling of this loop; write it by hand in ${out.typeLog.repo}: ${out.typeLog.retry} (add --supersedes <datetime> or --adds when yg lists decisions in force)`]; break;
+      case 'answer': out = R.answer(root, rest[0], rest[1]); break;   // text below: the type log is written outside the lock
       case 'resume': out = R.resumeData(root, flags); text = renderResume(out, R.loadProfile(root)); break;
       case 'handoff':
         need(rest[0] === undefined || rest[0] === 'read' || rest[0] === 'write', `handoff takes read or write (got "${rest[0]}") — the state is assembled live by resume`);
@@ -421,6 +421,16 @@ export function dispatch(root, cmd, rest, flags) {
       default: throw new Error(`unknown command: ${cmd}\n${USAGE}`);
     }
     });
+  }
+  // A ratified area ruling goes to the type's decision log after the answer is recorded and the lock let go: the
+  // probe and the write run another tool, which may take a while, and other writers of the loop must not wait on it.
+  if (cmd === 'answer') {
+    if (out.typeDecision) {
+      out.typeLog = writeAreaDecision(root, out.typeDecision);
+      try { withLock(root, () => recordTypeLog(root, out.ruling, out.typeDecision, out.typeLog)); } catch (e) { warn.push(`note: what became of ${out.ruling} in the type log was not recorded in the loop: ${e.message}`); }
+    }
+    text = `answered a-${out.id}${out.issue ? ` · written into ${out.issue}` : ''}${out.verdict ? ` · ${out.ruling} ${out.verdict}${renderTypeLog(out.typeLog)}` : ''}`;
+    if (out.typeLog?.state === 'failed') warn.push(`note: ${out.ruling} stays a ruling of this loop; write it by hand in ${out.typeLog.repo}: ${out.typeLog.retry} (add --supersedes <datetime> or --adds when yg lists decisions in force)`);
   }
   return { out, text, warn };
 }
