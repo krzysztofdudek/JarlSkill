@@ -144,9 +144,11 @@ commands:
                                                  the goal, when the loop opened and last moved,
                                                  then one line: open, in flight, waiting, done, dropped, deferred,
                                                  open questions, to ratify, merged with CI pending or red; then who
-                                                 reviewed the done work (fresh, coordinator, self, unrecorded); then the
-                                                 choices awaiting ratification, stale leases, the issues in flight
-                                                 with no acceptance line, and — committed loops — the loop files
+                                                 reviewed the done work (fresh, coordinator, self, unrecorded); then,
+                                                 when goal.md has no "Check: <command>" line, that the loop lands on
+                                                 testimony alone; then the choices awaiting ratification, stale
+                                                 leases, the issues in flight with no acceptance line, and —
+                                                 committed loops — the loop files
                                                  git has not committed; --by adds the status counts per
                                                  repository, tag, kind, priority or a field the profile declares
   archive "<slug>"                               put the current loop away under .jarl/archive/<yyyy.mm.dd>-<slug>/,
@@ -154,8 +156,11 @@ commands:
                                                  can open a new loop here in the same mode
   report [--found]                               what was done (per repository when it spans several), who reviewed it,
                                                  dropped, deferred and still open — ready for the changelog; --found adds
-                                                 the issues found by someone other than the jarl; --json also carries
-                                                 one row per issue (see SKILL.md, "Views for dashboards")
+                                                 the issues found by someone other than the jarl; then the loop metrics
+                                                 (cycle time, rounds, reopenings, the share of fresh reviews, red CI after
+                                                 merge, follow-ups within 7 days — "no data" where the record holds none)
+                                                 and the testimony mark when no check is declared; --json also carries
+                                                 one row per issue and the metrics (see SKILL.md, "Loop metrics")
   tips                                           read-only: per repository the loop's issues name (open, in progress,
                                                  recently merged), the tip of each worker branch in flight, the release
                                                  branch and main, ahead/behind their upstream as last fetched, and — when
