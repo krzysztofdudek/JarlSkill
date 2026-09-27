@@ -727,7 +727,7 @@ export function loadDecisions(root) {
   // A ruling's own fields (By, Supersedes, Superseded by, Settles) are the block the tool writes at the end of its
   // section — the trailing lines that are such a field or blank. A line of the ruling's text that happens to start
   // with **By:** is text.
-  const META = /^\*\*(By|Supersedes|Superseded by|Settles):\*\*\s*(.*)$/;
+  const META = DECISION_META;
   return out.map((d) => {
     let cut = d.body.length;
     while (cut > 0 && (d.body[cut - 1].trim() === '' || META.test(d.body[cut - 1]))) cut -= 1;
@@ -735,11 +735,34 @@ export function loadDecisions(root) {
     const field = (name) => meta.filter((m) => m[1] === name).map((m) => m[2].trim());
     const ruling = d.body.slice(0, cut).join('\n').trim();
     const sup = field('Superseded by').pop();
-    return { date: d.date, slug: d.slug, ruling, by: field('By').pop() || null, supersedes: field('Supersedes').pop() || null, supersededBy: sup ? sup.split(/\s/)[0] : null, settles: splitList(field('Settles').pop()) };
+    const reach = field('Reach').pop();
+    const typeLog = /^(\S+) · (\S+)/.exec(field('Type log').pop() || '');
+    const first = (name) => (field(name).pop() || '').split(/\s/)[0] || null;
+    return {
+      date: d.date, slug: d.slug, ruling, by: field('By').pop() || null, supersedes: field('Supersedes').pop() || null, supersededBy: sup ? sup.split(/\s/)[0] : null, settles: splitList(field('Settles').pop()),
+      area: field('Area').pop() || null, reach: reach !== undefined && /^\d+$/.test(reach) ? Number(reach) : null,
+      ratified: first('Ratified'), rejected: first('Rejected'), typeLog: typeLog ? { type: typeLog[1], datetime: typeLog[2] } : null,
+    };
   });
 }
+// The fields the tool writes into a ruling's closing block. Area and Reach come with the ruling (decide --area,
+// --reach); Superseded by, Ratified, Rejected and Type log are added to an earlier ruling in place, later.
+const DECISION_META = /^\*\*(By|Supersedes|Superseded by|Settles|Area|Reach|Ratified|Rejected|Type log):\*\*\s*(.*)$/;
 
-export function appendDecision(root, slug, ruling, { by, supersedes } = {}) {
+// A field line added at the end of one ruling's own section, by lines: the text is never read as a pattern.
+function markDecision(root, slug, line) {
+  const path = join(jarlDir(root), 'decisions.md');
+  const lines = readText(path).split('\n');
+  const at = lines.findIndex((l) => { const h = DECISION_HEAD.exec(l); return h && h[2] === slug; });
+  need(at !== -1, `no ruling ${slug} in decisions.md`);
+  let end = lines.findIndex((l, n) => n > at && l.startsWith('## '));
+  if (end === -1) end = lines.length;
+  while (end - 1 > at && lines[end - 1].trim() === '') end -= 1;
+  lines.splice(end, 0, line);
+  writeAtomic(path, lines.join('\n'));
+}
+
+export function appendDecision(root, slug, ruling, { by, supersedes, area, reach } = {}) {
   need(typeof slug === 'string' && SLUG_RE.test(slug), `a ruling's slug is letters, digits and . _ - (starting with a letter or digit, at most 80 characters) — not "${slug}"; e.g. ${slugify(String(slug || 'ruling'))}`);
   const path = join(jarlDir(root), 'decisions.md');
   const existing = existsSync(path) ? readText(path) : '# Decisions\n';
@@ -760,7 +783,7 @@ export function appendDecision(root, slug, ruling, { by, supersedes } = {}) {
     lines.splice(end, 0, `**Superseded by:** ${slug} (${today()})`);
     text = lines.join('\n');
   }
-  const meta = [by ? `**By:** ${fieldText(by)}` : null, supersedes !== undefined ? `**Supersedes:** ${supersedes}` : null].filter(Boolean).join('\n');
+  const meta = [by ? `**By:** ${fieldText(by)}` : null, supersedes !== undefined ? `**Supersedes:** ${supersedes}` : null, area ? `**Area:** ${area}` : null, reach !== undefined && reach !== null ? `**Reach:** ${reach}` : null].filter(Boolean).join('\n');
   writeAtomic(path, `${text.replace(/\s*$/, '')}\n\n## ${today()} · ${slug}\n${bodyText(ruling)}\n${meta ? `\n${meta}\n` : ''}`);
 }
 
@@ -1606,6 +1629,8 @@ export function cmdMode(root, mode) {
 
 export function cmdClose(root, flags) {
   needLiveLoop(root, '');
+  // --batch files the ratification batch and closes nothing, so the user can answer it before the loop goes.
+  if (flags.batch) return { closed: false, batch: ratificationBatch(root) };
   const profile = loadProfile(root);
   const left = loadIssues(root).filter((i) => profile.unfinished(i.status));
   need(flags.force || left.length === 0, `${left.length} issue(s) still open or in progress: ${left.map((i) => i.id).join(', ')} — set each ${profile.with('terminal').filter((st) => profile.is(st, 'settles-dependents') || profile.is(st, 'closes-record')).join(' or ') || profile.with('terminal').join(' or ')}, or report them to the user and run with --force`);
@@ -1613,16 +1638,19 @@ export function cmdClose(root, flags) {
   // place and logs the close instead of removing it, so --root still finds the loop afterwards.
   // Deferred work is not open, so it does not hold the close — but the close says it leaves it waiting.
   const deferred = loadIssues(root).filter((i) => i.status === 'deferred').map((i) => i.id);
+  // The ratification batch is assembled here and never holds the close: in a permanent loop its items stay open for
+  // the user's word; in a loop on a branch the rulings no one ratified leave with the directory, rulings of that loop.
+  const batch = ratificationBatch(root);
   // A committed loop's files git never saw are named, not refused: in the permanent mode they (and the closing
   // line) wait for a commit; in the committed mode the removal below is itself the change to commit.
   if (existsSync(join(jarlDir(root), '.permanent'))) {
     appendLog(root, `closed · kept as a permanent record${deferred.length ? ` · ${deferred.length} deferred still waiting: ${deferred.join(', ')}` : ''}`);
     const files = uncommittedLoopFiles(root);
-    return { removed: null, kept: jarlDir(root), leftOpen: left.map((i) => i.id), deferred, uncommitted: files === null ? null : files.length };
+    return { closed: true, removed: null, kept: jarlDir(root), leftOpen: left.map((i) => i.id), deferred, uncommitted: files === null ? null : files.length, batch };
   }
   const files = uncommittedLoopFiles(root);
   rmSync(jarlDir(root), { recursive: true, force: true });
-  return { removed: jarlDir(root), kept: null, leftOpen: left.map((i) => i.id), deferred, uncommitted: files === null ? null : files.length };
+  return { closed: true, removed: jarlDir(root), kept: null, leftOpen: left.map((i) => i.id), deferred, uncommitted: files === null ? null : files.length, batch };
 }
 
 
@@ -2461,13 +2489,14 @@ export function cmdChangelog(root, rawIds, flags = {}) {
 // ---- questions to the user and the handoff --------------------------------------------------
 
 function asksPath(root) { return join(jarlDir(root), 'asks.md'); }
-const ASK_RE = /^- \*\*a-(\d{3})\*\* \((open|answered)\)(?: · (stop|stuck|lower|charter|ratify))?(?: · target (\S+))?(?: · issue (\d{3}))? · (.*)$/;
+// A ratify item the close's batch filed names the area ruling it asks about: `· ruling <slug>`.
+const ASK_RE = /^- \*\*a-(\d{3})\*\* \((open|answered)\)(?: · (stop|stuck|lower|charter|ratify))?(?: · target (\S+))?(?: · issue (\d{3}))?(?: · ruling ([A-Za-z0-9][A-Za-z0-9._-]{0,79}))? · (.*)$/;
 
 export function loadAsks(root) {
   const path = asksPath(root);
   if (!existsSync(path)) return [];
   return readText(path).split('\n').map((l) => ASK_RE.exec(l)).filter(Boolean)
-    .map((m) => ({ id: m[1], state: m[2], kind: m[3] || null, target: m[4] || null, issue: m[5] || null, question: m[6] }));
+    .map((m) => ({ id: m[1], state: m[2], kind: m[3] || null, target: m[4] || null, issue: m[5] || null, ...(m[6] ? { ruling: m[6] } : {}), question: m[7] }));
 }
 
 export function cmdAsk(root, question, flags) {
@@ -2481,9 +2510,19 @@ export function cmdAsk(root, question, flags) {
   const id = String(asks.reduce((m, a) => Math.max(m, Number(a.id)), 0) + 1).padStart(3, '0');
   const path = asksPath(root);
   const target = kind === 'lower' ? ` · target ${flags.target}` : '';
-  appendAtomic(path, '# Questions to the user\n\n', `- **a-${id}** (open) · ${kind}${target}${flags.issue ? ` · issue ${String(flags.issue).padStart(3, '0')}` : ''} · ${question}\n`);
+  // flags.ruling is not a flag of the command line: only the close's ratification batch passes it.
+  const ruling = kind === 'ratify' && flags.ruling ? ` · ruling ${flags.ruling}` : '';
+  appendAtomic(path, '# Questions to the user\n\n', `- **a-${id}** (open) · ${kind}${target}${flags.issue ? ` · issue ${String(flags.issue).padStart(3, '0')}` : ''}${ruling} · ${question}\n`);
   appendLog(root, `asked a-${id} (${kind}) · ${question}`);
   return { id, question, kind };
+}
+
+// The one word that answers a ratification: the first word of the answer, without case or trailing punctuation.
+export const RATIFY_WORDS = ['yes', 'ok', 'ratify', 'ratified', 'accept', 'accepted', 'approve', 'approved', 'tak'];
+export const REJECT_WORDS = ['no', 'reject', 'rejected', 'nie'];
+function ratifyVerdict(answer) {
+  const w = String(answer).trim().split(/\s+/)[0].toLowerCase().replace(/[.,;:!]+$/, '');
+  return RATIFY_WORDS.includes(w) ? 'ratified' : REJECT_WORDS.includes(w) ? 'rejected' : null;
 }
 
 export function cmdAnswer(root, rawId, answer) {
@@ -2492,6 +2531,12 @@ export function cmdAnswer(root, rawId, answer) {
   const ask = loadAsks(root).find((a) => a.id === id);
   need(ask, `no such question: a-${id}`);
   need(ask.state === 'open', `a-${id} is already answered`);
+  // A batch item asks about one area ruling, and its answer says one word first: yes or no.
+  const rulings = ask.ruling ? loadDecisions(root) : [];
+  const ruling = ask.ruling ? rulings.find((d) => d.slug === ask.ruling) : null;
+  const verdict = ask.ruling ? ratifyVerdict(answer) : null;
+  need(!ask.ruling || verdict, `a-${id} ratifies ruling ${ask.ruling}: the answer starts with one word — ${RATIFY_WORDS.join(', ')} to ratify it, ${REJECT_WORDS.join(', ')} to reject it`);
+  need(!ask.ruling || ruling, `a-${id} ratifies ruling ${ask.ruling}, which is no longer in decisions.md`);
   appendDecision(root, `ask-${id}`, `**Question:** ${ask.question}\n**Answer:** ${answer}`, { by: 'owner' });
   const path = asksPath(root);
   writeAtomic(path, readText(path).replace(`- **a-${id}** (open)`, `- **a-${id}** (answered)`));
@@ -2499,7 +2544,37 @@ export function cmdAnswer(root, rawId, answer) {
   // The issue the question was about carries the answer too, so reading the issue is enough.
   const issue = ask.issue ? findIssue(root, ask.issue) : null;
   if (issue) appendRuling(root, [issue], `Ruling ask-${id}${ask.kind ? ` (${ask.kind})` : ''}: ${answer.split('\n')[0]}`);
-  return { id, answer, ...(issue ? { issue: issue.id } : {}) };
+  const out = { id, answer, ...(issue ? { issue: issue.id } : {}) };
+  if (ruling) Object.assign(out, ratify(root, ruling, rulings, verdict, id));
+  return out;
+}
+
+// A ratification answered: the ruling is marked in place. A ratified area ruling hands back the entry for the type's
+// decision log (typeDecision: { type, text, supersedes }) — what the command line writes through yg-edge.mjs, the one
+// place in Jarl that reaches another tool, and what a composer standing on record.mjs may write with its own code.
+// This module never writes it: it reads and writes the loop's files only.
+function ratify(root, ruling, rulings, verdict, askId) {
+  markDecision(root, ruling.slug, `**${verdict === 'ratified' ? 'Ratified' : 'Rejected'}:** a-${askId} (${today()})`);
+  appendLog(root, `${verdict} ${ruling.slug} · a-${askId}${ruling.area ? ` · area ${ruling.area}` : ''}`);
+  const out = { ruling: ruling.slug, verdict, typeDecision: null, typeLog: null };
+  if (verdict !== 'ratified' || !ruling.area) return out;
+  if (ruling.supersededBy) return { ...out, typeLog: { state: 'skipped', reason: `superseded by ${ruling.supersededBy}, whose own item asks about it` } };
+  // The ruling it replaces, when its entry is in the same type's log, is replaced there too.
+  const prior = ruling.supersedes ? rulings.find((d) => d.slug === ruling.supersedes) : null;
+  const supersedes = prior && prior.typeLog && prior.typeLog.type === ruling.area ? prior.typeLog.datetime : null;
+  return { ...out, typeDecision: { type: ruling.area, text: `${ruling.ruling}\n\n(ratified: ${ruling.slug}, a-${askId})`, supersedes } };
+}
+
+// What became of a ratified area ruling's entry in the type's decision log, recorded: a written one marks the ruling
+// **Type log:** <type> · <datetime> (what a later ruling superseding it replaces); a failed one is a log line. Either
+// way the ruling stays in decisions.md.
+export function recordTypeLog(root, slug, decision, result) {
+  if (result.state === 'written') {
+    markDecision(root, slug, `**Type log:** ${decision.type} · ${result.datetime || 'unknown'}`);
+    appendLog(root, `${slug} written into the decision log of type ${decision.type}${decision.supersedes ? ` · supersedes ${decision.supersedes}` : ''}`);
+  } else if (result.state === 'failed') {
+    appendLog(root, `${slug} NOT written into the decision log of type ${decision.type} · ${result.reason}`);
+  }
 }
 
 // A ruling written into issues' Evidence, after what is there, with one log line each. The status is left
@@ -2520,12 +2595,57 @@ function appendRuling(root, issues, line) {
 export function cmdDecide(root, slug, ruling, flags = {}) {
   need(slug && ruling, 'decide requires <slug> "<ruling>"');
   need(flags.by === undefined || fieldText(flags.by), '--by needs a value — who ruled: owner, jarl, or a name');
+  need(flags.area === undefined || AREA_RE.test(String(flags.area)), `--area names the type of code the ruling reaches, as the repository's graph names it: one word of letters, digits and . _ - (got "${flags.area}")`);
+  need(flags.reach === undefined || flags.area !== undefined, '--reach counts the files of the --area type — it needs --area');
+  need(flags.reach === undefined || /^\d+$/.test(String(flags.reach)), `--reach is how many files the area holds, a whole number (got "${flags.reach}")`);
   const by = flags.by !== undefined ? fieldText(flags.by) : 'owner';
   const settles = flags.settles !== undefined ? issuesFor(root, flags.settles) : [];
-  appendDecision(root, slug, settles.length ? `${ruling.trim()}\n\n**Settles:** ${settles.map((i) => i.id).join(', ')}` : ruling, { by, supersedes: flags.supersedes });
-  appendLog(root, `decided ${slug} · by ${by}${flags.supersedes !== undefined ? ` · supersedes ${flags.supersedes}` : ''}`);
+  const area = flags.area !== undefined ? String(flags.area) : null;
+  const reach = flags.reach !== undefined ? Number(flags.reach) : null;
+  appendDecision(root, slug, settles.length ? `${ruling.trim()}\n\n**Settles:** ${settles.map((i) => i.id).join(', ')}` : ruling, { by, supersedes: flags.supersedes, area, reach });
+  appendLog(root, `decided ${slug} · by ${by}${flags.supersedes !== undefined ? ` · supersedes ${flags.supersedes}` : ''}${area ? ` · area ${area}${reach !== null ? ` (${reach} files)` : ''}` : ''}`);
   if (settles.length) appendRuling(root, settles, `Ruling ${slug}: ${ruling.trim().split('\n')[0]}`);
-  return { slug, by, supersedes: flags.supersedes ?? null, settles: settles.map((i) => i.id) };
+  return { slug, by, supersedes: flags.supersedes ?? null, settles: settles.map((i) => i.id), ...(area ? { area, reach } : {}) };
+}
+
+// A type name as the repository's graph takes it for a log: one path segment.
+export const AREA_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
+
+// ---- the ratification batch: area rulings the user admits when the loop closes -----------------------------
+
+// At most this many area rulings wait for the user's word at once; the rest wait for the next close.
+export const RATIFY_BATCH = 10;
+// A ruling's first sentence, as the batch quotes it.
+function firstSentence(text) {
+  const line = String(text).split('\n').map((l) => l.trim()).find(Boolean) || '';
+  const s = /^.+?[.!?](?=\s|$)/.exec(line)?.[0] || line;
+  return s.length > 200 ? `${s.slice(0, 199)}…` : s;
+}
+
+// The batch: every open ratify item that asks about an area ruling, and new ones filed for the area rulings in force
+// that no item has asked about yet — the widest reach first (a ruling with no count last, then oldest first) — up to
+// RATIFY_BATCH open in all. A ruling already ratified or rejected is never asked again. Nothing here blocks anything.
+export function ratificationBatch(root) {
+  const asks = loadAsks(root);
+  const asked = new Set(asks.filter((a) => a.ruling).map((a) => a.ruling));
+  const pending = asks.filter((a) => a.ruling && a.state === 'open');
+  const rulings = loadDecisions(root);
+  const candidates = rulings
+    .filter((d) => d.area && !d.supersededBy && !d.ratified && !d.rejected && !asked.has(d.slug))
+    .map((d, n) => ({ d, n }))
+    .sort((a, b) => (b.d.reach ?? -1) - (a.d.reach ?? -1) || a.n - b.n)
+    .map((x) => x.d);
+  const room = Math.max(0, RATIFY_BATCH - pending.length);
+  const filed = candidates.slice(0, room).map((d) => {
+    const reach = d.reach !== null ? `${d.reach} file${d.reach === 1 ? '' : 's'}` : 'files not counted';
+    return cmdAsk(root, `area ${d.area} · ${reach} · ${d.slug}: "${firstSentence(d.ruling)}" — yes to admit it into the type's decisions, no to leave it a ruling of this loop`, { kind: 'ratify', ruling: d.slug }).id;
+  });
+  const bySlug = new Map(rulings.map((d) => [d.slug, d]));
+  const items = loadAsks(root).filter((a) => a.ruling && a.state === 'open').map((a) => {
+    const d = bySlug.get(a.ruling);
+    return { ask: `a-${a.id}`, ruling: a.ruling, area: d?.area ?? null, reach: d?.reach ?? null, question: a.question };
+  });
+  return { items, filed: filed.map((id) => `a-${id}`), waiting: candidates.length - filed.length };
 }
 
 // decisions [--live]: the rulings, oldest first, each with who ruled and what superseded it; --live leaves out
