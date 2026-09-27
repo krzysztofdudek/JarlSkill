@@ -1,5 +1,5 @@
-// The shared skill fragments in SKILL.md (between the RUNES markers) and the vendored Runes files are pinned in
-// vendor/runes.pin.json and checked by the vendored tool, offline. The CI job adds the fresh-clone half.
+// The shared skill fragments in SKILL.md (between the RUNES markers) and the vendoring tool are pinned in
+// vendor/runes.pin.json and checked by that tool, offline; Jarl vendors no Runes code. The CI job adds the fresh-clone half.
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -13,9 +13,9 @@ const check = (skillDir) =>
   spawnSync(process.execPath, [join(skillDir, 'scripts', 'runes.mjs'), 'check', '--offline', '--pin', join(skillDir, 'scripts', 'vendor', 'runes.pin.json')], { encoding: 'utf8' });
 
 const tmps = [];
-after(() => { for (const d of tmps) rmSync(d, { recursive: true, force: true }); });
+after(() => { for (const d of tmps) rmSync(d, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); });
 
-// A throwaway repository holding the skill directory as it is here: the tool's own copy, the pin, the copy and SKILL.md.
+// A throwaway repository holding the skill directory as it is here: the tool's own copy, the pin and SKILL.md.
 function copyOfSkill() {
   const repo = mkdtempSync(join(tmpdir(), 'jarl-runes-'));
   tmps.push(repo);
@@ -28,10 +28,10 @@ function copyOfSkill() {
   return dir;
 }
 
-test('the vendored Runes copy, the tool and every skill fragment match the pin', () => {
+test('the tool and every skill fragment match the pin, and no Runes file is vendored', () => {
   const r = check(SKILL);
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /3 skill fragments and the tool match/);
+  assert.match(r.stdout, /0 vendored files, 3 skill fragments and the tool match/);
 });
 
 test('SKILL.md carries each pinned fragment between its markers, once', () => {

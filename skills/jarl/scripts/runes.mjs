@@ -13,8 +13,8 @@
 // The pin (JSON), with every consumer-side path relative to the pin file's directory and required to stay inside the consumer's repository:
 //   source     git URL of Runes
 //   tag, commit the vendored release and the commit its tag pointed at when vendored (written by update)
-//   dest       directory that holds the copy; files keep their Runes-relative paths under it
-//   paths      Runes-relative files or directories to vendor, e.g. "dist/fs", "dist/version.mjs"
+//   dest       directory that holds the copy; files keep their Runes-relative paths under it (not needed when paths is empty)
+//   paths      Runes-relative files or directories to vendor, e.g. "dist/fs", "dist/version.mjs"; empty or left out for a pin that carries only fragments
 //   fragments  [{ name, target, sha256 }]: skills/<name>.md lives in target between <!-- RUNES:<name>:START --> and <!-- RUNES:<name>:END -->
 //   tool       { path, sha256 }: where this file itself is vendored
 //   files      { <Runes-relative path>: <sha256> } (written by update)
@@ -107,11 +107,15 @@ function loadPin(pinArg) {
   const root = repositoryRoot(base);
   if (typeof pin.source !== 'string' || !pin.source) throw new UsageError('pin: source is required');
   if (pin.source.startsWith('-')) throw new UsageError('pin: source must not start with -');
-  const destDir = consumerPath(pin.dest, 'pin.dest', base, root);
-  if (!Array.isArray(pin.paths) || pin.paths.length === 0) throw new UsageError('pin: paths must list at least one Runes path');
+  pin.paths = pin.paths ?? [];
+  if (!Array.isArray(pin.paths)) throw new UsageError('pin.paths: expected an array');
   pin.paths = pin.paths.map((p) => safeRelative(p, 'pin.paths'));
   pin.fragments = pin.fragments ?? [];
   if (!Array.isArray(pin.fragments)) throw new UsageError('pin.fragments: expected an array');
+  if (pin.paths.length === 0 && pin.fragments.length === 0) throw new UsageError('pin: paths or fragments must name at least one thing to vendor');
+  // A fragments-only pin vendors no file, so it needs no copy directory; one that still lists vendored files needs it to check or remove them.
+  const needsDest = pin.paths.length > 0 || pin.dest !== undefined || Object.keys(pin.files ?? {}).length > 0;
+  const destDir = needsDest ? consumerPath(pin.dest, 'pin.dest', base, root) : undefined;
   const targets = new Map();
   for (const f of pin.fragments) {
     if (!f || typeof f.name !== 'string' || !/^[A-Za-z0-9_-]+$/.test(f.name)) throw new UsageError('pin.fragments: each needs a name of letters, digits, - or _');
@@ -339,7 +343,7 @@ function offlineProblems(ctx) {
       : `modified: ${pin.dest}/${f} (hand edits are not allowed; change Runes and run update)`);
   }
   const pinnedSet = new Set(pinned);
-  const tree = listTree(destDir);
+  const tree = destDir ? listTree(destDir) : { files: [], links: [] };
   for (const f of tree.files) if (!pinnedSet.has(f)) problems.push(`extra: ${pin.dest}/${f} is not in the pin`);
   for (const l of tree.links) if (!pinnedSet.has(l)) problems.push(`symlink: ${pin.dest}/${l} is not allowed in the copy`);
   problems.push(...danglingImports(destDir, present));
@@ -445,7 +449,7 @@ function localReport(ctx) {
   } catch (e) {
     throw new UsageError(`RUNES_DIR: ${e.message}`);
   }
-  const vendored = listTree(destDir);
+  const vendored = destDir ? listTree(destDir) : { files: [], links: [] };
   for (const l of vendored.links) lines.push(`symlink in the copy: ${l}`);
   const all = [...new Set([...local, ...vendored.files])].sort();
   let same = 0;
