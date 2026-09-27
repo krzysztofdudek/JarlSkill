@@ -2146,7 +2146,10 @@ export function leaseProblems(root, issue, hours = STALE_HOURS, now = Date.now()
 // behind it, is judged by ancestry alone: a number is too weak to trust a recorded merge for. Null otherwise.
 function doneMark(repo, base, name, on, dirty, profile = DEFAULT_PROFILE) {
   const closed = (i) => profile.is(i.status, 'closes-record');
-  const settled = on.length > 0 && on.every((i) => closed(i) || i.status === 'dropped') && on.some(closed);
+  // Given up: finished, settling what waits on it, without closing the record (built-in: dropped). A status that is
+  // finished but settles nothing (deferred) is work that waits, and keeps its branch.
+  const givenUp = (i) => profile.is(i.status, 'terminal') && profile.is(i.status, 'settles-dependents') && !closed(i);
+  const settled = on.length > 0 && on.every((i) => closed(i) || givenUp(i)) && on.some(closed);
   if (!settled) return null;
   const inBase = git(repo, ['merge-base', '--is-ancestor', name, base]) !== null;
   let byRecord = false;

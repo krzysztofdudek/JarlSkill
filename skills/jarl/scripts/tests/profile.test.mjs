@@ -481,3 +481,33 @@ test('no profile: status --json keeps the five counts at the top level and has n
   assert.match(jarl(root, 'status'), /open 1 · in flight 0 · done 0 · dropped 0 · deferred 0 · questions 0/);
 });
 
+function gitRepo() {
+  const dir = mkdtempSync(join(tmpdir(), 'jarl-profile-git-'));
+  const g = (...a) => execFileSync('git', a, { cwd: dir, stdio: 'ignore' });
+  g('init', '-q', '-b', 'main'); g('config', 'user.email', 't@t'); g('config', 'user.name', 't');
+  writeFileSync(join(dir, 'a.txt'), 'a\n'); g('add', '.'); g('commit', '-qm', 'base');
+  return { dir, g };
+}
+
+test('branches: a branch is DONE → delete by flags — closed or given up (terminal, settling, not closing); work that waits keeps it', () => {
+  const PROF = { ...HOUSE, statuses: { ...HOUSE.statuses, abandoned: ['terminal', 'settles-dependents', 'needs-reason'], parked: ['terminal', 'needs-reason'] } };
+  const { dir, g } = gitRepo();
+  jarl(dir, 'init', 'g', '--profile', profileFile(PROF));
+  for (const t of ['a', 'b', 'c']) jarl(dir, 'new', t);
+  jarl(dir, 'set', '1,2,3', 'queued', 'ok');
+  jarl(dir, 'set', '1,2', 'running', 'go', '--branch', 'feat/x', '--worker', 'w');
+  jarl(dir, 'set', '3', 'running', 'go', '--branch', 'feat/y', '--worker', 'w');
+  g('branch', 'feat/x'); g('branch', 'feat/y');
+  jarl(dir, 'evidence', '1,3', '--ran', 't', '--saw', 'ok');
+  jarl(dir, 'review', '1,3', 'approve', 'fine', '--by', 'r');
+  jarl(dir, 'set', '1', 'merged', 'in');
+  jarl(dir, 'set', '2', 'abandoned', 'gone');
+  jarl(dir, 'new', 'd'); jarl(dir, 'set', '4', 'queued', 'ok');
+  jarl(dir, 'set', '3', 'merged', 'in');
+  jarl(dir, 'set', '4', 'running', 'go', '--branch', 'feat/y', '--worker', 'w');
+  jarl(dir, 'set', '4', 'parked', 'later');
+  const rows = JSON.parse(jarl(dir, 'branches', '--json'));
+  assert.equal(rows.find((r) => r.branch === 'feat/x').done, 'delete', 'merged and a given-up issue: the branch can go');
+  assert.equal(rows.find((r) => r.branch === 'feat/y').done, null, 'an issue parked on it keeps the branch');
+});
+
