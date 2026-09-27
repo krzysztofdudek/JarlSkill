@@ -272,7 +272,7 @@ test('no profile: no profile file, the same issue file byte for byte, the same l
   assert.deepEqual(Object.keys(st).slice(0, 5), ['open', 'in-progress', 'done', 'dropped', 'deferred']);
   assert.ok(!('profile' in st));
   const rep = JSON.parse(jarl(root, 'report', '--json'));
-  assert.deepEqual(Object.keys(rep), ['done', 'dropped', 'deferred', 'left', 'found', 'reviews', 'byRepo', 'issues', 'text']);
+  assert.deepEqual(Object.keys(rep), ['done', 'dropped', 'deferred', 'left', 'found', 'reviews', 'byRepo', 'issues', 'text', 'check', 'metrics']);
   assert.equal(jarl(root, 'status').split('\n')[2], 'open 1 · in flight 0 · done 0 · dropped 0 · deferred 0 · questions 0');
   assert.doesNotMatch(jarl(root, 'status'), /profile/);
   assert.match(refuses(root, 'set', '1', 'queued', 'x'), /status must be one of: open, in-progress, done, dropped, deferred/);

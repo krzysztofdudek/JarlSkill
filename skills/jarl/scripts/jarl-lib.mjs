@@ -1590,6 +1590,7 @@ export function cmdStatus(root, flags = {}) {
   c.ciRed = live.filter((i) => mergedOf(i)?.ci === 'red').map((i) => i.id);
   c.handoff = handoffAge(root, c.lastActivity);
   c.reviews = reviewSplit(root, issues);
+  c.check = checkState(root);
   const files = uncommittedLoopFiles(root);
   c.uncommitted = files === null ? null : files.length;
   // --by: the same five counts per repository, tag, kind or priority — a dashboard's table, read from the issues.
@@ -1862,6 +1863,195 @@ function gateLine(profile, split, label) {
   return `closed on a merge in the base, no approve required (this loop's done gate) · reviews recorded: ${renderSplit(split)}`;
 }
 function renderSplit(s) { return `fresh ${s.fresh} · coordinator ${s.coordinator} · self ${s.self}${s.unrecorded ? ` · unrecorded ${s.unrecorded}` : ''}`; }
+
+// ---- the check a loop lands on, and the loop's metrics (report --json) ----------------------------------------------
+
+// The check a loop declares: every `Check: <what runs>` line in goal.md (a plain line, a list item, or in bold), several
+// for a loop whose repositories each have their own. Jarl never runs it: the line says what decides a landing, so the
+// views can tell a loop whose merges pass a check from one that lands on its reviews alone. Where the repository has a
+// check, the check decides what lands; a review can only stop a change and is recorded as testimony. A loop with no
+// declared check lands on testimony alone, and status and report say so.
+export function declaredChecks(root) {
+  const goal = join(jarlDir(root), 'goal.md');
+  if (!existsSync(goal)) return [];
+  const checks = [];
+  for (const line of readText(goal).split('\n')) {
+    const m = /^\s*(?:[-*]\s+)?(?:\*\*)?check:(?:\*\*)?\s*(.+)$/i.exec(line);
+    if (m && fieldText(m[1].replace(/\*\*/g, ''))) checks.push(fieldText(m[1].replace(/\*\*/g, '')).replace(/^`(.*)`$/, '$1'));
+  }
+  return checks;
+}
+export function checkState(root) {
+  const checks = declaredChecks(root);
+  return { declared: checks.length > 0, checks, landsOn: checks.length ? 'check' : 'testimony' };
+}
+export const TESTIMONY_NOTE = 'no check declared — this loop lands on testimony alone: a review is recorded as testimony, not proof (a `Check: <command>` line in goal.md names the check that decides a landing)';
+function checkLine(c) { return c.declared ? `check: ${c.checks.join(' · ')}` : TESTIMONY_NOTE; }
+
+// A journal stamp (YYYY-MM-DD HH:MM, UTC) in milliseconds.
+function stampMs(at) { return Date.parse(`${at.replace(' ', 'T')}:00Z`); }
+const HOUR = 3600000;
+const DAY = 24 * HOUR;
+const round1 = (x) => Math.round(x * 10) / 10;
+const share = (part, whole) => (whole ? Math.round((part / whole) * 1000) / 1000 : null);
+const pct = (s) => `${round1(s * 100)}%`;
+function spread(values) {
+  if (!values.length) return { n: 0, medianHours: null, p90Hours: null, maxHours: null };
+  const v = [...values].sort((a, b) => a - b);
+  const at = (q) => v[Math.min(v.length - 1, Math.ceil(q * v.length) - 1)];
+  const mid = v.length % 2 ? v[(v.length - 1) / 2] : (v[v.length / 2 - 1] + v[v.length / 2]) / 2;
+  return { n: v.length, medianHours: round1(mid / HOUR), p90Hours: round1(at(0.9) / HOUR), maxHours: round1(v[v.length - 1] / HOUR) };
+}
+// A three-digit issue number standing alone in a text: no letter or digit touches it, so a sha (1b066c7) or a longer
+// number never reads as one, while reviewer-450, raport-398 and (024) do.
+function idsNamed(text) { return [...String(text || '').matchAll(/(?<![0-9A-Za-z])(\d{3})(?![0-9A-Za-z])/g)].map((m) => m[1]); }
+
+// The loop's metrics, read from its record alone — the journal and the issue files — never from git or a network. Each
+// metric carries n (how many issues it was read from) and, where the record holds nothing to read it from, noData with
+// the reason and null values instead of a zero: an approve logged before --by existed has no kind, a loop with no merge
+// has no CI after a merge, and a zero there would claim something the record never said.
+//
+// - cycleTime: first move into a status that holds the claim (in progress) → last move into one that closes the record
+//   (done), per closed issue; leadTime the same from its filing. Hours, median, p90, max.
+// - rounds: `round` lines and `changes` verdicts per closed issue the journal tracks.
+// - reopenings: moves out of a status that closes the record (done back to open or in progress), on any issue the
+//   journal tracks; deferred or dropped work brought back is not a reopening — nothing was closed as finished.
+// - freshReviews: the kind of the live approve that cleared each closed issue (see gateState), its share among those
+//   with a recorded kind, the same for closed issues carrying code, and who the fresh reviewers were.
+// - redCiAfterMerge: issues whose CI was recorded red at any point after their merge, among merges whose CI settled
+//   (green or red); pending and none (no CI to wait for) are counted apart.
+// - followUps: issues filed within 7 days after a closed issue first closed whose Found by names its number. A closed
+//   research issue is left out: the issues filed from its findings are what it was for, not defects it left behind.
+export const FOLLOW_UP_DAYS = 7;
+export function loopMetrics(root, issues = loadIssues(root), journal = journalById(root), now = Date.now()) {
+  const profile = loadProfile(root);
+  const coordinators = coordinatorNames(root);
+  const closes = (st) => profile.is(st, 'closes-record');
+  const claims = (st) => profile.is(st, 'holds-claim');
+  const byId = new Map(issues.map((i) => [i.id, i]));
+  // One pass over each issue's journal: filed, the moves, rounds, changes, merges and CI states.
+  const facts = new Map();
+  for (const i of issues) {
+    const f = { filed: null, firstClaim: null, firstClose: null, lastClose: null, rounds: 0, changes: 0, reopens: 0, merged: false, ci: [], tracked: false };
+    let status = null;
+    const moved = movesInto(profile.statuses, i.id);
+    for (const e of journal.get(i.id) || []) {
+      if (e.text.startsWith(`filed ${i.id} `)) { f.filed = f.filed || e.at; status = profile.initial; f.tracked = true; continue; }
+      const m = moved.exec(e.text);
+      if (m) {
+        const prev = status; status = m[1]; f.tracked = true;
+        if (claims(status) && !f.firstClaim) f.firstClaim = e.at;
+        if (closes(status)) { f.firstClose = f.firstClose || e.at; f.lastClose = e.at; }
+        if (prev && closes(prev) && !closes(status)) f.reopens += 1;
+        continue;
+      }
+      if (e.text.startsWith(`${i.id} round `)) { f.rounds += 1; continue; }
+      if (e.text.startsWith(`${i.id} review changes `)) { f.changes += 1; continue; }
+      const mg = new RegExp(`^${i.id} merged \\S+.* · CI (${CI_STATES.join('|')})$`).exec(e.text);
+      if (mg) { f.merged = true; f.ci.push(mg[1]); continue; }
+      const ci = new RegExp(`^${i.id} CI (${CI_STATES.join('|')})$`).exec(e.text);
+      if (ci && f.merged) f.ci.push(ci[1]);
+    }
+    // A merge recorded on the issue with no journal line for it (a hand-made file): its CI field as the one reading.
+    if (!f.merged && mergedOf(i)) { f.merged = true; if (mergedOf(i).ci) f.ci.push(mergedOf(i).ci); }
+    facts.set(i.id, f);
+  }
+  const closed = issues.filter((i) => closes(i.status));
+  const noData = (cond, why) => (cond ? why : null);
+
+  const cycle = closed.map((i) => facts.get(i.id)).filter((f) => f.firstClaim && f.lastClose && stampMs(f.lastClose) >= stampMs(f.firstClaim)).map((f) => stampMs(f.lastClose) - stampMs(f.firstClaim));
+  const cycleTime = { ...spread(cycle), of: closed.length, noData: noData(!cycle.length, closed.length ? 'no closed issue has a move into progress and a later close in the journal' : 'nothing closed yet') };
+  const lead = closed.map((i) => facts.get(i.id)).filter((f) => f.filed && f.lastClose).map((f) => stampMs(f.lastClose) - stampMs(f.filed));
+  const leadTime = { ...spread(lead), of: closed.length, noData: noData(!lead.length, closed.length ? 'no closed issue has its filing and its close in the journal' : 'nothing closed yet') };
+
+  const trackedClosed = closed.filter((i) => facts.get(i.id).tracked);
+  const withRounds = trackedClosed.filter((i) => facts.get(i.id).rounds);
+  const withChanges = trackedClosed.filter((i) => facts.get(i.id).changes);
+  const rounds = {
+    n: trackedClosed.length,
+    rounds: trackedClosed.length ? withRounds.reduce((s, i) => s + facts.get(i.id).rounds, 0) : null,
+    issuesWithRounds: trackedClosed.length ? withRounds.map((i) => i.id) : null,
+    changes: trackedClosed.length ? withChanges.reduce((s, i) => s + facts.get(i.id).changes, 0) : null,
+    issuesWithChanges: trackedClosed.length ? withChanges.map((i) => i.id) : null,
+    noData: noData(!trackedClosed.length, closed.length ? 'the journal tracks no closed issue' : 'nothing closed yet'),
+  };
+
+  const tracked = issues.filter((i) => facts.get(i.id).tracked);
+  const reopened = tracked.filter((i) => facts.get(i.id).reopens);
+  const reopenings = { n: tracked.length, times: tracked.length ? reopened.reduce((s, i) => s + facts.get(i.id).reopens, 0) : null, issues: tracked.length ? reopened.map((i) => i.id) : null, noData: noData(!tracked.length, 'the journal tracks no issue') };
+
+  const kinds = { fresh: 0, coordinator: 0, self: 0, unrecorded: 0 };
+  const code = { fresh: 0, coordinator: 0, self: 0, unrecorded: 0 };
+  const reviewers = {};
+  for (const i of closed) {
+    const a = gateState(root, i.id, journal.get(i.id) || [], coordinators, issues, journal).live;
+    const k = a && a.kind ? a.kind : 'unrecorded';
+    kinds[k] += 1;
+    if (carriesCode(i)) code[k] += 1;
+    if (k === 'fresh') reviewers[a.by] = (reviewers[a.by] || 0) + 1;
+  }
+  const recorded = kinds.fresh + kinds.coordinator + kinds.self;
+  const codeRecorded = code.fresh + code.coordinator + code.self;
+  const freshReviews = {
+    n: closed.length, recorded, ...kinds, share: share(kinds.fresh, recorded),
+    code: { n: codeRecorded + code.unrecorded, recorded: codeRecorded, ...code, share: share(code.fresh, codeRecorded) },
+    reviewers: Object.fromEntries(Object.entries(reviewers).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))),
+    noData: noData(!recorded, closed.length ? `no closed issue's approve records who gave it (${kinds.unrecorded} from before --by)` : 'nothing closed yet'),
+  };
+
+  const mergedIssues = issues.filter((i) => facts.get(i.id).merged);
+  const red = mergedIssues.filter((i) => facts.get(i.id).ci.includes('red'));
+  const settled = mergedIssues.filter((i) => facts.get(i.id).ci.some((c) => c === 'green' || c === 'red'));
+  const lastCi = (i) => facts.get(i.id).ci[facts.get(i.id).ci.length - 1] || null;
+  const redCiAfterMerge = {
+    n: mergedIssues.length, settled: settled.length, red: settled.length ? red.length : null, issues: settled.length ? red.map((i) => i.id) : null, share: share(red.length, settled.length),
+    pending: mergedIssues.filter((i) => lastCi(i) === 'pending').map((i) => i.id), none: mergedIssues.filter((i) => lastCi(i) === 'none').map((i) => i.id),
+    noData: noData(!settled.length, mergedIssues.length ? 'no merge has a CI recorded green or red yet' : 'no merge recorded'),
+  };
+
+  // Follow-ups: the closed issues that have a close time in the journal, and every issue filed within the window after
+  // it that names its number in Found by. The window of a close less than 7 days ago is still open: counted apart.
+  const anyFoundBy = issues.some((i) => fieldText(i.fields['found by']));
+  const followable = (i) => i.kind !== 'research' && facts.get(i.id).firstClose;
+  const closedAt = closed.filter(followable);
+  const found = {};
+  for (const y of issues) {
+    const filed = facts.get(y.id).filed;
+    if (!filed) continue;
+    for (const x of new Set(idsNamed(y.fields['found by']))) {
+      if (x === y.id || !byId.has(x) || !followable(byId.get(x)) || !closes(byId.get(x).status)) continue;
+      const gap = stampMs(filed) - stampMs(facts.get(x).firstClose);
+      if (gap >= 0 && gap <= FOLLOW_UP_DAYS * DAY) (found[x] = found[x] || []).push(y.id);
+    }
+  }
+  const followUps = {
+    windowDays: FOLLOW_UP_DAYS, n: closedAt.length, windowOpen: closedAt.filter((i) => now - stampMs(facts.get(i.id).firstClose) < FOLLOW_UP_DAYS * DAY).length,
+    withFollowUps: anyFoundBy && closedAt.length ? Object.keys(found).length : null, share: anyFoundBy ? share(Object.keys(found).length, closedAt.length) : null,
+    followUps: anyFoundBy ? Object.keys(found).sort().map((id) => ({ id, followUps: found[id] })) : null,
+    noData: noData(!anyFoundBy || !closedAt.length, !anyFoundBy ? 'no issue records Found by, so no follow-up can be traced to what it follows' : closed.length ? 'no closed issue outside research has its close in the journal' : 'nothing closed yet'),
+  };
+
+  return { check: checkState(root), cycleTime, leadTime, rounds, reopenings, freshReviews, redCiAfterMerge, followUps };
+}
+
+export function renderMetrics(m) {
+  const nd = (x) => `no data (${x.noData})`;
+  const time = (x) => (x.noData ? nd(x) : `median ${x.medianHours} h · p90 ${x.p90Hours} h · max ${x.maxHours} h · n ${x.n} of ${x.of} closed`);
+  const list = (ids) => (ids.length ? `: ${ids.join(', ')}` : '');
+  const f = m.freshReviews;
+  return [
+    '## Loop metrics',
+    checkLine(m.check),
+    `cycle time (in progress → closed): ${time(m.cycleTime)}`,
+    `lead time (filed → closed): ${time(m.leadTime)}`,
+    `rounds: ${m.rounds.noData ? nd(m.rounds) : `${m.rounds.rounds} on ${m.rounds.issuesWithRounds.length} issue(s) · changes verdicts ${m.rounds.changes} on ${m.rounds.issuesWithChanges.length} issue(s) · n ${m.rounds.n} closed`}`,
+    `reopened: ${m.reopenings.noData ? nd(m.reopenings) : `${m.reopenings.issues.length} issue(s), ${m.reopenings.times} time(s)${list(m.reopenings.issues)} · n ${m.reopenings.n}`}`,
+    `fresh reviews of closed work: ${f.noData ? nd(f) : `${f.fresh} of ${f.recorded} with a recorded reviewer (${pct(f.share)}) · coordinator ${f.coordinator} · self ${f.self}${f.unrecorded ? ` · no data for ${f.unrecorded} (approved before --by)` : ''}${f.code.recorded ? ` · carrying code: ${f.code.fresh} of ${f.code.recorded} (${pct(f.code.share)})` : ''}`}`,
+    ...(Object.keys(f.reviewers).length ? [`fresh reviewers: ${Object.keys(f.reviewers).length}${Object.keys(f.reviewers).length > 5 ? ', most often' : ''} ${Object.entries(f.reviewers).slice(0, 5).map(([k, v]) => `${k} ${v}`).join(' · ')}`] : []),
+    `red CI after merge: ${m.redCiAfterMerge.noData ? nd(m.redCiAfterMerge) : `${m.redCiAfterMerge.red} of ${m.redCiAfterMerge.settled} settled (${pct(m.redCiAfterMerge.share)})${list(m.redCiAfterMerge.issues)}`}${m.redCiAfterMerge.pending.length ? ` · pending ${m.redCiAfterMerge.pending.length}` : ''}${m.redCiAfterMerge.none.length ? ` · no CI ${m.redCiAfterMerge.none.length}` : ''}`,
+    `follow-ups within ${m.followUps.windowDays} days (Found by names the closed issue): ${m.followUps.noData ? nd(m.followUps) : `${m.followUps.withFollowUps} of ${m.followUps.n} closed (${pct(m.followUps.share)})${m.followUps.followUps.length ? `: ${m.followUps.followUps.map((x) => `${x.id} ← ${x.followUps.join(', ')}`).join('; ')}` : ''}${m.followUps.windowOpen ? ` · window still open for ${m.followUps.windowOpen}` : ''}`}`,
+  ].join('\n');
+}
 
 const SEVERITIES = ['Critical', 'Important', 'Minor'];
 
@@ -2857,16 +3047,18 @@ export function cmdReport(root, flags = {}) {
     const a = gateState(root, i.id, journal.get(i.id) || [], coordinators, issues, journal).live;
     return { id: i.id, title: i.title, status: i.status, kind: i.kind, priority: i.priority, tier: i.tier, tags: i.tags, repos: repoNames(root, i), branch: i.fields.branch || null, after: i.after, sources: i.sources, merged: m ? m.sha : null, ci: m ? m.ci : null, review: a ? { by: a.by, kind: a.kind, at: a.at } : null };
   });
-  const lines = [`# Report`, '', goal, '', `## Done (${done.length})`, ...(done.length ? [gateLine(profile, split, 'Reviewed by')] : []), ...doneLines,
+  const metrics = loopMetrics(root, issues, journal);
+  const lines = [`# Report`, '', goal, '', ...(metrics.check.declared ? [] : [TESTIMONY_NOTE, '']), `## Done (${done.length})`, ...(done.length ? [gateLine(profile, split, 'Reviewed by')] : []), ...doneLines,
     ...closedOther.flatMap((st) => {
       const on = issues.filter((i) => i.status === st);
       return ['', `## ${reasonWord(st)} (${on.length})`, ...on.map((i) => `- ${i.id} ${i.title}${profile.is(st, 'needs-reason') ? ` — ${statusReason(i.sections.evidence, reasonWord(st))}` : ''}`)];
     }),
     '', `## Still open (${left.length})`, ...left.map((i) => `- ${i.id} ${i.title} (${i.status})`),
-    ...(flags.found ? ['', `## Found along the way (${found.length})`, ...found.map((i) => `- ${i.id} ${i.title} — ${i.fields['found by']}`)] : [])];
+    ...(flags.found ? ['', `## Found along the way (${found.length})`, ...found.map((i) => `- ${i.id} ${i.title} — ${i.fields['found by']}`)] : []),
+    '', renderMetrics(metrics)];
   return { done: done.length, dropped: dropped.length, deferred: deferred.length, left: left.length, found: found.length, reviews: split,
     ...(profile.declared ? { statuses: Object.fromEntries(profile.statuses.map((st) => [st, issues.filter((i) => i.status === st).length])) } : {}),
-    byRepo: Object.fromEntries(repos.map((r) => [r, byRepo[r].map((i) => i.id)])), issues: rows, text: lines.join('\n') + '\n' };
+    byRepo: Object.fromEntries(repos.map((r) => [r, byRepo[r].map((i) => i.id)])), issues: rows, text: lines.join('\n') + '\n', check: metrics.check, metrics };
 }
 
 // ---- research findings into issues ----------------------------------------------------------------
@@ -3085,6 +3277,7 @@ export function renderStatus(o, profile = DEFAULT_PROFILE) {
   const width = o.by ? Math.max(...Object.keys(o.by.groups).map((k) => k.length), 1) : 0;
   const by = o.by ? [`by ${o.by.key}:`, ...Object.entries(o.by.groups).map(([k, g]) => `  ${k.padEnd(width)}  ${profile.statuses.map((st) => `${statusLabel(st)} ${g[st]}`).join(' · ')}`)] : [];
   const more = [
+    ...(o.check && !o.check.declared ? [TESTIMONY_NOTE] : []),
     ...(o.scheduler ? [schedulerNote(o.scheduler)] : []),
     ...by,
     ...o.stale.map((x) => `stale ${x.id} · ${x.problems.join('; ')}`),
