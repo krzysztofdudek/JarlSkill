@@ -121,7 +121,7 @@ commands:
                                                  CI pending or red, the tips of every repository the issues name,
                                                  loop files not committed, and the last log lines (n, default 15);
                                                  no network unless --ci asks gh for the CI of each pushed tip
-  handoff read [--log n] [--ready n] [--ci] | write
+  handoff read [--log n] [--ready n] [--ci] | write [--summary s] [--next x]...
                                                  read: resume, then a .jarl/handoff.md from before as history;
                                                  write: retired — writes nothing, says so and exits 0 (the state is
                                                  assembled live; intent lives in priorities, After and rulings)
