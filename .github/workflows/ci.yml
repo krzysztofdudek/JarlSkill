@@ -28,3 +28,29 @@ jobs:
       - name: Run tests
         working-directory: skills/jarl/scripts
         run: npm test
+
+  # The same tests on Windows (issue 481): paths with drive letters and backslashes, CRLF checkouts (the runner's
+  # git has core.autocrlf on), no bash of its own, rename refused over an open file. Git for Windows' bash is what
+  # the tests' own shell steps run in (tests/portable.mjs).
+  test-windows:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [18, 24]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Configure git identity
+        run: |
+          git config --global user.email "ci@jarlskill.local"
+          git config --global user.name "JarlSkill CI"
+          git config --global init.defaultBranch main
+
+      - name: Run tests
+        working-directory: skills/jarl/scripts
+        run: npm test
