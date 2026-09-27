@@ -391,19 +391,19 @@ test('set <ids> <field> <value> writes a declared field, checked against its val
   assert.equal(JSON.parse(jarl(root, 'show', '1', '--json')).status, 'proposed');
 });
 
-test('list --where filters on any header field; list and resume show the declared fields; status --by takes one', () => {
+test('list --match filters on any header field; list and resume show the declared fields; status --by takes one', () => {
   const root = fieldedLoop();
   jarl(root, 'new', 'a', '--field', 'Area-2=core');
   jarl(root, 'new', 'b', '--field', 'Area-2=cli', '--kind', 'fix');
   jarl(root, 'new', 'c', '--field', 'Area-2=cli');
   jarl(root, 'set', '1,2,3', 'queued', 'ok');
-  const ids = (...w) => JSON.parse(jarl(root, 'list', ...w.flatMap((x) => ['--where', x]), '--json')).map((i) => i.id);
+  const ids = (...w) => JSON.parse(jarl(root, 'list', ...w.flatMap((x) => ['--match', x]), '--json')).map((i) => i.id);
   assert.deepEqual(ids('area-2=cli'), ['002', '003']);
   assert.deepEqual(ids('Area-2=cli', 'kind=fix'), ['002']);
   assert.deepEqual(ids('status=queued'), ['001', '002', '003']);
   assert.deepEqual(ids('Note='), ['001', '002', '003'], 'an empty value matches an empty field');
-  assert.match(refuses(root, 'list', '--where', 'bogus=1'), /--where names a header field — one of: .*Area-2, Class, Note \(got "bogus"\)/);
-  assert.match(refuses(root, 'list', '--where', 'nothing'), /--where takes <field>=<value>/);
+  assert.match(refuses(root, 'list', '--match', 'bogus=1'), /--match names a header field — one of: .*Area-2, Class, Note \(got "bogus"\)/);
+  assert.match(refuses(root, 'list', '--match', 'nothing'), /--match takes <field>=<value>/);
   assert.match(jarl(root, 'list'), /^001 {2}P2 {2}queued {6}feature {2}a {2}Area-2=core Class=b$/m);
   jarl(root, 'set', '2', 'running', 'go', '--worker', 'w');
   const resume = JSON.parse(jarl(root, 'resume', '--json'));
@@ -432,7 +432,7 @@ test('a template fills declared fields and sections; import takes --field and fi
   assert.equal(i.fields['area-2'], 'core');
 });
 
-test('no profile: --field, --section and a field in place of a status are refused; --where works on the built-in fields', () => {
+test('no profile: --field, --section and a field in place of a status are refused; --match works on the built-in fields', () => {
   const root = repo();
   jarl(root, 'init', 'g');
   assert.match(refuses(root, 'new', 't', '--field', 'A=1'), /this loop's profile declares no fields — --field names one/);
@@ -440,6 +440,6 @@ test('no profile: --field, --section and a field in place of a status are refuse
   jarl(root, 'new', 'a', '--kind', 'gap');
   jarl(root, 'new', 'b');
   assert.match(refuses(root, 'set', '1', 'kind', 'gap'), /^status must be one of: open, in-progress, done, dropped, deferred\n$/);
-  assert.deepEqual(JSON.parse(jarl(root, 'list', '--where', 'kind=gap', '--json')).map((i) => i.id), ['001']);
+  assert.deepEqual(JSON.parse(jarl(root, 'list', '--match', 'kind=gap', '--json')).map((i) => i.id), ['001']);
   assert.equal(jarl(root, 'list'), '001  P2  open        gap      a\n002  P2  open        bug      b');
 });

@@ -71,9 +71,9 @@ commands:
                                                  done or dropped, and status counts it as waiting
   evidence <ids> "<text>" | --ran "<command>" --saw "<what it printed>"
                                                  append a free-text note, or one checkable row per --ran/--saw pair (repeatable)
-  list [--status s] [--kind k] [--tag t] [--prio p] [--grep re] [--where "<field>=<value>"]... [--all]
+  list [--status s] [--kind k] [--tag t] [--prio p] [--grep re] [--match "<field>=<value>"]... [--all]
                                                  the issues not finished (open and in-progress) by default; --all for
-                                                 every status; --where keeps those whose header field holds the value
+                                                 every status; --match keeps those whose header field holds the value
   show <id>                                      print one issue
   set <ids> <status> "<why>" [--branch <b>] [--worker <name>] [--worktree <path>] | <ids> <field> "<value>"
                                                  change status; writes the log line in the same move; in-progress
@@ -1108,14 +1108,14 @@ export function cmdList(root, flags) {
   if (flags.kind) rows = rows.filter((i) => i.kind === flags.kind);
   if (flags.tag) rows = rows.filter((i) => i.tags.includes(flags.tag));
   if (flags.prio) rows = rows.filter((i) => i.priority === String(flags.prio));
-  // --where <field>=<value> (repeatable, all must hold): any header field — the tool's own, Kind, Tier or one the
+  // --match <field>=<value> (repeatable, all must hold): any header field — the tool's own, Kind, Tier or one the
   // profile declares — compared as written, without case in the name. An empty value matches an empty field.
-  for (const w of [].concat(flags.where ?? [])) {
+  for (const w of [].concat(flags.match ?? [])) {
     const at = String(w).indexOf('=');
-    need(at > 0, `--where takes <field>=<value> (got "${w}")`);
+    need(at > 0, `--match takes <field>=<value> (got "${w}")`);
     const name = String(w).slice(0, at).trim().toLowerCase();
     const known = [...TOOL_FIELDS, 'Kind', 'Tier', ...profile.fields.map((f) => f.name)];
-    need(known.some((k) => k.toLowerCase() === name), `--where names a header field — one of: ${known.join(', ')} (got "${name}")`);
+    need(known.some((k) => k.toLowerCase() === name), `--match names a header field — one of: ${known.join(', ')} (got "${name}")`);
     const value = fieldText(String(w).slice(at + 1));
     rows = rows.filter((i) => (name === 'status' ? i.status : fieldText(i.fields[name])) === value);
   }
@@ -2935,7 +2935,7 @@ export const COMMAND_FLAGS = {
   source: {},
   after: { clear: 'bool' },
   evidence: { ran: 'many', saw: 'many' },
-  list: { status: 'value', kind: 'value', tag: 'value', prio: 'value', grep: 'value', where: 'many', all: 'bool' },
+  list: { status: 'value', kind: 'value', tag: 'value', prio: 'value', grep: 'value', match: 'many', all: 'bool' },
   show: {}, set: { branch: 'value', worker: 'value', worktree: 'value' }, tag: {}, prio: {}, files: {},
   repo: { clear: 'bool' },
   next: { limit: 'value' },
