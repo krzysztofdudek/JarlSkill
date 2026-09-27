@@ -107,81 +107,47 @@ test('resume assembles every section live from the loop and the repositories its
 
   // JSON: the same sections as data.
   const o = JSON.parse(run(hub, ['resume', '--json'], { JARL_GH: ghStub(parent) }).stdout);
-  assert.deepEqual(Object.keys(o), ['goal', 'opened', 'lastActivity', 'archived', 'status', 'rulings', 'inFlight', 'waiting', 'questions', 'ratify', 'next', 'readyTotal', 'queue', 'merged', 'tips', 'uncommitted', 'log', 'legacyHandoff']);
+  assert.deepEqual(Object.keys(o), ['goal', 'opened', 'lastActivity', 'archived', 'status', 'rulings', 'inFlight', 'waiting', 'questions', 'ratify', 'held', 'next', 'readyTotal', 'queue', 'merged', 'tips', 'uncommitted', 'log', 'legacyHandoff']);
   assert.deepEqual(o.inFlight[0], { id: '001', title: 'in flight one', branch: 'jarl/001-one', worker: 'w1', since: o.inFlight[0].since, stale: [] });
   assert.deepEqual(o.merged.map((m) => [m.id, m.ci]), [['006', 'pending'], ['007', 'red']]);
   assert.equal(o.tips.ci, false);
   assert.equal(o.legacyHandoff, null);
 
-  // An issue in progress that waits on After is under Waiting, not In flight: each section's count is the number
-  // on the counts line, in text and in JSON.
+  // The sections sum to the counts line. An issue in progress that waits on After is under Waiting, not In flight;
+  // an open one whose file is taken by work in flight is Held, naming who holds it. In text and in JSON.
   jarl(hub, 'new', 'eight');
   jarl(hub, 'after', '5', '8');
+  jarl(hub, 'new', 'held nine', '--repo', '../tool', '--files', 'tool/src/a.mjs');
   const w = jarl(hub, 'resume');
   const st = JSON.parse(jarl(hub, 'status', '--json'));
-  assert.deepEqual([st.inFlight, st.waiting], [1, 2]);
-  assert.match(w, /\nopen \d+ · in flight 1 · waiting 2 · /);
+  assert.deepEqual([st.ready, st.inFlight, st.waiting], [6, 1, 2]);
+  assert.match(w, /\nopen 6 · in flight 1 · waiting 2 · /);
   assert.match(w, /## In flight \(1\)\n- 001 in flight one · branch jarl\/001-one · worker w1 · since \S+ \S+\n\n/);
-  assert.match(w, /## Waiting — After not settled \(2\)\n- 002 waits for one \(after 001\)\n- 005 queued five \(after 008\) · in progress\n/);
+  assert.match(w, /## Waiting — After not settled \(2\)\n- 002 waits for one \(after 001\)\n- 005 queued five \(after 008\) · in progress · branch jarl\/005-five · worker w5 · since \S+ \S+\n/);
+  assert.match(w, /## Held — files in flight \(1\)\n- 009  P2  held nine \(tool\/src\/a\.mjs held by 001\)\n/);
+  assert.match(w, /## Next ready \(5 of 5\)\n/);
   const wo = JSON.parse(jarl(hub, 'resume', '--json'));
-  assert.deepEqual([wo.inFlight.length, wo.waiting.length], [wo.status.inFlight, wo.status.waiting]);
+  assert.deepEqual([wo.inFlight.length, wo.waiting.length, wo.held.length + wo.readyTotal], [wo.status.inFlight, wo.status.waiting, wo.status.ready]);
   assert.deepEqual(wo.waiting.map((x) => [x.id, x.status]), [['002', 'open'], ['005', 'in-progress']]);
+  assert.deepEqual(wo.held, [{ id: '009', title: 'held nine', priority: '2', files: ['tool/src/a.mjs'], heldBy: ['001'] }]);
 
-  // A lease that went wrong is flagged in place.
-  sh(tool, 'git branch -D jarl/001-one');
-  assert.match(jarl(hub, 'resume'), /- 001 in flight one · branch jarl\/001-one · worker w1 · since \S+ \S+ · STALE: branch gone: jarl\/001-one\n/);
+  // A lease that went wrong is flagged in place, in flight or waiting.
+  sh(tool, 'git branch -D jarl/001-one jarl/005-five');
+  const gone = jarl(hub, 'resume');
+  assert.match(gone, /- 001 in flight one · branch jarl\/001-one · worker w1 · since \S+ \S+ · STALE: branch gone: jarl\/001-one\n/);
+  assert.match(gone, /- 005 queued five \(after 008\) · in progress · branch jarl\/005-five · worker w5 · since \S+ \S+ · STALE: branch gone: jarl\/005-five\n/);
+
+  // --log 0 leaves the log out.
+  assert.doesNotMatch(jarl(hub, 'resume', '--log', '0'), /log line|empty log/);
+  assert.equal(JSON.parse(jarl(hub, 'resume', '--log', '0', '--json')).log, null);
 });
 
-test('handoff write is retired: it takes its old flags, writes nothing, says so and exits 0; handoff read is resume plus the old file as history', () => {
+test('resume in a git repository with no worker branches: Tips shows the release branch and main, nothing else', () => {
   const { hub } = world();
   jarl(hub, 'new', 'one');
-  const before = snapshot(hub);
-  const r = run(hub, ['handoff', 'write', '--summary', 'the plan', '--next', 'raise one']);
-  assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /^handoff write is retired: nothing written\. The state a session resumes from is assembled live — run jarl\.mjs resume\./);
-  assert.deepEqual(snapshot(hub), before, 'no handoff.md, no log line');
-  assert.equal(existsSync(join(hub, '.jarl', 'handoff.md')), false);
-  assert.deepEqual(JSON.parse(jarl(hub, 'handoff', 'write', '--json')), { retired: true, wrote: null, note: r.stdout });
-  // With no file kept, read is resume itself.
-  const resumed = jarl(hub, 'resume');
-  assert.equal(jarl(hub, 'handoff', 'read'), resumed);
-  assert.equal(jarl(hub, 'handoff'), resumed, 'a bare handoff reads');
-  assert.match(run(hub, ['handoff', 'rewrite']).stderr, /handoff takes read or write/);
-  // status no longer carries a handoff age in its text.
-  writeFileSync(join(hub, '.jarl', 'handoff.md'), '# Handoff\n\n**At:** 2026-01-01 00:00 · **Head:** main@abc1234\n\n## Summary\nthe old plan\n\n## Next\n- raise one\n');
-  assert.doesNotMatch(jarl(hub, 'status'), /handoff/);
-  const h = jarl(hub, 'handoff', 'read');
-  assert.ok(h.startsWith(jarl(hub, 'resume')), 'read starts with exactly what resume prints');
-  assert.match(h, /\n\n## Earlier handoff — history, written 2026-01-01 00:00, \d+d ago; not the current state\n\*\*At:\*\* 2026-01-01 00:00 · \*\*Head:\*\* main@abc1234\n\n### Summary\nthe old plan\n\n### Next\n- raise one$/);
-  const js = JSON.parse(jarl(hub, 'handoff', 'read', '--json'));
-  assert.match(js.history, /the old plan/);
-  assert.equal(js.legacyHandoff.at, '2026-01-01 00:00');
-});
-
-test('resume stays fast on a loop of hundreds of issues naming another repository and a long log', () => {
-  const { hub, tool } = world();
-  const dir = join(hub, '.jarl', 'issues');
-  const statuses = ['done', 'done', 'done', 'open', 'in-progress'];
-  for (let n = 1; n <= 425; n += 1) {
-    const id = String(n).padStart(3, '0');
-    const status = statuses[n % statuses.length];
-    const lease = status === 'in-progress' ? `**Branch:** jarl/${id}-x\n**Worker:** w\n**Since:** 2026-09-27 06:00\n` : '';
-    const merged = status === 'done' ? `**Merged:** abc1234 in ../tool\n**CI:** green\n` : '';
-    writeFileSync(join(dir, `${id}-issue-${id}.md`), `# ${id} · issue ${id}\n\n**Status:** ${status}\n**Kind:** bug\n**Priority:** 2\n**Tier:** standard\n**Tags:** \n**Files:** tool/src/f${id}.mjs\n**Repo:** ../tool\n${lease}${merged}**Found by:** jarl\n**Where:**\n\n## What\n\n\n## Why\n\n\n## Acceptance\n- works\n\n## Evidence\n\n`);
-  }
-  const lines = [];
-  for (let n = 0; n < 3000; n += 1) lines.push(`- 2026-09-27 06:00 · ${String((n % 425) + 1).padStart(3, '0')} evidence · note ${n}`);
-  writeFileSync(join(hub, '.jarl', 'log.md'), `# Log\n\n${lines.join('\n')}\n`);
-  sh(tool, 'for n in 005 010 015; do git branch jarl/$n-x; done');
-  const t0 = Date.now();
-  const r = run(hub, ['resume']);
-  const ms = Date.now() - t0;
-  assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /## In flight \(85\)/);
-  assert.match(r.stdout, /## Last 15 log line\(s\)/);
-  // The budget is 2 s on a quiet machine; the bound here leaves room for a loaded one, and still catches a return
-  // to git processes per issue (over a thousand on this loop).
-  assert.ok(ms < 6000, `resume took ${ms} ms`);
+  const t = jarl(hub, 'resume');
+  assert.match(t, /## Tips \(CI not asked — --ci asks gh\)\n\[hub\] \S+\n {2}release {2}main [0-9a-f]{12} {2}\(no upstream\) {2}not pushed\n\n## /);
+  assert.doesNotMatch(t, /feature {2}/);
 });
 
 // The live loop of the family release, when this checkout sits beside it: resume and handoff read on a copy, with

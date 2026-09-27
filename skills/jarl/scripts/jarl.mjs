@@ -1146,7 +1146,8 @@ export function cmdNext(root, flags) {
   // Files are compared as (repository, path) pairs: the same path in two repositories never holds
   // an issue back, the same file in one repository always does, however its Repo path is spelled.
   const keysOf = (i) => i.files.map((f) => { const at = fileAt(root, i, f); return { f, key: `${at.repo}\n${at.path}` }; });
-  const taken = new Set(issues.filter((i) => i.status === 'in-progress').flatMap((i) => keysOf(i).map((k) => k.key)));
+  // Each taken file with the issue holding it: an in-progress one, or an open one offered earlier in this list.
+  const taken = new Map(issues.filter((i) => i.status === 'in-progress').flatMap((i) => keysOf(i).map((k) => [k.key, i.id])));
   const byId = new Map(issues.map((i) => [i.id, i]));
   const out = [];
   for (const i of issues.filter((x) => x.status === 'open').sort((a, b) => a.priority.localeCompare(b.priority) || a.id.localeCompare(b.id))) {
@@ -1154,9 +1155,9 @@ export function cmdNext(root, flags) {
     const after = waitingOn(i, byId);
     if (after.length) { out.push({ id: i.id, title: i.title, priority: i.priority, after, waitsOn: [] }); continue; }
     const keys = keysOf(i);
-    const clash = keys.filter((k) => taken.has(k.key)).map((k) => k.f);
-    if (clash.length) { out.push({ id: i.id, title: i.title, priority: i.priority, waitsOn: clash, after: [] }); continue; }
-    keys.forEach((k) => taken.add(k.key));
+    const held = keys.filter((k) => taken.has(k.key));
+    if (held.length) { out.push({ id: i.id, title: i.title, priority: i.priority, waitsOn: held.map((k) => k.f), heldBy: [...new Set(held.map((k) => taken.get(k.key)))], after: [] }); continue; }
+    keys.forEach((k) => taken.set(k.key, i.id));
     // Offered, but flagged: a worker raised on an issue with no acceptance line has nothing to prove, and
     // the reviewer nothing to check it against. Fill it with body --acceptance before raising one.
     out.push({ id: i.id, title: i.title, priority: i.priority, files: i.files, ready: true, waitsOn: [], after: [], ...(acceptanceLineCount(i) ? {} : { noAcceptance: true }) });
@@ -2190,10 +2191,16 @@ export function cmdResume(root, flags = {}) {
     id: i.id, title: i.title, branch: i.fields.branch || null, worker: i.fields.worker || null, since: i.fields.since || null,
     stale: stale.get(i.id) || [],
   }));
-  const waiting = issues.filter((i) => (i.status === 'open' || i.status === 'in-progress') && unsettled(i)).map((i) => ({ id: i.id, title: i.title, status: i.status, after: waitingOn(i, byId) }));
+  const waiting = issues.filter((i) => (i.status === 'open' || i.status === 'in-progress') && unsettled(i)).map((i) => ({
+    id: i.id, title: i.title, status: i.status, after: waitingOn(i, byId),
+    ...(i.status === 'in-progress' ? { branch: i.fields.branch || null, worker: i.fields.worker || null, since: i.fields.since || null, stale: stale.get(i.id) || [] } : {}),
+  }));
   const asks = loadAsks(root).filter((a) => a.state === 'open');
   const next = cmdNext(root, {});
   const ready = next.filter((r) => r.ready);
+  // Open, not waiting on After, and still not offered: a file it declares is taken by work in flight (or by a ready
+  // issue ahead of it). Ready and held together are the open count on the status line.
+  const held = next.filter((r) => !r.ready && !r.after.length).map((r) => ({ id: r.id, title: r.title, priority: r.priority, files: r.waitsOn, heldBy: r.heldBy }));
   const merged = issues.filter((i) => status.ciPending.includes(i.id) || status.ciRed.includes(i.id)).map((i) => ({ id: i.id, title: i.title, ...mergedOf(i) }));
   const logPath = join(jarlDir(root), 'log.md');
   const logLines = existsSync(logPath) ? readFileSync(logPath, 'utf8').split('\n').filter((l) => /^- \d{4}-\d{2}-\d{2} \d{2}:\d{2} · /.test(l)) : [];
@@ -2202,10 +2209,10 @@ export function cmdResume(root, flags = {}) {
     goal: status.goal, opened: status.opened, lastActivity: status.lastActivity, archived: status.archived, status,
     rulings, inFlight, waiting,
     questions: asks.filter((a) => a.kind !== 'ratify'), ratify: asks.filter((a) => a.kind === 'ratify'),
-    next: ready.slice(0, readyN).map((r) => ({ id: r.id, title: r.title, priority: r.priority, ...(r.noAcceptance ? { noAcceptance: true } : {}) })), readyTotal: ready.length,
+    held, next: ready.slice(0, readyN).map((r) => ({ id: r.id, title: r.title, priority: r.priority, ...(r.noAcceptance ? { noAcceptance: true } : {}) })), readyTotal: ready.length,
     queue: cmdQueue(root), merged, tips: cmdTips(root, { ci: flags.ci === true }),
     uncommitted: uncommittedLoopFiles(root),
-    log: logLines.slice(logN ? -logN : logLines.length).map((l) => l.slice(2)),
+    log: logN ? logLines.slice(-logN).map((l) => l.slice(2)) : null,
     legacyHandoff: legacy ? { path: handoffPath(root), at: legacy.at, ageMs: legacy.ageMs } : null,
   };
 }
@@ -2241,15 +2248,16 @@ export function renderResume(o) {
     ...head,
     ...sec(`Rulings in force (${o.rulings.length})`, o.rulings.map((d) => `- ${d.date} · ${d.slug}${d.by ? ` · by ${d.by}` : ''} — ${short(d.line)}`), '- (none)'),
     ...sec(`In flight (${o.inFlight.length})`, o.inFlight.map((x) => `- ${x.id} ${short(x.title)}${lease(x) ? ` · ${lease(x)}` : ''}${x.stale.length ? ` · STALE: ${x.stale.join('; ')}` : ''}`), '- (nothing)'),
-    ...sec(`Waiting — After not settled (${o.waiting.length})`, o.waiting.map((x) => `- ${x.id} ${short(x.title)} (after ${x.after.join(', ')})${x.status === 'in-progress' ? ' · in progress' : ''}`)),
+    ...sec(`Waiting — After not settled (${o.waiting.length})`, o.waiting.map((x) => `- ${x.id} ${short(x.title)} (after ${x.after.join(', ')})${x.status === 'in-progress' ? ` · in progress${lease(x) ? ` · ${lease(x)}` : ''}${x.stale.length ? ` · STALE: ${x.stale.join('; ')}` : ''}` : ''}`)),
     ...sec(`Questions to the user (${o.questions.length})`, o.questions.map((a) => `- a-${a.id} (${a.kind || 'stuck'})${a.issue ? ` issue ${a.issue}` : ''} · ${a.question}`), '- (nothing)'),
     ...sec(`To ratify (${o.ratify.length})`, o.ratify.map((a) => `- a-${a.id}${a.issue ? ` (issue ${a.issue})` : ''} · ${a.question}`)),
+    ...sec(`Held — files in flight (${o.held.length})`, o.held.map((x) => `- ${x.id}  P${x.priority}  ${short(x.title)} (${x.files.join(', ')} held by ${x.heldBy.join(', ')})`)),
     ...sec(`Next ready (${o.next.length} of ${o.readyTotal})`, o.next.map((r) => `- ${r.id}  P${r.priority}  ${short(r.title)}${r.noAcceptance ? '  (no acceptance yet)' : ''}`), '- (nothing ready)'),
     ...sec('Merge queue', queue, '- (nothing approved waits to be merged)'),
     ...sec(`Merged, CI pending or red (${o.merged.length})`, o.merged.map((m) => `- ${m.id} ${m.sha}${m.repo ? ` in ${m.repo}` : ''} · CI ${m.ci}`)),
     ...sec(`Tips${o.tips.ci ? '' : ' (CI not asked — --ci asks gh)'}`, tips),
     ...(files.length ? sec(`Loop files not committed (${files.length}) — commit .jarl/`, [...files.slice(0, 20).map((f) => `- ${f}`), ...(files.length > 20 ? [`- … ${files.length - 20} more`] : [])]) : []),
-    ...sec(`Last ${o.log.length} log line(s)`, o.log.map((l) => `- ${l}`), '- (empty log)'),
+    ...(o.log ? sec(`Last ${o.log.length} log line(s)`, o.log.map((l) => `- ${l}`), '- (empty log)') : []),
     ...(o.legacyHandoff ? [`(a handoff file from before resume is kept at .jarl/handoff.md${o.legacyHandoff.at ? `, written ${o.legacyHandoff.at}` : ''} — history, not the state; handoff read prints it)`] : []),
   ].join('\n').replace(/\n+$/, '');
 }
