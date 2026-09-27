@@ -6,7 +6,7 @@
   ],
   "tool": {
     "path": "../runes.mjs",
-    "sha256": "4ab51bcf8e5e61f946d95a1f8fd344a0299a3c026d5ca4094294a0311fd12f4d"
+    "sha256": "c294f0fd5e67090665b1f63296945217b7723d85d1dbcbf124f01b90c799446e"
   },
   "fragments": [
     {
@@ -25,9 +25,9 @@
       "sha256": "c0b49ef13956153d5ece99a0ce6e1fed0a8c797dcc8fd522f0990fd70b2823dc"
     }
   ],
-  "tag": "v0.1.2",
-  "commit": "008c6136cfaafa89d2589ed81b4515bca2554da5",
+  "tag": "v0.1.3",
+  "commit": "35353bed01ce3de12483ae9edeafab9f4f830cd2",
   "files": {
-    "dist/version.mjs": "d2202ac11c18f43897ae4817a7158c83f602c510a0a326032086fa4d49f9e179"
+    "dist/version.mjs": "f2f7a7d2568903b489944cda939d385c4c0dd7193ef641dc8db24e4bcae5f969"
   }
 }

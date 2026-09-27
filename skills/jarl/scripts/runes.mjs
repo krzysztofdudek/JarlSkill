@@ -152,21 +152,37 @@ function listTree(dir) {
   return { files: rel(files), links: rel(links) };
 }
 
-// Every file of the given Runes-relative paths inside a tree (a clone or RUNES_DIR). An absent path or a symbolic link anywhere on the way is an error: a link would vendor whatever it points at.
+// The paths git records as symbolic links (mode 120000) in a checkout's index; empty when tree is not a checkout. Git for Windows checks a link out as a plain file holding the target path unless core.symlinks is on, so the file system alone would not show it.
+function indexedLinks(tree) {
+  if (!exists(join(tree, '.git'))) return new Set();
+  let listing;
+  try {
+    listing = git(['ls-files', '--stage', '-z'], tree);
+  } catch {
+    return new Set();
+  }
+  return new Set(listing.split('\0').filter((e) => e.startsWith('120000 ')).map((e) => e.slice(e.indexOf('\t') + 1)));
+}
+
+// Every file of the given Runes-relative paths inside a tree (a clone or RUNES_DIR). An absent path or a symbolic link anywhere on the way is an error, whether the file system shows it or only git's index does: a link would vendor whatever it points at.
 function filesUnder(tree, paths) {
   const files = [];
+  const gitLinks = indexedLinks(tree);
+  const refuse = (link) => { throw new Error(`'${link}' is a symbolic link in ${tree}; Runes paths must be real files`); };
   for (const p of paths) {
     const segments = p.split('/');
     for (let i = 1; i <= segments.length; i++) {
       const partial = segments.slice(0, i).join('/');
-      if (isLink(join(tree, partial))) throw new Error(`'${partial}' is a symbolic link in ${tree}; Runes paths must be real files`);
+      if (isLink(join(tree, partial)) || gitLinks.has(partial)) refuse(partial);
     }
     const full = join(tree, p);
     const st = lstatSync(full, { throwIfNoEntry: false });
     if (!st) throw new Error(`'${p}' does not exist in ${tree}`);
     if (st.isDirectory()) {
       const { files: found, links } = listTree(full);
-      if (links.length > 0) throw new Error(`'${p}/${links[0]}' is a symbolic link in ${tree}; Runes paths must be real files`);
+      if (links.length > 0) refuse(`${p}/${links[0]}`);
+      const hidden = [...gitLinks].sort().find((l) => l.startsWith(`${p}/`));
+      if (hidden !== undefined) refuse(hidden);
       files.push(...found.map((f) => `${p}/${f}`));
     } else files.push(p);
   }
@@ -554,7 +570,7 @@ function cmdUpdate(args) {
       if (!existsSync(src) || isLink(src)) throw new Error(`fragment ${frag.name}: ${tag} has no skills/${frag.name}.md as a real file`);
       bodies.set(frag, canonical(readFileSync(src, 'utf8')));
     }
-    if (ctx.toolPath && isLink(join(clone, TOOL_SOURCE))) throw new Error(`${TOOL_SOURCE} is a symbolic link in ${tag}`);
+    if (ctx.toolPath && (isLink(join(clone, TOOL_SOURCE)) || indexedLinks(clone).has(TOOL_SOURCE))) throw new Error(`${TOOL_SOURCE} is a symbolic link in ${tag}`);
 
     const oldFiles = pin.files ?? {};
     const newFiles = {};
