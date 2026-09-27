@@ -229,7 +229,7 @@ test('a closes-record status passes the done gate: evidence since the claim, and
   assert.match(jarl(root, 'next'), /^002 {2}P2 {2}second {2}\(no acceptance yet\)$/m, 'merged settles the dependent');
   const st = JSON.parse(jarl(root, 'status', '--json'));
   assert.deepEqual(st.reviews, { fresh: 1, coordinator: 0, self: 0, unrecorded: 0 });
-  assert.equal(st.merged, 1);
+  assert.equal(st.statuses.merged, 1);
   // A reopen out of the closing status spends the approve, as a reopen out of done does.
   jarl(root, 'set', '1', 'queued', 'reopened');
   jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'again');
@@ -443,3 +443,36 @@ test('no profile: --field, --section and a field in place of a status are refuse
   assert.deepEqual(JSON.parse(jarl(root, 'list', '--match', 'kind=gap', '--json')).map((i) => i.id), ['001']);
   assert.equal(jarl(root, 'list'), '001  P2  open        gap      a\n002  P2  open        bug      b');
 });
+
+// ---- the fresh review's points ----
+
+test('under a profile the status counts live under statuses, so no status name can overwrite a key of the view', () => {
+  const root = houseLoop();
+  jarl(root, 'new', 'a');
+  jarl(root, 'new', 'b', '--after', '1');
+  jarl(root, 'set', '1,2', 'queued', 'ok');
+  const st = JSON.parse(jarl(root, 'status', '--json'));
+  assert.deepEqual(st.statuses, { proposed: 0, queued: 2, running: 0, landed: 0, merged: 0, blocked: 0, dropped: 0 });
+  assert.equal(st.waiting, 1, 'waiting is the view\'s count of issues waiting on After');
+  assert.equal(st.queued, undefined, 'no status count at the top level under a profile');
+  assert.deepEqual(JSON.parse(jarl(root, 'resume', '--json')).status.statuses.queued, 2);
+  assert.match(jarl(root, 'status'), /queued 1 · in flight 0 · waiting 1 · proposed 0 · merged 0/);
+});
+
+test('a status may not take a name the views use; the refusal lists the reserved names', () => {
+  for (const name of ['waiting', 'ready', 'stale', 'questions', 'statuses', 'in-flight']) {
+    assert.throws(() => J.validateProfile({ ...HOUSE, statuses: { ...HOUSE.statuses, [name]: [] } }), new RegExp(`status "${name}" is a name the views use for something else — the reserved names are waiting, ready, in-flight, questions, ratify, to-ratify, goal`));
+  }
+  assert.ok(J.RESERVED_STATUS_NAMES.every((n) => !J.STATUSES.includes(n)), 'no built-in status is reserved');
+});
+
+test('no profile: status --json keeps the five counts at the top level and has no statuses key', () => {
+  const root = repo();
+  jarl(root, 'init', 'g');
+  jarl(root, 'new', 'a');
+  const st = JSON.parse(jarl(root, 'status', '--json'));
+  assert.equal(st.open, 1);
+  assert.ok(!('statuses' in st));
+  assert.match(jarl(root, 'status'), /open 1 · in flight 0 · done 0 · dropped 0 · deferred 0 · questions 0/);
+});
+

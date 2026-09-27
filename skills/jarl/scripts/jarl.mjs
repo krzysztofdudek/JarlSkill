@@ -384,6 +384,10 @@ export const TOOL_FIELDS = ['Status', 'Priority', 'Tags', 'Files', 'Repo', 'Afte
 export const BUILTIN_SECTIONS = ['What', 'Why', 'Acceptance', 'Changelog', 'Evidence'];
 export const PROFILE_FIELD_RE = /^[A-Za-z][A-Za-z0-9 -]{0,39}$/;
 export const PROFILE_STATUS_RE = /^[a-z][a-z0-9-]{0,39}$/;
+// Names a status may not take: the words status and resume already print for something else (the counts line's
+// "waiting", "ready", "in flight", "questions", "to ratify") and the lower-case keys of status --json, so a count and a
+// view can never be read for one another.
+export const RESERVED_STATUS_NAMES = ['waiting', 'ready', 'in-flight', 'questions', 'ratify', 'to-ratify', 'goal', 'opened', 'archived', 'stale', 'handoff', 'reviews', 'uncommitted', 'by', 'statuses'];
 const PROFILE_SECTION_RE = /^[A-Za-z][A-Za-z0-9 _-]{0,59}$/;
 const PROFILE_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
 export function profilePath(root) { return join(jarlDir(root), 'profile.json'); }
@@ -406,6 +410,7 @@ export function validateProfile(json, where = 'the profile') {
   else {
     for (const [name, flags] of Object.entries(json.statuses)) {
       if (!PROFILE_STATUS_RE.test(name)) { say(`status "${name}" must be lower-case letters, digits and - (starting with a letter, at most 40 characters)`); continue; }
+      if (RESERVED_STATUS_NAMES.includes(name)) { say(`status "${name}" is a name the views use for something else — the reserved names are ${RESERVED_STATUS_NAMES.join(', ')}`); continue; }
       if (!Array.isArray(flags) || !flags.every((f) => typeof f === 'string')) { say(`status "${name}" takes a list of flags (${STATUS_FLAGS.join(', ')}), [] for none`); continue; }
       for (const f of flags) if (!STATUS_FLAGS.includes(f)) say(`status "${name}": unknown flag "${f}" — the flags are ${STATUS_FLAGS.join(', ')}`);
       if (new Set(flags).size !== flags.length) say(`status "${name}" names a flag twice`);
@@ -1521,9 +1526,13 @@ export function uncommittedLoopFiles(root) {
 export function cmdStatus(root, flags = {}) {
   const hours = staleHours(flags);
   const profile = loadProfile(root);
-  const c = Object.fromEntries(profile.statuses.map((st) => [st, 0]));
+  // The count per status. Without a profile the five built-in counts are top-level keys, as they always were; under a
+  // profile they live under their own key, statuses, so no status name can overwrite a key of the view (waiting,
+  // ready, stale...). countOf reads either.
+  const counts = Object.fromEntries(profile.statuses.map((st) => [st, 0]));
+  const c = profile.declared ? { statuses: counts } : counts;
   const issues = loadIssues(root);
-  for (const i of issues) c[i.status] = (c[i.status] || 0) + 1;
+  for (const i of issues) counts[i.status] = (counts[i.status] || 0) + 1;
   // Each status keeps its own count; waiting is the part of those in play (open, in progress) whose After issues
   // are not settled yet, so "in flight" in the text line means someone is working on it.
   const byId = new Map(issues.map((i) => [i.id, i]));
@@ -3022,9 +3031,11 @@ const ARITY = Object.fromEntries(Object.entries(COMMAND_ARGS).filter(([, a]) => 
 
 // The counts line of status and resume: the issues ready (in the dispatchable status — built-in: open) and in flight
 // (holds-claim), less those waiting on After, then every other status by its own name, then the questions.
+// One status's count from a status object, with or without a profile (see cmdStatus).
+function countOf(o, st) { return (o.statuses || o)[st] || 0; }
 function countsLine(o, profile) {
   const ready = profile.with('dispatchable');
-  const rest = profile.statuses.filter((st) => !profile.active(st)).map((st) => ` · ${st} ${o[st] || 0}`).join('');
+  const rest = profile.statuses.filter((st) => !profile.active(st)).map((st) => ` · ${st} ${countOf(o, st)}`).join('');
   return `${ready.length === 1 ? ready[0] : 'ready'} ${o.ready} · in flight ${o.inFlight}${o.waiting ? ` · waiting ${o.waiting}` : ''}${rest} · questions ${o.questions}${o.ratify ? ` · to ratify ${o.ratify}` : ''}${o.ciPending.length ? ` · merged, CI pending ${o.ciPending.length}` : ''}${o.ciRed.length ? ` · CI red ${o.ciRed.length}` : ''}`;
 }
 const statusLabel = (st) => (st === 'in-progress' ? 'in flight' : st);
@@ -3039,7 +3050,7 @@ function renderStatus(o, profile = DEFAULT_PROFILE) {
     ...o.stale.map((x) => `stale ${x.id} · ${x.problems.join('; ')}`),
     ...(o.ciPending.length ? [`merged, CI pending: ${o.ciPending.join(', ')}`] : []),
     ...(o.ciRed.length ? [`merged, CI red: ${o.ciRed.join(', ')}`] : []),
-    ...(o.done ? [`done reviewed by: ${renderSplit(o.reviews)}`] : []),
+    ...(profile.with('closes-record').some((st) => countOf(o, st)) ? [`done reviewed by: ${renderSplit(o.reviews)}`] : []),
     ...(o.uncommitted ? [`${o.uncommitted} loop file(s) not committed — commit .jarl/ in the loop's repository`] : []),
     ...o.toRatify.map((a) => `ratify a-${a.id}${a.issue ? ` (issue ${a.issue})` : ''} · ${a.question}`),
     ...(o.waiting ? [`waiting (After not settled): ${o.waitingIds.join(', ')}`] : []),
