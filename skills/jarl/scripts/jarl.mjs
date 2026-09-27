@@ -2343,7 +2343,9 @@ export function cmdQueue(root, flags = {}) {
   const issues = loadIssues(root);
   const journal = journalById(root);
   const profile = loadProfile(root);
-  const unsettled = issues.filter((i) => profile.unfinished(i.status));
+  // Only work in play (offered or worked on): an issue waiting in a status with no such flag (a proposal, a block) is
+  // never queued for merge.
+  const unsettled = issues.filter((i) => profile.active(i.status));
   const coordinators = coordinatorNames(root);
   const gate = new Map(unsettled.map((i) => [i.id, gateState(root, i.id, journal.get(i.id) || [], coordinators, issues, journal)]));
   // Every issue in the queue sits on a branch, so it carries code: only a fresh approve puts it there (the

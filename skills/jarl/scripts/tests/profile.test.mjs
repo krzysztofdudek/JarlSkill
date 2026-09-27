@@ -511,3 +511,18 @@ test('branches: a branch is DONE → delete by flags — closed or given up (ter
   assert.equal(rows.find((r) => r.branch === 'feat/y').done, null, 'an issue parked on it keeps the branch');
 });
 
+test('queue takes only work in play: a proposed or blocked issue with a fresh approve on a branch is never queued', () => {
+  const { dir, g } = gitRepo();
+  jarl(dir, 'init', 'g', '--profile', profileFile(HOUSE));
+  jarl(dir, 'new', 'a'); jarl(dir, 'new', 'b');
+  jarl(dir, 'set', '1,2', 'queued', 'ok');
+  jarl(dir, 'set', '1', 'running', 'go', '--branch', 'feat/a', '--worker', 'w');
+  jarl(dir, 'set', '2', 'running', 'go', '--branch', 'feat/b', '--worker', 'w');
+  for (const b of ['feat/a', 'feat/b']) { g('checkout', '-q', '-b', b, 'main'); writeFileSync(join(dir, `${b.slice(5)}.txt`), 'x\n'); g('add', '.'); g('commit', '-qm', b); }
+  g('checkout', '-q', 'main');
+  jarl(dir, 'review', '1,2', 'approve', 'fine', '--by', 'r');
+  jarl(dir, 'set', '2', 'blocked', 'owner');
+  const rows = JSON.parse(jarl(dir, 'queue', '--json')).repos[0].rows;
+  assert.deepEqual(rows.map((r) => r.branch), ['feat/a']);
+});
+
