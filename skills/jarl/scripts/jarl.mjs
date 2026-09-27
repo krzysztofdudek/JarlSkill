@@ -2183,11 +2183,14 @@ export function cmdResume(root, flags = {}) {
   const byId = new Map(issues.map((i) => [i.id, i]));
   const stale = new Map(status.stale.map((x) => [x.id, x.problems]));
   const rulings = cmdDecisions(root, { live: true }).map((d) => ({ date: d.date, slug: d.slug, by: d.by, line: (d.ruling.split('\n').find((l) => l.trim()) || '').trim() }));
-  const inFlight = issues.filter((i) => i.status === 'in-progress').map((i) => ({
+  // In flight and waiting split the unfinished issues the way status counts them: an issue whose After is not
+  // settled is waiting, in progress or not, so each section's count is the number on the counts line.
+  const unsettled = (i) => waitingOn(i, byId).length > 0;
+  const inFlight = issues.filter((i) => i.status === 'in-progress' && !unsettled(i)).map((i) => ({
     id: i.id, title: i.title, branch: i.fields.branch || null, worker: i.fields.worker || null, since: i.fields.since || null,
-    waitsOn: waitingOn(i, byId), stale: stale.get(i.id) || [],
+    stale: stale.get(i.id) || [],
   }));
-  const waiting = issues.filter((i) => i.status === 'open' && waitingOn(i, byId).length).map((i) => ({ id: i.id, title: i.title, after: waitingOn(i, byId) }));
+  const waiting = issues.filter((i) => (i.status === 'open' || i.status === 'in-progress') && unsettled(i)).map((i) => ({ id: i.id, title: i.title, status: i.status, after: waitingOn(i, byId) }));
   const asks = loadAsks(root).filter((a) => a.state === 'open');
   const next = cmdNext(root, {});
   const ready = next.filter((r) => r.ready);
@@ -2237,8 +2240,8 @@ export function renderResume(o) {
   return [
     ...head,
     ...sec(`Rulings in force (${o.rulings.length})`, o.rulings.map((d) => `- ${d.date} · ${d.slug}${d.by ? ` · by ${d.by}` : ''} — ${short(d.line)}`), '- (none)'),
-    ...sec(`In flight (${o.inFlight.length})`, o.inFlight.map((x) => `- ${x.id} ${short(x.title)}${x.waitsOn.length ? ` (waits on ${x.waitsOn.join(', ')})` : ''}${lease(x) ? ` · ${lease(x)}` : ''}${x.stale.length ? ` · STALE: ${x.stale.join('; ')}` : ''}`), '- (nothing)'),
-    ...sec(`Waiting — After not settled (${o.waiting.length})`, o.waiting.map((x) => `- ${x.id} ${short(x.title)} (after ${x.after.join(', ')})`)),
+    ...sec(`In flight (${o.inFlight.length})`, o.inFlight.map((x) => `- ${x.id} ${short(x.title)}${lease(x) ? ` · ${lease(x)}` : ''}${x.stale.length ? ` · STALE: ${x.stale.join('; ')}` : ''}`), '- (nothing)'),
+    ...sec(`Waiting — After not settled (${o.waiting.length})`, o.waiting.map((x) => `- ${x.id} ${short(x.title)} (after ${x.after.join(', ')})${x.status === 'in-progress' ? ' · in progress' : ''}`)),
     ...sec(`Questions to the user (${o.questions.length})`, o.questions.map((a) => `- a-${a.id} (${a.kind || 'stuck'})${a.issue ? ` issue ${a.issue}` : ''} · ${a.question}`), '- (nothing)'),
     ...sec(`To ratify (${o.ratify.length})`, o.ratify.map((a) => `- a-${a.id}${a.issue ? ` (issue ${a.issue})` : ''} · ${a.question}`)),
     ...sec(`Next ready (${o.next.length} of ${o.readyTotal})`, o.next.map((r) => `- ${r.id}  P${r.priority}  ${short(r.title)}${r.noAcceptance ? '  (no acceptance yet)' : ''}`), '- (nothing ready)'),

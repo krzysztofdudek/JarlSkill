@@ -108,10 +108,24 @@ test('resume assembles every section live from the loop and the repositories its
   // JSON: the same sections as data.
   const o = JSON.parse(run(hub, ['resume', '--json'], { JARL_GH: ghStub(parent) }).stdout);
   assert.deepEqual(Object.keys(o), ['goal', 'opened', 'lastActivity', 'archived', 'status', 'rulings', 'inFlight', 'waiting', 'questions', 'ratify', 'next', 'readyTotal', 'queue', 'merged', 'tips', 'uncommitted', 'log', 'legacyHandoff']);
-  assert.deepEqual(o.inFlight[0], { id: '001', title: 'in flight one', branch: 'jarl/001-one', worker: 'w1', since: o.inFlight[0].since, waitsOn: [], stale: [] });
+  assert.deepEqual(o.inFlight[0], { id: '001', title: 'in flight one', branch: 'jarl/001-one', worker: 'w1', since: o.inFlight[0].since, stale: [] });
   assert.deepEqual(o.merged.map((m) => [m.id, m.ci]), [['006', 'pending'], ['007', 'red']]);
   assert.equal(o.tips.ci, false);
   assert.equal(o.legacyHandoff, null);
+
+  // An issue in progress that waits on After is under Waiting, not In flight: each section's count is the number
+  // on the counts line, in text and in JSON.
+  jarl(hub, 'new', 'eight');
+  jarl(hub, 'after', '5', '8');
+  const w = jarl(hub, 'resume');
+  const st = JSON.parse(jarl(hub, 'status', '--json'));
+  assert.deepEqual([st.inFlight, st.waiting], [1, 2]);
+  assert.match(w, /\nopen \d+ · in flight 1 · waiting 2 · /);
+  assert.match(w, /## In flight \(1\)\n- 001 in flight one · branch jarl\/001-one · worker w1 · since \S+ \S+\n\n/);
+  assert.match(w, /## Waiting — After not settled \(2\)\n- 002 waits for one \(after 001\)\n- 005 queued five \(after 008\) · in progress\n/);
+  const wo = JSON.parse(jarl(hub, 'resume', '--json'));
+  assert.deepEqual([wo.inFlight.length, wo.waiting.length], [wo.status.inFlight, wo.status.waiting]);
+  assert.deepEqual(wo.waiting.map((x) => [x.id, x.status]), [['002', 'open'], ['005', 'in-progress']]);
 
   // A lease that went wrong is flagged in place.
   sh(tool, 'git branch -D jarl/001-one');
