@@ -54,8 +54,11 @@ test('parity: each tool has one field per argument and per flag, under the CLI n
     for (const [f, kind] of Object.entries(COMMAND_FLAGS[cmd])) {
       assert.equal(props[f].type, { bool: 'boolean', many: 'array', value: 'string' }[kind], `${cmd} --${f} is ${kind}`);
     }
-    // Every flag the usage text shows for this command is a field (the usage is read on its own, not the table).
-    for (const [, f] of blocks[cmd].synopsis.matchAll(/--([a-z][a-z-]*)/g)) assert.ok(props[f], `${cmd}: usage shows --${f}, the tool has no field for it`);
+    // Both ways against the usage text, read on its own: every flag it shows is a field, and every flag in the
+    // table is shown there.
+    const shown = new Set([...blocks[cmd].synopsis.matchAll(/--([a-z][a-z-]*)/g)].map((m) => m[1]));
+    for (const f of shown) assert.ok(props[f], `${cmd}: usage shows --${f}, the tool has no field for it`);
+    for (const f of flags) assert.ok(shown.has(f), `${cmd}: --${f} is in COMMAND_FLAGS but its usage does not show it`);
     assert.equal(t.inputSchema.additionalProperties, false);
     assert.equal(t.annotations.readOnlyHint, !MUTATING.has(cmd));
     assert.match(t.description, MUTATING.has(cmd) ? /^WRITES the loop/ : /^Read-only/, `${cmd}: the description says plainly whether it writes`);
@@ -68,7 +71,8 @@ test('parity: every field reaches the CLI parser as the flag or argument it name
     const wantPos = [];
     for (const a of COMMAND_ARGS[cmd]) {
       const n = mcp.argName(a);
-      if (a.endsWith('...')) { input[n] = [`${n}-1`, `--${n}-2`]; wantPos.push(...input[n]); } else { input[n] = `--${n} value`; wantPos.push(input[n]); }
+      const abs = ['file', 'files'].includes(n) ? '/' : '';   // the findings paths must be absolute
+      if (a.endsWith('...')) { input[n] = [`${abs}${n}-1`, `${abs}--${n}-2`]; wantPos.push(...input[n]); } else { input[n] = `${abs}--${n} value`; wantPos.push(input[n]); }
     }
     const wantFlags = {};
     for (const [f, kind] of Object.entries(COMMAND_FLAGS[cmd])) {
@@ -84,7 +88,8 @@ test('parity: every field reaches the CLI parser as the flag or argument it name
 test('a field the command does not take, a wrong type, or an argument after a missing one is refused as invalid params', () => {
   assert.throws(() => mcp.argvFor('set', { ids: '1', bogus: 1 }), /unknown field "bogus"/);
   assert.throws(() => mcp.argvFor('list', { all: 'yes' }), /"all" must be true or false/);
-  assert.throws(() => mcp.argvFor('set', { ids: '1', why: 'x' }), /"why" is given but "status" before it is not/);
+  assert.throws(() => mcp.argvFor('after', { ids: '2', clear: true }), /"id" is required/);
+  assert.throws(() => mcp.argvFor('handoff', { next: 'x', action: undefined, bogus: 1 }), /unknown field/);
   assert.deepEqual(mcp.argvFor('prio', { ids: 3, priority: 1 }), ['prio', '--', '3', '1'], 'numbers are taken as their text');
   assert.deepEqual(mcp.argvFor('evidence', { ids: '1', ran: 'npm test', saw: 'ok' }), ['evidence', '--ran=npm test', '--saw=ok', '--', '1'], 'a single string for a repeatable flag is one item');
 });
@@ -246,6 +251,88 @@ test('SKILL.md names every argument field the tools take, and sends the agent to
   const skill = readFileSync(fileURLToPath(new URL('../../SKILL.md', import.meta.url)), 'utf8');
   const line = Object.entries(COMMAND_ARGS).filter(([, a]) => a.length).map(([c, a]) => `\`${c}\` ${a.map(mcp.argName).join(', ')}`).join(' · ');
   assert.ok(skill.includes(line), `SKILL.md lists the argument fields as:\n${line}`);
+  const flagLine = Object.entries(COMMAND_FLAGS).filter(([, f]) => Object.keys(f).length).map(([c, f]) => `\`${c}\` ${Object.keys(f).join(', ')}`).join(' · ');
+  assert.ok(skill.includes(`The flag fields: ${flagLine};`), `SKILL.md lists the flag fields as:\n${flagLine}`);
   assert.match(skill, /\*\*Call it through its MCP tools\.\*\*/);
   assert.match(skill, /### The CLI, when the tools are not there/);
+});
+
+
+// ---- what the server refuses, and what it says without being asked ----
+
+function loopDir(prefix) {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  mkdirSync(join(dir, '.git'));
+  mcp.callTool('jarl_init', { goal: 'g', root: dir });
+  return dir;
+}
+const issuesIn = (dir) => readdirSync(join(dir, '.jarl', 'issues')).length;
+function refusedAsInvalid(fn, re) {
+  let e;
+  try { fn(); } catch (x) { e = x; }
+  assert.ok(e, 'expected a refusal');
+  assert.equal(e.code, -32602, e.message);
+  if (re) assert.match(e.message, re);
+}
+
+for (const [label, root] of [['a number', 123], ['an empty string', ''], ['whitespace', '   '], ['a relative path', 'some/loop'], ['null', null]]) {
+  test(`root given as ${label} is refused as invalid params, and nothing is written anywhere`, () => {
+    const cwdLoop = loopDir('jarl-mcp-badroot-');
+    refusedAsInvalid(() => mcp.callTool('jarl_new', { title: 't', root }, {}, cwdLoop), /"root" must be the absolute path/);
+    assert.equal(issuesIn(cwdLoop), 0, 'the loop the server runs in got nothing');
+    assert.deepEqual(mcp.handle({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'jarl_status', arguments: { root } } }).error?.code, -32602);
+  });
+}
+
+test('import and sources take only absolute findings paths', () => {
+  const root = loopDir('jarl-mcp-paths-');
+  refusedAsInvalid(() => mcp.callTool('jarl_import', { file: 'findings.json', root }), /"file" must be an absolute path/);
+  refusedAsInvalid(() => mcp.callTool('jarl_sources', { files: ['/abs/f.json', 'rel/f.json'], root }), /"files" must be an absolute path/);
+  const r = mcp.callTool('jarl_sources', { files: [join(root, 'missing.json')], root });
+  assert.equal(r.isError, true, 'an absolute path goes through to the CLI, which answers for itself');
+  assert.match(byName.jarl_import.inputSchema.properties.file.description, /absolute path/);
+});
+
+test('a missing required field is refused as invalid params, as the schema declares it', () => {
+  const root = loopDir('jarl-mcp-required-');
+  refusedAsInvalid(() => mcp.callTool('jarl_new', { root }), /"title" is required/);
+  refusedAsInvalid(() => mcp.callTool('jarl_set', { ids: '1', root }), /"status" is required/);
+  refusedAsInvalid(() => mcp.callTool('jarl_review', { ids: '1', verdict: 'approve', root }), /"findings" is required/);
+  for (const t of TOOLS) for (const f of t.inputSchema.required || []) assert.ok(t.inputSchema.properties[f], `${t.name}: required ${f} is a field`);
+  assert.equal(mcp.callTool('jarl_check', { branch: 'x', root }).isError, true, 'an optional argument left out goes through');
+});
+
+test('with no root, every answer ends by naming the loop it reached and where that came from', () => {
+  const a = loopDir('jarl-mcp-env-note-');
+  const viaEnv = mcp.callTool('jarl_new', { title: 'from env' }, { JARL_ROOT: a }, tmpdir());
+  assert.equal(viaEnv.isError, false);
+  assert.match(viaEnv.content.at(-1).text, new RegExp(`^loop: ${a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\(no root given — from JARL_ROOT\\)`));
+  assert.equal(issuesIn(a), 1);
+  const viaCwd = mcp.callTool('jarl_status', {}, {}, a);
+  assert.match(viaCwd.content.at(-1).text, /\(no root given — found from the server's working directory /);
+  const refused = mcp.callTool('jarl_show', { id: '9' }, {}, a);
+  assert.equal(refused.isError, true);
+  assert.match(refused.content.at(-1).text, /^loop: /, 'a refusal names the loop too');
+  const named = mcp.callTool('jarl_status', { root: a });
+  assert.ok(!named.content.some((c) => c.text.startsWith('loop: ')), 'a call that named its root is not told');
+});
+
+test('initialize answers with the client\'s protocol version when it speaks it, else with its own', () => {
+  const v = (asked) => mcp.handle({ jsonrpc: '2.0', id: 1, method: 'initialize', params: asked ? { protocolVersion: asked } : {} }).result.protocolVersion;
+  for (const known of mcp.PROTOCOL_VERSIONS) assert.equal(v(known), known);
+  assert.equal(v('1999-01-01'), mcp.PROTOCOL_VERSION);
+  assert.equal(v(undefined), mcp.PROTOCOL_VERSION);
+});
+
+test('a JSON-RPC response from the client gets no answer; a malformed request still does', () => {
+  const lines = [
+    { jsonrpc: '2.0', id: 90, result: {} },
+    { jsonrpc: '2.0', id: 91, error: { code: 1, message: 'x' } },
+    { jsonrpc: '2.0', id: 92 },
+    { jsonrpc: '2.0', id: 93, method: 'ping' },
+  ].map((m) => JSON.stringify(m)).join('\n');
+  const out = execSync(`"${process.execPath}" "${SERVER}"`, { input: `${lines}\n`, encoding: 'utf8' }).trim().split('\n').map((l) => JSON.parse(l));
+  assert.deepEqual(out.map((m) => m.id), [92, 93]);
+  assert.equal(out[0].error.code, -32600);
+  assert.deepEqual(out[1].result, {});
 });

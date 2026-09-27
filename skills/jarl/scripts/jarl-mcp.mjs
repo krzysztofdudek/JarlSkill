@@ -18,11 +18,17 @@
 // Zero dependencies, Node 18+.
 import { createInterface } from 'node:readline';
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { resolve, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { COMMAND_ARGS, COMMAND_FLAGS, GLOBAL_FLAGS, MUTATING, USAGE, parseArgs, dispatch, findRoot } from './jarl.mjs';
 
 export const PROTOCOL_VERSION = '2025-06-18';
+// The versions this server can speak: it uses nothing a later one added beyond tool annotations, which an
+// older client ignores. A client asking for one of these gets it back; any other gets PROTOCOL_VERSION.
+export const PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'];
+// The fields that name a file on disk: read against the server's working directory, which is not the caller's,
+// so they must be absolute.
+const PATH_FIELDS = { import: ['file'], sources: ['files'] };
 function version() {
   // The plugin's manifest, when the skill runs from a plugin install; a drop-in copy has none.
   try { return JSON.parse(readFileSync(new URL('../../../plugin.json', import.meta.url), 'utf8')).version || '0.0.0'; } catch { return '0.0.0'; }
@@ -87,7 +93,8 @@ export function buildTools() {
     });
     for (const [f, kind] of Object.entries(COMMAND_FLAGS[cmd])) properties[f] = flagSchema(f, kind);
     properties.json = { type: 'boolean', description: 'Answer with the JSON --json prints instead of the text.' };
-    properties.root = { type: 'string', description: "--root: the directory holding .jarl/ (absolute path). Defaults to JARL_ROOT from the server's environment, else the loop found from the server's working directory. Workers in a worktree and every role of a loop that lives in another repository pass it always." };
+    for (const f of PATH_FIELDS[cmd] || []) properties[f].description += ' An absolute path: the server does not run in your working directory, so a relative one is refused.';
+    properties.root = { type: 'string', description: "--root: the directory holding .jarl/, as an absolute path (a relative or empty one is refused). Defaults to JARL_ROOT from the server's environment, else the loop found from the server's working directory. Workers in a worktree and every role of a loop that lives in another repository pass it always." };
     const effect = writes
       ? `WRITES the loop (.jarl/), holding .jarl/.lock while it runs.`
       : cmd === 'handoff' ? 'Read-only (write is retired and writes nothing).' : 'Read-only: writes nothing.';
@@ -124,6 +131,13 @@ export function argvFor(cmd, input = {}) {
   delete flags.help;
   const known = new Set([...args.map(argName), ...Object.keys(flags)]);
   for (const k of Object.keys(input)) need(known.has(k), `${toolName(cmd)}: unknown field "${k}" — it takes ${[...known].join(', ')}`);
+  if (input.root !== undefined) {
+    need(typeof input.root === 'string' && input.root.trim() !== '' && isAbsolute(input.root.trim()), `${toolName(cmd)}: "root" must be the absolute path of the checkout holding .jarl/ (got ${JSON.stringify(input.root)}) — leave it out to use JARL_ROOT or the server's working directory`);
+  }
+  for (const a of args) if (!optional(a) && !variadic(a)) need(input[argName(a)] !== undefined && input[argName(a)] !== null, `${toolName(cmd)}: "${argName(a)}" is required`);
+  for (const f of PATH_FIELDS[cmd] || []) {
+    for (const x of [].concat(input[f] ?? [])) need(typeof x === 'string' && isAbsolute(x), `${toolName(cmd)}: "${f}" must be an absolute path (got ${JSON.stringify(x)}) — the server does not run in your working directory`);
+  }
   const argv = [cmd];
   for (const [f, kind] of Object.entries(flags)) {
     if (f === 'root') continue;   // resolved by the caller, not handed to dispatch as a flag
@@ -162,11 +176,13 @@ export function argvFor(cmd, input = {}) {
 }
 function need(cond, msg) { if (!cond) throw invalid(msg); }
 
-export function rootFor(input = {}, env = process.env, cwd = process.cwd()) {
-  if (typeof input.root === 'string' && input.root.trim()) return resolve(cwd, input.root);
-  if (env.JARL_ROOT && env.JARL_ROOT.trim()) return resolve(cwd, env.JARL_ROOT);
-  return findRoot(cwd);
+// The loop a call reaches, and where that came from: the root field, else JARL_ROOT, else the working directory.
+export function rootOf(input = {}, env = process.env, cwd = process.cwd()) {
+  if (typeof input.root === 'string' && input.root.trim()) return { root: resolve(input.root.trim()), from: 'root' };
+  if (env.JARL_ROOT && env.JARL_ROOT.trim()) return { root: resolve(cwd, env.JARL_ROOT.trim()), from: 'JARL_ROOT' };
+  return { root: findRoot(cwd), from: 'cwd' };
 }
+export function rootFor(input = {}, env = process.env, cwd = process.cwd()) { return rootOf(input, env, cwd).root; }
 
 // One tool call: { content, isError } as MCP returns it. Invalid fields throw a ProtocolError (a JSON-RPC error);
 // everything the CLI would print — its answer, its notes, its refusal — comes back as the result.
@@ -175,16 +191,20 @@ export function callTool(name, input = {}, env = process.env, cwd = process.cwd(
   const cmd = typeof name === 'string' && name.startsWith(TOOL_PREFIX) ? name.slice(TOOL_PREFIX.length) : null;
   if (!cmd || !Object.hasOwn(COMMAND_FLAGS, cmd)) throw invalid(`Unknown tool: ${name}`);
   const argv = argvFor(cmd, input);
+  const { root, from } = rootOf(input, env, cwd);
+  // A call that named no root is told which loop it reached, so a write never lands somewhere unseen.
+  const where = from === 'root' ? [] : [{ type: 'text', text: `loop: ${root} (no root given — ${from === 'JARL_ROOT' ? 'from JARL_ROOT' : `found from the server's working directory ${cwd}`})` }];
   let r;
   try {
     const { positional, flags } = parseArgs(argv);
-    r = dispatch(rootFor(input, env, cwd), cmd, positional.slice(1), flags);
+    r = dispatch(root, cmd, positional.slice(1), flags);
   } catch (e) {
-    return { content: [{ type: 'text', text: e?.message || String(e) }], isError: true };   // the CLI's exit 1
+    return { content: [{ type: 'text', text: e?.message || String(e) }, ...where], isError: true };   // the CLI's exit 1
   }
   const text = input.json ? JSON.stringify(r.out, null, 2) : String(r.text ?? '');
   const content = [{ type: 'text', text }];
   if (r.warn.length) content.push({ type: 'text', text: r.warn.join('\n') });
+  content.push(...where);
   return { content, isError: cmd === 'check' && !r.out.ok };   // check's exit 2: a check that failed
 }
 
@@ -193,7 +213,10 @@ export function handle(msg, tools = buildTools()) {
   const { id, method, params } = msg;
   const ok = (result) => ({ jsonrpc: '2.0', id, result });
   const err = (code, message) => ({ jsonrpc: '2.0', id, error: { code, message } });
-  if (method === 'initialize') return ok({ protocolVersion: PROTOCOL_VERSION, capabilities: { tools: {} }, serverInfo: SERVER_INFO });
+  if (method === 'initialize') {
+    const asked = params?.protocolVersion;
+    return ok({ protocolVersion: PROTOCOL_VERSIONS.includes(asked) ? asked : PROTOCOL_VERSION, capabilities: { tools: {} }, serverInfo: SERVER_INFO });
+  }
   if (method === 'ping') return ok({});
   if (method === 'tools/list') return ok({ tools });
   if (method === 'tools/call') {
@@ -214,6 +237,8 @@ function serve() {
     let msg;
     try { msg = JSON.parse(t); } catch { send({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } }); return; }
     const hasId = msg && Object.hasOwn(msg, 'id');
+    // A response from the client (to a request this server never sends): nothing to answer.
+    if (msg && typeof msg === 'object' && msg.method === undefined && hasId && (Object.hasOwn(msg, 'result') || Object.hasOwn(msg, 'error'))) return;
     if (!msg || typeof msg.method !== 'string') { if (hasId) send({ jsonrpc: '2.0', id: msg.id ?? null, error: { code: -32600, message: 'Invalid Request' } }); return; }
     if (!hasId) return;   // a notification (initialized, cancelled): nothing to answer
     try { send(handle(msg, tools)); } catch (e) { send({ jsonrpc: '2.0', id: msg.id, error: { code: -32603, message: e?.message || String(e) } }); }
