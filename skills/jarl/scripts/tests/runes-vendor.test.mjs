@@ -1,5 +1,6 @@
-// The shared skill fragments in SKILL.md (between the RUNES markers) and the vendoring tool are pinned in
-// vendor/runes.pin.json and checked by that tool, offline; Jarl vendors no Runes code. The CI job adds the fresh-clone half.
+// The vendored Runes code (the MCP adapter, the command table it reads, and the parity, measure and client parts of
+// the test kit), the shared skill fragments in SKILL.md (between the RUNES markers) and the vendoring tool are pinned
+// in vendor/runes.pin.json and checked by that tool, offline. The CI job adds the fresh-clone half.
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -28,10 +29,22 @@ function copyOfSkill() {
   return dir;
 }
 
-test('the tool and every skill fragment match the pin, and no Runes file is vendored', () => {
+test('the vendored copy, the tool and every skill fragment match the pin', () => {
   const r = check(SKILL);
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /0 vendored files, 3 skill fragments and the tool match/);
+  assert.match(r.stdout, /\d+ vendored files, 3 skill fragments and the tool match/);
+  const pin = JSON.parse(readFileSync(join(SKILL, 'scripts', 'vendor', 'runes.pin.json'), 'utf8'));
+  assert.deepEqual(pin.paths, ['dist/version.mjs', 'dist/cli', 'dist/mcp', 'dist/testkit/parity.mjs', 'dist/testkit/measure.mjs', 'dist/testkit/client.mjs']);
+  assert.ok(Object.keys(pin.files).length > 0 && Object.keys(pin.files).every((f) => pin.paths.some((p) => f === p || f.startsWith(`${p}/`))));
+});
+
+test('a hand edit of a vendored file turns the gate red and names the file', () => {
+  const dir = copyOfSkill();
+  const path = join(dir, 'scripts', 'vendor', 'runes', 'dist', 'mcp', 'tools.mjs');
+  writeFileSync(path, `${readFileSync(path, 'utf8')}\n// edited\n`);
+  const r = check(dir);
+  assert.equal(r.status, 1, r.stdout);
+  assert.match(r.stderr, /dist\/mcp\/tools\.mjs/);
 });
 
 test('SKILL.md carries each pinned fragment between its markers, once', () => {
