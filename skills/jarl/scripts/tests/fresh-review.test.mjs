@@ -4,7 +4,7 @@
 // and says so loudly, never refusing.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -185,4 +185,38 @@ test('queue: a fresh approve stays live in the queue after a later coordinator a
   const rows = JSON.parse(jarl(root, 'queue', '--json').stdout).repos[0].rows;
   assert.deepEqual(rows.map((r) => r.issues), [[id]]);
   assert.equal(rows[0].by, 'opus-reviewer-5');
+});
+
+// ---- issue 370 review: status/report must stay near-linear in issue count -------------------------------------
+
+// Fast, subprocess-free setup: clone one real issue's rendered file N times (editing only the header's id), so
+// timing measures the CLI's own per-command cost, not N process spawns. Every clone is done — report walks every
+// issue, status (through reviewSplit) walks every done one, so both exercise gateState once per issue.
+function seedDone(n) {
+  const root = loop();
+  const dir = join(root, '.jarl', 'issues');
+  jarl(root, 'new', 'sample');
+  const file = join(dir, readdirSync(dir)[0]);
+  const template = readFileSync(file, 'utf8').replace(/^\*\*Status:\*\* .*$/m, '**Status:** done');
+  writeFileSync(file, template);
+  for (let i = 2; i <= n; i += 1) {
+    const id = String(i).padStart(3, '0');
+    writeFileSync(join(dir, `${id}-sample.md`), template.replace(/^# 001 ·/, `# ${id} ·`));
+  }
+  return root;
+}
+function timeStatusAndReport(n) {
+  const root = seedDone(n);
+  const t0 = Date.now();
+  jarl(root, 'status');
+  jarl(root, 'report');
+  return Date.now() - t0;
+}
+
+test('status and report stay roughly linear in issue count (guards the O(n^2) self-scope lookup fixed in issue 370)', () => {
+  const small = timeStatusAndReport(100);
+  const big = timeStatusAndReport(400);   // 4x the issues
+  // Linear cost roughly quadruples; the O(n^2) this guards against (every gateState call reloading every issue
+  // file and the whole journal) would grow ~16x. Generous slack keeps this from flaking on a loaded machine.
+  assert.ok(big < small * 8 + 800, `status+report should scale roughly linearly, not quadratically: ${small}ms at 100 issues vs ${big}ms at 400 issues`);
 });

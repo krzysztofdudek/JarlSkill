@@ -857,7 +857,8 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   const nothing = issues.length > 1 ? ' — nothing was written' : '';
   if (status === 'done') {
     const journal = journalById(root);
-    for (const issue of issues) need(!doneRefusal(root, issue, journal), `${doneRefusal(root, issue, journal)}${nothing}`);
+    const allIssues = loadIssues(root);
+    for (const issue of issues) need(!doneRefusal(root, issue, journal, allIssues), `${doneRefusal(root, issue, journal, allIssues)}${nothing}`);
   }
   // One lease for the whole call: every issue in a package gets the same Branch, Worker, Worktree and Since.
   // A relative worktree path is read from the loop's root, like --repo, so it means the same from anywhere.
@@ -893,14 +894,14 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
 // last went in progress (or was reopened, or — never in progress — was filed; free-text notes never count alone), and a live approve by someone
 // other than its worker (see gateState) — by a fresh reviewer when the issue carries code (a Branch or Merged field;
 // see carriesCode). It gates only the record: nothing here stops code from landing.
-export function doneRefusal(root, issue, journal = journalById(root)) {
-  const g = gateState(root, issue.id, journal.get(issue.id) || []);
+export function doneRefusal(root, issue, journal = journalById(root), issues = loadIssues(root)) {
+  const g = gateState(root, issue.id, journal.get(issue.id) || [], coordinatorNames(root), issues, journal);
   const how = `jarl.mjs evidence ${issue.id} --ran "<command>" --saw "<what it printed>"`;
   if (!workEvidence(issue)) return `${issue.id} has no evidence yet — record it first: ${how}`;
   if (!g.tracked && !evidenceRows(issue).length) return `${issue.id} has no --ran/--saw evidence row — a free-text note alone is not proof of the work: ${how}`;
   if (g.tracked && !g.rowsSince) return `${issue.id} has no --ran/--saw evidence row recorded since it was ${g.anchor.what === 'filed' ? 'filed' : `moved → ${g.anchor.what}`} (${g.anchor.at}) — a free-text note, or a row written before that (before a start or a reopen), is not proof of the work: ${how}`;
   const code = carriesCode(issue);
-  if (g.selfApproved) return `${issue.id}'s last approve is by its own worker — a self-approve does not count as review: jarl.mjs review ${issue.id} approve --by <${code ? 'fresh reviewer' : 'fresh reviewer|jarl'}> "<findings>"`;
+  if (g.selfApproved) return `${issue.id}'s live approve is by a worker of this issue or its branch — a self-approve does not count as review: jarl.mjs review ${issue.id} approve --by <${code ? 'fresh reviewer' : 'fresh reviewer|jarl'}> "<findings>"`;
   if (!g.approved) return `${issue.id} has no approving review newer than its last round${g.tracked ? ' or reopen' : ''} — a fresh reviewer reads the issue and the diff first: jarl.mjs review ${issue.id} approve|changes --by <reviewer> "<findings>"`;
   if (code && !g.fresh) return `${issue.id} ${freshRuleText(issue, g.live)}: jarl.mjs review ${issue.id} approve|changes --by <fresh reviewer> "<findings>"`;
   return null;
@@ -973,8 +974,9 @@ export function cmdMerged(root, rawIds, flags) {
   if (sha) {
     const journal = journalById(root);
     const coordinators = coordinatorNames(root);
+    const allIssues = loadIssues(root);
     for (const issue of issues) {
-      const g = gateState(root, issue.id, journal.get(issue.id) || [], coordinators);
+      const g = gateState(root, issue.id, journal.get(issue.id) || [], coordinators, allIssues, journal);
       if (!g.fresh) notes.push(`MERGED WITHOUT A FRESH REVIEW — ${issue.id} ${g.live ? freshRuleText({ fields: { merged: sha } }, g.live) : 'holds no live approve at all (none, or spent by a later round, restart or reopen) — the fresh-review rule: a code issue needs an approve from a fresh reviewer before it merges'}; recorded as given, get the fresh review now: jarl.mjs review ${issue.id} approve|changes --by <fresh reviewer> "<findings>"`);
     }
   }
@@ -1328,23 +1330,37 @@ function leaseWorkers(events) {
   return workers;
 }
 
-// The full self scope for an issue: everyone its own lease has ever named, plus everyone named on another issue
-// that shares its Branch — a package leased once for several issues, or one folded into the branch later by a
-// bare `set <ids> in-progress --branch <b>` with no --worker of its own. Self-review is refused for any of them,
-// not only the id's own latest lease.
-function selfWorkers(root, id, events, issues = loadIssues(root)) {
+// Every worker ever leased on a Branch, across every issue that records it — built once per set of issues (a
+// package leased once for several issues, or one folded into the branch later by a bare `set <ids> in-progress
+// --branch <b>` with no --worker of its own, is still one branch). Cached by the `issues` array's identity, so a
+// caller that loads the issues once and hands the same array to every gateState call in a loop (status, report,
+// queue) builds this exactly once, not once per issue — the earlier version rebuilt it (and reloaded every issue
+// file and the whole journal) on every call, making a scan over N issues cost O(N²).
+const BRANCH_WORKERS = new WeakMap();
+function branchWorkers(issues, journal) {
+  let map = BRANCH_WORKERS.get(issues);
+  if (map) return map;
+  map = new Map();
+  for (const i of issues) {
+    const branch = fieldText(i.fields.branch);
+    if (!branch) continue;
+    const set = map.get(branch) || new Set();
+    for (const w of leaseWorkers(journal.get(i.id) || [])) set.add(w);
+    if (i.fields.worker) set.add(fieldText(i.fields.worker));
+    map.set(branch, set);
+  }
+  BRANCH_WORKERS.set(issues, map);
+  return map;
+}
+
+// The full self scope for one issue: everyone its own lease has ever named, plus everyone named on another issue
+// that shares its Branch (see branchWorkers). Self-review is refused for any of them, not only the id's own
+// latest lease. Pure and cheap: no I/O, so it costs nothing extra when called once per issue in a loop.
+function selfWorkers(events, issue, branches) {
   const self = leaseWorkers(events);
-  const issue = issues.find((i) => i.id === id);
   if (issue && issue.fields.worker) self.add(fieldText(issue.fields.worker));
   const branch = issue && fieldText(issue.fields.branch);
-  if (branch) {
-    const journal = journalById(root);
-    for (const sib of issues) {
-      if (sib.id === id || fieldText(sib.fields.branch) !== branch) continue;
-      for (const w of leaseWorkers(journal.get(sib.id) || [])) self.add(w);
-      if (sib.fields.worker) self.add(fieldText(sib.fields.worker));
-    }
-  }
+  if (branch && branches.has(branch)) for (const w of branches.get(branch)) self.add(w);
   return self;
 }
 
@@ -1360,8 +1376,13 @@ function selfWorkers(root, id, events, issues = loadIssues(root)) {
 //   resets do — a coordinator's approve recorded after a live fresh one does not undo it;
 // - `tracked` is false for an issue the journal has no filing and no status move for (a hand-made file, a
 //   loop older than the log format): the gate then needs a --ran/--saw row in its Evidence section.
-export function gateState(root, id, events = journalById(root).get(id) || [], coordinators = coordinatorNames(root)) {
-  const self = selfWorkers(root, id, events);
+//
+// `issues` and `journal` are for the self scope's branch lookup only, and default to a fresh load — fine for a
+// single call, but a caller reading the gate for many issues (status, report, queue) must load them once and
+// pass the same array and map to every call, so branchWorkers (see above) builds its map once, not per issue.
+export function gateState(root, id, events = journalById(root).get(id) || [], coordinators = coordinatorNames(root), issues = loadIssues(root), journal = journalById(root)) {
+  const issue = issues.find((i) => i.id === id) || null;
+  const self = selfWorkers(events, issue, branchWorkers(issues, journal));
   let status = null; let anchor = null; let cut = -1;
   const evidence = []; const reviews = [];
   for (const e of events) {
@@ -1424,8 +1445,11 @@ export function reviewState(root, id) {
 // (approved before --by existed). Shown by status and report, never acted on.
 export function reviewSplit(root, issues = loadIssues(root), journal = journalById(root)) {
   const split = { fresh: 0, coordinator: 0, self: 0, unrecorded: 0 };
+  const coordinators = coordinatorNames(root);
   for (const i of issues.filter((x) => x.status === 'done')) {
-    const a = gateState(root, i.id, journal.get(i.id) || []).lastApprove;
+    // The live approve — the one that actually cleared the issue — not simply the last one recorded: a later
+    // coordinator (or self) approve does not make an already-cleared issue read as coordinator- or self-reviewed.
+    const a = gateState(root, i.id, journal.get(i.id) || [], coordinators, issues, journal).live;
     split[a && a.kind ? a.kind : 'unrecorded'] += 1;
   }
   return split;
@@ -1454,12 +1478,15 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
   }
   const by = flags.by !== undefined ? fieldText(flags.by) : null;
   const journal = by ? journalById(root) : null;
+  // The full issue list, not just the ones under review: a sibling elsewhere on the same Branch still counts
+  // for self (see gateState/branchWorkers), and loading it once here keeps a package review call linear.
+  const allIssues = by ? loadIssues(root) : null;
   const coordinators = coordinatorNames(root);
   const kinds = issues.map((issue) => {
     if (!by) return null;
     // Self is everyone who has ever held this issue's lease — its own worker across every takeover, and the
     // worker of any other issue sharing its Branch (a package) — not only its current Worker field.
-    const self = [...gateState(root, issue.id, journal.get(issue.id) || []).workers];
+    const self = [...gateState(root, issue.id, journal.get(issue.id) || [], coordinators, allIssues, journal).workers];
     const kind = reviewerKind(by, self, coordinators);
     const who = self.length === 1 ? `${self[0]} is the issue's worker` : self.length > 1 ? `${self.join(', ')} have all held ${issue.id}'s lease` : '';
     need(verdict !== 'approve' || kind !== 'self', `${issue.id}: an approve by ${by} is a self-approve${who ? ` (${who})` : ''} and does not count as review — a fresh reviewer, or the jarl, reads the diff${issues.length > 1 ? ' — nothing was written' : ''}`);
@@ -1891,7 +1918,7 @@ export function cmdQueue(root, flags = {}) {
   const journal = journalById(root);
   const unsettled = issues.filter((i) => i.status === 'open' || i.status === 'in-progress');
   const coordinators = coordinatorNames(root);
-  const gate = new Map(unsettled.map((i) => [i.id, gateState(root, i.id, journal.get(i.id) || [], coordinators)]));
+  const gate = new Map(unsettled.map((i) => [i.id, gateState(root, i.id, journal.get(i.id) || [], coordinators, issues, journal)]));
   // Every issue in the queue sits on a branch, so it carries code: only a fresh approve puts it there (the
   // fresh-review rule). One cleared by a coordinator alone waits, listed with its package as waiting for review.
   const approved = unsettled.filter((i) => gate.get(i.id).fresh);
@@ -2197,11 +2224,13 @@ export function cmdReport(root, flags = {}) {
   const doneLines = repos.length > 1 ? repos.flatMap((r) => ['', `### ${r} (${byRepo[r].length})`, ...byRepo[r].map(row)]) : done.map(row);
   const journal = journalById(root);
   const split = reviewSplit(root, issues, journal);
+  const coordinators = coordinatorNames(root);
   // One row per issue, for a host that renders its own dashboard from --json: the same fields a reader of the
-  // issue would look up, with the last approve (who, which kind, when).
+  // issue would look up, with the live approve (who, which kind, when) — the one that actually cleared it, not
+  // simply the last one recorded.
   const rows = issues.map((i) => {
     const m = mergedOf(i);
-    const a = gateState(root, i.id, journal.get(i.id) || []).lastApprove;
+    const a = gateState(root, i.id, journal.get(i.id) || [], coordinators, issues, journal).live;
     return { id: i.id, title: i.title, status: i.status, kind: i.kind, priority: i.priority, tier: i.tier, tags: i.tags, repos: repoNames(root, i), branch: i.fields.branch || null, after: i.after, sources: i.sources, merged: m ? m.sha : null, ci: m ? m.ci : null, review: a ? { by: a.by, kind: a.kind, at: a.at } : null };
   });
   const lines = [`# Report`, '', goal, '', `## Done (${done.length})`, ...(done.length ? [`Reviewed by: ${renderSplit(split)}`] : []), ...doneLines,
