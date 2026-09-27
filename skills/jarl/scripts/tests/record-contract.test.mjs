@@ -124,7 +124,14 @@ test('record.mjs names every export by hand and stands only on jarl-lib.mjs, whi
   const record = here('record.mjs');
   const lib = here('jarl-lib.mjs');
   assert.doesNotMatch(record, /^export \*/m, 'record.mjs enumerates its exports; no export *');
-  const imports = (text) => [...text.matchAll(/^import .* from '([^']+)';$/gm)].map((m) => m[1]);
+  // Every specifier the module loads: static imports (one line or many), side-effect imports, export … from, and
+  // import() — a dynamic import whose argument is not a string literal is refused outright, since it cannot be checked.
+  const imports = (text) => {
+    assert.doesNotMatch(text, /\bimport\s*\(\s*[^'"\s]/, 'a dynamic import of a computed specifier');
+    return [...text.matchAll(/\bfrom\s*['"]([^'"]+)['"]|^\s*import\s*['"]([^'"]+)['"]|\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/gm)].map((m) => m[1] || m[2] || m[3]);
+  };
+  assert.deepEqual(imports("import {\n  a,\n  b,\n} from './x.mjs';\nimport './y.mjs';\nexport { c } from './z.mjs';\nconst d = await import('./w.mjs');"), ['./x.mjs', './y.mjs', './z.mjs', './w.mjs']);
+  assert.throws(() => imports('const m = await import(name);'), /computed specifier/);
   assert.deepEqual(imports(record).filter((s) => !s.startsWith('node:')), ['./jarl-lib.mjs']);
   assert.deepEqual(imports(lib).filter((s) => !s.startsWith('node:')), []);
 });

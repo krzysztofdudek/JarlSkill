@@ -11,11 +11,18 @@
 // - `ids` is one id ('7', '007', '#7') or several, as the CLI takes them: '12,13', '203-206,209', or an array. One id
 //   gives back one result object; several give back an array of them.
 // - `opts` carries what the CLI's flags carry, under the flags' own names ({ branch, worker, worktree }, { ran, saw },
-//   { sha, ci, repo }, { by, supersedes, settles }, …). The result of every call is what the command's --json prints.
+//   { sha, ci, repo }, { by, supersedes, settles }, …), plus caller on setStatus and setField. The opts keys named at
+//   each function below are part of the contract, as much as the parameters: renaming or dropping one bumps
+//   RECORD_API; a new optional key does not. The result of every call is what the command's --json prints.
 // - A refusal is a thrown Error whose message is the CLI's refusal, word for word; nothing is written then.
-// - Every call that writes holds .jarl/.lock for its whole length (re-entrant: a caller already inside withLock keeps
-//   its own), and every file is written whole (writeAtomic). Every call starts from empty per-call caches, so a
-//   process that lives long sees disk and git as they are now, exactly as a fresh CLI process would.
+// - Every call that writes holds .jarl/.lock for its whole length, and every file is written whole (writeAtomic). The
+//   lock is re-entrant per loop (a call inside withLock on the same loop keeps that lock; one on another loop takes
+//   that loop's own). withLock runs synchronous work only: a function that is async or returns a promise is refused.
+// - Waiting for a lock held by another process blocks the thread (Atomics.wait) for up to 20 s before the call is
+//   refused; a caller with an event loop to keep responsive runs these calls off it (a worker or a child process).
+// - Every call first empties the per-call caches (git refs, resolved repositories, branch tips), so a process that lives
+//   long sees git as it is now. The profile is the one thing kept: it is re-read whenever .jarl/profile.json changes
+//   its modification time or size, so a rewrite that keeps both is not seen until one of them changes.
 // Zero dependencies, Node 22+.
 import { resolve } from 'node:path';
 import * as L from './jarl-lib.mjs';
