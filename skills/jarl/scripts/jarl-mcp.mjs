@@ -7,12 +7,16 @@
 // by its dispatch — the same function main() runs, which empties the per-command git caches first, so a server
 // that lives for a whole session sees disk and git as they are now, exactly as a fresh process would.
 //
-// Result: what the CLI prints on stdout is the first text block (JSON with json: true, as --json prints it); what it
-// says on stderr (notes) is a second one; a refusal (the CLI's exit 1) and a failed check (exit 2) come back with
-// isError: true and the text. The loop: the root field, else JARL_ROOT from the server's environment, else the loop
-// found from the server's working directory, the way the CLI finds it from its own. Writes: dispatch runs
-// synchronously and the server handles one message at a time, so its calls never overlap; against other processes
-// (the CLI, other sessions' servers) every writing command holds .jarl/.lock exactly as the CLI does.
+// Result: with json: true the content is exactly one text block, the JSON --json prints, so a client that
+// concatenates blocks never has to skip anything to parse it; the CLI's stderr notes and the "which loop" note
+// below go into _meta ('jarl/warn', 'jarl/loop') instead. Without json, stdout is the first text block, stderr
+// notes are a second one, and a refusal (the CLI's exit 1) and a failed check (exit 2) come back with isError:
+// true and the text. The loop: the root field, else JARL_ROOT from the server's environment — refused unless it
+// is absolute, for the same reason "root" is: a relative one would resolve against the server's own working
+// directory, not the caller's, and silently reach whatever loop happens to sit there — else the loop found from
+// the server's working directory, the way the CLI finds it from its own. Writes: dispatch runs synchronously and
+// the server handles one message at a time, so its calls never overlap; against other processes (the CLI, other
+// sessions' servers) every writing command holds .jarl/.lock exactly as the CLI does.
 //
 // Wire format: newline-delimited JSON-RPC 2.0 on stdin/stdout (MCP stdio transport); stderr is for diagnostics.
 // Zero dependencies, Node 18+.
@@ -181,9 +185,18 @@ export function argvFor(cmd, input = {}) {
 function need(cond, msg) { if (!cond) throw invalid(msg); }
 
 // The loop a call reaches, and where that came from: the root field, else JARL_ROOT, else the working directory.
+// JARL_ROOT is refused unless it is absolute — resolving it against the server's cwd the way a shell would resolve
+// a relative $PATH entry would silently reach whichever loop happens to sit there, in a process the caller does not
+// control and mostly does not see; failing every call that would use it, rather than only refusing at server
+// start, keeps working the common case where every call already passes its own absolute "root" (SKILL.md has
+// every worker in a worktree do exactly that) and never silently misresolves the one that doesn't.
 export function rootOf(input = {}, env = process.env, cwd = process.cwd()) {
   if (typeof input.root === 'string' && input.root.trim()) return { root: resolve(input.root.trim()), from: 'root' };
-  if (env.JARL_ROOT && env.JARL_ROOT.trim()) return { root: resolve(cwd, env.JARL_ROOT.trim()), from: 'JARL_ROOT' };
+  if (env.JARL_ROOT && env.JARL_ROOT.trim()) {
+    const raw = env.JARL_ROOT.trim();
+    need(isAbsolute(raw), `JARL_ROOT must be an absolute path (got ${JSON.stringify(raw)}) — a relative one would resolve against the server's own working directory, not the caller's; pass "root" on the call instead, or fix the server's environment`);
+    return { root: resolve(raw), from: 'JARL_ROOT' };
+  }
   return { root: findRoot(cwd), from: 'cwd' };
 }
 export function rootFor(input = {}, env = process.env, cwd = process.cwd()) { return rootOf(input, env, cwd).root; }
@@ -196,20 +209,29 @@ export function callTool(name, input = {}, env = process.env, cwd = process.cwd(
   if (!cmd || !Object.hasOwn(COMMAND_FLAGS, cmd)) throw invalid(`Unknown tool: ${name}`);
   const argv = argvFor(cmd, input);
   const { root, from } = rootOf(input, env, cwd);
-  // A call that named no root is told which loop it reached, so a write never lands somewhere unseen.
-  const where = from === 'root' ? [] : [{ type: 'text', text: `loop: ${root} (no root given — ${from === 'JARL_ROOT' ? 'from JARL_ROOT' : `found from the server's working directory ${cwd}`})` }];
+  // A call that named no root is told which loop it reached, so a write never lands somewhere unseen. With
+  // json: true this note (and the CLI's stderr notes) never become a second text block — a client that
+  // concatenates the blocks to parse JSON would otherwise get invalid JSON — they go into _meta instead, the way
+  // Grain's MCP server puts its own repo note and stderr there.
+  const loopNote = from === 'root' ? null : `loop: ${root} (no root given — ${from === 'JARL_ROOT' ? 'from JARL_ROOT' : `found from the server's working directory ${cwd}`})`;
   let r;
   try {
     const { positional, flags } = parseArgs(argv);
     r = dispatch(root, cmd, positional.slice(1), flags);
   } catch (e) {
-    return { content: [{ type: 'text', text: e?.message || String(e) }, ...where], isError: true };   // the CLI's exit 1
+    const text = e?.message || String(e);   // the CLI's exit 1
+    if (input.json) return { content: [{ type: 'text', text }], isError: true, ...(loopNote ? { _meta: { 'jarl/loop': loopNote } } : {}) };
+    return { content: [{ type: 'text', text }, ...(loopNote ? [{ type: 'text', text: loopNote }] : [])], isError: true };
   }
-  const text = input.json ? JSON.stringify(r.out, null, 2) : String(r.text ?? '');
-  const content = [{ type: 'text', text }];
+  const isError = cmd === 'check' && !r.out.ok;   // check's exit 2: a check that failed
+  if (input.json) {
+    const meta = { ...(r.warn.length ? { 'jarl/warn': r.warn.join('\n') } : {}), ...(loopNote ? { 'jarl/loop': loopNote } : {}) };
+    return { content: [{ type: 'text', text: JSON.stringify(r.out, null, 2) }], isError, ...(Object.keys(meta).length ? { _meta: meta } : {}) };
+  }
+  const content = [{ type: 'text', text: String(r.text ?? '') }];
   if (r.warn.length) content.push({ type: 'text', text: r.warn.join('\n') });
-  content.push(...where);
-  return { content, isError: cmd === 'check' && !r.out.ok };   // check's exit 2: a check that failed
+  if (loopNote) content.push({ type: 'text', text: loopNote });
+  return { content, isError };
 }
 
 // ----- JSON-RPC / MCP -----

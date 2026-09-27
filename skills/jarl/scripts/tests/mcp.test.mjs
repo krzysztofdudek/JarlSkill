@@ -105,6 +105,14 @@ test('the loop root: the field, else JARL_ROOT, else the loop found from the wor
   assert.equal(mcp.rootFor({}, {}, join(dir, 'sub')), dir);
 });
 
+for (const [label, value] of [['a bare relative path', 'some/loop'], ['./ itself', '.'], ['../ up one', '../elsewhere']]) {
+  test(`a relative JARL_ROOT (${label}) is refused, not resolved against the server's cwd`, () => {
+    const dir = mkdtempSync(join(tmpdir(), 'jarl-mcp-relroot-'));
+    refusedAsInvalid(() => mcp.rootFor({}, { JARL_ROOT: value }, dir), /JARL_ROOT must be an absolute path/);
+    refusedAsInvalid(() => mcp.callTool('jarl_status', {}, { JARL_ROOT: value }, dir), /JARL_ROOT must be an absolute path/);
+  });
+}
+
 // ---- the server over stdio, as a host starts it ----
 
 function startServer(env = {}, cwd = undefined) {
@@ -317,6 +325,49 @@ test('with no root, every answer ends by naming the loop it reached and where th
   assert.match(refused.content.at(-1).text, /^loop: /, 'a refusal names the loop too');
   const named = mcp.callTool('jarl_status', { root: a });
   assert.ok(!named.content.some((c) => c.text.startsWith('loop: ')), 'a call that named its root is not told');
+});
+
+test('with json: true, the answer is exactly one text block holding the JSON, whatever else there is to say', () => {
+  const a = loopDir('jarl-mcp-json-meta-');
+
+  // No root given: the loop note would have been a second block; it goes into _meta instead.
+  const viaEnv = mcp.callTool('jarl_status', { json: true }, { JARL_ROOT: a }, tmpdir());
+  assert.equal(viaEnv.isError, false);
+  assert.equal(viaEnv.content.length, 1, 'exactly one text block');
+  assert.deepEqual(JSON.parse(viaEnv.content[0].text).open, 0);
+  assert.match(viaEnv._meta['jarl/loop'], new RegExp(`^loop: ${a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\(no root given — from JARL_ROOT\\)`));
+  assert.ok(!('jarl/warn' in viaEnv._meta));
+
+  // A call that named its root gets no _meta at all: nothing left over to say.
+  const named = mcp.callTool('jarl_status', { root: a, json: true });
+  assert.equal(named.content.length, 1);
+  assert.equal(named._meta, undefined);
+
+  // A command that notes something on stderr (set's evidence note) still comes back as one block, the note in _meta.
+  mcp.callTool('jarl_new', { title: 't', root: a });
+  mcp.callTool('jarl_evidence', { ids: '1', ran: 'npm test', saw: 'ok', root: a });
+  mcp.callTool('jarl_review', { ids: '1', verdict: 'approve', findings: 'fine', by: 'jarl', root: a });
+  const withNote = mcp.callTool('jarl_set', { ids: '1', status: 'done', why: 'finished', root: a, json: true });
+  assert.equal(withNote.isError, false, withNote.content[0].text);
+  assert.equal(withNote.content.length, 1);
+  assert.match(withNote._meta['jarl/warn'], /^note: 001 /);
+
+  // A refusal (the CLI's exit 1) with json: true is still one block; the loop note goes to _meta, not a second block.
+  const refused = mcp.callTool('jarl_show', { id: '9', json: true }, {}, a);
+  assert.equal(refused.isError, true);
+  assert.equal(refused.content.length, 1);
+  assert.match(refused._meta['jarl/loop'], /^loop: /);
+
+  // check's exit 2 (a failed check) with json: true: still one block, isError true, the JSON with its items.
+  const c = mkdtempSync(join(tmpdir(), 'jarl-mcp-json-check-'));
+  execSync('git init -q -b feature && git config user.email t@t && git config user.name t && git config core.excludesFile /dev/null && echo 1 > a.mjs && git add -A && git commit -qm base', { cwd: c });
+  mcp.callTool('jarl_init', { goal: 'g', root: c });
+  mcp.callTool('jarl_new', { title: 't', files: 'a.mjs', root: c });
+  execSync('git checkout -q -b jarl/001-t && echo 2 > b.mjs && git add -A && git commit -qm change && git checkout -q feature', { cwd: c });
+  const failedCheck = mcp.callTool('jarl_check', { id: '1', branch: 'jarl/001-t', root: c, json: true });
+  assert.equal(failedCheck.isError, true);
+  assert.equal(failedCheck.content.length, 1);
+  assert.ok(JSON.parse(failedCheck.content[0].text).ok === false);
 });
 
 test('initialize answers with the client\'s protocol version when it speaks it, else with its own', () => {
