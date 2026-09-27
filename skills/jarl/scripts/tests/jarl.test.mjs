@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, readFileSync, existsSync, writeFileSync, readdi
 import { join, basename } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { sh } from './portable.mjs';
+import { sh, NO_EXCLUDES } from './portable.mjs';
 import { fileURLToPath } from 'node:url';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
@@ -391,7 +391,7 @@ function gitRepo() {
   const g = (...a) => execFileSync('git', a, { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   g('init', '-q', '-b', 'feature');
   g('config', 'user.email', 't@t'); g('config', 'user.name', 't');
-  g('config', 'core.excludesFile', '/dev/null');
+  g('config', 'core.excludesFile', NO_EXCLUDES);
   sh(dir, `echo a > a.txt && git add -A && git commit -qm base`);
   return { dir, g };
 }

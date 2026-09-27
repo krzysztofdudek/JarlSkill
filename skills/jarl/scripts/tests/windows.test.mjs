@@ -63,3 +63,11 @@ test('the MCP server knows it is the entry however its path is spelled: in anoth
   assert.equal(isEntry(fake.replace('C:', 'c:'), fake, 'win32'), true, 'drive-letter case does not matter on Windows');
   assert.equal(isEntry(fake.toUpperCase(), fake, 'linux'), false, 'elsewhere case does matter');
 });
+
+test('a path written into an issue is stored with slashes when given on Windows, and kept as given elsewhere', async () => {
+  const { portablePath } = await import('../jarl.mjs');
+  assert.equal(portablePath('..\\tool', 'win32'), '../tool');
+  assert.equal(portablePath('src\\a.mjs', 'win32'), 'src/a.mjs');
+  assert.equal(portablePath('C:\\work\\tool', 'win32'), 'C:/work/tool');
+  assert.equal(portablePath('odd\\name', 'linux'), 'odd\\name', 'a backslash is a file-name character outside Windows');
+});

@@ -276,7 +276,7 @@ function serve() {
   process.on('uncaughtException', (e) => console.error('[jarl-mcp] uncaught:', e?.stack || e));
 }
 
-// Run as the server only when this file is the one node was started with. Compared as real paths, and without case on
+// Run as the server only when this file is the script the process was started with. Compared as real paths, and without case on
 // Windows: a plugin root spelled with another drive-letter case (c:\ against C:\), or reached through a junction,
 // is still this file — a mismatch would leave the server silent, and the client waiting on it.
 export function isEntry(argv1, self = fileURLToPath(import.meta.url), platform = process.platform) {

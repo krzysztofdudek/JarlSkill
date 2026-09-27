@@ -231,7 +231,7 @@ function mainCheckoutWithLoop(dir) {
   } catch { return null; }
   const commonDir = resolve(dir, common);
   const main = basename(commonDir) === '.git' ? dirname(commonDir) : null;
-  // canonical on both sides: git prints C:/x/.git where node spells C:\x, and a drive letter's case may differ.
+  // canonical on both sides: git prints C:/x/.git where the path module spells C:\x, and a drive letter's case may differ.
   return main && canonical(main) !== canonical(dir) && existsSync(jarlDir(main)) ? main : null;
 }
 export function jarlDir(root) { return join(root, '.jarl'); }
@@ -1027,7 +1027,7 @@ export function cmdNew(root, title, rawFlags) {
     const tmp = join(dir, `.${id}.${process.pid}.tmp`);
     writeFileSync(tmp, renderIssue({
       id, title, status: profile.initial, kind, priority, tier, fields, sections, acceptanceHeading: profile.acceptance || 'Acceptance',
-      tags: splitList(flags.tags), files: splitList(flags.files), repo: repos.join(', '), foundBy: flags['found-by'] || 'jarl',
+      tags: splitList(flags.tags), files: pathList(flags.files), repo: repos.join(', '), foundBy: flags['found-by'] || 'jarl',
       where: flags.where, what: bodyText(flags.what), why: bodyText(flags.why), source, after,
       // A template's Acceptance and Changelog are taken as written (a list already); a flag replaces them.
       acceptance: flags.acceptance !== undefined ? acceptanceText(flags.acceptance) : bodyText(fromTemplate.acceptance),
@@ -1043,6 +1043,11 @@ export function cmdNew(root, title, rawFlags) {
 }
 
 function splitList(v) { return String(v || '').split(',').map((s) => s.trim()).filter(Boolean); }
+// A path written into an issue (Files, Repo) is read on every OS the loop is checked out on, and git names files with
+// '/' everywhere: a path given on Windows is stored with '/' (C:\a\b → C:/a/b, which Windows reads the same). Elsewhere a
+// backslash is an ordinary file-name character and is kept.
+export function portablePath(p, platform = process.platform) { return platform === 'win32' ? p.replace(/\\/g, '/') : p; }
+function pathList(v) { return splitList(v).map((p) => portablePath(p)); }
 
 // A Source entry names one finding for good: the report's directory (dated, so unique) and the finding's id
 // inside it, <dir>#<id>. Several are one comma list.
@@ -1384,7 +1389,7 @@ export function cmdPrio(root, rawIds, prio) {
 export function cmdFiles(root, rawId, list) {
   const issue = findIssue(root, rawId);
   need(issue, `no such issue: ${rawId}`);
-  const files = splitList(list);
+  const files = pathList(list);
   writeAtomic(issue.file, setField(readText(issue.file), 'Files', files.join(', ')));
   return { id: issue.id, files };
 }
@@ -1504,7 +1509,7 @@ export function reposNamed(issue) { return splitList(issue.fields.repo); }
 // A --repo value on new, import and repo: one path or a comma list, each the root of a git repository.
 function repoList(root, v) {
   need(typeof v === 'string', '--repo takes one path, or several as one comma list');
-  const list = splitList(v);
+  const list = pathList(v);
   need(list.length, '--repo needs a path');
   for (const r of list) repoOf(root, r);
   return list;
@@ -1959,7 +1964,7 @@ export function repoOf(root, named) {
   // A subdirectory of a repository is not the repository: the paths git reports are relative to its root, so a
   // declared file or a removed test would be read from the wrong place and go unseen.
   const top = git(repo, ['rev-parse', '--show-toplevel']);
-  need(top !== null && canonical(top) === canonical(repo), `${repo} is inside the repository at ${top}, not its root — name the root: ${relative(canonical(root), canonical(top || repo)) || '.'}`);
+  need(top !== null && canonical(top) === canonical(repo), `${repo} is inside the repository at ${top}, not its root — name the root: ${portablePath(relative(canonical(root), canonical(top || repo))) || '.'}`);
   RESOLVED.set(key, repo);
   return repo;
 }
@@ -2243,7 +2248,7 @@ function issueTops(root, issue) { return issueRepos(root, issue).map(topOf); }
 export const TIPS_RECENT_MS = 7 * 24 * 3_600_000;
 
 // gh, when it is on PATH (JARL_GH names another binary: a test knob). Null when it cannot be run: tips then
-// says nothing about CI rather than guessing. A JARL_GH ending in .js, .mjs or .cjs is run by this node, so a stub
+// says nothing about CI rather than guessing. A JARL_GH ending in .js, .mjs or .cjs is run by process.execPath, so a stub
 // works the same on every OS: Windows runs no shebang script, and no .cmd shim without a shell.
 let GH;
 // Every cache a command fills, emptied before the next one (see dispatch).

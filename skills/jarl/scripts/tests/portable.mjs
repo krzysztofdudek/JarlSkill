@@ -20,7 +20,12 @@ export function bashBin() {
   if (!found) throw new Error(`no Git for Windows bash beside ${exec}: the tests need it`);
   return (BASH = found);
 }
-export const slashed = (script) => (process.platform === 'win32' ? script.replace(/\b[A-Za-z]:\\[^\s'"`;&|<>]*/g, (p) => p.replace(/\\/g, '/')) : script);
+// Git for Windows refuses /dev/null (it reads as nul) as core.excludesFile; a file that does not exist does the same
+// job there — no global excludes — and git passes over a missing one silently.
+export const NO_EXCLUDES = process.platform === 'win32' ? '.git/no-global-excludes' : '/dev/null';
+export const slashed = (script) => (process.platform === 'win32'
+  ? script.replace(/\b[A-Za-z]:\\[^\s'"`;&|<>]*/g, (p) => p.replace(/\\/g, '/')).replace(/core\.excludesFile \/dev\/null/g, `core.excludesFile ${NO_EXCLUDES}`)
+  : script);
 export function sh(cwd, script) {
   return execFileSync(bashBin(), ['-c', slashed(script)], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 }
