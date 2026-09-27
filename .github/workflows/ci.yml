@@ -29,6 +29,11 @@ jobs:
         working-directory: skills/jarl/scripts
         run: npm test
 
+      # The vendored Runes copy and the shared skill fragments, against a fresh clone of the pinned tag (npm test runs the offline half).
+      - name: Runes vendor check
+        working-directory: skills/jarl/scripts
+        run: node runes.mjs check --ci --pin vendor/runes.pin.json
+
   # The same tests on Windows (issue 481): paths with drive letters and backslashes, CRLF checkouts (the runner's
   # git has core.autocrlf on), no bash of its own, rename refused over an open file. Git for Windows' bash is what
   # the tests' own shell steps run in (tests/portable.mjs).

@@ -265,7 +265,8 @@ test('SKILL.md names every argument field the tools take, and sends the agent to
   assert.ok(skill.includes(line), `SKILL.md lists the argument fields as:\n${line}`);
   const flagLine = Object.entries(COMMAND_FLAGS).filter(([, f]) => Object.keys(f).length).map(([c, f]) => `\`${c}\` ${Object.keys(f).join(', ')}`).join(' · ');
   assert.ok(skill.includes(`The flag fields: ${flagLine};`), `SKILL.md lists the flag fields as:\n${flagLine}`);
-  assert.match(skill, /\*\*Call it through its MCP tools\.\*\*/);
+  assert.match(skill, /<!-- RUNES:mcp-first:START -->\n\*\*Call the tool through its MCP tools first, when the session has them\.\*\*/);
+  assert.match(skill, /\*\*Jarl's server\.\*\* Installed as a plugin, Jarl starts an MCP server named `jarl`/);
   assert.match(skill, /### The CLI, when the tools are not there/);
 });
 
