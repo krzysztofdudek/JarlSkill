@@ -186,7 +186,7 @@ commands:
                                                  — a permanent loop (see init --permanent, or mode permanent) is
                                                  kept instead: it logs the close and the directory stays as the record;
                                                  first it files the ratification batch — at most 10 area rulings, widest
-                                                 reach first, each a ratify item answered yes or no — and never waits
+                                                 reach first, each a ratify item answered yes or reject — and never waits
                                                  for it; --batch files the batch only and closes nothing; a ratified
                                                  area ruling is written into the type's decision log (yg log add
                                                  --type) when the repository has a graph and a working yg
@@ -349,7 +349,7 @@ function main() {
 // The ratification batch as close prints it: one line per item, then what became of the ones nobody answered.
 function renderBatch(batch, loop) {
   if (!batch.items.length && !batch.waiting) return loop === 'open' ? 'no area ruling awaits ratification' : '';
-  const head = `\nto ratify (${batch.items.length}${batch.waiting ? `, ${batch.waiting} more at the next close` : ''}) — answer each with yes or no: jarl.mjs answer <a-id> "yes"`;
+  const head = `\nto ratify (${batch.items.length}${batch.waiting ? `, ${batch.waiting} more at the next close` : ''}) — answer each with yes or reject (tak or nie): jarl.mjs answer <a-id> "yes"`;
   const tail = { open: 'nothing closed; the loop goes on', kept: 'unanswered items stay open in the record', removed: 'unanswered, they left with the loop as its own rulings' }[loop];
   return `${head}\n${batch.items.map((i) => `- ${i.ask} · ${i.question}`).join('\n')}\n${tail}`;
 }

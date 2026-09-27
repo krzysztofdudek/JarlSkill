@@ -126,7 +126,7 @@ export function addRound(root, id, what) { return write(root, () => L.cmdRound(r
 export function decide(root, slug, ruling, opts = {}) { return write(root, () => L.cmdDecide(root, slug, ruling, opts)); }
 // opts { kind, target, issue }.
 export function ask(root, question, opts = {}) { return write(root, () => L.cmdAsk(root, question, opts)); }
-// A ratify item from the close's batch names an area ruling: its answer starts with yes or no and marks that ruling
+// A ratify item from the close's batch names an area ruling: its answer starts with yes or reject and marks that ruling
 // Ratified or Rejected; the result then carries { ruling, verdict, typeDecision, typeLog }. A ratified area ruling's
 // typeDecision ({ type, text, supersedes }) is the entry for the type's decision log: the command line writes it
 // (yg-edge.mjs); this library never does, so a composer writes it with its own code or leaves it.

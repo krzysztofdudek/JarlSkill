@@ -157,7 +157,7 @@ At least one `--ran`/`--saw` evidence row — the command that was run and what 
 <details>
 <summary><b>Does Jarl need Yggdrasil?</b></summary>
 
-No. It works alone, and it touches Yggdrasil in one place only. A ruling about a whole type of code (`decide --area <type> --reach <n>`) is put to you when the loop closes, in one batch of at most ten, each one sentence you answer with yes or no; not answering never holds the close. When the repository has a Yggdrasil graph and a working `yg`, a ruling you ratified is written into that type's decision log with `yg log add --type`, so the next agent touching any file of the type reads it. Without either, it stays one of the loop's rulings, and nothing else happens.
+No. It works alone, and it touches Yggdrasil in one place only. A ruling about a whole type of code (`decide --area <type> --reach <n>`) is put to you when the loop closes, in one batch of at most ten, each one sentence you answer with yes or reject (tak or nie); not answering never holds the close. When the repository has a Yggdrasil graph and a working `yg`, a ruling you ratified is written into that type's decision log with `yg log add --type`, so the next agent touching any file of the type reads it. Without either, it stays one of the loop's rulings, and nothing else happens.
 </details>
 
 <details>

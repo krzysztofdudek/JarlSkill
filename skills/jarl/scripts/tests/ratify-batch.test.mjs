@@ -91,7 +91,7 @@ test('close --batch files at most ten items, widest reach first, closes nothing,
   assert.deepEqual(again.batch.filed, []);
   assert.equal(again.batch.items.length, 10);
   // Two answered make room for two more; the uncounted one comes last.
-  jarl(root, {}, 'answer', first.batch.items[0].ask, 'no');
+  jarl(root, {}, 'answer', first.batch.items[0].ask, 'reject');
   jarl(root, {}, 'answer', first.batch.items[1].ask, 'yes');
   const third = json(root, {}, 'close', '--batch');
   assert.deepEqual(third.batch.items.slice(-2).map((i) => i.ruling), ['r3', 'r2']);
@@ -112,6 +112,26 @@ test('a ratification is answered with one word first: anything else is refused a
   assert.match(decisions(root), /\*\*Rejected:\*\* a-001/);
   assert.equal(json(root, {}, 'decisions').find((d) => d.slug === 'r').rejected, 'a-001');
   assert.deepEqual(json(root, {}, 'close', '--batch').batch.items, [], 'a rejected ruling is never asked again');
+});
+
+test('"no" decides nothing alone — English no, colloquial Polish yes: the next word decides, a bare "no" is refused (issue 496)', () => {
+  const root = loop();
+  for (const r of ['a', 'b', 'c', 'd']) jarl(root, {}, 'decide', r, 'A rule.', '--area', 'svc', '--reach', '3');
+  const items = json(root, {}, 'close', '--batch').batch.items;
+  const ask = (slug) => items.find((i) => i.ruling === slug).ask;
+  const before = decisions(root);
+  for (const bare of ['no', 'No.', 'no!', 'no maybe']) {
+    const r = run(root, {}, ['answer', ask('a'), bare]);
+    assert.notEqual(r.status, 0, `"${bare}" is refused`);
+    assert.match(r.stderr, /English no and colloquial Polish yes[\s\S]*answer tak or nie/);
+  }
+  assert.equal(decisions(root), before, 'a refused answer writes nothing: no Rejected mark');
+  assert.match(jarl(root, {}, 'answer', ask('a'), 'no tak'), /a ratified/);
+  assert.match(jarl(root, {}, 'answer', ask('b'), 'No, tak.'), /b ratified/);
+  assert.match(jarl(root, {}, 'answer', ask('c'), 'no nie'), /c rejected/);
+  assert.match(jarl(root, {}, 'answer', ask('d'), 'reject'), /d rejected/);
+  const ds = json(root, {}, 'decisions');
+  assert.deepEqual(['a', 'b', 'c', 'd'].map((s) => [ds.find((d) => d.slug === s).ratified, ds.find((d) => d.slug === s).rejected]), [[ask('a'), null], [ask('b'), null], [null, ask('c')], [null, ask('d')]]);
 });
 
 test('close goes through without any ratification: a branch loop is removed, a permanent one keeps its open items', () => {
@@ -166,7 +186,7 @@ test('with a graph and a working yg, a ratified area ruling goes into the type l
   // A rejection sends nothing.
   jarl(root, env, 'decide', 'three', 'Not this one.', '--area', 'service', '--reach', '12');
   jarl(root, env, 'close', '--batch');
-  jarl(root, env, 'answer', 'a-003', 'no');
+  jarl(root, env, 'answer', 'a-003', 'nie');
   assert.equal(yg.calls().length, 4);
   assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /one written into the decision log of type service/);
 });
@@ -261,4 +281,22 @@ test('what decisions.md holds is checked again before it reaches yg: a bad type 
   } finally {
     if (before === undefined) delete process.env.JARL_YG; else process.env.JARL_YG = before;
   }
+});
+
+// On Windows `npx` is npx.cmd, which runs only through cmd.exe: yg-edge.mjs builds that command line itself. A .cmd
+// stand-in for yg takes the same road there (a JARL_YG not ending in .js goes through the shell), so the Windows CI
+// job runs the real path a user's npx.cmd would take (issue 496).
+test('on Windows a .cmd yg runs through the shell and the ratified ruling reaches it intact', { skip: process.platform !== 'win32' && 'the shell road is taken on Windows only' }, () => {
+  const yg = stub();
+  const cmd = join(yg.bin, '..', 'yg.cmd');
+  writeFileSync(cmd, `@echo off\r\n"${process.execPath}" "${yg.bin}" %*\r\n`);
+  const root = loop({ graph: true });
+  const env = { JARL_YG: cmd };
+  jarl(root, env, 'decide', 'r', 'Every service validates its input.', '--area', 'service', '--reach', '2');
+  jarl(root, env, 'close', '--batch');
+  const out = json(root, env, 'answer', 'a-001', 'yes');
+  assert.equal(out.typeLog.state, 'written', JSON.stringify(out.typeLog));
+  const write = yg.calls().find((c) => c.args[0] === 'log');
+  assert.deepEqual(write.args.slice(0, 5), ['log', 'add', '--type', 'service', '--reason-file']);
+  assert.match(write.text, /^Every service validates its input\./);
 });

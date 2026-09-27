@@ -2715,11 +2715,21 @@ export function cmdAsk(root, question, flags) {
 }
 
 // The one word that answers a ratification: the first word of the answer, without case or trailing punctuation.
+// "no" is not among them: it is English no and colloquial Polish yes ("no tak", "no"), so it decides nothing alone —
+// the word after it decides ("no tak" ratifies, "no nie" rejects), and a bare "no" is refused with a request for
+// tak or nie rather than read as a rejection the user may not have meant.
 export const RATIFY_WORDS = ['yes', 'ok', 'ratify', 'ratified', 'accept', 'accepted', 'approve', 'approved', 'tak'];
-export const REJECT_WORDS = ['no', 'reject', 'rejected', 'nie'];
+export const REJECT_WORDS = ['reject', 'rejected', 'nie'];
+export const AMBIGUOUS_WORDS = ['no'];
 function ratifyVerdict(answer) {
-  const w = String(answer).trim().split(/\s+/)[0].toLowerCase().replace(/[.,;:!]+$/, '');
-  return RATIFY_WORDS.includes(w) ? 'ratified' : REJECT_WORDS.includes(w) ? 'rejected' : null;
+  const words = String(answer).trim().split(/\s+/).map((w) => w.toLowerCase().replace(/[.,;:!?]+$/, ''));
+  const verdict = (w) => (RATIFY_WORDS.includes(w) ? 'ratified' : REJECT_WORDS.includes(w) ? 'rejected' : null);
+  return AMBIGUOUS_WORDS.includes(words[0]) ? verdict(words[1] || '') : verdict(words[0]);
+}
+function ratifyRefusal(id, ruling, answer) {
+  const first = String(answer).trim().split(/\s+/)[0].toLowerCase().replace(/[.,;:!?]+$/, '');
+  if (AMBIGUOUS_WORDS.includes(first)) return `a-${id} ratifies ruling ${ruling}: "${first}" is English no and colloquial Polish yes, so it decides nothing — answer tak or nie (yes or reject)`;
+  return `a-${id} ratifies ruling ${ruling}: the answer starts with one word — ${RATIFY_WORDS.join(', ')} to ratify it, ${REJECT_WORDS.join(', ')} to reject it`;
 }
 
 export function cmdAnswer(root, rawId, answer) {
@@ -2728,11 +2738,11 @@ export function cmdAnswer(root, rawId, answer) {
   const ask = loadAsks(root).find((a) => a.id === id);
   need(ask, `no such question: a-${id}`);
   need(ask.state === 'open', `a-${id} is already answered`);
-  // A batch item asks about one area ruling, and its answer says one word first: yes or no.
+  // A batch item asks about one area ruling, and its answer says one word first: yes or reject (tak or nie).
   const rulings = ask.ruling ? loadDecisions(root) : [];
   const ruling = ask.ruling ? rulings.find((d) => d.slug === ask.ruling) : null;
   const verdict = ask.ruling ? ratifyVerdict(answer) : null;
-  need(!ask.ruling || verdict, `a-${id} ratifies ruling ${ask.ruling}: the answer starts with one word — ${RATIFY_WORDS.join(', ')} to ratify it, ${REJECT_WORDS.join(', ')} to reject it`);
+  need(!ask.ruling || verdict, ask.ruling && !verdict ? ratifyRefusal(id, ask.ruling, answer) : '');
   need(!ask.ruling || ruling, `a-${id} ratifies ruling ${ask.ruling}, which is no longer in decisions.md`);
   appendDecision(root, `ask-${id}`, `**Question:** ${ask.question}\n**Answer:** ${answer}`, { by: 'owner' });
   const path = asksPath(root);
@@ -2835,7 +2845,7 @@ export function ratificationBatch(root) {
   const room = Math.max(0, RATIFY_BATCH - pending.length);
   const filed = candidates.slice(0, room).map((d) => {
     const reach = d.reach !== null ? `${d.reach} file${d.reach === 1 ? '' : 's'}` : 'files not counted';
-    return cmdAsk(root, `area ${d.area} · ${reach} · ${d.slug}: "${firstSentence(d.ruling)}" — yes to admit it into the type's decisions, no to leave it a ruling of this loop`, { kind: 'ratify', ruling: d.slug }).id;
+    return cmdAsk(root, `area ${d.area} · ${reach} · ${d.slug}: "${firstSentence(d.ruling)}" — yes (tak) to admit it into the type's decisions, reject (nie) to leave it a ruling of this loop`, { kind: 'ratify', ruling: d.slug }).id;
   });
   const bySlug = new Map(rulings.map((d) => [d.slug, d]));
   const items = loadAsks(root).filter((a) => a.ruling && a.state === 'open').map((a) => {
