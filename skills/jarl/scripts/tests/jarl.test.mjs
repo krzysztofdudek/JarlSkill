@@ -267,12 +267,11 @@ test('tier field, rounds and takeover, asks and answers, handoff, report', () =>
   jarl(root, 'answer', 'a-001', 'yes, keep it');
   assert.match(readFileSync(join(root, '.jarl', 'decisions.md'), 'utf8'), /ask-001[\s\S]*yes, keep it/);
   assert.match(refuses(root, 'answer', '001', 'again'), /already answered/);
-  assert.match(jarl(root, 'handoff', 'read'), /fresh start/);
+  assert.doesNotMatch(jarl(root, 'handoff', 'read'), /Earlier handoff/, 'no handoff file: nothing shown as history');
   jarl(root, 'set', '001', 'in-progress', 'raised');
-  jarl(root, 'handoff', 'write', '--summary', 'one in flight', '--next', 'merge 001', '--next', 'file the rest');
-  const h = jarl(root, 'handoff', 'read');
-  assert.match(h, /- 001 hard thing/);
-  assert.match(h, /- merge 001\n- file the rest/);
+  const h = jarl(root, 'resume');
+  assert.match(h, /## In flight \(1\)\n- 001 hard thing/);
+  assert.match(h, /## Rulings in force \(1\)\n- \S+ · ask-001 · by owner — \*\*Question:\*\* keep the old flag\?/);
   const rep = jarl(root, 'report');
   assert.doesNotMatch(rep, /Found along the way/, 'the found section is opt-in');
   assert.match(jarl(root, 'report', '--found'), /Found along the way \(1\)/);
@@ -550,10 +549,11 @@ test('check, branches and handoff read the repository an issue names, not the lo
     jarl(hub, 'set', '001', 'open', 'back');
     jarl(hub, 'set', '002', 'open', 'back');
 
-    // The handoff records where the tool repository stands, beside the hub's own head.
-    jarl(hub, 'set', '001', 'in-progress', 'worker raised in tool');
-    jarl(hub, 'handoff', 'write', '--summary', 'one in flight in tool');
-    assert.match(jarl(hub, 'handoff', 'read'), new RegExp(`\\*\\*Head:\\*\\* main@[0-9a-f]+ · \\*\\*Head in \\.\\./tool:\\*\\* feature@${sh(tool, 'git rev-parse --short feature')}`));
+    // resume shows where the tool repository stands, beside the hub's own tips.
+    jarl(hub, 'set', '001', 'in-progress', 'worker raised in tool', '--branch', 'jarl/001-change-a');
+    const res = jarl(hub, 'resume');
+    assert.match(res, new RegExp(`^\\[tool\\] .*\\n(  .*\\n)*  release  feature ${sh(tool, 'git rev-parse --short=12 feature')}`, 'm'), `${mode}: the tool repository's tip is shown`);
+    assert.match(res, /^  feature  jarl\/001-change-a [0-9a-f]{12}  \+1\/-0 vs feature  not pushed  → 001$/m, mode);
 
     assert.equal(sh(tool, 'git status --porcelain --untracked-files=all'), '', `${mode}: the loop never writes into the tool repository`);
   }
@@ -1041,8 +1041,7 @@ test('ask --kind ratify blocks nothing, is listed in status and the handoff, and
   const st = jarl(root, 'status');
   assert.match(st, /questions 0 · to ratify 1/);
   assert.match(st, /^ratify a-001 \(issue 001\) · raised the prompt limit/m);
-  jarl(root, 'handoff', 'write', '--summary', 's');
-  assert.match(jarl(root, 'handoff', 'read'), /## Waiting on the user\n- \(nothing\)\n\n## Decided under mandate, awaiting ratification\n- a-001 \(issue 001\) raised/);
+  assert.match(jarl(root, 'resume'), /## Questions to the user \(0\)\n- \(nothing\)\n\n## To ratify \(1\)\n- a-001 \(issue 001\) · raised/);
   // It holds nothing back: next, done.
   jarl(root, 'review', '1', 'approve', '--by', 'rev', 'ok');
   jarl(root, 'evidence', '1', '--ran', 'check', '--saw', 'green');
@@ -1294,9 +1293,9 @@ test('a committed loop names the loop files git has not committed in status, han
   assert.doesNotMatch(jarl(root, 'status'), /not committed/);
   jarl(root, 'new', 'one');
   assert.match(jarl(root, 'status'), /^2 loop file\(s\) not committed — commit \.jarl\/ in the loop's repository$/m);
-  assert.match(jarl(root, 'handoff', 'write', '--summary', 's'), /· 3 loop file\(s\) not committed$/);
+  assert.match(jarl(root, 'resume'), /^## Loop files not committed \(2\) — commit \.jarl\/\n- \.jarl\/issues\/001-one\.md\n- \.jarl\/log\.md$/m);
   jarl(root, 'set', '1', 'dropped', 'no');
-  assert.match(jarl(root, 'close'), /closed as a permanent record · 3 loop file\(s\) not committed — commit \.jarl\//);
+  assert.match(jarl(root, 'close'), /closed as a permanent record · 2 loop file\(s\) not committed — commit \.jarl\//);
   sh('git add -A && git commit -qm record');
   assert.equal(JSON.parse(jarl(root, 'status', '--json')).uncommitted, 0);
 
@@ -1309,34 +1308,6 @@ test('a committed loop names the loop files git has not committed in status, han
   assert.equal(JSON.parse(jarl(loose, 'status', '--json')).uncommitted, null);
 });
 
-test('handoff read computes the mechanical parts live and says how old the written part is', () => {
-  const { root, sh } = gitLoop();
-  jarl(root, 'new', 'one');
-  jarl(root, 'new', 'two');
-  jarl(root, 'handoff', 'write', '--summary', 'the plan', '--next', 'raise two');
-  const fresh = jarl(root, 'handoff', 'read');
-  assert.match(fresh, /^written \d+m ago · 0 log line\(s\) and 0 issue\(s\) changed since$/m);
-  assert.doesNotMatch(fresh, /STALE/);
-  // Written three days before the loop's last line: stale; what moved since is read now, not from the file.
-  const path = join(root, '.jarl', 'handoff.md');
-  writeFileSync(path, readFileSync(path, 'utf8').replace(/^\*\*At:\*\* \S+ \S+/m, '**At:** 2026-01-01 00:00'));
-  jarl(root, 'set', '2', 'in-progress', 'raised', '--branch', 'jarl/002-two', '--worker', 'w2');
-  jarl(root, 'ask', 'which way?', '--kind', 'stuck', '--issue', '1');
-  sh('echo x > x.txt && git add x.txt && git commit -qm more');
-  const h = jarl(root, 'handoff', 'read');
-  assert.match(h, /^written \d+d ago · STALE by \d+d: last activity \S+ \S+ · \d+ log line\(s\) and 2 issue\(s\) changed since · heads moved: \. \(main@[0-9a-f]+ → main@[0-9a-f]+\)$/m);
-  assert.match(h, /## Summary\nthe plan\n/);
-  assert.match(h, /## In flight\n- 002 two · branch jarl\/002-two · worker w2 · since /);
-  assert.match(h, /## Waiting on the user\n- a-001 which way\?/);
-  assert.match(h, /## Next\n- raise two/);
-  assert.equal(readFileSync(path, 'utf8').includes('002 two'), false, 'the file itself is not rewritten by a read');
-  const st = JSON.parse(jarl(root, 'status', '--json'));
-  assert.equal(st.handoff.stale, true);
-  assert.match(jarl(root, 'status'), /last activity \S+ \S+ · handoff \d+d old \(stale by \d+d\)/);
-  const js = JSON.parse(jarl(root, 'handoff', 'read', '--json'));
-  assert.equal(js.handoff.issuesChangedSince, 2);
-});
-
 test('issues and handoffs from before leases and merges read unchanged', () => {
   const { root } = gitLoop();
   const old = '# 001 · old one\n\n**Status:** in-progress\n**Kind:** bug\n**Priority:** 1\n**Tier:** standard\n**Tags:** \n**Files:** a.txt\n**Found by:** jarl\n**Where:**\n\n## What\n\n\n## Why\n\n\n## Acceptance\n\n\n## Evidence\n\n';
@@ -1346,8 +1317,12 @@ test('issues and handoffs from before leases and merges read unchanged', () => {
   assert.deepEqual([st.stale, st.ciPending, st.ciRed], [[], [], []]);
   assert.equal(readFileSync(join(root, '.jarl', 'issues', '001-old-one.md'), 'utf8'), old, 'reading never writes');
   const h = jarl(root, 'handoff', 'read');
-  assert.match(h, /## In flight\n- 001 old one\n/);
-  assert.doesNotMatch(h, /999 gone/);
+  assert.match(h, /## In flight \(1\)\n- 001 old one\n/);
+  // The old file is shown whole, but below the live state and one heading level down, as history.
+  assert.match(h, /\n## Earlier handoff — history, written 2026-01-01 00:00, \d+d ago; not the current state\n\*\*At:\*\* 2026-01-01 00:00 · \*\*Head:\*\* main@abc1234\n\n### Summary\nold\n\n### In flight\n- 999 gone\n/);
+  assert.ok(h.indexOf('999 gone') > h.indexOf('## Last '), 'the snapshot comes after the live sections');
+  assert.match(jarl(root, 'resume'), /a handoff file from before resume is kept at \.jarl\/handoff\.md, written 2026-01-01 00:00 — history, not the state; handoff read prints it\)$/);
+  assert.doesNotMatch(jarl(root, 'resume'), /999 gone/, 'resume itself never prints the old snapshot');
   assert.deepEqual(JSON.parse(jarl(root, 'branches', '--json')), []);
 });
 
@@ -1392,13 +1367,13 @@ test('DONE → delete needs the branch tip in the base, or in every recorded mer
   assert.equal(mark('jarl/004-dirty'), 'delete');
 });
 
-test('outside a git repository a Branch lease is not reported gone; handoff read counts what came after its own log line', () => {
+test('outside a git repository a Branch lease is not reported gone, and resume shows it with no tips', () => {
   const loose = repo();
   jarl(loose, 'init', 'goal');
   jarl(loose, 'new', 'one');
   jarl(loose, 'set', '1', 'in-progress', 'w', '--branch', 'jarl/001-one');
   assert.deepEqual(JSON.parse(jarl(loose, 'status', '--json')).stale, []);
-  jarl(loose, 'handoff', 'write', '--summary', 's');
-  jarl(loose, 'new', 'two');
-  assert.match(jarl(loose, 'handoff', 'read'), /· 1 log line\(s\) and 1 issue\(s\) changed since/, 'a line in the same minute as the handoff still counts');
+  const r = jarl(loose, 'resume');
+  assert.match(r, /- 001 one · branch jarl\/001-one · since \S+ \S+\n/);
+  assert.doesNotMatch(r, /STALE|## Tips/);
 });
