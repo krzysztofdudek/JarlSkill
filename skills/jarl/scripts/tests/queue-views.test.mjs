@@ -6,6 +6,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync, spawnSync } from 'node:child_process';
+import { sh } from './portable.mjs';
 import { fileURLToPath } from 'node:url';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
@@ -24,7 +25,6 @@ function refuses(root, ...args) {
   assert.notEqual(r.status, 0, `expected a refusal: ${args.join(' ')}`);
   return r.stderr;
 }
-const sh = (cwd, script) => execFileSync('bash', ['-c', script], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 // A git repository on branch `feature` holding the loop (default mode) and two source files.
 function repo() {
   const dir = mkdtempSync(join(tmpdir(), 'jarl-queue-'));
