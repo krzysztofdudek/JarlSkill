@@ -123,7 +123,8 @@ export function writeRuleRatification(root, { rule, text }) {
   const by = ratifier(repo);
   const dir = mkdtempSync(join(tmpdir(), 'jarl-rule-'));
   const file = join(dir, 'ratification.md');
-  const retry = `yg log add --aspect ${rule} --ratify --by '${by}' --reason '<what was admitted>'`;
+  // Quoted for a POSIX shell: a name such as O'Brien stays one word when the command is pasted.
+  const retry = `yg log add --aspect ${rule} --ratify --by '${by.replace(/'/g, "'\\''")}' --reason '<what was admitted>'`;
   try {
     writeFileSync(file, `${text.trim()}\n`);
     const out = run(repo, ['log', 'add', '--aspect', rule, '--ratify', '--by', by, '--reason-file', file], WRITE_MS);

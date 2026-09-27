@@ -326,6 +326,10 @@ test('decide --rule names the rule an area ruling admits: it needs --area and a 
   const item = json(root, {}, 'close', '--batch').batch.items.find((i) => i.ruling === 'todo');
   assert.equal(item.rule, 'no-todo-comments');
   assert.match(item.question, /^area service · rule no-todo-comments · 12 files · todo:/);
+  // yg ratifies a rule on every type it reaches, not only the area asked about: the question says so.
+  assert.match(item.question, /ratify rule no-todo-comments as it stands now on every type the graph has it reach \(not only service\)/);
+  jarl(root, {}, 'decide', 'plain', 'Handlers log once.', '--area', 'handler', '--reach', '3');
+  assert.doesNotMatch(json(root, {}, 'close', '--batch').batch.items.find((i) => i.ruling === 'plain').question, /ratify rule|every type/);
 });
 
 test('a ratified ruling naming a rule writes the type decision and then the rule ratification, by the person git names', () => {

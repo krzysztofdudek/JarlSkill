@@ -2868,7 +2868,10 @@ export function ratificationBatch(root) {
   const room = Math.max(0, RATIFY_BATCH - pending.length);
   const filed = candidates.slice(0, room).map((d) => {
     const reach = d.reach !== null ? `${d.reach} file${d.reach === 1 ? '' : 's'}` : 'files not counted';
-    return cmdAsk(root, `area ${d.area}${d.rule ? ` · rule ${d.rule}` : ''} · ${reach} · ${d.slug}: "${firstSentence(d.ruling)}" — yes (tak) to admit it into the type's decisions, reject (nie) to leave it a ruling of this loop`, { kind: 'ratify', ruling: d.slug }).id;
+    // A rule's ratification admits it, as it stands now, on every type the graph has it reach — Yggdrasil reads them,
+    // not Jarl — so the question says so: a yes about one area must not pass for consent to less than it gives.
+    const scope = d.rule ? `, and to ratify rule ${d.rule} as it stands now on every type the graph has it reach (not only ${d.area})` : '';
+    return cmdAsk(root, `area ${d.area}${d.rule ? ` · rule ${d.rule}` : ''} · ${reach} · ${d.slug}: "${firstSentence(d.ruling)}" — yes (tak) to admit it into the type's decisions${scope}, reject (nie) to leave it a ruling of this loop`, { kind: 'ratify', ruling: d.slug }).id;
   });
   const bySlug = new Map(rulings.map((d) => [d.slug, d]));
   const items = loadAsks(root).filter((a) => a.ruling && a.state === 'open').map((a) => {
