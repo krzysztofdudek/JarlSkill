@@ -71,3 +71,12 @@ test('a path written into an issue is stored with slashes when given on Windows,
   assert.equal(portablePath('C:\\work\\tool', 'win32'), 'C:/work/tool');
   assert.equal(portablePath('odd\\name', 'linux'), 'odd\\name', 'a backslash is a file-name character outside Windows');
 });
+
+test('the CLI runs when started through a symlink to it, as a plugin directory linked into place is', { skip: process.platform === 'win32' && 'a file symlink needs a privilege on Windows; isEntry is covered above' }, async () => {
+  const { symlinkSync } = await import('node:fs');
+  const dir = mkdtempSync(join(tmpdir(), 'jarl-link-'));
+  const link = join(dir, 'jarl.mjs');
+  symlinkSync(SCRIPT, link);
+  const r = spawnSync(process.execPath, [link, '--help'], { encoding: 'utf8' });
+  assert.match(r.stdout, /^usage: jarl\.mjs/, 'started through the link, the CLI answers instead of exiting silently');
+});

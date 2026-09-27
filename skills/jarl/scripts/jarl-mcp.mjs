@@ -21,10 +21,10 @@
 // Wire format: newline-delimited JSON-RPC 2.0 on stdin/stdout (MCP stdio transport); stderr is for diagnostics.
 // Zero dependencies, Node 22+.
 import { createInterface } from 'node:readline';
-import { readFileSync, realpathSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { resolve, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { COMMAND_ARGS, COMMAND_FLAGS, GLOBAL_FLAGS, MUTATING, USAGE, parseArgs, dispatch, findRoot } from './jarl.mjs';
+import { COMMAND_ARGS, COMMAND_FLAGS, GLOBAL_FLAGS, MUTATING, USAGE, parseArgs, dispatch, findRoot, isEntry as isEntryOf } from './jarl.mjs';
 
 export const PROTOCOL_VERSION = '2025-06-18';
 // The versions this server can speak: it uses nothing a later one added beyond tool annotations, which an
@@ -276,13 +276,7 @@ function serve() {
   process.on('uncaughtException', (e) => console.error('[jarl-mcp] uncaught:', e?.stack || e));
 }
 
-// Run as the server only when this file is the script the process was started with. Compared as real paths, and without case on
-// Windows: a plugin root spelled with another drive-letter case (c:\ against C:\), or reached through a junction,
-// is still this file — a mismatch would leave the server silent, and the client waiting on it.
-export function isEntry(argv1, self = fileURLToPath(import.meta.url), platform = process.platform) {
-  if (!argv1) return false;
-  const real = (p) => { try { return realpathSync.native(p); } catch { return resolve(p); } };
-  const [a, b] = [real(resolve(argv1)), real(self)];
-  return platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
-}
+// Run as the server only when this file is the script the process was started with (isEntry in jarl-lib.mjs: real
+// paths, without case on Windows — a mismatch would leave the server silent, and the client waiting on it).
+export function isEntry(argv1, self = fileURLToPath(import.meta.url), platform = process.platform) { return isEntryOf(argv1, self, platform); }
 if (isEntry(process.argv[1])) serve();

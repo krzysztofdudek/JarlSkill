@@ -11,11 +11,11 @@
 // This module re-exports jarl-lib.mjs whole for older importers, but none of those exports is a contract: only
 // record.mjs (RECORD_API) is.
 
-import { resolve, basename } from 'node:path';
+import { basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as R from './record.mjs';
 import {
-  ROUNDS_BEFORE_TAKEOVER, need, resetCaches, withLock, readText,
+  ROUNDS_BEFORE_TAKEOVER, need, resetCaches, withLock, readText, isEntry,
   cmdProfile, cmdArchive, cmdList, cmdNext, cmdMode, cmdClose, cmdCheck, cmdBranches, cmdTips, cmdQueue,
   cmdChangelog, cmdHandoffRead, cmdHandoffWrite, cmdReport, cmdImport, cmdSources,
   renderProfile, renderTips, renderQueue, renderResume, renderStatus, renderImport, renderSources, renderList,
@@ -403,4 +403,4 @@ export function dispatch(root, cmd, rest, flags) {
   return { out, text, warn };
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();
+if (isEntry(process.argv[1], fileURLToPath(import.meta.url))) main();

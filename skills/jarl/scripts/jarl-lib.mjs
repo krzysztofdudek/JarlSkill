@@ -179,6 +179,16 @@ export function withLock(root, fn) {
   }
 }
 
+// Whether argv1 (process.argv[1]) names the script self: compared as real paths, and without case on Windows, so a
+// plugin root spelled with another drive-letter case (c:\ against C:\), or reached through a symlink or a junction,
+// still counts as this script. The CLI and the MCP server both start only when this holds.
+export function isEntry(argv1, self, platform = process.platform) {
+  if (!argv1) return false;
+  const real = (p) => { try { return realpathSync.native(p); } catch { return resolve(p); } };
+  const [a, b] = [real(resolve(argv1)), real(self)];
+  return platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
+}
+
 // Every text file the loop keeps is read with its line endings as LF: a loop is committed, and a Windows checkout
 // with core.autocrlf (or an editor there) hands it back with CRLF, which every line-based parser here would misread.
 export function readText(path) { return readFileSync(path, 'utf8').replace(/\r\n?/g, '\n'); }
