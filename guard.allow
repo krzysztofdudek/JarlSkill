@@ -1,0 +1,4 @@
+# Places where the family guard is knowingly silenced in Jarl's own code. Reviewed like code: every entry says why, and an entry that silences nothing fails the guard test (skills/jarl/scripts/tests/guard.test.mjs).
+# Format: <path> <rule> [<subject>]   # reason
+
+skills/jarl/scripts/yg-edge.mjs * # Jarl's one optional edge to Yggdrasil: a ratified area ruling written with `yg log add --type` when the repository has .yggdrasil/ and a working yg; the only file allowed to name that state directory or run that command
