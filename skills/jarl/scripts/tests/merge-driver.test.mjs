@@ -5,12 +5,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, existsSync, rmSync, cpSync, copyFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mergeDecisionsTexts, decisionsDriverCommand, mergeFlags, JARL_GITATTRIBUTES } from '../jarl-lib.mjs';
-import { NO_EXCLUDES } from './portable.mjs';
+import { NO_EXCLUDES, bashBin } from './portable.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 const ruling = (date, slug, text, ...meta) => `## ${date} · ${slug}\n${text}\n${meta.length ? `\n${meta.join('\n')}\n` : ''}`;
@@ -74,7 +74,11 @@ function repo() {
   const merge = (branch, settings = []) => spawnSync('git', [...settings, 'merge', '--no-edit', branch], { cwd: dir, encoding: 'utf8' });
   return { dir, g, jarl, commit, merge, done: () => rmSync(dir, { recursive: true, force: true }) };
 }
-const decisionsOf = (dir) => readFileSync(join(dir, '.jarl', 'decisions.md'), 'utf8');
+// A file as the working tree holds it, with its line ends as git stores them. Under core.autocrlf=true (Git for
+// Windows' default, and the Windows runner's) git writes a clean merge's result into the working tree with CRLF,
+// though the driver wrote LF and the blob git commits is LF: the line ends say nothing about the driver.
+const worktree = (path) => readFileSync(path, 'utf8').replace(/\r\n/g, '\n');
+const decisionsOf = (dir) => worktree(join(dir, '.jarl', 'decisions.md'));
 /** The `-c` settings mergeFlags prints, as git arguments. */
 const settings = (driver = decisionsDriverCommand()) => ['-c', `merge.jarl-decisions.driver=${driver}`];
 
@@ -124,7 +128,9 @@ test('git merge with the -c settings: both sides\' rulings and journal lines are
     assert.match(text, /· from-b\n/);
     assert.match(text, /· from-main\n/);
     assert.doesNotMatch(text, /^<<<<<<< /m);
-    const log = readFileSync(join(r.dir, '.jarl', 'log.md'), 'utf8');
+    // What git committed is the driver's own LF text, whatever the checkout turned the working copy into.
+    assert.doesNotMatch(r.g('cat-file', '-p', 'HEAD:.jarl/decisions.md'), /\r/);
+    const log = worktree(join(r.dir, '.jarl', 'log.md'));
     assert.match(log, /from-b/);
     assert.match(log, /from-main/);
     assert.doesNotMatch(log, /^<<<<<<< /m);
@@ -189,14 +195,34 @@ test('fact 13, b\': a driver program that is there but fails without writing (an
     const old = join(r.dir, 'old yg.mjs');
     writeFileSync(old, "console.error(\"error: unknown command 'merge-driver'\"); process.exit(1);\n");
     const flags = mergeFlags({ yg: `"${process.execPath.replace(/\\/g, '/')}" "${old.replace(/\\/g, '/')}"` });
-    const m = spawnSync('sh', ['-c', `git ${flags} merge --no-edit b`], { cwd: r.dir, encoding: 'utf8' });
+    const m = spawnSync(bashBin(), ['-c', `git ${flags} merge --no-edit b`], { cwd: r.dir, encoding: 'utf8' });
     assert.notEqual(m.status, 0);
-    const x = readFileSync(join(r.dir, 'x.md'), 'utf8');
+    const x = worktree(join(r.dir, 'x.md'));
     assert.match(x, /^<<<<<<< /m, 'markers, not ours alone');
     assert.match(x, /from b/);
     // The decisions driver in the same line still merged its file cleanly.
-    assert.match(readFileSync(join(r.dir, 'decisions.md'), 'utf8'), /· b\n[\s\S]*· m\n|· m\n[\s\S]*· b\n/);
+    assert.match(worktree(join(r.dir, 'decisions.md')), /· b\n[\s\S]*· m\n|· m\n[\s\S]*· b\n/);
   } finally { r.done(); }
+});
+
+test('the driver command runs a runtime and a script whose paths hold a space, an apostrophe and a dollar sign (C:\\Program Files\\nodejs\\node.exe)', () => {
+  const r = repo();
+  const away = mkdtempSync(join(tmpdir(), 'jarl-paths-'));
+  try {
+    // The runtime and the scripts copied where git's shell must quote them: a Windows node sits in "Program Files".
+    const runtime = join(away, "node's $HOME dir", basename(process.execPath));
+    mkdirSync(dirname(runtime), { recursive: true });
+    copyFileSync(process.execPath, runtime);
+    const scripts = join(away, "jarl skill's $1");
+    cpSync(dirname(SCRIPT), scripts, { recursive: true, filter: (p) => !/[\\/](tests|node_modules)$/.test(p) });
+    twoBranchesDecide(r, () => r.jarl('decide', 'from-b', 'B.'), () => r.jarl('decide', 'from-main', 'M.'));
+    const m = r.merge('b', settings(decisionsDriverCommand(runtime, join(scripts, 'jarl.mjs'))));
+    assert.equal(m.status, 0, m.stderr);
+    const text = decisionsOf(r.dir);
+    assert.match(text, /· from-b\n/);
+    assert.match(text, /· from-main\n/);
+    assert.doesNotMatch(text, /^<<<<<<< /m);
+  } finally { r.done(); rmSync(away, { recursive: true, force: true }); }
 });
 
 test('fact 13, c: the driver never exits 0 without writing — a clean merge leaves the merged rulings in the file', () => {
