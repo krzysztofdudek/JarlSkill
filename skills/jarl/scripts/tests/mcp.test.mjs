@@ -38,7 +38,7 @@ test('parity: the tool set is the one this release documents — adding or remov
   assert.deepEqual(TOOLS.map((t) => t.name).sort(), [
     'after', 'answer', 'archive', 'ask', 'body', 'branches', 'changelog', 'check', 'close', 'decide', 'decisions',
     'evidence', 'files', 'handoff', 'help', 'import', 'init', 'list', 'log', 'merged', 'mode', 'new', 'next', 'prio',
-    'queue', 'repo', 'report', 'resume', 'review', 'round', 'set', 'show', 'source', 'sources', 'status', 'tag', 'tips',
+    'profile', 'queue', 'repo', 'report', 'resume', 'review', 'round', 'set', 'show', 'source', 'sources', 'status', 'tag', 'tips',
   ].map(mcp.toolName));
 });
 
@@ -76,7 +76,9 @@ test('parity: every field reaches the CLI parser as the flag or argument it name
     }
     const wantFlags = {};
     for (const [f, kind] of Object.entries(COMMAND_FLAGS[cmd])) {
-      if (kind === 'bool') { input[f] = true; wantFlags[f] = true; } else if (kind === 'many') { input[f] = ['--a', 'b=c']; wantFlags[f] = ['--a', 'b=c']; } else { input[f] = '--v=1'; wantFlags[f] = '--v=1'; }
+      // A flag naming a file on disk must be absolute, like the findings paths.
+      const v = (mcp.PATH_FIELDS[cmd] || []).includes(f) ? '/--v=1' : '--v=1';
+      if (kind === 'bool') { input[f] = true; wantFlags[f] = true; } else if (kind === 'many') { input[f] = ['--a', 'b=c']; wantFlags[f] = ['--a', 'b=c']; } else { input[f] = v; wantFlags[f] = v; }
     }
     input.json = true; wantFlags.json = true;
     const { positional, flags } = parseArgs(mcp.argvFor(cmd, input));
@@ -335,4 +337,8 @@ test('a JSON-RPC response from the client gets no answer; a malformed request st
   assert.deepEqual(out.map((m) => m.id), [92, 93]);
   assert.equal(out[0].error.code, -32600);
   assert.deepEqual(out[1].result, {});
+});
+
+test('jarl_set says that its status field may name a declared field, with why as the value', () => {
+  assert.match(byName.jarl_set.description, /The "status" field may instead name a field the loop's profile declares \(see jarl_profile\), and "why" is then that field's value/);
 });

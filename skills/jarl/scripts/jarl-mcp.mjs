@@ -28,7 +28,7 @@ export const PROTOCOL_VERSION = '2025-06-18';
 export const PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 // The fields that name a file on disk: read against the server's working directory, which is not the caller's,
 // so they must be absolute.
-const PATH_FIELDS = { import: ['file'], sources: ['files'] };
+export const PATH_FIELDS = { import: ['file'], sources: ['files'], init: ['profile'], profile: ['file'] };
 function version() {
   // The plugin's manifest, when the skill runs from a plugin install; a drop-in copy has none.
   try { return JSON.parse(readFileSync(new URL('../../../plugin.json', import.meta.url), 'utf8')).version || '0.0.0'; } catch { return '0.0.0'; }
@@ -65,6 +65,10 @@ export function usageBlocks(usage = USAGE) {
   return blocks;
 }
 // The paragraphs after the table (ids, flags, writes, --repo), for the help tool.
+// What a command's table cannot say about its arguments, added to that tool's description.
+export const ARG_NOTES = {
+  set: 'The "status" field may instead name a field the loop\'s profile declares (see jarl_profile), and "why" is then that field\'s value: set <ids> <field> "<value>".',
+};
 const IDS_NOTE = 'An ids field is one id or several as one comma list with ranges (12,13,14 or 203-206,209); every id and every precondition is checked before anything is written, so the call lands on all of them or on none.';
 
 function flagSchema(name, kind) {
@@ -101,7 +105,7 @@ export function buildTools() {
     const takesIds = args.some((a) => argName(a) === 'ids');
     tools.push({
       name: toolName(cmd),
-      description: `${effect} CLI: jarl.mjs ${b.synopsis} — ${b.description.replace(/[.;,]?$/, '.')}${takesIds ? ` ${IDS_NOTE}` : ''}`,
+      description: `${effect} CLI: jarl.mjs ${b.synopsis} — ${b.description.replace(/[.;,]?$/, '.')}${ARG_NOTES[cmd] ? ` ${ARG_NOTES[cmd]}` : ''}${takesIds ? ` ${IDS_NOTE}` : ''}`,
       inputSchema: { type: 'object', properties, ...(required.length ? { required } : {}), additionalProperties: false },
       annotations: { readOnlyHint: !writes, destructiveHint: cmd === 'close' || cmd === 'archive', idempotentHint: false, openWorldHint: false },
     });
