@@ -150,6 +150,77 @@ test('resume in a git repository with no worker branches: Tips shows the release
   assert.doesNotMatch(t, /feature {2}/);
 });
 
+test('commands run in one process read git afresh each time: a branch made between two of them is seen', async () => {
+  const { dispatch } = await import(new URL('../jarl.mjs', import.meta.url).href);
+  const { hub, tool } = world();
+  jarl(hub, 'new', 'one', '--repo', '../tool');
+  jarl(hub, 'set', '1', 'in-progress', 'raised', '--branch', 'jarl/001-one', '--worker', 'w1');
+  const lease = () => dispatch(hub, 'resume', [], {}).out.inFlight[0].stale;
+  assert.deepEqual(lease(), ['branch gone: jarl/001-one']);
+  sh(tool, 'git branch jarl/001-one');
+  assert.deepEqual(lease(), [], 'the branch made after the first call is seen by the second');
+  const tips = () => dispatch(hub, 'tips', [], {}).out.repos.find((r) => r.repo === 'tool').rows.map((x) => x.branch);
+  assert.deepEqual(tips(), ['jarl/001-one', 'release', 'main']);
+  // A repository that was not one yet, then is: the refusal is not remembered.
+  const later = join(hub, '..', 'later');
+  mkdirSync(later);
+  assert.throws(() => dispatch(hub, 'check', ['1'], { branch: 'x', repo: '../later' }), /not a git repository/);
+  sh(later, 'git init -q -b main && git config user.email t@t && git config user.name t && echo 1 > f && git add -A && git commit -qm base');
+  assert.doesNotThrow(() => dispatch(hub, 'branches', [], { repo: '../later' }));
+});
+
+test('handoff write is retired: it takes its old flags, writes nothing, says so and exits 0; handoff read is resume plus the old file as history', () => {
+  const { hub } = world();
+  jarl(hub, 'new', 'one');
+  const before = snapshot(hub);
+  const r = run(hub, ['handoff', 'write', '--summary', 'the plan', '--next', 'raise one']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /^handoff write is retired: nothing written\. The state a session resumes from is assembled live — run jarl\.mjs resume\./);
+  assert.deepEqual(snapshot(hub), before, 'no handoff.md, no log line');
+  assert.equal(existsSync(join(hub, '.jarl', 'handoff.md')), false);
+  assert.deepEqual(JSON.parse(jarl(hub, 'handoff', 'write', '--json')), { retired: true, wrote: null, note: r.stdout });
+  // With no file kept, read is resume itself.
+  const resumed = jarl(hub, 'resume');
+  assert.equal(jarl(hub, 'handoff', 'read'), resumed);
+  assert.equal(jarl(hub, 'handoff'), resumed, 'a bare handoff reads');
+  assert.match(run(hub, ['handoff', 'rewrite']).stderr, /handoff takes read or write/);
+  // status no longer carries a handoff age in its text.
+  writeFileSync(join(hub, '.jarl', 'handoff.md'), '# Handoff\n\n**At:** 2026-01-01 00:00 · **Head:** main@abc1234\n\n## Summary\nthe old plan\n\n## Next\n- raise one\n');
+  assert.doesNotMatch(jarl(hub, 'status'), /handoff/);
+  const h = jarl(hub, 'handoff', 'read');
+  assert.ok(h.startsWith(jarl(hub, 'resume')), 'read starts with exactly what resume prints');
+  assert.match(h, /\n\n## Earlier handoff — history, written 2026-01-01 00:00, \d+d ago; not the current state\n\*\*At:\*\* 2026-01-01 00:00 · \*\*Head:\*\* main@abc1234\n\n### Summary\nthe old plan\n\n### Next\n- raise one$/);
+  const js = JSON.parse(jarl(hub, 'handoff', 'read', '--json'));
+  assert.match(js.history, /the old plan/);
+  assert.equal(js.legacyHandoff.at, '2026-01-01 00:00');
+});
+
+test('resume stays fast on a loop of hundreds of issues naming another repository and a long log', () => {
+  const { hub, tool } = world();
+  const dir = join(hub, '.jarl', 'issues');
+  const statuses = ['done', 'done', 'done', 'open', 'in-progress'];
+  for (let n = 1; n <= 425; n += 1) {
+    const id = String(n).padStart(3, '0');
+    const status = statuses[n % statuses.length];
+    const lease = status === 'in-progress' ? `**Branch:** jarl/${id}-x\n**Worker:** w\n**Since:** 2026-09-27 06:00\n` : '';
+    const merged = status === 'done' ? `**Merged:** abc1234 in ../tool\n**CI:** green\n` : '';
+    writeFileSync(join(dir, `${id}-issue-${id}.md`), `# ${id} · issue ${id}\n\n**Status:** ${status}\n**Kind:** bug\n**Priority:** 2\n**Tier:** standard\n**Tags:** \n**Files:** tool/src/f${id}.mjs\n**Repo:** ../tool\n${lease}${merged}**Found by:** jarl\n**Where:**\n\n## What\n\n\n## Why\n\n\n## Acceptance\n- works\n\n## Evidence\n\n`);
+  }
+  const lines = [];
+  for (let n = 0; n < 3000; n += 1) lines.push(`- 2026-09-27 06:00 · ${String((n % 425) + 1).padStart(3, '0')} evidence · note ${n}`);
+  writeFileSync(join(hub, '.jarl', 'log.md'), `# Log\n\n${lines.join('\n')}\n`);
+  sh(tool, 'for n in 005 010 015; do git branch jarl/$n-x; done');
+  const t0 = Date.now();
+  const r = run(hub, ['resume']);
+  const ms = Date.now() - t0;
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /## In flight \(85\)/);
+  assert.match(r.stdout, /## Last 15 log line\(s\)/);
+  // The budget is 2 s on a quiet machine; the bound here leaves room for a loaded one, and still catches a return
+  // to git processes per issue (over a thousand on this loop).
+  assert.ok(ms < 6000, `resume took ${ms} ms`);
+});
+
 // The live loop of the family release, when this checkout sits beside it: resume and handoff read on a copy, with
 // its old handoff.md shown as history. Skipped anywhere else.
 const LIVE = process.env.JARL_LIVE_LOOP || join(fileURLToPath(new URL('.', import.meta.url)), '../../../../../Vision/core/toolset/release-6.1.0');

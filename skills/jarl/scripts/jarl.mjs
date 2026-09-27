@@ -1518,11 +1518,15 @@ function git(root, args) {
 // tip, upstream (null when none is set or its remote branch is gone), ahead/behind against that upstream and the
 // time of its last commit — one git process per repository instead of several per branch, which is what keeps the
 // read-only views (status, tips, resume) fast on a loop of hundreds of issues. jarl never moves a ref, so nothing
-// read here goes stale while it runs.
-const IS_REPO = new Map();
+// read here goes stale while it runs. The caches live for one command: dispatch empties them (resetCaches) before
+// each one. Only what was found is kept — a directory that is not a repository, like a Repo path that did not
+// resolve, is asked again, so a refusal always names the current state.
+const IS_REPO = new Set();
 function isGitRepo(dir) {
-  if (!IS_REPO.has(dir)) IS_REPO.set(dir, git(dir, ['rev-parse', '--git-dir']) !== null);
-  return IS_REPO.get(dir);
+  if (IS_REPO.has(dir)) return true;
+  const ok = git(dir, ['rev-parse', '--git-dir']) !== null;
+  if (ok) IS_REPO.add(dir);
+  return ok;
 }
 const REFS = new Map();
 export function refsIn(repo) {
@@ -1559,7 +1563,7 @@ export function repoOf(root, named) {
   const key = `${root}\n${named}`;
   if (RESOLVED.has(key)) return RESOLVED.get(key);
   const repo = resolve(root, named);
-  need(git(repo, ['rev-parse', '--git-dir']) !== null, `not a git repository: ${repo} (a relative --repo or Repo path is read from the loop's root, ${root})`);
+  need(isGitRepo(repo), `not a git repository: ${repo} (a relative --repo or Repo path is read from the loop's root, ${root})`);
   // A subdirectory of a repository is not the repository: the paths git reports are relative to its root, so a
   // declared file or a removed test would be read from the wrong place and go unseen.
   const top = git(repo, ['rev-parse', '--show-toplevel']);
@@ -1843,6 +1847,11 @@ export const TIPS_RECENT_MS = 7 * 24 * 3_600_000;
 // gh, when it is on PATH (JARL_GH names another binary: a test knob). Null when it cannot be run: tips then
 // says nothing about CI rather than guessing.
 let GH;
+// Every cache a command fills, emptied before the next one (see dispatch).
+export function resetCaches() {
+  for (const m of [IS_REPO, REFS, RESOLVED, REPO_OF, TOP_OF]) m.clear();
+  GH = undefined;
+}
 function ghBin() {
   if (GH !== undefined) return GH;
   const bin = process.env.JARL_GH || 'gh';
@@ -2681,12 +2690,28 @@ function main() {
   const [cmd, ...rest] = positional;
   if (!cmd || flags.help) { console.log(USAGE); process.exit(cmd ? 0 : 1); }
   const root = flags.root ? resolve(flags.root) : findRoot();
+  let r;
+  try { r = dispatch(root, cmd, rest, flags); } catch (e) {
+    console.error(e.message);
+    process.exit(1);
+  }
+  const { out, text, warn } = r;
+  console.log(flags.json ? JSON.stringify(out, null, 2) : text);
+  for (const w of warn) console.error(w);
+  if (cmd === 'check' && !out.ok) process.exit(2);
+}
+
+// One command, run: its result (what --json prints), its text and the notes said on stderr. Throws on a refusal.
+// Every call starts from empty caches, so a caller that runs many commands in one process (a server) sees each
+// time what is on disk and in git now, exactly as a fresh process would.
+export function dispatch(root, cmd, rest, flags) {
+  resetCaches();
   let out;
   let text;
   let warn = [];   // said on stderr, so a caller reading stdout sees the same lines as before
   const each = (o, f) => [].concat(o).map(f).join('\n');
   const writes = MUTATING.has(cmd);
-  try {
+  {
     (writes ? (fn) => withLock(root, fn) : (fn) => fn())(() => {
     switch (cmd) {
       case 'init': out = cmdInit(root, rest[0], flags); text = `opened ${out.dir} · ${out.permanent ? 'permanent record, no branch' : out.committed ? 'committed with the work' : 'kept out of git'}`; break;
@@ -2731,13 +2756,8 @@ function main() {
       default: throw new Error(`unknown command: ${cmd}\n${USAGE}`);
     }
     });
-  } catch (e) {
-    console.error(e.message);
-    process.exit(1);
   }
-  console.log(flags.json ? JSON.stringify(out, null, 2) : text);
-  for (const w of warn) console.error(w);
-  if (cmd === 'check' && !out.ok) process.exit(2);
+  return { out, text, warn };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();
