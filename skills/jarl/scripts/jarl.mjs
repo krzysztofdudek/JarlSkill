@@ -433,6 +433,13 @@ function renderRuleLog(r, t) {
   if (t.state === 'skipped') return ` · rule ${r.rule} not ratified in its own log: ${t.reason}`;
   return ` · rule ${r.rule} NOT ratified in its own log: ${t.reason}`;
 }
+// A loop whose profile keeps close to the record belongs to the composer that runs it: what the answer says instead of
+// a write, naming the composer and its command.
+function composerOf(root) {
+  const profile = R.loadProfile(root);
+  if (profile.lifecycle.close !== 'record') return null;
+  return { state: 'skipped', reason: `this loop is run by ${profile.name}, which writes it into the graph with its own code${profile.lifecycle.command ? ` — ${profile.lifecycle.command}` : ''}` };
+}
 function renderTypeLog(t) {
   if (!t) return '';
   if (t.state === 'written') return ` · written into the type's decision log${t.datetime ? ` (${t.datetime})` : ''}`;
@@ -510,14 +517,18 @@ export function dispatch(root, cmd, rest, flags) {
   }
   // A ratified area ruling goes to the type's decision log after the answer is recorded and the lock let go: the
   // probe and the write run another tool, which may take a while, and other writers of the loop must not wait on it.
+  // A loop run by a composer (its profile keeps close to the record) is written into the graph by that composer, with
+  // its own code and into the tree it hands over: here the answer is recorded and nothing is sent, so no entry is ever
+  // written twice, nor into a checkout the composer's work never reaches.
   if (cmd === 'answer') {
+    const composer = (out.typeDecision || out.ruleRatification) ? composerOf(root) : null;
     if (out.typeDecision) {
-      out.typeLog = writeAreaDecision(root, out.typeDecision);
+      out.typeLog = composer || writeAreaDecision(root, out.typeDecision);
       try { withLock(root, () => recordTypeLog(root, out.ruling, out.typeDecision, out.typeLog)); } catch (e) { warn.push(`note: what became of ${out.ruling} in the type log was not recorded in the loop: ${e.message}`); }
     }
     // The rule's ratification is written after the type's decision, and independently of it: either may fail alone.
     if (out.ruleRatification) {
-      out.ruleLog = writeRuleRatification(root, out.ruleRatification);
+      out.ruleLog = composer || writeRuleRatification(root, out.ruleRatification);
       try { withLock(root, () => recordRuleLog(root, out.ruling, out.ruleRatification, out.ruleLog)); } catch (e) { warn.push(`note: what became of ${out.ruling} in the rule's log was not recorded in the loop: ${e.message}`); }
     }
     text = `answered a-${out.id}${out.issue ? ` · written into ${out.issue}` : ''}${out.verdict ? ` · ${out.ruling} ${out.verdict}${renderTypeLog(out.typeLog)}${renderRuleLog(out.ruleRatification, out.ruleLog)}` : ''}`;

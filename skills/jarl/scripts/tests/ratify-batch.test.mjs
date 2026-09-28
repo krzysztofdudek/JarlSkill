@@ -430,3 +430,51 @@ test('answer --by names who answered: the ruling records them and the rule ratif
   const tool = mcp.buildTools().find((t) => t.name === mcp.toolName('answer'));
   assert.equal(tool.inputSchema.properties.by.type, 'string');
 });
+
+// A loop a composer runs (its profile keeps close to the record: Horde's mission) is written into the graph by that
+// composer, into the tree it hands over (issue 436). The composer files its own batch through record.mjs ask with the
+// ruling named; the command line answering one of its items records the verdict and sends nothing, so no entry is
+// written twice or into a checkout the composer's work never reaches.
+function composerLoop() {
+  const root = mkdtempSync(join(tmpdir(), 'jarl-composer-'));
+  mkdirSync(join(root, '.git'));
+  mkdirSync(join(root, '.yggdrasil'));
+  const profile = join(root, 'composer.json');
+  writeFileSync(profile, JSON.stringify({
+    'jarl-profile': 1, name: 'composer',
+    statuses: { open: { flags: ['dispatchable'] }, doing: { flags: ['holds-claim'] }, done: { flags: ['settles-dependents', 'terminal', 'closes-record'] } },
+    lifecycle: { close: 'record', archive: 'record', command: 'composer done' },
+  }));
+  jarl(root, {}, 'init', 'goal', '--profile', profile);
+  return root;
+}
+
+test('a composer files its own ratify items by ruling; the command line answering one writes nothing into the graph and says who does', async () => {
+  const yg = stub();
+  const root = composerLoop();
+  const env = { JARL_YG: yg.bin, ...gitName('Jane Doe') };
+  jarl(root, env, 'decide', 'svc', 'Every service validates its input.', '--area', 'service', '--reach', '4', '--rule', 'validates-input');
+  jarl(root, env, 'decide', 'plain', 'Not about an area.');
+  const R = await import('../record.mjs');
+  const item = R.ask(root, 'area service · svc: "Every service validates its input." — yes or reject', { kind: 'ratify', ruling: 'svc' });
+  assert.equal(item.kind, 'ratify');
+  assert.equal(R.loadAsks(root).find((a) => a.id === item.id).ruling, 'svc');
+  // What a ratify item may name: an area ruling in force, once, and only on a ratify item.
+  assert.throws(() => R.ask(root, 'again', { kind: 'ratify', ruling: 'svc' }), /has been put to ratification already/);
+  assert.throws(() => R.ask(root, 'q', { kind: 'ratify', ruling: 'plain' }), /no area ruling plain/);
+  assert.throws(() => R.ask(root, 'q', { kind: 'ratify', ruling: 'ghost' }), /no area ruling ghost/);
+  assert.throws(() => R.ask(root, 'q', { kind: 'stuck', ruling: 'svc' }), /kind ratify/);
+  const out = json(root, env, 'answer', `a-${item.id}`, 'yes');
+  assert.equal(out.verdict, 'ratified');
+  assert.equal(out.typeLog.state, 'skipped');
+  assert.match(out.typeLog.reason, /run by composer, which writes it into the graph with its own code — composer done/);
+  assert.equal(out.ruleLog.state, 'skipped');
+  assert.deepEqual(yg.calls(), [], 'nothing reached yg: not even the probe');
+  assert.match(decisions(root), /\*\*Ratified:\*\* a-001/);
+  assert.doesNotMatch(decisions(root), /Type log|Rule log/);
+  // A ratified ruling is never put to ratification again.
+  jarl(root, env, 'decide', 'svc2', 'Services log every refusal.', '--area', 'service');
+  R.ask(root, 'q', { kind: 'ratify', ruling: 'svc2' });
+  jarl(root, env, 'answer', 'a-002', 'nie');
+  assert.throws(() => R.ask(root, 'q', { kind: 'ratify', ruling: 'svc' }), /already ratified|put to ratification already/);
+});
