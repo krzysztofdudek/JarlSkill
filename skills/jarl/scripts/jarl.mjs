@@ -157,7 +157,8 @@ commands:
                                                  repository, tag, kind, priority or a field the profile declares
   archive "<slug>"                               put the current loop away under .jarl/archive/<yyyy.mm.dd>-<slug>/,
                                                  keeping the archive, the mode markers and .jarl/templates/, so init
-                                                 can open a new loop here in the same mode
+                                                 can open a new loop here in the same mode; refused under a profile
+                                                 whose "lifecycle" keeps archive to the record (it names the command)
   report [--found]                               what was done (per repository when it spans several), who reviewed it,
                                                  dropped, deferred and still open — ready for the changelog; --found adds
                                                  the issues found by someone other than the jarl; then the loop metrics
@@ -194,7 +195,8 @@ commands:
                                                  for it; --batch files the batch only and closes nothing; a ratified
                                                  area ruling is written into the type's decision log (yg log add
                                                  --type) when the repository has a graph and a working yg, and one
-                                                 naming a rule also ratifies it (yg log add --aspect --ratify)
+                                                 naming a rule also ratifies it (yg log add --aspect --ratify);
+                                                 refused under a profile whose "lifecycle" keeps close to the record
 
 options: --json  --help  --root <repo root>
 
@@ -498,10 +500,10 @@ export function dispatch(root, cmd, rest, flags) {
       case 'tips': out = cmdTips(root); text = renderTips(out); break;
       case 'queue': out = cmdQueue(root, flags); text = renderQueue(out); break;
       case 'changelog': out = cmdChangelog(root, rest[0], flags); text = out.text || '(no changelog fragment on these issues)'; warn = out.missing.length ? [`note: no changelog fragment: ${out.missing.join(', ')} — record one with: jarl.mjs body <id> --changelog "Added: …"`] : []; break;
-      case 'archive': out = cmdArchive(root, rest[0]); text = `archived → ${out.archived}${out.leftOpen.length ? ` · ${out.leftOpen.length} still open or in progress: ${out.leftOpen.join(', ')}` : ''} · open a new loop with: jarl.mjs init "<goal>"`; break;
+      case 'archive': out = cmdArchive(root, rest[0], { caller: 'cli' }); text = `archived → ${out.archived}${out.leftOpen.length ? ` · ${out.leftOpen.length} still open or in progress: ${out.leftOpen.join(', ')}` : ''} · open a new loop with: jarl.mjs init "<goal>"`; break;
       case 'mode': out = cmdMode(root, rest[0]); text = 'now permanent · no longer tied to a feature branch; close keeps the directory'; break;
       case 'profile': out = cmdProfile(root, rest[0]); text = renderProfile(out); break;
-      case 'close': out = cmdClose(root, flags); text = out.closed ? (out.kept ? `kept ${out.kept} · closed as a permanent record` : `removed ${out.removed}`) + (out.deferred.length ? ` · ${out.deferred.length} deferred still waiting: ${out.deferred.join(', ')}` : '') + (out.uncommitted ? ` · ${out.uncommitted} loop file(s) not committed${out.kept ? ' — commit .jarl/' : ' before the removal'}` : '') + renderBatch(out.batch, out.kept ? 'kept' : 'removed') : renderBatch(out.batch, 'open').trimStart(); break;
+      case 'close': out = cmdClose(root, { ...flags, caller: 'cli' }); text = out.closed ? (out.kept ? `kept ${out.kept} · closed as a permanent record` : `removed ${out.removed}`) + (out.deferred.length ? ` · ${out.deferred.length} deferred still waiting: ${out.deferred.join(', ')}` : '') + (out.uncommitted ? ` · ${out.uncommitted} loop file(s) not committed${out.kept ? ' — commit .jarl/' : ' before the removal'}` : '') + renderBatch(out.batch, out.kept ? 'kept' : 'removed') : renderBatch(out.batch, 'open').trimStart(); break;
       default: throw new Error(`unknown command: ${cmd}\n${USAGE}`);
     }
     });
