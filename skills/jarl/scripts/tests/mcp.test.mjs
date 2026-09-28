@@ -60,8 +60,9 @@ test('parity: each tool has one field per argument and per flag, under the CLI n
     const shown = new Set([...blocks[cmd].synopsis.matchAll(/--([a-z][a-z-]*)/g)].map((m) => m[1]));
     for (const f of shown) assert.ok(props[f], `${cmd}: usage shows --${f}, the tool has no field for it`);
     for (const f of flags) assert.ok(shown.has(f), `${cmd}: --${f} is in COMMAND_FLAGS but its usage does not show it`);
-    assert.equal(t.inputSchema.additionalProperties, false);
-    assert.equal(t.annotations.readOnlyHint, !MUTATING.has(cmd));
+    // Runes 1.0.0 writes only what differs from the MCP defaults: no additionalProperties (the server refuses an unknown field itself), readOnlyHint only when true.
+    assert.equal(t.inputSchema.additionalProperties, undefined);
+    assert.equal(t.annotations.readOnlyHint === true, !MUTATING.has(cmd));
     assert.match(t.description, MUTATING.has(cmd) ? /^WRITES the loop/ : /^Read-only/, `${cmd}: the description says plainly whether it writes`);
   }
 });
