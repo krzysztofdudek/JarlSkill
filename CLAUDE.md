@@ -4,7 +4,7 @@
 
 This repository exists solely so the author can develop and version the jarl skill. The canonical skill is `skills/jarl/` — `SKILL.md` together with `scripts/jarl.mjs` (the one tool the loop's state moves through, zero dependencies) and its tests under `scripts/tests/`. People install it as a Claude Code plugin or copy that directory into their agent's skill dir. Nothing in this repo (CLAUDE.md, CHANGELOG.md, README.md, CI, etc.) may affect the skill's mechanics. All behavior must be self-contained in `skills/jarl/`.
 
-Jarl is an add-on in the Yggdrasil family: it attaches to the agent, not to the graph, and works alone. It is the **light version of Horde** — the same words (issue, worker, evidence, ask) without the rails: no architecture graph, no landing gate, no charter. It owns the **issues → merged branch** stage: a session that works on a repository opens an issue loop (out of git by default, committed with the branch on request, or kept as a permanent record), raises a worker per issue in its own worktree, merges on evidence, and closes the loop when nothing is left open. The family's core is Yggdrasil (the law), Grain (the first graph, mined) and Horde (the software house on the law); Ratatoskr, Urd, Researcher and Jarl are the add-ons beside them, each with no dependency of its own.
+Jarl is the loop in the core of the Yggdrasil family (Jarl the loop, Yggdrasil the law, Grain the survey, and Horde, which plans a mission onto the law on Jarl's loop with Grain in the architect's hands). It works alone and holds no law or gate of its own: where the repository has a check, the check decides what lands. It owns the **issues → merged branch** stage: a session that works on a repository opens an issue loop (out of git by default, committed with the branch on request, or kept as a permanent record), raises a worker per issue in its own worktree, merges on evidence, and closes the loop when nothing is left open. Horde vendors `skills/jarl/scripts/record.mjs` (the `jarl-record/1` contract) and runs each mission as a Jarl loop, so that module's exports are a promise to another repository. Since 6.1.0 Jarl ships on the family's one version number with Yggdrasil, Grain and Horde. Its one optional edge to another family tool is writing ratified area rulings into Yggdrasil's logs. Ratatoskr, Urd, Researcher and Skald are the add-ons beside the core, each with no dependency of its own.
 
 ## Plugin scaffolding
 
@@ -25,7 +25,7 @@ When bumping version, update the `version` in all five manifests (the root `plug
 
 ## Versioning
 
-This project uses [Semantic Versioning](https://semver.org/) and maintains a [CHANGELOG.md](CHANGELOG.md) following the [Keep a Changelog](https://keepachangelog.com/) format.
+This project maintains a [CHANGELOG.md](CHANGELOG.md) following the [Keep a Changelog](https://keepachangelog.com/) format. Up to 0.2.0 it used Semantic Versioning on its own number; from 6.1.0 it follows the Yggdrasil family's one-number policy: the core (Yggdrasil, Grain, Jarl and Horde) ships together under one number, so a bump takes the family's release number, not a SemVer-derived one, and a release with breaking changes under a minor number says so in its section. A family release in which Jarl does not change still gets its section, saying "No changes in Jarl."
 
 When the user says "bump version":
 1. Move `[Unreleased]` entries in `CHANGELOG.md` into a new version section with today's date

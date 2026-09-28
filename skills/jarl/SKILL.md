@@ -9,11 +9,7 @@ You are the **jarl of this branch**: the one who directs the work, not the one w
 your client. You talk to them in plain words, you ask them only what is theirs to decide, and you never
 spend their trust on a guess.
 
-Jarl is the light version of Horde. Same words — issue, worker, evidence, ask — without the rails: no
-architecture graph, no landing gate, no charter, no client machinery. A branch, a directory of issues,
-one tool, a loop. When a repository needs rails, that is Horde's job; Jarl is the loop and nothing more. A loop may
-be opened with a profile, data that names its statuses and fields (see [Profiles](#profiles)); Jarl reads the profile
-and never grows rails of its own (see [What Jarl will not grow](#what-jarl-will-not-grow)).
+Jarl is the loop of the Yggdrasil family: issue, worker, evidence, ask, and the record they leave. It holds no law and runs no gate of its own. The law is Yggdrasil's, and where the repository has a check, the check decides what lands, not Jarl: a fresh reviewer can only stop a change, and its word is recorded as testimony. A loop whose `goal.md` declares no `Check:` line lands on testimony alone, and says so (see [Loop metrics](#loop-metrics)). A branch, a directory of issues, one tool, a loop. Horde, the family's mission tool, runs its missions on this same loop and adds what Jarl will not grow: an architect who plans the mission onto the graph first, a landing gate and the client's charter. A loop may be opened with a profile, data that names its statuses and fields (see [Profiles](#profiles)); Jarl reads the profile and never grows rails of its own (see [What Jarl will not grow](#what-jarl-will-not-grow)).
 
 ## The one place
 
@@ -681,10 +677,8 @@ Jarl records, derives and displays; it never blocks code from landing. Every sca
 4. **A release mode that refuses to tag or release.** A release checklist is issues filed from a template; the procedure belongs to the skill that runs releases, and the tags to each repository's own release workflow.
 5. **A computed schedule or critical-path planner.** `next` offers what can run now; After is ordering and bookkeeping, not a schedule.
 
-The line holds for Jarl's own code, not for everything a loop may run. Jarl has no gate, no planner and no lease that acts, and it will not grow one. A profile, written by a composer such as Horde, may install such things as commands of its own, and Jarl then runs them where the profile says and records what they answer, without knowing what they mean. Today a profile carries data only: statuses and who may set them, fields, sections, the scheduler it defers to and what its done gate asks for; the commands it may install (which work shares territory, what a move into a status requires, what happens after a write) come in later releases, one extension point at a time. A request for one of the five above is a request for such a composer and its profile, not for a bigger Jarl.
+The line holds for Jarl's own code. A profile is data only: statuses and who may set them, fields, sections, the scheduler it defers to, what its done gate asks for and who may end the loop. Jarl does not run commands a profile supplies, now or later. A composer that needs a gate, a planner or a lease that acts, as Horde does, keeps them in its own code beside the record and writes to the record through `record.mjs`. The only Jarl code that calls another tool of the family is the optional write of ratified rulings to Yggdrasil (see [Rulings about an area](#rulings-about-an-area)). A request for one of the five above is a request for such a composer, not for a bigger Jarl.
 
 ## Boundary with other skills
 
-Jarl is the loop; it does not replace discipline. TDD, debugging, verification and review skills still
-hold inside every worker. Urd's "ask, don't guess" holds inside the jarl. Horde replaces Jarl when a
-mission needs the graph, the gate and the client's charter — the vocabulary carries over unchanged.
+Jarl is the loop; it does not replace discipline. TDD, debugging, verification and review skills still hold inside every worker. Urd's "ask, don't guess" holds inside the jarl. When a mission needs the graph, a plan made before anyone writes, the gate and the client's charter, that is Horde, whose mission is a Jarl loop run under its own profile — the vocabulary carries over because the record is the same.
