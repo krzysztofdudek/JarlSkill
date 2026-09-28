@@ -99,28 +99,31 @@ export function writeAreaDecision(root, { type, text, supersedes = null }) {
   }
 }
 
-// Who admitted the rule, as the ratification names them: the person the graph's repository commits as (git
-// user.name), who is the user answering the batch; "the owner" when git names nobody. A name cmd.exe would read inside
-// quotes, or one of no letters, is not passed: "the owner" stands for it.
+// Who admitted the rule, as the ratification names them: the one the answer named (answer --by), else the person
+// the graph's repository commits as (git user.name), who is the user answering the batch; "the owner" when neither
+// names anybody. A name cmd.exe would read inside quotes, or one of no letters, is not passed: "the owner" stands for it.
 const NAME_RE = /^[^"%!\r\n\x00-\x1f]{1,120}$/u;
-function ratifier(repo) {
+const passable = (name) => NAME_RE.test(name) && /\p{L}/u.test(name);
+function ratifier(repo, named) {
+  if (named !== undefined && named !== null) return passable(named) ? named : 'the owner';
   let name = '';
   try { name = execFileSync('git', ['config', 'user.name'], { cwd: repo, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { /* none set */ }
-  return NAME_RE.test(name) && /\p{L}/u.test(name) ? name : 'the owner';
+  return passable(name) ? name : 'the owner';
 }
 
 // Writes the ratification of one rule (the ruleRatification an answer hands back) into the rule's own log. The types
 // and the version admitted are Yggdrasil's to read from the graph, never Jarl's to say. The answer has the shapes of
-// writeAreaDecision's, and a written one also names who it says admitted the rule (by). yg refuses a rule it does not
+// writeAreaDecision's, and a written one also names who it says admitted the rule (by): the ratification's own by
+// when the answer named someone, else git's user.name. yg refuses a rule it does not
 // know (aspect-not-found) and one no type reaches (aspect-ratify-no-type): the refusal is passed on with the command
 // to run by hand. Entries a graph upgrade recorded for rules already in force name the graph, not a person; Jarl never
 // reads them as the user's word and never skips a write because one is there.
-export function writeRuleRatification(root, { rule, text }) {
+export function writeRuleRatification(root, { rule, text, by: named }) {
   if (!RULE_RE.test(String(rule))) return { state: 'skipped', reason: `"${rule}" is not a rule id yg takes (segments of letters, digits and . _ - joined by /)` };
   const repo = graphRepo(root);
   if (!repo) return { state: 'skipped', reason: `no ${GRAPH_DIR}/ in the loop's repository` };
   try { run(repo, ['--version'], PROBE_MS); } catch { return { state: 'skipped', reason: `${GRAPH_DIR}/ found, but no working yg answers \`npx --no-install yg --version\` there` }; }
-  const by = ratifier(repo);
+  const by = ratifier(repo, named);
   const dir = mkdtempSync(join(tmpdir(), 'jarl-rule-'));
   const file = join(dir, 'ratification.md');
   // Quoted for a POSIX shell: a name such as O'Brien stays one word when the command is pasted.
