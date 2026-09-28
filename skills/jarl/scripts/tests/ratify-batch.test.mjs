@@ -392,3 +392,41 @@ test('a ratification yg refuses is reported with the command to run by hand; the
   assert.doesNotMatch(decisions(root), /Rule log/);
   assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /r did NOT ratify rule lonely in its own log/);
 });
+
+// Who answered (issue 503): `answer --by <who>` records that person on the answer's ruling instead of the fixed owner,
+// and a ratification of a rule then names them in `yg log add --ratify --by`, whatever git's user.name says. Without
+// --by, the answer is the owner's and the ratification names git's user.name, as before.
+test('answer --by names who answered: the ruling records them and the rule ratification passes them to yg; absent, nothing changes', async () => {
+  const yg = stub();
+  const root = loop({ graph: true });
+  const env = { JARL_YG: yg.bin, ...gitName('Jane Doe') };
+  jarl(root, env, 'decide', 'todo', 'No TODO comments in services.', '--area', 'service', '--rule', 'no-todo-comments');
+  jarl(root, env, 'decide', 'two', 'No console in services.', '--area', 'service', '--rule', 'no-console');
+  jarl(root, env, 'close', '--batch');
+  const out = json(root, env, 'answer', 'a-001', 'tak', '--by', 'Anna Nowak');
+  assert.equal(out.ruleRatification.by, 'Anna Nowak');
+  assert.equal(out.ruleLog.by, 'Anna Nowak');
+  const aspect = () => yg.calls().filter((c) => c.args[2] === '--aspect');
+  assert.deepEqual(aspect()[0].args.slice(4, 7), ['--ratify', '--by', 'Anna Nowak']);
+  assert.match(decisions(root), /## \S+ · ask-001\n\*\*Question:\*\*[^\n]*\n\*\*Answer:\*\* tak\n\n\*\*By:\*\* Anna Nowak/);
+  assert.equal(json(root, env, 'decisions').find((d) => d.slug === 'ask-001').by, 'Anna Nowak');
+  assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /todo ratified rule no-todo-comments in its own log · by Anna Nowak/);
+  // Without --by: the owner answered, and the ratification names the person git names.
+  const plain = json(root, env, 'answer', 'a-002', 'yes');
+  assert.deepEqual(plain.ruleRatification, { rule: 'no-console', text: 'No console in services.\n\n(ratified: two, a-002)' });
+  assert.equal(plain.ruleLog.by, 'Jane Doe');
+  assert.deepEqual(aspect()[1].args.slice(4, 7), ['--ratify', '--by', 'Jane Doe']);
+  assert.equal(json(root, env, 'decisions').find((d) => d.slug === 'ask-002').by, 'owner');
+  // An empty --by is refused before anything is written; a name cmd.exe would misread is replaced by "the owner".
+  jarl(root, env, 'ask', 'Which DB?');
+  assert.match(run(root, env, ['answer', 'a-003', 'Postgres', '--by', ' ']).stderr, /--by needs a value/);
+  assert.match(readFileSync(join(root, '.jarl', 'asks.md'), 'utf8'), /\*\*a-003\*\* \(open\)/);
+  jarl(root, env, 'decide', 'three', 'Third.', '--area', 'service', '--rule', 'no-eval');
+  jarl(root, env, 'close', '--batch');
+  const odd = json(root, env, 'answer', 'a-004', 'yes', '--by', '100%');
+  assert.equal(odd.ruleLog.by, 'the owner');
+  // MCP parity: the jarl_answer tool carries the field, generated from the command table.
+  const mcp = await import('../jarl-mcp.mjs');
+  const tool = mcp.buildTools().find((t) => t.name === mcp.toolName('answer'));
+  assert.equal(tool.inputSchema.properties.by.type, 'string');
+});
