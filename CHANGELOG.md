@@ -2,8 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Up to 0.2.0 Jarl followed Semantic Versioning on its own number. From 6.1.0 it follows the Yggdrasil family's one-number policy instead: the core of the family (Yggdrasil, Grain, Jarl and Horde) ships together under one number, so a release may carry breaking changes under a minor number, and its section says so. A release in which Jarl does not change says "No changes in Jarl."
 
 ## [Unreleased]
 
@@ -52,6 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Jarl works on Windows. A loop checked out with Windows line endings reads and writes as it does elsewhere; a write that Windows refuses for a moment because another program has the file open is retried instead of failing; the CLI and the MCP server start however the plugin path is spelled (drive-letter case, a symlink or a junction); and the test suite runs on Windows in CI.
 
 ### Changed
+- Jarl joins the core of the Yggdrasil family and takes the family's version number: the next release is 6.1.0, straight after 0.2.0, shipped together with Yggdrasil, Grain and Horde. Horde's missions run as Jarl loops. The README, the skill's opening and its "What Jarl will not grow" say so: Jarl is the loop, the repository's check (where there is one) decides what lands, and a profile is data that Jarl never runs as commands. Skald joins the add-ons in the family section.
 - Each MCP tool now describes itself in one sentence after whether it writes, so the tool list costs an agent's context about 9,500 tokens instead of 12,900; the full usage of every command is what `jarl_help` returns. Every tool keeps its name and its fields. The server now runs on the MCP adapter the family's tools share, vendored with the skill and checked byte for byte against its pinned release. The server also stops cleanly on SIGTERM, SIGINT and SIGHUP, and a test reports the size of the tool list against the family's budget of 8.5k tokens as a warning, never a failure.
 - The skill's passages on calling the tools through MCP first, on a worker's own worktree and branch, and on what counts as evidence are now the wording shared word for word with the other skills of the family, and a check keeps them identical. In Jarl's terms nothing changes in behaviour: a worker passes the checks its brief names and never merges, and a free-text note explains while only `--ran`/`--saw` rows prove the work.
 - Jarl now needs Node.js 22 or later.
