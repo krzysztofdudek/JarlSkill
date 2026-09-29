@@ -25,7 +25,7 @@ When bumping version, update the `version` in all five manifests (the root `plug
 
 ## Versioning
 
-This project maintains a [CHANGELOG.md](CHANGELOG.md) following the [Keep a Changelog](https://keepachangelog.com/) format. Up to 0.2.0 it used Semantic Versioning on its own number; from 6.1.0 it follows the Yggdrasil family's one-number policy: the core (Yggdrasil, Grain, Jarl and Horde) ships together under one number, so a bump takes the family's release number, not a SemVer-derived one, and a release with breaking changes under a minor number says so in its section. A family release in which Jarl does not change still gets its section, saying "No changes in Jarl."
+This project maintains a [CHANGELOG.md](CHANGELOG.md) following the [Keep a Changelog](https://keepachangelog.com/) format. Up to 0.1.0 it used Semantic Versioning on its own number; from 6.1.0 it follows the Yggdrasil family's one-number policy: the core (Yggdrasil, Grain, Jarl and Horde) ships together under one number, so a bump takes the family's release number, not a SemVer-derived one, and a release with breaking changes under a minor number says so in its section. A family release in which Jarl does not change still gets its section, saying "No changes in Jarl."
 
 When the user says "bump version":
 1. Move `[Unreleased]` entries in `CHANGELOG.md` into a new version section with today's date
