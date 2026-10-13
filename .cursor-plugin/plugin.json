@@ -1,7 +1,7 @@
 {
   "name": "jarl",
   "displayName": "Jarl",
-  "version": "6.1.0",
+  "version": "6.1.1",
   "description": "Skill that turns your coding agent into the director of a feature branch: an issue loop (kept out of git by default, committed when you ask) where everything seen becomes an issue, a worker per issue works in its own worktree, evidence decides what merges, and the loop leaves no trace on main.",
   "author": {
     "name": "Krzysztof Dudek",
@@ -19,5 +19,15 @@
     "feature-branch",
     "agentic-workflow"
   ],
-  "logo": "yggdrasil.svg"
+  "logo": "yggdrasil.svg",
+  "mcpServers": {
+    "jarl": {
+      "command": "node",
+      "args": [
+        "-e",
+        "const f=process.argv[1];if(!require(\"fs\").existsSync(f)){console.error(\"jarl: \"+f+\" is not reachable from this environment (a host path inside a container?), so jarl did not run\");process.exit(0)}const r=require(\"child_process\").spawnSync(process.execPath,process.argv.slice(1),{stdio:\"inherit\"});process.exit(r.status===null?1:r.status)",
+        "${CURSOR_PLUGIN_ROOT}/skills/jarl/scripts/jarl-mcp.mjs"
+      ]
+    }
+  }
 }

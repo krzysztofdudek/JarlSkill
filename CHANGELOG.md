@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [6.1.1] - 2026-10-13
+
+### Fixed
+- Jarl's tools now start in Cursor, from an entry of the plugin made for Cursor.
+
 ## [6.1.0] - 2026-09-29
 
 Jarl 6.1.0 lets one loop drive work across several repositories, keeps the loop out of your git history by default, and starts each new session from a single `resume`. Your agent reaches every command as an MCP tool, and the record gets firmer: an issue closes on recorded proof, and code on a fresh reviewer's approve. Jarl now shares one version number with the rest of the Yggdrasil family's core (Yggdrasil, Grain and Horde), so it moves from 0.1.0 straight to 6.1.0. Under that shared number a minor release can carry upgrade steps, and this one has a few.
@@ -70,6 +75,7 @@ Jarl 6.1.0 lets one loop drive work across several repositories, keeps the loop 
 - Three standing helpers the loop raises so the director's own context is spent on the client: a reeve that runs the loop day to day and reports back on four occasions only, a fresh reviewer per branch, and a merger that verifies and merges one branch at a time. Worker branches are named by issue and never leave the machine.
 - Installable as a Claude Code plugin, a GitHub Copilot CLI plugin, a Codex CLI plugin and a Cursor plugin, or as a single file dropped into any agent's skill directory.
 
-[Unreleased]: https://github.com/krzysztofdudek/JarlSkill/compare/v6.1.0...HEAD
+[Unreleased]: https://github.com/krzysztofdudek/JarlSkill/compare/v6.1.1...HEAD
+[6.1.1]: https://github.com/krzysztofdudek/JarlSkill/compare/v6.1.0...v6.1.1
 [6.1.0]: https://github.com/krzysztofdudek/JarlSkill/compare/v0.1.0...v6.1.0
 [0.1.0]: https://github.com/krzysztofdudek/JarlSkill/releases/tag/v0.1.0
