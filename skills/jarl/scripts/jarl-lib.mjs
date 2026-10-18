@@ -2,7 +2,7 @@
 // change without notice. The stable surface other tools may vendor is record.mjs (RECORD_API), and only that;
 // the command line is jarl.mjs, a CLI over this module.
 //
-// Markdown is the source of truth: .jarl/goal.md, .jarl/decisions.md, the dated log and one
+// Markdown is the source of truth: the loop's goal and decisions, the dated log and one
 // .jarl/issues/NNN-slug.md per issue. This module only reads and writes those files, so anything
 // it does can be checked by opening them. Zero dependencies, Node 22+.
 
@@ -824,10 +824,23 @@ ${extra}${changelog ? `## Changelog\n${changelog}\n\n` : ''}## Evidence
 
 // ---- journal and decisions ----------------------------------------------------------------------
 
-// The log file of the record held in `dir`: the one place that names it. Only appendLogLines writes it and only
-// loopEvents reads it.
+// The files of the record held in `dir`, named here and nowhere else. Only appendLogLines writes the log and only
+// loopEvents reads it; the goal is read by goalLines, the decisions by decisionsAt and the questions by asksAt.
 const LOG_FILE = 'log.md';
+const GOAL_FILE = 'goal.md';
+const DECISIONS_FILE = 'decisions.md';
+const ASKS_FILE = 'asks.md';
+// A journal stamp, as the log and the loop's other dated lines write it: YYYY-MM-DD HH:MM (UTC).
+const STAMP_SRC = '\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}';
 export function logPath(dir) { return join(dir, LOG_FILE); }
+// A stamp in milliseconds; null for a text that is no stamp.
+function parseStamp(s) {
+  const m = new RegExp(`^(\\d{4}-\\d{2}-\\d{2}) (\\d{2}:\\d{2})$`).exec(String(s || '').trim());
+  return m ? Date.parse(`${m[1]}T${m[2]}:00Z`) : null;
+}
+function goalPath(dir) { return join(dir, GOAL_FILE); }
+function decisionsPath(dir) { return join(dir, DECISIONS_FILE); }
+function asksPath(dir) { return join(dir, ASKS_FILE); }
 export function appendLog(root, event) {
   appendLogLines(root, [event]);
 }
@@ -856,12 +869,12 @@ export function firstLine(text, where) {
 export const SLUG_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
 const DECISION_HEAD = /^## (\d{4}-\d{2}-\d{2}) · (.+?)\s*$/;
 
-// decisions.md read back: one entry per `## <date> · <slug>` heading, with its ruling, who ruled (**By:**, none
-// on rulings from before the field), what it supersedes and what superseded it.
+// The decisions read back: one entry per `## <date> · <slug>` heading, with its ruling, who ruled (**By:**, none
+// on a ruling that records no author), what it supersedes and what superseded it.
 export function loadDecisions(root) { return decisionsAt(jarlDir(root)); }
 // The rulings of the record held in `dir`.
 function decisionsAt(dir) {
-  const path = join(dir, 'decisions.md');
+  const path = decisionsPath(dir);
   if (!existsSync(path)) return [];
   const out = [];
   for (const line of readText(path).split('\n')) {
@@ -897,21 +910,24 @@ function decisionsAt(dir) {
 const DECISION_META = /^\*\*(By|Supersedes|Superseded by|Settles|Area|Reach|Rule|Ratified|Rejected|Type log|Rule log):\*\*\s*(.*)$/;
 
 // A field line added at the end of one ruling's own section, by lines: the text is never read as a pattern.
-function markDecision(root, slug, line) {
-  const path = join(jarlDir(root), 'decisions.md');
-  const lines = readText(path).split('\n');
+function markedDecisions(text, slug, line) {
+  const lines = text.split('\n');
   const at = lines.findIndex((l) => { const h = DECISION_HEAD.exec(l); return h && h[2] === slug; });
-  need(at !== -1, `no ruling ${slug} in decisions.md`);
+  need(at !== -1, `no ruling ${slug} in ${DECISIONS_FILE}`);
   let end = lines.findIndex((l, n) => n > at && l.startsWith('## '));
   if (end === -1) end = lines.length;
   while (end - 1 > at && lines[end - 1].trim() === '') end -= 1;
   lines.splice(end, 0, line);
-  writeAtomic(path, lines.join('\n'));
+  return lines.join('\n');
+}
+function markDecision(root, slug, line) {
+  const path = decisionsPath(jarlDir(root));
+  writeAtomic(path, markedDecisions(readText(path), slug, line));
 }
 
 export function appendDecision(root, slug, ruling, { by, supersedes, area, reach, rule } = {}) {
   need(typeof slug === 'string' && SLUG_RE.test(slug), `a ruling's slug is letters, digits and . _ - (starting with a letter or digit, at most 80 characters) — not "${slug}"; e.g. ${slugify(String(slug || 'ruling'))}`);
-  const path = join(jarlDir(root), 'decisions.md');
+  const path = decisionsPath(jarlDir(root));
   const existing = existsSync(path) ? readText(path) : '# Decisions\n';
   const all = loadDecisions(root);
   need(!all.some((d) => d.slug === slug), `duplicate slug: ${slug} — a ruling that replaces it takes a new slug and --supersedes ${slug}`);
@@ -919,19 +935,54 @@ export function appendDecision(root, slug, ruling, { by, supersedes, area, reach
   if (supersedes !== undefined) {
     need(typeof supersedes === 'string' && supersedes !== slug, '--supersedes names the slug of an earlier ruling');
     const old = all.find((d) => d.slug === supersedes);
-    need(old, `no ruling ${supersedes} in decisions.md to supersede`);
+    need(old, `no ruling ${supersedes} in ${DECISIONS_FILE} to supersede`);
     need(!old.supersededBy, `${supersedes} is already superseded by ${old.supersededBy} — supersede that one instead`);
-    // The mark goes at the end of the old ruling's own section, by lines: the text is never read as a pattern.
-    const lines = text.split('\n');
-    const at = lines.findIndex((l) => { const h = DECISION_HEAD.exec(l); return h && h[2] === supersedes; });
-    let end = lines.findIndex((l, n) => n > at && l.startsWith('## '));
-    if (end === -1) end = lines.length;
-    while (end - 1 > at && lines[end - 1].trim() === '') end -= 1;
-    lines.splice(end, 0, `**Superseded by:** ${slug} (${today()})`);
-    text = lines.join('\n');
+    text = markedDecisions(text, supersedes, `**Superseded by:** ${slug} (${today()})`);
   }
   const meta = [by ? `**By:** ${fieldText(by)}` : null, supersedes !== undefined ? `**Supersedes:** ${supersedes}` : null, area ? `**Area:** ${area}` : null, reach !== undefined && reach !== null ? `**Reach:** ${reach}` : null, rule ? `**Rule:** ${rule}` : null].filter(Boolean).join('\n');
   writeAtomic(path, `${text.replace(/\s*$/, '')}\n\n## ${today()} · ${slug}\n${bodyText(ruling)}\n${meta ? `\n${meta}\n` : ''}`);
+}
+
+// The goal of the record held in `dir`, as text; null when it has none.
+function readGoal(dir) {
+  const path = goalPath(dir);
+  return existsSync(path) ? readText(path) : null;
+}
+// The one grammar of a line the goal carries for the tool: `Check: <what runs>`, `Check (<repository>): <what runs>`,
+// `Model (<tier>): <model>[, <model>…]` and `Coordinators: <name>[, <name>…]`, each as a plain line, a list item, or in
+// bold. goalLines reads them all in one pass and goalLineText writes one, so no other reader or writer of the goal
+// repeats the pattern. It returns
+//   goal           the first line of the goal, or null where the loop has none
+//   checks         every command the goal names, the loop's own first
+//   checksByRepo   { bare: the loop's own commands, repos: { <repository>: its commands } }
+//   models         [{ tier, models }] in the order written, `tier` as written
+//   coordinators   the names written on Coordinators lines
+const GOAL_LINE = /^\s*(?:[-*]\s+)?(?:\*\*)?(coordinators|check|model)(?:\s*\(([^)]+)\))?:(?:\*\*)?\s*(.+)$/i;
+export function goalLines(text) {
+  const out = { goal: null, checks: [], checksByRepo: { bare: [], repos: {} }, models: [], coordinators: [] };
+  if (text == null) return out;
+  const lines = text.split('\n');
+  out.goal = lines.slice(2).find((l) => l.trim()) || '';
+  for (const line of lines) {
+    const m = GOAL_LINE.exec(line);
+    if (!m) continue;
+    const key = m[1].toLowerCase();
+    const value = m[3].replace(/\*\*/g, '');
+    const qualifier = m[2] && fieldText(m[2]);
+    if (key === 'coordinators' && !m[2]) out.coordinators.push(...value.split(',').map((n) => fieldText(n)).filter(Boolean));
+    else if (key === 'model' && m[2]) out.models.push({ tier: qualifier, models: value.split(',').map((s) => fieldText(s).replace(/^`(.*)`$/, '$1')).filter(Boolean) });
+    else if (key === 'check') {
+      const command = fieldText(value).replace(/^`(.*)`$/, '$1');
+      if (!command) continue;
+      if (qualifier) (out.checksByRepo.repos[qualifier] = out.checksByRepo.repos[qualifier] || []).push(command); else out.checksByRepo.bare.push(command);
+    }
+  }
+  out.checks = [...out.checksByRepo.bare, ...Object.values(out.checksByRepo.repos).flat()];
+  return out;
+}
+// The line goalLines reads back as `key` with `value`: `Check`, `Model` and `Coordinators`, a repository or a tier as the qualifier.
+export function goalLineText(key, value, qualifier) {
+  return `${key}${qualifier ? ` (${qualifier})` : ''}: ${Array.isArray(value) ? value.join(', ') : value}`;
 }
 
 // ---- commands ----------------------------------------------------------------------------------
@@ -981,8 +1032,8 @@ export function cmdInit(root, goal, flags = {}) {
   mkdirSync(issuesDir(root), { recursive: true });
   if (!archived) writeAtomic(join(jarlDir(root), '.gitignore'), committed ? JARL_GITIGNORE_COMMITTED : JARL_GITIGNORE);
   if (!archived && permanent) writeAtomic(join(jarlDir(root), '.permanent'), PERMANENT_MARKER);
-  writeAtomic(join(jarlDir(root), 'goal.md'), `# Goal\n\n${goal.trim()}\n\n## Assumptions\n\n## Rules that apply here\n`);
-  writeAtomic(join(jarlDir(root), 'decisions.md'), '# Decisions\n');
+  writeAtomic(goalPath(jarlDir(root)), `# Goal\n\n${goal.trim()}\n\n## Assumptions\n\n## Rules that apply here\n`);
+  writeAtomic(decisionsPath(jarlDir(root)), '# Decisions\n');
   writeAtomic(logPath(jarlDir(root)), '# Log\n\n');
   if (prof) writeAtomic(profilePath(root), `${JSON.stringify(prof.json, null, 2)}\n`);
   if (committed) ensureLoopMerge(root);
@@ -994,7 +1045,7 @@ export function cmdInit(root, goal, flags = {}) {
 
 // A live loop is one with a goal; a .jarl/ holding only archive/ and the mode markers has none.
 export function hasLiveLoop(root) {
-  return existsSync(join(jarlDir(root), 'goal.md'));
+  return existsSync(goalPath(jarlDir(root)));
 }
 
 // The refusal for a command that needs a live loop: no .jarl/ at all, or one holding only archives.
@@ -2184,7 +2235,7 @@ function statusOf(root, loop, flags) {
   c.ratify = c.toRatify.length;
   // What a session needs to decide between continuing this loop and archiving it: the goal, when the
   // loop was opened, and when anything last happened in it — all read from its own files.
-  c.goal = loop.goal !== null ? (loop.goal.split('\n').slice(2).find((l) => l.trim()) || '').trim() : null;
+  c.goal = loop.goalLines.goal !== null ? loop.goalLines.goal.trim() : null;
   const log = loop.events;
   c.opened = log.length ? log[0].at : null;
   c.lastActivity = log.length ? log[log.length - 1].at : null;
@@ -2334,7 +2385,7 @@ export function cmdClose(root, flags = {}) {
 //   ci             a CI state recorded alone: state
 //   body           a body change
 //   other          any other line
-const LOG_LINE = /^- (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) · ([^\n]*)$/;
+const LOG_LINE = new RegExp(`^- (${STAMP_SRC}) · ([^\\n]*)$`);
 const LEADING_ID = new RegExp(`^(?:filed )?(${ID_SRC})\\b`);
 const RETRACT_ROW_LINE = new RegExp(`^${ID_SRC} evidence retract · row (\\d+)\\b`);
 const WORKER_FIELD = / · worker (.+?)(?: · worktree |$)/;
@@ -2425,11 +2476,11 @@ export function journalById(root) {
 //   profile       the loop's profile
 //   issues        every issue, in order; byId, the same by id
 //   events        every dated line of the log, typed (see parseEvent); eventsById, the events of each issue
-//   goal          the text of the goal, or null
+//   goal          the text of the goal, or null; goalLines, what it carries for the tool (see goalLines)
 //   asks          the questions; decisions, the rulings
 //   coordinators  the names that review as the loop's director
 //   branchWorkers every worker leased on each Branch, across every issue that records it
-// goal, asks, decisions, coordinators and branchWorkers are read on first use.
+// goal, goalLines, asks, decisions, coordinators and branchWorkers are read on first use.
 export function readLoop(dir) {
   const root = basename(dir) === '.jarl' ? dirname(dir) : dir;
   const profile = profileAt(dir);
@@ -2440,9 +2491,10 @@ function makeLoop({ dir, root, profile, issues, events }) {
   const once = (make) => { let made = false; let value; return () => { if (!made) { value = make(); made = true; } return value; }; };
   const reads = {
     goal: once(() => readGoal(dir)),
+    goalLines: once(() => goalLines(loop.goal)),
     asks: once(() => asksAt(dir)),
     decisions: once(() => decisionsAt(dir)),
-    coordinators: once(() => coordinatorsIn(root, loop.goal)),
+    coordinators: once(() => coordinatorsIn(root, loop.goalLines)),
     branchWorkers: once(() => branchWorkersOf(loop)),
   };
   for (const [key, read] of Object.entries(reads)) Object.defineProperty(loop, key, { enumerable: true, get: read });
@@ -2451,17 +2503,12 @@ function makeLoop({ dir, root, profile, issues, events }) {
 // The same loop over some of its issues (the ones a view is scoped to): the gate looks up an issue and the branch it
 // shares with others among these, as the view does.
 function scopedLoop(loop, issues) { return makeLoop({ dir: loop.dir, root: loop.root, profile: loop.profile, issues, events: loop.events }); }
-function readGoal(dir) {
-  const path = join(dir, 'goal.md');
-  return existsSync(path) ? readText(path) : null;
-}
 
 // Who reviewed, as a kind: the word self, or anyone who has ever held the issue's lease — its own worker across
 // every takeover, and the worker of any other issue sharing its Branch (a package, or an issue folded into the
 // same branch later) — is self too; the loop's own director — coordinator, jarl, reeve, the loop's own name (the
-// directory holding .jarl/) and any name goal.md declares on a `Coordinators: a, b` line (coordinator); anyone
+// directory holding .jarl/) and any name the goal declares on a `Coordinators: a, b` line (coordinator); anyone
 // else (fresh). A name is compared without case and surrounding space. `worker` is a name, or a set of them.
-export const REVIEWER_KINDS = ['fresh', 'coordinator', 'self'];
 export const BASE_COORDINATORS = ['coordinator', 'jarl', 'reeve'];
 export function reviewerKind(by, worker, coordinators = BASE_COORDINATORS) {
   const b = fieldText(by).toLowerCase();
@@ -2471,16 +2518,9 @@ export function reviewerKind(by, worker, coordinators = BASE_COORDINATORS) {
   return 'fresh';
 }
 // The names that review as the loop's director in this loop: the fixed three, the loop's own name, and the names
-// a `Coordinators:` line in goal.md lists (comma separated; as a plain line, a list item, or in bold).
-export function coordinatorNames(root) { return coordinatorsIn(root, readGoal(jarlDir(root))); }
-function coordinatorsIn(root, goal) {
-  const names = [...BASE_COORDINATORS, basename(resolve(root))];
-  for (const line of (goal ?? '').split('\n')) {
-    const m = /^\s*(?:[-*]\s+)?(?:\*\*)?coordinators:(?:\*\*)?\s*(.+)$/i.exec(line);
-    if (m) names.push(...m[1].split(',').map((n) => fieldText(n.replace(/\*\*/g, ''))).filter(Boolean));
-  }
-  return names;
-}
+// a `Coordinators:` line of the goal lists (see goalLines).
+export function coordinatorNames(root) { return coordinatorsIn(root, goalLines(readGoal(jarlDir(root)))); }
+function coordinatorsIn(root, lines) { return [...BASE_COORDINATORS, basename(resolve(root)), ...lines.coordinators]; }
 const KIND_WEIGHT = { fresh: 0, coordinator: 1, self: 2 };
 // An issue carries code when it records a branch or a merge. Only then does done (and the merge queue) need a
 // fresh approve; an issue with neither — a ruling, a note, a hub document — is still cleared by the coordinator.
@@ -2568,7 +2608,7 @@ export function gateOf(loop, id) {
     }
     if (e.type === 'round') { cut = e.n; continue; }
     if (e.type === 'verdict') {
-      // The kind is the one recorded, or the one today's names give, whichever is stricter: a name goal.md
+      // The kind is the one recorded, or the one today's names give, whichever is stricter: a name the goal
       // declares as a coordinator after its approve was logged as fresh does not stay fresh, and a name that
       // turns out to have ever held the lease (self) does not stay fresh or coordinator either.
       let kind = e.kind;
@@ -2631,12 +2671,6 @@ export function gateOf(loop, id) {
   };
 }
 
-// The latest review against the rounds and reopens after it (kept for callers of the older shape).
-export function reviewState(root, id) {
-  const g = gateState(root, id);
-  return { approved: g.approved, lastReview: g.lastReview };
-}
-
 // Who reviewed the done issues: the kind of each one's last approve, and how many carry no reviewer at all
 // (approved before --by existed). Shown by status and report, never acted on.
 export function reviewSplit(loop) {
@@ -2659,29 +2693,14 @@ function renderSplit(s) { return `fresh ${s.fresh} · coordinator ${s.coordinato
 
 // ---- the check a loop lands on, and the loop's metrics (report --json) ----------------------------------------------
 
-// The check a loop declares: every `Check: <what runs>` line in goal.md (a plain line, a list item, or in bold) is the
-// command of the whole loop; a `Check (<name>): <what runs>` line is the command of the repository <name>, written as
-// its Files prefix writes it. Jarl never runs it: the line says what the check is, and the merge rows say whether a
-// landing passed it. Where the repository has a check, the check decides what lands; a review can only stop a change and
-// is recorded as testimony.
-const CHECK_LINE = /^\s*(?:[-*]\s+)?(?:\*\*)?check(?:\s*\(([^)]+)\))?:(?:\*\*)?\s*(.+)$/i;
-export function declaredChecksByRepo(root) { return checksIn(readGoal(jarlDir(root))); }
-function checksIn(goal) {
-  const out = { bare: [], repos: {} };
-  for (const line of (goal ?? '').split('\n')) {
-    const m = CHECK_LINE.exec(line);
-    const command = m && fieldText(m[2].replace(/\*\*/g, '')).replace(/^`(.*)`$/, '$1');
-    if (!command) continue;
-    const name = m[1] && fieldText(m[1]);
-    if (name) (out.repos[name] = out.repos[name] || []).push(command); else out.bare.push(command);
-  }
-  return out;
-}
+// The check a loop declares: every `Check: <what runs>` line of the goal is the command of the whole loop; a
+// `Check (<name>): <what runs>` line is the command of the repository <name>, written as its Files prefix writes it
+// (see goalLines). Jarl never runs it: the line says what the check is, and the merge rows say whether a landing passed
+// it. Where the repository has a check, the check decides what lands; a review can only stop a change and is recorded
+// as testimony.
+export function declaredChecksByRepo(root) { return goalLines(readGoal(jarlDir(root))).checksByRepo; }
 // Every command the goal names, bare lines first.
-export function declaredChecks(root) {
-  const d = declaredChecksByRepo(root);
-  return [...d.bare, ...Object.values(d.repos).flat()];
-}
+export function declaredChecks(root) { return goalLines(readGoal(jarlDir(root))).checks; }
 
 // The merge a log line records: `<id> merged <sha>[ in <repo>]`, then the fields it names in any order — `check <what
 // ran>` for a merge landed on a passing check row, `landed red, cause <id>` for one landed while its check was red for a
@@ -2711,11 +2730,11 @@ function lastMerge(events) {
 // on a passing check row, on red (with the issue that tracks the cause), or with no check row recorded (a merge written
 // without one). Per repository, an issue naming several counts in
 // each. A repository lands on its check when any of its merges carries a check row, else on testimony; the Check lines of
-// goal.md only name the commands.
+// goal only name the commands.
 export function checkState(loop) {
   const { root, issues } = loop;
-  const declared = checksIn(loop.goal);
-  const checks = [...declared.bare, ...Object.values(declared.repos).flat()];
+  const declared = loop.goalLines.checksByRepo;
+  const checks = loop.goalLines.checks;
   const byRepo = {};
   const repo = (name) => (byRepo[name] = byRepo[name] || { merges: 0, withCheck: 0, noCheck: 0, red: [], declared: declared.repos[name] || [], landsOn: 'testimony' });
   for (const name of Object.keys(declared.repos)) repo(name);
@@ -2968,18 +2987,16 @@ function modelValue(raw) {
 }
 const baseModelId = (m) => String(m).split('@')[0];
 
-// The model lines of goal.md: `Model (<tier>): <model>[, <model>…]`, read like `Check:` (a plain line, a list item, or in
-// bold). The first model of a line is the tier's default; the order of the profile's tiers, weakest first, ranks the models;
-// a model on no line is unplaced and ranks below every placed one. The same id at another effort sits where the id sits.
-export function modelLines(root) { return modelLinesIn(readGoal(jarlDir(root)), loadProfile(root)); }
-function modelLinesIn(goal, profile) {
+// The model lines of the goal: `Model (<tier>): <model>[, <model>…]` (see goalLines). The first model of a line is the
+// tier's default; the order of the profile's tiers, weakest first, ranks the models; a model on no line is unplaced and
+// ranks below every placed one. The same id at another effort sits where the id sits.
+export function modelLines(root) { return modelLinesIn(goalLines(readGoal(jarlDir(root))), loadProfile(root)); }
+function modelLinesIn(lines, profile) {
   const byTier = {};
-  for (const line of (goal ?? '').split('\n')) {
-    const m = /^\s*(?:[-*]\s+)?(?:\*\*)?model\s*\(([^)]+)\):(?:\*\*)?\s*(.+)$/i.exec(line);
-    if (!m) continue;
-    const tier = profile.tiers.find((t) => t.toLowerCase() === fieldText(m[1]).toLowerCase());
+  for (const line of lines.models) {
+    const tier = profile.tiers.find((t) => t.toLowerCase() === line.tier.toLowerCase());
     if (!tier) continue;
-    byTier[tier] = [...(byTier[tier] || []), ...m[2].replace(/\*\*/g, '').split(',').map((s) => fieldText(s).replace(/^`(.*)`$/, '$1')).filter(Boolean)];
+    byTier[tier] = [...(byTier[tier] || []), ...line.models];
   }
   const exact = new Map();
   const base = new Map();
@@ -3240,7 +3257,7 @@ export function renderModels(m) {
   return [
     `# Models · ${m.loops.map((l) => `${l.label} (${l.issues} issues, ${l.units} units, ${l.verdicts} verdicts)`).join(' · ')}`,
     `Grouped by the model as recorded; a kind of task is Kind · Tier. Every count carries its n and a share appears only from n >= ${m.minN}; fits and below compare a model's clean share with its kind's own baseline; may clear needs ${m.minN} approves by a lower-ranked or same-model reviewer that a reviewer able to clear checked afterwards, with no miss. Compare inside a kind: a model is measured on the work it was given, and a worker's clean share is only as strict as its reviewers. Not derived: whether a finding was right, cost, and every slip that never reached the record. Suggestions only; nothing here refuses or changes anything.`,
-    m.modelLines.declared ? `Model lines: ${Object.entries(m.modelLines.byTier).map(([t, ms]) => `${t}: ${ms.join(', ')}`).join(' · ')}` : 'This loop declares no Model (<tier>) lines in goal.md, so no model is placed and no rank is known.',
+    m.modelLines.declared ? `Model lines: ${Object.entries(m.modelLines.byTier).map(([t, ms]) => `${t}: ${ms.join(', ')}`).join(' · ')}` : `This loop declares no Model (<tier>) lines in ${GOAL_FILE}, so no model is placed and no rank is known.`,
     '',
     ...(m.slices ? m.slices.flatMap((s) => [`# By ${m.by}: ${s.value}`, ...block(s), '']) : block(m)),
   ].join('\n').replace(/\n+$/, '');
@@ -3631,10 +3648,6 @@ function issuesOnBranch(root, issues, realRepo, name) {
   return issues.filter((i) => issueRepos(root, i).includes(realRepo) && (i.fields.branch ? i.fields.branch === name : i.id === legacy));
 }
 
-function parseStamp(s) {
-  const m = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})$/.exec(String(s || '').trim());
-  return m ? Date.parse(`${m[1]}T${m[2]}:00Z`) : null;
-}
 export function ago(ms) {
   const m = Math.max(0, Math.round(ms / 60_000));
   if (m < 60) return `${m}m`;
@@ -3992,14 +4005,13 @@ export function cmdChangelog(root, rawIds, flags = {}) {
 
 // ---- questions to the user and the handoff --------------------------------------------------
 
-function asksPath(root) { return join(jarlDir(root), 'asks.md'); }
 // A ratify item the close's batch filed names the area ruling it asks about: `· ruling <slug>`.
 const ASK_RE = new RegExp(`^- \\*\\*a-(${ID_SRC})\\*\\* \\((open|answered)\\)(?: · (stop|stuck|lower|charter|ratify))?(?: · target (\\S+))?(?: · issue (${ID_SRC}))?(?: · ruling ([A-Za-z0-9][A-Za-z0-9._-]{0,79}))? · (.*)$`);
 
 export function loadAsks(root) { return asksAt(jarlDir(root)); }
 // The questions of the record held in `dir`.
 function asksAt(dir) {
-  const path = join(dir, 'asks.md');
+  const path = asksPath(dir);
   if (!existsSync(path)) return [];
   // A question of several lines is the item line and its next lines indented by two spaces (blank ones are two spaces
   // alone); an older reader sees the item line only, which still reads as a question.
@@ -4026,21 +4038,21 @@ export function cmdAsk(root, question, flags) {
   const id = padId(asks.reduce((m, a) => Math.max(m, Number(a.id)), 0) + 1);
   // The first question a-1000 or more, or one naming an issue of 1000 or more, raises the record format first.
   if (needsRaisedFormat(id) || (flags.issue !== undefined && needsRaisedFormat(padId(flags.issue)))) raiseFormat(root);
-  const path = asksPath(root);
+  const path = asksPath(jarlDir(root));
   const target = kind === 'lower' ? ` · target ${flags.target}` : '';
   // flags.ruling is not a flag of the command line: the close's ratification batch passes it, and so may a composer
   // filing its own batch (record.mjs ask). It names an area ruling in force that no item has asked about yet.
   if (flags.ruling !== undefined) {
     need(kind === 'ratify', `a question naming a ruling is that ruling's ratification item — kind ratify (got "${kind}")`);
     const d = loadDecisions(root).find((x) => x.slug === String(flags.ruling));
-    need(d && d.area, `no area ruling ${flags.ruling} in decisions.md to put to ratification`);
+    need(d && d.area, `no area ruling ${flags.ruling} in ${DECISIONS_FILE} to put to ratification`);
     need(!d.supersededBy && !d.ratified && !d.rejected, `${flags.ruling} is ${d.supersededBy ? `superseded by ${d.supersededBy}` : d.ratified ? 'already ratified' : 'already rejected'} — nothing to ratify`);
     need(!loadAsks(root).some((x) => x.ruling === d.slug), `${flags.ruling} has been put to ratification already`);
   }
   const ruling = kind === 'ratify' && flags.ruling ? ` · ruling ${flags.ruling}` : '';
   const asked = String(question).replace(/\r\n?/g, '\n').trim().split('\n');
   appendAtomic(path, '# Questions to the user\n\n', `- **a-${id}** (open) · ${kind}${target}${flags.issue ? ` · issue ${padId(flags.issue)}` : ''}${ruling} · ${asked[0]}\n${asked.slice(1).map((l) => `  ${l}\n`).join('')}`);
-  appendLog(root, `asked a-${id} (${kind}) · ${firstLine(question, 'asks.md')}`);
+  appendLog(root, `asked a-${id} (${kind}) · ${firstLine(question, ASKS_FILE)}`);
   return { id, question: asked.join('\n'), kind };
 }
 
@@ -4075,16 +4087,16 @@ export function cmdAnswer(root, rawId, answer, flags = {}) {
   const ruling = ask.ruling ? rulings.find((d) => d.slug === ask.ruling) : null;
   const verdict = ask.ruling ? ratifyVerdict(answer) : null;
   need(!ask.ruling || verdict, ask.ruling && !verdict ? ratifyRefusal(id, ask.ruling, answer) : '');
-  need(!ask.ruling || ruling, `a-${id} ratifies ruling ${ask.ruling}, which is no longer in decisions.md`);
+  need(!ask.ruling || ruling, `a-${id} ratifies ruling ${ask.ruling}, which is no longer in ${DECISIONS_FILE}`);
   appendDecision(root, `ask-${id}`, `**Question:** ${ask.question}\n**Answer:** ${answer}`, { by: by || 'owner' });
-  const path = asksPath(root);
+  const path = asksPath(jarlDir(root));
   // The item line only: a continuation line of an earlier question is never the one marked.
   writeAtomic(path, readText(path).split('\n').map((l) => (l.startsWith(`- **a-${id}** (open)`) ? l.replace('(open)', '(answered)') : l)).join('\n'));
-  appendLog(root, `answered a-${id} · ${firstLine(answer, `decisions.md, ruling ask-${id}`)}`);
+  appendLog(root, `answered a-${id} · ${firstLine(answer, `${DECISIONS_FILE}, ruling ask-${id}`)}`);
   // The issue the question was about carries the answer too, so reading the issue is enough: its first line and, when
   // there is more, a pointer to the whole ruling.
   const issue = ask.issue ? findIssue(root, ask.issue) : null;
-  if (issue) appendRuling(root, [issue], `Ruling ask-${id}${ask.kind ? ` (${ask.kind})` : ''}: ${firstLine(answer, `decisions.md, ruling ask-${id}`)}`);
+  if (issue) appendRuling(root, [issue], `Ruling ask-${id}${ask.kind ? ` (${ask.kind})` : ''}: ${firstLine(answer, `${DECISIONS_FILE}, ruling ask-${id}`)}`);
   const out = { id, answer, ...(issue ? { issue: issue.id } : {}) };
   if (ruling) Object.assign(out, ratify(root, ruling, rulings, verdict, id, by));
   return out;
@@ -4113,7 +4125,7 @@ function ratify(root, ruling, rulings, verdict, askId, by = null) {
 
 // What became of a ratified area ruling's entry in the type's decision log, recorded: a written one marks the ruling
 // **Type log:** <type> · <datetime> (what a later ruling superseding it replaces); a failed one is a log line. Either
-// way the ruling stays in decisions.md.
+// way the ruling stays in the decisions.
 export function recordTypeLog(root, slug, decision, result) {
   if (result.state === 'written') {
     markDecision(root, slug, `**Type log:** ${decision.type} · ${result.datetime || 'unknown'}`);
@@ -4147,7 +4159,7 @@ function appendRuling(root, issues, line) {
 
 // decide <slug> "<ruling>" [--by who] [--supersedes <slug>] [--settles <ids>]: the ruling, who ruled (the owner
 // unless --by says otherwise: jarl for a choice the loop made under a mandate), the earlier ruling it replaces —
-// marked **Superseded by:** in place, so a reader of decisions.md, and decisions --live, see it is no longer in
+// marked **Superseded by:** in place, so a reader of the decisions, and decisions --live, see it is no longer in
 // force — and the issues it settles.
 export function cmdDecide(root, slug, ruling, flags = {}) {
   need(slug && ruling, 'decide requires <slug> "<ruling>"');
@@ -4164,7 +4176,7 @@ export function cmdDecide(root, slug, ruling, flags = {}) {
   const rule = flags.rule !== undefined ? String(flags.rule) : null;
   appendDecision(root, slug, settles.length ? `${ruling.trim()}\n\n**Settles:** ${settles.map((i) => i.id).join(', ')}` : ruling, { by, supersedes: flags.supersedes, area, reach, rule });
   appendLog(root, `decided ${slug} · by ${by}${flags.supersedes !== undefined ? ` · supersedes ${flags.supersedes}` : ''}${area ? ` · area ${area}${reach !== null ? ` (${reach} files)` : ''}${rule ? ` · rule ${rule}` : ''}` : ''}`);
-  if (settles.length) appendRuling(root, settles, `Ruling ${slug}: ${firstLine(ruling, `decisions.md, ruling ${slug}`)}`);
+  if (settles.length) appendRuling(root, settles, `Ruling ${slug}: ${firstLine(ruling, `${DECISIONS_FILE}, ruling ${slug}`)}`);
   return { slug, by, supersedes: flags.supersedes ?? null, settles: settles.map((i) => i.id), ...(area ? { area, reach, ...(rule ? { rule } : {}) } : {}) };
 }
 
@@ -4222,12 +4234,11 @@ export function cmdDecisions(root, flags = {}) {
 
 // ---- resume: the state a session picks the loop up from, assembled live -------------------------------
 
-// The loop has no hand-written handoff any more: everything a new session needs is already in the loop's own
-// files — the goal, the rulings, the issues with their leases and After, the asks, the log — and in the
-// repositories they name. resume reads it all now, so nothing can be stale and nothing has to be written before a
-// session ends (a session that gets cut leaves nothing half-said). Intent lives where it always did: order in
-// the priorities and After, reasons in decisions.md and the issues' bodies. .jarl/handoff.md from before is kept
-// and read only as history.
+// The loop has no hand-written handoff: everything a new session needs is in the loop's own files — the goal, the
+// rulings, the issues with their leases and After, the asks, the log — and in the repositories they name. resume
+// reads it all live, so nothing can be stale and nothing has to be written before a session ends (a session that
+// gets cut leaves nothing half-said). Intent lives in the order of the priorities and After, and the reasons in the
+// rulings and the issues' bodies. A handoff.md left in a loop is read as history only.
 function handoffPath(root) { return join(jarlDir(root), 'handoff.md'); }
 
 // How old the legacy handoff is, against the clock and against the loop's last log line: stale when the loop
@@ -4235,7 +4246,7 @@ function handoffPath(root) { return join(jarlDir(root), 'handoff.md'); }
 export function handoffAge(root, lastActivity, now = Date.now()) {
   if (!existsSync(handoffPath(root))) return null;
   const text = readText(handoffPath(root));
-  const at = /^\*\*At:\*\* (\d{4}-\d{2}-\d{2} \d{2}:\d{2})/m.exec(text)?.[1] || null;
+  const at = new RegExp(`^\\*\\*At:\\*\\* (${STAMP_SRC})`, 'm').exec(text)?.[1] || null;
   const atMs = parseStamp(at);
   if (atMs === null) return { at: null, ageMs: null, staleByMs: null, stale: false };
   const last = parseStamp(lastActivity);
@@ -4404,7 +4415,7 @@ export function cmdReport(root, flags = {}) {
   // Deferred), with the reason a needs-reason status carries.
   const closedOther = profile.statuses.filter((st) => profile.is(st, 'terminal') && !profile.is(st, 'closes-record'));
   const found = issues.filter((i) => i.fields['found by'] && !/^jarl\b/i.test(i.fields['found by']));
-  const goal = loop.goal !== null ? loop.goal.split('\n').slice(2).find((l) => l.trim()) || '' : '';
+  const goal = loop.goalLines.goal ?? '';
   const byRepo = {};
   for (const i of done) for (const r of repoNames(root, i)) (byRepo[r] = byRepo[r] || []).push(i);
   const row = (i) => `- ${i.id} ${i.title} (${i.kind})${mergedOf(i) ? ` · merged ${mergedOf(i).sha}${mergedOf(i).repo ? ` in ${mergedOf(i).repo}` : ''}` : ''}`;
@@ -4701,14 +4712,14 @@ export function renderList(rows, profile = DEFAULT_PROFILE) {
 // ---- git merges the loop's own files ----------------------------------------------------------------
 //
 // A committed loop travels with the branches, so git merges its files whenever two of them meet. The journal is one
-// dated line per event, so a union of both sides is its merge. decisions.md is never a union: a union joins lines,
-// and a ruling is a block whose closing fields (Superseded by, Ratified, …) are added in place later — a union once
-// pinned a `**Superseded by:**` line to the wrong ruling and let two rulings each supersede one ruling. It gets a
-// driver of its own, mergeDecisionsTexts, run by git as `jarl.mjs merge-driver decisions %O %A %B`.
+// dated line per event, so a union of both sides is its merge. The decisions are never a union: a union joins lines,
+// and a ruling is a block whose closing fields (Superseded by, Ratified, …) are added in place later — a union can
+// pin a `**Superseded by:**` line to the wrong ruling and let two rulings each supersede one ruling. They get a
+// driver of their own, mergeDecisionsTexts, run by git as `jarl.mjs merge-driver decisions %O %A %B`.
 
 const SINGLE_VALUED = new Set(['By', 'Supersedes', 'Superseded by', 'Area', 'Reach', 'Ratified', 'Rejected', 'Type log']);
 
-// decisions.md as blocks: the text before the first ruling, then one block per `## <date> · <slug>` heading — the
+// The decisions as blocks: the text before the first ruling, then one block per `## <date> · <slug>` heading — the
 // same reading loadDecisions makes — each with its ruling text and its closing field lines kept apart.
 function decisionBlocks(text) {
   const lines = String(text).replace(/\r\n?/g, '\n').split('\n');
@@ -4754,7 +4765,7 @@ function mergeRuling(b, o, t) {
   return { text: [o.head, ...(o.ruling ? [o.ruling] : []), ...(meta.length ? ['', ...meta] : [])].join('\n') };
 }
 
-// What git's decisions.md driver writes: { ok: true, text } for a clean merge, or { ok: false, text, conflicts } with
+// What git's decisions driver writes: { ok: true, text } for a clean merge, or { ok: false, text, conflicts } with
 // every conflicting ruling between conflict markers (ours, then theirs) and every other ruling merged, so the person
 // resolving sees each conflict where it is. Refused: a ruling both sides superseded (two successors in force), a slug
 // both sides added with different rulings, a ruling both sides rewrote, and one side changed while the other removed
@@ -4830,9 +4841,9 @@ function guardedDriver(run) {
 export const JARL_SCRIPT = join(dirname(fileURLToPath(import.meta.url)), 'jarl.mjs');
 
 // How git merges a committed loop's files, in .jarl/.gitattributes (paths relative to .jarl/): the journal by union,
-// decisions.md by the jarl-decisions driver. A clone that never configured the driver merges decisions.md with
+// the decisions by the jarl-decisions driver. A clone that never configured the driver merges the decisions with
 // plain conflict markers — the fallback, never a silent union.
-export const JARL_GITATTRIBUTES = `# jarl: how git merges the loop (see SKILL.md): the journal by union, decisions.md by its own driver\n/${LOG_FILE} merge=union\n/decisions.md merge=jarl-decisions\n`;
+export const JARL_GITATTRIBUTES = `# jarl: how git merges the loop (see SKILL.md): the journal by union, ${DECISIONS_FILE} by its own driver\n/${LOG_FILE} merge=union\n/${DECISIONS_FILE} merge=jarl-decisions\n`;
 
 // The variables that point git at another repository than the one its working directory is in (git sets them for
 // a hook it runs): the loop's repository is always the one its directory is in.
@@ -4852,7 +4863,7 @@ export function ensureLoopMerge(root) {
   const attrs = join(jarlDir(root), '.gitattributes');
   if (!existsSync(attrs) || readText(attrs) !== JARL_GITATTRIBUTES) { writeAtomic(attrs, JARL_GITATTRIBUTES); changed.push('.jarl/.gitattributes'); }
   if (gitHere(jarlDir(root), ['rev-parse', '--is-inside-work-tree']) !== 'true') return changed;
-  for (const [key, value] of [['merge.jarl-decisions.name', "Jarl's decisions.md (rulings merged block by block)"], ['merge.jarl-decisions.driver', decisionsDriverCommand()]]) {
+  for (const [key, value] of [['merge.jarl-decisions.name', `Jarl's ${DECISIONS_FILE} (rulings merged block by block)`], ['merge.jarl-decisions.driver', decisionsDriverCommand()]]) {
     if (gitHere(jarlDir(root), ['config', '--local', '--get', key]) === value) continue;
     if (gitHere(jarlDir(root), ['config', '--local', key, value]) !== null) changed.push(key);
   }
@@ -4864,7 +4875,7 @@ export function ensureLoopMerge(root) {
 // repository with a graph). One shell-quoted line, ready to put between `git` and `merge`.
 export function mergeFlags({ yg } = {}) {
   const sq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
-  const pairs = [['merge.jarl-decisions.name', 'jarl decisions.md'], ['merge.jarl-decisions.driver', decisionsDriverCommand()]];
+  const pairs = [['merge.jarl-decisions.name', `jarl ${DECISIONS_FILE}`], ['merge.jarl-decisions.driver', decisionsDriverCommand()]];
   if (yg) {
     for (const kind of ['log', 'lock']) {
       pairs.push([`merge.yg-${kind}.name`, `Yggdrasil ${kind}`], [`merge.yg-${kind}.driver`, guardedDriver(`${yg} merge-driver ${kind} %O %A %B %P`)]);
