@@ -17,7 +17,7 @@ import * as R from './record.mjs';
 import {
   ROUNDS_BEFORE_TAKEOVER, need, resetCaches, withLock, readText, isEntry,
   cmdProfile, cmdArchive, cmdList, cmdNext, renderNext, cmdMode, cmdClose, cmdCheck, cmdBranches, cmdTips, cmdQueue,
-  cmdChangelog, cmdHandoffRead, cmdHandoffWrite, cmdReport, cmdImport, cmdSources, cmdAnswer,
+  cmdChangelog, cmdHandoffRead, cmdHandoffWrite, cmdReport, cmdImport, cmdSources, cmdAnswer, cmdModels, renderModels,
   renderProfile, renderTips, renderQueue, renderResume, renderStatus, renderImport, renderSources, renderList, recordTypeLog, recordRuleLog,
   runDecisionsDriver, mergeFlags, describeNew, renderNewReply, issueView, evidenceTable,
 } from './jarl-lib.mjs';
@@ -37,10 +37,13 @@ commands:
                                                  .jarl/.permanent, and is not tied to a feature branch: close (below)
                                                  keeps the directory instead of removing it; --profile checks the
                                                  profile file (see profile below) and stores it as .jarl/profile.json
-  new "<title>" [--kind k] [--prio 1|2|3] [--tier standard|strong] [--tags a,b] [--files p,q] [--repo <path>] [--found-by who]
+  new "<title>" [--kind k] [--prio 1|2|3] [--tier light|standard|strong] [--tags a,b] [--files p,q] [--repo <path>] [--found-by who]
       [--where "<w>"] [--what "<w>"] [--why "<w>"] [--acceptance "<line>"]... [--changelog "<entry>"]...
       [--source <dir>#<id>,...] [--after <ids>] [--template <name>] [--field "<Name>=<value>"]... [--section "<Heading>=<text>"]...
-                                                 file an issue under the next free number; --repo names the repository
+                                                 file an issue under the next free number; without --tier it records
+                                                 standard and says so on stderr, with what each tier is for (light: a check
+                                                 or test decides; strong: unknown cause, design, record format, security);
+                                                 --repo names the repository
                                                  its code lives in when that is not the loop's own, several as one comma
                                                  list (see --repo below);
                                                  --what, --why and --acceptance (one per line, repeatable) write the body,
@@ -82,13 +85,15 @@ commands:
                                                  verdict since the last start or reopen, every "changes" finding no later
                                                  approve answered, one line per earlier round; --full prints the whole
                                                  file; --json is complete
-  set <ids> <status> "<why>" [--branch <b>] [--worker <name>] [--worktree <path>] | <ids> <field> "<value>"
+  set <ids> <status> "<why>" [--branch <b>] [--worker <name>] [--model <m>] [--worktree <path>] | <ids> <field> "<value>"
                                                  (field resources "a, b": the exclusive resources the issue holds while
                                                  its lease lasts, loop-wide names; next never offers two issues holding one)
                                                  change status; writes the log line in the same move; in-progress
-                                                 writes Since (and Branch, Worker, Worktree when given) — one lease
-                                                 for every id, so a package shares it; leaving in-progress removes
-                                                 Worker, Worktree and Since and keeps Branch; done notes a merge
+                                                 writes Since (and Branch, Worker, Model, Worktree when given) — one lease
+                                                 for every id, so a package shares it; --model is the model the worker
+                                                 was raised on, as the platform names it (with @<effort> where it has that
+                                                 lever), stored as given; leaving in-progress removes Worker, Model,
+                                                 Worktree and Since and keeps Branch; done notes a merge
                                                  whose CI is not green yet; done needs evidence logged since the issue
                                                  last went in progress (or was reopened, or — never in progress — was
                                                  filed) as a --ran/--saw row — a free-text note never counts alone —
@@ -109,8 +114,11 @@ commands:
                                                  its repository and its path (see --repo below); one with no acceptance line
                                                  or no declared files is marked; --all adds the others in groups (held by a
                                                  file and by whom, waiting on After, held by a question), --json rows carry a group
-  review <ids> approve|changes --by <reviewer> "<findings>"
-                                                 the reviewer's verdict; --by is required, recorded with its kind
+  review <ids> approve|changes --by <reviewer> [--model <m>] [--relayed] "<findings>"
+                                                 the reviewer's verdict; --model is the model the reviewer was raised on
+                                                 (stored as given); --relayed marks a verdict recorded by someone else in
+                                                 the reviewer's name, for a reviewer that cannot be resumed to record its
+                                                 own; --by is required, recorded with its kind
                                                  (self for the issue's worker or "self" — refused on an approve;
                                                  coordinator for coordinator, jarl, reeve, the loop's own name and
                                                  names on a "Coordinators:" line in goal.md; fresh for anyone else);
@@ -122,7 +130,15 @@ commands:
                                                  through, and the done gate and the metrics stop counting it; never a
                                                  "changes" verdict; the first retraction of a loop raises its record
                                                  format to 2 (see evidence --retract)
-  round <id> "<what failed>"                     one red round; after three prints the takeover block for a fresh worker
+  round <id> "<what failed>"                     one red round; after three prints the takeover block for a fresh worker,
+                                                 with the advice to raise it one tier up or on another model
+  models [--by repo|tag]
+                                                 read-only: per model as worker and as reviewer, per Kind · Tier, what the
+                                                 record holds (units, clean first passes, changes, rounds, verdicts, checked
+                                                 approves), every count with its n and a share only from n >= 5, with the
+                                                 words fits, below, new and may clear; work with no recorded model
+                                                 is grouped by tier; --by slices by repository or tag;
+                                                 suggestions only, no lock, nothing written
   check [<id>] --branch <b> [--base <feature-branch>] [--repo <path>]
                                                  commits beyond the base, diff inside the declared files, and the
                                                  change in test files and assertions — numbers, never a verdict;
@@ -282,10 +298,11 @@ export const COMMAND_FLAGS = {
   after: { clear: 'bool' },
   evidence: { ran: 'many', saw: 'many', retract: 'value', by: 'value' },
   list: { status: 'value', kind: 'value', tag: 'value', prio: 'value', grep: 'value', match: 'many', all: 'bool' },
-  show: { full: 'bool' }, set: { branch: 'value', worker: 'value', worktree: 'value' }, tag: {}, prio: {}, files: {},
+  show: { full: 'bool' }, set: { branch: 'value', worker: 'value', model: 'value', worktree: 'value' }, tag: {}, prio: {}, files: {},
   repo: { clear: 'bool' },
   next: { limit: 'value', all: 'bool' },
-  review: { by: 'value' }, round: {},
+  review: { by: 'value', model: 'value', relayed: 'bool' }, round: {},
+  models: { by: 'value' },
   check: { branch: 'value', base: 'value', repo: 'value' },
   branches: { base: 'value', repo: 'value', 'stale-hours': 'value' },
   merged: { sha: 'value', ci: 'value', repo: 'value' },
@@ -359,7 +376,7 @@ export const COMMAND_ARGS = {
   init: ['goal'], new: ['title'], body: ['id'], import: ['file'], sources: ['files...'], source: ['id', 'refs'],
   after: ['id', 'ids?'], evidence: ['ids', 'text?'], list: [], show: ['id'], set: ['ids', 'status', 'why?'],
   merged: ['ids'], tag: ['ids', 'ops...'], prio: ['ids', 'priority'], files: ['id', 'paths'], repo: ['id', 'path?'],
-  next: [], review: ['ids', 'verdict', 'findings'], round: ['id', 'what'], check: ['id?'], branches: [],
+  next: [], review: ['ids', 'verdict', 'findings'], round: ['id', 'what'], models: [], check: ['id?'], branches: [],
   ask: ['question'], answer: ['id', 'answer'], resume: [], handoff: ['action?'], log: ['event'],
   decide: ['slug', 'ruling'], decisions: [], status: [], archive: ['slug'], report: [], tips: [], queue: [],
   changelog: ['ids'], mode: ['mode'], close: [], profile: ['file?'],
@@ -386,6 +403,7 @@ export const COMMAND_SUMMARY = {
   next: 'The open issues ready to start: no file shared with work in progress, every After issue settled, no open question on them; all adds the held and waiting ones in groups.',
   review: 'Record a reviewer\'s verdict (approve or changes) on issues, with the reviewer and the findings; or retract the newest approve.',
   round: 'Record one red round on an issue; after three it prints the takeover block for a fresh worker.',
+  models: 'Per model as worker and as reviewer, per kind of task: the counts, clean first passes and verdicts the record holds, with the words fits, below, new and may clear.',
   check: 'Measure a worker branch against its base: commits, diff inside the declared files, test changes; numbers, never a verdict.',
   branches: 'Every worker branch with its issues, commits beyond the base, worktree state, stale leases and done branches.',
   ask: 'File a question the user has to answer (stop, stuck, lower, charter or ratify).',
@@ -503,7 +521,8 @@ export function dispatch(root, cmd, rest, flags) {
     (writes ? (fn) => withLock(root, fn) : (fn) => fn())(() => {
     switch (cmd) {
       case 'init': out = R.initLoop(root, rest[0], flags); text = `opened ${out.dir} · ${out.permanent ? 'permanent record, no branch' : out.committed ? 'committed with the work' : 'kept out of git'}${out.profile ? ` · profile ${out.profile}` : ''}`; break;
-      case 'new': out = R.newIssue(root, rest[0], flags); out = { ...out, ...describeNew(out.file) }; text = renderNewReply(out); break;
+      // The command line says caller 'cli': the notes (the tier a new issue got) are for it, never for a library caller.
+      case 'new': out = R.newIssue(root, rest[0], { ...flags, caller: 'cli' }); out = { ...out, ...describeNew(out.file) }; text = renderNewReply(out); warn = out.note ? [out.note] : []; break;
       case 'body': out = R.setBody(root, rest[0], flags); text = `${out.id} body: ${out.set.join(', ')}`; break;
       case 'source': out = R.setSource(root, rest[0], rest[1]); text = `${out.id} source: ${out.sources.join(', ')}`; break;
       case 'after': out = R.setAfter(root, rest[0], rest[1], flags); text = `${out.id} after: ${out.cleared ? 'cleared' : out.after.join(', ')}`; break;
@@ -518,7 +537,8 @@ export function dispatch(root, cmd, rest, flags) {
       case 'repo': out = R.setRepo(root, rest[0], rest[1], flags); text = `${out.id} repo: ${out.cleared ? 'cleared' : out.repo}`; break;
       case 'evidence': out = R.addEvidence(root, rest[0], rest[1], flags); text = each(out, (o) => (o.retracted ? `${o.id} evidence row ${o.retracted} retracted by ${o.by}` : o.rows ? `${o.id} evidence row${o.rows.length > 1 ? 's' : ''} recorded` : `${o.id} evidence recorded`)); break;
       case 'next': out = cmdNext(root, flags); text = out.scheduler ? out.note : renderNext(out, flags.all === true, out.length ? 0 : cmdNext(root, { all: true }).length); break;
-      case 'review': out = R.review(root, rest[0], rest[1], rest[2], flags); text = each(out, (o) => o.retracted ? `${o.id} review retracted by ${o.by} (${o.kind}): the approve ${o.retracted}` : `${o.id} review ${o.verdict}${o.by ?` by ${o.by} (${o.kind})` : ''} · acceptance: ${o.acceptance ? o.acceptance.split('\n').join(' / ') : '(none on file)'}`); warn = [].concat(out).filter((o) => o.note).map((o) => `note: ${o.note}`); break;
+      case 'review': out = R.review(root, rest[0], rest[1], rest[2], { ...flags, caller: 'cli' }); text = each(out, (o) => o.retracted ? `${o.id} review retracted by ${o.by} (${o.kind}): the approve ${o.retracted}` : `${o.id} review ${o.verdict}${o.by ?` by ${o.by} (${o.kind})` : ''} · acceptance: ${o.acceptance ? o.acceptance.split('\n').join(' / ') : '(none on file)'}`); warn = [].concat(out).filter((o) => o.note).map((o) => `note: ${o.note}`); break;
+      case 'models': out = cmdModels(root, flags); text = renderModels(out); break;
       case 'round': out = R.addRound(root, rest[0], rest[1]); text = out.takeover ? `${out.id} round ${out.round} — takeover:\n\n${out.block}` : `${out.id} round ${out.round} of ${ROUNDS_BEFORE_TAKEOVER} before a takeover`; break;
       case 'merged': out = R.recordMerged(root, rest[0], flags); text = `${out.ids.join(', ')} ${out.sha ? `merged ${out.sha}` : 'merge'} · CI ${out.ci}`; warn = out.notes.map((n) => `note: ${n}`); break;
       case 'check': out = cmdCheck(root, rest[0], flags); text = `${out.id === null ? `package ${out.ids.join(', ')} on ${out.branch}\n` : ''}${out.repo === root ? '' : `in ${out.repo}\n`}${out.items.map((i) => `${i.ok ? '✓' : '✗'} ${i.name} — ${i.note}`).join('\n')}`; break;
