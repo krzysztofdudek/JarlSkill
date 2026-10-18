@@ -2,7 +2,7 @@
 // line kind the done gate, the metrics, models, rounds, tips and the stamps of status and resume read.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdtempSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import * as R from '../record.mjs';
@@ -127,6 +127,39 @@ test('the same call gives the same answer however many loops were read before it
   L.readLoop(L.jarlDir(b));
   assert.equal(JSON.stringify(L.cmdModels(a, {})), before);
   assert.equal(L.jarlDir(a), join(a, '.jarl'));
+});
+
+const appendToLog = (root, line) => appendFileSync(join(L.jarlDir(root), 'log.md'), `${line}\n`);
+
+test('a log line holds any character but a newline: a pasted note with U+2028 is an event, and the last stamp', () => {
+  const root = loop();
+  const id = worked(root, 'with a pasted note', { worker: 'w-one', branch: 'jarl/z' });
+  const note = `pasted${String.fromCharCode(0x2028)}note`;
+  appendToLog(root, `- 2030-01-01 00:00 · ${id} evidence · ${note}`);
+  const events = L.loopEvents(L.jarlDir(root), L.loadProfile(root));
+  assert.equal(events[events.length - 1].text, `${id} evidence · ${note}`);
+  assert.equal(L.cmdStatus(root).lastActivity, '2030-01-01 00:00');
+  assert.equal(L.cmdResume(root, {}).log.at(-1), `2030-01-01 00:00 · ${id} evidence · ${note}`);
+});
+
+test('a mention of another issue inside a note is not a round of that issue', () => {
+  const root = loop();
+  const a = worked(root, 'first', { worker: 'w-one', branch: 'jarl/a' });
+  const b = worked(root, 'second', { worker: 'w-two', branch: 'jarl/b' });
+  appendToLog(root, `- 2030-01-01 00:00 · ${b} evidence · compare with ${a} · ${a} round 9 · not a round`);
+  assert.equal(L.roundsOf(root, a), 0);
+  L.cmdRound(root, a, 'red once');
+  assert.equal(L.roundsOf(root, a), 1);
+});
+
+test('a hand-written line that is no verdict is not a changes verdict in the metrics', () => {
+  const root = loop();
+  const id = worked(root, 'closed work', { worker: 'w-one', branch: 'jarl/c' });
+  R.addEvidence(root, id, undefined, { ran: 'npm test', saw: 'pass' });
+  R.review(root, id, 'approve', 'read the diff, nothing found', { by: 'rev-a' });
+  R.setStatus(root, id, 'done', 'merged', {});
+  appendToLog(root, `- 2030-01-01 00:00 · ${id} review changes needed more tests`);
+  assert.equal(L.loopMetrics(root).rounds.changes, 0);
 });
 
 test('an archived loop is read by its directory', () => {

@@ -1428,7 +1428,7 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   need(flags.base === undefined || (typeof flags.base === 'string' && fieldText(flags.base) !== '' && !flags.base.startsWith('-')), 'base names a branch or ref — the one the merge landed in');
   if (profile.is(status, 'closes-record')) {
     const loop = readLoop(jarlDir(root));
-    for (const issue of issues) { const refusal = doneRefusal(root, issue, { base: flags.base, loop }); need(!refusal, `${refusal}${nothing}`); }
+    for (const issue of issues) { const refusal = doneRefusalIn(root, loop, issue, flags.base); need(!refusal, `${refusal}${nothing}`); }
   }
   // One lease for the whole call: every issue in a package gets the same Branch, Worker, Worktree and Since.
   // A relative worktree path is read from the loop's root, like --repo, so it means the same from anywhere.
@@ -1510,11 +1510,11 @@ function setResources(root, rawIds, value, flags) {
 // A profile's done-gate changes the last two: requires-merged also asks for a recorded merge whose sha is in the base
 // (see mergeRefusal), and approve: none (allowed only with requires-merged) drops the approve — the gate that landed
 // the merge stands behind the issue instead of a reviewer. The evidence rows are asked for either way.
-// opts { base, loop }: the loop a caller checking several issues has read once (else it is read here).
-export function doneRefusal(root, issue, opts = {}) {
-  const { base } = opts;
-  const loop = opts.loop ?? readLoop(jarlDir(root));
-  const profile = loadProfile(root);
+// doneRefusal reads the loop for one issue; a caller checking several issues reads it once and asks doneRefusalIn.
+export function doneRefusal(root, issue) { return doneRefusalIn(root, readLoop(jarlDir(root)), issue, undefined); }
+// `base`: the branch or ref the merge landed in, when the caller names one.
+function doneRefusalIn(root, loop, issue, base) {
+  const { profile } = loop;
   const g = gateOf(loop, issue.id);
   const how = `jarl.mjs evidence ${issue.id} --ran "<command>" --saw "<what it printed>"`;
   if (g.unresolvedRetractions.length) return `${issue.id} records a retraction of evidence row ${g.unresolvedRetractions.join(', ')} that matches no evidence line of the log, so which row it retracts is unknown and a retracted row might be counted — done refuses until that log line is repaired`;
@@ -2334,7 +2334,7 @@ export function cmdClose(root, flags = {}) {
 //   ci             a CI state recorded alone: state
 //   body           a body change
 //   other          any other line
-const LOG_LINE = /^- (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) · (.*)$/;
+const LOG_LINE = /^- (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) · ([^\n]*)$/;
 const LEADING_ID = new RegExp(`^(?:filed )?(${ID_SRC})\\b`);
 const RETRACT_ROW_LINE = new RegExp(`^${ID_SRC} evidence retract · row (\\d+)\\b`);
 const WORKER_FIELD = / · worker (.+?)(?: · worktree |$)/;
@@ -2387,15 +2387,15 @@ export function loopEvents(dir, profile) {
   const path = logPath(dir);
   if (!existsSync(path)) return [];
   const parse = eventParser(profile);
-  const statusOf = new Map();
+  const lastStatus = new Map();
   const events = [];
   readText(path).split('\n').forEach((l, n) => {
     const m = LOG_LINE.exec(l);
     if (!m) return;
     const id = LEADING_ID.exec(m[2])?.[1] ?? null;
-    const body = id === null ? { type: 'other' } : parse(id, m[2], statusOf.get(id) ?? null);
-    if (body.type === 'filed') statusOf.set(id, profile.initial);
-    else if (body.type === 'move') statusOf.set(id, body.to);
+    const body = id === null ? { type: 'other' } : parse(id, m[2], lastStatus.get(id) ?? null);
+    if (body.type === 'filed') lastStatus.set(id, profile.initial);
+    else if (body.type === 'move') lastStatus.set(id, body.to);
     events.push({ n, at: m[1], text: m[2], id, ...body });
   });
   return events;
@@ -3025,15 +3025,14 @@ function modelFacts(loop, label, lines) {
   const journal = loop.eventsById;
   const closes = (st) => profile.is(st, 'closes-record');
   const claims = (st) => profile.is(st, 'holds-claim');
-  const parsed = new Map();
-  for (const i of issues) parsed.set(i.id, journal.get(i.id) || []);
+  const eventsOf = (id) => journal.get(id) || [];
   const { filed, firstClose } = filedAndClosed(issues, journal, profile);
   const follow = followUpsOf(issues, filed, firstClose, profile);
 
   // The units: every lease that names a worker, grouped by branch, worker and model.
   const unitMap = new Map();
-  for (const [id, ev] of parsed) {
-    for (const e of ev) {
+  for (const { id } of issues) {
+    for (const e of eventsOf(id)) {
       if (e.type !== 'move' || !e.lease) continue;
       const key = `${e.lease.branch || id}\n${e.lease.worker}\n${e.lease.model || ''}`;
       const u = unitMap.get(key) || { worker: e.lease.worker, model: e.lease.model, issues: new Map() };
@@ -3043,7 +3042,7 @@ function modelFacts(loop, label, lines) {
   }
   // One issue inside one unit: from its lease to the next lease of another worker or model on it (a handover), or the end.
   const inUnit = (id, from, worker, model) => {
-    const ev = parsed.get(id);
+    const ev = eventsOf(id);
     const handover = ev.find((e) => e.n > from && e.type === 'move' && e.lease && (e.lease.worker !== worker || (e.lease.model && e.lease.model !== model)));
     const win = ev.filter((e) => e.n > from && (!handover || e.n < handover.n));
     let status = 'in-progress';
@@ -3082,8 +3081,9 @@ function modelFacts(loop, label, lines) {
   // The verdicts: per approve, whether a later reviewer of another model checked it, whether it missed, and whether it
   // is the approve that cleared the issue on the worker's own model or a lower-ranked one.
   const verdicts = [];
-  for (const [id, ev] of parsed) {
-    const issue = byId.get(id);
+  for (const issue of issues) {
+    const { id } = issue;
+    const ev = eventsOf(id);
     const workers = [...new Set(leaseModels(ev))];
     const top = Math.max(-1, ...workers.map(lines.rank));
     const ownOrLower = (m) => m != null && workers.length > 0 && (workers.includes(m) || (top >= 0 && lines.rank(m) < top));
