@@ -2,7 +2,7 @@
 // line each, with its reason and the command that repairs it. Nothing is refused and the record does not change.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readdirSync, readFileSync } from 'node:fs';
+import { appendFileSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { jarl, loop as makeLoop } from './helpers.mjs';
 
@@ -59,6 +59,7 @@ test('report names a retracted approve retracted and never counts it as unrecord
 
 test('a merge recorded on a dropped issue is flagged, and report does not count it among the merges that carry a passing check row', () => {
   const root = loop(3);
+  appendFileSync(join(root, '.jarl', 'goal.md'), '\nCheck: npm test\n');
   jarl(root, 'review', '1', 'approve', '--by', 'jarl', 'read the diff, nothing found'); row(root, 1); jarl(root, 'set', '1', 'done');
   jarl(root, 'merged', '1', '--sha', 'abc1234', '--ran', 'npm test', '--saw', 'pass');
   jarl(root, 'set', '3', 'dropped', 'not needed');
@@ -72,7 +73,7 @@ test('a merge recorded on a dropped issue is flagged, and report does not count 
   const report = json(root, 'report');
   assert.equal(report.check.merges.merges, 1);
   assert.equal(report.check.merges.withCheck, 1);
-  assert.match(report.text, /1 of 1 merge\(s\) carry a passing check row/);
+  assert.match(report.text, /1 of 1 merges carry the declared check/);
 });
 
 test('a code issue done with no merge recorded is flagged', () => {

@@ -63,9 +63,10 @@ test('merged --ran --saw records the evidence row and a merge line that names th
   assert.match(log(root), /^- \S+ \S+ · 001 evidence row · npm test$/m);
   assert.match(log(root), /^- \S+ \S+ · 002 merged abc1234 · check npm test$/m);
   assert.doesNotMatch(log(root), /merged abc1234.*CI/);
+  appendFileSync(join(root, '.jarl', 'goal.md'), '\nCheck: npm test\n');
   const st = jarl(root, 'status');
   assert.doesNotMatch(st, /CI pending/);
-  assert.doesNotMatch(st, /testimony/, 'a landing on a passing check row is not testimony');
+  assert.doesNotMatch(st, /testimony/, 'a landing on the declared check is not testimony');
   // With --ci too, the CI state follows the check in the line.
   jarl(root, 'merged', '2', '--sha', 'abc1234', '--ran', 'npm test', '--saw', 'pass 12', '--ci', 'pending');
   assert.match(log(root), /002 merged abc1234 · check npm test · CI pending$/m);
@@ -132,17 +133,18 @@ test('status --by repo and report count, per repository, merges with a passing c
   jarl(root, 'merged', '3', '--sha', 'abc1234', '--ran', 'npm test', '--saw', 'pass 9');
   jarl(root, 'merged', '4', '--sha', 'abc1234', '--red', '5');
   const status = json(root, 'status', '--by', 'repo');
-  assert.deepEqual(status.check.byRepo.app, { merges: 2, withCheck: 1, noCheck: 1, red: [], declared: ['yg check'], landsOn: 'check' });
-  assert.deepEqual(status.check.byRepo.lib, { merges: 2, withCheck: 1, noCheck: 0, red: [{ id: '004', cause: '005' }], declared: ['npm test'], landsOn: 'check' });
+  assert.deepEqual(status.check.byRepo.app, { repo: 'app', merges: 2, withCheck: 1, noCheck: 1, red: [], declared: ['yg check'], landsOn: 'partial', k: 1, n: 2 });
+  assert.deepEqual(status.check.byRepo.lib, { repo: 'lib', merges: 2, withCheck: 1, noCheck: 0, red: [{ id: '004', cause: '005' }], declared: ['npm test'], landsOn: 'partial', k: 1, n: 2 });
   assert.deepEqual(status.check.merges, { merges: 4, withCheck: 2, noCheck: 1, red: [{ id: '004', cause: '005' }] });
   const text = jarl(root, 'status', '--by', 'repo');
   assert.match(text, /^merges by repository, with the check that decided each:$/m);
-  assert.match(text, /^ {2}app {2}2 merge\(s\) · passing check row 1 · no check row recorded 1 · landed on red 0 · declared yg check$/m);
-  assert.match(text, /^ {2}lib {2}2 merge\(s\) · passing check row 1 · no check row recorded 0 · landed on red 1 \(004, cause 005\) · declared npm test$/m);
+  assert.match(text, /^ {2}app {2}2 merge\(s\) · with the declared check 1 · without it 1 · landed on red 0 · declared yg check$/m);
+  assert.match(text, /^ {2}lib {2}2 merge\(s\) · with the declared check 1 · without it 0 · landed on red 1 \(004, cause 005\) · declared npm test$/m);
+  assert.match(text, /^check app: 1 of 2 merges carry the declared check/m);
   assert.doesNotMatch(jarl(root, 'status'), /^merges by repository/m, 'only with --by repo');
   const report = jarl(root, 'report');
   assert.match(report, /^merges by repository:$/m);
-  assert.match(report, /^ {2}lib {2}2 merge\(s\) · passing check row 1 · no check row recorded 0 · landed on red 1 \(004, cause 005\)/m);
+  assert.match(report, /^ {2}lib {2}2 merge\(s\) · with the declared check 1 · without it 0 · landed on red 1 \(004, cause 005\)/m);
   assert.deepEqual(json(root, 'report').check, status.check);
 });
 

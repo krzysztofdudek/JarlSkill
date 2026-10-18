@@ -36,11 +36,11 @@ test('a loop whose merges carry no check row is marked in status and report; a C
   const dir = loop();
   const empty = { merges: { merges: 0, withCheck: 0, noCheck: 0, red: [] }, byRepo: {} };
   const status = jarl(dir, 'status');
-  assert.match(status, /no merge carries a check row — this loop lands on testimony alone/);
+  assert.match(status, /no merge carries the declared check — this loop lands on testimony alone/);
   assert.deepEqual(json(dir, 'status').check, { declared: false, checks: [], landsOn: 'testimony', ...empty });
   const report = json(dir, 'report');
   assert.deepEqual(report.check, { declared: false, checks: [], landsOn: 'testimony', ...empty });
-  assert.match(report.text, /^no merge carries a check row — this loop lands on testimony alone/m);
+  assert.match(report.text, /^no merge carries the declared check — this loop lands on testimony alone/m);
   assert.equal(report.metrics.check.landsOn, 'testimony');
 
   // A declared line flips nothing: only a merge that carries a check row does.
@@ -53,7 +53,7 @@ test('a loop whose merges carry no check row is marked in status and report; a C
   const declared = json(dir, 'report');
   assert.equal(declared.check.landsOn, 'check');
   assert.doesNotMatch(declared.text, /testimony/);
-  assert.match(declared.text, /^check: 1 of 1 merge\(s\) carry a passing check row · declared npm test · yg check$/m);
+  assert.match(declared.text, /^check \S+: 1 of 1 merges carry the declared check · declared npm test · yg check$/m);
 });
 
 test('an empty loop reports every metric as no data, never as zero', () => {

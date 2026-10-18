@@ -2841,16 +2841,19 @@ function lastMerge(events) {
 }
 
 // What the merges say about the check, from the log: every merged issue counts once, by its last merge line, as landed
-// on a passing check row, on red (with the issue that tracks the cause), or with no check row recorded (a merge written
-// without one). Per repository, an issue naming several counts in
-// each. A repository lands on its check when any of its merges carries a check row, else on testimony; the Check lines of
-// goal only name the commands.
+// on the declared check (its --ran text equals a command the repository's Check lines declare, after trimming), on red
+// (with the issue that tracks the cause), or on neither (no check row, or a row that is not the declared check). Per
+// repository, an issue naming several counts in each. A repository's declared check is its own `Check (<repo>)` lines,
+// else the loop's `Check:` lines. A repository lands on its check (`check`) when every merge carries it, on
+// testimony (`testimony`) when none does or none is declared, and is `partial` between: k is the merges carrying the
+// declared check, n all its merges.
 export function checkState(loop) {
   const { root, issues } = loop;
   const declared = loop.goalLines.checksByRepo;
   const checks = loop.goalLines.checks;
+  const declaredFor = (name) => (declared.repos[name] && declared.repos[name].length ? declared.repos[name] : declared.bare);
   const byRepo = {};
-  const repo = (name) => (byRepo[name] = byRepo[name] || { merges: 0, withCheck: 0, noCheck: 0, red: [], declared: declared.repos[name] || [], landsOn: 'testimony' });
+  const repo = (name) => (byRepo[name] = byRepo[name] || { repo: name, merges: 0, withCheck: 0, noCheck: 0, red: [], declared: declaredFor(name), landsOn: 'testimony' });
   for (const name of Object.keys(declared.repos)) repo(name);
   const total = { merges: 0, withCheck: 0, noCheck: 0, red: [] };
   for (const i of issues) {
@@ -2858,20 +2861,40 @@ export function checkState(loop) {
     if (loop.profile.is(i.status, 'terminal') && !loop.profile.is(i.status, 'closes-record')) continue;
     const line = lastMerge(loop.eventsById.get(i.id) || []);
     if (!line && !mergedOf(i)) continue;
-    const kind = line && line.red ? 'red' : line && line.check ? 'withCheck' : 'noCheck';
-    for (const name of repoNames(root, i)) {
+    const names = repoNames(root, i);
+    const kindIn = (name) => (line && line.red ? 'red' : carriesDeclared(line, repo(name).declared) ? 'withCheck' : 'noCheck');
+    for (const name of names) {
       const r = repo(name);
       r.merges += 1;
-      if (kind === 'red') r.red.push({ id: i.id, cause: line.red }); else r[kind] += 1;
+      if (kindIn(name) === 'red') r.red.push({ id: i.id, cause: line.red }); else r[kindIn(name)] += 1;
     }
+    const kind = line && line.red ? 'red' : names.some((n) => kindIn(n) === 'withCheck') ? 'withCheck' : 'noCheck';
     total.merges += 1;
     if (kind === 'red') total.red.push({ id: i.id, cause: line.red }); else total[kind] += 1;
   }
-  for (const r of Object.values(byRepo)) r.landsOn = r.withCheck > 0 ? 'check' : 'testimony';
-  return { declared: checks.length > 0, checks, landsOn: total.withCheck > 0 ? 'check' : 'testimony', merges: total, byRepo: Object.fromEntries(Object.keys(byRepo).sort().map((k) => [k, byRepo[k]])) };
+  const lands = (t) => (t.merges > 0 && t.withCheck === t.merges ? 'check' : t.withCheck === 0 ? 'testimony' : 'partial');
+  for (const r of Object.values(byRepo)) { r.landsOn = lands(r); r.k = r.withCheck; r.n = r.merges; }
+  return { declared: checks.length > 0, checks, landsOn: lands(total), merges: total, byRepo: Object.fromEntries(Object.keys(byRepo).sort().map((k) => [k, byRepo[k]])) };
 }
-export const TESTIMONY_NOTE = 'no merge carries a check row — this loop lands on testimony alone: a review is recorded as testimony, not proof (merged <ids> --sha <sha> --ran "<check>" --saw "<summary>" records the check that decided a landing)';
-function checkLine(c) { return c.landsOn === 'check' ? `check: ${c.merges.withCheck} of ${c.merges.merges} merge(s) carry a passing check row${c.checks.length ? ` · declared ${c.checks.join(' · ')}` : ''}` : TESTIMONY_NOTE; }
+// Whether a merge line's check text names one of the declared commands: the text is the --ran commands of the call
+// joined by " ; " (see cmdMerged), compared with each declared command after trimming.
+function carriesDeclared(line, commands) {
+  if (!line || !line.check || !commands.length) return false;
+  const norm = (s) => fieldText(s).replace(/ +· +/g, ' - ').slice(0, 200);
+  const wanted = commands.map(norm);
+  return line.check.split(' ; ').some((part) => wanted.includes(part.trim()));
+}
+export const TESTIMONY_NOTE = 'no merge carries the declared check — this loop lands on testimony alone: a review is recorded as testimony, not proof (a merge carries the check when its --ran text equals a command a Check line of the goal declares: merged <ids> --sha <sha> --ran "<check>" --saw "<summary>")';
+// The landing banner: the testimony mark while no merge carries the declared check, then one line per repository, the count
+// of its merges that carry the declared check, or the mark that it declares none.
+export function checkLines(c) {
+  const lines = c.landsOn === 'testimony' ? [TESTIMONY_NOTE] : [];
+  for (const [name, r] of Object.entries(c.byRepo)) {
+    if (!r.merges && !r.declared.length) continue;
+    lines.push(r.declared.length ? `check ${name}: ${r.k} of ${r.n} merges carry the declared check · declared ${r.declared.join(' · ')}` : `check ${name}: no check declared — ${r.n} merge(s) land on testimony alone`);
+  }
+  return lines;
+}
 // One line per repository: its merges by what they carry, the red ones with their cause.
 export function mergeCheckLines(c) {
   const names = Object.keys(c.byRepo).filter((n) => c.byRepo[n].merges || c.byRepo[n].declared.length);
@@ -2879,7 +2902,7 @@ export function mergeCheckLines(c) {
   const width = Math.max(...names.map((n) => n.length));
   return names.map((n) => {
     const r = c.byRepo[n];
-    return `  ${n.padEnd(width)}  ${r.merges} merge(s) · passing check row ${r.withCheck} · no check row recorded ${r.noCheck} · landed on red ${r.red.length}${r.red.length ? ` (${r.red.map((x) => `${x.id}, cause ${x.cause}`).join('; ')})` : ''}${r.declared.length ? ` · declared ${r.declared.join(' · ')}` : ''}`;
+    return `  ${n.padEnd(width)}  ${r.merges} merge(s) · with the declared check ${r.withCheck} · without it ${r.noCheck} · landed on red ${r.red.length}${r.red.length ? ` (${r.red.map((x) => `${x.id}, cause ${x.cause}`).join('; ')})` : ''}${r.declared.length ? ` · declared ${r.declared.join(' · ')}` : ''}`;
   });
 }
 
@@ -3055,7 +3078,7 @@ export function renderMetrics(m) {
   const f = m.freshReviews;
   return [
     '## Loop metrics',
-    checkLine(m.check),
+    ...checkLines(m.check),
     ...(m.check.merges.merges ? ['merges by repository:', ...mergeCheckLines(m.check)] : []),
     `cycle time (in progress → closed): ${time(m.cycleTime)}`,
     `lead time (filed → closed): ${time(m.leadTime)}`,
@@ -4565,7 +4588,7 @@ export function cmdReport(root, flags = {}) {
   });
   const metrics = metricsOf(loop, Date.now());
   const closedGate = closedGateFlags(loop);
-  const lines = [`# Report`, '', goal, '', ...(metrics.check.landsOn === 'check' ? [] : [TESTIMONY_NOTE, '']), `## Done (${done.length})`, ...(done.length ? [gateLine(profile, split, 'Reviewed by')] : []), ...doneLines,
+  const lines = [`# Report`, '', goal, '', ...(metrics.check.landsOn === 'testimony' ? [TESTIMONY_NOTE, ''] : []), `## Done (${done.length})`, ...(done.length ? [gateLine(profile, split, 'Reviewed by')] : []), ...doneLines,
     ...closedOther.flatMap((st) => {
       const on = issues.filter((i) => i.status === st);
       return ['', `## ${reasonWord(st)} (${on.length})`, ...on.map((i) => `- ${i.id} ${i.title}${profile.is(st, 'needs-reason') ? ` — ${statusReason(i.sections.evidence, reasonWord(st))}` : ''}`)];
@@ -4796,7 +4819,7 @@ export function renderStatus(o, profile = DEFAULT_PROFILE) {
   const by = o.by ? [`by ${o.by.key}:`, ...Object.entries(o.by.groups).map(([k, g]) => `  ${k.padEnd(width)}  ${profile.statuses.map((st) => `${statusLabel(st)} ${g[st]}`).join(' · ')}`)] : [];
   const more = [
     ...(o.tag !== undefined ? [`scoped to the issues tagged ${o.tag} — the counts above and the lists below are theirs only`] : []),
-    ...(o.check && o.check.landsOn === 'testimony' ? [TESTIMONY_NOTE] : []),
+    ...(o.check ? checkLines(o.check) : []),
     ...(o.scheduler ? [schedulerNote(o.scheduler)] : []),
     ...by,
     ...(o.by && o.by.key === 'repo' && o.check ? ['merges by repository, with the check that decided each:', ...mergeCheckLines(o.check)] : []),

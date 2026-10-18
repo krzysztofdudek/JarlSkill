@@ -196,8 +196,10 @@ commands:
                                                  then one line: open, in flight, waiting, done, dropped, deferred,
                                                  open questions, to ratify, merged with CI pending or red; then who
                                                  reviewed the done work (fresh, coordinator, self, unrecorded); then,
-                                                 when goal.md has no "Check: <command>" line, that the loop lands on
-                                                 testimony alone; then the choices awaiting ratification, stale
+                                                 per repository, "k of n merges carry the declared check" (a merge
+                                                 carries it when its --ran text equals a command a Check line of
+                                                 goal.md declares), the testimony mark for a repository that declares
+                                                 none and while no merge carries the declared check; then the choices awaiting ratification, stale
                                                  leases, the issues in flight with no acceptance line, and —
                                                  committed loops — the loop files
                                                  git has not committed; --by adds the status counts per
@@ -211,7 +213,8 @@ commands:
                                                  the issues found by someone other than the jarl; then the loop metrics
                                                  (cycle time, rounds, reopenings, the share of fresh reviews, red CI after
                                                  merge, follow-ups within 7 days — "no data" where the record holds none)
-                                                 and the testimony mark when no check is declared; --json also carries
+                                                 and the landing banner, per repository "k of n merges carry the declared
+                                                 check", with the testimony mark as status shows it; --json also carries
                                                  one row per issue and the metrics (see SKILL.md, "Loop metrics")
   tips                                           read-only: per repository the loop's issues name (open, in progress,
                                                  recently merged), the tip of each worker branch in flight, the release
