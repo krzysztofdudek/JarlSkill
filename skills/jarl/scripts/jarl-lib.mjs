@@ -1663,6 +1663,14 @@ function gitRun(cwd, args) {
   try { return { ok: true, out: execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim() }; }
   catch (e) { return { ok: false, err: String(e.stderr || e.message).trim().split('\n')[0] }; }
 }
+// Every worktree git lists in a repository, with the branch it is on (null when detached).
+function listedWorktrees(repo) {
+  return (git(repo, ['worktree', 'list', '--porcelain']) || '').split(/\n\s*\n/).map((b) => ({ path: /^worktree (.+)$/m.exec(b)?.[1], branch: /^branch refs\/heads\/(.+)$/m.exec(b)?.[1] || null })).filter((w) => w.path);
+}
+const sameDir = (a, b) => canonical(a) === canonical(b);
+// The one wording for a worktree git lists whose directory is not there. Git marks such a worktree prunable or not
+// depending on how the directory went missing, and the lookup reads that as gone or as invisible; both are the same fact here.
+const missingWorktreeReason = () => 'git lists its worktree but its directory is missing here';
 const insideDir = (dir, path) => { const r = relative(canonical(dir), canonical(path)); return r === '' || (!r.startsWith('..') && !isAbsolute(r)); };
 
 function cleanUpAfterMerge(root, issues, sha, repoPath) {
@@ -1690,18 +1698,33 @@ function cleanUpAfterMerge(root, issues, sha, repoPath) {
     if (others.length) { keep(`${others.join(', ')} still hold${others.length === 1 ? 's' : ''} a lease on it`); continue; }
     if (git(repo, ['merge-base', '--is-ancestor', branch, base]) === null && git(repo, ['merge-base', '--is-ancestor', branch, sha]) === null) { keep(`its tip is neither in ${base} nor in the merge ${sha}`); continue; }
     const stored = on.map((i) => i.fields.worktree).find(Boolean);
-    const ws = worktreeState(repo, branch, stored);
+    // Only the worktree git lists on exactly this branch is Jarl's to remove; the path the lease names is looked at to say
+    // what it is when it is not that one, and is never removed.
+    const ws = worktreeState(repo, branch, undefined);
+    if (ws.state === 'none' && stored) {
+      const listed = listedWorktrees(repo).find((w) => sameDir(w.path, stored));
+      keep(!listed ? `the path the lease names (${stored}) is not a worktree git lists` : listed.branch ? `the path the lease names (${stored}) is a worktree on ${listed.branch}, not on this branch` : `the path the lease names (${stored}) is a detached worktree`);
+      continue;
+    }
     let removed = null;
-    if (ws.state === 'elsewhere' || ws.state === 'invisible') { keep('its worktree is not on this machine'); continue; }
-    if (ws.state === 'gone') { keep('git lists its worktree but the directory is gone'); continue; }
+    if (ws.state === 'elsewhere') { keep('its worktree is not on this machine'); continue; }
+    if (ws.state === 'gone' || ws.state === 'invisible') { keep(missingWorktreeReason()); continue; }
     if (ws.state === 'here') {
       const main = mainCheckoutOf(repo);
       if (main && main.main && canonical(ws.path) === main.main) { keep('it is checked out in the main checkout'); continue; }
       if (stored && existsSync(stored) && canonical(stored) !== canonical(ws.path)) { keep('it is checked out in another worktree than the one the lease names'); continue; }
       if (insideDir(ws.path, root) || insideDir(ws.path, process.cwd())) { keep('the loop or this command lives in its worktree'); continue; }
-      const dirty = git(ws.path, ['status', '--porcelain']);
-      if (dirty === null) { keep('the state of its worktree cannot be read'); continue; }
-      if (dirty !== '') { keep(`its worktree holds ${dirty.split('\n').filter(Boolean).length} uncommitted or untracked file(s)`); continue; }
+      const status = git(ws.path, ['status', '--porcelain', '--ignored']);
+      if (status === null) { keep('the state of its worktree cannot be read'); continue; }
+      const lines = status.split('\n').filter(Boolean);
+      const changed = lines.filter((l) => !l.startsWith('!!'));
+      if (changed.length) { keep(`its worktree holds ${changed.length} uncommitted or untracked file(s)`); continue; }
+      // git deletes ignored files together with a worktree, so a worktree that holds any is left for a person to look at.
+      const ignored = lines.map((l) => l.slice(3));
+      if (ignored.length) {
+        keep(`its worktree holds ignored files: ${ignored.slice(0, 5).join(', ')}${ignored.length > 5 ? `, and ${ignored.length - 5} more` : ''}`, { commands: [`git -C ${repo} worktree remove --force ${ws.path}`, `git -C ${repo} branch -d ${branch}`] });
+        continue;
+      }
       const gone = gitRun(repo, ['worktree', 'remove', ws.path]);
       if (!gone.ok) { keep(`git worktree remove refused: ${gone.err}`); continue; }
       removed = ws.path;

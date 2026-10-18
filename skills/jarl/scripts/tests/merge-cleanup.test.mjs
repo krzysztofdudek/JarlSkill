@@ -4,7 +4,7 @@
 // only: no force, no remote branch. The command line and the tools do it, `--keep` skips it, a library caller never gets it.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, renameSync, existsSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, renameSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
@@ -163,8 +163,62 @@ test('a worktree git lists whose directory is gone keeps the branch', () => {
   const { parent, repo, wt, sha } = fixture();
   renameSync(wt, join(parent, 'moved-away'));
   const out = jarl(repo, 'merged', '1', '--sha', sha);
-  assert.match(out, /\nkept jarl\/001-x — (git lists its worktree but the directory is gone|its worktree is not on this machine)$/);
+  assert.match(out, /\nkept jarl\/001-x — git lists its worktree but its directory is missing here$/);
   assert.deepEqual(branches(repo).sort(), ['jarl/001-x', 'main']);
+});
+
+test('a worktree holding an ignored file is kept, the reason names it and the git commands are printed; nothing is removed', () => {
+  const { repo, wt, sha } = fixture();
+  appendFileSync(join(repo, '.git', 'info', 'exclude'), '*.secret\n');
+  writeFileSync(join(wt, 'token.secret'), 'x\n');
+  const out = jarl(repo, 'merged', '1', '--sha', sha);
+  assert.match(out, /\nkept jarl\/001-x — its worktree holds ignored files: token\.secret\nafter looking at the files, remove them with:\n {2}git -C .*repo worktree remove --force .*wt-001\n {2}git -C .*repo branch -d jarl\/001-x$/);
+  assert.equal(readFileSync(join(wt, 'token.secret'), 'utf8'), 'x\n');
+  assert.deepEqual(branches(repo).sort(), ['jarl/001-x', 'main']);
+});
+
+test('the path a lease names is never removed unless git lists it on exactly the issue\'s branch', () => {
+  // Another branch: the lease names the main checkout, which is on main.
+  let f = fixture({ worktree: false });
+  jarl(f.repo, 'set', '1', 'in-progress', 'again', '--branch', 'jarl/001-x', '--worker', 'w-one', '--worktree', f.repo);
+  assert.match(jarl(f.repo, 'merged', '1', '--sha', f.sha), /\nkept jarl\/001-x — the path the lease names \(.*repo\) is a worktree on main, not on this branch$/);
+  assert.equal(existsSync(join(f.repo, '.git')), true);
+  assert.deepEqual(branches(f.repo).sort(), ['jarl/001-x', 'main']);
+  // Another issue's live worktree, on its own branch.
+  f = fixture({ worktree: false, issues: 2 });
+  const live = join(f.parent, 'wt-009');
+  git(f.repo, 'worktree', 'add', '-q', '-b', 'jarl/009-live', live);
+  jarl(f.repo, 'set', '1', 'in-progress', 'again', '--branch', 'jarl/001-x', '--worker', 'w-one', '--worktree', live);
+  assert.match(jarl(f.repo, 'merged', '1', '--sha', f.sha), /is a worktree on jarl\/009-live, not on this branch$/);
+  assert.equal(existsSync(live), true);
+  // Detached.
+  f = fixture({ worktree: false });
+  const detached = join(f.parent, 'wt-detached');
+  git(f.repo, 'worktree', 'add', '-q', '--detach', detached);
+  jarl(f.repo, 'set', '1', 'in-progress', 'again', '--branch', 'jarl/001-x', '--worker', 'w-one', '--worktree', detached);
+  assert.match(jarl(f.repo, 'merged', '1', '--sha', f.sha), /is a detached worktree$/);
+  assert.equal(existsSync(detached), true);
+  // Not listed by git at all.
+  f = fixture({ worktree: false });
+  const plain = join(f.parent, 'plain');
+  mkdirSync(plain);
+  jarl(f.repo, 'set', '1', 'in-progress', 'again', '--branch', 'jarl/001-x', '--worker', 'w-one', '--worktree', plain);
+  assert.match(jarl(f.repo, 'merged', '1', '--sha', f.sha), /is not a worktree git lists$/);
+  assert.equal(existsSync(plain), true);
+  assert.deepEqual(branches(f.repo).sort(), ['jarl/001-x', 'main']);
+});
+
+test('a loop that lives inside the issue\'s worktree keeps it', () => {
+  const { parent, repo, wt, sha } = fixture({ worktree: true });
+  const inner = join(wt, 'loop');
+  mkdirSync(inner);
+  jarl(inner, 'init', 'inner goal');
+  jarl(inner, 'new', 'inner issue', '--acceptance', 'it works');
+  jarl(inner, 'set', '1', 'in-progress', 'start', '--branch', 'jarl/001-x', '--worker', 'w-one', '--worktree', wt);
+  const out = jarl(inner, 'merged', '1', '--sha', sha, '--repo', repo);
+  assert.match(out, /\nkept jarl\/001-x — the loop or this command lives in its worktree$/);
+  assert.equal(existsSync(wt), true);
+  void parent;
 });
 
 test('a branch git would refuse to delete without a force is kept: there is no force', () => {
