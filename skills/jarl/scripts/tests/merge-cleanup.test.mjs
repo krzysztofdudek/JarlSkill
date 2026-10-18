@@ -192,6 +192,43 @@ test('an untracked file is seen whatever the repository hides, and the printed c
   assert.equal(shellWord('jarl/001-x'), 'jarl/001-x');
 });
 
+test('a tracked file edited and hidden with assume-unchanged or skip-worktree keeps the worktree and the branch', () => {
+  for (const [flag, shown] of [['--assume-unchanged', /assume-unchanged or skip-worktree marks: a\.txt/], ['--skip-worktree', /assume-unchanged or skip-worktree marks: a\.txt/]]) {
+    const { repo, wt, sha } = fixture();
+    git(wt, 'update-index', flag, 'a.txt');
+    writeFileSync(join(wt, 'a.txt'), 'edited\n');
+    assert.equal(git(wt, 'status', '--porcelain'), '', 'git status sees nothing');
+    assert.match(jarl(repo, 'merged', '1', '--sha', sha), new RegExp(`\\nkept jarl/001-x — its worktree hides changes from git status behind ${shown.source}$`));
+    assert.equal(readFileSync(join(wt, 'a.txt'), 'utf8'), 'edited\n');
+    assert.deepEqual(branches(repo).sort(), ['jarl/001-x', 'main']);
+  }
+});
+
+test('core.excludesFile, an exclude entry and a worktree-local configuration hide nothing the check must see', () => {
+  // A configured excludes file turns an untracked file into an ignored one: it is kept for that.
+  let f = fixture();
+  const excludes = join(f.parent, 'global-excludes');
+  writeFileSync(excludes, '*.mine\n');
+  git(f.repo, 'config', 'core.excludesFile', excludes);
+  writeFileSync(join(f.wt, 'notes.mine'), 'x\n');
+  assert.match(jarl(f.repo, 'merged', '1', '--sha', f.sha), /\nkept jarl\/001-x — its worktree holds ignored files: notes\.mine\n/);
+  assert.equal(existsSync(join(f.wt, 'notes.mine')), true);
+  // An entry in .git/info/exclude, the same.
+  f = fixture();
+  appendFileSync(join(f.repo, '.git', 'info', 'exclude'), '*.hide\n');
+  writeFileSync(join(f.wt, 'a.hide'), 'x\n');
+  assert.match(jarl(f.repo, 'merged', '1', '--sha', f.sha), /holds ignored files: a\.hide\n/);
+  // A configuration local to the worktree that hides untracked files from status.
+  f = fixture();
+  git(f.repo, 'config', 'extensions.worktreeConfig', 'true');
+  git(f.wt, 'config', '--worktree', 'status.showUntrackedFiles', 'no');
+  writeFileSync(join(f.wt, 'hidden.txt'), 'h\n');
+  assert.equal(git(f.wt, 'status', '--porcelain'), '', 'status hides it');
+  assert.match(jarl(f.repo, 'merged', '1', '--sha', f.sha), /\nkept jarl\/001-x — its worktree holds 1 uncommitted or untracked file\(s\)$/);
+  assert.equal(existsSync(join(f.wt, 'hidden.txt')), true);
+  assert.deepEqual(branches(f.repo).sort(), ['jarl/001-x', 'main']);
+});
+
 test('the path a lease names is never removed unless git lists it on exactly the issue\'s branch', () => {
   // Another branch: the lease names the main checkout, which is on main.
   let f = fixture({ worktree: false });

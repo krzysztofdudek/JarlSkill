@@ -1722,6 +1722,14 @@ function cleanUpAfterMerge(root, issues, sha, repoPath) {
       const lines = status.split('\n').filter(Boolean);
       const changed = lines.filter((l) => !l.startsWith('!!'));
       if (changed.length) { keep(`its worktree holds ${changed.length} uncommitted or untracked file(s)`); continue; }
+      // A second, independent look, so that no single mechanism that hides a change from `status` slips through: files an
+      // index flag hides (assume-unchanged shows as a lowercase tag in ls-files -v, skip-worktree as S), the working files
+      // against HEAD, and the untracked files not ignored.
+      const flagged = (git(ws.path, ['-c', 'core.fsmonitor=false', 'ls-files', '-v']) || '').split('\n').filter((l) => l && (/^[a-z]/.test(l) || l.startsWith('S ')));
+      if (flagged.length) { keep(`its worktree hides changes from git status behind assume-unchanged or skip-worktree marks: ${flagged.slice(0, 5).map((l) => l.slice(2)).join(', ')}${flagged.length > 5 ? `, and ${flagged.length - 5} more` : ''}`); continue; }
+      if (!gitRun(ws.path, ['diff', '--quiet', 'HEAD', '--']).ok) { keep('its worktree differs from its HEAD'); continue; }
+      const others = git(ws.path, ['ls-files', '--others', '--exclude-standard']);
+      if (others === null || others !== '') { keep('its worktree holds untracked files'); continue; }
       // git deletes ignored files together with a worktree, so a worktree that holds any is left for a person to look at.
       const ignored = lines.map((l) => l.slice(3));
       if (ignored.length) {
