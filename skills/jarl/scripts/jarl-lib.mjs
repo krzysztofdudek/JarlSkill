@@ -2102,8 +2102,15 @@ export function issueView(root, issue, { full = false } = {}) {
   pieces.push(cur);
   const numbered = (body, rows) => body.map((l, i) => { const r = rows.find((x) => x.start === i); return r ? l.replace(/^- /, `- [${r.n}] `) : l; });
   const g = full ? null : gateState(root, issue.id);
+  const notes = recordDisagreements(readLoop(jarlDir(root))).filter((d) => d.id === issue.id).map((d) => d.line);
   const out = [];
   for (const p of pieces) {
+    if (p.name === null && notes.length) {
+      const head = [...p.lines];
+      while (head.length && head[head.length - 1].trim() === '') head.pop();
+      out.push(...head, ...notes, '');
+      continue;
+    }
     if (p.name !== 'evidence' && p.name !== 'reviews') { out.push(...p.lines); continue; }
     const body = p.lines.slice(1);
     if (p.name === 'evidence') {
@@ -2342,6 +2349,8 @@ function statusOf(root, loop, flags) {
   c.reviews = reviewSplit(flags.tag === undefined ? loop : scopedLoop(loop, issues));
   c.inFlightRows = inFlightRows(loop, issues);
   c.closedGate = closedGateFlags(flags.tag === undefined ? loop : scopedLoop(loop, issues));
+  const disagreements = recordDisagreements(flags.tag === undefined ? loop : scopedLoop(loop, issues));
+  if (disagreements.length) c.disagreements = disagreements;
   const files = uncommittedLoopFiles(root);
   c.uncommitted = files === null ? null : files.length;
   // --by: the same five counts per repository, tag, kind or priority — a dashboard's table, read from the issues.
@@ -2640,6 +2649,60 @@ function makeLoop({ dir, root, profile, issues, events }) {
 // The same loop over some of its issues (the ones a view is scoped to): the gate looks up an issue and the branch it
 // shares with others among these, as the view does.
 function scopedLoop(loop, issues) { return makeLoop({ dir: loop.dir, root: loop.root, profile: loop.profile, issues, events: loop.events }); }
+
+// Where the files disagree with the journal, which is the record: one entry { id, field, onFile, record, line } per
+// header field (Status, Branch, Worker, Model, Since, Merged, CI) whose value differs from the journal's, one per
+// issue the journal holds no filing and no move of (field 'journal'), and one per status a line of the journal moves an
+// issue into that the loop's profile does not list (field 'profile': the line reads as a note, not as a move). The
+// views never believe the header; they print these. Each line names how the disagreement is settled: the header written
+// back to the journal's value, which writes nothing else, or the move or merge that makes the header's value the
+// record, which writes a line of its own.
+const FIELD_NAMES = { status: 'Status', branch: 'Branch', worker: 'Worker', model: 'Model', since: 'Since', merged: 'Merged', ci: 'CI' };
+const LEASE_KEYS = ['branch', 'worker', 'model'];
+const ghostRe = idRe('^({id}) → (\\S+)');
+export function recordDisagreements(loop) {
+  const { profile } = loop;
+  const text = (v) => fieldText(v);
+  const out = [];
+  for (const issue of loop.issues) {
+    if (issue.id === null) continue;
+    const id = issue.id;
+    if (issue.onFile === null) {
+      const status = profile.statuses.includes(issue.status) ? issue.status : profile.initial;
+      out.push({ id, field: 'journal', onFile: issue.status, record: null, line: `record: ${id} is not in the log (it holds no filing and no move), so its header is read as it stands — to put it in the log: jarl.mjs set ${id} ${status}${profile.is(status, 'needs-reason') ? ' "<why>"' : ''}${profile.is(status, 'closes-record') ? ' (through its checks)' : ''}` });
+      continue;
+    }
+    for (const field of Object.keys(FIELD_NAMES)) {
+      const file = text(issue.onFile[field]);
+      const record = text(field === 'status' ? issue.status : issue.fields[field]);
+      if (file === record) continue;
+      const name = FIELD_NAMES[field];
+      const was = file ? `reads ${file} in the file` : 'is missing from the file';
+      const now = record ? (file ? `${record} in the log` : `reads ${record} in the log`) : 'is not in the log';
+      const follow = record ? `write **${name}:** ${record} back into the header` : `remove the **${name}:** line from the header`;
+      let make = '';
+      if (file && field === 'status' && profile.statuses.includes(file)) make = `jarl.mjs set ${id} ${file}${profile.is(file, 'needs-reason') ? ' "<why>"' : ''} (a move into ${file}${profile.is(file, 'closes-record') ? ', through its checks' : ''})`;
+      else if (file && LEASE_KEYS.includes(field) && profile.is(issue.status, 'holds-claim')) make = `jarl.mjs set ${id} ${issue.status} --${field} ${file} (a new move line, which stamps Since again)`;
+      else if (file && field === 'merged' && /^\S+(?: in .+)?$/.test(file)) {
+        const m = mergedOf({ fields: { merged: file } });
+        const ci = text(issue.onFile.ci);
+        make = `jarl.mjs merged ${id} --sha ${m.sha}${m.repo ? ` --repo ${m.repo}` : ''}${CI_STATES.includes(ci) ? ` --ci ${ci}` : ''} --keep (a new merge line)`;
+      } else if (file && field === 'ci' && CI_STATES.includes(file) && issue.fields.merged) make = `jarl.mjs merged ${id} --ci ${file} (a new CI line)`;
+      out.push({ id, field: name, onFile: file || null, record: record || null, line: `record: ${id} ${name} ${was} and ${now}, which is the record — to follow the log, ${follow}${make ? `; to make the file's value the record, ${make}` : ''}` });
+    }
+  }
+  const seen = new Set();
+  for (const e of loop.events) {
+    if (e.id === null || e.type !== 'other') continue;
+    const m = ghostRe.exec(e.text);
+    if (!m || m[1] !== e.id || profile.statuses.includes(m[2])) continue;
+    const key = `${e.id} ${m[2]}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ id: e.id, field: 'profile', onFile: null, record: m[2], line: `record: ${e.id} the log moves it into ${m[2]}, which the loop's profile does not list as a status, so the line is read as a note and not as a move — restore ${m[2]} in the profile's statuses to read it as the move it was` });
+  }
+  return out;
+}
 
 // Who reviewed, as a kind: the word self, or anyone who has ever held the issue's lease — its own worker across
 // every takeover, and the worker of any other issue sharing its Branch (a package, or an issue folded into the
@@ -4555,6 +4618,7 @@ export function cmdResume(root, flags = {}) {
     ...(scheduled ? { scheduler: profile.scheduler } : {}),
     queue: cmdQueue(root), merged, tips: cmdTips(root, { ci: flags.ci === true }),
     uncommitted: uncommittedLoopFiles(root),
+    ...(status.disagreements ? { disagreements: status.disagreements } : {}),
     log: logN ? logLines.slice(-logN).map((e) => `${e.at} · ${e.text}`) : null,
     legacyHandoff: legacy ? { path: handoffPath(root), at: legacy.at, ageMs: legacy.ageMs } : null,
   };
@@ -4579,6 +4643,7 @@ export function renderResume(o, profile = DEFAULT_PROFILE) {
   return [
     ...head,
     ...sec(`Rulings in force (${o.rulings.length})`, o.rulings.map((d) => `- ${d.date} · ${d.slug}${d.by ? ` · by ${d.by}` : ''} — ${short(d.line)}`), '- (none)'),
+    ...sec(`The files disagree with the log (${(st.disagreements || []).length})`, (st.disagreements || []).map((d) => d.line)),
     ...sec(`Closed, gate does not hold (${(st.closedGate || []).length})`, (st.closedGate || []).map(closedGateLine)),
     ...sec(`In flight (${o.inFlight.length})`, o.inFlight.map((x) => `- ${x.id} ${short(x.title)}${shownFields(x)}${lease(x) ? ` · ${lease(x)}` : ''}${x.stale.length ? ` · STALE: ${x.stale.join('; ')}` : ''}${x.mark ? `\n  → ${IN_FLIGHT_MARKS[x.mark]}` : ''}`), '- (nothing)'),
     ...sec(`Waiting — After not settled (${o.waiting.length})`, o.waiting.map((x) => `- ${x.id} ${short(x.title)} (after ${x.after.join(', ')})${x.stale !== undefined ? ` · ${x.status === 'in-progress' ? 'in progress' : x.status}${lease(x) ? ` · ${lease(x)}` : ''}${x.stale.length ? ` · STALE: ${x.stale.join('; ')}` : ''}` : ''}`)),
@@ -4894,6 +4959,7 @@ export function renderStatus(o, profile = DEFAULT_PROFILE) {
   const by = o.by ? [`by ${o.by.key}:`, ...Object.entries(o.by.groups).map(([k, g]) => `  ${k.padEnd(width)}  ${profile.statuses.map((st) => `${statusLabel(st)} ${g[st]}`).join(' · ')}`)] : [];
   const more = [
     ...(o.tag !== undefined ? [`scoped to the issues tagged ${o.tag} — the counts above and the lists below are theirs only`] : []),
+    ...(o.disagreements || []).map((d) => d.line),
     ...(o.check ? checkLines(o.check) : []),
     ...(o.scheduler ? [schedulerNote(o.scheduler)] : []),
     ...by,

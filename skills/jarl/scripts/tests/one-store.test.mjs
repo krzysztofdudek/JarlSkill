@@ -5,13 +5,14 @@
 // operations alone.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs, { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import fs, { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as R from '../record.mjs';
 import { gitRepo, jarl, loop as makeLoop, refuses } from './helpers.mjs';
 import { oldJarl, oldJarlIsPinned } from './old-jarl.mjs';
+import { sh } from './portable.mjs';
 
 const L = await import('../jarl-lib.mjs');
 
@@ -191,6 +192,154 @@ test('the views of a loop moved only through the tool read the same as the heade
   for (const key of ['open', 'in-progress', 'done', 'dropped', 'deferred', 'waiting', 'inFlight', 'ready']) assert.equal(old.value[key], now[key], key);
   const rows = (issues) => issues.map((i) => [i.id, i.status, i.fields.branch ?? null, i.fields.worker ?? null]);
   assert.deepEqual(rows(oldJarl(root, 'list', { all: true }).value), rows(L.cmdList(root, { all: true })), 'the frozen reader lists the same issues in the same states');
+});
+
+// ---- the report of a header that disagrees -----------------------------------------------------------------
+
+const recordLines = (text) => text.split('\n').filter((l) => l.startsWith('record: '));
+// A loop with issue 001 leased, with a model, and merged with its CI green, moved only through the command line.
+function leasedAndMerged() {
+  const root = makeLoop();
+  jarl(root, 'new', 'one', '--tier', 'light', '--acceptance', 'a');
+  jarl(root, 'set', '1', 'in-progress', '--branch', 'jarl/1-a', '--worker', 'w1', '--model', 'm1');
+  jarl(root, 'merged', '1', '--sha', 'abc1234', '--ci', 'green', '--keep');
+  return root;
+}
+
+test('a hand edit of Status is reported by status, resume and show as one line that names the log as the record and the commands that settle it', () => {
+  const root = makeLoop();
+  jarl(root, 'new', 'first', '--tier', 'light');
+  jarl(root, 'set', '1', 'in-progress', '--branch', 'jarl/1-a', '--worker', 'w1');
+  assert.deepEqual(recordLines(jarl(root, 'status')), [], 'a loop moved through the tool prints no such line');
+  assert.equal(JSON.parse(jarl(root, 'status', '--json')).disagreements, undefined);
+  editHeader(root, '001', (t) => t.replace('**Status:** in-progress', '**Status:** done'));
+  const line = 'record: 001 Status reads done in the file and in-progress in the log, which is the record — to follow the log, write **Status:** in-progress back into the header; to make the file\'s value the record, jarl.mjs set 001 done (a move into done, through its checks)';
+  assert.deepEqual(recordLines(jarl(root, 'status')), [line]);
+  assert.deepEqual(recordLines(jarl(root, 'resume')), [line]);
+  assert.match(jarl(root, 'resume'), /## The files disagree with the log \(1\)\nrecord: 001 /);
+  assert.deepEqual(recordLines(jarl(root, 'show', '1')), [line]);
+  assert.deepEqual(recordLines(jarl(root, 'show', '1', '--full')), [line]);
+  const st = JSON.parse(jarl(root, 'status', '--json'));
+  assert.deepEqual(st.disagreements, [{ id: '001', field: 'Status', onFile: 'done', record: 'in-progress', line }]);
+  assert.deepEqual(JSON.parse(jarl(root, 'resume', '--json')).disagreements, st.disagreements);
+  assert.equal(R.statusData(root).disagreements.length, 1);
+  assert.equal(R.resumeData(root).disagreements.length, 1);
+});
+
+const CASES = [
+  { field: 'Status', edit: (t) => t.replace('**Status:** in-progress', '**Status:** open'), make: ['set', '001', 'open'] },
+  { field: 'Branch', edit: (t) => t.replace('**Branch:** jarl/1-a', '**Branch:** jarl/1-b'), make: ['set', '001', 'in-progress', '--branch', 'jarl/1-b'] },
+  { field: 'Worker', edit: (t) => t.replace('**Worker:** w1', '**Worker:** w9'), make: ['set', '001', 'in-progress', '--worker', 'w9'] },
+  { field: 'Model', edit: (t) => t.replace('**Model:** m1', '**Model:** m2'), make: ['set', '001', 'in-progress', '--model', 'm2'] },
+  { field: 'Since', edit: (t) => t.replace(/^\*\*Since:\*\* .*$/m, '**Since:** 2026-01-01 00:00'), make: null },
+  { field: 'Merged', edit: (t) => t.replace('**Merged:** abc1234', '**Merged:** deadbeef'), make: ['merged', '001', '--sha', 'deadbeef', '--ci', 'green', '--keep'] },
+  { field: 'CI', edit: (t) => t.replace('**CI:** green', '**CI:** red'), make: ['merged', '001', '--ci', 'red'] },
+];
+for (const c of CASES) {
+  test(`a hand edit of ${c.field} is one reported line, and the way to follow the log writes nothing while the way to make the file the record settles it`, () => {
+    const root = leasedAndMerged();
+    const original = readFileSync(issueFile(root, '001'), 'utf8');
+    const logBefore = logLinesOf(root).length;
+    editHeader(root, '001', c.edit);
+    assert.notEqual(readFileSync(issueFile(root, '001'), 'utf8'), original, 'the edit changed the file');
+    const status = recordLines(jarl(root, 'status'));
+    assert.equal(status.length, 1, status.join('\n'));
+    assert.match(status[0], new RegExp(`^record: 001 ${c.field} (reads .* in the file and .* in the log|is missing)`));
+    assert.match(status[0], /which is the record — to follow the log, (write \*\*|remove the )/);
+    assert.equal(/to make the file's value the record/.test(status[0]), c.make !== null, 'a field with no command of its own names none');
+    // Following the log is a header written back: no command, no line.
+    const edited = readFileSync(issueFile(root, '001'), 'utf8');
+    writeFileSync(issueFile(root, '001'), original);
+    assert.deepEqual(recordLines(jarl(root, 'status')), []);
+    assert.equal(logLinesOf(root).length, logBefore, 'the journal gained nothing');
+    // Making the file's value the record is the one command the line names, and it leaves nothing else changed.
+    if (c.make) {
+      writeFileSync(issueFile(root, '001'), edited);
+      const printed = /to make the file's value the record, (jarl\.mjs [^(]+?) \(/.exec(status[0])[1];
+      assert.deepEqual(printed.split(' ').slice(1), c.make);
+      jarl(root, ...c.make);
+      assert.deepEqual(recordLines(jarl(root, 'status')), []);
+      assert.deepEqual(recordLines(jarl(root, 'resume')), []);
+      assert.deepEqual(recordLines(jarl(root, 'show', '1')), []);
+      assert.equal(logLinesOf(root).length, logBefore + 1, 'the command wrote its one line');
+      if (c.field === 'Merged') assert.equal(headerOf(issueFile(root, '001')).ci, 'green', 'the CI state survived the command');
+    }
+  });
+}
+
+test('an issue the journal holds no filing and no move of is reported as not in the log, and the command named puts it there', () => {
+  const root = makeLoop();
+  writeFileSync(join(R.jarlDir(root), 'issues', '001-by-hand.md'), '# 001 · by hand\n\n**Status:** open\n**Kind:** bug\n');
+  const lines = recordLines(jarl(root, 'status'));
+  assert.deepEqual(lines, ['record: 001 is not in the log (it holds no filing and no move), so its header is read as it stands — to put it in the log: jarl.mjs set 001 open']);
+  jarl(root, 'set', '001', 'open');
+  assert.deepEqual(recordLines(jarl(root, 'status')), []);
+});
+
+test('a hand edit of the profile\'s status list is reported: a line that moved an issue into a status the profile no longer lists reads as a note', () => {
+  const root = makeLoop();
+  const profile = { 'jarl-profile': 1, name: 'review-loop', statuses: { open: ['dispatchable'], working: ['holds-claim'], review: [], done: ['settles-dependents', 'terminal', 'closes-record'] } };
+  const file = join(root, 'p.json');
+  writeFileSync(file, JSON.stringify(profile));
+  const dir = mkdtempSync(join(tmpdir(), 'jarl-one-store-profile-'));
+  mkdirSync(join(dir, '.git'));
+  jarl(dir, 'init', 'g', '--profile', file);
+  jarl(dir, 'new', 'one', '--tier', 'light');
+  jarl(dir, 'set', '1', 'working', '--worker', 'w1');
+  jarl(dir, 'set', '1', 'review');
+  assert.match(jarl(dir, 'status'), /review 1/);
+  const { review, ...rest } = profile.statuses;
+  assert.ok(review);
+  writeFileSync(join(dir, '.jarl', 'profile.json'), JSON.stringify({ ...profile, statuses: rest }));
+  const lines = recordLines(jarl(dir, 'status'));
+  assert.equal(lines.filter((l) => /^record: 001 the log moves it into review, which the loop's profile does not list as a status, so the line is read as a note and not as a move/.test(l)).length, 1);
+  assert.ok(lines.some((l) => /^record: 001 Status reads review in the file and working in the log/.test(l)), 'the status the file holds against the one the log now reads');
+  assert.ok(JSON.parse(jarl(dir, 'status', '--json')).disagreements.some((d) => d.field === 'profile'));
+  writeFileSync(join(dir, '.jarl', 'profile.json'), JSON.stringify(profile));
+  assert.deepEqual(recordLines(jarl(dir, 'status')), []);
+});
+
+test('the same log folds the same in two clones, and clones that merged in opposite directions follow their own log', () => {
+  const { dir, g } = gitRepo({ branch: 'main' });
+  jarl(dir, 'init', 'g', '--committed');
+  jarl(dir, 'new', 'one', '--tier', 'light');
+  g('add', '-A'); g('commit', '-qm', 'loop');
+  g('checkout', '-q', '-b', 'x');
+  jarl(dir, 'set', '1', 'in-progress', '--worker', 'wx');
+  g('add', '-A'); g('commit', '-qm', 'x moves it');
+  g('checkout', '-q', 'main'); g('checkout', '-q', '-b', 'y');
+  jarl(dir, 'set', '1', 'deferred', 'later');
+  g('add', '-A'); g('commit', '-qm', 'y moves it');
+  const clone = (branch, other) => {
+    const c = mkdtempSync(join(tmpdir(), 'jarl-one-store-clone-'));
+    sh(c, `git clone -q ${dir} . && git config user.email t@t && git config user.name t && git config core.excludesFile /dev/null && git checkout -q ${branch}`);
+    sh(c, `git merge -q --no-edit origin/${other} || (git checkout --ours -- .jarl/issues && git add -A && git commit -q --no-edit)`);
+    return c;
+  };
+  const one = clone('x', 'y');
+  const two = clone('y', 'x');
+  const lines = (c) => readFileSync(join(c, '.jarl', 'log.md'), 'utf8').split('\n').filter((l) => l.startsWith('- ')).filter((l) => /001 → /.test(l));
+  assert.equal(lines(one).length, 2);
+  assert.deepEqual([...lines(one)].sort(), [...lines(two)].sort(), 'both hold the same lines');
+  const stateOf = (c) => foldOf(R.jarlDir(c), R.loadProfile(c), '001').status;
+  assert.equal(stateOf(one), lines(one)[1].includes('deferred') ? 'deferred' : 'in-progress', 'a clone follows the order of its own log');
+  assert.equal(stateOf(two), lines(two)[1].includes('deferred') ? 'deferred' : 'in-progress');
+  // The same log text in a third place folds identically.
+  const copy = mkdtempSync(join(tmpdir(), 'jarl-one-store-copy-'));
+  mkdirSync(join(copy, '.git'));
+  cpSync(join(one, '.jarl'), join(copy, '.jarl'), { recursive: true });
+  assert.equal(stateOf(copy), stateOf(one));
+  assert.equal(JSON.parse(jarl(copy, 'status', '--json'))['in-progress'], JSON.parse(jarl(one, 'status', '--json'))['in-progress']);
+  // The file a person resolved by hand is reported wherever it differs from the log the clone holds.
+  for (const c of [one, two]) {
+    const header = headerOf(join(c, '.jarl', 'issues', readdirSync(join(c, '.jarl', 'issues')).find((f) => f.startsWith('001-'))));
+    const reported = recordLines(jarl(c, 'status')).length > 0;
+    assert.equal(reported, header.status !== stateOf(c), `${c}: a disagreement is printed exactly when the header differs from the log`);
+  }
+});
+
+test('a copy of a real loop prints no disagreement', { skip: !(LIVE && existsSync(join(LIVE, '.jarl'))) && 'JARL_LIVE_LOOP is unset, or names no loop' }, () => {
+  assert.deepEqual(L.recordDisagreements(L.readLoop(join(LIVE, '.jarl'))), []);
 });
 
 // ---- one stamp, and the line before the file ------------------------------------------------------------------
