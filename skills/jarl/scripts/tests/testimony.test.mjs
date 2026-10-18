@@ -49,7 +49,7 @@ test('three lines through every command that writes text: whole in the issue, th
   assert.ok(reviews.includes('review line three'));
   assert.ok(issue.indexOf('## Reviews') < issue.indexOf('## Evidence'), 'Evidence stays last');
   assert.ok(has(issue, 'ran') && has(issue, 'saw'), 'the rows keep every line');
-  assert.ok(has(jarl(root, 'show', id), 'evidence'));
+  assert.ok(has(jarl(root, 'show', id, '--full'), 'evidence'));
   const shown = JSON.parse(jarl(root, 'show', id, '--json'));
   assert.ok(shown.sections.reviews.includes('review line two'), '--json carries the whole review');
 

@@ -475,8 +475,8 @@ test('repeated --ran/--saw in one call produce one row per pair, not a comma-joi
   jarl(root, 'new', 'thing');
   jarl(root, 'evidence', '001', '--ran', 'cmd one', '--saw', 'result one', '--ran', 'cmd two', '--saw', 'result two');
   const shown = jarl(root, 'show', '001');
-  assert.match(shown, /^- \*\*ran:\*\* cmd one · \*\*saw:\*\* result one$/m);
-  assert.match(shown, /^- \*\*ran:\*\* cmd two · \*\*saw:\*\* result two$/m);
+  assert.match(shown, /^- \[1\] \*\*ran:\*\* cmd one · \*\*saw:\*\* result one$/m);
+  assert.match(shown, /^- \[2\] \*\*ran:\*\* cmd two · \*\*saw:\*\* result two$/m);
   const log = readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
   assert.match(log, /001 evidence row · cmd one$/m);
   assert.match(log, /001 evidence row · cmd two$/m);
@@ -787,7 +787,7 @@ test('20 parallel evidence calls land 20 rows and 20 log lines; 10 parallel new 
   jarl(root, 'new', 'target');
   await Promise.all(Array.from({ length: 20 }, (_, n) => jarlAsync(root, 'evidence', '001', '--ran', `w${n}`, '--saw', 'ok')));
   const shown = jarl(root, 'show', '001');
-  assert.equal((shown.match(/^- \*\*ran:\*\* w\d+ · \*\*saw:\*\* ok$/gm) || []).length, 20);
+  assert.equal((shown.match(/^- \[\d+\] \*\*ran:\*\* w\d+ · \*\*saw:\*\* ok$/gm) || []).length, 20);
   const log = readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
   assert.equal((log.match(/· 001 evidence row · w\d+$/gm) || []).length, 20);
   const filed = await Promise.all(Array.from({ length: 10 }, (_, n) => jarlAsync(root, 'new', `parallel ${n}`, '--json')));
@@ -838,9 +838,9 @@ test('a value flag takes the next argument whatever it starts with; -- ends the 
   assert.match(refuses(root, 'evidence', '001', '--', 'x'), /unexpected: "--root".*flags such as --root go before it/s);
   assert.match(refuses(root, 'set', '1', '2', 'done', 'why'), /set takes at most 3 arguments — unexpected: "why".*12,13/s);
   const shown = jarl(root, 'show', '001');
-  assert.match(shown, /^- \*\*ran:\*\* --help · \*\*saw:\*\* usage$/m);
-  assert.match(shown, /^- \*\*ran:\*\* yg check · \*\*saw:\*\* --- FAIL: 3 pairs$/m);
-  assert.match(shown, /^- \*\*ran:\*\* go test \.\/\.\.\. · \*\*saw:\*\* ok=all$/m);
+  assert.match(shown, /^- \[1\] \*\*ran:\*\* --help · \*\*saw:\*\* usage$/m);
+  assert.match(shown, /^- \[2\] \*\*ran:\*\* yg check · \*\*saw:\*\* --- FAIL: 3 pairs$/m);
+  assert.match(shown, /^- \[3\] \*\*ran:\*\* go test \.\/\.\.\. · \*\*saw:\*\* ok=all$/m);
   assert.match(shown, /^--json prints ok$/m);
   assert.match(raw('new', '--', '--json output drops key'), /^filed 002 /);
   // Refused loudly, naming what the command takes.
@@ -959,7 +959,7 @@ test('many callers on a lock left by a dead process: one breaks it, none loses a
   const lock = join(root, '.jarl', '.lock');
   writeFileSync(lock, `99999999 ${hostname()} 2026-01-01T00:00:00.000Z\n`);
   await Promise.all(Array.from({ length: 20 }, (_, n) => jarlAsync(root, 'evidence', '001', '--ran', `b${n}`, '--saw', 'ok')));
-  assert.equal((jarl(root, 'show', '001').match(/^- \*\*ran:\*\* b\d+ · /gm) || []).length, 20);
+  assert.equal((jarl(root, 'show', '001').match(/^- \[\d+\] \*\*ran:\*\* b\d+ · /gm) || []).length, 20);
   assert.equal((readFileSync(join(root, '.jarl', 'log.md'), 'utf8').match(/· 001 evidence row · b\d+$/gm) || []).length, 20);
   assert.deepEqual(readdirSync(join(root, '.jarl')).filter((f) => f.startsWith('.lock')), [], 'neither the lock nor the breaker lock is left');
   // A holder that died between creating the lock and writing its name: empty, and broken once two seconds old.
@@ -1029,7 +1029,7 @@ test('new writes the body at filing time, body replaces it later, and neither is
   assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /001 body · what/);
   // Without any of it, an issue reads exactly as before.
   jarl(root, 'new', 'bare');
-  assert.match(jarl(root, 'show', '2'), /\*\*Where:\*\*\n\n## What\n\n\n## Why\n\n\n## Acceptance\n\n\n## Evidence$/);
+  assert.match(jarl(root, 'show', '2', '--full'), /\*\*Where:\*\*\n\n## What\n\n\n## Why\n\n\n## Acceptance\n\n\n## Evidence$/);
 });
 
 test('next and status flag work with no acceptance line, done says so on stderr, review echoes the acceptance', () => {

@@ -1605,7 +1605,7 @@ export function cmdRepo(root, rawId, path, { clear = false } = {}) {
 // The checkable rows of an Evidence section, each with its ordinal n counted over the whole section (a retracted
 // row keeps its number, so a number never moves), the lines it spans (start..end, a row is its first line and the
 // indented lines under it) and whether it is retracted (struck through: `- ~~**ran:** … **saw:** …~~`). The one
-// numbering: evidence --retract takes it, and the done gate matches the journal's rows to it.
+// numbering: show prints it, evidence --retract takes it, the done gate counts by it.
 const ROW_START = /^- (~~)?\*\*ran:\*\*/;
 export function evidenceTable(text) {
   const lines = String(text || '').split('\n');
@@ -1650,8 +1650,8 @@ export function workEvidence(issue, profile = DEFAULT_PROFILE) {
 // replace it: the merger's free-text note lands after the worker's rows. `set done` needs the section
 // non-empty, rows or not (not every issue's proof is a command).
 //
-// evidence <id> --retract <n> --by <who> "<reason>" retracts the n-th row (counted over the whole Evidence section, a
-// retracted row keeping its number) by an appended entry: the row stays, struck through, the entry names who retracted it and why, and
+// evidence <id> --retract <n> --by <who> "<reason>" retracts the n-th row (numbered over the whole Evidence section, as
+// show prints it) by an appended entry: the row stays, struck through, the entry names who retracted it and why, and
 // the done gate no longer counts it. It only tightens: a row is taken away, never added or revived.
 export function cmdEvidence(root, rawIds, text, flags) {
   if (flags && flags.retract !== undefined) return retractEvidence(root, rawIds, text, flags);
@@ -1693,7 +1693,7 @@ function retractEvidence(root, rawIds, reason, flags) {
   need(!isBulk(rawIds), 'evidence --retract names one issue and one row');
   need(flags.ran === undefined && flags.saw === undefined, 'evidence --retract takes a row number and a reason, not a new --ran/--saw row');
   const raw = String(flags.retract);
-  need(/^\d+$/.test(raw) && Number(raw) >= 1, `--retract takes the number of an evidence row: 1 for the first --ran/--saw row of the Evidence section, 2 for the second, retracted rows counted too; got "${raw}"`);
+  need(/^\d+$/.test(raw) && Number(raw) >= 1, `--retract takes the number of an evidence row as show prints it (1, 2, …); got "${raw}"`);
   const n = Number(raw);
   const by = retractedBy(flags, 'a retraction');
   needSaid(reason, 'a retraction');
@@ -1716,6 +1716,54 @@ function retractEvidence(root, rawIds, reason, flags) {
   writeAtomic(issue.file, setSection(text, 'Evidence', `${lines.join('\n').trim()}\n${entry}`));
   appendLog(root, `${issue.id} evidence retract · row ${n} · by ${by} · ${firstLine(reason, "the issue's Evidence section")}`);
   return { id: issue.id, retracted: n, by };
+}
+
+// show <id>: the issue as the done gate sees it. The header, What, Why, Acceptance, Changelog and any section of the
+// profile in full; of Reviews and Evidence only the gate's window — every verdict and every --ran/--saw row since
+// the last start or reopen — plus every "changes" finding no later approve has answered, and one line for each
+// earlier verdict; last, the exact call that prints everything. The window is read from the journal, where the file's
+// entries are matched to the log's lines in order: when the file and the log do not agree on how many there are (an
+// issue written by hand, a loop older than the Reviews section) nothing is cut. Every evidence row carries its
+// ordinal [n], counted over the whole section, the number evidence --retract takes; --full prints the file with them.
+export function issueView(root, issue, { full = false } = {}) {
+  const pieces = [];
+  let cur = { name: null, lines: [] };
+  for (const l of readText(issue.file).split('\n')) {
+    const h = /^##\s+(.*)$/.exec(l);
+    if (h) { pieces.push(cur); cur = { name: h[1].trim().toLowerCase(), lines: [l] }; } else cur.lines.push(l);
+  }
+  pieces.push(cur);
+  const numbered = (body, rows) => body.map((l, i) => { const r = rows.find((x) => x.start === i); return r ? l.replace(/^- /, `- [${r.n}] `) : l; });
+  const journal = full ? null : journalById(root);
+  const g = full ? null : gateState(root, issue.id, journal.get(issue.id) || [], coordinatorNames(root), loadIssues(root), journal);
+  const out = [];
+  for (const p of pieces) {
+    if (p.name !== 'evidence' && p.name !== 'reviews') { out.push(...p.lines); continue; }
+    const body = p.lines.slice(1);
+    if (p.name === 'evidence') {
+      const t = evidenceTable(body.join('\n'));
+      const earlier = !full && g.anchorN >= 0 && g.rowLog.length === t.rows.length ? g.rowLog.filter((r) => r.n <= g.anchorN).length : 0;
+      out.push(p.lines[0]);
+      if (earlier > 0) {
+        out.push(`(evidence rows 1-${earlier} came before the last start or reopen and are not shown; ${earlier === t.rows.length ? 'none since' : `rows ${earlier + 1}-${t.rows.length} follow`})`);
+        out.push(...numbered(body, t.rows).slice(t.rows[earlier - 1].end + 1));
+      } else out.push(...numbered(body, t.rows));
+      continue;
+    }
+    const t = reviewEntries(body.join('\n'));
+    out.push(p.lines[0]);
+    if (full || !t.entries.length || t.entries.length !== g.trail.length) { out.push(...body); continue; }
+    out.push(...body.slice(0, t.entries[0].start));
+    t.entries.forEach((e, i) => {
+      const open = e.verdict === 'changes' && !t.entries.slice(i + 1).some((x) => x.verdict === 'approve' && !x.retracted);
+      if (g.trail[i].n > g.cut || open) { out.push(...body.slice(e.start, e.end + 1)); return; }
+      const first = body.slice(e.start + 1, e.end + 1).map((l) => l.trim()).find(Boolean);
+      const line = `- earlier: ${body[e.start].replace(/^- /, '')}${first ? ` · ${first}` : ''}`;
+      out.push(line.length > 200 ? `${line.slice(0, 197)}...` : line);
+    });
+  }
+  if (full) return out.join('\n');
+  return `${out.join('\n').replace(/\s+$/, '')}\n\nThe whole issue, with every earlier round and row: jarl.mjs show ${issue.id} --full\n`;
 }
 
 // A declared file is a repository and a path inside it. An issue that names no repository declares
@@ -2069,6 +2117,7 @@ export function gateState(root, id, events = journalById(root).get(id) || [], co
   const self = selfWorkers(events, issue, branchWorkers(issues, journal, profile), profile);
   let status = null; let anchor = null; let cut = -1;
   const evidence = []; const allReviews = [];
+  const trail = [];   // every review line in order (approve, changes, retract), for the issue view
   const moved = movesInto(profile.statuses, id);
   const retractRow = new RegExp(`^${id} evidence retract · row (\\d+)\\b`);
   const retractReviewLine = new RegExp(`^${id} review retract\\b`);
@@ -2095,12 +2144,14 @@ export function gateState(root, id, events = journalById(root).get(id) || [], co
       if (kind && r[2]) { const now = reviewerKind(r[2], self, coordinators); if (KIND_WEIGHT[now] > KIND_WEIGHT[kind]) kind = now; }
       const review = { n: e.n, at: e.at, verdict: r[1], by: r[2] || null, kind, retracted: false };
       allReviews.push(review);
+      trail.push(review);
       continue;
     }
     // A retraction takes away the newest approve not yet retracted, and only that: it never touches a changes verdict.
     if (retractReviewLine.test(e.text)) {
       const target = [...allReviews].reverse().find((x) => x.verdict === 'approve' && !x.retracted);
       if (target) target.retracted = true;
+      trail.push({ n: e.n, at: e.at, verdict: 'retract', retracted: false });
       continue;
     }
     const rr = retractRow.exec(e.text);
@@ -2123,7 +2174,10 @@ export function gateState(root, id, events = journalById(root).get(id) || [], co
   return {
     tracked: anchor !== null,
     anchor: anchor ? { at: anchor.at, what: anchor.text.startsWith('filed ') ? 'filed' : anchor.text.slice(id.length + 1).split(' · ')[0].replace(/^→ /, '') } : null,
-    rowsSince: anchor ? evidence.filter((e) => e.n > anchor.n && !e.retracted).length : evidence.filter((e) => !e.retracted).length,    lastReview: last ? last.verdict : null,
+    rowsSince: anchor ? evidence.filter((e) => e.n > anchor.n && !e.retracted).length : evidence.filter((e) => !e.retracted).length,
+    // What the issue view windows by: where the gate's window starts in the log, and the log's rows and review lines in order.
+    cut, anchorN: anchor ? anchor.n : -1, rowLog: evidence, trail,
+    lastReview: last ? last.verdict : null,
     lastApprove: [...reviews].reverse().find((r) => r.verdict === 'approve') || null,
     approved: Boolean(live && live.kind !== 'self'),
     selfApproved: Boolean(live && live.kind === 'self'),
