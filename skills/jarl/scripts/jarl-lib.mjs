@@ -1643,7 +1643,74 @@ export function cmdMerged(root, rawIds, flags) {
   }
   const named = `${flags.repo !== undefined ? ` in ${fieldText(flags.repo)}` : ''}${checkText ? ` · check ${checkText}` : ''}${cause ? ` · landed red, cause ${cause}` : ''}${ci ? ` · CI ${ci}` : ''}`;
   appendLogLines(root, issues.map((issue) => (sha ? `${issue.id} merged ${sha}${named}` : `${issue.id} CI ${ci}`)));
-  return { ids: issues.map((i) => i.id), sha: sha || null, ci: ci ?? null, ...(checkText ? { check: checkText } : {}), ...(cause ? { red: cause } : {}), notes };
+  // The cleanup comes last, after the merge is on the record, and only on the command line and in the tools.
+  const cleanup = sha && cli && flags.keep !== true ? cleanUpAfterMerge(root, issues, sha, repoPath) : [];
+  return { ids: issues.map((i) => i.id), sha: sha || null, ci: ci ?? null, ...(checkText ? { check: checkText } : {}), ...(cause ? { red: cause } : {}), ...(cleanup.length ? { cleanup } : {}), notes };
+}
+
+// ---- the cleanup a recorded merge makes redundant -------------------------------------------------------------------
+//
+// Right after merged records a sha, the issue's worktree and its local branch are redundant. Jarl removes them when that is
+// safe and keeps everything, naming the condition, when it is not. It is the only place Jarl changes git, and only after a
+// recorded merge: `git worktree remove` and `git branch -d`, never a force, never a file removed by any other means, nothing
+// pushed and no remote branch touched. It runs for the command line and the tools (--keep skips it), never for a library call.
+// The branch is kept unless every condition holds: it is not the base, a release branch or a trunk name; its tip is in the
+// base or in the recorded merge; no other unfinished issue holds a lease on it (a package); its worktree, when it has one,
+// is on this machine, is the one the lease names, is not the main checkout nor the one the loop or this command lives in,
+// and holds nothing uncommitted and nothing untracked; and git itself accepts the removal and the delete.
+const TRUNK_NAME = /^(?:HEAD|main|master|trunk|develop|release\/.+)$/;
+function gitRun(cwd, args) {
+  try { return { ok: true, out: execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim() }; }
+  catch (e) { return { ok: false, err: String(e.stderr || e.message).trim().split('\n')[0] }; }
+}
+const insideDir = (dir, path) => { const r = relative(canonical(dir), canonical(path)); return r === '' || (!r.startsWith('..') && !isAbsolute(r)); };
+
+function cleanUpAfterMerge(root, issues, sha, repoPath) {
+  const profile = loadProfile(root);
+  const everyone = loadIssues(root);
+  const called = new Set(issues.map((i) => i.id));
+  const groups = new Map();
+  for (const issue of issues) {
+    const branch = fieldText(issue.fields.branch);
+    if (!branch) continue;
+    for (const repo of repoPath ? [canonical(repoPath)] : issueRepos(root, issue)) {
+      const key = `${repo}\n${branch}`;
+      if (!groups.has(key)) groups.set(key, { repo, branch, on: [] });
+      groups.get(key).on.push(issue);
+    }
+  }
+  const results = [];
+  for (const { repo, branch, on } of groups.values()) {
+    if (!isGitRepo(repo) || git(repo, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`]) === null) continue;
+    const base = defaultBase(repo);
+    const result = { repo: basename(repo), branch };
+    const keep = (reason, extra = {}) => results.push({ ...result, ...extra, kept: reason });
+    if (TRUNK_NAME.test(branch) || branch === base) { keep('it is the base or a release branch'); continue; }
+    const others = everyone.filter((i) => !called.has(i.id) && fieldText(i.fields.branch) === branch && profile.unfinished(i.status) && issueRepos(root, i).includes(repo)).map((i) => i.id);
+    if (others.length) { keep(`${others.join(', ')} still hold${others.length === 1 ? 's' : ''} a lease on it`); continue; }
+    if (git(repo, ['merge-base', '--is-ancestor', branch, base]) === null && git(repo, ['merge-base', '--is-ancestor', branch, sha]) === null) { keep(`its tip is neither in ${base} nor in the merge ${sha}`); continue; }
+    const stored = on.map((i) => i.fields.worktree).find(Boolean);
+    const ws = worktreeState(repo, branch, stored);
+    let removed = null;
+    if (ws.state === 'elsewhere' || ws.state === 'invisible') { keep('its worktree is not on this machine'); continue; }
+    if (ws.state === 'gone') { keep('git lists its worktree but the directory is gone'); continue; }
+    if (ws.state === 'here') {
+      const main = mainCheckoutOf(repo);
+      if (main && main.main && canonical(ws.path) === main.main) { keep('it is checked out in the main checkout'); continue; }
+      if (stored && existsSync(stored) && canonical(stored) !== canonical(ws.path)) { keep('it is checked out in another worktree than the one the lease names'); continue; }
+      if (insideDir(ws.path, root) || insideDir(ws.path, process.cwd())) { keep('the loop or this command lives in its worktree'); continue; }
+      const dirty = git(ws.path, ['status', '--porcelain']);
+      if (dirty === null) { keep('the state of its worktree cannot be read'); continue; }
+      if (dirty !== '') { keep(`its worktree holds ${dirty.split('\n').filter(Boolean).length} uncommitted or untracked file(s)`); continue; }
+      const gone = gitRun(repo, ['worktree', 'remove', ws.path]);
+      if (!gone.ok) { keep(`git worktree remove refused: ${gone.err}`); continue; }
+      removed = ws.path;
+    }
+    const dropped = gitRun(repo, ['branch', '-d', branch]);
+    if (!dropped.ok) { keep(`git branch -d refused: ${dropped.err}`, removed ? { worktree: removed } : {}); continue; }
+    results.push({ ...result, ...(removed ? { worktree: removed } : {}), removed: true });
+  }
+  return results;
 }
 
 export function cmdTag(root, rawIds, ops) {
@@ -2486,7 +2553,7 @@ export function mergeLineOf(id, text) {
 
 // What the merges say about the check, from the log: every merged issue counts once, by its last merge line, as landed
 // on a passing check row, on red (with the issue that tracks the cause), or with no check row recorded (a merge written
-// without one, and every merge from before the record carried it). Per repository, an issue naming several counts in
+// without one). Per repository, an issue naming several counts in
 // each. A repository lands on its check when any of its merges carries a check row, else on testimony; the Check lines of
 // goal.md only name the commands.
 export function checkState(root, issues = loadIssues(root), journal = journalById(root)) {
@@ -3247,8 +3314,8 @@ function git(root, args) {
 // Read once per run: whether a directory is in a git repository, and every local branch of a repository with its
 // tip, upstream (null when none is set or its remote branch is gone), ahead/behind against that upstream and the
 // time of its last commit — one git process per repository instead of several per branch, which is what keeps the
-// read-only views (status, tips, resume) fast on a loop of hundreds of issues. jarl never moves a ref, so nothing
-// read here goes stale while it runs. The caches live for one command: dispatch empties them (resetCaches) before
+// read-only views (status, tips, resume) fast on a loop of hundreds of issues. jarl moves a ref only in the cleanup
+// that ends a recorded merge, after which the command is over, so nothing read here goes stale while it runs. The caches live for one command: dispatch empties them (resetCaches) before
 // each one. Only what was found is kept — a directory that is not a repository, like a Repo path that did not
 // resolve, is asked again, so a refusal always names the current state.
 const IS_REPO = new Set();

@@ -1409,9 +1409,9 @@ test('merged records the sha and CI as fields; status counts CI pending; done no
   assert.match(refuses(root, 'merged', '1', '--sha', 'nothex!'), /--sha is a commit id/);
   assert.match(refuses(root, 'merged', '1', '--ci', 'green'), /001 records no merge yet/);
   assert.match(refuses(root, 'merged', '1', '--sha', sha, '--ci', 'blue'), /--ci must be one of: pending, green, red, none/);
-  assert.equal(jarl(root, 'merged', '1,2', '--sha', sha), `001, 002 merged ${sha}`, 'no --ci given: no CI state is recorded');
+  assert.equal(jarl(root, 'merged', '1,2', '--sha', sha, '--keep'), `001, 002 merged ${sha}`, 'no --ci given: no CI state is recorded');
   assert.doesNotMatch(jarl(root, 'show', '1'), /\*\*CI:\*\*/);
-  assert.equal(jarl(root, 'merged', '1,2', '--sha', sha, '--ci', 'pending'), `001, 002 merged ${sha} · CI pending`);
+  assert.equal(jarl(root, 'merged', '1,2', '--sha', sha, '--ci', 'pending', '--keep'),`001, 002 merged ${sha} · CI pending`);
   assert.match(jarl(root, 'show', '1'), new RegExp(`^\\*\\*Merged:\\*\\* ${sha}\\n\\*\\*CI:\\*\\* pending$`, 'm'));
   assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), new RegExp(`002 merged ${sha} · CI pending`));
   const st = jarl(root, 'status');
@@ -1419,7 +1419,7 @@ test('merged records the sha and CI as fields; status counts CI pending; done no
   assert.match(st, /^merged, CI pending: 001, 002$/m);
   // An unknown sha is recorded as given, with a note.
   assert.match(withStderr(root, 'merged', '1', '--sha', 'deadbeef').stderr, /deadbeef is not a commit in/);
-  jarl(root, 'merged', '1', '--sha', sha, '--ci', 'pending');
+  jarl(root, 'merged', '1', '--sha', sha, '--ci', 'pending', '--keep');
   jarl(root, 'review', '1,2', 'approve', '--by', 'rev', FINDINGS);
   jarl(root, 'evidence', '1,2', '--ran', 'check', '--saw', 'green');
   const done = withStderr(root, 'set', '1,2', 'done', 'merged');

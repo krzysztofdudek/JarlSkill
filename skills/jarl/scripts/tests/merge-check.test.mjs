@@ -153,7 +153,7 @@ test('status --by repo and report count, per repository, merges with a passing c
   assert.deepEqual(json(root, 'report').check, status.check);
 });
 
-test('a loop whose merges were recorded before the check reads them as no check row recorded, never as failed', () => {
+test('a loop whose merges carry no check row reads them as no check row recorded, never as failed', () => {
   const root = loop(3);
   // The merge records a loop wrote without a check: a Merged field and CI field, and its log lines.
   jarl(root, 'merged', '1', '--sha', 'abc1234', '--ci', 'green');
