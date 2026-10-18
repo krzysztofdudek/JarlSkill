@@ -60,6 +60,49 @@ test('slugify cuts at 60 characters and then trims dashes: no name starts or end
   for (const t of ['x '.repeat(40), 'ab cd '.repeat(20), '.'.repeat(70) + ' ok']) assert.doesNotMatch(slugify(t), /^-|-$/);
 });
 
+test('new refuses a text that holds a matched pair named after one of its own fields, outside code, and body does too', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  const pair = '<what>the thing</what><why>because</why><prio>1</prio>';
+  assert.match(refuses(root, 'new', 't', '--what', pair), /the What text holds a <what>…<\/what> pair: a field goes in its own parameter \(--what\)/);
+  assert.match(refuses(root, 'new', 't', '--why', 'because <acceptance>\n- it works\n</acceptance>'), /the Why text holds a <acceptance>…<\/acceptance> pair.*\(--acceptance\)/);
+  assert.match(refuses(root, 'new', 't', '--what', 'fine', '--why', '<TAGS>a,b</Tags>'), /<tags>…<\/tags>/);
+  assert.equal(readdirSync(join(root, '.jarl', 'issues')).length, 0, 'nothing was written');
+  jarl(root, 'new', 'ok', '--what', 'fine');
+  assert.match(refuses(root, 'body', '1', '--why', '<files>a.mjs</files>'), /the Why text holds a <files>…<\/files> pair.*\(--files\)/);
+  assert.match(refuses(root, 'body', '1', '--what', pair), /the What text holds a <what>/);
+  assert.doesNotMatch(readFileSync(join(root, '.jarl', 'issues', '001-ok.md'), 'utf8'), /<files>/);
+});
+
+test('a lone tag, a pair in a code span and a pair in a fenced block are accepted, and so is the text of issue 305 itself', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'lone', '--what', 'a lone <why> and a closing </what> are text');
+  jarl(root, 'new', 'span', '--what', 'the tags `<why>` and `</why>` are named, or `<why>x</why>` whole');
+  jarl(root, 'new', 'fence', '--what', 'see:\n```\n<what>the thing</what>\n<why>because</why>\n```\nand\n~~~~\n<tags>a</tags>\n~~~~\nend');
+  const own = 'A caller whose tool call carried every field inside the What parameter got tickets with no tags. The refusal must not catch a tag that is quoted, because this issue names such tags in code spans (`<what>`, `<why>`, `<prio>`); so only a matched opening and closing pair of a field name, outside code, is refused.';
+  jarl(root, 'new', 'own', '--what', own);
+  assert.equal(readdirSync(join(root, '.jarl', 'issues')).length, 4);
+});
+
+test('the reply of new keeps its first line, then lists what was parsed and each empty field with the command that fills it', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  const bare = jarl(root, 'new', 'bare').split('\n');
+  assert.match(bare[0], /^filed 001 · .*001-bare\.md$/);
+  assert.match(bare[1], /^parsed: priority 2 · tier standard · kind bug · tags \(none\) · 0 acceptance lines · What 0 characters · Why 0 characters$/);
+  for (const [field, command] of [['why', 'body 001 --why'], ['acceptance', 'body 001 --acceptance'], ['files', 'files 001 p,q'], ['after', 'after 001 <ids>'], ['where', 'body 001 --where']]) {
+    assert.ok(bare[2].includes(`${field} (jarl.mjs ${command}`), `${field} is named with ${command}`);
+  }
+  const full = jarl(root, 'new', 'full', '--what', 'seven', '--why', 'yy', '--acceptance', 'a', '--acceptance', 'b', '--prio', '1', '--tags', 'x,y', '--files', 'a.mjs', '--where', 'here', '--after', '1').split('\n');
+  assert.match(full[1], /priority 1 · tier standard · kind bug · tags x,y · 2 acceptance lines · What 5 characters · Why 2 characters/);
+  assert.equal(full.length, 2, 'nothing is left empty');
+  const json = JSON.parse(jarl(root, 'new', 'j', '--json'));
+  assert.equal(json.id, '003');
+  assert.deepEqual(json.empty.map((e) => e.field), ['why', 'acceptance', 'files', 'after', 'where']);
+  assert.equal(json.parsed.tags.length, 0);
+});
+
 test('dropping an issue keeps the evidence already written, and the report prints only the reason', () => {
   const root = repo();
   jarl(root, 'init', 'goal');

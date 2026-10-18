@@ -705,6 +705,55 @@ function setSection(text, name, body) {
 export function bodyText(v) {
   return String(v ?? '').replace(/\r\n?/g, '\n').split('\n').map((l) => l.replace(/^(\s*)(#+)(?=\s|$)/, (_, sp, h) => `${sp}\\${h}`)).join('\n').trim();
 }
+// A text for What, Why or a section that holds a matched opening and closing tag named after one of the issue's own
+// fields (<why>…</why>) is a call whose fields all went into one parameter: the other fields would be filed empty.
+// Refused, naming the field. Code is not looked at — a fenced block or a code span may name such a tag — and a lone
+// tag is only text.
+const FIELD_TAGS = ['what', 'why', 'acceptance', 'prio', 'tags', 'files', 'kind'];
+const FIELD_FLAG = { what: '--what', why: '--why', acceptance: '--acceptance', prio: '--prio', tags: '--tags', files: '--files', kind: '--kind' };
+export function needNoFieldTags(text, where) {
+  let fence = null;
+  const kept = [];
+  for (const line of String(text ?? '').split('\n')) {
+    const f = /^ {0,3}(`{3,}|~{3,})/.exec(line);
+    if (fence) { if (f && f[1][0] === fence[0] && f[1].length >= fence.length) fence = null; continue; }
+    if (f) { fence = f[1]; continue; }
+    kept.push(line);
+  }
+  const outsideCode = kept.join('\n').replace(/(`+)[\s\S]*?\1/g, ' ');
+  for (const tag of FIELD_TAGS) {
+    if (new RegExp(`<${tag}\\s*>[\\s\\S]*?</${tag}\\s*>`, 'i').test(outsideCode)) {
+      throw new Error(`${where} holds a <${tag}>…</${tag}> pair: a field goes in its own parameter (${FIELD_FLAG[tag]}), never inside another text — nothing was written; pass each field on its own, or put the tags in backticks if you mean to write them`);
+    }
+  }
+}
+// What a new issue was filed with, read back from its file: for new's reply, which lists what was parsed and what was
+// left empty, each empty field with the command that fills it.
+const FILL_WITH = {
+  why: (id) => `jarl.mjs body ${id} --why "<why>"`,
+  acceptance: (id) => `jarl.mjs body ${id} --acceptance "<line>"`,
+  files: (id) => `jarl.mjs files ${id} p,q`,
+  after: (id) => `jarl.mjs after ${id} <ids>`,
+  where: (id) => `jarl.mjs body ${id} --where "<where>"`,
+  'found by': () => 'only at filing: new --found-by <who>',
+};
+export function describeNew(file) {
+  const issue = parseIssue(readText(file), file);
+  const len = (k) => (issue.sections[k] || '').trim().length;
+  const parsed = { priority: issue.priority, tier: issue.tier, kind: issue.kind, tags: issue.tags, acceptanceLines: acceptanceLineCount(issue), whatChars: len('what'), whyChars: len('why') };
+  const empty = [
+    ['why', len('why') === 0], ['acceptance', acceptanceLineCount(issue) === 0], ['files', issue.files.length === 0],
+    ['after', issue.after.length === 0], ['where', !fieldText(issue.fields.where)], ['found by', !fieldText(issue.fields['found by'])],
+  ].filter(([, e]) => e).map(([k]) => ({ field: k, fill: FILL_WITH[k](issue.id) }));
+  return { parsed, empty };
+}
+export function renderNewReply(out) {
+  const { parsed: p, empty } = out;
+  const lines = [`filed ${out.id} · ${out.file}`,
+    `parsed: priority ${p.priority} · tier ${p.tier} · kind ${p.kind} · tags ${p.tags.length ? p.tags.join(',') : '(none)'} · ${p.acceptanceLines} acceptance line${p.acceptanceLines === 1 ? '' : 's'} · What ${p.whatChars} characters · Why ${p.whyChars} characters`];
+  if (empty.length) lines.push(`left empty: ${empty.map((e) => `${e.field} (${e.fill})`).join(' · ')}`);
+  return lines.join('\n');
+}
 // A header field is one line.
 function fieldText(v) { return String(v ?? '').replace(/\s+/g, ' ').trim(); }
 // --acceptance repeats, one checkable line each; several become a list.
@@ -1012,6 +1061,9 @@ export function cmdNew(root, title, rawFlags) {
     return [f.name, v];
   });
   const givenSections = namedPairs(flags.section, 'section', profile.sections, 'section');
+  needNoFieldTags(flags.what, 'the What text');
+  needNoFieldTags(flags.why, 'the Why text');
+  for (const [h, v] of givenSections) needNoFieldTags(v, `the ${h} text`);
   const sections = profile.sections.map((h) => [h, givenSections.has(h) ? bodyText(givenSections.get(h)) : bodyText(fromTemplate.section?.(h.toLowerCase()))]);
   if (profile.acceptance && fromTemplate.acceptance === undefined && fromTemplate.section) fromTemplate.acceptance = fromTemplate.section(profile.acceptance.toLowerCase());
   const kind = flags.kind || profile.kindDefault;
@@ -1106,6 +1158,9 @@ export function cmdBody(root, rawId, flags) {
   const parts = ['where', 'what', 'why', 'acceptance', 'changelog', 'section'].filter((k) => flags[k] !== undefined);
   need(parts.length, 'body needs at least one of --where, --what, --why, --acceptance, --changelog, --section');
   const sections = namedPairs(flags.section, 'section', profile.sections, 'section');
+  needNoFieldTags(flags.what, 'the What text');
+  needNoFieldTags(flags.why, 'the Why text');
+  for (const [h, v] of sections) needNoFieldTags(v, `the ${h} text`);
   let text = readText(issue.file);
   if (flags.where !== undefined) text = setField(text, 'Where', fieldText(flags.where));
   if (flags.what !== undefined) text = setSection(text, 'What', bodyText(flags.what));

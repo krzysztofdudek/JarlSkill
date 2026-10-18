@@ -19,7 +19,7 @@ import {
   cmdProfile, cmdArchive, cmdList, cmdNext, cmdMode, cmdClose, cmdCheck, cmdBranches, cmdTips, cmdQueue,
   cmdChangelog, cmdHandoffRead, cmdHandoffWrite, cmdReport, cmdImport, cmdSources, cmdAnswer,
   renderProfile, renderTips, renderQueue, renderResume, renderStatus, renderImport, renderSources, renderList, recordTypeLog, recordRuleLog,
-  runDecisionsDriver, mergeFlags,
+  runDecisionsDriver, mergeFlags, describeNew, renderNewReply,
 } from './jarl-lib.mjs';
 import { writeAreaDecision, writeRuleRatification } from './yg-edge.mjs';
 
@@ -475,7 +475,7 @@ export function dispatch(root, cmd, rest, flags) {
     (writes ? (fn) => withLock(root, fn) : (fn) => fn())(() => {
     switch (cmd) {
       case 'init': out = R.initLoop(root, rest[0], flags); text = `opened ${out.dir} · ${out.permanent ? 'permanent record, no branch' : out.committed ? 'committed with the work' : 'kept out of git'}${out.profile ? ` · profile ${out.profile}` : ''}`; break;
-      case 'new': out = R.newIssue(root, rest[0], flags); text = `filed ${out.id} · ${out.file}`; break;
+      case 'new': out = R.newIssue(root, rest[0], flags); out = { ...out, ...describeNew(out.file) }; text = renderNewReply(out); break;
       case 'body': out = R.setBody(root, rest[0], flags); text = `${out.id} body: ${out.set.join(', ')}`; break;
       case 'source': out = R.setSource(root, rest[0], rest[1]); text = `${out.id} source: ${out.sources.join(', ')}`; break;
       case 'after': out = R.setAfter(root, rest[0], rest[1], flags); text = `${out.id} after: ${out.cleared ? 'cleared' : out.after.join(', ')}`; break;
