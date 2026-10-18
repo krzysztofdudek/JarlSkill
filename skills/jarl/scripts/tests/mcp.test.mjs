@@ -39,7 +39,7 @@ test('parity: every command dispatch runs has its tables, its usage block and ex
 test('parity: the tool set is the one this release documents — adding or removing a tool is a deliberate edit here', () => {
   assert.deepEqual(TOOLS.map((t) => t.name).sort(), [
     'after', 'answer', 'archive', 'ask', 'body', 'branches', 'changelog', 'check', 'close', 'decide', 'decisions',
-    'evidence', 'files', 'handoff', 'help', 'import', 'init', 'list', 'log', 'merged', 'mode', 'new', 'next', 'prio',
+    'evidence', 'files', 'handoff', 'help', 'import', 'init', 'list', 'log', 'merged', 'mode', 'models', 'new', 'next', 'prio',
     'profile', 'queue', 'repo', 'report', 'resume', 'review', 'round', 'set', 'show', 'source', 'sources', 'status', 'tag', 'tips',
   ].map(mcp.toolName));
 });
