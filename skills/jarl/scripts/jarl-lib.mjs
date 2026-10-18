@@ -1114,9 +1114,9 @@ export function cmdInit(root, goal, flags = {}) {
   if (prof) writeAtomic(profilePath(root), `${JSON.stringify(prof.json, null, 2)}\n`);
   if (committed) ensureLoopMerge(root);
   appendLog(root, `opened · ${goal.trim()}${prof ? ` · profile ${prof.profile.name}` : ''}`);
-  // Said once, on the command line: a goal that names no check lands its merges on testimony until a merge records one.
+  // Said once, on the command line: a goal that names no check lands its merges on testimony, whatever they record.
   const noCheck = flags.caller === 'cli' && declaredChecks(root).length === 0;
-  return { dir: jarlDir(root), committed, permanent, ...(prof ? { profile: prof.profile.name } : {}), ...(noCheck ? { note: 'the goal names no check (a "Check: <command>" line, or "Check (<repo>): <command>" for one repository) — this loop lands on testimony alone until a merge records the check that decided it: merged <ids> --sha <sha> --ran "<check>" --saw "<summary>"' } : {}) };
+  return { dir: jarlDir(root), committed, permanent, ...(prof ? { profile: prof.profile.name } : {}), ...(noCheck ? { note: 'the goal names no check (a "Check: <command>" line, or "Check (<repo>): <command>" for one repository) — this loop lands on testimony alone, whatever its merges record, until the goal declares one' } : {}) };
 }
 
 // A live loop is one with a goal; a .jarl/ holding only archive/ and the mode markers has none.
@@ -1625,8 +1625,8 @@ function setResources(root, rawIds, value, flags) {
   return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, field: 'Resources', value: names.join(', ') })));
 }
 
-// Why an issue may not go done, or null when it may: at least one --ran/--saw evidence row logged since the issue
-// last went in progress (or was reopened, or — never in progress — was filed; free-text notes never count alone), and a live approve by someone
+// Why an issue may not go done, or null when it may: at least one --ran/--saw evidence row inside the gate's window
+// (see gateWindow; free-text notes never count alone), and a live approve by someone
 // other than its worker (see gateState) — by a fresh reviewer when the issue carries code (a Branch or Merged field;
 // see carriesCode). It gates only the record: nothing here stops code from landing.
 // A profile's done-gate changes the last two: requires-merged also asks for a recorded merge whose sha is in the base
@@ -2313,6 +2313,7 @@ function statusOf(root, loop, flags) {
   c.handoff = handoffAge(root, c.lastActivity);
   c.reviews = reviewSplit(flags.tag === undefined ? loop : scopedLoop(loop, issues));
   c.inFlightRows = inFlightRows(loop, issues);
+  c.closedGate = closedGateFlags(flags.tag === undefined ? loop : scopedLoop(loop, issues));
   const files = uncommittedLoopFiles(root);
   c.uncommitted = files === null ? null : files.length;
   // --by: the same five counts per repository, tag, kind or priority — a dashboard's table, read from the issues.
@@ -2406,21 +2407,36 @@ export function cmdClose(root, flags = {}) {
   need(flags.force || left.length === 0, `${left.length} issue(s) still open or in progress: ${left.map((i) => i.id).join(', ')} — set each ${profile.with('terminal').filter((st) => profile.is(st, 'settles-dependents') || profile.is(st, 'closes-record')).join(' or ') || profile.with('terminal').join(' or ')}, or report them to the user and run with --force`);
   // A permanent loop is a record, not a stage cleared before a merge: close leaves the directory in
   // place and logs the close instead of removing it, so --root still finds the loop afterwards.
-  // Deferred work is not open, so it does not hold the close — but the close says it leaves it waiting.
+  // Deferred work is not open, but it is work that waits: where close removes the directory it would wait nowhere, so
+  // the default mode refuses until the deferred issues are archived or --force removes them; a permanent loop keeps them.
   const deferred = loadIssues(root).filter((i) => i.status === 'deferred').map((i) => i.id);
+  const permanent = existsSync(join(jarlDir(root), '.permanent'));
+  need(permanent || flags.force || deferred.length === 0, `${deferred.length} issue(s) deferred: ${deferred.join(', ')} — close removes .jarl/ with them, and deferred work waits, it is not gone. Keep it: jarl.mjs archive "<slug>" puts the loop under .jarl/archive/ with its deferred issues. Or remove it with them: jarl.mjs close --force`);
   // The ratification batch is assembled here and never holds the close: in a permanent loop its items stay open for
   // the user's word; in a loop on a branch the rulings no one ratified leave with the directory, rulings of that loop.
+  // In the committed mode the archive is committed content: leaving it would put .jarl/archive/ on the branch that merges to
+  // main, so close refuses while it holds anything, unless --force removes the whole directory.
+  const archiveDir = join(jarlDir(root), 'archive');
+  const archived = existsSync(archiveDir) ? readdirSync(archiveDir) : [];
+  const committedMode = !permanent && !outOfGit(root);
+  need(!committedMode || flags.force || archived.length === 0, `.jarl/archive/ holds ${archived.length} archived loop(s): ${archived.join(', ')} — in the committed mode the archive is committed content, and close would leave it on the branch that merges to main. Move it out of the tree, or remove it with the loop: jarl.mjs close --force`);
   const batch = ratificationBatch(root);
   // A committed loop's files git never saw are named, not refused: in the permanent mode they (and the closing
   // line) wait for a commit; in the committed mode the removal below is itself the change to commit.
-  if (existsSync(join(jarlDir(root), '.permanent'))) {
+  if (permanent) {
     appendLog(root, `closed · kept as a permanent record${deferred.length ? ` · ${deferred.length} deferred still waiting: ${deferred.join(', ')}` : ''}`);
     const files = uncommittedLoopFiles(root);
     return { closed: true, removed: null, kept: jarlDir(root), leftOpen: left.map((i) => i.id), deferred, uncommitted: files === null ? null : files.length, batch };
   }
   const files = uncommittedLoopFiles(root);
-  rmSync(jarlDir(root), { recursive: true, force: true });
-  return { closed: true, removed: jarlDir(root), kept: null, leftOpen: left.map((i) => i.id), deferred, uncommitted: files === null ? null : files.length, batch };
+  // In the default mode an archive is never removed: close removes the live loop's files and leaves the archive, the mode
+  // markers and the templates where archive leaves them. In the committed mode the whole directory goes (an archive only with --force).
+  const archive = archiveDir;
+  const keepArchive = !committedMode && existsSync(archive);
+  if (keepArchive) {
+    for (const entry of readdirSync(jarlDir(root))) if (!ARCHIVE_KEEPS.has(entry)) rmSync(join(jarlDir(root), entry), { recursive: true, force: true });
+  } else rmSync(jarlDir(root), { recursive: true, force: true });
+  return { closed: true, removed: jarlDir(root), archiveKept: keepArchive ? archive : null, archiveRemoved: archived.length ? archived : null, kept: null, leftOpen: left.map((i) => i.id), deferred, uncommitted: files === null ? null : files.length, batch };
 }
 
 
@@ -2633,13 +2649,11 @@ function selfWorkers(events, issue, branches) {
 }
 
 // The done gate, read from the journal for one issue. Replaying its lines in order:
-// - the evidence anchor is the last move into in-progress from another status, or a reopen (done or
-//   in-progress back to open), or — for an issue that never went in progress — its filing; only --ran/--saw
-//   rows logged after it count for done (a free-text note never does), so nothing written when the issue was
-//   filed, or before a restart or a reopen, is proof of the work;
+// - the window (gateWindow) holds the anchor and the cut; only --ran/--saw rows logged after the anchor count for done
+//   (a free-text note never does), so nothing written before a start, a reopen or the filing is proof of the work;
 // - an approve by anyone who has ever held the issue's lease (self — see selfWorkers) never counts;
 // - the live approve is the strongest one (fresh over coordinator over self) among those since whatever last
-//   reset the issue — a round, a reopen, a restart into in-progress (cut), or a later "changes" verdict still
+//   reset the issue — the cut of the window (a round, a reopen, a start), or a later "changes" verdict still
 //   waiting on its own approve. A later, weaker approve never spends an earlier, still-live one: only those
 //   resets do — a coordinator's approve recorded after a live fresh one does not undo it;
 // - `tracked` is false for an issue the journal has no filing and no status move for (a hand-made file, a
@@ -2648,28 +2662,36 @@ function selfWorkers(events, issue, branches) {
 // gateState reads the loop for one call; a view that reads the gate for many issues reads the loop once and asks
 // gateOf of it.
 export function gateState(root, id) { return gateOf(readLoop(jarlDir(root)), id); }
+// The one window of the done gate, from the issue's own events in order: `anchor` is the event after which a --ran/--saw
+// row counts as proof, `cut` the log line number at or before which an approve is spent. The flags of the profile say what
+// resets them. A filing, a start (a move into a status that holds the claim from one that does not), a reopen (a move into
+// a dispatchable status from one that closes the record or holds the claim, and any move out of a status that closes the
+// record) reset both, so a close rests only on proof and review recorded after the last of them. A red round
+// resets the cut alone: it spends the approve, while the rows the worker logged stay true.
+export function gateWindow(profile, events) {
+  let anchor = null; let cut = -1;
+  for (const e of events) {
+    if (e.type === 'filed') { anchor = e; cut = e.n; continue; }
+    if (e.type === 'round') { cut = e.n; continue; }
+    if (e.type !== 'move') continue;
+    const { from, to } = e;
+    const start = profile.is(to, 'holds-claim') && !profile.is(from, 'holds-claim');
+    const reopen = profile.is(to, 'dispatchable') && (profile.is(from, 'closes-record') || profile.is(from, 'holds-claim'));
+    const leavesClose = profile.is(from, 'closes-record') && !profile.is(to, 'closes-record');
+    if (start || reopen || leavesClose) { anchor = e; cut = e.n; }
+  }
+  return { anchor, cut };
+}
 export function gateOf(loop, id) {
   const { profile, coordinators } = loop;
   const events = loop.eventsById.get(id) || [];
   const issue = loop.issues.find((i) => i.id === id) || null;
   const self = selfWorkers(events, issue, loop.branchWorkers);
-  let anchor = null; let cut = -1;
+  const { anchor, cut } = gateWindow(profile, events);
   const evidence = []; const allReviews = [];
   const trail = [];   // every review line in order (approve, changes, retract), for the issue view
   const retractedRows = [];
   for (const e of events) {
-    if (e.type === 'filed') { anchor = e; continue; }
-    if (e.type === 'move') {
-      const prev = e.from; const status = e.to;
-      // A (re)start spends an earlier approve too: in progress → deferred → in progress needs a new review. The
-      // flags say it: a move into a holds-claim status from one that is not; a reopen, into a dispatchable status
-      // from one that closes the record or holds the claim; and any move out of a status that closes the record.
-      if (profile.is(status, 'holds-claim') && !profile.is(prev, 'holds-claim')) { anchor = e; cut = e.n; }
-      if (profile.is(status, 'dispatchable') && (profile.is(prev, 'closes-record') || profile.is(prev, 'holds-claim'))) { anchor = e; cut = e.n; }
-      if (profile.is(prev, 'closes-record') && !profile.is(status, 'closes-record')) cut = e.n;
-      continue;
-    }
-    if (e.type === 'round') { cut = e.n; continue; }
     if (e.type === 'verdict') {
       // The kind is the one recorded, or the one today's names give, whichever is stricter: a name the goal
       // declares as a coordinator after its approve was logged as fresh does not stay fresh, and a name that
@@ -2739,20 +2761,66 @@ export function gateOf(loop, id) {
 export function reviewSplit(loop) {
   const split = { fresh: 0, coordinator: 0, self: 0, unrecorded: 0 };
   for (const i of loop.issues.filter((x) => loop.profile.is(x.status, 'closes-record'))) {
-    // The live approve — the one that actually cleared the issue — not simply the last one recorded: a later
-    // coordinator (or self) approve does not make an already-cleared issue read as coordinator- or self-reviewed.
-    const a = gateOf(loop, i.id).live;
-    split[a && a.kind ? a.kind : 'unrecorded'] += 1;
+    const kind = approveKind(gateOf(loop, i.id));
+    if (kind === 'retracted') split.retracted = (split.retracted || 0) + 1; else split[kind] += 1;
   }
   return split;
 }
+// The kind of the approve that stands behind an issue — the live one, the one that actually cleared it, not simply the
+// last one recorded: a later coordinator (or self) approve does not make an already-cleared issue read as coordinator- or
+// self-reviewed. `retracted` when the approve was taken back and none stands; `unrecorded` for an approve without --by.
+function approveKind(g) {
+  if (g.live) return g.live.kind || 'unrecorded';
+  return g.trail.some((r) => r.verdict === 'approve' && r.retracted && r.n > g.cut) ? 'retracted' : 'unrecorded';
+}
+
+// The closed issues whose done gate does not hold on the record as it stands, each with its reason and the command that
+// repairs it. Read from the journal the gate reads, never stored: the gate refuses at the move, and the record can change
+// after it (an approve or a proof row retracted, a merge recorded later, a restart that spent the approve). Every issue
+// in a finished status is read: a closing one against the gate's own conditions, any other against the merge it records.
+export function closedGateFlags(loop) {
+  const { profile } = loop;
+  const flags = [];
+  for (const issue of loop.issues) {
+    if (!profile.is(issue.status, 'terminal')) continue;
+    const id = issue.id;
+    const events = loop.eventsById.get(id) || [];
+    const merges = events.filter((e) => e.type === 'merged');
+    const reasons = []; const repairs = [];
+    const flag = (reason, repair) => { reasons.push(reason); if (!repairs.includes(repair)) repairs.push(repair); };
+    const reopen = `jarl.mjs set ${id} open`;
+    if (!profile.is(issue.status, 'closes-record')) {
+      if (merges.length || mergedOf(issue)) flag(`a merge is recorded on a ${issue.status} issue`, reopen);
+    } else {
+      const g = gateOf(loop, id);
+      if (!g.tracked) continue;
+      const code = carriesCode(issue);
+      if (!g.rowsSince) flag(g.rowLog.some((r) => r.retracted && r.n > g.anchorN) ? 'its proof row was retracted' : `no --ran/--saw row since it was ${g.anchor.what === 'filed' ? 'filed' : `moved → ${g.anchor.what}`}`, `jarl.mjs evidence ${id} --ran "<command>" --saw "<what it printed>"`);
+      if (profile.doneGate.approve !== 'none') {
+        const fresh = `jarl.mjs review ${id} approve --by <fresh reviewer> "<findings>"`;
+        const kind = approveKind(g);
+        if (g.selfApproved) flag('its live approve is by a worker of this issue or its branch', fresh);
+        else if (!g.approved) flag(kind === 'retracted' ? 'its approve was retracted' : g.trail.some((r) => r.verdict === 'approve') ? 'its approve is spent by a later round, restart, reopen or changes verdict' : 'it holds no approve', fresh);
+        else if (code && !g.fresh) flag(`it carries code and holds no fresh approve (the live one is by ${g.live.by || 'a reviewer not recorded'}, ${g.live.kind || 'unrecorded'})`, fresh);
+      }
+      const doneAt = Math.max(-1, ...events.filter((e) => e.type === 'move' && profile.is(e.to, 'closes-record')).map((e) => e.n));
+      if (merges.some((m) => m.n > doneAt)) flag('a merge was recorded after it went done', reopen);
+      if (fieldText(issue.fields.branch) && !merges.length && !mergedOf(issue)) flag('a code issue done with no merge recorded', reopen);
+    }
+    // Reopening resets the row and the approve, so when it is one of several repairs it comes first: the others would be wasted.
+    if (repairs.length > 1 && repairs.includes(reopen)) repairs.splice(0, repairs.length, `${reopen} (it resets the row and the approve, so do it first)`, ...repairs.filter((r) => r !== reopen));
+    if (reasons.length) flags.push({ id, reason: reasons.join('; '), repair: repairs.join(' ; ') });
+  }
+  return flags;
+}
+const closedGateLine = (x) => `closed, gate does not hold: ${x.id} · ${x.reason} — repair: ${x.repair}`;
 // Who stands behind the closed issues: the reviewers, by kind — or, under a done gate with no approve, the merge that
 // landed each one, with whatever reviews were recorded all the same.
 function gateLine(profile, split, label) {
   if (profile.doneGate.approve !== 'none') return `${label}: ${renderSplit(split)}`;
   return `closed on a merge in the base, no approve required (this loop's done gate) · reviews recorded: ${renderSplit(split)}`;
 }
-function renderSplit(s) { return `fresh ${s.fresh} · coordinator ${s.coordinator} · self ${s.self}${s.unrecorded ? ` · unrecorded ${s.unrecorded}` : ''}`; }
+function renderSplit(s) { return `fresh ${s.fresh} · coordinator ${s.coordinator} · self ${s.self}${s.retracted ? ` · retracted ${s.retracted}` : ''}${s.unrecorded ? ` · unrecorded ${s.unrecorded}` : ''}`; }
 
 // ---- the check a loop lands on, and the loop's metrics (report --json) ----------------------------------------------
 
@@ -2790,35 +2858,60 @@ function lastMerge(events) {
 }
 
 // What the merges say about the check, from the log: every merged issue counts once, by its last merge line, as landed
-// on a passing check row, on red (with the issue that tracks the cause), or with no check row recorded (a merge written
-// without one). Per repository, an issue naming several counts in
-// each. A repository lands on its check when any of its merges carries a check row, else on testimony; the Check lines of
-// goal only name the commands.
+// on the declared check (its --ran text equals a command the repository's Check lines declare, after trimming), on red
+// (with the issue that tracks the cause), or on neither (no check row, or a row that is not the declared check). Per
+// repository, an issue naming several counts in each. A repository's declared check is its own `Check (<repo>)` lines,
+// else the loop's `Check:` lines. A repository lands on its check (`check`) when every merge carries it, on
+// testimony (`testimony`) when none does or none is declared, and is `partial` between: k is the merges carrying the
+// declared check, n all its merges.
 export function checkState(loop) {
   const { root, issues } = loop;
   const declared = loop.goalLines.checksByRepo;
   const checks = loop.goalLines.checks;
+  const declaredFor = (name) => (declared.repos[name] && declared.repos[name].length ? declared.repos[name] : declared.bare);
   const byRepo = {};
-  const repo = (name) => (byRepo[name] = byRepo[name] || { merges: 0, withCheck: 0, noCheck: 0, red: [], declared: declared.repos[name] || [], landsOn: 'testimony' });
+  const repo = (name) => (byRepo[name] = byRepo[name] || { repo: name, merges: 0, withCheck: 0, noCheck: 0, red: [], declared: declaredFor(name), landsOn: 'testimony' });
   for (const name of Object.keys(declared.repos)) repo(name);
   const total = { merges: 0, withCheck: 0, noCheck: 0, red: [] };
   for (const i of issues) {
+    // A merge on work that was dropped or deferred is no landing of the loop's work: closedGateFlags names it instead.
+    if (loop.profile.is(i.status, 'terminal') && !loop.profile.is(i.status, 'closes-record')) continue;
     const line = lastMerge(loop.eventsById.get(i.id) || []);
     if (!line && !mergedOf(i)) continue;
-    const kind = line && line.red ? 'red' : line && line.check ? 'withCheck' : 'noCheck';
-    for (const name of repoNames(root, i)) {
+    const names = repoNames(root, i);
+    const kindIn = (name) => (line && line.red ? 'red' : carriesDeclared(line, repo(name).declared) ? 'withCheck' : 'noCheck');
+    for (const name of names) {
       const r = repo(name);
       r.merges += 1;
-      if (kind === 'red') r.red.push({ id: i.id, cause: line.red }); else r[kind] += 1;
+      if (kindIn(name) === 'red') r.red.push({ id: i.id, cause: line.red }); else r[kindIn(name)] += 1;
     }
+    const kind = line && line.red ? 'red' : names.some((n) => kindIn(n) === 'withCheck') ? 'withCheck' : 'noCheck';
     total.merges += 1;
     if (kind === 'red') total.red.push({ id: i.id, cause: line.red }); else total[kind] += 1;
   }
-  for (const r of Object.values(byRepo)) r.landsOn = r.withCheck > 0 ? 'check' : 'testimony';
-  return { declared: checks.length > 0, checks, landsOn: total.withCheck > 0 ? 'check' : 'testimony', merges: total, byRepo: Object.fromEntries(Object.keys(byRepo).sort().map((k) => [k, byRepo[k]])) };
+  const lands = (t) => (t.merges > 0 && t.withCheck === t.merges ? 'check' : t.withCheck === 0 ? 'testimony' : 'partial');
+  for (const r of Object.values(byRepo)) { r.landsOn = lands(r); r.k = r.withCheck; r.n = r.merges; }
+  return { declared: checks.length > 0, checks, landsOn: lands(total), merges: total, byRepo: Object.fromEntries(Object.keys(byRepo).sort().map((k) => [k, byRepo[k]])) };
 }
-export const TESTIMONY_NOTE = 'no merge carries a check row — this loop lands on testimony alone: a review is recorded as testimony, not proof (merged <ids> --sha <sha> --ran "<check>" --saw "<summary>" records the check that decided a landing)';
-function checkLine(c) { return c.landsOn === 'check' ? `check: ${c.merges.withCheck} of ${c.merges.merges} merge(s) carry a passing check row${c.checks.length ? ` · declared ${c.checks.join(' · ')}` : ''}` : TESTIMONY_NOTE; }
+// Whether a merge line's check text names one of the declared commands: the text is the --ran commands of the call
+// joined by " ; " (see cmdMerged), compared with each declared command after trimming.
+function carriesDeclared(line, commands) {
+  if (!line || !line.check || !commands.length) return false;
+  const norm = (s) => fieldText(s).replace(/ +· +/g, ' - ').slice(0, 200);
+  const wanted = commands.map(norm);
+  return line.check.split(' ; ').some((part) => wanted.includes(part.trim()));
+}
+export const TESTIMONY_NOTE = 'no merge carries the declared check — this loop lands on testimony alone: a review is recorded as testimony, not proof (a merge carries the check when its --ran text equals a command a Check line of the goal declares: merged <ids> --sha <sha> --ran "<check>" --saw "<summary>")';
+// The landing banner: the testimony mark while no merge carries the declared check, then one line per repository, the count
+// of its merges that carry the declared check, or the mark that it declares none.
+export function checkLines(c) {
+  const lines = c.landsOn === 'testimony' ? [TESTIMONY_NOTE] : [];
+  for (const [name, r] of Object.entries(c.byRepo)) {
+    if (!r.merges && !r.declared.length) continue;
+    lines.push(r.declared.length ? `check ${name}: ${r.k} of ${r.n} merges carry the declared check · declared ${r.declared.join(' · ')}` : `check ${name}: no check declared — ${r.n} merge(s) land on testimony alone`);
+  }
+  return lines;
+}
 // One line per repository: its merges by what they carry, the red ones with their cause.
 export function mergeCheckLines(c) {
   const names = Object.keys(c.byRepo).filter((n) => c.byRepo[n].merges || c.byRepo[n].declared.length);
@@ -2826,7 +2919,7 @@ export function mergeCheckLines(c) {
   const width = Math.max(...names.map((n) => n.length));
   return names.map((n) => {
     const r = c.byRepo[n];
-    return `  ${n.padEnd(width)}  ${r.merges} merge(s) · passing check row ${r.withCheck} · no check row recorded ${r.noCheck} · landed on red ${r.red.length}${r.red.length ? ` (${r.red.map((x) => `${x.id}, cause ${x.cause}`).join('; ')})` : ''}${r.declared.length ? ` · declared ${r.declared.join(' · ')}` : ''}`;
+    return `  ${n.padEnd(width)}  ${r.merges} merge(s) · with the declared check ${r.withCheck} · without it ${r.noCheck} · landed on red ${r.red.length}${r.red.length ? ` (${r.red.map((x) => `${x.id}, cause ${x.cause}`).join('; ')})` : ''}${r.declared.length ? ` · declared ${r.declared.join(' · ')}` : ''}`;
   });
 }
 
@@ -2949,17 +3042,17 @@ export function metricsOf(loop, now) {
   const code = { fresh: 0, coordinator: 0, self: 0, unrecorded: 0 };
   const reviewers = {};
   for (const i of closed) {
-    const a = gateOf(loop, i.id).live;
-    const k = a && a.kind ? a.kind : 'unrecorded';
-    kinds[k] += 1;
-    if (carriesCode(i)) code[k] += 1;
-    if (k === 'fresh') reviewers[a.by] = (reviewers[a.by] || 0) + 1;
+    const g = gateOf(loop, i.id);
+    const k = approveKind(g);
+    kinds[k] = (kinds[k] || 0) + 1;
+    if (carriesCode(i)) code[k] = (code[k] || 0) + 1;
+    if (k === 'fresh') reviewers[g.live.by] = (reviewers[g.live.by] || 0) + 1;
   }
   const recorded = kinds.fresh + kinds.coordinator + kinds.self;
   const codeRecorded = code.fresh + code.coordinator + code.self;
   const freshReviews = {
     n: closed.length, recorded, ...kinds, share: share(kinds.fresh, recorded),
-    code: { n: codeRecorded + code.unrecorded, recorded: codeRecorded, ...code, share: share(code.fresh, codeRecorded) },
+    code: { n: codeRecorded + code.unrecorded + (code.retracted || 0), recorded: codeRecorded, ...code, share: share(code.fresh, codeRecorded) },
     reviewers: Object.fromEntries(Object.entries(reviewers).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))),
     noData: noData(!recorded, closed.length ? `no closed issue's approve records who gave it (${kinds.unrecorded} from before --by)` : 'nothing closed yet'),
   };
@@ -3002,13 +3095,13 @@ export function renderMetrics(m) {
   const f = m.freshReviews;
   return [
     '## Loop metrics',
-    checkLine(m.check),
+    ...checkLines(m.check),
     ...(m.check.merges.merges ? ['merges by repository:', ...mergeCheckLines(m.check)] : []),
     `cycle time (in progress → closed): ${time(m.cycleTime)}`,
     `lead time (filed → closed): ${time(m.leadTime)}`,
     `rounds: ${m.rounds.noData ? nd(m.rounds) : `${m.rounds.rounds} on ${m.rounds.issuesWithRounds.length} issue(s) · changes verdicts ${m.rounds.changes} on ${m.rounds.issuesWithChanges.length} issue(s) · n ${m.rounds.n} closed`}`,
     `reopened: ${m.reopenings.noData ? nd(m.reopenings) : `${m.reopenings.issues.length} issue(s), ${m.reopenings.times} time(s)${list(m.reopenings.issues)} · n ${m.reopenings.n}`}`,
-    `fresh reviews of closed work: ${f.noData ? nd(f) : `${f.fresh} of ${f.recorded} with a recorded reviewer (${pct(f.share)}) · coordinator ${f.coordinator} · self ${f.self}${f.unrecorded ? ` · no data for ${f.unrecorded} (approved before --by)` : ''}${f.code.recorded ? ` · carrying code: ${f.code.fresh} of ${f.code.recorded} (${pct(f.code.share)})` : ''}`}`,
+    `fresh reviews of closed work: ${f.noData ? nd(f) : `${f.fresh} of ${f.recorded} with a recorded reviewer (${pct(f.share)}) · coordinator ${f.coordinator} · self ${f.self}${f.retracted ? ` · retracted ${f.retracted}` : ''}${f.unrecorded ? ` · no data for ${f.unrecorded} (approved before --by)` : ''}${f.code.recorded ? ` · carrying code: ${f.code.fresh} of ${f.code.recorded} (${pct(f.code.share)})` : ''}`}`,
     ...(Object.keys(f.reviewers).length ? [`fresh reviewers: ${Object.keys(f.reviewers).length}${Object.keys(f.reviewers).length > 5 ? ', most often' : ''} ${Object.entries(f.reviewers).slice(0, 5).map(([k, v]) => `${k} ${v}`).join(' · ')}`] : []),
     `red CI after merge: ${m.redCiAfterMerge.noData ? nd(m.redCiAfterMerge) : `${m.redCiAfterMerge.red} of ${m.redCiAfterMerge.settled} settled (${pct(m.redCiAfterMerge.share)})${list(m.redCiAfterMerge.issues)}`}${m.redCiAfterMerge.pending.length ? ` · pending ${m.redCiAfterMerge.pending.length}` : ''}${m.redCiAfterMerge.none.length ? ` · no CI ${m.redCiAfterMerge.none.length}` : ''}`,
     `follow-ups within ${m.followUps.windowDays} days (Found by names the closed issue): ${m.followUps.noData ? nd(m.followUps) : `${m.followUps.withFollowUps} of ${m.followUps.n} closed${m.followUps.followUps.length ? `: ${m.followUps.followUps.map((x) => `${x.id} ← ${x.followUps.join(', ')}`).join('; ')}` : ''} · ${m.followUps.windowClosed ? `share ${m.followUps.windowClosedWithFollowUps} of ${m.followUps.windowClosed} whose ${m.followUps.windowDays} days have passed (${pct(m.followUps.share)})` : `share: no data (no close is ${m.followUps.windowDays} days old yet)`}${m.followUps.windowOpen ? ` · window still open for ${m.followUps.windowOpen}` : ''}`}`,
@@ -4428,6 +4521,7 @@ export function renderResume(o, profile = DEFAULT_PROFILE) {
   return [
     ...head,
     ...sec(`Rulings in force (${o.rulings.length})`, o.rulings.map((d) => `- ${d.date} · ${d.slug}${d.by ? ` · by ${d.by}` : ''} — ${short(d.line)}`), '- (none)'),
+    ...sec(`Closed, gate does not hold (${(st.closedGate || []).length})`, (st.closedGate || []).map(closedGateLine)),
     ...sec(`In flight (${o.inFlight.length})`, o.inFlight.map((x) => `- ${x.id} ${short(x.title)}${shownFields(x)}${lease(x) ? ` · ${lease(x)}` : ''}${x.stale.length ? ` · STALE: ${x.stale.join('; ')}` : ''}${x.mark ? `\n  → ${IN_FLIGHT_MARKS[x.mark]}` : ''}`), '- (nothing)'),
     ...sec(`Waiting — After not settled (${o.waiting.length})`, o.waiting.map((x) => `- ${x.id} ${short(x.title)} (after ${x.after.join(', ')})${x.stale !== undefined ? ` · ${x.status === 'in-progress' ? 'in progress' : x.status}${lease(x) ? ` · ${lease(x)}` : ''}${x.stale.length ? ` · STALE: ${x.stale.join('; ')}` : ''}` : ''}`)),
     ...sec(`Questions to the user (${o.questions.length})`, o.questions.map((a) => `- a-${a.id} (${a.kind || 'stuck'})${a.issue ? ` issue ${a.issue}` : ''} · ${a.question}`), '- (nothing)'),
@@ -4510,17 +4604,19 @@ export function cmdReport(root, flags = {}) {
     return { id: i.id, title: i.title, status: i.status, kind: i.kind, priority: i.priority, tier: i.tier, tags: i.tags, repos: repoNames(root, i), branch: i.fields.branch || null, after: i.after, sources: i.sources, merged: m ? m.sha : null, ci: m ? m.ci : null, review: a ? { by: a.by, kind: a.kind, at: a.at } : null };
   });
   const metrics = metricsOf(loop, Date.now());
-  const lines = [`# Report`, '', goal, '', ...(metrics.check.landsOn === 'check' ? [] : [TESTIMONY_NOTE, '']), `## Done (${done.length})`, ...(done.length ? [gateLine(profile, split, 'Reviewed by')] : []), ...doneLines,
+  const closedGate = closedGateFlags(loop);
+  const lines = [`# Report`, '', goal, '', ...(metrics.check.landsOn === 'testimony' ? [TESTIMONY_NOTE, ''] : []), `## Done (${done.length})`, ...(done.length ? [gateLine(profile, split, 'Reviewed by')] : []), ...doneLines,
     ...closedOther.flatMap((st) => {
       const on = issues.filter((i) => i.status === st);
       return ['', `## ${reasonWord(st)} (${on.length})`, ...on.map((i) => `- ${i.id} ${i.title}${profile.is(st, 'needs-reason') ? ` — ${statusReason(i.sections.evidence, reasonWord(st))}` : ''}`)];
     }),
+    ...(closedGate.length ? ['', `## Closed, gate does not hold (${closedGate.length})`, ...closedGate.map(closedGateLine)] : []),
     '', `## Still open (${left.length})`, ...left.map((i) => `- ${i.id} ${i.title} (${i.status})`),
     ...(flags.found ? ['', `## Found along the way (${found.length})`, ...found.map((i) => `- ${i.id} ${i.title} — ${i.fields['found by']}`)] : []),
     '', renderMetrics(metrics)];
   return { done: done.length, dropped: dropped.length, deferred: deferred.length, left: left.length, found: found.length, reviews: split,
     ...(profile.declared ? { statuses: Object.fromEntries(profile.statuses.map((st) => [st, issues.filter((i) => i.status === st).length])) } : {}),
-    byRepo: Object.fromEntries(repos.map((r) => [r, byRepo[r].map((i) => i.id)])), issues: rows, text: lines.join('\n') + '\n', check: metrics.check, metrics };
+    byRepo: Object.fromEntries(repos.map((r) => [r, byRepo[r].map((i) => i.id)])), issues: rows, text: lines.join('\n') + '\n', check: metrics.check, metrics, closedGate };
 }
 
 // ---- research findings into issues ----------------------------------------------------------------
@@ -4740,7 +4836,7 @@ export function renderStatus(o, profile = DEFAULT_PROFILE) {
   const by = o.by ? [`by ${o.by.key}:`, ...Object.entries(o.by.groups).map(([k, g]) => `  ${k.padEnd(width)}  ${profile.statuses.map((st) => `${statusLabel(st)} ${g[st]}`).join(' · ')}`)] : [];
   const more = [
     ...(o.tag !== undefined ? [`scoped to the issues tagged ${o.tag} — the counts above and the lists below are theirs only`] : []),
-    ...(o.check && o.check.landsOn === 'testimony' ? [TESTIMONY_NOTE] : []),
+    ...(o.check ? checkLines(o.check) : []),
     ...(o.scheduler ? [schedulerNote(o.scheduler)] : []),
     ...by,
     ...(o.by && o.by.key === 'repo' && o.check ? ['merges by repository, with the check that decided each:', ...mergeCheckLines(o.check)] : []),
@@ -4752,6 +4848,7 @@ export function renderStatus(o, profile = DEFAULT_PROFILE) {
     ...o.toRatify.map((a) => `ratify a-${a.id}${a.issue ? ` (issue ${a.issue})` : ''} · ${a.question}`),
     ...(o.waiting ? [`waiting (After not settled): ${o.waitingIds.join(', ')}`] : []),
     ...(o.noAcceptance.length ? [`in flight with no acceptance line: ${o.noAcceptance.join(', ')}`] : []),
+    ...(o.closedGate || []).map(closedGateLine),
     ...(o.inFlightRows || []).map((x) => `in flight ${x.id} · ${x.next}`),
   ];
   return `${head}${line}${more.length ? `\n${more.join('\n')}` : ''}`;
