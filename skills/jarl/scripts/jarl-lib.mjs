@@ -1039,9 +1039,43 @@ export function readTemplate(root, name) {
   };
 }
 
+// Where a loop's directory stands among the worktrees of its git repository, read-only (git rev-parse, git worktree
+// list). Null outside git. `main` is the main checkout (null for a bare repository), `mainRoot` the same directory of the
+// loop in it, `linked` whether `root` is inside a linked worktree rather than the main checkout, and `copies` the loop's
+// directory in every worktree, the main checkout first. The one helper that finds the main checkout through git's own
+// worktree list; the commands that must act on the main checkout's loop reuse it.
+export function mainCheckoutOf(root) {
+  const top = git(root, ['rev-parse', '--show-toplevel']);
+  const list = top === null ? null : git(root, ['worktree', 'list', '--porcelain']);
+  if (list === null) return null;
+  const entries = list.split(/\n\s*\n/).map((b) => ({ path: /^worktree (.+)$/m.exec(b)?.[1], bare: /^bare$/m.test(b) })).filter((e) => e.path);
+  const here = canonical(top);
+  const rel = relative(here, canonical(root));
+  const main = entries.length && !entries[0].bare ? canonical(entries[0].path) : null;
+  return {
+    main, mainRoot: main === null ? null : join(main, rel), linked: main !== null && main !== here,
+    copies: entries.filter((e) => !e.bare).map((e) => join(canonical(e.path), rel)),
+  };
+}
+// The highest issue number any copy of this loop holds (the main checkout and every linked worktree), 0 when none.
+function highestAcrossWorktrees(root) {
+  const found = mainCheckoutOf(root);
+  let top = 0;
+  for (const copy of found ? found.copies : []) {
+    const dir = issuesDir(copy);
+    if (!existsSync(dir)) continue;
+    for (const f of readdirSync(dir)) { const m = ISSUE_FILE_RE.exec(f); if (m) top = Math.max(top, Number(m[1])); }
+  }
+  return top;
+}
+
 export function cmdNew(root, title, rawFlags) {
   need(title, 'new requires "<title>"');
   needLiveLoop(root, ' — run: jarl.mjs init "<goal>"');
+  // A linked worktree of a committed loop holds only the copy it was cut with, so a number taken there may already be used
+  // in the main checkout: file from the main checkout.
+  const placed = mainCheckoutOf(root);
+  need(!placed || !placed.linked || !existsSync(jarlDir(placed.mainRoot)), `${root} is a linked worktree of ${placed?.mainRoot}, which holds this loop: its copy here may lag, and the number would be used twice — file from the main checkout: pass --root ${placed?.mainRoot}`);
   let flags = rawFlags;
   let fromTemplate = {};
   if (rawFlags.template !== undefined) {
@@ -1080,7 +1114,10 @@ export function cmdNew(root, title, rawFlags) {
   // lock broken early), the next number is tried instead of two issues sharing one.
   const dir = issuesDir(root);
   const taken = () => readdirSync(dir).map((f) => ISSUE_FILE_RE.exec(f)).filter(Boolean).map((m) => Number(m[1]));
-  let n = taken().reduce((m, x) => Math.max(m, x), 0) + 1;
+  // The highest number over this loop and its copies in every other worktree (read-only), so a lagging copy cannot hand
+  // out a number already used elsewhere. The issue files stay the only source: there is no counter file.
+  const elsewhere = highestAcrossWorktrees(root);
+  let n = Math.max(taken().reduce((m, x) => Math.max(m, x), 0), elsewhere) + 1;
   for (let tries = 0; ; tries += 1) {
     const id = padId(n);
     // The first issue of 1000 or more is a file a 6.1.x reader would skip in silence: the format is raised first.

@@ -8,7 +8,7 @@ import { sh, NO_EXCLUDES } from './portable.mjs';
 import { fileURLToPath } from 'node:url';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
-const { JARL_GITIGNORE_COMMITTED } = await import(new URL('../jarl.mjs', import.meta.url).href);
+const { JARL_GITIGNORE_COMMITTED, mainCheckoutOf } = await import(new URL('../jarl.mjs', import.meta.url).href);
 
 function repo() {
   const dir = mkdtempSync(join(tmpdir(), 'jarl-'));
@@ -101,6 +101,49 @@ test('the reply of new keeps its first line, then lists what was parsed and each
   assert.equal(json.id, '003');
   assert.deepEqual(json.empty.map((e) => e.field), ['why', 'acceptance', 'files', 'after', 'where']);
   assert.equal(json.parsed.tags.length, 0);
+});
+
+test('new from a linked worktree of a committed loop is refused and names the main checkout; on the main checkout the number is the highest over every worktree', () => {
+  const root = repo();
+  rmSync(join(root, '.git'), { recursive: true, force: true });
+  const wt = `${root}-wt`;
+  sh(root, 'git init -q -b feature && git config user.email t@t && git config user.name t && git config core.excludesFile /dev/null && echo a > a.txt && git add -A && git commit -qm base');
+  jarl(root, 'init', 'goal', '--committed');
+  jarl(root, 'new', 'first');
+  sh(root, `git add -A && git commit -qm loop && git worktree add -q -b w1 ${wt}`);
+  // The main checkout moves on by two issues; the worktree keeps the copy it was cut with.
+  jarl(root, 'new', 'second'); jarl(root, 'new', 'third');
+  assert.deepEqual(readdirSync(join(wt, '.jarl', 'issues')), ['001-first.md']);
+  const said = refuses(wt, 'new', 'from the worktree');
+  assert.match(said, /is a linked worktree of .*, which holds this loop/);
+  assert.ok(said.includes(basename(root)), 'it names the main checkout as the root to pass');
+  assert.deepEqual(readdirSync(join(wt, '.jarl', 'issues')), ['001-first.md'], 'nothing was written');
+  // A worktree copy that holds a higher number (999 here) than the main checkout counts: the next number is 1000.
+  const high = join(wt, '.jarl', 'issues', '999-high.md');
+  writeFileSync(high, '# 999 · high\n\n**Status:** open\n**Kind:** task\n**Priority:** 2\n**Tier:** standard\n\n## What\nx\n');
+  const made = JSON.parse(jarl(root, 'new', 'after the high one', '--json'));
+  assert.equal(made.id, '1000');
+  assert.match(made.file, /1000-after-the-high-one\.md$/);
+  // Without the worktree's higher copy the main checkout files the next number as always.
+  const plain = repo();
+  jarl(plain, 'init', 'goal');
+  assert.equal(JSON.parse(jarl(plain, 'new', 'a', '--json')).id, '001');
+});
+
+test('the main checkout is found through git by one helper: a linked worktree knows its main checkout and every copy of the loop', () => {
+  const root = repo();
+  rmSync(join(root, '.git'), { recursive: true, force: true });
+  const wt = `${root}-wt2`;
+  sh(root, 'git init -q -b feature && git config user.email t@t && git config user.name t && git config core.excludesFile /dev/null && echo a > a.txt && git add -A && git commit -qm base');
+  sh(root, `git worktree add -q -b w2 ${wt}`);
+  const here = mainCheckoutOf(root);
+  const there = mainCheckoutOf(wt);
+  assert.equal(here.linked, false);
+  assert.equal(there.linked, true);
+  assert.equal(there.main, here.main);
+  assert.equal(there.mainRoot, here.mainRoot);
+  assert.equal(there.copies.length, 2);
+  assert.equal(mainCheckoutOf(mkdtempSync(join(tmpdir(), 'jarl-nogit-'))), null);
 });
 
 test('dropping an issue keeps the evidence already written, and the report prints only the reason', () => {
