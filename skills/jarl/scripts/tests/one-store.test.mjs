@@ -394,6 +394,61 @@ test('a composer cannot write the journal whole through writeAtomic, and writes 
   R.writeAtomic(join(R.jarlDir(root), 'decisions.md'), '# Decisions\n');
 });
 
+// ---- a composer's flow through the record operations alone -------------------------------------------------
+
+test('a composer that moves tickets with the record operations and edits its own ticket fields under the lock reads the same in every view and the gate', () => {
+  const repo = gitRepo({ branch: 'main' });
+  const root = shapedLoop(SHAPES.horde);
+  const dir = R.jarlDir(root);
+  const a = R.newIssue(root, 'lands on main', { repo: repo.dir }).id;
+  const b = R.newIssue(root, 'waits in the queue', { repo: repo.dir }).id;
+  const c = R.newIssue(root, 'is sent back', { repo: repo.dir }).id;
+  R.setStatus(root, a, 'queued', undefined, {});
+  R.setStatus(root, a, 'running', undefined, { branch: 'jarl/a', worker: 'w1', model: 'm1' });
+  R.addEvidence(root, a, undefined, { ran: 'node --test', saw: 'ok' });
+  R.recordMerged(root, a, { sha: repo.g('rev-parse', 'HEAD').trim() });
+  R.setStatus(root, a, 'merged', undefined, {});
+  R.setStatus(root, b, 'queued', undefined, {});
+  R.setStatus(root, c, 'running', undefined, { branch: 'jarl/c', worker: 'w2' });
+  R.addRound(root, c, 'the check was red');
+  // The composer's own edit of its own ticket fields, as its editTicket does: under the lock, whole file, no line of the journal.
+  const edit = (id, fn) => R.withLock(root, () => { const file = issueFile(root, id); R.writeAtomic(file, fn(readFileSync(file, 'utf8'))); });
+  const logBefore = logLinesOf(root).length;
+  edit(b, (t) => t.replace('\n## ', '\n**Team:** platform\n\n## '));
+  edit(b, (t) => t.replace(/^\*\*Files:\*\*.*$/m, '**Files:** a.txt, b.txt'));
+  assert.equal(logLinesOf(root).length, logBefore, 'the edit wrote no line');
+  const agree = () => {
+    const loop = L.readLoop(dir);
+    const status = R.statusData(root);
+    const resume = R.resumeData(root);
+    for (const issue of loop.issues) {
+      const g = L.gateOf(loop, issue.id);
+      assert.equal(g.tracked, true, `${issue.id} is held by the journal`);
+      assert.equal(issue.status, foldOf(dir, loop.profile, issue.id).status, `${issue.id}: the view and the fold read one status`);
+      assert.deepEqual(R.findIssue(root, issue.id).fields, issue.fields);
+    }
+    const byStatus = {};
+    for (const issue of loop.issues) byStatus[issue.status] = (byStatus[issue.status] || 0) + 1;
+    for (const [name, n] of Object.entries(status.statuses)) assert.equal(n, byStatus[name] || 0, `status counts ${name} as the issues read`);
+    assert.equal(status.inFlight, loop.issues.filter((i) => loop.profile.is(i.status, 'holds-claim')).length);
+    assert.deepEqual(resume.inFlight.map((x) => x.id), loop.issues.filter((i) => loop.profile.is(i.status, 'holds-claim')).map((i) => i.id));
+    assert.deepEqual(status.closedGate, [], 'the closed ticket holds its gate');
+    return { status, resume };
+  };
+  const first = agree();
+  assert.equal(first.status.disagreements, undefined, 'a write of a field the journal does not hold is no disagreement');
+  assert.equal(first.resume.disagreements, undefined);
+  assert.equal(R.findIssue(root, b).fields.files, 'a.txt, b.txt');
+  assert.match(readFileSync(issueFile(root, b), 'utf8'), /\*\*Team:\*\* platform/);
+  // The composer writes a status into a ticket's text: the views keep the status of the journal and say so.
+  edit(b, (t) => t.replace('**Status:** queued', '**Status:** merged'));
+  const second = agree();
+  assert.equal(second.status.disagreements.length, 1);
+  assert.equal(second.status.disagreements[0].field, 'Status');
+  assert.equal(second.status.statuses.merged, 1, 'the edit moved no count');
+  assert.equal(R.findIssue(root, b).status, 'queued');
+});
+
 // ---- one stamp, and the line before the file ------------------------------------------------------------------
 
 // A clock that moves two minutes at every reading, so two readings of "now" in one call cannot fall in the same minute.
