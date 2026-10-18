@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { FINDINGS } from './findings.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 
@@ -79,4 +80,36 @@ test('next says so when nothing is ready but something is held, and an answered 
   assert.match(jarl(root, 'next'), /nothing is ready to start.*next --all/);
   jarl(root, 'answer', '1', 'this one');
   assert.deepEqual(JSON.parse(jarl(root, 'next', '--json')).map((r) => r.id), ['001']);
+});
+
+// ---- 283: derived facts on in-flight rows ---------------------------------------------------------------
+
+test('in-flight rows carry one derived fact, in status and resume, text and json; set ready names the view', () => {
+  const root = loop();
+  for (const t of ['no rows', 'rows only', 'asked for changes', 'approved']) jarl(root, 'new', t, '--files', `${t.replace(/ /g, '-')}.mjs`);
+  jarl(root, 'new', 'waits', '--after', '1');
+  for (const id of ['1', '2', '3', '4', '5']) jarl(root, 'set', id, 'in-progress', 'go', '--worker', `w${id}`, '--branch', `jarl/${id}`);
+  for (const id of ['2', '3', '4']) jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'green');
+  jarl(root, 'review', '3', 'changes', '--by', 'rev', 'Important: the edge case of an empty list is not handled');
+  jarl(root, 'review', '4', 'approve', '--by', 'rev', FINDINGS);
+  const st = JSON.parse(jarl(root, 'status', '--json'));
+  assert.deepEqual(Object.fromEntries(st.inFlightRows.map((r) => [r.id, r.mark])),
+    { '001': 'no-rows', '002': 'rows-no-verdict', '003': 'changes-requested', '004': 'approved' }, 'an issue waiting on After is not in flight');
+  const text = jarl(root, 'status');
+  assert.match(text, /^in flight 001 · no evidence rows since the start/m);
+  assert.match(text, /^in flight 002 · evidence rows recorded, no verdict .* waits for a reviewer$/m);
+  assert.match(text, /^in flight 003 · changes requested .* back with the worker/m);
+  assert.match(text, /^in flight 004 · approved and queued .* then set it done$/m);
+  const resume = JSON.parse(jarl(root, 'resume', '--json'));
+  assert.deepEqual(resume.inFlight.map((r) => r.mark), ['no-rows', 'rows-no-verdict', 'changes-requested', 'approved']);
+  assert.match(jarl(root, 'resume'), /^- 003 asked for changes .*\n {2}→ changes requested/m);
+  // A new round or a restart spends the verdict: rows and no verdict again.
+  jarl(root, 'round', '3', 'red again');
+  assert.equal(JSON.parse(jarl(root, 'status', '--json')).inFlightRows.find((r) => r.id === '003').mark, 'rows-no-verdict');
+  const msg = refuses(root, 'set', '1', 'ready');
+  assert.match(msg, /ready is a view here, not a status/);
+  assert.match(msg, /`next` lists the issues ready to start/);
+  assert.match(msg, /declare one in its profile/);
+  assert.match(refuses(root, 'set', '1', 'review'), /review is a view here/);
+  assert.match(refuses(root, 'set', '1', 'nonsense'), /^status must be one of: /m);
 });

@@ -1369,6 +1369,8 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   const profile = loadProfile(root);
   // set <ids> <field> <value>: a field the profile declares (Kind and Tier too, when it declares them), not a status.
   if (!profile.statuses.includes(status) && status !== undefined && profile.field(status)) return setDeclaredField(root, rawIds, profile.field(status), why, flags);
+  // ready and the review words are views, not statuses: say which view answers the question the worker was asking.
+  need(profile.statuses.includes(status) || !/^(ready|review|in[-_ ]?review|ready[-_ ]for[-_ ]review|reviewing)$/i.test(String(status ?? '')), `${status} is a view here, not a status: \`next\` lists the issues ready to start, and \`status\` and \`resume\` mark each in-flight issue with what the record says (no evidence rows yet; rows and no verdict, so it waits for a reviewer; changes requested; approved and queued). Nothing needs setting: record the rows with \`evidence\`, and the reviewer's verdict with \`review\`. A loop that wants an explicit review status can declare one in its profile. Statuses here: ${profile.statuses.join(', ')}`);
   need(profile.statuses.includes(status), `status must be one of: ${profile.statuses.join(', ')}${profile.declaredFields.length ? ` — or a field this loop's profile declares: ${profile.declaredFields.map((f) => f.name).join(', ')}` : ''}`);
   need(caller !== 'cli' || profile.setBy(status) !== 'record', `${status} is set by the record only — this loop's profile (${profile.name}) marks it "set-by": "record", so jarl set and the MCP tools cannot move an issue into it; the tool that runs the loop does${profile.scheduler ? ` (${profile.scheduler})` : ''}`);
   const holds = profile.is(status, 'holds-claim');
@@ -1974,6 +1976,7 @@ export function cmdStatus(root, flags = {}) {
   c.ciRed = live.filter((i) => mergedOf(i)?.ci === 'red').map((i) => i.id);
   c.handoff = handoffAge(root, c.lastActivity);
   c.reviews = reviewSplit(root, issues);
+  c.inFlightRows = inFlightRows(root, issues, profile, byId);
   const files = uncommittedLoopFiles(root);
   c.uncommitted = files === null ? null : files.length;
   // --by: the same five counts per repository, tag, kind or priority — a dashboard's table, read from the issues.
@@ -1994,6 +1997,31 @@ export function cmdStatus(root, flags = {}) {
   return c;
 }
 export const STATUS_BY = ['repo', 'tag', 'kind', 'prio'];
+
+// What the record says about one in-flight issue, as one fact and the step it points to (never a status, never stored):
+// no evidence rows since the start; rows and no verdict since the last restart or round; changes requested; approved
+// (the merge comes next, and then done). A self approve is not a verdict that counts, so it reads as no verdict.
+export const IN_FLIGHT_MARKS = {
+  'no-rows': 'no evidence rows since the start — the worker has recorded no proof yet',
+  'rows-no-verdict': 'evidence rows recorded, no verdict since the last start or round — it waits for a reviewer',
+  'changes-requested': 'changes requested — it is back with the worker, who fixes it and records new rows',
+  approved: 'approved and queued for the merge — next the merger lands it, then set it done',
+};
+export function inFlightMark(root, issue, journal, issues, coordinators) {
+  const g = gateState(root, issue.id, journal.get(issue.id) || [], coordinators, issues, journal);
+  if (g.approved) return 'approved';
+  const verdicts = g.trail.filter((r) => r.n > g.cut && !r.retracted && (r.verdict === 'approve' || r.verdict === 'changes'));
+  if (verdicts.length && verdicts[verdicts.length - 1].verdict === 'changes') return 'changes-requested';
+  return g.rowsSince === 0 ? 'no-rows' : 'rows-no-verdict';
+}
+export function inFlightRows(root, issues, profile, byId) {
+  const journal = journalById(root);
+  const coordinators = coordinatorNames(root);
+  return issues.filter((i) => profile.is(i.status, 'holds-claim') && !waitingOn(i, byId, profile).length).map((i) => {
+    const mark = inFlightMark(root, i, journal, issues, coordinators);
+    return { id: i.id, title: i.title, branch: i.fields.branch || null, worker: i.fields.worker || null, since: i.fields.since || null, mark, next: IN_FLIGHT_MARKS[mark] };
+  });
+}
 
 // A loop opened before the permanent mode existed, or opened --committed, has no way to become the
 // permanent record other than this: init is the only command that writes .jarl/.permanent for a new
@@ -3462,6 +3490,7 @@ export function cmdResume(root, flags = {}) {
   const issues = loadIssues(root);
   const byId = new Map(issues.map((i) => [i.id, i]));
   const stale = new Map(status.stale.map((x) => [x.id, x.problems]));
+  const marks = new Map(status.inFlightRows.map((x) => [x.id, x.mark]));
   const rulings = cmdDecisions(root, { live: true }).map((d) => ({ date: d.date, slug: d.slug, by: d.by, line: (d.ruling.split('\n').find((l) => l.trim()) || '').trim() }));
   // In flight and waiting split the unfinished issues the way status counts them: an issue whose After is not
   // settled is waiting, in progress or not, so each section's count is the number on the counts line.
@@ -3471,7 +3500,7 @@ export function cmdResume(root, flags = {}) {
   const declared = (i) => (profile.fields.length ? { fields: Object.fromEntries(profile.fields.map((f) => [f.name, fieldText(i.fields[f.key])]).filter(([, v]) => v)) } : {});
   const inFlight = issues.filter((i) => holds(i) && !unsettled(i)).map((i) => ({
     id: i.id, title: i.title, branch: i.fields.branch || null, worker: i.fields.worker || null, since: i.fields.since || null,
-    stale: stale.get(i.id) || [], ...declared(i),
+    stale: stale.get(i.id) || [], mark: marks.get(i.id), ...declared(i),
   }));
   const waiting = issues.filter((i) => profile.active(i.status) && unsettled(i)).map((i) => ({
     id: i.id, title: i.title, status: i.status, after: waitingOn(i, byId, profile),
@@ -3532,7 +3561,7 @@ export function renderResume(o, profile = DEFAULT_PROFILE) {
   return [
     ...head,
     ...sec(`Rulings in force (${o.rulings.length})`, o.rulings.map((d) => `- ${d.date} · ${d.slug}${d.by ? ` · by ${d.by}` : ''} — ${short(d.line)}`), '- (none)'),
-    ...sec(`In flight (${o.inFlight.length})`, o.inFlight.map((x) => `- ${x.id} ${short(x.title)}${shownFields(x)}${lease(x) ? ` · ${lease(x)}` : ''}${x.stale.length ? ` · STALE: ${x.stale.join('; ')}` : ''}`), '- (nothing)'),
+    ...sec(`In flight (${o.inFlight.length})`, o.inFlight.map((x) => `- ${x.id} ${short(x.title)}${shownFields(x)}${lease(x) ? ` · ${lease(x)}` : ''}${x.stale.length ? ` · STALE: ${x.stale.join('; ')}` : ''}${x.mark ? `\n  → ${IN_FLIGHT_MARKS[x.mark]}` : ''}`), '- (nothing)'),
     ...sec(`Waiting — After not settled (${o.waiting.length})`, o.waiting.map((x) => `- ${x.id} ${short(x.title)} (after ${x.after.join(', ')})${x.stale !== undefined ? ` · ${x.status === 'in-progress' ? 'in progress' : x.status}${lease(x) ? ` · ${lease(x)}` : ''}${x.stale.length ? ` · STALE: ${x.stale.join('; ')}` : ''}` : ''}`)),
     ...sec(`Questions to the user (${o.questions.length})`, o.questions.map((a) => `- a-${a.id} (${a.kind || 'stuck'})${a.issue ? ` issue ${a.issue}` : ''} · ${a.question}`), '- (nothing)'),
     ...sec(`To ratify (${o.ratify.length})`, o.ratify.map((a) => `- a-${a.id}${a.issue ? ` (issue ${a.issue})` : ''} · ${a.question}`)),
@@ -3857,6 +3886,7 @@ export function renderStatus(o, profile = DEFAULT_PROFILE) {
     ...o.toRatify.map((a) => `ratify a-${a.id}${a.issue ? ` (issue ${a.issue})` : ''} · ${a.question}`),
     ...(o.waiting ? [`waiting (After not settled): ${o.waitingIds.join(', ')}`] : []),
     ...(o.noAcceptance.length ? [`in flight with no acceptance line: ${o.noAcceptance.join(', ')}`] : []),
+    ...(o.inFlightRows || []).map((x) => `in flight ${x.id} · ${x.next}`),
   ];
   return `${head}${line}${more.length ? `\n${more.join('\n')}` : ''}`;
 }
