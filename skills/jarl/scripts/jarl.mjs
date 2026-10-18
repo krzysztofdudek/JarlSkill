@@ -213,6 +213,10 @@ git merges (not loop commands: no --root, no lock, no tool of the MCP server):
 203-206,209. Every id and every precondition is checked before anything is written, so the call lands on
 all of them or on none, with one log line per issue.
 
+An issue number has at least three digits: below 1000 it is padded to three (007, 195), from 1000 it has the digits
+it needs (1000, 1001); 7 and #7 both mean 007. Questions are numbered the same way (a-001, a-1000). Numbers are
+compared as numbers, so 999 comes before 1000.
+
 Flags: a flag the command does not take is an error. A value flag takes the next argument whatever it
 starts with (--ran "--help" records a row), or inline as --flag=value. A bare -- ends the flags: put a
 note or a title that starts with -- after it, and every flag (--root too) before it. Words beyond what a

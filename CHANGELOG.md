@@ -9,6 +9,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 - A loop now records which format it was written in. When Jarl first writes something an older Jarl would read wrongly without saying so, it marks the loop first, and the older Jarl then refuses the loop with a clear message instead of misreading it. Loops that never need this stay as they are and keep working with older versions.
 
+### Fixed
+- A loop can now hold 1000 issues or more. Issue and question numbers keep three digits below 1000 (007, 195) and grow from there (1000, 1001); filing, listing, showing, ranges such as 998-1002, reviews, the journal, branches named `jarl/1000-…` and questions such as a-1000 all work, and numbers are ordered as numbers, so 999 comes before 1000. The first issue or question numbered 1000 or more marks the loop for the newer format, so an older Jarl refuses it with a clear message instead of skipping those issues. Existing loops and their files are unchanged.
+- The follow-up count in `report` now counts only issue numbers the loop holds, so a date, a year or a version in a "Found by" line is never read as an issue.
+
 ## [6.1.1] - 2026-10-13
 
 ### Fixed
