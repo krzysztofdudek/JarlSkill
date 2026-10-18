@@ -113,3 +113,33 @@ test('in-flight rows carry one derived fact, in status and resume, text and json
   assert.match(refuses(root, 'set', '1', 'review'), /review is a view here/);
   assert.match(refuses(root, 'set', '1', 'nonsense'), /^status must be one of: /m);
 });
+
+// ---- 281: status --tag ----------------------------------------------------------------------------------
+
+test('status --tag scopes every section to the issues carrying the tag', () => {
+  const root = loop();
+  jarl(root, 'new', 'alpha one', '--tags', 'alpha', '--files', 'a.mjs');
+  jarl(root, 'new', 'alpha two', '--tags', 'alpha', '--files', 'b.mjs', '--after', '1');
+  jarl(root, 'new', 'beta one', '--tags', 'beta', '--files', 'c.mjs');
+  jarl(root, 'new', 'beta two', '--tags', 'beta', '--files', 'd.mjs');
+  jarl(root, 'set', '1', 'in-progress', 'go', '--worker', 'w1', '--branch', 'jarl/1');
+  jarl(root, 'set', '3', 'in-progress', 'go', '--worker', 'w3', '--branch', 'jarl/3');
+  jarl(root, 'ask', 'which?', '--kind', 'stuck', '--issue', '4');
+  const a = JSON.parse(jarl(root, 'status', '--tag', 'alpha', '--json'));
+  const b = JSON.parse(jarl(root, 'status', '--tag', 'beta', '--json'));
+  assert.deepEqual([a.open, a['in-progress']], [1, 1]);
+  assert.deepEqual([b.open, b['in-progress']], [1, 1]);
+  assert.deepEqual(a.waitingIds, ['002']);
+  assert.deepEqual(b.waitingIds, []);
+  assert.deepEqual(a.inFlightRows.map((r) => r.id), ['001']);
+  assert.deepEqual(b.inFlightRows.map((r) => r.id), ['003']);
+  assert.deepEqual([a.questions, b.questions], [0, 1], 'a question counts under the tag of the issue it names');
+  assert.equal(a.noAcceptance.length, 1);
+  assert.deepEqual(a.noAcceptance, ['001']);
+  assert.deepEqual(b.noAcceptance, ['003']);
+  assert.equal(a.tag, 'alpha');
+  const whole = JSON.parse(jarl(root, 'status', '--json'));
+  assert.equal(whole.open, 2); assert.equal(whole['in-progress'], 2); assert.equal(whole.tag, undefined);
+  assert.match(jarl(root, 'status', '--tag', 'alpha'), /^open 0 · in flight 1 · waiting 1 /m, 'alpha one runs, alpha two waits on it');
+  assert.match(refuses(root, 'status', '--tag', 'nope'), /no issue carries the tag nope/);
+});

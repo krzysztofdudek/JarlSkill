@@ -1939,11 +1939,15 @@ export function cmdStatus(root, flags = {}) {
   // ready, stale...). countOf reads either.
   const counts = Object.fromEntries(profile.statuses.map((st) => [st, 0]));
   const c = profile.declared ? { statuses: counts } : counts;
-  const issues = loadIssues(root);
+  const every = loadIssues(root);
+  // --tag: every section below is computed over the issues carrying that tag only; an After issue outside the tag is
+  // still read for what it is (byId holds them all), so waiting means the same thing in the scope as in the whole.
+  if (flags.tag !== undefined) need(typeof flags.tag === 'string' && flags.tag && every.some((i) => i.tags.includes(flags.tag)), `no issue carries the tag ${flags.tag}`);
+  const issues = flags.tag === undefined ? every : every.filter((i) => i.tags.includes(flags.tag));
   for (const i of issues) counts[i.status] = (counts[i.status] || 0) + 1;
   // Each status keeps its own count; waiting is the part of those in play (open, in progress) whose After issues
   // are not settled yet, so "in flight" in the text line means someone is working on it.
-  const byId = new Map(issues.map((i) => [i.id, i]));
+  const byId = new Map(every.map((i) => [i.id, i]));
   const unfinished = issues.filter((i) => profile.active(i.status));
   c.waitingIds = unfinished.filter((i) => waitingOn(i, byId, profile).length).map((i) => i.id);
   c.waiting = c.waitingIds.length;
@@ -1953,7 +1957,8 @@ export function cmdStatus(root, flags = {}) {
   c.ready = profile.scheduler ? null : unfinished.filter((i) => profile.is(i.status, 'dispatchable') && !c.waitingIds.includes(i.id)).length;
   if (profile.scheduler) c.scheduler = profile.scheduler;
   c.noAcceptance = issues.filter((i) => profile.is(i.status, 'holds-claim') && !acceptanceLineCount(i)).map((i) => i.id);
-  const asks = loadAsks(root).filter((a) => a.state === 'open');
+  const inScope = new Set(issues.map((i) => i.id));
+  const asks = loadAsks(root).filter((a) => a.state === 'open' && (flags.tag === undefined || (a.issue && inScope.has(a.issue))));
   // A ratify item blocks nothing, so it is not counted among the questions the loop waits on.
   c.questions = asks.filter((a) => a.kind !== 'ratify').length;
   c.toRatify = asks.filter((a) => a.kind === 'ratify');
@@ -1976,7 +1981,7 @@ export function cmdStatus(root, flags = {}) {
   c.ciRed = live.filter((i) => mergedOf(i)?.ci === 'red').map((i) => i.id);
   c.handoff = handoffAge(root, c.lastActivity);
   c.reviews = reviewSplit(root, issues);
-  c.inFlightRows = inFlightRows(root, issues, profile, byId);
+  c.inFlightRows = inFlightRows(root, issues, profile, byId, every);
   const files = uncommittedLoopFiles(root);
   c.uncommitted = files === null ? null : files.length;
   // --by: the same five counts per repository, tag, kind or priority — a dashboard's table, read from the issues.
@@ -1994,6 +1999,7 @@ export function cmdStatus(root, flags = {}) {
   }
   // Last, so every key status --json carried before keeps its place.
   c.check = checkState(root);
+  if (flags.tag !== undefined) c.tag = flags.tag;
   return c;
 }
 export const STATUS_BY = ['repo', 'tag', 'kind', 'prio'];
@@ -2014,11 +2020,11 @@ export function inFlightMark(root, issue, journal, issues, coordinators) {
   if (verdicts.length && verdicts[verdicts.length - 1].verdict === 'changes') return 'changes-requested';
   return g.rowsSince === 0 ? 'no-rows' : 'rows-no-verdict';
 }
-export function inFlightRows(root, issues, profile, byId) {
+export function inFlightRows(root, issues, profile, byId, all = issues) {
   const journal = journalById(root);
   const coordinators = coordinatorNames(root);
   return issues.filter((i) => profile.is(i.status, 'holds-claim') && !waitingOn(i, byId, profile).length).map((i) => {
-    const mark = inFlightMark(root, i, journal, issues, coordinators);
+    const mark = inFlightMark(root, i, journal, all, coordinators);
     return { id: i.id, title: i.title, branch: i.fields.branch || null, worker: i.fields.worker || null, since: i.fields.since || null, mark, next: IN_FLIGHT_MARKS[mark] };
   });
 }

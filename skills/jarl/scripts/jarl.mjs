@@ -162,7 +162,8 @@ commands:
                                                  close puts it to the user for ratification
   decisions [--live]                             the rulings with who ruled and what superseded them; --live only
                                                  those still in force
-  status [--stale-hours n] [--by repo|tag|kind|prio|<field>]
+  status [--stale-hours n] [--by repo|tag|kind|prio|<field>] [--tag <t>]
+                                                 --tag computes every part of status over the issues carrying that tag only
                                                  the goal, when the loop opened and last moved,
                                                  then one line: open, in flight, waiting, done, dropped, deferred,
                                                  open questions, to ratify, merged with CI pending or red; then who
@@ -291,7 +292,7 @@ export const COMMAND_FLAGS = {
   resume: { log: 'value', ready: 'value', ci: 'bool' },
   handoff: { summary: 'value', next: 'many', log: 'value', ready: 'value', ci: 'bool' },
   log: {}, decide: { settles: 'value', by: 'value', supersedes: 'value', area: 'value', reach: 'value', rule: 'value' }, decisions: { live: 'bool' },
-  status: { 'stale-hours': 'value', by: 'value' }, archive: {}, report: { found: 'bool' }, tips: {}, mode: {},
+  status: { 'stale-hours': 'value', by: 'value', tag: 'value' }, archive: {}, report: { found: 'bool' }, tips: {}, mode: {},
   queue: { repo: 'value', base: 'value' }, changelog: { repo: 'value' },
   close: { force: 'bool', batch: 'bool' }, profile: {},
 };
