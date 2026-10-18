@@ -2545,6 +2545,35 @@ export function journalById(root) {
   return eventsById(loopEvents(jarlDir(root), loadProfile(root)));
 }
 
+// The state an issue's own lines say, the one every view and the gate read: its status, its lease (branch, worker, model,
+// since), the merge it records and that merge's CI state, folded over the issue's events in file order, as the
+// commands that write the lines write the header beside them. A move into a status that holds the claim stamps `since`
+// with the line's stamp, replaces the branch when the line names one, replaces the worker when it names one (and then
+// the model with the line's own, or none), and replaces the model alone when only a model is named; a move into any
+// other status removes the worker, the model and `since`, and keeps the branch. A merge line replaces the merge and
+// takes its CI state (none when it names none); a CI line replaces the CI state alone. Null for an issue the
+// journal holds no filing and no move of: its header is all there is to read.
+export function issueState(profile, events) {
+  const s = { status: null, branch: null, worker: null, model: null, since: null, merged: null, ci: null };
+  let held = false;
+  for (const e of events) {
+    if (e.type === 'filed') { held = true; s.status = profile.initial; continue; }
+    if (e.type === 'move') {
+      held = true; s.status = e.to;
+      if (profile.is(e.to, 'holds-claim')) {
+        s.since = e.at;
+        const branch = BRANCH_FIELD.exec(e.text)?.[1];
+        if (branch) s.branch = branch;
+        if (e.lease) { s.worker = e.lease.worker; s.model = e.model; } else if (e.model) s.model = e.model;
+      } else { s.worker = null; s.model = null; s.since = null; }
+      continue;
+    }
+    if (e.type === 'merged') { s.merged = e.repo ? `${e.sha} in ${e.repo}` : e.sha; s.ci = e.ci; continue; }
+    if (e.type === 'ci') s.ci = e.state;
+  }
+  return held ? s : null;
+}
+
 // ---- the loaded loop -------------------------------------------------------------------------------
 //
 // A command reads the loop once, into one value, and hands it to the gate, the views and models; nothing a function
