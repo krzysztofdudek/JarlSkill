@@ -1447,7 +1447,10 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   // The model goes before the worker: the worker is read as the text after "· worker " up to "· worktree " or the end of
   // the line, so a model written after it would become part of the worker's name.
   const leaseNote = [flags.branch !== undefined && `branch ${fieldText(flags.branch)}`, model !== undefined && `model ${model}`, flags.worker !== undefined && `worker ${fieldText(flags.worker)}`, worktree !== undefined && `worktree ${worktree}`].filter(Boolean).join(' · ');
-  appendLogLines(root, issues.map((issue) => `${issue.id} → ${status}${why ? ` · ${why}` : ''}${leaseNote ? ` · ${leaseNote}` : ''}`));
+  // The reason is free text in front of the lease's fields: on a lease its own " · " is neutralised, so no reason can be
+  // read as a branch, a model or a worker.
+  const reason = holds && why ? String(why).replace(/ +· +/g, ' - ') : why;
+  appendLogLines(root, issues.map((issue) => `${issue.id} → ${status}${reason ? ` · ${reason}` : ''}${leaseNote ? ` · ${leaseNote}` : ''}`));
   // Said on the command line only, and only in a loop that declares model lines: a lease with no model (once per call).
   const leaseNoModel = caller === 'cli' && holds && model === undefined && modelLines(root, profile).declared ? 'no --model on this lease — the loop declares its models, and a model that is not recorded can never be recovered' : null;
   return oneOrMany(rawIds, issues.map((issue, n) => ({ id: issue.id, status, ...(holds ? { since, ...(flags.branch !== undefined ? { branch: fieldText(flags.branch) } : {}), ...(flags.worker !== undefined ? { worker: fieldText(flags.worker) } : {}), ...(model !== undefined ? { model } : {}), ...(worktree !== undefined ? { worktree } : {}) } : {}), ...(profile.is(status, 'closes-record') ? doneNote(issue) : {}), ...(leaseNoModel && n === 0 ? { note: leaseNoModel } : {}) })));
@@ -2622,6 +2625,10 @@ export function renderMetrics(m) {
 export const MODEL_MIN_N = 5;
 const LEASE_WORKER = / · worker (.+?)(?: · worktree |$)/;
 const LEASE_MODEL = / · model (.+?)(?: · worker | · worktree |$)/;
+// The model of a lease line: the last " · model " field, which sits in the fields after the free-text reason.
+const leaseModelOf = (text) => { const at = text.lastIndexOf(' · model '); return at < 0 ? null : (LEASE_MODEL.exec(text.slice(at)) || [])[1] || null; };
+// A finding that opens like a field would read as one: its line gets a lead-in, so no free text is ever a model or a relay mark.
+const loggedFinding = (line) => (/^(model |relayed( ·|$))/i.test(line) ? `findings: ${line}` : line);
 
 // A --model value: the platform's model id as given, trimmed. One value, and never the log's own separator.
 function modelValue(raw) {
@@ -2667,8 +2674,8 @@ function leaseModels(events, profile) {
   const out = [];
   for (const e of events) {
     if (!into.test(e.text)) continue;
-    const m = LEASE_MODEL.exec(e.text);
-    if (m) out.push(m[1]);
+    const m = leaseModelOf(e.text);
+    if (m) out.push(m);
   }
   return out;
 }
@@ -2700,7 +2707,7 @@ function parseIssueEvents(id, events, profile) {
       const from = status;
       status = mv[1];
       const w = claims(status) ? LEASE_WORKER.exec(e.text) : null;
-      out.push({ ...base, type: 'move', from, to: status, lease: w ? { worker: fieldText(w[1]), model: (LEASE_MODEL.exec(e.text) || [])[1] || null, branch: (/ · branch (\S+)/.exec(e.text) || [])[1] || null } : null });
+      out.push({ ...base, type: 'move', from, to: status, lease: w ? { worker: fieldText(w[1]), model: leaseModelOf(e.text), branch: (/ · branch (\S+)/.exec(e.text) || [])[1] || null } : null });
       continue;
     }
     if (e.text.startsWith(`${id} round `)) { out.push({ ...base, type: 'round' }); continue; }
@@ -2798,7 +2805,7 @@ function modelFacts(dir, label, lines) {
     const settled = per.every((p) => p.closed || p.handedOver);
     units.push({
       loop: label, model: u.model, worker: u.worker, kind: lead.kind || '(none)', tier: lead.tier, repos: repoLabel(dir, lead), tags: lead.tags,
-      ended: !settled && !reviewed, reviewed,
+      ended: !settled, reviewed,
       clean: per.every((p) => p.closed && !p.changes && !p.rounds && !p.handedOver),
       changes: per.reduce((s, p) => s + p.changes, 0), rounds: per.reduce((s, p) => s + p.rounds, 0),
       redAfterApprove: per.some((p) => p.redAfterApprove), handedOver: per.some((p) => p.handedOver),
@@ -2860,7 +2867,7 @@ function workerCell(key, rows, extra = {}) {
     key, kind: rows[0].model == null ? null : rows[0].kind, tier: rows[0].tier,
     units: n.length, reviewed: c((r) => r.reviewed), clean: c((r) => r.clean), share: n.length >= MODEL_MIN_N ? share(c((r) => r.clean), n.length) : null,
     changes: n.reduce((s, r) => s + r.changes, 0), rounds: n.reduce((s, r) => s + r.rounds, 0), redAfterApprove: c((r) => r.redAfterApprove), handedOver: c((r) => r.handedOver),
-    endedBeforeReview: rows.length - n.length, rowsBeforeReview: c((r) => r.rowsBefore),
+    endedBeforeReview: rows.filter((r) => r.ended && !r.reviewed).length, endedAfterReview: rows.filter((r) => r.ended && r.reviewed).length, rowsBeforeReview: c((r) => r.rowsBefore),
     rowsShare: n.length >= MODEL_MIN_N ? share(c((r) => r.rowsBefore), n.length) : null, followUps: n.reduce((s, r) => s + r.followUps, 0),
     word: null, rollup: false, ...extra,
   };
@@ -2957,14 +2964,14 @@ export function cmdModels(root, flags = {}) {
 const countOfN = (k, n) => `${k} of ${n}`;
 export function renderModels(m) {
   const pc = (s) => (s == null ? '' : ` (${Math.round(s * 100)}%)`);
-  const workerLine = (c, lead) => `  ${lead}  units ${c.units} · clean first pass ${countOfN(c.clean, c.units)}${pc(c.share)} · changes ${c.changes} · rounds ${c.rounds} · red after approve ${c.redAfterApprove} · handed over ${c.handedOver} · rows before review ${countOfN(c.rowsBeforeReview, c.units)}${pc(c.rowsShare)} · follow-ups ${c.followUps}${c.endedBeforeReview ? ` · ended before review ${c.endedBeforeReview} (not in the units)` : ''}${c.word ? ` · ${c.word}` : ''}${c.rollup ? ' (all kinds at that tier)' : ''}`;
+  const workerLine = (c, lead) => `  ${lead}  units ${c.units} · clean first pass ${countOfN(c.clean, c.units)}${pc(c.share)} · changes ${c.changes} · rounds ${c.rounds} · red after approve ${c.redAfterApprove} · handed over ${c.handedOver} · rows before review ${countOfN(c.rowsBeforeReview, c.units)}${pc(c.rowsShare)} · follow-ups ${c.followUps}${c.endedBeforeReview ? ` · ended before any review ${c.endedBeforeReview} (not in the units)` : ''}${c.endedAfterReview ? ` · ended after a review without closing ${c.endedAfterReview} (not in the units)` : ''}${c.word ? ` · ${c.word}` : ''}${c.rollup ? ' (all kinds at that tier)' : ''}`;
   const reviewerLine = (c, lead) => `  ${lead}  verdicts ${c.verdicts} (changes ${c.changes}, approves ${c.approves}) · approves checked by a later reviewer of another model ${c.checked} of ${c.approves} · misses ${c.misses} · relayed ${c.relayed} · clearing approves on its own or a lower-ranked model ${c.clearingOwnOrLower}${c.word ? ` · ${c.word}` : ''}`;
   const heading = (r) => `${r.label}${r.model == null ? '' : `${r.tier ? ` (${r.tier})` : ''}${r.unplaced ? ' [unplaced]' : ''}${r.new ? ' [new]' : ''}`}`;
   const block = (t) => [
     '## As worker',
-    ...(t.workers.length ? t.workers.flatMap((r) => [...(r.model == null ? [] : [heading(r)]), ...r.cells.map((c) => workerLine(c, r.model == null ? `(not recorded) · ${c.key}` : c.key))]) : ['(no unit of work yet)']),
+    ...(t.workers.length ? t.workers.flatMap((r) => [heading(r),...r.cells.map((c) => workerLine(c, r.model == null ? `(not recorded) · ${c.key}` : c.key))]) : ['(no unit of work yet)']),
     '', '## As reviewer',
-    ...(t.reviewers.length ? t.reviewers.flatMap((r) => [...(r.model == null ? [] : [heading({ ...r, tier: null })]), ...r.cells.map((c) => reviewerLine(c, r.model == null ? `(not recorded) · ${c.key}` : c.key))]) : ['(no verdict yet)']),
+    ...(t.reviewers.length ? t.reviewers.flatMap((r) => [heading({ ...r, tier: null }),...r.cells.map((c) => reviewerLine(c, r.model == null ? `(not recorded) · ${c.key}` : c.key))]) : ['(no verdict yet)']),
   ];
   return [
     `# Models · ${m.loops.map((l) => `${l.label} (${l.issues} issues, ${l.units} units, ${l.verdicts} verdicts)`).join(' · ')}`,
@@ -2995,7 +3002,8 @@ export function modelMarkFor(table, lines, issue) {
     if (row.model == null || lines.rank(row.model) < 0 || lines.rank(row.model) >= lines.rank(def)) continue;
     const c = pick(row);
     if (!c || c.word !== 'fits') continue;
-    if (defCell && !(c.clean * defCell.units > defCell.clean * c.units)) continue;
+    // The default "does no better there": the candidate's share is at least as good as the default's.
+    if (defCell && c.clean * defCell.units < defCell.clean * c.units) continue;
     if (!best || c.clean * best.cell.units > best.cell.clean * c.units || (c.clean * best.cell.units === best.cell.clean * c.units && c.units > best.cell.units)) best = { row, cell: c };
   }
   if (!best) return none;
@@ -3106,7 +3114,7 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
   }
   // The model and the relay mark come after the kind: a reader that parses only the name and the kind ignores what follows.
   const marks = `${model !== undefined ? `model ${model} · ` : ''}${relayed ? 'relayed · ' : ''}`;
-  appendLogLines(root, issues.map((issue, n) => `${issue.id} review ${verdict} · ${by ? `by ${by} (${kinds[n]}) · ` : ''}${marks}${firstLine(findings, "the issue's Reviews section")}`));
+  appendLogLines(root, issues.map((issue, n) => `${issue.id} review ${verdict} · ${by ? `by ${by} (${kinds[n]}) · ` : ''}${marks}${loggedFinding(firstLine(findings, "the issue's Reviews section"))}`));
   // Recorded, never refused: a coordinator's approve on a code issue is a fact of the record, but it does not clear
   // the issue for done or the merge queue — the output says so at once. On the command line, in a loop that declares
   // its models, the model notes join it (see reviewModelNotes).

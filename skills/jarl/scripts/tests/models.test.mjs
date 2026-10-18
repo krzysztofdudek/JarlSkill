@@ -4,7 +4,7 @@
 // (tests/old-jarl.mjs) without a refusal and without a silent misreading, so the record format is not raised.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, existsSync, cpSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
@@ -121,12 +121,12 @@ test('the command line and the tables carry --model and --relayed', () => {
 
 // ---- the frozen reader ------------------------------------------------------------------------------
 
-test('the frozen reader reads the lease line with the model before the worker, the verdict line with model and relayed, and the new Tier, without the format being raised', () => {
+test('the frozen reader reads the lease line with the model before the worker, the verdict line with model and relayed, and Tier light, without the format being raised', () => {
   assert.ok(oldJarlIsPinned());
   const root = loop();
   const { id } = R.newIssue(root, 'a thing', { acceptance: 'it works', tier: 'light' });
   R.setStatus(root, id, 'in-progress', 'go', { branch: 'jarl/001-a', worker: 'w-five', model: 'claude-sonnet-5-5@high' });
-  // The worker is parsed from the lease line, not from a header field: remove the header fields the new Jarl wrote.
+  // The frozen reader finds the worker of the lease, whatever the model before it says.
   assert.equal(OLD.findIssue(root, id).fields.worker, 'w-five');
   assert.throws(() => OLD.cmdReview(root, id, 'approve', 'Minor: nothing to add here', { by: 'w-five' }), /self-approve/, 'the self-approve is refused');
   R.addEvidence(root, id, undefined, { ran: 'npm test', saw: 'pass' });
@@ -258,6 +258,56 @@ test('the third round prints a takeover block that says to raise the fresh worke
   assert.match(r.block, /one tier up from standard, or on a model other than mid-model/);
 });
 
+// ---- free text is never a field ------------------------------------------------------------------------------
+
+function reviewedUnit(root, findings, extra = {}) {
+  const { id } = R.newIssue(root, 'a thing', { acceptance: 'it works' });
+  R.setStatus(root, id, 'in-progress', extra.reason ?? '', { branch: `jarl/${id}-x`, worker: 'w-one', ...(extra.model ? { model: extra.model } : {}) });
+  R.addEvidence(root, id, undefined, { ran: 'npm test', saw: 'pass' });
+  R.review(root, id, 'approve', findings, { by: 'rev-one' });
+  return id;
+}
+
+test('findings that open like a model field are not read as one: no reviewer model appears, and the frozen reader still reads the verdict', () => {
+  const root = loop();
+  const id = reviewedUnit(root, 'model fake-1 · looks fine here and nothing found');
+  assert.match(log(root), /001 review approve · by rev-one \(fresh\) · findings: model fake-1 · looks fine/);
+  R.setStatus(root, id, 'done', 'merged', {});
+  const m = L.cmdModels(root, {});
+  assert.deepEqual(m.reviewers.map((r) => r.model), [null]);
+  const gate = OLD.gateState(root, id);
+  assert.equal(gate.live.kind, 'fresh');
+});
+
+test('findings that open like the relay mark are not read as one', () => {
+  const root = loop();
+  reviewedUnit(root, 'relayed · looks fine here and nothing found');
+  assert.match(log(root), /by rev-one \(fresh\) · findings: relayed · looks fine/);
+  const m = L.cmdModels(root, {});
+  assert.equal(m.reviewers[0].cells[0].relayed, 0);
+  const real = L.cmdModels(loop(), {});
+  assert.deepEqual(real.reviewers, []);
+});
+
+test('a lease reason that holds " · model " is neutralised on write and never read as the model', () => {
+  const root = loop();
+  const id = reviewedUnit(root, 'read the whole diff, found nothing', { reason: 'start · model fake-2 · more', model: MID });
+  assert.match(log(root), /001 → in-progress · start - model fake-2 - more · branch jarl\/001-x · model mid-model · worker w-one/);
+  R.setStatus(root, id, 'done', 'merged', {});
+  assert.deepEqual(L.cmdModels(root, {}).workers.map((r) => r.model), [MID]);
+  // A line written before the reason was neutralised still reads right: the model is the last field.
+  const raw = readFileSync(join(root, '.jarl', 'log.md'), 'utf8').replace(' · branch ', ' · model fake-3 · branch ');
+  writeFileSync(join(root, '.jarl', 'log.md'), raw);
+  assert.deepEqual(L.cmdModels(root, {}).workers.map((r) => r.model), [MID]);
+  const bare = loop();
+  const id2 = reviewedUnit(bare, 'read the whole diff, found nothing', { reason: 'start · model fake-4 · more' });
+  R.setStatus(bare, id2, 'done', 'merged', {});
+  assert.deepEqual(L.cmdModels(bare, {}).workers.map((r) => r.model), [null]);
+  const { id: open } = R.newIssue(bare, 'another', { acceptance: 'it works' });
+  R.setStatus(bare, open, 'in-progress', 'start · model fake-5 · more', { branch: 'jarl/9-x', worker: 'w-two', model: MID });
+  assert.throws(() => OLD.cmdReview(bare, open, 'approve', 'Minor: nothing to add here', { by: 'w-two' }), /self-approve/);
+});
+
 // ---- the views: models ----------------------------------------------------------------------------------
 
 const cell = (rows, model, key) => rows.find((r) => r.model === model).cells.find((c) => c.key === key);
@@ -334,6 +384,22 @@ test('models: a loop whose leases and verdicts carry no model reads as (not reco
   const text = L.renderModels(m);
   assert.match(text, /\(not recorded\) · tier standard/);
   assert.match(text, /\(not recorded\) · tier light/);
+});
+
+test('models: work with no recorded model prints under its own heading, never under the last named model', () => {
+  const root = loop({ lines: true });
+  units(root, 5, { model: MID, worker: 'w-m' });
+  units(root, 2, { worker: 'w-old' });
+  const text = L.renderModels(L.cmdModels(root, {}));
+  assert.match(text, /\n\(not recorded\)\n  \(not recorded\) · tier standard  units 2/);
+});
+
+test('a lower-ranked model whose share equals the default\'s is suggested: the default does no better there', () => {
+  const root = loop({ lines: true });
+  units(root, 5, { model: SMALL, worker: 'w-small' });
+  units(root, 5, { model: MID, worker: 'w-mid' });
+  const { id } = R.newIssue(root, 'to do', { kind: 'bug', tier: 'standard', acceptance: 'it works' });
+  assert.equal(J.cmdNext(root, {}).find((r) => r.id === id).model.suggested, SMALL);
 });
 
 test('models --by repo slices the same facts by repository; the text names n for every count and a share only from n >= 5', () => {
@@ -442,8 +508,24 @@ test('resume in-flight rows and status inFlightRows carry the model, or say it w
 
 // ---- the real record ----------------------------------------------------------------------------------
 
-test('JARL_LIVE_LOOP, when set: the live record reads as (not recorded) by tier, and the tier rows are consistent with its settled units', { skip: !process.env.JARL_LIVE_LOOP }, () => {
+test('JARL_LIVE_LOOP, when set: the record cut where the research cut it gives the research\'s tier rows; the whole record reads as (not recorded) by tier', { skip: !process.env.JARL_LIVE_LOOP }, () => {
   const root = process.env.JARL_LIVE_LOOP;
+  // The research (retro-output.txt) read the first 2062 log lines: there the strong tier has 62 settled units, 36 clean
+  // (58%), 34 changes and 17 with evidence rows before the review, and the standard tier 4 units, 3 clean, 1 change.
+  // A unit is counted only when every issue of it closed or was handed over; two further strong units were reviewed
+  // and then ended without closing, and this view lists them apart ("ended after a review without closing") instead of
+  // counting them, which is the research's own rule. Counting them would give 64 units and 38 changes.
+  const logLines = readFileSync(join(root, '.jarl', 'log.md'), 'utf8').split('\n');
+  if (logLines.length >= 2062) {
+    const cut = mkdtempSync(join(tmpdir(), 'jarl-live-cut-'));
+    cpSync(join(root, '.jarl'), join(cut, '.jarl'), { recursive: true });
+    writeFileSync(join(cut, '.jarl', 'log.md'), `${logLines.slice(0, 2062).join('\n')}\n`);
+    const rows = L.cmdModels(cut, {}).workers.find((r) => r.model === null).cells;
+    const strong = rows.find((c) => c.key === 'tier strong');
+    const standard = rows.find((c) => c.key === 'tier standard');
+    assert.deepEqual([strong.units, strong.clean, strong.changes, strong.rowsBeforeReview, strong.endedAfterReview], [62, 36, 34, 17, 2]);
+    assert.deepEqual([standard.units, standard.clean, standard.changes, standard.rowsBeforeReview], [4, 3, 1, 0]);
+  }
   const m = L.cmdModels(root, {});
   const row = m.workers.find((r) => r.model === null);
   assert.ok(row, 'work with no recorded model exists');
