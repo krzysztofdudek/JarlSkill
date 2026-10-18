@@ -10,7 +10,7 @@ import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as R from '../record.mjs';
-import { gitRepo, jarl, loop as makeLoop, refuses } from './helpers.mjs';
+import { gitRepo, jarl, loop as makeLoop, refuses, spawnJarl } from './helpers.mjs';
 import { oldJarl, oldJarlIsPinned } from './old-jarl.mjs';
 import { sh } from './portable.mjs';
 
@@ -447,6 +447,19 @@ test('a composer that moves tickets with the record operations and edits its own
   assert.equal(second.status.disagreements[0].field, 'Status');
   assert.equal(second.status.statuses.merged, 1, 'the edit moved no count');
   assert.equal(R.findIssue(root, b).status, 'queued');
+});
+
+// ---- the words ----------------------------------------------------------------------------------------------
+
+test('the skill says once which store is the record, and the help of the commands that print or refuse says the same', () => {
+  const skill = readFileSync(new URL('../../SKILL.md', import.meta.url), 'utf8');
+  assert.equal(skill.split('**The log is the record, and one tool moves it**').length - 1, 1, 'the source is stated once');
+  assert.match(skill, /^### When a header disagrees with the log$/m);
+  for (const part of ['A Branch the log has recorded cannot be cleared', 'In a committed loop', 'an audit of the change, and nothing reads them as state', 'a hand edit of a profile\'s status list'.replace('a hand', 'A hand')]) assert.ok(skill.includes(part), part);
+  const out = spawnJarl(makeLoop(), ['--help']);
+  const help = `${out.stdout}${out.stderr}`;
+  assert.match(help, /the log is the record of an issue's status, lease, merge and CI/);
+  assert.match(help, /a line that reads as a filing, a move,/);
 });
 
 // ---- one stamp, and the line before the file ------------------------------------------------------------------
