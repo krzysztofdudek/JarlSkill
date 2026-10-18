@@ -11,7 +11,8 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import * as R from '../record.mjs';
 
-const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
+const L = await import('../jarl-lib.mjs');
+const SCRIPT =fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 
 const run = (root, ...args) => spawnSync(process.execPath, [SCRIPT, ...args, '--root', root], { encoding: 'utf8', timeout: 60_000 });
 function jarl(root, ...args) {
@@ -175,6 +176,20 @@ test('a worktree holding an ignored file is kept, the reason names it and the gi
   assert.match(out, /\nkept jarl\/001-x — its worktree holds ignored files: token\.secret\nafter looking at the files, remove them with:\n {2}git -C .*repo worktree remove --force .*wt-001\n {2}git -C .*repo branch -d jarl\/001-x$/);
   assert.equal(readFileSync(join(wt, 'token.secret'), 'utf8'), 'x\n');
   assert.deepEqual(branches(repo).sort(), ['jarl/001-x', 'main']);
+});
+
+test('an untracked file is seen whatever the repository hides, and the printed commands are safe to paste', () => {
+  const { repo, wt, sha } = fixture();
+  git(repo, 'config', 'status.showUntrackedFiles', 'no');
+  writeFileSync(join(wt, 'hidden.txt'), 'h\n');
+  assert.match(jarl(repo, 'merged', '1', '--sha', sha), /\nkept jarl\/001-x — its worktree holds 1 uncommitted or untracked file\(s\)$/);
+  assert.equal(readFileSync(join(wt, 'hidden.txt'), 'utf8'), 'h\n');
+  assert.deepEqual(branches(repo).sort(), ['jarl/001-x', 'main']);
+  // A word with a space, a quote or a metacharacter is quoted in the printed commands; a plain one is left as it is.
+  const { shellWord } = L;
+  assert.equal(shellWord('/tmp/a b'), "'/tmp/a b'");
+  assert.equal(shellWord("it's;$(x)"), "'it'\\''s;$(x)'");
+  assert.equal(shellWord('jarl/001-x'), 'jarl/001-x');
 });
 
 test('the path a lease names is never removed unless git lists it on exactly the issue\'s branch', () => {

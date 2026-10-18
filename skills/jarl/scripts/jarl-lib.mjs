@@ -1667,6 +1667,8 @@ function gitRun(cwd, args) {
 function listedWorktrees(repo) {
   return (git(repo, ['worktree', 'list', '--porcelain']) || '').split(/\n\s*\n/).map((b) => ({ path: /^worktree (.+)$/m.exec(b)?.[1], branch: /^branch refs\/heads\/(.+)$/m.exec(b)?.[1] || null })).filter((w) => w.path);
 }
+// A word safe to paste into a shell: single-quoted unless it is plainly safe.
+export const shellWord = (s) => (/^[A-Za-z0-9_@%+=:,./-]+$/.test(s) ? s : `'${String(s).replace(/'/g, `'\\''`)}'`);
 const sameDir = (a, b) => canonical(a) === canonical(b);
 // The one wording for a worktree git lists whose directory is not there. Git marks such a worktree prunable or not
 // depending on how the directory went missing, and the lookup reads that as gone or as invisible; both are the same fact here.
@@ -1714,7 +1716,8 @@ function cleanUpAfterMerge(root, issues, sha, repoPath) {
       if (main && main.main && canonical(ws.path) === main.main) { keep('it is checked out in the main checkout'); continue; }
       if (stored && existsSync(stored) && canonical(stored) !== canonical(ws.path)) { keep('it is checked out in another worktree than the one the lease names'); continue; }
       if (insideDir(ws.path, root) || insideDir(ws.path, process.cwd())) { keep('the loop or this command lives in its worktree'); continue; }
-      const status = git(ws.path, ['status', '--porcelain', '--ignored']);
+      // Asked explicitly, whatever the user's git configuration hides (status.showUntrackedFiles, ignore settings).
+      const status = git(ws.path, ['-c', 'status.showUntrackedFiles=all', 'status', '--porcelain', '--untracked-files=all', '--ignored']);
       if (status === null) { keep('the state of its worktree cannot be read'); continue; }
       const lines = status.split('\n').filter(Boolean);
       const changed = lines.filter((l) => !l.startsWith('!!'));
@@ -1722,7 +1725,7 @@ function cleanUpAfterMerge(root, issues, sha, repoPath) {
       // git deletes ignored files together with a worktree, so a worktree that holds any is left for a person to look at.
       const ignored = lines.map((l) => l.slice(3));
       if (ignored.length) {
-        keep(`its worktree holds ignored files: ${ignored.slice(0, 5).join(', ')}${ignored.length > 5 ? `, and ${ignored.length - 5} more` : ''}`, { commands: [`git -C ${repo} worktree remove --force ${ws.path}`, `git -C ${repo} branch -d ${branch}`] });
+        keep(`its worktree holds ignored files: ${ignored.slice(0, 5).join(', ')}${ignored.length > 5 ? `, and ${ignored.length - 5} more` : ''}`, { commands: [`git -C ${shellWord(repo)} worktree remove --force ${shellWord(ws.path)}`, `git -C ${shellWord(repo)} branch -d ${shellWord(branch)}`] });
         continue;
       }
       const gone = gitRun(repo, ['worktree', 'remove', ws.path]);

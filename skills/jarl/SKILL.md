@@ -543,7 +543,8 @@ batches), or that `jarl_branches` shows with commits beyond the base:
    keeps (the reason is named: uncommitted or untracked files, another issue still on the branch, a tip that is
    not in the base or the merge, the branch checked out elsewhere, the base or a release branch, a worktree
    not on this machine, or a refusal by git itself) is the merger's to look at: fix what the reason names and
-   remove it with `git worktree remove` and `git branch -d`, never a force. When the worker began on a branch of
+   remove it with `git worktree remove` and `git branch -d`. The tool never forces; for a worktree that holds ignored
+   files it prints commands that carry git's force flag, which a person who has looked at those files may run. When the worker began on a branch of
    another name and made `jarl/NNN-slug` beside it instead of renaming it, that original branch is not the
    issue's Branch and stays for the merger to delete (read it off `git worktree list` and `jarl_branches`, which
    marks it `DONE → delete`). Then, in the committed and permanent modes only, commit `.jarl/` (everything in it, including what the reeve wrote meanwhile) on the
