@@ -10,6 +10,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { sh } from './portable.mjs';
 import { oldJarl } from './old-jarl.mjs';
+import { FINDINGS } from './findings.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 const L = await import('../jarl-lib.mjs');
@@ -96,7 +97,7 @@ test('list, queue, next, show, set, after, ranges, review and the log work acros
   jarl(root, 'set', '1000', 'in-progress', '--worker', 'w1');
   assert.match(jarl(root, 'show', '1000'), /\*\*Status:\*\* in-progress/);
   jarl(root, 'evidence', '1000', '--ran', 'npm test', '--saw', 'ok');
-  jarl(root, 'review', '1000', 'approve', '--by', 'rev', 'fine');
+  jarl(root, 'review', '1000', 'approve', '--by', 'rev', FINDINGS);
   jarl(root, 'set', '1000', 'done');
   const log = readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
   assert.match(log, /· 1000 review approve · by rev \(fresh\)/);
@@ -117,7 +118,7 @@ test('the same commands work by the MCP tool', () => {
   tool(root, 'jarl_after', { id: '1001', ids: '998-1000' });
   assert.deepEqual(JSON.parse(tool(root, 'jarl_show', { id: '1001', json: true })).after, ['998', '999', '1000']);
   tool(root, 'jarl_set', { ids: '1000', status: 'in-progress', worker: 'w1' });
-  tool(root, 'jarl_review', { ids: '1000', verdict: 'approve', findings: 'fine', by: 'rev' });
+  tool(root, 'jarl_review', { ids: '1000', verdict: 'approve', findings: FINDINGS, by: 'rev' });
   assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /· 1000 review approve/);
   assert.match(tool(root, 'jarl_ask', { question: 'which?', issue: '1000' }), /a-001/);
 });

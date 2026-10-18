@@ -9,6 +9,7 @@ import { join, basename } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { sh } from './portable.mjs';
+import { FINDINGS } from './findings.mjs';
 import { fileURLToPath } from 'node:url';
 import { reviewerKind, coordinatorNames, BASE_COORDINATORS, ID_SRC } from '../jarl.mjs';
 
@@ -60,7 +61,7 @@ test('reviewer kinds: self for the worker or "self"; coordinator for the fixed n
   assert.equal(reviewerKind('odin-reeve', 'w1', names), 'coordinator');
   assert.equal(reviewerKind('opus-reviewer-7', 'w1', names), 'fresh');
   const id = codeIssue(root);
-  assert.match(jarl(root, 'review', id, 'approve', '--by', 'Sigurd', 'read it').stdout, /by Sigurd \(coordinator\)/);
+  assert.match(jarl(root, 'review', id, 'approve', '--by', 'Sigurd', FINDINGS).stdout, /by Sigurd \(coordinator\)/);
 });
 
 test('a code issue: a coordinator approve is recorded with a note, done refuses it naming the rule; a fresh approve clears it', () => {
@@ -75,10 +76,10 @@ test('a code issue: a coordinator approve is recorded with a note, done refuses 
   assert.match(why, /--by <fresh reviewer>/);
   // Every coordinator name is refused the same way.
   for (const by of ['reeve', 'coordinator', basename(root)]) {
-    jarl(root, 'review', id, 'approve', '--by', by, 'again');
+    jarl(root, 'review', id, 'approve', '--by', by, FINDINGS);
     assert.match(refuses(root, 'set', id, 'done'), /fresh-review rule/);
   }
-  assert.match(refuses(root, 'review', id, 'approve', '--by', 'self', 'mine'), /self-approve/);
+  assert.match(refuses(root, 'review', id, 'approve', '--by', 'self', FINDINGS), /self-approve/);
   const ok = jarl(root, 'review', id, 'approve', '--by', 'opus-reviewer-1', 'Minor: a name');
   assert.doesNotMatch(ok.stderr, /fresh-review rule/);
   assert.match(jarl(root, 'set', id, 'done').stdout, new RegExp(`${id} → done`));
@@ -89,7 +90,7 @@ test('an issue with no Branch and no Merged field is still cleared by the coordi
   const id = FILED.exec(jarl(root, 'new', 'a ruling').stdout)[1];
   jarl(root, 'set', id, 'in-progress', 'go', '--worker', 'w1');
   jarl(root, 'evidence', id, '--ran', 'read decisions.md', '--saw', 'ruling recorded');
-  const r = jarl(root, 'review', id, 'approve', '--by', 'jarl', 'fine');
+  const r = jarl(root, 'review', id, 'approve', '--by', 'jarl', FINDINGS);
   assert.doesNotMatch(r.stderr, /fresh-review rule/);
   assert.match(jarl(root, 'set', id, 'done').stdout, /→ done/);
 });
@@ -97,7 +98,7 @@ test('an issue with no Branch and no Merged field is still cleared by the coordi
 test('a name goal.md declares a coordinator after its approve was logged as fresh no longer clears a code issue', () => {
   const root = loop();
   const id = codeIssue(root);
-  jarl(root, 'review', id, 'approve', '--by', 'helga', 'ok');
+  jarl(root, 'review', id, 'approve', '--by', 'helga', FINDINGS);
   const goal = join(root, '.jarl', 'goal.md');
   writeFileSync(goal, `${readFileSync(goal, 'utf8')}\nCoordinators: helga\n`);
   assert.match(refuses(root, 'set', id, 'done'), /by helga \(coordinator\)/);
@@ -111,9 +112,9 @@ test('queue: a coordinator approve alone keeps a branch out; a fresh approve put
   const wt = mkdtempSync(join(tmpdir(), 'jarl-wt-'));
   sh(root, `git worktree add -q -b jarl/${id}-x ${wt} feature`);
   sh(wt, 'echo change >> a.mjs && git add -A && git commit -qm work');
-  jarl(root, 'review', id, 'approve', '--by', 'jarl', 'ok');
+  jarl(root, 'review', id, 'approve', '--by', 'jarl', FINDINGS);
   assert.equal(JSON.parse(jarl(root, 'queue', '--json').stdout).repos[0].rows.length, 0);
-  jarl(root, 'review', id, 'approve', '--by', 'opus-reviewer-2', 'ok');
+  jarl(root, 'review', id, 'approve', '--by', 'opus-reviewer-2', FINDINGS);
   const rows = JSON.parse(jarl(root, 'queue', '--json').stdout).repos[0].rows;
   assert.deepEqual(rows.map((r) => r.issues), [[id]]);
   assert.equal(rows[0].by, 'opus-reviewer-2');
@@ -123,8 +124,8 @@ test('merged without a fresh approve is recorded and said loudly; with one, noth
   const root = loop();
   const a = codeIssue(root, 'coordinated');
   const b = codeIssue(root, 'reviewed');
-  jarl(root, 'review', a, 'approve', '--by', 'jarl', 'ok');
-  jarl(root, 'review', b, 'approve', '--by', 'opus-reviewer-3', 'ok');
+  jarl(root, 'review', a, 'approve', '--by', 'jarl', FINDINGS);
+  jarl(root, 'review', b, 'approve', '--by', 'opus-reviewer-3', FINDINGS);
   const sha = sh(root, 'git rev-parse HEAD');
   const r = jarl(root, 'merged', a, '--sha', sha, '--ci', 'none');
   assert.match(r.stderr, /MERGED WITHOUT A FRESH REVIEW/);
@@ -146,9 +147,9 @@ test('self spans a takeover: the worker before a hand-over is still self, not on
   // works the same way — the issue keeps its identity, only Worker changes).
   jarl(root, 'set', id, 'in-progress', 'handed over', '--worker', 'w2');
   jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'pass');
-  assert.match(refuses(root, 'review', id, 'approve', '--by', 'w1', 'looks fine'), /self-approve/);
-  assert.match(refuses(root, 'review', id, 'approve', '--by', 'W2', 'looks fine'), /self-approve/);
-  assert.match(jarl(root, 'review', id, 'approve', '--by', 'opus-reviewer-9', 'read it').stdout, /by opus-reviewer-9 \(fresh\)/);
+  assert.match(refuses(root, 'review', id, 'approve', '--by', 'w1', FINDINGS), /self-approve/);
+  assert.match(refuses(root, 'review', id, 'approve', '--by', 'W2', FINDINGS), /self-approve/);
+  assert.match(jarl(root, 'review', id, 'approve', '--by', 'opus-reviewer-9', FINDINGS).stdout, /by opus-reviewer-9 \(fresh\)/);
 });
 
 test('self spans a package: an issue folded into a branch with no --worker of its own inherits self from the branch\'s other issue', () => {
@@ -159,8 +160,8 @@ test('self spans a package: an issue folded into a branch with no --worker of it
   // b joins the same branch later, recording only --branch — the package's one shared lease, not a fresh one.
   jarl(root, 'set', b, 'in-progress', 'joins the package', '--branch', 'jarl/pkg-x');
   jarl(root, 'evidence', b, '--ran', 'npm test', '--saw', 'pass');
-  assert.match(refuses(root, 'review', b, 'approve', '--by', 'w1', 'looks fine'), /self-approve/);
-  assert.match(jarl(root, 'review', b, 'approve', '--by', 'opus-reviewer-9', 'read it').stdout, /by opus-reviewer-9 \(fresh\)/);
+  assert.match(refuses(root, 'review', b, 'approve', '--by', 'w1', FINDINGS), /self-approve/);
+  assert.match(jarl(root, 'review', b, 'approve', '--by', 'opus-reviewer-9', FINDINGS).stdout, /by opus-reviewer-9 \(fresh\)/);
 });
 
 // ---- issue 370: a later coordinator approve does not spend an earlier, still-live fresh approve ----------------
@@ -168,7 +169,7 @@ test('self spans a package: an issue folded into a branch with no --worker of it
 test('a later coordinator approve does not spend an earlier, still-live fresh approve', () => {
   const root = loop();
   const id = codeIssue(root);
-  jarl(root, 'review', id, 'approve', '--by', 'opus-reviewer-4', 'read it');
+  jarl(root, 'review', id, 'approve', '--by', 'opus-reviewer-4', FINDINGS);
   const r = jarl(root, 'review', id, 'approve', '--by', 'jarl', 'also looked, formality');
   assert.match(r.stdout, /by jarl \(coordinator\)/);
   // This particular approve is still noted as not clearing it by itself — but the earlier fresh one already did.
@@ -183,8 +184,8 @@ test('queue: a fresh approve stays live in the queue after a later coordinator a
   const wt = mkdtempSync(join(tmpdir(), 'jarl-wt-'));
   sh(root, `git worktree add -q -b jarl/${id}-x ${wt} feature`);
   sh(wt, 'echo change >> a.mjs && git add -A && git commit -qm work');
-  jarl(root, 'review', id, 'approve', '--by', 'opus-reviewer-5', 'ok');
-  jarl(root, 'review', id, 'approve', '--by', 'coordinator', 'formality');
+  jarl(root, 'review', id, 'approve', '--by', 'opus-reviewer-5', FINDINGS);
+  jarl(root, 'review', id, 'approve', '--by', 'coordinator', FINDINGS);
   const rows = JSON.parse(jarl(root, 'queue', '--json').stdout).repos[0].rows;
   assert.deepEqual(rows.map((r) => r.issues), [[id]]);
   assert.equal(rows[0].by, 'opus-reviewer-5');

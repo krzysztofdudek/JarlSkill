@@ -19,7 +19,7 @@ import {
   cmdProfile, cmdArchive, cmdList, cmdNext, cmdMode, cmdClose, cmdCheck, cmdBranches, cmdTips, cmdQueue,
   cmdChangelog, cmdHandoffRead, cmdHandoffWrite, cmdReport, cmdImport, cmdSources, cmdAnswer,
   renderProfile, renderTips, renderQueue, renderResume, renderStatus, renderImport, renderSources, renderList, recordTypeLog, recordRuleLog,
-  runDecisionsDriver, mergeFlags, describeNew, renderNewReply,
+  runDecisionsDriver, mergeFlags, describeNew, renderNewReply, issueView, evidenceTable,
 } from './jarl-lib.mjs';
 import { writeAreaDecision, writeRuleRatification } from './yg-edge.mjs';
 
@@ -51,9 +51,10 @@ commands:
                                                  each replaced by the flag when given; --field and --section
                                                  (repeatable) write the fields and sections the loop's profile declares
                                                  (a field's default when not given; a required one must be given)
-  body <id> [--where "<w>"] [--what "<w>"] [--why "<w>"] [--acceptance "<line>"]... [--changelog "<entry>"]...
+  body <id> [--title "<t>"] [--where "<w>"] [--what "<w>"] [--why "<w>"] [--acceptance "<line>"]... [--changelog "<entry>"]...
       [--section "<Heading>=<text>"]...
-                                                 set or replace the Where field and the What, Why, Acceptance and
+                                                 set or replace the title (the file keeps its name; the old title goes
+                                                 into the log), the Where field and the What, Why, Acceptance and
                                                  Changelog sections, and a section the profile declares
   import <findings.json> [--source <dir>] [--kind k] [--prio 1|2|3] [--tier t] [--tags a,b] [--repo <path>]
       [--found-by who] [--only <finding ids>] [--adopt] [--dry-run] [--field "<Name>=<value>"]...
@@ -66,12 +67,21 @@ commands:
   source <id> <dir>#<id>,...                     set the Source field of an issue filed by hand
   after <id> <ids> | <id> --clear                the issues this one waits on: next does not offer it until each is
                                                  done or dropped, and status counts it as waiting
-  evidence <ids> "<text>" | --ran "<command>" --saw "<what it printed>"
-                                                 append a free-text note, or one checkable row per --ran/--saw pair (repeatable)
+  evidence <ids> "<text>" | --ran "<command>" --saw "<what it printed>" | <id> --retract <n> --by <who> "<reason>"
+                                                 append a free-text note, or one checkable row per --ran/--saw pair (repeatable);
+                                                 --retract retracts the n-th evidence row (the number show prints before each row,
+                                                 counted over the whole Evidence section) by an appended entry: the row
+                                                 stays, struck through, and the done gate no longer counts it; the first
+                                                 retraction of a loop raises its record format to 2, so a Jarl 6.1.x
+                                                 refuses the loop instead of counting the row
   list [--status s] [--kind k] [--tag t] [--prio p] [--grep re] [--match "<field>=<value>"]... [--all]
                                                  the issues not finished (open and in-progress) by default; --all for
                                                  every status; --match keeps those whose header field holds the value
-  show <id>                                      print one issue
+  show <id> [--full]                             print one issue as the done gate sees it: the header, What, Why,
+                                                 Acceptance and Changelog, every evidence row (numbered [n]) and every
+                                                 verdict since the last start or reopen, every "changes" finding no later
+                                                 approve answered, one line per earlier round; --full prints the whole
+                                                 file; --json is complete
   set <ids> <status> "<why>" [--branch <b>] [--worker <name>] [--worktree <path>] | <ids> <field> "<value>"
                                                  change status; writes the log line in the same move; in-progress
                                                  writes Since (and Branch, Worker, Worktree when given) — one lease
@@ -101,7 +111,13 @@ commands:
                                                  coordinator for coordinator, jarl, reeve, the loop's own name and
                                                  names on a "Coordinators:" line in goal.md; fresh for anyone else);
                                                  "done" needs an approve newer than the last round and reopen, and a
-                                                 fresh one when the issue carries code (a Branch or Merged field)
+                                                 fresh one when the issue carries code (a Branch or Merged field);
+                                                 findings need at least three words; "retract" in place of the verdict
+                                                 (review <id> retract --by <who> "<reason>") retracts the newest approve
+                                                 not yet retracted, by an appended entry: the approve stays, struck
+                                                 through, and the done gate and the metrics stop counting it; never a
+                                                 "changes" verdict; the first retraction of a loop raises its record
+                                                 format to 2 (see evidence --retract)
   round <id> "<what failed>"                     one red round; after three prints the takeover block for a fresh worker
   check [<id>] --branch <b> [--base <feature-branch>] [--repo <path>]
                                                  commits beyond the base, diff inside the declared files, and the
@@ -251,7 +267,7 @@ export const COMMAND_FLAGS = {
     where: 'value', what: 'value', why: 'value', acceptance: 'many', source: 'value', after: 'value', changelog: 'many', template: 'value',
     field: 'many', section: 'many',
   },
-  body: { where: 'value', what: 'value', why: 'value', acceptance: 'many', changelog: 'many', section: 'many' },
+  body: { title: 'value', where: 'value', what: 'value', why: 'value', acceptance: 'many', changelog: 'many', section: 'many' },
   import: {
     source: 'value', kind: 'value', prio: 'value', tier: 'value', tags: 'value', repo: 'value', 'found-by': 'value',
     only: 'value', adopt: 'bool', 'dry-run': 'bool', field: 'many',
@@ -259,9 +275,9 @@ export const COMMAND_FLAGS = {
   sources: { source: 'value' },
   source: {},
   after: { clear: 'bool' },
-  evidence: { ran: 'many', saw: 'many' },
+  evidence: { ran: 'many', saw: 'many', retract: 'value', by: 'value' },
   list: { status: 'value', kind: 'value', tag: 'value', prio: 'value', grep: 'value', match: 'many', all: 'bool' },
-  show: {}, set: { branch: 'value', worker: 'value', worktree: 'value' }, tag: {}, prio: {}, files: {},
+  show: { full: 'bool' }, set: { branch: 'value', worker: 'value', worktree: 'value' }, tag: {}, prio: {}, files: {},
   repo: { clear: 'bool' },
   next: { limit: 'value' },
   review: { by: 'value' }, round: {},
@@ -348,14 +364,14 @@ export const COMMAND_ARGS = {
 export const COMMAND_SUMMARY = {
   init: 'Open a loop: create .jarl/ with the goal, out of git by default, committed or permanent when asked.',
   new: 'File an issue under the next free number, with its fields and its What, Why and Acceptance.',
-  body: 'Set or replace an issue\'s Where field and its What, Why, Acceptance, Changelog and profile sections.',
+  body: 'Set or replace an issue\'s title, its Where field and its What, Why, Acceptance, Changelog and profile sections.',
   import: 'File one issue per finding of a findings file, skipping findings already filed.',
   sources: 'Per findings report: its findings, the issues filed from them and their status.',
   source: 'Set the Source field of an issue filed by hand.',
   after: 'Set or clear the issues this one waits on before next offers it.',
-  evidence: 'Append a free-text note, or checkable rows of what ran and what it printed, to issues.',
+  evidence: 'Append a free-text note, or checkable rows of what ran and what it printed, to issues; or retract one row by number.',
   list: 'List the issues, the unfinished ones by default, filtered by status, kind, tag, priority or a field.',
-  show: 'Print one issue.',
+  show: 'Print one issue as the done gate sees it (its current window, rows numbered), or the whole file with --full.',
   set: 'Change the status of issues, with the reason logged, or set a field the profile declares.',
   merged: 'Record a merge (sha, repository, CI state) on issues, or move the CI state of issues already merged.',
   tag: 'Add and remove tags on issues.',
@@ -363,7 +379,7 @@ export const COMMAND_SUMMARY = {
   files: 'Declare the files an issue touches.',
   repo: 'Name the repository (or several) an issue\'s code lives in, or clear it.',
   next: 'The open issues ready to dispatch: no file shared with work in progress, every After issue settled.',
-  review: 'Record a reviewer\'s verdict (approve or changes) on issues, with the reviewer and the findings.',
+  review: 'Record a reviewer\'s verdict (approve or changes) on issues, with the reviewer and the findings; or retract the newest approve.',
   round: 'Record one red round on an issue; after three it prints the takeover block for a fresh worker.',
   check: 'Measure a worker branch against its base: commits, diff inside the declared files, test changes; numbers, never a verdict.',
   branches: 'Every worker branch with its issues, commits beyond the base, worktree state, stale leases and done branches.',
@@ -405,6 +421,8 @@ function mergeDriverMain(args) {
   process.exit(1);
 }
 
+const LONG_NOTE_CHARS = 600;
+const LONG_NOTE_LINES = 6;
 function main() {
   if (process.argv[2] === 'merge-driver') mergeDriverMain(process.argv.slice(3));
   let parsed;
@@ -419,6 +437,11 @@ function main() {
     process.exit(1);
   }
   const { out, text, warn } = r;
+  // Said on the command line only, after the note is written whole: a long free-text note is hard to read back and
+  // cannot be retracted by number; nothing is refused or cut.
+  if (cmd === 'evidence' && flags.ran === undefined && flags.retract === undefined && typeof rest[1] === 'string' && (rest[1].length > LONG_NOTE_CHARS || rest[1].trim().split('\n').length > LONG_NOTE_LINES)) {
+    warn.push(`note: that evidence note is long (${rest[1].trim().length} characters, ${rest[1].trim().split('\n').length} lines) and was written whole; only its first line reaches the log, and a note is not a row that can be retracted by number — for proof of work, record it as --ran "<command>" --saw "<what it printed>"`);
+  }
   console.log(flags.json ? JSON.stringify(out, null, 2) : text);
   for (const w of warn) console.error(w);
   if (cmd === 'check' && !out.ok) process.exit(2);
@@ -482,15 +505,15 @@ export function dispatch(root, cmd, rest, flags) {
       case 'import': out = cmdImport(root, rest[0], flags); text = renderImport(out); break;
       case 'sources': out = cmdSources(root, rest, flags); text = renderSources(out); break;
       case 'list': out = cmdList(root, flags); text = renderList(out, R.loadProfile(root)); break;
-      case 'show': { const i = R.findIssue(root, rest[0]); need(i, `no such issue: ${rest[0]}`); out = i; text = readText(i.file); break; }
+      case 'show': { const i = R.findIssue(root, rest[0]); need(i, `no such issue: ${rest[0]}`); out = { ...i, evidenceRows: evidenceTable(i.sections.evidence).rows.map(({ n, ran, saw, retracted }) => ({ n, ran, saw, retracted })) }; text = issueView(root, i, { full: Boolean(flags.full) }); break; }
       case 'set': out = setCommand(root, rest[0], rest[1], rest[2], flags); text = each(out, (o) => (o.field ? `${o.id} ${o.field}: ${o.value || '(cleared)'}` : `${o.id} → ${o.status}${o.branch ? ` · ${o.branch}` : ''}${o.worker ? ` · ${o.worker}` : ''}`)); warn = [].concat(out).filter((o) => o.note).map((o) => `note: ${o.id} ${o.note}`); break;
       case 'tag': out = R.setTags(root, rest[0], rest.slice(1)); text = each(out, (o) => `${o.id} tags: ${o.tags.join(', ') || '(none)'}`); break;
       case 'prio': out = R.setPriority(root, rest[0], rest[1]); text = each(out, (o) => `${o.id} priority ${o.priority}`); break;
       case 'files': out = R.setFiles(root, rest[0], rest[1]); text = `${out.id} files: ${out.files.join(', ') || '(none)'}`; break;
       case 'repo': out = R.setRepo(root, rest[0], rest[1], flags); text = `${out.id} repo: ${out.cleared ? 'cleared' : out.repo}`; break;
-      case 'evidence': out = R.addEvidence(root, rest[0], rest[1], flags); text = each(out, (o) => (o.rows ? `${o.id} evidence row${o.rows.length > 1 ? 's' : ''} recorded` : `${o.id} evidence recorded`)); break;
+      case 'evidence': out = R.addEvidence(root, rest[0], rest[1], flags); text = each(out, (o) => (o.retracted ? `${o.id} evidence row ${o.retracted} retracted by ${o.by}` : o.rows ? `${o.id} evidence row${o.rows.length > 1 ? 's' : ''} recorded` : `${o.id} evidence recorded`)); break;
       case 'next': out = cmdNext(root, flags); text = out.scheduler ? out.note : out.length ? out.map((r) => (r.ready ? `${r.id}  P${r.priority}  ${r.title}${r.noAcceptance ? '  (no acceptance yet)' : ''}` : r.after.length ? `${r.id}  P${r.priority}  ${r.title}  (after ${r.after.join(', ')})` : `${r.id}  P${r.priority}  ${r.title}  (waits on ${r.waitsOn.join(', ')})`)).join('\n') : '(nothing open)'; break;
-      case 'review': out = R.review(root, rest[0], rest[1], rest[2], flags); text = each(out, (o) => `${o.id} review ${o.verdict}${o.by ? ` by ${o.by} (${o.kind})` : ''} · acceptance: ${o.acceptance ? o.acceptance.split('\n').join(' / ') : '(none on file)'}`); warn = [].concat(out).filter((o) => o.note).map((o) => `note: ${o.note}`); break;
+      case 'review': out = R.review(root, rest[0], rest[1], rest[2], flags); text = each(out, (o) => o.retracted ? `${o.id} review retracted by ${o.by} (${o.kind}): the approve ${o.retracted}` : `${o.id} review ${o.verdict}${o.by ?` by ${o.by} (${o.kind})` : ''} · acceptance: ${o.acceptance ? o.acceptance.split('\n').join(' / ') : '(none on file)'}`); warn = [].concat(out).filter((o) => o.note).map((o) => `note: ${o.note}`); break;
       case 'round': out = R.addRound(root, rest[0], rest[1]); text = out.takeover ? `${out.id} round ${out.round} — takeover:\n\n${out.block}` : `${out.id} round ${out.round} of ${ROUNDS_BEFORE_TAKEOVER} before a takeover`; break;
       case 'merged': out = R.recordMerged(root, rest[0], flags); text = `${out.ids.join(', ')} ${out.sha ? `merged ${out.sha}` : 'merge'} · CI ${out.ci}`; warn = out.notes.map((n) => `note: ${n}`); break;
       case 'check': out = cmdCheck(root, rest[0], flags); text = `${out.id === null ? `package ${out.ids.join(', ')} on ${out.branch}\n` : ''}${out.repo === root ? '' : `in ${out.repo}\n`}${out.items.map((i) => `${i.ok ? '✓' : '✗'} ${i.name} — ${i.note}`).join('\n')}`; break;

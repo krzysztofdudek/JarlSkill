@@ -11,6 +11,7 @@ import { mkdtempSync, readFileSync, writeFileSync, existsSync, rmSync } from 'no
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { FINDINGS } from './findings.mjs';
 
 const R = await import('../record.mjs');
 const CLI = await import('../jarl.mjs');
@@ -149,10 +150,15 @@ test('the record through record.mjs: a loop opened, an issue carried to done and
     const lease = R.setStatus(root, '1', 'in-progress', undefined, { worker: 'w1' });
     assert.equal(lease.worker, 'w1');
     R.addEvidence(root, '1', undefined, { ran: 'npm test', saw: 'ok' });
-    R.review(root, '1', 'approve', 'fine', { by: 'reviewer' });
+    R.review(root, '1', 'approve', FINDINGS, { by: 'reviewer' });
     assert.equal(R.setStatus(root, '1', 'done').status, 'done');
     R.recordMerged(root, '1', { sha: 'abc1234', ci: 'green' });
     assert.deepEqual(R.mergedOf(R.findIssue(root, '1')), { sha: 'abc1234', repo: null, ci: 'green' });
+    assert.deepEqual(R.evidenceRows(R.findIssue(root, '1')), [{ ran: 'npm test', saw: 'ok' }]);
+    // A retracted row is struck through and is no longer an evidence row; the library call is the CLI's (opts { retract, by }).
+    R.addEvidence(root, '1', undefined, { ran: 'wrong check', saw: 'wrong result' });
+    assert.equal(R.evidenceRows(R.findIssue(root, '1')).length, 2);
+    assert.equal(R.addEvidence(root, '1', 'it ran in the wrong place', { retract: '2', by: 'reviewer' }).retracted, 2);
     assert.deepEqual(R.evidenceRows(R.findIssue(root, '1')), [{ ran: 'npm test', saw: 'ok' }]);
     assert.equal(R.addRound(root, '2', 'failed once').round, 1);
     R.decide(root, 'one', 'first ruling');
