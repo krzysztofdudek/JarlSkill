@@ -205,7 +205,7 @@ test('an issue may name several repositories: files per repository, next keeps t
   jarl(hub, 'new', 'only lib a', '--repo', '../lib', '--files', 'lib/src/a.mjs');
   jarl(hub, 'new', 'only tool b', '--repo', '../tool', '--files', 'tool/src/b.mjs');
   jarl(hub, 'set', '1', 'in-progress', 'go', '--branch', 'jarl/001-cross');
-  const next = JSON.parse(jarl(hub, 'next', '--json'));
+  const next = JSON.parse(jarl(hub, 'next', '--all', '--json'));
   assert.deepEqual(next.find((r) => r.id === '002').waitsOn, ['lib/src/a.mjs'], 'the same file in lib waits');
   assert.equal(next.find((r) => r.id === '003').ready, true, 'another file in tool does not');
   // check: one repository at a time, bounded by the files declared in it.

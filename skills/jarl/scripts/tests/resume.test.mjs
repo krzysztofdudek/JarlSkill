@@ -77,11 +77,12 @@ test('resume assembles every section live from the loop and the repositories its
   assert.match(t, /^# Resume · ship the export command\nopened \S+ \S+ · last activity \S+ \S+\nopen 4 · in flight 2 · waiting 1 · done 0 · dropped 0 · deferred 0 · questions 1 · to ratify 1 · merged, CI pending 1 · CI red 1\n/);
   assert.match(t, /## Rulings in force \(1\)\n- \S+ · new-way · by owner — do it the new way\n\n/);
   assert.doesNotMatch(t, /old-way ·/, 'a superseded ruling is not in force');
-  assert.match(t, /## In flight \(2\)\n- 001 in flight one · branch jarl\/001-one · worker w1 · since \S+ \S+\n- 005 queued five · branch jarl\/005-five · worker w5 · since \S+ \S+\n/);
+  assert.match(t, /## In flight \(2\)\n- 001 in flight one · branch jarl\/001-one · worker w1 · since \S+ \S+\n {2}→ no evidence rows since the start[^\n]*\n- 005 queued five · branch jarl\/005-five · worker w5 · since \S+ \S+\n {2}→ approved and queued[^\n]*\n/);
   assert.match(t, /## Waiting — After not settled \(1\)\n- 002 waits for one \(after 001\)\n/);
   assert.match(t, /## Questions to the user \(1\)\n- a-001 \(stuck\) issue 003 · which flag name\?\n/);
   assert.match(t, /## To ratify \(1\)\n- a-002 \(issue 001\) · kept the old default under the mandate\n/);
-  assert.match(t, /## Next ready \(4 of 4\)\n- 003  P1  ready two\n- 004  P2  ready three  \(no acceptance yet\)\n- 006  P2  merged six  \(no acceptance yet\)\n- 007  P2  merged seven  \(no acceptance yet\)\n/);
+  assert.match(t, /## Held — files in flight \(1\)\n- 003  P1  ready two \(open question a-001\)\n/, 'an open stuck question holds its issue back (issue 249)');
+  assert.match(t, /## Next ready \(3 of 3\)\n- 004  P2  ready three  \(no acceptance yet\)\n- 006  P2  merged six  \(no acceptance yet\)\n- 007  P2  merged seven  \(no acceptance yet\)\n/);
   assert.match(t, /## Merge queue\n\[tool\] into release\n  1\. jarl\/005-five → 005  \+1  approved \S+ \S+ by rev  batch 1\n/);
   assert.match(t, /## Merged, CI pending or red \(2\)\n- 006 [0-9a-f]+ in \.\.\/tool · CI pending\n- 007 [0-9a-f]+ in \.\.\/tool · CI red\n/);
   assert.match(t, /## Tips \(CI not asked — --ci asks gh\)\n/);
@@ -93,7 +94,7 @@ test('resume assembles every section live from the loop and the repositories its
 
   // --log and --ready narrow the two long sections; --ci asks gh for the pushed tips only.
   const narrow = run(hub, ['resume', '--log', '2', '--ready', '1', '--ci'], { JARL_GH: ghStub(parent) }).stdout;
-  assert.match(narrow, /## Next ready \(1 of 4\)\n- 003  P1  ready two\n\n/);
+  assert.match(narrow, /## Next ready \(1 of 3\)\n- 004  P2  ready three  \(no acceptance yet\)\n\n/);
   assert.match(narrow, /## Last 2 log line\(s\)\n- \S+ \S+ · filed 007 · merged seven\n- \S+ \S+ · 007 merged \S+ in \.\.\/tool · CI red$/);
   assert.match(narrow, /## Tips\n/);
   assert.match(narrow, / {2}release {2}release [0-9a-f]{12} {2}= origin\/release {2}ci green \(run 7 CI\)/);
@@ -103,7 +104,7 @@ test('resume assembles every section live from the loop and the repositories its
   // JSON: the same sections as data.
   const o = JSON.parse(run(hub, ['resume', '--json'], { JARL_GH: ghStub(parent) }).stdout);
   assert.deepEqual(Object.keys(o), ['goal', 'opened', 'lastActivity', 'archived', 'status', 'rulings', 'inFlight', 'waiting', 'questions', 'ratify', 'held', 'next', 'readyTotal', 'queue', 'merged', 'tips', 'uncommitted', 'log', 'legacyHandoff']);
-  assert.deepEqual(o.inFlight[0], { id: '001', title: 'in flight one', branch: 'jarl/001-one', worker: 'w1', since: o.inFlight[0].since, stale: [] });
+  assert.deepEqual(o.inFlight[0], { id: '001', title: 'in flight one', branch: 'jarl/001-one', worker: 'w1', since: o.inFlight[0].since, stale: [], mark: 'no-rows' });
   assert.deepEqual(o.merged.map((m) => [m.id, m.ci]), [['006', 'pending'], ['007', 'red']]);
   assert.equal(o.tips.ci, false);
   assert.equal(o.legacyHandoff, null);
@@ -117,14 +118,14 @@ test('resume assembles every section live from the loop and the repositories its
   const st = JSON.parse(jarl(hub, 'status', '--json'));
   assert.deepEqual([st.ready, st.inFlight, st.waiting], [6, 1, 2]);
   assert.match(w, /\nopen 6 · in flight 1 · waiting 2 · /);
-  assert.match(w, /## In flight \(1\)\n- 001 in flight one · branch jarl\/001-one · worker w1 · since \S+ \S+\n\n/);
+  assert.match(w, /## In flight \(1\)\n- 001 in flight one · branch jarl\/001-one · worker w1 · since \S+ \S+\n {2}→ no evidence rows since the start[^\n]*\n\n/);
   assert.match(w, /## Waiting — After not settled \(2\)\n- 002 waits for one \(after 001\)\n- 005 queued five \(after 008\) · in progress · branch jarl\/005-five · worker w5 · since \S+ \S+\n/);
-  assert.match(w, /## Held — files in flight \(1\)\n- 009  P2  held nine \(tool\/src\/a\.mjs held by 001\)\n/);
-  assert.match(w, /## Next ready \(5 of 5\)\n/);
+  assert.match(w, /## Held — files in flight \(2\)\n- 003  P1  ready two \(open question a-001\)\n- 009  P2  held nine \(tool\/src\/a\.mjs held by 001\)\n/);
+  assert.match(w, /## Next ready \(4 of 4\)\n/);
   const wo = JSON.parse(jarl(hub, 'resume', '--json'));
   assert.deepEqual([wo.inFlight.length, wo.waiting.length, wo.held.length + wo.readyTotal], [wo.status.inFlight, wo.status.waiting, wo.status.ready]);
   assert.deepEqual(wo.waiting.map((x) => [x.id, x.status]), [['002', 'open'], ['005', 'in-progress']]);
-  assert.deepEqual(wo.held, [{ id: '009', title: 'held nine', priority: '2', files: ['tool/src/a.mjs'], heldBy: ['001'] }]);
+  assert.deepEqual(wo.held, [{ id: '003', title: 'ready two', priority: '1', files: [], heldBy: [], questions: ['001'] }, { id: '009', title: 'held nine', priority: '2', files: ['tool/src/a.mjs'], heldBy: ['001'] }]);
 
   // A lease that went wrong is flagged in place, in flight or waiting.
   sh(tool, 'git branch -D jarl/001-one jarl/005-five');

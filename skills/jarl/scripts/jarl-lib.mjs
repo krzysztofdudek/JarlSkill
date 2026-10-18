@@ -599,6 +599,8 @@ export function parseIssue(text, file) {
   issue.files = (issue.fields.files || '').split(',').map((s) => s.trim()).filter(Boolean);
   // Both fields are newer than most loops: an issue without them reads as waiting on nothing and filed from no finding.
   issue.after = splitList(issue.fields.after).map(padId);
+  // The exclusive resources it holds while its lease lasts (names, loop-wide, never files); only next reads them.
+  issue.resources = splitList(issue.fields.resources);
   issue.sources = splitList(issue.fields.source);
   return issue;
 }
@@ -1369,6 +1371,11 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   const profile = loadProfile(root);
   // set <ids> <field> <value>: a field the profile declares (Kind and Tier too, when it declares them), not a status.
   if (!profile.statuses.includes(status) && status !== undefined && profile.field(status)) return setDeclaredField(root, rawIds, profile.field(status), why, flags);
+  // Resources: the built-in field of exclusive resources, unless the profile declares a field of that name (handled above:
+  // the profile's meaning wins, and next reads no resources then).
+  if (!profile.statuses.includes(status) && String(status ?? '').toLowerCase() === 'resources') return setResources(root, rawIds, why, flags);
+  // ready and the review words are views, not statuses: say which view answers the question the worker was asking.
+  need(profile.statuses.includes(status) || !/^(ready|review|in[-_ ]?review|ready[-_ ]for[-_ ]review|reviewing)$/i.test(String(status ?? '')), `${status} is a view here, not a status: \`next\` lists the issues ready to start, and \`status\` and \`resume\` mark each in-flight issue with what the record says (no evidence rows yet; rows and no verdict, so it waits for a reviewer; changes requested; approved and queued). Nothing needs setting: record the rows with \`evidence\`, and the reviewer's verdict with \`review\`. A loop that wants an explicit review status can declare one in its profile. Statuses here: ${profile.statuses.join(', ')}`);
   need(profile.statuses.includes(status), `status must be one of: ${profile.statuses.join(', ')}${profile.declaredFields.length ? ` — or a field this loop's profile declares: ${profile.declaredFields.map((f) => f.name).join(', ')}` : ''}`);
   need(caller !== 'cli' || profile.setBy(status) !== 'record', `${status} is set by the record only — this loop's profile (${profile.name}) marks it "set-by": "record", so jarl set and the MCP tools cannot move an issue into it; the tool that runs the loop does${profile.scheduler ? ` (${profile.scheduler})` : ''}`);
   const holds = profile.is(status, 'holds-claim');
@@ -1430,6 +1437,24 @@ function setDeclaredField(root, rawIds, field, value, flags) {
   for (const issue of issues) writeAtomic(issue.file, setField(readText(issue.file), field.name, v));
   appendLogLines(root, issues.map((issue) => `${issue.id} field ${field.name} · ${v || '(cleared)'}`));
   return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, field: field.name, value: v })));
+}
+
+// set <ids> resources "a, b": the exclusive resources an issue holds for the whole life of its lease (a port, a database
+// server, the machine's load), loop-wide and not files. Names are single words; an empty value clears the field. Only next
+// reads it: check, queue and the file rules do not, and a Jarl 6.1.0 reads the line as any field it does not know.
+function setResources(root, rawIds, value, flags) {
+  const lease = ['branch', 'worker', 'worktree'].filter((k) => flags[k] !== undefined);
+  need(!lease.length, `--${lease[0]} goes with a status, not with the field Resources`);
+  need(value !== undefined, 'set <ids> resources "<name>[, <name>...]" — the value is required (an empty one clears the field)');
+  const names = [];
+  for (const n of splitList(fieldText(value))) {
+    need(/^[A-Za-z0-9._:/-]+$/.test(n), `resource names are single words of letters, digits and . _ : / - ("${n}" is not): name the thing, e.g. gate, db-server, port-8080`);
+    if (!names.some((x) => x.toLowerCase() === n.toLowerCase())) names.push(n);
+  }
+  const issues = issuesFor(root, rawIds);
+  for (const issue of issues) writeAtomic(issue.file, setField(readText(issue.file), 'Resources', names.join(', ')));
+  appendLogLines(root, issues.map((issue) => `${issue.id} field Resources · ${names.join(', ') || '(cleared)'}`));
+  return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, field: 'Resources', value: names.join(', ') })));
 }
 
 // Why an issue may not go done, or null when it may: at least one --ran/--saw evidence row logged since the issue
@@ -1850,29 +1875,79 @@ function repoList(root, v) {
 export function schedulerNote(cmd) { return `scheduling is led by the composer: ${cmd}`; }
 
 // next — on a loop with an external scheduler, { scheduler, note } and no list: Jarl computes nothing it cannot know.
+// By default the issues ready to start and nothing else; --all adds the others, each row carrying its group:
+// ready, held-by-file (a file an in-progress or earlier-offered issue holds), waiting-after (After not settled) or
+// held-by-question (an open stuck or stop question names the issue). A library caller reads the full list through
+// nextRows and filters it itself.
+export const NEXT_GROUPS = ['ready', 'held-by-file', 'held-by-resource', 'waiting-after', 'held-by-question'];
 export function cmdNext(root, flags) {
   const profile = loadProfile(root);
   if (profile.scheduler) return { scheduler: profile.scheduler, note: schedulerNote(profile.scheduler) };
+  const rows = nextRows(root, flags);
+  return flags.all ? rows : rows.filter((r) => r.ready);
+}
+
+const NEXT_HEADERS = { ready: 'Ready', 'held-by-file': 'Held by a file another issue holds', 'held-by-resource': 'Held by a resource another issue holds', 'waiting-after': 'Waiting on After', 'held-by-question': 'Held by an open question' };
+export function renderNext(rows, all, held = 0) {
+  const line = (r) => {
+    const note = r.group === 'ready' ? [r.noAcceptance && 'no acceptance yet', r.noFiles && 'no files declared']
+      : r.group === 'waiting-after' ? [`after ${r.after.join(', ')}`]
+        : r.group === 'held-by-question' ? [`question ${r.questions.map((q) => `a-${q}`).join(', ')}`]
+          : [`waits on ${[...r.waitsOn, ...(r.resources || []).map((x) => `resource ${x}`)].join(', ')}, held by ${r.heldBy.join(', ')}`];
+    return `${r.id}  P${r.priority}  ${r.title}${note.filter(Boolean).map((n) => `  (${n})`).join('')}`;
+  };
+  if (!all) {
+    if (rows.length) return rows.map(line).join('\n');
+    return held ? `(nothing is ready to start; ${held} open issue(s) are held or waiting — jarl next --all shows which and why)` : '(nothing open)';
+  }
+  if (!rows.length) return '(nothing open)';
+  return NEXT_GROUPS.map((g) => [g, rows.filter((r) => r.group === g)]).filter(([, list]) => list.length)
+    .map(([g, list]) => `${NEXT_HEADERS[g]} (${list.length})\n${list.map(line).join('\n')}`).join('\n\n');
+}
+
+export function nextRows(root, flags = {}) {
+  const profile = loadProfile(root);
   const issues = loadIssues(root);
+  // An open question of kind stuck (the default) or stop that names an issue holds that issue back until it is answered.
+  const asked = new Map();
+  for (const a of loadAsks(root)) {
+    if (a.state !== 'open' || !a.issue || !['stuck', 'stop', null].includes(a.kind)) continue;
+    asked.set(a.issue, [...(asked.get(a.issue) || []), a.id]);
+  }
   // Files are compared as (repository, path) pairs: the same path in two repositories never holds
   // an issue back, the same file in one repository always does, however its Repo path is spelled.
   const keysOf = (i) => i.files.map((f) => { const at = fileAt(root, i, f); return { f, key: `${at.repo}\n${at.path}` }; });
   // Each taken file with the issue holding it: one in a holds-claim status (in progress), or a dispatchable (open)
   // one offered earlier in this list.
   const taken = new Map(issues.filter((i) => profile.is(i.status, 'holds-claim')).flatMap((i) => keysOf(i).map((k) => [k.key, i.id])));
+  // Exclusive resources: names, loop-wide (no repository in the key), held by an issue for its lease's whole life. A
+  // profile that declares a field named Resources keeps that field's meaning: it is not read here (never both ways).
+  const resourcesOf = (i) => (profile.field('resources') ? [] : i.resources.map((name) => ({ name, key: name.toLowerCase() })));
+  const takenRes = new Map(issues.filter((i) => profile.is(i.status, 'holds-claim')).flatMap((i) => resourcesOf(i).map((r) => [r.key, i.id])));
   const byId = new Map(issues.map((i) => [i.id, i]));
   const out = [];
   for (const i of issues.filter((x) => profile.is(x.status, 'dispatchable')).sort((a, b) => a.priority.localeCompare(b.priority) || cmpId(a.id, b.id))) {
     // An issue whose After issues are not all settled (done or dropped) is never offered, whatever its files.
     const after = waitingOn(i, byId, profile);
-    if (after.length) { out.push({ id: i.id, title: i.title, priority: i.priority, after, waitsOn: [] }); continue; }
+    const base = { id: i.id, title: i.title, priority: i.priority, ...(i.files.length ? {} : { noFiles: true }) };
+    if (after.length) { out.push({ ...base, group: 'waiting-after', after, waitsOn: [] }); continue; }
+    if (asked.has(i.id)) { out.push({ ...base, group: 'held-by-question', questions: asked.get(i.id), waitsOn: [], after: [] }); continue; }
     const keys = keysOf(i);
     const held = keys.filter((k) => taken.has(k.key));
-    if (held.length) { out.push({ id: i.id, title: i.title, priority: i.priority, waitsOn: held.map((k) => k.f), heldBy: [...new Set(held.map((k) => taken.get(k.key)))], after: [] }); continue; }
+    const heldRes = resourcesOf(i).filter((r) => takenRes.has(r.key));
+    if (held.length || heldRes.length) {
+      out.push({
+        ...base, group: held.length ? 'held-by-file' : 'held-by-resource', waitsOn: held.map((k) => k.f),
+        ...(heldRes.length ? { resources: heldRes.map((r) => r.name) } : {}),
+        heldBy: [...new Set([...held.map((k) => taken.get(k.key)), ...heldRes.map((r) => takenRes.get(r.key))])], after: [],
+      });
+      continue;
+    }
     keys.forEach((k) => taken.set(k.key, i.id));
+    resourcesOf(i).forEach((r) => takenRes.set(r.key, i.id));
     // Offered, but flagged: a worker raised on an issue with no acceptance line has nothing to prove, and
     // the reviewer nothing to check it against. Fill it with body --acceptance before raising one.
-    out.push({ id: i.id, title: i.title, priority: i.priority, files: i.files, ready: true, waitsOn: [], after: [], ...(acceptanceLineCount(i) ? {} : { noAcceptance: true }) });
+    out.push({ ...base, group: 'ready', files: i.files, ready: true, waitsOn: [], after: [], ...(acceptanceLineCount(i) ? {} : { noAcceptance: true }) });
   }
   const limit = Number(flags.limit) || Infinity;
   let n = 0;
@@ -1900,11 +1975,15 @@ export function cmdStatus(root, flags = {}) {
   // ready, stale...). countOf reads either.
   const counts = Object.fromEntries(profile.statuses.map((st) => [st, 0]));
   const c = profile.declared ? { statuses: counts } : counts;
-  const issues = loadIssues(root);
+  const every = loadIssues(root);
+  // --tag: every section below is computed over the issues carrying that tag only; an After issue outside the tag is
+  // still read for what it is (byId holds them all), so waiting means the same thing in the scope as in the whole.
+  if (flags.tag !== undefined) need(typeof flags.tag === 'string' && flags.tag && every.some((i) => i.tags.includes(flags.tag)), `no issue carries the tag ${flags.tag}`);
+  const issues = flags.tag === undefined ? every : every.filter((i) => i.tags.includes(flags.tag));
   for (const i of issues) counts[i.status] = (counts[i.status] || 0) + 1;
   // Each status keeps its own count; waiting is the part of those in play (open, in progress) whose After issues
   // are not settled yet, so "in flight" in the text line means someone is working on it.
-  const byId = new Map(issues.map((i) => [i.id, i]));
+  const byId = new Map(every.map((i) => [i.id, i]));
   const unfinished = issues.filter((i) => profile.active(i.status));
   c.waitingIds = unfinished.filter((i) => waitingOn(i, byId, profile).length).map((i) => i.id);
   c.waiting = c.waitingIds.length;
@@ -1914,7 +1993,8 @@ export function cmdStatus(root, flags = {}) {
   c.ready = profile.scheduler ? null : unfinished.filter((i) => profile.is(i.status, 'dispatchable') && !c.waitingIds.includes(i.id)).length;
   if (profile.scheduler) c.scheduler = profile.scheduler;
   c.noAcceptance = issues.filter((i) => profile.is(i.status, 'holds-claim') && !acceptanceLineCount(i)).map((i) => i.id);
-  const asks = loadAsks(root).filter((a) => a.state === 'open');
+  const inScope = new Set(issues.map((i) => i.id));
+  const asks = loadAsks(root).filter((a) => a.state === 'open' && (flags.tag === undefined || (a.issue && inScope.has(a.issue))));
   // A ratify item blocks nothing, so it is not counted among the questions the loop waits on.
   c.questions = asks.filter((a) => a.kind !== 'ratify').length;
   c.toRatify = asks.filter((a) => a.kind === 'ratify');
@@ -1937,6 +2017,7 @@ export function cmdStatus(root, flags = {}) {
   c.ciRed = live.filter((i) => mergedOf(i)?.ci === 'red').map((i) => i.id);
   c.handoff = handoffAge(root, c.lastActivity);
   c.reviews = reviewSplit(root, issues);
+  c.inFlightRows = inFlightRows(root, issues, profile, byId, every);
   const files = uncommittedLoopFiles(root);
   c.uncommitted = files === null ? null : files.length;
   // --by: the same five counts per repository, tag, kind or priority — a dashboard's table, read from the issues.
@@ -1953,10 +2034,45 @@ export function cmdStatus(root, flags = {}) {
     c.by = { key: declared ? declared.key : flags.by, groups: Object.fromEntries(Object.keys(groups).sort().map((k) => [k, groups[k]])) };
   }
   // Last, so every key status --json carried before keeps its place.
+  if (flags.tag !== undefined) c.tag = flags.tag;
   c.check = checkState(root);
   return c;
 }
 export const STATUS_BY = ['repo', 'tag', 'kind', 'prio'];
+
+// What the record says about one in-flight issue, as one fact and the step it points to (never a status, never stored):
+// no evidence rows since the start; rows and no verdict since the last restart or round; changes requested; approved
+// (the merge comes next, and then done). A self approve is not a verdict that counts, so it reads as no verdict.
+export const IN_FLIGHT_MARKS = {
+  'no-rows': 'no evidence rows since the start — the worker has recorded no proof yet',
+  'rows-no-verdict': 'evidence rows recorded, no verdict since the last start or round — it waits for a reviewer',
+  'changes-requested': 'changes requested — it is back with the worker, who fixes it and records new rows',
+  approved: 'approved and queued for the merge — next the merger lands it, then set it done',
+  'approved-not-fresh': 'approved by a coordinator only, and it carries code — neither the merge queue nor done accepts that: it waits for a fresh reviewer\'s approve',
+  merged: 'merged — nothing is left to land: set it done',
+  'merged-ci': 'merged, CI not green yet — next record the CI result (merged <id> --ci green|red), then set it done',
+};
+export function inFlightMark(root, issue, journal, issues, coordinators) {
+  const g = gateState(root, issue.id, journal.get(issue.id) || [], coordinators, issues, journal);
+  if (g.approved) {
+    // The same rule the done gate and the merge queue apply: an issue that carries code is cleared by a fresh approve only.
+    if (carriesCode(issue) && !g.fresh) return 'approved-not-fresh';
+    const m = mergedOf(issue);
+    if (!m) return 'approved';
+    return m.ci === 'pending' || m.ci === 'red' ? 'merged-ci' : 'merged';
+  }
+  const verdicts = g.trail.filter((r) => r.n > g.cut && !r.retracted && (r.verdict === 'approve' || r.verdict === 'changes'));
+  if (verdicts.length && verdicts[verdicts.length - 1].verdict === 'changes') return 'changes-requested';
+  return g.rowsSince === 0 ? 'no-rows' : 'rows-no-verdict';
+}
+export function inFlightRows(root, issues, profile, byId, all = issues) {
+  const journal = journalById(root);
+  const coordinators = coordinatorNames(root);
+  return issues.filter((i) => profile.is(i.status, 'holds-claim') && !waitingOn(i, byId, profile).length).map((i) => {
+    const mark = inFlightMark(root, i, journal, all, coordinators);
+    return { id: i.id, title: i.title, branch: i.fields.branch || null, worker: i.fields.worker || null, since: i.fields.since || null, mark, next: IN_FLIGHT_MARKS[mark] };
+  });
+}
 
 // A loop opened before the permanent mode existed, or opened --committed, has no way to become the
 // permanent record other than this: init is the only command that writes .jarl/.permanent for a new
@@ -3425,6 +3541,7 @@ export function cmdResume(root, flags = {}) {
   const issues = loadIssues(root);
   const byId = new Map(issues.map((i) => [i.id, i]));
   const stale = new Map(status.stale.map((x) => [x.id, x.problems]));
+  const marks = new Map(status.inFlightRows.map((x) => [x.id, x.mark]));
   const rulings = cmdDecisions(root, { live: true }).map((d) => ({ date: d.date, slug: d.slug, by: d.by, line: (d.ruling.split('\n').find((l) => l.trim()) || '').trim() }));
   // In flight and waiting split the unfinished issues the way status counts them: an issue whose After is not
   // settled is waiting, in progress or not, so each section's count is the number on the counts line.
@@ -3434,7 +3551,7 @@ export function cmdResume(root, flags = {}) {
   const declared = (i) => (profile.fields.length ? { fields: Object.fromEntries(profile.fields.map((f) => [f.name, fieldText(i.fields[f.key])]).filter(([, v]) => v)) } : {});
   const inFlight = issues.filter((i) => holds(i) && !unsettled(i)).map((i) => ({
     id: i.id, title: i.title, branch: i.fields.branch || null, worker: i.fields.worker || null, since: i.fields.since || null,
-    stale: stale.get(i.id) || [], ...declared(i),
+    stale: stale.get(i.id) || [], mark: marks.get(i.id), ...declared(i),
   }));
   const waiting = issues.filter((i) => profile.active(i.status) && unsettled(i)).map((i) => ({
     id: i.id, title: i.title, status: i.status, after: waitingOn(i, byId, profile),
@@ -3442,11 +3559,11 @@ export function cmdResume(root, flags = {}) {
   }));
   const asks = loadAsks(root).filter((a) => a.state === 'open');
   const scheduled = profile.scheduler !== null;
-  const next = scheduled ? [] : cmdNext(root, {});
+  const next = scheduled ? [] : nextRows(root, {});
   const ready = next.filter((r) => r.ready);
   // Open, not waiting on After, and still not offered: a file it declares is taken by work in flight (or by a ready
-  // issue ahead of it). Ready and held together are the open count on the status line.
-  const held = next.filter((r) => !r.ready && !r.after.length).map((r) => ({ id: r.id, title: r.title, priority: r.priority, files: r.waitsOn, heldBy: r.heldBy }));
+  // issue ahead of it), or an open question names it. Ready and held together are the open count on the status line.
+  const held = next.filter((r) => !r.ready && !r.after.length).map((r) => ({ id: r.id, title: r.title, priority: r.priority, files: r.waitsOn, heldBy: r.heldBy || [], ...(r.questions ? { questions: r.questions } : {}), ...(r.resources ? { resources: r.resources } : {}) }));
   const merged = issues.filter((i) => status.ciPending.includes(i.id) || status.ciRed.includes(i.id)).map((i) => ({ id: i.id, title: i.title, ...mergedOf(i) }));
   const logPath = join(jarlDir(root), 'log.md');
   const logLines = existsSync(logPath) ? readText(logPath).split('\n').filter((l) => /^- \d{4}-\d{2}-\d{2} \d{2}:\d{2} · /.test(l)) : [];
@@ -3495,11 +3612,11 @@ export function renderResume(o, profile = DEFAULT_PROFILE) {
   return [
     ...head,
     ...sec(`Rulings in force (${o.rulings.length})`, o.rulings.map((d) => `- ${d.date} · ${d.slug}${d.by ? ` · by ${d.by}` : ''} — ${short(d.line)}`), '- (none)'),
-    ...sec(`In flight (${o.inFlight.length})`, o.inFlight.map((x) => `- ${x.id} ${short(x.title)}${shownFields(x)}${lease(x) ? ` · ${lease(x)}` : ''}${x.stale.length ? ` · STALE: ${x.stale.join('; ')}` : ''}`), '- (nothing)'),
+    ...sec(`In flight (${o.inFlight.length})`, o.inFlight.map((x) => `- ${x.id} ${short(x.title)}${shownFields(x)}${lease(x) ? ` · ${lease(x)}` : ''}${x.stale.length ? ` · STALE: ${x.stale.join('; ')}` : ''}${x.mark ? `\n  → ${IN_FLIGHT_MARKS[x.mark]}` : ''}`), '- (nothing)'),
     ...sec(`Waiting — After not settled (${o.waiting.length})`, o.waiting.map((x) => `- ${x.id} ${short(x.title)} (after ${x.after.join(', ')})${x.stale !== undefined ? ` · ${x.status === 'in-progress' ? 'in progress' : x.status}${lease(x) ? ` · ${lease(x)}` : ''}${x.stale.length ? ` · STALE: ${x.stale.join('; ')}` : ''}` : ''}`)),
     ...sec(`Questions to the user (${o.questions.length})`, o.questions.map((a) => `- a-${a.id} (${a.kind || 'stuck'})${a.issue ? ` issue ${a.issue}` : ''} · ${a.question}`), '- (nothing)'),
     ...sec(`To ratify (${o.ratify.length})`, o.ratify.map((a) => `- a-${a.id}${a.issue ? ` (issue ${a.issue})` : ''} · ${a.question}`)),
-    ...sec(`Held — files in flight (${o.held.length})`, o.held.map((x) => `- ${x.id}  P${x.priority}  ${short(x.title)} (${x.files.join(', ')} held by ${x.heldBy.join(', ')})`)),
+    ...sec(`Held — files in flight (${o.held.length})`, o.held.map((x) => `- ${x.id}  P${x.priority}  ${short(x.title)} (${x.questions ? `open question ${x.questions.map((q) => `a-${q}`).join(', ')}` : `${[...x.files, ...(x.resources || []).map((n) => `resource ${n}`)].join(', ')} held by ${x.heldBy.join(', ')}`})`)),
     ...(o.scheduler ? sec('Next ready and merge queue', [`- ${schedulerNote(o.scheduler)}`]) : [
       ...sec(`Next ready (${o.next.length} of ${o.readyTotal})`, o.next.map((r) => `- ${r.id}  P${r.priority}  ${short(r.title)}${shownFields(r)}${r.noAcceptance ? '  (no acceptance yet)' : ''}`), '- (nothing ready)'),
       ...sec('Merge queue', queue, '- (nothing approved waits to be merged)'),
@@ -3809,6 +3926,7 @@ export function renderStatus(o, profile = DEFAULT_PROFILE) {
   const width = o.by ? Math.max(...Object.keys(o.by.groups).map((k) => k.length), 1) : 0;
   const by = o.by ? [`by ${o.by.key}:`, ...Object.entries(o.by.groups).map(([k, g]) => `  ${k.padEnd(width)}  ${profile.statuses.map((st) => `${statusLabel(st)} ${g[st]}`).join(' · ')}`)] : [];
   const more = [
+    ...(o.tag !== undefined ? [`scoped to the issues tagged ${o.tag} — the counts above and the lists below are theirs only`] : []),
     ...(o.check && !o.check.declared ? [TESTIMONY_NOTE] : []),
     ...(o.scheduler ? [schedulerNote(o.scheduler)] : []),
     ...by,
@@ -3820,6 +3938,7 @@ export function renderStatus(o, profile = DEFAULT_PROFILE) {
     ...o.toRatify.map((a) => `ratify a-${a.id}${a.issue ? ` (issue ${a.issue})` : ''} · ${a.question}`),
     ...(o.waiting ? [`waiting (After not settled): ${o.waitingIds.join(', ')}`] : []),
     ...(o.noAcceptance.length ? [`in flight with no acceptance line: ${o.noAcceptance.join(', ')}`] : []),
+    ...(o.inFlightRows || []).map((x) => `in flight ${x.id} · ${x.next}`),
   ];
   return `${head}${line}${more.length ? `\n${more.join('\n')}` : ''}`;
 }

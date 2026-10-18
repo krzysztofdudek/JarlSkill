@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 import * as R from './record.mjs';
 import {
   ROUNDS_BEFORE_TAKEOVER, need, resetCaches, withLock, readText, isEntry,
-  cmdProfile, cmdArchive, cmdList, cmdNext, cmdMode, cmdClose, cmdCheck, cmdBranches, cmdTips, cmdQueue,
+  cmdProfile, cmdArchive, cmdList, cmdNext, renderNext, cmdMode, cmdClose, cmdCheck, cmdBranches, cmdTips, cmdQueue,
   cmdChangelog, cmdHandoffRead, cmdHandoffWrite, cmdReport, cmdImport, cmdSources, cmdAnswer,
   renderProfile, renderTips, renderQueue, renderResume, renderStatus, renderImport, renderSources, renderList, recordTypeLog, recordRuleLog,
   runDecisionsDriver, mergeFlags, describeNew, renderNewReply, issueView, evidenceTable,
@@ -83,6 +83,8 @@ commands:
                                                  approve answered, one line per earlier round; --full prints the whole
                                                  file; --json is complete
   set <ids> <status> "<why>" [--branch <b>] [--worker <name>] [--worktree <path>] | <ids> <field> "<value>"
+                                                 (field resources "a, b": the exclusive resources the issue holds while
+                                                 its lease lasts, loop-wide names; next never offers two issues holding one)
                                                  change status; writes the log line in the same move; in-progress
                                                  writes Since (and Branch, Worker, Worktree when given) — one lease
                                                  for every id, so a package shares it; leaving in-progress removes
@@ -102,9 +104,11 @@ commands:
   files <id> p,q,...                             declare the files the issue touches
   repo <id> <path>[,<path>...] | <id> --clear    name the repository (its root) the issue's code lives in — several as one
                                                  comma list — or remove the field
-  next [--limit n]                               open issues that do not share a file with any in-progress one and
-                                                 whose After issues are done or dropped; a file is its repository and
-                                                 its path (see --repo below); one with no acceptance line is marked
+  next [--limit n] [--all]                       the open issues ready to start: no file shared with an in-progress one, every
+                                                 After issue done or dropped, no open stuck or stop question on it; a file is
+                                                 its repository and its path (see --repo below); one with no acceptance line
+                                                 or no declared files is marked; --all adds the others in groups (held by a
+                                                 file and by whom, waiting on After, held by a question), --json rows carry a group
   review <ids> approve|changes --by <reviewer> "<findings>"
                                                  the reviewer's verdict; --by is required, recorded with its kind
                                                  (self for the issue's worker or "self" — refused on an approve;
@@ -160,7 +164,8 @@ commands:
                                                  close puts it to the user for ratification
   decisions [--live]                             the rulings with who ruled and what superseded them; --live only
                                                  those still in force
-  status [--stale-hours n] [--by repo|tag|kind|prio|<field>]
+  status [--stale-hours n] [--by repo|tag|kind|prio|<field>] [--tag <t>]
+                                                 --tag computes every part of status over the issues carrying that tag only
                                                  the goal, when the loop opened and last moved,
                                                  then one line: open, in flight, waiting, done, dropped, deferred,
                                                  open questions, to ratify, merged with CI pending or red; then who
@@ -279,7 +284,7 @@ export const COMMAND_FLAGS = {
   list: { status: 'value', kind: 'value', tag: 'value', prio: 'value', grep: 'value', match: 'many', all: 'bool' },
   show: { full: 'bool' }, set: { branch: 'value', worker: 'value', worktree: 'value' }, tag: {}, prio: {}, files: {},
   repo: { clear: 'bool' },
-  next: { limit: 'value' },
+  next: { limit: 'value', all: 'bool' },
   review: { by: 'value' }, round: {},
   check: { branch: 'value', base: 'value', repo: 'value' },
   branches: { base: 'value', repo: 'value', 'stale-hours': 'value' },
@@ -289,7 +294,7 @@ export const COMMAND_FLAGS = {
   resume: { log: 'value', ready: 'value', ci: 'bool' },
   handoff: { summary: 'value', next: 'many', log: 'value', ready: 'value', ci: 'bool' },
   log: {}, decide: { settles: 'value', by: 'value', supersedes: 'value', area: 'value', reach: 'value', rule: 'value' }, decisions: { live: 'bool' },
-  status: { 'stale-hours': 'value', by: 'value' }, archive: {}, report: { found: 'bool' }, tips: {}, mode: {},
+  status: { 'stale-hours': 'value', by: 'value', tag: 'value' }, archive: {}, report: { found: 'bool' }, tips: {}, mode: {},
   queue: { repo: 'value', base: 'value' }, changelog: { repo: 'value' },
   close: { force: 'bool', batch: 'bool' }, profile: {},
 };
@@ -378,7 +383,7 @@ export const COMMAND_SUMMARY = {
   prio: 'Set the priority of issues.',
   files: 'Declare the files an issue touches.',
   repo: 'Name the repository (or several) an issue\'s code lives in, or clear it.',
-  next: 'The open issues ready to dispatch: no file shared with work in progress, every After issue settled.',
+  next: 'The open issues ready to start: no file shared with work in progress, every After issue settled, no open question on them; all adds the held and waiting ones in groups.',
   review: 'Record a reviewer\'s verdict (approve or changes) on issues, with the reviewer and the findings; or retract the newest approve.',
   round: 'Record one red round on an issue; after three it prints the takeover block for a fresh worker.',
   check: 'Measure a worker branch against its base: commits, diff inside the declared files, test changes; numbers, never a verdict.',
@@ -512,7 +517,7 @@ export function dispatch(root, cmd, rest, flags) {
       case 'files': out = R.setFiles(root, rest[0], rest[1]); text = `${out.id} files: ${out.files.join(', ') || '(none)'}`; break;
       case 'repo': out = R.setRepo(root, rest[0], rest[1], flags); text = `${out.id} repo: ${out.cleared ? 'cleared' : out.repo}`; break;
       case 'evidence': out = R.addEvidence(root, rest[0], rest[1], flags); text = each(out, (o) => (o.retracted ? `${o.id} evidence row ${o.retracted} retracted by ${o.by}` : o.rows ? `${o.id} evidence row${o.rows.length > 1 ? 's' : ''} recorded` : `${o.id} evidence recorded`)); break;
-      case 'next': out = cmdNext(root, flags); text = out.scheduler ? out.note : out.length ? out.map((r) => (r.ready ? `${r.id}  P${r.priority}  ${r.title}${r.noAcceptance ? '  (no acceptance yet)' : ''}` : r.after.length ? `${r.id}  P${r.priority}  ${r.title}  (after ${r.after.join(', ')})` : `${r.id}  P${r.priority}  ${r.title}  (waits on ${r.waitsOn.join(', ')})`)).join('\n') : '(nothing open)'; break;
+      case 'next': out = cmdNext(root, flags); text = out.scheduler ? out.note : renderNext(out, flags.all === true, out.length ? 0 : cmdNext(root, { all: true }).length); break;
       case 'review': out = R.review(root, rest[0], rest[1], rest[2], flags); text = each(out, (o) => o.retracted ? `${o.id} review retracted by ${o.by} (${o.kind}): the approve ${o.retracted}` : `${o.id} review ${o.verdict}${o.by ?` by ${o.by} (${o.kind})` : ''} · acceptance: ${o.acceptance ? o.acceptance.split('\n').join(' / ') : '(none on file)'}`); warn = [].concat(out).filter((o) => o.note).map((o) => `note: ${o.note}`); break;
       case 'round': out = R.addRound(root, rest[0], rest[1]); text = out.takeover ? `${out.id} round ${out.round} — takeover:\n\n${out.block}` : `${out.id} round ${out.round} of ${ROUNDS_BEFORE_TAKEOVER} before a takeover`; break;
       case 'merged': out = R.recordMerged(root, rest[0], flags); text = `${out.ids.join(', ')} ${out.sha ? `merged ${out.sha}` : 'merge'} · CI ${out.ci}`; warn = out.notes.map((n) => `note: ${n}`); break;
