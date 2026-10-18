@@ -2,7 +2,7 @@
 // change without notice. The stable surface other tools may vendor is record.mjs (RECORD_API), and only that;
 // the command line is jarl.mjs, a CLI over this module.
 //
-// Markdown is the source of truth: .jarl/goal.md, .jarl/decisions.md, .jarl/log.md and one
+// Markdown is the source of truth: .jarl/goal.md, .jarl/decisions.md, the dated log and one
 // .jarl/issues/NNN-slug.md per issue. This module only reads and writes those files, so anything
 // it does can be checked by opening them. Zero dependencies, Node 22+.
 
@@ -819,13 +819,17 @@ ${extra}${changelog ? `## Changelog\n${changelog}\n\n` : ''}## Evidence
 
 // ---- journal and decisions ----------------------------------------------------------------------
 
+// The log file of the record held in `dir`: the one place that names it. Only appendLogLines writes it and only
+// loopEvents reads it.
+const LOG_FILE = 'log.md';
+export function logPath(dir) { return join(dir, LOG_FILE); }
 export function appendLog(root, event) {
   appendLogLines(root, [event]);
 }
 // Several lines in one write: a bulk command's lines land together or not at all.
 export function appendLogLines(root, events) {
   const at = stamp();
-  appendAtomic(join(jarlDir(root), 'log.md'), '# Log\n\n', events.map((e) => `- ${at} · ${oneLine(e)}\n`).join(''));
+  appendAtomic(logPath(jarlDir(root)), '# Log\n\n', events.map((e) => `- ${at} · ${oneLine(e)}\n`).join(''));
 }
 
 // The log is one event per line: a text with line breaks never reaches it raw. A command that keeps the whole text
@@ -972,7 +976,7 @@ export function cmdInit(root, goal, flags = {}) {
   if (!archived && permanent) writeAtomic(join(jarlDir(root), '.permanent'), PERMANENT_MARKER);
   writeAtomic(join(jarlDir(root), 'goal.md'), `# Goal\n\n${goal.trim()}\n\n## Assumptions\n\n## Rules that apply here\n`);
   writeAtomic(join(jarlDir(root), 'decisions.md'), '# Decisions\n');
-  writeAtomic(join(jarlDir(root), 'log.md'), '# Log\n\n');
+  writeAtomic(logPath(jarlDir(root)), '# Log\n\n');
   if (prof) writeAtomic(profilePath(root), `${JSON.stringify(prof.json, null, 2)}\n`);
   if (committed) ensureLoopMerge(root);
   appendLog(root, `opened · ${goal.trim()}${prof ? ` · profile ${prof.profile.name}` : ''}`);
@@ -1917,7 +1921,7 @@ function retractEvidence(root, rawIds, reason, flags) {
   const row = table.rows[n - 1];
   need(row, `${issue.id} has ${table.rows.length} evidence row${table.rows.length === 1 ? '' : 's'}: there is no row ${n}`);
   need(!row.retracted, `row ${n} of ${issue.id} is retracted already`);
-  const journalRows = (journalById(root).get(issue.id) || []).filter((e) => e.text.startsWith(`${issue.id} evidence row · `));
+  const journalRows = (journalById(root).get(issue.id) || []).filter((e) => e.type === 'row');
   need(journalRows.length === 0 || journalRows.length === table.rows.length, `${issue.id} holds ${table.rows.length} evidence row${table.rows.length === 1 ? '' : 's'} and its log ${journalRows.length}, so the row numbers cannot be matched to the log; nothing was written`);
   need(journalRows.length === 0 || alignRows(issue.id, table.rows, journalRows)[n - 1], `row ${n} of ${issue.id} matches no evidence line of the log, so its retraction could not be told from another row's; nothing was written`);
   // The first retraction of a loop raises the record format, before its line is written: Jarl 6.1.0 does not read a
@@ -2174,10 +2178,9 @@ export function cmdStatus(root, flags = {}) {
   // loop was opened, and when anything last happened in it — all read from its own files.
   const goalPath = join(jarlDir(root), 'goal.md');
   c.goal = existsSync(goalPath) ? (readText(goalPath).split('\n').slice(2).find((l) => l.trim()) || '').trim() : null;
-  const logPath = join(jarlDir(root), 'log.md');
-  const stamps = existsSync(logPath) ? [...readText(logPath).matchAll(/^- (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) · /gm)].map((m) => m[1]) : [];
-  c.opened = stamps[0] || null;
-  c.lastActivity = stamps[stamps.length - 1] || null;
+  const log = loopEvents(jarlDir(root), profile);
+  c.opened = log.length ? log[0].at : null;
+  c.lastActivity = log.length ? log[log.length - 1].at : null;
   const archiveDir = join(jarlDir(root), 'archive');
   c.archived = existsSync(archiveDir) ? readdirSync(archiveDir).length : 0;
   // Leases that look wrong (worktree gone, branch gone, idle), merges waiting on CI, the legacy handoff file's age (JSON only) and the
@@ -2371,10 +2374,10 @@ function eventParser(profile) {
   };
 }
 
-// Every dated line of the loop's log under `dir` (the directory holding goal.md, log.md and issues/), in order, as
+// Every dated line of the loop's log under `dir` (the directory holding the goal, the log and issues/), in order, as
 // typed events. An issue's events carry the status it moved from, replayed from its own filing and moves.
 export function loopEvents(dir, profile) {
-  const path = join(dir, 'log.md');
+  const path = logPath(dir);
   if (!existsSync(path)) return [];
   const parse = eventParser(profile);
   const statusOf = new Map();
@@ -2573,7 +2576,7 @@ export function gateState(root, id, events = journalById(root).get(id) || [], co
   }
   return {
     tracked: anchor !== null,
-    anchor: anchor ? { at: anchor.at, what: anchor.text.startsWith('filed ') ? 'filed' : anchor.text.slice(id.length + 1).split(' · ')[0].replace(/^→ /, '') } : null,
+    anchor: anchor ? { at: anchor.at, what: anchor.type === 'filed' ? 'filed' : anchor.to } : null,
     unresolvedRetractions,
     rowsSince: anchor ? evidence.filter((e) => e.n > anchor.n && !e.retracted).length : evidence.filter((e) => !e.retracted).length,
     // What the issue view windows by: where the gate's window starts in the log, and the log's rows and review lines in order.
@@ -3145,8 +3148,8 @@ function reviewerTable(verdictRows) {
 // --with <root> (a root, or an archive directory under .jarl/archive/). A path that is not a loop is refused with a
 // message. Read-only: no lock is taken and nothing is written.
 function loopShape(path) {
-  if (existsSync(join(path, '.jarl', 'log.md')) && existsSync(join(path, '.jarl', 'issues'))) return 'root';
-  if (existsSync(join(path, 'log.md')) && existsSync(join(path, 'issues'))) return 'archive';
+  if (existsSync(logPath(join(path, '.jarl'))) && existsSync(join(path, '.jarl', 'issues'))) return 'root';
+  if (existsSync(logPath(path)) && existsSync(join(path, 'issues'))) return 'archive';
   return null;
 }
 export function cmdModels(root, flags = {}) {
@@ -3167,7 +3170,7 @@ export function cmdModels(root, flags = {}) {
     // A root's own .jarl/ is the same loop as the root.
     if (basename(path) === '.jarl' && loopShape(dirname(path)) === 'root') path = dirname(path);
     const shape = loopShape(path);
-    need(shape, `${p} is not a loop: it holds no .jarl/ with a log and issues, and is not an archived loop (an archive directory holds log.md and issues/) — nothing was read`);
+    need(shape, `${p} is not a loop: it holds no .jarl/ with a log and issues, and is not an archived loop (an archive directory holds ${LOG_FILE} and issues/) — nothing was read`);
     add(p, path, shape);
   }
   need(sources.length, `no loop to read here: ${root} holds no live loop — name one with --with <root>, or its archives with --archives`);
@@ -3434,9 +3437,7 @@ export function repoOf(root, named) {
 }
 
 export function roundsOf(root, id) {
-  const path = join(jarlDir(root), 'log.md');
-  if (!existsSync(path)) return 0;
-  return readText(path).split('\n').filter((l) => l.includes(`· ${id} round `)).length;
+  return (journalById(root).get(id) || []).filter((e) => e.type === 'round').length;
 }
 
 export function cmdRound(root, rawId, what) {
@@ -3446,7 +3447,7 @@ export function cmdRound(root, rawId, what) {
   const n = roundsOf(root, issue.id) + 1;
   appendLog(root, `${issue.id} round ${n} · ${what}`);
   const takeover = n >= ROUNDS_BEFORE_TAKEOVER;
-  const log = readText(join(jarlDir(root), 'log.md')).split('\n').filter((l) => l.includes(`· ${issue.id} `)).join('\n');
+  const log = (journalById(root).get(issue.id) || []).filter((e) => e.type !== 'filed').map((e) => `- ${e.at} · ${e.text}`).join('\n');
   // The fresh worker is raised one tier up, or on another model than the one that failed (the lease names it).
   const failed = fieldText(issue.fields.model);
   const raise = `For whoever raises the fresh worker: raise it one tier up from ${issue.tier}, or on a model other than ${failed || 'the one that failed'}${failed ? '' : ' (its lease did not record one)'} — the same model at the same tier has failed this ${n} times.`;
@@ -3772,7 +3773,7 @@ export function cmdTips(root, { ci: askCi = true } = {}) {
     const m = mergedOf(i);
     if (!m || i.status === 'dropped') return false;
     if (m.ci === 'pending' || m.ci === 'red') return true;
-    const line = [...(journal.get(i.id) || [])].reverse().find((e) => e.text.startsWith(`${i.id} merged `));
+    const line = lastMerge(journal.get(i.id) || []);
     const at = line ? parseStamp(line.at) : null;
     return at !== null && now - at <= TIPS_RECENT_MS;
   };
@@ -4260,8 +4261,7 @@ export function cmdResume(root, flags = {}) {
   // issue ahead of it), or an open question names it. Ready and held together are the open count on the status line.
   const held = next.filter((r) => !r.ready && !r.after.length).map((r) => ({ id: r.id, title: r.title, priority: r.priority, files: r.waitsOn, heldBy: r.heldBy || [], ...(r.questions ? { questions: r.questions } : {}), ...(r.resources ? { resources: r.resources } : {}) }));
   const merged = issues.filter((i) => status.ciPending.includes(i.id) || status.ciRed.includes(i.id)).map((i) => ({ id: i.id, title: i.title, ...mergedOf(i) }));
-  const logPath = join(jarlDir(root), 'log.md');
-  const logLines = existsSync(logPath) ? readText(logPath).split('\n').filter((l) => /^- \d{4}-\d{2}-\d{2} \d{2}:\d{2} · /.test(l)) : [];
+  const logLines = loopEvents(jarlDir(root), profile);
   const legacy = handoffAge(root, status.lastActivity);
   return {
     goal: status.goal, opened: status.opened, lastActivity: status.lastActivity, archived: status.archived, status,
@@ -4271,7 +4271,7 @@ export function cmdResume(root, flags = {}) {
     ...(scheduled ? { scheduler: profile.scheduler } : {}),
     queue: cmdQueue(root), merged, tips: cmdTips(root, { ci: flags.ci === true }),
     uncommitted: uncommittedLoopFiles(root),
-    log: logN ? logLines.slice(-logN).map((l) => l.slice(2)) : null,
+    log: logN ? logLines.slice(-logN).map((e) => `${e.at} · ${e.text}`) : null,
     legacyHandoff: legacy ? { path: handoffPath(root), at: legacy.at, ageMs: legacy.ageMs } : null,
   };
 }
@@ -4804,7 +4804,7 @@ export const JARL_SCRIPT = join(dirname(fileURLToPath(import.meta.url)), 'jarl.m
 // How git merges a committed loop's files, in .jarl/.gitattributes (paths relative to .jarl/): the journal by union,
 // decisions.md by the jarl-decisions driver. A clone that never configured the driver merges decisions.md with
 // plain conflict markers — the fallback, never a silent union.
-export const JARL_GITATTRIBUTES = '# jarl: how git merges the loop (see SKILL.md): the journal by union, decisions.md by its own driver\n/log.md merge=union\n/decisions.md merge=jarl-decisions\n';
+export const JARL_GITATTRIBUTES = `# jarl: how git merges the loop (see SKILL.md): the journal by union, decisions.md by its own driver\n/${LOG_FILE} merge=union\n/decisions.md merge=jarl-decisions\n`;
 
 // The variables that point git at another repository than the one its working directory is in (git sets them for
 // a hook it runs): the loop's repository is always the one its directory is in.
