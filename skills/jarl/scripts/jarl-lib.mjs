@@ -95,14 +95,14 @@ function stamp() { return new Date().toISOString().replace('T', ' ').slice(0, 16
 
 // Workers, reviewers and the merger all write through this tool with the same --root, often at the same
 // moment. Every command that writes therefore runs under .jarl/.lock, taken with the exclusive-create flag
-// so exactly one process holds it; the holder's pid, host and start time are written inside it. A lock
-// whose holder is gone is broken and taken over (see lockIsStale); a caller that cannot get it within
-// LOCK_WAIT_MS fails loudly, naming the holder, rather than writing without it. And every file is written
+// so exactly one process holds it; the owner's pid, host and start time are written inside it. A lock
+// whose owner is gone is broken and taken over (see lockIsStale); a caller that cannot get it within
+// LOCK_WAIT_MS fails loudly, naming the owner, rather than writing without it. And every file is written
 // whole to a temporary file beside it and renamed into place, so a reader that takes no lock (list, show)
 // never sees half a file.
-export const LOCK_STALE_MS = 30_000;          // a lock from another host, or one whose holder cannot be read
+export const LOCK_STALE_MS = 30_000;          // a lock from another host, or one whose owner cannot be read
 export const LOCK_REUSED_PID_MS = 10 * 60_000; // a lock on this host whose pid runs, against pid reuse
-export const LOCK_EMPTY_MS = 2_000;            // a lock with nothing in it: its holder died between create and write
+export const LOCK_EMPTY_MS = 2_000;            // a lock with nothing in it: its owner died between create and write
 export const LOCK_BREAK_STALE_MS = 5_000;      // a breaker's own lock (below), left by a breaker that died
 export const LOCK_WAIT_MS = Number(process.env.JARL_LOCK_WAIT_MS) || 20_000;   // the variable is a test knob
 const SLEEPER = new Int32Array(new SharedArrayBuffer(4));
@@ -123,9 +123,9 @@ function runSync(fn) {
   return out;
 }
 
-// Stale: empty for longer than LOCK_EMPTY_MS; on this host, a holder whose pid does not run (or, against pid
+// Stale: empty for longer than LOCK_EMPTY_MS; on this host, an owner whose pid does not run (or, against pid
 // reuse, one held for longer than LOCK_REUSED_PID_MS); from another host (a shared checkout) or with an unreadable
-// holder, one held for longer than LOCK_STALE_MS.
+// owner, one held for longer than LOCK_STALE_MS.
 function lockIsStale(text, mtimeMs) {
   const age = Date.now() - mtimeMs;
   if (!text.trim()) return age > LOCK_EMPTY_MS;
@@ -137,9 +137,9 @@ function lockIsStale(text, mtimeMs) {
   return age > LOCK_STALE_MS;
 }
 
-// Breaking a stale lock is itself serialized, behind .jarl/.lock.break (exclusive create): only its holder
+// Breaking a stale lock is itself serialized, behind .jarl/.lock.break (exclusive create): only its owner
 // may remove .lock, and only when .lock still holds exactly the content judged stale. A live lock is never
-// moved or renamed, so a fresh holder that took the lock meanwhile keeps it. A breaker that died leaves
+// moved or renamed, so a fresh owner that took the lock meanwhile keeps it. A breaker that died leaves
 // .lock.break behind; it is removed after LOCK_BREAK_STALE_MS (breaking takes milliseconds).
 function breakStaleLock(root, stale) {
   const brk = join(jarlDir(root), '.lock.break');
@@ -4061,7 +4061,7 @@ export function renderQueue(o) {
 export function cmdChangelog(root, rawIds, flags = {}) {
   need(rawIds !== undefined, 'changelog requires <ids> — the issues whose fragments to print, e.g. 284,288 or 203-206');
   const issues = issuesFor(root, rawIds, true);
-  // --repo is matched by the repository itself (its resolved root), never by its folder name alone.
+  // --repo is matched by the repository itself (its resolved root), never by its directory name alone.
   const only = flags.repo !== undefined ? topOf(canonical(repoOf(root, flags.repo))) : null;
   const byRepo = {};
   const missing = [];
