@@ -1850,10 +1850,45 @@ function repoList(root, v) {
 export function schedulerNote(cmd) { return `scheduling is led by the composer: ${cmd}`; }
 
 // next — on a loop with an external scheduler, { scheduler, note } and no list: Jarl computes nothing it cannot know.
+// By default the issues ready to start and nothing else; --all adds the others, each row carrying its group:
+// ready, held-by-file (a file an in-progress or earlier-offered issue holds), waiting-after (After not settled) or
+// held-by-question (an open stuck or stop question names the issue). A library caller reads the full list through
+// nextRows and filters it itself.
+export const NEXT_GROUPS = ['ready', 'held-by-file', 'waiting-after', 'held-by-question'];
 export function cmdNext(root, flags) {
   const profile = loadProfile(root);
   if (profile.scheduler) return { scheduler: profile.scheduler, note: schedulerNote(profile.scheduler) };
+  const rows = nextRows(root, flags);
+  return flags.all ? rows : rows.filter((r) => r.ready);
+}
+
+const NEXT_HEADERS = { ready: 'Ready', 'held-by-file': 'Held by a file in progress', 'waiting-after': 'Waiting on After', 'held-by-question': 'Held by an open question' };
+export function renderNext(rows, all, held = 0) {
+  const line = (r) => {
+    const note = r.group === 'ready' ? [r.noAcceptance && 'no acceptance yet', r.noFiles && 'no files declared']
+      : r.group === 'waiting-after' ? [`after ${r.after.join(', ')}`]
+        : r.group === 'held-by-question' ? [`question ${r.questions.map((q) => `a-${q}`).join(', ')}`]
+          : [`waits on ${r.waitsOn.join(', ')}, held by ${r.heldBy.join(', ')}`];
+    return `${r.id}  P${r.priority}  ${r.title}${note.filter(Boolean).map((n) => `  (${n})`).join('')}`;
+  };
+  if (!all) {
+    if (rows.length) return rows.map(line).join('\n');
+    return held ? `(nothing is ready to start; ${held} open issue(s) are held or waiting — jarl next --all shows which and why)` : '(nothing open)';
+  }
+  if (!rows.length) return '(nothing open)';
+  return NEXT_GROUPS.map((g) => [g, rows.filter((r) => r.group === g)]).filter(([, list]) => list.length)
+    .map(([g, list]) => `${NEXT_HEADERS[g]} (${list.length})\n${list.map(line).join('\n')}`).join('\n\n');
+}
+
+export function nextRows(root, flags = {}) {
+  const profile = loadProfile(root);
   const issues = loadIssues(root);
+  // An open question of kind stuck (the default) or stop that names an issue holds that issue back until it is answered.
+  const asked = new Map();
+  for (const a of loadAsks(root)) {
+    if (a.state !== 'open' || !a.issue || !['stuck', 'stop', null].includes(a.kind)) continue;
+    asked.set(a.issue, [...(asked.get(a.issue) || []), a.id]);
+  }
   // Files are compared as (repository, path) pairs: the same path in two repositories never holds
   // an issue back, the same file in one repository always does, however its Repo path is spelled.
   const keysOf = (i) => i.files.map((f) => { const at = fileAt(root, i, f); return { f, key: `${at.repo}\n${at.path}` }; });
@@ -1865,14 +1900,16 @@ export function cmdNext(root, flags) {
   for (const i of issues.filter((x) => profile.is(x.status, 'dispatchable')).sort((a, b) => a.priority.localeCompare(b.priority) || cmpId(a.id, b.id))) {
     // An issue whose After issues are not all settled (done or dropped) is never offered, whatever its files.
     const after = waitingOn(i, byId, profile);
-    if (after.length) { out.push({ id: i.id, title: i.title, priority: i.priority, after, waitsOn: [] }); continue; }
+    const base = { id: i.id, title: i.title, priority: i.priority, ...(i.files.length ? {} : { noFiles: true }) };
+    if (after.length) { out.push({ ...base, group: 'waiting-after', after, waitsOn: [] }); continue; }
+    if (asked.has(i.id)) { out.push({ ...base, group: 'held-by-question', questions: asked.get(i.id), waitsOn: [], after: [] }); continue; }
     const keys = keysOf(i);
     const held = keys.filter((k) => taken.has(k.key));
-    if (held.length) { out.push({ id: i.id, title: i.title, priority: i.priority, waitsOn: held.map((k) => k.f), heldBy: [...new Set(held.map((k) => taken.get(k.key)))], after: [] }); continue; }
+    if (held.length) { out.push({ ...base, group: 'held-by-file', waitsOn: held.map((k) => k.f), heldBy: [...new Set(held.map((k) => taken.get(k.key)))], after: [] }); continue; }
     keys.forEach((k) => taken.set(k.key, i.id));
     // Offered, but flagged: a worker raised on an issue with no acceptance line has nothing to prove, and
     // the reviewer nothing to check it against. Fill it with body --acceptance before raising one.
-    out.push({ id: i.id, title: i.title, priority: i.priority, files: i.files, ready: true, waitsOn: [], after: [], ...(acceptanceLineCount(i) ? {} : { noAcceptance: true }) });
+    out.push({ ...base, group: 'ready', files: i.files, ready: true, waitsOn: [], after: [], ...(acceptanceLineCount(i) ? {} : { noAcceptance: true }) });
   }
   const limit = Number(flags.limit) || Infinity;
   let n = 0;
@@ -3442,11 +3479,11 @@ export function cmdResume(root, flags = {}) {
   }));
   const asks = loadAsks(root).filter((a) => a.state === 'open');
   const scheduled = profile.scheduler !== null;
-  const next = scheduled ? [] : cmdNext(root, {});
+  const next = scheduled ? [] : nextRows(root, {});
   const ready = next.filter((r) => r.ready);
   // Open, not waiting on After, and still not offered: a file it declares is taken by work in flight (or by a ready
-  // issue ahead of it). Ready and held together are the open count on the status line.
-  const held = next.filter((r) => !r.ready && !r.after.length).map((r) => ({ id: r.id, title: r.title, priority: r.priority, files: r.waitsOn, heldBy: r.heldBy }));
+  // issue ahead of it), or an open question names it. Ready and held together are the open count on the status line.
+  const held = next.filter((r) => !r.ready && !r.after.length).map((r) => ({ id: r.id, title: r.title, priority: r.priority, files: r.waitsOn, heldBy: r.heldBy || [], ...(r.questions ? { questions: r.questions } : {}) }));
   const merged = issues.filter((i) => status.ciPending.includes(i.id) || status.ciRed.includes(i.id)).map((i) => ({ id: i.id, title: i.title, ...mergedOf(i) }));
   const logPath = join(jarlDir(root), 'log.md');
   const logLines = existsSync(logPath) ? readText(logPath).split('\n').filter((l) => /^- \d{4}-\d{2}-\d{2} \d{2}:\d{2} · /.test(l)) : [];
@@ -3499,7 +3536,7 @@ export function renderResume(o, profile = DEFAULT_PROFILE) {
     ...sec(`Waiting — After not settled (${o.waiting.length})`, o.waiting.map((x) => `- ${x.id} ${short(x.title)} (after ${x.after.join(', ')})${x.stale !== undefined ? ` · ${x.status === 'in-progress' ? 'in progress' : x.status}${lease(x) ? ` · ${lease(x)}` : ''}${x.stale.length ? ` · STALE: ${x.stale.join('; ')}` : ''}` : ''}`)),
     ...sec(`Questions to the user (${o.questions.length})`, o.questions.map((a) => `- a-${a.id} (${a.kind || 'stuck'})${a.issue ? ` issue ${a.issue}` : ''} · ${a.question}`), '- (nothing)'),
     ...sec(`To ratify (${o.ratify.length})`, o.ratify.map((a) => `- a-${a.id}${a.issue ? ` (issue ${a.issue})` : ''} · ${a.question}`)),
-    ...sec(`Held — files in flight (${o.held.length})`, o.held.map((x) => `- ${x.id}  P${x.priority}  ${short(x.title)} (${x.files.join(', ')} held by ${x.heldBy.join(', ')})`)),
+    ...sec(`Held — files in flight (${o.held.length})`, o.held.map((x) => `- ${x.id}  P${x.priority}  ${short(x.title)} (${x.questions ? `open question ${x.questions.map((q) => `a-${q}`).join(', ')}` : `${x.files.join(', ')} held by ${x.heldBy.join(', ')}`})`)),
     ...(o.scheduler ? sec('Next ready and merge queue', [`- ${schedulerNote(o.scheduler)}`]) : [
       ...sec(`Next ready (${o.next.length} of ${o.readyTotal})`, o.next.map((r) => `- ${r.id}  P${r.priority}  ${short(r.title)}${shownFields(r)}${r.noAcceptance ? '  (no acceptance yet)' : ''}`), '- (nothing ready)'),
       ...sec('Merge queue', queue, '- (nothing approved waits to be merged)'),

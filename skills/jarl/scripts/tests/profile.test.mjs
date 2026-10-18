@@ -191,10 +191,10 @@ test('both holds-claim statuses carry the lease and hold their files; leaving th
   assert.match(refuses(root, 'set', '1', 'queued', 'x', '--worker', 'w'), /--worker goes with running or landed only/);
   jarl(root, 'set', '1', 'running', 'go', '--branch', 'b/1', '--worker', 'w1');
   assert.match(jarl(root, 'show', '1'), /\*\*Worker:\*\* w1/);
-  assert.match(jarl(root, 'next'), /002 .*waits on src\/a\.mjs/);
+  assert.match(jarl(root, 'next', '--all'), /002 .*waits on src\/a\.mjs/);
   jarl(root, 'set', '1', 'landed', 'ready for the gate', '--worker', 'w1');
   assert.match(jarl(root, 'show', '1'), /\*\*Since:\*\*/);
-  assert.match(jarl(root, 'next'), /002 .*waits on src\/a\.mjs/, 'landed still holds the claim');
+  assert.match(jarl(root, 'next', '--all'), /002 .*waits on src\/a\.mjs/, 'landed still holds the claim');
   jarl(root, 'set', '1', 'blocked', 'waits for the owner');
   const shown = jarl(root, 'show', '1');
   assert.doesNotMatch(shown, /\*\*Worker:\*\*|\*\*Since:\*\*/);
@@ -207,11 +207,11 @@ test('only a settles-dependents status releases a dependent; a drop here does no
   jarl(root, 'new', 'first');
   jarl(root, 'new', 'second', '--after', '1');
   jarl(root, 'set', '1,2', 'queued', 'accepted');
-  assert.match(jarl(root, 'next'), /002 .*\(after 001\)/);
+  assert.match(jarl(root, 'next', '--all'), /002 .*\(after 001\)/);
   assert.match(refuses(root, 'set', '1', 'dropped'), /dropped needs a reason/);
   jarl(root, 'set', '1', 'dropped', 'not needed');
   assert.match(jarl(root, 'show', '1'), /Dropped: not needed/);
-  assert.match(jarl(root, 'next'), /002 .*\(after 001\)/, 'dropped is terminal but does not settle here');
+  assert.match(jarl(root, 'next', '--all'), /002 .*\(after 001\)/, 'dropped is terminal but does not settle here');
 });
 
 test('a closes-record status passes the done gate: evidence since the claim, and a live approve', () => {
@@ -227,7 +227,7 @@ test('a closes-record status passes the done gate: evidence since the claim, and
   assert.match(refuses(root, 'review', '1', 'approve', FINDINGS, '--by', 'w1'), /self-approve/);
   jarl(root, 'review', '1', 'approve', FINDINGS, '--by', 'reviewer');
   jarl(root, 'set', '1', 'merged', 'landed through the gate');
-  assert.match(jarl(root, 'next'), /^002 {2}P2 {2}second {2}\(no acceptance yet\)$/m, 'merged settles the dependent');
+  assert.match(jarl(root, 'next'), /^002 {2}P2 {2}second {2}\(no acceptance yet\) {2}\(no files declared\)$/m, 'merged settles the dependent');
   const st = JSON.parse(jarl(root, 'status', '--json'));
   assert.deepEqual(st.reviews, { fresh: 1, coordinator: 0, self: 0, unrecorded: 0 });
   assert.equal(st.statuses.merged, 1);

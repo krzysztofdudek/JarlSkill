@@ -83,7 +83,7 @@ test('list, queue, next, show, set, after, ranges, review and the log work acros
   jarl(root, 'new', 'thousand', '--acceptance', 'works');
   jarl(root, 'new', 'thousand one', '--acceptance', 'works');
   assert.deepEqual(JSON.parse(jarl(root, 'list', '--json')).map((r) => r.id), ['998', '999', '1000', '1001']);
-  assert.deepEqual(JSON.parse(jarl(root, 'next', '--json')).map((r) => r.id), ['998', '999', '1000', '1001']);
+  assert.deepEqual(JSON.parse(jarl(root, 'next', '--all', '--json')).map((r) => r.id), ['998', '999', '1000', '1001']);
   assert.match(jarl(root, 'show', '1000'), /^# 1000 · thousand/);
   assert.match(jarl(root, 'show', '#1001'), /^# 1001 · thousand one/);
   assert.match(refuses(root, 'show', '1002'), /no such issue: 1002/);

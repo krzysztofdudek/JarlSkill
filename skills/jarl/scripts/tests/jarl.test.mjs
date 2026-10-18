@@ -282,7 +282,7 @@ test('the repository name in Files: --repo strips it like the field does, an inn
   jarl(hub, 'new', 'first on app/x', '--files', 'app/app/x.mjs', '--repo', '../app');
   jarl(hub, 'new', 'second on app/x', '--files', 'app/x.mjs', '--repo', '../app');
   jarl(hub, 'set', '002', 'in-progress', 'worker raised');
-  const next = JSON.parse(jarl(hub, 'next', '--json'));
+  const next = JSON.parse(jarl(hub, 'next', '--all', '--json'));
   assert.deepEqual(next.find((r) => r.id === '003').waitsOn, ['app/x.mjs'], 'the same file in one repository always holds an issue back');
 
   // 3. One repository however its path is spelled: through a symlink, and (where the file system ignores case) in
@@ -295,7 +295,7 @@ test('the repository name in Files: --repo strips it like the field does, an inn
   spellings.forEach((spelling, k) => {
     const id = String(5 + k).padStart(3, '0');
     jarl(hub, 'new', `spelled ${spelling}`, '--files', `${spelling.replace('../', '')}/src/b.mjs`, '--repo', spelling);
-    const row = JSON.parse(jarl(hub, 'next', '--json')).find((r) => r.id === id);
+    const row = JSON.parse(jarl(hub, 'next', '--all', '--json')).find((r) => r.id === id);
     assert.ok(row && row.waitsOn, `${spelling}: the same repository, so the same file, so it waits`);
   });
 });
@@ -329,7 +329,7 @@ test('tags, priority and next respect file overlap', () => {
   jarl(root, 'tag', '001', '+parser', '+docs', '-parser');
   assert.match(jarl(root, 'show', '001'), /\*\*Tags:\*\* docs/);
   jarl(root, 'prio', '003', '1');
-  const next = JSON.parse(jarl(root, 'next', '--json'));
+  const next = JSON.parse(jarl(root, 'next', '--all', '--json'));
   assert.deepEqual(next.filter((r) => r.ready).map((r) => r.id), ['002', '003']);
   assert.deepEqual(next.find((r) => r.id === '001').waitsOn, ['a.mjs']);
   jarl(root, 'set', '002', 'in-progress', 'raised');
@@ -682,11 +682,11 @@ test('next keeps the same path in two repositories apart and still holds a colli
   jarl(hub, 'new', 'the hub\'s own changelog', '--files', 'CHANGELOG.md');
   jarl(hub, 'new', 'other repository again, behind the first one there', '--repo', '../other', '--files', 'other/CHANGELOG.md');
   jarl(hub, 'set', '001', 'in-progress', 'worker raised in tool');
-  const rows = JSON.parse(jarl(hub, 'next', '--json'));
+  const rows = JSON.parse(jarl(hub, 'next', '--all', '--json'));
   assert.deepEqual(rows.filter((r) => r.ready).map((r) => r.id), ['002', '003', '005'], 'the same path in another repository never waits');
   assert.deepEqual(rows.find((r) => r.id === '004').waitsOn, ['tool/src/a.mjs'], 'the same file in the same repository still waits, however the Repo path is spelled');
   assert.deepEqual(rows.find((r) => r.id === '006').waitsOn, ['other/CHANGELOG.md'], 'two open issues on one file in one repository do not both run');
-  assert.match(jarl(hub, 'next'), /^004 {2}P2 {2}same source file, same repository {2}\(waits on tool\/src\/a\.mjs\)$/m);
+  assert.match(jarl(hub, 'next', '--all'), /^004 {2}P2 {2}same source file, same repository {2}\(waits on tool\/src\/a\.mjs, held by 001\)$/m);
 });
 
 test('check matches a changed file against the files an issue declares in its own repository', () => {
@@ -1158,7 +1158,7 @@ test('After holds an issue out of next and counts it as waiting; decide --settle
   assert.match(jarl(root, 'status'), /open 2 · in flight 0 · waiting 3 ·/);
   const st = JSON.parse(jarl(root, 'status', '--json'));
   assert.deepEqual([st.open, st['in-progress'], st.waiting], [3, 2, 3], 'the status counts stay counts of statuses');
-  const next = jarl(root, 'next');
+  const next = jarl(root, 'next', '--all');
   assert.match(next, /^005 {2}P2 {2}after the release {2}\(after 001\)$/m);
   assert.match(next, /^001 {2}P2 {2}release/m);
   assert.match(refuses(root, 'after', '1', '5'), /would close a cycle/);
