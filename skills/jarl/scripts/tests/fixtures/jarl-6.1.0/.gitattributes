@@ -1,0 +1,2 @@
+# The pinned Jarl 6.1.0 library is read byte for byte against its hash (tests/old-jarl.mjs): no checkout may touch it.
+* -text
