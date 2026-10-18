@@ -1,4 +1,4 @@
-// Copilot (Agent Plugins 1.0) and Codex read the portable `plugin.json` at the repository root before
+// Copilot (Agent Plugins) and Codex read the portable `plugin.json` at the repository root before
 // any host-specific manifest; Claude Code and Cursor keep reading their own. One plugin, several files:
 // this holds them to one name, one version and one description.
 import { test } from 'node:test';

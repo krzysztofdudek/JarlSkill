@@ -22,12 +22,14 @@ export function run(root, args, opts) {
   const r = spawnJarl(root, args, opts);
   return { status: r.status, stdout: (r.stdout ?? '').trim(), stderr: (r.stderr ?? '').trim() };
 }
-// What the command prints, trimmed; a failure throws with what it said, and carries its status, stdout and stderr.
-export function jarl(root, ...args) {
-  const r = run(root, args);
+// The result of a call that succeeded; a failure throws with what it said, and carries its status, stdout and stderr.
+export function jarlResult(root, args, opts) {
+  const r = run(root, args, opts);
   if (r.status !== 0) throw Object.assign(new Error(`jarl ${args.join(' ')} failed: ${r.stderr}`), r);
-  return r.stdout;
+  return r;
 }
+// What the command prints, trimmed.
+export function jarl(root, ...args) { return jarlResult(root, args).stdout; }
 // What the command says when it refuses, as written (with its closing newline); a call that succeeds fails the test.
 export function refuses(root, ...args) {
   const r = spawnJarl(root, args);

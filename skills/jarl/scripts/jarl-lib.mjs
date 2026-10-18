@@ -363,9 +363,9 @@ export const DEFAULT_LIFECYCLE = Object.freeze({ close: 'any', archive: 'any', c
 // The format of the record (the issue files, the log, the rulings) this Jarl reads and writes. A profile may state the
 // format it was written for; one this Jarl does not know is refused before anything else, so a vendored copy and an
 // installed Jarl that drifted apart stop loudly instead of half-reading each other's loop.
-// Format 1 is every loop up to 6.1.x; format 2 is raised, by raiseFormat, by the first write of an element a 6.1.x reader
-// would misread in silence (a repository name in Repo, an id of 1000 or more, a retraction line). A loop without a
-// profile, or with a profile that names no format, is format 1. Both are the contract jarl-record/1.
+// Format 1 is a loop whose profile names no format, or that has no profile. Format 2 is raised, by raiseFormat, by the
+// first write of an element a reader that knows only format 1 would misread in silence (a repository name in Repo, an
+// id of 1000 or more, a retraction line); such a reader refuses the loop instead. Both are the contract jarl-record/1.
 export const RECORD_FORMAT = 1;
 export const RECORD_FORMATS = Object.freeze([1, 2]);
 export const RECORD_FORMAT_RAISED = 2;
@@ -454,7 +454,7 @@ export function validateProfile(json, where = 'the profile') {
   if (json.fields !== undefined && !isObj(json.fields)) say('"fields" must be an object: { "<Field>": { "enum": [...], "default": "...", "required": true } }');
   for (const [name, spec] of Object.entries(isObj(json.fields) ? json.fields : {})) {
     if (!PROFILE_FIELD_RE.test(name) || name !== name.trim()) { say(`field "${name}" must be letters, digits, spaces and - (starting with a letter, at most 40 characters)`); continue; }
-    if (TOOL_FIELDS.some((t) => t.toLowerCase() === name.toLowerCase())) { say(`field "${name}" is one the tool writes itself — a profile cannot declare it`); continue; }
+    if (TOOL_FIELDS.some((t) => t.toLowerCase() === name.toLowerCase())) { say(`field "${name}" is one the tool writes itself — a profile cannot declare it; rename the field in the profile, because the tool writes ${name} itself`); continue; }
     if (statuses.includes(name.toLowerCase())) { say(`field "${name}" has the name of a status — set <id> ${name.toLowerCase()} would be ambiguous`); continue; }
     if (fields.some((f) => f.key === name.toLowerCase())) { say(`field "${name}" is declared twice (names are compared without case)`); continue; }
     if (!isObj(spec)) { say(`field "${name}" takes an object: { "enum": [...], "default": "...", "required": true } ({} for a free one-line value)`); continue; }
@@ -761,6 +761,9 @@ function setField(text, name, value) {
   return lines.join('\n');
 }
 
+// Remove the first line `**<Name>:** …`, in exactly that case, wherever it stands (what after --clear and repo --clear remove).
+function removeFirstField(text, name) { return text.replace(new RegExp(`^\\*\\*${name}:\\*\\*.*\\n`, 'm'), ''); }
+
 // Remove header fields (only the header: a section line that looks like a field is text). A field that is
 // not there is left alone.
 function removeFields(text, names) {
@@ -986,19 +989,20 @@ function decisionsAt(dir) {
 const DECISION_META = /^\*\*(By|Supersedes|Superseded by|Settles|Area|Reach|Rule|Ratified|Rejected|Type log|Rule log):\*\*\s*(.*)$/;
 
 // A field line added at the end of one ruling's own section, by lines: the text is never read as a pattern.
-function markedDecisions(text, slug, line) {
-  const lines = text.split('\n');
+// Given `text` (the decisions as they will be written), it returns the marked text and writes nothing; without it, it marks
+// the decisions of the loop in `root` and writes them once.
+function markDecision(root, slug, line, { text: given } = {}) {
+  const path = decisionsPath(jarlDir(root));
+  const lines = (given ?? readText(path)).split('\n');
   const at = lines.findIndex((l) => { const h = DECISION_HEAD.exec(l); return h && h[2] === slug; });
   need(at !== -1, `no ruling ${slug} in ${DECISIONS_FILE}`);
   let end = lines.findIndex((l, n) => n > at && l.startsWith('## '));
   if (end === -1) end = lines.length;
   while (end - 1 > at && lines[end - 1].trim() === '') end -= 1;
   lines.splice(end, 0, line);
-  return lines.join('\n');
-}
-function markDecision(root, slug, line) {
-  const path = decisionsPath(jarlDir(root));
-  writeAtomic(path, markedDecisions(readText(path), slug, line));
+  if (given !== undefined) return lines.join('\n');
+  writeAtomic(path, lines.join('\n'));
+  return undefined;
 }
 
 export function appendDecision(root, slug, ruling, { by, supersedes, area, reach, rule } = {}) {
@@ -1013,7 +1017,7 @@ export function appendDecision(root, slug, ruling, { by, supersedes, area, reach
     const old = all.find((d) => d.slug === supersedes);
     need(old, `no ruling ${supersedes} in ${DECISIONS_FILE} to supersede`);
     need(!old.supersededBy, `${supersedes} is already superseded by ${old.supersededBy} — supersede that one instead`);
-    text = markedDecisions(text, supersedes, `**Superseded by:** ${slug} (${today()})`);
+    text = markDecision(root, supersedes, `**Superseded by:** ${slug} (${today()})`, { text });
   }
   const meta = [by ? `**By:** ${fieldText(by)}` : null, supersedes !== undefined ? `**Supersedes:** ${supersedes}` : null, area ? `**Area:** ${area}` : null, reach !== undefined && reach !== null ? `**Reach:** ${reach}` : null, rule ? `**Rule:** ${rule}` : null].filter(Boolean).join('\n');
   writeAtomic(path, `${text.replace(/\s*$/, '')}\n\n## ${today()} · ${slug}\n${bodyText(ruling)}\n${meta ? `\n${meta}\n` : ''}`);
@@ -1026,7 +1030,7 @@ function readGoal(dir) {
 }
 // The one grammar of a line the goal carries for the tool: `Check: <what runs>`, `Check (<repository>): <what runs>`,
 // `Model (<tier>): <model>[, <model>…]` and `Coordinators: <name>[, <name>…]`, each as a plain line, a list item, or in
-// bold. goalLines reads them all in one pass and goalLineText writes one, so no other reader or writer of the goal
+// bold. goalLines reads them all in one pass, so no other reader of the goal
 // repeats the pattern. It returns
 //   goal           the first line of the goal, or null where the loop has none
 //   checks         every command the goal names, the loop's own first
@@ -1055,10 +1059,6 @@ export function goalLines(text) {
   }
   out.checks = [...out.checksByRepo.bare, ...Object.values(out.checksByRepo.repos).flat()];
   return out;
-}
-// The line goalLines reads back as `key` with `value`: `Check`, `Model` and `Coordinators`, a repository or a tier as the qualifier.
-export function goalLineText(key, value, qualifier) {
-  return `${key}${qualifier ? ` (${qualifier})` : ''}: ${Array.isArray(value) ? value.join(', ') : value}`;
 }
 
 // ---- commands ----------------------------------------------------------------------------------
@@ -1316,7 +1316,7 @@ export function cmdNew(root, title, rawFlags) {
   let n = Math.max(taken().reduce((m, x) => Math.max(m, x), 0), elsewhere) + 1;
   for (let tries = 0; ; tries += 1) {
     const id = padId(n);
-    // The first issue of 1000 or more is a file a 6.1.x reader would skip in silence: the format is raised first.
+    // The first issue of 1000 or more is a file a reader that knows only format 1 would skip in silence: the format is raised first.
     if (needsRaisedFormat(id)) raiseFormat(root);
     const file = join(dir, `${id}-${slugify(title)}.md`);
     const tmp = join(dir, `.${id}.${process.pid}.tmp`);
@@ -1432,7 +1432,7 @@ export function cmdAfter(root, rawId, raw, { clear = false } = {}) {
   if (clear) {
     need(raw === undefined, 'after takes either <ids> or --clear, not both');
     need(issue.fields.after !== undefined, `${issue.id} has no After field to clear`);
-    writeAtomic(issue.file, removeFields(readText(issue.file), ['After']));
+    writeAtomic(issue.file, removeFirstField(readText(issue.file), 'After'));
     appendLog(root, `${issue.id} after · cleared`);
     return { id: issue.id, after: [], cleared: true };
   }
@@ -1900,7 +1900,7 @@ export function cmdRepo(root, rawId, path, { clear = false } = {}) {
   need(issue, `no such issue: ${rawId}`);
   if (clear) {
     need(issue.fields.repo, `${issue.id} has no Repo field to clear`);
-    const text = removeFields(readText(issue.file), ['Repo']);
+    const text = removeFirstField(readText(issue.file), 'Repo');
     writeAtomic(issue.file, text);
     return { id: issue.id, repo: null, cleared: true };
   }
@@ -3077,7 +3077,7 @@ function reviewModelNotes(issue, verdict, model, lines, events) {
   return [];
 }
 
-const repoLabels = (dir, issue) => {
+const issueRepoLabels = (dir, issue) => {
   const named = reposNamed(issue);
   return named.length ? [...new Set(named.map((n) => repoLabel(n, dir)))] : [repoLabel(resolve(dir))];
 };
@@ -3133,7 +3133,7 @@ function modelFacts(loop, label, lines) {
     const reviewed = per.some((p) => p.reviewed);
     const settled = per.every((p) => p.closed || p.handedOver);
     units.push({
-      loop: label, model: u.model, worker: u.worker, kind: lead.kind || '(none)', tier: lead.tier, repos: repoLabels(dir, lead), tags: lead.tags,
+      loop: label, model: u.model, worker: u.worker, kind: lead.kind || '(none)', tier: lead.tier, repos: issueRepoLabels(dir, lead), tags: lead.tags,
       ended: !settled, reviewed,
       clean: per.every((p) => p.closed && !p.changes && !p.rounds && !p.handedOver),
       changes: per.reduce((s, p) => s + p.changes, 0), rounds: per.reduce((s, p) => s + p.rounds, 0),
@@ -3161,7 +3161,7 @@ function modelFacts(loop, label, lines) {
       if (e.type !== 'verdict') return;
       const row = {
         loop: label, model: e.model, by: e.by, relayed: e.relayed, verdict: e.verdict, kind: issue.kind || '(none)', tier: issue.tier,
-        repos: repoLabels(dir, issue), tags: issue.tags, checked: false, miss: false, ownOrLower: false, clearing: false, lowChecked: false,
+        repos: issueRepoLabels(dir, issue), tags: issue.tags, checked: false, miss: false, ownOrLower: false, clearing: false, lowChecked: false,
       };
       if (e.verdict === 'approve') {
         row.ownOrLower = ownOrLower(e.model);

@@ -9,7 +9,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { FINDINGS } from './findings.mjs';
 import { oldJarl } from './old-jarl.mjs';
-import { run, jarl, refuses, loop as makeLoop } from './helpers.mjs';
+import { run, jarl, refuses, loop as makeLoop, SPAWN_TIMEOUT } from './helpers.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 
@@ -154,7 +154,7 @@ test('status --tag scopes every section to the issues carrying the tag', () => {
 
 test('status --tag scopes the stale leases and the merges waiting on CI too', () => {
   const dir = mkdtempSync(join(tmpdir(), 'jarl-tag-git-'));
-  const git = (...a) => spawnSync('git', a, { cwd: dir, encoding: 'utf8' });
+  const git = (...a) => spawnSync('git', a, { cwd: dir, encoding: 'utf8', timeout: SPAWN_TIMEOUT });
   git('init', '-q', '-b', 'main'); git('config', 'user.email', 't@t'); git('config', 'user.name', 't'); git('config', 'core.excludesFile', '/dev/null');
   writeFileSync(join(dir, 'a.mjs'), '1\n');
   git('add', '-A'); git('commit', '-qm', 'base');
@@ -186,7 +186,7 @@ test('status --tag scopes the stale leases and the merges waiting on CI too', ()
 
 function twoRepos() {
   const hub = mkdtempSync(join(tmpdir(), 'jarl-res-'));
-  for (const name of ['tool', 'lib']) { mkdirSync(join(hub, name)); spawnSync('git', ['init', '-q', '-b', 'main'], { cwd: join(hub, name) }); }
+  for (const name of ['tool', 'lib']) { mkdirSync(join(hub, name)); spawnSync('git', ['init', '-q', '-b', 'main'], { cwd: join(hub, name), timeout: SPAWN_TIMEOUT }); }
   jarl(hub, 'init', 'goal');
   return hub;
 }
@@ -218,7 +218,7 @@ test('a resource is held by an issue in progress; next never offers two issues t
 
 test('an issue that declares a resource passes check on its real files; check, queue and the file rules never read it', () => {
   const dir = mkdtempSync(join(tmpdir(), 'jarl-res-git-'));
-  const git = (...a) => spawnSync('git', a, { cwd: dir, encoding: 'utf8' });
+  const git = (...a) => spawnSync('git', a, { cwd: dir, encoding: 'utf8', timeout: SPAWN_TIMEOUT });
   git('init', '-q', '-b', 'main'); git('config', 'user.email', 't@t'); git('config', 'user.name', 't'); git('config', 'core.excludesFile', '/dev/null');
   writeFileSync(join(dir, 'a.mjs'), '1\n');
   git('add', '-A'); git('commit', '-qm', 'base');
@@ -237,14 +237,14 @@ test('an issue that declares a resource passes check on its real files; check, q
   assert.deepEqual(JSON.parse(jarl(dir, 'queue', '--json')).repos.flatMap((r) => r.rows), [], 'queue reads no resource');
 });
 
-test('set resources refuses a bad name and the lease flags; an empty value clears; Jarl 6.1.0 ignores the field', () => {
+test('set resources refuses a bad name and the lease flags; an empty value clears; the frozen reader ignores the field', () => {
   const hub = twoRepos();
   jarl(hub, 'new', 'a', '--files', 'a.mjs');
   jarl(hub, 'new', 'b', '--files', 'b.mjs');
   assert.match(refuses(hub, 'set', '1', 'resources', 'two words'), /resource names are single words/);
   jarl(hub, 'set', '1,2', 'resources', 'port-8080');
   assert.deepEqual(JSON.parse(jarl(hub, 'next', '--json')).map((r) => r.id), ['001'], '002 shares the resource, so it is held');
-  // The pinned Jarl 6.1.0 reads the field as any other it does not know: both issues are ready to it, nothing refused.
+  // The pinned frozen reader reads the field as any other it does not know: both issues are ready to it, nothing refused.
   for (const command of ['list', 'status', 'next', 'queue']) assert.equal(oldJarl(hub, command, {}).ok, true, command);
   assert.deepEqual(oldJarl(hub, 'next', {}).value.filter((r) => r.ready).map((r) => r.id), ['001', '002'], '6.1.0 ignores Resources');
   jarl(hub, 'set', '2', 'resources', '');
@@ -256,7 +256,7 @@ test('Resources is a field the tool writes itself: a profile that declares a fie
   const file = join(dir, 'profile.json');
   writeFileSync(file, JSON.stringify({ 'jarl-profile': 1, name: 'mine', statuses: { open: ['dispatchable'], 'in-progress': ['holds-claim'], done: ['settles-dependents', 'terminal', 'closes-record'], dropped: ['terminal', 'needs-reason'] }, fields: { Resources: { default: 'none' } } }));
   const hub = mkdtempSync(join(tmpdir(), 'jarl-res-hub-'));
-  assert.match(refuses(hub, 'init', 'goal', '--profile', file), /field "Resources" is one the tool writes itself — a profile cannot declare it/);
+  assert.match(refuses(hub, 'init', 'goal', '--profile', file), /field "Resources" is one the tool writes itself — a profile cannot declare it; rename the field in the profile, because the tool writes Resources itself/);
   jarl(hub, 'init', 'goal');
   assert.match(jarl(hub, 'new', 'a', '--files', 'a.mjs'), /001/);
   assert.match(jarl(hub, 'set', '1', 'resources', 'shared'), /001 Resources: shared/, 'the name has one meaning: the exclusive resources');

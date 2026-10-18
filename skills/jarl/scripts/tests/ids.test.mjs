@@ -1,6 +1,6 @@
 // The one id grammar: three or more digits, padded to three below 1000, compared as numbers. A loop that reaches 1000 keeps
 // working in every command, by the CLI and by the MCP tool, and the first id of 1000 or more raises the record format so
-// the pinned Jarl 6.1.0 (which would skip such a file in silence) refuses the loop loudly.
+// the pinned frozen reader (which would skip such a file in silence) refuses the loop loudly.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync, rmSync } from 'node:fs';
@@ -21,7 +21,7 @@ const tool = (root, name, input = {}) => mcp.callTool(name, { root, ...input }).
 const markerPath = (root) => join(root, '.jarl', 'profile.json');
 const formatOf = (root) => (existsSync(markerPath(root)) ? JSON.parse(readFileSync(markerPath(root), 'utf8')).format : 1);
 
-// A loop that already holds issues 998 and 999, written as 6.1.0 would have: the next number is 1000.
+// A loop that already holds issues 998 and 999, written as the frozen reader would have: the next number is 1000.
 function loopAt999() {
   const root = mkdtempSync(join(tmpdir(), 'jarl-ids-'));
   mkdirSync(join(root, '.git'));
@@ -45,7 +45,7 @@ test('padId, cmpId and the id pattern: three digits below 1000, as many as neede
   assert.equal(L.needsRaisedFormat('1000'), true);
 });
 
-test('new numbers 1000 after 999, raises the record format before it writes, and the pinned 6.1.0 then refuses the loop', () => {
+test('new numbers 1000 after 999, raises the record format before it writes, and the pinned frozen reader then refuses the loop', () => {
   const root = loopAt999();
   assert.equal(formatOf(root), 1);
   assert.equal(oldJarl(root, 'list', {}).ok, true, 'before: 6.1.0 reads the loop');

@@ -10,14 +10,14 @@ import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import * as R from '../record.mjs';
-import { spawnJarl, jarl } from './helpers.mjs';
+import { spawnJarl, jarl, SPAWN_TIMEOUT } from './helpers.mjs';
 
 const L = await import('../jarl-lib.mjs');
 const SCRIPT =fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 
 const run = (root, ...args) => spawnJarl(root, args);
 const git = (cwd, ...args) => {
-  const r = spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', '-c', 'commit.gpgsign=false', ...args], { cwd, encoding: 'utf8', timeout: 60_000 });
+  const r = spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', '-c', 'commit.gpgsign=false', ...args], { cwd, encoding: 'utf8', timeout: SPAWN_TIMEOUT });
   assert.equal(r.status, 0, `git ${args.join(' ')}: ${r.stderr}`);
   return r.stdout.trim();
 };

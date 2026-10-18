@@ -1,5 +1,5 @@
 // A multi-line text given to a command is kept whole: in the issue, the question or the ruling, never cut to its
-// first line, and the log (one line per event) never holds a raw newline. Jarl 6.1.0 still reads such a loop.
+// first line, and the log (one line per event) never holds a raw newline. The pinned frozen reader still reads such a loop.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync } from 'node:fs';
@@ -70,7 +70,7 @@ test('three lines through every command that writes text: whole in the issue, th
   assert.ok(log.includes('question line one'));
 });
 
-test('a verdict line with its pointer, and a multi-line question, read right under the pinned 6.1.0', () => {
+test('a verdict line with its pointer, and a multi-line question, read right under the pinned frozen reader', () => {
   const root = loop();
   const id = JSON.parse(jarl(root, 'new', 'old reader', '--acceptance', 'it works', '--json')).id;
   jarl(root, 'set', id, 'in-progress', '--worker', 'w-one', '--branch', 'jarl/001-x');

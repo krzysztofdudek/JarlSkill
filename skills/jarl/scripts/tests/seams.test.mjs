@@ -137,15 +137,16 @@ test('one resolver names the repositories of an issue, one parser splits the wor
 
 // A comment that dates the code instead of stating what it does: a version number, "older", "no longer", "legacy", and
 // the like. The exceptions are named here, one by one, with the file and the text that stays.
-const DATED = /\b\d+\.\d+\.\d+\b|\bolder\b|before .* existed|\bno longer\b|\bearlier (version|jarl|reader|loop)|\blegacy\b|\bbackward|\bcompatib|\bused to\b|\bnew in\b|\bmigrat|\bformerly\b|\bfrom before\b|\bprevious (version|release)/i;
+const VERSIONED = /\b\d+\.\d+(?:\.(?:\d+|x))?\b|\bv\d+\b/;
+const DATED = /\b\d+\.\d+(?:\.(?:\d+|x))?\b|\bv\d+\b|\bolder\b|before .* existed|\bno longer\b|\bearlier (version|jarl|reader|loop)|\blegacy\b|\bbackward|\bcompatib|\bused to\b|\bnew in\b|\bmigrat|\bformerly\b|\bfrom before\b|\bprevious (version|release)/i;
 const EXCEPTIONS = [];
-function datedComments(name, text) {
+function datedComments(name, text, pattern = DATED) {
   const out = [];
   text.split('\n').forEach((line, i) => {
     const at = line.search(/(^|\s)\/\/(\s|$)/);
     if (at === -1) return;
     const comment = line.slice(at).trim();
-    if (DATED.test(comment) && !EXCEPTIONS.some((e) => e.file === name && comment.includes(e.text))) out.push(`${name}:${i + 1}: ${comment}`);
+    if (pattern.test(comment) && !EXCEPTIONS.some((e) => e.file === name && comment.includes(e.text))) out.push(`${name}:${i + 1}: ${comment}`);
   });
   return out;
 }
@@ -155,4 +156,27 @@ test('rule 7: no comment in the scripts names a version or a past', () => {
   assert.ok(files.includes('jarl-lib.mjs') && files.includes('jarl.mjs') && files.includes('record.mjs'));
   assert.deepEqual(files.flatMap((f) => datedComments(f, read(f))), []);
   assert.equal(datedComments('x.mjs', 'const a = 1; // kept for 6.1.0 readers\n// an older loop\n// the lease since the last move\nconst u = "https://example.com";\n// compatible with a reader\n').length, 3);
+  assert.equal(datedComments('x.mjs', '// a 6.1.x reader\n// the v2 shape\n// since 6.2\n// a ratio of 0.5 lines\n// nothing dated here\n').length, 4, 'N.N.x, vN and N.N are version-shaped');
+});
+
+// The same words in the tests' comments and test titles (not in the frozen reader or in data a test feeds a command), and
+// in the prose files.
+const TESTS = readdirSync(new URL('tests/', SCRIPTS)).filter((f) => f.endsWith('.test.mjs') && f !== 'seams.test.mjs');
+const titlesOf = (text) => text.split('\n').flatMap((line, i) => (/^\s*test\('/.test(line) ? [`${i + 1}: ${line.trim()}`] : [])).filter((l) => VERSIONED.test(l));
+
+test('rule 7: no comment or title in the tests, and no prose in the skill or the readme, holds a version-shaped token', () => {
+  assert.deepEqual(TESTS.flatMap((f) => datedComments(`tests/${f}`, read(`tests/${f}`), VERSIONED)), []);
+  assert.deepEqual(TESTS.flatMap((f) => titlesOf(read(`tests/${f}`)).map((l) => `tests/${f}:${l}`)), []);
+  const prose = (name, url) => readFileSync(url, 'utf8').split('\n').flatMap((l, i) => (VERSIONED.test(l) ? [`${name}:${i + 1}: ${l.trim().slice(0, 80)}`] : []));
+  assert.deepEqual(prose('SKILL.md', new URL('../SKILL.md', SCRIPTS)), []);
+  assert.deepEqual(prose('README.md', new URL('../../../README.md', SCRIPTS)), []);
+});
+
+// ---- every spawn in the tests has a timeout -----------------------------------------------------------
+
+test('every process a test starts carries a timeout', () => {
+  const calls = (text) => text.split('\n').flatMap((l, i) => (/\b(spawnSync|execFileSync|execSync)\(/.test(l) && !/timeout/.test(l) && !/^\s*(\/\/|import|assert)/.test(l) ?[`${i + 1}: ${l.trim().slice(0, 100)}`] : []));
+  const files = [...TESTS, 'helpers.mjs', 'portable.mjs', 'old-jarl.mjs'];
+  assert.deepEqual(files.flatMap((f) => calls(read(`tests/${f}`)).map((l) => `tests/${f}:${l}`)), []);
+  assert.equal(calls('const r = spawnSync(process.execPath, [x], { encoding: \'utf8\' });\nconst ok = spawnSync(a, b, { timeout: 1 });').length, 1);
 });

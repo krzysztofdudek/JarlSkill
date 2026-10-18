@@ -5,7 +5,7 @@ import { join, basename } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { sh, NO_EXCLUDES } from './portable.mjs';
-import { jarl, refuses, gitRepo } from './helpers.mjs';
+import { run, jarl, refuses, gitRepo, SPAWN_TIMEOUT } from './helpers.mjs';
 import { fileURLToPath } from 'node:url';
 import { FINDINGS } from './findings.mjs';
 
@@ -196,7 +196,7 @@ test('deferred is its own status: it needs a reason, stays out of the default li
 function gitRepoWithWorktree() {
   const main = mkdtempSync(join(tmpdir(), 'jarl-main-'));
   const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' };
-  const git = (cwd, ...args) => execFileSync('git', args, { cwd, env, encoding: 'utf8' }).trim();
+  const git = (cwd, ...args) => execFileSync('git', args, { cwd, env, encoding: 'utf8', timeout: SPAWN_TIMEOUT }).trim();
   git(main, 'init', '-q', '-b', 'feature');
   writeFileSync(join(main, 'a.txt'), 'a\n');
   git(main, 'add', '-A');
@@ -205,7 +205,7 @@ function gitRepoWithWorktree() {
   git(main, 'worktree', 'add', '-q', '-b', 'jarl/001-thing', wt);
   return { main, wt, git };
 }
-const jarlIn = (cwd, ...args) => execFileSync(process.execPath, [SCRIPT, ...args], { cwd, encoding: 'utf8' }).trim();
+const jarlIn = (cwd, ...args) => execFileSync(process.execPath, [SCRIPT, ...args], { cwd, encoding: 'utf8', timeout: SPAWN_TIMEOUT }).trim();
 
 test('a run in a worktree finds the loop in the main checkout by itself, and an explicit --root still wins', () => {
   const { main, wt, git } = gitRepoWithWorktree();
@@ -224,10 +224,10 @@ test('a run in a worktree finds the loop in the main checkout by itself, and an 
   // Explicit --root wins, even one that has no loop.
   const elsewhere = repo();
   assert.match(String(refuses(elsewhere, 'new', 'x')), /no \.jarl\//);
-  assert.match(execFileSync(process.execPath, [SCRIPT, 'list', '--root', main], { cwd: wt, encoding: 'utf8' }), /thing to fix/);
+  assert.match(execFileSync(process.execPath, [SCRIPT, 'list', '--root', main], { cwd: wt, encoding: 'utf8', timeout: SPAWN_TIMEOUT }), /thing to fix/);
   // A worktree of a repository whose main checkout has no loop still says so plainly.
   const bare = gitRepoWithWorktree();
-  assert.throws(() => execFileSync(process.execPath, [SCRIPT, 'new', 'x'], { cwd: bare.wt, encoding: 'utf8', stdio: 'pipe' }), (e) => /no \.jarl\//.test(String(e.stderr)));
+  assert.throws(() => execFileSync(process.execPath, [SCRIPT, 'new', 'x'], { cwd: bare.wt, encoding: 'utf8', stdio: 'pipe', timeout: SPAWN_TIMEOUT }), (e) => /no \.jarl\//.test(String(e.stderr)));
 });
 
 test('a repository is named by its root, not a subdirectory of it, and the Repo field can be cleared', () => {
@@ -372,7 +372,7 @@ test('tier field, rounds and takeover, asks and answers, handoff, report', () =>
 
 test('check reads a worker branch: commits, declared files, removed tests, assertions', () => {
   const root = repo();
-  const g = (...a) => execFileSync('git', a, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  const g = (...a) => execFileSync('git', a, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: SPAWN_TIMEOUT }).trim();
   rmSync(join(root, '.git'), { recursive: true, force: true });
   g('init', '-q', '-b', 'feature');
   g('config', 'user.email', 't@t'); g('config', 'user.name', 't');
@@ -394,7 +394,7 @@ test('check reads a worker branch: commits, declared files, removed tests, asser
 
 test('check matches a declared file relative to a subdirectory, not just the repo root', () => {
   const root = repo();
-  const g = (...a) => execFileSync('git', a, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  const g = (...a) => execFileSync('git', a, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: SPAWN_TIMEOUT }).trim();
   rmSync(join(root, '.git'), { recursive: true, force: true });
   g('init', '-q', '-b', 'feature');
   g('config', 'user.email', 't@t'); g('config', 'user.name', 't');
@@ -423,7 +423,7 @@ test('a round after an approve spends the approve', () => {
 
 test('branches lists a worktree branch a worker never renamed, marked unnamed', () => {
   const root = repo();
-  const g = (...a) => execFileSync('git', a, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  const g = (...a) => execFileSync('git', a, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: SPAWN_TIMEOUT }).trim();
   rmSync(join(root, '.git'), { recursive: true, force: true });
   g('init', '-q', '-b', 'feature'); g('config', 'user.email', 't@t'); g('config', 'user.name', 't');
   sh(root, `echo a > a.txt && git add -A && git commit -qm base`);
@@ -801,7 +801,7 @@ test('a lock left by a process that is gone is broken; a live holder makes the c
   writeFileSync(lock, `${process.pid} ${hostname()} ${new Date().toISOString()}\n`);
   const env = { ...process.env, JARL_LOCK_WAIT_MS: '300' };
   let err;
-  try { execFileSync(process.execPath, [SCRIPT, 'evidence', '001', 'blocked', '--root', root], { encoding: 'utf8', env, stdio: 'pipe' }); } catch (e) { err = e; }
+  try { execFileSync(process.execPath, [SCRIPT, 'evidence', '001', 'blocked', '--root', root], { encoding: 'utf8', env, stdio: 'pipe', timeout: SPAWN_TIMEOUT }); } catch (e) { err = e; }
   assert.ok(err, 'a held lock refuses instead of writing without it');
   assert.match(String(err.stderr), new RegExp(`\\.jarl/\\.lock is held by another jarl\\.mjs \\(${process.pid} .*\\) — nothing was written`));
   assert.doesNotMatch(jarl(root, 'show', '001'), /blocked/);
@@ -818,7 +818,7 @@ test('a value flag takes the next argument whatever it starts with; -- ends the 
   assert.equal(jarl(root, 'evidence', '001', '--ran', '--help', '--saw', 'usage'), '001 evidence row recorded');
   jarl(root, 'evidence', '001', '--ran', 'yg check', '--saw', '--- FAIL: 3 pairs');
   jarl(root, 'evidence', '001', '--ran=go test ./...', '--saw=ok=all');
-  const raw = (...args) => execFileSync(process.execPath, [SCRIPT, '--root', root, ...args], { encoding: 'utf8' }).trim();
+  const raw = (...args) => execFileSync(process.execPath, [SCRIPT, '--root', root, ...args], { encoding: 'utf8', timeout: SPAWN_TIMEOUT }).trim();
   raw('evidence', '001', '--', '--json prints ok');
   // A --root written after the bare -- is an argument, and a surplus one is refused rather than dropped.
   assert.match(refuses(root, 'evidence', '001', '--', 'x'), /unexpected: "--root".*flags such as --root go before it/s);
@@ -1030,7 +1030,7 @@ test('next and status flag work with no acceptance line, done says so on stderr,
   assert.match(jarl(root, 'status'), /in flight with no acceptance line: 001$/m);
   assert.match(jarl(root, 'review', '2', 'approve', '--by', 'rev', FINDINGS), /002 review approve by rev \(fresh\) · acceptance: - a \/ - b/);
   jarl(root, 'evidence', '2', '--ran', 'x', '--saw', 'y');
-  const r = execFileSync(process.execPath, [SCRIPT, 'set', '2', 'done', 'merged', '--root', root], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  const r = execFileSync(process.execPath, [SCRIPT, 'set', '2', 'done', 'merged', '--root', root], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: SPAWN_TIMEOUT });
   assert.equal(r.trim(), '002 → done', 'stdout is unchanged');
   const child = (() => { try { return sh(tmpdir(), `node ${SCRIPT} review 1 approve --by rev "${FINDINGS}" --root ${root} >/dev/null && node ${SCRIPT} evidence 1 --ran t --saw ok --root ${root} >/dev/null && node ${SCRIPT} set 1 done m --root ${root} 2>&1 >/dev/null`); } catch (e) { return String(e.stdout); } })();
   assert.match(child, /note: 001 no acceptance line on file/, 'done is never refused for it, only noted');
@@ -1256,10 +1256,7 @@ function gitLoop(...initFlags) {
   jarl(root, 'init', 'goal', ...initFlags);
   return { root, sh: run };
 }
-function withStderr(root, ...args) {
-  const r = spawnSync(process.execPath, [SCRIPT, ...args, '--root', root], { encoding: 'utf8' });
-  return { status: r.status, stdout: r.stdout.trim(), stderr: r.stderr.trim() };
-}
+const withStderr = (root, ...args) => run(root, args);
 function editIssue(root, id, fn) {
   const dir = join(root, '.jarl', 'issues');
   const file = join(dir, readdirSync(dir).find((f) => f.startsWith(`${id}-`)));

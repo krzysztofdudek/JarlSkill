@@ -11,6 +11,7 @@ import { join, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mergeDecisionsTexts, decisionsDriverCommand, mergeFlags, JARL_GITATTRIBUTES } from '../jarl-lib.mjs';
 import { NO_EXCLUDES, bashBin } from './portable.mjs';
+import { SPAWN_TIMEOUT } from './helpers.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 const ruling = (date, slug, text, ...meta) => `## ${date} · ${slug}\n${text}\n${meta.length ? `\n${meta.join('\n')}\n` : ''}`;
@@ -67,11 +68,11 @@ test('decisions: a ruling both sides rewrote is refused', () => {
 
 function repo() {
   const dir = mkdtempSync(join(tmpdir(), 'jarl-merge-'));
-  const g = (...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  const g = (...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: SPAWN_TIMEOUT }).trim();
   g('init', '-q', '-b', 'main'); g('config', 'user.email', 't@t'); g('config', 'user.name', 't'); g('config', 'core.excludesFile', NO_EXCLUDES);
-  const jarl = (...args) => execFileSync(process.execPath, [SCRIPT, ...args, '--root', dir], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  const jarl = (...args) => execFileSync(process.execPath, [SCRIPT, ...args, '--root', dir], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: SPAWN_TIMEOUT }).trim();
   const commit = (m) => { g('add', '-A'); g('commit', '-qm', m); };
-  const merge = (branch, settings = []) => spawnSync('git', [...settings, 'merge', '--no-edit', branch], { cwd: dir, encoding: 'utf8' });
+  const merge = (branch, settings = []) => spawnSync('git', [...settings, 'merge', '--no-edit', branch], { cwd: dir, encoding: 'utf8', timeout: SPAWN_TIMEOUT });
   return { dir, g, jarl, commit, merge, done: () => rmSync(dir, { recursive: true, force: true }) };
 }
 // A file as the working tree holds it, with its line ends as git stores them. Under core.autocrlf=true (Git for
@@ -92,7 +93,7 @@ test('a committed loop gets its merge setup: .jarl/.gitattributes and the decisi
     assert.match(flags, /merge\.jarl-decisions\.driver=/);
     assert.match(flags, /merge\.yg-log\.driver=yg merge-driver log %O %A %B %P/);
     assert.match(flags, /merge\.yg-lock\.driver=yg merge-driver lock %O %A %B %P/);
-    const out = execFileSync(process.execPath, [SCRIPT, 'merge-driver', 'flags'], { encoding: 'utf8' });
+    const out = execFileSync(process.execPath, [SCRIPT, 'merge-driver', 'flags'], { encoding: 'utf8', timeout: SPAWN_TIMEOUT });
     assert.match(out, /^-c 'merge\.jarl-decisions\.name=/);
   } finally { r.done(); }
 });
@@ -102,7 +103,7 @@ test('a loop out of git gets no merge setup', () => {
   try {
     r.jarl('init', 'goal');
     assert.equal(existsSync(join(r.dir, '.jarl', '.gitattributes')), false);
-    assert.equal(spawnSync('git', ['config', '--local', '--get', 'merge.jarl-decisions.driver'], { cwd: r.dir }).status, 1);
+    assert.equal(spawnSync('git', ['config', '--local', '--get', 'merge.jarl-decisions.driver'], { cwd: r.dir, timeout: SPAWN_TIMEOUT }).status, 1);
   } finally { r.done(); }
 });
 
@@ -195,7 +196,7 @@ test('fact 13, b\': a driver program that is there but fails without writing (an
     const old = join(r.dir, 'old yg.mjs');
     writeFileSync(old, "console.error(\"error: unknown command 'merge-driver'\"); process.exit(1);\n");
     const flags = mergeFlags({ yg: `"${process.execPath.replace(/\\/g, '/')}" "${old.replace(/\\/g, '/')}"` });
-    const m = spawnSync(bashBin(), ['-c', `git ${flags} merge --no-edit b`], { cwd: r.dir, encoding: 'utf8' });
+    const m = spawnSync(bashBin(), ['-c', `git ${flags} merge --no-edit b`], { cwd: r.dir, encoding: 'utf8', timeout: SPAWN_TIMEOUT });
     assert.notEqual(m.status, 0);
     const x = worktree(join(r.dir, 'x.md'));
     assert.match(x, /^<<<<<<< /m, 'markers, not ours alone');
@@ -241,7 +242,7 @@ test('fact 13, c: the driver never exits 0 without writing — a clean merge lea
       writeFileSync(o, file(ruling('2026-01-01', 'a', 'A.')));
       writeFileSync(a, file(ruling('2026-01-01', 'a', 'A.'), ruling('2026-01-02', 'o', 'O.')));
       writeFileSync(b, file(ruling('2026-01-01', 'a', 'A.'), ruling('2026-01-02', 't', 'T.')));
-      const run = spawnSync(process.execPath, [SCRIPT, 'merge-driver', 'decisions', o, a, b], { encoding: 'utf8' });
+      const run = spawnSync(process.execPath, [SCRIPT, 'merge-driver', 'decisions', o, a, b], { encoding: 'utf8', timeout: SPAWN_TIMEOUT });
       assert.equal(run.status, 0, run.stderr);
       assert.match(readFileSync(a, 'utf8'), /· o\n[\s\S]*· t\n/);
     } finally { rmSync(dir, { recursive: true, force: true }); }

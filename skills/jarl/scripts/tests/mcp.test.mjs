@@ -61,7 +61,7 @@ test('parity: each tool has one field per argument and per flag, under the CLI n
     const shown = new Set([...blocks[cmd].synopsis.matchAll(/--([a-z][a-z-]*)/g)].map((m) => m[1]));
     for (const f of shown) assert.ok(props[f], `${cmd}: usage shows --${f}, the tool has no field for it`);
     for (const f of flags) assert.ok(shown.has(f), `${cmd}: --${f} is in COMMAND_FLAGS but its usage does not show it`);
-    // Runes 1.0.0 writes only what differs from the MCP defaults: no additionalProperties (the server refuses an unknown field itself), readOnlyHint only when true.
+    // Runes writes only what differs from the MCP defaults: no additionalProperties (the server refuses an unknown field itself), readOnlyHint only when true.
     assert.equal(t.inputSchema.additionalProperties, undefined);
     assert.equal(t.annotations.readOnlyHint === true, !MUTATING.has(cmd));
     assert.match(t.description, MUTATING.has(cmd) ? /^WRITES the loop/ : /^Read-only/, `${cmd}: the description says plainly whether it writes`);
@@ -236,7 +236,7 @@ test('the plugin starts the server by itself: .mcp.json and the portable mcp.jso
   assert.ok(existsSync(join(PLUGIN, 'skills/jarl/scripts/jarl-mcp.mjs')));
   // A plugin path the environment cannot reach (a host path inside a container): one stderr line, exit 0.
   // Run with its arguments as an array, as a host starts it: no shell's quoting in between, on any OS.
-  const r = spawnSync(process.execPath, ['-e', claude.args[1], '/no/such/jarl-mcp.mjs'], { encoding: 'utf8' });
+  const r = spawnSync(process.execPath, ['-e', claude.args[1], '/no/such/jarl-mcp.mjs'], { encoding: 'utf8', timeout: 120_000 });
   assert.match(r.stderr, /^jarl: \/no\/such\/jarl-mcp\.mjs is not reachable from this environment/);
   assert.equal(r.status, 0);
 });
@@ -389,7 +389,7 @@ test('a JSON-RPC response from the client gets no answer; a malformed request st
     { jsonrpc: '2.0', id: 92 },
     { jsonrpc: '2.0', id: 93, method: 'ping' },
   ].map((m) => JSON.stringify(m)).join('\n');
-  const out = execFileSync(process.execPath, [SERVER], { input: `${lines}\n`, encoding: 'utf8' }).trim().split('\n').map((l) => JSON.parse(l));
+  const out = execFileSync(process.execPath, [SERVER], { input: `${lines}\n`, encoding: 'utf8', timeout: 120_000 }).trim().split('\n').map((l) => JSON.parse(l));
   assert.deepEqual(out.map((m) => m.id), [92, 93]);
   assert.equal(out[0].error.code, -32600);
   assert.deepEqual(out[1].result, {});

@@ -29,7 +29,7 @@
 // the server handles one call at a time, so its calls never overlap; against other processes (the CLI, other
 // sessions' servers) every writing command holds .jarl/.lock exactly as the CLI does.
 //
-// Wire format: newline-delimited JSON-RPC 2.0 on stdin/stdout (MCP stdio transport); stderr is for diagnostics.
+// Wire format: newline-delimited JSON-RPC on stdin/stdout (MCP stdio transport); stderr is for diagnostics.
 // No dependencies beyond the vendored copy, Node 22+.
 import { readFileSync } from 'node:fs';
 import { resolve, isAbsolute } from 'node:path';

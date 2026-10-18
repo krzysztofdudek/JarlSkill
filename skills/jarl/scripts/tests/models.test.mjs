@@ -11,7 +11,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import * as R from '../record.mjs';
 import { OLD_JARL_FILE, oldJarlIsPinned, oldJarl } from './old-jarl.mjs';
-import { spawnJarl, loop as makeLoop } from './helpers.mjs';
+import { spawnJarl, loop as makeLoop, SPAWN_TIMEOUT } from './helpers.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 const L = await import('../jarl-lib.mjs');
@@ -420,7 +420,7 @@ test('a lower-ranked model whose share equals the default\'s is suggested: the d
 test('models --by repo slices the same facts by repository; the text names n for every count and a share only from n >= 5', () => {
   const root = loop({ lines: true });
   mkdirSync(join(root, 'sub'));
-  assert.equal(spawnSync('git', ['init', '-q'], { cwd: join(root, 'sub') }).status, 0);
+  assert.equal(spawnSync('git', ['init', '-q'], { cwd: join(root, 'sub'), timeout: SPAWN_TIMEOUT }).status, 0);
   units(root, 5, { model: MID, worker: 'w-m' }, 1);
   units(root, 2, { model: MID, worker: 'w-m', repo: 'sub' });
   const m = L.cmdModels(root, { by: 'repo' });

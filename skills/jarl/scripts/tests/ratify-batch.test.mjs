@@ -10,7 +10,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { run as runJarl } from './helpers.mjs';
+import { run as runJarl, jarlResult } from './helpers.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 
@@ -29,7 +29,7 @@ if (args[0] === '--version') { console.log('6.1.0'); process.exit(0); }
 if (mode === 'writer') {
   // Another writer of the loop while the type log is being written: it must not find the loop's lock held.
   const { spawnSync } = await import('child_process');
-  const r = spawnSync(process.execPath, [${JSON.stringify(SCRIPT)}, 'log', 'meanwhile', '--root', process.env.JARL_TEST_ROOT], { encoding: 'utf8', env: { ...process.env, JARL_LOCK_WAIT_MS: '300' } });
+  const r = spawnSync(process.execPath, [${JSON.stringify(SCRIPT)}, 'log', 'meanwhile', '--root', process.env.JARL_TEST_ROOT], { encoding: 'utf8', env: { ...process.env, JARL_LOCK_WAIT_MS: '300' }, timeout: 120000 });
   appendFileSync(${JSON.stringify(join(dir, 'calls.jsonl'))}, JSON.stringify({ args: ['meanwhile'], status: r.status, stderr: r.stderr }) + '\\n');
 }
 if (mode === 'refuse') { console.error("error[type-not-found]: node type '" + args[3] + "' is not defined"); process.exit(1); }
@@ -49,11 +49,7 @@ const loop = ({ graph = false, permanent = false } = {}) => {
 };
 // A call with an environment of its own (no Yggdrasil unless the test names one): the shared run, with JARL_YG empty.
 const run = (root, env, args) => runJarl(root, args, { env: { JARL_YG: '', ...env } });
-const jarl = (root, env, ...args) => {
-  const r = run(root, env, args);
-  if (r.status !== 0) throw new Error(`jarl ${args.join(' ')} failed: ${r.stderr}`);
-  return r.stdout;
-};
+const jarl = (root, env, ...args) => jarlResult(root, args, { env: { JARL_YG: '', ...env } }).stdout;
 const json = (root, env, ...args) => JSON.parse(jarl(root, env, ...args, '--json'));
 const decisions = (root) => readFileSync(join(root, '.jarl', 'decisions.md'), 'utf8');
 

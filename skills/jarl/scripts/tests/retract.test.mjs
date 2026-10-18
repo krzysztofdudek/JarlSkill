@@ -1,5 +1,5 @@
 // Retraction by an appended entry (issue 245), a title change and a review with empty findings. The first retraction of
-// a loop raises the record format, so the pinned Jarl 6.1.0 (tests/old-jarl.mjs) refuses the loop instead of counting
+// a loop raises the record format, so the pinned frozen reader (tests/old-jarl.mjs) refuses the loop instead of counting
 // the retracted approve or row.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -169,7 +169,7 @@ test('a retraction always finds its row: a command holding the saw marker, a com
   assert.deepEqual(L.gateState(root, id).unresolvedRetractions, [7]);
 });
 
-test('the first retraction raises the format before its line is written; the pinned Jarl 6.1.0 refuses the loop loudly', () => {
+test('the first retraction raises the format before its line is written; the pinned frozen reader refuses the loop loudly', () => {
   for (const retract of [
     (root, id) => jarl(root, 'review', id, 'retract', '--by', 'jarl', 'the approve was a mistake'),
     (root, id) => jarl(root, 'evidence', id, '--retract', '1', '--by', 'jarl', 'the row was a mistake'),

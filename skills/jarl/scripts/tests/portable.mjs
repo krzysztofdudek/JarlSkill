@@ -15,7 +15,7 @@ let BASH;
 export function bashBin() {
   if (BASH) return BASH;
   if (process.platform !== 'win32') return (BASH = 'bash');
-  const exec = execFileSync('git', ['--exec-path'], { encoding: 'utf8' }).trim();   // <git>/mingw64/libexec/git-core
+  const exec = execFileSync('git', ['--exec-path'], { encoding: 'utf8', timeout: 120_000 }).trim();   // <git>/mingw64/libexec/git-core
   const found = [resolve(exec, '..', '..', '..', 'bin', 'bash.exe'), resolve(exec, '..', '..', '..', 'usr', 'bin', 'bash.exe')].find((p) => existsSync(p));
   if (!found) throw new Error(`no Git for Windows bash beside ${exec}: the tests need it`);
   return (BASH = found);

@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { sh, ghStub } from './portable.mjs';
-import { run as runJarl, jarl, refuses, loop as makeLoop } from './helpers.mjs';
+import { run as runJarl, jarl, refuses, loop as makeLoop, SPAWN_TIMEOUT } from './helpers.mjs';
 import { fileURLToPath } from 'node:url';
 import { FINDINGS } from './findings.mjs';
 
@@ -154,7 +154,7 @@ test('decide: slugs are validated and compared as strings — q.r is not a dupli
   for (const bad of ['a+b', '(x', 'a b', '[z]', 'x'.repeat(81), 'ż', '.dot']) {
     assert.match(refuses(root, 'decide', bad, 'r'), /a ruling's slug is letters, digits/, bad);
   }
-  const lead = spawnSync(process.execPath, [SCRIPT, '--root', root, 'decide', '--', '-lead', 'r'], { encoding: 'utf8' });
+  const lead = spawnSync(process.execPath, [SCRIPT, '--root', root, 'decide', '--', '-lead', 'r'], { encoding: 'utf8', timeout: SPAWN_TIMEOUT });
   assert.match(lead.stderr, /a ruling's slug is letters, digits/);
   assert.match(refuses(root, 'decide', 'answers', 'r', '--by', ''), /--by needs a value/);
 });

@@ -9,7 +9,7 @@ import { join, basename } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { sh } from './portable.mjs';
-import { run, refuses } from './helpers.mjs';
+import { run, jarlResult, refuses } from './helpers.mjs';
 import { FINDINGS } from './findings.mjs';
 import { fileURLToPath } from 'node:url';
 import { reviewerKind, coordinatorNames, BASE_COORDINATORS, ID_SRC } from '../jarl.mjs';
@@ -20,11 +20,7 @@ const FILED = new RegExp(`filed (${ID_SRC})`);
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 
 // A call that succeeded, as the whole result (the tests read its stdout and stderr).
-const jarl = (root, ...args) => {
-  const r = run(root, args);
-  if (r.status !== 0) throw new Error(`jarl ${args.join(' ')} failed: ${r.stderr}`);
-  return r;
-};
+const jarl = (root, ...args) => jarlResult(root, args);
 const loop = () => {
   const dir = mkdtempSync(join(tmpdir(), 'jarl-fresh-'));
   sh(dir, 'git init -q -b feature && git config user.email t@t && git config user.name t && git config core.excludesFile /dev/null && echo 1 > a.mjs && git add -A && git commit -qm base');

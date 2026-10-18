@@ -13,7 +13,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import * as R from '../record.mjs';
 import { oldJarl } from './old-jarl.mjs';
-import { spawnJarl, jarl, refuses, loop as makeLoop } from './helpers.mjs';
+import { spawnJarl, jarl, refuses, loop as makeLoop, SPAWN_TIMEOUT } from './helpers.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 const L = await import('../jarl-lib.mjs');
@@ -22,7 +22,7 @@ const run = (root, ...args) => spawnJarl(root, args);
 const json = (root, ...args) => JSON.parse(jarl(root, ...args, '--json'));
 const log = (root) => readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
 const issueText = (root, id) => { const dir = join(root, '.jarl', 'issues'); return readFileSync(join(dir, readdirSync(dir).find((f) => f.startsWith(`${String(id).padStart(3, '0')}-`))), 'utf8'); };
-const git = (cwd, ...args) => spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { cwd, encoding: 'utf8', timeout: 60_000 });
+const git = (cwd, ...args) => spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { cwd, encoding: 'utf8', timeout: SPAWN_TIMEOUT });
 
 // A loop of one repository (the loop's own), with `n` issues filed.
 const loop = (n = 0, goal = 'goal') => {

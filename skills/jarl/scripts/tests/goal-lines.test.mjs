@@ -1,4 +1,4 @@
-// The goal is read by one grammar: goalLines returns what it carries for the tool, goalLineText writes a line it reads back.
+// The goal is read by one grammar: goalLines returns what it carries for the tool.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as L from '../jarl-lib.mjs';
@@ -37,12 +37,4 @@ test('goalLines of a loop with no goal is empty, and a goal without lines carrie
   const bare = L.goalLines('# Goal\n\n\nJust this\n');
   assert.equal(bare.goal, 'Just this');
   assert.deepEqual(bare.checks, []);
-});
-
-test('goalLineText writes a line goalLines reads back', () => {
-  const text = ['# Goal', '', 'g', L.goalLineText('Check', 'make all'), L.goalLineText('Check', 'npm test', 'lib'), L.goalLineText('Model', ['a', 'b'], 'light'), L.goalLineText('Coordinators', ['x', 'y'])].join('\n');
-  const g = L.goalLines(text);
-  assert.deepEqual(g.checksByRepo, { bare: ['make all'], repos: { lib: ['npm test'] } });
-  assert.deepEqual(g.models, [{ tier: 'light', models: ['a', 'b'] }]);
-  assert.deepEqual(g.coordinators, ['x', 'y']);
 });
