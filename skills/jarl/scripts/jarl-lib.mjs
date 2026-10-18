@@ -1123,16 +1123,15 @@ export function readTemplate(root, name) {
   };
 }
 
-// Where a loop's directory stands among the worktrees of its git repository, read-only (git rev-parse, git worktree
-// list). Null outside git. `main` is the main checkout (null for a bare repository), `mainRoot` the same directory of the
-// loop in it, `linked` whether `root` is inside a linked worktree rather than the main checkout, and `copies` the loop's
-// directory in every worktree, the main checkout first. The one helper that finds the main checkout through git's own
-// worktree list; the commands that must act on the main checkout's loop reuse it.
+// Where a loop's directory stands among the worktrees of its git repository, read-only (git rev-parse and the
+// worktrees git lists). Null outside git. `main` is the main checkout (null for a bare repository), `mainRoot` the same
+// directory of the loop in it, `linked` whether `root` is inside a linked worktree rather than the main checkout, and
+// `copies` the loop's directory in every worktree, the main checkout first. The one helper that finds the main checkout
+// through git's own list of worktrees; the commands that must act on the main checkout's loop reuse it.
 export function mainCheckoutOf(root) {
   const top = git(root, ['rev-parse', '--show-toplevel']);
-  const list = top === null ? null : git(root, ['worktree', 'list', '--porcelain']);
-  if (list === null) return null;
-  const entries = list.split(/\n\s*\n/).map((b) => ({ path: /^worktree (.+)$/m.exec(b)?.[1], bare: /^bare$/m.test(b) })).filter((e) => e.path);
+  const entries = top === null ? null : worktreesOf(root);
+  if (entries === null) return null;
   const here = canonical(top);
   const rel = relative(here, canonical(root));
   const main = entries.length && !entries[0].bare ? canonical(entries[0].path) : null;
@@ -1141,7 +1140,7 @@ export function mainCheckoutOf(root) {
     copies: entries.filter((e) => !e.bare).map((e) => join(canonical(e.path), rel)),
   };
 }
-// The one lookup of a worktree's state, asked of git first (git worktree list --porcelain in `repo`). It finds the worktree
+// The one lookup of a worktree's state, asked of git first (the worktrees git lists in `repo`). It finds the worktree
 // holding the lease's `branch`, and, for an old lease that stored one, the worktree at `stored`. The states:
 //   here       the worktree's directory is on this machine;
 //   elsewhere  git lists it locked (`reason` when it has one) and its directory is not visible from here — a container's;
@@ -1153,11 +1152,7 @@ export function mainCheckoutOf(root) {
 // `gone`, a missing one whose parent is missing too is `invisible`. Returns { state, path, reason? }; `path` is null for none.
 export function worktreeState(repo, branch, stored) {
   const sameAs = (a, b) => canonical(dirname(a)) === canonical(dirname(b)) && basename(a) === basename(b);
-  const list = repo ? git(repo, ['worktree', 'list', '--porcelain']) : null;
-  const entries = (list || '').split(/\n\s*\n/).map((b) => ({
-    path: /^worktree (.+)$/m.exec(b)?.[1], branch: /^branch refs\/heads\/(.+)$/m.exec(b)?.[1],
-    locked: /^locked(?: |$)/m.test(b), reason: /^locked (.+)$/m.exec(b)?.[1], prunable: /^prunable(?: |$)/m.test(b),
-  })).filter((e) => e.path);
+  const entries = (repo && worktreesOf(repo)) || [];
   const found = (branch && entries.find((e) => e.branch === branch)) || (stored && entries.find((e) => sameAs(e.path, stored)));
   if (found) {
     if (existsSync(found.path)) return { state: 'here', path: found.path };
@@ -1590,9 +1585,7 @@ function mergeRefusal(root, issue, base) {
   const m = mergedOf(issue);
   const gate = 'this loop\'s profile closes an issue only on a landed merge (done-gate "requires-merged": true)';
   if (!m) return `${issue.id} records no merge — ${gate}: jarl.mjs merged ${issue.id} --sha <sha> once it has landed`;
-  let repos = [];
-  for (const n of m.repo ? [m.repo] : (reposNamed(issue).length ? reposNamed(issue) : [undefined])) { try { repos.push(repoOf(root, n)); } catch { /* not a repository here */ } }
-  repos = repos.filter((r) => isGitRepo(r));
+  const repos = issueRepoPaths(root, issue, m.repo ? [m.repo] : undefined).filter(isGitRepo);
   if (!repos.length) return `${issue.id} records Merged ${m.sha}, but no repository it names is a git repository here — ${gate}, and the merge cannot be checked`;
   const ref = base === undefined ? 'HEAD' : base;
   if (base !== undefined && repos.every((r) => git(r, ['rev-parse', '--verify', '--quiet', `${base}^{commit}`]) === null)) return `${issue.id}: the base ${base} is not a branch or commit in ${repos.join(' or ')} — ${gate}, and the merge cannot be checked`;
@@ -1676,9 +1669,7 @@ export function cmdMerged(root, rawIds, flags) {
     // An issue naming several repositories is noted only when the sha is in none of them.
     const checked = new Set();
     for (const issue of issues) {
-      let repos = repoPath ? [repoPath] : [];
-      if (!repoPath) for (const n of (reposNamed(issue).length ? reposNamed(issue) : [undefined])) { try { repos.push(repoOf(root, n)); } catch { /* gone */ } }
-      repos = repos.filter((r) => git(r, ['rev-parse', '--git-dir']) !== null);
+      const repos = (repoPath ? [repoPath] : issueRepoPaths(root, issue)).filter(isGitRepo);
       const key = repos.join('\n');
       if (!repos.length || checked.has(key)) continue;
       checked.add(key);
@@ -1725,10 +1716,6 @@ function gitRun(cwd, args) {
   try { return { ok: true, out: execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim() }; }
   catch (e) { return { ok: false, err: String(e.stderr || e.message).trim().split('\n')[0] }; }
 }
-// Every worktree git lists in a repository, with the branch it is on (null when detached).
-function listedWorktrees(repo) {
-  return (git(repo, ['worktree', 'list', '--porcelain']) || '').split(/\n\s*\n/).map((b) => ({ path: /^worktree (.+)$/m.exec(b)?.[1], branch: /^branch refs\/heads\/(.+)$/m.exec(b)?.[1] || null })).filter((w) => w.path);
-}
 // A word safe to paste into a shell: single-quoted unless it is plainly safe.
 export const shellWord = (s) => (/^[A-Za-z0-9_@%+=:,./-]+$/.test(s) ? s : `'${String(s).replace(/'/g, `'\\''`)}'`);
 const sameDir = (a, b) => canonical(a) === canonical(b);
@@ -1755,7 +1742,7 @@ function cleanUpAfterMerge(root, issues, sha, repoPath) {
   for (const { repo, branch, on } of groups.values()) {
     if (!isGitRepo(repo) || git(repo, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`]) === null) continue;
     const base = defaultBase(repo);
-    const result = { repo: basename(repo), branch };
+    const result = { repo: repoLabel(repo), branch };
     const keep = (reason, extra = {}) => results.push({ ...result, ...extra, kept: reason });
     if (TRUNK_NAME.test(branch) || branch === base) { keep('it is the base or a release branch'); continue; }
     const others = everyone.filter((i) => !called.has(i.id) && fieldText(i.fields.branch) === branch && profile.unfinished(i.status) && issueRepos(root, i).includes(repo)).map((i) => i.id);
@@ -1766,7 +1753,7 @@ function cleanUpAfterMerge(root, issues, sha, repoPath) {
     // what it is when it is not that one, and is never removed.
     const ws = worktreeState(repo, branch, undefined);
     if (ws.state === 'none' && stored) {
-      const listed = listedWorktrees(repo).find((w) => sameDir(w.path, stored));
+      const listed = (worktreesOf(repo) || []).find((w) => sameDir(w.path, stored));
       keep(!listed ? `the path the lease names (${stored}) is not a worktree git lists` : listed.branch ? `the path the lease names (${stored}) is a worktree on ${listed.branch}, not on this branch` : `the path the lease names (${stored}) is a detached worktree`);
       continue;
     }
@@ -3029,9 +3016,9 @@ function reviewModelNotes(issue, verdict, model, lines, events) {
   return [];
 }
 
-const repoLabel = (dir, issue) => {
+const repoLabels = (dir, issue) => {
   const named = reposNamed(issue);
-  return named.length ? [...new Set(named.map((n) => basename(n.replace(/[\\/]+$/, '')) || basename(resolve(dir))))] : [basename(resolve(dir))];
+  return named.length ? [...new Set(named.map((n) => repoLabel(n, dir)))] : [repoLabel(resolve(dir))];
 };
 
 // What one loop's record shows of its workers (one row per unit: one worker on one branch, which is one issue or one
@@ -3085,7 +3072,7 @@ function modelFacts(loop, label, lines) {
     const reviewed = per.some((p) => p.reviewed);
     const settled = per.every((p) => p.closed || p.handedOver);
     units.push({
-      loop: label, model: u.model, worker: u.worker, kind: lead.kind || '(none)', tier: lead.tier, repos: repoLabel(dir, lead), tags: lead.tags,
+      loop: label, model: u.model, worker: u.worker, kind: lead.kind || '(none)', tier: lead.tier, repos: repoLabels(dir, lead), tags: lead.tags,
       ended: !settled, reviewed,
       clean: per.every((p) => p.closed && !p.changes && !p.rounds && !p.handedOver),
       changes: per.reduce((s, p) => s + p.changes, 0), rounds: per.reduce((s, p) => s + p.rounds, 0),
@@ -3113,7 +3100,7 @@ function modelFacts(loop, label, lines) {
       if (e.type !== 'verdict') return;
       const row = {
         loop: label, model: e.model, by: e.by, relayed: e.relayed, verdict: e.verdict, kind: issue.kind || '(none)', tier: issue.tier,
-        repos: repoLabel(dir, issue), tags: issue.tags, checked: false, miss: false, ownOrLower: false, clearing: false, lowChecked: false,
+        repos: repoLabels(dir, issue), tags: issue.tags, checked: false, miss: false, ownOrLower: false, clearing: false, lowChecked: false,
       };
       if (e.verdict === 'approve') {
         row.ownOrLower = ownOrLower(e.model);
@@ -3426,6 +3413,18 @@ function git(root, args) {
   try { return execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { return null; }
 }
 
+// The worktrees of the repository `dir` is in, as `git worktree list --porcelain` gives them: { path, branch (null when detached), bare, locked,
+// reason (of the lock), prunable }, the main checkout first. Null where git does not answer. The one place the list is
+// split into entries.
+function worktreesOf(dir) {
+  const text = git(dir, ['worktree', 'list', '--porcelain']);
+  if (text === null) return null;
+  return text.split(/\n\s*\n/).map((b) => ({
+    path: /^worktree (.+)$/m.exec(b)?.[1], branch: /^branch refs\/heads\/(.+)$/m.exec(b)?.[1] || null, bare: /^bare$/m.test(b),
+    locked: /^locked(?: |$)/m.test(b), reason: /^locked (.+)$/m.exec(b)?.[1], prunable: /^prunable(?: |$)/m.test(b),
+  })).filter((e) => e.path);
+}
+
 // Read once per run: whether a directory is in a git repository, and every local branch of a repository with its
 // tip, upstream (null when none is set or its remote branch is gone), ahead/behind against that upstream and the
 // time of its last commit — one git process per repository instead of several per branch, which is what keeps the
@@ -3533,7 +3532,7 @@ export function cmdCheck(root, rawId, flags) {
     need(pkg.length, `no issue records branch ${flags.branch} — name one (check <id> --branch ${flags.branch}), or record the package: set <ids> in-progress --branch ${flags.branch}`);
     if (flags.repo === undefined) {
       const repos = new Map();
-      for (const i of pkg) for (const n of (reposNamed(i).length ? reposNamed(i) : ['.'])) { const r = canonical(resolve(root, n)); repos.set(r, [...(repos.get(r) || []), i.id]); }
+      for (const i of pkg) for (const n of namedRepos(reposNamed(i))) { const r = canonical(resolve(root, n ?? '.')); repos.set(r, [...(repos.get(r) || []), i.id]); }
       need(repos.size === 1, `the issues on ${flags.branch} name different repositories (${[...repos.values()].map((ids) => ids.join(', ')).join(' | ')}) — check them one by one, or pass --repo`);
     }
   } else {
@@ -3618,9 +3617,7 @@ function loopRepos(root, issues) {
   for (const issue of issues) {
     const unfinished = profile.unfinished(issue.status);
     if (!unfinished && !(issue.fields.branch && issue.status !== 'dropped')) continue;
-    for (const named of reposNamed(issue)) {
-      let repo;
-      try { repo = repoOf(root, named); } catch { continue; }   // a Repo path that no longer resolves is not the boot's to refuse
+    for (const repo of issueRepoPaths(root, issue)) {   // a Repo path that does not resolve is not the boot's to refuse
       const real = canonical(repo);
       if (!seen.has(real)) seen.set(real, repo);
     }
@@ -3633,13 +3630,21 @@ function loopRepos(root, issues) {
 const REPO_OF = new Map();
 function issueRepos(root, issue) {
   const key = `${root}\n${issue.fields.repo || ''}`;
-  if (!REPO_OF.has(key)) {
-    const out = [];
-    for (const n of (reposNamed(issue).length ? reposNamed(issue) : [undefined])) { try { out.push(canonical(repoOf(root, n))); } catch { /* no longer resolves */ } }
-    REPO_OF.set(key, out);
-  }
+  if (!REPO_OF.has(key)) REPO_OF.set(key, issueRepoPaths(root, issue).map(canonical));
   return REPO_OF.get(key);
 }
+// The one resolver of the repositories an issue names: the checkouts its Repo field gives, as repoOf resolves them, or
+// the loop's own repository where it names none. `names` stands in for the Repo field where something else names the
+// repository (a recorded merge). A name that does not resolve is left out: a Repo path that is gone is no refusal here.
+function issueRepoPaths(root, issue, names = reposNamed(issue)) {
+  const out = [];
+  for (const n of namedRepos(names)) { try { out.push(repoOf(root, n)); } catch { /* not a repository here */ } }
+  return out;
+}
+// The names to resolve: the ones given, or undefined (the loop's own repository) where there are none.
+function namedRepos(names) { return names.length ? names : [undefined]; }
+// What a repository is called wherever the tool shows one: the name of its directory.
+function repoLabel(dir, fallback = dir) { return basename(String(dir).replace(/[\\/]+$/, '')) || basename(resolve(fallback)); }
 
 // The issues a branch carries in one repository: those that record it as their Branch, and — for an issue
 // from before the field — the one whose number the branch's jarl/NNN-* name carries.
@@ -3666,8 +3671,7 @@ export function leaseProblems(root, issue, hours = STALE_HOURS, now = Date.now()
   let lastCommit = null;
   // Outside a git repository there is no branch to find, gone or not. An issue naming several repositories
   // keeps its branch while any of them has it.
-  const repos = [];
-  if (f.branch || f.worktree) for (const n of (reposNamed(issue).length ? reposNamed(issue) : [undefined])) { try { const r = repoOf(root, n); if (isGitRepo(r)) repos.push(r); } catch { /* gone */ } }
+  const repos = f.branch || f.worktree ? issueRepoPaths(root, issue).filter(isGitRepo) : [];
   // The worktree is asked of git, by the lease's branch (and the stored path of an old lease): only 'gone' is a problem.
   if (f.branch || f.worktree) {
     const states = (repos.length ? repos : [null]).map((r) => worktreeState(r, f.branch, f.worktree));
@@ -3718,11 +3722,7 @@ function branchesIn(root, repo, flags, issues, hours = STALE_HOURS) {
   const base = flags.base || defaultBase(repo);
   const real = canonical(repo);
   const named = (git(repo, ['branch', '--list', 'jarl/*', '--format=%(refname:short)']) || '').split('\n').filter(Boolean);
-  const worktrees = (git(repo, ['worktree', 'list', '--porcelain']) || '').split('\n\n').map((b) => {
-    const path = /^worktree (.*)$/m.exec(b)?.[1];
-    const branch = /^branch refs\/heads\/(.*)$/m.exec(b)?.[1];
-    return { path, branch };
-  }).filter((w) => w.branch);
+  const worktrees = (worktreesOf(repo) || []).filter((w) => w.branch);
   const mainPath = git(repo, ['rev-parse', '--show-toplevel']);
   // A branch some issue records as its Branch is listed whatever its name: a package's shared branch.
   const leased = [...new Set(issues.filter((i) => i.fields.branch && i.status !== 'dropped' && issueRepos(root, i).includes(real)).map((i) => i.fields.branch))];
@@ -3738,19 +3738,19 @@ function branchesIn(root, repo, flags, issues, hours = STALE_HOURS) {
     const wtGone = ws.state === 'gone';
     const status = ws.state === 'here' ? git(ws.path, ['status', '--porcelain']) : null;
     const dirty = status === null ? null : status.split('\n').filter(Boolean).length;
-    // Uncommitted changes that cannot be counted: a worktree listed but not visible from here, or one that would not answer.
+    // Uncommitted changes that cannot be counted: a worktree git lists but this machine cannot see, or one that would not answer.
     const unknown = ws.state === 'elsewhere' || ws.state === 'invisible' || (ws.state === 'here' && dirty === null);
     const stale = on.flatMap((i) => leaseProblems(root, i, hours).map((p) => `${i.id} ${p}`));
     // Done → delete: every issue it carries is done or dropped (at least one done), and its work is in the
     // base — the branch is an ancestor of it, or every done issue records its merge.
     const done = doneMark(repo, base, name, on, dirty, loadProfile(root), unknown);
-    return { repo: basename(repo), branch: name, ahead, worktree: ws.path, worktreeState: ws.state, ...(ws.reason ? { worktreeReason: ws.reason } : {}), ...(wtGone ? { worktreeGone: true } : {}), dirty, unnamed: !name.startsWith('jarl/') && !leased.includes(name), issues: on.map((i) => i.id), stale, done, deletable: done === 'delete' };
+    return { repo: repoLabel(repo), branch: name, ahead, worktree: ws.path, worktreeState: ws.state, ...(ws.reason ? { worktreeReason: ws.reason } : {}), ...(wtGone ? { worktreeGone: true } : {}), dirty, unnamed: !name.startsWith('jarl/') && !leased.includes(name), issues: on.map((i) => i.id), stale, done, deletable: done === 'delete' };
   });
   // An in-progress issue whose recorded branch is not in the repository any more: a lease with nothing under it.
   const gone = leased.filter((b) => !exists(b)).map((name) => {
     const on = issuesOnBranch(root, issues, real, name);
     const stale = on.flatMap((i) => leaseProblems(root, i, hours).map((p) => `${i.id} ${p}`));
-    return { repo: basename(repo), branch: name, ahead: null, worktree: null, dirty: null, unnamed: false, issues: on.map((i) => i.id), stale, done: null, deletable: false, missing: true };
+    return { repo: repoLabel(repo), branch: name, ahead: null, worktree: null, dirty: null, unnamed: false, issues: on.map((i) => i.id), stale, done: null, deletable: false, missing: true };
   }).filter((r) => r.stale.length);
   return [...rows, ...gone];
 }
@@ -3825,7 +3825,7 @@ export function cmdTips(root, { ci: askCi = true } = {}) {
   const repos = new Map([[topOf(root), root]]);
   for (const i of named) {
     const m = mergedOf(i);
-    for (const n of [...reposNamed(i), ...(m && m.repo ? [m.repo] : [])]) { try { const r = repoOf(root, n); if (!repos.has(topOf(r))) repos.set(topOf(r), r); } catch { /* gone */ } }
+    for (const r of issueRepoPaths(root, i, [...reposNamed(i), ...(m && m.repo ? [m.repo] : [])])) if (!repos.has(topOf(r))) repos.set(topOf(r), r);
   }
   const out = [];
   for (const [real, repo] of repos) {
@@ -4398,7 +4398,7 @@ function statusReason(evidence, word) {
 // or the loop's own.
 function repoNames(root, issue) {
   const named = reposNamed(issue);
-  return named.length ? [...new Set(named.map((n) => basename(topOf(canonical(resolve(root, n))))))] : [basename(topOf(root))];
+  return named.length ? [...new Set(named.map((n) => repoLabel(topOf(canonical(resolve(root, n))))))] : [repoLabel(topOf(root))];
 }
 
 // report [--found]: done (per repository when the done work spans more than one — an issue naming several is
