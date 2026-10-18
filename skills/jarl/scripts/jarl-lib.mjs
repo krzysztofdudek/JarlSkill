@@ -1558,7 +1558,7 @@ function doneNote(issue, root) {
   }
   const m = mergedOf(issue);
   // A merge that carries its check (a passing row, or the red it landed on) needs no CI state to be told apart from an unrecorded one.
-  const decided = () => { let line = null; for (const e of journalById(root).get(issue.id) || []) line = mergeLineOf(issue.id, e.text) || line; return Boolean(line && (line.check || line.red)); };
+  const decided = () => { const line = lastMerge(journalById(root).get(issue.id) || []); return Boolean(line && (line.check || line.red)); };
   if (m && m.ci !== 'green' && m.ci !== 'none' && !(m.ci === null && decided())) notes.push(`merged ${m.sha}, CI ${m.ci || 'not recorded'} — record it when known: jarl.mjs merged ${issue.id} --ci green|red`);
   return notes.length ? { note: notes.join('; ') } : {};
 }
@@ -2660,6 +2660,13 @@ export function mergeLineOf(id, text) {
   return line;
 }
 
+// The last merge an issue's events record, or null.
+function lastMerge(events) {
+  let line = null;
+  for (const e of events) if (e.type === 'merged') line = e;
+  return line;
+}
+
 // What the merges say about the check, from the log: every merged issue counts once, by its last merge line, as landed
 // on a passing check row, on red (with the issue that tracks the cause), or with no check row recorded (a merge written
 // without one). Per repository, an issue naming several counts in
@@ -2673,8 +2680,7 @@ export function checkState(root, issues = loadIssues(root), journal = journalByI
   for (const name of Object.keys(declared.repos)) repo(name);
   const total = { merges: 0, withCheck: 0, noCheck: 0, red: [] };
   for (const i of issues) {
-    let line = null;
-    for (const e of journal.get(i.id) || []) line = mergeLineOf(i.id, e.text) || line;
+    const line = lastMerge(journal.get(i.id) || []);
     if (!line && !mergedOf(i)) continue;
     const kind = line && line.red ? 'red' : line && line.check ? 'withCheck' : 'noCheck';
     for (const name of repoNames(root, i)) {
@@ -2748,34 +2754,58 @@ export function idsNamed(text, held) {
 // - followUps: issues filed within 7 days after a closed issue first closed whose Found by names its number. A closed
 //   research issue is left out: the issues filed from its findings are what it was for, not defects it left behind.
 export const FOLLOW_UP_DAYS = 7;
+// When each issue was filed and when it first moved into a status that closes the record, by issue, from its events.
+function filedAndClosed(issues, journal, profile) {
+  const filed = new Map();
+  const firstClose = new Map();
+  for (const i of issues) {
+    for (const e of journal.get(i.id) || []) {
+      if (e.type === 'filed' && !filed.has(i.id)) filed.set(i.id, e.at);
+      if (e.type === 'move' && profile.is(e.to, 'closes-record') && !firstClose.has(i.id)) firstClose.set(i.id, e.at);
+    }
+  }
+  return { filed, firstClose };
+}
+// The follow-up rule, once: the issues filed within FOLLOW_UP_DAYS after another issue first closed, whose Found by
+// names it, by the issue they follow. An issue follows only a closed issue that has its close in the journal, and not a
+// research one: the issues filed from a research issue's findings are what it was for, not defects it left behind.
+function followUpsOf(issues, filed, firstClose, profile) {
+  const byId = new Map(issues.map((i) => [i.id, i]));
+  const followable = (i) => i.kind !== 'research' && firstClose.has(i.id);
+  const found = new Map();
+  for (const y of issues) {
+    if (!filed.has(y.id)) continue;
+    for (const x of new Set(idsNamed(y.fields['found by'], byId))) {
+      if (x === y.id || !byId.has(x) || !followable(byId.get(x)) || !profile.is(byId.get(x).status, 'closes-record')) continue;
+      const gap = stampMs(filed.get(y.id)) - stampMs(firstClose.get(x));
+      if (gap >= 0 && gap <= FOLLOW_UP_DAYS * DAY) found.set(x, [...(found.get(x) || []), y.id]);
+    }
+  }
+  return found;
+}
 export function loopMetrics(root, issues = loadIssues(root), journal = journalById(root), now = Date.now()) {
   const profile = loadProfile(root);
   const coordinators = coordinatorNames(root);
   const closes = (st) => profile.is(st, 'closes-record');
   const claims = (st) => profile.is(st, 'holds-claim');
-  const byId = new Map(issues.map((i) => [i.id, i]));
-  // One pass over each issue's journal: filed, the moves, rounds, changes, merges and CI states.
+  const { filed: filedAt, firstClose: firstCloseAt } = filedAndClosed(issues, journal, profile);
+  // One pass over each issue's journal: the moves, rounds, changes, merges and CI states.
   const facts = new Map();
   for (const i of issues) {
-    const f = { filed: null, firstClaim: null, firstClose: null, lastClose: null, rounds: 0, changes: 0, reopens: 0, merged: false, ci: [], tracked: false };
-    let status = null;
-    const moved = movesInto(profile.statuses, i.id);
+    const f = { filed: filedAt.get(i.id) || null, firstClaim: null, firstClose: firstCloseAt.get(i.id) || null, lastClose: null, rounds: 0, changes: 0, reopens: 0, merged: false, ci: [], tracked: false };
     for (const e of journal.get(i.id) || []) {
-      if (e.text.startsWith(`filed ${i.id} `)) { f.filed = f.filed || e.at; status = profile.initial; f.tracked = true; continue; }
-      const m = moved.exec(e.text);
-      if (m) {
-        const prev = status; status = m[1]; f.tracked = true;
+      if (e.type === 'filed') { f.tracked = true; continue; }
+      if (e.type === 'move') {
+        const prev = e.from; const status = e.to; f.tracked = true;
         if (claims(status) && !f.firstClaim) f.firstClaim = e.at;
-        if (closes(status)) { f.firstClose = f.firstClose || e.at; f.lastClose = e.at; }
+        if (closes(status)) f.lastClose = e.at;
         if (prev && closes(prev) && !closes(status)) f.reopens += 1;
         continue;
       }
-      if (e.text.startsWith(`${i.id} round `)) { f.rounds += 1; continue; }
-      if (e.text.startsWith(`${i.id} review changes `)) { f.changes += 1; continue; }
-      const mg = mergeLineOf(i.id, e.text);
-      if (mg) { f.merged = true; if (mg.ci) f.ci.push(mg.ci); continue; }
-      const ci = new RegExp(`^${i.id} CI (${CI_STATES.join('|')})$`).exec(e.text);
-      if (ci && f.merged) f.ci.push(ci[1]);
+      if (e.type === 'round') { f.rounds += 1; continue; }
+      if (e.type === 'verdict' && e.verdict === 'changes') { f.changes += 1; continue; }
+      if (e.type === 'merged') { f.merged = true; if (e.ci) f.ci.push(e.ci); continue; }
+      if (e.type === 'ci' && f.merged) f.ci.push(e.state);
     }
     // A merge recorded on the issue with no journal line for it (a hand-made file): its CI field as the one reading.
     if (!f.merged && mergedOf(i)) { f.merged = true; if (mergedOf(i).ci) f.ci.push(mergedOf(i).ci); }
@@ -2837,28 +2867,18 @@ export function loopMetrics(root, issues = loadIssues(root), journal = journalBy
   // Follow-ups: the closed issues that have a close time in the journal, and every issue filed within the window after
   // it that names its number in Found by. The window of a close less than 7 days ago is still open: counted apart.
   const anyFoundBy = issues.some((i) => fieldText(i.fields['found by']));
-  const followable = (i) => i.kind !== 'research' && facts.get(i.id).firstClose;
-  const closedAt = closed.filter(followable);
-  const found = {};
-  for (const y of issues) {
-    const filed = facts.get(y.id).filed;
-    if (!filed) continue;
-    for (const x of new Set(idsNamed(y.fields['found by'], byId))) {
-      if (x === y.id || !byId.has(x) || !followable(byId.get(x)) || !closes(byId.get(x).status)) continue;
-      const gap = stampMs(filed) - stampMs(facts.get(x).firstClose);
-      if (gap >= 0 && gap <= FOLLOW_UP_DAYS * DAY) (found[x] = found[x] || []).push(y.id);
-    }
-  }
+  const closedAt = closed.filter((i) => i.kind !== 'research' && facts.get(i.id).firstClose);
+  const found = followUpsOf(issues, filedAt, firstCloseAt, profile);
   // The share is taken over the closes whose window has passed: a close from yesterday with no follow-up yet has not
   // shown it has none, so counting it would pull the share toward a zero the record cannot back.
   const windowClosed = closedAt.filter((i) => now - stampMs(facts.get(i.id).firstClose) >= FOLLOW_UP_DAYS * DAY);
-  const windowClosedWith = windowClosed.filter((i) => found[i.id]).length;
+  const windowClosedWith = windowClosed.filter((i) => found.has(i.id)).length;
   const followUps = {
     windowDays: FOLLOW_UP_DAYS, n: closedAt.length, windowOpen: closedAt.length - windowClosed.length,
-    withFollowUps: anyFoundBy && closedAt.length ? Object.keys(found).length : null,
+    withFollowUps: anyFoundBy && closedAt.length ? found.size : null,
     windowClosed: windowClosed.length, windowClosedWithFollowUps: anyFoundBy && windowClosed.length ? windowClosedWith : null,
     share: anyFoundBy ? share(windowClosedWith, windowClosed.length) : null,
-    followUps: anyFoundBy ? Object.keys(found).sort(cmpId).map((id) => ({ id, followUps: found[id] })) : null,
+    followUps: anyFoundBy ? [...found.keys()].sort(cmpId).map((id) => ({ id, followUps: found.get(id) })) : null,
     noData: noData(!anyFoundBy || !closedAt.length, !anyFoundBy ? 'no issue records Found by, so no follow-up can be traced to what it follows' : closed.length ? 'no closed issue outside research has its close in the journal' : 'nothing closed yet'),
   };
 
@@ -2935,22 +2955,15 @@ export function modelLines(root, profile = loadProfile(root)) {
 }
 
 // Every model an issue was leased on, from its own journal (a takeover adds one).
-function leaseModels(events, profile) {
-  const into = movesInto(profile.with('holds-claim'));
-  const out = [];
-  for (const e of events) {
-    if (!into.test(e.text)) continue;
-    const m = leaseModelOf(e.text);
-    if (m) out.push(m);
-  }
-  return out;
+function leaseModels(events) {
+  return events.filter((e) => e.type === 'move' && e.model).map((e) => e.model);
 }
 
 // The notes a verdict gets on the command line in a loop that declares model lines: never a refusal.
-function reviewModelNotes(issue, verdict, model, lines, events, profile) {
+function reviewModelNotes(issue, verdict, model, lines, events) {
   if (model === undefined) return [`${issue.id}: no --model on this verdict — the loop declares its models; record the model this reviewer was raised on`];
   if (verdict !== 'approve') return [];
-  const workers = [...new Set(leaseModels(events, profile))];
+  const workers = [...new Set(leaseModels(events))];
   if (!workers.length) return [];
   if (workers.includes(model)) return [`${issue.id}: an approve by the same model as the worker's (${model}) — a fresh instance is still a fresh reviewer, but the correlation risk is real; the approve that clears an issue comes from another model, not a lower-ranked one, until \`models\` says otherwise`];
   const top = Math.max(...workers.map(lines.rank));
@@ -2958,65 +2971,10 @@ function reviewModelNotes(issue, verdict, model, lines, events, profile) {
   return [];
 }
 
-// One issue's journal as events: the filing, the moves (a lease carries its worker and model), rounds, evidence rows and
-// verdicts (with the model and the relay mark after the kind).
-function parseIssueEvents(id, events, profile) {
-  const moved = movesInto(profile.statuses, id);
-  const claims = (st) => profile.is(st, 'holds-claim');
-  const out = [];
-  let status = null;
-  for (const e of events) {
-    const base = { n: e.n, at: e.at };
-    if (e.text.startsWith(`filed ${id} `)) { status = profile.initial; out.push({ ...base, type: 'filed' }); continue; }
-    const mv = moved.exec(e.text);
-    if (mv) {
-      const from = status;
-      status = mv[1];
-      const w = claims(status) ? WORKER_FIELD.exec(e.text) : null;
-      out.push({ ...base, type: 'move', from, to: status, lease: w ? { worker: fieldText(w[1]), model: leaseModelOf(e.text), branch: (/ · branch (\S+)/.exec(e.text) || [])[1] || null } : null });
-      continue;
-    }
-    if (e.text.startsWith(`${id} round `)) { out.push({ ...base, type: 'round' }); continue; }
-    if (e.text.startsWith(`${id} evidence row · `)) { out.push({ ...base, type: 'row' }); continue; }
-    const r = REVIEW_LINE.exec(e.text);
-    if (r) {
-      const rest = e.text.slice(r[0].length);
-      const mm = /^model (.+?) · /.exec(rest);
-      out.push({ ...base, type: 'verdict', verdict: r[1], by: r[2] || null, kind: r[3] || null, model: mm ? mm[1] : null, relayed: /^relayed · /.test(mm ? rest.slice(mm[0].length) : rest) });
-    }
-  }
-  return out;
-}
-
 const repoLabel = (dir, issue) => {
   const named = reposNamed(issue);
   return named.length ? [...new Set(named.map((n) => basename(n.replace(/[\\/]+$/, '')) || basename(resolve(dir))))] : [basename(resolve(dir))];
 };
-
-// The issues filed within the follow-up window after another closed issue, whose Found by names it (the loop metric's
-// own rule), by the issue they follow.
-function followUpsByIssue(issues, journal, profile) {
-  const byId = new Map(issues.map((i) => [i.id, i]));
-  const firstClose = new Map();
-  const filed = new Map();
-  for (const i of issues) {
-    const ev = parseIssueEvents(i.id, journal.get(i.id) || [], profile);
-    const f = ev.find((x) => x.type === 'filed');
-    if (f) filed.set(i.id, f.at);
-    const c = ev.find((x) => x.type === 'move' && profile.is(x.to, 'closes-record'));
-    if (c) firstClose.set(i.id, c.at);
-  }
-  const found = new Map();
-  for (const y of issues) {
-    if (!filed.has(y.id)) continue;
-    for (const x of new Set(idsNamed(y.fields['found by'], byId))) {
-      if (x === y.id || !firstClose.has(x) || byId.get(x).kind === 'research' || !profile.is(byId.get(x).status, 'closes-record')) continue;
-      const gap = stampMs(filed.get(y.id)) - stampMs(firstClose.get(x));
-      if (gap >= 0 && gap <= FOLLOW_UP_DAYS * DAY) found.set(x, (found.get(x) || 0) + 1);
-    }
-  }
-  return found;
-}
 
 // What one loop's record shows of its workers (one row per unit: one worker on one branch, which is one issue or one
 // package leased in one call; a takeover starts a new unit) and of its verdicts, each with the model beside the name.
@@ -3028,8 +2986,9 @@ function modelFacts(dir, label, lines) {
   const closes = (st) => profile.is(st, 'closes-record');
   const claims = (st) => profile.is(st, 'holds-claim');
   const parsed = new Map();
-  for (const i of issues) parsed.set(i.id, parseIssueEvents(i.id, journal.get(i.id) || [], profile));
-  const follow = followUpsByIssue(issues, journal, profile);
+  for (const i of issues) parsed.set(i.id, journal.get(i.id) || []);
+  const { filed, firstClose } = filedAndClosed(issues, journal, profile);
+  const follow = followUpsOf(issues, filed, firstClose, profile);
 
   // The units: every lease that names a worker, grouped by branch, worker and model.
   const unitMap = new Map();
@@ -3076,7 +3035,7 @@ function modelFacts(dir, label, lines) {
       changes: per.reduce((s, p) => s + p.changes, 0), rounds: per.reduce((s, p) => s + p.rounds, 0),
       redAfterApprove: per.some((p) => p.redAfterApprove), handedOver: per.some((p) => p.handedOver),
       rowsBefore: per.filter((p) => p.reviewed).every((p) => p.rowsBeforeReview > 0) && reviewed,
-      followUps: per.reduce((s, p) => s + (follow.get(p.id) || 0), 0),
+      followUps: per.reduce((s, p) => s + (follow.get(p.id) || []).length, 0),
     });
   }
 
@@ -3085,7 +3044,7 @@ function modelFacts(dir, label, lines) {
   const verdicts = [];
   for (const [id, ev] of parsed) {
     const issue = byId.get(id);
-    const workers = [...new Set(leaseModels(journal.get(id) || [], profile))];
+    const workers = [...new Set(leaseModels(ev))];
     const top = Math.max(-1, ...workers.map(lines.rank));
     const ownOrLower = (m) => m != null && workers.length > 0 && (workers.includes(m) || (top >= 0 && lines.rank(m) < top));
     const seq = ev.filter((e) => e.type === 'verdict' && e.by || e.type === 'round' || e.type === 'move');
@@ -3390,7 +3349,7 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
   const noteOf = (issue, n) => {
     const said = [
       verdict === 'approve' && kinds[n] === 'coordinator' && carriesCode(issue) ? `${issue.id} carries code and ${by} is a coordinator — the fresh-review rule: this approve is recorded but does not clear it for done or the merge queue; a fresh reviewer's approve does` : null,
-      ...(lines && lines.declared ? reviewModelNotes(issue, verdict, model, lines, journal.get(issue.id) || [], loadProfile(root)) : []),
+      ...(lines && lines.declared ? reviewModelNotes(issue, verdict, model, lines, journal.get(issue.id) || []) : []),
     ].filter(Boolean);
     return said.length ? { note: said.join('; ') } : {};
   };
