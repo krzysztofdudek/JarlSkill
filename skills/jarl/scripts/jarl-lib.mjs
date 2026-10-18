@@ -2634,13 +2634,11 @@ function selfWorkers(events, issue, branches) {
 }
 
 // The done gate, read from the journal for one issue. Replaying its lines in order:
-// - the evidence anchor is the last move into in-progress from another status, or a reopen (done or
-//   in-progress back to open), or — for an issue that never went in progress — its filing; only --ran/--saw
-//   rows logged after it count for done (a free-text note never does), so nothing written when the issue was
-//   filed, or before a restart or a reopen, is proof of the work;
+// - the window (gateWindow) holds the anchor and the cut; only --ran/--saw rows logged after the anchor count for done
+//   (a free-text note never does), so nothing written before a start, a reopen or the filing is proof of the work;
 // - an approve by anyone who has ever held the issue's lease (self — see selfWorkers) never counts;
 // - the live approve is the strongest one (fresh over coordinator over self) among those since whatever last
-//   reset the issue — a round, a reopen, a restart into in-progress (cut), or a later "changes" verdict still
+//   reset the issue — the cut of the window (a round, a reopen, a start), or a later "changes" verdict still
 //   waiting on its own approve. A later, weaker approve never spends an earlier, still-live one: only those
 //   resets do — a coordinator's approve recorded after a live fresh one does not undo it;
 // - `tracked` is false for an issue the journal has no filing and no status move for (a hand-made file, a
@@ -2649,28 +2647,36 @@ function selfWorkers(events, issue, branches) {
 // gateState reads the loop for one call; a view that reads the gate for many issues reads the loop once and asks
 // gateOf of it.
 export function gateState(root, id) { return gateOf(readLoop(jarlDir(root)), id); }
+// The one window of the done gate, from the issue's own events in order: `anchor` is the event after which a --ran/--saw
+// row counts as proof, `cut` the log line number at or before which an approve is spent. The flags of the profile say what
+// resets them. A filing, a start (a move into a status that holds the claim from one that does not), a reopen (a move into
+// a dispatchable status from one that closes the record or holds the claim, and any move out of a status that closes the
+// record) reset both, so a close rests only on proof and review recorded after the last of them. A red round
+// resets the cut alone: it spends the approve, while the rows the worker logged stay true.
+export function gateWindow(profile, events) {
+  let anchor = null; let cut = -1;
+  for (const e of events) {
+    if (e.type === 'filed') { anchor = e; cut = e.n; continue; }
+    if (e.type === 'round') { cut = e.n; continue; }
+    if (e.type !== 'move') continue;
+    const { from, to } = e;
+    const start = profile.is(to, 'holds-claim') && !profile.is(from, 'holds-claim');
+    const reopen = profile.is(to, 'dispatchable') && (profile.is(from, 'closes-record') || profile.is(from, 'holds-claim'));
+    const leavesClose = profile.is(from, 'closes-record') && !profile.is(to, 'closes-record');
+    if (start || reopen || leavesClose) { anchor = e; cut = e.n; }
+  }
+  return { anchor, cut };
+}
 export function gateOf(loop, id) {
   const { profile, coordinators } = loop;
   const events = loop.eventsById.get(id) || [];
   const issue = loop.issues.find((i) => i.id === id) || null;
   const self = selfWorkers(events, issue, loop.branchWorkers);
-  let anchor = null; let cut = -1;
+  const { anchor, cut } = gateWindow(profile, events);
   const evidence = []; const allReviews = [];
   const trail = [];   // every review line in order (approve, changes, retract), for the issue view
   const retractedRows = [];
   for (const e of events) {
-    if (e.type === 'filed') { anchor = e; continue; }
-    if (e.type === 'move') {
-      const prev = e.from; const status = e.to;
-      // A (re)start spends an earlier approve too: in progress → deferred → in progress needs a new review. The
-      // flags say it: a move into a holds-claim status from one that is not; a reopen, into a dispatchable status
-      // from one that closes the record or holds the claim; and any move out of a status that closes the record.
-      if (profile.is(status, 'holds-claim') && !profile.is(prev, 'holds-claim')) { anchor = e; cut = e.n; }
-      if (profile.is(status, 'dispatchable') && (profile.is(prev, 'closes-record') || profile.is(prev, 'holds-claim'))) { anchor = e; cut = e.n; }
-      if (profile.is(prev, 'closes-record') && !profile.is(status, 'closes-record')) cut = e.n;
-      continue;
-    }
-    if (e.type === 'round') { cut = e.n; continue; }
     if (e.type === 'verdict') {
       // The kind is the one recorded, or the one today's names give, whichever is stricter: a name the goal
       // declares as a coordinator after its approve was logged as fresh does not stay fresh, and a name that

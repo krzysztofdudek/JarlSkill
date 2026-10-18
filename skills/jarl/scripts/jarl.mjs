@@ -81,7 +81,7 @@ commands:
                                                  every status; --match keeps those whose header field holds the value
   show <id> [--full]                             print one issue as the done gate sees it: the header, What, Why,
                                                  Acceptance and Changelog, every evidence row (numbered [n]) and every
-                                                 verdict since the last start or reopen, every "changes" finding no later
+                                                 verdict in the done gate's window, every "changes" finding no later
                                                  approve answered, one line per earlier round; --full prints the whole
                                                  file; --json is complete
   set <ids> <status> "<why>" [--branch <b>] [--worker <name>] [--model <m>] [--worktree <path>] | <ids> <field> "<value>"
@@ -93,10 +93,10 @@ commands:
                                                  was raised on, as the platform names it (with @<effort> where it has that
                                                  lever), stored as given; leaving in-progress removes Worker, Model,
                                                  Worktree and Since and keeps Branch; done notes a merge
-                                                 whose CI is not green yet; done needs evidence logged since the issue
-                                                 last went in progress (or was reopened, or — never in progress — was
-                                                 filed) as a --ran/--saw row — a free-text note never counts alone —
-                                                 and an approve not spent by a round, a restart or a reopen; with a
+                                                 whose CI is not green yet; done needs, inside one window (rows after
+                                                 the last start, reopen or filing; approves after those or a red
+                                                 round), a --ran/--saw row — a free-text note never counts alone —
+                                                 and a live approve; with a
                                                  field the loop's profile declares in place of the status, writes
                                                  that field (checked against its values) on every id
   merged <ids> --sha <sha> [--ran "<check>" --saw "<summary>" | --red <id>] [--ci pending|green|red|none] [--repo <path>] [--keep] | <ids> --ci <state>
@@ -130,7 +130,7 @@ commands:
                                                  (self for the issue's worker or "self" — refused on an approve;
                                                  coordinator for coordinator, jarl, reeve, the loop's own name and
                                                  names on a "Coordinators:" line in goal.md; fresh for anyone else);
-                                                 "done" needs an approve newer than the last round and reopen, and a
+                                                 "done" needs an approve inside the gate's window, and a
                                                  fresh one when the issue carries code (a Branch or Merged field);
                                                  findings need at least three words; "retract" in place of the verdict
                                                  (review <id> retract --by <who> "<reason>") retracts the newest approve
