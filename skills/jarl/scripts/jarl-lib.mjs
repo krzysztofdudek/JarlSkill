@@ -923,9 +923,9 @@ function asksPath(dir) { return join(dir, ASKS_FILE); }
 export function appendLog(root, event) {
   appendLogLines(root, [event]);
 }
-// Several lines in one write: a bulk command's lines land together or not at all.
-export function appendLogLines(root, events) {
-  const at = stamp();
+// Several lines in one write: a bulk command's lines land together or not at all. A command that writes the same
+// moment into a header field takes the stamp once and passes it as `at`, so the two cannot fall in two minutes.
+export function appendLogLines(root, events, at = stamp()) {
   appendAtomic(logPath(jarlDir(root)), '# Log\n\n', events.map((e) => `- ${at} · ${oneLine(e)}\n`).join(''));
 }
 
@@ -1329,10 +1329,12 @@ export function cmdNew(root, title, rawFlags) {
       changelog: flags.changelog !== undefined ? changelogText(flags.changelog) : bodyText(fromTemplate.changelog),
     }));
     let claimed = !taken().includes(n);
+    // The filing goes into the journal first: a write that stops after it leaves the record ahead of the files (a filing
+    // with no file, and the number is taken again), never a file the record does not hold.
+    if (claimed) appendLog(root, `filed ${id} · ${title}${rawFlags.template !== undefined ? ` · template ${rawFlags.template}` : ''}`);
     if (claimed) { try { claimed = claimFile(tmp, file); } catch (e) { unlinkSync(tmp); throw e; } }
     unlinkSync(tmp);
     if (claimed) {
-      appendLog(root, `filed ${id} · ${title}${rawFlags.template !== undefined ? ` · template ${rawFlags.template}` : ''}`);
       // Said on the command line only (a library caller gets none, and its result does not change): the tier it used.
       const note = rawFlags.caller === 'cli' && rawFlags.tier === undefined ? { note: tierNote(profile, tier) } : {};
       return { id, file, ...(rawFlags.template !== undefined ? { template: rawFlags.template } : {}), ...note };
@@ -1581,14 +1583,16 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
     }
     return { issue, text };
   });
-  for (const w of writes) writeAtomic(w.issue.file, w.text);
   // The model goes before the worker: the worker is read as the text after "· worker " up to "· worktree " or the end of
   // the line, so a model written after it would become part of the worker's name.
   const leaseNote = [flags.branch !== undefined && `branch ${fieldText(flags.branch)}`, model !== undefined && `model ${model}`, flags.worker !== undefined && `worker ${fieldText(flags.worker)}`, worktree !== undefined && `worktree ${worktree}`].filter(Boolean).join(' · ');
   // The reason is free text in front of the lease's fields: on a lease its own " · " is neutralised, so no reason can be
   // read as a branch, a model or a worker.
   const reason = holds && why ? String(why).replace(/ +· +/g, ' - ') : why;
-  appendLogLines(root, issues.map((issue) => `${issue.id} → ${status}${reason ? ` · ${reason}` : ''}${leaseNote ? ` · ${leaseNote}` : ''}`));
+  // The line goes first: a write that stops between the two leaves the journal, the record, ahead of the files, which the
+  // views report, and never a file ahead of the record.
+  appendLogLines(root, issues.map((issue) => `${issue.id} → ${status}${reason ? ` · ${reason}` : ''}${leaseNote ? ` · ${leaseNote}` : ''}`), since);
+  for (const w of writes) writeAtomic(w.issue.file, w.text);
   // Said on the command line only, and only in a loop that declares model lines: a lease with no model (once per call).
   const leaseNoModel = caller === 'cli' && holds && model === undefined && modelLines(root).declared ? 'no --model on this lease — the loop declares its models, and a model that is not recorded can never be recovered' : null;
   return oneOrMany(rawIds, issues.map((issue, n) => ({ id: issue.id, status, ...(holds ? { since, ...(flags.branch !== undefined ? { branch: fieldText(flags.branch) } : {}), ...(flags.worker !== undefined ? { worker: fieldText(flags.worker) } : {}), ...(model !== undefined ? { model } : {}), ...(worktree !== undefined ? { worktree } : {}) } : {}), ...(profile.is(status, 'closes-record') ? doneNote(issue, root) : {}), ...(leaseNoModel && n === 0 ? { note: leaseNoModel } : {}) })));
@@ -1764,14 +1768,15 @@ export function cmdMerged(root, rawIds, flags) {
   }
   // The evidence rows go in first, like evidence writes them: one row per --ran/--saw pair on every issue of the call.
   if (rows) cmdEvidence(root, issues.map((i) => i.id).join(','), undefined, { ran: flags.ran, saw: flags.saw });
+  const named = `${flags.repo !== undefined ? ` in ${fieldText(flags.repo)}` : ''}${checkText ? ` · check ${checkText}` : ''}${cause ? ` · landed red, cause ${cause}` : ''}${ci ? ` · CI ${ci}` : ''}`;
+  // The line goes first, as in set: a write that stops between the two leaves the record ahead of the files.
+  appendLogLines(root, issues.map((issue) => (sha ? `${issue.id} merged ${sha}${named}` : `${issue.id} CI ${ci}`)));
   for (const issue of issues) {
     let text = readText(issue.file);
     if (sha) text = setField(text, 'Merged', `${sha}${flags.repo !== undefined ? ` in ${fieldText(flags.repo)}` : ''}`);
     text = ci ? setField(text, 'CI', ci) : removeFields(text, ['CI']);
     writeAtomic(issue.file, text);
   }
-  const named = `${flags.repo !== undefined ? ` in ${fieldText(flags.repo)}` : ''}${checkText ? ` · check ${checkText}` : ''}${cause ? ` · landed red, cause ${cause}` : ''}${ci ? ` · CI ${ci}` : ''}`;
-  appendLogLines(root, issues.map((issue) => (sha ? `${issue.id} merged ${sha}${named}` : `${issue.id} CI ${ci}`)));
   // The cleanup comes last, after the merge is on the record, and only on the command line and in the tools.
   const cleanup = sha && cli && flags.keep !== true ? cleanUpAfterMerge(root, issues, sha, repoPath) : [];
   return { ids: issues.map((i) => i.id), sha: sha || null, ci: ci ?? null, ...(checkText ? { check: checkText } : {}), ...(cause ? { red: cause } : {}), ...(cleanup.length ? { cleanup } : {}), notes };

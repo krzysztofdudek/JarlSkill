@@ -5,7 +5,8 @@
 // operations alone.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import fs, { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as R from '../record.mjs';
@@ -117,4 +118,69 @@ test('a copy of a real loop: the fold equals the header of every issue it holds'
   }
   assert.deepEqual(wrong, []);
   assert.ok(held > 100, 'the copy holds many issues');
+});
+
+// ---- one stamp, and the line before the file ------------------------------------------------------------------
+
+// A clock that moves two minutes at every reading, so two readings of "now" in one call cannot fall in the same minute.
+function withRacingClock(fn) {
+  const RealDate = Date;
+  let t = RealDate.parse('2026-10-19T10:00:00Z');
+  globalThis.Date = class extends RealDate {
+    constructor(...args) { if (args.length) super(...args); else { super(t); t += 120_000; } }
+    static now() { return t; }
+  };
+  try { return fn(); } finally { globalThis.Date = RealDate; }
+}
+function logLinesOf(root) { return readFileSync(join(R.jarlDir(root), 'log.md'), 'utf8').split('\n').filter((l) => l.startsWith('- ')); }
+
+test('the Since of a lease and the stamp of its journal line are one reading of the clock', () => {
+  const root = makeLoop();
+  const { id } = R.newIssue(root, 'one stamp');
+  withRacingClock(() => R.setStatus(root, id, 'in-progress', undefined, { branch: 'jarl/1-a', worker: 'w1' }));
+  const issue = R.findIssue(root, id);
+  const line = logLinesOf(root).find((l) => l.includes(`${id} → in-progress`));
+  assert.equal(line.slice(2, 18), issue.fields.since, 'the header and the line carry the same minute');
+  const dir = R.jarlDir(root);
+  const profile = R.loadProfile(root);
+  assert.equal(foldOf(dir, profile, id).since, headerOf(issue.file).since);
+});
+
+const asRoot = typeof process.getuid === 'function' && process.getuid() === 0;
+// Runs fn with the issues directory of the loop closed to writing (a file cannot be created or replaced in it).
+function withIssuesDirClosed(root, fn) {
+  const dir = join(R.jarlDir(root), 'issues');
+  chmodSync(dir, 0o555);
+  try { return fn(); } finally { chmodSync(dir, 0o755); }
+}
+
+test('set writes the journal line before the file: a write that stops leaves the record ahead of the file', { skip: asRoot && 'a writer running as root is not stopped by a closed directory' }, () => {
+  const root = makeLoop();
+  const { id } = R.newIssue(root, 'crash in set');
+  withIssuesDirClosed(root, () => assert.throws(() => R.setStatus(root, id, 'in-progress', undefined, { branch: 'jarl/1-a', worker: 'w1' })));
+  assert.ok(logLinesOf(root).some((l) => l.includes(`${id} → in-progress`)), 'the line is in the journal');
+  assert.equal(headerOf(issueFile(root, id)).status, 'open', 'the file was not reached');
+  const dir = R.jarlDir(root);
+  assert.equal(foldOf(dir, R.loadProfile(root), id).status, 'in-progress', 'the record is ahead of the file, not behind it');
+});
+
+test('merged writes the journal line before the file', { skip: asRoot && 'a writer running as root is not stopped by a closed directory' }, () => {
+  const root = makeLoop();
+  const { id } = R.newIssue(root, 'crash in merged');
+  withIssuesDirClosed(root, () => assert.throws(() => R.recordMerged(root, id, { sha: 'abc1234', ci: 'green' })));
+  assert.ok(logLinesOf(root).some((l) => l.includes(`${id} merged abc1234`)));
+  assert.equal(headerOf(issueFile(root, id)).merged, null);
+  assert.equal(foldOf(R.jarlDir(root), R.loadProfile(root), id).merged, 'abc1234');
+});
+
+test('new writes the filing line before the file is created, and a stopped filing leaves a line and no file', () => {
+  const root = makeLoop();
+  const real = fs.linkSync;
+  fs.linkSync = () => { throw Object.assign(new Error('stopped'), { code: 'EIO' }); };
+  syncBuiltinESMExports();
+  try { assert.throws(() => R.newIssue(root, 'crash in new'), /stopped/); } finally { fs.linkSync = real; syncBuiltinESMExports(); }
+  assert.ok(logLinesOf(root).some((l) => l.includes('filed 001 · crash in new')), 'the filing is in the journal');
+  assert.deepEqual(readdirSync(join(R.jarlDir(root), 'issues')).filter((f) => f.endsWith('.md')), [], 'no file was created');
+  const again = R.newIssue(root, 'crash in new');
+  assert.equal(again.id, '001', 'the number is taken again');
 });
