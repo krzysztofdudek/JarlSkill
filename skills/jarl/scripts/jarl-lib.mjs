@@ -2302,21 +2302,107 @@ export function cmdClose(root, flags = {}) {
 
 // ---- review and the done gate --------------------------------------------------------------------
 
-// The journal, one event per dated line, grouped by the issue each line is about (`NNN …`, or `filed NNN …`).
-// Read once per command: the done gate, the review split and tips all read it.
-export function journalById(root) {
-  const path = join(jarlDir(root), 'log.md');
-  const map = new Map();
-  if (!existsSync(path)) return map;
+// ---- the log: one reader ---------------------------------------------------------------------------
+//
+// The log is one dated line per event. This is the only place that reads the file and the only place that knows a
+// line's grammar: parseEvent types one line, loopEvents reads the file and types them all, and everything else that
+// needs a fact about the log (the done gate, the metrics, models, the rounds, tips, the timestamps status and resume
+// print) takes it from the typed event. A line kind is taught here once.
+//
+// An event is { n, at, text, id, type, … } with n the line's index in the file and id the issue the line is about
+// (null for a line about the loop). The types and what they add:
+//   filed          the issue's filing
+//   move           a status change: from (null when the log holds no earlier status), to, lease — { worker, model, branch }
+//                  for a move into a status that holds the claim and names a worker, else null — and model, the model a
+//                  lease line names (null without one)
+//   round          one red round
+//   row            one --ran/--saw evidence row
+//   verdict        a review: verdict (approve|changes), by, kind (as recorded), model, relayed
+//   retract-row    a retracted evidence row: row, its number
+//   retract-review a retracted approve
+//   merged         a recorded merge: sha, repo, check, red, ci
+//   ci             a CI state recorded alone: state
+//   body           a body change
+//   other          any other line
+const LOG_LINE = /^- (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) · (.*)$/;
+const LEADING_ID = new RegExp(`^(?:filed )?(${ID_SRC})\\b`);
+const RETRACT_ROW_LINE = new RegExp(`^${ID_SRC} evidence retract · row (\\d+)\\b`);
+const WORKER_FIELD = / · worker (.+?)(?: · worktree |$)/;
+const MODEL_FIELD = / · model (.+?)(?: · worker | · worktree |$)/;
+const BRANCH_FIELD = / · branch (\S+)/;
+// The model of a lease line: the last " · model " field, which sits in the fields after the free-text reason.
+function leaseModelOf(text) { const at = text.lastIndexOf(' · model '); return at < 0 ? null : (MODEL_FIELD.exec(text.slice(at)) || [])[1] || null; }
+
+// One log line as an event, without its place in the file. `from` is the status the issue was in before the line.
+export function parseEvent(id, text, profile, from = null) {
+  return eventParser(profile)(id, text, from);
+}
+function eventParser(profile) {
+  const moved = movesInto(profile.statuses);
+  const claims = (st) => profile.is(st, 'holds-claim');
+  return (id, text, from) => {
+    if (text.startsWith(`filed ${id} `)) return { type: 'filed' };
+    if (!text.startsWith(`${id} `) && text !== id) return { type: 'other' };
+    const mv = moved.exec(text);
+    if (mv) {
+      const to = mv[1];
+      const named = claims(to) ? WORKER_FIELD.exec(text) : null;
+      const model = claims(to) ? leaseModelOf(text) : null;
+      return { type: 'move', from, to, lease: named ? { worker: fieldText(named[1]), model, branch: (BRANCH_FIELD.exec(text) || [])[1] || null } : null, model };
+    }
+    if (text.startsWith(`${id} round `)) return { type: 'round' };
+    const r = REVIEW_LINE.exec(text);
+    if (r) {
+      const rest = text.slice(r[0].length);
+      const mm = /^model (.+?) · /.exec(rest);
+      return { type: 'verdict', verdict: r[1], by: r[2] || null, kind: r[3] || null, model: mm ? mm[1] : null, relayed: /^relayed · /.test(mm ? rest.slice(mm[0].length) : rest) };
+    }
+    if (text.startsWith(`${id} review retract`) && !/^\w/.test(text.slice(`${id} review retract`.length))) return { type: 'retract-review' };
+    const rr = RETRACT_ROW_LINE.exec(text);
+    if (rr) return { type: 'retract-row', row: Number(rr[1]) };
+    if (text.startsWith(`${id} evidence row · `)) return { type: 'row' };
+    if (text.startsWith(`${id} merged `)) {
+      const line = mergeLineOf(id, text);
+      if (line) return { type: 'merged', ...line };
+    }
+    if (text.startsWith(`${id} CI `) && CI_STATES.includes(text.slice(`${id} CI `.length))) return { type: 'ci', state: text.slice(`${id} CI `.length) };
+    if (text.startsWith(`${id} body · `)) return { type: 'body' };
+    return { type: 'other' };
+  };
+}
+
+// Every dated line of the loop's log under `dir` (the directory holding goal.md, log.md and issues/), in order, as
+// typed events. An issue's events carry the status it moved from, replayed from its own filing and moves.
+export function loopEvents(dir, profile) {
+  const path = join(dir, 'log.md');
+  if (!existsSync(path)) return [];
+  const parse = eventParser(profile);
+  const statusOf = new Map();
+  const events = [];
   readText(path).split('\n').forEach((l, n) => {
-    const m = /^- (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) · (.*)$/.exec(l);
+    const m = LOG_LINE.exec(l);
     if (!m) return;
-    const id = new RegExp(`^(?:filed )?(${ID_SRC})\\b`).exec(m[2])?.[1];
-    if (!id) return;
-    if (!map.has(id)) map.set(id, []);
-    map.get(id).push({ n, at: m[1], text: m[2] });
+    const id = LEADING_ID.exec(m[2])?.[1] ?? null;
+    const body = id === null ? { type: 'other' } : parse(id, m[2], statusOf.get(id) ?? null);
+    if (body.type === 'filed') statusOf.set(id, profile.initial);
+    else if (body.type === 'move') statusOf.set(id, body.to);
+    events.push({ n, at: m[1], text: m[2], id, ...body });
   });
+  return events;
+}
+// The events of the issues, by the issue each line is about.
+export function eventsById(events) {
+  const map = new Map();
+  for (const e of events) {
+    if (e.id === null) continue;
+    if (!map.has(e.id)) map.set(e.id, []);
+    map.get(e.id).push(e);
+  }
   return map;
+}
+// The journal as the done gate and the views read it: the events by issue.
+export function journalById(root) {
+  return eventsById(loopEvents(jarlDir(root), loadProfile(root)));
 }
 
 // Who reviewed, as a kind: the word self, or anyone who has ever held the issue's lease — its own worker across
@@ -2361,14 +2447,9 @@ function movesInto(statuses, id = ID_SRC) {
 
 // Every worker one issue's own journal has ever named on an in-progress move — a takeover replaces Worker but
 // is still the same issue, so every lease across every round counts, not only the latest.
-function leaseWorkers(events, profile = DEFAULT_PROFILE) {
+function leaseWorkers(events) {
   const workers = new Set();
-  const into = movesInto(profile.with('holds-claim'));
-  for (const e of events) {
-    if (!into.test(e.text)) continue;
-    const w = / · worker (.+?)(?: · worktree |$)/.exec(e.text);
-    if (w) workers.add(fieldText(w[1]));
-  }
+  for (const e of events) if (e.type === 'move' && e.lease) workers.add(e.lease.worker);
   return workers;
 }
 
@@ -2387,7 +2468,7 @@ function branchWorkers(issues, journal, profile = DEFAULT_PROFILE) {
     const branch = fieldText(i.fields.branch);
     if (!branch) continue;
     const set = map.get(branch) || new Set();
-    for (const w of leaseWorkers(journal.get(i.id) || [], profile)) set.add(w);
+    for (const w of leaseWorkers(journal.get(i.id) || [])) set.add(w);
     if (i.fields.worker) set.add(fieldText(i.fields.worker));
     map.set(branch, set);
   }
@@ -2398,8 +2479,8 @@ function branchWorkers(issues, journal, profile = DEFAULT_PROFILE) {
 // The full self scope for one issue: everyone its own lease has ever named, plus everyone named on another issue
 // that shares its Branch (see branchWorkers). Self-review is refused for any of them, not only the id's own
 // latest lease. Pure and cheap: no I/O, so it costs nothing extra when called once per issue in a loop.
-function selfWorkers(events, issue, branches, profile = DEFAULT_PROFILE) {
-  const self = leaseWorkers(events, profile);
+function selfWorkers(events, issue, branches) {
+  const self = leaseWorkers(events);
   if (issue && issue.fields.worker) self.add(fieldText(issue.fields.worker));
   const branch = issue && fieldText(issue.fields.branch);
   if (branch && branches.has(branch)) for (const w of branches.get(branch)) self.add(w);
@@ -2425,19 +2506,15 @@ function selfWorkers(events, issue, branches, profile = DEFAULT_PROFILE) {
 export function gateState(root, id, events = journalById(root).get(id) || [], coordinators = coordinatorNames(root), issues = loadIssues(root), journal = journalById(root)) {
   const profile = loadProfile(root);
   const issue = issues.find((i) => i.id === id) || null;
-  const self = selfWorkers(events, issue, branchWorkers(issues, journal, profile), profile);
-  let status = null; let anchor = null; let cut = -1;
+  const self = selfWorkers(events, issue, branchWorkers(issues, journal, profile));
+  let anchor = null; let cut = -1;
   const evidence = []; const allReviews = [];
   const trail = [];   // every review line in order (approve, changes, retract), for the issue view
-  const moved = movesInto(profile.statuses, id);
   const retractedRows = [];
-  const retractRow = new RegExp(`^${id} evidence retract · row (\\d+)\\b`);
-  const retractReviewLine = new RegExp(`^${id} review retract\\b`);
   for (const e of events) {
-    if (e.text.startsWith(`filed ${id} `)) { status = profile.initial; anchor = e; continue; }
-    const move = moved.exec(e.text);
-    if (move) {
-      const prev = status; status = move[1];
+    if (e.type === 'filed') { anchor = e; continue; }
+    if (e.type === 'move') {
+      const prev = e.from; const status = e.to;
       // A (re)start spends an earlier approve too: in progress → deferred → in progress needs a new review. The
       // flags say it: a move into a holds-claim status from one that is not; a reopen, into a dispatchable status
       // from one that closes the record or holds the claim; and any move out of a status that closes the record.
@@ -2446,29 +2523,27 @@ export function gateState(root, id, events = journalById(root).get(id) || [], co
       if (profile.is(prev, 'closes-record') && !profile.is(status, 'closes-record')) cut = e.n;
       continue;
     }
-    if (e.text.startsWith(`${id} round `)) { cut = e.n; continue; }
-    const r = REVIEW_LINE.exec(e.text);
-    if (r) {
+    if (e.type === 'round') { cut = e.n; continue; }
+    if (e.type === 'verdict') {
       // The kind is the one recorded, or the one today's names give, whichever is stricter: a name goal.md
       // declares as a coordinator after its approve was logged as fresh does not stay fresh, and a name that
       // turns out to have ever held the lease (self) does not stay fresh or coordinator either.
-      let kind = r[3] || null;
-      if (kind && r[2]) { const now = reviewerKind(r[2], self, coordinators); if (KIND_WEIGHT[now] > KIND_WEIGHT[kind]) kind = now; }
-      const review = { n: e.n, at: e.at, verdict: r[1], by: r[2] || null, kind, retracted: false };
+      let kind = e.kind;
+      if (kind && e.by) { const now = reviewerKind(e.by, self, coordinators); if (KIND_WEIGHT[now] > KIND_WEIGHT[kind]) kind = now; }
+      const review = { n: e.n, at: e.at, verdict: e.verdict, by: e.by, kind, retracted: false };
       allReviews.push(review);
       trail.push(review);
       continue;
     }
     // A retraction takes away the newest approve not yet retracted, and only that: it never touches a changes verdict.
-    if (retractReviewLine.test(e.text)) {
+    if (e.type === 'retract-review') {
       const target = [...allReviews].reverse().find((x) => x.verdict === 'approve' && !x.retracted);
       if (target) target.retracted = true;
       trail.push({ n: e.n, at: e.at, verdict: 'retract', retracted: false });
       continue;
     }
-    const rr = retractRow.exec(e.text);
-    if (rr) { retractedRows.push(Number(rr[1])); continue; }
-    if (e.text.startsWith(`${id} evidence row · `)) evidence.push({ ...e, retracted: false });
+    if (e.type === 'retract-row') { retractedRows.push(e.row); continue; }
+    if (e.type === 'row') evidence.push({ ...e, retracted: false });
   }
   // A retraction names a row by its file-wide ordinal (evidenceTable: the one numbering show prints), and the journal's
   // row lines are matched to the file's rows (alignRows), so journal lines that merged in another order cannot retract
@@ -2818,10 +2893,6 @@ export function renderMetrics(m) {
 // from it is read-only and only ever suggests: Jarl never refuses, reroutes or changes anything by model.
 
 export const MODEL_MIN_N = 5;
-const LEASE_WORKER = / · worker (.+?)(?: · worktree |$)/;
-const LEASE_MODEL = / · model (.+?)(?: · worker | · worktree |$)/;
-// The model of a lease line: the last " · model " field, which sits in the fields after the free-text reason.
-const leaseModelOf = (text) => { const at = text.lastIndexOf(' · model '); return at < 0 ? null : (LEASE_MODEL.exec(text.slice(at)) || [])[1] || null; };
 // A finding that opens like a field would read as one: its line gets a lead-in, so no free text is ever a model or a relay mark.
 const loggedFinding = (line) => (/^(model |relayed( ·|$))/i.test(line) ? `findings: ${line}` : line);
 
@@ -2901,7 +2972,7 @@ function parseIssueEvents(id, events, profile) {
     if (mv) {
       const from = status;
       status = mv[1];
-      const w = claims(status) ? LEASE_WORKER.exec(e.text) : null;
+      const w = claims(status) ? WORKER_FIELD.exec(e.text) : null;
       out.push({ ...base, type: 'move', from, to: status, lease: w ? { worker: fieldText(w[1]), model: leaseModelOf(e.text), branch: (/ · branch (\S+)/.exec(e.text) || [])[1] || null } : null });
       continue;
     }
