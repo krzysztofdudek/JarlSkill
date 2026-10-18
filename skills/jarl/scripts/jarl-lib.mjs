@@ -2322,7 +2322,7 @@ export function cmdClose(root, flags = {}) {
 // An event is { n, at, text, id, type, … } with n the line's index in the file and id the issue the line is about
 // (null for a line about the loop). The types and what they add:
 //   filed          the issue's filing
-//   move           a status change: from (null when the log holds no earlier status), to, lease — { worker, model, branch }
+//   move           a status change: from (null when the log names no status before the line), to, lease — { worker, model, branch }
 //                  for a move into a status that holds the claim and names a worker, else null — and model, the model a
 //                  lease line names (null without one)
 //   round          one red round
