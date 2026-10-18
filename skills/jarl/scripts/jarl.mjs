@@ -15,7 +15,7 @@ import { basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as R from './record.mjs';
 import {
-  ROUNDS_BEFORE_TAKEOVER, need, resetCaches, withLock, readText, isEntry,
+  ROUNDS_BEFORE_TAKEOVER, need, resetCaches, withLock, readText, isEntry, cmdSet,
   cmdProfile, cmdArchive, cmdList, cmdNext, renderNext, cmdMode, cmdClose, cmdCheck, cmdBranches, cmdTips, cmdQueue,
   cmdChangelog, cmdHandoffRead, cmdHandoffWrite, cmdReport, cmdImport, cmdSources, cmdAnswer, cmdModels, renderModels,
   renderProfile, renderTips, renderQueue, renderResume, renderStatus, renderImport, renderSources, renderList, recordTypeLog, recordRuleLog,
@@ -508,15 +508,9 @@ function renderTypeLog(t) {
   return ` · NOT written into the type log: ${t.reason}`;
 }
 
-// set <ids> <status> [why] or set <ids> <field> <value>: a name the profile declares as a field (and not as a status)
-// is a field; anything else is a status, refused by setStatus with the CLI's own words when it names neither.
-function setCommand(root, ids, name, value, flags) {
-  const profile = R.loadProfile(root);
-  const field = name !== undefined && !profile.statuses.includes(name) && profile.field(name);
-  // The command line (and the MCP tools, which run through dispatch) always sets as caller 'cli'.
-  const opts = { ...flags, caller: 'cli' };
-  return field ? R.setField(root, ids, name, value, opts) : R.setStatus(root, ids, name, value, opts);
-}
+// set <ids> <status> [why] or set <ids> <field> <value>: the library decides which one the name is (see setRoute). The
+// command line (and the MCP tools, which run through dispatch) always sets as caller 'cli'.
+function setCommand(root, ids, name, value, flags) { return cmdSet(root, ids, name, value, { ...flags, caller: 'cli' }); }
 
 // One command, run: its result (what --json prints), its text and the notes said on stderr. Throws on a refusal.
 // Every call starts from empty caches, so a caller that runs many commands in one process (a server) sees each

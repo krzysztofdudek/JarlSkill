@@ -353,7 +353,7 @@ export const DONE_GATE_APPROVE = ['fresh', 'none'];
 export const DEFAULT_DONE_GATE = Object.freeze({ approve: 'fresh', 'requires-merged': false });
 // Header fields the tool itself writes and reads: a profile cannot declare them. Kind and Tier are built in too, but
 // a profile may declare them to replace their values (an enum, and a default).
-export const TOOL_FIELDS = ['Status', 'Priority', 'Tags', 'Files', 'Repo', 'After', 'Found by', 'Source', 'Where', 'Branch', 'Worker', 'Worktree', 'Since', 'Merged', 'CI'];
+export const TOOL_FIELDS = ['Status', 'Priority', 'Tags', 'Files', 'Repo', 'After', 'Found by', 'Source', 'Where', 'Branch', 'Worker', 'Worktree', 'Since', 'Merged', 'CI', 'Resources'];
 export const BUILTIN_SECTIONS = ['What', 'Why', 'Acceptance', 'Changelog', 'Evidence'];
 export const PROFILE_FIELD_RE = /^[A-Za-z][A-Za-z0-9 -]{0,39}$/;
 export const PROFILE_STATUS_RE = /^[a-z][a-z0-9-]{0,39}$/;
@@ -1471,26 +1471,48 @@ export function reasonWord(status) { return status.charAt(0).toUpperCase() + sta
 // Who asked for the move: 'cli' — the command line and the MCP tools over it, which always say so — or 'record', a
 // library call through record.mjs (the default). A status the profile marks "set-by": "record" refuses 'cli'.
 export const SET_CALLERS = ['cli', 'record'];
-let lastCaller = null;
-// The caller the last set ran as, refused or not: for the suite, which checks that the command line says 'cli'.
-export function lastSetCaller() { return lastCaller; }
+
+// Where `set <ids> <name> …` goes, decided here and nowhere else: a field the profile declares (Kind and Tier too, when it
+// declares them) and that is no status, the built-in Resources field, or a move into a status.
+function setRoute(profile, name) {
+  if (name === undefined || profile.statuses.includes(name)) return 'status';
+  if (profile.field(name)) return 'field';
+  return String(name).toLowerCase() === 'resources' ? 'resources' : 'status';
+}
+// The lease flags (--branch, --worker, --model, --worktree) a call gives. They belong to a move into a status that holds
+// a claim; a call that writes a field refuses them.
+const LEASE_FLAGS = ['branch', 'worker', 'model', 'worktree'];
+function leaseFlagsGiven(flags) { return LEASE_FLAGS.filter((k) => flags[k] !== undefined); }
+function needNoLeaseFlags(flags, what) {
+  const lease = leaseFlagsGiven(flags);
+  need(!lease.length, `--${lease[0]} goes with a status, not with ${what}`);
+}
+// set with the name taken as a status (record.setStatus), or as a field the profile declares (record.setField): the
+// refusal of a name that is the other kind, in the command line's own words.
+export function cmdSetStatus(root, rawIds, status, why, flags = {}) {
+  const profile = loadProfile(root);
+  need(profile.statuses.includes(status) || !profile.field(status), `${status} is a field this loop's profile declares, not a status — setField writes it`);
+  return cmdSet(root, rawIds, status, why, flags);
+}
+export function cmdSetField(root, rawIds, field, value, flags = {}) {
+  const profile = loadProfile(root);
+  need(profile.field(field) && !profile.statuses.includes(field), `${field} is not a field this loop's profile declares${profile.declaredFields.length ? ` — it declares ${profile.declaredFields.map((f) => f.name).join(', ')}` : ''}`);
+  return cmdSet(root, rawIds, field, value, flags);
+}
 
 export function cmdSet(root, rawIds, status, why, flags = {}) {
   const caller = flags.caller ?? 'record';
   need(SET_CALLERS.includes(caller), `caller must be one of: ${SET_CALLERS.join(', ')} (got "${caller}")`);
-  lastCaller = caller;
   const profile = loadProfile(root);
-  // set <ids> <field> <value>: a field the profile declares (Kind and Tier too, when it declares them), not a status.
-  if (!profile.statuses.includes(status) && status !== undefined && profile.field(status)) return setDeclaredField(root, rawIds, profile.field(status), why, flags);
-  // Resources: the built-in field of exclusive resources, unless the profile declares a field of that name (handled above:
-  // the profile's meaning wins, and next reads no resources then).
-  if (!profile.statuses.includes(status) && String(status ?? '').toLowerCase() === 'resources') return setResources(root, rawIds, why, flags);
+  const route = setRoute(profile, status);
+  if (route === 'field') return setDeclaredField(root, rawIds, profile.field(status), why, flags);
+  if (route === 'resources') return setResources(root, rawIds, why, flags);
   // ready and the review words are views, not statuses: say which view answers the question the worker was asking.
   need(profile.statuses.includes(status) || !/^(ready|review|in[-_ ]?review|ready[-_ ]for[-_ ]review|reviewing)$/i.test(String(status ?? '')), `${status} is a view here, not a status: \`next\` lists the issues ready to start, and \`status\` and \`resume\` mark each in-flight issue with what the record says (no evidence rows yet; rows and no verdict, so it waits for a reviewer; changes requested; approved and queued). Nothing needs setting: record the rows with \`evidence\`, and the reviewer's verdict with \`review\`. A loop that wants an explicit review status can declare one in its profile. Statuses here: ${profile.statuses.join(', ')}`);
   need(profile.statuses.includes(status), `status must be one of: ${profile.statuses.join(', ')}${profile.declaredFields.length ? ` — or a field this loop's profile declares: ${profile.declaredFields.map((f) => f.name).join(', ')}` : ''}`);
   need(caller !== 'cli' || profile.setBy(status) !== 'record', `${status} is set by the record only — this loop's profile (${profile.name}) marks it "set-by": "record", so jarl set and the MCP tools cannot move an issue into it; the tool that runs the loop does${profile.scheduler ? ` (${profile.scheduler})` : ''}`);
   const holds = profile.is(status, 'holds-claim');
-  const lease = ['branch', 'worker', 'model', 'worktree'].filter((k) => flags[k] !== undefined);
+  const lease = leaseFlagsGiven(flags);
   need(!lease.length || holds, `--${lease[0]} goes with ${profile.with('holds-claim').join(' or ')} only — it records who works on the issue and where`);
   for (const k of lease) need(typeof flags[k] === 'string' && fieldText(flags[k]), `--${k} needs a value`);
   const model = flags.model !== undefined ? modelValue(flags.model) : undefined;
@@ -1550,8 +1572,7 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
 // set <ids> <field> <value>: one declared field written on every issue in the call (checked against its enum first),
 // with one log line each. An empty value clears it, unless the field is required (or is Kind or Tier).
 function setDeclaredField(root, rawIds, field, value, flags) {
-  const lease = ['branch', 'worker', 'model', 'worktree'].filter((k) => flags[k] !== undefined);
-  need(!lease.length, `--${lease[0]} goes with a status, not with the field ${field.name}`);
+  needNoLeaseFlags(flags, `the field ${field.name}`);
   need(value !== undefined, `set <ids> ${field.name} "<value>" — the value is required${field.enum ? ` (one of: ${field.enum.join(', ')})` : ''}`);
   const profile = loadProfile(root);
   const v = fieldValue(profile, field, value);
@@ -1566,8 +1587,7 @@ function setDeclaredField(root, rawIds, field, value, flags) {
 // server, the machine's load), loop-wide and not files. Names are single words; an empty value clears the field. Only next
 // reads it: check, queue and the file rules do not, and a Jarl 6.1.0 reads the line as any field it does not know.
 function setResources(root, rawIds, value, flags) {
-  const lease = ['branch', 'worker', 'model', 'worktree'].filter((k) => flags[k] !== undefined);
-  need(!lease.length, `--${lease[0]} goes with a status, not with the field Resources`);
+  needNoLeaseFlags(flags, 'the field Resources');
   need(value !== undefined, 'set <ids> resources "<name>[, <name>...]" — the value is required (an empty one clears the field)');
   const names = [];
   for (const n of splitList(fieldText(value))) {
@@ -2167,9 +2187,9 @@ export function nextRows(root, flags = {}) {
   // Each taken file with the issue holding it: one in a holds-claim status (in progress), or a dispatchable (open)
   // one offered earlier in this list.
   const taken = new Map(issues.filter((i) => profile.is(i.status, 'holds-claim')).flatMap((i) => keysOf(i).map((k) => [k.key, i.id])));
-  // Exclusive resources: names, loop-wide (no repository in the key), held by an issue for its lease's whole life. A
-  // profile that declares a field named Resources keeps that field's meaning: it is not read here (never both ways).
-  const resourcesOf = (i) => (profile.field('resources') ? [] : i.resources.map((name) => ({ name, key: name.toLowerCase() })));
+  // Exclusive resources: names, loop-wide (no repository in the key), held by an issue for its lease's whole life. Resources
+  // is a field the tool writes itself, so no profile declares a field of that name and the name has one meaning.
+  const resourcesOf = (i) => i.resources.map((name) => ({ name, key: name.toLowerCase() }));
   const takenRes = new Map(issues.filter((i) => profile.is(i.status, 'holds-claim')).flatMap((i) => resourcesOf(i).map((r) => [r.key, i.id])));
   const byId = new Map(issues.map((i) => [i.id, i]));
   const out = [];

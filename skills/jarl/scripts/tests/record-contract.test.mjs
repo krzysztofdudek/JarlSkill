@@ -211,16 +211,18 @@ test('the profile through record.mjs: a declared field is written by setField, n
 test('set says who asked: the command line and the MCP tools pass caller cli, a library call defaults to record', () => {
   const root = mkdtempSync(join(tmpdir(), 'jarl-record-caller-'));
   try {
-    R.initLoop(root, 'g');
+    const file = join(root, 'profile.json');
+    writeFileSync(file, JSON.stringify({ 'jarl-profile': R.PROFILE_VERSION, name: 'p', statuses: { open: ['dispatchable'], doing: { flags: ['holds-claim'], 'set-by': 'record' }, done: ['settles-dependents', 'terminal', 'closes-record'] } }));
+    R.initLoop(root, 'g', { profile: file });
     R.newIssue(root, 't');
-    CLI.dispatch(root, 'set', ['1', 'in-progress'], {});
-    assert.equal(CLI.lastSetCaller(), 'cli');
-    assert.throws(() => CLI.dispatch(root, 'set', ['1', 'done'], {}), /no evidence yet/);
-    assert.equal(CLI.lastSetCaller(), 'cli', 'a refused set still ran as cli');
+    const moves = () => readFileSync(join(root, '.jarl', 'log.md'), 'utf8').split('\n').filter((l) => l.includes('001 → doing')).length;
+    assert.throws(() => CLI.dispatch(root, 'set', ['1', 'doing'], {}), /set by the record only/, 'the command line asks as cli');
+    assert.equal(moves(), 0, 'a refused move leaves no log line');
+    R.setStatus(root, '1', 'doing');
+    assert.equal(moves(), 1, 'a library call asks as record, and its move is in the log');
     R.setStatus(root, '1', 'open');
-    assert.equal(CLI.lastSetCaller(), 'record');
-    R.setStatus(root, '1', 'in-progress', undefined, { caller: 'cli' });
-    assert.equal(CLI.lastSetCaller(), 'cli');
+    assert.throws(() => R.setStatus(root, '1', 'doing', undefined, { caller: 'cli' }), /set by the record only/, 'a library call may ask as cli');
+    assert.equal(moves(), 1);
     assert.throws(() => R.setStatus(root, '1', 'open', undefined, { caller: 'someone' }), /caller must be one of: cli, record/);
     // the command line cannot pass a caller of its own: --caller is not a flag of set
     assert.throws(() => CLI.parseArgs(['set', '1', 'open', '--caller', 'record']), /unknown flag --caller/);

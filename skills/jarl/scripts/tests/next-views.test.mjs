@@ -268,16 +268,13 @@ test('set resources refuses a bad name and the lease flags; an empty value clear
   assert.deepEqual(JSON.parse(jarl(hub, 'next', '--json')).map((r) => r.id), ['001', '002']);
 });
 
-test('a profile that declares a Resources field keeps its own meaning: next does not read it as exclusive resources', () => {
+test('Resources is a field the tool writes itself: a profile that declares a field of that name is refused', () => {
   const dir = mkdtempSync(join(tmpdir(), 'jarl-res-profile-'));
   const file = join(dir, 'profile.json');
   writeFileSync(file, JSON.stringify({ 'jarl-profile': 1, name: 'mine', statuses: { open: ['dispatchable'], 'in-progress': ['holds-claim'], done: ['settles-dependents', 'terminal', 'closes-record'], dropped: ['terminal', 'needs-reason'] }, fields: { Resources: { default: 'none' } } }));
   const hub = mkdtempSync(join(tmpdir(), 'jarl-res-hub-'));
-  jarl(hub, 'init', 'goal', '--profile', file);
-  jarl(hub, 'new', 'a', '--files', 'a.mjs');
-  jarl(hub, 'new', 'b', '--files', 'b.mjs');
-  jarl(hub, 'set', '1,2', 'resources', 'shared');
-  assert.match(jarl(hub, 'show', '1'), /\*\*Resources:\*\* shared/, 'written as the profile\'s own field');
-  assert.deepEqual(JSON.parse(jarl(hub, 'next', '--json')).map((r) => r.id), ['001', '002'], 'both offered: the profile\'s Resources is not the exclusive kind');
-  assert.match(jarl(hub, 'profile'), /Resources/);
+  assert.match(refuses(hub, 'init', 'goal', '--profile', file), /field "Resources" is one the tool writes itself — a profile cannot declare it/);
+  jarl(hub, 'init', 'goal');
+  assert.match(jarl(hub, 'new', 'a', '--files', 'a.mjs'), /001/);
+  assert.match(jarl(hub, 'set', '1', 'resources', 'shared'), /001 Resources: shared/, 'the name has one meaning: the exclusive resources');
 });
