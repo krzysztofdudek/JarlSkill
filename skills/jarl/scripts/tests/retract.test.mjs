@@ -3,7 +3,7 @@
 // the retracted approve or row.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
@@ -133,6 +133,26 @@ test('evidence --retract: the n-th row of the whole section is struck through an
   assert.equal(refusal(), null);
 });
 
+test('a retraction strikes the row the file numbers, whatever order the journal lines are in', () => {
+  const root = loop();
+  const id = started(root);
+  jarl(root, 'evidence', id, '--ran', 'alpha check', '--saw', 'alpha result');
+  jarl(root, 'evidence', id, '--ran', 'beta check', '--saw', 'beta result');
+  jarl(root, 'evidence', id, '--ran', 'beta check', '--saw', 'beta result again');
+  // The journal's two row lines come back in the other order, as lines of a committed loop can when branches merge.
+  const logPath = join(root, '.jarl', 'log.md');
+  const lines = readFileSync(logPath, 'utf8').split('\n');
+  const [a, b, c] = lines.flatMap((l, i) => (l.includes(`${id} evidence row · `) ? [i] : []));
+  [lines[a], lines[b], lines[c]] = [lines[b], lines[c], lines[a]];
+  writeFileSync(logPath, lines.join('\n'));
+  jarl(root, 'evidence', id, '--retract', '1', '--by', 'jarl', 'alpha ran in the wrong place');
+  const state = L.gateState(root, id).rowLog.map((e) => [e.text.split(' · ').pop(), e.retracted]);
+  assert.deepEqual(state.sort(), [['alpha check', true], ['beta check', false], ['beta check', false]], 'row 1 of the file is alpha, wherever its journal line is');
+  jarl(root, 'evidence', id, '--retract', '3', '--by', 'jarl', 'the second beta ran in the wrong place');
+  assert.equal(L.gateState(root, id).rowLog.filter((e) => e.retracted).length, 2);
+  assert.equal(L.gateState(root, id).rowsSince, 1);
+});
+
 test('the first retraction raises the format before its line is written; the pinned Jarl 6.1.0 refuses the loop loudly', () => {
   for (const retract of [
     (root, id) => jarl(root, 'review', id, 'retract', '--by', 'jarl', 'the approve was a mistake'),
@@ -174,9 +194,13 @@ test('a review with empty findings is rejected: no letters or digits, or too lit
   const root = loop();
   const id = started(root);
   for (const findings of ['x', ' x ', '-', '   ', '...', '\n']) {
-    assert.match(refuses(root, 'review', id, 'approve', '--by', 'rev-a', findings), /(needs words|requires)/, JSON.stringify(findings));
+    assert.match(refuses(root, 'review', id, 'approve', '--by', 'rev-a', findings), /(need at least 3 words|requires)/, JSON.stringify(findings));
   }
-  assert.match(refuses(root, 'review', id, 'changes', '--by', 'rev-a', 'x'), /needs words/);
+  assert.match(refuses(root, 'review', id, 'changes', '--by', 'rev-a', 'x'), /need at least 3 words/);
   assert.doesNotMatch(file(root, id), /## Reviews/, 'nothing was written');
-  assert.match(jarl(root, 'review', id, 'approve', '--by', 'rev-a', 'ok'), /review approve/);
+  for (const findings of ['ok', 'LGTM', 'fine', 'looks fine', 'ok - fine']) {
+    assert.match(refuses(root, 'review', id, 'approve', '--by', 'rev-a', findings), /need at least 3 words.*\(got [12] words?:/, findings);
+  }
+  assert.doesNotMatch(file(root, id), /## Reviews/, 'nothing was written');
+  assert.match(jarl(root, 'review', id, 'approve', '--by', 'rev-a', 'read it twice'), /review approve/);
 });

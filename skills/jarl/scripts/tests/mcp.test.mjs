@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { spawn, spawnSync, execFileSync } from 'node:child_process';
 import { sh } from './portable.mjs';
 import { fileURLToPath } from 'node:url';
+import { FINDINGS } from './findings.mjs';
 
 const SERVER = fileURLToPath(new URL('../jarl-mcp.mjs', import.meta.url));
 const CLI_SOURCE = readFileSync(fileURLToPath(new URL('../jarl.mjs', import.meta.url)), 'utf8');
@@ -181,7 +182,7 @@ test('smoke: initialize, tools/list, status and a writing command on a temporary
 
     // The CLI's stderr notes come back as a second block.
     await s.call('jarl_evidence', { ids: '1', ran: 'npm test', saw: 'ok', root });
-    await s.call('jarl_review', { ids: '1', verdict: 'approve', findings: 'fine', by: 'jarl', root });
+    await s.call('jarl_review', { ids: '1', verdict: 'approve', findings: FINDINGS, by: 'jarl', root });
     const done = await s.call('jarl_set', { ids: '1', status: 'done', why: 'finished', root });
     assert.equal(done.isError, false, done.content[0].text);
     assert.match(done.content[0].text, /001 → done/);
@@ -350,7 +351,7 @@ test('with json: true, the answer is exactly one text block holding the JSON, wh
   // A command that notes something on stderr (set's evidence note) still comes back as one block, the note in _meta.
   mcp.callTool('jarl_new', { title: 't', root: a });
   mcp.callTool('jarl_evidence', { ids: '1', ran: 'npm test', saw: 'ok', root: a });
-  mcp.callTool('jarl_review', { ids: '1', verdict: 'approve', findings: 'fine', by: 'jarl', root: a });
+  mcp.callTool('jarl_review', { ids: '1', verdict: 'approve', findings: FINDINGS, by: 'jarl', root: a });
   const withNote = mcp.callTool('jarl_set', { ids: '1', status: 'done', why: 'finished', root: a, json: true });
   assert.equal(withNote.isError, false, withNote.content[0].text);
   assert.equal(withNote.content.length, 1);

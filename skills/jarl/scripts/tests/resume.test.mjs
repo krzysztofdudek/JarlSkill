@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { sh, ghStub } from './portable.mjs';
 import { fileURLToPath } from 'node:url';
+import { FINDINGS } from './findings.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 
@@ -62,7 +63,7 @@ test('resume assembles every section live from the loop and the repositories its
   jarl(hub, 'new', 'queued five', '--repo', '../tool', '--files', 'tool/src/b.mjs');
   jarl(hub, 'set', '5', 'in-progress', 'raised', '--branch', 'jarl/005-five', '--worker', 'w5');
   sh(tool, 'git checkout -q -b jarl/005-five && echo 2 > src/b.mjs && git commit -qam five && git checkout -q release');
-  jarl(hub, 'review', '5', 'approve', '--by', 'rev', 'ok');
+  jarl(hub, 'review', '5', 'approve', '--by', 'rev', FINDINGS);
   // Merged with CI pending, and one with CI red.
   jarl(hub, 'new', 'merged six', '--repo', '../tool');
   jarl(hub, 'merged', '6', '--sha', sh(tool, 'git rev-parse --short release'), '--ci', 'pending', '--repo', '../tool');

@@ -11,6 +11,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { sh } from './portable.mjs';
+import { FINDINGS } from './findings.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 const R = await import('../record.mjs');
@@ -205,7 +206,7 @@ test('done-gate requires-merged with approve fresh: the landed merge and the fre
   const head = sh(repo, 'git rev-parse HEAD');
   jarl(root, 'merged', '001', '--sha', head, '--ci', 'none');
   assert.match(refuses(root, 'set', '001', 'merged'), /no approving review/);
-  jarl(root, 'review', '001', 'approve', '--by', 'fresh-eyes', 'fine');
+  jarl(root, 'review', '001', 'approve', '--by', 'fresh-eyes', FINDINGS);
   assert.match(jarl(root, 'set', '001', 'merged'), /001 → merged/);
 });
 
@@ -215,7 +216,7 @@ test('no done-gate: a loop without the key closes exactly as before — no merge
   R.setStatus(root, '001', 'queued');
   jarl(root, 'set', '001', 'running', '--worker', 'w1');
   jarl(root, 'evidence', '001', '--ran', 'x', '--saw', 'y');
-  jarl(root, 'review', '001', 'approve', '--by', 'fresh-eyes', 'fine');
+  jarl(root, 'review', '001', 'approve', '--by', 'fresh-eyes', FINDINGS);
   assert.match(jarl(root, 'set', '001', 'merged'), /001 → merged/);
 });
 

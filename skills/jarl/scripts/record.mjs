@@ -52,6 +52,8 @@ export function loadAsks(root) { return read(() => L.loadAsks(root)); }
 export function parseIssue(text, file) { return L.parseIssue(text, file); }
 export function renderIssue(spec) { return L.renderIssue(spec); }
 export function mergedOf(issue) { return L.mergedOf(issue); }
+// The checkable --ran/--saw rows of an issue's Evidence, as { ran, saw }; a retracted row (struck through by
+// addEvidence with opts { retract }) is not one.
 export function evidenceRows(issue) { return L.evidenceRows(issue); }
 
 // ---- the profile ----------------------------------------------------------------------------------
@@ -106,7 +108,7 @@ export function setField(root, ids, field, value, opts = {}) {
     return L.cmdSet(root, ids, field, value, opts);
   });
 }
-// The sections: opts { where, what, why, acceptance, changelog, section } (section: "<Heading>=<text>", repeatable).
+// The title (the heading only; the file keeps its name) and the sections: opts { title, where, what, why, acceptance, changelog, section } (section: "<Heading>=<text>", repeatable).
 export function setBody(root, id, opts = {}) { return write(root, () => L.cmdBody(root, id, opts)); }
 // tags: ['+name', '-name', …].
 export function setTags(root, ids, ops) { return write(root, () => L.cmdTag(root, ids, ops)); }
@@ -116,9 +118,14 @@ export function setFiles(root, id, files) { return write(root, () => L.cmdFiles(
 export function setRepo(root, id, path, opts = {}) { return write(root, () => L.cmdRepo(root, id, path, { clear: opts.clear === true })); }
 export function setAfter(root, id, ids, opts = {}) { return write(root, () => L.cmdAfter(root, id, ids, { clear: opts.clear === true })); }
 export function setSource(root, id, refs) { return write(root, () => L.cmdSource(root, id, refs)); }
-// Free text, or opts { ran, saw } (one row per pair; text then undefined).
+// Free text, or opts { ran, saw } (one row per pair; text then undefined), or opts { retract: n, by } with the reason as
+// text: the n-th row of the whole Evidence section (retracted rows counted) is struck through and an entry saying who
+// retracted it and why is appended; the done gate stops counting it. The first retraction raises the loop's record
+// format, so a Jarl that cannot read a retraction refuses the loop.
 export function addEvidence(root, ids, text, opts = {}) { return write(root, () => L.cmdEvidence(root, ids, text, opts)); }
-// verdict: approve | changes; opts { by }.
+// verdict: approve | changes (findings of at least three words); opts { by }. verdict retract, with the reason as findings,
+// retracts the newest approve not yet retracted by an appended entry (never a changes verdict), and raises the record
+// format the first time, like addEvidence's retract.
 export function review(root, ids, verdict, findings, opts = {}) { return write(root, () => L.cmdReview(root, ids, verdict, findings, opts)); }
 // opts { sha, ci, repo }.
 export function recordMerged(root, ids, opts = {}) { return write(root, () => L.cmdMerged(root, ids, opts)); }

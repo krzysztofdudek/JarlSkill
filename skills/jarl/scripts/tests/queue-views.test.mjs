@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { sh } from './portable.mjs';
 import { fileURLToPath } from 'node:url';
+import { FINDINGS } from './findings.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 
@@ -54,8 +55,8 @@ test('queue: approved, ahead of the base and not merged — in the order of appr
   branchWith(root, 'jarl/002-second', 'src/b.mjs');
   branchWith(root, 'jarl/004-not', 'src/a.mjs');
   // 002 approved before 001: the queue follows the approvals, not the numbers.
-  jarl(root, 'review', '2', 'approve', '--by', 'rev', 'ok');
-  jarl(root, 'review', '1', 'approve', '--by', 'rev', 'ok');
+  jarl(root, 'review', '2', 'approve', '--by', 'rev', FINDINGS);
+  jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
   const q = JSON.parse(jarl(root, 'queue', '--json'));
   assert.equal(q.repos.length, 1);
   const rows = q.repos[0].rows;
@@ -85,9 +86,9 @@ test('queue: a round spends the approve, overlapping files start a new batch, a 
   branchWith(root, 'jarl/001-a', 'src/a.mjs');
   branchWith(root, 'jarl/002-b', 'src/a.mjs');
   branchWith(root, 'jarl/003-pkg', 'src/b.mjs');
-  jarl(root, 'review', '1', 'approve', '--by', 'rev', 'ok');
-  jarl(root, 'review', '2', 'approve', '--by', 'rev', 'ok');
-  jarl(root, 'review', '3', 'approve', '--by', 'rev', 'ok');
+  jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
+  jarl(root, 'review', '2', 'approve', '--by', 'rev', FINDINGS);
+  jarl(root, 'review', '3', 'approve', '--by', 'rev', FINDINGS);
   let rows = JSON.parse(jarl(root, 'queue', '--json')).repos[0].rows;
   const byBranch = Object.fromEntries(rows.map((r) => [r.branch, r]));
   assert.equal(byBranch['jarl/001-a'].batch, 1);
@@ -109,7 +110,7 @@ test('queue: an issue in another repository is queued there; --repo reads one re
   jarl(hub, 'new', 'in tool', '--repo', '../tool', '--files', 'tool/src/a.mjs');
   jarl(hub, 'set', '1', 'in-progress', 'go', '--branch', 'jarl/001-t', '--worker', 'w');
   branchWith(tool, 'jarl/001-t', 'src/a.mjs');
-  jarl(hub, 'review', '1', 'approve', '--by', 'rev', 'ok');
+  jarl(hub, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
   const before = readFileSync(join(hub, '.jarl', 'log.md'), 'utf8');
   const q = JSON.parse(jarl(hub, 'queue', '--json'));
   const toolRows = q.repos.find((r) => r.repo === 'tool').rows;
@@ -197,7 +198,7 @@ test('status --by groups the counts by kind, tag, priority or repository; report
   jarl(root, 'new', 'c', '--kind', 'gap');
   jarl(root, 'set', '3', 'dropped', 'not needed');
   jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'ok');
-  jarl(root, 'review', '1', 'approve', '--by', 'rev', 'ok');
+  jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
   jarl(root, 'set', '1', 'done', 'ok');
   const s = JSON.parse(jarl(root, 'status', '--by', 'kind', '--json'));
   assert.deepEqual(s.by, { key: 'kind', groups: { bug: { open: 0, 'in-progress': 0, done: 1, dropped: 0, deferred: 0 }, gap: { open: 1, 'in-progress': 0, done: 0, dropped: 1, deferred: 0 } } });

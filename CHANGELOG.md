@@ -14,7 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A free-text evidence note that runs long is now noted on stderr (command line only): it is still written whole, nothing is refused or cut, and the note points to `--ran`/`--saw` rows for proof of work.
 
 ### Changed
-- `review` now refuses findings that say nothing (empty, `-`, a single letter): a verdict needs words about what was read and what was found.
+- `review` now refuses findings of fewer than three words (`ok`, `-`, `LGTM`) and says how many it got: a verdict needs a few words about what was read and what was found.
 - `new` now refuses a What, Why or section text that holds a matched opening and closing tag named after one of the issue's own fields (for example `<why>…</why>`) outside code, and says to pass that field in its own parameter; a lone tag, or a pair in backticks or a fenced block, is accepted. Its reply lists what was filed (priority, tier, kind, tags, acceptance lines, the length of What and Why) and each field left empty with the command that fills it.
 
 ### Fixed

@@ -1619,7 +1619,11 @@ export function evidenceTable(text) {
     let body = lines.slice(i, end + 1).map((l) => l.trim()).join(' ').replace(/^- (~~)?\*\*ran:\*\*\s*/, '');
     if (retracted) body = body.replace(/~~$/, '');
     const cut = body.indexOf(' · **saw:**');
-    rows.push({ n: rows.length + 1, start: i, end, retracted, ran: (cut === -1 ? body : body.slice(0, cut)).trim(), saw: cut === -1 ? '' : body.slice(cut + ' · **saw:**'.length).trim() });
+    // The first line of the command, as the journal's row line keeps it (see gateState).
+    const first = lines[i].replace(/^- (~~)?\*\*ran:\*\*\s*/, '');
+    const firstCut = first.indexOf(' · **saw:**');
+    const ranFirst = (firstCut === -1 ? first : first.slice(0, firstCut)).replace(/~~$/, '').trim();
+    rows.push({ n: rows.length + 1, start: i, end, retracted, ranFirst, ran: (cut === -1 ? body : body.slice(0, cut)).trim(), saw: cut === -1 ? '' : body.slice(cut + ' · **saw:**'.length).trim() });
     i = end;
   }
   return { lines, rows };
@@ -1679,6 +1683,7 @@ export function cmdEvidence(root, rawIds, text, flags) {
 }
 
 // A text a reviewer or a retracting hand gives must say something: at least two letters or digits (not "", "-", "x").
+const REVIEW_MIN_WORDS = 3;
 function needSaid(text, what) {
   const said = (String(text ?? '').match(/[\p{L}\p{N}]/gu) || []).length;
   need(said >= 2, `${what} needs words — what was read and what was found, or why; got "${String(text ?? '').trim().slice(0, 20)}"`);
@@ -2119,6 +2124,7 @@ export function gateState(root, id, events = journalById(root).get(id) || [], co
   const evidence = []; const allReviews = [];
   const trail = [];   // every review line in order (approve, changes, retract), for the issue view
   const moved = movesInto(profile.statuses, id);
+  const retractedRows = [];
   const retractRow = new RegExp(`^${id} evidence retract · row (\\d+)\\b`);
   const retractReviewLine = new RegExp(`^${id} review retract\\b`);
   for (const e of events) {
@@ -2155,8 +2161,25 @@ export function gateState(root, id, events = journalById(root).get(id) || [], co
       continue;
     }
     const rr = retractRow.exec(e.text);
-    if (rr) { if (evidence[Number(rr[1]) - 1]) evidence[Number(rr[1]) - 1].retracted = true; continue; }
+    if (rr) { retractedRows.push(Number(rr[1])); continue; }
     if (e.text.startsWith(`${id} evidence row · `)) evidence.push({ ...e, retracted: false });
+  }
+  // A retraction names a row by its file-wide ordinal (evidenceTable: the one numbering show prints). The journal's row
+  // lines are matched to the file's rows by the command they keep, the k-th journal line of a command for the k-th row
+  // with that command, so journal lines that merged in another order cannot retract the wrong row; without the issue
+  // file (or a row it holds), the n-th journal row stands in.
+  if (retractedRows.length) {
+    const rows = issue ? evidenceTable(issue.sections.evidence).rows : [];
+    for (const n of retractedRows) {
+      const row = rows[n - 1];
+      let target = evidence[n - 1];
+      if (row) {
+        const prefix = `${id} evidence row · ${row.ranFirst}`;
+        const k = rows.slice(0, n - 1).filter((r) => r.ranFirst === row.ranFirst).length;
+        target = evidence.filter((x) => x.text === prefix || x.text.startsWith(`${prefix} (+`))[k];
+      }
+      if (target) target.retracted = true;
+    }
   }
   const reviews = allReviews.filter((r) => !r.retracted);
   const last = reviews[reviews.length - 1] || null;
@@ -2478,7 +2501,8 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
   need(verdict === 'approve' || verdict === 'changes' || verdict === 'retract', 'review requires approve|changes|retract');
   if (verdict === 'retract') return retractReview(root, rawIds, findings, flags);
   need(findings, 'review requires "<findings>" — what was read and what was found, even when nothing');
-  needSaid(findings, 'the findings of a review');
+  const words = String(findings).split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
+  need(words >= REVIEW_MIN_WORDS, `the findings of a review need at least ${REVIEW_MIN_WORDS} words — what was read and what was found, even when nothing (got ${words} word${words === 1 ? '' : 's'}: "${String(findings).trim().slice(0, 40)}")`);
   need(flags.by === undefined || fieldText(flags.by), '--by needs a value — the reviewer\'s name');
   need(flags.by !== undefined, `a verdict needs --by <reviewer> — who read the diff: a fresh reviewer's name, or jarl when the loop's director reviewed it`);
   const issues = issuesFor(root, rawIds);

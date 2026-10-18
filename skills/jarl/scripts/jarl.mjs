@@ -112,7 +112,7 @@ commands:
                                                  names on a "Coordinators:" line in goal.md; fresh for anyone else);
                                                  "done" needs an approve newer than the last round and reopen, and a
                                                  fresh one when the issue carries code (a Branch or Merged field);
-                                                 findings need words (not "x" or "-"); "retract" in place of the verdict
+                                                 findings need at least three words; "retract" in place of the verdict
                                                  (review <id> retract --by <who> "<reason>") retracts the newest approve
                                                  not yet retracted, by an appended entry: the approve stays, struck
                                                  through, and the done gate and the metrics stop counting it; never a

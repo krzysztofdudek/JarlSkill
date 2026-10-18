@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { sh, NO_EXCLUDES } from './portable.mjs';
 import { fileURLToPath } from 'node:url';
+import { FINDINGS } from './findings.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 const { JARL_GITIGNORE_COMMITTED, mainCheckoutOf, worktreeState } = await import(new URL('../jarl.mjs', import.meta.url).href);
@@ -418,11 +419,11 @@ test('a round after an approve spends the approve', () => {
   jarl(root, 'init', 'goal');
   jarl(root, 'new', 'thing');
   jarl(root, 'evidence', '001', '--ran', 'npm test', '--saw', 'suite green');
-  jarl(root, 'review', '001', 'approve', '--by', 'rev', 'fine');
+  jarl(root, 'review', '001', 'approve', '--by', 'rev', FINDINGS);
   jarl(root, 'round', '001', 'merger: suite red after merge');
   assert.match(refuses(root, 'set', '001', 'done'), /no approving review/);
   assert.match(refuses(root, 'review', '001', 'maybe', 'x'), /approve\|changes/);
-  jarl(root, 'review', '001', 'approve', '--by', 'rev', 'fixed');
+  jarl(root, 'review', '001', 'approve', '--by', 'rev', FINDINGS);
   jarl(root, 'set', '001', 'done');
 });
 
@@ -449,7 +450,7 @@ test('evidence accepts free text or structured rows; rows are readable back', ()
   jarl(root, 'evidence', '001', '--ran', 'node --test tests/a.test.mjs', '--saw', '3 pass');
   assert.match(jarl(root, 'show', '001'), /\*\*ran:\*\* npm test · \*\*saw:\*\* 12 pass, 0 fail/);
   assert.match(refuses(root, 'evidence', '001', '--ran', 'x'), /needs both --ran/);
-  jarl(root, 'review', '001', 'approve', '--by', 'rev', 'fine');
+  jarl(root, 'review', '001', 'approve', '--by', 'rev', FINDINGS);
   jarl(root, 'set', '001', 'done');
 });
 
@@ -907,7 +908,7 @@ test('a bulk call with one bad id, or one issue failing its precondition, writes
   assert.match(refuses(root, 'set', '1,2', 'bogus'), /status must be one of/);
   // 001 is ready for done, 002 is not: neither moves.
   jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'proof');
-  jarl(root, 'review', '1', 'approve', '--by', 'rev', 'fine');
+  jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
   assert.match(refuses(root, 'set', '1,2', 'done'), /002 has no evidence yet.*nothing was written/s);
   assert.match(jarl(root, 'show', '1'), /^\*\*Status:\*\* open$/m);
   assert.match(refuses(root, 'prio', '1,x', '1'), /not an issue id: "x"/);
@@ -1042,11 +1043,11 @@ test('next and status flag work with no acceptance line, done says so on stderr,
   assert.match(jarl(root, 'next'), /001 {2}P2 {2}no acceptance {2}\(no acceptance yet\)/);
   jarl(root, 'set', '1,2', 'in-progress', 'raised');
   assert.match(jarl(root, 'status'), /in flight with no acceptance line: 001$/m);
-  assert.match(jarl(root, 'review', '2', 'approve', '--by', 'rev', 'fine'), /002 review approve by rev \(fresh\) · acceptance: - a \/ - b/);
+  assert.match(jarl(root, 'review', '2', 'approve', '--by', 'rev', FINDINGS), /002 review approve by rev \(fresh\) · acceptance: - a \/ - b/);
   jarl(root, 'evidence', '2', '--ran', 'x', '--saw', 'y');
   const r = execFileSync(process.execPath, [SCRIPT, 'set', '2', 'done', 'merged', '--root', root], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   assert.equal(r.trim(), '002 → done', 'stdout is unchanged');
-  const child = (() => { try { return sh(tmpdir(), `node ${SCRIPT} review 1 approve --by rev ok --root ${root} >/dev/null && node ${SCRIPT} evidence 1 --ran t --saw ok --root ${root} >/dev/null && node ${SCRIPT} set 1 done m --root ${root} 2>&1 >/dev/null`); } catch (e) { return String(e.stdout); } })();
+  const child = (() => { try { return sh(tmpdir(), `node ${SCRIPT} review 1 approve --by rev "${FINDINGS}" --root ${root} >/dev/null && node ${SCRIPT} evidence 1 --ran t --saw ok --root ${root} >/dev/null && node ${SCRIPT} set 1 done m --root ${root} 2>&1 >/dev/null`); } catch (e) { return String(e.stdout); } })();
   assert.match(child, /note: 001 no acceptance line on file/, 'done is never refused for it, only noted');
 });
 
@@ -1139,7 +1140,7 @@ test('ask --kind ratify blocks nothing, is listed in status and the handoff, and
   assert.match(st, /^ratify a-001 \(issue 001\) · raised the prompt limit/m);
   assert.match(jarl(root, 'resume'), /## Questions to the user \(0\)\n- \(nothing\)\n\n## To ratify \(1\)\n- a-001 \(issue 001\) · raised/);
   // It holds nothing back: next, done.
-  jarl(root, 'review', '1', 'approve', '--by', 'rev', 'ok');
+  jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
   jarl(root, 'evidence', '1', '--ran', 'check', '--saw', 'green');
   jarl(root, 'set', '1', 'done', 'merged');
   jarl(root, 'answer', 'a-001', 'ratified');
@@ -1210,7 +1211,7 @@ test('done: a ruling, a drop reason or a free-text note alone is not evidence; a
   jarl(root, 'init', 'goal');
   jarl(root, 'new', 'settled', '--acceptance', 'npm test passes', '--acceptance', 'docs say so');
   jarl(root, 'decide', 'rule', 'keep it', '--settles', '1');
-  jarl(root, 'review', '1', 'approve', '--by', 'rev', 'ok');
+  jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
   assert.match(refuses(root, 'set', '1', 'done', 'x'), /001 has no evidence yet/);
   jarl(root, 'evidence', '1', 'merged abc');
   assert.match(refuses(root, 'set', '1', 'done', 'x'), /001 has no --ran\/--saw evidence row recorded since it was filed/);
@@ -1305,7 +1306,7 @@ test('a worktree is looked up through git by the lease branch: locked, invisible
   jarl(root, 'set', '4', 'in-progress', 'w', '--branch', 'jarl/004-closed');
   sh(`git worktree add -q -b jarl/004-closed ${wt4} && git worktree lock --reason devcontainer ${wt4}`);
   renameSync(wt4, join(away, 'wt4'));
-  jarl(root, 'review', '4', 'approve', '--by', 'rev', 'ok');
+  jarl(root, 'review', '4', 'approve', '--by', 'rev', FINDINGS);
   jarl(root, 'evidence', '4', '--ran', 'check', '--saw', 'green');
   jarl(root, 'set', '4', 'done', 'merged');
 
@@ -1416,7 +1417,7 @@ test('merged records the sha and CI as fields; status counts CI pending; done no
   // An unknown sha is recorded as given, with a note.
   assert.match(withStderr(root, 'merged', '1', '--sha', 'deadbeef').stderr, /deadbeef is not a commit in/);
   jarl(root, 'merged', '1', '--sha', sha);
-  jarl(root, 'review', '1,2', 'approve', '--by', 'rev', 'ok');
+  jarl(root, 'review', '1,2', 'approve', '--by', 'rev', FINDINGS);
   jarl(root, 'evidence', '1,2', '--ran', 'check', '--saw', 'green');
   const done = withStderr(root, 'set', '1,2', 'done', 'merged');
   assert.equal(done.status, 0);
@@ -1476,7 +1477,7 @@ test('issues and handoffs from before leases and merges read unchanged', () => {
 test('DONE → delete needs the branch tip in the base, or in every recorded merge, and a clean worktree; a number-only match trusts ancestry alone', () => {
   const { root, sh } = gitLoop();
   const mark = (branch) => JSON.parse(jarl(root, 'branches', '--json')).find((r) => r.branch === branch)?.done ?? null;
-  const close = (id) => { jarl(root, 'review', id, 'approve', '--by', 'rev', 'ok'); jarl(root, 'evidence', id, '--ran', 'check', '--saw', 'green'); jarl(root, 'set', id, 'done', 'merged'); };
+  const close = (id) => { jarl(root, 'review', id, 'approve', '--by', 'rev', FINDINGS); jarl(root, 'evidence', id, '--ran', 'check', '--saw', 'green'); jarl(root, 'set', id, 'done', 'merged'); };
   // Merged elsewhere (a release branch, not the base): the tip is in the recorded merge, so it can go.
   jarl(root, 'new', 'elsewhere', '--files', 'a.txt');
   jarl(root, 'set', '1', 'in-progress', 'w', '--branch', 'jarl/001-else');

@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { FINDINGS } from './findings.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 const J = await import('../jarl.mjs');
@@ -223,8 +224,8 @@ test('a closes-record status passes the done gate: evidence since the claim, and
   assert.match(refuses(root, 'set', '1', 'merged'), /no --ran\/--saw evidence row recorded since it was moved → running/);
   jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', '12 pass');
   assert.match(refuses(root, 'set', '1', 'merged'), /no approving review/);
-  assert.match(refuses(root, 'review', '1', 'approve', 'fine', '--by', 'w1'), /self-approve/);
-  jarl(root, 'review', '1', 'approve', 'read it', '--by', 'reviewer');
+  assert.match(refuses(root, 'review', '1', 'approve', FINDINGS, '--by', 'w1'), /self-approve/);
+  jarl(root, 'review', '1', 'approve', FINDINGS, '--by', 'reviewer');
   jarl(root, 'set', '1', 'merged', 'landed through the gate');
   assert.match(jarl(root, 'next'), /^002 {2}P2 {2}second {2}\(no acceptance yet\)$/m, 'merged settles the dependent');
   const st = JSON.parse(jarl(root, 'status', '--json'));
@@ -292,13 +293,13 @@ function sameWork(root) {
   jarl(root, 'new', 'five');
   jarl(root, 'set', '1', 'in-progress', 'go', '--branch', 'jarl/001-one', '--worker', 'w1');
   jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'ok');
-  jarl(root, 'review', '1', 'approve', 'fine', '--by', 'r1');
+  jarl(root, 'review', '1', 'approve', FINDINGS, '--by', 'r1');
   jarl(root, 'set', '4', 'dropped', 'gone');
   jarl(root, 'set', '5', 'deferred', 'later');
   jarl(root, 'set', '3', 'in-progress', 'go');
   jarl(root, 'round', '3', 'red');
   jarl(root, 'evidence', '3', '--ran', 'npm test', '--saw', 'ok');
-  jarl(root, 'review', '3', 'approve', 'fine', '--by', 'jarl');
+  jarl(root, 'review', '3', 'approve', FINDINGS, '--by', 'jarl');
   jarl(root, 'set', '3', 'done', 'done');
   const views = {};
   for (const v of [['next'], ['list', '--all'], ['status'], ['status', '--by', 'kind'], ['report'], ['resume', '--log', '0'], ['queue'], ['next', '--json']]) {
@@ -499,7 +500,7 @@ test('branches: a branch is DONE → delete by flags — closed or given up (ter
   jarl(dir, 'set', '3', 'running', 'go', '--branch', 'feat/y', '--worker', 'w');
   g('branch', 'feat/x'); g('branch', 'feat/y');
   jarl(dir, 'evidence', '1,3', '--ran', 't', '--saw', 'ok');
-  jarl(dir, 'review', '1,3', 'approve', 'fine', '--by', 'r');
+  jarl(dir, 'review', '1,3', 'approve', FINDINGS, '--by', 'r');
   jarl(dir, 'set', '1', 'merged', 'in');
   jarl(dir, 'set', '2', 'abandoned', 'gone');
   jarl(dir, 'new', 'd'); jarl(dir, 'set', '4', 'queued', 'ok');
@@ -520,7 +521,7 @@ test('queue takes only work in play: a proposed or blocked issue with a fresh ap
   jarl(dir, 'set', '2', 'running', 'go', '--branch', 'feat/b', '--worker', 'w');
   for (const b of ['feat/a', 'feat/b']) { g('checkout', '-q', '-b', b, 'main'); writeFileSync(join(dir, `${b.slice(5)}.txt`), 'x\n'); g('add', '.'); g('commit', '-qm', b); }
   g('checkout', '-q', 'main');
-  jarl(dir, 'review', '1,2', 'approve', 'fine', '--by', 'r');
+  jarl(dir, 'review', '1,2', 'approve', FINDINGS, '--by', 'r');
   jarl(dir, 'set', '2', 'blocked', 'owner');
   const rows = JSON.parse(jarl(dir, 'queue', '--json')).repos[0].rows;
   assert.deepEqual(rows.map((r) => r.branch), ['feat/a']);

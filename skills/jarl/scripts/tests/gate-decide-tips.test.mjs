@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { sh, ghStub } from './portable.mjs';
 import { fileURLToPath } from 'node:url';
+import { FINDINGS } from './findings.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 
@@ -60,7 +61,7 @@ test('done: a free-text note never closes an issue, even one that never went in 
   const root = loop();
   jarl(root, 'new', 'small');
   jarl(root, 'evidence', '1', 'Source: finding X — written at filing time');
-  jarl(root, 'review', '1', 'approve', '--by', 'rev', 'ok');
+  jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
   assert.match(refuses(root, 'set', '1', 'done', 'ok'), /001 has no --ran\/--saw evidence row recorded since it was filed/);
   jarl(root, 'evidence', '1', 'more prose, still no row');
   assert.match(refuses(root, 'set', '1', 'done', 'ok'), /no --ran\/--saw evidence row/);
@@ -72,21 +73,21 @@ test('review: an approve needs --by, a self-approve by the worker is refused, an
   const root = loop();
   jarl(root, 'new', 'a'); jarl(root, 'new', 'b');
   jarl(root, 'set', '1,2', 'in-progress', 'pkg', '--worker', 'opus-worker-3', '--branch', 'jarl/001-pkg');
-  assert.match(refuses(root, 'review', '1', 'approve', 'fine'), /a verdict needs --by/);
-  assert.match(refuses(root, 'review', '1-2', 'approve', '--by', 'Opus-Worker-3', 'fine'), /001: an approve by Opus-Worker-3 is a self-approve \(opus-worker-3 is the issue's worker\).*nothing was written/);
-  assert.match(refuses(root, 'review', '1', 'approve', '--by', 'self', 'fine'), /self-approve/);
+  assert.match(refuses(root, 'review', '1', 'approve', FINDINGS), /a verdict needs --by/);
+  assert.match(refuses(root, 'review', '1-2', 'approve', '--by', 'Opus-Worker-3', FINDINGS), /001: an approve by Opus-Worker-3 is a self-approve \(opus-worker-3 is the issue's worker\).*nothing was written/);
+  assert.match(refuses(root, 'review', '1', 'approve', '--by', 'self', FINDINGS), /self-approve/);
   const log = () => readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
   assert.doesNotMatch(log(), /review approve/, 'a refused approve writes nothing');
   // A changes verdict needs --by too, and may come from the worker: it is recorded, not refused.
   jarl(root, 'review', '1', 'changes', '--by', 'opus-worker-3', 'Important: a self-check found a hole');
   assert.match(refuses(root, 'review', '1', 'changes', 'Important: no reviewer named'), /a verdict needs --by/);
-  assert.equal(jarl(root, 'review', '1,2', 'approve', '--by', 'fresh-opus', 'read it'), '001 review approve by fresh-opus (fresh) · acceptance: (none on file)\n002 review approve by fresh-opus (fresh) · acceptance: (none on file)');
-  assert.match(log(), /001 review approve · by fresh-opus \(fresh\) · read it/);
-  assert.match(jarl(root, 'review', '2', 'approve', '--by', 'jarl', 'also read'), /by jarl \(coordinator\)/);
+  assert.equal(jarl(root, 'review', '1,2', 'approve', '--by', 'fresh-opus', FINDINGS), '001 review approve by fresh-opus (fresh) · acceptance: (none on file)\n002 review approve by fresh-opus (fresh) · acceptance: (none on file)');
+  assert.match(log(), /001 review approve · by fresh-opus \(fresh\) · read the diff, nothing found/);
+  assert.match(jarl(root, 'review', '2', 'approve', '--by', 'jarl', FINDINGS), /by jarl \(coordinator\)/);
   // The worker is found from the lease line too once the Worker field is gone.
   jarl(root, 'evidence', '1', '--ran', 't', '--saw', 'ok');
   jarl(root, 'set', '1', 'deferred', 'later');
-  assert.match(refuses(root, 'review', '1', 'approve', '--by', 'opus-worker-3', 'looks fine'), /self-approve/);
+  assert.match(refuses(root, 'review', '1', 'approve', '--by', 'opus-worker-3', FINDINGS), /self-approve/);
 });
 
 test('done: a reopen spends the approve and the evidence before it; a round spends the approve', () => {
@@ -94,24 +95,24 @@ test('done: a reopen spends the approve and the evidence before it; a round spen
   jarl(root, 'new', 'x');
   jarl(root, 'set', '1', 'in-progress', 'go');
   jarl(root, 'evidence', '1', '--ran', 't', '--saw', 'ok');
-  jarl(root, 'review', '1', 'approve', '--by', 'r1', 'ok');
+  jarl(root, 'review', '1', 'approve', '--by', 'r1', FINDINGS);
   jarl(root, 'set', '1', 'done', 'merged');
   jarl(root, 'set', '1', 'open', 'reopened: the fix was incomplete');
   const r = refuses(root, 'set', '1', 'done', 'again');
   assert.match(r, /no --ran\/--saw evidence row recorded since it was moved → open/);
   jarl(root, 'evidence', '1', '--ran', 't2', '--saw', 'ok');
   assert.match(refuses(root, 'set', '1', 'done', 'again'), /no approving review newer than its last round or reopen/);
-  jarl(root, 'review', '1', 'approve', '--by', 'r2', 'ok');
+  jarl(root, 'review', '1', 'approve', '--by', 'r2', FINDINGS);
   jarl(root, 'round', '1', 'red on CI');
   assert.match(refuses(root, 'set', '1', 'done', 'again'), /no approving review/);
-  jarl(root, 'review', '1', 'approve', '--by', 'r2', 'ok');
+  jarl(root, 'review', '1', 'approve', '--by', 'r2', FINDINGS);
   assert.equal(jarl(root, 'set', '1', 'done', 'again'), '001 → done');
   // A re-lease of an issue already in progress is not a new start: its evidence stands.
   jarl(root, 'new', 'y');
   jarl(root, 'set', '2', 'in-progress', 'go', '--worker', 'a');
   jarl(root, 'evidence', '2', '--ran', 't', '--saw', 'ok');
   jarl(root, 'set', '2', 'in-progress', 'handed over', '--worker', 'b');
-  jarl(root, 'review', '2', 'approve', '--by', 'r', 'ok');
+  jarl(root, 'review', '2', 'approve', '--by', 'r', FINDINGS);
   assert.equal(jarl(root, 'set', '2', 'done', 'ok'), '002 → done');
 });
 
@@ -120,13 +121,13 @@ test('done: in progress → deferred → in progress spends the approve and the 
   jarl(root, 'new', 'z');
   jarl(root, 'set', '1', 'in-progress', 'go');
   jarl(root, 'evidence', '1', '--ran', 't', '--saw', 'ok');
-  jarl(root, 'review', '1', 'approve', '--by', 'r', 'ok');
+  jarl(root, 'review', '1', 'approve', '--by', 'r', FINDINGS);
   jarl(root, 'set', '1', 'deferred', 'waits for the client');
   jarl(root, 'set', '1', 'in-progress', 'back on');
   assert.match(refuses(root, 'set', '1', 'done', 'x'), /no --ran\/--saw evidence row recorded since it was moved → in-progress/);
   jarl(root, 'evidence', '1', '--ran', 't2', '--saw', 'ok');
   assert.match(refuses(root, 'set', '1', 'done', 'x'), /no approving review/);
-  jarl(root, 'review', '1', 'approve', '--by', 'r', 'ok again');
+  jarl(root, 'review', '1', 'approve', '--by', 'r', `${FINDINGS} again`);
   assert.equal(jarl(root, 'set', '1', 'done', 'x'), '001 → done');
 });
 
@@ -150,8 +151,8 @@ test('status and report show who reviewed the done work', () => {
   const root = loop();
   for (const t of ['a', 'b', 'c']) jarl(root, 'new', t);
   jarl(root, 'evidence', '1-3', '--ran', 't', '--saw', 'ok');
-  jarl(root, 'review', '1', 'approve', '--by', 'fresh-opus', 'ok');
-  jarl(root, 'review', '2', 'approve', '--by', 'jarl', 'ok');
+  jarl(root, 'review', '1', 'approve', '--by', 'fresh-opus', FINDINGS);
+  jarl(root, 'review', '2', 'approve', '--by', 'jarl', FINDINGS);
   appendFileSync(join(root, '.jarl', 'log.md'), '- 2026-01-01 00:00 · 003 review approve · an approve from before --by\n');
   jarl(root, 'set', '1-3', 'done', 'ok');
   assert.match(jarl(root, 'status'), /^done reviewed by: fresh 1 · coordinator 1 · self 0 · unrecorded 1$/m);
@@ -217,7 +218,7 @@ test('an issue may name several repositories: files per repository, next keeps t
   assert.match(jarl(hub, 'branches'), /\[tool\] jarl\/001-cross → 001/);
   assert.doesNotMatch(jarl(hub, 'status'), /branch gone/);
   // report: per repository, an issue naming two under each.
-  for (const id of ['1', '2']) { jarl(hub, 'evidence', id, '--ran', 't', '--saw', 'ok'); jarl(hub, 'review', id, 'approve', '--by', 'r', 'ok'); }
+  for (const id of ['1', '2']) { jarl(hub, 'evidence', id, '--ran', 't', '--saw', 'ok'); jarl(hub, 'review', id, 'approve', '--by', 'r', FINDINGS); }
   jarl(hub, 'set', '1,2', 'done', 'ok');
   const rep = jarl(hub, 'report');
   assert.match(rep, /### lib \(2\)\n- 001 cross \(bug\)\n- 002 only lib a \(bug\)/);
@@ -288,7 +289,7 @@ test('tips and report key a repository by its root: a loop in a subdirectory and
   jarl(root, 'init', 'goal');
   jarl(root, 'new', 'own');
   jarl(root, 'new', 'named', '--repo', '../..');
-  for (const id of ['1', '2']) { jarl(root, 'evidence', id, '--ran', 't', '--saw', 'ok'); jarl(root, 'review', id, 'approve', '--by', 'r', 'ok'); }
+  for (const id of ['1', '2']) { jarl(root, 'evidence', id, '--ran', 't', '--saw', 'ok'); jarl(root, 'review', id, 'approve', '--by', 'r', FINDINGS); }
   jarl(root, 'set', '1,2', 'done', 'ok');
   jarl(root, 'new', 'open one', '--repo', '../..');
   const rep = JSON.parse(jarl(root, 'report', '--json'));
