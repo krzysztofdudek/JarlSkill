@@ -2414,6 +2414,12 @@ export function cmdClose(root, flags = {}) {
   need(permanent || flags.force || deferred.length === 0, `${deferred.length} issue(s) deferred: ${deferred.join(', ')} — close removes .jarl/ with them, and deferred work waits, it is not gone. Keep it: jarl.mjs archive "<slug>" puts the loop under .jarl/archive/ with its deferred issues. Or remove it with them: jarl.mjs close --force`);
   // The ratification batch is assembled here and never holds the close: in a permanent loop its items stay open for
   // the user's word; in a loop on a branch the rulings no one ratified leave with the directory, rulings of that loop.
+  // In the committed mode the archive is committed content: leaving it would put .jarl/archive/ on the branch that merges to
+  // main, so close refuses while it holds anything, unless --force removes the whole directory.
+  const archiveDir = join(jarlDir(root), 'archive');
+  const archived = existsSync(archiveDir) ? readdirSync(archiveDir) : [];
+  const committedMode = !permanent && !outOfGit(root);
+  need(!committedMode || flags.force || archived.length === 0, `.jarl/archive/ holds ${archived.length} archived loop(s): ${archived.join(', ')} — in the committed mode the archive is committed content, and close would leave it on the branch that merges to main. Move it out of the tree, or remove it with the loop: jarl.mjs close --force`);
   const batch = ratificationBatch(root);
   // A committed loop's files git never saw are named, not refused: in the permanent mode they (and the closing
   // line) wait for a commit; in the committed mode the removal below is itself the change to commit.
@@ -2423,13 +2429,14 @@ export function cmdClose(root, flags = {}) {
     return { closed: true, removed: null, kept: jarlDir(root), leftOpen: left.map((i) => i.id), deferred, uncommitted: files === null ? null : files.length, batch };
   }
   const files = uncommittedLoopFiles(root);
-  // Archived loops are never removed: with an archive in place, close removes the live loop's files and leaves the archive,
-  // the mode markers and the templates where archive leaves them.
-  const archive = join(jarlDir(root), 'archive');
-  if (existsSync(archive)) {
+  // In the default mode an archive is never removed: close removes the live loop's files and leaves the archive, the mode
+  // markers and the templates where archive leaves them. In the committed mode the whole directory goes (an archive only with --force).
+  const archive = archiveDir;
+  const keepArchive = !committedMode && existsSync(archive);
+  if (keepArchive) {
     for (const entry of readdirSync(jarlDir(root))) if (!ARCHIVE_KEEPS.has(entry)) rmSync(join(jarlDir(root), entry), { recursive: true, force: true });
   } else rmSync(jarlDir(root), { recursive: true, force: true });
-  return { closed: true, removed: jarlDir(root), archiveKept: existsSync(archive) ? archive : null, kept: null, leftOpen: left.map((i) => i.id), deferred, uncommitted: files === null ? null : files.length, batch };
+  return { closed: true, removed: jarlDir(root), archiveKept: keepArchive ? archive : null, archiveRemoved: archived.length ? archived : null, kept: null, leftOpen: left.map((i) => i.id), deferred, uncommitted: files === null ? null : files.length, batch };
 }
 
 

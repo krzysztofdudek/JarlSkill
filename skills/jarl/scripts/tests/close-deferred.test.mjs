@@ -2,7 +2,7 @@
 // the two ways forward, archive and close --force; --force says what it removed; a permanent loop keeps its directory.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { jarl, jarlResult, loop as makeLoop, refuses } from './helpers.mjs';
 
@@ -65,4 +65,34 @@ test('a permanent loop with a deferred issue keeps its directory and says the is
   assert.match(out, /closed as a permanent record/);
   assert.match(out, /1 deferred still waiting: 004/);
   assert.ok(existsSync(join(root, '.jarl')));
+});
+
+// A committed loop that was archived once and opened again: its archive is committed content.
+function committedWithArchive() {
+  const root = makeLoop({ prefix: 'jarl-close-committed-', via: 'cli', initFlags: ['--committed'] });
+  jarl(root, 'new', 'first', '--acceptance', 'it works');
+  jarl(root, 'set', '1', 'dropped', 'not needed');
+  jarl(root, 'archive', 'first round');
+  jarl(root, 'init', 'second round');
+  return root;
+}
+
+test('in the committed mode close refuses while .jarl/archive/ holds anything, and --force removes the whole directory', () => {
+  const root = committedWithArchive();
+  const said = refuses(root, 'close');
+  assert.match(said, /\.jarl\/archive\//);
+  assert.match(said, /first-round/);
+  assert.match(said, /[Mm]ove it out of the tree/);
+  assert.match(said, /close --force/);
+  assert.ok(existsSync(join(root, '.jarl', 'goal.md')), 'nothing was removed');
+  const out = jarl(root, 'close', '--force');
+  assert.match(out, /^removed .*with \.jarl\/archive\/: .*first-round/);
+  assert.equal(existsSync(join(root, '.jarl')), false);
+});
+
+test('in the committed mode an empty .jarl/archive/ directory does not hold the close', () => {
+  const root = makeLoop({ prefix: 'jarl-close-committed-empty-', via: 'cli', initFlags: ['--committed'] });
+  mkdirSync(join(root, '.jarl', 'archive'));
+  assert.match(jarl(root, 'close'), /^removed /);
+  assert.equal(existsSync(join(root, '.jarl')), false);
 });
