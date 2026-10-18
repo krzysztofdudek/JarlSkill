@@ -10,7 +10,10 @@ import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { sh } from './portable.mjs';
 import { fileURLToPath } from 'node:url';
-import { reviewerKind, coordinatorNames, BASE_COORDINATORS } from '../jarl.mjs';
+import { reviewerKind, coordinatorNames, BASE_COORDINATORS, ID_SRC } from '../jarl.mjs';
+
+// The id a filing reports, read with the shared id grammar (three digits or more).
+const FILED = new RegExp(`filed (${ID_SRC})`);
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 
@@ -36,7 +39,7 @@ function loop() {
 }
 // An in-progress issue on a branch, worked by w1, with one evidence row — ready for done but for its review.
 function codeIssue(root, title = 'code') {
-  const id = /filed (\d{3})/.exec(jarl(root, 'new', title, '--files', 'a.mjs').stdout)[1];
+  const id = FILED.exec(jarl(root, 'new', title, '--files', 'a.mjs').stdout)[1];
   jarl(root, 'set', id, 'in-progress', 'go', '--branch', `jarl/${id}-x`, '--worker', 'w1');
   jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'pass 1');
   return id;
@@ -83,7 +86,7 @@ test('a code issue: a coordinator approve is recorded with a note, done refuses 
 
 test('an issue with no Branch and no Merged field is still cleared by the coordinator', () => {
   const root = loop();
-  const id = /filed (\d{3})/.exec(jarl(root, 'new', 'a ruling').stdout)[1];
+  const id = FILED.exec(jarl(root, 'new', 'a ruling').stdout)[1];
   jarl(root, 'set', id, 'in-progress', 'go', '--worker', 'w1');
   jarl(root, 'evidence', id, '--ran', 'read decisions.md', '--saw', 'ruling recorded');
   const r = jarl(root, 'review', id, 'approve', '--by', 'jarl', 'fine');
@@ -137,7 +140,7 @@ test('merged without a fresh approve is recorded and said loudly; with one, noth
 
 test('self spans a takeover: the worker before a hand-over is still self, not only the latest lease', () => {
   const root = loop();
-  const id = /filed (\d{3})/.exec(jarl(root, 'new', 'takeover').stdout)[1];
+  const id = FILED.exec(jarl(root, 'new', 'takeover').stdout)[1];
   jarl(root, 'set', id, 'in-progress', 'go', '--branch', `jarl/${id}-x`, '--worker', 'w1');
   // A hand-over: re-leased to a different worker without ever leaving in-progress (a takeover after rounds
   // works the same way — the issue keeps its identity, only Worker changes).
@@ -150,8 +153,8 @@ test('self spans a takeover: the worker before a hand-over is still self, not on
 
 test('self spans a package: an issue folded into a branch with no --worker of its own inherits self from the branch\'s other issue', () => {
   const root = loop();
-  const a = /filed (\d{3})/.exec(jarl(root, 'new', 'a').stdout)[1];
-  const b = /filed (\d{3})/.exec(jarl(root, 'new', 'b').stdout)[1];
+  const a = FILED.exec(jarl(root, 'new', 'a').stdout)[1];
+  const b = FILED.exec(jarl(root, 'new', 'b').stdout)[1];
   jarl(root, 'set', a, 'in-progress', 'go', '--branch', 'jarl/pkg-x', '--worker', 'w1');
   // b joins the same branch later, recording only --branch — the package's one shared lease, not a fresh one.
   jarl(root, 'set', b, 'in-progress', 'joins the package', '--branch', 'jarl/pkg-x');

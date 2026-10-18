@@ -1057,6 +1057,34 @@ export function mainCheckoutOf(root) {
     copies: entries.filter((e) => !e.bare).map((e) => join(canonical(e.path), rel)),
   };
 }
+// The one lookup of a worktree's state, asked of git first (git worktree list --porcelain in `repo`). It finds the worktree
+// holding the lease's `branch`, and, for an old lease that stored one, the worktree at `stored`. The states:
+//   here       the worktree's directory is on this machine;
+//   elsewhere  git lists it locked (`reason` when it has one) and its directory is not visible from here — a container's;
+//   invisible  git lists it but its directory is not visible from here: not marked prunable, or prunable with its parent
+//              directory missing too (a whole directory tree on another machine) — not gone;
+//   gone       its directory is missing while the parent directory is here: removed under a live lease;
+//   none       no worktree holds the branch (and `stored`, when given, is neither listed nor a directory here).
+// The fallback for a stored path git does not list: a directory here is `here`, a missing one with an existing parent is
+// `gone`, a missing one whose parent is missing too is `invisible`. Returns { state, path, reason? }; `path` is null for none.
+export function worktreeState(repo, branch, stored) {
+  const sameAs = (a, b) => canonical(dirname(a)) === canonical(dirname(b)) && basename(a) === basename(b);
+  const list = repo ? git(repo, ['worktree', 'list', '--porcelain']) : null;
+  const entries = (list || '').split(/\n\s*\n/).map((b) => ({
+    path: /^worktree (.+)$/m.exec(b)?.[1], branch: /^branch refs\/heads\/(.+)$/m.exec(b)?.[1],
+    locked: /^locked(?: |$)/m.test(b), reason: /^locked (.+)$/m.exec(b)?.[1], prunable: /^prunable(?: |$)/m.test(b),
+  })).filter((e) => e.path);
+  const found = (branch && entries.find((e) => e.branch === branch)) || (stored && entries.find((e) => sameAs(e.path, stored)));
+  if (found) {
+    if (existsSync(found.path)) return { state: 'here', path: found.path };
+    if (found.locked) return { state: 'elsewhere', path: found.path, ...(found.reason ? { reason: found.reason } : {}) };
+    if (found.prunable && existsSync(dirname(found.path))) return { state: 'gone', path: found.path };
+    return { state: 'invisible', path: found.path };
+  }
+  if (!stored) return { state: 'none', path: null };
+  if (existsSync(stored)) return { state: 'here', path: stored };
+  return { state: existsSync(dirname(stored)) ? 'gone' : 'invisible', path: stored };
+}
 // The highest issue number any copy of this loop holds (the main checkout and every linked worktree), 0 when none.
 function highestAcrossWorktrees(root) {
   const found = mainCheckoutOf(root);
@@ -2082,8 +2110,15 @@ function spread(values) {
 // (6.2.0) are set aside first, and only a number that is an id the loop holds (`held`, a Set or Map of ids) counts, so a
 // year or a count never becomes an issue in a loop of thousands.
 export function idsNamed(text, held) {
-  const plain = String(text || '').replace(/\d{4}-\d{2}(?:-\d{2})?(?:[ T]\d{2}:\d{2})?/g, ' ').replace(/\d+(?:\.\d+)+/g, ' ');
-  return [...plain.matchAll(new RegExp(`(?<![0-9A-Za-z])(${ID_SRC})(?![0-9A-Za-z])`, 'g'))].map((m) => padId(m[1])).filter((id) => held.has(id));
+  const plain = String(text || '').replace(/(?<![0-9])\d{4}-(?:0[1-9]|1[0-2])(?:-(?:0[1-9]|[12]\d|3[01]))?(?:[ T]\d{2}:\d{2})?(?![0-9])/g, ' ').replace(/\d+(?:\.\d+)+/g, ' ');
+  // A range (998-1002, low-high like expandIds reads it) names every id the loop holds inside it; a lone id names itself.
+  const heldIds = [...held.keys ? held.keys() : held].map(String);
+  const out = [];
+  for (const m of plain.matchAll(new RegExp(`(?<![0-9A-Za-z])(${ID_SRC})(?:-#?(${ID_SRC}))?(?![0-9A-Za-z])`, 'g'))) {
+    if (m[2] !== undefined && Number(m[1]) <= Number(m[2])) out.push(...heldIds.filter((id) => Number(id) >= Number(m[1]) && Number(id) <= Number(m[2])).sort((a, b) => Number(a) - Number(b)));
+    else for (const raw of m[2] === undefined ? [m[1]] : [m[1], m[2]]) if (held.has(padId(raw))) out.push(padId(raw));
+  }
+  return out;
 }
 
 // The loop's metrics, read from its record alone — the journal and the issue files — never from git or a network. Each
@@ -2530,13 +2565,19 @@ export function leaseProblems(root, issue, hours = STALE_HOURS, now = Date.now()
   if (!loadProfile(root).is(issue.status, 'holds-claim')) return [];
   const f = issue.fields;
   const out = [];
-  if (f.worktree && !existsSync(f.worktree)) out.push(`worktree gone: ${f.worktree}`);
   let lastCommit = null;
+  // Outside a git repository there is no branch to find, gone or not. An issue naming several repositories
+  // keeps its branch while any of them has it.
+  const repos = [];
+  if (f.branch || f.worktree) for (const n of (reposNamed(issue).length ? reposNamed(issue) : [undefined])) { try { const r = repoOf(root, n); if (isGitRepo(r)) repos.push(r); } catch { /* gone */ } }
+  // The worktree is asked of git, by the lease's branch (and the stored path of an old lease): only 'gone' is a problem.
+  if (f.branch || f.worktree) {
+    const states = (repos.length ? repos : [null]).map((r) => worktreeState(r, f.branch, f.worktree));
+    const seen = states.find((s) => s.state !== 'gone' && s.state !== 'none');
+    const gone = states.find((s) => s.state === 'gone');
+    if (!seen && gone) out.push(`worktree gone: ${gone.path}`);
+  }
   if (f.branch) {
-    // Outside a git repository there is no branch to find, gone or not. An issue naming several repositories
-    // keeps its branch while any of them has it.
-    const repos = [];
-    for (const n of (reposNamed(issue).length ? reposNamed(issue) : [undefined])) { try { const r = repoOf(root, n); if (isGitRepo(r)) repos.push(r); } catch { /* gone */ } }
     const having = repos.filter((r) => refsIn(r).has(f.branch));
     if (repos.length && !having.length) out.push(`branch gone: ${f.branch}`);
     for (const r of having) { const t = refsIn(r).get(f.branch).committedMs; if (t && (!lastCommit || t > lastCommit)) lastCommit = t; }
@@ -2555,7 +2596,7 @@ export function leaseProblems(root, issue, hours = STALE_HOURS, now = Date.now()
 // uncommitted files. 'unverified': its issues record merges but the branch has commits none of them contain
 // (work after the merge, or a squash). A branch matched only by its jarl/NNN- number, with no Branch field
 // behind it, is judged by ancestry alone: a number is too weak to trust a recorded merge for. Null otherwise.
-function doneMark(repo, base, name, on, dirty, profile = DEFAULT_PROFILE) {
+function doneMark(repo, base, name, on, dirty, profile = DEFAULT_PROFILE, unknown = false) {
   const closed = (i) => profile.is(i.status, 'closes-record');
   // Given up: finished, settling what waits on it, without closing the record (built-in: dropped). A status that is
   // finished but settles nothing (deferred) is work that waits, and keeps its branch.
@@ -2571,7 +2612,8 @@ function doneMark(repo, base, name, on, dirty, profile = DEFAULT_PROFILE) {
     byRecord = done.every((i) => git(repo, ['merge-base', '--is-ancestor', name, mergedOf(i).sha]) !== null);
     if (!byRecord) return 'unverified';
   }
-  return dirty ? 'dirty' : 'delete';
+  // A worktree git lists but this machine cannot inspect has an unknown number of uncommitted changes: never 'delete'.
+  return dirty ? 'dirty' : unknown ? 'unknown' : 'delete';
 }
 
 function branchesIn(root, repo, flags, issues = loadIssues(root), hours = STALE_HOURS) {
@@ -2592,16 +2634,19 @@ function branchesIn(root, repo, flags, issues = loadIssues(root), hours = STALE_
   const rows = [...named, ...recorded, ...extra].map((name) => {
     const mb = git(repo, ['merge-base', base, name]);
     const ahead = mb ? Number(git(repo, ['rev-list', '--count', `${mb}..${name}`]) || 0) : null;
-    const wt = worktrees.find((w) => w.branch === name);
-    // git keeps listing a worktree whose directory was deleted under it (prunable) — that one is gone.
-    const wtGone = Boolean(wt && !existsSync(wt.path));
-    const dirty = wt && !wtGone ? (git(wt.path, ['status', '--porcelain']) || '').split('\n').filter(Boolean).length : null;
     const on = issuesOnBranch(root, issues, real, name);
+    // The worktree is asked of git by the branch (and an old lease's stored path), through the one lookup.
+    const ws = worktreeState(repo, name, on.map((i) => i.fields.worktree).find(Boolean));
+    const wtGone = ws.state === 'gone';
+    const status = ws.state === 'here' ? git(ws.path, ['status', '--porcelain']) : null;
+    const dirty = status === null ? null : status.split('\n').filter(Boolean).length;
+    // Uncommitted changes that cannot be counted: a worktree listed but not visible from here, or one that would not answer.
+    const unknown = ws.state === 'elsewhere' || ws.state === 'invisible' || (ws.state === 'here' && dirty === null);
     const stale = on.flatMap((i) => leaseProblems(root, i, hours).map((p) => `${i.id} ${p}`));
     // Done → delete: every issue it carries is done or dropped (at least one done), and its work is in the
     // base — the branch is an ancestor of it, or every done issue records its merge.
-    const done = doneMark(repo, base, name, on, dirty, loadProfile(root));
-    return { repo: basename(repo), branch: name, ahead, worktree: wt ? wt.path : null, ...(wtGone ? { worktreeGone: true } : {}), dirty, unnamed: !name.startsWith('jarl/') && !leased.includes(name), issues: on.map((i) => i.id), stale, done, deletable: done === 'delete' };
+    const done = doneMark(repo, base, name, on, dirty, loadProfile(root), unknown);
+    return { repo: basename(repo), branch: name, ahead, worktree: ws.path, worktreeState: ws.state, ...(ws.reason ? { worktreeReason: ws.reason } : {}), ...(wtGone ? { worktreeGone: true } : {}), dirty, unnamed: !name.startsWith('jarl/') && !leased.includes(name), issues: on.map((i) => i.id), stale, done, deletable: done === 'delete' };
   });
   // An in-progress issue whose recorded branch is not in the repository any more: a lease with nothing under it.
   const gone = leased.filter((b) => !exists(b)).map((name) => {
