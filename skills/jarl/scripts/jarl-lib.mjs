@@ -2407,14 +2407,17 @@ export function cmdClose(root, flags = {}) {
   need(flags.force || left.length === 0, `${left.length} issue(s) still open or in progress: ${left.map((i) => i.id).join(', ')} — set each ${profile.with('terminal').filter((st) => profile.is(st, 'settles-dependents') || profile.is(st, 'closes-record')).join(' or ') || profile.with('terminal').join(' or ')}, or report them to the user and run with --force`);
   // A permanent loop is a record, not a stage cleared before a merge: close leaves the directory in
   // place and logs the close instead of removing it, so --root still finds the loop afterwards.
-  // Deferred work is not open, so it does not hold the close — but the close says it leaves it waiting.
+  // Deferred work is not open, but it is work that waits: where close removes the directory it would wait nowhere, so
+  // the default mode refuses until the deferred issues are archived or --force removes them; a permanent loop keeps them.
   const deferred = loadIssues(root).filter((i) => i.status === 'deferred').map((i) => i.id);
+  const permanent = existsSync(join(jarlDir(root), '.permanent'));
+  need(permanent || flags.force || deferred.length === 0, `${deferred.length} issue(s) deferred: ${deferred.join(', ')} — close removes .jarl/ with them, and deferred work waits, it is not gone. Keep it: jarl.mjs archive "<slug>" puts the loop under .jarl/archive/ with its deferred issues. Or remove it with them: jarl.mjs close --force`);
   // The ratification batch is assembled here and never holds the close: in a permanent loop its items stay open for
   // the user's word; in a loop on a branch the rulings no one ratified leave with the directory, rulings of that loop.
   const batch = ratificationBatch(root);
   // A committed loop's files git never saw are named, not refused: in the permanent mode they (and the closing
   // line) wait for a commit; in the committed mode the removal below is itself the change to commit.
-  if (existsSync(join(jarlDir(root), '.permanent'))) {
+  if (permanent) {
     appendLog(root, `closed · kept as a permanent record${deferred.length ? ` · ${deferred.length} deferred still waiting: ${deferred.join(', ')}` : ''}`);
     const files = uncommittedLoopFiles(root);
     return { closed: true, removed: null, kept: jarlDir(root), leftOpen: left.map((i) => i.id), deferred, uncommitted: files === null ? null : files.length, batch };

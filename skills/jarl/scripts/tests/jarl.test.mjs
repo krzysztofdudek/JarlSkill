@@ -184,9 +184,9 @@ test('deferred is its own status: it needs a reason, stays out of the default li
   assert.match(report, /## Deferred \(1\)\n- 001 waits for the client — the client wants to decide first/);
   assert.match(report, /## Dropped \(1\)\n- 003 gone for good — duplicate/);
   assert.match(jarl(root, 'show', '001'), /half a fix on a branch/);
-  // A loop with only deferred work left can close, and says what it leaves waiting.
+  // A loop with only deferred work left is closed by --force, and names the deferred issues it removed.
   jarl(root, 'set', '002', 'dropped', 'no longer needed');
-  const closed = JSON.parse(jarl(root, 'close', '--json'));
+  const closed = JSON.parse(jarl(root, 'close', '--force', '--json'));
   assert.deepEqual(closed.deferred, ['001']);
 });
 

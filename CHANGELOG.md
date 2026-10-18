@@ -31,6 +31,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `review` now refuses findings of fewer than three words (`ok`, `-`, `LGTM`) and says how many it got: a verdict needs a few words about what was read and what was found.
 - `new` now refuses a What, Why or section text that holds a matched opening and closing tag named after one of the issue's own fields (for example `<why>…</why>`) outside code, and says to pass that field in its own parameter; a lone tag, or a pair in backticks or a fenced block, is accepted. Its reply lists what was filed (priority, tier, kind, tags, acceptance lines, the length of What and Why) and each field left empty with the command that fills it.
 - An issue that is reopened and closed again needs a `--ran`/`--saw` row recorded after the reopen, as well as a new approve. A close that rests on a row from before the reopen is refused. A start or a reopen resets both; a red round spends only the approve.
+- In a loop kept out of git, `close` refuses while any issue is deferred and names the two ways forward: `archive` to keep the work, or `close --force` to remove it. `close --force` is described in the skill, and `close` says what it removed instead of saying deferred work is still waiting.
 
 ### Fixed
 - A mention of another issue inside a note is no longer counted as a round of that issue.

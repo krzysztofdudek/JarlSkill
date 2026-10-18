@@ -237,7 +237,10 @@ commands:
                                                  Tier, the fields and sections its issues carry and the heading of their
                                                  acceptance; the built-in one when the loop has none; with a file, that
                                                  file checked against the profile schema instead
-  close [--force] [--batch]                      refuse while anything is open or in progress; else remove .jarl/
+  close [--force] [--batch]                      refuse while anything is open or in progress, and, where it removes .jarl/,
+                                                 while anything is deferred (the refusal names archive "<slug>", which
+                                                 keeps the loop under .jarl/archive/, and --force, which removes the
+                                                 loop with its open and deferred issues, keeping no copy); else remove .jarl/
                                                  — a permanent loop (see init --permanent, or mode permanent) is
                                                  kept instead: it logs the close and the directory stays as the record;
                                                  first it files the ratification batch — at most 10 area rulings, widest
@@ -569,7 +572,7 @@ export function dispatch(root, cmd, rest, flags) {
       case 'archive': out = cmdArchive(root, rest[0], { caller: 'cli' }); text = `archived → ${out.archived}${out.leftOpen.length ? ` · ${out.leftOpen.length} still open or in progress: ${out.leftOpen.join(', ')}` : ''} · open a new loop with: jarl.mjs init "<goal>"`; break;
       case 'mode': out = cmdMode(root, rest[0]); text = 'now permanent · no longer tied to a feature branch; close keeps the directory'; break;
       case 'profile': out = cmdProfile(root, rest[0]); text = renderProfile(out); break;
-      case 'close': out = cmdClose(root, { ...flags, caller: 'cli' }); text = out.closed ? (out.kept ? `kept ${out.kept} · closed as a permanent record` : `removed ${out.removed}`) + (out.deferred.length ? ` · ${out.deferred.length} deferred still waiting: ${out.deferred.join(', ')}` : '') + (out.uncommitted ? ` · ${out.uncommitted} loop file(s) not committed${out.kept ? ' — commit .jarl/' : ' before the removal'}` : '') + renderBatch(out.batch, out.kept ? 'kept' : 'removed') : renderBatch(out.batch, 'open').trimStart(); break;
+      case 'close': out = cmdClose(root, { ...flags, caller: 'cli' }); text = out.closed ? (out.kept ? `kept ${out.kept} · closed as a permanent record` : `removed ${out.removed}`) + (out.deferred.length ? ` · ${out.deferred.length} deferred ${out.kept ? 'still waiting' : 'removed with the loop'}: ${out.deferred.join(', ')}` : '') + (out.uncommitted ? ` · ${out.uncommitted} loop file(s) not committed${out.kept ? ' — commit .jarl/' : ' before the removal'}` : '') + renderBatch(out.batch, out.kept ? 'kept' : 'removed') : renderBatch(out.batch, 'open').trimStart(); break;
       default: throw new Error(`unknown command: ${cmd}\n${USAGE}`);
     }
     });
