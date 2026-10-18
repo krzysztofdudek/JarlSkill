@@ -8,18 +8,11 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { sh, ghStub } from './portable.mjs';
 import { fileURLToPath } from 'node:url';
 import { FINDINGS } from './findings.mjs';
+import { run as runJarl, jarl } from './helpers.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 
-function run(root, args, env = {}) {
-  const r = spawnSync(process.execPath, [SCRIPT, ...args, '--root', root], { encoding: 'utf8', env: { ...process.env, ...env } });
-  return { status: r.status, stdout: r.stdout.trim(), stderr: r.stderr.trim() };
-}
-function jarl(root, ...args) {
-  const r = run(root, args);
-  if (r.status !== 0) throw new Error(`jarl ${args.join(' ')} failed: ${r.stderr}`);
-  return r.stdout;
-}
+const run = (root, args, env = {}) => runJarl(root, args, { env });
 // Every file under .jarl/ with its contents: a read-only command leaves this exactly as it was.
 function snapshot(root) {
   const out = {};

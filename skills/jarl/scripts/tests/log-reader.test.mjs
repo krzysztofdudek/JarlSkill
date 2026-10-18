@@ -6,6 +6,7 @@ import { appendFileSync, mkdtempSync, mkdirSync, readdirSync, writeFileSync } fr
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import * as R from '../record.mjs';
+import { loop as makeLoop } from './helpers.mjs';
 
 const L = await import('../jarl-lib.mjs');
 const P = L.DEFAULT_PROFILE;
@@ -79,12 +80,7 @@ test('a directory without a log has no events', () => {
   assert.deepEqual(L.loopEvents(mkdtempSync(join(tmpdir(), 'jarl-log-reader-')), P), []);
 });
 
-function loop() {
-  const root = mkdtempSync(join(tmpdir(), 'jarl-loaded-loop-'));
-  mkdirSync(join(root, '.git'));
-  R.initLoop(root, 'a goal for the loaded loop');
-  return root;
-}
+const loop = () => makeLoop({ prefix: 'jarl-loaded-loop-', goal: 'a goal for the loaded loop' });
 function worked(root, title, { worker, branch }) {
   const { id } = R.newIssue(root, title, { tier: 'light', acceptance: 'it works' });
   R.setStatus(root, id, 'in-progress', '', { branch, worker });

@@ -7,19 +7,12 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { jarl, spawnJarl, loop as makeLoop } from './helpers.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 const L = await import('../jarl-lib.mjs');
 
-function jarl(root, ...args) {
-  return execFileSync(process.execPath, [SCRIPT, ...args, '--root', root], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-}
-function loop() {
-  const root = mkdtempSync(join(tmpdir(), 'jarl-show-'));
-  mkdirSync(join(root, '.git'));
-  jarl(root, 'init', 'a goal');
-  return root;
-}
+const loop = () => makeLoop({ prefix: 'jarl-show-', goal: 'a goal', via: 'cli' });
 function started(root, title = 'thing to do') {
   const id = JSON.parse(jarl(root, 'new', title, '--acceptance', 'it works', '--json')).id;
   jarl(root, 'set', id, 'in-progress', '--worker', 'w-one', '--branch', `jarl/${id}-x`);
@@ -132,7 +125,7 @@ test('show leaves an issue the log does not match (written by hand) whole', () =
 test('a long free-text evidence note is noted on stderr and still written whole; a short one and a row say nothing', () => {
   const root = loop();
   const id = JSON.parse(jarl(root, 'new', 'long note', '--json')).id;
-  const run = (...args) => spawnSync(process.execPath, [SCRIPT, ...args, '--root', root], { encoding: 'utf8' });
+  const run = (...args) => spawnJarl(root, args);
   const long = Array.from({ length: 40 }, (_, n) => `line ${n} of a long pasted output that nobody reads back`).join('\n');
   const r = run('evidence', id, long);
   assert.equal(r.status, 0);

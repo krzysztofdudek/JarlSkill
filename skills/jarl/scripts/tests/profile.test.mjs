@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { FINDINGS } from './findings.mjs';
+import { jarl, refuses, gitRepo as sharedGitRepo } from './helpers.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 const J = await import('../jarl.mjs');
@@ -16,13 +17,6 @@ function repo() {
   const dir = mkdtempSync(join(tmpdir(), 'jarl-profile-'));
   mkdirSync(join(dir, '.git'));
   return dir;
-}
-function jarl(root, ...args) {
-  return execFileSync(process.execPath, [SCRIPT, ...args, '--root', root], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-}
-function refuses(root, ...args) {
-  try { jarl(root, ...args); } catch (e) { return String(e.stderr); }
-  throw new Error('expected a refusal');
 }
 function profileFile(json) {
   const dir = mkdtempSync(join(tmpdir(), 'jarl-profile-file-'));
@@ -482,13 +476,7 @@ test('no profile: status --json keeps the five counts at the top level and has n
   assert.match(jarl(root, 'status'), /open 1 · in flight 0 · done 0 · dropped 0 · deferred 0 · questions 0/);
 });
 
-function gitRepo() {
-  const dir = mkdtempSync(join(tmpdir(), 'jarl-profile-git-'));
-  const g = (...a) => execFileSync('git', a, { cwd: dir, stdio: 'ignore' });
-  g('init', '-q', '-b', 'main'); g('config', 'user.email', 't@t'); g('config', 'user.name', 't');
-  writeFileSync(join(dir, 'a.txt'), 'a\n'); g('add', '.'); g('commit', '-qm', 'base');
-  return { dir, g };
-}
+const gitRepo = () => sharedGitRepo({ prefix: 'jarl-profile-git-', branch: 'main' });
 
 test('branches: a branch is DONE → delete by flags — closed or given up (terminal, settling, not closing); work that waits keeps it', () => {
   const PROF = { ...HOUSE, statuses: { ...HOUSE.statuses, abandoned: ['terminal', 'settles-dependents', 'needs-reason'], parked: ['terminal', 'needs-reason'] } };

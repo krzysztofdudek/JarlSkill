@@ -1,5 +1,5 @@
 // Retraction by an appended entry (issue 245), a title change and a review with empty findings. The first retraction of
-// a loop raises the record format, so the pinned Jarl 6.1.0 (tests/old-jarl.mjs) refuses the loop instead of counting
+// a loop raises the record format, so the pinned frozen reader (tests/old-jarl.mjs) refuses the loop instead of counting
 // the retracted approve or row.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -9,23 +9,12 @@ import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { oldJarl } from './old-jarl.mjs';
+import { jarl, refuses, loop as makeLoop } from './helpers.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 const L = await import('../jarl-lib.mjs');
 
-function jarl(root, ...args) {
-  return execFileSync(process.execPath, [SCRIPT, ...args, '--root', root], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-}
-function refuses(root, ...args) {
-  try { jarl(root, ...args); } catch (e) { return String(e.stderr); }
-  throw new Error(`expected a refusal: ${args.join(' ')}`);
-}
-function loop() {
-  const root = mkdtempSync(join(tmpdir(), 'jarl-retract-'));
-  mkdirSync(join(root, '.git'));
-  jarl(root, 'init', 'a goal');
-  return root;
-}
+const loop = () => makeLoop({ prefix: 'jarl-retract-', goal: 'a goal', via: 'cli' });
 // An issue in progress on a branch (a code issue), filed under id 001 unless others exist.
 function started(root, title = 'thing to do') {
   const id = JSON.parse(jarl(root, 'new', title, '--acceptance', 'it works', '--json')).id;
@@ -180,7 +169,7 @@ test('a retraction always finds its row: a command holding the saw marker, a com
   assert.deepEqual(L.gateState(root, id).unresolvedRetractions, [7]);
 });
 
-test('the first retraction raises the format before its line is written; the pinned Jarl 6.1.0 refuses the loop loudly', () => {
+test('the first retraction raises the format before its line is written; the pinned frozen reader refuses the loop loudly', () => {
   for (const retract of [
     (root, id) => jarl(root, 'review', id, 'retract', '--by', 'jarl', 'the approve was a mistake'),
     (root, id) => jarl(root, 'evidence', id, '--retract', '1', '--by', 'jarl', 'the row was a mistake'),

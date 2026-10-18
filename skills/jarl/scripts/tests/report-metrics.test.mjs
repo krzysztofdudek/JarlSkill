@@ -9,21 +9,13 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { jarl, loop as makeLoop } from './helpers.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 const L = await import('../jarl-lib.mjs');
 
-function jarl(root, ...args) {
-  const r = spawnSync(process.execPath, [SCRIPT, ...args, '--root', root], { encoding: 'utf8' });
-  if (r.status !== 0) throw new Error(`jarl ${args.join(' ')} failed: ${r.stderr}`);
-  return r.stdout.trim();
-}
 const json = (root, ...args) => JSON.parse(jarl(root, ...args, '--json'));
-function loop(goal = 'metrics') {
-  const dir = mkdtempSync(join(tmpdir(), 'jarl-metrics-'));
-  jarl(dir, 'init', goal);
-  return dir;
-}
+const loop = (goal = 'metrics') => makeLoop({ prefix: 'jarl-metrics-', goal, via: 'cli', dotGit: false });
 const issueFile = (dir, id) => join(dir, '.jarl', 'issues', readdirSync(join(dir, '.jarl', 'issues')).find((f) => f.startsWith(`${id}-`)));
 // Header fields written straight into the issue file, the way a loop older than a command would hold them.
 function fields(dir, id, values) {

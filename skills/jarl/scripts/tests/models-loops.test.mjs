@@ -9,17 +9,13 @@ import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import * as R from '../record.mjs';
+import { loop as makeLoop, spawnJarl } from './helpers.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 const L = await import('../jarl-lib.mjs');
 const MID = 'mid-model';
 
-function loop() {
-  const root = mkdtempSync(join(tmpdir(), 'jarl-models-loops-'));
-  mkdirSync(join(root, '.git'));
-  R.initLoop(root, 'a goal');
-  return root;
-}
+const loop = () => makeLoop({ prefix: 'jarl-models-loops-', goal: 'a goal' });
 let seq = 0;
 function units(root, n, { model, changed = 0 } = {}) {
   for (let k = 0; k < n; k += 1) {
@@ -121,7 +117,7 @@ test('a root that is not a loop is refused with a message, and nothing is writte
   const before = snapshot(a);
   assert.throws(() => L.cmdModels(a, { with: empty }), /is not a loop/);
   assert.throws(() => L.cmdModels(a, { with: join(a, 'nowhere') }), /is not a loop/);
-  const r = spawnSync(process.execPath, [SCRIPT, 'models', '--with', empty, '--root', a], { encoding: 'utf8', timeout: 60_000 });
+  const r = spawnJarl(a, ['models', '--with', empty]);
   assert.notEqual(r.status, 0);
   assert.match(r.stderr, /is not a loop/);
   assert.deepEqual(snapshot(a), before);
@@ -135,7 +131,7 @@ test('the command line takes --with (repeatable) and --archives, reads, and writ
   units(a, 3, { model: MID });
   units(b, 3, { model: MID });
   const before = [snapshot(a), snapshot(b)];
-  const r = spawnSync(process.execPath, [SCRIPT, 'models', '--with', b, '--archives', '--json', '--root', a], { encoding: 'utf8', timeout: 60_000 });
+  const r = spawnJarl(a, ['models', '--with', b, '--archives', '--json']);
   assert.equal(r.status, 0, r.stderr);
   assert.equal(JSON.parse(r.stdout).loops.length, 2);
   assert.deepEqual([snapshot(a), snapshot(b)], before);

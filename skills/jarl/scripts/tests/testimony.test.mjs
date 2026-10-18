@@ -1,5 +1,5 @@
 // A multi-line text given to a command is kept whole: in the issue, the question or the ruling, never cut to its
-// first line, and the log (one line per event) never holds a raw newline. Jarl 6.1.0 still reads such a loop.
+// first line, and the log (one line per event) never holds a raw newline. The pinned frozen reader still reads such a loop.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync } from 'node:fs';
@@ -8,24 +8,17 @@ import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { oldJarl } from './old-jarl.mjs';
+import { jarl, loop as makeLoop } from './helpers.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 const L = await import(new URL('../jarl-lib.mjs', import.meta.url).href);
 
-function jarl(root, ...args) {
-  return execFileSync(process.execPath, [SCRIPT, ...args, '--root', root], { encoding: 'utf8' }).trim();
-}
 const three = (tag) => `${tag} line one\n${tag} line two\n${tag} line three`;
 const lines = (tag) => three(tag).split('\n');
 const has = (text, tag) => lines(tag).every((l) => text.includes(l));
 const read = (root, name) => readFileSync(join(root, '.jarl', name), 'utf8');
 
-function loop() {
-  const root = mkdtempSync(join(tmpdir(), 'jarl-testimony-'));
-  mkdirSync(join(root, '.git'));
-  jarl(root, 'init', three('goal'));
-  return root;
-}
+const loop = () => makeLoop({ prefix: 'jarl-testimony-', goal: three('goal'), via: 'cli' });
 
 test('three lines through every command that writes text: whole in the issue, the question and the ruling, and one line in the log', () => {
   const root = loop();
@@ -77,7 +70,7 @@ test('three lines through every command that writes text: whole in the issue, th
   assert.ok(log.includes('question line one'));
 });
 
-test('a verdict line with its pointer, and a multi-line question, read right under the pinned 6.1.0', () => {
+test('a verdict line with its pointer, and a multi-line question, read right under the pinned frozen reader', () => {
   const root = loop();
   const id = JSON.parse(jarl(root, 'new', 'old reader', '--acceptance', 'it works', '--json')).id;
   jarl(root, 'set', id, 'in-progress', '--worker', 'w-one', '--branch', 'jarl/001-x');

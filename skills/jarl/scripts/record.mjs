@@ -96,19 +96,11 @@ export function newIssue(root, title, opts = {}) { return write(root, () => L.cm
 // is the branch checked out in the merge's repository, or opts.base (a branch or ref, library callers only) when the
 // composer landed the merge into a branch that is not checked out there.
 export function setStatus(root, ids, status, why, opts = {}) {
-  return write(root, () => {
-    const profile = L.loadProfile(root);
-    L.need(profile.statuses.includes(status) || !profile.field(status), `${status} is a field this loop's profile declares, not a status — setField writes it`);
-    return L.cmdSet(root, ids, status, why, opts);
-  });
+  return write(root, () => L.cmdSetStatus(root, ids, status, why, opts));
 }
 // A field the profile declares (Kind and Tier too, when it declares them), checked against its values.
 export function setField(root, ids, field, value, opts = {}) {
-  return write(root, () => {
-    const profile = L.loadProfile(root);
-    L.need(profile.field(field) && !profile.statuses.includes(field), `${field} is not a field this loop's profile declares${profile.declaredFields.length ? ` — it declares ${profile.declaredFields.map((f) => f.name).join(', ')}` : ''}`);
-    return L.cmdSet(root, ids, field, value, opts);
-  });
+  return write(root, () => L.cmdSetField(root, ids, field, value, opts));
 }
 // The title (the heading only; the file keeps its name) and the sections: opts { title, where, what, why, acceptance, changelog, section } (section: "<Heading>=<text>", repeatable).
 export function setBody(root, id, opts = {}) { return write(root, () => L.cmdBody(root, id, opts)); }

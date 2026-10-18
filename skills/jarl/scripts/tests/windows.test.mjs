@@ -9,9 +9,10 @@ import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { readText, renameRetry, RENAME_RETRY_MS } from '../jarl.mjs';
+import { spawnJarl, SPAWN_TIMEOUT } from './helpers.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
-const run = (root, ...args) => spawnSync(process.execPath, [SCRIPT, ...args, '--root', root], { encoding: 'utf8' });
+const run = (root, ...args) => spawnJarl(root, args);
 
 test('readText gives LF whatever the file holds', () => {
   const f = join(mkdtempSync(join(tmpdir(), 'jarl-crlf-')), 'x.md');
@@ -77,6 +78,6 @@ test('the CLI runs when started through a symlink to it, as a plugin directory l
   const dir = mkdtempSync(join(tmpdir(), 'jarl-link-'));
   const link = join(dir, 'jarl.mjs');
   symlinkSync(SCRIPT, link);
-  const r = spawnSync(process.execPath, [link, '--help'], { encoding: 'utf8' });
+  const r = spawnSync(process.execPath, [link, '--help'], { encoding: 'utf8', timeout: SPAWN_TIMEOUT });
   assert.match(r.stdout, /^usage: jarl\.mjs/, 'started through the link, the CLI answers instead of exiting silently');
 });

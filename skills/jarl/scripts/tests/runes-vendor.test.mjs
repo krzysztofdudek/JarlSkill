@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 
 const SKILL = fileURLToPath(new URL('../../', import.meta.url));
 const check = (skillDir) =>
-  spawnSync(process.execPath, [join(skillDir, 'scripts', 'runes.mjs'), 'check', '--offline', '--pin', join(skillDir, 'scripts', 'vendor', 'runes.pin.json')], { encoding: 'utf8' });
+  spawnSync(process.execPath, [join(skillDir, 'scripts', 'runes.mjs'), 'check', '--offline', '--pin', join(skillDir, 'scripts', 'vendor', 'runes.pin.json')], { encoding: 'utf8', timeout: 120_000 });
 
 const tmps = [];
 after(() => { for (const d of tmps) rmSync(d, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); });

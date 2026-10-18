@@ -1,25 +1,24 @@
 #!/usr/bin/env node
 // jarl.mjs — the one tool the jarl skill's state moves through: the command line over record.mjs.
 //
-// Markdown is the source of truth: .jarl/goal.md, .jarl/decisions.md, .jarl/log.md and one
+// Markdown is the source of truth: the loop's goal, decisions and log, and one
 // .jarl/issues/NNN-slug.md per issue. This script only reads and writes those files, so anything
 // it does can be checked by opening them. Zero dependencies, Node 22+.
 //
 // What is here: the usage text, the flag and argument tables, the parser and dispatch — one command, run and rendered.
 // Every operation on the record goes through record.mjs, the stable surface another tool may vendor; the rest of the
 // commands (the views over git, import, report and the like) come from jarl-lib.mjs, the implementation behind both.
-// This module re-exports jarl-lib.mjs whole for older importers, but none of those exports is a contract: only
+// This module re-exports jarl-lib.mjs whole, but none of those exports is a contract: only
 // record.mjs (RECORD_API) is.
 
-import { basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as R from './record.mjs';
 import {
-  ROUNDS_BEFORE_TAKEOVER, need, resetCaches, withLock, readText, isEntry,
+  ROUNDS_BEFORE_TAKEOVER, need, resetCaches, withLock, readText, isEntry, cmdSet,
   cmdProfile, cmdArchive, cmdList, cmdNext, renderNext, cmdMode, cmdClose, cmdCheck, cmdBranches, cmdTips, cmdQueue,
   cmdChangelog, cmdHandoffRead, cmdHandoffWrite, cmdReport, cmdImport, cmdSources, cmdAnswer, cmdModels, renderModels,
   renderProfile, renderTips, renderQueue, renderResume, renderStatus, renderImport, renderSources, renderList, recordTypeLog, recordRuleLog,
-  runDecisionsDriver, mergeFlags, describeNew, renderNewReply, issueView, evidenceTable,
+  runDecisionsDriver, mergeFlags, describeNew, renderNewReply, issueView, evidenceTable, renderBranches, renderDecide, renderDecisions,
 } from './jarl-lib.mjs';
 import { writeAreaDecision, writeRuleRatification } from './yg-edge.mjs';
 
@@ -508,15 +507,9 @@ function renderTypeLog(t) {
   return ` · NOT written into the type log: ${t.reason}`;
 }
 
-// set <ids> <status> [why] or set <ids> <field> <value>: a name the profile declares as a field (and not as a status)
-// is a field; anything else is a status, refused by setStatus with the CLI's own words when it names neither.
-function setCommand(root, ids, name, value, flags) {
-  const profile = R.loadProfile(root);
-  const field = name !== undefined && !profile.statuses.includes(name) && profile.field(name);
-  // The command line (and the MCP tools, which run through dispatch) always sets as caller 'cli'.
-  const opts = { ...flags, caller: 'cli' };
-  return field ? R.setField(root, ids, name, value, opts) : R.setStatus(root, ids, name, value, opts);
-}
+// set <ids> <status> [why] or set <ids> <field> <value>: the library decides which one the name is (see setRoute). The
+// command line (and the MCP tools, which run through dispatch) always sets as caller 'cli'.
+function setCommand(root, ids, name, value, flags) { return cmdSet(root, ids, name, value, { ...flags, caller: 'cli' }); }
 
 // One command, run: its result (what --json prints), its text and the notes said on stderr. Throws on a refusal.
 // Every call starts from empty caches, so a caller that runs many commands in one process (a server) sees each
@@ -525,7 +518,7 @@ export function dispatch(root, cmd, rest, flags) {
   resetCaches();
   let out;
   let text;
-  let warn = [];   // said on stderr, so a caller reading stdout sees the same lines as before
+  let warn = [];   // said on stderr, so a caller reading stdout sees the result alone
   const each = (o, f) => [].concat(o).map(f).join('\n');
   const writes = MUTATING.has(cmd);
   {
@@ -553,7 +546,7 @@ export function dispatch(root, cmd, rest, flags) {
       case 'round': out = R.addRound(root, rest[0], rest[1]); text = out.takeover ? `${out.id} round ${out.round} — takeover:\n\n${out.block}` : `${out.id} round ${out.round} of ${ROUNDS_BEFORE_TAKEOVER} before a takeover`; break;
       case 'merged': out = R.recordMerged(root, rest[0], { ...flags, caller: 'cli' }); text = `${out.ids.join(', ')} ${out.sha ? `merged ${out.sha}` : 'merge'}${out.check ? ` · check ${out.check}` : ''}${out.red ? ` · landed red, cause ${out.red}` : ''}${out.ci ? ` · CI ${out.ci}` : ''}${(out.cleanup || []).map((c) => `\n${c.kept ? `kept ${c.branch}${c.worktree ? ` (worktree ${c.worktree} removed)` : ''} — ${c.kept}` : `removed ${c.worktree ? `the worktree ${c.worktree} and ` : ''}the branch ${c.branch}`}${(c.commands || []).length ? `\nafter looking at the files, remove them with:\n${c.commands.map((x) => `  ${x}`).join('\n')}` : ''}${out.cleanup.some((x) => x.repo !== c.repo) ? ` [${c.repo}]` : ''}`).join('')}`; warn = out.notes.map((n) => `note: ${n}`); break;
       case 'check': out = cmdCheck(root, rest[0], flags); text = `${out.id === null ? `package ${out.ids.join(', ')} on ${out.branch}\n` : ''}${out.repo === root ? '' : `in ${out.repo}\n`}${out.items.map((i) => `${i.ok ? '✓' : '✗'} ${i.name} — ${i.note}`).join('\n')}`; break;
-      case 'branches': out = cmdBranches(root, flags); text = out.length ? out.map((b) => `${b.repo !== basename(root) ? `[${b.repo}] ` : ''}${b.branch}${b.issues.length ? ` → ${b.issues.join(', ')}` : ''}  ${b.missing ? 'GONE' : `+${b.ahead ?? '?'}  ${b.worktree ? `${b.worktree}${b.worktreeGone ? ' (gone)' : b.worktreeState === 'elsewhere' ? ` (elsewhere${b.worktreeReason ? `: ${b.worktreeReason}` : ''})` : b.worktreeState === 'invisible' ? ' (not visible from here)' : b.dirty ? ` (${b.dirty} uncommitted)` : ' (clean)'}` : '(no worktree)'}`}${b.unnamed ? '  UNNAMED — rename to jarl/NNN-slug before merging' : ''}${{ delete: '  DONE → delete', dirty: '  DONE (worktree dirty)', unknown: '  DONE (worktree state unknown)', unverified: '  DONE (merged by record, branch not in base) — verify' }[b.done] || ''}${b.stale.length ? `  STALE: ${b.stale.join('; ')}` : ''}`).join('\n') : '(no worker branches)'; break;
+      case 'branches': out = cmdBranches(root, flags); text = renderBranches(out, root); break;
       case 'ask': out = R.ask(root, rest[0], flags); text = out.kind === 'ratify' ? `filed a-${out.id} for ratification · blocks nothing` : `asked a-${out.id}`; break;
       // The library's answer (jarl-record/1) takes no opts: --by reaches the answer through jarl-lib.mjs, under the lock held here.
       case 'answer': out = cmdAnswer(root, rest[0], rest[1], flags); break;   // text below: the type log is written outside the lock
@@ -564,8 +557,8 @@ export function dispatch(root, cmd, rest, flags) {
         break;
       case 'report': out = cmdReport(root, flags); text = out.text; break;
       case 'log': out = R.appendLog(root, rest[0]); text = 'logged'; break;
-      case 'decide': out = R.decide(root, rest[0], rest[1], flags); text = `decided ${out.slug} · by ${out.by}${out.supersedes ? ` · supersedes ${out.supersedes}` : ''}${out.settles.length ? ` · written into ${out.settles.join(', ')}` : ''}${out.area ? ` · area ${out.area}${out.reach !== null ? ` (${out.reach} file${out.reach === 1 ? '' : 's'})` : ''}${out.rule ? ` · rule ${out.rule}` : ''} · put to ratification at close` : ''}`; break;
-      case 'decisions': out = R.decisions(root, flags); text = out.length ? out.map((d) => `${d.date} · ${d.slug}${d.by ? ` · by ${d.by}` : ''}${d.area ? ` · area ${d.area}${d.rule ? ` · rule ${d.rule}` : ''}${d.ratified ? ' ratified' : d.rejected ? ' rejected' : ''}` : ''}${d.supersededBy ? ` · SUPERSEDED by ${d.supersededBy}` : ''}${d.supersedes ? ` · supersedes ${d.supersedes}` : ''} — ${(d.ruling.split('\n').find((l) => l.trim()) || '').slice(0, 160)}`).join('\n') : '(no rulings)'; break;
+      case 'decide': out = R.decide(root, rest[0], rest[1], flags); text = renderDecide(out); break;
+      case 'decisions': out = R.decisions(root, flags); text = renderDecisions(out); break;
       case 'status': out = R.statusData(root, flags); text = renderStatus(out, R.loadProfile(root)); break;
       case 'tips': out = cmdTips(root); text = renderTips(out); break;
       case 'queue': out = cmdQueue(root, flags); text = renderQueue(out); break;

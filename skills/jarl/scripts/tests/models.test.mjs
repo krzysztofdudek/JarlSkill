@@ -11,6 +11,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import * as R from '../record.mjs';
 import { OLD_JARL_FILE, oldJarlIsPinned, oldJarl } from './old-jarl.mjs';
+import { spawnJarl, loop as makeLoop, SPAWN_TIMEOUT } from './helpers.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 const L = await import('../jarl-lib.mjs');
@@ -22,16 +23,14 @@ const MID = 'mid-model';
 const SMALL = 'small-model';
 const LINES = `\nModel (strong): ${BIG}\nModel (standard): ${MID}, mid-other\nModel (light): ${SMALL}\n`;
 
-function loop({ lines = false } = {}) {
-  const root = mkdtempSync(join(tmpdir(), 'jarl-models-'));
-  mkdirSync(join(root, '.git'));
-  R.initLoop(root, 'a goal');
+const loop = ({ lines = false } = {}) => {
+  const root = makeLoop({ prefix: 'jarl-models-', goal: 'a goal' });
   if (lines) appendFileSync(join(root, '.jarl', 'goal.md'), LINES);
   return root;
-}
+};
 const log = (root) => readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
 const issueText = (root, id) => readFileSync(L.findIssue(root, id).file, 'utf8');
-const cli = (root, ...args) => spawnSync(process.execPath, [SCRIPT, ...args, '--root', root], { encoding: 'utf8', timeout: 60_000 });
+const cli = (root, ...args) => spawnJarl(root, args);
 
 let seq = 0;
 // One finished unit of work: filed, leased with a model, one evidence row, `changes` reviews, an approve, done.
@@ -421,7 +420,7 @@ test('a lower-ranked model whose share equals the default\'s is suggested: the d
 test('models --by repo slices the same facts by repository; the text names n for every count and a share only from n >= 5', () => {
   const root = loop({ lines: true });
   mkdirSync(join(root, 'sub'));
-  assert.equal(spawnSync('git', ['init', '-q'], { cwd: join(root, 'sub') }).status, 0);
+  assert.equal(spawnSync('git', ['init', '-q'], { cwd: join(root, 'sub'), timeout: SPAWN_TIMEOUT }).status, 0);
   units(root, 5, { model: MID, worker: 'w-m' }, 1);
   units(root, 2, { model: MID, worker: 'w-m', repo: 'sub' });
   const m = L.cmdModels(root, { by: 'repo' });
