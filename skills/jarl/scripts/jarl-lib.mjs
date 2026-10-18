@@ -1235,13 +1235,17 @@ export function cmdBody(root, rawId, flags) {
   const issue = findIssue(root, rawId);
   need(issue, `no such issue: ${rawId}`);
   const profile = loadProfile(root);
-  const parts = ['where', 'what', 'why', 'acceptance', 'changelog', 'section'].filter((k) => flags[k] !== undefined);
-  need(parts.length, 'body needs at least one of --where, --what, --why, --acceptance, --changelog, --section');
+  const parts = ['title', 'where', 'what', 'why', 'acceptance', 'changelog', 'section'].filter((k) => flags[k] !== undefined);
+  need(parts.length, 'body needs at least one of --title, --where, --what, --why, --acceptance, --changelog, --section');
+  const title = flags.title === undefined ? null : fieldText(flags.title);
+  need(flags.title === undefined || title, '--title needs a title');
   const sections = namedPairs(flags.section, 'section', profile.sections, 'section');
   needNoFieldTags(flags.what, 'the What text');
   needNoFieldTags(flags.why, 'the Why text');
   for (const [h, v] of sections) needNoFieldTags(v, `the ${h} text`);
   let text = readText(issue.file);
+  // The title is the heading's text; the file keeps its name, so the number and the slug a branch was cut from stay.
+  if (title) text = text.replace(/^(#\s+\d+\s+·\s+).*$/m, (_, head) => `${head}${title}`);
   if (flags.where !== undefined) text = setField(text, 'Where', fieldText(flags.where));
   if (flags.what !== undefined) text = setSection(text, 'What', bodyText(flags.what));
   if (flags.why !== undefined) text = setSection(text, 'Why', bodyText(flags.why));
@@ -1250,7 +1254,7 @@ export function cmdBody(root, rawId, flags) {
   if (flags.changelog !== undefined) text = setSection(text, 'Changelog', changelogText(flags.changelog));
   writeAtomic(issue.file, text);
   const named = parts.flatMap((k) => (k === 'section' ? [...sections.keys()] : [k]));
-  appendLog(root, `${issue.id} body · ${named.join(', ')}`);
+  appendLog(root, `${issue.id} body · ${named.join(', ')}${title ? ` · title was "${issue.title}"` : ''}`);
   return { id: issue.id, set: named };
 }
 
@@ -1598,14 +1602,31 @@ export function cmdRepo(root, rawId, path, { clear = false } = {}) {
   return { id: issue.id, repo: repos.join(', '), repos };
 }
 
-export function evidenceRows(issue) {
-  const text = (issue.sections.evidence || '');
+// The checkable rows of an Evidence section, each with its ordinal n counted over the whole section (a retracted
+// row keeps its number, so a number never moves), the lines it spans (start..end, a row is its first line and the
+// indented lines under it) and whether it is retracted (struck through: `- ~~**ran:** … **saw:** …~~`). The one
+// numbering: evidence --retract takes it, and the done gate matches the journal's rows to it.
+const ROW_START = /^- (~~)?\*\*ran:\*\*/;
+export function evidenceTable(text) {
+  const lines = String(text || '').split('\n');
   const rows = [];
-  for (const line of text.split('\n')) {
-    const m = /^- \*\*ran:\*\*\s*(.*?)\s*·\s*\*\*saw:\*\*\s*(.*)$/.exec(line.trim());
-    if (m) rows.push({ ran: m[1], saw: m[2] });
+  for (let i = 0; i < lines.length; i += 1) {
+    const s = ROW_START.exec(lines[i]);
+    if (!s) continue;
+    let end = i;
+    while (end + 1 < lines.length && /^ {2}\S/.test(lines[end + 1])) end += 1;
+    const retracted = Boolean(s[1]);
+    let body = lines.slice(i, end + 1).map((l) => l.trim()).join(' ').replace(/^- (~~)?\*\*ran:\*\*\s*/, '');
+    if (retracted) body = body.replace(/~~$/, '');
+    const cut = body.indexOf(' · **saw:**');
+    rows.push({ n: rows.length + 1, start: i, end, retracted, ran: (cut === -1 ? body : body.slice(0, cut)).trim(), saw: cut === -1 ? '' : body.slice(cut + ' · **saw:**'.length).trim() });
+    i = end;
   }
-  return rows;
+  return { lines, rows };
+}
+// The rows that count as evidence: the ones with a --saw and not retracted.
+export function evidenceRows(issue) {
+  return evidenceTable(issue.sections.evidence).rows.filter((r) => !r.retracted && r.saw !== '').map((r) => ({ ran: r.ran, saw: r.saw }));
 }
 
 // A finding's proposal copied in by import is not yet an acceptance line: it waits to be made checkable.
@@ -1628,7 +1649,12 @@ export function workEvidence(issue, profile = DEFAULT_PROFILE) {
 // in one call or across calls, one row per acceptance line. Both append to the same section, never
 // replace it: the merger's free-text note lands after the worker's rows. `set done` needs the section
 // non-empty, rows or not (not every issue's proof is a command).
+//
+// evidence <id> --retract <n> --by <who> "<reason>" retracts the n-th row (counted over the whole Evidence section, a
+// retracted row keeping its number) by an appended entry: the row stays, struck through, the entry names who retracted it and why, and
+// the done gate no longer counts it. It only tightens: a row is taken away, never added or revived.
 export function cmdEvidence(root, rawIds, text, flags) {
+  if (flags && flags.retract !== undefined) return retractEvidence(root, rawIds, text, flags);
   let rows = null;
   if (flags && (flags.ran !== undefined || flags.saw !== undefined)) {
     const rans = [].concat(flags.ran ?? []);
@@ -1650,6 +1676,46 @@ export function cmdEvidence(root, rawIds, text, flags) {
   }
   appendLogLines(root, issues.flatMap((issue) => (rows ? rows.map((r) => `${issue.id} evidence row · ${firstLine(r.ran, "the issue's Evidence section")}`) : [`${issue.id} evidence · ${firstLine(text, "the issue's Evidence section")}`])));
   return oneOrMany(rawIds, issues.map((issue) => (rows ? { id: issue.id, rows } : { id: issue.id })));
+}
+
+// A text a reviewer or a retracting hand gives must say something: at least two letters or digits (not "", "-", "x").
+function needSaid(text, what) {
+  const said = (String(text ?? '').match(/[\p{L}\p{N}]/gu) || []).length;
+  need(said >= 2, `${what} needs words — what was read and what was found, or why; got "${String(text ?? '').trim().slice(0, 20)}"`);
+}
+function retractedBy(flags, what) {
+  need(flags.by !== undefined && fieldText(flags.by), `${what} needs --by <who> — whoever retracts it is recorded with the reason`);
+  return fieldText(flags.by);
+}
+const struck = (line) => line.replace(/^- /, '- ~~');
+
+function retractEvidence(root, rawIds, reason, flags) {
+  need(!isBulk(rawIds), 'evidence --retract names one issue and one row');
+  need(flags.ran === undefined && flags.saw === undefined, 'evidence --retract takes a row number and a reason, not a new --ran/--saw row');
+  const raw = String(flags.retract);
+  need(/^\d+$/.test(raw) && Number(raw) >= 1, `--retract takes the number of an evidence row: 1 for the first --ran/--saw row of the Evidence section, 2 for the second, retracted rows counted too; got "${raw}"`);
+  const n = Number(raw);
+  const by = retractedBy(flags, 'a retraction');
+  needSaid(reason, 'a retraction');
+  const [issue] = issuesFor(root, rawIds);
+  const text = readText(issue.file);
+  const table = evidenceTable(parseIssue(text, issue.file).sections.evidence);
+  need(table.rows.length > 0, `${issue.id} has no evidence row to retract`);
+  const row = table.rows[n - 1];
+  need(row, `${issue.id} has ${table.rows.length} evidence row${table.rows.length === 1 ? '' : 's'}: there is no row ${n}`);
+  need(!row.retracted, `row ${n} of ${issue.id} is retracted already`);
+  const logged = (journalById(root).get(issue.id) || []).filter((e) => e.text.startsWith(`${issue.id} evidence row · `)).length;
+  need(logged === 0 || logged === table.rows.length, `${issue.id} holds ${table.rows.length} evidence row${table.rows.length === 1 ? '' : 's'} and its log ${logged}, so the row numbers cannot be matched to the log; nothing was written`);
+  // The first retraction of a loop raises the record format, before its line is written: Jarl 6.1.0 does not read a
+  // retraction and would go on counting the row, so it must refuse the loop instead.
+  raiseFormat(root);
+  const lines = table.lines.slice();
+  lines[row.start] = struck(lines[row.start]);
+  lines[row.end] = `${lines[row.end].trimEnd()}~~`;
+  const entry = `- **retracted:** row ${n} · by ${by} · ${stamp().slice(0, 10)}\n${bodyText(reason).split('\n').map((l) => (l ? `  ${l}` : '')).join('\n')}`;
+  writeAtomic(issue.file, setSection(text, 'Evidence', `${lines.join('\n').trim()}\n${entry}`));
+  appendLog(root, `${issue.id} evidence retract · row ${n} · by ${by} · ${firstLine(reason, "the issue's Evidence section")}`);
+  return { id: issue.id, retracted: n, by };
 }
 
 // A declared file is a repository and a path inside it. An issue that names no repository declares
@@ -2002,8 +2068,10 @@ export function gateState(root, id, events = journalById(root).get(id) || [], co
   const issue = issues.find((i) => i.id === id) || null;
   const self = selfWorkers(events, issue, branchWorkers(issues, journal, profile), profile);
   let status = null; let anchor = null; let cut = -1;
-  const evidence = []; const reviews = [];
+  const evidence = []; const allReviews = [];
   const moved = movesInto(profile.statuses, id);
+  const retractRow = new RegExp(`^${id} evidence retract · row (\\d+)\\b`);
+  const retractReviewLine = new RegExp(`^${id} review retract\\b`);
   for (const e of events) {
     if (e.text.startsWith(`filed ${id} `)) { status = profile.initial; anchor = e; continue; }
     const move = moved.exec(e.text);
@@ -2025,11 +2093,21 @@ export function gateState(root, id, events = journalById(root).get(id) || [], co
       // turns out to have ever held the lease (self) does not stay fresh or coordinator either.
       let kind = r[3] || null;
       if (kind && r[2]) { const now = reviewerKind(r[2], self, coordinators); if (KIND_WEIGHT[now] > KIND_WEIGHT[kind]) kind = now; }
-      reviews.push({ n: e.n, at: e.at, verdict: r[1], by: r[2] || null, kind });
+      const review = { n: e.n, at: e.at, verdict: r[1], by: r[2] || null, kind, retracted: false };
+      allReviews.push(review);
       continue;
     }
-    if (e.text.startsWith(`${id} evidence row · `)) evidence.push(e);
+    // A retraction takes away the newest approve not yet retracted, and only that: it never touches a changes verdict.
+    if (retractReviewLine.test(e.text)) {
+      const target = [...allReviews].reverse().find((x) => x.verdict === 'approve' && !x.retracted);
+      if (target) target.retracted = true;
+      continue;
+    }
+    const rr = retractRow.exec(e.text);
+    if (rr) { if (evidence[Number(rr[1]) - 1]) evidence[Number(rr[1]) - 1].retracted = true; continue; }
+    if (e.text.startsWith(`${id} evidence row · `)) evidence.push({ ...e, retracted: false });
   }
+  const reviews = allReviews.filter((r) => !r.retracted);
   const last = reviews[reviews.length - 1] || null;
   // Only approves logged after the last "changes" verdict are even candidates — a changes still needs its own
   // approve, as before. Among those, and past cut, the strongest kind wins, tie-broken by the more recent.
@@ -2045,8 +2123,7 @@ export function gateState(root, id, events = journalById(root).get(id) || [], co
   return {
     tracked: anchor !== null,
     anchor: anchor ? { at: anchor.at, what: anchor.text.startsWith('filed ') ? 'filed' : anchor.text.slice(id.length + 1).split(' · ')[0].replace(/^→ /, '') } : null,
-    rowsSince: anchor ? evidence.filter((e) => e.n > anchor.n).length : evidence.length,
-    lastReview: last ? last.verdict : null,
+    rowsSince: anchor ? evidence.filter((e) => e.n > anchor.n && !e.retracted).length : evidence.filter((e) => !e.retracted).length,    lastReview: last ? last.verdict : null,
     lastApprove: [...reviews].reverse().find((r) => r.verdict === 'approve') || null,
     approved: Boolean(live && live.kind !== 'self'),
     selfApproved: Boolean(live && live.kind === 'self'),
@@ -2300,9 +2377,54 @@ const SEVERITIES = ['Critical', 'Important', 'Minor'];
 // --by names the reviewer, and every verdict needs it: the line records the name and its kind (fresh, coordinator,
 // self). An approve by the issue's own worker — its Worker field, or the worker of its last lease — is refused:
 // a self-approve is not a review.
+//
+// review <id> retract --by <who> "<reason>" retracts the newest approve not yet retracted, by an appended entry: the
+// approve stays in the issue, struck through, and the done gate and the metrics stop counting it. It only tightens:
+// a "changes" verdict is never retracted (that would revive an earlier acceptance) and a retraction is never retracted.
+const REVIEW_ENTRY = /^- (~~)?\*\*(approve|changes|retract)\*\*(?: · by (.+?) \((fresh|coordinator|self)\))?(?: · (\d{4}-\d{2}-\d{2}))?/;
+// The entries of a Reviews section in file order, each with the lines it spans.
+export function reviewEntries(text) {
+  const lines = String(text || '').split('\n');
+  const entries = [];
+  lines.forEach((l, i) => {
+    const m = REVIEW_ENTRY.exec(l);
+    if (m) entries.push({ start: i, retracted: Boolean(m[1]), verdict: m[2], by: m[3] || null, kind: m[4] || null, day: m[5] || null });
+  });
+  entries.forEach((e, k) => { e.end = k + 1 < entries.length ? entries[k + 1].start - 1 : lines.length - 1; });
+  return { lines, entries };
+}
+function retractReview(root, rawIds, reason, flags) {
+  need(!isBulk(rawIds), 'review retract names one issue');
+  const by = retractedBy(flags, 'a retraction');
+  needSaid(reason, 'a retraction');
+  const [issue] = issuesFor(root, rawIds);
+  const journal = journalById(root);
+  const coordinators = coordinatorNames(root);
+  const g = gateState(root, issue.id, journal.get(issue.id) || [], coordinators, loadIssues(root), journal);
+  const text = readText(issue.file);
+  const table = reviewEntries(parseIssue(text, issue.file).sections.reviews);
+  let target = null;
+  for (let k = table.entries.length - 1; k >= 0; k -= 1) { const e = table.entries[k]; if (e.verdict === 'approve' && !e.retracted) { target = e; break; } }
+  need(g.lastApprove || target, `${issue.id} has no approve to retract — a retraction takes away the newest approve, never a "changes" verdict`);
+  const who = g.lastApprove || target;
+  const kind = reviewerKind(by, g.workers, coordinators);
+  // The first retraction of a loop raises the record format, before its line is written: Jarl 6.1.0 does not read a
+  // retraction and would go on counting the approve, so it must refuse the loop instead.
+  raiseFormat(root);
+  const lines = table.lines.slice();
+  if (target) lines[target.start] = `${struck(lines[target.start])}~~`;
+  const named = `${who.by ? `by ${who.by}${who.kind ? ` (${who.kind})` : ''}` : 'with no reviewer recorded'}${(who.at || who.day) ? ` of ${(who.at || who.day).slice(0, 10)}` : ''}`;
+  const entry = `- **retract** · by ${by} (${kind}) · ${stamp().slice(0, 10)}\n  retracts the approve ${named}\n${bodyText(reason).split('\n').map((l) => (l ? `  ${l}` : '')).join('\n')}`;
+  const current = lines.join('\n').trim();
+  writeAtomic(issue.file, setSection(text, 'Reviews', current ? `${current}\n${entry}` : entry));
+  appendLog(root, `${issue.id} review retract · by ${by} (${kind}) · retracts the approve ${named} · ${firstLine(reason, "the issue's Reviews section")}`);
+  return { id: issue.id, verdict: 'retract', by, kind, retracted: named, severities: [], acceptance: (issue.sections.acceptance || '').trim() };
+}
 export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
-  need(verdict === 'approve' || verdict === 'changes', 'review requires approve|changes');
+  need(verdict === 'approve' || verdict === 'changes' || verdict === 'retract', 'review requires approve|changes|retract');
+  if (verdict === 'retract') return retractReview(root, rawIds, findings, flags);
   need(findings, 'review requires "<findings>" — what was read and what was found, even when nothing');
+  needSaid(findings, 'the findings of a review');
   need(flags.by === undefined || fieldText(flags.by), '--by needs a value — the reviewer\'s name');
   need(flags.by !== undefined, `a verdict needs --by <reviewer> — who read the diff: a fresh reviewer's name, or jarl when the loop's director reviewed it`);
   const issues = issuesFor(root, rawIds);

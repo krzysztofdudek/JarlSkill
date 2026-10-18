@@ -8,8 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 - A loop now records which format it was written in. When Jarl first writes something an older Jarl would read wrongly without saying so, it marks the loop first, and the older Jarl then refuses the loop with a clear message instead of misreading it. Loops that never need this stay as they are and keep working with older versions.
+- A wrong verdict or evidence row can now be taken back without editing the record. `review <id> retract --by <who> "<reason>"` retracts the newest approve not yet retracted, and `evidence <id> --retract <n> --by <who> "<reason>"` retracts the n-th evidence row. The original stays in the issue, struck through, with an entry saying who retracted it and why; `done` and the metrics no longer count it. A retraction only tightens: it never retracts a `changes` verdict. The first retraction in a loop marks the loop for the newer format, so an older Jarl refuses it instead of still counting the retracted approve or row.
+- `body <id> --title "<title>"` changes an issue's title, with the old title in the log; the file keeps its name.
 
 ### Changed
+- `review` now refuses findings that say nothing (empty, `-`, a single letter): a verdict needs words about what was read and what was found.
 - `new` now refuses a What, Why or section text that holds a matched opening and closing tag named after one of the issue's own fields (for example `<why>…</why>`) outside code, and says to pass that field in its own parameter; a lone tag, or a pair in backticks or a fenced block, is accepted. Its reply lists what was filed (priority, tier, kind, tags, acceptance lines, the length of What and Why) and each field left empty with the command that fills it.
 
 ### Fixed

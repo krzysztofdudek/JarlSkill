@@ -86,7 +86,7 @@ test('review: an approve needs --by, a self-approve by the worker is refused, an
   // The worker is found from the lease line too once the Worker field is gone.
   jarl(root, 'evidence', '1', '--ran', 't', '--saw', 'ok');
   jarl(root, 'set', '1', 'deferred', 'later');
-  assert.match(refuses(root, 'review', '1', 'approve', '--by', 'opus-worker-3', 'x'), /self-approve/);
+  assert.match(refuses(root, 'review', '1', 'approve', '--by', 'opus-worker-3', 'looks fine'), /self-approve/);
 });
 
 test('done: a reopen spends the approve and the evidence before it; a round spends the approve', () => {
