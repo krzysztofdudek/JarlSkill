@@ -8,7 +8,7 @@ import { sh, NO_EXCLUDES } from './portable.mjs';
 import { fileURLToPath } from 'node:url';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
-const { JARL_GITIGNORE_COMMITTED } = await import(new URL('../jarl.mjs', import.meta.url).href);
+const { JARL_GITIGNORE_COMMITTED, mainCheckoutOf } = await import(new URL('../jarl.mjs', import.meta.url).href);
 
 function repo() {
   const dir = mkdtempSync(join(tmpdir(), 'jarl-'));
@@ -45,6 +45,105 @@ test('slugify keeps the letters NFKD does not decompose: ł, ø, ß and the like
   assert.equal(slugify('Ærø đường þing'), 'aero-duong-thing');
   assert.equal(slugify('plain ASCII stays'), 'plain-ascii-stays');
   assert.equal(slugify('ł'), 'l');
+});
+
+test('slugify cuts at 60 characters and then trims dashes: no name starts or ends with a dash', async () => {
+  const { slugify } = await import(new URL('../jarl.mjs', import.meta.url).href);
+  // The 60th character of this slug is the dash after "is": cutting before trimming left it at the end.
+  const cut = slugify('Jarl: an issue file name can end in a dash when the title is cut at 60 characters');
+  assert.equal(cut, 'jarl-an-issue-file-name-can-end-in-a-dash-when-the-title-is');
+  assert.equal(cut.length, 59);
+  // The 60th character is punctuation that becomes a dash, and a title that is all punctuation falls back.
+  assert.equal(slugify(`${'a'.repeat(59)}, and then more words`), 'a'.repeat(59));
+  assert.equal(slugify(`${'a'.repeat(60)} tail`), 'a'.repeat(60));
+  assert.equal(slugify('--- !!! ---'), 'issue');
+  for (const t of ['x '.repeat(40), 'ab cd '.repeat(20), '.'.repeat(70) + ' ok']) assert.doesNotMatch(slugify(t), /^-|-$/);
+});
+
+test('new refuses a text that holds a matched pair named after one of its own fields, outside code, and body does too', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  const pair = '<what>the thing</what><why>because</why><prio>1</prio>';
+  assert.match(refuses(root, 'new', 't', '--what', pair), /the What text holds a <what>…<\/what> pair: a field goes in its own parameter \(--what\)/);
+  assert.match(refuses(root, 'new', 't', '--why', 'because <acceptance>\n- it works\n</acceptance>'), /the Why text holds a <acceptance>…<\/acceptance> pair.*\(--acceptance\)/);
+  assert.match(refuses(root, 'new', 't', '--what', 'fine', '--why', '<TAGS>a,b</Tags>'), /<tags>…<\/tags>/);
+  assert.equal(readdirSync(join(root, '.jarl', 'issues')).length, 0, 'nothing was written');
+  jarl(root, 'new', 'ok', '--what', 'fine');
+  assert.match(refuses(root, 'body', '1', '--why', '<files>a.mjs</files>'), /the Why text holds a <files>…<\/files> pair.*\(--files\)/);
+  assert.match(refuses(root, 'body', '1', '--what', pair), /the What text holds a <what>/);
+  assert.doesNotMatch(readFileSync(join(root, '.jarl', 'issues', '001-ok.md'), 'utf8'), /<files>/);
+});
+
+test('a lone tag, a pair in a code span and a pair in a fenced block are accepted, and so is the text of issue 305 itself', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'lone', '--what', 'a lone <why> and a closing </what> are text');
+  jarl(root, 'new', 'span', '--what', 'the tags `<why>` and `</why>` are named, or `<why>x</why>` whole');
+  jarl(root, 'new', 'fence', '--what', 'see:\n```\n<what>the thing</what>\n<why>because</why>\n```\nand\n~~~~\n<tags>a</tags>\n~~~~\nend');
+  const own = 'A caller whose tool call carried every field inside the What parameter got tickets with no tags. The refusal must not catch a tag that is quoted, because this issue names such tags in code spans (`<what>`, `<why>`, `<prio>`); so only a matched opening and closing pair of a field name, outside code, is refused.';
+  jarl(root, 'new', 'own', '--what', own);
+  assert.equal(readdirSync(join(root, '.jarl', 'issues')).length, 4);
+});
+
+test('the reply of new keeps its first line, then lists what was parsed and each empty field with the command that fills it', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  const bare = jarl(root, 'new', 'bare').split('\n');
+  assert.match(bare[0], /^filed 001 · .*001-bare\.md$/);
+  assert.match(bare[1], /^parsed: priority 2 · tier standard · kind bug · tags \(none\) · 0 acceptance lines · What 0 characters · Why 0 characters$/);
+  for (const [field, command] of [['why', 'body 001 --why'], ['acceptance', 'body 001 --acceptance'], ['files', 'files 001 p,q'], ['after', 'after 001 <ids>'], ['where', 'body 001 --where']]) {
+    assert.ok(bare[2].includes(`${field} (jarl.mjs ${command}`), `${field} is named with ${command}`);
+  }
+  const full = jarl(root, 'new', 'full', '--what', 'seven', '--why', 'yy', '--acceptance', 'a', '--acceptance', 'b', '--prio', '1', '--tags', 'x,y', '--files', 'a.mjs', '--where', 'here', '--after', '1').split('\n');
+  assert.match(full[1], /priority 1 · tier standard · kind bug · tags x,y · 2 acceptance lines · What 5 characters · Why 2 characters/);
+  assert.equal(full.length, 2, 'nothing is left empty');
+  const json = JSON.parse(jarl(root, 'new', 'j', '--json'));
+  assert.equal(json.id, '003');
+  assert.deepEqual(json.empty.map((e) => e.field), ['why', 'acceptance', 'files', 'after', 'where']);
+  assert.equal(json.parsed.tags.length, 0);
+});
+
+test('new from a linked worktree of a committed loop is refused and names the main checkout; on the main checkout the number is the highest over every worktree', () => {
+  const root = repo();
+  rmSync(join(root, '.git'), { recursive: true, force: true });
+  const wt = `${root}-wt`;
+  sh(root, 'git init -q -b feature && git config user.email t@t && git config user.name t && git config core.excludesFile /dev/null && echo a > a.txt && git add -A && git commit -qm base');
+  jarl(root, 'init', 'goal', '--committed');
+  jarl(root, 'new', 'first');
+  sh(root, `git add -A && git commit -qm loop && git worktree add -q -b w1 ${wt}`);
+  // The main checkout moves on by two issues; the worktree keeps the copy it was cut with.
+  jarl(root, 'new', 'second'); jarl(root, 'new', 'third');
+  assert.deepEqual(readdirSync(join(wt, '.jarl', 'issues')), ['001-first.md']);
+  const said = refuses(wt, 'new', 'from the worktree');
+  assert.match(said, /is a linked worktree of .*, which holds this loop/);
+  assert.ok(said.includes(basename(root)), 'it names the main checkout as the root to pass');
+  assert.deepEqual(readdirSync(join(wt, '.jarl', 'issues')), ['001-first.md'], 'nothing was written');
+  // A worktree copy that holds a higher number (999 here) than the main checkout counts: the next number is 1000.
+  const high = join(wt, '.jarl', 'issues', '999-high.md');
+  writeFileSync(high, '# 999 · high\n\n**Status:** open\n**Kind:** task\n**Priority:** 2\n**Tier:** standard\n\n## What\nx\n');
+  const made = JSON.parse(jarl(root, 'new', 'after the high one', '--json'));
+  assert.equal(made.id, '1000');
+  assert.match(made.file, /1000-after-the-high-one\.md$/);
+  // Without the worktree's higher copy the main checkout files the next number as always.
+  const plain = repo();
+  jarl(plain, 'init', 'goal');
+  assert.equal(JSON.parse(jarl(plain, 'new', 'a', '--json')).id, '001');
+});
+
+test('the main checkout is found through git by one helper: a linked worktree knows its main checkout and every copy of the loop', () => {
+  const root = repo();
+  rmSync(join(root, '.git'), { recursive: true, force: true });
+  const wt = `${root}-wt2`;
+  sh(root, 'git init -q -b feature && git config user.email t@t && git config user.name t && git config core.excludesFile /dev/null && echo a > a.txt && git add -A && git commit -qm base');
+  sh(root, `git worktree add -q -b w2 ${wt}`);
+  const here = mainCheckoutOf(root);
+  const there = mainCheckoutOf(wt);
+  assert.equal(here.linked, false);
+  assert.equal(there.linked, true);
+  assert.equal(there.main, here.main);
+  assert.equal(there.mainRoot, here.mainRoot);
+  assert.equal(there.copies.length, 2);
+  assert.equal(mainCheckoutOf(mkdtempSync(join(tmpdir(), 'jarl-nogit-'))), null);
 });
 
 test('dropping an issue keeps the evidence already written, and the report prints only the reason', () => {

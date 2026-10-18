@@ -19,7 +19,7 @@ import {
   cmdProfile, cmdArchive, cmdList, cmdNext, cmdMode, cmdClose, cmdCheck, cmdBranches, cmdTips, cmdQueue,
   cmdChangelog, cmdHandoffRead, cmdHandoffWrite, cmdReport, cmdImport, cmdSources, cmdAnswer,
   renderProfile, renderTips, renderQueue, renderResume, renderStatus, renderImport, renderSources, renderList, recordTypeLog, recordRuleLog,
-  runDecisionsDriver, mergeFlags,
+  runDecisionsDriver, mergeFlags, describeNew, renderNewReply,
 } from './jarl-lib.mjs';
 import { writeAreaDecision, writeRuleRatification } from './yg-edge.mjs';
 
@@ -212,6 +212,10 @@ git merges (not loop commands: no --root, no lock, no tool of the MCP server):
 <ids> (evidence, review, set, tag, prio, merged): one id, or several as one comma list with ranges — 12,13,14 or
 203-206,209. Every id and every precondition is checked before anything is written, so the call lands on
 all of them or on none, with one log line per issue.
+
+An issue number has at least three digits: below 1000 it is padded to three (007, 195), from 1000 it has the digits
+it needs (1000, 1001); 7 and #7 both mean 007. Questions are numbered the same way (a-001, a-1000). Numbers are
+compared as numbers, so 999 comes before 1000.
 
 Flags: a flag the command does not take is an error. A value flag takes the next argument whatever it
 starts with (--ran "--help" records a row), or inline as --flag=value. A bare -- ends the flags: put a
@@ -471,7 +475,7 @@ export function dispatch(root, cmd, rest, flags) {
     (writes ? (fn) => withLock(root, fn) : (fn) => fn())(() => {
     switch (cmd) {
       case 'init': out = R.initLoop(root, rest[0], flags); text = `opened ${out.dir} · ${out.permanent ? 'permanent record, no branch' : out.committed ? 'committed with the work' : 'kept out of git'}${out.profile ? ` · profile ${out.profile}` : ''}`; break;
-      case 'new': out = R.newIssue(root, rest[0], flags); text = `filed ${out.id} · ${out.file}`; break;
+      case 'new': out = R.newIssue(root, rest[0], flags); out = { ...out, ...describeNew(out.file) }; text = renderNewReply(out); break;
       case 'body': out = R.setBody(root, rest[0], flags); text = `${out.id} body: ${out.set.join(', ')}`; break;
       case 'source': out = R.setSource(root, rest[0], rest[1]); text = `${out.id} source: ${out.sources.join(', ')}`; break;
       case 'after': out = R.setAfter(root, rest[0], rest[1], flags); text = `${out.id} after: ${out.cleared ? 'cleared' : out.after.join(', ')}`; break;

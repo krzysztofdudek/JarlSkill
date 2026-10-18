@@ -278,6 +278,17 @@ export const DEFAULT_LIFECYCLE = Object.freeze({ close: 'any', archive: 'any', c
 export const RECORD_FORMAT = 1;
 export const RECORD_FORMATS = Object.freeze([1, 2]);
 export const RECORD_FORMAT_RAISED = 2;
+// The one grammar of an issue number (and of the number in a question, a-NNN): three or more digits. Below 1000 a number
+// is padded to three (007, 195); from 1000 it has the digits it needs. Every reader and writer of an id uses these, and
+// ids are compared as numbers, never as strings (999 comes before 1000). The first id of 1000 or more raises the record
+// format (a 6.1.x reader skips such a file in silence).
+export const ID_SRC = '\\d{3,}';
+export function padId(raw) {
+  const s = String(raw).trim().replace(/^#/, '');
+  return /^\d+$/.test(s) ? s.replace(/^0+/, '').padStart(3, '0') : s;
+}
+export const cmpId = (a, b) => Number(a) - Number(b);
+export const needsRaisedFormat = (id) => /^\d+$/.test(String(id)) && Number(id) >= 1000;
 // The done gate a loop runs on: the built-in one (approve: fresh — a live approve by someone other than the worker,
 // from a fresh reviewer when the issue carries code) and no merge required. A profile may ask for a landed merge
 // (requires-merged) and, only with it, give up the approve (approve: none): the merge gate that landed it is then the
@@ -561,7 +572,7 @@ const UNDECOMPOSED = {
 };
 export function slugify(title) {
   return title.toLowerCase().replace(/[łøđðħıŧßæœþ]/g, (c) => UNDECOMPOSED[c]).normalize('NFKD').replace(/[̀-ͯ]/g, '')
-    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'issue';
+    .replace(/[^a-z0-9]+/g, '-').slice(0, 60).replace(/^-+|-+$/g, '') || 'issue';
 }
 
 // A header field: **Name:** value. A name is letters, digits, spaces and dashes, so a profile's fields (Area-2) read
@@ -570,7 +581,7 @@ const FIELD_RE = /^\*\*([A-Za-z0-9 -]+):\*\*\s*(.*)$/;
 
 export function parseIssue(text, file) {
   const lines = text.split('\n');
-  const head = /^#\s+(\d{3})\s+·\s+(.*)$/.exec(lines[0] || '');
+  const head = new RegExp(`^#\\s+(${ID_SRC})\\s+·\\s+(.*)$`).exec(lines[0] || '');
   const issue = { file, id: head ? head[1] : null, title: head ? head[2].trim() : '', fields: {}, sections: {} };
   let section = null;
   for (const line of lines.slice(1)) {
@@ -587,16 +598,17 @@ export function parseIssue(text, file) {
   issue.tags = (issue.fields.tags || '').split(',').map((s) => s.trim()).filter(Boolean);
   issue.files = (issue.fields.files || '').split(',').map((s) => s.trim()).filter(Boolean);
   // Both fields are newer than most loops: an issue without them reads as waiting on nothing and filed from no finding.
-  issue.after = splitList(issue.fields.after).map((x) => x.replace(/^#/, '').padStart(3, '0'));
+  issue.after = splitList(issue.fields.after).map(padId);
   issue.sources = splitList(issue.fields.source);
   return issue;
 }
 
+const ISSUE_FILE_RE = new RegExp(`^(${ID_SRC})-.*\\.md$`);
 export function loadIssues(root) {
   const dir = issuesDir(root);
   if (!existsSync(dir)) return [];
   const profile = loadProfile(root);
-  return readdirSync(dir).filter((f) => /^\d{3}-.*\.md$/.test(f)).sort()
+  return readdirSync(dir).filter((f) => ISSUE_FILE_RE.test(f)).sort((a, b) => cmpId(ISSUE_FILE_RE.exec(a)[1], ISSUE_FILE_RE.exec(b)[1]) || (a < b ? -1 : a > b ? 1 : 0))
     .map((f) => withProfile(parseIssue(readText(join(dir, f)), join(dir, f)), profile));
 }
 // An issue read under the loop's profile: one written with no Status starts where the profile's issues start.
@@ -640,7 +652,7 @@ function namedPairs(list, flag, known, what) {
 }
 
 export function findIssue(root, rawId) {
-  const id = String(rawId).replace(/^#/, '').padStart(3, '0');
+  const id = padId(rawId);
   return loadIssues(root).find((i) => i.id === id) || null;
 }
 
@@ -692,6 +704,55 @@ function setSection(text, name, body) {
 // the same and parses as text.
 export function bodyText(v) {
   return String(v ?? '').replace(/\r\n?/g, '\n').split('\n').map((l) => l.replace(/^(\s*)(#+)(?=\s|$)/, (_, sp, h) => `${sp}\\${h}`)).join('\n').trim();
+}
+// A text for What, Why or a section that holds a matched opening and closing tag named after one of the issue's own
+// fields (<why>…</why>) is a call whose fields all went into one parameter: the other fields would be filed empty.
+// Refused, naming the field. Code is not looked at — a fenced block or a code span may name such a tag — and a lone
+// tag is only text.
+const FIELD_TAGS = ['what', 'why', 'acceptance', 'prio', 'tags', 'files', 'kind'];
+const FIELD_FLAG = { what: '--what', why: '--why', acceptance: '--acceptance', prio: '--prio', tags: '--tags', files: '--files', kind: '--kind' };
+export function needNoFieldTags(text, where) {
+  let fence = null;
+  const kept = [];
+  for (const line of String(text ?? '').split('\n')) {
+    const f = /^ {0,3}(`{3,}|~{3,})/.exec(line);
+    if (fence) { if (f && f[1][0] === fence[0] && f[1].length >= fence.length) fence = null; continue; }
+    if (f) { fence = f[1]; continue; }
+    kept.push(line);
+  }
+  const outsideCode = kept.join('\n').replace(/(`+)[\s\S]*?\1/g, ' ');
+  for (const tag of FIELD_TAGS) {
+    if (new RegExp(`<${tag}\\s*>[\\s\\S]*?</${tag}\\s*>`, 'i').test(outsideCode)) {
+      throw new Error(`${where} holds a <${tag}>…</${tag}> pair: a field goes in its own parameter (${FIELD_FLAG[tag]}), never inside another text — nothing was written; pass each field on its own, or put the tags in backticks if you mean to write them`);
+    }
+  }
+}
+// What a new issue was filed with, read back from its file: for new's reply, which lists what was parsed and what was
+// left empty, each empty field with the command that fills it.
+const FILL_WITH = {
+  why: (id) => `jarl.mjs body ${id} --why "<why>"`,
+  acceptance: (id) => `jarl.mjs body ${id} --acceptance "<line>"`,
+  files: (id) => `jarl.mjs files ${id} p,q`,
+  after: (id) => `jarl.mjs after ${id} <ids>`,
+  where: (id) => `jarl.mjs body ${id} --where "<where>"`,
+  'found by': () => 'only at filing: new --found-by <who>',
+};
+export function describeNew(file) {
+  const issue = parseIssue(readText(file), file);
+  const len = (k) => (issue.sections[k] || '').trim().length;
+  const parsed = { priority: issue.priority, tier: issue.tier, kind: issue.kind, tags: issue.tags, acceptanceLines: acceptanceLineCount(issue), whatChars: len('what'), whyChars: len('why') };
+  const empty = [
+    ['why', len('why') === 0], ['acceptance', acceptanceLineCount(issue) === 0], ['files', issue.files.length === 0],
+    ['after', issue.after.length === 0], ['where', !fieldText(issue.fields.where)], ['found by', !fieldText(issue.fields['found by'])],
+  ].filter(([, e]) => e).map(([k]) => ({ field: k, fill: FILL_WITH[k](issue.id) }));
+  return { parsed, empty };
+}
+export function renderNewReply(out) {
+  const { parsed: p, empty } = out;
+  const lines = [`filed ${out.id} · ${out.file}`,
+    `parsed: priority ${p.priority} · tier ${p.tier} · kind ${p.kind} · tags ${p.tags.length ? p.tags.join(',') : '(none)'} · ${p.acceptanceLines} acceptance line${p.acceptanceLines === 1 ? '' : 's'} · What ${p.whatChars} characters · Why ${p.whyChars} characters`];
+  if (empty.length) lines.push(`left empty: ${empty.map((e) => `${e.field} (${e.fill})`).join(' · ')}`);
+  return lines.join('\n');
 }
 // A header field is one line.
 function fieldText(v) { return String(v ?? '').replace(/\s+/g, ' ').trim(); }
@@ -978,9 +1039,43 @@ export function readTemplate(root, name) {
   };
 }
 
+// Where a loop's directory stands among the worktrees of its git repository, read-only (git rev-parse, git worktree
+// list). Null outside git. `main` is the main checkout (null for a bare repository), `mainRoot` the same directory of the
+// loop in it, `linked` whether `root` is inside a linked worktree rather than the main checkout, and `copies` the loop's
+// directory in every worktree, the main checkout first. The one helper that finds the main checkout through git's own
+// worktree list; the commands that must act on the main checkout's loop reuse it.
+export function mainCheckoutOf(root) {
+  const top = git(root, ['rev-parse', '--show-toplevel']);
+  const list = top === null ? null : git(root, ['worktree', 'list', '--porcelain']);
+  if (list === null) return null;
+  const entries = list.split(/\n\s*\n/).map((b) => ({ path: /^worktree (.+)$/m.exec(b)?.[1], bare: /^bare$/m.test(b) })).filter((e) => e.path);
+  const here = canonical(top);
+  const rel = relative(here, canonical(root));
+  const main = entries.length && !entries[0].bare ? canonical(entries[0].path) : null;
+  return {
+    main, mainRoot: main === null ? null : join(main, rel), linked: main !== null && main !== here,
+    copies: entries.filter((e) => !e.bare).map((e) => join(canonical(e.path), rel)),
+  };
+}
+// The highest issue number any copy of this loop holds (the main checkout and every linked worktree), 0 when none.
+function highestAcrossWorktrees(root) {
+  const found = mainCheckoutOf(root);
+  let top = 0;
+  for (const copy of found ? found.copies : []) {
+    const dir = issuesDir(copy);
+    if (!existsSync(dir)) continue;
+    for (const f of readdirSync(dir)) { const m = ISSUE_FILE_RE.exec(f); if (m) top = Math.max(top, Number(m[1])); }
+  }
+  return top;
+}
+
 export function cmdNew(root, title, rawFlags) {
   need(title, 'new requires "<title>"');
   needLiveLoop(root, ' — run: jarl.mjs init "<goal>"');
+  // A linked worktree of a committed loop holds only the copy it was cut with, so a number taken there may already be used
+  // in the main checkout: file from the main checkout.
+  const placed = mainCheckoutOf(root);
+  need(!placed || !placed.linked || !existsSync(jarlDir(placed.mainRoot)), `${root} is a linked worktree of ${placed?.mainRoot}, which holds this loop: its copy here may lag, and the number would be used twice — file from the main checkout: pass --root ${placed?.mainRoot}`);
   let flags = rawFlags;
   let fromTemplate = {};
   if (rawFlags.template !== undefined) {
@@ -1000,6 +1095,9 @@ export function cmdNew(root, title, rawFlags) {
     return [f.name, v];
   });
   const givenSections = namedPairs(flags.section, 'section', profile.sections, 'section');
+  needNoFieldTags(flags.what, 'the What text');
+  needNoFieldTags(flags.why, 'the Why text');
+  for (const [h, v] of givenSections) needNoFieldTags(v, `the ${h} text`);
   const sections = profile.sections.map((h) => [h, givenSections.has(h) ? bodyText(givenSections.get(h)) : bodyText(fromTemplate.section?.(h.toLowerCase()))]);
   if (profile.acceptance && fromTemplate.acceptance === undefined && fromTemplate.section) fromTemplate.acceptance = fromTemplate.section(profile.acceptance.toLowerCase());
   const kind = flags.kind || profile.kindDefault;
@@ -1015,10 +1113,15 @@ export function cmdNew(root, title, rawFlags) {
   // writer got there first (the lock makes that rare, not impossible — a hand-made file, a stale
   // lock broken early), the next number is tried instead of two issues sharing one.
   const dir = issuesDir(root);
-  const taken = () => readdirSync(dir).map((f) => /^(\d{3,})-.*\.md$/.exec(f)).filter(Boolean).map((m) => Number(m[1]));
-  let n = taken().reduce((m, x) => Math.max(m, x), 0) + 1;
+  const taken = () => readdirSync(dir).map((f) => ISSUE_FILE_RE.exec(f)).filter(Boolean).map((m) => Number(m[1]));
+  // The highest number over this loop and its copies in every other worktree (read-only), so a lagging copy cannot hand
+  // out a number already used elsewhere. The issue files stay the only source: there is no counter file.
+  const elsewhere = highestAcrossWorktrees(root);
+  let n = Math.max(taken().reduce((m, x) => Math.max(m, x), 0), elsewhere) + 1;
   for (let tries = 0; ; tries += 1) {
-    const id = String(n).padStart(3, '0');
+    const id = padId(n);
+    // The first issue of 1000 or more is a file a 6.1.x reader would skip in silence: the format is raised first.
+    if (needsRaisedFormat(id)) raiseFormat(root);
     const file = join(dir, `${id}-${slugify(title)}.md`);
     const tmp = join(dir, `.${id}.${process.pid}.tmp`);
     writeFileSync(tmp, renderIssue({
@@ -1092,6 +1195,9 @@ export function cmdBody(root, rawId, flags) {
   const parts = ['where', 'what', 'why', 'acceptance', 'changelog', 'section'].filter((k) => flags[k] !== undefined);
   need(parts.length, 'body needs at least one of --where, --what, --why, --acceptance, --changelog, --section');
   const sections = namedPairs(flags.section, 'section', profile.sections, 'section');
+  needNoFieldTags(flags.what, 'the What text');
+  needNoFieldTags(flags.why, 'the Why text');
+  for (const [h, v] of sections) needNoFieldTags(v, `the ${h} text`);
   let text = readText(issue.file);
   if (flags.where !== undefined) text = setField(text, 'Where', fieldText(flags.where));
   if (flags.what !== undefined) text = setSection(text, 'What', bodyText(flags.what));
@@ -1157,7 +1263,7 @@ export function cmdList(root, flags) {
     const re = new RegExp(flags.grep, 'i');
     rows = rows.filter((i) => re.test(readText(i.file)));
   }
-  return rows.sort((a, b) => a.priority.localeCompare(b.priority) || a.id.localeCompare(b.id));
+  return rows.sort((a, b) => a.priority.localeCompare(b.priority) || cmpId(a.id, b.id));
 }
 
 // Bulk ids: evidence, review, set, tag and prio take one id or several — a comma list with ranges,
@@ -1174,20 +1280,21 @@ export function expandIds(raw) {
       const [a, b] = [Number(range[1]), Number(range[2])];
       need(a <= b, `range ${part} runs backwards — write it low-high`);
       need(b - a < MAX_BULK, `range ${part} spans more than ${MAX_BULK} issues`);
-      for (let n = a; n <= b; n += 1) out.push(String(n).padStart(3, '0'));
+      for (let n = a; n <= b; n += 1) out.push(padId(n));
     } else {
       need(/^\d+$/.test(part), `not an issue id: "${part}" — ids are numbers, several as a comma list with ranges: 12,13 or 203-206,209`);
-      out.push(part.padStart(3, '0'));
+      out.push(padId(part));
     }
   }
   return [...new Set(out)];
 }
 function isBulk(raw) { return /[,-]/.test(String(raw ?? '')); }
-function issuesFor(root, rawIds) {
+function issuesFor(root, rawIds, readOnly = false) {
   const ids = expandIds(rawIds);
   const all = loadIssues(root);
   const missing = ids.filter((id) => !all.some((i) => i.id === id));
   need(missing.length === 0, `no such issue: ${missing.join(', ')}${ids.length > 1 ? ' — nothing was written' : ''}`);
+  if (!readOnly && ids.some(needsRaisedFormat)) raiseFormat(root);
   return ids.map((id) => all.find((i) => i.id === id));
 }
 // One id in, the same object as always out; a list in, an array of them.
@@ -1572,7 +1679,7 @@ export function cmdNext(root, flags) {
   const taken = new Map(issues.filter((i) => profile.is(i.status, 'holds-claim')).flatMap((i) => keysOf(i).map((k) => [k.key, i.id])));
   const byId = new Map(issues.map((i) => [i.id, i]));
   const out = [];
-  for (const i of issues.filter((x) => profile.is(x.status, 'dispatchable')).sort((a, b) => a.priority.localeCompare(b.priority) || a.id.localeCompare(b.id))) {
+  for (const i of issues.filter((x) => profile.is(x.status, 'dispatchable')).sort((a, b) => a.priority.localeCompare(b.priority) || cmpId(a.id, b.id))) {
     // An issue whose After issues are not all settled (done or dropped) is never offered, whatever its files.
     const after = waitingOn(i, byId, profile);
     if (after.length) { out.push({ id: i.id, title: i.title, priority: i.priority, after, waitsOn: [] }); continue; }
@@ -1734,7 +1841,7 @@ export function journalById(root) {
   readText(path).split('\n').forEach((l, n) => {
     const m = /^- (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) · (.*)$/.exec(l);
     if (!m) return;
-    const id = /^(?:filed )?(\d{3})\b/.exec(m[2])?.[1];
+    const id = new RegExp(`^(?:filed )?(${ID_SRC})\\b`).exec(m[2])?.[1];
     if (!id) return;
     if (!map.has(id)) map.set(id, []);
     map.get(id).push({ n, at: m[1], text: m[2] });
@@ -1773,11 +1880,11 @@ const KIND_WEIGHT = { fresh: 0, coordinator: 1, self: 2 };
 // An issue carries code when it records a branch or a merge. Only then does done (and the merge queue) need a
 // fresh approve; an issue with neither — a ruling, a note, a hub document — is still cleared by the coordinator.
 export function carriesCode(issue) { return Boolean(fieldText(issue.fields.branch) || fieldText(issue.fields.merged)); }
-const REVIEW_LINE = /^\d{3} review (approve|changes) · (?:by (.+?) \((fresh|coordinator|self)\) · )?/;
+const REVIEW_LINE = new RegExp(`^${ID_SRC} review (approve|changes) · (?:by (.+?) \\((fresh|coordinator|self)\\) · )?`);
 
 // A journal line that moves an issue (the one with that id, or any) into one of the statuses named: `NNN → <status>`,
 // the status followed by the end of the line or a space. Longest names first, so no status is read as a shorter one.
-function movesInto(statuses, id = '\\d{3}') {
+function movesInto(statuses, id = ID_SRC) {
   const names = [...statuses].sort((a, b) => b.length - a.length);
   return new RegExp(`^${id} → (${names.join('|')})(?= |$)`);
 }
@@ -1970,9 +2077,14 @@ function spread(values) {
   const mid = v.length % 2 ? v[(v.length - 1) / 2] : (v[v.length / 2 - 1] + v[v.length / 2]) / 2;
   return { n: v.length, medianHours: round1(mid / HOUR), p90Hours: round1(at(0.9) / HOUR), maxHours: round1(v[v.length - 1] / HOUR) };
 }
-// A three-digit issue number standing alone in a text: no letter or digit touches it, so a sha (1b066c7) or a longer
-// number never reads as one, while reviewer-450, raport-398 and (024) do.
-function idsNamed(text) { return [...String(text || '').matchAll(/(?<![0-9A-Za-z])(\d{3})(?![0-9A-Za-z])/g)].map((m) => m[1]); }
+// An issue number of the loop standing alone in a text: no letter or digit touches it, so a sha (1b066c7) or a longer
+// number never reads as one, while reviewer-450, raport-398 and (024) do. Dates (2026-10-15, 2026-10) and versions
+// (6.2.0) are set aside first, and only a number that is an id the loop holds (`held`, a Set or Map of ids) counts, so a
+// year or a count never becomes an issue in a loop of thousands.
+export function idsNamed(text, held) {
+  const plain = String(text || '').replace(/\d{4}-\d{2}(?:-\d{2})?(?:[ T]\d{2}:\d{2})?/g, ' ').replace(/\d+(?:\.\d+)+/g, ' ');
+  return [...plain.matchAll(new RegExp(`(?<![0-9A-Za-z])(${ID_SRC})(?![0-9A-Za-z])`, 'g'))].map((m) => padId(m[1])).filter((id) => held.has(id));
+}
 
 // The loop's metrics, read from its record alone — the journal and the issue files — never from git or a network. Each
 // metric carries n (how many issues it was read from) and, where the record holds nothing to read it from, noData with
@@ -2086,7 +2198,7 @@ export function loopMetrics(root, issues = loadIssues(root), journal = journalBy
   for (const y of issues) {
     const filed = facts.get(y.id).filed;
     if (!filed) continue;
-    for (const x of new Set(idsNamed(y.fields['found by']))) {
+    for (const x of new Set(idsNamed(y.fields['found by'], byId))) {
       if (x === y.id || !byId.has(x) || !followable(byId.get(x)) || !closes(byId.get(x).status)) continue;
       const gap = stampMs(filed) - stampMs(facts.get(x).firstClose);
       if (gap >= 0 && gap <= FOLLOW_UP_DAYS * DAY) (found[x] = found[x] || []).push(y.id);
@@ -2101,7 +2213,7 @@ export function loopMetrics(root, issues = loadIssues(root), journal = journalBy
     withFollowUps: anyFoundBy && closedAt.length ? Object.keys(found).length : null,
     windowClosed: windowClosed.length, windowClosedWithFollowUps: anyFoundBy && windowClosed.length ? windowClosedWith : null,
     share: anyFoundBy ? share(windowClosedWith, windowClosed.length) : null,
-    followUps: anyFoundBy ? Object.keys(found).sort().map((id) => ({ id, followUps: found[id] })) : null,
+    followUps: anyFoundBy ? Object.keys(found).sort(cmpId).map((id) => ({ id, followUps: found[id] })) : null,
     noData: noData(!anyFoundBy || !closedAt.length, !anyFoundBy ? 'no issue records Found by, so no follow-up can be traced to what it follows' : closed.length ? 'no closed issue outside research has its close in the journal' : 'nothing closed yet'),
   };
 
@@ -2395,7 +2507,7 @@ function issueRepos(root, issue) {
 // The issues a branch carries in one repository: those that record it as their Branch, and — for an issue
 // from before the field — the one whose number the branch's jarl/NNN-* name carries.
 function issuesOnBranch(root, issues, realRepo, name) {
-  const legacy = /^jarl\/(?:[^/]+\/)?(\d{3})-/.exec(name)?.[1] || /^[^/]+\/jarl\/(\d{3})-/.exec(name)?.[1];
+  const legacy = new RegExp(`^jarl/(?:[^/]+/)?(${ID_SRC})-`).exec(name)?.[1] || new RegExp(`^[^/]+/jarl/(${ID_SRC})-`).exec(name)?.[1];
   return issues.filter((i) => issueRepos(root, i).includes(realRepo) && (i.fields.branch ? i.fields.branch === name : i.id === legacy));
 }
 
@@ -2728,7 +2840,7 @@ export function renderQueue(o) {
 // writes the file once. Reads only.
 export function cmdChangelog(root, rawIds, flags = {}) {
   need(rawIds !== undefined, 'changelog requires <ids> — the issues whose fragments to print, e.g. 284,288 or 203-206');
-  const issues = issuesFor(root, rawIds);
+  const issues = issuesFor(root, rawIds, true);
   // --repo is matched by the repository itself (its resolved root), never by its folder name alone.
   const only = flags.repo !== undefined ? topOf(canonical(repoOf(root, flags.repo))) : null;
   const byRepo = {};
@@ -2754,7 +2866,7 @@ export function cmdChangelog(root, rawIds, flags = {}) {
 
 function asksPath(root) { return join(jarlDir(root), 'asks.md'); }
 // A ratify item the close's batch filed names the area ruling it asks about: `· ruling <slug>`.
-const ASK_RE = /^- \*\*a-(\d{3})\*\* \((open|answered)\)(?: · (stop|stuck|lower|charter|ratify))?(?: · target (\S+))?(?: · issue (\d{3}))?(?: · ruling ([A-Za-z0-9][A-Za-z0-9._-]{0,79}))? · (.*)$/;
+const ASK_RE = new RegExp(`^- \\*\\*a-(${ID_SRC})\\*\\* \\((open|answered)\\)(?: · (stop|stuck|lower|charter|ratify))?(?: · target (\\S+))?(?: · issue (${ID_SRC}))?(?: · ruling ([A-Za-z0-9][A-Za-z0-9._-]{0,79}))? · (.*)$`);
 
 export function loadAsks(root) {
   const path = asksPath(root);
@@ -2771,7 +2883,9 @@ export function cmdAsk(root, question, flags) {
   need(kind !== 'lower' || flags.target, '--target is required for kind lower — nothing to weaken without naming it');
   need(kind === 'lower' || !flags.target, `--target has no meaning for kind "${kind}" — only lower names something to weaken`);
   const asks = loadAsks(root);
-  const id = String(asks.reduce((m, a) => Math.max(m, Number(a.id)), 0) + 1).padStart(3, '0');
+  const id = padId(asks.reduce((m, a) => Math.max(m, Number(a.id)), 0) + 1);
+  // The first question a-1000 or more, or one naming an issue of 1000 or more, raises the record format first.
+  if (needsRaisedFormat(id) || (flags.issue !== undefined && needsRaisedFormat(padId(flags.issue)))) raiseFormat(root);
   const path = asksPath(root);
   const target = kind === 'lower' ? ` · target ${flags.target}` : '';
   // flags.ruling is not a flag of the command line: the close's ratification batch passes it, and so may a composer
@@ -2784,7 +2898,7 @@ export function cmdAsk(root, question, flags) {
     need(!loadAsks(root).some((x) => x.ruling === d.slug), `${flags.ruling} has been put to ratification already`);
   }
   const ruling = kind === 'ratify' && flags.ruling ? ` · ruling ${flags.ruling}` : '';
-  appendAtomic(path, '# Questions to the user\n\n', `- **a-${id}** (open) · ${kind}${target}${flags.issue ? ` · issue ${String(flags.issue).padStart(3, '0')}` : ''}${ruling} · ${question}\n`);
+  appendAtomic(path, '# Questions to the user\n\n', `- **a-${id}** (open) · ${kind}${target}${flags.issue ? ` · issue ${padId(flags.issue)}` : ''}${ruling} · ${question}\n`);
   appendLog(root, `asked a-${id} (${kind}) · ${question}`);
   return { id, question, kind };
 }
@@ -2811,7 +2925,7 @@ export function cmdAnswer(root, rawId, answer, flags = {}) {
   need(answer, 'answer requires "<answer>"');
   need(flags.by === undefined || fieldText(flags.by), '--by needs a value — who answered: owner or a name');
   const by = flags.by === undefined ? null : fieldText(flags.by);
-  const id = String(rawId).replace(/^a-/, '').padStart(3, '0');
+  const id = padId(String(rawId).replace(/^a-/, ''));
   const ask = loadAsks(root).find((a) => a.id === id);
   need(ask, `no such question: a-${id}`);
   need(ask.state === 'open', `a-${id} is already answered`);
