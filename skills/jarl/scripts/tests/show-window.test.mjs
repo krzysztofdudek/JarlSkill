@@ -53,12 +53,19 @@ test('show prints the gate window: current rows and verdicts, one line per earli
   for (const row of ['run one', 'run two', 'run three', 'run four']) assert.match(shown, new RegExp(`\\*\\*ran:\\*\\* ${row}`), 'every row since the start is shown');
   assert.match(shown, /\*\*approve\*\* · by rev-d \(fresh\)/);
   assert.match(shown, /Minor: a name\. The rest reads right/, 'the current verdict is whole');
-  const earlier = shown.split('\n').filter((l) => l.startsWith('- earlier: '));
-  assert.equal(earlier.length, 3, 'one line for each earlier round');
-  assert.match(earlier[0], /\*\*changes\*\* · by rev-a \(fresh\) · \d{4}-\d{2}-\d{2} · Important: first problem$/);
-  assert.doesNotMatch(shown, /with a second line/, 'an answered earlier finding is a line, not the text');
+  assert.equal(shown.split('\n').filter((l) => l.startsWith('- earlier: ')).length, 0, 'every verdict since the last start is in full, whatever round it was made in');
+  for (const said of ['Important: first problem', 'with a second line', 'Important: second problem', 'Critical: third problem']) assert.ok(shown.includes(said), said);
   assert.match(shown, /\n\nThe whole issue, with every earlier round and row: jarl\.mjs show 001 --full$/);
   assert.match(jarl(root, 'show', id, '--full'), /with a second line/);
+
+  // Verdicts from before the last start are a line each, the answered ones: a restart ends the window.
+  jarl(root, 'set', id, 'deferred', 'waits for a decision');
+  jarl(root, 'set', id, 'in-progress', '--worker', 'w-two', '--branch', 'jarl/001-x');
+  const restarted = jarl(root, 'show', id);
+  const earlier = restarted.split('\n').filter((l) => l.startsWith('- earlier: '));
+  assert.equal(earlier.length, 4, 'three changes and the approve, a line each');
+  assert.match(earlier[0], /\*\*changes\*\* · by rev-a \(fresh\) · \d{4}-\d{2}-\d{2} · Important: first problem$/);
+  assert.doesNotMatch(restarted, /with a second line/, 'an answered earlier finding is a line, not the text');
 
   // The same issue without the approve: the changes findings nothing answered are printed whole.
   const open = threeRounds();

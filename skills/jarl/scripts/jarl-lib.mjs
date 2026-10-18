@@ -1761,7 +1761,7 @@ export function issueView(root, issue, { full = false } = {}) {
     out.push(...body.slice(0, t.entries[0].start));
     t.entries.forEach((e, i) => {
       const open = e.verdict === 'changes' && !t.entries.slice(i + 1).some((x) => x.verdict === 'approve' && !x.retracted);
-      if (g.trail[i].n > g.cut || open) { out.push(...body.slice(e.start, e.end + 1)); return; }
+      if (g.trail[i].n > g.anchorN || open) { out.push(...body.slice(e.start, e.end + 1)); return; }
       const first = body.slice(e.start + 1, e.end + 1).map((l) => l.trim()).find(Boolean);
       const line = `- earlier: ${body[e.start].replace(/^- /, '')}${first ? ` · ${first}` : ''}`;
       out.push(line.length > 200 ? `${line.slice(0, 197)}...` : line);
