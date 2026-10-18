@@ -78,6 +78,22 @@ test('--model goes with in-progress only, needs a value and cannot hold the line
   assert.throws(() => R.setStatus(root, id, 'in-progress', '', { worker: 'w', model: 'a · worker b' }), /one value/);
 });
 
+test('a --worker or --branch value that holds the line separator is refused, so no name can be read as a model', () => {
+  const root = loop();
+  const { id } = R.newIssue(root, 'a thing', { acceptance: 'it works' });
+  const before = log(root);
+  for (const bad of ['w-c · model evil', 'w-c ·  model evil', '· model evil', 'w-c · model evil ·']) {
+    assert.throws(() => R.setStatus(root, id, 'in-progress', '', { branch: 'jarl/001-a', worker: bad }), /--worker is one name/, `worker ${bad}`);
+    assert.throws(() => R.setStatus(root, id, 'in-progress', '', { branch: bad, worker: 'w-c' }), /--branch is one name/, `branch ${bad}`);
+  }
+  assert.equal(log(root), before, 'a refused lease writes nothing');
+  assert.equal(L.findIssue(root, id).fields.status, 'open');
+  R.setStatus(root, id, 'in-progress', '', { branch: 'jarl/001-a', worker: 'w-c·model·ok' });
+  assert.doesNotMatch(log(root), / · model /, 'a name with the dot inside it, without spaces, is no separator');
+  const read = oldJarl(root, 'list', {});
+  assert.equal(read.ok, true, 'the frozen reader reads the log as it stands');
+});
+
 test('review --model [--relayed] writes the model and the relay mark after the kind, in the log line and in the Reviews entry', () => {
   const root = loop();
   const { id } = R.newIssue(root, 'a thing', { acceptance: 'it works' });
