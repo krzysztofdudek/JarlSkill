@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, existsSync, writeFileSync, readdirSync, rmSync, symlinkSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, existsSync, writeFileSync, readdirSync, rmSync, symlinkSync, renameSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -8,7 +8,7 @@ import { sh, NO_EXCLUDES } from './portable.mjs';
 import { fileURLToPath } from 'node:url';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
-const { JARL_GITIGNORE_COMMITTED, mainCheckoutOf } = await import(new URL('../jarl.mjs', import.meta.url).href);
+const { JARL_GITIGNORE_COMMITTED, mainCheckoutOf, worktreeState } = await import(new URL('../jarl.mjs', import.meta.url).href);
 
 function repo() {
   const dir = mkdtempSync(join(tmpdir(), 'jarl-'));
@@ -1278,6 +1278,57 @@ function editIssue(root, id, fn) {
   const file = join(dir, readdirSync(dir).find((f) => f.startsWith(`${id}-`)));
   writeFileSync(file, fn(readFileSync(file, 'utf8')));
 }
+
+test('a worktree is looked up through git by the lease branch: locked, invisible, found without a stored path, and truly removed', () => {
+  const { root, sh } = gitLoop();
+  for (const t of ['locked', 'invisible', 'removed', 'closed']) jarl(root, 'new', t, '--files', 'a.txt');
+  const away = join(root, '..', `${basename(root)}-away`);
+  mkdirSync(away);
+  // 001: locked with a reason, its directory not on this machine (a container's); the lease stores the path.
+  const wt1 = join(root, '..', `${basename(root)}-wt1`);
+  jarl(root, 'set', '1', 'in-progress', 'w', '--branch', 'jarl/001-locked', '--worktree', wt1);
+  sh(`git worktree add -q -b jarl/001-locked ${wt1} && git worktree lock --reason devcontainer ${wt1}`);
+  renameSync(wt1, join(away, 'wt1'));
+  // 002: unlocked, no stored path, its whole parent directory not visible from here.
+  const parent2 = join(root, '..', `${basename(root)}-p2`);
+  mkdirSync(parent2);
+  jarl(root, 'set', '2', 'in-progress', 'w', '--branch', 'jarl/002-invisible');
+  sh(`git worktree add -q -b jarl/002-invisible ${join(parent2, 'wt')}`);
+  renameSync(parent2, join(away, 'p2'));
+  // 003: no stored path, directory removed under a live lease while its parent is still here.
+  const wt3 = join(root, '..', `${basename(root)}-wt3`);
+  jarl(root, 'set', '3', 'in-progress', 'w', '--branch', 'jarl/003-removed');
+  sh(`git worktree add -q -b jarl/003-removed ${wt3}`);
+  rmSync(wt3, { recursive: true, force: true });
+  // 004: finished and in the base, but its locked worktree cannot be inspected from here.
+  const wt4 = join(root, '..', `${basename(root)}-wt4`);
+  jarl(root, 'set', '4', 'in-progress', 'w', '--branch', 'jarl/004-closed');
+  sh(`git worktree add -q -b jarl/004-closed ${wt4} && git worktree lock --reason devcontainer ${wt4}`);
+  renameSync(wt4, join(away, 'wt4'));
+  jarl(root, 'review', '4', 'approve', '--by', 'rev', 'ok');
+  jarl(root, 'evidence', '4', '--ran', 'check', '--saw', 'green');
+  jarl(root, 'set', '4', 'done', 'merged');
+
+  const state = (branch, stored) => worktreeState(root, branch, stored);
+  assert.deepEqual([state('jarl/001-locked', wt1).state, state('jarl/001-locked').state], ['elsewhere', 'elsewhere']);
+  assert.equal(state('jarl/001-locked').reason, 'devcontainer');
+  assert.equal(state('jarl/002-invisible').state, 'invisible');
+  assert.equal(state('jarl/003-removed').state, 'gone');
+  assert.equal(state('jarl/009-nobody').state, 'none');
+  assert.equal(state('jarl/009-nobody', join(root, '..', 'never-was-here')).state, 'gone');
+  assert.equal(state('jarl/none-but-here', root).state, 'here');
+
+  const st = JSON.parse(jarl(root, 'status', '--json'));
+  assert.deepEqual(st.stale.map((x) => x.id), ['003']);
+  assert.match(st.stale[0].problems[0], /^worktree gone: /);
+  const br = jarl(root, 'branches');
+  assert.match(br, /^jarl\/001-locked → 001  \+0  \S+ \(elsewhere: devcontainer\)$/m);
+  assert.match(br, /^jarl\/002-invisible → 002  \+0  \S+ \(not visible from here\)$/m);
+  assert.match(br, /^jarl\/003-removed → 003  \+0  \S+ \(gone\)  STALE: 003 worktree gone: /m);
+  assert.match(br, /^jarl\/004-closed → 004  \+0  \S+ \(elsewhere: devcontainer\)  DONE \(worktree state unknown\)$/m);
+  assert.doesNotMatch(br, /DONE → delete/);
+  assert.equal(JSON.parse(jarl(root, 'branches', '--json')).find((r) => r.branch === 'jarl/004-closed').deletable, false);
+});
 
 test('a package is one lease on one branch: set records it, check --branch bounds the diff by the union, branches maps it', () => {
   const { root, sh } = gitLoop();
