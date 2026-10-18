@@ -2,9 +2,10 @@
 // line kind the done gate, the metrics, models, rounds, tips and the stamps of status and resume read.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import * as R from '../record.mjs';
 
 const L = await import('../jarl-lib.mjs');
 const P = L.DEFAULT_PROFILE;
@@ -76,4 +77,70 @@ test('loopEvents reads the file in order, with the line index, the stamp and the
 
 test('a directory without a log has no events', () => {
   assert.deepEqual(L.loopEvents(mkdtempSync(join(tmpdir(), 'jarl-log-reader-')), P), []);
+});
+
+function loop() {
+  const root = mkdtempSync(join(tmpdir(), 'jarl-loaded-loop-'));
+  mkdirSync(join(root, '.git'));
+  R.initLoop(root, 'a goal for the loaded loop');
+  return root;
+}
+function worked(root, title, { worker, branch }) {
+  const { id } = R.newIssue(root, title, { tier: 'light', acceptance: 'it works' });
+  R.setStatus(root, id, 'in-progress', '', { branch, worker });
+  return id;
+}
+
+test('readLoop reads a loop once into one value: profile, issues, events, goal, questions, rulings, coordinators', () => {
+  const root = loop();
+  const id = worked(root, 'first thing', { worker: 'w-one', branch: 'jarl/x' });
+  R.ask(root, 'which way?', { kind: 'stuck' });
+  const value = L.readLoop(L.jarlDir(root));
+  assert.equal(value.dir, L.jarlDir(root));
+  assert.equal(value.root, root);
+  assert.equal(value.profile.name, 'built-in');
+  assert.deepEqual(value.issues.map((i) => i.id), [id]);
+  assert.equal(value.byId.get(id).title, 'first thing');
+  assert.deepEqual(value.eventsById.get(id).map((e) => e.type), ['filed', 'move']);
+  assert.match(value.goal, /a goal for the loaded loop/);
+  assert.equal(value.asks.length, 1);
+  assert.deepEqual(value.decisions, []);
+  assert.ok(value.coordinators.includes('jarl'));
+});
+
+test('the gate of a loop value is the gate of the loop on disk, and a package shares its branch workers', () => {
+  const root = loop();
+  const a = worked(root, 'first', { worker: 'w-one', branch: 'jarl/shared' });
+  const b = worked(root, 'second', { worker: 'w-two', branch: 'jarl/shared' });
+  const value = L.readLoop(L.jarlDir(root));
+  assert.deepEqual([...L.gateOf(value, a).workers].sort(), ['w-one', 'w-two']);
+  assert.deepEqual([...L.gateOf(value, b).workers].sort(), ['w-one', 'w-two']);
+  assert.deepEqual([...L.gateState(root, a).workers].sort(), [...L.gateOf(value, a).workers].sort());
+});
+
+test('the same call gives the same answer however many loops were read before it', () => {
+  const a = loop();
+  const b = loop();
+  worked(a, 'only here', { worker: 'w-a', branch: 'jarl/a' });
+  const before = JSON.stringify(L.cmdModels(a, {}));
+  L.cmdModels(b, {});
+  L.readLoop(L.jarlDir(b));
+  assert.equal(JSON.stringify(L.cmdModels(a, {})), before);
+  assert.equal(L.jarlDir(a), join(a, '.jarl'));
+});
+
+test('an archived loop is read by its directory', () => {
+  const root = loop();
+  const id = worked(root, 'archived work', { worker: 'w-one', branch: 'jarl/y' });
+  R.addEvidence(root, id, undefined, { ran: 'npm test', saw: 'pass' });
+  R.review(root, id, 'approve', 'read the diff, nothing found', { by: 'rev-a' });
+  R.setStatus(root, id, 'done', 'merged', {});
+  L.cmdArchive(root, 'done-loop');
+  const dir = join(L.jarlDir(root), 'archive', readdirSync(join(L.jarlDir(root), 'archive'))[0]);
+  const value = L.readLoop(dir);
+  assert.equal(value.dir, dir);
+  assert.equal(value.root, dir);
+  assert.deepEqual(value.issues.map((i) => i.id), [id]);
+  assert.equal(L.gateOf(value, id).fresh, true);
+  assert.equal(L.cmdModels(root, { with: dir }).loops.length, 1);
 });

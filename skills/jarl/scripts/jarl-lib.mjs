@@ -58,10 +58,9 @@ function mainCheckoutWithLoop(dir) {
   // canonical on both sides: git prints C:/x/.git where the path module spells C:\x, and a drive letter's case may differ.
   return main && canonical(main) !== canonical(dir) && existsSync(jarlDir(main)) ? main : null;
 }
-// An archived loop is a directory that holds what .jarl/ holds (goal, log, issues): while models reads one, its directory
-// stands for a root whose .jarl/ it is, so every reader of the record reads it unchanged. Read-only, and removed after.
-const LOOP_DIRS = new Map();
-export function jarlDir(root) { return LOOP_DIRS.get(root) ?? join(root, '.jarl'); }
+// The directory holding a loop's record. An archived loop is a directory that holds what this one holds (goal, log,
+// issues); readLoop reads either by its directory.
+export function jarlDir(root) { return join(root, '.jarl'); }
 export function issuesDir(root) { return join(jarlDir(root), 'issues'); }
 
 function today() { return new Date().toISOString().slice(0, 10); }
@@ -500,8 +499,10 @@ function freezeProfile(p) {
 // The loop's profile: .jarl/profile.json when there is one, else the built-in. Read once per state of the file (a
 // command reads it many times). A profile file that does not validate is a refusal, never a silent fallback.
 const PROFILES = new Map();
-export function loadProfile(root) {
-  const path = profilePath(root);
+export function loadProfile(root) { return profileAt(jarlDir(root)); }
+// The profile of the record held in `dir` (a loop's .jarl/, or an archived loop's directory).
+export function profileAt(dir) {
+  const path = join(dir, 'profile.json');
   let st;
   try { st = statSync(path); } catch { return DEFAULT_PROFILE; }
   const key = `${st.mtimeMs} ${st.size}`;
@@ -612,9 +613,13 @@ export function parseIssue(text, file) {
 
 const ISSUE_FILE_RE = new RegExp(`^(${ID_SRC})-.*\\.md$`);
 export function loadIssues(root) {
-  const dir = issuesDir(root);
+  if (!existsSync(issuesDir(root))) return [];
+  return issuesAt(jarlDir(root), loadProfile(root));
+}
+// The issues of the record held in `recordDir`, read under `profile`.
+function issuesAt(recordDir, profile) {
+  const dir = join(recordDir, 'issues');
   if (!existsSync(dir)) return [];
-  const profile = loadProfile(root);
   return readdirSync(dir).filter((f) => ISSUE_FILE_RE.test(f)).sort((a, b) => cmpId(ISSUE_FILE_RE.exec(a)[1], ISSUE_FILE_RE.exec(b)[1]) || (a < b ? -1 : a > b ? 1 : 0))
     .map((f) => withProfile(parseIssue(readText(join(dir, f)), join(dir, f)), profile));
 }
@@ -853,8 +858,10 @@ const DECISION_HEAD = /^## (\d{4}-\d{2}-\d{2}) · (.+?)\s*$/;
 
 // decisions.md read back: one entry per `## <date> · <slug>` heading, with its ruling, who ruled (**By:**, none
 // on rulings from before the field), what it supersedes and what superseded it.
-export function loadDecisions(root) {
-  const path = join(jarlDir(root), 'decisions.md');
+export function loadDecisions(root) { return decisionsAt(jarlDir(root)); }
+// The rulings of the record held in `dir`.
+function decisionsAt(dir) {
+  const path = join(dir, 'decisions.md');
   if (!existsSync(path)) return [];
   const out = [];
   for (const line of readText(path).split('\n')) {
@@ -1420,9 +1427,8 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   need(flags.base === undefined || caller === 'record', 'base is named by a library call through record.mjs only — the command line checks against the branch checked out');
   need(flags.base === undefined || (typeof flags.base === 'string' && fieldText(flags.base) !== '' && !flags.base.startsWith('-')), 'base names a branch or ref — the one the merge landed in');
   if (profile.is(status, 'closes-record')) {
-    const journal = journalById(root);
-    const allIssues = loadIssues(root);
-    for (const issue of issues) { const refusal = doneRefusal(root, issue, journal, allIssues, { base: flags.base }); need(!refusal, `${refusal}${nothing}`); }
+    const loop = readLoop(jarlDir(root));
+    for (const issue of issues) { const refusal = doneRefusal(root, issue, { base: flags.base, loop }); need(!refusal, `${refusal}${nothing}`); }
   }
   // One lease for the whole call: every issue in a package gets the same Branch, Worker, Worktree and Since.
   // A relative worktree path is read from the loop's root, like --repo, so it means the same from anywhere.
@@ -1460,7 +1466,7 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   const reason = holds && why ? String(why).replace(/ +· +/g, ' - ') : why;
   appendLogLines(root, issues.map((issue) => `${issue.id} → ${status}${reason ? ` · ${reason}` : ''}${leaseNote ? ` · ${leaseNote}` : ''}`));
   // Said on the command line only, and only in a loop that declares model lines: a lease with no model (once per call).
-  const leaseNoModel = caller === 'cli' && holds && model === undefined && modelLines(root, profile).declared ? 'no --model on this lease — the loop declares its models, and a model that is not recorded can never be recovered' : null;
+  const leaseNoModel = caller === 'cli' && holds && model === undefined && modelLines(root).declared ? 'no --model on this lease — the loop declares its models, and a model that is not recorded can never be recovered' : null;
   return oneOrMany(rawIds, issues.map((issue, n) => ({ id: issue.id, status, ...(holds ? { since, ...(flags.branch !== undefined ? { branch: fieldText(flags.branch) } : {}), ...(flags.worker !== undefined ? { worker: fieldText(flags.worker) } : {}), ...(model !== undefined ? { model } : {}), ...(worktree !== undefined ? { worktree } : {}) } : {}), ...(profile.is(status, 'closes-record') ? doneNote(issue, root) : {}), ...(leaseNoModel && n === 0 ? { note: leaseNoModel } : {}) })));
 }
 
@@ -1504,9 +1510,12 @@ function setResources(root, rawIds, value, flags) {
 // A profile's done-gate changes the last two: requires-merged also asks for a recorded merge whose sha is in the base
 // (see mergeRefusal), and approve: none (allowed only with requires-merged) drops the approve — the gate that landed
 // the merge stands behind the issue instead of a reviewer. The evidence rows are asked for either way.
-export function doneRefusal(root, issue, journal = journalById(root), issues = loadIssues(root), { base } = {}) {
+// opts { base, loop }: the loop a caller checking several issues has read once (else it is read here).
+export function doneRefusal(root, issue, opts = {}) {
+  const { base } = opts;
+  const loop = opts.loop ?? readLoop(jarlDir(root));
   const profile = loadProfile(root);
-  const g = gateState(root, issue.id, journal.get(issue.id) || [], coordinatorNames(root), issues, journal);
+  const g = gateOf(loop, issue.id);
   const how = `jarl.mjs evidence ${issue.id} --ran "<command>" --saw "<what it printed>"`;
   if (g.unresolvedRetractions.length) return `${issue.id} records a retraction of evidence row ${g.unresolvedRetractions.join(', ')} that matches no evidence line of the log, so which row it retracts is unknown and a retracted row might be counted — done refuses until that log line is repaired`;
   if (!workEvidence(issue, profile)) return `${issue.id} has no evidence yet — record it first: ${how}`;
@@ -1629,11 +1638,9 @@ export function cmdMerged(root, rawIds, flags) {
   // no fresh approve went in without the fresh review the rule asks for, and the note says so loudly.
   // Under a done gate with no approve (approve: none), the merge gate stands behind the issue, and no reviewer is owed.
   if (sha && loadProfile(root).doneGate.approve !== 'none') {
-    const journal = journalById(root);
-    const coordinators = coordinatorNames(root);
-    const allIssues = loadIssues(root);
+    const loop = readLoop(jarlDir(root));
     for (const issue of issues) {
-      const g = gateState(root, issue.id, journal.get(issue.id) || [], coordinators, allIssues, journal);
+      const g = gateOf(loop, issue.id);
       if (!g.fresh) notes.push(`MERGED WITHOUT A FRESH REVIEW — ${issue.id} ${g.live ? freshRuleText({ fields: { merged: sha } }, g.live) : 'holds no live approve at all (none, or spent by a later round, restart or reopen) — the fresh-review rule: a code issue needs an approve from a fresh reviewer before it merges'}; recorded as given, get the fresh review now: jarl.mjs review ${issue.id} approve|changes --by <fresh reviewer> "<findings>"`);
     }
   }
@@ -1952,8 +1959,7 @@ export function issueView(root, issue, { full = false } = {}) {
   }
   pieces.push(cur);
   const numbered = (body, rows) => body.map((l, i) => { const r = rows.find((x) => x.start === i); return r ? l.replace(/^- /, `- [${r.n}] `) : l; });
-  const journal = full ? null : journalById(root);
-  const g = full ? null : gateState(root, issue.id, journal.get(issue.id) || [], coordinatorNames(root), loadIssues(root), journal);
+  const g = full ? null : gateState(root, issue.id);
   const out = [];
   for (const p of pieces) {
     if (p.name !== 'evidence' && p.name !== 'reviews') { out.push(...p.lines); continue; }
@@ -2142,15 +2148,17 @@ export function uncommittedLoopFiles(root) {
   return out.split('\n').filter(Boolean).map((l) => l.replace(/^[ MTADRCU?!]{1,2} /, '')).sort();
 }
 
-export function cmdStatus(root, flags = {}) {
+export function cmdStatus(root, flags = {}) { return statusOf(root, readLoop(jarlDir(root)), flags); }
+// The status of a loop already read: a view that shows more than the status reads the loop once for all of it.
+function statusOf(root, loop, flags) {
   const hours = staleHours(flags);
-  const profile = loadProfile(root);
+  const { profile } = loop;
   // The count per status. Without a profile the five built-in counts are top-level keys, as they always were; under a
   // profile they live under their own key, statuses, so no status name can overwrite a key of the view (waiting,
   // ready, stale...). countOf reads either.
   const counts = Object.fromEntries(profile.statuses.map((st) => [st, 0]));
   const c = profile.declared ? { statuses: counts } : counts;
-  const every = loadIssues(root);
+  const every = loop.issues;
   // --tag: every section below is computed over the issues carrying that tag only; an After issue outside the tag is
   // still read for what it is (byId holds them all), so waiting means the same thing in the scope as in the whole.
   if (flags.tag !== undefined) need(typeof flags.tag === 'string' && flags.tag && every.some((i) => i.tags.includes(flags.tag)), `no issue carries the tag ${flags.tag}`);
@@ -2158,7 +2166,7 @@ export function cmdStatus(root, flags = {}) {
   for (const i of issues) counts[i.status] = (counts[i.status] || 0) + 1;
   // Each status keeps its own count; waiting is the part of those in play (open, in progress) whose After issues
   // are not settled yet, so "in flight" in the text line means someone is working on it.
-  const byId = new Map(every.map((i) => [i.id, i]));
+  const { byId } = loop;
   const unfinished = issues.filter((i) => profile.active(i.status));
   c.waitingIds = unfinished.filter((i) => waitingOn(i, byId, profile).length).map((i) => i.id);
   c.waiting = c.waitingIds.length;
@@ -2169,16 +2177,15 @@ export function cmdStatus(root, flags = {}) {
   if (profile.scheduler) c.scheduler = profile.scheduler;
   c.noAcceptance = issues.filter((i) => profile.is(i.status, 'holds-claim') && !acceptanceLineCount(i)).map((i) => i.id);
   const inScope = new Set(issues.map((i) => i.id));
-  const asks = loadAsks(root).filter((a) => a.state === 'open' && (flags.tag === undefined || (a.issue && inScope.has(a.issue))));
+  const asks = loop.asks.filter((a) => a.state === 'open' && (flags.tag === undefined || (a.issue && inScope.has(a.issue))));
   // A ratify item blocks nothing, so it is not counted among the questions the loop waits on.
   c.questions = asks.filter((a) => a.kind !== 'ratify').length;
   c.toRatify = asks.filter((a) => a.kind === 'ratify');
   c.ratify = c.toRatify.length;
   // What a session needs to decide between continuing this loop and archiving it: the goal, when the
   // loop was opened, and when anything last happened in it — all read from its own files.
-  const goalPath = join(jarlDir(root), 'goal.md');
-  c.goal = existsSync(goalPath) ? (readText(goalPath).split('\n').slice(2).find((l) => l.trim()) || '').trim() : null;
-  const log = loopEvents(jarlDir(root), profile);
+  c.goal = loop.goal !== null ? (loop.goal.split('\n').slice(2).find((l) => l.trim()) || '').trim() : null;
+  const log = loop.events;
   c.opened = log.length ? log[0].at : null;
   c.lastActivity = log.length ? log[log.length - 1].at : null;
   const archiveDir = join(jarlDir(root), 'archive');
@@ -2190,8 +2197,8 @@ export function cmdStatus(root, flags = {}) {
   c.ciPending = live.filter((i) => mergedOf(i)?.ci === 'pending').map((i) => i.id);
   c.ciRed = live.filter((i) => mergedOf(i)?.ci === 'red').map((i) => i.id);
   c.handoff = handoffAge(root, c.lastActivity);
-  c.reviews = reviewSplit(root, issues);
-  c.inFlightRows = inFlightRows(root, issues, profile, byId, every);
+  c.reviews = reviewSplit(flags.tag === undefined ? loop : scopedLoop(loop, issues));
+  c.inFlightRows = inFlightRows(loop, issues);
   const files = uncommittedLoopFiles(root);
   c.uncommitted = files === null ? null : files.length;
   // --by: the same five counts per repository, tag, kind or priority — a dashboard's table, read from the issues.
@@ -2209,7 +2216,7 @@ export function cmdStatus(root, flags = {}) {
   }
   // Last, so every key status --json carried before keeps its place.
   if (flags.tag !== undefined) c.tag = flags.tag;
-  c.check = checkState(root, every);
+  c.check = checkState(loop);
   return c;
 }
 export const STATUS_BY = ['repo', 'tag', 'kind', 'prio'];
@@ -2226,8 +2233,8 @@ export const IN_FLIGHT_MARKS = {
   merged: 'merged — nothing is left to land: set it done',
   'merged-ci': 'merged, CI not green yet — next record the CI result (merged <id> --ci green|red), then set it done',
 };
-export function inFlightMark(root, issue, journal, issues, coordinators) {
-  const g = gateState(root, issue.id, journal.get(issue.id) || [], coordinators, issues, journal);
+export function inFlightMark(loop, issue) {
+  const g = gateOf(loop, issue.id);
   if (g.approved) {
     // The same rule the done gate and the merge queue apply: an issue that carries code is cleared by a fresh approve only.
     if (carriesCode(issue) && !g.fresh) return 'approved-not-fresh';
@@ -2239,11 +2246,11 @@ export function inFlightMark(root, issue, journal, issues, coordinators) {
   if (verdicts.length && verdicts[verdicts.length - 1].verdict === 'changes') return 'changes-requested';
   return g.rowsSince === 0 ? 'no-rows' : 'rows-no-verdict';
 }
-export function inFlightRows(root, issues, profile, byId, all = issues) {
-  const journal = journalById(root);
-  const coordinators = coordinatorNames(root);
+// The rows for the in-flight `issues` of a loop (its own issues, or the ones a view is scoped to).
+export function inFlightRows(loop, issues) {
+  const { profile, byId } = loop;
   return issues.filter((i) => profile.is(i.status, 'holds-claim') && !waitingOn(i, byId, profile).length).map((i) => {
-    const mark = inFlightMark(root, i, journal, all, coordinators);
+    const mark = inFlightMark(loop, i);
     return { id: i.id, title: i.title, branch: i.fields.branch || null, worker: i.fields.worker || null, model: i.fields.model || null, since: i.fields.since || null, mark, next: IN_FLIGHT_MARKS[mark] };
   });
 }
@@ -2408,6 +2415,47 @@ export function journalById(root) {
   return eventsById(loopEvents(jarlDir(root), loadProfile(root)));
 }
 
+// ---- the loaded loop -------------------------------------------------------------------------------
+//
+// A command reads the loop once, into one value, and hands it to the gate, the views and models; nothing a function
+// needs about the record is looked up again or kept in a module-level table. The value of readLoop(dir), with `dir`
+// the directory holding the record (a loop's .jarl/, or an archived loop's directory):
+//   dir, root     the record's directory, and the directory whose name is the loop's own (the one holding .jarl/, or
+//                 the archive directory itself)
+//   profile       the loop's profile
+//   issues        every issue, in order; byId, the same by id
+//   events        every dated line of the log, typed (see parseEvent); eventsById, the events of each issue
+//   goal          the text of the goal, or null
+//   asks          the questions; decisions, the rulings
+//   coordinators  the names that review as the loop's director
+//   branchWorkers every worker leased on each Branch, across every issue that records it
+// goal, asks, decisions, coordinators and branchWorkers are read on first use.
+export function readLoop(dir) {
+  const root = basename(dir) === '.jarl' ? dirname(dir) : dir;
+  const profile = profileAt(dir);
+  return makeLoop({ dir, root, profile, issues: issuesAt(dir, profile), events: loopEvents(dir, profile) });
+}
+function makeLoop({ dir, root, profile, issues, events }) {
+  const loop = { dir, root, profile, issues, byId: new Map(issues.map((i) => [i.id, i])), events, eventsById: eventsById(events) };
+  const once = (make) => { let made = false; let value; return () => { if (!made) { value = make(); made = true; } return value; }; };
+  const reads = {
+    goal: once(() => readGoal(dir)),
+    asks: once(() => asksAt(dir)),
+    decisions: once(() => decisionsAt(dir)),
+    coordinators: once(() => coordinatorsIn(root, loop.goal)),
+    branchWorkers: once(() => branchWorkersOf(loop)),
+  };
+  for (const [key, read] of Object.entries(reads)) Object.defineProperty(loop, key, { enumerable: true, get: read });
+  return loop;
+}
+// The same loop over some of its issues (the ones a view is scoped to): the gate looks up an issue and the branch it
+// shares with others among these, as the view does.
+function scopedLoop(loop, issues) { return makeLoop({ dir: loop.dir, root: loop.root, profile: loop.profile, issues, events: loop.events }); }
+function readGoal(dir) {
+  const path = join(dir, 'goal.md');
+  return existsSync(path) ? readText(path) : null;
+}
+
 // Who reviewed, as a kind: the word self, or anyone who has ever held the issue's lease — its own worker across
 // every takeover, and the worker of any other issue sharing its Branch (a package, or an issue folded into the
 // same branch later) — is self too; the loop's own director — coordinator, jarl, reeve, the loop's own name (the
@@ -2424,14 +2472,12 @@ export function reviewerKind(by, worker, coordinators = BASE_COORDINATORS) {
 }
 // The names that review as the loop's director in this loop: the fixed three, the loop's own name, and the names
 // a `Coordinators:` line in goal.md lists (comma separated; as a plain line, a list item, or in bold).
-export function coordinatorNames(root) {
+export function coordinatorNames(root) { return coordinatorsIn(root, readGoal(jarlDir(root))); }
+function coordinatorsIn(root, goal) {
   const names = [...BASE_COORDINATORS, basename(resolve(root))];
-  const goal = join(jarlDir(root), 'goal.md');
-  if (existsSync(goal)) {
-    for (const line of readText(goal).split('\n')) {
-      const m = /^\s*(?:[-*]\s+)?(?:\*\*)?coordinators:(?:\*\*)?\s*(.+)$/i.exec(line);
-      if (m) names.push(...m[1].split(',').map((n) => fieldText(n.replace(/\*\*/g, ''))).filter(Boolean));
-    }
+  for (const line of (goal ?? '').split('\n')) {
+    const m = /^\s*(?:[-*]\s+)?(?:\*\*)?coordinators:(?:\*\*)?\s*(.+)$/i.exec(line);
+    if (m) names.push(...m[1].split(',').map((n) => fieldText(n.replace(/\*\*/g, ''))).filter(Boolean));
   }
   return names;
 }
@@ -2456,31 +2502,24 @@ function leaseWorkers(events) {
   return workers;
 }
 
-// Every worker ever leased on a Branch, across every issue that records it — built once per set of issues (a
-// package leased once for several issues, or one folded into the branch later by a bare `set <ids> in-progress
-// --branch <b>` with no --worker of its own, is still one branch). Cached by the `issues` array's identity, so a
-// caller that loads the issues once and hands the same array to every gateState call in a loop (status, report,
-// queue) builds this exactly once, not once per issue — the earlier version rebuilt it (and reloaded every issue
-// file and the whole journal) on every call, making a scan over N issues cost O(N²).
-const BRANCH_WORKERS = new WeakMap();
-function branchWorkers(issues, journal, profile = DEFAULT_PROFILE) {
-  let map = BRANCH_WORKERS.get(issues);
-  if (map) return map;
-  map = new Map();
-  for (const i of issues) {
+// Every worker ever leased on a Branch, across every issue of the loop that records it (a package leased once for
+// several issues, or one folded into the branch later by a bare `set <ids> in-progress --branch <b>` with no
+// --worker of its own, is still one branch). The loop holds it, built once on first use.
+function branchWorkersOf(loop) {
+  const map = new Map();
+  for (const i of loop.issues) {
     const branch = fieldText(i.fields.branch);
     if (!branch) continue;
     const set = map.get(branch) || new Set();
-    for (const w of leaseWorkers(journal.get(i.id) || [])) set.add(w);
+    for (const w of leaseWorkers(loop.eventsById.get(i.id) || [])) set.add(w);
     if (i.fields.worker) set.add(fieldText(i.fields.worker));
     map.set(branch, set);
   }
-  BRANCH_WORKERS.set(issues, map);
   return map;
 }
 
 // The full self scope for one issue: everyone its own lease has ever named, plus everyone named on another issue
-// that shares its Branch (see branchWorkers). Self-review is refused for any of them, not only the id's own
+// that shares its Branch (see branchWorkersOf). Self-review is refused for any of them, not only the id's own
 // latest lease. Pure and cheap: no I/O, so it costs nothing extra when called once per issue in a loop.
 function selfWorkers(events, issue, branches) {
   const self = leaseWorkers(events);
@@ -2503,13 +2542,14 @@ function selfWorkers(events, issue, branches) {
 // - `tracked` is false for an issue the journal has no filing and no status move for (a hand-made file, a
 //   loop older than the log format): the gate then needs a --ran/--saw row in its Evidence section.
 //
-// `issues` and `journal` are for the self scope's branch lookup only, and default to a fresh load — fine for a
-// single call, but a caller reading the gate for many issues (status, report, queue) must load them once and
-// pass the same array and map to every call, so branchWorkers (see above) builds its map once, not per issue.
-export function gateState(root, id, events = journalById(root).get(id) || [], coordinators = coordinatorNames(root), issues = loadIssues(root), journal = journalById(root)) {
-  const profile = loadProfile(root);
-  const issue = issues.find((i) => i.id === id) || null;
-  const self = selfWorkers(events, issue, branchWorkers(issues, journal, profile));
+// gateState reads the loop for one call; a view that reads the gate for many issues reads the loop once and asks
+// gateOf of it.
+export function gateState(root, id) { return gateOf(readLoop(jarlDir(root)), id); }
+export function gateOf(loop, id) {
+  const { profile, coordinators } = loop;
+  const events = loop.eventsById.get(id) || [];
+  const issue = loop.issues.find((i) => i.id === id) || null;
+  const self = selfWorkers(events, issue, loop.branchWorkers);
   let anchor = null; let cut = -1;
   const evidence = []; const allReviews = [];
   const trail = [];   // every review line in order (approve, changes, retract), for the issue view
@@ -2599,14 +2639,12 @@ export function reviewState(root, id) {
 
 // Who reviewed the done issues: the kind of each one's last approve, and how many carry no reviewer at all
 // (approved before --by existed). Shown by status and report, never acted on.
-export function reviewSplit(root, issues = loadIssues(root), journal = journalById(root)) {
+export function reviewSplit(loop) {
   const split = { fresh: 0, coordinator: 0, self: 0, unrecorded: 0 };
-  const coordinators = coordinatorNames(root);
-  const profile = loadProfile(root);
-  for (const i of issues.filter((x) => profile.is(x.status, 'closes-record'))) {
+  for (const i of loop.issues.filter((x) => loop.profile.is(x.status, 'closes-record'))) {
     // The live approve — the one that actually cleared the issue — not simply the last one recorded: a later
     // coordinator (or self) approve does not make an already-cleared issue read as coordinator- or self-reviewed.
-    const a = gateState(root, i.id, journal.get(i.id) || [], coordinators, issues, journal).live;
+    const a = gateOf(loop, i.id).live;
     split[a && a.kind ? a.kind : 'unrecorded'] += 1;
   }
   return split;
@@ -2627,11 +2665,10 @@ function renderSplit(s) { return `fresh ${s.fresh} · coordinator ${s.coordinato
 // landing passed it. Where the repository has a check, the check decides what lands; a review can only stop a change and
 // is recorded as testimony.
 const CHECK_LINE = /^\s*(?:[-*]\s+)?(?:\*\*)?check(?:\s*\(([^)]+)\))?:(?:\*\*)?\s*(.+)$/i;
-export function declaredChecksByRepo(root) {
-  const goal = join(jarlDir(root), 'goal.md');
+export function declaredChecksByRepo(root) { return checksIn(readGoal(jarlDir(root))); }
+function checksIn(goal) {
   const out = { bare: [], repos: {} };
-  if (!existsSync(goal)) return out;
-  for (const line of readText(goal).split('\n')) {
+  for (const line of (goal ?? '').split('\n')) {
     const m = CHECK_LINE.exec(line);
     const command = m && fieldText(m[2].replace(/\*\*/g, '')).replace(/^`(.*)`$/, '$1');
     if (!command) continue;
@@ -2675,15 +2712,16 @@ function lastMerge(events) {
 // without one). Per repository, an issue naming several counts in
 // each. A repository lands on its check when any of its merges carries a check row, else on testimony; the Check lines of
 // goal.md only name the commands.
-export function checkState(root, issues = loadIssues(root), journal = journalById(root)) {
-  const declared = declaredChecksByRepo(root);
+export function checkState(loop) {
+  const { root, issues } = loop;
+  const declared = checksIn(loop.goal);
   const checks = [...declared.bare, ...Object.values(declared.repos).flat()];
   const byRepo = {};
   const repo = (name) => (byRepo[name] = byRepo[name] || { merges: 0, withCheck: 0, noCheck: 0, red: [], declared: declared.repos[name] || [], landsOn: 'testimony' });
   for (const name of Object.keys(declared.repos)) repo(name);
   const total = { merges: 0, withCheck: 0, noCheck: 0, red: [] };
   for (const i of issues) {
-    const line = lastMerge(journal.get(i.id) || []);
+    const line = lastMerge(loop.eventsById.get(i.id) || []);
     if (!line && !mergedOf(i)) continue;
     const kind = line && line.red ? 'red' : line && line.check ? 'withCheck' : 'noCheck';
     for (const name of repoNames(root, i)) {
@@ -2786,9 +2824,11 @@ function followUpsOf(issues, filed, firstClose, profile) {
   }
   return found;
 }
-export function loopMetrics(root, issues = loadIssues(root), journal = journalById(root), now = Date.now()) {
-  const profile = loadProfile(root);
-  const coordinators = coordinatorNames(root);
+// loopMetrics reads the loop for one call, at `now` (its fourth argument); metricsOf takes a loop already read.
+export function loopMetrics(root, issues, events, now) { return metricsOf(readLoop(jarlDir(root)), now ?? Date.now()); }
+export function metricsOf(loop, now) {
+  const { profile, issues } = loop;
+  const journal = loop.eventsById;
   const closes = (st) => profile.is(st, 'closes-record');
   const claims = (st) => profile.is(st, 'holds-claim');
   const { filed: filedAt, firstClose: firstCloseAt } = filedAndClosed(issues, journal, profile);
@@ -2842,7 +2882,7 @@ export function loopMetrics(root, issues = loadIssues(root), journal = journalBy
   const code = { fresh: 0, coordinator: 0, self: 0, unrecorded: 0 };
   const reviewers = {};
   for (const i of closed) {
-    const a = gateState(root, i.id, journal.get(i.id) || [], coordinators, issues, journal).live;
+    const a = gateOf(loop, i.id).live;
     const k = a && a.kind ? a.kind : 'unrecorded';
     kinds[k] += 1;
     if (carriesCode(i)) code[k] += 1;
@@ -2885,7 +2925,7 @@ export function loopMetrics(root, issues = loadIssues(root), journal = journalBy
     noData: noData(!anyFoundBy || !closedAt.length, !anyFoundBy ? 'no issue records Found by, so no follow-up can be traced to what it follows' : closed.length ? 'no closed issue outside research has its close in the journal' : 'nothing closed yet'),
   };
 
-  return { check: checkState(root, issues, journal), cycleTime, leadTime, rounds, reopenings, freshReviews, redCiAfterMerge, followUps };
+  return { check: checkState(loop), cycleTime, leadTime, rounds, reopenings, freshReviews, redCiAfterMerge, followUps };
 }
 
 export function renderMetrics(m) {
@@ -2931,17 +2971,15 @@ const baseModelId = (m) => String(m).split('@')[0];
 // The model lines of goal.md: `Model (<tier>): <model>[, <model>…]`, read like `Check:` (a plain line, a list item, or in
 // bold). The first model of a line is the tier's default; the order of the profile's tiers, weakest first, ranks the models;
 // a model on no line is unplaced and ranks below every placed one. The same id at another effort sits where the id sits.
-export function modelLines(root, profile = loadProfile(root)) {
+export function modelLines(root) { return modelLinesIn(readGoal(jarlDir(root)), loadProfile(root)); }
+function modelLinesIn(goal, profile) {
   const byTier = {};
-  const goal = join(jarlDir(root), 'goal.md');
-  if (existsSync(goal)) {
-    for (const line of readText(goal).split('\n')) {
-      const m = /^\s*(?:[-*]\s+)?(?:\*\*)?model\s*\(([^)]+)\):(?:\*\*)?\s*(.+)$/i.exec(line);
-      if (!m) continue;
-      const tier = profile.tiers.find((t) => t.toLowerCase() === fieldText(m[1]).toLowerCase());
-      if (!tier) continue;
-      byTier[tier] = [...(byTier[tier] || []), ...m[2].replace(/\*\*/g, '').split(',').map((s) => fieldText(s).replace(/^`(.*)`$/, '$1')).filter(Boolean)];
-    }
+  for (const line of (goal ?? '').split('\n')) {
+    const m = /^\s*(?:[-*]\s+)?(?:\*\*)?model\s*\(([^)]+)\):(?:\*\*)?\s*(.+)$/i.exec(line);
+    if (!m) continue;
+    const tier = profile.tiers.find((t) => t.toLowerCase() === fieldText(m[1]).toLowerCase());
+    if (!tier) continue;
+    byTier[tier] = [...(byTier[tier] || []), ...m[2].replace(/\*\*/g, '').split(',').map((s) => fieldText(s).replace(/^`(.*)`$/, '$1')).filter(Boolean)];
   }
   const exact = new Map();
   const base = new Map();
@@ -2981,11 +3019,10 @@ const repoLabel = (dir, issue) => {
 
 // What one loop's record shows of its workers (one row per unit: one worker on one branch, which is one issue or one
 // package leased in one call; a takeover starts a new unit) and of its verdicts, each with the model beside the name.
-function modelFacts(dir, label, lines) {
-  const profile = loadProfile(dir);
-  const issues = loadIssues(dir);
-  const journal = journalById(dir);
-  const byId = new Map(issues.map((i) => [i.id, i]));
+function modelFacts(loop, label, lines) {
+  const { profile, issues, byId } = loop;
+  const dir = loop.root;
+  const journal = loop.eventsById;
   const closes = (st) => profile.is(st, 'closes-record');
   const claims = (st) => profile.is(st, 'holds-claim');
   const parsed = new Map();
@@ -3174,10 +3211,7 @@ export function cmdModels(root, flags = {}) {
     add(p, path, shape);
   }
   need(sources.length, `no loop to read here: ${root} holds no live loop — name one with --with <root>, or its archives with --archives`);
-  const facts = sources.map((s) => {
-    if (s.shape === 'archive') LOOP_DIRS.set(s.path, s.path);
-    try { return modelFacts(s.path, s.label, lines); } finally { if (s.shape === 'archive') LOOP_DIRS.delete(s.path); }
-  });
+  const facts = sources.map((s) => modelFacts(readLoop(s.shape === 'archive' ? s.path : jarlDir(s.path)), s.label, lines));
   const unitRows = facts.flatMap((f) => f.units);
   const verdictRows = facts.flatMap((f) => f.verdicts);
   const tables = (u, v) => { const w = workerTable(u, lines); return { workers: w.rows, reviewers: reviewerTable(v), baselines: w.baselines }; };
@@ -3278,9 +3312,9 @@ function retractReview(root, rawIds, reason, flags) {
   const by = retractedBy(flags, 'a retraction');
   needSaid(reason, 'a retraction');
   const [issue] = issuesFor(root, rawIds);
-  const journal = journalById(root);
-  const coordinators = coordinatorNames(root);
-  const g = gateState(root, issue.id, journal.get(issue.id) || [], coordinators, loadIssues(root), journal);
+  const loop = readLoop(jarlDir(root));
+  const { coordinators } = loop;
+  const g = gateOf(loop, issue.id);
   const text = readText(issue.file);
   const table = reviewEntries(parseIssue(text, issue.file).sections.reviews);
   let target = null;
@@ -3318,17 +3352,14 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
   const model = flags.model !== undefined ? modelValue(flags.model) : undefined;
   need(flags.relayed === undefined || flags.relayed === true, '--relayed takes no value');
   const relayed = flags.relayed === true;
-  const journal = by ? journalById(root) : null;
-  // The full issue list, not just the ones under review: a sibling elsewhere on the same Branch still counts
-  // for self (see gateState/branchWorkers), and loading it once here keeps a package review call linear.
-  const allIssues = by ? loadIssues(root) : null;
-  const coordinators = coordinatorNames(root);
+  // The whole loop, not just the issues under review: a sibling elsewhere on the same Branch still counts for self.
+  const loop = by ? readLoop(jarlDir(root)) : null;
   const kinds = issues.map((issue) => {
     if (!by) return null;
     // Self is everyone who has ever held this issue's lease — its own worker across every takeover, and the
     // worker of any other issue sharing its Branch (a package) — not only its current Worker field.
-    const self = [...gateState(root, issue.id, journal.get(issue.id) || [], coordinators, allIssues, journal).workers];
-    const kind = reviewerKind(by, self, coordinators);
+    const self = [...gateOf(loop, issue.id).workers];
+    const kind = reviewerKind(by, self, loop.coordinators);
     const who = self.length === 1 ? `${self[0]} is the issue's worker` : self.length > 1 ? `${self.join(', ')} have all held ${issue.id}'s lease` : '';
     need(verdict !== 'approve' || kind !== 'self', `${issue.id}: an approve by ${by} is a self-approve${who ? ` (${who})` : ''} and does not count as review — a fresh reviewer, or the jarl, reads the diff${issues.length > 1 ? ' — nothing was written' : ''}`);
     return kind;
@@ -3352,7 +3383,7 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
   const noteOf = (issue, n) => {
     const said = [
       verdict === 'approve' && kinds[n] === 'coordinator' && carriesCode(issue) ? `${issue.id} carries code and ${by} is a coordinator — the fresh-review rule: this approve is recorded but does not clear it for done or the merge queue; a fresh reviewer's approve does` : null,
-      ...(lines && lines.declared ? reviewModelNotes(issue, verdict, model, lines, journal.get(issue.id) || []) : []),
+      ...(lines && lines.declared ? reviewModelNotes(issue, verdict, model, lines, loop.eventsById.get(issue.id) || []) : []),
     ].filter(Boolean);
     return said.length ? { note: said.join('; ') } : {};
   };
@@ -3564,7 +3595,7 @@ function staleHours(flags) {
 
 // The loop's own repository, every repository an open or in-progress issue names, and every one an issue
 // records a Branch in (a done package's branch waits there to be deleted).
-function loopRepos(root, issues = loadIssues(root)) {
+function loopRepos(root, issues) {
   const seen = new Map([[canonical(root), root]]);
   const profile = loadProfile(root);
   for (const issue of issues) {
@@ -3670,7 +3701,7 @@ function doneMark(repo, base, name, on, dirty, profile = DEFAULT_PROFILE, unknow
   return dirty ? 'dirty' : unknown ? 'unknown' : 'delete';
 }
 
-function branchesIn(root, repo, flags, issues = loadIssues(root), hours = STALE_HOURS) {
+function branchesIn(root, repo, flags, issues, hours = STALE_HOURS) {
   const base = flags.base || defaultBase(repo);
   const real = canonical(repo);
   const named = (git(repo, ['branch', '--list', 'jarl/*', '--format=%(refname:short)']) || '').split('\n').filter(Boolean);
@@ -3766,18 +3797,17 @@ export function ciOf(repo, sha) {
 // the branch its checkout is on (the release branch), and main — with ahead/behind against its upstream as last
 // fetched (nothing is fetched), and, when gh is on PATH, the CI of that exact commit. It never gates anything.
 export function cmdTips(root, { ci: askCi = true } = {}) {
-  const issues = loadIssues(root);
-  const journal = journalById(root);
+  const loop = readLoop(jarlDir(root));
+  const { issues, profile } = loop;
   const now = Date.now();
   const recent = (i) => {
     const m = mergedOf(i);
     if (!m || i.status === 'dropped') return false;
     if (m.ci === 'pending' || m.ci === 'red') return true;
-    const line = lastMerge(journal.get(i.id) || []);
+    const line = lastMerge(loop.eventsById.get(i.id) || []);
     const at = line ? parseStamp(line.at) : null;
     return at !== null && now - at <= TIPS_RECENT_MS;
   };
-  const profile = loadProfile(root);
   const named = issues.filter((i) => profile.unfinished(i.status) || recent(i));
   const repos = new Map([[topOf(root), root]]);
   for (const i of named) {
@@ -3858,13 +3888,12 @@ export function cmdQueue(root, flags = {}) {
   // Under an external scheduler the merge order is its own (and with approve: none no fresh approve would ever queue
   // anything): { scheduler, note, repos: [] }.
   if (profile.scheduler) return { scheduler: profile.scheduler, note: schedulerNote(profile.scheduler), repos: [] };
-  const issues = loadIssues(root);
-  const journal = journalById(root);
+  const loop = readLoop(jarlDir(root));
+  const { issues } = loop;
   // Only work in play (offered or worked on): an issue waiting in a status with no such flag (a proposal, a block) is
   // never queued for merge.
   const unsettled = issues.filter((i) => profile.active(i.status));
-  const coordinators = coordinatorNames(root);
-  const gate = new Map(unsettled.map((i) => [i.id, gateState(root, i.id, journal.get(i.id) || [], coordinators, issues, journal)]));
+  const gate = new Map(unsettled.map((i) => [i.id, gateOf(loop, i.id)]));
   // Every issue in the queue sits on a branch, so it carries code: only a fresh approve puts it there (the
   // fresh-review rule). One cleared by a coordinator alone waits, listed with its package as waiting for review.
   const approved = unsettled.filter((i) => gate.get(i.id).fresh);
@@ -3967,8 +3996,10 @@ function asksPath(root) { return join(jarlDir(root), 'asks.md'); }
 // A ratify item the close's batch filed names the area ruling it asks about: `· ruling <slug>`.
 const ASK_RE = new RegExp(`^- \\*\\*a-(${ID_SRC})\\*\\* \\((open|answered)\\)(?: · (stop|stuck|lower|charter|ratify))?(?: · target (\\S+))?(?: · issue (${ID_SRC}))?(?: · ruling ([A-Za-z0-9][A-Za-z0-9._-]{0,79}))? · (.*)$`);
 
-export function loadAsks(root) {
-  const path = asksPath(root);
+export function loadAsks(root) { return asksAt(jarlDir(root)); }
+// The questions of the record held in `dir`.
+function asksAt(dir) {
+  const path = join(dir, 'asks.md');
   if (!existsSync(path)) return [];
   // A question of several lines is the item line and its next lines indented by two spaces (blank ones are two spaces
   // alone); an older reader sees the item line only, which still reads as a question.
@@ -4232,13 +4263,12 @@ export function cmdResume(root, flags = {}) {
   need(existsSync(jarlDir(root)), `no loop here: ${jarlDir(root)} does not exist — open one with jarl.mjs init "<goal>", or pass --root <the directory holding .jarl/>`);
   const logN = countFlag(flags, 'log', RESUME_LOG_LINES);
   const readyN = countFlag(flags, 'ready', RESUME_READY);
-  const status = cmdStatus(root);
-  const profile = loadProfile(root);
-  const issues = loadIssues(root);
-  const byId = new Map(issues.map((i) => [i.id, i]));
+  const loop = readLoop(jarlDir(root));
+  const status = statusOf(root, loop, {});
+  const { profile, issues, byId } = loop;
   const stale = new Map(status.stale.map((x) => [x.id, x.problems]));
   const marks = new Map(status.inFlightRows.map((x) => [x.id, x.mark]));
-  const rulings = cmdDecisions(root, { live: true }).map((d) => ({ date: d.date, slug: d.slug, by: d.by, line: (d.ruling.split('\n').find((l) => l.trim()) || '').trim() }));
+  const rulings = loop.decisions.filter((d) => !d.supersededBy).map((d) => ({ date: d.date, slug: d.slug, by: d.by, line: (d.ruling.split('\n').find((l) => l.trim()) || '').trim() }));
   // In flight and waiting split the unfinished issues the way status counts them: an issue whose After is not
   // settled is waiting, in progress or not, so each section's count is the number on the counts line.
   const unsettled = (i) => waitingOn(i, byId, profile).length > 0;
@@ -4253,7 +4283,7 @@ export function cmdResume(root, flags = {}) {
     id: i.id, title: i.title, status: i.status, after: waitingOn(i, byId, profile),
     ...(holds(i) ? { branch: i.fields.branch || null, worker: i.fields.worker || null, model: i.fields.model || null, since: i.fields.since || null, stale: stale.get(i.id) || [] } : {}),
   }));
-  const asks = loadAsks(root).filter((a) => a.state === 'open');
+  const asks = loop.asks.filter((a) => a.state === 'open');
   const scheduled = profile.scheduler !== null;
   const next = scheduled ? [] : nextRows(root, {});
   const ready = next.filter((r) => r.ready);
@@ -4261,7 +4291,7 @@ export function cmdResume(root, flags = {}) {
   // issue ahead of it), or an open question names it. Ready and held together are the open count on the status line.
   const held = next.filter((r) => !r.ready && !r.after.length).map((r) => ({ id: r.id, title: r.title, priority: r.priority, files: r.waitsOn, heldBy: r.heldBy || [], ...(r.questions ? { questions: r.questions } : {}), ...(r.resources ? { resources: r.resources } : {}) }));
   const merged = issues.filter((i) => status.ciPending.includes(i.id) || status.ciRed.includes(i.id)).map((i) => ({ id: i.id, title: i.title, ...mergedOf(i) }));
-  const logLines = loopEvents(jarlDir(root), profile);
+  const logLines = loop.events;
   const legacy = handoffAge(root, status.lastActivity);
   return {
     goal: status.goal, opened: status.opened, lastActivity: status.lastActivity, archived: status.archived, status,
@@ -4364,8 +4394,8 @@ function repoNames(root, issue) {
 // listed under each, for each repository's changelog), dropped, deferred, still open, and who reviewed the done
 // work; --found adds the issues someone other than the jarl found.
 export function cmdReport(root, flags = {}) {
-  const profile = loadProfile(root);
-  const issues = loadIssues(root);
+  const loop = readLoop(jarlDir(root));
+  const { profile, issues } = loop;
   const done = issues.filter((i) => profile.is(i.status, 'closes-record'));
   const dropped = issues.filter((i) => i.status === 'dropped');
   const deferred = issues.filter((i) => i.status === 'deferred');
@@ -4374,24 +4404,22 @@ export function cmdReport(root, flags = {}) {
   // Deferred), with the reason a needs-reason status carries.
   const closedOther = profile.statuses.filter((st) => profile.is(st, 'terminal') && !profile.is(st, 'closes-record'));
   const found = issues.filter((i) => i.fields['found by'] && !/^jarl\b/i.test(i.fields['found by']));
-  const goal = existsSync(join(jarlDir(root), 'goal.md')) ? readText(join(jarlDir(root), 'goal.md')).split('\n').slice(2).find((l) => l.trim()) || '' : '';
+  const goal = loop.goal !== null ? loop.goal.split('\n').slice(2).find((l) => l.trim()) || '' : '';
   const byRepo = {};
   for (const i of done) for (const r of repoNames(root, i)) (byRepo[r] = byRepo[r] || []).push(i);
   const row = (i) => `- ${i.id} ${i.title} (${i.kind})${mergedOf(i) ? ` · merged ${mergedOf(i).sha}${mergedOf(i).repo ? ` in ${mergedOf(i).repo}` : ''}` : ''}`;
   const repos = Object.keys(byRepo).sort();
   const doneLines = repos.length > 1 ? repos.flatMap((r) => ['', `### ${r} (${byRepo[r].length})`, ...byRepo[r].map(row)]) : done.map(row);
-  const journal = journalById(root);
-  const split = reviewSplit(root, issues, journal);
-  const coordinators = coordinatorNames(root);
+  const split = reviewSplit(loop);
   // One row per issue, for a host that renders its own dashboard from --json: the same fields a reader of the
   // issue would look up, with the live approve (who, which kind, when) — the one that actually cleared it, not
   // simply the last one recorded.
   const rows = issues.map((i) => {
     const m = mergedOf(i);
-    const a = gateState(root, i.id, journal.get(i.id) || [], coordinators, issues, journal).live;
+    const a = gateOf(loop, i.id).live;
     return { id: i.id, title: i.title, status: i.status, kind: i.kind, priority: i.priority, tier: i.tier, tags: i.tags, repos: repoNames(root, i), branch: i.fields.branch || null, after: i.after, sources: i.sources, merged: m ? m.sha : null, ci: m ? m.ci : null, review: a ? { by: a.by, kind: a.kind, at: a.at } : null };
   });
-  const metrics = loopMetrics(root, issues, journal);
+  const metrics = metricsOf(loop, Date.now());
   const lines = [`# Report`, '', goal, '', ...(metrics.check.landsOn === 'check' ? [] : [TESTIMONY_NOTE, '']), `## Done (${done.length})`, ...(done.length ? [gateLine(profile, split, 'Reviewed by')] : []), ...doneLines,
     ...closedOther.flatMap((st) => {
       const on = issues.filter((i) => i.status === st);
