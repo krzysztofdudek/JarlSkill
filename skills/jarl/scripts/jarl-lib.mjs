@@ -572,7 +572,7 @@ const UNDECOMPOSED = {
 };
 export function slugify(title) {
   return title.toLowerCase().replace(/[łøđðħıŧßæœþ]/g, (c) => UNDECOMPOSED[c]).normalize('NFKD').replace(/[̀-ͯ]/g, '')
-    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'issue';
+    .replace(/[^a-z0-9]+/g, '-').slice(0, 60).replace(/^-+|-+$/g, '') || 'issue';
 }
 
 // A header field: **Name:** value. A name is letters, digits, spaces and dashes, so a profile's fields (Area-2) read

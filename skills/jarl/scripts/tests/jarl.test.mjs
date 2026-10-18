@@ -47,6 +47,19 @@ test('slugify keeps the letters NFKD does not decompose: ł, ø, ß and the like
   assert.equal(slugify('ł'), 'l');
 });
 
+test('slugify cuts at 60 characters and then trims dashes: no name starts or ends with a dash', async () => {
+  const { slugify } = await import(new URL('../jarl.mjs', import.meta.url).href);
+  // The 60th character of this slug is the dash after "is": cutting before trimming left it at the end.
+  const cut = slugify('Jarl: an issue file name can end in a dash when the title is cut at 60 characters');
+  assert.equal(cut, 'jarl-an-issue-file-name-can-end-in-a-dash-when-the-title-is');
+  assert.equal(cut.length, 59);
+  // The 60th character is punctuation that becomes a dash, and a title that is all punctuation falls back.
+  assert.equal(slugify(`${'a'.repeat(59)}, and then more words`), 'a'.repeat(59));
+  assert.equal(slugify(`${'a'.repeat(60)} tail`), 'a'.repeat(60));
+  assert.equal(slugify('--- !!! ---'), 'issue');
+  for (const t of ['x '.repeat(40), 'ab cd '.repeat(20), '.'.repeat(70) + ' ok']) assert.doesNotMatch(slugify(t), /^-|-$/);
+});
+
 test('dropping an issue keeps the evidence already written, and the report prints only the reason', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
