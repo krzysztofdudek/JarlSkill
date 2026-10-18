@@ -66,7 +66,7 @@ test('next lists only the issues ready to start; --all adds the groups with head
   assert.match(text, /^006 {2}P2 {2}no files at all {2}\(no acceptance yet\) {2}\(no files declared\)$/m);
   const full = jarl(root, 'next', '--all');
   assert.match(full, /^Ready \(2\)$/m);
-  assert.match(full, /^Held by a file in progress \(1\)$/m);
+  assert.match(full, /^Held by a file another issue holds \(1\)$/m);
   assert.match(full, /^002 {2}P2 {2}blocked by file {2}\(waits on a\.mjs, held by 001\)$/m);
   assert.match(full, /^Waiting on After \(1\)$/m);
   assert.match(full, /^004 {2}P2 {2}after the running one {2}\(after 001\)$/m);
@@ -115,6 +115,27 @@ test('in-flight rows carry one derived fact, in status and resume, text and json
   assert.match(refuses(root, 'set', '1', 'nonsense'), /^status must be one of: /m);
 });
 
+test('a coordinator\'s approve on an issue that carries code is not "approved and queued"; a merged issue says what is left', () => {
+  const root = loop();
+  jarl(root, 'new', 'code issue', '--files', 'a.mjs');
+  jarl(root, 'new', 'merged issue', '--files', 'b.mjs');
+  jarl(root, 'new', 'plain issue', '--files', 'c.mjs');
+  jarl(root, 'set', '1', 'in-progress', 'go', '--worker', 'w1', '--branch', 'jarl/1');
+  jarl(root, 'set', '2', 'in-progress', 'go', '--worker', 'w2', '--branch', 'jarl/2');
+  jarl(root, 'set', '3', 'in-progress', 'go', '--worker', 'w3');
+  for (const id of ['1', '2', '3']) jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'green');
+  jarl(root, 'review', '1', 'approve', '--by', 'jarl', FINDINGS);
+  jarl(root, 'review', '2', 'approve', '--by', 'rev', FINDINGS);
+  jarl(root, 'merged', '2', '--sha', 'abc1234', '--ci', 'pending');
+  const marks = () => Object.fromEntries(JSON.parse(jarl(root, 'status', '--json')).inFlightRows.map((r) => [r.id, r.mark]));
+  assert.deepEqual(marks(), { '001': 'approved-not-fresh', '002': 'merged-ci', '003': 'rows-no-verdict' });
+  assert.match(jarl(root, 'status'), /^in flight 001 · approved by a coordinator only.*fresh reviewer/m);
+  assert.match(jarl(root, 'status'), /^in flight 002 · merged, CI not green yet — next record the CI result/m);
+  assert.doesNotMatch(jarl(root, 'status'), /in flight 001 · approved and queued/);
+  jarl(root, 'merged', '2', '--ci', 'green');
+  assert.equal(marks()['002'], 'merged');
+});
+
 // ---- 281: status --tag ----------------------------------------------------------------------------------
 
 test('status --tag scopes every section to the issues carrying the tag', () => {
@@ -143,6 +164,39 @@ test('status --tag scopes every section to the issues carrying the tag', () => {
   assert.equal(whole.open, 2); assert.equal(whole['in-progress'], 2); assert.equal(whole.tag, undefined);
   assert.match(jarl(root, 'status', '--tag', 'alpha'), /^open 0 · in flight 1 · waiting 1 /m, 'alpha one runs, alpha two waits on it');
   assert.match(refuses(root, 'status', '--tag', 'nope'), /no issue carries the tag nope/);
+  assert.match(jarl(root, 'status', '--tag', 'alpha'), /^scoped to the issues tagged alpha/m);
+  const keys = Object.keys(a);
+  assert.deepEqual(keys.slice(-2), ['tag', 'check'], 'tag sits just before the last key, check stays last');
+});
+
+test('status --tag scopes the stale leases and the merges waiting on CI too', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'jarl-tag-git-'));
+  const git = (...a) => spawnSync('git', a, { cwd: dir, encoding: 'utf8' });
+  git('init', '-q', '-b', 'main'); git('config', 'user.email', 't@t'); git('config', 'user.name', 't'); git('config', 'core.excludesFile', '/dev/null');
+  writeFileSync(join(dir, 'a.mjs'), '1\n');
+  git('add', '-A'); git('commit', '-qm', 'base');
+  jarl(dir, 'init', 'goal');
+  jarl(dir, 'new', 'alpha running', '--tags', 'alpha');   // 001: its branch does not exist
+  jarl(dir, 'new', 'beta running', '--tags', 'beta');     // 002: nor does this one
+  jarl(dir, 'new', 'alpha merged', '--tags', 'alpha');    // 003
+  jarl(dir, 'new', 'beta merged', '--tags', 'beta');      // 004
+  jarl(dir, 'set', '1', 'in-progress', 'go', '--worker', 'w1', '--branch', 'gone-alpha');
+  jarl(dir, 'set', '2', 'in-progress', 'go', '--worker', 'w2', '--branch', 'gone-beta');
+  jarl(dir, 'merged', '3', '--sha', 'abc1234', '--ci', 'pending');
+  jarl(dir, 'merged', '4', '--sha', 'abc1234', '--ci', 'red');
+  const whole = JSON.parse(jarl(dir, 'status', '--json'));
+  assert.deepEqual(whole.stale.map((x) => x.id), ['001', '002']);
+  const a = JSON.parse(jarl(dir, 'status', '--tag', 'alpha', '--json'));
+  const b = JSON.parse(jarl(dir, 'status', '--tag', 'beta', '--json'));
+  assert.deepEqual(a.stale.map((x) => x.id), ['001']);
+  assert.deepEqual(b.stale.map((x) => x.id), ['002']);
+  assert.match(a.stale[0].problems.join(), /branch gone: gone-alpha/);
+  assert.deepEqual([a.ciPending, a.ciRed], [['003'], []]);
+  assert.deepEqual([b.ciPending, b.ciRed], [[], ['004']]);
+  const text = jarl(dir, 'status', '--tag', 'beta');
+  assert.match(text, /^stale 002 · branch gone: gone-beta/m);
+  assert.match(text, /^merged, CI red: 004$/m);
+  assert.doesNotMatch(text, /001|003/);
 });
 
 // ---- 282: exclusive resources ---------------------------------------------------------------------------
@@ -161,7 +215,7 @@ test('a resource is held by an issue in progress; next never offers two issues t
   jarl(hub, 'new', 'light work', '--repo', './lib', '--files', 'lib/c.mjs');                    // 003
   jarl(hub, 'new', 'third heavy run', '--repo', './tool', '--files', 'tool/d.mjs');             // 004
   jarl(hub, 'set', '1', 'resources', 'gate, Database');
-  jarl(hub, 'set', '2', 'resources', 'database');
+  jarl(hub, 'set', '2', 'resources', 'DataBase');
   jarl(hub, 'set', '4', 'resources', 'gate');
   assert.match(jarl(hub, 'show', '1'), /\*\*Resources:\*\* gate, Database/);
   // Nothing in progress: the first heavy one is offered, the others sharing a resource with an offered one are held.
@@ -170,8 +224,8 @@ test('a resource is held by an issue in progress; next never offers two issues t
   assert.deepEqual(by('ready'), ['001', '003'], 'two repositories, one resource: never together');
   assert.deepEqual(by('held-by-resource'), ['002', '004']);
   assert.deepEqual(rows.find((r) => r.id === '002').heldBy, ['001']);
-  assert.deepEqual(rows.find((r) => r.id === '002').resources, ['database']);
-  assert.match(jarl(hub, 'next', '--all'), /^Held by a resource in use \(2\)\n002 {2}P2 {2}heavy run in lib {2}.*\(waits on resource database, held by 001\)/m);
+  assert.deepEqual(rows.find((r) => r.id === '002').resources, ['DataBase'], 'names keep the case they were written in; the comparison ignores case');
+  assert.match(jarl(hub, 'next', '--all'), /^Held by a resource another issue holds \(2\)\n002 {2}P2 {2}heavy run in lib {2}.*\(waits on resource DataBase, held by 001\)/m);
   // Once 001 runs, its resources are taken for the whole lease.
   jarl(hub, 'set', '1', 'in-progress', 'go', '--worker', 'w1');
   assert.deepEqual(JSON.parse(jarl(hub, 'next', '--json')).map((r) => r.id), ['003']);

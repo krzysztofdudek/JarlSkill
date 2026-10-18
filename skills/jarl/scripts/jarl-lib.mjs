@@ -1887,7 +1887,7 @@ export function cmdNext(root, flags) {
   return flags.all ? rows : rows.filter((r) => r.ready);
 }
 
-const NEXT_HEADERS = { ready: 'Ready', 'held-by-file': 'Held by a file in progress', 'held-by-resource': 'Held by a resource in use', 'waiting-after': 'Waiting on After', 'held-by-question': 'Held by an open question' };
+const NEXT_HEADERS = { ready: 'Ready', 'held-by-file': 'Held by a file another issue holds', 'held-by-resource': 'Held by a resource another issue holds', 'waiting-after': 'Waiting on After', 'held-by-question': 'Held by an open question' };
 export function renderNext(rows, all, held = 0) {
   const line = (r) => {
     const note = r.group === 'ready' ? [r.noAcceptance && 'no acceptance yet', r.noFiles && 'no files declared']
@@ -1922,7 +1922,7 @@ export function nextRows(root, flags = {}) {
   const taken = new Map(issues.filter((i) => profile.is(i.status, 'holds-claim')).flatMap((i) => keysOf(i).map((k) => [k.key, i.id])));
   // Exclusive resources: names, loop-wide (no repository in the key), held by an issue for its lease's whole life. A
   // profile that declares a field named Resources keeps that field's meaning: it is not read here (never both ways).
-  const resourcesOf = (i) => (profile.field('resources') ? [] : i.resources.map((name) => ({ name: name.toLowerCase(), key: name.toLowerCase() })));
+  const resourcesOf = (i) => (profile.field('resources') ? [] : i.resources.map((name) => ({ name, key: name.toLowerCase() })));
   const takenRes = new Map(issues.filter((i) => profile.is(i.status, 'holds-claim')).flatMap((i) => resourcesOf(i).map((r) => [r.key, i.id])));
   const byId = new Map(issues.map((i) => [i.id, i]));
   const out = [];
@@ -2034,8 +2034,8 @@ export function cmdStatus(root, flags = {}) {
     c.by = { key: declared ? declared.key : flags.by, groups: Object.fromEntries(Object.keys(groups).sort().map((k) => [k, groups[k]])) };
   }
   // Last, so every key status --json carried before keeps its place.
-  c.check = checkState(root);
   if (flags.tag !== undefined) c.tag = flags.tag;
+  c.check = checkState(root);
   return c;
 }
 export const STATUS_BY = ['repo', 'tag', 'kind', 'prio'];
@@ -2048,10 +2048,19 @@ export const IN_FLIGHT_MARKS = {
   'rows-no-verdict': 'evidence rows recorded, no verdict since the last start or round — it waits for a reviewer',
   'changes-requested': 'changes requested — it is back with the worker, who fixes it and records new rows',
   approved: 'approved and queued for the merge — next the merger lands it, then set it done',
+  'approved-not-fresh': 'approved by a coordinator only, and it carries code — neither the merge queue nor done accepts that: it waits for a fresh reviewer\'s approve',
+  merged: 'merged — nothing is left to land: set it done',
+  'merged-ci': 'merged, CI not green yet — next record the CI result (merged <id> --ci green|red), then set it done',
 };
 export function inFlightMark(root, issue, journal, issues, coordinators) {
   const g = gateState(root, issue.id, journal.get(issue.id) || [], coordinators, issues, journal);
-  if (g.approved) return 'approved';
+  if (g.approved) {
+    // The same rule the done gate and the merge queue apply: an issue that carries code is cleared by a fresh approve only.
+    if (carriesCode(issue) && !g.fresh) return 'approved-not-fresh';
+    const m = mergedOf(issue);
+    if (!m) return 'approved';
+    return m.ci === 'pending' || m.ci === 'red' ? 'merged-ci' : 'merged';
+  }
   const verdicts = g.trail.filter((r) => r.n > g.cut && !r.retracted && (r.verdict === 'approve' || r.verdict === 'changes'));
   if (verdicts.length && verdicts[verdicts.length - 1].verdict === 'changes') return 'changes-requested';
   return g.rowsSince === 0 ? 'no-rows' : 'rows-no-verdict';
@@ -3917,6 +3926,7 @@ export function renderStatus(o, profile = DEFAULT_PROFILE) {
   const width = o.by ? Math.max(...Object.keys(o.by.groups).map((k) => k.length), 1) : 0;
   const by = o.by ? [`by ${o.by.key}:`, ...Object.entries(o.by.groups).map(([k, g]) => `  ${k.padEnd(width)}  ${profile.statuses.map((st) => `${statusLabel(st)} ${g[st]}`).join(' · ')}`)] : [];
   const more = [
+    ...(o.tag !== undefined ? [`scoped to the issues tagged ${o.tag} — the counts above and the lists below are theirs only`] : []),
     ...(o.check && !o.check.declared ? [TESTIMONY_NOTE] : []),
     ...(o.scheduler ? [schedulerNote(o.scheduler)] : []),
     ...by,

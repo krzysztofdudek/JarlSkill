@@ -1166,7 +1166,8 @@ test('After holds an issue out of next and counts it as waiting; decide --settle
   assert.match(refuses(root, 'new', 'x', '--after', '99'), /no such issue: 099/);
   jarl(root, 'set', '1', 'dropped', 'not this release');
   assert.match(jarl(root, 'status'), /in flight 2 · done/);
-  assert.doesNotMatch(jarl(root, 'next'), /\(after/);
+  assert.match(jarl(root, 'next'), /^005 {2}P2 {2}after the release/m, 'dropping 001 releases 005: it is listed as ready');
+  assert.doesNotMatch(jarl(root, 'next', '--all'), /Waiting on After/, 'and no issue is left in the waiting group');
   jarl(root, 'after', '5', '--clear');
   assert.equal(JSON.parse(jarl(root, 'show', '5', '--json')).fields.after, undefined);
   // A ruling names what it settles: the ruling goes into each issue's evidence, the status stays.
