@@ -3,7 +3,7 @@
 // the retracted approve or row.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
@@ -151,6 +151,33 @@ test('a retraction strikes the row the file numbers, whatever order the journal 
   jarl(root, 'evidence', id, '--retract', '3', '--by', 'jarl', 'the second beta ran in the wrong place');
   assert.equal(L.gateState(root, id).rowLog.filter((e) => e.retracted).length, 2);
   assert.equal(L.gateState(root, id).rowsSince, 1);
+});
+
+test('a retraction always finds its row: a command holding the saw marker, a command of several lines, and a retraction that cannot be resolved refuses done', () => {
+  for (const [ran, saw] of [['echo one · **saw:** two', 'three'], ['first line\nsecond line', 'result'], ['first line\nsecond line · **saw:** x', 'result\nmore']]) {
+    const root = loop();
+    const id = started(root);
+    jarl(root, 'evidence', id, '--ran', 'plain check', '--saw', 'plain result');
+    jarl(root, 'evidence', id, '--ran', ran, '--saw', saw);
+    jarl(root, 'review', id, 'approve', '--by', 'rev-a', 'read the diff twice');
+    assert.equal(L.gateState(root, id).rowsSince, 2);
+    jarl(root, 'evidence', id, '--retract', '2', '--by', 'jarl', 'wrong place entirely');
+    jarl(root, 'evidence', id, '--retract', '1', '--by', 'jarl', 'also the wrong place');
+    const g = L.gateState(root, id);
+    assert.deepEqual(g.unresolvedRetractions, [], JSON.stringify(ran));
+    assert.equal(g.rowsSince, 0, `both rows are retracted whatever they contain: ${JSON.stringify(ran)}`);
+    assert.match(doneRefusal(root, id), /no --ran\/--saw evidence row recorded since/, JSON.stringify(ran));
+  }
+  // A retraction line naming a row that no journal line fits (a log repaired by hand, merged badly): done refuses, loudly.
+  const root = loop();
+  const id = started(root);
+  jarl(root, 'evidence', id, '--ran', 'a check', '--saw', 'a result');
+  jarl(root, 'review', id, 'approve', '--by', 'rev-a', 'read the diff twice');
+  const refusal = () => L.doneRefusal(root, L.findIssue(root, id));
+  assert.equal(refusal(), null, 'before the bad line the gate is open');
+  appendFileSync(join(root, '.jarl', 'log.md'), `- 2026-10-18 20:00 · ${id} evidence retract · row 7 · by jarl · a row that is not there\n`);
+  assert.match(refusal(), /records a retraction of evidence row 7 that matches no evidence line of the log/);
+  assert.deepEqual(L.gateState(root, id).unresolvedRetractions, [7]);
 });
 
 test('the first retraction raises the format before its line is written; the pinned Jarl 6.1.0 refuses the loop loudly', () => {

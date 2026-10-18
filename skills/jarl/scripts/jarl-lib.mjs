@@ -1443,6 +1443,7 @@ export function doneRefusal(root, issue, journal = journalById(root), issues = l
   const profile = loadProfile(root);
   const g = gateState(root, issue.id, journal.get(issue.id) || [], coordinatorNames(root), issues, journal);
   const how = `jarl.mjs evidence ${issue.id} --ran "<command>" --saw "<what it printed>"`;
+  if (g.unresolvedRetractions.length) return `${issue.id} records a retraction of evidence row ${g.unresolvedRetractions.join(', ')} that matches no evidence line of the log, so which row it retracts is unknown and a retracted row might be counted — done refuses until that log line is repaired`;
   if (!workEvidence(issue, profile)) return `${issue.id} has no evidence yet — record it first: ${how}`;
   if (!g.tracked && !evidenceRows(issue).length) return `${issue.id} has no --ran/--saw evidence row — a free-text note alone is not proof of the work: ${how}`;
   if (g.tracked && !g.rowsSince) return `${issue.id} has no --ran/--saw evidence row recorded since it was ${g.anchor.what === 'filed' ? 'filed' : `moved → ${g.anchor.what}`} (${g.anchor.at}) — a free-text note, or a row written before that (before a start or a reopen), is not proof of the work: ${how}`;
@@ -1607,6 +1608,25 @@ export function cmdRepo(root, rawId, path, { clear = false } = {}) {
 // indented lines under it) and whether it is retracted (struck through: `- ~~**ran:** … **saw:** …~~`). The one
 // numbering: show prints it, evidence --retract takes it, the done gate counts by it.
 const ROW_START = /^- (~~)?\*\*ran:\*\*/;
+// Which journal line each file row wrote, by position in the file: a row's journal line keeps the first line of its
+// command (`<id> evidence row · <first line>`, with a pointer suffix when the command has more lines), so it matches
+// when that is the row's whole first line (a command of several lines) or is followed by the saw marker. Each journal
+// line is taken once, the earliest still free, so lines in another order, equal commands and commands that hold the
+// saw marker themselves all resolve; a row no journal line fits is null.
+const MORE_LINES = / \(\+\d+ more lines, whole text in [^)]*\)$/;
+export function alignRows(id, rows, journalRows) {
+  const prefix = `${id} evidence row · `;
+  const used = new Set();
+  return rows.map((row) => {
+    const hit = journalRows.find((j) => {
+      if (used.has(j) || !j.text.startsWith(prefix)) return false;
+      const l = j.text.slice(prefix.length).replace(MORE_LINES, '');
+      return row.first === l || row.first.startsWith(`${l} · **saw:**`);
+    });
+    if (hit) used.add(hit);
+    return hit || null;
+  });
+}
 export function evidenceTable(text) {
   const lines = String(text || '').split('\n');
   const rows = [];
@@ -1619,11 +1639,9 @@ export function evidenceTable(text) {
     let body = lines.slice(i, end + 1).map((l) => l.trim()).join(' ').replace(/^- (~~)?\*\*ran:\*\*\s*/, '');
     if (retracted) body = body.replace(/~~$/, '');
     const cut = body.indexOf(' · **saw:**');
-    // The first line of the command, as the journal's row line keeps it (see gateState).
-    const first = lines[i].replace(/^- (~~)?\*\*ran:\*\*\s*/, '');
-    const firstCut = first.indexOf(' · **saw:**');
-    const ranFirst = (firstCut === -1 ? first : first.slice(0, firstCut)).replace(/~~$/, '').trim();
-    rows.push({ n: rows.length + 1, start: i, end, retracted, ranFirst, ran: (cut === -1 ? body : body.slice(0, cut)).trim(), saw: cut === -1 ? '' : body.slice(cut + ' · **saw:**'.length).trim() });
+    // The row's first physical line after the marker: what alignRows matches the journal's row line against.
+    const first = lines[i].replace(/^- (~~)?\*\*ran:\*\*\s*/, '').trim();
+    rows.push({ n: rows.length + 1, start: i, end, retracted, first, ran: (cut === -1 ? body : body.slice(0, cut)).trim(), saw: cut === -1 ? '' : body.slice(cut + ' · **saw:**'.length).trim() });
     i = end;
   }
   return { lines, rows };
@@ -1709,8 +1727,9 @@ function retractEvidence(root, rawIds, reason, flags) {
   const row = table.rows[n - 1];
   need(row, `${issue.id} has ${table.rows.length} evidence row${table.rows.length === 1 ? '' : 's'}: there is no row ${n}`);
   need(!row.retracted, `row ${n} of ${issue.id} is retracted already`);
-  const logged = (journalById(root).get(issue.id) || []).filter((e) => e.text.startsWith(`${issue.id} evidence row · `)).length;
-  need(logged === 0 || logged === table.rows.length, `${issue.id} holds ${table.rows.length} evidence row${table.rows.length === 1 ? '' : 's'} and its log ${logged}, so the row numbers cannot be matched to the log; nothing was written`);
+  const journalRows = (journalById(root).get(issue.id) || []).filter((e) => e.text.startsWith(`${issue.id} evidence row · `));
+  need(journalRows.length === 0 || journalRows.length === table.rows.length, `${issue.id} holds ${table.rows.length} evidence row${table.rows.length === 1 ? '' : 's'} and its log ${journalRows.length}, so the row numbers cannot be matched to the log; nothing was written`);
+  need(journalRows.length === 0 || alignRows(issue.id, table.rows, journalRows)[n - 1], `row ${n} of ${issue.id} matches no evidence line of the log, so its retraction could not be told from another row's; nothing was written`);
   // The first retraction of a loop raises the record format, before its line is written: Jarl 6.1.0 does not read a
   // retraction and would go on counting the row, so it must refuse the loop instead.
   raiseFormat(root);
@@ -2164,21 +2183,17 @@ export function gateState(root, id, events = journalById(root).get(id) || [], co
     if (rr) { retractedRows.push(Number(rr[1])); continue; }
     if (e.text.startsWith(`${id} evidence row · `)) evidence.push({ ...e, retracted: false });
   }
-  // A retraction names a row by its file-wide ordinal (evidenceTable: the one numbering show prints). The journal's row
-  // lines are matched to the file's rows by the command they keep, the k-th journal line of a command for the k-th row
-  // with that command, so journal lines that merged in another order cannot retract the wrong row; without the issue
-  // file (or a row it holds), the n-th journal row stands in.
+  // A retraction names a row by its file-wide ordinal (evidenceTable: the one numbering show prints), and the journal's
+  // row lines are matched to the file's rows (alignRows), so journal lines that merged in another order cannot retract
+  // the wrong row. A retraction that cannot be resolved to exactly one row is never ignored: it is returned, and done
+  // refuses while one stands, so a retracted row can never count again unseen.
+  const unresolvedRetractions = [];
   if (retractedRows.length) {
     const rows = issue ? evidenceTable(issue.sections.evidence).rows : [];
+    const aligned = alignRows(id, rows, evidence);
     for (const n of retractedRows) {
-      const row = rows[n - 1];
-      let target = evidence[n - 1];
-      if (row) {
-        const prefix = `${id} evidence row · ${row.ranFirst}`;
-        const k = rows.slice(0, n - 1).filter((r) => r.ranFirst === row.ranFirst).length;
-        target = evidence.filter((x) => x.text === prefix || x.text.startsWith(`${prefix} (+`))[k];
-      }
-      if (target) target.retracted = true;
+      if (aligned[n - 1]) aligned[n - 1].retracted = true;
+      else if (evidence.length) unresolvedRetractions.push(n);
     }
   }
   const reviews = allReviews.filter((r) => !r.retracted);
@@ -2197,6 +2212,7 @@ export function gateState(root, id, events = journalById(root).get(id) || [], co
   return {
     tracked: anchor !== null,
     anchor: anchor ? { at: anchor.at, what: anchor.text.startsWith('filed ') ? 'filed' : anchor.text.slice(id.length + 1).split(' · ')[0].replace(/^→ /, '') } : null,
+    unresolvedRetractions,
     rowsSince: anchor ? evidence.filter((e) => e.n > anchor.n && !e.retracted).length : evidence.filter((e) => !e.retracted).length,
     // What the issue view windows by: where the gate's window starts in the log, and the log's rows and review lines in order.
     cut, anchorN: anchor ? anchor.n : -1, rowLog: evidence, trail,
