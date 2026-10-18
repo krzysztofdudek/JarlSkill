@@ -58,7 +58,10 @@ function mainCheckoutWithLoop(dir) {
   // canonical on both sides: git prints C:/x/.git where the path module spells C:\x, and a drive letter's case may differ.
   return main && canonical(main) !== canonical(dir) && existsSync(jarlDir(main)) ? main : null;
 }
-export function jarlDir(root) { return join(root, '.jarl'); }
+// An archived loop is a directory that holds what .jarl/ holds (goal, log, issues): while models reads one, its directory
+// stands for a root whose .jarl/ it is, so every reader of the record reads it unchanged. Read-only, and removed after.
+const LOOP_DIRS = new Map();
+export function jarlDir(root) { return LOOP_DIRS.get(root) ?? join(root, '.jarl'); }
 export function issuesDir(root) { return join(jarlDir(root), 'issues'); }
 
 function today() { return new Date().toISOString().slice(0, 10); }
@@ -2906,12 +2909,38 @@ function reviewerTable(verdictRows) {
   }).sort(byLabel);
 }
 
-// The loop models reads: this one. Read-only: no lock is taken and nothing is written.
+// The loops models reads: this one (when it has a live record), its own archives when asked (--archives), and every
+// --with <root> (a root, or an archive directory under .jarl/archive/). A path that is not a loop is refused with a
+// message. Read-only: no lock is taken and nothing is written.
+function loopShape(path) {
+  if (existsSync(join(path, '.jarl', 'log.md')) && existsSync(join(path, '.jarl', 'issues'))) return 'root';
+  if (existsSync(join(path, 'log.md')) && existsSync(join(path, 'issues'))) return 'archive';
+  return null;
+}
 export function cmdModels(root, flags = {}) {
   need(flags.by === undefined || ['repo', 'tag'].includes(flags.by), `--by is one of: repo, tag (got "${flags.by}")`);
-  need(existsSync(join(jarlDir(root), 'issues')), `no loop here: ${jarlDir(root)} holds no issues — open one with jarl.mjs init "<goal>", or pass --root <the directory holding .jarl/>`);
+  need(flags.archives === undefined || flags.archives === true, '--archives takes no value');
   const lines = modelLines(root);
-  const facts = [modelFacts(root, 'this loop', lines)];
+  const sources = [];
+  const seen = new Set();
+  const add = (label, path, shape) => { const key = canonical(path); if (!seen.has(key)) { seen.add(key); sources.push({ label, path, shape }); } };
+  if (loopShape(root) === 'root') add('this loop', root, 'root');
+  if (flags.archives === true) {
+    const dir = join(jarlDir(root), 'archive');
+    if (existsSync(dir)) for (const name of readdirSync(dir).sort()) if (loopShape(join(dir, name)) === 'archive') add(`archive ${name}`, join(dir, name), 'archive');
+  }
+  for (const p of [].concat(flags.with ?? [])) {
+    need(typeof p === 'string' && p, '--with takes a loop: the directory holding .jarl/, or an archived loop under .jarl/archive/');
+    const path = resolve(p);
+    const shape = loopShape(path);
+    need(shape, `${p} is not a loop: it holds no .jarl/ with a log and issues, and is not an archived loop (an archive directory holds log.md and issues/) — nothing was read`);
+    add(p, path, shape);
+  }
+  need(sources.length, `no loop to read here: ${root} holds no live loop — name one with --with <root>, or its archives with --archives`);
+  const facts = sources.map((s) => {
+    if (s.shape === 'archive') LOOP_DIRS.set(s.path, s.path);
+    try { return modelFacts(s.path, s.label, lines); } finally { if (s.shape === 'archive') LOOP_DIRS.delete(s.path); }
+  });
   const unitRows = facts.flatMap((f) => f.units);
   const verdictRows = facts.flatMap((f) => f.verdicts);
   const tables = (u, v) => { const w = workerTable(u, lines); return { workers: w.rows, reviewers: reviewerTable(v), baselines: w.baselines }; };

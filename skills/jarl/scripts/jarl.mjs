@@ -132,13 +132,15 @@ commands:
                                                  format to 2 (see evidence --retract)
   round <id> "<what failed>"                     one red round; after three prints the takeover block for a fresh worker,
                                                  with the advice to raise it one tier up or on another model
-  models [--by repo|tag]
+  models [--by repo|tag] [--with <root>]... [--archives]
                                                  read-only: per model as worker and as reviewer, per Kind · Tier, what the
                                                  record holds (units, clean first passes, changes, rounds, verdicts, checked
                                                  approves), every count with its n and a share only from n >= 5, with the
                                                  words fits, below, new and may clear; work with no recorded model
-                                                 is grouped by tier; --by slices by repository or tag;
-                                                 suggestions only, no lock, nothing written
+                                                 is grouped by tier; --by slices by repository or tag; --with reads another
+                                                 loop (its root, or an archive directory) and --archives this loop's own
+                                                 archives, merged into one table that names the loops it read; a path that
+                                                 is not a loop is refused; suggestions only, no lock, nothing written
   check [<id>] --branch <b> [--base <feature-branch>] [--repo <path>]
                                                  commits beyond the base, diff inside the declared files, and the
                                                  change in test files and assertions — numbers, never a verdict;
@@ -302,7 +304,7 @@ export const COMMAND_FLAGS = {
   repo: { clear: 'bool' },
   next: { limit: 'value', all: 'bool' },
   review: { by: 'value', model: 'value', relayed: 'bool' }, round: {},
-  models: { by: 'value' },
+  models: { by: 'value', with: 'many', archives: 'bool' },
   check: { branch: 'value', base: 'value', repo: 'value' },
   branches: { base: 'value', repo: 'value', 'stale-hours': 'value' },
   merged: { sha: 'value', ci: 'value', repo: 'value' },
@@ -403,7 +405,7 @@ export const COMMAND_SUMMARY = {
   next: 'The open issues ready to start: no file shared with work in progress, every After issue settled, no open question on them; all adds the held and waiting ones in groups.',
   review: 'Record a reviewer\'s verdict (approve or changes) on issues, with the reviewer and the findings; or retract the newest approve.',
   round: 'Record one red round on an issue; after three it prints the takeover block for a fresh worker.',
-  models: 'Per model as worker and as reviewer, per kind of task: the counts, clean first passes and verdicts the record holds, with the words fits, below, new and may clear.',
+  models: 'Per model as worker and as reviewer, per kind of task: the counts, clean first passes and verdicts the record holds, with the words fits, below, new and may clear; reads other loops and archives too.',
   check: 'Measure a worker branch against its base: commits, diff inside the declared files, test changes; numbers, never a verdict.',
   branches: 'Every worker branch with its issues, commits beyond the base, worktree state, stale leases and done branches.',
   ask: 'File a question the user has to answer (stop, stuck, lower, charter or ratify).',
