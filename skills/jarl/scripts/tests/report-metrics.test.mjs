@@ -40,23 +40,28 @@ function journal(dir, lines) {
   writeFileSync(join(dir, '.jarl', 'log.md'), `# Log\n\n${lines.map((l) => `- ${l}`).join('\n')}\n`);
 }
 
-test('a loop with no declared check is marked in status and report; a Check line in goal.md names the check instead', () => {
+test('a loop whose merges carry no check row is marked in status and report; a Check line in goal.md only names the command', () => {
   const dir = loop();
+  const empty = { merges: { merges: 0, withCheck: 0, noCheck: 0, red: [] }, byRepo: {} };
   const status = jarl(dir, 'status');
-  assert.match(status, /no check declared — this loop lands on testimony alone/);
-  assert.deepEqual(json(dir, 'status').check, { declared: false, checks: [], landsOn: 'testimony' });
+  assert.match(status, /no merge carries a check row — this loop lands on testimony alone/);
+  assert.deepEqual(json(dir, 'status').check, { declared: false, checks: [], landsOn: 'testimony', ...empty });
   const report = json(dir, 'report');
-  assert.deepEqual(report.check, { declared: false, checks: [], landsOn: 'testimony' });
-  assert.match(report.text, /^no check declared — this loop lands on testimony alone/m);
+  assert.deepEqual(report.check, { declared: false, checks: [], landsOn: 'testimony', ...empty });
+  assert.match(report.text, /^no merge carries a check row — this loop lands on testimony alone/m);
   assert.equal(report.metrics.check.landsOn, 'testimony');
 
+  // A declared line flips nothing: only a merge that carries a check row does.
   appendFileSync(join(dir, '.jarl', 'goal.md'), '\n- **Check:** `npm test`\nCheck: yg check\n');
+  assert.match(jarl(dir, 'status'), /testimony/);
+  assert.deepEqual(json(dir, 'status').check, { declared: true, checks: ['npm test', 'yg check'], landsOn: 'testimony', ...empty });
+  jarl(dir, 'new', 'one', '--acceptance', 'it works');
+  jarl(dir, 'merged', '1', '--sha', 'abc1234', '--ran', 'npm test', '--saw', 'pass 3');
   assert.doesNotMatch(jarl(dir, 'status'), /testimony/);
-  assert.deepEqual(json(dir, 'status').check, { declared: true, checks: ['npm test', 'yg check'], landsOn: 'check' });
   const declared = json(dir, 'report');
   assert.equal(declared.check.landsOn, 'check');
   assert.doesNotMatch(declared.text, /testimony/);
-  assert.match(declared.text, /^check: npm test · yg check$/m);
+  assert.match(declared.text, /^check: 1 of 1 merge\(s\) carry a passing check row · declared npm test · yg check$/m);
 });
 
 test('an empty loop reports every metric as no data, never as zero', () => {

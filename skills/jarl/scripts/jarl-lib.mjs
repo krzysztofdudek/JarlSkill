@@ -976,7 +976,9 @@ export function cmdInit(root, goal, flags = {}) {
   if (prof) writeAtomic(profilePath(root), `${JSON.stringify(prof.json, null, 2)}\n`);
   if (committed) ensureLoopMerge(root);
   appendLog(root, `opened · ${goal.trim()}${prof ? ` · profile ${prof.profile.name}` : ''}`);
-  return { dir: jarlDir(root), committed, permanent, ...(prof ? { profile: prof.profile.name } : {}) };
+  // Said once, on the command line: a goal that names no check lands its merges on testimony until a merge records one.
+  const noCheck = flags.caller === 'cli' && declaredChecks(root).length === 0;
+  return { dir: jarlDir(root), committed, permanent, ...(prof ? { profile: prof.profile.name } : {}), ...(noCheck ? { note: 'the goal names no check (a "Check: <command>" line, or "Check (<repo>): <command>" for one repository) — this loop lands on testimony alone until a merge records the check that decided it: merged <ids> --sha <sha> --ran "<check>" --saw "<summary>"' } : {}) };
 }
 
 // A live loop is one with a goal; a .jarl/ holding only archive/ and the mode markers has none.
@@ -1455,7 +1457,7 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   appendLogLines(root, issues.map((issue) => `${issue.id} → ${status}${reason ? ` · ${reason}` : ''}${leaseNote ? ` · ${leaseNote}` : ''}`));
   // Said on the command line only, and only in a loop that declares model lines: a lease with no model (once per call).
   const leaseNoModel = caller === 'cli' && holds && model === undefined && modelLines(root, profile).declared ? 'no --model on this lease — the loop declares its models, and a model that is not recorded can never be recovered' : null;
-  return oneOrMany(rawIds, issues.map((issue, n) => ({ id: issue.id, status, ...(holds ? { since, ...(flags.branch !== undefined ? { branch: fieldText(flags.branch) } : {}), ...(flags.worker !== undefined ? { worker: fieldText(flags.worker) } : {}), ...(model !== undefined ? { model } : {}), ...(worktree !== undefined ? { worktree } : {}) } : {}), ...(profile.is(status, 'closes-record') ? doneNote(issue) : {}), ...(leaseNoModel && n === 0 ? { note: leaseNoModel } : {}) })));
+  return oneOrMany(rawIds, issues.map((issue, n) => ({ id: issue.id, status, ...(holds ? { since, ...(flags.branch !== undefined ? { branch: fieldText(flags.branch) } : {}), ...(flags.worker !== undefined ? { worker: fieldText(flags.worker) } : {}), ...(model !== undefined ? { model } : {}), ...(worktree !== undefined ? { worktree } : {}) } : {}), ...(profile.is(status, 'closes-record') ? doneNote(issue, root) : {}), ...(leaseNoModel && n === 0 ? { note: leaseNoModel } : {}) })));
 }
 
 // set <ids> <field> <value>: one declared field written on every issue in the call (checked against its enum first),
@@ -1546,7 +1548,7 @@ function freshRuleText(issue, live) {
 // Said, never refused: done closes an issue whose acceptance is missing, or has more lines than the
 // --ran/--saw rows recorded, or that was merged while its CI is not green yet, but the output says so, so
 // the gap is seen by whoever closed it.
-function doneNote(issue) {
+function doneNote(issue, root) {
   const notes = [];
   const lines = acceptanceLineCount(issue);
   if (!lines) notes.push('no acceptance line on file');
@@ -1555,7 +1557,9 @@ function doneNote(issue) {
     if (rows < lines) notes.push(`${lines} acceptance line(s), ${rows} --ran/--saw row(s)`);
   }
   const m = mergedOf(issue);
-  if (m && m.ci !== 'green' && m.ci !== 'none') notes.push(`merged ${m.sha}, CI ${m.ci || 'not recorded'} — record it when known: jarl.mjs merged ${issue.id} --ci green|red`);
+  // A merge that carries its check (a passing row, or the red it landed on) needs no CI state to be told apart from an unrecorded one.
+  const decided = () => { let line = null; for (const e of journalById(root).get(issue.id) || []) line = mergeLineOf(issue.id, e.text) || line; return Boolean(line && (line.check || line.red)); };
+  if (m && m.ci !== 'green' && m.ci !== 'none' && !(m.ci === null && decided())) notes.push(`merged ${m.sha}, CI ${m.ci || 'not recorded'} — record it when known: jarl.mjs merged ${issue.id} --ci green|red`);
   return notes.length ? { note: notes.join('; ') } : {};
 }
 
@@ -1568,21 +1572,40 @@ export function mergedOf(issue) {
   return { sha: m[1], repo: m[2] || null, ci };
 }
 
-// merged <ids> --sha <sha> [--ci pending|green|red|none] [--repo <path>] — the merge as a field, not as prose:
-// the sha, where it landed and the CI state. --ci alone, on issues that already record a merge, moves only
-// the CI state. A sha the repository does not know is noted, never refused (the merge may be in a clone not
-// fetched here). It records; it never decides whether anything may land.
+// merged <ids> --sha <sha> [--ran "<check>" --saw "<summary>" | --red <id>] [--ci pending|green|red|none] [--repo <path>]
+// — the merge as a field, not as prose: the sha, where it landed, the check that decided it and the CI state. --ran and
+// --saw record the check's evidence row on every issue of the call and name the check in the merge line; --red <id> records
+// a merge that landed while its check was red for a cause outside the branch, which issue <id> tracks, and is never counted
+// as a passing check. The CI state is recorded only when given, except for a library call, which keeps pending as the
+// default. --ci alone, on issues that already record a merge, moves only the CI state. A sha the repository does not know
+// is noted, never refused (the merge may be in a clone not fetched here). It records; it never decides whether anything
+// may land.
 export function cmdMerged(root, rawIds, flags) {
+  const cli = flags.caller === 'cli';
   need(flags.sha !== undefined || flags.ci !== undefined, 'merged needs --sha <sha> (and optionally --ci), or --ci alone on issues that already record a merge');
   if (flags.sha !== undefined) need(/^[0-9a-f]{4,64}$/i.test(String(flags.sha)), `--sha is a commit id, 4 to 64 hex characters (got "${flags.sha}")`);
   if (flags.ci !== undefined) need(CI_STATES.includes(flags.ci), `--ci must be one of: ${CI_STATES.join(', ')} — none means the repository has no CI to wait for`);
   need(flags.repo === undefined || flags.sha !== undefined, '--repo names where --sha landed; give it with --sha');
+  const rows = flags.ran !== undefined || flags.saw !== undefined ? rowsOf(flags) : null;
+  need(!rows || flags.sha !== undefined, '--ran and --saw record the check that decided the merge; give them with --sha');
+  need(flags.red === undefined || flags.sha !== undefined, '--red names the issue that tracks why the merge landed on a red check; give it with --sha');
+  need(!(rows && flags.red !== undefined), 'a merge landed on red carries no passing check: give --ran/--saw for a green check, or --red <id> for a red one, not both');
   const issues = issuesFor(root, rawIds);
   const nothing = issues.length > 1 ? ' — nothing was written' : '';
+  let cause = null;
+  if (flags.red !== undefined) {
+    need(typeof flags.red === 'string' && fieldText(flags.red), '--red needs the id of the issue that tracks the cause');
+    const tracked = findIssue(root, fieldText(flags.red));
+    need(tracked, `--red names an issue that does not exist: ${flags.red}${nothing}`);
+    need(!issues.some((i) => i.id === tracked.id), `--red names the issue that tracks the cause of a red check outside the branch; ${tracked.id} is the issue being merged${nothing}`);
+    cause = tracked.id;
+  }
   if (flags.sha === undefined) for (const issue of issues) need(mergedOf(issue), `${issue.id} records no merge yet — give --sha: jarl.mjs merged ${issue.id} --sha <sha> --ci ${flags.ci}${nothing}`);
   const repoPath = flags.repo !== undefined ? repoOf(root, flags.repo) : null;
   const sha = flags.sha !== undefined ? String(flags.sha).toLowerCase() : null;
-  const ci = flags.ci ?? (sha ? 'pending' : undefined);
+  const ci = flags.ci ?? (sha && !cli ? 'pending' : undefined);
+  // The check as the merge line names it: the commands that ran, one line, never the log's own separator.
+  const checkText = rows ? fieldText(rows.map((r) => r.ran).join(' ; ')).replace(/ +· +/g, ' - ').slice(0, 200) : null;
   const notes = [];
   if (sha) {
     // Where the sha should be: --repo, else each issue's Repo, else the loop's own repository.
@@ -1610,14 +1633,17 @@ export function cmdMerged(root, rawIds, flags) {
       if (!g.fresh) notes.push(`MERGED WITHOUT A FRESH REVIEW — ${issue.id} ${g.live ? freshRuleText({ fields: { merged: sha } }, g.live) : 'holds no live approve at all (none, or spent by a later round, restart or reopen) — the fresh-review rule: a code issue needs an approve from a fresh reviewer before it merges'}; recorded as given, get the fresh review now: jarl.mjs review ${issue.id} approve|changes --by <fresh reviewer> "<findings>"`);
     }
   }
+  // The evidence rows go in first, like evidence writes them: one row per --ran/--saw pair on every issue of the call.
+  if (rows) cmdEvidence(root, issues.map((i) => i.id).join(','), undefined, { ran: flags.ran, saw: flags.saw });
   for (const issue of issues) {
     let text = readText(issue.file);
     if (sha) text = setField(text, 'Merged', `${sha}${flags.repo !== undefined ? ` in ${fieldText(flags.repo)}` : ''}`);
-    text = setField(text, 'CI', ci);
+    text = ci ? setField(text, 'CI', ci) : removeFields(text, ['CI']);
     writeAtomic(issue.file, text);
   }
-  appendLogLines(root, issues.map((issue) => (sha ? `${issue.id} merged ${sha}${flags.repo !== undefined ? ` in ${fieldText(flags.repo)}` : ''} · CI ${ci}` : `${issue.id} CI ${ci}`)));
-  return { ids: issues.map((i) => i.id), sha: sha || null, ci, notes };
+  const named = `${flags.repo !== undefined ? ` in ${fieldText(flags.repo)}` : ''}${checkText ? ` · check ${checkText}` : ''}${cause ? ` · landed red, cause ${cause}` : ''}${ci ? ` · CI ${ci}` : ''}`;
+  appendLogLines(root, issues.map((issue) => (sha ? `${issue.id} merged ${sha}${named}` : `${issue.id} CI ${ci}`)));
+  return { ids: issues.map((i) => i.id), sha: sha || null, ci: ci ?? null, ...(checkText ? { check: checkText } : {}), ...(cause ? { red: cause } : {}), notes };
 }
 
 export function cmdTag(root, rawIds, ops) {
@@ -1734,16 +1760,20 @@ export function workEvidence(issue, profile = DEFAULT_PROFILE) {
 // evidence <id> --retract <n> --by <who> "<reason>" retracts the n-th row (numbered over the whole Evidence section, as
 // show prints it) by an appended entry: the row stays, struck through, the entry names who retracted it and why, and
 // the done gate no longer counts it. It only tightens: a row is taken away, never added or revived.
+// The --ran/--saw rows of a call, checked: each --ran has its --saw, each with a value.
+function rowsOf(flags) {
+  const rans = [].concat(flags.ran ?? []);
+  const saws = [].concat(flags.saw ?? []);
+  need(rans.length && saws.length && [...rans, ...saws].every((v) => typeof v === 'string' && v.trim()), 'a row needs both --ran "<command>" and --saw "<what it printed>", each with a value');
+  need(rans.length === saws.length, `--ran and --saw must repeat the same number of times (got ${rans.length} --ran, ${saws.length} --saw)`);
+  return rans.map((ran, i) => ({ ran, saw: saws[i] }));
+}
 export function cmdEvidence(root, rawIds, text, flags) {
   if (flags && flags.retract !== undefined) return retractEvidence(root, rawIds, text, flags);
   let rows = null;
   if (flags && (flags.ran !== undefined || flags.saw !== undefined)) {
-    const rans = [].concat(flags.ran ?? []);
-    const saws = [].concat(flags.saw ?? []);
-    need(rans.length && saws.length && [...rans, ...saws].every((v) => typeof v === 'string' && v.trim()), 'a row needs both --ran "<command>" and --saw "<what it printed>", each with a value');
-    need(rans.length === saws.length, `--ran and --saw must repeat the same number of times (got ${rans.length} --ran, ${saws.length} --saw)`);
+    rows = rowsOf(flags);
     need(text === undefined, `evidence takes free text or --ran/--saw rows, not both (got "${text}" as well) — a value starting with -- goes after a bare --`);
-    rows = rans.map((ran, i) => ({ ran, saw: saws[i] }));
   } else {
     need(text, 'evidence requires "<what was run and what it printed>", or --ran "<command>" --saw "<what it printed>"');
   }
@@ -2075,7 +2105,7 @@ export function cmdStatus(root, flags = {}) {
   }
   // Last, so every key status --json carried before keeps its place.
   if (flags.tag !== undefined) c.tag = flags.tag;
-  c.check = checkState(root);
+  c.check = checkState(root, every);
   return c;
 }
 export const STATUS_BY = ['repo', 'tag', 'kind', 'prio'];
@@ -2412,27 +2442,88 @@ function renderSplit(s) { return `fresh ${s.fresh} · coordinator ${s.coordinato
 
 // ---- the check a loop lands on, and the loop's metrics (report --json) ----------------------------------------------
 
-// The check a loop declares: every `Check: <what runs>` line in goal.md (a plain line, a list item, or in bold), several
-// for a loop whose repositories each have their own. Jarl never runs it: the line says what decides a landing, so the
-// views can tell a loop whose merges pass a check from one that lands on its reviews alone. Where the repository has a
-// check, the check decides what lands; a review can only stop a change and is recorded as testimony. A loop with no
-// declared check lands on testimony alone, and status and report say so.
-export function declaredChecks(root) {
+// The check a loop declares: every `Check: <what runs>` line in goal.md (a plain line, a list item, or in bold) is the
+// command of the whole loop; a `Check (<name>): <what runs>` line is the command of the repository <name>, written as
+// its Files prefix writes it. Jarl never runs it: the line says what the check is, and the merge rows say whether a
+// landing passed it. Where the repository has a check, the check decides what lands; a review can only stop a change and
+// is recorded as testimony.
+const CHECK_LINE = /^\s*(?:[-*]\s+)?(?:\*\*)?check(?:\s*\(([^)]+)\))?:(?:\*\*)?\s*(.+)$/i;
+export function declaredChecksByRepo(root) {
   const goal = join(jarlDir(root), 'goal.md');
-  if (!existsSync(goal)) return [];
-  const checks = [];
+  const out = { bare: [], repos: {} };
+  if (!existsSync(goal)) return out;
   for (const line of readText(goal).split('\n')) {
-    const m = /^\s*(?:[-*]\s+)?(?:\*\*)?check:(?:\*\*)?\s*(.+)$/i.exec(line);
-    if (m && fieldText(m[1].replace(/\*\*/g, ''))) checks.push(fieldText(m[1].replace(/\*\*/g, '')).replace(/^`(.*)`$/, '$1'));
+    const m = CHECK_LINE.exec(line);
+    const command = m && fieldText(m[2].replace(/\*\*/g, '')).replace(/^`(.*)`$/, '$1');
+    if (!command) continue;
+    const name = m[1] && fieldText(m[1]);
+    if (name) (out.repos[name] = out.repos[name] || []).push(command); else out.bare.push(command);
   }
-  return checks;
+  return out;
 }
-export function checkState(root) {
-  const checks = declaredChecks(root);
-  return { declared: checks.length > 0, checks, landsOn: checks.length ? 'check' : 'testimony' };
+// Every command the goal names, bare lines first.
+export function declaredChecks(root) {
+  const d = declaredChecksByRepo(root);
+  return [...d.bare, ...Object.values(d.repos).flat()];
 }
-export const TESTIMONY_NOTE = 'no check declared — this loop lands on testimony alone: a review is recorded as testimony, not proof (a `Check: <command>` line in goal.md names the check that decides a landing)';
-function checkLine(c) { return c.declared ? `check: ${c.checks.join(' · ')}` : TESTIMONY_NOTE; }
+
+// The merge a log line records: `<id> merged <sha>[ in <repo>]`, then the fields it names in any order — `check <what
+// ran>` for a merge landed on a passing check row, `landed red, cause <id>` for one landed while its check was red for a
+// cause outside the branch, and `CI <state>`. Null for any other line.
+export function mergeLineOf(id, text) {
+  const parts = text.split(' · ');
+  const head = new RegExp(`^${id} merged (\\S+)(?: in (.+))?$`).exec(parts[0]);
+  if (!head) return null;
+  const line = { sha: head[1], repo: head[2] || null, check: null, red: null, ci: null };
+  for (const p of parts.slice(1)) {
+    let m;
+    if ((m = /^check (.+)$/.exec(p))) line.check = m[1];
+    else if ((m = /^landed red, cause (\S+)$/.exec(p))) line.red = m[1];
+    else if ((m = /^CI (pending|green|red|none)$/.exec(p))) line.ci = m[1];
+  }
+  return line;
+}
+
+// What the merges say about the check, from the log: every merged issue counts once, by its last merge line, as landed
+// on a passing check row, on red (with the issue that tracks the cause), or with no check row recorded (a merge written
+// without one, and every merge from before the record carried it). Per repository, an issue naming several counts in
+// each. A repository lands on its check when any of its merges carries a check row, else on testimony; the Check lines of
+// goal.md only name the commands.
+export function checkState(root, issues = loadIssues(root), journal = journalById(root)) {
+  const declared = declaredChecksByRepo(root);
+  const checks = [...declared.bare, ...Object.values(declared.repos).flat()];
+  const byRepo = {};
+  const repo = (name) => (byRepo[name] = byRepo[name] || { merges: 0, withCheck: 0, noCheck: 0, red: [], declared: declared.repos[name] || [], landsOn: 'testimony' });
+  for (const name of Object.keys(declared.repos)) repo(name);
+  const total = { merges: 0, withCheck: 0, noCheck: 0, red: [] };
+  for (const i of issues) {
+    let line = null;
+    for (const e of journal.get(i.id) || []) line = mergeLineOf(i.id, e.text) || line;
+    if (!line && !mergedOf(i)) continue;
+    const kind = line && line.red ? 'red' : line && line.check ? 'withCheck' : 'noCheck';
+    for (const name of repoNames(root, i)) {
+      const r = repo(name);
+      r.merges += 1;
+      if (kind === 'red') r.red.push({ id: i.id, cause: line.red }); else r[kind] += 1;
+    }
+    total.merges += 1;
+    if (kind === 'red') total.red.push({ id: i.id, cause: line.red }); else total[kind] += 1;
+  }
+  for (const r of Object.values(byRepo)) r.landsOn = r.withCheck > 0 ? 'check' : 'testimony';
+  return { declared: checks.length > 0, checks, landsOn: total.withCheck > 0 ? 'check' : 'testimony', merges: total, byRepo: Object.fromEntries(Object.keys(byRepo).sort().map((k) => [k, byRepo[k]])) };
+}
+export const TESTIMONY_NOTE = 'no merge carries a check row — this loop lands on testimony alone: a review is recorded as testimony, not proof (merged <ids> --sha <sha> --ran "<check>" --saw "<summary>" records the check that decided a landing)';
+function checkLine(c) { return c.landsOn === 'check' ? `check: ${c.merges.withCheck} of ${c.merges.merges} merge(s) carry a passing check row${c.checks.length ? ` · declared ${c.checks.join(' · ')}` : ''}` : TESTIMONY_NOTE; }
+// One line per repository: its merges by what they carry, the red ones with their cause.
+export function mergeCheckLines(c) {
+  const names = Object.keys(c.byRepo).filter((n) => c.byRepo[n].merges || c.byRepo[n].declared.length);
+  if (!names.length) return [];
+  const width = Math.max(...names.map((n) => n.length));
+  return names.map((n) => {
+    const r = c.byRepo[n];
+    return `  ${n.padEnd(width)}  ${r.merges} merge(s) · passing check row ${r.withCheck} · no check row recorded ${r.noCheck} · landed on red ${r.red.length}${r.red.length ? ` (${r.red.map((x) => `${x.id}, cause ${x.cause}`).join('; ')})` : ''}${r.declared.length ? ` · declared ${r.declared.join(' · ')}` : ''}`;
+  });
+}
 
 // A journal stamp (YYYY-MM-DD HH:MM, UTC) in milliseconds.
 function stampMs(at) { return Date.parse(`${at.replace(' ', 'T')}:00Z`); }
@@ -2505,8 +2596,8 @@ export function loopMetrics(root, issues = loadIssues(root), journal = journalBy
       }
       if (e.text.startsWith(`${i.id} round `)) { f.rounds += 1; continue; }
       if (e.text.startsWith(`${i.id} review changes `)) { f.changes += 1; continue; }
-      const mg = new RegExp(`^${i.id} merged \\S+.* · CI (${CI_STATES.join('|')})$`).exec(e.text);
-      if (mg) { f.merged = true; f.ci.push(mg[1]); continue; }
+      const mg = mergeLineOf(i.id, e.text);
+      if (mg) { f.merged = true; if (mg.ci) f.ci.push(mg.ci); continue; }
       const ci = new RegExp(`^${i.id} CI (${CI_STATES.join('|')})$`).exec(e.text);
       if (ci && f.merged) f.ci.push(ci[1]);
     }
@@ -2595,7 +2686,7 @@ export function loopMetrics(root, issues = loadIssues(root), journal = journalBy
     noData: noData(!anyFoundBy || !closedAt.length, !anyFoundBy ? 'no issue records Found by, so no follow-up can be traced to what it follows' : closed.length ? 'no closed issue outside research has its close in the journal' : 'nothing closed yet'),
   };
 
-  return { check: checkState(root), cycleTime, leadTime, rounds, reopenings, freshReviews, redCiAfterMerge, followUps };
+  return { check: checkState(root, issues, journal), cycleTime, leadTime, rounds, reopenings, freshReviews, redCiAfterMerge, followUps };
 }
 
 export function renderMetrics(m) {
@@ -2606,6 +2697,7 @@ export function renderMetrics(m) {
   return [
     '## Loop metrics',
     checkLine(m.check),
+    ...(m.check.merges.merges ? ['merges by repository:', ...mergeCheckLines(m.check)] : []),
     `cycle time (in progress → closed): ${time(m.cycleTime)}`,
     `lead time (filed → closed): ${time(m.leadTime)}`,
     `rounds: ${m.rounds.noData ? nd(m.rounds) : `${m.rounds.rounds} on ${m.rounds.issuesWithRounds.length} issue(s) · changes verdicts ${m.rounds.changes} on ${m.rounds.issuesWithChanges.length} issue(s) · n ${m.rounds.n} closed`}`,
@@ -4158,7 +4250,7 @@ export function cmdReport(root, flags = {}) {
     return { id: i.id, title: i.title, status: i.status, kind: i.kind, priority: i.priority, tier: i.tier, tags: i.tags, repos: repoNames(root, i), branch: i.fields.branch || null, after: i.after, sources: i.sources, merged: m ? m.sha : null, ci: m ? m.ci : null, review: a ? { by: a.by, kind: a.kind, at: a.at } : null };
   });
   const metrics = loopMetrics(root, issues, journal);
-  const lines = [`# Report`, '', goal, '', ...(metrics.check.declared ? [] : [TESTIMONY_NOTE, '']), `## Done (${done.length})`, ...(done.length ? [gateLine(profile, split, 'Reviewed by')] : []), ...doneLines,
+  const lines = [`# Report`, '', goal, '', ...(metrics.check.landsOn === 'check' ? [] : [TESTIMONY_NOTE, '']), `## Done (${done.length})`, ...(done.length ? [gateLine(profile, split, 'Reviewed by')] : []), ...doneLines,
     ...closedOther.flatMap((st) => {
       const on = issues.filter((i) => i.status === st);
       return ['', `## ${reasonWord(st)} (${on.length})`, ...on.map((i) => `- ${i.id} ${i.title}${profile.is(st, 'needs-reason') ? ` — ${statusReason(i.sections.evidence, reasonWord(st))}` : ''}`)];
@@ -4388,9 +4480,10 @@ export function renderStatus(o, profile = DEFAULT_PROFILE) {
   const by = o.by ? [`by ${o.by.key}:`, ...Object.entries(o.by.groups).map(([k, g]) => `  ${k.padEnd(width)}  ${profile.statuses.map((st) => `${statusLabel(st)} ${g[st]}`).join(' · ')}`)] : [];
   const more = [
     ...(o.tag !== undefined ? [`scoped to the issues tagged ${o.tag} — the counts above and the lists below are theirs only`] : []),
-    ...(o.check && !o.check.declared ? [TESTIMONY_NOTE] : []),
+    ...(o.check && o.check.landsOn === 'testimony' ? [TESTIMONY_NOTE] : []),
     ...(o.scheduler ? [schedulerNote(o.scheduler)] : []),
     ...by,
+    ...(o.by && o.by.key === 'repo' && o.check ? ['merges by repository, with the check that decided each:', ...mergeCheckLines(o.check)] : []),
     ...o.stale.map((x) => `stale ${x.id} · ${x.problems.join('; ')}`),
     ...(o.ciPending.length ? [`merged, CI pending: ${o.ciPending.join(', ')}`] : []),
     ...(o.ciRed.length ? [`merged, CI red: ${o.ciRed.join(', ')}`] : []),
