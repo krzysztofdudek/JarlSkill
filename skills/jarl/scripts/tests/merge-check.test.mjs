@@ -202,7 +202,7 @@ test('init says once, on the command line, that a goal naming no check lands on 
   mkdirSync(join(bare, '.git'));
   const said = run(bare, 'init', 'a goal with no check');
   assert.equal(said.status, 0);
-  assert.match(said.stderr, /note: the goal names no check .* lands on testimony alone until a merge records the check that decided it/);
+  assert.match(said.stderr, /note: the goal names no check .* lands on testimony alone, whatever its merges record, until the goal declares one/);
   const named = mkdtempSync(join(tmpdir(), 'jarl-mcheck-init-'));
   mkdirSync(join(named, '.git'));
   assert.doesNotMatch(run(named, 'init', 'a goal\n\nCheck: npm test').stderr, /note:/);

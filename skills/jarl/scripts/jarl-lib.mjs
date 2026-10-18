@@ -1114,9 +1114,9 @@ export function cmdInit(root, goal, flags = {}) {
   if (prof) writeAtomic(profilePath(root), `${JSON.stringify(prof.json, null, 2)}\n`);
   if (committed) ensureLoopMerge(root);
   appendLog(root, `opened · ${goal.trim()}${prof ? ` · profile ${prof.profile.name}` : ''}`);
-  // Said once, on the command line: a goal that names no check lands its merges on testimony until a merge records one.
+  // Said once, on the command line: a goal that names no check lands its merges on testimony, whatever they record.
   const noCheck = flags.caller === 'cli' && declaredChecks(root).length === 0;
-  return { dir: jarlDir(root), committed, permanent, ...(prof ? { profile: prof.profile.name } : {}), ...(noCheck ? { note: 'the goal names no check (a "Check: <command>" line, or "Check (<repo>): <command>" for one repository) — this loop lands on testimony alone until a merge records the check that decided it: merged <ids> --sha <sha> --ran "<check>" --saw "<summary>"' } : {}) };
+  return { dir: jarlDir(root), committed, permanent, ...(prof ? { profile: prof.profile.name } : {}), ...(noCheck ? { note: 'the goal names no check (a "Check: <command>" line, or "Check (<repo>): <command>" for one repository) — this loop lands on testimony alone, whatever its merges record, until the goal declares one' } : {}) };
 }
 
 // A live loop is one with a goal; a .jarl/ holding only archive/ and the mode markers has none.
@@ -1625,8 +1625,8 @@ function setResources(root, rawIds, value, flags) {
   return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, field: 'Resources', value: names.join(', ') })));
 }
 
-// Why an issue may not go done, or null when it may: at least one --ran/--saw evidence row logged since the issue
-// last went in progress (or was reopened, or — never in progress — was filed; free-text notes never count alone), and a live approve by someone
+// Why an issue may not go done, or null when it may: at least one --ran/--saw evidence row inside the gate's window
+// (see gateWindow; free-text notes never count alone), and a live approve by someone
 // other than its worker (see gateState) — by a fresh reviewer when the issue carries code (a Branch or Merged field;
 // see carriesCode). It gates only the record: nothing here stops code from landing.
 // A profile's done-gate changes the last two: requires-merged also asks for a recorded merge whose sha is in the base
@@ -2423,8 +2423,13 @@ export function cmdClose(root, flags = {}) {
     return { closed: true, removed: null, kept: jarlDir(root), leftOpen: left.map((i) => i.id), deferred, uncommitted: files === null ? null : files.length, batch };
   }
   const files = uncommittedLoopFiles(root);
-  rmSync(jarlDir(root), { recursive: true, force: true });
-  return { closed: true, removed: jarlDir(root), kept: null, leftOpen: left.map((i) => i.id), deferred, uncommitted: files === null ? null : files.length, batch };
+  // Archived loops are never removed: with an archive in place, close removes the live loop's files and leaves the archive,
+  // the mode markers and the templates where archive leaves them.
+  const archive = join(jarlDir(root), 'archive');
+  if (existsSync(archive)) {
+    for (const entry of readdirSync(jarlDir(root))) if (!ARCHIVE_KEEPS.has(entry)) rmSync(join(jarlDir(root), entry), { recursive: true, force: true });
+  } else rmSync(jarlDir(root), { recursive: true, force: true });
+  return { closed: true, removed: jarlDir(root), archiveKept: existsSync(archive) ? archive : null, kept: null, leftOpen: left.map((i) => i.id), deferred, uncommitted: files === null ? null : files.length, batch };
 }
 
 
@@ -2795,6 +2800,8 @@ export function closedGateFlags(loop) {
       if (merges.some((m) => m.n > doneAt)) flag('a merge was recorded after it went done', reopen);
       if (fieldText(issue.fields.branch) && !merges.length && !mergedOf(issue)) flag('a code issue done with no merge recorded', reopen);
     }
+    // Reopening resets the row and the approve, so when it is one of several repairs it comes first: the others would be wasted.
+    if (repairs.length > 1 && repairs.includes(reopen)) repairs.splice(0, repairs.length, `${reopen} (it resets the row and the approve, so do it first)`, ...repairs.filter((r) => r !== reopen));
     if (reasons.length) flags.push({ id, reason: reasons.join('; '), repair: repairs.join(' ; ') });
   }
   return flags;

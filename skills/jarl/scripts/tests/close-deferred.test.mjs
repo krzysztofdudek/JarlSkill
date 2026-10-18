@@ -35,14 +35,19 @@ test('close --force removes the loop and names the deferred issues as removed, n
   assert.equal(existsSync(join(root, '.jarl')), false);
 });
 
-test('archive keeps the deferred issue under .jarl/archive, and a loop opened after it closes', () => {
+test('archive keeps the deferred issue under .jarl/archive, and init and close of a later loop leave the archive in place', () => {
   const root = deferredLoop();
   jarl(root, 'archive', 'first round');
   const [name] = archives(root);
   assert.match(name, /^\d{4}\.\d{2}\.\d{2}-first-round$/);
   assert.ok(readdirSync(join(root, '.jarl', 'archive', name, 'issues')).some((f) => f.startsWith('004-')), 'issue 4 is in the archive');
   jarl(root, 'init', 'second round');
-  assert.match(jarl(root, 'close'), /^removed /);
+  assert.deepEqual(archives(root), [name], 'init leaves the archive in place');
+  const out = jarl(root, 'close');
+  assert.match(out, /^removed .*archive\/ is left in place/);
+  assert.deepEqual(archives(root), [name], 'close leaves the archive in place');
+  assert.ok(readdirSync(join(root, '.jarl', 'archive', name, 'issues')).some((f) => f.startsWith('004-')), 'issue 4 is still in the archive');
+  assert.equal(existsSync(join(root, '.jarl', 'goal.md')), false, 'the live loop is gone');
 });
 
 test('a default-mode loop with no deferred issue closes as it did', () => {
