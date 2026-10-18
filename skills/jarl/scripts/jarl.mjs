@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 // jarl.mjs — the one tool the jarl skill's state moves through: the command line over record.mjs.
 //
-// Markdown is the source of truth: .jarl/goal.md, .jarl/decisions.md, .jarl/log.md and one
+// Markdown is the source of truth: the loop's goal, decisions and log, and one
 // .jarl/issues/NNN-slug.md per issue. This script only reads and writes those files, so anything
 // it does can be checked by opening them. Zero dependencies, Node 22+.
 //
 // What is here: the usage text, the flag and argument tables, the parser and dispatch — one command, run and rendered.
 // Every operation on the record goes through record.mjs, the stable surface another tool may vendor; the rest of the
 // commands (the views over git, import, report and the like) come from jarl-lib.mjs, the implementation behind both.
-// This module re-exports jarl-lib.mjs whole for older importers, but none of those exports is a contract: only
+// This module re-exports jarl-lib.mjs whole, but none of those exports is a contract: only
 // record.mjs (RECORD_API) is.
 
 import { fileURLToPath } from 'node:url';
@@ -518,7 +518,7 @@ export function dispatch(root, cmd, rest, flags) {
   resetCaches();
   let out;
   let text;
-  let warn = [];   // said on stderr, so a caller reading stdout sees the same lines as before
+  let warn = [];   // said on stderr, so a caller reading stdout sees the result alone
   const each = (o, f) => [].concat(o).map(f).join('\n');
   const writes = MUTATING.has(cmd);
   {

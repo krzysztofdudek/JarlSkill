@@ -42,8 +42,8 @@ import {
 } from './vendor/runes/dist/mcp/index.mjs';
 
 export const PROTOCOL_VERSION = RUNES_PROTOCOL_VERSION;
-// The versions this server can speak: it uses nothing a later one added beyond tool annotations, which an
-// older client ignores. A client asking for one of these gets it back; any other gets PROTOCOL_VERSION.
+// The protocol revisions this server speaks: it uses nothing beyond tool annotations, which a client that does not
+// know them ignores. A client asking for one of these gets it back; any other gets PROTOCOL_VERSION.
 export const PROTOCOL_VERSIONS = RUNES_PROTOCOL_VERSIONS;
 // The fields that name a file on disk: read against the server's working directory, which is not the caller's,
 // so they must be absolute.
