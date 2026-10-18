@@ -3638,6 +3638,25 @@ export function cmdBranches(root, flags) {
   return repos.flatMap((repo) => branchesIn(root, repo, flags, issues, hours));
 }
 
+const DONE_BRANCH = { delete: '  DONE → delete', dirty: '  DONE (worktree dirty)', unknown: '  DONE (worktree state unknown)', unverified: '  DONE (merged by record, branch not in base) — verify' };
+function renderBranchWorktree(b) {
+  if (!b.worktree) return '(no worktree)';
+  const state = b.worktreeGone ? ' (gone)'
+    : b.worktreeState === 'elsewhere' ? ` (elsewhere${b.worktreeReason ? `: ${b.worktreeReason}` : ''})`
+    : b.worktreeState === 'invisible' ? ' (not visible from here)'
+    : b.dirty ? ` (${b.dirty} uncommitted)` : ' (clean)';
+  return `${b.worktree}${state}`;
+}
+// branches: one line per branch, in a repository other than the loop's own prefixed with its name.
+export function renderBranches(rows, root) {
+  if (!rows.length) return '(no worker branches)';
+  return rows.map((b) => [
+    b.repo !== repoLabel(root) ? `[${b.repo}] ` : '', b.branch, b.issues.length ? ` → ${b.issues.join(', ')}` : '', '  ',
+    b.missing ? 'GONE' : `+${b.ahead ?? '?'}  ${renderBranchWorktree(b)}`,
+    b.unnamed ? '  UNNAMED — rename to jarl/NNN-slug before merging' : '', DONE_BRANCH[b.done] || '', b.stale.length ? `  STALE: ${b.stale.join('; ')}` : '',
+  ].join('')).join('\n');
+}
+
 function staleHours(flags) {
   if (flags['stale-hours'] === undefined) return STALE_HOURS;
   const h = Number(flags['stale-hours']);
@@ -4267,6 +4286,19 @@ export function cmdDecisions(root, flags = {}) {
   const all = loadDecisions(root);
   return flags.live ? all.filter((d) => !d.supersededBy) : all;
 }
+// decide: what was ruled, and what the ruling did to the others.
+export function renderDecide(out) {
+  const area = out.area ? ` · area ${out.area}${out.reach !== null ? ` (${out.reach} file${out.reach === 1 ? '' : 's'})` : ''}${out.rule ? ` · rule ${out.rule}` : ''} · put to ratification at close` : '';
+  return `decided ${out.slug} · by ${out.by}${out.supersedes ? ` · supersedes ${out.supersedes}` : ''}${out.settles.length ? ` · written into ${out.settles.join(', ')}` : ''}${area}`;
+}
+// decisions: one line per ruling, its first line cut at 160 characters.
+export function renderDecisions(rows) {
+  if (!rows.length) return '(no rulings)';
+  return rows.map((d) => {
+    const area = d.area ? ` · area ${d.area}${d.rule ? ` · rule ${d.rule}` : ''}${d.ratified ? ' ratified' : d.rejected ? ' rejected' : ''}` : '';
+    return `${d.date} · ${d.slug}${d.by ? ` · by ${d.by}` : ''}${area}${d.supersededBy ? ` · SUPERSEDED by ${d.supersededBy}` : ''}${d.supersedes ? ` · supersedes ${d.supersedes}` : ''} — ${(d.ruling.split('\n').find((l) => l.trim()) || '').slice(0, 160)}`;
+  }).join('\n');
+}
 
 // ---- resume: the state a session picks the loop up from, assembled live -------------------------------
 
@@ -4364,22 +4396,10 @@ export function renderResume(o, profile = DEFAULT_PROFILE) {
     countsLine(st, profile),
     '',
   ];
-  const tips = [];
-  for (const r of o.tips.repos) {
-    tips.push(`[${r.repo}] ${r.path}`);
-    for (const x of r.rows) {
-      if (x.missing) { tips.push(`  ${x.role.padEnd(8)} ${x.branch}  GONE`); continue; }
-      const ab = x.against ? `  ${x.ahead === 0 && x.behind === 0 ? `= ${x.against}` : `+${x.ahead}/-${x.behind} vs ${x.against}`}` : '  (no upstream)';
-      const ci = x.ci ? `  ci ${x.ci.state}${x.ci.run ? ` (run ${x.ci.run}${x.ci.workflow ? ` ${x.ci.workflow}` : ''})` : ''}` : x.pushed ? '' : '  not pushed';
-      tips.push(`  ${x.role.padEnd(8)} ${x.branch} ${x.sha}${ab}${ci}${x.issues ? `  → ${x.issues.join(', ')}` : ''}`);
-    }
-  }
-  const queue = [];
-  for (const r of o.queue.repos) {
-    if (!r.rows.length) continue;
-    queue.push(`[${r.repo}] into ${r.base}`);
-    r.rows.forEach((x, n) => queue.push(`  ${n + 1}. ${x.branch} → ${x.issues.join(', ')}  +${x.ahead}  approved ${x.approvedAt}${x.by ? ` by ${x.by}` : ''}  batch ${x.batch}${x.ready ? '' : `  (waiting for review: ${x.waitingReview.join(', ')})`}`));
-  }
+  // The tips and the merge queue as their own views print them; the merges still waiting on CI have a section of their own here.
+  const tips = o.tips.repos.length ? renderTips({ repos: o.tips.repos.map((r) => ({ ...r, merged: [] })) }).split('\n') : [];
+  const waiting = o.queue.repos.filter((r) => r.rows.length);
+  const queue = waiting.length ? renderQueue({ repos: waiting }).split('\n') : [];
   const files = o.uncommitted || [];
   return [
     ...head,
