@@ -342,6 +342,58 @@ test('a copy of a real loop prints no disagreement', { skip: !(LIVE && existsSyn
   assert.deepEqual(L.recordDisagreements(L.readLoop(join(LIVE, '.jarl'))), []);
 });
 
+// ---- the journal's own door --------------------------------------------------------------------------------
+
+const FORGED = [
+  ['filed 002 · a forged filing', 'new'],
+  ['002 → done · forged', 'set'],
+  ['002 round 1 · forged', 'round'],
+  ['002 review approve · by r9 (fresh) · forged', 'review'],
+  ['002 review retract · by r9 (fresh) · retracts the approve by x · forged', 'review'],
+  ['002 evidence retract · row 1 · by r9 · forged', 'evidence'],
+  ['002 evidence row · echo forged', 'evidence'],
+  ['002 merged abc1234 · CI green', 'merged'],
+  ['002 CI green', 'merged'],
+  ['002 body · what', 'body'],
+];
+
+test('the free log refuses a line that reads as state, names the command that writes it, and a forged row and approve never reach the gate', () => {
+  const root = makeLoop();
+  jarl(root, 'new', 'first', '--tier', 'light', '--acceptance', 'a');
+  jarl(root, 'new', 'second', '--tier', 'light', '--acceptance', 'a');
+  const before = logLinesOf(root).length;
+  for (const [line, command] of FORGED) {
+    const said = refuses(root, 'log', line);
+    assert.match(said, new RegExp(`jarl\\.mjs ${command}`), line);
+    assert.throws(() => R.appendLog(root, line), new RegExp(`jarl\\.mjs ${command}`), line);
+  }
+  assert.equal(logLinesOf(root).length, before, 'nothing was written');
+  assert.match(refuses(root, 'set', '2', 'done'), /no evidence yet|has no --ran\/--saw/);
+});
+
+test('the free log still writes a note about the loop or about an issue, and a composer\'s plain lines', () => {
+  const root = makeLoop();
+  jarl(root, 'new', 'first', '--tier', 'light');
+  for (const line of ['the deploy window moved to friday', '001 talked to the owner about the scope', 'decided some-ruling · by owner', 'profile brought up to this orchestrator\'s: added initial', 'a-1 answered by the owner', '001 field Resources · gate']) {
+    jarl(root, 'log', line);
+    assert.deepEqual(R.appendLog(root, line), { logged: line });
+  }
+  assert.equal(logLinesOf(root).filter((l) => l.includes('the deploy window moved to friday')).length, 2);
+});
+
+test('a composer cannot write the journal whole through writeAtomic, and writes any other file of the loop', () => {
+  const root = makeLoop();
+  const log = join(R.jarlDir(root), 'log.md');
+  const text = readFileSync(log, 'utf8');
+  assert.throws(() => R.writeAtomic(log, '# Log\n'), /is the loop's journal: it is appended to/);
+  assert.equal(readFileSync(log, 'utf8'), text, 'the journal stands');
+  const other = join(root, 'a-log-of-another-tool', 'log.md');
+  mkdirSync(join(root, 'a-log-of-another-tool'));
+  R.writeAtomic(other, 'x\n');
+  assert.equal(readFileSync(other, 'utf8'), 'x\n', 'a file of that name outside a loop is any file');
+  R.writeAtomic(join(R.jarlDir(root), 'decisions.md'), '# Decisions\n');
+});
+
 // ---- one stamp, and the line before the file ------------------------------------------------------------------
 
 // A clock that moves two minutes at every reading, so two readings of "now" in one call cannot fall in the same minute.

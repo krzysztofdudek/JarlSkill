@@ -946,6 +946,13 @@ function asksPath(dir) { return join(dir, ASKS_FILE); }
 export function appendLog(root, event) {
   appendLogLines(root, [event]);
 }
+// A whole-file write for a composer (record.writeAtomic): any file but the loop's journal, which is appended to and
+// never written whole, so no line of it is replaced or dropped behind the record's back.
+export function writeWhole(path, text) {
+  const dir = dirname(path);
+  need(!(basename(path) === LOG_FILE && (existsSync(join(dir, 'issues')) || existsSync(goalPath(dir)))), `${path} is the loop's journal: it is appended to (record.appendLog), never written whole`);
+  writeAtomic(path, text);
+}
 // Several lines in one write: a bulk command's lines land together or not at all. A command that writes the same
 // moment into a header field takes the stamp once and passes it as `at`, so the two cannot fall in two minutes.
 export function appendLogLines(root, events, at = stamp()) {
@@ -2546,6 +2553,24 @@ function eventParser(profile) {
     if (text.startsWith(`${id} body · `)) return { type: 'body' };
     return { type: 'other' };
   };
+}
+
+// The command that writes each kind of line that carries state: what the free log refuses to write in its place.
+const LINE_WRITERS = {
+  filed: 'jarl.mjs new', move: 'jarl.mjs set <ids> <status>', round: 'jarl.mjs round <id>', verdict: 'jarl.mjs review <id> approve|changes',
+  'retract-review': 'jarl.mjs review <id> retract', 'retract-row': 'jarl.mjs evidence <id> --retract <n>', row: 'jarl.mjs evidence <id> --ran "<command>" --saw "<what it printed>"',
+  merged: 'jarl.mjs merged <id> --sha <sha>', ci: 'jarl.mjs merged <id> --ci <state>', body: 'jarl.mjs body <id>',
+};
+// A free line for the journal (the log command and record.appendLog): a note about the loop or an issue. A line that
+// reads as one of the kinds above (a filing, a move, a round, a verdict, a retraction, a row, a merge, a CI state or a body
+// change) is refused and names the command that writes it, so every line the views and the gate read as state was
+// written by the command that owns it, with that command's checks.
+export function appendNote(root, event) {
+  const text = oneLine(event);
+  const id = LEADING_ID.exec(text)?.[1] ?? null;
+  const type = id === null ? 'other' : parseEvent(id, text, loadProfile(root)).type;
+  need(type === 'other', `log writes a note, and "${text.length > 80 ? `${text.slice(0, 77)}...` : text}" reads as ${type === 'filed' ? 'a filing' : `a ${type.replace('-', ' ')} line`}, which the journal's own command writes with its checks: ${LINE_WRITERS[type]}`);
+  appendLog(root, event);
 }
 
 // Every dated line of the loop's log under `dir` (the directory holding the goal, the log and issues/), in order, as
