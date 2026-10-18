@@ -215,3 +215,40 @@ test('init says once, on the command line, that a goal naming no check lands on 
   mkdirSync(join(lib, '.git'));
   assert.equal(R.initLoop(lib, 'a library goal').note, undefined, 'a library caller is told nothing');
 });
+
+// ---- the reply of review names the next step --------------------------------------------------------
+
+const FINDINGS = 'read the diff and the tests, found nothing wrong';
+const CHANGES = 'Important: the empty case is not handled';
+
+test('the reply of review names the next step: an approve the merger\'s one merged call and done, changes the round', () => {
+  const root = loop(2);
+  jarl(root, 'set', '1', 'in-progress', 'start', '--branch', 'jarl/001-a', '--worker', 'w-one');
+  const approve = jarl(root, 'review', '1', 'approve', '--by', 'rev-fresh', FINDINGS);
+  assert.match(approve, /· next: the merger merges the branch and records it with one call — jarl\.mjs merged 001 --sha <sha> --ran "<check>" --saw "<summary>" — then jarl\.mjs set 001 done; a worker never sets done$/);
+  const changes = jarl(root, 'review', '1', 'changes', '--by', 'rev-fresh', CHANGES);
+  assert.match(changes, /· next: the jarl records the round — jarl\.mjs round 001 "<what failed>" — and a worker is raised again to fix it$/);
+  // A coordinator's approve on code keeps its note and points at the fresh reviewer.
+  const coordinator = run(root, 'review', '1', 'approve', '--by', 'jarl', FINDINGS);
+  assert.match(coordinator.stderr, /carries code and jarl is a coordinator/);
+  assert.match(coordinator.stdout, /· next: a fresh reviewer's approve is next/);
+  // An issue with no code is closed by its evidence.
+  assert.match(jarl(root, 'review', '2', 'approve', '--by', 'rev-fresh', FINDINGS), /· next: jarl\.mjs set 002 done once its evidence rows are recorded; a worker never sets done$/);
+  // A package names the step for each issue; the JSON carries the same line.
+  const both = json(root, 'review', '1,2', 'approve', '--by', 'rev-fresh', FINDINGS);
+  assert.equal(both.length, 2);
+  assert.match(both[0].next, /merged 001 --sha/);
+  assert.match(both[1].next, /set 002 done/);
+});
+
+test('the same next step is in the reply of the MCP tool, and a library call keeps its reply as it is', async () => {
+  const mcp = await import('../jarl-mcp.mjs');
+  const root = loop(1);
+  jarl(root, 'set', '1', 'in-progress', 'start', '--branch', 'jarl/001-a', '--worker', 'w-one');
+  const r = mcp.callTool('jarl_review', { ids: '1', verdict: 'approve', findings: FINDINGS, by: 'rev-fresh', root });
+  assert.match(r.content[0].text, /· next: the merger merges the branch and records it with one call/);
+  const lib = R.review(root, '1', 'approve', FINDINGS, { by: 'rev-other' });
+  assert.equal('next' in lib, false);
+  const retract = jarl(root, 'review', '1', 'retract', '--by', 'jarl', 'the approve read the wrong diff');
+  assert.doesNotMatch(retract, /next:/);
+});

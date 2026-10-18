@@ -3224,7 +3224,18 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
   };
   // The verdict comes back with the acceptance it was given against, so a reviewer (and the merger reading
   // the output) sees what the approve claims is met — or that there was nothing to meet.
-  return oneOrMany(rawIds, issues.map((issue, n) => ({ id: issue.id, verdict, ...(by ? { by, kind: kinds[n] } : {}), ...(model !== undefined ? { model } : {}), ...(relayed ? { relayed } : {}), severities, acceptance: (issue.sections.acceptance || '').trim(), ...noteOf(issue, n) })));
+  return oneOrMany(rawIds, issues.map((issue, n) => ({ id: issue.id, verdict, ...(by ? { by, kind: kinds[n] } : {}), ...(model !== undefined ? { model } : {}), ...(relayed ? { relayed } : {}), severities, acceptance: (issue.sections.acceptance || '').trim(), ...(flags.caller === 'cli' ? { next: nextAfterVerdict(issue, verdict, kinds[n]) } : {}), ...noteOf(issue, n) })));
+}
+
+// The one step a verdict leaves, named in its reply so nobody has to know the flow: an approve is followed by the merge
+// (the merger lands it and records it with one call) and then done, which a worker never sets; changes are followed by a
+// round, which sends the work back to a worker raised again. A coordinator's approve on code does not clear it: a fresh
+// reviewer's approve is the next step.
+function nextAfterVerdict(issue, verdict, kind) {
+  if (verdict === 'changes') return `the jarl records the round — jarl.mjs round ${issue.id} "<what failed>" — and a worker is raised again to fix it`;
+  if (carriesCode(issue) && kind === 'coordinator') return `a fresh reviewer's approve is next — jarl.mjs review ${issue.id} approve|changes --by <fresh reviewer> "<findings>" — then the merger lands it`;
+  if (carriesCode(issue)) return `the merger merges the branch and records it with one call — jarl.mjs merged ${issue.id} --sha <sha> --ran "<check>" --saw "<summary>" — then jarl.mjs set ${issue.id} done; a worker never sets done`;
+  return `jarl.mjs set ${issue.id} done once its evidence rows are recorded; a worker never sets done`;
 }
 
 // ---- rounds, branches, checks ------------------------------------------------------------------
