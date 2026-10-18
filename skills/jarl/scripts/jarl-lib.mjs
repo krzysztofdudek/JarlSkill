@@ -2111,7 +2111,14 @@ function spread(values) {
 // year or a count never becomes an issue in a loop of thousands.
 export function idsNamed(text, held) {
   const plain = String(text || '').replace(/(?<![0-9])\d{4}-(?:0[1-9]|1[0-2])(?:-(?:0[1-9]|[12]\d|3[01]))?(?:[ T]\d{2}:\d{2})?(?![0-9])/g, ' ').replace(/\d+(?:\.\d+)+/g, ' ');
-  return [...plain.matchAll(new RegExp(`(?<![0-9A-Za-z])(${ID_SRC})(?![0-9A-Za-z])`, 'g'))].map((m) => padId(m[1])).filter((id) => held.has(id));
+  // A range (998-1002, low-high like expandIds reads it) names every id the loop holds inside it; a lone id names itself.
+  const heldIds = [...held.keys ? held.keys() : held].map(String);
+  const out = [];
+  for (const m of plain.matchAll(new RegExp(`(?<![0-9A-Za-z])(${ID_SRC})(?:-#?(${ID_SRC}))?(?![0-9A-Za-z])`, 'g'))) {
+    if (m[2] !== undefined && Number(m[1]) <= Number(m[2])) out.push(...heldIds.filter((id) => Number(id) >= Number(m[1]) && Number(id) <= Number(m[2])).sort((a, b) => Number(a) - Number(b)));
+    else for (const raw of m[2] === undefined ? [m[1]] : [m[1], m[2]]) if (held.has(padId(raw))) out.push(padId(raw));
+  }
+  return out;
 }
 
 // The loop's metrics, read from its record alone — the journal and the issue files — never from git or a network. Each
