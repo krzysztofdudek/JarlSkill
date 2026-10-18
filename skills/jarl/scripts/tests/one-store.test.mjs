@@ -10,7 +10,8 @@ import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as R from '../record.mjs';
-import { gitRepo, jarl, loop as makeLoop } from './helpers.mjs';
+import { gitRepo, jarl, loop as makeLoop, refuses } from './helpers.mjs';
+import { oldJarl, oldJarlIsPinned } from './old-jarl.mjs';
 
 const L = await import('../jarl-lib.mjs');
 
@@ -118,6 +119,78 @@ test('a copy of a real loop: the fold equals the header of every issue it holds'
   }
   assert.deepEqual(wrong, []);
   assert.ok(held > 100, 'the copy holds many issues');
+});
+
+// ---- the views and the gate read the record ----------------------------------------------------------------
+
+// The text of an issue file rewritten by `fn`, the way a person editing it by hand would.
+function editHeader(root, id, fn) {
+  const file = issueFile(root, id);
+  writeFileSync(file, fn(readFileSync(file, 'utf8')));
+}
+
+test('a hand edit of a Status header to done is not counted by status, resume, list, show or next', () => {
+  const root = makeLoop();
+  jarl(root, 'new', 'first', '--tier', 'light');
+  jarl(root, 'new', 'second', '--tier', 'light');
+  jarl(root, 'set', '1', 'in-progress', '--branch', 'jarl/1-a', '--worker', 'w1');
+  editHeader(root, '001', (t) => t.replace('**Status:** in-progress', '**Status:** done'));
+  const status = JSON.parse(jarl(root, 'status', '--json'));
+  assert.equal(status.done, 0, 'status does not count the edit as a close');
+  assert.equal(status['in-progress'], 1);
+  assert.equal(status.inFlight, 1);
+  assert.match(jarl(root, 'status'), /open 1 · in flight 1 · done 0/);
+  assert.match(jarl(root, 'resume'), /open 1 · in flight 1 · done 0/);
+  assert.match(jarl(root, 'resume'), /## In flight \(1\)\n- 001 /);
+  assert.match(jarl(root, 'list', '--all'), /001.*in-progress/);
+  assert.equal(JSON.parse(jarl(root, 'show', '1', '--json')).status, 'in-progress');
+  const next = jarl(root, 'next', '--all');
+  assert.doesNotMatch(next, /^001 /m, 'an issue in progress is not offered');
+});
+
+test('a removed Branch header does not turn a code issue into one a coordinator may close', () => {
+  const root = makeLoop();
+  jarl(root, 'new', 'code', '--tier', 'light', '--acceptance', 'it works');
+  jarl(root, 'set', '1', 'in-progress', '--branch', 'jarl/1-a', '--worker', 'w1');
+  jarl(root, 'evidence', '1', '--ran', 'node --test', '--saw', 'ok');
+  editHeader(root, '001', (t) => t.replace(/^\*\*Branch:\*\*.*\n/m, ''));
+  jarl(root, 'review', '1', 'approve', '--by', 'jarl', 'the diff was read and holds');
+  const refusal = refuses(root, 'set', '1', 'done');
+  assert.match(refusal, /carries code \(Branch is recorded\)/);
+  assert.match(refusal, /fresh-review rule/);
+});
+
+test('a Merged header written by hand does not satisfy a done gate that wants a recorded merge', () => {
+  const repo = gitRepo({ branch: 'main' });
+  const root = shapedLoop(SHAPES.horde);
+  const { id } = R.newIssue(root, 'lands', { repo: repo.dir });
+  R.setStatus(root, id, 'running', undefined, { branch: 'jarl/1-a', worker: 'w1' });
+  R.addEvidence(root, id, undefined, { ran: 'node --test', saw: 'ok' });
+  const sha = repo.g('rev-parse', 'HEAD').trim();
+  editHeader(root, id, (t) => t.replace(/^(\*\*Status:\*\*.*)$/m, `$1\n**Merged:** ${sha}`));
+  assert.throws(() => R.setStatus(root, id, 'merged', undefined, {}), /records no merge/);
+  R.recordMerged(root, id, { sha });
+  R.setStatus(root, id, 'merged', undefined, {});
+  assert.equal(R.findIssue(root, id).status, 'merged');
+});
+
+test('the views of a loop moved only through the tool read the same as the header they replace, and the frozen reader counts the same', () => {
+  const root = makeLoop();
+  jarl(root, 'new', 'one', '--tier', 'light', '--acceptance', 'a');
+  jarl(root, 'new', 'two', '--tier', 'light', '--acceptance', 'a');
+  jarl(root, 'new', 'three', '--tier', 'light');
+  jarl(root, 'set', '1', 'in-progress', '--branch', 'jarl/1-a', '--worker', 'w1', '--model', 'm1');
+  jarl(root, 'set', '2', 'in-progress', '--worker', 'w2');
+  jarl(root, 'set', '3', 'deferred', 'later');
+  const loop = L.readLoop(R.jarlDir(root));
+  for (const issue of loop.issues) assert.deepEqual(issue.onFile, { status: issue.status, ...Object.fromEntries(['branch', 'worker', 'model', 'since', 'merged', 'ci'].map((k) => [k, issue.fields[k] ?? null])) }, `${issue.id}: the header and the record agree`);
+  assert.ok(oldJarlIsPinned());
+  const old = oldJarl(root, 'status', {});
+  assert.equal(old.ok, true);
+  const now = R.statusData(root);
+  for (const key of ['open', 'in-progress', 'done', 'dropped', 'deferred', 'waiting', 'inFlight', 'ready']) assert.equal(old.value[key], now[key], key);
+  const rows = (issues) => issues.map((i) => [i.id, i.status, i.fields.branch ?? null, i.fields.worker ?? null]);
+  assert.deepEqual(rows(oldJarl(root, 'list', { all: true }).value), rows(L.cmdList(root, { all: true })), 'the frozen reader lists the same issues in the same states');
 });
 
 // ---- one stamp, and the line before the file ------------------------------------------------------------------

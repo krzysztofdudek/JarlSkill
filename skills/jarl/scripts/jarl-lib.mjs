@@ -692,12 +692,35 @@ export function loadIssues(root) {
   if (!existsSync(issuesDir(root))) return [];
   return issuesAt(jarlDir(root), loadProfile(root));
 }
-// The issues of the record held in `recordDir`, read under `profile`.
-function issuesAt(recordDir, profile) {
+// The issues of the record held in `recordDir`, read under `profile`: each one's text, and for the status, lease, merge
+// and CI the state the record's journal (`events`, read here when not handed in) says, which is what the commands wrote
+// beside it. What the header says is kept in issue.onFile.
+function issuesAt(recordDir, profile, events = loopEvents(recordDir, profile)) {
   const dir = join(recordDir, 'issues');
   if (!existsSync(dir)) return [];
+  const by = eventsById(events);
   return readdirSync(dir).filter((f) => ISSUE_FILE_RE.test(f)).sort((a, b) => cmpId(ISSUE_FILE_RE.exec(a)[1], ISSUE_FILE_RE.exec(b)[1]) || (a < b ? -1 : a > b ? 1 : 0))
-    .map((f) => withProfile(parseIssue(readText(join(dir, f)), join(dir, f)), profile));
+    .map((f) => {
+      const issue = withProfile(parseIssue(readText(join(dir, f)), join(dir, f)), profile);
+      return withRecordState(issue, issueState(profile, by.get(issue.id) || []));
+    });
+}
+// The header fields the commands render from the journal, as the fields of an issue name them.
+const RENDERED_FIELDS = ['branch', 'worker', 'model', 'since', 'merged', 'ci'];
+// An issue with the state its journal gives in place of the one its header says. The header as read stays in
+// issue.onFile (not enumerable, so a copy of the issue does not carry it): status and the fields above, each as the file
+// has it. An issue the journal holds no filing and no move of (state null) keeps its header, and onFile is null.
+function withRecordState(issue, state) {
+  const onFile = { status: issue.status, ...Object.fromEntries(RENDERED_FIELDS.map((k) => [k, issue.fields[k] ?? null])) };
+  Object.defineProperty(issue, 'onFile', { value: state ? onFile : null, enumerable: false, configurable: true });
+  if (!state) return issue;
+  issue.status = state.status;
+  issue.fields.status = state.status;
+  for (const k of RENDERED_FIELDS) {
+    if (state[k] !== null) issue.fields[k] = state[k];
+    else delete issue.fields[k];
+  }
+  return issue;
 }
 // An issue read under the loop's profile: one written with no Status starts where the profile's issues start.
 // Its acceptance is read under the profile's heading as under ## Acceptance, so every view that counts acceptance
@@ -2597,7 +2620,8 @@ export function issueState(profile, events) {
 export function readLoop(dir) {
   const root = basename(dir) === '.jarl' ? dirname(dir) : dir;
   const profile = profileAt(dir);
-  return makeLoop({ dir, root, profile, issues: issuesAt(dir, profile), events: loopEvents(dir, profile) });
+  const events = loopEvents(dir, profile);
+  return makeLoop({ dir, root, profile, issues: issuesAt(dir, profile, events), events });
 }
 function makeLoop({ dir, root, profile, issues, events }) {
   const loop = { dir, root, profile, issues, byId: new Map(issues.map((i) => [i.id, i])), events, eventsById: eventsById(events) };
