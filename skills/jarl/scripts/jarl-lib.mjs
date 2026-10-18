@@ -272,8 +272,12 @@ export const DEFAULT_LIFECYCLE = Object.freeze({ close: 'any', archive: 'any', c
 // The format of the record (the issue files, the log, the rulings) this Jarl reads and writes. A profile may state the
 // format it was written for; one this Jarl does not know is refused before anything else, so a vendored copy and an
 // installed Jarl that drifted apart stop loudly instead of half-reading each other's loop.
+// Format 1 is every loop up to 6.1.x; format 2 is raised, by raiseFormat, by the first write of an element a 6.1.x reader
+// would misread in silence (a repository name in Repo, an id of 1000 or more, a retraction line). A loop without a
+// profile, or with a profile that names no format, is format 1. Both are the contract jarl-record/1.
 export const RECORD_FORMAT = 1;
-export const RECORD_FORMATS = Object.freeze([1]);
+export const RECORD_FORMATS = Object.freeze([1, 2]);
+export const RECORD_FORMAT_RAISED = 2;
 // The done gate a loop runs on: the built-in one (approve: fresh — a live approve by someone other than the worker,
 // from a fresh reviewer when the issue carries code) and no merge required. A profile may ask for a landed merge
 // (requires-merged) and, only with it, give up the approve (approve: none): the merge gate that landed it is then the
@@ -305,7 +309,12 @@ export function validateProfile(json, where = 'the profile') {
   if (!isObj(json)) throw new Error(`${where} is not a JSON object`);
   // The record format first, and alone: a profile written for another format may mean anything by its other keys.
   if (json.format !== undefined && !RECORD_FORMATS.includes(json.format)) {
-    throw new Error(`${where} is written for record format ${JSON.stringify(json.format)}, and this Jarl reads format ${RECORD_FORMATS.join(', ')} — use the Jarl the loop was opened with (a vendored copy and the installed one must agree), or upgrade this one`);
+    throw new Error(`${where} is written for record format ${JSON.stringify(json.format)}, and this Jarl reads format ${RECORD_FORMATS.join(', ')} — nothing was read or written; use the Jarl the loop was opened with (a vendored copy and the installed one must agree), or upgrade this one`);
+  }
+  // The format marker: a profile that holds only jarl-profile and format changes nothing in how the loop behaves (the
+  // built-in profile, declared: false); it only says which format the record was written in.
+  if (Object.keys(json).length === 2 && json['jarl-profile'] === PROFILE_VERSION && json.format !== undefined) {
+    return makeProfile({ name: 'built-in', statuses: Object.entries(BUILTIN_STATUSES), initial: 'open', declared: false, format: json.format });
   }
   for (const k of Object.keys(json)) if (!PROFILE_KEYS.includes(k)) say(`unknown key "${k}" — a profile takes ${PROFILE_KEYS.join(', ')}`);
   if (json['jarl-profile'] !== PROFILE_VERSION) say(`"jarl-profile" must be ${PROFILE_VERSION} (the profile format this Jarl reads)`);
@@ -487,6 +496,23 @@ export function loadProfile(root) {
   const profile = validateProfile(json, path);
   PROFILES.set(path, { key, profile });
   return profile;
+}
+// Raises the loop to a record format (default: the one 6.2.0 adds), before the write that needs it and under the same
+// lock: .jarl/profile.json becomes the marker (jarl-profile and format only) when the loop has none, and a declared
+// profile gets its "format" key set. One function, called by every write of an element an older reader would misread
+// in silence; it never lowers the format, and it refuses a loop already in a format this Jarl does not read (loadProfile
+// throws). Returns true when it wrote.
+export function raiseFormat(root, to = RECORD_FORMAT_RAISED) {
+  need(RECORD_FORMATS.includes(to), `record format ${to} is not one this Jarl writes`);
+  if (!existsSync(jarlDir(root))) return false;
+  return withLock(root, () => {
+    if (loadProfile(root).format >= to) return false;
+    const path = profilePath(root);
+    const json = existsSync(path) ? JSON.parse(readText(path)) : { 'jarl-profile': PROFILE_VERSION };
+    json.format = to;
+    writeAtomic(path, `${JSON.stringify(json, null, 2)}\n`);
+    return true;
+  });
 }
 export function readProfileFile(file) {
   need(typeof file === 'string' && file.trim(), '--profile needs the path of a profile file');

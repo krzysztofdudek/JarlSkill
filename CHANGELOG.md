@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- A loop now records which format it was written in. When Jarl first writes something an older Jarl would read wrongly without saying so, it marks the loop first, and the older Jarl then refuses the loop with a clear message instead of misreading it. Loops that never need this stay as they are and keep working with older versions.
+
 ## [6.1.1] - 2026-10-13
 
 ### Fixed

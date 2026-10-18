@@ -216,9 +216,10 @@ test('resume stays fast on a loop of hundreds of issues naming another repositor
 });
 
 // The live loop of the family release, when this checkout sits beside it: resume and handoff read on a copy, with
-// its old handoff.md shown as history. Skipped anywhere else.
-const LIVE = process.env.JARL_LIVE_LOOP || join(fileURLToPath(new URL('.', import.meta.url)), '../../../../../Vision/core/toolset/release-6.1.0');
-test('a copy of a live loop from before resume: resume reads it, handoff read shows its handoff.md as history', { skip: !existsSync(join(LIVE, '.jarl', 'handoff.md')) && 'no live loop beside this checkout' }, () => {
+// its old handoff.md shown as history. The loop is named by JARL_LIVE_LOOP (the directory that holds its .jarl) and by
+// nothing else: unset, or pointing at a loop without a handoff.md, the test is skipped and says so.
+const LIVE = process.env.JARL_LIVE_LOOP || '';
+test('a copy of a live loop from before resume: resume reads it, handoff read shows its handoff.md as history', { skip: !(LIVE && existsSync(join(LIVE, '.jarl', 'handoff.md'))) && 'JARL_LIVE_LOOP is unset, or names no loop with a .jarl/handoff.md' }, () => {
   const copy = mkdtempSync(join(tmpdir(), 'jarl-live-'));
   cpSync(join(LIVE, '.jarl'), join(copy, '.jarl'), { recursive: true });
   const before = snapshot(copy);
@@ -230,4 +231,15 @@ test('a copy of a live loop from before resume: resume reads it, handoff read sh
   assert.match(h, /\n## Earlier handoff — history, written \S+ \S+, \S+ ago; not the current state\n\*\*At:\*\* /);
   assert.match(h, /\n### Summary\n/);
   assert.deepEqual(snapshot(copy), before, 'nothing written to the copy');
+});
+
+// A committed test names no path outside the repository: the tests sit four levels under its root, so five or more
+// climbs leave it. A loop a test needs from outside comes in through an environment variable.
+test('no committed test names a path outside the repository', () => {
+  const dir = fileURLToPath(new URL('.', import.meta.url));
+  const out = [];
+  for (const f of readdirSync(dir).filter((n) => n.endsWith('.mjs'))) {
+    readFileSync(join(dir, f), 'utf8').split('\n').forEach((line, i) => { if (/(\.\.\/){5}/.test(line)) out.push(`${f}:${i + 1}`); });
+  }
+  assert.deepEqual(out, []);
 });

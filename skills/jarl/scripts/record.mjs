@@ -59,7 +59,7 @@ export function evidenceRows(issue) { return L.evidenceRows(issue); }
 // A profile, as loadProfile, validateProfile, readProfileFile and DEFAULT_PROFILE give it, is contract in these fields:
 //   name, declared (false for the built-in one), initial, statuses (in order), kinds, kindDefault, tiers, tierDefault,
 //   fields (the extra header fields: [{ name, key, enum, default, required }]), sections (extra headings), acceptance
-//   (the acceptance heading, or null for "Acceptance"), format (the record format, 1), scheduler (the external
+//   (the acceptance heading, or null for "Acceptance"), format (the record format, 1 or 2: a loop without a marker is 1), scheduler (the external
 //   scheduler's command, or null), doneGate ({ approve: 'fresh'|'none', 'requires-merged': boolean }), lifecycle ({ close: 'any'|'record', archive:
 //   'any'|'record', command: string|null } — 'record' refuses jarl close / archive and their MCP tools), and the questions
 //   is(status, flag), with(flag), flagsOf(status), setBy(status) ('any' or 'record'), active(status),
