@@ -164,3 +164,13 @@ test('idsNamed counts only ids the loop holds: never a year, a date, a hash, a v
   assert.deepEqual(L.idsNamed('2026', held), ['2026'], 'a number that is an issue the loop holds still counts when it stands alone');
   assert.deepEqual(L.idsNamed('', held), []);
 });
+
+test('idsNamed reads a range of ids of any length whole, and a date still yields none', () => {
+  const held = new Map(['998', '999', '1000', '1001', '1002', '2026'].map((id) => [id, 1]));
+  assert.deepEqual(L.idsNamed('998-1002', held), ['998', '1002'], 'both ends of a range are ids; the ones between are not named');
+  assert.deepEqual(L.idsNamed('1000-1002', held), ['1000', '1002']);
+  assert.deepEqual(L.idsNamed('see 998-999, 1000-1001 and 2026-10-15', held), ['998', '999', '1000', '1001']);
+  assert.deepEqual(L.idsNamed('2026-10-15', held), []);
+  assert.deepEqual(L.idsNamed('2026-10-15 12:30', held), []);
+  assert.deepEqual(L.idsNamed('2026-10', held), []);
+});

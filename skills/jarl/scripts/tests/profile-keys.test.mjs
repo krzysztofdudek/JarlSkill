@@ -15,6 +15,8 @@ import { sh } from './portable.mjs';
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 const R = await import('../record.mjs');
 const CLI = await import('../jarl.mjs');
+// The id a filing reports, read with the shared id grammar (three digits or more).
+const FILED = new RegExp(`filed (${CLI.ID_SRC})`);
 
 function run(root, args) {
   const r = spawnSync(process.execPath, [SCRIPT, ...args, '--root', root], { encoding: 'utf8' });
@@ -143,7 +145,7 @@ test('set-by record: jarl set and the MCP tools cannot move an issue into it; a 
   jarl(root, 'set', '001', 'running', '--branch', 'jarl/001-a', '--worker', 'w1');
   assert.equal(R.findIssue(root, '001').status, 'running');
   // Filing is not a move: a new issue lands in a set-by-record initial status.
-  assert.equal(R.findIssue(root, jarl(root, 'new', 'another').match(/filed (\d{3})/)[1]).status, 'proposed');
+  assert.equal(R.findIssue(root, jarl(root, 'new', 'another').match(FILED)[1]).status, 'proposed');
 });
 
 // ---- done-gate ----

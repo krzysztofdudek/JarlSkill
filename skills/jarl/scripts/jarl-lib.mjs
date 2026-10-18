@@ -2110,7 +2110,7 @@ function spread(values) {
 // (6.2.0) are set aside first, and only a number that is an id the loop holds (`held`, a Set or Map of ids) counts, so a
 // year or a count never becomes an issue in a loop of thousands.
 export function idsNamed(text, held) {
-  const plain = String(text || '').replace(/\d{4}-\d{2}(?:-\d{2})?(?:[ T]\d{2}:\d{2})?/g, ' ').replace(/\d+(?:\.\d+)+/g, ' ');
+  const plain = String(text || '').replace(/(?<![0-9])\d{4}-(?:0[1-9]|1[0-2])(?:-(?:0[1-9]|[12]\d|3[01]))?(?:[ T]\d{2}:\d{2})?(?![0-9])/g, ' ').replace(/\d+(?:\.\d+)+/g, ' ');
   return [...plain.matchAll(new RegExp(`(?<![0-9A-Za-z])(${ID_SRC})(?![0-9A-Za-z])`, 'g'))].map((m) => padId(m[1])).filter((id) => held.has(id));
 }
 
