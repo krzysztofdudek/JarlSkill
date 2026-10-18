@@ -61,6 +61,19 @@ test('--with takes one value or several, and the same loop twice is read once', 
   assert.equal(L.cmdModels(a, { with: [b, b] }).loops.length, 2);
 });
 
+test('a root and its own .jarl/ passed together are one loop, and each model row says how many loops it comes from', () => {
+  const a = loop();
+  const b = loop();
+  units(a, 3, { model: MID });
+  units(b, 3, { model: MID });
+  const m = L.cmdModels(a, { with: [a, join(a, '.jarl'), b, join(b, '.jarl')] });
+  assert.equal(m.loops.length, 2);
+  assert.equal(m.workers.find((r) => r.model === MID).loops, 2);
+  assert.equal(m.reviewers.find((r) => r.model === null).loops, 2);
+  assert.match(L.renderModels(m), /\nmid-model \(?[^\n]*from 2 loops/);
+  assert.equal(L.cmdModels(a, {}).workers[0].loops, 1);
+});
+
 test('--archives reads the loop\'s own archives, and an archive directory can be named with --with', () => {
   const root = loop();
   units(root, 3, { model: MID });

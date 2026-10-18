@@ -2893,7 +2893,7 @@ function workerTable(unitRows, lines) {
     return {
       model: model === '' ? null : model, label: model === '' ? '(not recorded)' : model, tier: model === '' ? null : lines.placedTier(model),
       placed: model !== '' && lines.rank(model) >= 0, unplaced: model !== '' && lines.declared && lines.rank(model) < 0,
-      new: model !== '' && cells.every((c) => c.units < MODEL_MIN_N), cells,
+      new: model !== '' && cells.every((c) => c.units < MODEL_MIN_N), loops: new Set(rs.map((r) => r.loop)).size, cells,
     };
   }).sort(byLabel);
   return { rows, baselines: [...baseline.values()].sort((a, b) => a.key.localeCompare(b.key)).map((b) => ({ ...b, share: b.units >= MODEL_MIN_N ? share(b.clean, b.units) : null })) };
@@ -2912,7 +2912,7 @@ function reviewerTable(verdictRows) {
         word: model !== '' && lowChecked >= MODEL_MIN_N && lowMisses === 0 ? `may clear ${key}` : null,
       };
     }).sort((a, b) => a.key.localeCompare(b.key));
-    return { model: model === '' ? null : model, label: model === '' ? '(not recorded)' : model, cells };
+    return { model: model === '' ? null : model, label: model === '' ? '(not recorded)' : model, loops: new Set(rs.map((r) => r.loop)).size, cells };
   }).sort(byLabel);
 }
 
@@ -2938,7 +2938,9 @@ export function cmdModels(root, flags = {}) {
   }
   for (const p of [].concat(flags.with ?? [])) {
     need(typeof p === 'string' && p, '--with takes a loop: the directory holding .jarl/, or an archived loop under .jarl/archive/');
-    const path = resolve(p);
+    let path = resolve(p);
+    // A root's own .jarl/ is the same loop as the root.
+    if (basename(path) === '.jarl' && loopShape(dirname(path)) === 'root') path = dirname(path);
     const shape = loopShape(path);
     need(shape, `${p} is not a loop: it holds no .jarl/ with a log and issues, and is not an archived loop (an archive directory holds log.md and issues/) — nothing was read`);
     add(p, path, shape);
@@ -2966,7 +2968,7 @@ export function renderModels(m) {
   const pc = (s) => (s == null ? '' : ` (${Math.round(s * 100)}%)`);
   const workerLine = (c, lead) => `  ${lead}  units ${c.units} · clean first pass ${countOfN(c.clean, c.units)}${pc(c.share)} · changes ${c.changes} · rounds ${c.rounds} · red after approve ${c.redAfterApprove} · handed over ${c.handedOver} · rows before review ${countOfN(c.rowsBeforeReview, c.units)}${pc(c.rowsShare)} · follow-ups ${c.followUps}${c.endedBeforeReview ? ` · ended before any review ${c.endedBeforeReview} (not in the units)` : ''}${c.endedAfterReview ? ` · ended after a review without closing ${c.endedAfterReview} (not in the units)` : ''}${c.word ? ` · ${c.word}` : ''}${c.rollup ? ' (all kinds at that tier)' : ''}`;
   const reviewerLine = (c, lead) => `  ${lead}  verdicts ${c.verdicts} (changes ${c.changes}, approves ${c.approves}) · approves checked by a later reviewer of another model ${c.checked} of ${c.approves} · misses ${c.misses} · relayed ${c.relayed} · clearing approves on its own or a lower-ranked model ${c.clearingOwnOrLower}${c.word ? ` · ${c.word}` : ''}`;
-  const heading = (r) => `${r.label}${r.model == null ? '' : `${r.tier ? ` (${r.tier})` : ''}${r.unplaced ? ' [unplaced]' : ''}${r.new ? ' [new]' : ''}`}`;
+  const heading = (r) => `${r.label}${r.model == null ? '' : `${r.tier ? ` (${r.tier})` : ''}${r.unplaced ? ' [unplaced]' : ''}${r.new ? ' [new]' : ''}`}${r.loops > 1 ? ` · from ${r.loops} loops` : ''}`;
   const block = (t) => [
     '## As worker',
     ...(t.workers.length ? t.workers.flatMap((r) => [heading(r),...r.cells.map((c) => workerLine(c, r.model == null ? `(not recorded) · ${c.key}` : c.key))]) : ['(no unit of work yet)']),
