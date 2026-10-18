@@ -8,24 +8,17 @@ import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { oldJarl } from './old-jarl.mjs';
+import { jarl, loop as makeLoop } from './helpers.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 const L = await import(new URL('../jarl-lib.mjs', import.meta.url).href);
 
-function jarl(root, ...args) {
-  return execFileSync(process.execPath, [SCRIPT, ...args, '--root', root], { encoding: 'utf8' }).trim();
-}
 const three = (tag) => `${tag} line one\n${tag} line two\n${tag} line three`;
 const lines = (tag) => three(tag).split('\n');
 const has = (text, tag) => lines(tag).every((l) => text.includes(l));
 const read = (root, name) => readFileSync(join(root, '.jarl', name), 'utf8');
 
-function loop() {
-  const root = mkdtempSync(join(tmpdir(), 'jarl-testimony-'));
-  mkdirSync(join(root, '.git'));
-  jarl(root, 'init', three('goal'));
-  return root;
-}
+const loop = () => makeLoop({ prefix: 'jarl-testimony-', goal: three('goal'), via: 'cli' });
 
 test('three lines through every command that writes text: whole in the issue, the question and the ruling, and one line in the log', () => {
   const root = loop();

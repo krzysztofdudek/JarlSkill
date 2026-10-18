@@ -13,30 +13,23 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import * as R from '../record.mjs';
 import { oldJarl } from './old-jarl.mjs';
+import { spawnJarl, jarl, refuses, loop as makeLoop } from './helpers.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 const L = await import('../jarl-lib.mjs');
 
-const run = (root, ...args) => spawnSync(process.execPath, [SCRIPT, ...args, '--root', root], { encoding: 'utf8', timeout: 60_000 });
-function jarl(root, ...args) {
-  const r = run(root, ...args);
-  if (r.status !== 0) throw new Error(`jarl ${args.join(' ')} failed: ${r.stderr}`);
-  return r.stdout.trim();
-}
-const refuses = (root, ...args) => { const r = run(root, ...args); assert.notEqual(r.status, 0, `jarl ${args.join(' ')} should refuse`); return r.stderr; };
+const run = (root, ...args) => spawnJarl(root, args);
 const json = (root, ...args) => JSON.parse(jarl(root, ...args, '--json'));
 const log = (root) => readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
 const issueText = (root, id) => { const dir = join(root, '.jarl', 'issues'); return readFileSync(join(dir, readdirSync(dir).find((f) => f.startsWith(`${String(id).padStart(3, '0')}-`))), 'utf8'); };
 const git = (cwd, ...args) => spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { cwd, encoding: 'utf8', timeout: 60_000 });
 
 // A loop of one repository (the loop's own), with `n` issues filed.
-function loop(n = 0, goal = 'goal') {
-  const root = mkdtempSync(join(tmpdir(), 'jarl-mcheck-'));
-  mkdirSync(join(root, '.git'));
-  jarl(root, 'init', goal);
+const loop = (n = 0, goal = 'goal') => {
+  const root = makeLoop({ prefix: 'jarl-mcheck-', goal, via: 'cli' });
   for (let k = 1; k <= n; k += 1) jarl(root, 'new', `issue ${k}`, '--acceptance', 'it works');
   return root;
-}
+};
 // A loop of two repositories side by side: `app` (the loop's own) and `lib`; the issues named in `inLib` live in lib.
 function twoRepos(n, inLib) {
   const parent = mkdtempSync(join(tmpdir(), 'jarl-mcheck-two-'));

@@ -9,6 +9,7 @@ import { join, basename } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { sh } from './portable.mjs';
+import { run, refuses } from './helpers.mjs';
 import { FINDINGS } from './findings.mjs';
 import { fileURLToPath } from 'node:url';
 import { reviewerKind, coordinatorNames, BASE_COORDINATORS, ID_SRC } from '../jarl.mjs';
@@ -18,26 +19,18 @@ const FILED = new RegExp(`filed (${ID_SRC})`);
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 
-function run(root, args) {
-  const r = spawnSync(process.execPath, [SCRIPT, ...args, '--root', root], { encoding: 'utf8' });
-  return { status: r.status, stdout: r.stdout.trim(), stderr: r.stderr.trim() };
-}
-function jarl(root, ...args) {
+// A call that succeeded, as the whole result (the tests read its stdout and stderr).
+const jarl = (root, ...args) => {
   const r = run(root, args);
   if (r.status !== 0) throw new Error(`jarl ${args.join(' ')} failed: ${r.stderr}`);
   return r;
-}
-function refuses(root, ...args) {
-  const r = run(root, args);
-  assert.notEqual(r.status, 0, `expected a refusal: ${args.join(' ')}`);
-  return r.stderr;
-}
-function loop() {
+};
+const loop = () => {
   const dir = mkdtempSync(join(tmpdir(), 'jarl-fresh-'));
   sh(dir, 'git init -q -b feature && git config user.email t@t && git config user.name t && git config core.excludesFile /dev/null && echo 1 > a.mjs && git add -A && git commit -qm base');
   jarl(dir, 'init', 'goal');
   return dir;
-}
+};
 // An in-progress issue on a branch, worked by w1, with one evidence row — ready for done but for its review.
 function codeIssue(root, title = 'code') {
   const id = FILED.exec(jarl(root, 'new', title, '--files', 'a.mjs').stdout)[1];

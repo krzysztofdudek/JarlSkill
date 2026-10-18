@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url';
 
 import { sh } from './portable.mjs';
 import { FINDINGS } from './findings.mjs';
+import { run, jarl, refuses } from './helpers.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 const R = await import('../record.mjs');
@@ -19,21 +20,7 @@ const CLI = await import('../jarl.mjs');
 // The id a filing reports, read with the shared id grammar (three digits or more).
 const FILED = new RegExp(`filed (${CLI.ID_SRC})`);
 
-function run(root, args) {
-  const r = spawnSync(process.execPath, [SCRIPT, ...args, '--root', root], { encoding: 'utf8' });
-  return { status: r.status, stdout: r.stdout.trim(), stderr: r.stderr.trim() };
-}
-function jarl(root, ...args) {
-  const r = run(root, args);
-  if (r.status !== 0) throw new Error(`jarl ${args.join(' ')} failed: ${r.stderr}`);
-  return r.stdout;
-}
 const json = (root, ...args) => JSON.parse(jarl(root, ...args, '--json'));
-function refuses(root, ...args) {
-  const r = run(root, args);
-  assert.notEqual(r.status, 0, `expected a refusal: ${args.join(' ')}`);
-  return r.stderr;
-}
 function file(obj) {
   const f = join(mkdtempSync(join(tmpdir(), 'jarl-keys-file-')), 'profile.json');
   writeFileSync(f, typeof obj === 'string' ? obj : JSON.stringify(obj, null, 2));

@@ -9,28 +9,11 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { FINDINGS } from './findings.mjs';
 import { oldJarl } from './old-jarl.mjs';
+import { run, jarl, refuses, loop as makeLoop } from './helpers.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 
-function run(root, args) {
-  const r = spawnSync(process.execPath, [SCRIPT, ...args, '--root', root], { encoding: 'utf8' });
-  return { status: r.status, stdout: r.stdout.trim(), stderr: r.stderr.trim() };
-}
-function jarl(root, ...args) {
-  const r = run(root, args);
-  if (r.status !== 0) throw new Error(`jarl ${args.join(' ')} failed: ${r.stderr}`);
-  return r.stdout;
-}
-function refuses(root, ...args) {
-  const r = run(root, args);
-  assert.notEqual(r.status, 0, `expected a refusal: ${args.join(' ')}`);
-  return r.stderr;
-}
-function loop() {
-  const dir = mkdtempSync(join(tmpdir(), 'jarl-views-'));
-  jarl(dir, 'init', 'goal');
-  return dir;
-}
+const loop = () => makeLoop({ prefix: 'jarl-views-', via: 'cli', dotGit: false });
 
 // ---- 249: next lists the ready set, groups behind --all -----------------------------------------------
 

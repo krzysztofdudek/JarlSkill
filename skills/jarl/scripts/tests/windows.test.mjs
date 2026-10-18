@@ -9,9 +9,10 @@ import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { readText, renameRetry, RENAME_RETRY_MS } from '../jarl.mjs';
+import { spawnJarl } from './helpers.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
-const run = (root, ...args) => spawnSync(process.execPath, [SCRIPT, ...args, '--root', root], { encoding: 'utf8' });
+const run = (root, ...args) => spawnJarl(root, args);
 
 test('readText gives LF whatever the file holds', () => {
   const f = join(mkdtempSync(join(tmpdir(), 'jarl-crlf-')), 'x.md');

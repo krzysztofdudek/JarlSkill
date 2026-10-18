@@ -12,6 +12,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { sh } from './portable.mjs';
+import { run, jarl } from './helpers.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 const R = await import('../record.mjs');
@@ -19,20 +20,12 @@ const L = await import('../jarl-lib.mjs');
 const CLI = await import('../jarl.mjs');
 const MCP = await import('../jarl-mcp.mjs');
 
-function run(root, args) {
-  const r = spawnSync(process.execPath, [SCRIPT, ...args, '--root', root], { encoding: 'utf8' });
-  return { status: r.status, stdout: r.stdout.trim(), stderr: r.stderr.trim() };
-}
-function jarl(root, ...args) {
-  const r = run(root, args);
-  if (r.status !== 0) throw new Error(`jarl ${args.join(' ')} failed: ${r.stderr}`);
-  return r.stdout;
-}
-function refuses(root, ...args) {
+// A refusal here is the command line's own, exit status 1.
+const refuses = (root, ...args) => {
   const r = run(root, args);
   assert.equal(r.status, 1, `expected a refusal: ${args.join(' ')}`);
   return r.stderr;
-}
+};
 const reason = (fn) => { try { fn(); } catch (e) { return e.message; } throw new Error('expected a refusal'); };
 function file(obj) {
   const f = join(mkdtempSync(join(tmpdir(), 'jarl-life-file-')), 'profile.json');

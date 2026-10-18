@@ -9,23 +9,12 @@ import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { oldJarl } from './old-jarl.mjs';
+import { jarl, refuses, loop as makeLoop } from './helpers.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 const L = await import('../jarl-lib.mjs');
 
-function jarl(root, ...args) {
-  return execFileSync(process.execPath, [SCRIPT, ...args, '--root', root], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-}
-function refuses(root, ...args) {
-  try { jarl(root, ...args); } catch (e) { return String(e.stderr); }
-  throw new Error(`expected a refusal: ${args.join(' ')}`);
-}
-function loop() {
-  const root = mkdtempSync(join(tmpdir(), 'jarl-retract-'));
-  mkdirSync(join(root, '.git'));
-  jarl(root, 'init', 'a goal');
-  return root;
-}
+const loop = () => makeLoop({ prefix: 'jarl-retract-', goal: 'a goal', via: 'cli' });
 // An issue in progress on a branch (a code issue), filed under id 001 unless others exist.
 function started(root, title = 'thing to do') {
   const id = JSON.parse(jarl(root, 'new', title, '--acceptance', 'it works', '--json')).id;

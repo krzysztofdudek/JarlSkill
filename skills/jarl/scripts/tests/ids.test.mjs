@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { sh } from './portable.mjs';
+import { jarl, refuses } from './helpers.mjs';
 import { oldJarl } from './old-jarl.mjs';
 import { FINDINGS } from './findings.mjs';
 
@@ -16,13 +17,6 @@ const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 const L = await import('../jarl-lib.mjs');
 const mcp = await import('../jarl-mcp.mjs');
 
-function jarl(root, ...args) {
-  return execFileSync(process.execPath, [SCRIPT, ...args, '--root', root], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-}
-function refuses(root, ...args) {
-  try { jarl(root, ...args); } catch (e) { return String(e.stderr); }
-  throw new Error('expected a refusal');
-}
 const tool = (root, name, input = {}) => mcp.callTool(name, { root, ...input }).content[0].text;
 const markerPath = (root) => join(root, '.jarl', 'profile.json');
 const formatOf = (root) => (existsSync(markerPath(root)) ? JSON.parse(readFileSync(markerPath(root), 'utf8')).format : 1);

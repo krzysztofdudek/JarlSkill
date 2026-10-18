@@ -10,6 +10,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { run as runJarl } from './helpers.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 
@@ -39,22 +40,20 @@ console.log('Timestamp: 2026-09-27T10:00:0' + (readFileSync(${JSON.stringify(joi
   return { bin, calls: () => (existsSync(join(dir, 'calls.jsonl')) ? readFileSync(join(dir, 'calls.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l)) : []) };
 }
 
-function loop({ graph = false, permanent = false } = {}) {
+const loop = ({ graph = false, permanent = false } = {}) => {
   const root = mkdtempSync(join(tmpdir(), 'jarl-ratify-'));
   mkdirSync(join(root, '.git'));
   if (graph) mkdirSync(join(root, '.yggdrasil'));
   jarl(root, {}, 'init', 'goal', ...(permanent ? ['--permanent'] : []));
   return root;
-}
-function run(root, env, args) {
-  const r = spawnSync(process.execPath, [SCRIPT, ...args, '--root', root], { encoding: 'utf8', env: { ...process.env, JARL_YG: '', ...env } });
-  return { status: r.status, stdout: r.stdout.trim(), stderr: r.stderr.trim() };
-}
-function jarl(root, env, ...args) {
+};
+// A call with an environment of its own (no Yggdrasil unless the test names one): the shared run, with JARL_YG empty.
+const run = (root, env, args) => runJarl(root, args, { env: { JARL_YG: '', ...env } });
+const jarl = (root, env, ...args) => {
   const r = run(root, env, args);
   if (r.status !== 0) throw new Error(`jarl ${args.join(' ')} failed: ${r.stderr}`);
   return r.stdout;
-}
+};
 const json = (root, env, ...args) => JSON.parse(jarl(root, env, ...args, '--json'));
 const decisions = (root) => readFileSync(join(root, '.jarl', 'decisions.md'), 'utf8');
 

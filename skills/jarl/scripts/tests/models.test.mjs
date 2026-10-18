@@ -11,6 +11,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import * as R from '../record.mjs';
 import { OLD_JARL_FILE, oldJarlIsPinned, oldJarl } from './old-jarl.mjs';
+import { spawnJarl, loop as makeLoop } from './helpers.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 const L = await import('../jarl-lib.mjs');
@@ -22,16 +23,14 @@ const MID = 'mid-model';
 const SMALL = 'small-model';
 const LINES = `\nModel (strong): ${BIG}\nModel (standard): ${MID}, mid-other\nModel (light): ${SMALL}\n`;
 
-function loop({ lines = false } = {}) {
-  const root = mkdtempSync(join(tmpdir(), 'jarl-models-'));
-  mkdirSync(join(root, '.git'));
-  R.initLoop(root, 'a goal');
+const loop = ({ lines = false } = {}) => {
+  const root = makeLoop({ prefix: 'jarl-models-', goal: 'a goal' });
   if (lines) appendFileSync(join(root, '.jarl', 'goal.md'), LINES);
   return root;
-}
+};
 const log = (root) => readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
 const issueText = (root, id) => readFileSync(L.findIssue(root, id).file, 'utf8');
-const cli = (root, ...args) => spawnSync(process.execPath, [SCRIPT, ...args, '--root', root], { encoding: 'utf8', timeout: 60_000 });
+const cli = (root, ...args) => spawnJarl(root, args);
 
 let seq = 0;
 // One finished unit of work: filed, leased with a model, one evidence row, `changes` reviews, an approve, done.

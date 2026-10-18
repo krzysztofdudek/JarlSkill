@@ -5,6 +5,7 @@ import { join, basename } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { sh, NO_EXCLUDES } from './portable.mjs';
+import { jarl, refuses, gitRepo } from './helpers.mjs';
 import { fileURLToPath } from 'node:url';
 import { FINDINGS } from './findings.mjs';
 
@@ -15,13 +16,6 @@ function repo() {
   const dir = mkdtempSync(join(tmpdir(), 'jarl-'));
   mkdirSync(join(dir, '.git'));
   return dir;
-}
-function jarl(root, ...args) {
-  return execFileSync(process.execPath, [SCRIPT, ...args, '--root', root], { encoding: 'utf8' }).trim();
-}
-function refuses(root, ...args) {
-  try { jarl(root, ...args); } catch (e) { return String(e.stderr); }
-  throw new Error('expected a refusal');
 }
 
 test('init, new, list, show', () => {
@@ -485,16 +479,7 @@ test('repeated --ran/--saw in one call produce one row per pair, not a comma-joi
   assert.match(refuses(root, 'evidence', '001', '--ran', '--saw', 'x'), /needs both --ran/);
 });
 
-// A real repository, not the fake .git directory repo() makes: these tests ask git itself what it sees.
-function gitRepo() {
-  const dir = mkdtempSync(join(tmpdir(), 'jarl-git-'));
-  const g = (...a) => execFileSync('git', a, { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-  g('init', '-q', '-b', 'feature');
-  g('config', 'user.email', 't@t'); g('config', 'user.name', 't');
-  g('config', 'core.excludesFile', NO_EXCLUDES);
-  sh(dir, `echo a > a.txt && git add -A && git commit -qm base`);
-  return { dir, g };
-}
+// A real repository, not the fake .git directory repo() makes (gitRepo of the helpers): these tests ask git itself what it sees.
 
 test('init keeps the loop out of git by default: .jarl/.gitignore holds exactly * and **/*', () => {
   const { dir: root, g } = gitRepo();

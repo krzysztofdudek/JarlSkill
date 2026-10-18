@@ -7,12 +7,10 @@ import { join } from 'node:path';
 
 process.env.JARL_LOCK_WAIT_MS = '300';
 const R = await import('../record.mjs');
+// After the knob above is set: the library reads it when it loads.
+const { loop: makeLoop } = await import('./helpers.mjs');
 
-function loop(name) {
-  const root = mkdtempSync(join(tmpdir(), `jarl-lock-${name}-`));
-  R.initLoop(root, `loop ${name}`);
-  return root;
-}
+const loop = (name) => makeLoop({ prefix: `jarl-lock-${name}-`, goal: `loop ${name}`, dotGit: false });
 // A lock held by another process that is alive on this host: the parent of this test process.
 function heldElsewhere(root) {
   writeFileSync(join(R.jarlDir(root), '.lock'), `${process.ppid} ${hostname()} ${new Date().toISOString()}\n`);

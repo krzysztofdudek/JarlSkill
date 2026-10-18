@@ -10,24 +10,16 @@ import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { oldJarl, oldJarlIsPinned } from './old-jarl.mjs';
+import { jarl, refuses, loop as makeLoop } from './helpers.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 const L = await import('../jarl-lib.mjs');
 
-function loop() {
-  const dir = mkdtempSync(join(tmpdir(), 'jarl-format-'));
-  mkdirSync(join(dir, '.git'));
-  jarl(dir, 'init', 'a goal');
+const loop = () => {
+  const dir = makeLoop({ prefix: 'jarl-format-', goal: 'a goal', via: 'cli' });
   jarl(dir, 'new', 'first issue', '--acceptance', 'it works');
   return dir;
-}
-function jarl(root, ...args) {
-  return execFileSync(process.execPath, [SCRIPT, ...args, '--root', root], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-}
-function refuses(root, ...args) {
-  try { jarl(root, ...args); } catch (e) { return String(e.stderr); }
-  throw new Error('expected a refusal');
-}
+};
 const marker = (root) => join(root, '.jarl', 'profile.json');
 const read = (root) => JSON.parse(readFileSync(marker(root), 'utf8'));
 

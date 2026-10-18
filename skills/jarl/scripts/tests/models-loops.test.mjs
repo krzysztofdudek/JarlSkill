@@ -9,17 +9,13 @@ import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import * as R from '../record.mjs';
+import { loop as makeLoop } from './helpers.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 const L = await import('../jarl-lib.mjs');
 const MID = 'mid-model';
 
-function loop() {
-  const root = mkdtempSync(join(tmpdir(), 'jarl-models-loops-'));
-  mkdirSync(join(root, '.git'));
-  R.initLoop(root, 'a goal');
-  return root;
-}
+const loop = () => makeLoop({ prefix: 'jarl-models-loops-', goal: 'a goal' });
 let seq = 0;
 function units(root, n, { model, changed = 0 } = {}) {
   for (let k = 0; k < n; k += 1) {

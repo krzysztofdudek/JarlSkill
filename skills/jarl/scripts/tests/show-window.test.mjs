@@ -7,19 +7,12 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { jarl, loop as makeLoop } from './helpers.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 const L = await import('../jarl-lib.mjs');
 
-function jarl(root, ...args) {
-  return execFileSync(process.execPath, [SCRIPT, ...args, '--root', root], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-}
-function loop() {
-  const root = mkdtempSync(join(tmpdir(), 'jarl-show-'));
-  mkdirSync(join(root, '.git'));
-  jarl(root, 'init', 'a goal');
-  return root;
-}
+const loop = () => makeLoop({ prefix: 'jarl-show-', goal: 'a goal', via: 'cli' });
 function started(root, title = 'thing to do') {
   const id = JSON.parse(jarl(root, 'new', title, '--acceptance', 'it works', '--json')).id;
   jarl(root, 'set', id, 'in-progress', '--worker', 'w-one', '--branch', `jarl/${id}-x`);

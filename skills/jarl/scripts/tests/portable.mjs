@@ -27,7 +27,7 @@ export const slashed = (script) => (process.platform === 'win32'
   ? script.replace(/\b[A-Za-z]:\\[^\s'"`;&|<>]*/g, (p) => p.replace(/\\/g, '/')).replace(/core\.excludesFile \/dev\/null/g, `core.excludesFile ${NO_EXCLUDES}`)
   : script);
 export function sh(cwd, script) {
-  return execFileSync(bashBin(), ['-c', slashed(script)], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  return execFileSync(bashBin(), ['-c', slashed(script)], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 120_000 }).trim();
 }
 
 export function ghStub(dir, runs = [{ conclusion: 'success', status: 'completed', databaseId: 7, workflowName: 'CI' }]) {

@@ -7,31 +7,14 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { sh, ghStub } from './portable.mjs';
+import { run as runJarl, jarl, refuses, loop as makeLoop } from './helpers.mjs';
 import { fileURLToPath } from 'node:url';
 import { FINDINGS } from './findings.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 
-function run(root, args, env = {}) {
-  const r = spawnSync(process.execPath, [SCRIPT, ...args, '--root', root], { encoding: 'utf8', env: { ...process.env, ...env } });
-  return { status: r.status, stdout: r.stdout.trim(), stderr: r.stderr.trim() };
-}
-function jarl(root, ...args) {
-  const r = run(root, args);
-  if (r.status !== 0) throw new Error(`jarl ${args.join(' ')} failed: ${r.stderr}`);
-  return r.stdout;
-}
-function refuses(root, ...args) {
-  const r = run(root, args);
-  assert.notEqual(r.status, 0, `expected a refusal: ${args.join(' ')}`);
-  return r.stderr;
-}
-function loop() {
-  const dir = mkdtempSync(join(tmpdir(), 'jarl-gate-'));
-  mkdirSync(join(dir, '.git'));
-  jarl(dir, 'init', 'goal');
-  return dir;
-}
+const run = (root, args, env = {}) => runJarl(root, args, { env });
+const loop = () => makeLoop({ prefix: 'jarl-gate-', via: 'cli' });
 function reposBeside(...names) {
   const parent = mkdtempSync(join(tmpdir(), 'jarl-multi-'));
   const dirs = {};
