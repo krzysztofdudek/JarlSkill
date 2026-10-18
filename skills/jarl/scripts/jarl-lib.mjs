@@ -818,7 +818,20 @@ export function appendLog(root, event) {
 // Several lines in one write: a bulk command's lines land together or not at all.
 export function appendLogLines(root, events) {
   const at = stamp();
-  appendAtomic(join(jarlDir(root), 'log.md'), '# Log\n\n', events.map((e) => `- ${at} · ${e}\n`).join(''));
+  appendAtomic(join(jarlDir(root), 'log.md'), '# Log\n\n', events.map((e) => `- ${at} · ${oneLine(e)}\n`).join(''));
+}
+
+// The log is one event per line: a text with line breaks never reaches it raw. A command that keeps the whole text
+// elsewhere writes its first line and a pointer (firstLine); any other text that gets here has its lines joined by
+// " ⏎ ", so nothing is cut.
+function oneLine(event) {
+  return String(event).replace(/\r\n?/g, '\n').trim().split('\n').map((l) => l.trim()).filter(Boolean).join(' ⏎ ');
+}
+// The first line of a text, and when there are more, how many and where the whole is kept.
+export function firstLine(text, where) {
+  const lines = String(text).replace(/\r\n?/g, '\n').trim().split('\n');
+  const first = lines[0].trim();
+  return lines.length > 1 ? `${first} (+${lines.length - 1} more lines, whole text in ${where})` : first;
 }
 
 // A ruling's slug names it for good: letters, digits, and . _ - inside, at most 80 characters. It is compared
@@ -1099,6 +1112,8 @@ function highestAcrossWorktrees(root) {
 
 export function cmdNew(root, title, rawFlags) {
   need(title, 'new requires "<title>"');
+  // A title is the heading line of the issue: line breaks in it become spaces, so the lines after the first are not lost to the heading.
+  if (/[\r\n]/.test(title)) title = String(title).split(/\r\n?|\n/).map((l) => l.trim()).filter(Boolean).join(' ');
   needLiveLoop(root, ' — run: jarl.mjs init "<goal>"');
   // A linked worktree of a committed loop holds only the copy it was cut with, so a number taken there may already be used
   // in the main checkout: file from the main checkout.
@@ -1626,12 +1641,14 @@ export function cmdEvidence(root, rawIds, text, flags) {
     need(text, 'evidence requires "<what was run and what it printed>", or --ran "<command>" --saw "<what it printed>"');
   }
   const issues = issuesFor(root, rawIds);
-  const added = rows ? rows.map((r) => `- **ran:** ${r.ran} · **saw:** ${r.saw}`).join('\n') : text;
+  // A row is one list item: the lines of a multi-line command or output after the first are indented under it.
+  const indented = (v) => String(v).replace(/\r\n?/g, '\n').trim().split('\n').join('\n  ');
+  const added = rows ? rows.map((r) => `- **ran:** ${indented(r.ran)} · **saw:** ${indented(r.saw)}`).join('\n') : text;
   for (const issue of issues) {
     const current = (issue.sections.evidence || '').trim();
     writeAtomic(issue.file, setSection(readText(issue.file), 'Evidence', current ? `${current}${rows ? '\n' : '\n\n'}${added}` : added));
   }
-  appendLogLines(root, issues.flatMap((issue) => (rows ? rows.map((r) => `${issue.id} evidence row · ${r.ran}`) : [`${issue.id} evidence · ${text.split('\n')[0]}`])));
+  appendLogLines(root, issues.flatMap((issue) => (rows ? rows.map((r) => `${issue.id} evidence row · ${firstLine(r.ran, "the issue's Evidence section")}`) : [`${issue.id} evidence · ${firstLine(text, "the issue's Evidence section")}`])));
   return oneOrMany(rawIds, issues.map((issue) => (rows ? { id: issue.id, rows } : { id: issue.id })));
 }
 
@@ -2310,7 +2327,16 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
     need(verdict !== 'approve' || kind !== 'self', `${issue.id}: an approve by ${by} is a self-approve${who ? ` (${who})` : ''} and does not count as review — a fresh reviewer, or the jarl, reads the diff${issues.length > 1 ? ' — nothing was written' : ''}`);
     return kind;
   });
-  appendLogLines(root, issues.map((issue, n) => `${issue.id} review ${verdict} · ${by ? `by ${by} (${kinds[n]}) · ` : ''}${findings.split('\n')[0]}`));
+  // The whole findings go under the issue's ## Reviews (before Evidence, which stays last); the log keeps the verdict
+  // line the gate reads, the first line of the findings and a pointer.
+  const day = stamp().slice(0, 10);
+  for (const [n, issue] of issues.entries()) {
+    const text = readText(issue.file);
+    const current = (parseIssue(text, issue.file).sections.reviews || '').trim();
+    const entry = `- **${verdict}** · ${by ? `by ${by} (${kinds[n]}) · ` : ''}${day}\n${bodyText(findings).split('\n').map((l) => (l ? `  ${l}` : '')).join('\n')}`;
+    writeAtomic(issue.file, setSection(text, 'Reviews', current ? `${current}\n${entry}` : entry));
+  }
+  appendLogLines(root, issues.map((issue, n) => `${issue.id} review ${verdict} · ${by ? `by ${by} (${kinds[n]}) · ` : ''}${firstLine(findings, "the issue's Reviews section")}`));
   // Recorded, never refused: a coordinator's approve on a code issue is a fact of the record, but it does not clear
   // the issue for done or the merge queue — the output says so at once.
   const noteOf = (issue, n) => (verdict === 'approve' && kinds[n] === 'coordinator' && carriesCode(issue) ? { note: `${issue.id} carries code and ${by} is a coordinator — the fresh-review rule: this approve is recorded but does not clear it for done or the merge queue; a fresh reviewer's approve does` } : {});
@@ -2916,8 +2942,18 @@ const ASK_RE = new RegExp(`^- \\*\\*a-(${ID_SRC})\\*\\* \\((open|answered)\\)(?:
 export function loadAsks(root) {
   const path = asksPath(root);
   if (!existsSync(path)) return [];
-  return readText(path).split('\n').map((l) => ASK_RE.exec(l)).filter(Boolean)
-    .map((m) => ({ id: m[1], state: m[2], kind: m[3] || null, target: m[4] || null, issue: m[5] || null, ...(m[6] ? { ruling: m[6] } : {}), question: m[7] }));
+  // A question of several lines is the item line and its next lines indented by two spaces (blank ones are two spaces
+  // alone); an older reader sees the item line only, which still reads as a question.
+  const out = [];
+  let last = null;
+  for (const line of readText(path).split('\n')) {
+    const m = ASK_RE.exec(line);
+    if (m) { last = { id: m[1], state: m[2], kind: m[3] || null, target: m[4] || null, issue: m[5] || null, ...(m[6] ? { ruling: m[6] } : {}), question: m[7] }; out.push(last); continue; }
+    if (last && line.startsWith('  ')) last.question += `\n${line.slice(2)}`;
+    else last = null;
+  }
+  for (const a of out) a.question = a.question.replace(/\s+$/, '');
+  return out;
 }
 
 export function cmdAsk(root, question, flags) {
@@ -2943,9 +2979,10 @@ export function cmdAsk(root, question, flags) {
     need(!loadAsks(root).some((x) => x.ruling === d.slug), `${flags.ruling} has been put to ratification already`);
   }
   const ruling = kind === 'ratify' && flags.ruling ? ` · ruling ${flags.ruling}` : '';
-  appendAtomic(path, '# Questions to the user\n\n', `- **a-${id}** (open) · ${kind}${target}${flags.issue ? ` · issue ${padId(flags.issue)}` : ''}${ruling} · ${question}\n`);
-  appendLog(root, `asked a-${id} (${kind}) · ${question}`);
-  return { id, question, kind };
+  const asked = String(question).replace(/\r\n?/g, '\n').trim().split('\n');
+  appendAtomic(path, '# Questions to the user\n\n', `- **a-${id}** (open) · ${kind}${target}${flags.issue ? ` · issue ${padId(flags.issue)}` : ''}${ruling} · ${asked[0]}\n${asked.slice(1).map((l) => `  ${l}\n`).join('')}`);
+  appendLog(root, `asked a-${id} (${kind}) · ${firstLine(question, 'asks.md')}`);
+  return { id, question: asked.join('\n'), kind };
 }
 
 // The one word that answers a ratification: the first word of the answer, without case or trailing punctuation.
@@ -2982,11 +3019,13 @@ export function cmdAnswer(root, rawId, answer, flags = {}) {
   need(!ask.ruling || ruling, `a-${id} ratifies ruling ${ask.ruling}, which is no longer in decisions.md`);
   appendDecision(root, `ask-${id}`, `**Question:** ${ask.question}\n**Answer:** ${answer}`, { by: by || 'owner' });
   const path = asksPath(root);
-  writeAtomic(path, readText(path).replace(`- **a-${id}** (open)`, `- **a-${id}** (answered)`));
-  appendLog(root, `answered a-${id} · ${answer.split('\n')[0]}`);
-  // The issue the question was about carries the answer too, so reading the issue is enough.
+  // The item line only: a continuation line of an earlier question is never the one marked.
+  writeAtomic(path, readText(path).split('\n').map((l) => (l.startsWith(`- **a-${id}** (open)`) ? l.replace('(open)', '(answered)') : l)).join('\n'));
+  appendLog(root, `answered a-${id} · ${firstLine(answer, `decisions.md, ruling ask-${id}`)}`);
+  // The issue the question was about carries the answer too, so reading the issue is enough: its first line and, when
+  // there is more, a pointer to the whole ruling.
   const issue = ask.issue ? findIssue(root, ask.issue) : null;
-  if (issue) appendRuling(root, [issue], `Ruling ask-${id}${ask.kind ? ` (${ask.kind})` : ''}: ${answer.split('\n')[0]}`);
+  if (issue) appendRuling(root, [issue], `Ruling ask-${id}${ask.kind ? ` (${ask.kind})` : ''}: ${firstLine(answer, `decisions.md, ruling ask-${id}`)}`);
   const out = { id, answer, ...(issue ? { issue: issue.id } : {}) };
   if (ruling) Object.assign(out, ratify(root, ruling, rulings, verdict, id, by));
   return out;
@@ -3066,7 +3105,7 @@ export function cmdDecide(root, slug, ruling, flags = {}) {
   const rule = flags.rule !== undefined ? String(flags.rule) : null;
   appendDecision(root, slug, settles.length ? `${ruling.trim()}\n\n**Settles:** ${settles.map((i) => i.id).join(', ')}` : ruling, { by, supersedes: flags.supersedes, area, reach, rule });
   appendLog(root, `decided ${slug} · by ${by}${flags.supersedes !== undefined ? ` · supersedes ${flags.supersedes}` : ''}${area ? ` · area ${area}${reach !== null ? ` (${reach} files)` : ''}${rule ? ` · rule ${rule}` : ''}` : ''}`);
-  if (settles.length) appendRuling(root, settles, `Ruling ${slug}: ${ruling.trim().split('\n')[0]}`);
+  if (settles.length) appendRuling(root, settles, `Ruling ${slug}: ${firstLine(ruling, `decisions.md, ruling ${slug}`)}`);
   return { slug, by, supersedes: flags.supersedes ?? null, settles: settles.map((i) => i.id), ...(area ? { area, reach, ...(rule ? { rule } : {}) } : {}) };
 }
 
