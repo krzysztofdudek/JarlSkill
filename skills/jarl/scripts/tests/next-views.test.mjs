@@ -2,12 +2,13 @@
 // derived facts on in-flight rows (283), status --tag (281) and exclusive resources (282).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { FINDINGS } from './findings.mjs';
+import { oldJarl } from './old-jarl.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 
@@ -142,4 +143,87 @@ test('status --tag scopes every section to the issues carrying the tag', () => {
   assert.equal(whole.open, 2); assert.equal(whole['in-progress'], 2); assert.equal(whole.tag, undefined);
   assert.match(jarl(root, 'status', '--tag', 'alpha'), /^open 0 · in flight 1 · waiting 1 /m, 'alpha one runs, alpha two waits on it');
   assert.match(refuses(root, 'status', '--tag', 'nope'), /no issue carries the tag nope/);
+});
+
+// ---- 282: exclusive resources ---------------------------------------------------------------------------
+
+function twoRepos() {
+  const hub = mkdtempSync(join(tmpdir(), 'jarl-res-'));
+  for (const name of ['tool', 'lib']) { mkdirSync(join(hub, name)); spawnSync('git', ['init', '-q', '-b', 'main'], { cwd: join(hub, name) }); }
+  jarl(hub, 'init', 'goal');
+  return hub;
+}
+
+test('a resource is held by an issue in progress; next never offers two issues that declare one, across repositories', () => {
+  const hub = twoRepos();
+  jarl(hub, 'new', 'heavy run in tool', '--repo', './tool', '--files', 'tool/a.mjs');           // 001
+  jarl(hub, 'new', 'heavy run in lib', '--repo', './lib', '--files', 'lib/b.mjs');              // 002
+  jarl(hub, 'new', 'light work', '--repo', './lib', '--files', 'lib/c.mjs');                    // 003
+  jarl(hub, 'new', 'third heavy run', '--repo', './tool', '--files', 'tool/d.mjs');             // 004
+  jarl(hub, 'set', '1', 'resources', 'gate, Database');
+  jarl(hub, 'set', '2', 'resources', 'database');
+  jarl(hub, 'set', '4', 'resources', 'gate');
+  assert.match(jarl(hub, 'show', '1'), /\*\*Resources:\*\* gate, Database/);
+  // Nothing in progress: the first heavy one is offered, the others sharing a resource with an offered one are held.
+  const rows = JSON.parse(jarl(hub, 'next', '--all', '--json'));
+  const by = (g) => rows.filter((r) => r.group === g).map((r) => r.id);
+  assert.deepEqual(by('ready'), ['001', '003'], 'two repositories, one resource: never together');
+  assert.deepEqual(by('held-by-resource'), ['002', '004']);
+  assert.deepEqual(rows.find((r) => r.id === '002').heldBy, ['001']);
+  assert.deepEqual(rows.find((r) => r.id === '002').resources, ['database']);
+  assert.match(jarl(hub, 'next', '--all'), /^Held by a resource in use \(2\)\n002 {2}P2 {2}heavy run in lib {2}.*\(waits on resource database, held by 001\)/m);
+  // Once 001 runs, its resources are taken for the whole lease.
+  jarl(hub, 'set', '1', 'in-progress', 'go', '--worker', 'w1');
+  assert.deepEqual(JSON.parse(jarl(hub, 'next', '--json')).map((r) => r.id), ['003']);
+  const held = JSON.parse(jarl(hub, 'next', '--all', '--json')).filter((r) => r.group === 'held-by-resource');
+  assert.deepEqual(held.map((r) => [r.id, r.heldBy]), [['002', ['001']], ['004', ['001']]]);
+});
+
+test('an issue that declares a resource passes check on its real files; check, queue and the file rules never read it', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'jarl-res-git-'));
+  const git = (...a) => spawnSync('git', a, { cwd: dir, encoding: 'utf8' });
+  git('init', '-q', '-b', 'main'); git('config', 'user.email', 't@t'); git('config', 'user.name', 't'); git('config', 'core.excludesFile', '/dev/null');
+  writeFileSync(join(dir, 'a.mjs'), '1\n');
+  git('add', '-A'); git('commit', '-qm', 'base');
+  jarl(dir, 'init', 'goal');
+  jarl(dir, 'new', 'work', '--files', 'a.mjs');
+  jarl(dir, 'set', '1', 'resources', 'gate');
+  jarl(dir, 'set', '1', 'in-progress', 'go', '--worker', 'w', '--branch', 'work');
+  git('checkout', '-q', '-b', 'work');
+  writeFileSync(join(dir, 'a.mjs'), '2\n');
+  git('commit', '-qam', 'work');
+  const c = JSON.parse(jarl(dir, 'check', '1', '--branch', 'work', '--base', 'main', '--json'));
+  const scope = c.items.find((x) => x.name === 'diff inside declared files');
+  assert.equal(scope.ok, true, 'a resource is not a file: the real change is inside the issue');
+  assert.match(scope.note, /1 file\(s\), all inside/);
+  assert.deepEqual(c.changed, ['a.mjs']);
+  assert.deepEqual(JSON.parse(jarl(dir, 'queue', '--json')).repos.flatMap((r) => r.rows), [], 'queue reads no resource');
+});
+
+test('set resources refuses a bad name and the lease flags; an empty value clears; Jarl 6.1.0 ignores the field', () => {
+  const hub = twoRepos();
+  jarl(hub, 'new', 'a', '--files', 'a.mjs');
+  jarl(hub, 'new', 'b', '--files', 'b.mjs');
+  assert.match(refuses(hub, 'set', '1', 'resources', 'two words'), /resource names are single words/);
+  jarl(hub, 'set', '1,2', 'resources', 'port-8080');
+  assert.deepEqual(JSON.parse(jarl(hub, 'next', '--json')).map((r) => r.id), ['001'], '002 shares the resource, so it is held');
+  // The pinned Jarl 6.1.0 reads the field as any other it does not know: both issues are ready to it, nothing refused.
+  for (const command of ['list', 'status', 'next', 'queue']) assert.equal(oldJarl(hub, command, {}).ok, true, command);
+  assert.deepEqual(oldJarl(hub, 'next', {}).value.filter((r) => r.ready).map((r) => r.id), ['001', '002'], '6.1.0 ignores Resources');
+  jarl(hub, 'set', '2', 'resources', '');
+  assert.deepEqual(JSON.parse(jarl(hub, 'next', '--json')).map((r) => r.id), ['001', '002']);
+});
+
+test('a profile that declares a Resources field keeps its own meaning: next does not read it as exclusive resources', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'jarl-res-profile-'));
+  const file = join(dir, 'profile.json');
+  writeFileSync(file, JSON.stringify({ 'jarl-profile': 1, name: 'mine', statuses: { open: ['dispatchable'], 'in-progress': ['holds-claim'], done: ['settles-dependents', 'terminal', 'closes-record'], dropped: ['terminal', 'needs-reason'] }, fields: { Resources: { default: 'none' } } }));
+  const hub = mkdtempSync(join(tmpdir(), 'jarl-res-hub-'));
+  jarl(hub, 'init', 'goal', '--profile', file);
+  jarl(hub, 'new', 'a', '--files', 'a.mjs');
+  jarl(hub, 'new', 'b', '--files', 'b.mjs');
+  jarl(hub, 'set', '1,2', 'resources', 'shared');
+  assert.match(jarl(hub, 'show', '1'), /\*\*Resources:\*\* shared/, 'written as the profile\'s own field');
+  assert.deepEqual(JSON.parse(jarl(hub, 'next', '--json')).map((r) => r.id), ['001', '002'], 'both offered: the profile\'s Resources is not the exclusive kind');
+  assert.match(jarl(hub, 'profile'), /Resources/);
 });

@@ -599,6 +599,8 @@ export function parseIssue(text, file) {
   issue.files = (issue.fields.files || '').split(',').map((s) => s.trim()).filter(Boolean);
   // Both fields are newer than most loops: an issue without them reads as waiting on nothing and filed from no finding.
   issue.after = splitList(issue.fields.after).map(padId);
+  // The exclusive resources it holds while its lease lasts (names, loop-wide, never files); only next reads them.
+  issue.resources = splitList(issue.fields.resources);
   issue.sources = splitList(issue.fields.source);
   return issue;
 }
@@ -1369,6 +1371,9 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   const profile = loadProfile(root);
   // set <ids> <field> <value>: a field the profile declares (Kind and Tier too, when it declares them), not a status.
   if (!profile.statuses.includes(status) && status !== undefined && profile.field(status)) return setDeclaredField(root, rawIds, profile.field(status), why, flags);
+  // Resources: the built-in field of exclusive resources, unless the profile declares a field of that name (handled above:
+  // the profile's meaning wins, and next reads no resources then).
+  if (!profile.statuses.includes(status) && String(status ?? '').toLowerCase() === 'resources') return setResources(root, rawIds, why, flags);
   // ready and the review words are views, not statuses: say which view answers the question the worker was asking.
   need(profile.statuses.includes(status) || !/^(ready|review|in[-_ ]?review|ready[-_ ]for[-_ ]review|reviewing)$/i.test(String(status ?? '')), `${status} is a view here, not a status: \`next\` lists the issues ready to start, and \`status\` and \`resume\` mark each in-flight issue with what the record says (no evidence rows yet; rows and no verdict, so it waits for a reviewer; changes requested; approved and queued). Nothing needs setting: record the rows with \`evidence\`, and the reviewer's verdict with \`review\`. A loop that wants an explicit review status can declare one in its profile. Statuses here: ${profile.statuses.join(', ')}`);
   need(profile.statuses.includes(status), `status must be one of: ${profile.statuses.join(', ')}${profile.declaredFields.length ? ` — or a field this loop's profile declares: ${profile.declaredFields.map((f) => f.name).join(', ')}` : ''}`);
@@ -1432,6 +1437,24 @@ function setDeclaredField(root, rawIds, field, value, flags) {
   for (const issue of issues) writeAtomic(issue.file, setField(readText(issue.file), field.name, v));
   appendLogLines(root, issues.map((issue) => `${issue.id} field ${field.name} · ${v || '(cleared)'}`));
   return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, field: field.name, value: v })));
+}
+
+// set <ids> resources "a, b": the exclusive resources an issue holds for the whole life of its lease (a port, a database
+// server, the machine's load), loop-wide and not files. Names are single words; an empty value clears the field. Only next
+// reads it: check, queue and the file rules do not, and a Jarl 6.1.0 reads the line as any field it does not know.
+function setResources(root, rawIds, value, flags) {
+  const lease = ['branch', 'worker', 'worktree'].filter((k) => flags[k] !== undefined);
+  need(!lease.length, `--${lease[0]} goes with a status, not with the field Resources`);
+  need(value !== undefined, 'set <ids> resources "<name>[, <name>...]" — the value is required (an empty one clears the field)');
+  const names = [];
+  for (const n of splitList(fieldText(value))) {
+    need(/^[A-Za-z0-9._:/-]+$/.test(n), `resource names are single words of letters, digits and . _ : / - ("${n}" is not): name the thing, e.g. gate, db-server, port-8080`);
+    if (!names.some((x) => x.toLowerCase() === n.toLowerCase())) names.push(n);
+  }
+  const issues = issuesFor(root, rawIds);
+  for (const issue of issues) writeAtomic(issue.file, setField(readText(issue.file), 'Resources', names.join(', ')));
+  appendLogLines(root, issues.map((issue) => `${issue.id} field Resources · ${names.join(', ') || '(cleared)'}`));
+  return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, field: 'Resources', value: names.join(', ') })));
 }
 
 // Why an issue may not go done, or null when it may: at least one --ran/--saw evidence row logged since the issue
@@ -1856,7 +1879,7 @@ export function schedulerNote(cmd) { return `scheduling is led by the composer: 
 // ready, held-by-file (a file an in-progress or earlier-offered issue holds), waiting-after (After not settled) or
 // held-by-question (an open stuck or stop question names the issue). A library caller reads the full list through
 // nextRows and filters it itself.
-export const NEXT_GROUPS = ['ready', 'held-by-file', 'waiting-after', 'held-by-question'];
+export const NEXT_GROUPS = ['ready', 'held-by-file', 'held-by-resource', 'waiting-after', 'held-by-question'];
 export function cmdNext(root, flags) {
   const profile = loadProfile(root);
   if (profile.scheduler) return { scheduler: profile.scheduler, note: schedulerNote(profile.scheduler) };
@@ -1864,13 +1887,13 @@ export function cmdNext(root, flags) {
   return flags.all ? rows : rows.filter((r) => r.ready);
 }
 
-const NEXT_HEADERS = { ready: 'Ready', 'held-by-file': 'Held by a file in progress', 'waiting-after': 'Waiting on After', 'held-by-question': 'Held by an open question' };
+const NEXT_HEADERS = { ready: 'Ready', 'held-by-file': 'Held by a file in progress', 'held-by-resource': 'Held by a resource in use', 'waiting-after': 'Waiting on After', 'held-by-question': 'Held by an open question' };
 export function renderNext(rows, all, held = 0) {
   const line = (r) => {
     const note = r.group === 'ready' ? [r.noAcceptance && 'no acceptance yet', r.noFiles && 'no files declared']
       : r.group === 'waiting-after' ? [`after ${r.after.join(', ')}`]
         : r.group === 'held-by-question' ? [`question ${r.questions.map((q) => `a-${q}`).join(', ')}`]
-          : [`waits on ${r.waitsOn.join(', ')}, held by ${r.heldBy.join(', ')}`];
+          : [`waits on ${[...r.waitsOn, ...(r.resources || []).map((x) => `resource ${x}`)].join(', ')}, held by ${r.heldBy.join(', ')}`];
     return `${r.id}  P${r.priority}  ${r.title}${note.filter(Boolean).map((n) => `  (${n})`).join('')}`;
   };
   if (!all) {
@@ -1897,6 +1920,10 @@ export function nextRows(root, flags = {}) {
   // Each taken file with the issue holding it: one in a holds-claim status (in progress), or a dispatchable (open)
   // one offered earlier in this list.
   const taken = new Map(issues.filter((i) => profile.is(i.status, 'holds-claim')).flatMap((i) => keysOf(i).map((k) => [k.key, i.id])));
+  // Exclusive resources: names, loop-wide (no repository in the key), held by an issue for its lease's whole life. A
+  // profile that declares a field named Resources keeps that field's meaning: it is not read here (never both ways).
+  const resourcesOf = (i) => (profile.field('resources') ? [] : i.resources.map((name) => ({ name: name.toLowerCase(), key: name.toLowerCase() })));
+  const takenRes = new Map(issues.filter((i) => profile.is(i.status, 'holds-claim')).flatMap((i) => resourcesOf(i).map((r) => [r.key, i.id])));
   const byId = new Map(issues.map((i) => [i.id, i]));
   const out = [];
   for (const i of issues.filter((x) => profile.is(x.status, 'dispatchable')).sort((a, b) => a.priority.localeCompare(b.priority) || cmpId(a.id, b.id))) {
@@ -1907,8 +1934,17 @@ export function nextRows(root, flags = {}) {
     if (asked.has(i.id)) { out.push({ ...base, group: 'held-by-question', questions: asked.get(i.id), waitsOn: [], after: [] }); continue; }
     const keys = keysOf(i);
     const held = keys.filter((k) => taken.has(k.key));
-    if (held.length) { out.push({ ...base, group: 'held-by-file', waitsOn: held.map((k) => k.f), heldBy: [...new Set(held.map((k) => taken.get(k.key)))], after: [] }); continue; }
+    const heldRes = resourcesOf(i).filter((r) => takenRes.has(r.key));
+    if (held.length || heldRes.length) {
+      out.push({
+        ...base, group: held.length ? 'held-by-file' : 'held-by-resource', waitsOn: held.map((k) => k.f),
+        ...(heldRes.length ? { resources: heldRes.map((r) => r.name) } : {}),
+        heldBy: [...new Set([...held.map((k) => taken.get(k.key)), ...heldRes.map((r) => takenRes.get(r.key))])], after: [],
+      });
+      continue;
+    }
     keys.forEach((k) => taken.set(k.key, i.id));
+    resourcesOf(i).forEach((r) => takenRes.set(r.key, i.id));
     // Offered, but flagged: a worker raised on an issue with no acceptance line has nothing to prove, and
     // the reviewer nothing to check it against. Fill it with body --acceptance before raising one.
     out.push({ ...base, group: 'ready', files: i.files, ready: true, waitsOn: [], after: [], ...(acceptanceLineCount(i) ? {} : { noAcceptance: true }) });
@@ -3518,7 +3554,7 @@ export function cmdResume(root, flags = {}) {
   const ready = next.filter((r) => r.ready);
   // Open, not waiting on After, and still not offered: a file it declares is taken by work in flight (or by a ready
   // issue ahead of it), or an open question names it. Ready and held together are the open count on the status line.
-  const held = next.filter((r) => !r.ready && !r.after.length).map((r) => ({ id: r.id, title: r.title, priority: r.priority, files: r.waitsOn, heldBy: r.heldBy || [], ...(r.questions ? { questions: r.questions } : {}) }));
+  const held = next.filter((r) => !r.ready && !r.after.length).map((r) => ({ id: r.id, title: r.title, priority: r.priority, files: r.waitsOn, heldBy: r.heldBy || [], ...(r.questions ? { questions: r.questions } : {}), ...(r.resources ? { resources: r.resources } : {}) }));
   const merged = issues.filter((i) => status.ciPending.includes(i.id) || status.ciRed.includes(i.id)).map((i) => ({ id: i.id, title: i.title, ...mergedOf(i) }));
   const logPath = join(jarlDir(root), 'log.md');
   const logLines = existsSync(logPath) ? readText(logPath).split('\n').filter((l) => /^- \d{4}-\d{2}-\d{2} \d{2}:\d{2} · /.test(l)) : [];
@@ -3571,7 +3607,7 @@ export function renderResume(o, profile = DEFAULT_PROFILE) {
     ...sec(`Waiting — After not settled (${o.waiting.length})`, o.waiting.map((x) => `- ${x.id} ${short(x.title)} (after ${x.after.join(', ')})${x.stale !== undefined ? ` · ${x.status === 'in-progress' ? 'in progress' : x.status}${lease(x) ? ` · ${lease(x)}` : ''}${x.stale.length ? ` · STALE: ${x.stale.join('; ')}` : ''}` : ''}`)),
     ...sec(`Questions to the user (${o.questions.length})`, o.questions.map((a) => `- a-${a.id} (${a.kind || 'stuck'})${a.issue ? ` issue ${a.issue}` : ''} · ${a.question}`), '- (nothing)'),
     ...sec(`To ratify (${o.ratify.length})`, o.ratify.map((a) => `- a-${a.id}${a.issue ? ` (issue ${a.issue})` : ''} · ${a.question}`)),
-    ...sec(`Held — files in flight (${o.held.length})`, o.held.map((x) => `- ${x.id}  P${x.priority}  ${short(x.title)} (${x.questions ? `open question ${x.questions.map((q) => `a-${q}`).join(', ')}` : `${x.files.join(', ')} held by ${x.heldBy.join(', ')}`})`)),
+    ...sec(`Held — files in flight (${o.held.length})`, o.held.map((x) => `- ${x.id}  P${x.priority}  ${short(x.title)} (${x.questions ? `open question ${x.questions.map((q) => `a-${q}`).join(', ')}` : `${[...x.files, ...(x.resources || []).map((n) => `resource ${n}`)].join(', ')} held by ${x.heldBy.join(', ')}`})`)),
     ...(o.scheduler ? sec('Next ready and merge queue', [`- ${schedulerNote(o.scheduler)}`]) : [
       ...sec(`Next ready (${o.next.length} of ${o.readyTotal})`, o.next.map((r) => `- ${r.id}  P${r.priority}  ${short(r.title)}${shownFields(r)}${r.noAcceptance ? '  (no acceptance yet)' : ''}`), '- (nothing ready)'),
       ...sec('Merge queue', queue, '- (nothing approved waits to be merged)'),

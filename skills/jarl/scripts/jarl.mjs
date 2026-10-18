@@ -83,6 +83,8 @@ commands:
                                                  approve answered, one line per earlier round; --full prints the whole
                                                  file; --json is complete
   set <ids> <status> "<why>" [--branch <b>] [--worker <name>] [--worktree <path>] | <ids> <field> "<value>"
+                                                 (field resources "a, b": the exclusive resources the issue holds while
+                                                 its lease lasts, loop-wide names; next never offers two issues holding one)
                                                  change status; writes the log line in the same move; in-progress
                                                  writes Since (and Branch, Worker, Worktree when given) — one lease
                                                  for every id, so a package shares it; leaving in-progress removes
