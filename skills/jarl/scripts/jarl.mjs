@@ -171,7 +171,8 @@ commands:
                                                  change in test files and assertions — numbers, never a verdict;
                                                  notes for the added lines that name a loop issue by its number after
                                                  the word issue or with a hash sign (at most 20 printed, the rest
-                                                 counted), which never change ok;
+                                                 counted), which never change ok; a branch no issue records is refused
+                                                 with its commit count;
                                                  read in --repo, else the issue's Repo, else the loop's own repository;
                                                  with no id, the diff is bounded by the union of Files of every issue
                                                  that records Branch <b> (a package on one branch, one call)
@@ -179,7 +180,8 @@ commands:
                                                  every jarl/7-* branch and every branch an issue records: the
                                                  issues on it, commits beyond the base, worktree state, STALE leases
                                                  (worktree gone, branch gone, idle over n hours, default 6) and
-                                                 DONE → delete; shown only, never acted on; read in --repo, else the
+                                                 DONE → delete, NO ISSUE for commits no issue holds; shown only, never
+                                                 acted on; read in --repo, else the
                                                  loop's own repository and every repository its issues name
   ask "<question>" [--kind stop|stuck|lower|charter|ratify] [--target x] [--issue 7] [--option "<label>: <effect>"]...
                                                  a question the user has to answer; lower needs --target;

@@ -32,6 +32,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `--repo` takes a name, a checkout, a worktree or a file inside a repository, and always means the repository's main checkout.
 - `show` and `status --by repo` print where each repository, and the worktree of a lease, is on this machine. `status --by repo` also prints each repository's base and warns when its checkout is on another branch. A name with no checkout on this machine says where to put one, and the commands that act on it refuse it.
 - `check` on a branch now lists each added line that cites a loop issue by its number, so a stale reference shows before the merge. The check passes or fails as before.
+- `branches` marks a branch that holds commits but no issue with `NO ISSUE`. A check of such a branch says how many commits it carries and what to file before it can run.
 
 ### Changed
 - A lease holds a branch, a worker and a start time, and no worktree path: the worktree is found through the branch. `set --worktree <path>` checks that the path is a worktree of the issue's repository with the lease's branch checked out, refuses it otherwise, and stores nothing.

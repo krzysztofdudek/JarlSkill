@@ -4226,13 +4226,27 @@ export function renderCheckNotes(out) {
 // check <id> --branch <b> bounds the diff by that issue's Files; check --branch <b> with no id bounds it by the
 // union of Files over every issue that records Branch <b> (in progress or done) — a package on one shared
 // branch passes in one call instead of failing each issue for the files of the others.
+// The commits a branch carries beyond the base, or null when git does not know the branch or the base.
+function commitsBeyond(repo, base, branch) {
+  const n = git(repo, ['rev-list', '--count', `${base}..${branch}`]);
+  return n === null ? null : Number(n);
+}
+// The refusal of a branch no issue records. When the branch carries commits, it says how many and what to file.
+function unrecordedBranch(root, flags) {
+  const repo = flags.repo !== undefined ? repoFromInput(root, flags.repo).main : root;
+  const base = flags.base || defaultBase(repo);
+  const carried = commitsBeyond(repo, base, flags.branch);
+  if (carried) return `no issue records branch ${flags.branch}: it carries ${carried} commit(s) beyond ${base} and no issue holds it (work without a ticket) — file the issue, then set it in-progress --branch ${flags.branch}`;
+  return `no issue records branch ${flags.branch} — name one (check <id> --branch ${flags.branch}), or record the package: set <ids> in-progress --branch ${flags.branch}`;
+}
+
 export function cmdCheck(root, rawId, flags) {
   need(flags.branch, 'check requires --branch <worker branch>');
   let pkg;
   if (rawId === undefined) {
     const profile = loadProfile(root);
     pkg = loadIssues(root).filter((i) => i.fields.branch === flags.branch && (profile.is(i.status, 'holds-claim') || profile.is(i.status, 'closes-record')));
-    need(pkg.length, `no issue records branch ${flags.branch} — name one (check <id> --branch ${flags.branch}), or record the package: set <ids> in-progress --branch ${flags.branch}`);
+    if (!pkg.length) need(false, unrecordedBranch(root, flags));
     if (flags.repo === undefined) {
       const repos = new Map();
       for (const i of pkg) for (const r of issuePlaces(root, i)) repos.set(r, [...(repos.get(r) || []), i.id]);
@@ -4321,7 +4335,7 @@ export function renderBranches(rows, root) {
   return rows.map((b) => [
     b.repo !== repoLabel(root) ? `[${b.repo}] ` : '', b.branch, b.issues.length ? ` → ${b.issues.join(', ')}` : '', '  ',
     b.missing ? 'GONE' : `+${b.ahead ?? '?'}  ${renderBranchWorktree(b)}`,
-    b.unnamed ? '  UNNAMED — rename to jarl/NNN-slug before merging' : '', DONE_BRANCH[b.done] || '', b.stale.length ? `  STALE: ${b.stale.join('; ')}` : '',
+    b.unnamed ? '  UNNAMED — rename to jarl/NNN-slug before merging' : '', b.unticketed ? '  NO ISSUE' : '', DONE_BRANCH[b.done] || '', b.stale.length ? `  STALE: ${b.stale.join('; ')}` : '',
   ].join('')).join('\n');
 }
 
@@ -4446,13 +4460,15 @@ function branchesIn(root, repo, flags, issues, hours = STALE_HOURS) {
     // Done → delete: every issue it carries is done or dropped (at least one done), and its work is in the
     // base — the branch is an ancestor of it, or every done issue records its merge.
     const done = doneMark(repo, base, name, on, dirty, loadProfile(root), unknown);
-    return { repo: repoLabel(repo), branch: name, ahead, worktree: ws.path, worktreeState: ws.state, ...(ws.reason ? { worktreeReason: ws.reason } : {}), ...(wtGone ? { worktreeGone: true } : {}), dirty, unnamed: !name.startsWith('jarl/') && !leased.includes(name), issues: on.map((i) => i.id), stale, done, deletable: done === 'delete' };
+    // A branch that carries commits, no issue holds (no Branch, no lease) and that is neither the base nor a release branch.
+    const unticketed = on.length === 0 && (ahead ?? 0) > 0 && name !== base && !/^release\//.test(name);
+    return { repo: repoLabel(repo), branch: name, ahead, unticketed, worktree: ws.path, worktreeState: ws.state, ...(ws.reason ? { worktreeReason: ws.reason } : {}), ...(wtGone ? { worktreeGone: true } : {}), dirty, unnamed: !name.startsWith('jarl/') && !leased.includes(name), issues: on.map((i) => i.id), stale, done, deletable: done === 'delete' };
   });
   // An in-progress issue whose recorded branch is not in the repository any more: a lease with nothing under it.
   const gone = leased.filter((b) => !exists(b)).map((name) => {
     const on = issuesOnBranch(root, issues, real, name);
     const stale = on.flatMap((i) => leaseProblems(root, i, hours).map((p) => `${i.id} ${p}`));
-    return { repo: repoLabel(repo), branch: name, ahead: null, worktree: null, dirty: null, unnamed: false, issues: on.map((i) => i.id), stale, done: null, deletable: false, missing: true };
+    return { repo: repoLabel(repo), branch: name, ahead: null, unticketed: false, worktree: null, dirty: null, unnamed: false, issues: on.map((i) => i.id), stale, done: null, deletable: false, missing: true };
   }).filter((r) => r.stale.length);
   return [...rows, ...gone];
 }

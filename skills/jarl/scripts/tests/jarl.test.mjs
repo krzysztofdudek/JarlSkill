@@ -1373,6 +1373,34 @@ test('check --branch notes each added line that names a loop issue by its number
   assert.match(text, /^note a\.txt:3 names issue 3 · the same as #3$/m);
 });
 
+test('check --branch refuses a branch no issue holds, and says how many commits it carries and what to file', () => {
+  const { root, sh: git } = gitLoop();
+  jarl(root, 'new', 'one', '--files', 'a.txt');
+  git('git checkout -q -b feature && echo more >> a.txt && git commit -qam work && git checkout -q main');
+  const msg = refuses(root, 'check', '--branch', 'feature', '--base', 'main');
+  assert.match(msg, /^no issue records branch feature: it carries 1 commit\(s\) beyond main and no issue holds it \(work without a ticket\) — file the issue, then set it in-progress --branch feature\n$/);
+  assert.match(refuses(root, 'check', '--branch', 'jarl/none'), /^no issue records branch jarl\/none — name one/);
+});
+
+test('branches marks with NO ISSUE a branch with commits that no issue holds, and no leased, empty, base or release branch', () => {
+  const { root, sh: git } = gitLoop();
+  jarl(root, 'new', 'one', '--files', 'a.txt');
+  git('git checkout -q -b jarl/1-pkg && echo x >> a.txt && git commit -qam work && git checkout -q main');
+  jarl(root, 'set', '1', 'in-progress', 'package raised', '--branch', 'jarl/1-pkg', '--worker', 'w1');
+  git('git checkout -q -b jarl/9-orphan && echo y >> b.txt && git commit -qam orphan && git checkout -q main');
+  git('git branch jarl/7-empty');
+  const wt = join(root, '..', `${basename(root)}-rel`);
+  git(`git worktree add -q -b release/9.0 ${wt} && cd ${wt} && echo r >> c.txt && git commit -qam rel && cd ${root}`);
+  const text = jarl(root, 'branches');
+  assert.match(text, /^jarl\/9-orphan .*NO ISSUE$/m);
+  assert.doesNotMatch(text, /^jarl\/1-pkg .*NO ISSUE/m);
+  assert.doesNotMatch(text, /^jarl\/7-empty .*NO ISSUE/m);
+  assert.doesNotMatch(text, /^release\/9\.0 .*NO ISSUE/m);
+  const rows = JSON.parse(jarl(root, 'branches', '--json'));
+  const flag = Object.fromEntries(rows.map((r) => [r.branch, r.unticketed]));
+  assert.deepEqual(flag, { 'jarl/1-pkg': false, 'jarl/9-orphan': true, 'jarl/7-empty': false, 'release/9.0': false });
+});
+
 test('check --branch prints at most twenty issue notes and counts the rest', () => {
   const { root, sh: git } = gitLoop();
   for (const t of ['one', 'two']) jarl(root, 'new', t, '--files', 'a.txt');
