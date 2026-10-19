@@ -3,10 +3,12 @@
 // and the name it also answers to, the glossary the skill defines its terms in, and the words that name the owner.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { fileURLToPath } from 'node:url';
 import * as R from '../record.mjs';
+import { COMMAND_SUMMARY, USAGE } from '../jarl.mjs';
 import { gitRepo, jarlResult, run } from './helpers.mjs';
 
 const NO_GH = { JARL_GH: join(tmpdir(), 'jarl-vocab-no-gh') };
@@ -73,3 +75,74 @@ test('scope and check give the same output, and only check says on stderr which 
     assert.match(check.stderr, /^note: check keeps working as a name of scope; scope is the name to use$/m);
   }
 });
+
+// The text the skill, the help and the tool descriptions speak in: one place where each rule below is checked.
+const SKILL = fileURLToPath(new URL('../../SKILL.md', import.meta.url));
+// The blocks between the Runes markers are shared fragments that Runes writes and the vendoring pins: they are changed in
+// Runes, never in this file, so these rules read the skill outside them.
+const SKILL_LINES = (() => {
+  const out = [];
+  let inside = false;
+  for (const line of readFileSync(SKILL, 'utf8').split('\n')) {
+    if (/^<!-- RUNES:[a-z-]+:START -->$/.test(line)) inside = true;
+    if (!inside) out.push(line);
+    if (/^<!-- RUNES:[a-z-]+:END -->$/.test(line)) inside = false;
+  }
+  return out;
+})();
+const HELP_LINES = USAGE.split('\n');
+const DESCRIPTIONS = Object.values(COMMAND_SUMMARY);
+const where = (lines) => lines.map((l, i) => [i + 1, l]).filter(([, l]) => l !== undefined);
+const hits = (lines, re) => where(lines).filter(([, l]) => re.test(l)).map(([n, l]) => `${n}: ${l.slice(0, 140)}`);
+
+// The owner is the one who rules. Only "user-visible" keeps the word: it names the people a built product serves.
+const OWNER_WORDS = /\b(?:user|users|client|clients)\b/i;
+const OWNER_EXCEPTIONS = /user-visible/g;
+
+test('the skill, the help and the tool descriptions say owner for the one who rules, never user or client', () => {
+  const clean = (l) => l.replace(OWNER_EXCEPTIONS, '');
+  assert.deepEqual(hits(SKILL_LINES.map(clean), OWNER_WORDS), []);
+  assert.deepEqual(hits(HELP_LINES.map(clean), OWNER_WORDS), []);
+  assert.deepEqual(hits(DESCRIPTIONS.map(clean), OWNER_WORDS), []);
+});
+
+test('the reviewer\'s standing and the question\'s type keep their own words: kind stays the issue Kind', () => {
+  const re = /reviewer'?s? kind\b|reviewer kind\b|question'?s? kind\b|kind of task\b/i;
+  assert.deepEqual(hits(SKILL_LINES, re), []);
+  assert.deepEqual(hits(HELP_LINES, re), []);
+  assert.deepEqual(hits(DESCRIPTIONS, re), []);
+});
+
+test('the skill, the help and the descriptions speak only of Jarl as it is now: no version, no history word', () => {
+  const re = /\b(?:older|earlier|no longer|new in|used to|legacy|backward|compatible with|predates?|formerly)\b|\bv?\d+\.\d+\.\d+\b/i;
+  assert.deepEqual(hits(SKILL_LINES, re), []);
+  assert.deepEqual(hits(HELP_LINES, re), []);
+  assert.deepEqual(hits(DESCRIPTIONS, re), []);
+});
+
+test('ticket is a word of a composer quoted once, and the skill names the command only as scope', () => {
+  assert.deepEqual(hits(SKILL_LINES, /\bticket/i).filter((h) => !/Horde/.test(h)), []);
+  assert.deepEqual(hits(SKILL_LINES, /\bcheck (?:\[?<id>|--branch|--repo)|jarl_check/), []);
+});
+
+test('the skill defines each glossary term once, in one table, in one present-tense sentence', () => {
+  const start = SKILL_LINES.indexOf('## Glossary');
+  assert.ok(start >= 0, 'the skill has a Glossary section');
+  let end = start + 1;
+  while (end < SKILL_LINES.length && !/^## /.test(SKILL_LINES[end])) end += 1;
+  const rows = SKILL_LINES.slice(start, end).map((l) => /^\| `([^`]+)` \| (.+) \|$/.exec(l)).filter(Boolean);
+  assert.deepEqual(rows.map((r) => r[1]), TERMS, 'one row per term, in the order of the list');
+  for (const [, term, definition] of rows) {
+    assert.doesNotMatch(definition, /\.\s+[A-Z]/, `${term}: one sentence`);
+    assert.match(definition, /\.$/, `${term}: ends its sentence`);
+  }
+  const outside = SKILL_LINES.filter((_, i) => i < start || i >= end);
+  for (const term of TERMS) {
+    // A definition: the term, with an article, is or means a noun phrase, at the start of a line or a sentence.
+    const re = new RegExp(`(?:(?:^|[.;:]\\s+|^\\W*)(?:a|an|the)\\s+${term}s?\\s+(?:is|means)\\s+(?:a|an|the|one|any|what|every|when)\\b|^\\W*${term}\\W*\\s+means\\b)`, 'i');
+    assert.deepEqual(hits(outside, re), [], `${term} is defined outside the glossary`);
+  }
+});
+
+// Every term the glossary defines, in the order its table lists them.
+const TERMS = ['issue', 'loop', 'lease', 'package', 'round', 'evidence row', 'proof', 'note', 'verdict', 'standing', 'gate', 'merge record', 'ruling', 'question', 'type', 'profile', 'tier', 'model', 'mode', 'format', 'owner', 'jarl', 'worker', 'reviewer', 'merger', 'composer', 'scope', 'check'];

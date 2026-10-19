@@ -29,7 +29,7 @@ export const STALE_HOURS = 6;
 // A handoff file written more than this before the loop's last log line is read as stale (status --json).
 export const HANDOFF_STALE_MS = 60 * 60_000;
 // The lease fields: written by set in-progress, removed when the issue leaves in-progress. Branch stays: it
-// is where the work was, which branches and check --branch still read after done.
+// is where the work was, which branches and scope --branch still read after done.
 const LEASE_FIELDS = ['Worker', 'Model', 'Worktree', 'Since'];
 
 
@@ -4645,7 +4645,7 @@ export function renderCheckNotes(out) {
   return lines.join('\n');
 }
 
-// check <id> --branch <b> bounds the diff by that issue's Files; check --branch <b> with no id bounds it by the
+// scope <id> --branch <b> bounds the diff by that issue's Files; scope --branch <b> with no id bounds it by the
 // union of Files over every issue that records Branch <b> (in progress or done) — a package on one shared
 // branch passes in one call instead of failing each issue for the files of the others.
 // The commits a branch carries beyond the base, or null when git does not know the branch or the base.

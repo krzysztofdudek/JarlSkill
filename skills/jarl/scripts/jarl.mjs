@@ -93,7 +93,7 @@ commands:
   show <id> [--full]                             print one issue as the done gate sees it: the header, What, Why,
                                                  Acceptance and Changelog, every Proof row (numbered [n]) and every
                                                  verdict in the done gate's window, Notes whole, every "changes" finding no later
-                                                 approve answered, one line per earlier round; --full prints the whole
+                                                 approve answered, one line per round that came before; --full prints the whole
                                                  file; --json is complete; under the header, one line for each header
                                                  field that disagrees with the log (see status), where each repository
                                                  written as a name is on this machine and the worktree git has on the
@@ -192,9 +192,9 @@ commands:
                                                  acted on; read in --repo, else the
                                                  loop's own repository and every repository its issues name
   ask "<question>" [--kind stop|stuck|lower|charter|ratify] [--target x] [--issue 7] [--option "<label>: <effect>"]...
-                                                 a question the user has to answer; lower needs --target;
+                                                 a question the ownerhas to answer; lower needs --target;
                                                  listed at boot until answered; ratify is a choice already made
-                                                 under a mandate, awaiting the user's word, and blocks nothing;
+                                                 under a mandate, awaiting the owner's word, and blocks nothing;
                                                  --option gives the choices, at least two, repeated for each one:
                                                  the question prints with its options for the choice window
   answer <ids> "<answer>" | --option <label> [--by who]
@@ -221,12 +221,12 @@ commands:
                                                  a body change is refused, and the refusal names the command that writes it
   decide <slug> "<ruling>" [--by who] [--supersedes <slug>] [--settles <ids>] [--area <type> [--reach n] [--rule <id>]]
                                                  append a ruling (slug: letters, digits, . _ -); refuses a duplicate slug;
-                                                 --by records who ruled (default owner); --supersedes marks the earlier
+                                                 --by records who ruled (default owner); --supersedes marks the ruling it replaces
                                                  ruling "Superseded by" in place; --settles writes the ruling into each
                                                  named issue's evidence (its status is unchanged); --area marks a ruling
                                                  about a whole type of code, --reach how many files that type holds,
                                                  --rule the graph's rule it admits on that type (its id):
-                                                 close puts it to the user for ratification
+                                                 close puts it to the ownerfor ratification
   decisions [--live]                             the rulings with who ruled and what superseded them; --live only
                                                  those still in force
   goal                                           the goal as goal.md holds it
@@ -506,11 +506,11 @@ export const COMMAND_SUMMARY = {
   next: 'The open issues ready to start: no file shared with work in progress, every After issue settled, no open question on them; all adds the held and waiting ones in groups.',
   review: 'Record a reviewer\'s verdict (approve or changes) on issues, with the reviewer and the findings.',
   round: 'Record one red round on issues; after three it prints the takeover block for a fresh worker.',
-  models: 'Per model as worker and as reviewer, per kind of task: the counts, clean first passes and verdicts the record holds, with the words fits, below, new and may clear; reads other loops and archives too.',
+  models: 'Per model as worker and as reviewer, per kind of issue: the counts, clean first passes and verdicts the record holds, with the words fits, below, new and may clear; reads other loops and archives too.',
   scope: 'Measure a worker branch against its base: commits, diff inside the declared files, test changes; numbers, never a verdict.',
   branches: 'Every worker branch with its issues, commits beyond the base, worktree state, stale leases and done branches.',
-  ask: 'File a question the user has to answer (stop, stuck, lower, charter or ratify).',
-  answer: 'Record the user\'s answer to a question, the option chosen or the words given, as a ruling and close the question; several ratify items take one answer.',
+  ask: 'File a question the ownerhas to answer (stop, stuck, lower, charter or ratify).',
+  answer: 'Record the owner\'s answer to a question, the option chosen or the words given, as a ruling and close the question; several ratify items take one answer.',
   resume: 'The boot: everything a session picks the loop up from, assembled live.',
   handoff: 'read: resume plus an old handoff file as history; write: retired, writes nothing.',
   log: 'Append one dated note to the loop\'s journal; a line that reads as a move, a verdict or another line of state is refused.',
