@@ -258,11 +258,11 @@ commands:
                                                  branch and main, ahead/behind their upstream as last fetched, and — when
                                                  gh is on PATH — the CI of a tip its upstream holds (else "not pushed");
                                                  nothing is fetched or written
-  queue [--repo <name|path>] [--base <b>]           read-only: the branches waiting for the merger — an open or in-progress
+  queue [--repo <name|path>] [--base <b>]        read-only: the branches waiting for the merger — an open or in-progress
                                                  issue on it holds a live approve and the branch is ahead of its base —
                                                  in the order they were approved, per repository, cut into batches whose
                                                  declared files do not overlap; it runs no check and refuses nothing
-  changelog <ids> [--repo <name|path>]              print the issues' ## Changelog entries grouped by section (Added,
+  changelog <ids> [--repo <name|path>]           print the issues' ## Changelog entries grouped by section (Added,
                                                  Changed, Deprecated, Removed, Fixed, Security), ready to paste under
                                                  [Unreleased]; per repository when they span several; reads only
   mode permanent                                 switch an existing committed loop to the permanent mode, with a
@@ -329,7 +329,7 @@ puts it there. The Repo field stores the name where the checkout sits at that pl
 otherwise (a note on stderr says why); a path is read from the loop's root, so it means the same from
 any worktree. A name needs no path in the record: Jarl declares it once in .jarl/repos.md, with the
 repository's root commits, its origin as found and its base branch, and the loop's record format
-rises with the first name, so a Jarl that cannot read a name refuses the loop. In a loop of the
+rises with the first name: a loop that holds a name needs a Jarl that knows names. In a loop of the
 raised format a Repo value that starts with . or / (or a drive letter) is a path and anything else
 a name. An issue that names a repository writes each of its files with that repository's directory
 name first (tool/src/a.mjs for Repo tool): next then keeps the same path in two repositories apart,
@@ -599,7 +599,7 @@ export function dispatch(root, cmd, rest, flags) {
         if (flags.base) {
           need(!flags.clear, 'repo --base takes a repository name and a branch, and no --clear');
           out = cmdRepoBase(root, rest[0], rest[1]);
-          text = out.unchanged ? `${out.name} base: ${out.base} (unchanged)` : `${out.name} base: ${out.base}${out.was ? ` (was ${out.was})` : ''}`;
+          text = out.unchanged ? `${out.name} base: ${out.base} (unchanged)` : `${out.name} base: ${out.base} (was ${out.was ?? 'none'})`;
         } else {
           out = R.setRepo(root, rest[0], rest[1], flags);
           text = `${out.id} repo: ${out.cleared ? 'cleared' : out.repo}${out.unchanged ? ' (unchanged)' : ''}`;

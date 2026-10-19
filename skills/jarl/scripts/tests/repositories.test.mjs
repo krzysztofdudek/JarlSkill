@@ -59,7 +59,7 @@ test('two sibling repositories get names and a third that is not a sibling keeps
   assert.equal(neu(w.hub, 'b', '--repo', '../lib').status, 0);
   const third = neu(w.hub, 'c', '--repo', away);
   assert.equal(third.status, 0, third.stderr);
-  assert.match(third.stderr, /note: .* is stored as the path .*: the checkout is not at .*tool, where a name would resolve/);
+  assert.match(third.stderr, /note: .* is stored as the path .*: another repository stands at .*tool, where its name would resolve, so this one keeps its path/);
   assert.match(w.issue(3), new RegExp(`^\\*\\*Repo:\\*\\* ${escaped(away)}$`, 'm'));
   // Declared once, with every root commit, the origin as found and the base, and no path.
   const lines = w.decl().split('\n').filter((l) => l.startsWith('- **'));
@@ -136,6 +136,8 @@ test('two repositories that share a directory name stay apart: the second keeps 
   neu(w.hub, 'in sibling', '--repo', 'tool', '--files', 'tool/x.mjs');
   const r = neu(w.hub, 'in away', '--repo', away, '--files', 'tool/x.mjs');
   assert.match(r.stderr, /note: .* is stored as the path/);
+  assert.match(r.stderr, new RegExp(`another repository stands at ${escaped(w.tool)}, where its name would resolve, so this one keeps its path`));
+  assert.doesNotMatch(r.stderr, /put it, or a symlink to it, there/, 'it never advises putting a checkout where another stands');
   assert.match(w.issue(2), new RegExp(`^\\*\\*Repo:\\*\\* ${escaped(away)}$`, 'm'));
   const next = JSON.parse(jarl(w.hub, 'next', '--all', '--json'));
   assert.equal(next.find((x) => x.id === '2').ready, true, 'the same file name in two repositories of one directory name does not hold');
@@ -172,7 +174,7 @@ test('the first name raises the record format under the lock, writes bare-word p
   R.newIssue(w.hub, 'named', { repo: 'tool' });
   assert.equal(L.loadProfile(w.hub).format, 2);
   assert.match(w.issue(1), /^\*\*Repo:\*\* \.\/sub, \.\/other$/m, 'the bare-word path says the same place unambiguously');
-  assert.match(w.log(), /repo paths written as \.\/<word> in 0*1 · the record format is raised before names are stored/);
+  assert.match(w.log(), /repo paths written as \.\/<word> in 0*1 · the record format is raised/);
   assert.equal(L.repoOf(w.hub, './sub'), nested);
   for (const command of ['list', 'status', 'next', 'queue']) {
     const r = oldJarl(w.hub, command, {});
@@ -183,7 +185,7 @@ test('the first name raises the record format under the lock, writes bare-word p
   assert.match(w.decl(), /^- \*\*tool\*\* · roots /m);
 });
 
-test('a loop that holds only paths is read by the frozen reader as it always was, whatever the repo lines say', () => {
+test('a loop that holds only paths is read by the frozen reader unchanged, whatever the repo lines say', () => {
   const w = world();
   repoAt(join(w.hub, 'sub'));
   const away = repoAt(join(tmp('jarl-away-'), 'far'));
@@ -549,4 +551,149 @@ test('the files and the leases of a loop are never given a machine\'s path by a 
   const everything = [w.log(), w.decl(), w.issue(1), readFileSync(join(w.hub, '.jarl', 'profile.json'), 'utf8')].join('\n');
   assert.doesNotMatch(everything, new RegExp(escaped(w.parent)));
   assert.doesNotMatch(everything, new RegExp(escaped(dirname(w.parent))));
+});
+
+// ---- every raise of the format keeps a bare-word path pointing where it pointed ---------------------------------------
+
+// A loop written by the frozen reader's library: a repository nested under the loop's root is written as the bare word
+// api, its merge is recorded with that word, and a different repository named api stands beside the loop. A branch of the
+// same name is in both, so a reader that picks the wrong one deletes the wrong branch.
+function nestedWorld() {
+  const w = world('lib');
+  const api = repoAt(join(w.hub, 'api'), { commits: [['api.txt', 'api\n']] });
+  git(api, 'checkout', '-q', '-b', 'jarl/1-x');
+  writeFileSync(join(api, 'w.txt'), 'w\n');
+  git(api, 'add', '-A');
+  git(api, 'commit', '-qm', 'work');
+  git(api, 'checkout', '-q', 'main');
+  git(api, 'merge', '-q', '--no-ff', '-m', 'merge', 'jarl/1-x');
+  const sha = git(api, 'rev-parse', '--short', 'HEAD');
+  const sibling = repoAt(join(w.parent, 'api'), { commits: [['sibling.txt', 'sibling\n']] });
+  git(sibling, 'branch', 'jarl/1-x');
+  R.newIssue(w.hub, 'nested work');
+  const first = join(w.hub, '.jarl', 'issues', readdirSync(join(w.hub, '.jarl', 'issues')).find((f) => f.startsWith('001-')));
+  writeFileSync(first, readFileSync(first, 'utf8').replace(/^(\*\*Files:\*\*.*)$/m, '$1\n**Repo:** api'));
+  R.setStatus(w.hub, '001', 'in-progress', '', { branch: 'jarl/1-x', worker: 'w1' });
+  R.newIssue(w.hub, 'second');
+  R.setStatus(w.hub, '002', 'in-progress', '', { branch: 'jarl/2-y', worker: 'w2' });
+  R.addEvidence(w.hub, '002', undefined, { ran: 't', saw: 'ok' });
+  R.review(w.hub, '002', 'approve', 'read the diff, nothing found here', { by: 'rev' });
+  const merged = oldJarl(w.hub, 'merged', {}, ['001', { sha, ci: 'green', repo: 'api' }]);
+  assert.equal(merged.ok, true, merged.error);
+  assert.match(w.issue(1), new RegExp(`^\\*\\*Merged:\\*\\* ${sha} in api$`, 'm'));
+  return { ...w, api, sibling, sha };
+}
+const branchesOf = (dir) => git(dir, 'branch', '--list', '--format=%(refname:short)').split('\n');
+const TRIGGERS = {
+  'a name': (w) => R.newIssue(w.hub, 'named', { repo: 'lib' }),
+  'a plain issue number on new': (w) => jarl(w.hub, 'new', 'plain', '--tier', 'light'),
+  'import': (w) => {
+    const dir = tmp('report-2026-10-01-');
+    writeFileSync(join(dir, 'findings.json'), JSON.stringify([{ id: 'f-1', kind: 'defect', priority: 'high', title: 'a defect', where: 'x:1', evidence: 'e', proposal: 'p', effort: 'S' }]));
+    jarl(w.hub, 'import', join(dir, 'findings.json'), '--source', 'core/research/2026-10-01-x');
+  },
+  'a question': (w) => jarl(w.hub, 'ask', 'which way?'),
+  'the retraction of a review': (w) => jarl(w.hub, 'review', '2', 'retract', '--by', 'x', 'the approve was wrong'),
+  'the retraction of an evidence row': (w) => jarl(w.hub, 'evidence', '2', '--retract', '1', '--by', 'x', 'the row was wrong'),
+};
+for (const [trigger, raise] of Object.entries(TRIGGERS)) {
+  test(`${trigger} raises the format and every bare-word path keeps addressing the nested repository, never the sibling of the same name`, () => {
+    const w = nestedWorld();
+    assert.equal(L.loadProfile(w.hub).format, 1);
+    assert.equal(oldJarl(w.hub, 'list', {}).ok, true);
+    raise(w);
+    assert.equal(L.loadProfile(w.hub).format, 2);
+    assert.match(w.issue(1), /^\*\*Repo:\*\* \.\/api$/m);
+    assert.match(w.issue(1), new RegExp(`^\\*\\*Merged:\\*\\* ${w.sha} in \\./api$`, 'm'));
+    assert.match(w.log(), new RegExp(`001 merged ${w.sha} in \\./api · CI green`));
+    L.resetCaches();
+    const issue = L.findIssue(w.hub, '001');
+    assert.equal(L.mergedOf(issue).repo, './api');
+    assert.equal(L.repoOf(w.hub, L.mergedOf(issue).repo), w.api, 'the done gate reads the merge where it landed');
+    assert.equal(L.whereOf(w.hub, issue).repos[0].path, w.api);
+    assert.equal(JSON.parse(jarl(w.hub, 'status', '--by', 'repo', '--json')).by.where.api.path, w.api);
+    assert.equal(JSON.parse(run(w.hub, ['check', '1', '--branch', 'jarl/1-x', '--json']).stdout).repo, w.api);
+    const tips = jarl(w.hub, 'tips');
+    assert.match(tips, new RegExp(escaped(w.api)));
+    assert.doesNotMatch(tips, new RegExp(`${escaped(w.sibling)}\\b`));
+    assert.match(jarl(w.hub, 'branches'), /^\[api\] jarl\/1-x → 001 /m);
+    assert.equal(run(w.hub, ['queue']).status, 0);
+    // The merge's cleanup removes the branch in the nested repository and leaves the sibling's alone.
+    jarl(w.hub, 'merged', '1', '--sha', w.sha, '--ci', 'green');
+    assert.equal(branchesOf(w.api).includes('jarl/1-x'), false);
+    assert.equal(branchesOf(w.sibling).includes('jarl/1-x'), true, 'a branch in the sibling is never touched');
+    // A second raise changes nothing more: the rewrite is idempotent.
+    const before = [w.issue(1), w.log()];
+    L.withLock(w.hub, () => L.raiseFormat(w.hub));
+    assert.deepEqual([w.issue(1), w.log()], before);
+  });
+}
+
+test('merged refuses to act when the checkout under a name holds none of the declared root commits, and deletes no branch', () => {
+  const w = world('tool');
+  neu(w.hub, 'a', '--repo', 'tool');
+  git(w.tool, 'branch', 'jarl/1-x');
+  jarl(w.hub, 'set', '1', 'in-progress', 'go', '--branch', 'jarl/1-x', '--worker', 'w1');
+  const sha = git(w.tool, 'rev-parse', '--short', 'HEAD');
+  renameSync(w.tool, join(w.parent, 'tool-real'));
+  const other = repoAt(join(w.parent, 'tool'), { commits: [['other.txt', 'another repository\n']] });
+  git(other, 'branch', 'jarl/1-x');
+  const before = w.log() + w.issue(1);
+  assert.match(refuses(w.hub, 'merged', '1', '--sha', sha, '--ci', 'green'), /is another repository than tool/);
+  assert.match(refuses(w.hub, 'merged', '1', '--sha', sha, '--ci', 'green', '--repo', 'tool'), /is another repository than tool/);
+  assert.equal(w.log() + w.issue(1), before, 'nothing was written');
+  assert.equal(branchesOf(other).includes('jarl/1-x'), true);
+});
+
+// ---- a value that names no repository is refused ----------------------------------------------------------------
+
+test('a path that does not exist, and a value with a line break or the log\'s separator, are refused naming the value, and store nothing', () => {
+  const w = world('tool');
+  neu(w.hub, 'a');
+  for (const [given, pattern] of [
+    ['../alpha', /--repo "\.\.\/alpha"/],
+    ['./subx', /--repo "\.\/subx"/],
+    ['./tool\n./x', /--repo ".*\\n.*" is on more than one line/],
+    ['tool · x', /--repo "tool · x" is on more than one line or holds the log's separator/],
+  ]) {
+    for (const args of [['repo', '1', given], ['new', 'b', '--tier', 'light', '--repo', given]]) {
+      const said = refuses(w.hub, ...args);
+      assert.match(said, pattern, JSON.stringify(given));
+      assert.match(said, /not a git repository|more than one line/);
+    }
+  }
+  assert.doesNotMatch(w.issue(1), /\*\*Repo:\*\*/);
+  assert.equal(existsSync(join(w.hub, '.jarl', 'repos.md')), false);
+  assert.equal(JSON.parse(jarl(w.hub, 'list', '--all', '--json')).length, 1, 'no issue was filed');
+});
+
+// ---- declarations -----------------------------------------------------------------------------------------------
+
+test('the declaration file opens with its fixed text', () => {
+  const w = world('tool');
+  neu(w.hub, 'a', '--repo', 'tool');
+  const text = readFileSync(join(w.hub, '.jarl', 'repos.md'), 'utf8');
+  assert.ok(text.startsWith('# Repositories\n\nEach line declares a repository that an issue names by name: its root commits, its origin as found, its base branch, and no path. Jarl writes this file and nothing else does. A name stands for the checkout beside the main checkout of the loop.\n\n- **tool** · '));
+  assert.equal(text, `${L.REPOS_HEADER}- **tool** · roots ${roots(w.tool).join(', ')} · origin none · base main\n`);
+});
+
+test('a checkout with no branch is declared with no base, and says so', () => {
+  const w = world('tool');
+  git(w.tool, 'checkout', '-q', '--detach');
+  const r = neu(w.hub, 'a', '--repo', 'tool');
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stderr, /note: tool has no branch checked out, so it is declared with no base — name one with repo --base tool <branch>/);
+  assert.match(w.decl(), /^- \*\*tool\*\* · roots [0-9a-f]{40} · origin none · base none$/m);
+  assert.equal(L.declaredRepos(w.hub).get('tool').base, null);
+  assert.equal(jarl(w.hub, 'repo', '--base', 'tool', 'main'), 'tool base: main (was none)');
+});
+
+test('a name written in another case is the one declared name when the disk ignores case', (t) => {
+  const w = world('tool');
+  if (!existsSync(join(w.parent, 'TOOL'))) { t.skip('this disk tells TOOL from tool'); return; }
+  neu(w.hub, 'a', '--repo', 'tool');
+  const r = neu(w.hub, 'b', '--repo', 'TOOL');
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(w.issue(2), /^\*\*Repo:\*\* tool$/m);
+  assert.equal(w.decl().split('\n').filter((l) => l.startsWith('- **')).length, 1);
 });

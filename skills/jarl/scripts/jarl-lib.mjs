@@ -629,6 +629,7 @@ export function raiseFormat(root, to = RECORD_FORMAT_RAISED) {
   if (!existsSync(jarlDir(root))) return false;
   return withLock(root, () => {
     if (loadProfile(root).format >= to) return false;
+    writeBarePaths(root);
     const path = profilePath(root);
     const json = existsSync(path) ? JSON.parse(readText(path)) : { 'jarl-profile': PROFILE_VERSION };
     json.format = to;
@@ -1967,6 +1968,7 @@ export function cmdMerged(root, rawIds, flags) {
   const pickedRepo = flags.repo !== undefined ? repoFromInput(root, String(flags.repo)) : null;
   const repoPath = pickedRepo ? pickedRepo.main : null;
   const repoIn = pickedRepo ? ` in ${noSeparators(pickedRepo.value)}` : '';
+  if (flags.sha !== undefined) needRightCheckouts(root, pickedRepo ? [pickedRepo.name].filter(Boolean) : issues.flatMap((i) => splitList(i.fields.repo)));
   const sha =flags.sha !== undefined ? String(flags.sha).toLowerCase() : null;
   const ci = flags.ci ?? (sha && !cli ? 'pending' : undefined);
   // The check as the merge line names it: the commands that ran, one line, never the log's own separator.
@@ -2882,6 +2884,21 @@ export function appendNote(root, event) {
   const type = id === null ? 'other' : parseEvent(id, text, loadProfile(root)).type;
   need(type === 'other', `log writes a note, and "${text.length > 80 ? `${text.slice(0, 77)}...` : text}" reads as ${type === 'filed' ? 'a filing' : `a ${type.replace('-', ' ')} line`}, which the journal's own command writes with its checks: ${LINE_WRITERS[type]}`);
   appendLog(root, event);
+}
+
+// Writes the repository after "in" of every merge line of the log as `fn(value)` gives it, the rest of the line as it was;
+// nothing is written when no line changes. Only the raise of the record format calls it.
+const MERGE_REPO_PART = /^(\S+ merged \S+ in )(.+?)((?: · .*)?)$/;
+export function mapMergeRepos(root, fn) {
+  const path = logPath(jarlDir(root));
+  if (!existsSync(path)) return;
+  const log = readText(path);
+  const next = log.split('\n').map((l) => {
+    const m = LOG_LINE.exec(l);
+    const p = m && MERGE_REPO_PART.exec(m[2]);
+    return p ? `- ${m[1]} · ${p[1]}${fn(p[2])}${p[3]}` : l;
+  }).join('\n');
+  if (next !== log) writeAtomic(path, next);
 }
 
 // Every dated line of the loop's log under `dir` (the directory holding the goal, the log and issues/), in order, as
@@ -4407,12 +4424,6 @@ export function repoValueKind(root, value) {
   return loadProfile(root).format >= RECORD_FORMAT_RAISED && !PATH_START.test(value) && REPO_NAME_RE.test(value) ? 'name' : 'path';
 }
 
-// The main checkout of the repository `dir` is in, canonical, from the list of worktrees git gives (its first entry);
-// null for a bare repository or where git does not answer.
-function checkoutOf(dir) {
-  const entries = worktreesOf(dir);
-  return entries && entries.length && !entries[0].bare ? canonical(entries[0].path) : null;
-}
 // The directory a name is looked for in: the parent of the loop's main checkout, found through git's common directory, so
 // a loop opened in a linked worktree finds its siblings beside the main checkout. A loop outside git looks beside its root.
 const HOMES = new Map();
@@ -4519,22 +4530,34 @@ function pathTo(root, main) {
 export function repoFromInput(root, raw) {
   need(typeof raw === 'string' && raw.trim() !== '', '--repo takes a repository: its name, its checkout, a worktree of it or a file inside it');
   const given = portablePath(raw.trim());
+  need(!/[\r\n]/.test(given) && !given.includes(' · '), `--repo ${JSON.stringify(given)} is on more than one line or holds the log's separator: a repository is one name or one path`);
   const word = !PATH_START.test(given);
   need(!word || REPO_NAME_RE.test(given), `${JSON.stringify(given)} is neither a path (it starts with . or /) nor a repository name (letters, digits, - _ and . inside)`);
   const home = loopHome(root);
   const spelled = word ? join(home, given) : resolve(root, given);
-  let isDir = false;
-  try { isDir = statSync(spelled).isDirectory(); } catch { isDir = false; }
-  const inside = isDir ? spelled : dirname(spelled);
+  // Only a directory, or an existing file (reduced to the directory it is in), names a repository: a path that is not
+  // there is refused, never read as the repository around it.
+  let kind = null;
+  try { const st = statSync(spelled); kind = st.isDirectory() ? 'dir' : st.isFile() ? 'file' : null; } catch { kind = null; }
+  need(kind !== null || word, `not a git repository: ${spelled} does not exist (--repo ${JSON.stringify(given)}) — give the repository's name, its checkout, a worktree of it or a file inside it`);
+  const isDir = kind === 'dir';
+  const inside = isDir ? spelled : kind === 'file' ? dirname(spelled) : spelled;
   need(isGitRepo(inside), word ? `${nameFix(root, given)} (${spelled} is not a git repository${isGitRepo(resolve(root, given)) ? `; ./${given} is a repository under the loop's root — a path is written with a leading ./` : ''})` :`not a git repository: ${spelled} (a relative --repo or Repo path is read from the loop's root, ${root})`);
-  const main = checkoutOf(inside);
+  const main = (mainCheckoutOf(inside) || {}).main ?? null;
   need(main !== null, `${inside} is in a bare repository, which has no checkout to name`);
   const candidates = [word ? given : null, isDir ? basename(spelled) : null, basename(main)];
-  const name = candidates.find((n, k) => n && REPO_NAME_RE.test(n) && candidates.indexOf(n) === k && canonical(join(home, n)) === main);
-  if (name) return { main, name, value: name, note: null };
+  let name = candidates.find((n, k) => n && REPO_NAME_RE.test(n) && candidates.indexOf(n) === k && canonical(join(home, n)) === main);
+  if (name) {
+    // A disk that ignores case reads TOOL as tool: one repository has one name, the declared spelling or else the directory's own.
+    const same = (n) => n.toLowerCase() === name.toLowerCase();
+    name = [...declaredRepos(root).keys()].find((d) => same(d) && canonical(join(home, d)) === main) ??(same(basename(main)) ? basename(main) : name);
+    return { main, name, value: name, note: null };
+  }
   const exact = isDir && canonical(spelled) === main;
   const value = exact ? given : pathTo(root, main);
-  const why = `${exact ? '' : `${given} is reduced to its main checkout; `}the checkout is not at ${join(home, basename(main))}, where a name would resolve — put it, or a symlink to it, there to name it`;
+  const place = join(home, basename(main));
+  const occupied = existsSync(place) && canonical(place) !== main;
+  const why = `${exact ? '' : `${given} is reduced to its main checkout; `}${occupied ? `another repository stands at ${place}, where its name would resolve, so this one keeps its path` : `the checkout is not at ${place}, where a name would resolve — put it, or a symlink to it, there to name it`}`;
   return { main, name: null, value, note: `${given} is stored as the path ${value}: ${why}` };
 }
 // The values of a --repo list (one name or path, or several as one comma list), each read by repoFromInput.
@@ -4545,33 +4568,44 @@ function repoList(root, v) {
   return items.map((item) => repoFromInput(root, item));
 }
 
-// The first name a loop stores raises its record format, under the lock of the write, and writes any bare-word path a
-// format-1 issue holds as ./<word>, the same place said so that format 2 does not read it as a name.
-function rewriteBarePaths(root) {
-  if (loadProfile(root).format >= RECORD_FORMAT_RAISED) return;
+// Every raise of the record format (raiseFormat, whatever triggers it) first writes each bare-word path a format-1 loop
+// holds as ./<word>: the same place said so that format 2 does not read it as a name. The values are the Repo field of
+// every issue, the repository after "in" in a Merged field, and the same after "in" in the log's merge lines, which
+// the header is read against. A value that already starts with a dot, a slash or a drive letter is left as it is, so the
+// rewrite is idempotent. Called under the lock, before the marker is written.
+const BARE_REPO_LINE = /^(\*\*Repo:\*\* )(.*)$/m;
+const BARE_MERGED_FIELD = /^(\*\*Merged:\*\* \S+ in )(.+)$/m;
+const dotted = (v) => (PATH_START.test(v) ? v : `./${v}`);
+function writeBarePaths(root) {
+  const dir = issuesDir(root);
   const rewritten = [];
-  for (const issue of loadIssues(root)) {
-    const values = splitList(issue.fields.repo);
-    if (!values.some((v) => !PATH_START.test(v))) continue;
-    writeAtomic(issue.file, setField(readText(issue.file), 'Repo', values.map((v) => (PATH_START.test(v) ? v : `./${v}`)).join(', ')));
-    rewritten.push(issue.id);
+  for (const f of existsSync(dir) ? readdirSync(dir) : []) {
+    const m = ISSUE_FILE_RE.exec(f);
+    if (!m) continue;
+    const text = readText(join(dir, f));
+    const next = text
+      .replace(BARE_REPO_LINE, (all, head, value) => `${head}${splitList(value).map(dotted).join(', ')}`)
+      .replace(BARE_MERGED_FIELD, (all, head, value) => `${head}${dotted(value.trim())}`);
+    if (next === text) continue;
+    writeAtomic(join(dir, f), next);
+    rewritten.push(m[1]);
   }
-  if (rewritten.length) appendLog(root, `repo paths written as ./<word> in ${rewritten.join(', ')} · the record format is raised before names are stored`);
+  mapMergeRepos(root, dotted);
+  if (rewritten.length) appendLog(root, `repo paths written as ./<word> in ${rewritten.join(', ')} · the record format is raised`);
 }
-// The names among the repositories read from a --repo list are declared (once) and the format raised first.
+// The names among the repositories read from a --repo list are declared (once), after the format is raised.
 function commitRepoNames(root, picked) {
   if (!picked.some((p) => p.name)) return;
   withLock(root, () => {
-    rewriteBarePaths(root);
     raiseFormat(root);
-    for (const p of picked) if (p.name) declareRepo(root, p.name, p.main);
+    for (const p of picked) if (p.name && declareRepo(root, p.name, p.main) === 'no-base') p.note = `${p.name} has no branch checked out, so it is declared with no base — name one with repo --base ${p.name} <branch>`;
   });
 }
 
 // ---- the declarations in .jarl/repos.md
 
-const REPOS_HEADER = '# Repositories\n\nJarl declares a repository here the first time an issue names it; no command writes this file by hand. A name stands for the checkout beside the main checkout of the loop, and the file holds no path.\n\n';
-const declarationText = (e) => `roots ${e.roots === null ? 'unknown' : e.roots.length ? e.roots.join(', ') : 'none'} · origin ${e.origin ?? 'none'} · base ${e.base}`;
+export const REPOS_HEADER = '# Repositories\n\nEach line declares a repository that an issue names by name: its root commits, its origin as found, its base branch, and no path. Jarl writes this file and nothing else does. A name stands for the checkout beside the main checkout of the loop.\n\n';
+const declarationText = (e) => `roots ${e.roots === null ? 'unknown' : e.roots.length ? e.roots.join(', ') : 'none'} · origin ${e.origin ?? 'none'} · base ${e.base ?? 'none'}`;
 // name → { name, roots (null when the checkout was shallow), origin (null when none), base }, in the order written.
 export function declaredRepos(root) {
   const out = new Map();
@@ -4582,7 +4616,7 @@ export function declaredRepos(root) {
     const parts = new Map(m[2].split(' · ').map((s) => { const k = s.indexOf(' '); return k < 0 ? [s, ''] : [s.slice(0, k), s.slice(k + 1)]; }));
     const roots = parts.get('roots');
     const origin = parts.get('origin');
-    out.set(m[1], { name: m[1], roots: roots === undefined || roots === 'unknown' ? null : roots === 'none' ? [] : roots.split(', '), origin: origin && origin !== 'none' ? origin : null, base: parts.get('base') || null });
+    out.set(m[1], { name: m[1], roots: roots === undefined || roots === 'unknown' ? null : roots === 'none' ? [] : roots.split(', '), origin: origin && origin !== 'none' ? origin : null, base: parts.get('base') && parts.get('base') !== 'none' ? parts.get('base') : null });
   }
   return out;
 }
@@ -4594,11 +4628,13 @@ function writeDeclarations(root, entries) {
 function declareRepo(root, name, main) {
   const known = declaredRepos(root);
   if (known.has(name)) return false;
-  const base = noSeparators(defaultBase(main));
-  const entry ={ name, roots: rootsOf(main, base), origin: originSpelling(git(main, ['remote', 'get-url', 'origin'])), base };
+  // A checkout with no branch checked out (detached) is declared with no base.
+  const current = noSeparators(defaultBase(main));
+  const base = current === 'HEAD' ? null : current;
+  const entry = { name, roots: rootsOf(main, base ?? 'HEAD'), origin: originSpelling(git(main, ['remote', 'get-url', 'origin'])), base };
   appendLog(root, `repo ${name} declared · ${declarationText(entry)}`);
   writeDeclarations(root, [...known.values(), entry]);
-  return true;
+  return base === null ? 'no-base' : true;
 }
 
 // repo --base <name> <branch>: changes the base of a declared repository, with a log line that says what it was.
@@ -4636,8 +4672,19 @@ export function repoIdentity(root, name) {
   out.found = found;
   if (found === null) return { ...out, state: 'unverified', notes: [...out.notes, 'a shallow checkout cannot show its root commits'] };
   if (declared.roots === null) return { ...out, state: 'unverified', notes: [...out.notes, 'the declaration was made from a shallow checkout and holds no root commits'] };
+  if (found.length === 0 || declared.roots.length === 0) return { ...out, state: 'unverified', notes: [...out.notes, 'a repository with no commit has no root commit to compare'] };
   if (found.some((r) => declared.roots.includes(r))) return { ...out, state: 'verified' };
   return { ...out, state: 'mismatch', fix: `${path} is another repository than ${name} (its root commits are ${found.join(', ') || 'none'}, the declaration holds ${declared.roots.join(', ')}) — put the checkout of ${name}, or a symlink to it, there` };
+}
+
+// A command that deletes a branch or a worktree acts only on the repository it names: a value written as a name whose
+// checkout holds none of the declared root commits is another repository, and is refused whatever else reads the value.
+export function needRightCheckouts(root, values) {
+  for (const value of new Set(values)) {
+    if (repoValueKind(root, value) !== 'name') continue;
+    const found = repoIdentity(root, value);
+    need(found.state !== 'mismatch', found.fix);
+  }
 }
 
 // ---- where the repositories and the worktree of a lease are on this machine
