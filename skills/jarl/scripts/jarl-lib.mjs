@@ -4097,14 +4097,20 @@ function nextAfterVerdict(issue, verdict, kind) {
 
 // The worktrees of the repository `dir` is in, as `git worktree list --porcelain` gives them: { path, branch (null when detached), bare, locked,
 // reason (of the lock), prunable }, the main checkout first. Null where git does not answer. The one place the list is
-// split into entries.
+// split into entries. The first entry of a repository kept in a submodule is git's own directory for it (inside the
+// superproject's .git), not a working tree: its working tree is the directory its core.worktree names, and one without
+// that setting has none (bare).
 function worktreesOf(dir) {
   const text = git(dir, ['worktree', 'list', '--porcelain']);
   if (text === null) return null;
   return text.split(/\n\s*\n/).map((b) => ({
     path: /^worktree (.+)$/m.exec(b)?.[1], branch: /^branch refs\/heads\/(.+)$/m.exec(b)?.[1] || null, bare: /^bare$/m.test(b),
     locked: /^locked(?: |$)/m.test(b), reason: /^locked (.+)$/m.exec(b)?.[1], prunable: /^prunable(?: |$)/m.test(b),
-  })).filter((e) => e.path);
+  })).filter((e) => e.path).map((e, k) => {
+    if (k !== 0 || e.bare || !existsSync(join(e.path, 'HEAD')) || existsSync(join(e.path, '.git'))) return e;
+    const tree = git(e.path, ['config', '--get', 'core.worktree']);
+    return tree ? { ...e, path: resolve(e.path, tree) } : { ...e, bare: true };
+  });
 }
 
 // Read once per run: whether a directory is in a git repository, and every local branch of a repository with its
@@ -4466,6 +4472,7 @@ export function repoOf(root, named) {
   // A subdirectory of a repository is not the repository: the paths git reports are relative to its root, so a
   // declared file or a removed test would be read from the wrong place and go unseen.
   const top = git(repo, ['rev-parse', '--show-toplevel']);
+  need(top !== null || git(repo, ['rev-parse', '--is-bare-repository']) !== 'true', `${repo} is a bare repository: it has no working tree to act on`);
   need(top !== null && canonical(top) === canonical(repo), name ? `${repo} is inside the repository at ${top}, not its root — ${nameFix(root, name)}` : `${repo} is inside the repository at ${top}, not its root — name the root: ${portablePath(relative(canonical(root), canonical(top || repo))) || '.'}`);
   RESOLVED.set(key, repo);
   return repo;
@@ -4549,7 +4556,7 @@ export function repoFromInput(root, raw) {
   const inside = isDir ? spelled : kind === 'file' ? dirname(spelled) : spelled;
   need(isGitRepo(inside), word ? `${nameFix(root, given)} (${spelled} is not a git repository${isGitRepo(resolve(root, given)) ? `; ./${given} is a repository under the loop's root — a path is written with a leading ./` : ''})` :`not a git repository: ${spelled} (a relative --repo or Repo path is read from the loop's root, ${root})`);
   const main = (mainCheckoutOf(inside) || {}).main ?? null;
-  need(main !== null, `${inside} is in a bare repository, which has no checkout to name`);
+  need(main !== null, `${inside} is a bare repository: it has no working tree to act on`);
   const candidates = [word ? given : null, isDir ? basename(spelled) : null, basename(main)];
   let name = candidates.find((n, k) => n && REPO_NAME_RE.test(n) && candidates.indexOf(n) === k && canonical(join(home, n)) === main);
   if (name) {

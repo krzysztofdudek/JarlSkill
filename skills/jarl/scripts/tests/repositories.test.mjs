@@ -261,6 +261,64 @@ test('a loop opened in a linked worktree resolves its siblings beside the main c
   assert.equal(L.repoOf(wt, 'tool'), tool);
 });
 
+// A superproject with the loop and a repository as submodules: git's directory for a submodule is inside the superproject's
+// .git, and its working tree is where the submodule is checked out.
+function submoduleWorld() {
+  const parent = tmp('jarl-sub-');
+  const sources = { hub: repoAt(join(parent, 'src-hub')), tool: repoAt(join(parent, 'src-tool'), { commits: [['tool.txt', 'tool\n']] }) };
+  const sup = repoAt(join(parent, 'super'));
+  for (const n of ['hub', 'tool']) git(sup, '-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', sources[n], n);
+  git(sup, 'commit', '-qm', 'submodules');
+  return { sup, hub: join(sup, 'hub'), tool: join(sup, 'tool') };
+}
+
+test('a loop kept in a submodule finds a sibling submodule by name beside its working tree, not inside the superproject\'s git directory', () => {
+  const w = submoduleWorld();
+  jarl(w.hub, 'init', 'goal');
+  const r = run(w.hub, ['new', 'a', '--tier', 'light', '--repo', '../tool']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.doesNotMatch(r.stderr, /stored as the path/);
+  assert.match(readFileSync(join(w.hub, '.jarl', 'issues', readdirSync(join(w.hub, '.jarl', 'issues'))[0]), 'utf8'), /^\*\*Repo:\*\* tool$/m);
+  assert.equal(L.mainCheckoutOf(w.hub).main, w.hub);
+  assert.equal(L.repoOf(w.hub, 'tool'), w.tool);
+  assert.match(jarl(w.hub, 'show', '1'), new RegExp(`^repository tool is at ${escaped(w.tool)}$`, 'm'));
+  assert.deepEqual(JSON.parse(jarl(w.hub, 'branches', '--repo', 'tool', '--json')), []);
+  assert.equal(run(w.hub, ['check', '1', '--branch', 'main']).stderr.includes('.git/modules'), false);
+  assert.equal(L.repoIdentity(w.hub, 'tool').state, 'verified');
+});
+
+test('a linked worktree of a submodule loop resolves its siblings beside the submodule\'s working tree', () => {
+  const w = submoduleWorld();
+  jarl(w.hub, 'init', 'goal', '--committed');
+  jarl(w.hub, 'new', 'a', '--tier', 'light', '--repo', 'tool');
+  git(w.hub, 'add', '-A');
+  git(w.hub, 'commit', '-qm', 'loop');
+  const wt = join(tmp('jarl-elsewhere-'), 'hub-wt');
+  git(w.hub, 'worktree', 'add', '-q', '-b', 'side', wt);
+  assert.equal(L.mainCheckoutOf(wt).main, w.hub);
+  assert.equal(L.mainCheckoutOf(wt).linked, true);
+  assert.match(jarl(wt, 'show', '1'), new RegExp(`^repository tool is at ${escaped(w.tool)}$`, 'm'));
+  // A linked worktree of the sibling submodule is reduced to the submodule's own working tree.
+  const toolWt = join(tmp('jarl-elsewhere-'), 'tool-wt');
+  git(w.tool, 'worktree', 'add', '-q', '-b', 'side', toolWt);
+  assert.equal(L.repoFromInput(w.hub, toolWt).main, w.tool);
+  assert.equal(L.repoFromInput(w.hub, toolWt).name, 'tool');
+});
+
+test('a bare repository under a name is refused as a bare repository', () => {
+  const w = world();
+  const bare = join(w.parent, 'tool');
+  mkdirSync(bare);
+  git(bare, 'init', '-q', '--bare');
+  assert.match(refuses(w.hub, 'new', 'x', '--tier', 'light', '--repo', 'tool'), /tool is a bare repository: it has no working tree to act on/);
+  R.newIssue(w.hub, 'a');
+  assert.match(refuses(w.hub, 'repo', '1', '../tool'), /is a bare repository: it has no working tree to act on/);
+  const file = join(w.hub, '.jarl', 'issues', readdirSync(join(w.hub, '.jarl', 'issues'))[0]);
+  writeFileSync(file, readFileSync(file, 'utf8').replace(/^(\*\*Files:\*\*.*)$/m, '$1\n**Repo:** ../tool'));
+  assert.match(refuses(w.hub, 'check', '1', '--branch', 'main'), /is a bare repository: it has no working tree to act on/);
+  assert.doesNotMatch(refuses(w.hub, 'check', '1', '--branch', 'main'), /at null/);
+});
+
 test('a loop outside git looks for a name beside its own directory', () => {
   const parent = tmp('jarl-plain-');
   const root = join(parent, 'loop');
