@@ -54,3 +54,22 @@ test('a profile validation message names the lease, and a status names the flag 
   assert.throws(() => R.validateProfile({ 'jarl-profile': 1, statuses: { a: ['dispatchable'], b: ['lease', 'holds-claim', 'settles-dependents'] } }), /names a flag twice/);
   assert.doesNotThrow(() => R.validateProfile({ 'jarl-profile': 1, statuses: { a: ['dispatchable'], b: ['lease'], c: ['terminal', 'settles-dependents'] } }));
 });
+
+test('scope and check give the same output, and only check says on stderr which name to use', () => {
+  const { dir, g } = gitRepo({ prefix: 'jarl-vocab-scope-', branch: 'feature' });
+  g('checkout', '-q', '-b', 'jarl/1-a');
+  writeFileSync(join(dir, 'a.txt'), 'changed\n');
+  g('add', '-A'); g('commit', '-qm', 'work');
+  g('checkout', '-q', 'feature');
+  R.initLoop(dir, 'goal');
+  R.newIssue(dir, 'first', { acceptance: 'it works' });
+  R.setStatus(dir, '1', 'in-progress', undefined, { branch: 'jarl/1-a', worker: 'w1' });
+  for (const extra of [[], ['--json']]) {
+    const scope = run(dir, ['scope', '1', '--branch', 'jarl/1-a', ...extra]);
+    const check = run(dir, ['check', '1', '--branch', 'jarl/1-a', ...extra]);
+    assert.equal(check.stdout, scope.stdout, extra.join(' '));
+    assert.equal(check.status, scope.status, extra.join(' '));
+    assert.equal(scope.stderr, '', 'scope says nothing on stderr');
+    assert.match(check.stderr, /^note: check keeps working as a name of scope; scope is the name to use$/m);
+  }
+});

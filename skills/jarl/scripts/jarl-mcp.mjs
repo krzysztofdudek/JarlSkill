@@ -34,7 +34,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { COMMAND_ARGS, COMMAND_FLAGS, flagsOf, COMMAND_SUMMARY, GLOBAL_FLAGS, MUTATING, USAGE, parseArgs, dispatch, findRoot, isEntry as isEntryOf } from './jarl.mjs';
+import { COMMAND_ALIASES, COMMAND_ARGS, COMMAND_FLAGS, flagsOf, COMMAND_SUMMARY, GLOBAL_FLAGS, MUTATING, USAGE, parseArgs, dispatch, findRoot, isEntry as isEntryOf } from './jarl.mjs';
 import { defineTable } from './vendor/runes/dist/cli/index.mjs';
 import {
   buildTools as generateTools, argvFor as generateArgv, commandForTool, serveStdio, InvalidParams,
@@ -70,17 +70,22 @@ const INSTRUCTIONS = 'Every jarl command is a tool, jarl_<command>, with its arg
 
 // The CLI's tables as one Runes command table. An argument written `name...` in COMMAND_ARGS takes any number of
 // words, none included (tag's +a -b, sources' findings files): `name...?` in the Runes grammar.
+// A name a command answers to besides its own gets a tool of its own, with the command's arguments and summary.
+const entry = (cmd) => ({
+  args: COMMAND_ARGS[cmd].map((a) => (a.endsWith('...') ? `${a}?` : a)),
+  flags: flagsOf(cmd),
+  summary: COMMAND_SUMMARY[cmd],
+  writes: MUTATING.has(cmd),
+  destructive: cmd === 'close' || cmd === 'archive',
+  ...(PATH_FIELDS[cmd] ? { paths: PATH_FIELDS[cmd] } : {}),
+});
 export const TABLE = defineTable({
   tool: 'jarl',
   globalFlags: GLOBAL_FLAGS,
-  commands: Object.fromEntries(Object.keys(COMMAND_FLAGS).map((cmd) => [cmd, {
-    args: COMMAND_ARGS[cmd].map((a) => (a.endsWith('...') ? `${a}?` : a)),
-    flags: flagsOf(cmd),
-    summary: COMMAND_SUMMARY[cmd],
-    writes: MUTATING.has(cmd),
-    destructive: cmd === 'close' || cmd === 'archive',
-    ...(PATH_FIELDS[cmd] ? { paths: PATH_FIELDS[cmd] } : {}),
-  }])),
+  commands: {
+    ...Object.fromEntries(Object.keys(COMMAND_FLAGS).map((cmd) => [cmd, entry(cmd)])),
+    ...Object.fromEntries(Object.entries(COMMAND_ALIASES).map(([name, cmd]) => [name, entry(cmd)])),
+  },
 });
 
 function describe(cmd, spec) {
@@ -182,7 +187,7 @@ export function callTool(name, input = {}, env = process.env, cwd = process.cwd(
     if (input.json) return { content: [{ type: 'text', text }], isError: true, ...(loopNote ? { _meta: { 'jarl/loop': loopNote } } : {}) };
     return { content: [{ type: 'text', text }, ...(loopNote ? [{ type: 'text', text: loopNote }] : [])], isError: true };
   }
-  const isError = cmd === 'check' && !r.out.ok;   // check's exit 2: a check that failed
+  const isError = (COMMAND_ALIASES[cmd] ?? cmd) === 'scope' && !r.out.ok;   // scope's exit 2: a branch that failed its measure
   if (input.json) {
     const meta = { ...(r.warn.length ? { 'jarl/warn': r.warn.join('\n') } : {}), ...(loopNote ? { 'jarl/loop': loopNote } : {}) };
     return { content: [{ type: 'text', text: JSON.stringify(r.out, null, 2) }], isError, ...(Object.keys(meta).length ? { _meta: meta } : {}) };

@@ -4659,11 +4659,11 @@ function unrecordedBranch(root, flags) {
   const base = flags.base || defaultBase(repo);
   const carried = commitsBeyond(repo, base, flags.branch);
   if (carried) return `no issue records branch ${flags.branch}: it carries ${carried} commit(s) beyond ${base} and no issue holds it (work without a ticket) — file the issue, then set it in-progress --branch ${flags.branch}`;
-  return `no issue records branch ${flags.branch} — name one (check <id> --branch ${flags.branch}), or record the package: set <ids> in-progress --branch ${flags.branch}`;
+  return `no issue records branch ${flags.branch} — name one (scope <id> --branch ${flags.branch}), or record the package: set <ids> in-progress --branch ${flags.branch}`;
 }
 
 export function cmdCheck(root, rawId, flags) {
-  need(flags.branch, 'check requires --branch <worker branch>');
+  need(flags.branch, 'scope requires --branch <worker branch>');
   let pkg;
   if (rawId === undefined) {
     const profile = loadProfile(root);

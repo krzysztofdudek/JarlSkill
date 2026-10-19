@@ -174,7 +174,7 @@ commands:
                                                  loop (its root, or an archive directory) and --archives this loop's own
                                                  archives, merged into one table that names the loops it read; a path that
                                                  is not a loop is refused; suggestions only, no lock, nothing written
-  check [<id>] --branch <b> [--base <feature-branch>] [--repo <name|path>]
+  scope [<id>] --branch <b> [--base <feature-branch>] [--repo <name|path>]
                                                  commits beyond the base, diff inside the declared files, and the
                                                  change in test files and assertions — numbers, never a verdict;
                                                  notes for the added lines that name a loop issue by its number after
@@ -394,7 +394,7 @@ export const COMMAND_FLAGS = {
   next: { limit: 'value', all: 'bool' },
   review: { by: 'value', model: 'value', relayed: 'bool' }, round: {},
   models: { by: 'value', with: 'many', archives: 'bool' },
-  check: { branch: 'value', base: 'value', repo: 'value' },
+  scope: { branch: 'value', base: 'value', repo: 'value' },
   branches: { base: 'value', repo: 'value', 'stale-hours': 'value' },
   merged: { sha: 'value', ci: 'value', repo: 'value', ran: 'many', saw: 'many', red: 'value', keep: 'bool' },
   ask: { kind: 'value', target: 'value', issue: 'value', option: 'many' },
@@ -411,7 +411,10 @@ export const COMMAND_FLAGS = {
 // Flags a command reads besides the ones its usage shows: the spellings another form of the same operation takes
 // (evidence --retract <n> is retract <id> <n>). The parser and the tools' fields carry them; the usage text does not.
 export const ALTERNATE_FLAGS = { evidence: { retract: 'value', by: 'value' } };
-export const flagsOf = (cmd) => ({ ...(COMMAND_FLAGS[cmd] || {}), ...(ALTERNATE_FLAGS[cmd] || {}) });
+// A name a command answers to besides its own: the command line and the tools run it under the command it names, and
+// the command line says which name to use. The help and the skill name the command only.
+export const COMMAND_ALIASES = Object.freeze({ check: 'scope' });
+export const flagsOf = (cmd) => ({ ...(COMMAND_FLAGS[COMMAND_ALIASES[cmd] ?? cmd] || {}), ...(ALTERNATE_FLAGS[COMMAND_ALIASES[cmd] ?? cmd] || {}) });
 
 export function parseArgs(argv) {
   const positional = [];
@@ -427,7 +430,7 @@ export function parseArgs(argv) {
       positional.push(a);
       if (cmd === undefined) {
         cmd = a;
-        need(COMMAND_FLAGS[cmd], `unknown command: ${cmd}\n${USAGE}`);
+        need(COMMAND_FLAGS[COMMAND_ALIASES[cmd] ?? cmd], `unknown command: ${cmd}\n${USAGE}`);
       }
       continue;
     }
@@ -474,7 +477,7 @@ export const COMMAND_ARGS = {
   after: ['id', 'ids?'], evidence: ['ids', 'text?'], retract: ['id', 'what', 'reason'], field: ['ids', 'name', 'value?'],
   list: [], show: ['id'], set: ['ids', 'status', 'why?'],
   merged: ['ids'], tag: ['ids', 'ops...'], prio: ['ids', 'priority'], files: ['id', 'paths'], repo: ['id', 'path?'],
-  next: [], review: ['ids', 'verdict', 'findings'], round: ['id', 'what'], models: [], check: ['id?'], branches: [],
+  next: [], review: ['ids', 'verdict', 'findings'], round: ['id', 'what'], models: [], scope: ['id?'], branches: [],
   ask: ['question'], answer: ['id', 'answer?'], resume: [], handoff: ['action?'], log: ['event'],
   decide: ['slug', 'ruling'], decisions: [], goal: [], status: [], archive: ['slug'], report: [], tips: [], queue: [],
   changelog: ['ids'], mode: ['mode'], close: [], profile: ['file?'], verify: [],
@@ -504,7 +507,7 @@ export const COMMAND_SUMMARY = {
   review: 'Record a reviewer\'s verdict (approve or changes) on issues, with the reviewer and the findings.',
   round: 'Record one red round on issues; after three it prints the takeover block for a fresh worker.',
   models: 'Per model as worker and as reviewer, per kind of task: the counts, clean first passes and verdicts the record holds, with the words fits, below, new and may clear; reads other loops and archives too.',
-  check: 'Measure a worker branch against its base: commits, diff inside the declared files, test changes; numbers, never a verdict.',
+  scope: 'Measure a worker branch against its base: commits, diff inside the declared files, test changes; numbers, never a verdict.',
   branches: 'Every worker branch with its issues, commits beyond the base, worktree state, stale leases and done branches.',
   ask: 'File a question the user has to answer (stop, stuck, lower, charter or ratify).',
   answer: 'Record the user\'s answer to a question, the option chosen or the words given, as a ruling and close the question; several ratify items take one answer.',
@@ -525,7 +528,7 @@ export const COMMAND_SUMMARY = {
   verify: 'Check the record strictly, without a lock: the lines each reader does not place, the headers that disagree with the log, the repositories, leases and superseded rulings the issues name; exit 2 on a finding.',
   close: 'Close the loop when nothing is open or in progress, filing the ratification batch first.',
 };
-const ARITY = Object.fromEntries(Object.entries(COMMAND_ARGS).filter(([, a]) => !a.some((n) => n.endsWith('...'))).map(([c, a]) => [c, a.length]));
+const ARITY = Object.fromEntries(Object.entries({ ...COMMAND_ARGS, ...Object.fromEntries(Object.entries(COMMAND_ALIASES).map(([name, c]) => [name, COMMAND_ARGS[c]])) }).filter(([, a]) => !a.some((n) => n.endsWith('...'))).map(([c, a]) => [c, a.length]));
 
 // The commands that write: each runs under .jarl/.lock (see withLock).
 export const MUTATING = new Set(['init', 'new', 'body', 'import', 'source', 'after', 'set', 'field', 'merged', 'tag', 'prio', 'files', 'repo', 'evidence', 'retract', 'review', 'round', 'ask', 'answer', 'log', 'decide', 'goal', 'archive', 'mode', 'close']);
@@ -562,6 +565,7 @@ function main() {
     process.exit(1);
   }
   const { out, text, warn, aliases } = r;
+  if (COMMAND_ALIASES[cmd]) warn.unshift(`note: ${cmd} keeps working as a name of ${COMMAND_ALIASES[cmd]}; ${COMMAND_ALIASES[cmd]} is the name to use`);
   // Said on the command line only, after the note is written whole: a long free-text note is hard to read back and
   // cannot be retracted by number; nothing is refused or cut.
   if (cmd === 'evidence' && flags.ran === undefined && flags.retract === undefined && typeof rest[1] === 'string' && (rest[1].length > LONG_NOTE_CHARS || rest[1].trim().split('\n').length > LONG_NOTE_LINES)) {
@@ -569,7 +573,7 @@ function main() {
   }
   console.log(flags.json ? JSON.stringify(out, null, 2) : text);
   for (const w of [...aliases, ...warn]) console.error(w);
-  if ((cmd === 'check' || cmd === 'verify') && !out.ok) process.exit(2);
+  if (((COMMAND_ALIASES[cmd] ?? cmd) === 'scope' || cmd === 'verify') && !out.ok) process.exit(2);
 }
 
 // The ratification batch as close prints it: one line per item, then what became of the ones nobody answered.
@@ -606,7 +610,8 @@ function setCommand(root, ids, name, value, flags) { return cmdSet(root, ids, na
 // One command, run: its result (what --json prints), its text and the notes said on stderr. Throws on a refusal.
 // Every call starts from empty caches, so a caller that runs many commands in one process (a server) sees each
 // time what is on disk and in git now, exactly as a fresh process would.
-export function dispatch(root, cmd, rest, flags) {
+export function dispatch(root, commandName, rest, flags) {
+  const cmd = COMMAND_ALIASES[commandName] ?? commandName;
   resetCaches();
   let out;
   let text;
@@ -665,7 +670,7 @@ export function dispatch(root, cmd, rest, flags) {
       case 'models': out = cmdModels(root, flags); text = renderModels(out); break;
       case 'round': out = eachIssue(root, rest[0], (id, dry) => cmdRound(root, id, rest[1], dry)); text = each(out, (o) => (o.takeover ? `${o.id} round ${o.round} — takeover:\n\n${o.block}` : `${o.id} round ${o.round} of ${ROUNDS_BEFORE_TAKEOVER} before a takeover`)); break;
       case 'merged': out = R.recordMerged(root, rest[0], { ...flags, caller: 'cli' }); text = `${out.ids.join(', ')} ${out.sha ? `merged ${out.sha}` : 'merge'}${out.check ? ` · check ${out.check}` : ''}${out.red ? ` · landed red, cause ${out.red}` : ''}${out.ci ? ` · CI ${out.ci}` : ''}${(out.cleanup || []).map((c) => `\n${c.kept ? `kept ${c.branch}${c.worktree ? ` (worktree ${c.worktree} removed)` : ''} — ${c.kept}` : `removed ${c.worktree ? `the worktree ${c.worktree} and ` : ''}the branch ${c.branch}`}${(c.commands || []).length ? `\nafter looking at the files, remove them with:\n${c.commands.map((x) => `  ${x}`).join('\n')}` : ''}${out.cleanup.some((x) => x.repo !== c.repo) ? ` [${c.repo}]` : ''}`).join('')}`; warn = out.notes.map((n) => `note: ${n}`); break;
-      case 'check': out = cmdCheck(root, rest[0], flags); text = `${out.id === null ? `package ${out.ids.join(', ')} on ${out.branch}\n` : ''}${out.repo === root ? '' : `in ${out.repo}\n`}${out.items.map((i) => `${i.ok ? '✓' : '✗'} ${i.name} — ${i.note}`).join('\n')}${out.notes.length || out.notesOmitted ? `\n${renderCheckNotes(out)}` : ''}`; break;
+      case 'scope': out = cmdCheck(root, rest[0], flags); text = `${out.id === null ? `package ${out.ids.join(', ')} on ${out.branch}\n` : ''}${out.repo === root ? '' : `in ${out.repo}\n`}${out.items.map((i) => `${i.ok ? '✓' : '✗'} ${i.name} — ${i.note}`).join('\n')}${out.notes.length || out.notesOmitted ? `\n${renderCheckNotes(out)}` : ''}`; break;
       case 'branches': out = cmdBranches(root, flags); text = renderBranches(out, root); break;
       case 'ask': out = R.ask(root, rest[0], { ...flags, width: undefined }); text = askText(out); break;
       // The library's answer (jarl-record/1) takes no opts: --by and --option reach the answer through jarl-lib.mjs, under the lock held here.

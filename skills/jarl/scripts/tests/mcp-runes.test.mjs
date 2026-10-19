@@ -8,17 +8,31 @@ import { fileURLToPath } from 'node:url';
 import { assertParity, parityProblems } from '../vendor/runes/dist/testkit/parity.mjs';
 import { measureTools, formatToolsMeasure } from '../vendor/runes/dist/testkit/measure.mjs';
 import { listToolsOverStdio } from '../vendor/runes/dist/testkit/client.mjs';
-import { COMMAND_FLAGS, USAGE } from '../jarl.mjs';
+import { COMMAND_ALIASES, COMMAND_FLAGS, USAGE } from '../jarl.mjs';
 import * as mcp from '../jarl-mcp.mjs';
 
 const SERVER = fileURLToPath(new URL('../jarl-mcp.mjs', import.meta.url));
 const listed = await listToolsOverStdio({ command: process.execPath, args: [SERVER] });
 
+// A name a command answers to has a tool of its own, and the usage names only the command. The parity below holds the
+// commands and their tools; the alias tools are checked against their command apart.
+const ALIAS_TOOLS = Object.keys(COMMAND_ALIASES).map(mcp.toolName);
+const commandsOnly = { ...mcp.TABLE, commands: Object.fromEntries(Object.entries(mcp.TABLE.commands).filter(([name]) => !COMMAND_ALIASES[name])) };
+const commandTools = listed.filter((t) => !ALIAS_TOOLS.includes(t.name));
+
 // The usage side checks that every command has its entry and no entry names a command the table lacks. Its flag check
 // is off: an entry's prose names other commands' flags (set's "--ran/--saw row", close's "init --permanent"), and
 // mcp.test.mjs already holds each synopsis to its command's flags both ways.
 test('parity (Runes testkit): the table, the usage text and the tools the running server lists say the same thing', () => {
-  assertParity({ table: mcp.TABLE, usage: USAGE, usageOptions: { from: /^commands:/ }, usageFlags: false, tools: listed, toolOptions: mcp.TOOL_OPTIONS });
+  assertParity({ table: commandsOnly, usage: USAGE, usageOptions: { from: /^commands:/ }, usageFlags: false, tools: commandTools, toolOptions: mcp.TOOL_OPTIONS });
+});
+
+test('a name a command answers to has a tool of its own, with the same fields and description as the command', () => {
+  const byName = Object.fromEntries(listed.map((t) => [t.name, t]));
+  for (const [name, cmd] of Object.entries(COMMAND_ALIASES)) {
+    assert.deepEqual(byName[mcp.toolName(name)].inputSchema, byName[mcp.toolName(cmd)].inputSchema, name);
+    assert.equal(byName[mcp.toolName(name)].description, byName[mcp.toolName(cmd)].description, name);
+  }
 });
 
 test('parity (Runes testkit): a tool that loses a field, or a command with no tool, is caught', () => {
@@ -30,7 +44,7 @@ test('parity (Runes testkit): a tool that loses a field, or a command with no to
 });
 
 test('the table is the CLI\'s: every command, and the server lists exactly the tools buildTools generates', () => {
-  assert.deepEqual(Object.keys(mcp.TABLE.commands).sort(), Object.keys(COMMAND_FLAGS).sort());
+  assert.deepEqual(Object.keys(mcp.TABLE.commands).sort(), [...Object.keys(COMMAND_FLAGS), ...Object.keys(COMMAND_ALIASES)].sort());
   assert.deepEqual(listed, JSON.parse(JSON.stringify(mcp.buildTools())));
 });
 
