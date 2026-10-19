@@ -38,6 +38,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The skill lists every difference between the record library and the command line, with the reason for each, so a tool that builds on the library can see where the two differ.
 
 ### Changed
+- The skill is now a short entry file with a `references/` directory beside it. A plugin install gets both. If you copy the skill by hand, copy the whole `skills/jarl/` directory, not only `SKILL.md`.
 - The skill uses one word for each concept and has a short glossary of them.
 - The person who rules over a loop is called the owner.
 - The claim an issue holds while it is in progress is called a lease. A profile that still writes the old flag name, `holds-claim`, keeps working.
