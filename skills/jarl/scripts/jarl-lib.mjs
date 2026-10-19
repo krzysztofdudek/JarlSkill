@@ -378,7 +378,7 @@ export const DONE_GATE_APPROVE = ['fresh', 'none'];
 export const DEFAULT_DONE_GATE = Object.freeze({ approve: 'fresh', 'requires-merged': false });
 // Header fields the tool itself writes and reads: a profile cannot declare them. Kind and Tier are built in too, but
 // a profile may declare them to replace their values (an enum, and a default).
-export const TOOL_FIELDS = ['Status', 'Priority', 'Tags', 'Files', 'Repo', 'After', 'Found by', 'Source', 'Where', 'Branch', 'Worker', 'Worktree', 'Since', 'Merged', 'CI', 'Resources'];
+export const TOOL_FIELDS = ['Status', 'Priority', 'Tags', 'Files', 'Repo', 'After', 'Found by', 'Source', 'Where', 'Branch', 'Worker', 'Worktree', 'Since', 'Merged', 'Merge check', 'CI', 'Resources'];
 export const BUILTIN_SECTIONS = ['What', 'Why', 'Acceptance', 'Changelog', 'Evidence'];
 export const PROFILE_FIELD_RE = /^[A-Za-z][A-Za-z0-9 -]{0,39}$/;
 export const PROFILE_STATUS_RE = /^[a-z][a-z0-9-]{0,39}$/;
@@ -706,7 +706,7 @@ function issuesAt(recordDir, profile, events = loopEvents(recordDir, profile)) {
     });
 }
 // The header fields the commands render from the journal, as the fields of an issue name them.
-const RENDERED_FIELDS = ['branch', 'worker', 'model', 'since', 'merged', 'ci'];
+const RENDERED_FIELDS = ['branch', 'worker', 'model', 'since', 'merged', 'merge check', 'ci'];
 // An issue with the state its journal gives in place of the one its header says. The header as read stays in
 // issue.onFile (not enumerable, so a copy of the issue does not carry it): status and the fields above, each as the file
 // has it. An issue the journal holds no filing and no move of (state null) keeps its header, and onFile is null.
@@ -1611,8 +1611,8 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
     // not a reset of it.
     if (profile.is(status, 'needs-reason')) {
       const written = (issue.sections.evidence || '').trim();
-      const line = `${reasonWord(status)}: ${why}`;
-      text = setSection(text, 'Evidence', written ? `${written}\n\n${line}` : line);
+      const line = `${reasonWord(status)}: ${noteText(why, written)}`;
+      text = setSection(text, 'Evidence', placeEvidence(written, 'note', line, '\n\n'));
     }
     return { issue, text };
   });
@@ -1624,7 +1624,7 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   // A reason that opens with the name of a lease field is closed by a segment "(reason)", so no reader takes it for the field.
   // Every separator character of a lease's reason is replaced, with the space around it, so no run of separators and
   // spaces can leave a separator in it and the reason is one segment of the line.
-  const neutral = holds && why ? String(why).replace(/\s*·\s*/g, ' - ').trim() : why;
+  const neutral = holds && why ? noSeparators(why) : why;
   const reason = holds && neutral && /^(branch|model|worker|worktree) /.test(neutral) ? `${neutral} · (reason)` : neutral;
   // The line goes first: a write that stops between the two leaves the journal, the record, ahead of the files, which the
   // views report, and never a file ahead of the record.
@@ -1634,6 +1634,11 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   const leaseNoModel = caller === 'cli' && holds && model === undefined && modelLines(root).declared ? 'no --model on this lease — the loop declares its models, and a model that is not recorded can never be recovered' : null;
   return oneOrMany(rawIds, issues.map((issue, n) => ({ id: issue.id, status, ...(holds ? { since, ...(flags.branch !== undefined ? { branch: fieldText(flags.branch) } : {}), ...(flags.worker !== undefined ? { worker: fieldText(flags.worker) } : {}), ...(model !== undefined ? { model } : {}), ...(worktree !== undefined ? { worktree } : {}) } : {}), ...(profile.is(status, 'closes-record') ? doneNote(issue, root) : {}), ...(leaseNoModel && n === 0 ? { note: leaseNoModel } : {}) })));
 }
+
+// Free text written into a log line beside its fields (a lease's reason, a merge's check and what it printed): every
+// separator character is replaced, with the space around it, after trimming, so no run of separators and spaces can
+// survive in it at either end or inside and the text is one segment of the line.
+export function noSeparators(text) { return String(text ?? '').trim().replace(/\s*·\s*/g, ' - ').trim(); }
 
 // Why a lease value (--branch, --worker, --model, --worktree) cannot be written, or null when the lease line gives it
 // back unchanged: one line in all four; no comma in a worker or a model (a comma marks a sentence, not a name); and a
@@ -1721,11 +1726,14 @@ export function doneRefusal(root, issue) { return doneRefusalIn(root, readLoop(j
 function doneRefusalIn(root, loop, issue, base) {
   const { profile } = loop;
   const g = gateOf(loop, issue.id);
-  const how = `jarl.mjs evidence ${issue.id} --ran "<command>" --saw "<what it printed>"`;
+  const how = EVIDENCE_HOW(issue.id);
+  // A merge that records its check does not stand in for the worker's row: said to whoever is refused, the merger included.
+  const mergeLine = lastMerge(loop.eventsById.get(issue.id) || []);
+  const gap = mergeLine && mergeLine.check ? ` — the merge records a check (${mergeLine.check}), but that check is the merger's and does not stand in for the worker's row: the row is the worker's proof of the work, so the worker records what the work's own check ran and printed, and nobody types the merge check into Proof in its place` : '';
   if (g.unresolvedRetractions.length) return `${issue.id} records a retraction of evidence row ${g.unresolvedRetractions.join(', ')} that matches no evidence line of the log, so which row it retracts is unknown and a retracted row might be counted — done refuses until that log line is repaired`;
-  if (!workEvidence(issue, profile)) return `${issue.id} has no evidence yet — record it first: ${how}`;
-  if (!g.tracked && !evidenceRows(issue).length) return `${issue.id} has no --ran/--saw evidence row — a free-text note alone is not proof of the work: ${how}`;
-  if (g.tracked && !g.rowsSince) return `${issue.id} has no --ran/--saw evidence row recorded since it was ${g.anchor.what === 'filed' ? 'filed' : `moved → ${g.anchor.what}`} (${g.anchor.at}) — a free-text note, or a row written before that (before a start or a reopen), is not proof of the work: ${how}`;
+  if (!workEvidence(issue, profile)) return `${issue.id} has no evidence yet — record it first: ${how}${gap}`;
+  if (!g.tracked && !evidenceRows(issue).length) return `${issue.id} has no --ran/--saw evidence row — a free-text note alone is not proof of the work: ${how}${gap}`;
+  if (g.tracked && !g.rowsSince) return `${issue.id} has no --ran/--saw evidence row recorded since it was ${g.anchor.what === 'filed' ? 'filed' : `moved → ${g.anchor.what}`} (${g.anchor.at}) — a free-text note, or a row written before that (before a start or a reopen), is not proof of the work: ${how}${gap}`;
   if (profile.doneGate['requires-merged']) { const m = mergeRefusal(root, issue, base); if (m) return m; }
   if (profile.doneGate.approve === 'none') return null;
   const code = carriesCode(issue);
@@ -1773,11 +1781,15 @@ function doneNote(issue, root) {
     if (rows < lines) notes.push(`${lines} acceptance line(s), ${rows} --ran/--saw row(s)`);
   }
   const m = mergedOf(issue);
-  // A merge that carries its check (a passing row, or the red it landed on) needs no CI state to be told apart from an unrecorded one.
+  // A merge that carries its check (a passing check, or the red it landed on) needs no CI state to be told apart from an unrecorded one.
   const decided = () => { const line = lastMerge(journalById(root).get(issue.id) || []); return Boolean(line && (line.check || line.red)); };
   if (m && m.ci !== 'green' && m.ci !== 'none' && !(m.ci === null && decided())) notes.push(`merged ${m.sha}, CI ${m.ci || 'not recorded'} — record it when known: jarl.mjs merged ${issue.id} --ci green|red`);
   return notes.length ? { note: notes.join('; ') } : {};
 }
+
+// The Proof rows an issue holds inside the done gate's window: the --ran/--saw rows the worker wrote, not retracted.
+function proofSince(g, issue) { return g.tracked ? g.rowsSince : evidenceRows(issue).length; }
+const EVIDENCE_HOW = (id) => `jarl.mjs evidence ${id} --ran "<command>" --saw "<what it printed>"`;
 
 // The merge an issue records: **Merged:** <sha>[ in <repo>] and **CI:** pending|green|red|none. Null when
 // the issue records none.
@@ -1790,7 +1802,8 @@ export function mergedOf(issue) {
 
 // merged <ids> --sha <sha> [--ran "<check>" --saw "<summary>" | --red <id>] [--ci pending|green|red|none] [--repo <path>]
 // — the merge as a field, not as prose: the sha, where it landed, the check that decided it and the CI state. --ran and
-// --saw record the check's evidence row on every issue of the call and name the check in the merge line; --red <id> records
+// --saw record the check and what it printed in the merge record (the merge line and the Merge check field) of every issue
+// of the call; they write no Proof row, because the merger's check is not the worker's proof; --red <id> records
 // a merge that landed while its check was red for a cause outside the branch, which issue <id> tracks, and is never counted
 // as a passing check. The CI state is recorded only when given, except for a library call, which keeps pending as the
 // default. --ci alone, on issues that already record a merge, moves only the CI state. A sha the repository does not know
@@ -1821,7 +1834,9 @@ export function cmdMerged(root, rawIds, flags) {
   const sha = flags.sha !== undefined ? String(flags.sha).toLowerCase() : null;
   const ci = flags.ci ?? (sha && !cli ? 'pending' : undefined);
   // The check as the merge line names it: the commands that ran, one line, never the log's own separator.
-  const checkText = rows ? fieldText(rows.map((r) => r.ran).join(' ; ')).replace(/ +· +/g, ' - ').slice(0, 200) : null;
+  const oneLineOf = (key) => noSeparators(fieldText(rows.map((r) => r[key]).join(' ; '))).slice(0, 200).trim();
+  const checkText = rows ? oneLineOf('ran') : null;
+  const sawText = rows ? oneLineOf('saw') : null;
   const notes = [];
   if (sha) {
     // Where the sha should be: --repo, else each issue's Repo, else the loop's own repository.
@@ -1838,6 +1853,13 @@ export function cmdMerged(root, rawIds, flags) {
   // Said, never refused: a merge is a fact, and recording it is not the place to stop it. A merge whose issue holds
   // no fresh approve went in without the fresh review the rule asks for, and the note says so loudly.
   // Under a done gate with no approve (approve: none), the merge gate stands behind the issue, and no reviewer is owed.
+  if (sha && cli) {
+    const loop = readLoop(jarlDir(root));
+    for (const issue of issues) {
+      const g = gateOf(loop, issue.id);
+      if (proofSince(g, issue) === 0) notes.push(`NO PROOF FROM THE WORKER — ${issue.id} holds no Proof row since it was ${g.tracked ? (g.anchor.what === 'filed' ? 'filed' : `moved → ${g.anchor.what}`) : 'filed'}; ${checkText ? 'the merge check is recorded in the merge record and is not proof' : 'the merge records no check, and a merge is not proof'}, so done refuses until the worker records it:${EVIDENCE_HOW(issue.id)}`);
+    }
+  }
   if (sha && loadProfile(root).doneGate.approve !== 'none') {
     const loop = readLoop(jarlDir(root));
     for (const issue of issues) {
@@ -1845,14 +1867,18 @@ export function cmdMerged(root, rawIds, flags) {
       if (!g.fresh) notes.push(`MERGED WITHOUT A FRESH REVIEW — ${issue.id} ${g.live ? freshRuleText({ fields: { merged: sha } }, g.live) : 'holds no live approve at all (none, or spent by a later round, restart or reopen) — the fresh-review rule: a code issue needs an approve from a fresh reviewer before it merges'}; recorded as given, get the fresh review now: jarl.mjs review ${issue.id} approve|changes --by <fresh reviewer> "<findings>"`);
     }
   }
-  // The evidence rows go in first, like evidence writes them: one row per --ran/--saw pair on every issue of the call.
-  if (rows) cmdEvidence(root, issues.map((i) => i.id).join(','), undefined, { ran: flags.ran, saw: flags.saw });
-  const named = `${flags.repo !== undefined ? ` in ${fieldText(flags.repo)}` : ''}${checkText ? ` · check ${checkText}` : ''}${cause ? ` · landed red, cause ${cause}` : ''}${ci ? ` · CI ${ci}` : ''}`;
+  // The check goes into the merge record (the merge line and the Merge check field) and never into Proof: the merger's
+  // check is not the worker's proof, so only evidence writes a row.
+  const named = `${flags.repo !== undefined ? ` in ${fieldText(flags.repo)}` : ''}${checkText ? ` · check ${checkText}${sawText ? ` · saw ${sawText}` : ''}` : ''}${cause ? ` · landed red, cause ${cause}` : ''}${ci ? ` · CI ${ci}` : ''}`;
   // The line goes first, as in set: a write that stops between the two leaves the record ahead of the files.
   appendLogLines(root, issues.map((issue) => (sha ? `${issue.id} merged ${sha}${named}` : `${issue.id} CI ${ci}`)));
   for (const issue of issues) {
     let text = readText(issue.file);
-    if (sha) text = setField(text, 'Merged', `${sha}${flags.repo !== undefined ? ` in ${fieldText(flags.repo)}` : ''}`);
+    if (sha) {
+      text = setField(text, 'Merged', `${sha}${flags.repo !== undefined ? ` in ${fieldText(flags.repo)}` : ''}`);
+      const kept = mergeCheckText(checkText, sawText);
+      text = kept ? setField(text, 'Merge check', kept) : removeFields(text, ['Merge check']);
+    }
     text = ci ? setField(text, 'CI', ci) : removeFields(text, ['CI']);
     writeAtomic(issue.file, text);
   }
@@ -2044,6 +2070,53 @@ export function evidenceRows(issue) {
   return evidenceTable(issue.sections.evidence).rows.filter((r) => !r.retracted && r.saw !== '').map((r) => ({ ran: r.ran, saw: r.saw }));
 }
 
+// ---- Proof and Notes: the two parts of an Evidence section ---------------------------------------------------------
+//
+// An Evidence section whose first entry is written while it is empty gets two sub-headings, always in this order: `### Proof`
+// (the worker's --ran/--saw rows) and `### Notes` (free text, rulings, reasons and retraction entries). A sub-heading is
+// written with its first entry. A section that already holds content and neither sub-heading is unsplit: it is read as
+// it stands and entries are appended at its end, never sorted into parts. The sub-headings are not section headings
+// (a section ends at `## `), so nothing that cuts a section sees them.
+const PROOF_HEAD = /^### Proof\s*$/;
+const NOTES_HEAD = /^### Notes\s*$/;
+// Where the parts of a section's lines begin: the index of each sub-heading, or -1.
+function evidenceParts(lines) {
+  return { proofAt: lines.findIndex((l) => PROOF_HEAD.test(l)), notesAt: lines.findIndex((l) => NOTES_HEAD.test(l)) };
+}
+// Whether a section's text holds content and neither sub-heading.
+export function isUnsplit(section) {
+  const lines = String(section || '').trim().split('\n');
+  const { proofAt, notesAt } = evidenceParts(lines);
+  return lines.join('').trim() !== '' && proofAt === -1 && notesAt === -1;
+}
+// A note must not read as a sub-heading of the section: in a section written in parts, a line that starts with # is escaped
+// as a body is; in an unsplit one, only a line that is a sub-heading by itself.
+function noteText(value, current) {
+  return isUnsplit(current) ? String(value).split('\n').map((l) => l.replace(/^(\s*)###(?=\s+(?:Proof|Notes)\s*$)/, '$1\\###')).join('\n') : bodyText(value);
+}
+// The Evidence section with one entry written into its part. `kind` is 'proof' (rows, one per line) or 'note' (text); `sep`
+// is what separates a note from the text before it. A proof entry goes after the last row of the section, wherever that
+// is (a row number is an ordinal over the whole section, so a row never goes in front of another row), else at the end of
+// Proof, else in a Proof written in front of an existing Notes. A note goes at the end of the section, in a Notes written
+// when there is none. An unsplit section is appended to as it is, and an empty one is written in parts.
+export function placeEvidence(current, kind, added, sep) {
+  const text = String(current || '').trim();
+  if (text === '') return `${kind === 'proof' ? '### Proof' : '### Notes'}\n\n${added}`;
+  const lines = text.split('\n');
+  const { proofAt, notesAt } = evidenceParts(lines);
+  if (proofAt === -1 && notesAt === -1) return `${text}${sep}${added}`;
+  if (kind === 'note') return notesAt === -1 ? `${text}\n\n### Notes\n\n${added}` : `${text}${sep}${added}`;
+  const rows = evidenceTable(text).rows;
+  const entry = added.split('\n');
+  if (rows.length) lines.splice(rows[rows.length - 1].end + 1, 0, ...entry);
+  else if (proofAt !== -1) {
+    let at = notesAt > proofAt ? notesAt : lines.length;
+    while (at - 1 > proofAt && lines[at - 1].trim() === '') at -= 1;
+    lines.splice(at, 0, ...(at === proofAt + 1 ? [''] : []), ...entry);
+  } else lines.splice(notesAt, 0, '### Proof', '', ...entry, '');
+  return lines.join('\n');
+}
+
 // A finding's proposal copied in by import is not yet an acceptance line: it waits to be made checkable.
 export const PROPOSED = 'Proposed by the finding';
 export function acceptanceLineCount(issue) {
@@ -2058,7 +2131,18 @@ export function acceptanceLineCount(issue) {
 export function workEvidence(issue, profile = DEFAULT_PROFILE) {
   // Status names are lower-case letters, digits and dashes: nothing in them is read as a pattern.
   const skip = new RegExp(`^\\s*(Ruling\\b${profile.with('needs-reason').map((st) => `|${reasonWord(st)}:`).join('')})`);
-  return (issue.sections.evidence || '').split('\n').filter((l) => !skip.test(l)).join('\n').trim();
+  const section = issue.sections.evidence || '';
+  let lines = section.split('\n');
+  // In a section written in parts, the work's evidence is its Proof: the lines of Proof and every row line (a row written
+  // by a writer that does not know the parts may sit under Notes). A note alone is not evidence of the work.
+  const { proofAt, notesAt } = evidenceParts(lines);
+  if (proofAt !== -1 || notesAt !== -1) {
+    const proofEnd = notesAt > proofAt ? notesAt : lines.length;
+    const inRow = new Set();
+    for (const r of evidenceTable(section).rows) for (let i = r.start; i <= r.end; i += 1) inRow.add(i);
+    lines = lines.filter((l, i) => inRow.has(i) || (proofAt !== -1 && i > proofAt && i < proofEnd));
+  }
+  return lines.filter((l) => !skip.test(l)).join('\n').trim();
 }
 
 // evidence <id> "<text>" appends free text (a merge sha, a one-line note); evidence <id> --ran
@@ -2093,7 +2177,7 @@ export function cmdEvidence(root, rawIds, text, flags) {
   const added = rows ? rows.map((r) => `- **ran:** ${indented(r.ran)} · **saw:** ${indented(r.saw)}`).join('\n') : text;
   for (const issue of issues) {
     const current = (issue.sections.evidence || '').trim();
-    writeAtomic(issue.file, setSection(readText(issue.file), 'Evidence', current ? `${current}${rows ? '\n' : '\n\n'}${added}` : added));
+    writeAtomic(issue.file, setSection(readText(issue.file), 'Evidence', rows ? placeEvidence(current, 'proof', added, '\n') : placeEvidence(current, 'note', noteText(added, current), '\n\n')));
   }
   appendLogLines(root, issues.flatMap((issue) => (rows ? rows.map((r) => `${issue.id} evidence row · ${firstLine(r.ran, "the issue's Evidence section")}`) : [`${issue.id} evidence · ${firstLine(text, "the issue's Evidence section")}`])));
   return oneOrMany(rawIds, issues.map((issue) => (rows ? { id: issue.id, rows } : { id: issue.id })));
@@ -2136,7 +2220,7 @@ function retractEvidence(root, rawIds, reason, flags) {
   lines[row.start] = struck(lines[row.start]);
   lines[row.end] = `${lines[row.end].trimEnd()}~~`;
   const entry = `- **retracted:** row ${n} · by ${by} · ${stamp().slice(0, 10)}\n${bodyText(reason).split('\n').map((l) => (l ? `  ${l}` : '')).join('\n')}`;
-  writeAtomic(issue.file, setSection(text, 'Evidence', `${lines.join('\n').trim()}\n${entry}`));
+  writeAtomic(issue.file, setSection(text, 'Evidence', placeEvidence(lines.join('\n').trim(), 'note', entry, '\n')));
   appendLog(root, `${issue.id} evidence retract · row ${n} · by ${by} · ${firstLine(reason, "the issue's Evidence section")}`);
   return { id: issue.id, retracted: n, by };
 }
@@ -2173,9 +2257,17 @@ export function issueView(root, issue, { full = false } = {}) {
       const t = evidenceTable(body.join('\n'));
       const earlier = !full && g.anchorN >= 0 && g.rowLog.length === t.rows.length ? g.rowLog.filter((r) => r.n <= g.anchorN).length : 0;
       out.push(p.lines[0]);
-      if (earlier > 0) {
-        out.push(`(evidence rows 1-${earlier} came before the last start or reopen and are not shown; ${earlier === t.rows.length ? 'none since' : `rows ${earlier + 1}-${t.rows.length} follow`})`);
+      const cutNote = `(evidence rows 1-${earlier} came before the last start or reopen and are not shown; ${earlier === t.rows.length ? 'none since' : `rows ${earlier + 1}-${t.rows.length} follow`})`;
+      if (earlier > 0 && evidenceParts(body).proofAt === -1 && evidenceParts(body).notesAt === -1) {
+        out.push(cutNote);
         out.push(...numbered(body, t.rows).slice(t.rows[earlier - 1].end + 1));
+      } else if (earlier > 0) {
+        // A section in parts keeps both sub-headings and Notes whole: only the lines of the earlier rows are replaced, by one line.
+        const gone = new Set();
+        for (const r of t.rows.slice(0, earlier)) for (let i = r.start; i <= r.end; i += 1) gone.add(i);
+        const shown = numbered(body, t.rows);
+        let said = false;
+        shown.forEach((l, i) => { if (!gone.has(i)) out.push(l); else if (!said) { said = true; out.push(cutNote); } });
       } else out.push(...numbered(body, t.rows));
       continue;
     }
@@ -2699,7 +2791,7 @@ export function journalById(root) {
 // takes its CI state (none when it names none); a CI line replaces the CI state alone. Null for an issue the
 // journal holds no filing and no move of: its header is all there is to read.
 export function issueState(profile, events) {
-  const s = { status: null, branch: null, worker: null, model: null, since: null, merged: null, ci: null };
+  const s = { status: null, branch: null, worker: null, model: null, since: null, merged: null, 'merge check': null, ci: null };
   let held = false;
   for (const e of events) {
     if (e.type === 'filed') { if (!held) { held = true; s.status = profile.initial; } continue; }
@@ -2713,7 +2805,7 @@ export function issueState(profile, events) {
       } else { s.worker = null; s.model = null; s.since = null; }
       continue;
     }
-    if (e.type === 'merged') { s.merged = e.repo ? `${e.sha} in ${e.repo}` : e.sha; s.ci = e.ci; continue; }
+    if (e.type === 'merged') { s.merged = e.repo ? `${e.sha} in ${e.repo}` : e.sha; s['merge check'] = mergeCheckText(e.check, e.saw); s.ci = e.ci; continue; }
     if (e.type === 'ci') s.ci = e.state;
   }
   return held ? s : null;
@@ -2765,7 +2857,7 @@ function scopedLoop(loop, issues) { return makeLoop({ dir: loop.dir, root: loop.
 // views never believe the header; they print these. Each line names how the disagreement is settled: the header written
 // back to the journal's value, which writes nothing else, or the move or merge that makes the header's value the
 // record, which writes a line of its own.
-const FIELD_NAMES = { status: 'Status', branch: 'Branch', worker: 'Worker', model: 'Model', since: 'Since', merged: 'Merged', ci: 'CI' };
+const FIELD_NAMES = { status: 'Status', branch: 'Branch', worker: 'Worker', model: 'Model', since: 'Since', merged: 'Merged', 'merge check': 'Merge check', ci: 'CI' };
 const LEASE_KEYS = ['branch', 'worker', 'model'];
 const ghostRe = idRe('^({id}) → (\\S+)');
 export function recordDisagreements(loop) {
@@ -2782,6 +2874,8 @@ export function recordDisagreements(loop) {
     for (const field of Object.keys(FIELD_NAMES)) {
       const file = fieldText(issue.onFile[field]);
       const record = fieldText(field === 'status' ? issue.status : issue.fields[field]);
+      // A header that never carried the Merge check (the merge was written without the field) is read from the merge line, and said nothing about.
+      if (field === 'merge check' && !file) continue;
       if (file !== record) out.push(fieldDisagreement(profile, issue, field, file, record));
     }
   }
@@ -3087,7 +3181,7 @@ function renderSplit(s) { return `fresh ${s.fresh} · coordinator ${s.coordinato
 
 // The check a loop declares: every `Check: <what runs>` line of the goal is the command of the whole loop; a
 // `Check (<name>): <what runs>` line is the command of the repository <name>, written as its Files prefix writes it
-// (see goalLines). Jarl never runs it: the line says what the check is, and the merge rows say whether a landing passed
+// (see goalLines). Jarl never runs it: the line says what the check is, and the merge lines say whether a landing passed
 // it. Where the repository has a check, the check decides what lands; a review can only stop a change and is recorded
 // as testimony.
 export function declaredChecksByRepo(root) { return goalLines(readGoal(jarlDir(root))).checksByRepo; }
@@ -3095,8 +3189,8 @@ export function declaredChecksByRepo(root) { return goalLines(readGoal(jarlDir(r
 export function declaredChecks(root) { return goalLines(readGoal(jarlDir(root))).checks; }
 
 // The merge a log line records: `<id> merged <sha>[ in <repo>]`, then the fields it names in any order — `check <what
-// ran>` for a merge landed on a passing check row, `landed red, cause <id>` for one landed while its check was red for a
-// cause outside the branch, and `CI <state>`. Null for any other line.
+// ran>` for a merge landed on a passing check, `saw <what it printed>` after it, `landed red, cause <id>` for one landed
+// while its check was red for a cause outside the branch, and `CI <state>`. Null for any other line.
 export function mergeLineOf(id, text) {
   const parts = text.split(' · ');
   const head = new RegExp(`^${id} merged (\\S+)(?: in (.+))?$`).exec(parts[0]);
@@ -3105,11 +3199,16 @@ export function mergeLineOf(id, text) {
   for (const p of parts.slice(1)) {
     let m;
     if ((m = /^check (.+)$/.exec(p))) line.check = m[1];
+    else if ((m = /^saw (.+)$/.exec(p)) && line.check !== null) line.saw = m[1];
     else if ((m = /^landed red, cause (\S+)$/.exec(p))) line.red = m[1];
     else if ((m = /^CI (pending|green|red|none)$/.exec(p))) line.ci = m[1];
   }
   return line;
 }
+
+// The Merge check field of an issue: the check a merge line names and what it printed, as one line. Null when the merge
+// names no check. The field is rendered from the merge line, like Merged and CI.
+function mergeCheckText(check, saw) { return check ? (saw ? `${check} · saw ${saw}` : check) : null; }
 
 // The last merge an issue's events record, or null.
 function lastMerge(events) {
@@ -3120,7 +3219,7 @@ function lastMerge(events) {
 
 // What the merges say about the check, from the log: every merged issue counts once, by its last merge line, as landed
 // on the declared check (its --ran text equals a command the repository's Check lines declare, after trimming), on red
-// (with the issue that tracks the cause), or on neither (no check row, or a row that is not the declared check). Per
+// (with the issue that tracks the cause), or on neither (no check, or a check that is not the declared one). Per
 // repository, an issue naming several counts in each. A repository's declared check is its own `Check (<repo>)` lines,
 // else the loop's `Check:` lines. A repository lands on its check (`check`) when every merge carries it, on
 // testimony (`testimony`) when none does or none is declared, and is `partial` between: k is the merges carrying the
@@ -3808,6 +3907,7 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
   const noteOf = (issue, n) => {
     const said = [
       verdict === 'approve' && kinds[n] === 'coordinator' && carriesCode(issue) ? `${issue.id} carries code and ${by} is a coordinator — the fresh-review rule: this approve is recorded but does not clear it for done or the merge queue; a fresh reviewer's approve does` : null,
+      flags.caller === 'cli' && verdict === 'approve' && proofSince(gateOf(loop, issue.id), issue) === 0 ? `${issue.id} holds no Proof row since the gate's window opened — done needs the worker's row, and the merger's check does not stand in for it: ${EVIDENCE_HOW(issue.id)}` : null,
       ...(lines && lines.declared ? reviewModelNotes(issue, verdict, model, lines, loop.eventsById.get(issue.id) || []) : []),
     ].filter(Boolean);
     return said.length ? { note: said.join('; ') } : {};
@@ -3824,8 +3924,8 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
 function nextAfterVerdict(issue, verdict, kind) {
   if (verdict === 'changes') return `the jarl records the round — jarl.mjs round ${issue.id} "<what failed>" — and a worker is raised again to fix it`;
   if (carriesCode(issue) && kind === 'coordinator') return `a fresh reviewer's approve is next — jarl.mjs review ${issue.id} approve|changes --by <fresh reviewer> "<findings>" — then the merger lands it`;
-  if (carriesCode(issue)) return `the merger merges the branch and records it with one call — jarl.mjs merged ${issue.id} --sha <sha> --ran "<check>" --saw "<summary>" — then jarl.mjs set ${issue.id} done; a worker never sets done`;
-  return `jarl.mjs set ${issue.id} done once its evidence rows are recorded; a worker never sets done`;
+  if (carriesCode(issue)) return `the merger merges the branch and records it with one call — jarl.mjs merged ${issue.id} --sha <sha> --ran "<check>" --saw "<summary>" — then jarl.mjs set ${issue.id} done, which needs a Proof row from the worker (the merge check is the merger's and is no proof); a worker never sets done`;
+  return `jarl.mjs set ${issue.id} done once the worker's Proof rows are recorded; a worker never sets done`;
 }
 
 // ---- rounds, branches, checks ------------------------------------------------------------------
@@ -4585,7 +4685,7 @@ function appendRuling(root, issues, line) {
   for (const issue of issues) {
     const text = readText(issue.file);
     const current = (parseIssue(text, issue.file).sections.evidence || '').trim();
-    writeAtomic(issue.file, setSection(text, 'Evidence', current ? `${current}\n\n${line}` : line));
+    writeAtomic(issue.file, setSection(text, 'Evidence', placeEvidence(current, 'note', noteText(line, current), '\n\n')));
   }
   appendLogLines(root, issues.map((issue) => `${issue.id} evidence · ${line}`));
 }

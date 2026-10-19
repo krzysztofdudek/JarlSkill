@@ -63,25 +63,26 @@ commands:
                                                  one issue per finding, with Source: <dir>#<finding id>; a finding
                                                  whose Source is already on an issue is skipped, so a re-run files
                                                  nothing twice; --dry-run prints what it would file; --adopt writes
-                                                 Source onto an older issue that names the finding id but has none
+                                                 Source onto an existing issue that names the finding id but has none
   sources [<findings.json>...] [--source <dir>]  per report: its findings, the issues filed from them and their
                                                  status; with a findings file, the findings nobody filed too
   source <id> <dir>#<id>,...                     set the Source field of an issue filed by hand
   after <id> <ids> | <id> --clear                the issues this one waits on: next does not offer it until each is
                                                  done or dropped, and status counts it as waiting
   evidence <ids> "<text>" | --ran "<command>" --saw "<what it printed>" | <id> --retract <n> --by <who> "<reason>"
-                                                 append a free-text note, or one checkable row per --ran/--saw pair (repeatable);
+                                                 append a free-text note (under ### Notes), or one checkable row per --ran/--saw
+                                                 pair (repeatable; under ### Proof, after the last row);
                                                  --retract retracts the n-th evidence row (the number show prints before each row,
                                                  counted over the whole Evidence section) by an appended entry: the row
-                                                 stays, struck through, and the done gate no longer counts it; the first
-                                                 retraction of a loop raises its record format to 2, so a Jarl 6.1.x
-                                                 refuses the loop instead of counting the row
+                                                 stays, struck through, and the done gate does not count it; the first
+                                                 retraction of a loop raises its record format to 2, so a reader that
+                                                 knows only format 1 refuses the loop instead of counting the row
   list [--status s] [--kind k] [--tag t] [--prio p] [--grep re] [--match "<field>=<value>"]... [--all]
                                                  the issues not finished (open and in-progress) by default; --all for
                                                  every status; --match keeps those whose header field holds the value
   show <id> [--full]                             print one issue as the done gate sees it: the header, What, Why,
-                                                 Acceptance and Changelog, every evidence row (numbered [n]) and every
-                                                 verdict in the done gate's window, every "changes" finding no later
+                                                 Acceptance and Changelog, every Proof row (numbered [n]) and every
+                                                 verdict in the done gate's window, Notes whole, every "changes" finding no later
                                                  approve answered, one line per earlier round; --full prints the whole
                                                  file; --json is complete; under the header, one line for each header
                                                  field that disagrees with the log (see status)
@@ -106,8 +107,11 @@ commands:
                                                  the merge as fields: Merged (sha, and where with --repo) and CI
                                                  (only when given; pending: a pushed commit whose CI will report;
                                                  none: no CI to wait for), and a log line. --ran/--saw record the
-                                                 check that decided the merge: its evidence row (as evidence writes
-                                                 it) and a merge line that names it. --red <id> records a merge that
+                                                 check that decided the merge and what it printed, in the merge
+                                                 record (the Merge check field and the merge line): never as a Proof
+                                                 row, because the merger's check is not the worker's proof (done
+                                                 asks the worker for the row; the reply says when none is there).
+                                                 --red <id> records a merge that
                                                  landed while its check was red for a cause outside the branch, which
                                                  issue <id> tracks; it is never counted as a passing check, and the
                                                  jarl rules on it first. --ci alone moves the CI of issues already
@@ -134,7 +138,8 @@ commands:
                                                  coordinator for coordinator, jarl, reeve, the loop's own name and
                                                  names on a "Coordinators:" line in goal.md; fresh for anyone else);
                                                  "done" needs an approve inside the gate's window, and a
-                                                 fresh one when the issue carries code (a Branch or Merged field);
+                                                 fresh one when the issue carries code (a Branch or Merged field), and
+                                                 the worker's Proof row; an approve on an issue with no Proof row says so;
                                                  findings need at least three words; "retract" in place of the verdict
                                                  (review <id> retract --by <who> "<reason>") retracts the newest approve
                                                  not yet retracted, by an appended entry: the approve stays, struck
@@ -179,7 +184,7 @@ commands:
                                                  loop files not committed, and the last log lines (n, default 15);
                                                  no network unless --ci asks gh for the CI of each pushed tip
   handoff read [--log n] [--ready n] [--ci] | write [--summary s] [--next x]...
-                                                 read: resume, then a .jarl/handoff.md from before as history;
+                                                 read: resume, then a .jarl/handoff.md, when one exists, as history;
                                                  write: retired — writes nothing, says so and exits 0 (the state is
                                                  assembled live; intent lives in priorities, After and rulings)
   log "<event>"                                  append one dated note to the journal; a line that reads as a filing, a move,
@@ -582,7 +587,7 @@ export function dispatch(root, cmd, rest, flags) {
       case 'queue': out = cmdQueue(root, flags); text = renderQueue(out); break;
       case 'changelog': out = cmdChangelog(root, rest[0], flags); text = out.text || '(no changelog fragment on these issues)'; warn = out.missing.length ? [`note: no changelog fragment: ${out.missing.join(', ')} — record one with: jarl.mjs body <id> --changelog "Added: …"`] : []; break;
       case 'archive': out = cmdArchive(root, rest[0], { caller: 'cli' }); text = `archived → ${out.archived}${out.leftOpen.length ? ` · ${out.leftOpen.length} still open or in progress: ${out.leftOpen.join(', ')}` : ''} · open a new loop with: jarl.mjs init "<goal>"`; break;
-      case 'mode': out = cmdMode(root, rest[0]); text = 'now permanent · no longer tied to a feature branch; close keeps the directory'; break;
+      case 'mode': out = cmdMode(root, rest[0]); text = 'now permanent · not tied to a feature branch; close keeps the directory'; break;
       case 'profile': out = cmdProfile(root, rest[0]); text = renderProfile(out); break;
       case 'close': out = cmdClose(root, { ...flags, caller: 'cli' }); text = out.closed ? (out.kept ? `kept ${out.kept} · closed as a permanent record` : `removed ${out.removed}${out.archiveKept ? ' (the live loop; .jarl/archive/ is left in place)' : out.archiveRemoved ? ` (with .jarl/archive/: ${out.archiveRemoved.join(', ')})` : ''}`) + (out.deferred.length ? ` · ${out.deferred.length} deferred ${out.kept ? 'still waiting' : 'removed with the loop'}: ${out.deferred.join(', ')}` : '') + (out.uncommitted ? ` · ${out.uncommitted} loop file(s) not committed${out.kept ? ' — commit .jarl/' : ' before the removal'}` : '') + renderBatch(out.batch, out.kept ? 'kept' : 'removed') : renderBatch(out.batch, 'open').trimStart(); break;
       default: throw new Error(`unknown command: ${cmd}\n${USAGE}`);

@@ -16,7 +16,7 @@ import { sh } from './portable.mjs';
 
 const L = await import('../jarl-lib.mjs');
 
-const RENDERED = ['status', 'branch', 'worker', 'model', 'since', 'merged', 'ci'];
+const RENDERED = ['status', 'branch', 'worker', 'model', 'since', 'merged', 'merge check', 'ci'];
 // The rendered fields of an issue file as its header says them (null for a field the header does not carry).
 function headerOf(file) {
   const issue = L.parseIssue(readFileSync(file, 'utf8'), file);
@@ -191,7 +191,7 @@ test('the views of a loop moved only through the tool read the same as the heade
   jarl(root, 'set', '2', 'in-progress', '--worker', 'w2');
   jarl(root, 'set', '3', 'deferred', 'later');
   const loop = L.readLoop(R.jarlDir(root));
-  for (const issue of loop.issues) assert.deepEqual(issue.onFile, { status: issue.status, ...Object.fromEntries(['branch', 'worker', 'model', 'since', 'merged', 'ci'].map((k) => [k, issue.fields[k] ?? null])) }, `${issue.id}: the header and the record agree`);
+  for (const issue of loop.issues) assert.deepEqual(issue.onFile, { status: issue.status, ...Object.fromEntries(['branch', 'worker', 'model', 'since', 'merged', 'merge check', 'ci'].map((k) => [k, issue.fields[k] ?? null])) },`${issue.id}: the header and the record agree`);
   assert.ok(oldJarlIsPinned());
   const old = oldJarl(root, 'status', {});
   assert.equal(old.ok, true);

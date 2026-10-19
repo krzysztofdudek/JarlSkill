@@ -1189,7 +1189,7 @@ test('replacement patterns in user text are written as they are: $1, $&, $\' and
   assert.equal((text.match(/^## /gm) || []).length, 4, 'no section duplicated');
   const i = JSON.parse(jarl(root, 'show', '1', '--json'));
   assert.equal(i.sections.why.trim(), "use $' here and $` and $& and $1");
-  assert.equal(i.sections.evidence.trim(), "saw $' and $1\n\nthen $& too");
+  assert.equal(i.sections.evidence.trim(), "### Notes\n\nsaw $' and $1\n\nthen $& too");
 });
 
 test('done: a ruling, a drop reason or a free-text note alone is not evidence; a proposal is not an acceptance line; fewer rows than lines is noted', () => {
@@ -1200,7 +1200,7 @@ test('done: a ruling, a drop reason or a free-text note alone is not evidence; a
   jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
   assert.match(refuses(root, 'set', '1', 'done', 'x'), /001 has no evidence yet/);
   jarl(root, 'evidence', '1', 'merged abc');
-  assert.match(refuses(root, 'set', '1', 'done', 'x'), /001 has no --ran\/--saw evidence row recorded since it was filed/);
+  assert.match(refuses(root, 'set', '1', 'done', 'x'), /001 has no evidence yet/, 'a note alone sits under Notes and is not evidence of the work');
   jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'pass');
   const r = (() => { try { return sh(tmpdir(), `node ${SCRIPT} set 1 done m --root ${root} 2>&1`); } catch (e) { return String(e.stdout); } })();
   assert.match(r, /note: 001 2 acceptance line\(s\), 1 --ran\/--saw row\(s\)/);

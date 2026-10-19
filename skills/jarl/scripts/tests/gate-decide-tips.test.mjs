@@ -33,6 +33,7 @@ test('done: evidence written before the issue went in progress is not proof; evi
   const root = loop();
   jarl(root, 'new', 'thing');
   jarl(root, 'evidence', '1', 'Source: a research report, finding X');   // a note at filing time
+  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'a run from before the start');
   jarl(root, 'set', '1', 'in-progress', 'raised', '--worker', 'w1');
   jarl(root, 'review', '1', 'approve', '--by', 'fresh-opus', 'read the diff');
   assert.match(refuses(root, 'set', '1', 'done', 'merged'), /001 has no --ran\/--saw evidence row recorded since it was moved → in-progress/);
@@ -45,9 +46,9 @@ test('done: a free-text note never closes an issue, even one that never went in 
   jarl(root, 'new', 'small');
   jarl(root, 'evidence', '1', 'Source: finding X — written at filing time');
   jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
-  assert.match(refuses(root, 'set', '1', 'done', 'ok'), /001 has no --ran\/--saw evidence row recorded since it was filed/);
+  assert.match(refuses(root, 'set', '1', 'done', 'ok'), /001 has no evidence yet/, 'a note alone is Notes, and Notes is not evidence of the work');
   jarl(root, 'evidence', '1', 'more prose, still no row');
-  assert.match(refuses(root, 'set', '1', 'done', 'ok'), /no --ran\/--saw evidence row/);
+  assert.match(refuses(root, 'set', '1', 'done', 'ok'), /no evidence yet/);
   jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', '12 pass');
   assert.equal(jarl(root, 'set', '1', 'done', 'ok'), '001 → done');
 });
@@ -64,7 +65,7 @@ test('review: an approve needs --by, a self-approve by the worker is refused, an
   // A changes verdict needs --by too, and may come from the worker: it is recorded, not refused.
   jarl(root, 'review', '1', 'changes', '--by', 'opus-worker-3', 'Important: a self-check found a hole');
   assert.match(refuses(root, 'review', '1', 'changes', 'Important: no reviewer named'), /a verdict needs --by/);
-  const next = (id) => `the merger merges the branch and records it with one call — jarl.mjs merged ${id} --sha <sha> --ran "<check>" --saw "<summary>" — then jarl.mjs set ${id} done; a worker never sets done`;
+  const next = (id) => `the merger merges the branch and records it with one call — jarl.mjs merged ${id} --sha <sha> --ran "<check>" --saw "<summary>" — then jarl.mjs set ${id} done, which needs a Proof row from the worker (the merge check is the merger's and is no proof); a worker never sets done`;
   assert.equal(jarl(root, 'review', '1,2', 'approve', '--by', 'fresh-opus', FINDINGS), `001 review approve by fresh-opus (fresh) · acceptance: (none on file) · next: ${next('001')}\n002 review approve by fresh-opus (fresh) · acceptance: (none on file) · next: ${next('002')}`);
   assert.match(log(), /001 review approve · by fresh-opus \(fresh\) · read the diff, nothing found/);
   assert.match(jarl(root, 'review', '2', 'approve', '--by', 'jarl', FINDINGS), /by jarl \(coordinator\)/);

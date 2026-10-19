@@ -172,7 +172,16 @@ test('rule 7: no comment or title in the tests, and no prose in the skill or the
   assert.deepEqual(prose('README.md', new URL('../../../README.md', SCRIPTS)), []);
 });
 
-const PAST_WORDS = /\bno longer\b|\bolder\b|\blegacy\b|\bused to\b|\bformerly\b|\bnew in\b/i;
+// The help text and the descriptions the command line and the server print are prose too: their lines hold no dating word.
+function datedStrings(name, text) {
+  return text.split('\n').flatMap((line, i) => (!/^\s*\/\//.test(line) && !/jsonrpc|plugin\.json/.test(line) && DATED.test(line) ? [`${name}:${i + 1}: ${line.trim().slice(0, 100)}`] : []));
+}
+test('rule 7: no line of the help text or of the server\'s descriptions names a version or a past', () => {
+  assert.deepEqual(['jarl.mjs', 'jarl-mcp.mjs'].flatMap((f) => datedStrings(f, read(f))), []);
+  assert.equal(datedStrings('x.mjs', "  evidence  a Jarl 6.1.x refuses the loop\n  show  prints the issue\n// an older reader\n  merged  as it no longer did\n").length, 2);
+});
+
+const PAST_WORDS =/\bno longer\b|\bolder\b|\blegacy\b|\bused to\b|\bformerly\b|\bnew in\b/i;
 test('rule 7: no title of the one-store tests and no changelog entry of the single record says "no longer", "older", "legacy" or "used to"', () => {
   const titled = TESTS.filter((f) => f === 'one-store.test.mjs').flatMap((f) => read(`tests/${f}`).split('\n').flatMap((line, i) => (/^\s*test\('/.test(line) && PAST_WORDS.test(line) ? [`tests/${f}:${i + 1}: ${line.trim().slice(0, 100)}`] : [])));
   assert.deepEqual(titled, []);
