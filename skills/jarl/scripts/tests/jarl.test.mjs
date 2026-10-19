@@ -2329,6 +2329,9 @@ const ANOMALIES = [
   { name: 'an id of 1000 or more in a loop whose record format was not raised', pattern: /issue 1000: its id needs the raised record format/, make: (bad) => {
     const root = plain(); if (bad) withIssueFile(root, '1000-late.md', '# 1000 · late\n\n**Status:** open\n'); return root;
   } },
+  { name: 'a file in the issues directory that the loop does not read as an issue', pattern: /issues\/notes\.md: a file the loop does not read as an issue/, make: (bad) => {
+    const root = issued(); if (bad) withIssueFile(root, 'notes.md', 'a note\n'); return root;
+  } },
   { name: 'a foreign line in the questions file', pattern: /asks\.md line \d+: "stray words"/, make: (bad) => {
     const root = plain(); writeFileSync(join(root, '.jarl', 'asks.md'), `# Questions to the user\n\n${bad ? 'stray words\n' : ''}`); return root;
   } },
