@@ -282,7 +282,7 @@ commands:
                                                  log line; refuses a default-mode loop (out of git — a permanent
                                                  record must be committed) and an already-permanent one
   profile [<file>]                               read-only: the loop's profile — its statuses and what each one means
-                                                 (dispatchable, holds-claim, settles-dependents, terminal, closes-record,
+                                                 (dispatchable, lease, settles-dependents, terminal, closes-record,
                                                  needs-reason), the status a new issue starts in, the values of Kind and
                                                  Tier, the fields and sections its issues carry and the heading of their
                                                  acceptance; the built-in one when the loop has none; with a file, that

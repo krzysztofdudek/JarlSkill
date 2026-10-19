@@ -355,7 +355,7 @@ function branchGlobsFor(id) { return [...new Set([String(id), idKey(id)])].flatM
 //
 // What a status means is said by its flags, never by its name:
 // - dispatchable        next offers an issue in it (built-in: open);
-// - holds-claim         an issue in it holds its files against the others, and carries the lease: set writes Since
+// - lease               an issue in it holds its files against the others, and carries the lease: set writes Since
 //                       (and Branch, Worker, Worktree when given) on a move into it, and leaving it removes the lease
 //                       (built-in: in-progress);
 // - settles-dependents  an issue in it does not hold back the issues that wait on it with After (built-in: done,
@@ -366,8 +366,12 @@ function branchGlobsFor(id) { return [...new Set([String(id), idKey(id)])].flatM
 //                       status count it as done work (built-in: done);
 // - needs-reason        a move into it needs a reason, written under Evidence as "<Status>: <why>" (built-in: dropped,
 //                       deferred).
-// A status is at most one of dispatchable, holds-claim and terminal; closes-record is terminal too.
+// A status is at most one of dispatchable, lease and terminal; closes-record is terminal too.
+// STATUS_FLAGS keeps the name the record contract holds for the lease flag; a profile may write that name or lease,
+// and both mean the one flag. flagWord gives the name a message or a description prints: lease.
 export const STATUS_FLAGS = Object.freeze(['dispatchable', 'holds-claim', 'settles-dependents', 'terminal', 'closes-record', 'needs-reason']);
+const flagOf = (f) => (f === 'lease' ? 'holds-claim' : f);
+export const flagWord = (f) => (f === 'holds-claim' ? 'lease' : f);
 export const BUILTIN_STATUSES = {
   open: ['dispatchable'],
   'in-progress': ['holds-claim'],
@@ -468,18 +472,19 @@ export function validateProfile(json, where = 'the profile') {
         flags = spec.flags === undefined ? [] : spec.flags;
         setBy.set(name, spec['set-by'] || 'any');
       }
-      if (!Array.isArray(flags) || !flags.every((f) => typeof f === 'string')) { say(`status "${name}" takes a list of flags (${STATUS_FLAGS.join(', ')}), [] for none — or { "flags": [...], "set-by": "record" }`); continue; }
-      for (const f of flags) if (!STATUS_FLAGS.includes(f)) say(`status "${name}": unknown flag "${f}" — the flags are ${STATUS_FLAGS.join(', ')}`);
+      if (!Array.isArray(flags) || !flags.every((f) => typeof f === 'string')) { say(`status "${name}" takes a list of flags (${STATUS_FLAGS.map(flagWord).join(', ')}), [] for none — or { "flags": [...], "set-by": "record" }`); continue; }
+      flags = flags.map(flagOf);
+      for (const f of flags) if (!STATUS_FLAGS.includes(f)) say(`status "${name}": unknown flag "${f}" — the flags are ${STATUS_FLAGS.map(flagWord).join(', ')}`);
       if (new Set(flags).size !== flags.length) say(`status "${name}" names a flag twice`);
       const set = new Set(flags);
-      if (['dispatchable', 'holds-claim', 'terminal'].filter((f) => set.has(f)).length > 1) say(`status "${name}" is at most one of dispatchable, holds-claim and terminal`);
+      if (['dispatchable', 'holds-claim', 'terminal'].filter((f) => set.has(f)).length > 1) say(`status "${name}" is at most one of dispatchable, lease and terminal`);
       if (set.has('closes-record') && !set.has('terminal')) say(`status "${name}" is closes-record, so it must be terminal too`);
       statuses.push(name);
       flagsOf.set(name, set);
     }
     const some = (f) => statuses.some((s) => flagsOf.get(s).has(f));
     if (statuses.length && !some('dispatchable')) say('no status is dispatchable — next would never offer anything');
-    if (statuses.length && !some('holds-claim')) say('no status holds-claim — no issue could ever be worked on');
+    if (statuses.length && !some('holds-claim')) say('no status is a lease — no issue could ever be worked on');
     if (statuses.length && !some('terminal')) say('no status is terminal — the loop could never close');
     if (statuses.length && !some('settles-dependents')) say('no status settles-dependents — an issue waiting on another with After would wait for good');
   }
@@ -488,7 +493,7 @@ export function validateProfile(json, where = 'the profile') {
     if (!statuses.includes(json.initial)) say(`"initial" must name one of the statuses (${statuses.join(', ')})`);
     else initial = json.initial;
   }
-  if (initial && flagsOf.get(initial) && (flagsOf.get(initial).has('terminal') || flagsOf.get(initial).has('holds-claim'))) say(`a new issue starts in "${initial}", which is ${flagsOf.get(initial).has('terminal') ? 'terminal' : 'holds-claim'} — name another with "initial"`);
+  if (initial && flagsOf.get(initial) && (flagsOf.get(initial).has('terminal') || flagsOf.get(initial).has('holds-claim'))) say(`a new issue starts in "${initial}", which is ${flagsOf.get(initial).has('terminal') ? 'terminal' : 'a lease'} — name another with "initial"`);
   // fields: { "<Name>": { enum?, default?, required? } }
   const fields = [];
   if (json.fields !== undefined && !isObj(json.fields)) say('"fields" must be an object: { "<Field>": { "enum": [...], "default": "...", "required": true } }');
@@ -712,7 +717,7 @@ export function readProfileFile(file) {
 export function describeProfile(p) {
   return {
     name: p.name, declared: p.declared, initial: p.initial,
-    statuses: p.statuses.map((s) => ({ name: s, flags: p.flagsOf(s), ...(p.setBy(s) !== 'any' ? { setBy: p.setBy(s) } : {}) })),
+    statuses: p.statuses.map((s) => ({ name: s, flags: p.flagsOf(s).map(flagWord), ...(p.setBy(s) !== 'any' ? { setBy: p.setBy(s) } : {}) })),
     fields: p.declaredFields ? p.declaredFields.map((f) => ({ name: f.name, enum: f.enum, default: f.default, required: f.required })) : [],
     kinds: p.kinds, tiers: p.tiers, sections: p.sections, acceptanceHeading: p.acceptance || 'Acceptance',
     format: p.format, externalScheduler: p.scheduler, doneGate: { ...p.doneGate }, lifecycle: { ...p.lifecycle },
@@ -2903,7 +2908,7 @@ export function nextRows(root, flags = {}) {
   // Files are compared as (repository, path) pairs: the same path in two repositories never holds
   // an issue back, the same file in one repository always does, however its Repo path is spelled.
   const keysOf = (i) => i.files.map((f) => { const at = fileAt(root, i, f); return { f, key: `${at.repo}\n${at.path}` }; });
-  // Each taken file with the issue holding it: one in a holds-claim status (in progress), or a dispatchable (open)
+  // Each taken file with the issue holding it: one in a lease status (in progress), or a dispatchable (open)
   // one offered earlier in this list.
   const taken = new Map(issues.filter((i) => profile.is(i.status, 'holds-claim')).flatMap((i) => keysOf(i).map((k) => [k.key, i.id])));
   // Exclusive resources: names, loop-wide (no repository in the key), held by an issue for its lease's whole life. Resources
@@ -6265,7 +6270,7 @@ export function cmdSources(root, files, flags = {}) {
 
 
 // The counts line of status and resume: the issues ready (in the dispatchable status — built-in: open) and in flight
-// (holds-claim), less those waiting on After, then every other status by its own name, then the questions.
+// (lease), less those waiting on After, then every other status by its own name, then the questions.
 // One status's count from a status object, with or without a profile (see cmdStatus).
 function countOf(o, st) { return (o.statuses || o)[st] || 0; }
 function countsLine(o, profile) {

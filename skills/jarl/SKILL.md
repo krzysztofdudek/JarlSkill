@@ -330,8 +330,8 @@ A loop may be opened with a profile: `init "<goal>" --profile <file>` checks the
   "statuses": {
     "proposed": [],
     "queued":   ["dispatchable"],
-    "running":  ["holds-claim"],
-    "landed":   ["holds-claim"],
+    "running":  ["lease"],
+    "landed":   ["lease"],
     "merged":   ["settles-dependents", "terminal", "closes-record"],
     "blocked":  [],
     "dropped":  ["terminal", "needs-reason"]
@@ -352,13 +352,13 @@ What a status means is said by its flags, never by its name:
 | Flag | What the tool does with it | Built in |
 |---|---|---|
 | `dispatchable` | `next` offers the issue | open |
-| `holds-claim` | the issue holds its files against the others and carries the lease: a move into it writes Since (and Branch, Worker, Model when given), leaving it removes the lease | in-progress |
+| `lease` | the issue holds its files against the others and carries the lease: a move into it writes Since (and Branch, Worker, Model when given), leaving it removes the lease | in-progress |
 | `settles-dependents` | the issue does not hold back the issues that wait on it with After | done, dropped |
 | `terminal` | finished business: `list` hides it by default, `close` and `archive` do not wait for it | done, dropped, deferred |
 | `closes-record` | a move into it passes the done gate (evidence since the claim, a live approve, fresh for code), and `status`, `report` and `review` count it as done work | done |
 | `needs-reason` | a move into it needs a reason, written under Evidence as `<Status>: <why>` | dropped, deferred |
 
-A status is at most one of `dispatchable`, `holds-claim` and `terminal`, and `closes-record` is terminal too. A profile needs at least one dispatchable, one holds-claim, one terminal and one settles-dependents status (without the last, every issue waiting on another with After would wait for good). A status may not take a name the views already print or key for something else: `waiting`, `ready`, `in-flight`, `questions`, `ratify`, `to-ratify`, `goal`, `opened`, `archived`, `stale`, `handoff`, `reviews`, `uncommitted`, `by` and `statuses` are reserved, and the refusal lists them. A composer whose own queue has a waiting state names that status otherwise (`held`, `parked`). A new issue starts in `initial`, else in the first status listed, which may not be terminal or hold the claim; a status with no flags is one an issue waits in (a proposal not yet accepted, a block), counted by name and never offered. `branches` marks a branch DONE → delete when every issue on it is closed (closes-record) or given up (terminal and settles-dependents without closing the record, built-in: dropped), at least one closed; an issue in a terminal status that settles nothing (deferred) keeps its branch. `queue` takes only issues in play (dispatchable or holds-claim), never one waiting in a status with neither. A few views keep reading two built-in words as they always did: the leases `branches` lists, `tips` and the CI counts of `status` pass over a status named `dropped`, `close` names the issues left in a status named `deferred`, and `report --json` keeps its `dropped` and `deferred` counts by those names.
+A status is at most one of `dispatchable`, `lease` and `terminal`, and `closes-record` is terminal too. A profile needs at least one dispatchable, one lease, one terminal and one settles-dependents status (without the last, every issue waiting on another with After would wait for good). A status may not take a name the views already print or key for something else: `waiting`, `ready`, `in-flight`, `questions`, `ratify`, `to-ratify`, `goal`, `opened`, `archived`, `stale`, `handoff`, `reviews`, `uncommitted`, `by` and `statuses` are reserved, and the refusal lists them. A composer whose own queue has a waiting state names that status otherwise (`held`, `parked`). A new issue starts in `initial`, else in the first status listed, which may not be terminal or hold the claim; a status with no flags is one an issue waits in (a proposal not yet accepted, a block), counted by name and never offered. `branches` marks a branch DONE → delete when every issue on it is closed (closes-record) or given up (terminal and settles-dependents without closing the record, built-in: dropped), at least one closed; an issue in a terminal status that settles nothing (deferred) keeps its branch. `queue` takes only issues in play (dispatchable or lease), never one waiting in a status with neither. A few views keep reading two built-in words as they always did: the leases `branches` lists, `tips` and the CI counts of `status` pass over a status named `dropped`, `close` names the issues left in a status named `deferred`, and `report --json` keeps its `dropped` and `deferred` counts by those names.
 
 Fields: a name is letters, digits, spaces and dashes (`Area-2`). A field may carry `enum` (its values), `default` and `required`. `new` writes every declared field after **Where:** (the `--field "<Name>=<value>"` given, else the template's, else the default; a required one with none is refused, and a value outside the enum is refused), `list` and `resume` show the ones an issue holds, `field <ids> <field> "<value>"` writes one on several issues at once (a field may not share a name with a status), `list --match <field>=<value>` filters on any header field, and `status --by <field>` counts per value. Declaring `Kind` or `Tier` with an `enum` replaces their built-in values. The fields the tool writes itself (Status, Priority, Tags, Files, Repo, After, Found by, Source, Where, Branch, Worker, Worktree, Since, Merged, CI) cannot be declared. Sections: extra headings, written after the acceptance and filled with `new`/`body --section "<Heading>=<text>"`. `acceptance-heading` names the heading the loop's issues keep their acceptance under; it counts exactly as `## Acceptance` does, and `body --acceptance` writes under whichever of the two the issue has.
 
@@ -371,7 +371,7 @@ Five more keys are for a composer that runs the loop's scheduling and landing it
   "statuses": {
     "proposed": { "flags": [], "set-by": "record" },
     "queued":   { "flags": ["dispatchable"], "set-by": "record" },
-    "running":  ["holds-claim"],
+    "running":  ["lease"],
     "merged":   { "flags": ["settles-dependents", "terminal", "closes-record"], "set-by": "record" },
     "dropped":  ["settles-dependents", "terminal", "needs-reason"]
   },
