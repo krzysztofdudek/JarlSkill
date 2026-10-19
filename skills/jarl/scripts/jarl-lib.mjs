@@ -253,7 +253,7 @@ function appendAtomic(path, header, text) {
 // ---- ids: the one grammar of the number of an issue, a question and a branch ----------------------------------------
 
 // The number of an issue, of a question (a-12) and of the issue a branch carries: one or more digits, written plain (7,
-// 42, 1000) or with leading zeros (007). Every reader and writer of an id, a range of ids or the id in a branch name is
+// 42, 1000) or with leading zeros, as 007. Every reader and writer of an id, a range of ids or the id in a branch name is
 // here. Two writings of one number name one issue, ids are compared as numbers (999 comes before 1000), and a log line,
 // a heading or a question keeps the writing its issue file carries.
 export const ID_SRC = '\\d+';
@@ -282,7 +282,7 @@ function issueForms(dir) { const d = join(dir, 'issues'); return writtenForms(ex
 // The number a new issue or question is written with: plain (7, 1000), or with leading zeros to `width` digits when the
 // caller names a width (the record library names 3, so its file reads 007-…). The command line and the tools name none.
 export function newNumber(n, width) { return width ? String(n).padStart(width, '0') : String(n); }
-// The number of a question as the command line gives it: 12, #12 or a-12.
+// The number of a question as the command line gives it: 12, the same with a hash in front, or a-12.
 function askNumber(raw) { return idKey(String(raw).replace(/^a-/, '')); }
 
 // One id, or several as a comma list with ranges: `12,13,14` or `203-206,209` (no spaces: one argument, like --tags a,b).
@@ -307,7 +307,7 @@ export function expandIds(raw) {
 function isBulk(raw) { return /[,-]/.test(String(raw ?? '')); }
 
 // An issue number of the loop standing alone in a text: no letter or digit touches it, so a sha (1b066c7) or a longer
-// number never reads as one, while reviewer-450, raport-398 and (024) do. Dates (2026-10-15, 2026-10) and dotted
+// number never reads as one, while reviewer-450, report-398 and 024 between brackets do. Dates (2026-10-15, 2026-10) and dotted
 // version numbers are set aside first, and only a number that is an id the loop holds (`held`, a Set or Map of ids) counts, so a
 // year or a count never becomes an issue in a loop of thousands.
 export function idsNamed(text, held) {
