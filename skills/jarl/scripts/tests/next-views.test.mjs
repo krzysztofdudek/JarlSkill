@@ -1,4 +1,4 @@
-// The views of next, status and resume that say what comes next: the ready set and its groups (issue 249), the
+// The views of next, status and resume that say what comes next: the ready set and its groups, the
 // derived facts on in-flight rows (283), status --tag (281) and exclusive resources (282).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { FINDINGS } from './findings.mjs';
 import { oldJarl } from './old-jarl.mjs';
 import { run, jarl, refuses, loop as makeLoop, SPAWN_TIMEOUT } from './helpers.mjs';
+import * as R from '../record.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 
@@ -19,12 +20,12 @@ const loop = () => makeLoop({ prefix: 'jarl-views-', via: 'cli', dotGit: false }
 
 function groupedLoop() {
   const root = loop();
-  jarl(root, 'new', 'running', '--files', 'a.mjs');          // 001, in progress, holds a.mjs
-  jarl(root, 'new', 'blocked by file', '--files', 'a.mjs');  // 002
-  jarl(root, 'new', 'ready one', '--files', 'b.mjs');        // 003
-  jarl(root, 'new', 'after the running one', '--files', 'c.mjs', '--after', '1'); // 004
-  jarl(root, 'new', 'asked about', '--files', 'd.mjs');      // 005
-  jarl(root, 'new', 'no files at all');                      // 006
+  jarl(root, 'new', 'running', '--files', 'a.mjs');          // 1, in progress, holds a.mjs
+  jarl(root, 'new', 'blocked by file', '--files', 'a.mjs');  // 2
+  jarl(root, 'new', 'ready one', '--files', 'b.mjs');        // 3
+  jarl(root, 'new', 'after the running one', '--files', 'c.mjs', '--after', '1'); // 4
+  jarl(root, 'new', 'asked about', '--files', 'd.mjs');      // 5
+  jarl(root, 'new', 'no files at all');                      // 6
   jarl(root, 'set', '1', 'in-progress', 'go', '--worker', 'w1');
   jarl(root, 'ask', 'which way?', '--kind', 'stuck', '--issue', '5');
   return root;
@@ -33,28 +34,28 @@ function groupedLoop() {
 test('next lists only the issues ready to start; --all adds the groups with headers and who holds what', () => {
   const root = groupedLoop();
   const plain = JSON.parse(jarl(root, 'next', '--json'));
-  assert.deepEqual(plain.map((r) => r.id), ['003', '006'], 'only the ready ones');
+  assert.deepEqual(plain.map((r) => r.id), ['3', '6'], 'only the ready ones');
   assert.ok(plain.every((r) => r.group === 'ready'));
   const all = JSON.parse(jarl(root, 'next', '--all', '--json'));
   const by = (g) => all.filter((r) => r.group === g).map((r) => r.id);
-  assert.deepEqual(by('ready'), ['003', '006']);
-  assert.deepEqual(by('held-by-file'), ['002']);
-  assert.deepEqual(by('waiting-after'), ['004']);
-  assert.deepEqual(by('held-by-question'), ['005']);
-  assert.deepEqual(all.find((r) => r.id === '002').heldBy, ['001']);
-  assert.deepEqual(all.find((r) => r.id === '004').after, ['001']);
-  assert.deepEqual(all.find((r) => r.id === '005').questions, ['001']);
+  assert.deepEqual(by('ready'), ['3', '6']);
+  assert.deepEqual(by('held-by-file'), ['2']);
+  assert.deepEqual(by('waiting-after'), ['4']);
+  assert.deepEqual(by('held-by-question'), ['5']);
+  assert.deepEqual(all.find((r) => r.id === '2').heldBy, ['1']);
+  assert.deepEqual(all.find((r) => r.id === '4').after, ['1']);
+  assert.deepEqual(all.find((r) => r.id === '5').questions, ['1']);
   const text = jarl(root, 'next');
-  assert.doesNotMatch(text, /002|004|005/);
-  assert.match(text, /^006 {2}P2 {2}no files at all {2}\(no acceptance yet\) {2}\(no files declared\)$/m);
+  assert.doesNotMatch(text, /\b(2|4|5)\b/);
+  assert.match(text, /^6 {2}P2 {2}no files at all {2}\(no acceptance yet\) {2}\(no files declared\)$/m);
   const full = jarl(root, 'next', '--all');
   assert.match(full, /^Ready \(2\)$/m);
   assert.match(full, /^Held by a file another issue holds \(1\)$/m);
-  assert.match(full, /^002 {2}P2 {2}blocked by file {2}\(waits on a\.mjs, held by 001\)$/m);
+  assert.match(full, /^2 {2}P2 {2}blocked by file {2}\(waits on a\.mjs, held by 1\)$/m);
   assert.match(full, /^Waiting on After \(1\)$/m);
-  assert.match(full, /^004 {2}P2 {2}after the running one {2}\(after 001\)$/m);
+  assert.match(full, /^4 {2}P2 {2}after the running one {2}\(after 1\)$/m);
   assert.match(full, /^Held by an open question \(1\)$/m);
-  assert.match(full, /^005 {2}P2 {2}asked about {2}\(question a-001\)$/m);
+  assert.match(full, /^5 {2}P2 {2}asked about {2}\(question a-1\)$/m);
 });
 
 test('next says so when nothing is ready but something is held, and an answered question releases its issue', () => {
@@ -63,7 +64,7 @@ test('next says so when nothing is ready but something is held, and an answered 
   jarl(root, 'ask', 'which?', '--kind', 'stop', '--issue', '1');
   assert.match(jarl(root, 'next'), /nothing is ready to start.*next --all/);
   jarl(root, 'answer', '1', 'this one');
-  assert.deepEqual(JSON.parse(jarl(root, 'next', '--json')).map((r) => r.id), ['001']);
+  assert.deepEqual(JSON.parse(jarl(root, 'next', '--json')).map((r) => r.id), ['1']);
 });
 
 // ---- 283: derived facts on in-flight rows ---------------------------------------------------------------
@@ -78,18 +79,18 @@ test('in-flight rows carry one derived fact, in status and resume, text and json
   jarl(root, 'review', '4', 'approve', '--by', 'rev', FINDINGS);
   const st = JSON.parse(jarl(root, 'status', '--json'));
   assert.deepEqual(Object.fromEntries(st.inFlightRows.map((r) => [r.id, r.mark])),
-    { '001': 'no-rows', '002': 'rows-no-verdict', '003': 'changes-requested', '004': 'approved' }, 'an issue waiting on After is not in flight');
+    { '1': 'no-rows', '2': 'rows-no-verdict', '3': 'changes-requested', '4': 'approved' }, 'an issue waiting on After is not in flight');
   const text = jarl(root, 'status');
-  assert.match(text, /^in flight 001 · no evidence rows since the start/m);
-  assert.match(text, /^in flight 002 · evidence rows recorded, no verdict .* waits for a reviewer$/m);
-  assert.match(text, /^in flight 003 · changes requested .* back with the worker/m);
-  assert.match(text, /^in flight 004 · approved and queued .* then set it done$/m);
+  assert.match(text, /^in flight 1 · no evidence rows since the start/m);
+  assert.match(text, /^in flight 2 · evidence rows recorded, no verdict .* waits for a reviewer$/m);
+  assert.match(text, /^in flight 3 · changes requested .* back with the worker/m);
+  assert.match(text, /^in flight 4 · approved and queued .* then set it done$/m);
   const resume = JSON.parse(jarl(root, 'resume', '--json'));
   assert.deepEqual(resume.inFlight.map((r) => r.mark), ['no-rows', 'rows-no-verdict', 'changes-requested', 'approved']);
-  assert.match(jarl(root, 'resume'), /^- 003 asked for changes .*\n {2}→ changes requested/m);
+  assert.match(jarl(root, 'resume'), /^- 3 asked for changes .*\n {2}→ changes requested/m);
   // A new round or a restart spends the verdict: rows and no verdict again.
   jarl(root, 'round', '3', 'red again');
-  assert.equal(JSON.parse(jarl(root, 'status', '--json')).inFlightRows.find((r) => r.id === '003').mark, 'rows-no-verdict');
+  assert.equal(JSON.parse(jarl(root, 'status', '--json')).inFlightRows.find((r) => r.id === '3').mark, 'rows-no-verdict');
   const msg = refuses(root, 'set', '1', 'ready');
   assert.match(msg, /ready is a view here, not a status/);
   assert.match(msg, /`next` lists the issues ready to start/);
@@ -111,12 +112,12 @@ test('a coordinator\'s approve on an issue that carries code is not "approved an
   jarl(root, 'review', '2', 'approve', '--by', 'rev', FINDINGS);
   jarl(root, 'merged', '2', '--sha', 'abc1234', '--ci', 'pending');
   const marks = () => Object.fromEntries(JSON.parse(jarl(root, 'status', '--json')).inFlightRows.map((r) => [r.id, r.mark]));
-  assert.deepEqual(marks(), { '001': 'approved-not-fresh', '002': 'merged-ci', '003': 'rows-no-verdict' });
-  assert.match(jarl(root, 'status'), /^in flight 001 · approved by a coordinator only.*fresh reviewer/m);
-  assert.match(jarl(root, 'status'), /^in flight 002 · merged, CI not green yet — next record the CI result/m);
-  assert.doesNotMatch(jarl(root, 'status'), /in flight 001 · approved and queued/);
+  assert.deepEqual(marks(), { '1': 'approved-not-fresh', '2': 'merged-ci', '3': 'rows-no-verdict' });
+  assert.match(jarl(root, 'status'), /^in flight 1 · approved by a coordinator only.*fresh reviewer/m);
+  assert.match(jarl(root, 'status'), /^in flight 2 · merged, CI not green yet — next record the CI result/m);
+  assert.doesNotMatch(jarl(root, 'status'), /in flight 1 · approved and queued/);
   jarl(root, 'merged', '2', '--ci', 'green');
-  assert.equal(marks()['002'], 'merged');
+  assert.equal(marks()['2'], 'merged');
 });
 
 // ---- 281: status --tag ----------------------------------------------------------------------------------
@@ -134,14 +135,14 @@ test('status --tag scopes every section to the issues carrying the tag', () => {
   const b = JSON.parse(jarl(root, 'status', '--tag', 'beta', '--json'));
   assert.deepEqual([a.open, a['in-progress']], [1, 1]);
   assert.deepEqual([b.open, b['in-progress']], [1, 1]);
-  assert.deepEqual(a.waitingIds, ['002']);
+  assert.deepEqual(a.waitingIds, ['2']);
   assert.deepEqual(b.waitingIds, []);
-  assert.deepEqual(a.inFlightRows.map((r) => r.id), ['001']);
-  assert.deepEqual(b.inFlightRows.map((r) => r.id), ['003']);
+  assert.deepEqual(a.inFlightRows.map((r) => r.id), ['1']);
+  assert.deepEqual(b.inFlightRows.map((r) => r.id), ['3']);
   assert.deepEqual([a.questions, b.questions], [0, 1], 'a question counts under the tag of the issue it names');
   assert.equal(a.noAcceptance.length, 1);
-  assert.deepEqual(a.noAcceptance, ['001']);
-  assert.deepEqual(b.noAcceptance, ['003']);
+  assert.deepEqual(a.noAcceptance, ['1']);
+  assert.deepEqual(b.noAcceptance, ['3']);
   assert.equal(a.tag, 'alpha');
   const whole = JSON.parse(jarl(root, 'status', '--json'));
   assert.equal(whole.open, 2); assert.equal(whole['in-progress'], 2); assert.equal(whole.tag, undefined);
@@ -159,27 +160,27 @@ test('status --tag scopes the stale leases and the merges waiting on CI too', ()
   writeFileSync(join(dir, 'a.mjs'), '1\n');
   git('add', '-A'); git('commit', '-qm', 'base');
   jarl(dir, 'init', 'goal');
-  jarl(dir, 'new', 'alpha running', '--tags', 'alpha');   // 001: its branch does not exist
-  jarl(dir, 'new', 'beta running', '--tags', 'beta');     // 002: nor does this one
-  jarl(dir, 'new', 'alpha merged', '--tags', 'alpha');    // 003
-  jarl(dir, 'new', 'beta merged', '--tags', 'beta');      // 004
+  jarl(dir, 'new', 'alpha running', '--tags', 'alpha');   // 1: its branch does not exist
+  jarl(dir, 'new', 'beta running', '--tags', 'beta');     // 2: nor does this one
+  jarl(dir, 'new', 'alpha merged', '--tags', 'alpha');    // 3
+  jarl(dir, 'new', 'beta merged', '--tags', 'beta');      // 4
   jarl(dir, 'set', '1', 'in-progress', 'go', '--worker', 'w1', '--branch', 'gone-alpha');
   jarl(dir, 'set', '2', 'in-progress', 'go', '--worker', 'w2', '--branch', 'gone-beta');
   jarl(dir, 'merged', '3', '--sha', 'abc1234', '--ci', 'pending');
   jarl(dir, 'merged', '4', '--sha', 'abc1234', '--ci', 'red');
   const whole = JSON.parse(jarl(dir, 'status', '--json'));
-  assert.deepEqual(whole.stale.map((x) => x.id), ['001', '002']);
+  assert.deepEqual(whole.stale.map((x) => x.id), ['1', '2']);
   const a = JSON.parse(jarl(dir, 'status', '--tag', 'alpha', '--json'));
   const b = JSON.parse(jarl(dir, 'status', '--tag', 'beta', '--json'));
-  assert.deepEqual(a.stale.map((x) => x.id), ['001']);
-  assert.deepEqual(b.stale.map((x) => x.id), ['002']);
+  assert.deepEqual(a.stale.map((x) => x.id), ['1']);
+  assert.deepEqual(b.stale.map((x) => x.id), ['2']);
   assert.match(a.stale[0].problems.join(), /branch gone: gone-alpha/);
-  assert.deepEqual([a.ciPending, a.ciRed], [['003'], []]);
-  assert.deepEqual([b.ciPending, b.ciRed], [[], ['004']]);
+  assert.deepEqual([a.ciPending, a.ciRed], [['3'], []]);
+  assert.deepEqual([b.ciPending, b.ciRed], [[], ['4']]);
   const text = jarl(dir, 'status', '--tag', 'beta');
-  assert.match(text, /^stale 002 · branch gone: gone-beta/m);
-  assert.match(text, /^merged, CI red: 004$/m);
-  assert.doesNotMatch(text, /001|003/);
+  assert.match(text, /^stale 2 · branch gone: gone-beta/m);
+  assert.match(text, /^merged, CI red: 4$/m);
+  assert.doesNotMatch(text, /(stale|merged, CI red|CI pending|in flight with no acceptance line): .*\b(1|3)\b/, 'the alpha issues are not listed');
 });
 
 // ---- 282: exclusive resources ---------------------------------------------------------------------------
@@ -193,10 +194,10 @@ function twoRepos() {
 
 test('a resource is held by an issue in progress; next never offers two issues that declare one, across repositories', () => {
   const hub = twoRepos();
-  jarl(hub, 'new', 'heavy run in tool', '--repo', './tool', '--files', 'tool/a.mjs');           // 001
-  jarl(hub, 'new', 'heavy run in lib', '--repo', './lib', '--files', 'lib/b.mjs');              // 002
-  jarl(hub, 'new', 'light work', '--repo', './lib', '--files', 'lib/c.mjs');                    // 003
-  jarl(hub, 'new', 'third heavy run', '--repo', './tool', '--files', 'tool/d.mjs');             // 004
+  jarl(hub, 'new', 'heavy run in tool', '--repo', './tool', '--files', 'tool/a.mjs');           // 1
+  jarl(hub, 'new', 'heavy run in lib', '--repo', './lib', '--files', 'lib/b.mjs');              // 2
+  jarl(hub, 'new', 'light work', '--repo', './lib', '--files', 'lib/c.mjs');                    // 3
+  jarl(hub, 'new', 'third heavy run', '--repo', './tool', '--files', 'tool/d.mjs');             // 4
   jarl(hub, 'set', '1', 'resources', 'gate, Database');
   jarl(hub, 'set', '2', 'resources', 'DataBase');
   jarl(hub, 'set', '4', 'resources', 'gate');
@@ -204,16 +205,16 @@ test('a resource is held by an issue in progress; next never offers two issues t
   // Nothing in progress: the first heavy one is offered, the others sharing a resource with an offered one are held.
   const rows = JSON.parse(jarl(hub, 'next', '--all', '--json'));
   const by = (g) => rows.filter((r) => r.group === g).map((r) => r.id);
-  assert.deepEqual(by('ready'), ['001', '003'], 'two repositories, one resource: never together');
-  assert.deepEqual(by('held-by-resource'), ['002', '004']);
-  assert.deepEqual(rows.find((r) => r.id === '002').heldBy, ['001']);
-  assert.deepEqual(rows.find((r) => r.id === '002').resources, ['DataBase'], 'names keep the case they were written in; the comparison ignores case');
-  assert.match(jarl(hub, 'next', '--all'), /^Held by a resource another issue holds \(2\)\n002 {2}P2 {2}heavy run in lib {2}.*\(waits on resource DataBase, held by 001\)/m);
-  // Once 001 runs, its resources are taken for the whole lease.
+  assert.deepEqual(by('ready'), ['1', '3'], 'two repositories, one resource: never together');
+  assert.deepEqual(by('held-by-resource'), ['2', '4']);
+  assert.deepEqual(rows.find((r) => r.id === '2').heldBy, ['1']);
+  assert.deepEqual(rows.find((r) => r.id === '2').resources, ['DataBase'], 'names keep the case they were written in; the comparison ignores case');
+  assert.match(jarl(hub, 'next', '--all'), /^Held by a resource another issue holds \(2\)\n2 {2}P2 {2}heavy run in lib {2}.*\(waits on resource DataBase, held by 1\)/m);
+  // Once 1 runs, its resources are taken for the whole lease.
   jarl(hub, 'set', '1', 'in-progress', 'go', '--worker', 'w1');
-  assert.deepEqual(JSON.parse(jarl(hub, 'next', '--json')).map((r) => r.id), ['003']);
+  assert.deepEqual(JSON.parse(jarl(hub, 'next', '--json')).map((r) => r.id), ['3']);
   const held = JSON.parse(jarl(hub, 'next', '--all', '--json')).filter((r) => r.group === 'held-by-resource');
-  assert.deepEqual(held.map((r) => [r.id, r.heldBy]), [['002', ['001']], ['004', ['001']]]);
+  assert.deepEqual(held.map((r) => [r.id, r.heldBy]), [['2', ['1']], ['4', ['1']]]);
 });
 
 test('an issue that declares a resource passes check on its real files; check, queue and the file rules never read it', () => {
@@ -239,8 +240,9 @@ test('an issue that declares a resource passes check on its real files; check, q
 
 test('set resources refuses a bad name and the lease flags; an empty value clears; the frozen reader ignores the field', () => {
   const hub = twoRepos();
-  jarl(hub, 'new', 'a', '--files', 'a.mjs');
-  jarl(hub, 'new', 'b', '--files', 'b.mjs');
+  // Filed by the library, so the loop stays format 1 for the frozen reader; the numbers are 001 and 002.
+  R.newIssue(hub, 'a', { files: 'a.mjs' });
+  R.newIssue(hub, 'b', { files: 'b.mjs' });
   assert.match(refuses(hub, 'set', '1', 'resources', 'two words'), /resource names are single words/);
   jarl(hub, 'set', '1,2', 'resources', 'port-8080');
   assert.deepEqual(JSON.parse(jarl(hub, 'next', '--json')).map((r) => r.id), ['001'], '002 shares the resource, so it is held');
@@ -258,6 +260,6 @@ test('Resources is a field the tool writes itself: a profile that declares a fie
   const hub = mkdtempSync(join(tmpdir(), 'jarl-res-hub-'));
   assert.match(refuses(hub, 'init', 'goal', '--profile', file), /field "Resources" is one the tool writes itself — a profile cannot declare it; rename the field in the profile, because the tool writes Resources itself/);
   jarl(hub, 'init', 'goal');
-  assert.match(jarl(hub, 'new', 'a', '--files', 'a.mjs'), /001/);
-  assert.match(jarl(hub, 'set', '1', 'resources', 'shared'), /001 Resources: shared/, 'the name has one meaning: the exclusive resources');
+  assert.match(jarl(hub, 'new', 'a', '--files', 'a.mjs'), /1/);
+  assert.match(jarl(hub, 'set', '1', 'resources', 'shared'), /1 Resources: shared/, 'the name has one meaning: the exclusive resources');
 });

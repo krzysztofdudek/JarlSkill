@@ -1,5 +1,5 @@
-// The done gate read from the journal (issue 272), rulings with supersession (276), issues across several
-// repositories (278) and the read-only tips view (282).
+// The done gate read from the journal, rulings with supersession, issues across several repositories and the
+// read-only tips view.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, readdirSync, appendFileSync } from 'node:fs';
@@ -36,9 +36,9 @@ test('done: evidence written before the issue went in progress is not proof; evi
   jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'a run from before the start');
   jarl(root, 'set', '1', 'in-progress', 'raised', '--worker', 'w1');
   jarl(root, 'review', '1', 'approve', '--by', 'fresh-opus', 'read the diff');
-  assert.match(refuses(root, 'set', '1', 'done', 'merged'), /001 has no --ran\/--saw evidence row recorded since it was moved → in-progress/);
+  assert.match(refuses(root, 'set', '1', 'done', 'merged'), /1 has no --ran\/--saw evidence row recorded since it was moved → in-progress/);
   jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', '63 pass');
-  assert.equal(jarl(root, 'set', '1', 'done', 'merged'), '001 → done');
+  assert.equal(jarl(root, 'set', '1', 'done', 'merged'), '1 → done');
 });
 
 test('done: a free-text note never closes an issue, even one that never went in progress; a --ran/--saw row after filing does', () => {
@@ -46,19 +46,19 @@ test('done: a free-text note never closes an issue, even one that never went in 
   jarl(root, 'new', 'small');
   jarl(root, 'evidence', '1', 'Source: finding X — written at filing time');
   jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
-  assert.match(refuses(root, 'set', '1', 'done', 'ok'), /001 has no evidence yet/, 'a note alone is Notes, and Notes is not evidence of the work');
+  assert.match(refuses(root, 'set', '1', 'done', 'ok'), /1 has no evidence yet/, 'a note alone is Notes, and Notes is not evidence of the work');
   jarl(root, 'evidence', '1', 'more prose, still no row');
   assert.match(refuses(root, 'set', '1', 'done', 'ok'), /no evidence yet/);
   jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', '12 pass');
-  assert.equal(jarl(root, 'set', '1', 'done', 'ok'), '001 → done');
+  assert.equal(jarl(root, 'set', '1', 'done', 'ok'), '1 → done');
 });
 
 test('review: an approve needs --by, a self-approve by the worker is refused, and --by is recorded with its kind', () => {
   const root = loop();
   jarl(root, 'new', 'a'); jarl(root, 'new', 'b');
-  jarl(root, 'set', '1,2', 'in-progress', 'pkg', '--worker', 'opus-worker-3', '--branch', 'jarl/001-pkg');
+  jarl(root, 'set', '1,2', 'in-progress', 'pkg', '--worker', 'opus-worker-3', '--branch', 'jarl/1-pkg');
   assert.match(refuses(root, 'review', '1', 'approve', FINDINGS), /a verdict needs --by/);
-  assert.match(refuses(root, 'review', '1-2', 'approve', '--by', 'Opus-Worker-3', FINDINGS), /001: an approve by Opus-Worker-3 is a self-approve \(opus-worker-3 is the issue's worker\).*nothing was written/);
+  assert.match(refuses(root, 'review', '1-2', 'approve', '--by', 'Opus-Worker-3', FINDINGS), /1: an approve by Opus-Worker-3 is a self-approve \(opus-worker-3 is the issue's worker\).*nothing was written/);
   assert.match(refuses(root, 'review', '1', 'approve', '--by', 'self', FINDINGS), /self-approve/);
   const log = () => readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
   assert.doesNotMatch(log(), /review approve/, 'a refused approve writes nothing');
@@ -66,8 +66,8 @@ test('review: an approve needs --by, a self-approve by the worker is refused, an
   jarl(root, 'review', '1', 'changes', '--by', 'opus-worker-3', 'Important: a self-check found a hole');
   assert.match(refuses(root, 'review', '1', 'changes', 'Important: no reviewer named'), /a verdict needs --by/);
   const next = (id) => `the merger merges the branch and records it with one call — jarl.mjs merged ${id} --sha <sha> --ran "<check>" --saw "<summary>" — then jarl.mjs set ${id} done, which needs a Proof row from the worker (the merge check is the merger's and is no proof); a worker never sets done`;
-  assert.equal(jarl(root, 'review', '1,2', 'approve', '--by', 'fresh-opus', FINDINGS), `001 review approve by fresh-opus (fresh) · acceptance: (none on file) · next: ${next('001')}\n002 review approve by fresh-opus (fresh) · acceptance: (none on file) · next: ${next('002')}`);
-  assert.match(log(), /001 review approve · by fresh-opus \(fresh\) · read the diff, nothing found/);
+  assert.equal(jarl(root, 'review', '1,2', 'approve', '--by', 'fresh-opus', FINDINGS), `1 review approve by fresh-opus (fresh) · acceptance: (none on file) · next: ${next('1')}\n2 review approve by fresh-opus (fresh) · acceptance: (none on file) · next: ${next('2')}`);
+  assert.match(log(), /1 review approve · by fresh-opus \(fresh\) · read the diff, nothing found/);
   assert.match(jarl(root, 'review', '2', 'approve', '--by', 'jarl', FINDINGS), /by jarl \(coordinator\)/);
   // The worker is found from the lease line too once the Worker field is gone.
   jarl(root, 'evidence', '1', '--ran', 't', '--saw', 'ok');
@@ -91,14 +91,14 @@ test('done: a reopen spends the approve and the evidence before it; a round spen
   jarl(root, 'round', '1', 'red on CI');
   assert.match(refuses(root, 'set', '1', 'done', 'again'), /no approving review/);
   jarl(root, 'review', '1', 'approve', '--by', 'r2', FINDINGS);
-  assert.equal(jarl(root, 'set', '1', 'done', 'again'), '001 → done');
+  assert.equal(jarl(root, 'set', '1', 'done', 'again'), '1 → done');
   // A re-lease of an issue already in progress is not a new start: its evidence stands.
   jarl(root, 'new', 'y');
   jarl(root, 'set', '2', 'in-progress', 'go', '--worker', 'a');
   jarl(root, 'evidence', '2', '--ran', 't', '--saw', 'ok');
   jarl(root, 'set', '2', 'in-progress', 'handed over', '--worker', 'b');
   jarl(root, 'review', '2', 'approve', '--by', 'r', FINDINGS);
-  assert.equal(jarl(root, 'set', '2', 'done', 'ok'), '002 → done');
+  assert.equal(jarl(root, 'set', '2', 'done', 'ok'), '2 → done');
 });
 
 test('done: in progress → deferred → in progress spends the approve and the rows before it, as a reopen does', () => {
@@ -113,22 +113,22 @@ test('done: in progress → deferred → in progress spends the approve and the 
   jarl(root, 'evidence', '1', '--ran', 't2', '--saw', 'ok');
   assert.match(refuses(root, 'set', '1', 'done', 'x'), /no approving review/);
   jarl(root, 'review', '1', 'approve', '--by', 'r', `${FINDINGS} again`);
-  assert.equal(jarl(root, 'set', '1', 'done', 'x'), '001 → done');
+  assert.equal(jarl(root, 'set', '1', 'done', 'x'), '1 → done');
 });
 
 test('done: an issue the journal does not know (a hand-made file) needs a row in its Evidence; an approve logged by hand as self never counts', () => {
   const root = loop();
   jarl(root, 'new', 'hand');
   const dir = join(root, '.jarl', 'issues');
-  const f = readdirSync(dir).find((x) => x.startsWith('001-'));
-  writeFileSync(join(dir, f.replace('001-', '002-')), readFileSync(join(dir, f), 'utf8').replace('# 001 ·', '# 002 ·').replace(/## Evidence\n/, '## Evidence\nold proof\n'));
-  appendFileSync(join(root, '.jarl', 'log.md'), '- 2026-01-01 00:00 · 002 review approve · legacy approve\n');
-  assert.match(refuses(root, 'set', '2', 'done', 'legacy'), /002 has no --ran\/--saw evidence row — a free-text note alone/);
-  const f2 = join(dir, readdirSync(dir).find((x) => x.startsWith('002-')));
+  const f = readdirSync(dir).find((x) => x.startsWith('1-'));
+  writeFileSync(join(dir, f.replace('1-', '2-')), readFileSync(join(dir, f), 'utf8').replace('# 1 ·', '# 2 ·').replace(/## Evidence\n/, '## Evidence\nold proof\n'));
+  appendFileSync(join(root, '.jarl', 'log.md'), '- 2026-01-01 00:00 · 2 review approve · legacy approve\n');
+  assert.match(refuses(root, 'set', '2', 'done', 'legacy'), /2 has no --ran\/--saw evidence row — a free-text note alone/);
+  const f2 = join(dir, readdirSync(dir).find((x) => x.startsWith('2-')));
   writeFileSync(f2, readFileSync(f2, 'utf8').replace('old proof', 'old proof\n- **ran:** npm test · **saw:** pass'));
-  assert.equal(jarl(root, 'set', '2', 'done', 'legacy'), '002 → done');
+  assert.equal(jarl(root, 'set', '2', 'done', 'legacy'), '2 → done');
   jarl(root, 'evidence', '1', '--ran', 'x', '--saw', 'y');
-  appendFileSync(join(root, '.jarl', 'log.md'), '- 2026-01-01 00:00 · 001 review approve · by w (self) · hand-written\n');
+  appendFileSync(join(root, '.jarl', 'log.md'), '- 2026-01-01 00:00 · 1 review approve · by w (self) · hand-written\n');
   assert.match(refuses(root, 'set', '1', 'done', 'x'), /self-approve does not count/);
 });
 
@@ -138,7 +138,7 @@ test('status and report show who reviewed the done work', () => {
   jarl(root, 'evidence', '1-3', '--ran', 't', '--saw', 'ok');
   jarl(root, 'review', '1', 'approve', '--by', 'fresh-opus', FINDINGS);
   jarl(root, 'review', '2', 'approve', '--by', 'jarl', FINDINGS);
-  appendFileSync(join(root, '.jarl', 'log.md'), '- 2026-01-01 00:00 · 003 review approve · an approve from before --by\n');
+  appendFileSync(join(root, '.jarl', 'log.md'), '- 2026-01-01 00:00 · 3 review approve · an approve from before --by\n');
   jarl(root, 'set', '1-3', 'done', 'ok');
   assert.match(jarl(root, 'status'), /^done reviewed by: fresh 1 · coordinator 1 · self 0 · unrecorded 1$/m);
   assert.match(jarl(root, 'report'), /## Done \(3\)\nReviewed by: fresh 1 · coordinator 1 · self 0 · unrecorded 1/);
@@ -189,27 +189,27 @@ test('an issue may name several repositories: files per repository, next keeps t
   assert.match(refuses(hub, 'new', 'bad', '--repo', '../tool,../nope'), /not a git repository/);
   jarl(hub, 'new', 'only lib a', '--repo', '../lib', '--files', 'lib/src/a.mjs');
   jarl(hub, 'new', 'only tool b', '--repo', '../tool', '--files', 'tool/src/b.mjs');
-  jarl(hub, 'set', '1', 'in-progress', 'go', '--branch', 'jarl/001-cross');
+  jarl(hub, 'set', '1', 'in-progress', 'go', '--branch', 'jarl/1-cross');
   const next = JSON.parse(jarl(hub, 'next', '--all', '--json'));
-  assert.deepEqual(next.find((r) => r.id === '002').waitsOn, ['lib/src/a.mjs'], 'the same file in lib waits');
-  assert.equal(next.find((r) => r.id === '003').ready, true, 'another file in tool does not');
+  assert.deepEqual(next.find((r) => r.id === '2').waitsOn, ['lib/src/a.mjs'], 'the same file in lib waits');
+  assert.equal(next.find((r) => r.id === '3').ready, true, 'another file in tool does not');
   // check: one repository at a time, bounded by the files declared in it.
-  sh(tool, 'git checkout -q -b jarl/001-cross && echo 2 > src/a.mjs && echo 2 > src/b.mjs && git commit -qam w && git checkout -q feature');
-  assert.match(refuses(hub, 'check', '1', '--branch', 'jarl/001-cross'), /names several repositories/);
-  const r = run(hub, ['check', '1', '--branch', 'jarl/001-cross', '--repo', '../tool']);
+  sh(tool, 'git checkout -q -b jarl/1-cross && echo 2 > src/a.mjs && echo 2 > src/b.mjs && git commit -qam w && git checkout -q feature');
+  assert.match(refuses(hub, 'check', '1', '--branch', 'jarl/1-cross'), /names several repositories/);
+  const r = run(hub, ['check', '1', '--branch', 'jarl/1-cross', '--repo', '../tool']);
   assert.equal(r.status, 2);
   assert.match(r.stdout, /✗ diff inside declared files — outside tool\/src\/a\.mjs: src\/b\.mjs/);
   // branches finds the branch in the repository that has it; the lease is not gone while one has it.
-  assert.match(jarl(hub, 'branches'), /\[tool\] jarl\/001-cross → 001/);
+  assert.match(jarl(hub, 'branches'), /\[tool\] jarl\/1-cross → 1/);
   assert.doesNotMatch(jarl(hub, 'status'), /branch gone/);
   // report: per repository, an issue naming two under each.
   for (const id of ['1', '2']) { jarl(hub, 'evidence', id, '--ran', 't', '--saw', 'ok'); jarl(hub, 'review', id, 'approve', '--by', 'r', FINDINGS); }
   jarl(hub, 'set', '1,2', 'done', 'ok');
   const rep = jarl(hub, 'report');
-  assert.match(rep, /### lib \(2\)\n- 001 cross \(bug\)\n- 002 only lib a \(bug\)/);
-  assert.match(rep, /### tool \(1\)\n- 001 cross \(bug\)/);
-  assert.deepEqual(JSON.parse(jarl(hub, 'report', '--json')).byRepo, { lib: ['001', '002'], tool: ['001'] });
-  assert.equal(jarl(hub, 'repo', '3', '../tool,../lib'), '003 repo: ../tool, ../lib');
+  assert.match(rep, /### lib \(2\)\n- 1 cross \(bug\)\n- 2 only lib a \(bug\)/);
+  assert.match(rep, /### tool \(1\)\n- 1 cross \(bug\)/);
+  assert.deepEqual(JSON.parse(jarl(hub, 'report', '--json')).byRepo, { lib: ['1', '2'], tool: ['1'] });
+  assert.equal(jarl(hub, 'repo', '3', '../tool,../lib'), '3 repo: ../tool, ../lib');
 });
 
 // ---- 282: tips -------------------------------------------------------------------------------------
@@ -221,8 +221,8 @@ test('tips: branch tips against their upstream, CI from gh for pushed commits, n
   sh(tool, `git remote add origin ${bare} && git push -q -u origin feature && git branch main && git push -q -u origin main && echo 3 > src/a.mjs && git commit -qam local`);
   jarl(hub, 'init', 'goal');
   jarl(hub, 'new', 'w', '--repo', '../tool', '--files', 'tool/src/b.mjs');
-  jarl(hub, 'set', '1', 'in-progress', 'go', '--branch', 'jarl/001-w');
-  sh(tool, 'git branch jarl/001-w');
+  jarl(hub, 'set', '1', 'in-progress', 'go', '--branch', 'jarl/1-w');
+  sh(tool, 'git branch jarl/1-w');
   const log = readFileSync(join(hub, '.jarl', 'log.md'), 'utf8');
   const gh = ghStub(parent, [{ conclusion: 'failure', status: 'completed', databaseId: 42, workflowName: 'CI' }, { conclusion: 'success', status: 'completed', databaseId: 41, workflowName: 'lint' }]);
   const r = run(hub, ['tips', '--json'], { JARL_GH: gh });
@@ -231,8 +231,8 @@ test('tips: branch tips against their upstream, CI from gh for pushed commits, n
   assert.equal(o.gh, true);
   const t = o.repos.find((x) => x.repo === 'tool');
   const row = (b) => t.rows.find((x) => x.branch === b);
-  assert.deepEqual([row('jarl/001-w').role, row('jarl/001-w').against, row('jarl/001-w').ahead, row('jarl/001-w').ci], ['feature', 'feature', 0, undefined], 'a worker branch never pushed: compared to the release branch, no CI');
-  assert.deepEqual(row('jarl/001-w').issues, ['001']);
+  assert.deepEqual([row('jarl/1-w').role, row('jarl/1-w').against, row('jarl/1-w').ahead, row('jarl/1-w').ci], ['feature', 'feature', 0, undefined], 'a worker branch never pushed: compared to the release branch, no CI');
+  assert.deepEqual(row('jarl/1-w').issues, ['1']);
   // The release branch is one commit ahead of its remote: that tip was never pushed, so CI is not asked about.
   assert.deepEqual([row('feature').role, row('feature').upstream, row('feature').ahead, row('feature').behind, row('feature').pushed, row('feature').ci], ['release', 'origin/feature', 1, 0, false, undefined]);
   // main is where its remote is: its CI is asked about, for that exact commit.
@@ -240,7 +240,7 @@ test('tips: branch tips against their upstream, CI from gh for pushed commits, n
   assert.deepEqual([row('main').role, row('main').pushed, row('main').ci], ['main', true, { state: 'red', runs: 2, run: 42, workflow: 'CI', conclusion: 'failure' }]);
   assert.equal(readFileSync(join(parent, 'gh-calls'), 'utf8').trim(), `run list --commit ${mainSha} --json conclusion,status,databaseId,workflowName --limit 20`);
   const text = run(hub, ['tips'], { JARL_GH: gh }).stdout;
-  assert.match(text, /\[tool\] .*\n {2}feature {2}jarl\/001-w [0-9a-f]{12} {2}= feature {2}not pushed {2}→ 001\n {2}release {2}feature [0-9a-f]{12} {2}\+1\/-0 vs origin\/feature {2}not pushed\n {2}main {5}main [0-9a-f]{12} {2}= origin\/main {2}ci red \(run 42 CI\)/);
+  assert.match(text, /\[tool\] .*\n {2}feature {2}jarl\/1-w [0-9a-f]{12} {2}= feature {2}not pushed {2}→ 1\n {2}release {2}feature [0-9a-f]{12} {2}\+1\/-0 vs origin\/feature {2}not pushed\n {2}main {5}main [0-9a-f]{12} {2}= origin\/main {2}ci red \(run 42 CI\)/);
   // Without gh: the same view, with no CI and no error.
   const none = JSON.parse(run(hub, ['tips', '--json'], { JARL_GH: join(parent, 'no-such-gh') }).stdout);
   assert.equal(none.gh, false);
@@ -252,19 +252,19 @@ test('tips: a worker branch of a multi-repository issue is shown where it is, GO
   const { hub, tool, lib } = reposBeside('tool', 'lib');
   jarl(hub, 'init', 'goal');
   jarl(hub, 'new', 'cross', '--repo', '../tool,../lib', '--files', 'tool/src/a.mjs,lib/src/a.mjs');
-  jarl(hub, 'set', '1', 'in-progress', 'go', '--branch', 'jarl/001-cross');
-  sh(tool, 'git branch jarl/001-cross');
+  jarl(hub, 'set', '1', 'in-progress', 'go', '--branch', 'jarl/1-cross');
+  sh(tool, 'git branch jarl/1-cross');
   sh(lib, 'git checkout -q --detach');
   const env = { JARL_GH: join(hub, 'no-gh') };
   const o = JSON.parse(run(hub, ['tips', '--json'], env).stdout);
   const t = o.repos.find((x) => x.repo === 'tool');
   const l = o.repos.find((x) => x.repo === 'lib');
-  assert.deepEqual(t.rows.find((x) => x.branch === 'jarl/001-cross').issues, ['001']);
-  assert.equal(l.rows.some((x) => x.branch === 'jarl/001-cross'), false, 'not GONE in lib: tool has it');
+  assert.deepEqual(t.rows.find((x) => x.branch === 'jarl/1-cross').issues, ['1']);
+  assert.equal(l.rows.some((x) => x.branch === 'jarl/1-cross'), false, 'not GONE in lib: tool has it');
   assert.equal(l.rows.some((x) => x.role === 'release'), false, 'a detached HEAD is not a release branch');
-  sh(tool, 'git branch -D jarl/001-cross');
+  sh(tool, 'git branch -D jarl/1-cross');
   const gone = JSON.parse(run(hub, ['tips', '--json'], env).stdout);
-  assert.equal(gone.repos.find((x) => x.repo === 'tool').rows.find((x) => x.branch === 'jarl/001-cross').missing, true);
+  assert.equal(gone.repos.find((x) => x.repo === 'tool').rows.find((x) => x.branch === 'jarl/1-cross').missing, true);
 });
 
 test('tips and report key a repository by its root: a loop in a subdirectory and Repo ../.. are one repository', () => {
@@ -278,7 +278,7 @@ test('tips and report key a repository by its root: a loop in a subdirectory and
   jarl(root, 'set', '1,2', 'done', 'ok');
   jarl(root, 'new', 'open one', '--repo', '../..');
   const rep = JSON.parse(jarl(root, 'report', '--json'));
-  assert.deepEqual(rep.byRepo, { hub: ['001', '002'] });
+  assert.deepEqual(rep.byRepo, { hub: ['1', '2'] });
   assert.doesNotMatch(rep.text, /### /, 'one repository: no per-repository sections');
   const o = JSON.parse(run(root, ['tips', '--json'], { JARL_GH: join(hub, 'no-gh') }).stdout);
   assert.deepEqual(o.repos.map((r) => r.repo), ['hub']);

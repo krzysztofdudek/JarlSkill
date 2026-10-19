@@ -2,7 +2,7 @@
 // jarl.mjs — the one tool the jarl skill's state moves through: the command line over record.mjs.
 //
 // Markdown is the source of truth: the loop's goal, decisions and log, and one
-// .jarl/issues/NNN-slug.md per issue. This script only reads and writes those files, so anything
+// .jarl/issues/7-slug.md per issue. This script only reads and writes those files, so anything
 // it does can be checked by opening them. Zero dependencies, Node 22+.
 //
 // What is here: the usage text, the flag and argument tables, the parser and dispatch — one command, run and rendered.
@@ -164,12 +164,12 @@ commands:
                                                  with no id, the diff is bounded by the union of Files of every issue
                                                  that records Branch <b> (a package on one branch, one call)
   branches [--base <feature-branch>] [--repo <path>] [--stale-hours n]
-                                                 every jarl/NNN-* branch and every branch an issue records: the
+                                                 every jarl/7-* branch and every branch an issue records: the
                                                  issues on it, commits beyond the base, worktree state, STALE leases
                                                  (worktree gone, branch gone, idle over n hours, default 6) and
                                                  DONE → delete; shown only, never acted on; read in --repo, else the
                                                  loop's own repository and every repository its issues name
-  ask "<question>" [--kind stop|stuck|lower|charter|ratify] [--target x] [--issue NNN]
+  ask "<question>" [--kind stop|stuck|lower|charter|ratify] [--target x] [--issue 7]
                                                  a question the user has to answer; lower needs --target;
                                                  listed at boot until answered; ratify is a choice already made
                                                  under a mandate, awaiting the user's word, and blocks nothing
@@ -283,9 +283,9 @@ git merges (not loop commands: no --root, no lock, no tool of the MCP server):
 203-206,209. Every id and every precondition is checked before anything is written, so the call lands on
 all of them or on none, with one log line per issue.
 
-An issue number has at least three digits: below 1000 it is padded to three (007, 195), from 1000 it has the digits
-it needs (1000, 1001); 7 and #7 both mean 007. Questions are numbered the same way (a-001, a-1000). Numbers are
-compared as numbers, so 999 comes before 1000.
+An issue number is a plain number: 7, 195, 1000. A number written with leading zeros (007) or with a # (#7) is the
+same issue as 7. Questions are numbered the same way (a-7, a-1000). Numbers are compared as numbers, so 999 comes
+before 1000.
 
 Flags: a flag the command does not take is an error. A value flag takes the next argument whatever it
 starts with (--ran "--help" records a row), or inline as --flag=value. A bare -- ends the flags: put a
@@ -374,7 +374,7 @@ export function parseArgs(argv) {
     const kind = Object.hasOwn(t, name) ? t[name] : undefined;
     if (kind === undefined) {
       const where = cmd === undefined ? `before the command — only ${named(GLOBAL_FLAGS)} may come before it` : `for ${cmd} — it takes ${named(t)}`;
-      throw new Error(`unknown flag ${a} ${where}. A value that starts with -- goes after a bare --, e.g. evidence 001 -- "--json prints ok"`);
+      throw new Error(`unknown flag ${a} ${where}. A value that starts with -- goes after a bare --, e.g. evidence 7 -- "--json prints ok"`);
     }
     if (kind === 'bool') {
       need(inline === undefined, `--${name} takes no value`);
@@ -549,7 +549,7 @@ export function dispatch(root, cmd, rest, flags) {
     switch (cmd) {
       case 'init': out = R.initLoop(root, rest[0], { ...flags, caller: 'cli' }); text = `opened ${out.dir} · ${out.permanent ? 'permanent record, no branch' : out.committed ? 'committed with the work' : 'kept out of git'}${out.profile ? ` · profile ${out.profile}` : ''}`; warn = out.note ? [`note: ${out.note}`] : []; break;
       // The command line says caller 'cli': the notes (the tier a new issue got) are for it, never for a library caller.
-      case 'new': out = R.newIssue(root, rest[0], { ...flags, caller: 'cli' }); out = { ...out, ...describeNew(out.file) }; text = renderNewReply(out); warn = out.note ? [out.note] : []; break;
+      case 'new': out = R.newIssue(root, rest[0], { ...flags, caller: 'cli', width: undefined }); out = { ...out, ...describeNew(out.file) }; text = renderNewReply(out); warn = out.note ? [out.note] : []; break;
       case 'body': out = R.setBody(root, rest[0], flags); text = `${out.id} body: ${out.set.join(', ')}`; break;
       case 'source': out = R.setSource(root, rest[0], rest[1]); text = `${out.id} source: ${out.sources.join(', ')}`; break;
       case 'after': out = R.setAfter(root, rest[0], rest[1], flags); text = `${out.id} after: ${out.cleared ? 'cleared' : out.after.join(', ')}`; break;
@@ -570,7 +570,7 @@ export function dispatch(root, cmd, rest, flags) {
       case 'merged': out = R.recordMerged(root, rest[0], { ...flags, caller: 'cli' }); text = `${out.ids.join(', ')} ${out.sha ? `merged ${out.sha}` : 'merge'}${out.check ? ` · check ${out.check}` : ''}${out.red ? ` · landed red, cause ${out.red}` : ''}${out.ci ? ` · CI ${out.ci}` : ''}${(out.cleanup || []).map((c) => `\n${c.kept ? `kept ${c.branch}${c.worktree ? ` (worktree ${c.worktree} removed)` : ''} — ${c.kept}` : `removed ${c.worktree ? `the worktree ${c.worktree} and ` : ''}the branch ${c.branch}`}${(c.commands || []).length ? `\nafter looking at the files, remove them with:\n${c.commands.map((x) => `  ${x}`).join('\n')}` : ''}${out.cleanup.some((x) => x.repo !== c.repo) ? ` [${c.repo}]` : ''}`).join('')}`; warn = out.notes.map((n) => `note: ${n}`); break;
       case 'check': out = cmdCheck(root, rest[0], flags); text = `${out.id === null ? `package ${out.ids.join(', ')} on ${out.branch}\n` : ''}${out.repo === root ? '' : `in ${out.repo}\n`}${out.items.map((i) => `${i.ok ? '✓' : '✗'} ${i.name} — ${i.note}`).join('\n')}`; break;
       case 'branches': out = cmdBranches(root, flags); text = renderBranches(out, root); break;
-      case 'ask': out = R.ask(root, rest[0], flags); text = out.kind === 'ratify' ? `filed a-${out.id} for ratification · blocks nothing` : `asked a-${out.id}`; break;
+      case 'ask': out = R.ask(root, rest[0], { ...flags, width: undefined }); text = out.kind === 'ratify' ? `filed a-${out.id} for ratification · blocks nothing` : `asked a-${out.id}`; break;
       // The library's answer (jarl-record/1) takes no opts: --by reaches the answer through jarl-lib.mjs, under the lock held here.
       case 'answer': out = cmdAnswer(root, rest[0], rest[1], flags); break;   // text below: the type log is written outside the lock
       case 'resume': out = R.resumeData(root, flags); text = renderResume(out, R.loadProfile(root)); break;

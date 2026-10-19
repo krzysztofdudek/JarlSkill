@@ -23,13 +23,13 @@ const loop = () => makeLoop({ prefix: 'jarl-testimony-', goal: three('goal'), vi
 test('three lines through every command that writes text: whole in the issue, the question and the ruling, and one line in the log', () => {
   const root = loop();
   const id = JSON.parse(jarl(root, 'new', 'multi-line testimony', '--what', three('what'), '--why', three('why'), '--acceptance', three('acceptance'), '--changelog', 'Fixed: x', '--json')).id;
-  assert.equal(id, '001');
+  assert.equal(id, '1');
   const t = JSON.parse(jarl(root, 'new', three('title'), '--json')).id;
-  assert.match(readFileSync(L.findIssue(root, t).file, 'utf8'), /^# 002 · title line one title line two title line three\n/, 'a title of three lines is one heading with every line');
+  assert.match(readFileSync(L.findIssue(root, t).file, 'utf8'), /^# 2 · title line one title line two title line three\n/, 'a title of three lines is one heading with every line');
   jarl(root, 'body', id, '--what', three('body-what'), '--why', three('body-why'));
   jarl(root, 'evidence', id, three('evidence'));
   jarl(root, 'evidence', id, '--ran', three('ran'), '--saw', three('saw'));
-  jarl(root, 'set', id, 'in-progress', '--worker', 'w-one', '--branch', 'jarl/001-x');
+  jarl(root, 'set', id, 'in-progress', '--worker', 'w-one', '--branch', 'jarl/1-x');
   jarl(root, 'round', id, three('round'));
   jarl(root, 'review', id, 'changes', '--by', 'reviewer-one', `Important: ${three('review')}`);
 
@@ -57,7 +57,7 @@ test('three lines through every command that writes text: whole in the issue, th
   const after = readFileSync(L.findIssue(root, id).file, 'utf8');
   assert.match(after, /Ruling multi-ruling: ruling line one/);
   assert.match(after, /multi-ruling/);
-  assert.match(after, /ask-001/);
+  assert.match(after, /ask-1/);
   assert.match(after, /decisions\.md/);
 
   jarl(root, 'log', three('log'));
@@ -70,13 +70,16 @@ test('three lines through every command that writes text: whole in the issue, th
   assert.ok(log.includes('question line one'));
 });
 
-test('a verdict line with its pointer, and a multi-line question, read right under the pinned frozen reader', () => {
+test('a verdict line with its pointer, and a multi-line question, read right under the pinned frozen reader', async () => {
   const root = loop();
-  const id = JSON.parse(jarl(root, 'new', 'old reader', '--acceptance', 'it works', '--json')).id;
-  jarl(root, 'set', id, 'in-progress', '--worker', 'w-one', '--branch', 'jarl/001-x');
+  // Filed by the library, whose number has three digits, so the loop stays format 1 for the frozen reader.
+  const id = (await import('../record.mjs')).newIssue(root, 'old reader', { acceptance: 'it works' }).id;
+  jarl(root, 'set', id, 'in-progress', '--worker', 'w-one', '--branch', 'jarl/1-x');
   jarl(root, 'review', id, 'changes', '--by', 'reviewer-one', `Important: ${three('review')}`);
-  jarl(root, 'ask', three('question'), '--kind', 'stuck');
-  jarl(root, 'ask', 'next question');
+  // Questions are filed by the library as well, so the loop stays format 1 for the frozen reader.
+  const R = await import('../record.mjs');
+  R.ask(root, three('question'), { kind: 'stuck' });
+  R.ask(root, 'next question');
   assert.equal(oldJarl(root, 'list', {}).ok, true);
   const status = oldJarl(root, 'status', {});
   assert.equal(status.ok, true, status.error);

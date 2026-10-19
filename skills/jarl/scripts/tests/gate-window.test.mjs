@@ -15,7 +15,7 @@ const loop = (n) => {
 };
 const row = (root, id, saw = 'pass') => jarl(root, 'evidence', String(id), '--ran', 'npm test', '--saw', saw);
 const approve = (root, id) => jarl(root, 'review', String(id), 'approve', '--by', 'jarl', 'read the diff, nothing found');
-const gate = (root, id) => L.gateState(root, String(id).padStart(3, '0'));
+const gate = (root, id) => L.gateState(root, String(id));
 
 test('an issue closed, deferred and closed again is refused for the missing row after the reopen, and passes with one', () => {
   const root = loop(2);

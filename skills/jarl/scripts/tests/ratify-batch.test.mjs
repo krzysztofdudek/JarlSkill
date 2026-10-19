@@ -1,4 +1,4 @@
-// Rulings about a whole area of code (issue 475): `decide --area <type> [--reach n]` marks one; `close` files the
+// Rulings about a whole area of code: `decide --area <type> [--reach n]` marks one; `close` files the
 // ratification batch — at most ten, widest reach first, each a ratify item answered with one word — and never waits
 // for it; a ratified area ruling is written into the type's decision log through yg-edge.mjs when the repository
 // has a graph and a working yg, and stays a ruling of the loop when it has neither or the write fails.
@@ -105,12 +105,12 @@ test('a ratification is answered with one word first: anything else is refused a
   assert.match(run(root, {}, ['answer', ask, 'maybe later']).stderr, /starts with one word — yes/);
   assert.equal(decisions(root), before);
   assert.match(jarl(root, {}, 'answer', ask, 'Nie.'), /r rejected/);
-  assert.match(decisions(root), /\*\*Rejected:\*\* a-001/);
-  assert.equal(json(root, {}, 'decisions').find((d) => d.slug === 'r').rejected, 'a-001');
+  assert.match(decisions(root), /\*\*Rejected:\*\* a-1/);
+  assert.equal(json(root, {}, 'decisions').find((d) => d.slug === 'r').rejected, 'a-1');
   assert.deepEqual(json(root, {}, 'close', '--batch').batch.items, [], 'a rejected ruling is never asked again');
 });
 
-test('"no" decides nothing alone — English no, colloquial Polish yes: the next word decides, a bare "no" is refused (issue 496)', () => {
+test('"no" decides nothing alone — English no, colloquial Polish yes: the next word decides, a bare "no" is refused', () => {
   const root = loop();
   for (const r of ['a', 'b', 'c', 'd']) jarl(root, {}, 'decide', r, 'A rule.', '--area', 'svc', '--reach', '3');
   const items = json(root, {}, 'close', '--batch').batch.items;
@@ -142,7 +142,7 @@ test('close goes through without any ratification: a branch loop is removed, a p
   jarl(perm, {}, 'decide', 'r', 'A rule.', '--area', 'svc', '--reach', '3');
   assert.match(jarl(perm, {}, 'close'), /closed as a permanent record[\s\S]*to ratify \(1\)[\s\S]*unanswered items stay open/);
   assert.equal(json(perm, {}, 'status').ratify, 1);
-  assert.match(jarl(perm, {}, 'answer', 'a-001', 'yes'), /r ratified · not written into a type log: no \.yggdrasil\//);
+  assert.match(jarl(perm, {}, 'answer', 'a-1', 'yes'), /r ratified · not written into a type log: no \.yggdrasil\//);
 });
 
 test('without a graph, a ratified area ruling is never sent anywhere', () => {
@@ -150,11 +150,11 @@ test('without a graph, a ratified area ruling is never sent anywhere', () => {
   const root = loop();
   jarl(root, {}, 'decide', 'r', 'A rule.', '--area', 'svc', '--reach', '3');
   jarl(root, {}, 'close', '--batch');
-  const out = json(root, { JARL_YG: yg.bin }, 'answer', 'a-001', 'yes');
+  const out = json(root, { JARL_YG: yg.bin }, 'answer', 'a-1', 'yes');
   assert.equal(out.verdict, 'ratified');
   assert.equal(out.typeLog.state, 'skipped');
   assert.deepEqual(yg.calls(), []);
-  assert.match(decisions(root), /\*\*Ratified:\*\* a-001/);
+  assert.match(decisions(root), /\*\*Ratified:\*\* a-1/);
   assert.doesNotMatch(decisions(root), /Type log/);
 });
 
@@ -164,25 +164,25 @@ test('with a graph and a working yg, a ratified area ruling goes into the type l
   const env = { JARL_YG: yg.bin };
   jarl(root, env, 'decide', 'one', 'Every service validates its input.', '--area', 'service', '--reach', '12');
   jarl(root, env, 'close', '--batch');
-  const first = json(root, env, 'answer', 'a-001', 'yes');
+  const first = json(root, env, 'answer', 'a-1', 'yes');
   assert.deepEqual(first.typeLog, { state: 'written', repo: root, datetime: '2026-09-27T10:00:02.000Z' });
   const [probe, write] = yg.calls();
   assert.deepEqual(probe.args, ['--version']);
   assert.deepEqual(write.args.slice(0, 4), ['log', 'add', '--type', 'service']);
   assert.equal(write.args[4], '--reason-file');
   assert.equal(write.args.length, 6, 'no --supersedes and no --adds: the type log decides whether one is needed');
-  assert.match(write.text, /^Every service validates its input\.\n\n\(ratified: one, a-001\)\n$/);
+  assert.match(write.text, /^Every service validates its input\.\n\n\(ratified: one, a-1\)\n$/);
   assert.match(decisions(root), /\*\*Type log:\*\* service · 2026-09-27T10:00:02\.000Z/);
   // A ruling that supersedes one Jarl wrote into the same type log replaces it there too.
   jarl(root, env, 'decide', 'two', 'Services validate with the shared schema.', '--area', 'service', '--reach', '12', '--supersedes', 'one');
   jarl(root, env, 'close', '--batch');
-  const second = json(root, env, 'answer', 'a-002', 'ok');
+  const second = json(root, env, 'answer', 'a-2', 'ok');
   assert.equal(second.typeLog.state, 'written');
   assert.deepEqual(yg.calls()[3].args.slice(-2), ['--supersedes', '2026-09-27T10:00:02.000Z']);
   // A rejection sends nothing.
   jarl(root, env, 'decide', 'three', 'Not this one.', '--area', 'service', '--reach', '12');
   jarl(root, env, 'close', '--batch');
-  jarl(root, env, 'answer', 'a-003', 'nie');
+  jarl(root, env, 'answer', 'a-3', 'nie');
   assert.equal(yg.calls().length, 4);
   assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /one written into the decision log of type service/);
 });
@@ -193,11 +193,11 @@ test('a write yg refuses is reported, never fatal: the ruling stays in decisions
   const env = { JARL_YG: yg.bin };
   jarl(root, env, 'decide', 'r', 'A rule.', '--area', 'ghost', '--reach', '1');
   jarl(root, env, 'close', '--batch');
-  const r = run(root, env, ['answer', 'a-001', 'yes']);
+  const r = run(root, env, ['answer', 'a-1', 'yes']);
   assert.equal(r.status, 0);
   assert.match(r.stdout, /NOT written into the type log: error\[type-not-found\]/);
   assert.match(r.stderr, /note: r stays a ruling of this loop; write it by hand in .*: yg log add --type ghost/);
-  assert.match(decisions(root), /\*\*Ratified:\*\* a-001/);
+  assert.match(decisions(root), /\*\*Ratified:\*\* a-1/);
   assert.doesNotMatch(decisions(root), /Type log/);
   assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /r NOT written into the decision log of type ghost/);
 });
@@ -207,7 +207,7 @@ test('a graph without a working yg writes nothing and says why', () => {
   const root = loop({ graph: true });
   jarl(root, {}, 'decide', 'r', 'A rule.', '--area', 'svc', '--reach', '1');
   jarl(root, {}, 'close', '--batch');
-  const out = json(root, { JARL_YG: yg.bin }, 'answer', 'a-001', 'yes');
+  const out = json(root, { JARL_YG: yg.bin }, 'answer', 'a-1', 'yes');
   assert.equal(out.typeLog.state, 'skipped');
   assert.match(out.typeLog.reason, /no working yg/);
   assert.deepEqual(yg.calls().map((c) => c.args), [['--version']]);
@@ -220,8 +220,8 @@ test('the whole close with a graph: batch, answers, close — and the loop close
   jarl(root, env, 'decide', 'wide', 'Handlers never touch the database.', '--area', 'handler', '--reach', '40');
   jarl(root, env, 'decide', 'narrow', 'Jobs retry three times.', '--area', 'job', '--reach', '4');
   const text = jarl(root, env, 'close', '--batch');
-  assert.match(text, /^to ratify \(2\)[\s\S]*a-001 · area handler · 40 files · wide[\s\S]*a-002 · area job · 4 files · narrow[\s\S]*nothing closed/);
-  jarl(root, env, 'answer', 'a-001', 'yes');
+  assert.match(text, /^to ratify \(2\)[\s\S]*a-1 · area handler · 40 files · wide[\s\S]*a-2 · area job · 4 files · narrow[\s\S]*nothing closed/);
+  jarl(root, env, 'answer', 'a-1', 'yes');
   const closed = json(root, env, 'close');
   assert.equal(closed.closed, true);
   assert.deepEqual(closed.batch.items.map((i) => i.ruling), ['narrow']);
@@ -238,9 +238,9 @@ test('the library never reaches another tool: record.mjs answer hands back the t
   const before = process.env.JARL_YG;
   process.env.JARL_YG = yg.bin;
   try {
-    const out = R.answer(root, 'a-001', 'yes');
+    const out = R.answer(root, 'a-1', 'yes');
     assert.equal(out.verdict, 'ratified');
-    assert.deepEqual(out.typeDecision, { type: 'job', text: 'A rule for every job.\n\n(ratified: r, a-001)', supersedes: null });
+    assert.deepEqual(out.typeDecision, { type: 'job', text: 'A rule for every job.\n\n(ratified: r, a-1)', supersedes: null });
     assert.equal(out.typeLog, null);
   } finally {
     if (before === undefined) delete process.env.JARL_YG; else process.env.JARL_YG = before;
@@ -254,7 +254,7 @@ test('the type log is written with the loop lock let go: another writer of the l
   const env = { JARL_YG: yg.bin, JARL_TEST_ROOT: root };
   jarl(root, env, 'decide', 'r', 'A rule.', '--area', 'svc', '--reach', '2');
   jarl(root, env, 'close', '--batch');
-  assert.equal(json(root, env, 'answer', 'a-001', 'yes').typeLog.state, 'written');
+  assert.equal(json(root, env, 'answer', 'a-1', 'yes').typeLog.state, 'written');
   const meanwhile = yg.calls().find((c) => c.args[0] === 'meanwhile');
   assert.equal(meanwhile.status, 0, meanwhile.stderr);
   assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /meanwhile[\s\S]*r written into the decision log of type svc/);
@@ -281,7 +281,7 @@ test('what decisions.md holds is checked again before it reaches yg: a bad type 
 
 // On Windows `npx` is npx.cmd, which runs only through cmd.exe: yg-edge.mjs builds that command line itself. A .cmd
 // stand-in for yg takes the same road there (a JARL_YG not ending in .js goes through the shell), so the Windows CI
-// job runs the real path a user's npx.cmd would take (issue 496).
+// job runs the real path a user's npx.cmd would take.
 test('on Windows a .cmd yg runs through the shell and the ratified ruling and its rule reach it intact', { skip: process.platform !== 'win32' && 'the shell road is taken on Windows only' }, () => {
   const yg = stub();
   const cmd = join(yg.bin, '..', 'yg.cmd');
@@ -290,7 +290,7 @@ test('on Windows a .cmd yg runs through the shell and the ratified ruling and it
   const env = { JARL_YG: cmd, ...gitName('Jane Doe') };
   jarl(root, env, 'decide', 'r', 'Every service validates its input.', '--area', 'service', '--reach', '2', '--rule', 'boundary/validates-input');
   jarl(root, env, 'close', '--batch');
-  const out = json(root, env, 'answer', 'a-001', 'yes');
+  const out = json(root, env, 'answer', 'a-1', 'yes');
   assert.equal(out.typeLog.state, 'written', JSON.stringify(out.typeLog));
   assert.equal(out.ruleLog.state, 'written', JSON.stringify(out.ruleLog));
   const [write, ratification] = yg.calls().filter((c) => c.args[0] === 'log');
@@ -300,7 +300,7 @@ test('on Windows a .cmd yg runs through the shell and the ratified ruling and it
   assert.match(ratification.text, /^Every service validates its input\./);
 });
 
-// A ruling that names a rule of the graph (issue 502): the user's yes also ratifies that rule in its own log, naming
+// A ruling that names a rule of the graph: the user's yes also ratifies that rule in its own log, naming
 // who admitted it — the person git names in the graph's repository — so Yggdrasil's type-law-unratified clears.
 function gitName(name) {
   const dir = mkdtempSync(join(tmpdir(), 'jarl-gitcfg-'));
@@ -333,16 +333,16 @@ test('a ratified ruling naming a rule writes the type decision and then the rule
   const env = { JARL_YG: yg.bin, ...gitName('Jane Doe') };
   jarl(root, env, 'decide', 'todo', 'No TODO comments in services.', '--area', 'service', '--reach', '12', '--rule', 'no-todo-comments');
   jarl(root, env, 'close', '--batch');
-  const out = json(root, env, 'answer', 'a-001', 'tak');
+  const out = json(root, env, 'answer', 'a-1', 'tak');
   assert.equal(out.typeLog.state, 'written');
-  assert.deepEqual(out.ruleRatification, { rule: 'no-todo-comments', text: 'No TODO comments in services.\n\n(ratified: todo, a-001)' });
+  assert.deepEqual(out.ruleRatification, { rule: 'no-todo-comments', text: 'No TODO comments in services.\n\n(ratified: todo, a-1)' });
   assert.equal(out.ruleLog.state, 'written');
   assert.equal(out.ruleLog.by, 'Jane Doe');
   const writes = yg.calls().filter((c) => c.args[0] === 'log');
   assert.deepEqual(writes.map((c) => c.args.slice(0, 4)), [['log', 'add', '--type', 'service'], ['log', 'add', '--aspect', 'no-todo-comments']]);
   assert.deepEqual(writes[1].args.slice(4, 8), ['--ratify', '--by', 'Jane Doe', '--reason-file']);
   assert.equal(writes[1].args.length, 9);
-  assert.match(writes[1].text, /^No TODO comments in services\.\n\n\(ratified: todo, a-001\)\n$/);
+  assert.match(writes[1].text, /^No TODO comments in services\.\n\n\(ratified: todo, a-1\)\n$/);
   assert.match(decisions(root), /\*\*Rule log:\*\* no-todo-comments · 2026-09-27T10:00:0\d\.000Z/);
   assert.equal(json(root, env, 'decisions').find((d) => d.slug === 'todo').ruleLog.rule, 'no-todo-comments');
   assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /todo ratified rule no-todo-comments in its own log · by Jane Doe/);
@@ -350,7 +350,7 @@ test('a ratified ruling naming a rule writes the type decision and then the rule
   const env2 = { JARL_YG: yg.bin, ...gitName('') };
   jarl(root, env2, 'decide', 'two', 'Another.', '--area', 'service', '--rule', 'no-console');
   jarl(root, env2, 'close', '--batch');
-  assert.equal(json(root, env2, 'answer', 'a-002', 'yes').ruleLog.by, 'the owner');
+  assert.equal(json(root, env2, 'answer', 'a-2', 'yes').ruleLog.by, 'the owner');
 });
 
 test('a rejected ruling, one without a graph and one without --rule send no ratification', () => {
@@ -360,16 +360,16 @@ test('a rejected ruling, one without a graph and one without --rule send no rati
   jarl(root, env, 'decide', 'r', 'A rule.', '--area', 'svc', '--rule', 'no-todo-comments');
   jarl(root, env, 'decide', 'plain', 'No rule named.', '--area', 'svc');
   jarl(root, env, 'close', '--batch');
-  jarl(root, env, 'answer', 'a-001', 'nie');
-  assert.equal(json(root, env, 'answer', 'a-002', 'yes').ruleLog, null);
+  jarl(root, env, 'answer', 'a-1', 'nie');
+  assert.equal(json(root, env, 'answer', 'a-2', 'yes').ruleLog, null);
   assert.ok(!yg.calls().some((c) => c.args.includes('--aspect')));
   const bare = loop();
   jarl(bare, env, 'decide', 'r', 'A rule.', '--area', 'svc', '--rule', 'no-todo-comments');
   jarl(bare, env, 'close', '--batch');
-  const out = json(bare, env, 'answer', 'a-001', 'yes');
+  const out = json(bare, env, 'answer', 'a-1', 'yes');
   assert.equal(out.ruleLog.state, 'skipped');
   assert.match(out.ruleLog.reason, /no \.yggdrasil\//);
-  assert.match(decisions(bare), /\*\*Ratified:\*\* a-001/);
+  assert.match(decisions(bare), /\*\*Ratified:\*\* a-1/);
 });
 
 test('a ratification yg refuses is reported with the command to run by hand; the type decision and the ruling stand', () => {
@@ -378,17 +378,17 @@ test('a ratification yg refuses is reported with the command to run by hand; the
   const env = { JARL_YG: yg.bin, ...gitName('Jane Doe') };
   jarl(root, env, 'decide', 'r', 'A rule.', '--area', 'svc', '--rule', 'lonely');
   jarl(root, env, 'close', '--batch');
-  const r = run(root, env, ['answer', 'a-001', 'yes']);
+  const r = run(root, env, ['answer', 'a-1', 'yes']);
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /written into the type's decision log[\s\S]*rule lonely NOT ratified in its own log: error\[aspect-ratify-no-type\]/);
   assert.match(r.stderr, /note: rule lonely is not ratified in its own log; write it by hand in .*: yg log add --aspect lonely --ratify --by 'Jane Doe'/);
-  assert.match(decisions(root), /\*\*Ratified:\*\* a-001/);
+  assert.match(decisions(root), /\*\*Ratified:\*\* a-1/);
   assert.match(decisions(root), /\*\*Type log:\*\* svc/);
   assert.doesNotMatch(decisions(root), /Rule log/);
   assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /r did NOT ratify rule lonely in its own log/);
 });
 
-// Who answered (issue 503): `answer --by <who>` records that person on the answer's ruling instead of the fixed owner,
+// Who answered:`answer --by <who>` records that person on the answer's ruling instead of the fixed owner,
 // and a ratification of a rule then names them in `yg log add --ratify --by`, whatever git's user.name says. Without
 // --by, the answer is the owner's and the ratification names git's user.name, as before.
 test('answer --by names who answered: the ruling records them and the rule ratification passes them to yg; absent, nothing changes', async () => {
@@ -398,27 +398,27 @@ test('answer --by names who answered: the ruling records them and the rule ratif
   jarl(root, env, 'decide', 'todo', 'No TODO comments in services.', '--area', 'service', '--rule', 'no-todo-comments');
   jarl(root, env, 'decide', 'two', 'No console in services.', '--area', 'service', '--rule', 'no-console');
   jarl(root, env, 'close', '--batch');
-  const out = json(root, env, 'answer', 'a-001', 'tak', '--by', 'Anna Nowak');
+  const out = json(root, env, 'answer', 'a-1', 'tak', '--by', 'Anna Nowak');
   assert.equal(out.ruleRatification.by, 'Anna Nowak');
   assert.equal(out.ruleLog.by, 'Anna Nowak');
   const aspect = () => yg.calls().filter((c) => c.args[2] === '--aspect');
   assert.deepEqual(aspect()[0].args.slice(4, 7), ['--ratify', '--by', 'Anna Nowak']);
-  assert.match(decisions(root), /## \S+ · ask-001\n\*\*Question:\*\*[^\n]*\n\*\*Answer:\*\* tak\n\n\*\*By:\*\* Anna Nowak/);
-  assert.equal(json(root, env, 'decisions').find((d) => d.slug === 'ask-001').by, 'Anna Nowak');
+  assert.match(decisions(root), /## \S+ · ask-1\n\*\*Question:\*\*[^\n]*\n\*\*Answer:\*\* tak\n\n\*\*By:\*\* Anna Nowak/);
+  assert.equal(json(root, env, 'decisions').find((d) => d.slug === 'ask-1').by, 'Anna Nowak');
   assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /todo ratified rule no-todo-comments in its own log · by Anna Nowak/);
   // Without --by: the owner answered, and the ratification names the person git names.
-  const plain = json(root, env, 'answer', 'a-002', 'yes');
-  assert.deepEqual(plain.ruleRatification, { rule: 'no-console', text: 'No console in services.\n\n(ratified: two, a-002)' });
+  const plain = json(root, env, 'answer', 'a-2', 'yes');
+  assert.deepEqual(plain.ruleRatification, { rule: 'no-console', text: 'No console in services.\n\n(ratified: two, a-2)' });
   assert.equal(plain.ruleLog.by, 'Jane Doe');
   assert.deepEqual(aspect()[1].args.slice(4, 7), ['--ratify', '--by', 'Jane Doe']);
-  assert.equal(json(root, env, 'decisions').find((d) => d.slug === 'ask-002').by, 'owner');
+  assert.equal(json(root, env, 'decisions').find((d) => d.slug === 'ask-2').by, 'owner');
   // An empty --by is refused before anything is written; a name cmd.exe would misread is replaced by "the owner".
   jarl(root, env, 'ask', 'Which DB?');
-  assert.match(run(root, env, ['answer', 'a-003', 'Postgres', '--by', ' ']).stderr, /--by needs a value/);
-  assert.match(readFileSync(join(root, '.jarl', 'asks.md'), 'utf8'), /\*\*a-003\*\* \(open\)/);
+  assert.match(run(root, env, ['answer', 'a-3', 'Postgres', '--by', ' ']).stderr, /--by needs a value/);
+  assert.match(readFileSync(join(root, '.jarl', 'asks.md'), 'utf8'), /\*\*a-3\*\* \(open\)/);
   jarl(root, env, 'decide', 'three', 'Third.', '--area', 'service', '--rule', 'no-eval');
   jarl(root, env, 'close', '--batch');
-  const odd = json(root, env, 'answer', 'a-004', 'yes', '--by', '100%');
+  const odd = json(root, env, 'answer', 'a-4', 'yes', '--by', '100%');
   assert.equal(odd.ruleLog.by, 'the owner');
   // MCP parity: the jarl_answer tool carries the field, generated from the command table.
   const mcp = await import('../jarl-mcp.mjs');
@@ -427,7 +427,7 @@ test('answer --by names who answered: the ruling records them and the rule ratif
 });
 
 // A loop a composer runs (its profile keeps close to the record: Horde's mission) is written into the graph by that
-// composer, into the tree it hands over (issue 436). The composer files its own batch through record.mjs ask with the
+// composer, into the tree it hands over. The composer files its own batch through record.mjs ask with the
 // ruling named; the command line answering one of its items records the verdict and sends nothing, so no entry is
 // written twice or into a checkout the composer's work never reaches.
 function composerLoop() {
@@ -470,6 +470,6 @@ test('a composer files its own ratify items by ruling; the command line answerin
   // A ratified ruling is never put to ratification again.
   jarl(root, env, 'decide', 'svc2', 'Services log every refusal.', '--area', 'service');
   R.ask(root, 'q', { kind: 'ratify', ruling: 'svc2' });
-  jarl(root, env, 'answer', 'a-002', 'nie');
+  jarl(root, env, 'answer', 'a-2', 'nie');
   assert.throws(() => R.ask(root, 'q', { kind: 'ratify', ruling: 'svc' }), /already ratified|put to ratification already/);
 });

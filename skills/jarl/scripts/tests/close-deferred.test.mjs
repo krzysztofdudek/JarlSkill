@@ -19,7 +19,7 @@ const archives = (root) => (existsSync(join(root, '.jarl', 'archive')) ? readdir
 test('close in the default mode refuses while an issue is deferred, names it and the two ways forward, and removes nothing', () => {
   const root = deferredLoop();
   const said = refuses(root, 'close');
-  assert.match(said, /004/);
+  assert.match(said, /4/);
   assert.match(said, /archive/);
   assert.match(said, /close --force/);
   assert.ok(existsSync(join(root, '.jarl')), 'the loop is still on disk');
@@ -30,7 +30,7 @@ test('close --force removes the loop and names the deferred issues as removed, n
   const root = deferredLoop();
   const out = jarlResult(root, ['close', '--force']);
   assert.match(out.stdout, /^removed /);
-  assert.match(out.stdout, /1 deferred removed with the loop: 004/);
+  assert.match(out.stdout, /1 deferred removed with the loop: 4/);
   assert.doesNotMatch(`${out.stdout}\n${out.stderr}`, /still waiting/);
   assert.equal(existsSync(join(root, '.jarl')), false);
 });
@@ -40,13 +40,13 @@ test('archive keeps the deferred issue under .jarl/archive, and init and close o
   jarl(root, 'archive', 'first round');
   const [name] = archives(root);
   assert.match(name, /^\d{4}\.\d{2}\.\d{2}-first-round$/);
-  assert.ok(readdirSync(join(root, '.jarl', 'archive', name, 'issues')).some((f) => f.startsWith('004-')), 'issue 4 is in the archive');
+  assert.ok(readdirSync(join(root, '.jarl', 'archive', name, 'issues')).some((f) => f.startsWith('4-')), 'issue 4 is in the archive');
   jarl(root, 'init', 'second round');
   assert.deepEqual(archives(root), [name], 'init leaves the archive in place');
   const out = jarl(root, 'close');
   assert.match(out, /^removed .*archive\/ is left in place/);
   assert.deepEqual(archives(root), [name], 'close leaves the archive in place');
-  assert.ok(readdirSync(join(root, '.jarl', 'archive', name, 'issues')).some((f) => f.startsWith('004-')), 'issue 4 is still in the archive');
+  assert.ok(readdirSync(join(root, '.jarl', 'archive', name, 'issues')).some((f) => f.startsWith('4-')), 'issue 4 is still in the archive');
   assert.equal(existsSync(join(root, '.jarl', 'goal.md')), false, 'the live loop is gone');
 });
 
@@ -63,7 +63,7 @@ test('a permanent loop with a deferred issue keeps its directory and says the is
   const root = deferredLoop(['--permanent']);
   const out = jarl(root, 'close');
   assert.match(out, /closed as a permanent record/);
-  assert.match(out, /1 deferred still waiting: 004/);
+  assert.match(out, /1 deferred still waiting: 4/);
   assert.ok(existsSync(join(root, '.jarl')));
 });
 

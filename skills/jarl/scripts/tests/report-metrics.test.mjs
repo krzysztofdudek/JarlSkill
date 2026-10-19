@@ -1,4 +1,4 @@
-// The loop's metrics in report --json, and the mark on a loop with no declared check (issue 464). Every metric is read
+// The loop's metrics in report --json, and the mark on a loop with no declared check. Every metric is read
 // from the record alone — the journal and the issue files — and where the record holds nothing to read it from it says
 // "no data" with a reason and null values, never a zero. A loop with no `Check:` line in goal.md lands on testimony
 // alone, and status and report say so.
@@ -74,8 +74,8 @@ test('an empty loop reports every metric as no data, never as zero', () => {
 test('approves from before --by give no data for the fresh share, not a share of zero', () => {
   const dir = loop();
   jarl(dir, 'new', 'one');
-  fields(dir, '001', { Status: 'done' });
-  journal(dir, ['2026-09-01 10:00 · filed 001 · one', '2026-09-01 10:10 · 001 → in-progress · go', '2026-09-01 11:00 · 001 review approve · looks fine', '2026-09-01 11:10 · 001 → done · ok']);
+  fields(dir, '1', { Status: 'done' });
+  journal(dir, ['2026-09-01 10:00 · filed 1 · one', '2026-09-01 10:10 · 1 → in-progress · go', '2026-09-01 11:00 · 1 review approve · looks fine', '2026-09-01 11:10 · 1 → done · ok']);
   const f = json(dir, 'report').metrics.freshReviews;
   assert.equal(f.recorded, 0);
   assert.equal(f.unrecorded, 1);
@@ -86,74 +86,74 @@ test('approves from before --by give no data for the fresh share, not a share of
 test('the metrics are read from the journal and the issues, with the numbers a reader would count by hand', () => {
   const dir = loop();
   for (const t of ['a', 'b', 'c', 'd', 'e', 'f', 'g']) jarl(dir, 'new', t);
-  // 001: code, fresh approve, merged, CI red then green; one round and one changes verdict; reopened once after done.
-  // 002: code, coordinator approve, merged with no CI. 003: no code, approved by the jarl, CI still pending.
-  // 004: deferred and brought back — not a reopening. 005: filed 3 days after 001 closed, found by 001's reviewer: a
-  // follow-up. 006: filed after 002 closed but names it only inside a sha (1b002c3): not a follow-up. 007: a research
-  // issue closed, with 006 naming it in Found by: research is left out of follow-ups.
-  fields(dir, '001', { Status: 'done', Branch: 'jarl/001-a', Merged: 'abc1234', CI: 'green' });
-  fields(dir, '002', { Status: 'done', Branch: 'jarl/002-b', Merged: 'def5678', CI: 'none' });
-  fields(dir, '003', { Status: 'done', Merged: 'aaa1111', CI: 'pending' });
-  fields(dir, '004', { Status: 'open' });
-  fields(dir, '005', { Status: 'open', 'Found by': 'reviewer-001' });
-  fields(dir, '006', { Status: 'open', 'Found by': 'CI run after merge 1b002c3, and research 007' });
-  fields(dir, '007', { Status: 'done', Kind: 'research' });
+  // 1: code, fresh approve, merged, CI red then green; one round and one changes verdict; reopened once after done.
+  // 2: code, coordinator approve, merged with no CI. 3: no code, approved by the jarl, CI still pending.
+  // 4: deferred and brought back — not a reopening. 5: filed 3 days after 1 closed, found by 1's reviewer: a
+  // follow-up. 6: filed after 2 closed but names it only inside a sha (1b2c3): not a follow-up. 7: a research
+  // issue closed, with 6 naming it in Found by: research is left out of follow-ups.
+  fields(dir, '1', { Status: 'done', Branch: 'jarl/1-a', Merged: 'abc1234', CI: 'green' });
+  fields(dir, '2', { Status: 'done', Branch: 'jarl/2-b', Merged: 'def5678', CI: 'none' });
+  fields(dir, '3', { Status: 'done', Merged: 'aaa1111', CI: 'pending' });
+  fields(dir, '4', { Status: 'open' });
+  fields(dir, '5', { Status: 'open', 'Found by': 'reviewer of issue 1' });
+  fields(dir, '6', { Status: 'open', 'Found by': 'CI run after merge 1b2c3, and research 7' });
+  fields(dir, '7', { Status: 'done', Kind: 'research' });
   journal(dir, [
-    '2026-09-01 08:00 · filed 001 · a',
-    '2026-09-01 08:00 · filed 002 · b',
-    '2026-09-01 08:00 · filed 003 · c',
-    '2026-09-01 08:00 · filed 004 · d',
-    '2026-09-01 08:00 · filed 007 · g',
-    '2026-09-01 09:00 · 001 → in-progress · worker started · branch jarl/001-a · worker w1',
-    '2026-09-01 10:00 · 001 review changes · by r1 (fresh) · Important: x',
-    '2026-09-01 10:05 · 001 round 1 · x',
-    '2026-09-01 11:00 · 001 review approve · by r1 (fresh) · ok',
-    '2026-09-01 11:10 · 001 merged abc1234 · CI pending',
-    '2026-09-01 11:20 · 001 CI red',
-    '2026-09-01 11:30 · 001 → done · merged',
-    '2026-09-01 12:00 · 001 → open · reopened: missed a case',
-    '2026-09-01 13:00 · 001 → in-progress · again · worker w1',
-    '2026-09-01 14:00 · 001 review approve · by r2 (fresh) · ok',
-    '2026-09-01 14:10 · 001 CI green',
-    '2026-09-01 15:00 · 001 → done · merged',
-    '2026-09-01 09:00 · 002 → in-progress · worker started · branch jarl/002-b · worker w2',
-    '2026-09-01 12:00 · 002 review approve · by jarl (coordinator) · ok',
-    '2026-09-01 12:10 · 002 merged def5678 · CI none',
-    '2026-09-01 13:00 · 002 → done · ok',
-    '2026-09-02 08:00 · 003 → in-progress · worker started',
-    '2026-09-02 09:00 · 003 review approve · by jarl (coordinator) · ok',
-    '2026-09-02 09:30 · 003 merged aaa1111 · CI pending',
-    '2026-09-02 10:00 · 003 → done · ok',
-    '2026-09-02 10:00 · 004 → deferred · later',
-    '2026-09-03 10:00 · 004 → open · back',
-    '2026-09-02 11:00 · 007 → done · the report',
-    '2026-09-04 15:00 · filed 005 · e',
-    '2026-09-05 08:00 · filed 006 · f',
+    '2026-09-01 08:00 · filed 1 · a',
+    '2026-09-01 08:00 · filed 2 · b',
+    '2026-09-01 08:00 · filed 3 · c',
+    '2026-09-01 08:00 · filed 4 · d',
+    '2026-09-01 08:00 · filed 7 · g',
+    '2026-09-01 09:00 · 1 → in-progress · worker started · branch jarl/1-a · worker w1',
+    '2026-09-01 10:00 · 1 review changes · by r1 (fresh) · Important: x',
+    '2026-09-01 10:05 · 1 round 1 · x',
+    '2026-09-01 11:00 · 1 review approve · by r1 (fresh) · ok',
+    '2026-09-01 11:10 · 1 merged abc1234 · CI pending',
+    '2026-09-01 11:20 · 1 CI red',
+    '2026-09-01 11:30 · 1 → done · merged',
+    '2026-09-01 12:00 · 1 → open · reopened: missed a case',
+    '2026-09-01 13:00 · 1 → in-progress · again · worker w1',
+    '2026-09-01 14:00 · 1 review approve · by r2 (fresh) · ok',
+    '2026-09-01 14:10 · 1 CI green',
+    '2026-09-01 15:00 · 1 → done · merged',
+    '2026-09-01 09:00 · 2 → in-progress · worker started · branch jarl/2-b · worker w2',
+    '2026-09-01 12:00 · 2 review approve · by jarl (coordinator) · ok',
+    '2026-09-01 12:10 · 2 merged def5678 · CI none',
+    '2026-09-01 13:00 · 2 → done · ok',
+    '2026-09-02 08:00 · 3 → in-progress · worker started',
+    '2026-09-02 09:00 · 3 review approve · by jarl (coordinator) · ok',
+    '2026-09-02 09:30 · 3 merged aaa1111 · CI pending',
+    '2026-09-02 10:00 · 3 → done · ok',
+    '2026-09-02 10:00 · 4 → deferred · later',
+    '2026-09-03 10:00 · 4 → open · back',
+    '2026-09-02 11:00 · 7 → done · the report',
+    '2026-09-04 15:00 · filed 5 · e',
+    '2026-09-05 08:00 · filed 6 · f',
   ]);
   const out = json(dir, 'report');
   const m = out.metrics;
-  // Cycle: 001 09:00 → 15:00 = 6 h; 002 09:00 → 13:00 = 4 h; 003 08:00 → 10:00 = 2 h; 007 never in progress.
+  // Cycle: 1 09:00 → 15:00 = 6 h; 2 09:00 → 13:00 = 4 h; 3 08:00 → 10:00 = 2 h; 7 never in progress.
   assert.deepEqual({ n: m.cycleTime.n, of: m.cycleTime.of, median: m.cycleTime.medianHours, max: m.cycleTime.maxHours }, { n: 3, of: 4, median: 4, max: 6 });
   // Lead: 7 h, 5 h, 26 h, 27 h.
   assert.deepEqual({ n: m.leadTime.n, median: m.leadTime.medianHours, max: m.leadTime.maxHours }, { n: 4, median: 16.5, max: 27 });
-  assert.deepEqual({ rounds: m.rounds.rounds, on: m.rounds.issuesWithRounds, changes: m.rounds.changes, onChanges: m.rounds.issuesWithChanges }, { rounds: 1, on: ['001'], changes: 1, onChanges: ['001'] });
-  assert.deepEqual({ times: m.reopenings.times, issues: m.reopenings.issues }, { times: 1, issues: ['001'] });
+  assert.deepEqual({ rounds: m.rounds.rounds, on: m.rounds.issuesWithRounds, changes: m.rounds.changes, onChanges: m.rounds.issuesWithChanges }, { rounds: 1, on: ['1'], changes: 1, onChanges: ['1'] });
+  assert.deepEqual({ times: m.reopenings.times, issues: m.reopenings.issues }, { times: 1, issues: ['1'] });
   const f = m.freshReviews;
   assert.deepEqual({ fresh: f.fresh, coordinator: f.coordinator, self: f.self, unrecorded: f.unrecorded, recorded: f.recorded }, { fresh: 1, coordinator: 2, self: 0, unrecorded: 1, recorded: 3 });
   assert.equal(f.share, 0.333);
   assert.deepEqual({ recorded: f.code.recorded, fresh: f.code.fresh, share: f.code.share }, { recorded: 3, fresh: 1, share: 0.333 });
   assert.deepEqual(f.reviewers, { r2: 1 });
   const ci = m.redCiAfterMerge;
-  assert.deepEqual({ n: ci.n, settled: ci.settled, red: ci.red, issues: ci.issues, share: ci.share, pending: ci.pending, none: ci.none }, { n: 3, settled: 1, red: 1, issues: ['001'], share: 1, pending: ['003'], none: ['002'] });
+  assert.deepEqual({ n: ci.n, settled: ci.settled, red: ci.red, issues: ci.issues, share: ci.share, pending: ci.pending, none: ci.none }, { n: 3, settled: 1, red: 1, issues: ['1'], share: 1, pending: ['3'], none: ['2'] });
   const fu = m.followUps;
-  assert.deepEqual({ n: fu.n, with: fu.withFollowUps, list: fu.followUps }, { n: 3, with: 1, list: [{ id: '001', followUps: ['005'] }] });
+  assert.deepEqual({ n: fu.n, with: fu.withFollowUps, list: fu.followUps }, { n: 3, with: 1, list: [{ id: '1', followUps: ['5'] }] });
   assert.equal(fu.noData, null);
-  assert.match(out.text, /^reopened: 1 issue\(s\), 1 time\(s\): 001 · n 7$/m);
-  assert.match(out.text, /^red CI after merge: 1 of 1 settled \(100%\): 001 · pending 1 · no CI 1$/m);
+  assert.match(out.text, /^reopened: 1 issue\(s\), 1 time\(s\): 1 · n 7$/m);
+  assert.match(out.text, /^red CI after merge: 1 of 1 settled \(100%\): 1 · pending 1 · no CI 1$/m);
   assert.deepEqual({ windowClosed: fu.windowClosed, with: fu.windowClosedWithFollowUps, share: fu.share, open: fu.windowOpen }, { windowClosed: 3, with: 1, share: 0.333, open: 0 });
-  assert.match(out.text, /^follow-ups within 7 days \(Found by names the closed issue\): 1 of 3 closed: 001 ← 005 · share 1 of 3 whose 7 days have passed \(33\.3%\)$/m);
-  // A week and a bit after 001 first closed (09-01 11:30), 002 (09-01 13:00) and 003 (09-02 10:00) are still inside their
-  // window: the share is taken over 001 alone, never over closes that have not had their 7 days.
+  assert.match(out.text, /^follow-ups within 7 days \(Found by names the closed issue\): 1 of 3 closed: 1 ← 5 · share 1 of 3 whose 7 days have passed \(33\.3%\)$/m);
+  // A week and a bit after 1 first closed (09-01 11:30), 2 (09-01 13:00) and 3 (09-02 10:00) are still inside their
+  // window: the share is taken over 1 alone, never over closes that have not had their 7 days.
   const early = L.loopMetrics(dir, undefined, undefined, Date.parse('2026-09-08T12:00:00Z')).followUps;
   assert.deepEqual({ windowClosed: early.windowClosed, with: early.windowClosedWithFollowUps, share: early.share, open: early.windowOpen, all: early.withFollowUps }, { windowClosed: 1, with: 1, share: 1, open: 2, all: 1 });
   const none = L.loopMetrics(dir, undefined, undefined, Date.parse('2026-09-03T12:00:00Z')).followUps;

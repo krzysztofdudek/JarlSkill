@@ -174,7 +174,7 @@ test('a new issue starts in the initial status, and next offers only a dispatcha
   assert.equal(jarl(root, 'next'), '(nothing open)', 'a proposal is not offered');
   assert.match(refuses(root, 'set', '1', 'open', 'x'), /status must be one of: proposed, queued, running, landed, merged, blocked, dropped/);
   jarl(root, 'set', '1', 'queued', 'accepted');
-  assert.match(jarl(root, 'next'), /^001 {2}P2 {2}a/);
+  assert.match(jarl(root, 'next'), /^1 {2}P2 {2}a/);
 });
 
 test('both holds-claim statuses carry the lease and hold their files; leaving them removes the lease', () => {
@@ -185,15 +185,15 @@ test('both holds-claim statuses carry the lease and hold their files; leaving th
   assert.match(refuses(root, 'set', '1', 'queued', 'x', '--worker', 'w'), /--worker goes with running or landed only/);
   jarl(root, 'set', '1', 'running', 'go', '--branch', 'b/1', '--worker', 'w1');
   assert.match(jarl(root, 'show', '1'), /\*\*Worker:\*\* w1/);
-  assert.match(jarl(root, 'next', '--all'), /002 .*waits on src\/a\.mjs/);
+  assert.match(jarl(root, 'next', '--all'), /2 .*waits on src\/a\.mjs/);
   jarl(root, 'set', '1', 'landed', 'ready for the gate', '--worker', 'w1');
   assert.match(jarl(root, 'show', '1'), /\*\*Since:\*\*/);
-  assert.match(jarl(root, 'next', '--all'), /002 .*waits on src\/a\.mjs/, 'landed still holds the claim');
+  assert.match(jarl(root, 'next', '--all'), /2 .*waits on src\/a\.mjs/, 'landed still holds the claim');
   jarl(root, 'set', '1', 'blocked', 'waits for the owner');
   const shown = jarl(root, 'show', '1');
   assert.doesNotMatch(shown, /\*\*Worker:\*\*|\*\*Since:\*\*/);
   assert.match(shown, /\*\*Branch:\*\* b\/1/);
-  assert.match(jarl(root, 'next'), /^002 {2}P2 {2}b {2}\(no acceptance yet\)$/m);
+  assert.match(jarl(root, 'next'), /^2 {2}P2 {2}b {2}\(no acceptance yet\)$/m);
 });
 
 test('only a settles-dependents status releases a dependent; a drop here does not', () => {
@@ -201,11 +201,11 @@ test('only a settles-dependents status releases a dependent; a drop here does no
   jarl(root, 'new', 'first');
   jarl(root, 'new', 'second', '--after', '1');
   jarl(root, 'set', '1,2', 'queued', 'accepted');
-  assert.match(jarl(root, 'next', '--all'), /002 .*\(after 001\)/);
+  assert.match(jarl(root, 'next', '--all'), /2 .*\(after 1\)/);
   assert.match(refuses(root, 'set', '1', 'dropped'), /dropped needs a reason/);
   jarl(root, 'set', '1', 'dropped', 'not needed');
   assert.match(jarl(root, 'show', '1'), /Dropped: not needed/);
-  assert.match(jarl(root, 'next', '--all'), /002 .*\(after 001\)/, 'dropped is terminal but does not settle here');
+  assert.match(jarl(root, 'next', '--all'), /2 .*\(after 1\)/, 'dropped is terminal but does not settle here');
 });
 
 test('a closes-record status passes the done gate: evidence since the claim, and a live approve', () => {
@@ -221,7 +221,7 @@ test('a closes-record status passes the done gate: evidence since the claim, and
   assert.match(refuses(root, 'review', '1', 'approve', FINDINGS, '--by', 'w1'), /self-approve/);
   jarl(root, 'review', '1', 'approve', FINDINGS, '--by', 'reviewer');
   jarl(root, 'set', '1', 'merged', 'landed through the gate');
-  assert.match(jarl(root, 'next'), /^002 {2}P2 {2}second {2}\(no acceptance yet\) {2}\(no files declared\)$/m, 'merged settles the dependent');
+  assert.match(jarl(root, 'next'), /^2 {2}P2 {2}second {2}\(no acceptance yet\) {2}\(no files declared\)$/m, 'merged settles the dependent');
   const st = JSON.parse(jarl(root, 'status', '--json'));
   assert.deepEqual(st.reviews, { fresh: 1, coordinator: 0, self: 0, unrecorded: 0 });
   assert.equal(st.statuses.merged, 1);
@@ -243,12 +243,12 @@ test('status, list, report and close read the statuses by their flags', () => {
   const line = jarl(root, 'status').split('\n')[2];
   assert.equal(line, 'queued 1 · in flight 0 · proposed 1 · merged 0 · blocked 1 · dropped 1 · questions 0');
   assert.match(jarl(root, 'status').split('\n')[1], / · profile house$/);
-  assert.deepEqual(JSON.parse(jarl(root, 'list', '--json')).map((i) => i.id), ['001', '002', '003'], 'proposed and blocked are not finished');
+  assert.deepEqual(JSON.parse(jarl(root, 'list', '--json')).map((i) => i.id), ['1', '2', '3'], 'proposed and blocked are not finished');
   const report = JSON.parse(jarl(root, 'report', '--json'));
   assert.equal(report.left, 3);
   assert.deepEqual(report.statuses, { proposed: 1, queued: 1, running: 0, landed: 0, merged: 0, blocked: 1, dropped: 1 });
-  assert.match(report.text, /## Done \(0\)\n\n## Dropped \(1\)\n- 004 dropped one — no longer wanted\n\n## Still open \(3\)/);
-  assert.match(refuses(root, 'close'), /3 issue\(s\) still open or in progress: 001, 002, 003 — set each merged,/);
+  assert.match(report.text, /## Done \(0\)\n\n## Dropped \(1\)\n- 4 dropped one — no longer wanted\n\n## Still open \(3\)/);
+  assert.match(refuses(root, 'close'), /3 issue\(s\) still open or in progress: 1, 2, 3 — set each merged,/);
   assert.match(jarl(root, 'status', '--by', 'kind'), /bug {2}proposed 1 · queued 1 · running 0 · landed 0 · merged 0 · blocked 1 · dropped 1/);
   assert.match(jarl(root, 'resume'), /· profile house\nqueued 1 · in flight 0 · proposed 1/);
 });
@@ -261,8 +261,8 @@ test('no profile: no profile file, the same issue file byte for byte, the same l
   assert.ok(!existsSync(join(root, '.jarl', 'profile.json')));
   assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /· opened · g\n$/);
   jarl(root, 'new', 'plain issue', '--files', 'a.mjs', '--acceptance', 'it works');
-  const file = readFileSync(join(root, '.jarl', 'issues', '001-plain-issue.md'), 'utf8');
-  assert.equal(file, '# 001 · plain issue\n\n**Status:** open\n**Kind:** bug\n**Priority:** 2\n**Tier:** standard\n**Tags:** \n**Files:** a.mjs\n**Found by:** jarl\n**Where:**\n\n## What\n\n\n## Why\n\n\n## Acceptance\nit works\n\n## Evidence\n\n');
+  const file = readFileSync(join(root, '.jarl', 'issues', '1-plain-issue.md'), 'utf8');
+  assert.equal(file, '# 1 · plain issue\n\n**Status:** open\n**Kind:** bug\n**Priority:** 2\n**Tier:** standard\n**Tags:** \n**Files:** a.mjs\n**Found by:** jarl\n**Where:**\n\n## What\n\n\n## Why\n\n\n## Acceptance\nit works\n\n## Evidence\n\n');
   const st = JSON.parse(jarl(root, 'status', '--json'));
   assert.deepEqual(Object.keys(st).slice(0, 5), ['open', 'in-progress', 'done', 'dropped', 'deferred']);
   assert.ok(!('profile' in st));
@@ -285,7 +285,7 @@ function sameWork(root) {
   jarl(root, 'new', 'three', '--files', 'b.mjs');
   jarl(root, 'new', 'four');
   jarl(root, 'new', 'five');
-  jarl(root, 'set', '1', 'in-progress', 'go', '--branch', 'jarl/001-one', '--worker', 'w1');
+  jarl(root, 'set', '1', 'in-progress', 'go', '--branch', 'jarl/1-one', '--worker', 'w1');
   jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'ok');
   jarl(root, 'review', '1', 'approve', FINDINGS, '--by', 'r1');
   jarl(root, 'set', '4', 'dropped', 'gone');
@@ -341,8 +341,8 @@ test('new writes the declared fields after Where, the extra sections after Accep
   assert.match(refuses(root, 'new', 't', '--field', 'Area-2'), /--field takes <name>=<value>/);
   assert.match(refuses(root, 'new', 't', '--kind', 'bug', '--field', 'area-2=core'), /--kind must be one of: feature, fix, chore/);
   jarl(root, 'new', 'a thing', '--field', 'area-2=core', '--section', 'Plan=first this\nthen that', '--acceptance', 'it runs', '--tier', 'max');
-  const file = readFileSync(join(root, '.jarl', 'issues', '001-a-thing.md'), 'utf8');
-  assert.equal(file, '# 001 · a thing\n\n**Status:** proposed\n**Kind:** feature\n**Priority:** 2\n**Tier:** max\n**Tags:** \n**Files:** \n**Found by:** jarl\n**Where:**\n**Area-2:** core\n**Class:** b\n**Note:**\n\n## What\n\n\n## Why\n\n\n## Acceptance — evidence\nit runs\n\n## Plan\nfirst this\nthen that\n\n## Ports\n\n\n## Evidence\n\n');
+  const file = readFileSync(join(root, '.jarl', 'issues', '1-a-thing.md'), 'utf8');
+  assert.equal(file, '# 1 · a thing\n\n**Status:** proposed\n**Kind:** feature\n**Priority:** 2\n**Tier:** max\n**Tags:** \n**Files:** \n**Found by:** jarl\n**Where:**\n**Area-2:** core\n**Class:** b\n**Note:**\n\n## What\n\n\n## Why\n\n\n## Acceptance — evidence\nit runs\n\n## Plan\nfirst this\nthen that\n\n## Ports\n\n\n## Evidence\n\n');
   const shown = JSON.parse(jarl(root, 'show', '1', '--json'));
   assert.equal(shown.fields['area-2'], 'core');
   assert.equal(shown.sections.acceptance, 'it runs\n\n', 'the aliased heading reads as the acceptance');
@@ -353,7 +353,7 @@ test('an issue written with the aliased heading by another tool counts its accep
   const root = fieldedLoop();
   jarl(root, 'new', 'x', '--field', 'Area-2=cli');
   jarl(root, 'set', '1', 'queued', 'ok');
-  const path = join(root, '.jarl', 'issues', '001-x.md');
+  const path = join(root, '.jarl', 'issues', '1-x.md');
   writeFileSync(path, readFileSync(path, 'utf8').replace('## Acceptance — evidence\n\n', '## Acceptance — evidence\n- one\n- two\n'));
   jarl(root, 'set', '1', 'running', 'go');
   assert.deepEqual(JSON.parse(jarl(root, 'status', '--json')).noAcceptance, []);
@@ -369,7 +369,7 @@ test('set <ids> <field> <value> writes a declared field, checked against its val
   const root = fieldedLoop();
   jarl(root, 'new', 'a', '--field', 'Area-2=core');
   jarl(root, 'new', 'b', '--field', 'Area-2=core');
-  assert.equal(jarl(root, 'set', '1,2', 'area-2', 'cli'), '001 Area-2: cli\n002 Area-2: cli');
+  assert.equal(jarl(root, 'set', '1,2', 'area-2', 'cli'), '1 Area-2: cli\n2 Area-2: cli');
   assert.match(refuses(root, 'set', '1', 'Area-2', 'web'), /Area-2 must be one of: core, cli/);
   assert.match(refuses(root, 'set', '1', 'Area-2', ''), /Area-2 cannot be empty/);
   assert.match(refuses(root, 'set', '1', 'Area-2'), /the value is required/);
@@ -381,7 +381,7 @@ test('set <ids> <field> <value> writes a declared field, checked against its val
   assert.match(refuses(root, 'set', '1', 'kind', 'bug'), /Kind must be one of: feature, fix, chore/);
   assert.match(refuses(root, 'set', '1', 'Note', 'x', '--worker', 'w'), /--worker goes with a status, not with the field Note/);
   assert.match(refuses(root, 'set', '1', 'Files', 'x'), /status must be one of: .* — or a field this loop's profile declares: Kind, Tier, Area-2, Class, Note/);
-  assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /· 001 field Area-2 · cli\n.*· 002 field Area-2 · cli\n/);
+  assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /· 1 field Area-2 · cli\n.*· 2 field Area-2 · cli\n/);
   // A field line is not a status move: the done gate's replay does not read it as one.
   assert.equal(JSON.parse(jarl(root, 'show', '1', '--json')).status, 'proposed');
 });
@@ -393,18 +393,18 @@ test('list --match filters on any header field; list and resume show the declare
   jarl(root, 'new', 'c', '--field', 'Area-2=cli');
   jarl(root, 'set', '1,2,3', 'queued', 'ok');
   const ids = (...w) => JSON.parse(jarl(root, 'list', ...w.flatMap((x) => ['--match', x]), '--json')).map((i) => i.id);
-  assert.deepEqual(ids('area-2=cli'), ['002', '003']);
-  assert.deepEqual(ids('Area-2=cli', 'kind=fix'), ['002']);
-  assert.deepEqual(ids('status=queued'), ['001', '002', '003']);
-  assert.deepEqual(ids('Note='), ['001', '002', '003'], 'an empty value matches an empty field');
+  assert.deepEqual(ids('area-2=cli'), ['2', '3']);
+  assert.deepEqual(ids('Area-2=cli', 'kind=fix'), ['2']);
+  assert.deepEqual(ids('status=queued'), ['1', '2', '3']);
+  assert.deepEqual(ids('Note='), ['1', '2', '3'], 'an empty value matches an empty field');
   assert.match(refuses(root, 'list', '--match', 'bogus=1'), /--match names a header field — one of: .*Area-2, Class, Note \(got "bogus"\)/);
   assert.match(refuses(root, 'list', '--match', 'nothing'), /--match takes <field>=<value>/);
-  assert.match(jarl(root, 'list'), /^001 {2}P2 {2}queued {6}feature {2}a {2}Area-2=core Class=b$/m);
+  assert.match(jarl(root, 'list'), /^1 {2}P2 {2}queued {6}feature {2}a {2}Area-2=core Class=b$/m);
   jarl(root, 'set', '2', 'running', 'go', '--worker', 'w');
   const resume = JSON.parse(jarl(root, 'resume', '--json'));
   assert.deepEqual(resume.inFlight[0].fields, { 'Area-2': 'cli', Class: 'b' });
   assert.deepEqual(resume.next.map((r) => r.fields['Area-2']), ['core', 'cli']);
-  assert.match(jarl(root, 'resume'), /- 002 b · Area-2=cli Class=b · worker w/);
+  assert.match(jarl(root, 'resume'), /- 2 b · Area-2=cli Class=b · worker w/);
   assert.match(jarl(root, 'status', '--by', 'area-2'), /by area-2:\n {2}cli +proposed 0 · queued 1 · running 1 .*\n {2}core +proposed 0 · queued 1/);
   assert.match(refuses(root, 'status', '--by', 'bogus'), /--by is one of: repo, tag, kind, prio, area-2, class, note/);
 });
@@ -435,8 +435,8 @@ test('no profile: --field, --section and a field in place of a status are refuse
   jarl(root, 'new', 'a', '--kind', 'gap');
   jarl(root, 'new', 'b');
   assert.match(refuses(root, 'set', '1', 'kind', 'gap'), /^status must be one of: open, in-progress, done, dropped, deferred\n$/);
-  assert.deepEqual(JSON.parse(jarl(root, 'list', '--match', 'kind=gap', '--json')).map((i) => i.id), ['001']);
-  assert.equal(jarl(root, 'list'), '001  P2  open        gap      a\n002  P2  open        bug      b');
+  assert.deepEqual(JSON.parse(jarl(root, 'list', '--match', 'kind=gap', '--json')).map((i) => i.id), ['1']);
+  assert.equal(jarl(root, 'list'), '1  P2  open        gap      a\n2  P2  open        bug      b');
 });
 
 // ---- the fresh review's points ----
@@ -519,7 +519,7 @@ test('setField matches a field name without case: a hand-written **status:** is 
   const root = repo();
   jarl(root, 'init', 'g');
   jarl(root, 'new', 'a');
-  const path = join(root, '.jarl', 'issues', '001-a.md');
+  const path = join(root, '.jarl', 'issues', '1-a.md');
   writeFileSync(path, readFileSync(path, 'utf8').replace('**Status:** open', '**status:** open').replace('**Tags:** ', '**tags:** x'));
   jarl(root, 'set', '1', 'deferred', 'later');
   jarl(root, 'tag', '1', '+y');
