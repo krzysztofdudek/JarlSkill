@@ -691,9 +691,21 @@ export function slugify(title) {
 // as fields; the built-in ones are letters and spaces only.
 const FIELD_RE = /^\*\*([A-Za-z0-9 -]+):\*\*\s*(.*)$/;
 
-export function parseIssue(text, file) {
+// With `skipped` (an array), what the parser does not place is pushed onto it as { n, text, reason }: the first line when it
+// is not an issue's header, and a Resources line one of whose names is not a word (letters, digits and . _ : / -).
+export function parseIssue(text, file, skipped) {
   const lines = text.split('\n');
   const head = idRe('^#\\s+({id})\\s+·\\s+(.*)$').exec(lines[0] || '');
+  if (skipped && !head) skipped.push({ n: 1, text: lines[0] || '', reason: 'not an issue header: the first line is "# <id> · <title>"' });
+  if (skipped) {
+    lines.forEach((line, i) => {
+      const f = FIELD_RE.exec(line);
+      if (!f || f[1].toLowerCase() !== 'resources') return;
+      for (const name of splitList(f[2])) {
+        if (!/^[A-Za-z0-9._:/-]+$/.test(name)) { skipped.push({ n: i + 1, text: line, reason: `the resource "${fieldText(name)}" is not a word: resource names are letters, digits and . _ : / -` }); break; }
+      }
+    });
+  }
   const issue = { file, id: head ? head[1] : null, title: head ? head[2].trim() : '', fields: {}, sections: {} };
   let section = null;
   for (const line of lines.slice(1)) {
@@ -1025,17 +1037,27 @@ const DECISION_HEAD = /^## (\d{4}-\d{2}-\d{2}) · (.+?)\s*$/;
 
 // The decisions read back: one entry per `## <date> · <slug>` heading, with its ruling, who ruled (**By:**, none
 // on a ruling that records no author), what it supersedes and what superseded it.
-export function loadDecisions(root) { return decisionsAt(jarlDir(root)); }
-// The rulings of the record held in `dir`.
-function decisionsAt(dir) {
+export function loadDecisions(root, skipped) { return decisionsAt(jarlDir(root), skipped); }
+// The rulings of the record held in `dir`. With `skipped` (an array), each line that is neither a ruling heading, a line
+// of a ruling, the title nor blank is pushed onto it as { n, text, reason }: text before the first ruling, a "## " heading
+// that is not a ruling's, and a ruling whose slug an earlier ruling already holds.
+function decisionsAt(dir, skipped) {
   const path = decisionsPath(dir);
   if (!existsSync(path)) return [];
   const out = [];
-  for (const line of readText(path).split('\n')) {
+  const slugs = new Set();
+  readText(path).split('\n').forEach((line, i) => {
     const h = DECISION_HEAD.exec(line);
-    if (h) { out.push({ date: h[1], slug: h[2], body: [] }); continue; }
+    if (h) {
+      if (skipped && slugs.has(h[2])) skipped.push({ n: i + 1, text: line, reason: `the slug ${h[2]} is ruled twice: a ruling's slug names one ruling` });
+      slugs.add(h[2]);
+      out.push({ date: h[1], slug: h[2], body: [] });
+      return;
+    }
+    if (skipped && /^## /.test(line)) skipped.push({ n: i + 1, text: line, reason: 'a ruling heading does not parse: it is "## <date> · <slug>"' });
+    else if (skipped && !out.length && line.trim() !== '' && !line.startsWith('# ')) skipped.push({ n: i + 1, text: line, reason: 'text before the first ruling: a ruling starts with "## <date> · <slug>"' });
     if (out.length) out[out.length - 1].body.push(line);
-  }
+  });
   // A ruling's own fields (By, Supersedes, Superseded by, Settles) are the block the tool writes at the end of its
   // section — the trailing lines that are such a field or blank. A line of the ruling's text that happens to start
   // with **By:** is text.
@@ -1115,25 +1137,33 @@ function readGoal(dir) {
 //   models         [{ tier, models }] in the order written, `tier` as written
 //   coordinators   the names written on Coordinators lines
 const GOAL_LINE = /^\s*(?:[-*]\s+)?(?:\*\*)?(coordinators|check|model)(?:\s*\(([^)]+)\))?:(?:\*\*)?\s*(.+)$/i;
-export function goalLines(text) {
+// With `skipped` (an array), each machine line the grammar does not place is pushed onto it as { n, text, reason }: a
+// Check with no command, a Model with no tier or no model, a Coordinators line with a tier.
+export function goalLines(text, skipped) {
   const out = { goal: null, checks: [], checksByRepo: { bare: [], repos: {} }, models: [], coordinators: [] };
   if (text == null) return out;
   const lines = text.split('\n');
   out.goal = lines.slice(2).find((l) => l.trim()) || '';
-  for (const line of lines) {
+  lines.forEach((line, i) => {
     const m = GOAL_LINE.exec(line);
-    if (!m) continue;
+    if (!m) return;
     const key = m[1].toLowerCase();
     const value = m[3].replace(/\*\*/g, '');
     const qualifier = m[2] && fieldText(m[2]);
+    const skip = (reason) => { if (skipped) skipped.push({ n: i + 1, text: line, reason }); };
     if (key === 'coordinators' && !m[2]) out.coordinators.push(...value.split(',').map((n) => fieldText(n)).filter(Boolean));
-    else if (key === 'model' && m[2]) out.models.push({ tier: qualifier, models: value.split(',').map((s) => fieldText(s).replace(/^`(.*)`$/, '$1')).filter(Boolean) });
+    else if (key === 'coordinators') skip('a Coordinators line takes no tier: it is "Coordinators: <name>[, <name>…]"');
+    else if (key === 'model' && m[2]) {
+      const models = value.split(',').map((s) => fieldText(s).replace(/^`(.*)`$/, '$1')).filter(Boolean);
+      if (models.length) out.models.push({ tier: qualifier, models });
+      else skip('a Model line names no model: it is "Model (<tier>): <model>[, <model>…]"');
+    } else if (key === 'model') skip('a Model line names its tier in brackets: it is "Model (<tier>): <model>[, <model>…]"');
     else if (key === 'check') {
       const command = fieldText(value).replace(/^`(.*)`$/, '$1');
-      if (!command) continue;
+      if (!command) { skip('a Check line names no command: it is "Check: <what runs>" or "Check (<repository>): <what runs>"'); return; }
       if (qualifier) (out.checksByRepo.repos[qualifier] = out.checksByRepo.repos[qualifier] || []).push(command); else out.checksByRepo.bare.push(command);
     }
-  }
+  });
   out.checks = [...out.checksByRepo.bare, ...Object.values(out.checksByRepo.repos).flat()];
   return out;
 }
@@ -2907,8 +2937,10 @@ export function mapMergeRepos(root, fn) {
 }
 
 // Every dated line of the loop's log under `dir` (the directory holding the goal, the log and issues/), in order, as
-// typed events. An issue's events carry the status it moved from, replayed from its own filing and moves.
-export function loopEvents(dir, profile) {
+// typed events. An issue's events carry the status it moved from, replayed from its own filing and moves. With `skipped`
+// (an array), each line the reader does not place is pushed onto it as { n, text, reason }, n the line's number: a line
+// that is not dated, and a line that reads as one of the kinds the log writes and parses as none of them (see unplaced).
+export function loopEvents(dir, profile, skipped) {
   const path = logPath(dir);
   if (!existsSync(path)) return [];
   const parse = eventParser(profile);
@@ -2917,16 +2949,36 @@ export function loopEvents(dir, profile) {
   const forms = issueForms(dir);
   readText(path).split('\n').forEach((l, n) => {
     const m = LOG_LINE.exec(l);
-    if (!m) return;
+    if (!m) {
+      if (skipped && l.trim() !== '' && !l.startsWith('#')) skipped.push({ n: n + 1, text: l, reason: 'not a dated line: a line of the log is "- <date> <time> · <text>"' });
+      return;
+    }
     // A line names its issue as it was written; the event carries the issue's own form, so it meets its issue's id.
     const written = LEADING_ID.exec(m[2])?.[1] ?? null;
     const id = written === null ? null : writtenId(written, forms);
     const body = id === null ? { type: 'other' } : parse(written, m[2], lastStatus.get(id) ?? null);
+    if (skipped && written !== null) { const why = unplaced(profile, written, m[2], body); if (why) skipped.push({ n: n + 1, text: l, reason: why }); }
     if (body.type === 'filed') { if (!lastStatus.has(id)) lastStatus.set(id, profile.initial); }
     else if (body.type === 'move') lastStatus.set(id, body.to);
     events.push({ n, at: m[1], text: m[2], id, ...body });
   });
   return events;
+}
+// Why a dated line of an issue is not placed, or null when it is: a line that reads as one of the kinds the log writes
+// (a review, a merge, a CI state, a body change, an evidence row or retraction) and that the parser placed as none of
+// them; a move into a status that holds the claim whose worker or model does not parse; a verdict whose model mark does not.
+const LOG_KIND = /^(review|merged|CI|body|evidence (?:row|retract))\b/;
+function unplaced(profile, written, text, body) {
+  const rest = text.slice(written.length + 1);
+  if (body.type === 'other') {
+    const kind = LOG_KIND.exec(rest);
+    return kind ? `reads as a "${kind[1]}" line of the log, and that line's grammar is not met` : null;
+  }
+  if (body.type === 'move' && profile.is(body.to, 'holds-claim') && !body.lease && !body.model && / · (worker|model) /.test(text)) {
+    return 'the lease fields of the move do not parse: a worker and a model are one name each, written once, in the order branch, model, worker, worktree';
+  }
+  if (body.type === 'verdict' && body.model === null && /(^| · )model /.test(rest)) return 'the model mark of the verdict does not parse: it is "model <name> · " after the reviewer';
+  return null;
 }
 // The events of the issues, by the issue each line is about.
 export function eventsById(events) {
@@ -5027,24 +5079,34 @@ const ASK_RE = idRe('^- \\*\\*a-({id})\\*\\* \\((open|answered)\\)(?: · (stop|s
 // pass noSeparators, so the line splits on its separators alone. A question's indented lines never start with `- **a-`.
 const ASK_OPTION_RE = idRe('^- \\*\\*a-({id})\\*\\* option · (.+?) · (.+)$');
 
-export function loadAsks(root) { return asksAt(jarlDir(root)); }
+export function loadAsks(root, skipped) { return asksAt(jarlDir(root), skipped); }
 // The questions of the record held in `dir`; a question with options carries them as `options: [{ label, effect }]`.
-function asksAt(dir) {
+// With `skipped` (an array), each line that is neither a question, an option, a continuation, a blank nor the heading
+// is pushed onto it as { n, text, reason }, and so is an option whose question the file does not hold.
+function asksAt(dir, skipped) {
   const path = asksPath(dir);
   if (!existsSync(path)) return [];
   // A question of several lines is the item line and its next lines indented by two spaces (blank ones are two spaces
   // alone); the item line alone still reads as a question.
   const out = [];
   const options = new Map();
+  const optionLines = [];
   let last = null;
   const forms = issueForms(dir);
-  for (const line of readText(path).split('\n')) {
+  readText(path).split('\n').forEach((line, i) => {
+    const skip = (reason) => { if (skipped) skipped.push({ n: i + 1, text: line, reason }); };
     const m = ASK_RE.exec(line);
-    if (m) { last = { id: m[1], state: m[2], kind: m[3] || null, target: m[4] || null, issue: m[5] ? writtenId(m[5], forms) : null, ...(m[6] ? { ruling: m[6] } : {}), question: m[7] }; out.push(last); continue; }
+    if (m) { last = { id: m[1], state: m[2], kind: m[3] || null, target: m[4] || null, issue: m[5] ? writtenId(m[5], forms) : null, ...(m[6] ? { ruling: m[6] } : {}), question: m[7] }; out.push(last); return; }
     const o = ASK_OPTION_RE.exec(line);
-    if (o) { const key = idKey(o[1]); options.set(key, [...(options.get(key) || []), { label: o[2], effect: o[3] }]); last = null; continue; }
-    if (last && line.startsWith('  ')) last.question += `\n${line.slice(2)}`;
-    else last = null;
+    if (o) { const key = idKey(o[1]); options.set(key, [...(options.get(key) || []), { label: o[2], effect: o[3] }]); optionLines.push({ key, line: i + 1, text: line }); last = null; return; }
+    if (last && line.startsWith('  ')) { last.question += `\n${line.slice(2)}`; return; }
+    last = null;
+    if (line.trim() === '' || line.startsWith('# ')) return;
+    skip('not a question, an option of one, or a continuation line of a question: a question is "- **a-<n>** (open|answered) · <kind> · <question>"');
+  });
+  if (skipped) {
+    const asked = new Set(out.map((a) => idKey(a.id)));
+    for (const o of optionLines) if (!asked.has(o.key)) skipped.push({ n: o.line, text: o.text, reason: 'an option of no question: the question it belongs to is not in the file' });
   }
   for (const a of out) {
     a.question = a.question.replace(/\s+$/, '');

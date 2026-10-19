@@ -1891,6 +1891,83 @@ test('decide with no --by prints no notice: the owner is the default, and a noti
   assert.equal(run(root, ['decide', 'default-rule', 'Keep it.']).stderr, '');
 });
 
+// ---- the strict readers: every line a parser cannot place is listed, and the readers answer the same without the list
+
+const LIB_URL = new URL('../jarl.mjs', import.meta.url).href;
+
+test('the log reader lists a line that reads as an event and does not parse, a line that is not dated, and a lease whose fields do not parse; a note is not listed', async () => {
+  const lib = await import(LIB_URL);
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'first');
+  const dir = join(root, '.jarl');
+  const path = join(dir, 'log.md');
+  const lines = [
+    '- 2026-10-19 10:00 · 1 review nonsense here',
+    '- 2026-10-19 10:01 · 1 review approve · model gpt-5',
+    '- 2026-10-19 10:02 · 1 → in-progress · worker a, b',
+    '- 2026-10-19 10:03 · 1 merged',
+    '- 2026-10-19 10:04 · this line is a free note about nothing',
+    '- 2026-10-19 10:05 · 1 evidence · a note of the issue is not listed',
+    'garbage line in the log',
+  ];
+  writeFileSync(path, `${readFileSync(path, 'utf8')}${lines.join('\n')}\n`);
+  const skipped = [];
+  const events = lib.loopEvents(dir, lib.loadProfile(root), skipped);
+  assert.deepEqual(skipped.map((s) => s.text), [lines[0], lines[1], lines[2], lines[3], lines[6]]);
+  assert.ok(skipped.every((s, k) => k === 0 || s.n > skipped[k - 1].n), 'in file order');
+  assert.ok(skipped.every((s) => typeof s.reason === 'string' && s.reason.length > 0), 'each line says why');
+  assert.equal(events.length, lib.loopEvents(dir, lib.loadProfile(root)).length, 'the events are the same with or without the list');
+});
+
+test('the goal reader lists a machine line it cannot place: a Check with no command, a Model with no tier, a Coordinators with a tier', async () => {
+  const lib = await import(LIB_URL);
+  const text = '# Goal\n\nShip it.\n\n- Check:   \n- Model: gpt-5\n- Coordinators (Grain): Ada\n- Check (Grain): npm test\n- Model (strong): opus\n- Coordinators: Ada, Bo\n';
+  const skipped = [];
+  const lines = lib.goalLines(text, skipped);
+  assert.deepEqual(skipped.map((s) => s.text), ['- Check:   ', '- Model: gpt-5', '- Coordinators (Grain): Ada']);
+  assert.deepEqual(skipped.map((s) => s.n), [5, 6, 7]);
+  assert.deepEqual(lines, lib.goalLines(text), 'the same reading without the list');
+  assert.deepEqual(lines.checks, ['npm test']);
+  assert.deepEqual(lines.coordinators, ['Ada', 'Bo']);
+});
+
+test('the issue parser lists an unparsable header and a Resources field whose name is not a word', async () => {
+  const lib = await import(LIB_URL);
+  const skipped = [];
+  lib.parseIssue('# seven broken title\n\n**Status:** open\n', 'a.md', skipped);
+  lib.parseIssue('# 7 · fine\n\n**Status:** open\n**Resources:** gate, db server\n\n## What\nx\n', 'b.md', skipped);
+  assert.deepEqual(skipped.map((s) => [s.n, s.text]), [[1, '# seven broken title'], [4, '**Resources:** gate, db server']]);
+  assert.match(skipped[1].reason, /db server/);
+});
+
+test('the question reader lists a line that is neither a question, an option nor a continuation, and an option of no question', async () => {
+  const lib = await import(LIB_URL);
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  const path = join(root, '.jarl', 'asks.md');
+  writeFileSync(path, `# Questions to the user\n\n- **a-001** (open) · stop · issue 1 · Which way?\n  a continuation line\nstray words\n- **a-009** option · label · effect\n`);
+  const skipped = [];
+  const asks = lib.loadAsks(root, skipped);
+  assert.deepEqual(skipped.map((s) => s.text), ['stray words', '- **a-009** option · label · effect']);
+  assert.equal(asks.length, 1);
+  assert.equal(asks[0].question, 'Which way?\na continuation line');
+});
+
+test('the decision reader lists text before the first ruling, a ruling heading that does not parse and a slug ruled twice', async () => {
+  const lib = await import(LIB_URL);
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'decide', 'rule-a', 'Keep a.', '--by', 'owner');
+  const path = join(root, '.jarl', 'decisions.md');
+  writeFileSync(path, `${readFileSync(path, 'utf8')}\n## 2026-10-19 rule-b without a dot\n## 2026-10-19 · rule-a\nAgain.\n`);
+  const skipped = [];
+  const rulings = lib.loadDecisions(root, skipped);
+  assert.deepEqual(skipped.map((s) => s.text), ['## 2026-10-19 rule-b without a dot', '## 2026-10-19 · rule-a']);
+  assert.match(skipped[1].reason, /rule-a/);
+  assert.deepEqual(rulings.map((r) => r.slug), lib.loadDecisions(root).map((r) => r.slug), 'the same rulings without the list');
+});
+
 test('goal lines set through the command line read through the frozen reader: the loop is read, the worker parsed, done passes', () => {
   const root = repo();
   jarl(root, 'init', 'Ship it.');
