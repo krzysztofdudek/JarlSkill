@@ -1,4 +1,4 @@
-// The fresh-review rule (issue 281): an issue that carries code — a Branch or a Merged field — goes done, and enters
+// The fresh-review rule:an issue that carries code — a Branch or a Merged field — goes done, and enters
 // the merge queue, only on a live approve by a fresh reviewer; a coordinator's approve is recorded but does not clear
 // it. An issue with neither field is still cleared by the coordinator. merged records a merge without a fresh review
 // and says so loudly, never refusing.
@@ -126,7 +126,7 @@ test('merged without a fresh approve is recorded and said loudly; with one, noth
   assert.doesNotMatch(jarl(root, 'merged', a, '--ci', 'green').stderr, /FRESH REVIEW/);
 });
 
-// ---- issue 370: self spans every lease an issue (or its branch package) has ever had --------------------------
+// ---- self spans every lease an issue (or its branch package) has ever had --------------------------
 
 test('self spans a takeover: the worker before a hand-over is still self, not only the latest lease', () => {
   const root = loop();
@@ -153,7 +153,7 @@ test('self spans a package: an issue folded into a branch with no --worker of it
   assert.match(jarl(root, 'review', b, 'approve', '--by', 'opus-reviewer-9', FINDINGS).stdout, /by opus-reviewer-9 \(fresh\)/);
 });
 
-// ---- issue 370: a later coordinator approve does not spend an earlier, still-live fresh approve ----------------
+// ---- a later coordinator approve does not spend an earlier, still-live fresh approve ----------------
 
 test('a later coordinator approve does not spend an earlier, still-live fresh approve', () => {
   const root = loop();
@@ -180,7 +180,7 @@ test('queue: a fresh approve stays live in the queue after a later coordinator a
   assert.equal(rows[0].by, 'opus-reviewer-5');
 });
 
-// ---- issue 370 review: status/report must stay near-linear in issue count -------------------------------------
+// ---- status/report must stay near-linear in issue count -------------------------------------
 
 // Fast, subprocess-free setup: clone one real issue's rendered file N times (editing only the header's id), so
 // timing measures the CLI's own per-command cost, not N process spawns. Every clone is done — report walks every
@@ -193,7 +193,7 @@ function seedDone(n) {
   const template = readFileSync(file, 'utf8').replace(/^\*\*Status:\*\* .*$/m, '**Status:** done');
   writeFileSync(file, template);
   for (let i = 2; i <= n; i += 1) {
-    const id = String(i).padStart(3, '0');
+    const id = String(i);
     writeFileSync(join(dir, `${id}-sample.md`), template.replace(/^# 001 ·/, `# ${id} ·`));
   }
   return root;
@@ -206,7 +206,7 @@ function timeStatusAndReport(n) {
   return Date.now() - t0;
 }
 
-test('status and report stay roughly linear in issue count (guards the O(n^2) self-scope lookup fixed in issue 370)', () => {
+test('status and report stay roughly linear in issue count (guards the O(n^2) self-scope lookup)', () => {
   const small = timeStatusAndReport(100);
   const big = timeStatusAndReport(400);   // 4x the issues
   // Linear cost roughly quadruples; the O(n^2) this guards against (every gateState call reloading every issue

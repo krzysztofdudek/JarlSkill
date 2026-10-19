@@ -252,21 +252,38 @@ function appendAtomic(path, header, text) {
 
 // ---- ids: the one grammar of the number of an issue, a question and a branch ----------------------------------------
 
-// The number of an issue (and of a question, a-NNN): three or more digits. Below 1000 a number is padded to three (007,
-// 195); from 1000 it has the digits it needs. Every reader and writer of an id, a range of ids or the id in a branch
-// name is here, and ids are compared as numbers, never as strings (999 comes before 1000). The first id of 1000 or
-// more raises the record format, because a reader of format 1 skips such a file in silence.
-export const ID_SRC = '\\d{3,}';
+// The number of an issue, of a question (a-12) and of the issue a branch carries: one or more digits, written plain (7,
+// 42, 1000) or with leading zeros (007). Every reader and writer of an id, a range of ids or the id in a branch name is
+// here. Two writings of one number name one issue, ids are compared as numbers (999 comes before 1000), and a log line,
+// a heading or a question keeps the writing its issue file carries.
+export const ID_SRC = '\\d+';
 // A pattern with `{id}` where an issue number stands: the one way another section embeds the grammar.
 function idRe(source, flags) { return new RegExp(source.replaceAll('{id}', ID_SRC), flags); }
-export function padId(raw) {
+const ISSUE_FILE_RE = idRe('^({id})-.*\\.md$');
+// The key of an id: its number without leading zeros, so 007, 7 and #7 share one key. Ids are compared by key.
+export function idKey(raw) {
   const s = String(raw).trim().replace(/^#/, '');
-  return /^\d+$/.test(s) ? s.replace(/^0+/, '').padStart(3, '0') : s;
+  return /^\d+$/.test(s) ? s.replace(/^0+(?=\d)/, '') : s;
 }
 export const cmpId = (a, b) => Number(a) - Number(b);
-export const needsRaisedFormat = (id) => /^\d+$/.test(String(id)) && Number(id) >= 1000;
+// The record format a written id needs before it is written: a number of fewer than three digits is written plain, and a
+// reader that expects three digits skips it in silence, as it skips a number of 1000 or more.
+export const needsRaisedFormat = (id) => /^\d+$/.test(String(id)) && (String(id).length < 3 || Number(id) >= 1000);
+// The written form of each issue number the issue files' names hold, by key: 007 for 007-x.md, 7 for 7-x.md.
+export function writtenForms(names) {
+  const forms = new Map();
+  for (const f of names) { const m = ISSUE_FILE_RE.exec(f); if (m) forms.set(idKey(m[1]), m[1]); }
+  return forms;
+}
+// The form an id is written in: the one its issue file carries, else the id as given, without its #.
+export function writtenId(raw, forms) { return forms.get(idKey(raw)) ?? String(raw).trim().replace(/^#/, ''); }
+// The written forms of the issue files under `dir` (the directory holding issues/).
+function issueForms(dir) { const d = join(dir, 'issues'); return writtenForms(existsSync(d) ? readdirSync(d) : []); }
+// The number a new issue or question is written with: plain (7, 1000), or with leading zeros to `width` digits when the
+// caller names a width (the record library names 3, so its file reads 007-…). The command line and the tools name none.
+export function newNumber(n, width) { return width ? String(n).padStart(width, '0') : String(n); }
 // The number of a question as the command line gives it: 12, #12 or a-12.
-function askNumber(raw) { return padId(String(raw).replace(/^a-/, '')); }
+function askNumber(raw) { return idKey(String(raw).replace(/^a-/, '')); }
 
 // One id, or several as a comma list with ranges: `12,13,14` or `203-206,209` (no spaces: one argument, like --tags a,b).
 const MAX_BULK = 200;
@@ -279,10 +296,10 @@ export function expandIds(raw) {
       const [a, b] = [Number(range[1]), Number(range[2])];
       need(a <= b, `range ${part} runs backwards — write it low-high`);
       need(b - a < MAX_BULK, `range ${part} spans more than ${MAX_BULK} issues`);
-      for (let n = a; n <= b; n += 1) out.push(padId(n));
+      for (let n = a; n <= b; n += 1) out.push(String(n));
     } else {
       need(/^\d+$/.test(part), `not an issue id: "${part}" — ids are numbers, several as a comma list with ranges: 12,13 or 203-206,209`);
-      out.push(padId(part));
+      out.push(idKey(part));
     }
   }
   return [...new Set(out)];
@@ -297,10 +314,22 @@ export function idsNamed(text, held) {
   const plain = String(text || '').replace(/(?<![0-9])\d{4}-(?:0[1-9]|1[0-2])(?:-(?:0[1-9]|[12]\d|3[01]))?(?:[ T]\d{2}:\d{2})?(?![0-9])/g, ' ').replace(/\d+(?:\.\d+)+/g, ' ');
   // A range (998-1002, low-high like expandIds reads it) names every id the loop holds inside it; a lone id names itself.
   const heldIds = [...held.keys ? held.keys() : held].map(String);
+  // A number named in the text is the held id it means, written as the loop writes it (007 for 7 when the file is 007).
+  const byKey = new Map(heldIds.map((id) => [idKey(id), id]));
   const out = [];
-  for (const m of plain.matchAll(idRe('(?<![0-9A-Za-z])({id})(?:-#?({id}))?(?![0-9A-Za-z])', 'g'))) {
-    if (m[2] !== undefined && Number(m[1]) <= Number(m[2])) out.push(...heldIds.filter((id) => Number(id) >= Number(m[1]) && Number(id) <= Number(m[2])).sort((a, b) => Number(a) - Number(b)));
-    else for (const raw of m[2] === undefined ? [m[1]] : [m[1], m[2]]) if (held.has(padId(raw))) out.push(padId(raw));
+  // A number of one or two digits names an issue only when it is introduced: written #N, or in a list or range that
+  // follows issue, issues or ticket (the list runs on over commas and and/or). Free text such as jarl-2-B2 names none.
+  // A number of three or more digits names an issue whenever the loop holds it.
+  let prevEnd = 0;
+  let chain = false;
+  for (const m of plain.matchAll(idRe('(?<![0-9A-Za-z])(#?)({id})(?:-(#?)({id}))?(?![0-9A-Za-z])', 'g'))) {
+    const gap = plain.slice(prevEnd, m.index);
+    prevEnd = m.index + m[0].length;
+    const introduced = m[1] === '#' || /(?:^|[^A-Za-z])(?:issues?|tickets?)\s*$/i.test(gap) || (chain && /^\s*(?:,|and|or|&)?\s*$/i.test(gap));
+    chain = introduced;
+    if (m[2].length < 3 && !introduced) continue;
+    if (m[4] !== undefined && Number(m[2]) <= Number(m[4])) out.push(...heldIds.filter((id) => Number(id) >= Number(m[2]) && Number(id) <= Number(m[4])).sort(cmpId));
+    else for (const raw of m[4] === undefined ? [m[2]] : [m[2], m[4]]) if (byKey.has(idKey(raw))) out.push(byKey.get(idKey(raw)));
   }
   return out;
 }
@@ -310,7 +339,7 @@ function branchIssueId(name) {
   return idRe('^jarl/(?:[^/]+/)?({id})-').exec(name)?.[1] || idRe('^[^/]+/jarl/({id})-').exec(name)?.[1] || null;
 }
 // The branch names git is asked for that carry an issue's number (the globs `branchIssueId` reads).
-function branchGlobsFor(id) { return [`jarl/${id}-*`, `jarl/*/${id}-*`]; }
+function branchGlobsFor(id) { return [...new Set([String(id), idKey(id)])].flatMap((n) => [`jarl/${n}-*`, `jarl/*/${n}-*`]); }
 
 // ---- the profile: what a loop's issues carry and what its statuses mean ----------------------------
 
@@ -680,14 +709,13 @@ export function parseIssue(text, file) {
   issue.tags = (issue.fields.tags || '').split(',').map((s) => s.trim()).filter(Boolean);
   issue.files = (issue.fields.files || '').split(',').map((s) => s.trim()).filter(Boolean);
   // Both fields are optional: an issue without them reads as waiting on nothing and filed from no finding.
-  issue.after = splitList(issue.fields.after).map(padId);
+  issue.after = splitList(issue.fields.after).map(idKey);
   // The exclusive resources it holds while its lease lasts (names, loop-wide, never files); only next reads them.
   issue.resources = splitList(issue.fields.resources);
   issue.sources = splitList(issue.fields.source);
   return issue;
 }
 
-const ISSUE_FILE_RE = idRe('^({id})-.*\\.md$');
 export function loadIssues(root) {
   if (!existsSync(issuesDir(root))) return [];
   return issuesAt(jarlDir(root), loadProfile(root));
@@ -699,9 +727,12 @@ function issuesAt(recordDir, profile, events = loopEvents(recordDir, profile)) {
   const dir = join(recordDir, 'issues');
   if (!existsSync(dir)) return [];
   const by = eventsById(events);
+  const forms = writtenForms(readdirSync(dir));
   return readdirSync(dir).filter((f) => ISSUE_FILE_RE.test(f)).sort((a, b) => cmpId(ISSUE_FILE_RE.exec(a)[1], ISSUE_FILE_RE.exec(b)[1]) || (a < b ? -1 : a > b ? 1 : 0))
     .map((f) => {
       const issue = withProfile(parseIssue(readText(join(dir, f)), join(dir, f)), profile);
+      // An After names an issue as the loop writes it: the form its file carries, whatever form the After line gives.
+      issue.after = issue.after.map((x) => writtenId(x, forms));
       return withRecordState(issue, issueState(profile, by.get(issue.id) || []));
     });
 }
@@ -763,8 +794,8 @@ function namedPairs(list, flag, known, what) {
 }
 
 export function findIssue(root, rawId) {
-  const id = padId(rawId);
-  return loadIssues(root).find((i) => i.id === id) || null;
+  const key = idKey(rawId);
+  return loadIssues(root).find((i) => idKey(i.id) === key) || null;
 }
 
 function setField(text, name, value) {
@@ -1345,7 +1376,7 @@ export function cmdNew(root, title, rawFlags) {
   const elsewhere = highestAcrossWorktrees(root);
   let n = Math.max(taken().reduce((m, x) => Math.max(m, x), 0), elsewhere) + 1;
   for (let tries = 0; ; tries += 1) {
-    const id = padId(n);
+    const id = newNumber(n, rawFlags.width);
     // The first issue of 1000 or more is a file a reader that knows only format 1 would skip in silence: the format is raised first.
     if (needsRaisedFormat(id)) raiseFormat(root);
     const file = join(dir, `${id}-${slugify(title)}.md`);
@@ -1392,18 +1423,19 @@ export function sourceList(v) {
 // The issues one waits on: each must exist and not be the issue itself, and the chain must not come back to
 // it — a cycle would leave every issue in it waiting for good with nothing to say so.
 function afterList(root, selfId, raw) {
-  const ids = expandIds(raw);
+  const keys = expandIds(raw);
   const all = loadIssues(root);
-  const missing = ids.filter((id) => !all.some((i) => i.id === id));
+  const missing = keys.filter((k) => !all.some((i) => idKey(i.id) === k));
   need(missing.length === 0, `no such issue: ${missing.join(', ')}`);
-  need(!selfId || !ids.includes(selfId), `${selfId} cannot wait on itself`);
+  const ids = keys.map((k) => all.find((i) => idKey(i.id) === k).id);
+  need(!selfId || !ids.some((id) => idKey(id) === idKey(selfId)), `${selfId} cannot wait on itself`);
   if (selfId) {
     const byId = new Map(all.map((i) => [i.id, i]));
     const seen = new Set();
     const stack = [...ids];
     while (stack.length) {
       const id = stack.pop();
-      need(id !== selfId, `${selfId} after ${ids.join(', ')} would close a cycle: that chain of After already leads back to ${selfId}, so none of them would ever be offered`);
+      need(idKey(id) !== idKey(selfId), `${selfId} after ${ids.join(', ')} would close a cycle: that chain of After already leads back to ${selfId}, so none of them would ever be offered`);
       if (seen.has(id)) continue;
       seen.add(id);
       stack.push(...(byId.get(id)?.after || []));
@@ -1507,12 +1539,13 @@ export function cmdList(root, flags) {
 // precondition checked before anything is written, so a call either lands on all of them or on none;
 // each issue still gets its own log line.
 function issuesFor(root, rawIds, readOnly = false) {
-  const ids = expandIds(rawIds);
+  const keys = expandIds(rawIds);
   const all = loadIssues(root);
-  const missing = ids.filter((id) => !all.some((i) => i.id === id));
-  need(missing.length === 0, `no such issue: ${missing.join(', ')}${ids.length > 1 ? ' — nothing was written' : ''}`);
-  if (!readOnly && ids.some(needsRaisedFormat)) raiseFormat(root);
-  return ids.map((id) => all.find((i) => i.id === id));
+  const missing = keys.filter((k) => !all.some((i) => idKey(i.id) === k));
+  need(missing.length === 0, `no such issue: ${missing.join(', ')}${keys.length > 1 ? ' — nothing was written' : ''}`);
+  const found = keys.map((k) => all.find((i) => idKey(i.id) === k));
+  if (!readOnly && found.some((i) => needsRaisedFormat(i.id))) raiseFormat(root);
+  return found;
 }
 // One id in, the same object as always out; a list in, an array of them.
 function oneOrMany(rawIds, results) { return isBulk(rawIds) ? results : results[0]; }
@@ -2756,11 +2789,14 @@ export function loopEvents(dir, profile) {
   const parse = eventParser(profile);
   const lastStatus = new Map();
   const events = [];
+  const forms = issueForms(dir);
   readText(path).split('\n').forEach((l, n) => {
     const m = LOG_LINE.exec(l);
     if (!m) return;
-    const id = LEADING_ID.exec(m[2])?.[1] ?? null;
-    const body = id === null ? { type: 'other' } : parse(id, m[2], lastStatus.get(id) ?? null);
+    // A line names its issue as it was written; the event carries the issue's own form, so it meets its issue's id.
+    const written = LEADING_ID.exec(m[2])?.[1] ?? null;
+    const id = written === null ? null : writtenId(written, forms);
+    const body = id === null ? { type: 'other' } : parse(written, m[2], lastStatus.get(id) ?? null);
     if (body.type === 'filed') { if (!lastStatus.has(id)) lastStatus.set(id, profile.initial); }
     else if (body.type === 'move') lastStatus.set(id, body.to);
     events.push({ n, at: m[1], text: m[2], id, ...body });
@@ -2926,7 +2962,7 @@ function unreadableMoves(loop) {
   for (const e of loop.events) {
     if (e.id === null || e.type !== 'other') continue;
     const m = ghostRe.exec(e.text);
-    if (!m || m[1] !== e.id || loop.profile.statuses.includes(m[2])) continue;
+    if (!m || idKey(m[1]) !== idKey(e.id) || loop.profile.statuses.includes(m[2])) continue;
     if (!/^[a-z][a-z0-9_-]*$/.test(m[2]) || !/^( · |$)/.test(e.text.slice(m[0].length))) continue;
     const key = `${e.id} ${m[2]}`;
     if (seen.has(key)) continue;
@@ -3016,7 +3052,11 @@ function selfWorkers(events, issue, branches) {
 //
 // gateState reads the loop for one call; a view that reads the gate for many issues reads the loop once and asks
 // gateOf of it.
-export function gateState(root, id) { return gateOf(readLoop(jarlDir(root)), id); }
+export function gateState(root, id) {
+  const loop = readLoop(jarlDir(root));
+  const issue = loop.issues.find((i) => idKey(i.id) === idKey(id));
+  return gateOf(loop, issue ? issue.id : id);
+}
 // The one window of the done gate, from the issue's own events in order: `anchor` is the event after which a --ran/--saw
 // row counts as proof, `cut` the log line number at or before which an approve is spent. The flags of the profile say what
 // resets them. A filing, a start (a move into a status that holds the claim from one that does not), a reopen (a move into
@@ -4186,7 +4226,7 @@ function repoLabel(dir, fallback = dir) { return basename(String(dir).replace(/[
 // that records no Branch — the one whose number the branch's jarl/NNN-* name carries.
 function issuesOnBranch(root, issues, realRepo, name) {
   const legacy = branchIssueId(name);
-  return issues.filter((i) => issueRepos(root, i).includes(realRepo) && (i.fields.branch ? i.fields.branch === name : i.id === legacy));
+  return issues.filter((i) => issueRepos(root, i).includes(realRepo) && (i.fields.branch ? i.fields.branch === name : idKey(i.id) === idKey(legacy)));
 }
 
 export function ago(ms) {
@@ -4550,9 +4590,10 @@ function asksAt(dir) {
   // alone); the item line alone still reads as a question.
   const out = [];
   let last = null;
+  const forms = issueForms(dir);
   for (const line of readText(path).split('\n')) {
     const m = ASK_RE.exec(line);
-    if (m) { last = { id: m[1], state: m[2], kind: m[3] || null, target: m[4] || null, issue: m[5] || null, ...(m[6] ? { ruling: m[6] } : {}), question: m[7] }; out.push(last); continue; }
+    if (m) { last = { id: m[1], state: m[2], kind: m[3] || null, target: m[4] || null, issue: m[5] ? writtenId(m[5], forms) : null, ...(m[6] ? { ruling: m[6] } : {}), question: m[7] }; out.push(last); continue; }
     if (last && line.startsWith('  ')) last.question += `\n${line.slice(2)}`;
     else last = null;
   }
@@ -4568,9 +4609,11 @@ export function cmdAsk(root, question, flags) {
   need(kind !== 'lower' || flags.target, '--target is required for kind lower — nothing to weaken without naming it');
   need(kind === 'lower' || !flags.target, `--target has no meaning for kind "${kind}" — only lower names something to weaken`);
   const asks = loadAsks(root);
-  const id = padId(asks.reduce((m, a) => Math.max(m, Number(a.id)), 0) + 1);
-  // The first question a-1000 or more, or one naming an issue of 1000 or more, raises the record format first.
-  if (needsRaisedFormat(id) || (flags.issue !== undefined && needsRaisedFormat(padId(flags.issue)))) raiseFormat(root);
+  const id = newNumber(asks.reduce((m, a) => Math.max(m, Number(a.id)), 0) + 1, flags.width);
+  // The issue is written as its file writes it, so a question about 007 names it 007 and raises nothing.
+  const issueWritten = flags.issue ? writtenId(flags.issue, issueForms(jarlDir(root))) : null;
+  // A question whose number is written plain (a-7, a-1000) or that names an issue so written raises the format first.
+  if (needsRaisedFormat(id) || (issueWritten !== null && needsRaisedFormat(issueWritten))) raiseFormat(root);
   const path = asksPath(jarlDir(root));
   const target = kind === 'lower' ? ` · target ${flags.target}` : '';
   // flags.ruling is not a flag of the command line: the close's ratification batch passes it, and so may a composer
@@ -4584,7 +4627,7 @@ export function cmdAsk(root, question, flags) {
   }
   const ruling = kind === 'ratify' && flags.ruling ? ` · ruling ${flags.ruling}` : '';
   const asked = String(question).replace(/\r\n?/g, '\n').trim().split('\n');
-  appendAtomic(path, '# Questions to the user\n\n', `- **a-${id}** (open) · ${kind}${target}${flags.issue ? ` · issue ${padId(flags.issue)}` : ''}${ruling} · ${asked[0]}\n${asked.slice(1).map((l) => `  ${l}\n`).join('')}`);
+  appendAtomic(path, '# Questions to the user\n\n', `- **a-${id}** (open) · ${kind}${target}${issueWritten !== null ? ` · issue ${issueWritten}` : ''}${ruling} · ${asked[0]}\n${asked.slice(1).map((l) => `  ${l}\n`).join('')}`);
   appendLog(root, `asked a-${id} (${kind}) · ${firstLine(question, ASKS_FILE)}`);
   return { id, question: asked.join('\n'), kind };
 }
@@ -4611,9 +4654,10 @@ export function cmdAnswer(root, rawId, answer, flags = {}) {
   need(answer, 'answer requires "<answer>"');
   need(flags.by === undefined || fieldText(flags.by), '--by needs a value — who answered: owner or a name');
   const by = flags.by === undefined ? null : fieldText(flags.by);
-  const id = askNumber(rawId);
-  const ask = loadAsks(root).find((a) => a.id === id);
-  need(ask, `no such question: a-${id}`);
+  const key = askNumber(rawId);
+  const ask = loadAsks(root).find((a) => idKey(a.id) === key);
+  need(ask, `no such question: a-${key}`);
+  const id = ask.id;
   need(ask.state === 'open', `a-${id} is already answered`);
   // A batch item asks about one area ruling, and its answer says one word first: yes or reject (tak or nie).
   const rulings = ask.ruling ? loadDecisions(root) : [];

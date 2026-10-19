@@ -161,11 +161,11 @@ test('smoke: initialize, tools/list, status and a writing command on a temporary
     assert.equal(opened.isError, false, opened.content[0].text);
     const filed = await s.call('jarl_new', { title: '--odd title', kind: 'bug', prio: '1', acceptance: ['one', '--two'], root, json: true });
     assert.equal(filed.isError, false, filed.content[0].text);
-    assert.equal(JSON.parse(filed.content[0].text).id, '001');
+    assert.equal(JSON.parse(filed.content[0].text).id, '1');
     const issue = readFileSync(join(root, '.jarl', 'issues', readdirSync(join(root, '.jarl', 'issues'))[0]), 'utf8');
-    assert.match(issue, /^# 001 · --odd title/);
+    assert.match(issue, /^# 1 · --odd title/);
     assert.match(issue, /- one\n- --two/);
-    assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /filed 001/);
+    assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /filed 1/);
 
     const status = await s.call('jarl_status', { root });
     assert.equal(status.isError, false);
@@ -185,8 +185,8 @@ test('smoke: initialize, tools/list, status and a writing command on a temporary
     await s.call('jarl_review', { ids: '1', verdict: 'approve', findings: FINDINGS, by: 'jarl', root });
     const done = await s.call('jarl_set', { ids: '1', status: 'done', why: 'finished', root });
     assert.equal(done.isError, false, done.content[0].text);
-    assert.match(done.content[0].text, /001 → done/);
-    assert.match(done.content[1]?.text || '', /^note: 001 /, 'two acceptance lines, one evidence row: the note the CLI prints on stderr');
+    assert.match(done.content[0].text, /1 → done/);
+    assert.match(done.content[1]?.text || '', /^note: 1 /, 'two acceptance lines, one evidence row: the note the CLI prints on stderr');
 
     // An invalid field is a protocol error, not a tool result.
     const bad = await s.request('tools/call', { name: 'jarl_set', arguments: { ids: '1', nope: true } });
@@ -216,8 +216,8 @@ test('a check that fails is the CLI exit 2: isError, with the items', () => {
   sh(root, 'git init -q -b feature && git config user.email t@t && git config user.name t && git config core.excludesFile /dev/null && echo 1 > a.mjs && git add -A && git commit -qm base');
   mcp.callTool('jarl_init', { goal: 'g', root });
   mcp.callTool('jarl_new', { title: 't', files: 'a.mjs', root });
-  sh(root, 'git checkout -q -b jarl/001-t && echo 2 > b.mjs && git add -A && git commit -qm change && git checkout -q feature');
-  const r = mcp.callTool('jarl_check', { id: '1', branch: 'jarl/001-t', root });
+  sh(root, 'git checkout -q -b jarl/1-t && echo 2 > b.mjs && git add -A && git commit -qm change && git checkout -q feature');
+  const r = mcp.callTool('jarl_check', { id: '1', branch: 'jarl/1-t', root });
   assert.equal(r.isError, true);
   assert.match(r.content[0].text, /✗/);
 });
@@ -256,7 +256,7 @@ test('concurrent writes: calls sent at once to one server, and to two servers on
     const ids = results.map((r) => JSON.parse(r.content[0].text).id);
     assert.equal(new Set(ids).size, 16, `every issue got its own number: ${ids.join(' ')}`);
     assert.equal(readdirSync(join(root, '.jarl', 'issues')).length, 16);
-    assert.equal(readFileSync(join(root, '.jarl', 'log.md'), 'utf8').split('\n').filter((l) => / filed \d{3}/.test(l)).length, 16);
+    assert.equal(readFileSync(join(root, '.jarl', 'log.md'), 'utf8').split('\n').filter((l) => / filed \d+/.test(l)).length, 16);
     assert.ok(!existsSync(join(root, '.jarl', '.lock')), 'the lock is released after the last write');
   } finally { await Promise.all([a.stop(), b.stop()]); }
 });
@@ -355,7 +355,7 @@ test('with json: true, the answer is exactly one text block holding the JSON, wh
   const withNote = mcp.callTool('jarl_set', { ids: '1', status: 'done', why: 'finished', root: a, json: true });
   assert.equal(withNote.isError, false, withNote.content[0].text);
   assert.equal(withNote.content.length, 1);
-  assert.match(withNote._meta['jarl/warn'], /^note: 001 /);
+  assert.match(withNote._meta['jarl/warn'], /^note: 1 /);
 
   // A refusal (the CLI's exit 1) with json: true is still one block; the loop note goes to _meta, not a second block.
   const refused = mcp.callTool('jarl_show', { id: '9', json: true }, {}, a);
@@ -368,8 +368,8 @@ test('with json: true, the answer is exactly one text block holding the JSON, wh
   sh(c, 'git init -q -b feature && git config user.email t@t && git config user.name t && git config core.excludesFile /dev/null && echo 1 > a.mjs && git add -A && git commit -qm base');
   mcp.callTool('jarl_init', { goal: 'g', root: c });
   mcp.callTool('jarl_new', { title: 't', files: 'a.mjs', root: c });
-  sh(c, 'git checkout -q -b jarl/001-t && echo 2 > b.mjs && git add -A && git commit -qm change && git checkout -q feature');
-  const failedCheck = mcp.callTool('jarl_check', { id: '1', branch: 'jarl/001-t', root: c, json: true });
+  sh(c, 'git checkout -q -b jarl/1-t && echo 2 > b.mjs && git add -A && git commit -qm change && git checkout -q feature');
+  const failedCheck = mcp.callTool('jarl_check', { id: '1', branch: 'jarl/1-t', root: c, json: true });
   assert.equal(failedCheck.isError, true);
   assert.equal(failedCheck.content.length, 1);
   assert.ok(JSON.parse(failedCheck.content[0].text).ok === false);

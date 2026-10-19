@@ -1,4 +1,4 @@
-// Retraction by an appended entry (issue 245), a title change and a review with empty findings. The first retraction of
+// Retraction by an appended entry, a title change and a review with empty findings. The first retraction of
 // a loop raises the record format, so the pinned frozen reader (tests/old-jarl.mjs) refuses the loop instead of counting
 // the retracted approve or row.
 import { test } from 'node:test';
@@ -13,11 +13,13 @@ import { jarl, refuses, loop as makeLoop } from './helpers.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 const L = await import('../jarl-lib.mjs');
+// Issues are filed by the library, whose number has three digits, so each loop stays format 1 until a retraction.
+const R = await import('../record.mjs');
 
 const loop = () => makeLoop({ prefix: 'jarl-retract-', goal: 'a goal', via: 'cli' });
-// An issue in progress on a branch (a code issue), filed under id 001 unless others exist.
+// An issue in progress on a branch (a code issue), filed under 001 unless others exist.
 function started(root, title = 'thing to do') {
-  const id = JSON.parse(jarl(root, 'new', title, '--acceptance', 'it works', '--json')).id;
+  const id = R.newIssue(root, title, { acceptance: 'it works' }).id;
   jarl(root, 'set', id, 'in-progress', '--worker', 'w-one', '--branch', `jarl/${id}-x`);
   return id;
 }
@@ -35,7 +37,7 @@ test('review retract: the newest approve is struck through and no longer counts,
   assert.equal(existsSync(profileFile(root)), false, 'no retraction yet: the record is still format 1');
 
   const said = jarl(root, 'review', id, 'retract', '--by', 'jarl', 'I approved the wrong branch');
-  assert.match(said, /001 review retracted by jarl \(coordinator\): the approve by opus-reviewer-1 \(fresh\)/);
+  assert.match(said, /1 review retracted by jarl \(coordinator\): the approve by opus-reviewer-1 \(fresh\)/);
   assert.equal(L.gateState(root, id).approved, false, 'after: the gate does not count it');
   assert.match(doneRefusal(root, id), /no approving review/);
 
@@ -191,7 +193,7 @@ test('the first retraction raises the format before its line is written; the pin
 
 test('body --title changes the heading with a log entry; the file keeps its name', () => {
   const root = loop();
-  const id = JSON.parse(jarl(root, 'new', 'a wrong title', '--json')).id;
+  const id = R.newIssue(root, 'a wrong title').id;
   const before = L.findIssue(root, id).file;
   assert.match(jarl(root, 'body', id, '--title', 'the right title'), /001 body: title/);
   const issue = L.findIssue(root, id);

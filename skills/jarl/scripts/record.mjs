@@ -95,7 +95,8 @@ export function writeAtomic(path, text) { return L.writeWhole(path, text); }
 
 // new: opts { kind, prio, tier, tags, files, repo, 'found-by', where, what, why, acceptance, source, after, changelog,
 // template, field, section }.
-export function newIssue(root, title, opts = {}) { return write(root, () => L.cmdNew(root, title, opts)); }
+// The library names the width of a new number (three digits, so the file reads 007-…); the command line names none.
+export function newIssue(root, title, opts = {}) { return write(root, () => L.cmdNew(root, title, { width: 3, ...opts })); }
 // A move into a status, checked against the profile: needs-reason wants `why`, closes-record passes the done gate,
 // holds-claim writes the lease from opts { branch, worker, worktree }, leaving it removes the lease.
 // opts.caller says who asks: 'record' (the default for a library call) or 'cli' (what the command line and the MCP tools
@@ -142,7 +143,7 @@ export function decide(root, slug, ruling, opts = {}) { return write(root, () =>
 // opts { kind, target, issue, ruling }. ruling (the slug of an area ruling in force, with kind ratify) makes the question
 // that ruling's ratification item — what close's batch files, and what a composer files for a batch of its own — so its
 // answer marks the ruling ratified or rejected. A ruling already asked about, ratified, rejected or superseded is refused.
-export function ask(root, question, opts = {}) { return write(root, () => L.cmdAsk(root, question, opts)); }
+export function ask(root, question, opts = {}) { return write(root, () => L.cmdAsk(root, question, { width: 3, ...opts })); }
 // A ratify item from the close's batch names an area ruling: its answer starts with yes or reject and marks that ruling
 // Ratified or Rejected; the result then carries { ruling, verdict, typeDecision, typeLog, ruleRatification, ruleLog }.
 // A ratified area ruling's typeDecision ({ type, text, supersedes }) is the entry for the type's decision log, and its

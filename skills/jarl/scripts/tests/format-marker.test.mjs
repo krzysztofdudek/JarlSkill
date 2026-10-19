@@ -15,9 +15,11 @@ import { jarl, refuses, loop as makeLoop } from './helpers.mjs';
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 const L = await import('../jarl-lib.mjs');
 
+// The first issue is filed by the library, which writes its number with three digits, so the loop is format 1.
+const R = await import('../record.mjs');
 const loop = () => {
   const dir = makeLoop({ prefix: 'jarl-format-', goal: 'a goal', via: 'cli' });
-  jarl(dir, 'new', 'first issue', '--acceptance', 'it works');
+  R.newIssue(dir, 'first issue', { acceptance: 'it works' });
   return dir;
 };
 const marker = (root) => join(root, '.jarl', 'profile.json');

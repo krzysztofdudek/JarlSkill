@@ -24,13 +24,13 @@ test('init, new, list, show', () => {
   assert.ok(existsSync(join(root, '.jarl', 'goal.md')));
   const a = JSON.parse(jarl(root, 'new', 'parser refuses fixture three', '--kind', 'bug', '--prio', '1', '--tags', 'parser', '--files', 'src/parser.mjs', '--json'));
   const b = JSON.parse(jarl(root, 'new', 'docs promise a flag that does not exist', '--kind', 'docs', '--json'));
-  assert.equal(a.id, '001'); assert.equal(b.id, '002');
+  assert.equal(a.id, '1'); assert.equal(b.id, '2');
   const rows = JSON.parse(jarl(root, 'list', '--json'));
-  assert.deepEqual(rows.map((r) => r.id), ['001', '002']);
+  assert.deepEqual(rows.map((r) => r.id), ['1', '2']);
   assert.equal(JSON.parse(jarl(root, 'list', '--tag', 'parser', '--json')).length, 1);
   assert.equal(JSON.parse(jarl(root, 'list', '--grep', 'flag that does not', '--json')).length, 1);
-  assert.match(jarl(root, 'show', '1'), /^# 001 · parser refuses fixture three/);
-  assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /filed 001/);
+  assert.match(jarl(root, 'show', '1'), /^# 1 · parser refuses fixture three/);
+  assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /filed 1/);
 });
 
 test('slugify keeps the letters NFKD does not decompose: ł, ø, ß and the like become their plain-Latin spelling, not a hole', async () => {
@@ -66,10 +66,10 @@ test('new refuses a text that holds a matched pair named after one of its own fi
   jarl(root, 'new', 'ok', '--what', 'fine');
   assert.match(refuses(root, 'body', '1', '--why', '<files>a.mjs</files>'), /the Why text holds a <files>…<\/files> pair.*\(--files\)/);
   assert.match(refuses(root, 'body', '1', '--what', pair), /the What text holds a <what>/);
-  assert.doesNotMatch(readFileSync(join(root, '.jarl', 'issues', '001-ok.md'), 'utf8'), /<files>/);
+  assert.doesNotMatch(readFileSync(join(root, '.jarl', 'issues', '1-ok.md'), 'utf8'), /<files>/);
 });
 
-test('a lone tag, a pair in a code span and a pair in a fenced block are accepted, and so is the text of issue 305 itself', () => {
+test('a lone tag, a pair in a code span and a pair in a fenced block are accepted, and so is the text of an issue heading', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
   jarl(root, 'new', 'lone', '--what', 'a lone <why> and a closing </what> are text');
@@ -84,16 +84,16 @@ test('the reply of new keeps its first line, then lists what was parsed and each
   const root = repo();
   jarl(root, 'init', 'goal');
   const bare = jarl(root, 'new', 'bare').split('\n');
-  assert.match(bare[0], /^filed 001 · .*001-bare\.md$/);
+  assert.match(bare[0], /^filed 1 · .*1-bare\.md$/);
   assert.match(bare[1], /^parsed: priority 2 · tier standard · kind bug · tags \(none\) · 0 acceptance lines · What 0 characters · Why 0 characters$/);
-  for (const [field, command] of [['why', 'body 001 --why'], ['acceptance', 'body 001 --acceptance'], ['files', 'files 001 p,q'], ['after', 'after 001 <ids>'], ['where', 'body 001 --where']]) {
+  for (const [field, command] of [['why', 'body 1 --why'], ['acceptance', 'body 1 --acceptance'], ['files', 'files 1 p,q'], ['after', 'after 1 <ids>'], ['where', 'body 1 --where']]) {
     assert.ok(bare[2].includes(`${field} (jarl.mjs ${command}`), `${field} is named with ${command}`);
   }
   const full = jarl(root, 'new', 'full', '--what', 'seven', '--why', 'yy', '--acceptance', 'a', '--acceptance', 'b', '--prio', '1', '--tags', 'x,y', '--files', 'a.mjs', '--where', 'here', '--after', '1').split('\n');
   assert.match(full[1], /priority 1 · tier standard · kind bug · tags x,y · 2 acceptance lines · What 5 characters · Why 2 characters/);
   assert.equal(full.length, 2, 'nothing is left empty');
   const json = JSON.parse(jarl(root, 'new', 'j', '--json'));
-  assert.equal(json.id, '003');
+  assert.equal(json.id, '3');
   assert.deepEqual(json.empty.map((e) => e.field), ['why', 'acceptance', 'files', 'after', 'where']);
   assert.equal(json.parsed.tags.length, 0);
 });
@@ -108,11 +108,11 @@ test('new from a linked worktree of a committed loop is refused and names the ma
   sh(root, `git add -A && git commit -qm loop && git worktree add -q -b w1 ${wt}`);
   // The main checkout moves on by two issues; the worktree keeps the copy it was cut with.
   jarl(root, 'new', 'second'); jarl(root, 'new', 'third');
-  assert.deepEqual(readdirSync(join(wt, '.jarl', 'issues')), ['001-first.md']);
+  assert.deepEqual(readdirSync(join(wt, '.jarl', 'issues')), ['1-first.md']);
   const said = refuses(wt, 'new', 'from the worktree');
   assert.match(said, /is a linked worktree of .*, which holds this loop/);
   assert.ok(said.includes(basename(root)), 'it names the main checkout as the root to pass');
-  assert.deepEqual(readdirSync(join(wt, '.jarl', 'issues')), ['001-first.md'], 'nothing was written');
+  assert.deepEqual(readdirSync(join(wt, '.jarl', 'issues')), ['1-first.md'], 'nothing was written');
   // A worktree copy that holds a higher number (999 here) than the main checkout counts: the next number is 1000.
   const high = join(wt, '.jarl', 'issues', '999-high.md');
   writeFileSync(high, '# 999 · high\n\n**Status:** open\n**Kind:** task\n**Priority:** 2\n**Tier:** standard\n\n## What\nx\n');
@@ -122,7 +122,7 @@ test('new from a linked worktree of a committed loop is refused and names the ma
   // Without the worktree's higher copy the main checkout files the next number as always.
   const plain = repo();
   jarl(plain, 'init', 'goal');
-  assert.equal(JSON.parse(jarl(plain, 'new', 'a', '--json')).id, '001');
+  assert.equal(JSON.parse(jarl(plain, 'new', 'a', '--json')).id, '1');
 });
 
 test('the main checkout is found through git by one helper: a linked worktree knows its main checkout and every copy of the loop', () => {
@@ -145,18 +145,18 @@ test('dropping an issue keeps the evidence already written, and the report print
   const root = repo();
   jarl(root, 'init', 'goal');
   jarl(root, 'new', 'thing that goes away');
-  jarl(root, 'evidence', '001', 'tried a fix, saw it hang');
-  jarl(root, 'set', '001', 'dropped', 'the client said not now');
-  const shown = jarl(root, 'show', '001');
+  jarl(root, 'evidence', '1', 'tried a fix, saw it hang');
+  jarl(root, 'set', '1', 'dropped', 'the client said not now');
+  const shown = jarl(root, 'show', '1');
   assert.match(shown, /tried a fix, saw it hang/, 'the evidence written before the drop is still there');
   assert.match(shown, /Dropped: the client said not now/);
   const report = jarl(root, 'report');
-  assert.match(report, /## Dropped \(1\)\n- 001 thing that goes away — the client said not now/);
+  assert.match(report, /## Dropped \(1\)\n- 1 thing that goes away — the client said not now/);
   assert.doesNotMatch(report, /tried a fix/, 'the report carries the reason, not the notes');
   // An issue with no evidence yet reads the same as before.
   jarl(root, 'new', 'never started');
-  jarl(root, 'set', '002', 'dropped', 'duplicate of 001');
-  assert.match(jarl(root, 'report'), /- 002 never started — duplicate of 001/);
+  jarl(root, 'set', '2', 'dropped', 'duplicate of 1');
+  assert.match(jarl(root, 'report'), /- 2 never started — duplicate of 1/);
 });
 
 test('deferred is its own status: it needs a reason, stays out of the default list, is counted apart and reported apart', () => {
@@ -165,10 +165,10 @@ test('deferred is its own status: it needs a reason, stays out of the default li
   jarl(root, 'new', 'waits for the client');
   jarl(root, 'new', 'still to do');
   jarl(root, 'new', 'gone for good');
-  assert.match(refuses(root, 'set', '001', 'deferred'), /deferred needs a reason/);
-  jarl(root, 'evidence', '001', 'half a fix on a branch');
-  jarl(root, 'set', '001', 'deferred', 'the client wants to decide first');
-  jarl(root, 'set', '003', 'dropped', 'duplicate');
+  assert.match(refuses(root, 'set', '1', 'deferred'), /deferred needs a reason/);
+  jarl(root, 'evidence', '1', 'half a fix on a branch');
+  jarl(root, 'set', '1', 'deferred', 'the client wants to decide first');
+  jarl(root, 'set', '3', 'dropped', 'duplicate');
   // Not in the default list, in --status deferred and in --all.
   assert.doesNotMatch(jarl(root, 'list'), /waits for the client/);
   assert.match(jarl(root, 'list', '--status', 'deferred'), /waits for the client/);
@@ -181,13 +181,13 @@ test('deferred is its own status: it needs a reason, stays out of the default li
   assert.match(jarl(root, 'status'), /deferred 1/);
   // Reported apart, with the reason, and the evidence already written stays.
   const report = jarl(root, 'report');
-  assert.match(report, /## Deferred \(1\)\n- 001 waits for the client — the client wants to decide first/);
-  assert.match(report, /## Dropped \(1\)\n- 003 gone for good — duplicate/);
-  assert.match(jarl(root, 'show', '001'), /half a fix on a branch/);
+  assert.match(report, /## Deferred \(1\)\n- 1 waits for the client — the client wants to decide first/);
+  assert.match(report, /## Dropped \(1\)\n- 3 gone for good — duplicate/);
+  assert.match(jarl(root, 'show', '1'), /half a fix on a branch/);
   // A loop with only deferred work left is closed by --force, and names the deferred issues it removed.
-  jarl(root, 'set', '002', 'dropped', 'no longer needed');
+  jarl(root, 'set', '2', 'dropped', 'no longer needed');
   const closed = JSON.parse(jarl(root, 'close', '--force', '--json'));
-  assert.deepEqual(closed.deferred, ['001']);
+  assert.deepEqual(closed.deferred, ['1']);
 });
 
 // In the default mode the loop lives in the main checkout and a worktree cannot see it. The tool used to need
@@ -202,7 +202,7 @@ function gitRepoWithWorktree() {
   git(main, 'add', '-A');
   git(main, 'commit', '-q', '-m', 'init');
   const wt = join(mkdtempSync(join(tmpdir(), 'jarl-wt-')), 'worker');
-  git(main, 'worktree', 'add', '-q', '-b', 'jarl/001-thing', wt);
+  git(main, 'worktree', 'add', '-q', '-b', 'jarl/1-thing', wt);
   return { main, wt, git };
 }
 const jarlIn = (cwd, ...args) => execFileSync(process.execPath, [SCRIPT, ...args], { cwd, encoding: 'utf8', timeout: SPAWN_TIMEOUT }).trim();
@@ -213,14 +213,14 @@ test('a run in a worktree finds the loop in the main checkout by itself, and an 
   jarl(main, 'new', 'thing to fix');
   // No --root: the worktree has no .jarl/ of its own, the main checkout does.
   assert.match(jarlIn(wt, 'list'), /thing to fix/);
-  assert.equal(JSON.parse(jarlIn(wt, 'show', '001', '--json')).title, 'thing to fix');
-  jarlIn(wt, 'evidence', '001', 'ran it in the worktree');
-  assert.match(jarl(main, 'show', '001'), /ran it in the worktree/, 'the write landed in the main checkout\'s loop');
+  assert.equal(JSON.parse(jarlIn(wt, 'show', '1', '--json')).title, 'thing to fix');
+  jarlIn(wt, 'evidence', '1', 'ran it in the worktree');
+  assert.match(jarl(main, 'show', '1'), /ran it in the worktree/, 'the write landed in the main checkout\'s loop');
   // check and branches read the repository from there too.
   git(wt, 'commit', '-q', '--allow-empty', '-m', 'worker change');
-  assert.match(jarlIn(wt, 'branches'), /jarl\/001-thing/);
-  const checked = JSON.parse(jarlIn(wt, 'check', '001', '--branch', 'jarl/001-thing', '--json'));
-  assert.match(checked.items.find((i) => i.name === 'commits beyond base').note, /1 commit\(s\) on jarl\/001-thing beyond/);
+  assert.match(jarlIn(wt, 'branches'), /jarl\/1-thing/);
+  const checked = JSON.parse(jarlIn(wt, 'check', '1', '--branch', 'jarl/1-thing', '--json'));
+  assert.match(checked.items.find((i) => i.name === 'commits beyond base').note, /1 commit\(s\) on jarl\/1-thing beyond/);
   // Explicit --root wins, even one that has no loop.
   const elsewhere = repo();
   assert.match(String(refuses(elsewhere, 'new', 'x')), /no \.jarl\//);
@@ -241,16 +241,16 @@ test('a repository is named by its root, not a subdirectory of it, and the Repo 
   jarl(hub, 'new', 'change a', '--files', 'src/a.mjs');
   // A subdirectory of a repository is not the repository: its paths would be read from the wrong place, so a
   // removed test file would go unseen. Refused everywhere a repository is named, naming the root to give instead.
-  assert.match(refuses(hub, 'repo', '001', '../tool/src'), /is inside the repository at .*tool, not its root — name the root: \.\.\/tool/);
+  assert.match(refuses(hub, 'repo', '1', '../tool/src'), /is inside the repository at .*tool, not its root — name the root: \.\.\/tool/);
   assert.match(refuses(hub, 'new', 'other', '--repo', '../tool/src'), /not its root/);
   assert.match(refuses(hub, 'branches', '--repo', '../tool/src'), /not its root/);
-  assert.match(refuses(hub, 'check', '001', '--branch', 'feature', '--repo', '../tool/src'), /not its root/);
+  assert.match(refuses(hub, 'check', '1', '--branch', 'feature', '--repo', '../tool/src'), /not its root/);
   // The root itself is fine, and the field can be cleared again.
-  jarl(hub, 'repo', '001', '../tool');
-  assert.match(jarl(hub, 'show', '001'), /^\*\*Repo:\*\* \.\.\/tool$/m);
-  assert.match(jarl(hub, 'repo', '001', '--clear'), /001 repo: cleared/);
-  assert.doesNotMatch(jarl(hub, 'show', '001'), /\*\*Repo:\*\*/);
-  assert.match(refuses(hub, 'repo', '001', '--clear'), /no Repo field/);
+  jarl(hub, 'repo', '1', '../tool');
+  assert.match(jarl(hub, 'show', '1'), /^\*\*Repo:\*\* \.\.\/tool$/m);
+  assert.match(jarl(hub, 'repo', '1', '--clear'), /1 repo: cleared/);
+  assert.doesNotMatch(jarl(hub, 'show', '1'), /\*\*Repo:\*\*/);
+  assert.match(refuses(hub, 'repo', '1', '--clear'), /no Repo field/);
 });
 
 // Files are compared as (repository, path) pairs; three ways the pair used to be read wrongly, each silently.
@@ -262,12 +262,12 @@ test('the repository name in Files: --repo strips it like the field does, an inn
   sh(hub, `${setup('main')} && echo notes > notes.md && git add -A && git commit -qm base`);
   sh(tool, `${setup('feature')} && echo x > src/a.mjs && git add -A && git commit -qm base`);
   sh(app, `${setup('feature')} && echo x > app/x.mjs && git add -A && git commit -qm base`);
-  sh(tool, `git worktree add -q -b jarl/001-a ${parent}/wt-001 && cd ${parent}/wt-001 && echo y > src/a.mjs && git commit -qam change`);
+  sh(tool, `git worktree add -q -b jarl/1-a ${parent}/wt-1 && cd ${parent}/wt-1 && echo y > src/a.mjs && git commit -qam change`);
   jarl(hub, 'init', 'goal');
 
   // 1. `check --repo` on an issue with no Repo field strips the name as the field would: tool/src/a.mjs is src/a.mjs.
   jarl(hub, 'new', 'change a', '--files', 'tool/src/a.mjs');
-  const byRepoFlag = JSON.parse(jarl(hub, 'check', '001', '--branch', 'jarl/001-a', '--repo', '../tool', '--json'));
+  const byRepoFlag = JSON.parse(jarl(hub, 'check', '1', '--branch', 'jarl/1-a', '--repo', '../tool', '--json'));
   const scope = byRepoFlag.items.find((i) => i.name === 'diff inside declared files');
   assert.equal(scope.ok, true, scope.note);
 
@@ -275,9 +275,9 @@ test('the repository name in Files: --repo strips it like the field does, an inn
   // inside the repository app, and `app/x.mjs` already IS that path, so the two meet in next instead of passing.
   jarl(hub, 'new', 'first on app/x', '--files', 'app/app/x.mjs', '--repo', '../app');
   jarl(hub, 'new', 'second on app/x', '--files', 'app/x.mjs', '--repo', '../app');
-  jarl(hub, 'set', '002', 'in-progress', 'worker raised');
+  jarl(hub, 'set', '2', 'in-progress', 'worker raised');
   const next = JSON.parse(jarl(hub, 'next', '--all', '--json'));
-  assert.deepEqual(next.find((r) => r.id === '003').waitsOn, ['app/x.mjs'], 'the same file in one repository always holds an issue back');
+  assert.deepEqual(next.find((r) => r.id === '3').waitsOn, ['app/x.mjs'], 'the same file in one repository always holds an issue back');
 
   // 3. One repository however its path is spelled: through a symlink, and (where the file system ignores case) in
   // another case.
@@ -285,9 +285,9 @@ test('the repository name in Files: --repo strips it like the field does, an inn
   symlinkSync(tool, join(parent, 'link'), 'junction');   // a junction on Windows: no privilege needed
   if (existsSync(join(parent, 'TOOL'))) spellings.push('../TOOL');
   jarl(hub, 'new', 'holds src/a.mjs', '--files', 'tool/src/b.mjs', '--repo', '../tool');
-  jarl(hub, 'set', '004', 'in-progress', 'worker raised');
+  jarl(hub, 'set', '4', 'in-progress', 'worker raised');
   spellings.forEach((spelling, k) => {
-    const id = String(5 + k).padStart(3, '0');
+    const id = String(5 + k);
     jarl(hub, 'new', `spelled ${spelling}`, '--files', `${spelling.replace('../', '')}/src/b.mjs`, '--repo', spelling);
     const row = JSON.parse(jarl(hub, 'next', '--all', '--json')).find((r) => r.id === id);
     assert.ok(row && row.waitsOn, `${spelling}: the same repository, so the same file, so it waits`);
@@ -298,20 +298,20 @@ test('status moves only with a log line; done needs evidence; dropped needs a re
   const root = repo();
   jarl(root, 'init', 'goal');
   jarl(root, 'new', 'thing');
-  assert.match(refuses(root, 'set', '001', 'done'), /no evidence yet/);
-  assert.match(refuses(root, 'set', '001', 'dropped'), /needs a reason/);
-  jarl(root, 'set', '001', 'in-progress', 'worker raised');
-  jarl(root, 'evidence', '001', '--ran', 'npm test', '--saw', '12 pass, 0 fail');
-  assert.match(refuses(root, 'set', '001', 'done'), /no approving review/);
-  jarl(root, 'review', '001', 'changes', '--by', 'rev', 'Important: the new test never goes red');
-  assert.match(refuses(root, 'set', '001', 'done'), /no approving review/);
-  jarl(root, 'review', '001', 'approve', '--by', 'rev', 'read the diff; test red before, green after');
-  jarl(root, 'set', '001', 'done');
+  assert.match(refuses(root, 'set', '1', 'done'), /no evidence yet/);
+  assert.match(refuses(root, 'set', '1', 'dropped'), /needs a reason/);
+  jarl(root, 'set', '1', 'in-progress', 'worker raised');
+  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', '12 pass, 0 fail');
+  assert.match(refuses(root, 'set', '1', 'done'), /no approving review/);
+  jarl(root, 'review', '1', 'changes', '--by', 'rev', 'Important: the new test never goes red');
+  assert.match(refuses(root, 'set', '1', 'done'), /no approving review/);
+  jarl(root, 'review', '1', 'approve', '--by', 'rev', 'read the diff; test red before, green after');
+  jarl(root, 'set', '1', 'done');
   const log = readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
-  assert.match(log, /001 → in-progress · worker raised/);
-  assert.match(log, /001 → done/);
-  assert.match(readFileSync(join(root, '.jarl', 'issues', '001-thing.md'), 'utf8'), /\*\*Status:\*\* done/);
-  assert.match(refuses(root, 'set', '001', 'verified'), /status must be one of/);
+  assert.match(log, /1 → in-progress · worker raised/);
+  assert.match(log, /1 → done/);
+  assert.match(readFileSync(join(root, '.jarl', 'issues', '1-thing.md'), 'utf8'), /\*\*Status:\*\* done/);
+  assert.match(refuses(root, 'set', '1', 'verified'), /status must be one of/);
 });
 
 test('tags, priority and next respect file overlap', () => {
@@ -320,14 +320,14 @@ test('tags, priority and next respect file overlap', () => {
   jarl(root, 'new', 'one', '--files', 'a.mjs', '--prio', '3');
   jarl(root, 'new', 'two', '--files', 'a.mjs,b.mjs', '--prio', '1');
   jarl(root, 'new', 'three', '--files', 'c.mjs');
-  jarl(root, 'tag', '001', '+parser', '+docs', '-parser');
-  assert.match(jarl(root, 'show', '001'), /\*\*Tags:\*\* docs/);
-  jarl(root, 'prio', '003', '1');
+  jarl(root, 'tag', '1', '+parser', '+docs', '-parser');
+  assert.match(jarl(root, 'show', '1'), /\*\*Tags:\*\* docs/);
+  jarl(root, 'prio', '3', '1');
   const next = JSON.parse(jarl(root, 'next', '--all', '--json'));
-  assert.deepEqual(next.filter((r) => r.ready).map((r) => r.id), ['002', '003']);
-  assert.deepEqual(next.find((r) => r.id === '001').waitsOn, ['a.mjs']);
-  jarl(root, 'set', '002', 'in-progress', 'raised');
-  assert.deepEqual(JSON.parse(jarl(root, 'next', '--json')).filter((r) => r.ready).map((r) => r.id), ['003']);
+  assert.deepEqual(next.filter((r) => r.ready).map((r) => r.id), ['2', '3']);
+  assert.deepEqual(next.find((r) => r.id === '1').waitsOn, ['a.mjs']);
+  jarl(root, 'set', '2', 'in-progress', 'raised');
+  assert.deepEqual(JSON.parse(jarl(root, 'next', '--json')).filter((r) => r.ready).map((r) => r.id), ['3']);
 });
 
 test('decide refuses a duplicate slug; close refuses while open, removes when clean', () => {
@@ -337,7 +337,7 @@ test('decide refuses a duplicate slug; close refuses while open, removes when cl
   assert.match(refuses(root, 'decide', 'no-new-constants', 'again'), /duplicate slug/);
   jarl(root, 'new', 'thing');
   assert.match(refuses(root, 'close'), /still open/);
-  jarl(root, 'set', '001', 'dropped', 'out of scope');
+  jarl(root, 'set', '1', 'dropped', 'out of scope');
   assert.match(jarl(root, 'status'), /dropped 1/);
   jarl(root, 'close');
   assert.equal(existsSync(join(root, '.jarl')), false);
@@ -348,23 +348,23 @@ test('tier field, rounds and takeover, asks and answers, handoff, report', () =>
   jarl(root, 'init', 'goal');
   assert.match(refuses(root, 'new', 'x', '--tier', 'huge'), /--tier must be one of/);
   jarl(root, 'new', 'hard thing', '--tier', 'strong', '--found-by', 'tester, running the suite');
-  assert.match(jarl(root, 'show', '001'), /\*\*Tier:\*\* strong/);
-  assert.match(jarl(root, 'round', '001', 'suite red'), /round 1 of 3/);
-  jarl(root, 'round', '001', 'still red');
-  const r = JSON.parse(jarl(root, 'round', '001', 'red again', '--json'));
+  assert.match(jarl(root, 'show', '1'), /\*\*Tier:\*\* strong/);
+  assert.match(jarl(root, 'round', '1', 'suite red'), /round 1 of 3/);
+  jarl(root, 'round', '1', 'still red');
+  const r = JSON.parse(jarl(root, 'round', '1', 'red again', '--json'));
   assert.equal(r.takeover, true);
-  assert.match(r.block, /attempted issue 001 3 times/);
+  assert.match(r.block, /attempted issue 1 3 times/);
   const a = JSON.parse(jarl(root, 'ask', 'keep the old flag?', '--issue', '1', '--json'));
-  assert.equal(a.id, '001');
+  assert.equal(a.id, '1');
   assert.match(jarl(root, 'status'), /questions 1/);
-  jarl(root, 'answer', 'a-001', 'yes, keep it');
-  assert.match(readFileSync(join(root, '.jarl', 'decisions.md'), 'utf8'), /ask-001[\s\S]*yes, keep it/);
-  assert.match(refuses(root, 'answer', '001', 'again'), /already answered/);
+  jarl(root, 'answer', 'a-1', 'yes, keep it');
+  assert.match(readFileSync(join(root, '.jarl', 'decisions.md'), 'utf8'), /ask-1[\s\S]*yes, keep it/);
+  assert.match(refuses(root, 'answer', '1', 'again'), /already answered/);
   assert.doesNotMatch(jarl(root, 'handoff', 'read'), /Earlier handoff/, 'no handoff file: nothing shown as history');
-  jarl(root, 'set', '001', 'in-progress', 'raised');
+  jarl(root, 'set', '1', 'in-progress', 'raised');
   const h = jarl(root, 'resume');
-  assert.match(h, /## In flight \(1\)\n- 001 hard thing/);
-  assert.match(h, /## Rulings in force \(1\)\n- \S+ · ask-001 · by owner — \*\*Question:\*\* keep the old flag\?/);
+  assert.match(h, /## In flight \(1\)\n- 1 hard thing/);
+  assert.match(h, /## Rulings in force \(1\)\n- \S+ · ask-1 · by owner — \*\*Question:\*\* keep the old flag\?/);
   const rep = jarl(root, 'report');
   assert.doesNotMatch(rep, /Found along the way/, 'the found section is opt-in');
   assert.match(jarl(root, 'report', '--found'), /Found along the way \(1\)/);
@@ -380,9 +380,9 @@ test('check reads a worker branch: commits, declared files, removed tests, asser
   sh(root, `echo 'export const a = 1;' > src/a.mjs && printf 'assert.equal(1,1);\\nassert.equal(2,2);\\n' > tests/a.test.mjs && git add -A && git commit -qm base`);
   jarl(root, 'init', 'goal', '--committed');
   jarl(root, 'new', 'change a', '--files', 'src/a.mjs,tests/a.test.mjs');
-  sh(root, `git add -A && git commit -qm jarl && git checkout -qb jarl/001-change-a && echo 'export const a = 2;' > src/a.mjs && printf 'assert.equal(1,1);\\n' > tests/a.test.mjs && echo x > src/b.mjs && echo '- entry' >> CHANGELOG.md && echo 'export {};' > tests/new.test.mjs && git add -A && git commit -qm work && git checkout -q feature`);
+  sh(root, `git add -A && git commit -qm jarl && git checkout -qb jarl/1-change-a && echo 'export const a = 2;' > src/a.mjs && printf 'assert.equal(1,1);\\n' > tests/a.test.mjs && echo x > src/b.mjs && echo '- entry' >> CHANGELOG.md && echo 'export {};' > tests/new.test.mjs && git add -A && git commit -qm work && git checkout -q feature`);
   let out;
-  try { jarl(root, 'check', '001', '--branch', 'jarl/001-change-a', '--base', 'feature', '--json'); } catch (e) { out = JSON.parse(e.stdout); }
+  try { jarl(root, 'check', '1', '--branch', 'jarl/1-change-a', '--base', 'feature', '--json'); } catch (e) { out = JSON.parse(e.stdout); }
   assert.equal(out.ok, false);
   const byName = Object.fromEntries(out.items.map((i) => [i.name, i]));
   assert.equal(byName['commits beyond base'].ok, true);
@@ -402,8 +402,8 @@ test('check matches a declared file relative to a subdirectory, not just the rep
   sh(root, `echo one > skills/x/SKILL.md && git add -A && git commit -qm base`);
   jarl(root, 'init', 'goal', '--committed');
   jarl(root, 'new', 'change the skill body', '--files', 'SKILL.md');
-  sh(root, `git add -A && git commit -qm jarl && git checkout -qb jarl/001-change-the-skill-body && echo two > skills/x/SKILL.md && git add -A && git commit -qm work && git checkout -q feature`);
-  const out = JSON.parse(jarl(root, 'check', '001', '--branch', 'jarl/001-change-the-skill-body', '--base', 'feature', '--json'));
+  sh(root, `git add -A && git commit -qm jarl && git checkout -qb jarl/1-change-the-skill-body && echo two > skills/x/SKILL.md && git add -A && git commit -qm work && git checkout -q feature`);
+  const out = JSON.parse(jarl(root, 'check', '1', '--branch', 'jarl/1-change-the-skill-body', '--base', 'feature', '--json'));
   const byName = Object.fromEntries(out.items.map((i) => [i.name, i]));
   assert.equal(byName['diff inside declared files'].ok, true, byName['diff inside declared files'].note);
 });
@@ -412,13 +412,13 @@ test('a round after an approve spends the approve', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
   jarl(root, 'new', 'thing');
-  jarl(root, 'evidence', '001', '--ran', 'npm test', '--saw', 'suite green');
-  jarl(root, 'review', '001', 'approve', '--by', 'rev', FINDINGS);
-  jarl(root, 'round', '001', 'merger: suite red after merge');
-  assert.match(refuses(root, 'set', '001', 'done'), /no approving review/);
-  assert.match(refuses(root, 'review', '001', 'maybe', 'x'), /approve\|changes/);
-  jarl(root, 'review', '001', 'approve', '--by', 'rev', FINDINGS);
-  jarl(root, 'set', '001', 'done');
+  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'suite green');
+  jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
+  jarl(root, 'round', '1', 'merger: suite red after merge');
+  assert.match(refuses(root, 'set', '1', 'done'), /no approving review/);
+  assert.match(refuses(root, 'review', '1', 'maybe', 'x'), /approve\|changes/);
+  jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
+  jarl(root, 'set', '1', 'done');
 });
 
 test('branches lists a worktree branch a worker never renamed, marked unnamed', () => {
@@ -440,26 +440,26 @@ test('evidence accepts free text or structured rows; rows are readable back', ()
   const root = repo();
   jarl(root, 'init', 'goal');
   jarl(root, 'new', 'thing');
-  jarl(root, 'evidence', '001', '--ran', 'npm test', '--saw', '12 pass, 0 fail');
-  jarl(root, 'evidence', '001', '--ran', 'node --test tests/a.test.mjs', '--saw', '3 pass');
-  assert.match(jarl(root, 'show', '001'), /\*\*ran:\*\* npm test · \*\*saw:\*\* 12 pass, 0 fail/);
-  assert.match(refuses(root, 'evidence', '001', '--ran', 'x'), /needs both --ran/);
-  jarl(root, 'review', '001', 'approve', '--by', 'rev', FINDINGS);
-  jarl(root, 'set', '001', 'done');
+  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', '12 pass, 0 fail');
+  jarl(root, 'evidence', '1', '--ran', 'node --test tests/a.test.mjs', '--saw', '3 pass');
+  assert.match(jarl(root, 'show', '1'), /\*\*ran:\*\* npm test · \*\*saw:\*\* 12 pass, 0 fail/);
+  assert.match(refuses(root, 'evidence', '1', '--ran', 'x'), /needs both --ran/);
+  jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
+  jarl(root, 'set', '1', 'done');
 });
 
 test('free-text evidence appends, it never overwrites earlier evidence', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
   jarl(root, 'new', 'thing');
-  jarl(root, 'evidence', '001', 'first note');
-  jarl(root, 'evidence', '001', 'second note');
-  const shown = jarl(root, 'show', '001');
+  jarl(root, 'evidence', '1', 'first note');
+  jarl(root, 'evidence', '1', 'second note');
+  const shown = jarl(root, 'show', '1');
   assert.ok(shown.indexOf('first note') > -1 && shown.indexOf('first note') < shown.indexOf('second note'), 'both notes kept, in order');
   jarl(root, 'new', 'merged thing');
-  jarl(root, 'evidence', '002', '--ran', 'npm test', '--saw', '12 pass');
-  jarl(root, 'evidence', '002', 'check green, merged abc1234');
-  const merged = jarl(root, 'show', '002');
+  jarl(root, 'evidence', '2', '--ran', 'npm test', '--saw', '12 pass');
+  jarl(root, 'evidence', '2', 'check green, merged abc1234');
+  const merged = jarl(root, 'show', '2');
   assert.match(merged, /\*\*ran:\*\* npm test · \*\*saw:\*\* 12 pass/, "the worker's row survives the merger's note");
   assert.match(merged, /merged abc1234/);
 });
@@ -468,15 +468,15 @@ test('repeated --ran/--saw in one call produce one row per pair, not a comma-joi
   const root = repo();
   jarl(root, 'init', 'goal');
   jarl(root, 'new', 'thing');
-  jarl(root, 'evidence', '001', '--ran', 'cmd one', '--saw', 'result one', '--ran', 'cmd two', '--saw', 'result two');
-  const shown = jarl(root, 'show', '001');
+  jarl(root, 'evidence', '1', '--ran', 'cmd one', '--saw', 'result one', '--ran', 'cmd two', '--saw', 'result two');
+  const shown = jarl(root, 'show', '1');
   assert.match(shown, /^- \[1\] \*\*ran:\*\* cmd one · \*\*saw:\*\* result one$/m);
   assert.match(shown, /^- \[2\] \*\*ran:\*\* cmd two · \*\*saw:\*\* result two$/m);
   const log = readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
-  assert.match(log, /001 evidence row · cmd one$/m);
-  assert.match(log, /001 evidence row · cmd two$/m);
-  assert.match(refuses(root, 'evidence', '001', '--ran', 'a', '--ran', 'b', '--saw', 'only one'), /must repeat the same number of times/);
-  assert.match(refuses(root, 'evidence', '001', '--ran', '--saw', 'x'), /needs both --ran/);
+  assert.match(log, /1 evidence row · cmd one$/m);
+  assert.match(log, /1 evidence row · cmd two$/m);
+  assert.match(refuses(root, 'evidence', '1', '--ran', 'a', '--ran', 'b', '--saw', 'only one'), /must repeat the same number of times/);
+  assert.match(refuses(root, 'evidence', '1', '--ran', '--saw', 'x'), /needs both --ran/);
 });
 
 // A real repository, not the fake .git directory repo() makes (gitRepo of the helpers): these tests ask git itself what it sees.
@@ -486,8 +486,8 @@ test('init keeps the loop out of git by default: .jarl/.gitignore holds exactly 
   jarl(root, 'init', 'goal');
   assert.equal(readFileSync(join(root, '.jarl', '.gitignore'), 'utf8'), '*\n**/*\n');
   jarl(root, 'new', 'thing', '--files', 'a.txt');
-  jarl(root, 'evidence', '001', '--ran', 'npm test', '--saw', '1 pass');
-  jarl(root, 'evidence', '001', 'merged abc1234');
+  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', '1 pass');
+  jarl(root, 'evidence', '1', 'merged abc1234');
   assert.equal(g('status', '--porcelain'), '', 'git status shows nothing from .jarl/');
   assert.equal(g('status', '--porcelain', '--untracked-files=all'), '', 'not even file by file');
   g('add', '-A');
@@ -505,10 +505,10 @@ test('init --committed ignores only the lock and temporary files, and git sees t
   assert.match(refuses(gitRepo().dir, 'init', 'goal', '--committed=yes'), /--committed takes no value/);
   assert.equal(readFileSync(join(root, '.jarl', '.gitignore'), 'utf8'), JARL_GITIGNORE_COMMITTED);
   jarl(root, 'new', 'thing');
-  jarl(root, 'evidence', '001', 'note');
+  jarl(root, 'evidence', '1', 'note');
   const seen = g('status', '--porcelain', '--untracked-files=all');
   assert.match(seen, /^\?\? \.jarl\/goal\.md$/m);
-  assert.match(seen, /^\?\? \.jarl\/issues\/001-thing\.md$/m);
+  assert.match(seen, /^\?\? \.jarl\/issues\/1-thing\.md$/m);
   g('add', '-A');
   assert.match(g('ls-files', '.jarl'), /\.jarl\/log\.md/);
   assert.match(refuses(root, 'init', 'again'), /already exists/);
@@ -526,10 +526,10 @@ test('init --permanent commits the loop and marks it as a record; close then kee
   assert.match(refuses(repo(), 'init', 'goal', '--permanent=yes'), /--permanent takes no value/);
   jarl(root, 'new', 'thing');
   assert.match(refuses(root, 'close'), /still open/, 'the open-issue refusal is unchanged in the permanent mode');
-  jarl(root, 'set', '001', 'dropped', 'out of scope');
+  jarl(root, 'set', '1', 'dropped', 'out of scope');
   jarl(root, 'close');
   assert.equal(existsSync(join(root, '.jarl')), true, 'a permanent loop keeps its directory once clean');
-  assert.equal(existsSync(join(root, '.jarl', 'issues', '001-thing.md')), true);
+  assert.equal(existsSync(join(root, '.jarl', 'issues', '1-thing.md')), true);
   assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /closed · kept as a permanent record/);
 });
 
@@ -543,7 +543,7 @@ test('mode permanent turns an existing committed loop into a permanent record; a
   assert.equal(readFileSync(join(root, '.jarl', '.gitignore'), 'utf8'), JARL_GITIGNORE_COMMITTED, 'still committed, as it always was');
   assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /mode → permanent/);
   jarl(root, 'new', 'thing');
-  jarl(root, 'set', '001', 'dropped', 'out of scope');
+  jarl(root, 'set', '1', 'dropped', 'out of scope');
   jarl(root, 'close');
   assert.equal(existsSync(join(root, '.jarl')), true, 'a loop switched to permanent keeps its directory on close, like one opened with init --permanent');
   assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /closed · kept as a permanent record/);
@@ -568,7 +568,7 @@ test('a branch loop, default or --committed, still removes the directory on clos
     const root = repo();
     jarl(root, 'init', 'goal', ...args);
     jarl(root, 'new', 'thing');
-    jarl(root, 'set', '001', 'dropped', 'out of scope');
+    jarl(root, 'set', '1', 'dropped', 'out of scope');
     jarl(root, 'close');
     assert.equal(existsSync(join(root, '.jarl')), false);
   }
@@ -588,55 +588,55 @@ test('check, branches and handoff read the repository an issue names, not the lo
     jarl(hub, 'new', 'change a', '--files', 'src/a.mjs,tests/a.test.mjs', '--repo', '../tool');
     jarl(hub, 'new', 'other', '--files', 'src/a.mjs');
     if (committed) sh(hub, 'git add -A && git commit -qm jarl');
-    sh(tool, `git worktree add -q -b jarl/001-change-a ${parent}/wt-001 && cd ${parent}/wt-001 && echo 'export const a = 2;' > src/a.mjs && printf 'assert.equal(1,1);\\nassert.equal(2,2);\\n' > tests/a.test.mjs && git add -A && git commit -qm work`);
+    sh(tool, `git worktree add -q -b jarl/1-change-a ${parent}/wt-1 && cd ${parent}/wt-1 && echo 'export const a = 2;' > src/a.mjs && printf 'assert.equal(1,1);\\nassert.equal(2,2);\\n' > tests/a.test.mjs && git add -A && git commit -qm work`);
     const mode = committed ? 'committed' : 'default';
 
     // The issue's Repo field: the branch, its base and its files all come from the tool repository.
-    const out = JSON.parse(jarl(hub, 'check', '001', '--branch', 'jarl/001-change-a', '--json'));
+    const out = JSON.parse(jarl(hub, 'check', '1', '--branch', 'jarl/1-change-a', '--json'));
     const byName = Object.fromEntries(out.items.map((i) => [i.name, i]));
     assert.equal(out.base, 'feature', `${mode}: the base is the tool repository's current branch, not the hub's`);
     assert.equal(out.mergeBase, sh(tool, 'git rev-parse feature'), mode);
     assert.equal(byName['commits beyond base'].ok, true, byName['commits beyond base'].note);
-    assert.match(byName['commits beyond base'].note, /^1 commit\(s\) on jarl\/001-change-a/);
+    assert.match(byName['commits beyond base'].note, /^1 commit\(s\) on jarl\/1-change-a/);
     assert.deepEqual(out.changed, ['src/a.mjs', 'tests/a.test.mjs']);
     assert.equal(byName['diff inside declared files'].ok, true, byName['diff inside declared files'].note);
     assert.equal(byName['assertions in touched tests'].note, '1 → 2');
     assert.equal(out.ok, true, mode);
-    assert.match(jarl(hub, 'show', '001'), /^\*\*Repo:\*\* \.\.\/tool$/m);
-    assert.doesNotMatch(jarl(hub, 'show', '002'), /\*\*Repo:\*\*/, 'an issue that names no repository carries no Repo line');
+    assert.match(jarl(hub, 'show', '1'), /^\*\*Repo:\*\* \.\.\/tool$/m);
+    assert.doesNotMatch(jarl(hub, 'show', '2'), /\*\*Repo:\*\*/, 'an issue that names no repository carries no Repo line');
 
     // --repo on the command does the same for an issue that names no repository; without it, the loop's own repository is read, as before.
-    assert.match(refuses(hub, 'check', '002', '--branch', 'jarl/001-change-a'), /no such branch/);
-    assert.equal(JSON.parse(jarl(hub, 'check', '002', '--branch', 'jarl/001-change-a', '--repo', '../tool', '--json')).ok, true, mode);
-    assert.match(refuses(hub, 'check', '001', '--branch', 'jarl/001-change-a', '--repo', '../nowhere'), /not a git repository/);
-    jarl(hub, 'repo', '002', '../tool');
-    assert.match(jarl(hub, 'show', '002'), /^\*\*Repo:\*\* \.\.\/tool$/m);
-    assert.equal(JSON.parse(jarl(hub, 'check', '002', '--branch', 'jarl/001-change-a', '--json')).base, 'feature', mode);
+    assert.match(refuses(hub, 'check', '2', '--branch', 'jarl/1-change-a'), /no such branch/);
+    assert.equal(JSON.parse(jarl(hub, 'check', '2', '--branch', 'jarl/1-change-a', '--repo', '../tool', '--json')).ok, true, mode);
+    assert.match(refuses(hub, 'check', '1', '--branch', 'jarl/1-change-a', '--repo', '../nowhere'), /not a git repository/);
+    jarl(hub, 'repo', '2', '../tool');
+    assert.match(jarl(hub, 'show', '2'), /^\*\*Repo:\*\* \.\.\/tool$/m);
+    assert.equal(JSON.parse(jarl(hub, 'check', '2', '--branch', 'jarl/1-change-a', '--json')).base, 'feature', mode);
 
     // branches lists the worker branch in the tool repository, and the hub's own listing stays empty.
     const rows = JSON.parse(jarl(hub, 'branches', '--repo', '../tool', '--json'));
-    assert.deepEqual(rows.map((r) => r.branch), ['jarl/001-change-a'], mode);
+    assert.deepEqual(rows.map((r) => r.branch), ['jarl/1-change-a'], mode);
     assert.equal(rows[0].ahead, 1);
-    assert.ok(rows[0].worktree.endsWith('wt-001'), rows[0].worktree);
+    assert.ok(rows[0].worktree.endsWith('wt-1'), rows[0].worktree);
     assert.equal(rows[0].dirty, 0);
     assert.equal(rows[0].repo, 'tool');
     // With no --repo, branches looks in the loop's own repository and in every repository an open issue names,
     // each row carrying the repository's name: the hub has no worker branches of its own, the tool repository has one.
     const all = JSON.parse(jarl(hub, 'branches', '--json'));
-    assert.deepEqual(all.map((r) => [r.repo, r.branch]), [['tool', 'jarl/001-change-a']], `${mode}: the worker branch in the tool repository is seen from the hub`);
-    assert.match(jarl(hub, 'branches'), /^\[tool\] jarl\/001-change-a → 001  \+1 /, mode);
+    assert.deepEqual(all.map((r) => [r.repo, r.branch]), [['tool', 'jarl/1-change-a']], `${mode}: the worker branch in the tool repository is seen from the hub`);
+    assert.match(jarl(hub, 'branches'), /^\[tool\] jarl\/1-change-a → 1  \+1 /, mode);
     // Once nothing open or in progress names the tool repository any more, the hub is left with its own.
-    jarl(hub, 'set', '001', 'dropped', 'not needed');
-    jarl(hub, 'set', '002', 'dropped', 'not needed');
+    jarl(hub, 'set', '1', 'dropped', 'not needed');
+    jarl(hub, 'set', '2', 'dropped', 'not needed');
     assert.deepEqual(JSON.parse(jarl(hub, 'branches', '--json')), [], `${mode}: the hub itself has no worker branches`);
-    jarl(hub, 'set', '001', 'open', 'back');
-    jarl(hub, 'set', '002', 'open', 'back');
+    jarl(hub, 'set', '1', 'open', 'back');
+    jarl(hub, 'set', '2', 'open', 'back');
 
     // resume shows where the tool repository stands, beside the hub's own tips.
-    jarl(hub, 'set', '001', 'in-progress', 'worker raised in tool', '--branch', 'jarl/001-change-a');
+    jarl(hub, 'set', '1', 'in-progress', 'worker raised in tool', '--branch', 'jarl/1-change-a');
     const res = jarl(hub, 'resume');
     assert.match(res, new RegExp(`^\\[tool\\] .*\\n(  .*\\n)*  release  feature ${sh(tool, 'git rev-parse --short=12 feature')}`, 'm'), `${mode}: the tool repository's tip is shown`);
-    assert.match(res, /^  feature  jarl\/001-change-a [0-9a-f]{12}  \+1\/-0 vs feature  not pushed  → 001$/m, mode);
+    assert.match(res, /^  feature  jarl\/1-change-a [0-9a-f]{12}  \+1\/-0 vs feature  not pushed  → 1$/m, mode);
 
     assert.equal(sh(tool, 'git status --porcelain --untracked-files=all'), '', `${mode}: the loop never writes into the tool repository`);
   }
@@ -666,12 +666,12 @@ test('next keeps the same path in two repositories apart and still holds a colli
   jarl(hub, 'new', 'same source file, same repository', '--repo', '../tool/', '--files', 'tool/src/a.mjs');
   jarl(hub, 'new', 'the hub\'s own changelog', '--files', 'CHANGELOG.md');
   jarl(hub, 'new', 'other repository again, behind the first one there', '--repo', '../other', '--files', 'other/CHANGELOG.md');
-  jarl(hub, 'set', '001', 'in-progress', 'worker raised in tool');
+  jarl(hub, 'set', '1', 'in-progress', 'worker raised in tool');
   const rows = JSON.parse(jarl(hub, 'next', '--all', '--json'));
-  assert.deepEqual(rows.filter((r) => r.ready).map((r) => r.id), ['002', '003', '005'], 'the same path in another repository never waits');
-  assert.deepEqual(rows.find((r) => r.id === '004').waitsOn, ['tool/src/a.mjs'], 'the same file in the same repository still waits, however the Repo path is spelled');
-  assert.deepEqual(rows.find((r) => r.id === '006').waitsOn, ['other/CHANGELOG.md'], 'two open issues on one file in one repository do not both run');
-  assert.match(jarl(hub, 'next', '--all'), /^004 {2}P2 {2}same source file, same repository {2}\(waits on tool\/src\/a\.mjs, held by 001\)$/m);
+  assert.deepEqual(rows.filter((r) => r.ready).map((r) => r.id), ['2', '3', '5'], 'the same path in another repository never waits');
+  assert.deepEqual(rows.find((r) => r.id === '4').waitsOn, ['tool/src/a.mjs'], 'the same file in the same repository still waits, however the Repo path is spelled');
+  assert.deepEqual(rows.find((r) => r.id === '6').waitsOn, ['other/CHANGELOG.md'], 'two open issues on one file in one repository do not both run');
+  assert.match(jarl(hub, 'next', '--all'), /^4 {2}P2 {2}same source file, same repository {2}\(waits on tool\/src\/a\.mjs, held by 1\)$/m);
 });
 
 test('check matches a changed file against the files an issue declares in its own repository', () => {
@@ -679,19 +679,19 @@ test('check matches a changed file against the files an issue declares in its ow
   jarl(hub, 'init', 'goal');
   jarl(hub, 'new', 'change a in tool', '--repo', '../tool', '--files', 'tool/src/a.mjs');
   jarl(hub, 'new', 'change b in tool', '--repo', '../tool', '--files', 'tool/src/b.mjs');
-  sh(tool, `git worktree add -q -b jarl/001-change-a-in-tool ${parent}/wt-001 && cd ${parent}/wt-001 && echo 'export const a = 2;' > src/a.mjs && printf 'assert.equal(1,1);\\nassert.equal(2,2);\\n' > tests/a.test.mjs && echo '- a' >> CHANGELOG.md && git add -A && git commit -qm work`);
+  sh(tool, `git worktree add -q -b jarl/1-change-a-in-tool ${parent}/wt-1 && cd ${parent}/wt-1 && echo 'export const a = 2;' > src/a.mjs && printf 'assert.equal(1,1);\\nassert.equal(2,2);\\n' > tests/a.test.mjs && echo '- a' >> CHANGELOG.md && git add -A && git commit -qm work`);
 
-  const out = JSON.parse(jarl(hub, 'check', '001', '--branch', 'jarl/001-change-a-in-tool', '--json'));
+  const out = JSON.parse(jarl(hub, 'check', '1', '--branch', 'jarl/1-change-a-in-tool', '--json'));
   const byName = Object.fromEntries(out.items.map((i) => [i.name, i]));
   assert.deepEqual(out.changed, ['CHANGELOG.md', 'src/a.mjs', 'tests/a.test.mjs']);
   assert.equal(byName['diff inside declared files'].ok, true, byName['diff inside declared files'].note);
   assert.equal(byName['diff inside declared files'].note, '3 file(s), all inside');
   assert.equal(out.ok, true);
-  assert.match(jarl(hub, 'check', '001', '--branch', 'jarl/001-change-a-in-tool'), /^✓ diff inside declared files — 3 file\(s\), all inside$/m);
+  assert.match(jarl(hub, 'check', '1', '--branch', 'jarl/1-change-a-in-tool'), /^✓ diff inside declared files — 3 file\(s\), all inside$/m);
 
   // Dropping the name does not widen the scope: another file of the same repository stays outside.
   let other;
-  try { jarl(hub, 'check', '002', '--branch', 'jarl/001-change-a-in-tool', '--json'); } catch (e) { other = JSON.parse(e.stdout); }
+  try { jarl(hub, 'check', '2', '--branch', 'jarl/1-change-a-in-tool', '--json'); } catch (e) { other = JSON.parse(e.stdout); }
   const otherByName = Object.fromEntries(other.items.map((i) => [i.name, i]));
   assert.equal(otherByName['diff inside declared files'].ok, false);
   assert.equal(otherByName['diff inside declared files'].note, 'outside tool/src/b.mjs: src/a.mjs');
@@ -713,12 +713,12 @@ test('review changes requires a Critical or Important finding; Minor alone is re
   const root = repo();
   jarl(root, 'init', 'goal');
   jarl(root, 'new', 'thing');
-  assert.match(refuses(root, 'review', '001', 'changes', '--by', 'rev', 'looks a bit off'), /needs at least one finding ranked/);
-  assert.match(refuses(root, 'review', '001', 'changes', '--by', 'rev', 'Minor: naming could be better'), /Minor alone goes to evidence/);
-  jarl(root, 'review', '001', 'changes', '--by', 'rev', 'Important: the new test never goes red');
-  jarl(root, 'evidence', '001', '--ran', 'npm test', '--saw', 'fixed');
-  jarl(root, 'review', '001', 'approve', '--by', 'rev', 'Minor: could still tidy the naming, but fine to land');
-  jarl(root, 'set', '001', 'done');
+  assert.match(refuses(root, 'review', '1', 'changes', '--by', 'rev', 'looks a bit off'), /needs at least one finding ranked/);
+  assert.match(refuses(root, 'review', '1', 'changes', '--by', 'rev', 'Minor: naming could be better'), /Minor alone goes to evidence/);
+  jarl(root, 'review', '1', 'changes', '--by', 'rev', 'Important: the new test never goes red');
+  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'fixed');
+  jarl(root, 'review', '1', 'approve', '--by', 'rev', 'Minor: could still tidy the naming, but fine to land');
+  jarl(root, 'set', '1', 'done');
 });
 
 // A loop is put away with `archive`, not deleted, and a new one opens in its place. Everything but
@@ -732,12 +732,12 @@ test('archive puts the loop away under .jarl/archive/<date>-<slug>/, and init op
   const out = JSON.parse(jarl(root, 'archive', 'first round', '--json'));
   const day = new Date().toISOString().slice(0, 10).replace(/-/g, '.');
   assert.equal(out.archived, join(root, '.jarl', 'archive', `${day}-first-round`));
-  assert.deepEqual(out.leftOpen, ['001']);
+  assert.deepEqual(out.leftOpen, ['1']);
   for (const f of ['goal.md', 'log.md', 'decisions.md', 'issues']) {
     assert.ok(existsSync(join(out.archived, f)), `${f} moved into the archive`);
     assert.ok(!existsSync(join(root, '.jarl', f)), `${f} is no longer live`);
   }
-  assert.match(readFileSync(join(out.archived, 'log.md'), 'utf8'), /archived → \.jarl\/archive\/.*first-round · 1 still open or in progress: 001/);
+  assert.match(readFileSync(join(out.archived, 'log.md'), 'utf8'), /archived → \.jarl\/archive\/.*first-round · 1 still open or in progress: 1/);
   assert.equal(readFileSync(join(root, '.jarl', '.gitignore'), 'utf8'), '*\n**/*\n', 'the mode marker stays');
 
   assert.match(refuses(root, 'new', 'into nothing'), /no live loop here — \.jarl\/ holds only archived loops/);
@@ -745,7 +745,7 @@ test('archive puts the loop away under .jarl/archive/<date>-<slug>/, and init op
   assert.match(refuses(root, 'archive', 'again'), /holds only earlier archives/);
 
   assert.match(jarl(root, 'init', 'second goal'), /kept out of git/);
-  assert.match(jarl(root, 'new', 'fresh work'), /filed 001/);
+  assert.match(jarl(root, 'new', 'fresh work'), /filed 1/);
   const status = jarl(root, 'status');
   assert.match(status, /^goal: second goal$/m);
   assert.match(status, /opened \d{4}-\d{2}-\d{2} \d{2}:\d{2} · last activity \d{4}-\d{2}-\d{2} \d{2}:\d{2} · 1 archived loop\(s\)/);
@@ -771,15 +771,15 @@ test('20 parallel evidence calls land 20 rows and 20 log lines; 10 parallel new 
   const root = repo();
   jarl(root, 'init', 'goal');
   jarl(root, 'new', 'target');
-  await Promise.all(Array.from({ length: 20 }, (_, n) => jarlAsync(root, 'evidence', '001', '--ran', `w${n}`, '--saw', 'ok')));
-  const shown = jarl(root, 'show', '001');
+  await Promise.all(Array.from({ length: 20 }, (_, n) => jarlAsync(root, 'evidence', '1', '--ran', `w${n}`, '--saw', 'ok')));
+  const shown = jarl(root, 'show', '1');
   assert.equal((shown.match(/^- \[\d+\] \*\*ran:\*\* w\d+ · \*\*saw:\*\* ok$/gm) || []).length, 20);
   const log = readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
-  assert.equal((log.match(/· 001 evidence row · w\d+$/gm) || []).length, 20);
+  assert.equal((log.match(/· 1 evidence row · w\d+$/gm) || []).length, 20);
   const filed = await Promise.all(Array.from({ length: 10 }, (_, n) => jarlAsync(root, 'new', `parallel ${n}`, '--json')));
   const ids = filed.map((r) => JSON.parse(r.stdout).id);
   assert.equal(new Set(ids).size, 10, `distinct ids, got ${ids.join(' ')}`);
-  assert.deepEqual([...ids].sort(), ['002', '003', '004', '005', '006', '007', '008', '009', '010', '011']);
+  assert.deepEqual([...ids].sort((a, b) => Number(a) - Number(b)), ['2', '3', '4', '5', '6', '7', '8', '9', '10', '11']);
   assert.equal(existsSync(join(root, '.jarl', '.lock')), false, 'the lock is released after every call');
   const { readdirSync } = await import('node:fs');
   assert.deepEqual(readdirSync(join(root, '.jarl', 'issues')).filter((f) => f.endsWith('.tmp')), [], 'no temporary file is left behind');
@@ -793,18 +793,18 @@ test('a lock left by a process that is gone is broken; a live holder makes the c
   const { hostname } = await import('node:os');
   // A pid that cannot be running (above the kernel's pid range).
   writeFileSync(lock, `99999999 ${hostname()} 2026-01-01T00:00:00.000Z\n`);
-  jarl(root, 'evidence', '001', 'after a crash');
-  assert.match(jarl(root, 'show', '001'), /after a crash/);
+  jarl(root, 'evidence', '1', 'after a crash');
+  assert.match(jarl(root, 'show', '1'), /after a crash/);
   assert.equal(existsSync(lock), false);
   // A live holder (this test's own process) that does not let go: the call waits out its limit, then refuses.
   const { withLock } = await import(new URL('../jarl.mjs', import.meta.url).href);
   writeFileSync(lock, `${process.pid} ${hostname()} ${new Date().toISOString()}\n`);
   const env = { ...process.env, JARL_LOCK_WAIT_MS: '300' };
   let err;
-  try { execFileSync(process.execPath, [SCRIPT, 'evidence', '001', 'blocked', '--root', root], { encoding: 'utf8', env, stdio: 'pipe', timeout: SPAWN_TIMEOUT }); } catch (e) { err = e; }
+  try { execFileSync(process.execPath, [SCRIPT, 'evidence', '1', 'blocked', '--root', root], { encoding: 'utf8', env, stdio: 'pipe', timeout: SPAWN_TIMEOUT }); } catch (e) { err = e; }
   assert.ok(err, 'a held lock refuses instead of writing without it');
   assert.match(String(err.stderr), new RegExp(`\\.jarl/\\.lock is held by another jarl\\.mjs \\(${process.pid} .*\\) — nothing was written`));
-  assert.doesNotMatch(jarl(root, 'show', '001'), /blocked/);
+  assert.doesNotMatch(jarl(root, 'show', '1'), /blocked/);
   assert.equal(typeof withLock, 'function');
 });
 
@@ -815,27 +815,27 @@ test('a value flag takes the next argument whatever it starts with; -- ends the 
   jarl(root, 'init', 'goal');
   jarl(root, 'new', 'target');
   // --ran "--help" is a row, not a request for the usage text.
-  assert.equal(jarl(root, 'evidence', '001', '--ran', '--help', '--saw', 'usage'), '001 evidence row recorded');
-  jarl(root, 'evidence', '001', '--ran', 'yg check', '--saw', '--- FAIL: 3 pairs');
-  jarl(root, 'evidence', '001', '--ran=go test ./...', '--saw=ok=all');
+  assert.equal(jarl(root, 'evidence', '1', '--ran', '--help', '--saw', 'usage'), '1 evidence row recorded');
+  jarl(root, 'evidence', '1', '--ran', 'yg check', '--saw', '--- FAIL: 3 pairs');
+  jarl(root, 'evidence', '1', '--ran=go test ./...', '--saw=ok=all');
   const raw = (...args) => execFileSync(process.execPath, [SCRIPT, '--root', root, ...args], { encoding: 'utf8', timeout: SPAWN_TIMEOUT }).trim();
-  raw('evidence', '001', '--', '--json prints ok');
+  raw('evidence', '1', '--', '--json prints ok');
   // A --root written after the bare -- is an argument, and a surplus one is refused rather than dropped.
-  assert.match(refuses(root, 'evidence', '001', '--', 'x'), /unexpected: "--root".*flags such as --root go before it/s);
+  assert.match(refuses(root, 'evidence', '1', '--', 'x'), /unexpected: "--root".*flags such as --root go before it/s);
   assert.match(refuses(root, 'set', '1', '2', 'done', 'why'), /set takes at most 3 arguments — unexpected: "why".*12,13/s);
-  const shown = jarl(root, 'show', '001');
+  const shown = jarl(root, 'show', '1');
   assert.match(shown, /^- \[1\] \*\*ran:\*\* --help · \*\*saw:\*\* usage$/m);
   assert.match(shown, /^- \[2\] \*\*ran:\*\* yg check · \*\*saw:\*\* --- FAIL: 3 pairs$/m);
   assert.match(shown, /^- \[3\] \*\*ran:\*\* go test \.\/\.\.\. · \*\*saw:\*\* ok=all$/m);
   assert.match(shown, /^--json prints ok$/m);
-  assert.match(raw('new', '--', '--json output drops key'), /^filed 002 /);
+  assert.match(raw('new', '--', '--json output drops key'), /^filed 2 /);
   // Refused loudly, naming what the command takes.
   assert.match(refuses(root, 'new', 'd', '--kidn', 'gap'), /unknown flag --kidn for new — it takes .*--kind/);
-  assert.match(refuses(root, 'evidence', '001', '--json prints ok'), /unknown flag --json prints ok for evidence.*bare --/s);
-  assert.throws(() => raw('evidence', '001', '--ran'), (e) => /--ran needs a value/.test(String(e.stderr)));
+  assert.match(refuses(root, 'evidence', '1', '--json prints ok'), /unknown flag --json prints ok for evidence.*bare --/s);
+  assert.throws(() => raw('evidence', '1', '--ran'), (e) => /--ran needs a value/.test(String(e.stderr)));
   assert.match(refuses(root, 'new', 'x', '--kind', 'bug', '--kind', 'gap'), /--kind given twice/);
   assert.match(refuses(root, 'list', '--all=yes'), /--all takes no value/);
-  assert.match(refuses(root, 'evidence', '001', 'note', '--ran', 'a', '--saw', 'b'), /not both/);
+  assert.match(refuses(root, 'evidence', '1', 'note', '--ran', 'a', '--saw', 'b'), /not both/);
   assert.match(refuses(root, '--kind', 'bug', 'new', 'x'), /before the command/);
   assert.match(refuses(root, 'frobnicate'), /unknown command: frobnicate/);
   // Nothing refused above wrote anything.
@@ -863,23 +863,23 @@ test('evidence, review, set, tag and prio take a comma list with ranges, all or 
   jarl(root, 'init', 'goal');
   for (const t of ['a', 'b', 'c', 'd', 'e']) jarl(root, 'new', t);
   // A four-issue package closes in four calls.
-  assert.equal(jarl(root, 'evidence', '1-3,5', '--ran', 'npm test', '--saw', 'pass 40'), '001 evidence row recorded\n002 evidence row recorded\n003 evidence row recorded\n005 evidence row recorded');
+  assert.equal(jarl(root, 'evidence', '1-3,5', '--ran', 'npm test', '--saw', 'pass 40'), '1 evidence row recorded\n2 evidence row recorded\n3 evidence row recorded\n5 evidence row recorded');
   jarl(root, 'review', '1-3,5', 'approve', '--by', 'rev', 'read the diff, nothing found');
-  jarl(root, 'evidence', '001,002,003,005', 'merged abc1234');
-  assert.equal(jarl(root, 'set', '1-3,5', 'done', 'merged abc1234'), '001 → done\n002 → done\n003 → done\n005 → done');
+  jarl(root, 'evidence', '1,2,3,5', 'merged abc1234');
+  assert.equal(jarl(root, 'set', '1-3,5', 'done', 'merged abc1234'), '1 → done\n2 → done\n3 → done\n5 → done');
   const rows = JSON.parse(jarl(root, 'list', '--all', '--json'));
-  assert.deepEqual(rows.filter((r) => r.status === 'done').map((r) => r.id), ['001', '002', '003', '005']);
+  assert.deepEqual(rows.filter((r) => r.status === 'done').map((r) => r.id), ['1', '2', '3', '5']);
   const log = readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
-  assert.equal((log.match(/· 00[1235] → done · merged abc1234$/gm) || []).length, 4, 'one log line per issue');
-  assert.equal((log.match(/· 00[1235] review approve · /gm) || []).length, 4);
+  assert.equal((log.match(/· [1235] → done · merged abc1234$/gm) || []).length, 4, 'one log line per issue');
+  assert.equal((log.match(/· [1235] review approve · /gm) || []).length, 4);
   // tag and prio.
   jarl(root, 'tag', '4,5', '+later', '-none');
   jarl(root, 'prio', '4-5', '1');
-  const [d, e] = ['004', '005'].map((id) => jarl(root, 'show', id));
+  const [d, e] = ['4', '5'].map((id) => jarl(root, 'show', id));
   for (const t of [d, e]) { assert.match(t, /^\*\*Tags:\*\* later$/m); assert.match(t, /^\*\*Priority:\*\* 1$/m); }
   // A JSON caller gets an array for a list, the old object for one id.
   assert.ok(Array.isArray(JSON.parse(jarl(root, 'prio', '4,5', '2', '--json'))));
-  assert.equal(JSON.parse(jarl(root, 'prio', '4', '3', '--json')).id, '004');
+  assert.equal(JSON.parse(jarl(root, 'prio', '4', '3', '--json')).id, '4');
 });
 
 test('a bulk call with one bad id, or one issue failing its precondition, writes nothing at all', () => {
@@ -888,13 +888,13 @@ test('a bulk call with one bad id, or one issue failing its precondition, writes
   for (const t of ['a', 'b']) jarl(root, 'new', t);
   const before = () => [readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), jarl(root, 'show', '1'), jarl(root, 'show', '2')].join('\n');
   const snap = before();
-  assert.match(refuses(root, 'evidence', '1,2,9', 'note'), /no such issue: 009 — nothing was written/);
-  assert.match(refuses(root, 'tag', '1-3', '+x'), /no such issue: 003/);
+  assert.match(refuses(root, 'evidence', '1,2,9', 'note'), /no such issue: 9 — nothing was written/);
+  assert.match(refuses(root, 'tag', '1-3', '+x'), /no such issue: 3/);
   assert.match(refuses(root, 'set', '1,2', 'bogus'), /status must be one of/);
-  // 001 is ready for done, 002 is not: neither moves.
+  // 1 is ready for done, 2 is not: neither moves.
   jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'proof');
   jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
-  assert.match(refuses(root, 'set', '1,2', 'done'), /002 has no evidence yet.*nothing was written/s);
+  assert.match(refuses(root, 'set', '1,2', 'done'), /2 has no evidence yet.*nothing was written/s);
   assert.match(jarl(root, 'show', '1'), /^\*\*Status:\*\* open$/m);
   assert.match(refuses(root, 'prio', '1,x', '1'), /not an issue id: "x"/);
   assert.match(refuses(root, 'prio', '5-2', '1'), /runs backwards/);
@@ -911,10 +911,10 @@ test('a committed loop keeps the lock and temporary files out of git; an older c
     writeFileSync(join(root, '.jarl', '.lock'), '1 host 2026-01-01\n');
     writeFileSync(join(root, '.jarl', '.lock.break'), '');
     writeFileSync(join(root, '.jarl', '.log.md.123.tmp'), '');
-    writeFileSync(join(root, '.jarl', 'issues', '.002.123.tmp'), '');
+    writeFileSync(join(root, '.jarl', 'issues', '.2.123.tmp'), '');
     g('add', '-A');
     const staged = g('ls-files', '.jarl').split('\n');
-    assert.ok(staged.includes('.jarl/.gitignore') && staged.includes('.jarl/issues/001-thing.md') && staged.includes('.jarl/log.md'), `${mode}: the loop is committed`);
+    assert.ok(staged.includes('.jarl/.gitignore') && staged.includes('.jarl/issues/1-thing.md') && staged.includes('.jarl/log.md'), `${mode}: the loop is committed`);
     assert.deepEqual(staged.filter((f) => /lock|\.tmp$/.test(f)), [], `${mode}: the lock and temp files are not`);
   }
   // A committed loop opened before the narrow file existed has no ignore file at all.
@@ -944,25 +944,25 @@ test('many callers on a lock left by a dead process: one breaks it, none loses a
   const { utimesSync, readdirSync } = await import('node:fs');
   const lock = join(root, '.jarl', '.lock');
   writeFileSync(lock, `99999999 ${hostname()} 2026-01-01T00:00:00.000Z\n`);
-  await Promise.all(Array.from({ length: 20 }, (_, n) => jarlAsync(root, 'evidence', '001', '--ran', `b${n}`, '--saw', 'ok')));
-  assert.equal((jarl(root, 'show', '001').match(/^- \[\d+\] \*\*ran:\*\* b\d+ · /gm) || []).length, 20);
-  assert.equal((readFileSync(join(root, '.jarl', 'log.md'), 'utf8').match(/· 001 evidence row · b\d+$/gm) || []).length, 20);
+  await Promise.all(Array.from({ length: 20 }, (_, n) => jarlAsync(root, 'evidence', '1', '--ran', `b${n}`, '--saw', 'ok')));
+  assert.equal((jarl(root, 'show', '1').match(/^- \[\d+\] \*\*ran:\*\* b\d+ · /gm) || []).length, 20);
+  assert.equal((readFileSync(join(root, '.jarl', 'log.md'), 'utf8').match(/· 1 evidence row · b\d+$/gm) || []).length, 20);
   assert.deepEqual(readdirSync(join(root, '.jarl')).filter((f) => f.startsWith('.lock')), [], 'neither the lock nor the breaker lock is left');
   // A holder that died between creating the lock and writing its name: empty, and broken once two seconds old.
   writeFileSync(lock, '');
   const old = new Date(Date.now() - 5_000);
   utimesSync(lock, old, old);
   const t0 = Date.now();
-  jarl(root, 'evidence', '001', 'after an empty lock');
+  jarl(root, 'evidence', '1', 'after an empty lock');
   assert.ok(Date.now() - t0 < 10_000, 'well inside the wait limit');
-  assert.match(jarl(root, 'show', '001'), /after an empty lock/);
+  assert.match(jarl(root, 'show', '1'), /after an empty lock/);
   // A breaker that died holding the breaker lock does not block for good.
   writeFileSync(lock, `99999999 ${hostname()} 2026-01-01T00:00:00.000Z\n`);
   writeFileSync(join(root, '.jarl', '.lock.break'), '');
   const older = new Date(Date.now() - 60_000);
   utimesSync(join(root, '.jarl', '.lock.break'), older, older);
-  jarl(root, 'evidence', '001', 'after a dead breaker');
-  assert.match(jarl(root, 'show', '001'), /after a dead breaker/);
+  jarl(root, 'evidence', '1', 'after a dead breaker');
+  assert.match(jarl(root, 'show', '1'), /after a dead breaker/);
 });
 
 test('new claims its file with a hard link, and without hard links falls back to an exclusive create', async () => {
@@ -970,20 +970,20 @@ test('new claims its file with a hard link, and without hard links falls back to
   const dir = mkdtempSync(join(tmpdir(), 'jarl-claim-'));
   const tmp = join(dir, '.tmp'); writeFileSync(tmp, 'body');
   const noLinks = () => { const e = new Error('no links'); e.code = 'EPERM'; throw e; };
-  assert.equal(claimFile(tmp, join(dir, '001-a.md'), noLinks), true);
-  assert.equal(readFileSync(join(dir, '001-a.md'), 'utf8'), 'body');
-  assert.equal(claimFile(tmp, join(dir, '001-a.md'), noLinks), false, 'a taken name is not overwritten');
-  assert.equal(claimFile(tmp, join(dir, '002-b.md')), true);
-  assert.equal(claimFile(tmp, join(dir, '002-b.md')), false);
+  assert.equal(claimFile(tmp, join(dir, '1-a.md'), noLinks), true);
+  assert.equal(readFileSync(join(dir, '1-a.md'), 'utf8'), 'body');
+  assert.equal(claimFile(tmp, join(dir, '1-a.md'), noLinks), false, 'a taken name is not overwritten');
+  assert.equal(claimFile(tmp, join(dir, '2-b.md')), true);
+  assert.equal(claimFile(tmp, join(dir, '2-b.md')), false);
   const other = () => { const e = new Error('disk'); e.code = 'EIO'; throw e; };
-  assert.throws(() => claimFile(tmp, join(dir, '003-c.md'), other), /disk/);
+  assert.throws(() => claimFile(tmp, join(dir, '3-c.md'), other), /disk/);
 });
 
 test('a command refused by the parser or its own checks does not backfill the ignore file', () => {
   const root = repo();
   jarl(root, 'init', 'goal', '--committed');
   rmSync(join(root, '.jarl', '.gitignore'));
-  refuses(root, 'evidence', '001', '--bogus');
+  refuses(root, 'evidence', '1', '--bogus');
   assert.equal(existsSync(join(root, '.jarl', '.gitignore')), false, 'the parser refused before any lock');
   refuses(root, 'set', '999', 'done');
   assert.equal(existsSync(join(root, '.jarl', '.gitignore')), false, 'a command refused under the lock writes nothing');
@@ -1000,7 +1000,7 @@ test('new writes the body at filing time, body replaces it later, and neither is
   jarl(root, 'init', 'goal');
   jarl(root, 'new', 'with a body', '--where', 'src/a.mjs:12', '--what', 'the parser drops the last row', '--why', 'exports lose data',
     '--acceptance', 'npm test -- parser passes', '--acceptance', 'fixture 3 exports 10 rows');
-  const shown = jarl(root, 'show', '001');
+  const shown = jarl(root, 'show', '1');
   assert.match(shown, /^\*\*Where:\*\* src\/a\.mjs:12$/m);
   assert.match(shown, /## What\nthe parser drops the last row\n\n## Why\nexports lose data\n\n## Acceptance\n- npm test -- parser passes\n- fixture 3 exports 10 rows\n\n## Evidence/);
   // A body line that looks like a heading stays inside its section.
@@ -1012,7 +1012,7 @@ test('new writes the body at filing time, body replaces it later, and neither is
   // A bare ## line is escaped too.
   jarl(root, 'body', '1', '--why', 'a\n##\nb');
   assert.match(JSON.parse(jarl(root, 'show', '1', '--json')).sections.why, /^a\n\\##\nb/);
-  assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /001 body · what/);
+  assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /1 body · what/);
   // Without any of it, an issue reads exactly as before.
   jarl(root, 'new', 'bare');
   assert.match(jarl(root, 'show', '2', '--full'), /\*\*Where:\*\*\n\n## What\n\n\n## Why\n\n\n## Acceptance\n\n\n## Evidence$/);
@@ -1025,15 +1025,15 @@ test('next and status flag work with no acceptance line, done says so on stderr,
   jarl(root, 'new', 'has acceptance', '--acceptance', 'a', '--acceptance', 'b');
   const next = JSON.parse(jarl(root, 'next', '--json'));
   assert.equal(next[0].noAcceptance, true); assert.equal(next[1].noAcceptance, undefined);
-  assert.match(jarl(root, 'next'), /001 {2}P2 {2}no acceptance {2}\(no acceptance yet\)/);
+  assert.match(jarl(root, 'next'), /1 {2}P2 {2}no acceptance {2}\(no acceptance yet\)/);
   jarl(root, 'set', '1,2', 'in-progress', 'raised');
-  assert.match(jarl(root, 'status'), /in flight with no acceptance line: 001$/m);
-  assert.match(jarl(root, 'review', '2', 'approve', '--by', 'rev', FINDINGS), /002 review approve by rev \(fresh\) · acceptance: - a \/ - b/);
+  assert.match(jarl(root, 'status'), /in flight with no acceptance line: 1$/m);
+  assert.match(jarl(root, 'review', '2', 'approve', '--by', 'rev', FINDINGS), /2 review approve by rev \(fresh\) · acceptance: - a \/ - b/);
   jarl(root, 'evidence', '2', '--ran', 'x', '--saw', 'y');
   const r = execFileSync(process.execPath, [SCRIPT, 'set', '2', 'done', 'merged', '--root', root], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: SPAWN_TIMEOUT });
-  assert.equal(r.trim(), '002 → done', 'stdout is unchanged');
+  assert.equal(r.trim(), '2 → done', 'stdout is unchanged');
   const child = (() => { try { return sh(tmpdir(), `node ${SCRIPT} review 1 approve --by rev "${FINDINGS}" --root ${root} >/dev/null && node ${SCRIPT} evidence 1 --ran t --saw ok --root ${root} >/dev/null && node ${SCRIPT} set 1 done m --root ${root} 2>&1 >/dev/null`); } catch (e) { return String(e.stdout); } })();
-  assert.match(child, /note: 001 no acceptance line on file/, 'done is never refused for it, only noted');
+  assert.match(child, /note: 1 no acceptance line on file/, 'done is never refused for it, only noted');
 });
 
 const FLAT = [
@@ -1054,7 +1054,7 @@ test('import files one issue per finding with a Source, never twice, and keeps E
   const dry = JSON.parse(jarl(root, 'import', file, '--source', 'core/research/2026-09-25-jarl', '--dry-run', '--json'));
   assert.equal(dry.filed.length, 2); assert.equal(JSON.parse(jarl(root, 'list', '--all', '--json')).length, 0, 'a dry run files nothing');
   const out = JSON.parse(jarl(root, 'import', file, '--source', 'core/research/2026-09-25-jarl', '--tags', 'research', '--json'));
-  assert.deepEqual(out.filed.map((f) => [f.id, f.finding, f.kind, f.priority]), [['001', 'jarl-2-B2', 'bug', '1'], ['002', 'jarl-2-B5', 'gap', '3']]);
+  assert.deepEqual(out.filed.map((f) => [f.id, f.finding, f.kind, f.priority]), [['1', 'jarl-2-B2', 'bug', '1'], ['2', 'jarl-2-B5', 'gap', '3']]);
   const one = JSON.parse(jarl(root, 'show', '1', '--json'));
   assert.equal(one.fields.source, 'core/research/2026-09-25-jarl#jarl-2-B2');
   assert.equal(one.fields.where, 'jarl.mjs:297');
@@ -1073,7 +1073,7 @@ test('import files one issue per finding with a Source, never twice, and keeps E
   assert.deepEqual([o2.filed[0].kind, o2.filed[0].priority], ['docs', '3']);
   const sources = jarl(root, 'sources', file, '--source', 'core/research/2026-09-25-jarl');
   assert.match(sources, /^core\/research\/2026-09-25-jarl · 2 finding\(s\) · 2 filed · 0 unfiled · issues: open 2$/m);
-  assert.match(sources, /^ {2}jarl-2-B2 {2}001 open$/m);
+  assert.match(sources, /^ {2}jarl-2-B2 {2}1 open$/m);
   const all = JSON.parse(jarl(root, 'sources', '--json'));
   assert.deepEqual(all.map((r) => r.source).sort(), ['core/research/2026-09-25-jarl', 'core/research/2026-09-25-other', 'r2']);
 });
@@ -1108,7 +1108,7 @@ test('import --adopt links older issues that name the finding, once, without fil
   const file = findingsDir([...FLAT, { id: 'jarl-9-Z9', title: 'z' }, { id: 'jarl-2-B20', title: 'no one names me' }]);
   assert.match(jarl(root, 'import', file, '--source', 'r'), /filed 1 · already filed 0 · named by an issue without Source 3/);
   const o = JSON.parse(jarl(root, 'import', file, '--source', 'r', '--adopt', '--json'));
-  assert.deepEqual(o.adopted.map((a) => [a.finding, a.issue]), [['jarl-2-B2', '001'], ['jarl-2-B5', '002'], ['jarl-9-Z9', '002']]);
+  assert.deepEqual(o.adopted.map((a) => [a.finding, a.issue]), [['jarl-2-B2', '1'], ['jarl-2-B5', '2'], ['jarl-9-Z9', '2']]);
   assert.equal(JSON.parse(jarl(root, 'show', '2', '--json')).fields.source, 'r#jarl-2-B5, r#jarl-9-Z9');
   assert.match(jarl(root, 'import', file, '--source', 'r'), /filed 0 · already filed 4/);
 });
@@ -1118,18 +1118,18 @@ test('ask --kind ratify blocks nothing, is listed in status and the handoff, and
   jarl(root, 'init', 'goal');
   jarl(root, 'new', 'limit raised');
   jarl(root, 'set', '1', 'in-progress', 'w');
-  assert.match(jarl(root, 'ask', 'raised the prompt limit to 96000 under the mandate', '--kind', 'ratify', '--issue', '1'), /filed a-001 for ratification · blocks nothing/);
+  assert.match(jarl(root, 'ask', 'raised the prompt limit to 96000 under the mandate', '--kind', 'ratify', '--issue', '1'), /filed a-1 for ratification · blocks nothing/);
   assert.match(refuses(root, 'ask', 'x', '--kind', 'ratify', '--issue', '9'), /no such issue: 9/);
   const st = jarl(root, 'status');
   assert.match(st, /questions 0 · to ratify 1/);
-  assert.match(st, /^ratify a-001 \(issue 001\) · raised the prompt limit/m);
-  assert.match(jarl(root, 'resume'), /## Questions to the user \(0\)\n- \(nothing\)\n\n## To ratify \(1\)\n- a-001 \(issue 001\) · raised/);
+  assert.match(st, /^ratify a-1 \(issue 1\) · raised the prompt limit/m);
+  assert.match(jarl(root, 'resume'), /## Questions to the user \(0\)\n- \(nothing\)\n\n## To ratify \(1\)\n- a-1 \(issue 1\) · raised/);
   // It holds nothing back: next, done.
   jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
   jarl(root, 'evidence', '1', '--ran', 'check', '--saw', 'green');
   jarl(root, 'set', '1', 'done', 'merged');
-  jarl(root, 'answer', 'a-001', 'ratified');
-  assert.match(jarl(root, 'show', '1'), /Ruling ask-001 \(ratify\): ratified/);
+  jarl(root, 'answer', 'a-1', 'ratified');
+  assert.match(jarl(root, 'show', '1'), /Ruling ask-1 \(ratify\): ratified/);
   assert.match(jarl(root, 'status'), /questions 0$/m);
 });
 
@@ -1144,38 +1144,38 @@ test('After holds an issue out of next and counts it as waiting; decide --settle
   const st = JSON.parse(jarl(root, 'status', '--json'));
   assert.deepEqual([st.open, st['in-progress'], st.waiting], [3, 2, 3], 'the status counts stay counts of statuses');
   const next = jarl(root, 'next', '--all');
-  assert.match(next, /^005 {2}P2 {2}after the release {2}\(after 001\)$/m);
-  assert.match(next, /^001 {2}P2 {2}release/m);
+  assert.match(next, /^5 {2}P2 {2}after the release {2}\(after 1\)$/m);
+  assert.match(next, /^1 {2}P2 {2}release/m);
   assert.match(refuses(root, 'after', '1', '5'), /would close a cycle/);
   assert.match(refuses(root, 'after', '1', '1'), /cannot wait on itself/);
-  assert.match(refuses(root, 'new', 'x', '--after', '99'), /no such issue: 099/);
+  assert.match(refuses(root, 'new', 'x', '--after', '99'), /no such issue: 99/);
   jarl(root, 'set', '1', 'dropped', 'not this release');
   assert.match(jarl(root, 'status'), /in flight 2 · done/);
-  assert.match(jarl(root, 'next'), /^005 {2}P2 {2}after the release/m, 'dropping 001 releases 005: it is listed as ready');
+  assert.match(jarl(root, 'next'), /^5 {2}P2 {2}after the release/m, 'dropping 1 releases 5: it is listed as ready');
   assert.doesNotMatch(jarl(root, 'next', '--all'), /Waiting on After/, 'and no issue is left in the waiting group');
   jarl(root, 'after', '5', '--clear');
   assert.equal(JSON.parse(jarl(root, 'show', '5', '--json')).fields.after, undefined);
   // A ruling names what it settles: the ruling goes into each issue's evidence, the status stays.
-  assert.match(jarl(root, 'decide', 'numbers', 'the core ships on one number', '--settles', '4'), /decided numbers · by owner · written into 004/);
+  assert.match(jarl(root, 'decide', 'numbers', 'the core ships on one number', '--settles', '4'), /decided numbers · by owner · written into 4/);
   const four = JSON.parse(jarl(root, 'show', '4', '--json'));
   assert.equal(four.status, 'open');
   assert.match(four.sections.evidence, /Ruling numbers: the core ships on one number/);
-  assert.match(readFileSync(join(root, '.jarl', 'decisions.md'), 'utf8'), /the core ships on one number\n\n\*\*Settles:\*\* 004/);
-  assert.match(refuses(root, 'decide', 'other', 'x', '--settles', '4,77'), /no such issue: 077/);
+  assert.match(readFileSync(join(root, '.jarl', 'decisions.md'), 'utf8'), /the core ships on one number\n\n\*\*Settles:\*\* 4/);
+  assert.match(refuses(root, 'decide', 'other', 'x', '--settles', '4,77'), /no such issue: 77/);
   assert.doesNotMatch(readFileSync(join(root, '.jarl', 'decisions.md'), 'utf8'), /other/, 'a refused ruling writes nothing');
 });
 
 test('an issue file from before these fields reads and moves unchanged', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
-  const old = '# 001 · old one\n\n**Status:** open\n**Kind:** bug\n**Priority:** 1\n**Tier:** standard\n**Tags:** \n**Files:** a.mjs\n**Found by:** jarl\n**Where:**\n\n## What\n\n\n## Why\n\n\n## Acceptance\n\n\n## Evidence\n\n';
-  writeFileSync(join(root, '.jarl', 'issues', '001-old-one.md'), old);
+  const old = '# 1 · old one\n\n**Status:** open\n**Kind:** bug\n**Priority:** 1\n**Tier:** standard\n**Tags:** \n**Files:** a.mjs\n**Found by:** jarl\n**Where:**\n\n## What\n\n\n## Why\n\n\n## Acceptance\n\n\n## Evidence\n\n';
+  writeFileSync(join(root, '.jarl', 'issues', '1-old-one.md'), old);
   const i = JSON.parse(jarl(root, 'show', '1', '--json'));
   assert.deepEqual([i.after, i.sources], [[], []]);
-  assert.match(jarl(root, 'next'), /^001 {2}P1 {2}old one/);
+  assert.match(jarl(root, 'next'), /^1 {2}P1 {2}old one/);
   assert.match(jarl(root, 'status'), /open 1 · in flight 0 · done 0/);
   jarl(root, 'source', '1', 'r#A-1');
-  assert.match(readFileSync(join(root, '.jarl', 'issues', '001-old-one.md'), 'utf8'), /\*\*Where:\*\*\n\*\*Source:\*\* r#A-1\n\n## What/);
+  assert.match(readFileSync(join(root, '.jarl', 'issues', '1-old-one.md'), 'utf8'), /\*\*Where:\*\*\n\*\*Source:\*\* r#A-1\n\n## What/);
 });
 
 test('replacement patterns in user text are written as they are: $1, $&, $\' and $` never expand', () => {
@@ -1198,12 +1198,12 @@ test('done: a ruling, a drop reason or a free-text note alone is not evidence; a
   jarl(root, 'new', 'settled', '--acceptance', 'npm test passes', '--acceptance', 'docs say so');
   jarl(root, 'decide', 'rule', 'keep it', '--settles', '1');
   jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
-  assert.match(refuses(root, 'set', '1', 'done', 'x'), /001 has no evidence yet/);
+  assert.match(refuses(root, 'set', '1', 'done', 'x'), /1 has no evidence yet/);
   jarl(root, 'evidence', '1', 'merged abc');
-  assert.match(refuses(root, 'set', '1', 'done', 'x'), /001 has no evidence yet/, 'a note alone sits under Notes and is not evidence of the work');
+  assert.match(refuses(root, 'set', '1', 'done', 'x'), /1 has no evidence yet/, 'a note alone sits under Notes and is not evidence of the work');
   jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'pass');
   const r = (() => { try { return sh(tmpdir(), `node ${SCRIPT} set 1 done m --root ${root} 2>&1`); } catch (e) { return String(e.stdout); } })();
-  assert.match(r, /note: 001 2 acceptance line\(s\), 1 --ran\/--saw row\(s\)/);
+  assert.match(r, /note: 1 2 acceptance line\(s\), 1 --ran\/--saw row\(s\)/);
   const file = findingsDir([{ id: 'jarl-3-X1', title: 'x', proposal: 'do it' }]);
   const o = JSON.parse(jarl(root, 'import', file, '--source', 'r', '--json'));
   const next = JSON.parse(jarl(root, 'next', '--json')).find((x) => x.id === o.filed[0].id);
@@ -1221,7 +1221,7 @@ test('import never takes a short id, a header field or Evidence for a mention of
   jarl(root, 'new', 'package', '--what', 'from report-x: F7 and C9');              // short id with its report named
   const file = findingsDir([{ id: 'F1', title: 'a' }, { id: 'F4', title: 'b' }, { id: 'C1', title: 'c' }, { id: '2', title: 'd' }, { id: 'jarl-2-B2', title: 'e' }, { id: 'F7', title: 'f' }]);
   const o = JSON.parse(jarl(root, 'import', file, '--source', 'core/research/report-x', '--adopt', '--dry-run', '--json'));
-  assert.deepEqual(o.adopted.map((a) => [a.finding, a.issue]), [['F7', '004']]);
+  assert.deepEqual(o.adopted.map((a) => [a.finding, a.issue]), [['F7', '4']]);
   assert.deepEqual(o.filed.map((f) => f.finding), ['F1', 'F4', 'C1', '2', 'jarl-2-B2']);
   // The angles shape: a bare id needs its <angle>/<id> or its report; the angle name is slugified into the key.
   const angles = findingsDir([{ angle: 'First Hour', surviving: [{ id: 'prime-teaches-removed-verdict', title: 'p' }] }]);
@@ -1229,7 +1229,7 @@ test('import never takes a short id, a header field or Evidence for a mention of
   assert.equal(a.filed[0].finding, 'first-hour/prime-teaches-removed-verdict');
   jarl(root, 'new', 'names it', '--what', 'first-hour/prime-teaches-removed-verdict');
   const a2 = JSON.parse(jarl(root, 'import', angles, '--source', 'r-angles', '--dry-run', '--json'));
-  assert.deepEqual(a2.mentioned.map((m) => m.issue), ['005']);
+  assert.deepEqual(a2.mentioned.map((m) => m.issue), ['5']);
 });
 
 test('import adopts a package issue whose Evidence names the report and lists the ids; short ids and other lines never match there', () => {
@@ -1242,7 +1242,7 @@ test('import adopts a package issue whose Evidence names the report and lists th
   jarl(root, 'evidence', '2', 'see core/research/2026-09-25-x-audit/report.md');
   const file = findingsDir([{ id: 'area-a-01', title: 'a' }, { id: 'area-a-02', title: 'b' }, { id: 'area-a-03', title: 'c' }, { id: 'F1', title: 'd' }]);
   const o = JSON.parse(jarl(root, 'import', file, '--source', 'core/research/2026-09-25-x-audit', '--adopt', '--json'));
-  assert.deepEqual(o.adopted.map((x) => [x.finding, x.issue]), [['area-a-01', '001'], ['area-a-02', '001']]);
+  assert.deepEqual(o.adopted.map((x) => [x.finding, x.issue]), [['area-a-01', '1'], ['area-a-02', '1']]);
   assert.deepEqual(o.filed.map((f) => f.finding), ['area-a-03', 'F1']);
   assert.match(jarl(root, 'import', file, '--source', 'core/research/2026-09-25-x-audit'), /filed 0 · already filed 4/);
 });
@@ -1268,50 +1268,50 @@ test('a worktree is looked up through git by the lease branch: locked, invisible
   for (const t of ['locked', 'invisible', 'removed', 'closed']) jarl(root, 'new', t, '--files', 'a.txt');
   const away = join(root, '..', `${basename(root)}-away`);
   mkdirSync(away);
-  // 001: locked with a reason, its directory not on this machine (a container's); the lease stores the path.
+  // 1: locked with a reason, its directory not on this machine (a container's); the lease stores the path.
   const wt1 = join(root, '..', `${basename(root)}-wt1`);
-  jarl(root, 'set', '1', 'in-progress', 'w', '--branch', 'jarl/001-locked', '--worktree', wt1);
-  sh(`git worktree add -q -b jarl/001-locked ${wt1} && git worktree lock --reason devcontainer ${wt1}`);
+  jarl(root, 'set', '1', 'in-progress', 'w', '--branch', 'jarl/1-locked', '--worktree', wt1);
+  sh(`git worktree add -q -b jarl/1-locked ${wt1} && git worktree lock --reason devcontainer ${wt1}`);
   renameSync(wt1, join(away, 'wt1'));
-  // 002: unlocked, no stored path, its whole parent directory not visible from here.
+  // 2: unlocked, no stored path, its whole parent directory not visible from here.
   const parent2 = join(root, '..', `${basename(root)}-p2`);
   mkdirSync(parent2);
-  jarl(root, 'set', '2', 'in-progress', 'w', '--branch', 'jarl/002-invisible');
-  sh(`git worktree add -q -b jarl/002-invisible ${join(parent2, 'wt')}`);
+  jarl(root, 'set', '2', 'in-progress', 'w', '--branch', 'jarl/2-invisible');
+  sh(`git worktree add -q -b jarl/2-invisible ${join(parent2, 'wt')}`);
   renameSync(parent2, join(away, 'p2'));
-  // 003: no stored path, directory removed under a live lease while its parent is still here.
+  // 3: no stored path, directory removed under a live lease while its parent is still here.
   const wt3 = join(root, '..', `${basename(root)}-wt3`);
-  jarl(root, 'set', '3', 'in-progress', 'w', '--branch', 'jarl/003-removed');
-  sh(`git worktree add -q -b jarl/003-removed ${wt3}`);
+  jarl(root, 'set', '3', 'in-progress', 'w', '--branch', 'jarl/3-removed');
+  sh(`git worktree add -q -b jarl/3-removed ${wt3}`);
   rmSync(wt3, { recursive: true, force: true });
-  // 004: finished and in the base, but its locked worktree cannot be inspected from here.
+  // 4: finished and in the base, but its locked worktree cannot be inspected from here.
   const wt4 = join(root, '..', `${basename(root)}-wt4`);
-  jarl(root, 'set', '4', 'in-progress', 'w', '--branch', 'jarl/004-closed');
-  sh(`git worktree add -q -b jarl/004-closed ${wt4} && git worktree lock --reason devcontainer ${wt4}`);
+  jarl(root, 'set', '4', 'in-progress', 'w', '--branch', 'jarl/4-closed');
+  sh(`git worktree add -q -b jarl/4-closed ${wt4} && git worktree lock --reason devcontainer ${wt4}`);
   renameSync(wt4, join(away, 'wt4'));
   jarl(root, 'review', '4', 'approve', '--by', 'rev', FINDINGS);
   jarl(root, 'evidence', '4', '--ran', 'check', '--saw', 'green');
   jarl(root, 'set', '4', 'done', 'merged');
 
   const state = (branch, stored) => worktreeState(root, branch, stored);
-  assert.deepEqual([state('jarl/001-locked', wt1).state, state('jarl/001-locked').state], ['elsewhere', 'elsewhere']);
-  assert.equal(state('jarl/001-locked').reason, 'devcontainer');
-  assert.equal(state('jarl/002-invisible').state, 'invisible');
-  assert.equal(state('jarl/003-removed').state, 'gone');
-  assert.equal(state('jarl/009-nobody').state, 'none');
-  assert.equal(state('jarl/009-nobody', join(root, '..', 'never-was-here')).state, 'gone');
+  assert.deepEqual([state('jarl/1-locked', wt1).state, state('jarl/1-locked').state], ['elsewhere', 'elsewhere']);
+  assert.equal(state('jarl/1-locked').reason, 'devcontainer');
+  assert.equal(state('jarl/2-invisible').state, 'invisible');
+  assert.equal(state('jarl/3-removed').state, 'gone');
+  assert.equal(state('jarl/9-nobody').state, 'none');
+  assert.equal(state('jarl/9-nobody', join(root, '..', 'never-was-here')).state, 'gone');
   assert.equal(state('jarl/none-but-here', root).state, 'here');
 
   const st = JSON.parse(jarl(root, 'status', '--json'));
-  assert.deepEqual(st.stale.map((x) => x.id), ['003']);
+  assert.deepEqual(st.stale.map((x) => x.id), ['3']);
   assert.match(st.stale[0].problems[0], /^worktree gone: /);
   const br = jarl(root, 'branches');
-  assert.match(br, /^jarl\/001-locked → 001  \+0  \S+ \(elsewhere: devcontainer\)$/m);
-  assert.match(br, /^jarl\/002-invisible → 002  \+0  \S+ \(not visible from here\)$/m);
-  assert.match(br, /^jarl\/003-removed → 003  \+0  \S+ \(gone\)  STALE: 003 worktree gone: /m);
-  assert.match(br, /^jarl\/004-closed → 004  \+0  \S+ \(elsewhere: devcontainer\)  DONE \(worktree state unknown\)$/m);
+  assert.match(br, /^jarl\/1-locked → 1  \+0  \S+ \(elsewhere: devcontainer\)$/m);
+  assert.match(br, /^jarl\/2-invisible → 2  \+0  \S+ \(not visible from here\)$/m);
+  assert.match(br, /^jarl\/3-removed → 3  \+0  \S+ \(gone\)  STALE: 3 worktree gone: /m);
+  assert.match(br, /^jarl\/4-closed → 4  \+0  \S+ \(elsewhere: devcontainer\)  DONE \(worktree state unknown\)$/m);
   assert.doesNotMatch(br, /DONE → delete/);
-  assert.equal(JSON.parse(jarl(root, 'branches', '--json')).find((r) => r.branch === 'jarl/004-closed').deletable, false);
+  assert.equal(JSON.parse(jarl(root, 'branches', '--json')).find((r) => r.branch === 'jarl/4-closed').deletable, false);
 });
 
 test('a package is one lease on one branch: set records it, check --branch bounds the diff by the union, branches maps it', () => {
@@ -1320,29 +1320,29 @@ test('a package is one lease on one branch: set records it, check --branch bound
   jarl(root, 'new', 'two', '--files', 'b.txt');
   jarl(root, 'new', 'three', '--files', 'c.txt');
   const wt = join(root, '..', `${basename(root)}-wt`);
-  assert.match(jarl(root, 'set', '1-2', 'in-progress', 'package raised', '--branch', 'jarl/001-pkg', '--worker', 'w1', '--worktree', wt), /^001 → in-progress · jarl\/001-pkg · w1\n002 → in-progress · jarl\/001-pkg · w1$/);
+  assert.match(jarl(root, 'set', '1-2', 'in-progress', 'package raised', '--branch', 'jarl/1-pkg', '--worker', 'w1', '--worktree', wt), /^1 → in-progress · jarl\/1-pkg · w1\n2 → in-progress · jarl\/1-pkg · w1$/);
   const shown = jarl(root, 'show', '2');
-  assert.match(shown, /^\*\*Branch:\*\* jarl\/001-pkg$/m);
+  assert.match(shown, /^\*\*Branch:\*\* jarl\/1-pkg$/m);
   assert.match(shown, /^\*\*Worker:\*\* w1$/m);
   assert.match(shown, new RegExp(`^\\*\\*Worktree:\\*\\* ${wt.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}$`, 'm'));
   assert.match(shown, /^\*\*Since:\*\* \d{4}-\d{2}-\d{2} \d{2}:\d{2}$/m);
-  assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /002 → in-progress · package raised · branch jarl\/001-pkg · worker w1 · worktree /);
+  assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /2 → in-progress · package raised · branch jarl\/1-pkg · worker w1 · worktree /);
   assert.match(refuses(root, 'set', '3', 'open', 'x', '--branch', 'b'), /--branch goes with in-progress only/);
 
-  sh(`git worktree add -q -b jarl/001-pkg ${wt} && cd ${wt} && echo A > a.txt && echo B > b.txt && git commit -qam work`);
+  sh(`git worktree add -q -b jarl/1-pkg ${wt} && cd ${wt} && echo A > a.txt && echo B > b.txt && git commit -qam work`);
   // One issue alone still fails for the files of the other; the package passes in one call.
-  const alone = withStderr(root, 'check', '001', '--branch', 'jarl/001-pkg');
+  const alone = withStderr(root, 'check', '1', '--branch', 'jarl/1-pkg');
   assert.equal(alone.status, 2);
   assert.match(alone.stdout, /✗ diff inside declared files — outside a\.txt: b\.txt/);
-  const pkg = JSON.parse(jarl(root, 'check', '--branch', 'jarl/001-pkg', '--json'));
+  const pkg = JSON.parse(jarl(root, 'check', '--branch', 'jarl/1-pkg', '--json'));
   assert.equal(pkg.ok, true, JSON.stringify(pkg.items));
-  assert.deepEqual([pkg.id, pkg.ids], [null, ['001', '002']]);
-  assert.match(jarl(root, 'check', '--branch', 'jarl/001-pkg'), /^package 001, 002 on jarl\/001-pkg\n/);
+  assert.deepEqual([pkg.id, pkg.ids], [null, ['1', '2']]);
+  assert.match(jarl(root, 'check', '--branch', 'jarl/1-pkg'), /^package 1, 2 on jarl\/1-pkg\n/);
   assert.match(refuses(root, 'check', '--branch', 'jarl/none'), /no issue records branch jarl\/none/);
 
   const rows = JSON.parse(jarl(root, 'branches', '--json'));
-  assert.deepEqual(rows.map((r) => [r.branch, r.issues, r.stale, r.deletable]), [['jarl/001-pkg', ['001', '002'], [], false]]);
-  assert.match(jarl(root, 'branches'), /^jarl\/001-pkg → 001, 002  \+1 /);
+  assert.deepEqual(rows.map((r) => [r.branch, r.issues, r.stale, r.deletable]), [['jarl/1-pkg', ['1', '2'], [], false]]);
+  assert.match(jarl(root, 'branches'), /^jarl\/1-pkg → 1, 2  \+1 /);
   assert.doesNotMatch(jarl(root, 'status'), /stale/);
 });
 
@@ -1352,29 +1352,29 @@ test('stale leases are shown, never acted on: worktree gone, branch gone, idle',
   jarl(root, 'new', 'two', '--files', 'b.txt');
   jarl(root, 'new', 'three', '--files', 'c.txt');
   const wt = join(root, '..', `${basename(root)}-wt`);
-  jarl(root, 'set', '1', 'in-progress', 'w', '--branch', 'jarl/001-one', '--worker', 'w1', '--worktree', wt);
-  sh(`git worktree add -q -b jarl/001-one ${wt} && cd ${wt} && echo A > a.txt && git commit -qam work`);
-  jarl(root, 'set', '2', 'in-progress', 'w', '--branch', 'jarl/002-never-made');
+  jarl(root, 'set', '1', 'in-progress', 'w', '--branch', 'jarl/1-one', '--worker', 'w1', '--worktree', wt);
+  sh(`git worktree add -q -b jarl/1-one ${wt} && cd ${wt} && echo A > a.txt && git commit -qam work`);
+  jarl(root, 'set', '2', 'in-progress', 'w', '--branch', 'jarl/2-never-made');
   jarl(root, 'set', '3', 'in-progress', 'w');
   // The lease is as old as the journal's line for it: the stamp of that line is what ages it.
   const log = join(root, '.jarl', 'log.md');
-  writeFileSync(log, readFileSync(log, 'utf8').replace(/^- \d{4}-\d{2}-\d{2} \d{2}:\d{2}( · 003 → in-progress)/m, '- 2026-01-01 00:00$1'));
+  writeFileSync(log, readFileSync(log, 'utf8').replace(/^- \d{4}-\d{2}-\d{2} \d{2}:\d{2}( · 3 → in-progress)/m, '- 2026-01-01 00:00$1'));
   // The 2026-09-21 loss: a worktree deleted under a live lease.
   rmSync(wt, { recursive: true, force: true });
   const st = JSON.parse(jarl(root, 'status', '--json'));
-  assert.deepEqual(st.stale.map((x) => x.id), ['001', '002', '003']);
+  assert.deepEqual(st.stale.map((x) => x.id), ['1', '2', '3']);
   assert.match(st.stale[0].problems[0], /^worktree gone: /);
-  assert.match(st.stale[1].problems[0], /^branch gone: jarl\/002-never-made$/);
+  assert.match(st.stale[1].problems[0], /^branch gone: jarl\/2-never-made$/);
   assert.match(st.stale[2].problems[0], /^idle \d+d: lease since 2026-01-01 00:00$/);
   const text = jarl(root, 'status');
-  assert.match(text, /^stale 001 · worktree gone: /m);
-  assert.match(text, /^stale 003 · idle /m);
+  assert.match(text, /^stale 1 · worktree gone: /m);
+  assert.match(text, /^stale 3 · idle /m);
   // A lease younger than --stale-hours is not idle; the lease is only shown, the issue stays in progress.
   assert.equal(JSON.parse(jarl(root, 'status', '--stale-hours', '1000000', '--json')).stale.length, 2);
   assert.match(refuses(root, 'status', '--stale-hours', 'soon'), /--stale-hours takes a positive number/);
   const br = jarl(root, 'branches');
-  assert.match(br, /^jarl\/001-one → 001  \+1  \S+ \(gone\)  STALE: 001 worktree gone: /m);
-  assert.match(br, /^jarl\/002-never-made → 002  GONE  STALE: 002 branch gone: jarl\/002-never-made$/m);
+  assert.match(br, /^jarl\/1-one → 1  \+1  \S+ \(gone\)  STALE: 1 worktree gone: /m);
+  assert.match(br, /^jarl\/2-never-made → 2  GONE  STALE: 2 branch gone: jarl\/2-never-made$/m);
   assert.equal(JSON.parse(jarl(root, 'show', '1', '--json')).status, 'in-progress');
   // Leaving in-progress removes the lease and keeps the branch.
   jarl(root, 'set', '3', 'open', 'back to the queue');
@@ -1386,21 +1386,21 @@ test('merged records the sha and CI as fields; status counts CI pending; done no
   const { root, sh } = gitLoop();
   jarl(root, 'new', 'one', '--files', 'a.txt', '--acceptance', 'a is A');
   jarl(root, 'new', 'two', '--files', 'b.txt', '--acceptance', 'b is B');
-  jarl(root, 'set', '1,2', 'in-progress', 'w', '--branch', 'jarl/001-pkg', '--worker', 'w1');
-  sh('git checkout -q -b jarl/001-pkg && echo A > a.txt && echo B > b.txt && git commit -qam work && git checkout -q main && git merge -q --no-ff -m "merge 001-002" jarl/001-pkg');
+  jarl(root, 'set', '1,2', 'in-progress', 'w', '--branch', 'jarl/1-pkg', '--worker', 'w1');
+  sh('git checkout -q -b jarl/1-pkg && echo A > a.txt && echo B > b.txt && git commit -qam work && git checkout -q main && git merge -q --no-ff -m "merge 1-2" jarl/1-pkg');
   const sha = sh('git rev-parse --short HEAD');
   assert.match(refuses(root, 'merged', '1'), /merged needs --sha/);
   assert.match(refuses(root, 'merged', '1', '--sha', 'nothex!'), /--sha is a commit id/);
-  assert.match(refuses(root, 'merged', '1', '--ci', 'green'), /001 records no merge yet/);
+  assert.match(refuses(root, 'merged', '1', '--ci', 'green'), /1 records no merge yet/);
   assert.match(refuses(root, 'merged', '1', '--sha', sha, '--ci', 'blue'), /--ci must be one of: pending, green, red, none/);
-  assert.equal(jarl(root, 'merged', '1,2', '--sha', sha, '--keep'), `001, 002 merged ${sha}`, 'no --ci given: no CI state is recorded');
+  assert.equal(jarl(root, 'merged', '1,2', '--sha', sha, '--keep'), `1, 2 merged ${sha}`, 'no --ci given: no CI state is recorded');
   assert.doesNotMatch(jarl(root, 'show', '1'), /\*\*CI:\*\*/);
-  assert.equal(jarl(root, 'merged', '1,2', '--sha', sha, '--ci', 'pending', '--keep'),`001, 002 merged ${sha} · CI pending`);
+  assert.equal(jarl(root, 'merged', '1,2', '--sha', sha, '--ci', 'pending', '--keep'),`1, 2 merged ${sha} · CI pending`);
   assert.match(jarl(root, 'show', '1'), new RegExp(`^\\*\\*Merged:\\*\\* ${sha}\\n\\*\\*CI:\\*\\* pending$`, 'm'));
-  assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), new RegExp(`002 merged ${sha} · CI pending`));
+  assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), new RegExp(`2 merged ${sha} · CI pending`));
   const st = jarl(root, 'status');
   assert.match(st, /· merged, CI pending 2/);
-  assert.match(st, /^merged, CI pending: 001, 002$/m);
+  assert.match(st, /^merged, CI pending: 1, 2$/m);
   // An unknown sha is recorded as given, with a note.
   assert.match(withStderr(root, 'merged', '1', '--sha', 'deadbeef').stderr, /deadbeef is not a commit in/);
   jarl(root, 'merged', '1', '--sha', sha, '--ci', 'pending', '--keep');
@@ -1408,25 +1408,26 @@ test('merged records the sha and CI as fields; status counts CI pending; done no
   jarl(root, 'evidence', '1,2', '--ran', 'check', '--saw', 'green');
   const done = withStderr(root, 'set', '1,2', 'done', 'merged');
   assert.equal(done.status, 0);
-  assert.match(done.stderr, new RegExp(`note: 001 merged ${sha}, CI pending`));
+  assert.match(done.stderr, new RegExp(`note: 1 merged ${sha}, CI pending`));
   assert.doesNotMatch(jarl(root, 'show', '1'), /\*\*(Worker|Since):\*\*/, 'done ends the lease');
-  assert.match(jarl(root, 'show', '1'), /^\*\*Branch:\*\* jarl\/001-pkg$/m, 'done keeps the branch');
+  assert.match(jarl(root, 'show', '1'), /^\*\*Branch:\*\* jarl\/1-pkg$/m, 'done keeps the branch');
   jarl(root, 'merged', '1,2', '--ci', 'green');
   assert.doesNotMatch(jarl(root, 'status'), /CI pending/);
-  assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /001 CI green/);
-  assert.match(jarl(root, 'report'), new RegExp(`- 001 one \\(bug\\) · merged ${sha}`));
-  assert.match(jarl(root, 'branches'), /^jarl\/001-pkg → 001, 002  \+0  \(no worktree\)  DONE → delete$/m);
+  assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /1 CI green/);
+  assert.match(jarl(root, 'report'), new RegExp(`- 1 one \\(bug\\) · merged ${sha}`));
+  assert.match(jarl(root, 'branches'), /^jarl\/1-pkg → 1, 2  \+0  \(no worktree\)  DONE → delete$/m);
   // A red CI is counted apart.
   jarl(root, 'merged', '2', '--ci', 'red');
   assert.match(jarl(root, 'status'), /· CI red 1/);
 });
 
-test('a committed loop names the loop files git has not committed in status, handoff and close; the default mode stays silent', () => {
+test('a committed loop names the loop files git has not committed in status, handoff and close; the default mode stays silent', async () => {
   const { root, sh } = gitLoop('--permanent');
   sh('git add -A && git commit -qm loop');
   assert.equal(JSON.parse(jarl(root, 'status', '--json')).uncommitted, 0);
   assert.doesNotMatch(jarl(root, 'status'), /not committed/);
-  jarl(root, 'new', 'one');
+  // Filed by the library: its number has three digits, so the loop keeps its format and writes no profile file.
+  (await import(new URL('../record.mjs', import.meta.url).href)).newIssue(root, 'one');
   assert.match(jarl(root, 'status'), /^2 loop file\(s\) not committed — commit \.jarl\/ in the loop's repository$/m);
   assert.match(jarl(root, 'resume'), /^## Loop files not committed \(2\) — commit \.jarl\/\n- \.jarl\/issues\/001-one\.md\n- \.jarl\/log\.md$/m);
   jarl(root, 'set', '1', 'dropped', 'no');
@@ -1445,14 +1446,14 @@ test('a committed loop names the loop files git has not committed in status, han
 
 test('issues and handoffs from before leases and merges read unchanged', () => {
   const { root } = gitLoop();
-  const old = '# 001 · old one\n\n**Status:** in-progress\n**Kind:** bug\n**Priority:** 1\n**Tier:** standard\n**Tags:** \n**Files:** a.txt\n**Found by:** jarl\n**Where:**\n\n## What\n\n\n## Why\n\n\n## Acceptance\n\n\n## Evidence\n\n';
-  writeFileSync(join(root, '.jarl', 'issues', '001-old-one.md'), old);
+  const old = '# 1 · old one\n\n**Status:** in-progress\n**Kind:** bug\n**Priority:** 1\n**Tier:** standard\n**Tags:** \n**Files:** a.txt\n**Found by:** jarl\n**Where:**\n\n## What\n\n\n## Why\n\n\n## Acceptance\n\n\n## Evidence\n\n';
+  writeFileSync(join(root, '.jarl', 'issues', '1-old-one.md'), old);
   writeFileSync(join(root, '.jarl', 'handoff.md'), '# Handoff\n\n**At:** 2026-01-01 00:00 · **Head:** main@abc1234\n\n## Summary\nold\n\n## In flight\n- 999 gone\n\n## Waiting on the user\n- (nothing)\n\n## Next\n- (nothing recorded)\n');
   const st = JSON.parse(jarl(root, 'status', '--json'));
   assert.deepEqual([st.stale, st.ciPending, st.ciRed], [[], [], []]);
-  assert.equal(readFileSync(join(root, '.jarl', 'issues', '001-old-one.md'), 'utf8'), old, 'reading never writes');
+  assert.equal(readFileSync(join(root, '.jarl', 'issues', '1-old-one.md'), 'utf8'), old, 'reading never writes');
   const h = jarl(root, 'handoff', 'read');
-  assert.match(h, /## In flight \(1\)\n- 001 old one\n/);
+  assert.match(h, /## In flight \(1\)\n- 1 old one\n/);
   // The old file is shown whole, but below the live state and one heading level down, as history.
   assert.match(h, /\n## Earlier handoff — history, written 2026-01-01 00:00, \d+d ago; not the current state\n\*\*At:\*\* 2026-01-01 00:00 · \*\*Head:\*\* main@abc1234\n\n### Summary\nold\n\n### In flight\n- 999 gone\n/);
   assert.ok(h.indexOf('999 gone') > h.indexOf('## Last '), 'the snapshot comes after the live sections');
@@ -1467,48 +1468,48 @@ test('DONE → delete needs the branch tip in the base, or in every recorded mer
   const close = (id) => { jarl(root, 'review', id, 'approve', '--by', 'rev', FINDINGS); jarl(root, 'evidence', id, '--ran', 'check', '--saw', 'green'); jarl(root, 'set', id, 'done', 'merged'); };
   // Merged elsewhere (a release branch, not the base): the tip is in the recorded merge, so it can go.
   jarl(root, 'new', 'elsewhere', '--files', 'a.txt');
-  jarl(root, 'set', '1', 'in-progress', 'w', '--branch', 'jarl/001-else');
-  sh('git checkout -q -b jarl/001-else && echo A > a.txt && git commit -qam w && git checkout -q -b rel main && git merge -q --no-ff -m m jarl/001-else && git checkout -q main');
+  jarl(root, 'set', '1', 'in-progress', 'w', '--branch', 'jarl/1-else');
+  sh('git checkout -q -b jarl/1-else && echo A > a.txt && git commit -qam w && git checkout -q -b rel main && git merge -q --no-ff -m m jarl/1-else && git checkout -q main');
   jarl(root, 'merged', '1', '--sha', sh('git rev-parse rel'));
   close('1');
-  assert.equal(mark('jarl/001-else'), 'delete');
+  assert.equal(mark('jarl/1-else'), 'delete');
   // A commit on the branch after the merge: the record no longer covers it.
-  sh('git checkout -q jarl/001-else && echo AA > a.txt && git commit -qam later && git checkout -q main');
-  assert.equal(mark('jarl/001-else'), 'unverified');
-  assert.match(jarl(root, 'branches'), /^jarl\/001-else → 001 .*DONE \(merged by record, branch not in base\) — verify$/m);
+  sh('git checkout -q jarl/1-else && echo AA > a.txt && git commit -qam later && git checkout -q main');
+  assert.equal(mark('jarl/1-else'), 'unverified');
+  assert.match(jarl(root, 'branches'), /^jarl\/1-else → 1 .*DONE \(merged by record, branch not in base\) — verify$/m);
   // A squash merge, then an extra commit: never taken as merged.
   jarl(root, 'new', 'squashed', '--files', 'b.txt');
-  jarl(root, 'set', '2', 'in-progress', 'w', '--branch', 'jarl/002-sq');
-  sh('git checkout -q -b jarl/002-sq && echo B > b.txt && git commit -qam w && git checkout -q main && git merge -q --squash jarl/002-sq && git commit -qm squash && git checkout -q jarl/002-sq && echo BB > b.txt && git commit -qam extra && git checkout -q main');
+  jarl(root, 'set', '2', 'in-progress', 'w', '--branch', 'jarl/2-sq');
+  sh('git checkout -q -b jarl/2-sq && echo B > b.txt && git commit -qam w && git checkout -q main && git merge -q --squash jarl/2-sq && git commit -qm squash && git checkout -q jarl/2-sq && echo BB > b.txt && git commit -qam extra && git checkout -q main');
   jarl(root, 'merged', '2', '--sha', sh('git rev-parse HEAD'));
   close('2');
-  assert.equal(mark('jarl/002-sq'), 'unverified');
+  assert.equal(mark('jarl/2-sq'), 'unverified');
   // An issue from before Branch, matched by the branch's number only: a recorded merge is not trusted there.
   jarl(root, 'new', 'legacy', '--files', 'c.txt');
-  sh('git checkout -q -b jarl/003-legacy && echo C > c.txt && git commit -qam w && git checkout -q -b rel3 main && git merge -q --no-ff -m m jarl/003-legacy && git checkout -q main');
+  sh('git checkout -q -b jarl/3-legacy && echo C > c.txt && git commit -qam w && git checkout -q -b rel3 main && git merge -q --no-ff -m m jarl/3-legacy && git checkout -q main');
   jarl(root, 'merged', '3', '--sha', sh('git rev-parse rel3'));
   close('3');
-  assert.equal(mark('jarl/003-legacy'), null);
+  assert.equal(mark('jarl/3-legacy'), null);
   // In the base, but its worktree holds uncommitted files.
   jarl(root, 'new', 'dirty', '--files', 'd.txt');
   const wt = join(root, '..', `${basename(root)}-wt4`);
-  jarl(root, 'set', '4', 'in-progress', 'w', '--branch', 'jarl/004-dirty', '--worktree', wt);
-  sh(`git worktree add -q -b jarl/004-dirty ${wt} && cd ${wt} && echo D > d.txt && git add d.txt && git commit -qm w && echo scratch > notes.txt`);
-  sh('git merge -q --no-ff -m m4 jarl/004-dirty');
+  jarl(root, 'set', '4', 'in-progress', 'w', '--branch', 'jarl/4-dirty', '--worktree', wt);
+  sh(`git worktree add -q -b jarl/4-dirty ${wt} && cd ${wt} && echo D > d.txt && git add d.txt && git commit -qm w && echo scratch > notes.txt`);
+  sh('git merge -q --no-ff -m m4 jarl/4-dirty');
   close('4');
-  assert.equal(mark('jarl/004-dirty'), 'dirty');
-  assert.match(jarl(root, 'branches'), /^jarl\/004-dirty → 004 .*\(1 uncommitted\)  DONE \(worktree dirty\)$/m);
+  assert.equal(mark('jarl/4-dirty'), 'dirty');
+  assert.match(jarl(root, 'branches'), /^jarl\/4-dirty → 4 .*\(1 uncommitted\)  DONE \(worktree dirty\)$/m);
   rmSync(join(wt, 'notes.txt'));
-  assert.equal(mark('jarl/004-dirty'), 'delete');
+  assert.equal(mark('jarl/4-dirty'), 'delete');
 });
 
 test('outside a git repository a Branch lease is not reported gone, and resume shows it with no tips', () => {
   const loose = repo();
   jarl(loose, 'init', 'goal');
   jarl(loose, 'new', 'one');
-  jarl(loose, 'set', '1', 'in-progress', 'w', '--branch', 'jarl/001-one');
+  jarl(loose, 'set', '1', 'in-progress', 'w', '--branch', 'jarl/1-one');
   assert.deepEqual(JSON.parse(jarl(loose, 'status', '--json')).stale, []);
   const r = jarl(loose, 'resume');
-  assert.match(r, /- 001 one · branch jarl\/001-one · since \S+ \S+\n/);
+  assert.match(r, /- 1 one · branch jarl\/1-one · since \S+ \S+\n/);
   assert.doesNotMatch(r, /STALE|## Tips/);
 });

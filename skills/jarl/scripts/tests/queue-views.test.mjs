@@ -1,4 +1,4 @@
-// The merge queue as a derived view and changelog fragments (issue 284), and the views and templates a
+// The merge queue as a derived view and changelog fragments, and the views and templates a
 // dashboard or a release checklist is built from (289).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -35,30 +35,30 @@ test('queue: approved, ahead of the base and not merged — in the order of appr
   jarl(root, 'new', 'second', '--files', 'src/b.mjs');
   jarl(root, 'new', 'third', '--files', 'src/b.mjs');
   jarl(root, 'new', 'not reviewed', '--files', 'src/a.mjs');
-  jarl(root, 'set', '1', 'in-progress', 'go', '--branch', 'jarl/001-first', '--worker', 'w1');
-  jarl(root, 'set', '2', 'in-progress', 'go', '--branch', 'jarl/002-second', '--worker', 'w2');
-  jarl(root, 'set', '4', 'in-progress', 'go', '--branch', 'jarl/004-not', '--worker', 'w4');
-  branchWith(root, 'jarl/001-first', 'src/a.mjs');
-  branchWith(root, 'jarl/002-second', 'src/b.mjs');
-  branchWith(root, 'jarl/004-not', 'src/a.mjs');
-  // 002 approved before 001: the queue follows the approvals, not the numbers.
+  jarl(root, 'set', '1', 'in-progress', 'go', '--branch', 'jarl/1-first', '--worker', 'w1');
+  jarl(root, 'set', '2', 'in-progress', 'go', '--branch', 'jarl/2-second', '--worker', 'w2');
+  jarl(root, 'set', '4', 'in-progress', 'go', '--branch', 'jarl/4-not', '--worker', 'w4');
+  branchWith(root, 'jarl/1-first', 'src/a.mjs');
+  branchWith(root, 'jarl/2-second', 'src/b.mjs');
+  branchWith(root, 'jarl/4-not', 'src/a.mjs');
+  // 2 approved before 1: the queue follows the approvals, not the numbers.
   jarl(root, 'review', '2', 'approve', '--by', 'rev', FINDINGS);
   jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
   const q = JSON.parse(jarl(root, 'queue', '--json'));
   assert.equal(q.repos.length, 1);
   const rows = q.repos[0].rows;
-  assert.deepEqual(rows.map((r) => r.branch), ['jarl/002-second', 'jarl/001-first']);
-  assert.deepEqual(rows.map((r) => r.issues), [['002'], ['001']]);
+  assert.deepEqual(rows.map((r) => r.branch), ['jarl/2-second', 'jarl/1-first']);
+  assert.deepEqual(rows.map((r) => r.issues), [['2'], ['1']]);
   assert.equal(rows[0].ahead, 1);
   assert.equal(q.repos[0].base, 'feature');
   // Files do not overlap, so both go in one batch.
   assert.deepEqual(rows.map((r) => r.batch), [1, 1]);
   const text = jarl(root, 'queue');
-  assert.match(text, /1\. jarl\/002-second → 002/);
-  assert.doesNotMatch(text, /004/);
+  assert.match(text, /1\. jarl\/2-second → 2/);
+  assert.doesNotMatch(text, /\b4\b/);
   // Once merged into the base, a branch leaves the queue by itself.
-  sh(root, 'git merge -q --no-ff jarl/002-second -m "merge 002"');
-  assert.deepEqual(JSON.parse(jarl(root, 'queue', '--json')).repos[0].rows.map((r) => r.branch), ['jarl/001-first']);
+  sh(root, 'git merge -q --no-ff jarl/2-second -m "merge 2"');
+  assert.deepEqual(JSON.parse(jarl(root, 'queue', '--json')).repos[0].rows.map((r) => r.branch), ['jarl/1-first']);
 });
 
 test('queue: a round spends the approve, overlapping files start a new batch, a package lists who still waits for review', () => {
@@ -67,26 +67,26 @@ test('queue: a round spends the approve, overlapping files start a new batch, a 
   jarl(root, 'new', 'b', '--files', 'src/a.mjs');
   jarl(root, 'new', 'c', '--files', 'src/b.mjs');
   jarl(root, 'new', 'd', '--files', 'src/b.mjs');
-  jarl(root, 'set', '1', 'in-progress', 'go', '--branch', 'jarl/001-a', '--worker', 'w1');
-  jarl(root, 'set', '2', 'in-progress', 'go', '--branch', 'jarl/002-b', '--worker', 'w2');
-  jarl(root, 'set', '3,4', 'in-progress', 'pkg', '--branch', 'jarl/003-pkg', '--worker', 'w3');
-  branchWith(root, 'jarl/001-a', 'src/a.mjs');
-  branchWith(root, 'jarl/002-b', 'src/a.mjs');
-  branchWith(root, 'jarl/003-pkg', 'src/b.mjs');
+  jarl(root, 'set', '1', 'in-progress', 'go', '--branch', 'jarl/1-a', '--worker', 'w1');
+  jarl(root, 'set', '2', 'in-progress', 'go', '--branch', 'jarl/2-b', '--worker', 'w2');
+  jarl(root, 'set', '3,4', 'in-progress', 'pkg', '--branch', 'jarl/3-pkg', '--worker', 'w3');
+  branchWith(root, 'jarl/1-a', 'src/a.mjs');
+  branchWith(root, 'jarl/2-b', 'src/a.mjs');
+  branchWith(root, 'jarl/3-pkg', 'src/b.mjs');
   jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
   jarl(root, 'review', '2', 'approve', '--by', 'rev', FINDINGS);
   jarl(root, 'review', '3', 'approve', '--by', 'rev', FINDINGS);
   let rows = JSON.parse(jarl(root, 'queue', '--json')).repos[0].rows;
   const byBranch = Object.fromEntries(rows.map((r) => [r.branch, r]));
-  assert.equal(byBranch['jarl/001-a'].batch, 1);
-  assert.equal(byBranch['jarl/002-b'].batch, 2, 'the same file as 001 never rides in its batch');
-  assert.deepEqual(byBranch['jarl/003-pkg'].issues, ['003']);
-  assert.deepEqual(byBranch['jarl/003-pkg'].waitingReview, ['004']);
-  assert.equal(byBranch['jarl/003-pkg'].ready, false);
-  assert.equal(byBranch['jarl/001-a'].ready, true);
+  assert.equal(byBranch['jarl/1-a'].batch, 1);
+  assert.equal(byBranch['jarl/2-b'].batch, 2, 'the same file as 1 never rides in its batch');
+  assert.deepEqual(byBranch['jarl/3-pkg'].issues, ['3']);
+  assert.deepEqual(byBranch['jarl/3-pkg'].waitingReview, ['4']);
+  assert.equal(byBranch['jarl/3-pkg'].ready, false);
+  assert.equal(byBranch['jarl/1-a'].ready, true);
   jarl(root, 'round', '1', 'check red');
   rows = JSON.parse(jarl(root, 'queue', '--json')).repos[0].rows;
-  assert.ok(!rows.some((r) => r.branch === 'jarl/001-a'), 'a round spends the approve: the branch leaves the queue');
+  assert.ok(!rows.some((r) => r.branch === 'jarl/1-a'), 'a round spends the approve: the branch leaves the queue');
 });
 
 test('queue: an issue in another repository is queued there; --repo reads one repository; nothing is written', () => {
@@ -95,13 +95,13 @@ test('queue: an issue in another repository is queued there; --repo reads one re
   for (const d of [hub, tool]) { mkdirSync(d); sh(d, 'git init -q -b feature && git config user.email t@t && git config user.name t && git config core.excludesFile /dev/null && mkdir src && echo 1 > src/a.mjs && git add -A && git commit -qm base'); }
   jarl(hub, 'init', 'goal');
   jarl(hub, 'new', 'in tool', '--repo', '../tool', '--files', 'tool/src/a.mjs');
-  jarl(hub, 'set', '1', 'in-progress', 'go', '--branch', 'jarl/001-t', '--worker', 'w');
-  branchWith(tool, 'jarl/001-t', 'src/a.mjs');
+  jarl(hub, 'set', '1', 'in-progress', 'go', '--branch', 'jarl/1-t', '--worker', 'w');
+  branchWith(tool, 'jarl/1-t', 'src/a.mjs');
   jarl(hub, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
   const before = readFileSync(join(hub, '.jarl', 'log.md'), 'utf8');
   const q = JSON.parse(jarl(hub, 'queue', '--json'));
   const toolRows = q.repos.find((r) => r.repo === 'tool').rows;
-  assert.deepEqual(toolRows.map((r) => r.branch), ['jarl/001-t']);
+  assert.deepEqual(toolRows.map((r) => r.branch), ['jarl/1-t']);
   assert.equal(JSON.parse(jarl(hub, 'queue', '--repo', '../tool', '--json')).repos.length, 1);
   assert.equal(readFileSync(join(hub, '.jarl', 'log.md'), 'utf8'), before, 'queue writes nothing');
 });
@@ -119,7 +119,7 @@ test('changelog: fragments recorded on the issue print grouped for [Unreleased];
   const r = run(root, ['changelog', '1-3']);
   assert.equal(r.status, 0);
   assert.equal(r.stdout, '### Added\n- `queue` shows the merge queue.\n\n### Changed\n- `report` groups by repository.\n\n### Fixed\n- A value starting with $1 or $& is written as it is.');
-  assert.match(r.stderr, /no changelog fragment: 003/);
+  assert.match(r.stderr, /no changelog fragment: 3/);
   const j = JSON.parse(jarl(root, 'changelog', '1,2', '--json'));
   assert.deepEqual(j.sections, { Added: ['`queue` shows the merge queue.'], Changed: ['`report` groups by repository.'], Fixed: ['A value starting with $1 or $& is written as it is.'] });
   // body --changelog replaces the fragment, it never appends.
@@ -164,7 +164,7 @@ test('new --template reads .jarl/templates/<name>.md: its fields are defaults, i
   assert.match(i, /## Why\nOverridden\.\n/);
   assert.match(i, /## Acceptance\n- the tag exists on the remote\n- CI is green on the tag\n/);
   jarl(root, 'new', 'Phase B', '--template', 'release-phase', '--kind', 'docs', '--after', '1');
-  assert.match(jarl(root, 'show', '2'), /\*\*Kind:\*\* docs[\s\S]*\*\*After:\*\* 001/);
+  assert.match(jarl(root, 'show', '2'), /\*\*Kind:\*\* docs[\s\S]*\*\*After:\*\* 1/);
   assert.match(refuses(root, 'new', 'x', '--template', 'nope'), /no template nope in .*templates — templates here: release-phase/);
   assert.match(refuses(root, 'new', 'x', '--template', '../goal'), /a template is named by letters, digits/);
   // A template whose first line is already a field keeps that field.
@@ -197,7 +197,7 @@ test('status --by groups the counts by kind, tag, priority or repository; report
   // Without --by the shape is what it was.
   assert.equal(JSON.parse(jarl(root, 'status', '--json')).by, undefined);
   const rep = JSON.parse(jarl(root, 'report', '--json'));
-  const one = rep.issues.find((i) => i.id === '001');
-  assert.deepEqual({ ...one, repos: undefined }, { id: '001', title: 'a', status: 'done', kind: 'bug', priority: '2', tier: 'standard', tags: ['x', 'y'], repos: undefined, branch: null, after: [], sources: [], merged: null, ci: null, review: { by: 'rev', kind: 'fresh', at: one.review.at } });
+  const one = rep.issues.find((i) => i.id === '1');
+  assert.deepEqual({ ...one, repos: undefined }, { id: '1', title: 'a', status: 'done', kind: 'bug', priority: '2', tier: 'standard', tags: ['x', 'y'], repos: undefined, branch: null, after: [], sources: [], merged: null, ci: null, review: { by: 'rev', kind: 'fresh', at: one.review.at } });
   assert.equal(rep.issues.length, 3);
 });

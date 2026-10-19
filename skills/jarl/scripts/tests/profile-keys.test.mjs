@@ -1,4 +1,4 @@
-// The profile keys a composer's loop stands on (issue 477): "set-by" on a status, "external-scheduler", "done-gate" and
+// The profile keys a composer's loop stands on:"set-by" on a status, "external-scheduler", "done-gate" and
 // "format". A loop run by a composer such as Horde must not be misread by Jarl's own views: a status only the composer
 // may set is refused to jarl set and the MCP tools, next and queue say who schedules instead of computing a ready list,
 // done needs a merge the base holds, and a record format this Jarl does not know is refused before anything is read.
@@ -121,17 +121,17 @@ test('profile describes the new keys, as JSON and as text', () => {
 test('set-by record: jarl set and the MCP tools cannot move an issue into it; a library call can, and moving out is anyone\'s', () => {
   const { root } = mission();
   jarl(root, 'new', 'a ticket');
-  const path = R.findIssue(root, '001').file;
+  const path = R.findIssue(root, '1').file;
   const before = readFileSync(path, 'utf8');
-  assert.match(refuses(root, 'set', '001', 'queued'), /queued is set by the record only — this loop's profile \(horde\) marks it "set-by": "record".*\(horde\.mjs tick\)/);
+  assert.match(refuses(root, 'set', '1', 'queued'), /queued is set by the record only — this loop's profile \(horde\) marks it "set-by": "record".*\(horde\.mjs tick\)/);
   // The MCP tools run through dispatch as the command line does: jarl_set is refused the same way.
-  assert.throws(() => CLI.dispatch(root, 'set', ['001', 'queued'], {}), /queued is set by the record only/);
-  assert.throws(() => R.setStatus(root, '001', 'queued', undefined, { caller: 'cli' }), /set by the record only/);
+  assert.throws(() => CLI.dispatch(root, 'set', ['1', 'queued'], {}), /queued is set by the record only/);
+  assert.throws(() => R.setStatus(root, '1', 'queued', undefined, { caller: 'cli' }), /set by the record only/);
   assert.equal(readFileSync(path, 'utf8'), before, 'a refusal writes nothing');
   // The composer, through record.mjs, moves it; the worker's claim after that is anyone's.
-  assert.equal(R.setStatus(root, '001', 'queued').status, 'queued');
-  jarl(root, 'set', '001', 'running', '--branch', 'jarl/001-a', '--worker', 'w1');
-  assert.equal(R.findIssue(root, '001').status, 'running');
+  assert.equal(R.setStatus(root, '1', 'queued').status, 'queued');
+  jarl(root, 'set', '1', 'running', '--branch', 'jarl/1-a', '--worker', 'w1');
+  assert.equal(R.findIssue(root, '1').status, 'running');
   // Filing is not a move: a new issue lands in a set-by-record initial status.
   assert.equal(R.findIssue(root, jarl(root, 'new', 'another').match(FILED)[1]).status, 'proposed');
 });
@@ -141,26 +141,26 @@ test('set-by record: jarl set and the MCP tools cannot move an issue into it; a 
 test('done-gate requires-merged: no merge, or a merge the base does not hold, is refused; approve none asks for no review', () => {
   const { repo, root } = mission();
   jarl(root, 'new', 'ticket');
-  R.setStatus(root, '001', 'queued');
-  jarl(root, 'set', '001', 'running', '--branch', 'jarl/001-t', '--worker', 'w1');
-  jarl(root, 'evidence', '001', '--ran', 'npm test', '--saw', 'pass 1');
-  assert.match(reason(() => R.setStatus(root, '001', 'merged')), /001 records no merge — this loop's profile closes an issue only on a landed merge \(done-gate "requires-merged": true\)/);
+  R.setStatus(root, '1', 'queued');
+  jarl(root, 'set', '1', 'running', '--branch', 'jarl/1-t', '--worker', 'w1');
+  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'pass 1');
+  assert.match(reason(() => R.setStatus(root, '1', 'merged')), /1 records no merge — this loop's profile closes an issue only on a landed merge \(done-gate "requires-merged": true\)/);
   // A commit on a side branch, recorded as merged, is not in the base yet.
-  sh(repo, 'git checkout -q -b jarl/001-t && echo 2 > src/a.mjs && git commit -qam work && git checkout -q main');
-  const side = sh(repo, 'git rev-parse jarl/001-t');
-  const rec = R.recordMerged(root, '001', { sha: side, ci: 'none' });
+  sh(repo, 'git checkout -q -b jarl/1-t && echo 2 > src/a.mjs && git commit -qam work && git checkout -q main');
+  const side = sh(repo, 'git rev-parse jarl/1-t');
+  const rec = R.recordMerged(root, '1', { sha: side, ci: 'none' });
   assert.ok(!rec.notes.some((n) => /FRESH REVIEW/.test(n)), 'with approve none no reviewer is owed, so the merge note does not ask for one');
-  assert.match(reason(() => R.setStatus(root, '001', 'merged')), new RegExp(`001 records Merged ${side.slice(0, 12)}\\w*, which is not in the base \\(main in `));
+  assert.match(reason(() => R.setStatus(root, '1', 'merged')), new RegExp(`1 records Merged ${side.slice(0, 12)}\\w*, which is not in the base \\(main in `));
   // Landed: the base holds it. No review was ever recorded, and none is asked for.
-  sh(repo, 'git merge -q --ff-only jarl/001-t');
-  assert.equal(R.setStatus(root, '001', 'merged').status, 'merged');
+  sh(repo, 'git merge -q --ff-only jarl/1-t');
+  assert.equal(R.setStatus(root, '1', 'merged').status, 'merged');
   // An unknown sha is refused the same way.
   jarl(root, 'new', 'second');
-  R.setStatus(root, '002', 'queued');
-  jarl(root, 'set', '002', 'running', '--worker', 'w2');
-  jarl(root, 'evidence', '002', '--ran', 'npm test', '--saw', 'pass 2');
-  R.recordMerged(root, '002', { sha: 'deadbeef', ci: 'none' });
-  assert.match(reason(() => R.setStatus(root, '002', 'merged')), /records Merged deadbeef, which is not in the base/);
+  R.setStatus(root, '2', 'queued');
+  jarl(root, 'set', '2', 'running', '--worker', 'w2');
+  jarl(root, 'evidence', '2', '--ran', 'npm test', '--saw', 'pass 2');
+  R.recordMerged(root, '2', { sha: 'deadbeef', ci: 'none' });
+  assert.match(reason(() => R.setStatus(root, '2', 'merged')), /records Merged deadbeef, which is not in the base/);
 });
 
 test('done-gate requires-merged: a composer landing into a branch nobody has checked out names it as base; the command line cannot', () => {
@@ -168,61 +168,61 @@ test('done-gate requires-merged: a composer landing into a branch nobody has che
   // branch checked out is the wrong base, and the composer names the one it landed into.
   const { repo, root } = mission();
   jarl(root, 'new', 'ticket');
-  R.setStatus(root, '001', 'queued');
-  jarl(root, 'set', '001', 'running', '--branch', 'h1-t001', '--worker', 'w1');
-  jarl(root, 'evidence', '001', '--ran', 'land', '--saw', 'green');
-  sh(repo, 'git branch h1/team && git checkout -q -b h1-t001 && echo 2 > src/a.mjs && git commit -qam work && git checkout -q h1/team && git merge -q --no-ff -m land h1-t001 && git checkout -q main');
+  R.setStatus(root, '1', 'queued');
+  jarl(root, 'set', '1', 'running', '--branch', 'h1-t1', '--worker', 'w1');
+  jarl(root, 'evidence', '1', '--ran', 'land', '--saw', 'green');
+  sh(repo, 'git branch h1/team && git checkout -q -b h1-t1 && echo 2 > src/a.mjs && git commit -qam work && git checkout -q h1/team && git merge -q --no-ff -m land h1-t1 && git checkout -q main');
   const landed = sh(repo, 'git rev-parse h1/team');
-  R.recordMerged(root, '001', { sha: landed, ci: 'none' });
-  assert.match(reason(() => R.setStatus(root, '001', 'merged')), /which is not in the base \(main in /);
-  assert.match(reason(() => R.setStatus(root, '001', 'merged', undefined, { base: 'h1/nope' })), /the base h1\/nope is not a branch or commit/);
+  R.recordMerged(root, '1', { sha: landed, ci: 'none' });
+  assert.match(reason(() => R.setStatus(root, '1', 'merged')), /which is not in the base \(main in /);
+  assert.match(reason(() => R.setStatus(root, '1', 'merged', undefined, { base: 'h1/nope' })), /the base h1\/nope is not a branch or commit/);
   // The command line has no --base, and a base handed to dispatch (as an MCP call would) is refused, not honoured.
-  assert.match(refuses(root, 'set', '001', 'dropped', 'x', '--base', 'h1/team'), /unknown flag --base/);
-  assert.throws(() => CLI.dispatch(root, 'set', ['001', 'dropped', 'x'], { base: 'h1/team' }), /base is named by a library call through record\.mjs only/);
-  assert.equal(R.findIssue(root, '001').status, 'running', 'a refusal writes nothing');
-  assert.equal(R.setStatus(root, '001', 'merged', undefined, { base: 'h1/team' }).status, 'merged');
+  assert.match(refuses(root, 'set', '1', 'dropped', 'x', '--base', 'h1/team'), /unknown flag --base/);
+  assert.throws(() => CLI.dispatch(root, 'set', ['1', 'dropped', 'x'], { base: 'h1/team' }), /base is named by a library call through record\.mjs only/);
+  assert.equal(R.findIssue(root, '1').status, 'running', 'a refusal writes nothing');
+  assert.equal(R.setStatus(root, '1', 'merged', undefined, { base: 'h1/team' }).status, 'merged');
 });
 
 test('done-gate requires-merged with approve fresh: the landed merge and the fresh approve are both asked for', () => {
   const { repo, root } = mission({ ...HORDE, name: 'both', 'external-scheduler': undefined, 'done-gate': { approve: 'fresh', 'requires-merged': true }, statuses: { ...HORDE.statuses, merged: ['settles-dependents', 'terminal', 'closes-record'] } });
   jarl(root, 'new', 'ticket');
-  R.setStatus(root, '001', 'queued');
-  jarl(root, 'set', '001', 'running', '--branch', 'jarl/001-t', '--worker', 'w1');
-  jarl(root, 'evidence', '001', '--ran', 'npm test', '--saw', 'pass');
-  assert.match(refuses(root, 'set', '001', 'merged'), /records no merge/);
+  R.setStatus(root, '1', 'queued');
+  jarl(root, 'set', '1', 'running', '--branch', 'jarl/1-t', '--worker', 'w1');
+  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'pass');
+  assert.match(refuses(root, 'set', '1', 'merged'), /records no merge/);
   const head = sh(repo, 'git rev-parse HEAD');
-  jarl(root, 'merged', '001', '--sha', head, '--ci', 'none');
-  assert.match(refuses(root, 'set', '001', 'merged'), /no approving review/);
-  jarl(root, 'review', '001', 'approve', '--by', 'fresh-eyes', FINDINGS);
-  assert.match(jarl(root, 'set', '001', 'merged'), /001 → merged/);
+  jarl(root, 'merged', '1', '--sha', head, '--ci', 'none');
+  assert.match(refuses(root, 'set', '1', 'merged'), /no approving review/);
+  jarl(root, 'review', '1', 'approve', '--by', 'fresh-eyes', FINDINGS);
+  assert.match(jarl(root, 'set', '1', 'merged'), /1 → merged/);
 });
 
 test('no done-gate: a loop without the key closes exactly as before — no merge asked for', () => {
   const { root } = mission({ ...HORDE, name: 'plain', 'done-gate': undefined, 'external-scheduler': undefined, statuses: { ...HORDE.statuses, merged: ['settles-dependents', 'terminal', 'closes-record'] } });
   jarl(root, 'new', 'ticket');
-  R.setStatus(root, '001', 'queued');
-  jarl(root, 'set', '001', 'running', '--worker', 'w1');
-  jarl(root, 'evidence', '001', '--ran', 'x', '--saw', 'y');
-  jarl(root, 'review', '001', 'approve', '--by', 'fresh-eyes', FINDINGS);
-  assert.match(jarl(root, 'set', '001', 'merged'), /001 → merged/);
+  R.setStatus(root, '1', 'queued');
+  jarl(root, 'set', '1', 'running', '--worker', 'w1');
+  jarl(root, 'evidence', '1', '--ran', 'x', '--saw', 'y');
+  jarl(root, 'review', '1', 'approve', '--by', 'fresh-eyes', FINDINGS);
+  assert.match(jarl(root, 'set', '1', 'merged'), /1 → merged/);
 });
 
 // ---- every view on a mission's loop ----
 
 test('every view tells the truth on a mission\'s loop: next, queue, status, resume, tips, branches, report, list', () => {
   const { repo, root } = mission();
-  // 001 merged and landed; 002 in flight on its branch; 003 queued but held back by the composer's own edges (Jarl
-  // cannot see them); 004 proposed; 005 dropped.
+  // 1 merged and landed; 2 in flight on its branch; 3 queued but held back by the composer's own edges (Jarl
+  // cannot see them); 4 proposed; 5 dropped.
   for (const t of ['landed one', 'in flight', 'queued', 'proposed', 'gone']) jarl(root, 'new', t);
-  R.setStatus(root, '001,002,003,005', 'queued');
-  sh(repo, 'git checkout -q -b jarl/001-landed && echo 2 > src/a.mjs && git commit -qam one && git checkout -q main && git merge -q --ff-only jarl/001-landed');
-  jarl(root, 'set', '001', 'running', '--branch', 'jarl/001-landed', '--worker', 'w1');
-  jarl(root, 'evidence', '001', '--ran', 'gate', '--saw', 'green');
-  R.recordMerged(root, '001', { sha: sh(repo, 'git rev-parse HEAD'), ci: 'none' });
-  R.setStatus(root, '001', 'merged');
-  sh(repo, 'git checkout -q -b jarl/002-flight && echo 3 > src/b.mjs && git add src/b.mjs && git commit -qm two && git checkout -q main');
-  jarl(root, 'set', '002', 'running', '--branch', 'jarl/002-flight', '--worker', 'w2');
-  jarl(root, 'set', '005', 'dropped', 'out of scope');
+  R.setStatus(root, '1,2,3,5', 'queued');
+  sh(repo, 'git checkout -q -b jarl/1-landed && echo 2 > src/a.mjs && git commit -qam one && git checkout -q main && git merge -q --ff-only jarl/1-landed');
+  jarl(root, 'set', '1', 'running', '--branch', 'jarl/1-landed', '--worker', 'w1');
+  jarl(root, 'evidence', '1', '--ran', 'gate', '--saw', 'green');
+  R.recordMerged(root, '1', { sha: sh(repo, 'git rev-parse HEAD'), ci: 'none' });
+  R.setStatus(root, '1', 'merged');
+  sh(repo, 'git checkout -q -b jarl/2-flight && echo 3 > src/b.mjs && git add src/b.mjs && git commit -qm two && git checkout -q main');
+  jarl(root, 'set', '2', 'running', '--branch', 'jarl/2-flight', '--worker', 'w2');
+  jarl(root, 'set', '5', 'dropped', 'out of scope');
 
   // next and queue: the composer schedules, Jarl computes nothing.
   assert.equal(jarl(root, 'next'), 'scheduling is led by the composer: horde.mjs tick');
@@ -244,7 +244,7 @@ test('every view tells the truth on a mission\'s loop: next, queue, status, resu
 
   // resume: in flight is true, the ready list and the merge queue are the composer's.
   const rs = json(root, 'resume');
-  assert.deepEqual(rs.inFlight.map((x) => [x.id, x.branch, x.worker]), [['002', 'jarl/002-flight', 'w2']]);
+  assert.deepEqual(rs.inFlight.map((x) => [x.id, x.branch, x.worker]), [['2', 'jarl/2-flight', 'w2']]);
   assert.deepEqual(rs.next, []);
   assert.equal(rs.readyTotal, null);
   assert.deepEqual(rs.held, []);
@@ -257,13 +257,13 @@ test('every view tells the truth on a mission\'s loop: next, queue, status, resu
   const tips = json(root, 'tips');
   assert.equal(tips.repos.length, 1);
   const rows = tips.repos[0].rows.map((r) => [r.role, r.branch, r.issues || []]);
-  assert.deepEqual(rows, [['feature', 'jarl/002-flight', ['002']], ['release', 'main', []]]);
+  assert.deepEqual(rows, [['feature', 'jarl/2-flight', ['2']], ['release', 'main', []]]);
 
   // branches: the landed branch is done and deletable, the one in flight is not.
   const br = Object.fromEntries(json(root, 'branches').map((b) => [b.branch, b]));
-  assert.equal(br['jarl/001-landed'].done, 'delete');
-  assert.deepEqual(br['jarl/001-landed'].issues, ['001']);
-  assert.equal(br['jarl/002-flight'].done, null);
+  assert.equal(br['jarl/1-landed'].done, 'delete');
+  assert.deepEqual(br['jarl/1-landed'].issues, ['1']);
+  assert.equal(br['jarl/2-flight'].done, null);
 
   // report: merged is the done work, with the merge it closed on; dropped with its reason; the rest still open.
   const rp = json(root, 'report');
@@ -271,13 +271,13 @@ test('every view tells the truth on a mission\'s loop: next, queue, status, resu
   assert.equal(rp.dropped, 1);
   assert.equal(rp.left, 3);
   assert.deepEqual(rp.statuses, st.statuses);
-  assert.equal(rp.issues.find((i) => i.id === '001').merged, sh(repo, 'git rev-parse HEAD'));
+  assert.equal(rp.issues.find((i) => i.id === '1').merged, sh(repo, 'git rev-parse HEAD'));
   assert.match(rp.text, /## Done \(1\)\nclosed on a merge in the base, no approve required \(this loop's done gate\)/);
-  assert.match(rp.text, /## Dropped \(1\)\n- 005 gone — out of scope/);
-  assert.match(rp.text, /## Still open \(3\)\n- 002 in flight \(running\)\n- 003 queued \(queued\)\n- 004 proposed \(proposed\)/);
+  assert.match(rp.text, /## Dropped \(1\)\n- 5 gone — out of scope/);
+  assert.match(rp.text, /## Still open \(3\)\n- 2 in flight \(running\)\n- 3 queued \(queued\)\n- 4 proposed \(proposed\)/);
 
   // list: the unfinished ones, by the profile's statuses.
-  assert.deepEqual(json(root, 'list').map((i) => [i.id, i.status]), [['002', 'running'], ['003', 'queued'], ['004', 'proposed']]);
+  assert.deepEqual(json(root, 'list').map((i) => [i.id, i.status]), [['2', 'running'], ['3', 'queued'], ['4', 'proposed']]);
 });
 
 test('no profile: next is still the list and queue the rows, with no scheduler key anywhere', () => {
