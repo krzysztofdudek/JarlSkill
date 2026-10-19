@@ -329,6 +329,8 @@ function quick(root, ...args) {
   assert.equal(r.error, undefined, `jarl ${args.join(' ')} did not finish: ${r.error && r.error.message}`);
   return r;
 }
+// A named pipe cannot exist on Windows, so the tests that need one do not run there.
+const NO_PIPES = { skip: process.platform === 'win32' ? 'named pipes (mkfifo) do not exist on Windows' : false };
 // Replaces the file at rel by a named pipe.
 function pipeAt(root, rel) {
   const file = join(root, rel);
@@ -338,7 +340,7 @@ function pipeAt(root, rel) {
   assert.equal(made.status, 0, 'mkfifo made the pipe');
 }
 
-test('a named pipe at a slot path is refused by evidence --file, done, show and verify without blocking, and leaves no lock behind', () => {
+test('a named pipe at a slot path is refused by evidence --file, done, show and verify without blocking, and leaves no lock behind', NO_PIPES, () => {
   const root = loopWith();
   both(root);
   pipeAt(root, 'attachments/1/before.png');
@@ -354,7 +356,7 @@ test('a named pipe at a slot path is refused by evidence --file, done, show and 
   assert.equal(quick(root, 'evidence', '1', 'a note after the pipes').status, 0, 'the write lock is free');
 });
 
-test('status, resume and report do not block on a closed issue whose slot path has become a named pipe', () => {
+test('status, resume and report do not block on a closed issue whose slot path has become a named pipe', NO_PIPES, () => {
   const root = loopWith();
   both(root);
   jarl(root, 'set', '1', 'done');
