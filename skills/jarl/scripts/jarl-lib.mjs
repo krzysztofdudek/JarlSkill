@@ -2481,7 +2481,7 @@ function inspectAttachment(root, issueId, spec, rel, gone, hash = true) {
 // How a file that differs from its row is said: the recorded hash and the one the bytes have now, shortened.
 function changedText(recorded, now) { return `${recorded.path} does not match its recorded sha256 (recorded ${recorded.sha256.slice(0, 12)}, now ${now.sha256.slice(0, 12)})`; }
 // Where one required slot of an issue stands in the gate's window: the newest row of the slot, and the file as it is now. A
-// retraction empties the slot, and never brings back an older row. state is missing (no row in the window, or the newest is
+// retraction empties the slot, and never brings back an earlier row of it. state is missing (no row in the window, or the newest is
 // retracted: `outside` says a row of the slot exists before the window opened), filled, gone, changed (the bytes are not the
 // recorded ones) or refused. With `hash` false the file's size is compared and its bytes are not read, so changed then means a
 // different size; the done gate and verify read the bytes.
@@ -2529,7 +2529,7 @@ export function attachmentStates(root, issue) {
   });
 }
 // The lines show prints for an issue whose kind requires slots: each required slot, its recorded path and its state, one of
-// filled, gone, changed, refused (with its reason), outside (a row from before the gate's window, which does not count) and
+// filled, gone, changed, refused (with its reason), outside (a row recorded ahead of the gate's window, which does not count) and
 // not recorded (with its place and extensions).
 function attachmentLines(root, profile, issue) {
   const states = attachmentStates(root, issue);
