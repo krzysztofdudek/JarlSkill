@@ -629,6 +629,7 @@ export function raiseFormat(root, to = RECORD_FORMAT_RAISED) {
   if (!existsSync(jarlDir(root))) return false;
   return withLock(root, () => {
     if (loadProfile(root).format >= to) return false;
+    writeBarePaths(root);
     const path = profilePath(root);
     const json = existsSync(path) ? JSON.parse(readText(path)) : { 'jarl-profile': PROFILE_VERSION };
     json.format = to;
@@ -1448,9 +1449,10 @@ export function cmdNew(root, title, rawFlags) {
   need(PRIORITIES.includes(priority), '--prio must be 1, 2 or 3');
   const tier = String(flags.tier || profile.tierDefault);
   need(profile.tiers.includes(tier), `--tier must be one of: ${profile.tiers.join(', ')} — the tier of model the worker is raised on, mapped to a model by the platform running the loop`);
-  const repos = flags.repo !== undefined ? repoList(root, flags.repo) : [];
+  const picked = flags.repo !== undefined ? repoList(root, flags.repo) : [];
   const source = sourceList(flags.source);
   const after = flags.after !== undefined ? afterList(root, null, flags.after) : [];
+  commitRepoNames(root, picked);
   // The number is claimed by creating the file with a link, which never overwrites: when another
   // writer got there first (the lock makes that rare, not impossible — a hand-made file, a stale
   // lock broken early), the next number is tried instead of two issues sharing one.
@@ -1468,7 +1470,7 @@ export function cmdNew(root, title, rawFlags) {
     const tmp = join(dir, `.${id}.${process.pid}.tmp`);
     writeFileSync(tmp, renderIssue({
       id, title, status: profile.initial, kind, priority, tier, fields, sections, acceptanceHeading: profile.acceptance || 'Acceptance',
-      tags: splitList(flags.tags), files: pathList(flags.files), repo: repos.join(', '), foundBy: flags['found-by'] || 'jarl',
+      tags: splitList(flags.tags), files: pathList(flags.files), repo: picked.map((p) => p.value).join(', '), foundBy: flags['found-by'] || 'jarl',
       where: flags.where, what: bodyText(flags.what), why: bodyText(flags.why), source, after,
       // A template's Acceptance and Changelog are taken as written (a list already); a flag replaces them.
       acceptance: flags.acceptance !== undefined ? acceptanceText(flags.acceptance) : bodyText(fromTemplate.acceptance),
@@ -1482,7 +1484,8 @@ export function cmdNew(root, title, rawFlags) {
     unlinkSync(tmp);
     if (claimed) {
       // Said on the command line only (a library caller gets none, and its result does not change): the tier it used.
-      const note = rawFlags.caller === 'cli' && rawFlags.tier === undefined ? { note: tierNote(profile, tier) } : {};
+      const notes = rawFlags.caller === 'cli' ? [rawFlags.tier === undefined ? tierNote(profile, tier) : null, ...picked.map((p) => p.note && `note: ${p.note}`)].filter(Boolean) : [];
+      const note = notes.length ? { note: notes.join('\n') } : {};
       return { id, file, ...(rawFlags.template !== undefined ? { template: rawFlags.template } : {}), ...note };
     }
     need(tries < 100, 'could not claim a free issue number after 100 tries');
@@ -1707,10 +1710,13 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
     const loop = readLoop(jarlDir(root));
     for (const issue of issues) { const refusal = doneRefusalIn(root, loop, issue, flags.base); need(!refusal, `${refusal}${nothing}`); }
   }
-  // One lease for the whole call: every issue in a package gets the same Branch, Worker, Worktree and Since.
-  // A relative worktree path is read from the loop's root, like --repo, so it means the same from anywhere.
+  // One lease for the whole call: every issue in a package gets the same Branch, Worker and Since. A lease records no
+  // worktree: git allows a branch in at most one worktree, so the worktree of a lease is found through its branch. On the
+  // command line and in the tools --worktree is a check (a relative path is read from the loop's root, like --repo): a
+  // path that exists must be a worktree of a repository of the issue with the lease's branch checked out. The record
+  // library accepts the key and stores nothing.
   const since = stamp();
-  const worktree = flags.worktree !== undefined ? resolve(root, fieldText(flags.worktree)) : undefined;
+  if (holds && flags.worktree !== undefined && caller === 'cli') for (const issue of issues) needWorktreeOfLease(root, issue, flags.branch !== undefined ? fieldText(flags.branch) : fieldText(issue.fields.branch), resolve(root, fieldText(flags.worktree)));
   const writes = issues.map((issue) => {
     let text = readText(issue.file);
     text = setField(text, 'Status', status);
@@ -1720,7 +1726,6 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
       // The model belongs to the worker it was raised for: a new worker named without one does not inherit the last one's.
       if (model !== undefined) text = setField(text, 'Model', model);
       else if (flags.worker !== undefined) text = removeFields(text, ['Model']);
-      if (worktree !== undefined) text = setField(text, 'Worktree', worktree);
       text = setField(text, 'Since', since);
     } else {
       text = removeFields(text, LEASE_FIELDS);
@@ -1734,9 +1739,9 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
     }
     return { issue, text };
   });
-  // The model goes before the worker: the worker is read as the text after "· worker " up to "· worktree " or the end of
-  // the line, so a model written after it would become part of the worker's name.
-  const leaseNote = [flags.branch !== undefined && `branch ${fieldText(flags.branch)}`, model !== undefined && `model ${model}`, flags.worker !== undefined && `worker ${fieldText(flags.worker)}`, worktree !== undefined && `worktree ${worktree}`].filter(Boolean).join(' · ');
+  // The model goes before the worker: the worker is read as the text after "· worker " up to the end of the line (or up to
+  // "· worktree " in a line that carries one), so a model written after it would become part of the worker's name.
+  const leaseNote = [flags.branch !== undefined && `branch ${fieldText(flags.branch)}`, model !== undefined && `model ${model}`, flags.worker !== undefined && `worker ${fieldText(flags.worker)}`].filter(Boolean).join(' · ');
   // The reason is free text in front of the lease's fields: on a lease its own " · " is neutralised, so no reason can be
   // read as a branch, a model or a worker.
   // A reason that opens with the name of a lease field is closed by a segment "(reason)", so no reader takes it for the field.
@@ -1750,7 +1755,19 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   for (const w of writes) writeAtomic(w.issue.file, w.text);
   // Said on the command line only, and only in a loop that declares model lines: a lease with no model (once per call).
   const leaseNoModel = caller === 'cli' && holds && model === undefined && modelLines(root).declared ? 'no --model on this lease — the loop declares its models, and a model that is not recorded can never be recovered' : null;
-  return oneOrMany(rawIds, issues.map((issue, n) => ({ id: issue.id, status, ...(holds ? { since, ...(flags.branch !== undefined ? { branch: fieldText(flags.branch) } : {}), ...(flags.worker !== undefined ? { worker: fieldText(flags.worker) } : {}), ...(model !== undefined ? { model } : {}), ...(worktree !== undefined ? { worktree } : {}) } : {}), ...(profile.is(status, 'closes-record') ? doneNote(issue, root) : {}), ...(leaseNoModel && n === 0 ? { note: leaseNoModel } : {}) })));
+  const worktreeNote = caller === 'cli' && holds && flags.worktree !== undefined ? '--worktree was checked and is not recorded — the worktree of a lease is found through its branch' : null;
+  const leaseNotes = [leaseNoModel, worktreeNote].filter(Boolean).join('; ');
+  return oneOrMany(rawIds, issues.map((issue, n) => ({ id: issue.id, status, ...(holds ? { since, ...(flags.branch !== undefined ? { branch: fieldText(flags.branch) } : {}), ...(flags.worker !== undefined ? { worker: fieldText(flags.worker) } : {}), ...(model !== undefined ? { model } : {}) } : {}), ...(profile.is(status, 'closes-record') ? doneNote(issue, root) : {}), ...(leaseNotes && n === 0 ? { note: leaseNotes } : {}) })));
+}
+
+// The check behind set --worktree: a path that exists is a worktree of one of the repositories the issue names (or the
+// loop's own) with `branch` checked out; a path that does not exist is not checked.
+function needWorktreeOfLease(root, issue, branch, path) {
+  if (!existsSync(path)) return;
+  const repos = issueRepoPaths(root, issue).filter(isGitRepo);
+  const listed = repos.flatMap((r) => (worktreesOf(r) || []).filter((w) => sameDir(w.path, path)));
+  need(listed.length > 0, `--worktree ${path} is not a worktree of ${repos.length ? repos.map((r) => repoLabel(r)).join(' or ') : 'a repository of ' + issue.id} — a lease is its branch, and the worktree is found through it`);
+  need(!branch || listed.some((w) => w.branch === branch), `--worktree ${path} has ${listed[0].branch ?? 'no branch'} checked out, not ${branch}, the branch of the lease`);
 }
 
 // Free text written into a log line beside its fields (a lease's reason, a merge's check and what it printed): every
@@ -1948,14 +1965,17 @@ export function cmdMerged(root, rawIds, flags) {
     cause = tracked.id;
   }
   if (flags.sha === undefined) for (const issue of issues) need(mergedOf(issue), `${issue.id} records no merge yet — give --sha: jarl.mjs merged ${issue.id} --sha <sha> --ci ${flags.ci}${nothing}`);
-  const repoPath = flags.repo !== undefined ? repoOf(root, flags.repo) : null;
+  const pickedRepo = flags.repo !== undefined ? repoFromInput(root, String(flags.repo)) : null;
+  const repoPath = pickedRepo ? pickedRepo.main : null;
+  const repoIn = pickedRepo ? ` in ${noSeparators(pickedRepo.value)}` : '';
+  if (flags.sha !== undefined) needRightCheckouts(root, pickedRepo ? [pickedRepo.name].filter(Boolean) : issues.flatMap((i) => splitList(i.fields.repo)));
   const sha = flags.sha !== undefined ? String(flags.sha).toLowerCase() : null;
   const ci = flags.ci ?? (sha && !cli ? 'pending' : undefined);
   // The check as the merge line names it: the commands that ran, one line, never the log's own separator.
   const oneLineOf = (key) => noSeparators(fieldText(rows.map((r) => r[key]).join(' ; '))).slice(0, 200).trim();
   const checkText = rows ? oneLineOf('ran') : null;
   const sawText = rows ? oneLineOf('saw') : null;
-  const notes = [];
+  const notes = pickedRepo && pickedRepo.note ? [pickedRepo.note] : [];
   if (sha) {
     // Where the sha should be: --repo, else each issue's Repo, else the loop's own repository.
     // An issue naming several repositories is noted only when the sha is in none of them.
@@ -1987,13 +2007,14 @@ export function cmdMerged(root, rawIds, flags) {
   }
   // The check goes into the merge record (the merge line and the Merge check field) and never into Proof: the merger's
   // check is not the worker's proof, so only evidence writes a row.
-  const named = `${flags.repo !== undefined ? ` in ${fieldText(flags.repo)}` : ''}${checkText ? ` · check ${checkText}${sawText ? ` · saw ${sawText}` : ''}` : ''}${cause ? ` · landed red, cause ${cause}` : ''}${ci ? ` · CI ${ci}` : ''}`;
+  const named = `${repoIn}${checkText ? ` · check ${checkText}${sawText ? ` · saw ${sawText}` : ''}` : ''}${cause ? ` · landed red, cause ${cause}` : ''}${ci ? ` · CI ${ci}` : ''}`;
   // The line goes first, as in set: a write that stops between the two leaves the record ahead of the files.
+  if (pickedRepo) commitRepoNames(root, [pickedRepo]);
   appendLogLines(root, issues.map((issue) => (sha ? `${issue.id} merged ${sha}${named}` : `${issue.id} CI ${ci}`)));
   for (const issue of issues) {
     let text = readText(issue.file);
     if (sha) {
-      text = setField(text, 'Merged', `${sha}${flags.repo !== undefined ? ` in ${fieldText(flags.repo)}` : ''}`);
+      text = setField(text, 'Merged', `${sha}${repoIn}`);
       const kept = mergeCheckText(checkText, sawText);
       text = kept ? setField(text, 'Merge check', kept) : removeFields(text, ['Merge check']);
     }
@@ -2001,7 +2022,7 @@ export function cmdMerged(root, rawIds, flags) {
     writeAtomic(issue.file, text);
   }
   // The cleanup comes last, after the merge is on the record, and only on the command line and in the tools.
-  const cleanup = sha && cli && flags.keep !== true ? cleanUpAfterMerge(root, issues, sha, repoPath) : [];
+  const cleanup = sha && cli && flags.keep !== true ? cleanUpAfterMerge(root, issues, sha, repoPath, pickedRepo && pickedRepo.name ? [pickedRepo.name] : []) : [];
   return { ids: issues.map((i) => i.id), sha: sha || null, ci: ci ?? null, ...(checkText ? { check: checkText } : {}), ...(cause ? { red: cause } : {}), ...(cleanup.length ? { cleanup } : {}), notes };
 }
 
@@ -2024,7 +2045,7 @@ const sameDir = (a, b) => canonical(a) === canonical(b);
 const missingWorktreeReason = () => 'git lists its worktree but its directory is missing here';
 const insideDir = (dir, path) => { const r = relative(canonical(dir), canonical(path)); return r === '' || (!r.startsWith('..') && !isAbsolute(r)); };
 
-function cleanUpAfterMerge(root, issues, sha, repoPath) {
+function cleanUpAfterMerge(root, issues, sha, repoPath, named = []) {
   const profile = loadProfile(root);
   const everyone = loadIssues(root);
   const called = new Set(issues.map((i) => i.id));
@@ -2044,6 +2065,8 @@ function cleanUpAfterMerge(root, issues, sha, repoPath) {
     const base = defaultBase(repo);
     const result = { repo: repoLabel(repo), branch };
     const keep = (reason, extra = {}) => results.push({ ...result, ...extra, kept: reason });
+    const unsafe = whyNotDeletable(root, repo, [...on.flatMap((i) => splitList(i.fields.repo)), ...named]);
+    if (unsafe) { keep(unsafe); continue; }
     if (TRUNK_NAME.test(branch) || branch === base) { keep('it is the base or a release branch'); continue; }
     const others = everyone.filter((i) => !called.has(i.id) && fieldText(i.fields.branch) === branch && profile.unfinished(i.status) && issueRepos(root, i).includes(repo)).map((i) => i.id);
     if (others.length) { keep(`${others.join(', ')} still hold${others.length === 1 ? 's' : ''} a lease on it`); continue; }
@@ -2128,14 +2151,21 @@ export function cmdRepo(root, rawId, path, { clear = false } = {}) {
   need(issue, `no such issue: ${rawId}`);
   if (clear) {
     need(issue.fields.repo, `${issue.id} has no Repo field to clear`);
+    appendLog(root, `${issue.id} repo · cleared · was ${noSeparators(issue.fields.repo)}`);
     const text = removeFirstField(readText(issue.file), 'Repo');
     writeAtomic(issue.file, text);
     return { id: issue.id, repo: null, cleared: true };
   }
-  need(path !== undefined, 'repo requires <path> — the checkout of the repository the issue\'s code lives in, several as one comma list (or --clear to remove the field)');
-  const repos = repoList(root, path);
+  need(path !== undefined, 'repo requires <name or path> — the repository the issue\'s code lives in (its name, its checkout, a worktree of it or a file inside it), several as one comma list (or --clear to remove the field)');
+  const picked = repoList(root, path);
+  commitRepoNames(root, picked);
+  const repos = picked.map((p) => p.value);
+  const was = fieldText(issue.fields.repo);
+  const notes = picked.map((p) => p.note).filter(Boolean);
+  if (was === repos.join(', ')) return { id: issue.id, repo: was, repos, unchanged: true, notes };
+  appendLog(root, `${issue.id} repo · ${noSeparators(repos.join(', '))}${was ? ` · was ${noSeparators(was)}` : ''}`);
   writeAtomic(issue.file, setField(readText(issue.file), 'Repo', repos.join(', ')));
-  return { id: issue.id, repo: repos.join(', '), repos };
+  return { id: issue.id, repo: repos.join(', '), repos, notes };
 }
 
 // ---- issues: the rows of an Evidence section -------------------------------------------------------
@@ -2360,7 +2390,7 @@ export function issueView(root, issue, { full = false } = {}) {
   pieces.push(cur);
   const numbered = (body, rows) => body.map((l, i) => { const r = rows.find((x) => x.start === i); return r ? l.replace(/^- /, `- [${r.n}] `) : l; });
   const g = full ? null : gateState(root, issue.id);
-  const notes = recordDisagreements(readLoop(jarlDir(root))).filter((d) => d.id === issue.id).map(disagreementText);
+  const notes = [...recordDisagreements(readLoop(jarlDir(root))).filter((d) => d.id === issue.id).map(disagreementText), ...whereLines(whereOf(root, issue))];
   const out = [];
   for (const p of pieces) {
     if (p.name === null && notes.length) {
@@ -2430,10 +2460,10 @@ export function fileAt(root, issue, declared) {
   // Several repositories: the one whose name the entry starts with; an entry that starts with none of them is
   // a path in the first one named.
   for (const r of named) { const hit = prefixedIn(root, r, declared); if (hit) return hit; }
-  return { repo: canonical(resolve(root, named[0])), path: declared };
+  return { repo: canonical(repoPlace(root, named[0]).path), path: declared };
 }
 function prefixedIn(root, named, declared) {
-  const spelled = resolve(root, named);
+  const spelled = repoPlace(root, named).path;
   const repo = canonical(spelled);
   // The name written in front of a path is the repository's own directory name, or the name its Repo path
   // spells (a symlink or another case of it): either reads as the same prefix.
@@ -2447,17 +2477,9 @@ function prefixedIn(root, named, declared) {
   return null;
 }
 
-// The repositories an issue names, as written: its Repo field, one path or a comma list. Empty for an issue
+// The repositories an issue names, as written: its Repo field, names and paths as a comma list. Empty for an issue
 // whose code lives in the loop's own repository.
 export function reposNamed(issue) { return splitList(issue.fields.repo); }
-// A --repo value on new, import and repo: one path or a comma list, each the root of a git repository.
-function repoList(root, v) {
-  need(typeof v === 'string', '--repo takes one path, or several as one comma list');
-  const list = pathList(v);
-  need(list.length, '--repo needs a path');
-  for (const r of list) repoOf(root, r);
-  return list;
-}
 
 // The words next, queue, status and resume say in place of what they would compute, on a loop whose profile names an
 // external scheduler: Jarl does not know that scheduler's edges (ports, leases, holds), so a ready list of its own would
@@ -2630,7 +2652,7 @@ function statusOf(root, loop, flags) {
       const g = (groups[k] = groups[k] || Object.fromEntries(profile.statuses.map((st) => [st, 0])));
       if (Object.hasOwn(g, i.status)) g[i.status] += 1;
     }
-    c.by = { key: declared ? declared.key : flags.by, groups: Object.fromEntries(Object.keys(groups).sort().map((k) => [k, groups[k]])) };
+    c.by = { key: declared ? declared.key : flags.by, groups: Object.fromEntries(Object.keys(groups).sort().map((k) => [k, groups[k]])), ...(flags.by === 'repo' && !declared ? { where: reposWhere(root, issues) } : {}) };
   }
   // Last, so every key status --json carried before keeps its place.
   if (flags.tag !== undefined) c.tag = flags.tag;
@@ -2864,6 +2886,24 @@ export function appendNote(root, event) {
   const type = id === null ? 'other' : parseEvent(id, text, loadProfile(root)).type;
   need(type === 'other', `log writes a note, and "${text.length > 80 ? `${text.slice(0, 77)}...` : text}" reads as ${type === 'filed' ? 'a filing' : `a ${type.replace('-', ' ')} line`}, which the journal's own command writes with its checks: ${LINE_WRITERS[type]}`);
   appendLog(root, event);
+}
+
+// Writes the repository after "in" of every merge line of the log as `fn(value)` gives it, the rest of the line as it was;
+// nothing is written when no line changes. Only the raise of the record format calls it.
+// Only a line the tool itself writes for a merge is touched: the id of an issue of the loop first, the sha, the repository,
+// then only the fixed segments (check, saw, landed red, CI) in the order merged writes them. Any other line is left as it is.
+const MERGE_REPO_PART = idRe('^({id}) merged ([0-9a-f]{4,64}) in ([^\\n]+?)((?: · check [^\\n]*?)?(?: · saw [^\\n]*?)?(?: · landed red, cause \\S+)?(?: · CI (?:pending|green|red|none))?)$');
+export function mapMergeRepos(root, fn) {
+  const path = logPath(jarlDir(root));
+  if (!existsSync(path)) return;
+  const log = readText(path);
+  const held = issueForms(jarlDir(root));
+  const next = log.split('\n').map((l) => {
+    const m = LOG_LINE.exec(l);
+    const p = m && MERGE_REPO_PART.exec(m[2]);
+    return p && held.has(idKey(p[1])) && !p[3].includes(' · ') ?`- ${m[1]} · ${p[1]} merged ${p[2]} in ${fn(p[3])}${p[4]}` : l;
+  }).join('\n');
+  if (next !== log) writeAtomic(path, next);
 }
 
 // Every dated line of the loop's log under `dir` (the directory holding the goal, the log and issues/), in order, as
@@ -4057,14 +4097,20 @@ function nextAfterVerdict(issue, verdict, kind) {
 
 // The worktrees of the repository `dir` is in, as `git worktree list --porcelain` gives them: { path, branch (null when detached), bare, locked,
 // reason (of the lock), prunable }, the main checkout first. Null where git does not answer. The one place the list is
-// split into entries.
+// split into entries. The first entry of a repository kept in a submodule is git's own directory for it (inside the
+// superproject's .git), not a working tree: its working tree is the directory its core.worktree names, and one without
+// that setting has none (bare).
 function worktreesOf(dir) {
   const text = git(dir, ['worktree', 'list', '--porcelain']);
   if (text === null) return null;
   return text.split(/\n\s*\n/).map((b) => ({
     path: /^worktree (.+)$/m.exec(b)?.[1], branch: /^branch refs\/heads\/(.+)$/m.exec(b)?.[1] || null, bare: /^bare$/m.test(b),
     locked: /^locked(?: |$)/m.test(b), reason: /^locked (.+)$/m.exec(b)?.[1], prunable: /^prunable(?: |$)/m.test(b),
-  })).filter((e) => e.path);
+  })).filter((e) => e.path).map((e, k) => {
+    if (k !== 0 || e.bare || !existsSync(join(e.path, 'HEAD')) || existsSync(join(e.path, '.git'))) return e;
+    const tree = git(e.path, ['config', '--get', 'core.worktree']);
+    return tree ? { ...e, path: resolve(e.path, tree) } : { ...e, bare: true };
+  });
 }
 
 // Read once per run: whether a directory is in a git repository, and every local branch of a repository with its
@@ -4098,31 +4144,6 @@ export function refsIn(repo) {
   }
   REFS.set(repo, map);
   return map;
-}
-
-// Where git runs for an issue's code. A loop may keep its issues in one repository while its workers
-// change another; that other repository is named by --repo on the command or by the issue's Repo
-// field. A relative path is read from the loop's root, not the caller's directory, because workers,
-// reviewers and the merger call the tool from different checkouts with the same --root. Naming
-// nothing keeps git where the loop lives.
-//
-// A repository that resolved once resolves the same for the rest of the run: a loop of hundreds of issues names a
-// handful of repositories, and each check costs two git processes. A path that failed is checked again, so its
-// refusal always names the current state.
-const RESOLVED = new Map();
-export function repoOf(root, named) {
-  if (named === undefined || named === '') return root;
-  need(typeof named === 'string', '--repo takes one path — the checkout of the repository the code lives in');
-  const key = `${root}\n${named}`;
-  if (RESOLVED.has(key)) return RESOLVED.get(key);
-  const repo = resolve(root, named);
-  need(isGitRepo(repo), `not a git repository: ${repo} (a relative --repo or Repo path is read from the loop's root, ${root})`);
-  // A subdirectory of a repository is not the repository: the paths git reports are relative to its root, so a
-  // declared file or a removed test would be read from the wrong place and go unseen.
-  const top = git(repo, ['rev-parse', '--show-toplevel']);
-  need(top !== null && canonical(top) === canonical(repo), `${repo} is inside the repository at ${top}, not its root — name the root: ${portablePath(relative(canonical(root), canonical(top || repo))) || '.'}`);
-  RESOLVED.set(key, repo);
-  return repo;
 }
 
 export function roundsOf(root, id) {
@@ -4174,7 +4195,7 @@ export function cmdCheck(root, rawId, flags) {
     need(pkg.length, `no issue records branch ${flags.branch} — name one (check <id> --branch ${flags.branch}), or record the package: set <ids> in-progress --branch ${flags.branch}`);
     if (flags.repo === undefined) {
       const repos = new Map();
-      for (const i of pkg) for (const n of namedRepos(reposNamed(i))) { const r = canonical(resolve(root, n ?? '.')); repos.set(r, [...(repos.get(r) || []), i.id]); }
+      for (const i of pkg) for (const r of issuePlaces(root, i)) repos.set(r, [...(repos.get(r) || []), i.id]);
       need(repos.size === 1, `the issues on ${flags.branch} name different repositories (${[...repos.values()].map((ids) => ids.join(', ')).join(' | ')}) — check them one by one, or pass --repo`);
     }
   } else {
@@ -4184,7 +4205,7 @@ export function cmdCheck(root, rawId, flags) {
     need(flags.repo !== undefined || reposNamed(issue).length <= 1, `${issue.id} names several repositories (${reposNamed(issue).join(', ')}) — check one at a time with --repo <path>`);
   }
   const issue = pkg[0];
-  const repo = repoOf(root, flags.repo ?? reposNamed(issue)[0]);
+  const repo = flags.repo !== undefined ? repoFromInput(root, flags.repo).main : repoOf(root, reposNamed(issue)[0]);
   const realRepo = canonical(repo);
   const where = repo === root ? '' : ` in ${repo}`;
   const base = flags.base || defaultBase(repo);
@@ -4208,8 +4229,8 @@ export function cmdCheck(root, rawId, flags) {
   // repository's name first is matched by the path after that name.
   // `--repo` on the command reads the paths as the issue's own Repo field would.
   // An issue that names several repositories bounds the diff by the files it declares in the one read here.
-  const listsRepo = (i) => reposNamed(i).some((n) => canonical(resolve(root, n)) === realRepo);
-  const named = (i) => (flags.repo !== undefined && !listsRepo(i) ? { ...i, fields: { ...i.fields, repo: flags.repo } } : i);
+  const listsRepo = (i) => Boolean(i.fields.repo) && issuePlaces(root, i).includes(realRepo);
+  const named = (i) => (flags.repo !== undefined && !listsRepo(i) ? { ...i, fields: { ...i.fields, repo: portablePath(repo) } } : i);
   const here = pkg.flatMap((i) => i.files.map((d) => ({ d, at: fileAt(root, named(i), d) }))).filter((x) => canonical(x.at.repo) === realRepo);
   const declaredFiles = [...new Set(here.map((x) => x.d))];
   const declared = here.map((x) => x.at.path);
@@ -4240,7 +4261,7 @@ export function cmdCheck(root, rawId, flags) {
 export function cmdBranches(root, flags) {
   const hours = staleHours(flags);
   const issues = loadIssues(root);
-  const repos = flags.repo !== undefined ? [repoOf(root, flags.repo)] : loopRepos(root, issues);
+  const repos = flags.repo !== undefined ? [repoFromInput(root, flags.repo).main] : loopRepos(root, issues);
   return repos.flatMap((repo) => branchesIn(root, repo, flags, issues, hours));
 }
 
@@ -4285,27 +4306,6 @@ function loopRepos(root, issues) {
   }
   return [...seen.values()];
 }
-
-// The repository an issue's code lives in, canonical; empty when its Repo path does not resolve. Resolved
-// once per spelling of the path in a run: a loop of hundreds of issues names a handful of repositories.
-const REPO_OF = new Map();
-function issueRepos(root, issue) {
-  const key = `${root}\n${issue.fields.repo || ''}`;
-  if (!REPO_OF.has(key)) REPO_OF.set(key, issueRepoPaths(root, issue).map(canonical));
-  return REPO_OF.get(key);
-}
-// The one resolver of the repositories an issue names: the checkouts its Repo field gives, as repoOf resolves them, or
-// the loop's own repository where it names none. `names` stands in for the Repo field where something else names the
-// repository (a recorded merge). A name that does not resolve is left out: a Repo path that is gone is no refusal here.
-function issueRepoPaths(root, issue, names = reposNamed(issue)) {
-  const out = [];
-  for (const n of namedRepos(names)) { try { out.push(repoOf(root, n)); } catch { /* not a repository here */ } }
-  return out;
-}
-// The names to resolve: the ones given, or undefined (the loop's own repository) where there are none.
-function namedRepos(names) { return names.length ? names : [undefined]; }
-// What a repository is called wherever the tool shows one: the name of its directory.
-function repoLabel(dir, fallback = dir) { return basename(String(dir).replace(/[\\/]+$/, '')) || basename(resolve(fallback)); }
 
 // The issues a branch carries in one repository: those that record it as their Branch, and — for an issue
 // that records no Branch — the one whose number the branch's jarl/NNN-* name carries.
@@ -4416,6 +4416,364 @@ function branchesIn(root, repo, flags, issues, hours = STALE_HOURS) {
   return [...rows, ...gone];
 }
 
+// ---- repositories: names, declarations and the one resolver ------------------------------------------------------
+//
+// A repository an issue names is written as a name or as a path. The record holds identity and the machine holds
+// location. A name is the directory git clone gives the repository; it holds no path and resolves, here and nowhere
+// else, to the sibling of the loop's main checkout. A path is read from the loop's root. How a stored value reads
+// depends on the loop's record format: in format 1 every value is a path; in format 2 a value that starts with a dot, a
+// slash or a drive letter is a path, and anything else is a name. Jarl declares a name once, in .jarl/repos.md, with the
+// root commits of the repository (all of them), its origin as found and its base branch, and no path. The root commits
+// are read to declare a repository and to check one (repoIdentity); no other command reads them. Nothing resolved is
+// ever written: the views print where a repository is on this machine and store none of it.
+export const REPOS_FILE = 'repos.md';
+const reposPath = (root) => join(jarlDir(root), REPOS_FILE);
+const REPO_NAME_RE = /^[A-Za-z0-9_][A-Za-z0-9._-]*$/;
+const PATH_START = /^(?:[./\\]|[A-Za-z]:(?:[\\/]|$))/;
+// 'name' or 'path': how a stored Repo value (or the in-part of a recorded merge) reads in this loop.
+export function repoValueKind(root, value) {
+  return loadProfile(root).format >= RECORD_FORMAT_RAISED && !PATH_START.test(value) && REPO_NAME_RE.test(value) ? 'name' : 'path';
+}
+
+// The directory a name is looked for in: the parent of the loop's main checkout, found through git's common directory, so
+// a loop opened in a linked worktree finds its siblings beside the main checkout. A loop outside git looks beside its root.
+const HOMES = new Map();
+function loopHome(root) {
+  if (HOMES.has(root)) return HOMES.get(root);
+  const found = mainCheckoutOf(root);
+  const home = dirname(found && found.main ? found.main : canonical(resolve(root)));
+  if (found && found.main) HOMES.set(root, home);
+  return home;
+}
+const nameFix = (root, name) => `the repository ${name} is not on this machine — put its checkout, or a symlink to it, at ${join(loopHome(root), name)}`;
+
+// Where a stored value points on this machine, with no check that a repository is there: { path, name } with name null for
+// a path. No value is the loop's own directory.
+export function repoPlace(root, value) {
+  if (value === undefined || value === '') return { path: root, name: null };
+  if (repoValueKind(root, value) === 'path') return { path: resolve(root, value), name: null };
+  return { path: join(loopHome(root), value), name: value };
+}
+
+// Where git runs for an issue's code. A loop may keep its issues in one repository while its workers change another;
+// the issue's Repo field names it. A relative path is read from the loop's root, not the caller's directory, because
+// workers, reviewers and the merger call the tool from different checkouts with the same --root. Naming nothing keeps git
+// where the loop lives. A repository that resolved once resolves the same for the rest of the run: a loop of hundreds of
+// issues names a handful of repositories, and each check costs two git processes. One that failed is checked again, so
+// its refusal always names the current state.
+const RESOLVED = new Map();
+export function repoOf(root, named) {
+  if (named === undefined || named === '') return root;
+  need(typeof named === 'string', '--repo takes one name or path — the repository the code lives in');
+  const key = `${root}\n${loadProfile(root).format}\n${named}`;
+  if (RESOLVED.has(key)) return RESOLVED.get(key);
+  const { path: repo, name } = repoPlace(root, named);
+  need(isGitRepo(repo), name ? `${nameFix(root, name)} (${repo} is not a git repository)` : `not a git repository: ${repo} (a relative --repo or Repo path is read from the loop's root, ${root})`);
+  // A subdirectory of a repository is not the repository: the paths git reports are relative to its root, so a
+  // declared file or a removed test would be read from the wrong place and go unseen.
+  const top = git(repo, ['rev-parse', '--show-toplevel']);
+  need(top !== null || git(repo, ['rev-parse', '--is-bare-repository']) !== 'true', `${repo} is a bare repository: it has no working tree to act on`);
+  need(top !== null && canonical(top) === canonical(repo), name ? `${repo} is inside the repository at ${top}, not its root — ${nameFix(root, name)}` : `${repo} is inside the repository at ${top}, not its root — name the root: ${portablePath(relative(canonical(root), canonical(top || repo))) || '.'}`);
+  RESOLVED.set(key, repo);
+  return repo;
+}
+
+// The repository an issue's code lives in, canonical; empty when its Repo value does not resolve. Resolved once per
+// spelling of the value in a run: a loop of hundreds of issues names a handful of repositories.
+const REPO_OF = new Map();
+function issueRepos(root, issue) {
+  const key = `${root}\n${loadProfile(root).format}\n${issue.fields.repo || ''}`;
+  if (!REPO_OF.has(key)) REPO_OF.set(key, issueRepoPaths(root, issue).map(canonical));
+  return REPO_OF.get(key);
+}
+// The checkouts an issue's Repo field gives, as repoOf resolves them, or the loop's own repository where it names none.
+// `names` stands in for the Repo field where something else names the repository (a recorded merge). A value that does
+// not resolve is left out: a repository that is not on this machine is no refusal here.
+function issueRepoPaths(root, issue, names = reposNamed(issue)) {
+  const out = [];
+  for (const n of namedRepos(names)) { try { out.push(repoOf(root, n)); } catch { /* not a repository here */ } }
+  return out;
+}
+// The values to resolve: the ones given, or undefined (the loop's own repository) where there are none.
+function namedRepos(names) { return names.length ? names : [undefined]; }
+// The canonical places an issue's Repo values point to, resolved or not: one key for one repository.
+function issuePlaces(root, issue) { return namedRepos(reposNamed(issue)).map((n) => canonical(repoPlace(root, n).path)); }
+// What a repository is called wherever the tool shows one: the name of its directory.
+function repoLabel(dir, fallback = dir) { return basename(String(dir).replace(/[\\/]+$/, '')) || basename(resolve(fallback)); }
+// What the report and the status group an issue's repositories under: a name is its own label, a path the name of the
+// directory of the repository it points into.
+function repoEntries(root, issue) {
+  const named = reposNamed(issue);
+  if (!named.length) return [{ label: repoLabel(topOf(root)), value: undefined }];
+  const seen = new Set();
+  return named.map((value) => { const p = repoPlace(root, value); return { label: p.name ?? repoLabel(topOf(canonical(p.path))), value }; }).filter((e) => !seen.has(e.label) && seen.add(e.label));
+}
+
+// ---- what a person or a tool names a repository by, and what is stored
+
+// A remote url as the record spells it: host and path, with no scheme, credentials or .git; null for a local path.
+export function originSpelling(url) {
+  const raw = String(url ?? '').trim();
+  if (!raw) return null;
+  const full = /^[a-z][a-z0-9+.-]*:\/\/(?:[^@/]*@)?([^/:]+)(?::\d+)?\/(.+)$/i.exec(raw);
+  const scp = /^(?:[^@/\s]+@)?([^:/\s]+):(?!\/\/)(.+)$/.exec(raw);
+  const m = full ?? (scp && !/^[A-Za-z]:[\\/]/.test(raw) ? scp : null);
+  return m ? noSeparators(`${m[1]}/${m[2].replace(/\/+$/, '').replace(/\.git$/, '')}`) : null;
+}
+// The root commits reachable from `ref` in the checkout `dir`, sorted; null when the checkout is shallow, which cannot
+// show them. The one place the roots are read.
+function rootsOf(dir, ref = 'HEAD') {
+  if (git(dir, ['rev-parse', '--is-shallow-repository']) === 'true') return null;
+  const out = git(dir, ['rev-list', '--max-parents=0', ref]);
+  return out === null ? [] : out.split('\n').filter(Boolean).sort();
+}
+// The path to a main checkout from the loop's root, written so that a format-2 loop reads it as a path.
+function pathTo(root, main) {
+  const rel = portablePath(relative(canonical(root), main));
+  if (rel === '') return '.';
+  if (isAbsolute(rel) || /^[A-Za-z]:/.test(rel)) return main;
+  return PATH_START.test(rel) ? rel : `./${rel}`;
+}
+
+// What a person or a tool gives for a repository — a name, a checkout, a worktree of it or a file inside it — reduced to
+// its main checkout through git's list of worktrees: { main, name, value, note }. `value` is what Repo stores: the name
+// when the checkout sits where the convention looks for it, else the path (with a note saying why, so two repositories
+// that share a directory name stay apart). Writes nothing.
+export function repoFromInput(root, raw) {
+  need(typeof raw === 'string' && raw.trim() !== '', '--repo takes a repository: its name, its checkout, a worktree of it or a file inside it');
+  const given = portablePath(raw.trim());
+  need(!/[\r\n]/.test(given) && !given.includes(' · '), `--repo ${JSON.stringify(given)} is on more than one line or holds the log's separator: a repository is one name or one path`);
+  const word = !PATH_START.test(given);
+  need(!word || REPO_NAME_RE.test(given), `${JSON.stringify(given)} is neither a path (it starts with . or /) nor a repository name (letters, digits, - _ and . inside)`);
+  const home = loopHome(root);
+  const spelled = word ? join(home, given) : resolve(root, given);
+  // Only a directory, or an existing file (reduced to the directory it is in), names a repository: a path that is not
+  // there is refused, never read as the repository around it.
+  let kind = null;
+  try { const st = statSync(spelled); kind = st.isDirectory() ? 'dir' : st.isFile() ? 'file' : null; } catch { kind = null; }
+  need(kind !== null || word, `not a git repository: ${spelled} does not exist (--repo ${JSON.stringify(given)}) — give the repository's name, its checkout, a worktree of it or a file inside it`);
+  const isDir = kind === 'dir';
+  const inside = isDir ? spelled : kind === 'file' ? dirname(spelled) : spelled;
+  need(isGitRepo(inside), word ? `${nameFix(root, given)} (${spelled} is not a git repository${isGitRepo(resolve(root, given)) ? `; ./${given} is a repository under the loop's root — a path is written with a leading ./` : ''})` :`not a git repository: ${spelled} (a relative --repo or Repo path is read from the loop's root, ${root})`);
+  const main = (mainCheckoutOf(inside) || {}).main ?? null;
+  need(main !== null, `${inside} is a bare repository: it has no working tree to act on`);
+  const candidates = [word ? given : null, isDir ? basename(spelled) : null, basename(main)];
+  let name = candidates.find((n, k) => n && REPO_NAME_RE.test(n) && candidates.indexOf(n) === k && canonical(join(home, n)) === main);
+  if (name) {
+    // A disk that ignores case reads TOOL as tool: one repository has one name, the declared spelling or else the directory's own.
+    const same = (n) => n.toLowerCase() === name.toLowerCase();
+    name = [...declaredRepos(root).keys()].find((d) => same(d) && canonical(join(home, d)) === main) ??(same(basename(main)) ? basename(main) : name);
+    return { main, name, value: name, note: null };
+  }
+  const exact = isDir && canonical(spelled) === main;
+  const value = exact ? given : pathTo(root, main);
+  const place = join(home, basename(main));
+  const occupied = existsSync(place) && canonical(place) !== main;
+  const why = `${exact ? '' : `${given} is reduced to its main checkout; `}${occupied ? `another repository stands at ${place}, where its name would resolve, so this one keeps its path` : `the checkout is not at ${place}, where a name would resolve — put it, or a symlink to it, there to name it`}`;
+  return { main, name: null, value, note: `${given} is stored as the path ${value}: ${why}` };
+}
+// The values of a --repo list (one name or path, or several as one comma list), each read by repoFromInput.
+function repoList(root, v) {
+  need(typeof v === 'string', '--repo takes one name or path, or several as one comma list');
+  const items = splitList(v);
+  need(items.length, '--repo needs a name or a path');
+  return items.map((item) => repoFromInput(root, item));
+}
+
+// Every raise of the record format (raiseFormat, whatever triggers it) first writes each bare-word path a format-1 loop
+// holds as ./<word>: the same place said so that format 2 does not read it as a name. The values are the Repo field of
+// every issue, the repository after "in" in a Merged field, and the same after "in" in the log's merge lines, which
+// the header is read against. A value that already starts with a dot, a slash or a drive letter is left as it is, so the
+// rewrite is idempotent. Called under the lock, before the marker is written.
+const BARE_REPO_LINE = /^(\*\*Repo:\*\* )(.*)$/m;
+const BARE_MERGED_FIELD = /^(\*\*Merged:\*\* \S+ in )(.+)$/m;
+const dotted = (v) => (PATH_START.test(v) ? v : `./${v}`);
+function writeBarePaths(root) {
+  const dir = issuesDir(root);
+  const rewritten = [];
+  for (const f of existsSync(dir) ? readdirSync(dir) : []) {
+    const m = ISSUE_FILE_RE.exec(f);
+    if (!m) continue;
+    const text = readText(join(dir, f));
+    const next = text
+      .replace(BARE_REPO_LINE, (all, head, value) => `${head}${splitList(value).map(dotted).join(', ')}`)
+      .replace(BARE_MERGED_FIELD, (all, head, value) => `${head}${dotted(value.trim())}`);
+    if (next === text) continue;
+    writeAtomic(join(dir, f), next);
+    rewritten.push(m[1]);
+  }
+  mapMergeRepos(root, dotted);
+  if (rewritten.length) appendLog(root, `repo paths written as ./<word> in ${rewritten.join(', ')} · the record format is raised`);
+}
+// The names among the repositories read from a --repo list are declared (once), after the format is raised.
+function commitRepoNames(root, picked) {
+  if (!picked.some((p) => p.name)) return;
+  withLock(root, () => {
+    raiseFormat(root);
+    for (const p of picked) if (p.name && declareRepo(root, p.name, p.main) === 'no-base') p.note = `${p.name} has no branch checked out, so it is declared with no base — name one with repo --base ${p.name} <branch>`;
+  });
+}
+
+// ---- the declarations in .jarl/repos.md
+
+export const REPOS_HEADER = '# Repositories\n\nEach line declares a repository that an issue names by name: its root commits, its origin as found, its base branch, and no path. Jarl writes this file and nothing else does. A name stands for the checkout beside the main checkout of the loop.\n\n';
+const declarationText = (e) => `roots ${e.roots === null ? 'unknown' : e.roots.length ? e.roots.join(', ') : 'none'} · origin ${e.origin ?? 'none'} · base ${e.base ?? 'none'}`;
+// name → { name, roots (null when the checkout was shallow), origin (null when none), base }, in the order written.
+export function declaredRepos(root) {
+  const out = new Map();
+  if (!existsSync(reposPath(root))) return out;
+  for (const line of readText(reposPath(root)).split('\n')) {
+    const m = /^- \*\*([A-Za-z0-9_][A-Za-z0-9._-]*)\*\* · (.*)$/.exec(line);
+    if (!m) continue;
+    const parts = new Map(m[2].split(' · ').map((s) => { const k = s.indexOf(' '); return k < 0 ? [s, ''] : [s.slice(0, k), s.slice(k + 1)]; }));
+    const roots = parts.get('roots');
+    const origin = parts.get('origin');
+    out.set(m[1], { name: m[1], roots: roots === undefined || roots === 'unknown' ? null : roots === 'none' ? [] : roots.split(', '), origin: origin && origin !== 'none' ? origin : null, base: parts.get('base') && parts.get('base') !== 'none' ? parts.get('base') : null });
+  }
+  return out;
+}
+function writeDeclarations(root, entries) {
+  writeAtomic(reposPath(root), `${REPOS_HEADER}${entries.map((e) => `- **${e.name}** · ${declarationText(e)}`).join('\n')}\n`);
+}
+// Declares `name` for the checkout `main` once: its root commits, its origin as found and the branch it has checked out as
+// its base. The log line goes first. True when it wrote.
+function declareRepo(root, name, main) {
+  const known = declaredRepos(root);
+  if (known.has(name)) return false;
+  // A checkout with no branch checked out (detached) is declared with no base.
+  const current = noSeparators(defaultBase(main));
+  const base = current === 'HEAD' ? null : current;
+  const entry = { name, roots: rootsOf(main, base ?? 'HEAD'), origin: originSpelling(git(main, ['remote', 'get-url', 'origin'])), base };
+  appendLog(root, `repo ${name} declared · ${declarationText(entry)}`);
+  writeDeclarations(root, [...known.values(), entry]);
+  return base === null ? 'no-base' : true;
+}
+
+// repo --base <name> <branch>: changes the base of a declared repository, with a log line that says what it was.
+export function cmdRepoBase(root, name, branch) {
+  need(name !== undefined && branch !== undefined, 'repo --base takes a repository name and a branch: jarl.mjs repo --base <name> <branch>');
+  const known = declaredRepos(root);
+  need(known.has(name), `${name} is not declared in this loop${known.size ? ` — it declares ${[...known.keys()].join(', ')}` : ''}; Jarl declares a repository the first time an issue names it`);
+  const base = fieldText(branch);
+  need(base && !/[\r\n]/.test(String(branch)) && !base.includes(' · '), 'the base is one branch name on one line');
+  const problem = branchNameProblem(base);
+  need(!problem, `${JSON.stringify(base)} ${problem}`);
+  const was = known.get(name).base;
+  if (was === base) return { name, base, was, unchanged: true };
+  appendLog(root, `repo ${name} base · was ${was ?? 'none'} · now ${base}`);
+  writeDeclarations(root, [...known.values()].map((e) => (e.name === name ? { ...e, base } : e)));
+  return { name, base, was, unchanged: false };
+}
+
+// ---- the identity of a declared repository, against the checkout on this machine
+
+// Whether the checkout a name resolves to is the repository the declaration names: { name, state, path, roots, found, notes,
+// fix }. The states: undeclared (no declaration), missing (nothing is there; `fix` says where to put it), verified (the
+// checkout has a root commit the declaration holds), mismatch (it has none: another repository stands there; `fix`
+// says so) and unverified (a shallow checkout cannot show its roots, or the declaration was made from one). A different
+// origin is a note and never changes the state. This is the check verify reports; no other command reads the roots.
+export function repoIdentity(root, name) {
+  const declared = declaredRepos(root).get(name);
+  const { path } = repoPlace(root, name);
+  const out = { name, state: 'undeclared', path, roots: declared ? declared.roots : null, found: null, notes: [] };
+  if (!declared) return out;
+  try { repoOf(root, name); } catch (e) { return { ...out, state: 'missing', fix: nameFix(root, name), notes: [String(e.message)] }; }
+  const found = rootsOf(path, declared.base && git(path, ['rev-parse', '--verify', '--quiet', `${declared.base}^{commit}`]) !== null ? declared.base : 'HEAD');
+  const origin = originSpelling(git(path, ['remote', 'get-url', 'origin']));
+  if (declared.origin && origin && declared.origin !== origin) out.notes.push(`its origin is ${origin}, the declaration holds ${declared.origin} (a fork or a renamed repository)`);
+  out.found = found;
+  if (found === null) return { ...out, state: 'unverified', notes: [...out.notes, 'a shallow checkout cannot show its root commits'] };
+  if (declared.roots === null) return { ...out, state: 'unverified', notes: [...out.notes, 'the declaration was made from a shallow checkout and holds no root commits'] };
+  if (found.length === 0 || declared.roots.length === 0) return { ...out, state: 'unverified', notes: [...out.notes, 'a repository with no commit has no root commit to compare'] };
+  if (found.some((r) => declared.roots.includes(r))) return { ...out, state: 'verified' };
+  return { ...out, state: 'mismatch', fix: `${path} is another repository than ${name} (its root commits are ${found.join(', ') || 'none'}, the declaration holds ${declared.roots.join(', ')}) — put the checkout of ${name}, or a symlink to it, there` };
+}
+
+// A command that acts on a repository acts only on the one it names. A value written as a name that does not resolve to
+// a repository on this machine is refused with its fix (the views mark it and go on), and so is one whose checkout holds
+// none of the declared root commits: that is another repository.
+export function needRightCheckouts(root, values) {
+  for (const value of new Set(values)) {
+    if (repoValueKind(root, value) !== 'name') continue;
+    repoOf(root, value);
+    const found = repoIdentity(root, value);
+    need(found.state !== 'mismatch', found.fix);
+  }
+}
+// Why nothing may be deleted in the checkout `repo`, or null: it stands under a name (one of `values`) whose root commits
+// were not compared and found equal. A checkout that is unverified (shallow, or declared from a shallow one), another
+// repository, or under an undeclared name keeps everything.
+export function whyNotDeletable(root, repo, values) {
+  for (const value of new Set(values)) {
+    if (repoValueKind(root, value) !== 'name' || canonical(repoPlace(root, value).path) !== canonical(repo)) continue;
+    const found = repoIdentity(root, value);
+    if (found.state !== 'verified') return `the checkout under the name ${value} is ${found.state === 'mismatch' ? 'another repository' : `not verified as that repository (${found.state}${found.notes.length ? `: ${found.notes[0]}` : ''})`}, so nothing is deleted in it`;
+  }
+  return null;
+}
+
+// ---- where the repositories and the worktree of a lease are on this machine
+
+// The repositories an issue names and the worktree git has on its lease's branch in each of them, read from git and the
+// file system and never stored. A repository: { value, name, path, state (here | missing), fix? }. A worktree: { repo,
+// branch, state (here | elsewhere | invisible | gone | none), path, reason? }, for a lease that stores no worktree path.
+export function whereOf(root, issue) {
+  const repos = reposNamed(issue).map((value) => {
+    const place = repoPlace(root, value);
+    try { repoOf(root, value); return { value, name: place.name, path: place.path, state: 'here' }; }
+    catch (e) { return { value, name: place.name, path: place.path, state: 'missing', fix: place.name ? nameFix(root, place.name) : String(e.message) }; }
+  });
+  const worktrees = [];
+  const f = issue.fields;
+  if (loadProfile(root).is(issue.status, 'holds-claim') && f.branch && !f.worktree) {
+    for (const dir of issueRepoPaths(root, issue)) {
+      if (!isGitRepo(dir)) continue;
+      const ws = worktreeState(dir, f.branch, undefined);
+      worktrees.push({ repo: repoLabel(dir), branch: f.branch, state: ws.state, path: ws.path, ...(ws.reason ? { reason: ws.reason } : {}) });
+    }
+  }
+  return { repos, worktrees };
+}
+const WORKTREE_STATE_TEXT = { here: '', gone: ' (gone)', invisible: ' (listed by git, not visible from here)' };
+// The lines show prints under the header: where each repository written as a name is, and the worktree of the lease. A
+// repository written as a path says nothing: its value is the place.
+export function whereLines(where) {
+  const lines = [];
+  for (const r of where.repos) {
+    if (!r.name) continue;
+    lines.push(r.state === 'here' ? `repository ${r.name} is at ${r.path}` : r.fix);
+  }
+  for (const w of where.worktrees) {
+    lines.push(w.state === 'none' ? `no worktree of ${w.repo} holds ${w.branch}` : `worktree of ${w.repo} on ${w.branch}: ${w.path}${w.state === 'elsewhere' ? ` (elsewhere${w.reason ? `: ${w.reason}` : ''})` : WORKTREE_STATE_TEXT[w.state] ?? ''}`);
+  }
+  return lines;
+}
+// For status --by repo: each repository the issues name, where its checkout is, and for a declared one its base and
+// whether the checkout is on it (a warning only). Keyed by the label the status groups by.
+export function reposWhere(root, issues) {
+  const declared = declaredRepos(root);
+  const out = {};
+  for (const issue of issues) {
+    for (const { label, value } of repoEntries(root, issue)) {
+      if (out[label]) continue;
+      const place = repoPlace(root, value);
+      let dir = null;
+      try { dir = repoOf(root, value); } catch { dir = null; }
+      const base = place.name ? declared.get(place.name)?.base ?? null : null;
+      const current = dir ? git(dir, ['rev-parse', '--abbrev-ref', 'HEAD']) : null;
+      out[label] = { name: place.name, path: place.path, state: dir ? 'here' : 'missing', ...(dir ? {} : { fix: place.name ? nameFix(root, place.name) : `${place.path} is not a git repository` }), base, current, onBase: base && current ? current === base : null };
+    }
+  }
+  return out;
+}
+export function reposWhereLines(where) {
+  return Object.entries(where).map(([label, w]) => {
+    if (w.state === 'missing') return `  ${label}  ${w.fix}`;
+    const on = w.onBase === false ? ` · WARNING: its checkout is on ${w.current}, not on its base` : w.current ? ` · on ${w.current}` : '';
+    return `  ${label}  ${w.path}${w.base ? ` · base ${w.base}` : ''}${on}`;
+  });
+}
+
 // ---- tips: where each repository's branches stand, and their CI -----------------------------------
 
 // A directory's repository, as one key: the canonical root of the git repository holding it, so a loop kept in a
@@ -4436,7 +4794,7 @@ export const TIPS_RECENT_MS = 7 * 24 * 3_600_000;
 let GH;
 // Every cache a command fills, emptied before the next one (see dispatch).
 export function resetCaches() {
-  for (const m of [IS_REPO, REFS, RESOLVED, REPO_OF, TOP_OF]) m.clear();
+  for (const m of [IS_REPO, REFS, RESOLVED, REPO_OF, TOP_OF, HOMES]) m.clear();
   GH = undefined;
 }
 function ghBin() {
@@ -4568,7 +4926,7 @@ export function cmdQueue(root, flags = {}) {
   // Every issue in the queue sits on a branch, so it carries code: only a fresh approve puts it there (the
   // fresh-review rule). One cleared by a coordinator alone waits, listed with its package as waiting for review.
   const approved = unsettled.filter((i) => gate.get(i.id).fresh);
-  const repos = flags.repo !== undefined ? [repoOf(root, flags.repo)] : loopRepos(root, issues);
+  const repos = flags.repo !== undefined ? [repoFromInput(root, flags.repo).main] : loopRepos(root, issues);
   const out = [];
   for (const repo of repos) {
     if (!isGitRepo(repo)) continue;
@@ -4641,7 +4999,7 @@ export function cmdChangelog(root, rawIds, flags = {}) {
   need(rawIds !== undefined, 'changelog requires <ids> — the issues whose fragments to print, e.g. 284,288 or 203-206');
   const issues = issuesFor(root, rawIds, true);
   // --repo is matched by the repository itself (its resolved root), never by its directory name alone.
-  const only = flags.repo !== undefined ? topOf(canonical(repoOf(root, flags.repo))) : null;
+  const only = flags.repo !== undefined ? topOf(repoFromInput(root, flags.repo).main) : null;
   const byRepo = {};
   const missing = [];
   for (const i of issues) {
@@ -5172,10 +5530,7 @@ function statusReason(evidence, word) {
 
 // The repository an issue's work counts under in the report: the directory name of each repository it names,
 // or the loop's own.
-function repoNames(root, issue) {
-  const named = reposNamed(issue);
-  return named.length ? [...new Set(named.map((n) => repoLabel(topOf(canonical(resolve(root, n))))))] : [repoLabel(topOf(root))];
-}
+function repoNames(root, issue) { return repoEntries(root, issue).map((e) => e.label); }
 
 // report [--found]: done (per repository when the done work spans more than one — an issue naming several is
 // listed under each, for each repository's changelog), dropped, deferred, still open, and who reviewed the done
@@ -5443,7 +5798,8 @@ export function renderStatus(o, profile = DEFAULT_PROFILE) {
     ...(o.check ? checkLines(o.check) : []),
     ...(o.scheduler ? [schedulerNote(o.scheduler)] : []),
     ...by,
-    ...(o.by && o.by.key === 'repo' && o.check ? ['merges by repository, with the check that decided each:', ...mergeCheckLines(o.check)] : []),
+    ...(o.by && o.by.where && Object.keys(o.by.where).length ? ['where each repository is on this machine:', ...reposWhereLines(o.by.where)] : []),
+    ...(o.by && o.by.key === 'repo' && o.check ?['merges by repository, with the check that decided each:', ...mergeCheckLines(o.check)] : []),
     ...o.stale.map((x) => `stale ${x.id} · ${x.problems.join('; ')}`),
     ...(o.ciPending.length ? [`merged, CI pending: ${o.ciPending.join(', ')}`] : []),
     ...(o.ciRed.length ? [`merged, CI red: ${o.ciRed.join(', ')}`] : []),

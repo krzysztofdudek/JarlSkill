@@ -17,7 +17,7 @@ import {
   ROUNDS_BEFORE_TAKEOVER, need, resetCaches, withLock, readText, isEntry, cmdSet,
   cmdProfile, cmdArchive, cmdList, cmdNext, renderNext, cmdMode, cmdClose, cmdCheck, cmdBranches, cmdTips, cmdQueue,
   cmdChangelog, cmdHandoffRead, cmdHandoffWrite, cmdReport, cmdImport, cmdSources, cmdAnswerMany, cmdModels, renderModels,
-  issuesNaming, questionFor, cmdGoal, cmdGoalSet,
+  issuesNaming, questionFor, cmdGoal, cmdGoalSet, cmdRepoBase, whereOf,
   renderProfile, renderTips, renderQueue, renderResume, renderStatus, renderImport, renderSources, renderList, recordTypeLog, recordRuleLog,
   runDecisionsDriver, mergeFlags, describeNew, renderNewReply, issueView, evidenceTable, renderBranches, renderDecide, renderDecisions,
 } from './jarl-lib.mjs';
@@ -37,7 +37,7 @@ commands:
                                                  .jarl/.permanent, and is not tied to a feature branch: close (below)
                                                  keeps the directory instead of removing it; --profile checks the
                                                  profile file (see profile below) and stores it as .jarl/profile.json
-  new "<title>" [--kind k] [--prio 1|2|3] [--tier light|standard|strong] [--tags a,b] [--files p,q] [--repo <path>] [--found-by who]
+  new "<title>" [--kind k] [--prio 1|2|3] [--tier light|standard|strong] [--tags a,b] [--files p,q] [--repo <name|path>] [--found-by who]
       [--where "<w>"] [--what "<w>"] [--why "<w>"] [--acceptance "<line>"]... [--changelog "<entry>"]...
       [--source <dir>#<id>,...] [--after <ids>] [--template <name>] [--field "<Name>=<value>"]... [--section "<Heading>=<text>"]...
                                                  file an issue under the next free number; without --tier it records
@@ -59,7 +59,7 @@ commands:
                                                  set or replace the title (the file keeps its name; the old title goes
                                                  into the log), the Where field and the What, Why, Acceptance and
                                                  Changelog sections, and a section the profile declares
-  import <findings.json> [--source <dir>] [--kind k] [--prio 1|2|3] [--tier t] [--tags a,b] [--repo <path>]
+  import <findings.json> [--source <dir>] [--kind k] [--prio 1|2|3] [--tier t] [--tags a,b] [--repo <name|path>]
       [--found-by who] [--only <finding ids>] [--adopt] [--dry-run] [--field "<Name>=<value>"]...
                                                  one issue per finding, with Source: <dir>#<finding id>; a finding
                                                  whose Source is already on an issue is skipped, so a re-run files
@@ -86,25 +86,30 @@ commands:
                                                  verdict in the done gate's window, Notes whole, every "changes" finding no later
                                                  approve answered, one line per earlier round; --full prints the whole
                                                  file; --json is complete; under the header, one line for each header
-                                                 field that disagrees with the log (see status)
+                                                 field that disagrees with the log (see status), where each repository
+                                                 written as a name is on this machine and the worktree git has on the
+                                                 lease's branch (--json carries them as where)
   set <ids> <status> "<why>" [--branch <b>] [--worker <name>] [--model <m>] [--worktree <path>] [--header] | <ids> <field> "<value>"
                                                  (<ids> <status-in-the-log> --header rewrites the header fields the log
                                                  renders from the log, writes no log line and is never a move)
                                                  (field resources "a, b": the exclusive resources the issue holds while
                                                  its lease lasts, loop-wide names; next never offers two issues holding one)
                                                  change status; writes the log line in the same move; in-progress
-                                                 writes Since (and Branch, Worker, Model, Worktree when given) — one lease
+                                                 writes Since (and Branch, Worker, Model when given) — one lease
                                                  for every id, so a package shares it; --model is the model the worker
                                                  was raised on, as the platform names it (with @<effort> where it has that
-                                                 lever), stored as given; leaving in-progress removes Worker, Model,
-                                                 Worktree and Since and keeps Branch; done notes a merge
+                                                 lever), stored as given; --worktree is a check and records nothing: a path
+                                                 that exists must be a worktree of a repository of the issue with the
+                                                 lease's branch checked out, and the worktree of a lease is found through
+                                                 its branch; leaving in-progress removes Worker, Model, Since (and a
+                                                 Worktree field a lease holds) and keeps Branch; done notes a merge
                                                  whose CI is not green yet; done needs, inside one window (rows after
                                                  the last start, reopen or filing; approves after those or a red
                                                  round), a --ran/--saw row — a free-text note never counts alone —
                                                  and a live approve; with a
                                                  field the loop's profile declares in place of the status, writes
                                                  that field (checked against its values) on every id
-  merged <ids> --sha <sha> [--ran "<check>" --saw "<summary>" | --red <id>] [--ci pending|green|red|none] [--repo <path>] [--keep] | <ids> --ci <state>
+  merged <ids> --sha <sha> [--ran "<check>" --saw "<summary>" | --red <id>] [--ci pending|green|red|none] [--repo <name|path>] [--keep] | <ids> --ci <state>
                                                  the merge as fields: Merged (sha, and where with --repo) and CI
                                                  (only when given; pending: a pushed commit whose CI will report;
                                                  none: no CI to wait for), and a log line. --ran/--saw record the
@@ -123,8 +128,11 @@ commands:
   tag <ids> +a -b ...                            add and remove tags
   prio <ids> 1|2|3                               set priority
   files <id> p,q,...                             declare the files the issue touches
-  repo <id> <path>[,<path>...] | <id> --clear    name the repository (its root) the issue's code lives in — several as one
-                                                 comma list — or remove the field
+  repo <id> <name|path>[,<name|path>...] | <id> --clear | --base <name> <branch>
+                                                 name the repository the issue's code lives in — its name, its checkout,
+                                                 a worktree of it or a file inside it, several as one comma list — or
+                                                 remove the field; --base changes the base branch a declared repository
+                                                 is held against; every change is logged (see --repo below)
   next [--limit n] [--all]                       the open issues ready to start: no file shared with an in-progress one, every
                                                  After issue done or dropped, no open stuck or stop question on it; a file is
                                                  its repository and its path (see --repo below); one with no acceptance line
@@ -158,13 +166,13 @@ commands:
                                                  loop (its root, or an archive directory) and --archives this loop's own
                                                  archives, merged into one table that names the loops it read; a path that
                                                  is not a loop is refused; suggestions only, no lock, nothing written
-  check [<id>] --branch <b> [--base <feature-branch>] [--repo <path>]
+  check [<id>] --branch <b> [--base <feature-branch>] [--repo <name|path>]
                                                  commits beyond the base, diff inside the declared files, and the
                                                  change in test files and assertions — numbers, never a verdict;
                                                  read in --repo, else the issue's Repo, else the loop's own repository;
                                                  with no id, the diff is bounded by the union of Files of every issue
                                                  that records Branch <b> (a package on one branch, one call)
-  branches [--base <feature-branch>] [--repo <path>] [--stale-hours n]
+  branches [--base <feature-branch>] [--repo <name|path>] [--stale-hours n]
                                                  every jarl/7-* branch and every branch an issue records: the
                                                  issues on it, commits beyond the base, worktree state, STALE leases
                                                  (worktree gone, branch gone, idle over n hours, default 6) and
@@ -230,7 +238,9 @@ commands:
                                                  leases, the issues in flight with no acceptance line, and —
                                                  committed loops — the loop files
                                                  git has not committed; --by adds the status counts per
-                                                 repository, tag, kind, priority or a field the profile declares
+                                                 repository, tag, kind, priority or a field the profile declares; --by repo
+                                                 also prints where each repository is on this machine, its base and
+                                                 whether its checkout is on it
   archive "<slug>"                               put the current loop away under .jarl/archive/<yyyy.mm.dd>-<slug>/,
                                                  keeping the archive, the mode markers and .jarl/templates/, so init
                                                  can open a new loop here in the same mode; refused under a profile
@@ -248,11 +258,11 @@ commands:
                                                  branch and main, ahead/behind their upstream as last fetched, and — when
                                                  gh is on PATH — the CI of a tip its upstream holds (else "not pushed");
                                                  nothing is fetched or written
-  queue [--repo <path>] [--base <b>]             read-only: the branches waiting for the merger — an open or in-progress
+  queue [--repo <name|path>] [--base <b>]        read-only: the branches waiting for the merger — an open or in-progress
                                                  issue on it holds a live approve and the branch is ahead of its base —
                                                  in the order they were approved, per repository, cut into batches whose
                                                  declared files do not overlap; it runs no check and refuses nothing
-  changelog <ids> [--repo <path>]                print the issues' ## Changelog entries grouped by section (Added,
+  changelog <ids> [--repo <name|path>]           print the issues' ## Changelog entries grouped by section (Added,
                                                  Changed, Deprecated, Removed, Fixed, Security), ready to paste under
                                                  [Unreleased]; per repository when they span several; reads only
   mode permanent                                 switch an existing committed loop to the permanent mode, with a
@@ -310,14 +320,23 @@ inside), so parallel calls from workers, reviewers and the merger queue instead 
 writes; a lock whose holder is gone is taken over, a live one that does not let go within 20 s fails the
 call with nothing written. Files are replaced whole, never half-written.
 
---repo <path>: the checkout of another repository, for a loop that keeps its issues in one repository
-while its workers change another. Branches, the base (that checkout's current branch), diffs and
-assertions are then read there. A relative path is read from the loop's root (the directory holding
-.jarl/), so it means the same from any worktree. An issue that names a repository writes each of its
-files with that repository's directory name first (tool/src/a.mjs for Repo ../tool): next then keeps
-the same path in two repositories apart, and check matches the path after the name. An issue may name
-several repositories (Repo: ../tool, ../lib): each file then starts with the name of the one it is in
-(one with no such name is in the first), and check on it takes --repo to say which one to read.`;
+--repo <name|path>: another repository, for a loop that keeps its issues in one repository while its
+workers change another: its name (the directory git clone gives it), its checkout, a worktree of it or a
+file inside it, always reduced to its main checkout. Branches, the base (that checkout's current
+branch), diffs and assertions are then read there. A name resolves to the sibling of the loop's main
+checkout (<parent>/<name>); on a machine laid out differently, a symlink beside the loop's checkout
+puts it there. The Repo field stores the name where the checkout sits at that place, and the path
+otherwise (a note on stderr says why); a path is read from the loop's root, so it means the same from
+any worktree. A name needs no path in the record: Jarl declares it once in .jarl/repos.md, with the
+repository's root commits, its origin as found and its base branch, and the loop's record format
+rises with the first name (a record carries its format, and Jarl refuses a format it does not read). In a loop of the
+raised format a Repo value that starts with . or / (or a drive letter) is a path and anything else
+a name. An issue that names a repository writes each of its files with that repository's directory
+name first (tool/src/a.mjs for Repo tool): next then keeps the same path in two repositories apart,
+and check matches the path after the name. An issue may name several repositories (Repo: tool, lib):
+each file then starts with the name of the one it is in (one with no such name is in the first), and
+check on it takes --repo to say which one to read. show and status --by repo print where each
+repository, and the worktree of a lease, is on this machine; nothing resolved is written.`;
 // ---- main --------------------------------------------------------------------------------------
 
 // Every flag a command accepts, and what it takes: 'bool' takes no value, 'value' takes exactly one,
@@ -345,7 +364,7 @@ export const COMMAND_FLAGS = {
   evidence: { ran: 'many', saw: 'many', retract: 'value', by: 'value' },
   list: { status: 'value', kind: 'value', tag: 'value', prio: 'value', grep: 'value', match: 'many', all: 'bool' },
   show: { full: 'bool' }, set: { branch: 'value', worker: 'value', model: 'value', worktree: 'value', header: 'bool' }, tag: {}, prio: {}, files: {},
-  repo: { clear: 'bool' },
+  repo: { clear: 'bool', base: 'bool' },
   next: { limit: 'value', all: 'bool' },
   review: { by: 'value', model: 'value', relayed: 'bool' }, round: {},
   models: { by: 'value', with: 'many', archives: 'bool' },
@@ -571,12 +590,22 @@ export function dispatch(root, cmd, rest, flags) {
       case 'import': out = cmdImport(root, rest[0], flags); text = renderImport(out); break;
       case 'sources': out = cmdSources(root, rest, flags); text = renderSources(out); break;
       case 'list': out = cmdList(root, flags); text = renderList(out, R.loadProfile(root)); break;
-      case 'show': { const i = R.findIssue(root, rest[0]); need(i, `no such issue: ${rest[0]}`); out = { ...i, evidenceRows: evidenceTable(i.sections.evidence).rows.map(({ n, ran, saw, retracted }) => ({ n, ran, saw, retracted })) }; text = issueView(root, i, { full: Boolean(flags.full) }); break; }
+      case 'show': { const i = R.findIssue(root, rest[0]); need(i, `no such issue: ${rest[0]}`); out = { ...i, evidenceRows: evidenceTable(i.sections.evidence).rows.map(({ n, ran, saw, retracted }) => ({ n, ran, saw, retracted })), where: whereOf(root, i) }; text = issueView(root, i, { full: Boolean(flags.full) }); break; }
       case 'set': out = setCommand(root, rest[0], rest[1], rest[2], flags); text = each(out, (o) => (o.field ? `${o.id} ${o.field}: ${o.value || '(cleared)'}` : o.header ? `header of ${o.id} rewritten from the log: ${o.status}` : `${o.id} → ${o.status}${o.branch ? ` · ${o.branch}` : ''}${o.worker ? ` · ${o.worker}` : ''}`)); warn = [].concat(out).filter((o) => o.note).map((o) => `note: ${o.id} ${o.note}`); break;
       case 'tag': out = R.setTags(root, rest[0], rest.slice(1)); text = each(out, (o) => `${o.id} tags: ${o.tags.join(', ') || '(none)'}`); break;
       case 'prio': out = R.setPriority(root, rest[0], rest[1]); text = each(out, (o) => `${o.id} priority ${o.priority}`); break;
       case 'files': out = R.setFiles(root, rest[0], rest[1]); text = `${out.id} files: ${out.files.join(', ') || '(none)'}`; break;
-      case 'repo': out = R.setRepo(root, rest[0], rest[1], flags); text = `${out.id} repo: ${out.cleared ? 'cleared' : out.repo}`; break;
+      case 'repo':
+        if (flags.base) {
+          need(!flags.clear, 'repo --base takes a repository name and a branch, and no --clear');
+          out = cmdRepoBase(root, rest[0], rest[1]);
+          text = out.unchanged ? `${out.name} base: ${out.base} (unchanged)` : `${out.name} base: ${out.base} (was ${out.was ?? 'none'})`;
+        } else {
+          out = R.setRepo(root, rest[0], rest[1], flags);
+          text = `${out.id} repo: ${out.cleared ? 'cleared' : out.repo}${out.unchanged ? ' (unchanged)' : ''}`;
+          warn = (out.notes || []).map((n) => `note: ${n}`);
+        }
+        break;
       case 'evidence': out = R.addEvidence(root, rest[0], rest[1], flags); text = each(out, (o) => (o.retracted ? `${o.id} evidence row ${o.retracted} retracted by ${o.by}` : o.rows ? `${o.id} evidence row${o.rows.length > 1 ? 's' : ''} recorded` : `${o.id} evidence recorded`)); break;
       case 'next': out = cmdNext(root, flags); text = out.scheduler ? out.note : renderNext(out, flags.all === true, out.length ? 0 : cmdNext(root, { all: true }).length); break;
       case 'review': out = R.review(root, rest[0], rest[1], rest[2], { ...flags, caller: 'cli' }); text = each(out, (o) => o.retracted ? `${o.id} review retracted by ${o.by} (${o.kind}): the approve ${o.retracted}` : `${o.id} review ${o.verdict}${o.by ?` by ${o.by} (${o.kind})` : ''} · acceptance: ${o.acceptance ? o.acceptance.split('\n').join(' / ') : '(none on file)'}${o.next ? ` · next: ${o.next}` : ''}`); warn = [].concat(out).filter((o) => o.note).map((o) => `note: ${o.note}`); break;

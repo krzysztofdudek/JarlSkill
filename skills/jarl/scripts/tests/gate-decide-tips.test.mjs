@@ -185,7 +185,7 @@ test('an issue may name several repositories: files per repository, next keeps t
   const { hub, tool, lib } = reposBeside('tool', 'lib');
   jarl(hub, 'init', 'goal');
   jarl(hub, 'new', 'cross', '--repo', '../tool,../lib', '--files', 'tool/src/a.mjs,lib/src/a.mjs');
-  assert.match(jarl(hub, 'show', '1'), /^\*\*Repo:\*\* \.\.\/tool, \.\.\/lib$/m);
+  assert.match(jarl(hub, 'show', '1'), /^\*\*Repo:\*\* tool, lib$/m);
   assert.match(refuses(hub, 'new', 'bad', '--repo', '../tool,../nope'), /not a git repository/);
   jarl(hub, 'new', 'only lib a', '--repo', '../lib', '--files', 'lib/src/a.mjs');
   jarl(hub, 'new', 'only tool b', '--repo', '../tool', '--files', 'tool/src/b.mjs');
@@ -209,7 +209,7 @@ test('an issue may name several repositories: files per repository, next keeps t
   assert.match(rep, /### lib \(2\)\n- 1 cross \(bug\)\n- 2 only lib a \(bug\)/);
   assert.match(rep, /### tool \(1\)\n- 1 cross \(bug\)/);
   assert.deepEqual(JSON.parse(jarl(hub, 'report', '--json')).byRepo, { lib: ['1', '2'], tool: ['1'] });
-  assert.equal(jarl(hub, 'repo', '3', '../tool,../lib'), '3 repo: ../tool, ../lib');
+  assert.equal(jarl(hub, 'repo', '3', '../tool,../lib'), '3 repo: tool, lib');
 });
 
 // ---- 282: tips -------------------------------------------------------------------------------------

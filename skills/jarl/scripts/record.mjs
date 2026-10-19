@@ -98,7 +98,8 @@ export function writeAtomic(path, text) { return L.writeWhole(path, text); }
 // The library names the width of a new number (three digits, so the file reads 007-…); the command line names none.
 export function newIssue(root, title, opts = {}) { return write(root, () => L.cmdNew(root, title, { width: 3, ...opts })); }
 // A move into a status, checked against the profile: needs-reason wants `why`, closes-record passes the done gate,
-// holds-claim writes the lease from opts { branch, worker, worktree }, leaving it removes the lease.
+// holds-claim writes the lease from opts { branch, worker, model }, leaving it removes the lease. A lease records no
+// worktree, which is found through its branch: a worktree key is accepted and stores nothing, and is never refused.
 // opts.caller says who asks: 'record' (the default for a library call) or 'cli' (what the command line and the MCP tools
 // always pass). A status the profile marks "set-by": "record" refuses 'cli'; a library caller that acts for a person at
 // the command line passes 'cli' too. setField takes the same opts.caller. The profile's done-gate decides what a move
@@ -118,7 +119,8 @@ export function setBody(root, id, opts = {}) { return write(root, () => L.cmdBod
 export function setTags(root, ids, ops) { return write(root, () => L.cmdTag(root, ids, ops)); }
 export function setPriority(root, ids, priority) { return write(root, () => L.cmdPrio(root, ids, priority)); }
 export function setFiles(root, id, files) { return write(root, () => L.cmdFiles(root, id, files)); }
-// opts { clear }.
+// path is a repository's name, its checkout, a worktree of it or a file inside it (several as one comma list), stored as a
+// name where the checkout sits beside the loop's own and as a path elsewhere; opts { clear }.
 export function setRepo(root, id, path, opts = {}) { return write(root, () => L.cmdRepo(root, id, path, { clear: opts.clear === true })); }
 export function setAfter(root, id, ids, opts = {}) { return write(root, () => L.cmdAfter(root, id, ids, { clear: opts.clear === true })); }
 export function setSource(root, id, refs) { return write(root, () => L.cmdSource(root, id, refs)); }
