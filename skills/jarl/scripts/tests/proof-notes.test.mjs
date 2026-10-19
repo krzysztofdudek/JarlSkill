@@ -105,13 +105,74 @@ test('a stale Merge check in a header is reported like a stale Merged or CI, and
   assert.doesNotMatch(jarl(root, 'show', '1'), /record: 001 Merge check/);
 });
 
-test('a library merge with ran and saw writes no row either; a Horde-shaped close (merge, then the composer\'s own row) still closes', () => {
-  const root = makeLoop({ prefix: 'jarl-proofnotes-', via: 'cli' });
-  jarl(root, 'new', 'one', '--acceptance', 'it works');
+test('a library merge with ran and saw writes no row either; a composer that merges and then writes its own row closes the issue', () => {
+  const root = approved();
   R.recordMerged(root, '1', { sha: 'abc1234', ci: 'green', ran: 'npm test', saw: '3 pass' });
   assert.doesNotMatch(issueText(root, 1), /\*\*ran:\*\*/);
+  assert.throws(() => R.setStatus(root, '1', 'done', 'x', {}), /does not stand in for the worker's row/);
   R.addEvidence(root, '1', undefined, { ran: 'composer gate', saw: 'green' });
   assert.match(issueText(root, 1), /^- \*\*ran:\*\* composer gate · \*\*saw:\*\* green$/m);
+  R.setStatus(root, '1', 'done', 'x', {});
+  assert.equal(R.findIssue(root, '1').status, 'done');
+});
+
+test('the NO PROOF note says what the merge recorded: a check, or none', () => {
+  const root = approved(2);
+  jarl(root, 'new', 'cause', '--acceptance', 'it works');
+  const bare = run(root, ['merged', '1', '--sha', 'abc1234', '--keep']);
+  assert.match(bare.stderr, /NO PROOF FROM THE WORKER — 001 holds no Proof row[^\n]*the merge records no check, and a merge is not proof/);
+  const red = run(root, ['merged', '2', '--sha', 'abc1234', '--red', '3', '--keep']);
+  assert.match(red.stderr, /NO PROOF FROM THE WORKER — 002[^\n]*the merge records no check, and a merge is not proof/);
+  assert.doesNotMatch(bare.stderr + red.stderr, /merge check is recorded/);
+});
+
+test('a merge line from before the Merge check field existed is read for the field: no disagreement is printed when the header lacks it', () => {
+  const root = approved();
+  jarl(root, 'merged', '1', '--sha', 'abc1234', '--ran', 'npm test', '--saw', '3 pass', '--keep');
+  const file = issueFile(root, 1);
+  writeFileSync(file, readFileSync(file, 'utf8').replace(/^\*\*Merge check:\*\*.*\n/m, ''));
+  assert.doesNotMatch(jarl(root, 'show', '1'), /Merge check/);
+  assert.equal(L.findIssue(root, 1).fields['merge check'], 'npm test · saw 3 pass');
+});
+
+// ---- free text beside a field ---------------------------------------------------------------------------------
+
+// A seeded sample of strings over an alphabet of separators, spaces and the words a line's fields are made of.
+function samples(seed, count) {
+  let s = seed;
+  const next = () => { s = (s * 1664525 + 1013904223) % 4294967296; return s / 4294967296; };
+  const alphabet = ['·', ' ', 'CI', 'red', 'check', 'saw', 'worker', 'branch', 'x'];
+  return Array.from({ length: count }, () => Array.from({ length: 1 + Math.floor(next() * 8) }, () => alphabet[Math.floor(next() * alphabet.length)]).join(''));
+}
+const say = (v) => v.replace(/\s+/g, ' ').trim();
+
+test('free text in --ran and --saw of merged and evidence reads back as the flags set it: the CI state, the Merge check and the lease', () => {
+  const root = approved(1);
+  const lease = L.findIssue(root, 1).fields;
+  const texts = [...samples(7, 60), '· CI red', 'CI red ·', ' · ', '·'].filter((t) => say(t) !== '');
+  assert.ok(texts.length >= 40);
+  const want = (t) => L.noSeparators(say(t));
+  texts.slice(0, 40).forEach((ran, i) => {
+    const saw = texts[(i * 7 + 3) % texts.length];
+    const label = `ran ${JSON.stringify(ran)} saw ${JSON.stringify(saw)}`;
+    jarl(root, 'evidence', '1', '--ran', ran, '--saw', saw);
+    const row = L.evidenceRows(L.findIssue(root, 1)).pop();
+    assert.deepEqual(row, { ran: say(ran), saw: say(saw) }, `${label}: the row`);
+    jarl(root, 'merged', '1', '--sha', 'abc1234', '--ran', ran, '--saw', saw, '--ci', 'green', '--keep');
+    const f = L.findIssue(root, 1).fields;
+    assert.equal(f.ci, 'green', `${label}: the CI state`);
+    assert.equal(f['merge check'], `${want(ran)} · saw ${want(saw)}`, `${label}: the Merge check`);
+    assert.equal(f.merged, 'abc1234');
+    assert.equal(f.branch, lease.branch, `${label}: the branch`);
+    assert.equal(f.worker, lease.worker, `${label}: the worker`);
+    assert.deepEqual(L.recordDisagreements(L.readLoop(L.jarlDir(root))), [], `${label}: the header and the log agree`);
+  });
+});
+
+test('noSeparators leaves no separator and no run of separators and spaces at either end or inside', () => {
+  for (const t of samples(11, 300)) assert.doesNotMatch(L.noSeparators(t), /·/);
+  assert.equal(L.noSeparators('x · y'), 'x - y');
+  assert.equal(L.noSeparators('· CI red'), '- CI red');
 });
 
 // ---- where each kind of entry lands -----------------------------------------------------------------------------

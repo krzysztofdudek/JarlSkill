@@ -63,7 +63,7 @@ commands:
                                                  one issue per finding, with Source: <dir>#<finding id>; a finding
                                                  whose Source is already on an issue is skipped, so a re-run files
                                                  nothing twice; --dry-run prints what it would file; --adopt writes
-                                                 Source onto an older issue that names the finding id but has none
+                                                 Source onto an existing issue that names the finding id but has none
   sources [<findings.json>...] [--source <dir>]  per report: its findings, the issues filed from them and their
                                                  status; with a findings file, the findings nobody filed too
   source <id> <dir>#<id>,...                     set the Source field of an issue filed by hand
@@ -74,9 +74,9 @@ commands:
                                                  pair (repeatable; under ### Proof, after the last row);
                                                  --retract retracts the n-th evidence row (the number show prints before each row,
                                                  counted over the whole Evidence section) by an appended entry: the row
-                                                 stays, struck through, and the done gate no longer counts it; the first
-                                                 retraction of a loop raises its record format to 2, so a Jarl 6.1.x
-                                                 refuses the loop instead of counting the row
+                                                 stays, struck through, and the done gate does not count it; the first
+                                                 retraction of a loop raises its record format to 2, so a reader that
+                                                 knows only format 1 refuses the loop instead of counting the row
   list [--status s] [--kind k] [--tag t] [--prio p] [--grep re] [--match "<field>=<value>"]... [--all]
                                                  the issues not finished (open and in-progress) by default; --all for
                                                  every status; --match keeps those whose header field holds the value
@@ -184,7 +184,7 @@ commands:
                                                  loop files not committed, and the last log lines (n, default 15);
                                                  no network unless --ci asks gh for the CI of each pushed tip
   handoff read [--log n] [--ready n] [--ci] | write [--summary s] [--next x]...
-                                                 read: resume, then a .jarl/handoff.md from before as history;
+                                                 read: resume, then a .jarl/handoff.md, when one exists, as history;
                                                  write: retired — writes nothing, says so and exits 0 (the state is
                                                  assembled live; intent lives in priorities, After and rulings)
   log "<event>"                                  append one dated note to the journal; a line that reads as a filing, a move,
@@ -587,7 +587,7 @@ export function dispatch(root, cmd, rest, flags) {
       case 'queue': out = cmdQueue(root, flags); text = renderQueue(out); break;
       case 'changelog': out = cmdChangelog(root, rest[0], flags); text = out.text || '(no changelog fragment on these issues)'; warn = out.missing.length ? [`note: no changelog fragment: ${out.missing.join(', ')} — record one with: jarl.mjs body <id> --changelog "Added: …"`] : []; break;
       case 'archive': out = cmdArchive(root, rest[0], { caller: 'cli' }); text = `archived → ${out.archived}${out.leftOpen.length ? ` · ${out.leftOpen.length} still open or in progress: ${out.leftOpen.join(', ')}` : ''} · open a new loop with: jarl.mjs init "<goal>"`; break;
-      case 'mode': out = cmdMode(root, rest[0]); text = 'now permanent · no longer tied to a feature branch; close keeps the directory'; break;
+      case 'mode': out = cmdMode(root, rest[0]); text = 'now permanent · not tied to a feature branch; close keeps the directory'; break;
       case 'profile': out = cmdProfile(root, rest[0]); text = renderProfile(out); break;
       case 'close': out = cmdClose(root, { ...flags, caller: 'cli' }); text = out.closed ? (out.kept ? `kept ${out.kept} · closed as a permanent record` : `removed ${out.removed}${out.archiveKept ? ' (the live loop; .jarl/archive/ is left in place)' : out.archiveRemoved ? ` (with .jarl/archive/: ${out.archiveRemoved.join(', ')})` : ''}`) + (out.deferred.length ? ` · ${out.deferred.length} deferred ${out.kept ? 'still waiting' : 'removed with the loop'}: ${out.deferred.join(', ')}` : '') + (out.uncommitted ? ` · ${out.uncommitted} loop file(s) not committed${out.kept ? ' — commit .jarl/' : ' before the removal'}` : '') + renderBatch(out.batch, out.kept ? 'kept' : 'removed') : renderBatch(out.batch, 'open').trimStart(); break;
       default: throw new Error(`unknown command: ${cmd}\n${USAGE}`);

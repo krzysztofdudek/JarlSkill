@@ -1624,7 +1624,7 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   // A reason that opens with the name of a lease field is closed by a segment "(reason)", so no reader takes it for the field.
   // Every separator character of a lease's reason is replaced, with the space around it, so no run of separators and
   // spaces can leave a separator in it and the reason is one segment of the line.
-  const neutral = holds && why ? String(why).replace(/\s*·\s*/g, ' - ').trim() : why;
+  const neutral = holds && why ? noSeparators(why) : why;
   const reason = holds && neutral && /^(branch|model|worker|worktree) /.test(neutral) ? `${neutral} · (reason)` : neutral;
   // The line goes first: a write that stops between the two leaves the journal, the record, ahead of the files, which the
   // views report, and never a file ahead of the record.
@@ -1634,6 +1634,11 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   const leaseNoModel = caller === 'cli' && holds && model === undefined && modelLines(root).declared ? 'no --model on this lease — the loop declares its models, and a model that is not recorded can never be recovered' : null;
   return oneOrMany(rawIds, issues.map((issue, n) => ({ id: issue.id, status, ...(holds ? { since, ...(flags.branch !== undefined ? { branch: fieldText(flags.branch) } : {}), ...(flags.worker !== undefined ? { worker: fieldText(flags.worker) } : {}), ...(model !== undefined ? { model } : {}), ...(worktree !== undefined ? { worktree } : {}) } : {}), ...(profile.is(status, 'closes-record') ? doneNote(issue, root) : {}), ...(leaseNoModel && n === 0 ? { note: leaseNoModel } : {}) })));
 }
+
+// Free text written into a log line beside its fields (a lease's reason, a merge's check and what it printed): every
+// separator character is replaced, with the space around it, after trimming, so no run of separators and spaces can
+// survive in it at either end or inside and the text is one segment of the line.
+export function noSeparators(text) { return String(text ?? '').trim().replace(/\s*·\s*/g, ' - ').trim(); }
 
 // Why a lease value (--branch, --worker, --model, --worktree) cannot be written, or null when the lease line gives it
 // back unchanged: one line in all four; no comma in a worker or a model (a comma marks a sentence, not a name); and a
@@ -1776,7 +1781,7 @@ function doneNote(issue, root) {
     if (rows < lines) notes.push(`${lines} acceptance line(s), ${rows} --ran/--saw row(s)`);
   }
   const m = mergedOf(issue);
-  // A merge that carries its check (a passing row, or the red it landed on) needs no CI state to be told apart from an unrecorded one.
+  // A merge that carries its check (a passing check, or the red it landed on) needs no CI state to be told apart from an unrecorded one.
   const decided = () => { const line = lastMerge(journalById(root).get(issue.id) || []); return Boolean(line && (line.check || line.red)); };
   if (m && m.ci !== 'green' && m.ci !== 'none' && !(m.ci === null && decided())) notes.push(`merged ${m.sha}, CI ${m.ci || 'not recorded'} — record it when known: jarl.mjs merged ${issue.id} --ci green|red`);
   return notes.length ? { note: notes.join('; ') } : {};
@@ -1829,7 +1834,7 @@ export function cmdMerged(root, rawIds, flags) {
   const sha = flags.sha !== undefined ? String(flags.sha).toLowerCase() : null;
   const ci = flags.ci ?? (sha && !cli ? 'pending' : undefined);
   // The check as the merge line names it: the commands that ran, one line, never the log's own separator.
-  const oneLineOf = (key) => fieldText(rows.map((r) => r[key]).join(' ; ')).replace(/ +· +/g, ' - ').slice(0, 200).trim();
+  const oneLineOf = (key) => noSeparators(fieldText(rows.map((r) => r[key]).join(' ; '))).slice(0, 200).trim();
   const checkText = rows ? oneLineOf('ran') : null;
   const sawText = rows ? oneLineOf('saw') : null;
   const notes = [];
@@ -1852,7 +1857,7 @@ export function cmdMerged(root, rawIds, flags) {
     const loop = readLoop(jarlDir(root));
     for (const issue of issues) {
       const g = gateOf(loop, issue.id);
-      if (proofSince(g, issue) === 0) notes.push(`NO PROOF FROM THE WORKER — ${issue.id} holds no Proof row since it was ${g.tracked ? (g.anchor.what === 'filed' ? 'filed' : `moved → ${g.anchor.what}`) : 'filed'}; the merge check is recorded in the merge record and is not proof, so done refuses until the worker records it: ${EVIDENCE_HOW(issue.id)}`);
+      if (proofSince(g, issue) === 0) notes.push(`NO PROOF FROM THE WORKER — ${issue.id} holds no Proof row since it was ${g.tracked ? (g.anchor.what === 'filed' ? 'filed' : `moved → ${g.anchor.what}`) : 'filed'}; ${checkText ? 'the merge check is recorded in the merge record and is not proof' : 'the merge records no check, and a merge is not proof'}, so done refuses until the worker records it:${EVIDENCE_HOW(issue.id)}`);
     }
   }
   if (sha && loadProfile(root).doneGate.approve !== 'none') {
@@ -2869,6 +2874,8 @@ export function recordDisagreements(loop) {
     for (const field of Object.keys(FIELD_NAMES)) {
       const file = fieldText(issue.onFile[field]);
       const record = fieldText(field === 'status' ? issue.status : issue.fields[field]);
+      // A header that never carried the Merge check (the merge was written without the field) is read from the merge line, and said nothing about.
+      if (field === 'merge check' && !file) continue;
       if (file !== record) out.push(fieldDisagreement(profile, issue, field, file, record));
     }
   }
@@ -3174,7 +3181,7 @@ function renderSplit(s) { return `fresh ${s.fresh} · coordinator ${s.coordinato
 
 // The check a loop declares: every `Check: <what runs>` line of the goal is the command of the whole loop; a
 // `Check (<name>): <what runs>` line is the command of the repository <name>, written as its Files prefix writes it
-// (see goalLines). Jarl never runs it: the line says what the check is, and the merge rows say whether a landing passed
+// (see goalLines). Jarl never runs it: the line says what the check is, and the merge lines say whether a landing passed
 // it. Where the repository has a check, the check decides what lands; a review can only stop a change and is recorded
 // as testimony.
 export function declaredChecksByRepo(root) { return goalLines(readGoal(jarlDir(root))).checksByRepo; }
@@ -3182,8 +3189,8 @@ export function declaredChecksByRepo(root) { return goalLines(readGoal(jarlDir(r
 export function declaredChecks(root) { return goalLines(readGoal(jarlDir(root))).checks; }
 
 // The merge a log line records: `<id> merged <sha>[ in <repo>]`, then the fields it names in any order — `check <what
-// ran>` for a merge landed on a passing check row, `landed red, cause <id>` for one landed while its check was red for a
-// cause outside the branch, and `CI <state>`. Null for any other line.
+// ran>` for a merge landed on a passing check, `saw <what it printed>` after it, `landed red, cause <id>` for one landed
+// while its check was red for a cause outside the branch, and `CI <state>`. Null for any other line.
 export function mergeLineOf(id, text) {
   const parts = text.split(' · ');
   const head = new RegExp(`^${id} merged (\\S+)(?: in (.+))?$`).exec(parts[0]);
@@ -3212,7 +3219,7 @@ function lastMerge(events) {
 
 // What the merges say about the check, from the log: every merged issue counts once, by its last merge line, as landed
 // on the declared check (its --ran text equals a command the repository's Check lines declare, after trimming), on red
-// (with the issue that tracks the cause), or on neither (no check row, or a row that is not the declared check). Per
+// (with the issue that tracks the cause), or on neither (no check, or a check that is not the declared one). Per
 // repository, an issue naming several counts in each. A repository's declared check is its own `Check (<repo>)` lines,
 // else the loop's `Check:` lines. A repository lands on its check (`check`) when every merge carries it, on
 // testimony (`testimony`) when none does or none is declared, and is `partial` between: k is the merges carrying the
