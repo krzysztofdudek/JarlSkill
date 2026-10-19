@@ -212,10 +212,6 @@ commands:
                                                  CI pending or red, the tips of every repository the issues name,
                                                  loop files not committed, and the last log lines (n, default 15);
                                                  no network unless --ci asks gh for the CI of each pushed tip
-  handoff read [--log n] [--ready n] [--ci] | write [--summary s] [--next x]...
-                                                 read: resume, then a .jarl/handoff.md, when one exists, as history;
-                                                 write: retired — writes nothing, says so and exits 0 (the state is
-                                                 assembled live; intent lives in priorities, After and rulings)
   log "<event>"                                  append one dated note to the journal; a line that reads as a filing, a move,
                                                  a round, a verdict, a retraction, an evidence row, a merge, a CI state or
                                                  a body change is refused, and the refusal names the command that writes it
@@ -414,6 +410,8 @@ export const ALTERNATE_FLAGS = { evidence: { retract: 'value', by: 'value' } };
 // A name a command answers to besides its own: the command line and the tools run it under the command it names, and
 // the command line says which name to use. The help and the skill name the command only.
 export const COMMAND_ALIASES = Object.freeze({ check: 'scope' });
+// The commands the command line runs and the tool list leaves out: no tool, and no block in the usage text.
+export const INTERNAL_COMMANDS = Object.freeze(['handoff']);
 export const flagsOf = (cmd) => ({ ...(COMMAND_FLAGS[COMMAND_ALIASES[cmd] ?? cmd] || {}), ...(ALTERNATE_FLAGS[COMMAND_ALIASES[cmd] ?? cmd] || {}) });
 
 export function parseArgs(argv) {
@@ -512,7 +510,7 @@ export const COMMAND_SUMMARY = {
   ask: 'File a question the owner has to answer (stop, stuck, lower, charter or ratify).',
   answer: 'Record the owner\'s answer to a question, the option chosen or the words given, as a ruling and close the question; several ratify items take one answer.',
   resume: 'The boot: everything a session picks the loop up from, assembled live.',
-  handoff: 'read: resume plus an old handoff file as history; write: retired, writes nothing.',
+  handoff: 'read: resume, then the handoff file the loop holds, if any; write: writes nothing.',
   log: 'Append one dated note to the loop\'s journal; a line that reads as a move, a verdict or another line of state is refused.',
   decide: 'Append a ruling, optionally superseding one, settling issues or covering an area of code.',
   decisions: 'The rulings with who ruled and what superseded them.',
@@ -663,7 +661,13 @@ export function dispatch(root, commandName, rest, flags) {
         need(rest[1] === 'review' || /^\d+$/.test(rest[1] ?? ''), `retract takes review (the newest approve) or the number of an evidence row, got "${rest[1] ?? ''}"`);
         if (rest[1] === 'review') { out = R.review(root, rest[0], 'retract', rest[2], { by: flags.by, caller: 'cli' }); text = each(out, renderReview); warn = [].concat(out).filter((o) => o.note).map((o) => `note: ${o.note}`); } else { out = R.addEvidence(root, rest[0], rest[2], { retract: rest[1], by: flags.by }); text = each(out, renderEvidence); }
         break;
-      case 'next': out = cmdNext(root, flags); text = out.scheduler ? out.note : renderNext(out, flags.all === true, out.length ? 0 : cmdNext(root, { all: true }).length); break;
+      // One computation of the rows: the ready ones are listed, and the rest says how many are held or waiting.
+      case 'next': {
+        const rows = cmdNext(root, { ...flags, all: true });
+        out = rows.scheduler || flags.all ? rows : rows.filter((r) => r.ready);
+        text = rows.scheduler ? rows.note : renderNext(out, flags.all === true, rows.length - out.length);
+        break;
+      }
       case 'review':
         if (rest[1] === 'retract') aliases.push('note: a verdict is retracted with: retract <id> review --by <who> "<reason>"');
         out = R.review(root, rest[0], rest[1], rest[2], { ...flags, caller: 'cli' }); text = each(out, renderReview); warn = [].concat(out).filter((o) => o.note).map((o) => `note: ${o.note}`); break;

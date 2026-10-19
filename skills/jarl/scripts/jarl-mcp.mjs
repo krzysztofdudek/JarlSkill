@@ -34,7 +34,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { COMMAND_ALIASES, COMMAND_ARGS, COMMAND_FLAGS, flagsOf, COMMAND_SUMMARY, GLOBAL_FLAGS, MUTATING, USAGE, parseArgs, dispatch, findRoot, isEntry as isEntryOf } from './jarl.mjs';
+import { COMMAND_ALIASES, COMMAND_ARGS, COMMAND_FLAGS, INTERNAL_COMMANDS, flagsOf, COMMAND_SUMMARY, GLOBAL_FLAGS, MUTATING, USAGE, parseArgs, dispatch, findRoot, isEntry as isEntryOf } from './jarl.mjs';
 import { defineTable } from './vendor/runes/dist/cli/index.mjs';
 import {
   buildTools as generateTools, argvFor as generateArgv, commandForTool, serveStdio, InvalidParams,
@@ -62,11 +62,12 @@ export const argName = (a) => a.replace(/[?.]+$/, '');
 export const ARG_NOTES = {};
 // The commands that write one issue at a time and take the list grammar in their "id" field.
 const LIST_ID_COMMANDS = new Set(['body', 'source', 'after', 'files', 'repo', 'round']);
-const IDS_NOTE = 'An ids field is one id or several as one comma list with ranges (12,13,14 or 203-206,209); every id and every precondition is checked before anything is written, so the call lands on all of them or on none.';
 const IDS_FIELD = 'One id, or several as one comma list with ranges (12,13 or 203-206): all of them change, or none.';
 const ROOT_FIELD = "The directory holding .jarl/, as an absolute path (a relative or empty one is refused). Defaults to JARL_ROOT from the server's environment, else the loop found from the server's working directory. Workers in a worktree and every role of a loop that lives in another repository pass it always.";
+const IDS_NOTE = 'An ids field is one id or several as one comma list with ranges (12,13,14 or 203-206,209); every id and every precondition is checked before anything is written, so the call lands on all of them or on none.';
 const HELP = `${USAGE}\n\n${IDS_NOTE}\n\n${Object.entries(ARG_NOTES).map(([c, n]) => `${toolName(c)}: ${n}`).join('\n')}`;
-const INSTRUCTIONS = 'Every jarl command is a tool, jarl_<command>, with its arguments and flags as fields. A description is one sentence; jarl_help answers with the full usage of every command.';
+// Hosts keep these in the session's standing instructions, so the last sentence outlives a compaction that loses the skill.
+const INSTRUCTIONS = 'Every jarl command is a tool, jarl_<command>, with its arguments and flags as fields. A description is one sentence; jarl_help answers with the full usage of every command. After a compaction, or any summary of your own context, you are starting a session: run jarl_resume before your next action; a summary is not the state of the loop.';
 
 // The CLI's tables as one Runes command table. An argument written `name...` in COMMAND_ARGS takes any number of
 // words, none included (tag's +a -b, sources' findings files): `name...?` in the Runes grammar.
@@ -77,6 +78,7 @@ const entry = (cmd) => ({
   summary: COMMAND_SUMMARY[cmd],
   writes: MUTATING.has(cmd),
   destructive: cmd === 'close' || cmd === 'archive',
+  ...(INTERNAL_COMMANDS.includes(cmd) ? { internal: true } : {}),
   ...(PATH_FIELDS[cmd] ? { paths: PATH_FIELDS[cmd] } : {}),
 });
 export const TABLE = defineTable({

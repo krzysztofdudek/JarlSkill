@@ -12,7 +12,7 @@ What counts as proof, what an issue needs before it is done, how a record is tak
 
 ## Proof, Notes and the merge record
 
-Evidence is recorded as pairs of `--ran` and `--saw` (the rule is in [SKILL.md](../SKILL.md#the-rules-that-never-bend)). In Jarl a pair is one row of `evidence <ids> --ran "<command>" --saw "<what it printed>"`, and `set done` needs at least one such row inside the gate's window.
+Evidence is recorded as pairs of `--ran` and `--saw` (the rule is in [SKILL.md](../SKILL.md#the-rules-that-never-bend)). In Jarl a pair is one row of `evidence <ids> --ran "<command>" --saw "<what it printed>"`, and `set done` needs at least one such row inside the gate's window. Free-text evidence is for a line or two that explains what the rows prove: the rows prove, and a worker's long report goes to the jarl, never into the evidence.
 
 An issue keeps what proves the work apart from what explains it, and apart from the merge. **Proof** holds the worker's `--ran`/`--saw` rows. **Notes** holds free text, rulings (`decide --settles`, `answer --issue`), the reasons of a drop or a deferral (`Dropped: …`, `Deferred: …`) and the entries that retract a row. The merger's check lives in the **merge record**, beside **Merged:** and **CI:**: `merged --ran … --saw …` writes the **Merge check:** header field and names the check on the merge line, and writes no row, so the merger's check never stands in for the worker's proof. `set done` counts only Proof, and when the merge record holds a check but Proof is empty, its refusal says that the row is the worker's and the merge check does not stand in for it; `merged` and an approve say so too when the issue holds no Proof row yet.
 

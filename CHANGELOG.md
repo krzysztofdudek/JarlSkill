@@ -38,6 +38,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The skill lists every difference between the record library and the command line, with the reason for each, so a tool that builds on the library can see where the two differ.
 
 ### Changed
+- The `handoff` tool is no longer among the assistant tools; a session starts from `resume`. After a compaction, the assistant's standing instructions say to run `resume` before the next action.
+- `next` and `resume` show only the default model of an issue's tier, and no longer work out the models table first.
 - The skill is now a short entry file with a `references/` directory beside it. A plugin install gets both. If you copy the skill by hand, copy the whole `skills/jarl/` directory, not only `SKILL.md`.
 - The skill uses one word for each concept and has a short glossary of them.
 - The person who rules over a loop is called the owner.

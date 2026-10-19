@@ -14,8 +14,10 @@ import { FINDINGS } from './findings.mjs';
 const SERVER = fileURLToPath(new URL('../jarl-mcp.mjs', import.meta.url));
 const CLI_SOURCE = readFileSync(fileURLToPath(new URL('../jarl.mjs', import.meta.url)), 'utf8');
 const PLUGIN = fileURLToPath(new URL('../../../../', import.meta.url));
-const { COMMAND_ALIASES, COMMAND_ARGS, COMMAND_FLAGS, GLOBAL_FLAGS, MUTATING, parseArgs, flagsOf } = await import('../jarl.mjs');
+const { COMMAND_ALIASES, COMMAND_ARGS, COMMAND_FLAGS, GLOBAL_FLAGS, INTERNAL_COMMANDS, MUTATING, parseArgs, flagsOf } = await import('../jarl.mjs');
 const mcp = await import('../jarl-mcp.mjs');
+// The commands that have a tool and a block in the usage text: every command but the internal ones.
+const publicOf = (names) => names.filter((c) => !INTERNAL_COMMANDS.includes(c));
 
 const TOOLS = mcp.buildTools();
 const byName = Object.fromEntries(TOOLS.map((t) => [t.name, t]));
@@ -31,22 +33,22 @@ test('parity: every command dispatch runs has its tables, its usage block and ex
   assert.ok(commands.length >= 30, `read ${commands.length} commands from dispatch`);
   assert.deepEqual(Object.keys(COMMAND_FLAGS).sort(), commands, 'COMMAND_FLAGS names the commands dispatch runs');
   assert.deepEqual(Object.keys(COMMAND_ARGS).sort(), commands, 'COMMAND_ARGS names the commands dispatch runs');
-  assert.deepEqual(Object.keys(mcp.usageBlocks()).sort(), commands, 'USAGE describes the commands dispatch runs');
-  assert.deepEqual(TOOLS.map((t) => t.name).sort(), [...commands.map(mcp.toolName), ...Object.keys(COMMAND_ALIASES).map(mcp.toolName), 'jarl_help'].sort(), 'one tool per command and per name it answers to, and help');
+  assert.deepEqual(Object.keys(mcp.usageBlocks()).sort(), publicOf(commands), 'USAGE describes the commands dispatch runs that are not internal');
+  assert.deepEqual(TOOLS.map((t) => t.name).sort(), [...publicOf(commands).map(mcp.toolName), ...Object.keys(COMMAND_ALIASES).map(mcp.toolName), 'jarl_help'].sort(), 'one tool per command that is not internal and per name it answers to, and help');
   for (const w of MUTATING) assert.ok(commands.includes(w), `MUTATING names ${w}, which dispatch does not run`);
 });
 
 test('parity: the tool set is the one this release documents — adding or removing a tool is a deliberate edit here', () => {
   assert.deepEqual(TOOLS.map((t) => t.name).sort(), [
     'after', 'answer', 'archive', 'ask', 'body', 'branches', 'changelog', 'check', 'close', 'decide', 'decisions',
-    'evidence', 'field', 'files', 'goal', 'handoff', 'help', 'import', 'init', 'list', 'log', 'merged', 'mode', 'models', 'new', 'next', 'prio',
+    'evidence', 'field', 'files', 'goal', 'help', 'import', 'init', 'list', 'log', 'merged', 'mode', 'models', 'new', 'next', 'prio',
     'profile', 'queue', 'repo', 'report', 'resume', 'retract', 'review', 'round', 'scope', 'set', 'show', 'source', 'sources', 'status', 'tag', 'tips', 'verify',
   ].map(mcp.toolName));
 });
 
 test('parity: each tool has one field per argument and per flag, under the CLI name, of the matching type', () => {
   const blocks = mcp.usageBlocks();
-  for (const cmd of Object.keys(COMMAND_FLAGS)) {
+  for (const cmd of publicOf(Object.keys(COMMAND_FLAGS))) {
     const t = byName[mcp.toolName(cmd)];
     const props = t.inputSchema.properties;
     const args = COMMAND_ARGS[cmd].map(mcp.argName);
@@ -71,7 +73,7 @@ test('parity: each tool has one field per argument and per flag, under the CLI n
 });
 
 test('parity: every field reaches the CLI parser as the flag or argument it names', () => {
-  for (const cmd of Object.keys(COMMAND_FLAGS)) {
+  for (const cmd of publicOf(Object.keys(COMMAND_FLAGS))) {
     const input = {};
     const wantPos = [];
     for (const a of COMMAND_ARGS[cmd]) {
@@ -96,7 +98,7 @@ test('a field the command does not take, a wrong type, or an argument after a mi
   assert.throws(() => mcp.argvFor('set', { ids: '1', bogus: 1 }), /unknown field "bogus"/);
   assert.throws(() => mcp.argvFor('list', { all: 'yes' }), /"all" must be true or false/);
   assert.throws(() => mcp.argvFor('after', { ids: '2', clear: true }), /"id" is required/);
-  assert.throws(() => mcp.argvFor('handoff', { next: 'x', action: undefined, bogus: 1 }), /unknown field/);
+  assert.throws(() => mcp.argvFor('resume', { log: '3', bogus: 1 }), /unknown field/);
   assert.deepEqual(mcp.argvFor('prio', { ids: 3, priority: 1 }), ['prio', '--', '3', '1'], 'numbers are taken as their text');
   assert.deepEqual(mcp.argvFor('evidence', { ids: '1', ran: 'npm test', saw: 'ok' }), ['evidence', '--ran=npm test', '--saw=ok', '--', '1'], 'a single string for a repeatable flag is one item');
 });
@@ -266,9 +268,9 @@ test('concurrent writes: calls sent at once to one server, and to two servers on
 test('the skill names every field the tools take in references/commands.md, and sends the agent to the tools first', () => {
   const skill = readFileSync(fileURLToPath(new URL('../../SKILL.md', import.meta.url)), 'utf8');
   const commands = readFileSync(fileURLToPath(new URL('../../references/commands.md', import.meta.url)), 'utf8');
-  const line = Object.entries(COMMAND_ARGS).filter(([, a]) => a.length).map(([c, a]) => `\`${c}\` ${a.map(mcp.argName).join(', ')}`).join(' · ');
+  const line = Object.entries(COMMAND_ARGS).filter(([c, a]) => a.length && !INTERNAL_COMMANDS.includes(c)).map(([c, a]) => `\`${c}\` ${a.map(mcp.argName).join(', ')}`).join(' · ');
   assert.ok(commands.includes(line), `references/commands.md lists the argument fields as:\n${line}`);
-  const flagLine = Object.entries(COMMAND_FLAGS).filter(([, f]) => Object.keys(f).length).map(([c, f]) => `\`${c}\` ${Object.keys(f).join(', ')}`).join(' · ');
+  const flagLine = Object.entries(COMMAND_FLAGS).filter(([c, f]) => Object.keys(f).length && !INTERNAL_COMMANDS.includes(c)).map(([c, f]) => `\`${c}\` ${Object.keys(f).join(', ')}`).join(' · ');
   assert.ok(commands.includes(`The flag fields: ${flagLine};`), `references/commands.md lists the flag fields as:\n${flagLine}`);
   assert.match(skill, /\(references\/commands\.md#the-tools-and-their-fields\)/, 'SKILL.md points to the fields');
   assert.match(skill, /<!-- RUNES:mcp-first:START -->\n\*\*Call the tool through its MCP tools first, when the session has them\.\*\*/);

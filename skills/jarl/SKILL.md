@@ -12,6 +12,7 @@ Jarl is the loop of the Yggdrasil family: issue, worker, evidence, ask, and the 
 ## First moves
 
 - **A `.jarl/` already holds a loop.** At the first contact of a session with it, run `status` (goal, when it was opened, last activity) and ask the owner once whether this session continues that loop or archives it (`archive "<slug>"`, then `init "<goal>"`). Ask only at that first contact, never again on each `new` or `evidence` in the same work. Then run `resume`: one command, the whole state, read live. Read [jarl.md](references/jarl.md) to run the loop, or the reference of your own role.
+- **After a compaction, or any summary of your own context, you are starting a session: run `resume` before the next action.** A summary is not the state: the record is.
 - **No loop yet.** Run `init "<goal>"`: the loop lives out of git by default, `--committed` commits it with the work, `--permanent` keeps it as a standing record (see [Where the loop lives](references/record.md#where-the-loop-lives)). Put a `Check: <command>` line in the goal when the repository has a check that decides what lands. Then file what is known as issues and follow the loop in [jarl.md](references/jarl.md#the-loop).
 - **You were raised to do one job.** Read your role's reference first: the table below says which.
 
@@ -19,7 +20,7 @@ Jarl is the loop of the Yggdrasil family: issue, worker, evidence, ask, and the 
 
 | Role | What it does | Read |
 |---|---|---|
-| jarl | directs the loop: files issues, picks, raises the others, records verdicts, asks the owner, closes the loop | [references/jarl.md](references/jarl.md) |
+| jarl | directs the loop: files issues, picks, raises the others, records verdicts, asks the owner, closes the loop; its moments of work are in [The moments of work](references/jarl.md#the-moments-of-work) | [references/jarl.md](references/jarl.md) |
 | worker | does one issue, or one package, in its own worktree and records the proof | [references/worker.md](references/worker.md) |
 | reviewer | gives a verdict on an issue, with a standing | [references/reviewer.md](references/reviewer.md) |
 | merger | lands approved branches into the feature branch and records the merge | [references/merger.md](references/merger.md) |
@@ -33,7 +34,7 @@ The other references, each read when its subject comes up:
 | [references/profile.md](references/profile.md) | proof, notes and the merge record, attachments, the done gate, retracting, profiles |
 | [references/record.md](references/record.md) | the modes, the files of `.jarl/`, the log as the record, the issue file, the format marker, the write lock |
 | [references/models.md](references/models.md) | tiers, the loop's model lines, recording a model, calibration |
-| [references/repositories.md](references/repositories.md) | packages and leases, worktrees, a loop that directs several repositories |
+| [references/repositories.md](references/repositories.md) | packages and leases, worktrees, a loop that directs several repositories, the rules for parallel workers in worktrees |
 | [references/glossary.md](references/glossary.md) | each term of the skill, defined once |
 
 ## The daily commands
