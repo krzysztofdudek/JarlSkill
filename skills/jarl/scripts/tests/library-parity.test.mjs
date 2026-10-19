@@ -2,7 +2,7 @@
 // that start from the same state: the library call on one, the matching command (spawned as a process, as a person runs
 // it) on the other. The files and the log lines must come out the same, except where the list below names the
 // difference. The list is the one place that says what only the command line does, or what the library does
-// differently, and why; SKILL.md carries the same list, and a test there holds the two to each other cell by cell.
+// differently, and why; references/composers.md carries the same list, and a test there holds the two to each other cell by cell.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -14,12 +14,12 @@ import * as R from '../record.mjs';
 import { spawnJarl, gitRepo } from './helpers.mjs';
 import { FINDINGS } from './findings.mjs';
 
-// The heading of the section of SKILL.md that carries the table of the list.
-const SECTION = '### What only the command line does\n';
-const SKILL = fileURLToPath(new URL('../../SKILL.md', import.meta.url));
+// The heading of the section of references/composers.md that carries the table of the list.
+const SECTION = '## What only the command line does\n';
+const COMPOSERS = fileURLToPath(new URL('../../references/composers.md', import.meta.url));
 
 // What the command line does and the library does not, one row per difference: four cells, exactly as the table in
-// SKILL.md writes them. `cases` names the parity cases that show the difference (a row with none says why in `why`).
+// references/composers.md writes them. `cases` names the parity cases that show the difference (a row with none says why in `why`).
 export const COMMAND_LINE_ONLY = [
   { item: 'Merge with no CI state', cases: ['merged'], cli: 'records no CI state unless `--ci` is given', library: 'records `pending` when a sha is given without a CI state', why: 'a composer that records a merge before CI has run says so in the record; a person at the command line gives the state when it is known' },
   { item: 'Numbers of issues and questions', cases: ['new', 'ask'], cli: 'writes them plain (`3`, `a-1`), and raises the record format for a plain number under three digits', library: 'writes three digits (`003`, `a-001`)', why: 'a composer\'s files sort by name, and the contract returns the three-digit ids' },
@@ -233,10 +233,10 @@ test('every function export of record.mjs has a parity case, or is one of the re
   for (const op of cased) assert.ok(operations.includes(op), `a case names ${op}, which record.mjs does not export`);
 });
 
-test('the list and the table in SKILL.md agree cell by cell, so a changed cell in either fails', () => {
-  const skill = readFileSync(SKILL, 'utf8');
+test('the list and the table in references/composers.md agree cell by cell, so a changed cell in either fails', () => {
+  const skill = readFileSync(COMPOSERS, 'utf8');
   const start = skill.indexOf(SECTION);
-  assert.ok(start >= 0, `SKILL.md has no section "${SECTION}"`);
+  assert.ok(start >= 0, `references/composers.md has no section "${SECTION}"`);
   const rest = skill.slice(start + SECTION.length);
   const next = rest.search(/^#{1,3} /m);
   const body = next === -1 ? rest : rest.slice(0, next);

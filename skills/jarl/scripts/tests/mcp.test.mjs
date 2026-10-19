@@ -263,12 +263,14 @@ test('concurrent writes: calls sent at once to one server, and to two servers on
   } finally { await Promise.all([a.stop(), b.stop()]); }
 });
 
-test('SKILL.md names every argument field the tools take, and sends the agent to the tools first', () => {
+test('the skill names every field the tools take in references/commands.md, and sends the agent to the tools first', () => {
   const skill = readFileSync(fileURLToPath(new URL('../../SKILL.md', import.meta.url)), 'utf8');
+  const commands = readFileSync(fileURLToPath(new URL('../../references/commands.md', import.meta.url)), 'utf8');
   const line = Object.entries(COMMAND_ARGS).filter(([, a]) => a.length).map(([c, a]) => `\`${c}\` ${a.map(mcp.argName).join(', ')}`).join(' · ');
-  assert.ok(skill.includes(line), `SKILL.md lists the argument fields as:\n${line}`);
+  assert.ok(commands.includes(line), `references/commands.md lists the argument fields as:\n${line}`);
   const flagLine = Object.entries(COMMAND_FLAGS).filter(([, f]) => Object.keys(f).length).map(([c, f]) => `\`${c}\` ${Object.keys(f).join(', ')}`).join(' · ');
-  assert.ok(skill.includes(`The flag fields: ${flagLine};`), `SKILL.md lists the flag fields as:\n${flagLine}`);
+  assert.ok(commands.includes(`The flag fields: ${flagLine};`), `references/commands.md lists the flag fields as:\n${flagLine}`);
+  assert.match(skill, /\(references\/commands\.md#the-tools-and-their-fields\)/, 'SKILL.md points to the fields');
   assert.match(skill, /<!-- RUNES:mcp-first:START -->\n\*\*Call the tool through its MCP tools first, when the session has them\.\*\*/);
   assert.match(skill, /\*\*Jarl's server\.\*\* Installed as a plugin, Jarl starts an MCP server named `jarl`/);
   assert.match(skill, /### The CLI, when the tools are not there/);

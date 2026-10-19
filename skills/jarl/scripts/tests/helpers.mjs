@@ -2,7 +2,7 @@
 // test sets up. Every spawn carries an explicit timeout, so a hung process fails the test instead of waiting for it.
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,6 +11,30 @@ import { NO_EXCLUDES } from './portable.mjs';
 
 export const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 export const SPAWN_TIMEOUT = 120_000;
+
+// The directory of the skill (SKILL.md, references/, scripts/) and the markdown files that make up its text: SKILL.md
+// first, then every file of references/ in name order.
+export const SKILL_DIR = fileURLToPath(new URL('../../', import.meta.url));
+export function skillFiles() {
+  const refs = readdirSync(join(SKILL_DIR, 'references')).filter((f) => f.endsWith('.md')).sort();
+  return ['SKILL.md', ...refs.map((f) => `references/${f}`)];
+}
+// The text of one skill file, by its path under the skill directory ('SKILL.md', 'references/record.md').
+export const skillText = (file) => readFileSync(join(SKILL_DIR, file), 'utf8');
+// The lines of every skill file outside the blocks between the Runes markers (shared fragments that Runes writes and
+// the vendoring pins, changed in Runes and never here), as { file, n, text }; `n` counts from 1 in its own file.
+export function skillLines() {
+  const out = [];
+  for (const file of skillFiles()) {
+    let inside = false;
+    skillText(file).split('\n').forEach((text, i) => {
+      if (/^<!-- RUNES:[a-z-]+:START -->$/.test(text)) inside = true;
+      if (!inside) out.push({ file, n: i + 1, text });
+      if (/^<!-- RUNES:[a-z-]+:END -->$/.test(text)) inside = false;
+    });
+  }
+  return out;
+}
 
 // One run of the command line against the loop in `root`: the result of spawnSync, both streams as written. `env` is
 // added to the environment of the process.

@@ -16,6 +16,8 @@ import { readFileSync, readdirSync } from 'node:fs';
 
 const SCRIPTS = new URL('../', import.meta.url);
 const read = (name) => readFileSync(new URL(name, SCRIPTS), 'utf8');
+// The prose of the skill: SKILL.md and every file of references/, by the name each is read under.
+const SKILL_FILES = Object.fromEntries(['SKILL.md', ...readdirSync(new URL('../references/', SCRIPTS)).filter((f) => f.endsWith('.md')).sort().map((f) => `references/${f}`)].map((f) => [f, new URL(`../${f}`, SCRIPTS)]));
 const LIB = read('jarl-lib.mjs');
 
 const HEADER = /^\/\/ ---- (.+?) -{3,}\s*$/;
@@ -196,7 +198,7 @@ test('rule 7: no comment or title in the tests, and no prose in the skill or the
   assert.deepEqual(TESTS.flatMap((f) => datedComments(`tests/${f}`, read(`tests/${f}`), VERSIONED)), []);
   assert.deepEqual(TESTS.flatMap((f) => titlesOf(read(`tests/${f}`)).map((l) => `tests/${f}:${l}`)), []);
   const prose = (name, url) => readFileSync(url, 'utf8').split('\n').flatMap((l, i) => (VERSIONED.test(l) ? [`${name}:${i + 1}: ${l.trim().slice(0, 80)}`] : []));
-  assert.deepEqual(prose('SKILL.md', new URL('../SKILL.md', SCRIPTS)), []);
+  for (const [name, url] of Object.entries(SKILL_FILES)) assert.deepEqual(prose(name, url), []);
   assert.deepEqual(prose('README.md', new URL('../../../README.md', SCRIPTS)), []);
 });
 
@@ -255,11 +257,11 @@ function taskRefs(name, text, prose = false) {
 test('rule 8: no comment, test title or prose line names a task by number or tells its story', () => {
   const scripts = readdirSync(SCRIPTS).filter((f) => f.endsWith('.mjs'));
   const tests = readdirSync(new URL('tests/', SCRIPTS)).filter((f) => f.endsWith('.mjs') && f !== 'seams.test.mjs');
-  const prose = { 'SKILL.md': '../SKILL.md', 'README.md': '../../../README.md', 'CLAUDE.md': '../../../CLAUDE.md', 'CHANGELOG.md': '../../../CHANGELOG.md' };
+  const prose = { ...SKILL_FILES, 'README.md': new URL('../../../README.md', SCRIPTS), 'CLAUDE.md': new URL('../../../CLAUDE.md', SCRIPTS), 'CHANGELOG.md': new URL('../../../CHANGELOG.md', SCRIPTS) };
   assert.deepEqual([
     ...scripts.flatMap((f) => taskRefs(f, read(f))),
     ...tests.flatMap((f) => taskRefs(`tests/${f}`, read(`tests/${f}`))),
-    ...Object.entries(prose).flatMap(([n, u]) => taskRefs(n, readFileSync(new URL(u, SCRIPTS), 'utf8'), true)),
+    ...Object.entries(prose).flatMap(([n, u]) => taskRefs(n, readFileSync(u, 'utf8'), true)),
   ], []);
   assert.equal(taskRefs('x.mjs', '// the lease of (issue 281)\nconst a = 1; // see issue 7\n// (475) the old count\nconst b = "issue 9";\n// a package 2 ships\n// the #281 shape\n// the field report says so\n').length, 6);
   assert.equal(taskRefs('x.mjs', 'const a = 1; // a count of 7 things\n// the id 007 is data\n').length, 0);
