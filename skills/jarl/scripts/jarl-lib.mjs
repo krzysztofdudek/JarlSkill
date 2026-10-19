@@ -1969,7 +1969,7 @@ export function cmdMerged(root, rawIds, flags) {
   const repoPath = pickedRepo ? pickedRepo.main : null;
   const repoIn = pickedRepo ? ` in ${noSeparators(pickedRepo.value)}` : '';
   if (flags.sha !== undefined) needRightCheckouts(root, pickedRepo ? [pickedRepo.name].filter(Boolean) : issues.flatMap((i) => splitList(i.fields.repo)));
-  const sha =flags.sha !== undefined ? String(flags.sha).toLowerCase() : null;
+  const sha = flags.sha !== undefined ? String(flags.sha).toLowerCase() : null;
   const ci = flags.ci ?? (sha && !cli ? 'pending' : undefined);
   // The check as the merge line names it: the commands that ran, one line, never the log's own separator.
   const oneLineOf = (key) => noSeparators(fieldText(rows.map((r) => r[key]).join(' ; '))).slice(0, 200).trim();
@@ -2022,7 +2022,7 @@ export function cmdMerged(root, rawIds, flags) {
     writeAtomic(issue.file, text);
   }
   // The cleanup comes last, after the merge is on the record, and only on the command line and in the tools.
-  const cleanup = sha && cli && flags.keep !== true ? cleanUpAfterMerge(root, issues, sha, repoPath) : [];
+  const cleanup = sha && cli && flags.keep !== true ? cleanUpAfterMerge(root, issues, sha, repoPath, pickedRepo && pickedRepo.name ? [pickedRepo.name] : []) : [];
   return { ids: issues.map((i) => i.id), sha: sha || null, ci: ci ?? null, ...(checkText ? { check: checkText } : {}), ...(cause ? { red: cause } : {}), ...(cleanup.length ? { cleanup } : {}), notes };
 }
 
@@ -2045,7 +2045,7 @@ const sameDir = (a, b) => canonical(a) === canonical(b);
 const missingWorktreeReason = () => 'git lists its worktree but its directory is missing here';
 const insideDir = (dir, path) => { const r = relative(canonical(dir), canonical(path)); return r === '' || (!r.startsWith('..') && !isAbsolute(r)); };
 
-function cleanUpAfterMerge(root, issues, sha, repoPath) {
+function cleanUpAfterMerge(root, issues, sha, repoPath, named = []) {
   const profile = loadProfile(root);
   const everyone = loadIssues(root);
   const called = new Set(issues.map((i) => i.id));
@@ -2065,6 +2065,8 @@ function cleanUpAfterMerge(root, issues, sha, repoPath) {
     const base = defaultBase(repo);
     const result = { repo: repoLabel(repo), branch };
     const keep = (reason, extra = {}) => results.push({ ...result, ...extra, kept: reason });
+    const unsafe = whyNotDeletable(root, repo, [...on.flatMap((i) => splitList(i.fields.repo)), ...named]);
+    if (unsafe) { keep(unsafe); continue; }
     if (TRUNK_NAME.test(branch) || branch === base) { keep('it is the base or a release branch'); continue; }
     const others = everyone.filter((i) => !called.has(i.id) && fieldText(i.fields.branch) === branch && profile.unfinished(i.status) && issueRepos(root, i).includes(repo)).map((i) => i.id);
     if (others.length) { keep(`${others.join(', ')} still hold${others.length === 1 ? 's' : ''} a lease on it`); continue; }
@@ -2888,15 +2890,18 @@ export function appendNote(root, event) {
 
 // Writes the repository after "in" of every merge line of the log as `fn(value)` gives it, the rest of the line as it was;
 // nothing is written when no line changes. Only the raise of the record format calls it.
-const MERGE_REPO_PART = /^(\S+ merged \S+ in )(.+?)((?: · .*)?)$/;
+// Only a line the tool itself writes for a merge is touched: the id of an issue of the loop first, the sha, the repository,
+// then only the fixed segments (check, saw, landed red, CI) in the order merged writes them. Any other line is left as it is.
+const MERGE_REPO_PART = idRe('^({id}) merged ([0-9a-f]{4,64}) in ([^\\n]+?)((?: · check [^\\n]*?)?(?: · saw [^\\n]*?)?(?: · landed red, cause \\S+)?(?: · CI (?:pending|green|red|none))?)$');
 export function mapMergeRepos(root, fn) {
   const path = logPath(jarlDir(root));
   if (!existsSync(path)) return;
   const log = readText(path);
+  const held = issueForms(jarlDir(root));
   const next = log.split('\n').map((l) => {
     const m = LOG_LINE.exec(l);
     const p = m && MERGE_REPO_PART.exec(m[2]);
-    return p ? `- ${m[1]} · ${p[1]}${fn(p[2])}${p[3]}` : l;
+    return p && held.has(idKey(p[1])) && !p[3].includes(' · ') ?`- ${m[1]} · ${p[1]} merged ${p[2]} in ${fn(p[3])}${p[4]}` : l;
   }).join('\n');
   if (next !== log) writeAtomic(path, next);
 }
@@ -4677,14 +4682,27 @@ export function repoIdentity(root, name) {
   return { ...out, state: 'mismatch', fix: `${path} is another repository than ${name} (its root commits are ${found.join(', ') || 'none'}, the declaration holds ${declared.roots.join(', ')}) — put the checkout of ${name}, or a symlink to it, there` };
 }
 
-// A command that deletes a branch or a worktree acts only on the repository it names: a value written as a name whose
-// checkout holds none of the declared root commits is another repository, and is refused whatever else reads the value.
+// A command that acts on a repository acts only on the one it names. A value written as a name that does not resolve to
+// a repository on this machine is refused with its fix (the views mark it and go on), and so is one whose checkout holds
+// none of the declared root commits: that is another repository.
 export function needRightCheckouts(root, values) {
   for (const value of new Set(values)) {
     if (repoValueKind(root, value) !== 'name') continue;
+    repoOf(root, value);
     const found = repoIdentity(root, value);
     need(found.state !== 'mismatch', found.fix);
   }
+}
+// Why nothing may be deleted in the checkout `repo`, or null: it stands under a name (one of `values`) whose root commits
+// were not compared and found equal. A checkout that is unverified (shallow, or declared from a shallow one), another
+// repository, or under an undeclared name keeps everything.
+export function whyNotDeletable(root, repo, values) {
+  for (const value of new Set(values)) {
+    if (repoValueKind(root, value) !== 'name' || canonical(repoPlace(root, value).path) !== canonical(repo)) continue;
+    const found = repoIdentity(root, value);
+    if (found.state !== 'verified') return `the checkout under the name ${value} is ${found.state === 'mismatch' ? 'another repository' : `not verified as that repository (${found.state}${found.notes.length ? `: ${found.notes[0]}` : ''})`}, so nothing is deleted in it`;
+  }
+  return null;
 }
 
 // ---- where the repositories and the worktree of a lease are on this machine

@@ -629,6 +629,68 @@ for (const [trigger, raise] of Object.entries(TRIGGERS)) {
   });
 }
 
+test('a free note shaped like a merge line, and a merge line of no issue of the loop, are never rewritten by the format raise', () => {
+  const w = nestedWorld();
+  jarl(w.hub, 'log', `release merged ${w.sha} in api · CI green`);
+  writeFileSync(join(w.hub, '.jarl', 'log.md'), `${w.log()}- 2026-10-01 10:00 · 77 merged ${w.sha} in api · CI green\n- 2026-10-01 10:01 · 001 merged ${w.sha} in api · odd segment\n`);
+  jarl(w.hub, 'new', 'plain', '--tier', 'light');
+  const log = w.log();
+  assert.match(log, new RegExp(`001 merged ${w.sha} in \\./api · CI green`), 'the tool\'s own merge line is rewritten');
+  assert.match(log, new RegExp(`release merged ${w.sha} in api · CI green`));
+  assert.match(log, new RegExp(`77 merged ${w.sha} in api · CI green`));
+  assert.match(log, new RegExp(`001 merged ${w.sha} in api · odd segment`));
+});
+
+test('every command that acts on a name that does not resolve refuses it with the fix, merged with and without --repo among them, and the views mark it', () => {
+  const w = world('tool');
+  neu(w.hub, 'a', '--repo', 'tool');
+  jarl(w.hub, 'set', '1', 'in-progress', 'go', '--branch', 'jarl/1-x', '--worker', 'w1');
+  for (const emptyDirectoryThere of [false, true]) {
+    renameSync(w.tool, `${w.tool}-moved`);
+    if (emptyDirectoryThere) mkdirSync(w.tool);
+    const fix = `put its checkout, or a symlink to it, at ${join(w.parent, 'tool')}`;
+    const before = w.log() + w.issue(1);
+    for (const args of [['merged', '1', '--sha', 'abcd1234', '--ci', 'green'], ['merged', '1', '--sha', 'abcd1234', '--repo', 'tool'], ['check', '1', '--branch', 'jarl/1-x'], ['branches', '--repo', 'tool'], ['queue', '--repo', 'tool']]) {
+      assert.match(refuses(w.hub, ...args), new RegExp(escaped(fix)), args.join(' '));
+    }
+    assert.equal(w.log() + w.issue(1), before, 'a refused call writes nothing');
+    for (const view of [['tips'], ['queue'], ['branches'], ['status', '--by', 'repo'], ['show', '1']]) assert.equal(run(w.hub, view).status, 0, view.join(' '));
+    assert.match(jarl(w.hub, 'status', '--by', 'repo'), /the repository tool is not on this machine/);
+    if (emptyDirectoryThere) renameSync(w.tool, `${w.tool}-empty`);
+    renameSync(`${w.tool}-moved`, w.tool);
+  }
+});
+
+test('the merge cleanup deletes only in a checkout whose root commits were compared and found equal', () => {
+  // Verified: the branch goes.
+  let w = world('tool');
+  neu(w.hub, 'a', '--repo', 'tool');
+  git(w.tool, 'branch', 'jarl/1-x');
+  jarl(w.hub, 'set', '1', 'in-progress', 'go', '--branch', 'jarl/1-x', '--worker', 'w1');
+  assert.match(jarl(w.hub, 'merged', '1', '--sha', git(w.tool, 'rev-parse', '--short', 'HEAD')), /removed the branch jarl\/1-x/);
+  assert.equal(branchesOf(w.tool).includes('jarl/1-x'), false);
+  // A shallow clone of a different repository under the name: unverified, so nothing is deleted.
+  w = world('tool');
+  neu(w.hub, 'a', '--repo', 'tool');
+  jarl(w.hub, 'set', '1', 'in-progress', 'go', '--branch', 'jarl/1-x', '--worker', 'w1');
+  renameSync(w.tool, join(w.parent, 'tool-real'));
+  const full = repoAt(join(tmp('jarl-full-'), 'other'), { commits: [['o.txt', 'one\n'], ['p.txt', 'two\n']] });
+  git(w.parent, 'clone', '-q', '--depth', '1', `file://${full}`, join(w.parent, 'tool'));
+  git(w.tool, 'branch', 'jarl/1-x');
+  const out = jarl(w.hub, 'merged', '1', '--sha', git(w.tool, 'rev-parse', '--short', 'HEAD'));
+  assert.match(out, /kept jarl\/1-x — the checkout under the name tool is not verified as that repository \(unverified: a shallow checkout cannot show its root commits\), so nothing is deleted in it/);
+  assert.equal(branchesOf(w.tool).includes('jarl/1-x'), true);
+  // A shallow clone of the right repository is unverified too, and keeps everything.
+  w = world('tool');
+  neu(w.hub, 'a', '--repo', 'tool');
+  jarl(w.hub, 'set', '1', 'in-progress', 'go', '--branch', 'jarl/1-x', '--worker', 'w1');
+  renameSync(w.tool, join(w.parent, 'tool-real'));
+  git(w.parent, 'clone', '-q', '--depth', '1', `file://${join(w.parent, 'tool-real')}`, join(w.parent, 'tool'));
+  git(w.tool, 'branch', 'jarl/1-x');
+  assert.match(jarl(w.hub, 'merged', '1', '--sha', git(w.tool, 'rev-parse', '--short', 'HEAD')), /kept jarl\/1-x — .*not verified/);
+  assert.equal(branchesOf(w.tool).includes('jarl/1-x'), true);
+});
+
 test('merged refuses to act when the checkout under a name holds none of the declared root commits, and deletes no branch', () => {
   const w = world('tool');
   neu(w.hub, 'a', '--repo', 'tool');

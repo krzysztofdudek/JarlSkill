@@ -329,7 +329,7 @@ puts it there. The Repo field stores the name where the checkout sits at that pl
 otherwise (a note on stderr says why); a path is read from the loop's root, so it means the same from
 any worktree. A name needs no path in the record: Jarl declares it once in .jarl/repos.md, with the
 repository's root commits, its origin as found and its base branch, and the loop's record format
-rises with the first name: a loop that holds a name needs a Jarl that knows names. In a loop of the
+rises with the first name (a record carries its format, and Jarl refuses a format it does not read). In a loop of the
 raised format a Repo value that starts with . or / (or a drive letter) is a path and anything else
 a name. An issue that names a repository writes each of its files with that repository's directory
 name first (tool/src/a.mjs for Repo tool): next then keeps the same path in two repositories apart,
