@@ -206,8 +206,10 @@ test('resume stays fast on a loop of hundreds of issues naming another repositor
   assert.match(r.stdout, /## In flight \(85\)/);
   assert.match(r.stdout, /## Last 15 log line\(s\)/);
   // The budget is 2 s on a quiet machine; the bound here leaves room for a loaded one, and still catches a return
-  // to git processes per issue (over a thousand on this loop).
-  assert.ok(ms < 6000, `resume took ${ms} ms`);
+  // to git processes per issue (over a thousand on this loop). Starting a process is several times slower on
+  // Windows, so its bound is wider; a git process per issue would still cost minutes there.
+  const bound = process.platform === 'win32' ? 20000 : 6000;
+  assert.ok(ms < bound, `resume took ${ms} ms`);
 });
 
 // The live loop of the family release, when this checkout sits beside it: resume and handoff read on a copy, with
