@@ -1,6 +1,6 @@
 # The record
 
-What lives in `.jarl/`, in which mode, in which format, and how the log decides what is true. Read it before touching the files of a loop, when a header and the log disagree, or when a loop will not open.
+What lives in `.jarl/`, in which mode, in which format, and how the log decides what is true. Read it before touching the files of a loop, when a header and the log disagree, or when a loop will not open. The terms are defined in [glossary.md](glossary.md).
 
 ## Contents
 
@@ -38,6 +38,8 @@ command table in [commands.md](commands.md#the-commands).
 
 ## The files of the loop
 
+The tool writes fourteen paths in `.jarl/`, listed below, and the temporary files (`.*.tmp`) a write leaves for an instant.
+
 | Path | What | Who writes |
 |---|---|---|
 | `.jarl/goal.md` | Why this branch exists, in one paragraph; the standing assumptions; the rules that apply here. Written once at the start, amended only with the owner's word. A `Coordinators: a, b` line (plain, a list item, or bold) names extra reviewers who count as `coordinator` rather than `fresh`, alongside `coordinator`, `jarl`, `reeve` and the loop's own name — the directory holding `.jarl/` — which count as coordinators without being declared. `Model (<tier>): <model>[, <model>…]` lines (the same forms, one per tier) say which models run on each tier: the first is the tier's default, the order of the tiers ranks the models, and a model on no line is unplaced (see [Which model sits where](models.md#which-model-sits-where)). A `Check: <command>` line (the same forms, one per check, several allowed) names the check that decides what lands — the repository's own test or gate — and a `Check (<repo>): <command>` line names one repository's, `<repo>` being the name its Files prefix writes; Jarl never runs it. A merge carries the check when its `--ran` text (`merged --ran --saw`) equals a declared command; `status` and `report` say per repository how many merges carry it, and that the loop lands on testimony alone while none does or while the goal declares no check (see [Loop metrics](commands.md#loop-metrics)). | jarl |
@@ -45,6 +47,12 @@ command table in [commands.md](commands.md#the-commands).
 | `.jarl/issues/7-slug.md` | One issue per file, numbered in filing order from 1. A number is written plain (7, 42, 1000); a number written with leading zeros, as 007, is the same issue as 7. Format below. | jarl (header, status), worker (evidence) |
 | `.jarl/log.md` | The journal, append-only, one dated line per event: filed, started, done, dropped, merged, asked, decided. A text of several lines never breaks a line: the whole of it is kept where it belongs (the issue, `asks.md`, `decisions.md`) and the line holds its first line and a pointer. The one exception to append-only: the format raise rewrites the repository part of the tool's own merge lines, once, under the lock. | everyone, through the jarl |
 | `.jarl/repos.md` | The repositories the issues name by name, one line each: the name, the repository's root commits (all of them), its origin as found and its base branch, and no path. Written only when an issue first names a repository by name, and by `repo --base`; each write is a log line. | jarl |
+| `.jarl/asks.md` | The questions for the owner, one block per question: its type, its options and its answer; the ids are `a-1`, `a-2` and so on. | jarl (`ask`, `answer`) |
+| `.jarl/profile.json` | The loop's profile, read as data (see [Profiles](profile.md#profiles)); written by `init --profile`, and by the first write that raises the record format (see [The format marker](#the-format-marker)). | jarl |
+| `.jarl/templates/` | The issue templates, `<name>.md` each, which `archive` leaves in place (see [Templates](jarl.md#templates)). | the owner, the jarl |
+| `.jarl/archive/` | The archived loops, one directory `<yyyy.mm.dd>-<slug>/` each. | jarl (`archive`) |
+| `.jarl/.gitignore` · `.jarl/.gitattributes` · `.jarl/.permanent` | The mode of the loop and how git merges it (see [Where the loop lives](#where-the-loop-lives)). | jarl (`init`) |
+| `.jarl/.lock` · `.jarl/.lock.break` | The write lock (see [The write lock](#the-write-lock)). | every command that writes |
 
 ## The log is the record
 
@@ -52,7 +60,7 @@ command table in [commands.md](commands.md#the-commands).
 
 ## When a header disagrees with the log
 
-What the log says of an issue is folded in file order, the way the commands write it. The status is the target of the last move (the filing counts as a move into the profile's first status). A move into a status that holds the claim sets Since to the line's stamp, replaces Branch when the line names one, replaces Worker when it names one (and then Model with the line's own, or none), and replaces Model alone when only a model is named; a move into any other status removes Worker, Model and Since and keeps Branch. A merge line sets Merged and Merge check (the check and what it printed, none when it names none) and takes that line's CI state, none when it names none, and a CI line replaces the CI state alone. `set` and `merged` write the line first and the file second, with one stamp for Since and its line, so a write that stops between the two leaves the log ahead of the file and never the file ahead of the log.
+What the log says of an issue is folded in file order, the way the commands write it. The status is the target of the last move (the filing counts as a move into the profile's first status). A move into a status that holds the lease sets Since to the line's stamp, replaces Branch when the line names one, replaces Worker when it names one (and then Model with the line's own, or none), and replaces Model alone when only a model is named; a move into any other status removes Worker, Model and Since and keeps Branch. A merge line sets Merged and Merge check (the check and what it printed, none when it names none) and takes that line's CI state, none when it names none, and a CI line replaces the CI state alone. `set` and `merged` write the line first and the file second, with one stamp for Since and its line, so a write that stops between the two leaves the log ahead of the file and never the file ahead of the log.
 
 **Where the file says something else, the log wins and the view says so.** `status`, `resume` and `show` print one line for each of Status, Branch, Worker, Model, Since, Merged, Merge check and CI whose header differs from the log, and no count, mark, offer, queue row, report row or gate decision follows the file:
 
@@ -85,7 +93,7 @@ Every command that writes holds `.jarl/.lock` while it runs, and every file is r
 **Files:** the files it touches, comma separated — what `next` uses to keep workers apart; when **Repo:** is set, each starts with that repository's directory name (`tool/src/a.mjs`)
 **Repo:** only when the code lives in another repository than the loop — its name, or the path to its main checkout where it is not a sibling of the loop's (see [Code in another repository](repositories.md#code-in-another-repository))
 **After:** only when it waits on other issues — their ids; `next` holds it until each is done or dropped
-**Resources:** only when the work uses something no other work may use at the same time — names, comma separated, loop-wide and not files (a port, a database server, `gate` for the machine's load); written with `field <ids> resources "gate, db"`, and emptied with `field <ids> resources --clear`. Only `next` reads it: it does not offer an issue whose resource an in-progress issue holds, nor two issues that declare the same one at once, across repositories too, and `next --all` names the holder under *held by a resource another issue holds*. A resource is held for a lease's whole life: there is no capacity and no lock at run time, `check`, `queue` and the file rules never read it, contention during a test run belongs to the repository's own harness or the workspace's run lock, and how many heavy workers run at once stays the jarl's choice. `Resources` is a field Jarl writes itself, so a profile cannot declare a field of that name.
+**Resources:** only when the work uses something no other work may use at the same time — names, comma separated, loop-wide and not files (a port, a database server, `gate` for the machine's load); written with `field <ids> resources "gate, db"`, and emptied with `field <ids> resources --clear`. Only `next` reads it: it does not offer an issue whose resource an in-progress issue holds, nor two issues that declare the same one at once, across repositories too, and `next --all` names the holder under *held by a resource another issue holds*. A resource is held for a lease's whole life: there is no capacity and no lock at run time, `scope`, `queue` and the file rules never read it, contention during a test run belongs to the repository's own harness or the workspace's run lock, and how many heavy workers run at once stays the jarl's choice. `Resources` is a field Jarl writes itself, so a profile cannot declare a field of that name.
 **Found by:** who, doing what
 **Source:** only when it comes from research — <report dir>#<finding id>, several comma separated
 **Where:** file:line, or the command and what it printed

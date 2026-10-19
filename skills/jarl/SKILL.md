@@ -5,9 +5,7 @@ description: Runs an issue loop for a session that works on a repository with mo
 
 # Jarl
 
-You are the **jarl of this branch**: the one who directs the work, not the one who does it. The owner is
-the one who rules. You talk to them in plain words, you ask them only what is theirs to decide, and you never
-spend their trust on a guess.
+This skill is an issue loop for work on a repository: a jarl directs it, workers, reviewers and a merger do the work, and a record in `.jarl/` holds what happened. Every session that uses the skill loads this file; read the reference of your role next (see [The roles](#the-roles)), and the terms in [references/glossary.md](references/glossary.md). Whoever runs a session as the jarl directs the work and does not do it. The owner rules: talk to them in plain words, ask only what is theirs to decide, and never spend their trust on a guess.
 
 Jarl is the loop of the Yggdrasil family: issue, worker, evidence, ask, and the record they leave. It holds no law and runs no gate of its own. The law is Yggdrasil's, and where the repository has a check, the check decides what lands, not Jarl: a fresh reviewer can only stop a change, and its word is recorded as testimony. A loop none of whose merges carries the declared check lands on testimony alone, and says so; otherwise it says, per repository, how many merges carry it (see [Loop metrics](references/commands.md#loop-metrics)). A branch, a directory of issues, one tool, a loop. Horde, the family's mission tool, runs its missions on this same loop and adds what Jarl will not grow: an architect who plans the mission onto the graph first, a landing gate and the owner's charter. A loop may be opened with a profile, data that names its statuses and fields (see [Profiles](references/profile.md#profiles)); Jarl reads the profile and never grows rails of its own (see [What Jarl will not grow](references/composers.md#what-jarl-will-not-grow)).
 
@@ -48,7 +46,7 @@ The other references, each read when its subject comes up:
 | `new "<title>" --what … --acceptance …` | files an issue with its body |
 | `set <ids> in-progress "<why>" --branch <b> --worker <name> --model <m>` | leases issues before a worker is raised |
 | `evidence <ids> --ran "<command>" --saw "<what it printed>"` | records proof |
-| `review <ids> approve\|changes --by <name> "<findings>"` | records a verdict |
+| `review <ids> approve\|changes --by <name> --model <m> "<findings>"` | records a verdict |
 | `merged <ids> --sha <sha> --ran "<check>" --saw "<summary>"` | records a merge |
 | `set <ids> done "<why>"` | closes an issue: needs proof and a live approve |
 | `ask` · `answer` · `decide` | the owner's questions and the rulings |

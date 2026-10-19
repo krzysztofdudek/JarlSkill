@@ -1,6 +1,6 @@
 # The commands
 
-Every command of the tool with its flags, the fields the MCP tools take, the grammar of the command line, the JSON each view prints, and the loop metrics. The exact options of any command are printed by the tool itself: run `jarl.mjs --help`, or call the `jarl_help` tool, and read that text where this file and the help differ. Read this file when a command's behaviour is in question, or to see what a view carries.
+Every command of the tool with its flags, the fields the MCP tools take, the grammar of the command line, the JSON each view prints, and the loop metrics. The exact options of any command are printed by the tool itself: run `jarl.mjs --help`, or call the `jarl_help` tool, and read that text where this file and the help differ. Read this file when a command's behaviour is in question, or to see what a view carries. The terms are defined in [glossary.md](glossary.md).
 
 ## Contents
 

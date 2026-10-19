@@ -11,7 +11,7 @@ Invoke it on a branch and the agent becomes the **jarl** of that branch: everyth
 
 Run both, then `/reload-plugins` to activate it in this session (or restart Claude Code). Needs Node.js 22 or later on your `PATH`; no config, no API key. Then `/jarl <goal>` on a feature branch, or just start a session in a checkout that already carries `.jarl/` — the skill resumes on its own.
 
-> MIT licensed · a short skill file with references and one zero-dependency Node tool · works with any agent that reads skills · part of the [Yggdrasil family](#the-yggdrasil-family) · [full skill body](skills/jarl/SKILL.md)
+> MIT licensed · a short skill file with references and one zero-dependency Node tool · works with any agent that reads skills · part of the [Yggdrasil family](#the-yggdrasil-family) · [the skill: an entry file and its references](skills/jarl/SKILL.md)
 
 ---
 
@@ -108,9 +108,9 @@ Nothing else in this repo affects behavior — all of it lives in that directory
 
 ## What it doesn't claim
 
-Jarl is a working loop, not a guarantee. It does not enforce architecture, it does not gate a merge with a machine check of its own, and it does not hold an owner's charter — that is [Horde](https://github.com/krzysztofdudek/Horde), whose missions run on this same loop, with the graph and the rails. Where your repository has a check, the check decides what lands and a reviewer's approval is testimony; name it with a `Check:` line in the loop's goal. Without one, the loop lands on testimony alone, and `status` and `report` say so at the top. The state is four kinds of markdown file in `.jarl/`, moved by one small tool; the discipline is the agent's.
+Jarl is a working loop, not a guarantee. It does not enforce architecture, it does not gate a merge with a machine check of its own, and it does not hold an owner's charter — that is [Horde](https://github.com/krzysztofdudek/Horde), whose missions run on this same loop, with the graph and the rails. Where your repository has a check, the check decides what lands and a reviewer's approval is testimony; name it with a `Check:` line in the loop's goal. Without one, the loop lands on testimony alone, and `status` and `report` say so at the top. The state is the files of `.jarl/` (the goal, the rulings, the questions, the issues, the journal and the repositories' declarations, listed in [the record](skills/jarl/references/record.md#the-files-of-the-loop)), moved by one small tool; the discipline is the agent's.
 
-Jarl records, derives and displays; it never blocks code from landing. Jarl itself ships no merge queue that runs your check and refuses the merge, no `done` that waits for green CI, no leases that expire and are taken over, no release mode that refuses to tag, and no planner that computes a schedule. Each of those is a rail. A loop can be opened with a **profile**, a JSON file that names its statuses (and what each one means: offered, worked on, settling what waits on it, finished, closing the record, needing a reason), the fields its issues carry with their allowed values, and extra sections. A composer such as Horde brings its own profile. A profile is data only: Jarl never runs commands a profile supplies, and a composer keeps its own rails in its own code, writing to the loop through `record.mjs`. A loop without a profile works exactly as before. [The list, and what stays on Jarl's side, is in the skill](skills/jarl/references/composers.md#what-jarl-will-not-grow); [profiles are there too](skills/jarl/references/profile.md#profiles).
+Jarl records, derives and displays; it never blocks code from landing. Jarl itself ships no merge queue that runs your check and refuses the merge, no `done` that waits for green CI, no leases that expire and are taken over, no release mode that refuses to tag, and no planner that computes a schedule. Each of those is a rail. A loop can be opened with a **profile**, a JSON file that names its statuses (and what each one means: offered, worked on, settling what waits on it, finished, closing the record, needing a reason), the fields its issues carry with their allowed values, and extra sections. A composer such as Horde brings its own profile. A profile is data only: Jarl never runs commands a profile supplies, and a composer keeps its own rails in its own code, writing to the loop through `record.mjs`. A loop without a profile runs on the built-in statuses. [The list, and what stays on Jarl's side, is in the skill](skills/jarl/references/composers.md#what-jarl-will-not-grow); [profiles are there too](skills/jarl/references/profile.md#profiles).
 
 ---
 
@@ -163,7 +163,7 @@ No. It works alone, and it touches Yggdrasil in one place only. A ruling about a
 <details>
 <summary><b>Why one script, and why so small?</b></summary>
 
-Jarl is the loop and nothing more. Four markdown files and one rule: a status that changed without a log line did not change. The tool exists so that rule is enforced rather than promised — it files, lists, searches, moves a status with its reason, records evidence, says what can run in parallel and closes the loop. When the work needs a plan made before anyone writes, a gate and a charter, that is Horde, and a Horde mission is a Jarl loop underneath — the vocabulary carries over because the record is the same.
+Jarl is the loop and nothing more. A few markdown files and one rule: a status that changed without a log line did not change. The tool exists so that rule is enforced rather than promised — it files, lists, searches, moves a status with its reason, records evidence, says what can run in parallel and closes the loop. When the work needs a plan made before anyone writes, a gate and a charter, that is Horde, and a Horde mission is a Jarl loop underneath — the vocabulary carries over because the record is the same.
 </details>
 
 <details>

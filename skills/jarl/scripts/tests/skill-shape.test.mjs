@@ -13,7 +13,9 @@ const MAX_LINES = 250;
 const MAX_BYTES = 25 * 1024;
 const MAX_DESCRIPTION = 1024;
 const MAX_NAME = 64;
-const TOC_FROM_LINES = 100;
+// A reference over either size opens with a table of contents.
+const TOC_FROM_LINES = 60;
+const TOC_FROM_BYTES = 20 * 1024;
 const NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const FILE_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*\.md$/;
 const FIRST_PERSON = /\b(?:I|I'm|I'll|I've|my|mine|me|we|our|ours|us|you|your|yours)\b/i;
@@ -24,7 +26,25 @@ const HISTORY = /\b(?:older|earlier|no longer|new in|used to|legacy|backward|com
 const SINCE = /\bsince\b|(?:^|[.!?]\s)Since\b(?![:,*])/m;
 // A task by number or its story: the word issue, ticket, package or round followed by a number, a bare hash number,
 // or the words of a report on a task.
-const TASK = /\((?:issues?|tickets?|packages?|rounds?)\s+#?\d+|\(#?\d{2,4}\)|(?:^|[^a-z])(?:issues?|tickets?|packages?|rounds?)\s+#?\d+|#\d{2,}|field report/i;
+// Also the words that tell what once happened instead of stating the rule.
+const TASK = /\((?:issues?|tickets?|packages?|rounds?|tasks?)\s+#?\d+|\(#?\d{2,4}\)|(?:^|[^a-z])(?:issues?|tickets?|packages?|rounds?|tasks?)\s+#?\d+|#\d+|field report|\bin practice\b|\bhas produced\b/i;
+// The words the owner ruled out: the old flag name of the lease, the old name of the command that measures a branch,
+// and the claim as a name of the lease. Code spans keep the key `claim` of a research finding.
+const OLD_NAMES = [
+  [/holds-claim/, 'the old flag name of the lease'],
+  [/\bjarl(?:\.mjs)? check\b|`check [<\[-]|`check` (?:on|takes|reads|refuses)|\bon `check`|\(`check`,/, 'check as the name of the command that measures a branch (it is scope)'],
+];
+const CLAIM = /\bclaim\b/i;
+// The sentences outside the glossary that open with a glossary term and is or are without defining it, as
+// [file, a fragment of the line]. Each states a rule or a fact about the term; none defines it.
+const DEFINITION_ALLOWED = [
+  ['references/commands.md', 'The profile is checked as its own reader checks it'],
+  ['references/composers.md', 'the notes are for a person at the command line'],
+  ['references/composers.md', 'the mode is written at init'],
+  ['references/models.md', 'a model is measured only on the work it was given'],
+  ['references/profile.md', 'the evidence row is asked for either way'],
+  ['references/profile.md', 'The gate is checked at the move'],
+];
 
 const lf = (text) => text.replace(/\r\n/g, '\n');
 // The lines outside fenced code blocks, as [{ n, text }].
@@ -120,7 +140,7 @@ export function shapeProblems(dir) {
   const linkedFromSkill = new Set();
   for (const f of files) {
     for (const { n, text: line } of proseLines(text.get(f))) {
-      for (const m of withoutCodeSpans(line).matchAll(/\]\(([^)\s]*)\)/g)) {
+      for (const m of withoutCodeSpans(line).matchAll(/\]\(([^)\s]*)(?:\s+"[^"]*")?\)/g)) {
         const target = m[1];
         if (/^[a-z][a-z0-9+.-]*:/i.test(target)) continue;
         const where = `${f}:${n}`;
@@ -141,7 +161,30 @@ export function shapeProblems(dir) {
 
   for (const r of refs) {
     const lines = text.get(r).replace(/\n$/, '').split('\n').length;
-    if (lines > TOC_FROM_LINES && !hasTableOfContents(text.get(r))) problems.push(`${r} has ${lines} lines and no table of contents at the top`);
+    const bytes = Buffer.byteLength(text.get(r));
+    if ((lines > TOC_FROM_LINES || bytes > TOC_FROM_BYTES) && !hasTableOfContents(text.get(r))) problems.push(`${r} has ${lines} lines and ${bytes} bytes and no table of contents at the top`);
+  }
+
+  // A term of the glossary is defined in the glossary and nowhere else: no other file opens a sentence with the term
+  // followed by is or are. Fenced code, code spans and the Runes blocks are not read.
+  const glossary = text.get('references/glossary.md') ?? '';
+  const terms = [...glossary.matchAll(/^\| `([^`]+)` \|/gm)].map((m) => m[1]);
+  for (const f of files.filter((x) => x !== 'references/glossary.md')) {
+    const owned = runesLines(text.get(f));
+    for (const { n, text: line } of proseLines(text.get(f))) {
+      if (owned.has(n)) continue;
+      const prose = withoutCodeSpans(line);
+      for (const term of terms) {
+        const re = new RegExp(`(?:^|[.!?:;]\\s+|\\|\\s+|^[-*\\s]+)(?:\\*\\*)?(?:the|a|an) ${term}s?(?:\\*\\*)? (?:is|are) `, 'i');
+        if (re.test(prose) && !DEFINITION_ALLOWED.some(([file, fragment]) => file === f && line.includes(fragment))) problems.push(`${f}:${n}: defines "${term}", which glossary.md defines: ${line.trim().slice(0, 60)}`);
+      }
+    }
+  }
+
+  for (const f of files) {
+    const owned = runesLines(text.get(f));
+    for (const [re, what] of OLD_NAMES) text.get(f).split('\n').forEach((line, i) => { if (!owned.has(i + 1) && re.test(line)) problems.push(`${f}:${i + 1}: ${what}: ${line.trim().slice(0, 60)}`); });
+    for (const { n, text: line } of proseLines(text.get(f))) if (!owned.has(n) && CLAIM.test(withoutCodeSpans(line))) problems.push(`${f}:${n}: claim as a name of the lease (say lease): ${line.trim().slice(0, 60)}`);
   }
 
   for (const f of files) {
@@ -274,6 +317,38 @@ test('a word of history in SKILL.md or a reference fails, and the same word insi
 
 test('a task number or the story of a task in SKILL.md or a reference fails', () => {
   for (const text of ['It was fixed (issue 12).', 'See ticket 3.', 'The package 4 ships.', 'In round 5 it failed.', 'The #281 shape.']) {
+    assert.ok(names(broken('references/merger.md', (t) => `${t}\n${text}\n`), 'a task number').length, text);
+  }
+});
+
+test('a sentence outside the glossary that defines a glossary term fails, and a sentence that only uses the term does not', () => {
+  for (const sentence of ['The worker is an agent that does one issue.', 'A reviewer is the agent that gives a verdict.', 'The merger is the agent that lands a branch.', 'A lease is what an issue holds.', '- The profile is a file that names statuses.']) {
+    assert.ok(names(broken('references/worker.md', (t) => `${t}\n${sentence}\n`), 'which glossary.md defines').length, sentence);
+  }
+  assert.deepEqual(names(broken('references/worker.md', (t) => `${t}\nThe worker records the proof and the reviewer reads it.\nThe key \`the worker is\` is code.\n`), 'which glossary.md defines'), []);
+});
+
+test('the old name of the lease flag, the old name of the scope command and the claim as a name of the lease fail', () => {
+  assert.ok(names(broken('references/profile.md', (t) => `${t}\nThe flag holds-claim marks it.\n`), 'old flag name').length);
+  for (const text of ['Run jarl check on the branch.', 'Run jarl.mjs check 7 --branch b.', 'The `check <id>` command reads it.', 'The `check` on it takes --repo.']) {
+    assert.ok(names(broken('references/repositories.md', (t) => `${t}\n${text}\n`), 'it is scope').length, text);
+  }
+  assert.ok(names(broken('references/profile.md', (t) => `${t}\nA status that holds the claim.\n`), 'claim as a name of the lease').length);
+  assert.deepEqual(names(broken('references/profile.md', (t) => `${t}\nThe finding key \`claim\` and the check that decides landing, \`check\`.\n`), 'it is scope'), []);
+  assert.deepEqual(names(broken('references/profile.md', (t) => `${t}\nThe finding key \`claim\`.\n`), 'claim as a name'), []);
+});
+
+test('a reference over 60 lines, or over 20 KB, with no table of contents fails; so does a link with a title to a missing file', () => {
+  for (const [name, body] of [['long', `# Long\n\n${'A line.\n'.repeat(70)}`], ['heavy', `# Heavy\n\n${`${'x'.repeat(2000)}\n`.repeat(11)}`]]) {
+    const dir = scratchCopy();
+    writeFileSync(join(dir, 'references', `${name}.md`), body);
+    assert.ok(names(shapeProblems(dir), `references/${name}.md has`).length, name);
+  }
+  assert.ok(names(broken('SKILL.md', (t) => `${t}\n[x](references/none.md "a title")\n`), 'missing file').length);
+});
+
+test('a task by a bare hash number, by the word task, or told as a story fails', () => {
+  for (const text of ['See #7 for it.', 'The task 12 ships it.', 'It has produced a rewritten HEAD in practice.', 'In practice it broke.']) {
     assert.ok(names(broken('references/merger.md', (t) => `${t}\n${text}\n`), 'a task number').length, text);
   }
 });

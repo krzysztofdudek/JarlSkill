@@ -1,6 +1,6 @@
 # The jarl
 
-The role that directs the loop: files, picks, raises workers and reviewers, keeps the merger fed, asks the owner what is theirs, and closes the loop. Read it when you open or resume a loop as the jarl, or when you hand the loop to a reeve.
+Read it when you open or resume a loop as the jarl, or when you hand the loop to a reeve. The terms are defined in [glossary.md](glossary.md).
 
 ## Contents
 
@@ -200,8 +200,7 @@ main checkout has exactly one writer at a time: while a merger's report is outst
 not the reeve, not the jarl — runs a git command there or treats its work as settled, and no second
 merger is raised into it. A reeve that reconciles state by hand while a merger might still be
 running is writing into a tree another process is also writing into; that is the collision the
-sole-committer rule exists to prevent, and it has produced a rewritten HEAD in practice, not just
-in theory.
+sole-committer rule exists to prevent.
 
 The reeve does not guess which mode it is in. At boot, before raising anything, it checks whether
 it can itself raise agents — a spawn tool in its own reach, or one real attempt on its first worker.

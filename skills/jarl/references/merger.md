@@ -1,6 +1,6 @@
 # The merger
 
-The one long-lived agent that verifies and lands approved branches into the feature branch, and the only committer in the main checkout. Read it when you are raised as the merger, when the jarl writes the merger's brief, or when you record a merge.
+Read it when you are raised as the merger, when the jarl writes the merger's brief, or when you record a merge. The terms are defined in [glossary.md](glossary.md).
 
 ## Contents
 

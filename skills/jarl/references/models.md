@@ -1,6 +1,6 @@
 # Which model sits where
 
-The tiers, the model lines of a loop, how each platform maps them, how a spawn records its model, and what `models` derives from the record. Read it before raising any agent, and when a loop's model lines or a `models` table is in question.
+The tiers, the model lines of a loop, how each platform maps them, how a spawn records its model, and what `models` derives from the record. Read it before raising any agent, and when a loop's model lines or a `models` table is in question. The terms are defined in [glossary.md](glossary.md).
 
 ## Contents
 

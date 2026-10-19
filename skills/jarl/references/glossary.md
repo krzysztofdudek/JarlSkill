@@ -6,7 +6,7 @@ Each term below is defined here, once; the rest of the skill uses it in that sen
 |---|---|
 | `issue` | A unit of work filed under a number in the loop, with its fields and its acceptance lines; Horde calls it a ticket. |
 | `loop` | The `.jarl/` directory and everything kept in it for one run of Jarl: the goal, the rulings, the issues and the log. |
-| `lease` | The claim an in-progress issue holds on its files, its branch and its worker, written as Since, Branch, Worker and Model. |
+| `lease` | What an in-progress issue holds on its files, its branch and its worker, written as Since, Branch, Worker and Model. |
 | `package` | A set of issues that share one worker branch and are checked and merged together. |
 | `round` | One red attempt by a worker on an issue; the third round sends the issue to a takeover. |
 | `evidence row` | A numbered `--ran` and `--saw` pair under an issue's Evidence, the checkable record of what a command printed. |

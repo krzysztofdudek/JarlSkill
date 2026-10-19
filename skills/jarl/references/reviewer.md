@@ -1,6 +1,6 @@
 # The reviewer
 
-The agent that gives a verdict on an issue, with a standing. Read it when you are raised as a reviewer, or when the jarl raises one.
+Read it when you are raised as a reviewer, or when the jarl raises one. The terms are defined in [glossary.md](glossary.md).
 
 ## Contents
 

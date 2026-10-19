@@ -1,6 +1,6 @@
 # Composers and the record library
 
-What a tool that builds on Jarl's record may rely on, where the command line and the library differ, and what Jarl will not grow. Read it when you write or review code that reads or writes the record through `record.mjs`, or when someone asks Jarl for a gate, a queue that lands, or a planner.
+What a tool that builds on Jarl's record may rely on, where the command line and the library differ, and what Jarl will not grow. Read it when you write or review code that reads or writes the record through `record.mjs`, or when someone asks Jarl for a gate, a queue that lands, or a planner. The terms are defined in [glossary.md](glossary.md).
 
 ## Contents
 
@@ -61,7 +61,7 @@ Jarl records, derives and displays; it never blocks code from landing. Every sca
 4. **A release mode that refuses to tag or release.** A release checklist is issues filed from a template; the procedure belongs to the skill that runs releases, and the tags to each repository's own release workflow.
 5. **A computed schedule or critical-path planner.** `next` offers what can run now; After is ordering and bookkeeping, not a schedule.
 
-The line holds for Jarl's own code. A profile is data only: statuses and who may set them, fields, sections, the scheduler it defers to, what its done gate asks for and who may end the loop. Jarl does not run commands a profile supplies, now or later. A composer that needs a gate, a planner or a lease that acts, as Horde does, keeps them in its own code beside the record and writes to the record through `record.mjs`. The only Jarl code that calls another tool of the family is the optional write of ratified rulings to Yggdrasil (see [Rulings about an area](jarl.md#rulings-about-an-area)). A request for one of the five above is a request for such a composer, not for a bigger Jarl.
+The line holds for Jarl's own code. A profile carries data only: statuses and who may set them, fields, sections, the scheduler it defers to, what its done gate asks for and who may end the loop. Jarl does not run commands a profile supplies, now or later. A composer that needs a gate, a planner or a lease that acts, as Horde does, keeps them in its own code beside the record and writes to the record through `record.mjs`. The only Jarl code that calls another tool of the family is the optional write of ratified rulings to Yggdrasil (see [Rulings about an area](jarl.md#rulings-about-an-area)). A request for one of the five above is a request for such a composer, not for a bigger Jarl.
 
 ## Boundary with other skills
 

@@ -1,6 +1,6 @@
 # The worker
 
-The agent that does one issue, or one package of small issues, in its own worktree on its own branch, and records the proof. Read it when you are raised as a worker, or when the jarl writes a worker's brief.
+Read it when you are raised as a worker, or when the jarl writes a worker's brief. The terms are defined in [glossary.md](glossary.md).
 
 ## Contents
 
