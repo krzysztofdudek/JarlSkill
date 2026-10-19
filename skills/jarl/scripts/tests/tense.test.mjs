@@ -31,10 +31,11 @@ const TENSE_ALLOWED = [/jarl-record\/\d+/g, /old-jarl(?:\.mjs)?/g, /fixtures\/ja
 // The names of a script that the families read by their words (camel case and underscores split), and the names the
 // output keeps: each is a key the tests assert in the JSON the tools print, and renaming it would change that output.
 const NAME_FLAGS = /^(?:legacy|retire[ds]?|older|backward|backwards|compatible|migrate[sd]?|formerly)$/;
-const NAME_ALLOWED = {
-  legacyHandoff: 'the key of the handoff file in resume and status --json, which the tests assert',
-  retired: 'the key of the handoff write --json, which the tests assert',
-};
+// Each allowance holds in its one file only: the keys are built in the library, and no other name passes.
+const NAME_ALLOWED = [
+  { name: 'legacyHandoff', file: 'skills/jarl/scripts/jarl-lib.mjs', reason: 'the key of the handoff file in resume --json, which the tests assert' },
+  { name: 'retired', file: 'skills/jarl/scripts/jarl-lib.mjs', reason: 'the key of the handoff write --json, which the tests assert' },
+];
 // A string that is exactly one of these is a constant of the protocol or a placeholder of the server, not prose: the
 // JSON-RPC version, and the version the server reports when its manifest cannot be read.
 const CONSTANT_ALLOWED = {
@@ -197,7 +198,7 @@ function tenseHits(texts) {
   const hits = [];
   for (const { where, text, kind } of texts) {
     if (kind === 'name') {
-      if (NAME_ALLOWED[text] !== undefined) continue;
+      if (NAME_ALLOWED.some((a) => a.name === text && where.startsWith(`${a.file}:`))) continue;
       const word = text.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/_/g, ' ').toLowerCase().split(' ').find((w) => NAME_FLAGS.test(w));
       if (word) hits.push(`${where}: a word of history in a name: "${text}"`);
       continue;
@@ -234,6 +235,8 @@ test('the tense test names each family in a sample, and the allow-list passes on
   for (const sample of samples) assert.ok(tenseHits([{ where: 'x', text: sample }]).length, sample);
   const passes = ['the lease since the last start', 'an earlier round', 'the earlier verdict', 'a row from before a reopen', 'a migration of the record', 'an alias such as the family name', 'a row of the evidence', 'the usage of --issue 7', 'jarl-record/1 is the contract', 'the frozen reader at tests/old-jarl.mjs', 'fixtures/jarl-6.1.0/jarl-lib.mjs', 'the owner rules', 'a round <ids> call'];
   for (const sample of passes) assert.deepEqual(tenseHits([{ where: 'x', text: sample }]), [], sample);
-  assert.deepEqual(tenseHits([{ where: 'x', text: 'legacyHandoff', kind: 'name' }, { where: 'x', text: 'retired', kind: 'name' }]), []);
-  assert.equal(tenseHits([{ where: 'x', text: 'legacyFile', kind: 'name' }]).length, 1);
+  const lib = 'skills/jarl/scripts/jarl-lib.mjs:1';
+  assert.deepEqual(tenseHits([{ where: lib, text: 'legacyHandoff', kind: 'name' }, { where: lib, text: 'retired', kind: 'name' }]), []);
+  assert.equal(tenseHits([{ where: 'skills/jarl/scripts/mutant.mjs:1', text: 'retired', kind: 'name' }]).length, 1, 'the allowance holds in its one file');
+  assert.equal(tenseHits([{ where: lib, text: 'legacyFile', kind: 'name' }]).length, 1);
 });
