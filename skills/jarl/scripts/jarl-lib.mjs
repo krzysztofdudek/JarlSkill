@@ -1186,6 +1186,7 @@ export function cmdGoalSet(root, text) {
   const dir = jarlDir(root);
   const old = readGoal(dir);
   need(old !== null, 'the loop has no goal: open it with init "<goal>"');
+  need(!oneBreak(text).includes('\n'), 'goal --set takes one machine line: a line break in its value is refused');
   const line = goalLineOf(text);
   need(line && line.value && MACHINE_LABEL[line.key], 'goal --set takes one machine line: "Check (<repository>): <command>" or "Check: <command>", "Model (<tier>): <model>, …" or "Coordinators: <name>, …"');
   let qualifier = line.qualifier;
@@ -1199,9 +1200,11 @@ export function cmdGoalSet(root, text) {
   const value = noSeparators(line.value);
   need(value, 'goal --set needs a value after the colon');
   const next = goalWithLine(old, { key: line.key, qualifier, value });
+  // A line that already holds this value is left alone: nothing is written and no log line says it changed.
+  if (next.replaced && noSeparators(next.was) === value) return { shown: next.shown, replaced: true, was: next.was, unchanged: true };
   writeAtomic(goalPath(dir), next.text);
-  appendLog(root, `goal line ${next.replaced ? 'changed' : 'added'} · ${next.shown.replace(/\s+/g, ' ')}${next.replaced ? ` · was ${noSeparators(next.was)}` : ''}`);
-  return { shown: next.shown, replaced: next.replaced, was: next.replaced ? next.was : null };
+  appendLog(root, `goal line ${next.replaced ? 'changed' : 'added'} · ${next.shown}${next.replaced ? ` · was ${noSeparators(next.was)}` : ''}`);
+  return { shown: next.shown, replaced: next.replaced, was: next.replaced ? next.was : null, unchanged: false };
 }
 
 // ---- commands ----------------------------------------------------------------------------------

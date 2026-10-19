@@ -1726,6 +1726,45 @@ test('an answer in the person\'s own words and a batch answer read through the f
   assert.deepEqual(oldJarl(root, 'set', {}, ['001', 'done', 'merged', {}]).error ?? null, null, 'done passes');
 });
 
+test('goal --set with the value a line already holds says it is unchanged and writes neither the goal nor a log line', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'goal', '--set', 'Check (Grain): npm test');
+  const goalBefore = readRecord(root, 'goal.md');
+  const logBefore = readRecord(root, 'log.md');
+  assert.equal(jarl(root, 'goal', '--set', 'Check (Grain): npm test'), 'goal line unchanged: Check (Grain): npm test');
+  assert.equal(readRecord(root, 'goal.md'), goalBefore);
+  assert.equal(readRecord(root, 'log.md'), logBefore);
+  assert.match(jarl(root, 'goal', '--set', 'Check (Grain): npm run check'), /^goal line changed: Check \(Grain\): npm run check \(was npm test\)$/);
+});
+
+test('goal --set refuses a line break in its value, naming the line, and writes nothing', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  const before = readRecord(root, 'goal.md');
+  assert.match(refuses(root, 'goal', '--set', `Check (Grain): npm test${LS}Model (strong): opus`), /takes one machine line: a line break/);
+  assert.equal(readRecord(root, 'goal.md'), before);
+});
+
+test('a Model line set through the command line reads through the frozen reader: worker parsed, self-approve refused, done passes, questions counted', () => {
+  const root = repo();
+  jarl(root, 'init', 'Ship it.');
+  RECORD.newIssue(root, 'flag work');
+  RECORD.setStatus(root, '001', 'in-progress', 'started', { branch: 'jarl/001-flag-work', worker: 'w-one' });
+  jarl(root, 'goal', '--set', 'Model (strong): opus');
+  jarl(root, 'goal', '--set', 'Coordinators: Ada');
+  RECORD.ask(root, 'still open?');
+  for (const command of ['list', 'status', 'next', 'queue']) assert.deepEqual(oldJarl(root, command, {}).error ?? null, null, command);
+  assert.match(JSON.stringify(oldJarl(root, 'list', {}).value), /w-one/, 'the worker is parsed');
+  const counted = oldJarl(root, 'status', {}).value;
+  assert.equal(counted.questions, 1, 'the open question is counted');
+  assert.match(JSON.stringify(counted), /Ship it\./, 'the goal is read');
+  assert.match(refuses(root, 'review', '001', 'approve', '--by', 'w-one', FINDINGS), /worker|own/i);
+  jarl(root, 'review', '001', 'approve', '--by', 'rev', FINDINGS);
+  jarl(root, 'evidence', '001', '--ran', 'check', '--saw', 'green');
+  assert.deepEqual(oldJarl(root, 'set', {}, ['001', 'done', 'merged', {}]).error ?? null, null, 'done passes');
+});
+
 // ---- free text writes no structure: every line break is a break of the text, and a line of the text is never a field ----
 
 const LS = String.fromCharCode(0x2028);
