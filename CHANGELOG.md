@@ -10,42 +10,41 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 Jarl 6.2.0 makes the record of a loop more complete and more honest, and it keeps track of who did what. The skill your assistant reads is also shorter and clearer.
 
+### Before you upgrade
+
+- A loop, the record Jarl keeps of a piece of work, is marked with a new format the first time anything is written to it that an older Jarl would misread: a repository name, an issue or question number of 1000 or more, a retraction, or a new issue or question number below 100 written without leading zeros (3, not 003). A new loop, or any loop with fewer than 100 issues, is marked at its first new issue.
+- From then on every copy of Jarl that touches that loop must be this release, including assistant plugins in other sessions and copies in other clones. A copy of the previous release refuses such a loop with a clear message instead of misreading it.
+- Nothing is migrated or rewritten. Loops are read as written, except a status that was only edited by hand in an issue file: the log is the record now, and such an edit does not move the issue.
+- Recording a merge no longer sets the CI state to pending. Add `--ci <state>` when you want one; a tool that builds on the record library keeps the old default.
+- `merged` now deletes the issue's worktree and its local branch when that is safe. `--keep` stops it.
+- `show` prints the part of an issue that matters, and `show <id> --full` prints everything.
+- `next` lists only what can start now, and `next --all` lists the rest.
+- The assistant tools no longer include `handoff`. Start a session from `resume`.
+- There are three tiers of worker, `light`, `standard` and `strong`, and `standard` stays the default.
+- A new lease, the claim an issue holds while it is in progress, no longer records where its worktree is. Jarl finds the worktree through the branch.
+- Issue numbers are plain: 7, not 007. Both mean the same issue, so type either.
+- `check` is now `scope`, and `check` still works as a name for it.
+- `set <ids> <field> "<value>"` still writes a field and an empty value still clears it, with a note that points to `field`. `field` writes only `Resources` and the fields a loop's profile declares; the other fields keep their own commands.
+- `review` refuses findings of fewer than three words, so `LGTM` no longer passes; say what was read and what was found.
+- `close` refuses while any issue is deferred. Use `archive` to keep the work, or `close --force` to remove it.
+- An answer to a question that waits for the owner's ratification must say who gave it, with `--by`.
+- The `handoff` entry in `status --json` and the `legacyHandoff` entry in `resume --json` are no longer part of the documented output. They are still printed.
+- The skill is now a short file with a `references` directory beside it. A plugin install gets both. If you copy the skill by hand, copy the whole directory.
+- The shared Runes code that Jarl ships is unchanged.
+
 ### Added
 - An issue can need files before it is done, such as a picture before a fix and one after it, and Jarl will not close it until they are there.
 - A new command, `verify`, checks that a loop's record is in good order and changes nothing.
-- A wrong verdict or a wrong piece of proof can be taken back with `retract`. The original stays visible, struck through, with who took it back and why.
+- A wrong verdict, the reviewer's decision, or a wrong piece of proof can be taken back with `retract`. The original stays visible, struck through, with who took it back and why.
 - Jarl keeps which model did each piece of work and which model reviewed it, and `models` shows how well each one did.
 - A loop can name its repositories, so the record holds nothing that belongs to one machine.
-- A question can offer choices, and several questions can be answered at once.
-- `merged` clears away the worktree and the branch of a merged issue when that is safe, and `--keep` leaves them.
+- A question can offer choices, and several questions that wait for ratification can be answered at once.
 
 ### Changed
-- `show` prints the part of an issue that matters, and `show --full` prints everything.
-- `next` lists only what can start now, and `next --all` lists the rest and says what holds each issue back.
 - `status` and `resume` say what each issue in progress is waiting for.
-- `scope` is the new name of the command that measures a branch.
-- `set` changes statuses, and `field` changes every other field of an issue.
-- Issue numbers are plain: 7, not 007.
-- The skill sorts work into three tiers, `light`, `standard` and `strong`.
 
 ### Fixed
 - Long findings and notes are kept whole instead of cut to their first line.
-
-### Before you upgrade
-
-- Once any session writes a record that uses a repository name, an issue numbered 1000 or more, or a retraction, every copy of Jarl that touches that loop must be this release. That includes assistant plugins in other sessions and copies in other clones; an older copy then refuses the loop with a clear message instead of misreading it.
-- Nothing is migrated, and every existing loop reads as written.
-- Recording a merge no longer marks the check result as pending. Add `--ci <state>` when you want one; a tool that builds on the record library keeps the old default.
-- `show` no longer prints everything. Use `show <id> --full` for the whole issue.
-- `next` no longer lists work that cannot start yet. Use `next --all` to see it.
-- The assistant tools no longer include `handoff`. Start a session from `resume`.
-- There are three tiers, `light`, `standard` and `strong`, and `standard` stays the default.
-- A new lease no longer records where a worktree is. Jarl finds it through the branch.
-- New issues and questions are numbered plainly, and 007 and 7 mean the same issue, so type either.
-- `check` is now `scope`, and `check` still works as a name for it.
-- `set <ids> <field> "<value>"` no longer writes a field other than the status. It tells you to use `field`.
-- The skill is now a short file with a `references` directory beside it. A plugin install gets both. If you copy the skill by hand, copy the whole directory, not only the short file.
-- The shared Runes code that Jarl ships is unchanged.
 
 ## [6.1.1] - 2026-10-13
 

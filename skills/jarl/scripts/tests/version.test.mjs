@@ -15,7 +15,6 @@ const carriers = {
   '.codex-plugin/plugin.json': (m) => m.version,
   '.cursor-plugin/plugin.json': (m) => m.version,
   '.github/plugin/marketplace.json': (m) => m.plugins.find((p) => p.name === 'jarl').version,
-  'skills/jarl/scripts/package.json': (m) => m.version,
 };
 
 const newestChangelogVersion = () => {
