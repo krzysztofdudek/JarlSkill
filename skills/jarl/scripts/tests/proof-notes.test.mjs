@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import * as R from '../record.mjs';
 import { jarl, refuses, run, loop as makeLoop } from './helpers.mjs';
 import { FINDINGS } from './findings.mjs';
+import { oldJarl } from './old-jarl.mjs';
 
 const L = await import('../jarl-lib.mjs');
 
@@ -111,4 +112,108 @@ test('a library merge with ran and saw writes no row either; a Horde-shaped clos
   assert.doesNotMatch(issueText(root, 1), /\*\*ran:\*\*/);
   R.addEvidence(root, '1', undefined, { ran: 'composer gate', saw: 'green' });
   assert.match(issueText(root, 1), /^- \*\*ran:\*\* composer gate · \*\*saw:\*\* green$/m);
+});
+
+// ---- where each kind of entry lands -----------------------------------------------------------------------------
+
+// The two parts of an issue's Evidence section: the lines under ### Proof and under ### Notes (null when the heading is not there).
+function parts(root, id) {
+  const section = evidence(root, id).split('\n').slice(1).join('\n');
+  const proof = /^### Proof\n([\s\S]*?)(?=^### Notes$|(?![\s\S]))/m.exec(section);
+  const notes = /^### Notes\n([\s\S]*)$/m.exec(section);
+  return { section, proof: proof ? proof[1] : null, notes: notes ? notes[1] : null };
+}
+const fresh = (n = 1) => {
+  const root = makeLoop({ prefix: 'jarl-proofnotes-', via: 'cli' });
+  for (let k = 1; k <= n; k += 1) jarl(root, 'new', `issue ${k}`, '--acceptance', 'it works');
+  return root;
+};
+
+test('a row, a note, a ruling, an answer, a Deferred reason and a retraction each land under their heading', () => {
+  const root = fresh(2);
+  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'red');
+  jarl(root, 'evidence', '1', 'a free note');
+  jarl(root, 'decide', 'probe-ruling', 'the probe settles on the split', '--settles', '1');
+  jarl(root, 'ask', 'keep the split?', '--kind', 'ratify', '--issue', '1');
+  jarl(root, 'answer', 'a-001', 'kept');
+  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'green');
+  jarl(root, 'evidence', '1', '--retract', '1', '--by', 'rev', 'the first run was on the wrong tree');
+  jarl(root, 'set', '1', 'deferred', 'waits for the probe of 2');
+  const { proof, notes } = parts(root, 1);
+  assert.equal(proof.trim(), '- ~~**ran:** npm test · **saw:** red~~\n- **ran:** npm test · **saw:** green');
+  const order = ['a free note', 'Ruling probe-ruling', 'Ruling ask-001', '- **retracted:** row 1', 'the first run was on the wrong tree', 'Deferred: waits for the probe of 2'];
+  let at = -1;
+  for (const piece of order) { const next = notes.indexOf(piece); assert.ok(next > at, `${piece} comes in order under Notes`); at = next; }
+  assert.doesNotMatch(proof, /Ruling|free note|retracted|Deferred/);
+  assert.doesNotMatch(notes, /\*\*ran:\*\*/);
+  assert.equal((evidence(root, 1).match(/^### /gm) || []).length, 2, 'each heading is written once');
+  assert.match(evidence(root, 1), /^## Evidence\n\n### Proof\n\n- ~~/, 'Proof comes first');
+});
+
+test('a first note opens Notes alone; a row written later opens Proof in front of it', () => {
+  const root = fresh();
+  jarl(root, 'evidence', '1', 'a first note');
+  assert.equal(evidence(root, 1).trim(), '## Evidence\n\n### Notes\n\na first note');
+  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'green');
+  assert.equal(evidence(root, 1).trim(), '## Evidence\n\n### Proof\n\n- **ran:** npm test · **saw:** green\n\n### Notes\n\na first note');
+  jarl(root, 'evidence', '1', '--ran', 'lint', '--saw', 'clean', '--ran', 'types', '--saw', 'ok');
+  const { proof } = parts(root, 1);
+  assert.equal(proof.trim(), '- **ran:** npm test · **saw:** green\n- **ran:** lint · **saw:** clean\n- **ran:** types · **saw:** ok');
+});
+
+test('a new issue file is what it was: an empty Evidence section until the first entry', () => {
+  const root = fresh();
+  assert.equal(evidence(root, 1), '## Evidence\n\n');
+});
+
+test('free text and a reason cannot hold a line that reads as a sub-heading or a section heading', () => {
+  const root = fresh();
+  jarl(root, 'evidence', '1', 'first line\n### Proof\n## Why not\ntail');
+  const { section, notes } = parts(root, 1);
+  assert.equal((section.match(/^### Notes$/gm) || []).length, 1);
+  assert.doesNotMatch(section, /^### Proof$/m);
+  assert.match(notes, /\\### Proof/);
+  assert.match(notes, /\\## Why not/);
+  jarl(root, 'set', '1', 'deferred', 'later\n### Notes');
+  assert.equal((evidence(root, 1).match(/^### Notes$/gm) || []).length, 1);
+  assert.match(evidence(root, 1), /Deferred: later\n\\### Notes/);
+});
+
+test('a row written under Notes by a writer that does not know the parts is followed by the next row, and the row numbers hold', () => {
+  const root = fresh();
+  jarl(root, 'evidence', '1', '--ran', 'one', '--saw', 'ok');
+  jarl(root, 'evidence', '1', 'a note');
+  // The writer that does not know the parts appends its row at the end of the section, under Notes.
+  assert.equal(oldJarl(root, 'evidence', {}, ['1', null, { ran: 'two', saw: 'ok' }]).ok, true);
+  assert.equal(parts(root, 1).notes.trim(), 'a note\n- **ran:** two · **saw:** ok');
+  jarl(root, 'evidence', '1', '--ran', 'three', '--saw', 'ok');
+  const rows = L.evidenceTable(L.findIssue(root, 1).sections.evidence).rows.map((r) => `${r.n}:${r.ran}`);
+  assert.deepEqual(rows, ['1:one', '2:two', '3:three']);
+  assert.equal(parts(root, 1).notes.trim(), 'a note\n- **ran:** two · **saw:** ok\n- **ran:** three · **saw:** ok', 'the row follows the last row, under Notes');
+  // A retraction names the same row after the new one was written.
+  jarl(root, 'evidence', '1', '--retract', '2', '--by', 'rev', 'two was the wrong run');
+  assert.match(evidence(root, 1), /^- ~~\*\*ran:\*\* two · \*\*saw:\*\* ok~~$/m);
+  assert.match(evidence(root, 1), /^- \*\*ran:\*\* one · \*\*saw:\*\* ok$/m);
+});
+
+test('a Proof entry that is not a row (an attachment) goes after the last row at the end of Proof, in front of Notes', () => {
+  const root = fresh();
+  jarl(root, 'evidence', '1', 'a note first');
+  const text = L.placeEvidence(L.findIssue(root, 1).sections.evidence, 'proof', '- attachment', '\n');
+  assert.equal(text, '### Proof\n\n- attachment\n\n### Notes\n\na note first');
+  const withRow = L.placeEvidence('### Proof\n\n- **ran:** a · **saw:** b\n  second line\n\n### Notes\n\nn', 'proof', '- attachment', '\n');
+  assert.equal(withRow, '### Proof\n\n- **ran:** a · **saw:** b\n  second line\n- attachment\n\n### Notes\n\nn');
+});
+
+test('a section that already holds content and no sub-heading is never converted: every writer appends at its end, as before', () => {
+  const root = fresh(1);
+  const file = issueFile(root, 1);
+  writeFileSync(file, readFileSync(file, 'utf8').replace('## Evidence\n\n', '## Evidence\n\n- **ran:** old · **saw:** ok\n\nan old note\n'));
+  // Both writers are the same here: the rows of the section, then the note.
+  jarl(root, 'evidence', '1', '--ran', 'next', '--saw', 'ok');
+  jarl(root, 'evidence', '1', 'another note');
+  jarl(root, 'decide', 'u-ruling', 'a ruling', '--settles', '1');
+  jarl(root, 'set', '1', 'deferred', 'wait');
+  assert.equal(evidence(root, 1).trim(), '## Evidence\n\n- **ran:** old · **saw:** ok\n\nan old note\n- **ran:** next · **saw:** ok\n\nanother note\n\nRuling u-ruling: a ruling\n\nDeferred: wait');
+  assert.doesNotMatch(evidence(root, 1), /^### /m);
 });

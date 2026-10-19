@@ -1611,8 +1611,8 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
     // not a reset of it.
     if (profile.is(status, 'needs-reason')) {
       const written = (issue.sections.evidence || '').trim();
-      const line = `${reasonWord(status)}: ${why}`;
-      text = setSection(text, 'Evidence', written ? `${written}\n\n${line}` : line);
+      const line = `${reasonWord(status)}: ${noteText(why, written)}`;
+      text = setSection(text, 'Evidence', placeEvidence(written, 'note', line, '\n\n'));
     }
     return { issue, text };
   });
@@ -2065,6 +2065,53 @@ export function evidenceRows(issue) {
   return evidenceTable(issue.sections.evidence).rows.filter((r) => !r.retracted && r.saw !== '').map((r) => ({ ran: r.ran, saw: r.saw }));
 }
 
+// ---- Proof and Notes: the two parts of an Evidence section ---------------------------------------------------------
+//
+// An Evidence section whose first entry is written while it is empty gets two sub-headings, always in this order: `### Proof`
+// (the worker's --ran/--saw rows) and `### Notes` (free text, rulings, reasons and retraction entries). A sub-heading is
+// written with its first entry. A section that already holds content and neither sub-heading is unsplit: it is read as
+// it stands and entries are appended at its end, never sorted into parts. The sub-headings are not section headings
+// (a section ends at `## `), so nothing that cuts a section sees them.
+const PROOF_HEAD = /^### Proof\s*$/;
+const NOTES_HEAD = /^### Notes\s*$/;
+// Where the parts of a section's lines begin: the index of each sub-heading, or -1.
+function evidenceParts(lines) {
+  return { proofAt: lines.findIndex((l) => PROOF_HEAD.test(l)), notesAt: lines.findIndex((l) => NOTES_HEAD.test(l)) };
+}
+// Whether a section's text holds content and neither sub-heading.
+export function isUnsplit(section) {
+  const lines = String(section || '').trim().split('\n');
+  const { proofAt, notesAt } = evidenceParts(lines);
+  return lines.join('').trim() !== '' && proofAt === -1 && notesAt === -1;
+}
+// A note must not read as a sub-heading of the section: in a section written in parts, a line that starts with # is escaped
+// as a body is; in an unsplit one, only a line that is a sub-heading by itself.
+function noteText(value, current) {
+  return isUnsplit(current) ? String(value).split('\n').map((l) => l.replace(/^(\s*)###(?=\s+(?:Proof|Notes)\s*$)/, '$1\\###')).join('\n') : bodyText(value);
+}
+// The Evidence section with one entry written into its part. `kind` is 'proof' (rows, one per line) or 'note' (text); `sep`
+// is what separates a note from the text before it. A proof entry goes after the last row of the section, wherever that
+// is (a row number is an ordinal over the whole section, so a row never goes in front of another row), else at the end of
+// Proof, else in a Proof written in front of an existing Notes. A note goes at the end of the section, in a Notes written
+// when there is none. An unsplit section is appended to as it is, and an empty one is written in parts.
+export function placeEvidence(current, kind, added, sep) {
+  const text = String(current || '').trim();
+  if (text === '') return `${kind === 'proof' ? '### Proof' : '### Notes'}\n\n${added}`;
+  const lines = text.split('\n');
+  const { proofAt, notesAt } = evidenceParts(lines);
+  if (proofAt === -1 && notesAt === -1) return `${text}${sep}${added}`;
+  if (kind === 'note') return notesAt === -1 ? `${text}\n\n### Notes\n\n${added}` : `${text}${sep}${added}`;
+  const rows = evidenceTable(text).rows;
+  const entry = added.split('\n');
+  if (rows.length) lines.splice(rows[rows.length - 1].end + 1, 0, ...entry);
+  else if (proofAt !== -1) {
+    let at = notesAt > proofAt ? notesAt : lines.length;
+    while (at - 1 > proofAt && lines[at - 1].trim() === '') at -= 1;
+    lines.splice(at, 0, ...(at === proofAt + 1 ? [''] : []), ...entry);
+  } else lines.splice(notesAt, 0, '### Proof', '', ...entry, '');
+  return lines.join('\n');
+}
+
 // A finding's proposal copied in by import is not yet an acceptance line: it waits to be made checkable.
 export const PROPOSED = 'Proposed by the finding';
 export function acceptanceLineCount(issue) {
@@ -2079,7 +2126,18 @@ export function acceptanceLineCount(issue) {
 export function workEvidence(issue, profile = DEFAULT_PROFILE) {
   // Status names are lower-case letters, digits and dashes: nothing in them is read as a pattern.
   const skip = new RegExp(`^\\s*(Ruling\\b${profile.with('needs-reason').map((st) => `|${reasonWord(st)}:`).join('')})`);
-  return (issue.sections.evidence || '').split('\n').filter((l) => !skip.test(l)).join('\n').trim();
+  const section = issue.sections.evidence || '';
+  let lines = section.split('\n');
+  // In a section written in parts, the work's evidence is its Proof: the lines of Proof and every row line (a row written
+  // by a writer that does not know the parts may sit under Notes). A note alone is not evidence of the work.
+  const { proofAt, notesAt } = evidenceParts(lines);
+  if (proofAt !== -1 || notesAt !== -1) {
+    const proofEnd = notesAt > proofAt ? notesAt : lines.length;
+    const inRow = new Set();
+    for (const r of evidenceTable(section).rows) for (let i = r.start; i <= r.end; i += 1) inRow.add(i);
+    lines = lines.filter((l, i) => inRow.has(i) || (proofAt !== -1 && i > proofAt && i < proofEnd));
+  }
+  return lines.filter((l) => !skip.test(l)).join('\n').trim();
 }
 
 // evidence <id> "<text>" appends free text (a merge sha, a one-line note); evidence <id> --ran
@@ -2114,7 +2172,7 @@ export function cmdEvidence(root, rawIds, text, flags) {
   const added = rows ? rows.map((r) => `- **ran:** ${indented(r.ran)} · **saw:** ${indented(r.saw)}`).join('\n') : text;
   for (const issue of issues) {
     const current = (issue.sections.evidence || '').trim();
-    writeAtomic(issue.file, setSection(readText(issue.file), 'Evidence', current ? `${current}${rows ? '\n' : '\n\n'}${added}` : added));
+    writeAtomic(issue.file, setSection(readText(issue.file), 'Evidence', rows ? placeEvidence(current, 'proof', added, '\n') : placeEvidence(current, 'note', noteText(added, current), '\n\n')));
   }
   appendLogLines(root, issues.flatMap((issue) => (rows ? rows.map((r) => `${issue.id} evidence row · ${firstLine(r.ran, "the issue's Evidence section")}`) : [`${issue.id} evidence · ${firstLine(text, "the issue's Evidence section")}`])));
   return oneOrMany(rawIds, issues.map((issue) => (rows ? { id: issue.id, rows } : { id: issue.id })));
@@ -2157,7 +2215,7 @@ function retractEvidence(root, rawIds, reason, flags) {
   lines[row.start] = struck(lines[row.start]);
   lines[row.end] = `${lines[row.end].trimEnd()}~~`;
   const entry = `- **retracted:** row ${n} · by ${by} · ${stamp().slice(0, 10)}\n${bodyText(reason).split('\n').map((l) => (l ? `  ${l}` : '')).join('\n')}`;
-  writeAtomic(issue.file, setSection(text, 'Evidence', `${lines.join('\n').trim()}\n${entry}`));
+  writeAtomic(issue.file, setSection(text, 'Evidence', placeEvidence(lines.join('\n').trim(), 'note', entry, '\n')));
   appendLog(root, `${issue.id} evidence retract · row ${n} · by ${by} · ${firstLine(reason, "the issue's Evidence section")}`);
   return { id: issue.id, retracted: n, by };
 }
@@ -4612,7 +4670,7 @@ function appendRuling(root, issues, line) {
   for (const issue of issues) {
     const text = readText(issue.file);
     const current = (parseIssue(text, issue.file).sections.evidence || '').trim();
-    writeAtomic(issue.file, setSection(text, 'Evidence', current ? `${current}\n\n${line}` : line));
+    writeAtomic(issue.file, setSection(text, 'Evidence', placeEvidence(current, 'note', noteText(line, current), '\n\n')));
   }
   appendLogLines(root, issues.map((issue) => `${issue.id} evidence · ${line}`));
 }

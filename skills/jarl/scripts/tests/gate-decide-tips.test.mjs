@@ -33,6 +33,7 @@ test('done: evidence written before the issue went in progress is not proof; evi
   const root = loop();
   jarl(root, 'new', 'thing');
   jarl(root, 'evidence', '1', 'Source: a research report, finding X');   // a note at filing time
+  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'a run from before the start');
   jarl(root, 'set', '1', 'in-progress', 'raised', '--worker', 'w1');
   jarl(root, 'review', '1', 'approve', '--by', 'fresh-opus', 'read the diff');
   assert.match(refuses(root, 'set', '1', 'done', 'merged'), /001 has no --ran\/--saw evidence row recorded since it was moved → in-progress/);
@@ -45,9 +46,9 @@ test('done: a free-text note never closes an issue, even one that never went in 
   jarl(root, 'new', 'small');
   jarl(root, 'evidence', '1', 'Source: finding X — written at filing time');
   jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
-  assert.match(refuses(root, 'set', '1', 'done', 'ok'), /001 has no --ran\/--saw evidence row recorded since it was filed/);
+  assert.match(refuses(root, 'set', '1', 'done', 'ok'), /001 has no evidence yet/, 'a note alone is Notes, and Notes is not evidence of the work');
   jarl(root, 'evidence', '1', 'more prose, still no row');
-  assert.match(refuses(root, 'set', '1', 'done', 'ok'), /no --ran\/--saw evidence row/);
+  assert.match(refuses(root, 'set', '1', 'done', 'ok'), /no evidence yet/);
   jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', '12 pass');
   assert.equal(jarl(root, 'set', '1', 'done', 'ok'), '001 → done');
 });
