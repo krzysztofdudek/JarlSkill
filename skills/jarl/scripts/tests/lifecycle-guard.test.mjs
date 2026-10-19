@@ -1,6 +1,6 @@
-// The profile's "lifecycle" key (issue 505): a loop a composer keeps (Horde's mission) is closed and archived by the
-// composer, never by Jarl's own close and archive. Before, jarl close on a finished mission deleted .jarl/ with no way
-// back, and jarl archive moved a live mission out from under Horde. Under "lifecycle": { "close": "record",
+// The profile's "lifecycle" key: a loop a composer keeps (Horde's mission) is closed and archived by the
+// composer, never by Jarl's own close and archive. A plain jarl close on a finished mission would delete .jarl/ with no way
+// back, and a plain jarl archive would move a live mission out from under Horde. Under "lifecycle": { "close": "record",
 // "archive": "record" } both commands and their MCP tools refuse, name the composer's command and write nothing, while
 // a library caller (the composer) still may.
 import { test } from 'node:test';

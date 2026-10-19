@@ -1,4 +1,4 @@
-// What Windows does differently, tested on every OS (issue 481): a loop checked out with CRLF line endings reads
+// What Windows does differently, tested on every OS: a loop checked out with CRLF line endings reads
 // the same as one with LF, a rename refused for a moment over an open file is retried there (and only there),
 // and a JARL_GH that is a node script runs without a shebang.
 import { test } from 'node:test';

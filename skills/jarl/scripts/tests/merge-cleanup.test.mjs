@@ -24,7 +24,7 @@ const git = (cwd, ...args) => {
 const branches = (repo) => git(repo, 'branch', '--list', '--format=%(refname:short)').split('\n').filter(Boolean);
 const worktrees = (repo) => git(repo, 'worktree', 'list', '--porcelain').split('\n').filter((l) => l.startsWith('worktree ')).map((l) => l.slice(9));
 
-// A repository on `main` that is also the loop's root, with issue 1 leased on jarl/1-x in a worktree beside it that holds
+// A repository on `main` that is also the loop's root, with its first issue leased on jarl/1-x in a worktree beside it that holds
 // one commit. `merge: true` merges the branch into main with a merge commit, the way the merger does.
 function fixture({ merge = true, issues = 1, worktree = true } = {}) {
   const parent = mkdtempSync(join(tmpdir(), 'jarl-clean-'));

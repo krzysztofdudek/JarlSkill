@@ -205,7 +205,7 @@ test('the views of a loop moved only through the tool read the same as the heade
 // ---- the report of a header that disagrees -----------------------------------------------------------------
 
 const recordLines = (text) => text.split('\n').filter((l) => l.startsWith('record: '));
-// A loop with issue 1 leased, with a model, and merged with its CI green, moved only through the command line.
+// A loop with its first issue leased, with a model, and merged with its CI green, moved only through the command line.
 function leasedAndMerged() {
   const root = makeLoop();
   jarl(root, 'new', 'one', '--tier', 'light', '--acceptance', 'a');

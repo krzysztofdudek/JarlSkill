@@ -22,7 +22,7 @@ const tool = (root, name, input = {}) => mcp.callTool(name, { root, ...input }).
 const markerPath = (root) => join(root, '.jarl', 'profile.json');
 const formatOf = (root) => (existsSync(markerPath(root)) ? JSON.parse(readFileSync(markerPath(root), 'utf8')).format : 1);
 
-// A loop that already holds issues 998 and 999, written as the frozen reader would have: the next number is 1000.
+// A loop that already holds the ids 998 and 999, written as the frozen reader would have them: the next id is 1000.
 function loopAt999() {
   const root = mkdtempSync(join(tmpdir(), 'jarl-ids-'));
   mkdirSync(join(root, '.git'));
@@ -87,7 +87,7 @@ test('007 and 7 are one issue wherever an id is read: show, after, lists, the lo
   assert.deepEqual([...new Set(L.idsNamed('issues 6-8', held))], ['007', '8']);
 });
 
-test('a branch named jarl/7-<slug> or jarl/008-<slug> is the branch of issue 007 or 8, whichever form the issue file carries', () => {
+test('a branch named jarl/7-<slug> or jarl/008-<slug> belongs to the id 007 or 8, whichever form the file carries', () => {
   const root = mkdtempSync(join(tmpdir(), 'jarl-ids-'));
   mkdirSync(join(root, '.git'));
   jarl(root, 'init', 'a goal');
@@ -192,7 +192,7 @@ test('the same commands work by the MCP tool', () => {
   assert.match(tool(root, 'jarl_ask', { question: 'which?', issue: '1000' }), /a-1\b/);
 });
 
-test('questions: a-1000 and an issue 1000 in a question read and write the same, and the first of either raises the format', () => {
+test('questions: a-1000 and the plain 1000 in a question read and write the same, and the first of either raises the format', () => {
   const root = mkdtempSync(join(tmpdir(), 'jarl-ids-'));
   mkdirSync(join(root, '.git'));
   jarl(root, 'init', 'a goal');
