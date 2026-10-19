@@ -1,8 +1,8 @@
 // yg-edge.mjs — Jarl's one optional edge to another family tool, and the only place in Jarl's code that reaches one.
 //
-// A ruling about a whole area of code (`decide --area <type>`) that the user ratified is written into that type's
+// A ruling about a whole area of code (`decide --area <type>`) that the owner ratified is written into that type's
 // decision log in Yggdrasil (`yg log add --type <type>`), so an agent touching any other file of the type reads it.
-// When the ruling names a rule of the graph (`decide --area <type> --rule <id>`), the user's yes is also written into
+// When the ruling names a rule of the graph (`decide --area <type> --rule <id>`), the owner's yes is also written into
 // that rule's own log as a ratification (`yg log add --aspect <id> --ratify --by <who>`): what lets the rule stand
 // enforced on the types it reaches, and what clears Yggdrasil's type-law-unratified for it.
 // The edge is optional: it is taken only when the loop's repository holds a Yggdrasil graph (.yggdrasil/) and a
@@ -100,7 +100,7 @@ export function writeAreaDecision(root, { type, text, supersedes = null }) {
 }
 
 // Who admitted the rule, as the ratification names them: the one the answer named (answer --by), else the person
-// the graph's repository commits as (git user.name), who is the user answering the batch; "the owner" when neither
+// the graph's repository commits as (git user.name), who is the owner answering the batch; "the owner" when neither
 // names anybody. A name cmd.exe would read inside quotes, or one of no letters, is not passed: "the owner" stands for it.
 const NAME_RE = /^[^"%!\r\n\x00-\x1f]{1,120}$/u;
 const passable = (name) => NAME_RE.test(name) && /\p{L}/u.test(name);
@@ -117,7 +117,7 @@ function ratifier(repo, named) {
 // when the answer named someone, else git's user.name. yg refuses a rule it does not
 // know (aspect-not-found) and one no type reaches (aspect-ratify-no-type): the refusal is passed on with the command
 // to run by hand. Entries a graph upgrade recorded for rules already in force name the graph, not a person; Jarl never
-// reads them as the user's word and never skips a write because one is there.
+// reads them as the owner's word and never skips a write because one is there.
 export function writeRuleRatification(root, { rule, text, by: named }) {
   if (!RULE_RE.test(String(rule))) return { state: 'skipped', reason: `"${rule}" is not a rule id yg takes (segments of letters, digits and . _ - joined by /)` };
   const repo = graphRepo(root);

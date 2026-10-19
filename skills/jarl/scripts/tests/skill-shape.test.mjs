@@ -28,7 +28,7 @@ const SINCE = /\bsince\b|(?:^|[.!?]\s)Since\b(?![:,*])/m;
 // or the words of a report on a task.
 // Also the words that tell what once happened instead of stating the rule.
 const TASK = /\((?:issues?|tickets?|packages?|rounds?|tasks?)\s+#?\d+|\(#?\d{2,4}\)|(?:^|[^a-z])(?:issues?|tickets?|packages?|rounds?|tasks?)\s+#?\d+|#\d+|field report|\bin practice\b|\bhas produced\b/i;
-// The words the owner ruled out: the old flag name of the lease, the old name of the command that measures a branch,
+// The words the owner ruled out: the flag named holds-claim, the check command that measures a branch,
 // and the claim as a name of the lease. Code spans keep the key `claim` of a research finding.
 const OLD_NAMES = [
   [/holds-claim/, 'the old flag name of the lease'],
@@ -334,7 +334,7 @@ test('a sentence outside the glossary that defines a glossary term fails, and a 
   assert.deepEqual(names(broken('references/worker.md', (t) => `${t}\nThe worker records the proof and the reviewer reads it.\nThe key \`the worker is\` is code.\n`), 'which glossary.md defines'), []);
 });
 
-test('the old name of the lease flag, the old name of the scope command and the claim as a name of the lease fail', () => {
+test('the flag named holds-claim, the check command that measures a branch, and the claim as a name of the lease fail', () => {
   assert.ok(names(broken('references/profile.md', (t) => `${t}\nThe flag holds-claim marks it.\n`), 'old flag name').length);
   for (const text of ['Run jarl check on the branch.', 'Run jarl.mjs check 7 --branch b.', 'The `check <id>` command reads it.', 'The `check` on it takes --repo.']) {
     assert.ok(names(broken('references/repositories.md', (t) => `${t}\n${text}\n`), 'it is scope').length, text);

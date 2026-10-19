@@ -15,7 +15,7 @@ const SERVER = fileURLToPath(new URL('../jarl-mcp.mjs', import.meta.url));
 const listed = await listToolsOverStdio({ command: process.execPath, args: [SERVER] });
 
 // A name a command answers to has a tool of its own, and the usage names only the command. The parity below holds the
-// commands and their tools; the alias tools are checked against their command apart.
+// commands and their tools; the tools that name a command under a second spelling are checked against that command apart.
 const ALIAS_TOOLS = Object.keys(COMMAND_ALIASES).map(mcp.toolName);
 const commandsOnly = { ...mcp.TABLE, commands: Object.fromEntries(Object.entries(mcp.TABLE.commands).filter(([name]) => !COMMAND_ALIASES[name])) };
 const commandTools = listed.filter((t) => !ALIAS_TOOLS.includes(t.name));

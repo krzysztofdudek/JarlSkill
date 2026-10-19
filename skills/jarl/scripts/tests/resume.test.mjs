@@ -1,4 +1,4 @@
-// resume: the state a session picks the loop up from, assembled live; handoff write retired.
+// resume: the state a session picks the loop up from, assembled live; handoff writes nothing.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, readdirSync, existsSync, cpSync, statSync } from 'node:fs';
@@ -72,7 +72,7 @@ test('resume assembles every section live from the loop and the repositories its
   assert.doesNotMatch(t, /old-way ·/, 'a superseded ruling is not in force');
   assert.match(t, /## In flight \(2\)\n- 1 in flight one · branch jarl\/1-one · worker w1 · model not recorded · since \S+ \S+\n {2}→ no evidence rows since the start[^\n]*\n- 5 queued five · branch jarl\/5-five · worker w5 · model not recorded · since \S+ \S+\n {2}→ approved and queued[^\n]*\n/);
   assert.match(t, /## Waiting — After not settled \(1\)\n- 2 waits for one \(after 1\)\n/);
-  assert.match(t, /## Questions to the user \(1\)\n- a-1 \(stuck\) issue 3 · which flag name\?\n/);
+  assert.match(t, /## Questions to the owner \(1\)\n- a-1 \(stuck\) issue 3 · which flag name\?\n/);
   assert.match(t, /## To ratify \(1\)\n- a-2 \(issue 1\) · kept the old default under the mandate\n/);
   assert.match(t, /## Held — files in flight \(1\)\n- 3  P1  ready two \(open question a-1\)\n/, 'an open stuck question holds its issue back');
   assert.match(t, /## Next ready \(3 of 3\)\n- 4  P2  ready three  \(no acceptance yet\)\n- 6  P2  merged six  \(no acceptance yet\)\n- 7  P2  merged seven  \(no acceptance yet\)\n/);
@@ -158,13 +158,13 @@ test('commands run in one process read git afresh each time: a branch made betwe
   assert.doesNotThrow(() => dispatch(hub, 'branches', [], { repo: '../later' }));
 });
 
-test('handoff write is retired: it takes its old flags, writes nothing, says so and exits 0; handoff read is resume plus the old file as history', () => {
+test('handoff takes its flags, writes nothing, says so and exits 0; handoff read is resume plus the handoff file as history', () => {
   const { hub } = world();
   jarl(hub, 'new', 'one');
   const before = snapshot(hub);
   const r = run(hub, ['handoff', 'write', '--summary', 'the plan', '--next', 'raise one']);
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /^handoff write is retired: nothing written\. The state a session resumes from is assembled live — run jarl\.mjs resume\./);
+  assert.match(r.stdout, /^handoff writes nothing\. The state a session resumes from is assembled live — run jarl\.mjs resume\./);
   assert.deepEqual(snapshot(hub), before, 'no handoff.md, no log line');
   assert.equal(existsSync(join(hub, '.jarl', 'handoff.md')), false);
   assert.deepEqual(JSON.parse(jarl(hub, 'handoff', 'write', '--json')), { retired: true, wrote: null, note: r.stdout });
@@ -173,7 +173,7 @@ test('handoff write is retired: it takes its old flags, writes nothing, says so 
   assert.equal(jarl(hub, 'handoff', 'read'), resumed);
   assert.equal(jarl(hub, 'handoff'), resumed, 'a bare handoff reads');
   assert.match(run(hub, ['handoff', 'rewrite']).stderr, /handoff takes read or write/);
-  // status no longer carries a handoff age in its text.
+  // status carries no handoff age in its text.
   writeFileSync(join(hub, '.jarl', 'handoff.md'), '# Handoff\n\n**At:** 2026-01-01 00:00 · **Head:** main@abc1234\n\n## Summary\nthe old plan\n\n## Next\n- raise one\n');
   assert.doesNotMatch(jarl(hub, 'status'), /handoff/);
   const h = jarl(hub, 'handoff', 'read');
@@ -220,7 +220,7 @@ test('a copy of a live loop from before resume: resume reads it, handoff read sh
   const before = snapshot(copy);
   const r = run(copy, ['resume'], { JARL_GH: join(copy, 'no-gh') });
   assert.equal(r.status, 0, r.stderr);
-  for (const h of ['## Rulings in force', '## In flight', '## Questions to the user', '## Next ready', '## Merge queue', '## Last 15 log line(s)']) assert.ok(r.stdout.includes(h), h);
+  for (const h of ['## Rulings in force', '## In flight', '## Questions to the owner', '## Next ready', '## Merge queue', '## Last 15 log line(s)']) assert.ok(r.stdout.includes(h), h);
   assert.match(r.stdout, /the loop holds a handoff file at \.jarl\/handoff\.md/);
   const h = run(copy, ['handoff', 'read'], { JARL_GH: join(copy, 'no-gh') }).stdout;
   assert.match(h, /\n## Earlier handoff — history, written \S+ \S+, \S+ ago; not the current state\n\*\*At:\*\* /);

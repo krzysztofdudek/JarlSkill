@@ -198,8 +198,8 @@ one difference, at step 5: nothing above it changes — every issue still needs 
 `deferred` before closing, `report` still feeds the changelog, the repository's own check still needs
 to be green. But `jarl_close` in this mode never removes `.jarl/`: it refuses exactly as above
 while anything is open or in progress, and once clean it appends a closing line to `log.md` and
-leaves the directory in place — the record `--root` named stays where it was, for the next release,
-or the next session, to read.
+leaves the directory in place — the record `--root` named stays where it was, for a later session
+or any other reader, to read.
 
 ## The reeve: handing the loop down
 

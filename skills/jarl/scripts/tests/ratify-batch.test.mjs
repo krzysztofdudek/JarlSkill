@@ -302,7 +302,7 @@ test('on Windows a .cmd yg runs through the shell and the ratified ruling and it
   assert.match(ratification.text, /^Every service validates its input\./);
 });
 
-// A ruling that names a rule of the graph: the user's yes also ratifies that rule in its own log, naming
+// A ruling that names a rule of the graph: the owner's yes also ratifies that rule in its own log, naming
 // who admitted it — the person git names in the graph's repository — so Yggdrasil's type-law-unratified clears.
 function gitName(name) {
   const dir = mkdtempSync(join(tmpdir(), 'jarl-gitcfg-'));
