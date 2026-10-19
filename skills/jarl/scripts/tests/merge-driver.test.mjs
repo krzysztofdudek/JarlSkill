@@ -154,7 +154,7 @@ test('git merge with the -c settings: two branches superseding one ruling stop o
   } finally { r.done(); }
 });
 
-test('fact 13, a: an attribute naming a driver nobody defined gives git\'s own markers, never a union', () => {
+test('an attribute naming a driver nobody defined gives git\'s own markers, never a union', () => {
   const r = repo();
   try {
     twoBranchesDecide(r, () => r.jarl('decide', 'from-b', 'B.'), () => r.jarl('decide', 'from-main', 'M.'));
@@ -165,7 +165,7 @@ test('fact 13, a: an attribute naming a driver nobody defined gives git\'s own m
   } finally { r.done(); }
 });
 
-test('fact 13, b: a driver configured whose script is gone falls back to markers instead of keeping ours alone', () => {
+test('a driver configured whose script is gone falls back to markers instead of keeping ours alone', () => {
   const r = repo();
   try {
     twoBranchesDecide(r, () => r.jarl('decide', 'from-b', 'B.'), () => r.jarl('decide', 'from-main', 'M.'));
@@ -226,7 +226,7 @@ test('the driver command runs a runtime and a script whose paths hold a space, a
   } finally { r.done(); rmSync(away, { recursive: true, force: true }); }
 });
 
-test('fact 13, c: the driver never exits 0 without writing — a clean merge leaves the merged rulings in the file', () => {
+test('the driver never exits 0 without writing — a clean merge leaves the merged rulings in the file', () => {
   const r = repo();
   try {
     twoBranchesDecide(r, () => r.jarl('decide', 'from-b', 'B.'), () => r.jarl('decide', 'from-main', 'M.'));

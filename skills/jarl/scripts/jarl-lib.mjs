@@ -444,7 +444,7 @@ export function validateProfile(json, where = 'the profile') {
   if (!isObj(json)) throw new Error(`${where} is not a JSON object`);
   // The record format first, and alone: a profile written for another format may mean anything by its other keys.
   if (json.format !== undefined && !RECORD_FORMATS.includes(json.format)) {
-    throw new Error(`${where} is written for record format ${JSON.stringify(json.format)}, and this Jarl reads format ${RECORD_FORMATS.join(', ')} — nothing was read or written; use the Jarl the loop was opened with (a vendored copy and the installed one must agree), or upgrade this one`);
+    throw new Error(`${where} is written for record format ${JSON.stringify(json.format)}, and this Jarl reads format ${RECORD_FORMATS.join(', ')} — nothing was read or written; the reader needs a Jarl that knows format ${JSON.stringify(json.format)} (a vendored copy and the installed one must agree)`);
   }
   // The format marker: a profile that holds only jarl-profile and format changes nothing in how the loop behaves (the
   // built-in profile, declared: false); it only says which format the record was written in.
@@ -3093,7 +3093,7 @@ export function cmdMode(root, mode) {
   need(!outOfGit(root), 'this loop is out of git (default mode) — a permanent record must be committed, and only init decides .jarl/.gitignore, so there is no in-place switch. Start a fresh loop with: jarl.mjs init "<goal>" --permanent');
   need(!existsSync(join(jarlDir(root), '.permanent')), 'already a permanent record (.jarl/.permanent exists) — nothing to do');
   writeAtomic(join(jarlDir(root), '.permanent'), PERMANENT_MARKER);
-  appendLog(root, 'mode → permanent · no longer tied to a feature branch; close now keeps the directory instead of removing it');
+  appendLog(root, 'mode → permanent · not tied to a feature branch; close keeps the directory');
   return { permanent: true };
 }
 
@@ -3113,7 +3113,7 @@ export function cmdClose(root, flags = {}) {
   if (flags.batch) return { closed: false, batch: ratificationBatch(root) };
   const profile = loadProfile(root);
   const left = loadIssues(root).filter((i) => profile.unfinished(i.status));
-  need(flags.force || left.length === 0, `${left.length} issue(s) still open or in progress: ${left.map((i) => i.id).join(', ')} — set each ${profile.with('terminal').filter((st) => profile.is(st, 'settles-dependents') || profile.is(st, 'closes-record')).join(' or ') || profile.with('terminal').join(' or ')}, or report them to the user and run with --force`);
+  need(flags.force || left.length === 0, `${left.length} issue(s) still open or in progress: ${left.map((i) => i.id).join(', ')} — set each ${profile.with('terminal').filter((st) => profile.is(st, 'settles-dependents') || profile.is(st, 'closes-record')).join(' or ') || profile.with('terminal').join(' or ')}, or report them to the owner and run with --force`);
   // A permanent loop is a record, not a stage cleared before a merge: close leaves the directory in
   // place and logs the close instead of removing it, so --root still finds the loop afterwards.
   // Deferred work is not open, but it is work that waits: where close removes the directory it would wait nowhere, so
@@ -4772,8 +4772,8 @@ function loopRepos(root, issues) {
 // The issues a branch carries in one repository: those that record it as their Branch, and — for an issue
 // that records no Branch — the one whose number the branch's jarl/NNN-* name carries.
 function issuesOnBranch(root, issues, realRepo, name) {
-  const legacy = branchIssueId(name);
-  return issues.filter((i) => issueRepos(root, i).includes(realRepo) && (i.fields.branch ? i.fields.branch === name : idKey(i.id) === idKey(legacy)));
+  const numbered = branchIssueId(name);
+  return issues.filter((i) => issueRepos(root, i).includes(realRepo) && (i.fields.branch ? i.fields.branch === name : idKey(i.id) === idKey(numbered)));
 }
 
 export function ago(ms) {
@@ -5407,8 +5407,8 @@ export function cmdQueue(root, flags = {}) {
     // jarl/NNN-* branch carrying its number.
     const branchOf = (i) => {
       if (i.fields.branch) return exists(i.fields.branch) ? i.fields.branch : null;
-      const legacy = (git(repo, ['branch', '--list', ...branchGlobsFor(i.id), '--format=%(refname:short)']) || '').split('\n').filter(Boolean);
-      return legacy.length === 1 ? legacy[0] : null;
+      const found = (git(repo, ['branch', '--list', ...branchGlobsFor(i.id), '--format=%(refname:short)']) || '').split('\n').filter(Boolean);
+      return found.length === 1 ? found[0] : null;
     };
     const branches = new Map();
     for (const i of approved.filter((x) => issueRepos(root, x).includes(real))) {
@@ -5536,7 +5536,7 @@ function asksAt(dir, skipped) {
 export function cmdAsk(root, question, flags) {
   need(question, 'ask requires "<question>"');
   const kind = String(flags.kind || 'stuck');
-  need(ASK_KINDS.includes(kind), `--kind must be one of: ${ASK_KINDS.join(', ')} — stop (halt everything), stuck (this issue only), lower (weaken something protected, needs a target), charter (the goal itself), ratify (a choice already made under a mandate, awaiting the user's word; blocks nothing)`);
+  need(ASK_KINDS.includes(kind), `--kind must be one of: ${ASK_KINDS.join(', ')} — stop (halt everything), stuck (this issue only), lower (weaken something protected, needs a target), charter (the goal itself), ratify (a choice already made under a mandate, awaiting the owner's word; blocks nothing)`);
   if (flags.issue !== undefined) need(findIssue(root, flags.issue), `no such issue: ${flags.issue}`);
   need(kind !== 'lower' || flags.target, '--target is required for kind lower — nothing to weaken without naming it');
   need(kind === 'lower' || !flags.target, `--target has no meaning for kind "${kind}" — only lower names something to weaken`);
@@ -5561,7 +5561,7 @@ export function cmdAsk(root, question, flags) {
   const asked = oneBreak(question).trim().split('\n');
   const options = askOptions(flags.option, kind);
   const optionLines = options.map((o) => `- **a-${id}** option · ${o.label} · ${o.effect}\n`).join('');
-  appendAtomic(path, '# Questions to the user\n\n', `- **a-${id}** (open) · ${kind}${target}${issueWritten !== null ? ` · issue ${issueWritten}` : ''}${ruling} · ${asked[0]}\n${asked.slice(1).map((l) => `  ${l}\n`).join('')}${optionLines}`);
+  appendAtomic(path, '# Questions to the owner\n\n',`- **a-${id}** (open) · ${kind}${target}${issueWritten !== null ? ` · issue ${issueWritten}` : ''}${ruling} · ${asked[0]}\n${asked.slice(1).map((l) => `  ${l}\n`).join('')}${optionLines}`);
   appendLog(root, `asked a-${id} (${kind}) · ${firstLine(asked.join('\n'), ASKS_FILE)}`);
   return { id, question: asked.join('\n'), kind, ...(options.length ? { options } : {}) };
 }
@@ -5626,7 +5626,7 @@ function answerChecks(root, ask, answer, chosen) {
   const ruling = ask.ruling ? rulings.find((d) => d.slug === ask.ruling) : null;
   const verdict = ask.ruling ? ratifyVerdict(answer) : null;
   need(!ask.ruling || verdict, ask.ruling && !verdict ? ratifyRefusal(id, ask.ruling, answer) : '');
-  need(!ask.ruling || ruling, `a-${id} ratifies ruling ${ask.ruling}, which is no longer in ${DECISIONS_FILE}`);
+  need(!ask.ruling || ruling, `a-${id} ratifies ruling ${ask.ruling}, which is not in force in ${DECISIONS_FILE}`);
   return { verdict, ruling, rulings, option, options };
 }
 
@@ -5927,7 +5927,7 @@ export function cmdResume(root, flags = {}) {
   const held = next.filter((r) => !r.ready && !r.after.length).map((r) => ({ id: r.id, title: r.title, priority: r.priority, files: r.waitsOn, heldBy: r.heldBy || [], ...(r.questions ? { questions: r.questions } : {}), ...(r.resources ? { resources: r.resources } : {}) }));
   const merged = issues.filter((i) => status.ciPending.includes(i.id) || status.ciRed.includes(i.id)).map((i) => ({ id: i.id, title: i.title, ...mergedOf(i) }));
   const logLines = loop.events;
-  const legacy = handoffAge(root, status.lastActivity);
+  const kept = handoffAge(root, status.lastActivity);
   return {
     goal: status.goal, opened: status.opened, lastActivity: status.lastActivity, archived: status.archived, status,
     rulings, inFlight, waiting,
@@ -5938,7 +5938,7 @@ export function cmdResume(root, flags = {}) {
     uncommitted: uncommittedLoopFiles(root),
     ...(status.disagreements ? { disagreements: status.disagreements } : {}),
     log: logN ? logLines.slice(-logN).map((e) => `${e.at} · ${e.text}`) : null,
-    legacyHandoff: legacy ? { path: handoffPath(root), at: legacy.at, ageMs: legacy.ageMs } : null,
+    legacyHandoff: kept ? { path: handoffPath(root), at: kept.at, ageMs: kept.ageMs } : null,
   };
 }
 
@@ -5965,7 +5965,7 @@ export function renderResume(o, profile = DEFAULT_PROFILE) {
     ...sec(`Closed, gate does not hold (${(st.closedGate || []).length})`, (st.closedGate || []).map(closedGateLine)),
     ...sec(`In flight (${o.inFlight.length})`, o.inFlight.map((x) => `- ${x.id} ${short(x.title)}${shownFields(x)}${lease(x) ? ` · ${lease(x)}` : ''}${x.stale.length ? ` · STALE: ${x.stale.join('; ')}` : ''}${x.mark ? `\n  → ${IN_FLIGHT_MARKS[x.mark]}` : ''}`), '- (nothing)'),
     ...sec(`Waiting — After not settled (${o.waiting.length})`, o.waiting.map((x) => `- ${x.id} ${short(x.title)} (after ${x.after.join(', ')})${x.stale !== undefined ? ` · ${x.status === 'in-progress' ? 'in progress' : x.status}${lease(x) ? ` · ${lease(x)}` : ''}${x.stale.length ? ` · STALE: ${x.stale.join('; ')}` : ''}` : ''}`)),
-    ...sec(`Questions to the user (${o.questions.length})`, o.questions.map((a) => `- a-${a.id} (${a.kind || 'stuck'})${a.issue ? ` issue ${a.issue}` : ''} · ${a.question}`), '- (nothing)'),
+    ...sec(`Questions to the owner (${o.questions.length})`, o.questions.map((a) => `- a-${a.id} (${a.kind || 'stuck'})${a.issue ? ` issue ${a.issue}` : ''} · ${a.question}`), '- (nothing)'),
     ...sec(`To ratify (${o.ratify.length})`, o.ratify.map((a) => `- a-${a.id}${a.issue ? ` (issue ${a.issue})` : ''} · ${a.question}`)),
     ...sec(`Held — files in flight (${o.held.length})`, o.held.map((x) => `- ${x.id}  P${x.priority}  ${short(x.title)} (${x.questions ? `open question ${x.questions.map((q) => `a-${q}`).join(', ')}` : `${[...x.files, ...(x.resources || []).map((n) => `resource ${n}`)].join(', ')} held by ${x.heldBy.join(', ')}`})`)),
     ...(o.scheduler ? sec('Next ready and merge queue', [`- ${schedulerNote(o.scheduler)}`]) : [
@@ -5995,9 +5995,9 @@ export function cmdHandoffRead(root, flags = {}) {
 
 // handoff write — the state is assembled live by resume, so there is nothing to write. The command is accepted (with
 // its flags) so a script that calls it does not fail; it writes nothing — no file, no log line — and says so; exit 0.
-export const HANDOFF_RETIRED = 'handoff writes nothing. The state a session resumes from is assembled live — run jarl.mjs resume. Put intent where it lives: order in priorities and After (prio, after), reasons in rulings (decide) and issue bodies (body).';
+export const HANDOFF_TEXT = 'handoff writes nothing. The state a session resumes from is assembled live — run jarl.mjs resume. Put intent where it lives: order in priorities and After (prio, after), reasons in rulings (decide) and issue bodies (body).';
 export function cmdHandoffWrite() {
-  return { retired: true, wrote: null, note: HANDOFF_RETIRED };
+  return { retired: true, wrote: null, note: HANDOFF_TEXT };
 }
 
 // The reason an issue was dropped or deferred: the last "Dropped: ..." / "Deferred: ..." line of its Evidence,
@@ -6149,16 +6149,16 @@ function mentionOf(issues, finding, dir) {
     return !finding.angle && uniqueLooking(finding.localId);
   };
   const namedWithReport = (text) => named(text) || (bare.test(text) && report.test(text));
-  const legacy = issues.filter((i) => i.fields.source === undefined);
+  const unsourced = issues.filter((i) => i.fields.source === undefined);
   const bodyOf = (i) => [i.title, i.sections.what, i.sections.why, i.sections.acceptance].filter(Boolean).join('\n');
-  const byTitle = legacy.filter((i) => named(i.title) || (bare.test(i.title) && report.test(bodyOf(i))));
+  const byTitle = unsourced.filter((i) => named(i.title) || (bare.test(i.title) && report.test(bodyOf(i))));
   if (byTitle.length === 1) return { issue: byTitle[0] };
   if (byTitle.length > 1) return { ambiguous: byTitle.map((i) => i.id) };
   // Evidence counts under the strictest rule only: an id that reads as unique on its own, on an Evidence line
   // that also names the report (a package issue's "Source: <report dir>/report.md … Ids: a-b-01, a-b-02").
   const inEvidence = (i) => !finding.angle && uniqueLooking(finding.localId)
     && (i.sections.evidence || '').split('\n').some((l) => bare.test(l) && report.test(l));
-  const byBody = legacy.filter((i) => namedWithReport(bodyOf(i)) || inEvidence(i));
+  const byBody = unsourced.filter((i) => namedWithReport(bodyOf(i)) || inEvidence(i));
   if (byBody.length === 1) return { issue: byBody[0] };
   return byBody.length ? { ambiguous: byBody.map((i) => i.id) } : {};
 }

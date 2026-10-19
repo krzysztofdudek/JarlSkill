@@ -1129,7 +1129,7 @@ test('ask --kind ratify blocks nothing, is listed in status and the handoff, and
   const st = jarl(root, 'status');
   assert.match(st, /questions 0 · to ratify 1/);
   assert.match(st, /^ratify a-1 \(issue 1\) · raised the prompt limit/m);
-  assert.match(jarl(root, 'resume'), /## Questions to the user \(0\)\n- \(nothing\)\n\n## To ratify \(1\)\n- a-1 \(issue 1\) · raised/);
+  assert.match(jarl(root, 'resume'), /## Questions to the owner \(0\)\n- \(nothing\)\n\n## To ratify \(1\)\n- a-1 \(issue 1\) · raised/);
   // It holds nothing back: next, done.
   jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
   jarl(root, 'evidence', '1', '--ran', 'check', '--saw', 'green');
