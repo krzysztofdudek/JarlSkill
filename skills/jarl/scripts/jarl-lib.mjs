@@ -2249,7 +2249,7 @@ function cleanUpAfterMerge(root, issues, sha, repoPath, named = []) {
       if (main && main.main && canonical(ws.path) === main.main) { keep('it is checked out in the main checkout'); continue; }
       if (stored && existsSync(stored) && canonical(stored) !== canonical(ws.path)) { keep('it is checked out in another worktree than the one the lease names'); continue; }
       if (insideDir(ws.path, root) || insideDir(ws.path, process.cwd())) { keep('the loop or this command lives in its worktree'); continue; }
-      // Asked explicitly, whatever the user's git configuration hides (status.showUntrackedFiles, ignore settings).
+      // Asked explicitly, whatever git configuration on this machine hides (status.showUntrackedFiles, ignore settings).
       const status = git(ws.path, ['-c', 'status.showUntrackedFiles=all', 'status', '--porcelain', '--untracked-files=all', '--ignored']);
       if (status === null) { keep('the state of its worktree cannot be read'); continue; }
       const lines = status.split('\n').filter(Boolean);
@@ -3109,7 +3109,7 @@ export function needLifecycle(root, op, caller = 'record') {
 export function cmdClose(root, flags = {}) {
   needLiveLoop(root, '');
   needLifecycle(root, 'close', flags.caller);
-  // --batch files the ratification batch and closes nothing, so the user can answer it before the loop goes.
+  // --batch files the ratification batch and closes nothing, so the owner can answer it before the loop goes.
   if (flags.batch) return { closed: false, batch: ratificationBatch(root) };
   const profile = loadProfile(root);
   const left = loadIssues(root).filter((i) => profile.unfinished(i.status));
@@ -3122,7 +3122,7 @@ export function cmdClose(root, flags = {}) {
   const permanent = existsSync(join(jarlDir(root), '.permanent'));
   need(permanent || flags.force || deferred.length === 0, `${deferred.length} issue(s) deferred: ${deferred.join(', ')} — close removes .jarl/ with them, and deferred work waits, it is not gone. Keep it: jarl.mjs archive "<slug>" puts the loop under .jarl/archive/ with its deferred issues. Or remove it with them: jarl.mjs close --force`);
   // The ratification batch is assembled here and never holds the close: in a permanent loop its items stay open for
-  // the user's word; in a loop on a branch the rulings no one ratified leave with the directory, rulings of that loop.
+  // the owner's word; in a loop on a branch the rulings no one ratified leave with the directory, rulings of that loop.
   // In the committed mode the archive is committed content: leaving it would put .jarl/archive/ on the branch that merges to
   // main, so close refuses while it holds anything, unless --force removes the whole directory.
   const archiveDir = join(jarlDir(root), 'archive');
@@ -5489,7 +5489,7 @@ export function cmdChangelog(root, rawIds, flags = {}) {
   return { ids: issues.map((i) => i.id), missing, repos: Object.fromEntries(repos.map((r) => [r, order(byRepo[r])])), ...(repos.length <= 1 ? { sections: repos.length ? order(byRepo[repos[0]]) : {} } : {}), text };
 }
 
-// ---- questions to the user and the handoff --------------------------------------------------
+// ---- questions to the owner and the handoff -------------------------------------------------
 
 // A ratify item the close's batch filed names the area ruling it asks about: `· ruling <slug>`.
 const ASK_RE = idRe('^- \\*\\*a-({id})\\*\\* \\((open|answered)\\)(?: · (stop|stuck|lower|charter|ratify))?(?: · target (\\S+))?(?: · issue ({id}))?(?: · ruling ([A-Za-z0-9][A-Za-z0-9._-]{0,79}))? · (.*)$');
@@ -5591,7 +5591,7 @@ function askOptions(raw, kind) {
 // The one word that answers a ratification: the first word of the answer, without case or trailing punctuation.
 // "no" is not among them: it is English no and colloquial Polish yes ("no tak", "no"), so it decides nothing alone —
 // the word after it decides ("no tak" ratifies, "no nie" rejects), and a bare "no" is refused with a request for
-// tak or nie rather than read as a rejection the user may not have meant.
+// tak or nie rather than read as a rejection the owner may not have meant.
 export const RATIFY_WORDS = ['yes', 'ok', 'ratify', 'ratified', 'accept', 'accepted', 'approve', 'approved', 'tak'];
 export const REJECT_WORDS = ['reject', 'rejected', 'nie'];
 export const AMBIGUOUS_WORDS = ['no'];
@@ -5796,9 +5796,9 @@ export const AREA_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
 // A rule id as the graph names it: path segments of the same letters, none of them . or .., joined by /.
 export const RULE_RE = /^(?!.*(?:^|\/)\.{1,2}(?:\/|$))[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/;
 
-// ---- the ratification batch: area rulings the user admits when the loop closes -----------------------------
+// ---- the ratification batch: area rulings the owner admits when the loop closes ---------------------------
 
-// At most this many area rulings wait for the user's word at once; the rest wait for the next close.
+// At most this many area rulings wait for the owner's word at once; the rest wait for the next close.
 export const RATIFY_BATCH = 10;
 // A ruling's first sentence, as the batch quotes it.
 function firstSentence(text) {
@@ -5995,7 +5995,7 @@ export function cmdHandoffRead(root, flags = {}) {
 
 // handoff write — the state is assembled live by resume, so there is nothing to write. The command is accepted (with
 // its flags) so a script that calls it does not fail; it writes nothing — no file, no log line — and says so; exit 0.
-export const HANDOFF_RETIRED = 'handoff write is retired: nothing written. The state a session resumes from is assembled live — run jarl.mjs resume. Put intent where it lives: order in priorities and After (prio, after), reasons in rulings (decide) and issue bodies (body).';
+export const HANDOFF_RETIRED = 'handoff writes nothing. The state a session resumes from is assembled live — run jarl.mjs resume. Put intent where it lives: order in priorities and After (prio, after), reasons in rulings (decide) and issue bodies (body).';
 export function cmdHandoffWrite() {
   return { retired: true, wrote: null, note: HANDOFF_RETIRED };
 }

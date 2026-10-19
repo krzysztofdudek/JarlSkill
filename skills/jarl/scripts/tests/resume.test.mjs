@@ -1,4 +1,4 @@
-// resume: the state a session picks the loop up from, assembled live; handoff write retired.
+// resume: the state a session picks the loop up from, assembled live; handoff writes nothing.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, readdirSync, existsSync, cpSync, statSync } from 'node:fs';
@@ -158,13 +158,13 @@ test('commands run in one process read git afresh each time: a branch made betwe
   assert.doesNotThrow(() => dispatch(hub, 'branches', [], { repo: '../later' }));
 });
 
-test('handoff write is retired: it takes its old flags, writes nothing, says so and exits 0; handoff read is resume plus the old file as history', () => {
+test('handoff takes its flags, writes nothing, says so and exits 0; handoff read is resume plus the handoff file as history', () => {
   const { hub } = world();
   jarl(hub, 'new', 'one');
   const before = snapshot(hub);
   const r = run(hub, ['handoff', 'write', '--summary', 'the plan', '--next', 'raise one']);
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /^handoff write is retired: nothing written\. The state a session resumes from is assembled live — run jarl\.mjs resume\./);
+  assert.match(r.stdout, /^handoff writes nothing\. The state a session resumes from is assembled live — run jarl\.mjs resume\./);
   assert.deepEqual(snapshot(hub), before, 'no handoff.md, no log line');
   assert.equal(existsSync(join(hub, '.jarl', 'handoff.md')), false);
   assert.deepEqual(JSON.parse(jarl(hub, 'handoff', 'write', '--json')), { retired: true, wrote: null, note: r.stdout });
@@ -173,7 +173,7 @@ test('handoff write is retired: it takes its old flags, writes nothing, says so 
   assert.equal(jarl(hub, 'handoff', 'read'), resumed);
   assert.equal(jarl(hub, 'handoff'), resumed, 'a bare handoff reads');
   assert.match(run(hub, ['handoff', 'rewrite']).stderr, /handoff takes read or write/);
-  // status no longer carries a handoff age in its text.
+  // status carries no handoff age in its text.
   writeFileSync(join(hub, '.jarl', 'handoff.md'), '# Handoff\n\n**At:** 2026-01-01 00:00 · **Head:** main@abc1234\n\n## Summary\nthe old plan\n\n## Next\n- raise one\n');
   assert.doesNotMatch(jarl(hub, 'status'), /handoff/);
   const h = jarl(hub, 'handoff', 'read');
