@@ -106,8 +106,11 @@ commands:
                                                  the merge as fields: Merged (sha, and where with --repo) and CI
                                                  (only when given; pending: a pushed commit whose CI will report;
                                                  none: no CI to wait for), and a log line. --ran/--saw record the
-                                                 check that decided the merge: its evidence row (as evidence writes
-                                                 it) and a merge line that names it. --red <id> records a merge that
+                                                 check that decided the merge and what it printed, in the merge
+                                                 record (the Merge check field and the merge line): never as a Proof
+                                                 row, because the merger's check is not the worker's proof (done
+                                                 asks the worker for the row; the reply says when none is there).
+                                                 --red <id> records a merge that
                                                  landed while its check was red for a cause outside the branch, which
                                                  issue <id> tracks; it is never counted as a passing check, and the
                                                  jarl rules on it first. --ci alone moves the CI of issues already

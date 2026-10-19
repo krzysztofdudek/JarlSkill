@@ -52,16 +52,17 @@ test('Check (<repo>) lines name a repository\'s command; a bare Check line keeps
   assert.deepEqual(check.byRepo.app.declared, ['yg check']);
 });
 
-test('merged --ran --saw records the evidence row and a merge line that names the check; no CI state is recorded unless given', () => {
+test('merged --ran --saw records the check in the merge record, as a Merge check field and a merge line that names it, and writes no evidence row; no CI state is recorded unless given', () => {
   const root = loop(2);
   assert.equal(jarl(root, 'merged', '1,2', '--sha', 'abc1234', '--ran', 'npm test', '--saw', 'pass 12'), '001, 002 merged abc1234 · check npm test');
   for (const id of [1, 2]) {
-    assert.match(issueText(root, id), /^- \*\*ran:\*\* npm test · \*\*saw:\*\* pass 12$/m);
+    assert.doesNotMatch(issueText(root, id), /\*\*ran:\*\*/);
+    assert.match(issueText(root, id), /^\*\*Merge check:\*\* npm test · saw pass 12$/m);
     assert.match(issueText(root, id), /^\*\*Merged:\*\* abc1234$/m);
     assert.doesNotMatch(issueText(root, id), /\*\*CI:\*\*/);
   }
-  assert.match(log(root), /^- \S+ \S+ · 001 evidence row · npm test$/m);
-  assert.match(log(root), /^- \S+ \S+ · 002 merged abc1234 · check npm test$/m);
+  assert.doesNotMatch(log(root), /evidence row/);
+  assert.match(log(root), /^- \S+ \S+ · 002 merged abc1234 · check npm test · saw pass 12$/m);
   assert.doesNotMatch(log(root), /merged abc1234.*CI/);
   appendFileSync(join(root, '.jarl', 'goal.md'), '\nCheck: npm test\n');
   const st = jarl(root, 'status');
@@ -69,10 +70,10 @@ test('merged --ran --saw records the evidence row and a merge line that names th
   assert.doesNotMatch(st, /testimony/, 'a landing on the declared check is not testimony');
   // With --ci too, the CI state follows the check in the line.
   jarl(root, 'merged', '2', '--sha', 'abc1234', '--ran', 'npm test', '--saw', 'pass 12', '--ci', 'pending');
-  assert.match(log(root), /002 merged abc1234 · check npm test · CI pending$/m);
+  assert.match(log(root), /002 merged abc1234 · check npm test · saw pass 12 · CI pending$/m);
   // Free text in a command cannot add a field of its own.
   jarl(root, 'merged', '1', '--sha', 'abc1234', '--ran', 'npm test · CI red', '--saw', 'pass');
-  assert.match(log(root), /001 merged abc1234 · check npm test - CI red$/m);
+  assert.match(log(root), /001 merged abc1234 · check npm test - CI red · saw pass$/m);
   assert.equal(L.mergeLineOf('001', '001 merged abc1234 · check npm test - CI red').ci, null);
 });
 
@@ -220,7 +221,7 @@ test('the reply of review names the next step: an approve the merger\'s one merg
   const root = loop(2);
   jarl(root, 'set', '1', 'in-progress', 'start', '--branch', 'jarl/001-a', '--worker', 'w-one');
   const approve = jarl(root, 'review', '1', 'approve', '--by', 'rev-fresh', FINDINGS);
-  assert.match(approve, /· next: the merger merges the branch and records it with one call — jarl\.mjs merged 001 --sha <sha> --ran "<check>" --saw "<summary>" — then jarl\.mjs set 001 done; a worker never sets done$/);
+  assert.match(approve, /· next: the merger merges the branch and records it with one call — jarl\.mjs merged 001 --sha <sha> --ran "<check>" --saw "<summary>" — then jarl\.mjs set 001 done, which needs a Proof row from the worker \(the merge check is the merger's and is no proof\); a worker never sets done$/);
   const changes = jarl(root, 'review', '1', 'changes', '--by', 'rev-fresh', CHANGES);
   assert.match(changes, /· next: the jarl records the round — jarl\.mjs round 001 "<what failed>" — and a worker is raised again to fix it$/);
   // A coordinator's approve on code keeps its note and points at the fresh reviewer.
@@ -228,7 +229,7 @@ test('the reply of review names the next step: an approve the merger\'s one merg
   assert.match(coordinator.stderr, /carries code and jarl is a coordinator/);
   assert.match(coordinator.stdout, /· next: a fresh reviewer's approve is next/);
   // An issue with no code is closed by its evidence.
-  assert.match(jarl(root, 'review', '2', 'approve', '--by', 'rev-fresh', FINDINGS), /· next: jarl\.mjs set 002 done once its evidence rows are recorded; a worker never sets done$/);
+  assert.match(jarl(root, 'review', '2', 'approve', '--by', 'rev-fresh', FINDINGS), /· next: jarl\.mjs set 002 done once the worker's Proof rows are recorded; a worker never sets done$/);
   // A package names the step for each issue; the JSON carries the same line.
   const both = json(root, 'review', '1,2', 'approve', '--by', 'rev-fresh', FINDINGS);
   assert.equal(both.length, 2);

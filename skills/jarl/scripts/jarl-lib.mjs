@@ -378,7 +378,7 @@ export const DONE_GATE_APPROVE = ['fresh', 'none'];
 export const DEFAULT_DONE_GATE = Object.freeze({ approve: 'fresh', 'requires-merged': false });
 // Header fields the tool itself writes and reads: a profile cannot declare them. Kind and Tier are built in too, but
 // a profile may declare them to replace their values (an enum, and a default).
-export const TOOL_FIELDS = ['Status', 'Priority', 'Tags', 'Files', 'Repo', 'After', 'Found by', 'Source', 'Where', 'Branch', 'Worker', 'Worktree', 'Since', 'Merged', 'CI', 'Resources'];
+export const TOOL_FIELDS = ['Status', 'Priority', 'Tags', 'Files', 'Repo', 'After', 'Found by', 'Source', 'Where', 'Branch', 'Worker', 'Worktree', 'Since', 'Merged', 'Merge check', 'CI', 'Resources'];
 export const BUILTIN_SECTIONS = ['What', 'Why', 'Acceptance', 'Changelog', 'Evidence'];
 export const PROFILE_FIELD_RE = /^[A-Za-z][A-Za-z0-9 -]{0,39}$/;
 export const PROFILE_STATUS_RE = /^[a-z][a-z0-9-]{0,39}$/;
@@ -706,7 +706,7 @@ function issuesAt(recordDir, profile, events = loopEvents(recordDir, profile)) {
     });
 }
 // The header fields the commands render from the journal, as the fields of an issue name them.
-const RENDERED_FIELDS = ['branch', 'worker', 'model', 'since', 'merged', 'ci'];
+const RENDERED_FIELDS = ['branch', 'worker', 'model', 'since', 'merged', 'merge check', 'ci'];
 // An issue with the state its journal gives in place of the one its header says. The header as read stays in
 // issue.onFile (not enumerable, so a copy of the issue does not carry it): status and the fields above, each as the file
 // has it. An issue the journal holds no filing and no move of (state null) keeps its header, and onFile is null.
@@ -1721,11 +1721,14 @@ export function doneRefusal(root, issue) { return doneRefusalIn(root, readLoop(j
 function doneRefusalIn(root, loop, issue, base) {
   const { profile } = loop;
   const g = gateOf(loop, issue.id);
-  const how = `jarl.mjs evidence ${issue.id} --ran "<command>" --saw "<what it printed>"`;
+  const how = EVIDENCE_HOW(issue.id);
+  // A merge that records its check does not stand in for the worker's row: said to whoever is refused, the merger included.
+  const mergeLine = lastMerge(loop.eventsById.get(issue.id) || []);
+  const gap = mergeLine && mergeLine.check ? ` — the merge records a check (${mergeLine.check}), but that check is the merger's and does not stand in for the worker's row: the row is the worker's proof of the work, so the worker records what the work's own check ran and printed, and nobody types the merge check into Proof in its place` : '';
   if (g.unresolvedRetractions.length) return `${issue.id} records a retraction of evidence row ${g.unresolvedRetractions.join(', ')} that matches no evidence line of the log, so which row it retracts is unknown and a retracted row might be counted — done refuses until that log line is repaired`;
-  if (!workEvidence(issue, profile)) return `${issue.id} has no evidence yet — record it first: ${how}`;
-  if (!g.tracked && !evidenceRows(issue).length) return `${issue.id} has no --ran/--saw evidence row — a free-text note alone is not proof of the work: ${how}`;
-  if (g.tracked && !g.rowsSince) return `${issue.id} has no --ran/--saw evidence row recorded since it was ${g.anchor.what === 'filed' ? 'filed' : `moved → ${g.anchor.what}`} (${g.anchor.at}) — a free-text note, or a row written before that (before a start or a reopen), is not proof of the work: ${how}`;
+  if (!workEvidence(issue, profile)) return `${issue.id} has no evidence yet — record it first: ${how}${gap}`;
+  if (!g.tracked && !evidenceRows(issue).length) return `${issue.id} has no --ran/--saw evidence row — a free-text note alone is not proof of the work: ${how}${gap}`;
+  if (g.tracked && !g.rowsSince) return `${issue.id} has no --ran/--saw evidence row recorded since it was ${g.anchor.what === 'filed' ? 'filed' : `moved → ${g.anchor.what}`} (${g.anchor.at}) — a free-text note, or a row written before that (before a start or a reopen), is not proof of the work: ${how}${gap}`;
   if (profile.doneGate['requires-merged']) { const m = mergeRefusal(root, issue, base); if (m) return m; }
   if (profile.doneGate.approve === 'none') return null;
   const code = carriesCode(issue);
@@ -1779,6 +1782,10 @@ function doneNote(issue, root) {
   return notes.length ? { note: notes.join('; ') } : {};
 }
 
+// The Proof rows an issue holds inside the done gate's window: the --ran/--saw rows the worker wrote, not retracted.
+function proofSince(g, issue) { return g.tracked ? g.rowsSince : evidenceRows(issue).length; }
+const EVIDENCE_HOW = (id) => `jarl.mjs evidence ${id} --ran "<command>" --saw "<what it printed>"`;
+
 // The merge an issue records: **Merged:** <sha>[ in <repo>] and **CI:** pending|green|red|none. Null when
 // the issue records none.
 export function mergedOf(issue) {
@@ -1790,7 +1797,8 @@ export function mergedOf(issue) {
 
 // merged <ids> --sha <sha> [--ran "<check>" --saw "<summary>" | --red <id>] [--ci pending|green|red|none] [--repo <path>]
 // — the merge as a field, not as prose: the sha, where it landed, the check that decided it and the CI state. --ran and
-// --saw record the check's evidence row on every issue of the call and name the check in the merge line; --red <id> records
+// --saw record the check and what it printed in the merge record (the merge line and the Merge check field) of every issue
+// of the call; they write no Proof row, because the merger's check is not the worker's proof; --red <id> records
 // a merge that landed while its check was red for a cause outside the branch, which issue <id> tracks, and is never counted
 // as a passing check. The CI state is recorded only when given, except for a library call, which keeps pending as the
 // default. --ci alone, on issues that already record a merge, moves only the CI state. A sha the repository does not know
@@ -1821,7 +1829,9 @@ export function cmdMerged(root, rawIds, flags) {
   const sha = flags.sha !== undefined ? String(flags.sha).toLowerCase() : null;
   const ci = flags.ci ?? (sha && !cli ? 'pending' : undefined);
   // The check as the merge line names it: the commands that ran, one line, never the log's own separator.
-  const checkText = rows ? fieldText(rows.map((r) => r.ran).join(' ; ')).replace(/ +· +/g, ' - ').slice(0, 200) : null;
+  const oneLineOf = (key) => fieldText(rows.map((r) => r[key]).join(' ; ')).replace(/ +· +/g, ' - ').slice(0, 200).trim();
+  const checkText = rows ? oneLineOf('ran') : null;
+  const sawText = rows ? oneLineOf('saw') : null;
   const notes = [];
   if (sha) {
     // Where the sha should be: --repo, else each issue's Repo, else the loop's own repository.
@@ -1838,6 +1848,13 @@ export function cmdMerged(root, rawIds, flags) {
   // Said, never refused: a merge is a fact, and recording it is not the place to stop it. A merge whose issue holds
   // no fresh approve went in without the fresh review the rule asks for, and the note says so loudly.
   // Under a done gate with no approve (approve: none), the merge gate stands behind the issue, and no reviewer is owed.
+  if (sha && cli) {
+    const loop = readLoop(jarlDir(root));
+    for (const issue of issues) {
+      const g = gateOf(loop, issue.id);
+      if (proofSince(g, issue) === 0) notes.push(`NO PROOF FROM THE WORKER — ${issue.id} holds no Proof row since it was ${g.tracked ? (g.anchor.what === 'filed' ? 'filed' : `moved → ${g.anchor.what}`) : 'filed'}; the merge check is recorded in the merge record and is not proof, so done refuses until the worker records it: ${EVIDENCE_HOW(issue.id)}`);
+    }
+  }
   if (sha && loadProfile(root).doneGate.approve !== 'none') {
     const loop = readLoop(jarlDir(root));
     for (const issue of issues) {
@@ -1845,14 +1862,18 @@ export function cmdMerged(root, rawIds, flags) {
       if (!g.fresh) notes.push(`MERGED WITHOUT A FRESH REVIEW — ${issue.id} ${g.live ? freshRuleText({ fields: { merged: sha } }, g.live) : 'holds no live approve at all (none, or spent by a later round, restart or reopen) — the fresh-review rule: a code issue needs an approve from a fresh reviewer before it merges'}; recorded as given, get the fresh review now: jarl.mjs review ${issue.id} approve|changes --by <fresh reviewer> "<findings>"`);
     }
   }
-  // The evidence rows go in first, like evidence writes them: one row per --ran/--saw pair on every issue of the call.
-  if (rows) cmdEvidence(root, issues.map((i) => i.id).join(','), undefined, { ran: flags.ran, saw: flags.saw });
-  const named = `${flags.repo !== undefined ? ` in ${fieldText(flags.repo)}` : ''}${checkText ? ` · check ${checkText}` : ''}${cause ? ` · landed red, cause ${cause}` : ''}${ci ? ` · CI ${ci}` : ''}`;
+  // The check goes into the merge record (the merge line and the Merge check field) and never into Proof: the merger's
+  // check is not the worker's proof, so only evidence writes a row.
+  const named = `${flags.repo !== undefined ? ` in ${fieldText(flags.repo)}` : ''}${checkText ? ` · check ${checkText}${sawText ? ` · saw ${sawText}` : ''}` : ''}${cause ? ` · landed red, cause ${cause}` : ''}${ci ? ` · CI ${ci}` : ''}`;
   // The line goes first, as in set: a write that stops between the two leaves the record ahead of the files.
   appendLogLines(root, issues.map((issue) => (sha ? `${issue.id} merged ${sha}${named}` : `${issue.id} CI ${ci}`)));
   for (const issue of issues) {
     let text = readText(issue.file);
-    if (sha) text = setField(text, 'Merged', `${sha}${flags.repo !== undefined ? ` in ${fieldText(flags.repo)}` : ''}`);
+    if (sha) {
+      text = setField(text, 'Merged', `${sha}${flags.repo !== undefined ? ` in ${fieldText(flags.repo)}` : ''}`);
+      const kept = mergeCheckText(checkText, sawText);
+      text = kept ? setField(text, 'Merge check', kept) : removeFields(text, ['Merge check']);
+    }
     text = ci ? setField(text, 'CI', ci) : removeFields(text, ['CI']);
     writeAtomic(issue.file, text);
   }
@@ -2699,7 +2720,7 @@ export function journalById(root) {
 // takes its CI state (none when it names none); a CI line replaces the CI state alone. Null for an issue the
 // journal holds no filing and no move of: its header is all there is to read.
 export function issueState(profile, events) {
-  const s = { status: null, branch: null, worker: null, model: null, since: null, merged: null, ci: null };
+  const s = { status: null, branch: null, worker: null, model: null, since: null, merged: null, 'merge check': null, ci: null };
   let held = false;
   for (const e of events) {
     if (e.type === 'filed') { if (!held) { held = true; s.status = profile.initial; } continue; }
@@ -2713,7 +2734,7 @@ export function issueState(profile, events) {
       } else { s.worker = null; s.model = null; s.since = null; }
       continue;
     }
-    if (e.type === 'merged') { s.merged = e.repo ? `${e.sha} in ${e.repo}` : e.sha; s.ci = e.ci; continue; }
+    if (e.type === 'merged') { s.merged = e.repo ? `${e.sha} in ${e.repo}` : e.sha; s['merge check'] = mergeCheckText(e.check, e.saw); s.ci = e.ci; continue; }
     if (e.type === 'ci') s.ci = e.state;
   }
   return held ? s : null;
@@ -2765,7 +2786,7 @@ function scopedLoop(loop, issues) { return makeLoop({ dir: loop.dir, root: loop.
 // views never believe the header; they print these. Each line names how the disagreement is settled: the header written
 // back to the journal's value, which writes nothing else, or the move or merge that makes the header's value the
 // record, which writes a line of its own.
-const FIELD_NAMES = { status: 'Status', branch: 'Branch', worker: 'Worker', model: 'Model', since: 'Since', merged: 'Merged', ci: 'CI' };
+const FIELD_NAMES = { status: 'Status', branch: 'Branch', worker: 'Worker', model: 'Model', since: 'Since', merged: 'Merged', 'merge check': 'Merge check', ci: 'CI' };
 const LEASE_KEYS = ['branch', 'worker', 'model'];
 const ghostRe = idRe('^({id}) → (\\S+)');
 export function recordDisagreements(loop) {
@@ -3105,11 +3126,16 @@ export function mergeLineOf(id, text) {
   for (const p of parts.slice(1)) {
     let m;
     if ((m = /^check (.+)$/.exec(p))) line.check = m[1];
+    else if ((m = /^saw (.+)$/.exec(p)) && line.check !== null) line.saw = m[1];
     else if ((m = /^landed red, cause (\S+)$/.exec(p))) line.red = m[1];
     else if ((m = /^CI (pending|green|red|none)$/.exec(p))) line.ci = m[1];
   }
   return line;
 }
+
+// The Merge check field of an issue: the check a merge line names and what it printed, as one line. Null when the merge
+// names no check. The field is rendered from the merge line, like Merged and CI.
+function mergeCheckText(check, saw) { return check ? (saw ? `${check} · saw ${saw}` : check) : null; }
 
 // The last merge an issue's events record, or null.
 function lastMerge(events) {
@@ -3808,6 +3834,7 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
   const noteOf = (issue, n) => {
     const said = [
       verdict === 'approve' && kinds[n] === 'coordinator' && carriesCode(issue) ? `${issue.id} carries code and ${by} is a coordinator — the fresh-review rule: this approve is recorded but does not clear it for done or the merge queue; a fresh reviewer's approve does` : null,
+      flags.caller === 'cli' && verdict === 'approve' && proofSince(gateOf(loop, issue.id), issue) === 0 ? `${issue.id} holds no Proof row since the gate's window opened — done needs the worker's row, and the merger's check does not stand in for it: ${EVIDENCE_HOW(issue.id)}` : null,
       ...(lines && lines.declared ? reviewModelNotes(issue, verdict, model, lines, loop.eventsById.get(issue.id) || []) : []),
     ].filter(Boolean);
     return said.length ? { note: said.join('; ') } : {};
@@ -3824,8 +3851,8 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
 function nextAfterVerdict(issue, verdict, kind) {
   if (verdict === 'changes') return `the jarl records the round — jarl.mjs round ${issue.id} "<what failed>" — and a worker is raised again to fix it`;
   if (carriesCode(issue) && kind === 'coordinator') return `a fresh reviewer's approve is next — jarl.mjs review ${issue.id} approve|changes --by <fresh reviewer> "<findings>" — then the merger lands it`;
-  if (carriesCode(issue)) return `the merger merges the branch and records it with one call — jarl.mjs merged ${issue.id} --sha <sha> --ran "<check>" --saw "<summary>" — then jarl.mjs set ${issue.id} done; a worker never sets done`;
-  return `jarl.mjs set ${issue.id} done once its evidence rows are recorded; a worker never sets done`;
+  if (carriesCode(issue)) return `the merger merges the branch and records it with one call — jarl.mjs merged ${issue.id} --sha <sha> --ran "<check>" --saw "<summary>" — then jarl.mjs set ${issue.id} done, which needs a Proof row from the worker (the merge check is the merger's and is no proof); a worker never sets done`;
+  return `jarl.mjs set ${issue.id} done once the worker's Proof rows are recorded; a worker never sets done`;
 }
 
 // ---- rounds, branches, checks ------------------------------------------------------------------

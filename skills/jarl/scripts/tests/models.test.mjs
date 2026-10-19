@@ -221,6 +221,7 @@ test('notes on a lease and on a verdict without --model, and on an approve of th
   const { id } = R.newIssue(root, 'a thing', { acceptance: 'it works', tier: 'strong' });
   assert.match(notes(root, 'set', [id, 'in-progress', 'go'], { branch: 'jarl/001-a', worker: 'w-one' }), /no --model/, 'a lease without a model');
   assert.doesNotMatch(notes(root, 'set', [id, 'in-progress', 'go'], { branch: 'jarl/001-a', worker: 'w-one', model: BIG }), /--model/);
+  R.addEvidence(root, id, undefined, { ran: 'npm test', saw: 'pass' });
   assert.match(notes(root, 'review', [id, 'changes', 'Important: the case is missing'], { by: 'rev-1' }), /no --model/, 'a verdict without a model');
   assert.match(notes(root, 'review', [id, 'approve', 'read it all, nothing found'], { by: 'rev-2', model: BIG }), /same model as the worker's/, 'the worker model leased on the issue');
   assert.match(notes(root, 'review', [id, 'approve', 'read it all, nothing found'], { by: 'rev-3', model: SMALL }), /ranks below the worker's model/, 'a lower rank');
@@ -232,6 +233,7 @@ test('no note at all in a loop without model lines', () => {
   const root = loop();
   const { id } = R.newIssue(root, 'a thing', { acceptance: 'it works' });
   assert.equal(notes(root, 'set', [id, 'in-progress', 'go'], { branch: 'jarl/001-a', worker: 'w-one' }), '');
+  R.addEvidence(root, id, undefined, { ran: 'npm test', saw: 'pass' });
   assert.equal(notes(root, 'review', [id, 'approve', 'read it all, nothing found'], { by: 'rev-1' }), '');
   assert.equal(notes(root, 'review', [id, 'approve', 'read it all, nothing found'], { by: 'rev-2', model: MID }), '');
 });
