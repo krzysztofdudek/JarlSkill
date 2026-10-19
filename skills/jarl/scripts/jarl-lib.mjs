@@ -1575,7 +1575,10 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   for (const k of lease) need(typeof flags[k] === 'string' && fieldText(flags[k]), `--${k} needs a value`);
   const model = flags.model !== undefined ? modelValue(flags.model) : undefined;
   // A name is one value: with the log's own separator in it, the lease line would carry a field the caller did not give.
-  for (const k of ['worker', 'branch']) need(flags[k] === undefined || !` ${fieldText(flags[k])} `.includes(' · '), `--${k} is one name — not a phrase with " · " in it (got "${fieldText(flags[k])}")`);  const issues = issuesFor(root, rawIds);
+  for (const k of ['worker', 'branch']) need(flags[k] === undefined || !` ${fieldText(flags[k])} `.includes(' · '), `--${k} is one name — not a phrase with " · " in it (got "${fieldText(flags[k])}")`);
+  // What is written into the lease is what the journal gives back unchanged: a value the reader would take for something else is refused.
+  for (const k of lease) { const problem = leaseValueProblem(k, flags[k]); need(!problem, `--${k} ${JSON.stringify(fieldText(flags[k]))} ${problem}`); }
+  const issues = issuesFor(root, rawIds);
   need(!profile.is(status, 'needs-reason') || why, REASON_TEXT[status] || `${status} needs a reason: jarl.mjs set <id> ${status} "<why>"`);
   const nothing = issues.length > 1 ? ' — nothing was written' : '';
   // base: the branch the composer landed the merge into, for the done gate's requires-merged (else the branch checked
@@ -1630,9 +1633,31 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   return oneOrMany(rawIds, issues.map((issue, n) => ({ id: issue.id, status, ...(holds ? { since, ...(flags.branch !== undefined ? { branch: fieldText(flags.branch) } : {}), ...(flags.worker !== undefined ? { worker: fieldText(flags.worker) } : {}), ...(model !== undefined ? { model } : {}), ...(worktree !== undefined ? { worktree } : {}) } : {}), ...(profile.is(status, 'closes-record') ? doneNote(issue, root) : {}), ...(leaseNoModel && n === 0 ? { note: leaseNoModel } : {}) })));
 }
 
+// Why a lease value (--branch, --worker, --model, --worktree) cannot be written, or null when the lease line gives it
+// back unchanged: one line in all four; no comma in a worker or a model (a comma marks a sentence, not a name); and a
+// branch is a name git accepts, which has no space.
+function leaseValueProblem(flag, raw) {
+  const v = fieldText(raw);
+  if (/[\r\n]/.test(String(raw).trim())) return 'is on more than one line: the lease line is one line';
+  if (flag === 'worker' || flag === 'model') return v.includes(',') ? 'holds a comma: the lease line is read by position and a comma marks a sentence, not a name — use a name without one' : null;
+  if (flag === 'branch') return branchNameProblem(v);
+  return null;
+}
+// Why git would not accept `name` as a branch name (git check-ref-format), or null.
+function branchNameProblem(name) {
+  const bad = (why) => `is not a branch name git accepts: ${why}`;
+  if (/[\x00-\x20\x7f~^:?*[\\]/.test(name)) return bad('no space, control character or any of ~ ^ : ? * [ \\');
+  if (name.includes('..') || name.includes('@{') || name.includes('//') || name === '@') return bad('no "..", "@{", "//" or a lone @');
+  if (name.startsWith('-') || name.startsWith('/') || name.endsWith('/') || name.endsWith('.')) return bad('it does not start with - or /, nor end with / or .');
+  if (name.split('/').some((part) => part.startsWith('.') || part.endsWith('.lock'))) return bad('no part starts with . or ends with .lock');
+  return null;
+}
+
 // set <ids> <status> --header: writes the header fields the log renders (Status, Branch, Worker, Model, Since, Merged, CI)
 // of each issue from the log, and writes no log line; the status named is the one the log holds, so it is never a move.
 function rewriteHeader(root, rawIds, status, why, flags) {
+  need(status !== undefined, 'set <ids> <status-in-the-log> --header: name the status the log holds for the issue (status shows it); --header rewrites the header from the log and moves nothing');
+  need(loadProfile(root).statuses.includes(status), `${status} is not a status this loop's profile lists (${loadProfile(root).statuses.join(', ')}): --header rewrites a header from the log and moves nothing, so it names the status the log holds`);
   need(why === undefined && flags.base === undefined && !leaseFlagsGiven(flags).length, '--header rewrites the header from the log and takes no reason, lease flag or base');
   const issues = issuesFor(root, rawIds);
   for (const issue of issues) {

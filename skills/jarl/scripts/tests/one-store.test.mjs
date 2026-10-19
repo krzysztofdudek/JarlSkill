@@ -513,6 +513,91 @@ test('move lines in the shapes real loops hold read by position', () => {
   assert.equal(L.issueState(profile, by.get('014')).worker, 'claude-opus-5-5 fix-picture', 'a worker name may hold a space');
 });
 
+// ---- what is written into the lease reads back unchanged -----------------------------------------------------
+
+const NASTY = ['w1', 'w x', 'w,x', 'm,1', 'a b', 'a\nb', 'a · b', ' padded ', '(reason)', 'branch x', 'worker', 'ünï', 'q"q', "q'q", '**b**', 'jarl/001-a', 'a..b', 'a~b', 'a:b', 'a?b', 'a*b', 'a[b', 'a\\b', 'x.lock', '.hidden', 'a//b', '/a', 'a/', 'a.', '-a', '@', 'a@{b', 'm@high', 'a;b', 'a\tb'];
+for (const flag of ['worker', 'model', 'branch']) {
+  test(`every ${flag} value the command accepts reads back identical from the log and from the header, and every one it refuses writes nothing`, () => {
+    const root = makeLoop();
+    const dir = R.jarlDir(root);
+    const profile = R.loadProfile(root);
+    let accepted = 0; let refused = 0;
+    for (const value of NASTY) {
+      const { id } = R.newIssue(root, `lease ${flag}`);
+      const logBefore = logLinesOf(root).length;
+      const fileBefore = readFileSync(issueFile(root, id), 'utf8');
+      let wrote = true;
+      try { R.setStatus(root, id, 'in-progress', 'taking it', { [flag]: value }); } catch { wrote = false; }
+      if (wrote) {
+        accepted += 1;
+        const state = foldOf(dir, profile, id);
+        assert.equal(state[flag], fieldTextOf(value), `${JSON.stringify(value)}: the log gives it back`);
+        assert.deepEqual(state, headerOf(issueFile(root, id)), `${JSON.stringify(value)}: the header agrees with the log`);
+      } else {
+        refused += 1;
+        assert.equal(logLinesOf(root).length, logBefore, `${JSON.stringify(value)}: nothing in the journal`);
+        assert.equal(readFileSync(issueFile(root, id), 'utf8'), fileBefore, `${JSON.stringify(value)}: nothing in the file`);
+      }
+    }
+    assert.ok(accepted > 0 && refused > 0, 'some values are taken and some refused');
+    assert.deepEqual(recordLines(jarl(root, 'status')), []);
+  });
+}
+const fieldTextOf = (v) => String(v).replace(/\s+/g, ' ').trim();
+
+test('the refusals name the flag and the rule, and a worktree path reads back whatever it holds', () => {
+  const root = makeLoop();
+  const { id } = R.newIssue(root, 'refusals');
+  assert.match(refuses(root, 'set', id, 'in-progress', '--worker', 'w,x'), /--worker "w,x" holds a comma/);
+  assert.match(refuses(root, 'set', id, 'in-progress', '--model', 'm,1'), /--model "m,1" holds a comma/);
+  assert.match(refuses(root, 'set', id, 'in-progress', '--branch', 'a b'), /--branch "a b" is not a branch name git accepts/);
+  assert.match(refuses(root, 'set', id, 'in-progress', '--branch', 'a\nb'), /--branch .*more than one line/);
+  const wt = join(root, 'path · with · seps');
+  jarl(root, 'set', id, 'in-progress', '--branch', 'jarl/001-a', '--worker', 'w1', '--model', 'm1', '--worktree', wt);
+  const state = foldOf(R.jarlDir(root), R.loadProfile(root), id);
+  assert.deepEqual([state.branch, state.worker, state.model], ['jarl/001-a', 'w1', 'm1']);
+  assert.equal(R.findIssue(root, id).fields.worktree, wt);
+  assert.deepEqual(state, headerOf(issueFile(root, id)));
+});
+
+test('a branch with a space is refused, so a coordinator approve cannot close an issue that carries it', () => {
+  const root = makeLoop();
+  jarl(root, 'new', 'code', '--tier', 'light', '--acceptance', 'it works');
+  refuses(root, 'set', '1', 'in-progress', '--branch', 'a b', '--worker', 'w1');
+  assert.equal(R.findIssue(root, '001').status, 'open');
+  assert.equal(R.findIssue(root, '001').fields.branch, undefined);
+});
+
+// ---- the header rewrite says what it does ---------------------------------------------------------------------
+
+test('set --header says it rewrote a header and moved nothing, and refuses an unknown or a missing status in its own words', () => {
+  const root = makeLoop();
+  jarl(root, 'new', 'one', '--tier', 'light');
+  jarl(root, 'set', '1', 'in-progress', '--worker', 'w1');
+  assert.equal(jarl(root, 'set', '1', 'in-progress', '--header'), 'header of 001 rewritten from the log: in-progress');
+  const unknown = refuses(root, 'set', '1', 'bogus', '--header');
+  assert.match(unknown, /bogus is not a status this loop's profile lists/);
+  assert.doesNotMatch(unknown, /moves it|undefined/);
+  const missing = refuses(root, 'set', '1', '--header');
+  assert.match(missing, /name the status the log holds/);
+  assert.doesNotMatch(missing, /undefined/);
+});
+
+test('a phantom lease is not read from a reason: the units of a loop with such reasons are the leases the commands wrote', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'jarl-one-store-units-'));
+  mkdirSync(join(dir, 'issues'));
+  writeFileSync(join(dir, 'log.md'), [
+    '# Log', '',
+    '- 2026-10-01 09:00 · filed 012 · a',
+    '- 2026-10-01 09:01 · 012 → in-progress · worker did 013, 014, 015, 012 in one pass; awaiting fresh reviewer',
+    '- 2026-10-01 09:02 · filed 021 · b',
+    '- 2026-10-01 09:03 · 021 → in-progress · worker on branch fix-toolbox · branch fix-toolbox · worktree /p',
+  ].join('\n') + '\n');
+  const by = L.eventsById(L.loopEvents(dir, L.DEFAULT_PROFILE));
+  for (const id of ['012', '021']) assert.equal(by.get(id).find((e) => e.type === 'move').lease, null, `${id}: no worker was named, so no lease and no unit`);
+  assert.equal(L.issueState(L.DEFAULT_PROFILE, by.get('021')).branch, 'fix-toolbox');
+});
+
 // ---- a note cannot make a disagreement nothing settles --------------------------------------------------------
 
 test('the free log refuses an id and an arrow whatever follows, and a note of that shape already in a log is no disagreement', () => {
