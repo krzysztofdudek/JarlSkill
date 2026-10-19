@@ -72,6 +72,11 @@ test('parity: each tool has one field per argument and per flag, under the CLI n
   }
 });
 
+test('the jarl_answer id field says it takes one id or a comma list, read from the generated tool', () => {
+  const field = byName[mcp.toolName('answer')].inputSchema.properties.id;
+  assert.match(field.description, /one question id, or several ratify items as one comma list \(2,3,4\)/i);
+});
+
 test('parity: every field reaches the CLI parser as the flag or argument it names', () => {
   for (const cmd of publicOf(Object.keys(COMMAND_FLAGS))) {
     const input = {};

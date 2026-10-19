@@ -3859,10 +3859,14 @@ function carriesDeclared(line, commands) {
   return line.check.split(' ; ').some((part) => wanted.includes(part.trim()));
 }
 export const TESTIMONY_NOTE = 'no merge carries the declared check — this loop lands on testimony alone: a review is recorded as testimony, not proof (a merge carries the check when its --ran text equals a command a Check line of the goal declares: merged <ids> --sha <sha> --ran "<check>" --saw "<summary>")';
+// The mark for a goal that declares no Check line: no check is declared, so the merges are testimony whatever they record.
+export const TESTIMONY_NOTE_UNDECLARED = 'no check is declared — this loop lands its merges on testimony alone: a review is recorded as testimony, not proof (a Check line of the goal declares the command a merge must carry: merged <ids> --sha <sha> --ran "<check>" --saw "<summary>")';
+// The testimony mark a goal gets: the undeclared one when the goal names no Check line at all, else the declared one.
+const testimonyNote = (c) => (c.declared ? TESTIMONY_NOTE : TESTIMONY_NOTE_UNDECLARED);
 // The landing banner: the testimony mark while no merge carries the declared check, then one line per repository, the count
 // of its merges that carry the declared check, or the mark that it declares none.
 export function checkLines(c) {
-  const lines = c.landsOn === 'testimony' ? [TESTIMONY_NOTE] : [];
+  const lines = c.landsOn === 'testimony' ? [testimonyNote(c)] : [];
   for (const [name, r] of Object.entries(c.byRepo)) {
     if (!r.merges && !r.declared.length) continue;
     lines.push(r.declared.length ? `check ${name}: ${r.k} of ${r.n} merges carry the declared check · declared ${r.declared.join(' · ')}` : `check ${name}: no check declared — ${r.n} merge(s) land on testimony alone`);
@@ -6043,7 +6047,7 @@ export function cmdReport(root, flags = {}) {
   });
   const metrics = metricsOf(loop, Date.now());
   const closedGate = closedGateFlags(loop);
-  const lines = [`# Report`, '', goal, '', ...(metrics.check.landsOn === 'testimony' ? [TESTIMONY_NOTE, ''] : []), `## Done (${done.length})`, ...(done.length ? [gateLine(profile, split, 'Reviewed by')] : []), ...doneLines,
+  const lines = [`# Report`, '', goal, '', ...(metrics.check.landsOn === 'testimony' ? [testimonyNote(metrics.check), ''] : []), `## Done (${done.length})`, ...(done.length ? [gateLine(profile, split, 'Reviewed by')] : []), ...doneLines,
     ...closedOther.flatMap((st) => {
       const on = issues.filter((i) => i.status === st);
       return ['', `## ${reasonWord(st)} (${on.length})`, ...on.map((i) => `- ${i.id} ${i.title}${profile.is(st, 'needs-reason') ? ` — ${statusReason(i.sections.evidence, reasonWord(st))}` : ''}`)];

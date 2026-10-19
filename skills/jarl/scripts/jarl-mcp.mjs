@@ -63,6 +63,8 @@ export const ARG_NOTES = {};
 // The commands that write one issue at a time and take the list grammar in their "id" field.
 const LIST_ID_COMMANDS = new Set(['body', 'source', 'after', 'files', 'repo', 'round']);
 const IDS_FIELD = 'One id, or several as one comma list with ranges (12,13 or 203-206): all of them change, or none.';
+// The answer command takes one question, or several ratify items as one comma list (answer 2,3,4), with no ranges.
+const ANSWER_ID_FIELD = 'One question id, or several ratify items as one comma list (2,3,4): all of them take the one answer.';
 const ROOT_FIELD = "The directory holding .jarl/, as an absolute path (a relative or empty one is refused). Defaults to JARL_ROOT from the server's environment, else the loop found from the server's working directory. Workers in a worktree and every role of a loop that lives in another repository pass it always.";
 // The usage text whole: the ids grammar is in it, and its last section is the workflow for parallel workers.
 const HELP = USAGE;
@@ -97,6 +99,7 @@ function describe(cmd, spec) {
 function fieldNote(cmd, field) {
   if (field === 'root') return ROOT_FIELD;
   if (field === 'ids' || (field === 'id' && LIST_ID_COMMANDS.has(cmd))) return IDS_FIELD;
+  if (field === 'id' && cmd === 'answer') return ANSWER_ID_FIELD;
   return undefined;
 }
 // The options the tools are generated with: the prefix, the one-sentence descriptions, the notes on root and ids,

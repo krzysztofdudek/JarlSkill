@@ -32,6 +32,7 @@ Jarl 6.2.0 makes the record of a loop more complete and more honest, and it keep
 - Jarl keeps which model did each piece of work and which model reviewed it, and `models` shows how well each one did.
 - A loop can name its repositories, so the record holds nothing that belongs to one machine.
 - A question can offer choices, and several questions that wait for ratification can be answered at once.
+- Status, resume and report list a closed issue whose conditions for being done no longer hold, such as a proof that was taken back, with the command that repairs it.
 
 ### Changed
 - `status` and `resume` say what each issue in progress is waiting for.
