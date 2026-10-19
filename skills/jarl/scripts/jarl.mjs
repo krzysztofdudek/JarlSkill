@@ -308,6 +308,8 @@ commands:
 
 options: --json  --help  --root <repo root>
 
+The list of what only the command line does, next to the record library, is in the skill: SKILL.md, section "What only the command line does".
+
 git merges (not loop commands: no --root, no lock, no tool of the MCP server):
   merge-driver decisions <base> <ours> <theirs>  the driver git runs for .jarl/decisions.md (%O %A %B): the rulings of
                                                  both sides block by block, written over <ours>, exit 0; conflict
