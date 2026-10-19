@@ -21,7 +21,7 @@ Run both, then `/reload-plugins` to activate it in this session (or restart Clau
 
 The jarl writes `.jarl/goal.md`, reads the fixtures, and files what it sees: three fixtures the command refuses, one it accepts and gets wrong, a flag the docs promise that does not exist. Five issues, numbered, each with a checkable acceptance line. Two of them touch the same parser, so those run in series; the other three get a worker each, in its own worktree, with the issue pasted into the brief verbatim.
 
-A worker reports done. The jarl does not take its word: it reads the diff, runs the test suite itself, checks that the new test was red before the change, and only then merges into the branch with a commit that names the issue. One worker reports something else it noticed in passing — the jarl files issue 006 rather than letting the worker fix it on the side.
+A worker reports done. The jarl does not take its word: it reads the diff, runs the test suite itself, checks that the new test was red before the change, and only then merges into the branch with a commit that names the issue. One worker reports something else it noticed in passing — the jarl files a new issue rather than letting the worker fix it on the side.
 
 When nothing is open, the jarl closes the branch: changelog carries every user-visible change, the suite is green on the tip, and `.jarl/` is deleted — git never saw it, so the branch carries no trace. Merging and pushing wait for your word.
 
