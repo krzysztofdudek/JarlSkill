@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, existsSync, writeFileSync, readdirSync, rmSync, symlinkSync, renameSync } from 'node:fs';
-import { join, basename } from 'node:path';
+import { mkdtempSync, mkdirSync, readFileSync, existsSync, writeFileSync, readdirSync, rmSync, symlinkSync, renameSync, realpathSync } from 'node:fs';
+import { join, basename, delimiter } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { sh, NO_EXCLUDES } from './portable.mjs';
@@ -1966,6 +1966,275 @@ test('the decision reader lists text before the first ruling, a ruling heading t
   assert.deepEqual(skipped.map((s) => s.text), ['## 2026-10-19 rule-b without a dot', '## 2026-10-19 · rule-a']);
   assert.match(skipped[1].reason, /rule-a/);
   assert.deepEqual(rulings.map((r) => r.slug), lib.loadDecisions(root).map((r) => r.slug), 'the same rulings without the list');
+});
+
+// ---- verify: the record read strictly, with nothing written
+
+const LOG = (root) => join(root, '.jarl', 'log.md');
+const ISSUES = (root) => join(root, '.jarl', 'issues');
+const issueFile = (root, id) => join(ISSUES(root), readdirSync(ISSUES(root)).find((f) => f.startsWith(`${id}-`)));
+const appendLines = (root, ...lines) => writeFileSync(LOG(root), `${readFileSync(LOG(root), 'utf8')}${lines.join('\n')}\n`);
+const DATED = '- 2026-10-19 10:00 · ';
+
+test('verify on a clean loop prints clean, and exits 0', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'first', '--what', 'Does one thing.');
+  const r = run(root, ['verify']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /^verify: clean/);
+  assert.match(r.stdout, /^log\.md: clean$/m);
+});
+
+test('verify lists a log line that reads as an event and does not parse, with its line number, and exits 2', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'first');
+  appendLines(root, `${DATED}1 review nonsense here`);
+  const r = run(root, ['verify']);
+  assert.equal(r.status, 2);
+  const at = readFileSync(LOG(root), 'utf8').split('\n').findIndex((l) => l.includes('nonsense')) + 1;
+  assert.match(r.stdout, new RegExp(`log\\.md line ${at}: .*nonsense here.* — reads as a "review" line`));
+});
+
+test('verify lists a struck-through log line, which the reader takes for a note and so retracts nothing', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'first');
+  appendLines(root, `${DATED}~~1 review approve · by rev (fresh) · x~~ — a mistake`);
+  const r = run(root, ['verify']);
+  assert.equal(r.status, 2);
+  assert.match(r.stdout, /struck-through line: the reader takes it for a note/);
+});
+
+test('verify lists a retraction that points at a row the log does not hold', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'first');
+  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'green');
+  jarl(root, 'evidence', '1', '--retract', '1', '--by', 'owner', 'the row is wrong');
+  appendLines(root, `${DATED}1 evidence retract · row 9 · by owner · no such row`);
+  const r = run(root, ['verify']);
+  assert.equal(r.status, 2);
+  assert.match(r.stdout, /row 9 of issue 1 is not one of the 1 evidence rows the log holds/);
+});
+
+test('verify lists a retraction of a "changes" verdict, which only an approve can be', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'first');
+  jarl(root, 'review', '1', 'changes', '--by', 'rv', 'Important: the reason is missing');
+  appendLines(root, `${DATED}1 review retract · by owner (coordinator) · retracts the approve by rv (fresh) of 2026-10-19 · the reason`);
+  const r = run(root, ['verify']);
+  assert.equal(r.status, 2);
+  assert.match(r.stdout, /it takes away the approve by rv, but that was a "changes" verdict/);
+});
+
+test('verify lists a verdict whose model mark does not parse, and not a word of the findings that reads as one', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'first');
+  appendLines(root, `${DATED}1 review approve · by rv (fresh) · model gpt-5`);
+  appendLines(root, `${DATED}1 review changes · by rv2 (fresh) · Important: the text says · model is a word here`);
+  const r = run(root, ['verify']);
+  assert.equal(r.status, 2);
+  assert.equal((r.stdout.match(/the model mark of the verdict does not parse/g) || []).length, 1, r.stdout);
+});
+
+test('verify lists a move whose lease fields do not parse', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'first');
+  appendLines(root, `${DATED}1 → in-progress · worker a, b`);
+  assert.match(run(root, ['verify']).stdout, /the lease fields of the move do not parse/);
+});
+
+test('verify lists a header that disagrees with the log, in the words the views use', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'first');
+  const file = issueFile(root, 1);
+  writeFileSync(file, readFileSync(file, 'utf8').replace('**Status:** open', '**Status:** done'));
+  const r = run(root, ['verify']);
+  assert.equal(r.status, 2);
+  assert.match(r.stdout, /Status reads done in the file and open in the log/);
+});
+
+test('verify lists an After that names an issue the loop does not hold', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'first');
+  const file = issueFile(root, 1);
+  writeFileSync(file, readFileSync(file, 'utf8').replace('**Status:** open', '**Status:** open\n**After:** 9'));
+  assert.match(run(root, ['verify']).stdout, /issue 1: waits on issue 9 in its After field, which the loop does not hold/);
+});
+
+test('verify lists an issue file whose header does not parse, a Resources name that is not a word, and a file that is not an issue', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'first');
+  const file = issueFile(root, 1);
+  writeFileSync(file, readFileSync(file, 'utf8').replace('**Status:** open', '**Status:** open\n**Resources:** gate, db server'));
+  writeFileSync(join(ISSUES(root), '2-broken.md'), '# two broken title\n\n**Status:** open\n');
+  writeFileSync(join(ISSUES(root), 'notes.md'), 'a note\n');
+  const out = run(root, ['verify']).stdout;
+  assert.match(out, /issues\/2-broken\.md line 1: .*not an issue header/);
+  assert.match(out, /issues\/\d+-first\.md line \d+: .*the resource "db server" is not a word/);
+  assert.match(out, /issues\/notes\.md: a file the loop does not read as an issue/);
+});
+
+test('verify lists an id of 1000 or more in a loop whose record format was not raised', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  mkdirSync(ISSUES(root), { recursive: true });
+  writeFileSync(join(ISSUES(root), '1000-late.md'), '# 1000 · late\n\n**Status:** open\n');
+  assert.match(run(root, ['verify']).stdout, /issue 1000: its id needs the raised record format/);
+});
+
+test('verify lists an open issue that cites a ruling a later one supersedes, and not a finished one', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'decide', 'rule-a', 'Keep a.', '--by', 'jarl');
+  jarl(root, 'decide', 'rule-b', 'Keep b instead.', '--by', 'jarl', '--supersedes', 'rule-a');
+  jarl(root, 'new', 'open one', '--what', 'Obeys rule-a.');
+  jarl(root, 'new', 'other one', '--what', 'Obeys rule-a.');
+  jarl(root, 'set', '2', 'dropped', 'not needed');
+  const r = run(root, ['verify']);
+  assert.equal(r.status, 2);
+  assert.match(r.stdout, /issue 1: cites the ruling rule-a in What, Why or Acceptance, and rule-b supersedes it/);
+  assert.doesNotMatch(r.stdout, /issue 2: cites/);
+});
+
+test('verify prints the findings of a check in full order, twenty at a time, and counts the rest', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'first');
+  appendLines(root, ...Array.from({ length: 23 }, (_, k) => `${DATED}1 review nonsense ${k}`));
+  const out = run(root, ['verify']).stdout;
+  assert.equal((out.match(/reads as a "review" line/g) || []).length, 20);
+  assert.match(out, /  … and 3 more/);
+  assert.match(out, /log\.md: 23/);
+});
+
+test('verify --json carries the findings, the notes and each check', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'first');
+  appendLines(root, `${DATED}1 review nonsense`);
+  const out = JSON.parse(run(root, ['verify', '--json']).stdout);
+  assert.equal(out.ok, false);
+  assert.equal(out.findings, 1);
+  assert.equal(out.checks.find((c) => c.name === 'log').findings.length, 1);
+  assert.ok(Array.isArray(out.notes));
+});
+
+test('verify reads nothing it could write: the loop after it is byte for byte the loop before it, and it takes no lock', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'first');
+  appendLines(root, `${DATED}1 review nonsense`);
+  const snapshot = (dir) => readdirSync(dir, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1))
+    .flatMap((d) => (d.isDirectory() ? snapshot(join(dir, d.name)).map(([f, t]) => [`${d.name}/${f}`, t]) : [[d.name, readFileSync(join(dir, d.name), 'utf8')]]));
+  const before = snapshot(join(root, '.jarl'));
+  run(root, ['verify']);
+  run(root, ['verify', '--json']);
+  assert.deepEqual(snapshot(join(root, '.jarl')), before);
+  assert.equal(existsSync(join(root, '.jarl', '.lock')), false);
+});
+
+test('verify refuses a directory with no loop, and says where it looked', () => {
+  const root = repo();
+  const r = run(root, ['verify']);
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /verify reads a loop: there is no \.jarl\/ with a goal here/);
+});
+
+// Repositories: a name the issues give has a declaration, and the checkout that answers to the name has the declared root
+// commits. The sibling checkouts are made under the OS temporary directory.
+const gitIn = (cwd, ...args) => execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', '-c', 'commit.gpgsign=false', ...args], { cwd, encoding: 'utf8', timeout: SPAWN_TIMEOUT });
+function sibling(parent, name, content = `${name}\n`) {
+  const dir = join(parent, name);
+  mkdirSync(dir, { recursive: true });
+  gitIn(dir, 'init', '-q', '-b', 'main');
+  writeFileSync(join(dir, 'a.txt'), content);
+  gitIn(dir, 'add', '-A');
+  gitIn(dir, 'commit', '-qm', 'base');
+  return dir;
+}
+// A loop in a checkout whose parent holds the sibling repositories; the loop's first issue names `name`, and it is declared.
+function loopWithSibling(name) {
+  const parent = realpathSync(mkdtempSync(join(tmpdir(), 'jarl-verify-')));
+  const hub = sibling(parent, 'hub');
+  jarl(hub, 'init', 'goal');
+  jarl(hub, 'new', 'first');
+  sibling(parent, name);
+  jarl(hub, 'repo', '1', name);
+  return { parent, hub };
+}
+
+test('verify lists a declared repository that does not resolve on this machine', () => {
+  const { parent, hub } = loopWithSibling('Sib');
+  renameSync(join(parent, 'Sib'), join(parent, 'Sib-away'));
+  const r = run(hub, ['verify']);
+  assert.equal(r.status, 2);
+  assert.match(r.stdout, /Sib: is declared and does not resolve on this machine/);
+});
+
+test('verify lists a checkout under a declared name whose root commits are another repository\'s', () => {
+  const { parent, hub } = loopWithSibling('Sib');
+  renameSync(join(parent, 'Sib'), join(parent, 'Sib-away'));
+  sibling(parent, 'Sib', 'another repository\n');
+  const r = run(hub, ['verify']);
+  assert.equal(r.status, 2);
+  assert.match(r.stdout, /Sib: .*another repository than Sib/);
+});
+
+test('verify lists a name the issues give that no declaration in repos.md holds', () => {
+  const { hub } = loopWithSibling('Sib');
+  const file = issueFile(hub, 1);
+  writeFileSync(file, readFileSync(file, 'utf8').replace(/\*\*Repo:\*\* .*\n/, '').replace('**Status:** open', '**Status:** open\n**Repo:** Other'));
+  const r = run(hub, ['verify']);
+  assert.equal(r.status, 2);
+  assert.match(r.stdout, /Other: is named \(named by issue 1\) but has no declaration/);
+});
+
+test('verify lists a lease whose worktree no repository the issue names holds, and not one a named repository holds', () => {
+  const { parent, hub } = loopWithSibling('Sib');
+  const stray = realpathSync(mkdtempSync(join(tmpdir(), 'jarl-stray-')));
+  const file = issueFile(hub, 1);
+  writeFileSync(file, readFileSync(file, 'utf8').replace('**Status:** open', `**Status:** in-progress\n**Worktree:** ${stray}`));
+  appendLines(hub, `${DATED}1 → in-progress · worktree ${stray}`);
+  assert.match(run(hub, ['verify']).stdout, /issue 1: its worktree .* is not a worktree of a repository the issue names/);
+  writeFileSync(file, readFileSync(file, 'utf8').replace(stray, join(parent, 'Sib')));
+  assert.doesNotMatch(run(hub, ['verify']).stdout, /is not a worktree of a repository the issue names/);
+});
+
+test('verify does not flag a Repo that holds a path, whatever it resolves to', () => {
+  const { hub } = loopWithSibling('Sib');
+  const file = issueFile(hub, 1);
+  writeFileSync(file, readFileSync(file, 'utf8').replace('**Status:** open', '**Status:** open\n**Repo:** ../nowhere-here'));
+  const out = run(hub, ['verify']).stdout;
+  assert.doesNotMatch(out, /nowhere-here/);
+});
+
+// The real loops: a copy of a loop that a test is pointed at through the environment, never a fixture committed here. The
+// variable names the directory holding the loop's .jarl (several, separated by the platform's path separator). Without it
+// the test is skipped, and with it the test runs verify on each copy and checks that it ends with its checks printed.
+// JARL_LIVE_KNOWN=1 also checks the findings a frozen copy of the release loop is known to hold: one strike-through
+// verdict line and one open issue that cites a superseded ruling.
+const LIVE_LOOPS = (process.env.JARL_LIVE_LOOP || '').split(delimiter).filter(Boolean);
+test('verify on the real loops named by JARL_LIVE_LOOP: it runs to an end and prints its checks, and the known findings are found when JARL_LIVE_KNOWN is 1', {
+  skip: LIVE_LOOPS.length ? false : 'JARL_LIVE_LOOP is unset: name the directory of a copy of a real loop (the one holding its .jarl) to run this',
+}, () => {
+  for (const root of LIVE_LOOPS) {
+    const r = run(root, ['verify']);
+    assert.ok(r.status === 0 || r.status === 2, `${root}: ${r.stderr}`);
+    assert.match(r.stdout, /^log\.md: /m);
+    if (process.env.JARL_LIVE_KNOWN === '1') {
+      assert.match(r.stdout, /log\.md line \d+: "- 2026-10-03 13:12 · ~~006 review approve/);
+      assert.match(r.stdout, /open issues citing a superseded ruling: 1/);
+    }
+  }
 });
 
 test('goal lines set through the command line read through the frozen reader: the loop is read, the worker parsed, done passes', () => {
