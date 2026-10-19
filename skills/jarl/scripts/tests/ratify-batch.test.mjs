@@ -48,8 +48,10 @@ const loop = ({ graph = false, permanent = false } = {}) => {
   return root;
 };
 // A call with an environment of its own (no Yggdrasil unless the test names one): the shared run, with JARL_YG empty.
-const run = (root, env, args) => runJarl(root, args, { env: { JARL_YG: '', ...env } });
-const jarl = (root, env, ...args) => jarlResult(root, args, { env: { JARL_YG: '', ...env } }).stdout;
+// An answer names who answered (a ratify item needs it); a call that names no one is the owner's, as the defaults of these tests say.
+const named = (args) => (args[0] === 'answer' && !args.includes('--by') ? [...args, '--by', 'owner'] : args);
+const run = (root, env, args) => runJarl(root, named(args), { env: { JARL_YG: '', ...env } });
+const jarl = (root, env, ...args) => jarlResult(root, named(args), { env: { JARL_YG: '', ...env } }).stdout;
 const json = (root, env, ...args) => JSON.parse(jarl(root, env, ...args, '--json'));
 const decisions = (root) => readFileSync(join(root, '.jarl', 'decisions.md'), 'utf8');
 
@@ -296,7 +298,7 @@ test('on Windows a .cmd yg runs through the shell and the ratified ruling and it
   const [write, ratification] = yg.calls().filter((c) => c.args[0] === 'log');
   assert.deepEqual(write.args.slice(0, 5), ['log', 'add', '--type', 'service', '--reason-file']);
   assert.match(write.text, /^Every service validates its input\./);
-  assert.deepEqual(ratification.args.slice(0, 8), ['log', 'add', '--aspect', 'boundary/validates-input', '--ratify', '--by', 'Jane Doe', '--reason-file']);
+  assert.deepEqual(ratification.args.slice(0, 8), ['log', 'add', '--aspect', 'boundary/validates-input', '--ratify', '--by', 'owner', '--reason-file']);
   assert.match(ratification.text, /^Every service validates its input\./);
 });
 
@@ -327,15 +329,15 @@ test('decide --rule names the rule an area ruling admits: it needs --area and a 
   assert.doesNotMatch(json(root, {}, 'close', '--batch').batch.items.find((i) => i.ruling === 'plain').question, /ratify rule|every type/);
 });
 
-test('a ratified ruling naming a rule writes the type decision and then the rule ratification, by the person git names', () => {
+test('a ratified ruling naming a rule writes the type decision and then the rule ratification, by the one who answered', () => {
   const yg = stub();
   const root = loop({ graph: true });
   const env = { JARL_YG: yg.bin, ...gitName('Jane Doe') };
   jarl(root, env, 'decide', 'todo', 'No TODO comments in services.', '--area', 'service', '--reach', '12', '--rule', 'no-todo-comments');
   jarl(root, env, 'close', '--batch');
-  const out = json(root, env, 'answer', 'a-1', 'tak');
+  const out = json(root, env, 'answer', 'a-1', 'tak', '--by', 'Jane Doe');
   assert.equal(out.typeLog.state, 'written');
-  assert.deepEqual(out.ruleRatification, { rule: 'no-todo-comments', text: 'No TODO comments in services.\n\n(ratified: todo, a-1)' });
+  assert.deepEqual(out.ruleRatification, { rule: 'no-todo-comments', text: 'No TODO comments in services.\n\n(ratified: todo, a-1)', by: 'Jane Doe' });
   assert.equal(out.ruleLog.state, 'written');
   assert.equal(out.ruleLog.by, 'Jane Doe');
   const writes = yg.calls().filter((c) => c.args[0] === 'log');
@@ -346,11 +348,11 @@ test('a ratified ruling naming a rule writes the type decision and then the rule
   assert.match(decisions(root), /\*\*Rule log:\*\* no-todo-comments · 2026-09-27T10:00:0\d\.000Z/);
   assert.equal(json(root, env, 'decisions').find((d) => d.slug === 'todo').ruleLog.rule, 'no-todo-comments');
   assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /todo ratified rule no-todo-comments in its own log · by Jane Doe/);
-  // No name in git: the ratification says "the owner" rather than nobody.
+  // The owner is named when the call names no one (the default of this file's calls), whatever git's user.name says.
   const env2 = { JARL_YG: yg.bin, ...gitName('') };
   jarl(root, env2, 'decide', 'two', 'Another.', '--area', 'service', '--rule', 'no-console');
   jarl(root, env2, 'close', '--batch');
-  assert.equal(json(root, env2, 'answer', 'a-2', 'yes').ruleLog.by, 'the owner');
+  assert.equal(json(root, env2, 'answer', 'a-2', 'yes').ruleLog.by, 'owner');
 });
 
 test('a rejected ruling, one without a graph and one without --rule send no ratification', () => {
@@ -381,7 +383,7 @@ test('a ratification yg refuses is reported with the command to run by hand; the
   const r = run(root, env, ['answer', 'a-1', 'yes']);
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /written into the type's decision log[\s\S]*rule lonely NOT ratified in its own log: error\[aspect-ratify-no-type\]/);
-  assert.match(r.stderr, /note: rule lonely is not ratified in its own log; write it by hand in .*: yg log add --aspect lonely --ratify --by 'Jane Doe'/);
+  assert.match(r.stderr, /note: rule lonely is not ratified in its own log; write it by hand in .*: yg log add --aspect lonely --ratify --by 'owner'/);
   assert.match(decisions(root), /\*\*Ratified:\*\* a-1/);
   assert.match(decisions(root), /\*\*Type log:\*\* svc/);
   assert.doesNotMatch(decisions(root), /Rule log/);
@@ -390,8 +392,8 @@ test('a ratification yg refuses is reported with the command to run by hand; the
 
 // Who answered:`answer --by <who>` records that person on the answer's ruling instead of the fixed owner,
 // and a ratification of a rule then names them in `yg log add --ratify --by`, whatever git's user.name says. Without
-// --by, the answer is the owner's and the ratification names git's user.name, as before.
-test('answer --by names who answered: the ruling records them and the rule ratification passes them to yg; absent, nothing changes', async () => {
+// --by, the answer is the owner's and the ratification names the owner.
+test('answer --by names who answered: the ruling records them and the rule ratification passes them to yg; absent, the owner is named', async () => {
   const yg = stub();
   const root = loop({ graph: true });
   const env = { JARL_YG: yg.bin, ...gitName('Jane Doe') };
@@ -406,11 +408,11 @@ test('answer --by names who answered: the ruling records them and the rule ratif
   assert.match(decisions(root), /## \S+ · ask-1\n\*\*Question:\*\*[^\n]*\n\*\*Answer:\*\* tak\n\n\*\*By:\*\* Anna Nowak/);
   assert.equal(json(root, env, 'decisions').find((d) => d.slug === 'ask-1').by, 'Anna Nowak');
   assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /todo ratified rule no-todo-comments in its own log · by Anna Nowak/);
-  // Without --by: the owner answered, and the ratification names the person git names.
+  // A call that names no one: the owner answered, and the ratification names the owner, not the person git names.
   const plain = json(root, env, 'answer', 'a-2', 'yes');
-  assert.deepEqual(plain.ruleRatification, { rule: 'no-console', text: 'No console in services.\n\n(ratified: two, a-2)' });
-  assert.equal(plain.ruleLog.by, 'Jane Doe');
-  assert.deepEqual(aspect()[1].args.slice(4, 7), ['--ratify', '--by', 'Jane Doe']);
+  assert.deepEqual(plain.ruleRatification, { rule: 'no-console', text: 'No console in services.\n\n(ratified: two, a-2)', by: 'owner' });
+  assert.equal(plain.ruleLog.by, 'owner');
+  assert.deepEqual(aspect()[1].args.slice(4, 7), ['--ratify', '--by', 'owner']);
   assert.equal(json(root, env, 'decisions').find((d) => d.slug === 'ask-2').by, 'owner');
   // An empty --by is refused before anything is written; a name cmd.exe would misread is replaced by "the owner".
   jarl(root, env, 'ask', 'Which DB?');

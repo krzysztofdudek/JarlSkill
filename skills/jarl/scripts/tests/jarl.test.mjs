@@ -1128,7 +1128,7 @@ test('ask --kind ratify blocks nothing, is listed in status and the handoff, and
   jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
   jarl(root, 'evidence', '1', '--ran', 'check', '--saw', 'green');
   jarl(root, 'set', '1', 'done', 'merged');
-  jarl(root, 'answer', 'a-1', 'ratified');
+  jarl(root, 'answer', 'a-1', 'ratified', '--by', 'owner');
   assert.match(jarl(root, 'show', '1'), /Ruling ask-1 \(ratify\): ratified/);
   assert.match(jarl(root, 'status'), /questions 0$/m);
 });
@@ -1512,4 +1512,132 @@ test('outside a git repository a Branch lease is not reported gone, and resume s
   const r = jarl(loose, 'resume');
   assert.match(r, /- 1 one · branch jarl\/1-one · since \S+ \S+\n/);
   assert.doesNotMatch(r, /STALE|## Tips/);
+});
+
+// ---- questions with options, and their answers ------------------------------------------------------------------
+
+const RECORD = await import(new URL('../record.mjs', import.meta.url).href);
+const { oldJarl, oldJarlIsPinned } = await import(new URL('./old-jarl.mjs', import.meta.url).href);
+const { noSeparators: escapeFreeText } = await import(new URL('../jarl-lib.mjs', import.meta.url).href);
+const readRecord = (root, name) => readFileSync(join(root, '.jarl', name), 'utf8');
+
+test('ask records its options and prints them, ready for the choice window; a question without options prints as before', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  const out = jarl(root, 'ask', 'which way?', '--option', 'Keep: the flag stays', '--option', 'Drop: the flag goes');
+  assert.match(out, /^asked a-1/);
+  assert.match(out, /^- Keep: the flag stays$/m);
+  assert.match(out, /^- Drop: the flag goes$/m);
+  assert.deepEqual(RECORD.loadAsks(root)[0].options, [{ label: 'Keep', effect: 'the flag stays' }, { label: 'Drop', effect: 'the flag goes' }]);
+  assert.equal(jarl(root, 'ask', 'plain yes or no?'), 'asked a-2');
+  assert.equal(RECORD.loadAsks(root)[1].options, undefined);
+  assert.match(refuses(root, 'ask', 'x', '--option', 'only one: alone'), /at least two options/);
+  assert.match(refuses(root, 'ask', 'x', '--option', 'no colon here'), /<label>: <effect>/);
+  assert.match(refuses(root, 'ask', 'x', '--kind', 'ratify', '--option', 'A: a', '--option', 'B: b'), /ratify item is answered yes or reject/);
+});
+
+test('answer with --option marks the option chosen in the ruling; the answer in the person\'s own words is quoted as his words', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'ask', 'which way?', '--option', 'Keep: the flag stays', '--option', 'Drop: the flag goes');
+  jarl(root, 'ask', 'which pair?', '--option', 'A: a', '--option', 'B: b');
+  assert.match(refuses(root, 'answer', 'a-1', '--option', 'Nope'), /none of the options of a-1: Keep, Drop/);
+  assert.match(refuses(root, 'answer', 'a-1', 'my words', '--option', 'Keep'), /not both/);
+  assert.match(refuses(root, 'answer', 'a-2'), /answer requires/);
+  jarl(root, 'answer', 'a-1', '--option', 'Drop');
+  const first = readRecord(root, 'decisions.md');
+  assert.match(first, /\*\*Chose:\*\* Drop/);
+  assert.match(first, /^- Drop: the flag goes \(chosen\)$/m);
+  assert.match(first, /^- Keep: the flag stays$/m);
+  jarl(root, 'answer', 'a-2', 'both A and B');
+  const second = readRecord(root, 'decisions.md').split('## ').at(-1);
+  assert.match(second, /\*\*Answer in own words:\*\* both A and B/);
+  assert.doesNotMatch(second, /chosen|\*\*Chose:\*\*/);
+  assert.match(refuses(root, 'answer', 'a-1', '--option', 'Keep'), /already answered/);
+});
+
+test('answer takes a comma list of ratify items with one verdict, writes one ruling each naming the batch, and needs a named answerer', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'ask', 'raised the limit', '--kind', 'ratify');
+  jarl(root, 'ask', 'kept the flag', '--kind', 'ratify');
+  jarl(root, 'ask', 'a stuck question', '--kind', 'stuck');
+  assert.match(refuses(root, 'answer', 'a-1', 'yes'), /needs --by/);
+  for (const name of ['jarl', 'reeve', 'coordinator', basename(root)]) assert.match(refuses(root, 'answer', 'a-1', 'yes', '--by', name), /coordinator/);
+  assert.match(refuses(root, 'answer', 'a-1,a-3', 'yes', '--by', 'owner'), /answered together only when each is a ratify item/);
+  jarl(root, 'answer', '1,2', 'yes', '--by', 'owner');
+  const text = readRecord(root, 'decisions.md');
+  for (const n of [1, 2]) assert.match(text.split('## ').find((s) => s.includes(`ask-${n}`)), /\*\*Batch:\*\* answered together with a-1, a-2/);
+  assert.equal(RECORD.loadAsks(root).filter((a) => a.state === 'answered').length, 2);
+  assert.match(readRecord(root, 'decisions.md'), /\*\*By:\*\* owner/);
+});
+
+test('decide --by owner with no question in the record prints a notice on stderr; --supersedes names the open issues that name the old ruling', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'rewrite the flag handling', '--what', 'Follows flag-rule as it stands.');
+  assert.match(run(root, ['decide', 'quiet-rule', 'Keep the default.', '--by', 'owner']).stderr, /no question in the record/);
+  assert.equal(run(root, ['decide', 'mandate-rule', 'Keep the default.', '--by', 'jarl']).stderr, '');
+  jarl(root, 'decide', 'flag-rule', 'Keep the flag.', '--by', 'jarl');
+  const r = run(root, ['decide', 'flag-rule-two', 'Keep the flag, now.', '--by', 'jarl', '--supersedes', 'flag-rule']);
+  assert.equal(r.status, 0);
+  assert.match(r.stderr, /open issues name flag-rule: 1 — rewrite them to flag-rule-two/);
+});
+
+test('a question with options whose label or answer holds any separator and words reads back as one field', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  const words = ['·', ' ', 'option', 'chose', 'worker', 'branch', 'x'];
+  let seed = 5;
+  const next = () => { seed = (seed * 1664525 + 1013904223) % 4294967296; return seed / 4294967296; };
+  const samples = Array.from({ length: 40 }, () => Array.from({ length: 1 + Math.floor(next() * 8) }, () => words[Math.floor(next() * words.length)]).join(''));
+  const want = (s) => escapeFreeText(s);
+  let n = 0;
+  for (const s of samples.filter((x) => want(x) !== '')) {
+    n += 1;
+    jarl(root, 'ask', `question ${n}`, '--option', `${s}: effect ${n}`, '--option', `other ${n}: effect`);
+    const ask = RECORD.loadAsks(root).find((a) => a.id === String(n));
+    assert.equal(ask.options[0].label, want(s), `the label of ${JSON.stringify(s)}`);
+    assert.equal(ask.options[0].effect, `effect ${n}`);
+    jarl(root, 'answer', `a-${n}`, '--option', s);
+    const line = readRecord(root, 'log.md').split('\n').find((l) => l.includes(`answered a-${n} ·`));
+    const parts = line.split(' · ');
+    assert.equal(parts.length, 3, `the log line of ${JSON.stringify(s)} has three fields: ${line}`);
+    assert.equal(parts[2], want(s));
+    assert.match(readRecord(root, 'decisions.md'), new RegExp(`\\*\\*Chose:\\*\\* ${want(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\n`));
+  }
+  assert.ok(n >= 20);
+});
+
+test('questions with options and their answers read through the frozen reader: the loop is read, the worker parsed, a self-approve refused, done passes', () => {
+  assert.equal(oldJarlIsPinned(), true);
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  // The library writes three-digit numbers, which every reader of the format reads; the command line's plain numbers raise
+  // the format by their own rule (a number under three digits), which this test does not exercise.
+  RECORD.newIssue(root, 'flag work');
+  RECORD.setStatus(root, '001', 'in-progress', 'started', { branch: 'jarl/001-flag-work', worker: 'w-one' });
+  RECORD.ask(root, 'which way?', { option: ['Keep: the flag stays', 'Drop: the flag goes'] });
+  jarl(root, 'answer', 'a-001', '--option', 'Keep');
+  RECORD.ask(root, 'still open?', { option: ['Yes: wait: then', 'No: go on'] });
+  for (const command of ['list', 'status', 'next', 'queue']) assert.deepEqual(oldJarl(root, command, {}).error ?? null, null, command);
+  assert.match(JSON.stringify(oldJarl(root, 'list', {}).value), /w-one/, 'the worker is parsed');
+  assert.match(refuses(root, 'review', '001', 'approve', '--by', 'w-one', FINDINGS), /worker|own/i);
+  jarl(root, 'review', '001', 'approve', '--by', 'rev', FINDINGS);
+  jarl(root, 'evidence', '001', '--ran', 'check', '--saw', 'green');
+  assert.deepEqual(oldJarl(root, 'set', {}, ['001', 'done', 'merged', {}]).error ?? null, null, 'done passes');
+});
+
+test('the MCP answer tool takes one id, or a comma list of ratify items through its field id, as the command line does', async () => {
+  const mcp = await import(new URL('../jarl-mcp.mjs', import.meta.url).href);
+  const root = repo();
+  mcp.callTool('jarl_init', { goal: 'goal', root });
+  for (const question of ['raised the limit', 'kept the flag', 'dropped the old flag']) mcp.callTool('jarl_ask', { question, kind: 'ratify', root });
+  const one = mcp.callTool('jarl_answer', { id: 'a-1', answer: 'yes', by: 'owner', root });
+  assert.equal(one.isError, false);
+  assert.match(one.content[0].text, /answered a-1/);
+  const list = mcp.callTool('jarl_answer', { id: 'a-2,a-3', answer: 'yes', by: 'owner', root });
+  assert.equal(list.isError, false);
+  assert.match(list.content[0].text, /answered a-2[\s\S]*answered a-3/);
+  assert.equal(RECORD.loadAsks(root).filter((a) => a.state === 'answered').length, 3);
 });

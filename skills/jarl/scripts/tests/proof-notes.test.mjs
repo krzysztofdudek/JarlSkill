@@ -201,7 +201,7 @@ test('a row, a note, a ruling, an answer, a Deferred reason and a retraction eac
   jarl(root, 'evidence', '1', 'a free note');
   jarl(root, 'decide', 'probe-ruling', 'the probe settles on the split', '--settles', '1');
   jarl(root, 'ask', 'keep the split?', '--kind', 'ratify', '--issue', '1');
-  jarl(root, 'answer', 'a-1', 'kept');
+  jarl(root, 'answer', 'a-1', 'kept', '--by', 'owner');
   jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'green');
   jarl(root, 'evidence', '1', '--retract', '1', '--by', 'rev', 'the first run was on the wrong tree');
   jarl(root, 'set', '1', 'deferred', 'waits for the probe of 2');
