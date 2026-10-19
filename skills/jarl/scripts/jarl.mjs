@@ -192,7 +192,7 @@ commands:
                                                  acted on; read in --repo, else the
                                                  loop's own repository and every repository its issues name
   ask "<question>" [--kind stop|stuck|lower|charter|ratify] [--target x] [--issue 7] [--option "<label>: <effect>"]...
-                                                 a question the ownerhas to answer; lower needs --target;
+                                                 a question the owner has to answer; lower needs --target;
                                                  listed at boot until answered; ratify is a choice already made
                                                  under a mandate, awaiting the owner's word, and blocks nothing;
                                                  --option gives the choices, at least two, repeated for each one:
@@ -226,7 +226,7 @@ commands:
                                                  named issue's evidence (its status is unchanged); --area marks a ruling
                                                  about a whole type of code, --reach how many files that type holds,
                                                  --rule the graph's rule it admits on that type (its id):
-                                                 close puts it to the ownerfor ratification
+                                                 close puts it to the owner for ratification
   decisions [--live]                             the rulings with who ruled and what superseded them; --live only
                                                  those still in force
   goal                                           the goal as goal.md holds it
@@ -509,7 +509,7 @@ export const COMMAND_SUMMARY = {
   models: 'Per model as worker and as reviewer, per kind of issue: the counts, clean first passes and verdicts the record holds, with the words fits, below, new and may clear; reads other loops and archives too.',
   scope: 'Measure a worker branch against its base: commits, diff inside the declared files, test changes; numbers, never a verdict.',
   branches: 'Every worker branch with its issues, commits beyond the base, worktree state, stale leases and done branches.',
-  ask: 'File a question the ownerhas to answer (stop, stuck, lower, charter or ratify).',
+  ask: 'File a question the owner has to answer (stop, stuck, lower, charter or ratify).',
   answer: 'Record the owner\'s answer to a question, the option chosen or the words given, as a ruling and close the question; several ratify items take one answer.',
   resume: 'The boot: everything a session picks the loop up from, assembled live.',
   handoff: 'read: resume plus an old handoff file as history; write: retired, writes nothing.',

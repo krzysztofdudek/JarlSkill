@@ -146,3 +146,22 @@ test('the skill defines each glossary term once, in one table, in one present-te
 
 // Every term the glossary defines, in the order its table lists them.
 const TERMS = ['issue', 'loop', 'lease', 'package', 'round', 'evidence row', 'proof', 'note', 'verdict', 'standing', 'gate', 'merge record', 'ruling', 'question', 'type', 'profile', 'tier', 'model', 'mode', 'format', 'owner', 'jarl', 'worker', 'reviewer', 'merger', 'composer', 'scope', 'check'];
+
+// A replacement of one word by another can leave the new word glued to the word after it. Every help line and every
+// tool description is read for the words the vocabulary defines, each followed by nothing but its own plural or
+// inflection, and for two spaces in a row inside a sentence.
+const VOCABULARY = ['owner', 'lease', 'standing', 'type', 'scope'];
+const INFLECTED = ['owners', 'leases', 'leased', 'leasing', 'standings', 'types', 'typed', 'scopes', 'scoped', 'scoping'];
+const TOOLS = await import('../jarl-mcp.mjs').then((m) => m.buildTools());
+test('no help line or tool description glues a vocabulary word to the word after it, or leaves two spaces in a sentence', () => {
+  const texts = [...HELP_LINES.map((l) => ({ where: 'help', text: l })), ...TOOLS.map((t) => ({ where: t.name, text: t.description }))];
+  const glued = [];
+  for (const { where, text } of texts) {
+    for (const [word] of text.matchAll(new RegExp(`\\b(?:${VOCABULARY.join('|')})[a-z]+`, 'gi'))) {
+      if (!INFLECTED.includes(word.toLowerCase())) glued.push(`${where}: ${word}`);
+    }
+    // Help columns are aligned with runs of spaces; a sentence inside a tool description never has one.
+    if (where !== 'help' && /\S {2,}\S/.test(text)) glued.push(`${where}: two spaces`);
+  }
+  assert.deepEqual(glued, []);
+});
