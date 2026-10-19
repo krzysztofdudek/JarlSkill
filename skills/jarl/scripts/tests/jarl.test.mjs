@@ -1354,6 +1354,38 @@ test('a package is one lease on one branch: set records it, check --branch bound
   assert.doesNotMatch(jarl(root, 'status'), /stale/);
 });
 
+test('check --branch notes each added line that names a loop issue by its number, and no other line', () => {
+  const { root, sh: git } = gitLoop();
+  for (const t of ['one', 'two', 'three']) jarl(root, 'new', t, '--files', 'a.txt');
+  git('echo "old: see issue 1" > a.txt && git commit -qam base');
+  git('git checkout -q -b feature');
+  writeFileSync(join(root, 'a.txt'), 'keep\nsee issue 2 for it\nthe same as #3\nissue 9 is not ours\nyear 2026 and 2026-10-15\ntimeout 3 seconds\n');
+  git('git commit -qam "work for issue 1"');
+  const out = JSON.parse(jarl(root, 'check', '1', '--branch', 'feature', '--base', 'main', '--json'));
+  assert.equal(out.ok, true, 'the notes never change ok');
+  assert.deepEqual(out.notes, [
+    { kind: 'issue-number', file: 'a.txt', line: 2, ids: ['2'], text: 'see issue 2 for it' },
+    { kind: 'issue-number', file: 'a.txt', line: 3, ids: ['3'], text: 'the same as #3' },
+  ]);
+  assert.equal(out.notesOmitted, 0);
+  const text = jarl(root, 'check', '1', '--branch', 'feature', '--base', 'main');
+  assert.match(text, /^note a\.txt:2 names issue 2 · see issue 2 for it$/m);
+  assert.match(text, /^note a\.txt:3 names issue 3 · the same as #3$/m);
+});
+
+test('check --branch prints at most twenty issue notes and counts the rest', () => {
+  const { root, sh: git } = gitLoop();
+  for (const t of ['one', 'two']) jarl(root, 'new', t, '--files', 'a.txt');
+  git('git checkout -q -b feature');
+  writeFileSync(join(root, 'a.txt'), Array.from({ length: 25 }, (_, i) => `line ${i} cites issue 2`).join('\n') + '\n');
+  git('git commit -qam work');
+  const out = JSON.parse(jarl(root, 'check', '1', '--branch', 'feature', '--base', 'main', '--json'));
+  assert.equal(out.notes.length, 20);
+  assert.equal(out.notesOmitted, 5);
+  assert.equal(out.ok, true);
+  assert.match(jarl(root, 'check', '1', '--branch', 'feature', '--base', 'main'), /^… and 5 more notes not shown$/m);
+});
+
 test('stale leases are shown, never acted on: worktree gone, branch gone, idle', () => {
   const { root, sh } = gitLoop();
   jarl(root, 'new', 'one', '--files', 'a.txt');
