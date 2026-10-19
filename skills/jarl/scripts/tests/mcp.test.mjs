@@ -14,7 +14,7 @@ import { FINDINGS } from './findings.mjs';
 const SERVER = fileURLToPath(new URL('../jarl-mcp.mjs', import.meta.url));
 const CLI_SOURCE = readFileSync(fileURLToPath(new URL('../jarl.mjs', import.meta.url)), 'utf8');
 const PLUGIN = fileURLToPath(new URL('../../../../', import.meta.url));
-const { COMMAND_ARGS, COMMAND_FLAGS, GLOBAL_FLAGS, MUTATING, parseArgs, flagsOf } = await import('../jarl.mjs');
+const { COMMAND_ALIASES, COMMAND_ARGS, COMMAND_FLAGS, GLOBAL_FLAGS, MUTATING, parseArgs, flagsOf } = await import('../jarl.mjs');
 const mcp = await import('../jarl-mcp.mjs');
 
 const TOOLS = mcp.buildTools();
@@ -32,7 +32,7 @@ test('parity: every command dispatch runs has its tables, its usage block and ex
   assert.deepEqual(Object.keys(COMMAND_FLAGS).sort(), commands, 'COMMAND_FLAGS names the commands dispatch runs');
   assert.deepEqual(Object.keys(COMMAND_ARGS).sort(), commands, 'COMMAND_ARGS names the commands dispatch runs');
   assert.deepEqual(Object.keys(mcp.usageBlocks()).sort(), commands, 'USAGE describes the commands dispatch runs');
-  assert.deepEqual(TOOLS.map((t) => t.name).sort(), [...commands.map(mcp.toolName), 'jarl_help'].sort(), 'one tool per command, and help');
+  assert.deepEqual(TOOLS.map((t) => t.name).sort(), [...commands.map(mcp.toolName), ...Object.keys(COMMAND_ALIASES).map(mcp.toolName), 'jarl_help'].sort(), 'one tool per command and per name it answers to, and help');
   for (const w of MUTATING) assert.ok(commands.includes(w), `MUTATING names ${w}, which dispatch does not run`);
 });
 
@@ -40,7 +40,7 @@ test('parity: the tool set is the one this release documents — adding or remov
   assert.deepEqual(TOOLS.map((t) => t.name).sort(), [
     'after', 'answer', 'archive', 'ask', 'body', 'branches', 'changelog', 'check', 'close', 'decide', 'decisions',
     'evidence', 'field', 'files', 'goal', 'handoff', 'help', 'import', 'init', 'list', 'log', 'merged', 'mode', 'models', 'new', 'next', 'prio',
-    'profile', 'queue', 'repo', 'report', 'resume', 'retract', 'review', 'round', 'set', 'show', 'source', 'sources', 'status', 'tag', 'tips', 'verify',
+    'profile', 'queue', 'repo', 'report', 'resume', 'retract', 'review', 'round', 'scope', 'set', 'show', 'source', 'sources', 'status', 'tag', 'tips', 'verify',
   ].map(mcp.toolName));
 });
 

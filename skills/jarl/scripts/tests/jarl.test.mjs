@@ -641,8 +641,8 @@ test('check, branches and handoff read the repository an issue names, not the lo
     // resume shows where the tool repository stands, beside the hub's own tips.
     jarl(hub, 'set', '1', 'in-progress', 'worker raised in tool', '--branch', 'jarl/1-change-a');
     const res = jarl(hub, 'resume');
-    assert.match(res, new RegExp(`^\\[tool\\] .*\\n(  .*\\n)*  release  feature ${sh(tool, 'git rev-parse --short=12 feature')}`, 'm'), `${mode}: the tool repository's tip is shown`);
-    assert.match(res, /^  feature  jarl\/1-change-a [0-9a-f]{12}  \+1\/-0 vs feature  not pushed  → 1$/m, mode);
+    assert.match(res, new RegExp(`^\\[tool\\] .*\\n(  .*\\n)*  feature  feature ${sh(tool, 'git rev-parse --short=12 feature')}`, 'm'), `${mode}: the tool repository's tip is shown`);
+    assert.match(res, /^  worker   jarl\/1-change-a [0-9a-f]{12}  \+1\/-0 vs feature  not pushed  → 1$/m, mode);
 
     assert.equal(sh(tool, 'git status --porcelain --untracked-files=all'), '', `${mode}: the loop never writes into the tool repository`);
   }
@@ -1378,7 +1378,7 @@ test('check --branch refuses a branch no issue holds, and says how many commits 
   jarl(root, 'new', 'one', '--files', 'a.txt');
   git('git checkout -q -b feature && echo more >> a.txt && git commit -qam work && git checkout -q main');
   const msg = refuses(root, 'check', '--branch', 'feature', '--base', 'main');
-  assert.match(msg, /^no issue records branch feature: it carries 1 commit\(s\) beyond main and no issue holds it \(work without a ticket\) — file the issue, then set it in-progress --branch feature\n$/);
+  assert.match(msg, /^no issue records branch feature: it carries 1 commit\(s\) beyond main and no issue holds it \(work without an issue\) — file the issue, then set it in-progress --branch feature\n$/);
   assert.match(refuses(root, 'check', '--branch', 'jarl/none'), /^no issue records branch jarl\/none — name one/);
 });
 

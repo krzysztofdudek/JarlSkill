@@ -66,10 +66,10 @@ test('a profile is checked whole, and every problem is named at once', () => {
   assert.match(e, /unknown key "bogus"/);
   assert.match(e, /"jarl-profile" must be 1/);
   assert.match(e, /status "Open" must be lower-case/);
-  assert.match(e, /status "queued" is at most one of dispatchable, holds-claim and terminal/);
+  assert.match(e, /status "queued" is at most one of dispatchable, lease and terminal/);
   assert.match(e, /status "ran": unknown flag "fast"/);
   assert.match(e, /status "x" is closes-record, so it must be terminal too/);
-  assert.match(e, /no status holds-claim/);
+  assert.match(e, /no status is a lease/);
 });
 
 test('a profile must let the loop run and close, and a new issue must start somewhere it can wait', () => {

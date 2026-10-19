@@ -231,16 +231,16 @@ test('tips: branch tips against their upstream, CI from gh for pushed commits, n
   assert.equal(o.gh, true);
   const t = o.repos.find((x) => x.repo === 'tool');
   const row = (b) => t.rows.find((x) => x.branch === b);
-  assert.deepEqual([row('jarl/1-w').role, row('jarl/1-w').against, row('jarl/1-w').ahead, row('jarl/1-w').ci], ['feature', 'feature', 0, undefined], 'a worker branch never pushed: compared to the release branch, no CI');
+  assert.deepEqual([row('jarl/1-w').role, row('jarl/1-w').against, row('jarl/1-w').ahead, row('jarl/1-w').ci], ['worker', 'feature', 0, undefined], 'a worker branch never pushed: compared to the feature branch, no CI');
   assert.deepEqual(row('jarl/1-w').issues, ['1']);
   // The release branch is one commit ahead of its remote: that tip was never pushed, so CI is not asked about.
-  assert.deepEqual([row('feature').role, row('feature').upstream, row('feature').ahead, row('feature').behind, row('feature').pushed, row('feature').ci], ['release', 'origin/feature', 1, 0, false, undefined]);
+  assert.deepEqual([row('feature').role, row('feature').upstream, row('feature').ahead, row('feature').behind, row('feature').pushed, row('feature').ci], ['feature', 'origin/feature', 1, 0, false, undefined]);
   // main is where its remote is: its CI is asked about, for that exact commit.
   const mainSha = sh(tool, 'git rev-parse main');
   assert.deepEqual([row('main').role, row('main').pushed, row('main').ci], ['main', true, { state: 'red', runs: 2, run: 42, workflow: 'CI', conclusion: 'failure' }]);
   assert.equal(readFileSync(join(parent, 'gh-calls'), 'utf8').trim(), `run list --commit ${mainSha} --json conclusion,status,databaseId,workflowName --limit 20`);
   const text = run(hub, ['tips'], { JARL_GH: gh }).stdout;
-  assert.match(text, /\[tool\] .*\n {2}feature {2}jarl\/1-w [0-9a-f]{12} {2}= feature {2}not pushed {2}→ 1\n {2}release {2}feature [0-9a-f]{12} {2}\+1\/-0 vs origin\/feature {2}not pushed\n {2}main {5}main [0-9a-f]{12} {2}= origin\/main {2}ci red \(run 42 CI\)/);
+  assert.match(text, /\[tool\] .*\n {2}worker {3}jarl\/1-w [0-9a-f]{12} {2}= feature {2}not pushed {2}→ 1\n {2}feature {2}feature [0-9a-f]{12} {2}\+1\/-0 vs origin\/feature {2}not pushed\n {2}main {5}main [0-9a-f]{12} {2}= origin\/main {2}ci red \(run 42 CI\)/);
   // Without gh: the same view, with no CI and no error.
   const none = JSON.parse(run(hub, ['tips', '--json'], { JARL_GH: join(parent, 'no-such-gh') }).stdout);
   assert.equal(none.gh, false);
@@ -261,7 +261,7 @@ test('tips: a worker branch of a multi-repository issue is shown where it is, GO
   const l = o.repos.find((x) => x.repo === 'lib');
   assert.deepEqual(t.rows.find((x) => x.branch === 'jarl/1-cross').issues, ['1']);
   assert.equal(l.rows.some((x) => x.branch === 'jarl/1-cross'), false, 'not GONE in lib: tool has it');
-  assert.equal(l.rows.some((x) => x.role === 'release'), false, 'a detached HEAD is not a release branch');
+  assert.equal(l.rows.some((x) => x.role === 'feature'), false, 'a detached HEAD is no feature branch');
   sh(tool, 'git branch -D jarl/1-cross');
   const gone = JSON.parse(run(hub, ['tips', '--json'], env).stdout);
   assert.equal(gone.repos.find((x) => x.repo === 'tool').rows.find((x) => x.branch === 'jarl/1-cross').missing, true);

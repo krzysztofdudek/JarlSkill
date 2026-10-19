@@ -257,7 +257,7 @@ test('every view tells the truth on a mission\'s loop: next, queue, status, resu
   const tips = json(root, 'tips');
   assert.equal(tips.repos.length, 1);
   const rows = tips.repos[0].rows.map((r) => [r.role, r.branch, r.issues || []]);
-  assert.deepEqual(rows, [['feature', 'jarl/2-flight', ['2']], ['release', 'main', []]]);
+  assert.deepEqual(rows, [['worker', 'jarl/2-flight', ['2']], ['feature', 'main', []]]);
 
   // branches: the landed branch is done and deletable, the one in flight is not.
   const br = Object.fromEntries(json(root, 'branches').map((b) => [b.branch, b]));

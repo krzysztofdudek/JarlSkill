@@ -29,7 +29,7 @@ export const STALE_HOURS = 6;
 // A handoff file written more than this before the loop's last log line is read as stale (status --json).
 export const HANDOFF_STALE_MS = 60 * 60_000;
 // The lease fields: written by set in-progress, removed when the issue leaves in-progress. Branch stays: it
-// is where the work was, which branches and check --branch still read after done.
+// is where the work was, which branches and scope --branch still read after done.
 const LEASE_FIELDS = ['Worker', 'Model', 'Worktree', 'Since'];
 
 
@@ -355,7 +355,7 @@ function branchGlobsFor(id) { return [...new Set([String(id), idKey(id)])].flatM
 //
 // What a status means is said by its flags, never by its name:
 // - dispatchable        next offers an issue in it (built-in: open);
-// - holds-claim         an issue in it holds its files against the others, and carries the lease: set writes Since
+// - lease               an issue in it holds its files against the others, and carries the lease: set writes Since
 //                       (and Branch, Worker, Worktree when given) on a move into it, and leaving it removes the lease
 //                       (built-in: in-progress);
 // - settles-dependents  an issue in it does not hold back the issues that wait on it with After (built-in: done,
@@ -366,8 +366,12 @@ function branchGlobsFor(id) { return [...new Set([String(id), idKey(id)])].flatM
 //                       status count it as done work (built-in: done);
 // - needs-reason        a move into it needs a reason, written under Evidence as "<Status>: <why>" (built-in: dropped,
 //                       deferred).
-// A status is at most one of dispatchable, holds-claim and terminal; closes-record is terminal too.
+// A status is at most one of dispatchable, lease and terminal; closes-record is terminal too.
+// STATUS_FLAGS keeps the name the record contract holds for the lease flag; a profile may write that name or lease,
+// and both mean the one flag. flagWord gives the name a message or a description prints: lease.
 export const STATUS_FLAGS = Object.freeze(['dispatchable', 'holds-claim', 'settles-dependents', 'terminal', 'closes-record', 'needs-reason']);
+const flagOf = (f) => (f === 'lease' ? 'holds-claim' : f);
+export const flagWord = (f) => (f === 'holds-claim' ? 'lease' : f);
 export const BUILTIN_STATUSES = {
   open: ['dispatchable'],
   'in-progress': ['holds-claim'],
@@ -468,18 +472,19 @@ export function validateProfile(json, where = 'the profile') {
         flags = spec.flags === undefined ? [] : spec.flags;
         setBy.set(name, spec['set-by'] || 'any');
       }
-      if (!Array.isArray(flags) || !flags.every((f) => typeof f === 'string')) { say(`status "${name}" takes a list of flags (${STATUS_FLAGS.join(', ')}), [] for none — or { "flags": [...], "set-by": "record" }`); continue; }
-      for (const f of flags) if (!STATUS_FLAGS.includes(f)) say(`status "${name}": unknown flag "${f}" — the flags are ${STATUS_FLAGS.join(', ')}`);
+      if (!Array.isArray(flags) || !flags.every((f) => typeof f === 'string')) { say(`status "${name}" takes a list of flags (${STATUS_FLAGS.map(flagWord).join(', ')}), [] for none — or { "flags": [...], "set-by": "record" }`); continue; }
+      flags = flags.map(flagOf);
+      for (const f of flags) if (!STATUS_FLAGS.includes(f)) say(`status "${name}": unknown flag "${f}" — the flags are ${STATUS_FLAGS.map(flagWord).join(', ')}`);
       if (new Set(flags).size !== flags.length) say(`status "${name}" names a flag twice`);
       const set = new Set(flags);
-      if (['dispatchable', 'holds-claim', 'terminal'].filter((f) => set.has(f)).length > 1) say(`status "${name}" is at most one of dispatchable, holds-claim and terminal`);
+      if (['dispatchable', 'holds-claim', 'terminal'].filter((f) => set.has(f)).length > 1) say(`status "${name}" is at most one of dispatchable, lease and terminal`);
       if (set.has('closes-record') && !set.has('terminal')) say(`status "${name}" is closes-record, so it must be terminal too`);
       statuses.push(name);
       flagsOf.set(name, set);
     }
     const some = (f) => statuses.some((s) => flagsOf.get(s).has(f));
     if (statuses.length && !some('dispatchable')) say('no status is dispatchable — next would never offer anything');
-    if (statuses.length && !some('holds-claim')) say('no status holds-claim — no issue could ever be worked on');
+    if (statuses.length && !some('holds-claim')) say('no status is a lease — no issue could ever be worked on');
     if (statuses.length && !some('terminal')) say('no status is terminal — the loop could never close');
     if (statuses.length && !some('settles-dependents')) say('no status settles-dependents — an issue waiting on another with After would wait for good');
   }
@@ -488,7 +493,7 @@ export function validateProfile(json, where = 'the profile') {
     if (!statuses.includes(json.initial)) say(`"initial" must name one of the statuses (${statuses.join(', ')})`);
     else initial = json.initial;
   }
-  if (initial && flagsOf.get(initial) && (flagsOf.get(initial).has('terminal') || flagsOf.get(initial).has('holds-claim'))) say(`a new issue starts in "${initial}", which is ${flagsOf.get(initial).has('terminal') ? 'terminal' : 'holds-claim'} — name another with "initial"`);
+  if (initial && flagsOf.get(initial) && (flagsOf.get(initial).has('terminal') || flagsOf.get(initial).has('holds-claim'))) say(`a new issue starts in "${initial}", which is ${flagsOf.get(initial).has('terminal') ? 'terminal' : 'a lease'} — name another with "initial"`);
   // fields: { "<Name>": { enum?, default?, required? } }
   const fields = [];
   if (json.fields !== undefined && !isObj(json.fields)) say('"fields" must be an object: { "<Field>": { "enum": [...], "default": "...", "required": true } }');
@@ -712,7 +717,7 @@ export function readProfileFile(file) {
 export function describeProfile(p) {
   return {
     name: p.name, declared: p.declared, initial: p.initial,
-    statuses: p.statuses.map((s) => ({ name: s, flags: p.flagsOf(s), ...(p.setBy(s) !== 'any' ? { setBy: p.setBy(s) } : {}) })),
+    statuses: p.statuses.map((s) => ({ name: s, flags: p.flagsOf(s).map(flagWord), ...(p.setBy(s) !== 'any' ? { setBy: p.setBy(s) } : {}) })),
     fields: p.declaredFields ? p.declaredFields.map((f) => ({ name: f.name, enum: f.enum, default: f.default, required: f.required })) : [],
     kinds: p.kinds, tiers: p.tiers, sections: p.sections, acceptanceHeading: p.acceptance || 'Acceptance',
     format: p.format, externalScheduler: p.scheduler, doneGate: { ...p.doneGate }, lifecycle: { ...p.lifecycle },
@@ -2903,7 +2908,7 @@ export function nextRows(root, flags = {}) {
   // Files are compared as (repository, path) pairs: the same path in two repositories never holds
   // an issue back, the same file in one repository always does, however its Repo path is spelled.
   const keysOf = (i) => i.files.map((f) => { const at = fileAt(root, i, f); return { f, key: `${at.repo}\n${at.path}` }; });
-  // Each taken file with the issue holding it: one in a holds-claim status (in progress), or a dispatchable (open)
+  // Each taken file with the issue holding it: one in a lease status (in progress), or a dispatchable (open)
   // one offered earlier in this list.
   const taken = new Map(issues.filter((i) => profile.is(i.status, 'holds-claim')).flatMap((i) => keysOf(i).map((k) => [k.key, i.id])));
   // Exclusive resources: names, loop-wide (no repository in the key), held by an issue for its lease's whole life. Resources
@@ -4640,7 +4645,7 @@ export function renderCheckNotes(out) {
   return lines.join('\n');
 }
 
-// check <id> --branch <b> bounds the diff by that issue's Files; check --branch <b> with no id bounds it by the
+// scope <id> --branch <b> bounds the diff by that issue's Files; scope --branch <b> with no id bounds it by the
 // union of Files over every issue that records Branch <b> (in progress or done) — a package on one shared
 // branch passes in one call instead of failing each issue for the files of the others.
 // The commits a branch carries beyond the base, or null when git does not know the branch or the base.
@@ -4653,12 +4658,12 @@ function unrecordedBranch(root, flags) {
   const repo = flags.repo !== undefined ? repoFromInput(root, flags.repo).main : root;
   const base = flags.base || defaultBase(repo);
   const carried = commitsBeyond(repo, base, flags.branch);
-  if (carried) return `no issue records branch ${flags.branch}: it carries ${carried} commit(s) beyond ${base} and no issue holds it (work without a ticket) — file the issue, then set it in-progress --branch ${flags.branch}`;
-  return `no issue records branch ${flags.branch} — name one (check <id> --branch ${flags.branch}), or record the package: set <ids> in-progress --branch ${flags.branch}`;
+  if (carried) return `no issue records branch ${flags.branch}: it carries ${carried} commit(s) beyond ${base} and no issue holds it (work without an issue) — file the issue, then set it in-progress --branch ${flags.branch}`;
+  return `no issue records branch ${flags.branch} — name one (scope <id> --branch ${flags.branch}), or record the package: set <ids> in-progress --branch ${flags.branch}`;
 }
 
 export function cmdCheck(root, rawId, flags) {
-  need(flags.branch, 'check requires --branch <worker branch>');
+  need(flags.branch, 'scope requires --branch <worker branch>');
   let pkg;
   if (rawId === undefined) {
     const profile = loadProfile(root);
@@ -5303,6 +5308,8 @@ export function ciOf(repo, sha) {
 // issue names, the tip of each branch that matters there — the feature branches its in-progress issues record,
 // the branch its checkout is on (the release branch), and main — with ahead/behind against its upstream as last
 // fetched (nothing is fetched), and, when gh is on PATH, the CI of that exact commit. It never gates anything.
+// A row's role says what the branch is in the skill: worker (a worker branch of an in-progress issue), feature (the
+// branch the checkout is on, the one the loop's work merges into) or main.
 export function cmdTips(root, { ci: askCi = true } = {}) {
   const loop = readLoop(jarlDir(root));
   const { issues, profile } = loop;
@@ -5334,7 +5341,7 @@ export function cmdTips(root, { ci: askCi = true } = {}) {
     const hasBranch = (dir, b) => isGitRepo(dir) && refsIn(dir).has(b);
     const elsewhere = (b) => flight.filter((i) => i.fields.branch === b).some((i) => issueRepos(root, i).some((r) => topOf(r) !== real && hasBranch(r, b)));
     const feature = [...new Set(flight.map((i) => i.fields.branch))].filter((b) => exists(b) || !elsewhere(b));
-    const wanted = [...feature.map((b) => ({ role: 'feature', branch: b })), ...(current && current !== 'HEAD' ? [{ role: 'release', branch: current }] : []), ...(main ? [{ role: 'main', branch: main }] : [])];
+    const wanted = [...feature.map((b) => ({ role: 'worker', branch: b })), ...(current && current !== 'HEAD' ? [{ role: 'feature', branch: current }] : []), ...(main ? [{ role: 'main', branch: main }] : [])];
     const seen = new Set();
     const rows = [];
     for (const w of wanted) {
@@ -5346,15 +5353,15 @@ export function cmdTips(root, { ci: askCi = true } = {}) {
       // A worker branch cut with tracking of the release branch has no upstream of its own: only a remote branch
       // of the same name counts as where it was pushed.
       let upstream = ref.upstream;
-      if (upstream && w.role === 'feature' && !upstream.endsWith(`/${w.branch}`)) upstream = null;
+      if (upstream && w.role === 'worker' && !upstream.endsWith(`/${w.branch}`)) upstream = null;
       let ahead = null; let behind = null; let against = null;
       if (upstream) {
         ahead = ref.ahead; behind = ref.behind; against = upstream;
-      } else if (w.role === 'feature' && current && current !== 'HEAD' && current !== w.branch) {
+      } else if (w.role === 'worker' && current && current !== 'HEAD' && current !== w.branch) {
         const lr = (git(repo, ['rev-list', '--left-right', '--count', `${w.branch}...${current}`]) || '').split(/\s+/).map(Number);
         [ahead, behind] = lr; against = current;
       }
-      const on = w.role === 'feature' ? flight.filter((i) => i.fields.branch === w.branch).map((i) => i.id) : [];
+      const on = w.role === 'worker' ? flight.filter((i) => i.fields.branch === w.branch).map((i) => i.id) : [];
       // CI runs on what was pushed: only a tip its upstream already holds (nothing ahead) is asked about.
       const pushed = Boolean(upstream) && ahead === 0;
       const ci = pushed && askCi ? ciOf(repo, sha) : null;
@@ -6263,7 +6270,7 @@ export function cmdSources(root, files, flags = {}) {
 
 
 // The counts line of status and resume: the issues ready (in the dispatchable status — built-in: open) and in flight
-// (holds-claim), less those waiting on After, then every other status by its own name, then the questions.
+// (lease), less those waiting on After, then every other status by its own name, then the questions.
 // One status's count from a status object, with or without a profile (see cmdStatus).
 function countOf(o, st) { return (o.statuses || o)[st] || 0; }
 function countsLine(o, profile) {
