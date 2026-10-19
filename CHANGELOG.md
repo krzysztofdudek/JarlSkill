@@ -8,29 +8,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [6.2.0] - 2026-10-19
 
-Jarl 6.2.0 makes the record of a loop more complete and more honest, and it keeps track of who did what. The skill your assistant reads is also shorter and clearer.
+Jarl 6.2.0 makes the record of a loop more complete and more honest, and it keeps track of who did what. The file your assistant reads first is also shorter and clearer.
 
 ### Before you upgrade
 
-- A loop, the record Jarl keeps of a piece of work, is marked with a new format the first time anything is written to it that an older Jarl would misread: a repository name, an issue or question number of 1000 or more, a retraction, or a new issue or question number below 100 written without leading zeros (3, not 003). A new loop, or any loop with fewer than 100 issues, is marked at its first new issue.
-- From then on every copy of Jarl that touches that loop must be this release, including assistant plugins in other sessions and copies in other clones. A copy of the previous release refuses such a loop with a clear message instead of misreading it.
-- Nothing is migrated or rewritten. Loops are read as written, except a status that was only edited by hand in an issue file: the log is the record now, and such an edit does not move the issue.
-- Recording a merge no longer sets the CI state to pending. Add `--ci <state>` when you want one; a tool that builds on the record library keeps the old default.
-- `merged` now deletes the issue's worktree and its local branch when that is safe. `--keep` stops it.
-- `show` prints the part of an issue that matters, and `show <id> --full` prints everything.
-- `next` lists only what can start now, and `next --all` lists the rest.
+- A loop, the record Jarl keeps of a piece of work, is marked with a new format the first time anything is written to it that an older Jarl would misread: a repository name, an issue or question number of 1000 or more, a retraction, or a new issue or question number below 100 written without leading zeros (3, not 003). A new loop, or any loop with fewer than 100 issues, is marked at its first new issue or question.
+- From then on every copy of Jarl that touches that loop must be this release, including copies of Jarl installed in assistants in other sessions and other copies of the project. A copy of the previous release refuses such a loop with a clear message instead of misreading it.
+- Nothing is migrated. Loops are read as written, with two exceptions. A repository path written as a bare word, such as `sub`, becomes `./sub` when the loop is first marked, with the same meaning. A status, lease, merge or build-check line that was only edited by hand in an issue file no longer counts: the log is the record now, and such an edit does not move the issue.
+- Recording a merge no longer sets the result of the build checks to pending. Add `--ci <state>` when you want one; a tool built on Jarl's record keeps the old default.
+- `merged` now deletes the issue's worktree and its branch on this machine when that is safe. `--keep` stops it.
+- `show` prints the part of an issue that matters, and `show <id> --full` prints everything. `next` lists only what can start now, and `next --all` lists the rest.
 - The assistant tools no longer include `handoff`. Start a session from `resume`.
-- There are three tiers of worker, `light`, `standard` and `strong`, and `standard` stays the default.
-- A new lease, the claim an issue holds while it is in progress, no longer records where its worktree is. Jarl finds the worktree through the branch.
-- Issue numbers are plain: 7, not 007. Both mean the same issue, so type either.
-- `check` is now `scope`, and `check` still works as a name for it.
-- `set <ids> <field> "<value>"` still writes a field and an empty value still clears it, with a note that points to `field`. `field` writes only `Resources` and the fields a loop's profile declares; the other fields keep their own commands.
 - `review` refuses findings of fewer than three words, so `LGTM` no longer passes; say what was read and what was found.
-- `close` refuses while any issue is deferred. Use `archive` to keep the work, or `close --force` to remove it.
+- `close` refuses while any issue is deferred. Use `archive` to keep the work, or `close --force` to remove it; a permanent loop keeps its record and lists the deferred issues.
 - An answer to a question that waits for the owner's ratification must say who gave it, with `--by`.
 - The `handoff` entry in `status --json` and the `legacyHandoff` entry in `resume --json` are no longer part of the documented output. They are still printed.
-- The skill is now a short file with a `references` directory beside it. A plugin install gets both. If you copy the skill by hand, copy the whole directory.
-- The shared Runes code that Jarl ships is unchanged.
+- The file your assistant reads first is now short, with a `references` directory beside it. A plugin install gets both. If you copy the skill by hand, copy the whole directory.
 
 ### Added
 - An issue can need files before it is done, such as a picture before a fix and one after it, and Jarl will not close it until they are there.
@@ -42,6 +35,11 @@ Jarl 6.2.0 makes the record of a loop more complete and more honest, and it keep
 
 ### Changed
 - `status` and `resume` say what each issue in progress is waiting for.
+- There are three tiers of worker, `light`, `standard` and `strong`, and `standard` stays the default.
+- A new lease, the claim an issue holds while it is in progress, no longer records where its worktree is. Jarl finds the worktree through the branch.
+- Issue numbers are plain: 7, not 007. Both mean the same issue, so type either.
+- `check` is now `scope`, and `check` still works as a name for it.
+- `set <ids> <field> "<value>"` still writes a field and an empty value still clears it, with a note that points to `field`. `field` writes only `Resources` and the fields a loop's profile declares; the other fields keep their own commands.
 
 ### Fixed
 - Long findings and notes are kept whole instead of cut to their first line.
