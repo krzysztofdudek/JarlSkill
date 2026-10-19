@@ -217,3 +217,39 @@ test('a section that already holds content and no sub-heading is never converted
   assert.equal(evidence(root, 1).trim(), '## Evidence\n\n- **ran:** old · **saw:** ok\n\nan old note\n- **ran:** next · **saw:** ok\n\nanother note\n\nRuling u-ruling: a ruling\n\nDeferred: wait');
   assert.doesNotMatch(evidence(root, 1), /^### /m);
 });
+
+// ---- reading the parts ---------------------------------------------------------------------------------------------
+
+test('show keeps both sub-headings across a reopen: the rows before it are replaced by one line, Notes is printed whole', () => {
+  const root = fresh();
+  jarl(root, 'set', '1', 'in-progress', 'go', '--worker', 'w1');
+  jarl(root, 'evidence', '1', '--ran', 'first run', '--saw', 'red');
+  jarl(root, 'evidence', '1', 'a note from the first round');
+  jarl(root, 'set', '1', 'open', 'sent back');
+  jarl(root, 'set', '1', 'in-progress', 'again', '--worker', 'w2');
+  jarl(root, 'evidence', '1', '--ran', 'second run', '--saw', 'green');
+  const shown = jarl(root, 'show', '1');
+  assert.match(shown, /^### Proof$/m);
+  assert.match(shown, /^### Notes$/m);
+  assert.match(shown, /\(evidence rows 1-1 came before the last start or reopen and are not shown; rows 2-2 follow\)/);
+  assert.doesNotMatch(shown, /first run/);
+  assert.match(shown, /^- \[2\] \*\*ran:\*\* second run/m);
+  assert.match(shown, /^a note from the first round$/m);
+  const full = jarl(root, 'show', '1', '--full');
+  assert.match(full, /^- \[1\] \*\*ran:\*\* first run/m);
+  assert.match(full, /^- \[2\] \*\*ran:\*\* second run/m);
+  assert.ok(shown.indexOf('### Proof') < shown.indexOf('### Notes'));
+});
+
+test('a note alone gives "has no evidence yet", and a sub-heading line is never read as evidence', () => {
+  const root = fresh();
+  jarl(root, 'evidence', '1', 'a note and nothing else');
+  jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
+  const why = refuses(root, 'set', '1', 'done');
+  assert.match(why, /001 has no evidence yet/);
+  assert.equal(L.workEvidence(L.findIssue(root, 1)), '');
+  assert.equal(L.workEvidence({ sections: { evidence: '### Proof\n\n### Notes\n\nonly a note' } }), '');
+  assert.equal(L.workEvidence({ sections: { evidence: '### Proof\n\n- **ran:** a · **saw:** b\n\n### Notes\n\nn\n\n- **ran:** c · **saw:** d' } }), '- **ran:** a · **saw:** b\n\n- **ran:** c · **saw:** d');
+  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'pass');
+  assert.match(jarl(root, 'set', '1', 'done'), /001 → done/);
+});

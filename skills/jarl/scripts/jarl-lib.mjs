@@ -2252,9 +2252,17 @@ export function issueView(root, issue, { full = false } = {}) {
       const t = evidenceTable(body.join('\n'));
       const earlier = !full && g.anchorN >= 0 && g.rowLog.length === t.rows.length ? g.rowLog.filter((r) => r.n <= g.anchorN).length : 0;
       out.push(p.lines[0]);
-      if (earlier > 0) {
-        out.push(`(evidence rows 1-${earlier} came before the last start or reopen and are not shown; ${earlier === t.rows.length ? 'none since' : `rows ${earlier + 1}-${t.rows.length} follow`})`);
+      const cutNote = `(evidence rows 1-${earlier} came before the last start or reopen and are not shown; ${earlier === t.rows.length ? 'none since' : `rows ${earlier + 1}-${t.rows.length} follow`})`;
+      if (earlier > 0 && evidenceParts(body).proofAt === -1 && evidenceParts(body).notesAt === -1) {
+        out.push(cutNote);
         out.push(...numbered(body, t.rows).slice(t.rows[earlier - 1].end + 1));
+      } else if (earlier > 0) {
+        // A section in parts keeps both sub-headings and Notes whole: only the lines of the earlier rows are replaced, by one line.
+        const gone = new Set();
+        for (const r of t.rows.slice(0, earlier)) for (let i = r.start; i <= r.end; i += 1) gone.add(i);
+        const shown = numbered(body, t.rows);
+        let said = false;
+        shown.forEach((l, i) => { if (!gone.has(i)) out.push(l); else if (!said) { said = true; out.push(cutNote); } });
       } else out.push(...numbered(body, t.rows));
       continue;
     }
