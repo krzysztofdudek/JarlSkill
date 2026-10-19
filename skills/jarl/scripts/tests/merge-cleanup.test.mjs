@@ -4,7 +4,7 @@
 // only: no force, no remote branch. The command line and the tools do it, `--keep` skips it, a library caller never gets it.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, renameSync, existsSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, renameSync, existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
@@ -55,6 +55,14 @@ function fixture({ merge = true, issues = 1, worktree = true } = {}) {
   jarl(repo, 'set', '1', 'in-progress', 'start', '--branch', 'jarl/1-x', '--worker', 'w-one', ...(worktree ? ['--worktree', wt] : []));
   if (merge) git(repo, 'merge', '-q', '--no-ff', '-m', 'merge 1', 'jarl/1-x');
   return { parent, repo, wt, sha: git(repo, 'rev-parse', '--short', 'HEAD') };
+}
+
+// A lease that holds a Worktree field, as a lease can: set --worktree checks a path and stores nothing, so the field is written
+// into the issue file directly.
+function holdsWorktree(repo, id, path) {
+  const dir = join(repo, '.jarl', 'issues');
+  const file = join(dir, readdirSync(dir).find((f) => f.startsWith(`${id}-`)));
+  writeFileSync(file, readFileSync(file, 'utf8').replace(/^(\*\*Since:\*\* .*)$/m, `$1\n**Worktree:** ${path}`));
 }
 
 test('after merged on a branch whose tip is in the base, the worktree and the local branch are gone and the output says so', () => {
@@ -140,7 +148,8 @@ test('a branch checked out in another worktree than the one the lease names keep
   const { parent, repo, wt, sha } = fixture();
   const named = join(parent, 'somewhere-else');
   mkdirSync(named);
-  jarl(repo, 'set', '1', 'in-progress', 'again', '--branch', 'jarl/1-x', '--worker', 'w-one', '--worktree', named);
+  jarl(repo, 'set', '1', 'in-progress', 'again', '--branch', 'jarl/1-x', '--worker', 'w-one');
+  holdsWorktree(repo, '1', named);
   assert.match(jarl(repo, 'merged', '1', '--sha', sha), /\nkept jarl\/1-x — it is checked out in another worktree than the one the lease names$/);
   assert.equal(existsSync(wt), true);
   assert.deepEqual(branches(repo).sort(), ['jarl/1-x', 'main']);
@@ -228,7 +237,8 @@ test('core.excludesFile, an exclude entry and a worktree-local configuration hid
 test('the path a lease names is never removed unless git lists it on exactly the issue\'s branch', () => {
   // Another branch: the lease names the main checkout, which is on main.
   let f = fixture({ worktree: false });
-  jarl(f.repo, 'set', '1', 'in-progress', 'again', '--branch', 'jarl/1-x', '--worker', 'w-one', '--worktree', f.repo);
+  jarl(f.repo, 'set', '1', 'in-progress', 'again', '--branch', 'jarl/1-x', '--worker', 'w-one');
+  holdsWorktree(f.repo, '1', f.repo);
   assert.match(jarl(f.repo, 'merged', '1', '--sha', f.sha), /\nkept jarl\/1-x — the path the lease names \(.*repo\) is a worktree on main, not on this branch$/);
   assert.equal(existsSync(join(f.repo, '.git')), true);
   assert.deepEqual(branches(f.repo).sort(), ['jarl/1-x', 'main']);
@@ -236,21 +246,24 @@ test('the path a lease names is never removed unless git lists it on exactly the
   f = fixture({ worktree: false, issues: 2 });
   const live = join(f.parent, 'wt-9');
   git(f.repo, 'worktree', 'add', '-q', '-b', 'jarl/9-live', live);
-  jarl(f.repo, 'set', '1', 'in-progress', 'again', '--branch', 'jarl/1-x', '--worker', 'w-one', '--worktree', live);
+  jarl(f.repo, 'set', '1', 'in-progress', 'again', '--branch', 'jarl/1-x', '--worker', 'w-one');
+  holdsWorktree(f.repo, '1', live);
   assert.match(jarl(f.repo, 'merged', '1', '--sha', f.sha), /is a worktree on jarl\/9-live, not on this branch$/);
   assert.equal(existsSync(live), true);
   // Detached.
   f = fixture({ worktree: false });
   const detached = join(f.parent, 'wt-detached');
   git(f.repo, 'worktree', 'add', '-q', '--detach', detached);
-  jarl(f.repo, 'set', '1', 'in-progress', 'again', '--branch', 'jarl/1-x', '--worker', 'w-one', '--worktree', detached);
+  jarl(f.repo, 'set', '1', 'in-progress', 'again', '--branch', 'jarl/1-x', '--worker', 'w-one');
+  holdsWorktree(f.repo, '1', detached);
   assert.match(jarl(f.repo, 'merged', '1', '--sha', f.sha), /is a detached worktree$/);
   assert.equal(existsSync(detached), true);
   // Not listed by git at all.
   f = fixture({ worktree: false });
   const plain = join(f.parent, 'plain');
   mkdirSync(plain);
-  jarl(f.repo, 'set', '1', 'in-progress', 'again', '--branch', 'jarl/1-x', '--worker', 'w-one', '--worktree', plain);
+  jarl(f.repo, 'set', '1', 'in-progress', 'again', '--branch', 'jarl/1-x', '--worker', 'w-one');
+  holdsWorktree(f.repo, '1', plain);
   assert.match(jarl(f.repo, 'merged', '1', '--sha', f.sha), /is not a worktree git lists$/);
   assert.equal(existsSync(plain), true);
   assert.deepEqual(branches(f.repo).sort(), ['jarl/1-x', 'main']);

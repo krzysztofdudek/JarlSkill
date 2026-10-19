@@ -230,7 +230,7 @@ test('a run in a worktree finds the loop in the main checkout by itself, and an 
   assert.throws(() => execFileSync(process.execPath, [SCRIPT, 'new', 'x'], { cwd: bare.wt, encoding: 'utf8', stdio: 'pipe', timeout: SPAWN_TIMEOUT }), (e) => /no \.jarl\//.test(String(e.stderr)));
 });
 
-test('a repository is named by its root, not a subdirectory of it, and the Repo field can be cleared', () => {
+test('a directory or a file inside a repository names that repository, a stored path into a subdirectory is refused, and the Repo field can be cleared', () => {
   const parent = mkdtempSync(join(tmpdir(), 'jarl-repo-'));
   const hub = join(parent, 'hub'); const tool = join(parent, 'tool');
   mkdirSync(hub); mkdirSync(join(tool, 'src'), { recursive: true });
@@ -239,15 +239,21 @@ test('a repository is named by its root, not a subdirectory of it, and the Repo 
   sh(tool, `${setup('feature')} && echo 'x' > src/a.mjs && git add -A && git commit -qm base`);
   jarl(hub, 'init', 'goal');
   jarl(hub, 'new', 'change a', '--files', 'src/a.mjs');
-  // A subdirectory of a repository is not the repository: its paths would be read from the wrong place, so a
-  // removed test file would go unseen. Refused everywhere a repository is named, naming the root to give instead.
-  assert.match(refuses(hub, 'repo', '1', '../tool/src'), /is inside the repository at .*tool, not its root — name the root: \.\.\/tool/);
-  assert.match(refuses(hub, 'new', 'other', '--repo', '../tool/src'), /not its root/);
-  assert.match(refuses(hub, 'branches', '--repo', '../tool/src'), /not its root/);
-  assert.match(refuses(hub, 'check', '1', '--branch', 'feature', '--repo', '../tool/src'), /not its root/);
+  // A subdirectory or a file given for a repository is reduced to the repository's main checkout wherever a repository is
+  // named, so its paths are never read from the wrong place.
+  assert.equal(jarl(hub, 'repo', '1', '../tool/src'), '1 repo: tool');
+  assert.equal(jarl(hub, 'repo', '1', '../tool/src/a.mjs'), '1 repo: tool (unchanged)');
+  jarl(hub, 'new', 'other', '--repo', '../tool/src');
+  assert.match(jarl(hub, 'show', '2'), /^\*\*Repo:\*\* tool$/m);
+  assert.deepEqual(JSON.parse(jarl(hub, 'branches', '--repo', '../tool/src', '--json')), []);
+  assert.doesNotMatch(run(hub, ['check', '1', '--branch', 'feature', '--repo', '../tool/src']).stderr, /not its root/);
+  // A path stored into a subdirectory (written by hand) is not a repository's root: refused, naming the root to give.
+  const issueFile = join(hub, '.jarl', 'issues', readdirSync(join(hub, '.jarl', 'issues')).find((f) => f.startsWith('1-')));
+  writeFileSync(issueFile, readFileSync(issueFile, 'utf8').replace(/^\*\*Repo:\*\* .*$/m, '**Repo:** ../tool/src'));
+  assert.match(refuses(hub, 'check', '1', '--branch', 'feature'), /is inside the repository at .*tool, not its root — name the root: \.\.\/tool/);
   // The root itself is fine, and the field can be cleared again.
   jarl(hub, 'repo', '1', '../tool');
-  assert.match(jarl(hub, 'show', '1'), /^\*\*Repo:\*\* \.\.\/tool$/m);
+  assert.match(jarl(hub, 'show', '1'), /^\*\*Repo:\*\* tool$/m);
   assert.match(jarl(hub, 'repo', '1', '--clear'), /1 repo: cleared/);
   assert.doesNotMatch(jarl(hub, 'show', '1'), /\*\*Repo:\*\*/);
   assert.match(refuses(hub, 'repo', '1', '--clear'), /no Repo field/);
@@ -602,7 +608,7 @@ test('check, branches and handoff read the repository an issue names, not the lo
     assert.equal(byName['diff inside declared files'].ok, true, byName['diff inside declared files'].note);
     assert.equal(byName['assertions in touched tests'].note, '1 → 2');
     assert.equal(out.ok, true, mode);
-    assert.match(jarl(hub, 'show', '1'), /^\*\*Repo:\*\* \.\.\/tool$/m);
+    assert.match(jarl(hub, 'show', '1'), /^\*\*Repo:\*\* tool$/m);
     assert.doesNotMatch(jarl(hub, 'show', '2'), /\*\*Repo:\*\*/, 'an issue that names no repository carries no Repo line');
 
     // --repo on the command does the same for an issue that names no repository; without it, the loop's own repository is read, as before.
@@ -610,7 +616,7 @@ test('check, branches and handoff read the repository an issue names, not the lo
     assert.equal(JSON.parse(jarl(hub, 'check', '2', '--branch', 'jarl/1-change-a', '--repo', '../tool', '--json')).ok, true, mode);
     assert.match(refuses(hub, 'check', '1', '--branch', 'jarl/1-change-a', '--repo', '../nowhere'), /not a git repository/);
     jarl(hub, 'repo', '2', '../tool');
-    assert.match(jarl(hub, 'show', '2'), /^\*\*Repo:\*\* \.\.\/tool$/m);
+    assert.match(jarl(hub, 'show', '2'), /^\*\*Repo:\*\* tool$/m);
     assert.equal(JSON.parse(jarl(hub, 'check', '2', '--branch', 'jarl/1-change-a', '--json')).base, 'feature', mode);
 
     // branches lists the worker branch in the tool repository, and the hub's own listing stays empty.
@@ -1324,9 +1330,11 @@ test('a package is one lease on one branch: set records it, check --branch bound
   const shown = jarl(root, 'show', '2');
   assert.match(shown, /^\*\*Branch:\*\* jarl\/1-pkg$/m);
   assert.match(shown, /^\*\*Worker:\*\* w1$/m);
-  assert.match(shown, new RegExp(`^\\*\\*Worktree:\\*\\* ${wt.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}$`, 'm'));
+  assert.doesNotMatch(shown, /\*\*Worktree:\*\*/, 'a lease stores no worktree');
   assert.match(shown, /^\*\*Since:\*\* \d{4}-\d{2}-\d{2} \d{2}:\d{2}$/m);
-  assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /2 → in-progress · package raised · branch jarl\/1-pkg · worker w1 · worktree /);
+  const log = readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
+  assert.match(log, /2 → in-progress · package raised · branch jarl\/1-pkg · worker w1\n/);
+  assert.doesNotMatch(log, /worktree/);
   assert.match(refuses(root, 'set', '3', 'open', 'x', '--branch', 'b'), /--branch goes with in-progress only/);
 
   sh(`git worktree add -q -b jarl/1-pkg ${wt} && cd ${wt} && echo A > a.txt && echo B > b.txt && git commit -qam work`);

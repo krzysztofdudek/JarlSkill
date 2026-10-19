@@ -54,7 +54,8 @@ test('set in-progress --model writes the Model field and the model before the wo
   const out = R.setStatus(root, id, 'in-progress', 'start', { branch: 'jarl/001-a', worker: 'w-one', model: '  claude-sonnet-5-5@high ', worktree: join(root, 'wt') });
   assert.equal(out.model, 'claude-sonnet-5-5@high', 'stored as given, trimmed');
   assert.match(issueText(root, id), /^\*\*Model:\*\* claude-sonnet-5-5@high$/m);
-  assert.match(log(root), /001 → in-progress · start · branch jarl\/001-a · model claude-sonnet-5-5@high · worker w-one · worktree /);
+  assert.match(log(root), /001 → in-progress · start · branch jarl\/001-a · model claude-sonnet-5-5@high · worker w-one\n/, 'the record library accepts a worktree key and stores none');
+  assert.doesNotMatch(issueText(root, id), /\*\*Worktree:\*\*/);
   R.setStatus(root, id, 'open', '', {});
   assert.doesNotMatch(issueText(root, id), /\*\*Model:\*\*/, 'removed with Worker');
   assert.doesNotMatch(issueText(root, id), /\*\*Worker:\*\*/);
@@ -424,7 +425,7 @@ test('models --by repo slices the same facts by repository; the text names n for
   mkdirSync(join(root, 'sub'));
   assert.equal(spawnSync('git', ['init', '-q'], { cwd: join(root, 'sub'), timeout: SPAWN_TIMEOUT }).status, 0);
   units(root, 5, { model: MID, worker: 'w-m' }, 1);
-  units(root, 2, { model: MID, worker: 'w-m', repo: 'sub' });
+  units(root, 2, { model: MID, worker: 'w-m', repo: './sub' });
   const m = L.cmdModels(root, { by: 'repo' });
   assert.equal(m.by, 'repo');
   assert.deepEqual(m.slices.map((s) => s.value).sort(), ['sub', root.split('/').pop()].sort());

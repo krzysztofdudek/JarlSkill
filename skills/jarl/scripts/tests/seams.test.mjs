@@ -122,6 +122,20 @@ test('rule 6: the grammar of an id, a range of ids and the id in a branch name i
   assert.equal(outside(sample, IDS, ID_GRAMMAR).length, 2);
 });
 
+// ---- rule 9: repositories -----------------------------------------------------------------------------
+
+const REPOSITORIES = (title) => /^repositories:/.test(title);
+const REPOSITORY_NAMES = /\bREPOS_FILE\b|\brepos\.md\b|\bloopHome\(|\bdeclaredRepos\(|\brootsOf\(|--max-parents=0|--is-shallow-repository/;
+
+test('rule 9: only the repositories section resolves a name, declares a repository or reads a root commit', () => {
+  assert.deepEqual(outside(LIB, REPOSITORIES, REPOSITORY_NAMES), []);
+  assert.ok(sectionsOf(LIB).some((s) => REPOSITORIES(s.title) && s.lines.some((l) => /\bloopHome\(/.test(l.text))), 'the section does the resolving');
+  const sample = '// ---- repositories: names -----\nfunction loopHome(root) {}\n// ---- commands ----\nconst home = loopHome(root);\nconst r = git(dir, [\'rev-list\', \'--max-parents=0\', ref]);\nconst f = join(jarlDir(root), \'repos.md\');\n';
+  assert.equal(outside(sample, REPOSITORIES, REPOSITORY_NAMES).length, 3);
+  const count = (pattern) => (LIB.match(pattern) || []).length;
+  assert.equal(count(/--max-parents=0/g), 1, 'the root commits are read in one place');
+});
+
 // ---- the resolvers the seams hang on ------------------------------------------------------------------
 
 test('one resolver names the repositories of an issue, one parser splits the worktree list, one guard holds the lease flags', () => {

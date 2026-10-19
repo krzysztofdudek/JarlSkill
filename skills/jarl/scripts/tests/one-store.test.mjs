@@ -546,7 +546,7 @@ for (const flag of ['worker', 'model', 'branch']) {
 }
 const fieldTextOf = (v) => String(v).replace(/\s+/g, ' ').trim();
 
-test('the refusals name the flag and the rule, and a worktree path reads back whatever it holds', () => {
+test('the refusals name the flag and the rule, and a worktree path that does not exist is accepted and stored nowhere', () => {
   const root = makeLoop();
   const { id } = R.newIssue(root, 'refusals');
   assert.match(refuses(root, 'set', id, 'in-progress', '--worker', 'w,x'), /--worker "w,x" holds a comma/);
@@ -557,7 +557,8 @@ test('the refusals name the flag and the rule, and a worktree path reads back wh
   jarl(root, 'set', id, 'in-progress', '--branch', 'jarl/1-a', '--worker', 'w1', '--model', 'm1', '--worktree', wt);
   const state = foldOf(R.jarlDir(root), R.loadProfile(root), id);
   assert.deepEqual([state.branch, state.worker, state.model], ['jarl/1-a', 'w1', 'm1']);
-  assert.equal(R.findIssue(root, id).fields.worktree, wt);
+  assert.equal(R.findIssue(root, id).fields.worktree, undefined);
+  assert.doesNotMatch(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /worktree/);
   assert.deepEqual(state, headerOf(issueFile(root, id)));
 });
 
