@@ -70,7 +70,8 @@ commands:
   after <id> <ids> | <id> --clear                the issues this one waits on: next does not offer it until each is
                                                  done or dropped, and status counts it as waiting
   evidence <ids> "<text>" | --ran "<command>" --saw "<what it printed>" | <id> --retract <n> --by <who> "<reason>"
-                                                 append a free-text note, or one checkable row per --ran/--saw pair (repeatable);
+                                                 append a free-text note (under ### Notes), or one checkable row per --ran/--saw
+                                                 pair (repeatable; under ### Proof, after the last row);
                                                  --retract retracts the n-th evidence row (the number show prints before each row,
                                                  counted over the whole Evidence section) by an appended entry: the row
                                                  stays, struck through, and the done gate no longer counts it; the first
@@ -80,8 +81,8 @@ commands:
                                                  the issues not finished (open and in-progress) by default; --all for
                                                  every status; --match keeps those whose header field holds the value
   show <id> [--full]                             print one issue as the done gate sees it: the header, What, Why,
-                                                 Acceptance and Changelog, every evidence row (numbered [n]) and every
-                                                 verdict in the done gate's window, every "changes" finding no later
+                                                 Acceptance and Changelog, every Proof row (numbered [n]) and every
+                                                 verdict in the done gate's window, Notes whole, every "changes" finding no later
                                                  approve answered, one line per earlier round; --full prints the whole
                                                  file; --json is complete; under the header, one line for each header
                                                  field that disagrees with the log (see status)
@@ -137,7 +138,8 @@ commands:
                                                  coordinator for coordinator, jarl, reeve, the loop's own name and
                                                  names on a "Coordinators:" line in goal.md; fresh for anyone else);
                                                  "done" needs an approve inside the gate's window, and a
-                                                 fresh one when the issue carries code (a Branch or Merged field);
+                                                 fresh one when the issue carries code (a Branch or Merged field), and
+                                                 the worker's Proof row; an approve on an issue with no Proof row says so;
                                                  findings need at least three words; "retract" in place of the verdict
                                                  (review <id> retract --by <who> "<reason>") retracts the newest approve
                                                  not yet retracted, by an appended entry: the approve stays, struck
