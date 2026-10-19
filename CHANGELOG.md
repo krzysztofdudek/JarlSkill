@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- A loop can require files before an issue is done, such as a picture before a fix and one after it. The loop's profile says which kinds of issue need which files and where they lie, `evidence <id> --file <path> --slot <name>` records a file, and `done` refuses until every required file is there and unchanged. Jarl copies nothing, and `show` and `verify` report the files.
 - A new read-only command, `verify`, checks a loop's record for lines Jarl cannot read, headers that disagree with its log, repositories the issues name that are not on this machine, and open issues that cite a ruling that has been replaced. It changes nothing, and it exits with status 2 when it finds something.
 - `models --with <root>` (repeatable) reads another loop, a loop's root or an archived loop, and `models --archives` reads the loop's own archives. The loops merge into one table grouped by the model as recorded, and the output names the loops it read, so a model can be judged over several loops instead of one. A path that is not a loop is refused and nothing is written.
 - The record keeps which model did each piece of work. `set <ids> in-progress --model <m>` records the model the worker was raised on and `review … --model <m>` the model the reviewer was raised on, as the platform names it, with `@<effort>` where the platform has an effort setting. `review --relayed` marks a verdict that someone other than the reviewer recorded in its name.
