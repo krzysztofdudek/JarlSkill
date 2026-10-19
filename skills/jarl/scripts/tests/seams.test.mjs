@@ -200,3 +200,40 @@ test('every process a test starts carries a timeout', () => {
   assert.deepEqual(files.flatMap((f) => calls(read(`tests/${f}`)).map((l) => `tests/${f}:${l}`)), []);
   assert.equal(calls('const r = spawnSync(process.execPath, [x], { encoding: \'utf8\' });\nconst ok = spawnSync(a, b, { timeout: 1 });').length, 1);
 });
+
+// ---- rule 8: no task number and no task story --------------------------------------------------------
+
+// A comment, a test title or a line of prose never points at a task of the loop: not "(issue 281)", "issue 7", "ticket 3",
+// "package 2", "round 3", "#281" or "field report", and no comment opens with a bare number in parentheses. The commit
+// subject is the one place a number names an issue. No file needs an exception: an id that a test feeds a command is
+// written as the id (7, 007, 1000) and a line about a fixture says "the first issue" rather than its number.
+const TASK_REF = /\((issues?|tickets?|packages?|rounds?)\s+#?\d+|\(#?\d{2,4}\)|(^|[^a-z])(issues?|tickets?|packages?|rounds?)\s+#?\d+|#\d{2,}|field report/i;
+const BARE_NUMBER_FIRST = /^\s*(\/\/|\*)\s*\(#?\d+\)/;
+// The comment part of a script line (the whole line when it is a comment or a test title), or null.
+function commentOf(line) {
+  if (/^\s*(\/\/|\/\*|\*)/.test(line) || /^\s*test\('/.test(line)) return line;
+  const at = line.search(/\s\/\/\s/);
+  return at === -1 ? null : line.slice(at);
+}
+// The lines that hold a task reference, as "file:n: text". A prose file is read whole, line by line.
+function taskRefs(name, text, prose = false) {
+  return text.split('\n').flatMap((line, i) => {
+    const body = prose ? line : commentOf(line);
+    if (body === null || !(TASK_REF.test(body) || BARE_NUMBER_FIRST.test(body))) return [];
+    return [`${name}:${i + 1}: ${body.trim().slice(0, 120)}`];
+  });
+}
+
+test('rule 8: no comment, test title or prose line names a task by number or tells its story', () => {
+  const scripts = readdirSync(SCRIPTS).filter((f) => f.endsWith('.mjs'));
+  const tests = readdirSync(new URL('tests/', SCRIPTS)).filter((f) => f.endsWith('.mjs') && f !== 'seams.test.mjs');
+  const prose = { 'SKILL.md': '../SKILL.md', 'README.md': '../../../README.md', 'CLAUDE.md': '../../../CLAUDE.md', 'CHANGELOG.md': '../../../CHANGELOG.md' };
+  assert.deepEqual([
+    ...scripts.flatMap((f) => taskRefs(f, read(f))),
+    ...tests.flatMap((f) => taskRefs(`tests/${f}`, read(`tests/${f}`))),
+    ...Object.entries(prose).flatMap(([n, u]) => taskRefs(n, readFileSync(new URL(u, SCRIPTS), 'utf8'), true)),
+  ], []);
+  assert.equal(taskRefs('x.mjs', '// the lease of (issue 281)\nconst a = 1; // see issue 7\n// (475) the old count\nconst b = "issue 9";\n// a package 2 ships\n// the #281 shape\n// the field report says so\n').length, 6);
+  assert.equal(taskRefs('x.mjs', 'const a = 1; // a count of 7 things\n// the id 007 is data\n').length, 0);
+  assert.equal(taskRefs('x.md', 'Use `issue 7` as an example.\n(issue 281) ticket 3\n', true).length, 2, 'prose is read whole');
+});
