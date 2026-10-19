@@ -1622,7 +1622,9 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   // The reason is free text in front of the lease's fields: on a lease its own " · " is neutralised, so no reason can be
   // read as a branch, a model or a worker.
   // A reason that opens with the name of a lease field is closed by a segment "(reason)", so no reader takes it for the field.
-  const neutral = holds && why ? String(why).replace(/ +· +/g, ' - ') : why;
+  // Every separator character of a lease's reason is replaced, with the space around it, so no run of separators and
+  // spaces can leave a separator in it and the reason is one segment of the line.
+  const neutral = holds && why ? String(why).replace(/\s*·\s*/g, ' - ').trim() : why;
   const reason = holds && neutral && /^(branch|model|worker|worktree) /.test(neutral) ? `${neutral} · (reason)` : neutral;
   // The line goes first: a write that stops between the two leaves the journal, the record, ahead of the files, which the
   // views report, and never a file ahead of the record.
@@ -2582,11 +2584,18 @@ function leaseTail(segments) {
 }
 // The lease fields { branch, model, worker, worktree } a move line carries: the longest tail of its segments that reads as
 // lease fields in order, the segments before it being the reason.
-function leaseOfMove(text, id, to) {
+// The reason is the rest, as `reason`, without the "(reason)" segment that closes a reason opening with a field name.
+export function leaseOfMove(text, id, to) {
   const rest = text.slice(`${id} → ${to}`.length);
   const segments = rest === '' ? [] : rest.split(' · ').slice(1);
-  for (let k = 0; k <= segments.length; k += 1) { const found = leaseTail(segments.slice(k)); if (found) return found; }
-  return {};
+  for (let k = 0; k <= segments.length; k += 1) {
+    const found = leaseTail(segments.slice(k));
+    if (!found) continue;
+    const head = segments.slice(0, k);
+    if (head.length > 1 && head[head.length - 1] === '(reason)' && /^(branch|model|worker|worktree) /.test(head[0])) head.pop();
+    return { ...found, reason: head.join(' · ') };
+  }
+  return { reason: '' };
 }
 
 // One log line as an event, without its place in the file. `from` is the status the issue was in before the line.

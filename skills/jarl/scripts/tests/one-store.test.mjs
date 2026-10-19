@@ -568,6 +568,85 @@ test('a branch with a space is refused, so a coordinator approve cannot close an
   assert.equal(R.findIssue(root, '001').fields.branch, undefined);
 });
 
+// ---- free text next to a field is never read as one -----------------------------------------------------------
+
+// Texts over an alphabet of the separator, a space, the names of the lease fields and a letter, up to length 8, drawn by a
+// seeded generator; the cases that matter by name come first.
+function alphabetTexts(count, extra = []) {
+  const tokens = ['·', ' ', 'branch', 'worker', 'model', 'worktree', 'x'];
+  let seed = 20261019;
+  const next = (n) => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed % n; };
+  const out = [...extra];
+  for (let i = 0; i < count; i += 1) {
+    let text = '';
+    for (let n = 1 + next(8); n > 0; n -= 1) text += tokens[next(tokens.length)];
+    out.push(text);
+  }
+  return out;
+}
+const reasonModuloReplacement = (why) => String(why).replace(/\s*·\s*/g, ' - ').trim();
+
+test('a reason over the alphabet of separators, spaces and field names never reads as a lease field, and reads back as the same text modulo the replacement', () => {
+  const root = makeLoop();
+  const dir = R.jarlDir(root);
+  const profile = R.loadProfile(root);
+  const texts = alphabetTexts(300, ['a · · branch evil', 'x ·  · worker evil', ' ·  ·  · model evil', 'branch evil', 'worker raised', '(reason)', 'branch x · (reason)']);
+  for (const why of texts) {
+    for (const flags of [{}, { branch: 'jarl/1-a', worker: 'w1', model: 'm1' }]) {
+      const { id } = R.newIssue(root, 'reason');
+      R.setStatus(root, id, 'in-progress', why, flags);
+      const move = L.loopEvents(dir, profile).filter((e) => e.id === id && e.type === 'move').pop();
+      const state = foldOf(dir, profile, id);
+      assert.deepEqual([state.branch, state.worker, state.model], [flags.branch ?? null, flags.worker ?? null, flags.model ?? null], `${JSON.stringify(why)} ${JSON.stringify(flags)}`);
+      assert.equal(L.leaseOfMove(move.text, id, 'in-progress').reason, reasonModuloReplacement(why), `${JSON.stringify(why)}: the reason reads back`);
+    }
+  }
+  assert.deepEqual(recordLines(jarl(root, 'status')), []);
+});
+
+test('a note the free log accepts over the same alphabet is read as a note, and never changes an issue', () => {
+  const root = makeLoop();
+  const { id } = R.newIssue(root, 'notes');
+  R.setStatus(root, id, 'in-progress', undefined, { branch: 'jarl/1-a', worker: 'w1' });
+  const dir = R.jarlDir(root);
+  const profile = R.loadProfile(root);
+  const before = foldOf(dir, profile, id);
+  const accepted = [];
+  for (const body of alphabetTexts(300, [`${id} → x · branch evil`])) {
+    for (const prefix of ['', `${id} `, `${id} → `, `filed ${id} `, `${id} merged `]) {
+      try { R.appendLog(root, `${prefix}${body}`); accepted.push(`${prefix}${body}`.replace(/\s+/g, ' ').trim()); } catch { /* refused */ }
+    }
+  }
+  assert.ok(accepted.length > 100);
+  const events = L.loopEvents(dir, profile).filter((e) => accepted.includes(e.text));
+  assert.ok(events.length > 0);
+  assert.deepEqual([...new Set(events.map((e) => e.type))], ['other']);
+  assert.deepEqual(foldOf(dir, profile, id), before);
+});
+
+test('findings and the reason of a round over the same alphabet are never read as a mark or a field', () => {
+  const root = makeLoop();
+  const { id } = R.newIssue(root, 'verdicts');
+  R.setStatus(root, id, 'in-progress', undefined, { branch: 'jarl/1-a', worker: 'w1' });
+  const dir = R.jarlDir(root);
+  const profile = R.loadProfile(root);
+  const before = foldOf(dir, profile, id);
+  for (const tail of alphabetTexts(120, ['relayed · x', 'model m9 · x', 'Relayed', ' · relayed', 'model'])) {
+    for (const model of [undefined, 'm1']) {
+      R.review(root, id, 'changes', `Important: one two three ${tail}`, { by: 'rev-x', ...(model ? { model } : {}) });
+      const e = L.loopEvents(dir, profile).filter((x) => x.id === id && x.type === 'verdict').pop();
+      assert.deepEqual([e.verdict, e.by, e.kind, e.model, e.relayed], ['changes', 'rev-x', 'fresh', model ?? null, false], JSON.stringify(tail));
+    }
+    R.review(root, id, 'changes', `${tail}\nImportant: one two three`, { by: 'rev-x' });
+    const f = L.loopEvents(dir, profile).filter((x) => x.id === id && x.type === 'verdict').pop();
+    assert.deepEqual([f.verdict, f.by, f.model, f.relayed], ['changes', 'rev-x', null, false], `${JSON.stringify(tail)} first`);
+    R.addRound(root, id, tail);
+    const r = L.loopEvents(dir, profile).filter((x) => x.id === id).pop();
+    assert.equal(r.type, 'round', JSON.stringify(tail));
+  }
+  assert.deepEqual(foldOf(dir, profile, id), before);
+});
+
 // ---- the header rewrite says what it does ---------------------------------------------------------------------
 
 test('set --header says it rewrote a header and moved nothing, and refuses an unknown or a missing status in its own words', () => {
