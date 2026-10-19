@@ -92,7 +92,7 @@ The grammar of the command line (the flags, `--json`, `--help` and `--root`) is 
 
 ## The rules that never bend
 
-- **File first.** Anything anybody saw becomes an issue before anything else happens. Nobody fixes on the side: a worker reports what it found, and the jarl files it, so numbers never collide.
+- **File first.** Anything anybody saw becomes an issue before anything else happens. Nobody fixes on the side: a worker reports what it found, and the jarl files it, or the worker files it with `root` set to the main checkout; either way the write lock hands out the numbers, so they never collide.
 - **One tool moves the record.** Every status change, tag, priority, ruling and log line goes through the tool, never through a hand edit; a header edited by hand is never believed (see [The log is the record](references/record.md#the-log-is-the-record)).
 - **Pass the loop's root.** The live loop is in the main checkout, so every call from a worktree, and every brief, carries the absolute path of the main checkout as `root`.
 - **A code issue is cleared by a fresh reviewer.** An issue that records a Branch or a Merged field is cleared by the approve of an agent that neither wrote the code nor runs the loop. The worker never approves its own work, and `done` refuses without a live approve (see [references/reviewer.md](references/reviewer.md)).

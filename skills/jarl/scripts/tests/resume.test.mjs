@@ -221,7 +221,7 @@ test('a copy of a live loop from before resume: resume reads it, handoff read sh
   const r = run(copy, ['resume'], { JARL_GH: join(copy, 'no-gh') });
   assert.equal(r.status, 0, r.stderr);
   for (const h of ['## Rulings in force', '## In flight', '## Questions to the user', '## Next ready', '## Merge queue', '## Last 15 log line(s)']) assert.ok(r.stdout.includes(h), h);
-  assert.match(r.stdout, /a handoff file from before resume is kept at \.jarl\/handoff\.md/);
+  assert.match(r.stdout, /the loop holds a handoff file at \.jarl\/handoff\.md/);
   const h = run(copy, ['handoff', 'read'], { JARL_GH: join(copy, 'no-gh') }).stdout;
   assert.match(h, /\n## Earlier handoff — history, written \S+ \S+, \S+ ago; not the current state\n\*\*At:\*\* /);
   assert.match(h, /\n### Summary\n/);

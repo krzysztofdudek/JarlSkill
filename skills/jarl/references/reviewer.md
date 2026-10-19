@@ -29,6 +29,7 @@ exists to prevent. To reproduce red-before-green, read the pre-change file with 
 in place.
 Read the issue (jarl_show { id: "7", root: "<repo root>" }), then `git diff <feature-branch>...jarl/7-slug` — in
 the repository the issue's **Repo:** names when it names one, the loop's own otherwise.
+Read the rulings in force (jarl_decisions { live: true, root: "<repo root>" }): a change that goes against one is a finding.
 Read the evidence rows the worker recorded: a worker's missing rows, red and green not recorded as --ran/--saw rows, are an Important finding.
 Answer four questions with evidence: does the diff meet the acceptance line literally (quote it in the findings; an issue with none is itself a finding); was the new test red before the change and green after; did anything outside the issue's scope move; and, for every review and above all after a round, did the change or the fix weaken anything that worked or protected before (a mode, a default, a guard, a test)?
 Rank every finding Critical / Important / Minor. Minor findings alone are an approve.

@@ -2875,7 +2875,8 @@ export function cmdNext(root, flags) {
   return flags.all ? rows : rows.filter((r) => r.ready);
 }
 
-// How many times the costly reads ran in this process: the models table and the rows next computes. A view that must
+// How many times the costly reads ran in this process: the steps that build the models table (the command, the facts of
+// a loop, the worker and reviewer tables and each worker cell) and the rows next computes. A view that must
 // not build the table, or must build its rows once, is held to it by a test that reads these.
 const builds = { modelsTable: 0, nextRows: 0 };
 export const modelsTableBuilds = () => builds.modelsTable;
@@ -4134,6 +4135,7 @@ const issueRepoLabels = (dir, issue) => {
 // What one loop's record shows of its workers (one row per unit: one worker on one branch, which is one issue or one
 // package leased in one call; a takeover starts a new unit) and of its verdicts, each with the model beside the name.
 function modelFacts(loop, label, lines) {
+  builds.modelsTable += 1;
   const { profile, issues, byId } = loop;
   const dir = loop.root;
   const journal = loop.eventsById;
@@ -4240,6 +4242,7 @@ function modelFacts(loop, label, lines) {
 const cellKey = (r) => (r.model == null ? `tier ${r.tier}` : `${r.kind} · ${r.tier}`);
 const byLabel = (a, b) => (a.model == null) - (b.model == null) || String(a.model).localeCompare(String(b.model));
 function workerCell(key, rows, extra = {}) {
+  builds.modelsTable += 1;
   const n = rows.filter((r) => !r.ended);
   const c = (f) => n.filter(f).length;
   return {
@@ -4255,6 +4258,7 @@ const groupBy = (list, f) => { const g = new Map(); for (const x of list) { cons
 const atLeastShare = (a, b) => a.clean * b.units >= b.clean * a.units;   // a's clean share is at least b's, without rounding
 
 function workerTable(unitRows, lines) {
+  builds.modelsTable += 1;
   const baseline = new Map([...groupBy(unitRows.filter((r) => !r.ended), (r) => `${r.kind} · ${r.tier}`)].map(([k, rs]) => [k, { key: k, units: rs.length, clean: rs.filter((r) => r.clean).length }]));
   const tierBase = new Map([...groupBy(unitRows.filter((r) => !r.ended), (r) => r.tier)].map(([k, rs]) => [k, { key: `all kinds · ${k}`, units: rs.length, clean: rs.filter((r) => r.clean).length }]));
   const rows = [...groupBy(unitRows, (r) => r.model ?? '')].map(([model, rs]) => {
@@ -4279,6 +4283,7 @@ function workerTable(unitRows, lines) {
 }
 
 function reviewerTable(verdictRows) {
+  builds.modelsTable += 1;
   return [...groupBy(verdictRows, (r) => r.model ?? '')].map(([model, rs]) => {
     const cells = [...groupBy(rs, cellKey)].map(([key, list]) => {
       const approves = list.filter((r) => r.verdict === 'approve');
@@ -5971,7 +5976,7 @@ export function renderResume(o, profile = DEFAULT_PROFILE) {
     ...sec(`Tips${o.tips.ci ? '' : ' (CI not asked — --ci asks gh)'}`, tips),
     ...(files.length ? sec(`Loop files not committed (${files.length}) — commit .jarl/`, [...files.slice(0, 20).map((f) => `- ${f}`), ...(files.length > 20 ? [`- … ${files.length - 20} more`] : [])]) : []),
     ...(o.log ? sec(`Last ${o.log.length} log line(s)`, o.log.map((l) => `- ${l}`), '- (empty log)') : []),
-    ...(o.legacyHandoff ? [`(a handoff file from before resume is kept at .jarl/handoff.md${o.legacyHandoff.at ? `, written ${o.legacyHandoff.at}` : ''} — history, not the state; handoff read prints it)`] : []),
+    ...(o.legacyHandoff ? [`(the loop holds a handoff file at .jarl/handoff.md${o.legacyHandoff.at ? `, written ${o.legacyHandoff.at}` : ''} — not the state; handoff read prints it)`] : []),
   ].join('\n').replace(/\n+$/, '');
 }
 

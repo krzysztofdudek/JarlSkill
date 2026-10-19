@@ -62,7 +62,7 @@ It is raised with an explicit `--model` and is unplaced and new. It starts on sm
 
 ## Relaying a verdict
 
-A reviewer records its own verdict. A reviewer that came back without recording it is resumed to record it. `review --relayed` is for the one case that cannot cover, a reviewer that cannot be resumed (its session ended, an outside interruption): the coordinator records the verdict the reviewer gave, from its report, and marks it. It still counts as the reviewer's standing, because the reviewer did review; the mark makes the second-hand provenance true and makes the reviewer model's slip countable.
+Who records a verdict, and what is done when it is missing, is in [The review](reviewer.md#the-review). `review --relayed` is for the one case that rule cannot cover, a reviewer that cannot be resumed (its session ended, an outside interruption): the coordinator records the verdict the reviewer gave, from its report, and marks it. It still counts as the reviewer's standing, because the reviewer did review; the mark makes the second-hand provenance true and makes the reviewer model's slip countable.
 
 ## What models shows
 

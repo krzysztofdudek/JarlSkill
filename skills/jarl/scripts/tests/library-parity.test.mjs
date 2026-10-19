@@ -49,6 +49,7 @@ export const COMMAND_LINE_ONLY = [
   { item: '`show`', cases: [], cli: 'shows one issue as text, with its evidence rows and where its branch sits', library: 'no function; findIssue returns the same record as data', why: 'text for a person' },
   { item: '`list`', cases: [], cli: 'lists the issues as a table', library: 'no function; loadIssues returns the same record as data', why: 'a table for a person' },
   { item: '`changelog`', cases: [], cli: 'shows the changelog fragments of issues as text', library: 'no function', why: 'the release step writes the release text once, from the fragments' },
+  { item: '`handoff`', cases: [], cli: 'prints what `resume` prints, then the handoff file the loop holds, if there is one; its `write` writes nothing', library: 'no function', why: 'the handoff file is for a person to read at the start of a session' },
   { item: '`sources`', cases: [], cli: 'lists the sources of issues', library: 'no function; setSource writes them', why: 'a view for a person' },
   { item: '`profile`', cases: [], cli: 'shows the profile in use, as text', library: 'no function; loadProfile and describeProfile return it as data', why: 'text for a person' },
 ];

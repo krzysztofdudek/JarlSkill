@@ -70,7 +70,7 @@ the other side.
 
 Nothing is written for the next session. Everything it needs is in the loop's own files — the goal, the rulings, the issues with their leases and **After:**, the asks, the log — and in the repositories its issues name, so `resume` reads it all at the moment it is asked: nothing it prints can be stale, and a session that is cut off mid-turn leaves nothing unsaid. It holds no lock and writes nothing, so any role may run it at any time, and it needs no network (`--ci` adds the CI of each pushed tip through `gh`).
 
-**After a compaction, or any summary of your own context, you are starting a session: run `resume` before the next action. A summary is not the state:** it holds what you remember of the loop, and `resume` holds what the loop records. A coordinator that goes on from its summary acts on a state that may have moved.
+What to do after a compaction is in First moves in [SKILL.md](../SKILL.md#first-moves): it is a session start, and it begins with `resume`.
 
 What the next session needs lives where `resume` reads it:
 

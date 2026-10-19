@@ -2,13 +2,13 @@
 // tool list without the handoff tool, and the views that show a tier's default model without building the models table.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { appendFileSync, readFileSync } from 'node:fs';
+import { appendFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as R from '../record.mjs';
 import * as L from '../jarl-lib.mjs';
 import { dispatch, USAGE } from '../jarl.mjs';
 import * as mcp from '../jarl-mcp.mjs';
-import { loop, skillText } from './helpers.mjs';
+import { loop, skillFiles, skillText } from './helpers.mjs';
 
 // ---- the sentence that survives a compaction ----------------------------------------------------------------------------
 
@@ -16,11 +16,16 @@ test('after a summary of its own context a session resumes before its next actio
   const skill = skillText('SKILL.md');
   assert.match(skill, /compaction[^\n]*summary of your own context[^\n]*resume[^\n]*before[^\n]*next action/i);
   assert.match(skill, /a summary is not the state/i);
-  const instructions = readFileSync(new URL('../jarl-mcp.mjs', import.meta.url), 'utf8').match(/const INSTRUCTIONS = (['"`])((?:\\.|(?!\1).)*)\1;/)?.[2] ?? '';
+  // What a host receives: the instructions of the initialize answer.
+  const instructions = mcp.handle({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }).result.instructions;
   assert.match(instructions, /compaction/i);
   assert.match(instructions, /resume/);
   assert.match(instructions, /before your next action/);
   assert.match(instructions, /a summary is not the state/i);
+});
+
+test('the compaction sentence has two homes by design, SKILL.md for the skill and the server instructions for a host that keeps them; no reference repeats it', () => {
+  for (const file of skillFiles().filter((f) => f !== 'SKILL.md')) assert.doesNotMatch(skillText(file), /summary is not the state/i, `${file} repeats the compaction sentence`);
 });
 
 // ---- the briefs -----------------------------------------------------------------------------------------------------------
@@ -44,7 +49,9 @@ test('the worker brief ends with a closing checklist and says that no file carri
   ];
   for (const [what, re] of items) assert.match(brief, re, `the worker brief carries: ${what}`);
   assert.match(brief, /no (?:file|comment|test|doc)[^\n]*task number|task number[^\n]*no file/i);
+  assert.match(brief, /no loop issue number appears in code, comments, tests, docs or graph entries/i, 'every place a number may not appear is named');
   assert.match(brief, /loop ends[^\n]*number[^\n]*points nowhere/i, 'the reason is given in the worker\'s own terms');
+  assert.match(brief, /rulings in force[^\n]*jarl_decisions[^\n]*live: true/i, 'the worker reads the rulings in force');
   assert.match(brief, /only the commit subject names the issue/i);
   assert.ok(brief.indexOf('closing checklist') > brief.indexOf('Report in under'), 'the checklist closes the brief');
 });
@@ -60,21 +67,26 @@ test('the reviewer brief asks the fourth question, reads the rows, and ends with
   assert.match(last, /quotes? the line review printed/i, 'the answer quotes the line review printed');
   assert.ok(brief.trimEnd().endsWith('```'), 'the recording step closes the brief');
   assert.ok(brief.indexOf('Record your own verdict') > brief.indexOf('Rank every finding'), 'recording is the last step');
+  assert.match(brief, /rulings in force[^\n]*jarl_decisions[^\n]*live: true/i, 'the reviewer reads the rulings in force');
   assert.match(ref, /returned without recording[^\n]*resumed to record/i, 'a reviewer that returned without recording is resumed');
+  for (const file of skillFiles().filter((f) => f !== 'references/reviewer.md')) assert.doesNotMatch(skillText(file), /without recording[^\n]*resumed to record/i, `${file} repeats the rule that a reviewer is resumed to record`);
   assert.match(ref, /gate counts the reviewer of the previous round as fresh/i);
   assert.match(ref, /new one-shot reviewer for each round[^\n]*findings of the previous round/i);
 });
 
 // ---- the tool list ------------------------------------------------------------------------------------------------------
 
-test('the tool list has no handoff tool, the command line keeps its command, and no skill file names it', () => {
+test('the tool list has no handoff tool, the command line keeps its command, and the main path and the command reference leave it out', () => {
   assert.ok(!mcp.buildTools().some((t) => t.name === 'jarl_handoff'));
   assert.ok(!Object.keys(mcp.TABLE.commands).some((c) => c === 'handoff' && !mcp.TABLE.commands[c].internal), 'the table marks the command internal');
   assert.throws(() => mcp.callTool('jarl_handoff', {}), /unknown|no such tool|not found/i);
   assert.doesNotMatch(USAGE, /^\s{2}handoff\b/m, 'the usage text does not document it');
-  for (const file of ['SKILL.md', 'references/jarl.md', 'references/commands.md', 'references/record.md', 'references/worker.md', 'references/reviewer.md', 'references/merger.md', 'references/repositories.md', 'references/models.md', 'references/composers.md', 'references/glossary.md']) {
-    assert.doesNotMatch(skillText(file), /handoff/i, `${file} does not name the handoff`);
-  }
+  // The main path never names it. The command reference leaves out its tool fields, its row, the archive's mention of its
+  // file and the two JSON keys; the list of what only the command line does (composers.md) still has its row.
+  assert.doesNotMatch(skillText('SKILL.md'), /handoff/i, 'SKILL.md does not name the handoff');
+  const commands = skillText('references/commands.md');
+  assert.doesNotMatch(commands, /handoff/i, 'commands.md does not document the handoff command, its keys or its file');
+  assert.match(skillText('references/composers.md'), /^\| `handoff` \|/m, 'the command-line-only list keeps its row');
 });
 
 // ---- next and resume show the tier's default model and never build the models table -----------------------------------
@@ -101,7 +113,7 @@ test('next and resume print the default model of the tier and no table row; the 
   assert.deepEqual(next.out.map((r) => r.model), [{ default: 'mid-model' }, { default: 'big-model' }]);
   assert.deepEqual(resume.out.next.map((r) => r.model), [{ default: 'mid-model' }, { default: 'big-model' }]);
   L.cmdModels(root, {});
-  assert.equal(L.modelsTableBuilds(), built + 1, 'the probe counts a build of the table');
+  assert.ok(L.modelsTableBuilds() > built, 'the probe counts the steps that build the table, not only the command');
 });
 
 test('next computes its rows once, also when nothing is ready', () => {

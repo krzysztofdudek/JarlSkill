@@ -30,6 +30,7 @@ If the change is user-visible, record its changelog entry on the issue:
 jarl_body { id: "7", changelog: ["Added: …"], root: "<main checkout>" } (Changed, Fixed, … — one item per line). Edit
 CHANGELOG.md on your branch as well only where the repository's own rules (its CLAUDE.md, AGENTS.md or hooks) require
 the entry to come with the change; otherwise leave CHANGELOG.md to the merger.
+Read the rulings in force first (jarl_decisions { live: true, root: "<main checkout>" }): a ruling that names your issue or its files binds you.
 Prove the change: a test that is red before and green after. Run the test files your change touches,
 in the foreground, with the shell tool's own timeout parameter set (a run that outlives the tool's
 default timeout is moved to the background and you will sit waiting for a notification that is not

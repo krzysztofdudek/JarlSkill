@@ -364,7 +364,7 @@ Parallel workers in worktrees:
   - Committed mode: the merger alone commits .jarl/, and a worker never does.
   - Filing: the coordinator files the issues; a worker reports what it found, or files with --root <main checkout>.
   - Lease: an issue in progress is held by a worker, whose name, branch and start the lease records.
-  - Finished work: list hides done and dropped issues; --all shows every status, and --tag, --status, --prio and --grep filter by tag, status, priority and text.`;
+  - Finished work: list hides finished and deferred work; --all shows every status, and --tag, --status, --prio and --grep filter by tag, status, priority and text.`;
 // ---- main --------------------------------------------------------------------------------------
 
 // Every flag a command accepts, and what it takes: 'bool' takes no value, 'value' takes exactly one,

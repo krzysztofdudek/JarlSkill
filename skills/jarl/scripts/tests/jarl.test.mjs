@@ -1525,7 +1525,7 @@ test('issues and handoffs from before leases and merges read unchanged', () => {
   // The old file is shown whole, but below the live state and one heading level down, as history.
   assert.match(h, /\n## Earlier handoff — history, written 2026-01-01 00:00, \d+d ago; not the current state\n\*\*At:\*\* 2026-01-01 00:00 · \*\*Head:\*\* main@abc1234\n\n### Summary\nold\n\n### In flight\n- 999 gone\n/);
   assert.ok(h.indexOf('999 gone') > h.indexOf('## Last '), 'the snapshot comes after the live sections');
-  assert.match(jarl(root, 'resume'), /a handoff file from before resume is kept at \.jarl\/handoff\.md, written 2026-01-01 00:00 — history, not the state; handoff read prints it\)$/);
+  assert.match(jarl(root, 'resume'), /the loop holds a handoff file at \.jarl\/handoff\.md, written 2026-01-01 00:00 — not the state; handoff read prints it\)$/);
   assert.doesNotMatch(jarl(root, 'resume'), /999 gone/, 'resume itself never prints the old snapshot');
   assert.deepEqual(JSON.parse(jarl(root, 'branches', '--json')), []);
 });
