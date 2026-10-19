@@ -412,14 +412,6 @@ test('models: work with no recorded model prints under its own heading, never un
   assert.match(text, /\n\(not recorded\)\n  \(not recorded\) · tier standard  units 2/);
 });
 
-test('a lower-ranked model whose share equals the default\'s is suggested: the default does no better there', () => {
-  const root = loop({ lines: true });
-  units(root, 5, { model: SMALL, worker: 'w-small' });
-  units(root, 5, { model: MID, worker: 'w-mid' });
-  const { id } = R.newIssue(root, 'to do', { kind: 'bug', tier: 'standard', acceptance: 'it works' });
-  assert.equal(J.cmdNext(root, {}).find((r) => r.id === id).model.suggested, SMALL);
-});
-
 test('models --by repo slices the same facts by repository; the text names n for every count and a share only from n >= 5', () => {
   const root = loop({ lines: true });
   mkdirSync(join(root, 'sub'));
@@ -479,26 +471,22 @@ test('models is read-only: it takes no lock and writes nothing', () => {
 
 // ---- the views: next, resume, status --------------------------------------------------------------------
 
-test('next and resume show the tier default model, and suggest a lower-ranked model that fits while the default does no better; next --json gains model', () => {
+test('next and resume show the default model of the issue\'s tier alone, whatever the record measured of the other models; next --json carries model', () => {
   const root = loop({ lines: true });
   units(root, 5, { model: SMALL, worker: 'w-small' });
   units(root, 5, { model: MID, worker: 'w-mid' }, 2);
   const { id } = R.newIssue(root, 'to do', { kind: 'bug', tier: 'standard', acceptance: 'it works' });
   const { id: strong } = R.newIssue(root, 'hard', { kind: 'bug', tier: 'strong', acceptance: 'it works' });
   const rows = J.cmdNext(root, {});
-  const row = rows.find((r) => r.id === id);
-  assert.equal(row.model.default, MID);
-  assert.equal(row.model.suggested, SMALL);
-  assert.match(row.model.basis, /small-model/);
-  assert.match(row.model.basis, /5 of 5/);
-  const hard = rows.find((r) => r.id === strong);
-  assert.equal(hard.model.default, BIG);
-  assert.equal(hard.model.suggested, null);
+  assert.deepEqual(rows.find((r) => r.id === id).model, { default: MID });
+  assert.deepEqual(rows.find((r) => r.id === strong).model, { default: BIG });
   const text = L.renderNext(rows, false);
-  assert.match(text, new RegExp(`${id}[^\\n]*model mid-model[^\\n]*suggest small-model`));
+  assert.match(text, new RegExp(`${id}[^\\n]*\\[model mid-model\\]`));
+  assert.doesNotMatch(text, /suggest/);
   const resume = R.resumeData(root, {});
-  assert.equal(resume.next.find((r) => r.id === id).model.suggested, SMALL);
-  assert.match(L.renderResume(resume), /suggest small-model/);
+  assert.deepEqual(resume.next.find((r) => r.id === id).model, { default: MID });
+  assert.match(L.renderResume(resume), /\[model mid-model\]/);
+  assert.doesNotMatch(L.renderResume(resume), /suggest/);
 });
 
 test('next and resume carry no model in a loop without model lines', () => {

@@ -47,7 +47,7 @@ The library and the command line write the same files and log lines for every op
 | `show` | shows one issue as text, with its evidence rows and where its branch sits | no function; findIssue returns the same record as data | text for a person |
 | `list` | lists the issues as a table | no function; loadIssues returns the same record as data | a table for a person |
 | `changelog` | shows the changelog fragments of issues as text | no function | the release step writes the release text once, from the fragments |
-| `handoff` | reads and writes a session's handoff note | no function | the handoff is a note of a session, not part of the record |
+| `handoff` | prints what `resume` prints, then the handoff file the loop holds, if there is one; its `write` writes nothing | no function | the handoff file is for a person to read at the start of a session |
 | `sources` | lists the sources of issues | no function; setSource writes them | a view for a person |
 | `profile` | shows the profile in use, as text | no function; loadProfile and describeProfile return it as data | text for a person |
 

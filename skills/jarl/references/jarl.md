@@ -4,18 +4,36 @@ Read it when you open or resume a loop as the jarl, or when you hand the loop to
 
 ## Contents
 
+- [The moments of work](#the-moments-of-work): where each moment of a loop is described
+- [Opening a loop](#opening-a-loop): what to look at before the first worker
 - [The loop](#the-loop): the turn, in order
 - [Resuming a loop](#resuming-a-loop): where a new session finds what it needs
 - [Filing an issue](#filing-an-issue): the body in the call that files, issues that wait
 - [From research to issues](#from-research-to-issues): `import` and `sources`
 - [Templates](#templates): issues filed again and again in one shape, a release checklist
 - [What goes to the owner](#what-goes-to-the-owner): asking well, decisions made under a mandate
+- [An owner who is rarely there](#an-owner-who-is-rarely-there): provisional decisions and questions that hold one issue
 - [Rulings about an area](#rulings-about-an-area): rulings that reach every file of one type of code
 - [Closing the branch](#closing-the-branch): the steps before the feature branch merges to `main`
 - [Standing permission to push the feature branch](#standing-permission-to-push-the-feature-branch)
 - [Closing a permanent loop](#closing-a-permanent-loop)
 - [The reeve: handing the loop down](#the-reeve-handing-the-loop-down): a long-lived assistant that runs the loop
 - [Talking to the owner](#talking-to-the-owner)
+
+## The moments of work
+
+| Moment | Read |
+|---|---|
+| You open a loop | [Opening a loop](#opening-a-loop) |
+| Session start: resume | [Resuming a loop](#resuming-a-loop) |
+| You ask the owner through `ask` | [What goes to the owner](#what-goes-to-the-owner) and [An owner who is rarely there](#an-owner-who-is-rarely-there) |
+| You start researchers: `findings.json`, then `import` | [From research to issues](#from-research-to-issues) |
+| A loop over several repositories | [Code in another repository](repositories.md#code-in-another-repository) and [Parallel workers in worktrees](repositories.md#parallel-workers-in-worktrees) |
+| You close | [Closing the branch](#closing-the-branch) |
+
+## Opening a loop
+
+`init "<goal>"` opens it (see First moves in [SKILL.md](../SKILL.md#first-moves)). Before the first worker is raised, look at the checkout with `git status`. A worker sees only what is committed: a worktree is cut from the feature branch, so edits that exist only in the main checkout's working tree, and files git has not seen, are invisible to every worker raised from it. Commit that work on the feature branch first, or tell the owner it waits, and never hand a worker an issue whose files carry changes that are not committed. In a committed loop, `status` and `resume` also name the loop's own files that git has not committed.
 
 ## The loop
 
@@ -50,16 +68,16 @@ the other side.
 
 ## Resuming a loop
 
-There is no handoff file to write. Everything a new session needs is already in the loop's own files — the goal, the rulings, the issues with their leases and **After:**, the asks, the log — and in the repositories its issues name, so `resume` reads it all at the moment it is asked: nothing it prints can be stale, and a session that is cut off mid-turn leaves nothing unsaid. It holds no lock and writes nothing, so any role may run it at any time, and it needs no network (`--ci` adds the CI of each pushed tip through `gh`).
+Nothing is written for the next session. Everything it needs is in the loop's own files — the goal, the rulings, the issues with their leases and **After:**, the asks, the log — and in the repositories its issues name, so `resume` reads it all at the moment it is asked: nothing it prints can be stale, and a session that is cut off mid-turn leaves nothing unsaid. It holds no lock and writes nothing, so any role may run it at any time, and it needs no network (`--ci` adds the CI of each pushed tip through `gh`).
 
-What a handoff carries lives where `resume` reads it:
+What to do after a compaction is in First moves in [SKILL.md](../SKILL.md#first-moves): it is a session start, and it begins with `resume`.
+
+What the next session needs lives where `resume` reads it:
 
 - **What comes next** is the order of the issues: priorities (`prio`) and **After:** (`after`). The next session reads it in the ready list and the waiting list.
 - **Why** is a ruling (`decide`, or the owner's `answer`) or the issue's own body (`body --what/--why`). A reason worth keeping is never only in a summary.
 - **What is going on in a branch** is the lease (`set in-progress --branch --worker`), the evidence rows and the log line each command writes.
 - **What waits on the owner** is an `ask`, never a sentence in prose.
-
-`handoff read` prints the same, followed by the `.jarl/handoff.md` the loop holds, if any, as history; `handoff write` writes nothing.
 
 ## Filing an issue
 
@@ -69,7 +87,7 @@ What a handoff carries lives where `resume` reads it:
 
 ## From research to issues
 
-A research round leaves a `findings.json` beside its report. `import <findings.json>` files one issue per finding, and each carries **Source:** `<report dir>#<finding id>`. The report directory is dated, so that pair names one finding for good. The directory is the one holding the file, written from the root of its repository (`core/research/2026-09-25-jarl`), or given with `--source <dir>`. Import is idempotent. A finding whose Source an issue already carries is skipped, so a re-run files nothing twice. A finding named by an issue that has no **Source:** is not filed again either: `import` reports it, and `--adopt` writes the Source onto that issue. "Named" is read narrowly: the issue's title and its What, Why and Acceptance count, a header field never does, and Evidence only under the strictest rule: an id that reads as unique on its own, on an Evidence line that also names the report directory (a package issue's `Source: <report dir>/report.md … Ids: a-b-01, a-b-02`). An id that reads as unique on its own (a dash and at least eight characters, like `jarl-2-B2`) is enough there by itself. A short id (`F1`, `C1`, `2`), or any id from the angles shape, also needs its report named in the same issue: the report directory's name, or the full `<angle>/<id>`. When two issues name it, import reports it as ambiguous and leaves both alone. `--dry-run` prints what it would do, and `--only <ids>` takes part of the file. `--kind`, `--prio`, `--tier`, `--tags`, `--repo` and `--found-by` replace the mapped values for every issue filed.
+When you start researchers, ask each one to leave a `findings.json` beside its report, and then `import` it: the findings become issues in one call, and nobody rewrites a report into issues by hand. A research round leaves a `findings.json` beside its report. `import <findings.json>` files one issue per finding, and each carries **Source:** `<report dir>#<finding id>`. The report directory is dated, so that pair names one finding for good. The directory is the one holding the file, written from the root of its repository (`core/research/2026-09-25-jarl`), or given with `--source <dir>`. Import is idempotent. A finding whose Source an issue already carries is skipped, so a re-run files nothing twice. A finding named by an issue that has no **Source:** is not filed again either: `import` reports it, and `--adopt` writes the Source onto that issue. "Named" is read narrowly: the issue's title and its What, Why and Acceptance count, a header field never does, and Evidence only under the strictest rule: an id that reads as unique on its own, on an Evidence line that also names the report directory (a package issue's `Source: <report dir>/report.md … Ids: a-b-01, a-b-02`). An id that reads as unique on its own (a dash and at least eight characters, like `jarl-2-B2`) is enough there by itself. A short id (`F1`, `C1`, `2`), or any id from the angles shape, also needs its report named in the same issue: the report directory's name, or the full `<angle>/<id>`. When two issues name it, import reports it as ambiguous and leaves both alone. `--dry-run` prints what it would do, and `--only <ids>` takes part of the file. `--kind`, `--prio`, `--tier`, `--tags`, `--repo` and `--found-by` replace the mapped values for every issue filed.
 
 Three shapes are read: a flat array of findings; an array of angles, each with its findings under `surviving`; and `{ "results": [{ "area", "kept": [...] }] }`. In the angles shape an id is unique only inside its angle, so the key there is always `<angle>/<id>`, with the angle name slugified (`First Hour` → `first-hour`). Every finding needs an id, and a repeated id refuses the whole file. The mapping:
 
@@ -127,13 +145,15 @@ Ask well: where you are, what you found, the options with trade-offs, your recom
 open "what should I do". File it with `ask`, keep the rest of the loop moving, and record the answer
 with `answer` — it becomes a ruling in `decisions.md`.
 
-**Decided under a mandate.** When the owner has handed the loop a mandate to decide on its own ("decide
-and go on, I'll look later") and it decides something that is the owner's (from the list in SKILL.md), the
-choice is always filed as `ask --kind ratify [--issue <id>] "<what was decided, and why>"`, never left in
-evidence prose. A ratify item blocks nothing: the work goes on, `next` and `done` ignore it. It is
-listed in `status` (`to ratify N`, one line each) and under its own heading in `resume` until the
-owner answers. `answer` records the answer as a ruling and writes it into the issue's evidence. When the
-owner rejects the choice, file the undoing as a new issue.
+When the owner has handed the loop a mandate to decide on its own, or is away, how the loop goes on is in [An owner who is rarely there](#an-owner-who-is-rarely-there).
+
+## An owner who is rarely there
+
+The loop neither waits for the owner nor guesses for them. Everything that is theirs goes through `ask`, and the work that does not depend on the answer goes on. The exact grammar in force is printed by `jarl --help`.
+
+- **A provisional decision** is a ruling plus a question that asks for the owner's word afterwards: `decide <slug> "<ruling>"`, then `ask --kind ratify --issue <id> "<what was decided, and why>"`. It is never left in evidence prose. It blocks nothing: the work goes on, `next` and `done` ignore it, and it waits as long as the owner needs. It is listed in `status` (`to ratify N`, one line each) and under its own heading in `resume` until the owner answers. `answer` records the answer as a ruling and writes it into the issue's evidence. When the owner rejects the choice, file the undoing as a new issue.
+- **A question the jarl cannot settle** is `ask --kind stuck --issue <id> "<where you are, what you found, the options, your recommendation>"`. It holds only that issue: `next` does not offer it while the question is open, and every other issue goes on.
+- **At every boot** read the questions and the ratify items `resume` prints first: the owner may have answered in the meantime, and an answer is a ruling in force from then on.
 
 ## Rulings about an area
 

@@ -35,6 +35,9 @@ const OLD_NAMES = [
   [/\bjarl(?:\.mjs)? check\b|`check [<\[-]|`check` (?:on|takes|reads|refuses)|\bon `check`|\(`check`,/, 'check as the name of the command that measures a branch (it is scope)'],
 ];
 const CLAIM = /\bclaim\b/i;
+// A list item glued to the line before it: the closing mark of a sentence or a bracket, then a list marker and the start
+// of an entry (bold, a code span or a link) with no space or line break between; or a table row glued to the row before.
+const GLUED = /[.;:)\]]- (?:\*\*|`|\[)|\|\|\s*`/;
 // The sentences outside the glossary that open with a glossary term and is or are without defining it, as
 // [file, a fragment of the line]. Each states a rule or a fact about the term; none defines it.
 const DEFINITION_ALLOWED = [
@@ -197,6 +200,9 @@ export function shapeProblems(dir) {
     });
     for (const { n, text: line } of proseLines(body)) {
       if (owned.has(n)) continue;
+      // Two list items or entries on one line: the end of a sentence, a bracket or a code span followed at once by the
+      // marker of the next item, with no line break between them.
+      if (GLUED.test(line)) problems.push(`${f}:${n}: a list item or table row glued to the one before it: ${line.trim().slice(0, 60)}`);
       const prose = withoutCodeSpans(line);
       if (HISTORY.test(prose) || SINCE.test(prose)) problems.push(`${f}:${n}: a word of history: ${line.trim().slice(0, 60)}`);
     }
@@ -351,6 +357,14 @@ test('a task by a bare hash number, by the word task, or told as a story fails',
   for (const text of ['See #7 for it.', 'The task 12 ships it.', 'It has produced a rewritten HEAD in practice.', 'In practice it broke.']) {
     assert.ok(names(broken('references/merger.md', (t) => `${t}\n${text}\n`), 'a task number').length, text);
   }
+});
+
+test('a list item or a table row glued onto the end of the line before it fails, and a list that is broken into lines does not', () => {
+  const glued = names(broken('references/commands.md', (t) => t.replace(/\)\.\n(- \*\*`list --json`\*\*)/, ').$1')), 'glued');
+  assert.equal(glued.length, 1, glued.join('\n'));
+  assert.ok(names(broken('references/jarl.md', (t) => `${t}\n- one item.- **two** items\n`), 'glued').length);
+  assert.ok(names(broken('references/jarl.md', (t) => `${t}\n| a | b |\n|---|---|\n| \`x\` | y || \`z\` | w |\n`), 'glued').length);
+  assert.deepEqual(names(broken('references/jarl.md', (t) => `${t}\n- one item.\n- **two** items\n`), 'glued'), []);
 });
 
 test('the checks read the files a scratch copy was made of, not the real skill', () => {

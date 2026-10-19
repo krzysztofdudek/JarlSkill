@@ -22,7 +22,7 @@ If your worktree was made for you by the platform and starts on a branch it name
 (`git branch -m jarl/7-slug`); never create a second branch beside it, which leaves the first one behind.
 Your scope is the issue below and nothing else. Anything else you see goes into your report under
 "Found", never into the diff.
-No file of the repository carries a task number or a description of a task: a comment says what the code does and why it must be so, and a test title says what behaviour it proves.
+No file of the repository carries a task number or a description of a task: no loop issue number appears in code, comments, tests, docs or graph entries, because the loop ends and the number then points nowhere. A comment says what the code does and why it must be so, and a test title says what behaviour it proves. Only the commit subject names the issue (`… (issue <id>)`).
 The loop's tools are the jarl MCP tools (jarl_show, jarl_evidence, jarl_body, …); pass root: "<main checkout>"
 on every call — your worktree has no live `.jarl/` of its own — and never add `.jarl/` to your branch. If your
 session has no jarl_* tools, run the same commands as `node <absolute path to jarl.mjs> <command> --root <main checkout>`.
@@ -30,6 +30,7 @@ If the change is user-visible, record its changelog entry on the issue:
 jarl_body { id: "7", changelog: ["Added: …"], root: "<main checkout>" } (Changed, Fixed, … — one item per line). Edit
 CHANGELOG.md on your branch as well only where the repository's own rules (its CLAUDE.md, AGENTS.md or hooks) require
 the entry to come with the change; otherwise leave CHANGELOG.md to the merger.
+Read the rulings in force first (jarl_decisions { live: true, root: "<main checkout>" }): a ruling that names your issue or its files binds you.
 Prove the change: a test that is red before and green after. Run the test files your change touches,
 in the foreground, with the shell tool's own timeout parameter set (a run that outlives the tool's
 default timeout is moved to the background and you will sit waiting for a notification that is not
@@ -43,6 +44,8 @@ does the same can pop the wrong entry.
 Report in under 200 words: what changed, the evidence (commands and what they printed),
 "Found" (new issues, if any), and `git log -1 --oneline` of your commit.
 You spawn no agents of your own.
+Evidence is for proof: the --ran/--saw rows prove, and a free-text note is a line or two that explains them. Your long report goes to the jarl, not into the evidence.
+Before you report, go through the closing checklist, every item, whatever the tier of the issue: the work is committed on your branch; red and green are recorded as evidence rows (jarl_evidence with ran and saw), not only in the report; every check this brief names was waited for to its end, and what it printed is in a row; the changelog fragment is written on the issue, or the change is one nobody sees; the report is sent. A report that skips an item is not yet a report.
 
 <the output of jarl_show for the issue (its current window), not the file>
 ```

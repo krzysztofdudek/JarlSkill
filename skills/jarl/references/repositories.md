@@ -1,11 +1,12 @@
 # Packages, leases and several repositories
 
-How a package of issues shares one worker branch and one lease, how a lease shows up in git, and how one loop directs work in other repositories. Read it when you lease issues, read `branches` or a stale lease, or when an issue names a repository other than the loop's own. The terms are defined in [glossary.md](glossary.md).
+How a package of issues shares one worker branch and one lease, how a lease shows up in git, how one loop directs work in other repositories, and the rules for workers that run in parallel. Read it when you lease issues, read `branches` or a stale lease, or when an issue names a repository other than the loop's own. The terms are defined in [glossary.md](glossary.md).
 
 ## Contents
 
 - [Packages and leases](#packages-and-leases): one worker, one branch, several issues; the states of a worktree; stale leases
 - [Code in another repository](#code-in-another-repository): the issue names it, the name holds no path, the files carry the name
+- [Parallel workers in worktrees](#parallel-workers-in-worktrees): which mode, who commits `.jarl/`, who files, what a lease means, what `list` shows
 
 ## Packages and leases
 
@@ -29,3 +30,13 @@ A loop can keep its issues in one repository while its workers change another: a
 - **`branches` reads there with `--repo <path>`.** Without it, it lists the loop's own repository only, so at boot run it once per repository the open issues name.
 - **The worker, the reviewer and the merger work there.** The worker's worktree and its `jarl/7-slug` branch are cut in that repository from its own feature branch, and that is the branch the brief names; the reviewer diffs there; the merger merges and runs the check in that repository's main checkout. `.jarl/` never enters that repository.
 - **`resume` and `tips`** show where that repository's branches stand, beside the loop's own.
+
+## Parallel workers in worktrees
+
+The rules a session with several workers in worktrees runs by; `jarl --help` ends with the same list in short.
+
+- **The default mode keeps the loop out of git.** It lives in the main checkout, and a worktree cannot see it, so every call from a worktree, a worker's or the coordinator's, passes the main checkout as `root`. Several workers writing at once queue on the write lock and lose nothing, and the one `log.md` is shared on purpose: it is the record.
+- **In the committed mode the merger alone commits `.jarl/`.** A worker never does, because a worker's commit of the loop would carry a copy that nobody else writes.
+- **The coordinator files the issues.** A worker reports what it found, or files with `root` set to the main checkout, so numbers never collide.
+- **An issue in progress is held by a worker.** That is the lease: it stays in progress after an approve until the merge is recorded and the issue is set done, `resume` shows it with its worker, branch and start, and `status` counts the issues in flight and lists the stale leases.
+- **`list` hides finished and deferred work.** It shows the open and in-progress issues; `--all` shows every status, and `--status`, `--tag`, `--prio` and `--grep` narrow by status, tag, priority and text.

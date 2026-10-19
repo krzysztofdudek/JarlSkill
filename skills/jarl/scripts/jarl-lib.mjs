@@ -2875,8 +2875,15 @@ export function cmdNext(root, flags) {
   return flags.all ? rows : rows.filter((r) => r.ready);
 }
 
-// The model of a ready issue as next and resume show it: the tier's default, and the suggestion with its numbers.
-const modelText = (m) => (m && m.default ? `  [model ${m.default}${m.suggested ? ` · suggest ${m.suggested}: ${m.basis}` : ''}]` : '');
+// How many times the costly reads ran in this process: the steps that build the models table (the command, the facts of
+// a loop, the worker and reviewer tables and each worker cell) and the rows next computes. A view that must
+// not build the table, or must build its rows once, is held to it by a test that reads these.
+const builds = { modelsTable: 0, nextRows: 0 };
+export const modelsTableBuilds = () => builds.modelsTable;
+export const nextRowsBuilds = () => builds.nextRows;
+
+// The model of a ready issue as next and resume show it: the default model of the issue's tier.
+const modelText = (m) => (m && m.default ? `  [model ${m.default}]` : '');
 
 const NEXT_HEADERS = { ready: 'Ready', 'held-by-file': 'Held by a file another issue holds', 'held-by-resource': 'Held by a resource another issue holds', 'waiting-after': 'Waiting on After', 'held-by-question': 'Held by an open question' };
 export function renderNext(rows, all, held = 0) {
@@ -2897,6 +2904,7 @@ export function renderNext(rows, all, held = 0) {
 }
 
 export function nextRows(root, flags = {}) {
+  builds.nextRows += 1;
   const profile = loadProfile(root);
   const issues = loadIssues(root);
   // An open question of kind stuck (the default) or stop that names an issue holds that issue back until it is answered.
@@ -2943,7 +2951,7 @@ export function nextRows(root, flags = {}) {
   const limit = Number(flags.limit) || Infinity;
   let n = 0;
   const kept = out.filter((r) => { if (!r.ready) return true; n += 1; return n <= limit; });
-  // In a loop that declares model lines, a ready issue shows the model of its tier and what the record suggests.
+  // In a loop that declares model lines, a ready issue shows the default model of its tier.
   const marks = modelMarks(root, kept.filter((r) => r.ready).map((r) => byId.get(r.id)));
   return kept.map((r) => (marks.has(r.id) ? { ...r, model: marks.get(r.id) } : r));
 }
@@ -4127,6 +4135,7 @@ const issueRepoLabels = (dir, issue) => {
 // What one loop's record shows of its workers (one row per unit: one worker on one branch, which is one issue or one
 // package leased in one call; a takeover starts a new unit) and of its verdicts, each with the model beside the name.
 function modelFacts(loop, label, lines) {
+  builds.modelsTable += 1;
   const { profile, issues, byId } = loop;
   const dir = loop.root;
   const journal = loop.eventsById;
@@ -4233,6 +4242,7 @@ function modelFacts(loop, label, lines) {
 const cellKey = (r) => (r.model == null ? `tier ${r.tier}` : `${r.kind} · ${r.tier}`);
 const byLabel = (a, b) => (a.model == null) - (b.model == null) || String(a.model).localeCompare(String(b.model));
 function workerCell(key, rows, extra = {}) {
+  builds.modelsTable += 1;
   const n = rows.filter((r) => !r.ended);
   const c = (f) => n.filter(f).length;
   return {
@@ -4248,6 +4258,7 @@ const groupBy = (list, f) => { const g = new Map(); for (const x of list) { cons
 const atLeastShare = (a, b) => a.clean * b.units >= b.clean * a.units;   // a's clean share is at least b's, without rounding
 
 function workerTable(unitRows, lines) {
+  builds.modelsTable += 1;
   const baseline = new Map([...groupBy(unitRows.filter((r) => !r.ended), (r) => `${r.kind} · ${r.tier}`)].map(([k, rs]) => [k, { key: k, units: rs.length, clean: rs.filter((r) => r.clean).length }]));
   const tierBase = new Map([...groupBy(unitRows.filter((r) => !r.ended), (r) => r.tier)].map(([k, rs]) => [k, { key: `all kinds · ${k}`, units: rs.length, clean: rs.filter((r) => r.clean).length }]));
   const rows = [...groupBy(unitRows, (r) => r.model ?? '')].map(([model, rs]) => {
@@ -4272,6 +4283,7 @@ function workerTable(unitRows, lines) {
 }
 
 function reviewerTable(verdictRows) {
+  builds.modelsTable += 1;
   return [...groupBy(verdictRows, (r) => r.model ?? '')].map(([model, rs]) => {
     const cells = [...groupBy(rs, cellKey)].map(([key, list]) => {
       const approves = list.filter((r) => r.verdict === 'approve');
@@ -4297,6 +4309,7 @@ function loopShape(path) {
   return null;
 }
 export function cmdModels(root, flags = {}) {
+  builds.modelsTable += 1;
   need(flags.by === undefined || ['repo', 'tag'].includes(flags.by), `--by is one of: repo, tag (got "${flags.by}")`);
   need(flags.archives === undefined || flags.archives === true, '--archives takes no value');
   const lines = modelLines(root);
@@ -4353,40 +4366,12 @@ export function renderModels(m) {
   ].join('\n').replace(/\n+$/, '');
 }
 
-// The tier default and the suggestion for a ready issue, in a loop that declares model lines. A model suggested is a
-// lower-ranked, placed one that fits the issue's kind (its own cell, else its numbers across the kinds at that tier)
-// while the default does no better there.
-export function modelMarkFor(table, lines, issue) {
-  const def = lines.defaultOf(issue.tier);
-  const none = { default: def, suggested: null, basis: null };
-  if (!def) return none;
-  const key = `${issue.kind} · ${issue.tier}`;
-  const pick = (row) => {
-    if (!row) return null;
-    const own = row.cells.find((c) => c.key === key && !c.rollup && c.units >= MODEL_MIN_N);
-    if (own) return own;
-    return row.cells.find((c) => c.rollup && c.tier === issue.tier && c.units >= MODEL_MIN_N) || null;
-  };
-  const defCell = pick(table.workers.find((r) => r.model === def));
-  let best = null;
-  for (const row of table.workers) {
-    if (row.model == null || lines.rank(row.model) < 0 || lines.rank(row.model) >= lines.rank(def)) continue;
-    const c = pick(row);
-    if (!c || c.word !== 'fits') continue;
-    // The default "does no better there": the candidate's share is at least as good as the default's.
-    if (defCell && c.clean * defCell.units < defCell.clean * c.units) continue;
-    if (!best || c.clean * best.cell.units > best.cell.clean * c.units || (c.clean * best.cell.units === best.cell.clean * c.units && c.units > best.cell.units)) best = { row, cell: c };
-  }
-  if (!best) return none;
-  const c = best.cell;
-  return { default: def, suggested: best.row.model, basis: `${best.row.model} first pass clean ${c.clean} of ${c.units} on ${c.key}${c.rollup ? ' (its numbers across the kinds at that tier)' : ''}; ${def} ${defCell ? `${defCell.clean} of ${defCell.units}` : 'has no data there'}` };
-}
-// What next and resume show per ready issue, or nothing in a loop without model lines.
+// What next and resume show per ready issue: the default model of the issue's tier, read from the goal's Model lines
+// alone. The models table is never built for it; `models` is the view that builds it. Nothing in a loop without model lines.
 export function modelMarks(root, rows) {
   const lines = modelLines(root);
   if (!lines.declared || !rows.length) return new Map();
-  const table = cmdModels(root, {});
-  return new Map(rows.map((r) => [r.id, modelMarkFor(table, lines, r)]));
+  return new Map(rows.map((r) => [r.id, { default: lines.defaultOf(r.tier) }]));
 }
 
 const SEVERITIES = ['Critical', 'Important', 'Minor'];
@@ -5991,7 +5976,7 @@ export function renderResume(o, profile = DEFAULT_PROFILE) {
     ...sec(`Tips${o.tips.ci ? '' : ' (CI not asked — --ci asks gh)'}`, tips),
     ...(files.length ? sec(`Loop files not committed (${files.length}) — commit .jarl/`, [...files.slice(0, 20).map((f) => `- ${f}`), ...(files.length > 20 ? [`- … ${files.length - 20} more`] : [])]) : []),
     ...(o.log ? sec(`Last ${o.log.length} log line(s)`, o.log.map((l) => `- ${l}`), '- (empty log)') : []),
-    ...(o.legacyHandoff ? [`(a handoff file from before resume is kept at .jarl/handoff.md${o.legacyHandoff.at ? `, written ${o.legacyHandoff.at}` : ''} — history, not the state; handoff read prints it)`] : []),
+    ...(o.legacyHandoff ? [`(the loop holds a handoff file at .jarl/handoff.md${o.legacyHandoff.at ? `, written ${o.legacyHandoff.at}` : ''} — not the state; handoff read prints it)`] : []),
   ].join('\n').replace(/\n+$/, '');
 }
 
