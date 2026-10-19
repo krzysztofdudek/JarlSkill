@@ -34,7 +34,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { COMMAND_ARGS, COMMAND_FLAGS, COMMAND_SUMMARY, GLOBAL_FLAGS, MUTATING, USAGE, parseArgs, dispatch, findRoot, isEntry as isEntryOf } from './jarl.mjs';
+import { COMMAND_ARGS, COMMAND_FLAGS, flagsOf, COMMAND_SUMMARY, GLOBAL_FLAGS, MUTATING, USAGE, parseArgs, dispatch, findRoot, isEntry as isEntryOf } from './jarl.mjs';
 import { defineTable } from './vendor/runes/dist/cli/index.mjs';
 import {
   buildTools as generateTools, argvFor as generateArgv, commandForTool, serveStdio, InvalidParams,
@@ -59,9 +59,9 @@ export const toolName = (cmd) => `${TOOL_PREFIX}${cmd}`;
 export const argName = (a) => a.replace(/[?.]+$/, '');
 
 // What a command's table cannot say about its arguments, added to that tool's description.
-export const ARG_NOTES = {
-  set: 'The "status" field may instead name a field the loop\'s profile declares (see jarl_profile), and "why" is then that field\'s value: set <ids> <field> "<value>".',
-};
+export const ARG_NOTES = {};
+// The commands that write one issue at a time and take the list grammar in their "id" field.
+const LIST_ID_COMMANDS = new Set(['body', 'source', 'after', 'files', 'repo', 'round']);
 const IDS_NOTE = 'An ids field is one id or several as one comma list with ranges (12,13,14 or 203-206,209); every id and every precondition is checked before anything is written, so the call lands on all of them or on none.';
 const IDS_FIELD = 'One id, or several as one comma list with ranges (12,13 or 203-206): all of them change, or none.';
 const ROOT_FIELD = "The directory holding .jarl/, as an absolute path (a relative or empty one is refused). Defaults to JARL_ROOT from the server's environment, else the loop found from the server's working directory. Workers in a worktree and every role of a loop that lives in another repository pass it always.";
@@ -75,7 +75,7 @@ export const TABLE = defineTable({
   globalFlags: GLOBAL_FLAGS,
   commands: Object.fromEntries(Object.keys(COMMAND_FLAGS).map((cmd) => [cmd, {
     args: COMMAND_ARGS[cmd].map((a) => (a.endsWith('...') ? `${a}?` : a)),
-    flags: COMMAND_FLAGS[cmd],
+    flags: flagsOf(cmd),
     summary: COMMAND_SUMMARY[cmd],
     writes: MUTATING.has(cmd),
     destructive: cmd === 'close' || cmd === 'archive',
@@ -87,9 +87,9 @@ function describe(cmd, spec) {
   const effect = spec.writes ? 'WRITES the loop.' : 'Read-only.';
   return `${effect} ${spec.summary}${ARG_NOTES[cmd] ? ` ${ARG_NOTES[cmd]}` : ''}`;
 }
-function fieldNote(_cmd, field) {
+function fieldNote(cmd, field) {
   if (field === 'root') return ROOT_FIELD;
-  if (field === 'ids') return IDS_FIELD;
+  if (field === 'ids' || (field === 'id' && LIST_ID_COMMANDS.has(cmd))) return IDS_FIELD;
   return undefined;
 }
 // The options the tools are generated with: the prefix, the one-sentence descriptions, the notes on root and ids,

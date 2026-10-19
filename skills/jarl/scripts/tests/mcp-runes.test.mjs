@@ -37,12 +37,20 @@ test('the table is the CLI\'s: every command, and the server lists exactly the t
 test('budget step 1: a tool description is one sentence after whether it writes; the full usage is jarl_help', () => {
   for (const t of listed) {
     if (t.name === 'jarl_help') continue;
-    const body = t.description.replace(/^(WRITES the loop\.|Read-only\.) /, '').replace(mcp.ARG_NOTES.set, '').trim();
+    const body = t.description.replace(/^(WRITES the loop\.|Read-only\.) /, '').trim();
     assert.equal(body.split(/(?<=[.!?])\s+(?=[A-Z])/).length, 1, `${t.name}: "${body}"`);
     assert.ok(t.description.length <= 400, `${t.name}: ${t.description.length} characters`);
   }
   const help = mcp.callTool('jarl_help', {});
   assert.ok(help.content[0].text.startsWith(USAGE), 'jarl_help answers with the usage --help prints');
+});
+
+test('the server lists jarl_field for Resources and the profile\'s fields, with its own fields, and jarl_set for statuses alone', () => {
+  const byName = Object.fromEntries(listed.map((t) => [t.name, t]));
+  assert.match(byName.jarl_field.description, /^WRITES the loop\. Write one field on issues, Resources or a field the profile declares, or empty any optional field with clear\.$/);
+  assert.deepEqual(Object.keys(byName.jarl_field.inputSchema.properties).sort(), ['clear', 'ids', 'json', 'name', 'root', 'value']);
+  assert.equal(byName.jarl_field.inputSchema.properties.clear.type, 'boolean');
+  assert.equal(byName.jarl_set.description, 'WRITES the loop. Change the status of issues, with the reason logged.');
 });
 
 test('tools/list is measured against the budget (8.5k tokens per server): reported, a warning when over, never a failure', (t) => {
