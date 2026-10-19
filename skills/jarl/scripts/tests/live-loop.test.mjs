@@ -3,8 +3,8 @@
 // golden files, one per command, named as in COMMANDS; without both the test is skipped.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
@@ -21,10 +21,26 @@ const COMMANDS = {
 };
 const skip = !(LIVE && GOLDEN && existsSync(join(LIVE, '.jarl'))) && 'JARL_LIVE_LOOP (a copy of a real loop) and JARL_LIVE_GOLDEN (its golden outputs) are unset, or name nothing';
 
+// JARL_LIVE_RECORD=1 writes the golden files instead of comparing with them.
+const RECORD = process.env.JARL_LIVE_RECORD === '1';
+function printed(args) {
+  const out = spawnSync(process.execPath, [SCRIPT, ...args, '--root', LIVE], { encoding: 'utf8', timeout: 120_000 });
+  assert.equal(out.status, 0, out.stderr);
+  return out.stdout;
+}
+function matchesGolden(file, text) {
+  if (RECORD) { mkdirSync(dirname(join(GOLDEN, file)), { recursive: true }); writeFileSync(join(GOLDEN, file), text); return; }
+  assert.equal(text, readFileSync(join(GOLDEN, file), 'utf8'));
+}
+
 for (const [file, args] of Object.entries(COMMANDS)) {
   test(`${args.join(' ')} prints the golden bytes on the live loop copy`, { skip }, () => {
-    const out = spawnSync(process.execPath, [SCRIPT, ...args, '--root', LIVE], { encoding: 'utf8', timeout: 120_000 });
-    assert.equal(out.status, 0, out.stderr);
-    assert.equal(out.stdout, readFileSync(join(GOLDEN, file), 'utf8'));
+    matchesGolden(file, printed(args));
   });
 }
+
+test('show --full prints the golden bytes for every issue of the live loop copy', { skip }, () => {
+  const ids = readdirSync(join(LIVE, '.jarl', 'issues')).filter((f) => /^\d+-.*\.md$/.test(f)).map((f) => String(Number(f.slice(0, f.indexOf('-')))));
+  assert.ok(ids.length > 0);
+  for (const id of ids) matchesGolden(join('show', `${id}.txt`), printed(['show', id, '--full']));
+});
