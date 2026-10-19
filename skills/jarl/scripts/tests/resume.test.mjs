@@ -79,7 +79,7 @@ test('resume assembles every section live from the loop and the repositories its
   assert.match(t, /## Merge queue\n\[tool\] into release\n  1\. jarl\/5-five → 5  \+1  approved \S+ \S+ by rev  batch 1\n/);
   assert.match(t, /## Merged, CI pending or red \(2\)\n- 6 [0-9a-f]+ in tool · CI pending\n- 7 [0-9a-f]+ in tool · CI red\n/);
   assert.match(t, /## Tips \(CI not asked — --ci asks gh\)\n/);
-  assert.match(t, /^\[tool\] .*\n {2}feature {2}jarl\/1-one [0-9a-f]{12} {2}\+1\/-0 vs release {2}not pushed {2}→ 1\n {2}feature {2}jarl\/5-five [0-9a-f]{12} {2}\+1\/-0 vs release {2}not pushed {2}→ 5\n {2}release {2}release [0-9a-f]{12} {2}= origin\/release\n {2}main {5}main [0-9a-f]{12} {2}= origin\/main$/m);
+  assert.match(t, /^\[tool\] .*\n {2}worker {3}jarl\/1-one [0-9a-f]{12} {2}\+1\/-0 vs release {2}not pushed {2}→ 1\n {2}worker {3}jarl\/5-five [0-9a-f]{12} {2}\+1\/-0 vs release {2}not pushed {2}→ 5\n {2}feature {2}release [0-9a-f]{12} {2}= origin\/release\n {2}main {5}main [0-9a-f]{12} {2}= origin\/main$/m);
   assert.match(t, /## Loop files not committed \(\d+\) — commit \.jarl\/\n- \.jarl\/asks\.md\n/);
   assert.match(t, /## Last 15 log line\(s\)\n(- \S+ \S+ · .*\n){14}- \S+ \S+ · 7 merged /);
   assert.equal(existsSync(join(parent, 'gh-calls')), false, 'no --ci: gh is never run');
@@ -90,7 +90,7 @@ test('resume assembles every section live from the loop and the repositories its
   assert.match(narrow, /## Next ready \(1 of 3\)\n- 4  P2  ready three  \(no acceptance yet\)\n\n/);
   assert.match(narrow, /## Last 2 log line\(s\)\n- \S+ \S+ · filed 7 · merged seven\n- \S+ \S+ · 7 merged \S+ in tool · CI red$/);
   assert.match(narrow, /## Tips\n/);
-  assert.match(narrow, / {2}release {2}release [0-9a-f]{12} {2}= origin\/release {2}ci green \(run 7 CI\)/);
+  assert.match(narrow, / {2}feature {2}release [0-9a-f]{12} {2}= origin\/release {2}ci green \(run 7 CI\)/);
   assert.equal(readFileSync(join(parent, 'gh-calls'), 'utf8').trim().split('\n').length, 2, 'gh asked about the two pushed tips, release and main');
   assert.match(run(hub, ['resume', '--log', 'x']).stderr, /--log takes a whole number/);
 
@@ -135,8 +135,8 @@ test('resume in a git repository with no worker branches: Tips shows the release
   const { hub } = world();
   jarl(hub, 'new', 'one');
   const t = jarl(hub, 'resume');
-  assert.match(t, /## Tips \(CI not asked — --ci asks gh\)\n\[hub\] \S+\n {2}release {2}main [0-9a-f]{12} {2}\(no upstream\) {2}not pushed\n\n## /);
-  assert.doesNotMatch(t, /feature {2}/);
+  assert.match(t, /## Tips \(CI not asked — --ci asks gh\)\n\[hub\] \S+\n {2}feature {2}main [0-9a-f]{12} {2}\(no upstream\) {2}not pushed\n\n## /);
+  assert.doesNotMatch(t, /^ {2}worker /m);
 });
 
 test('commands run in one process read git afresh each time: a branch made between two of them is seen', async () => {

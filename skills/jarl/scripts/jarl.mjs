@@ -267,8 +267,8 @@ commands:
                                                  check", with the testimony mark as status shows it; --json also carries
                                                  one row per issue and the metrics (see SKILL.md, "Loop metrics")
   tips                                           read-only: per repository the loop's issues name (open, in progress,
-                                                 recently merged), the tip of each worker branch in flight, the release
-                                                 branch and main, ahead/behind their upstream as last fetched, and — when
+                                                 recently merged), the tip of each worker branch in flight, the feature
+                                                 branch the checkout is on and main, ahead/behind their upstream as last fetched, and — when
                                                  gh is on PATH — the CI of a tip its upstream holds (else "not pushed");
                                                  nothing is fetched or written
   queue [--repo <name|path>] [--base <b>]        read-only: the branches waiting for the merger — an open or in-progress
@@ -517,7 +517,7 @@ export const COMMAND_SUMMARY = {
   status: 'The goal, the counts by status, the reviews, stale leases and what awaits ratification.',
   archive: 'Put the current loop away under .jarl/archive/ so a new one can open here.',
   report: 'What was done, dropped, deferred and still open, ready for the changelog, with the loop metrics.',
-  tips: 'Per repository the loop names: the tips of worker, release and main branches, ahead/behind and CI; fetches nothing.',
+  tips: 'Per repository the loop names: the tips of worker, feature and main branches, ahead/behind and CI; fetches nothing.',
   queue: 'The branches waiting for the merger, in approval order, cut into batches whose files do not overlap.',
   changelog: 'Print the issues\' changelog entries grouped by section, ready to paste under [Unreleased].',
   mode: 'Switch a committed loop to the permanent mode.',

@@ -641,8 +641,8 @@ test('check, branches and handoff read the repository an issue names, not the lo
     // resume shows where the tool repository stands, beside the hub's own tips.
     jarl(hub, 'set', '1', 'in-progress', 'worker raised in tool', '--branch', 'jarl/1-change-a');
     const res = jarl(hub, 'resume');
-    assert.match(res, new RegExp(`^\\[tool\\] .*\\n(  .*\\n)*  release  feature ${sh(tool, 'git rev-parse --short=12 feature')}`, 'm'), `${mode}: the tool repository's tip is shown`);
-    assert.match(res, /^  feature  jarl\/1-change-a [0-9a-f]{12}  \+1\/-0 vs feature  not pushed  → 1$/m, mode);
+    assert.match(res, new RegExp(`^\\[tool\\] .*\\n(  .*\\n)*  feature  feature ${sh(tool, 'git rev-parse --short=12 feature')}`, 'm'), `${mode}: the tool repository's tip is shown`);
+    assert.match(res, /^  worker   jarl\/1-change-a [0-9a-f]{12}  \+1\/-0 vs feature  not pushed  → 1$/m, mode);
 
     assert.equal(sh(tool, 'git status --porcelain --untracked-files=all'), '', `${mode}: the loop never writes into the tool repository`);
   }

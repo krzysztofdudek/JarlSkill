@@ -5303,6 +5303,8 @@ export function ciOf(repo, sha) {
 // issue names, the tip of each branch that matters there — the feature branches its in-progress issues record,
 // the branch its checkout is on (the release branch), and main — with ahead/behind against its upstream as last
 // fetched (nothing is fetched), and, when gh is on PATH, the CI of that exact commit. It never gates anything.
+// A row's role says what the branch is in the skill: worker (a worker branch of an in-progress issue), feature (the
+// branch the checkout is on, the one the loop's work merges into) or main.
 export function cmdTips(root, { ci: askCi = true } = {}) {
   const loop = readLoop(jarlDir(root));
   const { issues, profile } = loop;
@@ -5334,7 +5336,7 @@ export function cmdTips(root, { ci: askCi = true } = {}) {
     const hasBranch = (dir, b) => isGitRepo(dir) && refsIn(dir).has(b);
     const elsewhere = (b) => flight.filter((i) => i.fields.branch === b).some((i) => issueRepos(root, i).some((r) => topOf(r) !== real && hasBranch(r, b)));
     const feature = [...new Set(flight.map((i) => i.fields.branch))].filter((b) => exists(b) || !elsewhere(b));
-    const wanted = [...feature.map((b) => ({ role: 'feature', branch: b })), ...(current && current !== 'HEAD' ? [{ role: 'release', branch: current }] : []), ...(main ? [{ role: 'main', branch: main }] : [])];
+    const wanted = [...feature.map((b) => ({ role: 'worker', branch: b })), ...(current && current !== 'HEAD' ? [{ role: 'feature', branch: current }] : []), ...(main ? [{ role: 'main', branch: main }] : [])];
     const seen = new Set();
     const rows = [];
     for (const w of wanted) {
@@ -5346,15 +5348,15 @@ export function cmdTips(root, { ci: askCi = true } = {}) {
       // A worker branch cut with tracking of the release branch has no upstream of its own: only a remote branch
       // of the same name counts as where it was pushed.
       let upstream = ref.upstream;
-      if (upstream && w.role === 'feature' && !upstream.endsWith(`/${w.branch}`)) upstream = null;
+      if (upstream && w.role === 'worker' && !upstream.endsWith(`/${w.branch}`)) upstream = null;
       let ahead = null; let behind = null; let against = null;
       if (upstream) {
         ahead = ref.ahead; behind = ref.behind; against = upstream;
-      } else if (w.role === 'feature' && current && current !== 'HEAD' && current !== w.branch) {
+      } else if (w.role === 'worker' && current && current !== 'HEAD' && current !== w.branch) {
         const lr = (git(repo, ['rev-list', '--left-right', '--count', `${w.branch}...${current}`]) || '').split(/\s+/).map(Number);
         [ahead, behind] = lr; against = current;
       }
-      const on = w.role === 'feature' ? flight.filter((i) => i.fields.branch === w.branch).map((i) => i.id) : [];
+      const on = w.role === 'worker' ? flight.filter((i) => i.fields.branch === w.branch).map((i) => i.id) : [];
       // CI runs on what was pushed: only a tip its upstream already holds (nothing ahead) is asked about.
       const pushed = Boolean(upstream) && ahead === 0;
       const ci = pushed && askCi ? ciOf(repo, sha) : null;
