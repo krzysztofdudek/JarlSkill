@@ -38,7 +38,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The skill lists every difference between the record library and the command line, with the reason for each, so a tool that builds on the library can see where the two differ.
 
 ### Changed
-- The command that measures a worker branch is now named `scope`; `check` keeps working under its name. `tips` labels worker branches as worker branches and the checkout's branch as the feature branch.
+- The skill uses one word for each concept and has a short glossary of them.
+- The person who rules over a loop is called the owner.
+- The claim an issue holds while it is in progress is called a lease. A profile that still writes the old flag name, `holds-claim`, keeps working.
+- `tips` labels worker branches as worker branches, and the branch you are on as the feature branch.
+- `profile` shows `lease` where it showed `holds-claim`.
+- The command that measures a branch has the clearer name `scope`; `check` keeps working under its name.
 - `set` changes statuses, and a new `field` verb writes the other fields, the fields a loop's profile declares and Resources. `field <ids> <name> --clear` empties a field, Files, Source, Where, Tags, After and Repo included. `files`, `repo`, `after`, `body`, `round` and `source` now take several issue numbers at once, such as `3,5-7`, and the call changes all of them or none. `jarl --help` now exits 0. Writing a field with `set <ids> <field> "<value>"` and emptying one with an empty value still work, and print the `field` form to use instead.
 - A lease holds a branch, a worker and a start time, and no worktree path: the worktree is found through the branch. `set --worktree <path>` checks that the path is a worktree of the issue's repository with the lease's branch checked out, refuses it otherwise, and stores nothing.
 - An answer to a ratification question must say who gave it, with `--by`; the command refuses a coordinator's name there, because the answer is the person's own ruling.

@@ -34,7 +34,7 @@ Each term below is defined here, once; the rest of the skill uses it in that sen
 | `type` | The closed category of a question: `stop`, `stuck`, `lower`, `charter` or `ratify`. |
 | `profile` | The file that names a loop's statuses, flags, fields and sections, read as data and never as rails of its own. |
 | `tier` | The strength an issue is given, `light`, `standard` or `strong`, which picks the models it may run on. |
-| `model` | The model a worker or a reviewer runs on, named as the platform names it, and the tier it is placed on. |
+| `model` | The name of the model a worker or a reviewer ran on, recorded with the lease or the verdict. |
 | `mode` | How the loop lives in git: `default` out of git, `committed` with the work, or `permanent` as a standing record. |
 | `format` | The record format a loop's files are written in; Jarl reads the formats it knows and refuses a higher one. |
 | `owner` | The one who rules: sets the goal, answers the questions and decides what is theirs to decide. |
@@ -832,7 +832,7 @@ The library and the command line write the same files and log lines for every op
 | `queue` | lists the merge queue | no function | a listing for a person; a composer decides what lands |
 | `report` | writes the loop's text report with its metrics | no function | a summary for a person; a composer reports from its own record |
 | `scope` | reads a worker branch's diff against the files its issues declare | no function | it reads git; a composer's gate decides what lands |
-| A second name for a command | prints a note on stderr that gives the command's own name | no second name | a note for a person at the command line; the tools and composers call a command by its own name |
+| Typing a command under another name | prints a note on stderr that gives the command's own name | no command names, only functions called by name | a note for a person typing at the command line; the tools and composers call a command by its own name |
 | `branches` | lists each branch with the issues it carries and its state | no function | it reads git in the repositories the issues name; a view for a person |
 | `tips` | lists the tip of each worker branch in flight | no function | it reads git in every repository the issues name; a view for a person |
 | `verify` | checks the record with its own readers in strict mode | no function; the readers are the library's | a consistency read for a person; a composer uses the readers |

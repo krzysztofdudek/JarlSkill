@@ -131,7 +131,7 @@ test('resume assembles every section live from the loop and the repositories its
   assert.equal(JSON.parse(jarl(hub, 'resume', '--log', '0', '--json')).log, null);
 });
 
-test('resume in a git repository with no worker branches: Tips shows the release branch and main, nothing else', () => {
+test('resume in a git repository with no worker branches: Tips shows the feature branch and main, nothing else', () => {
   const { hub } = world();
   jarl(hub, 'new', 'one');
   const t = jarl(hub, 'resume');

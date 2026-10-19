@@ -1378,7 +1378,7 @@ test('check --branch refuses a branch no issue holds, and says how many commits 
   jarl(root, 'new', 'one', '--files', 'a.txt');
   git('git checkout -q -b feature && echo more >> a.txt && git commit -qam work && git checkout -q main');
   const msg = refuses(root, 'check', '--branch', 'feature', '--base', 'main');
-  assert.match(msg, /^no issue records branch feature: it carries 1 commit\(s\) beyond main and no issue holds it \(work without a ticket\) — file the issue, then set it in-progress --branch feature\n$/);
+  assert.match(msg, /^no issue records branch feature: it carries 1 commit\(s\) beyond main and no issue holds it \(work without an issue\) — file the issue, then set it in-progress --branch feature\n$/);
   assert.match(refuses(root, 'check', '--branch', 'jarl/none'), /^no issue records branch jarl\/none — name one/);
 });
 

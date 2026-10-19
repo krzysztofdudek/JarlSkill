@@ -4658,7 +4658,7 @@ function unrecordedBranch(root, flags) {
   const repo = flags.repo !== undefined ? repoFromInput(root, flags.repo).main : root;
   const base = flags.base || defaultBase(repo);
   const carried = commitsBeyond(repo, base, flags.branch);
-  if (carried) return `no issue records branch ${flags.branch}: it carries ${carried} commit(s) beyond ${base} and no issue holds it (work without a ticket) — file the issue, then set it in-progress --branch ${flags.branch}`;
+  if (carried) return `no issue records branch ${flags.branch}: it carries ${carried} commit(s) beyond ${base} and no issue holds it (work without an issue) — file the issue, then set it in-progress --branch ${flags.branch}`;
   return `no issue records branch ${flags.branch} — name one (scope <id> --branch ${flags.branch}), or record the package: set <ids> in-progress --branch ${flags.branch}`;
 }
 
