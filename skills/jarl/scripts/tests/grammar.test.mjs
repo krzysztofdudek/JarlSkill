@@ -1,6 +1,7 @@
 // One grammar for the commands: --help exits 0, one retract verb for a verdict and an evidence row, set for statuses and
-// field for fields, one way to empty a field, and the list grammar on every command that takes an id. The spellings
-// another form of the same operation takes keep working, and say on stderr (the command line only) which form to use.
+// field for fields, one way to empty a field, and the list grammar on the commands that write one issue at a time. A
+// spelling that names the same operation through evidence, review or set is read as the verb, and says on stderr (the
+// command line only, never a tool reply) which verb to use.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, readFileSync } from 'node:fs';
@@ -84,6 +85,9 @@ test('retract refuses what the two spellings refuse, in the same words', () => {
   ];
   for (const [verb, form] of pairs) assert.equal(refuses(b, ...verb).replace(/\s+$/, ''), refuses(a, ...form).replace(/\s+$/, ''), verb.join(' '));
   assert.match(refuses(b, 'retract', '1', 'approve', '--by', 'jarl', 'what is this word'), /retract takes review .* or the number of an evidence row/);
+  assert.match(refuses(b, 'retract', '1', '0', '--by', 'jarl', 'row zero does not exist'), /^retract takes the number of an evidence row/);
+  assert.match(refuses(b, 'retract', '1,4', 'review', '--by', 'jarl', 'two issues at once'), /^retract names one issue/);
+  assert.match(refuses(b, 'retract', '1,4', '1', '--by', 'jarl', 'two issues at once'), /^retract names one issue/);
   assert.equal(logText(a), logText(b), 'nothing was written');
 });
 
@@ -110,7 +114,7 @@ test('field writes Resources and the fields a profile declares; set takes status
   assert.equal(field(root, '1', 'resources'), 'gate, db');
   assert.equal(field(root, '1', 'note'), 'see the thread');
   assert.match(refuses(root, 'field', '1', 'Area', 'web'), /Area must be one of: core, cli/);
-  assert.match(refuses(root, 'field', '1', 'Files', 'x'), /Files is not a field: Resources, or one this loop's profile declares \(Area, Note\)/);
+  assert.match(refuses(root, 'field', '1', 'Bogus', 'x'), /Bogus is not a field: Resources, or one this loop's profile declares \(Area, Note\)/);
   assert.match(refuses(root, 'field', '1', 'open', 'x'), /open is not a field/);
   assert.match(refuses(root, 'field', '1', 'Note', 'x', '--worker', 'w'), /unknown flag --worker for field/);
   assert.match(refuses(root, 'set', '1', 'Note', 'x', '--worker', 'w'), /--worker goes with a status, not with the field Note/);
@@ -137,6 +141,30 @@ test('set <ids> resources and set <ids> <profile field> write the field and say 
   assert.ok(!said.isError, said.content[0].text);
   assert.equal(said.content.length, 1, 'the tool reply carries no note');
   assert.equal(field(a, '3', 'resources'), 'gate');
+  const profileField = mcp.callTool('jarl_set', { ids: '3', status: 'Note', why: 'through set', root: a });
+  assert.ok(!profileField.isError, profileField.content[0].text);
+  assert.equal(profileField.content.length, 1);
+  assert.equal(field(a, '3', 'note'), 'through set');
+  // A value that is empty once trimmed empties the field, on the command line and in the tools.
+  for (const blank of ['', ' ', '   ']) {
+    jarl(a, 'field', '1', 'Note', 'to go');
+    jarl(a, 'field', '1', 'resources', 'gate');
+    assert.equal(run(a, ['set', '1', 'Note', blank]).status, 0);
+    assert.equal(run(a, ['set', '1', 'resources', blank]).status, 0);
+    assert.equal(field(a, '1', 'note') || '', '');
+    assert.equal(field(a, '1', 'resources') || '', '');
+    jarl(a, 'field', '2', 'Note', 'to go');
+    assert.ok(!mcp.callTool('jarl_set', { ids: '2', status: 'Note', why: blank, root: a }).isError);
+    assert.equal(field(a, '2', 'note') || '', '');
+  }
+  const toolField = mcp.callTool('jarl_field', { ids: '3', name: 'Note', value: 'through field', root: a });
+  assert.ok(!toolField.isError, toolField.content[0].text);
+  assert.equal(toolField.content.length, 1);
+  assert.equal(field(a, '3', 'note'), 'through field');
+  const cleared = mcp.callTool('jarl_field', { ids: '3', name: 'Note', clear: true, root: a });
+  assert.ok(!cleared.isError, cleared.content[0].text);
+  assert.equal(field(a, '3', 'note') || '', '');
+  assert.ok(mcp.callTool('jarl_field', { ids: '3', name: 'Note', value: ' ', root: a }).isError);
 });
 
 test('one idiom empties every field: --clear on After, Repo, Resources and a profile field', () => {
@@ -157,6 +185,19 @@ test('one idiom empties every field: --clear on After, Repo, Resources and a pro
   assert.doesNotMatch(text, /\*\*Resources:\*\*.*\S/);
   assert.match(text, /\*\*Note:\*\*\s*\n/);
   assert.match(refuses(root, 'field', '1', 'Area', '--clear'), /Area cannot be empty/);
+  // The optional header fields of the tool's own are emptied the same way, on a list too.
+  jarl(root, 'files', '1-2', 'a.txt');
+  jarl(root, 'source', '1-2', 'core/research/2026-10-01-report#r-1');
+  jarl(root, 'body', '1-2', '--where', 'somewhere');
+  jarl(root, 'tag', '1-2', '+x');
+  jarl(root, 'after', '1-2', '3');
+  jarl(root, 'repo', '1-2', dir);
+  for (const name of ['Files', 'Source', 'Where', 'Tags', 'After', 'Repo']) {
+    const said = jarl(root, 'field', '1-2', name, '--clear');
+    assert.match(said, new RegExp(`${name}: \\(cleared\\)`), name);
+    for (const id of ['1', '2']) assert.ok(!field(root, id, name.toLowerCase()), `${name} of ${id}`);
+  }
+  assert.match(refuses(root, 'field', '1', 'Files', 'a.txt'), /Files is written with its own command: files <ids> p,q/);
   assert.match(refuses(root, 'field', '1', 'Note', ''), /the value is required, or --clear to empty it/);
   assert.match(refuses(root, 'field', '1', 'Note', 'x', '--clear'), /either a value or --clear, not both/);
 });
@@ -220,7 +261,7 @@ test('one id answers as an object and a list as an array, so a caller that sends
   assert.deepEqual(JSON.parse(jarl(root, 'files', '1-2', 'a.txt', '--json')), [{ id: '1', files: ['a.txt'] }, { id: '2', files: ['a.txt'] }]);
 });
 
-test('the tools keep the field named id on every command that now takes a list', () => {
+test('the tools keep the field named id on every command that takes a list', () => {
   const tools = Object.fromEntries(mcp.buildTools().map((t) => [t.name, t]));
   for (const cmd of ['body', 'source', 'after', 'files', 'repo', 'round']) {
     const props = tools[`jarl_${cmd}`].inputSchema.properties;

@@ -1753,7 +1753,7 @@ export function eachIssue(root, rawIds, run) {
   const ids = keys.map((k) => all.find((i) => idKey(i.id) === k).id);
   for (const id of ids) {
     resetCaches();
-    try { run(id, true); } catch (e) { throw new Error(`${e.message} — nothing was written`); }
+    try { run(id, true); } catch (e) { throw new Error(/nothing was written/.test(e.message) ? e.message : `${e.message} — nothing was written`); }
   }
   return ids.map((id) => { resetCaches(); return run(id, false); });
 }
@@ -1785,6 +1785,8 @@ export function setRouteOf(root, name) { return setRoute(loadProfile(root), name
 export function cmdField(root, rawIds, name, value, flags = {}) {
   const profile = loadProfile(root);
   need(name !== undefined && String(name).trim() !== '', 'field requires <name> — Resources, or a field the loop\'s profile declares');
+  const own = EMPTIED_BY_FIELD[String(name).toLowerCase()];
+  if (own && !profile.field(name)) return emptyOwnField(root, rawIds, own, value, flags);
   const route = setRoute(profile, name);
   need(route !== 'status', `${name} is not a field: Resources, or one this loop's profile declares${profile.declaredFields.length ? ` (${profile.declaredFields.map((f) => f.name).join(', ')})` : ''}`);
   const clear = flags.clear === true;
@@ -1953,6 +1955,9 @@ function rewriteHeader(root, rawIds, status, why, flags) {
   return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, status: issue.status, header: true })));
 }
 
+// The optional header fields of the tool's own that field empties (and only empties: each has a command that writes it).
+const EMPTIED_BY_FIELD = { files: 'Files', source: 'Source', where: 'Where', tags: 'Tags', after: 'After', repo: 'Repo' };
+const WRITTEN_BY = { files: 'files <ids> p,q', source: 'source <ids> <dir>#<id>', where: 'body <ids> --where "<w>"', tags: 'tag <ids> +a -b', after: 'after <ids> <after-ids>', repo: 'repo <ids> <name|path>' };
 // field <ids> <field> <value>: one declared field written on every issue in the call (checked against its enum first),
 // with one log line each. An empty value clears it, unless the field is required (or is Kind or Tier).
 function setDeclaredField(root, rawIds, field, value, flags) {
@@ -1965,6 +1970,19 @@ function setDeclaredField(root, rawIds, field, value, flags) {
   for (const issue of issues) writeAtomic(issue.file, setField(readText(issue.file), field.name, v));
   appendLogLines(root, issues.map((issue) => `${issue.id} field ${field.name} · ${v || '(cleared)'}`));
   return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, field: field.name, value: v })));
+}
+
+// field <ids> <Files|Source|Where|Tags|After|Repo> --clear: the field is emptied (After and Repo as their own commands empty them).
+function emptyOwnField(root, rawIds, name, value, flags) {
+  const key = name.toLowerCase();
+  need(flags.clear === true && value === undefined, `${name} is written with its own command: ${WRITTEN_BY[key]}; field empties it with --clear`);
+  if (key === 'after' || key === 'repo') {
+    const done = [].concat(eachIssue(root, rawIds, (id, dry) => (key === 'after' ? cmdAfter(root, id, undefined, { clear: true, dry }) : cmdRepo(root, id, undefined, { clear: true, dry })))).map((o) => ({ id: o.id, field: name, value: '' }));
+    return isBulk(rawIds) ? done : done[0];
+  }
+  const issues = issuesFor(root, rawIds);
+  for (const issue of issues) writeAtomic(issue.file, key === 'source' ? removeFirstField(readText(issue.file), name) : setField(readText(issue.file), name, ''));
+  return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, field: name, value: '' })));
 }
 
 // field <ids> resources "a, b": the exclusive resources an issue holds for the whole life of its lease (a port, a database
@@ -2313,7 +2331,7 @@ export function cmdRepo(root, rawId, path, { clear = false, dry = false } = {}) 
 // The checkable rows of an Evidence section, each with its ordinal n counted over the whole section (a retracted
 // row keeps its number, so a number never moves), the lines it spans (start..end, a row is its first line and the
 // indented lines under it) and whether it is retracted (struck through: `- ~~**ran:** … **saw:** …~~`). The one
-// numbering: show prints it, evidence --retract takes it, the done gate counts by it.
+// numbering: show prints it, retract takes it, the done gate counts by it.
 const ROW_START = /^- (~~)?\*\*ran:\*\*/;
 // Which journal line each file row wrote, by position in the file: a row's journal line keeps the first line of its
 // command (`<id> evidence row · <first line>`, with a pointer suffix when the command has more lines), so it matches
@@ -2696,10 +2714,10 @@ function retractedBy(flags, what) {
 const struck = (line) => line.replace(/^- /, '- ~~');
 
 function retractEvidence(root, rawIds, reason, flags) {
-  need(!isBulk(rawIds), 'retracting an evidence row names one issue and one row');
+  need(!isBulk(rawIds), 'retract names one issue and one row');
   need(flags.ran === undefined && flags.saw === undefined, 'a retraction takes a row number and a reason, not a new --ran/--saw row');
   const raw = String(flags.retract);
-  need(/^\d+$/.test(raw) && Number(raw) >= 1, `--retract takes the number of an evidence row as show prints it (1, 2, …); got "${raw}"`);
+  need(/^\d+$/.test(raw) && Number(raw) >= 1, `retract takes the number of an evidence row as show prints it (1, 2, …); got "${raw}"`);
   const n = Number(raw);
   const by = retractedBy(flags, 'a retraction');
   needSaid(reason, 'a retraction');
@@ -2731,7 +2749,7 @@ function retractEvidence(root, rawIds, reason, flags) {
 // earlier verdict; last, the exact call that prints everything. The window is read from the journal, where the file's
 // entries are matched to the log's lines in order: when the file and the log do not agree on how many there are (an
 // issue written by hand, a loop without a Reviews section) nothing is cut. Every evidence row carries its
-// ordinal [n], counted over the whole section, the number evidence --retract takes; --full prints the file with them.
+// ordinal [n], counted over the whole section, the number retract takes; --full prints the file with them.
 export function issueView(root, issue, { full = false } = {}) {
   const pieces = [];
   let cur = { name: null, lines: [] };
@@ -4398,7 +4416,7 @@ export function reviewEntries(text) {
 // ---- commands: review ---------------------------------------------------------------------------------
 
 function retractReview(root, rawIds, reason, flags) {
-  need(!isBulk(rawIds), 'review retract names one issue');
+  need(!isBulk(rawIds), 'retract names one issue');
   const by = retractedBy(flags, 'a retraction');
   needSaid(reason, 'a retraction');
   const [issue] = issuesFor(root, rawIds);

@@ -399,5 +399,5 @@ test('a JSON-RPC response from the client gets no answer; a malformed request st
 
 test('jarl_set changes a status and jarl_field writes a field: each description says so', () => {
   assert.equal(byName.jarl_set.description, 'WRITES the loop. Change the status of issues, with the reason logged.');
-  assert.match(byName.jarl_field.description, /^WRITES the loop\. Write one field on issues, Resources or a field the profile declares, or empty it with clear\./);
+  assert.match(byName.jarl_field.description, /^WRITES the loop\. Write one field on issues, Resources or a field the profile declares, or empty any optional field with clear\./);
 });

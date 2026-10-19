@@ -119,8 +119,9 @@ commands:
                                                  issue holds while its lease lasts, as "a, b", loop-wide names; next
                                                  never offers two issues holding one) or a field the loop's profile
                                                  declares (checked against its values); --clear empties it, and the
-                                                 same --clear empties After and Repo; a required field is never empty;
-                                                 one log line per issue
+                                                 same --clear empties Files, Source, Where, Tags, After and Repo too
+                                                 (each is written by its own command); a required field is never
+                                                 empty; one log line per issue
   merged <ids> --sha <sha> [--ran "<check>" --saw "<summary>" | --red <id>] [--ci pending|green|red|none] [--repo <name|path>] [--keep] | <ids> --ci <state>
                                                  the merge as fields: Merged (sha, and where with --repo) and CI
                                                  (only when given; pending: a pushed commit whose CI will report;
@@ -483,25 +484,25 @@ export const COMMAND_ARGS = {
 export const COMMAND_SUMMARY = {
   init: 'Open a loop: create .jarl/ with the goal, out of git by default, committed or permanent when asked.',
   new: 'File an issue under the next free number, with its fields and its What, Why and Acceptance.',
-  body: 'Set or replace an issue\'s title, its Where field and its What, Why, Acceptance, Changelog and profile sections.',
+  body: 'Set or replace the title, the Where field and the What, Why, Acceptance, Changelog and profile sections of issues.',
   import: 'File one issue per finding of a findings file, skipping findings already filed.',
   sources: 'Per findings report: its findings, the issues filed from them and their status.',
-  source: 'Set the Source field of an issue filed by hand.',
-  after: 'Set or clear the issues this one waits on before next offers it.',
+  source: 'Set the Source field of issues filed by hand.',
+  after: 'Set or clear the issues these wait on before next offers them.',
   evidence: 'Append a free-text note, or checkable rows of what ran and what it printed, to issues; or record a file as an attachment of a slot (--file, --slot).',
   retract: 'Take back the newest approve of an issue (what: review) or one evidence row by its number (what: the number), by an entry that says who and why.',
-  field: 'Write one field on issues, Resources or a field the profile declares, or empty it with clear.',
+  field: 'Write one field on issues, Resources or a field the profile declares, or empty any optional field with clear.',
   list: 'List the issues, the unfinished ones by default, filtered by status, kind, tag, priority or a field.',
   show: 'Print one issue as the done gate sees it (its current window, rows numbered), or the whole file with --full.',
   set: 'Change the status of issues, with the reason logged.',
   merged: 'Record a merge (sha, repository, the check that decided it, CI state) on issues and remove their finished worktree and branch when that is safe, or move the CI state of issues already merged.',
   tag: 'Add and remove tags on issues.',
   prio: 'Set the priority of issues.',
-  files: 'Declare the files an issue touches.',
-  repo: 'Name the repository (or several) an issue\'s code lives in, or clear it.',
+  files: 'Declare the files issues touch.',
+  repo: 'Name the repository (or several) the code of issues lives in, or clear it.',
   next: 'The open issues ready to start: no file shared with work in progress, every After issue settled, no open question on them; all adds the held and waiting ones in groups.',
   review: 'Record a reviewer\'s verdict (approve or changes) on issues, with the reviewer and the findings.',
-  round: 'Record one red round on an issue; after three it prints the takeover block for a fresh worker.',
+  round: 'Record one red round on issues; after three it prints the takeover block for a fresh worker.',
   models: 'Per model as worker and as reviewer, per kind of task: the counts, clean first passes and verdicts the record holds, with the words fits, below, new and may clear; reads other loops and archives too.',
   check: 'Measure a worker branch against its base: commits, diff inside the declared files, test changes; numbers, never a verdict.',
   branches: 'Every worker branch with its issues, commits beyond the base, worktree state, stale leases and done branches.',
@@ -629,7 +630,7 @@ export function dispatch(root, cmd, rest, flags) {
       case 'show': { const i = R.findIssue(root, rest[0]); need(i, `no such issue: ${rest[0]}`); const attachments = attachmentStates(root, i); out = { ...i, evidenceRows: evidenceTable(i.sections.evidence).rows.map(({ n, ran, saw, retracted }) => ({ n, ran, saw, retracted })), where: whereOf(root, i), ...(attachments.length ? { attachments } : {}) }; text = issueView(root, i, { full: Boolean(flags.full) }); break; }
       case 'set':
         if (setRouteOf(root, rest[1]) === 'field') {
-          const clearing = rest[2] === '';
+          const clearing = typeof rest[2] === 'string' && rest[2].trim() === '';
           aliases.push(`note: ${rest[1]} is a field, not a status — write it with: field <ids> ${rest[1]} ${clearing ? '--clear' : '"<value>"'}`);
           out = cmdField(root, rest[0], rest[1], clearing ? undefined : rest[2], { ...flags, clear: clearing });
         } else out = setCommand(root, rest[0], rest[1], rest[2], flags);
