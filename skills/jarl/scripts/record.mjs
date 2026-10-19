@@ -4,7 +4,7 @@
 //
 // The contract is RECORD_API and the exports below, each with its arity, enumerated by hand — never `export *`. The
 // suite's contract test (tests/record-contract.test.mjs) holds the exact list; adding, removing or re-shaping an export
-// fails it until RECORD_API is bumped (jarl-record/2, …) and the new version's table is written beside the old one.
+// fails it until RECORD_API is bumped (jarl-record/2, …) and the table of that contract is written beside this one.
 //
 // How to call it:
 // - `root` is the directory holding .jarl/ (resolveRoot turns a --root value, or nothing, into one).

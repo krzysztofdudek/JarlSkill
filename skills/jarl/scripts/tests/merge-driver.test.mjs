@@ -154,7 +154,7 @@ test('git merge with the -c settings: two branches superseding one ruling stop o
   } finally { r.done(); }
 });
 
-test('fact 13, a: an attribute naming a driver nobody defined gives git\'s own markers, never a union', () => {
+test('an attribute naming a driver nobody defined gives git\'s own markers, never a union', () => {
   const r = repo();
   try {
     twoBranchesDecide(r, () => r.jarl('decide', 'from-b', 'B.'), () => r.jarl('decide', 'from-main', 'M.'));
@@ -165,7 +165,7 @@ test('fact 13, a: an attribute naming a driver nobody defined gives git\'s own m
   } finally { r.done(); }
 });
 
-test('fact 13, b: a driver configured whose script is gone falls back to markers instead of keeping ours alone', () => {
+test('a driver configured whose script is gone falls back to markers instead of keeping ours alone', () => {
   const r = repo();
   try {
     twoBranchesDecide(r, () => r.jarl('decide', 'from-b', 'B.'), () => r.jarl('decide', 'from-main', 'M.'));
@@ -177,7 +177,7 @@ test('fact 13, b: a driver configured whose script is gone falls back to markers
   } finally { r.done(); }
 });
 
-test('fact 13, b\': a driver program that is there but fails without writing (an older yg with no merge-driver) still gives markers', () => {
+test('a driver program that is there but fails without writing still gives markers, when the yg at its path has no merge-driver command', () => {
   const r = repo();
   try {
     writeFileSync(join(r.dir, '.gitattributes'), '/x.md merge=yg-log\n/decisions.md merge=jarl-decisions\n');
@@ -192,7 +192,7 @@ test('fact 13, b\': a driver program that is there but fails without writing (an
     writeFileSync(join(r.dir, 'x.md'), 'from main\n');
     writeFileSync(join(r.dir, 'decisions.md'), file(ruling('2026-01-01', 'a', 'A.'), ruling('2026-01-02', 'm', 'M.')));
     r.commit('main');
-    // An "older yg" at a path with a space: it knows no merge-driver command, exits 1 and writes nothing.
+    // A yg at a path with a space that knows no merge-driver command: it exits 1 and writes nothing.
     const old = join(r.dir, 'old yg.mjs');
     writeFileSync(old, "console.error(\"error: unknown command 'merge-driver'\"); process.exit(1);\n");
     const flags = mergeFlags({ yg: `"${process.execPath.replace(/\\/g, '/')}" "${old.replace(/\\/g, '/')}"` });
@@ -226,7 +226,7 @@ test('the driver command runs a runtime and a script whose paths hold a space, a
   } finally { r.done(); rmSync(away, { recursive: true, force: true }); }
 });
 
-test('fact 13, c: the driver never exits 0 without writing — a clean merge leaves the merged rulings in the file', () => {
+test('the driver never exits 0 without writing — a clean merge leaves the merged rulings in the file', () => {
   const r = repo();
   try {
     twoBranchesDecide(r, () => r.jarl('decide', 'from-b', 'B.'), () => r.jarl('decide', 'from-main', 'M.'));

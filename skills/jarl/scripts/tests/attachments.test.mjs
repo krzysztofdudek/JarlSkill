@@ -382,7 +382,7 @@ test('the log refuses a hand-written attachment row and names --file and --slot'
   assert.match(refuses(root, 'log', `1 evidence row · attach before attachments/1/before.png sha256:${'0'.repeat(64)} size:5`), /jarl\.mjs evidence <id> --file <path> --slot <name>/);
 });
 
-test('retracting the newest row of a slot empties it and never brings an older row back', () => {
+test('retracting the newest row of a slot empties it and never brings back the row before it', () => {
   const root = loopWith();
   both(root);
   put(root, 'attachments/1/after.png', PNG.replace('bug', 'bag'));

@@ -28,7 +28,7 @@ const log = (root) => readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
 const profileFile = (root) => join(root, '.jarl', 'profile.json');
 const doneRefusal = (root, id) => { try { jarl(root, 'set', id, 'done', 'merged'); return null; } catch (e) { return String(e.stderr); } };
 
-test('review retract: the newest approve is struck through and no longer counts, by an appended entry', () => {
+test('review retract: the newest approve is struck through and does not count, by an appended entry', () => {
   const root = loop();
   const id = started(root);
   jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'pass 5');

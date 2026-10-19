@@ -17,7 +17,7 @@ const L = await import('../jarl-lib.mjs');
 const json = (root, ...args) => JSON.parse(jarl(root, ...args, '--json'));
 const loop = (goal = 'metrics') => makeLoop({ prefix: 'jarl-metrics-', goal, via: 'cli', dotGit: false });
 const issueFile = (dir, id) => join(dir, '.jarl', 'issues', readdirSync(join(dir, '.jarl', 'issues')).find((f) => f.startsWith(`${id}-`)));
-// Header fields written straight into the issue file, the way a loop older than a command would hold them.
+// Header fields written straight into the issue file, the way a loop written by hand would hold them.
 function fields(dir, id, values) {
   const f = issueFile(dir, id);
   let text = readFileSync(f, 'utf8');

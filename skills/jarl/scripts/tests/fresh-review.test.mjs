@@ -84,7 +84,7 @@ test('an issue with no Branch and no Merged field is still cleared by the coordi
   assert.match(jarl(root, 'set', id, 'done').stdout, /→ done/);
 });
 
-test('a name goal.md declares a coordinator after its approve was logged as fresh no longer clears a code issue', () => {
+test('a name goal.md declares a coordinator after its approve was logged as fresh does not clear a code issue', () => {
   const root = loop();
   const id = codeIssue(root);
   jarl(root, 'review', id, 'approve', '--by', 'helga', FINDINGS);

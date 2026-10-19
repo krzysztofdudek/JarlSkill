@@ -190,8 +190,8 @@ test('deferred is its own status: it needs a reason, stays out of the default li
   assert.deepEqual(closed.deferred, ['1']);
 });
 
-// In the default mode the loop lives in the main checkout and a worktree cannot see it. The tool used to need
-// `--root <main checkout>` from every worktree; now a run in a worktree of a repository whose main checkout
+// In the default mode the loop lives in the main checkout and a worktree cannot see it. A run from a worktree needs
+// no `--root <main checkout>`: a run in a worktree of a repository whose main checkout
 // holds a loop finds that loop by itself, and an explicit --root still wins.
 function gitRepoWithWorktree() {
   const main = mkdtempSync(join(tmpdir(), 'jarl-main-'));
@@ -259,7 +259,7 @@ test('a directory or a file inside a repository names that repository, a stored 
   assert.match(refuses(hub, 'repo', '1', '--clear'), /no Repo field/);
 });
 
-// Files are compared as (repository, path) pairs; three ways the pair used to be read wrongly, each silently.
+// Files are compared as (repository, path) pairs; three ways the pair can be read wrongly, each silently.
 test('the repository name in Files: --repo strips it like the field does, an inner directory of the same name is not stripped, and a repository is one repository however its path is spelled', () => {
   const parent = mkdtempSync(join(tmpdir(), 'jarl-name-'));
   const hub = join(parent, 'hub'); const tool = join(parent, 'tool'); const app = join(parent, 'app');
@@ -908,7 +908,7 @@ test('a bulk call with one bad id, or one issue failing its precondition, writes
   assert.doesNotMatch(jarl(root, 'show', '2'), /note/);
 });
 
-test('a committed loop keeps the lock and temporary files out of git; an older committed loop is given the narrow ignore file by its first write', () => {
+test('a committed loop keeps the lock and temporary files out of git; a committed loop that lacks the narrow ignore file gets it on its first write', () => {
   for (const mode of ['--committed', '--permanent']) {
     const { dir: root, g } = gitRepo();
     jarl(root, 'init', 'goal', mode);
@@ -1105,7 +1105,7 @@ test('import reads the angles shape and the results/kept shape; refuses a findin
   assert.match(refuses(root, 'import', findingsDir({ nope: 1 })), /not a findings file/);
 });
 
-test('import --adopt links older issues that name the finding, once, without filing a duplicate', () => {
+test('import --adopt links the issues that already name the finding, once, without filing a duplicate', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
   jarl(root, 'new', 'Jarl: bodies (jarl-2-B2)');
@@ -1129,7 +1129,7 @@ test('ask --kind ratify blocks nothing, is listed in status and the handoff, and
   const st = jarl(root, 'status');
   assert.match(st, /questions 0 · to ratify 1/);
   assert.match(st, /^ratify a-1 \(issue 1\) · raised the prompt limit/m);
-  assert.match(jarl(root, 'resume'), /## Questions to the user \(0\)\n- \(nothing\)\n\n## To ratify \(1\)\n- a-1 \(issue 1\) · raised/);
+  assert.match(jarl(root, 'resume'), /## Questions to the owner \(0\)\n- \(nothing\)\n\n## To ratify \(1\)\n- a-1 \(issue 1\) · raised/);
   // It holds nothing back: next, done.
   jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
   jarl(root, 'evidence', '1', '--ran', 'check', '--saw', 'green');
@@ -1541,7 +1541,7 @@ test('DONE → delete needs the branch tip in the base, or in every recorded mer
   jarl(root, 'merged', '1', '--sha', sh('git rev-parse rel'));
   close('1');
   assert.equal(mark('jarl/1-else'), 'delete');
-  // A commit on the branch after the merge: the record no longer covers it.
+  // A commit on the branch after the merge: the record does not cover it.
   sh('git checkout -q jarl/1-else && echo AA > a.txt && git commit -qam later && git checkout -q main');
   assert.equal(mark('jarl/1-else'), 'unverified');
   assert.match(jarl(root, 'branches'), /^jarl\/1-else → 1 .*DONE \(merged by record, branch not in base\) — verify$/m);
