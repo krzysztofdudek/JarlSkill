@@ -900,7 +900,20 @@ export function renderNewReply(out) {
   return lines.join('\n');
 }
 // A header field is one line.
-function fieldText(v) { return String(v ?? '').replace(/\s+/g, ' ').trim(); }
+// The line breaks a text may hold, of every kind (a carriage return, the line and paragraph separators, NEL), as the one
+// line break the record writes. The readers split on that break alone, so a text is brought to it before anything is
+// written: its first line sits where the text's field is, and each later line is indented (see freeInline and freeBlock).
+const LINE_BREAKS = new RegExp(`\\r\\n?|${String.fromCharCode(0x2028)}|${String.fromCharCode(0x85)}`, 'g');
+function oneBreak(text) { return String(text ?? '').replace(LINE_BREAKS, '\n'); }
+// Free text after a field's label: the first line follows the label, every later line is indented two spaces, as a
+// question's continuation lines are, so no line of the text starts where the reader looks for a field or an option.
+function freeInline(text) { return oneBreak(text).split('\n').join('\n  '); }
+// A ruling's own text: every continuation line indented, and the first line too when it would read as structure (a field,
+// an option, a heading, an indent), so the text starts no field, option or heading of the record.
+function freeBlock(text) {
+  return oneBreak(text).split('\n').map((l, i) => (i === 0 && !/^[*\-#>\s]/.test(l) && !DECISION_META.test(l) && !DECISION_HEAD.test(l) ? l : `  ${l}`)).join('\n');
+}
+function fieldText(v) { return oneBreak(v).replace(/\s+/g, ' ').trim(); }
 // --acceptance repeats, one checkable line each; several become a list.
 export function acceptanceText(v) {
   const lines = [].concat(v ?? []).map(bodyText).filter(Boolean);
@@ -1031,7 +1044,8 @@ function decisionsAt(dir) {
     while (cut > 0 && (d.body[cut - 1].trim() === '' || META.test(d.body[cut - 1]))) cut -= 1;
     const meta = d.body.slice(cut).map((l) => META.exec(l)).filter(Boolean);
     const field = (name) => meta.filter((m) => m[1] === name).map((m) => m[2].trim());
-    const ruling = d.body.slice(0, cut).join('\n').trim();
+    // The ruling's text: a line indented two spaces is a continuation line of its free text, read without the indent.
+    const ruling = d.body.slice(0, cut).map((l) => (l.startsWith('  ') ? l.slice(2) : l)).join('\n').trim();
     const sup = field('Superseded by').pop();
     const reach = field('Reach').pop();
     const typeLog = /^(\S+) · (\S+)/.exec(field('Type log').pop() || '');
@@ -1066,7 +1080,8 @@ function markDecision(root, slug, line, { text: given } = {}) {
   return undefined;
 }
 
-export function appendDecision(root, slug, ruling, { by, supersedes, area, reach, rule } = {}) {
+// The ruling is written as its caller gives it: structure at the start of a line, free text indented (freeInline, freeBlock).
+export function appendDecision(root, slug, ruling, { by, supersedes, area, reach, rule, settles } = {}) {
   need(typeof slug === 'string' && SLUG_RE.test(slug), `a ruling's slug is letters, digits and . _ - (starting with a letter or digit, at most 80 characters) — not "${slug}"; e.g. ${slugify(String(slug || 'ruling'))}`);
   const path = decisionsPath(jarlDir(root));
   const existing = existsSync(path) ? readText(path) : '# Decisions\n';
@@ -1074,14 +1089,14 @@ export function appendDecision(root, slug, ruling, { by, supersedes, area, reach
   need(!all.some((d) => d.slug === slug), `duplicate slug: ${slug} — a ruling that replaces it takes a new slug and --supersedes ${slug}`);
   let text = existing;
   if (supersedes !== undefined) {
-    need(typeof supersedes === 'string' && supersedes !== slug, '--supersedes names the slug of an earlier ruling');
+    need(typeof supersedes === 'string' && SLUG_RE.test(supersedes) && supersedes !== slug, '--supersedes names the slug of an earlier ruling');
     const old = all.find((d) => d.slug === supersedes);
     need(old, `no ruling ${supersedes} in ${DECISIONS_FILE} to supersede`);
     need(!old.supersededBy, `${supersedes} is already superseded by ${old.supersededBy} — supersede that one instead`);
     text = markDecision(root, supersedes, `**Superseded by:** ${slug} (${today()})`, { text });
   }
-  const meta = [by ? `**By:** ${fieldText(by)}` : null, supersedes !== undefined ? `**Supersedes:** ${supersedes}` : null, area ? `**Area:** ${area}` : null, reach !== undefined && reach !== null ? `**Reach:** ${reach}` : null, rule ? `**Rule:** ${rule}` : null].filter(Boolean).join('\n');
-  writeAtomic(path, `${text.replace(/\s*$/, '')}\n\n## ${today()} · ${slug}\n${bodyText(ruling)}\n${meta ? `\n${meta}\n` : ''}`);
+  const meta = [settles?.length ? `**Settles:** ${settles.join(', ')}` : null, by ? `**By:** ${fieldText(by)}` : null, supersedes !== undefined ? `**Supersedes:** ${supersedes}` : null, area ? `**Area:** ${area}` : null, reach !== undefined && reach !== null ? `**Reach:** ${reach}` : null, rule ? `**Rule:** ${rule}` : null].filter(Boolean).join('\n');
+  writeAtomic(path, `${text.replace(/\s*$/, '')}\n\n## ${today()} · ${slug}\n${ruling.replace(/\s+$/, '')}\n${meta ? `\n${meta}\n` : ''}`);
 }
 
 // The goal of the record held in `dir`, as text; null when it has none.
@@ -1120,6 +1135,76 @@ export function goalLines(text) {
   }
   out.checks = [...out.checksByRepo.bare, ...Object.values(out.checksByRepo.repos).flat()];
   return out;
+}
+
+// The machine lines the command line writes into the goal, and the words that label them. A line is read by GOAL_LINE, the
+// grammar goalLines reads, and written with the label the grammar takes.
+const MACHINE_LABEL = { check: 'Check', model: 'Model', coordinators: 'Coordinators' };
+// The machine line a text is, as { key, qualifier, value } (key lower case; qualifier as written, or null), or null.
+export function goalLineOf(text) {
+  const m = GOAL_LINE.exec(String(text ?? ''));
+  if (!m) return null;
+  return { key: m[1].toLowerCase(), qualifier: m[2] ? fieldText(m[2]) : null, value: m[3].replace(/\*\*/g, '').trim() };
+}
+// Whether a goal line is the machine line of this kind and qualifier (the same qualifier, in any case, or none).
+function isMachineLine(line, key, qualifier) {
+  const m = GOAL_LINE.exec(line);
+  if (!m || m[1].toLowerCase() !== key) return false;
+  if (qualifier === null) return !m[2];
+  return m[2] !== undefined && fieldText(m[2]).toLowerCase() === qualifier.toLowerCase();
+}
+// The goal with one machine line set: every line of its kind and qualifier becomes this one, where the first stood, or the
+// line is added after the goal's text when there is none. `replaced` says which, and `was` is the value it held before.
+export function goalWithLine(text, line) {
+  const shown = `${MACHINE_LABEL[line.key]}${line.qualifier !== null ? ` (${line.qualifier})` : ''}: ${line.value}`;
+  const out = [];
+  let replaced = false;
+  let was = null;
+  for (const l of String(text ?? '').replace(/\s+$/, '').split('\n')) {
+    if (isMachineLine(l, line.key, line.qualifier)) {
+      if (!replaced) { out.push(shown); was = goalLineOf(l).value; }
+      replaced = true;
+      continue;
+    }
+    out.push(l);
+  }
+  if (!replaced) out.push('', shown);
+  return { text: `${out.join('\n')}\n`, replaced, was, shown };
+}
+
+// goal: the goal as goal.md holds it.
+export function cmdGoal(root) {
+  const text = readGoal(jarlDir(root));
+  need(text !== null, `the loop has no goal: open it with init "<goal>"`);
+  return { goal: text.replace(/\s+$/, '') };
+}
+// goal --set "<machine line>": one machine line of the goal changed, and a log line that says what it was and what it is now.
+// The machine lines are Check (<repository>): <command> or a bare Check: <command>, Model (<tier>): <models> with a tier the
+// profile declares, and Coordinators: <names>. Any other line, a repository line among them, is refused: a repository joins
+// the loop by its own declaration, not by a line of the goal.
+export function cmdGoalSet(root, text) {
+  const dir = jarlDir(root);
+  const old = readGoal(dir);
+  need(old !== null, 'the loop has no goal: open it with init "<goal>"');
+  need(!oneBreak(text).includes('\n'), 'goal --set takes one machine line: a line break in its value is refused');
+  const line = goalLineOf(text);
+  need(line && line.value && MACHINE_LABEL[line.key], 'goal --set takes one machine line: "Check (<repository>): <command>" or "Check: <command>", "Model (<tier>): <model>, …" or "Coordinators: <name>, …"');
+  let qualifier = line.qualifier;
+  if (line.key === 'model') {
+    need(qualifier !== null, 'a Model line names its tier: "Model (<tier>): <model>, …"');
+    const profile = loadProfile(root);
+    qualifier = profile.tiers.find((t) => t.toLowerCase() === qualifier.toLowerCase()) ?? null;
+    need(qualifier !== null, `the profile declares no tier ${line.qualifier}: its tiers are ${loadProfile(root).tiers.join(', ')}`);
+  }
+  need(line.key !== 'coordinators' || qualifier === null, 'a Coordinators line takes no qualifier: "Coordinators: <name>, …"');
+  const value = noSeparators(line.value);
+  need(value, 'goal --set needs a value after the colon');
+  const next = goalWithLine(old, { key: line.key, qualifier, value });
+  // A line that already holds this value is left alone: nothing is written and no log line says it changed.
+  if (next.replaced && noSeparators(next.was) === value) return { shown: next.shown, replaced: true, was: next.was, unchanged: true };
+  writeAtomic(goalPath(dir), next.text);
+  appendLog(root, `goal line ${next.replaced ? 'changed' : 'added'} · ${next.shown}${next.replaced ? ` · was ${noSeparators(next.was)}` : ''}`);
+  return { shown: next.shown, replaced: next.replaced, was: next.replaced ? next.was : null, unchanged: false };
 }
 
 // ---- commands ----------------------------------------------------------------------------------
@@ -4580,24 +4665,33 @@ export function cmdChangelog(root, rawIds, flags = {}) {
 
 // A ratify item the close's batch filed names the area ruling it asks about: `· ruling <slug>`.
 const ASK_RE = idRe('^- \\*\\*a-({id})\\*\\* \\((open|answered)\\)(?: · (stop|stuck|lower|charter|ratify))?(?: · target (\\S+))?(?: · issue ({id}))?(?: · ruling ([A-Za-z0-9][A-Za-z0-9._-]{0,79}))? · (.*)$');
+// An option of a question is its own line after the question: `- **a-<n>** option · <label> · <effect>`. Its label and effect
+// pass noSeparators, so the line splits on its separators alone. A question's indented lines never start with `- **a-`.
+const ASK_OPTION_RE = idRe('^- \\*\\*a-({id})\\*\\* option · (.+?) · (.+)$');
 
 export function loadAsks(root) { return asksAt(jarlDir(root)); }
-// The questions of the record held in `dir`.
+// The questions of the record held in `dir`; a question with options carries them as `options: [{ label, effect }]`.
 function asksAt(dir) {
   const path = asksPath(dir);
   if (!existsSync(path)) return [];
   // A question of several lines is the item line and its next lines indented by two spaces (blank ones are two spaces
   // alone); the item line alone still reads as a question.
   const out = [];
+  const options = new Map();
   let last = null;
   const forms = issueForms(dir);
   for (const line of readText(path).split('\n')) {
     const m = ASK_RE.exec(line);
     if (m) { last = { id: m[1], state: m[2], kind: m[3] || null, target: m[4] || null, issue: m[5] ? writtenId(m[5], forms) : null, ...(m[6] ? { ruling: m[6] } : {}), question: m[7] }; out.push(last); continue; }
+    const o = ASK_OPTION_RE.exec(line);
+    if (o) { const key = idKey(o[1]); options.set(key, [...(options.get(key) || []), { label: o[2], effect: o[3] }]); last = null; continue; }
     if (last && line.startsWith('  ')) last.question += `\n${line.slice(2)}`;
     else last = null;
   }
-  for (const a of out) a.question = a.question.replace(/\s+$/, '');
+  for (const a of out) {
+    a.question = a.question.replace(/\s+$/, '');
+    if (options.has(idKey(a.id))) a.options = options.get(idKey(a.id));
+  }
   return out;
 }
 
@@ -4626,10 +4720,34 @@ export function cmdAsk(root, question, flags) {
     need(!loadAsks(root).some((x) => x.ruling === d.slug), `${flags.ruling} has been put to ratification already`);
   }
   const ruling = kind === 'ratify' && flags.ruling ? ` · ruling ${flags.ruling}` : '';
-  const asked = String(question).replace(/\r\n?/g, '\n').trim().split('\n');
-  appendAtomic(path, '# Questions to the user\n\n', `- **a-${id}** (open) · ${kind}${target}${issueWritten !== null ? ` · issue ${issueWritten}` : ''}${ruling} · ${asked[0]}\n${asked.slice(1).map((l) => `  ${l}\n`).join('')}`);
-  appendLog(root, `asked a-${id} (${kind}) · ${firstLine(question, ASKS_FILE)}`);
-  return { id, question: asked.join('\n'), kind };
+  const asked = oneBreak(question).trim().split('\n');
+  const options = askOptions(flags.option, kind);
+  const optionLines = options.map((o) => `- **a-${id}** option · ${o.label} · ${o.effect}\n`).join('');
+  appendAtomic(path, '# Questions to the user\n\n', `- **a-${id}** (open) · ${kind}${target}${issueWritten !== null ? ` · issue ${issueWritten}` : ''}${ruling} · ${asked[0]}\n${asked.slice(1).map((l) => `  ${l}\n`).join('')}${optionLines}`);
+  appendLog(root, `asked a-${id} (${kind}) · ${firstLine(asked.join('\n'), ASKS_FILE)}`);
+  return { id, question: asked.join('\n'), kind, ...(options.length ? { options } : {}) };
+}
+
+// The options of a question, from `--option "<label>: <effect>"` (repeatable): at least two, each with its own label and
+// effect, the labels distinct whatever their case. A ratify item is answered yes or reject and takes none. Label and
+// effect pass noSeparators, the one escape for free text beside a field.
+function askOptions(raw, kind) {
+  const given = raw === undefined ? [] : [].concat(raw);
+  if (!given.length) return [];
+  need(kind !== 'ratify', 'a ratify item is answered yes or reject (tak or nie), so it takes no --option');
+  const options = given.map((text) => {
+    need(!oneBreak(text).includes('\n'), `--option takes one line: a label or an effect with a line break is refused (got "${String(text).trim()}")`);
+    const m = /^([^:]*?):\s*(.*)$/s.exec(String(text).trim());
+    need(m, `--option takes "<label>: <effect>", with a colon between the label and the effect (got "${text}")`);
+    const label = noSeparators(m[1]);
+    const effect = noSeparators(m[2]);
+    need(label && effect, `--option needs a label and an effect: "<label>: <effect>" (got "${text}")`);
+    return { label, effect };
+  });
+  need(options.length >= 2, 'a question with options has at least two options: a choice between one is not a choice');
+  const labels = options.map((o) => o.label.toLowerCase());
+  need(new Set(labels).size === labels.length, 'the labels of a question\'s options are distinct');
+  return options;
 }
 
 // The one word that answers a ratification: the first word of the answer, without case or trailing punctuation.
@@ -4650,33 +4768,95 @@ function ratifyRefusal(id, ruling, answer) {
   return `a-${id} ratifies ruling ${ruling}: the answer starts with one word — ${RATIFY_WORDS.join(', ')} to ratify it, ${REJECT_WORDS.join(', ')} to reject it`;
 }
 
-export function cmdAnswer(root, rawId, answer, flags = {}) {
-  need(answer, 'answer requires "<answer>"');
-  need(flags.by === undefined || fieldText(flags.by), '--by needs a value — who answered: owner or a name');
-  const by = flags.by === undefined ? null : fieldText(flags.by);
-  const key = askNumber(rawId);
-  const ask = loadAsks(root).find((a) => idKey(a.id) === key);
-  need(ask, `no such question: a-${key}`);
+// What an answer is checked against before anything is written: the question, the answer text (or the chosen option's label),
+// and for a ratify item the verdict its words give. A refusal throws; a check with nothing to refuse returns the verdict
+// and the ruling the item asks about.
+function answerChecks(root, ask, answer, chosen) {
   const id = ask.id;
   need(ask.state === 'open', `a-${id} is already answered`);
+  need(!(chosen !== null && answer), `answer takes --option <label> or the answer, not both — a-${id}`);
+  need(answer || chosen !== null, 'answer requires "<answer>" or --option <label>');
+  const options = ask.options || [];
+  let option = null;
+  if (chosen !== null) {
+    need(options.length, `a-${id} offered no options: answer it with its text`);
+    option = options.find((o) => o.label === noSeparators(chosen)) || null;
+    need(option, `"${chosen}" is none of the options of a-${id}: ${options.map((o) => o.label).join(', ')}`);
+  }
   // A batch item asks about one area ruling, and its answer says one word first: yes or reject (tak or nie).
   const rulings = ask.ruling ? loadDecisions(root) : [];
   const ruling = ask.ruling ? rulings.find((d) => d.slug === ask.ruling) : null;
   const verdict = ask.ruling ? ratifyVerdict(answer) : null;
   need(!ask.ruling || verdict, ask.ruling && !verdict ? ratifyRefusal(id, ask.ruling, answer) : '');
   need(!ask.ruling || ruling, `a-${id} ratifies ruling ${ask.ruling}, which is no longer in ${DECISIONS_FILE}`);
-  appendDecision(root, `ask-${id}`, `**Question:** ${ask.question}\n**Answer:** ${answer}`, { by: by || 'owner' });
+  return { verdict, ruling, rulings, option, options };
+}
+
+// The question's answer, as the ruling, the journal and the issue quote it. An answer to a question with options is either the
+// label of the option chosen (marked in the list of options offered) or the person's own words, never both.
+function answerRuling(ask, text, chosen, batch) {
+  const lines = [`**Question:** ${freeInline(ask.question)}`];
+  if (ask.options) {
+    lines.push('**Options:**', ...ask.options.map((o) => `- ${o.label}: ${o.effect}${chosen === o.label ? ' (chosen)' : ''}`));
+    lines.push(chosen !== null ? `**Chose:** ${chosen}` : `**Answer in own words:** ${freeInline(text)}`);
+  } else lines.push(`**Answer:** ${freeInline(text)}`);
+  if (batch) lines.push(`**Batch:** answered together with ${batch.map((b) => `a-${b}`).join(', ')}`);
+  return lines.join('\n');
+}
+
+// The answer to one question, written: the ruling, the question marked answered, the log line and the issue's ruling. A
+// ratify item's yes or reject is applied too, with `by` and the batch the question was answered in when several were.
+// The library's answer (record.mjs) calls this with no flags: its ruling is the owner's, and it names no options.
+export function cmdAnswer(root, rawId, answer, flags = {}) {
+  need(flags.by === undefined || fieldText(flags.by), '--by needs a value — who answered: owner or a name');
+  const by = flags.by === undefined ? null : fieldText(flags.by);
+  const chosen = flags.option === undefined ? null : noSeparators(flags.option);
+  const key = askNumber(rawId);
+  const ask = loadAsks(root).find((a) => idKey(a.id) === key);
+  need(ask, `no such question: a-${key}`);
+  const id = ask.id;
+  const text = answer === undefined ? null : noSeparators(oneBreak(answer));
+  const checked = answerChecks(root, ask, text, chosen);
+  const shown = chosen !== null ? chosen : text;
+  appendDecision(root, `ask-${id}`, answerRuling(ask, text, chosen === null ? null : checked.option.label, flags.batch || null), { by: by || 'owner' });
   const path = asksPath(jarlDir(root));
   // The item line only: a continuation line of an earlier question is never the one marked.
   writeAtomic(path, readText(path).split('\n').map((l) => (l.startsWith(`- **a-${id}** (open)`) ? l.replace('(open)', '(answered)') : l)).join('\n'));
-  appendLog(root, `answered a-${id} · ${firstLine(answer, `${DECISIONS_FILE}, ruling ask-${id}`)}`);
+  appendLog(root, `answered a-${id} · ${firstLine(shown, `${DECISIONS_FILE}, ruling ask-${id}`)}`);
   // The issue the question was about carries the answer too, so reading the issue is enough: its first line and, when
   // there is more, a pointer to the whole ruling.
   const issue = ask.issue ? findIssue(root, ask.issue) : null;
-  if (issue) appendRuling(root, [issue], `Ruling ask-${id}${ask.kind ? ` (${ask.kind})` : ''}: ${firstLine(answer, `${DECISIONS_FILE}, ruling ask-${id}`)}`);
-  const out = { id, answer, ...(issue ? { issue: issue.id } : {}) };
-  if (ruling) Object.assign(out, ratify(root, ruling, rulings, verdict, id, by));
+  if (issue) appendRuling(root, [issue], `Ruling ask-${id}${ask.kind ? ` (${ask.kind})` : ''}: ${firstLine(shown, `${DECISIONS_FILE}, ruling ask-${id}`)}`);
+  const out = { id, answer: shown, ...(chosen !== null ? { chose: checked.option.label } : {}), ...(issue ? { issue: issue.id } : {}) };
+  if (checked.ruling) Object.assign(out, ratify(root, checked.ruling, checked.rulings, checked.verdict, id, by));
   return out;
+}
+
+// The CLI's answer: one id, or a comma list of ratify items answered together with one verdict. Every question is checked
+// before anything is written, so a refusal writes nothing. A ratify item names who answered (--by) and no coordinator of the
+// loop: the answer to it is a ruling of the person, not of the loop's own director.
+export function cmdAnswerMany(root, rawIds, answer, flags = {}) {
+  const raw = String(rawIds ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+  need(raw.length, 'answer requires an id: one question, or several ratify items as a comma list');
+  const asks = loadAsks(root);
+  // A question named twice is answered once: the list is taken in its order with each number kept at its first place.
+  const found = [...new Set(raw.map(askNumber))].map((key) => {
+    const ask = asks.find((a) => idKey(a.id) === key);
+    need(ask, `no such question: a-${key}`);
+    return ask;
+  });
+  const batch = found.length > 1 ? found.map((a) => a.id) : null;
+  need(!batch || found.every((a) => a.kind === 'ratify'), 'several questions are answered together only when each is a ratify item');
+  const by = flags.by === undefined ? undefined : fieldText(flags.by);
+  const item = found.find((a) => a.kind === 'ratify');
+  if (item) {
+    need(by, `a-${item.id} is a ratify item, which needs --by: who answered (owner or a name)`);
+    need(!coordinatorNames(root).some((n) => n.toLowerCase() === by.toLowerCase()), `--by names a coordinator of the loop (${by}): a ratify item is answered by the owner or by a name`);
+  }
+  // Every question is checked before the first write, so a refusal of one of them writes nothing.
+  for (const ask of found) answerChecks(root, ask, answer === undefined ? null : noSeparators(answer), flags.option === undefined ? null : noSeparators(flags.option));
+  const results = found.map((ask) => cmdAnswer(root, ask.id, answer, { ...flags, ...(batch ? { batch } : {}) }));
+  return results.length === 1 ? results[0] : results;
 }
 
 // A ratification answered: the ruling is marked in place. A ratified area ruling hands back the entry for the type's
@@ -4751,10 +4931,26 @@ export function cmdDecide(root, slug, ruling, flags = {}) {
   const area = flags.area !== undefined ? String(flags.area) : null;
   const reach = flags.reach !== undefined ? Number(flags.reach) : null;
   const rule = flags.rule !== undefined ? String(flags.rule) : null;
-  appendDecision(root, slug, settles.length ? `${ruling.trim()}\n\n**Settles:** ${settles.map((i) => i.id).join(', ')}` : ruling, { by, supersedes: flags.supersedes, area, reach, rule });
+  appendDecision(root, slug, freeBlock(oneBreak(ruling).trim()), { by, supersedes: flags.supersedes, area, reach, rule, settles: settles.map((i) => i.id) });
   appendLog(root, `decided ${slug} · by ${by}${flags.supersedes !== undefined ? ` · supersedes ${flags.supersedes}` : ''}${area ? ` · area ${area}${reach !== null ? ` (${reach} files)` : ''}${rule ? ` · rule ${rule}` : ''}` : ''}`);
-  if (settles.length) appendRuling(root, settles, `Ruling ${slug}: ${firstLine(ruling, `${DECISIONS_FILE}, ruling ${slug}`)}`);
+  if (settles.length) appendRuling(root, settles, `Ruling ${slug}: ${firstLine(oneBreak(ruling).trim(), `${DECISIONS_FILE}, ruling ${slug}`)}`);
   return { slug, by, supersedes: flags.supersedes ?? null, settles: settles.map((i) => i.id), ...(area ? { area, reach, ...(rule ? { rule } : {}) } : {}) };
+}
+
+// Whether a question of the record asks about a ruling: a ratify item naming it, or the question the ruling `ask-<n>` was
+// written from.
+export function questionFor(root, slug) {
+  const m = /^ask-(\d+)$/.exec(slug);
+  return loadAsks(root).some((a) => a.ruling === slug || (m !== null && idKey(a.id) === idKey(m[1])));
+}
+// The unfinished issues whose What, Why or Acceptance name a ruling by its slug, as a whole word: the list a supersession
+// reports on stderr, so the open issues that cite the ruling it replaces are rewritten. A slug that ends a sentence (a
+// stop, a comma, a closing quote or bracket after it) names the ruling; a longer slug that starts with it, hyphenated or
+// dotted, does not.
+export function issuesNaming(root, slug) {
+  const profile = loadProfile(root);
+  const named = new RegExp(`(?<![A-Za-z0-9_-])(?<![A-Za-z0-9_]\\.)${slug.replace(/\./g, '\\.')}(?![A-Za-z0-9_]|-[A-Za-z0-9_]|\\.[A-Za-z0-9_])`);
+  return loadIssues(root).filter((i) => profile.unfinished(i.status) && named.test([i.sections.what, i.sections.why, i.sections.acceptance].filter(Boolean).join('\n')));
 }
 
 // A type name as the repository's graph takes it for a log: one path segment.

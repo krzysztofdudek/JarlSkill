@@ -16,7 +16,8 @@ import * as R from './record.mjs';
 import {
   ROUNDS_BEFORE_TAKEOVER, need, resetCaches, withLock, readText, isEntry, cmdSet,
   cmdProfile, cmdArchive, cmdList, cmdNext, renderNext, cmdMode, cmdClose, cmdCheck, cmdBranches, cmdTips, cmdQueue,
-  cmdChangelog, cmdHandoffRead, cmdHandoffWrite, cmdReport, cmdImport, cmdSources, cmdAnswer, cmdModels, renderModels,
+  cmdChangelog, cmdHandoffRead, cmdHandoffWrite, cmdReport, cmdImport, cmdSources, cmdAnswerMany, cmdModels, renderModels,
+  issuesNaming, questionFor, cmdGoal, cmdGoalSet,
   renderProfile, renderTips, renderQueue, renderResume, renderStatus, renderImport, renderSources, renderList, recordTypeLog, recordRuleLog,
   runDecisionsDriver, mergeFlags, describeNew, renderNewReply, issueView, evidenceTable, renderBranches, renderDecide, renderDecisions,
 } from './jarl-lib.mjs';
@@ -169,13 +170,20 @@ commands:
                                                  (worktree gone, branch gone, idle over n hours, default 6) and
                                                  DONE → delete; shown only, never acted on; read in --repo, else the
                                                  loop's own repository and every repository its issues name
-  ask "<question>" [--kind stop|stuck|lower|charter|ratify] [--target x] [--issue 7]
+  ask "<question>" [--kind stop|stuck|lower|charter|ratify] [--target x] [--issue 7] [--option "<label>: <effect>"]...
                                                  a question the user has to answer; lower needs --target;
                                                  listed at boot until answered; ratify is a choice already made
-                                                 under a mandate, awaiting the user's word, and blocks nothing
-  answer <id> "<answer>" [--by who]              records the answer as a ruling and closes the question; --by
-                                                 records who answered (default owner) and, on a ratify item whose
-                                                 ruling names a rule, is who the rule's ratification names
+                                                 under a mandate, awaiting the user's word, and blocks nothing;
+                                                 --option gives the choices, at least two, repeated for each one:
+                                                 the question prints with its options for the choice window
+  answer <ids> "<answer>" | --option <label> [--by who]
+                                                 records the answer as a ruling and closes the question: the option
+                                                 chosen, marked in the ruling's list of options, or the answer in the
+                                                 person's own words; --by records who answered (default owner) and
+                                                 is required on a ratify item, which names no coordinator of the loop;
+                                                 several ratify items as a comma list take one answer, one ruling each,
+                                                 each naming the batch it was answered in; on a ratify item whose
+                                                 ruling names a rule, the rule's ratification names who answered
   resume [--log n] [--ready n] [--ci]            read-only, the boot: everything a session picks the loop up from,
                                                  assembled live — goal and counts, rulings in force, in flight with
                                                  leases (and stale ones), waiting on After, questions, ratify items,
@@ -200,6 +208,11 @@ commands:
                                                  close puts it to the user for ratification
   decisions [--live]                             the rulings with who ruled and what superseded them; --live only
                                                  those still in force
+  goal                                           the goal as goal.md holds it
+  goal --set "<machine line>"                    one machine line of the goal set, with a log line that says what it
+                                                 was and what it is: "Check (<repository>): <command>" or a bare
+                                                 "Check: <command>", "Model (<tier>): <models>" (a tier the profile
+                                                 declares) or "Coordinators: <names>"; the rest of goal.md stays as written
   status [--stale-hours n] [--by repo|tag|kind|prio|<field>] [--tag <t>]
                                                  --tag computes every part of status over the issues carrying that tag only
                                                  the log is the record of an issue's status, lease, merge and CI; a header
@@ -339,11 +352,12 @@ export const COMMAND_FLAGS = {
   check: { branch: 'value', base: 'value', repo: 'value' },
   branches: { base: 'value', repo: 'value', 'stale-hours': 'value' },
   merged: { sha: 'value', ci: 'value', repo: 'value', ran: 'many', saw: 'many', red: 'value', keep: 'bool' },
-  ask: { kind: 'value', target: 'value', issue: 'value' },
-  answer: { by: 'value' },
+  ask: { kind: 'value', target: 'value', issue: 'value', option: 'many' },
+  answer: { by: 'value', option: 'value' },
   resume: { log: 'value', ready: 'value', ci: 'bool' },
   handoff: { summary: 'value', next: 'many', log: 'value', ready: 'value', ci: 'bool' },
   log: {}, decide: { settles: 'value', by: 'value', supersedes: 'value', area: 'value', reach: 'value', rule: 'value' }, decisions: { live: 'bool' },
+  goal: { set: 'value' },
   status: { 'stale-hours': 'value', by: 'value', tag: 'value' }, archive: {}, report: { found: 'bool' }, tips: {}, mode: {},
   queue: { repo: 'value', base: 'value' }, changelog: { repo: 'value' },
   close: { force: 'bool', batch: 'bool' }, profile: {},
@@ -410,8 +424,8 @@ export const COMMAND_ARGS = {
   after: ['id', 'ids?'], evidence: ['ids', 'text?'], list: [], show: ['id'], set: ['ids', 'status', 'why?'],
   merged: ['ids'], tag: ['ids', 'ops...'], prio: ['ids', 'priority'], files: ['id', 'paths'], repo: ['id', 'path?'],
   next: [], review: ['ids', 'verdict', 'findings'], round: ['id', 'what'], models: [], check: ['id?'], branches: [],
-  ask: ['question'], answer: ['id', 'answer'], resume: [], handoff: ['action?'], log: ['event'],
-  decide: ['slug', 'ruling'], decisions: [], status: [], archive: ['slug'], report: [], tips: [], queue: [],
+  ask: ['question'], answer: ['id', 'answer?'], resume: [], handoff: ['action?'], log: ['event'],
+  decide: ['slug', 'ruling'], decisions: [], goal: [], status: [], archive: ['slug'], report: [], tips: [], queue: [],
   changelog: ['ids'], mode: ['mode'], close: [], profile: ['file?'],
 };
 // One sentence per command: what it does, the MCP tool's whole description after "WRITES the loop." or "Read-only.".
@@ -440,12 +454,13 @@ export const COMMAND_SUMMARY = {
   check: 'Measure a worker branch against its base: commits, diff inside the declared files, test changes; numbers, never a verdict.',
   branches: 'Every worker branch with its issues, commits beyond the base, worktree state, stale leases and done branches.',
   ask: 'File a question the user has to answer (stop, stuck, lower, charter or ratify).',
-  answer: 'Record the user\'s answer to a question as a ruling and close the question.',
+  answer: 'Record the user\'s answer to a question, the option chosen or the words given, as a ruling and close the question; several ratify items take one answer.',
   resume: 'The boot: everything a session picks the loop up from, assembled live.',
   handoff: 'read: resume plus an old handoff file as history; write: retired, writes nothing.',
   log: 'Append one dated note to the loop\'s journal; a line that reads as a move, a verdict or another line of state is refused.',
   decide: 'Append a ruling, optionally superseding one, settling issues or covering an area of code.',
   decisions: 'The rulings with who ruled and what superseded them.',
+  goal: 'The goal as goal.md holds it, or one machine line of it set (Check, Model or Coordinators), with a log line that says what it was and what it is now.',
   status: 'The goal, the counts by status, the reviews, stale leases and what awaits ratification.',
   archive: 'Put the current loop away under .jarl/archive/ so a new one can open here.',
   report: 'What was done, dropped, deferred and still open, ready for the changelog, with the loop metrics.',
@@ -459,7 +474,7 @@ export const COMMAND_SUMMARY = {
 const ARITY = Object.fromEntries(Object.entries(COMMAND_ARGS).filter(([, a]) => !a.some((n) => n.endsWith('...'))).map(([c, a]) => [c, a.length]));
 
 // The commands that write: each runs under .jarl/.lock (see withLock).
-export const MUTATING = new Set(['init', 'new', 'body', 'import', 'source', 'after', 'set', 'merged', 'tag', 'prio', 'files', 'repo', 'evidence', 'review', 'round', 'ask', 'answer', 'log', 'decide', 'archive', 'mode', 'close']);
+export const MUTATING = new Set(['init', 'new', 'body', 'import', 'source', 'after', 'set', 'merged', 'tag', 'prio', 'files', 'repo', 'evidence', 'review', 'round', 'ask', 'answer', 'log', 'decide', 'goal', 'archive', 'mode', 'close']);
 
 // git's side of the loop: the merge driver git runs, and the settings a merger passes it. Neither reads a loop.
 function mergeDriverMain(args) {
@@ -506,7 +521,7 @@ function main() {
 // The ratification batch as close prints it: one line per item, then what became of the ones nobody answered.
 function renderBatch(batch, loop) {
   if (!batch.items.length && !batch.waiting) return loop === 'open' ? 'no area ruling awaits ratification' : '';
-  const head = `\nto ratify (${batch.items.length}${batch.waiting ? `, ${batch.waiting} more at the next close` : ''}) — answer each with yes or reject (tak or nie): jarl.mjs answer <a-id> "yes"`;
+  const head = `\nto ratify (${batch.items.length}${batch.waiting ? `, ${batch.waiting} more at the next close` : ''}) — answer each with yes or reject (tak or nie): jarl.mjs answer <a-id> "yes" --by <who answered>`;
   const tail = { open: 'nothing closed; the loop goes on', kept: 'unanswered items stay open in the record', removed: 'unanswered, they left with the loop as its own rulings' }[loop];
   return `${head}\n${batch.items.map((i) => `- ${i.ask} · ${i.question}`).join('\n')}\n${tail}`;
 }
@@ -570,9 +585,9 @@ export function dispatch(root, cmd, rest, flags) {
       case 'merged': out = R.recordMerged(root, rest[0], { ...flags, caller: 'cli' }); text = `${out.ids.join(', ')} ${out.sha ? `merged ${out.sha}` : 'merge'}${out.check ? ` · check ${out.check}` : ''}${out.red ? ` · landed red, cause ${out.red}` : ''}${out.ci ? ` · CI ${out.ci}` : ''}${(out.cleanup || []).map((c) => `\n${c.kept ? `kept ${c.branch}${c.worktree ? ` (worktree ${c.worktree} removed)` : ''} — ${c.kept}` : `removed ${c.worktree ? `the worktree ${c.worktree} and ` : ''}the branch ${c.branch}`}${(c.commands || []).length ? `\nafter looking at the files, remove them with:\n${c.commands.map((x) => `  ${x}`).join('\n')}` : ''}${out.cleanup.some((x) => x.repo !== c.repo) ? ` [${c.repo}]` : ''}`).join('')}`; warn = out.notes.map((n) => `note: ${n}`); break;
       case 'check': out = cmdCheck(root, rest[0], flags); text = `${out.id === null ? `package ${out.ids.join(', ')} on ${out.branch}\n` : ''}${out.repo === root ? '' : `in ${out.repo}\n`}${out.items.map((i) => `${i.ok ? '✓' : '✗'} ${i.name} — ${i.note}`).join('\n')}`; break;
       case 'branches': out = cmdBranches(root, flags); text = renderBranches(out, root); break;
-      case 'ask': out = R.ask(root, rest[0], { ...flags, width: undefined }); text = out.kind === 'ratify' ? `filed a-${out.id} for ratification · blocks nothing` : `asked a-${out.id}`; break;
-      // The library's answer (jarl-record/1) takes no opts: --by reaches the answer through jarl-lib.mjs, under the lock held here.
-      case 'answer': out = cmdAnswer(root, rest[0], rest[1], flags); break;   // text below: the type log is written outside the lock
+      case 'ask': out = R.ask(root, rest[0], { ...flags, width: undefined }); text = askText(out); break;
+      // The library's answer (jarl-record/1) takes no opts: --by and --option reach the answer through jarl-lib.mjs, under the lock held here.
+      case 'answer': out = cmdAnswerMany(root, rest[0], rest[1], flags); break;   // text below: the type log is written outside the lock
       case 'resume': out = R.resumeData(root, flags); text = renderResume(out, R.loadProfile(root)); break;
       case 'handoff':
         need(rest[0] === undefined || rest[0] === 'read' || rest[0] === 'write', `handoff takes read or write (got "${rest[0]}") — the state is assembled live by resume`);
@@ -580,8 +595,9 @@ export function dispatch(root, cmd, rest, flags) {
         break;
       case 'report': out = cmdReport(root, flags); text = out.text; break;
       case 'log': out = R.appendLog(root, rest[0]); text = 'logged'; break;
-      case 'decide': out = R.decide(root, rest[0], rest[1], flags); text = renderDecide(out); break;
+      case 'decide': out = R.decide(root, rest[0], rest[1], flags); text = renderDecide(out); decideNotes(root, rest[0], flags, warn); break;
       case 'decisions': out = R.decisions(root, flags); text = renderDecisions(out); break;
+      case 'goal': out = flags.set === undefined ? cmdGoal(root) : cmdGoalSet(root, flags.set); text = flags.set === undefined ? out.goal : out.unchanged ? `goal line unchanged: ${out.shown}` : `goal line ${out.replaced ? 'changed' : 'added'}: ${out.shown}${out.replaced ? ` (was ${out.was})` : ''}`; break;
       case 'status': out = R.statusData(root, flags); text = renderStatus(out, R.loadProfile(root)); break;
       case 'tips': out = cmdTips(root); text = renderTips(out); break;
       case 'queue': out = cmdQueue(root, flags); text = renderQueue(out); break;
@@ -599,22 +615,43 @@ export function dispatch(root, cmd, rest, flags) {
   // A loop run by a composer (its profile keeps close to the record) is written into the graph by that composer, with
   // its own code and into the tree it hands over: here the answer is recorded and nothing is sent, so no entry is ever
   // written twice, nor into a checkout the composer's work never reaches.
-  if (cmd === 'answer') {
-    const composer = (out.typeDecision || out.ruleRatification) ? composerOf(root) : null;
-    if (out.typeDecision) {
-      out.typeLog = composer || writeAreaDecision(root, out.typeDecision);
-      try { withLock(root, () => recordTypeLog(root, out.ruling, out.typeDecision, out.typeLog)); } catch (e) { warn.push(`note: what became of ${out.ruling} in the type log was not recorded in the loop: ${e.message}`); }
-    }
-    // The rule's ratification is written after the type's decision, and independently of it: either may fail alone.
-    if (out.ruleRatification) {
-      out.ruleLog = composer || writeRuleRatification(root, out.ruleRatification);
-      try { withLock(root, () => recordRuleLog(root, out.ruling, out.ruleRatification, out.ruleLog)); } catch (e) { warn.push(`note: what became of ${out.ruling} in the rule's log was not recorded in the loop: ${e.message}`); }
-    }
-    text = `answered a-${out.id}${out.issue ? ` · written into ${out.issue}` : ''}${out.verdict ? ` · ${out.ruling} ${out.verdict}${renderTypeLog(out.typeLog)}${renderRuleLog(out.ruleRatification, out.ruleLog)}` : ''}`;
-    if (out.typeLog?.state === 'failed') warn.push(`note: ${out.ruling} stays a ruling of this loop; write it by hand in ${out.typeLog.repo}: ${out.typeLog.retry} (add --supersedes <datetime> or --adds when yg lists decisions in force)`);
-    if (out.ruleLog?.state === 'failed') warn.push(`note: rule ${out.ruleRatification.rule} is not ratified in its own log; write it by hand in ${out.ruleLog.repo}: ${out.ruleLog.retry}`);
-  }
+  if (cmd === 'answer') text = [].concat(out).map((one) => answered(root, one, warn)).join('\n');
   return { out, text, warn };
+}
+
+// One answer, after its ruling is recorded: a ratified area ruling goes to the type's decision log (and a rule's ratification
+// to the rule's own log) through the composer or the graph's tool, then the line the command prints for it.
+function answered(root, out, warn) {
+  const composer = (out.typeDecision || out.ruleRatification) ? composerOf(root) : null;
+  if (out.typeDecision) {
+    out.typeLog = composer || writeAreaDecision(root, out.typeDecision);
+    try { withLock(root, () => recordTypeLog(root, out.ruling, out.typeDecision, out.typeLog)); } catch (e) { warn.push(`note: what became of ${out.ruling} in the type log was not recorded in the loop: ${e.message}`); }
+  }
+  // The rule's ratification is written after the type's decision, and independently of it: either may fail alone.
+  if (out.ruleRatification) {
+    out.ruleLog = composer || writeRuleRatification(root, out.ruleRatification);
+    try { withLock(root, () => recordRuleLog(root, out.ruling, out.ruleRatification, out.ruleLog)); } catch (e) { warn.push(`note: what became of ${out.ruling} in the rule's log was not recorded in the loop: ${e.message}`); }
+  }
+  if (out.typeLog?.state === 'failed') warn.push(`note: ${out.ruling} stays a ruling of this loop; write it by hand in ${out.typeLog.repo}: ${out.typeLog.retry} (add --supersedes <datetime> or --adds when yg lists decisions in force)`);
+  if (out.ruleLog?.state === 'failed') warn.push(`note: rule ${out.ruleRatification.rule} is not ratified in its own log; write it by hand in ${out.ruleLog.repo}: ${out.ruleLog.retry}`);
+  return `answered a-${out.id}${out.chose ? ` · chose ${out.chose}` : ''}${out.issue ? ` · written into ${out.issue}` : ''}${out.verdict ? ` · ${out.ruling} ${out.verdict}${renderTypeLog(out.typeLog)}${renderRuleLog(out.ruleRatification, out.ruleLog)}` : ''}`;
+}
+
+// What the command says of a question it asked: a question with options prints them, ready for the choice window.
+function askText(out) {
+  if (out.kind === 'ratify') return `filed a-${out.id} for ratification · blocks nothing`;
+  if (!out.options) return `asked a-${out.id}`;
+  return [`asked a-${out.id}`, out.question, ...out.options.map((o) => `- ${o.label}: ${o.effect}`), 'answer with --option <label>, or in your own words'].join('\n');
+}
+
+// The notes a decide says on stderr: the owner's word with no question in the record behind it, and the open issues that name the
+// ruling a supersession replaces, so the jarl rewrites them now.
+function decideNotes(root, slug, flags, warn) {
+  if (flags.by === 'owner' && !questionFor(root, slug)) warn.push(`note: no question in the record asks about ${slug}: a ruling by the owner with no question behind it is recorded as he gave it`);
+  if (flags.supersedes !== undefined) {
+    const open = issuesNaming(root, flags.supersedes);
+    if (open.length) warn.push(`note: open issues name ${flags.supersedes}: ${open.map((i) => i.id).join(', ')} — rewrite them to ${slug}`);
+  }
 }
 
 if (isEntry(process.argv[1], fileURLToPath(import.meta.url))) main();

@@ -201,7 +201,7 @@ test('a row, a note, a ruling, an answer, a Deferred reason and a retraction eac
   jarl(root, 'evidence', '1', 'a free note');
   jarl(root, 'decide', 'probe-ruling', 'the probe settles on the split', '--settles', '1');
   jarl(root, 'ask', 'keep the split?', '--kind', 'ratify', '--issue', '1');
-  jarl(root, 'answer', 'a-1', 'kept');
+  jarl(root, 'answer', 'a-1', 'kept', '--by', 'owner');
   jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'green');
   jarl(root, 'evidence', '1', '--retract', '1', '--by', 'rev', 'the first run was on the wrong tree');
   jarl(root, 'set', '1', 'deferred', 'waits for the probe of 2');
@@ -271,7 +271,7 @@ test('a Proof entry that is not a row (an attachment) goes after the last row at
   assert.equal(withRow, '### Proof\n\n- **ran:** a · **saw:** b\n  second line\n- attachment\n\n### Notes\n\nn');
 });
 
-test('a section that already holds content and no sub-heading is never converted: every writer appends at its end, as before', () => {
+test('a section that already holds content and no sub-heading is never converted: every writer appends at its end', () => {
   const root = fresh(1);
   const file = issueFile(root, 1);
   writeFileSync(file, readFileSync(file, 'utf8').replace('## Evidence\n\n', '## Evidence\n\n- **ran:** old · **saw:** ok\n\nan old note\n'));
