@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, existsSync, cpSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -420,8 +420,8 @@ test('models --by repo slices the same facts by repository; the text names n for
   units(root, 2, { model: MID, worker: 'w-m', repo: './sub' });
   const m = L.cmdModels(root, { by: 'repo' });
   assert.equal(m.by, 'repo');
-  assert.deepEqual(m.slices.map((s) => s.value).sort(), ['sub', root.split('/').pop()].sort());
-  const own = m.slices.find((s) => s.value === root.split('/').pop());
+  assert.deepEqual(m.slices.map((s) => s.value).sort(), ['sub', basename(root)].sort());
+  const own = m.slices.find((s) => s.value === basename(root));
   assert.equal(cell(own.workers, MID, 'bug · standard').units, 5);
   assert.throws(() => L.cmdModels(root, { by: 'nonsense' }), /--by is one of: repo, tag/);
   const text = L.renderModels(L.cmdModels(root, {}));

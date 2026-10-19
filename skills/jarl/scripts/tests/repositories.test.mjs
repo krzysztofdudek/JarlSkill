@@ -19,7 +19,10 @@ const git = (cwd, ...args) => {
   assert.equal(r.status, 0, `git ${args.join(' ')}: ${r.stderr}`);
   return r.stdout.trim();
 };
-const tmp = (prefix) => realpathSync(mkdtempSync(join(tmpdir(), prefix)));
+// The long real path (never a shortened Windows name), the form the library resolves names to.
+const tmp = (prefix) => realpathSync.native(mkdtempSync(join(tmpdir(), prefix)));
+// One slash form, for paths that git prints with forward slashes.
+const slash = (p) => p.replace(/\\/g, '/');
 const escaped = (s) => s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
 // A repository at `dir` on `branch` with one commit per entry of `commits` (a file name and its content).
 function repoAt(dir, { branch = 'main', commits = [['a.txt', 'a\n']] } = {}) {
@@ -60,7 +63,7 @@ test('two sibling repositories get names and a third that is not a sibling keeps
   const third = neu(w.hub, 'c', '--repo', away);
   assert.equal(third.status, 0, third.stderr);
   assert.match(third.stderr, /note: .* is stored as the path .*: another repository stands at .*tool, where its name would resolve, so this one keeps its path/);
-  assert.match(w.issue(3), new RegExp(`^\\*\\*Repo:\\*\\* ${escaped(away)}$`, 'm'));
+  assert.match(w.issue(3), new RegExp(`^\\*\\*Repo:\\*\\* ${escaped(slash(away))}$`, 'm'));
   // Declared once, with every root commit, the origin as found and the base, and no path.
   const lines = w.decl().split('\n').filter((l) => l.startsWith('- **'));
   assert.deepEqual(lines, [
@@ -138,7 +141,7 @@ test('two repositories that share a directory name stay apart: the second keeps 
   assert.match(r.stderr, /note: .* is stored as the path/);
   assert.match(r.stderr, new RegExp(`another repository stands at ${escaped(w.tool)}, where its name would resolve, so this one keeps its path`));
   assert.doesNotMatch(r.stderr, /put it, or a symlink to it, there/, 'it never advises putting a checkout where another stands');
-  assert.match(w.issue(2), new RegExp(`^\\*\\*Repo:\\*\\* ${escaped(away)}$`, 'm'));
+  assert.match(w.issue(2), new RegExp(`^\\*\\*Repo:\\*\\* ${escaped(slash(away))}$`, 'm'));
   const next = JSON.parse(jarl(w.hub, 'next', '--all', '--json'));
   assert.equal(next.find((x) => x.id === '2').ready, true, 'the same file name in two repositories of one directory name does not hold');
   jarl(w.hub, 'set', '1', 'in-progress', 'go', '--branch', 'jarl/1-x');
@@ -454,8 +457,8 @@ test('a new lease stores no worktree, and set --worktree checks the path and sto
   assert.doesNotMatch(w.issue(1), /\*\*Worktree:\*\*/);
   assert.match(w.log(), /1 → in-progress · go · branch jarl\/1-a · worker w1\n/);
   assert.doesNotMatch(w.log(), /worktree/);
-  assert.equal(JSON.parse(jarl(w.hub, 'show', '1', '--json')).where.worktrees[0].path, wt);
-  assert.match(jarl(w.hub, 'show', '1'), new RegExp(`^worktree of tool on jarl/1-a: ${escaped(wt)}$`, 'm'));
+  assert.equal(JSON.parse(jarl(w.hub, 'show', '1', '--json')).where.worktrees[0].path, slash(wt));
+  assert.match(jarl(w.hub, 'show', '1'), new RegExp(`^worktree of tool on jarl/1-a: ${escaped(slash(wt))}$`, 'm'));
 });
 
 test('set --worktree through the command line refuses a wrong path and writes nothing, while the record library accepts and stores nothing', () => {
@@ -497,11 +500,11 @@ test('the worktree of a lease is found by its branch in every state git can repo
   assert.match(jarl(w.hub, 'show', '1'), /^no worktree of tool holds jarl\/1-a$/m);
   const wt = join(parent, 'wt');
   git(w.tool, 'worktree', 'add', '-q', '-b', 'jarl/1-a', wt);
-  assert.deepEqual([stateOf().state, stateOf().path], ['here', wt]);
+  assert.deepEqual([stateOf().state, stateOf().path], ['here', slash(wt)]);
   // Its directory goes while the directory around it stays: git lists it as prunable, and it is gone.
   renameSync(wt, join(parent, 'wt-away'));
   assert.equal(stateOf().state, 'gone');
-  assert.match(jarl(w.hub, 'show', '1'), new RegExp(`^worktree of tool on jarl/1-a: ${escaped(wt)} \\(gone\\)$`, 'm'));
+  assert.match(jarl(w.hub, 'show', '1'), new RegExp(`^worktree of tool on jarl/1-a: ${escaped(slash(wt))} \\(gone\\)$`, 'm'));
   // The directory around it goes too: git lists it, and this machine cannot see it.
   const deep = join(parent, 'deep');
   const inner = join(deep, 'wt2');
@@ -532,7 +535,7 @@ test('a lease that holds a Worktree field keeps it and is read as it was written
   jarl(w.hub, 'set', '1', 'in-progress', 'again', '--worker', 'w2');
   assert.match(w.issue(1), new RegExp(`^\\*\\*Worktree:\\*\\* ${escaped(wt)}$`, 'm'), 'a lease move that names no worktree keeps the field');
   renameSync(wt, join(parent, 'wt-away'));
-  assert.match(jarl(w.hub, 'status'), new RegExp(`stale 1 · worktree gone: ${escaped(wt)}`));
+  assert.match(jarl(w.hub, 'status'), new RegExp(`stale 1 · worktree gone: ${escaped(slash(wt))}`));
   jarl(w.hub, 'set', '1', 'open', 'back');
   assert.doesNotMatch(w.issue(1), /\*\*Worktree:\*\*/, 'leaving in-progress removes it');
 });

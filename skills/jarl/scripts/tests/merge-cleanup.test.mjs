@@ -178,7 +178,7 @@ test('a worktree holding an ignored file is kept, the reason names it and the gi
   appendFileSync(join(repo, '.git', 'info', 'exclude'), '*.secret\n');
   writeFileSync(join(wt, 'token.secret'), 'x\n');
   const out = jarl(repo, 'merged', '1', '--sha', sha);
-  assert.match(out, /\nkept jarl\/1-x — its worktree holds ignored files: token\.secret\nafter looking at the files, remove them with:\n {2}git -C .*repo worktree remove --force .*wt-1\n {2}git -C .*repo branch -d jarl\/1-x$/);
+  assert.match(out, /\nkept jarl\/1-x — its worktree holds ignored files: token\.secret\nafter looking at the files, remove them with:\n {2}git -C '?.*repo'? worktree remove --force .*wt-1\n {2}git -C '?.*repo'? branch -d jarl\/1-x$/);
   assert.equal(readFileSync(join(wt, 'token.secret'), 'utf8'), 'x\n');
   assert.deepEqual(branches(repo).sort(), ['jarl/1-x', 'main']);
 });
