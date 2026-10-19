@@ -265,7 +265,7 @@ commands:
                                                  merge, follow-ups within 7 days — "no data" where the record holds none)
                                                  and the landing banner, per repository "k of n merges carry the declared
                                                  check", with the testimony mark as status shows it; --json also carries
-                                                 one row per issue and the metrics (see SKILL.md, "Loop metrics")
+                                                 one row per issue and the metrics (see references/commands.md, "Loop metrics")
   tips                                           read-only: per repository the loop's issues name (open, in progress,
                                                  recently merged), the tip of each worker branch in flight, the feature
                                                  branch the checkout is on and main, ahead/behind their upstream as last fetched, and — when
@@ -316,7 +316,7 @@ commands:
 
 options: --json  --help  --root <repo root>
 
-The list of what only the command line does, next to the record library, is in the skill: SKILL.md, section "What only the command line does".
+The list of what only the command line does, next to the record library, is in the skill: references/composers.md, section "What only the command line does".
 
 git merges (not loop commands: no --root, no lock, no tool of the MCP server):
   merge-driver decisions <base> <ours> <theirs>  the driver git runs for .jarl/decisions.md (%O %A %B): the rulings of

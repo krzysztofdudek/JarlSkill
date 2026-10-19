@@ -11,7 +11,7 @@ Invoke it on a branch and the agent becomes the **jarl** of that branch: everyth
 
 Run both, then `/reload-plugins` to activate it in this session (or restart Claude Code). Needs Node.js 22 or later on your `PATH`; no config, no API key. Then `/jarl <goal>` on a feature branch, or just start a session in a checkout that already carries `.jarl/` — the skill resumes on its own.
 
-> MIT licensed · one markdown file and one zero-dependency Node tool · works with any agent that reads skills · part of the [Yggdrasil family](#the-yggdrasil-family) · [full skill body](skills/jarl/SKILL.md)
+> MIT licensed · a short skill file with references and one zero-dependency Node tool · works with any agent that reads skills · part of the [Yggdrasil family](#the-yggdrasil-family) · [the skill: an entry file and its references](skills/jarl/SKILL.md)
 
 ---
 
@@ -75,7 +75,7 @@ codex plugin marketplace add krzysztofdudek/JarlSkill
 codex plugin install jarl@jarl-marketplace
 ```
 
-To upgrade later: `codex plugin marketplace upgrade jarl-marketplace`. Or drop the single file into `~/.agents/skills/jarl/SKILL.md` (user-level) or `.agents/skills/jarl/SKILL.md` (project-level).
+To upgrade later: `codex plugin marketplace upgrade jarl-marketplace`. Or copy the whole `skills/jarl/` directory to `~/.agents/skills/jarl/` (user-level) or `.agents/skills/jarl/` (project-level): `SKILL.md` links the files of `references/` beside it, so they are copied with it.
 
 ### Cursor plugin
 
@@ -84,7 +84,7 @@ git clone https://github.com/krzysztofdudek/JarlSkill.git
 ln -s "$(pwd)/JarlSkill" ~/.cursor/plugins/local/jarl
 ```
 
-Then reload Cursor (**Developer: Reload Window**). Or drop the single file into `~/.cursor/skills/jarl/SKILL.md` (user-level) or `.cursor/skills/jarl/SKILL.md` (project-level).
+Then reload Cursor (**Developer: Reload Window**). Or copy the whole `skills/jarl/` directory to `~/.cursor/skills/jarl/` (user-level) or `.cursor/skills/jarl/` (project-level): `SKILL.md` links the files of `references/` beside it, so they are copied with it.
 
 ### The MCP tools
 
@@ -94,7 +94,7 @@ A call reaches the loop its `root` field names; without it, the one `JARL_ROOT` 
 
 ### Drop-in (any agent)
 
-The whole skill is the [`skills/jarl/`](skills/jarl/) directory: one frontmatter-tagged markdown file, one Node tool and the MCP server over it. Copy the directory into your agent's skill directory; Node 22 or later on your `PATH` is the only requirement.
+The whole skill is the [`skills/jarl/`](skills/jarl/) directory: a short `SKILL.md` with frontmatter, the `references/` it links one level below, one Node tool and the MCP server over it. Copy the whole directory, `references/` included, into your agent's skill directory; Node 22 or later on your `PATH` is the only requirement.
 
 - **Claude Code, user-level:** `~/.claude/skills/jarl/`
 - **Claude Code, project-level:** `.claude/skills/jarl/` in your repo
@@ -102,15 +102,15 @@ The whole skill is the [`skills/jarl/`](skills/jarl/) directory: one frontmatter
 
 Nothing else in this repo affects behavior — all of it lives in that directory.
 
-**For tool authors.** `skills/jarl/scripts/record.mjs` is the one stable surface another tool may vendor to read and write a Jarl loop: an enumerated list of exports under the contract version `RECORD_API` (`jarl-record/1`), vendored together with `jarl-lib.mjs`. Nothing else is a contract — not `jarl.mjs`, whose exports are internal, and not `jarl-lib.mjs`. See [the record as a library](skills/jarl/SKILL.md#the-record-as-a-library).
+**For tool authors.** `skills/jarl/scripts/record.mjs` is the one stable surface another tool may vendor to read and write a Jarl loop: an enumerated list of exports under the contract version `RECORD_API` (`jarl-record/1`), vendored together with `jarl-lib.mjs`. Nothing else is a contract — not `jarl.mjs`, whose exports are internal, and not `jarl-lib.mjs`. See [the record as a library](skills/jarl/references/composers.md#the-record-as-a-library).
 
 ---
 
 ## What it doesn't claim
 
-Jarl is a working loop, not a guarantee. It does not enforce architecture, it does not gate a merge with a machine check of its own, and it does not hold an owner's charter — that is [Horde](https://github.com/krzysztofdudek/Horde), whose missions run on this same loop, with the graph and the rails. Where your repository has a check, the check decides what lands and a reviewer's approval is testimony; name it with a `Check:` line in the loop's goal. Without one, the loop lands on testimony alone, and `status` and `report` say so at the top. The state is four kinds of markdown file in `.jarl/`, moved by one small tool; the discipline is the agent's.
+Jarl is a working loop, not a guarantee. It does not enforce architecture, it does not gate a merge with a machine check of its own, and it does not hold an owner's charter — that is [Horde](https://github.com/krzysztofdudek/Horde), whose missions run on this same loop, with the graph and the rails. Where your repository has a check, the check decides what lands and a reviewer's approval is testimony; name it with a `Check:` line in the loop's goal. Without one, the loop lands on testimony alone, and `status` and `report` say so at the top. The state is the files of `.jarl/` (the goal, the rulings, the questions, the issues, the journal and the repositories' declarations, listed in [the record](skills/jarl/references/record.md#the-files-of-the-loop)), moved by one small tool; the discipline is the agent's.
 
-Jarl records, derives and displays; it never blocks code from landing. Jarl itself ships no merge queue that runs your check and refuses the merge, no `done` that waits for green CI, no leases that expire and are taken over, no release mode that refuses to tag, and no planner that computes a schedule. Each of those is a rail. A loop can be opened with a **profile**, a JSON file that names its statuses (and what each one means: offered, worked on, settling what waits on it, finished, closing the record, needing a reason), the fields its issues carry with their allowed values, and extra sections. A composer such as Horde brings its own profile. A profile is data only: Jarl never runs commands a profile supplies, and a composer keeps its own rails in its own code, writing to the loop through `record.mjs`. A loop without a profile works exactly as before. [The list, and what stays on Jarl's side, is in the skill](skills/jarl/SKILL.md#what-jarl-will-not-grow); [profiles are there too](skills/jarl/SKILL.md#profiles).
+Jarl records, derives and displays; it never blocks code from landing. Jarl itself ships no merge queue that runs your check and refuses the merge, no `done` that waits for green CI, no leases that expire and are taken over, no release mode that refuses to tag, and no planner that computes a schedule. Each of those is a rail. A loop can be opened with a **profile**, a JSON file that names its statuses (and what each one means: offered, worked on, settling what waits on it, finished, closing the record, needing a reason), the fields its issues carry with their allowed values, and extra sections. A composer such as Horde brings its own profile. A profile is data only: Jarl never runs commands a profile supplies, and a composer keeps its own rails in its own code, writing to the loop through `record.mjs`. A loop without a profile runs on the built-in statuses. [The list, and what stays on Jarl's side, is in the skill](skills/jarl/references/composers.md#what-jarl-will-not-grow); [profiles are there too](skills/jarl/references/profile.md#profiles).
 
 ---
 
@@ -133,7 +133,7 @@ Yes. Name the other repository when you file an issue (`new "<title>" --repo <na
 <details>
 <summary><b>Can a research report become issues?</b></summary>
 
-Yes. `import <findings.json>` files one issue per finding, with its body filled in and a **Source:** that names the report and the finding, and a second run files nothing twice. `sources` then shows, per report, which findings became which issues and where they stand, and which ones nobody filed. [The mapping is in the skill](skills/jarl/SKILL.md#from-research-to-issues).
+Yes. `import <findings.json>` files one issue per finding, with its body filled in and a **Source:** that names the report and the finding, and a second run files nothing twice. `sources` then shows, per report, which findings became which issues and where they stand, and which ones nobody filed. [The mapping is in the skill](skills/jarl/references/jarl.md#from-research-to-issues).
 </details>
 
 <details>
@@ -145,7 +145,7 @@ Yes. `import <findings.json>` files one issue per finding, with its body filled 
 <details>
 <summary><b>Can I get a dashboard or a release checklist out of it?</b></summary>
 
-Out of the record, yes, as outputs rather than new modes. `status --by repo|tag|kind|prio` counts per group, and `status --json`, `resume --json`, `report --json` (one row per issue), `queue --json` and `tips --json` have documented, stable shapes, so a page or a script renders the dashboard. A checklist that repeats (a release, a triage) is an issue template in `.jarl/templates/<name>.md`, filed with `new "<title>" --template <name>` and chained with `--after`, one issue per phase. [Both are in the skill](skills/jarl/SKILL.md#views-for-dashboards).
+Out of the record, yes, as outputs rather than new modes. `status --by repo|tag|kind|prio` counts per group, and `status --json`, `resume --json`, `report --json` (one row per issue), `queue --json` and `tips --json` have documented, stable shapes, so a page or a script renders the dashboard. A checklist that repeats (a release, a triage) is an issue template in `.jarl/templates/<name>.md`, filed with `new "<title>" --template <name>` and chained with `--after`, one issue per phase. [The shapes are in the skill](skills/jarl/references/commands.md#views-for-dashboards), [the templates too](skills/jarl/references/jarl.md#templates).
 </details>
 
 <details>
@@ -163,7 +163,7 @@ No. It works alone, and it touches Yggdrasil in one place only. A ruling about a
 <details>
 <summary><b>Why one script, and why so small?</b></summary>
 
-Jarl is the loop and nothing more. Four markdown files and one rule: a status that changed without a log line did not change. The tool exists so that rule is enforced rather than promised — it files, lists, searches, moves a status with its reason, records evidence, says what can run in parallel and closes the loop. When the work needs a plan made before anyone writes, a gate and a charter, that is Horde, and a Horde mission is a Jarl loop underneath — the vocabulary carries over because the record is the same.
+Jarl is the loop and nothing more. A few markdown files and one rule: a status that changed without a log line did not change. The tool exists so that rule is enforced rather than promised — it files, lists, searches, moves a status with its reason, records evidence, says what can run in parallel and closes the loop. When the work needs a plan made before anyone writes, a gate and a charter, that is Horde, and a Horde mission is a Jarl loop underneath — the vocabulary carries over because the record is the same.
 </details>
 
 <details>
