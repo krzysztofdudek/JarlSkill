@@ -14,7 +14,7 @@ import { FINDINGS } from './findings.mjs';
 const SERVER = fileURLToPath(new URL('../jarl-mcp.mjs', import.meta.url));
 const CLI_SOURCE = readFileSync(fileURLToPath(new URL('../jarl.mjs', import.meta.url)), 'utf8');
 const PLUGIN = fileURLToPath(new URL('../../../../', import.meta.url));
-const { COMMAND_ARGS, COMMAND_FLAGS, GLOBAL_FLAGS, MUTATING, parseArgs } = await import('../jarl.mjs');
+const { COMMAND_ARGS, COMMAND_FLAGS, GLOBAL_FLAGS, MUTATING, parseArgs, flagsOf } = await import('../jarl.mjs');
 const mcp = await import('../jarl-mcp.mjs');
 
 const TOOLS = mcp.buildTools();
@@ -39,8 +39,8 @@ test('parity: every command dispatch runs has its tables, its usage block and ex
 test('parity: the tool set is the one this release documents — adding or removing a tool is a deliberate edit here', () => {
   assert.deepEqual(TOOLS.map((t) => t.name).sort(), [
     'after', 'answer', 'archive', 'ask', 'body', 'branches', 'changelog', 'check', 'close', 'decide', 'decisions',
-    'evidence', 'files', 'goal', 'handoff', 'help', 'import', 'init', 'list', 'log', 'merged', 'mode', 'models', 'new', 'next', 'prio',
-    'profile', 'queue', 'repo', 'report', 'resume', 'review', 'round', 'set', 'show', 'source', 'sources', 'status', 'tag', 'tips', 'verify',
+    'evidence', 'field', 'files', 'goal', 'handoff', 'help', 'import', 'init', 'list', 'log', 'merged', 'mode', 'models', 'new', 'next', 'prio',
+    'profile', 'queue', 'repo', 'report', 'resume', 'retract', 'review', 'round', 'set', 'show', 'source', 'sources', 'status', 'tag', 'tips', 'verify',
   ].map(mcp.toolName));
 });
 
@@ -51,9 +51,11 @@ test('parity: each tool has one field per argument and per flag, under the CLI n
     const props = t.inputSchema.properties;
     const args = COMMAND_ARGS[cmd].map(mcp.argName);
     const flags = Object.keys(COMMAND_FLAGS[cmd]);
-    for (const a of args) assert.ok(!flags.includes(a) && !Object.hasOwn(GLOBAL_FLAGS, a), `${cmd}: argument "${a}" clashes with a flag`);
-    assert.deepEqual(Object.keys(props).sort(), [...args, ...flags, 'json', 'root'].sort(), `${cmd}: the fields are its arguments, its flags, json and root`);
-    for (const [f, kind] of Object.entries(COMMAND_FLAGS[cmd])) {
+    // The fields also carry the flags a command reads besides the ones its usage shows (flagsOf).
+    const fields = Object.keys(flagsOf(cmd));
+    for (const a of args) assert.ok(!fields.includes(a) && !Object.hasOwn(GLOBAL_FLAGS, a), `${cmd}: argument "${a}" clashes with a flag`);
+    assert.deepEqual(Object.keys(props).sort(), [...args, ...fields, 'json', 'root'].sort(), `${cmd}: the fields are its arguments, its flags, json and root`);
+    for (const [f, kind] of Object.entries(flagsOf(cmd))) {
       assert.equal(props[f].type, { bool: 'boolean', many: 'array', value: 'string' }[kind], `${cmd} --${f} is ${kind}`);
     }
     // Both ways against the usage text, read on its own: every flag it shows is a field, and every flag in the
@@ -78,7 +80,7 @@ test('parity: every field reaches the CLI parser as the flag or argument it name
       if (a.endsWith('...')) { input[n] = [`${abs}${n}-1`, `${abs}--${n}-2`]; wantPos.push(...input[n]); } else { input[n] = `${abs}--${n} value`; wantPos.push(input[n]); }
     }
     const wantFlags = {};
-    for (const [f, kind] of Object.entries(COMMAND_FLAGS[cmd])) {
+    for (const [f, kind] of Object.entries(flagsOf(cmd))) {
       // A flag naming a file on disk must be absolute, like the findings paths.
       const v = (mcp.PATH_FIELDS[cmd] || []).includes(f) ? '/--v=1' : '--v=1';
       if (kind === 'bool') { input[f] = true; wantFlags[f] = true; } else if (kind === 'many') { input[f] = ['--a', 'b=c']; wantFlags[f] = ['--a', 'b=c']; } else { input[f] = v; wantFlags[f] = v; }
@@ -395,6 +397,7 @@ test('a JSON-RPC response from the client gets no answer; a malformed request st
   assert.deepEqual(out[1].result, {});
 });
 
-test('jarl_set says that its status field may name a declared field, with why as the value', () => {
-  assert.match(byName.jarl_set.description, /The "status" field may instead name a field the loop's profile declares \(see jarl_profile\), and "why" is then that field's value/);
+test('jarl_set changes a status and jarl_field writes a field: each description says so', () => {
+  assert.equal(byName.jarl_set.description, 'WRITES the loop. Change the status of issues, with the reason logged.');
+  assert.match(byName.jarl_field.description, /^WRITES the loop\. Write one field on issues, Resources or a field the profile declares, or empty it with clear\./);
 });

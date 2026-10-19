@@ -14,7 +14,7 @@
 import { fileURLToPath } from 'node:url';
 import * as R from './record.mjs';
 import {
-  ROUNDS_BEFORE_TAKEOVER, need, resetCaches, withLock, readText, isEntry, cmdSet,
+  ROUNDS_BEFORE_TAKEOVER, need, resetCaches, withLock, readText, isEntry, cmdSet, cmdField, setRouteOf, eachIssue, cmdBody, cmdSource, cmdAfter, cmdFiles, cmdRepo, cmdRound,
   cmdProfile, cmdArchive, cmdList, cmdNext, renderNext, cmdMode, cmdClose, cmdCheck, cmdBranches, cmdTips, cmdQueue,
   cmdChangelog, cmdHandoffRead, cmdHandoffWrite, cmdReport, cmdImport, cmdSources, cmdAnswerMany, cmdModels, renderModels,
   issuesNaming, questionFor, cmdGoal, cmdGoalSet, cmdRepoBase, whereOf, cmdVerify, renderVerify, renderCheckNotes,
@@ -54,7 +54,7 @@ commands:
                                                  each replaced by the flag when given; --field and --section
                                                  (repeatable) write the fields and sections the loop's profile declares
                                                  (a field's default when not given; a required one must be given)
-  body <id> [--title "<t>"] [--where "<w>"] [--what "<w>"] [--why "<w>"] [--acceptance "<line>"]... [--changelog "<entry>"]...
+  body <ids> [--title "<t>"] [--where "<w>"] [--what "<w>"] [--why "<w>"] [--acceptance "<line>"]... [--changelog "<entry>"]...
       [--section "<Heading>=<text>"]...
                                                  set or replace the title (the file keeps its name; the old title goes
                                                  into the log), the Where field and the What, Why, Acceptance and
@@ -67,10 +67,10 @@ commands:
                                                  Source onto an existing issue that names the finding id but has none
   sources [<findings.json>...] [--source <dir>]  per report: its findings, the issues filed from them and their
                                                  status; with a findings file, the findings nobody filed too
-  source <id> <dir>#<id>,...                     set the Source field of an issue filed by hand
-  after <id> <ids> | <id> --clear                the issues this one waits on: next does not offer it until each is
+  source <ids> <dir>#<id>,...                    set the Source field of issues filed by hand
+  after <ids> <after-ids> | <ids> --clear        the issues these wait on: next does not offer one until each is
                                                  done or dropped, and status counts it as waiting
-  evidence <ids> "<text>" | --ran "<command>" --saw "<what it printed>" | <id> --file <path> --slot <name> | <id> --retract <n> --by <who> "<reason>"
+  evidence <ids> "<text>" | --ran "<command>" --saw "<what it printed>" | <id> --file <path> --slot <name>
                                                  append a free-text note (under ### Notes), or one checkable row per --ran/--saw
                                                  pair (repeatable; under ### Proof, after the last row);
                                                  --file --slot records one attachment as a Proof row: the slot, the path
@@ -78,12 +78,15 @@ commands:
                                                  size; nothing is copied. The slot is one the profile's done gate requires of
                                                  the issue's kind, and the file lies at the slot's place, has an allowed
                                                  extension and at least the minimum size (at most 64 MiB); done checks every
-                                                 required slot again on the disk;
-                                                 --retract retracts the n-th evidence row (the number show prints before each row,
-                                                 counted over the whole Evidence section) by an appended entry: the row
-                                                 stays, struck through, and the done gate does not count it; the first
-                                                 retraction of a loop raises its record format to 2, so a reader that
-                                                 knows only format 1 refuses the loop instead of counting the row
+                                                 required slot again on the disk
+  retract <id> review|<n> --by <who> "<reason>"  take a record back by an appended entry that says who and why; review retracts
+                                                 the newest approve not yet retracted (never a "changes" verdict), and the
+                                                 approve stays, struck through; <n> retracts the n-th evidence row (the
+                                                 number show prints before each row, counted over the whole Evidence
+                                                 section): the row stays, struck through; the done gate and the metrics
+                                                 do not count what is retracted; the first retraction of a loop raises its record format to
+                                                 2, so a reader that knows only format 1 refuses the loop instead of
+                                                 counting what was taken back
   list [--status s] [--kind k] [--tag t] [--prio p] [--grep re] [--match "<field>=<value>"]... [--all]
                                                  the issues not finished (open and in-progress) by default; --all for
                                                  every status; --match keeps those whose header field holds the value
@@ -95,11 +98,9 @@ commands:
                                                  field that disagrees with the log (see status), where each repository
                                                  written as a name is on this machine and the worktree git has on the
                                                  lease's branch (--json carries them as where)
-  set <ids> <status> "<why>" [--branch <b>] [--worker <name>] [--model <m>] [--worktree <path>] [--header] | <ids> <field> "<value>"
+  set <ids> <status> "<why>" [--branch <b>] [--worker <name>] [--model <m>] [--worktree <path>] [--header]
                                                  (<ids> <status-in-the-log> --header rewrites the header fields the log
                                                  renders from the log, writes no log line and is never a move)
-                                                 (field resources "a, b": the exclusive resources the issue holds while
-                                                 its lease lasts, loop-wide names; next never offers two issues holding one)
                                                  change status; writes the log line in the same move; in-progress
                                                  writes Since (and Branch, Worker, Model when given) — one lease
                                                  for every id, so a package shares it; --model is the model the worker
@@ -112,9 +113,14 @@ commands:
                                                  whose CI is not green yet; done needs, inside one window (rows after
                                                  the last start, reopen or filing; approves after those or a red
                                                  round), a --ran/--saw row — a free-text note never counts alone —
-                                                 and a live approve; with a
-                                                 field the loop's profile declares in place of the status, writes
-                                                 that field (checked against its values) on every id
+                                                 and a live approve
+  field <ids> <name> "<value>" | <ids> <name> --clear
+                                                 write one field on every id: Resources (the exclusive resources the
+                                                 issue holds while its lease lasts, as "a, b", loop-wide names; next
+                                                 never offers two issues holding one) or a field the loop's profile
+                                                 declares (checked against its values); --clear empties it, and the
+                                                 same --clear empties After and Repo; a required field is never empty;
+                                                 one log line per issue
   merged <ids> --sha <sha> [--ran "<check>" --saw "<summary>" | --red <id>] [--ci pending|green|red|none] [--repo <name|path>] [--keep] | <ids> --ci <state>
                                                  the merge as fields: Merged (sha, and where with --repo) and CI
                                                  (only when given; pending: a pushed commit whose CI will report;
@@ -133,8 +139,8 @@ commands:
                                                  --keep skips it
   tag <ids> +a -b ...                            add and remove tags
   prio <ids> 1|2|3                               set priority
-  files <id> p,q,...                             declare the files the issue touches
-  repo <id> <name|path>[,<name|path>...] | <id> --clear | --base <name> <branch>
+  files <ids> p,q,...                            declare the files the issues touch
+  repo <ids> <name|path>[,<name|path>...] | <ids> --clear | --base <name> <branch>
                                                  name the repository the issue's code lives in — its name, its checkout,
                                                  a worktree of it or a file inside it, several as one comma list — or
                                                  remove the field; --base changes the base branch a declared repository
@@ -155,14 +161,9 @@ commands:
                                                  "done" needs an approve inside the gate's window, and a
                                                  fresh one when the issue carries code (a Branch or Merged field), and
                                                  the worker's Proof row; an approve on an issue with no Proof row says so;
-                                                 findings need at least three words; "retract" in place of the verdict
-                                                 (review <id> retract --by <who> "<reason>") retracts the newest approve
-                                                 not yet retracted, by an appended entry: the approve stays, struck
-                                                 through, and the done gate and the metrics stop counting it; never a
-                                                 "changes" verdict; the first retraction of a loop raises its record
-                                                 format to 2 (see evidence --retract)
-  round <id> "<what failed>"                     one red round; after three prints the takeover block for a fresh worker,
-                                                 with the advice to raise it one tier up or on another model
+                                                 findings need at least three words; a verdict is taken back with retract
+  round <ids> "<what failed>"                    one red round on each; after three prints the takeover block for a fresh
+                                                 worker, with the advice to raise it one tier up or on another model
   models [--by repo|tag] [--with <root>]... [--archives]
                                                  read-only: per model as worker and as reviewer, per Kind · Tier, what the
                                                  record holds (units, clean first passes, changes, rounds, verdicts, checked
@@ -325,7 +326,7 @@ git merges (not loop commands: no --root, no lock, no tool of the MCP server):
                                                  so the drivers run whatever the clone holds: the decisions driver, and
                                                  with --yg Yggdrasil's log and lock drivers too
 
-<ids> (evidence, review, set, tag, prio, merged): one id, or several as one comma list with ranges — 12,13,14 or
+<ids> (body, source, after, files, repo, round, evidence, review, set, field, tag, prio, merged): one id, or several as one comma list with ranges — 12,13,14 or
 203-206,209. Every id and every precondition is checked before anything is written, so the call lands on
 all of them or on none, with one log line per issue.
 
@@ -384,7 +385,8 @@ export const COMMAND_FLAGS = {
   sources: { source: 'value' },
   source: {},
   after: { clear: 'bool' },
-  evidence: { ran: 'many', saw: 'many', retract: 'value', by: 'value', file: 'value', slot: 'value' },
+  evidence: { ran: 'many', saw: 'many', file: 'value', slot: 'value' },
+  retract: { by: 'value' }, field: { clear: 'bool' },
   list: { status: 'value', kind: 'value', tag: 'value', prio: 'value', grep: 'value', match: 'many', all: 'bool' },
   show: { full: 'bool' }, set: { branch: 'value', worker: 'value', model: 'value', worktree: 'value', header: 'bool' }, tag: {}, prio: {}, files: {},
   repo: { clear: 'bool', base: 'bool' },
@@ -405,12 +407,17 @@ export const COMMAND_FLAGS = {
   close: { force: 'bool', batch: 'bool' }, profile: {}, verify: {},
 };
 
+// Flags a command reads besides the ones its usage shows: the spellings another form of the same operation takes
+// (evidence --retract <n> is retract <id> <n>). The parser and the tools' fields carry them; the usage text does not.
+export const ALTERNATE_FLAGS = { evidence: { retract: 'value', by: 'value' } };
+export const flagsOf = (cmd) => ({ ...(COMMAND_FLAGS[cmd] || {}), ...(ALTERNATE_FLAGS[cmd] || {}) });
+
 export function parseArgs(argv) {
   const positional = [];
   const flags = {};
   let cmd;
   let rest = false;
-  const table = () => ({ ...GLOBAL_FLAGS, ...(COMMAND_FLAGS[cmd] || {}) });
+  const table = () => ({ ...GLOBAL_FLAGS, ...flagsOf(cmd) });
   const named = (t) => Object.keys(t).map((k) => `--${k}`).join(', ');
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
@@ -463,7 +470,8 @@ export function parseArgs(argv) {
 // +a -b, sources' findings files) and has no upper bound. A command's arity is how many names it has.
 export const COMMAND_ARGS = {
   init: ['goal'], new: ['title'], body: ['id'], import: ['file'], sources: ['files...'], source: ['id', 'refs'],
-  after: ['id', 'ids?'], evidence: ['ids', 'text?'], list: [], show: ['id'], set: ['ids', 'status', 'why?'],
+  after: ['id', 'ids?'], evidence: ['ids', 'text?'], retract: ['id', 'what', 'reason'], field: ['ids', 'name', 'value?'],
+  list: [], show: ['id'], set: ['ids', 'status', 'why?'],
   merged: ['ids'], tag: ['ids', 'ops...'], prio: ['ids', 'priority'], files: ['id', 'paths'], repo: ['id', 'path?'],
   next: [], review: ['ids', 'verdict', 'findings'], round: ['id', 'what'], models: [], check: ['id?'], branches: [],
   ask: ['question'], answer: ['id', 'answer?'], resume: [], handoff: ['action?'], log: ['event'],
@@ -480,17 +488,19 @@ export const COMMAND_SUMMARY = {
   sources: 'Per findings report: its findings, the issues filed from them and their status.',
   source: 'Set the Source field of an issue filed by hand.',
   after: 'Set or clear the issues this one waits on before next offers it.',
-  evidence: 'Append a free-text note, or checkable rows of what ran and what it printed, to issues; or record a file as an attachment of a slot (--file, --slot); or retract one row by number.',
+  evidence: 'Append a free-text note, or checkable rows of what ran and what it printed, to issues; or record a file as an attachment of a slot (--file, --slot).',
+  retract: 'Take back the newest approve of an issue (what: review) or one evidence row by its number (what: the number), by an entry that says who and why.',
+  field: 'Write one field on issues, Resources or a field the profile declares, or empty it with clear.',
   list: 'List the issues, the unfinished ones by default, filtered by status, kind, tag, priority or a field.',
   show: 'Print one issue as the done gate sees it (its current window, rows numbered), or the whole file with --full.',
-  set: 'Change the status of issues, with the reason logged, or set a field the profile declares.',
+  set: 'Change the status of issues, with the reason logged.',
   merged: 'Record a merge (sha, repository, the check that decided it, CI state) on issues and remove their finished worktree and branch when that is safe, or move the CI state of issues already merged.',
   tag: 'Add and remove tags on issues.',
   prio: 'Set the priority of issues.',
   files: 'Declare the files an issue touches.',
   repo: 'Name the repository (or several) an issue\'s code lives in, or clear it.',
   next: 'The open issues ready to start: no file shared with work in progress, every After issue settled, no open question on them; all adds the held and waiting ones in groups.',
-  review: 'Record a reviewer\'s verdict (approve or changes) on issues, with the reviewer and the findings; or retract the newest approve.',
+  review: 'Record a reviewer\'s verdict (approve or changes) on issues, with the reviewer and the findings.',
   round: 'Record one red round on an issue; after three it prints the takeover block for a fresh worker.',
   models: 'Per model as worker and as reviewer, per kind of task: the counts, clean first passes and verdicts the record holds, with the words fits, below, new and may clear; reads other loops and archives too.',
   check: 'Measure a worker branch against its base: commits, diff inside the declared files, test changes; numbers, never a verdict.',
@@ -517,7 +527,7 @@ export const COMMAND_SUMMARY = {
 const ARITY = Object.fromEntries(Object.entries(COMMAND_ARGS).filter(([, a]) => !a.some((n) => n.endsWith('...'))).map(([c, a]) => [c, a.length]));
 
 // The commands that write: each runs under .jarl/.lock (see withLock).
-export const MUTATING = new Set(['init', 'new', 'body', 'import', 'source', 'after', 'set', 'merged', 'tag', 'prio', 'files', 'repo', 'evidence', 'review', 'round', 'ask', 'answer', 'log', 'decide', 'goal', 'archive', 'mode', 'close']);
+export const MUTATING = new Set(['init', 'new', 'body', 'import', 'source', 'after', 'set', 'field', 'merged', 'tag', 'prio', 'files', 'repo', 'evidence', 'retract', 'review', 'round', 'ask', 'answer', 'log', 'decide', 'goal', 'archive', 'mode', 'close']);
 
 // git's side of the loop: the merge driver git runs, and the settings a merger passes it. Neither reads a loop.
 function mergeDriverMain(args) {
@@ -543,21 +553,21 @@ function main() {
   try { parsed = parseArgs(process.argv.slice(2)); } catch (e) { console.error(e.message); process.exit(1); }
   const { positional, flags } = parsed;
   const [cmd, ...rest] = positional;
-  if (!cmd || flags.help) { console.log(USAGE); process.exit(cmd ? 0 : 1); }
+  if (!cmd || flags.help) { console.log(USAGE); process.exit(flags.help ? 0 : 1); }
   const root = R.resolveRoot(flags.root);
   let r;
   try { r = dispatch(root, cmd, rest, flags); } catch (e) {
     console.error(e.message);
     process.exit(1);
   }
-  const { out, text, warn } = r;
+  const { out, text, warn, aliases } = r;
   // Said on the command line only, after the note is written whole: a long free-text note is hard to read back and
   // cannot be retracted by number; nothing is refused or cut.
   if (cmd === 'evidence' && flags.ran === undefined && flags.retract === undefined && typeof rest[1] === 'string' && (rest[1].length > LONG_NOTE_CHARS || rest[1].trim().split('\n').length > LONG_NOTE_LINES)) {
     warn.push(`note: that evidence note is long (${rest[1].trim().length} characters, ${rest[1].trim().split('\n').length} lines) and was written whole; only its first line reaches the log, and a note is not a row that can be retracted by number — for proof of work, record it as --ran "<command>" --saw "<what it printed>"`);
   }
   console.log(flags.json ? JSON.stringify(out, null, 2) : text);
-  for (const w of warn) console.error(w);
+  for (const w of [...aliases, ...warn]) console.error(w);
   if ((cmd === 'check' || cmd === 'verify') && !out.ok) process.exit(2);
 }
 
@@ -600,6 +610,7 @@ export function dispatch(root, cmd, rest, flags) {
   let out;
   let text;
   let warn = [];   // said on stderr, so a caller reading stdout sees the result alone
+  const aliases = [];   // the form to use when a call is spelled another way: said by the command line only, never by a tool
   const each = (o, f) => [].concat(o).map(f).join('\n');
   const writes = MUTATING.has(cmd);
   {
@@ -608,33 +619,50 @@ export function dispatch(root, cmd, rest, flags) {
       case 'init': out = R.initLoop(root, rest[0], { ...flags, caller: 'cli' }); text = `opened ${out.dir} · ${out.permanent ? 'permanent record, no branch' : out.committed ? 'committed with the work' : 'kept out of git'}${out.profile ? ` · profile ${out.profile}` : ''}`; warn = out.note ? [`note: ${out.note}`] : []; break;
       // The command line says caller 'cli': the notes (the tier a new issue got) are for it, never for a library caller.
       case 'new': out = R.newIssue(root, rest[0], { ...flags, caller: 'cli', width: undefined }); out = { ...out, ...describeNew(out.file) }; text = renderNewReply(out); warn = out.note ? [out.note] : []; break;
-      case 'body': out = R.setBody(root, rest[0], flags); text = `${out.id} body: ${out.set.join(', ')}`; break;
-      case 'source': out = R.setSource(root, rest[0], rest[1]); text = `${out.id} source: ${out.sources.join(', ')}`; break;
-      case 'after': out = R.setAfter(root, rest[0], rest[1], flags); text = `${out.id} after: ${out.cleared ? 'cleared' : out.after.join(', ')}`; break;
+      // body, source, after, files, repo and round take the list grammar: eachIssue checks every id before it writes one.
+      case 'body': out = eachIssue(root, rest[0], (id, dry) => cmdBody(root, id, flags, dry)); text = each(out, (o) => `${o.id} body: ${o.set.join(', ')}`); break;
+      case 'source': out = eachIssue(root, rest[0], (id, dry) => cmdSource(root, id, rest[1], dry)); text = each(out, (o) => `${o.id} source: ${o.sources.join(', ')}`); break;
+      case 'after': out = eachIssue(root, rest[0], (id, dry) => cmdAfter(root, id, rest[1], { clear: flags.clear === true, dry })); text = each(out, (o) => `${o.id} after: ${o.cleared ? 'cleared' : o.after.join(', ')}`); break;
       case 'import': out = cmdImport(root, rest[0], flags); text = renderImport(out); break;
       case 'sources': out = cmdSources(root, rest, flags); text = renderSources(out); break;
       case 'list': out = cmdList(root, flags); text = renderList(out, R.loadProfile(root)); break;
       case 'show': { const i = R.findIssue(root, rest[0]); need(i, `no such issue: ${rest[0]}`); const attachments = attachmentStates(root, i); out = { ...i, evidenceRows: evidenceTable(i.sections.evidence).rows.map(({ n, ran, saw, retracted }) => ({ n, ran, saw, retracted })), where: whereOf(root, i), ...(attachments.length ? { attachments } : {}) }; text = issueView(root, i, { full: Boolean(flags.full) }); break; }
-      case 'set': out = setCommand(root, rest[0], rest[1], rest[2], flags); text = each(out, (o) => (o.field ? `${o.id} ${o.field}: ${o.value || '(cleared)'}` : o.header ? `header of ${o.id} rewritten from the log: ${o.status}` : `${o.id} → ${o.status}${o.branch ? ` · ${o.branch}` : ''}${o.worker ? ` · ${o.worker}` : ''}`)); warn = [].concat(out).filter((o) => o.note).map((o) => `note: ${o.id} ${o.note}`); break;
+      case 'set':
+        if (setRouteOf(root, rest[1]) === 'field') {
+          const clearing = rest[2] === '';
+          aliases.push(`note: ${rest[1]} is a field, not a status — write it with: field <ids> ${rest[1]} ${clearing ? '--clear' : '"<value>"'}`);
+          out = cmdField(root, rest[0], rest[1], clearing ? undefined : rest[2], { ...flags, clear: clearing });
+        } else out = setCommand(root, rest[0], rest[1], rest[2], flags);
+        text = each(out, (o) => (o.field ? renderField(o) : o.header ? `header of ${o.id} rewritten from the log: ${o.status}` : `${o.id} → ${o.status}${o.branch ? ` · ${o.branch}` : ''}${o.worker ? ` · ${o.worker}` : ''}`)); warn = [].concat(out).filter((o) => o.note).map((o) => `note: ${o.id} ${o.note}`); break;
+      case 'field': out = cmdField(root, rest[0], rest[1], rest[2], flags); text = each(out, renderField); break;
       case 'tag': out = R.setTags(root, rest[0], rest.slice(1)); text = each(out, (o) => `${o.id} tags: ${o.tags.join(', ') || '(none)'}`); break;
       case 'prio': out = R.setPriority(root, rest[0], rest[1]); text = each(out, (o) => `${o.id} priority ${o.priority}`); break;
-      case 'files': out = R.setFiles(root, rest[0], rest[1]); text = `${out.id} files: ${out.files.join(', ') || '(none)'}`; break;
+      case 'files': out = eachIssue(root, rest[0], (id, dry) => cmdFiles(root, id, rest[1], dry)); text = each(out, (o) => `${o.id} files: ${o.files.join(', ') || '(none)'}`); break;
       case 'repo':
         if (flags.base) {
           need(!flags.clear, 'repo --base takes a repository name and a branch, and no --clear');
           out = cmdRepoBase(root, rest[0], rest[1]);
           text = out.unchanged ? `${out.name} base: ${out.base} (unchanged)` : `${out.name} base: ${out.base} (was ${out.was ?? 'none'})`;
         } else {
-          out = R.setRepo(root, rest[0], rest[1], flags);
-          text = `${out.id} repo: ${out.cleared ? 'cleared' : out.repo}${out.unchanged ? ' (unchanged)' : ''}`;
-          warn = (out.notes || []).map((n) => `note: ${n}`);
+          out = eachIssue(root, rest[0], (id, dry) => cmdRepo(root, id, rest[1], { clear: flags.clear === true, dry }));
+          text = each(out, (o) => `${o.id} repo: ${o.cleared ? 'cleared' : o.repo}${o.unchanged ? ' (unchanged)' : ''}`);
+          warn = [].concat(out).flatMap((o) => (o.notes || []).map((n) => `note: ${n}`));
         }
         break;
-      case 'evidence': out = R.addEvidence(root, rest[0], rest[1], flags); text = each(out, (o) => (o.retracted ? `${o.id} evidence row ${o.retracted} retracted by ${o.by}` : o.rows ? `${o.id} evidence row${o.rows.length > 1 ? 's' : ''} recorded` : `${o.id} evidence recorded`)); break;
+      case 'evidence':
+        if (flags.retract !== undefined) aliases.push(`note: an evidence row is retracted with: retract <id> ${flags.retract} --by <who> "<reason>"`);
+        out = R.addEvidence(root, rest[0], rest[1], flags); text = each(out, renderEvidence); break;
+      // One verb takes back a verdict and an evidence row: the review's newest approve, or the row by its number.
+      case 'retract':
+        need(rest[1] === 'review' || /^\d+$/.test(rest[1] ?? ''), `retract takes review (the newest approve) or the number of an evidence row, got "${rest[1] ?? ''}"`);
+        if (rest[1] === 'review') { out = R.review(root, rest[0], 'retract', rest[2], { by: flags.by, caller: 'cli' }); text = each(out, renderReview); warn = [].concat(out).filter((o) => o.note).map((o) => `note: ${o.note}`); } else { out = R.addEvidence(root, rest[0], rest[2], { retract: rest[1], by: flags.by }); text = each(out, renderEvidence); }
+        break;
       case 'next': out = cmdNext(root, flags); text = out.scheduler ? out.note : renderNext(out, flags.all === true, out.length ? 0 : cmdNext(root, { all: true }).length); break;
-      case 'review': out = R.review(root, rest[0], rest[1], rest[2], { ...flags, caller: 'cli' }); text = each(out, (o) => o.retracted ? `${o.id} review retracted by ${o.by} (${o.kind}): the approve ${o.retracted}` : `${o.id} review ${o.verdict}${o.by ?` by ${o.by} (${o.kind})` : ''} · acceptance: ${o.acceptance ? o.acceptance.split('\n').join(' / ') : '(none on file)'}${o.next ? ` · next: ${o.next}` : ''}`); warn = [].concat(out).filter((o) => o.note).map((o) => `note: ${o.note}`); break;
+      case 'review':
+        if (rest[1] === 'retract') aliases.push('note: a verdict is retracted with: retract <id> review --by <who> "<reason>"');
+        out = R.review(root, rest[0], rest[1], rest[2], { ...flags, caller: 'cli' }); text = each(out, renderReview); warn = [].concat(out).filter((o) => o.note).map((o) => `note: ${o.note}`); break;
       case 'models': out = cmdModels(root, flags); text = renderModels(out); break;
-      case 'round': out = R.addRound(root, rest[0], rest[1]); text = out.takeover ? `${out.id} round ${out.round} — takeover:\n\n${out.block}` : `${out.id} round ${out.round} of ${ROUNDS_BEFORE_TAKEOVER} before a takeover`; break;
+      case 'round': out = eachIssue(root, rest[0], (id, dry) => cmdRound(root, id, rest[1], dry)); text = each(out, (o) => (o.takeover ? `${o.id} round ${o.round} — takeover:\n\n${o.block}` : `${o.id} round ${o.round} of ${ROUNDS_BEFORE_TAKEOVER} before a takeover`)); break;
       case 'merged': out = R.recordMerged(root, rest[0], { ...flags, caller: 'cli' }); text = `${out.ids.join(', ')} ${out.sha ? `merged ${out.sha}` : 'merge'}${out.check ? ` · check ${out.check}` : ''}${out.red ? ` · landed red, cause ${out.red}` : ''}${out.ci ? ` · CI ${out.ci}` : ''}${(out.cleanup || []).map((c) => `\n${c.kept ? `kept ${c.branch}${c.worktree ? ` (worktree ${c.worktree} removed)` : ''} — ${c.kept}` : `removed ${c.worktree ? `the worktree ${c.worktree} and ` : ''}the branch ${c.branch}`}${(c.commands || []).length ? `\nafter looking at the files, remove them with:\n${c.commands.map((x) => `  ${x}`).join('\n')}` : ''}${out.cleanup.some((x) => x.repo !== c.repo) ? ` [${c.repo}]` : ''}`).join('')}`; warn = out.notes.map((n) => `note: ${n}`); break;
       case 'check': out = cmdCheck(root, rest[0], flags); text = `${out.id === null ? `package ${out.ids.join(', ')} on ${out.branch}\n` : ''}${out.repo === root ? '' : `in ${out.repo}\n`}${out.items.map((i) => `${i.ok ? '✓' : '✗'} ${i.name} — ${i.note}`).join('\n')}${out.notes.length || out.notesOmitted ? `\n${renderCheckNotes(out)}` : ''}`; break;
       case 'branches': out = cmdBranches(root, flags); text = renderBranches(out, root); break;
@@ -670,8 +698,13 @@ export function dispatch(root, cmd, rest, flags) {
   // its own code and into the tree it hands over: here the answer is recorded and nothing is sent, so no entry is ever
   // written twice, nor into a checkout the composer's work never reaches.
   if (cmd === 'answer') text = [].concat(out).map((one) => answered(root, one, warn)).join('\n');
-  return { out, text, warn };
+  return { out, text, warn, aliases };
 }
+
+// The line each command prints for one result.
+const renderField = (o) => `${o.id} ${o.field}: ${o.value || '(cleared)'}`;
+const renderEvidence = (o) => (o.retracted ? `${o.id} evidence row ${o.retracted} retracted by ${o.by}` : o.rows ? `${o.id} evidence row${o.rows.length > 1 ? 's' : ''} recorded` : `${o.id} evidence recorded`);
+const renderReview = (o) => (o.retracted ? `${o.id} review retracted by ${o.by} (${o.kind}): the approve ${o.retracted}` : `${o.id} review ${o.verdict}${o.by ? ` by ${o.by} (${o.kind})` : ''} · acceptance: ${o.acceptance ? o.acceptance.split('\n').join(' / ') : '(none on file)'}${o.next ? ` · next: ${o.next}` : ''}`);
 
 // One answer, after its ruling is recorded: a ratified area ruling goes to the type's decision log (and a rule's ratification
 // to the rule's own log) through the composer or the graph's tool, then the line the command prints for it.

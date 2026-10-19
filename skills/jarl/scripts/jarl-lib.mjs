@@ -1638,7 +1638,9 @@ export function waitingOn(issue, byId, profile = DEFAULT_PROFILE) {
 
 // body <id> — the Where field and the What, Why and Acceptance sections, set or replaced. Evidence is never
 // written here: it is the record of what was done, appended by evidence, never replaced.
-export function cmdBody(root, rawId, flags) {
+// `dry` checks everything the call would refuse and writes nothing: a list of ids is run dry on every id before the
+// first one is written (see eachIssue).
+export function cmdBody(root, rawId, flags, dry = false) {
   const issue = findIssue(root, rawId);
   need(issue, `no such issue: ${rawId}`);
   const profile = loadProfile(root);
@@ -1650,6 +1652,8 @@ export function cmdBody(root, rawId, flags) {
   needNoFieldTags(flags.what, 'the What text');
   needNoFieldTags(flags.why, 'the Why text');
   for (const [h, v] of sections) needNoFieldTags(v, `the ${h} text`);
+  const named = parts.flatMap((k) => (k === 'section' ? [...sections.keys()] : [k]));
+  if (dry) return { id: issue.id, set: named };
   let text = readText(issue.file);
   // The title is the heading's text; the file keeps its name, so the number and the slug a branch was cut from stay.
   if (title) text = text.replace(idRe('^(#\\s+{id}\\s+·\\s+).*$', 'm'), (_, head) => `${head}${title}`);
@@ -1660,33 +1664,35 @@ export function cmdBody(root, rawId, flags) {
   for (const [h, v] of sections) text = setSection(text, h, bodyText(v));
   if (flags.changelog !== undefined) text = setSection(text, 'Changelog', changelogText(flags.changelog));
   writeAtomic(issue.file, text);
-  const named = parts.flatMap((k) => (k === 'section' ? [...sections.keys()] : [k]));
   appendLog(root, `${issue.id} body · ${named.join(', ')}${title ? ` · title was "${issue.title}"` : ''}`);
   return { id: issue.id, set: named };
 }
 
-export function cmdSource(root, rawId, list) {
+export function cmdSource(root, rawId, list, dry = false) {
   const issue = findIssue(root, rawId);
   need(issue, `no such issue: ${rawId}`);
   const sources = sourceList(list);
   need(sources.length, 'source requires <report dir>#<finding id>[,...]');
+  if (dry) return { id: issue.id, sources };
   writeAtomic(issue.file, setField(readText(issue.file), 'Source', sources.join(', ')));
   appendLog(root, `${issue.id} source · ${sources.join(', ')}`);
   return { id: issue.id, sources };
 }
 
-export function cmdAfter(root, rawId, raw, { clear = false } = {}) {
+export function cmdAfter(root, rawId, raw, { clear = false, dry = false } = {}) {
   const issue = findIssue(root, rawId);
   need(issue, `no such issue: ${rawId}`);
   if (clear) {
     need(raw === undefined, 'after takes either <ids> or --clear, not both');
     need(issue.fields.after !== undefined, `${issue.id} has no After field to clear`);
+    if (dry) return { id: issue.id, after: [], cleared: true };
     writeAtomic(issue.file, removeFirstField(readText(issue.file), 'After'));
     appendLog(root, `${issue.id} after · cleared`);
     return { id: issue.id, after: [], cleared: true };
   }
   need(raw !== undefined, 'after requires <ids> — the issues this one waits on (or --clear)');
   const ids = afterList(root, issue.id, raw);
+  if (dry) return { id: issue.id, after: ids };
   writeAtomic(issue.file, setField(readText(issue.file), 'After', ids.join(', ')));
   appendLog(root, `${issue.id} after ${ids.join(', ')}`);
   return { id: issue.id, after: ids };
@@ -1735,6 +1741,23 @@ function issuesFor(root, rawIds, readOnly = false) {
 // One id in, the same object as always out; a list in, an array of them.
 function oneOrMany(rawIds, results) { return isBulk(rawIds) ? results : results[0]; }
 
+// A command that writes one issue at a time (files, repo, after, body, round, source) takes the list grammar too: `run(id,
+// dry)` does one issue's work and writes nothing when `dry` is true. Every id is resolved and run dry before the first
+// one is written, so a list lands on every id or on none; one id is run as it stands, with no pass before it.
+export function eachIssue(root, rawIds, run) {
+  if (!isBulk(rawIds)) return run(rawIds, false);
+  const keys = expandIds(rawIds);
+  const all = loadIssues(root);
+  const missing = keys.filter((k) => !all.some((i) => idKey(i.id) === k));
+  need(missing.length === 0, `no such issue: ${missing.join(', ')} — nothing was written`);
+  const ids = keys.map((k) => all.find((i) => idKey(i.id) === k).id);
+  for (const id of ids) {
+    resetCaches();
+    try { run(id, true); } catch (e) { throw new Error(`${e.message} — nothing was written`); }
+  }
+  return ids.map((id) => { resetCaches(); return run(id, false); });
+}
+
 // The refusal for a move into a needs-reason status given without one; the built-in two say what the status is for.
 const REASON_TEXT = {
   dropped: 'dropped needs a reason: jarl.mjs set <id> dropped "<why>"',
@@ -1753,6 +1776,22 @@ function setRoute(profile, name) {
   if (name === undefined || profile.statuses.includes(name)) return 'status';
   if (profile.field(name)) return 'field';
   return String(name).toLowerCase() === 'resources' ? 'resources' : 'status';
+}
+// What a name given to set is: 'status', or 'field' (a field the profile declares, or the built-in Resources).
+export function setRouteOf(root, name) { return setRoute(loadProfile(root), name) === 'status' ? 'status' : 'field'; }
+
+// field <ids> <name> "<value>" | field <ids> <name> --clear: one field written on every issue, the tool's own (Resources)
+// or one the profile declares. A field is emptied with clear and never with an empty value.
+export function cmdField(root, rawIds, name, value, flags = {}) {
+  const profile = loadProfile(root);
+  need(name !== undefined && String(name).trim() !== '', 'field requires <name> — Resources, or a field the loop\'s profile declares');
+  const route = setRoute(profile, name);
+  need(route !== 'status', `${name} is not a field: Resources, or one this loop's profile declares${profile.declaredFields.length ? ` (${profile.declaredFields.map((f) => f.name).join(', ')})` : ''}`);
+  const clear = flags.clear === true;
+  need(!clear || value === undefined, 'field takes either a value or --clear, not both');
+  need(clear || (value !== undefined && String(value).trim() !== ''), `field ${name} "<value>" — the value is required, or --clear to empty it`);
+  const written = clear ? '' : value;
+  return route === 'field' ? setDeclaredField(root, rawIds, profile.field(name), written, flags) : setResources(root, rawIds, written, flags);
 }
 // The lease flags (--branch, --worker, --model, --worktree) a call gives. They belong to a move into a status that holds
 // a claim; a call that writes a field refuses them.
@@ -1785,7 +1824,7 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   if (flags.header) return rewriteHeader(root, rawIds, status, why, flags);
   // ready and the review words are views, not statuses: say which view answers the question the worker was asking.
   need(profile.statuses.includes(status) || !/^(ready|review|in[-_ ]?review|ready[-_ ]for[-_ ]review|reviewing)$/i.test(String(status ?? '')), `${status} is a view here, not a status: \`next\` lists the issues ready to start, and \`status\` and \`resume\` mark each in-flight issue with what the record says (no evidence rows yet; rows and no verdict, so it waits for a reviewer; changes requested; approved and queued). Nothing needs setting: record the rows with \`evidence\`, and the reviewer's verdict with \`review\`. A loop that wants an explicit review status can declare one in its profile. Statuses here: ${profile.statuses.join(', ')}`);
-  need(profile.statuses.includes(status), `status must be one of: ${profile.statuses.join(', ')}${profile.declaredFields.length ? ` — or a field this loop's profile declares: ${profile.declaredFields.map((f) => f.name).join(', ')}` : ''}`);
+  need(profile.statuses.includes(status), `status must be one of: ${profile.statuses.join(', ')}`);
   need(caller !== 'cli' || profile.setBy(status) !== 'record', `${status} is set by the record only — this loop's profile (${profile.name}) marks it "set-by": "record", so jarl set and the MCP tools cannot move an issue into it; the tool that runs the loop does${profile.scheduler ? ` (${profile.scheduler})` : ''}`);
   const holds = profile.is(status, 'holds-claim');
   const lease = leaseFlagsGiven(flags);
@@ -1914,11 +1953,11 @@ function rewriteHeader(root, rawIds, status, why, flags) {
   return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, status: issue.status, header: true })));
 }
 
-// set <ids> <field> <value>: one declared field written on every issue in the call (checked against its enum first),
+// field <ids> <field> <value>: one declared field written on every issue in the call (checked against its enum first),
 // with one log line each. An empty value clears it, unless the field is required (or is Kind or Tier).
 function setDeclaredField(root, rawIds, field, value, flags) {
   needNoLeaseFlags(flags, `the field ${field.name}`);
-  need(value !== undefined, `set <ids> ${field.name} "<value>" — the value is required${field.enum ? ` (one of: ${field.enum.join(', ')})` : ''}`);
+  need(value !== undefined, `field <ids> ${field.name} "<value>" — the value is required${field.enum ? ` (one of: ${field.enum.join(', ')})` : ''}`);
   const profile = loadProfile(root);
   const v = fieldValue(profile, field, value);
   need(v || (!field.required && !field.builtin), `${field.name} cannot be empty${field.enum ? ` — one of: ${field.enum.join(', ')}` : ''}`);
@@ -1928,12 +1967,12 @@ function setDeclaredField(root, rawIds, field, value, flags) {
   return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, field: field.name, value: v })));
 }
 
-// set <ids> resources "a, b": the exclusive resources an issue holds for the whole life of its lease (a port, a database
+// field <ids> resources "a, b": the exclusive resources an issue holds for the whole life of its lease (a port, a database
 // server, the machine's load), loop-wide and not files. Names are single words; an empty value clears the field. Only next
 // reads it: check, queue and the file rules do not.
 function setResources(root, rawIds, value, flags) {
   needNoLeaseFlags(flags, 'the field Resources');
-  need(value !== undefined, 'set <ids> resources "<name>[, <name>...]" — the value is required (an empty one clears the field)');
+  need(value !== undefined, 'field <ids> resources "<name>[, <name>...]" — the value is required (--clear empties the field)');
   const names = [];
   for (const n of splitList(fieldText(value))) {
     need(/^[A-Za-z0-9._:/-]+$/.test(n), `resource names are single words of letters, digits and . _ : / - ("${n}" is not): name the thing, e.g. gate, db-server, port-8080`);
@@ -2237,19 +2276,20 @@ export function cmdPrio(root, rawIds, prio) {
   return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, priority: String(prio) })));
 }
 
-export function cmdFiles(root, rawId, list) {
+export function cmdFiles(root, rawId, list, dry = false) {
   const issue = findIssue(root, rawId);
   need(issue, `no such issue: ${rawId}`);
   const files = pathList(list);
-  writeAtomic(issue.file, setField(readText(issue.file), 'Files', files.join(', ')));
+  if (!dry) writeAtomic(issue.file, setField(readText(issue.file), 'Files', files.join(', ')));
   return { id: issue.id, files };
 }
 
-export function cmdRepo(root, rawId, path, { clear = false } = {}) {
+export function cmdRepo(root, rawId, path, { clear = false, dry = false } = {}) {
   const issue = findIssue(root, rawId);
   need(issue, `no such issue: ${rawId}`);
   if (clear) {
     need(issue.fields.repo, `${issue.id} has no Repo field to clear`);
+    if (dry) return { id: issue.id, repo: null, cleared: true };
     appendLog(root, `${issue.id} repo · cleared · was ${noSeparators(issue.fields.repo)}`);
     const text = removeFirstField(readText(issue.file), 'Repo');
     writeAtomic(issue.file, text);
@@ -2257,6 +2297,7 @@ export function cmdRepo(root, rawId, path, { clear = false } = {}) {
   }
   need(path !== undefined, 'repo requires <name or path> — the repository the issue\'s code lives in (its name, its checkout, a worktree of it or a file inside it), several as one comma list (or --clear to remove the field)');
   const picked = repoList(root, path);
+  if (dry) return { id: issue.id, repo: picked.map((p) => p.value).join(', ') };
   commitRepoNames(root, picked);
   const repos = picked.map((p) => p.value);
   const was = fieldText(issue.fields.repo);
@@ -2655,8 +2696,8 @@ function retractedBy(flags, what) {
 const struck = (line) => line.replace(/^- /, '- ~~');
 
 function retractEvidence(root, rawIds, reason, flags) {
-  need(!isBulk(rawIds), 'evidence --retract names one issue and one row');
-  need(flags.ran === undefined && flags.saw === undefined, 'evidence --retract takes a row number and a reason, not a new --ran/--saw row');
+  need(!isBulk(rawIds), 'retracting an evidence row names one issue and one row');
+  need(flags.ran === undefined && flags.saw === undefined, 'a retraction takes a row number and a reason, not a new --ran/--saw row');
   const raw = String(flags.retract);
   need(/^\d+$/.test(raw) && Number(raw) >= 1, `--retract takes the number of an evidence row as show prints it (1, 2, …); got "${raw}"`);
   const n = Number(raw);
@@ -3204,7 +3245,7 @@ function eventParser(profile) {
 // The command that writes each kind of line that carries state: what the free log refuses to write in its place.
 const LINE_WRITERS = {
   filed: 'jarl.mjs new', move: 'jarl.mjs set <ids> <status>', round: 'jarl.mjs round <id>', verdict: 'jarl.mjs review <id> approve|changes',
-  'retract-review': 'jarl.mjs review <id> retract', 'retract-row': 'jarl.mjs evidence <id> --retract <n>', row: 'jarl.mjs evidence <id> --ran "<command>" --saw "<what it printed>"',
+  'retract-review': 'jarl.mjs retract <id> review', 'retract-row': 'jarl.mjs retract <id> <n>', row: 'jarl.mjs evidence <id> --ran "<command>" --saw "<what it printed>"',
   merged: 'jarl.mjs merged <id> --sha <sha>', ci: 'jarl.mjs merged <id> --ci <state>', body: 'jarl.mjs body <id>',
 };
 const MOVE_SHAPE = idRe('^{id} →');
@@ -3262,7 +3303,7 @@ export function loopEvents(dir, profile, skipped) {
     const body = id === null ? { type: 'other' } : parse(written, m[2], lastStatus.get(id) ?? null);
     if (skipped && written !== null) { const why = unplaced(profile, written, m[2], body); if (why) skipped.push({ n: n + 1, text: l, reason: why }); }
     // A line the tool never writes with a strike-through: the reader takes it for a note, and a strike-through voids nothing.
-    if (skipped && /^~~/.test(m[2])) skipped.push({ n: n + 1, text: l, reason: 'a struck-through line: the reader takes it for a note, and a strike-through retracts nothing (a verdict is retracted with review retract, an evidence row with evidence --retract)' });
+    if (skipped && /^~~/.test(m[2])) skipped.push({ n: n + 1, text: l, reason: 'a struck-through line: the reader takes it for a note, and a strike-through retracts nothing (a verdict is retracted with retract <id> review, an evidence row with retract <id> <n>)' });
     if (body.type === 'filed') { if (!lastStatus.has(id)) lastStatus.set(id, profile.initial); }
     else if (body.type === 'move') lastStatus.set(id, body.to);
     events.push({ n, at: m[1], text: m[2], id, ...body });
@@ -4510,10 +4551,11 @@ export function roundsOf(root, id) {
   return (journalById(root).get(id) || []).filter((e) => e.type === 'round').length;
 }
 
-export function cmdRound(root, rawId, what) {
+export function cmdRound(root, rawId, what, dry = false) {
   need(what, 'round requires "<what failed>"');
   const issue = findIssue(root, rawId);
   need(issue, `no such issue: ${rawId}`);
+  if (dry) return { id: issue.id };
   const n = roundsOf(root, issue.id) + 1;
   appendLog(root, `${issue.id} round ${n} · ${what}`);
   const takeover = n >= ROUNDS_BEFORE_TAKEOVER;

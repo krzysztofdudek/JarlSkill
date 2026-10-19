@@ -37,7 +37,7 @@ test('the table is the CLI\'s: every command, and the server lists exactly the t
 test('budget step 1: a tool description is one sentence after whether it writes; the full usage is jarl_help', () => {
   for (const t of listed) {
     if (t.name === 'jarl_help') continue;
-    const body = t.description.replace(/^(WRITES the loop\.|Read-only\.) /, '').replace(mcp.ARG_NOTES.set, '').trim();
+    const body = t.description.replace(/^(WRITES the loop\.|Read-only\.) /, '').trim();
     assert.equal(body.split(/(?<=[.!?])\s+(?=[A-Z])/).length, 1, `${t.name}: "${body}"`);
     assert.ok(t.description.length <= 400, `${t.name}: ${t.description.length} characters`);
   }
