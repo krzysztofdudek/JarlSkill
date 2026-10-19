@@ -29,6 +29,8 @@ function foldOf(dir, profile, id) {
 }
 function issueFile(root, id) { return R.findIssue(root, id).file; }
 const asRoot = typeof process.getuid === 'function' && process.getuid() === 0;
+// Why a closed directory cannot stop a writer here (false where it can): root ignores permission bits, and Windows has none.
+const NOT_STOPPED = asRoot ? 'a writer running as root is not stopped by a closed directory' : process.platform === 'win32' ? 'a closed directory does not stop a writer on Windows, which has no permission bits' : false;
 // Runs fn with the issues directory of the loop closed to writing (a file cannot be created or replaced in it).
 function withIssuesDirClosed(root, fn) {
   const dir = join(R.jarlDir(root), 'issues');
@@ -695,7 +697,7 @@ test('the free log refuses an id and an arrow whatever follows, and a note of th
 
 // ---- the header from the log ----------------------------------------------------------------------------------
 
-test('a bulk set that stopped after its journal lines is repaired by set --header, which writes no line and keeps the moves', { skip: asRoot && 'a writer running as root is not stopped by a closed directory' }, () => {
+test('a bulk set that stopped after its journal lines is repaired by set --header, which writes no line and keeps the moves', { skip: NOT_STOPPED }, () => {
   const root = makeLoop();
   const ids = ['one', 'two'].map((t) => R.newIssue(root, t).id);
   withIssuesDirClosed(root, () => assert.throws(() => R.setStatus(root, ids.join(','), 'in-progress', undefined, { branch: 'jarl/1-a', worker: 'w1' })));
@@ -782,7 +784,7 @@ test('the Since of a lease and the stamp of its journal line are one reading of 
 });
 
 
-test('set writes the journal line before the file: a write that stops leaves the record ahead of the file', { skip: asRoot && 'a writer running as root is not stopped by a closed directory' }, () => {
+test('set writes the journal line before the file: a write that stops leaves the record ahead of the file', { skip: NOT_STOPPED }, () => {
   const root = makeLoop();
   const { id } = R.newIssue(root, 'crash in set');
   withIssuesDirClosed(root, () => assert.throws(() => R.setStatus(root, id, 'in-progress', undefined, { branch: 'jarl/1-a', worker: 'w1' })));
@@ -792,7 +794,7 @@ test('set writes the journal line before the file: a write that stops leaves the
   assert.equal(foldOf(dir, R.loadProfile(root), id).status, 'in-progress', 'the record is ahead of the file, not behind it');
 });
 
-test('merged writes the journal line before the file', { skip: asRoot && 'a writer running as root is not stopped by a closed directory' }, () => {
+test('merged writes the journal line before the file', { skip: NOT_STOPPED }, () => {
   const root = makeLoop();
   const { id } = R.newIssue(root, 'crash in merged');
   withIssuesDirClosed(root, () => assert.throws(() => R.recordMerged(root, id, { sha: 'abc1234', ci: 'green' })));
