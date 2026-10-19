@@ -1043,7 +1043,7 @@ const DECISION_HEAD = /^## (\d{4}-\d{2}-\d{2}) · (.+?)\s*$/;
 export function loadDecisions(root, skipped) { return decisionsAt(jarlDir(root), skipped); }
 // The rulings of the record held in `dir`. With `skipped` (an array), each line that is neither a ruling heading, a line
 // of a ruling, the title nor blank is pushed onto it as { n, text, reason }: text before the first ruling, a "## " heading
-// that is not a ruling's, and a ruling whose slug an earlier ruling already holds.
+// that is not a ruling's, and a ruling whose slug a ruling above it already holds.
 function decisionsAt(dir, skipped) {
   const path = decisionsPath(dir);
   if (!existsSync(path)) return [];
@@ -2866,7 +2866,7 @@ export function leaseOfMove(text, id, to) {
 // The approve a retraction line takes away, as { by, kind } (by null for an approve with no reviewer recorded), or null
 // when the line names none. The line is written "retracts the approve by <name> (<kind>) of <date>".
 const RETRACT_TARGET = /retracts the approve (?:by (.+?)(?: \((fresh|coordinator|self)\))?(?: of \d{4}-\d{2}-\d{2})?|with no reviewer recorded)(?= · |$)/;
-export function retractTarget(text) {
+function retractTarget(text) {
   const m = RETRACT_TARGET.exec(text);
   return m ? { by: m[1] ?? null, kind: m[2] ?? null } : null;
 }
@@ -2895,7 +2895,7 @@ function eventParser(profile) {
       const mm = /^model (.+?) · /.exec(rest);
       return { type: 'verdict', verdict: r[1], by: r[2] || null, kind: r[3] || null, model: mm ? mm[1] : null, relayed: /^relayed · /.test(mm ? rest.slice(mm[0].length) : rest) };
     }
-    if (text.startsWith(`${id} review retract`) && !/^\w/.test(text.slice(`${id} review retract`.length))) return { type: 'retract-review' };
+    if (text.startsWith(`${id} review retract`) && !/^\w/.test(text.slice(`${id} review retract`.length))) return { type: 'retract-review', target: retractTarget(text) };
     const rr = RETRACT_ROW_LINE.exec(text);
     if (rr) return { type: 'retract-row', row: Number(rr[1]) };
     if (text.startsWith(`${id} evidence row · `)) return { type: 'row' };
@@ -6007,12 +6007,13 @@ function profileProblems(message) {
   return items.length ? items : [String(message)];
 }
 // Every finding of the loop in `root`, as the checks print them, and the notes; a profile that does not parse ends the
-// reading, since every other reader goes through the profile.
+// reading, because every other reader goes through the profile.
 export function cmdVerify(root) {
   need(hasLiveLoop(root), 'verify reads a loop: there is no .jarl/ with a goal here — open one with jarl.mjs init "<goal>", or name the loop with --root');
   const found = [];
   const notes = [];
-  const add = (check, where, what) => found.push({ check, where, what });
+  // n is the line of the file the finding is about, where it has one: a check's findings print in file order.
+  const add = (check, where, what, n) => found.push({ check, where, what, n });
   const dir = jarlDir(root);
   let profile;
   try { profile = loadProfile(root); } catch (e) {
@@ -6021,23 +6022,23 @@ export function cmdVerify(root) {
   }
   const logSkips = [];
   const events = loopEvents(dir, profile, logSkips);
-  for (const s of logSkips) add('log', `${LOG_FILE} line ${s.n}`, `"${shownText(s.text)}" — ${s.reason}`);
+  for (const s of logSkips) add('log', `${LOG_FILE} line ${s.n}`, `"${shownText(s.text)}" — ${s.reason}`, s.n);
   const asksSkips = [];
   loadAsks(root, asksSkips);
-  for (const s of asksSkips) add('asks', `${ASKS_FILE} line ${s.n}`, `"${shownText(s.text)}" — ${s.reason}`);
+  for (const s of asksSkips) add('asks', `${ASKS_FILE} line ${s.n}`, `"${shownText(s.text)}" — ${s.reason}`, s.n);
   const decisionSkips = [];
   const rulings = loadDecisions(root, decisionSkips);
-  for (const s of decisionSkips) add('decisions', `${DECISIONS_FILE} line ${s.n}`, `"${shownText(s.text)}" — ${s.reason}`);
+  for (const s of decisionSkips) add('decisions', `${DECISIONS_FILE} line ${s.n}`, `"${shownText(s.text)}" — ${s.reason}`, s.n);
   const goalSkips = [];
   goalLines(readGoal(dir), goalSkips);
-  for (const s of goalSkips) add('goal', `${GOAL_FILE} line ${s.n}`, `"${shownText(s.text)}" — ${s.reason}`);
+  for (const s of goalSkips) add('goal', `${GOAL_FILE} line ${s.n}`, `"${shownText(s.text)}" — ${s.reason}`, s.n);
   for (const f of issueFilesOf(dir)) {
     const issueSkips = [];
     parseIssue(readText(join(dir, 'issues', f)), join(dir, 'issues', f), issueSkips);
-    for (const s of issueSkips) add('issues', `issues/${f} line ${s.n}`, `"${shownText(s.text)}" — ${s.reason}`);
+    for (const s of issueSkips) add('issues', `issues/${shownText(f)} line ${s.n}`, `"${shownText(s.text)}" — ${s.reason}`);
   }
-  for (const f of readdirSync(join(dir, 'issues'))) {
-    if (!ISSUE_FILE_RE.test(f)) add('issues', `issues/${f}`, 'a file the loop does not read as an issue: an issue file is <number>-<title>.md');
+  for (const f of existsSync(join(dir, 'issues')) ? readdirSync(join(dir, 'issues')) : []) {
+    if (!ISSUE_FILE_RE.test(f)) add('issues', `issues/${shownText(f)}`, 'a file the loop does not read as an issue: an issue file is <number>-<title>.md');
   }
   const loop = readLoop(dir);
   const known = new Set(loop.issues.filter((i) => i.id !== null).map((i) => idKey(i.id)));
@@ -6047,7 +6048,8 @@ export function cmdVerify(root) {
   }
   if (profile.format < RECORD_FORMAT_RAISED) {
     for (const e of events) {
-      if (e.type === 'retract-row' || e.type === 'retract-review') add('format', `${LOG_FILE} line ${e.n + 1}`, `"${shownText(e.text)}" — a retraction is written in the raised record format, and this loop is not in it`);
+      // A retraction is a line of the log: it is found there, with the other findings of the log, in file order.
+      if (e.type === 'retract-row' || e.type === 'retract-review') add('format', `${LOG_FILE} line ${e.n + 1}`, `"${shownText(e.text)}" — a retraction is written in the raised record format, and this loop is not in it`, e.n + 1);
     }
     for (const i of loop.issues) {
       if (i.id !== null && needsRaisedFormat(i.id)) add('format', `issue ${i.id}`, 'its id needs the raised record format (an id of 1000 or more, or of fewer than three digits), and this loop is not in it');
@@ -6091,17 +6093,16 @@ function retractionChecks(events, add) {
     if (e.type === 'verdict') verdicts.set(e.id, [...(verdicts.get(e.id) || []), e]);
     if (e.type === 'retract-row') {
       const have = rows.get(e.id) || 0;
-      if (e.row > have) add('log', where, `"${shownText(e.text)}" — row ${e.row} of issue ${e.id} is not one of the ${have} evidence rows the log holds for it`);
+      if (e.row > have) add('log', where, `"${shownText(e.text)}" — row ${e.row} of issue ${e.id} is not one of the ${have} evidence rows the log holds for it`, e.n + 1);
     }
     if (e.type === 'retract-review') {
       const before = verdicts.get(e.id) || [];
-      const target = retractTarget(e.text);
-      if (!target) { add('log', where, `"${shownText(e.text)}" — the line names no approve, so it takes away none`); continue; }
-      const same = before.filter((v) => v.by === target.by);
-      const who = target.by === null ? 'an approve with no reviewer recorded' : `the approve by ${target.by}`;
+      if (!e.target) { add('log', where, `"${shownText(e.text)}" — the line names no approve, so it takes away none`, e.n + 1); continue; }
+      const same = before.filter((v) => v.by === e.target.by);
       if (same.some((v) => v.verdict === 'approve')) continue;
-      if (same.some((v) => v.verdict === 'changes')) add('log', where, `"${shownText(e.text)}" — it takes away ${who}, but that was a "changes" verdict, and only an approve is retracted`);
-      else add('log', where, `"${shownText(e.text)}" — no ${who} comes before it in the log, so it points at no entry`);
+      const named = e.target.by === null ? 'with no reviewer recorded' : `by ${e.target.by}`;
+      if (same.some((v) => v.verdict === 'changes')) add('log', where, `"${shownText(e.text)}" — it takes away the approve ${named}, which the log holds as a "changes" verdict: only an approve is retracted`, e.n + 1);
+      else add('log', where, `"${shownText(e.text)}" — the log holds no approve ${named} before it, so it points at no entry`, e.n + 1);
     }
   }
 }
@@ -6124,7 +6125,12 @@ function repositoryChecks(root, loop, add, notes) {
 }
 function verifyResult(found, notes, unread = null) {
   const checks = VERIFY_CHECKS.map(([name, label]) => ({
-    name, label, read: unread === null || name === 'profile', findings: found.filter((f) => f.check === name).map(({ where, what }) => ({ where, what })),
+    name, label, read: unread === null || name === 'profile',
+    // Findings with a line print in file order, the ones without after them, in the order they were found.
+    findings: found.filter((f) => f.check === name)
+      .map((f, k) => ({ ...f, k }))
+      .sort((a, b) => (a.n === undefined) - (b.n === undefined) || (a.n ?? 0) - (b.n ?? 0) || a.k - b.k)
+      .map(({ where, what }) => ({ where, what })),
   }));
   return { ok: found.length === 0, findings: found.length, checks, notes, unread };
 }

@@ -136,6 +136,20 @@ test('rule 9: only the repositories section resolves a name, declares a reposito
   assert.equal(count(/--max-parents=0/g), 1, 'the root commits are read in one place');
 });
 
+// ---- rule 10: verify holds no grammar of its own ----------------------------------------------------------
+
+const VERIFY = (title) => /^verify:/.test(title);
+// A regular expression as code: the RegExp constructor, or a literal that opens after an operator, a bracket or a comma.
+const REGEX_CODE = /\bRegExp\b|(?:^|[(=,:!&|?\[]|\breturn)\s*\/(?![/*])/;
+const verifyLines = (text) => sectionsOf(text).filter((s) => VERIFY(s.title)).flatMap((s) => s.lines);
+
+test('rule 10: the verify section holds no regular expression: a record line is placed by the reader that owns it', () => {
+  assert.ok(sectionsOf(LIB).some((s) => VERIFY(s.title)), 'the verify section is found');
+  assert.deepEqual(verifyLines(LIB).filter((l) => REGEX_CODE.test(l.text)).map((l) => `${l.n}: ${l.text.trim()}`), []);
+  const sample = '// ---- verify: the record ----\nconst re = /^a+$/;\nconst b = x.test(/y/);\nconst c = new RegExp(\'z\');\n// ---- commands ----\nconst d = /ok/;\nconst e = \'issues/\' + f;\n';
+  assert.equal(verifyLines(sample).filter((l) => REGEX_CODE.test(l.text)).length, 3, 'three regular expressions in verify are found, and the commands section is not verify');
+});
+
 // ---- the resolvers the seams hang on ------------------------------------------------------------------
 
 test('one resolver names the repositories of an issue, one parser splits the worktree list, one guard holds the lease flags', () => {
