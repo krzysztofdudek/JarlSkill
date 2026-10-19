@@ -36,11 +36,11 @@ test('a loop whose merges carry no check row is marked in status and report; a C
   const dir = loop();
   const empty = { merges: { merges: 0, withCheck: 0, noCheck: 0, red: [] }, byRepo: {} };
   const status = jarl(dir, 'status');
-  assert.match(status, /no merge carries the declared check — this loop lands on testimony alone/);
+  assert.match(status, /no check is declared — this loop lands its merges on testimony alone/);
   assert.deepEqual(json(dir, 'status').check, { declared: false, checks: [], landsOn: 'testimony', ...empty });
   const report = json(dir, 'report');
   assert.deepEqual(report.check, { declared: false, checks: [], landsOn: 'testimony', ...empty });
-  assert.match(report.text, /^no merge carries the declared check — this loop lands on testimony alone/m);
+  assert.match(report.text, /^no check is declared — this loop lands its merges on testimony alone/m);
   assert.equal(report.metrics.check.landsOn, 'testimony');
 
   // A declared line flips nothing: only a merge that carries a check row does.

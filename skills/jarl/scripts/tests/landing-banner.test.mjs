@@ -27,11 +27,25 @@ test('a loop with no Check line and one merge recorded with a --ran text lands o
   const repo = Object.values(check.byRepo)[0];
   assert.deepEqual([repo.declared, repo.k, repo.n], [[], 0, 1]);
   for (const text of [jarl(root, 'status'), jarl(root, 'report')]) {
-    assert.match(text, /lands on testimony alone/);
+    assert.match(text, /no check is declared — this loop lands its merges on testimony alone/);
     assert.match(text, /no check declared/);
     assert.doesNotMatch(text, /carry the declared check/);
     assert.doesNotMatch(text, /lands on (its )?check\b/);
   }
+});
+
+test('a goal with no Check line says that no check is declared and that its merges are testimony, and a goal with a Check line keeps the declared mark', () => {
+  const root = loop(1);
+  merge(root, 1, 'npm test');
+  for (const text of [jarl(root, 'status'), jarl(root, 'report')]) {
+    assert.match(text, /^no check is declared — this loop lands its merges on testimony alone: a review is recorded as testimony, not proof/m);
+    assert.doesNotMatch(text, /no merge carries the declared check/);
+  }
+  const declared = loop(1);
+  goal(declared, '\nCheck: npm test\n');
+  const text = jarl(declared, 'status');
+  assert.match(text, /^no merge carries the declared check — this loop lands on testimony alone: a review is recorded as testimony, not proof/m);
+  assert.doesNotMatch(text, /no check is declared/);
 });
 
 test('with a declared check, status and report say how many of the merges carry it', () => {

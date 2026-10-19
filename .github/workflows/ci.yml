@@ -34,9 +34,9 @@ jobs:
         working-directory: skills/jarl/scripts
         run: node runes.mjs check --ci --pin vendor/runes.pin.json
 
-  # The same tests on Windows (issue 481): paths with drive letters and backslashes, CRLF checkouts (the runner's
-  # git has core.autocrlf on), no bash of its own, rename refused over an open file. Git for Windows' bash is what
-  # the tests' own shell steps run in (tests/portable.mjs).
+  # Runs the same tests on Windows: paths with drive letters and backslashes, CRLF checkouts (the runner's git has
+  # core.autocrlf on), a runner with no bash of its own, and a rename refused over an open file. Git for Windows' bash
+  # runs the tests' own shell steps (tests/portable.mjs).
   test-windows:
     runs-on: windows-latest
     strategy:
