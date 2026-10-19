@@ -165,7 +165,7 @@ test('one resolver names the repositories of an issue, one parser splits the wor
 
 // ---- rule 7: comments ---------------------------------------------------------------------------------
 
-// A comment that dates the code instead of stating what it does: a version number, "older", "no longer", "legacy", and
+// A comment that dates the code instead of stating what it does: a version number, a word of the past, and
 // the like. The exceptions are named here, one by one, with the file and the text that stays.
 const VERSIONED = /\b\d+\.\d+(?:\.(?:\d+|x))?\b|\bv\d+\b/;
 const DATED = /\b\d+\.\d+(?:\.(?:\d+|x))?\b|\bv\d+\b|\bolder\b|before .* existed|\bno longer\b|\bearlier (version|jarl|reader|loop)|\blegacy\b|\bbackward|\bcompatib|\bused to\b|\bnew in\b|\bmigrat|\bformerly\b|\bfrom before\b|\bprevious (version|release)/i;
@@ -212,7 +212,7 @@ test('rule 7: no line of the help text or of the server\'s descriptions names a 
 });
 
 const PAST_WORDS =/\bno longer\b|\bolder\b|\blegacy\b|\bused to\b|\bformerly\b|\bnew in\b/i;
-test('rule 7: no title of the one-store tests and no changelog entry of the single record says "no longer", "older", "legacy" or "used to"', () => {
+test('rule 7: no title of the one-store tests and no changelog entry of the single record tells of the past', () => {
   const titled = TESTS.filter((f) => f === 'one-store.test.mjs').flatMap((f) => read(`tests/${f}`).split('\n').flatMap((line, i) => (/^\s*test\('/.test(line) && PAST_WORDS.test(line) ? [`tests/${f}:${i + 1}: ${line.trim().slice(0, 100)}`] : [])));
   assert.deepEqual(titled, []);
   assert.equal(PAST_WORDS.test("test('the profile no longer lists it', () => {"), true);
@@ -233,8 +233,8 @@ test('every process a test starts carries a timeout', () => {
 
 // ---- rule 8: no task number and no task story --------------------------------------------------------
 
-// A comment, a test title or a line of prose never points at a task of the loop: not "(issue 281)", "issue 7", "ticket 3",
-// "package 2", "round 3", "#281" or "field report", and no comment opens with a bare number in parentheses. The commit
+// A comment, a test title or a line of prose never points at a task of the loop: no number after the word for an issue,
+// a ticket, a package or a round, no hash number, no report of a review, and no comment opens with a bare number in parentheses. The commit
 // subject is the one place a number names an issue. No file needs an exception: an id that a test feeds a command is
 // written as the id (7, 007, 1000) and a line about a fixture says "the first issue" rather than its number.
 const TASK_REF = /\((issues?|tickets?|packages?|rounds?)\s+#?\d+|\(#?\d{2,4}\)|(^|[^a-z])(issues?|tickets?|packages?|rounds?)\s+#?\d+|#\d{2,}|field report/i;
