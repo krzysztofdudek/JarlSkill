@@ -10,7 +10,7 @@ Read it when you are raised as a worker, or when the jarl writes a worker's brie
 
 ## Worker branches
 
-The worker's own-worktree rule is in [SKILL.md](../SKILL.md#the-rules-that-never-bend). The prefix is `jarl`, so a worker's branch is `jarl/7-slug`, the issue's own slug after its number: two workers never share a name and a branch reads as its issue. Two loops sharing one clone put the feature branch's last path segment in front of it. Such a branch exists only in the clone running the loop: it is cut from the feature branch, merged back into it by the merger with `--no-ff` and a message naming the issue, and deleted together with its worktree. **It is never pushed** — the feature branch is the only branch of this loop that ever leaves the machine, and only on the owner's word. In the default mode a worker branch never carries `.jarl/`; in the committed mode it carries the copy it was cut with, which nobody writes — the loop's live state is the main checkout's, reached with `--root`.
+The worker's own-worktree rule is in [SKILL.md](../SKILL.md#the-rules-that-never-bend). The prefix is `jarl`, so a worker's branch is `jarl/7-slug`, the issue's own slug after its number: two workers never share a name and a branch reads as its issue. Two loops sharing one clone prefix the branch with the feature branch's last path segment (`<segment>/jarl/7-slug`), and the tool reads that name as the same issue number. Such a branch exists only in the clone running the loop: it is cut from the feature branch, merged back into it by the merger with `--no-ff` and a message naming the issue, and deleted together with its worktree. **It is never pushed** — the feature branch is the only branch of this loop that ever leaves the machine, and only on the owner's word. In the default mode a worker branch never carries `.jarl/`; in the committed mode it carries the copy it was cut with, which nobody writes — the loop's live state is the loop root's (the directory that holds `.jarl/`), reached with `--root`.
 
 ## The worker's brief
 
@@ -23,14 +23,14 @@ If your worktree was made for you by the platform and starts on a branch it name
 Your scope is the issue below and nothing else. Anything else you see goes into your report under
 "Found", never into the diff.
 No file of the repository carries a task number or a description of a task: no loop issue number appears in code, comments, tests, docs or graph entries, because the loop ends and the number then points nowhere. A comment says what the code does and why it must be so, and a test title says what behaviour it proves. Only the commit subject names the issue (`… (issue <id>)`).
-The loop's tools are the jarl MCP tools (jarl_show, jarl_evidence, jarl_body, …); pass root: "<main checkout>"
-on every call — your worktree has no live `.jarl/` of its own — and never add `.jarl/` to your branch. If your
-session has no jarl_* tools, run the same commands as `node <absolute path to jarl.mjs> <command> --root <main checkout>`.
+The loop's tools are the jarl MCP tools (jarl_show, jarl_evidence, jarl_body, …); pass root: "<loop root>"
+(the directory that holds `.jarl/`) on every call — your worktree has no live `.jarl/` of its own — and never add `.jarl/` to your branch. If your
+session has no jarl_* tools, run the same commands as `node <absolute path to jarl.mjs> <command> --root <loop root>`.
 If the change is user-visible, record its changelog entry on the issue:
-jarl_body { id: "7", changelog: ["Added: …"], root: "<main checkout>" } (Changed, Fixed, … — one item per line). Edit
+jarl_body { id: "7", changelog: ["Added: …"], root: "<loop root>" } (Changed, Fixed, … — one item per line). Edit
 CHANGELOG.md on your branch as well only where the repository's own rules (its CLAUDE.md, AGENTS.md or hooks) require
 the entry to come with the change; otherwise leave CHANGELOG.md to the merger.
-Read the rulings in force first (jarl_decisions { live: true, root: "<main checkout>" }): a ruling that names your issue or its files binds you.
+Read the rulings in force first (jarl_decisions { live: true, root: "<loop root>" }): a ruling that names your issue or its files binds you.
 Prove the change: a test that is red before and green after. Run the test files your change touches,
 in the foreground, with the shell tool's own timeout parameter set (a run that outlives the tool's
 default timeout is moved to the background and you will sit waiting for a notification that is not

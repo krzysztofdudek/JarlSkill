@@ -142,7 +142,7 @@ function need(cond, msg) { if (!cond) throw invalid(msg); }
 export function argvFor(cmd, input = {}) {
   need(input !== null && typeof input === 'object' && !Array.isArray(input), `${toolName(cmd)}: arguments must be an object`);
   if (input.root !== undefined) {
-    need(typeof input.root === 'string' && input.root.trim() !== '' && isAbsolute(input.root.trim()), `${toolName(cmd)}: "root" must be the absolute path of the checkout holding .jarl/ (got ${JSON.stringify(input.root)}) — leave it out to use JARL_ROOT or the server's working directory`);
+    need(typeof input.root === 'string' && input.root.trim() !== '' && isAbsolute(input.root.trim()), `${toolName(cmd)}: "root" must be the absolute path of the directory that holds .jarl/ (got ${JSON.stringify(input.root)}) — leave it out to use JARL_ROOT or the server's working directory`);
   }
   const { root: _root, ...fields } = input;
   try { return generateArgv(TABLE, cmd, fields, TOOL_OPTIONS); } catch (e) {

@@ -18,7 +18,7 @@ Everything lives in `.jarl/` in the main checkout the loop runs in. On a feature
 reaches `main`; opened as a permanent record it lives on, wherever `--root` names, for good. The
 loop runs in one of three modes, chosen once at `init`:
 
-- **Default — out of git.** `init` writes `.jarl/.gitignore` with two lines, `*` and `**/*`, so git never sees the loop: it stays out of the branch's history, its diffs and its merges. The loop exists only in the main checkout's working tree — it belongs to that checkout, not to the branch, and no other clone or worktree has it. A worker's worktree therefore sees no `.jarl/`, so the worker, the reviewer and the merger always pass the main checkout as `root` (`--root` on the CLI), and nobody ever commits `.jarl/`.
+- **Default — out of git.** `init` writes `.jarl/.gitignore` with two lines, `*` and `**/*`, so git never sees the loop: it stays out of the branch's history, its diffs and its merges. The loop exists only in the main checkout's working tree — it belongs to that checkout, not to the branch, and no other clone or worktree has it. A worker's worktree therefore sees no `.jarl/`, so the worker, the reviewer and the merger always pass the loop root (the directory that holds `.jarl/`) as `root` (`--root` on the CLI), and nobody ever commits `.jarl/`.
 - **Committed — `init --committed`.** `.jarl/.gitignore` ignores only the tool's write lock and the temporary files a write leaves for an instant (`/.lock`, `/.lock.break`, `.*.tmp`), so a `git add` made while a call runs never commits them; the loop itself is committed with the work on the feature branch. `.jarl/.gitattributes` tells git how the loop merges when two branches carrying it meet: `log.md` by union (one dated line per event), `decisions.md` never by union but by Jarl's own driver, `jarl.mjs merge-driver decisions %O %A %B`, which keeps both sides' rulings block by block and stops with conflict markers when both sides superseded the same ruling, used one slug for two rulings, or rewrote one ruling. The tool configures that driver in the repository's local git configuration (a local command, never committed) at `init` and at the first write of a committed loop that lacks it, with a fallback to git's own conflict markers when the script is gone: a driver git is told to run but cannot start keeps ours and drops theirs without a word. A clone that never configured it gets plain markers. The merger passes the driver on every merge anyway (`merge-driver flags`, see [The merger](merger.md#the-merger)); GitHub's merge button runs no driver, so a loop's branches merge locally. The merger commits `.jarl/` with every merge, and the last commit before the branch merges to `main` removes the whole directory.
 - **Permanent — `init --permanent`.** Committed the same way, with the same narrow `.gitignore` — a record that must survive is always committed — and `init` additionally writes `.jarl/.permanent`, so a later session reads the mode from the loop itself rather than being told. This loop does not live on a feature branch at all: it lives wherever `--root` points, kept as a standing record, for example a repository that keeps one loop per release as that release's record, driving work in other repositories. Everything above — the files of the loop, the issue format, the roles, the tool — is the same; only closing differs, in [Closing the branch](jarl.md#closing-the-branch).
 
@@ -28,8 +28,7 @@ permanent mode. Only `init` decides the mode of a new loop. A committed loop wit
 ignore file is given it by its first write, which changes nothing about its mode; no command
 ever turns one mode's ignore file into the other's.
 `mode permanent` is the one exception: it turns an *existing, committed* loop into the permanent mode
-in place, for a committed loop (one opened `--committed`) — a release loop opened that way is
-exactly this case. It refuses a default-mode loop (out of git): a permanent record must be committed,
+in place, for a committed loop (one opened `--committed`). It refuses a default-mode loop (out of git): a permanent record must be committed,
 and there is no in-place way to add git tracking to one, so start a fresh loop with `init --permanent`
 instead. It refuses an already-permanent loop too, clearly, rather than silently doing nothing. See the
 command table in [commands.md](commands.md#the-commands).
@@ -38,7 +37,7 @@ command table in [commands.md](commands.md#the-commands).
 
 ## The files of the loop
 
-The tool writes fourteen paths in `.jarl/`, listed below, and the temporary files (`.*.tmp`) a write leaves for an instant.
+The tool writes thirteen paths in `.jarl/`, listed below, and the temporary files (`.*.tmp`) a write leaves for an instant. It reads two things it never writes: the issue templates in `.jarl/templates/`, which the owner or the jarl writes by hand (`archive` leaves them in place, see [Templates](jarl.md#templates)), and a `handoff.md` left in a loop, which `resume` names and `handoff read` prints, as history and never as state.
 
 | Path | What | Who writes |
 |---|---|---|
@@ -49,7 +48,6 @@ The tool writes fourteen paths in `.jarl/`, listed below, and the temporary file
 | `.jarl/repos.md` | The repositories the issues name by name, one line each: the name, the repository's root commits (all of them), its origin as found and its base branch, and no path. Written only when an issue first names a repository by name, and by `repo --base`; each write is a log line. | jarl |
 | `.jarl/asks.md` | The questions for the owner, one block per question: its type, its options and its answer; the ids are `a-1`, `a-2` and so on. | jarl (`ask`, `answer`) |
 | `.jarl/profile.json` | The loop's profile, read as data (see [Profiles](profile.md#profiles)); written by `init --profile`, and by the first write that raises the record format (see [The format marker](#the-format-marker)). | jarl |
-| `.jarl/templates/` | The issue templates, `<name>.md` each, which `archive` leaves in place (see [Templates](jarl.md#templates)). | the owner, the jarl |
 | `.jarl/archive/` | The archived loops, one directory `<yyyy.mm.dd>-<slug>/` each. | jarl (`archive`) |
 | `.jarl/.gitignore` · `.jarl/.gitattributes` · `.jarl/.permanent` | The mode of the loop and how git merges it (see [Where the loop lives](#where-the-loop-lives)). | jarl (`init`) |
 | `.jarl/.lock` · `.jarl/.lock.break` | The write lock (see [The write lock](#the-write-lock)). | every command that writes |

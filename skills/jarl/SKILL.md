@@ -43,7 +43,7 @@ The other references, each read when its subject comes up:
 |---|---|
 | `resume` | the whole state of the loop, read live; the first call of every session |
 | `status` | the goal, the counts, stale leases, what waits |
-| `next` | the open issues that can start now |
+| `next` | the open issues ready to start; `--all` adds the held and waiting ones, in groups |
 | `new "<title>" --what … --acceptance …` | files an issue with its body |
 | `set <ids> in-progress "<why>" --branch <b> --worker <name> --model <m>` | leases issues before a worker is raised |
 | `evidence <ids> --ran "<command>" --saw "<what it printed>"` | records proof |
@@ -74,11 +74,13 @@ Every command, its flags and its JSON are in [references/commands.md](references
 
 ### The CLI, when the tools are not there
 
-With no `jarl_*` tools in the session (the skill copied into an agent's skill directory rather than installed as a plugin, for one), the script is the CLI:
+With no `jarl_*` tools in the session (the skill copied into an agent's skill directory rather than installed as a plugin, for one), the script is the CLI. It sits in the skill's own directory, so the command names it by the directory this `SKILL.md` was read from:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT:-.claude/skills/jarl}/scripts/jarl.mjs" <command>
+node "<skill dir>/scripts/jarl.mjs" <command>
 ```
+
+`<skill dir>` is `${CLAUDE_PLUGIN_ROOT}/skills/jarl` in a Claude Code plugin install (`${PLUGIN_ROOT}` for Copilot and `${CURSOR_PLUGIN_ROOT}` for Cursor: the plugin root your host provides, plus `skills/jarl`), and `.claude/skills/jarl` (or wherever the directory was copied to) in a drop-in.
 
 If that file does not exist where the command runs, the path belongs to another machine: VS Code
 attached to a dev container, for one, hands the agent the host's install path, which the container
@@ -88,13 +90,15 @@ once, `find ~ /workspaces -path '*skills/jarl/scripts/jarl.mjs' 2>/dev/null | he
 absolute path it gives for the rest of the session, and hand that same path to every role you raise.
 If there is no copy at all, say so and stop: the loop's state moves only through the tool.
 
+**Which loop a call reaches.** A tool call: its `root` field; without it the server's `JARL_ROOT`; without that, discovery. A command line: `--root`; without it, discovery. Discovery finds the loop at the root of the checkout the call starts in (from a worktree that holds none, the root of its main checkout) and never looks in a subdirectory: a loop kept in one is reached only through `root`, `--root` or `JARL_ROOT`.
+
 The grammar of the command line (the flags, `--json`, `--help` and `--root`) is in [references/commands.md](references/commands.md#the-command-line).
 
 ## The rules that never bend
 
-- **File first.** Anything anybody saw becomes an issue before anything else happens. Nobody fixes on the side: a worker reports what it found, and the jarl files it, or the worker files it with `root` set to the main checkout; either way the write lock hands out the numbers, so they never collide.
+- **File first.** Anything anybody saw becomes an issue before anything else happens. Nobody fixes on the side: a worker reports what it found, and the jarl files it, or the worker files it with `root` set to the loop root (the directory that holds `.jarl/`); either way the write lock hands out the numbers, so they never collide.
 - **One tool moves the record.** Every status change, tag, priority, ruling and log line goes through the tool, never through a hand edit; a header edited by hand is never believed (see [The log is the record](references/record.md#the-log-is-the-record)).
-- **Pass the loop's root.** The live loop is in the main checkout, so every call from a worktree, and every brief, carries the absolute path of the main checkout as `root`.
+- **Pass the loop's root.** The live loop is in the loop root (the directory that holds `.jarl/`: the main checkout, or the subdirectory of it a loop is kept in), so every call from a worktree, and every brief, carries the absolute path of the loop root as `root`.
 - **A code issue is cleared by a fresh reviewer.** An issue that records a Branch or a Merged field is cleared by the approve of an agent that neither wrote the code nor runs the loop. The worker never approves its own work, and `done` refuses without a live approve (see [references/reviewer.md](references/reviewer.md)).
 - **Only the merger commits in the main checkout.** Everybody else writes `.jarl/` through the tool and never runs a commit there (see [references/merger.md](references/merger.md)).
 - **Merging to `main` and pushing are the owner's word.** A worker's branch is never pushed. The feature branch is pushed only when the owner has said so, once for good in a line of `goal.md` or a ruling, or each time (see [references/jarl.md](references/jarl.md#standing-permission-to-push-the-feature-branch)).
@@ -129,4 +133,4 @@ How rows, notes and the merge check sit in an issue, and when an issue may be se
 - **Leave it mergeable.** The work is committed on the branch and the checks the brief names pass there before the work is reported; the branch is not pushed, merged or rebased onto others unless the brief says so. Merging, and removing the worktree and the branch afterwards, is never the worker's job.
 <!-- RUNES:worker-worktree:END -->
 
-In Jarl the coordinator is the jarl and the one who merges is the merger. The branch naming and the rest of the worker's rules are in [references/worker.md](references/worker.md#worker-branches).
+In Jarl the root a call passes is the loop root, the directory that holds `.jarl/` (the main checkout only when the loop lives at its root). In Jarl the coordinator is the jarl and the one who merges is the merger. The branch naming and the rest of the worker's rules are in [references/worker.md](references/worker.md#worker-branches).

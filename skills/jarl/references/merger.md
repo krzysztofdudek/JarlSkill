@@ -12,7 +12,7 @@ Read it when you are raised as the merger, when the jarl writes the merger's bri
 ## The merger
 
 Verifying and merging eats context, and the jarl's context is the scarcest thing in the loop. So
-the jarl raises **one long-lived merger** — a cheaper capable model, no worktree of its own, the
+the jarl raises **one long-lived merger** — a model of the standard tier, no worktree of its own, the
 only agent besides the jarl allowed in the main checkout — and hands it every branch that comes
 back. The merger never edits code and never decides scope; it verifies and merges, serially, one
 branch at a time, and reports one line per branch. When a merger exists the jarl merges nothing
@@ -24,8 +24,8 @@ sees `.jarl/`, so the merger never commits it. Its brief:
 
 ```
 You are the merger of branch <feature-branch> in <repo root>; the loop's tools are the jarl MCP tools, always
-called with root: "<repo root>" (with no jarl_* tools in your session, `node <absolute path to jarl.mjs>
-<command> --root <repo root>`); below, `jarl_x a --f v` is the tool jarl_x with those fields. The loop is in the <default | committed | permanent> mode. In
+called with root: "<loop root>" (the directory holding .jarl/; with no jarl_* tools in your session, `node <absolute path to jarl.mjs>
+<command> --root <loop root>`); below, `jarl_x a --f v` is the tool jarl_x with those fields. The loop is in the <default | committed | permanent> mode. In
 the permanent mode `.jarl/` is committed exactly as in the committed mode, and that commit is never
 later stripped — there is no last commit before a merge to `main` that removes it, because a permanent
 loop is never merged to `main` and never closed by removing `.jarl/`. Merging itself does not otherwise
@@ -37,7 +37,7 @@ loop's own to merge into and later discard).
 When an issue's **Repo:** names another repository, its branch, its merge and its check live in that
 repository's main checkout — run git and the check there, list its branches with
 `jarl_branches --repo <path>`; `jarl_scope` reads there on its own; `.jarl/`, `root` and,
-in the committed mode, the commit of `.jarl/` stay in <repo root>.
+in the committed mode, the commit of `.jarl/` stay in <loop root>.
 You work in the main checkout, serially, one branch at a time. You never edit source files, never
 push a worker's branch, never push anything the loop's rules do not allow (see "Standing permission
 to push" in the jarl's own instructions: when `goal.md` or a ruling gives it, the merger's brief says
@@ -101,6 +101,6 @@ Jarl changes git in one place only, and only after a recorded merge: `merged --s
 
 ## The merge queue
 
-`queue` is what waits for the merger, computed from the record every time and never stored: a branch is in it when an open or in-progress issue on it holds a live approve (one no round, restart or reopen has spent) by a fresh reviewer — the done gate's reading for an issue that carries code, so an approve by the coordinator alone keeps the branch out and the branch has commits its base does not. The branch is the issue's **Branch:**, or, for an issue with no such field, the one `jarl/7-*` branch carrying its number. Rows come in the order the branches were approved and, per repository, are cut into batches the way the merger's brief batches them: a branch joins the current batch while its declared files share none with the batch, and starts the next one otherwise (a branch with no files declared rides alone). A package whose other issues still wait for their review is listed with them (`waiting for review: 164`). Once the branch is merged into its base it drops out by itself. With no `--repo` it reads the loop's own repository and every repository an issue names; `--base` replaces the checkout's current branch as the base.
+`queue` is what waits for the merger, computed from the record every time and never stored: a branch is in it when an open or in-progress issue on it holds a live approve (one no round, restart or reopen has spent) by a fresh reviewer, which is the done gate's reading for an issue that carries code (an approve by the coordinator alone keeps the branch out), and the branch has commits its base does not. The branch is the issue's **Branch:**, or, for an issue with no such field, the one `jarl/7-*` branch carrying its number. Rows come in the order the branches were approved and, per repository, are cut into batches the way the merger's brief batches them: a branch joins the current batch while its declared files share none with the batch, and starts the next one otherwise (a branch with no files declared rides alone). A package whose other issues still wait for their review is listed with them (`waiting for review: 164`). Once the branch is merged into its base it drops out by itself. With no `--repo` it reads the loop's own repository and every repository an issue names; `--base` replaces the checkout's current branch as the base.
 
 It is a view, not a gate: it runs no check, holds no lock, refuses no merge and orders nothing on its own. The merger reads it instead of waiting for the jarl to name branches, and still verifies every branch as its brief says.

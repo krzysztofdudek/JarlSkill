@@ -71,6 +71,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A range of issue numbers written in a free-text field, such as `1000-1002` in a "Found by" line, now counts every number the loop holds in it; before, its first number was lost whenever it looked like part of a date. A real date still counts for nothing.
 - A new issue's file name no longer ends in a dash when its title is cut at 60 characters. Existing files keep their names.
 - The follow-up count in `report` now counts only issue numbers the loop holds, so a date, a year or a version in a "Found by" line is never read as an issue.
+- The instructions an agent reads now match the tool. The command that runs Jarl resolves on a plugin install, the list of commands and options is complete, and the texts say who counts as the author of the work under review, which repositories `branches` reads and that a loop is found only at the top of a checkout.
 
 ## [6.1.1] - 2026-10-13
 

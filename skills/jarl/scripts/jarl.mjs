@@ -31,7 +31,7 @@ commands:
   init "<goal>" [--committed] [--permanent] [--profile <file>]
                                                  create .jarl/ with the goal; by default it also writes .jarl/.gitignore
                                                  (* and **/*) so git never sees the loop, and every role working
-                                                 outside the main checkout passes --root <main checkout>;
+                                                 outside the loop root passes --root <loop root>;
                                                  --committed ignores only the write lock and temporary files: the loop
                                                  is committed with the work; --permanent is committed too, marks it with
                                                  .jarl/.permanent, and is not tied to a feature branch: close (below)
@@ -156,7 +156,8 @@ commands:
                                                  (stored as given); --relayed marks a verdict recorded by someone else in
                                                  the reviewer's name, for a reviewer that cannot be resumed to record its
                                                  own; --by is required, recorded with its kind
-                                                 (self for the issue's worker or "self" — refused on an approve;
+                                                 (self for "self" or anyone who has held the issue's lease, across
+                                                 takeovers, or the lease of another issue on its Branch — refused on an approve;
                                                  coordinator for coordinator, jarl, reeve, the loop's own name and
                                                  names on a "Coordinators:" line in goal.md; fresh for anyone else);
                                                  "done" needs an approve inside the gate's window, and a
@@ -189,8 +190,9 @@ commands:
                                                  issues on it, commits beyond the base, worktree state, STALE leases
                                                  (worktree gone, branch gone, idle over n hours, default 6) and
                                                  DONE → delete, NO ISSUE for commits no issue holds; shown only, never
-                                                 acted on; read in --repo, else the
-                                                 loop's own repository and every repository its issues name
+                                                 acted on; read in --repo alone, else in the loop's own
+                                                 repository, every repository an open or in-progress issue
+                                                 names and every one where an issue not dropped records a Branch
   ask "<question>" [--kind stop|stuck|lower|charter|ratify] [--target x] [--issue 7] [--option "<label>: <effect>"]...
                                                  a question the owner has to answer; lower needs --target;
                                                  listed at boot until answered; ratify is a choice already made
@@ -310,7 +312,8 @@ commands:
                                                  naming a rule also ratifies it (yg log add --aspect --ratify);
                                                  refused under a profile whose "lifecycle" keeps close to the record
 
-options: --json  --help  --root <repo root>
+options: --json  --help  --root <loop root>   (the directory holding .jarl/; without it the loop at the root of the
+         current checkout, or of its main checkout from a worktree: never one in a subdirectory)
 
 The list of what only the command line does, next to the record library, is in the skill: references/composers.md, section "What only the command line does".
 
@@ -323,7 +326,7 @@ git merges (not loop commands: no --root, no lock, no tool of the MCP server):
                                                  so the drivers run whatever the clone holds: the decisions driver, and
                                                  with --yg Yggdrasil's log and lock drivers too
 
-<ids> (body, source, after, files, repo, round, evidence, review, set, field, tag, prio, merged): one id, or several as one comma list with ranges — 12,13,14 or
+<ids> (body, source, after, files, repo, round, evidence, review, set, field, tag, prio, merged, changelog): one id, or several as one comma list with ranges — 12,13,14 or
 203-206,209. Every id and every precondition is checked before anything is written, so the call lands on
 all of them or on none, with one log line per issue.
 
@@ -354,15 +357,15 @@ rises with the first name (a record carries its format, and Jarl refuses a forma
 raised format a Repo value that starts with . or / (or a drive letter) is a path and anything else
 a name. An issue that names a repository writes each of its files with that repository's directory
 name first (tool/src/a.mjs for Repo tool): next then keeps the same path in two repositories apart,
-and check matches the path after the name. An issue may name several repositories (Repo: tool, lib):
+and scope matches the path after the name. An issue may name several repositories (Repo: tool, lib):
 each file then starts with the name of the one it is in (one with no such name is in the first), and
-check on it takes --repo to say which one to read. show and status --by repo print where each
+scope on it takes --repo to say which one to read. show and status --by repo print where each
 repository, and the worktree of a lease, is on this machine; nothing resolved is written.
 
 Parallel workers in worktrees:
-  - Default mode: the loop is out of git and lives in the main checkout, so every call, a worker's and the coordinator's, passes --root <main checkout>.
+  - Default mode: the loop is out of git and lives in the loop root (the directory that holds .jarl/), so every call, a worker's and the coordinator's, passes --root <loop root>.
   - Committed mode: the merger alone commits .jarl/, and a worker never does.
-  - Filing: the coordinator files the issues; a worker reports what it found, or files with --root <main checkout>.
+  - Filing: the coordinator files the issues; a worker reports what it found, or files with --root <loop root>.
   - Lease: an issue in progress is held by a worker, whose name, branch and start the lease records.
   - Finished work: list hides finished and deferred work; --all shows every status, and --tag, --status, --prio and --grep filter by tag, status, priority and text.`;
 // ---- main --------------------------------------------------------------------------------------
@@ -512,8 +515,8 @@ export const COMMAND_SUMMARY = {
   review: 'Record a reviewer\'s verdict (approve or changes) on issues, with the reviewer and the findings.',
   round: 'Record one red round on issues; after three it prints the takeover block for a fresh worker.',
   models: 'Per model as worker and as reviewer, per kind of issue: the counts, clean first passes and verdicts the record holds, with the words fits, below, new and may clear; reads other loops and archives too.',
-  scope: 'Measure a worker branch against its base: commits, diff inside the declared files, test changes; numbers, never a verdict.',
-  branches: 'Every worker branch with its issues, commits beyond the base, worktree state, stale leases and done branches.',
+  scope: 'Measure the scope of a worker branch against its base: commits, diff inside the declared files, test changes; numbers, never a verdict.',
+  branches: 'Every worker branch with its issues, commits beyond the base, worktree state, stale leases and done branches, in the loop\'s repository and every repository its issues name (repo narrows it to one).',
   ask: 'File a question the owner has to answer (stop, stuck, lower, charter or ratify).',
   answer: 'Record the owner\'s answer to a question, the option chosen or the words given, as a ruling and close the question; several ratify items take one answer.',
   resume: 'The boot: everything a session picks the loop up from, assembled live.',
@@ -531,7 +534,7 @@ export const COMMAND_SUMMARY = {
   mode: 'Switch a committed loop to the permanent mode.',
   profile: 'The loop\'s profile (statuses, fields, sections), or a profile file checked against the schema.',
   verify: 'Check the record strictly, without a lock: the lines each reader does not place, the headers that disagree with the log, the repositories, leases and superseded rulings the issues name; exit 2 on a finding.',
-  close: 'Close the loop when nothing is open or in progress, filing the ratification batch first.',
+  close: 'Close the loop, filing the ratification batch first; it refuses while issues are open or in progress, or deferred where it removes the loop, unless force is set.',
 };
 const ARITY = Object.fromEntries(Object.entries({ ...COMMAND_ARGS, ...Object.fromEntries(Object.entries(COMMAND_ALIASES).map(([name, c]) => [name, COMMAND_ARGS[c]])) }).filter(([, a]) => !a.some((n) => n.endsWith('...'))).map(([c, a]) => [c, a.length]));
 
