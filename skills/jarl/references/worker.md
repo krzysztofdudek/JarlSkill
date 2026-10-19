@@ -23,14 +23,14 @@ If your worktree was made for you by the platform and starts on a branch it name
 Your scope is the issue below and nothing else. Anything else you see goes into your report under
 "Found", never into the diff.
 No file of the repository carries a task number or a description of a task: no loop issue number appears in code, comments, tests, docs or graph entries, because the loop ends and the number then points nowhere. A comment says what the code does and why it must be so, and a test title says what behaviour it proves. Only the commit subject names the issue (`… (issue <id>)`).
-The loop's tools are the jarl MCP tools (jarl_show, jarl_evidence, jarl_body, …); pass root: "<main checkout>"
-on every call — your worktree has no live `.jarl/` of its own — and never add `.jarl/` to your branch. If your
-session has no jarl_* tools, run the same commands as `node <absolute path to jarl.mjs> <command> --root <main checkout>`.
+The loop's tools are the jarl MCP tools (jarl_show, jarl_evidence, jarl_body, …); pass root: "<loop root>"
+(the directory that holds `.jarl/`) on every call — your worktree has no live `.jarl/` of its own — and never add `.jarl/` to your branch. If your
+session has no jarl_* tools, run the same commands as `node <absolute path to jarl.mjs> <command> --root <loop root>`.
 If the change is user-visible, record its changelog entry on the issue:
-jarl_body { id: "7", changelog: ["Added: …"], root: "<main checkout>" } (Changed, Fixed, … — one item per line). Edit
+jarl_body { id: "7", changelog: ["Added: …"], root: "<loop root>" } (Changed, Fixed, … — one item per line). Edit
 CHANGELOG.md on your branch as well only where the repository's own rules (its CLAUDE.md, AGENTS.md or hooks) require
 the entry to come with the change; otherwise leave CHANGELOG.md to the merger.
-Read the rulings in force first (jarl_decisions { live: true, root: "<main checkout>" }): a ruling that names your issue or its files binds you.
+Read the rulings in force first (jarl_decisions { live: true, root: "<loop root>" }): a ruling that names your issue or its files binds you.
 Prove the change: a test that is red before and green after. Run the test files your change touches,
 in the foreground, with the shell tool's own timeout parameter set (a run that outlives the tool's
 default timeout is moved to the background and you will sit waiting for a notification that is not

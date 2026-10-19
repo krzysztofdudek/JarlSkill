@@ -8,7 +8,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, 
 import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { SCRIPT, SKILL_DIR, SPAWN_TIMEOUT, gitRepo, jarl, loop, refuses, run, skillFiles, skillText } from './helpers.mjs';
+import { SCRIPT, SKILL_DIR, SPAWN_TIMEOUT, gitRepo, jarl, loop, refuses, run, skillFiles, skillLines, skillText } from './helpers.mjs';
 
 const { COMMAND_FLAGS, INTERNAL_COMMANDS, MUTATING, USAGE } = await import('../jarl.mjs');
 const mcp = await import('../jarl-mcp.mjs');
@@ -239,7 +239,10 @@ test('the README says who verifies: the fresh reviewer and the merger, and no mo
   const readme = readRoot('README.md');
   assert.match(readme, /a fresh reviewer reads the diff and checks that the new test was red before the change/);
   assert.match(readme, /the merger merges into the branch with a commit that names the issue and runs the check on the result/);
-  assert.match(readme, /nothing is closed without recorded evidence and a fresh reviewer's approve/);
+  assert.match(readme, /nothing is closed without recorded evidence and an approve, from a fresh reviewer when the issue carries code/);
+  assert.doesNotMatch(readme, /nothing is closed without recorded evidence and a fresh reviewer/);
+  assert.match(readme, /The tool refuses an approve by a self \(the issue's worker, anyone who has held its lease, or a worker of another issue on the same branch\)/);
+  assert.match(skillText('references/reviewer.md'), /refuses an approve by a self: the issue's worker, anyone who has held its lease, and the workers of any other issue on the same Branch/);
   for (const false_ of [/reproduced itself/i, /reproducing the acceptance/i, /runs the test suite itself/i, /blocks (?:code|a merge)/i, /Nobody writes a handoff/]) {
     assert.doesNotMatch(readme.replace(/never blocks code from landing/g, ''), false_);
   }
@@ -274,7 +277,9 @@ test('the first screen of SKILL.md starts a cold agent: resume an existing loop 
 
 test('models.md never puts the reviewer that clears an issue below the worker it reviews', () => {
   const models = skillText('references/models.md');
-  assert.match(models, /Workers run on the tier the issue's `Tier:` names\. A reviewer whose approve clears the issue runs on that tier or above, never below it/);
+  assert.match(models, /Workers start on the tier the issue's `Tier:` names, and a takeover raises the worker one tier up\. The reviewer whose approve clears the issue is never of the worker's own model and never ranked below the worker's model, the model the lease names and not the issue's tier/);
+  assert.match(models, /never ranked below the worker's model \(the model on the lease, whatever the issue's tier\)/);
+  assert.doesNotMatch(models, /runs on that tier or above/);
   assert.match(models, /Readers and the merger run on the standard tier/);
   assert.doesNotMatch(models, /Workers, readers, reviewers and the merger run on the standard tier/);
 });
@@ -332,4 +337,101 @@ test('a tool call does what its description says: jarl_ask without a kind files 
   mcp.callTool('jarl_new', { title: 'open', root });
   assert.equal(mcp.callTool('jarl_close', { root }).isError, true, 'close refuses while an issue is open');
   assert.equal(mcp.callTool('jarl_close', { force: true, root }).isError, false);
+});
+
+// ---- the rules as the tool applies them ---------------------------------------------------------------------------
+
+test('a reviewer is held to the worker\'s model, not to the issue\'s tier, and an issue with no code closes on the jarl\'s approve', () => {
+  const { dir } = gitRepo({ prefix: 'jarl-docs-rules-' });
+  jarl(dir, 'init', 'g');
+  jarl(dir, 'goal', '--set', 'Model (standard): m-std');
+  jarl(dir, 'goal', '--set', 'Model (strong): m-strong');
+  jarl(dir, 'new', 'code', '--tier', 'standard', '--files', 'a.txt');
+  jarl(dir, 'set', '1', 'in-progress', 'go', '--branch', 'jarl/1-code', '--worker', 'w', '--model', 'm-strong');
+  const note = run(dir, ['review', '1', 'approve', '--by', 'rev', '--model', 'm-std', 'read the diff and found nothing wrong']);
+  assert.equal(note.status, 0);
+  assert.match(note.stderr, /m-std ranks below the worker's model \(m-strong\)/);
+  jarl(dir, 'new', 'a ruling');
+  jarl(dir, 'review', '2', 'approve', '--by', 'jarl', 'the ruling reads right and matches the goal');
+  jarl(dir, 'evidence', '2', '--ran', 'read the ruling', '--saw', 'it matches the goal');
+  assert.match(jarl(dir, 'set', '2', 'done', 'settled'), /2 → done/);
+});
+
+// ---- the root every role passes -----------------------------------------------------------------------------------
+
+test('no brief and no rule names the main checkout as the root a call passes: the loop root is the directory that holds .jarl/', () => {
+  const found = [];
+  for (const { file, n, text } of skillLines()) {
+    if (/<main checkout>|\broot\b[`"]?[^.\n]{0,25}\b(?:set to|as) the (?:absolute path of the )?main checkout|passes the main checkout|carries the absolute path of the main checkout|--root[^\n]{0,12}main checkout/.test(text)) found.push(`${file}:${n}`);
+  }
+  assert.deepEqual(found, []);
+  for (const [file, text] of [['worker', skillText('references/worker.md')], ['reviewer', skillText('references/reviewer.md')], ['merger', skillText('references/merger.md')]]) {
+    assert.match(text, /<loop root>/, `the ${file} brief passes the loop root`);
+  }
+  assert.match(skillText('SKILL.md'), /carries the absolute path of the loop root as `root`/);
+  for (const line of USAGE.split('\n')) assert.doesNotMatch(line, /<main checkout>/);
+});
+
+test('a loop kept in a subdirectory is reached through the loop root and not through the main checkout', () => {
+  const { dir } = gitRepo({ prefix: 'jarl-docs-subroot-' });
+  const sub = join(dir, 'releases', 'x');
+  mkdirSync(sub, { recursive: true });
+  jarl(sub, 'init', 'kept in a subdirectory');
+  jarl(sub, 'new', 'one');
+  assert.match(jarl(sub, 'status'), /open 1/);
+  assert.match(jarl(dir, 'status'), /open 0/, 'the main checkout reads an empty loop');
+});
+
+// ---- scope is the command's name ---------------------------------------------------------------------------------
+
+test('the help and the tool descriptions name scope as the command that measures a branch, never check', () => {
+  const text = [USAGE, ...mcp.buildTools().map((t) => t.description)].join('\n');
+  assert.doesNotMatch(text, /\bcheck (?:matches|on it|takes|reads|refuses)|\bon `?check`?\b|\bjarl(?:\.mjs)? check\b/);
+  const byName = Object.fromEntries(mcp.buildTools().map((t) => [t.name, t.description]));
+  assert.match(byName.jarl_scope, /scope of a worker branch/);
+  assert.match(byName.jarl_check, /scope of a worker branch/);
+  assert.match(USAGE, /\bscope matches the path after the name/);
+  assert.match(USAGE, /\bscope on it takes --repo/);
+});
+
+// ---- the documented rows -----------------------------------------------------------------------------------------
+
+const rowOf = (command) => {
+  const md = skillText('references/commands.md');
+  const table = md.slice(md.indexOf('## The commands'), md.indexOf('## The command line'));
+  return table.split('\n').find((l) => l.startsWith(`| \`${command} `) || l.startsWith(`| \`${command}\``));
+};
+
+test('the rows of branches and close say what the code reads and does', () => {
+  const branches = rowOf('branches');
+  assert.match(branches, /with no `--repo`, in the loop's own repository, in every repository an open or in-progress issue names, and in every repository where an issue that is not dropped records a \*\*Branch:\*\*/);
+  assert.doesNotMatch(branches, /Read in `--repo`, else in the loop's own repository/);
+  assert.match(branches, /with it, in that one repository/);
+  const close = rowOf('close');
+  assert.match(close, /`--force`, which closes anyway, with issues still open or in progress/);
+  assert.match(close, /and with deferred ones/);
+});
+
+test('every flag a description of the command table names is a flag some command takes, and the id-list commands agree with the help text', () => {
+  const known = new Set([...Object.values(COMMAND_FLAGS).flatMap((f) => Object.keys(f)), 'json', 'help', 'root']);
+  const md = skillText('references/commands.md');
+  const table = md.slice(md.indexOf('## The commands'), md.indexOf('## The command line'));
+  for (const row of table.split('\n').filter((l) => l.startsWith('| `'))) {
+    const cells = row.slice(2).split(/(?<!\\)\|/);
+    for (const [, flag] of cells.slice(1).join('|').matchAll(/`--([a-z][a-z-]*)(?:[ `])/g)) assert.ok(known.has(flag), `--${flag} in ${row.slice(0, 40)}`);
+  }
+  const listOf = (text) => new Set([...text.matchAll(/`([a-z]+)`/g)].map((m) => m[1]));
+  const doc = /`<ids>` on ([^\n]*?) is one id or several/.exec(md)[1];
+  const help = /<ids> \(([^)]*)\)/.exec(USAGE)[1].split(', ');
+  assert.deepEqual([...listOf(doc)].sort(), [...help].sort());
+  assert.doesNotMatch(md, /\bevidence 0\d/, 'an example writes a plain number');
+});
+
+test('the plugin root SKILL.md names for each host is the one that host\'s manifest uses', () => {
+  const skill = skillText('SKILL.md');
+  const cursor = JSON.parse(readRoot('.cursor-plugin/plugin.json')).mcpServers.jarl.args.join(' ');
+  const portable = JSON.parse(readRoot('mcp.json')).mcpServers.jarl.args.join(' ');
+  assert.ok(cursor.includes('${CURSOR_PLUGIN_ROOT}/skills/jarl/'));
+  assert.ok(portable.includes('${PLUGIN_ROOT}/skills/jarl/'));
+  assert.ok(skill.includes('`${PLUGIN_ROOT}` for Copilot and `${CURSOR_PLUGIN_ROOT}` for Cursor'));
 });

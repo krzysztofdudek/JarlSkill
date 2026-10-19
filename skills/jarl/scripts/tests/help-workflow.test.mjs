@@ -8,9 +8,9 @@ import { loop, spawnJarl } from './helpers.mjs';
 
 const lastSection = (text) => text.replace(/\s+$/, '').split('\n\n').at(-1);
 const POINTS = [
-  ['the default mode with root set to the main checkout on every call', /default mode[^\n]*every call[^\n]*--root <main checkout>/i],
+  ['the default mode with root set to the loop root on every call', /default mode[^\n]*every call[^\n]*--root <loop root>/i],
   ['the merger alone commits .jarl/ in the committed mode', /committed mode[^\n]*merger alone commits \.jarl\/[^\n]*never/i],
-  ['the coordinator files issues, or a worker with root set to the main checkout', /coordinator files[^\n]*worker[^\n]*--root <main checkout>/i],
+  ['the coordinator files issues, or a worker with root set to the loop root', /coordinator files[^\n]*worker[^\n]*--root <loop root>/i],
   ['a lease means held by a worker', /lease[^\n]*held by a worker/i],
   ['list hides finished work and filters by tag, status, priority and text', /list hides[^\n]*done[^\n]*--tag[^\n]*--status[^\n]*--prio[^\n]*--grep|list hides[^\n]*tag[^\n]*status[^\n]*priority[^\n]*text/i],
 ];
