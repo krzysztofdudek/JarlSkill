@@ -27,6 +27,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A question can offer its choices: `ask "<question>" --option "<label>: <effect>"`, repeated for each one, prints them ready for the choice window. `answer <id> --option <label>` records the choice made, and the ruling marks it among the options; an answer in the person's own words is recorded as his words.
 - Several ratification questions are answered at once: `answer 2,3,4 yes --by <who>` gives one answer to all of them, and each gets its own ruling, naming the others it was answered with.
 - `decide --supersedes` names the open issues that still cite the ruling it replaces, and a ruling by the owner with no question behind it gets a notice on the command line.
+- `goal` prints the goal. `goal --set "Check (<repository>): <command>"`, `goal --set "Model (<tier>): <models>"` or `goal --set "Coordinators: <names>"` changes that one line of the goal and logs what it was and what it is now, so a change to what the loop runs is traceable.
 
 ### Changed
 - An answer to a ratification question must say who gave it, with `--by`; the command refuses a coordinator's name there, because the answer is the person's own ruling.

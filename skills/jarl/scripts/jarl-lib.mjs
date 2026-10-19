@@ -1122,6 +1122,73 @@ export function goalLines(text) {
   return out;
 }
 
+// The machine lines the command line writes into the goal, and the words that label them. A line is read by GOAL_LINE, the
+// grammar goalLines reads, and written with the label the grammar takes.
+const MACHINE_LABEL = { check: 'Check', model: 'Model', coordinators: 'Coordinators' };
+// The machine line a text is, as { key, qualifier, value } (key lower case; qualifier as written, or null), or null.
+export function goalLineOf(text) {
+  const m = GOAL_LINE.exec(String(text ?? ''));
+  if (!m) return null;
+  return { key: m[1].toLowerCase(), qualifier: m[2] ? fieldText(m[2]) : null, value: m[3].replace(/\*\*/g, '').trim() };
+}
+// Whether a goal line is the machine line of this kind and qualifier (the same qualifier, in any case, or none).
+function isMachineLine(line, key, qualifier) {
+  const m = GOAL_LINE.exec(line);
+  if (!m || m[1].toLowerCase() !== key) return false;
+  if (qualifier === null) return !m[2];
+  return m[2] !== undefined && fieldText(m[2]).toLowerCase() === qualifier.toLowerCase();
+}
+// The goal with one machine line set: every line of its kind and qualifier becomes this one, where the first stood, or the
+// line is added after the goal's text when there is none. `replaced` says which, and `was` is the value it held before.
+export function goalWithLine(text, line) {
+  const shown = `${MACHINE_LABEL[line.key]}${line.qualifier !== null ? ` (${line.qualifier})` : ''}: ${line.value}`;
+  const out = [];
+  let replaced = false;
+  let was = null;
+  for (const l of String(text ?? '').replace(/\s+$/, '').split('\n')) {
+    if (isMachineLine(l, line.key, line.qualifier)) {
+      if (!replaced) { out.push(shown); was = goalLineOf(l).value; }
+      replaced = true;
+      continue;
+    }
+    out.push(l);
+  }
+  if (!replaced) out.push('', shown);
+  return { text: `${out.join('\n')}\n`, replaced, was, shown };
+}
+
+// goal: the goal as goal.md holds it.
+export function cmdGoal(root) {
+  const text = readGoal(jarlDir(root));
+  need(text !== null, `the loop has no goal: open it with init "<goal>"`);
+  return { goal: text.replace(/\s+$/, '') };
+}
+// goal --set "<machine line>": one machine line of the goal changed, and a log line that says what it was and what it is now.
+// The machine lines are Check (<repository>): <command> or a bare Check: <command>, Model (<tier>): <models> with a tier the
+// profile declares, and Coordinators: <names>. Any other line, a repository line among them, is refused: a repository joins
+// the loop by its own declaration, not by a line of the goal.
+export function cmdGoalSet(root, text) {
+  const dir = jarlDir(root);
+  const old = readGoal(dir);
+  need(old !== null, 'the loop has no goal: open it with init "<goal>"');
+  const line = goalLineOf(text);
+  need(line && line.value && MACHINE_LABEL[line.key], 'goal --set takes one machine line: "Check (<repository>): <command>" or "Check: <command>", "Model (<tier>): <model>, …" or "Coordinators: <name>, …"');
+  let qualifier = line.qualifier;
+  if (line.key === 'model') {
+    need(qualifier !== null, 'a Model line names its tier: "Model (<tier>): <model>, …"');
+    const profile = loadProfile(root);
+    qualifier = profile.tiers.find((t) => t.toLowerCase() === qualifier.toLowerCase()) ?? null;
+    need(qualifier !== null, `the profile declares no tier ${line.qualifier}: its tiers are ${loadProfile(root).tiers.join(', ')}`);
+  }
+  need(line.key !== 'coordinators' || qualifier === null, 'a Coordinators line takes no qualifier: "Coordinators: <name>, …"');
+  const value = noSeparators(line.value);
+  need(value, 'goal --set needs a value after the colon');
+  const next = goalWithLine(old, { key: line.key, qualifier, value });
+  writeAtomic(goalPath(dir), next.text);
+  appendLog(root, `goal line ${next.replaced ? 'changed' : 'added'} · ${next.shown.replace(/\s+/g, ' ')}${next.replaced ? ` · was ${noSeparators(next.was)}` : ''}`);
+  return { shown: next.shown, replaced: next.replaced, was: next.replaced ? next.was : null };
+}
+
 // ---- commands ----------------------------------------------------------------------------------
 
 export function need(cond, msg) { if (!cond) throw new Error(msg); }

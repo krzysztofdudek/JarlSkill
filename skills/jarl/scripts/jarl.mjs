@@ -17,7 +17,7 @@ import {
   ROUNDS_BEFORE_TAKEOVER, need, resetCaches, withLock, readText, isEntry, cmdSet,
   cmdProfile, cmdArchive, cmdList, cmdNext, renderNext, cmdMode, cmdClose, cmdCheck, cmdBranches, cmdTips, cmdQueue,
   cmdChangelog, cmdHandoffRead, cmdHandoffWrite, cmdReport, cmdImport, cmdSources, cmdAnswerMany, cmdModels, renderModels,
-  issuesNaming, questionFor,
+  issuesNaming, questionFor, cmdGoal, cmdGoalSet,
   renderProfile, renderTips, renderQueue, renderResume, renderStatus, renderImport, renderSources, renderList, recordTypeLog, recordRuleLog,
   runDecisionsDriver, mergeFlags, describeNew, renderNewReply, issueView, evidenceTable, renderBranches, renderDecide, renderDecisions,
 } from './jarl-lib.mjs';
@@ -208,6 +208,11 @@ commands:
                                                  close puts it to the user for ratification
   decisions [--live]                             the rulings with who ruled and what superseded them; --live only
                                                  those still in force
+  goal                                           the goal as goal.md holds it
+  goal --set "<machine line>"                    one machine line of the goal set, with a log line that says what it
+                                                 was and what it is: "Check (<repository>): <command>" or a bare
+                                                 "Check: <command>", "Model (<tier>): <models>" (a tier the profile
+                                                 declares) or "Coordinators: <names>"; the rest of goal.md stays as written
   status [--stale-hours n] [--by repo|tag|kind|prio|<field>] [--tag <t>]
                                                  --tag computes every part of status over the issues carrying that tag only
                                                  the log is the record of an issue's status, lease, merge and CI; a header
@@ -352,6 +357,7 @@ export const COMMAND_FLAGS = {
   resume: { log: 'value', ready: 'value', ci: 'bool' },
   handoff: { summary: 'value', next: 'many', log: 'value', ready: 'value', ci: 'bool' },
   log: {}, decide: { settles: 'value', by: 'value', supersedes: 'value', area: 'value', reach: 'value', rule: 'value' }, decisions: { live: 'bool' },
+  goal: { set: 'value' },
   status: { 'stale-hours': 'value', by: 'value', tag: 'value' }, archive: {}, report: { found: 'bool' }, tips: {}, mode: {},
   queue: { repo: 'value', base: 'value' }, changelog: { repo: 'value' },
   close: { force: 'bool', batch: 'bool' }, profile: {},
@@ -419,7 +425,7 @@ export const COMMAND_ARGS = {
   merged: ['ids'], tag: ['ids', 'ops...'], prio: ['ids', 'priority'], files: ['id', 'paths'], repo: ['id', 'path?'],
   next: [], review: ['ids', 'verdict', 'findings'], round: ['id', 'what'], models: [], check: ['id?'], branches: [],
   ask: ['question'], answer: ['id', 'answer?'], resume: [], handoff: ['action?'], log: ['event'],
-  decide: ['slug', 'ruling'], decisions: [], status: [], archive: ['slug'], report: [], tips: [], queue: [],
+  decide: ['slug', 'ruling'], decisions: [], goal: [], status: [], archive: ['slug'], report: [], tips: [], queue: [],
   changelog: ['ids'], mode: ['mode'], close: [], profile: ['file?'],
 };
 // One sentence per command: what it does, the MCP tool's whole description after "WRITES the loop." or "Read-only.".
@@ -454,6 +460,7 @@ export const COMMAND_SUMMARY = {
   log: 'Append one dated note to the loop\'s journal; a line that reads as a move, a verdict or another line of state is refused.',
   decide: 'Append a ruling, optionally superseding one, settling issues or covering an area of code.',
   decisions: 'The rulings with who ruled and what superseded them.',
+  goal: 'The goal as goal.md holds it, or one machine line of it set (Check, Model or Coordinators), with a log line that says what it was and what it is now.',
   status: 'The goal, the counts by status, the reviews, stale leases and what awaits ratification.',
   archive: 'Put the current loop away under .jarl/archive/ so a new one can open here.',
   report: 'What was done, dropped, deferred and still open, ready for the changelog, with the loop metrics.',
@@ -467,7 +474,7 @@ export const COMMAND_SUMMARY = {
 const ARITY = Object.fromEntries(Object.entries(COMMAND_ARGS).filter(([, a]) => !a.some((n) => n.endsWith('...'))).map(([c, a]) => [c, a.length]));
 
 // The commands that write: each runs under .jarl/.lock (see withLock).
-export const MUTATING = new Set(['init', 'new', 'body', 'import', 'source', 'after', 'set', 'merged', 'tag', 'prio', 'files', 'repo', 'evidence', 'review', 'round', 'ask', 'answer', 'log', 'decide', 'archive', 'mode', 'close']);
+export const MUTATING = new Set(['init', 'new', 'body', 'import', 'source', 'after', 'set', 'merged', 'tag', 'prio', 'files', 'repo', 'evidence', 'review', 'round', 'ask', 'answer', 'log', 'decide', 'goal', 'archive', 'mode', 'close']);
 
 // git's side of the loop: the merge driver git runs, and the settings a merger passes it. Neither reads a loop.
 function mergeDriverMain(args) {
@@ -590,6 +597,7 @@ export function dispatch(root, cmd, rest, flags) {
       case 'log': out = R.appendLog(root, rest[0]); text = 'logged'; break;
       case 'decide': out = R.decide(root, rest[0], rest[1], flags); text = renderDecide(out); decideNotes(root, rest[0], flags, warn); break;
       case 'decisions': out = R.decisions(root, flags); text = renderDecisions(out); break;
+      case 'goal': out = flags.set === undefined ? cmdGoal(root) : cmdGoalSet(root, flags.set); text = flags.set === undefined ? out.goal : `goal line ${out.replaced ? 'changed' : 'added'}: ${out.shown}${out.replaced ? ` (was ${out.was})` : ''}`; break;
       case 'status': out = R.statusData(root, flags); text = renderStatus(out, R.loadProfile(root)); break;
       case 'tips': out = cmdTips(root); text = renderTips(out); break;
       case 'queue': out = cmdQueue(root, flags); text = renderQueue(out); break;

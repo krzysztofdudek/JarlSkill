@@ -1641,3 +1641,84 @@ test('the MCP answer tool takes one id, or a comma list of ratify items through 
   assert.match(list.content[0].text, /answered a-2[\s\S]*answered a-3/);
   assert.equal(RECORD.loadAsks(root).filter((a) => a.state === 'answered').length, 3);
 });
+
+// ---- the goal: printed, and its machine lines set ---------------------------------------------------------------
+
+const LIB = await import(new URL('../jarl-lib.mjs', import.meta.url).href);
+
+test('goal prints the goal; goal --set changes one machine line of each kind, with a log line that says what it was', () => {
+  const root = repo();
+  jarl(root, 'init', 'Ship the flag change.');
+  assert.match(jarl(root, 'goal'), /^# Goal\n\nShip the flag change\.\n/);
+  assert.match(jarl(root, 'goal', '--set', 'Check (Grain): cd plugins/grain && npm test'), /^goal line added: Check \(Grain\): cd plugins\/grain && npm test$/);
+  jarl(root, 'goal', '--set', 'Check: npm test');
+  jarl(root, 'goal', '--set', 'Model (standard): sonnet');
+  jarl(root, 'goal', '--set', 'Coordinators: Ada, Grace');
+  assert.match(jarl(root, 'goal', '--set', 'Check (Grain): cd plugins/grain && npm run check'), /^goal line changed: Check \(Grain\): cd plugins\/grain && npm run check \(was cd plugins\/grain && npm test\)$/);
+  jarl(root, 'goal', '--set', 'Model (STANDARD): opus');
+  const text = readRecord(root, 'goal.md');
+  assert.equal(text.match(/^Check \(Grain\):/gm).length, 1, 'one line per kind and repository');
+  assert.equal(text.match(/^Model \(standard\):/gim).length, 1);
+  assert.match(text, /^Ship the flag change\.$/m, 'the goal\'s own text stays as written');
+  const log = readRecord(root, 'log.md');
+  assert.match(log, /goal line changed · Check \(Grain\): cd plugins\/grain && npm run check · was cd plugins\/grain && npm test$/m);
+  assert.match(log, /goal line added · Coordinators: Ada, Grace$/m);
+  const g = LIB.goalLines(text);
+  assert.deepEqual(g.checksByRepo.repos.Grain, ['cd plugins/grain && npm run check']);
+  assert.deepEqual(g.checksByRepo.bare, ['npm test']);
+  assert.deepEqual(g.models, [{ tier: 'standard', models: ['opus'] }]);
+  assert.deepEqual(g.coordinators, ['Ada', 'Grace']);
+});
+
+test('goal --set refuses a Model line for a tier the profile does not declare, a repository line, a Coordinators qualifier and --amend', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  assert.match(refuses(root, 'goal', '--set', 'Model (vintage): opus'), /declares no tier vintage/);
+  assert.match(refuses(root, 'goal', '--set', 'Model: opus'), /names its tier/);
+  assert.match(refuses(root, 'goal', '--set', 'Repository: grain'), /takes one machine line/);
+  assert.match(refuses(root, 'goal', '--set', 'Coordinators (x): Ada'), /takes no qualifier/);
+  assert.match(refuses(root, 'goal', '--set', 'Check (Grain):   '), /takes one machine line/);
+  assert.match(refuses(root, 'goal', '--amend', 'a new paragraph'), /unknown flag --amend/);
+  assert.doesNotMatch(readRecord(root, 'goal.md'), /Model|Repository|Coordinators/);
+});
+
+test('goal --set escapes the value: a separator in it reads back as a dash, and the log line keeps three fields', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'goal', '--set', 'Check (Grain): build · test');
+  assert.equal(LIB.goalLines(readRecord(root, 'goal.md')).checksByRepo.repos.Grain[0], 'build - test');
+  const line = readRecord(root, 'log.md').split('\n').find((l) => l.includes('goal line added'));
+  assert.equal(line.split(' · ').length, 3, line);
+  // Seeded samples over separators and words: each value reads back as the escaped text, and its log line has three fields.
+  const words = ['·', ' ', 'option', 'chose', 'worker', 'branch', 'x'];
+  let seed = 9;
+  const next = () => { seed = (seed * 1664525 + 1013904223) % 4294967296; return seed / 4294967296; };
+  const samples = Array.from({ length: 30 }, () => Array.from({ length: 1 + Math.floor(next() * 8) }, () => words[Math.floor(next() * words.length)]).join(''));
+  let n = 0;
+  for (const s of samples.filter((x) => escapeFreeText(x) !== '')) {
+    n += 1;
+    jarl(root, 'goal', '--set', `Check (Repo${n}): ${s}`);
+    assert.equal(LIB.goalLines(readRecord(root, 'goal.md')).checksByRepo.repos[`Repo${n}`][0], escapeFreeText(s).replace(/\s+/g, ' '), JSON.stringify(s));
+    const logged = readRecord(root, 'log.md').split('\n').find((l) => l.includes(`Check (Repo${n}): `) && l.includes('goal line added'));
+    assert.equal(logged.split(' · ').length, 3, logged);
+  }
+  assert.ok(n >= 15);
+});
+
+test('goal lines set through the command line read through the frozen reader: the loop is read, the worker parsed, done passes', () => {
+  const root = repo();
+  jarl(root, 'init', 'Ship it.');
+  RECORD.newIssue(root, 'flag work');
+  RECORD.setStatus(root, '001', 'in-progress', 'started', { branch: 'jarl/001-flag-work', worker: 'w-one' });
+  jarl(root, 'goal', '--set', 'Check (Grain): npm test');
+  jarl(root, 'goal', '--set', 'Model (strong): opus');
+  jarl(root, 'goal', '--set', 'Coordinators: Ada');
+  jarl(root, 'goal', '--set', 'Check (Grain): npm run check');
+  for (const command of ['list', 'status', 'next', 'queue']) assert.deepEqual(oldJarl(root, command, {}).error ?? null, null, command);
+  assert.match(JSON.stringify(oldJarl(root, 'list', {}).value), /w-one/, 'the worker is parsed');
+  assert.match(JSON.stringify(oldJarl(root, 'status', {}).value), /Ship it\./, 'the goal is read');
+  assert.match(refuses(root, 'review', '001', 'approve', '--by', 'w-one', FINDINGS), /worker|own/i);
+  jarl(root, 'review', '001', 'approve', '--by', 'rev', FINDINGS);
+  jarl(root, 'evidence', '001', '--ran', 'check', '--saw', 'green');
+  assert.deepEqual(oldJarl(root, 'set', {}, ['001', 'done', 'merged', {}]).error ?? null, null, 'done passes');
+});
