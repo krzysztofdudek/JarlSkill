@@ -218,6 +218,32 @@ test('a section that already holds content and no sub-heading is never converted
   assert.doesNotMatch(evidence(root, 1), /^### /m);
 });
 
+// ---- the frozen reader --------------------------------------------------------------------------------------------
+
+test('the frozen reader reads a loop in the split form right: done is refused on the merge check alone, accepted on a worker row, and the Deferred reason shows in report; the record format stays', () => {
+  const root = approved(2);
+  jarl(root, 'new', 'three', '--acceptance', 'it works');
+  jarl(root, 'evidence', '2', '--ran', 'npm test', '--saw', 'pass');
+  jarl(root, 'evidence', '2', 'a note under Notes');
+  jarl(root, 'decide', 'split-ruling', 'the split is read right', '--settles', '2');
+  for (const id of ['1', '2']) jarl(root, 'merged', id, '--sha', 'abc1234', '--ran', 'npm test', '--saw', '3 pass', '--keep');
+  jarl(root, 'set', '3', 'deferred', 'waits for the probe of 2');
+  assert.match(evidence(root, 2), /### Proof[\s\S]*### Notes/);
+  assert.equal(L.workEvidence(L.findIssue(root, 1)), '', 'the merge check is not in the section');
+  // Issue 1 holds the merge check only: the frozen gate finds no row line.
+  const refused = oldJarl(root, 'set', {}, ['1', 'done', 'x', {}]);
+  assert.equal(refused.ok, false);
+  assert.match(refused.error, /001 has no evidence yet/);
+  // Issue 2 holds the worker's row under Proof.
+  assert.equal(oldJarl(root, 'set', {}, ['2', 'done', 'x', {}]).ok, true);
+  assert.equal(L.findIssue(root, 2).status, 'done');
+  // The Deferred reason, under Notes, is the one the frozen report prints.
+  const report = oldJarl(root, 'report', {});
+  assert.equal(report.ok, true);
+  assert.match(JSON.stringify(report.value), /waits for the probe of 2/);
+  assert.equal(JSON.parse(jarl(root, 'profile', '--json')).format, 1, 'the split form does not raise the record format');
+});
+
 // ---- reading the parts ---------------------------------------------------------------------------------------------
 
 test('show keeps both sub-headings across a reopen: the rows before it are replaced by one line, Notes is printed whole', () => {
