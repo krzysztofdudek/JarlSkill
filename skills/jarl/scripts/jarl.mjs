@@ -83,8 +83,11 @@ commands:
                                                  Acceptance and Changelog, every evidence row (numbered [n]) and every
                                                  verdict in the done gate's window, every "changes" finding no later
                                                  approve answered, one line per earlier round; --full prints the whole
-                                                 file; --json is complete
-  set <ids> <status> "<why>" [--branch <b>] [--worker <name>] [--model <m>] [--worktree <path>] | <ids> <field> "<value>"
+                                                 file; --json is complete; under the header, one line for each header
+                                                 field that disagrees with the log (see status)
+  set <ids> <status> "<why>" [--branch <b>] [--worker <name>] [--model <m>] [--worktree <path>] [--header] | <ids> <field> "<value>"
+                                                 (<ids> <status-in-the-log> --header rewrites the header fields the log
+                                                 renders from the log, writes no log line and is never a move)
                                                  (field resources "a, b": the exclusive resources the issue holds while
                                                  its lease lasts, loop-wide names; next never offers two issues holding one)
                                                  change status; writes the log line in the same move; in-progress
@@ -179,7 +182,9 @@ commands:
                                                  read: resume, then a .jarl/handoff.md from before as history;
                                                  write: retired — writes nothing, says so and exits 0 (the state is
                                                  assembled live; intent lives in priorities, After and rulings)
-  log "<event>"                                  append one dated line to the journal
+  log "<event>"                                  append one dated note to the journal; a line that reads as a filing, a move,
+                                                 a round, a verdict, a retraction, an evidence row, a merge, a CI state or
+                                                 a body change is refused, and the refusal names the command that writes it
   decide <slug> "<ruling>" [--by who] [--supersedes <slug>] [--settles <ids>] [--area <type> [--reach n] [--rule <id>]]
                                                  append a ruling (slug: letters, digits, . _ -); refuses a duplicate slug;
                                                  --by records who ruled (default owner); --supersedes marks the earlier
@@ -192,6 +197,10 @@ commands:
                                                  those still in force
   status [--stale-hours n] [--by repo|tag|kind|prio|<field>] [--tag <t>]
                                                  --tag computes every part of status over the issues carrying that tag only
+                                                 the log is the record of an issue's status, lease, merge and CI; a header
+                                                 that disagrees is never believed, and status prints one "record:" line
+                                                 for it, with how to write the header back or make it the record (resume
+                                                 and show print it too; --json carries disagreements when there are any)
                                                  the goal, when the loop opened and last moved,
                                                  then one line: open, in flight, waiting, done, dropped, deferred,
                                                  open questions, to ratify, merged with CI pending or red; then who
@@ -317,7 +326,7 @@ export const COMMAND_FLAGS = {
   after: { clear: 'bool' },
   evidence: { ran: 'many', saw: 'many', retract: 'value', by: 'value' },
   list: { status: 'value', kind: 'value', tag: 'value', prio: 'value', grep: 'value', match: 'many', all: 'bool' },
-  show: { full: 'bool' }, set: { branch: 'value', worker: 'value', model: 'value', worktree: 'value' }, tag: {}, prio: {}, files: {},
+  show: { full: 'bool' }, set: { branch: 'value', worker: 'value', model: 'value', worktree: 'value', header: 'bool' }, tag: {}, prio: {}, files: {},
   repo: { clear: 'bool' },
   next: { limit: 'value', all: 'bool' },
   review: { by: 'value', model: 'value', relayed: 'bool' }, round: {},
@@ -429,7 +438,7 @@ export const COMMAND_SUMMARY = {
   answer: 'Record the user\'s answer to a question as a ruling and close the question.',
   resume: 'The boot: everything a session picks the loop up from, assembled live.',
   handoff: 'read: resume plus an old handoff file as history; write: retired, writes nothing.',
-  log: 'Append one dated line to the loop\'s journal.',
+  log: 'Append one dated note to the loop\'s journal; a line that reads as a move, a verdict or another line of state is refused.',
   decide: 'Append a ruling, optionally superseding one, settling issues or covering an area of code.',
   decisions: 'The rulings with who ruled and what superseded them.',
   status: 'The goal, the counts by status, the reviews, stale leases and what awaits ratification.',
@@ -543,7 +552,7 @@ export function dispatch(root, cmd, rest, flags) {
       case 'sources': out = cmdSources(root, rest, flags); text = renderSources(out); break;
       case 'list': out = cmdList(root, flags); text = renderList(out, R.loadProfile(root)); break;
       case 'show': { const i = R.findIssue(root, rest[0]); need(i, `no such issue: ${rest[0]}`); out = { ...i, evidenceRows: evidenceTable(i.sections.evidence).rows.map(({ n, ran, saw, retracted }) => ({ n, ran, saw, retracted })) }; text = issueView(root, i, { full: Boolean(flags.full) }); break; }
-      case 'set': out = setCommand(root, rest[0], rest[1], rest[2], flags); text = each(out, (o) => (o.field ? `${o.id} ${o.field}: ${o.value || '(cleared)'}` : `${o.id} → ${o.status}${o.branch ? ` · ${o.branch}` : ''}${o.worker ? ` · ${o.worker}` : ''}`)); warn = [].concat(out).filter((o) => o.note).map((o) => `note: ${o.id} ${o.note}`); break;
+      case 'set': out = setCommand(root, rest[0], rest[1], rest[2], flags); text = each(out, (o) => (o.field ? `${o.id} ${o.field}: ${o.value || '(cleared)'}` : o.header ? `header of ${o.id} rewritten from the log: ${o.status}` : `${o.id} → ${o.status}${o.branch ? ` · ${o.branch}` : ''}${o.worker ? ` · ${o.worker}` : ''}`)); warn = [].concat(out).filter((o) => o.note).map((o) => `note: ${o.id} ${o.note}`); break;
       case 'tag': out = R.setTags(root, rest[0], rest.slice(1)); text = each(out, (o) => `${o.id} tags: ${o.tags.join(', ') || '(none)'}`); break;
       case 'prio': out = R.setPriority(root, rest[0], rest[1]); text = each(out, (o) => `${o.id} priority ${o.priority}`); break;
       case 'files': out = R.setFiles(root, rest[0], rest[1]); text = `${out.id} files: ${out.files.join(', ') || '(none)'}`; break;

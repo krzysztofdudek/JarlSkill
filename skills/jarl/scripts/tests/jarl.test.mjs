@@ -1356,7 +1356,9 @@ test('stale leases are shown, never acted on: worktree gone, branch gone, idle',
   sh(`git worktree add -q -b jarl/001-one ${wt} && cd ${wt} && echo A > a.txt && git commit -qam work`);
   jarl(root, 'set', '2', 'in-progress', 'w', '--branch', 'jarl/002-never-made');
   jarl(root, 'set', '3', 'in-progress', 'w');
-  editIssue(root, '003', (t) => t.replace(/^\*\*Since:\*\* .*$/m, '**Since:** 2026-01-01 00:00'));
+  // The lease is as old as the journal's line for it: the stamp of that line is what ages it.
+  const log = join(root, '.jarl', 'log.md');
+  writeFileSync(log, readFileSync(log, 'utf8').replace(/^- \d{4}-\d{2}-\d{2} \d{2}:\d{2}( · 003 → in-progress)/m, '- 2026-01-01 00:00$1'));
   // The 2026-09-21 loss: a worktree deleted under a live lease.
   rmSync(wt, { recursive: true, force: true });
   const st = JSON.parse(jarl(root, 'status', '--json'));

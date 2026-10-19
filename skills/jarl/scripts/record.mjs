@@ -43,6 +43,9 @@ export function jarlDir(root) { return L.jarlDir(root); }
 export function hasLiveLoop(root) { return L.hasLiveLoop(root); }
 // init: opts { committed, permanent, profile } (profile: the path of a profile file).
 export function initLoop(root, goal, opts = {}) { return write(root, () => L.cmdInit(root, goal, opts)); }
+// The issues as the record has them: each one's status, lease (Branch, Worker, Model, Since), Merged and CI are what the
+// loop's journal says, which is what the operations below write beside every header field. A header edited by hand does
+// not change them; parseIssue reads a text alone and so reads the header.
 export function loadIssues(root) { return read(() => L.loadIssues(root)); }
 export function findIssue(root, id) { return read(() => L.findIssue(root, id)); }
 // opts { live }: live leaves out the superseded rulings.
@@ -80,7 +83,12 @@ export function describeProfile(profile) { return L.describeProfile(profile); }
 // ---- one writer at a time -------------------------------------------------------------------------
 
 export function withLock(root, fn) { return L.withLock(root, fn); }
-export function writeAtomic(path, text) { return L.writeAtomic(path, text); }
+// Any file whole, except the loop's journal (log.md), which is appended to by appendLog and refused here. The issue
+// fields the record renders from the journal (Status, Branch, Worker, Model, Since, Merged, CI) are not the file's to
+// change: a write of one that differs from the journal is read as a disagreement, never as the new state. The fields the
+// journal does not hold (title, Kind, Priority, Tier, Tags, Files, Repo, After, Source, Where, Resources, a profile's own
+// fields) and the text of every section stay the file's.
+export function writeAtomic(path, text) { return L.writeWhole(path, text); }
 
 // ---- operations on the record (each under the lock) ---------------------------------------------
 
@@ -139,13 +147,16 @@ export function ask(root, question, opts = {}) { return write(root, () => L.cmdA
 // answer says so as a skipped write. decisions() tells a composer what is written already: typeLog and ruleLog, set
 // once the entry is in the graph's log (the **Type log:** and **Rule log:** fields a writer adds to the ruling).
 export function answer(root, id, text) { return write(root, () => L.cmdAnswer(root, id, text)); }
+// A free note for the journal. A line that reads as a filing, a move, a round, a verdict, a retraction, an evidence row, a
+// merge, a CI state or a body change is refused and names the operation that writes it.
 export function appendLog(root, event) {
-  return write(root, () => { L.need(event, 'log requires "<event>"'); L.appendLog(root, event); return { logged: event }; });
+  return write(root, () => { L.need(event, 'log requires "<event>"'); L.appendNote(root, event); return { logged: event }; });
 }
 
 // ---- the views' data ------------------------------------------------------------------------------
 
-// status --json: opts { 'stale-hours', by }.
+// status --json: opts { 'stale-hours', by }. It carries `disagreements` (one entry per header that disagrees with the
+// journal, with the line that says how to settle it) when there are any, and resumeData the same.
 export function statusData(root, opts = {}) { return read(() => L.cmdStatus(root, opts)); }
 // resume --json: opts { log, ready, ci }.
 export function resumeData(root, opts = {}) { return read(() => L.cmdResume(root, opts)); }

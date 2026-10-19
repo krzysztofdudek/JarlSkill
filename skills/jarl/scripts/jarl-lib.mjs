@@ -692,12 +692,35 @@ export function loadIssues(root) {
   if (!existsSync(issuesDir(root))) return [];
   return issuesAt(jarlDir(root), loadProfile(root));
 }
-// The issues of the record held in `recordDir`, read under `profile`.
-function issuesAt(recordDir, profile) {
+// The issues of the record held in `recordDir`, read under `profile`: each one's text, and for the status, lease, merge
+// and CI the state the record's journal (`events`, read here when not handed in) says, which is what the commands wrote
+// beside it. What the header says is kept in issue.onFile.
+function issuesAt(recordDir, profile, events = loopEvents(recordDir, profile)) {
   const dir = join(recordDir, 'issues');
   if (!existsSync(dir)) return [];
+  const by = eventsById(events);
   return readdirSync(dir).filter((f) => ISSUE_FILE_RE.test(f)).sort((a, b) => cmpId(ISSUE_FILE_RE.exec(a)[1], ISSUE_FILE_RE.exec(b)[1]) || (a < b ? -1 : a > b ? 1 : 0))
-    .map((f) => withProfile(parseIssue(readText(join(dir, f)), join(dir, f)), profile));
+    .map((f) => {
+      const issue = withProfile(parseIssue(readText(join(dir, f)), join(dir, f)), profile);
+      return withRecordState(issue, issueState(profile, by.get(issue.id) || []));
+    });
+}
+// The header fields the commands render from the journal, as the fields of an issue name them.
+const RENDERED_FIELDS = ['branch', 'worker', 'model', 'since', 'merged', 'ci'];
+// An issue with the state its journal gives in place of the one its header says. The header as read stays in
+// issue.onFile (not enumerable, so a copy of the issue does not carry it): status and the fields above, each as the file
+// has it. An issue the journal holds no filing and no move of (state null) keeps its header, and onFile is null.
+function withRecordState(issue, state) {
+  const onFile = { status: issue.status, ...Object.fromEntries(RENDERED_FIELDS.map((k) => [k, issue.fields[k] ?? null])) };
+  Object.defineProperty(issue, 'onFile', { value: state ? onFile : null, enumerable: false, configurable: true });
+  if (!state) return issue;
+  issue.status = state.status;
+  issue.fields.status = state.status;
+  for (const k of RENDERED_FIELDS) {
+    if (state[k] !== null) issue.fields[k] = state[k];
+    else delete issue.fields[k];
+  }
+  return issue;
 }
 // An issue read under the loop's profile: one written with no Status starts where the profile's issues start.
 // Its acceptance is read under the profile's heading as under ## Acceptance, so every view that counts acceptance
@@ -923,9 +946,16 @@ function asksPath(dir) { return join(dir, ASKS_FILE); }
 export function appendLog(root, event) {
   appendLogLines(root, [event]);
 }
-// Several lines in one write: a bulk command's lines land together or not at all.
-export function appendLogLines(root, events) {
-  const at = stamp();
+// A whole-file write for a composer (record.writeAtomic): any file but the loop's journal, which is appended to and
+// never written whole, so no line of it is replaced or dropped behind the record's back.
+export function writeWhole(path, text) {
+  const dir = dirname(path);
+  need(!(basename(path).toLowerCase() === LOG_FILE.toLowerCase() && (existsSync(join(dir, 'issues')) || existsSync(goalPath(dir)))), `${path} is the loop's journal: it is appended to (record.appendLog), never written whole`);
+  writeAtomic(path, text);
+}
+// Several lines in one write: a bulk command's lines land together or not at all. A command that writes the same
+// moment into a header field takes the stamp once and passes it as `at`, so the two cannot fall in two minutes.
+export function appendLogLines(root, events, at = stamp()) {
   appendAtomic(logPath(jarlDir(root)), '# Log\n\n', events.map((e) => `- ${at} · ${oneLine(e)}\n`).join(''));
 }
 
@@ -1329,10 +1359,12 @@ export function cmdNew(root, title, rawFlags) {
       changelog: flags.changelog !== undefined ? changelogText(flags.changelog) : bodyText(fromTemplate.changelog),
     }));
     let claimed = !taken().includes(n);
+    // The filing goes into the journal first: a write that stops after it leaves the record ahead of the files (a filing
+    // with no file, and the number is taken again), never a file the record does not hold.
+    if (claimed) appendLog(root, `filed ${id} · ${title}${rawFlags.template !== undefined ? ` · template ${rawFlags.template}` : ''}`);
     if (claimed) { try { claimed = claimFile(tmp, file); } catch (e) { unlinkSync(tmp); throw e; } }
     unlinkSync(tmp);
     if (claimed) {
-      appendLog(root, `filed ${id} · ${title}${rawFlags.template !== undefined ? ` · template ${rawFlags.template}` : ''}`);
       // Said on the command line only (a library caller gets none, and its result does not change): the tier it used.
       const note = rawFlags.caller === 'cli' && rawFlags.tier === undefined ? { note: tierNote(profile, tier) } : {};
       return { id, file, ...(rawFlags.template !== undefined ? { template: rawFlags.template } : {}), ...note };
@@ -1532,6 +1564,7 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   const route = setRoute(profile, status);
   if (route === 'field') return setDeclaredField(root, rawIds, profile.field(status), why, flags);
   if (route === 'resources') return setResources(root, rawIds, why, flags);
+  if (flags.header) return rewriteHeader(root, rawIds, status, why, flags);
   // ready and the review words are views, not statuses: say which view answers the question the worker was asking.
   need(profile.statuses.includes(status) || !/^(ready|review|in[-_ ]?review|ready[-_ ]for[-_ ]review|reviewing)$/i.test(String(status ?? '')), `${status} is a view here, not a status: \`next\` lists the issues ready to start, and \`status\` and \`resume\` mark each in-flight issue with what the record says (no evidence rows yet; rows and no verdict, so it waits for a reviewer; changes requested; approved and queued). Nothing needs setting: record the rows with \`evidence\`, and the reviewer's verdict with \`review\`. A loop that wants an explicit review status can declare one in its profile. Statuses here: ${profile.statuses.join(', ')}`);
   need(profile.statuses.includes(status), `status must be one of: ${profile.statuses.join(', ')}${profile.declaredFields.length ? ` — or a field this loop's profile declares: ${profile.declaredFields.map((f) => f.name).join(', ')}` : ''}`);
@@ -1543,6 +1576,8 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   const model = flags.model !== undefined ? modelValue(flags.model) : undefined;
   // A name is one value: with the log's own separator in it, the lease line would carry a field the caller did not give.
   for (const k of ['worker', 'branch']) need(flags[k] === undefined || !` ${fieldText(flags[k])} `.includes(' · '), `--${k} is one name — not a phrase with " · " in it (got "${fieldText(flags[k])}")`);
+  // What is written into the lease is what the journal gives back unchanged: a value the reader would take for something else is refused.
+  for (const k of lease) { const problem = leaseValueProblem(k, flags[k]); need(!problem, `--${k} ${JSON.stringify(fieldText(flags[k]))} ${problem}`); }
   const issues = issuesFor(root, rawIds);
   need(!profile.is(status, 'needs-reason') || why, REASON_TEXT[status] || `${status} needs a reason: jarl.mjs set <id> ${status} "<why>"`);
   const nothing = issues.length > 1 ? ' — nothing was written' : '';
@@ -1581,17 +1616,65 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
     }
     return { issue, text };
   });
-  for (const w of writes) writeAtomic(w.issue.file, w.text);
   // The model goes before the worker: the worker is read as the text after "· worker " up to "· worktree " or the end of
   // the line, so a model written after it would become part of the worker's name.
   const leaseNote = [flags.branch !== undefined && `branch ${fieldText(flags.branch)}`, model !== undefined && `model ${model}`, flags.worker !== undefined && `worker ${fieldText(flags.worker)}`, worktree !== undefined && `worktree ${worktree}`].filter(Boolean).join(' · ');
   // The reason is free text in front of the lease's fields: on a lease its own " · " is neutralised, so no reason can be
   // read as a branch, a model or a worker.
-  const reason = holds && why ? String(why).replace(/ +· +/g, ' - ') : why;
-  appendLogLines(root, issues.map((issue) => `${issue.id} → ${status}${reason ? ` · ${reason}` : ''}${leaseNote ? ` · ${leaseNote}` : ''}`));
+  // A reason that opens with the name of a lease field is closed by a segment "(reason)", so no reader takes it for the field.
+  // Every separator character of a lease's reason is replaced, with the space around it, so no run of separators and
+  // spaces can leave a separator in it and the reason is one segment of the line.
+  const neutral = holds && why ? String(why).replace(/\s*·\s*/g, ' - ').trim() : why;
+  const reason = holds && neutral && /^(branch|model|worker|worktree) /.test(neutral) ? `${neutral} · (reason)` : neutral;
+  // The line goes first: a write that stops between the two leaves the journal, the record, ahead of the files, which the
+  // views report, and never a file ahead of the record.
+  appendLogLines(root, issues.map((issue) => `${issue.id} → ${status}${reason ? ` · ${reason}` : ''}${leaseNote ? ` · ${leaseNote}` : ''}`), since);
+  for (const w of writes) writeAtomic(w.issue.file, w.text);
   // Said on the command line only, and only in a loop that declares model lines: a lease with no model (once per call).
   const leaseNoModel = caller === 'cli' && holds && model === undefined && modelLines(root).declared ? 'no --model on this lease — the loop declares its models, and a model that is not recorded can never be recovered' : null;
   return oneOrMany(rawIds, issues.map((issue, n) => ({ id: issue.id, status, ...(holds ? { since, ...(flags.branch !== undefined ? { branch: fieldText(flags.branch) } : {}), ...(flags.worker !== undefined ? { worker: fieldText(flags.worker) } : {}), ...(model !== undefined ? { model } : {}), ...(worktree !== undefined ? { worktree } : {}) } : {}), ...(profile.is(status, 'closes-record') ? doneNote(issue, root) : {}), ...(leaseNoModel && n === 0 ? { note: leaseNoModel } : {}) })));
+}
+
+// Why a lease value (--branch, --worker, --model, --worktree) cannot be written, or null when the lease line gives it
+// back unchanged: one line in all four; no comma in a worker or a model (a comma marks a sentence, not a name); and a
+// branch is a name git accepts, which has no space.
+function leaseValueProblem(flag, raw) {
+  const v = fieldText(raw);
+  if (/[\r\n]/.test(String(raw).trim())) return 'is on more than one line: the lease line is one line';
+  if (flag === 'worker' || flag === 'model') return v.includes(',') ? 'holds a comma: the lease line is read by position and a comma marks a sentence, not a name — use a name without one' : null;
+  if (flag === 'branch') return branchNameProblem(v);
+  return null;
+}
+// Why git would not accept `name` as a branch name (git check-ref-format), or null.
+function branchNameProblem(name) {
+  const bad = (why) => `is not a branch name git accepts: ${why}`;
+  if (/[\x00-\x20\x7f~^:?*[\\]/.test(name)) return bad('no space, control character or any of ~ ^ : ? * [ \\');
+  if (name.includes('..') || name.includes('@{') || name.includes('//') || name === '@') return bad('no "..", "@{", "//" or a lone @');
+  if (name.startsWith('-') || name.startsWith('/') || name.endsWith('/') || name.endsWith('.')) return bad('it does not start with - or /, nor end with / or .');
+  if (name.split('/').some((part) => part.startsWith('.') || part.endsWith('.lock'))) return bad('no part starts with . or ends with .lock');
+  return null;
+}
+
+// set <ids> <status> --header: writes the header fields the log renders (Status, Branch, Worker, Model, Since, Merged, CI)
+// of each issue from the log, and writes no log line; the status named is the one the log holds, so it is never a move.
+function rewriteHeader(root, rawIds, status, why, flags) {
+  need(status !== undefined, 'set <ids> <status-in-the-log> --header: name the status the log holds for the issue (status shows it); --header rewrites the header from the log and moves nothing');
+  need(loadProfile(root).statuses.includes(status), `${status} is not a status this loop's profile lists (${loadProfile(root).statuses.join(', ')}): --header rewrites a header from the log and moves nothing, so it names the status the log holds`);
+  need(why === undefined && flags.base === undefined && !leaseFlagsGiven(flags).length, '--header rewrites the header from the log and takes no reason, lease flag or base');
+  const issues = issuesFor(root, rawIds);
+  for (const issue of issues) {
+    need(issue.onFile !== null, `${issue.id} is not in the log, so there is nothing to write its header from — jarl.mjs set ${issue.id} ${status} puts it there`);
+    need(issue.status === status, `${issue.id} is ${issue.status} in the log: jarl.mjs set ${issue.id} ${issue.status} --header writes its header from it, and set ${issue.id} ${status} without --header moves it`);
+  }
+  for (const issue of issues) {
+    let text = setField(readText(issue.file), 'Status', issue.status);
+    for (const key of RENDERED_FIELDS) {
+      const name = FIELD_NAMES[key];
+      text = issue.fields[key] ? setField(text, name, issue.fields[key]) : removeFields(text, [name]);
+    }
+    writeAtomic(issue.file, text);
+  }
+  return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, status: issue.status, header: true })));
 }
 
 // set <ids> <field> <value>: one declared field written on every issue in the call (checked against its enum first),
@@ -1764,14 +1847,15 @@ export function cmdMerged(root, rawIds, flags) {
   }
   // The evidence rows go in first, like evidence writes them: one row per --ran/--saw pair on every issue of the call.
   if (rows) cmdEvidence(root, issues.map((i) => i.id).join(','), undefined, { ran: flags.ran, saw: flags.saw });
+  const named = `${flags.repo !== undefined ? ` in ${fieldText(flags.repo)}` : ''}${checkText ? ` · check ${checkText}` : ''}${cause ? ` · landed red, cause ${cause}` : ''}${ci ? ` · CI ${ci}` : ''}`;
+  // The line goes first, as in set: a write that stops between the two leaves the record ahead of the files.
+  appendLogLines(root, issues.map((issue) => (sha ? `${issue.id} merged ${sha}${named}` : `${issue.id} CI ${ci}`)));
   for (const issue of issues) {
     let text = readText(issue.file);
     if (sha) text = setField(text, 'Merged', `${sha}${flags.repo !== undefined ? ` in ${fieldText(flags.repo)}` : ''}`);
     text = ci ? setField(text, 'CI', ci) : removeFields(text, ['CI']);
     writeAtomic(issue.file, text);
   }
-  const named = `${flags.repo !== undefined ? ` in ${fieldText(flags.repo)}` : ''}${checkText ? ` · check ${checkText}` : ''}${cause ? ` · landed red, cause ${cause}` : ''}${ci ? ` · CI ${ci}` : ''}`;
-  appendLogLines(root, issues.map((issue) => (sha ? `${issue.id} merged ${sha}${named}` : `${issue.id} CI ${ci}`)));
   // The cleanup comes last, after the merge is on the record, and only on the command line and in the tools.
   const cleanup = sha && cli && flags.keep !== true ? cleanUpAfterMerge(root, issues, sha, repoPath) : [];
   return { ids: issues.map((i) => i.id), sha: sha || null, ci: ci ?? null, ...(checkText ? { check: checkText } : {}), ...(cause ? { red: cause } : {}), ...(cleanup.length ? { cleanup } : {}), notes };
@@ -2074,8 +2158,15 @@ export function issueView(root, issue, { full = false } = {}) {
   pieces.push(cur);
   const numbered = (body, rows) => body.map((l, i) => { const r = rows.find((x) => x.start === i); return r ? l.replace(/^- /, `- [${r.n}] `) : l; });
   const g = full ? null : gateState(root, issue.id);
+  const notes = recordDisagreements(readLoop(jarlDir(root))).filter((d) => d.id === issue.id).map(disagreementText);
   const out = [];
   for (const p of pieces) {
+    if (p.name === null && notes.length) {
+      const head = [...p.lines];
+      while (head.length && head[head.length - 1].trim() === '') head.pop();
+      out.push(...head, ...notes, '');
+      continue;
+    }
     if (p.name !== 'evidence' && p.name !== 'reviews') { out.push(...p.lines); continue; }
     const body = p.lines.slice(1);
     if (p.name === 'evidence') {
@@ -2314,6 +2405,8 @@ function statusOf(root, loop, flags) {
   c.reviews = reviewSplit(flags.tag === undefined ? loop : scopedLoop(loop, issues));
   c.inFlightRows = inFlightRows(loop, issues);
   c.closedGate = closedGateFlags(flags.tag === undefined ? loop : scopedLoop(loop, issues));
+  const disagreements = recordDisagreements(flags.tag === undefined ? loop : scopedLoop(loop, issues));
+  if (disagreements.length) c.disagreements = disagreements;
   const files = uncommittedLoopFiles(root);
   c.uncommitted = files === null ? null : files.length;
   // --by: the same five counts per repository, tag, kind or priority — a dashboard's table, read from the issues.
@@ -2467,11 +2560,43 @@ export function cmdClose(root, flags = {}) {
 const LOG_LINE = new RegExp(`^- (${STAMP_SRC}) · ([^\\n]*)$`);
 const LEADING_ID = idRe('^(?:filed )?({id})\\b');
 const RETRACT_ROW_LINE = idRe('^{id} evidence retract · row (\\d+)\\b');
-const WORKER_FIELD = / · worker (.+?)(?: · worktree |$)/;
-const MODEL_FIELD = / · model (.+?)(?: · worker | · worktree |$)/;
-const BRANCH_FIELD = / · branch (\S+)/;
-// The model of a lease line: the last " · model " field, which sits in the fields after the free-text reason.
-function leaseModelOf(text) { const at = text.lastIndexOf(' · model '); return at < 0 ? null : (MODEL_FIELD.exec(text.slice(at)) || [])[1] || null; }
+// A move into a status that holds the claim is read by position, never by searching: after the arrow and the status come
+// the free reason (at most one segment, never searched for fields) and then the lease fields in the order set writes them
+// (branch, model, worker, worktree), each at most once; the worktree path is the rest of the line.
+const LEASE_ORDER = ['branch', 'model', 'worker', 'worktree'];
+const LEASE_SEGMENT = /^(branch|model|worker|worktree) (.+)$/;
+function leaseTail(segments) {
+  const out = {};
+  let at = -1;
+  for (let i = 0; i < segments.length; i += 1) {
+    const m = LEASE_SEGMENT.exec(segments[i]);
+    if (!m) return null;
+    const k = LEASE_ORDER.indexOf(m[1]);
+    if (k <= at) return null;
+    at = k;
+    if (m[1] === 'worktree') { out.worktree = [m[2], ...segments.slice(i + 1)].join(' · '); return out; }
+    if (m[1] === 'branch' && /\s/.test(m[2])) return null;
+    // A worker or a model is a name: a text with a comma in it is a sentence, so a reason that opens with "worker" is not one.
+    if ((m[1] === 'worker' || m[1] === 'model') && m[2].includes(',')) return null;
+    out[m[1]] = fieldText(m[2]);
+  }
+  return out;
+}
+// The lease fields { branch, model, worker, worktree } a move line carries: the longest tail of its segments that reads as
+// lease fields in order, the segments before it being the reason.
+// The reason is the rest, as `reason`, without the "(reason)" segment that closes a reason opening with a field name.
+export function leaseOfMove(text, id, to) {
+  const rest = text.slice(`${id} → ${to}`.length);
+  const segments = rest === '' ? [] : rest.split(' · ').slice(1);
+  for (let k = 0; k <= segments.length; k += 1) {
+    const found = leaseTail(segments.slice(k));
+    if (!found) continue;
+    const head = segments.slice(0, k);
+    if (head.length > 1 && head[head.length - 1] === '(reason)' && /^(branch|model|worker|worktree) /.test(head[0])) head.pop();
+    return { ...found, reason: head.join(' · ') };
+  }
+  return { reason: '' };
+}
 
 // One log line as an event, without its place in the file. `from` is the status the issue was in before the line.
 export function parseEvent(id, text, profile, from = null) {
@@ -2486,9 +2611,9 @@ function eventParser(profile) {
     const mv = moved.exec(text);
     if (mv) {
       const to = mv[1];
-      const named = claims(to) ? WORKER_FIELD.exec(text) : null;
-      const model = claims(to) ? leaseModelOf(text) : null;
-      return { type: 'move', from, to, lease: named ? { worker: fieldText(named[1]), model, branch: (BRANCH_FIELD.exec(text) || [])[1] || null } : null, model };
+      const found = claims(to) ? leaseOfMove(text, id, to) : {};
+      const model = found.model || null;
+      return { type: 'move', from, to, lease: found.worker ? { worker: found.worker, model, branch: found.branch || null } : null, model };
     }
     if (text.startsWith(`${id} round `)) return { type: 'round' };
     const r = REVIEW_LINE.exec(text);
@@ -2511,6 +2636,26 @@ function eventParser(profile) {
   };
 }
 
+// The command that writes each kind of line that carries state: what the free log refuses to write in its place.
+const LINE_WRITERS = {
+  filed: 'jarl.mjs new', move: 'jarl.mjs set <ids> <status>', round: 'jarl.mjs round <id>', verdict: 'jarl.mjs review <id> approve|changes',
+  'retract-review': 'jarl.mjs review <id> retract', 'retract-row': 'jarl.mjs evidence <id> --retract <n>', row: 'jarl.mjs evidence <id> --ran "<command>" --saw "<what it printed>"',
+  merged: 'jarl.mjs merged <id> --sha <sha>', ci: 'jarl.mjs merged <id> --ci <state>', body: 'jarl.mjs body <id>',
+};
+const MOVE_SHAPE = idRe('^{id} →');
+// A free line for the journal (the log command and record.appendLog): a note about the loop or an issue. A line that
+// reads as one of the kinds above (a filing, a move, a round, a verdict, a retraction, a row, a merge, a CI state or a body
+// change) is refused and names the command that writes it, so every line the views and the gate read as state was
+// written by the command that owns it, with that command's checks.
+export function appendNote(root, event) {
+  const text = oneLine(event);
+  const id = LEADING_ID.exec(text)?.[1] ?? null;
+  need(!MOVE_SHAPE.test(text), `log writes a note, and "${text.length > 80 ? `${text.slice(0, 77)}...` : text}" has the shape of a move (an id, an arrow): the command that writes moves is ${LINE_WRITERS.move}`);
+  const type = id === null ? 'other' : parseEvent(id, text, loadProfile(root)).type;
+  need(type === 'other', `log writes a note, and "${text.length > 80 ? `${text.slice(0, 77)}...` : text}" reads as ${type === 'filed' ? 'a filing' : `a ${type.replace('-', ' ')} line`}, which the journal's own command writes with its checks: ${LINE_WRITERS[type]}`);
+  appendLog(root, event);
+}
+
 // Every dated line of the loop's log under `dir` (the directory holding the goal, the log and issues/), in order, as
 // typed events. An issue's events carry the status it moved from, replayed from its own filing and moves.
 export function loopEvents(dir, profile) {
@@ -2524,7 +2669,7 @@ export function loopEvents(dir, profile) {
     if (!m) return;
     const id = LEADING_ID.exec(m[2])?.[1] ?? null;
     const body = id === null ? { type: 'other' } : parse(id, m[2], lastStatus.get(id) ?? null);
-    if (body.type === 'filed') lastStatus.set(id, profile.initial);
+    if (body.type === 'filed') { if (!lastStatus.has(id)) lastStatus.set(id, profile.initial); }
     else if (body.type === 'move') lastStatus.set(id, body.to);
     events.push({ n, at: m[1], text: m[2], id, ...body });
   });
@@ -2545,6 +2690,35 @@ export function journalById(root) {
   return eventsById(loopEvents(jarlDir(root), loadProfile(root)));
 }
 
+// The state an issue's own lines say, the one every view and the gate read: its status, its lease (branch, worker, model,
+// since), the merge it records and that merge's CI state, folded over the issue's events in file order, as the
+// commands that write the lines write the header beside them. A move into a status that holds the claim stamps `since`
+// with the line's stamp, replaces the branch when the line names one, replaces the worker when it names one (and then
+// the model with the line's own, or none), and replaces the model alone when only a model is named; a move into any
+// other status removes the worker, the model and `since`, and keeps the branch. A merge line replaces the merge and
+// takes its CI state (none when it names none); a CI line replaces the CI state alone. Null for an issue the
+// journal holds no filing and no move of: its header is all there is to read.
+export function issueState(profile, events) {
+  const s = { status: null, branch: null, worker: null, model: null, since: null, merged: null, ci: null };
+  let held = false;
+  for (const e of events) {
+    if (e.type === 'filed') { if (!held) { held = true; s.status = profile.initial; } continue; }
+    if (e.type === 'move') {
+      held = true; s.status = e.to;
+      if (profile.is(e.to, 'holds-claim')) {
+        s.since = e.at;
+        const branch = leaseOfMove(e.text, e.id, e.to).branch;
+        if (branch) s.branch = branch;
+        if (e.lease) { s.worker = e.lease.worker; s.model = e.model; } else if (e.model) s.model = e.model;
+      } else { s.worker = null; s.model = null; s.since = null; }
+      continue;
+    }
+    if (e.type === 'merged') { s.merged = e.repo ? `${e.sha} in ${e.repo}` : e.sha; s.ci = e.ci; continue; }
+    if (e.type === 'ci') s.ci = e.state;
+  }
+  return held ? s : null;
+}
+
 // ---- the loaded loop -------------------------------------------------------------------------------
 //
 // A command reads the loop once, into one value, and hands it to the gate, the views and models; nothing a function
@@ -2563,7 +2737,8 @@ export function journalById(root) {
 export function readLoop(dir) {
   const root = basename(dir) === '.jarl' ? dirname(dir) : dir;
   const profile = profileAt(dir);
-  return makeLoop({ dir, root, profile, issues: issuesAt(dir, profile), events: loopEvents(dir, profile) });
+  const events = loopEvents(dir, profile);
+  return makeLoop({ dir, root, profile, issues: issuesAt(dir, profile, events), events });
 }
 function makeLoop({ dir, root, profile, issues, events }) {
   const loop = { dir, root, profile, issues, byId: new Map(issues.map((i) => [i.id, i])), events, eventsById: eventsById(events) };
@@ -2582,6 +2757,92 @@ function makeLoop({ dir, root, profile, issues, events }) {
 // The same loop over some of its issues (the ones a view is scoped to): the gate looks up an issue and the branch it
 // shares with others among these, as the view does.
 function scopedLoop(loop, issues) { return makeLoop({ dir: loop.dir, root: loop.root, profile: loop.profile, issues, events: loop.events }); }
+
+// Where the files disagree with the journal, which is the record: one entry { id, field, onFile, record, line } per
+// header field (Status, Branch, Worker, Model, Since, Merged, CI) whose value differs from the journal's, one per
+// issue the journal holds no filing and no move of (field 'journal'), and one per status a line of the journal moves an
+// issue into that the loop's profile does not list (field 'profile': the line reads as a note, not as a move). The
+// views never believe the header; they print these. Each line names how the disagreement is settled: the header written
+// back to the journal's value, which writes nothing else, or the move or merge that makes the header's value the
+// record, which writes a line of its own.
+const FIELD_NAMES = { status: 'Status', branch: 'Branch', worker: 'Worker', model: 'Model', since: 'Since', merged: 'Merged', ci: 'CI' };
+const LEASE_KEYS = ['branch', 'worker', 'model'];
+const ghostRe = idRe('^({id}) → (\\S+)');
+export function recordDisagreements(loop) {
+  const { profile } = loop;
+  const out = [];
+  for (const issue of loop.issues) {
+    if (issue.id === null) continue;
+    const id = issue.id;
+    if (issue.onFile === null) {
+      const status = profile.statuses.includes(issue.status) ? issue.status : profile.initial;
+      out.push({ id, field: 'journal', onFile: issue.status, record: null, line: `record: ${id} is not in the log (it holds no filing and no move), so its header is read as it stands — to put it in the log: jarl.mjs set ${id} ${status}${profile.is(status, 'needs-reason') ? ' "<why>"' : ''}${profile.is(status, 'closes-record') ? ' (through its checks)' : ''}` });
+      continue;
+    }
+    for (const field of Object.keys(FIELD_NAMES)) {
+      const file = fieldText(issue.onFile[field]);
+      const record = fieldText(field === 'status' ? issue.status : issue.fields[field]);
+      if (file !== record) out.push(fieldDisagreement(profile, issue, field, file, record));
+    }
+  }
+  out.push(...unreadableMoves(loop));
+  return out;
+}
+// The sentence about one header field: what the file holds against what the log holds.
+function disagreementSentence(name, file, record) {
+  const inFile = file ? `reads ${file} in the file` : 'is missing from the file';
+  const inLog = record ? (file ? `${record} in the log` : `reads ${record} in the log`) : 'is not in the log';
+  return `${name} ${inFile} and ${inLog}`;
+}
+// The command that makes the file's value the record, or '' when the field has none. It writes a line of its own.
+function makeFileTheRecord(profile, issue, field, file) {
+  const id = issue.id;
+  if (!file) return '';
+  if (field === 'status') {
+    if (!profile.statuses.includes(file)) return '';
+    return `jarl.mjs set ${id} ${file}${profile.is(file, 'needs-reason') ? ' "<why>"' : ''} (a move into ${file}${profile.is(file, 'closes-record') ? ', through its checks' : ''})`;
+  }
+  if (LEASE_KEYS.includes(field)) {
+    return profile.is(issue.status, 'holds-claim') ? `jarl.mjs set ${id} ${issue.status} --${field} ${file} (a new move line, which stamps Since again)` : '';
+  }
+  if (field === 'merged') {
+    const merge = /^\S+(?: in .+)?$/.test(file) ? mergedOf({ fields: { merged: file } }) : null;
+    if (!merge) return '';
+    const ci = fieldText(issue.onFile.ci);
+    return `jarl.mjs merged ${id} --sha ${merge.sha}${merge.repo ? ` --repo ${merge.repo}` : ''}${CI_STATES.includes(ci) ? ` --ci ${ci}` : ''} --keep (a new merge line)`;
+  }
+  if (field === 'ci') return CI_STATES.includes(file) && issue.fields.merged ? `jarl.mjs merged ${id} --ci ${file} (a new CI line)` : '';
+  return '';
+}
+// One entry for a header field that differs from the log. Its `rewrite` (not enumerable, so not in the JSON) is the
+// command that writes the header from the log without a hand edit and without a line.
+function fieldDisagreement(profile, issue, field, file, record) {
+  const name = FIELD_NAMES[field];
+  const follow = record ? `write **${name}:** ${record} back into the header` : `remove the **${name}:** line from the header`;
+  const make = makeFileTheRecord(profile, issue, field, file);
+  const entry = { id: issue.id, field: name, onFile: file || null, record: record || null, line: `record: ${issue.id} ${disagreementSentence(name, file, record)}, which is the record — to follow the log, ${follow}${make ? `; to make the file's value the record, ${make}` : ''}` };
+  Object.defineProperty(entry, 'rewrite', { value: `jarl.mjs set ${issue.id} ${issue.status} --header`, enumerable: false });
+  return entry;
+}
+// The lines that have the shape of a move the tool writes (`<id> → <status>` alone or followed by ` · …`, the status a
+// lower-case word) into a status the loop's profile does not list. They read as notes. Any other line with an arrow is a note.
+function unreadableMoves(loop) {
+  const out = [];
+  const seen = new Set();
+  for (const e of loop.events) {
+    if (e.id === null || e.type !== 'other') continue;
+    const m = ghostRe.exec(e.text);
+    if (!m || m[1] !== e.id || loop.profile.statuses.includes(m[2])) continue;
+    if (!/^[a-z][a-z0-9_-]*$/.test(m[2]) || !/^( · |$)/.test(e.text.slice(m[0].length))) continue;
+    const key = `${e.id} ${m[2]}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ id: e.id, field: 'profile', onFile: null, record: m[2], line: `record: ${e.id} the log moves it into ${m[2]}, which the loop's profile does not list as a status, so the line is read as a note and not as a move — the profile's status list changed after the line was written` });
+  }
+  return out;
+}
+// A disagreement as the views print it: its line, and under it the command that writes the header from the log.
+export function disagreementText(d) { return d.rewrite ? `${d.line}\n  or, with no hand edit and no new log line: ${d.rewrite} (writes the header from the log)` : d.line; }
 
 // Who reviewed, as a kind: the word self, or anyone who has ever held the issue's lease — its own worker across
 // every takeover, and the worker of any other issue sharing its Branch (a package, or an issue folded into the
@@ -2669,9 +2930,9 @@ export function gateState(root, id) { return gateOf(readLoop(jarlDir(root)), id)
 // record) reset both, so a close rests only on proof and review recorded after the last of them. A red round
 // resets the cut alone: it spends the approve, while the rows the worker logged stay true.
 export function gateWindow(profile, events) {
-  let anchor = null; let cut = -1;
+  let anchor = null; let cut = -1; let filed = false;
   for (const e of events) {
-    if (e.type === 'filed') { anchor = e; cut = e.n; continue; }
+    if (e.type === 'filed') { if (!filed) { filed = true; anchor = e; cut = e.n; } continue; }
     if (e.type === 'round') { cut = e.n; continue; }
     if (e.type !== 'move') continue;
     const { from, to } = e;
@@ -4497,6 +4758,7 @@ export function cmdResume(root, flags = {}) {
     ...(scheduled ? { scheduler: profile.scheduler } : {}),
     queue: cmdQueue(root), merged, tips: cmdTips(root, { ci: flags.ci === true }),
     uncommitted: uncommittedLoopFiles(root),
+    ...(status.disagreements ? { disagreements: status.disagreements } : {}),
     log: logN ? logLines.slice(-logN).map((e) => `${e.at} · ${e.text}`) : null,
     legacyHandoff: legacy ? { path: handoffPath(root), at: legacy.at, ageMs: legacy.ageMs } : null,
   };
@@ -4521,6 +4783,7 @@ export function renderResume(o, profile = DEFAULT_PROFILE) {
   return [
     ...head,
     ...sec(`Rulings in force (${o.rulings.length})`, o.rulings.map((d) => `- ${d.date} · ${d.slug}${d.by ? ` · by ${d.by}` : ''} — ${short(d.line)}`), '- (none)'),
+    ...sec(`The files disagree with the log (${(st.disagreements || []).length})`, (st.disagreements || []).map(disagreementText)),
     ...sec(`Closed, gate does not hold (${(st.closedGate || []).length})`, (st.closedGate || []).map(closedGateLine)),
     ...sec(`In flight (${o.inFlight.length})`, o.inFlight.map((x) => `- ${x.id} ${short(x.title)}${shownFields(x)}${lease(x) ? ` · ${lease(x)}` : ''}${x.stale.length ? ` · STALE: ${x.stale.join('; ')}` : ''}${x.mark ? `\n  → ${IN_FLIGHT_MARKS[x.mark]}` : ''}`), '- (nothing)'),
     ...sec(`Waiting — After not settled (${o.waiting.length})`, o.waiting.map((x) => `- ${x.id} ${short(x.title)} (after ${x.after.join(', ')})${x.stale !== undefined ? ` · ${x.status === 'in-progress' ? 'in progress' : x.status}${lease(x) ? ` · ${lease(x)}` : ''}${x.stale.length ? ` · STALE: ${x.stale.join('; ')}` : ''}` : ''}`)),
@@ -4836,6 +5099,7 @@ export function renderStatus(o, profile = DEFAULT_PROFILE) {
   const by = o.by ? [`by ${o.by.key}:`, ...Object.entries(o.by.groups).map(([k, g]) => `  ${k.padEnd(width)}  ${profile.statuses.map((st) => `${statusLabel(st)} ${g[st]}`).join(' · ')}`)] : [];
   const more = [
     ...(o.tag !== undefined ? [`scoped to the issues tagged ${o.tag} — the counts above and the lists below are theirs only`] : []),
+    ...(o.disagreements || []).map(disagreementText),
     ...(o.check ? checkLines(o.check) : []),
     ...(o.scheduler ? [schedulerNote(o.scheduler)] : []),
     ...by,
