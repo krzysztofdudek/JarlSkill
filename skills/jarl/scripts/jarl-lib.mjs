@@ -1432,7 +1432,7 @@ export function readTemplate(root, name) {
   const path = join(templatesDir(root), `${name}.md`);
   if (!existsSync(path)) {
     const have = existsSync(templatesDir(root)) ? readdirSync(templatesDir(root)).filter((f) => f.endsWith('.md')).map((f) => f.slice(0, -3)) : [];
-    throw new Error(`no template ${name} in ${templatesDir(root)} — ${have.length ? `templates here: ${have.join(', ')}` : 'none here yet; write one as an issue file without a number (see SKILL.md, "Templates")'}`);
+    throw new Error(`no template ${name} in ${templatesDir(root)} — ${have.length ? `templates here: ${have.join(', ')}` : 'none here yet; write one as an issue file without a number (see references/jarl.md, "Templates")'}`);
   }
   // The template is read as an issue whose title line may be anything: only its fields and sections count. A template
   // that starts straight with a field has no title line, so that first field is read as a field, not dropped.
@@ -6076,7 +6076,7 @@ export function cmdReport(root, flags = {}) {
 
 // A research round leaves a findings.json beside its report. import turns each finding into one issue whose
 // **Source:** is <report dir>#<finding id>: the report directory is dated, so the pair names that finding for
-// good, and a re-run skips every finding whose Source an issue already carries. The mapping (SKILL.md, "From
+// good, and a re-run skips every finding whose Source an issue already carries. The mapping (references/jarl.md, "From
 // research to issues") reads three shapes: a flat array of findings; an array of angles, each with its
 // surviving findings under `surviving`; and { results: [{ area, kept: [...] }] }. A finding without an id
 // cannot be keyed, so the file is refused whole.
@@ -6093,7 +6093,7 @@ export function findingsOf(json) {
   } else if (Array.isArray(json)) list = json;
   else if (json && Array.isArray(json.results)) list = json.results.flatMap((r) => r.kept || []);
   else if (json && Array.isArray(json.findings)) list = json.findings;
-  else throw new Error('not a findings file this tool reads: expected an array of findings, an array of angles with `surviving`, or { results: [{ kept }] } — see SKILL.md, "From research to issues"');
+  else throw new Error('not a findings file this tool reads: expected an array of findings, an array of angles with `surviving`, or { results: [{ kept }] } — see references/jarl.md, "From research to issues"');
   const seen = new Set();
   const out = list.map((f, n) => {
     need(f && typeof f === 'object' && (typeof f.id === 'string' || typeof f.id === 'number') && String(f.id).trim(), `finding #${n + 1} has no id — every finding needs one to be filed once and only once; nothing was filed`);
