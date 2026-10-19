@@ -900,7 +900,20 @@ export function renderNewReply(out) {
   return lines.join('\n');
 }
 // A header field is one line.
-function fieldText(v) { return String(v ?? '').replace(/\s+/g, ' ').trim(); }
+// The line breaks a text may hold, of every kind (a carriage return, the line and paragraph separators, NEL), as the one
+// line break the record writes. The readers split on that break alone, so a text is brought to it before anything is
+// written: its first line sits where the text's field is, and each later line is indented (see freeInline and freeBlock).
+const LINE_BREAKS = new RegExp(`\\r\\n?|${String.fromCharCode(0x2028)}|${String.fromCharCode(0x85)}`, 'g');
+function oneBreak(text) { return String(text ?? '').replace(LINE_BREAKS, '\n'); }
+// Free text after a field's label: the first line follows the label, every later line is indented two spaces, as a
+// question's continuation lines are, so no line of the text starts where the reader looks for a field or an option.
+function freeInline(text) { return oneBreak(text).split('\n').join('\n  '); }
+// A ruling's own text: every continuation line indented, and the first line too when it would read as structure (a field,
+// an option, a heading, an indent), so the text starts no field, option or heading of the record.
+function freeBlock(text) {
+  return oneBreak(text).split('\n').map((l, i) => (i === 0 && !/^[*\-#>\s]/.test(l) && !DECISION_META.test(l) && !DECISION_HEAD.test(l) ? l : `  ${l}`)).join('\n');
+}
+function fieldText(v) { return oneBreak(v).replace(/\s+/g, ' ').trim(); }
 // --acceptance repeats, one checkable line each; several become a list.
 export function acceptanceText(v) {
   const lines = [].concat(v ?? []).map(bodyText).filter(Boolean);
@@ -1031,7 +1044,8 @@ function decisionsAt(dir) {
     while (cut > 0 && (d.body[cut - 1].trim() === '' || META.test(d.body[cut - 1]))) cut -= 1;
     const meta = d.body.slice(cut).map((l) => META.exec(l)).filter(Boolean);
     const field = (name) => meta.filter((m) => m[1] === name).map((m) => m[2].trim());
-    const ruling = d.body.slice(0, cut).join('\n').trim();
+    // The ruling's text: a line indented two spaces is a continuation line of its free text, read without the indent.
+    const ruling = d.body.slice(0, cut).map((l) => (l.startsWith('  ') ? l.slice(2) : l)).join('\n').trim();
     const sup = field('Superseded by').pop();
     const reach = field('Reach').pop();
     const typeLog = /^(\S+) · (\S+)/.exec(field('Type log').pop() || '');
@@ -1066,7 +1080,8 @@ function markDecision(root, slug, line, { text: given } = {}) {
   return undefined;
 }
 
-export function appendDecision(root, slug, ruling, { by, supersedes, area, reach, rule } = {}) {
+// The ruling is written as its caller gives it: structure at the start of a line, free text indented (freeInline, freeBlock).
+export function appendDecision(root, slug, ruling, { by, supersedes, area, reach, rule, settles } = {}) {
   need(typeof slug === 'string' && SLUG_RE.test(slug), `a ruling's slug is letters, digits and . _ - (starting with a letter or digit, at most 80 characters) — not "${slug}"; e.g. ${slugify(String(slug || 'ruling'))}`);
   const path = decisionsPath(jarlDir(root));
   const existing = existsSync(path) ? readText(path) : '# Decisions\n';
@@ -1074,14 +1089,14 @@ export function appendDecision(root, slug, ruling, { by, supersedes, area, reach
   need(!all.some((d) => d.slug === slug), `duplicate slug: ${slug} — a ruling that replaces it takes a new slug and --supersedes ${slug}`);
   let text = existing;
   if (supersedes !== undefined) {
-    need(typeof supersedes === 'string' && supersedes !== slug, '--supersedes names the slug of an earlier ruling');
+    need(typeof supersedes === 'string' && SLUG_RE.test(supersedes) && supersedes !== slug, '--supersedes names the slug of an earlier ruling');
     const old = all.find((d) => d.slug === supersedes);
     need(old, `no ruling ${supersedes} in ${DECISIONS_FILE} to supersede`);
     need(!old.supersededBy, `${supersedes} is already superseded by ${old.supersededBy} — supersede that one instead`);
     text = markDecision(root, supersedes, `**Superseded by:** ${slug} (${today()})`, { text });
   }
-  const meta = [by ? `**By:** ${fieldText(by)}` : null, supersedes !== undefined ? `**Supersedes:** ${supersedes}` : null, area ? `**Area:** ${area}` : null, reach !== undefined && reach !== null ? `**Reach:** ${reach}` : null, rule ? `**Rule:** ${rule}` : null].filter(Boolean).join('\n');
-  writeAtomic(path, `${text.replace(/\s*$/, '')}\n\n## ${today()} · ${slug}\n${bodyText(ruling)}\n${meta ? `\n${meta}\n` : ''}`);
+  const meta = [settles?.length ? `**Settles:** ${settles.join(', ')}` : null, by ? `**By:** ${fieldText(by)}` : null, supersedes !== undefined ? `**Supersedes:** ${supersedes}` : null, area ? `**Area:** ${area}` : null, reach !== undefined && reach !== null ? `**Reach:** ${reach}` : null, rule ? `**Rule:** ${rule}` : null].filter(Boolean).join('\n');
+  writeAtomic(path, `${text.replace(/\s*$/, '')}\n\n## ${today()} · ${slug}\n${ruling.replace(/\s+$/, '')}\n${meta ? `\n${meta}\n` : ''}`);
 }
 
 // The goal of the record held in `dir`, as text; null when it has none.
@@ -4702,11 +4717,11 @@ export function cmdAsk(root, question, flags) {
     need(!loadAsks(root).some((x) => x.ruling === d.slug), `${flags.ruling} has been put to ratification already`);
   }
   const ruling = kind === 'ratify' && flags.ruling ? ` · ruling ${flags.ruling}` : '';
-  const asked = String(question).replace(/\r\n?/g, '\n').trim().split('\n');
+  const asked = oneBreak(question).trim().split('\n');
   const options = askOptions(flags.option, kind);
   const optionLines = options.map((o) => `- **a-${id}** option · ${o.label} · ${o.effect}\n`).join('');
   appendAtomic(path, '# Questions to the user\n\n', `- **a-${id}** (open) · ${kind}${target}${issueWritten !== null ? ` · issue ${issueWritten}` : ''}${ruling} · ${asked[0]}\n${asked.slice(1).map((l) => `  ${l}\n`).join('')}${optionLines}`);
-  appendLog(root, `asked a-${id} (${kind}) · ${firstLine(question, ASKS_FILE)}`);
+  appendLog(root, `asked a-${id} (${kind}) · ${firstLine(asked.join('\n'), ASKS_FILE)}`);
   return { id, question: asked.join('\n'), kind, ...(options.length ? { options } : {}) };
 }
 
@@ -4718,6 +4733,7 @@ function askOptions(raw, kind) {
   if (!given.length) return [];
   need(kind !== 'ratify', 'a ratify item is answered yes or reject (tak or nie), so it takes no --option');
   const options = given.map((text) => {
+    need(!oneBreak(text).includes('\n'), `--option takes one line: a label or an effect with a line break is refused (got "${String(text).trim()}")`);
     const m = /^([^:]*?):\s*(.*)$/s.exec(String(text).trim());
     need(m, `--option takes "<label>: <effect>", with a colon between the label and the effect (got "${text}")`);
     const label = noSeparators(m[1]);
@@ -4776,11 +4792,11 @@ function answerChecks(root, ask, answer, chosen) {
 // The question's answer, as the ruling, the journal and the issue quote it. An answer to a question with options is either the
 // label of the option chosen (marked in the list of options offered) or the person's own words, never both.
 function answerRuling(ask, text, chosen, batch) {
-  const lines = [`**Question:** ${ask.question}`];
+  const lines = [`**Question:** ${freeInline(ask.question)}`];
   if (ask.options) {
     lines.push('**Options:**', ...ask.options.map((o) => `- ${o.label}: ${o.effect}${chosen === o.label ? ' (chosen)' : ''}`));
-    lines.push(chosen !== null ? `**Chose:** ${chosen}` : `**Answer in own words:** ${text}`);
-  } else lines.push(`**Answer:** ${text}`);
+    lines.push(chosen !== null ? `**Chose:** ${chosen}` : `**Answer in own words:** ${freeInline(text)}`);
+  } else lines.push(`**Answer:** ${freeInline(text)}`);
   if (batch) lines.push(`**Batch:** answered together with ${batch.map((b) => `a-${b}`).join(', ')}`);
   return lines.join('\n');
 }
@@ -4796,7 +4812,7 @@ export function cmdAnswer(root, rawId, answer, flags = {}) {
   const ask = loadAsks(root).find((a) => idKey(a.id) === key);
   need(ask, `no such question: a-${key}`);
   const id = ask.id;
-  const text = answer === undefined ? null : noSeparators(answer);
+  const text = answer === undefined ? null : noSeparators(oneBreak(answer));
   const checked = answerChecks(root, ask, text, chosen);
   const shown = chosen !== null ? chosen : text;
   appendDecision(root, `ask-${id}`, answerRuling(ask, text, chosen === null ? null : checked.option.label, flags.batch || null), { by: by || 'owner' });
@@ -4820,8 +4836,8 @@ export function cmdAnswerMany(root, rawIds, answer, flags = {}) {
   const raw = String(rawIds ?? '').split(',').map((s) => s.trim()).filter(Boolean);
   need(raw.length, 'answer requires an id: one question, or several ratify items as a comma list');
   const asks = loadAsks(root);
-  const found = raw.map((r) => {
-    const key = askNumber(r);
+  // A question named twice is answered once: the list is taken in its order with each number kept at its first place.
+  const found = [...new Set(raw.map(askNumber))].map((key) => {
     const ask = asks.find((a) => idKey(a.id) === key);
     need(ask, `no such question: a-${key}`);
     return ask;
@@ -4912,9 +4928,9 @@ export function cmdDecide(root, slug, ruling, flags = {}) {
   const area = flags.area !== undefined ? String(flags.area) : null;
   const reach = flags.reach !== undefined ? Number(flags.reach) : null;
   const rule = flags.rule !== undefined ? String(flags.rule) : null;
-  appendDecision(root, slug, settles.length ? `${ruling.trim()}\n\n**Settles:** ${settles.map((i) => i.id).join(', ')}` : ruling, { by, supersedes: flags.supersedes, area, reach, rule });
+  appendDecision(root, slug, freeBlock(oneBreak(ruling).trim()), { by, supersedes: flags.supersedes, area, reach, rule, settles: settles.map((i) => i.id) });
   appendLog(root, `decided ${slug} · by ${by}${flags.supersedes !== undefined ? ` · supersedes ${flags.supersedes}` : ''}${area ? ` · area ${area}${reach !== null ? ` (${reach} files)` : ''}${rule ? ` · rule ${rule}` : ''}` : ''}`);
-  if (settles.length) appendRuling(root, settles, `Ruling ${slug}: ${firstLine(ruling, `${DECISIONS_FILE}, ruling ${slug}`)}`);
+  if (settles.length) appendRuling(root, settles, `Ruling ${slug}: ${firstLine(oneBreak(ruling).trim(), `${DECISIONS_FILE}, ruling ${slug}`)}`);
   return { slug, by, supersedes: flags.supersedes ?? null, settles: settles.map((i) => i.id), ...(area ? { area, reach, ...(rule ? { rule } : {}) } : {}) };
 }
 
@@ -4924,11 +4940,13 @@ export function questionFor(root, slug) {
   const m = /^ask-(\d+)$/.exec(slug);
   return loadAsks(root).some((a) => a.ruling === slug || (m !== null && idKey(a.id) === idKey(m[1])));
 }
-// The unfinished issues whose What, Why or Acceptance name a ruling by its slug, as a whole word: what a supersession leaves to
-// rewrite. This is the one supersession scan; the verify check reads the same list.
+// The unfinished issues whose What, Why or Acceptance name a ruling by its slug, as a whole word: the list a supersession
+// reports on stderr, so the open issues that cite the ruling it replaces are rewritten. A slug that ends a sentence (a
+// stop, a comma, a closing quote or bracket after it) names the ruling; a longer slug that starts with it, hyphenated or
+// dotted, does not.
 export function issuesNaming(root, slug) {
   const profile = loadProfile(root);
-  const named = new RegExp(`(^|[^A-Za-z0-9._-])${slug.replace(/\./g, '\\.')}($|[^A-Za-z0-9._-])`);
+  const named = new RegExp(`(?<![A-Za-z0-9_-])(?<![A-Za-z0-9_]\\.)${slug.replace(/\./g, '\\.')}(?![A-Za-z0-9_]|-[A-Za-z0-9_]|\\.[A-Za-z0-9_])`);
   return loadIssues(root).filter((i) => profile.unfinished(i.status) && named.test([i.sections.what, i.sections.why, i.sections.acceptance].filter(Boolean).join('\n')));
 }
 

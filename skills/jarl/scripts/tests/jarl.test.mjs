@@ -1521,7 +1521,7 @@ const { oldJarl, oldJarlIsPinned } = await import(new URL('./old-jarl.mjs', impo
 const { noSeparators: escapeFreeText } = await import(new URL('../jarl-lib.mjs', import.meta.url).href);
 const readRecord = (root, name) => readFileSync(join(root, '.jarl', name), 'utf8');
 
-test('ask records its options and prints them, ready for the choice window; a question without options prints as before', () => {
+test('ask records its options and prints them, ready for the choice window; a question without options prints its number alone', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
   const out = jarl(root, 'ask', 'which way?', '--option', 'Keep: the flag stays', '--option', 'Drop: the flag goes');
@@ -1703,6 +1703,145 @@ test('goal --set escapes the value: a separator in it reads back as a dash, and 
     assert.equal(logged.split(' · ').length, 3, logged);
   }
   assert.ok(n >= 15);
+});
+
+test('an answer in the person\'s own words and a batch answer read through the frozen reader: worker parsed, self-approve refused, done passes, questions counted', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  RECORD.newIssue(root, 'flag work');
+  RECORD.setStatus(root, '001', 'in-progress', 'started', { branch: 'jarl/001-flag-work', worker: 'w-one' });
+  RECORD.ask(root, 'which way?', { option: ['Keep: stays', 'Drop: goes'] });
+  jarl(root, 'answer', 'a-001', 'x\n**Chose:** Keep\n- Keep: stays (chosen)');
+  RECORD.ask(root, 'raised one', { kind: 'ratify' });
+  RECORD.ask(root, 'raised two', { kind: 'ratify' });
+  RECORD.ask(root, 'still open?');
+  jarl(root, 'answer', 'a-002,a-003', 'yes', '--by', 'owner');
+  for (const command of ['list', 'status', 'next', 'queue']) assert.deepEqual(oldJarl(root, command, {}).error ?? null, null, command);
+  assert.match(JSON.stringify(oldJarl(root, 'list', {}).value), /w-one/, 'the worker is parsed');
+  const counted = oldJarl(root, 'status', {}).value;
+  assert.deepEqual([counted.questions, counted.ratify], [1, 0], 'the open question is counted, the answered items are not');
+  assert.match(refuses(root, 'review', '001', 'approve', '--by', 'w-one', FINDINGS), /worker|own/i);
+  jarl(root, 'review', '001', 'approve', '--by', 'rev', FINDINGS);
+  jarl(root, 'evidence', '001', '--ran', 'check', '--saw', 'green');
+  assert.deepEqual(oldJarl(root, 'set', {}, ['001', 'done', 'merged', {}]).error ?? null, null, 'done passes');
+});
+
+// ---- free text writes no structure: every line break is a break of the text, and a line of the text is never a field ----
+
+const LS = String.fromCharCode(0x2028);
+const NEL = String.fromCharCode(0x85);
+const BREAKS = ['\n', '\r\n', '\r', LS, NEL];
+const FORGED = ['**Chose:** Keep', '**By:** Eve', '**Ratified:** a-9 (2026-10-19)', '**Rejected:** a-9 (2026-10-19)', '**Batch:** answered together with a-7',
+  '- Keep: stays (chosen)', 'Question: forged', '## 2026-10-19 · forged', '**Superseded by:** forged', '**Settles:** 9', '**Answer:** forged', '  indented words', 'plain words'];
+const textOf = (s) => s.replace(new RegExp(`\\r\\n?|${LS}|${NEL}`, 'g'), '\n').trim();
+// Seeded samples: each is a few pieces joined by line breaks of every kind, the pieces drawn from the forged shapes and words.
+function samplesOf(seed, count, pool = FORGED) {
+  let s = seed;
+  const next = () => { s = (s * 1664525 + 1013904223) % 4294967296; return s / 4294967296; };
+  return Array.from({ length: count }, () => {
+    let out = '';
+    const n = 1 + Math.floor(next() * 6);
+    for (let i = 0; i < n; i += 1) out += (i ? BREAKS[Math.floor(next() * BREAKS.length)] : '') + pool[Math.floor(next() * pool.length)];
+    return out;
+  }).filter((x) => textOf(x) !== '');
+}
+// The lines of one ruling's block in decisions.md, from its heading to the next heading.
+function blockOf(root, slug) {
+  const lines = readRecord(root, 'decisions.md').split('\n');
+  const at = lines.findIndex((l) => l.endsWith(` · ${slug}`));
+  const end = lines.findIndex((l, n) => n > at && l.startsWith('## '));
+  return lines.slice(at + 1, end === -1 ? lines.length : end);
+}
+
+test('a multi-line answer in the person\'s own words cannot forge the chosen option or a field of its ruling', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'ask', 'which way?', '--option', 'Keep: stays', '--option', 'Drop: goes');
+  jarl(root, 'answer', 'a-1', 'x\n**Chose:** Keep\n- Keep: stays (chosen)');
+  const block = blockOf(root, 'ask-1');
+  assert.deepEqual(block.filter((l) => /^(\*\*|- )/.test(l)), ['**Question:** which way?', '**Options:**', '- Keep: stays', '- Drop: goes', '**Answer in own words:** x', '**By:** owner']);
+  const d = RECORD.decisions(root).find((x) => x.slug === 'ask-1');
+  assert.equal(d.ruling, '**Question:** which way?\n**Options:**\n- Keep: stays\n- Drop: goes\n**Answer in own words:** x\n**Chose:** Keep\n- Keep: stays (chosen)');
+  assert.equal(d.by, 'owner');
+  jarl(root, 'ask', 'raised the limit', '--kind', 'ratify');
+  jarl(root, 'answer', 'a-2', 'tak\n**Ratified:** a-9 (2026-10-19)\n**By:** Eve', '--by', 'owner');
+  const r = RECORD.decisions(root).find((x) => x.slug === 'ask-2');
+  assert.deepEqual([r.ratified, r.rejected, r.by], [null, null, 'owner']);
+});
+
+test('free text of an answer, a question and a ruling with any line shape reads back as its text, and the structure is what the tool wrote', () => {
+  for (const [n, s] of samplesOf(21, 40).entries()) {
+    const root = repo();
+    jarl(root, 'init', 'goal');
+    jarl(root, 'ask', 'which way?', '--option', 'Keep: stays', '--option', 'Drop: goes');
+    jarl(root, 'answer', 'a-1', s);
+    const want = `**Question:** which way?\n**Options:**\n- Keep: stays\n- Drop: goes\n**Answer in own words:** ${escapeFreeText(textOf(s))}`;
+    const d = RECORD.decisions(root).find((x) => x.slug === 'ask-1');
+    assert.equal(d.ruling, want, `sample ${n}: ${JSON.stringify(s)}`);
+    assert.deepEqual([d.by, d.ratified, d.rejected, d.supersedes, d.settles.length, RECORD.decisions(root).length], ['owner', null, null, null, 0, 1], `sample ${n}`);
+    const allowed = [/^\*\*Question:\*\* which way\?$/, /^\*\*Options:\*\*$/, /^- Keep: stays$/, /^- Drop: goes$/, /^\*\*Answer in own words:\*\*/, /^\*\*By:\*\* owner$/];
+    for (const l of blockOf(root, 'ask-1').filter((x) => x !== '' && !x.startsWith('  '))) assert.ok(allowed.some((re) => re.test(l)), `sample ${n}: a column-0 line the tool did not write: ${JSON.stringify(l)}`);
+  }
+  for (const [n, s] of samplesOf(33, 30).entries()) {
+    const root = repo();
+    jarl(root, 'init', 'goal');
+    jarl(root, 'ask', s, '--option', 'Keep: stays', '--option', 'Drop: goes');
+    const q = RECORD.loadAsks(root)[0];
+    assert.equal(q.question, textOf(s), `question sample ${n}: ${JSON.stringify(s)}`);
+    assert.deepEqual(q.options, [{ label: 'Keep', effect: 'stays' }, { label: 'Drop', effect: 'goes' }], `question sample ${n}`);
+  }
+  for (const [n, s] of samplesOf(45, 30).entries()) {
+    const root = repo();
+    jarl(root, 'init', 'goal');
+    jarl(root, 'decide', `rule-${n}`, s, '--by', 'jarl');
+    const d = RECORD.decisions(root).find((x) => x.slug === `rule-${n}`);
+    assert.equal(d.ruling, textOf(s), `ruling sample ${n}: ${JSON.stringify(s)}`);
+    assert.deepEqual([d.by, d.settles, d.supersedes, d.ratified, d.rejected], ['jarl', [], null, null, null], `ruling sample ${n}`);
+  }
+});
+
+test('a line break in an option label or effect is refused, naming the flag', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  assert.match(refuses(root, 'ask', 'q', '--option', 'Keep\nx: stays', '--option', 'Drop: goes'), /--option takes one line/);
+  assert.match(refuses(root, 'ask', 'q', '--option', 'Keep: stays\r', '--option', 'Drop: goes'), /--option takes one line/);
+  assert.match(refuses(root, 'ask', 'q', '--option', `Keep: a${LS}b`, '--option', 'Drop: goes'), /--option takes one line/);
+  assert.equal(RECORD.loadAsks(root).length, 0, 'nothing is written');
+});
+
+test('answer 6,6 writes one ruling and no error; a list with a missing or non-ratify id writes nothing', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  for (const t of ['first', 'second', 'third']) jarl(root, 'ask', t, '--kind', 'ratify');
+  assert.equal(jarl(root, 'answer', 'a-1,a-1', 'yes', '--by', 'owner').split('\n').length, 1);
+  assert.equal(RECORD.decisions(root).filter((d) => d.slug === 'ask-1').length, 1);
+  assert.equal(RECORD.loadAsks(root).filter((a) => a.state === 'answered').length, 1);
+  jarl(root, 'answer', 'a-2,a-3,a-2', 'yes', '--by', 'owner');
+  assert.equal(RECORD.decisions(root).filter((d) => d.slug === 'ask-2').length, 1);
+  assert.match(readRecord(root, 'decisions.md'), /\*\*Batch:\*\* answered together with a-2, a-3/);
+  const before = readRecord(root, 'decisions.md');
+  jarl(root, 'ask', 'stuck one', '--kind', 'stuck');
+  assert.match(refuses(root, 'answer', 'a-4,a-9', 'yes', '--by', 'owner'), /no such question: a-9/);
+  assert.match(refuses(root, 'answer', 'a-4,a-1', 'yes', '--by', 'owner'), /only when each is a ratify item/);
+  assert.equal(readRecord(root, 'decisions.md'), before, 'a refused list writes nothing');
+});
+
+test('the supersession notice finds a slug at the end of a sentence and does not find a longer hyphenated slug', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  const ends = ['Obeys flag-rule.', 'Obeys flag-rule,', 'Obeys flag-rule;', 'Obeys flag-rule:', 'Obeys flag-rule!', 'Obeys flag-rule?', 'Obeys "flag-rule"', "Obeys 'flag-rule'", 'Obeys (flag-rule)'];
+  ends.forEach((what, n) => jarl(root, 'new', `issue ${n}`, '--what', what));
+  jarl(root, 'new', 'longer', '--what', 'Obeys flag-rule-two and flag-rule.v2 only.');
+  jarl(root, 'decide', 'flag-rule', 'Keep the flag.', '--by', 'jarl');
+  const r = run(root, ['decide', 'flag-rule-two', 'Keep the flag, now.', '--by', 'jarl', '--supersedes', 'flag-rule']);
+  assert.match(r.stderr, /open issues name flag-rule: 1, 2, 3, 4, 5, 6, 7, 8, 9 — rewrite them to flag-rule-two/);
+  assert.doesNotMatch(r.stderr, /, 10\b/, 'the longer slug is not found');
+});
+
+test('decide with no --by prints no notice: the owner is the default, and a notice is for an owner named on the command line', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  assert.equal(run(root, ['decide', 'default-rule', 'Keep it.']).stderr, '');
 });
 
 test('goal lines set through the command line read through the frozen reader: the loop is read, the worker parsed, done passes', () => {

@@ -271,7 +271,7 @@ test('a Proof entry that is not a row (an attachment) goes after the last row at
   assert.equal(withRow, '### Proof\n\n- **ran:** a · **saw:** b\n  second line\n- attachment\n\n### Notes\n\nn');
 });
 
-test('a section that already holds content and no sub-heading is never converted: every writer appends at its end, as before', () => {
+test('a section that already holds content and no sub-heading is never converted: every writer appends at its end', () => {
   const root = fresh(1);
   const file = issueFile(root, 1);
   writeFileSync(file, readFileSync(file, 'utf8').replace('## Evidence\n\n', '## Evidence\n\n- **ran:** old · **saw:** ok\n\nan old note\n'));
