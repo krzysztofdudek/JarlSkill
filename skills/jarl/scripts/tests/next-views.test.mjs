@@ -1,5 +1,5 @@
 // The views of next, status and resume that say what comes next: the ready set and its groups, the
-// derived facts on in-flight rows (283), status --tag (281) and exclusive resources (282).
+// derived facts on in-flight rows, status --tag and exclusive resources.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';

@@ -1,5 +1,5 @@
 // The merge queue as a derived view and changelog fragments, and the views and templates a
-// dashboard or a release checklist is built from (289).
+// dashboard or a release checklist is built from.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';

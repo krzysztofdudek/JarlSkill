@@ -296,11 +296,11 @@ test('the frozen reader reads a loop in the split form right: done is refused on
   jarl(root, 'set', '3', 'deferred', 'waits for the probe of 2');
   assert.match(evidence(root, 2), /### Proof[\s\S]*### Notes/);
   assert.equal(L.workEvidence(L.findIssue(root, 1)), '', 'the merge check is not in the section');
-  // Issue 1 holds the merge check only: the frozen gate finds no row line.
+  // The first issue holds the merge check only: the frozen gate finds no row line.
   const refused = oldJarl(root, 'set', {}, ['1', 'done', 'x', {}]);
   assert.equal(refused.ok, false);
   assert.match(refused.error, /001 has no evidence yet/);
-  // Issue 2 holds the worker's row under Proof.
+  // The second issue holds the worker's row under Proof.
   assert.equal(oldJarl(root, 'set', {}, ['2', 'done', 'x', {}]).ok, true);
   assert.equal(L.findIssue(root, 2).status, 'done');
   // The Deferred reason, under Notes, is the one the frozen report prints.

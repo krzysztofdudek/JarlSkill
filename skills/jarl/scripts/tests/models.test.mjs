@@ -1,4 +1,4 @@
-// The record keeps the model of every worker and reviewer (issue 287): the lease and the verdict lines, the tiers and the
+// The record keeps the model of every worker and reviewer: the lease and the verdict lines, the tiers and the
 // loop's model lines, the notes (command line only, only in a loop with model lines), and the read-only views that
 // derive from them: `models`, the marks on `next` and `resume`. Every line written here is read by the pinned frozen reader
 // (tests/old-jarl.mjs) without a refusal and without a silent misreading, so the record format is not raised.

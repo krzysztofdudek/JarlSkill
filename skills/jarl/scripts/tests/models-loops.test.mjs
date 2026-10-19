@@ -1,4 +1,4 @@
-// models reads other loops (issue 290): --with <root> (a root, or an archive directory), --archives (the loop's own
+// models reads other loops: --with <root> (a root, or an archive directory), --archives (the loop's own
 // archives). The tables merge: counts add up, a share appears only from n >= 5 over the sum, and a path that is not a
 // loop is refused with nothing written and no lock taken.
 import { test } from 'node:test';
