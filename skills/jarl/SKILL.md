@@ -133,4 +133,4 @@ How rows, notes and the merge check sit in an issue, and when an issue may be se
 - **Leave it mergeable.** The work is committed on the branch and the checks the brief names pass there before the work is reported; the branch is not pushed, merged or rebased onto others unless the brief says so. Merging, and removing the worktree and the branch afterwards, is never the worker's job.
 <!-- RUNES:worker-worktree:END -->
 
-In Jarl the coordinator is the jarl and the one who merges is the merger. The branch naming and the rest of the worker's rules are in [references/worker.md](references/worker.md#worker-branches).
+In Jarl the root a call passes is the loop root, the directory that holds `.jarl/` (the main checkout only when the loop lives at its root). In Jarl the coordinator is the jarl and the one who merges is the merger. The branch naming and the rest of the worker's rules are in [references/worker.md](references/worker.md#worker-branches).

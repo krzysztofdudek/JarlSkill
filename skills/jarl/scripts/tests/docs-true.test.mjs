@@ -277,8 +277,8 @@ test('the first screen of SKILL.md starts a cold agent: resume an existing loop 
 
 test('models.md never puts the reviewer that clears an issue below the worker it reviews', () => {
   const models = skillText('references/models.md');
-  assert.match(models, /Workers start on the tier the issue's `Tier:` names, and a takeover raises the worker one tier up\. The reviewer whose approve clears the issue is never of the worker's own model and never ranked below the worker's model, the model the lease names and not the issue's tier/);
-  assert.match(models, /never ranked below the worker's model \(the model on the lease, whatever the issue's tier\)/);
+  assert.match(models, /Workers start on the tier the issue's `Tier:` names, and a takeover raises the worker one tier up\. The reviewer whose approve clears the issue is never of the worker's own model and never ranked below the worker's model, every model that has held the issue's lease, and not the issue's tier/);
+  assert.match(models, /never ranked below the worker's model \(every model that has held the issue's lease, whatever the issue's tier\)/);
   assert.doesNotMatch(models, /runs on that tier or above/);
   assert.match(models, /Readers and the merger run on the standard tier/);
   assert.doesNotMatch(models, /Workers, readers, reviewers and the merger run on the standard tier/);
@@ -360,15 +360,23 @@ test('a reviewer is held to the worker\'s model, not to the issue\'s tier, and a
 // ---- the root every role passes -----------------------------------------------------------------------------------
 
 test('no brief and no rule names the main checkout as the root a call passes: the loop root is the directory that holds .jarl/', () => {
-  const found = [];
-  for (const { file, n, text } of skillLines()) {
-    if (/<main checkout>|\broot\b[`"]?[^.\n]{0,25}\b(?:set to|as) the (?:absolute path of the )?main checkout|passes the main checkout|carries the absolute path of the main checkout|--root[^\n]{0,12}main checkout/.test(text)) found.push(`${file}:${n}`);
-  }
+  // Any text that puts "main checkout" within 80 characters of "root", on either side, outside the pinned blocks.
+  const near = (text) => /\broot\b[\s\S]{0,80}main checkout|main checkout[\s\S]{0,80}\broot\b/i.test(text);
+  assert.ok(near('pass the main checkout\'s path as root'), 'the check catches a phrasing no fixed pattern names');
+  assert.ok(near('root: "<main checkout>"') && !near('the loop root, the directory that holds .jarl/'));
+  // The sentences that define the loop root or describe discovery, which name the main checkout on purpose.
+  const defines = (text) => /loop root|never looks in a subdirectory|holds no loop of its own|names the main checkout as the root to pass/.test(text);
+  const found = skillLines().filter(({ text }) => near(text) && !defines(text)).map(({ file, n, text }) => `${file}:${n}: ${text.slice(0, 80)}`);
   assert.deepEqual(found, []);
   for (const [file, text] of [['worker', skillText('references/worker.md')], ['reviewer', skillText('references/reviewer.md')], ['merger', skillText('references/merger.md')]]) {
     assert.match(text, /<loop root>/, `the ${file} brief passes the loop root`);
   }
   assert.match(skillText('SKILL.md'), /carries the absolute path of the loop root as `root`/);
+  // The pinned block says the main checkout; Jarl's own sentence right after it says what the root is (the block itself is held byte-identical by the vendoring test).
+  const skill = skillText('SKILL.md');
+  const sentence = 'In Jarl the root a call passes is the loop root, the directory that holds `.jarl/` (the main checkout only when the loop lives at its root).';
+  assert.ok(skill.indexOf(sentence) > skill.indexOf('<!-- RUNES:worker-worktree:END -->'), 'the sentence follows the block');
+  assert.ok(skill.indexOf(sentence) < skill.indexOf('In Jarl the coordinator is the jarl'));
   for (const line of USAGE.split('\n')) assert.doesNotMatch(line, /<main checkout>/);
 });
 

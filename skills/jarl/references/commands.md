@@ -68,7 +68,7 @@ A flag a command does not take is refused with the list of the ones it does, nev
 Every command takes `--json` and `--help`. A subagent does not always inherit `CLAUDE_PLUGIN_ROOT`, so
 a worker's brief carries the absolute path to the script as well as the tools. Run from a worktree of the repository whose main checkout holds the loop, the script finds the
 loop there by itself (default mode: the worktree has none of its own); `--root` still wins when given, and every brief carries the absolute path of
-the loop's checkout for it anyway, because a loop that lives in another repository (a hub directing code elsewhere) is not found from the code's worktree,
+the directory that holds `.jarl/` for it anyway, because a loop that lives in another repository (a hub directing code elsewhere) is not found from the code's worktree,
 and in committed mode a worktree holds only the copy it was cut with.
 
 ## Views for dashboards

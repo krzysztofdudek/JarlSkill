@@ -23,7 +23,7 @@ Opening the loop — reading the repository whole, writing the goal, the first r
 issues — is the one part that needs the strongest model in the room. The loop itself is clerical
 work over a tool that refuses what is wrong: the reeve, on the standard tier, runs it, hands out
 issues, reads reports and keeps the journal, and hands back to the jarl only on the four occasions
-named in [The reeve](jarl.md#the-reeve-handing-the-loop-down). Workers start on the tier the issue's `Tier:` names, and a takeover raises the worker one tier up. The reviewer whose approve clears the issue is never of the worker's own model and never ranked below the worker's model, the model the lease names and not the issue's tier (see [The approve that clears an issue](#the-approve-that-clears-an-issue)). Readers and the merger run on the standard tier. Say which tier is running in every report.
+named in [The reeve](jarl.md#the-reeve-handing-the-loop-down). Workers start on the tier the issue's `Tier:` names, and a takeover raises the worker one tier up. The reviewer whose approve clears the issue is never of the worker's own model and never ranked below the worker's model, every model that has held the issue's lease, and not the issue's tier (see [The approve that clears an issue](#the-approve-that-clears-an-issue)). Readers and the merger run on the standard tier. Say which tier is running in every report.
 
 ## The tiers, and when each fits
 
@@ -53,7 +53,7 @@ The one who spawns an agent knows the model it asked for; the agent often cannot
 
 ## The approve that clears an issue
 
-The approve that clears an issue is never of the worker's own model and never ranked below the worker's model (the model on the lease, whatever the issue's tier), until `models` shows `may clear <kind>` for that kind of issue. A lighter or same-model reviewer that adds a `changes` before the clearing approve is welcome: a cheap first reading that finds something saves a round. A breach is a note on the verdict and a count in `models`, never a refusal; the done gate and the fresh-review rule stand as they are.
+The approve that clears an issue is never of the worker's own model and never ranked below the worker's model (every model that has held the issue's lease, whatever the issue's tier), until `models` shows `may clear <kind>` for that kind of issue. A lighter or same-model reviewer that adds a `changes` before the clearing approve is welcome: a cheap first reading that finds something saves a round. A breach is a note on the verdict and a count in `models`, never a refusal; the done gate and the fresh-review rule stand as they are.
 
 ## How a new model enters
 
