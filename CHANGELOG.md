@@ -31,6 +31,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Repositories can be named. An issue's repository is written as its name, such as `Grain`, when its checkout stands beside the loop's checkout; otherwise it keeps its path and a note on the command line says why. Jarl records each named repository once, with its identity and its base branch and no path, so the record holds nothing that belongs to one machine; `repo --base <name> <branch>` changes the base, and every change of `repo` is logged. The first name marks the loop with its format, and a Jarl that does not read that format refuses the loop instead of misreading it.
 - `--repo` takes a name, a checkout, a worktree or a file inside a repository, and always means the repository's main checkout.
 - `show` and `status --by repo` print where each repository, and the worktree of a lease, is on this machine. `status --by repo` also prints each repository's base and warns when its checkout is on another branch. A name with no checkout on this machine says where to put one, and the commands that act on it refuse it.
+- `check` on a branch now lists each added line that cites a loop issue by its number, so a stale reference shows before the merge. The check passes or fails as before.
+- `branches` marks a branch that holds commits but no issue with `NO ISSUE`. A check of such a branch says how many commits it carries and what to file before it can run.
 
 ### Changed
 - A lease holds a branch, a worker and a start time, and no worktree path: the worktree is found through the branch. `set --worktree <path>` checks that the path is a worktree of the issue's repository with the lease's branch checked out, refuses it otherwise, and stores nothing.

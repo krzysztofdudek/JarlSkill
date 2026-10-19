@@ -42,8 +42,10 @@ function exec(bin, args, opts) {
 }
 // What git prints in `root`, trimmed; null when it fails.
 function git(root, args) {
-  try { return exec('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { return null; }
+  try { return exec('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: GIT_OUTPUT }).trim(); } catch { return null; }
 }
+// The most a git command may print to the library: a diff of a large branch is read whole.
+const GIT_OUTPUT = 256 * 1024 * 1024;
 // git run for its result and its refusal: { ok, out } or { ok: false, err } with the first line of what git said.
 function gitRun(cwd, args) {
   try { return { ok: true, out: exec('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim() }; }
@@ -309,8 +311,9 @@ function isBulk(raw) { return /[,-]/.test(String(raw ?? '')); }
 // An issue number of the loop standing alone in a text: no letter or digit touches it, so a sha (1b066c7) or a longer
 // number never reads as one, while reviewer-450, report-398 and 024 between brackets do. Dates (2026-10-15, 2026-10) and dotted
 // version numbers are set aside first, and only a number that is an id the loop holds (`held`, a Set or Map of ids) counts, so a
-// year or a count never becomes an issue in a loop of thousands.
-export function idsNamed(text, held) {
+// year or a count never becomes an issue in a loop of thousands. With `introducedOnly`, a number counts only when it is
+// introduced by the word issue, issues or ticket, or by a hash sign, whatever its length, so a bare number in code is never read as an id.
+export function idsNamed(text, held, { introducedOnly = false } = {}) {
   const plain = String(text || '').replace(/(?<![0-9])\d{4}-(?:0[1-9]|1[0-2])(?:-(?:0[1-9]|[12]\d|3[01]))?(?:[ T]\d{2}:\d{2})?(?![0-9])/g, ' ').replace(/\d+(?:\.\d+)+/g, ' ');
   // A range (998-1002, low-high like expandIds reads it) names every id the loop holds inside it; a lone id names itself.
   const heldIds = [...held.keys ? held.keys() : held].map(String);
@@ -327,7 +330,7 @@ export function idsNamed(text, held) {
     prevEnd = m.index + m[0].length;
     const introduced = m[1] === '#' || /(?:^|[^A-Za-z])(?:issues?|tickets?)\s*$/i.test(gap) || (chain && /^\s*(?:,|and|or|&)?\s*$/i.test(gap));
     chain = introduced;
-    if (m[2].length < 3 && !introduced) continue;
+    if (!introduced && (introducedOnly || m[2].length < 3)) continue;
     if (m[4] !== undefined && Number(m[2]) <= Number(m[4])) out.push(...heldIds.filter((id) => Number(id) >= Number(m[2]) && Number(id) <= Number(m[4])).sort(cmpId));
     else for (const raw of m[4] === undefined ? [m[2]] : [m[2], m[4]]) if (byKey.has(idKey(raw))) out.push(byKey.get(idKey(raw)));
   }
@@ -4183,16 +4186,67 @@ function countAsserts(root, ref, files) {
 
 function isTestFile(f) { return /(^|\/)(test|tests|spec|__tests__)(\/|$)|\.(test|spec)\.[a-z]+$|_test\.[a-z]+$|Tests?\.[a-z]+$/.test(f); }
 
+// The most notes a check prints; the rest are counted, so a branch of thousands of lines cannot flood the output.
+const NOTE_LIMIT = 20;
+// The added lines of a diff that name an issue of the loop (`held`): each line the branch gives, its file and its number
+// in the branch, read from the hunks of a zero-context diff. Only added lines count, a removed line never does, and the
+// text of each is one line with its separators escaped.
+function issueNumberNotes(repo, range, held) {
+  const diff = git(repo, ['diff', '--no-color', '--no-ext-diff', '-U0', range]) || '';
+  const notes = [];
+  let file = null;
+  let line = 0;
+  let oldLeft = 0;
+  let newLeft = 0;
+  for (const text of diff.split('\n')) {
+    if (oldLeft > 0 || newLeft > 0) {
+      if (oldLeft > 0 && text.startsWith('-')) oldLeft -= 1;
+      else if (newLeft > 0 && text.startsWith('+')) {
+        const added = noSeparators(oneLine(text.slice(1)));
+        const ids = idsNamed(added, held, { introducedOnly: true });
+        if (ids.length) notes.push({ kind: 'issue-number', file, line, ids, text: added });
+        newLeft -= 1;
+        line += 1;
+      }
+      continue;
+    }
+    const hunk = /^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(text);
+    if (hunk) { oldLeft = Number(hunk[1] ?? 1); line = Number(hunk[2]); newLeft = Number(hunk[3] ?? 1); }
+    else if (text.startsWith('+++ ')) file = text.startsWith('+++ b/') ? text.slice(6) : null;
+  }
+  return notes;
+}
+// The lines a check prints for its notes: each note on one line, then how many were left out past the limit.
+export function renderCheckNotes(out) {
+  const lines = out.notes.map((n) => `note ${n.file}:${n.line} names issue ${n.ids.join(', ')} · ${n.text}`);
+  if (out.notesOmitted) lines.push(`… and ${out.notesOmitted} more notes not shown`);
+  return lines.join('\n');
+}
+
 // check <id> --branch <b> bounds the diff by that issue's Files; check --branch <b> with no id bounds it by the
 // union of Files over every issue that records Branch <b> (in progress or done) — a package on one shared
 // branch passes in one call instead of failing each issue for the files of the others.
+// The commits a branch carries beyond the base, or null when git does not know the branch or the base.
+function commitsBeyond(repo, base, branch) {
+  const n = git(repo, ['rev-list', '--count', `${base}..${branch}`]);
+  return n === null ? null : Number(n);
+}
+// The refusal of a branch no issue records. When the branch carries commits, it says how many and what to file.
+function unrecordedBranch(root, flags) {
+  const repo = flags.repo !== undefined ? repoFromInput(root, flags.repo).main : root;
+  const base = flags.base || defaultBase(repo);
+  const carried = commitsBeyond(repo, base, flags.branch);
+  if (carried) return `no issue records branch ${flags.branch}: it carries ${carried} commit(s) beyond ${base} and no issue holds it (work without a ticket) — file the issue, then set it in-progress --branch ${flags.branch}`;
+  return `no issue records branch ${flags.branch} — name one (check <id> --branch ${flags.branch}), or record the package: set <ids> in-progress --branch ${flags.branch}`;
+}
+
 export function cmdCheck(root, rawId, flags) {
   need(flags.branch, 'check requires --branch <worker branch>');
   let pkg;
   if (rawId === undefined) {
     const profile = loadProfile(root);
     pkg = loadIssues(root).filter((i) => i.fields.branch === flags.branch && (profile.is(i.status, 'holds-claim') || profile.is(i.status, 'closes-record')));
-    need(pkg.length, `no issue records branch ${flags.branch} — name one (check <id> --branch ${flags.branch}), or record the package: set <ids> in-progress --branch ${flags.branch}`);
+    if (!pkg.length) need(false, unrecordedBranch(root, flags));
     if (flags.repo === undefined) {
       const repos = new Map();
       for (const i of pkg) for (const r of issuePlaces(root, i)) repos.set(r, [...(repos.get(r) || []), i.id]);
@@ -4248,7 +4302,8 @@ export function cmdCheck(root, rawId, flags) {
     { name: 'test files', ok: removedTests.length === 0, note: removedTests.length ? `removed: ${removedTests.join(', ')}` : `${testsTip.length} on the branch, ${touchedTests.length} touched, none removed` },
     { name: 'assertions in touched tests', ok: assertsTip >= assertsBase, note: `${assertsBase} → ${assertsTip}` },
   ];
-  return { id: rawId === undefined ? null : issue.id, ids: pkg.map((i) => i.id), branch: flags.branch, repo, base, mergeBase, changed, items, ok: items.every((i) => i.ok) };
+  const notes = issueNumberNotes(repo, `${base}...${flags.branch}`, new Set(loadIssues(root).map((i) => i.id)));
+  return { id: rawId === undefined ? null : issue.id, ids: pkg.map((i) => i.id), branch: flags.branch, repo, base, mergeBase, changed, items, notes: notes.slice(0, NOTE_LIMIT), notesOmitted: Math.max(0, notes.length - NOTE_LIMIT), ok: items.every((i) => i.ok) };
 }
 
 // Every jarl/* branch, plus every branch some worktree has checked out that is not the base: a
@@ -4280,7 +4335,7 @@ export function renderBranches(rows, root) {
   return rows.map((b) => [
     b.repo !== repoLabel(root) ? `[${b.repo}] ` : '', b.branch, b.issues.length ? ` → ${b.issues.join(', ')}` : '', '  ',
     b.missing ? 'GONE' : `+${b.ahead ?? '?'}  ${renderBranchWorktree(b)}`,
-    b.unnamed ? '  UNNAMED — rename to jarl/NNN-slug before merging' : '', DONE_BRANCH[b.done] || '', b.stale.length ? `  STALE: ${b.stale.join('; ')}` : '',
+    b.unnamed ? '  UNNAMED — rename to jarl/NNN-slug before merging' : '', b.unticketed ? '  NO ISSUE' : '', DONE_BRANCH[b.done] || '', b.stale.length ? `  STALE: ${b.stale.join('; ')}` : '',
   ].join('')).join('\n');
 }
 
@@ -4405,13 +4460,15 @@ function branchesIn(root, repo, flags, issues, hours = STALE_HOURS) {
     // Done → delete: every issue it carries is done or dropped (at least one done), and its work is in the
     // base — the branch is an ancestor of it, or every done issue records its merge.
     const done = doneMark(repo, base, name, on, dirty, loadProfile(root), unknown);
-    return { repo: repoLabel(repo), branch: name, ahead, worktree: ws.path, worktreeState: ws.state, ...(ws.reason ? { worktreeReason: ws.reason } : {}), ...(wtGone ? { worktreeGone: true } : {}), dirty, unnamed: !name.startsWith('jarl/') && !leased.includes(name), issues: on.map((i) => i.id), stale, done, deletable: done === 'delete' };
+    // A branch that carries commits, no issue holds (no Branch, no lease) and that is neither the base nor a release branch.
+    const unticketed = on.length === 0 && (ahead ?? 0) > 0 && name !== base && !/^release\//.test(name);
+    return { repo: repoLabel(repo), branch: name, ahead, unticketed, worktree: ws.path, worktreeState: ws.state, ...(ws.reason ? { worktreeReason: ws.reason } : {}), ...(wtGone ? { worktreeGone: true } : {}), dirty, unnamed: !name.startsWith('jarl/') && !leased.includes(name), issues: on.map((i) => i.id), stale, done, deletable: done === 'delete' };
   });
   // An in-progress issue whose recorded branch is not in the repository any more: a lease with nothing under it.
   const gone = leased.filter((b) => !exists(b)).map((name) => {
     const on = issuesOnBranch(root, issues, real, name);
     const stale = on.flatMap((i) => leaseProblems(root, i, hours).map((p) => `${i.id} ${p}`));
-    return { repo: repoLabel(repo), branch: name, ahead: null, worktree: null, dirty: null, unnamed: false, issues: on.map((i) => i.id), stale, done: null, deletable: false, missing: true };
+    return { repo: repoLabel(repo), branch: name, ahead: null, unticketed: false, worktree: null, dirty: null, unnamed: false, issues: on.map((i) => i.id), stale, done: null, deletable: false, missing: true };
   }).filter((r) => r.stale.length);
   return [...rows, ...gone];
 }
