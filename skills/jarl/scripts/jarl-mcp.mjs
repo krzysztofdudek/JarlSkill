@@ -64,8 +64,8 @@ export const ARG_NOTES = {};
 const LIST_ID_COMMANDS = new Set(['body', 'source', 'after', 'files', 'repo', 'round']);
 const IDS_FIELD = 'One id, or several as one comma list with ranges (12,13 or 203-206): all of them change, or none.';
 const ROOT_FIELD = "The directory holding .jarl/, as an absolute path (a relative or empty one is refused). Defaults to JARL_ROOT from the server's environment, else the loop found from the server's working directory. Workers in a worktree and every role of a loop that lives in another repository pass it always.";
-const IDS_NOTE = 'An ids field is one id or several as one comma list with ranges (12,13,14 or 203-206,209); every id and every precondition is checked before anything is written, so the call lands on all of them or on none.';
-const HELP = `${USAGE}\n\n${IDS_NOTE}\n\n${Object.entries(ARG_NOTES).map(([c, n]) => `${toolName(c)}: ${n}`).join('\n')}`;
+// The usage text whole: the ids grammar is in it, and its last section is the workflow for parallel workers.
+const HELP = USAGE;
 // Hosts keep these in the session's standing instructions, so the last sentence outlives a compaction that loses the skill.
 const INSTRUCTIONS = 'Every jarl command is a tool, jarl_<command>, with its arguments and flags as fields. A description is one sentence; jarl_help answers with the full usage of every command. After a compaction, or any summary of your own context, you are starting a session: run jarl_resume before your next action; a summary is not the state of the loop.';
 

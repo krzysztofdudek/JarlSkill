@@ -357,7 +357,14 @@ name first (tool/src/a.mjs for Repo tool): next then keeps the same path in two 
 and check matches the path after the name. An issue may name several repositories (Repo: tool, lib):
 each file then starts with the name of the one it is in (one with no such name is in the first), and
 check on it takes --repo to say which one to read. show and status --by repo print where each
-repository, and the worktree of a lease, is on this machine; nothing resolved is written.`;
+repository, and the worktree of a lease, is on this machine; nothing resolved is written.
+
+Parallel workers in worktrees:
+  - Default mode: the loop is out of git and lives in the main checkout, so every call, a worker's and the coordinator's, passes --root <main checkout>.
+  - Committed mode: the merger alone commits .jarl/, and a worker never does.
+  - Filing: the coordinator files the issues; a worker reports what it found, or files with --root <main checkout>.
+  - Lease: an issue in progress is held by a worker, whose name, branch and start the lease records.
+  - Finished work: list hides done and dropped issues; --all shows every status, and --tag, --status, --prio and --grep filter by tag, status, priority and text.`;
 // ---- main --------------------------------------------------------------------------------------
 
 // Every flag a command accepts, and what it takes: 'bool' takes no value, 'value' takes exactly one,
