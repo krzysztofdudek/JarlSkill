@@ -6,12 +6,12 @@
 // .jarl/issues/NNN-slug.md per issue. This module only reads and writes those files, so anything
 // it does can be checked by opening them. Zero dependencies, Node 22+.
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, rmSync, realpathSync, statSync, fstatSync, renameSync, openSync, closeSync, writeSync, unlinkSync, linkSync, constants as fsConstants } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, rmSync, realpathSync, statSync, lstatSync, fstatSync, renameSync, openSync, closeSync, writeSync, unlinkSync, linkSync, constants as fsConstants } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { hostname } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { join, resolve, dirname, basename, relative, isAbsolute } from 'node:path';
+import { join, resolve, dirname, basename, relative, isAbsolute, sep } from 'node:path';
 
 // The built-in statuses, kinds and tiers: what a loop with no profile uses (see "the profile" below).
 export const STATUSES = ['open', 'in-progress', 'done', 'dropped', 'deferred'];
@@ -582,6 +582,7 @@ function validateSlots(g, kinds, say) {
   const required = new Set();
   if (g['requires-slots'] === undefined) say('"done-gate": "slots" needs "requires-slots": the kinds of issue that must carry them');
   else if (!isObj(g['requires-slots'])) say('"done-gate": "requires-slots" is an object: { "<kind>": ["<slot>", ...] }');
+  else if (!Object.keys(g['requires-slots']).length) say('"requires-slots" names at least one kind of issue: { "<kind>": ["<slot>", ...] }');
   else {
     const table = {};
     for (const [kind, names] of Object.entries(g['requires-slots'])) {
@@ -608,7 +609,7 @@ function validateSlots(g, kinds, say) {
     const place = spec.place;
     const parts = typeof place === 'string' ? place.split('/') : [];
     if (typeof place !== 'string' || place === '' || place.length > 200 || /[\s\\\x00-\x1f]/.test(place) || place.startsWith('/') || parts.some((p) => p === '' || p === '.' || p === '..')) say(`${at}: "place" is a relative path under the loop root, without whitespace, backslash, an empty segment, . or .. — for example "attachments/<id>/${name}.*" (<id> stands for the issue's number)`);
-    else if (parts.slice(0, -1).some((p) => p.includes('*'))) say(`${at}: "place" holds * only in the last segment`);
+    else if (parts.slice(0, -1).some((p) => p.includes('*')) || place.split('*').length > 2) say(`${at}: "place" holds at most one *, and only in the last segment`);
     const exts = spec.extensions;
     if (!Array.isArray(exts) || !exts.length || !exts.every((e) => typeof e === 'string' && SLOT_EXT_RE.test(e))) say(`${at}: "extensions" is a non-empty list of lower-case extensions without the dot, such as ["png", "jpg"]`);
     const min = spec['min-size'] === undefined ? 1 : spec['min-size'];
@@ -2417,69 +2418,91 @@ function plainRelative(file) {
   if (parts.some((p) => p === '' || p === '.')) return 'is not a plain path: it holds an empty or a . segment';
   return null;
 }
-// The file at `rel` under the root: { missing: true }, { problem } or { size, sha256 }. It resolves the root and the path, refuses
-// a path that is, or sits under, a symlink, opens the file without following one, and reads it as bytes.
-function readAttachment(root, rel) {
+// The file at `rel` under the root: { missing: true }, { problem } or { size, sha256, name } (name: the path as the disk spells it).
+// It resolves the root and the path, refuses a path that is, or sits under, a symlink, and refuses anything that is not a regular
+// file (a pipe, a socket, a device, a directory) before it opens anything, so a pipe can never block the reader. The file is then
+// opened without following a symlink and without blocking, and the descriptor must be the file the check saw (same device and inode).
+// With `hash` false only the size is read, from the check alone: the file is never opened.
+function readAttachment(root, rel, hash = true) {
   let base;
-  try { base = realpathSync(root); } catch { return { problem: 'cannot be read: the loop root is not readable' }; }
+  try { base = realpathSync.native(root); } catch { return { problem: 'cannot be read: the loop root is not readable' }; }
   const abs = join(base, ...rel.split('/'));
   let real;
-  try { real = realpathSync(abs); } catch { return { missing: true }; }
-  if (real !== abs) return { problem: 'is, or sits under, a symlink: an attachment is a regular file inside the loop root' };
+  try { real = realpathSync.native(abs); } catch { return { missing: true }; }
+  const spelled = real !== abs && real.toLowerCase() === abs.toLowerCase();
+  if (real !== abs && !spelled) return { problem: 'is, or sits under, a symlink: an attachment is a regular file inside the loop root' };
+  const name = spelled ? relative(base, real).split(sep).join('/') : rel;
+  let seen;
+  try { seen = lstatSync(real); } catch { return { missing: true }; }
+  if (seen.isSymbolicLink()) return { problem: 'is a symlink: an attachment is a regular file inside the loop root' };
+  if (seen.isDirectory()) return { problem: 'is a directory' };
+  if (!seen.isFile()) return { problem: 'is not a regular file: a pipe, a socket or a device cannot be an attachment' };
+  const sizeProblem = (n) => (n > ATTACH_MAX_BYTES ? `is ${n} bytes, over the limit of 64 MiB` : n === 0 ? 'is empty' : null);
+  if (!hash) return sizeProblem(seen.size) ? { problem: sizeProblem(seen.size) } : { size: seen.size, sha256: null, name };
   let fd;
-  try { fd = openSync(abs, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW); } catch (e) {
+  try { fd = openSync(real, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW | (fsConstants.O_NONBLOCK || 0)); } catch (e) {
     if (e.code === 'ENOENT') return { missing: true };
     return { problem: e.code === 'EISDIR' ? 'is a directory' : e.code === 'ELOOP' ? 'is a symlink: an attachment is a regular file inside the loop root' : `cannot be opened (${e.code})` };
   }
   try {
     const st = fstatSync(fd);
-    if (st.isDirectory()) return { problem: 'is a directory' };
-    if (!st.isFile()) return { problem: 'is not a regular file' };
-    if (st.size > ATTACH_MAX_BYTES) return { problem: `is ${st.size} bytes, over the limit of 64 MiB` };
-    if (st.size === 0) return { problem: 'is empty' };
+    if (!st.isFile() || st.dev !== seen.dev || st.ino !== seen.ino) return { problem: 'was replaced while it was being read: an attachment is a regular file that stays put' };
+    if (sizeProblem(st.size)) return { problem: sizeProblem(st.size) };
     const bytes = readFileSync(fd);
     if (bytes.length > ATTACH_MAX_BYTES) return { problem: `is ${bytes.length} bytes, over the limit of 64 MiB` };
-    return { size: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') };
+    return { size: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex'), name };
   } finally { closeSync(fd); }
 }
 // The file at `rel` held to a slot: its path, its place, its extension (in lower case) and its size, then its bytes. Returns
 // { problem } (what is wrong with it, said as "<path> <problem>") or { size, sha256 }; `gone` is how a missing file is said.
-function inspectAttachment(root, issueId, spec, rel, gone) {
+// The path of a file held to a slot's place and extensions (the extension compared in lower case): the problem, or null.
+function shapeProblem(spec, issueId, rel) {
+  const place = slotPlace(spec, issueId);
+  if (!atPlace(place, rel)) return `${rel} is not at the place of slot ${spec.name} (${place})`;
+  const file = rel.slice(rel.lastIndexOf('/') + 1).toLowerCase();
+  const ext = file.includes('.') ? file.slice(file.lastIndexOf('.') + 1) : '';
+  return spec.extensions.includes(ext) ? null : `${rel} has the extension "${ext}", and slot ${spec.name} allows ${spec.extensions.join(', ')}`;
+}
+// `hash` false reads the size alone (see readAttachment); the result then holds no sha256. A result's `name` is the path as the
+// disk spells it, which is the one a row records.
+function inspectAttachment(root, issueId, spec, rel, gone, hash = true) {
   const bad = plainRelative(rel);
   if (bad) return { problem: `${rel === '' ? 'the path' : rel} ${bad}` };
-  if (spec) {
-    const place = slotPlace(spec, issueId);
-    if (!atPlace(place, rel)) return { problem: `${rel} is not at the place of slot ${spec.name} (${place})` };
-    const file = rel.slice(rel.lastIndexOf('/') + 1).toLowerCase();
-    const ext = file.includes('.') ? file.slice(file.lastIndexOf('.') + 1) : '';
-    if (!spec.extensions.includes(ext)) return { problem: `${rel} has the extension "${ext}", and slot ${spec.name} allows ${spec.extensions.join(', ')}` };
-  }
-  const read = readAttachment(root, rel);
+  const shape = spec ? shapeProblem(spec, issueId, rel) : null;
+  if (shape) return { problem: shape };
+  const read = readAttachment(root, rel, hash);
   if (read.missing) return { problem: `${rel} ${gone}`, missing: true };
   if (read.problem) return { problem: `${rel} ${read.problem}` };
-  if (spec && read.size < spec.minSize) return { problem: `${rel} is ${read.size} bytes, under the minimum of ${spec.minSize} bytes` };
+  const onDisk = spec && read.name !== rel ? shapeProblem(spec, issueId, read.name) : null;
+  if (onDisk) return { problem: onDisk };
+  if (spec && read.size < spec.minSize) return { problem: `${read.name} is ${read.size} bytes, under the minimum of ${spec.minSize} bytes` };
   return read;
 }
 // How a file that differs from its row is said: the recorded hash and the one the bytes have now, shortened.
 function changedText(recorded, now) { return `${recorded.path} does not match its recorded sha256 (recorded ${recorded.sha256.slice(0, 12)}, now ${now.sha256.slice(0, 12)})`; }
-// Where one required slot of an issue stands in the gate's window: the newest row of the slot that is not retracted, and
-// the file as it is now. state is missing (no row), filled, gone, changed (the bytes are not the recorded ones) or refused.
-function slotState(root, issue, spec, g) {
-  const row = [...g.rowLog].reverse().find((e) => e.attach && !e.retracted && e.attach.slot === spec.name && e.n > g.anchorN);
-  if (!row) return { state: 'missing', spec };
-  const now = inspectAttachment(root, issue.id, spec, row.attach.path, 'is gone');
+// Where one required slot of an issue stands in the gate's window: the newest row of the slot, and the file as it is now. A
+// retraction empties the slot, and never brings back an older row. state is missing (no row in the window, or the newest is
+// retracted: `outside` says a row of the slot exists before the window opened), filled, gone, changed (the bytes are not the
+// recorded ones) or refused. With `hash` false the file's size is compared and its bytes are not read, so changed then means a
+// different size; the done gate and verify read the bytes.
+function slotState(root, issue, spec, g, hash = true) {
+  const rows = g.rowLog.filter((e) => e.attach && e.attach.slot === spec.name);
+  const row = [...rows].reverse().find((e) => e.n > g.anchorN);
+  if (!row || row.retracted) return { state: 'missing', spec, outside: !row && rows.length > 0 };
+  const now = inspectAttachment(root, issue.id, spec, row.attach.path, 'is gone', hash);
   if (now.problem) return { state: now.missing ? 'gone' : 'refused', spec, row, problem: now.problem };
-  if (now.sha256 !== row.attach.sha256 || now.size !== row.attach.size) return { state: 'changed', spec, row, problem: changedText(row.attach, now) };
+  if (now.size !== row.attach.size || (hash && now.sha256 !== row.attach.sha256)) return { state: 'changed', spec, row, problem: hash ? changedText(row.attach, now) : `${row.attach.path} is ${now.size} bytes, and ${row.attach.size} were recorded` };
   return { state: 'filled', spec, row };
 }
 // What stops an issue from being done for want of its attachments: one { slot, what, fix } for each required slot that is not
 // filled, with the command that fills it. [] for an issue whose kind requires no slots.
-export function slotProblems(root, profile, issue, g) {
+// With `hash` false (the views) a file is compared by existence and size; the done gate reads the bytes.
+export function slotProblems(root, profile, issue, g, hash = true) {
   const out = [];
   for (const spec of requiredSlots(profile, issue)) {
-    const s = slotState(root, issue, spec, g);
+    const s = slotState(root, issue, spec, g, hash);
     if (s.state === 'filled') continue;
-    out.push({ slot: spec.name, what: s.state === 'missing' ? 'no file recorded' : s.problem, fix: `jarl.mjs evidence ${issue.id} --file <a file at ${slotPlace(spec, issue.id)}> --slot ${spec.name}` });
+    out.push({ slot: spec.name, what: s.state === 'missing' ? (s.outside ? 'no file recorded inside the gate\'s window (a row from before the last start or reopen does not count)' : 'no file recorded') : s.problem, fix: `jarl.mjs evidence ${issue.id} --file <a file at ${slotPlace(spec, issue.id)}> --slot ${spec.name}` });
   }
   return out;
 }
@@ -2489,28 +2512,45 @@ function slotRefusal(root, profile, issue, g) {
   if (!problems.length) return null;
   return `${issue.id} needs these attachments before done (kind ${issue.kind || profile.kindDefault}): ${problems.map((p) => `slot ${p.slot}: ${p.what} — ${p.fix}`).join('; ')}`;
 }
-// The lines show prints for an issue whose kind requires slots: each required slot, its recorded path and whether it is filled.
-function attachmentLines(root, profile, issue) {
+// The slots an issue's kind requires, each as { slot, state, place, extensions, path, size, sha256, problem } with the state the
+// gate would read them in (see slotState; the bytes are read, so a changed file is told from an unchanged one). [] when the
+// kind requires none. show prints them and show --json carries them.
+export function attachmentStates(root, issue) {
+  const profile = loadProfile(root);
   const specs = requiredSlots(profile, issue);
   if (!specs.length) return [];
   const g = gateState(root, issue.id);
-  const lines = [`Attachments (slots an issue of kind ${issue.kind || profile.kindDefault} requires):`];
-  for (const spec of specs) {
+  return specs.map((spec) => {
     const s = slotState(root, issue, spec, g);
-    if (s.state === 'missing') { lines.push(`- ${spec.name}: not recorded · place ${slotPlace(spec, issue.id)} · ${spec.extensions.join(', ')}`); continue; }
-    lines.push(`- ${spec.name}: ${s.row.attach.path} · ${s.row.attach.size} bytes · sha256 ${s.row.attach.sha256.slice(0, 12)} · ${s.state}`);
+    return {
+      slot: spec.name, state: s.state === 'missing' && s.outside ? 'outside' : s.state, place: slotPlace(spec, issue.id), extensions: [...spec.extensions],
+      path: s.row ? s.row.attach.path : null, size: s.row ? s.row.attach.size : null, sha256: s.row ? s.row.attach.sha256 : null, problem: s.problem || null,
+    };
+  });
+}
+// The lines show prints for an issue whose kind requires slots: each required slot, its recorded path and its state, one of
+// filled, gone, changed, refused (with its reason), outside (a row from before the gate's window, which does not count) and
+// not recorded (with its place and extensions).
+function attachmentLines(root, profile, issue) {
+  const states = attachmentStates(root, issue);
+  if (!states.length) return [];
+  const lines = [`Attachments (slots an issue of kind ${issue.kind || profile.kindDefault} requires):`];
+  for (const s of states) {
+    if (s.path === null) { lines.push(`- ${s.slot}: ${s.state === 'outside' ? 'not recorded in the gate\'s window (a row from before the last start or reopen does not count)' : 'not recorded'} · place ${s.place} · ${s.extensions.join(', ')}`); continue; }
+    lines.push(`- ${s.slot}: ${s.path} · ${s.size} bytes · sha256 ${s.sha256.slice(0, 12)} · ${s.state}${s.state === 'refused' ? ` (${s.problem})` : ''}`);
   }
   return lines;
 }
 // The recorded files of the loop that are gone or differ from what was recorded: verify's findings, one { id, what } for each slot of an issue
-// whose newest row that is not retracted names such a file.
+// whose newest row, when it is not retracted, names such a file.
 function attachmentFindings(root, loop) {
   const out = [];
   for (const issue of loop.issues) {
     if (issue.id === null || !(loop.eventsById.get(issue.id) || []).some((e) => e.attach)) continue;
     const newest = new Map();
-    for (const e of gateOf(loop, issue.id).rowLog) if (e.attach && !e.retracted) newest.set(e.attach.slot, e.attach);
+    for (const e of gateOf(loop, issue.id).rowLog) if (e.attach) newest.set(e.attach.slot, e.retracted ? null : e.attach);
     for (const [slot, a] of newest) {
+      if (a === null) continue;
       const now = inspectAttachment(root, issue.id, null, a.path, 'is gone');
       if (now.problem) out.push({ id: issue.id, what: `slot ${slot}: ${now.problem}` });
       else if (now.sha256 !== a.sha256 || now.size !== a.size) out.push({ id: issue.id, what: `slot ${slot}: ${changedText(a, now)}` });
@@ -2535,7 +2575,7 @@ function attachmentRow(root, rawIds, flags) {
   const rel = flags.file;
   const read = inspectAttachment(root, issue.id, spec, rel, 'is no such file');
   need(!read.problem, read.missing ? `no such file: ${rel}, under the loop root` : read.problem);
-  return [{ ran: `attach ${slot} ${rel} sha256:${read.sha256} size:${read.size}`, saw: `slot ${slot}: ${read.size} bytes` }];
+  return [{ ran: `attach ${slot} ${read.name} sha256:${read.sha256} size:${read.size}`, saw: `slot ${slot}: ${read.size} bytes` }];
 }
 
 // ---- commands: evidence ------------------------------------------------------------------------------
@@ -2584,7 +2624,8 @@ export function cmdEvidence(root, rawIds, text, flags) {
   if (attaching) rows = attachmentRow(root, rawIds, flags);
   else if (flags && (flags.ran !== undefined || flags.saw !== undefined)) {
     rows = rowsOf(flags);
-    need(!rows.some((r) => attachmentOf(r.ran)), 'a row shaped as an attachment is written only by --file and --slot, which read the file and record its hash');
+    // The log stores a command trimmed and cut to its first line, so the shape is judged on that, in any case.
+    need(!rows.some((r) => attachmentOf(String(r.ran).replace(/\r\n?/g, '\n').trim().split('\n')[0].trim().toLowerCase())),'a row shaped as an attachment is written only by --file and --slot, which read the file and record its hash');
     need(text === undefined, `evidence takes free text or --ran/--saw rows, not both (got "${text}" as well) — a value starting with -- goes after a bare --`);
   } else {
     need(text, 'evidence requires "<what was run and what it printed>", or --ran "<command>" --saw "<what it printed>"');
@@ -3176,7 +3217,7 @@ export function appendNote(root, event) {
   const id = LEADING_ID.exec(text)?.[1] ?? null;
   need(!MOVE_SHAPE.test(text), `log writes a note, and "${text.length > 80 ? `${text.slice(0, 77)}...` : text}" has the shape of a move (an id, an arrow): the command that writes moves is ${LINE_WRITERS.move}`);
   const type = id === null ? 'other' : parseEvent(id, text, loadProfile(root)).type;
-  need(type === 'other', `log writes a note, and "${text.length > 80 ? `${text.slice(0, 77)}...` : text}" reads as ${type === 'filed' ? 'a filing' : `a ${type.replace('-', ' ')} line`}, which the journal's own command writes with its checks: ${LINE_WRITERS[type]}`);
+  need(type === 'other', `log writes a note, and "${text.length > 80 ? `${text.slice(0, 77)}...` : text}" reads as ${type === 'filed' ? 'a filing' : `a ${type.replace('-', ' ')} line`}, which the journal's own command writes with its checks: ${type === 'row' && attachmentOf(text.slice(`${id} evidence row · `.length)) ? 'jarl.mjs evidence <id> --file <path> --slot <name>' : LINE_WRITERS[type]}`);
   appendLog(root, event);
 }
 
@@ -3634,7 +3675,7 @@ export function closedGateFlags(loop) {
       if (!g.tracked) continue;
       const code = carriesCode(issue);
       if (!g.rowsSince) flag(g.rowLog.some((r) => r.retracted && r.n > g.anchorN) ? 'its proof row was retracted' : `no --ran/--saw row since it was ${g.anchor.what === 'filed' ? 'filed' : `moved → ${g.anchor.what}`}`, `jarl.mjs evidence ${id} --ran "<command>" --saw "<what it printed>"`);
-      for (const p of slotProblems(loop.root, profile, issue, g)) flag(`slot ${p.slot}: ${p.what}`, p.fix);
+      for (const p of slotProblems(loop.root, profile, issue, g, false)) flag(`slot ${p.slot}: ${p.what}`, p.fix);
       if (profile.doneGate.approve !== 'none') {
         const fresh = `jarl.mjs review ${id} approve --by <fresh reviewer> "<findings>"`;
         const kind = approveKind(g);

@@ -10,7 +10,8 @@ import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as R from '../record.mjs';
-import { jarl, refuses, run, loop as makeLoop } from './helpers.mjs';
+import { spawnSync } from 'node:child_process';
+import { jarl, refuses, run, spawnJarl, loop as makeLoop } from './helpers.mjs';
 import { FINDINGS } from './findings.mjs';
 import { oldJarl } from './old-jarl.mjs';
 
@@ -285,7 +286,7 @@ test('the profile key is checked: kinds, slot names, places, extensions, sizes a
   assert.match(bad({ 'requires-slots': { bug: ['before'] }, slots: { before: { place: 'a/x.*', extensions: ['png'], color: 'red' } } }), /unknown key "color"/);
 });
 
-test('a profile without the key reads exactly as before: no slots in its description, no section in show, no extra check', () => {
+test('a profile without the key describes no slots, shows no attachment section and prints no extra check', () => {
   const root = makeLoop({ prefix: 'jarl-attach-', via: 'cli' });
   jarl(root, 'new', 'a defect', '--kind', 'bug', '--acceptance', 'it works');
   assert.deepEqual(Object.keys(JSON.parse(jarl(root, 'profile', '--json')).doneGate), ['approve', 'requires-merged']);
@@ -318,4 +319,133 @@ test('a reader that does not know the key refuses the profile loudly, and reads 
 test('the help text describes the two flags', () => {
   const help = run(makeLoop({ prefix: 'jarl-attach-', via: 'cli' }), ['--help']);
   assert.match(`${help.stdout}${help.stderr}`, /--file <path> --slot <name>/);
+});
+
+// ---- pipes, normalised rows and the states of a slot ----
+
+// A call that must finish at once: a pipe that blocks the reader makes it time out, and the test fails instead of hanging.
+function quick(root, ...args) {
+  const r = spawnJarl(root, args, { timeout: 15_000 });
+  assert.equal(r.error, undefined, `jarl ${args.join(' ')} did not finish: ${r.error && r.error.message}`);
+  return r;
+}
+// Replaces the file at rel by a named pipe.
+function pipeAt(root, rel) {
+  const file = join(root, rel);
+  mkdirSync(join(file, '..'), { recursive: true });
+  try { unlinkSync(file); } catch { /* there was none */ }
+  const made = spawnSync('mkfifo', [file], { timeout: 10_000 });
+  assert.equal(made.status, 0, 'mkfifo made the pipe');
+}
+
+test('a named pipe at a slot path is refused by evidence --file, done, show and verify without blocking, and leaves no lock behind', () => {
+  const root = loopWith();
+  both(root);
+  pipeAt(root, 'attachments/1/before.png');
+  const done = quick(root, 'set', '1', 'done');
+  assert.notEqual(done.status, 0);
+  assert.match(done.stderr, /slot before: attachments\/1\/before\.png is not a regular file/);
+  assert.match(quick(root, 'show', '1').stdout, /- before: attachments\/1\/before\.png .*refused \(attachments\/1\/before\.png is not a regular file/);
+  assert.match(quick(root, 'verify').stdout, /issue 1: slot before: attachments\/1\/before\.png is not a regular file/);
+  pipeAt(root, 'attachments/1/after.png');
+  const again = quick(root, 'evidence', '1', '--file', 'attachments/1/after.png', '--slot', 'after');
+  assert.notEqual(again.status, 0);
+  assert.match(again.stderr, /is not a regular file/);
+  assert.equal(quick(root, 'evidence', '1', 'a note after the pipes').status, 0, 'the write lock is free');
+});
+
+test('status, resume and report do not block on a closed issue whose slot path has become a named pipe', () => {
+  const root = loopWith();
+  both(root);
+  jarl(root, 'set', '1', 'done');
+  pipeAt(root, 'attachments/1/before.png');
+  const status = quick(root, 'status');
+  assert.match(status.stdout, /closed, gate does not hold: 1 · slot before: attachments\/1\/before\.png is not a regular file/);
+  assert.equal(quick(root, 'resume').status, 0);
+  assert.equal(quick(root, 'report').status, 0);
+  assert.equal(quick(root, 'evidence', '1', 'a note after the pipe').status, 0, 'the write lock is free');
+});
+
+test('a row shaped as an attachment is refused by --ran in every spelling the log would store as one', () => {
+  const root = loopWith();
+  const ran = `attach before attachments/1/before.png sha256:${'0'.repeat(64)} size:5`;
+  const variants = { 'a leading space': ` ${ran}`, 'a trailing space': `${ran} `, 'a trailing newline': `${ran}\n`, 'a trailing U+2028': `${ran} `, 'a leading tab': `\t${ran}`, 'a non-breaking space': ` ${ran}`, 'upper case': ran.toUpperCase(), 'a second line': `${ran}\nmore` };
+  for (const [name, value] of Object.entries(variants)) {
+    assert.match(refuses(root, 'evidence', '1', '--ran', value, '--saw', 'ok'), /--file and --slot/, name);
+  }
+  assert.doesNotMatch(log(root), /evidence row · attach/);
+  assert.match(jarl(root, 'evidence', '1', '--ran', 'attach the probe', '--saw', 'ok'), /recorded/, 'a command that only starts with the word is a row');
+});
+
+test('the log refuses a hand-written attachment row and names --file and --slot', () => {
+  const root = loopWith();
+  assert.match(refuses(root, 'log', `1 evidence row · attach before attachments/1/before.png sha256:${'0'.repeat(64)} size:5`), /jarl\.mjs evidence <id> --file <path> --slot <name>/);
+});
+
+test('retracting the newest row of a slot empties it and never brings an older row back', () => {
+  const root = loopWith();
+  both(root);
+  put(root, 'attachments/1/after.png', PNG.replace('bug', 'bag'));
+  attach(root, 'after', 'attachments/1/after.png');
+  const text = issueText(root, 1);
+  const rows = L.evidenceTable(text.slice(text.indexOf('## Evidence'))).rows;
+  const newest = rows.map((r, i) => (r.ran.startsWith('attach after') ? i + 1 : 0)).filter(Boolean).pop();
+  jarl(root, 'evidence', '1', '--retract', String(newest), '--by', 'rev', 'the picture shows the wrong screen');
+  assert.match(refuses(root, 'set', '1', 'done'), /slot after: no file recorded/);
+  assert.match(jarl(root, 'show', '1'), /- after: not recorded · place/);
+  assert.match(jarl(root, 'verify'), /verify: clean/);
+});
+
+test('show prints the reason of a refused slot and show --json carries the state of every slot', () => {
+  const root = loopWith();
+  both(root);
+  writeProfile(root, { ...PROFILE, 'done-gate': { ...PROFILE['done-gate'], slots: { ...PROFILE['done-gate'].slots, before: { place: 'attachments/<id>/before.*', extensions: ['png'], 'min-size': 5000 } } } });
+  assert.match(jarl(root, 'show', '1'), /- before: attachments\/1\/before\.png · \d+ bytes · sha256 [0-9a-f]{12} · refused \(attachments\/1\/before\.png is \d+ bytes, under the minimum of 5000 bytes\)/);
+  const slots = JSON.parse(jarl(root, 'show', '1', '--json')).attachments;
+  assert.deepEqual(slots.map((s) => [s.slot, s.state]), [['before', 'refused'], ['after', 'filled']]);
+  assert.equal(slots[1].sha256, sha(PNG));
+  assert.equal(slots[1].path, 'attachments/1/after.png');
+  assert.equal(JSON.parse(jarl(loopWith('gap'), 'show', '1', '--json')).attachments, undefined);
+});
+
+test('a row recorded before the last start is outside the window: show and done say so', () => {
+  const root = loopWith();
+  both(root);
+  jarl(root, 'set', '1', 'open', 'back to the queue');
+  jarl(root, 'set', '1', 'in-progress', 'again', '--worker', 'w2');
+  assert.match(jarl(root, 'show', '1'), /- before: not recorded in the gate's window \(a row from before the last start or reopen does not count\)/);
+  assert.equal(JSON.parse(jarl(root, 'show', '1', '--json')).attachments[0].state, 'outside');
+  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', '3 pass');
+  jarl(root, 'review', '1', 'approve', '--by', 'rev-fresh', FINDINGS);
+  assert.match(refuses(root, 'set', '1', 'done'), /slot before: no file recorded inside the gate's window/);
+});
+
+test('the views compare a recorded file by existence and size, and the done gate and verify read its bytes', () => {
+  const root = loopWith();
+  both(root);
+  jarl(root, 'set', '1', 'done');
+  put(root, 'attachments/1/after.png', PNG.replace('bug', 'bag'));
+  assert.doesNotMatch(jarl(root, 'status'), /gate does not hold/, 'a same-size rewrite is not read by status');
+  assert.match(run(root, ['verify']).stdout, /slot after: attachments\/1\/after\.png does not match its recorded sha256/);
+  put(root, 'attachments/1/after.png', `${PNG} and more`);
+  assert.match(jarl(root, 'status'), /closed, gate does not hold: 1 · slot after: attachments\/1\/after\.png is \d+ bytes, and \d+ were recorded/);
+});
+
+test('the real on-disk name of a file is the one recorded', () => {
+  const root = loopWith();
+  put(root, 'attachments/1/before.PNG');
+  const odd = join(root, 'attachments', '1', 'before.png');
+  let sensitive = true;
+  try { readFileSync(odd); sensitive = false; } catch { /* a case-sensitive disk */ }
+  if (sensitive) { assert.match(refuses(root, 'evidence', '1', '--file', 'attachments/1/before.png', '--slot', 'before'), /no such file/); return; }
+  attach(root, 'before', 'attachments/1/before.png');
+  assert.match(issueText(root, 1), /attach before attachments\/1\/before\.PNG sha256:/);
+});
+
+test('a place holds at most one *, in the last segment, and requires-slots names at least one kind', () => {
+  const bad = (gate) => { try { L.validateProfile({ ...PROFILE, 'done-gate': gate }); return null; } catch (e) { return e.message; } };
+  const one = (place) => ({ 'requires-slots': { bug: ['before'] }, slots: { before: { place, extensions: ['png'] } } });
+  assert.match(bad(one('a/*.*')), /at most one \*/);
+  assert.equal(bad(one('a/before.*')), null);
+  assert.match(bad({ 'requires-slots': {}, slots: {} }), /"requires-slots" names at least one kind/);
 });
