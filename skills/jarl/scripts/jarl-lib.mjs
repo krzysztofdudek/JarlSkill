@@ -694,9 +694,21 @@ export function slugify(title) {
 // as fields; the built-in ones are letters and spaces only.
 const FIELD_RE = /^\*\*([A-Za-z0-9 -]+):\*\*\s*(.*)$/;
 
-export function parseIssue(text, file) {
+// With `skipped` (an array), what the parser does not place is pushed onto it as { n, text, reason }: the first line when it
+// is not an issue's header, and a Resources line one of whose names is not a word (letters, digits and . _ : / -).
+export function parseIssue(text, file, skipped) {
   const lines = text.split('\n');
   const head = idRe('^#\\s+({id})\\s+·\\s+(.*)$').exec(lines[0] || '');
+  if (skipped && !head) skipped.push({ n: 1, text: lines[0] || '', reason: 'not an issue header: the first line is "# <id> · <title>"' });
+  if (skipped) {
+    lines.forEach((line, i) => {
+      const f = FIELD_RE.exec(line);
+      if (!f || f[1].toLowerCase() !== 'resources') return;
+      for (const name of splitList(f[2])) {
+        if (!/^[A-Za-z0-9._:/-]+$/.test(name)) { skipped.push({ n: i + 1, text: line, reason: `the resource "${fieldText(name)}" is not a word: resource names are letters, digits and . _ : / -` }); break; }
+      }
+    });
+  }
   const issue = { file, id: head ? head[1] : null, title: head ? head[2].trim() : '', fields: {}, sections: {} };
   let section = null;
   for (const line of lines.slice(1)) {
@@ -1028,17 +1040,27 @@ const DECISION_HEAD = /^## (\d{4}-\d{2}-\d{2}) · (.+?)\s*$/;
 
 // The decisions read back: one entry per `## <date> · <slug>` heading, with its ruling, who ruled (**By:**, none
 // on a ruling that records no author), what it supersedes and what superseded it.
-export function loadDecisions(root) { return decisionsAt(jarlDir(root)); }
-// The rulings of the record held in `dir`.
-function decisionsAt(dir) {
+export function loadDecisions(root, skipped) { return decisionsAt(jarlDir(root), skipped); }
+// The rulings of the record held in `dir`. With `skipped` (an array), each line that is neither a ruling heading, a line
+// of a ruling, the title nor blank is pushed onto it as { n, text, reason }: text before the first ruling, a "## " heading
+// that is not a ruling's, and a ruling whose slug a ruling above it already holds.
+function decisionsAt(dir, skipped) {
   const path = decisionsPath(dir);
   if (!existsSync(path)) return [];
   const out = [];
-  for (const line of readText(path).split('\n')) {
+  const slugs = new Set();
+  readText(path).split('\n').forEach((line, i) => {
     const h = DECISION_HEAD.exec(line);
-    if (h) { out.push({ date: h[1], slug: h[2], body: [] }); continue; }
+    if (h) {
+      if (skipped && slugs.has(h[2])) skipped.push({ n: i + 1, text: line, reason: `the slug ${h[2]} is ruled twice: a ruling's slug names one ruling` });
+      slugs.add(h[2]);
+      out.push({ date: h[1], slug: h[2], body: [] });
+      return;
+    }
+    if (skipped && /^## /.test(line)) skipped.push({ n: i + 1, text: line, reason: 'a ruling heading does not parse: it is "## <date> · <slug>"' });
+    else if (skipped && !out.length && line.trim() !== '' && !line.startsWith('# ')) skipped.push({ n: i + 1, text: line, reason: 'text before the first ruling: a ruling starts with "## <date> · <slug>"' });
     if (out.length) out[out.length - 1].body.push(line);
-  }
+  });
   // A ruling's own fields (By, Supersedes, Superseded by, Settles) are the block the tool writes at the end of its
   // section — the trailing lines that are such a field or blank. A line of the ruling's text that happens to start
   // with **By:** is text.
@@ -1118,25 +1140,33 @@ function readGoal(dir) {
 //   models         [{ tier, models }] in the order written, `tier` as written
 //   coordinators   the names written on Coordinators lines
 const GOAL_LINE = /^\s*(?:[-*]\s+)?(?:\*\*)?(coordinators|check|model)(?:\s*\(([^)]+)\))?:(?:\*\*)?\s*(.+)$/i;
-export function goalLines(text) {
+// With `skipped` (an array), each machine line the grammar does not place is pushed onto it as { n, text, reason }: a
+// Check with no command, a Model with no tier or no model, a Coordinators line with a tier.
+export function goalLines(text, skipped) {
   const out = { goal: null, checks: [], checksByRepo: { bare: [], repos: {} }, models: [], coordinators: [] };
   if (text == null) return out;
   const lines = text.split('\n');
   out.goal = lines.slice(2).find((l) => l.trim()) || '';
-  for (const line of lines) {
+  lines.forEach((line, i) => {
     const m = GOAL_LINE.exec(line);
-    if (!m) continue;
+    if (!m) return;
     const key = m[1].toLowerCase();
     const value = m[3].replace(/\*\*/g, '');
     const qualifier = m[2] && fieldText(m[2]);
+    const skip = (reason) => { if (skipped) skipped.push({ n: i + 1, text: line, reason }); };
     if (key === 'coordinators' && !m[2]) out.coordinators.push(...value.split(',').map((n) => fieldText(n)).filter(Boolean));
-    else if (key === 'model' && m[2]) out.models.push({ tier: qualifier, models: value.split(',').map((s) => fieldText(s).replace(/^`(.*)`$/, '$1')).filter(Boolean) });
+    else if (key === 'coordinators') skip('a Coordinators line takes no tier: it is "Coordinators: <name>[, <name>…]"');
+    else if (key === 'model' && m[2]) {
+      const models = value.split(',').map((s) => fieldText(s).replace(/^`(.*)`$/, '$1')).filter(Boolean);
+      if (models.length) out.models.push({ tier: qualifier, models });
+      else skip('a Model line names no model: it is "Model (<tier>): <model>[, <model>…]"');
+    } else if (key === 'model') skip('a Model line names its tier in brackets: it is "Model (<tier>): <model>[, <model>…]"');
     else if (key === 'check') {
       const command = fieldText(value).replace(/^`(.*)`$/, '$1');
-      if (!command) continue;
+      if (!command) { skip('a Check line names no command: it is "Check: <what runs>" or "Check (<repository>): <what runs>"'); return; }
       if (qualifier) (out.checksByRepo.repos[qualifier] = out.checksByRepo.repos[qualifier] || []).push(command); else out.checksByRepo.bare.push(command);
     }
-  }
+  });
   out.checks = [...out.checksByRepo.bare, ...Object.values(out.checksByRepo.repos).flat()];
   return out;
 }
@@ -2833,6 +2863,14 @@ export function leaseOfMove(text, id, to) {
   return { reason: '' };
 }
 
+// The approve a retraction line takes away, as { by, kind } (by null for an approve with no reviewer recorded), or null
+// when the line names none. The line is written "retracts the approve by <name> (<kind>) of <date>".
+const RETRACT_TARGET = /retracts the approve (?:by (.+?)(?: \((fresh|coordinator|self)\))?(?: of \d{4}-\d{2}-\d{2})?|with no reviewer recorded)(?= · |$)/;
+function retractTarget(text) {
+  const m = RETRACT_TARGET.exec(text);
+  return m ? { by: m[1] ?? null, kind: m[2] ?? null } : null;
+}
+
 // One log line as an event, without its place in the file. `from` is the status the issue was in before the line.
 export function parseEvent(id, text, profile, from = null) {
   return eventParser(profile)(id, text, from);
@@ -2857,7 +2895,7 @@ function eventParser(profile) {
       const mm = /^model (.+?) · /.exec(rest);
       return { type: 'verdict', verdict: r[1], by: r[2] || null, kind: r[3] || null, model: mm ? mm[1] : null, relayed: /^relayed · /.test(mm ? rest.slice(mm[0].length) : rest) };
     }
-    if (text.startsWith(`${id} review retract`) && !/^\w/.test(text.slice(`${id} review retract`.length))) return { type: 'retract-review' };
+    if (text.startsWith(`${id} review retract`) && !/^\w/.test(text.slice(`${id} review retract`.length))) return { type: 'retract-review', target: retractTarget(text) };
     const rr = RETRACT_ROW_LINE.exec(text);
     if (rr) return { type: 'retract-row', row: Number(rr[1]) };
     if (text.startsWith(`${id} evidence row · `)) return { type: 'row' };
@@ -2910,8 +2948,10 @@ export function mapMergeRepos(root, fn) {
 }
 
 // Every dated line of the loop's log under `dir` (the directory holding the goal, the log and issues/), in order, as
-// typed events. An issue's events carry the status it moved from, replayed from its own filing and moves.
-export function loopEvents(dir, profile) {
+// typed events. An issue's events carry the status it moved from, replayed from its own filing and moves. With `skipped`
+// (an array), each line the reader does not place is pushed onto it as { n, text, reason }, n the line's number: a line
+// that is not dated, and a line that reads as one of the kinds the log writes and parses as none of them (see unplaced).
+export function loopEvents(dir, profile, skipped) {
   const path = logPath(dir);
   if (!existsSync(path)) return [];
   const parse = eventParser(profile);
@@ -2920,16 +2960,40 @@ export function loopEvents(dir, profile) {
   const forms = issueForms(dir);
   readText(path).split('\n').forEach((l, n) => {
     const m = LOG_LINE.exec(l);
-    if (!m) return;
+    if (!m) {
+      if (skipped && l.trim() !== '' && !l.startsWith('#')) skipped.push({ n: n + 1, text: l, reason: 'not a dated line: a line of the log is "- <date> <time> · <text>"' });
+      return;
+    }
     // A line names its issue as it was written; the event carries the issue's own form, so it meets its issue's id.
     const written = LEADING_ID.exec(m[2])?.[1] ?? null;
     const id = written === null ? null : writtenId(written, forms);
     const body = id === null ? { type: 'other' } : parse(written, m[2], lastStatus.get(id) ?? null);
+    if (skipped && written !== null) { const why = unplaced(profile, written, m[2], body); if (why) skipped.push({ n: n + 1, text: l, reason: why }); }
+    // A line the tool never writes with a strike-through: the reader takes it for a note, and a strike-through voids nothing.
+    if (skipped && /^~~/.test(m[2])) skipped.push({ n: n + 1, text: l, reason: 'a struck-through line: the reader takes it for a note, and a strike-through retracts nothing (a verdict is retracted with review retract, an evidence row with evidence --retract)' });
     if (body.type === 'filed') { if (!lastStatus.has(id)) lastStatus.set(id, profile.initial); }
     else if (body.type === 'move') lastStatus.set(id, body.to);
     events.push({ n, at: m[1], text: m[2], id, ...body });
   });
   return events;
+}
+// Why a dated line of an issue is not placed, or null when it is: a line that reads as one of the kinds the log writes
+// (a review, a merge, a CI state, a body change, an evidence row or retraction) and that the parser placed as none of
+// them; a move into a status that holds the claim whose worker or model does not parse; a verdict whose model mark does not.
+const LOG_KIND = /^(review|merged|CI|body|evidence (?:row|retract))\b/;
+function unplaced(profile, written, text, body) {
+  const rest = text.slice(written.length + 1);
+  if (body.type === 'other') {
+    const kind = LOG_KIND.exec(rest);
+    return kind ? `reads as a "${kind[1]}" line of the log, and that line's grammar is not met` : null;
+  }
+  if (body.type === 'move' && profile.is(body.to, 'holds-claim') && !body.lease && !body.model && / · (worker|model) /.test(text)) {
+    return 'the lease fields of the move do not parse: a worker and a model are one name each, written once, in the order branch, model, worker, worktree';
+  }
+  // The model mark sits right after the reviewer, where the parser reads it: a word of the findings that reads as a mark is text.
+  const head = REVIEW_LINE.exec(text);
+  if (body.type === 'verdict' && body.model === null && head && /^model /.test(text.slice(head[0].length))) return 'the model mark of the verdict does not parse: it is "model <name> · " after the reviewer';
+  return null;
 }
 // The events of the issues, by the issue each line is about.
 export function eventsById(events) {
@@ -4675,6 +4739,10 @@ function commitRepoNames(root, picked) {
 
 export const REPOS_HEADER = '# Repositories\n\nEach line declares a repository that an issue names by name: its root commits, its origin as found, its base branch, and no path. Jarl writes this file and nothing else does. A name stands for the checkout beside the main checkout of the loop.\n\n';
 const declarationText = (e) => `roots ${e.roots === null ? 'unknown' : e.roots.length ? e.roots.join(', ') : 'none'} · origin ${e.origin ?? 'none'} · base ${e.base ?? 'none'}`;
+// The file the declarations are written in, as a message names it.
+export const REPOS_DECLARED_IN = `.jarl/${REPOS_FILE}`;
+// The names declared in the loop, in the order written.
+export function declaredNames(root) { return [...declaredRepos(root).keys()]; }
 // name → { name, roots (null when the checkout was shallow), origin (null when none), base }, in the order written.
 export function declaredRepos(root) {
   const out = new Map();
@@ -5084,24 +5152,34 @@ const ASK_RE = idRe('^- \\*\\*a-({id})\\*\\* \\((open|answered)\\)(?: · (stop|s
 // pass noSeparators, so the line splits on its separators alone. A question's indented lines never start with `- **a-`.
 const ASK_OPTION_RE = idRe('^- \\*\\*a-({id})\\*\\* option · (.+?) · (.+)$');
 
-export function loadAsks(root) { return asksAt(jarlDir(root)); }
+export function loadAsks(root, skipped) { return asksAt(jarlDir(root), skipped); }
 // The questions of the record held in `dir`; a question with options carries them as `options: [{ label, effect }]`.
-function asksAt(dir) {
+// With `skipped` (an array), each line that is neither a question, an option, a continuation, a blank nor the heading
+// is pushed onto it as { n, text, reason }, and so is an option whose question the file does not hold.
+function asksAt(dir, skipped) {
   const path = asksPath(dir);
   if (!existsSync(path)) return [];
   // A question of several lines is the item line and its next lines indented by two spaces (blank ones are two spaces
   // alone); the item line alone still reads as a question.
   const out = [];
   const options = new Map();
+  const optionLines = [];
   let last = null;
   const forms = issueForms(dir);
-  for (const line of readText(path).split('\n')) {
+  readText(path).split('\n').forEach((line, i) => {
+    const skip = (reason) => { if (skipped) skipped.push({ n: i + 1, text: line, reason }); };
     const m = ASK_RE.exec(line);
-    if (m) { last = { id: m[1], state: m[2], kind: m[3] || null, target: m[4] || null, issue: m[5] ? writtenId(m[5], forms) : null, ...(m[6] ? { ruling: m[6] } : {}), question: m[7] }; out.push(last); continue; }
+    if (m) { last = { id: m[1], state: m[2], kind: m[3] || null, target: m[4] || null, issue: m[5] ? writtenId(m[5], forms) : null, ...(m[6] ? { ruling: m[6] } : {}), question: m[7] }; out.push(last); return; }
     const o = ASK_OPTION_RE.exec(line);
-    if (o) { const key = idKey(o[1]); options.set(key, [...(options.get(key) || []), { label: o[2], effect: o[3] }]); last = null; continue; }
-    if (last && line.startsWith('  ')) last.question += `\n${line.slice(2)}`;
-    else last = null;
+    if (o) { const key = idKey(o[1]); options.set(key, [...(options.get(key) || []), { label: o[2], effect: o[3] }]); optionLines.push({ key, line: i + 1, text: line }); last = null; return; }
+    if (last && line.startsWith('  ')) { last.question += `\n${line.slice(2)}`; return; }
+    last = null;
+    if (line.trim() === '' || line.startsWith('# ')) return;
+    skip('not a question, an option of one, or a continuation line of a question: a question is "- **a-<n>** (open|answered) · <kind> · <question>"');
+  });
+  if (skipped) {
+    const asked = new Set(out.map((a) => idKey(a.id)));
+    for (const o of optionLines) if (!asked.has(o.key)) skipped.push({ n: o.line, text: o.text, reason: 'an option of no question: the question it belongs to is not in the file' });
   }
   for (const a of out) {
     a.question = a.question.replace(/\s+$/, '');
@@ -5901,6 +5979,175 @@ export function renderList(rows, profile = DEFAULT_PROFILE) {
   return rows.map((i) => { const d = declaredShown(i, profile); return `${i.id}  P${i.priority}  ${i.status.padEnd(11)} ${i.kind.padEnd(8)} ${i.title}${i.tags.length ? `  [${i.tags.join(', ')}]` : ''}${d ? `  ${d}` : ''}`; }).join('\n');
 }
 
+
+// ---- verify: the record read strictly, with nothing written ----------------------------------------------------
+//
+// verify runs the readers of the record in their strict mode (see loopEvents, goalLines, parseIssue, loadAsks and
+// loadDecisions, and validateProfile, which lists every problem it finds) and reports what each one did not place. It
+// adds no grammar of its own: a line is placed by the reader that owns it, and what verify adds is what the readers do
+// not see — a retraction that points at nothing, the record format a line needs, the header that disagrees with the log,
+// the repositories the issues name, the worktrees the leases hold and the open issues that cite a superseded ruling. It
+// takes no lock and no network and writes nothing; its exit status is the caller's (2 when it found something).
+
+// The checks in the order they print, with the part of the loop each one reads.
+const VERIFY_CHECKS = [
+  ['profile', 'profile.json'], ['log', LOG_FILE], ['asks', ASKS_FILE], ['decisions', DECISIONS_FILE], ['goal', GOAL_FILE],
+  ['issues', 'issues/'], ['format', 'record format'], ['headers', 'issue headers'], ['repositories', REPOS_DECLARED_IN],
+  ['leases', 'worktree leases'], ['superseded', 'open issues citing a superseded ruling'],
+];
+export const VERIFY_SHOWN = 20;
+// Free text from the record as a finding shows it: one line, with control characters escaped, at most 120 characters.
+function shownText(text) {
+  const s = JSON.stringify(String(text)).slice(1, -1);
+  return s.length > 120 ? `${s.slice(0, 119)}…` : s;
+}
+// The lines of a profile error: the problems list validateProfile throws, or the message itself.
+function profileProblems(message) {
+  const items = String(message).split('\n').filter((l) => l.startsWith('- ')).map((l) => l.slice(2));
+  return items.length ? items : [String(message)];
+}
+// Every finding of the loop in `root`, as the checks print them, and the notes; a profile that does not parse ends the
+// reading, because every other reader goes through the profile.
+export function cmdVerify(root) {
+  need(hasLiveLoop(root), 'verify reads a loop: there is no .jarl/ with a goal here — open one with jarl.mjs init "<goal>", or name the loop with --root');
+  const found = [];
+  const notes = [];
+  // n is the line of the file the finding is about, where it has one: a check's findings print in file order.
+  const add = (check, where, what, n) => found.push({ check, where, what, n });
+  const dir = jarlDir(root);
+  let profile;
+  try { profile = loadProfile(root); } catch (e) {
+    for (const reason of profileProblems(e.message)) add('profile', 'profile.json', reason);
+    return verifyResult(found, notes, 'the profile does not parse, and the other readers go through it');
+  }
+  const logSkips = [];
+  const events = loopEvents(dir, profile, logSkips);
+  for (const s of logSkips) add('log', `${LOG_FILE} line ${s.n}`, `"${shownText(s.text)}" — ${s.reason}`, s.n);
+  const asksSkips = [];
+  loadAsks(root, asksSkips);
+  for (const s of asksSkips) add('asks', `${ASKS_FILE} line ${s.n}`, `"${shownText(s.text)}" — ${s.reason}`, s.n);
+  const decisionSkips = [];
+  const rulings = loadDecisions(root, decisionSkips);
+  for (const s of decisionSkips) add('decisions', `${DECISIONS_FILE} line ${s.n}`, `"${shownText(s.text)}" — ${s.reason}`, s.n);
+  const goalSkips = [];
+  goalLines(readGoal(dir), goalSkips);
+  for (const s of goalSkips) add('goal', `${GOAL_FILE} line ${s.n}`, `"${shownText(s.text)}" — ${s.reason}`, s.n);
+  for (const f of issueFilesOf(dir)) {
+    const issueSkips = [];
+    parseIssue(readText(join(dir, 'issues', f)), join(dir, 'issues', f), issueSkips);
+    for (const s of issueSkips) add('issues', `issues/${shownText(f)} line ${s.n}`, `"${shownText(s.text)}" — ${s.reason}`);
+  }
+  for (const f of existsSync(join(dir, 'issues')) ? readdirSync(join(dir, 'issues')) : []) {
+    if (!ISSUE_FILE_RE.test(f)) add('issues', `issues/${shownText(f)}`, 'a file the loop does not read as an issue: an issue file is <number>-<title>.md');
+  }
+  const loop = readLoop(dir);
+  const known = new Set(loop.issues.filter((i) => i.id !== null).map((i) => idKey(i.id)));
+  for (const i of loop.issues) {
+    if (i.id === null) continue;
+    for (const a of i.after) if (!known.has(idKey(a))) add('issues', `issue ${i.id}`, `waits on issue ${a} in its After field, which the loop does not hold`);
+  }
+  if (profile.format < RECORD_FORMAT_RAISED) {
+    for (const e of events) {
+      // A retraction is a line of the log: it is found there, with the other findings of the log, in file order.
+      if (e.type === 'retract-row' || e.type === 'retract-review') add('format', `${LOG_FILE} line ${e.n + 1}`, `"${shownText(e.text)}" — a retraction is written in the raised record format, and this loop is not in it`, e.n + 1);
+    }
+    for (const i of loop.issues) {
+      if (i.id !== null && needsRaisedFormat(i.id)) add('format', `issue ${i.id}`, 'its id needs the raised record format (an id of 1000 or more, or of fewer than three digits), and this loop is not in it');
+    }
+  }
+  retractionChecks(events, add);
+  for (const d of recordDisagreements(loop)) add('headers', '', shownText(d.line));
+  repositoryChecks(root, loop, add, notes);
+  for (const i of loop.issues) {
+    const lease = fieldText(i.fields.worktree);
+    if (i.id === null || !lease || !profile.is(i.status, 'holds-claim')) continue;
+    const path = canonical(resolve(root, lease));
+    const repos = issueRepos(root, i);
+    // A lease is compared with the repositories its issue resolves to; one that resolves to none is a repository that is
+    // not on this machine, which the repositories check says, and a worktree that is gone is the status's to say.
+    if (!existsSync(path) || repos.length === 0) continue;
+    const listed = repos.flatMap((r) => (worktreesOf(r) || []).filter((w) => w.path).map((w) => canonical(w.path)));
+    if (!listed.includes(path)) add('leases', `issue ${i.id}`, `its worktree ${shownText(lease)} is not a worktree of a repository the issue names (its Repo field, or the loop's own repository)`);
+  }
+  const supersededBy = new Map(rulings.filter((d) => d.supersededBy).map((d) => [d.slug, d.supersededBy]));
+  for (const [slug, by] of supersededBy) {
+    for (const i of issuesNaming(root, slug)) add('superseded', `issue ${i.id}`, `cites the ruling ${slug} in What, Why or Acceptance, and ${by} supersedes it`);
+  }
+  return verifyResult(found, notes);
+}
+// The issue files of a loop, in the order the loop reads them.
+function issueFilesOf(dir) {
+  const d = join(dir, 'issues');
+  if (!existsSync(d)) return [];
+  return readdirSync(d).filter((f) => ISSUE_FILE_RE.test(f)).sort((a, b) => cmpId(ISSUE_FILE_RE.exec(a)[1], ISSUE_FILE_RE.exec(b)[1]) || (a < b ? -1 : a > b ? 1 : 0));
+}
+// The retraction lines: a row number that the log's rows of the issue do not reach, and an approve that was not given by
+// the reviewer the line names, or a "changes" verdict it names, or none at all.
+function retractionChecks(events, add) {
+  const rows = new Map();
+  const verdicts = new Map();
+  for (const e of events) {
+    if (e.id === null) continue;
+    const where = `${LOG_FILE} line ${e.n + 1}`;
+    if (e.type === 'row') rows.set(e.id, (rows.get(e.id) || 0) + 1);
+    if (e.type === 'verdict') verdicts.set(e.id, [...(verdicts.get(e.id) || []), e]);
+    if (e.type === 'retract-row') {
+      const have = rows.get(e.id) || 0;
+      if (e.row > have) add('log', where, `"${shownText(e.text)}" — row ${e.row} of issue ${e.id} is not one of the ${have} evidence rows the log holds for it`, e.n + 1);
+    }
+    if (e.type === 'retract-review') {
+      const before = verdicts.get(e.id) || [];
+      if (!e.target) { add('log', where, `"${shownText(e.text)}" — the line names no approve, so it takes away none`, e.n + 1); continue; }
+      const same = before.filter((v) => v.by === e.target.by);
+      if (same.some((v) => v.verdict === 'approve')) continue;
+      const named = e.target.by === null ? 'with no reviewer recorded' : `by ${e.target.by}`;
+      if (same.some((v) => v.verdict === 'changes')) add('log', where, `"${shownText(e.text)}" — it takes away the approve ${named}, which the log holds as a "changes" verdict: only an approve is retracted`, e.n + 1);
+      else add('log', where, `"${shownText(e.text)}" — the log holds no approve ${named} before it, so it points at no entry`, e.n + 1);
+    }
+  }
+}
+// The repositories the issues name by name, and the declared ones: each one's identity against the checkout on this
+// machine. A Repo that holds a path is not a name and is not checked here.
+function repositoryChecks(root, loop, add, notes) {
+  const named = new Map();
+  for (const i of loop.issues) {
+    for (const v of reposNamed(i)) if (repoValueKind(root, v) === 'name') named.set(v, [...(named.get(v) || []), i.id]);
+  }
+  for (const name of new Set([...named.keys(), ...declaredNames(root)])) {
+    const id = repoIdentity(root, name);
+    const cited = named.get(name) ? ` (named by issue ${named.get(name).join(', ')})` : '';
+    if (id.state === 'undeclared') add('repositories', name, `is named${cited} but has no declaration in ${REPOS_DECLARED_IN}`);
+    else if (id.state === 'missing') add('repositories', name, `is declared and does not resolve on this machine — ${id.fix}`);
+    else if (id.state === 'mismatch') add('repositories', name, id.fix);
+    else if (id.state === 'unverified') add('repositories', name, `cannot be verified: ${id.notes.join('; ')}`);
+    else for (const n of id.notes) notes.push({ where: name, what: n });
+  }
+}
+function verifyResult(found, notes, unread = null) {
+  const checks = VERIFY_CHECKS.map(([name, label]) => ({
+    name, label, read: unread === null || name === 'profile',
+    // Findings with a line print in file order, the ones without after them, in the order they were found.
+    findings: found.filter((f) => f.check === name)
+      .map((f, k) => ({ ...f, k }))
+      .sort((a, b) => (a.n === undefined) - (b.n === undefined) || (a.n ?? 0) - (b.n ?? 0) || a.k - b.k)
+      .map(({ where, what }) => ({ where, what })),
+  }));
+  return { ok: found.length === 0, findings: found.length, checks, notes, unread };
+}
+// verify as the command line prints it: each check with its count, its first findings and a count of the rest, then the notes.
+export function renderVerify(o) {
+  const lines = [o.ok ? 'verify: clean — every line of the record is placed, and nothing disagrees' : `verify: ${o.findings} finding${o.findings === 1 ? '' : 's'}`];
+  for (const c of o.checks) {
+    if (!c.read) { lines.push(`${c.label}: not read (${o.unread})`); continue; }
+    lines.push(c.findings.length ? `${c.label}: ${c.findings.length}` : `${c.label}: clean`);
+    for (const f of c.findings.slice(0, VERIFY_SHOWN)) lines.push(`  ${f.where ? `${f.where}: ` : ''}${f.what}`);
+    if (c.findings.length > VERIFY_SHOWN) lines.push(`  … and ${c.findings.length - VERIFY_SHOWN} more`);
+  }
+  const shownNotes = o.notes.slice(0, VERIFY_SHOWN);
+  for (const n of shownNotes) lines.push(`note: ${n.where ? `${n.where}: ` : ''}${n.what}`);
+  if (o.notes.length > VERIFY_SHOWN) lines.push(`note: … and ${o.notes.length - VERIFY_SHOWN} more`);
+  return lines.join('\n');
+}
 
 // ---- git merges the loop's own files ----------------------------------------------------------------
 //

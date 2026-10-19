@@ -17,7 +17,7 @@ import {
   ROUNDS_BEFORE_TAKEOVER, need, resetCaches, withLock, readText, isEntry, cmdSet,
   cmdProfile, cmdArchive, cmdList, cmdNext, renderNext, cmdMode, cmdClose, cmdCheck, cmdBranches, cmdTips, cmdQueue,
   cmdChangelog, cmdHandoffRead, cmdHandoffWrite, cmdReport, cmdImport, cmdSources, cmdAnswerMany, cmdModels, renderModels,
-  issuesNaming, questionFor, cmdGoal, cmdGoalSet, cmdRepoBase, whereOf, renderCheckNotes,
+  issuesNaming, questionFor, cmdGoal, cmdGoalSet, cmdRepoBase, whereOf, cmdVerify, renderVerify, renderCheckNotes,
   renderProfile, renderTips, renderQueue, renderResume, renderStatus, renderImport, renderSources, renderList, recordTypeLog, recordRuleLog,
   runDecisionsDriver, mergeFlags, describeNew, renderNewReply, issueView, evidenceTable, renderBranches, renderDecide, renderDecisions,
 } from './jarl-lib.mjs';
@@ -279,6 +279,16 @@ commands:
                                                  Tier, the fields and sections its issues carry and the heading of their
                                                  acceptance; the built-in one when the loop has none; with a file, that
                                                  file checked against the profile schema instead
+  verify                                         read-only, with no lock and no network: the record read strictly. Each
+                                                 reader lists the lines it does not place (the log, the goal, the issue
+                                                 headers, the questions and the rulings), the profile is checked, a
+                                                 retraction must point at an entry the log holds, a line that needs the
+                                                 raised record format is found in a loop that is not in it, a header
+                                                 that disagrees with the log is listed, each declared repository is
+                                                 checked by name and root commits, each worktree a lease holds belongs
+                                                 to a repository its issue names, and an open issue that cites a
+                                                 superseded ruling is listed; prints each check with its first findings,
+                                                 and exits 2 when it finds something
   close [--force] [--batch]                      refuse while anything is open or in progress, and, where it removes .jarl/,
                                                  while anything is deferred (the refusal names archive "<slug>", which
                                                  keeps the loop under .jarl/archive/, and --force, which removes the
@@ -384,7 +394,7 @@ export const COMMAND_FLAGS = {
   goal: { set: 'value' },
   status: { 'stale-hours': 'value', by: 'value', tag: 'value' }, archive: {}, report: { found: 'bool' }, tips: {}, mode: {},
   queue: { repo: 'value', base: 'value' }, changelog: { repo: 'value' },
-  close: { force: 'bool', batch: 'bool' }, profile: {},
+  close: { force: 'bool', batch: 'bool' }, profile: {}, verify: {},
 };
 
 export function parseArgs(argv) {
@@ -450,7 +460,7 @@ export const COMMAND_ARGS = {
   next: [], review: ['ids', 'verdict', 'findings'], round: ['id', 'what'], models: [], check: ['id?'], branches: [],
   ask: ['question'], answer: ['id', 'answer?'], resume: [], handoff: ['action?'], log: ['event'],
   decide: ['slug', 'ruling'], decisions: [], goal: [], status: [], archive: ['slug'], report: [], tips: [], queue: [],
-  changelog: ['ids'], mode: ['mode'], close: [], profile: ['file?'],
+  changelog: ['ids'], mode: ['mode'], close: [], profile: ['file?'], verify: [],
 };
 // One sentence per command: what it does, the MCP tool's whole description after "WRITES the loop." or "Read-only.".
 // The rest of what a command takes and does is its block of USAGE, which the jarl_help tool and --help print.
@@ -493,6 +503,7 @@ export const COMMAND_SUMMARY = {
   changelog: 'Print the issues\' changelog entries grouped by section, ready to paste under [Unreleased].',
   mode: 'Switch a committed loop to the permanent mode.',
   profile: 'The loop\'s profile (statuses, fields, sections), or a profile file checked against the schema.',
+  verify: 'Check the record strictly, without a lock: the lines each reader does not place, the headers that disagree with the log, the repositories, leases and superseded rulings the issues name; exit 2 on a finding.',
   close: 'Close the loop when nothing is open or in progress, filing the ratification batch first.',
 };
 const ARITY = Object.fromEntries(Object.entries(COMMAND_ARGS).filter(([, a]) => !a.some((n) => n.endsWith('...'))).map(([c, a]) => [c, a.length]));
@@ -539,7 +550,7 @@ function main() {
   }
   console.log(flags.json ? JSON.stringify(out, null, 2) : text);
   for (const w of warn) console.error(w);
-  if (cmd === 'check' && !out.ok) process.exit(2);
+  if ((cmd === 'check' || cmd === 'verify') && !out.ok) process.exit(2);
 }
 
 // The ratification batch as close prints it: one line per item, then what became of the ones nobody answered.
@@ -639,6 +650,7 @@ export function dispatch(root, cmd, rest, flags) {
       case 'archive': out = cmdArchive(root, rest[0], { caller: 'cli' }); text = `archived → ${out.archived}${out.leftOpen.length ? ` · ${out.leftOpen.length} still open or in progress: ${out.leftOpen.join(', ')}` : ''} · open a new loop with: jarl.mjs init "<goal>"`; break;
       case 'mode': out = cmdMode(root, rest[0]); text = 'now permanent · not tied to a feature branch; close keeps the directory'; break;
       case 'profile': out = cmdProfile(root, rest[0]); text = renderProfile(out); break;
+      case 'verify': out = cmdVerify(root); text = renderVerify(out); break;
       case 'close': out = cmdClose(root, { ...flags, caller: 'cli' }); text = out.closed ? (out.kept ? `kept ${out.kept} · closed as a permanent record` : `removed ${out.removed}${out.archiveKept ? ' (the live loop; .jarl/archive/ is left in place)' : out.archiveRemoved ? ` (with .jarl/archive/: ${out.archiveRemoved.join(', ')})` : ''}`) + (out.deferred.length ? ` · ${out.deferred.length} deferred ${out.kept ? 'still waiting' : 'removed with the loop'}: ${out.deferred.join(', ')}` : '') + (out.uncommitted ? ` · ${out.uncommitted} loop file(s) not committed${out.kept ? ' — commit .jarl/' : ' before the removal'}` : '') + renderBatch(out.batch, out.kept ? 'kept' : 'removed') : renderBatch(out.batch, 'open').trimStart(); break;
       default: throw new Error(`unknown command: ${cmd}\n${USAGE}`);
     }

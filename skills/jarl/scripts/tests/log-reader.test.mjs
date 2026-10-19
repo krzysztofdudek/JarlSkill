@@ -17,7 +17,7 @@ test('a filing, a round, an evidence row and the retractions are typed', () => {
   assert.deepEqual(L.parseEvent('012', '012 evidence row · node --test', P), { type: 'row' });
   assert.deepEqual(L.parseEvent('012', '012 evidence · a free note', P), { type: 'other' });
   assert.deepEqual(L.parseEvent('012', '012 evidence retract · row 3 · by rev · wrong', P), { type: 'retract-row', row: 3 });
-  assert.deepEqual(L.parseEvent('012', '012 review retract · by rev (fresh) · retracts the approve by x · why', P), { type: 'retract-review' });
+  assert.deepEqual(L.parseEvent('012', '012 review retract · by rev (fresh) · retracts the approve by x · why', P), { type: 'retract-review', target: { by: 'x', kind: null } });
   assert.deepEqual(L.parseEvent('012', '012 body · what', P), { type: 'body' });
 });
 

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, existsSync, writeFileSync, readdirSync, rmSync, symlinkSync, renameSync } from 'node:fs';
-import { join, basename } from 'node:path';
+import { mkdtempSync, mkdirSync, readFileSync, existsSync, writeFileSync, readdirSync, rmSync, symlinkSync, renameSync, realpathSync } from 'node:fs';
+import { join, basename, delimiter } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { sh, NO_EXCLUDES } from './portable.mjs';
@@ -1949,6 +1949,531 @@ test('decide with no --by prints no notice: the owner is the default, and a noti
   const root = repo();
   jarl(root, 'init', 'goal');
   assert.equal(run(root, ['decide', 'default-rule', 'Keep it.']).stderr, '');
+});
+
+// ---- the strict readers: every line a parser cannot place is listed, and the readers answer the same without the list
+
+const LIB_URL = new URL('../jarl.mjs', import.meta.url).href;
+
+test('the log reader lists a line that reads as an event and does not parse, a line that is not dated, and a lease whose fields do not parse; a note is not listed', async () => {
+  const lib = await import(LIB_URL);
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'first');
+  const dir = join(root, '.jarl');
+  const path = join(dir, 'log.md');
+  const lines = [
+    '- 2026-10-19 10:00 · 1 review nonsense here',
+    '- 2026-10-19 10:01 · 1 review approve · model gpt-5',
+    '- 2026-10-19 10:02 · 1 → in-progress · worker a, b',
+    '- 2026-10-19 10:03 · 1 merged',
+    '- 2026-10-19 10:04 · this line is a free note about nothing',
+    '- 2026-10-19 10:05 · 1 evidence · a note of the issue is not listed',
+    'garbage line in the log',
+  ];
+  writeFileSync(path, `${readFileSync(path, 'utf8')}${lines.join('\n')}\n`);
+  const skipped = [];
+  const events = lib.loopEvents(dir, lib.loadProfile(root), skipped);
+  assert.deepEqual(skipped.map((s) => s.text), [lines[0], lines[1], lines[2], lines[3], lines[6]]);
+  assert.ok(skipped.every((s, k) => k === 0 || s.n > skipped[k - 1].n), 'in file order');
+  assert.ok(skipped.every((s) => typeof s.reason === 'string' && s.reason.length > 0), 'each line says why');
+  assert.equal(events.length, lib.loopEvents(dir, lib.loadProfile(root)).length, 'the events are the same with or without the list');
+});
+
+test('the goal reader lists a machine line it cannot place: a Check with no command, a Model with no tier, a Coordinators with a tier', async () => {
+  const lib = await import(LIB_URL);
+  const text = '# Goal\n\nShip it.\n\n- Check:   \n- Model: gpt-5\n- Coordinators (Grain): Ada\n- Check (Grain): npm test\n- Model (strong): opus\n- Coordinators: Ada, Bo\n';
+  const skipped = [];
+  const lines = lib.goalLines(text, skipped);
+  assert.deepEqual(skipped.map((s) => s.text), ['- Check:   ', '- Model: gpt-5', '- Coordinators (Grain): Ada']);
+  assert.deepEqual(skipped.map((s) => s.n), [5, 6, 7]);
+  assert.deepEqual(lines, lib.goalLines(text), 'the same reading without the list');
+  assert.deepEqual(lines.checks, ['npm test']);
+  assert.deepEqual(lines.coordinators, ['Ada', 'Bo']);
+});
+
+test('the issue parser lists an unparsable header and a Resources field whose name is not a word', async () => {
+  const lib = await import(LIB_URL);
+  const skipped = [];
+  lib.parseIssue('# seven broken title\n\n**Status:** open\n', 'a.md', skipped);
+  lib.parseIssue('# 7 · fine\n\n**Status:** open\n**Resources:** gate, db server\n\n## What\nx\n', 'b.md', skipped);
+  assert.deepEqual(skipped.map((s) => [s.n, s.text]), [[1, '# seven broken title'], [4, '**Resources:** gate, db server']]);
+  assert.match(skipped[1].reason, /db server/);
+});
+
+test('the question reader lists a line that is neither a question, an option nor a continuation, and an option of no question', async () => {
+  const lib = await import(LIB_URL);
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  const path = join(root, '.jarl', 'asks.md');
+  writeFileSync(path, `# Questions to the user\n\n- **a-001** (open) · stop · issue 1 · Which way?\n  a continuation line\nstray words\n- **a-009** option · label · effect\n`);
+  const skipped = [];
+  const asks = lib.loadAsks(root, skipped);
+  assert.deepEqual(skipped.map((s) => s.text), ['stray words', '- **a-009** option · label · effect']);
+  assert.equal(asks.length, 1);
+  assert.equal(asks[0].question, 'Which way?\na continuation line');
+});
+
+test('the decision reader lists text before the first ruling, a ruling heading that does not parse and a slug ruled twice', async () => {
+  const lib = await import(LIB_URL);
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'decide', 'rule-a', 'Keep a.', '--by', 'owner');
+  const path = join(root, '.jarl', 'decisions.md');
+  writeFileSync(path, `${readFileSync(path, 'utf8')}\n## 2026-10-19 rule-b without a dot\n## 2026-10-19 · rule-a\nAgain.\n`);
+  const skipped = [];
+  const rulings = lib.loadDecisions(root, skipped);
+  assert.deepEqual(skipped.map((s) => s.text), ['## 2026-10-19 rule-b without a dot', '## 2026-10-19 · rule-a']);
+  assert.match(skipped[1].reason, /rule-a/);
+  assert.deepEqual(rulings.map((r) => r.slug), lib.loadDecisions(root).map((r) => r.slug), 'the same rulings without the list');
+});
+
+// ---- verify: the record read strictly, with nothing written
+
+const LOG = (root) => join(root, '.jarl', 'log.md');
+const ISSUES = (root) => join(root, '.jarl', 'issues');
+const issueFile = (root, id) => join(ISSUES(root), readdirSync(ISSUES(root)).find((f) => f.startsWith(`${id}-`)));
+const appendLines = (root, ...lines) => writeFileSync(LOG(root), `${readFileSync(LOG(root), 'utf8')}${lines.join('\n')}\n`);
+const DATED = '- 2026-10-19 10:00 · ';
+
+test('verify on a clean loop prints clean, and exits 0', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'first', '--what', 'Does one thing.');
+  const r = run(root, ['verify']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /^verify: clean/);
+  assert.match(r.stdout, /^log\.md: clean$/m);
+});
+
+test('verify lists a log line that reads as an event and does not parse, with its line number, and exits 2', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'first');
+  appendLines(root, `${DATED}1 review nonsense here`);
+  const r = run(root, ['verify']);
+  assert.equal(r.status, 2);
+  const at = readFileSync(LOG(root), 'utf8').split('\n').findIndex((l) => l.includes('nonsense')) + 1;
+  assert.match(r.stdout, new RegExp(`log\\.md line ${at}: .*nonsense here.* — reads as a "review" line`));
+});
+
+test('verify lists a struck-through log line, which the reader takes for a note and so retracts nothing', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'first');
+  appendLines(root, `${DATED}~~1 review approve · by rev (fresh) · x~~ — a mistake`);
+  const r = run(root, ['verify']);
+  assert.equal(r.status, 2);
+  assert.match(r.stdout, /struck-through line: the reader takes it for a note/);
+});
+
+test('verify lists a retraction that points at a row the log does not hold', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'first');
+  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'green');
+  jarl(root, 'evidence', '1', '--retract', '1', '--by', 'owner', 'the row is wrong');
+  appendLines(root, `${DATED}1 evidence retract · row 9 · by owner · no such row`);
+  const r = run(root, ['verify']);
+  assert.equal(r.status, 2);
+  assert.match(r.stdout, /row 9 of issue 1 is not one of the 1 evidence rows the log holds/);
+});
+
+test('verify lists a retraction of a "changes" verdict, which only an approve can be', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'first');
+  jarl(root, 'review', '1', 'changes', '--by', 'rv', 'Important: the reason is missing');
+  appendLines(root, `${DATED}1 review retract · by owner (coordinator) · retracts the approve by rv (fresh) of 2026-10-19 · the reason`);
+  const r = run(root, ['verify']);
+  assert.equal(r.status, 2);
+  assert.match(r.stdout, /it takes away the approve by rv, which the log holds as a "changes" verdict/);
+});
+
+test('verify lists a verdict whose model mark does not parse, and not a word of the findings that reads as one', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'first');
+  appendLines(root, `${DATED}1 review approve · by rv (fresh) · model gpt-5`);
+  appendLines(root, `${DATED}1 review changes · by rv2 (fresh) · Important: the text says · model is a word here`);
+  const r = run(root, ['verify']);
+  assert.equal(r.status, 2);
+  assert.equal((r.stdout.match(/the model mark of the verdict does not parse/g) || []).length, 1, r.stdout);
+});
+
+test('verify lists a move whose lease fields do not parse', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'first');
+  appendLines(root, `${DATED}1 → in-progress · worker a, b`);
+  assert.match(run(root, ['verify']).stdout, /the lease fields of the move do not parse/);
+});
+
+test('verify lists a header that disagrees with the log, in the words the views use', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'first');
+  const file = issueFile(root, 1);
+  writeFileSync(file, readFileSync(file, 'utf8').replace('**Status:** open', '**Status:** done'));
+  const r = run(root, ['verify']);
+  assert.equal(r.status, 2);
+  assert.match(r.stdout, /Status reads done in the file and open in the log/);
+});
+
+test('verify lists an After that names an issue the loop does not hold', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'first');
+  const file = issueFile(root, 1);
+  writeFileSync(file, readFileSync(file, 'utf8').replace('**Status:** open', '**Status:** open\n**After:** 9'));
+  assert.match(run(root, ['verify']).stdout, /issue 1: waits on issue 9 in its After field, which the loop does not hold/);
+});
+
+test('verify lists an issue file whose header does not parse, a Resources name that is not a word, and a file that is not an issue', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'first');
+  const file = issueFile(root, 1);
+  writeFileSync(file, readFileSync(file, 'utf8').replace('**Status:** open', '**Status:** open\n**Resources:** gate, db server'));
+  writeFileSync(join(ISSUES(root), '2-broken.md'), '# two broken title\n\n**Status:** open\n');
+  writeFileSync(join(ISSUES(root), 'notes.md'), 'a note\n');
+  const out = run(root, ['verify']).stdout;
+  assert.match(out, /issues\/2-broken\.md line 1: .*not an issue header/);
+  assert.match(out, /issues\/\d+-first\.md line \d+: .*the resource "db server" is not a word/);
+  assert.match(out, /issues\/notes\.md: a file the loop does not read as an issue/);
+});
+
+test('verify lists an id of 1000 or more in a loop whose record format was not raised', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  mkdirSync(ISSUES(root), { recursive: true });
+  writeFileSync(join(ISSUES(root), '1000-late.md'), '# 1000 · late\n\n**Status:** open\n');
+  assert.match(run(root, ['verify']).stdout, /issue 1000: its id needs the raised record format/);
+});
+
+test('verify lists an open issue that cites a ruling a later one supersedes, and not a finished one', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'decide', 'rule-a', 'Keep a.', '--by', 'jarl');
+  jarl(root, 'decide', 'rule-b', 'Keep b instead.', '--by', 'jarl', '--supersedes', 'rule-a');
+  jarl(root, 'new', 'open one', '--what', 'Obeys rule-a.');
+  jarl(root, 'new', 'other one', '--what', 'Obeys rule-a.');
+  jarl(root, 'set', '2', 'dropped', 'not needed');
+  const r = run(root, ['verify']);
+  assert.equal(r.status, 2);
+  assert.match(r.stdout, /issue 1: cites the ruling rule-a in What, Why or Acceptance, and rule-b supersedes it/);
+  assert.doesNotMatch(r.stdout, /issue 2: cites/);
+});
+
+test('verify prints the findings of the log in file order, a retraction among them', () => {
+  const root = retracted(issued());
+  appendLines(root, `${DATED}1 review nonsense first`, `${DATED}1 evidence retract · row 9 · by owner · no such row`, `${DATED}1 review nonsense last`);
+  const out = verifyOn(root).stdout;
+  const at = (s) => out.indexOf(s);
+  assert.ok(at('nonsense first') > -1 && at('nonsense first') < at('row 9 of issue 1') && at('row 9 of issue 1') < at('nonsense last'), out);
+});
+
+test('verify prints the findings of a check in full order, twenty at a time, and counts the rest', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'first');
+  appendLines(root, ...Array.from({ length: 23 }, (_, k) => `${DATED}1 review nonsense ${k}`));
+  const out = run(root, ['verify']).stdout;
+  assert.equal((out.match(/reads as a "review" line/g) || []).length, 20);
+  assert.match(out, /  … and 3 more/);
+  assert.match(out, /log\.md: 23/);
+});
+
+test('verify --json carries the findings, the notes and each check', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'first');
+  appendLines(root, `${DATED}1 review nonsense`);
+  const out = JSON.parse(run(root, ['verify', '--json']).stdout);
+  assert.equal(out.ok, false);
+  assert.equal(out.findings, 1);
+  assert.equal(out.checks.find((c) => c.name === 'log').findings.length, 1);
+  assert.ok(Array.isArray(out.notes));
+});
+
+test('verify reads nothing it could write: the loop after it is byte for byte the loop before it, and it takes no lock', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'first');
+  appendLines(root, `${DATED}1 review nonsense`);
+  const snapshot = (dir) => readdirSync(dir, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1))
+    .flatMap((d) => (d.isDirectory() ? snapshot(join(dir, d.name)).map(([f, t]) => [`${d.name}/${f}`, t]) : [[d.name, readFileSync(join(dir, d.name), 'utf8')]]));
+  const before = snapshot(join(root, '.jarl'));
+  run(root, ['verify']);
+  run(root, ['verify', '--json']);
+  assert.deepEqual(snapshot(join(root, '.jarl')), before);
+  assert.equal(existsSync(join(root, '.jarl', '.lock')), false);
+});
+
+test('verify refuses a directory with no loop, and says where it looked', () => {
+  const root = repo();
+  const r = run(root, ['verify']);
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /verify reads a loop: there is no \.jarl\/ with a goal here/);
+});
+
+// Repositories: a name the issues give has a declaration, and the checkout that answers to the name has the declared root
+// commits. The sibling checkouts are made under the OS temporary directory.
+const gitIn = (cwd, ...args) => execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', '-c', 'commit.gpgsign=false', ...args], { cwd, encoding: 'utf8', timeout: SPAWN_TIMEOUT });
+function sibling(parent, name, content = `${name}\n`) {
+  const dir = join(parent, name);
+  mkdirSync(dir, { recursive: true });
+  gitIn(dir, 'init', '-q', '-b', 'main');
+  writeFileSync(join(dir, 'a.txt'), content);
+  gitIn(dir, 'add', '-A');
+  gitIn(dir, 'commit', '-qm', 'base');
+  return dir;
+}
+// A loop in a checkout whose parent holds the sibling repositories; the loop's first issue names `name`, and it is declared.
+function loopWithSibling(name) {
+  const parent = realpathSync(mkdtempSync(join(tmpdir(), 'jarl-verify-')));
+  const hub = sibling(parent, 'hub');
+  jarl(hub, 'init', 'goal');
+  jarl(hub, 'new', 'first');
+  sibling(parent, name);
+  jarl(hub, 'repo', '1', name);
+  return { parent, hub };
+}
+
+test('verify lists a declared repository that does not resolve on this machine', () => {
+  const { parent, hub } = loopWithSibling('Sib');
+  renameSync(join(parent, 'Sib'), join(parent, 'Sib-away'));
+  const r = run(hub, ['verify']);
+  assert.equal(r.status, 2);
+  assert.match(r.stdout, /Sib: is declared and does not resolve on this machine/);
+});
+
+test('verify lists a checkout under a declared name whose root commits are another repository\'s', () => {
+  const { parent, hub } = loopWithSibling('Sib');
+  renameSync(join(parent, 'Sib'), join(parent, 'Sib-away'));
+  sibling(parent, 'Sib', 'another repository\n');
+  const r = run(hub, ['verify']);
+  assert.equal(r.status, 2);
+  assert.match(r.stdout, /Sib: .*another repository than Sib/);
+});
+
+test('verify lists a name the issues give that no declaration in repos.md holds', () => {
+  const { hub } = loopWithSibling('Sib');
+  const file = issueFile(hub, 1);
+  writeFileSync(file, readFileSync(file, 'utf8').replace(/\*\*Repo:\*\* .*\n/, '').replace('**Status:** open', '**Status:** open\n**Repo:** Other'));
+  const r = run(hub, ['verify']);
+  assert.equal(r.status, 2);
+  assert.match(r.stdout, /Other: is named \(named by issue 1\) but has no declaration/);
+});
+
+test('verify lists a lease whose worktree no repository the issue names holds, and not one a named repository holds', () => {
+  const { parent, hub } = loopWithSibling('Sib');
+  const stray = realpathSync(mkdtempSync(join(tmpdir(), 'jarl-stray-')));
+  const file = issueFile(hub, 1);
+  writeFileSync(file, readFileSync(file, 'utf8').replace('**Status:** open', `**Status:** in-progress\n**Worktree:** ${stray}`));
+  appendLines(hub, `${DATED}1 → in-progress · worktree ${stray}`);
+  assert.match(run(hub, ['verify']).stdout, /issue 1: its worktree .* is not a worktree of a repository the issue names/);
+  writeFileSync(file, readFileSync(file, 'utf8').replace(stray, join(parent, 'Sib')));
+  assert.doesNotMatch(run(hub, ['verify']).stdout, /is not a worktree of a repository the issue names/);
+});
+
+test('verify does not flag a Repo that holds a path, whatever it resolves to', () => {
+  const { hub } = loopWithSibling('Sib');
+  const file = issueFile(hub, 1);
+  writeFileSync(file, readFileSync(file, 'utf8').replace('**Status:** open', '**Status:** open\n**Repo:** ../nowhere-here'));
+  const out = run(hub, ['verify']).stdout;
+  assert.doesNotMatch(out, /nowhere-here/);
+});
+
+// One finding kind at a time: each builds a loop with exactly that anomaly (listed, exit 2), and the same loop without it
+// (no finding of that kind, exit 0).
+const plain = () => { const root = repo(); jarl(root, 'init', 'goal'); return root; };
+const issued = () => { const root = plain(); jarl(root, 'new', 'first', '--what', 'Does one thing.'); return root; };
+const retracted = (root) => { jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'green'); jarl(root, 'evidence', '1', '--retract', '1', '--by', 'owner', 'the row is wrong'); return root; };
+const withIssueFile = (root, name, text) => { mkdirSync(ISSUES(root), { recursive: true }); writeFileSync(join(ISSUES(root), name), text); return root; };
+const editIssue1 = (root, from, to) => { const f = issueFile(root, 1); writeFileSync(f, readFileSync(f, 'utf8').replace(from, to)); };
+const verifyOn = (root) => run(root, ['verify']);
+const ANOMALIES = [
+  { name: 'a profile that does not parse', pattern: /profile\.json: unknown key "bogus"/, make: (bad) => {
+    const root = plain();
+    if (bad) writeFileSync(join(root, '.jarl', 'profile.json'), JSON.stringify({ 'jarl-profile': 1, bogus: true, statuses: { open: ['dispatchable'] } }));
+    return root;
+  } },
+  { name: 'a log line that reads as an event and does not parse', pattern: /reads as a "review" line/, make: (bad) => {
+    const root = issued(); if (bad) appendLines(root, `${DATED}1 review nonsense`); return root;
+  } },
+  { name: 'a verdict whose model mark does not parse', pattern: /the model mark of the verdict does not parse/, make: (bad) => {
+    const root = issued(); if (bad) appendLines(root, `${DATED}1 review approve · by rv (fresh) · model gpt-5`); return root;
+  } },
+  { name: 'a move whose lease fields do not parse', pattern: /the lease fields of the move do not parse/, make: (bad) => {
+    const root = issued(); if (bad) appendLines(root, `${DATED}1 → in-progress · worker a, b`); return root;
+  } },
+  { name: 'a struck-through log line', pattern: /struck-through line/, make: (bad) => {
+    const root = issued(); if (bad) appendLines(root, `${DATED}~~1 review approve · by rv (fresh) · x~~ — a mistake`); return root;
+  } },
+  { name: 'a retraction that points at a row the log does not hold', pattern: /row 9 of issue 1 is not one of the 0 evidence rows/, make: (bad) => {
+    const root = issued(); if (bad) appendLines(root, `${DATED}1 evidence retract · row 9 · by owner · no such row`); else retracted(root); return root;
+  } },
+  { name: 'a retraction of a "changes" verdict', pattern: /which the log holds as a "changes" verdict/, make: (bad) => {
+    const root = issued();
+    if (bad) { jarl(root, 'review', '1', 'changes', '--by', 'rv', 'Important: the reason is missing'); appendLines(root, `${DATED}1 review retract · by owner (coordinator) · retracts the approve by rv (fresh) of 2026-10-19 · the reason`); }
+    else { jarl(root, 'review', '1', 'approve', '--by', 'rv', FINDINGS); jarl(root, 'review', '1', 'retract', '--by', 'owner', 'the approve was wrong'); }
+    return root;
+  } },
+  { name: 'a retraction line that names no approve', pattern: /the line names no approve, so it takes away none/, make: (bad) => {
+    const root = issued();
+    if (bad) appendLines(root, `${DATED}1 review retract · by owner (coordinator) · just a reason`);
+    else { jarl(root, 'review', '1', 'approve', '--by', 'rv', FINDINGS); jarl(root, 'review', '1', 'retract', '--by', 'owner', 'the approve was wrong'); }
+    return root;
+  } },
+  { name: 'a retraction of an approve the log does not hold', pattern: /the log holds no approve by rv before it, so it points at no entry/, make: (bad) => {
+    const root = issued(); if (bad) appendLines(root, `${DATED}1 review retract · by owner (coordinator) · retracts the approve by rv (fresh) of 2026-10-19 · the reason`); else { jarl(root, 'review', '1', 'approve', '--by', 'rv', FINDINGS); jarl(root, 'review', '1', 'retract', '--by', 'owner', 'the approve was wrong'); } return root;
+  } },
+  { name: 'a retraction in a loop whose record format was not raised', pattern: /a retraction is written in the raised record format, and this loop is not in it/, make: (bad) => {
+    const root = plain(); appendLines(root, `${DATED}1 evidence row · npm test`); if (bad) appendLines(root, `${DATED}1 evidence retract · row 1 · by owner · the row is wrong`); return root;
+  } },
+  { name: 'an id of 1000 or more in a loop whose record format was not raised', pattern: /issue 1000: its id needs the raised record format/, make: (bad) => {
+    const root = plain(); if (bad) withIssueFile(root, '1000-late.md', '# 1000 · late\n\n**Status:** open\n'); return root;
+  } },
+  { name: 'a file in the issues directory that the loop does not read as an issue', pattern: /issues\/notes\.md: a file the loop does not read as an issue/, make: (bad) => {
+    const root = issued(); if (bad) withIssueFile(root, 'notes.md', 'a note\n'); return root;
+  } },
+  { name: 'a foreign line in the questions file', pattern: /asks\.md line \d+: "stray words"/, make: (bad) => {
+    const root = plain(); writeFileSync(join(root, '.jarl', 'asks.md'), `# Questions to the user\n\n${bad ? 'stray words\n' : ''}`); return root;
+  } },
+  { name: 'a slug ruled twice', pattern: /the slug rule-a is ruled twice/, make: (bad) => {
+    const root = plain(); jarl(root, 'decide', 'rule-a', 'Keep a.', '--by', 'jarl');
+    if (bad) writeFileSync(join(root, '.jarl', 'decisions.md'), `${readFileSync(join(root, '.jarl', 'decisions.md'), 'utf8')}\n## 2026-10-19 · rule-a\nAgain.\n`);
+    return root;
+  } },
+  { name: 'a ruling heading that does not parse', pattern: /a ruling heading does not parse/, make: (bad) => {
+    const root = plain(); jarl(root, 'decide', 'rule-a', 'Keep a.', '--by', 'jarl');
+    if (bad) writeFileSync(join(root, '.jarl', 'decisions.md'), `${readFileSync(join(root, '.jarl', 'decisions.md'), 'utf8')}\n## 2026-10-19 without a dot\n`);
+    return root;
+  } },
+  { name: 'a goal machine line the grammar does not place', pattern: /goal\.md line \d+: .*a Check line names no command/, make: (bad) => {
+    const root = plain(); if (bad) writeFileSync(join(root, '.jarl', 'goal.md'), `${readFileSync(join(root, '.jarl', 'goal.md'), 'utf8')}\n- Check:   \n`); return root;
+  } },
+  { name: 'an issue header that does not parse', pattern: /not an issue header/, make: (bad) => {
+    const root = issued(); if (bad) withIssueFile(root, '2-broken.md', '# two broken title\n\n**Status:** open\n'); return root;
+  } },
+  { name: 'a Resources name that is not a word', pattern: /the resource "db server" is not a word/, make: (bad) => {
+    const root = issued(); if (bad) editIssue1(root, '**Status:** open', '**Status:** open\n**Resources:** gate, db server'); return root;
+  } },
+  { name: 'an After that names an issue the loop does not hold', pattern: /waits on issue 9 in its After field, which the loop does not hold/, make: (bad) => {
+    const root = issued(); if (bad) editIssue1(root, '**Status:** open', '**Status:** open\n**After:** 9'); return root;
+  } },
+  { name: 'a header that disagrees with the log', pattern: /Status reads done in the file and open in the log/, make: (bad) => {
+    const root = issued(); if (bad) editIssue1(root, '**Status:** open', '**Status:** done'); return root;
+  } },
+  { name: 'a repository named by an issue with no declaration', pattern: /Other: is named \(named by issue 1\) but has no declaration/, make: (bad) => {
+    const { hub } = loopWithSibling('Sib'); retracted(hub); if (bad) editIssue1(hub, '**Repo:** Sib', '**Repo:** Other'); return hub;
+  } },
+  { name: 'a declared repository that does not resolve', pattern: /Sib: is declared and does not resolve on this machine/, make: (bad) => {
+    const { parent, hub } = loopWithSibling('Sib'); if (bad) renameSync(join(parent, 'Sib'), join(parent, 'Sib-away')); return hub;
+  } },
+  { name: 'a checkout whose root commits are another repository\'s', pattern: /Sib: .*another repository than Sib/, make: (bad) => {
+    const { parent, hub } = loopWithSibling('Sib');
+    if (bad) { renameSync(join(parent, 'Sib'), join(parent, 'Sib-away')); sibling(parent, 'Sib', 'another repository\n'); }
+    return hub;
+  } },
+  { name: 'a worktree lease that no repository the issue names holds', pattern: /its worktree .* is not a worktree of a repository the issue names/, make: (bad) => {
+    const { parent, hub } = loopWithSibling('Sib');
+    retracted(hub);
+    const path = bad ? realpathSync(mkdtempSync(join(tmpdir(), 'jarl-stray-'))) : join(parent, 'Sib');
+    editIssue1(hub, '**Status:** open', `**Status:** in-progress\n**Repo:** Sib\n**Worktree:** ${path}\n**Since:** 2026-10-19 10:00`);
+    appendLines(hub, `${DATED}1 → in-progress · worktree ${path}`);
+    return hub;
+  } },
+  { name: 'an open issue that cites a superseded ruling', pattern: /cites the ruling rule-a in What, Why or Acceptance, and rule-b supersedes it/, make: (bad) => {
+    const root = plain(); jarl(root, 'decide', 'rule-a', 'Keep a.', '--by', 'jarl'); jarl(root, 'decide', 'rule-b', 'Keep b instead.', '--by', 'jarl', '--supersedes', 'rule-a');
+    jarl(root, 'new', 'first', '--what', bad ? 'Obeys rule-a.' : 'Does one thing.'); return root;
+  } },
+];
+for (const k of ANOMALIES) {
+  test(`verify lists ${k.name}, and exits 2`, () => {
+    const r = verifyOn(k.make(true));
+    assert.equal(r.status, 2, r.stdout + r.stderr);
+    assert.match(r.stdout, k.pattern);
+  });
+  test(`verify on a loop without ${k.name} finds nothing of that kind, and exits 0`, () => {
+    const r = verifyOn(k.make(false));
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.doesNotMatch(r.stdout, k.pattern);
+  });
+}
+
+test('verify notes a repository whose origin differs from the declared one, and that is a note, not a finding', () => {
+  const parent = realpathSync(mkdtempSync(join(tmpdir(), 'jarl-verify-')));
+  const hub = sibling(parent, 'hub');
+  jarl(hub, 'init', 'goal'); jarl(hub, 'new', 'first');
+  const sib = sibling(parent, 'Sib');
+  gitIn(sib, 'remote', 'add', 'origin', 'https://example.com/a/one.git');
+  jarl(hub, 'repo', '1', 'Sib');
+  gitIn(sib, 'remote', 'set-url', 'origin', 'https://example.com/b/two.git');
+  const r = verifyOn(hub);
+  assert.equal(r.status, 0, r.stdout);
+  assert.match(r.stdout, /note: Sib: its origin is example\.com\/b\/two, the declaration holds example\.com\/a\/one/);
+});
+
+test('verify on a repository whose origin is the declared one has no note about origin', () => {
+  const parent = realpathSync(mkdtempSync(join(tmpdir(), 'jarl-verify-')));
+  const hub = sibling(parent, 'hub');
+  jarl(hub, 'init', 'goal'); jarl(hub, 'new', 'first');
+  const sib = sibling(parent, 'Sib');
+  gitIn(sib, 'remote', 'add', 'origin', 'https://example.com/a/one.git');
+  jarl(hub, 'repo', '1', 'Sib');
+  const r = verifyOn(hub);
+  assert.equal(r.status, 0, r.stdout);
+  assert.doesNotMatch(r.stdout, /origin/);
+});
+
+test('verify lists a declaration made from a shallow checkout as unverified', () => {
+  const parent = realpathSync(mkdtempSync(join(tmpdir(), 'jarl-verify-')));
+  const hub = sibling(parent, 'hub');
+  jarl(hub, 'init', 'goal'); jarl(hub, 'new', 'first');
+  const src = sibling(parent, 'Src');
+  gitIn(parent, 'clone', '-q', '--depth', '1', `file://${src}`, join(parent, 'Sib'));
+  jarl(hub, 'repo', '1', 'Sib');
+  const r = verifyOn(hub);
+  assert.equal(r.status, 2, r.stdout);
+  assert.match(r.stdout, /Sib: cannot be verified: a shallow checkout cannot show its root commits/);
+});
+
+test('verify does not flag a Repo that holds a path, and does not resolve it', () => {
+  const root = issued();
+  editIssue1(root, '**Status:** open', '**Status:** open\n**Repo:** ../nowhere-at-all');
+  const r = verifyOn(root);
+  assert.equal(r.status, 0, r.stdout);
+  assert.doesNotMatch(r.stdout, /nowhere-at-all/);
+});
+
+test('verify finds nothing in the ruling fields a composer writes with a ruling', () => {
+  const root = plain();
+  jarl(root, 'decide', 'rule-a', 'Keep a.', '--by', 'jarl', '--area', 'gate', '--reach', '3', '--rule', 'gate/x');
+  const r = verifyOn(root);
+  assert.equal(r.status, 0, r.stdout);
+  assert.doesNotMatch(r.stdout, /decisions\.md: \d/);
+});
+
+// The real loops: a copy of a loop that a test is pointed at through the environment, never a fixture committed here. The
+// variable names the directory holding the loop's .jarl (several, separated by the platform's path separator). Without it
+// the test is skipped, and with it the test runs verify on each copy and checks that it ends with its checks printed.
+// JARL_LIVE_KNOWN=1 also checks the findings a frozen copy of the release loop is known to hold: one strike-through
+// verdict line and one open issue that cites a superseded ruling.
+const LIVE_LOOPS = (process.env.JARL_LIVE_LOOP || '').split(delimiter).filter(Boolean);
+test('verify on the real loops named by JARL_LIVE_LOOP: it runs to an end and prints its checks, and the known findings are found when JARL_LIVE_KNOWN is 1', {
+  skip: LIVE_LOOPS.length ? false : 'JARL_LIVE_LOOP is unset: name the directory of a copy of a real loop (the one holding its .jarl) to run this',
+}, () => {
+  for (const root of LIVE_LOOPS) {
+    const r = run(root, ['verify']);
+    assert.ok(r.status === 0 || r.status === 2, `${root}: ${r.stderr}`);
+    assert.match(r.stdout, /^log\.md: /m);
+    if (process.env.JARL_LIVE_KNOWN === '1') {
+      assert.match(r.stdout, /log\.md line \d+: "- 2026-10-03 13:12 · ~~006 review approve/);
+      assert.match(r.stdout, /open issues citing a superseded ruling: 1/);
+    }
+  }
 });
 
 test('goal lines set through the command line read through the frozen reader: the loop is read, the worker parsed, done passes', () => {
