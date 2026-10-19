@@ -70,9 +70,15 @@ commands:
   source <id> <dir>#<id>,...                     set the Source field of an issue filed by hand
   after <id> <ids> | <id> --clear                the issues this one waits on: next does not offer it until each is
                                                  done or dropped, and status counts it as waiting
-  evidence <ids> "<text>" | --ran "<command>" --saw "<what it printed>" | <id> --retract <n> --by <who> "<reason>"
+  evidence <ids> "<text>" | --ran "<command>" --saw "<what it printed>" | <id> --file <path> --slot <name> | <id> --retract <n> --by <who> "<reason>"
                                                  append a free-text note (under ### Notes), or one checkable row per --ran/--saw
                                                  pair (repeatable; under ### Proof, after the last row);
+                                                 --file --slot records one attachment as a Proof row: the slot, the path
+                                                 under the loop root (relative, no .., no symlink), the file's sha256 and its
+                                                 size; nothing is copied. The slot is one the profile's done gate requires of
+                                                 the issue's kind, and the file lies at the slot's place, has an allowed
+                                                 extension and at least the minimum size (at most 64 MiB); done checks every
+                                                 required slot again on the disk;
                                                  --retract retracts the n-th evidence row (the number show prints before each row,
                                                  counted over the whole Evidence section) by an appended entry: the row
                                                  stays, struck through, and the done gate does not count it; the first
@@ -376,7 +382,7 @@ export const COMMAND_FLAGS = {
   sources: { source: 'value' },
   source: {},
   after: { clear: 'bool' },
-  evidence: { ran: 'many', saw: 'many', retract: 'value', by: 'value' },
+  evidence: { ran: 'many', saw: 'many', retract: 'value', by: 'value', file: 'value', slot: 'value' },
   list: { status: 'value', kind: 'value', tag: 'value', prio: 'value', grep: 'value', match: 'many', all: 'bool' },
   show: { full: 'bool' }, set: { branch: 'value', worker: 'value', model: 'value', worktree: 'value', header: 'bool' }, tag: {}, prio: {}, files: {},
   repo: { clear: 'bool', base: 'bool' },
@@ -472,7 +478,7 @@ export const COMMAND_SUMMARY = {
   sources: 'Per findings report: its findings, the issues filed from them and their status.',
   source: 'Set the Source field of an issue filed by hand.',
   after: 'Set or clear the issues this one waits on before next offers it.',
-  evidence: 'Append a free-text note, or checkable rows of what ran and what it printed, to issues; or retract one row by number.',
+  evidence: 'Append a free-text note, or checkable rows of what ran and what it printed, to issues; or record a file as an attachment of a slot (--file, --slot); or retract one row by number.',
   list: 'List the issues, the unfinished ones by default, filtered by status, kind, tag, priority or a field.',
   show: 'Print one issue as the done gate sees it (its current window, rows numbered), or the whole file with --full.',
   set: 'Change the status of issues, with the reason logged, or set a field the profile declares.',
