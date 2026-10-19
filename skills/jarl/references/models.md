@@ -23,8 +23,7 @@ Opening the loop — reading the repository whole, writing the goal, the first r
 issues — is the one part that needs the strongest model in the room. The loop itself is clerical
 work over a tool that refuses what is wrong: the reeve, on the standard tier, runs it, hands out
 issues, reads reports and keeps the journal, and hands back to the jarl only on the four occasions
-named in [The reeve](jarl.md#the-reeve-handing-the-loop-down). Workers, readers, reviewers and the merger run on the standard tier unless an
-issue's own `Tier:` says otherwise. Say which tier is running in every report.
+named in [The reeve](jarl.md#the-reeve-handing-the-loop-down). Workers run on the tier the issue's `Tier:` names. A reviewer whose approve clears the issue runs on that tier or above, never below it, and on a different model from the worker's where the platform has one (see [The approve that clears an issue](#the-approve-that-clears-an-issue)). Readers and the merger run on the standard tier. Say which tier is running in every report.
 
 ## The tiers, and when each fits
 

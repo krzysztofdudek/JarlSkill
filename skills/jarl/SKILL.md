@@ -43,7 +43,7 @@ The other references, each read when its subject comes up:
 |---|---|
 | `resume` | the whole state of the loop, read live; the first call of every session |
 | `status` | the goal, the counts, stale leases, what waits |
-| `next` | the open issues that can start now |
+| `next` | the open issues ready to start; `--all` adds the held and waiting ones, in groups |
 | `new "<title>" --what … --acceptance …` | files an issue with its body |
 | `set <ids> in-progress "<why>" --branch <b> --worker <name> --model <m>` | leases issues before a worker is raised |
 | `evidence <ids> --ran "<command>" --saw "<what it printed>"` | records proof |
@@ -74,11 +74,13 @@ Every command, its flags and its JSON are in [references/commands.md](references
 
 ### The CLI, when the tools are not there
 
-With no `jarl_*` tools in the session (the skill copied into an agent's skill directory rather than installed as a plugin, for one), the script is the CLI:
+With no `jarl_*` tools in the session (the skill copied into an agent's skill directory rather than installed as a plugin, for one), the script is the CLI. It sits in the skill's own directory, so the command names it by the directory this `SKILL.md` was read from:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT:-.claude/skills/jarl}/scripts/jarl.mjs" <command>
+node "<skill dir>/scripts/jarl.mjs" <command>
 ```
+
+`<skill dir>` is `${CLAUDE_PLUGIN_ROOT}/skills/jarl` in a plugin install, and `.claude/skills/jarl` (or wherever the directory was copied to) in a drop-in.
 
 If that file does not exist where the command runs, the path belongs to another machine: VS Code
 attached to a dev container, for one, hands the agent the host's install path, which the container
@@ -87,6 +89,8 @@ cannot see. Do not work around the tool. Find the copy this environment has: the
 once, `find ~ /workspaces -path '*skills/jarl/scripts/jarl.mjs' 2>/dev/null | head -1`. Use the
 absolute path it gives for the rest of the session, and hand that same path to every role you raise.
 If there is no copy at all, say so and stop: the loop's state moves only through the tool.
+
+**Which loop a call reaches.** A tool call: its `root` field; without it the server's `JARL_ROOT`; without that, discovery. A command line: `--root`; without it, discovery. Discovery finds the loop at the root of the checkout the call starts in (from a worktree that holds none, the root of its main checkout) and never looks in a subdirectory: a loop kept in one is reached only through `root`, `--root` or `JARL_ROOT`.
 
 The grammar of the command line (the flags, `--json`, `--help` and `--root`) is in [references/commands.md](references/commands.md#the-command-line).
 

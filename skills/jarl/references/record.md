@@ -28,8 +28,7 @@ permanent mode. Only `init` decides the mode of a new loop. A committed loop wit
 ignore file is given it by its first write, which changes nothing about its mode; no command
 ever turns one mode's ignore file into the other's.
 `mode permanent` is the one exception: it turns an *existing, committed* loop into the permanent mode
-in place, for a committed loop (one opened `--committed`) — a release loop opened that way is
-exactly this case. It refuses a default-mode loop (out of git): a permanent record must be committed,
+in place, for a committed loop (one opened `--committed`). It refuses a default-mode loop (out of git): a permanent record must be committed,
 and there is no in-place way to add git tracking to one, so start a fresh loop with `init --permanent`
 instead. It refuses an already-permanent loop too, clearly, rather than silently doing nothing. See the
 command table in [commands.md](commands.md#the-commands).
@@ -38,7 +37,7 @@ command table in [commands.md](commands.md#the-commands).
 
 ## The files of the loop
 
-The tool writes fourteen paths in `.jarl/`, listed below, and the temporary files (`.*.tmp`) a write leaves for an instant.
+The tool writes thirteen paths in `.jarl/`, listed below, and the temporary files (`.*.tmp`) a write leaves for an instant. It reads two things it never writes: the issue templates in `.jarl/templates/`, which the owner or the jarl writes by hand (`archive` leaves them in place, see [Templates](jarl.md#templates)), and a `handoff.md` left in a loop, which `resume` names and `handoff read` prints, as history and never as state.
 
 | Path | What | Who writes |
 |---|---|---|
@@ -49,7 +48,6 @@ The tool writes fourteen paths in `.jarl/`, listed below, and the temporary file
 | `.jarl/repos.md` | The repositories the issues name by name, one line each: the name, the repository's root commits (all of them), its origin as found and its base branch, and no path. Written only when an issue first names a repository by name, and by `repo --base`; each write is a log line. | jarl |
 | `.jarl/asks.md` | The questions for the owner, one block per question: its type, its options and its answer; the ids are `a-1`, `a-2` and so on. | jarl (`ask`, `answer`) |
 | `.jarl/profile.json` | The loop's profile, read as data (see [Profiles](profile.md#profiles)); written by `init --profile`, and by the first write that raises the record format (see [The format marker](#the-format-marker)). | jarl |
-| `.jarl/templates/` | The issue templates, `<name>.md` each, which `archive` leaves in place (see [Templates](jarl.md#templates)). | the owner, the jarl |
 | `.jarl/archive/` | The archived loops, one directory `<yyyy.mm.dd>-<slug>/` each. | jarl (`archive`) |
 | `.jarl/.gitignore` · `.jarl/.gitattributes` · `.jarl/.permanent` | The mode of the loop and how git merges it (see [Where the loop lives](#where-the-loop-lives)). | jarl (`init`) |
 | `.jarl/.lock` · `.jarl/.lock.break` | The write lock (see [The write lock](#the-write-lock)). | every command that writes |
