@@ -85,7 +85,9 @@ commands:
                                                  approve answered, one line per earlier round; --full prints the whole
                                                  file; --json is complete; under the header, one line for each header
                                                  field that disagrees with the log (see status)
-  set <ids> <status> "<why>" [--branch <b>] [--worker <name>] [--model <m>] [--worktree <path>] | <ids> <field> "<value>"
+  set <ids> <status> "<why>" [--branch <b>] [--worker <name>] [--model <m>] [--worktree <path>] [--header] | <ids> <field> "<value>"
+                                                 (<ids> <status-in-the-log> --header rewrites the header fields the log
+                                                 renders from the log, writes no log line and is never a move)
                                                  (field resources "a, b": the exclusive resources the issue holds while
                                                  its lease lasts, loop-wide names; next never offers two issues holding one)
                                                  change status; writes the log line in the same move; in-progress
@@ -324,7 +326,7 @@ export const COMMAND_FLAGS = {
   after: { clear: 'bool' },
   evidence: { ran: 'many', saw: 'many', retract: 'value', by: 'value' },
   list: { status: 'value', kind: 'value', tag: 'value', prio: 'value', grep: 'value', match: 'many', all: 'bool' },
-  show: { full: 'bool' }, set: { branch: 'value', worker: 'value', model: 'value', worktree: 'value' }, tag: {}, prio: {}, files: {},
+  show: { full: 'bool' }, set: { branch: 'value', worker: 'value', model: 'value', worktree: 'value', header: 'bool' }, tag: {}, prio: {}, files: {},
   repo: { clear: 'bool' },
   next: { limit: 'value', all: 'bool' },
   review: { by: 'value', model: 'value', relayed: 'bool' }, round: {},

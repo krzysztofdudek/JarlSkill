@@ -5,7 +5,7 @@
 // operations alone.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs, { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import fs, { appendFileSync, chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -28,6 +28,13 @@ function foldOf(dir, profile, id) {
   return L.issueState(profile, events);
 }
 function issueFile(root, id) { return R.findIssue(root, id).file; }
+const asRoot = typeof process.getuid === 'function' && process.getuid() === 0;
+// Runs fn with the issues directory of the loop closed to writing (a file cannot be created or replaced in it).
+function withIssuesDirClosed(root, fn) {
+  const dir = join(R.jarlDir(root), 'issues');
+  chmodSync(dir, 0o555);
+  try { return fn(); } finally { chmodSync(dir, 0o755); }
+}
 
 // A profile in a composer's shape, and the status names a script uses under each profile.
 const HORDE = {
@@ -276,7 +283,7 @@ test('an issue the journal holds no filing and no move of is reported as not in 
   assert.deepEqual(recordLines(jarl(root, 'status')), []);
 });
 
-test('a hand edit of the profile\'s status list is reported: a line that moved an issue into a status the profile no longer lists reads as a note', () => {
+test('a hand edit of the profile\'s status list is reported: a line that moved an issue into a status the profile does not list reads as a note', () => {
   const root = makeLoop();
   const profile = { 'jarl-profile': 1, name: 'review-loop', statuses: { open: ['dispatchable'], working: ['holds-claim'], review: [], done: ['settles-dependents', 'terminal', 'closes-record'] } };
   const file = join(root, 'p.json');
@@ -449,6 +456,124 @@ test('a composer that moves tickets with the record operations and edits its own
   assert.equal(R.findIssue(root, b).status, 'queued');
 });
 
+// ---- a move line is read by position ------------------------------------------------------------------------
+
+test('a reason is never searched for lease fields: reasons that open with a field name, hold the separator or name a branch give the values the command wrote', () => {
+  const root = makeLoop();
+  const cases = [
+    { reason: 'branch work starts today', flags: [], want: { branch: null, worker: null } },
+    { reason: 'branch fix', flags: ['--branch', 'jarl/001-a'], want: { branch: 'jarl/001-a', worker: null } },
+    { reason: 'branch fix', flags: ['--worker', 'w1'], want: { branch: null, worker: 'w1' } },
+    { reason: 'worker raised', flags: [], want: { branch: null, worker: null } },
+    { reason: 'worker raised in tool', flags: ['--branch', 'jarl/002-b', '--worker', 'w2'], want: { branch: 'jarl/002-b', worker: 'w2' } },
+    { reason: 'model swap needed', flags: ['--model', 'm1'], want: { branch: null, worker: null, model: 'm1' } },
+    { reason: 'see the note · branch other', flags: ['--branch', 'jarl/003-c', '--worker', 'w3'], want: { branch: 'jarl/003-c', worker: 'w3' } },
+    { reason: 'on branch tools-misc: first slice', flags: ['--worker', 'w4'], want: { branch: null, worker: 'w4' } },
+  ];
+  for (const c of cases) {
+    const { id } = R.newIssue(root, `reason ${c.reason}`);
+    jarl(root, 'set', id, 'in-progress', c.reason, ...c.flags);
+    const state = foldOf(R.jarlDir(root), R.loadProfile(root), id);
+    assert.equal(state.branch, c.want.branch, `${c.reason}: branch`);
+    assert.equal(state.worker, c.want.worker, `${c.reason}: worker`);
+    if (c.want.model) assert.equal(state.model, c.want.model);
+    assert.deepEqual(state, headerOf(issueFile(root, id)), `${c.reason}: the fold equals the header`);
+  }
+  assert.deepEqual(recordLines(jarl(root, 'status')), []);
+  const wt = join(root, 'a · branch b');
+  const { id } = R.newIssue(root, 'a worktree path with the separator');
+  jarl(root, 'set', id, 'in-progress', 'go', '--branch', 'jarl/009-z', '--worker', 'w9', '--worktree', wt);
+  assert.equal(foldOf(R.jarlDir(root), R.loadProfile(root), id).branch, 'jarl/009-z');
+  assert.equal(foldOf(R.jarlDir(root), R.loadProfile(root), id).worker, 'w9');
+});
+
+test('move lines in the shapes real loops hold read by position', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'jarl-one-store-shapes-'));
+  mkdirSync(join(dir, 'issues'));
+  writeFileSync(join(dir, 'log.md'), [
+    '# Log', '',
+    '- 2026-10-01 09:00 · filed 005 · a',
+    '- 2026-10-01 09:01 · 005 → in-progress · worker w5-gates claims gates, regression, fingerprint · branch w5-gates · worker w5-gates',
+    '- 2026-10-01 09:02 · filed 010 · b',
+    '- 2026-10-01 09:03 · 010 → in-progress · w3-text on branch w3-text · branch w3-text · worker w3-text',
+    '- 2026-10-01 09:04 · filed 011 · c',
+    '- 2026-10-01 09:05 · 011 → in-progress · on branch tools-misc: slice one · model m@high · worker w-x · worktree /p',
+    '- 2026-10-01 09:06 · filed 013 · d',
+    '- 2026-10-01 09:07 · 013 → in-progress · worker on branch threads-import builds the notes import, the rail and tests',
+    '- 2026-10-01 09:08 · filed 014 · e',
+    '- 2026-10-01 09:09 · 014 → in-progress · branch fix-picture · worker claude-opus-5-5 fix-picture · worktree /p',
+  ].join('\n') + '\n');
+  const profile = L.DEFAULT_PROFILE;
+  const by = L.eventsById(L.loopEvents(dir, profile));
+  assert.deepEqual([L.issueState(profile, by.get('005')).branch, L.issueState(profile, by.get('005')).worker], ['w5-gates', 'w5-gates']);
+  assert.deepEqual([L.issueState(profile, by.get('010')).branch, L.issueState(profile, by.get('010')).worker], ['w3-text', 'w3-text']);
+  const s = L.issueState(profile, by.get('011'));
+  assert.deepEqual([s.branch, s.worker, s.model], [null, 'w-x', 'm@high']);
+  assert.equal(L.issueState(profile, by.get('013')).worker, null, 'a sentence that opens with "worker" is a reason');
+  assert.equal(L.issueState(profile, by.get('014')).worker, 'claude-opus-5-5 fix-picture', 'a worker name may hold a space');
+});
+
+// ---- a note cannot make a disagreement nothing settles --------------------------------------------------------
+
+test('the free log refuses an id and an arrow whatever follows, and a note of that shape already in a log is no disagreement', () => {
+  const root = makeLoop();
+  jarl(root, 'new', 'one', '--tier', 'light');
+  for (const line of ['001 → see 003 for context', '001 → DONE', '001 →nowhere']) {
+    assert.match(refuses(root, 'log', line), /has the shape of a move.*jarl\.mjs set <ids> <status>/, line);
+    assert.throws(() => R.appendLog(root, line), /shape of a move/);
+  }
+  appendFileSync(join(R.jarlDir(root), 'log.md'), '- 2026-10-01 09:00 · 001 → see 003 for context\n- 2026-10-01 09:01 · 001 → DONE\n');
+  assert.deepEqual(recordLines(jarl(root, 'status')), []);
+  assert.equal(JSON.parse(jarl(root, 'status', '--json')).disagreements, undefined);
+});
+
+// ---- the header from the log ----------------------------------------------------------------------------------
+
+test('a bulk set that stopped after its journal lines is repaired by set --header, which writes no line and keeps the moves', { skip: asRoot && 'a writer running as root is not stopped by a closed directory' }, () => {
+  const root = makeLoop();
+  const ids = ['one', 'two'].map((t) => R.newIssue(root, t).id);
+  withIssuesDirClosed(root, () => assert.throws(() => R.setStatus(root, ids.join(','), 'in-progress', undefined, { branch: 'jarl/1-a', worker: 'w1' })));
+  const lines = recordLines(jarl(root, 'status'));
+  assert.ok(lines.length >= ids.length, 'each issue is reported');
+  const shown = jarl(root, 'status');
+  assert.match(shown, /jarl\.mjs set 001 in-progress --header \(writes the header from the log\)/);
+  const before = logLinesOf(root).length;
+  jarl(root, 'set', ids.join(','), 'in-progress', '--header');
+  assert.equal(logLinesOf(root).length, before, 'no second journal line');
+  assert.deepEqual(recordLines(jarl(root, 'status')), []);
+  for (const id of ids) {
+    assert.equal(R.findIssue(root, id).status, 'in-progress', 'the recorded move stands');
+    assert.deepEqual(foldOf(R.jarlDir(root), R.loadProfile(root), id), headerOf(issueFile(root, id)));
+  }
+  assert.match(refuses(root, 'set', '001', 'open', '--header'), /is in-progress in the log/);
+  assert.match(refuses(root, 'set', '001', 'in-progress', 'a reason', '--header'), /takes no reason/);
+});
+
+test('set --header on an issue the log does not hold is refused, naming the command that puts it there', () => {
+  const root = makeLoop();
+  writeFileSync(join(R.jarlDir(root), 'issues', '001-by-hand.md'), '# 001 · by hand\n\n**Status:** open\n');
+  assert.match(refuses(root, 'set', '001', 'open', '--header'), /is not in the log.*jarl\.mjs set 001 open/);
+});
+
+test('the guard on the journal compares its name without case', () => {
+  const root = makeLoop();
+  assert.throws(() => R.writeAtomic(join(R.jarlDir(root), 'LOG.md'), 'x\n'), /is the loop's journal/);
+});
+
+test('a second filing line for an issue resets neither its status nor the window of the gate', () => {
+  const root = makeLoop();
+  const { id } = R.newIssue(root, 'filed twice');
+  R.setStatus(root, id, 'in-progress', undefined, { worker: 'w1' });
+  R.addEvidence(root, id, undefined, { ran: 'node --test', saw: 'ok' });
+  const dir = R.jarlDir(root);
+  const rowsBefore = L.gateOf(L.readLoop(dir), id).rowsSince;
+  appendFileSync(join(dir, 'log.md'), `- 2026-10-19 10:00 · filed ${id} · filed twice\n`);
+  assert.equal(R.findIssue(root, id).status, 'in-progress');
+  assert.equal(L.gateOf(L.readLoop(dir), id).rowsSince, rowsBefore, 'the row still counts');
+  assert.equal(foldOf(dir, R.loadProfile(root), id).status, 'in-progress');
+  assert.equal(L.loopEvents(dir, R.loadProfile(root)).filter((e) => e.type === 'move').pop().from, 'open');
+});
+
 // ---- the words ----------------------------------------------------------------------------------------------
 
 test('the skill says once which store is the record, and the help of the commands that print or refuse says the same', () => {
@@ -488,13 +613,6 @@ test('the Since of a lease and the stamp of its journal line are one reading of 
   assert.equal(foldOf(dir, profile, id).since, headerOf(issue.file).since);
 });
 
-const asRoot = typeof process.getuid === 'function' && process.getuid() === 0;
-// Runs fn with the issues directory of the loop closed to writing (a file cannot be created or replaced in it).
-function withIssuesDirClosed(root, fn) {
-  const dir = join(R.jarlDir(root), 'issues');
-  chmodSync(dir, 0o555);
-  try { return fn(); } finally { chmodSync(dir, 0o755); }
-}
 
 test('set writes the journal line before the file: a write that stops leaves the record ahead of the file', { skip: asRoot && 'a writer running as root is not stopped by a closed directory' }, () => {
   const root = makeLoop();

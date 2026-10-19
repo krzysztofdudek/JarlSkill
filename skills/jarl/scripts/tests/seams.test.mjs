@@ -172,6 +172,17 @@ test('rule 7: no comment or title in the tests, and no prose in the skill or the
   assert.deepEqual(prose('README.md', new URL('../../../README.md', SCRIPTS)), []);
 });
 
+const PAST_WORDS = /\bno longer\b|\bolder\b|\blegacy\b|\bused to\b|\bformerly\b|\bnew in\b/i;
+test('rule 7: no title of the one-store tests and no changelog entry of the single record says "no longer", "older", "legacy" or "used to"', () => {
+  const titled = TESTS.filter((f) => f === 'one-store.test.mjs').flatMap((f) => read(`tests/${f}`).split('\n').flatMap((line, i) => (/^\s*test\('/.test(line) && PAST_WORDS.test(line) ? [`tests/${f}:${i + 1}: ${line.trim().slice(0, 100)}`] : [])));
+  assert.deepEqual(titled, []);
+  assert.equal(PAST_WORDS.test("test('the profile no longer lists it', () => {"), true);
+  const changelog = readFileSync(new URL('../../../CHANGELOG.md', SCRIPTS), 'utf8').split('\n');
+  const unreleased = changelog.slice(changelog.findIndex((l) => l.startsWith('## [Unreleased]')) + 1);
+  const entry = unreleased.slice(0, unreleased.findIndex((l) => l.startsWith('## [')));
+  assert.deepEqual(entry.filter((l) => /^- The log is now the one record/.test(l) && PAST_WORDS.test(l)), []);
+});
+
 // ---- every spawn in the tests has a timeout -----------------------------------------------------------
 
 test('every process a test starts carries a timeout', () => {
