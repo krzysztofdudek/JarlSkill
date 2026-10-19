@@ -2320,6 +2320,12 @@ const ANOMALIES = [
     else { jarl(root, 'review', '1', 'approve', '--by', 'rv', FINDINGS); jarl(root, 'review', '1', 'retract', '--by', 'owner', 'the approve was wrong'); }
     return root;
   } },
+  { name: 'a retraction line that names no approve', pattern: /the line names no approve, so it takes away none/, make: (bad) => {
+    const root = issued();
+    if (bad) appendLines(root, `${DATED}1 review retract · by owner (coordinator) · just a reason`);
+    else { jarl(root, 'review', '1', 'approve', '--by', 'rv', FINDINGS); jarl(root, 'review', '1', 'retract', '--by', 'owner', 'the approve was wrong'); }
+    return root;
+  } },
   { name: 'a retraction of an approve the log does not hold', pattern: /the log holds no approve by rv before it, so it points at no entry/, make: (bad) => {
     const root = issued(); if (bad) appendLines(root, `${DATED}1 review retract · by owner (coordinator) · retracts the approve by rv (fresh) of 2026-10-19 · the reason`); else { jarl(root, 'review', '1', 'approve', '--by', 'rv', FINDINGS); jarl(root, 'review', '1', 'retract', '--by', 'owner', 'the approve was wrong'); } return root;
   } },
