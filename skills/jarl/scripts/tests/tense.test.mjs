@@ -2,7 +2,8 @@
 // no other Jarl, no plan for a release still to come and no second name for a command, calls the owner by his role, and
 // holds no task by number. The surfaces are the skill, its references, README.md and CLAUDE.md; the help, the usage, the command
 // summaries, the tool descriptions, the server's instructions, read from the command table, the tool list and the server;
-// every string, template literal, comment and name of the scripts; and the comments and the titles of the tests.
+// every string, template literal, comment and name of the scripts; the comments and the titles of the tests; and the
+// comments and the names of the workflow files.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
@@ -164,6 +165,17 @@ function commentLines(path, text) {
     return title ? [{ where, text: title[2] }] : [];
   });
 }
+// The comments and the names of a workflow file: a comment is the text after a # that starts a line or follows a value,
+// and a name is the value of a name key. The rest of the YAML is code, not prose, and is not read.
+function workflowLines(path, text) {
+  return text.split('\n').flatMap((line, i) => {
+    const where = `${path}:${i + 1}`;
+    const comment = /(?:^|\s)#(.*)$/.exec(line);
+    if (comment) return [{ where, text: comment[1] }];
+    const name = /^\s*(?:-\s+)?name:\s*(.*)$/.exec(line);
+    return name ? [{ where, text: name[1] }] : [];
+  });
+}
 // The help, the command summaries, the tool descriptions and the server's instructions, read from the tables and the server.
 function derivedLines() {
   const strings = (value, out = []) => {
@@ -192,7 +204,8 @@ function tenseTexts() {
   // test is held unchanged by this release, so its comments are not read here either.
   const tests = readdirSync(TESTS).filter((f) => f.endsWith('.mjs') && f !== 'old-jarl.mjs' && f !== 'record-contract.test.mjs');
   const testComments = tests.flatMap((f) => commentLines(`skills/jarl/scripts/tests/${f}`, readFileSync(join(TESTS, f), 'utf8')));
-  return [...markdown, ...derivedLines(), ...source, ...testComments];
+  const workflows = readdirSync(join(REPO, '.github/workflows')).filter((f) => f.endsWith('.yml')).sort().flatMap((f) => workflowLines(`.github/workflows/${f}`, read(`.github/workflows/${f}`)));
+  return [...markdown, ...derivedLines(), ...source, ...testComments, ...workflows];
 }
 function tenseHits(texts) {
   const hits = [];
@@ -228,6 +241,14 @@ test('the tense test reads every string, template, comment and name of a script,
   assert.ok(kind('name').includes('legacy'));
   assert.equal(tokens.find((t) => t.kind === 'comment' && t.text.includes('owner')).where, 'x.mjs:1');
   assert.equal(tenseHits(tokens).length, 4, 'the older string, the since comment, the retired template and the legacy name');
+});
+
+test('the tense test reads the comments and the names of a workflow file, and no other YAML', () => {
+  const sample = 'name: CI\n  # The runner (issue 7)\n  run: npm test # pinned 22.0.1\n  - name: Run tests\n    with: { node-version: 22 }\n';
+  const lines = workflowLines('x.yml', sample);
+  assert.deepEqual(lines.map((l) => l.text.trim()), ['CI', 'The runner (issue 7)', 'pinned 22.0.1', 'Run tests']);
+  assert.equal(lines[1].where, 'x.yml:2');
+  assert.equal(tenseHits(lines).length, 2, 'the task number and the version-shaped token');
 });
 
 test('the tense test names each family in a sample, and the allow-list passes only the record contract name, the frozen reader path and the two output keys', () => {
