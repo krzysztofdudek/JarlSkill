@@ -20,6 +20,7 @@ import {
   issuesNaming, questionFor, cmdGoal, cmdGoalSet, cmdRepoBase, whereOf, cmdVerify, renderVerify, renderCheckNotes,
   renderProfile, renderTips, renderQueue, renderResume, renderStatus, renderImport, renderSources, renderList, recordTypeLog, recordRuleLog,
   runDecisionsDriver, mergeFlags, describeNew, renderNewReply, issueView, attachmentStates, evidenceTable, renderBranches, renderDecide, renderDecisions,
+  cmdNextAs, renderNextAs, askerSection,
 } from './jarl-lib.mjs';
 import { writeAreaDecision, writeRuleRatification } from './yg-edge.mjs';
 
@@ -159,11 +160,23 @@ commands:
                                                  local branch (git worktree remove, git branch -d, never a force)
                                                  when that is safe, and names why it kept them when it is not;
                                                  --keep skips it
-  next [--limit n] [--all]                       the open issues ready to start: no file shared with an in-progress one, every
+  next [--limit n] [--all] [--as <who>]          the open issues ready to start: no file shared with an in-progress one, every
                                                  After issue done or dropped, no open stuck or stop question on it; a file is
                                                  its repository and its path (see --repo below); one with no acceptance line
                                                  or no declared files is marked; --all adds the others in groups (held by a
-                                                 file and by whom, waiting on After, held by a question), --json rows carry a group
+                                                 file and by whom, waiting on After, held by a question), --json rows carry a group;
+                                                 --as <who> lists instead what is on the owner, the jarl, a coordinator or
+                                                 a person by name now, each line with the command that moves it (it takes
+                                                 no --limit): the owner holds the questions and the items to ratify; the
+                                                 jarl the ready issues, the leases, a proof
+                                                 with no verdict, changes asked, an approve not merged, and a ruling that
+                                                 settles issues none of which is live (with no slice in the loop, a
+                                                 coordinator's lines are the jarl's); derived from the profile's status
+                                                 flags, the verdicts, the questions and the rulings; at most seven lines,
+                                                 the owner's first, then by how many issues each holds up, then how many
+                                                 more; --all every line and the issues waiting on that one, "waits on X
+                                                 via N"; under an external scheduler the issues in play are left out and
+                                                 the composer's command named
   review <ids> approve|changes --by <reviewer> [--model <m>] [--relayed] "<findings>"
                                                  the reviewer's verdict; --model is the model the reviewer was raised on
                                                  (stored as given); --relayed marks a verdict recorded by someone else in
@@ -220,13 +233,15 @@ commands:
                                                  several ratify items as a comma list take one answer, one ruling each,
                                                  each naming the batch it was answered in; on a ratify item whose
                                                  ruling names a rule, the rule's ratification names who answered
-  resume [--log n] [--ready n] [--ci]            read-only, the boot: everything a session picks the loop up from,
+  resume [--log n] [--ready n] [--ci] [--as <who>]
+                                                 read-only, the boot: everything a session picks the loop up from,
                                                  assembled live — goal and counts, rulings in force, in flight with
                                                  leases (and stale ones), waiting on After, questions, ratify items,
                                                  the next ready issues (n, default 10), the merge queue, merges with
                                                  CI pending or red, the tips of every repository the issues name,
                                                  loop files not committed, and the last log lines (n, default 15);
-                                                 no network unless --ci asks gh for the CI of each pushed tip
+                                                 no network unless --ci asks gh for the CI of each pushed tip;
+                                                 --as <who> ends it with what next --as <who> prints
   log "<event>"                                  append one dated note to the journal; a line that reads as a filing, a move,
                                                  a round, a verdict, a retraction, an evidence row, a merge, a CI state or
                                                  a body change is refused, and the refusal names the command that writes it
@@ -248,8 +263,9 @@ commands:
                                                  was and what it is: "Check (<repository>): <command>" or a bare
                                                  "Check: <command>", "Model (<tier>): <models>" (a tier the profile
                                                  declares) or "Coordinators: <names>"; the rest of goal.md stays as written
-  status [--stale-hours n] [--by repo|tag|kind|prio|<field>] [--tag <t>]
-                                                 --tag computes every part of status over the issues carrying that tag only
+  status [--stale-hours n] [--by repo|tag|kind|prio|<field>] [--tag <t>] [--as <who>]
+                                                 --tag computes every part of status over the issues carrying that tag only;
+                                                 --as <who> ends it with what next --as <who> prints
                                                  the log is the record of an issue's status, lease, merge and CI; a header
                                                  that disagrees is never believed, and status prints one "record:" line
                                                  for it, with how to write the header back or make it the record (resume
@@ -422,7 +438,7 @@ export const COMMAND_FLAGS = {
   list: { status: 'value', kind: 'value', tag: 'value', prio: 'value', grep: 'value', match: 'many', all: 'bool' },
   show: { full: 'bool' }, set: { branch: 'value', worker: 'value', model: 'value', worktree: 'value', header: 'bool' }, tag: { by: 'value' }, prio: { by: 'value' }, files: { by: 'value' },
   repo: { clear: 'bool', base: 'bool', by: 'value' },
-  next: { limit: 'value', all: 'bool' },
+  next: { limit: 'value', all: 'bool', as: 'value' },
   review: { by: 'value', model: 'value', relayed: 'bool' }, round: { findings: 'value' },
   models: { by: 'value', with: 'many', archives: 'bool' },
   scope: { branch: 'value', base: 'value', repo: 'value' },
@@ -430,11 +446,11 @@ export const COMMAND_FLAGS = {
   merged: { sha: 'value', ci: 'value', repo: 'value', ran: 'many', saw: 'many', red: 'value', keep: 'bool' },
   ask: { kind: 'value', target: 'value', issue: 'value', option: 'many' },
   answer: { by: 'value', option: 'value' },
-  resume: { log: 'value', ready: 'value', ci: 'bool' },
+  resume: { log: 'value', ready: 'value', ci: 'bool', as: 'value' },
   handoff: { summary: 'value', next: 'many', log: 'value', ready: 'value', ci: 'bool' },
   log: {}, decide: { settles: 'many', by: 'value', quote: 'value', supersedes: 'value', area: 'value', reach: 'value', rule: 'value' }, decisions: { live: 'bool' },
   goal: { set: 'value' },
-  status: { 'stale-hours': 'value', by: 'value', tag: 'value' }, archive: {}, report: { found: 'bool' }, tips: {}, mode: {},
+  status: { 'stale-hours': 'value', by: 'value', tag: 'value', as: 'value' }, archive: {}, report: { found: 'bool' }, tips: {}, mode: {},
   queue: { repo: 'value', base: 'value' }, changelog: { repo: 'value' },
   close: { force: 'bool', batch: 'bool' }, profile: {}, verify: {},
 };
@@ -536,7 +552,7 @@ export const COMMAND_SUMMARY = {
   prio: 'Set the priority of issues.',
   files: 'Declare the files issues touch.',
   repo: 'Name the repository (or several) the code of issues lives in, or clear it.',
-  next: 'The open issues ready to start: no file shared with work in progress, every After issue settled, no open question on them; all adds the held and waiting ones in groups.',
+  next: 'The open issues ready to start: no file shared with work in progress, every After issue settled, no open question on them; all adds the held and waiting ones in groups; as lists what is on the owner, the jarl or a named person, each line with its command.',
   review: 'Record a reviewer\'s verdict (approve or changes) on issues, with the reviewer and the findings.',
   round: 'Record one red round on issues; every third prints the takeover block for a fresh worker.',
   models: 'Per model as worker and as reviewer, per kind of issue: the counts, clean first passes and verdicts the record holds, with the words fits, below, new and may clear; reads other loops and archives too.',
@@ -544,13 +560,13 @@ export const COMMAND_SUMMARY = {
   branches: 'Every worker branch with its issues, commits beyond the base, worktree state, stale leases and done branches, in the loop\'s repository and every repository its issues name (repo narrows it to one).',
   ask: 'File a question the owner has to answer (stop, stuck, lower, charter or ratify).',
   answer: 'Record the owner\'s answer to a question, the option chosen or the words given, as a ruling and close the question; several ratify items take one answer.',
-  resume: 'The boot: everything a session picks the loop up from, assembled live.',
+  resume: 'The boot: everything a session picks the loop up from, assembled live; as ends it with what is on the one who asks.',
   handoff: 'read: resume, then the handoff file the loop holds, if any; write: writes nothing.',
   log: 'Append one dated note to the loop\'s journal; a line that reads as a move, a verdict or another line of state is refused.',
   decide: 'Append a ruling, optionally superseding one, settling issues or covering an area of code.',
   decisions: 'The rulings with who ruled and what superseded them.',
   goal: 'The goal as goal.md holds it, or one machine line of it set (Check, Model or Coordinators), with a log line that says what it was and what it is now.',
-  status: 'The goal, the counts by status, the reviews, stale leases and what awaits ratification.',
+  status: 'The goal, the counts by status, the reviews, stale leases and what awaits ratification; as ends it with what is on the one who asks.',
   archive: 'Put the current loop away under .jarl/archive/ so a new one can open here.',
   report: 'What was done, dropped, deferred and still open, ready for the changelog, with the loop metrics.',
   tips: 'Per repository the loop names: the tips of worker, feature and main branches, ahead/behind and CI; fetches nothing.',
@@ -778,6 +794,11 @@ export function dispatch(root, commandName, rest, flags) {
         break;
       // One computation of the rows: the ready ones are listed, and the rest says how many are held or waiting.
       case 'next': {
+        if (flags.as !== undefined) {
+          need(flags.limit === undefined, '--limit counts the ready issues of next; next --as prints at most seven lines, and --all every line');
+          out = cmdNextAs(root, flags); text = renderNextAs(out);
+          break;
+        }
         const rows = cmdNext(root, { ...flags, all: true });
         out = rows.scheduler || flags.all ? rows : rows.filter((r) => r.ready);
         text = rows.scheduler ? rows.note : renderNext(out, flags.all === true, rows.length - out.length);
@@ -794,7 +815,7 @@ export function dispatch(root, commandName, rest, flags) {
       case 'ask': out = R.ask(root, rest[0], { ...flags, width: undefined }); text = askText(out); break;
       // The library's answer (jarl-record/1) takes no opts: --by and --option reach the answer through jarl-lib.mjs, under the lock held here.
       case 'answer': out = cmdAnswerMany(root, rest[0], rest[1], flags); break;   // text below: the type log is written outside the lock
-      case 'resume': out = R.resumeData(root, flags); text = renderResume(out, R.loadProfile(root)); break;
+      case 'resume': out = R.resumeData(root, flags); text = renderResume(out, R.loadProfile(root)); ({ out, text } = endWithAsker(root, flags, out, text)); break;
       case 'handoff':
         need(rest[0] === undefined || rest[0] === 'read' || rest[0] === 'write', `handoff takes read or write (got "${rest[0]}") — the state is assembled live by resume`);
         if (rest[0] === 'write') { out = cmdHandoffWrite(); text = out.note; } else { out = cmdHandoffRead(root, flags); text = out.text; }
@@ -804,7 +825,7 @@ export function dispatch(root, commandName, rest, flags) {
       case 'decide': out = R.decide(root, rest[0], rest[1], flags); text = renderDecide(out); decideNotes(root, rest[0], out.by, flags, warn); break;
       case 'decisions': out = R.decisions(root, flags); text = renderDecisions(out); break;
       case 'goal': out = flags.set === undefined ? cmdGoal(root) : cmdGoalSet(root, flags.set); text = flags.set === undefined ? out.goal : out.unchanged ? `goal line unchanged: ${out.shown}` : `goal line ${out.replaced ? 'changed' : 'added'}: ${out.shown}${out.replaced ? ` (was ${out.was})` : ''}`; break;
-      case 'status': out = R.statusData(root, flags); text = renderStatus(out, R.loadProfile(root)); break;
+      case 'status': out = R.statusData(root, flags); text = renderStatus(out, R.loadProfile(root)); ({ out, text } = endWithAsker(root, flags, out, text)); break;
       case 'tips': out = cmdTips(root); text = renderTips(out); break;
       case 'queue': out = cmdQueue(root, flags); text = renderQueue(out); break;
       case 'changelog': out = cmdChangelog(root, rest[0], flags); text = out.text || '(no changelog fragment on these issues)'; warn = out.missing.length ? [`note: no changelog fragment: ${out.missing.join(', ')} — record one with: jarl.mjs body <id> --changelog "Added: …"`] : []; break;
@@ -824,6 +845,13 @@ export function dispatch(root, commandName, rest, flags) {
   // written twice, nor into a checkout the composer's work never reaches.
   if (cmd === 'answer') text = [].concat(out).map((one) => answered(root, one, warn)).join('\n');
   return { out, text, warn, aliases };
+}
+
+// status --as and resume --as: the view, then the asker's list as next --as prints it (`as` in --json).
+function endWithAsker(root, flags, out, text) {
+  if (flags.as === undefined) return { out, text };
+  const asker = askerSection(root, flags.as);
+  return { out: { ...out, as: asker.as }, text: `${text}\n\n${asker.text}` };
 }
 
 // The line each command prints for one result.
