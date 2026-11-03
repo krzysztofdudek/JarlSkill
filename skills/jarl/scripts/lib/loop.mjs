@@ -8,7 +8,7 @@ import { idKey, idRe } from './ids.mjs';
 import { profileAt } from './profile.mjs';
 import { asksAt, decisionsAt, goalLines, readGoal } from './journal.mjs';
 import { eventsById, loopEvents } from './log.mjs';
-import { alignRows, evidenceTable, issuesAt, mergedOf, settledNote, sharedNumberText, sharedNumbers } from './issues.mjs';
+import { alignRows, evidenceTable, issuesAt, mergedOf, refiledText, sharedNumberText, sharedNumbers } from './issues.mjs';
 import { branchTip } from './repositories.mjs';
 
 // ---- the loaded loop -------------------------------------------------------------------------------
@@ -53,7 +53,7 @@ function scopedLoop(loop, issues) { return makeLoop({ dir: loop.dir, root: loop.
 // Where the files disagree with the journal, which is the record: one entry { id, field, onFile, record, line } per
 // header field (Status, Branch, Worker, Model, Since, Merged, CI) whose value differs from the journal's, one per
 // issue the journal holds no filing and no move of (field 'journal'), and one per status a line of the journal moves an
-// issue into that the loop's profile does not list (field 'profile': the line reads as a note, not as a move), and one per number two issue files carry (field 'number', with the files) and one per number the log files more than once with no note after it saying how that was settled (field 'refiled'), each in place of the fields. The
+// issue into that the loop's profile does not list (field 'profile': the line reads as a note, not as a move), and one per number two issue files carry (field 'number', with the files) and one per number the log files more than once that one file carries (field 'refiled'), each in place of the fields and with no advice to write the log's value into a header. The
 // views never believe the header; they print these. Each line names how the disagreement is settled: the header written
 // back to the journal's value, which writes nothing else, or the move or merge that makes the header's value the
 // record, which writes a line of its own.
@@ -71,11 +71,11 @@ export function recordDisagreements(loop) {
   for (const issue of loop.issues) {
     if (issue.id === null || sharedFiles.has(issue.file)) continue;
     const id = issue.id;
-    // A number the log files more than once named several files at once, so its lines cannot be told apart: the header is
-    // not compared with them until a note after the last filing says how that was settled.
-    const unsettled = refiledUnsettled(loop.eventsById.get(id) || [], id);
-    if (unsettled) {
-      out.push({ id, field: 'refiled', onFile: null, record: null, files: [`issues/${basename(issue.file)}`], line: `record: the log files ${id} ${unsettled} times, so its lines for ${id} once named ${unsettled} issue files and cannot be told apart; the header of issues/${basename(issue.file)} is not compared with them, and the log's value is never to be written into it — when the log's status for ${id} is not the one the file reads, move it there (jarl.mjs set ${id} <status>), then write which earlier lines were whose: jarl.mjs log "${settledNote(id)}"` });
+    // A number the log files more than once named several files at once, and its lines cannot be told apart: no line
+    // written later attributes them, so the header is never compared with them and no advice copies them into it.
+    const filings = (loop.eventsById.get(id) || []).filter((e) => e.type === 'filed').length;
+    if (filings > 1) {
+      out.push({ id, field: 'refiled', onFile: null, record: null, files: [`issues/${basename(issue.file)}`], line: `record: ${refiledText(id, filings, `issues/${basename(issue.file)}`)}` });
       continue;
     }
     if (issue.onFile === null) {
@@ -93,14 +93,6 @@ export function recordDisagreements(loop) {
   }
   out.push(...unreadableMoves(loop));
   return out;
-}
-// The number of filings of `id` in its events when there are several and no `<id> number settled` note follows the last
-// of them; 0 otherwise.
-function refiledUnsettled(events, id) {
-  const filings = events.filter((e) => e.type === 'filed');
-  if (filings.length < 2) return 0;
-  const last = filings[filings.length - 1].n;
-  return events.some((e) => e.n > last && e.type === 'other' && e.text.startsWith(`${id} number settled`)) ? 0 : filings.length;
 }
 // The sentence about one header field: what the file holds against what the log holds.
 function disagreementSentence(name, file, record) {

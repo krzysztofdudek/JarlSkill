@@ -5,7 +5,7 @@ import { basename, join } from 'node:path';
 import { CI_STATES, fieldText, need, oneBreak, splitList } from './base.mjs';
 import { issuesDir, jarlDir } from './where.mjs';
 import { readText } from './files.mjs';
-import { ISSUE_FILE_RE, cmpId, idKey, idRe, writtenForms, writtenId } from './ids.mjs';
+import { ISSUE_FILE_RE, cmpId, idKey, idRe, newNumber, writtenForms, writtenId } from './ids.mjs';
 import { loadProfile } from './profile.mjs';
 import { DECISION_HEAD, DECISION_META } from './journal.mjs';
 import { eventsById, issueState, loopEvents } from './log.mjs';
@@ -142,7 +142,8 @@ function namedPairs(list, flag, known, what) {
 // of one checkout, that each file an issue take the same number, and git merges the two files without a conflict because
 // their names differ. The log names an issue by its number alone, so every line for that number is read for each file,
 // and a command that moved one of them would move both. Such a number names no issue until one of the files is given
-// another: the commands that address an issue by number refuse it, and verify and the views name both files.
+// another: the commands that address an issue by number refuse it, and verify and the views name both files. The log's
+// lines for it stay unattributed after that, so the header of a number the log files more than once is never judged.
 
 // The numbers two or more issue files carry, each with its issues in the order the loop reads them.
 export function sharedNumbers(issues) {
@@ -160,29 +161,20 @@ function sharedFiles(list) {
   const names = list.map((i) => `issues/${basename(i.file)}`);
   return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }
-// Whether the log's lines describe the file of `issue`: its header holds the status and every field the log renders as the
-// log has them. A file the log holds no line of is not described.
-function logDescribes(issue) {
-  const on = issue.onFile;
-  if (!on) return false;
-  return on.status === issue.status && RENDERED_FIELDS.every((k) => (k === 'merge check' && !fieldText(on[k])) || fieldText(on[k]) === fieldText(issue.fields[k]));
-}
-// The note that says how a number two files once carried was settled, as the log holds it: `<id> number settled · …`.
-export const settledNote = (id) => `${id} number settled · <which earlier lines of ${id} were whose>`;
-// What a shared number means and how it is settled, for a refusal and for the views. `all` is every issue of the loop,
-// so the free number named is one the loop does not hold. The file named for the new number is the one the log's lines
-// do not describe, so the file that keeps the number agrees with them.
+// What a shared number means and what the coordinator does about it, for a refusal and for verify. `all` is every issue
+// of the loop, so the free number named is one the loop does not hold. It names no file to renumber and no header to
+// write: the log cannot say which file its lines were written for, so any such advice could copy one issue's state into
+// another's file.
 export function sharedNumberText(shared, all) {
-  const free = all.reduce((m, i) => (i.id !== null && /^\d+$/.test(i.id) ? Math.max(m, Number(i.id)) : m), 0) + 1;
   const id = shared.id;
-  const name = (i) => `issues/${basename(i.file)}`;
-  const strays = shared.issues.filter((i) => !logDescribes(i));
-  const one = strays.length > 0 && strays.length < shared.issues.length;
-  const move = one ? strays[strays.length - 1] : shared.issues[shared.issues.length - 1];
-  const which = one
-    ? `Give ${name(move)} a number the loop does not hold, such as ${free}: its header differs from what the log says of ${id}, so the log's lines do not describe it`
-    : `The log's lines fit ${strays.length ? 'none' : 'each'} of the files, so either may take a new number; give ${name(move)} one the loop does not hold, such as ${free}`;
-  return `${shared.issues.length} issue files carry the number ${id}: ${sharedFiles(shared.issues)}. Two copies of the loop that each filed an issue and were merged leave this, and so does a file copied or made by hand. The log names an issue by its number alone, so its lines for ${id} cannot be told apart: each is read for every one of these files, and no command moves or edits one of them alone. It is settled by hand. ${which} (rename it to ${free}-… and write ${free} in its first line). Then put it in the log at the status its file reads (jarl.mjs set ${free} <status>): a renumbered issue starts its record anew, so one that was done needs its proof and a fresh review again before it is done. When the log's status for ${id} is not the one its own file reads, move it there (jarl.mjs set ${id} <status>). Last, write which earlier lines were whose: jarl.mjs log "${settledNote(id)}". Until that line is in the log, the header of ${id} is not compared with the log, and the log's value is never to be written into either file`;
+  // The free number is written as the shared one is: padded to its width in a loop whose numbers carry leading zeros.
+  const free = newNumber(all.reduce((m, i) => (i.id !== null && /^\d+$/.test(i.id) ? Math.max(m, Number(i.id)) : m), 0) + 1, /^0\d/.test(id) ? id.length : 0);
+  return `${shared.issues.length} issue files carry the number ${id}: ${sharedFiles(shared.issues)}. Two copies of the loop that each filed an issue and were merged leave this, and so does a file copied or made by hand. The log names an issue by its number alone, so it cannot tell its lines for ${id} apart: each is read for every one of these files, and no command moves or edits one of them alone. Jarl does not judge these files' headers against the log, and the log's state of ${id} is never to be written into any of them: it may be another file's. The coordinator settles it by hand: give one of the files a number the loop does not hold, such as ${free} (rename it to ${free}-… and write ${free} in its first line), put it in the log at the status its own file reads (jarl.mjs set ${free} <status>; a renumbered issue starts its record anew, so one that was done needs its proof and a fresh review again), and write in a log note which earlier lines of ${id} belong to which file (jarl.mjs log "…"). The earlier lines of ${id} stay as they are, so Jarl goes on not judging the header of ${id} for as long as the log names issues by number alone`;
+}
+// What Jarl says of a number the log files more than once while one issue file carries it: the log's earlier lines for
+// it may be another issue's, so the header is not judged against them and no advice copies them into the file.
+export function refiledText(id, filings, file) {
+  return `the log files ${id} ${filings} times, so its lines for ${id} may be another issue's that once carried this number, and it cannot tell them apart. Jarl does not judge the header of ${file} against them, and the log's state of ${id} is never to be written into it. The coordinator writes in a log note which earlier lines of ${id} belong to which file (jarl.mjs log "…"); a move by number from here on (jarl.mjs set ${id} <status>) is this file's alone`;
 }
 // The one issue `rawId` names among `issues`, or null when none does. A number two files carry is refused, with both files
 // named: a move or an edit by that number would land on each of them in the log.

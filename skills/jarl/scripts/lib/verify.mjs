@@ -77,7 +77,7 @@ export function cmdVerify(root) {
     if (!ISSUE_FILE_RE.test(f)) add('issues', `issues/${shownText(f)}`, 'a file the loop does not read as an issue: an issue file is <number>-<title>.md');
   }
   const loop = readLoop(dir);
-  // A number two files carry: the files, then what it means and how it is settled (headers says nothing of their fields).
+  // A number two files carry: the files, then what it means and what the coordinator does (headers says nothing of their fields).
   for (const s of sharedNumbers(loop.issues)) add('issues', `issue ${s.id}`, sharedNumberText(s, loop.issues));
   const known = new Set(loop.issues.filter((i) => i.id !== null).map((i) => idKey(i.id)));
   for (const i of loop.issues) {
@@ -94,8 +94,13 @@ export function cmdVerify(root) {
     }
   }
   retractionChecks(events, add);
-  // A refiled number's line is the tool's own advice and prints whole; the others are cut as free text is.
-  for (const d of recordDisagreements(loop)) if (d.field !== 'number') add('headers', '', d.field === 'refiled' ? d.line : shownText(d.line));
+  // A shared number is the issues check's finding. A number the log files more than once, now one file's, is a note printed
+  // whole: no command can attribute its earlier lines, so it is said every time and never turns verify red.
+  for (const d of recordDisagreements(loop)) {
+    if (d.field === 'number') continue;
+    if (d.field === 'refiled') notes.push({ where: `issue ${d.id}`, what: d.line.slice('record: '.length) });
+    else add('headers', '', shownText(d.line));
+  }
   repositoryChecks(root, loop, add, notes);
   for (const i of loop.issues) {
     const lease = fieldText(i.fields.worktree);
