@@ -414,6 +414,7 @@ test('check matches a declared file relative to a subdirectory, not just the rep
   assert.equal(byName['diff inside declared files'].ok, true, byName['diff inside declared files'].note);
 });
 
+// A branch that changes files at several depths, so a declared directory is told apart from a same-named one elsewhere.
 function scopeFixture(declare) {
   const root = repo();
   const g = (...a) => execFileSync('git', a, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: SPAWN_TIMEOUT }).trim();
@@ -421,44 +422,59 @@ function scopeFixture(declare) {
   g('init', '-q', '-b', 'feature');
   g('config', 'user.email', 't@t'); g('config', 'user.name', 't');
   mkdirSync(join(root, 'src', 'deep'), { recursive: true });
-  sh(root, `echo one > src/deep/a.mjs && echo one > other.txt && git add -A && git commit -qm base`);
+  mkdirSync(join(root, 'other', 'deep'), { recursive: true });
+  mkdirSync(join(root, 'vendor', 'src', 'deep'), { recursive: true });
+  sh(root, `echo one > src/deep/a.mjs && echo one > other/deep/q.mjs && echo one > vendor/src/deep/z.mjs && echo one > other.txt && git add -A && git commit -qm base`);
   jarl(root, 'init', 'goal', '--committed');
   declare(root);
-  sh(root, `git add -A && git commit -qm jarl && git checkout -qb jarl/1-work && echo two > src/deep/a.mjs && echo two > src/b.mjs && echo two > other.txt && git add -A && git commit -qm work && git checkout -q feature`);
+  sh(root, `git add -A && git commit -qm jarl && git checkout -qb jarl/1-work && echo two > src/deep/a.mjs && echo two > src/b.mjs && echo two > other/deep/q.mjs && echo two > vendor/src/deep/z.mjs && echo two > other.txt && git add -A && git commit -qm work && git checkout -q feature`);
   return root;
 }
+const scopeNote = (root, ...args) => JSON.parse(withStderr(root, 'check', ...args, '--branch', 'jarl/1-work', '--base', 'feature', '--json').stdout).items.find((i) => i.name === 'diff inside declared files');
 
 test('check on an issue with no declared files says so in one sentence and lists no file', () => {
   const root = scopeFixture((r) => jarl(r, 'new', 'work'));
-  const out = JSON.parse(jarl(root, 'check', '1', '--branch', 'jarl/1-work', '--base', 'feature', '--json'));
-  const scope = out.items.find((i) => i.name === 'diff inside declared files');
+  const scope = scopeNote(root, '1');
   assert.equal(scope.ok, true);
   assert.equal(scope.note, 'no files declared on the issue — nothing to bound the diff by');
 });
 
-test('check on a package where one issue declares no files says so in one sentence and lists no file', () => {
+test('check on a package keeps the declared files of one issue as the bounds, and names the issue that declares none', () => {
   const root = scopeFixture((r) => { jarl(r, 'new', 'declared', '--files', 'src/deep/a.mjs'); jarl(r, 'new', 'undeclared'); jarl(r, 'set', '1-2', 'in-progress', 'raised', '--branch', 'jarl/1-work', '--worker', 'w1'); });
-  const out = JSON.parse(jarl(root, 'check', '--branch', 'jarl/1-work', '--base', 'feature', '--json'));
-  const scope = out.items.find((i) => i.name === 'diff inside declared files');
-  assert.equal(scope.ok, true);
-  assert.equal(scope.note, '2 declares no files, so nothing bounds the diff');
+  const scope = scopeNote(root);
+  assert.equal(scope.ok, false);
+  assert.equal(scope.note, 'outside src/deep/a.mjs: other.txt, other/deep/q.mjs, src/b.mjs, vendor/src/deep/z.mjs (2 declares no files)');
 });
 
 test('check lets a declared directory cover everything under it and lists only files outside every declared place', () => {
-  const root = scopeFixture((r) => jarl(r, 'new', 'work', '--files', 'deep/'));
-  const out = JSON.parse(withStderr(root, 'check', '1', '--branch', 'jarl/1-work', '--base', 'feature', '--json').stdout);
-  const scope = out.items.find((i) => i.name === 'diff inside declared files');
+  const root = scopeFixture((r) => jarl(r, 'new', 'work', '--files', 'src/deep/'));
+  const scope = scopeNote(root, '1');
   assert.equal(scope.ok, false);
-  assert.equal(scope.note, 'outside deep/: other.txt, src/b.mjs');
+  assert.equal(scope.note, 'outside src/deep/: other.txt, other/deep/q.mjs, src/b.mjs, vendor/src/deep/z.mjs');
+  const whole = scopeNote(scopeFixture((r) => jarl(r, 'new', 'work', '--files', 'src, other, other.txt, vendor')), '1');
+  assert.equal(whole.ok, true, whole.note);
 });
 
-test('check never reads the worker\'s own commits as the bounds of its scope', () => {
-  const root = scopeFixture((r) => jarl(r, 'new', 'work', '--files', 'src/deep/a.mjs'));
-  const out = JSON.parse(withStderr(root, 'check', '1', '--branch', 'jarl/1-work', '--base', 'feature', '--json').stdout);
-  const scope = out.items.find((i) => i.name === 'diff inside declared files');
+test('check matches a declared directory only at the path it names, never a same-named directory deeper in the tree', () => {
+  const root = scopeFixture((r) => jarl(r, 'new', 'work', '--files', 'deep/'));
+  const scope = scopeNote(root, '1');
   assert.equal(scope.ok, false);
-  assert.equal(scope.note, 'outside src/deep/a.mjs: other.txt, src/b.mjs');
+  assert.match(scope.note, /other\/deep\/q\.mjs/);
+  assert.match(scope.note, /src\/deep\/a\.mjs/);
+  assert.match(scope.note, /vendor\/src\/deep\/z\.mjs/);
+  const nested = scopeNote(scopeFixture((r) => jarl(r, 'new', 'work', '--files', 'src/deep')), '1');
+  assert.doesNotMatch(nested.note, /src\/deep\/a\.mjs/);
+  assert.match(nested.note, /vendor\/src\/deep\/z\.mjs/, 'a directory under another one is not the declared one');
 });
+
+// The bounds come from the declared files alone; this holds for the original reader too, so the test pins the property.
+test('check bounds the diff by the declared files, never by what the worker\'s commits touched', () => {
+  const root = scopeFixture((r) => jarl(r, 'new', 'work', '--files', 'src/deep/a.mjs'));
+  const scope = scopeNote(root, '1');
+  assert.equal(scope.ok, false);
+  assert.equal(scope.note, 'outside src/deep/a.mjs: other.txt, other/deep/q.mjs, src/b.mjs, vendor/src/deep/z.mjs');
+});
+
 
 test('a round after an approve spends the approve', () => {
   const root = repo();

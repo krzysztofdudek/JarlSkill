@@ -161,10 +161,10 @@ export function cmdCheck(root, rawId, flags) {
   const alwaysInScope = (f) => isTestFile(f) || /(^|\/)CHANGELOG\.md$/i.test(f);
   // A declared file may be repo-relative (the common case) or relative to some subdirectory the
   // issue itself is scoped to (e.g. a plugin's own skill body); a diff path matches either way —
-  // as a root-relative prefix, or at a "/" boundary anywhere in the path. A declared directory covers everything under it.
+  // as a root-relative prefix, or as a path suffix ending at a "/" boundary.
   const pathMatches = (f, d) => {
     const dd = d.replace(/\/+$/, '');
-    return f === dd || f.startsWith(`${dd}/`) || f.endsWith(`/${dd}`) || f.includes(`/${dd}/`);
+    return f === dd || f.startsWith(`${dd}/`) || f.endsWith(`/${dd}`);
   };
   // The diff's paths are inside the repository read, so a file the issue declares with its
   // repository's name first is matched by the path after that name.
@@ -175,11 +175,8 @@ export function cmdCheck(root, rawId, flags) {
   const here = pkg.flatMap((i) => i.files.map((d) => ({ d, at: fileAt(root, named(i), d) }))).filter((x) => canonical(x.at.repo) === realRepo);
   const declaredFiles = [...new Set(here.map((x) => x.d))];
   const declared = here.map((x) => x.at.path);
-  // The bounds are only what the issues declare, never what the worker's commits touched: a worker would set its own.
-  // An issue that declares no files here leaves the diff unbounded, and that is one sentence, not a list of files.
-  const noFiles = pkg.filter((i) => !here.some((x) => i.files.includes(x.d))).map((i) => i.id);
-  const outside = declaredFiles.length && !noFiles.length ? changed.filter((f) => !alwaysInScope(f) && !declared.some((d) => pathMatches(f, d))) : [];
-  const unbounded = (ids) => `${ids.join(', ')} declare${ids.length === 1 ? 's' : ''} no files, so nothing bounds the diff`;
+  const outside = declaredFiles.length ? changed.filter((f) => !alwaysInScope(f) && !declared.some((d) => pathMatches(f, d))) : [];
+  const noFiles = pkg.length > 1 ? pkg.filter((i) => !here.some((x) => i.files.includes(x.d))).map((i) => i.id) : [];
   const testsBase = (git(repo, ['ls-tree', '-r', '--name-only', mergeBase]) || '').split('\n').filter(isTestFile);
   const testsTip = (git(repo, ['ls-tree', '-r', '--name-only', flags.branch]) || '').split('\n').filter(isTestFile);
   const removedTests = testsBase.filter((f) => !testsTip.includes(f));
@@ -188,7 +185,7 @@ export function cmdCheck(root, rawId, flags) {
   const assertsTip = countAsserts(repo, flags.branch, touchedTests);
   const items = [
     { name: 'commits beyond base', ok: Number(commits) > 0, note: `${commits} commit(s) on ${flags.branch} beyond ${mergeBase.slice(0, 7)}` },
-    { name: 'diff inside declared files', ok: outside.length === 0, note: noFiles.length ? (pkg.length > 1 ? unbounded(noFiles) : 'no files declared on the issue — nothing to bound the diff by') : (outside.length ? `outside ${declaredFiles.join(', ')}: ${outside.join(', ')}` : `${changed.length} file(s), all inside`) },
+    { name: 'diff inside declared files', ok: outside.length === 0, note: (declaredFiles.length ? (outside.length ? `outside ${declaredFiles.join(', ')}: ${outside.join(', ')}` : `${changed.length} file(s), all inside`) : `no files declared on the ${pkg.length > 1 ? 'issues' : 'issue'} — nothing to bound the diff by`) + (noFiles.length ? ` (${noFiles.join(', ')} declare${noFiles.length === 1 ? 's' : ''} no files)` : '') },
     { name: 'test files', ok: removedTests.length === 0, note: removedTests.length ? `removed: ${removedTests.join(', ')}` : `${testsTip.length} on the branch, ${touchedTests.length} touched, none removed` },
     { name: 'assertions in touched tests', ok: assertsTip >= assertsBase, note: `${assertsBase} → ${assertsTip}` },
   ];
