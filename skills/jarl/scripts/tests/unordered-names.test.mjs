@@ -19,25 +19,69 @@ function named() {
   return root;
 }
 
-test('a number counts as an issue when it stands alone as a word, and not inside a sha, a date, a version, a line number or a range', () => {
-  const held = new Set(['1', '2', '12', '100', '101', '285', '1000']);
+test('only an explicit citation counts: a number after the word issue or task, after a hash sign, or alone in brackets', () => {
+  const held = new Set(['1', '2', '12', '100', '101', '285', '1000', '1043', '128']);
   const ids = (text) => idsCited(text, held);
   assert.deepEqual(ids('needs issue 12 and 100'), ['12', '100']);
-  assert.deepEqual(ids('after #2, (101), 285. and 1000:'), ['2', '101', '285', '1000']);
-  assert.deepEqual(ids('issues 1, 2 and 12'), ['1', '2', '12']);
-  assert.deepEqual(ids("100's evidence, see 101's rows"), ['100', '101']);
-  // A number of one or two digits is an issue only when introduced; free-standing it is a count.
-  assert.deepEqual(ids('12 files and 2 tests'), []);
-  // False positives: a sha, a date, a version, a line number, a range, a hyphenated or dotted name.
-  assert.deepEqual(ids('merged 1000a2f at 71ebc5b, then 2236405 and c1afa59'), []);
-  assert.deepEqual(ids('on 2026-11-03 at 12:44 and 2026-11'), []);
-  assert.deepEqual(ids('Jarl 6.2.1, version 101, 1.0.0 and v100'), []);
-  assert.deepEqual(ids('see lib/verify.mjs:285 and verify.mjs:100'), []);
-  assert.deepEqual(ids('at line 285, lines 100 and 101, row 100, step 12, port 1000'), []);
-  assert.deepEqual(ids('the range 100-101 and lines 285-300'), []);
-  assert.deepEqual(ids('ask-100, a-101, reviewer-285, rev-1000-opus and jarl/100-x'), []);
+  assert.deepEqual(ids('Needs ISSUES 1, 2 and 12, or Task 100, or task 101.'), ['1', '2', '12', '100', '101']);
+  assert.deepEqual(ids('issues 1, 2, and 12 & 100'), ['1', '2', '12', '100']);
+  assert.deepEqual(ids('after #2, (101), (100, 1000) and (#285).'), ['2', '100', '101', '285', '1000']);
+  assert.deepEqual(ids('issue 285.'), ['285']);
+  assert.deepEqual(ids("issue 100's evidence"), ['100']);
+  assert.deepEqual(ids('issue #12'), ['12']);
   assert.deepEqual(ids(''), []);
   assert.deepEqual(ids(undefined), []);
+  assert.deepEqual(ids('issue 999'), [], 'an id the loop does not hold');
+});
+
+test('a plain amount, a position, an exit status or a part of a longer token is no citation', () => {
+  const held = new Set(['1', '2', '12', '100', '101', '128', '160', '285', '309', '1000', '1043']);
+  const ids = (text) => idsCited(text, held);
+  // Amounts of something: a bare number with a unit after it, or in no explicit citation at all.
+  assert.deepEqual(ids('309 lines, 160 characters, 41,043 bytes, 285 ms, 100 percent, 101 tests, 12 files, 100%'), []);
+  assert.deepEqual(ids('(309 lines) and (160 characters) and (100 tests) and (101 times) and (285 ms) and (100%)'), []);
+  assert.deepEqual(ids('#309 lines and #160 characters'), []);
+  assert.deepEqual(ids('the file has 309 lines and the check exits with 128'), []);
+  assert.deepEqual(ids('exits with (128), status (128), code (128), exit (128)'), []);
+  assert.deepEqual(ids('status 128, code 128, 285 and 1000'), []);
+  assert.deepEqual(ids('in rounds 100 and 101, lines 100 and 101, row 100, step 12, port 1000, version 101'), []);
+  // A thousands group, a decimal, a version, a date, a time, a sha.
+  assert.deepEqual(ids('issue 41,043 and issue 1,043 and issues 12,100'), []);
+  assert.deepEqual(ids('issue 100.5, issue 1.0.0, version 6.2.1 and (100.5)'), []);
+  assert.deepEqual(ids('on 2026-11-03 at 12:44 and issue 2026-11'), []);
+  assert.deepEqual(ids('merged 1000a2f at 71ebc5b, then 2236405 and c1afa59, issue 100a'), []);
+  // A hyphenated or slashed token, a file and line, a range, an id of another loop.
+  assert.deepEqual(ids('see lib/verify.mjs:285 and verify.mjs:100'), []);
+  assert.deepEqual(ids('issues 100-101 and issue 12/13 and issue 100/101'), []);
+  assert.deepEqual(ids('ask-100, a-101, reviewer-285, rev-1000-opus, jarl/100-x and non-issue 12'), []);
+  assert.deepEqual(ids('foo(100) and bar[101] and 100'), []);
+});
+
+test('sentences of a real loop name the issues they cite and none of the ids, counts and rulings they mention', () => {
+  const held = new Set(['001', '004', '007', '039', '058', '084', '100', '128', '309']);
+  const ids = (text) => idsCited(text, held);
+  assert.deepEqual(ids('Map row fr-14; issue 004 adds an owner\'s waiver by ruling.'), ['004']);
+  assert.deepEqual(ids('the owner\'s own looks are owner-only lines (039)'), ['039']);
+  assert.deepEqual(ids('a limit the per-issue key of issue 084 removes'), ['084']);
+  assert.deepEqual(ids('Map row fr-26: resume on the loop copy printed ask-001, and the owner did not follow the question (a-007).'), []);
+  assert.deepEqual(ids('as a fix round did in the field (see 058\'s evidence)'), []);
+  assert.deepEqual(ids('a 600-line refactor; the file grew to 309 lines, 160 characters wide; the check exits with 128'), []);
+  assert.deepEqual(ids('Tested on a copy of the 6.2.0 loop at 71ebc5b on 2026-11-03: 41,043 bytes in 100 files'), []);
+});
+
+test('a deep After chain is walked without recursion, and an issue that cites the first of it is noted', async () => {
+  const { unorderedNamings } = await import('../lib/loop.mjs');
+  const { loadProfile } = await import('../lib/profile.mjs');
+  const profile = loadProfile(makeLoop({ prefix: 'jarl-unordered-', via: 'cli' }));
+  const issues = Array.from({ length: 1200 }, (_, k) => ({ id: String(k + 1), status: 'open', after: k === 0 ? [] : [String(k)], sections: { what: k === 0 ? '' : `builds on issue ${k}`, why: '', acceptance: '' } }));
+  assert.deepEqual(unorderedNamings(issues, profile), [], 'each cites the one it waits on');
+  issues[1199].sections.what = 'also needs issue 1 and issue 700';
+  assert.deepEqual(unorderedNamings(issues, profile), [], 'both are in the chain of the last');
+  issues[0].after = ['1200'];
+  assert.deepEqual(unorderedNamings(issues, profile).map((n) => n.id), [], 'a cycle ends the walk');
+  issues[0].after = [];
+  issues[1199].after = [];
+  assert.deepEqual(unorderedNamings(issues, profile).map((n) => `${n.id}:${n.names.join(',')}`), ['1200:1,700']);
 });
 
 test('verify notes each open issue whose text names an unordered open issue, naming both, and exits clean', () => {

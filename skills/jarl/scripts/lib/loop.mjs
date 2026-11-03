@@ -189,7 +189,11 @@ export function disagreementText(d) { return d.rewrite ? `${d.line}\n  or, with 
 export function unorderedNamings(issues, profile, only = null) {
   const held = new Map(issues.filter((i) => i.id !== null).map((i) => [i.id, i]));
   const byKey = new Map([...held.values()].map((i) => [idKey(i.id), i]));
+  // The issues an issue waits on through After, directly or through the chain; walked once for an issue, and only for one
+  // that cites or is cited, so a loop whose texts cite nothing walks nothing.
+  const chains = new Map();
   const chainOf = (issue) => {
+    if (chains.has(issue)) return chains.get(issue);
     const seen = new Set();
     const stack = [...issue.after];
     while (stack.length) {
@@ -198,6 +202,7 @@ export function unorderedNamings(issues, profile, only = null) {
       seen.add(key);
       stack.push(...(byKey.get(key)?.after || []));
     }
+    chains.set(issue, seen);
     return seen;
   };
   const heading = (profile.acceptance || 'Acceptance').toLowerCase();
@@ -205,11 +210,8 @@ export function unorderedNamings(issues, profile, only = null) {
   for (const issue of issues) {
     if (issue.id === null || !profile.unfinished(issue.status) || (only && !only.includes(issue.id))) continue;
     const text = [issue.sections.what, issue.sections.why, issue.sections[heading]].filter(Boolean).join('\n');
-    const before = chainOf(issue);
-    const names = [...new Set(idsCited(text, held))].filter((id) => {
-      const other = held.get(id);
-      return idKey(id) !== idKey(issue.id) && !profile.is(other.status, 'settles-dependents') && !before.has(idKey(id)) && !chainOf(other).has(idKey(issue.id));
-    });
+    const cited = idsCited(text, held).filter((id) => idKey(id) !== idKey(issue.id) && !profile.is(held.get(id).status, 'settles-dependents'));
+    const names = cited.filter((id) => !chainOf(issue).has(idKey(id)) && !chainOf(held.get(id)).has(idKey(issue.id)));
     if (names.length) out.push({ id: issue.id, names });
   }
   return out;
