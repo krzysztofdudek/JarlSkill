@@ -207,6 +207,8 @@ export function cmdNew(root, title, rawFlags) {
   // writer got there first (the lock makes that rare, not impossible — a hand-made file, a stale
   // lock broken early), the next number is tried instead of two issues sharing one.
   const dir = issuesDir(root);
+  // Git keeps no empty directory, so a clone of a loop committed before its first issue has none yet.
+  mkdirSync(dir, { recursive: true });
   const taken = () => readdirSync(dir).map((f) => ISSUE_FILE_RE.exec(f)).filter(Boolean).map((m) => Number(m[1]));
   // The highest number over this loop and its copies in every other worktree (read-only), so a lagging copy cannot hand
   // out a number already used elsewhere. The issue files stay the only source: there is no counter file.
