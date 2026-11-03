@@ -16,7 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A task can be handed to a new worker on purpose, with the reason it changed hands, and the record keeps that reason. The old worker's branch and folder are then no longer reported as a problem.
 - A loop can now say after how many failed rounds a kind of task is handed to a fresh worker, with a line such as `Takeover (docs): 2` in its goal. A line `Takeover: 4` sets it for every other kind, and a loop that says nothing keeps three. A changed number counts from the next failed round, and the rounds are counted from the last handover. Each round line now ends with its place in that count, which older Jarl versions and Horde read as a plain round; rounds an older Jarl wrote count a handover every third.
 - `body --append` adds text to a section of an issue after what the section already holds, instead of replacing it.
-- Jarl's command line prints its version with `--version`. The number matches the one the Jarl tools in your session report. If the plugin in your session has another version than the copy you run, `resume` says so in one line.
+- Jarl's command line prints its version with `--version`. The number matches the one the Jarl tools in your session report. When your shell exports `CLAUDE_PLUGIN_ROOT`, and the plugin there has another version than the copy you run, `resume` says so in one line; without that variable it says nothing.
 
 ### Changed
 
