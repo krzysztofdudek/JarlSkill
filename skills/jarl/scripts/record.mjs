@@ -109,20 +109,22 @@ export function newIssue(root, title, opts = {}) { return write(root, () => L.cm
 export function setStatus(root, ids, status, why, opts = {}) {
   return write(root, () => L.cmdSetStatus(root, ids, status, why, opts));
 }
-// A field the profile declares (Kind and Tier too, when it declares them), checked against its values.
+// A field the profile declares (Kind and Tier too, when it declares them), checked against its values. A change of the
+// description is logged with the old value, and with its writer when opts.by names one (setField, setBody, setRepo,
+// setAfter); setTags, setPriority, setFiles and setSource take no opts, so their changes are logged with no writer.
 export function setField(root, ids, field, value, opts = {}) {
   return write(root, () => L.cmdSetField(root, ids, field, value, opts));
 }
-// The title (the heading only; the file keeps its name) and the sections: opts { title, where, what, why, acceptance, changelog, section } (section: "<Heading>=<text>", repeatable).
+// The title (the heading only; the file keeps its name) and the sections: opts { title, where, what, why, acceptance, changelog, section, by } (section: "<Heading>=<text>", repeatable).
 export function setBody(root, id, opts = {}) { return write(root, () => L.cmdBody(root, id, opts)); }
 // tags: ['+name', '-name', …].
 export function setTags(root, ids, ops) { return write(root, () => L.cmdTag(root, ids, ops)); }
 export function setPriority(root, ids, priority) { return write(root, () => L.cmdPrio(root, ids, priority)); }
 export function setFiles(root, id, files) { return write(root, () => L.cmdFiles(root, id, files)); }
 // path is a repository's name, its checkout, a worktree of it or a file inside it (several as one comma list), stored as a
-// name where the checkout sits beside the loop's own and as a path elsewhere; opts { clear }.
-export function setRepo(root, id, path, opts = {}) { return write(root, () => L.cmdRepo(root, id, path, { clear: opts.clear === true })); }
-export function setAfter(root, id, ids, opts = {}) { return write(root, () => L.cmdAfter(root, id, ids, { clear: opts.clear === true })); }
+// name where the checkout sits beside the loop's own and as a path elsewhere; opts { clear, by }.
+export function setRepo(root, id, path, opts = {}) { return write(root, () => L.cmdRepo(root, id, path, { clear: opts.clear === true, by: opts.by })); }
+export function setAfter(root, id, ids, opts = {}) { return write(root, () => L.cmdAfter(root, id, ids, { clear: opts.clear === true, by: opts.by })); }
 export function setSource(root, id, refs) { return write(root, () => L.cmdSource(root, id, refs)); }
 // Free text, or opts { ran, saw } (one row per pair; text then undefined), or opts { retract: n, by } with the reason as
 // text: the n-th row of the whole Evidence section (retracted rows counted) is struck through and an entry saying who
