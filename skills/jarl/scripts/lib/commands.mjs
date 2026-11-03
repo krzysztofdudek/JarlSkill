@@ -13,7 +13,7 @@ import { DEFAULT_PROFILE, TOOL_FIELDS, loadProfile, profilePath, readProfileFile
 import { appendLog, appendLogLines, decisionsPath, goalPath, logPath } from './journal.mjs';
 import { JARL_GITIGNORE, JARL_GITIGNORE_COMMITTED, ensureLoopMerge, outOfGit } from './loop-git.mjs';
 import { journalById, mergeCheckText } from './log.mjs';
-import { FIELD_RE, RENDERED_FIELDS, acceptanceHeading, acceptanceLineCount, acceptanceText, bodyText, changelogText, evidenceParts, evidenceRows, evidenceTable, fieldValue, findIssue, loadIssues, mergedOf, namedPairs, needNoFieldTags, noteText, parseIssue, placeEvidence, removeFields, removeFirstField, renderIssue, setField, setSection } from './issues.mjs';
+import { FIELD_RE, RENDERED_FIELDS, acceptanceHeading, acceptanceLineCount, acceptanceText, bodyText, changelogText, evidenceParts, evidenceRows, evidenceTable, fieldValue, findIssue, issueNamed, loadIssues, mergedOf, namedPairs, needNoFieldTags, noteText, parseIssue, placeEvidence, removeFields, removeFirstField, renderIssue, setField, setSection, unattributedRefusal } from './issues.mjs';
 import { branchTip, commitRepoNames, defaultBase, isGitRepo, issueRepoPaths, issueRepos, mainCheckoutOf, needRightCheckouts, raiseFormat, repoFromInput, repoLabel, repoList, tipLines, whyNotDeletable, worktreeState, worktreesOf } from './repositories.mjs';
 import { FIELD_NAMES, carriesCode, gateOf, readLoop } from './loop.mjs';
 import { declaredChecks, lastMerge } from './metrics.mjs';
@@ -279,7 +279,7 @@ function afterList(root, selfId, raw) {
   const all = loadIssues(root);
   const missing = keys.filter((k) => !all.some((i) => idKey(i.id) === k));
   need(missing.length === 0, `no such issue: ${missing.join(', ')}`);
-  const ids = keys.map((k) => all.find((i) => idKey(i.id) === k).id);
+  const ids = keys.map((k) => issueNamed(all, k).id);
   need(!selfId || !ids.some((id) => idKey(id) === idKey(selfId)), `${selfId} cannot wait on itself`);
   if (selfId) {
     const byId = new Map(all.map((i) => [i.id, i]));
@@ -432,7 +432,8 @@ export function cmdList(root, flags) {
   let rows = loadIssues(root);
   // Finished business (terminal: done, dropped, and deferred work, which waits) is not in the default list:
   // --status or --all shows it.
-  if (!flags.all && !flags.status) rows = rows.filter((i) => profile.unfinished(i.status));
+  // An issue whose number another file carries is listed whatever its status: the log's state of it may be another's.
+  if (!flags.all && !flags.status) rows = rows.filter((i) => profile.unfinished(i.status) || i.shared);
   if (flags.status) rows = rows.filter((i) => i.status === flags.status);
   if (flags.kind) rows = rows.filter((i) => i.kind === flags.kind);
   if (flags.tag) rows = rows.filter((i) => i.tags.includes(flags.tag));
@@ -463,7 +464,7 @@ function issuesFor(root, rawIds, readOnly = false) {
   const all = loadIssues(root);
   const missing = keys.filter((k) => !all.some((i) => idKey(i.id) === k));
   need(missing.length === 0, `no such issue: ${missing.join(', ')}${keys.length > 1 ? ' — nothing was written' : ''}`);
-  const found = keys.map((k) => all.find((i) => idKey(i.id) === k));
+  const found = keys.map((k) => issueNamed(all, k));
   if (!readOnly && found.some((i) => needsRaisedFormat(i.id))) raiseFormat(root);
   return found;
 }
@@ -479,7 +480,7 @@ export function eachIssue(root, rawIds, run) {
   const all = loadIssues(root);
   const missing = keys.filter((k) => !all.some((i) => idKey(i.id) === k));
   need(missing.length === 0, `no such issue: ${missing.join(', ')} — nothing was written`);
-  const ids = keys.map((k) => all.find((i) => idKey(i.id) === k).id);
+  const ids = keys.map((k) => issueNamed(all, k).id);
   for (const id of ids) {
     resetCaches();
     try { run(id, true); } catch (e) { throw new Error(/nothing was written/.test(e.message) ? e.message : `${e.message} — nothing was written`); }
@@ -612,6 +613,7 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   need(flags.base === undefined || caller === 'record', 'base is named by a library call through record.mjs only — the command line checks against the branch checked out');
   need(flags.base === undefined || (typeof flags.base === 'string' && fieldText(flags.base) !== '' && !flags.base.startsWith('-')), 'base names a branch or ref — the one the merge landed in');
   if (profile.is(status, 'closes-record')) {
+    for (const issue of issues) { const refusal = unattributedRefusal(issue, `moved → ${status}`); need(!refusal, `${refusal}${nothing}`); }
     const loop = readLoop(jarlDir(root));
     for (const issue of issues) { const refusal = doneRefusalIn(root, loop, issue, flags.base); need(!refusal, `${refusal}${nothing}`); }
   }
@@ -694,6 +696,7 @@ function rewriteHeader(root, rawIds, status, why, flags) {
   need(why === undefined && flags.base === undefined && !leaseFlagsGiven(flags).length, '--header rewrites the header from the log and takes no reason, lease flag or base');
   const issues = issuesFor(root, rawIds);
   for (const issue of issues) {
+    need(!issue.byHeader, `${issue.id} is read from its header: the log files ${issue.id} ${issue.byHeader?.filings} times and cannot say which file its lines were written for, so no header is written from it`);
     need(issue.onFile !== null, `${issue.id} is not in the log, so there is nothing to write its header from — jarl.mjs set ${issue.id} ${status} puts it there`);
     need(issue.status === status, `${issue.id} is ${issue.status} in the log: jarl.mjs set ${issue.id} ${issue.status} --header writes its header from it, and set ${issue.id} ${status} without --header moves it`);
   }
@@ -834,7 +837,7 @@ function doneNote(issue, root) {
   }
   const m = mergedOf(issue);
   // A merge that carries its check (a passing check, or the red it landed on) needs no CI state to be told apart from an unrecorded one.
-  const decided = () => { const line = lastMerge(journalById(root).get(issue.id) || []); return Boolean(line && (line.check || line.red)); };
+  const decided = () => { const line = issue.byHeader ? null : lastMerge(journalById(root).get(issue.id) || []); return Boolean(line && (line.check || line.red)); };
   if (m && m.ci !== 'green' && m.ci !== 'none' && !(m.ci === null && decided())) notes.push(`merged ${m.sha}, CI ${m.ci || 'not recorded'} — record it when known: jarl.mjs merged ${issue.id} --ci green|red`);
   return notes.length ? { note: notes.join('; ') } : {};
 }
@@ -875,6 +878,7 @@ export function cmdMerged(root, rawIds, flags) {
   need(!(rows && flags.red !== undefined), 'a merge landed on red carries no passing check: give --ran/--saw for a green check, or --red <id> for a red one, not both');
   const issues = issuesFor(root, rawIds);
   const nothing = issues.length > 1 ? ' — nothing was written' : '';
+  for (const issue of issues) { const refusal = unattributedRefusal(issue, 'merged'); need(!refusal, `${refusal}${nothing}`); }
   let cause = null;
   if (flags.red !== undefined) {
     need(typeof flags.red === 'string' && fieldText(flags.red), '--red needs the id of the issue that tracks the cause');

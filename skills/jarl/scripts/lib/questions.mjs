@@ -139,6 +139,8 @@ export function cmdAnswer(root, rawId, answer, flags = {}) {
   const key = askNumber(rawId);
   const ask = loadAsks(root).find((a) => idKey(a.id) === key);
   need(ask, `no such question: a-${key}`);
+  // The issue the answer is copied into is resolved before the first write, so a number two files carry writes nothing.
+  if (ask.issue) findIssue(root, ask.issue);
   const id = ask.id;
   const text = answer === undefined ? null : noSeparators(oneBreak(answer));
   const checked = answerChecks(root, ask, text, chosen);

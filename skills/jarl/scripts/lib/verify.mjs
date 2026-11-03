@@ -9,9 +9,9 @@ import { ISSUE_FILE_RE, cmpId, idKey, needsRaisedFormat } from './ids.mjs';
 import { RECORD_FORMAT_RAISED, loadProfile } from './profile.mjs';
 import { ASKS_FILE, DECISIONS_FILE, GOAL_FILE, LOG_FILE, goalLines, loadDecisions, readGoal } from './journal.mjs';
 import { loopEvents } from './log.mjs';
-import { parseIssue } from './issues.mjs';
+import { parseIssue, sharedNumberText, sharedNumbers } from './issues.mjs';
 import { REPOS_DECLARED_IN, declaredNames, issueRepos, repoIdentity, repoValueKind, reposNamed, worktreesOf } from './repositories.mjs';
-import { readLoop, recordDisagreements } from './loop.mjs';
+import { headerReadNotes, readLoop, recordDisagreements } from './loop.mjs';
 import { attachmentFindings } from './attachments.mjs';
 import { hasLiveLoop } from './commands.mjs';
 import { issuesNaming, loadAsks } from './questions.mjs';
@@ -77,6 +77,8 @@ export function cmdVerify(root) {
     if (!ISSUE_FILE_RE.test(f)) add('issues', `issues/${shownText(f)}`, 'a file the loop does not read as an issue: an issue file is <number>-<title>.md');
   }
   const loop = readLoop(dir);
+  // A number two files carry: the files, then what it means and what the coordinator does (headers says nothing of their fields).
+  for (const s of sharedNumbers(loop.issues)) add('issues', `issue ${s.id}`, sharedNumberText(s, loop.issues));
   const known = new Set(loop.issues.filter((i) => i.id !== null).map((i) => idKey(i.id)));
   for (const i of loop.issues) {
     if (i.id === null) continue;
@@ -92,7 +94,10 @@ export function cmdVerify(root) {
     }
   }
   retractionChecks(events, add);
-  for (const d of recordDisagreements(loop)) add('headers', '', shownText(d.line));
+  // A shared number is the issues check's finding. A number the log files more than once, now one file's, is read from
+  // its header: a one-line note, while a contradiction inside that header is a finding, printed whole as the tool wrote it.
+  for (const d of recordDisagreements(loop)) if (d.field !== 'number') add('headers', '', d.field === 'header' ? d.line : shownText(d.line));
+  for (const n of headerReadNotes(loop)) notes.push({ where: `issue ${n.id}`, what: n.line });
   repositoryChecks(root, loop, add, notes);
   for (const i of loop.issues) {
     const lease = fieldText(i.fields.worktree);

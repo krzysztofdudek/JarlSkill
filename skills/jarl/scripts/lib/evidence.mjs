@@ -12,9 +12,9 @@ import { SLOT_NAME_RE, loadProfile } from './profile.mjs';
 import { appendLog, appendLogLines, firstLine } from './journal.mjs';
 import { outOfGit } from './loop-git.mjs';
 import { attachmentOf, journalById } from './log.mjs';
-import { acceptanceLineCount, alignRows, bodyText, evidenceParts, evidenceTable, loadIssues, mergedOf, noteText, parseIssue, placeEvidence, reviewEntries, setSection } from './issues.mjs';
+import { acceptanceLineCount, alignRows, bodyText, evidenceParts, evidenceTable, loadIssues, mergedOf, noteText, parseIssue, placeEvidence, reviewEntries, setSection, sharedMark } from './issues.mjs';
 import { fileAt, raiseFormat, repoNames, reposWhere, tipLines, whereLines, whereOf } from './repositories.mjs';
-import { approveKind, carriesCode, disagreementText, gateOf, gateState, readLoop, recordDisagreements, reviewSplit, scopedLoop } from './loop.mjs';
+import { approveKind, carriesCode, disagreementText, gateOf, gateState, headerReadNotes, readLoop, recordDisagreements, reviewSplit, scopedLoop } from './loop.mjs';
 import { checkState, checkWaiting, checkWaitingText } from './metrics.mjs';
 import { builds, modelMarks } from './models.mjs';
 import { leaseProblems, staleHours } from './rounds.mjs';
@@ -79,7 +79,8 @@ function retractEvidence(root, rawIds, reason, flags) {
   const row = table.rows[n - 1];
   need(row, `${issue.id} has ${table.rows.length} evidence row${table.rows.length === 1 ? '' : 's'}: there is no row ${n}`);
   need(!row.retracted, `row ${n} of ${issue.id} is retracted already`);
-  const journalRows = (journalById(root).get(issue.id) || []).filter((e) => e.type === 'row');
+  // An issue read from its header has no log rows of its own: its file's rows are the only ones.
+  const journalRows = issue.byHeader ? [] : (journalById(root).get(issue.id) || []).filter((e) => e.type === 'row');
   need(journalRows.length === 0 || journalRows.length === table.rows.length, `${issue.id} holds ${table.rows.length} evidence row${table.rows.length === 1 ? '' : 's'} and its log ${journalRows.length}, so the row numbers cannot be matched to the log; nothing was written`);
   need(journalRows.length === 0 || alignRows(issue.id, table.rows, journalRows)[n - 1], `row ${n} of ${issue.id} matches no evidence line of the log, so its retraction could not be told from another row's; nothing was written`);
   // The first retraction of a loop raises the record format, before its line is written: a reader of format 1 does not
@@ -112,7 +113,7 @@ export function issueView(root, issue, { full = false } = {}) {
   const numbered = (body, rows) => body.map((l, i) => { const r = rows.find((x) => x.start === i); return r ? l.replace(/^- /, `- [${r.n}] `) : l; });
   const g = full ? null : gateState(root, issue.id);
   const loop = readLoop(jarlDir(root));
-  const notes = [...recordDisagreements(loop).filter((d) => d.id === issue.id).map(disagreementText), ...checkWaiting(loop, [issue]).map(checkWaitingText), ...whereLines(whereOf(root, issue))];
+  const notes = [...recordDisagreements(loop).filter((d) => d.id === issue.id).map(disagreementText), ...headerReadNotes(loop).filter((n) => n.id === issue.id).map((n) => `note: ${n.line}`), ...checkWaiting(loop, [issue]).map(checkWaitingText), ...whereLines(whereOf(root, issue))];
   const out = [];
   for (const p of pieces) {
     if (p.name === null && notes.length) {
@@ -189,7 +190,7 @@ export function renderNext(rows, all, held = 0) {
       : r.group === 'waiting-after' ? [`after ${r.after.join(', ')}`]
         : r.group === 'held-by-question' ? [`question ${r.questions.map((q) => `a-${q}`).join(', ')}`]
           : [`waits on ${[...r.waitsOn, ...(r.resources || []).map((x) => `resource ${x}`)].join(', ')}, held by ${r.heldBy.join(', ')}`];
-    return `${r.id}  P${r.priority}  ${r.title}${note.filter(Boolean).map((n) => `  (${n})`).join('')}${modelText(r.model)}`;
+    return `${r.id}  P${r.priority}  ${r.title}${[...note, r.shared && sharedMark(r.shared)].filter(Boolean).map((n) => `  (${n})`).join('')}${modelText(r.model)}`;
   };
   if (!all) {
     if (rows.length) return rows.map(line).join('\n');
@@ -225,7 +226,7 @@ export function nextRows(root, flags = {}) {
   for (const i of issues.filter((x) => profile.is(x.status, 'dispatchable')).sort((a, b) => a.priority.localeCompare(b.priority) || cmpId(a.id, b.id))) {
     // An issue whose After issues are not all settled (done or dropped) is never offered, whatever its files.
     const after = waitingOn(i, byId, profile);
-    const base = { id: i.id, title: i.title, priority: i.priority, ...(i.files.length ? {} : { noFiles: true }) };
+    const base = { id: i.id, title: i.title, priority: i.priority, ...(i.files.length ? {} : { noFiles: true }), ...(i.shared ? { shared: i.shared } : {}) };
     if (after.length) { out.push({ ...base, group: 'waiting-after', after, waitsOn: [] }); continue; }
     if (asked.has(i.id)) { out.push({ ...base, group: 'held-by-question', questions: asked.get(i.id), waitsOn: [], after: [] }); continue; }
     const keys = keysOf(i);
@@ -321,6 +322,9 @@ function statusOf(root, loop, flags) {
   c.closedGate = closedGateFlags(flags.tag === undefined ? loop : scopedLoop(loop, issues));
   const disagreements = recordDisagreements(flags.tag === undefined ? loop : scopedLoop(loop, issues));
   if (disagreements.length) c.disagreements = disagreements;
+  // The numbers read from their headers, one note each: not disagreements, the header is the record for them.
+  const byHeader = headerReadNotes(flags.tag === undefined ? loop : scopedLoop(loop, issues));
+  if (byHeader.length) c.headerRead = byHeader;
   const files = uncommittedLoopFiles(root);
   c.uncommitted = files === null ? null : files.length;
   // --by: the same five counts per repository, tag, kind or priority — a dashboard's table, read from the issues.

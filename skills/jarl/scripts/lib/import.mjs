@@ -8,7 +8,7 @@ import { canonical } from './where.mjs';
 import { readText } from './files.mjs';
 import { DEFAULT_PROFILE, loadProfile } from './profile.mjs';
 import { appendLog } from './journal.mjs';
-import { PROPOSED, findIssue, loadIssues } from './issues.mjs';
+import { PROPOSED, findIssue, loadIssues, sharedMark } from './issues.mjs';
 import { repoList, reposWhereLines } from './repositories.mjs';
 import { closedGateLine, disagreementText, gateLine } from './loop.mjs';
 import { checkLines, checkWaitingText, mergeCheckLines } from './metrics.mjs';
@@ -202,7 +202,9 @@ export function cmdImport(root, file, flags) {
   // One issue may name several findings (a package of minor ones): its Source gets all of them, once.
   const adopt = new Map();
   for (const a of out.adopted) adopt.set(a.issue, [...(adopt.get(a.issue) || []), a.key]);
-  for (const [id, keys] of adopt) cmdSource(root, id, [...(findIssue(root, id).sources), ...keys].join(','));
+  // Every adopted issue is resolved before the first write, so a number two files carry refuses the import whole.
+  const adopting = [...adopt].map(([id, keys]) => [id, [...findIssue(root, id).sources, ...keys]]);
+  for (const [id, sources] of adopting) cmdSource(root, id, sources.join(','));
   for (const { f, key } of toFile) {
     const r = cmdNew(root, f.title, {
       kind: flags.kind || f.kind, prio: flags.prio || f.priority, tier: flags.tier, tags: flags.tags, repo: flags.repo,
@@ -266,6 +268,7 @@ export function renderStatus(o, profile = DEFAULT_PROFILE) {
   const more = [
     ...(o.tag !== undefined ? [`scoped to the issues tagged ${o.tag} — the counts above and the lists below are theirs only`] : []),
     ...(o.disagreements || []).map(disagreementText),
+    ...(o.headerRead || []).map((n) => `note: ${n.line}`),
     ...(o.check ? checkLines(o.check) : []),
     ...(o.scheduler ? [schedulerNote(o.scheduler)] : []),
     ...by,
@@ -313,7 +316,7 @@ function declaredShown(i, profile) {
 }
 export function renderList(rows, profile = DEFAULT_PROFILE) {
   if (rows.length === 0) return '(none)';
-  return rows.map((i) => { const d = declaredShown(i, profile); return `${i.id}  P${i.priority}  ${i.status.padEnd(11)} ${i.kind.padEnd(8)} ${i.title}${i.tags.length ? `  [${i.tags.join(', ')}]` : ''}${d ? `  ${d}` : ''}`; }).join('\n');
+  return rows.map((i) => { const d = declaredShown(i, profile); return `${i.id}  P${i.priority}  ${i.status.padEnd(11)} ${i.kind.padEnd(8)} ${i.title}${i.tags.length ? `  [${i.tags.join(', ')}]` : ''}${d ? `  ${d}` : ''}${i.shared ? `  (${sharedMark(i.shared)})` : ''}`; }).join('\n');
 }
 
 // Used by the other modules of the library, and not part of what jarl-lib.mjs exports.
