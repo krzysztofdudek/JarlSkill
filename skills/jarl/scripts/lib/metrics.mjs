@@ -283,3 +283,20 @@ export function renderMetrics(m) {
 
 // Used by the other modules of the library, and not part of what jarl-lib.mjs exports.
 export { filedAndClosed, followUpsOf, lastMerge, share, testimonyNote };
+
+// The merges that carry no check and no red cause: an issue not yet closed whose last merge line names neither, so the
+// merge was recorded before its check finished. Each is { id, sha, repo } with the sha as recorded; the merge is
+// unfinished, and nobody reads it as landed, until the check or the red cause is recorded on the same commit.
+export function checkWaiting(loop, issues = loop.issues) {
+  const out = [];
+  for (const i of issues) {
+    if (loop.profile.is(i.status, 'terminal')) continue;
+    const line = lastMerge(loop.eventsById.get(i.id) || []);
+    if (line && !line.check && !line.red) out.push({ id: i.id, sha: line.sha, ...(line.repo ? { repo: line.repo } : {}) });
+  }
+  return out;
+}
+// What status, resume and show say of one such merge, with the command that records the check.
+export function checkWaitingText(w) {
+  return `merged, waiting for its check: ${w.id} (${w.sha}${w.repo ? ` in ${w.repo}` : ''}) — the merge is not finished until its check is recorded: jarl.mjs merged ${w.id} --sha ${w.sha}${w.repo ? ` --repo ${w.repo}` : ''} --ran "<the check command>" --saw "<what it printed>" (or --red <id> when it landed on a red check outside the branch)`;
+}

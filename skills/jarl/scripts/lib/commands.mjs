@@ -769,6 +769,9 @@ export function cmdMerged(root, rawIds, flags) {
       if (repos.every((r) => git(r, ['cat-file', '-e', `${sha}^{commit}`]) === null)) notes.push(`${sha} is not a commit in ${repos.join(' or ')} (yet) — recorded as given`);
     }
   }
+  // Said, never refused: the check of a merge runs on the merge result, so a commit that lacks the branch tip, or lacks
+  // the base as it stands before the merge landed there, was not the tree the check ran on.
+  if (sha) for (const issue of issues) notes.push(...mergeContentNotes(root, issue, sha, repoPath));
   // Said, never refused: a merge is a fact, and recording it is not the place to stop it. A merge whose issue holds
   // no fresh approve went in without the fresh review the rule asks for, and the note says so loudly.
   // Under a done gate with no approve (approve: none), the merge gate stands behind the issue, and no reviewer is owed.
@@ -807,6 +810,24 @@ export function cmdMerged(root, rawIds, flags) {
   // The cleanup comes last, after the merge is on the record, and only on the command line and in the tools.
   const cleanup = sha && cli && flags.keep !== true ? cleanUpAfterMerge(root, issues, sha, repoPath, pickedRepo && pickedRepo.name ? [pickedRepo.name] : []) : [];
   return { ids: issues.map((i) => i.id), sha: sha || null, ci: ci ?? null, ...(checkText ? { check: checkText } : {}), ...(cause ? { red: cause } : {}), ...(cleanup.length ? { cleanup } : {}), notes };
+}
+
+// What a recorded merge commit holds of the branch and of its base, as notes (empty when it holds both, or when the
+// branch, the base or the commit is not here to be read). The branch tip is the branch as it stands now; the base is the
+// main checkout's branch as it stands now, asked for only while the commit is not yet in it: once the base holds the
+// commit, later commits on the base are no part of the merge.
+function mergeContentNotes(root, issue, sha, repoPath) {
+  const branch = fieldText(issue.fields.branch);
+  const repo = (repoPath ? [repoPath] : issueRepoPaths(root, issue)).filter(isGitRepo).find((r) => git(r, ['cat-file', '-e', `${sha}^{commit}`]) !== null);
+  if (!repo) return [];
+  const holds = (ancestor, ref) => git(repo, ['merge-base', '--is-ancestor', ancestor, ref]) !== null;
+  const notes = [];
+  const tip = branch ? git(repo, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}^{commit}`]) : null;
+  if (tip && !holds(tip, sha)) notes.push(`MERGE WITHOUT THE BRANCH — ${sha} does not contain the tip of ${branch} (${tip.slice(0, 12)}), so a check that ran on it did not run on the branch's work; the check runs on the merge result: merge the branch, check the result, and record that commit with jarl.mjs merged ${issue.id} --sha <sha>`);
+  const base = defaultBase(repo);
+  const baseTip = base !== branch ? git(repo, ['rev-parse', '--verify', '--quiet', `${base}^{commit}`]) : null;
+  if (baseTip && !holds(sha, baseTip) && !holds(baseTip, sha)) notes.push(`MERGE WITHOUT THE BASE — ${sha} does not contain ${base} as it stands (${baseTip.slice(0, 12)}), so the check ran on a tree the base has moved past; the check runs on the merge result: merge the base into the result, check it again, and record that commit with jarl.mjs merged ${issue.id} --sha <sha>`);
+  return notes;
 }
 
 // What counts as evidence of the work for done: not a ruling written in by decide or answer, and not the

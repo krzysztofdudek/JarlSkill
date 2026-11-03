@@ -57,6 +57,7 @@ batches), or that `jarl_branches` shows with commits beyond the base:
    without it) is not a round: rounds count the worker's failures, and the third raises a takeover of work that
    was right. Roll back, file the cause as its own issue, and leave the branch approved in the queue until the
    check is green; only on the jarl's ruling is it landed on red, with `jarl_merged <ids> --sha <merge sha> --red <cause id>`.
+   The check runs on the merge result, with the branch and the base as it stands in it. If `jarl_merged` answers `MERGE WITHOUT THE BRANCH` or `MERGE WITHOUT THE BASE`, the commit you recorded lacks the branch tip or the base: the check did not run on the tree that landed, so merge again and check again before you report.
 4. Green: one call, `jarl_merged <ids> --sha <merge sha> --ran "<the check command>" --saw "<its summary line>"`
    (`--ci pending|green|red|none` too when CI is known: `none` when the repository has no CI; else
    `jarl_merged <ids> --ci green|red` once it reports), then `jarl_set <id> done`. The check goes in the merge record and is no
@@ -81,6 +82,7 @@ batches), or that `jarl_branches` shows with commits beyond the base:
    Before moving to the next branch, `jarl_show <id>` and confirm it reads
    `done` — a write that silently failed to land is worse than one that never ran. The tool locks
    and refuses loudly, but a call whose error result (or exit code) nobody read is still a write nobody saw.
+Report after the check has finished and its result is recorded, never before: a merge recorded without a check or a red cause shows as `merged, waiting for its check` in `status`, `resume` and `show` until `jarl_merged` records it.
 Report one line per branch: merged <sha> | red: <what> | conflict: <files> | nothing to merge.
 When several approved branches wait and their declared files do not overlap, merge them one after
 another and run the check once for the batch; a red batch is rolled back whole (`git reset --keep`
