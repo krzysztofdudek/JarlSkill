@@ -370,6 +370,46 @@ test('goal --set writes a takeover line for a kind the profile declares and refu
   assert.match(set('Takeover (docs): many').stderr, /whole number of rounds/);
 });
 
+test('a limit lowered below the rounds already counted gives the takeover at the next round', () => {
+  const { root, id } = leased(null, 'docs');
+  assert.equal(R.addRound(root, id, 'red one').takeover, false);
+  assert.equal(R.addRound(root, id, 'red two').takeover, false);
+  assert.equal(cli(root, 'goal', '--set', 'Takeover (docs): 2').status, 0);
+  const third = R.addRound(root, id, 'red three');
+  assert.deepEqual([third.takeover, third.limit, third.since], [true, 2, 3]);
+  assert.match(third.block, /attempted issue \S+ 3 times \(3 rounds in all\)/);
+  const next = R.addRound(root, id, 'red four');
+  assert.deepEqual([next.takeover, next.since], [false, 1]);
+  assert.equal(R.addRound(root, id, 'red five').takeover, true);
+});
+
+test('a limit raised after rounds are counted waits for the count to reach it, and the count restarts at each takeover', () => {
+  const { root, id } = leased('Takeover (docs): 2', 'docs');
+  assert.equal(R.addRound(root, id, 'red one').takeover, false);
+  assert.equal(R.addRound(root, id, 'red two').takeover, true);
+  assert.equal(R.addRound(root, id, 'red three').takeover, false);
+  assert.equal(cli(root, 'goal', '--set', 'Takeover (docs): 4').status, 0);
+  const rounds = [4, 5, 6].map((k) => R.addRound(root, id, `red ${k}`));
+  assert.deepEqual(rounds.map((r) => [r.takeover, r.since, r.limit]), [[false, 2, 4], [false, 3, 4], [true, 4, 4]]);
+  assert.match(cli(root, 'round', id, 'red seven').stdout, /round 7: 1 of 4 before a takeover/);
+});
+
+test('a limit of one reads as one time, and the takeover comes at every round', () => {
+  const { root, id } = leased('Takeover (docs): 1', 'docs');
+  const first = R.addRound(root, id, 'red one');
+  assert.equal(first.takeover, true);
+  assert.match(first.block, /has failed this 1 time\./);
+  assert.match(first.block, /attempted issue \S+ 1 time \(1 round in all\)/);
+});
+
+test('verify lists a takeover line for a kind the profile does not declare', () => {
+  const { root } = leased('Takeover (poetry): 2\nTakeover (docs): 2', 'docs');
+  const out = cli(root, 'verify');
+  assert.notEqual(out.status, 0);
+  assert.match(out.stdout + out.stderr, /Takeover \(poetry\): 2[^\n]*declares no kind poetry/);
+  assert.doesNotMatch(out.stdout + out.stderr, /Takeover \(docs\): 2/);
+});
+
 test('verify lists a takeover line that is not a count of rounds', () => {
   const { root } = leased('Takeover (docs): often\nTakeover: 0', 'docs');
   const out = cli(root, 'verify');

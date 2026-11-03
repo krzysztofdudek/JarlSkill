@@ -7,7 +7,7 @@ import { canonical, jarlDir } from './where.mjs';
 import { readText } from './files.mjs';
 import { ISSUE_FILE_RE, cmpId, idKey, needsRaisedFormat } from './ids.mjs';
 import { RECORD_FORMAT_RAISED, loadProfile } from './profile.mjs';
-import { ASKS_FILE, DECISIONS_FILE, GOAL_FILE, LOG_FILE, goalLines, loadDecisions, readGoal } from './journal.mjs';
+import { ASKS_FILE, DECISIONS_FILE, GOAL_FILE, LOG_FILE, goalLineOf, goalLines, loadDecisions, readGoal } from './journal.mjs';
 import { loopEvents } from './log.mjs';
 import { parseIssue, sharedNumberText, sharedNumbers } from './issues.mjs';
 import { REPOS_DECLARED_IN, declaredNames, issueRepos, repoIdentity, repoValueKind, reposNamed, worktreesOf } from './repositories.mjs';
@@ -66,7 +66,14 @@ export function cmdVerify(root) {
   const rulings = loadDecisions(root, decisionSkips);
   for (const s of decisionSkips) add('decisions', `${DECISIONS_FILE} line ${s.n}`, `"${shownText(s.text)}" — ${s.reason}`, s.n);
   const goalSkips = [];
-  goalLines(readGoal(dir), goalSkips);
+  const goalText = readGoal(dir);
+  goalLines(goalText, goalSkips);
+  // A Takeover line for a kind the profile does not declare never applies to an issue.
+  (goalText ?? '').split('\n').forEach((text, i) => {
+    const line = goalLineOf(text);
+    if (!line || line.key !== 'takeover' || line.qualifier === null || goalSkips.some((s) => s.n === i + 1)) return;
+    if (!profile.kinds.some((k) => k.toLowerCase() === line.qualifier.toLowerCase())) goalSkips.push({ n: i + 1, text, reason: `the profile declares no kind ${line.qualifier}, so the line applies to no issue: its kinds are ${profile.kinds.join(', ')}` });
+  });
   for (const s of goalSkips) add('goal', `${GOAL_FILE} line ${s.n}`, `"${shownText(s.text)}" — ${s.reason}`, s.n);
   for (const f of issueFilesOf(dir)) {
     const issueSkips = [];
