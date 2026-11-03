@@ -44,7 +44,7 @@ export function cmdResume(root, flags = {}) {
   const status = statusOf(root, loop, {});
   const { profile, issues, byId } = loop;
   const stale = new Map(status.stale.map((x) => [x.id, x.problems]));
-  const marks = new Map(status.inFlightRows.map((x) => [x.id, x.mark]));
+  const marks = new Map(status.inFlightRows.map((x) => [x.id, x]));
   // An answered question's ruling also carries its answer line, which the text lists before the question.
   const rulings = loop.decisions.filter((d) => !d.supersededBy).map((d) => {
     const answered = answeredLines(d);
@@ -58,7 +58,8 @@ export function cmdResume(root, flags = {}) {
   const declared = (i) => (profile.fields.length ? { fields: Object.fromEntries(profile.fields.map((f) => [f.name, fieldText(i.fields[f.key])]).filter(([, v]) => v)) } : {});
   const inFlight = issues.filter((i) => holds(i) && !unsettled(i)).map((i) => ({
     id: i.id, title: i.title, branch: i.fields.branch || null, worker: i.fields.worker || null, model: i.fields.model || null, since: i.fields.since || null,
-    stale: stale.get(i.id) || [], mark: marks.get(i.id), ...declared(i),
+    // next only where it says more than the mark: the owner's tick of a line only he ticks, before done.
+    stale: stale.get(i.id) || [], mark: marks.get(i.id)?.mark, ...(marks.get(i.id) && marks.get(i.id).next !== IN_FLIGHT_MARKS[marks.get(i.id).mark] ? { next: marks.get(i.id).next } : {}), ...declared(i),
   }));
   const waiting = issues.filter((i) => profile.active(i.status) && unsettled(i)).map((i) => ({
     id: i.id, title: i.title, status: i.status, after: waitingOn(i, byId, profile),
@@ -115,7 +116,7 @@ export function renderResume(o, profile = DEFAULT_PROFILE, note = null) {
     ...sec(`The files disagree with the log (${(st.disagreements || []).length})`, (st.disagreements || []).map(disagreementText)),
     ...sec(`Read from their headers (${(st.headerRead || []).length})`, (st.headerRead || []).map((n) => `- ${n.line}`)),
     ...sec(`Closed, gate does not hold (${(st.closedGate || []).length})`, (st.closedGate || []).map(closedGateLine)),
-    ...sec(`In flight (${o.inFlight.length})`, o.inFlight.map((x) => `- ${x.id} ${short(x.title)}${shownFields(x)}${lease(x) ? ` · ${lease(x)}` : ''}${x.stale.length ? ` · STALE: ${x.stale.join('; ')}` : ''}${x.mark ? `\n  → ${IN_FLIGHT_MARKS[x.mark]}` : ''}`), '- (nothing)'),
+    ...sec(`In flight (${o.inFlight.length})`, o.inFlight.map((x) => `- ${x.id} ${short(x.title)}${shownFields(x)}${lease(x) ? ` · ${lease(x)}` : ''}${x.stale.length ? ` · STALE: ${x.stale.join('; ')}` : ''}${x.mark ? `\n  → ${x.next || IN_FLIGHT_MARKS[x.mark]}` : ''}`), '- (nothing)'),
     ...sec(`Waiting — After not settled (${o.waiting.length})`, o.waiting.map((x) => `- ${x.id} ${short(x.title)} (after ${x.after.join(', ')})${x.stale !== undefined ? ` · ${x.status === 'in-progress' ? 'in progress' : x.status}${lease(x) ? ` · ${lease(x)}` : ''}${x.stale.length ? ` · STALE: ${x.stale.join('; ')}` : ''}` : ''}`)),
     ...sec(`Questions to the owner (${o.questions.length})`, o.questions.map((a) => `- a-${a.id} (${a.kind || 'stuck'})${a.issue ? ` issue ${a.issue}` : ''} · ${a.question}`), '- (nothing)'),
     ...sec(`To ratify (${o.ratify.length})`, o.ratify.map((a) => `- a-${a.id}${a.issue ? ` (issue ${a.issue})` : ''} · ${a.question}`)),

@@ -521,9 +521,12 @@ export function placeEvidence(current, kind, added, sep) {
 
 // A finding's proposal copied in by import is not yet an acceptance line: it waits to be made checkable.
 export const PROPOSED = 'Proposed by the finding';
-export function acceptanceLineCount(issue) {
+export function acceptanceLineCount(issue) { return acceptanceLines(issue).length; }
+// The acceptance lines of an issue, in order, each without its list marker: the lines counted above, numbered 1, 2, …
+// wherever a command names one by its number.
+export function acceptanceLines(issue) {
   const text = issue.sections.acceptance || '';
-  return text.split('\n').map((l) => l.trim().replace(/^- /, '')).filter((l) => l.length > 0 && !l.startsWith(PROPOSED)).length;
+  return text.split('\n').map((l) => l.trim().replace(/^- /, '')).filter((l) => l.length > 0 && !l.startsWith(PROPOSED));
 }
 
 // ---- issues: the entries of a Reviews section ---------------------------------------------------------

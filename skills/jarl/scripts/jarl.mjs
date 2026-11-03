@@ -22,7 +22,7 @@ import {
   issuesNaming, questionFor, cmdGoal, cmdGoalSet, cmdRepoBase, whereOf, cmdVerify, renderVerify, renderCheckNotes,
   renderProfile, renderTips, renderQueue, renderResume, renderStatus, renderImport, renderSources, renderList, recordTypeLog, recordRuleLog,
   runDecisionsDriver, mergeFlags, describeNew, renderNewReply, issueView, attachmentStates, evidenceTable, renderBranches, renderDecide, renderDecisions,
-  cmdNextAs, renderNextAs, askerSection,
+  cmdNextAs, renderNextAs, askerSection, cmdTick,
 } from './jarl-lib.mjs';
 import { writeAreaDecision, writeRuleRatification } from './yg-edge.mjs';
 
@@ -163,7 +163,8 @@ commands:
                                                  whose CI is not green yet; done needs, inside one window (rows after
                                                  the last start, reopen or filing; approves after those or a red
                                                  round), a --ran/--saw row — a free-text note never counts alone —
-                                                 and a live approve
+                                                 and a live approve, and the owner's tick of every acceptance line only he
+                                                 ticks (see tick)
   merged <ids> --sha <sha> [--ran "<check>" --saw "<summary>" | --red <id>] [--ci pending|green|red|none] [--repo <name|path>] [--keep] | <ids> --ci <state>
                                                  the merge as fields: Merged (sha, and where with --repo) and CI
                                                  (only when given; pending: a pushed commit whose CI will report;
@@ -191,7 +192,9 @@ commands:
                                                  no --limit): the owner holds the questions and the items to ratify; the
                                                  jarl the ready issues, the leases, a proof
                                                  with no verdict, changes asked, an approve not merged, and a ruling that
-                                                 settles issues none of which is live (with no slice in the loop, a
+                                                 settles issues none of which is live; an acceptance line only the owner
+                                                 ticks is the jarl's (its worker producing it) until its material is
+                                                 there, then the owner's, with the material and what to check (with no slice in the loop, a
                                                  coordinator's lines are the jarl's); a promise is on whoever its Found by
                                                  names, and a wait on its Person, with when to check, until what was
                                                  waited for is recorded, then on the jarl; derived from the profile's status
@@ -219,6 +222,17 @@ commands:
                                                  worker: a tier up, another model or a changed approach. The limit is read from the
                                                  goal at each round and the rounds are counted from the last takeover, so a changed
                                                  limit takes effect at the next round
+  tick <id> <line> --by owner                    the owner's tick of an acceptance line only he ticks, by its number among
+                                                 the issue's acceptance lines: a line written "[owner] <line> · material:
+                                                 <path, link or artifact> · check: <what to check>" (new and body refuse a
+                                                 line so marked that names no material or nothing to check, and its first
+                                                 write raises the record format to 3); done refuses while such a line is
+                                                 not ticked; tick refuses a name other than the owner's, and a line whose
+                                                 material is not there yet: no --ran/--saw row after the work was started or
+                                                 sent back, or, for a path, no file under the loop's root, the issue's
+                                                 repositories or its worktree; it writes one log line that holds the line
+                                                 as written, so a line rewritten after it waits for a new tick, and a red
+                                                 round, a start or a reopen spends it as it spends an approve
   models [--by repo|tag] [--with <root>]... [--archives]
                                                  read-only: per model as worker and as reviewer, per Kind · Tier, what the
                                                  record holds (units, clean first passes, changes, rounds, verdicts, checked
@@ -474,7 +488,7 @@ export const COMMAND_FLAGS = {
   show: { full: 'bool' }, set: { branch: 'value', worker: 'value', model: 'value', worktree: 'value', handover: 'bool', header: 'bool' }, tag: { by: 'value' }, prio: { by: 'value' }, files: { by: 'value' },
   repo: { clear: 'bool', base: 'bool', by: 'value' },
   next: { limit: 'value', all: 'bool', as: 'value' },
-  review: { by: 'value', model: 'value', relayed: 'bool' }, round: { findings: 'value' },
+  review: { by: 'value', model: 'value', relayed: 'bool' }, round: { findings: 'value' }, tick: { by: 'value' },
   models: { by: 'value', with: 'many', archives: 'bool' },
   scope: { branch: 'value', base: 'value', repo: 'value' },
   branches: { base: 'value', repo: 'value', 'stale-hours': 'value' },
@@ -561,7 +575,7 @@ export const COMMAND_ARGS = {
   after: ['id', 'ids...'], evidence: ['ids', 'text?'], retract: ['id', 'what', 'reason'], field: ['ids', 'name', 'value?'],
   list: [], show: ['id'], set: ['ids', 'status', 'why?'],
   merged: ['ids'], tag: ['ids', 'ops...'], prio: ['ids', 'priority'], files: ['id', 'paths...'], repo: ['id', 'path...'],
-  next: [], review: ['ids', 'verdict', 'findings'], round: ['id', 'what'], models: [], scope: ['id?'], branches: [],
+  next: [], review: ['ids', 'verdict', 'findings'], round: ['id', 'what'], tick: ['id', 'line'], models: [], scope: ['id?'], branches: [],
   ask: ['question'], answer: ['id', 'answer?'], resume: [], handoff: ['action?'], log: ['event'],
   decide: ['slug', 'ruling'], decisions: [], goal: [], status: [], archive: ['slug'], report: [], tips: [], queue: [],
   changelog: ['ids'], mode: ['mode'], close: [], profile: ['file?'], verify: [],
@@ -590,6 +604,7 @@ export const COMMAND_SUMMARY = {
   next: 'The open issues ready to start: no file shared with work in progress, every After issue settled, no open question on them, never a promise or a wait; all adds the held and waiting ones in groups; as lists what is on the owner, the jarl or a named person (a promise on its maker, a wait on its person), each line with its command.',
   review: 'Record a reviewer\'s verdict (approve or changes) on issues, with the reviewer and the findings.',
   round: 'Record one red round on issues; every third (or the count the goal sets for the kind of issue) prints the takeover block for a fresh worker.',
+  tick: 'Record the owner\'s tick of an acceptance line only he ticks, once he has reviewed the material it names.',
   models: 'Per model as worker and as reviewer, per kind of issue: the counts, clean first passes and verdicts the record holds, with the words fits, below, new and may clear; reads other loops and archives too.',
   scope: 'Measure the scope of a worker branch against its base: commits, diff inside the declared files, test changes; numbers, never a verdict.',
   branches: 'Every worker branch with its issues, commits beyond the base, worktree state, stale leases and done branches, in the loop\'s repository and every repository its issues name (repo narrows it to one).',
@@ -693,7 +708,7 @@ function fieldListValue(name, value) {
 const ARITY = Object.fromEntries(Object.entries({ ...COMMAND_ARGS, ...Object.fromEntries(Object.entries(COMMAND_ALIASES).map(([name, c]) => [name, COMMAND_ARGS[c]])) }).filter(([, a]) => !a.some((n) => n.endsWith('...'))).map(([c, a]) => [c, a.length]));
 
 // The commands that write: each runs under .jarl/.lock (see withLock).
-export const MUTATING = new Set(['init', 'new', 'body', 'import', 'source', 'after', 'set', 'field', 'merged', 'tag', 'prio', 'files', 'repo', 'evidence', 'retract', 'review', 'round', 'ask', 'answer', 'log', 'decide', 'goal', 'archive', 'mode', 'close']);
+export const MUTATING = new Set(['init', 'new', 'body', 'import', 'source', 'after', 'set', 'field', 'merged', 'tag', 'prio', 'files', 'repo', 'evidence', 'retract', 'review', 'round', 'tick', 'ask', 'answer', 'log', 'decide', 'goal', 'archive', 'mode', 'close']);
 
 // git's side of the loop: the merge driver git runs, and the settings a merger passes it. Neither reads a loop.
 function mergeDriverMain(args) {
@@ -864,6 +879,7 @@ export function dispatch(root, commandName, rest, flags) {
       case 'review':
         if (rest[1] === 'retract') aliases.push('note: a verdict is retracted with: retract <id> review --by <who> "<reason>"');
         out = R.review(root, rest[0], rest[1], rest[2], { ...flags, caller: 'cli' }); text = each(out, renderReview); warn = [].concat(out).filter((o) => o.note).map((o) => `note: ${o.note}`); break;
+      case 'tick': out = cmdTick(root, rest[0], rest[1], flags); text = `${out.id} acceptance line ${out.line} ticked by ${out.by} at ${out.at}`; break;
       case 'models': out = cmdModels(root, flags); text = renderModels(out); break;
       case 'round': out = eachIssue(root, rest[0], (id, dry) => cmdRound(root, id, rest[1], dry, flags)); text = each(out, (o) => (o.takeover ? `${o.id} round ${o.round} — takeover:\n\n${o.block}` : `${o.id} round ${o.round}: ${o.since} of ${o.limit} before a takeover; the rounds so far: show ${o.id}`)); break;
       case 'merged': out = R.recordMerged(root, rest[0], { ...flags, caller: 'cli' }); text = `${out.ids.join(', ')} ${out.sha ? `merged ${out.sha}` : 'merge'}${out.check ? ` · check ${out.check}` : ''}${out.red ? ` · landed red, cause ${out.red}` : ''}${out.ci ? ` · CI ${out.ci}` : ''}${(out.cleanup || []).map((c) => `\n${c.kept ? `kept ${c.branch}${c.worktree ? ` (worktree ${c.worktree} removed)` : ''} — ${c.kept}` : `removed ${c.worktree ? `the worktree ${c.worktree} and ` : ''}the branch ${c.branch}`}${(c.commands || []).length ? `\nafter looking at the files, remove them with:\n${c.commands.map((x) => `  ${x}`).join('\n')}` : ''}${out.cleanup.some((x) => x.repo !== c.repo) ? ` [${c.repo}]` : ''}`).join('')}`; warn = out.notes.map((n) => `note: ${n}`); break;

@@ -51,7 +51,8 @@ The other references, each read when its subject comes up:
 | `evidence <ids> --ran "<command>" --saw "<what it printed>"` | records proof |
 | `review <ids> approve\|changes --by <name> --model <m> "<findings>"` | records a verdict |
 | `merged <ids> --sha <sha> --ran "<check>" --saw "<summary>"` | records a merge |
-| `set <ids> done "<why>"` | closes an issue: needs proof and a live approve |
+| `set <ids> done "<why>"` | closes an issue: needs proof and a live approve, and the owner's tick of each line only he ticks |
+| `tick <id> <line> --by owner` | the owner's tick of an acceptance line written `[owner] … · material: … · check: …` |
 | `ask` · `answer` · `decide` | the owner's questions and the rulings |
 | `report` · `close` | what was done; ends the loop |
 

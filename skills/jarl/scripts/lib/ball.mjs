@@ -8,6 +8,7 @@ import { mergedOf } from './issues.mjs';
 import { carriesCode, gateOf, readLoop } from './loop.mjs';
 import { reasonWord, shellWord, waitingOn } from './commands.mjs';
 import { inFlightMark, nextRows, schedulerNote } from './evidence.mjs';
+import { ownerLineStates } from './owner-lines.mjs';
 
 // The holders: the owner, the jarl, a named coordinator or a named outside person. With no slice in the loop, every row
 // a coordinator would hold is the jarl's.
@@ -68,9 +69,12 @@ function issueRows(ctx) {
       out.push({ ...base, what: 'worker', says: `${withWorker}${fieldText(i.fields.since) ? ` since ${fieldText(i.fields.since)}` : ''}, ${backAfterRound ? 'sent back by a round, no new proof yet' : 'no proof yet'}; the worker records it`, command: `jarl.mjs evidence ${i.id} ${evidence}` });
       continue;
     }
+    // A close the done gate would refuse for an owner line not ticked is not offered: that line's own row stands instead.
+    const unticked = (ctx.ownerStates.get(i.id) || []).some((s) => !s.tick);
     if (mark === 'rows-no-verdict' && profile.doneGate.approve === 'none') {
       // A done gate that asks for no approve: the proof is enough, and the merge (when the gate asks for one) comes next.
       const merge = profile.doneGate['requires-merged'] && !mergedOf(i);
+      if (!merge && unticked) continue;
       out.push({ ...base, what: merge ? 'merge' : 'close', says: merge ? 'proof recorded, not merged; merge it' : 'proof recorded; close it',
         command: merge ? `jarl.mjs merged ${i.id} --sha <sha> --ran "<check>" --saw "<summary>"` : `jarl.mjs set ${i.id} ${closeStatus} "<why>"` });
       continue;
@@ -96,6 +100,7 @@ function issueRows(ctx) {
       out.push({ ...base, what: 'ci', says: 'merged, its CI not green yet; record the result', command: `jarl.mjs merged ${i.id} --ci green|red` });
       continue;
     }
+    if (unticked) continue;
     out.push({ ...base, what: 'close', says: mark === 'merged' ? 'merged; close it' : 'approved; close it', command: `jarl.mjs set ${i.id} ${closeStatus} "<why>"` });
   }
   out.push(...reviewRow(ctx, verdict));
@@ -183,6 +188,31 @@ function keptRows(ctx) {
   return out;
 }
 
+// The rows of the acceptance lines only the owner ticks, on the issues in play: a line whose material is not there yet is
+// on whoever produces it (with no slice, the jarl's line, the worker doing it), and once it is there, on the owner, with
+// the material and what to check. A line that names neither is the jarl's to rewrite. A ticked line holds nothing.
+function ownerLineRows(ctx) {
+  const out = [];
+  for (const [id, states] of ctx.ownerStates) {
+    const i = ctx.loop.byId.get(id);
+    const worker = fieldText(i.fields.worker) || null;
+    const base = { what: 'sign-off', id, title: i.title, priority: i.priority, ...(worker ? { doer: worker } : {}) };
+    for (const s of states.filter((x) => !x.tick)) {
+      const line = { ...base, line: s.n };
+      if (s.off) {
+        out.push({ ...line, holder: JARL_HOLDER, says: `acceptance line ${s.n} is marked as the owner's, and ${s.why}; rewrite it without the mark`, command: `jarl.mjs body ${id} --acceptance "<line>"... (every line of the section)` });
+      } else if (!s.material || !s.check || !s.what) {
+        out.push({ ...line, holder: JARL_HOLDER, says: `acceptance line ${s.n} is marked as the owner's and does not name its material and what to check; rewrite it`, command: `jarl.mjs body ${id} --acceptance "<line>"... (every line of the section)` });
+      } else if (!s.ready) {
+        out.push({ ...line, holder: JARL_HOLDER, says: `acceptance line ${s.n} is the owner's to tick once its material is there (${s.material}); ${s.why}`, command: `jarl.mjs evidence ${id} --ran "<command>" --saw "<what it printed>"` });
+      } else {
+        out.push({ ...line, holder: OWNER_HOLDER, material: s.material, check: s.check, says: `acceptance line ${s.n} is yours to tick: review ${s.material}${s.at ? ` (in ${s.at})` : ''} and check ${s.check}`, command: `jarl.mjs tick ${id} ${s.n} --by owner` });
+      }
+    }
+  }
+  return out;
+}
+
 // The owner's rows: every open question and every item to ratify. A ratify item blocks nothing.
 function questionRows(ctx) {
   return ctx.loop.asks.filter((a) => a.state === 'open').map((a) => {
@@ -222,7 +252,7 @@ function closedOn(loop, issue, slug) {
 
 // The sources of the rows, in order. Each reads the record through the context and gives rows { what, holder, says,
 // command, and id, ask or ruling }; a kind of open thing the record learns to hold adds its own source here.
-export const ROW_SOURCES = [issueRows, keptRows, questionRows, rulingRows];
+export const ROW_SOURCES = [issueRows, keptRows, ownerLineRows, questionRows, rulingRows];
 // The rows a composer's scheduler owns: under an external scheduler Jarl lists only the others.
 const SCHEDULING = new Set([issueRows]);
 
@@ -234,7 +264,10 @@ export function ballRows(root) {
   const { profile } = loop;
   const scheduled = profile.scheduler !== null;
   const awaiting = scheduled ? [] : awaitingReview(loop, profile);
-  const ctx = { root, loop, profile, next: scheduled ? [] : nextRows(root, {}), awaiting, onOwner: new Set(heldByOwner(loop, awaiting)) };
+  // The owner lines of the issues in play that wait on nothing, read once for the issue rows and their own.
+  const inPlay = loop.issues.filter((i) => profile.is(i.status, 'holds-claim') && !waitingOn(i, loop.byId, profile).length);
+  const ownerStates = new Map(inPlay.map((i) => [i.id, ownerLineStates(root, loop, i)]).filter(([, s]) => s.length));
+  const ctx = { root, loop, profile, next: scheduled ? [] : nextRows(root, {}), awaiting, onOwner: new Set(heldByOwner(loop, awaiting)), ownerStates };
   const rows = ROW_SOURCES.filter((s) => !(scheduled && SCHEDULING.has(s))).flatMap((s) => s(ctx));
   // Who each issue holds up: the issues in play whose After names it, not settled yet, and for a question the issue it holds.
   const active = loop.issues.filter((i) => profile.active(i.status));
@@ -267,8 +300,12 @@ function cmpRef(a, b) {
 // issue that holds it.
 function waitingRows(loop, rows, next, onOwner) {
   const { profile, byId } = loop;
-  const holderOfIssue = new Map(rows.filter((r) => r.id !== undefined).flatMap((r) => (r.ids || [r.id]).map((id) => [id, r.holder])));
-  for (const id of onOwner) holderOfIssue.set(id, OWNER_HOLDER);
+  // An issue may hold the ball on more than one holder at once (a merge on the jarl, an owner line on the owner).
+  const holderOfIssue = new Map();
+  for (const r of rows.filter((x) => x.id !== undefined)) {
+    for (const id of r.ids || [r.id]) holderOfIssue.set(id, [...new Set([...(holderOfIssue.get(id) || []), r.holder])]);
+  }
+  for (const id of onOwner) holderOfIssue.set(id, [OWNER_HOLDER]);
   const heldBy = new Map(next.filter((r) => r.heldBy && r.heldBy.length && !r.ready).map((r) => [r.id, r.heldBy]));
   const questionOf = new Map(next.filter((r) => r.group === 'held-by-question').map((r) => [r.id, r.questions]));
   const roots = (i, seen = new Set()) => {
@@ -282,30 +319,29 @@ function waitingRows(loop, rows, next, onOwner) {
     }
     return out;
   };
-  // The holder an issue that waits on nothing itself puts the wait on: its own row's, the owner's through a question
-  // that names it, or the holder of the issue that holds its file; null when the record names nobody (a status no flag
+  // The holders an issue that waits on nothing itself puts the wait on: its own rows', the owner's through a question
+  // that names it, or the holders of the issue that holds its file; none when the record names nobody (a status no flag
   // puts in play).
   const onOf = (b) => {
     if (holderOfIssue.has(b.id)) return holderOfIssue.get(b.id);
-    if (questionOf.has(b.id)) return OWNER_HOLDER;
+    if (questionOf.has(b.id)) return [OWNER_HOLDER];
     const h = (heldBy.get(b.id) || []).find((x) => holderOfIssue.has(x));
-    return h ? holderOfIssue.get(h) : null;
+    return h ? holderOfIssue.get(h) : [];
   };
   // One entry per waiting issue and holder, with every issue it waits through.
   const entries = new Map();
   const add = (i, on, through) => {
-    if (on === null) return;
     const key = `${i.id}\n${on}`;
     if (!entries.has(key)) entries.set(key, { id: i.id, title: i.title, on, via: [] });
     const e = entries.get(key);
     if (!e.via.includes(through)) e.via.push(through);
   };
   for (const i of loop.issues.filter((x) => profile.active(x.status) && waitingOn(x, byId, profile).length)) {
-    for (const b of roots(i)) add(i, onOf(b), b.id);
+    for (const b of roots(i)) for (const on of onOf(b)) add(i, on, b.id);
   }
   for (const [id, holders] of heldBy) {
     const h = holders.find((x) => holderOfIssue.has(x));
-    if (h) add(byId.get(id), holderOfIssue.get(h), h);
+    if (h) for (const on of holderOfIssue.get(h)) add(byId.get(id), on, h);
   }
   return [...entries.values()].sort((a, b) => cmpId(a.id, b.id));
 }
