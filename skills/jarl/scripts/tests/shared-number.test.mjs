@@ -161,25 +161,47 @@ function renumber(at, from, to) {
   writeFileSync(join(issues, name), text.replace(/^# \d+ ·/, `# ${to} ·`));
 }
 
-test('the finding says the log\'s lines for the number cannot be told apart, and following it leaves each file at its own status', () => {
+// What verify, status and resume say of the loop, joined: where a header advice would show.
+const views = (at) => [run(at.dir, ['verify']).stdout, jarl(at.dir, 'status'), jarl(at.dir, 'resume')].join('\n');
+// The header advice the finding forbids: the log's dropped written into a file nobody dropped.
+const COPIES_DROP = /write \*\*Status:\*\* dropped back into the header|Status reads open in the file and dropped in the log/;
+
+test('the finding names the file the log does not describe, and verify, status and resume give no header advice at any step of the settling', () => {
   const b = droppedOnOneSide();
   const said = run(b.dir, ['verify']).stdout;
   assert.match(said, /cannot be told apart/);
-  assert.match(said, /renumbering alone does not settle it/);
-  assert.match(said, /never write the log's value into either file/);
+  assert.match(said, /Give issues\/2-second-on-b\.md a number the loop does not hold, such as 3/, said);
+  assert.match(said, /a fresh review again before it is done/);
+  assert.match(said, /jarl\.mjs log "2 number settled · /);
   assert.doesNotMatch(said, /two clones or branches of the loop each filed one/, 'the cause is not asserted');
-  renumber(b, '2-second-on-a.md', 3);
-  // Renumbering alone leaves the drop made for A's file on the number B's file keeps.
+  assert.match(jarl(b.dir, 'list'), /second on A[\s\S]*second on B/, 'plain list shows both while the number reads as dropped');
+  renumber(b, '2-second-on-b.md', 3);
+  assert.doesNotMatch(views(b), COPIES_DROP, 'after the renumbering');
+  assert.match(jarl(b.dir, 'status'), /3 is not in the log[\s\S]*jarl\.mjs set 3 open/);
+  jarl(b.dir, 'set', '3', 'open');
+  assert.doesNotMatch(views(b), COPIES_DROP, 'after the renumbered issue is in the log');
+  jarl(b.dir, 'log', '2 number settled · the drop of 2 was for the first clone\'s file, which keeps 2; the second clone\'s is now 3 and was never moved');
+  const after = run(b.dir, ['verify']);
+  assert.equal(after.status, 0, after.stdout);
   assert.equal(JSON.parse(jarl(b.dir, 'show', '2', '--json')).status, 'dropped');
-  jarl(b.dir, 'log', 'the drop of 2 on the first clone was for the issue now numbered 3; the file that keeps 2 was never moved');
+  assert.equal(JSON.parse(jarl(b.dir, 'show', '3', '--json')).status, 'open');
+});
+
+test('renumbering the file the log does describe gives no header advice either, until the steps and the settling note are done', () => {
+  const b = droppedOnOneSide();
+  renumber(b, '2-second-on-a.md', 3);
+  const partway = views(b);
+  assert.doesNotMatch(partway, COPIES_DROP, 'after the renumbering');
+  assert.match(partway, /the log files 2 2 times/);
   jarl(b.dir, 'set', '3', 'dropped', 'not needed');
   jarl(b.dir, 'set', '2', 'open');
+  assert.doesNotMatch(views(b), COPIES_DROP, 'after both moves');
+  assert.match(run(b.dir, ['verify']).stdout, /the log files 2 2 times/, 'the settling note is still missing');
+  jarl(b.dir, 'log', '2 number settled · the drop of 2 was for the file now numbered 3; the file that keeps 2 was never moved');
+  const after = run(b.dir, ['verify']);
+  assert.equal(after.status, 0, after.stdout);
   assert.equal(JSON.parse(jarl(b.dir, 'show', '2', '--json')).status, 'open');
   assert.equal(JSON.parse(jarl(b.dir, 'show', '3', '--json')).status, 'dropped');
-  assert.match(readFileSync(join(b.dir, '.jarl', 'issues', '2-second-on-b.md'), 'utf8'), /\*\*Status:\*\* open/);
-  const after = run(b.dir, ['verify']);
-  assert.doesNotMatch(after.stdout, /carry the number/);
-  assert.match(after.stdout, /^issue headers: clean$/m, after.stdout);
 });
 
 test('list, next and report mark both files of a shared number', () => {

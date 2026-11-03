@@ -94,7 +94,8 @@ export function cmdVerify(root) {
     }
   }
   retractionChecks(events, add);
-  for (const d of recordDisagreements(loop)) if (d.field !== 'number') add('headers', '', shownText(d.line));
+  // A refiled number's line is the tool's own advice and prints whole; the others are cut as free text is.
+  for (const d of recordDisagreements(loop)) if (d.field !== 'number') add('headers', '', d.field === 'refiled' ? d.line : shownText(d.line));
   repositoryChecks(root, loop, add, notes);
   for (const i of loop.issues) {
     const lease = fieldText(i.fields.worktree);

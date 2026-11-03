@@ -351,7 +351,8 @@ export function cmdList(root, flags) {
   let rows = loadIssues(root);
   // Finished business (terminal: done, dropped, and deferred work, which waits) is not in the default list:
   // --status or --all shows it.
-  if (!flags.all && !flags.status) rows = rows.filter((i) => profile.unfinished(i.status));
+  // An issue whose number another file carries is listed whatever its status: the log's state of it may be another's.
+  if (!flags.all && !flags.status) rows = rows.filter((i) => profile.unfinished(i.status) || i.shared);
   if (flags.status) rows = rows.filter((i) => i.status === flags.status);
   if (flags.kind) rows = rows.filter((i) => i.kind === flags.kind);
   if (flags.tag) rows = rows.filter((i) => i.tags.includes(flags.tag));

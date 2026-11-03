@@ -160,12 +160,29 @@ function sharedFiles(list) {
   const names = list.map((i) => `issues/${basename(i.file)}`);
   return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }
+// Whether the log's lines describe the file of `issue`: its header holds the status and every field the log renders as the
+// log has them. A file the log holds no line of is not described.
+function logDescribes(issue) {
+  const on = issue.onFile;
+  if (!on) return false;
+  return on.status === issue.status && RENDERED_FIELDS.every((k) => (k === 'merge check' && !fieldText(on[k])) || fieldText(on[k]) === fieldText(issue.fields[k]));
+}
+// The note that says how a number two files once carried was settled, as the log holds it: `<id> number settled · …`.
+export const settledNote = (id) => `${id} number settled · <which earlier lines of ${id} were whose>`;
 // What a shared number means and how it is settled, for a refusal and for the views. `all` is every issue of the loop,
-// so the free number named is one the loop does not hold.
+// so the free number named is one the loop does not hold. The file named for the new number is the one the log's lines
+// do not describe, so the file that keeps the number agrees with them.
 export function sharedNumberText(shared, all) {
   const free = all.reduce((m, i) => (i.id !== null && /^\d+$/.test(i.id) ? Math.max(m, Number(i.id)) : m), 0) + 1;
   const id = shared.id;
-  return `${shared.issues.length} issue files carry the number ${id}: ${sharedFiles(shared.issues)}. Two copies of the loop that each filed an issue and were merged leave this, and so does a file copied or made by hand. The log names an issue by its number alone, so its lines for ${id} cannot be told apart: each is read for every one of these files, and no command moves or edits one of them alone. It is settled by hand, and renumbering alone does not settle it: give the other file a number the loop does not hold, such as ${free} (rename it to ${free}-… and write ${free} in its first line), and the log's earlier lines for ${id} stay with the file that keeps ${id}, whichever file they were written for. Then record which earlier lines belonged to which file (jarl.mjs log "<which lines of ${id} were whose>"), put the renamed issue in the log at the status its file reads (jarl.mjs set ${free} <status>), and when the log's status for ${id} is not the one its own file reads, move it there (jarl.mjs set ${id} <status>) — never write the log's value into either file`;
+  const name = (i) => `issues/${basename(i.file)}`;
+  const strays = shared.issues.filter((i) => !logDescribes(i));
+  const one = strays.length > 0 && strays.length < shared.issues.length;
+  const move = one ? strays[strays.length - 1] : shared.issues[shared.issues.length - 1];
+  const which = one
+    ? `Give ${name(move)} a number the loop does not hold, such as ${free}: its header differs from what the log says of ${id}, so the log's lines do not describe it`
+    : `The log's lines fit ${strays.length ? 'none' : 'each'} of the files, so either may take a new number; give ${name(move)} one the loop does not hold, such as ${free}`;
+  return `${shared.issues.length} issue files carry the number ${id}: ${sharedFiles(shared.issues)}. Two copies of the loop that each filed an issue and were merged leave this, and so does a file copied or made by hand. The log names an issue by its number alone, so its lines for ${id} cannot be told apart: each is read for every one of these files, and no command moves or edits one of them alone. It is settled by hand. ${which} (rename it to ${free}-… and write ${free} in its first line). Then put it in the log at the status its file reads (jarl.mjs set ${free} <status>): a renumbered issue starts its record anew, so one that was done needs its proof and a fresh review again before it is done. When the log's status for ${id} is not the one its own file reads, move it there (jarl.mjs set ${id} <status>). Last, write which earlier lines were whose: jarl.mjs log "${settledNote(id)}". Until that line is in the log, the header of ${id} is not compared with the log, and the log's value is never to be written into either file`;
 }
 // The one issue `rawId` names among `issues`, or null when none does. A number two files carry is refused, with both files
 // named: a move or an edit by that number would land on each of them in the log.
