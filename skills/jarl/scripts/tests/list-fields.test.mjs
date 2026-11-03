@@ -2,9 +2,10 @@
 // brackets or quotes as part of an item is refused instead of written.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync, writeFileSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { loop } from './helpers.mjs';
+import { loop, gitRepo, refuses } from './helpers.mjs';
 
 const mcp = await import('../jarl-mcp.mjs');
 
@@ -64,5 +65,71 @@ test('after and source take a list and store its items', () => {
   assert.equal(header(issueText(root, 3), 'After'), '1, 2');
   call(root, 'source', { id: '3', refs: ['core/r#a', 'core/r#b'] });
   assert.equal(header(issueText(root, 3), 'Source'), 'core/r#a, core/r#b');
-  refused(() => raw(root, 'after', { id: '3', ids: '["1", "2"]' }), /not the text of a list/i);
+  refused(() => raw(root, 'after', { id: '3', ids: '["1", "2"]' }), /reads as a list of several items/i);
+});
+
+test('files, source and after refuse an item that starts with - and say where flags go', () => {
+  const root = loop();
+  call(root, 'new', { title: 'a' });
+  call(root, 'new', { title: 'b' });
+  for (const [cmd, first] of [['files', 'a.mjs'], ['source', 'core/r#a'], ['after', '1']]) {
+    const said = refuses(root, cmd, '2', first, '--', '--root', '/x');
+    assert.match(said, /cannot start with -/);
+    assert.match(said, /flags such as --root go before it/);
+  }
+  assert.equal(header(issueText(root, 2), 'Files'), '');
+});
+
+test('a file named in brackets is a path, and an empty path clears Files', () => {
+  const root = loop();
+  call(root, 'new', { title: 't' });
+  call(root, 'files', { id: '1', paths: ['[1]'] });
+  assert.equal(header(issueText(root, 1), 'Files'), '[1]');
+  call(root, 'files', { id: '1', paths: [''] });
+  assert.equal(header(issueText(root, 1), 'Files'), '');
+});
+
+test('the source and files tools require their list; the after tool describes its ids', () => {
+  const tools = Object.fromEntries(mcp.buildTools().map((t) => [t.name, t.inputSchema]));
+  assert.ok(tools.jarl_files.required.includes('paths'));
+  assert.ok(tools.jarl_source.required.includes('refs'));
+  assert.ok(!tools.jarl_after.required.includes('ids'));
+  assert.match(tools.jarl_after.properties.ids.description, /waits on/);
+  assert.equal(tools.jarl_files.properties.paths.type, 'array');
+});
+
+test('repo, settles and only take lists through the tools', () => {
+  const root = loop();
+  const one = gitRepo().dir;
+  const two = gitRepo().dir;
+  call(root, 'new', { title: 'a', repo: [one, two] });
+  call(root, 'new', { title: 'b' });
+  const repo = header(issueText(root, 1), 'Repo');
+  assert.ok(!/[[\]"]/.test(repo), repo);
+  assert.equal(repo.split(',').length, 2);
+  call(root, 'decide', { slug: 'ruled', ruling: 'a ruling', settles: ['1', '2'] });
+  assert.match(readFileSync(join(root, '.jarl', 'decisions.md'), 'utf8'), /\*\*Settles:\*\* 1, 2/);
+  const tools = Object.fromEntries(mcp.buildTools().map((t) => [t.name, t.inputSchema]));
+  for (const [tool, field] of [['jarl_new', 'repo'], ['jarl_import', 'repo'], ['jarl_import', 'only'], ['jarl_decide', 'settles']]) {
+    assert.equal(tools[tool].properties[field].type, 'array', `${tool} ${field}`);
+  }
+});
+
+test('import takes tags, repo and only as lists through the tool', () => {
+  const root = loop();
+  const one = gitRepo().dir;
+  const two = gitRepo().dir;
+  const dir = mkdtempSync(join(tmpdir(), 'report-2026-09-25-'));
+  const file = join(dir, 'findings.json');
+  writeFileSync(file, JSON.stringify([
+    { id: 'f-1', kind: 'defect', priority: 'high', title: 'first', where: 'a.mjs:1', evidence: 'e', proposal: 'p', effort: 'S' },
+    { id: 'f-2', kind: 'defect', priority: 'low', title: 'second', where: 'a.mjs:2', evidence: 'e', proposal: 'p', effort: 'S' },
+    { id: 'f-3', kind: 'defect', priority: 'low', title: 'third', where: 'a.mjs:3', evidence: 'e', proposal: 'p', effort: 'S' },
+  ]));
+  call(root, 'import', { file, source: 'core/r', tags: ['drift', 'processes'], repo: [one, two], only: ['f-1', 'f-3'] });
+  const files = readdirSync(join(root, '.jarl', 'issues'));
+  assert.equal(files.length, 2);
+  const text = issueText(root, 1);
+  assert.equal(header(text, 'Tags'), 'drift, processes');
+  assert.equal(header(text, 'Repo').split(',').length, 2);
 });

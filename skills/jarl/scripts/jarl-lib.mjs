@@ -1597,14 +1597,14 @@ export function cmdNew(root, title, rawFlags) {
 
 // The items of a list field: a comma list, or a list of such texts, one item each.
 function splitList(v) { return [].concat(v ?? []).map((x) => String(x ?? '')).join(',').split(',').map((s) => s.trim()).filter(Boolean); }
-// A list given as the text of a list (["a", "b"]) holds one item that is the whole text; stored, it would put brackets and
-// quotes into the items. It is refused, and the message says how to give the items.
+// A list given as the text of a list (["a", "b"]) would put brackets and quotes into its items. Text that reads as a list
+// of more than one item, or an item in quotes, is refused; a single item in brackets ([1], a file of that name) is a name.
 function needNotListText(v, what) {
-  const text = [].concat(v ?? []).map(String).join(',').trim();
+  const text = [].concat(v ?? []).map(String).join(",").trim();
   let parsed = null;
-  if (text.startsWith('[') && text.endsWith(']')) { try { parsed = JSON.parse(text); } catch { parsed = null; } }
-  need(!Array.isArray(parsed) && !splitList(v).some((s) => s.startsWith('"') || s.endsWith('"')),
-    `${what} is a list of items, not the text of a list: give each item on its own (a, b), without brackets or quotes — got ${JSON.stringify(text)}`);
+  if (text.startsWith("[") && text.endsWith("]")) { try { parsed = JSON.parse(text); } catch { parsed = null; } }
+  need(!(Array.isArray(parsed) && parsed.length > 1) && !splitList(v).some((s) => s.startsWith('"') || s.endsWith('"')),
+    `${what} takes items one by one (a, b): text that reads as a list of several items, or an item in quotes, is refused — got ${JSON.stringify(text)}`);
 }
 // Tags are single words: brackets, quotes and backticks are never part of one.
 export function tagList(v) {
@@ -5063,7 +5063,7 @@ export function repoFromInput(root, raw) {
 }
 // The values of a --repo list (one name or path, or several as one comma list), each read by repoFromInput.
 function repoList(root, v) {
-  need(typeof v === 'string', '--repo takes one name or path, or several as one comma list');
+  need(v !== null && (typeof v === 'string' || Array.isArray(v)), '--repo takes one name or path, or several as a list');
   const items = splitList(v);
   need(items.length, '--repo needs a name or a path');
   return items.map((item) => repoFromInput(root, item));
@@ -5790,7 +5790,7 @@ export function cmdDecide(root, slug, ruling, flags = {}) {
   need(flags.rule === undefined || flags.area !== undefined, '--rule names the rule of the graph the ruling admits on the --area type — it needs --area');
   need(flags.rule === undefined || RULE_RE.test(String(flags.rule)), `--rule names a rule as the repository's graph names it: its id, segments of letters, digits and . _ - joined by / (got "${flags.rule}")`);
   const by = flags.by !== undefined ? fieldText(flags.by) : 'owner';
-  const settles = flags.settles !== undefined ? issuesFor(root, flags.settles) : [];
+  const settles = flags.settles !== undefined ? issuesFor(root, splitList(flags.settles).join(',')) : [];
   const area = flags.area !== undefined ? String(flags.area) : null;
   const reach = flags.reach !== undefined ? Number(flags.reach) : null;
   const rule = flags.rule !== undefined ? String(flags.rule) : null;

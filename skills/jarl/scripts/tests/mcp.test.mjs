@@ -84,7 +84,8 @@ test('parity: every field reaches the CLI parser as the flag or argument it name
     for (const a of COMMAND_ARGS[cmd]) {
       const n = mcp.argName(a);
       const abs = ['file', 'files'].includes(n) ? '/' : '';   // the findings paths must be absolute
-      if (a.endsWith('...')) { input[n] = [`${abs}${n}-1`, `${abs}--${n}-2`]; wantPos.push(...input[n]); } else { input[n] = `${abs}--${n} value`; wantPos.push(input[n]); }
+      // The lists of files, source and after hold paths, references and ids: an item starting with - is refused there.
+      if (a.endsWith('...')) { input[n] = [`${abs}${n}-1`, `${abs}${['files', 'source', 'after'].includes(cmd) ? '' : '--'}${n}-2`]; wantPos.push(...input[n]); } else { input[n] = `${abs}--${n} value`; wantPos.push(input[n]); }
     }
     const wantFlags = {};
     for (const [f, kind] of Object.entries(flagsOf(cmd))) {

@@ -74,8 +74,11 @@ const INSTRUCTIONS = 'Every jarl command is a tool, jarl_<command>, with its arg
 // The CLI's tables as one Runes command table. An argument written `name...` in COMMAND_ARGS takes any number of
 // words, none included (tag's +a -b, sources' findings files): `name...?` in the Runes grammar.
 // A name a command answers to besides its own gets a tool of its own, with the command's arguments and summary.
+// The lists a command cannot run without: its tool requires at least one item.
+const REQUIRED_LISTS = new Set(['files paths...', 'source refs...']);
+const AFTER_IDS_FIELD = 'The issues this one waits on: one id, or several as a comma list with ranges (12,13 or 203-206), or a list of ids. Left out when clear is set.';
 const entry = (cmd) => ({
-  args: COMMAND_ARGS[cmd].map((a) => (a.endsWith('...') ? `${a}?` : a)),
+  args: COMMAND_ARGS[cmd].map((a) => (a.endsWith('...') && !REQUIRED_LISTS.has(`${cmd} ${a}`) ? `${a}?` : a)),
   flags: flagsOf(cmd),
   summary: COMMAND_SUMMARY[cmd],
   writes: MUTATING.has(cmd),
@@ -98,6 +101,7 @@ function describe(cmd, spec) {
 }
 function fieldNote(cmd, field) {
   if (field === 'root') return ROOT_FIELD;
+  if (cmd === 'after' && field === 'ids') return AFTER_IDS_FIELD;
   if (field === 'ids' || (field === 'id' && LIST_ID_COMMANDS.has(cmd))) return IDS_FIELD;
   if (field === 'id' && cmd === 'answer') return ANSWER_ID_FIELD;
   return undefined;

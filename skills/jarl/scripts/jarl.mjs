@@ -45,7 +45,8 @@ commands:
                                                  or test decides; strong: unknown cause, design, record format, security);
                                                  --repo names the repository
                                                  its code lives in when that is not the loop's own, several as one comma
-                                                 list (see --repo below);
+                                                 list (see --repo below); --tags, --files, --source, --after and --repo
+                                                 repeat, or take a comma list, either way one item each;
                                                  --what, --why and --acceptance (one per line, repeatable) write the body,
                                                  --source names the finding(s) it comes from, --after the issues it waits on;
                                                  --changelog (repeatable) is the issue's changelog entry, "Added: …" etc.;
@@ -64,7 +65,8 @@ commands:
                                                  one issue per finding, with Source: <dir>#<finding id>; a finding
                                                  whose Source is already on an issue is skipped, so a re-run files
                                                  nothing twice; --dry-run prints what it would file; --adopt writes
-                                                 Source onto an existing issue that names the finding id but has none
+                                                 Source onto an existing issue that names the finding id but has none;
+                                                 --tags, --repo and --only repeat, or take a comma list
   sources [<findings.json>...] [--source <dir>]  per report: its findings, the issues filed from them and their
                                                  status; with a findings file, the findings nobody filed too
   source <ids> <dir>#<id>,...                    set the Source field of issues filed by hand
@@ -380,14 +382,14 @@ export const GLOBAL_FLAGS = { json: 'bool', help: 'bool', root: 'value' };
 export const COMMAND_FLAGS = {
   init: { committed: 'bool', permanent: 'bool', profile: 'value' },
   new: {
-    kind: 'value', prio: 'value', tier: 'value', tags: 'many', files: 'many', repo: 'value', 'found-by': 'value',
+    kind: 'value', prio: 'value', tier: 'value', tags: 'many', files: 'many', repo: 'many', 'found-by': 'value',
     where: 'value', what: 'value', why: 'value', acceptance: 'many', source: 'many', after: 'many', changelog: 'many', template: 'value',
     field: 'many', section: 'many',
   },
   body: { title: 'value', where: 'value', what: 'value', why: 'value', acceptance: 'many', changelog: 'many', section: 'many' },
   import: {
-    source: 'value', kind: 'value', prio: 'value', tier: 'value', tags: 'many', repo: 'value', 'found-by': 'value',
-    only: 'value', adopt: 'bool', 'dry-run': 'bool', field: 'many',
+    source: 'value', kind: 'value', prio: 'value', tier: 'value', tags: 'many', repo: 'many', 'found-by': 'value',
+    only: 'many', adopt: 'bool', 'dry-run': 'bool', field: 'many',
   },
   sources: { source: 'value' },
   source: {},
@@ -407,7 +409,7 @@ export const COMMAND_FLAGS = {
   answer: { by: 'value', option: 'value' },
   resume: { log: 'value', ready: 'value', ci: 'bool' },
   handoff: { summary: 'value', next: 'many', log: 'value', ready: 'value', ci: 'bool' },
-  log: {}, decide: { settles: 'value', by: 'value', supersedes: 'value', area: 'value', reach: 'value', rule: 'value' }, decisions: { live: 'bool' },
+  log: {}, decide: { settles: 'many', by: 'value', supersedes: 'value', area: 'value', reach: 'value', rule: 'value' }, decisions: { live: 'bool' },
   goal: { set: 'value' },
   status: { 'stale-hours': 'value', by: 'value', tag: 'value' }, archive: {}, report: { found: 'bool' }, tips: {}, mode: {},
   queue: { repo: 'value', base: 'value' }, changelog: { repo: 'value' },
@@ -474,8 +476,16 @@ export function parseArgs(argv) {
     const extra = positional.slice(1 + ARITY[cmd]);
     need(extra.length === 0, `${cmd} takes at most ${ARITY[cmd]} argument${ARITY[cmd] === 1 ? '' : 's'} — unexpected: ${extra.map((x) => JSON.stringify(x)).join(' ')}${rest ? ' (everything after a bare -- is an argument, so flags such as --root go before it)' : ''}; several ids are one argument: 12,13 or 203-206`);
   }
+  // The commands whose last argument is a list read every word after the id as an item. An item that starts with - is
+  // a flag that went to the wrong place (after a bare -- it is also where a --root written last would land), never a
+  // path, a reference or an id.
+  if (cmd !== undefined && LIST_AFTER_ID.has(cmd)) {
+    const dashed = positional.slice(2).filter((x) => x.startsWith('-'));
+    need(dashed.length === 0, `${cmd} takes its items after the id, and an item cannot start with - — unexpected: ${dashed.map((x) => JSON.stringify(x)).join(' ')}${rest ? ' (everything after a bare -- is an argument, so flags such as --root go before it)' : ''}`);
+  }
   return { positional, flags };
 }
+const LIST_AFTER_ID = new Set(['files', 'source', 'after']);
 // The arguments each command reads after its name, in order, named: the MCP server (jarl-mcp.mjs) turns each
 // name into a field of that command's tool, so this table and COMMAND_FLAGS are the one source of both the
 // CLI and the tools. A name ending in ? may be left out; one ending in ... takes any number of words (tag's
