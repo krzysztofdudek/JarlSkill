@@ -286,6 +286,16 @@ export function slicesOf(loop) {
   }
   return [...out.values()];
 }
+// The coordinator a --slice names, as the record writes it: a name of the Coordinators line (`coordinators`) or of a
+// slice tag one of `issues` carries, in any case. Any other name is refused, naming the slices there are.
+export function sliceNamed(coordinators, issues, name) {
+  need(typeof name === 'string' && fieldText(name), '--slice names a coordinator: its slice is the issues tagged slice:<coordinator>');
+  const known = [...coordinators, ...issues.map(sliceOf).filter((s) => s !== null)];
+  const found = known.find((k) => sameSlice(k, name));
+  const names = [...new Map(known.map((k) => [k.toLowerCase(), k])).values()];
+  need(found !== undefined, `no coordinator ${fieldText(name)} on the goal's Coordinators line and no issue tagged ${sliceTag(fieldText(name))} — ${names.length ? `the slices are ${names.map(sliceTag).join(', ')}` : 'the loop has no slice: jarl.mjs goal --set "Coordinators: <names>", then jarl.mjs tag <ids> +slice:<name>'}`);
+  return found;
+}
 // The slices with an issue in play.
 export function activeSlices(loop) { return slicesOf(loop).filter((s) => s.inPlay > 0); }
 const KIND_WEIGHT = { fresh: 0, coordinator: 1, self: 2 };

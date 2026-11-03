@@ -7,7 +7,7 @@ import { readText } from './files.mjs';
 import { DEFAULT_PROFILE, loadProfile } from './profile.mjs';
 import { mergedOf, sharedMark } from './issues.mjs';
 import { repoNames } from './repositories.mjs';
-import { closedGateLine, disagreementText, gateLine, gateOf, readLoop, reviewSplit } from './loop.mjs';
+import { closedGateLine, disagreementText, gateLine, gateOf, readLoop, reviewSplit, sameSlice, sliceNamed, sliceOf } from './loop.mjs';
 import { checkWaitingText, metricsOf, renderMetrics, testimonyNote } from './metrics.mjs';
 import { ago } from './rounds.mjs';
 import { cmdTips, renderTips } from './tips.mjs';
@@ -41,8 +41,13 @@ export function cmdResume(root, flags = {}) {
   const logN = countFlag(flags, 'log', RESUME_LOG_LINES);
   const readyN = countFlag(flags, 'ready', RESUME_READY);
   const loop = readLoop(jarlDir(root));
-  const status = statusOf(root, loop, {});
-  const { profile, issues, byId } = loop;
+  // --slice: in flight, waiting, held, the questions and the next ready are the slice's own, as status --slice counts
+  // them; the rulings, the merge queue, the tips and the log stay the loop's, which every slice shares.
+  const slice = flags.slice === undefined ? null : sliceNamed(loop.goalLines.coordinators, loop.issues, flags.slice);
+  const status = statusOf(root, loop, slice === null ? {} : { slice });
+  const { profile, byId } = loop;
+  const issues = slice === null ? loop.issues : loop.issues.filter((i) => sameSlice(sliceOf(i), slice));
+  const inScope = new Set(issues.map((i) => i.id));
   const stale = new Map(status.stale.map((x) => [x.id, x.problems]));
   const marks = new Map(status.inFlightRows.map((x) => [x.id, x.mark]));
   // An answered question's ruling also carries its answer line, which the text lists before the question.
@@ -64,9 +69,9 @@ export function cmdResume(root, flags = {}) {
     id: i.id, title: i.title, status: i.status, after: waitingOn(i, byId, profile),
     ...(holds(i) ? { branch: i.fields.branch || null, worker: i.fields.worker || null, model: i.fields.model || null, since: i.fields.since || null, stale: stale.get(i.id) || [] } : {}),
   }));
-  const asks = loop.asks.filter((a) => a.state === 'open');
+  const asks = loop.asks.filter((a) => a.state === 'open' && (slice === null || (a.issue && inScope.has(a.issue)) || sameSlice(a.slice ?? null, slice)));
   const scheduled = profile.scheduler !== null;
-  const next = scheduled ? [] : nextRows(root, {});
+  const next = scheduled ? [] : nextRows(root, slice === null ? {} : { slice });
   const ready = next.filter((r) => r.ready);
   // Open, not waiting on After, and still not offered: a file it declares is taken by work in flight (or by a ready
   // issue ahead of it), or an open question names it. Ready and held together are the open count on the status line.
@@ -75,7 +80,7 @@ export function cmdResume(root, flags = {}) {
   const logLines = loop.events;
   const kept = handoffAge(root, status.lastActivity);
   return {
-    goal: status.goal, opened: status.opened, lastActivity: status.lastActivity, archived: status.archived, status,
+    goal: status.goal, opened: status.opened, lastActivity: status.lastActivity, archived: status.archived, status, ...(slice !== null ? { slice } : {}),
     rulings, inFlight, waiting,
     questions: asks.filter((a) => a.kind !== 'ratify'), ratify: asks.filter((a) => a.kind === 'ratify'),
     held, next: ready.slice(0, readyN).map((r) => ({ id: r.id, title: r.title, priority: r.priority, ...(r.noAcceptance ? { noAcceptance: true } : {}), ...(r.model ? { model: r.model } : {}), ...declared(byId.get(r.id)) })), readyTotal: scheduled ? null : ready.length,
@@ -98,6 +103,7 @@ export function renderResume(o, profile = DEFAULT_PROFILE) {
     `# Resume${o.goal ? ` · ${o.goal}` : ''}`,
     `opened ${o.opened || '?'} · last activity ${o.lastActivity || '?'}${o.archived ? ` · ${o.archived} archived loop(s)` : ''}${profile.declared ? ` · profile ${profile.name}` : ''}`,
     countsLine(st, profile),
+    ...(o.slice !== undefined ? [`scoped to the slice of ${o.slice}, the issues tagged slice:${o.slice}: in flight, waiting, the questions, held and next ready are its own; the rulings, the merge queue, the tips and the log are the loop's`] : []),
     '',
   ];
   // The tips and the merge queue as their own views print them; the merges still waiting on CI have a section of their own here.

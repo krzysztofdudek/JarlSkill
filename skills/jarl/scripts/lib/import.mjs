@@ -273,6 +273,7 @@ export function renderStatus(o, profile = DEFAULT_PROFILE) {
   const by = o.by ? [`by ${o.by.key}:`, ...Object.entries(o.by.groups).map(([k, g]) => `  ${k.padEnd(width)}  ${profile.statuses.map((st) => `${statusLabel(st)} ${g[st]}`).join(' · ')}`)] : [];
   const more = [
     ...(o.tag !== undefined ? [`scoped to the issues tagged ${o.tag} — the counts above and the lists below are theirs only`] : []),
+    ...(o.slice !== undefined ? [`scoped to the slice of ${o.slice}, the issues tagged slice:${o.slice}, and the escalations that name it — the counts above and the lists below are theirs only`] : []),
     ...(o.slices ? [slicesLine(o.slices)] : []),
     ...(o.disagreements || []).map(disagreementText),
     ...(o.headerRead || []).map((n) => `note: ${n.line}`),

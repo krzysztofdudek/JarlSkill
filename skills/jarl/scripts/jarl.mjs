@@ -168,7 +168,8 @@ commands:
                                                  local branch (git worktree remove, git branch -d, never a force)
                                                  when that is safe, and names why it kept them when it is not;
                                                  --keep skips it
-  next [--limit n] [--all] [--as <who>]          the open issues ready to start: no file shared with an in-progress one, every
+  next [--limit n] [--all] [--as <who>] [--slice <coordinator>]
+                                                 the open issues ready to start: no file shared with an in-progress one, every
                                                  After issue done or dropped, no open stuck or stop question on it; a file is
                                                  its repository and its path (see --repo below); one with no acceptance line
                                                  or no declared files is marked; --all adds the others in groups (held by a
@@ -184,7 +185,9 @@ commands:
                                                  the owner's first, then by how many issues each holds up, then how many
                                                  more; --all every line and the issues waiting on that one, "waits on X
                                                  via N"; under an external scheduler the issues in play are left out and
-                                                 the composer's command named
+                                                 the composer's command named; --slice <coordinator> offers only the
+                                                 issues of that coordinator's slice: across slices only leases hold, and
+                                                 an open issue reserves its files against the issues of its own slice
   review <ids> approve|changes --by <reviewer> [--model <m>] [--relayed] "<findings>"
                                                  the reviewer's verdict; --model is the model the reviewer was raised on
                                                  (stored as given); --relayed marks a verdict recorded by someone else in
@@ -245,7 +248,7 @@ commands:
                                                  several ratify items as a comma list take one answer, one ruling each,
                                                  each naming the batch it was answered in; on a ratify item whose
                                                  ruling names a rule, the rule's ratification names who answered
-  resume [--log n] [--ready n] [--ci] [--as <who>]
+  resume [--log n] [--ready n] [--ci] [--as <who>] [--slice <coordinator>]
                                                  read-only, the boot: everything a session picks the loop up from,
                                                  assembled live — goal and counts, rulings in force, in flight with
                                                  leases (and stale ones), waiting on After, questions, ratify items,
@@ -253,7 +256,10 @@ commands:
                                                  CI pending or red, the tips of every repository the issues name,
                                                  loop files not committed, and the last log lines (n, default 15);
                                                  no network unless --ci asks gh for the CI of each pushed tip;
-                                                 --as <who> ends it with what next --as <who> prints
+                                                 --as <who> ends it with what next --as <who> prints; --slice
+                                                 <coordinator> keeps in flight, waiting, the questions, held and next
+                                                 ready to that coordinator's slice, and the rulings, the merge queue,
+                                                 the tips and the log whole
   log "<event>"                                  append one dated note to the journal; a line that reads as a filing, a move,
                                                  a round, a verdict, a retraction, an evidence row, a merge, a CI state or
                                                  a body change is refused, and the refusal names the command that writes it
@@ -278,8 +284,11 @@ commands:
                                                  "Check: <command>", "Model (<tier>): <models>" (a tier the profile
                                                  declares), "Coordinators: <names>" (each name a coordinator, which runs the slice of
                                                  the issues tagged slice:<name>), "Takeover (<kind>): <rounds>" or a bare "Takeover: <rounds>"; the rest of goal.md stays as written
-  status [--stale-hours n] [--by repo|tag|kind|prio|<field>] [--tag <t>] [--as <who>]
+  status [--stale-hours n] [--by repo|tag|kind|prio|<field>] [--tag <t>] [--as <who>] [--slice <coordinator>]
                                                  --tag computes every part of status over the issues carrying that tag only;
+                                                 --slice the same over one coordinator's slice (the issues tagged
+                                                 slice:<coordinator>), with the questions on them and the escalations
+                                                 that name the slice;
                                                  --as <who> ends it with what next --as <who> prints;
                                                  once an issue carries a slice: tag, one line names each coordinator
                                                  with its slice and how many of its issues are in play, and a slice
@@ -462,7 +471,7 @@ export const COMMAND_FLAGS = {
   list: { status: 'value', kind: 'value', tag: 'value', prio: 'value', grep: 'value', match: 'many', all: 'bool' },
   show: { full: 'bool' }, set: { branch: 'value', worker: 'value', model: 'value', worktree: 'value', handover: 'bool', header: 'bool' }, tag: { by: 'value' }, prio: { by: 'value' }, files: { by: 'value' },
   repo: { clear: 'bool', base: 'bool', by: 'value' },
-  next: { limit: 'value', all: 'bool', as: 'value' },
+  next: { limit: 'value', all: 'bool', as: 'value', slice: 'value' },
   review: { by: 'value', model: 'value', relayed: 'bool' }, round: { findings: 'value' },
   models: { by: 'value', with: 'many', archives: 'bool' },
   scope: { branch: 'value', base: 'value', repo: 'value' },
@@ -470,11 +479,11 @@ export const COMMAND_FLAGS = {
   merged: { sha: 'value', ci: 'value', repo: 'value', ran: 'many', saw: 'many', red: 'value', keep: 'bool' },
   ask: { kind: 'value', target: 'value', issue: 'value', option: 'many' },
   answer: { by: 'value', option: 'value' },
-  resume: { log: 'value', ready: 'value', ci: 'bool', as: 'value' },
+  resume: { log: 'value', ready: 'value', ci: 'bool', as: 'value', slice: 'value' },
   handoff: { summary: 'value', next: 'many', log: 'value', ready: 'value', ci: 'bool' },
   log: {}, decide: { settles: 'many', by: 'value', quote: 'value', under: 'value', supersedes: 'value', area: 'value', reach: 'value', rule: 'value' }, decisions: { live: 'bool' },
   goal: { set: 'value' },
-  status: { 'stale-hours': 'value', by: 'value', tag: 'value', as: 'value' }, archive: {}, report: { found: 'bool' }, tips: {}, mode: {},
+  status: { 'stale-hours': 'value', by: 'value', tag: 'value', as: 'value', slice: 'value' }, archive: {}, report: { found: 'bool' }, tips: {}, mode: {},
   queue: { repo: 'value', base: 'value' }, changelog: { repo: 'value' },
   close: { force: 'bool', batch: 'bool' }, profile: {}, verify: {},
 };
@@ -820,6 +829,7 @@ export function dispatch(root, commandName, rest, flags) {
       case 'next': {
         if (flags.as !== undefined) {
           need(flags.limit === undefined, '--limit counts the ready issues of next; next --as prints at most seven lines, and --all every line');
+          need(flags.slice === undefined, '--slice scopes next to one coordinator\'s slice; next --as <coordinator> lists what is on that coordinator, its slice included');
           out = cmdNextAs(root, flags); text = renderNextAs(out);
           break;
         }

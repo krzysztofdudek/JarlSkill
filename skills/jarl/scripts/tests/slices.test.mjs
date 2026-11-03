@@ -46,3 +46,58 @@ test('status names each coordinator of the Coordinators line with its slice, and
   const goal = readFileSync(join(root, '.jarl', 'goal.md'), 'utf8');
   assert.match(goal, /^Coordinators: odin, thor$/m);
 });
+
+// Two slices over one file: odin's 1 and 2, thor's 3, all declaring a.mjs; 4 in no slice; thor's 5 leased on c.mjs.
+function twoSlices() {
+  const root = loop();
+  jarl(root, 'goal', '--set', 'Coordinators: odin, thor');
+  jarl(root, 'new', 'odin first', '--tags', 'slice:odin', '--files', 'a.mjs', '--prio', '1');   // 1
+  jarl(root, 'new', 'odin second', '--tags', 'slice:odin', '--files', 'a.mjs');                 // 2
+  jarl(root, 'new', 'thor first', '--tags', 'slice:thor', '--files', 'a.mjs');                  // 3
+  jarl(root, 'new', 'the jarl\'s', '--files', 'b.mjs');                                         // 4
+  jarl(root, 'new', 'thor leased', '--tags', 'slice:thor', '--files', 'c.mjs');                 // 5
+  jarl(root, 'set', '5', 'in-progress', 'go', '--worker', 'w5', '--branch', 'jarl/5');
+  return root;
+}
+const ready = (rows) => rows.filter((r) => r.ready).map((r) => r.id);
+
+test('next --slice offers only the slice\'s issues: an open issue reserves its files within its own slice, and a lease holds across slices', () => {
+  const root = twoSlices();
+  // The whole loop: 1 reserves a.mjs against 2 and 3.
+  assert.deepEqual(ready(json(root, 'next', '--all')), ['1', '4']);
+  assert.deepEqual(ready(json(root, 'next', '--slice', 'odin', '--all')), ['1']);
+  assert.deepEqual(json(root, 'next', '--slice', 'odin', '--all').map((r) => [r.id, r.group]), [['1', 'ready'], ['2', 'held-by-file']]);
+  // Odin's open 1 does not hold thor's 3: across slices only leases hold.
+  assert.deepEqual(ready(json(root, 'next', '--slice', 'Thor', '--all')), ['3']);
+  jarl(root, 'set', '1', 'in-progress', 'go', '--worker', 'w1', '--branch', 'jarl/1');
+  assert.deepEqual(json(root, 'next', '--slice', 'thor', '--all').map((r) => [r.id, r.group, r.heldBy]), [['3', 'held-by-file', ['1']]]);
+  assert.match(jarl(root, 'next', '--slice', 'thor'), /nothing is ready to start; 1 open issue\(s\) are held or waiting/);
+  assert.match(refuses(root, 'next', '--slice', 'loki'), /^no coordinator loki on the goal's Coordinators line and no issue tagged slice:loki — the slices are slice:odin, slice:thor$/m);
+  assert.match(refuses(root, 'next', '--slice', 'odin', '--as', 'odin'), /^--slice scopes next to one coordinator's slice; next --as <coordinator> lists what is on that coordinator/m);
+});
+
+test('status --slice and resume --slice are scoped to the slice, the way status --tag is, and keep the loop\'s rulings, queue and log', () => {
+  const root = twoSlices();
+  jarl(root, 'ask', 'which way for odin?', '--issue', '2');      // a-1, on odin's 2
+  jarl(root, 'ask', 'which way for the jarl?', '--issue', '4');  // a-2, on the jarl's 4
+  const st = json(root, 'status', '--slice', 'odin');
+  assert.equal(st.slice, 'odin');
+  assert.equal(st.open, 2);
+  assert.equal(st.inFlight, 0);
+  assert.equal(st.questions, 1);
+  const text = jarl(root, 'status', '--slice', 'thor');
+  assert.match(text, /^open 1 · in flight 1 · done 0 · dropped 0 · deferred 0 · questions 0$/m);
+  assert.match(text, /^scoped to the slice of thor, the issues tagged slice:thor, and the escalations that name it — the counts above and the lists below are theirs only$/m);
+  assert.match(refuses(root, 'status', '--slice', 'odin', '--tag', 'docs'), /--tag and --slice each scope the view: give one/);
+  const r = json(root, 'resume', '--slice', 'thor');
+  assert.equal(r.slice, 'thor');
+  assert.deepEqual(r.inFlight.map((x) => x.id), ['5']);
+  assert.deepEqual(r.next.map((x) => x.id), ['3']);
+  assert.deepEqual(r.questions, []);
+  const odin = json(root, 'resume', '--slice', 'odin');
+  assert.deepEqual(odin.questions.map((a) => a.id), ['1']);
+  assert.deepEqual(odin.held.map((x) => x.id), ['2']);
+  assert.ok(odin.log.length > 3, 'the log is the loop\'s');
+  assert.match(jarl(root, 'resume', '--slice', 'odin'), /^scoped to the slice of odin, the issues tagged slice:odin: in flight, waiting, the questions, held and next ready are its own; the rulings, the merge queue, the tips and the log are the loop's$/m);
+  assert.match(refuses(root, 'resume', '--slice', 'loki'), /no coordinator loki on the goal's Coordinators line/);
+});
