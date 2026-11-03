@@ -11,8 +11,8 @@ export const QUOTE_MARKER = "The owner's words:";
 export const quoteLine = (words) => `${QUOTE_MARKER} "${words}"`;
 export const quoteShown = (words) => `the owner's words: "${words}"`;
 
-// Letters of other scripts that read as the Latin letters of "owner's words", after the compatibility forms are taken
-// apart and the case is folded; and a zero, which reads as an o.
+// Letters of other scripts that read as the Latin letters of "owner's words", once a letter's wide, bold, circled and
+// other Unicode forms are taken apart (NFKD) and the case is folded; and a zero, which reads as an o.
 const LOOKALIKES = {
   'а': 'a', 'е': 'e', 'о': 'o', 'р': 'p', 'с': 'c', 'у': 'y', 'х': 'x', 'ѕ': 's',
   'ԁ': 'd', 'ԝ': 'w', 'ѡ': 'w', 'г': 'r', 'п': 'n', 'ҽ': 'e', 'і': 'i', 'ӏ': 'l',
@@ -31,7 +31,7 @@ const COLONS = /[꞉∶ː˸։፡׃܃܄⁚⸬︰]/g;
 const QUOTES = /[“”„‟«»‹›〝〞〟″˝]/g;
 const SPACES = /[\s\p{Z}]+/gu;
 
-// A text in the one form the marker is looked for in: compatibility forms taken apart, case folded, invisible characters,
+// A text in the one form the marker is looked for in: every Unicode form of a letter taken apart, case folded, invisible characters,
 // accents, apostrophes and spaces dropped, lookalike letters, colons and quotes read as the plain ones.
 function normalForm(text) {
   return String(text ?? '').normalize('NFKD').toLowerCase().normalize('NFKD').replace(NOTHING, '').replace(APOSTROPHES, '')
