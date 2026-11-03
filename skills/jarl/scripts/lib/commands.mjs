@@ -13,7 +13,7 @@ import { appendLog, appendLogLines, decisionsPath, goalPath, logPath } from './j
 import { JARL_GITIGNORE, JARL_GITIGNORE_COMMITTED, ensureLoopMerge, outOfGit } from './loop-git.mjs';
 import { journalById, mergeCheckText } from './log.mjs';
 import { FIELD_RE, RENDERED_FIELDS, acceptanceHeading, acceptanceLineCount, acceptanceText, bodyText, changelogText, evidenceParts, evidenceRows, evidenceTable, fieldValue, findIssue, loadIssues, mergedOf, namedPairs, needNoFieldTags, noteText, parseIssue, placeEvidence, removeFields, removeFirstField, renderIssue, setField, setSection } from './issues.mjs';
-import { commitRepoNames, defaultBase, isGitRepo, issueRepoPaths, issueRepos, mainCheckoutOf, needRightCheckouts, raiseFormat, repoFromInput, repoLabel, repoList, tipLines, whyNotDeletable, worktreeState, worktreesOf } from './repositories.mjs';
+import { branchTip, commitRepoNames, defaultBase, isGitRepo, issueRepoPaths, issueRepos, mainCheckoutOf, needRightCheckouts, raiseFormat, repoFromInput, repoLabel, repoList, tipLines, whyNotDeletable, worktreeState, worktreesOf } from './repositories.mjs';
 import { FIELD_NAMES, carriesCode, gateOf, readLoop } from './loop.mjs';
 import { declaredChecks, lastMerge } from './metrics.mjs';
 import { modelLines, modelValue } from './models.mjs';
@@ -718,6 +718,16 @@ function doneNote(issue, root) {
 function proofSince(g, issue) { return g.tracked ? g.rowsSince : evidenceRows(issue).length; }
 const EVIDENCE_HOW = (id) => `jarl.mjs evidence ${id} --ran "<command>" --saw "<what it printed>"`;
 
+// What a merge refused for want of its --sha says next: the head of the branch the issue's lease records, as the ready
+// command that records it, or, where no branch is recorded or it has no single head here, that the sha has to be given.
+function noMergeHow(root, issue, ci) {
+  const branch = fieldText(issue.fields.branch);
+  const tip = branchTip(root, issue);
+  if (tip && !tip.includes(',')) return `the head of ${branch}, the branch its lease records, is ${tip}; once it has landed, record it: jarl.mjs merged ${issue.id} --sha ${tip} --ci ${ci}`;
+  if (!branch) return `its lease records no branch, so no head is offered; once it has landed, give its sha: jarl.mjs merged ${issue.id} --sha <sha> --ci ${ci}`;
+  return `${branch} has no single head in the repositories here, so no head is offered; once it has landed, give its sha: jarl.mjs merged ${issue.id} --sha <sha> --ci ${ci}`;
+}
+
 // merged <ids> --sha <sha> [--ran "<check>" --saw "<summary>" | --red <id>] [--ci pending|green|red|none] [--repo <path>]
 // — the merge as a field, not as prose: the sha, where it landed, the check that decided it and the CI state. --ran and
 // --saw record the check and what it printed in the merge record (the merge line and the Merge check field) of every issue
@@ -747,7 +757,7 @@ export function cmdMerged(root, rawIds, flags) {
     need(!issues.some((i) => i.id === tracked.id), `--red names the issue that tracks the cause of a red check outside the branch; ${tracked.id} is the issue being merged${nothing}`);
     cause = tracked.id;
   }
-  if (flags.sha === undefined) for (const issue of issues) need(mergedOf(issue), `${issue.id} records no merge yet — give --sha: jarl.mjs merged ${issue.id} --sha <sha> --ci ${flags.ci}${nothing}`);
+  if (flags.sha === undefined) for (const issue of issues) need(mergedOf(issue), `${issue.id} records no merge yet — ${noMergeHow(root, issue, flags.ci)}${nothing}`);
   const pickedRepo = flags.repo !== undefined ? repoFromInput(root, String(flags.repo)) : null;
   const repoPath = pickedRepo ? pickedRepo.main : null;
   const repoIn = pickedRepo ? ` in ${noSeparators(pickedRepo.value)}` : '';
