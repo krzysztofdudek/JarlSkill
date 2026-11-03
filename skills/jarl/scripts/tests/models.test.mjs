@@ -251,6 +251,28 @@ test('a library caller gets no note and its results do not change', () => {
   assert.equal(made.note, undefined);
 });
 
+test('a lease that names another spelling of a model the record holds says which spelling the record holds; the spelling the record holds, and a library call, say nothing', () => {
+  const root = loop();
+  const first = R.newIssue(root, 'first', { acceptance: 'it works' }).id;
+  const second = R.newIssue(root, 'second', { acceptance: 'it works' }).id;
+  const third = R.newIssue(root, 'third', { acceptance: 'it works' }).id;
+  const fourth = R.newIssue(root, 'fourth', { acceptance: 'it works' }).id;
+  assert.equal(notes(root, 'set', [first, 'in-progress', 'go'], { branch: 'jarl/001-a', worker: 'w-one', model: 'claude-opus-5-5' }), '', 'nothing held yet, so nothing to compare with');
+  assert.match(notes(root, 'set', [second, 'in-progress', 'go'], { branch: 'jarl/002-b', worker: 'w-two', model: 'claude-opus-5.5' }), /claude-opus-5\.5 is another spelling of claude-opus-5-5, which the record holds; models counts both as one model\./);
+  assert.equal(notes(root, 'set', [third, 'in-progress', 'go'], { branch: 'jarl/003-c', worker: 'w-three', model: 'claude-opus-5-5' }), '', 'the spelling the record holds is not another one');
+  assert.equal(R.setStatus(root, fourth, 'in-progress', 'go', { branch: 'jarl/004-d', worker: 'w-four', model: 'claude-opus-5.5' }).note, undefined, 'a library call gets no note');
+});
+
+test('a review that names another spelling of a model the record holds says which spelling the record holds, on the command line and in a loop with no model lines', () => {
+  const root = loop();
+  const { id } = R.newIssue(root, 'a thing', { acceptance: 'it works' });
+  R.setStatus(root, id, 'in-progress', '', { branch: 'jarl/001-a', worker: 'w-one', model: 'claude-opus-5-5' });
+  R.addEvidence(root, id, undefined, { ran: 'npm test', saw: 'pass' });
+  assert.match(notes(root, 'review', [id, 'approve', 'read it all, nothing found'], { by: 'rev-1', model: 'claude-opus-5.5' }), /claude-opus-5\.5 is another spelling of claude-opus-5-5, which the record holds; models counts both as one model\./);
+  assert.equal(notes(root, 'review', [id, 'approve', 'read it all, nothing found'], { by: 'rev-2', model: 'claude-opus-5-5' }), '', 'a spelling the record holds says nothing');
+  assert.equal(R.review(root, id, 'approve', 'read it all, nothing found', { by: 'rev-3', model: 'claude-opus-5.5' }).note, undefined, 'a library call gets no note');
+});
+
 test('new without --tier says on the command line which tier it used and the criteria; with --tier, or from the library, nothing', () => {
   const root = loop();
   const w = notes(root, 'new', ['a thing'], {});
@@ -756,6 +778,38 @@ test('models: work with no recorded model prints under its own heading, never un
   units(root, 2, { worker: 'w-old' });
   const text = L.renderModels(L.cmdModels(root, {}));
   assert.match(text, /\n\(not recorded\)\n  \(not recorded\) · tier standard  units 2/);
+});
+
+test('models: one model recorded with dots and with dashes is one row, which names the spellings it folded; the record keeps each id as written', () => {
+  const root = loop({ lines: true });
+  units(root, 4, { model: 'claude-opus-5-5', worker: 'w-dash', reviewerModel: 'claude-opus-5-5' });
+  units(root, 2, { model: 'claude-opus-5.5', worker: 'w-dot', reviewerModel: 'claude-opus-5.5' }, 1);
+  const m = L.cmdModels(root, {});
+  const worker = m.workers.filter((r) => r.spellings.includes('claude-opus-5.5'));
+  assert.equal(worker.length, 1, 'one worker row for the two spellings');
+  assert.deepEqual(worker[0].spellings, ['claude-opus-5-5', 'claude-opus-5.5'], 'the spelling more units carry names the row');
+  assert.equal(worker[0].model, 'claude-opus-5-5');
+  const bug = worker[0].cells.find((c) => c.key === 'bug · standard');
+  assert.deepEqual([bug.units, bug.clean, bug.changes], [6, 5, 1], 'the counts of both spellings add up');
+  const reviewer = m.reviewers.filter((r) => r.spellings.includes('claude-opus-5.5'));
+  assert.equal(reviewer.length, 1, 'one reviewer row for the two spellings');
+  const verdicts = reviewer[0].cells.find((c) => c.key === 'bug · standard');
+  assert.deepEqual([verdicts.verdicts, verdicts.approves, verdicts.changes], [7, 6, 1]);
+  assert.match(L.renderModels(m), /spellings folded: claude-opus-5-5, claude-opus-5\.5/);
+  assert.match(log(root), /· model claude-opus-5-5 · worker w-dash\n/, 'the log keeps the id as written');
+  assert.match(log(root), /· model claude-opus-5\.5 · worker w-dot\n/, 'and the other spelling as written');
+});
+
+test('a model written with dots sits on the goal line that writes it with dashes, and an approve by it is the same model as the worker\'s', () => {
+  const root = loop();
+  appendFileSync(join(root, '.jarl', 'goal.md'), '\nModel (strong): claude-opus-5-5\n');
+  const lines = L.modelLines(root);
+  assert.equal(lines.rank('claude-opus-5.5'), lines.rank('claude-opus-5-5'));
+  assert.equal(lines.rank('claude-opus-5.5@high'), lines.rank('claude-opus-5-5@high'), 'the same id at another effort sits where the id sits, in either spelling');
+  const { id } = R.newIssue(root, 'a thing', { acceptance: 'it works', tier: 'strong' });
+  R.setStatus(root, id, 'in-progress', '', { branch: 'jarl/001-a', worker: 'w-one', model: 'claude-opus-5-5' });
+  R.addEvidence(root, id, undefined, { ran: 'npm test', saw: 'pass' });
+  assert.match(notes(root, 'review', [id, 'approve', 'read it all, nothing found'], { by: 'rev-2', model: 'claude-opus-5.5' }), /same model as the worker's \(claude-opus-5\.5\)/);
 });
 
 test('models --by repo slices the same facts by repository; the text names n for every count and a share only from n >= 5', () => {
