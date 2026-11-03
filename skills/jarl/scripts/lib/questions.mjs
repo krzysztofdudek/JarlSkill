@@ -383,13 +383,26 @@ export function renderDecide(out) {
   const area = out.area ? ` · area ${out.area}${out.reach !== null ? ` (${out.reach} file${out.reach === 1 ? '' : 's'})` : ''}${out.rule ? ` · rule ${out.rule}` : ''} · put to ratification at close` : '';
   return `decided ${out.slug} · by ${out.by}${out.under ? ` · under ${out.under}` : ''}${out.supersedes ? ` · supersedes ${out.supersedes}` : ''}${out.settles.length ? ` · written into ${out.settles.join(', ')}` : ''}${area}`;
 }
-// decisions: one line per ruling, its first line cut at 160 characters.
+// The answer line and the question line of an answered question's ruling (ask-<n>), as the ruling holds them. Resume and
+// decisions list such a ruling by its answer first and the question after; null for any other ruling, which is listed
+// by its first line alone.
+const ANSWER_LINE = /^\*\*(?:Answer|Answer in own words|Chose):\*\*/;
+export function answeredLines(d) {
+  const lines = d.ruling.split('\n').map((l) => l.trim());
+  if (!/^ask-\d+$/.test(d.slug) || !lines[0].startsWith('**Question:**')) return null;
+  const answer = lines.find((l) => ANSWER_LINE.test(l));
+  return answer ? { answer, question: lines[0] } : null;
+}
+// decisions: one line per ruling, its first line cut at 160 characters; an answered question's ruling is its answer, then
+// its question, each cut at 160 characters.
 export function renderDecisions(rows) {
   if (!rows.length) return '(no rulings)';
   return rows.map((d) => {
     const area = d.area ? ` · area ${d.area}${d.rule ? ` · rule ${d.rule}` : ''}${d.ratified ? ' ratified' : d.rejected ? ' rejected' : ''}` : '';
     const quoted = d.quote ? ` · ${quoteShown(d.quote.split('\n')[0].slice(0, 160))}` : '';
-    return `${d.date} · ${d.slug}${d.by ? ` · by ${d.by}` : ''}${d.under ? ` · under ${d.under}` : ''}${area}${d.supersededBy ? ` · SUPERSEDED by ${d.supersededBy}` : ''}${d.supersedes ? ` · supersedes ${d.supersedes}` : ''} — ${(d.ruling.split('\n').find((l) => l.trim()) || '').slice(0, 160)}${quoted}`;
+    const answered = answeredLines(d);
+    const shown = answered ? `${answered.answer.slice(0, 160)} · ${answered.question.slice(0, 160)}` : (d.ruling.split('\n').find((l) => l.trim()) || '').slice(0, 160);
+    return `${d.date} · ${d.slug}${d.by ? ` · by ${d.by}` : ''}${d.under ? ` · under ${d.under}` : ''}${area}${d.supersededBy ? ` · SUPERSEDED by ${d.supersededBy}` : ''}${d.supersedes ? ` · supersedes ${d.supersedes}` : ''} — ${shown}${quoted}`;
   }).join('\n');
 }
 

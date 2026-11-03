@@ -12,7 +12,7 @@ import { checkWaitingText, metricsOf, renderMetrics, testimonyNote } from './met
 import { ago } from './rounds.mjs';
 import { cmdTips, renderTips } from './tips.mjs';
 import { reasonWord, waitingOn } from './commands.mjs';
-import { handoffAge, handoffPath } from './questions.mjs';
+import { answeredLines, handoffAge, handoffPath } from './questions.mjs';
 import { IN_FLIGHT_MARKS, closedGateFlags, modelText, nextRows, schedulerNote, statusOf, uncommittedLoopFiles } from './evidence.mjs';
 import { cmdQueue, renderQueue } from './queue.mjs';
 import { countsLine } from './import.mjs';
@@ -44,7 +44,11 @@ export function cmdResume(root, flags = {}) {
   const { profile, issues, byId } = loop;
   const stale = new Map(status.stale.map((x) => [x.id, x.problems]));
   const marks = new Map(status.inFlightRows.map((x) => [x.id, x.mark]));
-  const rulings = loop.decisions.filter((d) => !d.supersededBy).map((d) => ({ date: d.date, slug: d.slug, by: d.by, under: d.under, line: (d.ruling.split('\n').find((l) => l.trim()) || '').trim() }));
+  // An answered question's ruling also carries its answer line, which the text lists before the question.
+  const rulings = loop.decisions.filter((d) => !d.supersededBy).map((d) => {
+    const answered = answeredLines(d);
+    return { date: d.date, slug: d.slug, by: d.by, under: d.under, line: (d.ruling.split('\n').find((l) => l.trim()) || '').trim(), ...(answered ? { answer: answered.answer } : {}) };
+  });
   // In flight and waiting split the unfinished issues the way status counts them: an issue whose After is not
   // settled is waiting, in progress or not, so each section's count is the number on the counts line.
   const unsettled = (i) => waitingOn(i, byId, profile).length > 0;
@@ -102,7 +106,7 @@ export function renderResume(o, profile = DEFAULT_PROFILE) {
   const files = o.uncommitted || [];
   return [
     ...head,
-    ...sec(`Rulings in force (${o.rulings.length})`, o.rulings.map((d) => `- ${d.date} · ${d.slug}${d.by ? ` · by ${d.by}` : ''}${d.under ? ` · under ${d.under}` : ''} — ${short(d.line)}`), '- (none)'),
+    ...sec(`Rulings in force (${o.rulings.length})`, o.rulings.map((d) => `- ${d.date} · ${d.slug}${d.by ? ` · by ${d.by}` : ''}${d.under ? ` · under ${d.under}` : ''} — ${d.answer ? `${short(d.answer)} · ` : ''}${short(d.line)}`), '- (none)'),
     ...sec(`The files disagree with the log (${(st.disagreements || []).length})`, (st.disagreements || []).map(disagreementText)),
     ...sec(`Read from their headers (${(st.headerRead || []).length})`, (st.headerRead || []).map((n) => `- ${n.line}`)),
     ...sec(`Closed, gate does not hold (${(st.closedGate || []).length})`, (st.closedGate || []).map(closedGateLine)),
