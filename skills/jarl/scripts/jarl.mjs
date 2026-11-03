@@ -79,7 +79,9 @@ commands:
                                                  Priority, Tier, Kind, Found by and a required field are never empty;
                                                  any other name is refused with the names field writes and the command
                                                  that writes it instead
-  tag <ids> +a -b ... [--by who]                 add and remove tags
+  tag <ids> +a -b ... [--by who]                 add and remove tags; slice:<coordinator> puts the issue in that
+                                                 coordinator's slice, and an issue is in one slice at most: a second
+                                                 slice: tag is refused (here, in field Tags, new and import)
   prio <ids> 1|2|3 [--by who]                    set priority
   files <ids> p,q,... [--by who]                 declare the files the issues touch
   repo <ids> <name|path>[,<name|path>...] [--by who] | <ids> --clear [--by who] | --base <name> <branch>
@@ -274,10 +276,14 @@ commands:
   goal --set "<machine line>"                    one machine line of the goal set, with a log line that says what it
                                                  was and what it is: "Check (<repository>): <command>" or a bare
                                                  "Check: <command>", "Model (<tier>): <models>" (a tier the profile
-                                                 declares), "Coordinators: <names>", "Takeover (<kind>): <rounds>" or a bare "Takeover: <rounds>"; the rest of goal.md stays as written
+                                                 declares), "Coordinators: <names>" (each name a coordinator, which runs the slice of
+                                                 the issues tagged slice:<name>), "Takeover (<kind>): <rounds>" or a bare "Takeover: <rounds>"; the rest of goal.md stays as written
   status [--stale-hours n] [--by repo|tag|kind|prio|<field>] [--tag <t>] [--as <who>]
                                                  --tag computes every part of status over the issues carrying that tag only;
-                                                 --as <who> ends it with what next --as <who> prints
+                                                 --as <who> ends it with what next --as <who> prints;
+                                                 once an issue carries a slice: tag, one line names each coordinator
+                                                 with its slice and how many of its issues are in play, and a slice
+                                                 whose coordinator the Coordinators line does not name;
                                                  the log is the record of an issue's status, lease, merge and CI; a header
                                                  that disagrees is never believed, and status prints one "record:" line
                                                  for it, with how to write the header back or make it the record (resume

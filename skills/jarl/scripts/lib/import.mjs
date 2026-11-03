@@ -10,7 +10,7 @@ import { DEFAULT_PROFILE, formatOffText, loadProfile } from './profile.mjs';
 import { appendLog } from './journal.mjs';
 import { PROPOSED, findIssue, loadIssues, sharedMark } from './issues.mjs';
 import { repoList, reposWhereLines } from './repositories.mjs';
-import { closedGateLine, disagreementText, gateLine } from './loop.mjs';
+import { closedGateLine, disagreementText, gateLine, needOneSlice } from './loop.mjs';
 import { checkLines, checkWaitingText, mergeCheckLines } from './metrics.mjs';
 import { cmdNew, cmdSource, needLiveLoop } from './commands.mjs';
 import { schedulerNote } from './evidence.mjs';
@@ -172,6 +172,7 @@ export function cmdImport(root, file, flags) {
   // name is filed under the profile's default kind.
   const findings = profile.declared ? read.map((f) => (profile.kinds.includes(f.kind) ? f : { ...f, kind: profile.kindDefault })) : read;
   if (flags.repo !== undefined) repoList(root, flags.repo);
+  if (flags.tags !== undefined) needOneSlice(splitList(flags.tags));
   let chosen = findings;
   if (flags.only !== undefined) {
     const only = splitList(flags.only);
@@ -260,6 +261,11 @@ function countsLine(o, profile) {
 }
 const statusLabel = (st) => (st === 'in-progress' ? 'in flight' : st);
 
+// The coordinators and their slices, one line: who runs which slice and how many of its issues are in play.
+function slicesLine(slices) {
+  const inPlay = (s) => `(${s.inPlay ? `${s.inPlay} in play` : 'none in play'})`;
+  return `slices: ${slices.map((s) => (s.declared ? `${s.coordinator} runs ${s.tag} ${inPlay(s)}` : `${s.tag} has no coordinator on the goal's Coordinators line ${inPlay(s)}: its approve counts as fresh until the line names ${s.coordinator}`)).join(' · ')}`;
+}
 export function renderStatus(o, profile = DEFAULT_PROFILE) {
   const head = o.goal ? `goal: ${o.goal}\nopened ${o.opened || '?'} · last activity ${o.lastActivity || '?'}${o.archived ? ` · ${o.archived} archived loop(s)` : ''}${o.recordFormat ? ` · record format ${o.recordFormat.format}` : ''}${profile.declared ? ` · profile ${profile.name}` : ''}\n` : '';
   const line = countsLine(o, profile);
@@ -267,6 +273,7 @@ export function renderStatus(o, profile = DEFAULT_PROFILE) {
   const by = o.by ? [`by ${o.by.key}:`, ...Object.entries(o.by.groups).map(([k, g]) => `  ${k.padEnd(width)}  ${profile.statuses.map((st) => `${statusLabel(st)} ${g[st]}`).join(' · ')}`)] : [];
   const more = [
     ...(o.tag !== undefined ? [`scoped to the issues tagged ${o.tag} — the counts above and the lists below are theirs only`] : []),
+    ...(o.slices ? [slicesLine(o.slices)] : []),
     ...(o.disagreements || []).map(disagreementText),
     ...(o.headerRead || []).map((n) => `note: ${n.line}`),
     ...(o.check ? checkLines(o.check) : []),
