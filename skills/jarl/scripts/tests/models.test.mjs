@@ -314,6 +314,46 @@ test('a round records its count of findings and the takeover block lists them', 
   assert.match(bad.stderr, /--findings must be a whole number/);
 });
 
+test('the takeover advice reads the tiers and their order from the loop\'s profile', () => {
+  const root = loop();
+  writeFileSync(join(root, '.jarl', 'profile.json'), JSON.stringify({ 'jarl-profile': 1, name: 'sized', statuses: { open: ['dispatchable'], 'in-progress': ['holds-claim'], done: ['terminal', 'closes-record', 'settles-dependents'] }, fields: { Tier: { enum: ['small', 'big', 'huge'], default: 'small' } } }));
+  const run = (tier) => {
+    const { id } = R.newIssue(root, `a ${tier} thing`, { acceptance: 'it works', tier });
+    R.setStatus(root, id, 'in-progress', '', { branch: `jarl/${id}-a`, worker: 'w-one', model: MID });
+    R.addRound(root, id, 'red one');
+    R.addRound(root, id, 'red two');
+    return R.addRound(root, id, 'red three').block;
+  };
+  assert.match(run('small'), /one tier up from small \(to big\)/);
+  const top = run('huge');
+  assert.match(top, /huge is the top tier \(huge\)/);
+  assert.doesNotMatch(top, /tier up|light|strong/);
+});
+
+test('a later takeover does not offer the tier up again, and a count above the bound is refused', () => {
+  const root = loop();
+  const { id } = R.newIssue(root, 'a thing', { acceptance: 'it works', tier: 'standard' });
+  R.setStatus(root, id, 'in-progress', '', { branch: 'jarl/001-a', worker: 'w-one', model: MID });
+  const blocks = [1, 2, 3, 4, 5, 6].map((k) => R.addRound(root, id, `red ${k}`).block);
+  assert.match(blocks[2], /tier up/);
+  assert.match(blocks[5], /a model that has not held this issue/);
+  assert.doesNotMatch(blocks[5], /tier up/);
+  const bad = cli(root, 'round', id, 'red seven', '--findings', '1e23');
+  assert.notEqual(bad.status, 0);
+  assert.match(bad.stderr, /up to 10000/);
+  assert.notEqual(cli(root, 'round', id, 'red seven', '--findings', '10001').status, 0);
+});
+
+test('a count of findings is read from the flag only, never from the words of a round', () => {
+  const root = loop();
+  const { id } = R.newIssue(root, 'a thing', { acceptance: 'it works', tier: 'standard' });
+  R.setStatus(root, id, 'in-progress', '', { branch: 'jarl/001-a', worker: 'w-one', model: MID });
+  R.addRound(root, id, 'findings 99 · typed by hand');
+  cli(root, 'round', id, 'red two', '--findings', '4');
+  const out = cli(root, 'round', id, 'red three', '--findings', '2').stdout;
+  assert.match(out, /Findings per round: 4, 2\./);
+});
+
 // ---- free text is never a field ------------------------------------------------------------------------------
 
 function reviewedUnit(root, findings, extra = {}) {
