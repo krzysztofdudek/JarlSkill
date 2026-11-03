@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - A ruling recorded as the owner's now needs the owner's own words, which are kept with the ruling and shown beside it. A ruling recorded without a name is now the coordinator's, no longer the owner's.
+- Every ruling written into an issue now says who made it. No other text in the record can look like the owner's own words, whatever spelling it uses.
 - Every tool now refuses a field it does not take, including the help tool, and names the fields it does take, so a misspelled field is never dropped without a word.
 - A merge recorded before its test run has finished now shows as waiting for its check in the status, the resume and the issue itself, with the command that records the check. It stops showing once the check, or the red check it landed on, is recorded.
 - Recording a merge now warns when the commit you give does not contain the branch's latest work or the latest state of the branch it is merged into, so a check that ran on the wrong version is noticed at once.

@@ -4,6 +4,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, openSync, closeSync, writeSync, unlinkSync, linkSync } from 'node:fs';
 import { join, resolve, relative, isAbsolute } from 'node:path';
 import { CI_STATES, LEASE_FIELDS, PRIORITIES, TIERS, fieldText, need, noSeparators, slugify, splitList } from './base.mjs';
+import { needNoNewOwnersWords, needNoOwnersWords } from './owner.mjs';
 import { git, gitRun } from './git.mjs';
 import { canonical, issuesDir, jarlDir, portablePath, stamp, today } from './where.mjs';
 import { readText, renameRetry, writeAtomic } from './files.mjs';
@@ -162,6 +163,7 @@ function tierNote(profile, tier) {
 
 export function cmdNew(root, title, rawFlags) {
   need(title, 'new requires "<title>"');
+  needNoOwnersWords('the new issue', title, rawFlags);
   // A title is the heading line of the issue: line breaks in it become spaces, so the lines after the first are not lost to the heading.
   if (/[\r\n]/.test(title)) title = String(title).split(/\r\n?|\n/).map((l) => l.trim()).filter(Boolean).join(' ');
   needLiveLoop(root, ' — run: jarl.mjs init "<goal>"');
@@ -220,14 +222,17 @@ export function cmdNew(root, title, rawFlags) {
     if (needsRaisedFormat(id)) raiseFormat(root);
     const file = join(dir, `${id}-${slugify(title)}.md`);
     const tmp = join(dir, `.${id}.${process.pid}.tmp`);
-    writeFileSync(tmp, renderIssue({
+    const rendered = renderIssue({
       id, title, status: profile.initial, kind, priority, tier, fields, sections, acceptanceHeading: profile.acceptance || 'Acceptance',
       tags: splitList(flags.tags), files: pathList(flags.files), repo: picked.map((p) => p.value).join(', '), foundBy: flags['found-by'] || 'jarl',
       where: flags.where, what: bodyText(flags.what), why: bodyText(flags.why), source, after,
       // A template's Acceptance and Changelog are taken as written (a list already); a flag replaces them.
       acceptance: flags.acceptance !== undefined ? acceptanceText(flags.acceptance) : bodyText(fromTemplate.acceptance),
       changelog: flags.changelog !== undefined ? changelogText(flags.changelog) : bodyText(fromTemplate.changelog),
-    }));
+    });
+    // The file is claimed by a link, not through writeAtomic, so its text passes the record's one check here (a template too).
+    needNoNewOwnersWords('', rendered, `${id}-${slugify(title)}.md`);
+    writeFileSync(tmp, rendered);
     let claimed = !taken().includes(n);
     // The filing goes into the journal first: a write that stops after it leaves the record ahead of the files (a filing
     // with no file, and the number is taken again), never a file the record does not hold.
@@ -291,6 +296,7 @@ export function waitingOn(issue, byId, profile = DEFAULT_PROFILE) {
 // `dry` checks everything the call would refuse and writes nothing: a list of ids is run dry on every id before the
 // first one is written (see eachIssue).
 export function cmdBody(root, rawId, flags, dry = false) {
+  needNoOwnersWords('the body', flags);
   const issue = findIssue(root, rawId);
   need(issue, `no such issue: ${rawId}`);
   const profile = loadProfile(root);
@@ -433,6 +439,7 @@ export function setRouteOf(root, name) { return setRoute(loadProfile(root), name
 // field <ids> <name> "<value>" | field <ids> <name> --clear: one field written on every issue, the tool's own (Resources)
 // or one the profile declares. A field is emptied with clear and never with an empty value.
 export function cmdField(root, rawIds, name, value, flags = {}) {
+  needNoOwnersWords('the field', value);
   const profile = loadProfile(root);
   need(name !== undefined && String(name).trim() !== '', 'field requires <name> — Resources, or a field the loop\'s profile declares');
   const own = EMPTIED_BY_FIELD[String(name).toLowerCase()];
@@ -467,6 +474,7 @@ export function cmdSetField(root, rawIds, field, value, flags = {}) {
 }
 
 export function cmdSet(root, rawIds, status, why, flags = {}) {
+  needNoOwnersWords('the move', why, flags);
   const caller = flags.caller ?? 'record';
   need(SET_CALLERS.includes(caller), `caller must be one of: ${SET_CALLERS.join(', ')} (got "${caller}")`);
   const profile = loadProfile(root);
@@ -728,6 +736,7 @@ const EVIDENCE_HOW = (id) => `jarl.mjs evidence ${id} --ran "<command>" --saw "<
 // is noted, never refused (the merge may be in a clone not fetched here). It records; it never decides whether anything
 // may land.
 export function cmdMerged(root, rawIds, flags) {
+  needNoOwnersWords('the merge', flags);
   const cli = flags.caller === 'cli';
   need(flags.sha !== undefined || flags.ci !== undefined, 'merged needs --sha <sha> (and optionally --ci), or --ci alone on issues that already record a merge');
   if (flags.sha !== undefined) need(/^[0-9a-f]{4,64}$/i.test(String(flags.sha)), `--sha is a commit id, 4 to 64 hex characters (got "${flags.sha}")`);

@@ -7,6 +7,7 @@ import { jarlDir, stamp, today } from './where.mjs';
 import { appendAtomic, readText, writeAtomic } from './files.mjs';
 import { idKey, idRe, issueForms, writtenId } from './ids.mjs';
 import { loadProfile } from './profile.mjs';
+import { OWNER, carryingOwnersWords, needNoOwnersWords, quoteLine, quoteOf } from './owner.mjs';
 
 // ---- journal and decisions ----------------------------------------------------------------------
 
@@ -102,21 +103,12 @@ function decisionsAt(dir, skipped) {
     const ruleLog = /^(\S+) · (\S+)/.exec(field('Rule log').pop() || '');
     const first = (name) => (field(name).pop() || '').split(/\s/)[0] || null;
     return {
-      date: d.date, slug: d.slug, ruling, quote: field('By').pop() === 'owner' ? ownerQuote(ruling) : null, by: field('By').pop() || null, supersedes: field('Supersedes').pop() || null, supersededBy: sup ? sup.split(/\s/)[0] : null, settles: splitList(field('Settles').pop()),
+      date: d.date, slug: d.slug, ruling, quote: field('By').pop() === OWNER ? quoteOf(d.body.slice(0, cut)) : null, by: field('By').pop() || null, supersedes: field('Supersedes').pop() || null, supersededBy: sup ? sup.split(/\s/)[0] : null, settles: splitList(field('Settles').pop()),
       area: field('Area').pop() || null, reach: reach !== undefined && /^\d+$/.test(reach) ? Number(reach) : null, rule: field('Rule').pop() || null,
       ratified: first('Ratified'), rejected: first('Rejected'), typeLog: typeLog ? { type: typeLog[1], datetime: typeLog[2] } : null,
       ruleLog: ruleLog ? { rule: ruleLog[1], datetime: ruleLog[2] } : null,
     };
   });
-}
-// The owner's own words beside a ruling: the last paragraph of its text, `The owner's words: "<words>"`. It is text of
-// the ruling, not a field of its closing block, so a reader that knows no quote still reads the ruling and its author.
-export const QUOTE_MARKER = "The owner's words:";
-const QUOTE_LEAD = `${QUOTE_MARKER} `;
-export function withOwnerQuote(ruling, quote) { return `${ruling.replace(/\s+$/, '')}\n\n${QUOTE_LEAD}"${quote}"`; }
-export function ownerQuote(ruling) {
-  const m = /(?:^|\n\n)The owner's words: "([^\n]*)"$/.exec(ruling);
-  return m ? m[1] : null;
 }
 // The fields the tool writes into a ruling's closing block. Area, Reach and Rule come with the ruling (decide --area,
 // --reach, --rule); Superseded by, Ratified, Rejected, Type log and Rule log are added to an earlier ruling in place, later.
@@ -140,8 +132,11 @@ function markDecision(root, slug, line, { text: given } = {}) {
 }
 
 // The ruling is written as its caller gives it: structure at the start of a line, free text indented (freeInline, freeBlock).
+// The owner's words (quote, on a ruling by the owner only) are its last line, after a blank one, at the left edge: the one
+// line of a ruling no text given to decide can stand on (owner.mjs, quoteOf).
 export function appendDecision(root, slug, ruling, { by, quote, supersedes, area, reach, rule, settles } = {}) {
-  need(!String(ruling).includes(QUOTE_MARKER), `a ruling holds the line "${QUOTE_MARKER}" only as the owner's quote, written from --quote: take it out of the text`);
+  need(quote === undefined || quote === null || (typeof quote === 'string' && quote === fieldText(quote) && quote !== '' && by === OWNER), 'the owner\'s words are one line of text, kept with a ruling by the owner');
+  if (quote) needNoOwnersWords('--quote', quote);
   need(typeof slug === 'string' && SLUG_RE.test(slug), `a ruling's slug is letters, digits and . _ - (starting with a letter or digit, at most 80 characters) — not "${slug}"; e.g. ${slugify(String(slug || 'ruling'))}`);
   const path = decisionsPath(jarlDir(root));
   const existing = existsSync(path) ? readText(path) : '# Decisions\n';
@@ -156,7 +151,8 @@ export function appendDecision(root, slug, ruling, { by, quote, supersedes, area
     text = markDecision(root, supersedes, `**Superseded by:** ${slug} (${today()})`, { text });
   }
   const meta = [settles?.length ? `**Settles:** ${settles.join(', ')}` : null, by ? `**By:** ${fieldText(by)}` : null, supersedes !== undefined ? `**Supersedes:** ${supersedes}` : null, area ? `**Area:** ${area}` : null, reach !== undefined && reach !== null ? `**Reach:** ${reach}` : null, rule ? `**Rule:** ${rule}` : null].filter(Boolean).join('\n');
-  writeAtomic(path, `${text.replace(/\s*$/, '')}\n\n## ${today()} · ${slug}\n${(quote ? withOwnerQuote(ruling, quote) : ruling).replace(/\s+$/, '')}\n${meta ? `\n${meta}\n` : ''}`);
+  const body = `${ruling.replace(/\s+$/, '')}${quote ? `\n\n${quoteLine(quote)}` : ''}`;
+  carryingOwnersWords([quote && quoteLine(quote)], () => writeAtomic(path, `${text.replace(/\s*$/, '')}\n\n## ${today()} · ${slug}\n${body}\n${meta ? `\n${meta}\n` : ''}`));
 }
 
 // The goal of the record held in `dir`, as text; null when it has none.

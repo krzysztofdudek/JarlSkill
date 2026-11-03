@@ -221,10 +221,12 @@ commands:
                                                  a body change is refused, and the refusal names the command that writes it
   decide <slug> "<ruling>" [--by who [--quote "<words>"]] [--supersedes <slug>] [--settles <ids>] [--area <type> [--reach n] [--rule <id>]]
                                                  append a ruling (slug: letters, digits, . _ -); refuses a duplicate slug;
-                                                 --by records who ruled (the coordinator when it is left out); --by owner needs
-                                                 --quote, his own words, kept as the ruling's last paragraph; --supersedes marks
-                                                 the ruling it replaces "Superseded by" in place; --settles writes the ruling into each
-                                                 named issue's evidence (its status is unchanged); --area marks a ruling
+                                                 --by records who ruled (the coordinator when it is left out; a name that
+                                                 reads as owner is owner); --by owner needs --quote, his own words, kept as
+                                                 the ruling's last line, and no other text of the record may hold
+                                                 "The owner's words:" in any spelling; --supersedes marks
+                                                 the ruling it replaces "Superseded by" in place; --settles writes the ruling,
+                                                 with who ruled, into each named issue's evidence (its status is unchanged); --area marks a ruling
                                                  about a whole type of code, --reach how many files that type holds,
                                                  --rule the graph's rule it admits on that type (its id):
                                                  close puts it to the owner for ratification
@@ -779,7 +781,7 @@ export function dispatch(root, commandName, rest, flags) {
         break;
       case 'report': out = cmdReport(root, flags); text = out.text; break;
       case 'log': out = R.appendLog(root, rest[0]); text = 'logged'; break;
-      case 'decide': out = R.decide(root, rest[0], rest[1], flags); text = renderDecide(out); decideNotes(root, rest[0], flags, warn); break;
+      case 'decide': out = R.decide(root, rest[0], rest[1], flags); text = renderDecide(out); decideNotes(root, rest[0], out.by, flags, warn); break;
       case 'decisions': out = R.decisions(root, flags); text = renderDecisions(out); break;
       case 'goal': out = flags.set === undefined ? cmdGoal(root) : cmdGoalSet(root, flags.set); text = flags.set === undefined ? out.goal : out.unchanged ? `goal line unchanged: ${out.shown}` : `goal line ${out.replaced ? 'changed' : 'added'}: ${out.shown}${out.replaced ? ` (was ${out.was})` : ''}`; break;
       case 'status': out = R.statusData(root, flags); text = renderStatus(out, R.loadProfile(root)); break;
@@ -836,8 +838,8 @@ function askText(out) {
 
 // The notes a decide says on stderr: the owner's word with no question in the record behind it, and the open issues that name the
 // ruling a supersession replaces, so the jarl rewrites them now.
-function decideNotes(root, slug, flags, warn) {
-  if (typeof flags.by === 'string' && flags.by.trim().toLowerCase() === 'owner' && !questionFor(root, slug)) warn.push(`note: no question in the record asks about ${slug}: a ruling by the owner with no question behind it is recorded as he gave it`);
+function decideNotes(root, slug, by, flags, warn) {
+  if (by === 'owner' && !questionFor(root, slug)) warn.push(`note: no question in the record asks about ${slug}: a ruling by the owner with no question behind it is recorded as he gave it`);
   if (flags.supersedes !== undefined) {
     const open = issuesNaming(root, flags.supersedes);
     if (open.length) warn.push(`note: open issues name ${flags.supersedes}: ${open.map((i) => i.id).join(', ')} — rewrite them to ${slug}`);

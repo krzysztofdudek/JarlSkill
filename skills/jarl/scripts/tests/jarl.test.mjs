@@ -1135,7 +1135,7 @@ test('ask --kind ratify blocks nothing, is listed in status and the handoff, and
   jarl(root, 'evidence', '1', '--ran', 'check', '--saw', 'green');
   jarl(root, 'set', '1', 'done', 'merged');
   jarl(root, 'answer', 'a-1', 'ratified', '--by', 'owner');
-  assert.match(jarl(root, 'show', '1'), /Ruling ask-1 \(ratify\): ratified/);
+  assert.match(jarl(root, 'show', '1'), /Ruling ask-1 \(ratify, by owner\): ratified/);
   assert.match(jarl(root, 'status'), /questions 0$/m);
 });
 
@@ -1165,7 +1165,7 @@ test('After holds an issue out of next and counts it as waiting; decide --settle
   assert.match(jarl(root, 'decide', 'numbers', 'the core ships on one number', '--settles', '4'), /decided numbers · by coordinator · written into 4/);
   const four = JSON.parse(jarl(root, 'show', '4', '--json'));
   assert.equal(four.status, 'open');
-  assert.match(four.sections.evidence, /Ruling numbers: the core ships on one number/);
+  assert.match(four.sections.evidence, /Ruling numbers \(by coordinator\): the core ships on one number/);
   assert.match(readFileSync(join(root, '.jarl', 'decisions.md'), 'utf8'), /the core ships on one number\n\n\*\*Settles:\*\* 4/);
   assert.match(refuses(root, 'decide', 'other', 'x', '--settles', '4,77'), /no such issue: 77/);
   assert.doesNotMatch(readFileSync(join(root, '.jarl', 'decisions.md'), 'utf8'), /other/, 'a refused ruling writes nothing');
