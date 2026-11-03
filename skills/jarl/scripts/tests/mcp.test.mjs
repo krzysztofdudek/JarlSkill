@@ -424,3 +424,16 @@ test('every tool refuses a field it does not take, names the fields it takes, an
   refusedAsInvalid(() => mcp.callTool('jarl_body', { id: '1', whyy: 'x', root }), /unknown field "whyy"/);
   assert.equal(issuesIn(root), 0, 'no refused filing left an issue behind');
 });
+
+test('a filing refused for an after that names no issue takes no number: the next filing gets the next free one', () => {
+  const root = loopDir('jarl-mcp-after-');
+  const refused = mcp.callTool('jarl_new', { title: 'waits on a later issue', after: '2', root });
+  assert.equal(refused.isError, true);
+  assert.match(refused.content[0].text, /no such issue: 2/);
+  assert.equal(issuesIn(root), 0, 'the refusal wrote no issue');
+  const first = mcp.callTool('jarl_new', { title: 'first', json: true, root });
+  assert.equal(JSON.parse(first.content[0].text).id, '1', 'the refused filing took no number');
+  const second = mcp.callTool('jarl_new', { title: 'second', after: '1', json: true, root });
+  assert.equal(JSON.parse(second.content[0].text).id, '2');
+  assert.equal(issuesIn(root), 2);
+});
