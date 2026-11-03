@@ -11,6 +11,8 @@
 // This module re-exports jarl-lib.mjs whole, but none of those exports is a contract: only
 // record.mjs (RECORD_API) is.
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as R from './record.mjs';
 import {
@@ -27,6 +29,7 @@ import { writeAreaDecision, writeRuleRatification } from './yg-edge.mjs';
 export * from './jarl-lib.mjs';
 
 export const USAGE = `usage: jarl.mjs <command> [options]
+       jarl.mjs --version                        the version of this install, the one the MCP server reports
 
 commands:
   init "<goal>" [--committed] [--permanent] [--profile <file>] [--by who]
@@ -57,7 +60,7 @@ commands:
                                                  (repeatable) write the fields and sections the loop's profile declares
                                                  (a field's default when not given; a required one must be given)
   body <ids> [--title "<t>"] [--where "<w>"] [--what "<w>"] [--why "<w>"] [--acceptance "<line>"]... [--changelog "<entry>"]...
-      [--section "<Heading>=<text>"]... [--by who]
+      [--section "<Heading>=<text>"]... [--by who] [--append]
                                                  the description commands, body to after below: every part of an issue's
                                                  description is changed by one of them, and each change writes one log
                                                  line per issue and part with what the part held before and, when --by
@@ -66,7 +69,9 @@ commands:
                                                  --supersedes, and the status moves only with set. body sets or
                                                  replaces the title (the file keeps its name), the Where field and the
                                                  What, Why, Acceptance and Changelog sections, and a section the
-                                                 profile declares
+                                                 profile declares; with --append, the text is added after what the
+                                                 section holds (a list gains its new items), and the title and the
+                                                 Where field are not appended to
   field <ids> <name> "<value>" | <ids> <name> --clear [--by who]
                                                  write one header field of the description on every id: Title,
                                                  Priority, Tier, Kind, Found by, Tags, Files, Repo, After, Source,
@@ -477,7 +482,7 @@ export const COMMAND_FLAGS = {
     where: 'value', what: 'value', why: 'value', acceptance: 'many', source: 'many', after: 'many', changelog: 'many', template: 'value',
     field: 'many', section: 'many', by: 'value',
   },
-  body: { title: 'value', where: 'value', what: 'value', why: 'value', acceptance: 'many', changelog: 'many', section: 'many', by: 'value' },
+  body: { title: 'value', where: 'value', what: 'value', why: 'value', acceptance: 'many', changelog: 'many', section: 'many', by: 'value', append: 'bool' },
   import: {
     source: 'value', kind: 'value', prio: 'value', tier: 'value', tags: 'many', repo: 'many', 'found-by': 'value',
     only: 'many', adopt: 'bool', 'dry-run': 'bool', field: 'many', by: 'value',
@@ -588,7 +593,7 @@ export const COMMAND_ARGS = {
 export const COMMAND_SUMMARY = {
   init: 'Open a loop: create .jarl/ with the goal, out of git by default, committed or permanent when asked.',
   new: 'File an issue under the next free number, with its fields and its What, Why and Acceptance.',
-  body: 'Set or replace the title, the Where field and the What, Why, Acceptance, Changelog and profile sections of issues, logging what each part held and who changed it when named.',
+  body: 'Set or replace the title, the Where field and the What, Why, Acceptance, Changelog and profile sections of issues, or add to those sections with append, logging what each part held and who changed it when named.',
   import: 'File one issue per finding of a findings file, skipping findings already filed.',
   sources: 'Per findings report: its findings, the issues filed from them and their status.',
   source: 'Set the Source field of issues filed by hand.',
@@ -730,8 +735,30 @@ function mergeDriverMain(args) {
 
 const LONG_NOTE_CHARS = 600;
 const LONG_NOTE_LINES = 6;
+
+// The version of this install: the plugin manifest at the plugin root, three directories above this script. A copy with
+// no manifest reports a fallback version. The MCP server reads the same value, so the command line and the server of one install agree.
+export function installVersion() {
+  try { return JSON.parse(readFileSync(new URL('../../../plugin.json', import.meta.url), 'utf8')).version || '0.0.0'; } catch { return '0.0.0'; }
+}
+
+// The line resume prints when the host names a plugin root in CLAUDE_PLUGIN_ROOT and the manifest there names another
+// version than this script. The plugin's server runs the Jarl tools, so a different version there means the tools in the
+// session and this script differ. Null when the variable is unset or empty, when the manifest is missing, unreadable or
+// names no version, and when the two versions are equal. It never throws: a resume is never refused by it.
+export function pluginVersionNote(env = process.env, script = installVersion()) {
+  try {
+    const root = (env.CLAUDE_PLUGIN_ROOT ?? '').trim();
+    if (!root) return null;
+    const plugin = JSON.parse(readFileSync(join(root, 'plugin.json'), 'utf8')).version;
+    if (typeof plugin !== 'string' || !plugin || plugin === script) return null;
+    return `note: the plugin at CLAUDE_PLUGIN_ROOT, whose server runs the Jarl tools, is version ${plugin}; this script is version ${script}.`;
+  } catch { return null; }
+}
+
 function main() {
   if (process.argv[2] === 'merge-driver') mergeDriverMain(process.argv.slice(3));
+  if (process.argv.length === 3 && process.argv[2] === '--version') { console.log(installVersion()); process.exit(0); }
   let parsed;
   try { parsed = parseArgs(process.argv.slice(2)); } catch (e) { console.error(e.message); process.exit(1); }
   const { positional, flags } = parsed;
@@ -870,7 +897,7 @@ export function dispatch(root, commandName, rest, flags) {
       case 'ask': out = R.ask(root, rest[0], { ...flags, width: undefined }); text = askText(out); break;
       // The library's answer (jarl-record/1) takes no opts: --by and --option reach the answer through jarl-lib.mjs, under the lock held here.
       case 'answer': out = cmdAnswerMany(root, rest[0], rest[1], flags); break;   // text below: the type log is written outside the lock
-      case 'resume': out = R.resumeData(root, flags); text = renderResume(out, R.loadProfile(root)); ({ out, text } = endWithAsker(root, flags, out, text)); break;
+      case 'resume': out = R.resumeData(root, flags); text = renderResume(out, R.loadProfile(root), pluginVersionNote()); ({ out, text } = endWithAsker(root, flags, out, text)); break;
       case 'handoff':
         need(rest[0] === undefined || rest[0] === 'read' || rest[0] === 'write', `handoff takes read or write (got "${rest[0]}") — the state is assembled live by resume`);
         if (rest[0] === 'write') { out = cmdHandoffWrite(); text = out.note; } else { out = cmdHandoffRead(root, flags); text = out.text; }

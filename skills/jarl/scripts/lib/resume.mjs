@@ -94,7 +94,8 @@ export function cmdResume(root, flags = {}) {
   };
 }
 
-export function renderResume(o, profile = DEFAULT_PROFILE) {
+// The note, when there is one, is printed on the line after the counts.
+export function renderResume(o, profile = DEFAULT_PROFILE, note = null) {
   const shownFields = (x) => (x.fields && Object.keys(x.fields).length ? ` · ${Object.entries(x.fields).map(([n, v]) => `${n}=${v}`).join(' ')}` : '');
   const sec = (title, lines, none) => (lines.length ? [`## ${title}`, ...lines, ''] : none === undefined ? [] : [`## ${title}`, none, '']);
   const lease = (x) => [x.branch && `branch ${x.branch}`, x.worker && `worker ${x.worker}`, x.worker && x.model !== undefined && (x.model ? `model ${x.model}` : 'model not recorded'), x.since && `since ${x.since}`, leasedByText(x)].filter(Boolean).join(' · ');
@@ -104,6 +105,7 @@ export function renderResume(o, profile = DEFAULT_PROFILE) {
     `opened ${o.opened || '?'} · last activity ${o.lastActivity || '?'}${o.archived ? ` · ${o.archived} archived loop(s)` : ''}${profile.declared ? ` · profile ${profile.name}` : ''}`,
     countsLine(st, profile),
     ...(o.slice !== undefined ? [`scoped to the slice of ${o.slice}, the issues tagged slice:${o.slice}: in flight, waiting, the questions, held and next ready are its own; the rulings, the merge queue, the tips and the log are the loop's`] : []),
+    ...(note ? [note] : []),
     '',
   ];
   // The tips and the merge queue as their own views print them; the merges still waiting on CI have a section of their own here.

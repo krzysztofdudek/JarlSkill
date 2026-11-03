@@ -31,10 +31,9 @@
 //
 // Wire format: newline-delimited JSON-RPC on stdin/stdout (MCP stdio transport); stderr is for diagnostics.
 // No dependencies beyond the vendored copy, Node 22+.
-import { readFileSync } from 'node:fs';
 import { resolve, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { COMMAND_ALIASES, COMMAND_ARGS, COMMAND_FLAGS, INTERNAL_COMMANDS, LIST_FIELDS, flagsOf, COMMAND_SUMMARY, GLOBAL_FLAGS, MUTATING, USAGE, parseArgs, dispatch, findRoot, isEntry as isEntryOf } from './jarl.mjs';
+import { COMMAND_ALIASES, COMMAND_ARGS, COMMAND_FLAGS, INTERNAL_COMMANDS, LIST_FIELDS, flagsOf, COMMAND_SUMMARY, GLOBAL_FLAGS, MUTATING, USAGE, parseArgs, dispatch, findRoot, isEntry as isEntryOf, installVersion } from './jarl.mjs';
 import { defineTable } from './vendor/runes/dist/cli/index.mjs';
 import {
   buildTools as generateTools, argvFor as generateArgv, commandForTool, serveStdio, InvalidParams,
@@ -48,11 +47,7 @@ export const PROTOCOL_VERSIONS = RUNES_PROTOCOL_VERSIONS;
 // The fields that name a file on disk: read against the server's working directory, which is not the caller's,
 // so they must be absolute.
 export const PATH_FIELDS = { import: ['file'], sources: ['files'], init: ['profile'], profile: ['file'] };
-function version() {
-  // The plugin's manifest, when the skill runs from a plugin install; a drop-in copy has none.
-  try { return JSON.parse(readFileSync(new URL('../../../plugin.json', import.meta.url), 'utf8')).version || '0.0.0'; } catch { return '0.0.0'; }
-}
-const SERVER_INFO = { name: 'jarl', version: version() };
+const SERVER_INFO = { name: 'jarl', version: installVersion() };
 
 export const TOOL_PREFIX = 'jarl_';
 export const toolName = (cmd) => `${TOOL_PREFIX}${cmd}`;
@@ -103,13 +98,42 @@ function describe(cmd, spec) {
   const effect = spec.writes ? 'WRITES the loop.' : 'Read-only.';
   return `${effect} ${spec.summary}${ARG_NOTES[cmd] ? ` ${ARG_NOTES[cmd]}` : ''}`;
 }
-function fieldNote(cmd, field) {
+function baseNote(cmd, field) {
   if (field === 'root') return ROOT_FIELD;
   if ((field === 'ids' && cmd !== 'after') || (field === 'id' && LIST_ID_COMMANDS.has(cmd))) return IDS_FIELD;
   if (field === 'id' && cmd === 'answer') return ANSWER_ID_FIELD;
   if (field === 'ids' && cmd === 'after') return `The issues this one waits on. ${LIST_FIELD} Ids take ranges (203-206). Left out when clear is set.`;
   if (['name', 'path'].includes(listFieldsOf(cmd)[field])) return LIST_FIELD;
   return undefined;
+}
+// The example that ends a field's description where its name does not give its meaning: a call of the command's own
+// tool as JSON, so one line shows the field, the fields beside it and the type each one takes. A test holds every example
+// to the fields and the types of its tool.
+const EXAMPLES = {
+  after: {
+    id: 'Every one of them waits on the issues in ids. Example: {"id": "12", "ids": ["10", "11"]}',
+    ids: 'Example: {"id": "12", "ids": ["10", "11"]}',
+  },
+  evidence: {
+    ran: 'One command per row, a list of strings. Row n pairs with the text at place n of saw. Example: {"ids": "12", "ran": ["npm test"], "saw": ["# pass 4 # fail 0"]}',
+    saw: 'What each command of ran printed, a list of strings in the same order. Example: {"ids": "12", "ran": ["npm test"], "saw": ["# pass 4 # fail 0"]}',
+  },
+  review: {
+    verdict: 'approve or changes: the verdict of this reviewer on each issue. Example: {"ids": "12", "verdict": "approve", "by": "rev-12", "findings": "Read the diff and the acceptance: every line holds."}',
+    findings: 'What the reviewer read and found, at least three words, also when nothing is wrong. Example: {"ids": "12", "verdict": "approve", "by": "rev-12", "findings": "Read the diff and the acceptance: every line holds."}',
+  },
+  decide: {
+    supersedes: 'The slug of the ruling this one replaces, which the record then marks as superseded. Example: {"slug": "subagents-again", "ruling": "Use fresh reviewers again.", "supersedes": "no-subagents"}',
+  },
+  decisions: {
+    live: 'true lists only the rulings still in force, those no later ruling supersedes. Example: {"live": true}',
+  },
+  body: {
+    append: 'true adds the text to what each named section holds, after it, instead of replacing it. Title and Where cannot be appended to. Example: {"id": "12", "acceptance": ["the new line"], "append": true}',
+  },
+};
+function fieldNote(cmd, field) {
+  return [baseNote(cmd, field), EXAMPLES[cmd]?.[field]].filter(Boolean).join(' ') || undefined;
 }
 // The options the tools are generated with: the prefix, the one-sentence descriptions, the notes on root and ids,
 // and the help tool. The parity test builds its reference from the same options.

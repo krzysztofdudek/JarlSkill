@@ -22,6 +22,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The goal can name the one coordinator, or the person who runs the loop, who starts the merges, with a line such as `Merger: odin`. Every approved task waiting to be merged, in every part of the backlog, is then on that one list, so only one merge runs at a time.
 - Every command that records work can now say who did it: starting a task, recording proof, a failed round, a merge, a question, a note or a change to the goal. Name yourself on each call; nothing fills in a name for you, and where several coordinators work, a task started without a name shows as unnamed. The first named entry moves the loop to format 3.
 - The guide for running a loop now describes coordinators, each over its own part of the backlog, in place of a single assistant: when a coordinator should turn to whoever runs the loop (four cases), that each one waits on the helpers it started, and that one named person starts the merges.
+- `body --append` adds text to a section of an issue after what the section already holds, instead of replacing it.
+- Jarl's command line prints its version with `--version`. The number matches the one the Jarl tools in your session report. When your shell exports `CLAUDE_PLUGIN_ROOT`, and the plugin there has another version than the copy you run, `resume` says so in one line; without that variable it says nothing.
 
 ### Changed
 
@@ -32,6 +34,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - If you copy Jarl's record library into your own tool, copy the `scripts/lib/` folder too. It now sits next to `record.mjs` and `jarl-lib.mjs`, and the library does not work without it.
 - When a new issue is filed without a kind or a priority, Jarl says which one it took and names the option that sets it, as it already does for the tier.
 - When more than one coordinator has work in play, a task can only be started once it says which files or shared resources it touches, so work in two parts of the backlog cannot collide unseen. The refusal names the command that adds them.
+- The tools show an example for the issues `after` waits on, the rows of `evidence`, the verdict and findings of `review`, `decide`'s `supersedes` and the `live` view of `decisions`.
 
 ### Fixed
 
