@@ -67,6 +67,8 @@ The answer is the text the command prints; a note the command prints on stderr c
 
 A flag a command does not take is refused with the list of the ones it does, never ignored. A value flag takes the next argument whatever it starts with, so `--ran "--help"` or `--saw "--- FAIL"` records the row; `--flag=value` works too. A note or a title that itself starts with `--` goes after a bare `--` (`evidence 12 -- "--json drops a key"`), and every flag, `--root` included, goes before that `--`: arguments beyond what a command reads are refused, so a stray `--root` can never be dropped silently.
 
+`--version`, given alone as the first argument, prints the version of this install: the version in the manifest of the plugin the skill belongs to, or a fallback version when the copy has no manifest. `resume` prints one line after its counts when the host exports `CLAUDE_PLUGIN_ROOT` and the manifest at that plugin root names another version than this script. The note needs the host to export that variable; a host that does not export it gets no such line. Neither the note nor a missing manifest refuses a call.
+
 ### Lists
 
 A list field holds items, and every list field of every command and tool reads them by one rule. The list fields: the `<ids>` of the commands above and the `id` of `answer` (several ratify items), `new`'s `--tags`, `--files`, `--repo`, `--source` and `--after`, `import`'s `--tags`, `--repo` and `--only`, `decide`'s `--settles`, and the last argument of `files` (paths), `source` (references), `after` (the ids waited on) and `repo` (repositories).

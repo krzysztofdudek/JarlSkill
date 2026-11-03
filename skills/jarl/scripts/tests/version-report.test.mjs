@@ -8,7 +8,7 @@ import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { SCRIPT, SPAWN_TIMEOUT } from './helpers.mjs';
+import { SCRIPT, SPAWN_TIMEOUT, loop } from './helpers.mjs';
 
 const SCRIPTS = fileURLToPath(new URL('../', import.meta.url));
 const SERVER = join(SCRIPTS, 'jarl-mcp.mjs');
@@ -61,4 +61,60 @@ test('a copy with no plugin manifest reports the fallback version on both the co
   const copy = install(join(home, 'copy'));
   assert.equal(cliVersion(copy.cli), '0.0.0');
   assert.equal(serverVersion(copy.server), '0.0.0');
+});
+
+// A scratch plugin root. Its manifest names `version`, or holds `body` as written; with neither, the root has no manifest.
+function pluginRoot(t, { version, body } = {}) {
+  const dir = mkdtempSync(join(tmpdir(), 'jarl-plugin-root-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  if (body !== undefined) writeFileSync(join(dir, 'plugin.json'), body);
+  else if (version !== undefined) writeFileSync(join(dir, 'plugin.json'), JSON.stringify({ name: 'jarl', version }));
+  return dir;
+}
+
+// A loop of its own, removed after the test.
+function scratchLoop(t) {
+  const root = loop({ prefix: 'jarl-version-loop-' });
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  return root;
+}
+
+// The text the command line prints for resume on a loop, with the variable set to `plugin`, or unset when it is undefined.
+function resumeText(loopRoot, plugin) {
+  const env = { ...process.env };
+  delete env.CLAUDE_PLUGIN_ROOT;
+  if (plugin !== undefined) env.CLAUDE_PLUGIN_ROOT = plugin;
+  const r = spawnSync(process.execPath, [SCRIPT, 'resume', '--root', loopRoot], { encoding: 'utf8', timeout: SPAWN_TIMEOUT, env });
+  assert.equal(r.status, 0, r.stderr);
+  return r.stdout;
+}
+
+// The lines of a resume text that carry the plugin note.
+const pluginNotes = (text) => text.split('\n').filter((line) => line.startsWith('note: the plugin at CLAUDE_PLUGIN_ROOT'));
+
+test('resume prints one line naming both versions when the plugin at the variable reports another version', (t) => {
+  const script = cliVersion(SCRIPT);
+  const notes = pluginNotes(resumeText(scratchLoop(t), pluginRoot(t, { version: '4.5.6' })));
+  assert.deepEqual(notes, [`note: the plugin at CLAUDE_PLUGIN_ROOT, whose server runs the Jarl tools, is version 4.5.6; this script is version ${script}.`]);
+});
+
+test('resume prints no plugin note when the plugin at the variable reports the same version', (t) => {
+  assert.deepEqual(pluginNotes(resumeText(scratchLoop(t), pluginRoot(t, { version: cliVersion(SCRIPT) }))), []);
+});
+
+test('resume prints no plugin note when the variable is unset', (t) => {
+  assert.deepEqual(pluginNotes(resumeText(scratchLoop(t), undefined)), []);
+});
+
+test('resume prints no plugin note, and never fails, when the variable is empty or names no readable manifest', (t) => {
+  const loopRoot = scratchLoop(t);
+  const cases = [
+    '',
+    join(pluginRoot(t), 'missing'),
+    pluginRoot(t),
+    pluginRoot(t, { body: '{ not json' }),
+    pluginRoot(t, { body: JSON.stringify({ name: 'jarl' }) }),
+    pluginRoot(t, { body: JSON.stringify({ version: 4 }) }),
+  ];
+  for (const plugin of cases) assert.deepEqual(pluginNotes(resumeText(loopRoot, plugin)), [], `the variable set to ${plugin}`);
 });

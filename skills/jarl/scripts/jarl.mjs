@@ -12,6 +12,7 @@
 // record.mjs (RECORD_API) is.
 
 import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as R from './record.mjs';
 import {
@@ -700,6 +701,20 @@ export function installVersion() {
   try { return JSON.parse(readFileSync(new URL('../../../plugin.json', import.meta.url), 'utf8')).version || '0.0.0'; } catch { return '0.0.0'; }
 }
 
+// The line resume prints when the host names a plugin root in CLAUDE_PLUGIN_ROOT and the manifest there names another
+// version than this script. The plugin's server runs the Jarl tools, so a different version there means the tools in the
+// session and this script differ. Null when the variable is unset or empty, when the manifest is missing, unreadable or
+// names no version, and when the two versions are equal. It never throws: a resume is never refused by it.
+export function pluginVersionNote(env = process.env, script = installVersion()) {
+  try {
+    const root = (env.CLAUDE_PLUGIN_ROOT ?? '').trim();
+    if (!root) return null;
+    const plugin = JSON.parse(readFileSync(join(root, 'plugin.json'), 'utf8')).version;
+    if (typeof plugin !== 'string' || !plugin || plugin === script) return null;
+    return `note: the plugin at CLAUDE_PLUGIN_ROOT, whose server runs the Jarl tools, is version ${plugin}; this script is version ${script}.`;
+  } catch { return null; }
+}
+
 function main() {
   if (process.argv[2] === 'merge-driver') mergeDriverMain(process.argv.slice(3));
   if (process.argv.length === 3 && process.argv[2] === '--version') { console.log(installVersion()); process.exit(0); }
@@ -838,7 +853,7 @@ export function dispatch(root, commandName, rest, flags) {
       case 'ask': out = R.ask(root, rest[0], { ...flags, width: undefined }); text = askText(out); break;
       // The library's answer (jarl-record/1) takes no opts: --by and --option reach the answer through jarl-lib.mjs, under the lock held here.
       case 'answer': out = cmdAnswerMany(root, rest[0], rest[1], flags); break;   // text below: the type log is written outside the lock
-      case 'resume': out = R.resumeData(root, flags); text = renderResume(out, R.loadProfile(root)); ({ out, text } = endWithAsker(root, flags, out, text)); break;
+      case 'resume': out = R.resumeData(root, flags); text = renderResume(out, R.loadProfile(root), pluginVersionNote()); ({ out, text } = endWithAsker(root, flags, out, text)); break;
       case 'handoff':
         need(rest[0] === undefined || rest[0] === 'read' || rest[0] === 'write', `handoff takes read or write (got "${rest[0]}") — the state is assembled live by resume`);
         if (rest[0] === 'write') { out = cmdHandoffWrite(); text = out.note; } else { out = cmdHandoffRead(root, flags); text = out.text; }
