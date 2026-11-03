@@ -8,7 +8,7 @@ import { jarlDir, today } from './where.mjs';
 import { appendAtomic, readText, writeAtomic } from './files.mjs';
 import { askNumber, idKey, issueForms, needsRaisedFormat, newNumber, writtenId } from './ids.mjs';
 import { loadProfile } from './profile.mjs';
-import { ASKS_FILE, DECISIONS_FILE, STAMP_SRC, appendDecision, appendLog, appendLogLines, asksAt, asksPath, firstLine, loadDecisions, markDecision, parseStamp, withOwnerQuote } from './journal.mjs';
+import { ASKS_FILE, DECISIONS_FILE, STAMP_SRC, appendDecision, appendLog, appendLogLines, asksAt, asksPath, firstLine, loadDecisions, markDecision, parseStamp, QUOTE_MARKER } from './journal.mjs';
 import { findIssue, freeBlock, loadIssues, noteText, parseIssue, placeEvidence, setSection } from './issues.mjs';
 import { raiseFormat } from './repositories.mjs';
 import { coordinatorNames } from './loop.mjs';
@@ -17,9 +17,12 @@ import { issuesFor } from './commands.mjs';
 // ---- questions to the owner and the handoff -------------------------------------------------
 
 export function loadAsks(root, skipped) { return asksAt(jarlDir(root), skipped); }
+// The owner is the one fixed name `owner`, however it is typed.
+const ownerName = (by) => (by.toLowerCase() === 'owner' ? 'owner' : by);
 
 export function cmdAsk(root, question, flags) {
   need(question, 'ask requires "<question>"');
+  need(![question, flags.option].flat().some((t) => String(t ?? '').includes(QUOTE_MARKER)), `a question holds the line "${QUOTE_MARKER}" only as the owner's quote, written by decide: take it out of the text`);
   const kind = String(flags.kind || 'stuck');
   need(ASK_KINDS.includes(kind), `--kind must be one of: ${ASK_KINDS.join(', ')} — stop (halt everything), stuck (this issue only), lower (weaken something protected, needs a target), charter (the goal itself), ratify (a choice already made under a mandate, awaiting the owner's word; blocks nothing)`);
   if (flags.issue !== undefined) need(findIssue(root, flags.issue), `no such issue: ${flags.issue}`);
@@ -132,7 +135,7 @@ function answerRuling(ask, text, chosen, batch) {
 // The library's answer (record.mjs) calls this with no flags: its ruling is the owner's, and it names no options.
 export function cmdAnswer(root, rawId, answer, flags = {}) {
   need(flags.by === undefined || fieldText(flags.by), '--by needs a value — who answered: owner or a name');
-  const by = flags.by === undefined ? null : fieldText(flags.by);
+  const by = flags.by === undefined ? null : ownerName(fieldText(flags.by));
   const chosen = flags.option === undefined ? null : noSeparators(flags.option);
   const key = askNumber(rawId);
   const ask = loadAsks(root).find((a) => idKey(a.id) === key);
@@ -170,7 +173,7 @@ export function cmdAnswerMany(root, rawIds, answer, flags = {}) {
   });
   const batch = found.length > 1 ? found.map((a) => a.id) : null;
   need(!batch || found.every((a) => a.kind === 'ratify'), 'several questions are answered together only when each is a ratify item');
-  const by = flags.by === undefined ? undefined : fieldText(flags.by);
+  const by = flags.by === undefined ? undefined : ownerName(fieldText(flags.by));
   const item = found.find((a) => a.kind === 'ratify');
   if (item) {
     need(by, `a-${item.id} is a ratify item, which needs --by: who answered (owner or a name)`);
@@ -246,10 +249,11 @@ export function cmdDecide(root, slug, ruling, flags = {}) {
   need(slug && ruling, 'decide requires <slug> "<ruling>"');
   need(flags.by === undefined || fieldText(flags.by), '--by needs a value — who ruled: owner, jarl, or a name');
   const byOwner = flags.by !== undefined && fieldText(flags.by).toLowerCase() === 'owner';
+  need(flags.quote === undefined || typeof flags.quote === 'string', '--quote is the owner\'s own words, as text');
   const quote = flags.quote !== undefined ? fieldText(flags.quote) : null;
   need(flags.quote === undefined || quote, '--quote needs the owner\'s own words');
   need(!byOwner || quote, `a ruling by the owner carries his own words: give them with --quote "<what he said>"; a ruling without --by is recorded as the coordinator's, and a question he asked is not a ruling; a loop that names its owner otherwise records him as owner all the same, for the name owner is the rule`);
-  need(!ruling.includes("The owner's words:"), 'the ruling text holds the line "The owner\'s words:", which is the quote\'s own: give his words with --quote and leave that line out of the text');
+  need(!String(ruling).includes(QUOTE_MARKER), 'the ruling text holds the line "The owner\'s words:", which is the quote\'s own: give his words with --quote and leave that line out of the text');
   need(flags.quote === undefined || byOwner, '--quote is the owner\'s own words: it goes with --by owner');
   need(flags.area === undefined || AREA_RE.test(String(flags.area)), `--area names the type of code the ruling reaches, as the repository's graph names it: one word of letters, digits and . _ - (got "${flags.area}")`);
   need(flags.reach === undefined || flags.area !== undefined, '--reach counts the files of the --area type — it needs --area');
@@ -262,7 +266,7 @@ export function cmdDecide(root, slug, ruling, flags = {}) {
   const reach = flags.reach !== undefined ? Number(flags.reach) : null;
   const rule = flags.rule !== undefined ? String(flags.rule) : null;
   const text = freeBlock(oneBreak(ruling).trim());
-  appendDecision(root, slug, quote ? withOwnerQuote(text, quote) : text, { by, supersedes: flags.supersedes, area, reach, rule, settles: settles.map((i) => i.id) });
+  appendDecision(root, slug, text, { by, quote, supersedes: flags.supersedes, area, reach, rule, settles: settles.map((i) => i.id) });
   appendLog(root, `decided ${slug} · by ${by}${flags.supersedes !== undefined ? ` · supersedes ${flags.supersedes}` : ''}${area ? ` · area ${area}${reach !== null ? ` (${reach} files)` : ''}${rule ? ` · rule ${rule}` : ''}` : ''}`);
   if (settles.length) appendRuling(root, settles, `Ruling ${slug}: ${firstLine(oneBreak(ruling).trim(), `${DECISIONS_FILE}, ruling ${slug}`)}${quote ? ` · the owner's words: "${firstLine(quote, `${DECISIONS_FILE}, ruling ${slug}`)}"` : ''}`);
   return { slug, by, ...(quote ? { quote } : {}), supersedes: flags.supersedes ?? null, settles: settles.map((i) => i.id), ...(area ? { area, reach, ...(rule ? { rule } : {}) } : {}) };

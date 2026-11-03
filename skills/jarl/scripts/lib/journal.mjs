@@ -111,7 +111,8 @@ function decisionsAt(dir, skipped) {
 }
 // The owner's own words beside a ruling: the last paragraph of its text, `The owner's words: "<words>"`. It is text of
 // the ruling, not a field of its closing block, so a reader that knows no quote still reads the ruling and its author.
-const QUOTE_LEAD = "The owner's words: ";
+export const QUOTE_MARKER = "The owner's words:";
+const QUOTE_LEAD = `${QUOTE_MARKER} `;
 export function withOwnerQuote(ruling, quote) { return `${ruling.replace(/\s+$/, '')}\n\n${QUOTE_LEAD}"${quote}"`; }
 export function ownerQuote(ruling) {
   const m = /(?:^|\n\n)The owner's words: "([^\n]*)"$/.exec(ruling);
@@ -139,7 +140,8 @@ function markDecision(root, slug, line, { text: given } = {}) {
 }
 
 // The ruling is written as its caller gives it: structure at the start of a line, free text indented (freeInline, freeBlock).
-export function appendDecision(root, slug, ruling, { by, supersedes, area, reach, rule, settles } = {}) {
+export function appendDecision(root, slug, ruling, { by, quote, supersedes, area, reach, rule, settles } = {}) {
+  need(!String(ruling).includes(QUOTE_MARKER), `a ruling holds the line "${QUOTE_MARKER}" only as the owner's quote, written from --quote: take it out of the text`);
   need(typeof slug === 'string' && SLUG_RE.test(slug), `a ruling's slug is letters, digits and . _ - (starting with a letter or digit, at most 80 characters) — not "${slug}"; e.g. ${slugify(String(slug || 'ruling'))}`);
   const path = decisionsPath(jarlDir(root));
   const existing = existsSync(path) ? readText(path) : '# Decisions\n';
@@ -154,7 +156,7 @@ export function appendDecision(root, slug, ruling, { by, supersedes, area, reach
     text = markDecision(root, supersedes, `**Superseded by:** ${slug} (${today()})`, { text });
   }
   const meta = [settles?.length ? `**Settles:** ${settles.join(', ')}` : null, by ? `**By:** ${fieldText(by)}` : null, supersedes !== undefined ? `**Supersedes:** ${supersedes}` : null, area ? `**Area:** ${area}` : null, reach !== undefined && reach !== null ? `**Reach:** ${reach}` : null, rule ? `**Rule:** ${rule}` : null].filter(Boolean).join('\n');
-  writeAtomic(path, `${text.replace(/\s*$/, '')}\n\n## ${today()} · ${slug}\n${ruling.replace(/\s+$/, '')}\n${meta ? `\n${meta}\n` : ''}`);
+  writeAtomic(path, `${text.replace(/\s*$/, '')}\n\n## ${today()} · ${slug}\n${(quote ? withOwnerQuote(ruling, quote) : ruling).replace(/\s+$/, '')}\n${meta ? `\n${meta}\n` : ''}`);
 }
 
 // The goal of the record held in `dir`, as text; null when it has none.

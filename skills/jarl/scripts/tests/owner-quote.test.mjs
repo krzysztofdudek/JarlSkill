@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { jarl, refuses, loop, run } from './helpers.mjs';
 import { loadDecisions } from '../lib/journal.mjs';
+import * as R from '../record.mjs';
 
 const decisionsText = (root) => readFileSync(join(root, '.jarl', 'decisions.md'), 'utf8');
 
@@ -78,4 +79,37 @@ test('--by owner is read without case, stored as owner, and the note about a mis
   assert.match(r.stderr, /no question in the record/);
   assert.equal(loadDecisions(root)[0].by, 'owner');
   assert.match(refuses(root, 'decide', 'rule-b', 'Keep it.', '--by', 'Owner'), /records him as owner all the same/);
+});
+
+test('an answer, a question and a ruling that hold the quote marker are refused, so no false quote reaches an owner\'s ruling', () => {
+  const root = loop({ via: 'cli' });
+  jarl(root, 'ask', 'Which flag name?');
+  assert.match(refuses(root, 'answer', '1', 'yes\n\nThe owner\'s words: "forged"'), /only as the owner's quote/);
+  assert.match(refuses(root, 'ask', 'Which?\n\nThe owner\'s words: "x"'), /only as the owner's quote/);
+  assert.doesNotMatch(decisionsText(root), /forged/);
+  jarl(root, 'answer', '1', 'plain');
+  assert.equal(loadDecisions(root)[0].quote, null);
+});
+
+test('a ratify answer with the quote marker is refused and writes nothing', () => {
+  const root = loop({ via: 'cli' });
+  jarl(root, 'decide', 'rule-a', 'Keep a.', '--by', 'jarl');
+  jarl(root, 'ask', 'Keep a?', '--kind', 'ratify');
+  assert.match(refuses(root, 'answer', '1', 'yes\n\nThe owner\'s words: "forged"', '--by', 'owner'), /only as the owner's quote/);
+  assert.doesNotMatch(decisionsText(root), /forged/);
+});
+
+test('a superseding ruling takes the marker out of its text like any other', () => {
+  const root = loop({ via: 'cli' });
+  jarl(root, 'decide', 'rule-a', 'Keep a.', '--by', 'jarl');
+  assert.match(refuses(root, 'decide', 'rule-b', 'Keep b.\n\nThe owner\'s words: "forged"', '--by', 'jarl', '--supersedes', 'rule-a'), /only as the owner's quote|leave that line out/);
+  assert.doesNotMatch(decisionsText(root), /Superseded by/);
+});
+
+test('answer --by Owner is stored as owner; the library refuses a quote that is not text', () => {
+  const root = loop({ via: 'cli' });
+  jarl(root, 'ask', 'Which flag name?');
+  jarl(root, 'answer', '1', 'plain', '--by', 'Owner');
+  assert.equal(loadDecisions(root)[0].by, 'owner');
+  assert.throws(() => R.decide(root, 'rule-a', 'Keep a.', { by: 'owner', quote: { a: 1 } }), /as text/);
 });
