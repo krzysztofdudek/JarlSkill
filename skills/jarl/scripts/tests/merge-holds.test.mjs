@@ -127,12 +127,12 @@ test('merged without --sha on an issue whose lease records no branch says so, an
 // ---- the approve's tip against the tip being merged -------------------------------------------------------------------
 
 const APPROVED_ELSEWHERE = /APPROVED ON ANOTHER TIP/;
-// The commands the note gives to see the branch's own commits between two tips in a repository, and their changes, its
-// path as the shell takes it.
+// The commands the note gives to see what changed between two tips in a repository: the branch's commits along its first
+// parents, merges included, and the whole difference; the path as the shell takes it.
 const seeing = (dir, a, b) => {
   const at = realpathSync.native(dir);
   const word = /^[A-Za-z0-9_@%+=:,./-]+$/.test(at) ? at : `'${at}'`;
-  return `git -C ${word} log --oneline --first-parent --no-merges ${a}..${b} and git -C ${word} log -p --first-parent --no-merges ${a}..${b}`;
+  return `git -C ${word} log --oneline --first-parent ${a}..${b} and git -C ${word} diff ${a} ${b}`;
 };
 // The fixture with its issue approved by a fresh reviewer on the branch as it stands, and a helper that adds a commit on
 // the branch after that approve.
@@ -183,7 +183,7 @@ test('a merge of the approved tip, while the branch has moved on, lands what was
   assert.doesNotMatch(out, APPROVED_ELSEWHERE);
 });
 
-test('a merge of a commit made after the approve, while the branch moved on again before it was recorded, is noted with the approved tip and the branch tip', () => {
+test('a merge of a commit made after the approve, while the branch moved on again before it was recorded, names the commit that landed and not the later one', () => {
   const { repo, tip, later } = approved();
   const landed = later('late.txt');
   git(repo, 'merge', '-q', '--no-ff', '-m', 'merge a commit after the approve', landed);
@@ -191,27 +191,58 @@ test('a merge of a commit made after the approve, while the branch moved on agai
   const out = said(repo, 'merged', '1', '--sha', git(repo, 'rev-parse', 'HEAD'), '--keep');
   assert.match(out, /MERGE WITHOUT THE BRANCH/);
   assert.match(out, APPROVED_ELSEWHERE);
-  assert.ok(out.includes(`recorded on jarl/1-x at ${tip.slice(0, 12)}, and the branch stands at ${now.slice(0, 12)} at this merge`), out);
+  const [a, c, d] = [tip, landed, now].map((s) => s.slice(0, 12));
+  assert.ok(out.includes(`recorded on jarl/1-x at ${a}, and this merge holds the branch up to ${c} (it stands at ${d} now), so what changed from ${a} to ${c} landed without that review`), out);
+  assert.ok(out.includes(`see it: ${seeing(repo, a, c)}`), out);
+  assert.doesNotMatch(out, new RegExp(`${d} at this merge`));
 });
 
-test('after the base was merged into the branch, the commands of the note show only the branch\'s own commits', () => {
-  const { repo, tip, later } = approved();
-  commit(repo, 'base.txt', 'base\n');
-  git(repo, 'checkout', '-q', 'jarl/1-x');
-  git(repo, 'merge', '-q', '--no-ff', '-m', 'merge the base into the branch', 'main');
-  commit(repo, 'own.txt', 'own\n');
-  git(repo, 'checkout', '-q', 'main');
-  const now = git(repo, 'rev-parse', 'jarl/1-x');
+// The fixture with a.txt changed on the branch and approved there, then changed otherwise on the base, and the base merged
+// into the branch with the conflict resolved by a line of new code.
+function approvedThenBaseMerged() {
+  const f = fixture();
+  git(f.repo, 'checkout', '-q', 'jarl/1-x');
+  commit(f.repo, 'a.txt', 'branch\n');
+  git(f.repo, 'checkout', '-q', 'main');
+  const tip = git(f.repo, 'rev-parse', 'jarl/1-x');
+  jarl(f.repo, 'review', '1', 'approve', '--by', 'rev-fresh', 'read the diff, nothing found');
+  commit(f.repo, 'a.txt', 'base\n');
+  git(f.repo, 'checkout', '-q', 'jarl/1-x');
+  spawnSync('git', ['merge', '-q', 'main'], { cwd: f.repo, encoding: 'utf8', timeout: SPAWN_TIMEOUT });
+  writeFileSync(join(f.repo, 'a.txt'), 'branch and base\nnew code written in the conflict fix\n');
+  git(f.repo, 'add', 'a.txt');
+  git(f.repo, 'commit', '-qm', 'merge the base into the branch');
+  git(f.repo, 'checkout', '-q', 'main');
+  return { ...f, tip, now: git(f.repo, 'rev-parse', 'jarl/1-x') };
+}
+
+test('a merge of the base into the branch after the approve is noted, and the commands show that merge and the code its conflict fix added', () => {
+  const { repo, tip, now } = approvedThenBaseMerged();
   git(repo, 'merge', '-q', '--no-ff', '-m', 'merge 1', 'jarl/1-x');
   const out = said(repo, 'merged', '1', '--sha', git(repo, 'rev-parse', 'HEAD'), '--keep');
+  assert.match(out, APPROVED_ELSEWHERE);
   const [a, b] = [tip.slice(0, 12), now.slice(0, 12)];
   assert.ok(out.includes(`see it: ${seeing(repo, a, b)}`), out);
-  const commits = git(repo, 'log', '--oneline', '--first-parent', '--no-merges', `${a}..${b}`);
-  assert.match(commits, /add own\.txt/);
-  assert.doesNotMatch(commits, /add base\.txt/);
-  const changes = git(repo, 'log', '-p', '--first-parent', '--no-merges', `${a}..${b}`);
-  assert.match(changes, /own\.txt/);
-  assert.doesNotMatch(changes, /base\.txt/);
+  assert.match(git(repo, 'log', '--oneline', '--first-parent', `${a}..${b}`), /merge the base into the branch/);
+  assert.match(git(repo, 'diff', a, b), /\+new code written in the conflict fix/);
+});
+
+test('a merge of only the approved tip, after the base was merged into the branch, says nothing about the approve', () => {
+  const { repo, tip } = approvedThenBaseMerged();
+  spawnSync('git', ['merge', '-q', '--no-ff', '-m', 'merge the approved tip', tip], { cwd: repo, encoding: 'utf8', timeout: SPAWN_TIMEOUT });
+  writeFileSync(join(repo, 'a.txt'), 'resolved by the merger\n');
+  git(repo, 'add', 'a.txt');
+  git(repo, 'commit', '-qm', 'merge the approved tip');
+  assert.doesNotMatch(said(repo, 'merged', '1', '--sha', git(repo, 'rev-parse', 'HEAD'), '--keep'), APPROVED_ELSEWHERE);
+});
+
+test('a recorded commit that is not in the repository is noted as not found here, never as landed', () => {
+  const { repo, tip, later } = approved();
+  const now = later('late.txt');
+  const out = said(repo, 'merged', '1', '--sha', 'abcdef1234567', '--keep');
+  assert.match(out, APPROVED_ELSEWHERE);
+  assert.ok(out.includes(`at ${tip.slice(0, 12)}, and the branch stands at ${now.slice(0, 12)}; abcdef123456 is not found here, so what it holds cannot be read`), out);
+  assert.doesNotMatch(out, /landed without that review/);
 });
 
 test('a squash merge is noted when the branch moved after its approve, and not when it did not', () => {
@@ -253,27 +284,28 @@ test('a review recorded after the note is the approve the gate stands on, and do
   assert.equal(jarl(repo, 'set', '1', 'done', 'merged'), '1 → done');
 });
 
-test('an issue of several repositories is noted for the repository whose tip moved after the approve, and only that one', () => {
+test('an issue of several repositories is noted per repository whose tip moved after the approve: landed where the merge is, not merged yet elsewhere, nothing where it did not move', () => {
   const parent = mkdtempSync(join(tmpdir(), 'jarl-holds-multi-'));
   const dirs = {};
-  for (const name of ['hub', 'tool', 'lib']) {
+  for (const name of ['hub', 'tool', 'lib', 'doc']) {
     dirs[name] = join(parent, name);
     mkdirSync(dirs[name]);
     git(dirs[name], 'init', '-q', '-b', 'main');
     commit(dirs[name], 'a.txt', 'a\n');
   }
-  const { hub, tool, lib } = dirs;
+  const { hub, tool, lib, doc } = dirs;
   jarl(hub, 'init', 'goal');
-  jarl(hub, 'new', 'cross', '--repo', '../tool,../lib', '--acceptance', 'it works');
-  for (const r of [tool, lib]) { git(r, 'checkout', '-q', '-b', 'jarl/1-x'); commit(r, 'b.txt', 'b\n'); git(r, 'checkout', '-q', 'main'); }
+  jarl(hub, 'new', 'cross', '--repo', '../tool,../lib,../doc', '--acceptance', 'it works');
+  for (const r of [tool, lib, doc]) { git(r, 'checkout', '-q', '-b', 'jarl/1-x'); commit(r, 'b.txt', 'b\n'); git(r, 'checkout', '-q', 'main'); }
   jarl(hub, 'set', '1', 'in-progress', 'start', '--branch', 'jarl/1-x', '--worker', 'w-one');
   jarl(hub, 'review', '1', 'approve', '--by', 'rev-fresh', 'read the diff, nothing found');
-  const was = git(lib, 'rev-parse', 'jarl/1-x');
-  git(lib, 'checkout', '-q', 'jarl/1-x'); commit(lib, 'late.txt', 'late\n'); git(lib, 'checkout', '-q', 'main');
-  const now = git(lib, 'rev-parse', 'jarl/1-x');
+  const moved = (r) => { const was = git(r, 'rev-parse', 'jarl/1-x'); git(r, 'checkout', '-q', 'jarl/1-x'); commit(r, 'late.txt', 'late\n'); git(r, 'checkout', '-q', 'main'); return [was, git(r, 'rev-parse', 'jarl/1-x')].map((s) => s.slice(0, 12)); };
+  const [libWas, libNow] = moved(lib);
+  const [toolWas, toolNow] = moved(tool);
   git(lib, 'merge', '-q', '--no-ff', '-m', 'merge 1', 'jarl/1-x');
   const out = said(hub, 'merged', '1', '--sha', git(lib, 'rev-parse', 'HEAD'), '--keep');
   assert.match(out, APPROVED_ELSEWHERE);
-  assert.ok(out.includes(`in lib ${was.slice(0, 12)} → ${now.slice(0, 12)}, see it: ${seeing(lib, was.slice(0, 12), now.slice(0, 12))}`), out);
-  assert.doesNotMatch(out, /in tool /);
+  assert.ok(out.includes(`in lib ${libWas} → ${libNow}, which this merge holds without that review, see it: ${seeing(lib, libWas, libNow)}`), out);
+  assert.ok(out.includes(`in tool ${toolWas} → ${toolNow}, not merged yet, see it: ${seeing(tool, toolWas, toolNow)}`), out);
+  assert.doesNotMatch(out, /in doc /);
 });
