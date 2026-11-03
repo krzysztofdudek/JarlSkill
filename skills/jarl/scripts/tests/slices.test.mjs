@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { jarl, refuses, run, loop as makeLoop } from './helpers.mjs';
+import { jarl, refuses, run, skillText, loop as makeLoop } from './helpers.mjs';
 import { formatTwoJarl } from './old-jarl.mjs';
 
 const loop = () => makeLoop({ prefix: 'jarl-slice-', via: 'cli', dotGit: false });
@@ -228,4 +228,24 @@ test('with more than one slice in play, a lease on an issue that declares no Fil
   jarl(one, 'new', 'thor done', '--tags', 'slice:thor');
   jarl(one, 'set', '2', 'dropped', 'not needed');
   jarl(one, 'set', '1', 'in-progress', 'go', '--worker', 'w1', '--branch', 'jarl/1');
+});
+
+test('the jarl reference hands slices to coordinators: the four reasons to escalate, the rule of waiting, and one merger', () => {
+  const md = skillText('references/jarl.md');
+  const at = md.indexOf('## Coordinators: slices of the backlog');
+  assert.ok(at > 0, 'the section is there');
+  const section = md.slice(at, md.indexOf('\n## ', at + 1));
+  assert.doesNotMatch(md, /reeve/i, 'the coordinator is the role; no other name for it');
+  // The four reasons, as a list a built-in rule can quote line by line.
+  assert.deepEqual(section.split('\n').filter((l) => /^\d\. /.test(l)), [
+    '1. a gap or a finding outside its slice\'s goal;',
+    '2. a decision that is the jarl\'s or the owner\'s;',
+    '3. its slice empty, or blocked by another slice;',
+    '4. a takeover that failed too.',
+  ]);
+  assert.match(section, /`ask "<question>" --kind escalation --slice <name>`/);
+  assert.match(section.replace(/\n/g, ' '), /A level waits on the agents it raised, and returns only when the ball is on someone it did not raise\./);
+  assert.match(section.replace(/\n/g, ' '), /The goal's `Merger: <name>` line names the one holder, the jarl or one coordinator, that raises the merger/);
+  assert.match(section.replace(/\n/g, ' '), /Counts are never pushed up: the jarl reads them with `status --slice <name>`\./);
+  assert.match(skillText('references/models.md'), /\[Coordinators\]\(jarl\.md#coordinators-slices-of-the-backlog\)/);
 });

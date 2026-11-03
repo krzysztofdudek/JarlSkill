@@ -21,6 +21,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A coordinator can send a question up to whoever runs the loop, naming its part of the backlog or the task, instead of going to the owner. The question shows on that person's list and in the coordinator's view, and the task it names waits for the answer. The first such question moves the loop to format 3.
 - The goal can name the one coordinator, or the person who runs the loop, who starts the merges, with a line such as `Merger: odin`. Every approved task waiting to be merged, in every part of the backlog, is then on that one list, so only one merge runs at a time.
 - Every command that records work can now say who did it: starting a task, recording proof, a failed round, a merge, a question, a note or a change to the goal. Name yourself on each call; nothing fills in a name for you, and where several coordinators work, a task started without a name shows as unnamed. The first named entry moves the loop to format 3.
+- The guide for running a loop now describes coordinators, each over its own part of the backlog, in place of a single assistant: when a coordinator should turn to whoever runs the loop (four cases), that each one waits on the helpers it started, and that one named person starts the merges.
 
 ### Changed
 

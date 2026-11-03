@@ -21,9 +21,9 @@ Every spawn names its model explicitly and never inherits the coordinator's mode
 
 Opening the loop — reading the repository whole, writing the goal, the first rulings and the first
 issues — is the one part that needs the strongest model in the room. The loop itself is clerical
-work over a tool that refuses what is wrong: the reeve, on the standard tier, runs it, hands out
-issues, reads reports and keeps the journal, and hands back to the jarl only on the four occasions
-named in [The reeve](jarl.md#the-reeve-handing-the-loop-down). Workers start on the tier the issue's `Tier:` names, and a takeover offers a tier up, another model or a changed approach. The reviewer whose approve clears the issue is never of the worker's own model and never ranked below the worker's model, every model that has held the issue's lease, and not the issue's tier (see [The approve that clears an issue](#the-approve-that-clears-an-issue)). Readers and the merger run on the standard tier. Say which tier is running in every report.
+work over a tool that refuses what is wrong: coordinators, on the standard tier, run it over their
+slices, hand out issues, read reports and keep the journal, and go up to the jarl only for the four
+reasons named in [Coordinators](jarl.md#coordinators-slices-of-the-backlog). Workers start on the tier the issue's `Tier:` names, and a takeover offers a tier up, another model or a changed approach. The reviewer whose approve clears the issue is never of the worker's own model and never ranked below the worker's model, every model that has held the issue's lease, and not the issue's tier (see [The approve that clears an issue](#the-approve-that-clears-an-issue)). Readers and the merger run on the standard tier. Say which tier is running in every report.
 
 ## The tiers, and when each fits
 
