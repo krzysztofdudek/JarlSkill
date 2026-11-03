@@ -4,7 +4,7 @@
 // (tests/old-jarl.mjs) without a refusal and without a silent misreading, so the record format is not raised.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, existsSync, cpSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, existsSync, cpSync, renameSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
@@ -478,6 +478,19 @@ test('models: a model with fewer than five units in every kind is new; a model o
   assert.equal(row.new, true);
   assert.equal(row.unplaced, true);
   assert.equal(cell(m.workers, 'brand-new-1', 'bug · standard').share, null);
+});
+
+test('models on a loop with no issue file yet (a fresh clone of a committed loop) reads an empty live loop, not a missing one', () => {
+  const root = loop();
+  renameSync(join(root, '.jarl', 'issues'), join(root, '.jarl', 'issues-moved'));
+  const m = L.cmdModels(root, {});
+  assert.deepEqual(m.loops.map((l) => [l.label, l.issues, l.units, l.verdicts]), [['this loop', 0, 0, 0]]);
+  const r = cli(root, 'models');
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /# Models · this loop \(0 issues, 0 units, 0 verdicts\)/);
+  assert.match(r.stdout, /\(no unit of work yet\)/);
+  assert.match(r.stdout, /\(no verdict yet\)/);
+  assert.doesNotMatch(r.stdout + r.stderr, /holds no live loop/);
 });
 
 test('models: a loop whose leases and verdicts carry no model reads as (not recorded) by tier', () => {
