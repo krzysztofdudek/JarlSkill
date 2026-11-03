@@ -195,8 +195,9 @@ export function rootFor(input = {}, env = process.env, cwd = process.cwd()) { re
 export function callTool(name, input = {}, env = process.env, cwd = process.cwd()) {
   if (name === toolName('help')) {
     if (input === null || typeof input !== 'object' || Array.isArray(input)) throw invalid(`${name}: arguments must be an object`);
-    const extra = Object.keys(input);
-    if (extra.length) throw invalid(`${name}: unknown field "${extra[0]}" — it takes no fields`);
+    const shared = Object.keys(GLOBAL_FLAGS).filter((f) => f !== 'help');
+    const extra = Object.keys(input).filter((k) => !shared.includes(k));
+    if (extra.length) throw invalid(`${name}: unknown field "${extra[0]}" — it takes ${shared.length ? shared.join(', ') : 'no fields'}`);
     return { content: [{ type: 'text', text: HELP }], isError: false };
   }
   const cmd = commandForTool(TABLE, name, TOOL_OPTIONS);

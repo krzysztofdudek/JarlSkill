@@ -437,3 +437,10 @@ test('a filing refused for an after that names no issue takes no number: the nex
   assert.equal(JSON.parse(second.content[0].text).id, '2');
   assert.equal(issuesIn(root), 2);
 });
+
+test('the help tool takes the fields every tool takes and refuses any other', () => {
+  const root = loopDir('jarl-mcp-helproot-');
+  assert.equal(mcp.callTool('jarl_help', { root }).isError, false);
+  assert.equal(mcp.callTool('jarl_help', { root, json: true }).content[0].text, mcp.callTool('jarl_help').content[0].text);
+  refusedAsInvalid(() => mcp.callTool('jarl_help', { root, bogus: 1 }), /unknown field "bogus" — it takes json, root/);
+});
