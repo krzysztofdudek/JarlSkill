@@ -42,7 +42,7 @@ test('parity: the tool set is the one this release documents — adding or remov
   assert.deepEqual(TOOLS.map((t) => t.name).sort(), [
     'after', 'answer', 'archive', 'ask', 'body', 'branches', 'changelog', 'check', 'close', 'decide', 'decisions',
     'evidence', 'field', 'files', 'goal', 'help', 'import', 'init', 'list', 'log', 'merged', 'mode', 'models', 'new', 'next', 'prio',
-    'profile', 'queue', 'repo', 'report', 'resume', 'retract', 'review', 'round', 'scope', 'set', 'show', 'source', 'sources', 'status', 'tag', 'tips', 'verify',
+    'profile', 'queue', 'repo', 'report', 'resume', 'retract', 'review', 'round', 'scope', 'set', 'show', 'source', 'sources', 'status', 'tag', 'tick', 'tips', 'verify',
   ].map(mcp.toolName));
 });
 
@@ -408,7 +408,7 @@ test('a JSON-RPC response from the client gets no answer; a malformed request st
 
 test('jarl_set changes a status and jarl_field writes a field: each description says so', () => {
   assert.equal(byName.jarl_set.description, 'WRITES the loop. Change the status of issues, with the reason logged.');
-  assert.match(byName.jarl_field.description, /^WRITES the loop\. Write one header field of the description on issues \(Title, Priority, Tier, Kind, Found by, Tags, Files, Repo, After, Source, Where, Resources or a profile field\), or empty an optional one with clear, logging what it held and who changed it when named\./);
+  assert.match(byName.jarl_field.description, /^WRITES the loop\. Write one header field of the description on issues \(Title, Priority, Tier, Kind, Found by, Tags, Files, Repo, After, Source, Where, Resources, Person, Check when or a profile field\), or empty an optional one with clear, logging what it held and who changed it when named\./);
 });
 
 test('every tool refuses a field it does not take, names the fields it takes, and writes nothing', () => {

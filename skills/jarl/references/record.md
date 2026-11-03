@@ -83,7 +83,7 @@ What the log says of an issue is folded in file order, the way the commands writ
 
 **In a committed loop**, git merges `log.md` by union, which places the lines of two branches in the order of the merge direction. When both branches moved one issue, the clone that merged one way and the clone that merged the other way hold the same lines in two orders, and each folds its own log: the later move in its file decides, which is the order the done gate replays. The issue file has no merge driver and conflicts on the changed header lines; a resolution by hand that differs from the log the clone holds is printed as a disagreement, and writing the header back settles it. Two clones that hold the same log text read the same.
 
-**The log's own door is shut to forged state.** `log` writes a note, and a line that starts with an id and an arrow, or reads as a filing, a move, a round, a verdict, a retraction, an evidence row, a branch tip, a merge, a CI state or a body change is refused, with the command that writes it. A composer's `record.appendLog` is refused the same way, and `record.writeAtomic` writes any file but the journal whole. A well-formed line written into `log.md` by hand cannot be told from a real one; only the commands keep the lines true.
+**The log's own door is shut to forged state.** `log` writes a note, and a line that starts with an id and an arrow, or reads as a filing, a move, a round, a verdict, a retraction, an evidence row, a branch tip, a merge, a CI state, a body change or the owner's tick of an acceptance line is refused, with the command that writes it. A composer's `record.appendLog` is refused the same way, and `record.writeAtomic` writes any file but the journal whole. A well-formed line written into `log.md` by hand cannot be told from a real one; only the commands keep the lines true.
 
 ## The write lock
 
@@ -95,7 +95,7 @@ Every command that writes holds `.jarl/.lock` while it runs, and every file is r
 # 7 · title
 
 **Status:** open | in-progress | done | dropped | deferred
-**Kind:** bug | gap | cleanup | docs | test | research | process
+**Kind:** bug | gap | cleanup | docs | test | research | process | promise | wait — the last two are kept, not worked: a promise is kept by whoever its **Found by:** names, a wait is held by its **Person:**; `next` never offers either to a worker, and either ends when the issue closes (see [What is on whom](commands.md#what-is-on-whom))
 **Priority:** 1 | 2 | 3
 **Tier:** light | standard | strong, weakest first — the tier of model the worker is raised on, explicit in the file, never implied; the loop's `Model (<tier>):` lines in `goal.md` say which models run on each tier, and the criteria are in [Which model sits where](models.md#which-model-sits-where)
 **Tags:** comma, separated
@@ -103,7 +103,8 @@ Every command that writes holds `.jarl/.lock` while it runs, and every file is r
 **Repo:** only when the code lives in another repository than the loop — its name, or the path to its main checkout where it is not a sibling of the loop's (see [Code in another repository](repositories.md#code-in-another-repository))
 **After:** only when it waits on other issues — their ids; `next` holds it until each is done or dropped
 **Resources:** only when the work uses something no other work may use at the same time — names, comma separated, loop-wide and not files (a port, a database server, `gate` for the machine's load); written with `field <ids> resources "gate, db"`, and emptied with `field <ids> resources --clear`. `next` and the lease read it: `next` does not offer an issue whose resource an in-progress issue holds, nor two issues that declare the same one at once, across repositories too, and `next --all` names the holder under *held by a resource another issue holds*; a lease on such an issue is refused, naming the holder (see [Packages and leases](repositories.md#packages-and-leases)). A resource is held for a lease's whole life: there is no capacity and no lock at run time, `scope`, `queue` and the file rules never read it, contention during a test run belongs to the repository's own harness or the workspace's run lock, and how many heavy workers run at once stays the jarl's choice. `Resources` is a field Jarl writes itself, so a profile cannot declare a field of that name.
-**Found by:** who, doing what
+**Found by:** who, doing what; on a promise, who made it and keeps it
+**Person:** · **Check when:** only on a wait (written with `new --kind wait --person "<name>" --check-when "<when>"`, or by `field`) — the outside person it is held by, the name `next --as` answers to, and when to check it, a date or the event to check after; neither is emptied while the issue is a wait
 **Source:** only when it comes from research — <report dir>#<finding id>, several comma separated
 **Where:** file:line, or the command and what it printed
 **Branch:** only once it is in progress with --branch — the worker branch it is done on, shared by a package; kept after done

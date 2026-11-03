@@ -61,7 +61,7 @@ test('budget step 1: a tool description is one sentence after whether it writes;
 
 test('the server lists jarl_field for Resources and the profile\'s fields, with its own fields, and jarl_set for statuses alone', () => {
   const byName = Object.fromEntries(listed.map((t) => [t.name, t]));
-  assert.match(byName.jarl_field.description, /^WRITES the loop\. Write one header field of the description on issues \(Title, Priority, Tier, Kind, Found by, Tags, Files, Repo, After, Source, Where, Resources or a profile field\), or empty an optional one with clear, logging what it held and who changed it when named\.$/);
+  assert.match(byName.jarl_field.description, /^WRITES the loop\. Write one header field of the description on issues \(Title, Priority, Tier, Kind, Found by, Tags, Files, Repo, After, Source, Where, Resources, Person, Check when or a profile field\), or empty an optional one with clear, logging what it held and who changed it when named\.$/);
   assert.deepEqual(Object.keys(byName.jarl_field.inputSchema.properties).sort(), ['by', 'clear', 'ids', 'json', 'name', 'root', 'value']);
   assert.equal(byName.jarl_field.inputSchema.properties.clear.type, 'boolean');
   assert.equal(byName.jarl_set.description, 'WRITES the loop. Change the status of issues, with the reason logged.');

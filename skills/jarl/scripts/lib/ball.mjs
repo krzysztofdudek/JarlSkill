@@ -1,13 +1,14 @@
 // What is on whom: every open thing of the loop has one holder who must move next, derived from the record and never
 // stored, and next --as <holder> lists what is on that one, each line with the command that moves it.
 
-import { fieldText, need } from './base.mjs';
+import { PROMISE_KIND, WAIT_KIND, fieldText, need } from './base.mjs';
 import { jarlDir } from './where.mjs';
 import { cmpId, idKey, idsCited } from './ids.mjs';
 import { mergedOf } from './issues.mjs';
 import { carriesCode, gateOf, readLoop, sameSlice, sliceOf } from './loop.mjs';
 import { reasonWord, shellWord, waitingOn } from './commands.mjs';
 import { inFlightMark, nextRows, schedulerNote } from './evidence.mjs';
+import { ownerLineStates } from './owner-lines.mjs';
 
 // The holders: the owner, the jarl, a named coordinator or a named outside person. A ready issue, a lease, a proof with no
 // verdict and a changes verdict are held by the coordinator whose slice the issue is in, and by the jarl for an issue in
@@ -30,6 +31,12 @@ export function holderOf(name) {
   return plain;
 }
 const holderWord = (h) => (h === OWNER_HOLDER || h === JARL_HOLDER ? `the ${h}` : h);
+// One holder however its name is cased or spaced: Dana Smith and dana  smith are one person.
+const holderKey = (h) => String(h).toLowerCase().replace(/\s+/g, ' ');
+const sameHolder = (a, b) => holderKey(a) === holderKey(b);
+// Who keeps a promise: the one its Found by names (the jarl when it names nobody). Who a wait is held by: its Person.
+const makerOf = (issue) => holderOf(fieldText(issue.fields['found by']) || JARL_HOLDER);
+const personOf = (issue) => (fieldText(issue.fields.person) ? holderOf(fieldText(issue.fields.person)) : null);
 
 // The status a move of each kind goes into, read from the profile's flags: the first status that holds the claim, and
 // the first that closes the record (else the first terminal one).
@@ -44,8 +51,6 @@ function sliceHolder(loop, issue) {
   if (slice === null) return JARL_HOLDER;
   return loop.goalLines.coordinators.find((c) => sameSlice(c, slice)) ?? slice;
 }
-// Whether a row is on the asker: the owner and the jarl by their words, anyone else by name, in any case.
-const sameHolder = (a, b) => a.toLowerCase() === b.toLowerCase();
 
 // The issue rows: what the record says about an issue in play, as the step it points to and who takes it. The worker of
 // a lease is the one who does the step, and the holder of its slice (the jarl, with none) still holds the line.
@@ -62,14 +67,17 @@ function issueRows(ctx) {
   }
   const evidence = `--ran "<command>" --saw "<what it printed>"`;
   const verdict = (id) => `jarl.mjs review ${id} approve|changes --by <reviewer> "<findings>"`;
-  for (const i of loop.issues.filter((x) => profile.is(x.status, 'holds-claim') && !waitingOn(x, loop.byId, profile).length)) {
+  // A wait has rows of its own (keptRows); a promise in a lease is worked as any issue, and its maker holds each line.
+  for (const i of loop.issues.filter((x) => profile.is(x.status, 'holds-claim') && profile.keptKind(x.kind) !== WAIT_KIND && !waitingOn(x, loop.byId, profile).length)) {
     const mark = inFlightMark(loop, i);
     const worker = fieldText(i.fields.worker) || null;
-    const holder = sliceHolder(loop, i);
-    // The rows a slice's coordinator holds: the lease, the proof with no verdict and the changes verdict. What follows an
-    // approve (the merge, its CI and the close) stays the jarl's.
+    // A promise is on whoever made it; any other issue on the coordinator of its slice, for the lease, the proof with no
+    // verdict and the changes verdict, and on the jarl with no slice. What follows an approve (the merge, its CI and the
+    // close) stays the jarl's, a promise's its maker's.
+    const promise = profile.keptKind(i.kind) === PROMISE_KIND;
+    const holder = promise ? makerOf(i) : sliceHolder(loop, i);
     const base = { id: i.id, title: i.title, priority: i.priority, holder, ...(worker ? { doer: worker } : {}) };
-    const onJarl = { ...base, holder: JARL_HOLDER };
+    const onJarl = { ...base, holder: promise ? holder : JARL_HOLDER };
     // An approve not merged is on the one holder the goal's Merger line names, who raises the merger; with none, the jarl.
     const onMerger = { ...base, holder: ctx.merger };
     const withWorker = worker ? `with worker ${worker}` : 'in progress';
@@ -78,14 +86,17 @@ function issueRows(ctx) {
       out.push({ ...base, what: 'worker', says: `${withWorker}${fieldText(i.fields.since) ? ` since ${fieldText(i.fields.since)}` : ''}, ${backAfterRound ? 'sent back by a round, no new proof yet' : 'no proof yet'}; the worker records it`, command: `jarl.mjs evidence ${i.id} ${evidence}` });
       continue;
     }
+    // A close the done gate would refuse for an owner line not ticked is not offered: that line's own row stands instead.
+    const unticked = (ctx.ownerStates.get(i.id) || []).some((s) => !s.tick);
     if (mark === 'rows-no-verdict' && profile.doneGate.approve === 'none') {
       // A done gate that asks for no approve: the proof is enough, and the merge (when the gate asks for one) comes next.
       const merge = profile.doneGate['requires-merged'] && !mergedOf(i);
+      if (!merge && unticked) continue;
       out.push({ ...(merge ? onMerger : onJarl), what: merge ? 'merge' : 'close', says: merge ? 'proof recorded, not merged; merge it' : 'proof recorded; close it',
         command: merge ? `jarl.mjs merged ${i.id} --sha <sha> --ran "<check>" --saw "<summary>"` : `jarl.mjs set ${i.id} ${closeStatus} "<why>"` });
       continue;
     }
-    if (mark === 'rows-no-verdict' && carriesCode(i)) continue;   // listed together below
+    if (mark === 'rows-no-verdict' && carriesCode(i) && profile.keptKind(i.kind) !== PROMISE_KIND) continue;   // listed together below
     if (mark === 'rows-no-verdict') {
       out.push({ ...base, what: 'review', says: 'proof recorded, no verdict; raise a reviewer', command: verdict(i.id) });
       continue;
@@ -106,6 +117,7 @@ function issueRows(ctx) {
       out.push({ ...onJarl, what: 'ci', says: 'merged, its CI not green yet; record the result', command: `jarl.mjs merged ${i.id} --ci green|red` });
       continue;
     }
+    if (unticked) continue;
     out.push({ ...onJarl, what: 'close', says: mark === 'merged' ? 'merged; close it' : 'approved; close it', command: `jarl.mjs set ${i.id} ${closeStatus} "<why>"` });
   }
   // One line per holder for the proofs of code with no verdict: each coordinator raises its own slice's reviewer.
@@ -128,7 +140,7 @@ function sentBack(loop, issue, mark) {
 // The issues in play whose code has proof and no verdict, and waits for a fresh reviewer.
 function awaitingReview(loop, profile) {
   if (profile.doneGate.approve === 'none') return [];
-  return loop.issues.filter((i) => profile.is(i.status, 'holds-claim') && !waitingOn(i, loop.byId, profile).length && carriesCode(i)
+  return loop.issues.filter((i) => profile.is(i.status, 'holds-claim') && !profile.keptKind(i.kind) && !waitingOn(i, loop.byId, profile).length && carriesCode(i)
     && inFlightMark(loop, i) === 'rows-no-verdict' && !sentBack(loop, i, 'rows-no-verdict'));
 }
 
@@ -166,6 +178,63 @@ function reviewRow(todo, holder, verdict) {
     says: `proof recorded, no verdict; raise a fresh reviewer for ${ids}; if you cannot raise agents, ask the owner to start a fresh session`,
     command: `${only ? verdict(only.id) : verdict('<id>')}, or jarl.mjs ask "${REVIEW_ASK} issue${todo.length === 1 ? '' : 's'} ${ids}"`,
   }];
+}
+
+// The rows of a promise and of a wait, which next never offers to a worker: an open promise is on whoever made it until
+// it is kept and closed; a wait is on its outside person until what was waited for comes (the first proof row records
+// it), with when to check, and then on the jarl to close. Either ends when its issue leaves play.
+function keptRows(ctx) {
+  const { loop, profile } = ctx;
+  const closeStatus = statusWith(profile, 'closes-record', 'terminal');
+  const verdict = `approve|changes --by <reviewer> "<findings>"`;
+  const out = [];
+  const kept = loop.issues.filter((i) => profile.active(i.status) && !waitingOn(i, loop.byId, profile).length
+    && (profile.keptKind(i.kind) === WAIT_KIND || (profile.keptKind(i.kind) === PROMISE_KIND && !profile.is(i.status, 'holds-claim'))));
+  for (const i of kept) {
+    const mark = inFlightMark(loop, i);
+    const base = { id: i.id, title: i.title, priority: i.priority, kind: i.kind };
+    const promise = i.kind === PROMISE_KIND;
+    const holder = promise ? makerOf(i) : mark === 'no-rows' ? personOf(i) || JARL_HOLDER : JARL_HOLDER;
+    const when = fieldText(i.fields['check when']) || 'not said';
+    if (mark === 'no-rows') {
+      out.push(promise
+        ? { ...base, what: 'promise', holder, says: `promised by ${holderWord(holder)}; keep it, then record what was done`, command: `jarl.mjs evidence ${i.id} --ran "<what was done>" --saw "<what came of it>"` }
+        : { ...base, what: 'wait', holder, checkWhen: when, says: `waits on ${holderWord(holder)}, check when ${when}; when it comes, record it`, command: `jarl.mjs evidence ${i.id} --ran "<how it was checked>" --saw "<what came>"` });
+      continue;
+    }
+    const done = promise ? 'kept' : 'it came';
+    if (mark === 'rows-no-verdict' || mark === 'approved-not-fresh') out.push({ ...base, what: 'review', holder, says: `${done}, proof recorded, no verdict; review it`, command: `jarl.mjs review ${i.id} ${verdict}` });
+    else if (mark === 'changes-requested') out.push({ ...base, what: 'changes', holder, says: `${done}, changes asked by its reviewer; answer them and ask for a new verdict`, command: `jarl.mjs review ${i.id} ${verdict}` });
+    else out.push({ ...base, what: 'close', holder, says: `${done}, approved; close it`, command: `jarl.mjs set ${i.id} ${closeStatus} "<why>"` });
+  }
+  return out;
+}
+
+// The rows of the acceptance lines only the owner ticks, on the issues in play: a line whose material is not there yet is
+// on whoever produces it (the coordinator of its slice, the jarl with none, the worker doing it), and once it is there, on the owner, with
+// the material and what to check. A line that names neither is the jarl's to rewrite. A ticked line holds nothing.
+function ownerLineRows(ctx) {
+  const out = [];
+  for (const [id, states] of ctx.ownerStates) {
+    const i = ctx.loop.byId.get(id);
+    const worker = fieldText(i.fields.worker) || null;
+    const base = { what: 'sign-off', id, title: i.title, priority: i.priority, ...(worker ? { doer: worker } : {}) };
+    for (const s of states.filter((x) => !x.tick)) {
+      const line = { ...base, line: s.n };
+      if (s.off) {
+        out.push({ ...line, holder: JARL_HOLDER, says: `acceptance line ${s.n} is marked as the owner's, and ${s.why}; rewrite it without the mark`, command: `jarl.mjs body ${id} --acceptance "<line>"... (every line of the section)` });
+      } else if (!s.material || !s.check || !s.what) {
+        out.push({ ...line, holder: JARL_HOLDER, says: `acceptance line ${s.n} is marked as the owner's and does not name its material and what to check; rewrite it`, command: `jarl.mjs body ${id} --acceptance "<line>"... (every line of the section)` });
+      } else if (!s.ready) {
+        // Its material is produced in the lease, so the line is on whoever holds the lease's rows: the coordinator of the
+        // issue's slice, the jarl with none.
+        out.push({ ...line, holder: sliceHolder(ctx.loop, i), says: `acceptance line ${s.n} is the owner's to tick once its material is there (${s.material}); ${s.why}`, command: `jarl.mjs evidence ${id} --ran "<command>" --saw "<what it printed>"` });
+      } else {
+        out.push({ ...line, holder: OWNER_HOLDER, material: s.material, check: s.check, says: `acceptance line ${s.n} is yours to tick: review ${s.material}${s.at ? ` (in ${s.at})` : ''} and check ${s.check}`, command: `jarl.mjs tick ${id} ${s.n} --by owner` });
+      }
+    }
+  }
+  return out;
 }
 
 // The owner's rows: every open question and every item to ratify. A ratify item blocks nothing.
@@ -210,7 +279,7 @@ function closedOn(loop, issue, slug) {
 
 // The sources of the rows, in order. Each reads the record through the context and gives rows { what, holder, says,
 // command, and id, ask or ruling }; a kind of open thing the record learns to hold adds its own source here.
-export const ROW_SOURCES = [issueRows, questionRows, rulingRows];
+export const ROW_SOURCES = [issueRows, keptRows, ownerLineRows, questionRows, rulingRows];
 // The rows a composer's scheduler owns: under an external scheduler Jarl lists only the others.
 const SCHEDULING = new Set([issueRows]);
 
@@ -222,8 +291,11 @@ export function ballRows(root) {
   const { profile } = loop;
   const scheduled = profile.scheduler !== null;
   const awaiting = scheduled ? [] : awaitingReview(loop, profile);
+  // The owner lines of the issues in play that wait on nothing, read once for the issue rows and their own.
+  const inPlay = loop.issues.filter((i) => profile.is(i.status, 'holds-claim') && !waitingOn(i, loop.byId, profile).length);
+  const ownerStates = new Map(inPlay.map((i) => [i.id, ownerLineStates(root, loop, i)]).filter(([, s]) => s.length));
   // Each issue reserves its files against the issues of its own slice: across slices only leases hold.
-  const ctx = { root, loop, profile, merger: loop.goalLines.merger === null ? JARL_HOLDER : holderOf(loop.goalLines.merger), next: scheduled ? [] : nextRows(root, { perSlice: true }), awaiting, onOwner: new Set(heldByOwner(loop, awaiting)) };
+  const ctx = { root, loop, profile, merger: loop.goalLines.merger === null ? JARL_HOLDER : holderOf(loop.goalLines.merger), next: scheduled ? [] : nextRows(root, { perSlice: true }), awaiting, onOwner: new Set(heldByOwner(loop, awaiting)), ownerStates };
   const rows = ROW_SOURCES.filter((s) => !(scheduled && SCHEDULING.has(s))).flatMap((s) => s(ctx));
   // Who each issue holds up: the issues in play whose After names it, not settled yet, and for a question the issue it holds.
   const active = loop.issues.filter((i) => profile.active(i.status));
@@ -256,8 +328,12 @@ function cmpRef(a, b) {
 // issue that holds it.
 function waitingRows(loop, rows, next, onOwner) {
   const { profile, byId } = loop;
-  const holderOfIssue = new Map(rows.filter((r) => r.id !== undefined).flatMap((r) => (r.ids || [r.id]).map((id) => [id, r.holder])));
-  for (const id of onOwner) holderOfIssue.set(id, OWNER_HOLDER);
+  // An issue may hold the ball on more than one holder at once (a merge on the jarl, an owner line on the owner).
+  const holderOfIssue = new Map();
+  for (const r of rows.filter((x) => x.id !== undefined)) {
+    for (const id of r.ids || [r.id]) holderOfIssue.set(id, [...new Set([...(holderOfIssue.get(id) || []), r.holder])]);
+  }
+  for (const id of onOwner) holderOfIssue.set(id, [OWNER_HOLDER]);
   const heldBy = new Map(next.filter((r) => r.heldBy && r.heldBy.length && !r.ready).map((r) => [r.id, r.heldBy]));
   const questionOf = new Map(next.filter((r) => r.group === 'held-by-question').map((r) => [r.id, r.questions]));
   // The holder of the questions that hold an issue: the owner while any of them is the owner's, the jarl when every one is
@@ -275,30 +351,29 @@ function waitingRows(loop, rows, next, onOwner) {
     }
     return out;
   };
-  // The holder an issue that waits on nothing itself puts the wait on: its own row's, the owner's through a question
-  // that names it, or the holder of the issue that holds its file; null when the record names nobody (a status no flag
+  // The holders an issue that waits on nothing itself puts the wait on: its own rows', the owner's through a question
+  // that names it, or the holders of the issue that holds its file; none when the record names nobody (a status no flag
   // puts in play).
   const onOf = (b) => {
     if (holderOfIssue.has(b.id)) return holderOfIssue.get(b.id);
-    if (questionOf.has(b.id)) return questionHolder(b.id);
+    if (questionOf.has(b.id)) return [questionHolder(b.id)];
     const h = (heldBy.get(b.id) || []).find((x) => holderOfIssue.has(x));
-    return h ? holderOfIssue.get(h) : null;
+    return h ? holderOfIssue.get(h) : [];
   };
   // One entry per waiting issue and holder, with every issue it waits through.
   const entries = new Map();
   const add = (i, on, through) => {
-    if (on === null) return;
     const key = `${i.id}\n${on}`;
     if (!entries.has(key)) entries.set(key, { id: i.id, title: i.title, on, via: [] });
     const e = entries.get(key);
     if (!e.via.includes(through)) e.via.push(through);
   };
   for (const i of loop.issues.filter((x) => profile.active(x.status) && waitingOn(x, byId, profile).length)) {
-    for (const b of roots(i)) add(i, onOf(b), b.id);
+    for (const b of roots(i)) for (const on of onOf(b)) add(i, on, b.id);
   }
   for (const [id, holders] of heldBy) {
     const h = holders.find((x) => holderOfIssue.has(x));
-    if (h) add(byId.get(id), holderOfIssue.get(h), h);
+    if (h) for (const on of holderOfIssue.get(h)) add(byId.get(id), on, h);
   }
   return [...entries.values()].sort((a, b) => cmpId(a.id, b.id));
 }
@@ -319,8 +394,10 @@ export function cmdNextAs(root, flags = {}) {
   const sliced = loop.issues.some((i) => sliceOf(i) !== null);
   const ownSlice = loop.issues.some((i) => sameSlice(sliceOf(i), holder));
   const note = !coordinator || ownSlice ? null : sliced ? `no issue carries slice:${holder}, so nothing of a slice is on ${holder}: the issues in no slice are the jarl's (jarl.mjs next --as jarl), and jarl.mjs tag <ids> +slice:${holder} gives ${holder} its slice` : 'with no slice in the loop, what a coordinator holds is the jarl\'s: jarl.mjs next --as jarl';
+  // A person is named as the record writes the name, whatever case the asker typed.
+  const spelled = mine.length ? mine[0].holder : waits.length ? waits[0].on : holder;
   return {
-    as: holder, rows: shown, total: mine.length, more: mine.length - shown.length,
+    as: spelled, rows: shown, total: mine.length, more: mine.length - shown.length,
     waiting: all ? waits : [], waitingTotal: waits.length,
     ...(note ? { note } : {}),
     ...(scheduled ? { scheduler: loop.profile.scheduler, schedulerNote: `the issues in play are the composer's: ${schedulerNote(loop.profile.scheduler)}` } : {}),

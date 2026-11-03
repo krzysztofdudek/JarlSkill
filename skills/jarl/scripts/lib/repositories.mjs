@@ -150,11 +150,12 @@ export function raiseFormat(root, to = RECORD_FORMAT_RAISED, what = null) {
   });
 }
 // Before a write of the line FORMAT_LINES names `name`, under the write's lock: the loop is raised to the line's format
-// (from format 1 or 2, whichever it is in), or the write is refused where the loop's composer keeps its format.
-export function needFormat(root, name) {
+// (from format 1 or 2, whichever it is in), or the write is refused where the loop's composer keeps its format;
+// `what` names the write in the refusal when it is one part of the line (a field of a kind), else the line's own words do.
+export function needFormat(root, name, what = null) {
   const line = Object.hasOwn(FORMAT_LINES, name) ? FORMAT_LINES[name] : null;
   need(line, `${name} is not a line of the record format registry: its lines are ${Object.keys(FORMAT_LINES).join(', ')}`);
-  return raiseFormat(root, line.format, line.what);
+  return raiseFormat(root, line.format, what || line.what);
 }
 
 // Where a loop's directory stands among the worktrees of its git repository, read-only (git rev-parse and the

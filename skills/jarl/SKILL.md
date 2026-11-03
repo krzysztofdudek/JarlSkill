@@ -46,11 +46,13 @@ The other references, each read when its subject comes up:
 | `next` | the open issues ready to start; `--all` adds the held and waiting ones, in groups |
 | `next --as <who>` | what is on the owner, the jarl or a person by name now, each line with the command that moves it |
 | `new "<title>" --what … --acceptance …` | files an issue with its body |
+| `new "<title>" --kind promise` · `new "<title>" --kind wait --person "<name>" --check-when "<when>"` | records a promise, kept by whoever its Found by names, or a wait on a person outside the loop; `next` never offers either, `next --as` shows each on its holder until it closes |
 | `set <ids> in-progress "<why>" --branch <b> --worker <name> --model <m>` | leases issues before a worker is raised; with `--handover`, gives a leased issue to a new worker, `"<why>"` saying why |
 | `evidence <ids> --ran "<command>" --saw "<what it printed>"` | records proof |
 | `review <ids> approve\|changes --by <name> --model <m> "<findings>"` | records a verdict |
 | `merged <ids> --sha <sha> --ran "<check>" --saw "<summary>"` | records a merge |
-| `set <ids> done "<why>"` | closes an issue: needs proof and a live approve |
+| `set <ids> done "<why>"` | closes an issue: needs proof and a live approve, and the owner's tick of each line only he ticks |
+| `tick <id> <line> --by owner` | the owner's tick of an acceptance line written `[owner] … · material: … · check: …` |
 | `ask` · `answer` · `decide` | the owner's questions and the rulings |
 | `report` · `close` | what was done; ends the loop |
 

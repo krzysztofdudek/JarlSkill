@@ -35,6 +35,7 @@ The library and the command line write the same files and log lines for every op
 | `mode` | makes the loop permanent, a mode of git | no function | the mode is written at init, and a change of it is a decision of the person who commits the record |
 | `import` | files issues from a Markdown source | no function; newIssue files one issue | filing from a source is the composer's choice |
 | `next` | lists the open issues that can start now, and with `--as` what is on one holder (which `status --as` and `resume --as` end with) | no function; statusData carries the counts, and neither statusData nor resumeData takes `as` | ordering work is a composer's planner; Jarl offers what can run now, and says who moves next |
+| `tick` | records the owner's tick of an acceptance line only he ticks | no function | an owner line needs record format 3, which a composer's loop keeps off; the owner ticks at the command line or through the tools |
 | `queue` | lists the merge queue | no function | a listing for a person; a composer decides what lands |
 | `report` | writes the loop's text report with its metrics | no function | a summary for a person; a composer reports from its own record |
 | `scope` | reads a worker branch's diff against the files its issues declare | no function | it reads git; a composer's gate decides what lands |

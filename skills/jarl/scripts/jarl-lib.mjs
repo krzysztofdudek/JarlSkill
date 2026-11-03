@@ -18,7 +18,7 @@ export { logPath, appendLog, writeWhole, appendLogLines, withWriter, firstLine, 
 export { JARL_GITIGNORE, JARL_GITIGNORE_COMMITTED, outOfGit, decisionsDriverCommand, JARL_SCRIPT, JARL_GITATTRIBUTES, ensureLoopMerge } from './lib/loop-git.mjs';
 export { LOCK_STALE_MS, LOCK_REUSED_PID_MS, LOCK_EMPTY_MS, LOCK_BREAK_STALE_MS, LOCK_WAIT_MS, withLock, isEntry } from './lib/lock.mjs';
 export { leaseOfMove, attachmentOf, parseEvent, appendNote, mapMergeRepos, loopEvents, eventsById, journalById, issueState, mergeLineOf } from './lib/log.mjs';
-export { parseIssue, loadIssues, fieldValue, findIssue, sharedNumbers, sharedNumberText, bodyText, needNoFieldTags, describeNew, renderNewReply, acceptanceText, CHANGELOG_SECTIONS, changelogText, changelogEntries, renderIssue, mergedOf, alignRows, evidenceTable, evidenceRows, isUnsplit, placeEvidence, PROPOSED, acceptanceLineCount, reviewEntries } from './lib/issues.mjs';
+export { parseIssue, loadIssues, fieldValue, findIssue, sharedNumbers, sharedNumberText, bodyText, needNoFieldTags, describeNew, renderNewReply, acceptanceText, CHANGELOG_SECTIONS, changelogText, changelogEntries, renderIssue, mergedOf, alignRows, evidenceTable, evidenceRows, isUnsplit, placeEvidence, PROPOSED, acceptanceLineCount, acceptanceLines, reviewEntries } from './lib/issues.mjs';
 export { raiseFormat, needFormat, mainCheckoutOf, worktreeState, fileAt, reposNamed, refsIn, REPOS_FILE, repoValueKind, repoPlace, repoOf, branchTip, originSpelling, repoFromInput, REPOS_HEADER, REPOS_DECLARED_IN, declaredNames, declaredRepos, cmdRepoBase, repoIdentity, needRightCheckouts, whyNotDeletable, whereOf, whereLines, reposWhere, reposWhereLines } from './lib/repositories.mjs';
 export { readLoop, recordDisagreements, disagreementText, BASE_COORDINATORS, reviewerKind, coordinatorNames, carriesCode, gateState, gateWindow, gateOf, reviewSplit } from './lib/loop.mjs';
 export { declaredChecksByRepo, declaredChecks, checkState, TESTIMONY_NOTE, TESTIMONY_NOTE_UNDECLARED, checkLines, mergeCheckLines, FOLLOW_UP_DAYS, loopMetrics, metricsOf, renderMetrics } from './lib/metrics.mjs';
@@ -32,6 +32,7 @@ export { cmdEvidence, issueView, schedulerNote, NEXT_GROUPS, cmdNext, modelsTabl
 export { cmdQueue, renderQueue } from './lib/queue.mjs';
 export { OWNER_HOLDER, JARL_HOLDER, BALL_SHOWN, holderOf, ROW_SOURCES, ballRows, cmdNextAs, renderNextAs, askerSection } from './lib/ball.mjs';
 export { cmdReview } from './lib/review.mjs';
+export { OWNER_LINE_SHAPE, needOwnerLines, ownerLines, ownerLineStates, ownerLineRefusal, ownerLineNotes, cmdTick } from './lib/owner-lines.mjs';
 export { cmdChangelog } from './lib/changelog.mjs';
 export { findingsOf, reportDirOf, cmdImport, cmdSources, renderStatus, renderImport, renderSources, renderList } from './lib/import.mjs';
 export { RESUME_LOG_LINES, RESUME_READY, cmdResume, renderResume, cmdHandoffRead, HANDOFF_TEXT, cmdHandoffWrite, cmdReport } from './lib/resume.mjs';

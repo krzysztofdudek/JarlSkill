@@ -3,7 +3,7 @@
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, openSync, closeSync, writeSync, unlinkSync, linkSync } from 'node:fs';
 import { join, resolve, relative, isAbsolute } from 'node:path';
-import { CI_STATES, LEASE_FIELDS, PRIORITIES, TIERS, fieldText, need, noSeparators, slugify, splitList } from './base.mjs';
+import { CI_STATES, LEASE_FIELDS, PRIORITIES, TIERS, WAIT_KIND, fieldText, need, noSeparators, slugify, splitList } from './base.mjs';
 import { needNoNewOwnersWords, needNoOwnersWords } from './owner.mjs';
 import { git, gitRun } from './git.mjs';
 import { canonical, issuesDir, jarlDir, portablePath, stamp, today } from './where.mjs';
@@ -20,6 +20,7 @@ import { declaredChecks, lastMerge } from './metrics.mjs';
 import { modelLines, modelValue, spellingNote } from './models.mjs';
 import { slotRefusal } from './attachments.mjs';
 import { resetCaches } from './tips.mjs';
+import { needOwnerLines, ownerLineRefusal } from './owner-lines.mjs';
 
 // ---- commands ----------------------------------------------------------------------------------
 
@@ -202,6 +203,11 @@ export function cmdNew(root, title, rawFlags) {
   const kind = flags.kind || profile.kindDefault;
   const kindDefaulted = !flags.kind;
   need(profile.kinds.includes(kind), `--kind must be one of: ${profile.kinds.join(', ')}`);
+  const person = flags.person !== undefined ? keptValue('Person', flags.person) : '';
+  const checkWhen = flags['check-when'] !== undefined ? keptValue('Check when', flags['check-when']) : '';
+  const kept = profile.keptKind(kind);
+  need(kept === WAIT_KIND || (!person && !checkWhen), profile.kept ? `--${person ? 'person' : 'check-when'} goes with --kind wait: it names the outside person a wait is held by and when to check it` : `--${person ? 'person' : 'check-when'} is off in this loop: its profile declares its own kinds or a field Person or Check when, so the built-in promise and wait are off here — write a field the profile declares with --field "<Name>=<value>"`);
+  need(kept !== WAIT_KIND || (person && checkWhen), `a wait names the outside person it is held by and when to check it: jarl.mjs new "<title>" --kind wait --person "<name>" --check-when "<a date, or the event to check after>"`);
   const priority = String(flags.prio || '2');
   const priorityDefaulted = !flags.prio;
   need(PRIORITIES.includes(priority), '--prio must be 1, 2 or 3');
@@ -211,7 +217,14 @@ export function cmdNew(root, title, rawFlags) {
   needOneSlice(splitList(flags.tags));
   const source = sourceList(flags.source);
   const after = flags.after !== undefined ? afterList(root, null, flags.after) : [];
+  // A line only the owner ticks names its material and what to check; its first write raises the record format.
+  const acceptance = flags.acceptance !== undefined ? acceptanceText(flags.acceptance) : bodyText(fromTemplate.acceptance);
+  const ownerLined = needOwnerLines(acceptance);
+  // A promise and a wait are kinds a reader of formats 1 and 2 does not know: the loop is raised first, or, where a composer
+  // keeps its format, the filing is refused with nothing written.
+  if (kept) needFormat(root, 'promise-wait');
   commitRepoNames(root, picked);
+  if (ownerLined) needFormat(root, 'owner-line');
   // The number is claimed by creating the file with a link, which never overwrites: when another
   // writer got there first (the lock makes that rare, not impossible — a hand-made file, a stale
   // lock broken early), the next number is tried instead of two issues sharing one.
@@ -231,10 +244,10 @@ export function cmdNew(root, title, rawFlags) {
     const tmp = join(dir, `.${id}.${process.pid}.tmp`);
     const rendered = renderIssue({
       id, title, status: profile.initial, kind, priority, tier, fields, sections, acceptanceHeading: profile.acceptance || 'Acceptance',
-      tags: splitList(flags.tags), files: pathList(flags.files), repo: picked.map((p) => p.value).join(', '), foundBy: flags['found-by'] || 'jarl',
+      tags: splitList(flags.tags), files: pathList(flags.files), repo: picked.map((p) => p.value).join(', '), foundBy: flags['found-by'] || 'jarl', person, checkWhen,
       where: flags.where, what: bodyText(flags.what), why: bodyText(flags.why), source, after,
       // A template's Acceptance and Changelog are taken as written (a list already); a flag replaces them.
-      acceptance: flags.acceptance !== undefined ? acceptanceText(flags.acceptance) : bodyText(fromTemplate.acceptance),
+      acceptance,
       changelog: flags.changelog !== undefined ? changelogText(flags.changelog) : bodyText(fromTemplate.changelog),
     });
     // The file is claimed by a link, not through writeAtomic, so its text passes the record's one check here (a template too).
@@ -319,7 +332,16 @@ export function waitingOn(issue, byId, profile = DEFAULT_PROFILE) {
 // approve is taken back by retract, a ruling replaced by decide --supersedes, and the status moves only through set.
 
 // The header fields of the description, each written by field and by its own command.
-export const DESCRIPTION_FIELDS = ['Title', 'Priority', 'Tier', 'Kind', 'Found by', 'Tags', 'Files', 'Repo', 'After', 'Source', 'Where', 'Resources'];
+export const DESCRIPTION_FIELDS = ['Title', 'Priority', 'Tier', 'Kind', 'Found by', 'Tags', 'Files', 'Repo', 'After', 'Source', 'Where', 'Resources', 'Person', 'Check when'];
+// A wait's Person (the outside person it is held by, the name next --as answers to) and its Check when (a date, or the
+// event to check after): each one value on one line, without the log's separator.
+function keptValue(name, value) {
+  const v = fieldText(value);
+  need(typeof value === 'string' && v, `${name} needs a value: ${name === 'Person' ? 'the outside person a wait is held by' : 'when to check a wait, a date or the event to check after'}`);
+  need(!/[\r\n]/.test(String(value).trim()), `${name} is one line (got ${JSON.stringify(String(value))})`);
+  need(!v.includes('·'), `${name} is one value — not a phrase with "·" in it (got "${v}")`);
+  return v;
+}
 // The name a description change records as its author, or null when the call names nobody: a write nobody named is
 // logged with no author at all, never under a name nobody gave. A name is one name on one line, without the log's
 // separator, which would let it be read as more than one segment of the line.
@@ -395,8 +417,10 @@ export function cmdBody(root, rawId, flags, dry = false) {
   needNoFieldTags(flags.what, 'the What text');
   needNoFieldTags(flags.why, 'the Why text');
   for (const [h, v] of sections) needNoFieldTags(v, `the ${h} text`);
+  const ownerLined = flags.acceptance !== undefined && needOwnerLines(acceptanceText(flags.acceptance));
   const named = parts.flatMap((k) => (k === 'section' ? [...sections.keys()] : [k]));
   if (dry) return { id: issue.id, set: named };
+  if (ownerLined) needFormat(root, 'owner-line');
   let text = readText(issue.file);
   const lines = [];
   const held = (key) => issue.sections[key] ?? '';
@@ -543,11 +567,13 @@ export function setRouteOf(root, name) { return setRoute(loadProfile(root), name
 export function cmdField(root, rawIds, name, value, flags = {}) {
   needNoOwnersWords('the field', value);
   const profile = loadProfile(root);
-  const writable = () => [...DESCRIPTION_FIELDS, ...profile.fields.map((f) => f.name)].join(', ');
+  // Person and Check when are the tool's own where the built-in promise and wait hold, and a declared field's otherwise.
+  const writes = DESCRIPTION_FIELDS.filter((f) => profile.kept || !['person', 'check when'].includes(f.toLowerCase()));
+  const writable = () => [...writes, ...profile.fields.map((f) => f.name)].join(', ');
   need(name !== undefined && String(name).trim() !== '', `field requires <name> — a field of the description: ${writable()}`);
   editorOf(flags.by);
   const key = String(name).trim().toLowerCase();
-  need(setRoute(profile, name) !== 'status' || DESCRIPTION_FIELDS.some((f) => f.toLowerCase() === key), `${name} is not a field of the description, which field writes: ${writable()}; ${notWrittenByField(profile, key)}`);
+  need(setRoute(profile, name) !== 'status' || writes.some((f) => f.toLowerCase() === key), `${name} is not a field of the description, which field writes: ${writable()}; ${notWrittenByField(profile, key)}`);
   const clear = flags.clear === true;
   need(!clear || value === undefined, 'field takes either a value or --clear, not both');
   need(clear || (value !== undefined && String(value).trim() !== ''), `field ${name} "<value>" — the value is required, or --clear to empty it`);
@@ -564,6 +590,8 @@ export function cmdField(root, rawIds, name, value, flags = {}) {
     case 'after': return one(eachIssue(root, rawIds, (id, dry) => cmdAfter(root, id, value, { dry, by: flags.by })), 'After');
     case 'repo': return one(eachIssue(root, rawIds, (id, dry) => cmdRepo(root, id, value, { dry, by: flags.by })), 'Repo');
     case 'tags': return one(cmdTagList(root, rawIds, value, flags.by), 'Tags');
+    case 'person': return setKeptField(root, rawIds, 'Person', clear ? '' : value, flags);
+    case 'check when': return setKeptField(root, rawIds, 'Check when', clear ? '' : value, flags);
     default: return setDeclaredField(root, rawIds, builtInField(profile, key), clear ? '' : value, flags);
   }
 }
@@ -832,9 +860,28 @@ function setDeclaredField(root, rawIds, field, value, flags) {
   const v = fieldValue(profile, field, value);
   need(v || (!field.required && !field.builtin), `${field.name} cannot be empty${field.enum ? ` — one of: ${field.enum.join(', ')}` : ''}`);
   const issues = issuesFor(root, rawIds);
+  if (field.key === 'kind' && profile.keptKind(v) === WAIT_KIND) {
+    for (const issue of issues) need(fieldText(issue.fields.person) && fieldText(issue.fields['check when']), `${issue.id} becomes a wait only with the outside person it is held by and when to check it — first jarl.mjs field ${issue.id} Person "<name>" and jarl.mjs field ${issue.id} "Check when" "<a date, or the event to check after>"`);
+  }
+  if (field.key === 'kind' && profile.keptKind(v) && issues.some((issue) => issue.kind !== v)) needFormat(root, 'promise-wait');
   logChanges(root, issues.map((issue) => fieldLine(issue.id, field.name, v, heldField(issue, field.name), by)));
   for (const issue of issues) writeAtomic(issue.file, setField(readText(issue.file), field.name, v));
   return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, field: field.name, value: v })));
+}
+
+// field <ids> Person "<name>" | "Check when" "<when>": what a wait is held by and when to check it. Written on any issue,
+// so an issue can become a wait (its Kind is written last); never emptied on a wait, which they hold.
+function setKeptField(root, rawIds, name, value, flags) {
+  needNoLeaseFlags(flags, `the field ${name}`);
+  const profile = loadProfile(root);
+  const by = editorOf(flags.by);
+  const v = value === '' ? '' : keptValue(name, value);
+  const issues = issuesFor(root, rawIds);
+  for (const issue of issues) need(v || profile.keptKind(issue.kind) !== WAIT_KIND, `${issue.id} is a wait, held by its Person and checked when its Check when says: ${name} is never empty on it — give it another kind first (jarl.mjs field ${issue.id} Kind <kind>)`);
+  if (v) needFormat(root, 'promise-wait', `the field ${name} of a wait`);
+  logChanges(root, issues.map((issue) => fieldLine(issue.id, name, v, heldField(issue, name), by)));
+  for (const issue of issues) writeAtomic(issue.file, v ? setField(readText(issue.file), name, v) : removeFields(readText(issue.file), [name]));
+  return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, field: name, value: v })));
 }
 
 // field <ids> <Files|Source|Where|Tags|After|Repo> --clear: the field is emptied (After and Repo as their own commands empty them).
@@ -875,7 +922,8 @@ function setResources(root, rawIds, value, flags) {
 // see carriesCode). It gates only the record: nothing here stops code from landing.
 // A profile's done-gate changes the last two: requires-merged also asks for a recorded merge whose sha is in the base
 // (see mergeRefusal), and approve: none (allowed only with requires-merged) drops the approve — the gate that landed
-// the merge stands behind the issue instead of a reviewer. The evidence rows are asked for either way.
+// the merge stands behind the issue instead of a reviewer. The evidence rows are asked for either way, and so is the
+// owner's tick of every acceptance line only he ticks (see owner-lines.mjs).
 // doneRefusal reads the loop for one issue; a caller checking several issues reads it once and asks doneRefusalIn.
 export function doneRefusal(root, issue) { return doneRefusalIn(root, readLoop(jarlDir(root)), issue, undefined); }
 // `base`: the branch or ref the merge landed in, when the caller names one.
@@ -893,7 +941,7 @@ function doneRefusalIn(root, loop, issue, base) {
   const slots = slotRefusal(root, profile, issue, g);
   if (slots) return slots;
   if (profile.doneGate['requires-merged']) { const m = mergeRefusal(root, issue, base); if (m) return m; }
-  if (profile.doneGate.approve === 'none') return null;
+  if (profile.doneGate.approve === 'none') return ownerLineRefusal(root, loop, issue);
   const code = carriesCode(issue);
   if (g.selfApproved) return `${issue.id}'s live approve is by a worker of this issue or its branch — a self-approve does not count as review: jarl.mjs review ${issue.id} approve --by <${code ? 'fresh reviewer' : 'fresh reviewer|jarl'}> "<findings>"`;
   // A changes verdict with no approve after it is named as the cause, with its reviewer and day, so whoever is refused
@@ -904,7 +952,8 @@ function doneRefusalIn(root, loop, issue, base) {
   }
   if (!g.approved) return `${issue.id} has no approving review newer than its last round${g.tracked ? ' or reopen' : ''} — a fresh reviewer reads the issue and the diff first: jarl.mjs review ${issue.id} approve|changes --by <reviewer> "<findings>"`;
   if (code && !g.fresh) return `${issue.id} ${freshRuleText(issue, g.live)}: jarl.mjs review ${issue.id} approve|changes --by <fresh reviewer> "<findings>"`;
-  return null;
+  // Last, an acceptance line only the owner ticks: his look comes on top of the proof and the review, never instead.
+  return ownerLineRefusal(root, loop, issue);
 }
 
 // The done gate's requires-merged: the issue records a merge (merged --sha) and that commit is in the base — the branch

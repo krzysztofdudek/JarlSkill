@@ -39,6 +39,9 @@ import { STAMP_SRC, appendLog, logPath, oneLine } from './journal.mjs';
 //                  written: tip, the commit of the branch in each repository of the issue, in order, joined by commas
 //   ci             a CI state recorded alone: state
 //   body           a body change
+//   tick           the owner's tick of an acceptance line only he ticks: line, its number when it was ticked, by, and
+//                  ownerLine, the line as it was written then, which is what the tick holds (a line rewritten after it is
+//                  another); the event's text stays the log line's whole text, as for every other kind
 //   other          any other line
 // A line names its writer, when the call that wrote it named one (--by), right after the stamp and before the separator:
 // `- <stamp> by <writer> · <text>`. The place is fixed and no text of the line can reach it, so a note can never pose as
@@ -50,6 +53,8 @@ const RETRACT_ROW_LINE = idRe('^{id} evidence retract · row (\\d+)\\b');
 const RETRACT_NOTE_LINE = idRe('^{id} evidence retract · note (\\d+)\\b');
 // The tip line: the branch's commit in each repository of the issue, joined by commas, alone on the line.
 const TIP_LINE = idRe('^{id} tip ([0-9a-f]{7,64}(?:,[0-9a-f]{7,64})*)$');
+// The owner's tick: the number the acceptance line had, who ticked it, then the line itself as it was written.
+const TICK_LINE = idRe('^{id} tick · line (\\d+) · by (.+?) · (\\[[^\\]]*\\].*)$');
 // The standing of a round, right after its number and before its findings and its text: its count and the limit then.
 const ROUND_STANDING_LINE = /^\S+ round \d+ · (count|takeover) (\d+) of (\d+) · /;
 // A move into a status that holds the claim is read by position, never by searching: after the arrow and the status come
@@ -158,6 +163,8 @@ function eventParser(profile) {
     if (tp) return { type: 'tip', tip: tp[1] };
     if (text.startsWith(`${id} CI `) && CI_STATES.includes(text.slice(`${id} CI `.length))) return { type: 'ci', state: text.slice(`${id} CI `.length) };
     if (text.startsWith(`${id} body · `)) return { type: 'body' };
+    const tk = TICK_LINE.exec(text);
+    if (tk) return { type: 'tick', line: Number(tk[1]), by: tk[2], ownerLine: tk[3] };
     return { type: 'other' };
   };
 }
@@ -166,13 +173,13 @@ function eventParser(profile) {
 const LINE_WRITERS = {
   filed: 'jarl.mjs new', move: 'jarl.mjs set <ids> <status>', round: 'jarl.mjs round <id>', verdict: 'jarl.mjs review <id> approve|changes',
   'retract-review': 'jarl.mjs retract <id> review', 'retract-row': 'jarl.mjs retract <id> <n>', 'retract-note': 'jarl.mjs retract <id> note-<n>', row: 'jarl.mjs evidence <id> --ran "<command>" --saw "<what it printed>"',
-  merged: 'jarl.mjs merged <id> --sha <sha>', ci: 'jarl.mjs merged <id> --ci <state>', body: 'jarl.mjs body <id>',
+  merged: 'jarl.mjs merged <id> --sha <sha>', ci: 'jarl.mjs merged <id> --ci <state>', body: 'jarl.mjs body <id>', tick: 'jarl.mjs tick <id> <line> --by owner',
   tip: 'jarl.mjs evidence, review or merged, which write the tip of the branch after their own line',
 };
 const MOVE_SHAPE = idRe('^{id} →');
 // A free line for the journal (the log command and record.appendLog): a note about the loop or an issue. A line that
-// reads as one of the kinds above (a filing, a move, a round, a verdict, a retraction, a row, a merge, a CI state or a body
-// change) is refused and names the command that writes it, so every line the views and the gate read as state was
+// reads as one of the kinds above (a filing, a move, a round, a verdict, a retraction, a row, a merge, a CI state, a body
+// change or a tick) is refused and names the command that writes it, so every line the views and the gate read as state was
 // written by the command that owns it, with that command's checks.
 export function appendNote(root, event) {
   needNoOwnersWords('the note', event);
@@ -234,9 +241,9 @@ export function loopEvents(dir, profile, skipped) {
   return events;
 }
 // Why a dated line of an issue is not placed, or null when it is: a line that reads as one of the kinds the log writes
-// (a review, a merge, a CI state, a body change, an evidence row or retraction) and that the parser placed as none of
+// (a review, a merge, a CI state, a body change, an evidence row or retraction, a tick) and that the parser placed as none of
 // them; a move into a status that holds the claim whose worker or model does not parse; a verdict whose model mark does not.
-const LOG_KIND = /^(review|merged|CI|body|evidence (?:row|retract))\b/;
+const LOG_KIND = /^(review|merged|CI|body|evidence (?:row|retract)|tick(?= · ))\b/;
 function unplaced(profile, written, text, body) {
   const rest = text.slice(written.length + 1);
   if (body.type === 'other') {

@@ -2,7 +2,7 @@
 // of the goal's Coordinators line. An issue is in one slice at most, and the views say which coordinator runs which slice.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { jarl, refuses, run, skillText, loop as makeLoop } from './helpers.mjs';
 import { formatTwoJarl } from './old-jarl.mjs';
@@ -283,4 +283,27 @@ test('the issues behind an issue an escalation holds wait on the jarl, not on th
   // An owner's question on the same issue puts the wait on the owner.
   jarl(root, 'ask', 'and for the owner?', '--issue', '4');
   assert.deepEqual(waits('owner'), [['6', 'owner', ['4']]]);
+});
+
+test('an acceptance line only the owner ticks is on the slice\'s coordinator while its material is produced, then on the owner, and so are the issues that wait on it', () => {
+  const root = makeLoop({ prefix: 'jarl-slice-owner-', via: 'cli' });
+  jarl(root, 'goal', '--set', 'Coordinators: odin');
+  jarl(root, 'new', 'cut', '--tags', 'slice:odin', '--files', 'film.md', '--acceptance', 'the cut renders', '--acceptance', '[owner] the first cut reads well · material: renders/cut.txt · check: the pacing');   // 1
+  jarl(root, 'new', 'publish', '--files', 'p.md', '--after', '1', '--acceptance', 'it is published');   // 2
+  jarl(root, 'set', '1', 'in-progress', 'go', '--worker', 'w1');
+  const lines = (who) => json(root, 'next', '--as', who, '--all');
+  const signOff = (who) => lines(who).rows.filter((r) => r.what === 'sign-off').map((r) => [r.id, r.line]);
+  const waits = (who) => lines(who).waiting.map((w) => [w.id, w.via]);
+  assert.deepEqual(signOff('odin'), [['1', 2]], 'its worker produces the material in odin\'s slice');
+  assert.deepEqual(signOff('jarl'), []);
+  assert.deepEqual(waits('odin'), [['2', ['1']]]);
+  assert.deepEqual(waits('jarl'), []);
+  mkdirSync(join(root, 'renders'), { recursive: true });
+  writeFileSync(join(root, 'renders', 'cut.txt'), 'the cut\n');
+  jarl(root, 'evidence', '1', '--ran', 'render the cut', '--saw', 'renders/cut.txt written');
+  jarl(root, 'review', '1', 'approve', '--by', 'rev', 'Checked every acceptance line against the diff; nothing left open');
+  assert.deepEqual(signOff('owner'), [['1', 2]]);
+  assert.deepEqual(waits('owner'), [['2', ['1']]], 'with its material there, the wait is the owner\'s');
+  assert.deepEqual(waits('odin'), []);
+  assert.deepEqual(waits('jarl'), []);
 });
