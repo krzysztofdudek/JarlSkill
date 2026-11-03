@@ -245,12 +245,14 @@ commands:
   log "<event>"                                  append one dated note to the journal; a line that reads as a filing, a move,
                                                  a round, a verdict, a retraction, an evidence row, a merge, a CI state or
                                                  a body change is refused, and the refusal names the command that writes it
-  decide <slug> "<ruling>" [--by who [--quote "<words>"]] [--supersedes <slug>] [--settles <ids>] [--area <type> [--reach n] [--rule <id>]]
+  decide <slug> "<ruling>" [--by who [--quote "<words>"]] [--under <slug>] [--supersedes <slug>] [--settles <ids>] [--area <type> [--reach n] [--rule <id>]]
                                                  append a ruling (slug: letters, digits, . _ -); refuses a duplicate slug;
                                                  --by records who ruled (the coordinator when it is left out; a name that
                                                  reads as owner is owner); --by owner needs --quote, his own words, kept as
                                                  the ruling's last line, and no other text of the record may hold
-                                                 "The owner's words:" in any spelling; --supersedes marks
+                                                 "The owner's words:" in any spelling; --under names the ruling in force a ruling
+                                                 by the jarl or a coordinator rests on, kept as the text's last paragraph
+                                                 "Made under: <slug>", shown with the ruling by decisions and resume; --supersedes marks
                                                  the ruling it replaces "Superseded by" in place; --settles writes the ruling,
                                                  with who ruled, into each named issue's evidence (its status is unchanged); --area marks a ruling
                                                  about a whole type of code, --reach how many files that type holds,
@@ -448,7 +450,7 @@ export const COMMAND_FLAGS = {
   answer: { by: 'value', option: 'value' },
   resume: { log: 'value', ready: 'value', ci: 'bool', as: 'value' },
   handoff: { summary: 'value', next: 'many', log: 'value', ready: 'value', ci: 'bool' },
-  log: {}, decide: { settles: 'many', by: 'value', quote: 'value', supersedes: 'value', area: 'value', reach: 'value', rule: 'value' }, decisions: { live: 'bool' },
+  log: {}, decide: { settles: 'many', by: 'value', quote: 'value', under: 'value', supersedes: 'value', area: 'value', reach: 'value', rule: 'value' }, decisions: { live: 'bool' },
   goal: { set: 'value' },
   status: { 'stale-hours': 'value', by: 'value', tag: 'value', as: 'value' }, archive: {}, report: { found: 'bool' }, tips: {}, mode: {},
   queue: { repo: 'value', base: 'value' }, changelog: { repo: 'value' },
@@ -754,7 +756,7 @@ export function dispatch(root, commandName, rest, flags) {
       // The command line says caller 'cli': the notes (the tier a new issue got) are for it, never for a library caller.
       case 'new': out = R.newIssue(root, rest[0], { ...flags, caller: 'cli', width: undefined }); out = { ...out, ...describeNew(out.file) }; text = renderNewReply(out); warn = out.note ? [out.note] : []; break;
       // body, source, after, files, repo and round take the list grammar: eachIssue checks every id before it writes one.
-      case 'body': out = eachIssue(root, rest[0], (id, dry) => cmdBody(root, id, flags, dry)); text = each(out, (o) => `${o.id} body: ${o.set.join(', ')}`); break;
+      case 'body': out = eachIssue(root, rest[0], (id, dry) => cmdBody(root, id, { ...flags, caller: 'cli' }, dry)); text = each(out, (o) => `${o.id} body: ${o.set.join(', ')}`); warn = [].concat(out).filter((o) => o.note).map((o) => o.note); break;
       case 'source': out = eachIssue(root, rest[0], (id, dry) => cmdSource(root, id, rest[1], dry, flags.by)); text = each(out, (o) => `${o.id} source: ${o.sources.join(', ')}`); break;
       case 'after': out = eachIssue(root, rest[0], (id, dry) => cmdAfter(root, id, rest[1], { clear: flags.clear === true, dry, by: flags.by })); text = each(out, (o) => `${o.id} after: ${o.cleared ? 'cleared' : o.after.join(', ')}`); break;
       case 'import': out = cmdImport(root, rest[0], flags); text = renderImport(out); break;

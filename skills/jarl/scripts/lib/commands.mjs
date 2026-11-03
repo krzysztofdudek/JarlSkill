@@ -15,7 +15,7 @@ import { JARL_GITIGNORE, JARL_GITIGNORE_COMMITTED, ensureLoopMerge, outOfGit } f
 import { journalById, mergeCheckText } from './log.mjs';
 import { FIELD_RE, RENDERED_FIELDS, acceptanceHeading, acceptanceLineCount, acceptanceText, bodyText, changelogText, evidenceParts, evidenceRows, evidenceTable, fieldValue, findIssue, issueNamed, loadIssues, mergedOf, namedPairs, needNoFieldTags, noteText, parseIssue, placeEvidence, removeFields, removeFirstField, renderIssue, setField, setSection, unattributedRefusal } from './issues.mjs';
 import { branchTip, commitRepoNames, defaultBase, isGitRepo, issueRepoPaths, issueRepos, mainCheckoutOf, needRightCheckouts, raiseFormat, repoFromInput, repoLabel, repoList, tipLines, whyNotDeletable, worktreeState, worktreesOf } from './repositories.mjs';
-import { FIELD_NAMES, carriesCode, gateOf, readLoop } from './loop.mjs';
+import { FIELD_NAMES, carriesCode, gateOf, readLoop, unorderedNamings, unorderedText } from './loop.mjs';
 import { declaredChecks, lastMerge } from './metrics.mjs';
 import { modelLines, modelValue } from './models.mjs';
 import { slotRefusal } from './attachments.mjs';
@@ -253,6 +253,7 @@ export function cmdNew(root, title, rawFlags) {
         kindDefaulted ? defaultedNote('kind', kind, 'kind') : null,
         priorityDefaulted ? defaultedNote('priority', priority, 'prio') : null,
         ...picked.map((p) => p.note && `note: ${p.note}`),
+        ...unorderedNotes(root, profile, id),
       ].filter(Boolean) : [];
       const note = notes.length ? { note: notes.join('\n') } : {};
       return { id, file, ...(rawFlags.template !== undefined ? { template: rawFlags.template } : {}), ...note };
@@ -260,6 +261,11 @@ export function cmdNew(root, title, rawFlags) {
     need(tries < 100, 'could not claim a free issue number after 100 tries');
     n = Math.max(n + 1, taken().reduce((m, x) => Math.max(m, x), 0) + 1);
   }
+}
+
+// The notes for the text of an issue just written: one for the unfinished issues it names that nothing orders with it.
+function unorderedNotes(root, profile, id) {
+  return unorderedNamings(loadIssues(root), profile, [id]).map((n) => `note: issue ${n.id}: ${unorderedText(n)}`);
 }
 
 function pathList(v) { return splitList(v).map((p) => portablePath(p)); }
@@ -392,7 +398,9 @@ export function cmdBody(root, rawId, flags, dry = false) {
   if (flags.changelog !== undefined) section('Changelog', 'changelog', changelogText(flags.changelog));
   logChanges(root, lines);
   writeAtomic(issue.file, text);
-  return { id: issue.id, set: named };
+  // Said on the command line only: a rewritten What, Why or Acceptance that names issues nothing orders with this one.
+  const note = flags.caller === 'cli' && ['what', 'why', 'acceptance'].some((k) => named.includes(k)) ? unorderedNotes(root, profile, issue.id) : [];
+  return { id: issue.id, set: named, ...(note.length ? { note: note.join('\n') } : {}) };
 }
 
 export function cmdSource(root, rawId, list, dry = false, by = undefined) {
