@@ -7,7 +7,7 @@ import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
-import { jarl, run, SPAWN_TIMEOUT } from './helpers.mjs';
+import { jarl, refuses, run, SPAWN_TIMEOUT } from './helpers.mjs';
 const said = (repo, ...args) => run(repo, args).stderr;
 
 const git = (cwd, ...args) => {
@@ -98,4 +98,27 @@ test('a merge recorded on a red check with its cause is not shown as waiting for
   git(repo, 'merge', '-q', '--no-ff', '-m', 'merge 1', 'jarl/1-x');
   jarl(repo, 'merged', '1', '--sha', git(repo, 'rev-parse', 'HEAD'), '--red', '2', '--keep');
   assert.doesNotMatch(jarl(repo, 'status'), /waiting for its check/);
+});
+
+test('merged without --sha is refused with the ready command carrying the head of the branch the lease records', () => {
+  const { repo, tip } = fixture();
+  const out = refuses(repo, 'merged', '1', '--ci', 'green');
+  assert.match(out, /records no merge yet/);
+  assert.ok(out.includes(`the head of jarl/1-x, the branch its lease records, is ${tip}`), out);
+  assert.ok(out.includes(`jarl.mjs merged 1 --sha ${tip} --ci green`), out);
+  assert.doesNotMatch(jarl(repo, 'show', '1'), /Merged:/);
+});
+
+test('merged without --sha on an issue whose lease records no branch says so, and gives the command with a sha to fill in', () => {
+  const repo = join(mkdtempSync(join(tmpdir(), 'jarl-holds-')), 'repo');
+  mkdirSync(repo);
+  git(repo, 'init', '-q', '-b', 'main');
+  commit(repo, 'a.txt', 'a\n');
+  jarl(repo, 'init', 'goal');
+  jarl(repo, 'new', 'issue one', '--acceptance', 'it works');
+  const out = refuses(repo, 'merged', '1', '--ci', 'green');
+  assert.match(out, /records no merge yet/);
+  assert.match(out, /its lease records no branch, so no head is offered/);
+  assert.ok(out.includes('jarl.mjs merged 1 --sha <sha> --ci green'), out);
+  assert.doesNotMatch(jarl(repo, 'show', '1'), /Merged:/);
 });

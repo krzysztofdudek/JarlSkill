@@ -310,7 +310,7 @@ test('status moves only with a log line; done needs evidence; dropped needs a re
   jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', '12 pass, 0 fail');
   assert.match(refuses(root, 'set', '1', 'done'), /no approving review/);
   jarl(root, 'review', '1', 'changes', '--by', 'rev', 'Important: the new test never goes red');
-  assert.match(refuses(root, 'set', '1', 'done'), /no approving review/);
+  assert.match(refuses(root, 'set', '1', 'done'), /latest review is a changes verdict by rev of/);
   jarl(root, 'review', '1', 'approve', '--by', 'rev', 'read the diff; test red before, green after');
   jarl(root, 'set', '1', 'done');
   const log = readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
