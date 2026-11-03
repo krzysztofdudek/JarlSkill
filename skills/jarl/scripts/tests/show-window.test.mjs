@@ -88,7 +88,7 @@ test('show: rows before the last start are not shown, and the ordinals in the bo
   const full = jarl(root, 'show', id, '--full');
   assert.match(full, /^- \[1\] \*\*ran:\*\* old one/m);
   assert.match(full, /^- \[3\] \*\*ran:\*\* new three/m);
-  assert.equal(full.replace(/^- \[\d+\] /gm, '- '), readFileSync(L.findIssue(root, id).file, 'utf8').trim(), '--full is the file, with only the row numbers added');
+  assert.equal(full.replace(/^- \[\d+\] /gm, '- ').replace(/^\[note-\d+\] /gm, ''), readFileSync(L.findIssue(root, id).file, 'utf8').trim(), '--full is the file, with only the row and note numbers added');
   const json = JSON.parse(jarl(root, 'show', id, '--json'));
   assert.deepEqual(json.evidenceRows.map((r) => [r.n, r.ran]), [[1, 'old one'], [2, 'old two'], [3, 'new three'], [4, 'new four']]);
   assert.equal(json.title, 'restarted');

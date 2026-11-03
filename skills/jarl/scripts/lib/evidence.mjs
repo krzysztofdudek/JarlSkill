@@ -12,7 +12,7 @@ import { SLOT_NAME_RE, formatState, loadProfile } from './profile.mjs';
 import { appendLog, appendLogLines, firstLine } from './journal.mjs';
 import { outOfGit } from './loop-git.mjs';
 import { attachmentOf, journalById } from './log.mjs';
-import { acceptanceLineCount, alignRows, bodyText, evidenceParts, evidenceTable, loadIssues, mergedOf, noteText, parseIssue, placeEvidence, reviewEntries, setSection, sharedMark } from './issues.mjs';
+import { acceptanceLineCount, alignRows, bodyText, evidenceNotes, evidenceParts, evidenceTable, loadIssues, mergedOf, noteText, parseIssue, placeEvidence, reviewEntries, setSection, sharedMark, struckNote } from './issues.mjs';
 import { fileAt, needFormat, repoNames, reposWhere, tipLines, whereLines, whereOf } from './repositories.mjs';
 import { approveKind, carriesCode, disagreementText, gateOf, gateState, headerReadNotes, readLoop, recordDisagreements, reviewSplit, scopedLoop } from './loop.mjs';
 import { checkState, checkWaiting, checkWaitingText } from './metrics.mjs';
@@ -65,10 +65,12 @@ function retractedBy(flags, what) {
 const struck = (line) => line.replace(/^- /, '- ~~');
 
 function retractEvidence(root, rawIds, reason, flags) {
-  need(!isBulk(rawIds), 'retract names one issue and one row');
-  need(flags.ran === undefined && flags.saw === undefined, 'a retraction takes a row number and a reason, not a new --ran/--saw row');
+  need(!isBulk(rawIds), 'retract names one issue and one row or note');
+  need(flags.ran === undefined && flags.saw === undefined, 'a retraction takes a row or note number and a reason, not a new --ran/--saw row');
   const raw = String(flags.retract);
-  need(/^\d+$/.test(raw) && Number(raw) >= 1, `retract takes the number of an evidence row as show prints it (1, 2, …); got "${raw}"`);
+  const noteRaw = /^note-(\d+)$/.exec(raw);
+  if (noteRaw) return retractNote(root, rawIds, reason, flags, Number(noteRaw[1]));
+  need(/^\d+$/.test(raw) && Number(raw) >= 1, `retract takes the number of an evidence row as show prints it (1, 2, …) or a note as note-1, note-2, …; got "${raw}"`);
   const n = Number(raw);
   const by = retractedBy(flags, 'a retraction');
   needSaid(reason, 'a retraction');
@@ -95,6 +97,27 @@ function retractEvidence(root, rawIds, reason, flags) {
   return { id: issue.id, retracted: n, by };
 }
 
+// A free-text note taken back: struck through where it stands, and an entry saying who retracted it and why appended to
+// Notes. The note numbers are the ones show prints as note-<n>, counted over the whole section.
+function retractNote(root, rawIds, reason, flags, n) {
+  need(n >= 1, `retract takes a note as note-1, note-2, …; got "note-${n}"`);
+  const by = retractedBy(flags, 'a retraction');
+  needSaid(reason, 'a retraction');
+  const [issue] = issuesFor(root, rawIds);
+  const text = readText(issue.file);
+  const table = evidenceNotes(parseIssue(text, issue.file).sections.evidence);
+  need(table.notes.length > 0, `${issue.id} has no evidence note to retract`);
+  const note = table.notes[n - 1];
+  need(note, `${issue.id} has ${table.notes.length} evidence note${table.notes.length === 1 ? '' : 's'}: there is no note ${n}`);
+  need(!note.retracted, `note ${n} of ${issue.id} is retracted already`);
+  // The format is raised before the line is written, as a row's retraction does: a reader of format 1 would show the note.
+  needFormat(root, 'note-retraction');
+  const entry = `- **retracted:** note ${n} · by ${by} · ${stamp().slice(0, 10)}\n${bodyText(reason).split('\n').map((l) => (l ? `  ${l}` : '')).join('\n')}`;
+  writeAtomic(issue.file, setSection(text, 'Evidence', placeEvidence(struckNote(table.lines, note).join('\n').trim(), 'note', entry, '\n')));
+  appendLog(root, `${issue.id} evidence retract · note ${n} · by ${by} · ${firstLine(reason, "the issue's Evidence section")}`);
+  return { id: issue.id, retractedNote: n, by };
+}
+
 // show <id>: the issue as the done gate sees it. The header, What, Why, Acceptance, Changelog and any section of the
 // profile in full; of Reviews and Evidence only the gate's window — every verdict and every --ran/--saw row since
 // the last start or reopen — plus every "changes" finding no later approve has answered, and one line for each
@@ -110,7 +133,30 @@ export function issueView(root, issue, { full = false } = {}) {
     if (h) { pieces.push(cur); cur = { name: h[1].trim().toLowerCase(), lines: [l] }; } else cur.lines.push(l);
   }
   pieces.push(cur);
-  const numbered = (body, rows) => body.map((l, i) => { const r = rows.find((x) => x.start === i); return r ? l.replace(/^- /, `- [${r.n}] `) : l; });
+  // The lines of the section as shown: every row carries [n] and every note [note-n]. A retracted note is struck through
+  // in the whole file and left out (null) of the window a worker reads, with the blank line that follows it.
+  const numbered = (body, rows) => {
+    const { notes } = evidenceNotes(body.join('\n'));
+    const hidden = new Set();
+    const taken = notes.filter((m) => m.retracted);
+    if (!full) {
+      for (const x of taken) for (let i = x.start; i <= x.end + (body[x.end + 1] === '' ? 1 : 0); i += 1) hidden.add(i);
+      // The entry that says who retracted a note and why goes with it: a reason often restates the note.
+      for (let i = 0; i < body.length; i += 1) {
+        if (!/^- \*\*retracted:\*\* note \d+/.test(body[i])) continue;
+        hidden.add(i);
+        while (i + 1 < body.length && (/^ {2}/.test(body[i + 1]) || (body[i + 1] === '' && /^ {2}/.test(body[i + 2] || '')))) { i += 1; hidden.add(i); }
+      }
+    }
+    const shown = body.map((l, i) => {
+      if (hidden.has(i)) return null;
+      const r = rows.find((x) => x.start === i);
+      if (r) return l.replace(/^- /, `- [${r.n}] `);
+      const m = notes.find((x) => x.start === i);
+      return m ? l.replace(/^(- )?/, `$1[note-${m.n}] `) : l;
+    });
+    return !full && taken.length ? [...shown, `(${taken.length} note${taken.length === 1 ? '' : 's'} retracted, not shown; the reasons are in the log and in show --full)`] : shown;
+  };
   const g = full ? null : gateState(root, issue.id);
   const loop = readLoop(jarlDir(root));
   const notes = [...recordDisagreements(loop).filter((d) => d.id === issue.id).map(disagreementText), ...headerReadNotes(loop).filter((n) => n.id === issue.id).map((n) => `note: ${n.line}`), ...checkWaiting(loop, [issue]).map(checkWaitingText), ...whereLines(whereOf(root, issue))];
@@ -155,8 +201,9 @@ export function issueView(root, issue, { full = false } = {}) {
     });
   }
   const attachments = attachmentLines(root, loadProfile(root), issue);
-  if (full) return attachments.length ? `${out.join('\n').replace(/\s+$/, '')}\n\n${attachments.join('\n')}\n` : out.join('\n');
-  return `${out.join('\n').replace(/\s+$/, '')}\n\n${attachments.length ? `${attachments.join('\n')}\n\n` : ''}The whole issue, with every earlier round and row: jarl.mjs show ${issue.id} --full\n`;
+  const shown = out.filter((l) => l !== null);
+  if (full) return attachments.length ? `${shown.join('\n').replace(/\s+$/, '')}\n\n${attachments.join('\n')}\n` : shown.join('\n');
+  return `${shown.join('\n').replace(/\s+$/, '')}\n\n${attachments.length ? `${attachments.join('\n')}\n\n` : ''}The whole issue, with every earlier round and row: jarl.mjs show ${issue.id} --full\n`;
 }
 
 // The words next, queue, status and resume say in place of what they would compute, on a loop whose profile names an

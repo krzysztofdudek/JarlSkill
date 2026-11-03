@@ -13,7 +13,7 @@ import { DEFAULT_PROFILE, TOOL_FIELDS, loadProfile, numberWidth, profilePath, re
 import { appendLog, appendLogLines, decisionsPath, goalPath, logPath } from './journal.mjs';
 import { JARL_GITIGNORE, JARL_GITIGNORE_COMMITTED, ensureLoopMerge, outOfGit } from './loop-git.mjs';
 import { journalById, mergeCheckText } from './log.mjs';
-import { FIELD_RE, RENDERED_FIELDS, acceptanceHeading, acceptanceLineCount, acceptanceText, bodyText, changelogText, evidenceParts, evidenceRows, evidenceTable, fieldValue, findIssue, issueNamed, loadIssues, mergedOf, namedPairs, needNoFieldTags, noteText, parseIssue, placeEvidence, removeFields, removeFirstField, renderIssue, setField, setSection, unattributedRefusal } from './issues.mjs';
+import { FIELD_RE, RENDERED_FIELDS, acceptanceHeading, acceptanceLineCount, acceptanceText, bodyText, changelogText, evidenceNotes, evidenceParts, evidenceRows, evidenceTable, fieldValue, findIssue, issueNamed, loadIssues, mergedOf, namedPairs, needNoFieldTags, noteText, parseIssue, placeEvidence, removeFields, removeFirstField, renderIssue, setField, setSection, unattributedRefusal } from './issues.mjs';
 import { branchTip, commitRepoNames, defaultBase, isGitRepo, issueRepoPaths, issueRepos, mainCheckoutOf, needFormat, needRightCheckouts, repoFromInput, repoLabel, repoList, tipLines, whyNotDeletable, worktreeState, worktreesOf } from './repositories.mjs';
 import { FIELD_NAMES, carriesCode, gateOf, readLoop, unorderedNamings, unorderedText } from './loop.mjs';
 import { declaredChecks, lastMerge } from './metrics.mjs';
@@ -987,6 +987,9 @@ export function workEvidence(issue, profile = DEFAULT_PROFILE) {
   const skip = new RegExp(`^\\s*(Ruling\\b${profile.with('needs-reason').map((st) => `|${reasonWord(st)}:`).join('')})`);
   const section = issue.sections.evidence || '';
   let lines = section.split('\n');
+  // A note taken back counts for nothing: its lines are left out before anything is read.
+  const taken = new Set();
+  for (const note of evidenceNotes(section).notes.filter((x) => x.retracted)) for (let i = note.start; i <= note.end; i += 1) taken.add(i);
   // In a section written in parts, the work's evidence is its Proof: the lines of Proof and every row line (a row written
   // by a writer that does not know the parts may sit under Notes). A note alone is not evidence of the work.
   const { proofAt, notesAt } = evidenceParts(lines);
@@ -995,7 +998,7 @@ export function workEvidence(issue, profile = DEFAULT_PROFILE) {
     const inRow = new Set();
     for (const r of evidenceTable(section).rows) for (let i = r.start; i <= r.end; i += 1) inRow.add(i);
     lines = lines.filter((l, i) => inRow.has(i) || (proofAt !== -1 && i > proofAt && i < proofEnd));
-  }
+  } else lines = lines.filter((l, i) => !taken.has(i));
   return lines.filter((l) => !skip.test(l)).join('\n').trim();
 }
 

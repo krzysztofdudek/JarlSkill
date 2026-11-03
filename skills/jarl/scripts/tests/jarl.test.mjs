@@ -895,7 +895,7 @@ test('a value flag takes the next argument whatever it starts with; -- ends the 
   assert.match(shown, /^- \[1\] \*\*ran:\*\* --help · \*\*saw:\*\* usage$/m);
   assert.match(shown, /^- \[2\] \*\*ran:\*\* yg check · \*\*saw:\*\* --- FAIL: 3 pairs$/m);
   assert.match(shown, /^- \[3\] \*\*ran:\*\* go test \.\/\.\.\. · \*\*saw:\*\* ok=all$/m);
-  assert.match(shown, /^--json prints ok$/m);
+  assert.match(shown, /^\[note-1\] --json prints ok$/m);
   assert.match(raw('new', '--', '--json output drops key'), /^filed 2 /);
   // Refused loudly, naming what the command takes.
   assert.match(refuses(root, 'new', 'd', '--kidn', 'gap'), /unknown flag --kidn for new — it takes .*--kind/);
