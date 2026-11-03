@@ -414,6 +414,52 @@ test('check matches a declared file relative to a subdirectory, not just the rep
   assert.equal(byName['diff inside declared files'].ok, true, byName['diff inside declared files'].note);
 });
 
+function scopeFixture(declare) {
+  const root = repo();
+  const g = (...a) => execFileSync('git', a, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: SPAWN_TIMEOUT }).trim();
+  rmSync(join(root, '.git'), { recursive: true, force: true });
+  g('init', '-q', '-b', 'feature');
+  g('config', 'user.email', 't@t'); g('config', 'user.name', 't');
+  mkdirSync(join(root, 'src', 'deep'), { recursive: true });
+  sh(root, `echo one > src/deep/a.mjs && echo one > other.txt && git add -A && git commit -qm base`);
+  jarl(root, 'init', 'goal', '--committed');
+  declare(root);
+  sh(root, `git add -A && git commit -qm jarl && git checkout -qb jarl/1-work && echo two > src/deep/a.mjs && echo two > src/b.mjs && echo two > other.txt && git add -A && git commit -qm work && git checkout -q feature`);
+  return root;
+}
+
+test('check on an issue with no declared files says so in one sentence and lists no file', () => {
+  const root = scopeFixture((r) => jarl(r, 'new', 'work'));
+  const out = JSON.parse(jarl(root, 'check', '1', '--branch', 'jarl/1-work', '--base', 'feature', '--json'));
+  const scope = out.items.find((i) => i.name === 'diff inside declared files');
+  assert.equal(scope.ok, true);
+  assert.equal(scope.note, 'no files declared on the issue — nothing to bound the diff by');
+});
+
+test('check on a package where one issue declares no files says so in one sentence and lists no file', () => {
+  const root = scopeFixture((r) => { jarl(r, 'new', 'declared', '--files', 'src/deep/a.mjs'); jarl(r, 'new', 'undeclared'); jarl(r, 'set', '1-2', 'in-progress', 'raised', '--branch', 'jarl/1-work', '--worker', 'w1'); });
+  const out = JSON.parse(jarl(root, 'check', '--branch', 'jarl/1-work', '--base', 'feature', '--json'));
+  const scope = out.items.find((i) => i.name === 'diff inside declared files');
+  assert.equal(scope.ok, true);
+  assert.equal(scope.note, '2 declares no files, so nothing bounds the diff');
+});
+
+test('check lets a declared directory cover everything under it and lists only files outside every declared place', () => {
+  const root = scopeFixture((r) => jarl(r, 'new', 'work', '--files', 'deep/'));
+  const out = JSON.parse(withStderr(root, 'check', '1', '--branch', 'jarl/1-work', '--base', 'feature', '--json').stdout);
+  const scope = out.items.find((i) => i.name === 'diff inside declared files');
+  assert.equal(scope.ok, false);
+  assert.equal(scope.note, 'outside deep/: other.txt, src/b.mjs');
+});
+
+test('check never reads the worker\'s own commits as the bounds of its scope', () => {
+  const root = scopeFixture((r) => jarl(r, 'new', 'work', '--files', 'src/deep/a.mjs'));
+  const out = JSON.parse(withStderr(root, 'check', '1', '--branch', 'jarl/1-work', '--base', 'feature', '--json').stdout);
+  const scope = out.items.find((i) => i.name === 'diff inside declared files');
+  assert.equal(scope.ok, false);
+  assert.equal(scope.note, 'outside src/deep/a.mjs: other.txt, src/b.mjs');
+});
+
 test('a round after an approve spends the approve', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
