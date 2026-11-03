@@ -27,6 +27,7 @@ import { STAMP_SRC, appendLog, logPath, oneLine } from './journal.mjs';
 //   row            one --ran/--saw evidence row
 //   verdict        a review: verdict (approve|changes), by, kind (as recorded), model, relayed
 //   retract-row    a retracted evidence row: row, its number
+//   retract-note   a retracted evidence note: note, its number
 //   retract-review a retracted approve
 //   merged         a recorded merge: sha, repo, check, red, ci
 //   tip            the tip of the issue's branch when the line before it of the same issue (a row, a verdict, a merge) was
@@ -37,6 +38,7 @@ import { STAMP_SRC, appendLog, logPath, oneLine } from './journal.mjs';
 const LOG_LINE = new RegExp(`^- (${STAMP_SRC}) · ([^\\n]*)$`);
 const LEADING_ID = idRe('^(?:filed )?({id})\\b');
 const RETRACT_ROW_LINE = idRe('^{id} evidence retract · row (\\d+)\\b');
+const RETRACT_NOTE_LINE = idRe('^{id} evidence retract · note (\\d+)\\b');
 // The tip line: the branch's commit in each repository of the issue, joined by commas, alone on the line.
 const TIP_LINE = idRe('^{id} tip ([0-9a-f]{7,64}(?:,[0-9a-f]{7,64})*)$');
 // A move into a status that holds the claim is read by position, never by searching: after the arrow and the status come
@@ -122,6 +124,8 @@ function eventParser(profile) {
     if (text.startsWith(`${id} review retract`) && !/^\w/.test(text.slice(`${id} review retract`.length))) return { type: 'retract-review', target: retractTarget(text) };
     const rr = RETRACT_ROW_LINE.exec(text);
     if (rr) return { type: 'retract-row', row: Number(rr[1]) };
+    const rn = RETRACT_NOTE_LINE.exec(text);
+    if (rn) return { type: 'retract-note', note: Number(rn[1]) };
     if (text.startsWith(`${id} evidence row · `)) {
       const attach = attachmentOf(text.slice(`${id} evidence row · `.length));
       return attach ? { type: 'row', attach } : { type: 'row' };
@@ -141,7 +145,7 @@ function eventParser(profile) {
 // The command that writes each kind of line that carries state: what the free log refuses to write in its place.
 const LINE_WRITERS = {
   filed: 'jarl.mjs new', move: 'jarl.mjs set <ids> <status>', round: 'jarl.mjs round <id>', verdict: 'jarl.mjs review <id> approve|changes',
-  'retract-review': 'jarl.mjs retract <id> review', 'retract-row': 'jarl.mjs retract <id> <n>', row: 'jarl.mjs evidence <id> --ran "<command>" --saw "<what it printed>"',
+  'retract-review': 'jarl.mjs retract <id> review', 'retract-row': 'jarl.mjs retract <id> <n>', 'retract-note': 'jarl.mjs retract <id> note-<n>', row: 'jarl.mjs evidence <id> --ran "<command>" --saw "<what it printed>"',
   merged: 'jarl.mjs merged <id> --sha <sha>', ci: 'jarl.mjs merged <id> --ci <state>', body: 'jarl.mjs body <id>',
   tip: 'jarl.mjs evidence, review or merged, which write the tip of the branch after their own line',
 };

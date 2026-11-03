@@ -355,6 +355,43 @@ export function evidenceRows(issue) {
   return evidenceTable(issue.sections.evidence).rows.filter((r) => !r.retracted && r.saw !== '').map((r) => ({ ran: r.ran, saw: r.saw }));
 }
 
+// The free-text notes of an Evidence section, each with its ordinal n counted over the whole section (a retracted note
+// keeps its number), the lines it spans (start..end) and whether it is retracted (struck through: `~~` before its first
+// line's text and after its last line). A note is a run of lines with no blank line in it that is no row, no sub-heading
+// and no retraction entry (`- **retracted:**` and the lines indented under it). `retract <id> note-<n>` takes the number.
+const RETRACTION_ENTRY = /^- \*\*retracted:\*\*/;
+export function evidenceNotes(text) {
+  const { lines, rows } = evidenceTable(text);
+  const inRow = new Set();
+  for (const r of rows) for (let i = r.start; i <= r.end; i += 1) inRow.add(i);
+  const notes = [];
+  let open = null;
+  let entry = false;
+  const close = (end) => {
+    if (!open) return;
+    const retracted = /^(- )?~~/.test(lines[open.start]) && /~~$/.test(lines[end].trimEnd());
+    notes.push({ n: notes.length + 1, start: open.start, end, retracted });
+    open = null;
+  };
+  lines.forEach((l, i) => {
+    if (inRow.has(i) || PROOF_HEAD.test(l) || NOTES_HEAD.test(l)) { close(i - 1); entry = false; return; }
+    if (l.trim() === '') { close(i - 1); return; }
+    if (RETRACTION_ENTRY.test(l)) { close(i - 1); entry = true; return; }
+    if (entry && /^ {2}/.test(l)) return;
+    entry = false;
+    if (!open) open = { start: i };
+  });
+  close(lines.length - 1);
+  return { lines, notes };
+}
+// A note struck through, as a row is: after its bullet when it has one.
+export function struckNote(lines, note) {
+  const out = lines.slice();
+  out[note.start] = out[note.start].replace(/^(- )?/, '$1~~');
+  out[note.end] = `${out[note.end].trimEnd()}~~`;
+  return out;
+}
+
 // ---- Proof and Notes: the two parts of an Evidence section ---------------------------------------------------------
 //
 // An Evidence section whose first entry is written while it is empty gets two sub-headings, always in this order: `### Proof`
@@ -376,8 +413,10 @@ export function isUnsplit(section) {
 }
 // A note must not read as a sub-heading of the section: in a section written in parts, a line that starts with # is escaped
 // as a body is; in an unsplit one, only a line that is a sub-heading by itself.
+// A note whose own first line starts with ~~ is escaped, so that only a retraction strikes a note through.
 function noteText(value, current) {
-  return isUnsplit(current) ? String(value).split('\n').map((l) => l.replace(/^(\s*)###(?=\s+(?:Proof|Notes)\s*$)/, '$1\\###')).join('\n') : bodyText(value);
+  const text = isUnsplit(current) ? String(value).split('\n').map((l) => l.replace(/^(\s*)###(?=\s+(?:Proof|Notes)\s*$)/, '$1\\###')).join('\n') : bodyText(value);
+  return text.replace(/^(- )?~~/, '$1\\~~');
 }
 // The Evidence section with one entry written into its part. `kind` is 'proof' (rows, one per line) or 'note' (text); `sep`
 // is what separates a note from the text before it. A proof entry goes after the last row of the section, wherever that

@@ -222,3 +222,62 @@ test('a review with empty findings is rejected: no letters or digits, or too lit
   assert.doesNotMatch(file(root, id), /## Reviews/, 'nothing was written');
   assert.match(jarl(root, 'review', id, 'approve', '--by', 'rev-a', 'read it twice'), /review approve/);
 });
+
+test('a note is numbered as show prints it, retract takes it back with who and why, and the worker view leaves it out', () => {
+  const root = loop();
+  const id = started(root);
+  jarl(root, 'evidence', id, 'the first note stays');
+  jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'pass 5');
+  jarl(root, 'evidence', id, 'the second note names a subject the worker must not see');
+  jarl(root, 'evidence', id, 'the third note stays too');
+  assert.match(jarl(root, 'show', id), /^\[note-2\] the second note names a subject/m, 'the note carries its number');
+  assert.equal(existsSync(profileFile(root)), false, 'no retraction yet: the record is still format 1');
+
+  assert.match(jarl(root, 'retract', id, 'note-2', '--by', 'jarl', 'the owner withdrew it'), /001 evidence note 2 retracted by jarl/);
+  const text = file(root, id);
+  assert.match(text, /^~~the second note names a subject the worker must not see~~$/m, 'the original stays, struck through');
+  assert.match(text, /^- \*\*retracted:\*\* note 2 · by jarl · \d{4}-\d{2}-\d{2}\n  the owner withdrew it$/m, 'the retraction is an entry of its own');
+  assert.match(log(root), /001 evidence retract · note 2 · by jarl · the owner withdrew it$/m);
+  assert.equal(JSON.parse(readFileSync(profileFile(root), 'utf8')).format, 2, 'the first retraction raised the format');
+
+  const worker = jarl(root, 'show', id);
+  assert.doesNotMatch(worker, /second note|subject/, 'the view a worker reads leaves the retracted note out');
+  assert.match(worker, /^\[note-1\] the first note stays$/m);
+  assert.match(worker, /^\[note-3\] the third note stays too$/m, 'a note keeps its number');
+  assert.match(worker, /^- \*\*retracted:\*\* note 2/m, 'the entry that says who and why stays');
+  assert.match(jarl(root, 'show', id, '--full'), /^\[note-2\] ~~the second note names a subject the worker must not see~~$/m, 'the full view keeps it struck through');
+  assert.match(refuses(root, 'retract', id, 'note-2', '--by', 'jarl', 'again'), /note 2 of 001 is retracted already/);
+  assert.match(refuses(root, 'retract', id, 'note-9', '--by', 'jarl', 'no such note'), /has 3 evidence notes: there is no note 9/);
+  assert.match(refuses(root, 'retract', id, 'note-1', 'no one says who'), /needs --by/);
+  assert.match(refuses(root, 'retract', id, 'note-1', '--by', 'jarl', '-'), /needs words/);
+});
+
+test('a retracted note is read by neither the pinned frozen reader nor the done gate', () => {
+  const root = loop();
+  const id = started(root);
+  jarl(root, 'evidence', id, 'a note');
+  assert.equal(oldJarl(root, 'list', {}).ok, true, 'before: 6.1.0 reads the loop');
+  jarl(root, 'retract', id, 'note-1', '--by', 'jarl', 'written on the wrong issue');
+  const r = oldJarl(root, 'list', {});
+  assert.equal(r.ok, false);
+  assert.match(r.error, /written for record format 2, and this Jarl reads format 1/);
+  assert.equal(L.workEvidence({ sections: { evidence: '~~a struck note~~\n\n- **ran:** a · **saw:** b' } }), '- **ran:** a · **saw:** b');
+  assert.equal(L.workEvidence({ sections: { evidence: 'a live note\n\n~~a struck note~~' } }), 'a live note');
+});
+
+test('a note in a section with no sub-headings is numbered apart from its rows, and a note that starts with ~~ is escaped', () => {
+  const root = loop();
+  const id = started(root);
+  const f = L.findIssue(root, id).file;
+  writeFileSync(f, readFileSync(f, 'utf8').replace(/## Evidence\n[\s\S]*$/, '## Evidence\nan older note\n- **ran:** a · **saw:** b\n'));
+  jarl(root, 'evidence', id, '~~not a retraction~~');
+  assert.match(file(root, id), /^\\~~not a retraction~~$/m);
+  const shown = jarl(root, 'show', id);
+  assert.match(shown, /^\[note-1\] an older note$/m);
+  assert.match(shown, /^- \[1\] \*\*ran:\*\* a/m, 'the row keeps its own number');
+  assert.match(shown, /^\[note-2\] \\~~not a retraction~~$/m, 'a note that only looks struck is still a note');
+  jarl(root, 'retract', id, 'note-1', '--by', 'jarl', 'superseded by the next note');
+  assert.doesNotMatch(jarl(root, 'show', id), /an older note/);
+  assert.match(file(root, id), /^~~an older note~~$/m);
+  assert.match(jarl(root, 'verify', '--json'), /./, 'the record still reads');
+});

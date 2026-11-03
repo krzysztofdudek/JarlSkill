@@ -20,7 +20,7 @@ The two parts are two sub-headings inside `## Evidence`, `### Proof` and then `#
 
 - A row goes after the last row of the section, wherever that is, so a row never goes in front of another and the ordinals `show` prints and `retract` takes never move; with no row yet it goes at the end of Proof, in front of an existing Notes. Once a row written by a writer that does not know the parts sits under Notes, later rows follow it there.
 - An attachment of an issue's proof goes where a row goes: after the last row, at the end of Proof.
-- A note, a ruling, a reason and a retraction entry go at the end of the section, in Notes. A retracted row stays where it is, struck through.
+- A note, a ruling, a reason and a retraction entry go at the end of the section, in Notes. A retracted row or note stays where it is, struck through.
 - Free text and reasons cannot hold a line that reads as a sub-heading: such a line is escaped.
 - A section that already holds content and neither sub-heading is read as it stands and never converted: every writer appends at its end. A section holding only Notes reads as having no evidence yet.
 
@@ -44,7 +44,7 @@ One window decides which rows and which approves count: a row counts when it is 
 
 ## Retracting a verdict or an evidence row
 
-The record is never edited to take something back; a wrong entry is retracted by an entry that says who and why. `retract <id> review --by <who> "<reason>"` retracts the newest approve not yet retracted; `retract <id> <n> --by <who> "<reason>"` retracts the n-th evidence row, `n` the ordinal `show` prints before the row, counted over the whole Evidence section and never reused. The one verb takes the same arguments for both and names one issue. The original stays in the issue, struck through (`~~…~~`), the retraction is an entry of its own in the issue and a line in the log, and the done gate and the metrics do not count it. A retraction only tightens: it takes an approve or a row away, never a `changes` verdict (which would revive an acceptance the record already answers), and it never overrides a reviewer — a reviewer who disagrees records a verdict of their own. The first retraction in a loop raises the loop's record format (see [The format marker](record.md#the-format-marker)).
+The record is never edited to take something back; a wrong entry is retracted by an entry that says who and why. `retract <id> review --by <who> "<reason>"` retracts the newest approve not yet retracted; `retract <id> <n> --by <who> "<reason>"` retracts the n-th evidence row, `n` the ordinal `show` prints before the row, counted over the whole Evidence section and never reused, and `retract <id> note-<n> --by <who> "<reason>"` retracts the n-th free-text note of the Evidence section, `show` printing `[note-n]` before it. The one verb takes the same arguments for both and names one issue. `show` leaves a retracted note out of the view a worker reads and prints it struck through with `--full`. The original stays in the issue, struck through (`~~…~~`), the retraction is an entry of its own in the issue and a line in the log, and the done gate and the metrics do not count it. A retraction only tightens: it takes an approve, a row or a note away, never a `changes` verdict (which would revive an acceptance the record already answers), and it never overrides a reviewer — a reviewer who disagrees records a verdict of their own. The first retraction in a loop raises the loop's record format (see [The format marker](record.md#the-format-marker)).
 
 ## Profiles
 

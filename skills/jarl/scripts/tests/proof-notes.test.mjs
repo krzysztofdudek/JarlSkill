@@ -326,7 +326,7 @@ test('show keeps both sub-headings across a reopen: the rows before it are repla
   assert.match(shown, /\(evidence rows 1-1 came before the last start or reopen and are not shown; rows 2-2 follow\)/);
   assert.doesNotMatch(shown, /first run/);
   assert.match(shown, /^- \[2\] \*\*ran:\*\* second run/m);
-  assert.match(shown, /^a note from the first round$/m);
+  assert.match(shown, /^\[note-1\] a note from the first round$/m);
   const full = jarl(root, 'show', '1', '--full');
   assert.match(full, /^- \[1\] \*\*ran:\*\* first run/m);
   assert.match(full, /^- \[2\] \*\*ran:\*\* second run/m);

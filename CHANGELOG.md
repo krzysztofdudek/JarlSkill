@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- A note written on a task can be taken back, as an evidence row can, with who took it back and why. The issue view that a worker reads leaves a retracted note out, and the full view shows it struck through.
+
 ### Changed
 
 - If you copy Jarl's record library into your own tool, copy the `scripts/lib/` folder too. It now sits next to `record.mjs` and `jarl-lib.mjs`, and the library does not work without it.

@@ -81,11 +81,12 @@ commands:
                                                  the issue's kind, and the file lies at the slot's place, has an allowed
                                                  extension and at least the minimum size (at most 64 MiB); done checks every
                                                  required slot again on the disk
-  retract <id> review|<n> --by <who> "<reason>"  take a record back by an appended entry that says who and why; review retracts
+  retract <id> review|<n>|note-<n> --by <who> "<reason>"  take a record back by an appended entry that says who and why; review retracts
                                                  the newest approve not yet retracted (never a "changes" verdict), and the
                                                  approve stays, struck through; <n> retracts the n-th evidence row (the
                                                  number show prints before each row, counted over the whole Evidence
-                                                 section): the row stays, struck through; the done gate and the metrics
+                                                 section) and note-<n> the n-th free-text note (show prints note-<n> before it): the row or note stays, struck
+                                                 through, and show leaves a retracted note out unless --full; the done gate and the metrics
                                                  do not count what is retracted; the first retraction of a loop raises its record format to
                                                  2, so a reader that knows only format 1 refuses the loop instead of
                                                  counting what was taken back
@@ -512,7 +513,7 @@ export const COMMAND_SUMMARY = {
   source: 'Set the Source field of issues filed by hand.',
   after: 'Set or clear the issues these wait on before next offers them.',
   evidence: 'Append a free-text note, or checkable rows of what ran and what it printed, to issues; or record a file as an attachment of a slot (--file, --slot).',
-  retract: 'Take back the newest approve of an issue (what: review) or one evidence row by its number (what: the number), by an entry that says who and why.',
+  retract: 'Take back the newest approve of an issue (what: review), one evidence row by its number (what: the number) or one evidence note (what: note-<n>), by an entry that says who and why.',
   field: 'Write one field on issues, Resources or a field the profile declares, or empty any optional field with clear.',
   list: 'List the issues, the unfinished ones by default, filtered by status, kind, tag, priority or a field.',
   show: 'Print one issue as the done gate sees it (its current window, rows numbered), or the whole file with --full.',
@@ -750,7 +751,7 @@ export function dispatch(root, commandName, rest, flags) {
         out = R.addEvidence(root, rest[0], rest[1], flags); text = each(out, renderEvidence); break;
       // One verb takes back a verdict and an evidence row: the review's newest approve, or the row by its number.
       case 'retract':
-        need(rest[1] === 'review' || /^\d+$/.test(rest[1] ?? ''), `retract takes review (the newest approve) or the number of an evidence row, got "${rest[1] ?? ''}"`);
+        need(rest[1] === 'review' || /^(note-)?\d+$/.test(rest[1] ?? ''), `retract takes review (the newest approve) or the number of an evidence row, or note-<n> for a note, got "${rest[1] ?? ''}"`);
         if (rest[1] === 'review') { out = R.review(root, rest[0], 'retract', rest[2], { by: flags.by, caller: 'cli' }); text = each(out, renderReview); warn = [].concat(out).filter((o) => o.note).map((o) => `note: ${o.note}`); } else { out = R.addEvidence(root, rest[0], rest[2], { retract: rest[1], by: flags.by }); text = each(out, renderEvidence); }
         break;
       // One computation of the rows: the ready ones are listed, and the rest says how many are held or waiting.
@@ -805,7 +806,7 @@ export function dispatch(root, commandName, rest, flags) {
 
 // The line each command prints for one result.
 const renderField = (o) => `${o.id} ${o.field}: ${o.value || '(cleared)'}`;
-const renderEvidence = (o) => (o.retracted ? `${o.id} evidence row ${o.retracted} retracted by ${o.by}` : o.rows ? `${o.id} evidence row${o.rows.length > 1 ? 's' : ''} recorded` : `${o.id} evidence recorded`);
+const renderEvidence = (o) => (o.retractedNote ? `${o.id} evidence note ${o.retractedNote} retracted by ${o.by}` : o.retracted ? `${o.id} evidence row ${o.retracted} retracted by ${o.by}` : o.rows ? `${o.id} evidence row${o.rows.length > 1 ? 's' : ''} recorded` : `${o.id} evidence recorded`);
 const renderReview = (o) => (o.retracted ? `${o.id} review retracted by ${o.by} (${o.kind}): the approve ${o.retracted}` : `${o.id} review ${o.verdict}${o.by ? ` by ${o.by} (${o.kind})` : ''} · acceptance: ${o.acceptance ? o.acceptance.split('\n').join(' / ') : '(none on file)'}${o.next ? ` · next: ${o.next}` : ''}`);
 
 // One answer, after its ruling is recorded: a ratified area ruling goes to the type's decision log (and a rule's ratification
