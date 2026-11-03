@@ -34,8 +34,8 @@ const TENSE_ALLOWED = [/jarl-record\/\d+/g, /old-jarl(?:\.mjs)?/g, /fixtures\/ja
 const NAME_FLAGS = /^(?:legacy|retire[ds]?|older|backward|backwards|compatible|migrate[sd]?|formerly)$/;
 // Each allowance holds in its one file only: the keys are built in the library, and no other name passes.
 const NAME_ALLOWED = [
-  { name: 'legacyHandoff', file: 'skills/jarl/scripts/jarl-lib.mjs', reason: 'the key of the handoff file in resume --json, which the tests assert' },
-  { name: 'retired', file: 'skills/jarl/scripts/jarl-lib.mjs', reason: 'the key of the handoff write --json, which the tests assert' },
+  { name: 'legacyHandoff', file: 'skills/jarl/scripts/lib/resume.mjs', reason: 'the key of the handoff file in resume --json, which the tests assert' },
+  { name: 'retired', file: 'skills/jarl/scripts/lib/resume.mjs', reason: 'the key of the handoff write --json, which the tests assert' },
 ];
 // A string that is exactly one of these is a constant of the protocol or a placeholder of the server, not prose: the
 // JSON-RPC version, and the version the server reports when its manifest cannot be read.
@@ -198,10 +198,10 @@ function tenseTexts() {
   const references = readdirSync(join(SKILL, 'references')).filter((f) => f.endsWith('.md')).sort().map((f) => `skills/jarl/references/${f}`);
   const markdown = ['skills/jarl/SKILL.md', ...references, 'README.md', 'CLAUDE.md'].flatMap((p) => proseLines(p, read(p)));
   // The Runes vendoring tool is compared byte for byte with Runes' own copy by the vendor gate, so it is changed in Runes only.
-  const scripts = readdirSync(SCRIPTS).filter((f) => f.endsWith('.mjs') && f !== 'runes.mjs');
+  const scripts = [...readdirSync(SCRIPTS).filter((f) => f.endsWith('.mjs') && f !== 'runes.mjs'), ...readdirSync(join(SCRIPTS, 'lib')).filter((f) => f.endsWith('.mjs')).sort().map((f) => `lib/${f}`)];
   const source = scripts.flatMap((f) => sourceTokens(`skills/jarl/scripts/${f}`, read(`skills/jarl/scripts/${f}`)));
   // The frozen reader is the one file of the tests that names its version, and no rule reads it. The record contract's
-  // test is held unchanged by this release, so its comments are not read here either.
+  // test keeps two comments this rule would flag (on the frozen fingerprint and on a retracted row), so its comments are not read here.
   const tests = readdirSync(TESTS).filter((f) => f.endsWith('.mjs') && f !== 'old-jarl.mjs' && f !== 'record-contract.test.mjs');
   const testComments = tests.flatMap((f) => commentLines(`skills/jarl/scripts/tests/${f}`, readFileSync(join(TESTS, f), 'utf8')));
   const workflows = readdirSync(join(REPO, '.github/workflows')).filter((f) => f.endsWith('.yml')).sort().flatMap((f) => workflowLines(`.github/workflows/${f}`, read(`.github/workflows/${f}`)));
@@ -256,7 +256,7 @@ test('the tense test names each family in a sample, and the allow-list passes on
   for (const sample of samples) assert.ok(tenseHits([{ where: 'x', text: sample }]).length, sample);
   const passes = ['the lease since the last start', 'an earlier round', 'the earlier verdict', 'a row from before a reopen', 'a migration of the record', 'an alias such as the family name', 'a row of the evidence', 'the usage of --issue 7', 'jarl-record/1 is the contract', 'the frozen reader at tests/old-jarl.mjs', 'fixtures/jarl-6.1.0/jarl-lib.mjs', 'the owner rules', 'a round <ids> call'];
   for (const sample of passes) assert.deepEqual(tenseHits([{ where: 'x', text: sample }]), [], sample);
-  const lib = 'skills/jarl/scripts/jarl-lib.mjs:1';
+  const lib = 'skills/jarl/scripts/lib/resume.mjs:1';
   assert.deepEqual(tenseHits([{ where: lib, text: 'legacyHandoff', kind: 'name' }, { where: lib, text: 'retired', kind: 'name' }]), []);
   assert.equal(tenseHits([{ where: 'skills/jarl/scripts/mutant.mjs:1', text: 'retired', kind: 'name' }]).length, 1, 'the allowance holds in its one file');
   assert.equal(tenseHits([{ where: lib, text: 'legacyFile', kind: 'name' }]).length, 1);

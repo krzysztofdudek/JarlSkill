@@ -1,18 +1,18 @@
 // Jarl is a block: a loop profile may bring any vocabulary, but Jarl's own code never names another tool's concepts.
-// Three words stay out of jarl.mjs, jarl-lib.mjs, record.mjs, jarl-mcp.mjs and yg-edge.mjs entirely: wave, architect, node — and every word that starts with
+// Three words stay out of jarl.mjs, jarl-lib.mjs and the modules of lib/, record.mjs, jarl-mcp.mjs and yg-edge.mjs entirely: wave, architect, node — and every word that starts with
 // them (waves, architecture, nodes). The only allowed occurrences are the Node.js runtime, named where the code cannot
 // avoid it; each allowed form is listed below, and anything else fails.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-const FILES = ['../jarl.mjs', '../jarl-lib.mjs', '../record.mjs', '../jarl-mcp.mjs', '../yg-edge.mjs'];
+const FILES = ['../jarl.mjs', '../jarl-lib.mjs', ...readdirSync(new URL('../lib/', import.meta.url)).filter((f) => f.endsWith('.mjs')).sort().map((f) => `../lib/${f}`), '../record.mjs', '../jarl-mcp.mjs', '../yg-edge.mjs'];
 const FORBIDDEN = /\b(wave|architect|node)/gi;
 // The runtime, and only as written here: the shebang, an import from a node: built-in module, and "Node 22+".
 const RUNTIME = [/^#!\/usr\/bin\/env node$/, /'node:[a-z_]+'/g, /\bNode 22\+/g];
 
-test('the word test: jarl.mjs, jarl-lib.mjs, record.mjs, jarl-mcp.mjs and yg-edge.mjs never use wave, architect or node, beyond the Node.js runtime', () => {
+test('the word test: jarl.mjs, jarl-lib.mjs and the modules of lib/, record.mjs, jarl-mcp.mjs and yg-edge.mjs never use wave, architect or node, beyond the Node.js runtime', () => {
   for (const f of FILES) {
     const lines = readFileSync(fileURLToPath(new URL(f, import.meta.url)), 'utf8').split('\n');
     const hits = [];

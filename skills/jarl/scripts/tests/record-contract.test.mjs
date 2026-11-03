@@ -7,7 +7,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, writeFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -120,10 +120,11 @@ test('the contract check fails on an added, a removed or a re-shaped export', ()
   assert.equal(paramsOf(function f(a, b = 1, { c } = {}) { return [a, b, c]; }), '(a, b?, { c }?)');
 });
 
-test('record.mjs names every export by hand and stands only on jarl-lib.mjs, which stands only on Node built-ins', () => {
+test('record.mjs names every export by hand and stands only on jarl-lib.mjs, which stands only on the modules of lib/ and they on Node built-ins', () => {
   const here = (f) => readFileSync(fileURLToPath(new URL(`../${f}`, import.meta.url)), 'utf8');
   const record = here('record.mjs');
   const lib = here('jarl-lib.mjs');
+  const modules = readdirSync(fileURLToPath(new URL('../lib/', import.meta.url))).filter((f) => f.endsWith('.mjs')).sort();
   assert.doesNotMatch(record, /^export \*/m, 'record.mjs enumerates its exports; no export *');
   // Every specifier the module loads: static imports (one line or many), side-effect imports, export … from, and
   // import() — a dynamic import whose argument is not a string literal is refused outright, since it cannot be checked.
@@ -134,7 +135,18 @@ test('record.mjs names every export by hand and stands only on jarl-lib.mjs, whi
   assert.deepEqual(imports("import {\n  a,\n  b,\n} from './x.mjs';\nimport './y.mjs';\nexport { c } from './z.mjs';\nconst d = await import('./w.mjs');"), ['./x.mjs', './y.mjs', './z.mjs', './w.mjs']);
   assert.throws(() => imports('const m = await import(name);'), /computed specifier/);
   assert.deepEqual(imports(record).filter((s) => !s.startsWith('node:')), ['./jarl-lib.mjs']);
-  assert.deepEqual(imports(lib).filter((s) => !s.startsWith('node:')), []);
+  assert.deepEqual(imports(lib).filter((s) => !(s.startsWith('./lib/') && modules.includes(s.slice('./lib/'.length)))), []);
+  for (const m of modules) assert.deepEqual(imports(here(`lib/${m}`)).filter((s) => !s.startsWith('node:') && !(s.startsWith('./') && modules.includes(s.slice(2)))), [], `lib/${m}`);
+  // What a vendored copy carries is record.mjs, jarl-lib.mjs and lib/: the files record.mjs reaches, and no other.
+  const reached = new Set();
+  const walk = (f) => {
+    if (reached.has(f)) return;
+    reached.add(f);
+    const dir = f.includes('/') ? f.slice(0, f.lastIndexOf('/') + 1) : '';
+    for (const s of imports(here(f))) if (s.startsWith('./')) walk(`${dir}${s.slice(2)}`);
+  };
+  walk('record.mjs');
+  assert.deepEqual([...reached].filter((f) => f !== 'record.mjs' && f !== 'jarl-lib.mjs' && !f.startsWith('lib/')), []);
 });
 
 test('the record through record.mjs: a loop opened, an issue carried to done and merged, rulings, a question, the views', () => {
