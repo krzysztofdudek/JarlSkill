@@ -159,6 +159,10 @@ function tierNote(profile, tier) {
   const builtIn = profile.tiers.length === TIERS.length && profile.tiers.every((t, k) => t === TIERS[k]);
   return `note: no --tier given, so tier ${tier} was recorded${builtIn ? ` — ${TIERS.map((t) => `${t}: ${TIER_CRITERIA[t]}`).join('; ')}` : ' (this loop\'s default)'}; name it with --tier`;
 }
+// The kind and the priority a new issue took when its flag was not given: said so, as the tier is.
+function defaultedNote(field, value, flag) {
+  return `note: no --${flag} given, so ${field} ${value} was recorded (the default); name it with --${flag}`;
+}
 
 export function cmdNew(root, title, rawFlags) {
   need(title, 'new requires "<title>"');
@@ -194,8 +198,10 @@ export function cmdNew(root, title, rawFlags) {
   const sections = profile.sections.map((h) => [h, givenSections.has(h) ? bodyText(givenSections.get(h)) : bodyText(fromTemplate.section?.(h.toLowerCase()))]);
   if (profile.acceptance && fromTemplate.acceptance === undefined && fromTemplate.section) fromTemplate.acceptance = fromTemplate.section(profile.acceptance.toLowerCase());
   const kind = flags.kind || profile.kindDefault;
+  const kindDefaulted = !flags.kind;
   need(profile.kinds.includes(kind), `--kind must be one of: ${profile.kinds.join(', ')}`);
   const priority = String(flags.prio || '2');
+  const priorityDefaulted = !flags.prio;
   need(PRIORITIES.includes(priority), '--prio must be 1, 2 or 3');
   const tier = String(flags.tier || profile.tierDefault);
   need(profile.tiers.includes(tier), `--tier must be one of: ${profile.tiers.join(', ')} — the tier of model the worker is raised on, mapped to a model by the platform running the loop`);
@@ -235,8 +241,14 @@ export function cmdNew(root, title, rawFlags) {
     if (claimed) { try { claimed = claimFile(tmp, file); } catch (e) { unlinkSync(tmp); throw e; } }
     unlinkSync(tmp);
     if (claimed) {
-      // Said on the command line only (a library caller gets none, and its result does not change): the tier it used.
-      const notes = rawFlags.caller === 'cli' ? [rawFlags.tier === undefined ? tierNote(profile, tier) : null, ...picked.map((p) => p.note && `note: ${p.note}`)].filter(Boolean) : [];
+      // Said on the command line only (a library caller gets none, and its result does not change): the tier it used, and
+      // the kind and priority it took by default.
+      const notes = rawFlags.caller === 'cli' ? [
+        rawFlags.tier === undefined ? tierNote(profile, tier) : null,
+        kindDefaulted ? defaultedNote('kind', kind, 'kind') : null,
+        priorityDefaulted ? defaultedNote('priority', priority, 'prio') : null,
+        ...picked.map((p) => p.note && `note: ${p.note}`),
+      ].filter(Boolean) : [];
       const note = notes.length ? { note: notes.join('\n') } : {};
       return { id, file, ...(rawFlags.template !== undefined ? { template: rawFlags.template } : {}), ...note };
     }

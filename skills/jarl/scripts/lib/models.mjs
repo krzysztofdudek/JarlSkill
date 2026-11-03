@@ -249,8 +249,9 @@ function reviewerTable(verdictRows) {
 // The loops models reads: this one (when it has a live record), its own archives when asked (--archives), and every
 // --with <root> (a root, or an archive directory under .jarl/archive/). A path that is not a loop is refused with a
 // message. Read-only: no lock is taken and nothing is written.
+// A root holds a log: a loop with no issue yet has no issues folder, since git keeps no empty folder in a clone.
 function loopShape(path) {
-  if (existsSync(logPath(join(path, '.jarl'))) && existsSync(join(path, '.jarl', 'issues'))) return 'root';
+  if (existsSync(logPath(join(path, '.jarl')))) return 'root';
   if (existsSync(logPath(path)) && existsSync(join(path, 'issues'))) return 'archive';
   return null;
 }
