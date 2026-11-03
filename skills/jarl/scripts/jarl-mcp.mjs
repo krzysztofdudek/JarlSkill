@@ -193,7 +193,13 @@ export function rootFor(input = {}, env = process.env, cwd = process.cwd()) { re
 // One tool call: { content, isError } as MCP returns it. Invalid fields throw InvalidParams (a JSON-RPC error);
 // everything the CLI would print — its answer, its notes, its refusal — comes back as the result.
 export function callTool(name, input = {}, env = process.env, cwd = process.cwd()) {
-  if (name === toolName('help')) return { content: [{ type: 'text', text: HELP }], isError: false };
+  if (name === toolName('help')) {
+    if (input === null || typeof input !== 'object' || Array.isArray(input)) throw invalid(`${name}: arguments must be an object`);
+    const shared = Object.keys(GLOBAL_FLAGS).filter((f) => f !== 'help');
+    const extra = Object.keys(input).filter((k) => !shared.includes(k));
+    if (extra.length) throw invalid(`${name}: unknown field "${extra[0]}" — it takes ${shared.length ? shared.join(', ') : 'no fields'}`);
+    return { content: [{ type: 'text', text: HELP }], isError: false };
+  }
   const cmd = commandForTool(TABLE, name, TOOL_OPTIONS);
   if (cmd === null) throw invalid(`Unknown tool: ${name}`);
   const argv = argvFor(cmd, input);

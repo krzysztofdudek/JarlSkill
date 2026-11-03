@@ -12,6 +12,7 @@ import { PROFILE_VERSION, RECORD_FORMATS, RECORD_FORMAT_RAISED, loadProfile, pro
 import { appendLog } from './journal.mjs';
 import { withLock } from './lock.mjs';
 import { mapMergeRepos } from './log.mjs';
+import { loadIssues } from './issues.mjs';
 
 // ---- repositories: names, declarations and the one resolver ------------------------------------------------------
 //
@@ -344,7 +345,13 @@ export function repoFromInput(root, raw) {
   const place = join(home, basename(main));
   const occupied = existsSync(place) && canonical(place) !== main;
   const why = `${exact ? '' : `${given} is reduced to its main checkout; `}${occupied ? `another repository stands at ${place}, where its name would resolve, so this one keeps its path` : `the checkout is not at ${place}, where a name would resolve — put it, or a symlink to it, there to name it`}`;
-  return { main, name: null, value, note: `${given} is stored as the path ${value}: ${why}` };
+  return { main, name: null, value, note: storedAsPath(root, main) ? null : `${given} is stored as the path ${value}: ${why}` };
+}
+// Whether an issue of the loop already stores this checkout as a path. The note that says why a path is stored is said
+// once per loop: a later filing that names the same checkout by its path is silent.
+function storedAsPath(root, main) {
+  const place = canonical(main);
+  return loadIssues(root).some((issue) => reposNamed(issue).some((v) => repoValueKind(root, v) === 'path' && canonical(resolve(root, v)) === place));
 }
 // The values of a --repo list (one name or path, or several as one comma list), each read by repoFromInput.
 function repoList(root, v) {

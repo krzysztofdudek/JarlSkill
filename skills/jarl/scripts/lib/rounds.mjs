@@ -16,20 +16,47 @@ export function roundsOf(root, id) {
   return (journalById(root).get(id) || []).filter((e) => e.type === 'round').length;
 }
 
-export function cmdRound(root, rawId, what, dry = false) {
+// The findings a round line records after its number, in the order of the rounds.
+const FINDINGS_MAX = 10000;
+function findingsOfRounds(entries) {
+  return entries.filter((e) => e.type === 'round').map((e) => /^\S+ round \d+ · findings (\d+) · /.exec(e.text)).map((m) => (m ? Number(m[1]) : null));
+}
+
+// What to change for the fresh worker, from the tier the issue carries: a tier up while one exists, and from the top
+// tier a different model or a changed approach. Every step is a choice, so a loop that bars a model can take another.
+// The tiers and their order are the loop's profile's. After the first takeover the tier was already offered, so later
+// advice leaves it out: the issue's Tier stays as filed, and a model other than the ones that held the issue is the step.
+function takeoverAdvice(tiers, tier, failed, n, takeovers) {
+  const model = failed || 'the one that failed';
+  const unknown = failed ? '' : ' (its lease did not record one)';
+  const above = tiers[tiers.indexOf(tier) + 1];
+  const top = tiers[tiers.length - 1];
+  const tried = `the same model at the same tier has failed this ${n} times`;
+  const lead = 'For whoever raises the fresh worker: ';
+  if (takeovers > 1) return `${lead}put it on a model that has not held this issue (the last was ${model}${unknown}), or change the approach — ${tried}, and an earlier takeover has not settled it.`;
+  if (above) return `${lead}raise it one tier up from ${tier} (to ${above}), or put it on a model other than ${model}${unknown}, or change the approach — ${tried}.`;
+  return `${lead}${tier} is the top tier (${top}), so put it on a model other than ${model}${unknown}, or change the approach — ${tried}.`;
+}
+
+export function cmdRound(root, rawId, what, dry = false, opts = {}) {
   need(what, 'round requires "<what failed>"');
+  const found = opts.findings;
+  need(found === undefined || (/^\d+$/.test(String(found)) && Number(found) <= FINDINGS_MAX), `--findings must be a whole number up to ${FINDINGS_MAX}`);
   const issue = findIssue(root, rawId);
   need(issue, `no such issue: ${rawId}`);
   if (dry) return { id: issue.id };
   const n = roundsOf(root, issue.id) + 1;
-  appendLog(root, `${issue.id} round ${n} · ${what}`);
-  const takeover = n >= ROUNDS_BEFORE_TAKEOVER;
-  const log = (journalById(root).get(issue.id) || []).filter((e) => e.type !== 'filed').map((e) => `- ${e.at} · ${e.text}`).join('\n');
-  // The fresh worker is raised one tier up, or on another model than the one that failed (the lease names it).
-  const failed = fieldText(issue.fields.model);
-  const raise = `For whoever raises the fresh worker: raise it one tier up from ${issue.tier}, or on a model other than ${failed || 'the one that failed'}${failed ? '' : ' (its lease did not record one)'} — the same model at the same tier has failed this ${n} times.`;
-  const block = takeover ? `## Takeover\n\n${raise}\n\nA prior worker attempted issue ${issue.id} ${n} times; the issue is yours now. Its rounds so far:\n\n\`\`\`\n${log}\n\`\`\`\n` : null;
-  return { id: issue.id, round: n, takeover, block };
+  appendLog(root, `${issue.id} round ${n} · ${found === undefined ? (/^findings \d+ · /.test(what) ? 'findings - · ' : '') : `findings ${Number(found)} · `}${what}`);
+  // A takeover starts a new count: the next one comes after as many rounds of the new worker.
+  const takeover = n % ROUNDS_BEFORE_TAKEOVER === 0;
+  const since = ((n - 1) % ROUNDS_BEFORE_TAKEOVER) + 1;
+  const entries = journalById(root).get(issue.id) || [];
+  const findings = findingsOfRounds(entries).filter((x) => x !== null);
+  const trend = findings.length ? `Findings per round: ${findings.join(', ')}.\n\n` : '';
+  const log = entries.filter((e) => e.type !== 'filed').map((e) => `- ${e.at} · ${e.text}`).join('\n');
+  const advice = takeoverAdvice(loadProfile(root).tiers, issue.tier, fieldText(issue.fields.model), ROUNDS_BEFORE_TAKEOVER, n / ROUNDS_BEFORE_TAKEOVER);
+  const block = takeover ? `## Takeover\n\n${advice}\n\n${trend}A prior worker attempted issue ${issue.id} ${ROUNDS_BEFORE_TAKEOVER} times (${n} rounds in all); the issue is yours now. Its rounds so far:\n\n\`\`\`\n${log}\n\`\`\`\n` : null;
+  return { id: issue.id, round: n, since, takeover, block, ...(found === undefined ? {} : { findings: Number(found) }) };
 }
 
 const ASSERT_RE = /\b(expect\(|assert\.|assert\(|assert |t\.(Error|Fatal|Errorf|Fatalf)\(|Assert\.|should\.|\.toBe|\.toEqual)/g;

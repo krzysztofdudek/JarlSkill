@@ -410,3 +410,37 @@ test('jarl_set changes a status and jarl_field writes a field: each description 
   assert.equal(byName.jarl_set.description, 'WRITES the loop. Change the status of issues, with the reason logged.');
   assert.match(byName.jarl_field.description, /^WRITES the loop\. Write one field on issues, Resources or a field the profile declares, or empty any optional field with clear\./);
 });
+
+test('every tool refuses a field it does not take, names the fields it takes, and writes nothing', () => {
+  const root = loopDir('jarl-mcp-unknown-');
+  for (const t of TOOLS) {
+    const e = (() => { try { mcp.callTool(t.name, { bogus: 'x', root }); } catch (x) { return x; } })();
+    assert.ok(e, `${t.name} refuses an unknown field`);
+    assert.equal(e.code, -32602, `${t.name}: ${e.message}`);
+    assert.match(e.message, /unknown field "bogus" — it takes /, t.name);
+  }
+  refusedAsInvalid(() => mcp.callTool('jarl_new', { title: 'a', whyy: 'a reason that must not be lost', root }), /unknown field "whyy" — it takes .*\bwhy\b/);
+  refusedAsInvalid(() => mcp.callTool('jarl_new', { title: 'a', Why: 'a reason', root }), /unknown field "Why"/);
+  refusedAsInvalid(() => mcp.callTool('jarl_body', { id: '1', whyy: 'x', root }), /unknown field "whyy"/);
+  assert.equal(issuesIn(root), 0, 'no refused filing left an issue behind');
+});
+
+test('a filing refused for an after that names no issue takes no number: the next filing gets the next free one', () => {
+  const root = loopDir('jarl-mcp-after-');
+  const refused = mcp.callTool('jarl_new', { title: 'waits on a later issue', after: '2', root });
+  assert.equal(refused.isError, true);
+  assert.match(refused.content[0].text, /no such issue: 2/);
+  assert.equal(issuesIn(root), 0, 'the refusal wrote no issue');
+  const first = mcp.callTool('jarl_new', { title: 'first', json: true, root });
+  assert.equal(JSON.parse(first.content[0].text).id, '1', 'the refused filing took no number');
+  const second = mcp.callTool('jarl_new', { title: 'second', after: '1', json: true, root });
+  assert.equal(JSON.parse(second.content[0].text).id, '2');
+  assert.equal(issuesIn(root), 2);
+});
+
+test('the help tool takes the fields every tool takes and refuses any other', () => {
+  const root = loopDir('jarl-mcp-helproot-');
+  assert.equal(mcp.callTool('jarl_help', { root }).isError, false);
+  assert.equal(mcp.callTool('jarl_help', { root, json: true }).content[0].text, mcp.callTool('jarl_help').content[0].text);
+  refusedAsInvalid(() => mcp.callTool('jarl_help', { root, bogus: 1 }), /unknown field "bogus" — it takes json, root/);
+});

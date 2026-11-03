@@ -8,7 +8,7 @@ import { DEFAULT_PROFILE, loadProfile } from './profile.mjs';
 import { mergedOf, sharedMark } from './issues.mjs';
 import { repoNames } from './repositories.mjs';
 import { closedGateLine, disagreementText, gateLine, gateOf, readLoop, reviewSplit } from './loop.mjs';
-import { metricsOf, renderMetrics, testimonyNote } from './metrics.mjs';
+import { checkWaitingText, metricsOf, renderMetrics, testimonyNote } from './metrics.mjs';
 import { ago } from './rounds.mjs';
 import { cmdTips, renderTips } from './tips.mjs';
 import { reasonWord, waitingOn } from './commands.mjs';
@@ -114,6 +114,7 @@ export function renderResume(o, profile = DEFAULT_PROFILE) {
       ...sec('Merge queue', queue, '- (nothing approved waits to be merged)'),
     ]),
     ...sec(`Merged, CI pending or red (${o.merged.length})`, o.merged.map((m) => `- ${m.id} ${m.sha}${m.repo ? ` in ${m.repo}` : ''} · CI ${m.ci}`)),
+    ...sec(`Merged, waiting for its check (${(o.status.checkWaiting || []).length})`, (o.status.checkWaiting || []).map((w) => `- ${checkWaitingText(w)}`)),
     ...sec(`Tips${o.tips.ci ? '' : ' (CI not asked — --ci asks gh)'}`, tips),
     ...(files.length ? sec(`Loop files not committed (${files.length}) — commit .jarl/`, [...files.slice(0, 20).map((f) => `- ${f}`), ...(files.length > 20 ? [`- … ${files.length - 20} more`] : [])]) : []),
     ...(o.log ? sec(`Last ${o.log.length} log line(s)`, o.log.map((l) => `- ${l}`), '- (empty log)') : []),

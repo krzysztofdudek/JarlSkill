@@ -14,7 +14,7 @@ import { attachmentOf, journalById } from './log.mjs';
 import { acceptanceLineCount, alignRows, bodyText, evidenceParts, evidenceTable, loadIssues, mergedOf, noteText, parseIssue, placeEvidence, reviewEntries, setSection, sharedMark } from './issues.mjs';
 import { fileAt, raiseFormat, repoNames, reposWhere, tipLines, whereLines, whereOf } from './repositories.mjs';
 import { approveKind, carriesCode, disagreementText, gateOf, gateState, readLoop, recordDisagreements, reviewSplit, scopedLoop } from './loop.mjs';
-import { checkState } from './metrics.mjs';
+import { checkState, checkWaiting, checkWaitingText } from './metrics.mjs';
 import { builds, modelMarks } from './models.mjs';
 import { leaseProblems, staleHours } from './rounds.mjs';
 import { attachmentLines, inspectAttachment, requiredSlots, slotProblems } from './attachments.mjs';
@@ -109,7 +109,8 @@ export function issueView(root, issue, { full = false } = {}) {
   pieces.push(cur);
   const numbered = (body, rows) => body.map((l, i) => { const r = rows.find((x) => x.start === i); return r ? l.replace(/^- /, `- [${r.n}] `) : l; });
   const g = full ? null : gateState(root, issue.id);
-  const notes = [...recordDisagreements(readLoop(jarlDir(root))).filter((d) => d.id === issue.id).map(disagreementText), ...whereLines(whereOf(root, issue))];
+  const loop = readLoop(jarlDir(root));
+  const notes = [...recordDisagreements(loop).filter((d) => d.id === issue.id).map(disagreementText), ...checkWaiting(loop, [issue]).map(checkWaitingText), ...whereLines(whereOf(root, issue))];
   const out = [];
   for (const p of pieces) {
     if (p.name === null && notes.length) {
@@ -311,6 +312,7 @@ function statusOf(root, loop, flags) {
   const live = issues.filter((i) => i.status !== 'dropped');
   c.ciPending = live.filter((i) => mergedOf(i)?.ci === 'pending').map((i) => i.id);
   c.ciRed = live.filter((i) => mergedOf(i)?.ci === 'red').map((i) => i.id);
+  c.checkWaiting = checkWaiting(loop, issues);
   c.handoff = handoffAge(root, c.lastActivity);
   c.reviews = reviewSplit(flags.tag === undefined ? loop : scopedLoop(loop, issues));
   c.inFlightRows = inFlightRows(loop, issues);

@@ -355,7 +355,7 @@ test('tier field, rounds and takeover, asks and answers, handoff, report', () =>
   assert.match(refuses(root, 'new', 'x', '--tier', 'huge'), /--tier must be one of/);
   jarl(root, 'new', 'hard thing', '--tier', 'strong', '--found-by', 'tester, running the suite');
   assert.match(jarl(root, 'show', '1'), /\*\*Tier:\*\* strong/);
-  assert.match(jarl(root, 'round', '1', 'suite red'), /round 1 of 3/);
+  assert.match(jarl(root, 'round', '1', 'suite red'), /round 1: 1 of 3 before a takeover/);
   jarl(root, 'round', '1', 'still red');
   const r = JSON.parse(jarl(root, 'round', '1', 'red again', '--json'));
   assert.equal(r.takeover, true);
@@ -2492,4 +2492,17 @@ test('goal lines set through the command line read through the frozen reader: th
   jarl(root, 'review', '001', 'approve', '--by', 'rev', FINDINGS);
   jarl(root, 'evidence', '001', '--ran', 'check', '--saw', 'green');
   assert.deepEqual(oldJarl(root, 'set', {}, ['001', 'done', 'merged', {}]).error ?? null, null, 'done passes');
+});
+
+test('new files the first issue in a fresh clone of a committed loop that held no issue when it was committed', () => {
+  const origin = gitRepo({ prefix: 'jarl-origin-' });
+  jarl(origin.dir, 'init', 'goal', '--committed');
+  assert.equal(existsSync(join(origin.dir, '.jarl', 'issues')), true, 'the opened loop has an issues directory');
+  origin.g('add', '-A'); origin.g('commit', '-qm', 'open the loop');
+  const copy = join(mkdtempSync(join(tmpdir(), 'jarl-clone-')), 'clone');
+  execFileSync('git', ['clone', '-q', origin.dir, copy], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: SPAWN_TIMEOUT });
+  assert.equal(existsSync(join(copy, '.jarl', 'issues')), false, 'git keeps no empty directory, so the clone has none');
+  const filed = JSON.parse(jarl(copy, 'new', 'first issue in the clone', '--json'));
+  assert.equal(filed.id, '1');
+  assert.equal(JSON.parse(jarl(copy, 'list', '--json')).length, 1);
 });
