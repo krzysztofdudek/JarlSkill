@@ -984,24 +984,25 @@ function mergeContentNotes(root, issue, sha, repoPath) {
 // What a merge says when the approve the gate stands on was recorded on another tip of the branch than the one at this
 // merge: the commits between the two landed without that review. A commit does not spend an approve inside the gate's
 // window, so this note is where it shows. The approve's tip is the tip line written after it, one sha per repository of
-// the issue, in the order branchTip gives; an approve with no tip line, or a branch not here to be read (deleted before
-// the merge is recorded), is not compared. What landed is read along the branch's first parents: the newest of its
+// the issue, in the order branchTip gives. The branch's tip now is read in each repository on its own, so a repository
+// whose branch is gone (deleted by the cleanup of its own earlier merge, or before the merge is recorded) is left out and
+// the others are still compared; an approve with no tip line is not compared. What landed is read along the branch's first parents: the newest of its
 // commits after the approved tip that the recorded commit holds. A recorded commit that holds the approved tip and none
 // of those is the reviewed one and is left out (the note on a merge without the branch names the rest); one that holds
 // the approved tip only through a merge of the base into the branch is no exception, since that merge is a commit of the
 // branch. A recorded commit that does not hold the approved tip (a squash) is taken to hold the branch as it stands. A
-// repository the recorded commit is not in is said to be not merged yet, or, when it is in none of them, not found
+// repository the recorded commit is not in is said to be not in this merge, or, when it is in none of them, not found
 // here: nothing is said to have landed there. The commands the note gives list the branch's commits along its first
 // parents, merges of the base included, and the whole difference, so code a conflict fix added is seen.
 function approveTipNotes(root, issue, live, sha) {
   if (!live || !live.tip) return [];
-  const now = branchTip(root, issue);
-  if (!now || now === live.tip) return [];
   const branch = fieldText(issue.fields.branch);
+  if (!branch) return [];
   const short = (s) => s.slice(0, 12);
   const was = live.tip.split(',');
-  const is = now.split(',');
   const repos = issueRepos(root, issue);
+  const is = repos.map((dir) => (isGitRepo(dir) ? git(dir, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}^{commit}`]) : null));
+  if (!is.some(Boolean) || is.join(',') === live.tip) return [];
   const see = (dir, a, b) => `git -C ${shellWord(dir)} log --oneline --first-parent ${short(a)}..${short(b)} and git -C ${shellWord(dir)} diff ${short(a)} ${short(b)}`;
   const lines = (dir, args) => (git(dir, args) || '').split('\n').filter(Boolean);
   // The newest commit of the branch after the approved tip that the recorded commit holds; null when it holds none of
@@ -1015,13 +1016,13 @@ function approveTipNotes(root, issue, live, sha) {
   const who = live.by ? `by ${live.by} (${live.kind})` : 'by a reviewer not recorded';
   const again = `if it was meant to land, record a review of the tip that landed: jarl.mjs review ${issue.id} approve|changes --by <fresh reviewer> "<findings>"`;
   const head = `APPROVED ON ANOTHER TIP — ${issue.id}'s approve ${who} was recorded on ${branch}`;
-  if (was.length !== is.length || was.length !== repos.length) return [`${head} at ${was.map(short).join(', ')}, and the branch stands at ${is.map(short).join(', ')} at this merge, so that review did not see what changed between them; recorded as given, ${again}`];
-  const here = repos.map((dir) => git(dir, ['cat-file', '-e', `${sha}^{commit}`]) !== null);
-  const away = here.some(Boolean) ? 'not merged yet' : 'not found here';
+  if (was.length !== repos.length) return [`${head} at ${was.map(short).join(', ')}, and the branch stands at ${is.map((s) => (s ? short(s) : 'gone')).join(', ')} at this merge, so that review did not see what changed between them; recorded as given, ${again}`];
+  const here = repos.map((dir) => isGitRepo(dir) && git(dir, ['cat-file', '-e', `${sha}^{commit}`]) !== null);
+  const away = here.some(Boolean) ? 'not in this merge' : 'not found here';
   const moved = [];
   repos.forEach((dir, k) => {
     const [a, b] = [was[k], is[k]];
-    if (a === b) return;
+    if (!b || a === b) return;
     if (!here[k]) { moved.push({ dir, a, b, away }); return; }
     const to = landedUpTo(dir, a, b);
     if (to) moved.push({ dir, a, b, to });

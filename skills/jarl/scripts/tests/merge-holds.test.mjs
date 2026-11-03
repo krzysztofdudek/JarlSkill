@@ -284,7 +284,7 @@ test('a review recorded after the note is the approve the gate stands on, and do
   assert.equal(jarl(repo, 'set', '1', 'done', 'merged'), '1 → done');
 });
 
-test('an issue of several repositories is noted per repository whose tip moved after the approve: landed where the merge is, not merged yet elsewhere, nothing where it did not move', () => {
+test('an issue of several repositories is noted per repository whose tip moved after the approve: landed where the merge is, not in this merge elsewhere, nothing where it did not move', () => {
   const parent = mkdtempSync(join(tmpdir(), 'jarl-holds-multi-'));
   const dirs = {};
   for (const name of ['hub', 'tool', 'lib', 'doc']) {
@@ -306,6 +306,48 @@ test('an issue of several repositories is noted per repository whose tip moved a
   const out = said(hub, 'merged', '1', '--sha', git(lib, 'rev-parse', 'HEAD'), '--keep');
   assert.match(out, APPROVED_ELSEWHERE);
   assert.ok(out.includes(`in lib ${libWas} → ${libNow}, which this merge holds without that review, see it: ${seeing(lib, libWas, libNow)}`), out);
-  assert.ok(out.includes(`in tool ${toolWas} → ${toolNow}, not merged yet, see it: ${seeing(tool, toolWas, toolNow)}`), out);
+  assert.ok(out.includes(`in tool ${toolWas} → ${toolNow}, not in this merge, see it: ${seeing(tool, toolWas, toolNow)}`), out);
   assert.doesNotMatch(out, /in doc /);
+});
+
+// Two repositories beside a hub loop, the issue's branch with one commit in each, approved there by a fresh reviewer, and
+// then a commit on tool's branch after the approve. Each repository's merge is made and recorded on its own.
+function twoRepositoriesMovedInTool() {
+  const parent = mkdtempSync(join(tmpdir(), 'jarl-holds-two-'));
+  const dirs = {};
+  for (const name of ['hub', 'tool', 'lib']) {
+    dirs[name] = join(parent, name);
+    mkdirSync(dirs[name]);
+    git(dirs[name], 'init', '-q', '-b', 'main');
+    commit(dirs[name], 'a.txt', 'a\n');
+  }
+  const { hub, tool, lib } = dirs;
+  jarl(hub, 'init', 'goal');
+  jarl(hub, 'new', 'cross', '--repo', '../tool,../lib', '--acceptance', 'it works');
+  for (const r of [tool, lib]) { git(r, 'checkout', '-q', '-b', 'jarl/1-x'); commit(r, 'b.txt', 'b\n'); git(r, 'checkout', '-q', 'main'); }
+  jarl(hub, 'set', '1', 'in-progress', 'start', '--branch', 'jarl/1-x', '--worker', 'w-one');
+  jarl(hub, 'review', '1', 'approve', '--by', 'rev-fresh', 'read the diff, nothing found');
+  const was = git(tool, 'rev-parse', 'jarl/1-x').slice(0, 12);
+  git(tool, 'checkout', '-q', 'jarl/1-x'); commit(tool, 'late.txt', 'late\n'); git(tool, 'checkout', '-q', 'main');
+  const now = git(tool, 'rev-parse', 'jarl/1-x').slice(0, 12);
+  const merge = (r) => { git(r, 'merge', '-q', '--no-ff', '-m', 'merge 1', 'jarl/1-x'); return git(r, 'rev-parse', 'HEAD'); };
+  return { hub, tool, lib, was, now, merge };
+}
+
+test('two repositories recorded one after the other: the cleanup of the first one\'s branch does not silence the note on the second', () => {
+  const { hub, tool, lib, was, now, merge } = twoRepositoriesMovedInTool();
+  assert.doesNotMatch(said(hub, 'merged', '1', '--sha', merge(lib), '--repo', '../lib'), /landed without|in lib /, "lib's tip did not move, and tool is not in this merge");
+  assert.equal(git(lib, 'branch', '--list', 'jarl/1-x'), '', "the cleanup deleted lib's branch");
+  const out = said(hub, 'merged', '1', '--sha', merge(tool), '--repo', '../tool');
+  assert.match(out, APPROVED_ELSEWHERE);
+  assert.ok(out.includes(`in tool ${was} → ${now}, which this merge holds without that review, see it: ${seeing(tool, was, now)}`), out);
+  assert.doesNotMatch(out, /in lib /);
+});
+
+test('two repositories recorded one after the other with their branches kept: the repository merged first is said to be not in this merge, never not merged yet', () => {
+  const { hub, tool, lib, was, now, merge } = twoRepositoriesMovedInTool();
+  assert.match(said(hub, 'merged', '1', '--sha', merge(tool), '--repo', '../tool', '--keep'), new RegExp(`in tool ${was} → ${now}, which this merge holds without that review`));
+  const out = said(hub, 'merged', '1', '--sha', merge(lib), '--repo', '../lib', '--keep');
+  assert.ok(out.includes(`in tool ${was} → ${now}, not in this merge, see it: ${seeing(tool, was, now)}`), out);
+  assert.doesNotMatch(out, /not merged yet|landed without/);
 });
