@@ -837,7 +837,7 @@ function askText(out) {
 // The notes a decide says on stderr: the owner's word with no question in the record behind it, and the open issues that name the
 // ruling a supersession replaces, so the jarl rewrites them now.
 function decideNotes(root, slug, flags, warn) {
-  if (flags.by === 'owner' && !questionFor(root, slug)) warn.push(`note: no question in the record asks about ${slug}: a ruling by the owner with no question behind it is recorded as he gave it`);
+  if (typeof flags.by === 'string' && flags.by.trim().toLowerCase() === 'owner' && !questionFor(root, slug)) warn.push(`note: no question in the record asks about ${slug}: a ruling by the owner with no question behind it is recorded as he gave it`);
   if (flags.supersedes !== undefined) {
     const open = issuesNaming(root, flags.supersedes);
     if (open.length) warn.push(`note: open issues name ${flags.supersedes}: ${open.map((i) => i.id).join(', ')} — rewrite them to ${slug}`);

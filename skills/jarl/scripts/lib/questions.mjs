@@ -248,14 +248,15 @@ export function cmdDecide(root, slug, ruling, flags = {}) {
   const byOwner = flags.by !== undefined && fieldText(flags.by).toLowerCase() === 'owner';
   const quote = flags.quote !== undefined ? fieldText(flags.quote) : null;
   need(flags.quote === undefined || quote, '--quote needs the owner\'s own words');
-  need(!byOwner || quote, `a ruling by the owner carries his own words: give them with --quote "<what he said>"; a ruling without --by is recorded as the coordinator's, and a question he asked is not a ruling`);
+  need(!byOwner || quote, `a ruling by the owner carries his own words: give them with --quote "<what he said>"; a ruling without --by is recorded as the coordinator's, and a question he asked is not a ruling; a loop that names its owner otherwise records him as owner all the same, for the name owner is the rule`);
+  need(!ruling.includes("The owner's words:"), 'the ruling text holds the line "The owner\'s words:", which is the quote\'s own: give his words with --quote and leave that line out of the text');
   need(flags.quote === undefined || byOwner, '--quote is the owner\'s own words: it goes with --by owner');
   need(flags.area === undefined || AREA_RE.test(String(flags.area)), `--area names the type of code the ruling reaches, as the repository's graph names it: one word of letters, digits and . _ - (got "${flags.area}")`);
   need(flags.reach === undefined || flags.area !== undefined, '--reach counts the files of the --area type — it needs --area');
   need(flags.reach === undefined || /^\d+$/.test(String(flags.reach)), `--reach is how many files the area holds, a whole number (got "${flags.reach}")`);
   need(flags.rule === undefined || flags.area !== undefined, '--rule names the rule of the graph the ruling admits on the --area type — it needs --area');
   need(flags.rule === undefined || RULE_RE.test(String(flags.rule)), `--rule names a rule as the repository's graph names it: its id, segments of letters, digits and . _ - joined by / (got "${flags.rule}")`);
-  const by = flags.by !== undefined ? fieldText(flags.by) : 'coordinator';
+  const by = byOwner ? 'owner' : flags.by !== undefined ? fieldText(flags.by) : 'coordinator';
   const settles = flags.settles !== undefined ? issuesFor(root, flags.settles) : [];
   const area = flags.area !== undefined ? String(flags.area) : null;
   const reach = flags.reach !== undefined ? Number(flags.reach) : null;

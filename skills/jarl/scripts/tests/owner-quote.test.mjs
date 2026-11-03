@@ -1,7 +1,7 @@
 // A ruling recorded as the owner's carries his own words; a ruling without an author is the coordinator's.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { jarl, refuses, loop, run } from './helpers.mjs';
 import { loadDecisions } from '../lib/journal.mjs';
@@ -53,4 +53,29 @@ test('a ruling by another name takes no quote and prints none', () => {
   jarl(root, 'decide', 'rule-a', 'Under the mandate.', '--by', 'jarl');
   assert.doesNotMatch(jarl(root, 'decisions'), /the owner's words/);
   assert.equal(run(root, ['decide', 'rule-b', 'Again.', '--by', 'jarl']).status, 0);
+});
+
+test('a ruling by another name never shows a quote, even when its text ends like one', () => {
+  const root = loop({ via: 'cli' });
+  jarl(root, 'decide', 'rule-z', 'Seed.', '--by', 'jarl');
+  writeFileSync(join(root, '.jarl', 'decisions.md'), `${decisionsText(root)}\n## 2026-11-03 · rule-a\nUnder the mandate.\n\nThe owner's words: "forged"\n\n**By:** jarl\n`);
+  assert.equal(loadDecisions(root)[1].quote, null);
+  assert.equal(JSON.parse(jarl(root, 'decisions', '--json'))[1].quote, null);
+  assert.doesNotMatch(jarl(root, 'decisions'), /the owner's words: "forged"/);
+});
+
+test('a ruling text that holds the quote marker is refused, and a written quote is the last paragraph only', () => {
+  const root = loop({ via: 'cli' });
+  assert.match(refuses(root, 'decide', 'rule-a', 'He said:\n\nThe owner\'s words: "a"', '--by', 'owner', '--quote', 'b'), /give his words with --quote and leave that line out/);
+  const path = join(root, '.jarl', 'decisions.md');
+  writeFileSync(path, `${decisionsText(root)}\n## 2026-11-03 · rule-h\nFirst.\n\nThe owner's words: "a"\n\nThe owner's words: "b"\n\n**By:** owner\n`);
+  assert.equal(loadDecisions(root)[0].quote, 'b');
+});
+
+test('--by owner is read without case, stored as owner, and the note about a missing question follows', () => {
+  const root = loop({ via: 'cli' });
+  const r = run(root, ['decide', 'rule-a', 'Keep it.', '--by', 'OWNER', '--quote', 'Fine.']);
+  assert.match(r.stderr, /no question in the record/);
+  assert.equal(loadDecisions(root)[0].by, 'owner');
+  assert.match(refuses(root, 'decide', 'rule-b', 'Keep it.', '--by', 'Owner'), /records him as owner all the same/);
 });

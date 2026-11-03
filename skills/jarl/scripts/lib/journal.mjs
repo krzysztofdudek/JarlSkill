@@ -102,7 +102,7 @@ function decisionsAt(dir, skipped) {
     const ruleLog = /^(\S+) · (\S+)/.exec(field('Rule log').pop() || '');
     const first = (name) => (field(name).pop() || '').split(/\s/)[0] || null;
     return {
-      date: d.date, slug: d.slug, ruling, quote: ownerQuote(ruling), by: field('By').pop() || null, supersedes: field('Supersedes').pop() || null, supersededBy: sup ? sup.split(/\s/)[0] : null, settles: splitList(field('Settles').pop()),
+      date: d.date, slug: d.slug, ruling, quote: field('By').pop() === 'owner' ? ownerQuote(ruling) : null, by: field('By').pop() || null, supersedes: field('Supersedes').pop() || null, supersededBy: sup ? sup.split(/\s/)[0] : null, settles: splitList(field('Settles').pop()),
       area: field('Area').pop() || null, reach: reach !== undefined && /^\d+$/.test(reach) ? Number(reach) : null, rule: field('Rule').pop() || null,
       ratified: first('Ratified'), rejected: first('Rejected'), typeLog: typeLog ? { type: typeLog[1], datetime: typeLog[2] } : null,
       ruleLog: ruleLog ? { rule: ruleLog[1], datetime: ruleLog[2] } : null,
@@ -114,7 +114,7 @@ function decisionsAt(dir, skipped) {
 const QUOTE_LEAD = "The owner's words: ";
 export function withOwnerQuote(ruling, quote) { return `${ruling.replace(/\s+$/, '')}\n\n${QUOTE_LEAD}"${quote}"`; }
 export function ownerQuote(ruling) {
-  const m = /(?:^|\n\n)The owner's words: "([\s\S]*)"$/.exec(ruling);
+  const m = /(?:^|\n\n)The owner's words: "([^\n]*)"$/.exec(ruling);
   return m ? m[1] : null;
 }
 // The fields the tool writes into a ruling's closing block. Area, Reach and Rule come with the ruling (decide --area,
