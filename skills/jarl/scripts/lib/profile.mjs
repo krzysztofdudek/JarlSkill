@@ -2,7 +2,7 @@
 
 import { existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { KINDS, TIERS, TIER_DEFAULT, need } from './base.mjs';
+import { KEPT_KINDS, KINDS, TIERS, TIER_DEFAULT, need } from './base.mjs';
 import { jarlDir } from './where.mjs';
 import { readText } from './files.mjs';
 
@@ -125,7 +125,12 @@ export const DONE_GATE_APPROVE = ['fresh', 'none'];
 export const DEFAULT_DONE_GATE = Object.freeze({ approve: 'fresh', 'requires-merged': false });
 // Header fields the tool itself writes and reads: a profile cannot declare them. Kind and Tier are built in too, but
 // a profile may declare them to replace their values (an enum, and a default).
-export const TOOL_FIELDS = ['Status', 'Priority', 'Tags', 'Files', 'Repo', 'After', 'Found by', 'Source', 'Where', 'Branch', 'Worker', 'Worktree', 'Since', 'Merged', 'Merge check', 'CI', 'Resources', 'Person', 'Check when'];
+export const TOOL_FIELDS = ['Status', 'Priority', 'Tags', 'Files', 'Repo', 'After', 'Found by', 'Source', 'Where', 'Branch', 'Worker', 'Worktree', 'Since', 'Merged', 'Merge check', 'CI', 'Resources'];
+// The fields of a wait, Person and Check when, which the tool writes beside the kinds promise and wait. A profile that
+// declares a field of either name, or its own Kind values, keeps its own meaning when its loop is read: the built-in
+// promise and wait are off in that loop. A profile file given to init or to profile <file> is refused when it declares
+// either field or names promise or wait among its kinds (see reservedNamesProblem).
+export const KEPT_FIELDS = ['Person', 'Check when'];
 export const BUILTIN_SECTIONS = ['What', 'Why', 'Acceptance', 'Changelog', 'Evidence'];
 export const PROFILE_FIELD_RE = /^[A-Za-z][A-Za-z0-9 -]{0,39}$/;
 export const PROFILE_STATUS_RE = /^[a-z][a-z0-9-]{0,39}$/;
@@ -336,7 +341,11 @@ function makeProfile({ name, statuses, initial, fields = [], sections = [], acce
   const flags = new Map(statuses.map(([s, f]) => [s, new Set(f)]));
   const kind = fields.find((f) => f.key === 'kind');
   const tier = fields.find((f) => f.key === 'tier');
-  const kinds = kind ? kind.enum : KINDS;
+  // The built-in promise and wait hold in a loop whose profile declares neither their fields nor kinds of its own; a
+  // profile that declares Person or Check when keeps its field, and the two kinds are not among its kinds.
+  const ownWords = fields.filter((f) => KEPT_FIELDS.some((k) => k.toLowerCase() === f.key)).map((f) => f.name);
+  const kept = !kind && !ownWords.length;
+  const kinds = kind ? kind.enum : kept ? KINDS : KINDS.filter((k) => !KEPT_KINDS.includes(k));
   const tiers = tier ? tier.enum : TIERS;
   const p = {
     name, declared, initial, sections, acceptance,
@@ -346,6 +355,9 @@ function makeProfile({ name, statuses, initial, fields = [], sections = [], acce
     lifecycle,
     statuses: statuses.map(([s]) => s),
     kinds, kindDefault: kind && kind.default ? kind.default : kinds[0],
+    // Whether the built-in promise and wait hold here, and the kept kind an issue's kind is (null for any other, and
+    // for every kind of a loop where they are off: a kind of the profile's own named wait is its own).
+    kept, keptKind: (k) => (kept && KEPT_KINDS.includes(k) ? k : null),
     tiers, tierDefault: tier ? (tier.default || tiers[0]) : TIER_DEFAULT,
     // The fields the profile adds to the header (Kind and Tier are written in their fixed places).
     fields: fields.filter((f) => !f.builtin),
@@ -398,7 +410,21 @@ export function readProfileFile(file) {
   need(existsSync(file), `no such profile file: ${file}`);
   let json;
   try { json = JSON.parse(readText(file)); } catch (e) { throw new Error(`${file} is not JSON: ${e.message}`); }
-  return { json, profile: validateProfile(json, file) };
+  const profile = validateProfile(json, file);
+  const reserved = reservedNamesProblem(profile);
+  need(!reserved, `${file} is not a valid profile: ${reserved}`);
+  return { json, profile };
+}
+// What a profile file to be opened declares of the names the built-in promise and wait use, as one refusal, or null: a
+// field named Person or Check when, and promise or wait among its own kinds. A loop already open with such a profile is
+// read as it is, with the built-in promise and wait off (see makeProfile).
+function reservedNamesProblem(profile) {
+  const fields = profile.declaredFields.filter((f) => KEPT_FIELDS.some((k) => k.toLowerCase() === f.key)).map((f) => `the field ${f.name}`);
+  const kind = profile.declaredFields.find((f) => f.key === 'kind');
+  const kinds = kind && kind.enum ? kind.enum.filter((k) => KEPT_KINDS.includes(k)).map((k) => `the kind ${k}`) : [];
+  const named = [...fields, ...kinds];
+  if (!named.length) return null;
+  return `it declares ${named.join(' and ')}, which Jarl reserves for its own promise and wait — the reserved names are the fields ${KEPT_FIELDS.join(' and ')} and the kinds ${KEPT_KINDS.join(' and ')}; rename them in the profile`;
 }
 
 // The profile described, for `profile` and for a reader deciding whether a file is right.

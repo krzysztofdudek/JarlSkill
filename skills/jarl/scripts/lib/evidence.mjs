@@ -2,7 +2,7 @@
 
 import { existsSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { KEPT_KINDS, PROMISE_KIND, fieldText, need } from './base.mjs';
+import { PROMISE_KIND, fieldText, need } from './base.mjs';
 import { needNoOwnersWords } from './owner.mjs';
 import { git } from './git.mjs';
 import { jarlDir, stamp } from './where.mjs';
@@ -280,7 +280,7 @@ export function nextRows(root, flags = {}) {
     if (after.length) { out.push({ ...base, group: 'waiting-after', after, waitsOn: [] }); continue; }
     if (asked.has(i.id)) { out.push({ ...base, group: 'held-by-question', questions: asked.get(i.id), waitsOn: [], after: [] }); continue; }
     // A promise or a wait is kept by who holds it, not worked on by a worker: never offered, and it takes no file.
-    if (KEPT_KINDS.includes(i.kind)) {
+    if (profile.keptKind(i.kind)) {
       out.push({ ...base, group: i.kind, waitsOn: [], after: [], ...(i.kind === PROMISE_KIND ? { by: fieldText(i.fields['found by']) || null } : { person: fieldText(i.fields.person) || null, checkWhen: fieldText(i.fields['check when']) || null }) });
       continue;
     }

@@ -118,7 +118,8 @@ export function writeAtomic(path, text) { return L.writeWhole(path, text); }
 // ---- operations on the record (each under the lock) ---------------------------------------------
 
 // new: opts { kind, prio, tier, tags, files, repo, 'found-by', where, what, why, acceptance, source, after, changelog,
-// template, field, section }.
+// template, field, section, person, 'check-when' } (person and check-when: the outside person a wait is held by and
+// when to check it, both required on kind wait and refused on any other).
 // The library names the width of a new number (three digits, so the file reads 007-…); the command line names none.
 export function newIssue(root, title, opts = {}) { return write(root, () => L.cmdNew(root, title, { width: 3, ...opts })); }
 // A move into a status, checked against the profile: needs-reason wants `why`, closes-record passes the done gate,

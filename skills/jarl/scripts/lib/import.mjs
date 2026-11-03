@@ -167,12 +167,12 @@ export function cmdImport(root, file, flags) {
   const { dir, findings: read } = readFindings(file, flags);
   const profile = loadProfile(root);
   if (flags.kind !== undefined) need(profile.kinds.includes(flags.kind), `--kind must be one of: ${profile.kinds.join(', ')}`);
-  need(!KEPT_KINDS.includes(flags.kind), `--kind ${flags.kind}: a finding is work, never a promise or a wait — file one of those with jarl.mjs new "<title>" --kind ${flags.kind}`);
+  need(!profile.keptKind(flags.kind), `--kind ${flags.kind}: a finding is work, never a promise or a wait — file one of those with jarl.mjs new "<title>" --kind ${flags.kind}`);
   if (flags.prio !== undefined) need(PRIORITIES.includes(String(flags.prio)), '--prio must be 1, 2 or 3');
   if (flags.tier !== undefined) need(profile.tiers.includes(String(flags.tier)), `--tier must be one of: ${profile.tiers.join(', ')}`);
   // A finding's kind is mapped onto the built-in kinds; under a profile with kinds of its own, one it does not
   // name is filed under the profile's default kind.
-  const findings = profile.declared ? read.map((f) => (profile.kinds.includes(f.kind) && !KEPT_KINDS.includes(f.kind) ? f : { ...f, kind: profile.kindDefault })) : read;
+  const findings = profile.declared ? read.map((f) => (profile.kinds.includes(f.kind) && !profile.keptKind(f.kind) ? f : { ...f, kind: profile.kindDefault })) : read;
   if (flags.repo !== undefined) repoList(root, flags.repo);
   let chosen = findings;
   if (flags.only !== undefined) {

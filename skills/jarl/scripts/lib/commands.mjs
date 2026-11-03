@@ -3,7 +3,7 @@
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, openSync, closeSync, writeSync, unlinkSync, linkSync } from 'node:fs';
 import { join, resolve, relative, isAbsolute } from 'node:path';
-import { CI_STATES, KEPT_KINDS, LEASE_FIELDS, PRIORITIES, TIERS, WAIT_KIND, fieldText, need, noSeparators, slugify, splitList } from './base.mjs';
+import { CI_STATES, LEASE_FIELDS, PRIORITIES, TIERS, WAIT_KIND, fieldText, need, noSeparators, slugify, splitList } from './base.mjs';
 import { needNoNewOwnersWords, needNoOwnersWords } from './owner.mjs';
 import { git, gitRun } from './git.mjs';
 import { canonical, issuesDir, jarlDir, portablePath, stamp, today } from './where.mjs';
@@ -204,8 +204,9 @@ export function cmdNew(root, title, rawFlags) {
   need(profile.kinds.includes(kind), `--kind must be one of: ${profile.kinds.join(', ')}`);
   const person = flags.person !== undefined ? keptValue('Person', flags.person) : '';
   const checkWhen = flags['check-when'] !== undefined ? keptValue('Check when', flags['check-when']) : '';
-  need(kind === WAIT_KIND || (!person && !checkWhen), `--${person ? 'person' : 'check-when'} goes with --kind wait: it names the outside person a wait is held by and when to check it`);
-  need(kind !== WAIT_KIND || (person && checkWhen), `a wait names the outside person it is held by and when to check it: jarl.mjs new "<title>" --kind wait --person "<name>" --check-when "<a date, or the event to check after>"`);
+  const kept = profile.keptKind(kind);
+  need(kept === WAIT_KIND || (!person && !checkWhen), profile.kept ? `--${person ? 'person' : 'check-when'} goes with --kind wait: it names the outside person a wait is held by and when to check it` : `--${person ? 'person' : 'check-when'} is off in this loop: its profile declares its own kinds or a field Person or Check when, so the built-in promise and wait are off here — write a field the profile declares with --field "<Name>=<value>"`);
+  need(kept !== WAIT_KIND || (person && checkWhen), `a wait names the outside person it is held by and when to check it: jarl.mjs new "<title>" --kind wait --person "<name>" --check-when "<a date, or the event to check after>"`);
   const priority = String(flags.prio || '2');
   const priorityDefaulted = !flags.prio;
   need(PRIORITIES.includes(priority), '--prio must be 1, 2 or 3');
@@ -216,7 +217,7 @@ export function cmdNew(root, title, rawFlags) {
   const after = flags.after !== undefined ? afterList(root, null, flags.after) : [];
   // A promise and a wait are kinds a reader of formats 1 and 2 does not know: the loop is raised first, or, where a composer
   // keeps its format, the filing is refused with nothing written.
-  if (KEPT_KINDS.includes(kind)) needFormat(root, 'promise-wait');
+  if (kept) needFormat(root, 'promise-wait');
   commitRepoNames(root, picked);
   // The number is claimed by creating the file with a link, which never overwrites: when another
   // writer got there first (the lock makes that rare, not impossible — a hand-made file, a stale
@@ -558,11 +559,13 @@ export function setRouteOf(root, name) { return setRoute(loadProfile(root), name
 export function cmdField(root, rawIds, name, value, flags = {}) {
   needNoOwnersWords('the field', value);
   const profile = loadProfile(root);
-  const writable = () => [...DESCRIPTION_FIELDS, ...profile.fields.map((f) => f.name)].join(', ');
+  // Person and Check when are the tool's own where the built-in promise and wait hold, and a declared field's otherwise.
+  const writes = DESCRIPTION_FIELDS.filter((f) => profile.kept || !['person', 'check when'].includes(f.toLowerCase()));
+  const writable = () => [...writes, ...profile.fields.map((f) => f.name)].join(', ');
   need(name !== undefined && String(name).trim() !== '', `field requires <name> — a field of the description: ${writable()}`);
   editorOf(flags.by);
   const key = String(name).trim().toLowerCase();
-  need(setRoute(profile, name) !== 'status' || DESCRIPTION_FIELDS.some((f) => f.toLowerCase() === key), `${name} is not a field of the description, which field writes: ${writable()}; ${notWrittenByField(profile, key)}`);
+  need(setRoute(profile, name) !== 'status' || writes.some((f) => f.toLowerCase() === key), `${name} is not a field of the description, which field writes: ${writable()}; ${notWrittenByField(profile, key)}`);
   const clear = flags.clear === true;
   need(!clear || value === undefined, 'field takes either a value or --clear, not both');
   need(clear || (value !== undefined && String(value).trim() !== ''), `field ${name} "<value>" — the value is required, or --clear to empty it`);
@@ -840,10 +843,10 @@ function setDeclaredField(root, rawIds, field, value, flags) {
   const v = fieldValue(profile, field, value);
   need(v || (!field.required && !field.builtin), `${field.name} cannot be empty${field.enum ? ` — one of: ${field.enum.join(', ')}` : ''}`);
   const issues = issuesFor(root, rawIds);
-  if (field.key === 'kind' && v === WAIT_KIND) {
+  if (field.key === 'kind' && profile.keptKind(v) === WAIT_KIND) {
     for (const issue of issues) need(fieldText(issue.fields.person) && fieldText(issue.fields['check when']), `${issue.id} becomes a wait only with the outside person it is held by and when to check it — first jarl.mjs field ${issue.id} Person "<name>" and jarl.mjs field ${issue.id} "Check when" "<a date, or the event to check after>"`);
   }
-  if (field.key === 'kind' && KEPT_KINDS.includes(v) && issues.some((issue) => issue.kind !== v)) needFormat(root, 'promise-wait');
+  if (field.key === 'kind' && profile.keptKind(v) && issues.some((issue) => issue.kind !== v)) needFormat(root, 'promise-wait');
   logChanges(root, issues.map((issue) => fieldLine(issue.id, field.name, v, heldField(issue, field.name), by)));
   for (const issue of issues) writeAtomic(issue.file, setField(readText(issue.file), field.name, v));
   return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, field: field.name, value: v })));
@@ -853,11 +856,12 @@ function setDeclaredField(root, rawIds, field, value, flags) {
 // so an issue can become a wait (its Kind is written last); never emptied on a wait, which they hold.
 function setKeptField(root, rawIds, name, value, flags) {
   needNoLeaseFlags(flags, `the field ${name}`);
+  const profile = loadProfile(root);
   const by = editorOf(flags.by);
   const v = value === '' ? '' : keptValue(name, value);
   const issues = issuesFor(root, rawIds);
-  for (const issue of issues) need(v || issue.kind !== WAIT_KIND, `${issue.id} is a wait, held by its Person and checked when its Check when says: ${name} is never empty on it — give it another kind first (jarl.mjs field ${issue.id} Kind <kind>)`);
-  if (v) needFormat(root, 'promise-wait');
+  for (const issue of issues) need(v || profile.keptKind(issue.kind) !== WAIT_KIND, `${issue.id} is a wait, held by its Person and checked when its Check when says: ${name} is never empty on it — give it another kind first (jarl.mjs field ${issue.id} Kind <kind>)`);
+  if (v) needFormat(root, 'promise-wait', `the field ${name} of a wait`);
   logChanges(root, issues.map((issue) => fieldLine(issue.id, name, v, heldField(issue, name), by)));
   for (const issue of issues) writeAtomic(issue.file, v ? setField(readText(issue.file), name, v) : removeFields(readText(issue.file), [name]));
   return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, field: name, value: v })));

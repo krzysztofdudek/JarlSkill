@@ -350,3 +350,66 @@ test('a finding is never filed as a promise or a wait', () => {
   assert.deepEqual(json(root, 'list').map((i) => i.kind), ['bug', 'bug']);
   assert.match(refuses(root, 'import', file, '--kind', 'wait'), /--kind wait: a finding is work, never a promise or a wait — file one of those with jarl\.mjs new "<title>" --kind wait/);
 });
+
+test('resume lists the open promises and waits on their own, with who holds each, and never as held by a file', () => {
+  const root = loop();
+  jarl(root, 'new', 'real work', '--files', 'a.mjs');                                                                              // 1
+  jarl(root, 'new', 'same file', '--files', 'a.mjs');                                                                              // 2, held by 1
+  jarl(root, 'new', 'run the bench again', '--kind', 'promise', '--found-by', 'Ada');                                             // 3
+  jarl(root, 'new', 'the licence key', '--kind', 'wait', '--person', 'Dana Smith', '--check-when', '2026-11-10');                // 4
+  const text = jarl(root, 'resume');
+  assert.match(text, /^## Held — files in flight \(1\)\n- 2  P2  same file \(a\.mjs held by 1\)$/m);
+  assert.match(text, /^## Promises and waits \(2\)\n- 3  P2  run the bench again \(promised by Ada\)\n- 4  P2  the licence key \(waits on Dana Smith, check when 2026-11-10\)$/m);
+  assert.doesNotMatch(text, /\( held by \)/);
+  const o = json(root, 'resume');
+  assert.deepEqual(o.held.map((h) => h.id), ['2']);
+  assert.deepEqual(o.kept, [
+    { id: '3', title: 'run the bench again', priority: '2', kind: 'promise', by: 'Ada' },
+    { id: '4', title: 'the licence key', priority: '2', kind: 'wait', person: 'Dana Smith', checkWhen: '2026-11-10' },
+  ]);
+  assert.equal(o.held.length + o.kept.length + o.readyTotal, o.status.ready, 'ready, held and kept together are the open issues not waiting');
+});
+
+// A profile as a loop opened before Jarl kept promises and waits may hold it: a field Person of its own and a kind wait of its own.
+const OWN_WORDS = {
+  'jarl-profile': 1, name: 'own-words', statuses: BUILTIN_STATUSES,
+  fields: { Kind: { enum: ['work', 'wait'], default: 'work' }, Person: {}, 'Check when': {} },
+};
+
+test('a loop whose profile already declares a field Person or a kind wait reads as it did: its own field and kind keep their meaning, and the built-in promise and wait are off', () => {
+  const root = loop();
+  writeFileSync(join(root, '.jarl', 'profile.json'), JSON.stringify(OWN_WORDS));
+  jarl(root, 'new', 'hold the line', '--kind', 'wait', '--files', 'a.mjs', '--field', 'Person=Dana');   // its own kind wait
+  jarl(root, 'new', 'plain work', '--files', 'b.mjs');
+  for (const command of [['status'], ['list'], ['show', '1'], ['resume'], ['next']]) jarl(root, ...command);
+  assert.deepEqual(json(root, 'next').map((r) => r.id), ['1', '2'], 'its own wait is work, offered as any other');
+  assert.deepEqual(json(root, 'next', '--as', 'jarl').rows.map((r) => [r.id, r.what]), [['1', 'ready'], ['2', 'ready']]);
+  assert.equal(json(root, 'next', '--as', 'Dana').total, 0, 'Person is its own field here, and holds nothing');
+  jarl(root, 'field', '1', 'Person', 'Lee');
+  assert.match(readFileSync(join(root, '.jarl', 'issues', '1-hold-the-line.md'), 'utf8'), /^\*\*Person:\*\* Lee$/m);
+  assert.notEqual(profileJson(root).format, 3, 'nothing it writes raises it to format 3');
+  assert.match(refuses(root, 'new', 'a wait', '--kind', 'wait', '--person', 'Dana', '--check-when', 'Friday'), /--person is off in this loop: its profile declares its own kinds or a field Person or Check when, so the built-in promise and wait are off here/);
+  assert.match(refuses(root, 'new', 'a promise', '--kind', 'promise'), /--kind must be one of: work, wait/);
+  // A profile that declares only the field keeps the built-in work kinds, without promise and wait.
+  const other = loop();
+  writeFileSync(join(other, '.jarl', 'profile.json'), JSON.stringify({ 'jarl-profile': 1, name: 'own-field', statuses: BUILTIN_STATUSES, fields: { Person: {} } }));
+  assert.match(refuses(other, 'new', 'a promise', '--kind', 'promise'), /--kind must be one of: bug, gap, cleanup, docs, test, research, process$/m);
+  jarl(other, 'new', 'work', '--files', 'a.mjs', '--field', 'Person=Dana');
+  assert.deepEqual(json(other, 'next').map((r) => r.id), ['1']);
+});
+
+test('a profile file given to init or to profile is refused when it declares a field Person or Check when or names promise or wait among its kinds', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'jarl-as-reserved-'));
+  const write = (name, json) => { const f = join(dir, `${name}.json`); writeFileSync(f, JSON.stringify(json)); return f; };
+  const withField = write('field', { 'jarl-profile': 1, name: 'field', statuses: BUILTIN_STATUSES, fields: { 'Check when': {} } });
+  const withKinds = write('kinds', { 'jarl-profile': 1, name: 'kinds', statuses: BUILTIN_STATUSES, fields: { Kind: { enum: ['work', 'promise'] } } });
+  const fresh = mkdtempSync(join(tmpdir(), 'jarl-as-fresh-'));
+  assert.match(refuses(fresh, 'init', 'a goal', '--profile', withField), /is not a valid profile: it declares the field Check when, which Jarl reserves for its own promise and wait — the reserved names are the fields Person and Check when and the kinds promise and wait; rename them in the profile/);
+  assert.match(refuses(fresh, 'init', 'a goal', '--profile', withKinds), /it declares the kind promise, which Jarl reserves/);
+  assert.ok(!existsSync(join(fresh, '.jarl')), 'no loop was opened');
+  assert.match(refuses(fresh, 'profile', withField), /it declares the field Check when, which Jarl reserves/);
+  // The same profile already in a loop is read: the refusal is at the opening only.
+  const root = loop();
+  writeFileSync(join(root, '.jarl', 'profile.json'), JSON.stringify(OWN_WORDS));
+  assert.match(jarl(root, 'profile'), /^kind: work \| wait$/m);
+});

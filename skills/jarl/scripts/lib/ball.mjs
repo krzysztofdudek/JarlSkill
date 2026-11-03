@@ -1,7 +1,7 @@
 // What is on whom: every open thing of the loop has one holder who must move next, derived from the record and never
 // stored, and next --as <holder> lists what is on that one, each line with the command that moves it.
 
-import { KEPT_KINDS, PROMISE_KIND, WAIT_KIND, fieldText, need } from './base.mjs';
+import { PROMISE_KIND, WAIT_KIND, fieldText, need } from './base.mjs';
 import { jarlDir } from './where.mjs';
 import { cmpId, idKey, idsCited } from './ids.mjs';
 import { mergedOf } from './issues.mjs';
@@ -58,10 +58,10 @@ function issueRows(ctx) {
   const evidence = `--ran "<command>" --saw "<what it printed>"`;
   const verdict = (id) => `jarl.mjs review ${id} approve|changes --by <reviewer> "<findings>"`;
   // A wait has rows of its own (keptRows); a promise in a lease is worked as any issue, and its maker holds each line.
-  for (const i of loop.issues.filter((x) => profile.is(x.status, 'holds-claim') && x.kind !== WAIT_KIND && !waitingOn(x, loop.byId, profile).length)) {
+  for (const i of loop.issues.filter((x) => profile.is(x.status, 'holds-claim') && profile.keptKind(x.kind) !== WAIT_KIND && !waitingOn(x, loop.byId, profile).length)) {
     const mark = inFlightMark(loop, i);
     const worker = fieldText(i.fields.worker) || null;
-    const base = { id: i.id, title: i.title, priority: i.priority, holder: i.kind === PROMISE_KIND ? makerOf(i) : JARL_HOLDER, ...(worker ? { doer: worker } : {}) };
+    const base = { id: i.id, title: i.title, priority: i.priority, holder: profile.keptKind(i.kind) === PROMISE_KIND ? makerOf(i) : JARL_HOLDER, ...(worker ? { doer: worker } : {}) };
     const withWorker = worker ? `with worker ${worker}` : 'in progress';
     const backAfterRound = sentBack(loop, i, mark);
     if (mark === 'no-rows' || backAfterRound) {
@@ -75,7 +75,7 @@ function issueRows(ctx) {
         command: merge ? `jarl.mjs merged ${i.id} --sha <sha> --ran "<check>" --saw "<summary>"` : `jarl.mjs set ${i.id} ${closeStatus} "<why>"` });
       continue;
     }
-    if (mark === 'rows-no-verdict' && carriesCode(i) && i.kind !== PROMISE_KIND) continue;   // listed together below
+    if (mark === 'rows-no-verdict' && carriesCode(i) && profile.keptKind(i.kind) !== PROMISE_KIND) continue;   // listed together below
     if (mark === 'rows-no-verdict') {
       out.push({ ...base, what: 'review', says: 'proof recorded, no verdict; raise a reviewer', command: verdict(i.id) });
       continue;
@@ -112,7 +112,7 @@ function sentBack(loop, issue, mark) {
 // The issues in play whose code has proof and no verdict, and waits for a fresh reviewer.
 function awaitingReview(loop, profile) {
   if (profile.doneGate.approve === 'none') return [];
-  return loop.issues.filter((i) => profile.is(i.status, 'holds-claim') && !KEPT_KINDS.includes(i.kind) && !waitingOn(i, loop.byId, profile).length && carriesCode(i)
+  return loop.issues.filter((i) => profile.is(i.status, 'holds-claim') && !profile.keptKind(i.kind) && !waitingOn(i, loop.byId, profile).length && carriesCode(i)
     && inFlightMark(loop, i) === 'rows-no-verdict' && !sentBack(loop, i, 'rows-no-verdict'));
 }
 
@@ -162,7 +162,7 @@ function keptRows(ctx) {
   const verdict = `approve|changes --by <reviewer> "<findings>"`;
   const out = [];
   const kept = loop.issues.filter((i) => profile.active(i.status) && !waitingOn(i, loop.byId, profile).length
-    && (i.kind === WAIT_KIND || (i.kind === PROMISE_KIND && !profile.is(i.status, 'holds-claim'))));
+    && (profile.keptKind(i.kind) === WAIT_KIND || (profile.keptKind(i.kind) === PROMISE_KIND && !profile.is(i.status, 'holds-claim'))));
   for (const i of kept) {
     const mark = inFlightMark(loop, i);
     const base = { id: i.id, title: i.title, priority: i.priority, kind: i.kind };
