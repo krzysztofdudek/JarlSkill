@@ -258,10 +258,11 @@ export function nextRows(root, flags = {}) {
   const slice = flags.slice === undefined ? null : sliceNamed(goalLines(readGoal(jarlDir(root))).coordinators, issues, flags.slice);
   const inScope = slice === null ? () => true : (i) => sameSlice(sliceOf(i), slice);
   const groupOf = flags.perSlice ? (i) => (sliceOf(i) ?? '').toLowerCase() : () => '';
-  // An open question of kind stuck (the default) or stop that names an issue holds that issue back until it is answered.
+  // An open question of kind stuck (the default), stop or escalation that names an issue holds that issue back until it
+  // is answered: no worker is raised on an issue whose question waits on the owner or the jarl.
   const asked = new Map();
   for (const a of loadAsks(root)) {
-    if (a.state !== 'open' || !a.issue || !['stuck', 'stop', null].includes(a.kind)) continue;
+    if (a.state !== 'open' || !a.issue || !['stuck', 'stop', 'escalation', null].includes(a.kind)) continue;
     asked.set(a.issue, [...(asked.get(a.issue) || []), a.id]);
   }
   // Files are compared as (repository, path) pairs: the same path in two repositories never holds
@@ -364,7 +365,9 @@ function statusOf(root, loop, flags) {
   const inScope = new Set(issues.map((i) => i.id));
   const asks = loop.asks.filter((a) => a.state === 'open' && (!scoped || (a.issue && inScope.has(a.issue)) || (slice !== null && sameSlice(a.slice ?? null, slice))));
   // A ratify item blocks nothing, so it is not counted among the questions the loop waits on.
-  c.questions = asks.filter((a) => a.kind !== 'ratify').length;
+  c.questions = asks.filter((a) => a.kind !== 'ratify' && a.kind !== 'escalation').length;
+  // The escalations a coordinator sent up, which the jarl answers: counted apart from the owner's questions.
+  c.escalations = asks.filter((a) => a.kind === 'escalation').length;
   c.toRatify = asks.filter((a) => a.kind === 'ratify');
   c.ratify = c.toRatify.length;
   // What a session needs to decide between continuing this loop and archiving it: the goal, when the

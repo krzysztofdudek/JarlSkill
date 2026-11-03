@@ -8,23 +8,30 @@ import { jarlDir, today } from './where.mjs';
 import { appendAtomic, readText, writeAtomic } from './files.mjs';
 import { askNumber, idKey, issueForms, needsRaisedFormat, newNumber, writtenId } from './ids.mjs';
 import { loadProfile, numberWidth } from './profile.mjs';
-import { ASKS_FILE, DECISIONS_FILE, STAMP_SRC, answeredLines, appendDecision, appendLog, appendLogLines, asksAt, asksPath, firstLine, loadDecisions, markDecision, parseStamp } from './journal.mjs';
+import { ASKS_FILE, DECISIONS_FILE, STAMP_SRC, answeredLines, appendDecision, appendLog, appendLogLines, asksAt, asksPath, firstLine, goalLines, loadDecisions, markDecision, parseStamp, readGoal } from './journal.mjs';
 import { OWNER, carryingOwnersWords, needNoOwnersWords, quoteShown, rulingAuthor } from './owner.mjs';
 import { findIssue, freeBlock, loadIssues, noteText, parseIssue, placeEvidence, setSection } from './issues.mjs';
 import { needFormat } from './repositories.mjs';
-import { coordinatorNames } from './loop.mjs';
+import { coordinatorNames, sliceNamed } from './loop.mjs';
 import { issuesFor } from './commands.mjs';
 
 // ---- questions to the owner and the handoff -------------------------------------------------
 
 export function loadAsks(root, skipped) { return asksAt(jarlDir(root), skipped); }
+// Who answers an escalation when the answer names nobody: the jarl, who holds it.
+const JARL = 'jarl';
 
 export function cmdAsk(root, question, flags) {
   need(question, 'ask requires "<question>"');
   needNoOwnersWords('the question', question, flags);
   const kind = String(flags.kind || 'stuck');
-  need(ASK_KINDS.includes(kind), `--kind must be one of: ${ASK_KINDS.join(', ')} — stop (halt everything), stuck (this issue only), lower (weaken something protected, needs a target), charter (the goal itself), ratify (a choice already made under a mandate, awaiting the owner's word; blocks nothing)`);
+  need(ASK_KINDS.includes(kind), `--kind must be one of: ${ASK_KINDS.join(', ')} — stop (halt everything), stuck (this issue only), lower (weaken something protected, needs a target), charter (the goal itself), ratify (a choice already made under a mandate, awaiting the owner's word; blocks nothing), escalation (a coordinator's question to the jarl, naming its --slice or --issue)`);
   if (flags.issue !== undefined) need(findIssue(root, flags.issue), `no such issue: ${flags.issue}`);
+  // An escalation goes up from a coordinator to the jarl, who holds it; it names the slice or the issue it is about, so it
+  // stays in that slice's view. --slice names a slice of the loop, and only an escalation takes it.
+  need(kind !== 'escalation' || flags.issue !== undefined || flags.slice !== undefined, 'an escalation names what it is about: --slice <coordinator> (its slice) or --issue <id>, or both');
+  need(kind === 'escalation' || flags.slice === undefined, `--slice goes with kind escalation only — a question of kind "${kind}" is the owner's, about the loop or one issue`);
+  const slice = flags.slice === undefined ? null : sliceNamed(goalLines(readGoal(jarlDir(root))).coordinators, loadIssues(root), flags.slice);
   need(kind !== 'lower' || flags.target, '--target is required for kind lower — nothing to weaken without naming it');
   need(kind === 'lower' || !flags.target, `--target has no meaning for kind "${kind}" — only lower names something to weaken`);
   const asks = loadAsks(root);
@@ -45,12 +52,14 @@ export function cmdAsk(root, question, flags) {
     need(!loadAsks(root).some((x) => x.ruling === d.slug), `${flags.ruling} has been put to ratification already`);
   }
   const ruling = kind === 'ratify' && flags.ruling ? ` · ruling ${flags.ruling}` : '';
+  // A reader of formats 1 and 2 refuses a question of a kind it does not know: the first escalation raises the format first.
+  if (kind === 'escalation') needFormat(root, 'escalation');
   const asked = oneBreak(question).trim().split('\n');
   const options = askOptions(flags.option, kind);
   const optionLines = options.map((o) => `- **a-${id}** option · ${o.label} · ${o.effect}\n`).join('');
-  appendAtomic(path, '# Questions to the owner\n\n',`- **a-${id}** (open) · ${kind}${target}${issueWritten !== null ? ` · issue ${issueWritten}` : ''}${ruling} · ${asked[0]}\n${asked.slice(1).map((l) => `  ${l}\n`).join('')}${optionLines}`);
+  appendAtomic(path, '# Questions to the owner\n\n',`- **a-${id}** (open) · ${kind}${target}${issueWritten !== null ? ` · issue ${issueWritten}` : ''}${slice !== null ? ` · slice ${slice}` : ''}${ruling} · ${asked[0]}\n${asked.slice(1).map((l) => `  ${l}\n`).join('')}${optionLines}`);
   appendLog(root, `asked a-${id} (${kind}) · ${firstLine(asked.join('\n'), ASKS_FILE)}`);
-  return { id, question: asked.join('\n'), kind, ...(options.length ? { options } : {}) };
+  return { id, question: asked.join('\n'), kind, ...(slice !== null ? { slice } : {}), ...(options.length ? { options } : {}) };
 }
 
 // The options of a question, from `--option "<label>: <effect>"` (repeatable): at least two, each with its own label and
@@ -145,7 +154,8 @@ export function cmdAnswer(root, rawId, answer, flags = {}) {
   const text = answer === undefined ? null : noSeparators(oneBreak(answer));
   const checked = answerChecks(root, ask, text, chosen);
   const shown = chosen !== null ? chosen : text;
-  const author = by || OWNER;
+  // An escalation is the jarl's to answer: an answer that names nobody is the jarl's there, and the owner's elsewhere.
+  const author = by || (ask.kind === 'escalation' ? JARL : OWNER);
   const issue = ask.issue ? findIssue(root, ask.issue) : null;
   // The question and its options are copied into the ruling as the record holds them; a question written before the
   // marker was refused may hold it, and it is carried as it stands, never refused for text the answerer cannot change.

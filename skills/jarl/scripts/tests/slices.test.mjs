@@ -2,9 +2,10 @@
 // of the goal's Coordinators line. An issue is in one slice at most, and the views say which coordinator runs which slice.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { jarl, refuses, loop as makeLoop } from './helpers.mjs';
+import { jarl, refuses, run, loop as makeLoop } from './helpers.mjs';
+import { formatTwoJarl } from './old-jarl.mjs';
 
 const loop = () => makeLoop({ prefix: 'jarl-slice-', via: 'cli', dotGit: false });
 const json = (root, ...args) => JSON.parse(jarl(root, ...args, '--json'));
@@ -132,4 +133,55 @@ test('the issues waiting on a slice\'s issue, through After or a file it reserve
   assert.deepEqual(json(root, 'next', '--as', 'odin', '--all').waiting.map((w) => [w.id, w.on, w.via]), [['2', 'odin', ['1']], ['6', 'odin', ['1']]]);
   assert.deepEqual(json(root, 'next', '--as', 'jarl', '--all').waiting, [], 'nothing waits on the jarl');
   assert.deepEqual(json(root, 'next', '--as', 'odin', '--all').rows.find((r) => r.id === '1').holdsUp, ['6']);
+});
+
+test('ask --kind escalation names its slice or issue, is held by the jarl, shows in the slice\'s views and holds its issue back', () => {
+  const root = twoSlices();
+  const before = readFileSync(join(root, '.jarl', 'profile.json'), 'utf8');
+  assert.match(refuses(root, 'ask', 'is this ours?', '--kind', 'escalation'), /^an escalation names what it is about: --slice <coordinator> \(its slice\) or --issue <id>, or both$/m);
+  assert.match(refuses(root, 'ask', 'is this ours?', '--slice', 'odin'), /^--slice goes with kind escalation only/m);
+  assert.match(refuses(root, 'ask', 'is this ours?', '--kind', 'escalation', '--slice', 'loki'), /no coordinator loki on the goal's Coordinators line/);
+  assert.equal(readFileSync(join(root, '.jarl', 'profile.json'), 'utf8'), before, 'a refusal raises nothing');
+  assert.equal(json(root, 'profile').format, 2);
+  const a = json(root, 'ask', 'thor blocks odin on a.mjs: which goes first?', '--kind', 'escalation', '--slice', 'odin', '--issue', '2');
+  assert.deepEqual([a.id, a.kind, a.slice], ['1', 'escalation', 'odin']);
+  assert.equal(json(root, 'profile').format, 3, 'an older reader refuses a kind it does not know: the first escalation raises the format');
+  assert.match(readFileSync(join(root, '.jarl', 'asks.md'), 'utf8'), /^- \*\*a-1\*\* \(open\) · escalation · issue 2 · slice odin · thor blocks odin on a\.mjs: which goes first\?$/m);
+  // The jarl holds it; the owner does not.
+  const jarlRows = json(root, 'next', '--as', 'jarl', '--all').rows;
+  const row = jarlRows.find((r) => r.ask === '1');
+  assert.deepEqual([row.what, row.holder, row.holdsUp], ['escalation', 'jarl', ['2']]);
+  assert.match(jarl(root, 'next', '--as', 'jarl'), /^- a-1 thor blocks odin on a\.mjs: which goes first\?: escalation from slice:odin on issue 2 — jarl\.mjs answer a-1 "<answer>" --by jarl · holds up 2$/m);
+  assert.deepEqual(json(root, 'next', '--as', 'owner').rows, []);
+  // The slice's views show it; another slice's do not; the owner's question count leaves it out.
+  assert.equal(json(root, 'status', '--slice', 'odin').escalations, 1);
+  assert.equal(json(root, 'status', '--slice', 'thor').escalations, 0);
+  assert.equal(json(root, 'status').questions, 0);
+  assert.match(jarl(root, 'status'), / · questions 0 · escalations 1$/m);
+  assert.match(jarl(root, 'resume', '--slice', 'odin'), /^## Escalations to the jarl \(1\)\n- a-1 slice:odin issue 2 · thor blocks odin on a\.mjs: which goes first\?$/m);
+  assert.deepEqual(json(root, 'resume', '--slice', 'thor').escalations, []);
+  assert.equal(json(root, 'next', '--slice', 'odin', '--all').find((r) => r.id === '2').group, 'held-by-question');
+  // One that names only an issue is in the view of the issue's slice.
+  jarl(root, 'ask', 'is 3 in thor\'s goal?', '--kind', 'escalation', '--issue', '3');
+  assert.equal(json(root, 'status', '--slice', 'thor').escalations, 1);
+  // Answered with no --by, it is the jarl's ruling.
+  jarl(root, 'answer', 'a-1', 'odin goes first');
+  assert.match(readFileSync(join(root, '.jarl', 'decisions.md'), 'utf8'), /## \d{4}-\d{2}-\d{2} · ask-1\n[\s\S]*?\*\*By:\*\* jarl/);
+  assert.equal(json(root, 'next', '--slice', 'odin', '--all').find((r) => r.id === '2').group, 'held-by-file', 'the answer releases the issue');
+});
+
+test('verify finds an escalation in a loop that is not in record format 3', () => {
+  const root = twoSlices();
+  jarl(root, 'ask', 'which first?', '--kind', 'escalation', '--slice', 'odin');
+  writeFileSync(join(root, '.jarl', 'profile.json'), JSON.stringify({ 'jarl-profile': 1, format: 2 }));
+  assert.match(run(root, ['verify']).stdout, /asks\.md a-1: an escalation is written in record format 3, and this loop is not in it/);
+});
+
+test('a loop holding an escalation is refused by the frozen reader of formats 1 and 2, which would refuse the kind it does not know', () => {
+  const root = twoSlices();
+  assert.equal(formatTwoJarl(root, 'list', {}).ok, true);
+  jarl(root, 'ask', 'which first?', '--kind', 'escalation', '--slice', 'odin');
+  const two = formatTwoJarl(root, 'list', {});
+  assert.equal(two.ok, false);
+  assert.match(two.error, /written for record format 3/);
 });

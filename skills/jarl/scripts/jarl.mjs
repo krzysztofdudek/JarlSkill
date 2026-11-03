@@ -235,8 +235,12 @@ commands:
                                                  acted on; read in --repo alone, else in the loop's own
                                                  repository, every repository an open or in-progress issue
                                                  names and every one where an issue not dropped records a Branch
-  ask "<question>" [--kind stop|stuck|lower|charter|ratify] [--target x] [--issue 7] [--option "<label>: <effect>"]...
+  ask "<question>" [--kind stop|stuck|lower|charter|ratify|escalation] [--target x] [--issue 7] [--slice <coordinator>] [--option "<label>: <effect>"]...
                                                  a question the owner has to answer; lower needs --target;
+                                                 escalation is a coordinator's question to the jarl, who holds it:
+                                                 it names its --slice or its --issue (or both), shows on next --as
+                                                 jarl and in that slice's views, holds its issue back as stuck does,
+                                                 and is answered by the jarl (answer with no --by records the jarl);
                                                  listed at boot until answered; ratify is a choice already made
                                                  under a mandate, awaiting the owner's word, and blocks nothing;
                                                  --option gives the choices, at least two, repeated for each one:
@@ -244,7 +248,7 @@ commands:
   answer <ids> "<answer>" | --option <label> [--by who]
                                                  records the answer as a ruling and closes the question: the option
                                                  chosen, marked in the ruling's list of options, or the answer in the
-                                                 person's own words; --by records who answered (default owner) and
+                                                 person's own words; --by records who answered (default owner; the jarl on an escalation) and
                                                  is required on a ratify item, which names no coordinator of the loop;
                                                  several ratify items as a comma list take one answer, one ruling each,
                                                  each naming the batch it was answered in; on a ratify item whose
@@ -478,7 +482,7 @@ export const COMMAND_FLAGS = {
   scope: { branch: 'value', base: 'value', repo: 'value' },
   branches: { base: 'value', repo: 'value', 'stale-hours': 'value' },
   merged: { sha: 'value', ci: 'value', repo: 'value', ran: 'many', saw: 'many', red: 'value', keep: 'bool' },
-  ask: { kind: 'value', target: 'value', issue: 'value', option: 'many' },
+  ask: { kind: 'value', target: 'value', issue: 'value', slice: 'value', option: 'many' },
   answer: { by: 'value', option: 'value' },
   resume: { log: 'value', ready: 'value', ci: 'bool', as: 'value', slice: 'value' },
   handoff: { summary: 'value', next: 'many', log: 'value', ready: 'value', ci: 'bool' },

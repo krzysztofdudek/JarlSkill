@@ -18,6 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A coordinator named in the goal can run its own part of the backlog: tag an issue `slice:<name>` to put it in that coordinator's part. An issue belongs to one part at most, and the status shows who runs which part.
 - A coordinator can look at its own part of the backlog alone: what to start next, the status and the resume each take the part's name. A task waiting in one part never holds back a task in another; only work already started does.
 - Asking Jarl what is waiting on a coordinator now lists the tasks of its part: the ones ready to start, the ones being worked on, the work waiting for a reviewer and the work sent back. Tasks in no part stay with whoever runs the loop.
+- A coordinator can send a question up to whoever runs the loop, naming its part of the backlog or the task, instead of going to the owner. The question shows on that person's list and in the coordinator's view, and the task it names waits for the answer. The first such question moves the loop to format 3.
 
 ### Changed
 

@@ -170,6 +170,9 @@ function reviewRow(todo, holder, verdict) {
 function questionRows(ctx) {
   return ctx.loop.asks.filter((a) => a.state === 'open').map((a) => {
     const ref = `a-${a.id}`;
+    // An escalation goes up from a coordinator and is the jarl's: it names its slice or its issue.
+    if (a.kind === 'escalation') return { what: 'escalation', ask: a.id, kind: a.kind, title: a.question, holder: JARL_HOLDER, ...(a.slice ? { slice: a.slice } : {}),
+      says: `escalation${a.slice ? ` from slice:${a.slice}` : ''}${a.issue ? ` on issue ${a.issue}` : ''}`, command: `jarl.mjs answer ${ref} "<answer>" --by jarl` };
     if (a.kind === 'ratify') return { what: 'ratify', ask: a.id, title: a.question, holder: OWNER_HOLDER, says: `to ratify${a.issue ? ` (issue ${a.issue})` : ''}`, command: `jarl.mjs answer ${ref} "yes" --by owner (or "reject")` };
     // A question that asks for a fresh review holds the proofs it names, as far as they still await one.
     const keys = new Set(reviewAskKeys(ctx.loop, a.question));
@@ -229,7 +232,7 @@ export function ballRows(root) {
   for (const r of rows) {
     if (r.ids) r.holdsUp = upOf(r.ids);
     else if (r.id !== undefined) r.holdsUp = dependents.get(r.id) || [];
-    else if (r.what === 'question') r.holdsUp = [...new Set([...(heldByQuestion.has(r.ask) ? [heldByQuestion.get(r.ask)] : []), ...upOf(r.reviewing || [])])];
+    else if (r.what === 'question' || r.what === 'escalation') r.holdsUp = [...new Set([...(heldByQuestion.has(r.ask) ? [heldByQuestion.get(r.ask)] : []), ...upOf(r.reviewing || [])])];
     else r.holdsUp = [];
   }
   const weight = (r) => (r.what === 'question' && r.kind === 'stop' ? Number.MAX_SAFE_INTEGER : r.holdsUp.length);

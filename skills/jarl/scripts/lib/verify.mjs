@@ -6,7 +6,7 @@ import { fieldText, need } from './base.mjs';
 import { canonical, jarlDir } from './where.mjs';
 import { readText } from './files.mjs';
 import { ISSUE_FILE_RE, cmpId, idKey, needsRaisedFormat } from './ids.mjs';
-import { RECORD_FORMAT_RAISED, formatOffText, formatState, loadProfile } from './profile.mjs';
+import { FORMAT_LINES, RECORD_FORMAT_RAISED, formatOffText, formatState, loadProfile } from './profile.mjs';
 import { ASKS_FILE, DECISIONS_FILE, GOAL_FILE, LOG_FILE, goalLineOf, goalLines, loadDecisions, readGoal } from './journal.mjs';
 import { loopEvents } from './log.mjs';
 import { parseIssue, sharedNumberText, sharedNumbers } from './issues.mjs';
@@ -99,6 +99,10 @@ export function cmdVerify(root) {
     for (const i of loop.issues) {
       if (i.id !== null && needsRaisedFormat(i.id)) add('format', `issue ${i.id}`, 'its id needs the raised record format (an id of 1000 or more, or of fewer than three digits), and this loop is not in it');
     }
+  }
+  // A question of a format the loop is not in: an escalation is held by format 3.
+  if (profile.format < FORMAT_LINES.escalation.format) {
+    for (const a of loadAsks(root)) if (a.kind === 'escalation') add('format', `${ASKS_FILE} a-${a.id}`, `an escalation is written in record format ${FORMAT_LINES.escalation.format}, and this loop is not in it`);
   }
   retractionChecks(events, add);
   // A shared number is the issues check's finding. A number the log files more than once, now one file's, is read from
