@@ -194,7 +194,7 @@ function seedDone(n) {
   writeFileSync(file, template);
   for (let i = 2; i <= n; i += 1) {
     const id = String(i);
-    writeFileSync(join(dir, `${id}-sample.md`), template.replace(/^# 001 ·/, `# ${id} ·`));
+    writeFileSync(join(dir, `${id}-sample.md`), template.replace(/^# \d+ ·/, `# ${id} ·`));
   }
   return root;
 }

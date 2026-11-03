@@ -66,13 +66,17 @@ function issuesAt(recordDir, profile, events = loopEvents(recordDir, profile)) {
   if (!existsSync(dir)) return [];
   const by = eventsById(events);
   const forms = writtenForms(readdirSync(dir));
-  return readdirSync(dir).filter((f) => ISSUE_FILE_RE.test(f)).sort((a, b) => cmpId(ISSUE_FILE_RE.exec(a)[1], ISSUE_FILE_RE.exec(b)[1]) || (a < b ? -1 : a > b ? 1 : 0))
+  const issues = readdirSync(dir).filter((f) => ISSUE_FILE_RE.test(f)).sort((a, b) => cmpId(ISSUE_FILE_RE.exec(a)[1], ISSUE_FILE_RE.exec(b)[1]) || (a < b ? -1 : a > b ? 1 : 0))
     .map((f) => {
       const issue = withProfile(parseIssue(readText(join(dir, f)), join(dir, f)), profile);
       // An After names an issue as the loop writes it: the form its file carries, whatever form the After line gives.
       issue.after = issue.after.map((x) => writtenId(x, forms));
       return withRecordState(issue, issueState(profile, by.get(issue.id) || []));
     });
+  // An issue whose number another file carries too holds the files of that number in `shared`, which the views print;
+  // every other issue has no such key.
+  for (const s of sharedNumbers(issues)) for (const i of s.issues) i.shared = s.issues.map((x) => `issues/${basename(x.file)}`);
+  return issues;
 }
 // The header fields the commands render from the journal, as the fields of an issue name them.
 const RENDERED_FIELDS = ['branch', 'worker', 'model', 'since', 'merged', 'merge check', 'ci'];
@@ -146,6 +150,11 @@ export function sharedNumbers(issues) {
   for (const i of issues) if (i.id !== null) byKey.set(idKey(i.id), [...(byKey.get(idKey(i.id)) || []), i]);
   return [...byKey.values()].filter((list) => list.length > 1).map((list) => ({ id: list[0].id, issues: list }));
 }
+// The mark a view prints on the line of an issue whose number another file carries: the first files of that number, and a
+// count of the rest, so a line stays one line however many files share it.
+export function sharedMark(files) {
+  return `number shared: ${files.slice(0, 3).join(', ')}${files.length > 3 ? ` and ${files.length - 3} more` : ''}`;
+}
 // The files of one shared number as the record names them: issues/<file>, joined with "and".
 function sharedFiles(list) {
   const names = list.map((i) => `issues/${basename(i.file)}`);
@@ -155,7 +164,8 @@ function sharedFiles(list) {
 // so the free number named is one the loop does not hold.
 export function sharedNumberText(shared, all) {
   const free = all.reduce((m, i) => (i.id !== null && /^\d+$/.test(i.id) ? Math.max(m, Number(i.id)) : m), 0) + 1;
-  return `${shared.issues.length} issue files carry the number ${shared.id}: ${sharedFiles(shared.issues)} (two clones or branches of the loop each filed one, and the merge kept both). The log names an issue by its number alone, so every line for ${shared.id} is read for each of them, and nothing can move or edit one without the other — give one of them a number the loop does not hold, such as ${free}: rename its file to ${free}-… and write ${free} in its first line, then run jarl.mjs verify`;
+  const id = shared.id;
+  return `${shared.issues.length} issue files carry the number ${id}: ${sharedFiles(shared.issues)}. Two copies of the loop that each filed an issue and were merged leave this, and so does a file copied or made by hand. The log names an issue by its number alone, so its lines for ${id} cannot be told apart: each is read for every one of these files, and no command moves or edits one of them alone. It is settled by hand, and renumbering alone does not settle it: give the other file a number the loop does not hold, such as ${free} (rename it to ${free}-… and write ${free} in its first line), and the log's earlier lines for ${id} stay with the file that keeps ${id}, whichever file they were written for. Then record which earlier lines belonged to which file (jarl.mjs log "<which lines of ${id} were whose>"), put the renamed issue in the log at the status its file reads (jarl.mjs set ${free} <status>), and when the log's status for ${id} is not the one its own file reads, move it there (jarl.mjs set ${id} <status>) — never write the log's value into either file`;
 }
 // The one issue `rawId` names among `issues`, or null when none does. A number two files carry is refused, with both files
 // named: a move or an edit by that number would land on each of them in the log.

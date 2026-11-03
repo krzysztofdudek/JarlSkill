@@ -97,6 +97,13 @@ test('while two files carry one number, every command that addresses it is refus
     ['new', 'third', '--tier', 'light', '--after', '2'],
     ['ask', 'which one?', '--issue', '2'],
     ['changelog', '2'],
+    ['merged', '2', '--sha', 'abc1234', '--ran', 'npm test', '--saw', 'all green'],
+    ['scope', '2', '--branch', 'jarl/2-x'],
+    ['field', '2', 'Resources', 'db'],
+    ['source', '2', 'research/r#f1'],
+    ['repo', '2', '.'],
+    ['retract', '2', '1', '--by', 'jarl', 'the row was wrong'],
+    ['decide', 'which-one', 'the ruling text', '--settles', '2'],
   ];
   for (const args of calls) assert.match(refuses(dir, ...args), BOTH, args.join(' '));
   assert.deepEqual(snapshot(dir), before, 'no refusal wrote a line or a file');
@@ -134,17 +141,73 @@ test('status names both files of a shared number in place of a header advice, an
   assert.match(readFileSync(join(b.dir, '.jarl', 'issues', '2-second-on-b.md'), 'utf8'), /\*\*Status:\*\* open/, 'the file nobody moved still reads open');
 });
 
-test('giving one of the two files a free number, as the finding says, settles it', () => {
+// Clone A files its second issue and drops it; clone B files its own second issue and merges A in. B's file reads open.
+function droppedOnOneSide() {
+  const a = committedLoop();
+  const b = cloneOf(a.dir);
+  fileAndCommit(a, 'second on A');
+  jarl(a.dir, 'set', '2', 'dropped', 'not needed');
+  a.g('add', '-A'); a.g('commit', '-qm', 'a drops its 2');
+  fileAndCommit(b, 'second on B');
+  b.g('pull', '-q', '--no-rebase', '--no-edit', 'origin', 'main');
+  return b;
+}
+// Gives the file `from` the number `to`: its name and its first line, as the finding says.
+function renumber(at, from, to) {
+  const issues = join(at.dir, '.jarl', 'issues');
+  const text = readFileSync(join(issues, from), 'utf8');
+  const name = from.replace(/^\d+-/, `${to}-`);
+  at.g('mv', `.jarl/issues/${from}`, `.jarl/issues/${name}`);
+  writeFileSync(join(issues, name), text.replace(/^# \d+ ·/, `# ${to} ·`));
+}
+
+test('the finding says the log\'s lines for the number cannot be told apart, and following it leaves each file at its own status', () => {
+  const b = droppedOnOneSide();
+  const said = run(b.dir, ['verify']).stdout;
+  assert.match(said, /cannot be told apart/);
+  assert.match(said, /renumbering alone does not settle it/);
+  assert.match(said, /never write the log's value into either file/);
+  assert.doesNotMatch(said, /two clones or branches of the loop each filed one/, 'the cause is not asserted');
+  renumber(b, '2-second-on-a.md', 3);
+  // Renumbering alone leaves the drop made for A's file on the number B's file keeps.
+  assert.equal(JSON.parse(jarl(b.dir, 'show', '2', '--json')).status, 'dropped');
+  jarl(b.dir, 'log', 'the drop of 2 on the first clone was for the issue now numbered 3; the file that keeps 2 was never moved');
+  jarl(b.dir, 'set', '3', 'dropped', 'not needed');
+  jarl(b.dir, 'set', '2', 'open');
+  assert.equal(JSON.parse(jarl(b.dir, 'show', '2', '--json')).status, 'open');
+  assert.equal(JSON.parse(jarl(b.dir, 'show', '3', '--json')).status, 'dropped');
+  assert.match(readFileSync(join(b.dir, '.jarl', 'issues', '2-second-on-b.md'), 'utf8'), /\*\*Status:\*\* open/);
+  const after = run(b.dir, ['verify']);
+  assert.doesNotMatch(after.stdout, /carry the number/);
+  assert.match(after.stdout, /^issue headers: clean$/m, after.stdout);
+});
+
+test('list, next and report mark both files of a shared number', () => {
   const dir = twoClones();
-  const issues = join(dir, '.jarl', 'issues');
-  const text = readFileSync(join(issues, '2-second-on-b.md'), 'utf8');
-  const g = (...a) => execFileSync('git', a, { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: SPAWN_TIMEOUT });
-  g('mv', '.jarl/issues/2-second-on-b.md', '.jarl/issues/3-second-on-b.md');
-  writeFileSync(join(issues, '3-second-on-b.md'), text.replace(/^# 2 ·/, '# 3 ·'));
-  const r = run(dir, ['verify']);
-  assert.doesNotMatch(r.stdout, /carry the number/);
-  assert.match(jarl(dir, 'show', '3'), /second on B/);
-  assert.match(jarl(dir, 'show', '2'), /second on A/);
+  const marked = /number shared: issues\/2-second-on-a\.md, issues\/2-second-on-b\.md/;
+  for (const args of [['list'], ['next'], ['report']]) {
+    const lines = jarl(dir, ...args).split('\n').filter((l) => /second on [AB]/.test(l));
+    assert.equal(lines.length, 2, `${args[0]}: ${lines.join(' | ')}`);
+    for (const l of lines) assert.match(l, marked, `${args[0]}: ${l}`);
+  }
+  assert.doesNotMatch(jarl(dir, 'list'), /filed before the split.*number shared/);
+  assert.deepEqual(JSON.parse(jarl(dir, 'report', '--json')).issues.filter((i) => i.shared).map((i) => i.title), ['second on A', 'second on B']);
+});
+
+test('import --adopt that would write into a number two files carry is refused before it writes anything', () => {
+  const a = committedLoop();
+  jarl(a.dir, 'body', '1', '--what', 'covers jarl-1-A1');
+  a.g('add', '-A'); a.g('commit', '-qm', 'a names a finding');
+  const b = cloneOf(a.dir);
+  fileAndCommit(a, 'second on A');
+  jarl(b.dir, 'new', 'second on B', '--tier', 'light', '--what', 'covers jarl-2-B5');
+  b.g('add', '-A'); b.g('commit', '-qm', 'b files');
+  b.g('pull', '-q', '--no-rebase', '--no-edit', 'origin', 'main');
+  const file = join(mkdtempSync(join(tmpdir(), 'jarl-shared-findings-')), 'findings.json');
+  writeFileSync(file, JSON.stringify([{ id: 'jarl-1-A1', title: 'one' }, { id: 'jarl-2-B5', title: 'two' }]));
+  const before = snapshot(b.dir);
+  assert.match(refuses(b.dir, 'import', file, '--source', 'r', '--adopt'), BOTH);
+  assert.deepEqual(snapshot(b.dir), before, 'issue 1 got no Source and no line was written');
 });
 
 test('the record library finds an issue as before, and refuses a number two files carry with both files named', () => {

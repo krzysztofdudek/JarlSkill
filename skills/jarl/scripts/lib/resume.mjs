@@ -5,7 +5,7 @@ import { fieldText, need } from './base.mjs';
 import { jarlDir } from './where.mjs';
 import { readText } from './files.mjs';
 import { DEFAULT_PROFILE, loadProfile } from './profile.mjs';
-import { mergedOf } from './issues.mjs';
+import { mergedOf, sharedMark } from './issues.mjs';
 import { repoNames } from './repositories.mjs';
 import { closedGateLine, disagreementText, gateLine, gateOf, readLoop, reviewSplit } from './loop.mjs';
 import { metricsOf, renderMetrics, testimonyNote } from './metrics.mjs';
@@ -166,7 +166,9 @@ export function cmdReport(root, flags = {}) {
   const goal = loop.goalLines.goal ?? '';
   const byRepo = {};
   for (const i of done) for (const r of repoNames(root, i)) (byRepo[r] = byRepo[r] || []).push(i);
-  const row = (i) => `- ${i.id} ${i.title} (${i.kind})${mergedOf(i) ? ` · merged ${mergedOf(i).sha}${mergedOf(i).repo ? ` in ${mergedOf(i).repo}` : ''}` : ''}`;
+  // An issue whose number another file carries too says so on its line, with the files of that number.
+  const mark = (i) => (i.shared ? ` (${sharedMark(i.shared)})` : '');
+  const row = (i) => `- ${i.id} ${i.title}${mark(i)} (${i.kind})${mergedOf(i) ? ` · merged ${mergedOf(i).sha}${mergedOf(i).repo ? ` in ${mergedOf(i).repo}` : ''}` : ''}`;
   const repos = Object.keys(byRepo).sort();
   const doneLines = repos.length > 1 ? repos.flatMap((r) => ['', `### ${r} (${byRepo[r].length})`, ...byRepo[r].map(row)]) : done.map(row);
   const split = reviewSplit(loop);
@@ -176,17 +178,17 @@ export function cmdReport(root, flags = {}) {
   const rows = issues.map((i) => {
     const m = mergedOf(i);
     const a = gateOf(loop, i.id).live;
-    return { id: i.id, title: i.title, status: i.status, kind: i.kind, priority: i.priority, tier: i.tier, tags: i.tags, repos: repoNames(root, i), branch: i.fields.branch || null, after: i.after, sources: i.sources, merged: m ? m.sha : null, ci: m ? m.ci : null, review: a ? { by: a.by, kind: a.kind, at: a.at } : null };
+    return { id: i.id, title: i.title, status: i.status, kind: i.kind, priority: i.priority, tier: i.tier, tags: i.tags, repos: repoNames(root, i), branch: i.fields.branch || null, after: i.after, sources: i.sources, merged: m ? m.sha : null, ci: m ? m.ci : null, review: a ? { by: a.by, kind: a.kind, at: a.at } : null, ...(i.shared ? { shared: i.shared } : {}) };
   });
   const metrics = metricsOf(loop, Date.now());
   const closedGate = closedGateFlags(loop);
   const lines = [`# Report`, '', goal, '', ...(metrics.check.landsOn === 'testimony' ? [testimonyNote(metrics.check), ''] : []), `## Done (${done.length})`, ...(done.length ? [gateLine(profile, split, 'Reviewed by')] : []), ...doneLines,
     ...closedOther.flatMap((st) => {
       const on = issues.filter((i) => i.status === st);
-      return ['', `## ${reasonWord(st)} (${on.length})`, ...on.map((i) => `- ${i.id} ${i.title}${profile.is(st, 'needs-reason') ? ` — ${statusReason(i.sections.evidence, reasonWord(st))}` : ''}`)];
+      return ['', `## ${reasonWord(st)} (${on.length})`, ...on.map((i) => `- ${i.id} ${i.title}${mark(i)}${profile.is(st, 'needs-reason') ? ` — ${statusReason(i.sections.evidence, reasonWord(st))}` : ''}`)];
     }),
     ...(closedGate.length ? ['', `## Closed, gate does not hold (${closedGate.length})`, ...closedGate.map(closedGateLine)] : []),
-    '', `## Still open (${left.length})`, ...left.map((i) => `- ${i.id} ${i.title} (${i.status})`),
+    '', `## Still open (${left.length})`, ...left.map((i) => `- ${i.id} ${i.title}${mark(i)} (${i.status})`),
     ...(flags.found ? ['', `## Found along the way (${found.length})`, ...found.map((i) => `- ${i.id} ${i.title} — ${i.fields['found by']}`)] : []),
     '', renderMetrics(metrics)];
   return { done: done.length, dropped: dropped.length, deferred: deferred.length, left: left.length, found: found.length, reviews: split,

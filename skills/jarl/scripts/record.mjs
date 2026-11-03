@@ -47,6 +47,9 @@ export function initLoop(root, goal, opts = {}) { return write(root, () => L.cmd
 // loop's journal says, which is what the operations below write beside every header field. A header edited by hand does
 // not change them; parseIssue reads a text alone and so reads the header.
 export function loadIssues(root) { return read(() => L.loadIssues(root)); }
+// The issue a number names, or null. It throws, naming the files, when two issue files carry that number: the journal
+// cannot tell their lines apart, so neither is the issue the number names. Two such issues each carry `shared`, the files
+// of their number, in loadIssues; no other issue has that key.
 export function findIssue(root, id) { return read(() => L.findIssue(root, id)); }
 // opts { live }: live leaves out the superseded rulings.
 export function decisions(root, opts = {}) { return read(() => L.cmdDecisions(root, opts)); }

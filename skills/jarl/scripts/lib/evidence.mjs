@@ -11,7 +11,7 @@ import { SLOT_NAME_RE, loadProfile } from './profile.mjs';
 import { appendLog, appendLogLines, firstLine } from './journal.mjs';
 import { outOfGit } from './loop-git.mjs';
 import { attachmentOf, journalById } from './log.mjs';
-import { acceptanceLineCount, alignRows, bodyText, evidenceParts, evidenceTable, loadIssues, mergedOf, noteText, parseIssue, placeEvidence, reviewEntries, setSection } from './issues.mjs';
+import { acceptanceLineCount, alignRows, bodyText, evidenceParts, evidenceTable, loadIssues, mergedOf, noteText, parseIssue, placeEvidence, reviewEntries, setSection, sharedMark } from './issues.mjs';
 import { fileAt, raiseFormat, repoNames, reposWhere, tipLines, whereLines, whereOf } from './repositories.mjs';
 import { approveKind, carriesCode, disagreementText, gateOf, gateState, readLoop, recordDisagreements, reviewSplit, scopedLoop } from './loop.mjs';
 import { checkState } from './metrics.mjs';
@@ -186,7 +186,7 @@ export function renderNext(rows, all, held = 0) {
       : r.group === 'waiting-after' ? [`after ${r.after.join(', ')}`]
         : r.group === 'held-by-question' ? [`question ${r.questions.map((q) => `a-${q}`).join(', ')}`]
           : [`waits on ${[...r.waitsOn, ...(r.resources || []).map((x) => `resource ${x}`)].join(', ')}, held by ${r.heldBy.join(', ')}`];
-    return `${r.id}  P${r.priority}  ${r.title}${note.filter(Boolean).map((n) => `  (${n})`).join('')}${modelText(r.model)}`;
+    return `${r.id}  P${r.priority}  ${r.title}${[...note, r.shared && sharedMark(r.shared)].filter(Boolean).map((n) => `  (${n})`).join('')}${modelText(r.model)}`;
   };
   if (!all) {
     if (rows.length) return rows.map(line).join('\n');
@@ -222,7 +222,7 @@ export function nextRows(root, flags = {}) {
   for (const i of issues.filter((x) => profile.is(x.status, 'dispatchable')).sort((a, b) => a.priority.localeCompare(b.priority) || cmpId(a.id, b.id))) {
     // An issue whose After issues are not all settled (done or dropped) is never offered, whatever its files.
     const after = waitingOn(i, byId, profile);
-    const base = { id: i.id, title: i.title, priority: i.priority, ...(i.files.length ? {} : { noFiles: true }) };
+    const base = { id: i.id, title: i.title, priority: i.priority, ...(i.files.length ? {} : { noFiles: true }), ...(i.shared ? { shared: i.shared } : {}) };
     if (after.length) { out.push({ ...base, group: 'waiting-after', after, waitsOn: [] }); continue; }
     if (asked.has(i.id)) { out.push({ ...base, group: 'held-by-question', questions: asked.get(i.id), waitsOn: [], after: [] }); continue; }
     const keys = keysOf(i);
