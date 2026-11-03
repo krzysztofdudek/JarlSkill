@@ -260,6 +260,10 @@ function waitingRows(loop, rows, next, onOwner) {
   for (const id of onOwner) holderOfIssue.set(id, OWNER_HOLDER);
   const heldBy = new Map(next.filter((r) => r.heldBy && r.heldBy.length && !r.ready).map((r) => [r.id, r.heldBy]));
   const questionOf = new Map(next.filter((r) => r.group === 'held-by-question').map((r) => [r.id, r.questions]));
+  // The holder of the questions that hold an issue: the owner while any of them is the owner's, the jarl when every one is
+  // an escalation, which the jarl holds.
+  const kinds = new Map(loop.asks.map((a) => [a.id, a.kind]));
+  const questionHolder = (id) => (questionOf.get(id).every((q) => kinds.get(q) === 'escalation') ? JARL_HOLDER : OWNER_HOLDER);
   const roots = (i, seen = new Set()) => {
     const out = [];
     for (const a of waitingOn(i, byId, profile)) {
@@ -276,7 +280,7 @@ function waitingRows(loop, rows, next, onOwner) {
   // puts in play).
   const onOf = (b) => {
     if (holderOfIssue.has(b.id)) return holderOfIssue.get(b.id);
-    if (questionOf.has(b.id)) return OWNER_HOLDER;
+    if (questionOf.has(b.id)) return questionHolder(b.id);
     const h = (heldBy.get(b.id) || []).find((x) => holderOfIssue.has(x));
     return h ? holderOfIssue.get(h) : null;
   };

@@ -38,8 +38,6 @@ export function cmdAsk(root, question, flags) {
   const id = newNumber(asks.reduce((m, a) => Math.max(m, Number(a.id)), 0) + 1, numberWidth(loadProfile(root), flags.width));
   // The issue is written as its file writes it, so a question about 007 names it 007 and raises nothing.
   const issueWritten = flags.issue ? writtenId(flags.issue, issueForms(jarlDir(root))) : null;
-  // A question whose number is written plain (a-7, a-1000) or that names an issue so written raises the format first.
-  if (needsRaisedFormat(id) || (issueWritten !== null && needsRaisedFormat(issueWritten))) needFormat(root, 'plain-number');
   const path = asksPath(jarlDir(root));
   const target = kind === 'lower' ? ` · target ${flags.target}` : '';
   // flags.ruling is not a flag of the command line: the close's ratification batch passes it, and so may a composer
@@ -52,10 +50,13 @@ export function cmdAsk(root, question, flags) {
     need(!loadAsks(root).some((x) => x.ruling === d.slug), `${flags.ruling} has been put to ratification already`);
   }
   const ruling = kind === 'ratify' && flags.ruling ? ` · ruling ${flags.ruling}` : '';
-  // A reader of formats 1 and 2 refuses a question of a kind it does not know: the first escalation raises the format first.
-  if (kind === 'escalation') needFormat(root, 'escalation');
   const asked = oneBreak(question).trim().split('\n');
   const options = askOptions(flags.option, kind);
+  // Every check is done: the format is raised now, right before the write that needs it, so a refused question writes
+  // nothing. A number written plain (a-7, a-1000), or an issue so written, needs format 2; an escalation, whose kind a
+  // reader of formats 1 and 2 refuses, needs format 3.
+  if (needsRaisedFormat(id) || (issueWritten !== null && needsRaisedFormat(issueWritten))) needFormat(root, 'plain-number');
+  if (kind === 'escalation') needFormat(root, 'escalation');
   const optionLines = options.map((o) => `- **a-${id}** option · ${o.label} · ${o.effect}\n`).join('');
   appendAtomic(path, '# Questions to the owner\n\n',`- **a-${id}** (open) · ${kind}${target}${issueWritten !== null ? ` · issue ${issueWritten}` : ''}${slice !== null ? ` · slice ${slice}` : ''}${ruling} · ${asked[0]}\n${asked.slice(1).map((l) => `  ${l}\n`).join('')}${optionLines}`);
   appendLog(root, `asked a-${id} (${kind}) · ${firstLine(asked.join('\n'), ASKS_FILE)}`);

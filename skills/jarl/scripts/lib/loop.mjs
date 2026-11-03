@@ -249,7 +249,7 @@ function coordinatorsIn(root, lines) { return [...BASE_COORDINATORS, basename(re
 // that knows no slices reads the same line as the names that review as the loop's director. An issue is in one slice
 // at most; an issue in none is the jarl's.
 export const SLICE_PREFIX = 'slice:';
-const isSliceTag = (t) => String(t).toLowerCase().startsWith(SLICE_PREFIX);
+export const isSliceTag = (t) => String(t).toLowerCase().startsWith(SLICE_PREFIX);
 export function sliceTag(coordinator) { return `${SLICE_PREFIX}${coordinator}`; }
 // The coordinator whose slice an issue is in, as its tag names it, or null.
 export function sliceOf(issue) {
@@ -258,18 +258,22 @@ export function sliceOf(issue) {
 }
 // The same coordinator, in any case: slice:Odin and slice:odin are one slice.
 export const sameSlice = (a, b) => a !== null && b !== null && fieldText(a).toLowerCase() === fieldText(b).toLowerCase();
-// A write of an issue's tags keeps it in one slice at most, and a slice tag names its coordinator. `held` is what the issue
-// carries now, so a refusal says how to move it from the slice it is in.
+// A write of an issue's tags keeps one slice tag at most, and a slice tag names its coordinator; slice names compare in any
+// case, so slice:Odin beside slice:odin is a second tag of one slice and refused too. `held` is what the issue carries
+// now, so a refusal says how to move it from the slice it is in, removing every slice tag it holds.
 export function needOneSlice(tags, { id = null, held = [] } = {}) {
-  const slices = tags.filter(isSliceTag);
+  const slices = [...new Set(tags.filter(isSliceTag))];
   for (const t of slices) need(t.length > SLICE_PREFIX.length, `${t} names no coordinator: a slice is the tag slice:<coordinator>, the coordinator a name of the goal's Coordinators line`);
-  const distinct = [...new Map(slices.map((t) => [t.toLowerCase(), t])).values()];
-  if (distinct.length <= 1) return;
-  const was = held.find(isSliceTag);
-  const to = was && distinct.find((t) => t.toLowerCase() !== was.toLowerCase());
+  if (slices.length <= 1) return;
+  const heldSlices = held.filter(isSliceTag);
+  const was = heldSlices[0];
+  const to = was && slices.find((t) => !heldSlices.some((h) => h.toLowerCase() === t.toLowerCase()));
+  const same = was && !to ? slices.find((t) => !heldSlices.includes(t)) : null;
   need(false, id !== null && was && to
-    ? `${id} is in ${was} already, and an issue is in one slice — to move it: jarl.mjs tag ${id} -${was} +${to}`
-    : `an issue is in one slice, and ${id !== null ? `${id} would carry` : 'the tags name'} ${distinct.join(', ')} — keep one`);
+    ? `${id} is in ${was} already, and an issue is in one slice — to move it: jarl.mjs tag ${id} ${heldSlices.map((h) => `-${h}`).join(' ')} +${to}`
+    : id !== null && same
+      ? `${id} is in ${was} already, and ${same} names the same slice in another case — an issue carries one slice tag`
+      : `an issue is in one slice, and ${id !== null ? `${id} would carry` : 'the tags name'} ${slices.join(', ')} — keep one`);
 }
 // The slices of a loop: each coordinator the Coordinators line names, with its slice tag, then each slice a tag names
 // whose coordinator the line does not list (declared false: its coordinator's approve counts as fresh). inPlay counts the

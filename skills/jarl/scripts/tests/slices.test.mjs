@@ -23,9 +23,20 @@ test('tag, field Tags and new refuse a second slice: tag on one issue, and say h
   assert.match(refuses(root, 'tag', '1', '+slice:'), /^slice: names no coordinator: a slice is the tag slice:<coordinator>/m);
   assert.equal(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), log, 'a refusal writes no log line');
   assert.equal(readFileSync(json(root, 'show', '1').file, 'utf8'), file, 'nor the issue');
-  // The same slice in another case is one slice, and moving an issue is one call.
-  jarl(root, 'tag', '1', '+slice:Odin');
-  jarl(root, 'tag', '1', '-slice:odin', '-slice:Odin', '+slice:thor');
+  // Slice names compare in any case: the same slice written another way is a second slice tag, refused too.
+  assert.match(refuses(root, 'tag', '1', '+slice:Odin'), /^1 is in slice:odin already, and slice:Odin names the same slice in another case — an issue carries one slice tag$/m);
+  assert.match(refuses(root, 'field', '1', 'Tags', 'docs, slice:odin, slice:ODIN'), /^1 is in slice:odin already, and slice:ODIN names the same slice in another case — an issue carries one slice tag$/m);
+  assert.match(refuses(root, 'new', 'two', '--tags', 'slice:odin,slice:Odin'), /^an issue is in one slice, and the tags name slice:odin, slice:Odin — keep one$/m);
+  assert.equal(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), log);
+  // Moving an issue is one call, and a slice tag is removed in any case.
+  jarl(root, 'tag', '1', '-slice:ODIN', '+slice:thor');
+  assert.deepEqual(tagsOf(root, '1'), ['docs', 'slice:thor']);
+  // An issue that carries two spellings of one slice (a hand edit) is moved by the hint the refusal prints, which removes both.
+  const path = json(root, 'show', '1').file;
+  writeFileSync(path, readFileSync(path, 'utf8').replace(/^\*\*Tags:\*\* .*$/m, '**Tags:** docs, slice:Odin, slice:odin'));
+  const hint = /— to move it: jarl\.mjs (tag 1 -slice:Odin -slice:odin \+slice:thor)$/m.exec(refuses(root, 'tag', '1', '+slice:thor'));
+  assert.ok(hint, 'the hint removes every slice tag the issue holds');
+  jarl(root, ...hint[1].split(' '));
   assert.deepEqual(tagsOf(root, '1'), ['docs', 'slice:thor']);
 });
 
@@ -248,4 +259,28 @@ test('the jarl reference hands slices to coordinators: the four reasons to escal
   assert.match(section.replace(/\n/g, ' '), /The goal's `Merger: <name>` line names the one holder, the jarl or one coordinator, that raises the merger/);
   assert.match(section.replace(/\n/g, ' '), /Counts are never pushed up: the jarl reads them with `status --slice <name>`\./);
   assert.match(skillText('references/models.md'), /\[Coordinators\]\(jarl\.md#coordinators-slices-of-the-backlog\)/);
+});
+
+test('a refused escalation writes nothing: the format is raised only after every check, right before the write', () => {
+  const root = twoSlices();
+  const profile = () => readFileSync(join(root, '.jarl', 'profile.json'), 'utf8');
+  const before = profile();
+  const log = readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
+  assert.match(refuses(root, 'ask', 'which first?', '--kind', 'escalation', '--slice', 'odin', '--option', 'only: one choice'), /at least two options/);
+  assert.equal(profile(), before, 'the profile line holds the format it held');
+  assert.equal(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), log);
+  assert.equal(json(root, 'profile').format, 2);
+});
+
+test('the issues behind an issue an escalation holds wait on the jarl, not on the owner', () => {
+  const root = twoSlices();
+  jarl(root, 'new', 'after the jarl\'s', '--after', '4', '--files', 'h.mjs');   // 6
+  jarl(root, 'ask', 'is 4 ours?', '--kind', 'escalation', '--issue', '4');
+  const waits = (who) => json(root, 'next', '--as', who, '--all').waiting.map((w) => [w.id, w.on, w.via]);
+  assert.deepEqual(waits('owner'), []);
+  assert.deepEqual(waits('jarl'), [['6', 'jarl', ['4']]]);
+  assert.match(jarl(root, 'next', '--as', 'jarl', '--all'), /^- 6 after the jarl's: waits on the jarl via 4$/m);
+  // An owner's question on the same issue puts the wait on the owner.
+  jarl(root, 'ask', 'and for the owner?', '--issue', '4');
+  assert.deepEqual(waits('owner'), [['6', 'owner', ['4']]]);
 });

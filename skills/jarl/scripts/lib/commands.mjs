@@ -15,7 +15,7 @@ import { JARL_GITIGNORE, JARL_GITIGNORE_COMMITTED, ensureLoopMerge, outOfGit } f
 import { HANDOVER_SEGMENT, journalById, mergeCheckText } from './log.mjs';
 import { FIELD_RE, RENDERED_FIELDS, acceptanceHeading, acceptanceLineCount, acceptanceText, bodyText, changelogText, evidenceNotes, evidenceParts, evidenceRows, evidenceTable, fieldValue, findIssue, issueNamed, loadIssues, mergedOf, namedPairs, needNoFieldTags, noteText, parseIssue, placeEvidence, removeFields, removeFirstField, renderIssue, setField, setSection, unattributedRefusal } from './issues.mjs';
 import { branchTip, commitRepoNames, defaultBase, fileKeysOf, isGitRepo, issueRepoPaths, issueRepos, mainCheckoutOf, needFormat, needRightCheckouts, repoFromInput, repoLabel, repoList, tipLines, whyNotDeletable, worktreeState, worktreesOf } from './repositories.mjs';
-import { FIELD_NAMES, activeSlices, carriesCode, gateOf, needOneSlice, readLoop, unorderedNamings, unorderedText } from './loop.mjs';
+import { FIELD_NAMES, activeSlices, carriesCode, gateOf, isSliceTag, needOneSlice, readLoop, unorderedNamings, unorderedText } from './loop.mjs';
 import { declaredChecks, lastMerge } from './metrics.mjs';
 import { modelLines, modelValue, spellingNote } from './models.mjs';
 import { slotRefusal } from './attachments.mjs';
@@ -1287,7 +1287,9 @@ export function cmdTag(root, rawIds, ops, by = undefined) {
   for (const op of ops) need(/^[+-]./.test(op), `tags are +name or -name, not "${op}"`);
   const results = issues.map((issue) => {
     const tags = new Set(issue.tags);
-    for (const op of ops) { if (op.startsWith('+')) tags.add(op.slice(1)); else tags.delete(op.slice(1)); }
+    // A slice tag is removed in any case: -slice:odin takes slice:Odin off too, as the two name one slice.
+    const sameTag = (t, name) => t === name || (isSliceTag(name) && t.toLowerCase() === name.toLowerCase());
+    for (const op of ops) { if (op.startsWith('+')) tags.add(op.slice(1)); else for (const t of [...tags]) if (sameTag(t, op.slice(1))) tags.delete(t); }
     return { issue, tags: [...tags].sort() };
   });
   return writeTags(root, rawIds, results, editor, (r) => ({ id: r.issue.id, tags: r.tags }));
