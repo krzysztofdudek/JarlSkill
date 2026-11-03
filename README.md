@@ -32,7 +32,7 @@ Then run `/reload-plugins` or restart Claude Code. Needs Node.js 22 or newer on 
 - **In the agent's context:** the skill's description always; the skill body and the references it links when the loop runs; the MCP tool list.
 
 <details>
-<summary>Other agents: GitHub Copilot CLI, Cursor, a plain skill folder</summary>
+<summary>Other agents: GitHub Copilot CLI, Cursor, Codex, a plain skill folder</summary>
 
 GitHub Copilot CLI:
 
@@ -50,6 +50,10 @@ ln -s "$(pwd)/JarlSkill" ~/.cursor/plugins/local/jarl
 
 Then **Developer: Reload Window**.
 
+Codex reads a skill folder from `~/.agents/skills/jarl/` (user level) or `.agents/skills/jarl/` (project level): copy the whole `skills/jarl/` directory there, `references/` included.
+
+Cursor reads one from `~/.cursor/skills/jarl/` (user level) or `.cursor/skills/jarl/` (project level): copy the whole `skills/jarl/` directory there, `references/` included.
+
 A plain skill folder: copy the whole [`skills/jarl/`](skills/jarl/) directory, `references/` included, to `~/.claude/skills/jarl/` (user level) or `.claude/skills/jarl/` (project level), or wherever your agent reads skills. To use the MCP tools with a copied folder in Claude Code: `claude mcp add jarl -- node /absolute/path/to/skills/jarl/scripts/jarl-mcp.mjs`. Without them the skill uses the command line.
 
 </details>
@@ -58,7 +62,9 @@ A plain skill folder: copy the whole [`skills/jarl/`](skills/jarl/) directory, `
 
 - Everything anybody sees becomes an issue before anything is touched, so there are no fixes on the side.
 - Issues that touch the same files run one after another; the rest run in parallel, each in its own worktree.
-- A worker's report counts as a claim until a fresh reviewer reads the diff and checks the test was red before the change and green after.
+- A worker's report counts as a claim until a fresh reviewer reads the diff and checks that the new test was red before the change and green after.
+- Once a branch is approved, the merger merges into the branch with a commit that names the issue and runs the check on the result.
+- In the record, nothing is closed without recorded evidence and an approve, from a fresh reviewer when the issue carries code. The tool refuses an approve by a self (the issue's worker, anyone who has held its lease, or a worker of another issue on the same branch), and `status` and `report` say who reviewed the done work: fresh, coordinator, self or unrecorded.
 - The agent asks you when a protection would weaken, the goal would change, or work reaches outside the session.
 - The next session runs `resume` and picks up from the files, not from memory.
 
@@ -85,6 +91,7 @@ To keep the loop in git instead, open it with `init "<goal>" --committed` (it tr
 - Without a `Check:` line the loop lands on the reviewers' testimony alone, and `status` and `report` say so at the top.
 - It records and displays; it never blocks code from landing.
 - By default the loop lives only in the checkout that opened it; another clone does not see it.
+- It finds a loop at the root of a checkout, or of the main checkout from a worktree that holds none, and never in a subdirectory; a loop kept in one is reached with `--root`, `JARL_ROOT` or a tool call's `root` field.
 
 ## Remove it
 
@@ -97,7 +104,7 @@ claude plugin marketplace remove jarl-marketplace
 
 On Copilot CLI, `copilot plugin uninstall jarl@jarl-marketplace`. On Cursor, delete the link in `~/.cursor/plugins/local/jarl`.
 
-A closed loop already removed `.jarl/`. For an open one, delete `.jarl/` and the worker branches you no longer want. A committed or permanent loop is removed by a commit that deletes `.jarl/`.
+A closed loop has removed `.jarl/` itself. For an open one, delete `.jarl/` and the worker branches you do not want to keep. A committed or permanent loop is removed by a commit that deletes `.jarl/`.
 
 ## Questions
 
@@ -115,7 +122,7 @@ Read more: [The skill](skills/jarl/SKILL.md) · [The record](skills/jarl/referen
 
 ## The Yggdrasil family
 
-**Jarl** is the loop. **[Yggdrasil](https://github.com/krzysztofdudek/Yggdrasil)** is the law. **[Grain](https://github.com/krzysztofdudek/Grain)** is the survey. **[Horde](https://github.com/krzysztofdudek/Horde)** plans the mission onto the law before anyone writes, lands every change through a gate no agent can argue with, and turns what the mission learned into law. It runs on Jarl's loop, with Grain in the architect's hands. Those four are the core, and they ship under one version number, Jarl on it from 6.1.0: one set of tools built and tested against each other. Yggdrasil, Grain and Jarl each work alone; Horde is the one built on the other three. Where a repository has a check, the check decides what lands, in a Horde mission and in a Jarl loop alike: a fresh reviewer can only stop a change, never make a failing check pass, and its word is recorded as testimony. A Jarl loop in a repository with no check lands on testimony alone, and says so. Law that stays inside one component is raised freely by the agent working it. Law or decisions that reach a whole type of code are shared vocabulary: the agent proposes them and they run as advice at once, and the client, the one person the whole system answers to, admits them in one batch when the work closes. Only the client lowers or vetoes law. The core's shared machine contracts are registered on [one page](https://krzysztofdudek.github.io/Yggdrasil/family-contracts).
+**Jarl** is the loop. **[Yggdrasil](https://github.com/krzysztofdudek/Yggdrasil)** is the law. **[Grain](https://github.com/krzysztofdudek/Grain)** is the survey. **[Horde](https://github.com/krzysztofdudek/Horde)** plans the mission onto the law before anyone writes, lands every change through a gate no agent can argue with, and turns what the mission learned into law. It runs on Jarl's loop, with Grain in the architect's hands. Those four are the core, and they ship under one version number: one set of tools built and tested against each other. Yggdrasil, Grain and Jarl each work alone; Horde is the one built on the other three. Where a repository has a check, the check decides what lands, in a Horde mission and in a Jarl loop alike: a fresh reviewer can only stop a change, never make a failing check pass, and its word is recorded as testimony. A Jarl loop in a repository with no check lands on testimony alone, and says so. Law that stays inside one component is raised freely by the agent working it. Law or decisions that reach a whole type of code are shared vocabulary: the agent proposes them and they run as advice at once, and the client, the one person the whole system answers to, admits them in one batch when the work closes. Only the client lowers or vetoes law. The core's shared machine contracts are registered on [one page](https://krzysztofdudek.github.io/Yggdrasil/family-contracts).
 
 Start at the step where it hurts.
 
