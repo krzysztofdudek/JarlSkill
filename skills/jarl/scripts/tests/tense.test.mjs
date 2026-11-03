@@ -201,7 +201,7 @@ function tenseTexts() {
   const scripts = [...readdirSync(SCRIPTS).filter((f) => f.endsWith('.mjs') && f !== 'runes.mjs'), ...readdirSync(join(SCRIPTS, 'lib')).filter((f) => f.endsWith('.mjs')).sort().map((f) => `lib/${f}`)];
   const source = scripts.flatMap((f) => sourceTokens(`skills/jarl/scripts/${f}`, read(`skills/jarl/scripts/${f}`)));
   // The frozen reader is the one file of the tests that names its version, and no rule reads it. The record contract's
-  // test is held unchanged by this release, so its comments are not read here either.
+  // test keeps two comments this rule would flag (on the frozen fingerprint and on a retracted row), so its comments are not read here.
   const tests = readdirSync(TESTS).filter((f) => f.endsWith('.mjs') && f !== 'old-jarl.mjs' && f !== 'record-contract.test.mjs');
   const testComments = tests.flatMap((f) => commentLines(`skills/jarl/scripts/tests/${f}`, readFileSync(join(TESTS, f), 'utf8')));
   const workflows = readdirSync(join(REPO, '.github/workflows')).filter((f) => f.endsWith('.yml')).sort().flatMap((f) => workflowLines(`.github/workflows/${f}`, read(`.github/workflows/${f}`)));

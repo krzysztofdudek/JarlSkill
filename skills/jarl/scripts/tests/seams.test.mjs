@@ -106,7 +106,9 @@ test('rule 4: a view never writes', () => {
 
 // ---- rule 5: no upward import -------------------------------------------------------------------------
 
-const UPWARD = /from '\.\/(record|jarl|jarl-mcp)\.mjs'|import\('\.\/(record|jarl|jarl-mcp)\.mjs'\)/;
+// What stands above the library, named from beside it (./) or from inside lib/ (../): the record, the command line,
+// the server and jarl-lib.mjs, the one surface over the modules.
+const UPWARD = /from\s*['"]\.\.?\/(record|jarl|jarl-mcp|jarl-lib)\.mjs['"]|import\(\s*['"]\.\.?\/(record|jarl|jarl-mcp|jarl-lib)\.mjs['"]\s*\)/;
 const importsUpward = (text, pattern = UPWARD) => text.split('\n').filter((l) => pattern.test(l));
 
 test('rule 5: the library imports nothing above it, and the record imports not the command line', () => {
@@ -114,6 +116,7 @@ test('rule 5: the library imports nothing above it, and the record imports not t
   assert.deepEqual(importsUpward(read('record.mjs'), /from '\.\/(jarl|jarl-mcp)\.mjs'/), []);
   assert.deepEqual(importsUpward(read('yg-edge.mjs'), UPWARD), []);
   assert.equal(importsUpward('import * as R from \'./record.mjs\';\nimport { x } from \'node:fs\';').length, 1);
+  assert.equal(importsUpward('import { a } from \'../record.mjs\';\nexport * from \'../jarl-lib.mjs\';\nconst j = await import(\'../jarl.mjs\');\nimport { b } from \'./base.mjs\';').length, 3, 'from inside lib/');
 });
 
 // ---- rule 6: ids --------------------------------------------------------------------------------------
