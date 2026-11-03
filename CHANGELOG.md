@@ -41,6 +41,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - When two copies of a shared loop each file an issue and are then merged, both issues can get the same number. Jarl now says so and names both files, refuses to change either one by that number, and shows each one at the status its own file says, so one issue's status is never copied into the other. Neither can be closed or approved under that number, because Jarl cannot tell whose test results and reviews are whose: you file the work again under a new number. It also says how to give one of them a new number by hand.
 - When a repository is kept by its path rather than by its name, Jarl explains why the first time it happens in a loop. It no longer repeats that explanation on every new issue that names the same repository.
 - Recording a merge now warns when the branch got new commits after its review was approved. The warning names the reviewed commit and the merged one, and gives the commands that show the difference and record a new review. The merge is still recorded.
+- `resume` and `decisions` show an answered question with its answer first, then the question.
 
 ## [6.2.0] - 2026-10-19
 

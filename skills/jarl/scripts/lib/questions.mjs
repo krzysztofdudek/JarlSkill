@@ -8,7 +8,7 @@ import { jarlDir, today } from './where.mjs';
 import { appendAtomic, readText, writeAtomic } from './files.mjs';
 import { askNumber, idKey, issueForms, needsRaisedFormat, newNumber, writtenId } from './ids.mjs';
 import { loadProfile, numberWidth } from './profile.mjs';
-import { ASKS_FILE, DECISIONS_FILE, STAMP_SRC, appendDecision, appendLog, appendLogLines, asksAt, asksPath, firstLine, loadDecisions, markDecision, parseStamp } from './journal.mjs';
+import { ASKS_FILE, DECISIONS_FILE, STAMP_SRC, answeredLines, appendDecision, appendLog, appendLogLines, asksAt, asksPath, firstLine, loadDecisions, markDecision, parseStamp } from './journal.mjs';
 import { OWNER, carryingOwnersWords, needNoOwnersWords, quoteShown, rulingAuthor } from './owner.mjs';
 import { findIssue, freeBlock, loadIssues, noteText, parseIssue, placeEvidence, setSection } from './issues.mjs';
 import { needFormat } from './repositories.mjs';
@@ -383,13 +383,16 @@ export function renderDecide(out) {
   const area = out.area ? ` · area ${out.area}${out.reach !== null ? ` (${out.reach} file${out.reach === 1 ? '' : 's'})` : ''}${out.rule ? ` · rule ${out.rule}` : ''} · put to ratification at close` : '';
   return `decided ${out.slug} · by ${out.by}${out.under ? ` · under ${out.under}` : ''}${out.supersedes ? ` · supersedes ${out.supersedes}` : ''}${out.settles.length ? ` · written into ${out.settles.join(', ')}` : ''}${area}`;
 }
-// decisions: one line per ruling, its first line cut at 160 characters.
+// decisions: one line per ruling, its first line cut at 160 characters; an answered question's ruling is its answer, then
+// its question, each cut at 160 characters.
 export function renderDecisions(rows) {
   if (!rows.length) return '(no rulings)';
   return rows.map((d) => {
     const area = d.area ? ` · area ${d.area}${d.rule ? ` · rule ${d.rule}` : ''}${d.ratified ? ' ratified' : d.rejected ? ' rejected' : ''}` : '';
     const quoted = d.quote ? ` · ${quoteShown(d.quote.split('\n')[0].slice(0, 160))}` : '';
-    return `${d.date} · ${d.slug}${d.by ? ` · by ${d.by}` : ''}${d.under ? ` · under ${d.under}` : ''}${area}${d.supersededBy ? ` · SUPERSEDED by ${d.supersededBy}` : ''}${d.supersedes ? ` · supersedes ${d.supersedes}` : ''} — ${(d.ruling.split('\n').find((l) => l.trim()) || '').slice(0, 160)}${quoted}`;
+    const answered = answeredLines(d);
+    const shown = answered ? `${answered.answer.slice(0, 160)} · ${answered.question.slice(0, 160)}` : (d.ruling.split('\n').find((l) => l.trim()) || '').slice(0, 160);
+    return `${d.date} · ${d.slug}${d.by ? ` · by ${d.by}` : ''}${d.under ? ` · under ${d.under}` : ''}${area}${d.supersededBy ? ` · SUPERSEDED by ${d.supersededBy}` : ''}${d.supersedes ? ` · supersedes ${d.supersedes}` : ''} — ${shown}${quoted}`;
   }).join('\n');
 }
 

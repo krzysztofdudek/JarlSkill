@@ -113,6 +113,17 @@ function decisionsAt(dir, skipped) {
 // The fields the tool writes into a ruling's closing block. Area, Reach and Rule come with the ruling (decide --area,
 // --reach, --rule); Superseded by, Ratified, Rejected, Type log and Rule log are added to an earlier ruling in place, later.
 const DECISION_META = /^\*\*(By|Supersedes|Superseded by|Settles|Area|Reach|Rule|Ratified|Rejected|Type log|Rule log):\*\*\s*(.*)$/;
+// The answer line of an answered question's ruling (ask-<n>): the answer itself, the option chosen, or the answer in its own words.
+const ANSWER_LINE = /^\*\*(?:Answer|Answer in own words|Chose):\*\*/;
+// The answer line and the question line of an answered question's ruling, as the ruling holds them. Resume and decisions
+// list such a ruling by its answer first and the question after; any other ruling is listed by its first line alone, so
+// this returns null for it.
+export function answeredLines(d) {
+  const lines = d.ruling.split('\n').map((l) => l.trim());
+  if (!/^ask-\d+$/.test(d.slug) || !lines[0].startsWith('**Question:**')) return null;
+  const answer = lines.find((l) => ANSWER_LINE.test(l));
+  return answer ? { answer, question: lines[0] } : null;
+}
 
 // A field line added at the end of one ruling's own section, by lines: the text is never read as a pattern.
 // Given `text` (the decisions as they will be written), it returns the marked text and writes nothing; without it, it marks
