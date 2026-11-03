@@ -20,6 +20,7 @@ import { declaredChecks, lastMerge } from './metrics.mjs';
 import { modelLines, modelValue, spellingNote } from './models.mjs';
 import { slotRefusal } from './attachments.mjs';
 import { resetCaches } from './tips.mjs';
+import { needOwnerLines, ownerLineRefusal } from './owner-lines.mjs';
 
 // ---- commands ----------------------------------------------------------------------------------
 
@@ -210,7 +211,11 @@ export function cmdNew(root, title, rawFlags) {
   const picked = flags.repo !== undefined ? repoList(root, flags.repo) : [];
   const source = sourceList(flags.source);
   const after = flags.after !== undefined ? afterList(root, null, flags.after) : [];
+  // A line only the owner ticks names its material and what to check; its first write raises the record format.
+  const acceptance = flags.acceptance !== undefined ? acceptanceText(flags.acceptance) : bodyText(fromTemplate.acceptance);
+  const ownerLined = needOwnerLines(acceptance);
   commitRepoNames(root, picked);
+  if (ownerLined) needFormat(root, 'owner-line');
   // The number is claimed by creating the file with a link, which never overwrites: when another
   // writer got there first (the lock makes that rare, not impossible — a hand-made file, a stale
   // lock broken early), the next number is tried instead of two issues sharing one.
@@ -233,7 +238,7 @@ export function cmdNew(root, title, rawFlags) {
       tags: splitList(flags.tags), files: pathList(flags.files), repo: picked.map((p) => p.value).join(', '), foundBy: flags['found-by'] || 'jarl',
       where: flags.where, what: bodyText(flags.what), why: bodyText(flags.why), source, after,
       // A template's Acceptance and Changelog are taken as written (a list already); a flag replaces them.
-      acceptance: flags.acceptance !== undefined ? acceptanceText(flags.acceptance) : bodyText(fromTemplate.acceptance),
+      acceptance,
       changelog: flags.changelog !== undefined ? changelogText(flags.changelog) : bodyText(fromTemplate.changelog),
     });
     // The file is claimed by a link, not through writeAtomic, so its text passes the record's one check here (a template too).
@@ -394,8 +399,10 @@ export function cmdBody(root, rawId, flags, dry = false) {
   needNoFieldTags(flags.what, 'the What text');
   needNoFieldTags(flags.why, 'the Why text');
   for (const [h, v] of sections) needNoFieldTags(v, `the ${h} text`);
+  const ownerLined = flags.acceptance !== undefined && needOwnerLines(acceptanceText(flags.acceptance));
   const named = parts.flatMap((k) => (k === 'section' ? [...sections.keys()] : [k]));
   if (dry) return { id: issue.id, set: named };
+  if (ownerLined) needFormat(root, 'owner-line');
   let text = readText(issue.file);
   const lines = [];
   const held = (key) => issue.sections[key] ?? '';
@@ -865,7 +872,8 @@ function setResources(root, rawIds, value, flags) {
 // see carriesCode). It gates only the record: nothing here stops code from landing.
 // A profile's done-gate changes the last two: requires-merged also asks for a recorded merge whose sha is in the base
 // (see mergeRefusal), and approve: none (allowed only with requires-merged) drops the approve — the gate that landed
-// the merge stands behind the issue instead of a reviewer. The evidence rows are asked for either way.
+// the merge stands behind the issue instead of a reviewer. The evidence rows are asked for either way, and so is the
+// owner's tick of every acceptance line only he ticks (see owner-lines.mjs).
 // doneRefusal reads the loop for one issue; a caller checking several issues reads it once and asks doneRefusalIn.
 export function doneRefusal(root, issue) { return doneRefusalIn(root, readLoop(jarlDir(root)), issue, undefined); }
 // `base`: the branch or ref the merge landed in, when the caller names one.
@@ -883,7 +891,7 @@ function doneRefusalIn(root, loop, issue, base) {
   const slots = slotRefusal(root, profile, issue, g);
   if (slots) return slots;
   if (profile.doneGate['requires-merged']) { const m = mergeRefusal(root, issue, base); if (m) return m; }
-  if (profile.doneGate.approve === 'none') return null;
+  if (profile.doneGate.approve === 'none') return ownerLineRefusal(root, loop, issue);
   const code = carriesCode(issue);
   if (g.selfApproved) return `${issue.id}'s live approve is by a worker of this issue or its branch — a self-approve does not count as review: jarl.mjs review ${issue.id} approve --by <${code ? 'fresh reviewer' : 'fresh reviewer|jarl'}> "<findings>"`;
   // A changes verdict with no approve after it is named as the cause, with its reviewer and day, so whoever is refused
@@ -894,7 +902,8 @@ function doneRefusalIn(root, loop, issue, base) {
   }
   if (!g.approved) return `${issue.id} has no approving review newer than its last round${g.tracked ? ' or reopen' : ''} — a fresh reviewer reads the issue and the diff first: jarl.mjs review ${issue.id} approve|changes --by <reviewer> "<findings>"`;
   if (code && !g.fresh) return `${issue.id} ${freshRuleText(issue, g.live)}: jarl.mjs review ${issue.id} approve|changes --by <fresh reviewer> "<findings>"`;
-  return null;
+  // Last, an acceptance line only the owner ticks: his look comes on top of the proof and the review, never instead.
+  return ownerLineRefusal(root, loop, issue);
 }
 
 // The done gate's requires-merged: the issue records a merge (merged --sha) and that commit is in the base — the branch
