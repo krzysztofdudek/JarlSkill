@@ -296,25 +296,48 @@ export function waitingOn(issue, byId, profile = DEFAULT_PROFILE) {
 
 // The header fields of the description, each written by field and by its own command.
 export const DESCRIPTION_FIELDS = ['Title', 'Priority', 'Tier', 'Kind', 'Found by', 'Tags', 'Files', 'Repo', 'After', 'Source', 'Where', 'Resources'];
-// Who changed the description when the call names nobody: the loop's director, as new records who found an issue.
-export const DEFAULT_EDITOR = 'jarl';
-// The name a description change records as its author: one name on one line, without the log's separator, which would
-// let the name be read as more than one segment of the line.
+// The name a description change records as its author, or null when the call names nobody: a write nobody named is
+// logged with no author at all, never under a name nobody gave. A name is one name on one line, without the log's
+// separator, which would let it be read as more than one segment of the line.
 export function editorOf(by) {
-  if (by === undefined) return DEFAULT_EDITOR;
+  if (by === undefined || by === null) return null;
   const name = fieldText(by);
   need(typeof by === 'string' && name, '--by needs a name: who changed the description');
   need(!/[\r\n]/.test(String(by).trim()), `--by is one name on one line (got ${JSON.stringify(String(by))})`);
   need(!name.includes('·'), `--by is one name — not a phrase with "·" in it (got "${name}")`);
   return name;
 }
-// A value as one segment of a description line: on one line, with no separator of the log in it; (none) when empty.
-const logValue = (v) => noSeparators(String(v ?? '').replace(/\r\n?/g, '\n').split('\n').map((l) => l.trim()).filter(Boolean).join(' ⏎ ')) || '(none)';
-// The line a change of a header field writes: `<id> field <Name> · <value> · was <old value> · by <who>`.
-function fieldLine(id, name, value, was, by) { return `${id} field ${name} · ${fieldText(value) === '' ? '(cleared)' : logValue(value)} · was ${logValue(was)} · by ${by}`; }
-// The line a change of the title or of a section writes: `<id> body · <part> · was "<old text>" · by <who>`. The new
-// text is the file's; the old one is kept here, since nothing else keeps it.
-function bodyLine(id, part, was, by) { return `${id} body · ${part} · was ${logValue(was) === '(none)' ? '(none)' : `"${logValue(was)}"`} · by ${by}`; }
+// The stand-in a description line writes for the log's separator inside a value, as ⏎ stands in for a line break: the
+// value stays readable, and no reader finds a separator in it.
+const SEPARATOR_MARK = '∙';
+// A value as one segment of a description line: on one line (each break as ⏎), each separator as its stand-in; (none) when empty.
+const logValue = (v) => String(v ?? '').replace(/\r\n?/g, '\n').split('\n').map((l) => l.trim()).filter(Boolean).join(' ⏎ ').replace(/·/g, SEPARATOR_MARK) || '(none)';
+const byPart = (by) => (by ? ` · by ${by}` : '');
+// The line a change of a header field writes, `<id> field <Name> · <value> · was <old value>[ · by <who>]`, or null when
+// the field already holds the value: a change to nothing writes no line.
+function fieldLine(id, name, value, was, by) {
+  if (fieldText(value) === fieldText(was)) return null;
+  return `${id} field ${name} · ${fieldText(value) === '' ? '(cleared)' : logValue(value)} · was ${logValue(was)}${byPart(by)}`;
+}
+// The most of a section's first line a body line keeps: the line stays one short line whatever the section holds.
+const EXCERPT_CHARS = 120;
+// The line a change of the title or of a section writes, `<id> body · <part> · was "<old text>"[ · by <who>]`, or null
+// when the part already holds that text. The title is kept whole; a section by its first line (at most EXCERPT_CHARS)
+// and its length, so a long section never floods the log.
+function bodyLine(id, part, was, now, by) {
+  const old = String(was ?? '').trim();
+  if (old === String(now ?? '').trim()) return null;
+  if (!old) return `${id} body · ${part} · was (none)${byPart(by)}`;
+  if (part === 'title') return `${id} body · ${part} · was "${logValue(old)}"${byPart(by)}`;
+  const first = old.split(/\r\n?|\n/)[0].trim();
+  const cut = first.length > EXCERPT_CHARS ? `${first.slice(0, EXCERPT_CHARS)}…` : first;
+  return `${id} body · ${part} · was "${logValue(cut)}" (${old.length} characters)${byPart(by)}`;
+}
+// The lines of a description change that are not null, appended in one write; nothing when every part was unchanged.
+function logChanges(root, lines) {
+  const kept = lines.filter(Boolean);
+  if (kept.length) appendLogLines(root, kept);
+}
 // What a header field of an issue holds as written, '' when the header has none.
 const heldField = (issue, name) => fieldText(issue.fields[name.toLowerCase()]);
 
@@ -341,14 +364,15 @@ export function cmdBody(root, rawId, flags, dry = false) {
   const lines = [];
   const held = (key) => issue.sections[key] ?? '';
   // The title is the heading's text; the file keeps its name, so the number and the slug a branch was cut from stay.
-  if (title) { text = text.replace(idRe('^(#\\s+{id}\\s+·\\s+).*$', 'm'), (_, head) => `${head}${title}`); lines.push(bodyLine(issue.id, 'title', issue.title, by)); }
+  const section = (heading, part, now) => { text = setSection(text, heading, now); lines.push(bodyLine(issue.id, part, held(heading.toLowerCase()), now, by)); };
+  if (title) { text = text.replace(idRe('^(#\\s+{id}\\s+·\\s+).*$', 'm'), (_, head) => `${head}${title}`); lines.push(bodyLine(issue.id, 'title', issue.title, title, by)); }
   if (flags.where !== undefined) { text = setField(text, 'Where', fieldText(flags.where)); lines.push(fieldLine(issue.id, 'Where', flags.where, heldField(issue, 'Where'), by)); }
-  if (flags.what !== undefined) { text = setSection(text, 'What', bodyText(flags.what)); lines.push(bodyLine(issue.id, 'what', held('what'), by)); }
-  if (flags.why !== undefined) { text = setSection(text, 'Why', bodyText(flags.why)); lines.push(bodyLine(issue.id, 'why', held('why'), by)); }
-  if (flags.acceptance !== undefined) { text = setSection(text, acceptanceHeading(issue, profile), acceptanceText(flags.acceptance)); lines.push(bodyLine(issue.id, 'acceptance', held('acceptance'), by)); }
-  for (const [h, v] of sections) { text = setSection(text, h, bodyText(v)); lines.push(bodyLine(issue.id, h, held(h.toLowerCase()), by)); }
-  if (flags.changelog !== undefined) { text = setSection(text, 'Changelog', changelogText(flags.changelog)); lines.push(bodyLine(issue.id, 'changelog', held('changelog'), by)); }
-  appendLogLines(root, lines);
+  if (flags.what !== undefined) section('What', 'what', bodyText(flags.what));
+  if (flags.why !== undefined) section('Why', 'why', bodyText(flags.why));
+  if (flags.acceptance !== undefined) { const heading = acceptanceHeading(issue, profile); const now = acceptanceText(flags.acceptance); text = setSection(text, heading, now); lines.push(bodyLine(issue.id, 'acceptance', held('acceptance'), now, by)); }
+  for (const [h, v] of sections) section(h, h, bodyText(v));
+  if (flags.changelog !== undefined) section('Changelog', 'changelog', changelogText(flags.changelog));
+  logChanges(root, lines);
   writeAtomic(issue.file, text);
   return { id: issue.id, set: named };
 }
@@ -360,7 +384,7 @@ export function cmdSource(root, rawId, list, dry = false, by = undefined) {
   const sources = sourceList(list);
   need(sources.length, 'source requires <report dir>#<finding id>[,...]');
   if (dry) return { id: issue.id, sources };
-  appendLog(root, fieldLine(issue.id, 'Source', sources.join(', '), heldField(issue, 'Source'), editor));
+  logChanges(root, [fieldLine(issue.id, 'Source', sources.join(', '), heldField(issue, 'Source'), editor)]);
   writeAtomic(issue.file, setField(readText(issue.file), 'Source', sources.join(', ')));
   return { id: issue.id, sources };
 }
@@ -373,14 +397,14 @@ export function cmdAfter(root, rawId, raw, { clear = false, dry = false, by } = 
     need(raw === undefined, 'after takes either <ids> or --clear, not both');
     need(issue.fields.after !== undefined, `${issue.id} has no After field to clear`);
     if (dry) return { id: issue.id, after: [], cleared: true };
-    appendLog(root, fieldLine(issue.id, 'After', '', heldField(issue, 'After'), editor));
+    logChanges(root, [fieldLine(issue.id, 'After', '', heldField(issue, 'After'), editor)]);
     writeAtomic(issue.file, removeFirstField(readText(issue.file), 'After'));
     return { id: issue.id, after: [], cleared: true };
   }
   need(raw !== undefined, 'after requires <ids> — the issues this one waits on (or --clear)');
   const ids = afterList(root, issue.id, raw);
   if (dry) return { id: issue.id, after: ids };
-  appendLog(root, fieldLine(issue.id, 'After', ids.join(', '), heldField(issue, 'After'), editor));
+  logChanges(root, [fieldLine(issue.id, 'After', ids.join(', '), heldField(issue, 'After'), editor)]);
   writeAtomic(issue.file, setField(readText(issue.file), 'After', ids.join(', ')));
   return { id: issue.id, after: ids };
 }
@@ -676,7 +700,7 @@ function setDeclaredField(root, rawIds, field, value, flags) {
   const v = fieldValue(profile, field, value);
   need(v || (!field.required && !field.builtin), `${field.name} cannot be empty${field.enum ? ` — one of: ${field.enum.join(', ')}` : ''}`);
   const issues = issuesFor(root, rawIds);
-  appendLogLines(root, issues.map((issue) => fieldLine(issue.id, field.name, v, heldField(issue, field.name), by)));
+  logChanges(root, issues.map((issue) => fieldLine(issue.id, field.name, v, heldField(issue, field.name), by)));
   for (const issue of issues) writeAtomic(issue.file, setField(readText(issue.file), field.name, v));
   return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, field: field.name, value: v })));
 }
@@ -690,7 +714,7 @@ function emptyOwnField(root, rawIds, name, flags) {
   }
   const by = editorOf(flags.by);
   const issues = issuesFor(root, rawIds);
-  appendLogLines(root, issues.map((issue) => fieldLine(issue.id, name, '', heldField(issue, name), by)));
+  logChanges(root, issues.map((issue) => fieldLine(issue.id, name, '', heldField(issue, name), by)));
   for (const issue of issues) writeAtomic(issue.file, key === 'source' ? removeFirstField(readText(issue.file), name) : setField(readText(issue.file), name, ''));
   return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, field: name, value: '' })));
 }
@@ -708,7 +732,7 @@ function setResources(root, rawIds, value, flags) {
   }
   const by = editorOf(flags.by);
   const issues = issuesFor(root, rawIds);
-  appendLogLines(root, issues.map((issue) => fieldLine(issue.id, 'Resources', names.join(', '), heldField(issue, 'Resources'), by)));
+  logChanges(root, issues.map((issue) => fieldLine(issue.id, 'Resources', names.join(', '), heldField(issue, 'Resources'), by)));
   for (const issue of issues) writeAtomic(issue.file, setField(readText(issue.file), 'Resources', names.join(', ')));
   return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, field: 'Resources', value: names.join(', ') })));
 }
@@ -1065,7 +1089,7 @@ function cmdTagList(root, rawIds, value, by) {
   return writeTags(root, rawIds, results, editor, (r) => ({ id: r.issue.id, tags: r.tags }));
 }
 function writeTags(root, rawIds, results, by, out) {
-  appendLogLines(root, results.map((r) => fieldLine(r.issue.id, 'Tags', r.tags.join(', '), heldField(r.issue, 'Tags'), by)));
+  logChanges(root, results.map((r) => fieldLine(r.issue.id, 'Tags', r.tags.join(', '), heldField(r.issue, 'Tags'), by)));
   for (const r of results) writeAtomic(r.issue.file, setField(readText(r.issue.file), 'Tags', r.tags.join(', ')));
   return oneOrMany(rawIds, results.map(out));
 }
@@ -1074,7 +1098,7 @@ export function cmdPrio(root, rawIds, prio, by = undefined) {
   need(PRIORITIES.includes(String(prio)), 'priority is 1, 2 or 3');
   const editor = editorOf(by);
   const issues = issuesFor(root, rawIds);
-  appendLogLines(root, issues.map((issue) => fieldLine(issue.id, 'Priority', String(prio), heldField(issue, 'Priority'), editor)));
+  logChanges(root, issues.map((issue) => fieldLine(issue.id, 'Priority', String(prio), heldField(issue, 'Priority'), editor)));
   for (const issue of issues) writeAtomic(issue.file, setField(readText(issue.file), 'Priority', String(prio)));
   return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, priority: String(prio) })));
 }
@@ -1085,7 +1109,7 @@ export function cmdFiles(root, rawId, list, dry = false, by = undefined) {
   const editor = editorOf(by);
   const files = pathList(list);
   if (!dry) {
-    appendLog(root, fieldLine(issue.id, 'Files', files.join(', '), heldField(issue, 'Files'), editor));
+    logChanges(root, [fieldLine(issue.id, 'Files', files.join(', '), heldField(issue, 'Files'), editor)]);
     writeAtomic(issue.file, setField(readText(issue.file), 'Files', files.join(', ')));
   }
   return { id: issue.id, files };
@@ -1098,7 +1122,7 @@ export function cmdRepo(root, rawId, path, { clear = false, dry = false, by } = 
   if (clear) {
     need(issue.fields.repo, `${issue.id} has no Repo field to clear`);
     if (dry) return { id: issue.id, repo: null, cleared: true };
-    appendLog(root, fieldLine(issue.id, 'Repo', '', issue.fields.repo, editor));
+    logChanges(root, [fieldLine(issue.id, 'Repo', '', issue.fields.repo, editor)]);
     const text = removeFirstField(readText(issue.file), 'Repo');
     writeAtomic(issue.file, text);
     return { id: issue.id, repo: null, cleared: true };
@@ -1111,7 +1135,7 @@ export function cmdRepo(root, rawId, path, { clear = false, dry = false, by } = 
   const was = fieldText(issue.fields.repo);
   const notes = picked.map((p) => p.note).filter(Boolean);
   if (was === repos.join(', ')) return { id: issue.id, repo: was, repos, unchanged: true, notes };
-  appendLog(root, fieldLine(issue.id, 'Repo', repos.join(', '), was, editor));
+  logChanges(root, [fieldLine(issue.id, 'Repo', repos.join(', '), was, editor)]);
   writeAtomic(issue.file, setField(readText(issue.file), 'Repo', repos.join(', ')));
   return { id: issue.id, repo: repos.join(', '), repos, notes };
 }

@@ -59,8 +59,8 @@ commands:
       [--section "<Heading>=<text>"]... [--by who]
                                                  the description commands, body to after below: every part of an issue's
                                                  description is changed by one of them, and each change writes one log
-                                                 line per issue and part with who changed it (--by, jarl unless given)
-                                                 and what the part held before; the history (evidence, verdicts,
+                                                 line per issue and part with what the part held before and, when --by
+                                                 names one, who changed it (a value it already holds writes none); the history (evidence, verdicts,
                                                  merges, rulings, answers) has no edit, only retract and decide
                                                  --supersedes, and the status moves only with set. body sets or
                                                  replaces the title (the file keeps its name), the Where field and the
@@ -517,14 +517,14 @@ export const COMMAND_ARGS = {
 export const COMMAND_SUMMARY = {
   init: 'Open a loop: create .jarl/ with the goal, out of git by default, committed or permanent when asked.',
   new: 'File an issue under the next free number, with its fields and its What, Why and Acceptance.',
-  body: 'Set or replace the title, the Where field and the What, Why, Acceptance, Changelog and profile sections of issues, logging who changed each part and what it held.',
+  body: 'Set or replace the title, the Where field and the What, Why, Acceptance, Changelog and profile sections of issues, logging what each part held and who changed it when named.',
   import: 'File one issue per finding of a findings file, skipping findings already filed.',
   sources: 'Per findings report: its findings, the issues filed from them and their status.',
   source: 'Set the Source field of issues filed by hand.',
   after: 'Set or clear the issues these wait on before next offers them.',
   evidence: 'Append a free-text note, or checkable rows of what ran and what it printed, to issues; or record a file as an attachment of a slot (--file, --slot).',
   retract: 'Take back the newest approve of an issue (what: review) or one evidence row by its number (what: the number), by an entry that says who and why.',
-  field: 'Write one header field of the description on issues (Title, Priority, Tier, Kind, Found by, Tags, Files, Repo, After, Source, Where, Resources or a profile field), or empty an optional one with clear, logging who changed it and what it held.',
+  field: 'Write one header field of the description on issues (Title, Priority, Tier, Kind, Found by, Tags, Files, Repo, After, Source, Where, Resources or a profile field), or empty an optional one with clear, logging what it held and who changed it when named.',
   list: 'List the issues, the unfinished ones by default, filtered by status, kind, tag, priority or a field.',
   show: 'Print one issue as the done gate sees it (its current window, rows numbered), or the whole file with --full.',
   set: 'Change the status of issues, with the reason logged.',

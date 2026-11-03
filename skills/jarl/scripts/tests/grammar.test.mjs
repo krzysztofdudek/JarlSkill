@@ -120,7 +120,7 @@ test('field writes Resources and the fields a profile declares; set takes status
   assert.match(refuses(root, 'set', '1', 'Note', 'x', '--worker', 'w'), /--worker goes with a status, not with the field Note/);
   assert.match(refuses(root, 'set', '1', 'Files', 'x'), /^status must be one of: open, in-progress, done, dropped, deferred\n$/);
   assert.match(refuses(root, 'set', '1', 'bogus', 'x'), /status must be one of: /);
-  assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /· 1 field Resources · gate, db · was \(none\) · by jarl\n.*· 2 field Resources · gate, db · was \(none\) · by jarl\n/);
+  assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /· 1 field Resources · gate, db · was \(none\)\n.*· 2 field Resources · gate, db · was \(none\)\n/);
 });
 
 test('set <ids> resources and set <ids> <profile field> write the field and say which verb to use', () => {

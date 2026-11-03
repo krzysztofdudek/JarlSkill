@@ -53,7 +53,34 @@ test('field writes every header field of the description, each with a log line n
     else assert.equal(lastLine(root), `1 field ${name} · ${name === 'Tags' ? 'a, b' : value} · was ${was} · by w-one`, name);
   }
   jarl(root, 'field', '1', 'Tier', 'light');
-  assert.equal(lastLine(root), '1 field Tier · light · was strong · by jarl', 'who changed it is jarl when the call names nobody');
+  assert.equal(lastLine(root), '1 field Tier · light · was strong', 'a write that names nobody carries no author');
+  const count = logLines(root).length;
+  jarl(root, 'field', '1', 'Tier', 'light', '--by', 'w-one');
+  jarl(root, 'prio', '1', '1');
+  jarl(root, 'tag', '1', '+a');
+  jarl(root, 'field', '1', 'Title', 'a better title');
+  jarl(root, 'body', '1', '--what', 'old what');
+  assert.equal(logLines(root).length, count, 'a value the part already holds writes no line');
+});
+
+test('the record library logs the writer its options name, and no author when they name none', () => {
+  const root = profiledLoop();
+  R.setField(root, '1', 'Area', 'cli', { by: 'horde-architect' });
+  assert.equal(lastLine(root), '1 field Area · cli · was core · by horde-architect');
+  R.setBody(root, '1', { why: 'library why', by: 'horde-architect' });
+  assert.equal(lastLine(root), '1 body · why · was "old why" (7 characters) · by horde-architect');
+  R.setAfter(root, '1', '2', { by: 'horde-architect' });
+  assert.equal(lastLine(root), '1 field After · 2 · was (none) · by horde-architect');
+  R.setAfter(root, '1', undefined, { clear: true });
+  assert.equal(lastLine(root), '1 field After · (cleared) · was 2');
+  R.setFiles(root, '1', 'a.mjs');
+  assert.equal(lastLine(root), '1 field Files · a.mjs · was (none)');
+  R.setTags(root, '1', ['+x']);
+  assert.equal(lastLine(root), '1 field Tags · x · was (none)');
+  R.setPriority(root, '1', '3');
+  assert.equal(lastLine(root), '1 field Priority · 3 · was 2');
+  R.setSource(root, '1', 'r/x#1');
+  assert.equal(lastLine(root), '1 field Source · r/x#1 · was (none)');
 });
 
 test('the dedicated commands of the description log the old value and who changed it, by the one rule field follows', () => {
@@ -75,22 +102,29 @@ test('the dedicated commands of the description log the old value and who change
   assert.equal(lastLine(root), '1 field Files · (cleared) · was b.mjs · by coord');
 });
 
-test('body logs each part it replaces with the text the part held, on one line, and who changed it', () => {
+test('body logs each part it replaces by the first line and the length of what the part held, and who changed it', () => {
   const root = profiledLoop();
   jarl(root, 'body', '1', '--what', 'new what', '--why', 'new\nwhy', '--acceptance', 'line a', '--acceptance', 'line b', '--changelog', 'Fixed: new entry', '--section', 'Design=new design', '--by', 'w-two');
   const lines = logLines(root).filter((l) => l.startsWith('1 body · '));
   assert.deepEqual(lines, [
-    '1 body · what · was "old what" · by w-two',
-    '1 body · why · was "old why" · by w-two',
-    '1 body · acceptance · was "old line" · by w-two',
-    '1 body · Design · was "old design" · by w-two',
-    '1 body · changelog · was "- Fixed: old entry" · by w-two',
+    '1 body · what · was "old what" (8 characters) · by w-two',
+    '1 body · why · was "old why" (7 characters) · by w-two',
+    '1 body · acceptance · was "old line" (8 characters) · by w-two',
+    '1 body · Design · was "old design" (10 characters) · by w-two',
+    '1 body · changelog · was "- Fixed: old entry" (18 characters) · by w-two',
   ]);
   jarl(root, 'body', '1', '--why', 'third why');
-  assert.equal(lastLine(root), '1 body · why · was "new ⏎ why" · by jarl', 'a text of several lines is kept on one line');
+  assert.equal(lastLine(root), '1 body · why · was "new" (7 characters)', 'a section is kept by its first line and its length');
+  const long = `${'x'.repeat(300)}\nsecond line`;
+  jarl(root, 'body', '1', '--what', long);
+  jarl(root, 'body', '1', '--what', 'short');
+  assert.equal(lastLine(root), `1 body · what · was "${'x'.repeat(120)}…" (${long.length} characters)`, 'the first line is cut, so the line stays short');
   jarl(root, 'body', '1', '--title', 'a · dotted title');
   jarl(root, 'body', '1', '--title', 'plain');
-  assert.equal(lastLine(root), '1 body · title · was "a - dotted title" · by jarl', 'the log\'s separator never reaches a value');
+  assert.equal(lastLine(root), '1 body · title · was "a ∙ dotted title"', 'the log\'s separator in a value is written as its stand-in');
+  jarl(root, 'field', '1', 'Found by', 'x · y');
+  jarl(root, 'field', '1', 'Found by', 'owner');
+  assert.equal(lastLine(root), '1 field Found by · owner · was x ∙ y');
   assert.equal(R.findIssue(root, '1').sections.why.trim(), 'third why');
 });
 
@@ -123,6 +157,7 @@ test('the help lists the description commands together, and the reference says t
   const record = skillText('references/record.md');
   assert.match(record, /## The description and the history/);
   assert.match(record, /Evidence, verdicts, merges, rulings and answers have no edit command at all/);
+  assert.match(record, /No reader takes a description line as state: `log` writes a hand-written line of the `field` shape as a note/);
 });
 
 test('a loop whose description was changed by every command is read by the pinned frozen reader as before', () => {
