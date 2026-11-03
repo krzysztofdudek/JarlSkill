@@ -17,10 +17,10 @@ export function roundsOf(root, id) {
   return (journalById(root).get(id) || []).filter((e) => e.type === 'round').length;
 }
 
-// The findings a round line records after its number and its takeover mark, in the order of the rounds.
+// The findings a round line records after its number and its standing, in the order of the rounds.
 const FINDINGS_MAX = 10000;
 function findingsOfRounds(entries) {
-  return entries.filter((e) => e.type === 'round').map((e) => /^\S+ round \d+ · (?:takeover · )?findings (\d+) · /.exec(e.text)).map((m) => (m ? Number(m[1]) : null));
+  return entries.filter((e) => e.type === 'round').map((e) => /^\S+ round \d+ · (?:(?:count|takeover) \d+ of \d+ · )?findings (\d+) · /.exec(e.text)).map((m) => (m ? Number(m[1]) : null));
 }
 
 // What to change for the fresh worker, from the tier the issue carries: a tier up while one exists, and from the top
@@ -41,10 +41,12 @@ function takeoverAdvice(tiers, tier, failed, n, takeovers) {
 
 // Where an issue stands in the count to its next takeover, before the round being recorded. The limit is read from the
 // goal each time, as it reads now: its `Takeover (<kind>): <rounds>` line for the kind, else its bare `Takeover: <rounds>`
-// line, else three. The count is of the red rounds since the last takeover (the last round marked `takeover`), or since the
-// first round. So a changed limit takes effect at the next round, whether goal --set or a hand edit changed it: a limit
+// line, else three. The count is of the red rounds after the last takeover, or from the first round. Each round line
+// cmdRound writes carries its standing (`count <k> of <limit>`, or `takeover <k> of <limit>` on the round that took over),
+// and a round line without one is counted at the fixed limit of three, every third such round after the last takeover
+// being one. So a changed limit takes effect at the next round, whether goal --set or a hand edit changed it: a limit
 // lowered to the count or below gives the takeover at the next round, and a raised one waits for the count to reach it.
-// Returns { limit, since (the rounds since the last takeover), takeovers (the rounds marked so far) }.
+// Returns { limit, since (the rounds after the last takeover), takeovers (the takeovers so far) }.
 function takeoverStanding(root, issue, entries) {
   const lines = goalLines(readGoal(jarlDir(root))).takeovers;
   const limit = lines.kinds[String(issue.kind).toLowerCase()] ?? lines.bare ?? ROUNDS_BEFORE_TAKEOVER;
@@ -52,7 +54,8 @@ function takeoverStanding(root, issue, entries) {
   let takeovers = 0;
   for (const e of entries) {
     if (e.type !== 'round') continue;
-    if (e.takeover) { takeovers += 1; since = 0; } else since += 1;
+    const tookOver = e.standing ? e.standing.takeover : since + 1 >= ROUNDS_BEFORE_TAKEOVER;
+    if (tookOver) { takeovers += 1; since = 0; } else since += 1;
   }
   return { limit, since, takeovers };
 }
@@ -69,15 +72,16 @@ export function cmdRound(root, rawId, what, dry = false, opts = {}) {
   if (dry) return { id: issue.id };
   const n = roundsOf(root, issue.id) + 1;
   // A takeover starts a new count: the next one comes after as many rounds of the new worker as the goal's limit says
-  // at each of those rounds. The round that takes over is marked in its line, and the count reads the marks.
+  // at each of those rounds. Each round line carries its standing, and the count reads it.
   const standing = takeoverStanding(root, issue, journalById(root).get(issue.id) || []);
   const { limit } = standing;
   const since = standing.since + 1;
   const takeover = since >= limit;
   const takeovers = standing.takeovers + (takeover ? 1 : 0);
-  // Text that opens like a findings count or a takeover mark is set behind an empty count, so it is never read as either.
-  const typed = found === undefined ? (/^(?:findings \d+|takeover) · /.test(what) ? 'findings - · ' : '') : `findings ${Number(found)} · `;
-  appendLog(root, `${issue.id} round ${n} · ${takeover ? 'takeover · ' : ''}${typed}${what}`);
+  // The standing always comes first, so the text cannot pose as one; text that opens like a findings count is set behind
+  // an empty count, so it is never read as one.
+  const typed = found === undefined ? (/^findings \d+ · /.test(what) ? 'findings - · ' : '') : `findings ${Number(found)} · `;
+  appendLog(root, `${issue.id} round ${n} · ${takeover ? 'takeover' : 'count'} ${since} of ${limit} · ${typed}${what}`);
   const entries = journalById(root).get(issue.id) || [];
   const findings = findingsOfRounds(entries).filter((x) => x !== null);
   const trend = findings.length ? `Findings per round: ${findings.join(', ')}.\n\n` : '';

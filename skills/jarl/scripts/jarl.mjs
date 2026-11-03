@@ -268,7 +268,7 @@ commands:
   goal --set "<machine line>"                    one machine line of the goal set, with a log line that says what it
                                                  was and what it is: "Check (<repository>): <command>" or a bare
                                                  "Check: <command>", "Model (<tier>): <models>" (a tier the profile
-                                                 declares), "Coordinators: <names>" or "Takeover (<kind>): <rounds>"; the rest of goal.md stays as written
+                                                 declares), "Coordinators: <names>", "Takeover (<kind>): <rounds>" or a bare "Takeover: <rounds>"; the rest of goal.md stays as written
   status [--stale-hours n] [--by repo|tag|kind|prio|<field>] [--tag <t>] [--as <who>]
                                                  --tag computes every part of status over the issues carrying that tag only;
                                                  --as <who> ends it with what next --as <who> prints

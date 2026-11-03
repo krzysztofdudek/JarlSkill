@@ -269,7 +269,7 @@ export function cmdGoalSet(root, text) {
   need(old !== null, 'the loop has no goal: open it with init "<goal>"');
   need(!oneBreak(text).includes('\n'), 'goal --set takes one machine line: a line break in its value is refused');
   const line = goalLineOf(text);
-  need(line && line.value && MACHINE_LABEL[line.key], 'goal --set takes one machine line: "Check (<repository>): <command>" or "Check: <command>", "Model (<tier>): <model>, …", "Coordinators: <name>, …" or "Takeover (<kind>): <rounds>"');
+  need(line && line.value && MACHINE_LABEL[line.key], 'goal --set takes one machine line: "Check (<repository>): <command>" or "Check: <command>", "Model (<tier>): <model>, …", "Coordinators: <name>, …", "Takeover (<kind>): <rounds>" or "Takeover: <rounds>"');
   let qualifier = line.qualifier;
   if (line.key === 'model') {
     need(qualifier !== null, 'a Model line names its tier: "Model (<tier>): <model>, …"');
