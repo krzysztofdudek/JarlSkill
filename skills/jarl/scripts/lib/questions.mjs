@@ -8,7 +8,7 @@ import { jarlDir, today } from './where.mjs';
 import { appendAtomic, readText, writeAtomic } from './files.mjs';
 import { askNumber, idKey, issueForms, needsRaisedFormat, newNumber, writtenId } from './ids.mjs';
 import { loadProfile, numberWidth } from './profile.mjs';
-import { ASKS_FILE, DECISIONS_FILE, STAMP_SRC, appendDecision, appendLog, appendLogLines, asksAt, asksPath, firstLine, loadDecisions, markDecision, parseStamp } from './journal.mjs';
+import { ASKS_FILE, DECISIONS_FILE, STAMP_SRC, answeredLines, appendDecision, appendLog, appendLogLines, asksAt, asksPath, firstLine, loadDecisions, markDecision, parseStamp } from './journal.mjs';
 import { OWNER, carryingOwnersWords, needNoOwnersWords, quoteShown, rulingAuthor } from './owner.mjs';
 import { findIssue, freeBlock, loadIssues, noteText, parseIssue, placeEvidence, setSection } from './issues.mjs';
 import { needFormat } from './repositories.mjs';
@@ -382,16 +382,6 @@ export function cmdDecisions(root, flags = {}) {
 export function renderDecide(out) {
   const area = out.area ? ` · area ${out.area}${out.reach !== null ? ` (${out.reach} file${out.reach === 1 ? '' : 's'})` : ''}${out.rule ? ` · rule ${out.rule}` : ''} · put to ratification at close` : '';
   return `decided ${out.slug} · by ${out.by}${out.under ? ` · under ${out.under}` : ''}${out.supersedes ? ` · supersedes ${out.supersedes}` : ''}${out.settles.length ? ` · written into ${out.settles.join(', ')}` : ''}${area}`;
-}
-// The answer line and the question line of an answered question's ruling (ask-<n>), as the ruling holds them. Resume and
-// decisions list such a ruling by its answer first and the question after; null for any other ruling, which is listed
-// by its first line alone.
-const ANSWER_LINE = /^\*\*(?:Answer|Answer in own words|Chose):\*\*/;
-export function answeredLines(d) {
-  const lines = d.ruling.split('\n').map((l) => l.trim());
-  if (!/^ask-\d+$/.test(d.slug) || !lines[0].startsWith('**Question:**')) return null;
-  const answer = lines.find((l) => ANSWER_LINE.test(l));
-  return answer ? { answer, question: lines[0] } : null;
 }
 // decisions: one line per ruling, its first line cut at 160 characters; an answered question's ruling is its answer, then
 // its question, each cut at 160 characters.

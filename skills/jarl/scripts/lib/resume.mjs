@@ -12,7 +12,8 @@ import { checkWaitingText, metricsOf, renderMetrics, testimonyNote } from './met
 import { ago } from './rounds.mjs';
 import { cmdTips, renderTips } from './tips.mjs';
 import { reasonWord, waitingOn } from './commands.mjs';
-import { answeredLines, handoffAge, handoffPath } from './questions.mjs';
+import { handoffAge, handoffPath } from './questions.mjs';
+import { answeredLines } from './journal.mjs';
 import { IN_FLIGHT_MARKS, closedGateFlags, modelText, nextRows, schedulerNote, statusOf, uncommittedLoopFiles } from './evidence.mjs';
 import { cmdQueue, renderQueue } from './queue.mjs';
 import { countsLine } from './import.mjs';
