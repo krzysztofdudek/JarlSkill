@@ -128,12 +128,17 @@ commands:
                                                  field that disagrees with the log (see status), where each repository
                                                  written as a name is on this machine and the worktree git has on the
                                                  lease's branch (--json carries them as where)
-  set <ids> <status> "<why>" [--branch <b>] [--worker <name>] [--model <m>] [--worktree <path>] [--header]
+  set <ids> <status> "<why>" [--branch <b>] [--worker <name>] [--model <m>] [--worktree <path>] [--handover] [--header]
                                                  (<ids> <status-in-the-log> --header rewrites the header fields the log
                                                  renders from the log, writes no log line and is never a move)
                                                  change status; writes the log line in the same move; in-progress
                                                  writes Since (and Branch, Worker, Model when given) — one lease
-                                                 for every id, so a package shares it; --model is the model the worker
+                                                 for every id, so a package shares it; a lease holds: under the lock
+                                                 it refuses an issue another worker or branch holds and a file or
+                                                 resource another lease holds (naming the holder and its slice: tag),
+                                                 and --handover hands a leased issue to a new worker or branch, with
+                                                 "<why>" as the reason the worker changed, logged with the move and
+                                                 ending the old lease (its Worktree field goes); --model is the model the worker
                                                  was raised on, as the platform names it (with @<effort> where it has that
                                                  lever), stored as given; --worktree is a check and records nothing: a path
                                                  that exists must be a worktree of a repository of the issue with the
@@ -444,7 +449,7 @@ export const COMMAND_FLAGS = {
   evidence: { ran: 'many', saw: 'many', file: 'value', slot: 'value' },
   retract: { by: 'value' }, field: { clear: 'bool', by: 'value' },
   list: { status: 'value', kind: 'value', tag: 'value', prio: 'value', grep: 'value', match: 'many', all: 'bool' },
-  show: { full: 'bool' }, set: { branch: 'value', worker: 'value', model: 'value', worktree: 'value', header: 'bool' }, tag: { by: 'value' }, prio: { by: 'value' }, files: { by: 'value' },
+  show: { full: 'bool' }, set: { branch: 'value', worker: 'value', model: 'value', worktree: 'value', handover: 'bool', header: 'bool' }, tag: { by: 'value' }, prio: { by: 'value' }, files: { by: 'value' },
   repo: { clear: 'bool', base: 'bool', by: 'value' },
   next: { limit: 'value', all: 'bool', as: 'value' },
   review: { by: 'value', model: 'value', relayed: 'bool' }, round: { findings: 'value' },
@@ -775,7 +780,7 @@ export function dispatch(root, commandName, rest, flags) {
           aliases.push(`note: ${rest[1]} is a field, not a status — write it with: field <ids> ${rest[1]} ${clearing ? '--clear' : '"<value>"'}`);
           out = cmdField(root, rest[0], rest[1], clearing ? undefined : rest[2], { ...flags, clear: clearing });
         } else out = setCommand(root, rest[0], rest[1], rest[2], flags);
-        text = each(out, (o) => (o.field ? renderField(o) : o.header ? `header of ${o.id} rewritten from the log: ${o.status}` : `${o.id} → ${o.status}${o.branch ? ` · ${o.branch}` : ''}${o.worker ? ` · ${o.worker}` : ''}`)); warn = [].concat(out).filter((o) => o.note).map((o) => `note: ${o.id} ${o.note}`); break;
+        text = each(out, (o) => (o.field ? renderField(o) : o.header ? `header of ${o.id} rewritten from the log: ${o.status}` : `${o.id} → ${o.status}${o.branch ? ` · ${o.branch}` : ''}${o.worker ? ` · ${o.worker}` : ''}${o.handover ? ' · handed over' : ''}`)); warn = [].concat(out).filter((o) => o.note).map((o) => `note: ${o.id} ${o.note}`); break;
       case 'field': out = cmdField(root, rest[0], rest[1], fieldListValue(rest[1], rest[2]), flags); text = each(out, renderField); break;
       // tag and prio run under the lock dispatch holds, with who changed them; record.setTags and setPriority are the same writes.
       case 'tag': out = cmdTag(root, rest[0], rest.slice(1), flags.by); text = each(out, (o) => `${o.id} tags: ${o.tags.join(', ') || '(none)'}`); break;

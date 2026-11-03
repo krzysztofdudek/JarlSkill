@@ -96,7 +96,7 @@ test('done: a reopen spends the approve and the evidence before it; a round spen
   jarl(root, 'new', 'y');
   jarl(root, 'set', '2', 'in-progress', 'go', '--worker', 'a');
   jarl(root, 'evidence', '2', '--ran', 't', '--saw', 'ok');
-  jarl(root, 'set', '2', 'in-progress', 'handed over', '--worker', 'b');
+  jarl(root, 'set', '2', 'in-progress', 'handed over', '--worker', 'b', '--handover');
   jarl(root, 'review', '2', 'approve', '--by', 'r', FINDINGS);
   assert.equal(jarl(root, 'set', '2', 'done', 'ok'), '2 → done');
 });

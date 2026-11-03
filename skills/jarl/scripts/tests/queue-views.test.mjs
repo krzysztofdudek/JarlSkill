@@ -34,13 +34,13 @@ test('queue: approved, ahead of the base and not merged — in the order of appr
   jarl(root, 'new', 'first', '--files', 'src/a.mjs');
   jarl(root, 'new', 'second', '--files', 'src/b.mjs');
   jarl(root, 'new', 'third', '--files', 'src/b.mjs');
-  jarl(root, 'new', 'not reviewed', '--files', 'src/a.mjs');
+  jarl(root, 'new', 'not reviewed', '--files', 'src/c.mjs');
   jarl(root, 'set', '1', 'in-progress', 'go', '--branch', 'jarl/1-first', '--worker', 'w1');
   jarl(root, 'set', '2', 'in-progress', 'go', '--branch', 'jarl/2-second', '--worker', 'w2');
   jarl(root, 'set', '4', 'in-progress', 'go', '--branch', 'jarl/4-not', '--worker', 'w4');
   branchWith(root, 'jarl/1-first', 'src/a.mjs');
   branchWith(root, 'jarl/2-second', 'src/b.mjs');
-  branchWith(root, 'jarl/4-not', 'src/a.mjs');
+  branchWith(root, 'jarl/4-not', 'src/c.mjs');
   // 2 approved before 1: the queue follows the approvals, not the numbers.
   jarl(root, 'review', '2', 'approve', '--by', 'rev', FINDINGS);
   jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
@@ -64,11 +64,14 @@ test('queue: approved, ahead of the base and not merged — in the order of appr
 test('queue: a round spends the approve, overlapping files start a new batch, a package lists who still waits for review', () => {
   const root = repo();
   jarl(root, 'new', 'a', '--files', 'src/a.mjs');
-  jarl(root, 'new', 'b', '--files', 'src/a.mjs');
+  jarl(root, 'new', 'b');
   jarl(root, 'new', 'c', '--files', 'src/b.mjs');
   jarl(root, 'new', 'd', '--files', 'src/b.mjs');
   jarl(root, 'set', '1', 'in-progress', 'go', '--branch', 'jarl/1-a', '--worker', 'w1');
   jarl(root, 'set', '2', 'in-progress', 'go', '--branch', 'jarl/2-b', '--worker', 'w2');
+  // Two leases that share a file are refused at the lease, yet a record can still hold them (a file declared after the
+  // lease, two clones merged): the queue keeps them out of one batch all the same.
+  jarl(root, 'files', '2', 'src/a.mjs');
   jarl(root, 'set', '3,4', 'in-progress', 'pkg', '--branch', 'jarl/3-pkg', '--worker', 'w3');
   branchWith(root, 'jarl/1-a', 'src/a.mjs');
   branchWith(root, 'jarl/2-b', 'src/a.mjs');

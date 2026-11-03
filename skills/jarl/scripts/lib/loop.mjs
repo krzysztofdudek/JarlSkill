@@ -140,7 +140,10 @@ function makeFileTheRecord(profile, issue, field, file) {
     return `jarl.mjs set ${id} ${file}${profile.is(file, 'needs-reason') ? ' "<why>"' : ''} (a move into ${file}${profile.is(file, 'closes-record') ? ', through its checks' : ''})`;
   }
   if (LEASE_KEYS.includes(field)) {
-    return profile.is(issue.status, 'holds-claim') ? `jarl.mjs set ${id} ${issue.status} --${field} ${file} (a new move line, which stamps Since again)` : '';
+    if (!profile.is(issue.status, 'holds-claim')) return '';
+    // Another worker or branch than the lease the log holds is a new holder: the lease is handed over, with its reason.
+    const handover = (field === 'worker' || field === 'branch') && Boolean(issue.fields[field]);
+    return handover ? `jarl.mjs set ${id} ${issue.status} "<why>" --${field} ${file} --handover (a handover, a new move line, which stamps Since again)` : `jarl.mjs set ${id} ${issue.status} --${field} ${file} (a new move line, which stamps Since again)`;
   }
   if (field === 'merged') {
     const merge = /^\S+(?: in .+)?$/.test(file) ? mergedOf({ fields: { merged: file } }) : null;

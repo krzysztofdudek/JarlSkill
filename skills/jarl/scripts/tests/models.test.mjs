@@ -65,7 +65,7 @@ test('a takeover with another worker and no model does not keep the old model on
   const root = loop();
   const { id } = R.newIssue(root, 'a thing', { acceptance: 'it works' });
   R.setStatus(root, id, 'in-progress', '', { branch: 'jarl/001-a', worker: 'w-one', model: MID });
-  R.setStatus(root, id, 'in-progress', '', { branch: 'jarl/001-a', worker: 'w-two' });
+  R.setStatus(root, id, 'in-progress', 'taken over', { branch: 'jarl/001-a', worker: 'w-two', handover: true });
   assert.doesNotMatch(issueText(root, id), /\*\*Model:\*\*/, 'the model belonged to w-one');
   assert.match(issueText(root, id), /^\*\*Worker:\*\* w-two$/m);
 });

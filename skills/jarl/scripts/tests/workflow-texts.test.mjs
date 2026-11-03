@@ -126,7 +126,7 @@ test('next computes its rows once, also when nothing is ready', () => {
   assert.equal(L.nextRowsBuilds() - before, 1);
   assert.deepEqual(some.out, []);
   assert.match(some.text, /nothing is ready to start; 1 open issue\(s\) are held or waiting/);
-  R.setStatus(root, '2', 'in-progress', '', { branch: 'jarl/2-x', worker: 'w' });
+  R.setStatus(root, '2', 'in-progress', '', { branch: 'jarl/1-x', worker: 'w' });
   before = L.nextRowsBuilds();
   assert.equal(dispatch(root, 'next', [], {}).text, '(nothing open)');
   assert.equal(L.nextRowsBuilds() - before, 1);

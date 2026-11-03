@@ -12,9 +12,9 @@ import { ISSUE_FILE_RE, branchNameProblem, cmpId, expandIds, idKey, idRe, isBulk
 import { DEFAULT_PROFILE, TOOL_FIELDS, loadProfile, numberWidth, profilePath, readProfileFile } from './profile.mjs';
 import { appendLog, appendLogLines, decisionsPath, goalPath, logPath } from './journal.mjs';
 import { JARL_GITIGNORE, JARL_GITIGNORE_COMMITTED, ensureLoopMerge, outOfGit } from './loop-git.mjs';
-import { journalById, mergeCheckText } from './log.mjs';
+import { HANDOVER_SEGMENT, journalById, mergeCheckText } from './log.mjs';
 import { FIELD_RE, RENDERED_FIELDS, acceptanceHeading, acceptanceLineCount, acceptanceText, bodyText, changelogText, evidenceParts, evidenceRows, evidenceTable, fieldValue, findIssue, issueNamed, loadIssues, mergedOf, namedPairs, needNoFieldTags, noteText, parseIssue, placeEvidence, removeFields, removeFirstField, renderIssue, setField, setSection, unattributedRefusal } from './issues.mjs';
-import { branchTip, commitRepoNames, defaultBase, isGitRepo, issueRepoPaths, issueRepos, mainCheckoutOf, needFormat, needRightCheckouts, repoFromInput, repoLabel, repoList, tipLines, whyNotDeletable, worktreeState, worktreesOf } from './repositories.mjs';
+import { branchTip, commitRepoNames, defaultBase, fileKeysOf, isGitRepo, issueRepoPaths, issueRepos, mainCheckoutOf, needFormat, needRightCheckouts, repoFromInput, repoLabel, repoList, tipLines, whyNotDeletable, worktreeState, worktreesOf } from './repositories.mjs';
 import { FIELD_NAMES, carriesCode, gateOf, readLoop, unorderedNamings, unorderedText } from './loop.mjs';
 import { declaredChecks, lastMerge } from './metrics.mjs';
 import { modelLines, modelValue } from './models.mjs';
@@ -575,7 +575,7 @@ function notWrittenByField(profile, key) {
 const LEASE_FLAGS = ['branch', 'worker', 'model', 'worktree'];
 function leaseFlagsGiven(flags) { return LEASE_FLAGS.filter((k) => flags[k] !== undefined); }
 function needNoLeaseFlags(flags, what) {
-  const lease = leaseFlagsGiven(flags);
+  const lease = [...leaseFlagsGiven(flags), ...(flags.handover !== undefined ? ['handover'] : [])];
   need(!lease.length, `--${lease[0]} goes with a status, not with ${what}`);
 }
 // set with the name taken as a status (record.setStatus), or as a field the profile declares (record.setField): the
@@ -607,6 +607,9 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   const holds = profile.is(status, 'holds-claim');
   const lease = leaseFlagsGiven(flags);
   need(!lease.length || holds, `--${lease[0]} goes with ${profile.with('holds-claim').join(' or ')} only — it records who works on the issue and where`);
+  need(flags.handover === undefined || typeof flags.handover === 'boolean', '--handover takes no value: the reason it is logged with is the move\'s own "<why>"');
+  const handover = flags.handover === true;
+  need(!handover || holds, `--handover goes with ${profile.with('holds-claim').join(' or ')} only — it hands a lease to a new worker or branch`);
   for (const k of lease) need(typeof flags[k] === 'string' && fieldText(flags[k]), `--${k} needs a value`);
   const model = flags.model !== undefined ? modelValue(flags.model) : undefined;
   // A name is one value: with the log's own separator in it, the lease line would carry a field the caller did not give.
@@ -616,6 +619,7 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   const issues = issuesFor(root, rawIds);
   need(!profile.is(status, 'needs-reason') || why, REASON_TEXT[status] || `${status} needs a reason: jarl.mjs set <id> ${status} "<why>"`);
   const nothing = issues.length > 1 ? ' — nothing was written' : '';
+  if (holds) needLeaseHolds(root, profile, issues, status, why, flags, handover, nothing);
   // base: the branch the composer landed the merge into, for the done gate's requires-merged (else the branch checked
   // out). A library call only: the command line has no --base, and dispatch never passes one through.
   need(flags.base === undefined || caller === 'record', 'base is named by a library call through record.mjs only — the command line checks against the branch checked out');
@@ -641,6 +645,8 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
       // The model belongs to the worker it was raised for: a new worker named without one does not inherit the last one's.
       if (model !== undefined) text = setField(text, 'Model', model);
       else if (flags.worker !== undefined) text = removeFields(text, ['Model']);
+      // A Worktree field belongs to the lease that wrote it: once the issue is handed over, its worktree is the old one.
+      if (handover) text = removeFields(text, ['Worktree']);
       text = setField(text, 'Since', since);
     } else {
       text = removeFields(text, LEASE_FIELDS);
@@ -662,8 +668,12 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   // A reason that opens with the name of a lease field is closed by a segment "(reason)", so no reader takes it for the field.
   // Every separator character of a lease's reason is replaced, with the space around it, so no run of separators and
   // spaces can leave a separator in it and the reason is one segment of the line.
+  // A handover is the segment "handover" right after the reason, which a handover always has: a reason alone is one
+  // segment, so a reason that says "handover" is never read as one. A reader that does not know the segment reads it as
+  // part of the reason and the lease fields after it as they are.
   const neutral = holds && why ? noSeparators(why) : why;
-  const reason = holds && neutral && /^(branch|model|worker|worktree) /.test(neutral) ? `${neutral} · (reason)` : neutral;
+  const marked = handover ? `${neutral} · ${HANDOVER_SEGMENT}` : neutral;
+  const reason = holds && neutral && /^(branch|model|worker|worktree) /.test(neutral) ? `${marked} · (reason)` : marked;
   // The line goes first: a write that stops between the two leaves the journal, the record, ahead of the files, which the
   // views report, and never a file ahead of the record.
   appendLogLines(root, issues.map((issue) => `${issue.id} → ${status}${reason ? ` · ${reason}` : ''}${leaseNote ? ` · ${leaseNote}` : ''}`), since);
@@ -672,7 +682,61 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   const leaseNoModel = caller === 'cli' && holds && model === undefined && modelLines(root).declared ? 'no --model on this lease — the loop declares its models, and a model that is not recorded can never be recovered' : null;
   const worktreeNote = caller === 'cli' && holds && flags.worktree !== undefined ? '--worktree was checked and is not recorded — the worktree of a lease is found through its branch' : null;
   const leaseNotes = [leaseNoModel, worktreeNote].filter(Boolean).join('; ');
-  return oneOrMany(rawIds, issues.map((issue, n) => ({ id: issue.id, status, ...(holds ? { since, ...(flags.branch !== undefined ? { branch: fieldText(flags.branch) } : {}), ...(flags.worker !== undefined ? { worker: fieldText(flags.worker) } : {}), ...(model !== undefined ? { model } : {}) } : {}), ...(profile.is(status, 'closes-record') ? doneNote(issue, root) : {}), ...(leaseNotes && n === 0 ? { note: leaseNotes } : {}) })));
+  return oneOrMany(rawIds, issues.map((issue, n) => ({ id: issue.id, status, ...(handover ? { handover: true } : {}), ...(holds ? { since, ...(flags.branch !== undefined ? { branch: fieldText(flags.branch) } : {}), ...(flags.worker !== undefined ? { worker: fieldText(flags.worker) } : {}), ...(model !== undefined ? { model } : {}) } : {}), ...(profile.is(status, 'closes-record') ? doneNote(issue, root) : {}), ...(leaseNotes && n === 0 ? { note: leaseNotes } : {}) })));
+}
+
+// A lease holds. Called under the write lock with the issues just read from the record, before anything is written:
+// - an issue a lease holds (a status that holds the claim, with a worker or a branch) is refused a lease that names
+//   another worker or branch, unless the call hands it over (--handover, with the move's reason as why); a handover
+//   needs a lease to replace and a holder that changes;
+// - an issue that takes a lease (a new one, or a handover) is refused a file or a resource that another issue's lease
+//   holds, unless it joins that lease: the same branch, and the same worker when both name one. Issues leased in one
+//   call share one lease.
+// A move that names no new holder, or restates the one the issue has, takes nothing new and is never refused here.
+function needLeaseHolds(root, profile, issues, status, why, flags, handover, nothing) {
+  const named = (k) => (flags[k] !== undefined ? fieldText(flags[k]) : null);
+  const leaseFlags = ['branch', 'model', 'worker'].filter((k) => named(k) !== null).map((k) => `--${k} ${named(k)}`).join(' ');
+  const taken = new Set(issues.map((i) => i.id));
+  const leased = (i) => profile.is(i.status, 'holds-claim') && Boolean(i.fields.worker || i.fields.branch);
+  // Another holder named by the call: a worker or a branch other than the one the lease already names.
+  const replaces = (i) => ['worker', 'branch'].some((k) => named(k) !== null && i.fields[k] && named(k) !== fieldText(i.fields[k]));
+  if (handover) need(why, `--handover says why the work changes hands: set ${issues.map((i) => i.id).join(',')} ${status} "<why the worker changed>" ${leaseFlags} --handover`.replace(/ {2,}/g, ' '));
+  for (const issue of issues) {
+    if (handover) {
+      need(leased(issue), `${issue.id} holds no lease to hand over — lease it without --handover: set ${issue.id} ${status} "<why>" ${leaseFlags}${nothing}`.replace(/ {2,}/g, ' '));
+      need(replaces(issue), `--handover names the lease ${issue.id} already has (${holderText(issue)}) — a handover names the new --worker or --branch${nothing}`);
+    } else {
+      need(!(leased(issue) && replaces(issue)), `${issue.id} is leased already (${holderText(issue)}) — a second lease would replace it in silence, and ${fieldText(issue.fields.worker) || 'its worker'} would go on working on a branch the record does not name; when the work changes hands, say why: jarl.mjs set ${issue.id} ${status} "<why the worker changed>" ${leaseFlags} --handover${nothing}`.replace(/ {2,}/g, ' '));
+    }
+  }
+  // What the other leases hold: each file key and each resource, with the issue whose lease holds it.
+  const others = loadIssues(root).filter((i) => !taken.has(i.id) && profile.is(i.status, 'holds-claim'));
+  // The first holder of each, in the order of the record, so a refusal names the same issue every time.
+  const files = new Map();
+  const resources = new Map();
+  for (const i of others) {
+    for (const k of fileKeysOf(root, i)) if (!files.has(k.key)) files.set(k.key, i);
+    for (const r of i.resources) if (!resources.has(r.toLowerCase())) resources.set(r.toLowerCase(), i);
+  }
+  for (const issue of issues) {
+    if (leased(issue) && !handover) continue;
+    const branch = named('branch') ?? fieldText(issue.fields.branch);
+    const worker = named('worker') ?? fieldText(issue.fields.worker);
+    const joins = (h) => (branch && h.fields.branch ? branch === fieldText(h.fields.branch) && (!worker || !h.fields.worker || worker === fieldText(h.fields.worker)) : !branch && !h.fields.branch && Boolean(worker) && worker === fieldText(h.fields.worker));
+    const held = [
+      ...fileKeysOf(root, issue).filter((k) => files.has(k.key)).map((k) => ({ what: `declares ${k.f}`, by: files.get(k.key) })),
+      ...issue.resources.filter((r) => resources.has(r.toLowerCase())).map((r) => ({ what: `uses the resource ${r}`, by: resources.get(r.toLowerCase()) })),
+    ].filter((h) => !joins(h.by));
+    if (!held.length) continue;
+    const { what, by } = held[0];
+    const join = by.fields.branch ? `, or put ${issue.id} in ${by.id}'s lease: set ${issue.id} ${status} "<why>" --branch ${fieldText(by.fields.branch)}${by.fields.worker ? ` --worker ${fieldText(by.fields.worker)}` : ''}` : '';
+    need(false, `${issue.id} ${what}, which ${by.id} holds in its lease (${holderText(by)}) — two leases on one file or resource collide; wait until ${by.id} leaves its lease (next offers ${issue.id} then)${join}${nothing}`);
+  }
+}
+// Who holds an issue's lease, as the refusals name it: its worker, branch and start, and its slice tag when it has one.
+function holderText(issue) {
+  const slice = issue.tags.find((t) => t.startsWith('slice:'));
+  return [issue.fields.worker && `worker ${fieldText(issue.fields.worker)}`, issue.fields.branch && `branch ${fieldText(issue.fields.branch)}`, issue.fields.since && `since ${fieldText(issue.fields.since)}`, slice].filter(Boolean).join(', ') || 'no worker or branch named';
 }
 
 // The check behind set --worktree: a path that exists is a worktree of one of the repositories the issue names (or the
@@ -701,7 +765,7 @@ function leaseValueProblem(flag, raw) {
 function rewriteHeader(root, rawIds, status, why, flags) {
   need(status !== undefined, 'set <ids> <status-in-the-log> --header: name the status the log holds for the issue (status shows it); --header rewrites the header from the log and moves nothing');
   need(loadProfile(root).statuses.includes(status), `${status} is not a status this loop's profile lists (${loadProfile(root).statuses.join(', ')}): --header rewrites a header from the log and moves nothing, so it names the status the log holds`);
-  need(why === undefined && flags.base === undefined && !leaseFlagsGiven(flags).length, '--header rewrites the header from the log and takes no reason, lease flag or base');
+  need(why === undefined && flags.base === undefined && !leaseFlagsGiven(flags).length && flags.handover === undefined, '--header rewrites the header from the log and takes no reason, lease flag, --handover or base');
   const issues = issuesFor(root, rawIds);
   for (const issue of issues) {
     need(!issue.byHeader, `${issue.id} is read from its header: the log files ${issue.id} ${issue.byHeader?.filings} times and cannot say which file its lines were written for, so no header is written from it`);

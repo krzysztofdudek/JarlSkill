@@ -544,7 +544,7 @@ test('a lease that holds a Worktree field keeps it and is read as it was written
   const file = join(w.hub, '.jarl', 'issues', readdirSync(join(w.hub, '.jarl', 'issues'))[0]);
   writeFileSync(file, w.issue(1).replace(/^(\*\*Since:\*\* .*)$/m, `$1\n**Worktree:** ${wt}`));
   assert.doesNotMatch(jarl(w.hub, 'show', '1'), /^worktree of /m, 'a stored worktree is the header\'s own line');
-  jarl(w.hub, 'set', '1', 'in-progress', 'again', '--worker', 'w2');
+  jarl(w.hub, 'set', '1', 'in-progress', 'again', '--model', 'm2');
   assert.match(w.issue(1), new RegExp(`^\\*\\*Worktree:\\*\\* ${escaped(wt)}$`, 'm'), 'a lease move that names no worktree keeps the field');
   renameSync(wt, join(parent, 'wt-away'));
   assert.match(jarl(w.hub, 'status'), new RegExp(`stale 1 · worktree gone: ${escaped(slash(wt))}`));

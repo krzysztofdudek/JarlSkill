@@ -48,7 +48,7 @@ export function parseIssue(text, file, skipped) {
   issue.files = (issue.fields.files || '').split(',').map((s) => s.trim()).filter(Boolean);
   // Both fields are optional: an issue without them reads as waiting on nothing and filed from no finding.
   issue.after = splitList(issue.fields.after).map(idKey);
-  // The exclusive resources it holds while its lease lasts (names, loop-wide, never files); only next reads them.
+  // The exclusive resources it holds while its lease lasts (names, loop-wide, never files); next and the lease read them.
   issue.resources = splitList(issue.fields.resources);
   issue.sources = splitList(issue.fields.source);
   return issue;

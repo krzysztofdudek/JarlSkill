@@ -12,9 +12,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - You can ask Jarl what is waiting on one person: the owner's open questions, or the next step of every task for whoever runs the loop, each with the command that takes it. The status and the resume of a loop can end with that list.
 - A ruling made by the jarl or a coordinator can now name the ruling it rests on, such as the owner's mandate. The name is shown with the ruling in the list of rulings and in the resume, and a name that is not a ruling in force is refused.
 - When the text of an open issue mentions another unfinished issue by number and nothing orders the two, filing or editing that text and checking the record now print a note naming both, so you can say which comes first. The note changes nothing and never stops anything.
+- A task can be handed to a new worker on purpose, with the reason it changed hands, and the record keeps that reason. The old worker's branch and folder are then no longer reported as a problem.
 
 ### Changed
 
+- A task another worker already holds, or one that would touch a file or resource another worker holds, is now refused when you start it, naming who holds it, instead of quietly replacing that worker. To give a held task to someone else, say it is a handover and why.
 - A loop is marked with a new format, format 3, the first time Jarl writes into it one of the new kinds of entries this release adds. Format 3 is the format of Jarl 6.3.0: from then on an earlier Jarl refuses that loop with a clear message, saying it needs a Jarl that knows format 3, instead of misreading it, so every copy of Jarl that works on the loop must be 6.3.0 or later. The status, the check of the record and the profile now show which format a loop is in.
 - Jarl no longer changes the format of a loop that another tool runs, such as a Horde mission, so that tool can always read it. New issues and questions there get three-digit numbers, and anything that would need a newer format, such as taking back a piece of proof or naming a repository by a bare name, is refused with a message that says why. Jarl shows what is switched off in such a loop.
 - Tools that build on Jarl's record library get a new version of its contract, which keeps everything the previous version offered.

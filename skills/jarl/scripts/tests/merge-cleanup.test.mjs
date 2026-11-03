@@ -135,11 +135,11 @@ test('a tip that is neither in the base nor in the recorded merge keeps both', (
 
 test('the base is kept, and so is a release branch', () => {
   const { repo, sha } = fixture({ worktree: false });
-  jarl(repo, 'set', '1', 'in-progress', 'again', '--branch', 'main', '--worker', 'w-one');
+  jarl(repo, 'set', '1', 'in-progress', 'again', '--branch', 'main', '--worker', 'w-one', '--handover');
   assert.match(jarl(repo, 'merged', '1', '--sha', sha), /\nkept main — it is the base or a release branch$/);
   assert.ok(branches(repo).includes('main'));
   git(repo, 'branch', 'release/1.0', 'jarl/1-x');
-  jarl(repo, 'set', '1', 'in-progress', 'again', '--branch', 'release/1.0', '--worker', 'w-one');
+  jarl(repo, 'set', '1', 'in-progress', 'again', '--branch', 'release/1.0', '--worker', 'w-one', '--handover');
   assert.match(jarl(repo, 'merged', '1', '--sha', sha), /\nkept release\/1\.0 — it is the base or a release branch$/);
   assert.ok(branches(repo).includes('release/1.0'));
 });

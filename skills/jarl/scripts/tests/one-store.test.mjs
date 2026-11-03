@@ -80,10 +80,10 @@ for (const [name, shape] of Object.entries(SHAPES)) {
     same('a filed issue');
     R.setStatus(root, id, work, undefined, { branch: 'jarl/1-a', worker: 'w1', model: 'm1' }); same('a lease with branch, worker and model');
     R.setStatus(root, id, work, undefined, {}); same('a bare lease');
-    R.setStatus(root, id, work, undefined, { worker: 'w2' }); same('a new worker without a model');
+    R.setStatus(root, id, work, 'handed over', { worker: 'w2', handover: true }); same('a new worker without a model');
     R.setStatus(root, id, work, undefined, { model: 'm3' }); same('a model alone');
-    R.setStatus(root, id, work, undefined, { branch: 'jarl/1-b' }); same('a branch alone');
-    R.setStatus(root, id, work, 'taking over', { worker: 'w3', model: 'm4', worktree: join(root, 'wt') }); same('a takeover with a reason and a worktree');
+    R.setStatus(root, id, work, 'handed over', { branch: 'jarl/1-b', handover: true }); same('a branch alone');
+    R.setStatus(root, id, work, 'taking over', { worker: 'w3', model: 'm4', worktree: join(root, 'wt'), handover: true }); same('a takeover with a reason and a worktree');
     R.setStatus(root, id, rest, undefined, {}); same('released: the branch stays, the rest goes');
     R.setStatus(root, id, work, undefined, { worker: 'w4' }); same('leased again on the branch that stayed');
     R.recordMerged(root, id, { sha: 'abc1234' }); same('a merge with the default CI state');
@@ -238,8 +238,8 @@ test('a hand edit of Status is reported by status, resume and show as one line t
 
 const CASES = [
   { field: 'Status', edit: (t) => t.replace('**Status:** in-progress', '**Status:** open'), make: ['set', '1', 'open'] },
-  { field: 'Branch', edit: (t) => t.replace('**Branch:** jarl/1-a', '**Branch:** jarl/1-b'), make: ['set', '1', 'in-progress', '--branch', 'jarl/1-b'] },
-  { field: 'Worker', edit: (t) => t.replace('**Worker:** w1', '**Worker:** w9'), make: ['set', '1', 'in-progress', '--worker', 'w9'] },
+  { field: 'Branch', edit: (t) => t.replace('**Branch:** jarl/1-a', '**Branch:** jarl/1-b'), make: ['set', '1', 'in-progress', '"<why>"', '--branch', 'jarl/1-b', '--handover'] },
+  { field: 'Worker', edit: (t) => t.replace('**Worker:** w1', '**Worker:** w9'), make: ['set', '1', 'in-progress', '"<why>"', '--worker', 'w9', '--handover'] },
   { field: 'Model', edit: (t) => t.replace('**Model:** m1', '**Model:** m2'), make: ['set', '1', 'in-progress', '--model', 'm2'] },
   { field: 'Since', edit: (t) => t.replace(/^\*\*Since:\*\* .*$/m, '**Since:** 2026-01-01 00:00'), make: null },
   { field: 'Merged', edit: (t) => t.replace('**Merged:** abc1234', '**Merged:** deadbeef'), make: ['merged', '1', '--sha', 'deadbeef', '--ci', 'green', '--keep'] },

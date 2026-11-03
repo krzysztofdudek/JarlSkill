@@ -7,7 +7,7 @@ import { canonical, portablePath } from './where.mjs';
 import { branchIssueId, idKey, idsNamed } from './ids.mjs';
 import { DEFAULT_PROFILE, loadProfile } from './profile.mjs';
 import { appendLog, oneLine, parseStamp } from './journal.mjs';
-import { journalById } from './log.mjs';
+import { journalById, leaseOfMove } from './log.mjs';
 import { findIssue, loadIssues, mergedOf } from './issues.mjs';
 import { defaultBase, fileAt, isGitRepo, issuePlaces, issueRepoPaths, issueRepos, refsIn, repoFromInput, repoLabel, repoOf, reposNamed, worktreeState, worktreesOf } from './repositories.mjs';
 
@@ -224,7 +224,7 @@ export function renderBranches(rows, root) {
   return rows.map((b) => [
     b.repo !== repoLabel(root) ? `[${b.repo}] ` : '', b.branch, b.issues.length ? ` → ${b.issues.join(', ')}` : '', '  ',
     b.missing ? 'GONE' : `+${b.ahead ?? '?'}  ${renderBranchWorktree(b)}`,
-    b.unnamed ? '  UNNAMED — rename to jarl/NNN-slug before merging' : '', b.unticketed ? '  NO ISSUE' : '', DONE_BRANCH[b.done] || '', b.stale.length ? `  STALE: ${b.stale.join('; ')}` : '',
+    b.unnamed ? '  UNNAMED — rename to jarl/NNN-slug before merging' : '', b.unticketed ? '  NO ISSUE' : '', b.handedOver ? `  HANDED OVER: ${b.handedOver.map((id, n) => `${id} to ${b.handedTo[n]}`).join(', ')}` : '', DONE_BRANCH[b.done] || '', b.stale.length ? `  STALE: ${b.stale.join('; ')}` : '',
   ].join('')).join('\n');
 }
 
@@ -323,6 +323,28 @@ function doneMark(repo, base, name, on, dirty, profile = DEFAULT_PROFILE, unknow
   return dirty ? 'dirty' : unknown ? 'unknown' : 'delete';
 }
 
+// The branches an issue's leases left by a handover: the branch the lease named when a later move handed it over to
+// another branch. Such a branch was left on purpose, so the views name it as handed over, never as a branch no
+// issue holds.
+function handedOverBranches(profile, events) {
+  const out = new Map();
+  let current = null;
+  for (const e of events) {
+    if (e.type !== 'move' || !profile.is(e.to, 'holds-claim')) continue;
+    const branch = leaseOfMove(e.text, e.id, e.to).branch || null;
+    if (e.handover && current && branch && branch !== current) out.set(current, branch);
+    if (branch) current = branch;
+  }
+  return out;
+}
+// The issues of one repository whose lease left `name` by a handover, each with the branch it went to.
+function handedOverFrom(root, issues, realRepo, name, byId) {
+  const profile = loadProfile(root);
+  return issues.filter((i) => i.fields.branch !== name && issueRepos(root, i).includes(realRepo))
+    .map((i) => ({ id: i.id, to: handedOverBranches(profile, byId.get(i.id) || []).get(name) }))
+    .filter((h) => h.to);
+}
+
 function branchesIn(root, repo, flags, issues, hours = STALE_HOURS) {
   const base = flags.base || defaultBase(repo);
   const real = canonical(repo);
@@ -334,6 +356,9 @@ function branchesIn(root, repo, flags, issues, hours = STALE_HOURS) {
   const exists = (b) => git(repo, ['rev-parse', '--verify', '--quiet', `refs/heads/${b}`]) !== null;
   const recorded = leased.filter((b) => !named.includes(b) && b !== base && exists(b));
   const extra = worktrees.filter((w) => w.branch !== base && !named.includes(w.branch) && !recorded.includes(w.branch) && w.path !== mainPath).map((w) => w.branch);
+  // The journal is read once, and only when a branch no issue holds asks whether a handover left it.
+  let byId = null;
+  const journal = () => (byId ??= journalById(root));
   const rows = [...named, ...recorded, ...extra].map((name) => {
     const mb = git(repo, ['merge-base', base, name]);
     const ahead = mb ? Number(git(repo, ['rev-list', '--count', `${mb}..${name}`]) || 0) : null;
@@ -349,9 +374,10 @@ function branchesIn(root, repo, flags, issues, hours = STALE_HOURS) {
     // Done → delete: every issue it carries is done or dropped (at least one done), and its work is in the
     // base — the branch is an ancestor of it, or every done issue records its merge.
     const done = doneMark(repo, base, name, on, dirty, loadProfile(root), unknown);
+    const handed = on.length === 0 ? handedOverFrom(root, issues, real, name, journal()) : [];
     // A branch that carries commits, no issue holds (no Branch, no lease) and that is neither the base nor a release branch.
-    const unticketed = on.length === 0 && (ahead ?? 0) > 0 && name !== base && !/^release\//.test(name);
-    return { repo: repoLabel(repo), branch: name, ahead, unticketed, worktree: ws.path, worktreeState: ws.state, ...(ws.reason ? { worktreeReason: ws.reason } : {}), ...(wtGone ? { worktreeGone: true } : {}), dirty, unnamed: !name.startsWith('jarl/') && !leased.includes(name), issues: on.map((i) => i.id), stale, done, deletable: done === 'delete' };
+    const unticketed = on.length === 0 && !handed.length && (ahead ?? 0) > 0 && name !== base && !/^release\//.test(name);
+    return { repo: repoLabel(repo), branch: name, ahead, unticketed, ...(handed.length ? { handedOver: handed.map((h) => h.id), handedTo: handed.map((h) => h.to) } : {}), worktree: ws.path, worktreeState: ws.state, ...(ws.reason ? { worktreeReason: ws.reason } : {}), ...(wtGone ? { worktreeGone: true } : {}), dirty, unnamed: !name.startsWith('jarl/') && !leased.includes(name), issues: on.map((i) => i.id), stale, done, deletable: done === 'delete' };
   });
   // An in-progress issue whose recorded branch is not in the repository any more: a lease with nothing under it.
   const gone = leased.filter((b) => !exists(b)).map((name) => {
