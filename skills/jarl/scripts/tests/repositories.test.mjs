@@ -133,6 +133,18 @@ test('--repo takes a name, a checkout, a worktree of it or a file inside it, all
   assert.match(refuses(w.hub, 'repo', '1', join(tmp('jarl-none-'), 'nothing')), /not a git repository/);
 });
 
+test('a repository stored as a path is noted when the loop first stores it, and not again on the next filing', () => {
+  const w = world();
+  repoAt(join(w.hub, 'inner'));
+  const first = neu(w.hub, 'a', '--repo', './inner');
+  assert.equal(first.status, 0, first.stderr);
+  assert.match(first.stderr, /note: .* is stored as the path \.\/inner/);
+  const second = neu(w.hub, 'b', '--repo', './inner');
+  assert.equal(second.status, 0, second.stderr);
+  assert.doesNotMatch(second.stderr, /stored as the path/, 'the same repository is noted once per loop');
+  assert.match(w.issue(2), /^\*\*Repo:\*\* \.\/inner$/m);
+});
+
 test('two repositories that share a directory name stay apart: the second keeps its path', () => {
   const w = world('tool');
   const away = repoAt(join(tmp('jarl-away-'), 'tool'), { commits: [['other.txt', 'other\n']] });
