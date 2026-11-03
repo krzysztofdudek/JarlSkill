@@ -34,7 +34,7 @@ The library and the command line write the same files and log lines for every op
 | `archive` | moves the loop under an archive directory and leaves the open issues named | no function | ending a loop belongs to whoever runs it, and a profile may hand that to a composer |
 | `mode` | makes the loop permanent, a mode of git | no function | the mode is written at init, and a change of it is a decision of the person who commits the record |
 | `import` | files issues from a Markdown source | no function; newIssue files one issue | filing from a source is the composer's choice |
-| `next` | lists the open issues that can start now | no function; statusData carries the counts | ordering work is a composer's planner; Jarl offers what can run now |
+| `next` | lists the open issues that can start now, and with `--as` what is on one holder (which `status --as` and `resume --as` end with) | no function; statusData carries the counts, and neither statusData nor resumeData takes `as` | ordering work is a composer's planner; Jarl offers what can run now, and says who moves next |
 | `queue` | lists the merge queue | no function | a listing for a person; a composer decides what lands |
 | `report` | writes the loop's text report with its metrics | no function | a summary for a person; a composer reports from its own record |
 | `scope` | reads a worker branch's diff against the files its issues declare | no function | it reads git; a composer's gate decides what lands |

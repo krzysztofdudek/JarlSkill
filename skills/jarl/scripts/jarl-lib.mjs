@@ -30,6 +30,7 @@ export { PERMANENT_MARKER, cmdInit, hasLiveLoop, cmdArchive, claimFile, TEMPLATE
 export { loadAsks, cmdAsk, RATIFY_WORDS, REJECT_WORDS, AMBIGUOUS_WORDS, cmdAnswer, cmdAnswerMany, recordTypeLog, recordRuleLog, cmdDecide, questionFor, issuesNaming, AREA_RE, RULE_RE, RATIFY_BATCH, ratificationBatch, cmdDecisions, renderDecide, renderDecisions, handoffAge } from './lib/questions.mjs';
 export { cmdEvidence, issueView, schedulerNote, NEXT_GROUPS, cmdNext, modelsTableBuilds, nextRowsBuilds, renderNext, nextRows, uncommittedLoopFiles, cmdStatus, STATUS_BY, IN_FLIGHT_MARKS, inFlightMark, inFlightRows, cmdMode, cmdClose, closedGateFlags } from './lib/evidence.mjs';
 export { cmdQueue, renderQueue } from './lib/queue.mjs';
+export { OWNER_HOLDER, JARL_HOLDER, BALL_SHOWN, holderOf, ROW_SOURCES, ballRows, cmdNextAs, renderNextAs, askerSection } from './lib/ball.mjs';
 export { cmdReview } from './lib/review.mjs';
 export { cmdChangelog } from './lib/changelog.mjs';
 export { findingsOf, reportDirOf, cmdImport, cmdSources, renderStatus, renderImport, renderSources, renderList } from './lib/import.mjs';

@@ -17,7 +17,7 @@ const LAYERS = [
     'the vocabulary, a process, a path, a whole file, an id and the one test of the owner\'s words every write passes: nothing else of the record'],
   ['record', ['profile.mjs', 'journal.mjs', 'loop-git.mjs', 'lock.mjs', 'log.mjs', 'issues.mjs', 'repositories.mjs', 'loop.mjs', 'metrics.mjs', 'models.mjs', 'rounds.mjs', 'attachments.mjs', 'tips.mjs'],
     'the record read and written: the profile, the journal, the lock, the log, an issue, the repositories, the loaded loop and what is derived from it'],
-  ['commands', ['commands.mjs', 'questions.mjs', 'evidence.mjs', 'queue.mjs', 'review.mjs', 'changelog.mjs', 'import.mjs', 'resume.mjs', 'verify.mjs', 'merge-driver.mjs'],
+  ['commands', ['commands.mjs', 'questions.mjs', 'evidence.mjs', 'queue.mjs', 'ball.mjs', 'review.mjs', 'changelog.mjs', 'import.mjs', 'resume.mjs', 'verify.mjs', 'merge-driver.mjs'],
     'the commands and the views, each standing on the record and on the commands under it'],
 ];
 
