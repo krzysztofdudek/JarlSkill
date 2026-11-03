@@ -257,12 +257,29 @@ test('new without --tier says on the command line which tier it used and the cri
   assert.match(w, /tier standard/);
   assert.match(w, /light: a check or test decides/);
   assert.match(w, /strong: unknown cause/);
-  assert.equal(w.split('\n').length, 1, 'one line');
-  assert.equal(notes(root, 'new', ['another thing'], { tier: 'strong' }), '');
+  assert.equal(w.split('\n').filter((l) => l.includes('no --tier given')).length, 1, 'the tier note is one line');
+  assert.equal(notes(root, 'new', ['another thing'], { tier: 'strong', kind: 'bug', prio: '2' }), '');
   assert.equal(R.newIssue(root, 'third', {}).note, undefined);
   const real = cli(root, 'new', 'fourth thing');
   assert.equal(real.status, 0);
   assert.match(real.stderr, /tier standard/);
+});
+
+test('new without --kind or --prio says on the command line that each was defaulted and names the flag; with both, neither', () => {
+  const root = loop();
+  const w = notes(root, 'new', ['a film'], { tier: 'standard' });
+  assert.match(w, /no --kind given, so kind bug was recorded/);
+  assert.match(w, /name it with --kind/);
+  assert.match(w, /no --prio given, so priority 2 was recorded/);
+  assert.match(w, /name it with --prio/);
+  assert.equal(notes(root, 'new', ['another film'], { tier: 'standard', kind: 'bug', prio: '1' }), '');
+  const real = cli(root, 'new', 'fourth film', '--tier', 'standard');
+  assert.equal(real.status, 0);
+  assert.match(real.stderr, /--kind/);
+  assert.match(real.stderr, /--prio/);
+  const named = cli(root, 'new', 'fifth film', '--tier', 'standard', '--kind', 'bug', '--prio', '1');
+  assert.equal(named.status, 0);
+  assert.doesNotMatch(named.stderr, /--kind|--prio/);
 });
 
 test('the third round prints a takeover block that says to raise the fresh worker one tier up or on another model than the one that failed', () => {
