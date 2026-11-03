@@ -286,8 +286,63 @@ export function waitingOn(issue, byId, profile = DEFAULT_PROFILE) {
   return issue.after.filter((id) => byId.has(id) && !profile.is(byId.get(id).status, 'settles-dependents'));
 }
 
-// body <id> — the Where field and the What, Why and Acceptance sections, set or replaced. Evidence is never
-// written here: it is the record of what was done, appended by evidence, never replaced.
+// ---- the description of an issue -----------------------------------------------------------------
+//
+// An issue is its description and its history. Every part of the description (the title, the header fields below, the
+// fields a profile declares, the What, Why, Acceptance and Changelog sections and the sections a profile declares) is
+// changed by a command, and every change writes one log line that names the part, who changed it and what it held
+// before. The history (evidence rows and notes, verdicts, merges, rulings, answers) has no edit at all: a row or an
+// approve is taken back by retract, a ruling replaced by decide --supersedes, and the status moves only through set.
+
+// The header fields of the description, each written by field and by its own command.
+export const DESCRIPTION_FIELDS = ['Title', 'Priority', 'Tier', 'Kind', 'Found by', 'Tags', 'Files', 'Repo', 'After', 'Source', 'Where', 'Resources'];
+// The name a description change records as its author, or null when the call names nobody: a write nobody named is
+// logged with no author at all, never under a name nobody gave. A name is one name on one line, without the log's
+// separator, which would let it be read as more than one segment of the line.
+export function editorOf(by) {
+  if (by === undefined || by === null) return null;
+  const name = fieldText(by);
+  need(typeof by === 'string' && name, '--by needs a name: who changed the description');
+  need(!/[\r\n]/.test(String(by).trim()), `--by is one name on one line (got ${JSON.stringify(String(by))})`);
+  need(!name.includes('·'), `--by is one name — not a phrase with "·" in it (got "${name}")`);
+  return name;
+}
+// The stand-in a description line writes for the log's separator inside a value, as ⏎ stands in for a line break: the
+// value stays readable, and no reader finds a separator in it.
+const SEPARATOR_MARK = '∙';
+// A value as one segment of a description line: on one line (each break as ⏎), each separator as its stand-in; (none) when empty.
+const logValue = (v) => String(v ?? '').replace(/\r\n?/g, '\n').split('\n').map((l) => l.trim()).filter(Boolean).join(' ⏎ ').replace(/·/g, SEPARATOR_MARK) || '(none)';
+const byPart = (by) => (by ? ` · by ${by}` : '');
+// The line a change of a header field writes, `<id> field <Name> · <value> · was <old value>[ · by <who>]`, or null when
+// the field already holds the value: a change to nothing writes no line.
+function fieldLine(id, name, value, was, by) {
+  if (fieldText(value) === fieldText(was)) return null;
+  return `${id} field ${name} · ${fieldText(value) === '' ? '(cleared)' : logValue(value)} · was ${logValue(was)}${byPart(by)}`;
+}
+// The most of a section's first line a body line keeps: the line stays one short line whatever the section holds.
+const EXCERPT_CHARS = 120;
+// The line a change of the title or of a section writes, `<id> body · <part> · was "<old text>"[ · by <who>]`, or null
+// when the part already holds that text. The title is kept whole; a section by its first line (at most EXCERPT_CHARS)
+// and its length, so a long section never floods the log.
+function bodyLine(id, part, was, now, by) {
+  const old = String(was ?? '').trim();
+  if (old === String(now ?? '').trim()) return null;
+  if (!old) return `${id} body · ${part} · was (none)${byPart(by)}`;
+  if (part === 'title') return `${id} body · ${part} · was "${logValue(old)}"${byPart(by)}`;
+  const first = old.split(/\r\n?|\n/)[0].trim();
+  const cut = first.length > EXCERPT_CHARS ? `${first.slice(0, EXCERPT_CHARS)}…` : first;
+  return `${id} body · ${part} · was "${logValue(cut)}" (${old.length} characters)${byPart(by)}`;
+}
+// The lines of a description change that are not null, appended in one write; nothing when every part was unchanged.
+function logChanges(root, lines) {
+  const kept = lines.filter(Boolean);
+  if (kept.length) appendLogLines(root, kept);
+}
+// What a header field of an issue holds as written, '' when the header has none.
+const heldField = (issue, name) => fieldText(issue.fields[name.toLowerCase()]);
+
+// body <id> — the title, the Where field and the What, Why, Acceptance and Changelog sections, set or replaced. Evidence
+// is never written here: it is the record of what was done, appended by evidence, never replaced.
 // `dry` checks everything the call would refuse and writes nothing: a list of ids is run dry on every id before the
 // first one is written (see eachIssue).
 export function cmdBody(root, rawId, flags, dry = false) {
@@ -296,6 +351,7 @@ export function cmdBody(root, rawId, flags, dry = false) {
   const profile = loadProfile(root);
   const parts = ['title', 'where', 'what', 'why', 'acceptance', 'changelog', 'section'].filter((k) => flags[k] !== undefined);
   need(parts.length, 'body needs at least one of --title, --where, --what, --why, --acceptance, --changelog, --section');
+  const by = editorOf(flags.by);
   const title = flags.title === undefined ? null : fieldText(flags.title);
   need(flags.title === undefined || title, '--title needs a title');
   const sections = namedPairs(flags.section, 'section', profile.sections, 'section');
@@ -305,46 +361,51 @@ export function cmdBody(root, rawId, flags, dry = false) {
   const named = parts.flatMap((k) => (k === 'section' ? [...sections.keys()] : [k]));
   if (dry) return { id: issue.id, set: named };
   let text = readText(issue.file);
+  const lines = [];
+  const held = (key) => issue.sections[key] ?? '';
   // The title is the heading's text; the file keeps its name, so the number and the slug a branch was cut from stay.
-  if (title) text = text.replace(idRe('^(#\\s+{id}\\s+·\\s+).*$', 'm'), (_, head) => `${head}${title}`);
-  if (flags.where !== undefined) text = setField(text, 'Where', fieldText(flags.where));
-  if (flags.what !== undefined) text = setSection(text, 'What', bodyText(flags.what));
-  if (flags.why !== undefined) text = setSection(text, 'Why', bodyText(flags.why));
-  if (flags.acceptance !== undefined) text = setSection(text, acceptanceHeading(issue, profile), acceptanceText(flags.acceptance));
-  for (const [h, v] of sections) text = setSection(text, h, bodyText(v));
-  if (flags.changelog !== undefined) text = setSection(text, 'Changelog', changelogText(flags.changelog));
+  const section = (heading, part, now) => { text = setSection(text, heading, now); lines.push(bodyLine(issue.id, part, held(heading.toLowerCase()), now, by)); };
+  if (title) { text = text.replace(idRe('^(#\\s+{id}\\s+·\\s+).*$', 'm'), (_, head) => `${head}${title}`); lines.push(bodyLine(issue.id, 'title', issue.title, title, by)); }
+  if (flags.where !== undefined) { text = setField(text, 'Where', fieldText(flags.where)); lines.push(fieldLine(issue.id, 'Where', flags.where, heldField(issue, 'Where'), by)); }
+  if (flags.what !== undefined) section('What', 'what', bodyText(flags.what));
+  if (flags.why !== undefined) section('Why', 'why', bodyText(flags.why));
+  if (flags.acceptance !== undefined) { const heading = acceptanceHeading(issue, profile); const now = acceptanceText(flags.acceptance); text = setSection(text, heading, now); lines.push(bodyLine(issue.id, 'acceptance', held('acceptance'), now, by)); }
+  for (const [h, v] of sections) section(h, h, bodyText(v));
+  if (flags.changelog !== undefined) section('Changelog', 'changelog', changelogText(flags.changelog));
+  logChanges(root, lines);
   writeAtomic(issue.file, text);
-  appendLog(root, `${issue.id} body · ${named.join(', ')}${title ? ` · title was "${issue.title}"` : ''}`);
   return { id: issue.id, set: named };
 }
 
-export function cmdSource(root, rawId, list, dry = false) {
+export function cmdSource(root, rawId, list, dry = false, by = undefined) {
   const issue = findIssue(root, rawId);
   need(issue, `no such issue: ${rawId}`);
+  const editor = editorOf(by);
   const sources = sourceList(list);
   need(sources.length, 'source requires <report dir>#<finding id>[,...]');
   if (dry) return { id: issue.id, sources };
+  logChanges(root, [fieldLine(issue.id, 'Source', sources.join(', '), heldField(issue, 'Source'), editor)]);
   writeAtomic(issue.file, setField(readText(issue.file), 'Source', sources.join(', ')));
-  appendLog(root, `${issue.id} source · ${sources.join(', ')}`);
   return { id: issue.id, sources };
 }
 
-export function cmdAfter(root, rawId, raw, { clear = false, dry = false } = {}) {
+export function cmdAfter(root, rawId, raw, { clear = false, dry = false, by } = {}) {
   const issue = findIssue(root, rawId);
   need(issue, `no such issue: ${rawId}`);
+  const editor = editorOf(by);
   if (clear) {
     need(raw === undefined, 'after takes either <ids> or --clear, not both');
     need(issue.fields.after !== undefined, `${issue.id} has no After field to clear`);
     if (dry) return { id: issue.id, after: [], cleared: true };
+    logChanges(root, [fieldLine(issue.id, 'After', '', heldField(issue, 'After'), editor)]);
     writeAtomic(issue.file, removeFirstField(readText(issue.file), 'After'));
-    appendLog(root, `${issue.id} after · cleared`);
     return { id: issue.id, after: [], cleared: true };
   }
   need(raw !== undefined, 'after requires <ids> — the issues this one waits on (or --clear)');
   const ids = afterList(root, issue.id, raw);
   if (dry) return { id: issue.id, after: ids };
+  logChanges(root, [fieldLine(issue.id, 'After', ids.join(', '), heldField(issue, 'After'), editor)]);
   writeAtomic(issue.file, setField(readText(issue.file), 'After', ids.join(', ')));
-  appendLog(root, `${issue.id} after ${ids.join(', ')}`);
   return { id: issue.id, after: ids };
 }
 
@@ -434,16 +495,52 @@ export function setRouteOf(root, name) { return setRoute(loadProfile(root), name
 // or one the profile declares. A field is emptied with clear and never with an empty value.
 export function cmdField(root, rawIds, name, value, flags = {}) {
   const profile = loadProfile(root);
-  need(name !== undefined && String(name).trim() !== '', 'field requires <name> — Resources, or a field the loop\'s profile declares');
-  const own = EMPTIED_BY_FIELD[String(name).toLowerCase()];
-  if (own && !profile.field(name)) return emptyOwnField(root, rawIds, own, value, flags);
-  const route = setRoute(profile, name);
-  need(route !== 'status', `${name} is not a field: Resources, or one this loop's profile declares${profile.declaredFields.length ? ` (${profile.declaredFields.map((f) => f.name).join(', ')})` : ''}`);
+  const writable = () => [...DESCRIPTION_FIELDS, ...profile.fields.map((f) => f.name)].join(', ');
+  need(name !== undefined && String(name).trim() !== '', `field requires <name> — a field of the description: ${writable()}`);
+  editorOf(flags.by);
+  const key = String(name).trim().toLowerCase();
+  need(setRoute(profile, name) !== 'status' || DESCRIPTION_FIELDS.some((f) => f.toLowerCase() === key), `${name} is not a field of the description, which field writes: ${writable()}; ${notWrittenByField(profile, key)}`);
   const clear = flags.clear === true;
   need(!clear || value === undefined, 'field takes either a value or --clear, not both');
   need(clear || (value !== undefined && String(value).trim() !== ''), `field ${name} "<value>" — the value is required, or --clear to empty it`);
-  const written = clear ? '' : value;
-  return route === 'field' ? setDeclaredField(root, rawIds, profile.field(name), written, flags) : setResources(root, rawIds, written, flags);
+  if (profile.field(name)) return setDeclaredField(root, rawIds, profile.field(name), clear ? '' : value, flags);
+  if (key === 'resources') return setResources(root, rawIds, clear ? '' : value, flags);
+  const own = EMPTIED_BY_FIELD[key];
+  if (own && clear) return emptyOwnField(root, rawIds, own, flags);
+  const one = (results, field) => { const list = [].concat(results).map((o) => ({ id: o.id, field, value: fieldText(readFieldOf(root, o.id, field)) })); return isBulk(rawIds) ? list : list[0]; };
+  switch (key) {
+    case 'title': need(!clear, 'Title cannot be empty — body <ids> --title "<t>" replaces it'); return one(eachIssue(root, rawIds, (id, dry) => cmdBody(root, id, { title: value, by: flags.by }, dry)), 'Title');
+    case 'where': return one(eachIssue(root, rawIds, (id, dry) => cmdBody(root, id, { where: value, by: flags.by }, dry)), 'Where');
+    case 'files': return one(eachIssue(root, rawIds, (id, dry) => cmdFiles(root, id, value, dry, flags.by)), 'Files');
+    case 'source': return one(eachIssue(root, rawIds, (id, dry) => cmdSource(root, id, value, dry, flags.by)), 'Source');
+    case 'after': return one(eachIssue(root, rawIds, (id, dry) => cmdAfter(root, id, value, { dry, by: flags.by })), 'After');
+    case 'repo': return one(eachIssue(root, rawIds, (id, dry) => cmdRepo(root, id, value, { dry, by: flags.by })), 'Repo');
+    case 'tags': return one(cmdTagList(root, rawIds, value, flags.by), 'Tags');
+    default: return setDeclaredField(root, rawIds, builtInField(profile, key), clear ? '' : value, flags);
+  }
+}
+// A header field of the tool's own that every issue carries, as setDeclaredField writes it: Priority, Tier and Kind
+// checked against their values (the profile's, for Tier and Kind), Found by a free name; none of them is ever empty.
+function builtInField(profile, key) {
+  if (key === 'priority') return { name: 'Priority', key, enum: PRIORITIES, builtin: true };
+  if (key === 'tier') return { name: 'Tier', key, enum: profile.tiers, builtin: true };
+  if (key === 'kind') return { name: 'Kind', key, enum: profile.kinds, builtin: true };
+  return { name: 'Found by', key: 'found by', enum: null, builtin: true };
+}
+// What a field holds in the issue's file now, read again after a write.
+function readFieldOf(root, id, field) {
+  const issue = findIssue(root, id);
+  return field === 'Title' ? issue.title : issue.fields[field.toLowerCase()];
+}
+// Why a name is not one field writes, and which command writes it instead: the status and the lease move with set, a
+// merge is recorded by merged, a section is written by body, and the history has no edit.
+function notWrittenByField(profile, key) {
+  if (key === 'status' || profile.statuses.includes(key)) return 'a status is moved by set <ids> <status> "<why>"';
+  if (['branch', 'worker', 'model', 'since', 'worktree'].includes(key)) return 'the lease (Branch, Worker, Model, Since) is written by set <ids> in-progress';
+  if (['merged', 'merge check', 'ci'].includes(key)) return 'a merge and its CI are recorded by merged <ids> --sha <sha> | --ci <state>';
+  if (key === 'evidence' || key === 'reviews') return 'the history is never edited: a row or an approve is taken back by retract, a ruling replaced by decide --supersedes';
+  if (['what', 'why', 'acceptance', 'changelog', ...profile.sections.map((s) => s.toLowerCase())].includes(key)) return `a section is written by body <ids> --${['what', 'why', 'acceptance', 'changelog'].includes(key) ? key : 'section "<Heading>=<text>"'}`;
+  return 'a section is written by body, a status by set, a merge by merged';
 }
 // The lease flags (--branch, --worker, --model, --worktree) a call gives. They belong to a move into a status that holds
 // a claim; a call that writes a field refuses them.
@@ -591,32 +688,33 @@ function rewriteHeader(root, rawIds, status, why, flags) {
   return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, status: issue.status, header: true })));
 }
 
-// The optional header fields of the tool's own that field empties (and only empties: each has a command that writes it).
+// The optional header fields of the tool's own that field --clear empties.
 const EMPTIED_BY_FIELD = { files: 'Files', source: 'Source', where: 'Where', tags: 'Tags', after: 'After', repo: 'Repo' };
-const WRITTEN_BY = { files: 'files <ids> p,q', source: 'source <ids> <dir>#<id>', where: 'body <ids> --where "<w>"', tags: 'tag <ids> +a -b', after: 'after <ids> <after-ids>', repo: 'repo <ids> <name|path>' };
-// field <ids> <field> <value>: one declared field written on every issue in the call (checked against its enum first),
-// with one log line each. An empty value clears it, unless the field is required (or is Kind or Tier).
+// field <ids> <field> <value>: one declared field (or Priority, Tier, Kind, Found by) written on every issue in the call,
+// checked against its enum first, with one log line each. An empty value clears it, unless the field is required or built in.
 function setDeclaredField(root, rawIds, field, value, flags) {
   needNoLeaseFlags(flags, `the field ${field.name}`);
   need(value !== undefined, `field <ids> ${field.name} "<value>" — the value is required${field.enum ? ` (one of: ${field.enum.join(', ')})` : ''}`);
+  const by = editorOf(flags.by);
   const profile = loadProfile(root);
   const v = fieldValue(profile, field, value);
   need(v || (!field.required && !field.builtin), `${field.name} cannot be empty${field.enum ? ` — one of: ${field.enum.join(', ')}` : ''}`);
   const issues = issuesFor(root, rawIds);
+  logChanges(root, issues.map((issue) => fieldLine(issue.id, field.name, v, heldField(issue, field.name), by)));
   for (const issue of issues) writeAtomic(issue.file, setField(readText(issue.file), field.name, v));
-  appendLogLines(root, issues.map((issue) => `${issue.id} field ${field.name} · ${v || '(cleared)'}`));
   return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, field: field.name, value: v })));
 }
 
 // field <ids> <Files|Source|Where|Tags|After|Repo> --clear: the field is emptied (After and Repo as their own commands empty them).
-function emptyOwnField(root, rawIds, name, value, flags) {
+function emptyOwnField(root, rawIds, name, flags) {
   const key = name.toLowerCase();
-  need(flags.clear === true && value === undefined, `${name} is written with its own command: ${WRITTEN_BY[key]}; field empties it with --clear`);
   if (key === 'after' || key === 'repo') {
-    const done = [].concat(eachIssue(root, rawIds, (id, dry) => (key === 'after' ? cmdAfter(root, id, undefined, { clear: true, dry }) : cmdRepo(root, id, undefined, { clear: true, dry })))).map((o) => ({ id: o.id, field: name, value: '' }));
+    const done = [].concat(eachIssue(root, rawIds, (id, dry) => (key === 'after' ? cmdAfter(root, id, undefined, { clear: true, dry, by: flags.by }) : cmdRepo(root, id, undefined, { clear: true, dry, by: flags.by })))).map((o) => ({ id: o.id, field: name, value: '' }));
     return isBulk(rawIds) ? done : done[0];
   }
+  const by = editorOf(flags.by);
   const issues = issuesFor(root, rawIds);
+  logChanges(root, issues.map((issue) => fieldLine(issue.id, name, '', heldField(issue, name), by)));
   for (const issue of issues) writeAtomic(issue.file, key === 'source' ? removeFirstField(readText(issue.file), name) : setField(readText(issue.file), name, ''));
   return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, field: name, value: '' })));
 }
@@ -632,9 +730,10 @@ function setResources(root, rawIds, value, flags) {
     need(/^[A-Za-z0-9._:/-]+$/.test(n), `resource names are single words of letters, digits and . _ : / - ("${n}" is not): name the thing, e.g. gate, db-server, port-8080`);
     if (!names.some((x) => x.toLowerCase() === n.toLowerCase())) names.push(n);
   }
+  const by = editorOf(flags.by);
   const issues = issuesFor(root, rawIds);
+  logChanges(root, issues.map((issue) => fieldLine(issue.id, 'Resources', names.join(', '), heldField(issue, 'Resources'), by)));
   for (const issue of issues) writeAtomic(issue.file, setField(readText(issue.file), 'Resources', names.join(', ')));
-  appendLogLines(root, issues.map((issue) => `${issue.id} field Resources · ${names.join(', ') || '(cleared)'}`));
   return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, field: 'Resources', value: names.join(', ') })));
 }
 
@@ -971,7 +1070,8 @@ function cleanUpAfterMerge(root, issues, sha, repoPath, named = []) {
   return results;
 }
 
-export function cmdTag(root, rawIds, ops) {
+export function cmdTag(root, rawIds, ops, by = undefined) {
+  const editor = editorOf(by);
   const issues = issuesFor(root, rawIds);
   for (const op of ops) need(/^[+-]./.test(op), `tags are +name or -name, not "${op}"`);
   const results = issues.map((issue) => {
@@ -979,32 +1079,50 @@ export function cmdTag(root, rawIds, ops) {
     for (const op of ops) { if (op.startsWith('+')) tags.add(op.slice(1)); else tags.delete(op.slice(1)); }
     return { issue, tags: [...tags].sort() };
   });
+  return writeTags(root, rawIds, results, editor, (r) => ({ id: r.issue.id, tags: r.tags }));
+}
+// field <ids> Tags "a, b": the tags replaced by the list given, as tag writes them.
+function cmdTagList(root, rawIds, value, by) {
+  const editor = editorOf(by);
+  const tags = [...new Set(splitList(value))].sort();
+  const results = issuesFor(root, rawIds).map((issue) => ({ issue, tags }));
+  return writeTags(root, rawIds, results, editor, (r) => ({ id: r.issue.id, tags: r.tags }));
+}
+function writeTags(root, rawIds, results, by, out) {
+  logChanges(root, results.map((r) => fieldLine(r.issue.id, 'Tags', r.tags.join(', '), heldField(r.issue, 'Tags'), by)));
   for (const r of results) writeAtomic(r.issue.file, setField(readText(r.issue.file), 'Tags', r.tags.join(', ')));
-  return oneOrMany(rawIds, results.map((r) => ({ id: r.issue.id, tags: r.tags })));
+  return oneOrMany(rawIds, results.map(out));
 }
 
-export function cmdPrio(root, rawIds, prio) {
+export function cmdPrio(root, rawIds, prio, by = undefined) {
   need(PRIORITIES.includes(String(prio)), 'priority is 1, 2 or 3');
+  const editor = editorOf(by);
   const issues = issuesFor(root, rawIds);
+  logChanges(root, issues.map((issue) => fieldLine(issue.id, 'Priority', String(prio), heldField(issue, 'Priority'), editor)));
   for (const issue of issues) writeAtomic(issue.file, setField(readText(issue.file), 'Priority', String(prio)));
   return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, priority: String(prio) })));
 }
 
-export function cmdFiles(root, rawId, list, dry = false) {
+export function cmdFiles(root, rawId, list, dry = false, by = undefined) {
   const issue = findIssue(root, rawId);
   need(issue, `no such issue: ${rawId}`);
+  const editor = editorOf(by);
   const files = pathList(list);
-  if (!dry) writeAtomic(issue.file, setField(readText(issue.file), 'Files', files.join(', ')));
+  if (!dry) {
+    logChanges(root, [fieldLine(issue.id, 'Files', files.join(', '), heldField(issue, 'Files'), editor)]);
+    writeAtomic(issue.file, setField(readText(issue.file), 'Files', files.join(', ')));
+  }
   return { id: issue.id, files };
 }
 
-export function cmdRepo(root, rawId, path, { clear = false, dry = false } = {}) {
+export function cmdRepo(root, rawId, path, { clear = false, dry = false, by } = {}) {
   const issue = findIssue(root, rawId);
   need(issue, `no such issue: ${rawId}`);
+  const editor = editorOf(by);
   if (clear) {
     need(issue.fields.repo, `${issue.id} has no Repo field to clear`);
     if (dry) return { id: issue.id, repo: null, cleared: true };
-    appendLog(root, `${issue.id} repo · cleared · was ${noSeparators(issue.fields.repo)}`);
+    logChanges(root, [fieldLine(issue.id, 'Repo', '', issue.fields.repo, editor)]);
     const text = removeFirstField(readText(issue.file), 'Repo');
     writeAtomic(issue.file, text);
     return { id: issue.id, repo: null, cleared: true };
@@ -1017,7 +1135,7 @@ export function cmdRepo(root, rawId, path, { clear = false, dry = false } = {}) 
   const was = fieldText(issue.fields.repo);
   const notes = picked.map((p) => p.note).filter(Boolean);
   if (was === repos.join(', ')) return { id: issue.id, repo: was, repos, unchanged: true, notes };
-  appendLog(root, `${issue.id} repo · ${noSeparators(repos.join(', '))}${was ? ` · was ${noSeparators(was)}` : ''}`);
+  logChanges(root, [fieldLine(issue.id, 'Repo', repos.join(', '), was, editor)]);
   writeAtomic(issue.file, setField(readText(issue.file), 'Repo', repos.join(', ')));
   return { id: issue.id, repo: repos.join(', '), repos, notes };
 }

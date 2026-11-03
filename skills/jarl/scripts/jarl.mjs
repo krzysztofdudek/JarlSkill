@@ -14,7 +14,7 @@
 import { fileURLToPath } from 'node:url';
 import * as R from './record.mjs';
 import {
-  ROUNDS_BEFORE_TAKEOVER, need, resetCaches, withLock, readText, isEntry, cmdSet, cmdField, setRouteOf, eachIssue, cmdBody, cmdSource, cmdAfter, cmdFiles, cmdRepo, cmdRound,
+  ROUNDS_BEFORE_TAKEOVER, need, resetCaches, withLock, readText, isEntry, cmdSet, cmdField, setRouteOf, eachIssue, cmdBody, cmdSource, cmdAfter, cmdFiles, cmdRepo, cmdRound, cmdTag, cmdPrio,
   cmdProfile, cmdArchive, cmdList, cmdNext, renderNext, cmdMode, cmdClose, cmdCheck, cmdBranches, cmdTips, cmdQueue,
   cmdChangelog, cmdHandoffRead, cmdHandoffWrite, cmdReport, cmdImport, cmdSources, cmdAnswerMany, cmdModels, renderModels,
   issuesNaming, questionFor, cmdGoal, cmdGoalSet, cmdRepoBase, whereOf, cmdVerify, renderVerify, renderCheckNotes,
@@ -56,10 +56,40 @@ commands:
                                                  (repeatable) write the fields and sections the loop's profile declares
                                                  (a field's default when not given; a required one must be given)
   body <ids> [--title "<t>"] [--where "<w>"] [--what "<w>"] [--why "<w>"] [--acceptance "<line>"]... [--changelog "<entry>"]...
-      [--section "<Heading>=<text>"]...
-                                                 set or replace the title (the file keeps its name; the old title goes
-                                                 into the log), the Where field and the What, Why, Acceptance and
-                                                 Changelog sections, and a section the profile declares
+      [--section "<Heading>=<text>"]... [--by who]
+                                                 the description commands, body to after below: every part of an issue's
+                                                 description is changed by one of them, and each change writes one log
+                                                 line per issue and part with what the part held before and, when --by
+                                                 names one, who changed it (a value it already holds writes none); the history (evidence, verdicts,
+                                                 merges, rulings, answers) has no edit, only retract and decide
+                                                 --supersedes, and the status moves only with set. body sets or
+                                                 replaces the title (the file keeps its name), the Where field and the
+                                                 What, Why, Acceptance and Changelog sections, and a section the
+                                                 profile declares
+  field <ids> <name> "<value>" | <ids> <name> --clear [--by who]
+                                                 write one header field of the description on every id: Title,
+                                                 Priority, Tier, Kind, Found by, Tags, Files, Repo, After, Source,
+                                                 Where, Resources (the exclusive resources the issue holds while its
+                                                 lease lasts, as "a, b", loop-wide names; next never offers two issues
+                                                 holding one) or a field the loop's profile declares, each checked as
+                                                 its own command checks it (Priority, Tier, Kind and a declared field
+                                                 against their values); a list field (Tags, Files, Repo, After, Source)
+                                                 is replaced whole; --clear empties an optional one, and Title,
+                                                 Priority, Tier, Kind, Found by and a required field are never empty;
+                                                 any other name is refused with the names field writes and the command
+                                                 that writes it instead
+  tag <ids> +a -b ... [--by who]                 add and remove tags
+  prio <ids> 1|2|3 [--by who]                    set priority
+  files <ids> p,q,... [--by who]                 declare the files the issues touch
+  repo <ids> <name|path>[,<name|path>...] [--by who] | <ids> --clear [--by who] | --base <name> <branch>
+                                                 name the repository the issue's code lives in — its name, its checkout,
+                                                 a worktree of it or a file inside it, several as one comma list — or
+                                                 remove the field; --base changes the base branch a declared repository
+                                                 is held against; every change is logged (see --repo below)
+  source <ids> <dir>#<id>,... [--by who]         set the Source field of issues filed by hand
+  after <ids> <after-ids> | <ids> --clear [--by who]
+                                                 the issues these wait on: next does not offer one until each is
+                                                 done or dropped, and status counts it as waiting
   import <findings.json> [--source <dir>] [--kind k] [--prio 1|2|3] [--tier t] [--tags a,b] [--repo <name|path>]
       [--found-by who] [--only <finding ids>] [--adopt] [--dry-run] [--field "<Name>=<value>"]...
                                                  one issue per finding, with Source: <dir>#<finding id>; a finding
@@ -69,9 +99,6 @@ commands:
                                                  --tags, --repo and --only repeat, or take a comma list
   sources [<findings.json>...] [--source <dir>]  per report: its findings, the issues filed from them and their
                                                  status; with a findings file, the findings nobody filed too
-  source <ids> <dir>#<id>,...                    set the Source field of issues filed by hand
-  after <ids> <after-ids> | <ids> --clear        the issues these wait on: next does not offer one until each is
-                                                 done or dropped, and status counts it as waiting
   evidence <ids> "<text>" | --ran "<command>" --saw "<what it printed>" | <id> --file <path> --slot <name>
                                                  append a free-text note (under ### Notes), or one checkable row per --ran/--saw
                                                  pair (repeatable; under ### Proof, after the last row);
@@ -116,14 +143,6 @@ commands:
                                                  the last start, reopen or filing; approves after those or a red
                                                  round), a --ran/--saw row — a free-text note never counts alone —
                                                  and a live approve
-  field <ids> <name> "<value>" | <ids> <name> --clear
-                                                 write one field on every id: Resources (the exclusive resources the
-                                                 issue holds while its lease lasts, as "a, b", loop-wide names; next
-                                                 never offers two issues holding one) or a field the loop's profile
-                                                 declares (checked against its values); --clear empties it, and the
-                                                 same --clear empties Files, Source, Where, Tags, After and Repo too
-                                                 (each is written by its own command); a required field is never
-                                                 empty; one log line per issue
   merged <ids> --sha <sha> [--ran "<check>" --saw "<summary>" | --red <id>] [--ci pending|green|red|none] [--repo <name|path>] [--keep] | <ids> --ci <state>
                                                  the merge as fields: Merged (sha, and where with --repo) and CI
                                                  (only when given; pending: a pushed commit whose CI will report;
@@ -140,14 +159,6 @@ commands:
                                                  local branch (git worktree remove, git branch -d, never a force)
                                                  when that is safe, and names why it kept them when it is not;
                                                  --keep skips it
-  tag <ids> +a -b ...                            add and remove tags
-  prio <ids> 1|2|3                               set priority
-  files <ids> p,q,...                            declare the files the issues touch
-  repo <ids> <name|path>[,<name|path>...] | <ids> --clear | --base <name> <branch>
-                                                 name the repository the issue's code lives in — its name, its checkout,
-                                                 a worktree of it or a file inside it, several as one comma list — or
-                                                 remove the field; --base changes the base branch a declared repository
-                                                 is held against; every change is logged (see --repo below)
   next [--limit n] [--all]                       the open issues ready to start: no file shared with an in-progress one, every
                                                  After issue done or dropped, no open stuck or stop question on it; a file is
                                                  its repository and its path (see --repo below); one with no acceptance line
@@ -395,19 +406,19 @@ export const COMMAND_FLAGS = {
     where: 'value', what: 'value', why: 'value', acceptance: 'many', source: 'many', after: 'many', changelog: 'many', template: 'value',
     field: 'many', section: 'many',
   },
-  body: { title: 'value', where: 'value', what: 'value', why: 'value', acceptance: 'many', changelog: 'many', section: 'many' },
+  body: { title: 'value', where: 'value', what: 'value', why: 'value', acceptance: 'many', changelog: 'many', section: 'many', by: 'value' },
   import: {
     source: 'value', kind: 'value', prio: 'value', tier: 'value', tags: 'many', repo: 'many', 'found-by': 'value',
     only: 'many', adopt: 'bool', 'dry-run': 'bool', field: 'many',
   },
   sources: { source: 'value' },
-  source: {},
-  after: { clear: 'bool' },
+  source: { by: 'value' },
+  after: { clear: 'bool', by: 'value' },
   evidence: { ran: 'many', saw: 'many', file: 'value', slot: 'value' },
-  retract: { by: 'value' }, field: { clear: 'bool' },
+  retract: { by: 'value' }, field: { clear: 'bool', by: 'value' },
   list: { status: 'value', kind: 'value', tag: 'value', prio: 'value', grep: 'value', match: 'many', all: 'bool' },
-  show: { full: 'bool' }, set: { branch: 'value', worker: 'value', model: 'value', worktree: 'value', header: 'bool' }, tag: {}, prio: {}, files: {},
-  repo: { clear: 'bool', base: 'bool' },
+  show: { full: 'bool' }, set: { branch: 'value', worker: 'value', model: 'value', worktree: 'value', header: 'bool' }, tag: { by: 'value' }, prio: { by: 'value' }, files: { by: 'value' },
+  repo: { clear: 'bool', base: 'bool', by: 'value' },
   next: { limit: 'value', all: 'bool' },
   review: { by: 'value', model: 'value', relayed: 'bool' }, round: { findings: 'value' },
   models: { by: 'value', with: 'many', archives: 'bool' },
@@ -506,14 +517,14 @@ export const COMMAND_ARGS = {
 export const COMMAND_SUMMARY = {
   init: 'Open a loop: create .jarl/ with the goal, out of git by default, committed or permanent when asked.',
   new: 'File an issue under the next free number, with its fields and its What, Why and Acceptance.',
-  body: 'Set or replace the title, the Where field and the What, Why, Acceptance, Changelog and profile sections of issues.',
+  body: 'Set or replace the title, the Where field and the What, Why, Acceptance, Changelog and profile sections of issues, logging what each part held and who changed it when named.',
   import: 'File one issue per finding of a findings file, skipping findings already filed.',
   sources: 'Per findings report: its findings, the issues filed from them and their status.',
   source: 'Set the Source field of issues filed by hand.',
   after: 'Set or clear the issues these wait on before next offers them.',
   evidence: 'Append a free-text note, or checkable rows of what ran and what it printed, to issues; or record a file as an attachment of a slot (--file, --slot).',
   retract: 'Take back the newest approve of an issue (what: review) or one evidence row by its number (what: the number), by an entry that says who and why.',
-  field: 'Write one field on issues, Resources or a field the profile declares, or empty any optional field with clear.',
+  field: 'Write one header field of the description on issues (Title, Priority, Tier, Kind, Found by, Tags, Files, Repo, After, Source, Where, Resources or a profile field), or empty an optional one with clear, logging what it held and who changed it when named.',
   list: 'List the issues, the unfinished ones by default, filtered by status, kind, tag, priority or a field.',
   show: 'Print one issue as the done gate sees it (its current window, rows numbered), or the whole file with --full.',
   set: 'Change the status of issues, with the reason logged.',
@@ -617,6 +628,14 @@ function readLists(cmd, rest, flags) {
   return out;
 }
 
+// The value of field for a header field that holds a list (Tags, Files, Repo, After, Source), read by the same rule as the
+// commands that write those fields; any other field's value is one text, passed as it is.
+const FIELD_LISTS = { tags: 'name', files: 'path', repo: 'path', after: 'name', source: 'name' };
+function fieldListValue(name, value) {
+  const kind = FIELD_LISTS[String(name ?? '').trim().toLowerCase()];
+  return kind === undefined || value === undefined ? value : listItems(value, kind, String(name).trim()).join(',');
+}
+
 const ARITY = Object.fromEntries(Object.entries({ ...COMMAND_ARGS, ...Object.fromEntries(Object.entries(COMMAND_ALIASES).map(([name, c]) => [name, COMMAND_ARGS[c]])) }).filter(([, a]) => !a.some((n) => n.endsWith('...'))).map(([c, a]) => [c, a.length]));
 
 // The commands that write: each runs under .jarl/.lock (see withLock).
@@ -717,8 +736,8 @@ export function dispatch(root, commandName, rest, flags) {
       case 'new': out = R.newIssue(root, rest[0], { ...flags, caller: 'cli', width: undefined }); out = { ...out, ...describeNew(out.file) }; text = renderNewReply(out); warn = out.note ? [out.note] : []; break;
       // body, source, after, files, repo and round take the list grammar: eachIssue checks every id before it writes one.
       case 'body': out = eachIssue(root, rest[0], (id, dry) => cmdBody(root, id, flags, dry)); text = each(out, (o) => `${o.id} body: ${o.set.join(', ')}`); break;
-      case 'source': out = eachIssue(root, rest[0], (id, dry) => cmdSource(root, id, rest[1], dry)); text = each(out, (o) => `${o.id} source: ${o.sources.join(', ')}`); break;
-      case 'after': out = eachIssue(root, rest[0], (id, dry) => cmdAfter(root, id, rest[1], { clear: flags.clear === true, dry })); text = each(out, (o) => `${o.id} after: ${o.cleared ? 'cleared' : o.after.join(', ')}`); break;
+      case 'source': out = eachIssue(root, rest[0], (id, dry) => cmdSource(root, id, rest[1], dry, flags.by)); text = each(out, (o) => `${o.id} source: ${o.sources.join(', ')}`); break;
+      case 'after': out = eachIssue(root, rest[0], (id, dry) => cmdAfter(root, id, rest[1], { clear: flags.clear === true, dry, by: flags.by })); text = each(out, (o) => `${o.id} after: ${o.cleared ? 'cleared' : o.after.join(', ')}`); break;
       case 'import': out = cmdImport(root, rest[0], flags); text = renderImport(out); break;
       case 'sources': out = cmdSources(root, rest, flags); text = renderSources(out); break;
       case 'list': out = cmdList(root, flags); text = renderList(out, R.loadProfile(root)); break;
@@ -730,17 +749,18 @@ export function dispatch(root, commandName, rest, flags) {
           out = cmdField(root, rest[0], rest[1], clearing ? undefined : rest[2], { ...flags, clear: clearing });
         } else out = setCommand(root, rest[0], rest[1], rest[2], flags);
         text = each(out, (o) => (o.field ? renderField(o) : o.header ? `header of ${o.id} rewritten from the log: ${o.status}` : `${o.id} → ${o.status}${o.branch ? ` · ${o.branch}` : ''}${o.worker ? ` · ${o.worker}` : ''}`)); warn = [].concat(out).filter((o) => o.note).map((o) => `note: ${o.id} ${o.note}`); break;
-      case 'field': out = cmdField(root, rest[0], rest[1], rest[2], flags); text = each(out, renderField); break;
-      case 'tag': out = R.setTags(root, rest[0], rest.slice(1)); text = each(out, (o) => `${o.id} tags: ${o.tags.join(', ') || '(none)'}`); break;
-      case 'prio': out = R.setPriority(root, rest[0], rest[1]); text = each(out, (o) => `${o.id} priority ${o.priority}`); break;
-      case 'files': out = eachIssue(root, rest[0], (id, dry) => cmdFiles(root, id, rest[1], dry)); text = each(out, (o) => `${o.id} files: ${o.files.join(', ') || '(none)'}`); break;
+      case 'field': out = cmdField(root, rest[0], rest[1], fieldListValue(rest[1], rest[2]), flags); text = each(out, renderField); break;
+      // tag and prio run under the lock dispatch holds, with who changed them; record.setTags and setPriority are the same writes.
+      case 'tag': out = cmdTag(root, rest[0], rest.slice(1), flags.by); text = each(out, (o) => `${o.id} tags: ${o.tags.join(', ') || '(none)'}`); break;
+      case 'prio': out = cmdPrio(root, rest[0], rest[1], flags.by); text = each(out, (o) => `${o.id} priority ${o.priority}`); break;
+      case 'files': out = eachIssue(root, rest[0], (id, dry) => cmdFiles(root, id, rest[1], dry, flags.by)); text = each(out, (o) => `${o.id} files: ${o.files.join(', ') || '(none)'}`); break;
       case 'repo':
         if (flags.base) {
-          need(!flags.clear, 'repo --base takes a repository name and a branch, and no --clear');
+          need(!flags.clear && flags.by === undefined, 'repo --base takes a repository name and a branch, and no --clear or --by: it changes how a repository is declared, not an issue\'s description');
           out = cmdRepoBase(root, rest[0], rest[1]);
           text = out.unchanged ? `${out.name} base: ${out.base} (unchanged)` : `${out.name} base: ${out.base} (was ${out.was ?? 'none'})`;
         } else {
-          out = eachIssue(root, rest[0], (id, dry) => cmdRepo(root, id, rest[1], { clear: flags.clear === true, dry }));
+          out = eachIssue(root, rest[0], (id, dry) => cmdRepo(root, id, rest[1], { clear: flags.clear === true, dry, by: flags.by }));
           text = each(out, (o) => `${o.id} repo: ${o.cleared ? 'cleared' : o.repo}${o.unchanged ? ' (unchanged)' : ''}`);
           warn = [].concat(out).flatMap((o) => (o.notes || []).map((n) => `note: ${n}`));
         }
