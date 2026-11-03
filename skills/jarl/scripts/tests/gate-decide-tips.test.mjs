@@ -101,6 +101,18 @@ test('done: a reopen spends the approve and the evidence before it; a round spen
   assert.equal(jarl(root, 'set', '2', 'done', 'ok'), '2 → done');
 });
 
+test('done after an approve and a later changes verdict is refused naming that changes verdict, not a round', () => {
+  const root = loop();
+  jarl(root, 'new', 'x');
+  jarl(root, 'set', '1', 'in-progress', 'go');
+  jarl(root, 'evidence', '1', '--ran', 't', '--saw', 'ok');
+  jarl(root, 'review', '1', 'approve', '--by', 'r1', FINDINGS);
+  jarl(root, 'review', '1', 'changes', '--by', 'r2', `Important: ${FINDINGS}`);
+  const r = refuses(root, 'set', '1', 'done', 'x');
+  assert.match(r, /latest review is a changes verdict by r2 of \d{4}-\d{2}-\d{2}/, r);
+  assert.doesNotMatch(r, /round/, r);
+});
+
 test('done: in progress → deferred → in progress spends the approve and the rows before it, as a reopen does', () => {
   const root = loop();
   jarl(root, 'new', 'z');

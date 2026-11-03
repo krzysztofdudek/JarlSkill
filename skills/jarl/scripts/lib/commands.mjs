@@ -665,6 +665,12 @@ function doneRefusalIn(root, loop, issue, base) {
   if (profile.doneGate.approve === 'none') return null;
   const code = carriesCode(issue);
   if (g.selfApproved) return `${issue.id}'s live approve is by a worker of this issue or its branch — a self-approve does not count as review: jarl.mjs review ${issue.id} approve --by <${code ? 'fresh reviewer' : 'fresh reviewer|jarl'}> "<findings>"`;
+  // A changes verdict with no approve after it is named as the cause, with its reviewer and day, so whoever is refused
+  // sees the review that stands in the way.
+  if (!g.approved && g.lastReview === 'changes') {
+    const changes = [...g.trail].reverse().find((r) => r.verdict === 'changes');
+    return `${issue.id}'s latest review is a changes verdict by ${changes.by || 'a reviewer not recorded'} of ${changes.at}, and no approve came after it — a fresh reviewer reads the issue and the diff first: jarl.mjs review ${issue.id} approve|changes --by <reviewer> "<findings>"`;
+  }
   if (!g.approved) return `${issue.id} has no approving review newer than its last round${g.tracked ? ' or reopen' : ''} — a fresh reviewer reads the issue and the diff first: jarl.mjs review ${issue.id} approve|changes --by <reviewer> "<findings>"`;
   if (code && !g.fresh) return `${issue.id} ${freshRuleText(issue, g.live)}: jarl.mjs review ${issue.id} approve|changes --by <fresh reviewer> "<findings>"`;
   return null;
