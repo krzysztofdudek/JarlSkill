@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A ruling made by the jarl or a coordinator can now name the ruling it rests on, such as the owner's mandate. The name is shown with the ruling in the list of rulings and in the resume, and a name that is not a ruling in force is refused.
 - When the text of an open issue mentions another unfinished issue by number and nothing orders the two, filing or editing that text and checking the record now print a note naming both, so you can say which comes first. The note changes nothing and never stops anything.
 - A loop can now say after how many failed rounds a kind of task is handed to a fresh worker, with a line such as `Takeover (docs): 2` in its goal. A line `Takeover: 4` sets it for every other kind, and a loop that says nothing keeps three. A changed number counts from the next failed round, and the rounds are counted from the last handover. Each round line now ends with its place in that count, which older Jarl versions and Horde read as a plain round; rounds an older Jarl wrote count a handover every third.
+- `body --append` adds text to a section of an issue after what the section already holds, instead of replacing it.
 
 ### Changed
 
@@ -22,6 +23,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Tools that build on Jarl's record library get a new version of its contract, which keeps everything the previous version offered.
 - If you copy Jarl's record library into your own tool, copy the `scripts/lib/` folder too. It now sits next to `record.mjs` and `jarl-lib.mjs`, and the library does not work without it.
 - When a new issue is filed without a kind or a priority, Jarl says which one it took and names the option that sets it, as it already does for the tier.
+- The tools show an example for the issues `after` waits on, the rows of `evidence`, the verdict and findings of `review`, `decide`'s `supersedes` and the `live` view of `decisions`.
 
 ### Fixed
 

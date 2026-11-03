@@ -364,8 +364,13 @@ function logChanges(root, lines) {
 // What a header field of an issue holds as written, '' when the header has none.
 const heldField = (issue, name) => fieldText(issue.fields[name.toLowerCase()]);
 
-// body <id> — the title, the Where field and the What, Why, Acceptance and Changelog sections, set or replaced. Evidence
-// is never written here: it is the record of what was done, appended by evidence, never replaced.
+// The items a list section holds, each line without its bullet, for an append to add to.
+const itemsOf = (text) => String(text ?? '').split('\n').map((l) => l.trim().replace(/^-\s+/, '')).filter(Boolean);
+// The text a section holds after an append: what it held, then the added text as its own paragraph.
+const joinParagraphs = (held, added) => (String(held ?? '').trim() ? `${String(held).trim()}\n\n${added}` : added);
+// body <id>: the title, the Where field and the What, Why, Acceptance and Changelog sections, and the profile's sections,
+// set or replaced; with append, the text of each section is added after what it holds. Evidence is never written here:
+// it is the record of what was done, appended by evidence, never replaced.
 // `dry` checks everything the call would refuse and writes nothing: a list of ids is run dry on every id before the
 // first one is written (see eachIssue).
 export function cmdBody(root, rawId, flags, dry = false) {
@@ -379,6 +384,13 @@ export function cmdBody(root, rawId, flags, dry = false) {
   const title = flags.title === undefined ? null : fieldText(flags.title);
   need(flags.title === undefined || title, '--title needs a title');
   const sections = namedPairs(flags.section, 'section', profile.sections, 'section');
+  const append = flags.append === true;
+  if (append) {
+    need(flags.title === undefined && flags.where === undefined, '--append adds to a section (What, Why, Acceptance, Changelog or a profile section): the title and the Where field are replaced, not appended to');
+    for (const [heading, v] of [['What', flags.what], ['Why', flags.why], ['Acceptance', flags.acceptance], ['Changelog', flags.changelog], ...sections]) {
+      need(v === undefined || [].concat(v).some((x) => fieldText(x) !== ''), `--append needs text to add to the ${heading} section, not an empty one`);
+    }
+  }
   needNoFieldTags(flags.what, 'the What text');
   needNoFieldTags(flags.why, 'the Why text');
   for (const [h, v] of sections) needNoFieldTags(v, `the ${h} text`);
@@ -387,15 +399,22 @@ export function cmdBody(root, rawId, flags, dry = false) {
   let text = readText(issue.file);
   const lines = [];
   const held = (key) => issue.sections[key] ?? '';
+  // With append, a section keeps what it holds and the new text follows it.
+  const grow = (heading, now) => (append ? joinParagraphs(held(heading.toLowerCase()), now) : now);
   // The title is the heading's text; the file keeps its name, so the number and the slug a branch was cut from stay.
   const section = (heading, part, now) => { text = setSection(text, heading, now); lines.push(bodyLine(issue.id, part, held(heading.toLowerCase()), now, by)); };
   if (title) { text = text.replace(idRe('^(#\\s+{id}\\s+·\\s+).*$', 'm'), (_, head) => `${head}${title}`); lines.push(bodyLine(issue.id, 'title', issue.title, title, by)); }
   if (flags.where !== undefined) { text = setField(text, 'Where', fieldText(flags.where)); lines.push(fieldLine(issue.id, 'Where', flags.where, heldField(issue, 'Where'), by)); }
-  if (flags.what !== undefined) section('What', 'what', bodyText(flags.what));
-  if (flags.why !== undefined) section('Why', 'why', bodyText(flags.why));
-  if (flags.acceptance !== undefined) { const heading = acceptanceHeading(issue, profile); const now = acceptanceText(flags.acceptance); text = setSection(text, heading, now); lines.push(bodyLine(issue.id, 'acceptance', held('acceptance'), now, by)); }
-  for (const [h, v] of sections) section(h, h, bodyText(v));
-  if (flags.changelog !== undefined) section('Changelog', 'changelog', changelogText(flags.changelog));
+  if (flags.what !== undefined) section('What', 'what', grow('What', bodyText(flags.what)));
+  if (flags.why !== undefined) section('Why', 'why', grow('Why', bodyText(flags.why)));
+  if (flags.acceptance !== undefined) {
+    const heading = acceptanceHeading(issue, profile);
+    const now = acceptanceText(append ? [...itemsOf(held(heading.toLowerCase())), ...[].concat(flags.acceptance)] : flags.acceptance);
+    text = setSection(text, heading, now);
+    lines.push(bodyLine(issue.id, 'acceptance', held('acceptance'), now, by));
+  }
+  for (const [h, v] of sections) section(h, h, grow(h, bodyText(v)));
+  if (flags.changelog !== undefined) section('Changelog', 'changelog', changelogText(append ? [...itemsOf(held('changelog')), ...[].concat(flags.changelog)] : flags.changelog));
   logChanges(root, lines);
   writeAtomic(issue.file, text);
   // Said on the command line only: a rewritten What, Why or Acceptance that names issues nothing orders with this one.
