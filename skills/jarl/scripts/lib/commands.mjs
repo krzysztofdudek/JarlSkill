@@ -937,6 +937,7 @@ export function cmdMerged(root, rawIds, flags) {
     for (const issue of issues) {
       const g = gateOf(loop, issue.id);
       if (!g.fresh) notes.push(`MERGED WITHOUT A FRESH REVIEW — ${issue.id} ${g.live ? freshRuleText({ fields: { merged: sha } }, g.live) : 'holds no live approve at all (none, or spent by a later round, restart or reopen) — the fresh-review rule: a code issue needs an approve from a fresh reviewer before it merges'}; recorded as given, get the fresh review now: jarl.mjs review ${issue.id} approve|changes --by <fresh reviewer> "<findings>"`);
+      notes.push(...approveTipNotes(root, issue, g.live, sha));
     }
   }
   // The check goes into the merge record (the merge line and the Merge check field) and never into Proof: the merger's
@@ -978,6 +979,63 @@ function mergeContentNotes(root, issue, sha, repoPath) {
   const baseTip = base !== branch ? git(repo, ['rev-parse', '--verify', '--quiet', `${base}^{commit}`]) : null;
   if (baseTip && !holds(sha, baseTip) && !holds(baseTip, sha)) notes.push(`MERGE WITHOUT THE BASE — ${sha} does not contain ${base} as it stands (${baseTip.slice(0, 12)}), so the check ran on a tree the base has moved past; the check runs on the merge result: merge the base into the result, check it again, and record that commit with jarl.mjs merged ${issue.id} --sha <sha>`);
   return notes;
+}
+
+// What a merge says when the approve the gate stands on was recorded on another tip of the branch than the one at this
+// merge: the commits between the two landed without that review. A commit does not spend an approve inside the gate's
+// window, so this note is where it shows. The approve's tip is the tip line written after it, one sha per repository of
+// the issue, in the order branchTip gives. The branch's tip now is read in each repository on its own, so a repository
+// whose branch is gone (deleted by the cleanup of its own earlier merge, or before the merge is recorded) is left out and
+// the others are still compared; an approve with no tip line is not compared. What landed is read along the branch's first parents: the newest of its
+// commits after the approved tip that the recorded commit holds. A recorded commit that holds the approved tip and none
+// of those is the reviewed one and is left out (the note on a merge without the branch names the rest); one that holds
+// the approved tip only through a merge of the base into the branch is no exception, since that merge is a commit of the
+// branch. A recorded commit that does not hold the approved tip (a squash) is taken to hold the branch as it stands. A
+// repository the recorded commit is not in is said to be not in this merge, or, when it is in none of them, not found
+// here: nothing is said to have landed there. The commands the note gives list the branch's commits along its first
+// parents, merges of the base included, and the whole difference, so code a conflict fix added is seen.
+function approveTipNotes(root, issue, live, sha) {
+  if (!live || !live.tip) return [];
+  const branch = fieldText(issue.fields.branch);
+  if (!branch) return [];
+  const short = (s) => s.slice(0, 12);
+  const was = live.tip.split(',');
+  const repos = issueRepos(root, issue);
+  const is = repos.map((dir) => (isGitRepo(dir) ? git(dir, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}^{commit}`]) : null));
+  if (!is.some(Boolean) || is.join(',') === live.tip) return [];
+  const see = (dir, a, b) => `git -C ${shellWord(dir)} log --oneline --first-parent ${short(a)}..${short(b)} and git -C ${shellWord(dir)} diff ${short(a)} ${short(b)}`;
+  const lines = (dir, args) => (git(dir, args) || '').split('\n').filter(Boolean);
+  // The newest commit of the branch after the approved tip that the recorded commit holds; null when it holds none of
+  // them and holds the approved tip (the reviewed commit landed), the branch's tip when it does not hold the approved tip.
+  const landedUpTo = (dir, a, b) => {
+    const held = new Set(lines(dir, ['rev-list', sha, `^${a}`]));
+    const top = lines(dir, ['rev-list', '--first-parent', `${a}..${b}`]).find((c) => held.has(c));
+    if (top) return top;
+    return git(dir, ['merge-base', '--is-ancestor', a, sha]) !== null ? null : b;
+  };
+  const who = live.by ? `by ${live.by} (${live.kind})` : 'by a reviewer not recorded';
+  const again = `if it was meant to land, record a review of the tip that landed: jarl.mjs review ${issue.id} approve|changes --by <fresh reviewer> "<findings>"`;
+  const head = `APPROVED ON ANOTHER TIP — ${issue.id}'s approve ${who} was recorded on ${branch}`;
+  if (was.length !== repos.length) return [`${head} at ${was.map(short).join(', ')}, and the branch stands at ${is.map((s) => (s ? short(s) : 'gone')).join(', ')} at this merge, so that review did not see what changed between them; recorded as given, ${again}`];
+  const here = repos.map((dir) => isGitRepo(dir) && git(dir, ['cat-file', '-e', `${sha}^{commit}`]) !== null);
+  const away = here.some(Boolean) ? 'not in this merge' : 'not found here';
+  const moved = [];
+  repos.forEach((dir, k) => {
+    const [a, b] = [was[k], is[k]];
+    if (!b || a === b) return;
+    if (!here[k]) { moved.push({ dir, a, b, away }); return; }
+    const to = landedUpTo(dir, a, b);
+    if (to) moved.push({ dir, a, b, to });
+  });
+  if (!moved.length) return [];
+  if (repos.length === 1) {
+    const [m] = moved;
+    if (m.away) return [`${head} at ${short(m.a)}, and the branch stands at ${short(m.b)}; ${short(sha)} is not found here, so what it holds cannot be read; see what changed: ${see(m.dir, m.a, m.b)}; ${again}`];
+    const upTo = m.to === m.b ? `the branch stands at ${short(m.b)} at this merge, so what changed between them` : `this merge holds the branch up to ${short(m.to)} (it stands at ${short(m.b)} now), so what changed from ${short(m.a)} to ${short(m.to)}`;
+    return [`${head} at ${short(m.a)}, and ${upTo} landed without that review; recorded as given, see it: ${see(m.dir, m.a, m.to)}; ${again}`];
+  }
+  const entry = (m) => (m.away ? `in ${repoLabel(m.dir)} ${short(m.a)} → ${short(m.b)}, ${m.away}, see it: ${see(m.dir, m.a, m.b)}` : `in ${repoLabel(m.dir)} ${short(m.a)} → ${short(m.to)}, which this merge holds without that review${m.to === m.b ? '' : ` (the branch stands at ${short(m.b)})`}, see it: ${see(m.dir, m.a, m.to)}`);
+  return [`${head}, and the branch has moved since in ${moved.length === 1 ? 'one repository' : `${moved.length} repositories`}; recorded as given — ${moved.map(entry).join('; ')}; ${again}`];
 }
 
 // What counts as evidence of the work for done: not a ruling written in by decide or answer, and not the
