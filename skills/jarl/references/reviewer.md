@@ -13,7 +13,7 @@ A worker's report is a hypothesis. A **fresh one-shot reviewer** — never the w
 
 **After a round**, the gate counts the reviewer of the previous round as fresh, so it may approve again. The practice, for quality, is a new one-shot reviewer for each round, handed the findings of the previous round to check.
 
-**A reviewer records its own verdict**, as the last step of its brief. One that returned without recording is resumed to record it; the jarl relays the verdict (`review --relayed`) only when the reviewer cannot be resumed. The reviewer's brief follows.
+**A reviewer records its own verdict**, as the last step of its brief. One that returned without recording is resumed to record it; the jarl relays the verdict (`review --relayed`) only when the reviewer cannot be resumed. Any verdict meant to clear an issue is recorded with `review`, never as an evidence note, and a verdict relayed by someone else is recorded with `review --relayed`. The reviewer's brief follows.
 
 ## The reviewer's brief
 
