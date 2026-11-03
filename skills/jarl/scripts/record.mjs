@@ -152,7 +152,7 @@ export function setFiles(root, id, files) { return write(root, () => L.cmdFiles(
 export function setRepo(root, id, path, opts = {}) { return write(root, () => L.cmdRepo(root, id, path, { clear: opts.clear === true, by: opts.by })); }
 export function setAfter(root, id, ids, opts = {}) { return write(root, () => L.cmdAfter(root, id, ids, { clear: opts.clear === true, by: opts.by })); }
 export function setSource(root, id, refs) { return write(root, () => L.cmdSource(root, id, refs)); }
-// Free text, or opts { ran, saw } (one row per pair; text then undefined), or opts { retract: n, by } with the reason as
+// Free text, or opts { ran, saw } (one row per pair; text then undefined), or opts { retract: n, by } (n a row number, or note-<n> for a free-text note) with the reason as
 // text: the n-th row of the whole Evidence section (retracted rows counted) is struck through and an entry saying who
 // retracted it and why is appended; the done gate stops counting it. The first retraction raises the loop's record
 // format, so a Jarl that cannot read a retraction refuses the loop. Rows are written under ### Proof, after the last

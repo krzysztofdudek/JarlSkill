@@ -8,11 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- A note written on a task can be taken back, as an evidence row can, with who took it back and why. The issue view that a worker reads leaves a retracted note out, and the full view shows it struck through.
 - Every part of an issue's description can now be corrected, including its tier, its kind and who found it, and the record keeps who changed it and what it said before. What happened to an issue, such as its test results, reviews and merges, is never edited, only taken back or replaced.
-- You can ask Jarl what is waiting on one person: the owner's open questions, or the next step of every task for whoever runs the loop, each with the command that takes it. The status and the resume of a loop can end with that list.
+- You can ask Jarl what is waiting on one person: the owner's open questions, or the next step of every task for whoever runs the loop, each with the command that takes it. The status and the resume of a loop can end with that list. Work on code that waits for a review shows as one line naming all the tasks, with the question that asks the owner to start a fresh session if no reviewer can be raised; once that question is asked, the work shows on the owner's list.
 - A ruling made by the jarl or a coordinator can now name the ruling it rests on, such as the owner's mandate. The name is shown with the ruling in the list of rulings and in the resume, and a name that is not a ruling in force is refused.
 - When the text of an open issue mentions another unfinished issue by number and nothing orders the two, filing or editing that text and checking the record now print a note naming both, so you can say which comes first. The note changes nothing and never stops anything.
 - A task can be handed to a new worker on purpose, with the reason it changed hands, and the record keeps that reason. The old worker's branch and folder are then no longer reported as a problem.
+- A loop can now say after how many failed rounds a kind of task is handed to a fresh worker, with a line such as `Takeover (docs): 2` in its goal. A line `Takeover: 4` sets it for every other kind, and a loop that says nothing keeps three. A changed number counts from the next failed round, and the rounds are counted from the last handover. Each round line now ends with its place in that count, which older Jarl versions and Horde read as a plain round; rounds an older Jarl wrote count a handover every third.
 
 ### Changed
 
@@ -40,6 +42,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Tags, files, issue numbers and the other lists can be given to the tools as a real list, and each item is stored on its own, so filtering by a tag finds the issue. A list typed out as text, in brackets with more than one item or with quotes, is refused with a message that says how to write it, and so is a tag or an issue number that holds a bracket or a quote mark, and any item that starts with a dash. A file name in brackets, such as [id], is kept as a path.
 - When two copies of a shared loop each file an issue and are then merged, both issues can get the same number. Jarl now says so and names both files, refuses to change either one by that number, and shows each one at the status its own file says, so one issue's status is never copied into the other. Neither can be closed or approved under that number, because Jarl cannot tell whose test results and reviews are whose: you file the work again under a new number. It also says how to give one of them a new number by hand.
 - When a repository is kept by its path rather than by its name, Jarl explains why the first time it happens in a loop. It no longer repeats that explanation on every new issue that names the same repository.
+- Recording a merge now warns when the branch got new commits after its review was approved. The warning names the reviewed commit and the merged one, and gives the commands that show the difference and record a new review. The merge is still recorded.
 
 ## [6.2.0] - 2026-10-19
 
