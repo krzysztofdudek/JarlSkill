@@ -50,19 +50,13 @@ function issueRows(ctx) {
       says: 'ready to start, raise a worker', command: `jarl.mjs set ${r.id} ${leaseStatus} --branch <branch> --worker <name>` });
   }
   const evidence = `--ran "<command>" --saw "<what it printed>"`;
-  const unreviewed = [];
   const verdict = (id) => `jarl.mjs review ${id} approve|changes --by <reviewer> "<findings>"`;
   for (const i of loop.issues.filter((x) => profile.is(x.status, 'holds-claim') && !waitingOn(x, loop.byId, profile).length)) {
-    const g = gateOf(loop, i.id);
     const mark = inFlightMark(loop, i);
     const worker = fieldText(i.fields.worker) || null;
     const base = { id: i.id, title: i.title, priority: i.priority, holder: JARL_HOLDER, ...(worker ? { doer: worker } : {}) };
     const withWorker = worker ? `with worker ${worker}` : 'in progress';
-    // A round sends the work back: until the worker records a row after it, the issue is the worker's again.
-    const events = loop.eventsById.get(i.id) || [];
-    const lastRound = events.filter((e) => e.type === 'round').reduce((n, e) => Math.max(n, e.n), -1);
-    const rowsAfterRound = g.rowLog.filter((r) => !r.retracted && r.inWindow && r.n > lastRound).length;
-    const backAfterRound = lastRound >= 0 && rowsAfterRound === 0 && mark === 'rows-no-verdict';
+    const backAfterRound = sentBack(loop, i, mark);
     if (mark === 'no-rows' || backAfterRound) {
       out.push({ ...base, what: 'worker', says: `${withWorker}${fieldText(i.fields.since) ? ` since ${fieldText(i.fields.since)}` : ''}, ${backAfterRound ? 'sent back by a round, no new proof yet' : 'no proof yet'}; the worker records it`, command: `jarl.mjs evidence ${i.id} ${evidence}` });
       continue;
@@ -74,10 +68,7 @@ function issueRows(ctx) {
         command: merge ? `jarl.mjs merged ${i.id} --sha <sha> --ran "<check>" --saw "<summary>"` : `jarl.mjs set ${i.id} ${closeStatus} "<why>"` });
       continue;
     }
-    if (mark === 'rows-no-verdict' && carriesCode(i)) {
-      unreviewed.push(i);
-      continue;
-    }
+    if (mark === 'rows-no-verdict' && carriesCode(i)) continue;   // listed together below
     if (mark === 'rows-no-verdict') {
       out.push({ ...base, what: 'review', says: 'proof recorded, no verdict; raise a reviewer', command: verdict(i.id) });
       continue;
@@ -100,27 +91,46 @@ function issueRows(ctx) {
     }
     out.push({ ...base, what: 'close', says: mark === 'merged' ? 'merged; close it' : 'approved; close it', command: `jarl.mjs set ${i.id} ${closeStatus} "<why>"` });
   }
-  out.push(...reviewRow(ctx, unreviewed, verdict));
+  out.push(...reviewRow(ctx, verdict));
   return out;
+}
+
+// A round sends the work back: until the worker records a row after it, the issue is the worker's again.
+function sentBack(loop, issue, mark) {
+  const lastRound = (loop.eventsById.get(issue.id) || []).filter((e) => e.type === 'round').reduce((n, e) => Math.max(n, e.n), -1);
+  const rowsAfterRound = gateOf(loop, issue.id).rowLog.filter((r) => !r.retracted && r.inWindow && r.n > lastRound).length;
+  return lastRound >= 0 && rowsAfterRound === 0 && mark === 'rows-no-verdict';
+}
+
+// The issues in play whose code has proof and no verdict, and waits for a fresh reviewer.
+function awaitingReview(loop, profile) {
+  if (profile.doneGate.approve === 'none') return [];
+  return loop.issues.filter((i) => profile.is(i.status, 'holds-claim') && !waitingOn(i, loop.byId, profile).length && carriesCode(i)
+    && inFlightMark(loop, i) === 'rows-no-verdict' && !sentBack(loop, i, 'rows-no-verdict'));
 }
 
 // The proofs of code with no verdict, as one line: a fresh reviewer for all of them at once, or, where the jarl cannot
 // raise agents, a question asking the owner to start a fresh session. The record cannot tell the two apart, so the line
-// offers both. A proof that an open question of that wording already names is the owner's: it leaves the jarl's list and
-// ctx.onOwner remembers it, so the issues that wait on it wait on the owner.
-const REVIEW_ASK = 'start a fresh session to review issues';
-// The final s of "issues" is optional, so a question about one issue reads the same way.
-const REVIEW_ASK_RE = new RegExp(`^${REVIEW_ASK}?\\s+(\\d[^()\\n:;]*)`, 'i');
+// offers both. A proof that an open question of that wording names is the owner's: it leaves the jarl's list, and the
+// issues that wait on it wait on the owner. A question whose issues all have a verdict holds nothing.
+const REVIEW_ASK = 'start a fresh session to review';
+// The issues a question cites: the numbers right after "issue" or "issues", joined by ", ", " and " or " & ". A number
+// followed by a dot and a digit (a version) is no issue number.
+const NUMBER = '\\d+(?!\\.\\d)';
+const REVIEW_ASK_RE = new RegExp(`^${REVIEW_ASK} issues? (${NUMBER}(?:(?:, | and | & )${NUMBER})*)`, 'i');
 // The issues a question asks for a fresh review of, by the key of each number; none for any other question.
 function reviewAskKeys(question) {
   const m = REVIEW_ASK_RE.exec(question);
-  return m ? (m[1].match(/\d+/g) || []).map(idKey) : [];
+  return m ? m[1].match(/\d+/g).map(idKey) : [];
+}
+// The proofs awaiting a fresh reviewer that an open question names: the ones the owner holds.
+function heldByOwner(loop, awaiting) {
+  const asked = new Set(loop.asks.filter((a) => a.state === 'open').flatMap((a) => reviewAskKeys(a.question)));
+  return awaiting.filter((i) => asked.has(idKey(i.id))).map((i) => i.id);
 }
 const joinIds = (issues) => issues.map((i) => i.id).join(', ');
-function reviewRow(ctx, unreviewed, verdict) {
-  const asked = new Set(ctx.loop.asks.filter((a) => a.state === 'open').flatMap((a) => reviewAskKeys(a.question)));
-  for (const i of unreviewed) if (asked.has(idKey(i.id))) ctx.onOwner.add(i.id);
-  const todo = unreviewed.filter((i) => !asked.has(idKey(i.id)));
+function reviewRow(ctx, verdict) {
+  const todo = ctx.awaiting.filter((i) => !ctx.onOwner.has(i.id));
   if (!todo.length) return [];
   const ids = joinIds(todo);
   const only = todo.length === 1 ? todo[0] : null;
@@ -129,7 +139,7 @@ function reviewRow(ctx, unreviewed, verdict) {
   return [{
     what: 'review', id: todo[0].id, ids: todo.map((i) => i.id), title: only ? only.title : '', priority, holder: JARL_HOLDER, ...(worker ? { doer: worker } : {}),
     says: `proof recorded, no verdict; raise a fresh reviewer for ${ids}; if you cannot raise agents, ask the owner to start a fresh session`,
-    command: `${only ? verdict(only.id) : verdict('<id>')}, or jarl.mjs ask "${REVIEW_ASK} ${ids}"`,
+    command: `${only ? verdict(only.id) : verdict('<id>')}, or jarl.mjs ask "${REVIEW_ASK} issue${todo.length === 1 ? '' : 's'} ${ids}"`,
   }];
 }
 
@@ -142,7 +152,7 @@ function questionRows(ctx) {
     const keys = new Set(reviewAskKeys(a.question));
     const reviewing = ctx.loop.issues.filter((i) => ctx.onOwner.has(i.id) && keys.has(idKey(i.id))).map((i) => i.id);
     return { what: 'question', ask: a.id, kind: a.kind || 'stuck', title: a.question, holder: OWNER_HOLDER, ...(reviewing.length ? { reviewing } : {}),
-      says: `question (${a.kind || 'stuck'})${a.issue ? ` on issue ${a.issue}` : ''}${reviewing.length ? `, the fresh review of ${reviewing.join(', ')} waits on it` : ''}`, command: `jarl.mjs answer ${ref} "<answer>"` };
+      says: `question (${a.kind || 'stuck'})${a.issue ? ` on issue ${a.issue}` : ''}${reviewing.length ? `, the fresh review of ${reviewing.join(', ')} waits on it` : keys.size ? ', no issue it names awaits a review now' : ''}`, command: `jarl.mjs answer ${ref} "<answer>"` };
   });
 }
 
@@ -183,7 +193,8 @@ export function ballRows(root) {
   const loop = readLoop(jarlDir(root));
   const { profile } = loop;
   const scheduled = profile.scheduler !== null;
-  const ctx = { root, loop, profile, next: scheduled ? [] : nextRows(root, {}), onOwner: new Set() };
+  const awaiting = scheduled ? [] : awaitingReview(loop, profile);
+  const ctx = { root, loop, profile, next: scheduled ? [] : nextRows(root, {}), awaiting, onOwner: new Set(heldByOwner(loop, awaiting)) };
   const rows = ROW_SOURCES.filter((s) => !(scheduled && SCHEDULING.has(s))).flatMap((s) => s(ctx));
   // Who each issue holds up: the issues in play whose After names it, not settled yet, and for a question the issue it holds.
   const active = loop.issues.filter((i) => profile.active(i.status));

@@ -49,7 +49,7 @@ test('next --as jarl lists each issue in play with the step it points to and the
   assert.match(text, /^- 5 approved: approved, not merged; merge it \(worker w5\) — jarl\.mjs merged 5 --sha <sha> --ran "<check>" --saw "<summary>" · holds up 10, 11, 12$/m);
   assert.match(text, /^- 1 ready one: ready to start, raise a worker — jarl\.mjs set 1 in-progress --branch <branch> --worker <name> · holds up 7, 12$/m);
   assert.match(text, /^- 2 with a worker: with worker w2 since .*, no proof yet; the worker records it — jarl\.mjs evidence 2 --ran "<command>" --saw "<what it printed>"$/m);
-  assert.match(text, /^- 3 proof no verdict: proof recorded, no verdict; raise a fresh reviewer for 3; if you cannot raise agents, ask the owner to start a fresh session \(worker w3\) — jarl\.mjs review 3 approve\|changes --by <reviewer> "<findings>", or jarl\.mjs ask "start a fresh session to review issues 3"$/m);
+  assert.match(text, /^- 3 proof no verdict: proof recorded, no verdict; raise a fresh reviewer for 3; if you cannot raise agents, ask the owner to start a fresh session \(worker w3\) — jarl\.mjs review 3 approve\|changes --by <reviewer> "<findings>", or jarl\.mjs ask "start a fresh session to review issue 3"$/m);
   assert.match(text, /^- 4 changes asked: changes asked by its reviewer; send it back to a worker \(worker w4\) — jarl\.mjs round 4 "<what failed>"$/m);
   assert.match(text, /^- 6 merged: merged; close it \(worker w6\) — jarl\.mjs set 6 done "<why>"$/m);
   assert.doesNotMatch(text, /a-1|a-2|ratify/, 'the questions are the owner\'s');

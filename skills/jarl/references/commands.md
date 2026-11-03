@@ -94,7 +94,7 @@ Every open thing of a loop has one holder who moves next: the owner, the jarl, a
 | an issue ready to start | the jarl | `set <id> <the lease status> --branch <b> --worker <name>` |
 | a lease with no proof yet, or sent back by a round | the jarl, with its worker as the one who does it | `evidence <id> --ran … --saw …` |
 | a proof with no verdict, or an approve by a coordinator alone on an issue that carries code | the jarl | `review <id> approve\|changes --by <reviewer> …` |
-| the proofs of code with no verdict, all in one line | the jarl, until an open question that begins `start a fresh session to review issues <n>, <m>` names them; then the owner | `review <id> approve\|changes --by <reviewer> …`, or `ask "start a fresh session to review issues <n>, <m>"` where no agent can be raised |
+| the proofs of code with no verdict, all in one line | the jarl, until an open question that begins `start a fresh session to review issues <n>, <m>` (`issue <n>` for one) names them; then the owner | `review <id> approve\|changes --by <reviewer> …`, or `ask "start a fresh session to review issues <n>, <m>"` where no agent can be raised |
 | changes asked | the jarl | `round <id> "<what failed>"` |
 | an approve not merged | the jarl | `merged <id> --sha <sha> …` |
 | merged, or approved with no code | the jarl | `set <id> <the closing status> "<why>"`, or `merged <id> --ci green\|red` while CI is pending |

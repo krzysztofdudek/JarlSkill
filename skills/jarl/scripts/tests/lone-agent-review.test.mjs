@@ -3,6 +3,7 @@
 // the owner's, and his digest names the issues.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { FINDINGS } from './findings.mjs';
 import { jarl, loop as makeLoop } from './helpers.mjs';
 
 const loop = () => makeLoop({ prefix: 'jarl-lone-', via: 'cli', dotGit: false });
@@ -51,6 +52,44 @@ test('once the question for a fresh session is asked, the owner holds the ball a
   const text = jarl(root, 'next', '--as', 'jarl', '--all');
   assert.match(text, /^On the jarl \(1\)$/m);
   assert.doesNotMatch(text, /Waiting on the jarl/);
+});
+
+test('a question holds only the issues cited right after "issues", joined by commas, "and" or "&": no later number, version or sentence', () => {
+  const root = loneLoop();
+  jarl(root, 'new', 'third change', '--files', 'e.mjs');
+  jarl(root, 'new', 'fourth change', '--files', 'f.mjs');
+  jarl(root, 'set', '5', 'in-progress', 'go', '--worker', 'me', '--branch', 'jarl/5');
+  jarl(root, 'set', '6', 'in-progress', 'go', '--worker', 'me', '--branch', 'jarl/6');
+  jarl(root, 'evidence', '5', '--ran', 'npm test', '--saw', 'green');
+  jarl(root, 'evidence', '6', '--ran', 'npm test', '--saw', 'green');
+  const grouped = () => json(root, 'next', '--as', 'jarl', '--all').rows.filter((r) => r.ids).map((r) => r.ids);
+  assert.deepEqual(grouped(), [['1', '2', '5', '6']]);
+  jarl(root, 'ask', 'start a fresh session to review issues 1 and 2 before 5 lands. It waits on 6.3.0 and 6');
+  assert.deepEqual(grouped(), [['5', '6']], 'a number after the list, after a period, or in a version stays with the jarl');
+  jarl(root, 'answer', '1', 'done');
+  jarl(root, 'ask', 'start a fresh session to review issues 1, 2 & 5, then 6.3.0');
+  assert.deepEqual(grouped(), [['6']], 'a comma and an ampersand join the list; the version ends it');
+  jarl(root, 'answer', '2', 'done');
+  jarl(root, 'ask', 'start a fresh session to review issues 6.3.0');
+  assert.deepEqual(grouped(), [['1', '2', '5', '6']], 'a version is no issue number');
+});
+
+test('a question about one issue reads "issue", and a question whose issues all have a verdict holds nothing', () => {
+  const root = loop();
+  jarl(root, 'new', 'only change', '--files', 'a.mjs');
+  jarl(root, 'new', 'after it', '--after', '1', '--files', 'b.mjs');
+  jarl(root, 'set', '1', 'in-progress', 'go', '--worker', 'me', '--branch', 'jarl/1');
+  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'green');
+  const row = json(root, 'next', '--as', 'jarl').rows[0];
+  assert.ok(row.command.endsWith('jarl.mjs ask "start a fresh session to review issue 1"'), row.command);
+  assert.match(row.says, /raise a fresh reviewer for 1;/);
+  jarl(root, 'ask', 'start a fresh session to review issue 1');
+  assert.deepEqual(json(root, 'next', '--as', 'owner').rows.map((r) => [r.reviewing, r.holdsUp]), [[['1'], ['2']]]);
+  jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
+  const owner = json(root, 'next', '--as', 'owner', '--all');
+  assert.deepEqual(owner.rows.map((r) => [r.reviewing, r.holdsUp]), [[undefined, []]], 'the reviewed issue no longer waits on him');
+  assert.match(owner.rows[0].says, /no issue it names awaits a review now/);
+  assert.equal(owner.waitingTotal, 0);
 });
 
 test('a proof recorded after the question is asked is the jarl\'s again, and the answered question gives the ball back', () => {
