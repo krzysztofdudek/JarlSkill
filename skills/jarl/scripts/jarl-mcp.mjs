@@ -34,7 +34,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { COMMAND_ALIASES, COMMAND_ARGS, COMMAND_FLAGS, INTERNAL_COMMANDS, flagsOf, COMMAND_SUMMARY, GLOBAL_FLAGS, MUTATING, USAGE, parseArgs, dispatch, findRoot, isEntry as isEntryOf } from './jarl.mjs';
+import { COMMAND_ALIASES, COMMAND_ARGS, COMMAND_FLAGS, INTERNAL_COMMANDS, LIST_FIELDS, flagsOf, COMMAND_SUMMARY, GLOBAL_FLAGS, MUTATING, USAGE, parseArgs, dispatch, findRoot, isEntry as isEntryOf } from './jarl.mjs';
 import { defineTable } from './vendor/runes/dist/cli/index.mjs';
 import {
   buildTools as generateTools, argvFor as generateArgv, commandForTool, serveStdio, InvalidParams,
@@ -60,11 +60,15 @@ export const argName = (a) => a.replace(/[?.]+$/, '');
 
 // What a command's table cannot say about its arguments, added to that tool's description.
 export const ARG_NOTES = {};
+// The list fields of a command (LIST_FIELDS in jarl.mjs), under the command a second name stands for.
+const listFieldsOf = (cmd) => LIST_FIELDS[COMMAND_ALIASES[cmd] ?? cmd] || {};
 // The commands that write one issue at a time and take the list grammar in their "id" field.
 const LIST_ID_COMMANDS = new Set(['body', 'source', 'after', 'files', 'repo', 'round']);
-const IDS_FIELD = 'One id, or several as one comma list with ranges (12,13 or 203-206): all of them change, or none.';
+const IDS_FIELD = 'One id, or several as one comma list with ranges (12,13 or 203-206) or as a list of strings: all of them change, or none.';
+// Every other list field: one rule for all of them, listItems in jarl.mjs.
+const LIST_FIELD = 'One item, several as one comma list (a,b), or a list of strings, one item each. A list written as text (["a", "b"]), an item in quotes, or an item starting with - is refused.';
 // The answer command takes one question, or several ratify items as one comma list (answer 2,3,4), with no ranges.
-const ANSWER_ID_FIELD = 'One question id, or several ratify items as one comma list (2,3,4): all of them take the one answer.';
+const ANSWER_ID_FIELD = 'One question id, or several ratify items as one comma list (2,3,4) or as a list of strings: all of them take the one answer.';
 const ROOT_FIELD = "The directory holding .jarl/, as an absolute path (a relative or empty one is refused). Defaults to JARL_ROOT from the server's environment, else the loop found from the server's working directory. Workers in a worktree and every role of a loop that lives in another repository pass it always.";
 // The usage text whole: the ids grammar is in it, and its last section is the workflow for parallel workers.
 const HELP = USAGE;
@@ -73,9 +77,12 @@ const INSTRUCTIONS = 'Every jarl command is a tool, jarl_<command>, with its arg
 
 // The CLI's tables as one Runes command table. An argument written `name...` in COMMAND_ARGS takes any number of
 // words, none included (tag's +a -b, sources' findings files): `name...?` in the Runes grammar.
+// A list a command cannot run without (files' paths, source's references) keeps its field required, with one item
+// at least ("" is the one item that clears Files).
 // A name a command answers to besides its own gets a tool of its own, with the command's arguments and summary.
+const NEEDS_ITEMS = new Set(['files paths...', 'source refs...']);
 const entry = (cmd) => ({
-  args: COMMAND_ARGS[cmd].map((a) => (a.endsWith('...') ? `${a}?` : a)),
+  args: COMMAND_ARGS[cmd].map((a) => (a.endsWith('...') && !NEEDS_ITEMS.has(`${cmd} ${a}`) ? `${a}?` : a)),
   flags: flagsOf(cmd),
   summary: COMMAND_SUMMARY[cmd],
   writes: MUTATING.has(cmd),
@@ -98,8 +105,10 @@ function describe(cmd, spec) {
 }
 function fieldNote(cmd, field) {
   if (field === 'root') return ROOT_FIELD;
-  if (field === 'ids' || (field === 'id' && LIST_ID_COMMANDS.has(cmd))) return IDS_FIELD;
+  if ((field === 'ids' && cmd !== 'after') || (field === 'id' && LIST_ID_COMMANDS.has(cmd))) return IDS_FIELD;
   if (field === 'id' && cmd === 'answer') return ANSWER_ID_FIELD;
+  if (field === 'ids' && cmd === 'after') return `The issues this one waits on. ${LIST_FIELD} Ids take ranges (203-206). Left out when clear is set.`;
+  if (['name', 'path'].includes(listFieldsOf(cmd)[field])) return LIST_FIELD;
   return undefined;
 }
 // The options the tools are generated with: the prefix, the one-sentence descriptions, the notes on root and ids,
@@ -148,6 +157,16 @@ export function argvFor(cmd, input = {}) {
     need(typeof input.root === 'string' && input.root.trim() !== '' && isAbsolute(input.root.trim()), `${toolName(cmd)}: "root" must be the absolute path of the directory that holds .jarl/ (got ${JSON.stringify(input.root)}) — leave it out to use JARL_ROOT or the server's working directory`);
   }
   const { root: _root, ...fields } = input;
+  // A list flag repeats and a list argument that comes last takes many words, so the adapter carries a list for them.
+  // An id list comes before other arguments, so the adapter takes it as one word: given as a list of strings, it
+  // reaches the command line as the one comma list it reads there. listItems in dispatch checks the items either way.
+  const args = COMMAND_ARGS[COMMAND_ALIASES[cmd] ?? cmd] || [];
+  for (const field of Object.keys(listFieldsOf(cmd))) {
+    const v = fields[field];
+    if (!Array.isArray(v) || !args.some((a) => a.replace(/\?$/, '') === field)) continue;
+    need(v.every((x) => typeof x === 'string' || (typeof x === 'number' && Number.isFinite(x))), `${toolName(cmd)}: "${field}" must be a string or a list of strings`);
+    fields[field] = v.join(',');
+  }
   try { return generateArgv(TABLE, cmd, fields, TOOL_OPTIONS); } catch (e) {
     if (e instanceof InvalidParams) e.code = -32602;
     throw e;

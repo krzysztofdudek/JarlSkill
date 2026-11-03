@@ -45,7 +45,8 @@ commands:
                                                  or test decides; strong: unknown cause, design, record format, security);
                                                  --repo names the repository
                                                  its code lives in when that is not the loop's own, several as one comma
-                                                 list (see --repo below);
+                                                 list (see --repo below); --tags, --files, --source, --after and --repo
+                                                 repeat, or take a comma list (see Lists below);
                                                  --what, --why and --acceptance (one per line, repeatable) write the body,
                                                  --source names the finding(s) it comes from, --after the issues it waits on;
                                                  --changelog (repeatable) is the issue's changelog entry, "Added: …" etc.;
@@ -64,7 +65,8 @@ commands:
                                                  one issue per finding, with Source: <dir>#<finding id>; a finding
                                                  whose Source is already on an issue is skipped, so a re-run files
                                                  nothing twice; --dry-run prints what it would file; --adopt writes
-                                                 Source onto an existing issue that names the finding id but has none
+                                                 Source onto an existing issue that names the finding id but has none;
+                                                 --tags, --repo and --only repeat, or take a comma list
   sources [<findings.json>...] [--source <dir>]  per report: its findings, the issues filed from them and their
                                                  status; with a findings file, the findings nobody filed too
   source <ids> <dir>#<id>,...                    set the Source field of issues filed by hand
@@ -339,6 +341,15 @@ starts with (--ran "--help" records a row), or inline as --flag=value. A bare --
 note or a title that starts with -- after it, and every flag (--root too) before it. Words beyond what a
 command reads are an error.
 
+Lists (the <ids> above; new's --tags, --files, --repo, --source, --after; import's --tags, --repo, --only;
+decide's --settles; the paths of files, the references of source, the ids of after, the repositories of repo):
+one item, or several as one comma list (a,b); a list flag also repeats, and files, source, after and repo
+also take their items as separate words; a tool takes the same text or a list of strings, one item each.
+An item that starts with - is refused (it is a flag in the wrong place). A list written as text is refused:
+an item that begins or ends with a quote mark, a name (an id, a tag, a reference, a finding id) that holds
+a bracket or a quote, and a path whose brackets do not pair up ([a, b]) or that is a quoted or empty list
+in brackets (["a"], []). A path whose brackets pair up is a name: [1], src/[id]/page.tsx, [...slug].
+
 Writes: every command that writes holds .jarl/.lock while it runs (the holder's pid, host and time are
 inside), so parallel calls from workers, reviewers and the merger queue instead of losing each other's
 writes; a lock whose holder is gone is taken over, a live one that does not let go within 20 s fails the
@@ -380,14 +391,14 @@ export const GLOBAL_FLAGS = { json: 'bool', help: 'bool', root: 'value' };
 export const COMMAND_FLAGS = {
   init: { committed: 'bool', permanent: 'bool', profile: 'value' },
   new: {
-    kind: 'value', prio: 'value', tier: 'value', tags: 'value', files: 'value', repo: 'value', 'found-by': 'value',
-    where: 'value', what: 'value', why: 'value', acceptance: 'many', source: 'value', after: 'value', changelog: 'many', template: 'value',
+    kind: 'value', prio: 'value', tier: 'value', tags: 'many', files: 'many', repo: 'many', 'found-by': 'value',
+    where: 'value', what: 'value', why: 'value', acceptance: 'many', source: 'many', after: 'many', changelog: 'many', template: 'value',
     field: 'many', section: 'many',
   },
   body: { title: 'value', where: 'value', what: 'value', why: 'value', acceptance: 'many', changelog: 'many', section: 'many' },
   import: {
-    source: 'value', kind: 'value', prio: 'value', tier: 'value', tags: 'value', repo: 'value', 'found-by': 'value',
-    only: 'value', adopt: 'bool', 'dry-run': 'bool', field: 'many',
+    source: 'value', kind: 'value', prio: 'value', tier: 'value', tags: 'many', repo: 'many', 'found-by': 'value',
+    only: 'many', adopt: 'bool', 'dry-run': 'bool', field: 'many',
   },
   sources: { source: 'value' },
   source: {},
@@ -407,7 +418,7 @@ export const COMMAND_FLAGS = {
   answer: { by: 'value', option: 'value' },
   resume: { log: 'value', ready: 'value', ci: 'bool' },
   handoff: { summary: 'value', next: 'many', log: 'value', ready: 'value', ci: 'bool' },
-  log: {}, decide: { settles: 'value', by: 'value', supersedes: 'value', area: 'value', reach: 'value', rule: 'value' }, decisions: { live: 'bool' },
+  log: {}, decide: { settles: 'many', by: 'value', supersedes: 'value', area: 'value', reach: 'value', rule: 'value' }, decisions: { live: 'bool' },
   goal: { set: 'value' },
   status: { 'stale-hours': 'value', by: 'value', tag: 'value' }, archive: {}, report: { found: 'bool' }, tips: {}, mode: {},
   queue: { repo: 'value', base: 'value' }, changelog: { repo: 'value' },
@@ -481,10 +492,10 @@ export function parseArgs(argv) {
 // CLI and the tools. A name ending in ? may be left out; one ending in ... takes any number of words (tag's
 // +a -b, sources' findings files) and has no upper bound. A command's arity is how many names it has.
 export const COMMAND_ARGS = {
-  init: ['goal'], new: ['title'], body: ['id'], import: ['file'], sources: ['files...'], source: ['id', 'refs'],
-  after: ['id', 'ids?'], evidence: ['ids', 'text?'], retract: ['id', 'what', 'reason'], field: ['ids', 'name', 'value?'],
+  init: ['goal'], new: ['title'], body: ['id'], import: ['file'], sources: ['files...'], source: ['id', 'refs...'],
+  after: ['id', 'ids...'], evidence: ['ids', 'text?'], retract: ['id', 'what', 'reason'], field: ['ids', 'name', 'value?'],
   list: [], show: ['id'], set: ['ids', 'status', 'why?'],
-  merged: ['ids'], tag: ['ids', 'ops...'], prio: ['ids', 'priority'], files: ['id', 'paths'], repo: ['id', 'path?'],
+  merged: ['ids'], tag: ['ids', 'ops...'], prio: ['ids', 'priority'], files: ['id', 'paths...'], repo: ['id', 'path...'],
   next: [], review: ['ids', 'verdict', 'findings'], round: ['id', 'what'], models: [], scope: ['id?'], branches: [],
   ask: ['question'], answer: ['id', 'answer?'], resume: [], handoff: ['action?'], log: ['event'],
   decide: ['slug', 'ruling'], decisions: [], goal: [], status: [], archive: ['slug'], report: [], tips: [], queue: [],
@@ -536,6 +547,76 @@ export const COMMAND_SUMMARY = {
   verify: 'Check the record strictly, without a lock: the lines each reader does not place, the headers that disagree with the log, the repositories, leases and superseded rulings the issues name; exit 2 on a finding.',
   close: 'Close the loop, filing the ratification batch first; it refuses while issues are open or in progress, or deferred where it removes the loop, unless force is set.',
 };
+// The fields that hold a list, per command: an argument (named as in COMMAND_ARGS) or a flag, and what one item is.
+// A name (an issue or question id, a tag, a finding's reference or id) never holds a bracket or a quote; a path (Files,
+// Repo) may hold brackets that pair up, as file names do (src/[id]/page.tsx). tag's operations add names. The tools take
+// each of these fields as one text or as a list of strings (jarl-mcp.mjs), and dispatch reads every one through
+// listItems, so the command line and the tools follow one rule.
+export const LIST_FIELDS = {
+  new: { tags: 'name', files: 'path', repo: 'path', source: 'name', after: 'name' },
+  import: { tags: 'name', repo: 'path', only: 'name' },
+  decide: { settles: 'name' },
+  body: { id: 'name' }, round: { id: 'name' }, answer: { id: 'name' },
+  source: { id: 'name', refs: 'name' }, after: { id: 'name', ids: 'name' },
+  files: { id: 'name', paths: 'path' }, repo: { id: 'name', path: 'path' },
+  evidence: { ids: 'name' }, field: { ids: 'name' }, set: { ids: 'name' }, merged: { ids: 'name' },
+  tag: { ids: 'name', ops: 'ops' }, prio: { ids: 'name' }, review: { ids: 'name' }, changelog: { ids: 'name' },
+};
+const QUOTED = /^["'`]|["'`]$/;
+// Whether one item of a list is a piece of a list written out as text: it begins or ends with a quote mark, or, for a
+// name, holds a bracket or a quote at all; for a path, its brackets do not pair up (what a comma inside "[a, b]"
+// leaves), or it is an empty or quoted list in brackets ("[]", "["a"]"). A path in brackets with nothing else to
+// tell it from a name ([1], [...slug]) is a name.
+function piecesOfListText(item, kind) {
+  if (QUOTED.test(item)) return true;
+  if (kind === 'name') return /[[\]"'`]/.test(item);
+  let depth = 0;
+  for (const c of item) {
+    if (c === '[') depth += 1;
+    else if (c === ']' && --depth < 0) return true;
+  }
+  if (depth !== 0) return true;
+  const inner = /^\[(.*)\]$/.exec(item)?.[1].trim();
+  return inner !== undefined && (inner === '' || QUOTED.test(inner));
+}
+// The one rule of a list field: the items of one text written as a comma list, or of a list of such texts, each
+// trimmed, the empty ones dropped. An item that starts with - is a flag in the wrong place (after a bare -- it is
+// where a --root written last lands), and a piece of a list written as text would store its brackets and quotes:
+// both are refused, naming the field.
+export function listItems(value, kind, field) {
+  const text = [].concat(value ?? []).map(String).join(',');
+  const items = text.split(',').map((s) => s.trim()).filter(Boolean);
+  const dashed = items.filter((s) => s.startsWith('-'));
+  need(dashed.length === 0, `${field}: an item cannot start with - — got ${dashed.map((s) => JSON.stringify(s)).join(' ')} (everything after a bare -- is an argument, so flags such as --root go before it)`);
+  need(!items.some((s) => piecesOfListText(s, kind)), `${field} takes its items one by one: one item, a comma list (a,b) or a list of strings; ${kind === 'name' ? 'a list written as text, an item in quotes or a name holding a bracket or a quote mark' : 'a list written as text or an item in quotes'} is refused — got ${JSON.stringify(text)}`);
+  return items;
+}
+// A command's arguments and flags with every list field read by listItems and written back as the one comma list the
+// commands read: a list argument that is last takes every word left (files 3 a.mjs b.mjs), and a list flag repeats.
+// repo --base takes a repository name and a branch, not a list, and no word beyond them.
+function readLists(cmd, rest, flags) {
+  const fields = LIST_FIELDS[cmd];
+  if (cmd === 'repo' && flags.base) {
+    need(rest.length <= 2, `repo --base takes a repository name and a branch — unexpected: ${rest.slice(2).map((x) => JSON.stringify(x)).join(' ')} (everything after a bare -- is an argument, so flags such as --root go before it)`);
+    return { rest, flags };
+  }
+  if (!fields) return { rest, flags };
+  const out = { rest: [...rest], flags: { ...flags } };
+  COMMAND_ARGS[cmd].forEach((a, at) => {
+    const field = a.replace(/[?.]+$/, '');
+    const kind = fields[field];
+    if (kind === 'ops') { for (const op of rest.slice(at)) if (op.startsWith('+')) listItems(op.slice(1), 'name', 'tag'); return; }
+    if (kind === undefined) return;
+    const given = a.endsWith('...') ? (rest.length > at ? rest.slice(at) : undefined) : rest[at];
+    if (given === undefined) return;
+    out.rest.splice(at, a.endsWith('...') ? Infinity : 1, listItems(given, kind, field).join(','));
+  });
+  for (const [field, kind] of Object.entries(fields)) {
+    if (Object.hasOwn(flagsOf(cmd), field) && flags[field] !== undefined) out.flags[field] = listItems(flags[field], kind, `--${field}`).join(',');
+  }
+  return out;
+}
+
 const ARITY = Object.fromEntries(Object.entries({ ...COMMAND_ARGS, ...Object.fromEntries(Object.entries(COMMAND_ALIASES).map(([name, c]) => [name, COMMAND_ARGS[c]])) }).filter(([, a]) => !a.some((n) => n.endsWith('...'))).map(([c, a]) => [c, a.length]));
 
 // The commands that write: each runs under .jarl/.lock (see withLock).
@@ -620,6 +701,7 @@ function setCommand(root, ids, name, value, flags) { return cmdSet(root, ids, na
 // time what is on disk and in git now, exactly as a fresh process would.
 export function dispatch(root, commandName, rest, flags) {
   const cmd = COMMAND_ALIASES[commandName] ?? commandName;
+  ({ rest, flags } = readLists(cmd, rest, flags));
   resetCaches();
   let out;
   let text;
