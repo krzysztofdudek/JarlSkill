@@ -7,7 +7,7 @@ import { readText, writeAtomic } from './files.mjs';
 import { isBulk } from './ids.mjs';
 import { appendLog, appendLogLines, firstLine } from './journal.mjs';
 import { bodyText, parseIssue, reviewEntries, setSection, unattributedRefusal } from './issues.mjs';
-import { raiseFormat, tipLines } from './repositories.mjs';
+import { needFormat, tipLines } from './repositories.mjs';
 import { carriesCode, gateOf, readLoop, reviewerKind } from './loop.mjs';
 import { SEVERITIES, loggedFinding, modelLines, modelValue, reviewModelNotes } from './models.mjs';
 import { EVIDENCE_HOW, issuesFor, oneOrMany, proofSince } from './commands.mjs';
@@ -32,7 +32,7 @@ function retractReview(root, rawIds, reason, flags) {
   const kind = reviewerKind(by, g.workers, coordinators);
   // The first retraction of a loop raises the record format, before its line is written: a reader of format 1 does not
   // read a retraction and would go on counting the approve, so it must refuse the loop instead.
-  raiseFormat(root);
+  needFormat(root, 'retraction');
   const lines = table.lines.slice();
   if (target) lines[target.start] = `${struck(lines[target.start])}~~`;
   const named = `${who.by ? `by ${who.by}${who.kind ? ` (${who.kind})` : ''}` : 'with no reviewer recorded'}${(who.at || who.day) ? ` of ${(who.at || who.day).slice(0, 10)}` : ''}`;

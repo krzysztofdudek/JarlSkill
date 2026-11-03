@@ -1,8 +1,9 @@
 // The record contract: record.mjs is the one surface another tool may vendor, so its exports are held here exactly —
 // every name, whether it is a value or a function, and each function's parameters as written (a parameter with a
 // default is optional, marked ?). Adding, removing, renaming or re-shaping an export fails this test. The way through
-// is a new contract version: bump RECORD_API in record.mjs (jarl-record/2), write its table below beside the old one,
-// and freeze the new table's fingerprint in FROZEN. A published version's table is never edited in place — its
+// is a new contract version: bump RECORD_API in record.mjs, add it to RECORD_APIS, write its table below beside the
+// others, and freeze the new table's fingerprint in FROZEN. Every version RECORD_APIS names keeps its exports with their
+// parameters, so a caller written against it keeps working. A published version's table is never edited in place — its
 // fingerprint would no longer match. The same version goes on the family's contracts page.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -67,11 +68,67 @@ const CONTRACTS = {
     statusData: '(root, opts?)',
     resumeData: '(root, opts?)',
   },
+  'jarl-record/2': {
+    RECORD_API: 'value',
+    // the contracts this module keeps, and the record formats it reads, with the lines each format holds
+    RECORD_APIS: 'value',
+    RECORD_FORMATS: 'value',
+    FORMAT_LINES: 'value',
+    recordFormat: '(root)',
+    // the loop: where it is, opening it, reading it
+    resolveRoot: '(root, from)',
+    jarlDir: '(root)',
+    hasLiveLoop: '(root)',
+    initLoop: '(root, goal, opts?)',
+    loadIssues: '(root)',
+    findIssue: '(root, id)',
+    decisions: '(root, opts?)',
+    loadAsks: '(root)',
+    // an issue as text
+    parseIssue: '(text, file)',
+    renderIssue: '(spec)',
+    mergedOf: '(issue)',
+    evidenceRows: '(issue)',
+    // the profile
+    PROFILE_VERSION: 'value',
+    STATUS_FLAGS: 'value',
+    DEFAULT_PROFILE: 'value',
+    validateProfile: '(json, where)',
+    readProfileFile: '(file)',
+    loadProfile: '(root)',
+    describeProfile: '(profile)',
+    // one writer at a time
+    withLock: '(root, fn)',
+    writeAtomic: '(path, text)',
+    // operations on the record
+    newIssue: '(root, title, opts?)',
+    setStatus: '(root, ids, status, why, opts?)',
+    setField: '(root, ids, field, value, opts?)',
+    setBody: '(root, id, opts?)',
+    setTags: '(root, ids, ops)',
+    setPriority: '(root, ids, priority)',
+    setFiles: '(root, id, files)',
+    setRepo: '(root, id, path, opts?)',
+    setAfter: '(root, id, ids, opts?)',
+    setSource: '(root, id, refs)',
+    addEvidence: '(root, ids, text, opts?)',
+    review: '(root, ids, verdict, findings, opts?)',
+    recordMerged: '(root, ids, opts?)',
+    addRound: '(root, id, what)',
+    decide: '(root, slug, ruling, opts?)',
+    ask: '(root, question, opts?)',
+    answer: '(root, id, text)',
+    appendLog: '(root, event)',
+    // the views' data
+    statusData: '(root, opts?)',
+    resumeData: '(root, opts?)',
+  },
 };
 
 // Each published table's fingerprint, frozen when the version was published.
 const FROZEN = {
   'jarl-record/1': '7635917fcee9a8c3cd25c5ed50c8d365523e7c10432542eed269e22a57a7a041',
+  'jarl-record/2': 'ca7442fd9ed1c51380cd5bc8a51ad035d1ffaf39574148f0d2bd87406a2ed88b',
 };
 
 // A function's parameters as written in its source: `opts = {}` reads as opts?.
@@ -96,9 +153,38 @@ const sorted = (t) => Object.fromEntries(Object.keys(t).sort().map((k) => [k, t[
 const fingerprint = (t) => createHash('sha256').update(JSON.stringify(sorted(t))).digest('hex');
 
 test('record.mjs declares its contract version, and its exports are exactly that version\'s table', () => {
-  assert.equal(R.RECORD_API, 'jarl-record/1');
+  assert.equal(R.RECORD_API, 'jarl-record/2');
   assert.ok(CONTRACTS[R.RECORD_API], `no table for ${R.RECORD_API} — write one in this test`);
   assert.deepEqual(signatureOf(R), sorted(CONTRACTS[R.RECORD_API]), `record.mjs does not match ${R.RECORD_API}: a changed export needs a new contract version`);
+});
+
+test('every contract record.mjs keeps is named in RECORD_APIS, and each one\'s exports are still there with the same parameters, so a caller of any of them keeps working', () => {
+  assert.ok(Object.isFrozen(R.RECORD_APIS));
+  assert.deepEqual([...R.RECORD_APIS], ['jarl-record/1', 'jarl-record/2']);
+  assert.equal(R.RECORD_APIS[R.RECORD_APIS.length - 1], R.RECORD_API, 'the newest one is RECORD_API');
+  const now = signatureOf(R);
+  for (const version of R.RECORD_APIS) {
+    assert.ok(CONTRACTS[version], `no table for ${version}`);
+    for (const [name, shape] of Object.entries(CONTRACTS[version])) assert.equal(now[name], shape, `${version}: ${name}`);
+  }
+  // The values the newest contract adds: the record formats this library reads and the lines of each raised format.
+  assert.ok(Object.isFrozen(R.RECORD_FORMATS));
+  assert.deepEqual([...R.RECORD_FORMATS], [1, 2, 3]);
+  assert.ok(Object.isFrozen(R.FORMAT_LINES) && Object.keys(R.FORMAT_LINES).length > 0);
+});
+
+test('recordFormat says the format of a loop, the formats this library reads, whether a write may raise it and the lines that are off in it', () => {
+  const root = mkdtempSync(join(tmpdir(), 'jarl-record-format-'));
+  try {
+    R.initLoop(root, 'the goal');
+    assert.deepEqual(R.recordFormat(root), { format: 1, reads: [1, 2, 3], raises: true, off: [] });
+    const composed = mkdtempSync(join(tmpdir(), 'jarl-record-format-composed-'));
+    const file = join(composed, 'profile.json');
+    writeFileSync(file, JSON.stringify({ 'jarl-profile': R.PROFILE_VERSION, name: 'c', statuses: { open: ['dispatchable'], doing: ['holds-claim'], done: ['settles-dependents', 'terminal', 'closes-record'] }, 'external-scheduler': 'the composer' }));
+    R.initLoop(composed, 'the mission', { profile: file });
+    assert.deepEqual(R.recordFormat(composed), { format: 1, reads: [1, 2, 3], raises: false, off: Object.keys(R.FORMAT_LINES) });
+    rmSync(composed, { recursive: true, force: true });
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
 test('a published contract table is frozen: its fingerprint never changes', () => {
@@ -109,7 +195,7 @@ test('a published contract table is frozen: its fingerprint never changes', () =
 });
 
 test('the contract check fails on an added, a removed or a re-shaped export', () => {
-  const table = sorted(CONTRACTS['jarl-record/1']);
+  const table = sorted(CONTRACTS[R.RECORD_API]);
   const same = { ...R };
   assert.deepEqual(signatureOf(same), table);
   assert.notDeepEqual(signatureOf({ ...R, extra() {} }), table, 'an added export');

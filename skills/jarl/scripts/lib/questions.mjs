@@ -7,11 +7,11 @@ import { ASK_KINDS, HANDOFF_STALE_MS, fieldText, freeInline, need, noSeparators,
 import { jarlDir, today } from './where.mjs';
 import { appendAtomic, readText, writeAtomic } from './files.mjs';
 import { askNumber, idKey, issueForms, needsRaisedFormat, newNumber, writtenId } from './ids.mjs';
-import { loadProfile } from './profile.mjs';
+import { loadProfile, numberWidth } from './profile.mjs';
 import { ASKS_FILE, DECISIONS_FILE, STAMP_SRC, appendDecision, appendLog, appendLogLines, asksAt, asksPath, firstLine, loadDecisions, markDecision, parseStamp } from './journal.mjs';
 import { OWNER, carryingOwnersWords, needNoOwnersWords, quoteShown, rulingAuthor } from './owner.mjs';
 import { findIssue, freeBlock, loadIssues, noteText, parseIssue, placeEvidence, setSection } from './issues.mjs';
-import { raiseFormat } from './repositories.mjs';
+import { needFormat } from './repositories.mjs';
 import { coordinatorNames } from './loop.mjs';
 import { issuesFor } from './commands.mjs';
 
@@ -28,11 +28,11 @@ export function cmdAsk(root, question, flags) {
   need(kind !== 'lower' || flags.target, '--target is required for kind lower — nothing to weaken without naming it');
   need(kind === 'lower' || !flags.target, `--target has no meaning for kind "${kind}" — only lower names something to weaken`);
   const asks = loadAsks(root);
-  const id = newNumber(asks.reduce((m, a) => Math.max(m, Number(a.id)), 0) + 1, flags.width);
+  const id = newNumber(asks.reduce((m, a) => Math.max(m, Number(a.id)), 0) + 1, numberWidth(loadProfile(root), flags.width));
   // The issue is written as its file writes it, so a question about 007 names it 007 and raises nothing.
   const issueWritten = flags.issue ? writtenId(flags.issue, issueForms(jarlDir(root))) : null;
   // A question whose number is written plain (a-7, a-1000) or that names an issue so written raises the format first.
-  if (needsRaisedFormat(id) || (issueWritten !== null && needsRaisedFormat(issueWritten))) raiseFormat(root);
+  if (needsRaisedFormat(id) || (issueWritten !== null && needsRaisedFormat(issueWritten))) needFormat(root, 'plain-number');
   const path = asksPath(jarlDir(root));
   const target = kind === 'lower' ? ` · target ${flags.target}` : '';
   // flags.ruling is not a flag of the command line: the close's ratification batch passes it, and so may a composer
@@ -249,7 +249,8 @@ function appendRuling(root, issues, line) {
 // decide <slug> "<ruling>" [--by who] [--quote "<words>"] [--supersedes <slug>] [--settles <ids>]: the ruling, who ruled
 // (the caller, recorded as the coordinator, unless --by says otherwise: jarl for a choice the loop made under a
 // mandate, owner for the owner's own, which needs his words in --quote, kept on one line as the ruling's last paragraph),
-// the earlier ruling it replaces — marked **Superseded by:** in place, so a reader of the decisions, and decisions --live,
+// the ruling in force it rests on (--under, for a ruling by anyone but the owner, kept as the text's last paragraph
+// `Made under: <slug>`), the earlier ruling it replaces — marked **Superseded by:** in place, so a reader of the decisions, and decisions --live,
 // see it is not in force — and the issues it settles. Nothing in the loop names the owner: the name `owner` is his, and a
 // --by that reads as it is it (rulingAuthor). The owner's words reach the record from --quote alone: the ruling's text and
 // every other flag are refused when they hold the marker in any spelling, and the row each settled issue gets names who ruled.
@@ -269,18 +270,25 @@ export function cmdDecide(root, slug, ruling, flags = {}) {
   need(flags.reach === undefined || /^\d+$/.test(String(flags.reach)), `--reach is how many files the area holds, a whole number (got "${flags.reach}")`);
   need(flags.rule === undefined || flags.area !== undefined, '--rule names the rule of the graph the ruling admits on the --area type — it needs --area');
   need(flags.rule === undefined || RULE_RE.test(String(flags.rule)), `--rule names a rule as the repository's graph names it: its id, segments of letters, digits and . _ - joined by / (got "${flags.rule}")`);
+  need(flags.under === undefined || typeof flags.under === 'string', '--under names the slug of a ruling, as text');
+  need(flags.under === undefined || !byOwner, '--under names the ruling a ruling by the jarl or a coordinator rests on; a ruling by the owner rests on his own words');
+  const under = flags.under !== undefined ? fieldText(flags.under) : null;
+  if (under !== null) {
+    const inForce = loadDecisions(root).filter((d) => !d.supersededBy && d.slug !== flags.supersedes).map((d) => d.slug);
+    need(inForce.includes(under), `--under ${under ? `"${under}"` : 'needs a slug'} is not a ruling in force of this loop; the rulings in force: ${inForce.length ? inForce.join(', ') : '(none)'}`);
+  }
   const settles = flags.settles !== undefined ? issuesFor(root, flags.settles) : [];
   const area = flags.area !== undefined ? String(flags.area) : null;
   const reach = flags.reach !== undefined ? Number(flags.reach) : null;
   const rule = flags.rule !== undefined ? String(flags.rule) : null;
   const text = freeBlock(oneBreak(ruling).trim());
-  appendDecision(root, slug, text, { by, quote, supersedes: flags.supersedes, area, reach, rule, settles: settles.map((i) => i.id) });
+  appendDecision(root, slug, text, { by, quote, under, supersedes: flags.supersedes, area, reach, rule, settles: settles.map((i) => i.id) });
   appendLog(root, `decided ${slug} · by ${by}${flags.supersedes !== undefined ? ` · supersedes ${flags.supersedes}` : ''}${area ? ` · area ${area}${reach !== null ? ` (${reach} files)` : ''}${rule ? ` · rule ${rule}` : ''}` : ''}`);
   if (settles.length) {
     const shown = quote ? quoteShown(quote) : null;
     carryingOwnersWords([shown], () => appendRuling(root, settles, `Ruling ${slug} (by ${by}): ${firstLine(oneBreak(ruling).trim(), `${DECISIONS_FILE}, ruling ${slug}`)}${shown ? ` · ${shown}` : ''}`));
   }
-  return { slug, by, ...(quote ? { quote } : {}), supersedes: flags.supersedes ?? null, settles: settles.map((i) => i.id), ...(area ? { area, reach, ...(rule ? { rule } : {}) } : {}) };
+  return { slug, by, ...(quote ? { quote } : {}), ...(under ? { under } : {}), supersedes: flags.supersedes ?? null, settles: settles.map((i) => i.id), ...(area ? { area, reach, ...(rule ? { rule } : {}) } : {}) };
 }
 
 // Whether a question of the record asks about a ruling: a ratify item naming it, or the question the ruling `ask-<n>` was
@@ -373,7 +381,7 @@ export function cmdDecisions(root, flags = {}) {
 // decide: what was ruled, and what the ruling did to the others.
 export function renderDecide(out) {
   const area = out.area ? ` · area ${out.area}${out.reach !== null ? ` (${out.reach} file${out.reach === 1 ? '' : 's'})` : ''}${out.rule ? ` · rule ${out.rule}` : ''} · put to ratification at close` : '';
-  return `decided ${out.slug} · by ${out.by}${out.supersedes ? ` · supersedes ${out.supersedes}` : ''}${out.settles.length ? ` · written into ${out.settles.join(', ')}` : ''}${area}`;
+  return `decided ${out.slug} · by ${out.by}${out.under ? ` · under ${out.under}` : ''}${out.supersedes ? ` · supersedes ${out.supersedes}` : ''}${out.settles.length ? ` · written into ${out.settles.join(', ')}` : ''}${area}`;
 }
 // decisions: one line per ruling, its first line cut at 160 characters.
 export function renderDecisions(rows) {
@@ -381,7 +389,7 @@ export function renderDecisions(rows) {
   return rows.map((d) => {
     const area = d.area ? ` · area ${d.area}${d.rule ? ` · rule ${d.rule}` : ''}${d.ratified ? ' ratified' : d.rejected ? ' rejected' : ''}` : '';
     const quoted = d.quote ? ` · ${quoteShown(d.quote.split('\n')[0].slice(0, 160))}` : '';
-    return `${d.date} · ${d.slug}${d.by ? ` · by ${d.by}` : ''}${area}${d.supersededBy ? ` · SUPERSEDED by ${d.supersededBy}` : ''}${d.supersedes ? ` · supersedes ${d.supersedes}` : ''} — ${(d.ruling.split('\n').find((l) => l.trim()) || '').slice(0, 160)}${quoted}`;
+    return `${d.date} · ${d.slug}${d.by ? ` · by ${d.by}` : ''}${d.under ? ` · under ${d.under}` : ''}${area}${d.supersededBy ? ` · SUPERSEDED by ${d.supersededBy}` : ''}${d.supersedes ? ` · supersedes ${d.supersedes}` : ''} — ${(d.ruling.split('\n').find((l) => l.trim()) || '').slice(0, 160)}${quoted}`;
   }).join('\n');
 }
 

@@ -8,12 +8,12 @@ import { git } from './git.mjs';
 import { jarlDir, stamp } from './where.mjs';
 import { readText, writeAtomic } from './files.mjs';
 import { cmpId, isBulk } from './ids.mjs';
-import { SLOT_NAME_RE, loadProfile } from './profile.mjs';
+import { SLOT_NAME_RE, formatState, loadProfile } from './profile.mjs';
 import { appendLog, appendLogLines, firstLine } from './journal.mjs';
 import { outOfGit } from './loop-git.mjs';
 import { attachmentOf, journalById } from './log.mjs';
 import { acceptanceLineCount, alignRows, bodyText, evidenceParts, evidenceTable, loadIssues, mergedOf, noteText, parseIssue, placeEvidence, reviewEntries, setSection, sharedMark } from './issues.mjs';
-import { fileAt, raiseFormat, repoNames, reposWhere, tipLines, whereLines, whereOf } from './repositories.mjs';
+import { fileAt, needFormat, repoNames, reposWhere, tipLines, whereLines, whereOf } from './repositories.mjs';
 import { approveKind, carriesCode, disagreementText, gateOf, gateState, headerReadNotes, readLoop, recordDisagreements, reviewSplit, scopedLoop } from './loop.mjs';
 import { checkState, checkWaiting, checkWaitingText } from './metrics.mjs';
 import { builds, modelMarks } from './models.mjs';
@@ -85,7 +85,7 @@ function retractEvidence(root, rawIds, reason, flags) {
   need(journalRows.length === 0 || alignRows(issue.id, table.rows, journalRows)[n - 1], `row ${n} of ${issue.id} matches no evidence line of the log, so its retraction could not be told from another row's; nothing was written`);
   // The first retraction of a loop raises the record format, before its line is written: a reader of format 1 does not
   // read a retraction and would go on counting the row, so it must refuse the loop instead.
-  raiseFormat(root);
+  needFormat(root, 'retraction');
   const lines = table.lines.slice();
   lines[row.start] = struck(lines[row.start]);
   lines[row.end] = `${lines[row.end].trimEnd()}~~`;
@@ -325,6 +325,8 @@ function statusOf(root, loop, flags) {
   // The numbers read from their headers, one note each: not disagreements, the header is the record for them.
   const byHeader = headerReadNotes(flags.tag === undefined ? loop : scopedLoop(loop, issues));
   if (byHeader.length) c.headerRead = byHeader;
+  // The record format: what the loop is in, what this Jarl reads, and the lines that are off where a composer keeps the format.
+  c.recordFormat = formatState(profile);
   const files = uncommittedLoopFiles(root);
   c.uncommitted = files === null ? null : files.length;
   // --by: the same five counts per repository, tag, kind or priority — a dashboard's table, read from the issues.
