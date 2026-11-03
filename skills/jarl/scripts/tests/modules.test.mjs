@@ -21,17 +21,26 @@ const LAYERS = [
     'the commands and the views, each standing on the record and on the commands under it'],
 ];
 
-// Every import of a module as { spec, names: [{ imported, local }] }: static imports over one line or many, side-effect
-// imports and export … from. A dynamic import is refused outright: the graph is read from the text alone.
+// Every import of a module as { spec, names: [{ imported, local }] }, in every static form, over one line or many: a
+// side-effect import, a default import, a namespace import, named imports, a default beside either, and a re-export
+// (export * from, export * as X from, export { … } from). A re-export binds no local name. A dynamic import is refused
+// outright, and so is an import or a re-export the reader cannot place: the graph is read from the text alone.
+const IMPORT = /^[ \t]*import\s*(?:([\w$]+)\s*(?:,\s*)?)?(?:\*\s*as\s+([\w$]+)\s*|\{([^}]*)\}\s*)?(?:from\s*)?(['"])([^'"]+)\4\s*;?/gm;
+const REEXPORT = /^[ \t]*export\s*(?:\*(?:\s*as\s+[\w$]+)?|\{[^}]*\})\s*from\s*(['"])([^'"]+)\1\s*;?/gm;
 function importsOf(text) {
   assert.doesNotMatch(text, /\bimport\s*\(/, 'a dynamic import');
-  return [...text.matchAll(/^(?:import|export)\s*(?:\{([^}]*)\}\s*from\s*|\*\s+as\s+\w+\s+from\s*)?['"]([^'"]+)['"]/gm)].map((m) => ({
-    spec: m[2],
-    names: (m[1] || '').split(',').map((s) => s.trim()).filter(Boolean).map((s) => {
-      const [imported, local = imported] = s.split(/\s+as\s+/);
-      return { imported, local };
-    }),
-  }));
+  const named = (list) => (list || '').split(',').map((s) => s.trim()).filter(Boolean).map((s) => {
+    const [imported, local = imported] = s.split(/\s+as\s+/);
+    return { imported, local };
+  });
+  const found = [];
+  let rest = text.replace(IMPORT, (_, dflt, ns, list, q, spec) => {
+    found.push({ spec, names: [...(dflt ? [{ imported: 'default', local: dflt }] : []), ...(ns ? [{ imported: '*', local: ns }] : []), ...named(list)] });
+    return '';
+  });
+  rest = rest.replace(REEXPORT, (_, q, spec) => { found.push({ spec, names: [] }); return ''; });
+  assert.doesNotMatch(rest, /^[ \t]*import\b(?!\.meta)|^[ \t]*export\s*(?:\*|\{[^}]*\}\s*from\b)/m, 'an import or a re-export the reader cannot place');
+  return found;
 }
 
 // What a module may import: a Node built-in, or a module of lib/ by its file name.
@@ -106,6 +115,27 @@ test('a module of the library imports only Node built-ins and modules of lib/, f
   assert.deepEqual(layerProblems({ 'git.mjs': [] }, small), ['the commands layer names commands.mjs, which lib/ does not hold']);
   assert.deepEqual(strayImports({ 'a.mjs': "import { x } from '../record.mjs';\nimport { y } from './b.mjs';\nimport { z } from 'node:fs';\nimport {\n  w,\n} from '../jarl-lib.mjs';\n" }, ['a.mjs', 'b.mjs']), ['a.mjs imports ../record.mjs', 'a.mjs imports ../jarl-lib.mjs']);
   assert.throws(() => importsOf("const m = await import('./b.mjs');"), /dynamic import/);
+  // Every form of import and re-export is read: each sample, put in a ground module, reaches the commands layer.
+  const FORMS = [
+    "import './commands.mjs';",
+    "import cmd from './commands.mjs';",
+    "import * as C from './commands.mjs';",
+    "import { cmdNew } from './commands.mjs';",
+    "import {\n  cmdNew,\n  cmdSet as set,\n} from './commands.mjs';",
+    "import cmd, { cmdNew } from './commands.mjs';",
+    "import cmd, * as C from './commands.mjs';",
+    "export * from './commands.mjs';",
+    "export * as C from './commands.mjs';",
+    "export { cmdNew } from './commands.mjs';",
+    "export {\n  cmdNew as made,\n} from \"./commands.mjs\"",
+  ];
+  for (const form of FORMS) {
+    assert.deepEqual(layerProblems(graphOf({ 'git.mjs': `${form}\nexport const x = 1;\n`, 'commands.mjs': '' }), small), ['git.mjs (ground) imports commands.mjs (commands)'], form);
+    assert.deepEqual(strayImports({ 'a.mjs': form.replace(/\.\/commands\.mjs/, '../record.mjs') }, ['a.mjs']), ['a.mjs imports ../record.mjs'], form);
+  }
+  assert.deepEqual(importsOf("import cmd, { cmdNew as made } from './c.mjs';\nimport * as C from './d.mjs';").map((i) => i.names.map((n) => n.local)), [['cmd', 'made'], ['C']]);
+  assert.throws(() => importsOf("import{a}from'./b.mjs'\n  import strange-form;\n"), /cannot place/, 'a form the reader does not know fails');
+  assert.deepEqual(importsOf("export { a, b };\nconst t = 'import x';\n"), [], 'an export list without from and the word import in a string are not imports');
 });
 
 test('no chain of imports between the modules of the library comes back to where it started', () => {
