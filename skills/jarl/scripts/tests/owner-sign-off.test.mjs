@@ -162,3 +162,49 @@ test('next --as puts an owner line on whoever produces its material, then on the
   jarl(root, 'set', '1', 'done', 'finished');
   assert.deepEqual(json(root, 'next').map((r) => r.id), ['2']);
 });
+
+test('a tick reads whole wherever the log is shown: the resume tail and the takeover block print its issue, the word tick and who ticked', () => {
+  const root = signOffLoop();
+  produce(root);
+  proveAndApprove(root);
+  jarl(root, 'tick', '1', '2', '--by', 'owner');
+  const whole = /^- \d{4}-\d{2}-\d{2} \d{2}:\d{2} · 1 tick · line 2 · by owner · \[owner\] the first cut reads well · material: renders\/cut\.txt · check: the pacing of the opening and the captions$/m;
+  assert.match(jarl(root, 'resume'), whole);
+  assert.ok(json(root, 'resume').log.some((l) => /1 tick · line 2 · by owner · \[owner\] the first cut/.test(typeof l === 'string' ? l : `${l.text}`)), 'the resume --json tail holds the whole line');
+  jarl(root, 'round', '1', 'the captions drift');
+  jarl(root, 'round', '1', 'the captions drift again');
+  const takeover = jarl(root, 'round', '1', 'the captions still drift');
+  assert.match(takeover, /^## Takeover/m);
+  assert.match(takeover, whole);
+});
+
+test('resume, status and review name the owner\'s tick as the step before done while an owner line is not ticked', () => {
+  const root = signOffLoop();
+  produce(root);
+  jarl(root, 'evidence', '1', '--ran', 'render the cut', '--saw', 'renders/cut.txt written');
+  const reply = jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
+  assert.match(reply, /next: the owner ticks acceptance line 2 \(jarl\.mjs tick 1 2 --by owner\), then jarl\.mjs set 1 done once the worker's Proof rows are recorded/);
+  assert.match(jarl(root, 'resume'), /^ {2}→ approved and queued for the merge — next the merger lands it, then the owner ticks acceptance line 2 \(jarl\.mjs tick 1 2 --by owner\), then set it done$/m);
+  assert.match(jarl(root, 'status'), /^in flight 1 · approved and queued for the merge — next the merger lands it, then the owner ticks acceptance line 2 \(jarl\.mjs tick 1 2 --by owner\), then set it done$/m);
+  jarl(root, 'tick', '1', '2', '--by', 'owner');
+  assert.match(jarl(root, 'resume'), /^ {2}→ approved and queued for the merge — next the merger lands it, then set it done$/m);
+});
+
+test('in a loop run by a composer, an [owner] line written there by a Jarl that did not know the mark makes done and tick say that owner lines are off and how to rewrite it', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'jarl-owner-line-off-'));
+  mkdirSync(join(dir, '.git'));
+  const profile = join(mkdtempSync(join(tmpdir(), 'jarl-owner-line-profile-')), 'profile.json');
+  writeFileSync(profile, JSON.stringify({ 'jarl-profile': 1, name: 'composed', statuses: L.BUILTIN_STATUSES, 'external-scheduler': 'the composer tick' }, null, 2));
+  jarl(dir, 'init', 'a mission', '--profile', profile);
+  const id = R.newIssue(dir, 'cut the film', { acceptance: 'the cut renders' }).id;
+  const file = R.findIssue(dir, id).file;
+  R.writeAtomic(file, readFileSync(file, 'utf8').replace('the cut renders', OWNER_LINE));
+  jarl(dir, 'set', id, 'in-progress', 'go', '--worker', 'w1');
+  jarl(dir, 'evidence', id, '--ran', 'render the cut', '--saw', 'written');
+  jarl(dir, 'review', id, 'approve', '--by', 'rev', FINDINGS);
+  const off = /owner lines are off in this loop: its profile names an external scheduler \(the composer tick\) and keeps record format 1, so no tick can be written here; rewrite it without the \[owner\] mark: jarl\.mjs body 001 --acceptance/;
+  assert.match(refuses(dir, 'set', id, 'done', 'finished'), off);
+  assert.match(refuses(dir, 'tick', id, '1', '--by', 'owner'), off);
+  jarl(dir, 'body', id, '--acceptance', 'the first cut reads well');
+  jarl(dir, 'set', id, 'done', 'finished');
+});

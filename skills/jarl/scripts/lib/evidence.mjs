@@ -21,7 +21,7 @@ import { leaseProblems, staleHours } from './rounds.mjs';
 import { attachmentLines, inspectAttachment, requiredSlots, slotProblems } from './attachments.mjs';
 import { ARCHIVE_KEEPS, PERMANENT_MARKER, issuesFor, needLifecycle, needLiveLoop, oneOrMany, rowsOf, waitingOn } from './commands.mjs';
 import { handoffAge, loadAsks, ratificationBatch } from './questions.mjs';
-import { ownerLineNotes } from './owner-lines.mjs';
+import { ownerLineNotes, ownerLineWait } from './owner-lines.mjs';
 
 // ---- commands: evidence ------------------------------------------------------------------------------
 
@@ -422,12 +422,16 @@ export function inFlightMark(loop, issue) {
   if (verdicts.length && verdicts[verdicts.length - 1].verdict === 'changes') return 'changes-requested';
   return g.rowsSince === 0 ? 'no-rows' : 'rows-no-verdict';
 }
-// The rows for the in-flight `issues` of a loop (its own issues, or the ones a view is scoped to).
+// The rows for the in-flight `issues` of a loop (its own issues, or the ones a view is scoped to). Where the mark ends in
+// setting the issue done and an acceptance line only the owner ticks is not ticked, next says that tick comes first.
+const ENDS_DONE = new Set(['approved', 'merged', 'merged-ci']);
 export function inFlightRows(loop, issues) {
   const { profile, byId } = loop;
   return issues.filter((i) => profile.is(i.status, 'holds-claim') && !waitingOn(i, byId, profile).length).map((i) => {
     const mark = inFlightMark(loop, i);
-    return { id: i.id, title: i.title, branch: i.fields.branch || null, worker: i.fields.worker || null, model: i.fields.model || null, since: i.fields.since || null, mark, next: IN_FLIGHT_MARKS[mark] };
+    const wait = ENDS_DONE.has(mark) ? ownerLineWait(loop.root, loop, i) : null;
+    const next = wait ? IN_FLIGHT_MARKS[mark].replace(/set it done$/, `${wait}, then set it done`) : IN_FLIGHT_MARKS[mark];
+    return { id: i.id, title: i.title, branch: i.fields.branch || null, worker: i.fields.worker || null, model: i.fields.model || null, since: i.fields.since || null, mark, next };
   });
 }
 

@@ -162,7 +162,9 @@ function ownerLineRows(ctx) {
     const base = { what: 'sign-off', id, title: i.title, priority: i.priority, ...(worker ? { doer: worker } : {}) };
     for (const s of states.filter((x) => !x.tick)) {
       const line = { ...base, line: s.n };
-      if (!s.material || !s.check || !s.what) {
+      if (s.off) {
+        out.push({ ...line, holder: JARL_HOLDER, says: `acceptance line ${s.n} is marked as the owner's, and ${s.why}; rewrite it without the mark`, command: `jarl.mjs body ${id} --acceptance "<line>"... (every line of the section)` });
+      } else if (!s.material || !s.check || !s.what) {
         out.push({ ...line, holder: JARL_HOLDER, says: `acceptance line ${s.n} is marked as the owner's and does not name its material and what to check; rewrite it`, command: `jarl.mjs body ${id} --acceptance "<line>"... (every line of the section)` });
       } else if (!s.ready) {
         out.push({ ...line, holder: JARL_HOLDER, says: `acceptance line ${s.n} is the owner's to tick once its material is there (${s.material}); ${s.why}`, command: `jarl.mjs evidence ${id} --ran "<command>" --saw "<what it printed>"` });

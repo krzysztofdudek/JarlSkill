@@ -39,8 +39,9 @@ import { STAMP_SRC, appendLog, logPath, oneLine } from './journal.mjs';
 //                  written: tip, the commit of the branch in each repository of the issue, in order, joined by commas
 //   ci             a CI state recorded alone: state
 //   body           a body change
-//   tick           the owner's tick of an acceptance line only he ticks: line, its number when it was ticked, by, and text,
-//                  the line as it was written then, which is what the tick holds (a line rewritten after it is another)
+//   tick           the owner's tick of an acceptance line only he ticks: line, its number when it was ticked, by, and
+//                  ownerLine, the line as it was written then, which is what the tick holds (a line rewritten after it is
+//                  another); the event's text stays the log line's whole text, as for every other kind
 //   other          any other line
 const LOG_LINE = new RegExp(`^- (${STAMP_SRC}) · ([^\\n]*)$`);
 const LEADING_ID = idRe('^(?:filed )?({id})\\b');
@@ -159,7 +160,7 @@ function eventParser(profile) {
     if (text.startsWith(`${id} CI `) && CI_STATES.includes(text.slice(`${id} CI `.length))) return { type: 'ci', state: text.slice(`${id} CI `.length) };
     if (text.startsWith(`${id} body · `)) return { type: 'body' };
     const tk = TICK_LINE.exec(text);
-    if (tk) return { type: 'tick', line: Number(tk[1]), by: tk[2], text: tk[3] };
+    if (tk) return { type: 'tick', line: Number(tk[1]), by: tk[2], ownerLine: tk[3] };
     return { type: 'other' };
   };
 }
