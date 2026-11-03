@@ -8,7 +8,7 @@ import { idKey, idRe } from './ids.mjs';
 import { profileAt } from './profile.mjs';
 import { asksAt, decisionsAt, goalLines, readGoal } from './journal.mjs';
 import { eventsById, loopEvents } from './log.mjs';
-import { alignRows, evidenceRows, evidenceTable, headerReadText, issuesAt, mergedOf, sharedNumberText, sharedNumbers } from './issues.mjs';
+import { alignRows, evidenceRows, evidenceTable, headerReadText, issuesAt, mergedOf, reviewEntries, sharedNumberText, sharedNumbers } from './issues.mjs';
 import { branchTip } from './repositories.mjs';
 
 // ---- the loaded loop -------------------------------------------------------------------------------
@@ -34,6 +34,9 @@ export function readLoop(dir) {
 }
 function makeLoop({ dir, root, profile, issues, events }) {
   const loop = { dir, root, profile, issues, byId: new Map(issues.map((i) => [i.id, i])), events, eventsById: eventsById(events) };
+  // A number the log cannot attribute (two files carry it, or the log files it more than once) has no log lines of its
+  // own: its rows, approves and merges may be another issue's. The gate and every view read it from its file instead.
+  for (const i of issues) if (i.byHeader) loop.eventsById.set(i.id, i.shared ? [] : fileEvents(i));
   const once = (make) => { let made = false; let value; return () => { if (!made) { value = make(); made = true; } return value; }; };
   const reads = {
     goal: once(() => readGoal(dir)),
@@ -45,6 +48,18 @@ function makeLoop({ dir, root, profile, issues, events }) {
   };
   for (const [key, read] of Object.entries(reads)) Object.defineProperty(loop, key, { enumerable: true, get: read });
   return loop;
+}
+// The events of an issue read from its header, made from its own file in place of the log: one filing, then the --ran/--saw
+// rows of its Evidence, then the verdicts of its Reviews that are not crossed out, each in file order. No round, move or
+// merge line comes from the file, so the gate's window is the whole file, and a merge is the Merged field alone.
+function fileEvents(issue) {
+  const out = [{ type: 'filed', id: issue.id, n: 0, at: null, text: '' }];
+  for (const r of evidenceRows(issue)) out.push({ type: 'row', id: issue.id, n: out.length, at: null, text: `${issue.id} evidence row · ${r.ran}` });
+  for (const e of reviewEntries(issue.sections.reviews).entries) {
+    if (e.retracted || e.verdict === 'retract') continue;
+    out.push({ type: 'verdict', id: issue.id, n: out.length, at: e.day, text: '', verdict: e.verdict, by: e.by, kind: e.kind });
+  }
+  return out;
 }
 // The same loop over some of its issues (the ones a view is scoped to): the gate looks up an issue and the branch it
 // shares with others among these, as the view does.

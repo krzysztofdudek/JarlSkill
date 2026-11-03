@@ -311,6 +311,57 @@ test('a third file merged in after the renumbering shares the number again and i
   assert.doesNotMatch(views(a, '3'), JUDGES_2);
 });
 
+// Clone A files its second issue, works it on a branch with a row and a fresh approve and closes it; clone B files its own
+// second issue and starts it. One clone pulls the other, A's file is renumbered, and B's file keeps 2 with no row and no
+// review of its own. `aPullsB` says which clone merges: B's lines then come after A's in the log, else A's after B's.
+function closedOnOneSide(aPullsB) {
+  const a = committedLoop();
+  const b = cloneOf(a.dir);
+  fileAndCommit(a, 'second on A');
+  jarl(a.dir, 'set', '2', 'in-progress', '--branch', 'jarl/2-a', '--worker', 'w-a');
+  jarl(a.dir, 'evidence', '2', '--ran', 'npm test', '--saw', 'all green');
+  jarl(a.dir, 'review', '2', 'approve', '--by', 'rev-a', 'read the diff and found nothing wrong');
+  jarl(a.dir, 'set', '2', 'done');
+  a.g('add', '-A'); a.g('commit', '-qm', 'a closes its 2');
+  fileAndCommit(b, 'second on B');
+  jarl(b.dir, 'set', '2', 'in-progress', '--branch', 'jarl/2-b', '--worker', 'w-b');
+  b.g('add', '-A'); b.g('commit', '-qm', 'b starts its 2');
+  let at = b;
+  if (aPullsB) {
+    a.g('remote', 'add', 'b', b.dir);
+    a.g('pull', '-q', '--no-rebase', '--no-edit', 'b', 'main');
+    at = a;
+  } else b.g('pull', '-q', '--no-rebase', '--no-edit', 'origin', 'main');
+  renumber(at, '2-second-on-a.md', 3);
+  jarl(at.dir, 'log', 'the row, the approve and the close of 2 were the first clone\'s, now 3');
+  return at;
+}
+
+for (const [order, aPullsB] of [['the first clone\'s lines after the second\'s', false], ['the second clone\'s lines after the first\'s', true]]) {
+  test(`with ${order}, the number kept closes only on the row and the approve its own file holds`, () => {
+    const at = closedOnOneSide(aPullsB);
+    assert.equal(JSON.parse(jarl(at.dir, 'show', '2', '--json')).status, 'in-progress');
+    assert.match(refuses(at.dir, 'set', '2', 'done'), /^2 has no evidence yet/m, 'no row of its own: the other issue\'s row does not count');
+    jarl(at.dir, 'evidence', '2', '--ran', 'npm test', '--saw', 'all green on B');
+    assert.match(refuses(at.dir, 'set', '2', 'done'), /2 has no approving review/, 'no approve of its own: rev-a\'s does not count');
+    const queue = jarl(at.dir, 'queue');
+    assert.doesNotMatch(queue, /jarl\/2-b/, `the merge queue holds no approve for 2: ${queue}`);
+    jarl(at.dir, 'review', '2', 'approve', '--by', 'rev-b', 'read the diff and found nothing wrong');
+    assert.match(jarl(at.dir, 'set', '2', 'done'), /2 → done/, 'its own row and approve close it');
+    const report = JSON.parse(jarl(at.dir, 'report', '--json'));
+    assert.equal(report.issues.find((i) => i.id === '2').review.by, 'rev-b', 'report names the approve from its own file');
+    assert.equal(report.issues.find((i) => i.id === '3').status, 'done');
+  });
+}
+
+test('a plain issue in the same loop closes on the rows and the approve its log holds', () => {
+  const at = closedOnOneSide(false);
+  jarl(at.dir, 'set', '1', 'in-progress', '--branch', 'jarl/1-x', '--worker', 'w1');
+  jarl(at.dir, 'evidence', '1', '--ran', 'npm test', '--saw', 'all green');
+  jarl(at.dir, 'review', '1', 'approve', '--by', 'rev-1', 'read the diff and found nothing wrong');
+  assert.match(jarl(at.dir, 'set', '1', 'done'), /1 → done/);
+});
+
 test('list, next and report mark both files of a shared number', () => {
   const dir = twoClones();
   const marked = /number shared: issues\/2-second-on-a\.md, issues\/2-second-on-b\.md/;
