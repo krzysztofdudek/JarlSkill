@@ -57,7 +57,7 @@ commands:
                                                  (repeatable) write the fields and sections the loop's profile declares
                                                  (a field's default when not given; a required one must be given)
   body <ids> [--title "<t>"] [--where "<w>"] [--what "<w>"] [--why "<w>"] [--acceptance "<line>"]... [--changelog "<entry>"]...
-      [--section "<Heading>=<text>"]... [--by who]
+      [--section "<Heading>=<text>"]... [--by who] [--append]
                                                  the description commands, body to after below: every part of an issue's
                                                  description is changed by one of them, and each change writes one log
                                                  line per issue and part with what the part held before and, when --by
@@ -66,7 +66,9 @@ commands:
                                                  --supersedes, and the status moves only with set. body sets or
                                                  replaces the title (the file keeps its name), the Where field and the
                                                  What, Why, Acceptance and Changelog sections, and a section the
-                                                 profile declares
+                                                 profile declares; with --append, the text is added after what the
+                                                 section holds (a list gains its new items), and the title and the
+                                                 Where field are not appended to
   field <ids> <name> "<value>" | <ids> <name> --clear [--by who]
                                                  write one header field of the description on every id: Title,
                                                  Priority, Tier, Kind, Found by, Tags, Files, Repo, After, Source,
@@ -443,7 +445,7 @@ export const COMMAND_FLAGS = {
     where: 'value', what: 'value', why: 'value', acceptance: 'many', source: 'many', after: 'many', changelog: 'many', template: 'value',
     field: 'many', section: 'many',
   },
-  body: { title: 'value', where: 'value', what: 'value', why: 'value', acceptance: 'many', changelog: 'many', section: 'many', by: 'value' },
+  body: { title: 'value', where: 'value', what: 'value', why: 'value', acceptance: 'many', changelog: 'many', section: 'many', by: 'value', append: 'bool' },
   import: {
     source: 'value', kind: 'value', prio: 'value', tier: 'value', tags: 'many', repo: 'many', 'found-by': 'value',
     only: 'many', adopt: 'bool', 'dry-run': 'bool', field: 'many',
@@ -554,7 +556,7 @@ export const COMMAND_ARGS = {
 export const COMMAND_SUMMARY = {
   init: 'Open a loop: create .jarl/ with the goal, out of git by default, committed or permanent when asked.',
   new: 'File an issue under the next free number, with its fields and its What, Why and Acceptance.',
-  body: 'Set or replace the title, the Where field and the What, Why, Acceptance, Changelog and profile sections of issues, logging what each part held and who changed it when named.',
+  body: 'Set or replace the title, the Where field and the What, Why, Acceptance, Changelog and profile sections of issues, or add to those sections with append, logging what each part held and who changed it when named.',
   import: 'File one issue per finding of a findings file, skipping findings already filed.',
   sources: 'Per findings report: its findings, the issues filed from them and their status.',
   source: 'Set the Source field of issues filed by hand.',
