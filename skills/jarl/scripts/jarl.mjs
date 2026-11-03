@@ -11,6 +11,7 @@
 // This module re-exports jarl-lib.mjs whole, but none of those exports is a contract: only
 // record.mjs (RECORD_API) is.
 
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import * as R from './record.mjs';
 import {
@@ -27,6 +28,7 @@ import { writeAreaDecision, writeRuleRatification } from './yg-edge.mjs';
 export * from './jarl-lib.mjs';
 
 export const USAGE = `usage: jarl.mjs <command> [options]
+       jarl.mjs --version                        the version of this install, the one the MCP server reports
 
 commands:
   init "<goal>" [--committed] [--permanent] [--profile <file>]
@@ -691,8 +693,16 @@ function mergeDriverMain(args) {
 
 const LONG_NOTE_CHARS = 600;
 const LONG_NOTE_LINES = 6;
+
+// The version of this install: the plugin manifest at the plugin root, three directories above this script. A copy with
+// no manifest reports a fallback version. The MCP server reads the same value, so the command line and the server of one install agree.
+export function installVersion() {
+  try { return JSON.parse(readFileSync(new URL('../../../plugin.json', import.meta.url), 'utf8')).version || '0.0.0'; } catch { return '0.0.0'; }
+}
+
 function main() {
   if (process.argv[2] === 'merge-driver') mergeDriverMain(process.argv.slice(3));
+  if (process.argv.length === 3 && process.argv[2] === '--version') { console.log(installVersion()); process.exit(0); }
   let parsed;
   try { parsed = parseArgs(process.argv.slice(2)); } catch (e) { console.error(e.message); process.exit(1); }
   const { positional, flags } = parsed;

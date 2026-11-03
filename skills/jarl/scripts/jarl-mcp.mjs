@@ -31,10 +31,9 @@
 //
 // Wire format: newline-delimited JSON-RPC on stdin/stdout (MCP stdio transport); stderr is for diagnostics.
 // No dependencies beyond the vendored copy, Node 22+.
-import { readFileSync } from 'node:fs';
 import { resolve, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { COMMAND_ALIASES, COMMAND_ARGS, COMMAND_FLAGS, INTERNAL_COMMANDS, LIST_FIELDS, flagsOf, COMMAND_SUMMARY, GLOBAL_FLAGS, MUTATING, USAGE, parseArgs, dispatch, findRoot, isEntry as isEntryOf } from './jarl.mjs';
+import { COMMAND_ALIASES, COMMAND_ARGS, COMMAND_FLAGS, INTERNAL_COMMANDS, LIST_FIELDS, flagsOf, COMMAND_SUMMARY, GLOBAL_FLAGS, MUTATING, USAGE, parseArgs, dispatch, findRoot, isEntry as isEntryOf, installVersion } from './jarl.mjs';
 import { defineTable } from './vendor/runes/dist/cli/index.mjs';
 import {
   buildTools as generateTools, argvFor as generateArgv, commandForTool, serveStdio, InvalidParams,
@@ -48,11 +47,7 @@ export const PROTOCOL_VERSIONS = RUNES_PROTOCOL_VERSIONS;
 // The fields that name a file on disk: read against the server's working directory, which is not the caller's,
 // so they must be absolute.
 export const PATH_FIELDS = { import: ['file'], sources: ['files'], init: ['profile'], profile: ['file'] };
-function version() {
-  // The plugin's manifest, when the skill runs from a plugin install; a drop-in copy has none.
-  try { return JSON.parse(readFileSync(new URL('../../../plugin.json', import.meta.url), 'utf8')).version || '0.0.0'; } catch { return '0.0.0'; }
-}
-const SERVER_INFO = { name: 'jarl', version: version() };
+const SERVER_INFO = { name: 'jarl', version: installVersion() };
 
 export const TOOL_PREFIX = 'jarl_';
 export const toolName = (cmd) => `${TOOL_PREFIX}${cmd}`;
