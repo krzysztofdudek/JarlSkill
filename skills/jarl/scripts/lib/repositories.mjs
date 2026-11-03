@@ -209,6 +209,12 @@ export function fileAt(root, issue, declared) {
   return { repo: canonical(repoPlace(root, named[0]).path), path: declared };
 }
 
+// The files an issue declares as (repository, path) pairs, each with its key: the same path in two repositories is two
+// keys, the same file in one repository one key, however its Repo path is spelled. next and the lease compare these.
+export function fileKeysOf(root, issue) {
+  return issue.files.map((f) => { const at = fileAt(root, issue, f); return { f, key: `${at.repo}\n${at.path}` }; });
+}
+
 function prefixedIn(root, named, declared) {
   const spelled = repoPlace(root, named).path;
   const repo = canonical(spelled);

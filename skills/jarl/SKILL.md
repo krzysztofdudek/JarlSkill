@@ -46,7 +46,7 @@ The other references, each read when its subject comes up:
 | `next` | the open issues ready to start; `--all` adds the held and waiting ones, in groups |
 | `next --as <who>` | what is on the owner, the jarl or a person by name now, each line with the command that moves it |
 | `new "<title>" --what … --acceptance …` | files an issue with its body |
-| `set <ids> in-progress "<why>" --branch <b> --worker <name> --model <m>` | leases issues before a worker is raised |
+| `set <ids> in-progress "<why>" --branch <b> --worker <name> --model <m>` | leases issues before a worker is raised; with `--handover`, gives a leased issue to a new worker, `"<why>"` saying why |
 | `evidence <ids> --ran "<command>" --saw "<what it printed>"` | records proof |
 | `review <ids> approve\|changes --by <name> --model <m> "<findings>"` | records a verdict |
 | `merged <ids> --sha <sha> --ran "<check>" --saw "<summary>"` | records a merge |

@@ -13,7 +13,7 @@ import { appendLog, appendLogLines, firstLine } from './journal.mjs';
 import { outOfGit } from './loop-git.mjs';
 import { attachmentOf, journalById } from './log.mjs';
 import { acceptanceLineCount, alignRows, bodyText, evidenceNotes, evidenceParts, evidenceTable, loadIssues, mergedOf, noteText, parseIssue, placeEvidence, reviewEntries, setSection, sharedMark, struckNote } from './issues.mjs';
-import { fileAt, needFormat, repoNames, reposWhere, tipLines, whereLines, whereOf } from './repositories.mjs';
+import { fileKeysOf, needFormat, repoNames, reposWhere, tipLines, whereLines, whereOf } from './repositories.mjs';
 import { approveKind, carriesCode, disagreementText, gateOf, gateState, headerReadNotes, readLoop, recordDisagreements, reviewSplit, scopedLoop } from './loop.mjs';
 import { checkState, checkWaiting, checkWaitingText } from './metrics.mjs';
 import { builds, modelMarks } from './models.mjs';
@@ -260,7 +260,7 @@ export function nextRows(root, flags = {}) {
   }
   // Files are compared as (repository, path) pairs: the same path in two repositories never holds
   // an issue back, the same file in one repository always does, however its Repo path is spelled.
-  const keysOf = (i) => i.files.map((f) => { const at = fileAt(root, i, f); return { f, key: `${at.repo}\n${at.path}` }; });
+  const keysOf = (i) => fileKeysOf(root, i);
   // Each taken file with the issue holding it: one in a lease status (in progress), or a dispatchable (open)
   // one offered earlier in this list.
   const taken = new Map(issues.filter((i) => profile.is(i.status, 'holds-claim')).flatMap((i) => keysOf(i).map((k) => [k.key, i.id])));

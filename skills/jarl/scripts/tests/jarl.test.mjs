@@ -1361,7 +1361,7 @@ function editIssue(root, id, fn) {
 
 test('a worktree is looked up through git by the lease branch: locked, invisible, found without a stored path, and truly removed', () => {
   const { root, sh } = gitLoop();
-  for (const t of ['locked', 'invisible', 'removed', 'closed']) jarl(root, 'new', t, '--files', 'a.txt');
+  for (const t of ['locked', 'invisible', 'removed', 'closed']) jarl(root, 'new', t, '--files', `${t}.txt`);
   const away = join(root, '..', `${basename(root)}-away`);
   mkdirSync(away);
   // 1: locked with a reason, its directory not on this machine (a container's); the lease stores the path.

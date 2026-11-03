@@ -28,8 +28,8 @@ const loop = () => {
   return dir;
 };
 // An in-progress issue on a branch, worked by w1, with one evidence row — ready for done but for its review.
-function codeIssue(root, title = 'code') {
-  const id = FILED.exec(jarl(root, 'new', title, '--files', 'a.mjs').stdout)[1];
+function codeIssue(root, title = 'code', files = 'a.mjs') {
+  const id = FILED.exec(jarl(root, 'new', title, '--files', files).stdout)[1];
   jarl(root, 'set', id, 'in-progress', 'go', '--branch', `jarl/${id}-x`, '--worker', 'w1');
   jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'pass 1');
   return id;
@@ -112,7 +112,7 @@ test('queue: a coordinator approve alone keeps a branch out; a fresh approve put
 test('merged without a fresh approve is recorded and said loudly; with one, nothing is said', () => {
   const root = loop();
   const a = codeIssue(root, 'coordinated');
-  const b = codeIssue(root, 'reviewed');
+  const b = codeIssue(root, 'reviewed', 'b.mjs');
   jarl(root, 'review', a, 'approve', '--by', 'jarl', FINDINGS);
   jarl(root, 'review', b, 'approve', '--by', 'opus-reviewer-3', FINDINGS);
   const sha = sh(root, 'git rev-parse HEAD');
@@ -134,7 +134,7 @@ test('self spans a takeover: the worker before a hand-over is still self, not on
   jarl(root, 'set', id, 'in-progress', 'go', '--branch', `jarl/${id}-x`, '--worker', 'w1');
   // A hand-over: re-leased to a different worker without ever leaving in-progress (a takeover after rounds
   // works the same way — the issue keeps its identity, only Worker changes).
-  jarl(root, 'set', id, 'in-progress', 'handed over', '--worker', 'w2');
+  jarl(root, 'set', id, 'in-progress', 'handed over', '--worker', 'w2', '--handover');
   jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'pass');
   assert.match(refuses(root, 'review', id, 'approve', '--by', 'w1', FINDINGS), /self-approve/);
   assert.match(refuses(root, 'review', id, 'approve', '--by', 'W2', FINDINGS), /self-approve/);

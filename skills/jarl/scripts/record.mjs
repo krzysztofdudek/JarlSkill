@@ -122,7 +122,11 @@ export function writeAtomic(path, text) { return L.writeWhole(path, text); }
 // The library names the width of a new number (three digits, so the file reads 007-…); the command line names none.
 export function newIssue(root, title, opts = {}) { return write(root, () => L.cmdNew(root, title, { width: 3, ...opts })); }
 // A move into a status, checked against the profile: needs-reason wants `why`, closes-record passes the done gate,
-// holds-claim writes the lease from opts { branch, worker, model }, leaving it removes the lease. A lease records no
+// holds-claim writes the lease from opts { branch, worker, model }, leaving it removes the lease. The lease holds: an
+// issue another worker or branch holds, and a file or resource another lease holds, are refused, unless opts.handover
+// (true) hands a leased issue to the new worker or branch, with `why` as the reason. In a loop whose profile names an
+// external scheduler the composer decides who holds what, and neither refusal runs: a call written against any
+// contract in RECORD_APIS leases there as it always did. A lease records no
 // worktree, which is found through its branch: a worktree key is accepted and stores nothing, and is never refused.
 // opts.caller says who asks: 'record' (the default for a library call) or 'cli' (what the command line and the MCP tools
 // always pass). A status the profile marks "set-by": "record" refuses 'cli'; a library caller that acts for a person at

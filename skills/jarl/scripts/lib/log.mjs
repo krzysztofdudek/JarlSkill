@@ -23,7 +23,8 @@ import { STAMP_SRC, appendLog, logPath, oneLine } from './journal.mjs';
 //   filed          the issue's filing
 //   move           a status change: from (null when the log names no status before the line), to, lease — { worker, model, branch }
 //                  for a move into a status that holds the claim and names a worker, else null — and model, the model a
-//                  lease line names (null without one)
+//                  lease line names (null without one); a move that hands the lease over adds handover (true) and branch,
+//                  the branch it names (null without one)
 //   round          one red round; a round this Jarl writes carries its standing right after its number, as standing
 //                  { takeover, count, limit }: `<id> round <n> · count <k> of <limit> · …`, or `takeover <k> of <limit>`
 //                  on the round that reached the limit and printed the takeover block. A round line without a standing
@@ -69,9 +70,13 @@ function leaseTail(segments) {
   }
   return out;
 }
+// The segment that marks a lease handed over: it follows the move's reason, which a handover always has, so it is the
+// second segment of the head or later, and a reason alone (one segment) is never read as one.
+export const HANDOVER_SEGMENT = 'handover';
 // The lease fields { branch, model, worker, worktree } a move line carries: the longest tail of its segments that reads as
 // lease fields in order, the segments before it being the reason.
-// The reason is the rest, as `reason`, without the "(reason)" segment that closes a reason opening with a field name.
+// The reason is the rest, as `reason`, without the "(reason)" segment that closes a reason opening with a field name, and
+// without the handover segment; `handover` is true on a move that hands the lease over.
 export function leaseOfMove(text, id, to) {
   const rest = text.slice(`${id} → ${to}`.length);
   const segments = rest === '' ? [] : rest.split(' · ').slice(1);
@@ -80,7 +85,9 @@ export function leaseOfMove(text, id, to) {
     if (!found) continue;
     const head = segments.slice(0, k);
     if (head.length > 1 && head[head.length - 1] === '(reason)' && /^(branch|model|worker|worktree) /.test(head[0])) head.pop();
-    return { ...found, reason: head.join(' · ') };
+    const handover = head.length > 1 && head[head.length - 1] === HANDOVER_SEGMENT;
+    if (handover) head.pop();
+    return { ...found, reason: head.join(' · '), ...(handover ? { handover: true } : {}) };
   }
   return { reason: '' };
 }
@@ -118,7 +125,7 @@ function eventParser(profile) {
       const to = mv[1];
       const found = claims(to) ? leaseOfMove(text, id, to) : {};
       const model = found.model || null;
-      return { type: 'move', from, to, lease: found.worker ? { worker: found.worker, model, branch: found.branch || null } : null, model };
+      return { type: 'move', from, to, lease: found.worker ? { worker: found.worker, model, branch: found.branch || null } : null, model, ...(found.handover ? { handover: true, branch: found.branch || null } : {}) };
     }
     if (text.startsWith(`${id} round `)) {
       const st = ROUND_STANDING_LINE.exec(text);
