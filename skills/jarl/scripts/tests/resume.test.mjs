@@ -200,32 +200,74 @@ test('handoff takes its flags, writes nothing, says so and exits 0; handoff read
   assert.equal(js.legacyHandoff.at, '2026-01-01 00:00');
 });
 
-test('resume stays fast on a loop of hundreds of issues naming another repository and a long log', () => {
+// A loop of `count` issues in the shape of a real one (a share done, open, in flight), all naming the tool repository,
+// with a log of seven lines per issue. Returns the hub, the number in flight and the tool repository.
+function bigLoop(count) {
   const { hub, tool } = world();
   const dir = join(hub, '.jarl', 'issues');
   const statuses = ['done', 'done', 'done', 'open', 'in-progress'];
-  for (let n = 1; n <= 425; n += 1) {
+  let inFlight = 0;
+  for (let n = 1; n <= count; n += 1) {
     const id = String(n);
     const status = statuses[n % statuses.length];
+    if (status === 'in-progress') inFlight += 1;
     const lease = status === 'in-progress' ? `**Branch:** jarl/${id}-x\n**Worker:** w\n**Since:** 2026-09-27 06:00\n` : '';
     const merged = status === 'done' ? `**Merged:** abc1234 in ../tool\n**CI:** green\n` : '';
     writeFileSync(join(dir, `${id}-issue-${id}.md`), `# ${id} · issue ${id}\n\n**Status:** ${status}\n**Kind:** bug\n**Priority:** 2\n**Tier:** standard\n**Tags:** \n**Files:** tool/src/f${id}.mjs\n**Repo:** ../tool\n${lease}${merged}**Found by:** jarl\n**Where:**\n\n## What\n\n\n## Why\n\n\n## Acceptance\n- works\n\n## Evidence\n\n`);
   }
   const lines = [];
-  for (let n = 0; n < 3000; n += 1) lines.push(`- 2026-09-27 06:00 · ${String((n % 425) + 1).padStart(3, '0')} evidence · note ${n}`);
+  for (let n = 0; n < count * 7; n += 1) lines.push(`- 2026-09-27 06:00 · ${String((n % count) + 1).padStart(3, '0')} evidence · note ${n}`);
   writeFileSync(join(hub, '.jarl', 'log.md'), `# Log\n\n${lines.join('\n')}\n`);
   sh(tool, 'for n in 5 010 015; do git branch jarl/$n-x; done');
-  const t0 = Date.now();
-  const r = run(hub, ['resume']);
-  const ms = Date.now() - t0;
+  return { hub, tool, inFlight };
+}
+
+// What resume costs on a large loop is judged against measurements of the same run, never against a fixed number of
+// seconds: the git processes it starts are counted (the same on a quiet machine and a busy one), and its time is set
+// against a git process started now and against its own time on a loop a quarter the size (load slows all three). A git
+// process per issue, or a pass over every issue for each issue, fails; a busy machine does not.
+test('resume stays fast on a loop of hundreds of issues naming another repository and a long log', async () => {
+  const { dispatch } = await import(new URL('../jarl.mjs', import.meta.url).href);
+  const large = bigLoop(425);
+  const small = bigLoop(106);
+  const r = run(large.hub, ['resume']);
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /## In flight \(85\)/);
   assert.match(r.stdout, /## Last 15 log line\(s\)/);
-  // The budget is 2 s on a quiet machine; the bound here leaves room for a loaded one, and still catches a return
-  // to git processes per issue (over a thousand on this loop). Starting a process is several times slower on
-  // Windows, so its bound is wider; a git process per issue would still cost minutes there.
-  const bound = process.platform === 'win32' ? 20000 : 6000;
-  assert.ok(ms < bound, `resume took ${ms} ms`);
+
+  // git processes: GIT_TRACE adds one line for each git process that runs, in this process and its children.
+  const trace = join(large.hub, '..', 'git-trace');
+  const processes = (hub) => {
+    writeFileSync(trace, '');
+    process.env.GIT_TRACE = trace;
+    try { dispatch(hub, 'resume', [], {}); } finally { delete process.env.GIT_TRACE; }
+    return readFileSync(trace, 'utf8').split('\n').filter((l) => /\btrace: (built-in|exec): /.test(l)).length;
+  };
+  // Resume starts one git process for each issue in flight and a fixed few besides, so the large loop may start that
+  // many more than the small one, and a few spare.
+  const fewer = processes(small.hub);
+  const used = processes(large.hub);
+  const allowed = large.inFlight - small.inFlight + 10;
+  assert.ok(used - fewer <= allowed, `resume started ${used} git processes on the large loop and ${fewer} on the small one; ${large.inFlight - small.inFlight} more issues in flight allow ${allowed} more`);
+
+  // time, against clocks measured in this run: a git process started on this machine now (the unit), and resume on a
+  // loop a quarter the size. The best of several runs of each, taken one after the other, so a busy machine moves the
+  // unit and the baseline with the large run. Linear growth is 4x for 4x the issues and a pass over every issue for
+  // each issue is 16x; resume costs about 150 units, and the bounds leave room for the noise of one run.
+  const best = (runs, fn) => {
+    let least = Infinity;
+    for (let i = 0; i < runs; i += 1) {
+      const t0 = process.hrtime.bigint();
+      fn();
+      least = Math.min(least, Number(process.hrtime.bigint() - t0) / 1e6);
+    }
+    return least;
+  };
+  const unit = best(10, () => execFileSync('git', ['--version'], { stdio: 'ignore', timeout: 120_000 }));
+  const base = best(3, () => dispatch(small.hub, 'resume', [], {}));
+  const grown = best(3, () => dispatch(large.hub, 'resume', [], {}));
+  assert.ok(grown < unit * 400, `resume took ${grown.toFixed(0)} ms on the large loop, ${(grown / unit).toFixed(0)} times a git process (${unit.toFixed(1)} ms)`);
+  assert.ok(grown < base * 7, `resume took ${grown.toFixed(0)} ms on the large loop and ${base.toFixed(0)} ms on one a quarter its size: ${(grown / base).toFixed(1)}x for 4x the issues`);
 });
 
 // The live loop of the family release, when this checkout sits beside it: resume and handoff read on a copy, with
