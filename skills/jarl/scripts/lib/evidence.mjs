@@ -21,6 +21,7 @@ import { leaseProblems, staleHours } from './rounds.mjs';
 import { attachmentLines, inspectAttachment, requiredSlots, slotProblems } from './attachments.mjs';
 import { ARCHIVE_KEEPS, PERMANENT_MARKER, issuesFor, needLifecycle, needLiveLoop, oneOrMany, rowsOf, waitingOn } from './commands.mjs';
 import { handoffAge, loadAsks, ratificationBatch } from './questions.mjs';
+import { ownerLineNotes } from './owner-lines.mjs';
 
 // ---- commands: evidence ------------------------------------------------------------------------------
 
@@ -159,7 +160,7 @@ export function issueView(root, issue, { full = false } = {}) {
   };
   const g = full ? null : gateState(root, issue.id);
   const loop = readLoop(jarlDir(root));
-  const notes = [...recordDisagreements(loop).filter((d) => d.id === issue.id).map(disagreementText), ...headerReadNotes(loop).filter((n) => n.id === issue.id).map((n) => `note: ${n.line}`), ...checkWaiting(loop, [issue]).map(checkWaitingText), ...whereLines(whereOf(root, issue))];
+  const notes = [...recordDisagreements(loop).filter((d) => d.id === issue.id).map(disagreementText), ...headerReadNotes(loop).filter((n) => n.id === issue.id).map((n) => `note: ${n.line}`), ...checkWaiting(loop, [issue]).map(checkWaitingText), ...whereLines(whereOf(root, issue)), ...ownerLineNotes(root, loop, issue)];
   const out = [];
   for (const p of pieces) {
     if (p.name === null && notes.length) {
