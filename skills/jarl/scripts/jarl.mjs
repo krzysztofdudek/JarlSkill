@@ -46,7 +46,7 @@ commands:
                                                  --repo names the repository
                                                  its code lives in when that is not the loop's own, several as one comma
                                                  list (see --repo below); --tags, --files, --source, --after and --repo
-                                                 repeat, or take a comma list, either way one item each;
+                                                 repeat, or take a comma list (see Lists below);
                                                  --what, --why and --acceptance (one per line, repeatable) write the body,
                                                  --source names the finding(s) it comes from, --after the issues it waits on;
                                                  --changelog (repeatable) is the issue's changelog entry, "Added: …" etc.;
@@ -341,6 +341,15 @@ starts with (--ran "--help" records a row), or inline as --flag=value. A bare --
 note or a title that starts with -- after it, and every flag (--root too) before it. Words beyond what a
 command reads are an error.
 
+Lists (the <ids> above; new's --tags, --files, --repo, --source, --after; import's --tags, --repo, --only;
+decide's --settles; the paths of files, the references of source, the ids of after, the repositories of repo):
+one item, or several as one comma list (a,b); a list flag also repeats, and files, source, after and repo
+also take their items as separate words; a tool takes the same text or a list of strings, one item each.
+An item that starts with - is refused (it is a flag in the wrong place). A list written as text is refused:
+an item that begins or ends with a quote mark, a name (an id, a tag, a reference, a finding id) that holds
+a bracket or a quote, and a path whose brackets do not pair up ([a, b]) or that is a quoted or empty list
+in brackets (["a"], []). A path whose brackets pair up is a name: [1], src/[id]/page.tsx, [...slug].
+
 Writes: every command that writes holds .jarl/.lock while it runs (the holder's pid, host and time are
 inside), so parallel calls from workers, reviewers and the merger queue instead of losing each other's
 writes; a lock whose holder is gone is taken over, a live one that does not let go within 20 s fails the
@@ -476,16 +485,8 @@ export function parseArgs(argv) {
     const extra = positional.slice(1 + ARITY[cmd]);
     need(extra.length === 0, `${cmd} takes at most ${ARITY[cmd]} argument${ARITY[cmd] === 1 ? '' : 's'} — unexpected: ${extra.map((x) => JSON.stringify(x)).join(' ')}${rest ? ' (everything after a bare -- is an argument, so flags such as --root go before it)' : ''}; several ids are one argument: 12,13 or 203-206`);
   }
-  // The commands whose last argument is a list read every word after the id as an item. An item that starts with - is
-  // a flag that went to the wrong place (after a bare -- it is also where a --root written last would land), never a
-  // path, a reference or an id.
-  if (cmd !== undefined && LIST_AFTER_ID.has(cmd)) {
-    const dashed = positional.slice(2).filter((x) => x.startsWith('-'));
-    need(dashed.length === 0, `${cmd} takes its items after the id, and an item cannot start with - — unexpected: ${dashed.map((x) => JSON.stringify(x)).join(' ')}${rest ? ' (everything after a bare -- is an argument, so flags such as --root go before it)' : ''}`);
-  }
   return { positional, flags };
 }
-const LIST_AFTER_ID = new Set(['files', 'source', 'after']);
 // The arguments each command reads after its name, in order, named: the MCP server (jarl-mcp.mjs) turns each
 // name into a field of that command's tool, so this table and COMMAND_FLAGS are the one source of both the
 // CLI and the tools. A name ending in ? may be left out; one ending in ... takes any number of words (tag's
@@ -546,10 +547,77 @@ export const COMMAND_SUMMARY = {
   verify: 'Check the record strictly, without a lock: the lines each reader does not place, the headers that disagree with the log, the repositories, leases and superseded rulings the issues name; exit 2 on a finding.',
   close: 'Close the loop, filing the ratification batch first; it refuses while issues are open or in progress, or deferred where it removes the loop, unless force is set.',
 };
-const ARITY = Object.fromEntries(Object.entries({ ...COMMAND_ARGS, ...Object.fromEntries(Object.entries(COMMAND_ALIASES).map(([name, c]) => [name, COMMAND_ARGS[c]])) }).filter(([, a]) => !a.some((n) => n.endsWith('...'))).map(([c, a]) => [c, a.length]));
+// The fields that hold a list, per command: an argument (named as in COMMAND_ARGS) or a flag, and what one item is.
+// A name (an issue or question id, a tag, a finding's reference or id) never holds a bracket or a quote; a path (Files,
+// Repo) may hold brackets that pair up, as file names do (src/[id]/page.tsx). tag's operations add names. The tools take
+// each of these fields as one text or as a list of strings (jarl-mcp.mjs), and dispatch reads every one through
+// listItems, so the command line and the tools follow one rule.
+export const LIST_FIELDS = {
+  new: { tags: 'name', files: 'path', repo: 'path', source: 'name', after: 'name' },
+  import: { tags: 'name', repo: 'path', only: 'name' },
+  decide: { settles: 'name' },
+  body: { id: 'name' }, round: { id: 'name' }, answer: { id: 'name' },
+  source: { id: 'name', refs: 'name' }, after: { id: 'name', ids: 'name' },
+  files: { id: 'name', paths: 'path' }, repo: { id: 'name', path: 'path' },
+  evidence: { ids: 'name' }, field: { ids: 'name' }, set: { ids: 'name' }, merged: { ids: 'name' },
+  tag: { ids: 'name', ops: 'ops' }, prio: { ids: 'name' }, review: { ids: 'name' }, changelog: { ids: 'name' },
+};
+const QUOTED = /^["'`]|["'`]$/;
+// Whether one item of a list is a piece of a list written out as text: it begins or ends with a quote mark, or, for a
+// name, holds a bracket or a quote at all; for a path, its brackets do not pair up (what a comma inside "[a, b]"
+// leaves), or it is an empty or quoted list in brackets ("[]", "["a"]"). A path in brackets with nothing else to
+// tell it from a name ([1], [...slug]) is a name.
+function piecesOfListText(item, kind) {
+  if (QUOTED.test(item)) return true;
+  if (kind === 'name') return /[[\]"'`]/.test(item);
+  let depth = 0;
+  for (const c of item) {
+    if (c === '[') depth += 1;
+    else if (c === ']' && --depth < 0) return true;
+  }
+  if (depth !== 0) return true;
+  const inner = /^\[(.*)\]$/.exec(item)?.[1].trim();
+  return inner !== undefined && (inner === '' || QUOTED.test(inner));
+}
+// The one rule of a list field: the items of one text written as a comma list, or of a list of such texts, each
+// trimmed, the empty ones dropped. An item that starts with - is a flag in the wrong place (after a bare -- it is
+// where a --root written last lands), and a piece of a list written as text would store its brackets and quotes:
+// both are refused, naming the field.
+export function listItems(value, kind, field) {
+  const text = [].concat(value ?? []).map(String).join(',');
+  const items = text.split(',').map((s) => s.trim()).filter(Boolean);
+  const dashed = items.filter((s) => s.startsWith('-'));
+  need(dashed.length === 0, `${field}: an item cannot start with - — got ${dashed.map((s) => JSON.stringify(s)).join(' ')} (everything after a bare -- is an argument, so flags such as --root go before it)`);
+  need(!items.some((s) => piecesOfListText(s, kind)), `${field} takes its items one by one: one item, a comma list (a,b) or a list of strings; ${kind === 'name' ? 'a list written as text, an item in quotes or a name holding a bracket or a quote mark' : 'a list written as text or an item in quotes'} is refused — got ${JSON.stringify(text)}`);
+  return items;
+}
+// A command's arguments and flags with every list field read by listItems and written back as the one comma list the
+// commands read: a list argument that is last takes every word left (files 3 a.mjs b.mjs), and a list flag repeats.
+// repo --base takes a repository name and a branch, not a list, and no word beyond them.
+function readLists(cmd, rest, flags) {
+  const fields = LIST_FIELDS[cmd];
+  if (cmd === 'repo' && flags.base) {
+    need(rest.length <= 2, `repo --base takes a repository name and a branch — unexpected: ${rest.slice(2).map((x) => JSON.stringify(x)).join(' ')} (everything after a bare -- is an argument, so flags such as --root go before it)`);
+    return { rest, flags };
+  }
+  if (!fields) return { rest, flags };
+  const out = { rest: [...rest], flags: { ...flags } };
+  COMMAND_ARGS[cmd].forEach((a, at) => {
+    const field = a.replace(/[?.]+$/, '');
+    const kind = fields[field];
+    if (kind === 'ops') { for (const op of rest.slice(at)) if (op.startsWith('+')) listItems(op.slice(1), 'name', 'tag'); return; }
+    if (kind === undefined) return;
+    const given = a.endsWith('...') ? (rest.length > at ? rest.slice(at) : undefined) : rest[at];
+    if (given === undefined) return;
+    out.rest.splice(at, a.endsWith('...') ? Infinity : 1, listItems(given, kind, field).join(','));
+  });
+  for (const [field, kind] of Object.entries(fields)) {
+    if (Object.hasOwn(flagsOf(cmd), field) && flags[field] !== undefined) out.flags[field] = listItems(flags[field], kind, `--${field}`).join(',');
+  }
+  return out;
+}
 
-// The list a command takes after its id argument: every word given, or nothing when none was.
-const itemsAfterId = (rest) => (rest.length > 1 ? rest.slice(1) : undefined);
+const ARITY = Object.fromEntries(Object.entries({ ...COMMAND_ARGS, ...Object.fromEntries(Object.entries(COMMAND_ALIASES).map(([name, c]) => [name, COMMAND_ARGS[c]])) }).filter(([, a]) => !a.some((n) => n.endsWith('...'))).map(([c, a]) => [c, a.length]));
 
 // The commands that write: each runs under .jarl/.lock (see withLock).
 export const MUTATING = new Set(['init', 'new', 'body', 'import', 'source', 'after', 'set', 'field', 'merged', 'tag', 'prio', 'files', 'repo', 'evidence', 'retract', 'review', 'round', 'ask', 'answer', 'log', 'decide', 'goal', 'archive', 'mode', 'close']);
@@ -633,6 +701,7 @@ function setCommand(root, ids, name, value, flags) { return cmdSet(root, ids, na
 // time what is on disk and in git now, exactly as a fresh process would.
 export function dispatch(root, commandName, rest, flags) {
   const cmd = COMMAND_ALIASES[commandName] ?? commandName;
+  ({ rest, flags } = readLists(cmd, rest, flags));
   resetCaches();
   let out;
   let text;
@@ -648,8 +717,8 @@ export function dispatch(root, commandName, rest, flags) {
       case 'new': out = R.newIssue(root, rest[0], { ...flags, caller: 'cli', width: undefined }); out = { ...out, ...describeNew(out.file) }; text = renderNewReply(out); warn = out.note ? [out.note] : []; break;
       // body, source, after, files, repo and round take the list grammar: eachIssue checks every id before it writes one.
       case 'body': out = eachIssue(root, rest[0], (id, dry) => cmdBody(root, id, flags, dry)); text = each(out, (o) => `${o.id} body: ${o.set.join(', ')}`); break;
-      case 'source': out = eachIssue(root, rest[0], (id, dry) => cmdSource(root, id, itemsAfterId(rest), dry)); text = each(out, (o) => `${o.id} source: ${o.sources.join(', ')}`); break;
-      case 'after': out = eachIssue(root, rest[0], (id, dry) => cmdAfter(root, id, itemsAfterId(rest), { clear: flags.clear === true, dry })); text = each(out, (o) => `${o.id} after: ${o.cleared ? 'cleared' : o.after.join(', ')}`); break;
+      case 'source': out = eachIssue(root, rest[0], (id, dry) => cmdSource(root, id, rest[1], dry)); text = each(out, (o) => `${o.id} source: ${o.sources.join(', ')}`); break;
+      case 'after': out = eachIssue(root, rest[0], (id, dry) => cmdAfter(root, id, rest[1], { clear: flags.clear === true, dry })); text = each(out, (o) => `${o.id} after: ${o.cleared ? 'cleared' : o.after.join(', ')}`); break;
       case 'import': out = cmdImport(root, rest[0], flags); text = renderImport(out); break;
       case 'sources': out = cmdSources(root, rest, flags); text = renderSources(out); break;
       case 'list': out = cmdList(root, flags); text = renderList(out, R.loadProfile(root)); break;
@@ -664,14 +733,14 @@ export function dispatch(root, commandName, rest, flags) {
       case 'field': out = cmdField(root, rest[0], rest[1], rest[2], flags); text = each(out, renderField); break;
       case 'tag': out = R.setTags(root, rest[0], rest.slice(1)); text = each(out, (o) => `${o.id} tags: ${o.tags.join(', ') || '(none)'}`); break;
       case 'prio': out = R.setPriority(root, rest[0], rest[1]); text = each(out, (o) => `${o.id} priority ${o.priority}`); break;
-      case 'files': out = eachIssue(root, rest[0], (id, dry) => cmdFiles(root, id, itemsAfterId(rest), dry)); text = each(out, (o) => `${o.id} files: ${o.files.join(', ') || '(none)'}`); break;
+      case 'files': out = eachIssue(root, rest[0], (id, dry) => cmdFiles(root, id, rest[1], dry)); text = each(out, (o) => `${o.id} files: ${o.files.join(', ') || '(none)'}`); break;
       case 'repo':
         if (flags.base) {
           need(!flags.clear, 'repo --base takes a repository name and a branch, and no --clear');
           out = cmdRepoBase(root, rest[0], rest[1]);
           text = out.unchanged ? `${out.name} base: ${out.base} (unchanged)` : `${out.name} base: ${out.base} (was ${out.was ?? 'none'})`;
         } else {
-          out = eachIssue(root, rest[0], (id, dry) => cmdRepo(root, id, itemsAfterId(rest), { clear: flags.clear === true, dry }));
+          out = eachIssue(root, rest[0], (id, dry) => cmdRepo(root, id, rest[1], { clear: flags.clear === true, dry }));
           text = each(out, (o) => `${o.id} repo: ${o.cleared ? 'cleared' : o.repo}${o.unchanged ? ' (unchanged)' : ''}`);
           warn = [].concat(out).flatMap((o) => (o.notes || []).map((n) => `note: ${n}`));
         }

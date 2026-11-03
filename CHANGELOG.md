@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- Tags, files and issue lists given as a list through the tools are stored item by item, so filtering by a tag finds the issue. A list written out as text, with brackets or quotes, is refused.
+- Tags, files, issue numbers and the other lists can be given to the tools as a real list, and each item is stored on its own, so filtering by a tag finds the issue. A list typed out as text with brackets or quotes is refused with a message that says how to write it, and so is a tag or an issue number that holds a bracket or a quote mark.
 
 ## [6.2.0] - 2026-10-19
 
