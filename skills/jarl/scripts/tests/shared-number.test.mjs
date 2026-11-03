@@ -218,7 +218,7 @@ for (const [which, renamed, keptStatus, newMove] of [
     assert.equal(JSON.parse(jarl(b.dir, 'show', '3', '--json')).status, keptStatus === 'open' ? 'dropped' : 'open');
     const after = run(b.dir, ['verify']);
     assert.equal(after.status, 0, after.stdout);
-    assert.match(after.stdout, /^note: issue 2: 2 is read from its header \(issues\/2-second-on-[ab]\.md\): the log files 2 2 times and cannot say which file its lines were written for$/m);
+    assert.match(after.stdout, /^note: issue 2: 2 is read from its header \(issues\/2-second-on-[ab]\.md\): the log files 2 2 times and cannot say which file its lines were written for, so it is never closed or approved$/m);
     assert.doesNotMatch(v.resume, /The files disagree with the log/, 'the number read from its header is no disagreement');
     assert.match(v.resume, /## Read from their headers \(1\)\n- 2 is read from its header/);
     assert.equal(v.status.disagreements, undefined, 'status --json carries no disagreement');
@@ -312,9 +312,9 @@ test('a third file merged in after the renumbering shares the number again and i
 });
 
 // Clone A files its second issue, works it on a branch with a row and a fresh approve and closes it; clone B files its own
-// second issue and starts it. One clone pulls the other, A's file is renumbered, and B's file keeps 2 with no row and no
-// review of its own. `aPullsB` says which clone merges: B's lines then come after A's in the log, else A's after B's.
-function closedOnOneSide(aPullsB) {
+// second issue and starts it. One clone pulls the other and one file is renumbered. `aPullsB` says which clone merges: B's
+// lines then come after A's in the log, else A's after B's. `renamed` is the file given the number 3.
+function closedOnOneSide(aPullsB, renamed = '2-second-on-a.md') {
   const a = committedLoop();
   const b = cloneOf(a.dir);
   fileAndCommit(a, 'second on A');
@@ -332,27 +332,42 @@ function closedOnOneSide(aPullsB) {
     a.g('pull', '-q', '--no-rebase', '--no-edit', 'b', 'main');
     at = a;
   } else b.g('pull', '-q', '--no-rebase', '--no-edit', 'origin', 'main');
-  renumber(at, '2-second-on-a.md', 3);
-  jarl(at.dir, 'log', 'the row, the approve and the close of 2 were the first clone\'s, now 3');
+  renumber(at, renamed, 3);
+  jarl(at.dir, 'log', 'the row, the approve and the close of 2 were the first clone\'s');
   return at;
 }
+const NEVER_CLOSED = /the log files 2 2 times, so it cannot tell which issue the rows, approves, rounds and merges under 2 belong to, and an issue under this number is never closed or approved\. File the work again under a new number/;
 
 for (const [order, aPullsB] of [['the first clone\'s lines after the second\'s', false], ['the second clone\'s lines after the first\'s', true]]) {
-  test(`with ${order}, the number kept closes only on the row and the approve its own file holds`, () => {
+  test(`with ${order}, the number kept is never closed, approved or merged, whatever rows, rounds and moves come before`, () => {
     const at = closedOnOneSide(aPullsB);
     assert.equal(JSON.parse(jarl(at.dir, 'show', '2', '--json')).status, 'in-progress');
-    assert.match(refuses(at.dir, 'set', '2', 'done'), /^2 has no evidence yet/m, 'no row of its own: the other issue\'s row does not count');
+    const before = snapshot(at.dir);
+    assert.match(refuses(at.dir, 'set', '2', 'done'), NEVER_CLOSED, 'the other issue\'s row and approve close nothing');
     jarl(at.dir, 'evidence', '2', '--ran', 'npm test', '--saw', 'all green on B');
-    assert.match(refuses(at.dir, 'set', '2', 'done'), /2 has no approving review/, 'no approve of its own: rev-a\'s does not count');
-    const queue = jarl(at.dir, 'queue');
-    assert.doesNotMatch(queue, /jarl\/2-b/, `the merge queue holds no approve for 2: ${queue}`);
-    jarl(at.dir, 'review', '2', 'approve', '--by', 'rev-b', 'read the diff and found nothing wrong');
-    assert.match(jarl(at.dir, 'set', '2', 'done'), /2 → done/, 'its own row and approve close it');
+    assert.match(refuses(at.dir, 'review', '2', 'approve', '--by', 'rev-b', 'read the diff and found nothing wrong'), NEVER_CLOSED);
+    jarl(at.dir, 'round', '2', 'red');
+    assert.match(refuses(at.dir, 'set', '2', 'done'), NEVER_CLOSED, 'after a round');
+    jarl(at.dir, 'set', '2', 'open');
+    jarl(at.dir, 'set', '2', 'in-progress', '--branch', 'jarl/2-b', '--worker', 'w-b2');
+    assert.match(refuses(at.dir, 'review', '2', 'approve', '--by', 'w-b', 'the earlier worker reads the diff and approves it'), NEVER_CLOSED, 'a takeover\'s earlier worker approves nothing');
+    assert.match(refuses(at.dir, 'set', '2', 'done'), NEVER_CLOSED, 'after open and in-progress again');
+    assert.match(refuses(at.dir, 'merged', '2', '--sha', 'abc1234'), NEVER_CLOSED);
+    assert.match(jarl(at.dir, 'set', '2', 'dropped', 'filed again under a new number'), /2 → dropped/, 'the way out the refusal names');
+    assert.notDeepEqual(snapshot(at.dir), before);
     const report = JSON.parse(jarl(at.dir, 'report', '--json'));
-    assert.equal(report.issues.find((i) => i.id === '2').review.by, 'rev-b', 'report names the approve from its own file');
-    assert.equal(report.issues.find((i) => i.id === '3').status, 'done');
+    assert.equal(report.issues.find((i) => i.id === '2').review, null, 'report holds no approve for the number kept');
   });
 }
+
+test('a closed issue whose number the log cannot attribute stays closed, and is flagged by nothing', () => {
+  const at = closedOnOneSide(false, '2-second-on-b.md');
+  assert.equal(JSON.parse(jarl(at.dir, 'show', '2', '--json')).status, 'done');
+  const st = JSON.parse(jarl(at.dir, 'status', '--json'));
+  assert.equal(st.done, 1);
+  assert.equal((st.closedGate || []).length, 0, JSON.stringify(st.closedGate));
+  assert.match(jarl(at.dir, 'report'), /## Done \(1\)[\s\S]*- 2 second on A/);
+});
 
 test('a plain issue in the same loop closes on the rows and the approve its log holds', () => {
   const at = closedOnOneSide(false);

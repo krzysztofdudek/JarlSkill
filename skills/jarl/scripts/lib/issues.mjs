@@ -74,7 +74,9 @@ function issuesAt(recordDir, profile, events = loopEvents(recordDir, profile)) {
     // An After names an issue as the loop writes it: the form its file carries, whatever form the After line gives.
     issue.after = issue.after.map((x) => writtenId(x, forms));
     const events = by.get(issue.id) || [];
-    const filings = events.filter((e) => e.type === 'filed').length;
+    // Filings are counted by what they file: a filing line repeated with the same title (a line copied in the log) files
+    // the same issue again, while two titles under one number are two issues.
+    const filings = new Set(events.filter((e) => e.type === 'filed').map((e) => e.text.replace(/^filed \S+ · /, ''))).size;
     // A number two files carry, or one the log files more than once, is one the log cannot attribute: it cannot say which
     // file its lines were written for. Such an issue is read from its own header, never from the log.
     if (issue.id !== null && (files.get(idKey(issue.id)) > 1 || filings > 1)) return headerRead(issue, filings);
@@ -187,12 +189,19 @@ export function sharedNumberText(shared, all) {
   const filings = Math.max(0, ...shared.issues.map((i) => i.byHeader?.filings ?? 0));
   const head = `${shared.issues.length} issue files carry the number ${id}: ${sharedFiles(shared.issues)}.`;
   const rename = `give ${filings > 1 ? 'one of the files' : 'the copy'} a number the loop does not hold, such as ${free} (rename it to ${free}-… and write ${free} in its first line), and put it in the log at the status its own file reads (jarl.mjs set ${free} <status>; a renumbered issue starts its record anew, so one that was done needs its proof and a fresh review again)`;
-  if (filings > 1) return `${head} Two copies of the loop that each filed an issue and were merged leave this: the log files ${id} ${filings} times. The log names an issue by its number alone, so it cannot say which file its lines for ${id} were written for, and no command moves or edits one of these files alone. Each file is read from its own header, never from the log: its status, branch and lease are what the file says, only the rows and approves in its own Evidence and Reviews count for its done gate, and the log's state of ${id} is never to be written into any of them. The coordinator settles it by hand: ${rename}, then write in a log note which of the lines already written for ${id} belong to which file (jarl.mjs log "…"). The file that keeps ${id} is still read from its own header after that, because the log goes on filing ${id} more than once`;
+  if (filings > 1) return `${head} Two copies of the loop that each filed an issue and were merged leave this: the log files ${id} ${filings} times. The log names an issue by its number alone, so it cannot say which file its lines for ${id} were written for, and no command moves or edits one of these files alone. Each file is read from its own header, never from the log: its status, branch and lease are what the file says, it is never closed or approved under this number, because the log cannot tell whose its rows, approves, rounds and merges are (the work is filed again under a new number instead), and the log's state of ${id} is never to be written into any of them. The coordinator settles it by hand: ${rename}, then write in a log note which of the lines already written for ${id} belong to which file (jarl.mjs log "…"). The file that keeps ${id} is still read from its own header after that, because the log goes on filing ${id} more than once`;
   return `${head} The log files ${id} ${filings ? 'once' : 'never'}, so ${filings ? 'one of these files was made outside Jarl\'s commands, by a copy or by hand' : 'none of these files was filed by Jarl\'s commands'}, and Jarl cannot tell which file is the copy. No command moves or edits one of these files alone, and while they share ${id} each is read from its own header. The coordinator settles it by hand: ${rename}. ${id} is then one file the log files ${filings ? 'once' : 'never'}, which Jarl reads like any issue: if the file renumbered was the original, the copy that keeps ${id} takes the original's lines in the log, and Jarl cannot see that a copy was made`;
 }
 // The note on a number the log files more than once while one issue file carries it: one line, not a disagreement.
 export function headerReadText(id, filings, file) {
-  return `${id} is read from its header (${file}): the log files ${id} ${filings} times and cannot say which file its lines were written for`;
+  return `${id} is read from its header (${file}): the log files ${id} ${filings} times and cannot say which file its lines were written for, so it is never closed or approved`;
+}
+// The refusal of a move that rests on the log's proof (a close, an approve, a merge) for an issue read from its header:
+// the log's rows, approves, rounds and merges under its number may be another issue's, so none of them can clear it.
+export function unattributedRefusal(issue, what) {
+  if (!issue.byHeader) return null;
+  const id = issue.id;
+  return `${id} cannot be ${what}: the log files ${id} ${issue.byHeader.filings} times, so it cannot tell which issue the rows, approves, rounds and merges under ${id} belong to, and an issue under this number is never closed or approved. File the work again under a new number (jarl.mjs new "<title>") and carry it on there; this one can then be dropped (jarl.mjs set ${id} dropped "<why>")`;
 }
 // The one issue `rawId` names among `issues`, or null when none does. A number two files carry is refused, with both files
 // named: a move or an edit by that number would land on each of them in the log.
