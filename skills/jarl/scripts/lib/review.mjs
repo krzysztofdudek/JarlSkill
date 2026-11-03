@@ -1,12 +1,13 @@
 // The review command.
 
 import { fieldText, need } from './base.mjs';
+import { needNoOwnersWords } from './owner.mjs';
 import { jarlDir, stamp } from './where.mjs';
 import { readText, writeAtomic } from './files.mjs';
 import { isBulk } from './ids.mjs';
 import { appendLog, appendLogLines, firstLine } from './journal.mjs';
-import { bodyText, parseIssue, reviewEntries, setSection } from './issues.mjs';
-import { raiseFormat, tipLines } from './repositories.mjs';
+import { bodyText, parseIssue, reviewEntries, setSection, unattributedRefusal } from './issues.mjs';
+import { needFormat, tipLines } from './repositories.mjs';
 import { carriesCode, gateOf, readLoop, reviewerKind } from './loop.mjs';
 import { SEVERITIES, loggedFinding, modelLines, modelValue, reviewModelNotes } from './models.mjs';
 import { EVIDENCE_HOW, issuesFor, oneOrMany, proofSince } from './commands.mjs';
@@ -31,7 +32,7 @@ function retractReview(root, rawIds, reason, flags) {
   const kind = reviewerKind(by, g.workers, coordinators);
   // The first retraction of a loop raises the record format, before its line is written: a reader of format 1 does not
   // read a retraction and would go on counting the approve, so it must refuse the loop instead.
-  raiseFormat(root);
+  needFormat(root, 'retraction');
   const lines = table.lines.slice();
   if (target) lines[target.start] = `${struck(lines[target.start])}~~`;
   const named = `${who.by ? `by ${who.by}${who.kind ? ` (${who.kind})` : ''}` : 'with no reviewer recorded'}${(who.at || who.day) ? ` of ${(who.at || who.day).slice(0, 10)}` : ''}`;
@@ -42,6 +43,7 @@ function retractReview(root, rawIds, reason, flags) {
   return { id: issue.id, verdict: 'retract', by, kind, retracted: named, severities: [], acceptance: (issue.sections.acceptance || '').trim() };
 }
 export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
+  needNoOwnersWords('the review', findings, flags);
   need(verdict === 'approve' || verdict === 'changes' || verdict === 'retract', 'review requires approve|changes|retract');
   if (verdict === 'retract') return retractReview(root, rawIds, findings, flags);
   need(findings, 'review requires "<findings>" — what was read and what was found, even when nothing');
@@ -50,6 +52,7 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
   need(flags.by === undefined || fieldText(flags.by), '--by needs a value — the reviewer\'s name');
   need(flags.by !== undefined, `a verdict needs --by <reviewer> — who read the diff: a fresh reviewer's name, or jarl when the loop's director reviewed it`);
   const issues = issuesFor(root, rawIds);
+  if (verdict === 'approve') for (const issue of issues) { const refusal = unattributedRefusal(issue, 'approved'); need(!refusal, `${refusal}${issues.length > 1 ? ' — nothing was written' : ''}`); }
   const severities = SEVERITIES.filter((s) => findings.includes(s));
   if (verdict === 'changes') {
     need(severities.length > 0, `"changes" needs at least one finding ranked ${SEVERITIES.join('/')} — name the severity, not just the problem`);

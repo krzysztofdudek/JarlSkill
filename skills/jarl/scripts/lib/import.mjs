@@ -6,9 +6,9 @@ import { KINDS, PRIORITIES, fieldText, need, slugify, splitList } from './base.m
 import { git } from './git.mjs';
 import { canonical } from './where.mjs';
 import { readText } from './files.mjs';
-import { DEFAULT_PROFILE, loadProfile } from './profile.mjs';
+import { DEFAULT_PROFILE, formatOffText, loadProfile } from './profile.mjs';
 import { appendLog } from './journal.mjs';
-import { PROPOSED, findIssue, loadIssues } from './issues.mjs';
+import { PROPOSED, findIssue, loadIssues, sharedMark } from './issues.mjs';
 import { repoList, reposWhereLines } from './repositories.mjs';
 import { closedGateLine, disagreementText, gateLine } from './loop.mjs';
 import { checkLines, checkWaitingText, mergeCheckLines } from './metrics.mjs';
@@ -26,16 +26,50 @@ import { schedulerNote } from './evidence.mjs';
 const KIND_OF = { defect: 'bug', inconsistency: 'bug', risk: 'gap', opportunity: 'gap' };
 const PRIO_OF = { blocker: '1', critical: '1', high: '1', medium: '2', major: '2', important: '2', low: '3', minor: '3' };
 
+// The keys of a finding the mapping below reads. Research writes further keys beside them (verifier, v, language, and
+// others), and those pass. A key one or two edits away from one of these, of three or more characters, is refused:
+// a misspelled claim or severity would otherwise file the issue with that field empty and nothing said.
+const FINDING_KEYS = ['id', 'title', 'claim', 'kind', 'priority', 'severity', 'where', 'surfaces', 'truth', 'evidence', 'impact', 'adopter_impact', 'proposal', 'suggested_fix', 'fix', 'effort'];
+// The number of single-character edits (insert, delete, replace) that turn one text into the other.
+function editDistance(a, b) {
+  let row = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i += 1) {
+    const next = [i];
+    for (let j = 1; j <= b.length; j += 1) next[j] = Math.min(row[j] + 1, next[j - 1] + 1, row[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    row = next;
+  }
+  return row[b.length];
+}
+function refuseMisspelledKeys(f, label) {
+  if (!f || typeof f !== 'object') return f;
+  const near = (k) => {
+    if (k.length < 3 || FINDING_KEYS.includes(k)) return null;
+    const best = FINDING_KEYS.reduce((m, key) => (editDistance(k, key) < editDistance(k, m) ? key : m));
+    const d = editDistance(k, best);
+    return d >= 1 && d <= 2 ? best : null;
+  };
+  const bad = Object.keys(f).map((k) => [k, near(k)]).filter(([, best]) => best);
+  need(bad.length === 0, `finding ${label} has ${bad.map(([k, best]) => `"${k}" (did you mean "${best}"?)`).join(', ')}, which look like misspelled keys; the keys a finding takes are ${FINDING_KEYS.join(', ')} — nothing was filed`);
+  return f;
+}
+// A label for a finding in a refusal: its id, or its place in the list when it has none (the id check names that case).
+const labelOf = (f, n) => (f && f.id !== undefined ? `"${f.id}"` : `#${n + 1}`);
+const checkedList = (items) => items.map((f, n) => refuseMisspelledKeys(f, labelOf(f, n)));
+
 export function findingsOf(json) {
   let list;
   // In the angles shape an id is unique only inside its angle (two angles may each have an F1), so the key
   // is <angle>/<id> there, always — never only when two collide, which would change a key once a later
   // edit of the file added a twin.
   if (Array.isArray(json) && json.some((x) => x && Array.isArray(x.surviving))) {
-    list = json.flatMap((x) => (x.surviving || []).map((f) => (f && f.id !== undefined && x.angle ? { ...f, id: `${slugify(String(x.angle))}/${f.id}`, localId: String(f.id), angle: slugify(String(x.angle)) } : f)));
-  } else if (Array.isArray(json)) list = json;
-  else if (json && Array.isArray(json.results)) list = json.results.flatMap((r) => r.kept || []);
-  else if (json && Array.isArray(json.findings)) list = json.findings;
+    list = json.flatMap((x) => (x.surviving || []).map((f, n) => {
+      const angle = x && x.angle ? slugify(String(x.angle)) : null;
+      refuseMisspelledKeys(f, angle && f && f.id !== undefined ? `"${angle}/${f.id}"` : labelOf(f, n));
+      return f && f.id !== undefined && angle ? { ...f, id: `${angle}/${f.id}`, localId: String(f.id), angle } : f;
+    }));
+  } else if (Array.isArray(json)) list = checkedList(json);
+  else if (json && Array.isArray(json.results)) list = checkedList(json.results.flatMap((r) => r.kept || []));
+  else if (json && Array.isArray(json.findings)) list = checkedList(json.findings);
   else throw new Error('not a findings file this tool reads: expected an array of findings, an array of angles with `surviving`, or { results: [{ kept }] } — see references/jarl.md, "From research to issues"');
   const seen = new Set();
   const out = list.map((f, n) => {
@@ -168,7 +202,9 @@ export function cmdImport(root, file, flags) {
   // One issue may name several findings (a package of minor ones): its Source gets all of them, once.
   const adopt = new Map();
   for (const a of out.adopted) adopt.set(a.issue, [...(adopt.get(a.issue) || []), a.key]);
-  for (const [id, keys] of adopt) cmdSource(root, id, [...(findIssue(root, id).sources), ...keys].join(','));
+  // Every adopted issue is resolved before the first write, so a number two files carry refuses the import whole.
+  const adopting = [...adopt].map(([id, keys]) => [id, [...findIssue(root, id).sources, ...keys]]);
+  for (const [id, sources] of adopting) cmdSource(root, id, sources.join(','));
   for (const { f, key } of toFile) {
     const r = cmdNew(root, f.title, {
       kind: flags.kind || f.kind, prio: flags.prio || f.priority, tier: flags.tier, tags: flags.tags, repo: flags.repo,
@@ -225,15 +261,17 @@ function countsLine(o, profile) {
 const statusLabel = (st) => (st === 'in-progress' ? 'in flight' : st);
 
 export function renderStatus(o, profile = DEFAULT_PROFILE) {
-  const head = o.goal ? `goal: ${o.goal}\nopened ${o.opened || '?'} · last activity ${o.lastActivity || '?'}${o.archived ? ` · ${o.archived} archived loop(s)` : ''}${profile.declared ? ` · profile ${profile.name}` : ''}\n` : '';
+  const head = o.goal ? `goal: ${o.goal}\nopened ${o.opened || '?'} · last activity ${o.lastActivity || '?'}${o.archived ? ` · ${o.archived} archived loop(s)` : ''}${o.recordFormat ? ` · record format ${o.recordFormat.format}` : ''}${profile.declared ? ` · profile ${profile.name}` : ''}\n` : '';
   const line = countsLine(o, profile);
   const width = o.by ? Math.max(...Object.keys(o.by.groups).map((k) => k.length), 1) : 0;
   const by = o.by ? [`by ${o.by.key}:`, ...Object.entries(o.by.groups).map(([k, g]) => `  ${k.padEnd(width)}  ${profile.statuses.map((st) => `${statusLabel(st)} ${g[st]}`).join(' · ')}`)] : [];
   const more = [
     ...(o.tag !== undefined ? [`scoped to the issues tagged ${o.tag} — the counts above and the lists below are theirs only`] : []),
     ...(o.disagreements || []).map(disagreementText),
+    ...(o.headerRead || []).map((n) => `note: ${n.line}`),
     ...(o.check ? checkLines(o.check) : []),
     ...(o.scheduler ? [schedulerNote(o.scheduler)] : []),
+    ...(o.recordFormat && formatOffText(o.recordFormat) ? [formatOffText(o.recordFormat)] : []),
     ...by,
     ...(o.by && o.by.where && Object.keys(o.by.where).length ? ['where each repository is on this machine:', ...reposWhereLines(o.by.where)] : []),
     ...(o.by && o.by.key === 'repo' && o.check ?['merges by repository, with the check that decided each:', ...mergeCheckLines(o.check)] : []),
@@ -279,7 +317,7 @@ function declaredShown(i, profile) {
 }
 export function renderList(rows, profile = DEFAULT_PROFILE) {
   if (rows.length === 0) return '(none)';
-  return rows.map((i) => { const d = declaredShown(i, profile); return `${i.id}  P${i.priority}  ${i.status.padEnd(11)} ${i.kind.padEnd(8)} ${i.title}${i.tags.length ? `  [${i.tags.join(', ')}]` : ''}${d ? `  ${d}` : ''}`; }).join('\n');
+  return rows.map((i) => { const d = declaredShown(i, profile); return `${i.id}  P${i.priority}  ${i.status.padEnd(11)} ${i.kind.padEnd(8)} ${i.title}${i.tags.length ? `  [${i.tags.join(', ')}]` : ''}${d ? `  ${d}` : ''}${i.shared ? `  (${sharedMark(i.shared)})` : ''}`; }).join('\n');
 }
 
 // Used by the other modules of the library, and not part of what jarl-lib.mjs exports.

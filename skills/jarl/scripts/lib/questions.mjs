@@ -7,10 +7,11 @@ import { ASK_KINDS, HANDOFF_STALE_MS, fieldText, freeInline, need, noSeparators,
 import { jarlDir, today } from './where.mjs';
 import { appendAtomic, readText, writeAtomic } from './files.mjs';
 import { askNumber, idKey, issueForms, needsRaisedFormat, newNumber, writtenId } from './ids.mjs';
-import { loadProfile } from './profile.mjs';
+import { loadProfile, numberWidth } from './profile.mjs';
 import { ASKS_FILE, DECISIONS_FILE, STAMP_SRC, appendDecision, appendLog, appendLogLines, asksAt, asksPath, firstLine, loadDecisions, markDecision, parseStamp } from './journal.mjs';
+import { OWNER, carryingOwnersWords, needNoOwnersWords, quoteShown, rulingAuthor } from './owner.mjs';
 import { findIssue, freeBlock, loadIssues, noteText, parseIssue, placeEvidence, setSection } from './issues.mjs';
-import { raiseFormat } from './repositories.mjs';
+import { needFormat } from './repositories.mjs';
 import { coordinatorNames } from './loop.mjs';
 import { issuesFor } from './commands.mjs';
 
@@ -20,17 +21,18 @@ export function loadAsks(root, skipped) { return asksAt(jarlDir(root), skipped);
 
 export function cmdAsk(root, question, flags) {
   need(question, 'ask requires "<question>"');
+  needNoOwnersWords('the question', question, flags);
   const kind = String(flags.kind || 'stuck');
   need(ASK_KINDS.includes(kind), `--kind must be one of: ${ASK_KINDS.join(', ')} — stop (halt everything), stuck (this issue only), lower (weaken something protected, needs a target), charter (the goal itself), ratify (a choice already made under a mandate, awaiting the owner's word; blocks nothing)`);
   if (flags.issue !== undefined) need(findIssue(root, flags.issue), `no such issue: ${flags.issue}`);
   need(kind !== 'lower' || flags.target, '--target is required for kind lower — nothing to weaken without naming it');
   need(kind === 'lower' || !flags.target, `--target has no meaning for kind "${kind}" — only lower names something to weaken`);
   const asks = loadAsks(root);
-  const id = newNumber(asks.reduce((m, a) => Math.max(m, Number(a.id)), 0) + 1, flags.width);
+  const id = newNumber(asks.reduce((m, a) => Math.max(m, Number(a.id)), 0) + 1, numberWidth(loadProfile(root), flags.width));
   // The issue is written as its file writes it, so a question about 007 names it 007 and raises nothing.
   const issueWritten = flags.issue ? writtenId(flags.issue, issueForms(jarlDir(root))) : null;
   // A question whose number is written plain (a-7, a-1000) or that names an issue so written raises the format first.
-  if (needsRaisedFormat(id) || (issueWritten !== null && needsRaisedFormat(issueWritten))) raiseFormat(root);
+  if (needsRaisedFormat(id) || (issueWritten !== null && needsRaisedFormat(issueWritten))) needFormat(root, 'plain-number');
   const path = asksPath(jarlDir(root));
   const target = kind === 'lower' ? ` · target ${flags.target}` : '';
   // flags.ruling is not a flag of the command line: the close's ratification batch passes it, and so may a composer
@@ -131,25 +133,32 @@ function answerRuling(ask, text, chosen, batch) {
 // ratify item's yes or reject is applied too, with `by` and the batch the question was answered in when several were.
 // The library's answer (record.mjs) calls this with no flags: its ruling is the owner's, and it names no options.
 export function cmdAnswer(root, rawId, answer, flags = {}) {
-  need(flags.by === undefined || fieldText(flags.by), '--by needs a value — who answered: owner or a name');
-  const by = flags.by === undefined ? null : fieldText(flags.by);
+  const by = flags.by === undefined ? null : rulingAuthor(flags.by);
+  needNoOwnersWords('the answer', answer, flags.option);
   const chosen = flags.option === undefined ? null : noSeparators(flags.option);
   const key = askNumber(rawId);
   const ask = loadAsks(root).find((a) => idKey(a.id) === key);
   need(ask, `no such question: a-${key}`);
+  // The issue the answer is copied into is resolved before the first write, so a number two files carry writes nothing.
+  if (ask.issue) findIssue(root, ask.issue);
   const id = ask.id;
   const text = answer === undefined ? null : noSeparators(oneBreak(answer));
   const checked = answerChecks(root, ask, text, chosen);
   const shown = chosen !== null ? chosen : text;
-  appendDecision(root, `ask-${id}`, answerRuling(ask, text, chosen === null ? null : checked.option.label, flags.batch || null), { by: by || 'owner' });
-  const path = asksPath(jarlDir(root));
-  // The item line only: a continuation line of an earlier question is never the one marked.
-  writeAtomic(path, readText(path).split('\n').map((l) => (l.startsWith(`- **a-${id}** (open)`) ? l.replace('(open)', '(answered)') : l)).join('\n'));
+  const author = by || OWNER;
+  const issue = ask.issue ? findIssue(root, ask.issue) : null;
+  // The question and its options are copied into the ruling as the record holds them; a question written before the
+  // marker was refused may hold it, and it is carried as it stands, never refused for text the answerer cannot change.
+  carryingOwnersWords([...ask.question.split('\n'), ...(ask.options || []).flatMap((o) => [o.label, o.effect])], () => {
+    appendDecision(root, `ask-${id}`, answerRuling(ask, text, chosen === null ? null : checked.option.label, flags.batch || null), { by: author });
+    const path = asksPath(jarlDir(root));
+    // The item line only: a continuation line of an earlier question is never the one marked.
+    writeAtomic(path, readText(path).split('\n').map((l) => (l.startsWith(`- **a-${id}** (open)`) ? l.replace('(open)', '(answered)') : l)).join('\n'));
+  });
   appendLog(root, `answered a-${id} · ${firstLine(shown, `${DECISIONS_FILE}, ruling ask-${id}`)}`);
   // The issue the question was about carries the answer too, so reading the issue is enough: its first line and, when
   // there is more, a pointer to the whole ruling.
-  const issue = ask.issue ? findIssue(root, ask.issue) : null;
-  if (issue) appendRuling(root, [issue], `Ruling ask-${id}${ask.kind ? ` (${ask.kind})` : ''}: ${firstLine(shown, `${DECISIONS_FILE}, ruling ask-${id}`)}`);
+  if (issue) appendRuling(root, [issue], `Ruling ask-${id} (${ask.kind ? `${ask.kind}, ` : ''}by ${author}): ${firstLine(shown, `${DECISIONS_FILE}, ruling ask-${id}`)}`);
   const out = { id, answer: shown, ...(chosen !== null ? { chose: checked.option.label } : {}), ...(issue ? { issue: issue.id } : {}) };
   if (checked.ruling) Object.assign(out, ratify(root, checked.ruling, checked.rulings, checked.verdict, id, by));
   return out;
@@ -170,7 +179,7 @@ export function cmdAnswerMany(root, rawIds, answer, flags = {}) {
   });
   const batch = found.length > 1 ? found.map((a) => a.id) : null;
   need(!batch || found.every((a) => a.kind === 'ratify'), 'several questions are answered together only when each is a ratify item');
-  const by = flags.by === undefined ? undefined : fieldText(flags.by);
+  const by = flags.by === undefined ? undefined : rulingAuthor(flags.by);
   const item = found.find((a) => a.kind === 'ratify');
   if (item) {
     need(by, `a-${item.id} is a ratify item, which needs --by: who answered (owner or a name)`);
@@ -237,27 +246,49 @@ function appendRuling(root, issues, line) {
   appendLogLines(root, issues.map((issue) => `${issue.id} evidence · ${line}`));
 }
 
-// decide <slug> "<ruling>" [--by who] [--supersedes <slug>] [--settles <ids>]: the ruling, who ruled (the owner
-// unless --by says otherwise: jarl for a choice the loop made under a mandate), the earlier ruling it replaces —
-// marked **Superseded by:** in place, so a reader of the decisions, and decisions --live, see it is not in
-// force — and the issues it settles.
+// decide <slug> "<ruling>" [--by who] [--quote "<words>"] [--supersedes <slug>] [--settles <ids>]: the ruling, who ruled
+// (the caller, recorded as the coordinator, unless --by says otherwise: jarl for a choice the loop made under a
+// mandate, owner for the owner's own, which needs his words in --quote, kept on one line as the ruling's last paragraph),
+// the ruling in force it rests on (--under, for a ruling by anyone but the owner, kept as the text's last paragraph
+// `Made under: <slug>`), the earlier ruling it replaces — marked **Superseded by:** in place, so a reader of the decisions, and decisions --live,
+// see it is not in force — and the issues it settles. Nothing in the loop names the owner: the name `owner` is his, and a
+// --by that reads as it is it (rulingAuthor). The owner's words reach the record from --quote alone: the ruling's text and
+// every other flag are refused when they hold the marker in any spelling, and the row each settled issue gets names who ruled.
 export function cmdDecide(root, slug, ruling, flags = {}) {
   need(slug && ruling, 'decide requires <slug> "<ruling>"');
-  need(flags.by === undefined || fieldText(flags.by), '--by needs a value — who ruled: owner, jarl, or a name');
+  const by = flags.by === undefined ? 'coordinator' : rulingAuthor(flags.by);
+  const byOwner = by === OWNER;
+  need(flags.quote === undefined || typeof flags.quote === 'string', '--quote is the owner\'s own words, as text');
+  const quote = flags.quote !== undefined ? fieldText(flags.quote) : null;
+  need(flags.quote === undefined || quote, '--quote needs the owner\'s own words');
+  need(!byOwner || quote, `a ruling by the owner carries his own words: give them with --quote "<what he said>"; a ruling without --by is recorded as the coordinator's, and a question he asked is not a ruling; a loop that names its owner otherwise records him as owner all the same, for the name owner is the rule`);
+  needNoOwnersWords('the ruling', slug, ruling, { ...flags, quote: undefined });
+  need(flags.quote === undefined || byOwner, '--quote is the owner\'s own words: it goes with --by owner');
+  if (quote) needNoOwnersWords('--quote', quote);
   need(flags.area === undefined || AREA_RE.test(String(flags.area)), `--area names the type of code the ruling reaches, as the repository's graph names it: one word of letters, digits and . _ - (got "${flags.area}")`);
   need(flags.reach === undefined || flags.area !== undefined, '--reach counts the files of the --area type — it needs --area');
   need(flags.reach === undefined || /^\d+$/.test(String(flags.reach)), `--reach is how many files the area holds, a whole number (got "${flags.reach}")`);
   need(flags.rule === undefined || flags.area !== undefined, '--rule names the rule of the graph the ruling admits on the --area type — it needs --area');
   need(flags.rule === undefined || RULE_RE.test(String(flags.rule)), `--rule names a rule as the repository's graph names it: its id, segments of letters, digits and . _ - joined by / (got "${flags.rule}")`);
-  const by = flags.by !== undefined ? fieldText(flags.by) : 'owner';
+  need(flags.under === undefined || typeof flags.under === 'string', '--under names the slug of a ruling, as text');
+  need(flags.under === undefined || !byOwner, '--under names the ruling a ruling by the jarl or a coordinator rests on; a ruling by the owner rests on his own words');
+  const under = flags.under !== undefined ? fieldText(flags.under) : null;
+  if (under !== null) {
+    const inForce = loadDecisions(root).filter((d) => !d.supersededBy && d.slug !== flags.supersedes).map((d) => d.slug);
+    need(inForce.includes(under), `--under ${under ? `"${under}"` : 'needs a slug'} is not a ruling in force of this loop; the rulings in force: ${inForce.length ? inForce.join(', ') : '(none)'}`);
+  }
   const settles = flags.settles !== undefined ? issuesFor(root, flags.settles) : [];
   const area = flags.area !== undefined ? String(flags.area) : null;
   const reach = flags.reach !== undefined ? Number(flags.reach) : null;
   const rule = flags.rule !== undefined ? String(flags.rule) : null;
-  appendDecision(root, slug, freeBlock(oneBreak(ruling).trim()), { by, supersedes: flags.supersedes, area, reach, rule, settles: settles.map((i) => i.id) });
+  const text = freeBlock(oneBreak(ruling).trim());
+  appendDecision(root, slug, text, { by, quote, under, supersedes: flags.supersedes, area, reach, rule, settles: settles.map((i) => i.id) });
   appendLog(root, `decided ${slug} · by ${by}${flags.supersedes !== undefined ? ` · supersedes ${flags.supersedes}` : ''}${area ? ` · area ${area}${reach !== null ? ` (${reach} files)` : ''}${rule ? ` · rule ${rule}` : ''}` : ''}`);
-  if (settles.length) appendRuling(root, settles, `Ruling ${slug}: ${firstLine(oneBreak(ruling).trim(), `${DECISIONS_FILE}, ruling ${slug}`)}`);
-  return { slug, by, supersedes: flags.supersedes ?? null, settles: settles.map((i) => i.id), ...(area ? { area, reach, ...(rule ? { rule } : {}) } : {}) };
+  if (settles.length) {
+    const shown = quote ? quoteShown(quote) : null;
+    carryingOwnersWords([shown], () => appendRuling(root, settles, `Ruling ${slug} (by ${by}): ${firstLine(oneBreak(ruling).trim(), `${DECISIONS_FILE}, ruling ${slug}`)}${shown ? ` · ${shown}` : ''}`));
+  }
+  return { slug, by, ...(quote ? { quote } : {}), ...(under ? { under } : {}), supersedes: flags.supersedes ?? null, settles: settles.map((i) => i.id), ...(area ? { area, reach, ...(rule ? { rule } : {}) } : {}) };
 }
 
 // Whether a question of the record asks about a ruling: a ratify item naming it, or the question the ruling `ask-<n>` was
@@ -350,14 +381,15 @@ export function cmdDecisions(root, flags = {}) {
 // decide: what was ruled, and what the ruling did to the others.
 export function renderDecide(out) {
   const area = out.area ? ` · area ${out.area}${out.reach !== null ? ` (${out.reach} file${out.reach === 1 ? '' : 's'})` : ''}${out.rule ? ` · rule ${out.rule}` : ''} · put to ratification at close` : '';
-  return `decided ${out.slug} · by ${out.by}${out.supersedes ? ` · supersedes ${out.supersedes}` : ''}${out.settles.length ? ` · written into ${out.settles.join(', ')}` : ''}${area}`;
+  return `decided ${out.slug} · by ${out.by}${out.under ? ` · under ${out.under}` : ''}${out.supersedes ? ` · supersedes ${out.supersedes}` : ''}${out.settles.length ? ` · written into ${out.settles.join(', ')}` : ''}${area}`;
 }
 // decisions: one line per ruling, its first line cut at 160 characters.
 export function renderDecisions(rows) {
   if (!rows.length) return '(no rulings)';
   return rows.map((d) => {
     const area = d.area ? ` · area ${d.area}${d.rule ? ` · rule ${d.rule}` : ''}${d.ratified ? ' ratified' : d.rejected ? ' rejected' : ''}` : '';
-    return `${d.date} · ${d.slug}${d.by ? ` · by ${d.by}` : ''}${area}${d.supersededBy ? ` · SUPERSEDED by ${d.supersededBy}` : ''}${d.supersedes ? ` · supersedes ${d.supersedes}` : ''} — ${(d.ruling.split('\n').find((l) => l.trim()) || '').slice(0, 160)}`;
+    const quoted = d.quote ? ` · ${quoteShown(d.quote.split('\n')[0].slice(0, 160))}` : '';
+    return `${d.date} · ${d.slug}${d.by ? ` · by ${d.by}` : ''}${d.under ? ` · under ${d.under}` : ''}${area}${d.supersededBy ? ` · SUPERSEDED by ${d.supersededBy}` : ''}${d.supersedes ? ` · supersedes ${d.supersedes}` : ''} — ${(d.ruling.split('\n').find((l) => l.trim()) || '').slice(0, 160)}${quoted}`;
   }).join('\n');
 }
 

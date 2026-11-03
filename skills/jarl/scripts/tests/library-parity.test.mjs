@@ -22,7 +22,7 @@ const COMPOSERS = fileURLToPath(new URL('../../references/composers.md', import.
 // references/composers.md writes them. `cases` names the parity cases that show the difference (a row with none says why in `why`).
 export const COMMAND_LINE_ONLY = [
   { item: 'Merge with no CI state', cases: ['merged'], cli: 'records no CI state unless `--ci` is given', library: 'records `pending` when a sha is given without a CI state', why: 'a composer that records a merge before CI has run says so in the record; a person at the command line gives the state when it is known' },
-  { item: 'Numbers of issues and questions', cases: ['new', 'ask'], cli: 'writes them plain (`3`, `a-1`), and raises the record format for a plain number under three digits', library: 'writes three digits (`003`, `a-001`)', why: 'a composer\'s files sort by name, and the contract returns the three-digit ids' },
+  { item: 'Numbers of issues and questions', cases: ['new', 'ask'], cli: 'writes them plain (`3`, `a-1`), and raises the record format for a plain number under three digits, except in a loop whose profile names an external scheduler, where it writes three digits and raises nothing', library: 'writes three digits (`003`, `a-001`)', why: 'a composer\'s files sort by name, and the contract returns the three-digit ids' },
   { item: 'Merge cleanup', cases: ['merge cleanup'], cli: 'removes the merged issue\'s worktree and local branch when that is safe, unless `--keep` is given', library: 'removes nothing', why: 'removing git worktrees and branches is a step a person asks for at the command line; a composer removes the ones it made' },
   { item: 'Caller of a status or field move', cases: ['status as cli'], cli: 'asks as `cli`, so a status the profile marks `set-by: record` is refused', library: 'asks as `record` unless `caller: cli` is passed', why: 'a status the profile gives to the record\'s own tool is moved by the composer that runs the loop, not by a person at the command line' },
   { item: 'Worktree of a lease', cases: ['worktree as cli'], cli: 'refuses a `--worktree` that exists and is not a worktree of the lease\'s repository, or has another branch checked out', library: 'accepts it and stores nothing', why: 'the worktree of a lease is found through its branch; a composer that tracks worktrees checks them itself' },
@@ -36,7 +36,7 @@ export const COMMAND_LINE_ONLY = [
   { item: '`archive`', cases: [], cli: 'moves the loop under an archive directory and leaves the open issues named', library: 'no function', why: 'ending a loop belongs to whoever runs it, and a profile may hand that to a composer' },
   { item: '`mode`', cases: [], cli: 'makes the loop permanent, a mode of git', library: 'no function', why: 'the mode is written at init, and a change of it is a decision of the person who commits the record' },
   { item: '`import`', cases: [], cli: 'files issues from a Markdown source', library: 'no function; newIssue files one issue', why: 'filing from a source is the composer\'s choice' },
-  { item: '`next`', cases: [], cli: 'lists the open issues that can start now', library: 'no function; statusData carries the counts', why: 'ordering work is a composer\'s planner; Jarl offers what can run now' },
+  { item: '`next`', cases: [], cli: 'lists the open issues that can start now, and with `--as` what is on one holder (which `status --as` and `resume --as` end with)', library: 'no function; statusData carries the counts, and neither statusData nor resumeData takes `as`', why: 'ordering work is a composer\'s planner; Jarl offers what can run now, and says who moves next' },
   { item: '`queue`', cases: [], cli: 'lists the merge queue', library: 'no function', why: 'a listing for a person; a composer decides what lands' },
   { item: '`report`', cases: [], cli: 'writes the loop\'s text report with its metrics', library: 'no function', why: 'a summary for a person; a composer reports from its own record' },
   { item: '`scope`', cases: [], cli: 'reads a worker branch\'s diff against the files its issues declare', library: 'no function', why: 'it reads git; a composer\'s gate decides what lands' },
@@ -56,7 +56,7 @@ export const COMMAND_LINE_ONLY = [
 
 // The exports of record.mjs that read the loop and touch no file of it through an operation. Every other function export
 // is an operation, and needs a parity case: the test below fails for one that has none.
-const READS = ['resolveRoot', 'jarlDir', 'hasLiveLoop', 'loadIssues', 'findIssue', 'decisions', 'loadAsks', 'parseIssue', 'renderIssue', 'mergedOf', 'evidenceRows', 'validateProfile', 'readProfileFile', 'loadProfile', 'describeProfile', 'withLock', 'writeAtomic', 'statusData', 'resumeData'];
+const READS = ['resolveRoot', 'jarlDir', 'hasLiveLoop', 'loadIssues', 'findIssue', 'decisions', 'loadAsks', 'parseIssue', 'renderIssue', 'mergedOf', 'evidenceRows', 'validateProfile', 'readProfileFile', 'loadProfile', 'describeProfile', 'withLock', 'writeAtomic', 'statusData', 'resumeData', 'recordFormat'];
 
 const TIME = /\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?Z?)?)?/g;
 // The padding of an id and nothing else: 003 reads as 3, a-001 as a-1. Applied only where a case says its ids differ in spelling.

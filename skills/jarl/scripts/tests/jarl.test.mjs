@@ -310,7 +310,7 @@ test('status moves only with a log line; done needs evidence; dropped needs a re
   jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', '12 pass, 0 fail');
   assert.match(refuses(root, 'set', '1', 'done'), /no approving review/);
   jarl(root, 'review', '1', 'changes', '--by', 'rev', 'Important: the new test never goes red');
-  assert.match(refuses(root, 'set', '1', 'done'), /no approving review/);
+  assert.match(refuses(root, 'set', '1', 'done'), /latest review is a changes verdict by rev of/);
   jarl(root, 'review', '1', 'approve', '--by', 'rev', 'read the diff; test red before, green after');
   jarl(root, 'set', '1', 'done');
   const log = readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
@@ -413,6 +413,68 @@ test('check matches a declared file relative to a subdirectory, not just the rep
   const byName = Object.fromEntries(out.items.map((i) => [i.name, i]));
   assert.equal(byName['diff inside declared files'].ok, true, byName['diff inside declared files'].note);
 });
+
+// A branch that changes files at several depths, so a declared directory is told apart from a same-named one elsewhere.
+function scopeFixture(declare) {
+  const root = repo();
+  const g = (...a) => execFileSync('git', a, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: SPAWN_TIMEOUT }).trim();
+  rmSync(join(root, '.git'), { recursive: true, force: true });
+  g('init', '-q', '-b', 'feature');
+  g('config', 'user.email', 't@t'); g('config', 'user.name', 't');
+  mkdirSync(join(root, 'src', 'deep'), { recursive: true });
+  mkdirSync(join(root, 'other', 'deep'), { recursive: true });
+  mkdirSync(join(root, 'vendor', 'src', 'deep'), { recursive: true });
+  sh(root, `echo one > src/deep/a.mjs && echo one > other/deep/q.mjs && echo one > vendor/src/deep/z.mjs && echo one > other.txt && git add -A && git commit -qm base`);
+  jarl(root, 'init', 'goal', '--committed');
+  declare(root);
+  sh(root, `git add -A && git commit -qm jarl && git checkout -qb jarl/1-work && echo two > src/deep/a.mjs && echo two > src/b.mjs && echo two > other/deep/q.mjs && echo two > vendor/src/deep/z.mjs && echo two > other.txt && git add -A && git commit -qm work && git checkout -q feature`);
+  return root;
+}
+const scopeNote = (root, ...args) => JSON.parse(withStderr(root, 'check', ...args, '--branch', 'jarl/1-work', '--base', 'feature', '--json').stdout).items.find((i) => i.name === 'diff inside declared files');
+
+test('check on an issue with no declared files says so in one sentence and lists no file', () => {
+  const root = scopeFixture((r) => jarl(r, 'new', 'work'));
+  const scope = scopeNote(root, '1');
+  assert.equal(scope.ok, true);
+  assert.equal(scope.note, 'no files declared on the issue — nothing to bound the diff by');
+});
+
+test('check on a package keeps the declared files of one issue as the bounds, and names the issue that declares none', () => {
+  const root = scopeFixture((r) => { jarl(r, 'new', 'declared', '--files', 'src/deep/a.mjs'); jarl(r, 'new', 'undeclared'); jarl(r, 'set', '1-2', 'in-progress', 'raised', '--branch', 'jarl/1-work', '--worker', 'w1'); });
+  const scope = scopeNote(root);
+  assert.equal(scope.ok, false);
+  assert.equal(scope.note, 'outside src/deep/a.mjs: other.txt, other/deep/q.mjs, src/b.mjs, vendor/src/deep/z.mjs (2 declares no files)');
+});
+
+test('check lets a declared directory cover everything under it and lists only files outside every declared place', () => {
+  const root = scopeFixture((r) => jarl(r, 'new', 'work', '--files', 'src/deep/'));
+  const scope = scopeNote(root, '1');
+  assert.equal(scope.ok, false);
+  assert.equal(scope.note, 'outside src/deep/: other.txt, other/deep/q.mjs, src/b.mjs, vendor/src/deep/z.mjs');
+  const whole = scopeNote(scopeFixture((r) => jarl(r, 'new', 'work', '--files', 'src, other, other.txt, vendor')), '1');
+  assert.equal(whole.ok, true, whole.note);
+});
+
+test('check matches a declared directory only at the path it names, never a same-named directory deeper in the tree', () => {
+  const root = scopeFixture((r) => jarl(r, 'new', 'work', '--files', 'deep/'));
+  const scope = scopeNote(root, '1');
+  assert.equal(scope.ok, false);
+  assert.match(scope.note, /other\/deep\/q\.mjs/);
+  assert.match(scope.note, /src\/deep\/a\.mjs/);
+  assert.match(scope.note, /vendor\/src\/deep\/z\.mjs/);
+  const nested = scopeNote(scopeFixture((r) => jarl(r, 'new', 'work', '--files', 'src/deep')), '1');
+  assert.doesNotMatch(nested.note, /src\/deep\/a\.mjs/);
+  assert.match(nested.note, /vendor\/src\/deep\/z\.mjs/, 'a directory under another one is not the declared one');
+});
+
+// The bounds come from the declared files alone; this holds for the original reader too, so the test pins the property.
+test('check bounds the diff by the declared files, never by what the worker\'s commits touched', () => {
+  const root = scopeFixture((r) => jarl(r, 'new', 'work', '--files', 'src/deep/a.mjs'));
+  const scope = scopeNote(root, '1');
+  assert.equal(scope.ok, false);
+  assert.equal(scope.note, 'outside src/deep/a.mjs: other.txt, other/deep/q.mjs, src/b.mjs, vendor/src/deep/z.mjs');
+});
+
 
 test('a round after an approve spends the approve', () => {
   const root = repo();
@@ -1105,6 +1167,34 @@ test('import reads the angles shape and the results/kept shape; refuses a findin
   assert.match(refuses(root, 'import', findingsDir({ nope: 1 })), /not a findings file/);
 });
 
+test('import refuses a finding with a misspelled key, naming the finding, the key and the keys a finding takes, in a dry run as well, and files nothing', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  const file = findingsDir([{ id: 'C-1', title: 'a', clam: 'the claim, misspelled', severety: 'high' }]);
+  const msg = refuses(root, 'import', file, '--source', 'r-keys');
+  assert.match(msg, /finding "C-1" has "clam" \(did you mean "claim"\?\), "severety" \(did you mean "severity"\?\)/);
+  assert.match(msg, /the keys a finding takes are id, title, claim, kind, priority, severity, where, surfaces, truth, evidence, impact, adopter_impact, proposal, suggested_fix, fix, effort/);
+  assert.doesNotMatch(msg, /localId|angle/, 'the keys import sets itself are not listed');
+  assert.equal(refuses(root, 'import', file, '--source', 'r-keys', '--dry-run'), msg, 'a dry run refuses the same');
+  assert.equal(JSON.parse(jarl(root, 'list', '--all', '--json')).length, 0, 'nothing was filed');
+  const angles = findingsDir([{ angle: 'first hour', surviving: [{ id: 'F1', title: 'a', sevrity: 'minor' }] }]);
+  assert.match(refuses(root, 'import', angles, '--source', 'r-angles'), /finding "first-hour\/F1" has "sevrity" \(did you mean "severity"\?\)/);
+});
+
+test('import, a dry run and sources take a findings file whose findings carry keys the mapping does not read, and file every finding', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  const file = fileURLToPath(new URL('./fixtures/findings-with-extra-keys.json', import.meta.url));
+  const source = 'core/research/2026-11-03-extra-keys';
+  const dry = JSON.parse(jarl(root, 'import', file, '--source', source, '--dry-run', '--json'));
+  assert.deepEqual(dry.filed.map((f) => f.finding), ['jarl-fr-1c239812', 'check-fill-lock-F1', 'GF-1']);
+  assert.equal(JSON.parse(jarl(root, 'list', '--all', '--json')).length, 0, 'a dry run files nothing');
+  const out = JSON.parse(jarl(root, 'import', file, '--source', source, '--json'));
+  assert.equal(out.filed.length, 3);
+  assert.match(jarl(root, 'import', file, '--source', source), /filed 0 · already filed 3/);
+  assert.match(jarl(root, 'sources', file, '--source', source), /^core\/research\/2026-11-03-extra-keys · 3 finding\(s\) · 3 filed/m);
+});
+
 test('import --adopt links the issues that already name the finding, once, without filing a duplicate', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
@@ -1135,7 +1225,7 @@ test('ask --kind ratify blocks nothing, is listed in status and the handoff, and
   jarl(root, 'evidence', '1', '--ran', 'check', '--saw', 'green');
   jarl(root, 'set', '1', 'done', 'merged');
   jarl(root, 'answer', 'a-1', 'ratified', '--by', 'owner');
-  assert.match(jarl(root, 'show', '1'), /Ruling ask-1 \(ratify\): ratified/);
+  assert.match(jarl(root, 'show', '1'), /Ruling ask-1 \(ratify, by owner\): ratified/);
   assert.match(jarl(root, 'status'), /questions 0$/m);
 });
 
@@ -1162,10 +1252,10 @@ test('After holds an issue out of next and counts it as waiting; decide --settle
   jarl(root, 'after', '5', '--clear');
   assert.equal(JSON.parse(jarl(root, 'show', '5', '--json')).fields.after, undefined);
   // A ruling names what it settles: the ruling goes into each issue's evidence, the status stays.
-  assert.match(jarl(root, 'decide', 'numbers', 'the core ships on one number', '--settles', '4'), /decided numbers · by owner · written into 4/);
+  assert.match(jarl(root, 'decide', 'numbers', 'the core ships on one number', '--settles', '4'), /decided numbers · by coordinator · written into 4/);
   const four = JSON.parse(jarl(root, 'show', '4', '--json'));
   assert.equal(four.status, 'open');
-  assert.match(four.sections.evidence, /Ruling numbers: the core ships on one number/);
+  assert.match(four.sections.evidence, /Ruling numbers \(by coordinator\): the core ships on one number/);
   assert.match(readFileSync(join(root, '.jarl', 'decisions.md'), 'utf8'), /the core ships on one number\n\n\*\*Settles:\*\* 4/);
   assert.match(refuses(root, 'decide', 'other', 'x', '--settles', '4,77'), /no such issue: 77/);
   assert.doesNotMatch(readFileSync(join(root, '.jarl', 'decisions.md'), 'utf8'), /other/, 'a refused ruling writes nothing');
@@ -1644,7 +1734,7 @@ test('decide --by owner with no question in the record prints a notice on stderr
   const root = repo();
   jarl(root, 'init', 'goal');
   jarl(root, 'new', 'rewrite the flag handling', '--what', 'Follows flag-rule as it stands.');
-  assert.match(run(root, ['decide', 'quiet-rule', 'Keep the default.', '--by', 'owner']).stderr, /no question in the record/);
+  assert.match(run(root, ['decide', 'quiet-rule', 'Keep the default.', '--by', 'owner', '--quote', 'Keep it.']).stderr, /no question in the record/);
   assert.equal(run(root, ['decide', 'mandate-rule', 'Keep the default.', '--by', 'jarl']).stderr, '');
   jarl(root, 'decide', 'flag-rule', 'Keep the flag.', '--by', 'jarl');
   const r = run(root, ['decide', 'flag-rule-two', 'Keep the flag, now.', '--by', 'jarl', '--supersedes', 'flag-rule']);
@@ -1945,7 +2035,7 @@ test('the supersession notice finds a slug at the end of a sentence and does not
   assert.doesNotMatch(r.stderr, /, 10\b/, 'the longer slug is not found');
 });
 
-test('decide with no --by prints no notice: the owner is the default, and a notice is for an owner named on the command line', () => {
+test('decide with no --by prints no notice: the coordinator is the default, and a notice is for an owner named on the command line', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
   assert.equal(run(root, ['decide', 'default-rule', 'Keep it.']).stderr, '');
@@ -2018,7 +2108,7 @@ test('the decision reader lists text before the first ruling, a ruling heading t
   const lib = await import(LIB_URL);
   const root = repo();
   jarl(root, 'init', 'goal');
-  jarl(root, 'decide', 'rule-a', 'Keep a.', '--by', 'owner');
+  jarl(root, 'decide', 'rule-a', 'Keep a.', '--by', 'owner', '--quote', 'Keep a.');
   const path = join(root, '.jarl', 'decisions.md');
   writeFileSync(path, `${readFileSync(path, 'utf8')}\n## 2026-10-19 rule-b without a dot\n## 2026-10-19 · rule-a\nAgain.\n`);
   const skipped = [];

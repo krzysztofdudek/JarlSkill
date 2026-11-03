@@ -4,11 +4,11 @@
 import { resolve, dirname, basename } from 'node:path';
 import { CI_STATES, fieldText } from './base.mjs';
 import { jarlDir } from './where.mjs';
-import { idKey, idRe } from './ids.mjs';
+import { idKey, idRe, idsCited } from './ids.mjs';
 import { profileAt } from './profile.mjs';
 import { asksAt, decisionsAt, goalLines, readGoal } from './journal.mjs';
 import { eventsById, loopEvents } from './log.mjs';
-import { alignRows, evidenceTable, issuesAt, mergedOf } from './issues.mjs';
+import { alignRows, evidenceRows, evidenceTable, headerReadText, issuesAt, mergedOf, sharedNumberText, sharedNumbers } from './issues.mjs';
 import { branchTip } from './repositories.mjs';
 
 // ---- the loaded loop -------------------------------------------------------------------------------
@@ -34,6 +34,9 @@ export function readLoop(dir) {
 }
 function makeLoop({ dir, root, profile, issues, events }) {
   const loop = { dir, root, profile, issues, byId: new Map(issues.map((i) => [i.id, i])), events, eventsById: eventsById(events) };
+  // A number the log cannot attribute (two files carry it, or the log files it more than once) has no log lines of its
+  // own: its rows, approves, rounds and merges may be another issue's, so no view or gate reads any of them for it.
+  for (const i of issues) if (i.byHeader) loop.eventsById.set(i.id, []);
   const once = (make) => { let made = false; let value; return () => { if (!made) { value = make(); made = true; } return value; }; };
   const reads = {
     goal: once(() => readGoal(dir)),
@@ -53,7 +56,7 @@ function scopedLoop(loop, issues) { return makeLoop({ dir: loop.dir, root: loop.
 // Where the files disagree with the journal, which is the record: one entry { id, field, onFile, record, line } per
 // header field (Status, Branch, Worker, Model, Since, Merged, CI) whose value differs from the journal's, one per
 // issue the journal holds no filing and no move of (field 'journal'), and one per status a line of the journal moves an
-// issue into that the loop's profile does not list (field 'profile': the line reads as a note, not as a move). The
+// issue into that the loop's profile does not list (field 'profile': the line reads as a note, not as a move), and one per number two issue files carry (field 'number', with the files), each in place of the fields and with no advice to write the log's value into a header, and one per contradiction inside the header of an issue whose number the log cannot attribute (field 'header'), which is read from its header and never compared with the log. The
 // views never believe the header; they print these. Each line names how the disagreement is settled: the header written
 // back to the journal's value, which writes nothing else, or the move or merge that makes the header's value the
 // record, which writes a line of its own.
@@ -63,9 +66,20 @@ const ghostRe = idRe('^({id}) → (\\S+)');
 export function recordDisagreements(loop) {
   const { profile } = loop;
   const out = [];
+  // A number two files carry is one entry naming both: the log's lines for it are read for each file, so a header that
+  // differs from them may be the true one, and copying the log's value into it would move an issue nobody moved.
+  const shared = sharedNumbers(loop.issues);
+  const sharedFiles = new Set(shared.flatMap((s) => s.issues.map((i) => i.file)));
+  for (const s of shared) out.push({ id: s.id, field: 'number', onFile: null, record: null, files: s.issues.map((i) => `issues/${basename(i.file)}`), line: `record: ${sharedNumberText(s, loop.issues)}` });
   for (const issue of loop.issues) {
-    if (issue.id === null) continue;
+    if (issue.id === null || sharedFiles.has(issue.file)) continue;
     const id = issue.id;
+    // A number the log cannot attribute is read from its header, so the header is never compared with the log; it is
+    // checked against itself, which still catches a hand edit that contradicts the file.
+    if (issue.byHeader) {
+      for (const what of headerContradictions(profile, issue)) out.push({ id, field: 'header', onFile: issue.status, record: null, line: `record: ${id} is read from its header (issues/${basename(issue.file)}), and the header contradicts itself: ${what}` });
+      continue;
+    }
     if (issue.onFile === null) {
       const status = profile.statuses.includes(issue.status) ? issue.status : profile.initial;
       out.push({ id, field: 'journal', onFile: issue.status, record: null, line: `record: ${id} is not in the log (it holds no filing and no move), so its header is read as it stands — to put it in the log: jarl.mjs set ${id} ${status}${profile.is(status, 'needs-reason') ? ' "<why>"' : ''}${profile.is(status, 'closes-record') ? ' (through its checks)' : ''}` });
@@ -79,8 +93,37 @@ export function recordDisagreements(loop) {
       if (file !== record) out.push(fieldDisagreement(profile, issue, field, file, record));
     }
   }
+  // A shared number's files are checked against themselves too: each is read from its own header while they share it.
+  for (const s of shared) for (const issue of s.issues) {
+    for (const what of headerContradictions(profile, issue)) out.push({ id: s.id, field: 'header', onFile: issue.status, record: null, line: `record: ${s.id} is read from its header (issues/${basename(issue.file)}), and the header contradicts itself: ${what}` });
+  }
   out.push(...unreadableMoves(loop));
   return out;
+}
+// What a header read as the record says against itself: a status the profile does not list, a lease that its status
+// does not hold or a status that holds one with no lease, a CI with no merge, and a closing status with no proof row
+// in the file's Evidence.
+function headerContradictions(profile, issue) {
+  const out = [];
+  const has = (k) => Boolean(fieldText(issue.fields[k]));
+  const st = issue.status;
+  if (!profile.statuses.includes(st)) { out.push(`its Status ${st} is not one the loop's profile lists`); return out; }
+  if (profile.is(st, 'holds-claim')) {
+    if (!has('since')) out.push(`its Status ${st} holds a lease, and it has no Since`);
+  } else {
+    for (const k of ['worker', 'since', 'worktree']) if (has(k)) out.push(`it carries ${k === 'worktree' ? 'Worktree' : FIELD_NAMES[k]}, and its Status ${st} holds no lease`);
+  }
+  if (has('ci') && !has('merged')) out.push('it carries CI and no Merged');
+  if (profile.is(st, 'closes-record') && evidenceRows(issue).length === 0) out.push(`its Status ${st} closes it, and its Evidence holds no --ran/--saw row`);
+  return out;
+}
+// The issues read from their headers because the log files their number more than once, while one file carries it: one
+// note each, { id, file, filings, line }. They are not disagreements: the header is the record for them.
+export function headerReadNotes(loop) {
+  return loop.issues.filter((i) => i.byHeader && !i.shared).map((i) => {
+    const file = `issues/${basename(i.file)}`;
+    return { id: i.id, file, filings: i.byHeader.filings, line: headerReadText(i.id, i.byHeader.filings, file) };
+  });
 }
 // The sentence about one header field: what the file holds against what the log holds.
 function disagreementSentence(name, file, record) {
@@ -137,6 +180,46 @@ function unreadableMoves(loop) {
 }
 // A disagreement as the views print it: its line, and under it the command that writes the header from the log.
 export function disagreementText(d) { return d.rewrite ? `${d.line}\n  or, with no hand edit and no new log line: ${d.rewrite} (writes the header from the log)` : d.line; }
+
+// The issues an unfinished issue's What, Why or Acceptance names by number (see idsCited) while the order does not hold
+// them together: the named issue is unsettled (not done or dropped), is not among the issues the naming one waits on
+// through After, directly or through the chain, and does not itself wait on the naming one that way. Each is
+// { id, names: [ids] }, in the order of the issues. Only these are listed for the issues in `only` when it is given.
+// The text relies on the named issue, and nothing orders the two: a note, never a refusal.
+export function unorderedNamings(issues, profile, only = null) {
+  const held = new Map(issues.filter((i) => i.id !== null).map((i) => [i.id, i]));
+  const byKey = new Map([...held.values()].map((i) => [idKey(i.id), i]));
+  // Whether `issue` waits on the issue with `id` through After, directly or through the chain: a walk that stops at the
+  // first sight of it, so an ordered pair costs the distance between the two and only an unordered pair walks the chain.
+  const waitsOn = (issue, id) => {
+    const want = idKey(id);
+    const seen = new Set();
+    const stack = [...issue.after];
+    while (stack.length) {
+      const key = idKey(stack.pop());
+      if (key === want) return true;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      stack.push(...(byKey.get(key)?.after || []));
+    }
+    return false;
+  };
+  const heading = (profile.acceptance || 'Acceptance').toLowerCase();
+  const out = [];
+  for (const issue of issues) {
+    if (issue.id === null || !profile.unfinished(issue.status) || (only && !only.includes(issue.id))) continue;
+    const text = [issue.sections.what, issue.sections.why, issue.sections[heading]].filter(Boolean).join('\n');
+    const cited = idsCited(text, held).filter((id) => idKey(id) !== idKey(issue.id) && !profile.is(held.get(id).status, 'settles-dependents'));
+    const names = cited.filter((id) => !waitsOn(issue, id) && !waitsOn(held.get(id), issue.id));
+    if (names.length) out.push({ id: issue.id, names });
+  }
+  return out;
+}
+// The note a text that names unordered issues gets, on one line: the same words from verify, new and body.
+export function unorderedText(n) {
+  const [noun, it, is] = n.names.length === 1 ? ['issue', 'it', 'is'] : ['issues', 'them', 'are'];
+  return `names ${noun} ${n.names.join(', ')} in What, Why or Acceptance, which ${is} neither done nor dropped, and no After orders ${it} with ${n.id} — if the text relies on ${it}, order the two with: jarl.mjs after`;
+}
 
 // Who reviewed, as a kind: the word self, or anyone who has ever held the issue's lease — its own worker across
 // every takeover, and the worker of any other issue sharing its Branch (a package, or an issue folded into the

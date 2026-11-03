@@ -200,7 +200,7 @@ test('body --title changes the heading with a log entry; the file keeps its name
   assert.equal(issue.file, before, 'the file name is unchanged');
   assert.equal(issue.title, 'the right title');
   assert.match(readFileSync(before, 'utf8'), /^# 001 · the right title\n/);
-  assert.match(log(root), /001 body · title · title was "a wrong title"$/m);
+  assert.match(log(root), /001 body · title · was "a wrong title"$/m);
   assert.match(jarl(root, 'list'), /the right title/);
   assert.match(refuses(root, 'body', id, '--title', '  '), /--title needs a title/);
   jarl(root, 'body', id, '--title', 'two\nlines', '--what', 'and a body too');
@@ -238,14 +238,16 @@ test('a note is numbered as show prints it, retract takes it back with who and w
   assert.match(text, /^~~the second note names a subject the worker must not see~~$/m, 'the original stays, struck through');
   assert.match(text, /^- \*\*retracted:\*\* note 2 · by jarl · \d{4}-\d{2}-\d{2}\n  the owner withdrew it$/m, 'the retraction is an entry of its own');
   assert.match(log(root), /001 evidence retract · note 2 · by jarl · the owner withdrew it$/m);
-  assert.equal(JSON.parse(readFileSync(profileFile(root), 'utf8')).format, 2, 'the first retraction raised the format');
+  assert.equal(JSON.parse(readFileSync(profileFile(root), 'utf8')).format, 3, 'the first retraction raised the format');
 
   const worker = jarl(root, 'show', id);
   assert.doesNotMatch(worker, /second note|subject/, 'the view a worker reads leaves the retracted note out');
   assert.match(worker, /^\[note-1\] the first note stays$/m);
   assert.match(worker, /^\[note-3\] the third note stays too$/m, 'a note keeps its number');
-  assert.match(worker, /^- \*\*retracted:\*\* note 2/m, 'the entry that says who and why stays');
+  assert.doesNotMatch(worker, /retracted:\*\* note 2|withdrew/, 'the reason is hidden with the note');
+  assert.match(worker, /^\(1 note retracted, not shown/m, 'the view says how many notes were retracted');
   assert.match(jarl(root, 'show', id, '--full'), /^\[note-2\] ~~the second note names a subject the worker must not see~~$/m, 'the full view keeps it struck through');
+  assert.match(jarl(root, 'show', id, '--full'), /the owner withdrew it/, 'the reason stays in the full view');
   assert.match(refuses(root, 'retract', id, 'note-2', '--by', 'jarl', 'again'), /note 2 of 001 is retracted already/);
   assert.match(refuses(root, 'retract', id, 'note-9', '--by', 'jarl', 'no such note'), /has 3 evidence notes: there is no note 9/);
   assert.match(refuses(root, 'retract', id, 'note-1', 'no one says who'), /needs --by/);
@@ -260,7 +262,7 @@ test('a retracted note is read by neither the pinned frozen reader nor the done 
   jarl(root, 'retract', id, 'note-1', '--by', 'jarl', 'written on the wrong issue');
   const r = oldJarl(root, 'list', {});
   assert.equal(r.ok, false);
-  assert.match(r.error, /written for record format 2, and this Jarl reads format 1/);
+  assert.match(r.error, /written for record format 3, and this Jarl reads format 1/);
   assert.equal(L.workEvidence({ sections: { evidence: '~~a struck note~~\n\n- **ran:** a · **saw:** b' } }), '- **ran:** a · **saw:** b');
   assert.equal(L.workEvidence({ sections: { evidence: 'a live note\n\n~~a struck note~~' } }), 'a live note');
 });
@@ -280,4 +282,17 @@ test('a note in a section with no sub-headings is numbered apart from its rows, 
   assert.doesNotMatch(jarl(root, 'show', id), /an older note/);
   assert.match(file(root, id), /^~~an older note~~$/m);
   assert.match(jarl(root, 'verify', '--json'), /./, 'the record still reads');
+});
+
+test('a loop run by a composer refuses the retraction of a note and writes nothing', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'jarl-retract-composed-'));
+  mkdirSync(join(dir, '.git'));
+  const profile = join(mkdtempSync(join(tmpdir(), 'jarl-retract-profile-')), 'profile.json');
+  writeFileSync(profile, JSON.stringify({ 'jarl-profile': 1, name: 'composed', statuses: L.BUILTIN_STATUSES, 'external-scheduler': 'the composer tick' }, null, 2));
+  jarl(dir, 'init', 'a mission', '--profile', profile);
+  const id = R.newIssue(dir, 'first issue', { acceptance: 'it works' }).id;
+  jarl(dir, 'evidence', id, 'a note');
+  const before = file(dir, id);
+  assert.match(refuses(dir, 'retract', id, 'note-1', '--by', 'jarl', 'wrong issue'), /the retraction of a note needs record format 3.*nothing was written/s);
+  assert.equal(file(dir, id), before);
 });

@@ -4,17 +4,18 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, openSync, closeSync, writeSync, unlinkSync, linkSync } from 'node:fs';
 import { join, resolve, relative, isAbsolute } from 'node:path';
 import { CI_STATES, LEASE_FIELDS, PRIORITIES, TIERS, fieldText, need, noSeparators, slugify, splitList } from './base.mjs';
+import { needNoNewOwnersWords, needNoOwnersWords } from './owner.mjs';
 import { git, gitRun } from './git.mjs';
 import { canonical, issuesDir, jarlDir, portablePath, stamp, today } from './where.mjs';
 import { readText, renameRetry, writeAtomic } from './files.mjs';
 import { ISSUE_FILE_RE, branchNameProblem, cmpId, expandIds, idKey, idRe, isBulk, needsRaisedFormat, newNumber } from './ids.mjs';
-import { DEFAULT_PROFILE, TOOL_FIELDS, loadProfile, profilePath, readProfileFile } from './profile.mjs';
+import { DEFAULT_PROFILE, TOOL_FIELDS, loadProfile, numberWidth, profilePath, readProfileFile } from './profile.mjs';
 import { appendLog, appendLogLines, decisionsPath, goalPath, logPath } from './journal.mjs';
 import { JARL_GITIGNORE, JARL_GITIGNORE_COMMITTED, ensureLoopMerge, outOfGit } from './loop-git.mjs';
 import { journalById, mergeCheckText } from './log.mjs';
-import { FIELD_RE, RENDERED_FIELDS, acceptanceHeading, acceptanceLineCount, acceptanceText, bodyText, changelogText, evidenceNotes, evidenceParts, evidenceRows, evidenceTable, fieldValue, findIssue, loadIssues, mergedOf, namedPairs, needNoFieldTags, noteText, parseIssue, placeEvidence, removeFields, removeFirstField, renderIssue, setField, setSection } from './issues.mjs';
-import { commitRepoNames, defaultBase, isGitRepo, issueRepoPaths, issueRepos, mainCheckoutOf, needRightCheckouts, raiseFormat, repoFromInput, repoLabel, repoList, tipLines, whyNotDeletable, worktreeState, worktreesOf } from './repositories.mjs';
-import { FIELD_NAMES, carriesCode, gateOf, readLoop } from './loop.mjs';
+import { FIELD_RE, RENDERED_FIELDS, acceptanceHeading, acceptanceLineCount, acceptanceText, bodyText, changelogText, evidenceNotes, evidenceParts, evidenceRows, evidenceTable, fieldValue, findIssue, issueNamed, loadIssues, mergedOf, namedPairs, needNoFieldTags, noteText, parseIssue, placeEvidence, removeFields, removeFirstField, renderIssue, setField, setSection, unattributedRefusal } from './issues.mjs';
+import { branchTip, commitRepoNames, defaultBase, isGitRepo, issueRepoPaths, issueRepos, mainCheckoutOf, needFormat, needRightCheckouts, repoFromInput, repoLabel, repoList, tipLines, whyNotDeletable, worktreeState, worktreesOf } from './repositories.mjs';
+import { FIELD_NAMES, carriesCode, gateOf, readLoop, unorderedNamings, unorderedText } from './loop.mjs';
 import { declaredChecks, lastMerge } from './metrics.mjs';
 import { modelLines, modelValue } from './models.mjs';
 import { slotRefusal } from './attachments.mjs';
@@ -159,9 +160,14 @@ function tierNote(profile, tier) {
   const builtIn = profile.tiers.length === TIERS.length && profile.tiers.every((t, k) => t === TIERS[k]);
   return `note: no --tier given, so tier ${tier} was recorded${builtIn ? ` — ${TIERS.map((t) => `${t}: ${TIER_CRITERIA[t]}`).join('; ')}` : ' (this loop\'s default)'}; name it with --tier`;
 }
+// The kind and the priority a new issue took when its flag was not given: said so, as the tier is.
+function defaultedNote(field, value, flag) {
+  return `note: no --${flag} given, so ${field} ${value} was recorded (the default); name it with --${flag}`;
+}
 
 export function cmdNew(root, title, rawFlags) {
   need(title, 'new requires "<title>"');
+  needNoOwnersWords('the new issue', title, rawFlags);
   // A title is the heading line of the issue: line breaks in it become spaces, so the lines after the first are not lost to the heading.
   if (/[\r\n]/.test(title)) title = String(title).split(/\r\n?|\n/).map((l) => l.trim()).filter(Boolean).join(' ');
   needLiveLoop(root, ' — run: jarl.mjs init "<goal>"');
@@ -194,8 +200,10 @@ export function cmdNew(root, title, rawFlags) {
   const sections = profile.sections.map((h) => [h, givenSections.has(h) ? bodyText(givenSections.get(h)) : bodyText(fromTemplate.section?.(h.toLowerCase()))]);
   if (profile.acceptance && fromTemplate.acceptance === undefined && fromTemplate.section) fromTemplate.acceptance = fromTemplate.section(profile.acceptance.toLowerCase());
   const kind = flags.kind || profile.kindDefault;
+  const kindDefaulted = !flags.kind;
   need(profile.kinds.includes(kind), `--kind must be one of: ${profile.kinds.join(', ')}`);
   const priority = String(flags.prio || '2');
+  const priorityDefaulted = !flags.prio;
   need(PRIORITIES.includes(priority), '--prio must be 1, 2 or 3');
   const tier = String(flags.tier || profile.tierDefault);
   need(profile.tiers.includes(tier), `--tier must be one of: ${profile.tiers.join(', ')} — the tier of model the worker is raised on, mapped to a model by the platform running the loop`);
@@ -215,19 +223,22 @@ export function cmdNew(root, title, rawFlags) {
   const elsewhere = highestAcrossWorktrees(root);
   let n = Math.max(taken().reduce((m, x) => Math.max(m, x), 0), elsewhere) + 1;
   for (let tries = 0; ; tries += 1) {
-    const id = newNumber(n, rawFlags.width);
+    const id = newNumber(n, numberWidth(profile, rawFlags.width));
     // The first issue of 1000 or more is a file a reader that knows only format 1 would skip in silence: the format is raised first.
-    if (needsRaisedFormat(id)) raiseFormat(root);
+    if (needsRaisedFormat(id)) needFormat(root, 'plain-number');
     const file = join(dir, `${id}-${slugify(title)}.md`);
     const tmp = join(dir, `.${id}.${process.pid}.tmp`);
-    writeFileSync(tmp, renderIssue({
+    const rendered = renderIssue({
       id, title, status: profile.initial, kind, priority, tier, fields, sections, acceptanceHeading: profile.acceptance || 'Acceptance',
       tags: splitList(flags.tags), files: pathList(flags.files), repo: picked.map((p) => p.value).join(', '), foundBy: flags['found-by'] || 'jarl',
       where: flags.where, what: bodyText(flags.what), why: bodyText(flags.why), source, after,
       // A template's Acceptance and Changelog are taken as written (a list already); a flag replaces them.
       acceptance: flags.acceptance !== undefined ? acceptanceText(flags.acceptance) : bodyText(fromTemplate.acceptance),
       changelog: flags.changelog !== undefined ? changelogText(flags.changelog) : bodyText(fromTemplate.changelog),
-    }));
+    });
+    // The file is claimed by a link, not through writeAtomic, so its text passes the record's one check here (a template too).
+    needNoNewOwnersWords('', rendered, `${id}-${slugify(title)}.md`);
+    writeFileSync(tmp, rendered);
     let claimed = !taken().includes(n);
     // The filing goes into the journal first: a write that stops after it leaves the record ahead of the files (a filing
     // with no file, and the number is taken again), never a file the record does not hold.
@@ -235,14 +246,26 @@ export function cmdNew(root, title, rawFlags) {
     if (claimed) { try { claimed = claimFile(tmp, file); } catch (e) { unlinkSync(tmp); throw e; } }
     unlinkSync(tmp);
     if (claimed) {
-      // Said on the command line only (a library caller gets none, and its result does not change): the tier it used.
-      const notes = rawFlags.caller === 'cli' ? [rawFlags.tier === undefined ? tierNote(profile, tier) : null, ...picked.map((p) => p.note && `note: ${p.note}`)].filter(Boolean) : [];
+      // Said on the command line only (a library caller gets none, and its result does not change): the tier it used, and
+      // the kind and priority it took by default.
+      const notes = rawFlags.caller === 'cli' ? [
+        rawFlags.tier === undefined ? tierNote(profile, tier) : null,
+        kindDefaulted ? defaultedNote('kind', kind, 'kind') : null,
+        priorityDefaulted ? defaultedNote('priority', priority, 'prio') : null,
+        ...picked.map((p) => p.note && `note: ${p.note}`),
+        ...unorderedNotes(root, profile, id),
+      ].filter(Boolean) : [];
       const note = notes.length ? { note: notes.join('\n') } : {};
       return { id, file, ...(rawFlags.template !== undefined ? { template: rawFlags.template } : {}), ...note };
     }
     need(tries < 100, 'could not claim a free issue number after 100 tries');
     n = Math.max(n + 1, taken().reduce((m, x) => Math.max(m, x), 0) + 1);
   }
+}
+
+// The notes for the text of an issue just written: one for the unfinished issues it names that nothing orders with it.
+function unorderedNotes(root, profile, id) {
+  return unorderedNamings(loadIssues(root), profile, [id]).map((n) => `note: issue ${n.id}: ${unorderedText(n)}`);
 }
 
 function pathList(v) { return splitList(v).map((p) => portablePath(p)); }
@@ -262,7 +285,7 @@ function afterList(root, selfId, raw) {
   const all = loadIssues(root);
   const missing = keys.filter((k) => !all.some((i) => idKey(i.id) === k));
   need(missing.length === 0, `no such issue: ${missing.join(', ')}`);
-  const ids = keys.map((k) => all.find((i) => idKey(i.id) === k).id);
+  const ids = keys.map((k) => issueNamed(all, k).id);
   need(!selfId || !ids.some((id) => idKey(id) === idKey(selfId)), `${selfId} cannot wait on itself`);
   if (selfId) {
     const byId = new Map(all.map((i) => [i.id, i]));
@@ -286,16 +309,73 @@ export function waitingOn(issue, byId, profile = DEFAULT_PROFILE) {
   return issue.after.filter((id) => byId.has(id) && !profile.is(byId.get(id).status, 'settles-dependents'));
 }
 
-// body <id> — the Where field and the What, Why and Acceptance sections, set or replaced. Evidence is never
-// written here: it is the record of what was done, appended by evidence, never replaced.
+// ---- the description of an issue -----------------------------------------------------------------
+//
+// An issue is its description and its history. Every part of the description (the title, the header fields below, the
+// fields a profile declares, the What, Why, Acceptance and Changelog sections and the sections a profile declares) is
+// changed by a command, and every change writes one log line that names the part, who changed it and what it held
+// before. The history (evidence rows and notes, verdicts, merges, rulings, answers) has no edit at all: a row or an
+// approve is taken back by retract, a ruling replaced by decide --supersedes, and the status moves only through set.
+
+// The header fields of the description, each written by field and by its own command.
+export const DESCRIPTION_FIELDS = ['Title', 'Priority', 'Tier', 'Kind', 'Found by', 'Tags', 'Files', 'Repo', 'After', 'Source', 'Where', 'Resources'];
+// The name a description change records as its author, or null when the call names nobody: a write nobody named is
+// logged with no author at all, never under a name nobody gave. A name is one name on one line, without the log's
+// separator, which would let it be read as more than one segment of the line.
+export function editorOf(by) {
+  if (by === undefined || by === null) return null;
+  const name = fieldText(by);
+  need(typeof by === 'string' && name, '--by needs a name: who changed the description');
+  need(!/[\r\n]/.test(String(by).trim()), `--by is one name on one line (got ${JSON.stringify(String(by))})`);
+  need(!name.includes('·'), `--by is one name — not a phrase with "·" in it (got "${name}")`);
+  return name;
+}
+// The stand-in a description line writes for the log's separator inside a value, as ⏎ stands in for a line break: the
+// value stays readable, and no reader finds a separator in it.
+const SEPARATOR_MARK = '∙';
+// A value as one segment of a description line: on one line (each break as ⏎), each separator as its stand-in; (none) when empty.
+const logValue = (v) => String(v ?? '').replace(/\r\n?/g, '\n').split('\n').map((l) => l.trim()).filter(Boolean).join(' ⏎ ').replace(/·/g, SEPARATOR_MARK) || '(none)';
+const byPart = (by) => (by ? ` · by ${by}` : '');
+// The line a change of a header field writes, `<id> field <Name> · <value> · was <old value>[ · by <who>]`, or null when
+// the field already holds the value: a change to nothing writes no line.
+function fieldLine(id, name, value, was, by) {
+  if (fieldText(value) === fieldText(was)) return null;
+  return `${id} field ${name} · ${fieldText(value) === '' ? '(cleared)' : logValue(value)} · was ${logValue(was)}${byPart(by)}`;
+}
+// The most of a section's first line a body line keeps: the line stays one short line whatever the section holds.
+const EXCERPT_CHARS = 120;
+// The line a change of the title or of a section writes, `<id> body · <part> · was "<old text>"[ · by <who>]`, or null
+// when the part already holds that text. The title is kept whole; a section by its first line (at most EXCERPT_CHARS)
+// and its length, so a long section never floods the log.
+function bodyLine(id, part, was, now, by) {
+  const old = String(was ?? '').trim();
+  if (old === String(now ?? '').trim()) return null;
+  if (!old) return `${id} body · ${part} · was (none)${byPart(by)}`;
+  if (part === 'title') return `${id} body · ${part} · was "${logValue(old)}"${byPart(by)}`;
+  const first = old.split(/\r\n?|\n/)[0].trim();
+  const cut = first.length > EXCERPT_CHARS ? `${first.slice(0, EXCERPT_CHARS)}…` : first;
+  return `${id} body · ${part} · was "${logValue(cut)}" (${old.length} characters)${byPart(by)}`;
+}
+// The lines of a description change that are not null, appended in one write; nothing when every part was unchanged.
+function logChanges(root, lines) {
+  const kept = lines.filter(Boolean);
+  if (kept.length) appendLogLines(root, kept);
+}
+// What a header field of an issue holds as written, '' when the header has none.
+const heldField = (issue, name) => fieldText(issue.fields[name.toLowerCase()]);
+
+// body <id> — the title, the Where field and the What, Why, Acceptance and Changelog sections, set or replaced. Evidence
+// is never written here: it is the record of what was done, appended by evidence, never replaced.
 // `dry` checks everything the call would refuse and writes nothing: a list of ids is run dry on every id before the
 // first one is written (see eachIssue).
 export function cmdBody(root, rawId, flags, dry = false) {
+  needNoOwnersWords('the body', flags);
   const issue = findIssue(root, rawId);
   need(issue, `no such issue: ${rawId}`);
   const profile = loadProfile(root);
   const parts = ['title', 'where', 'what', 'why', 'acceptance', 'changelog', 'section'].filter((k) => flags[k] !== undefined);
   need(parts.length, 'body needs at least one of --title, --where, --what, --why, --acceptance, --changelog, --section');
+  const by = editorOf(flags.by);
   const title = flags.title === undefined ? null : fieldText(flags.title);
   need(flags.title === undefined || title, '--title needs a title');
   const sections = namedPairs(flags.section, 'section', profile.sections, 'section');
@@ -305,46 +385,53 @@ export function cmdBody(root, rawId, flags, dry = false) {
   const named = parts.flatMap((k) => (k === 'section' ? [...sections.keys()] : [k]));
   if (dry) return { id: issue.id, set: named };
   let text = readText(issue.file);
+  const lines = [];
+  const held = (key) => issue.sections[key] ?? '';
   // The title is the heading's text; the file keeps its name, so the number and the slug a branch was cut from stay.
-  if (title) text = text.replace(idRe('^(#\\s+{id}\\s+·\\s+).*$', 'm'), (_, head) => `${head}${title}`);
-  if (flags.where !== undefined) text = setField(text, 'Where', fieldText(flags.where));
-  if (flags.what !== undefined) text = setSection(text, 'What', bodyText(flags.what));
-  if (flags.why !== undefined) text = setSection(text, 'Why', bodyText(flags.why));
-  if (flags.acceptance !== undefined) text = setSection(text, acceptanceHeading(issue, profile), acceptanceText(flags.acceptance));
-  for (const [h, v] of sections) text = setSection(text, h, bodyText(v));
-  if (flags.changelog !== undefined) text = setSection(text, 'Changelog', changelogText(flags.changelog));
+  const section = (heading, part, now) => { text = setSection(text, heading, now); lines.push(bodyLine(issue.id, part, held(heading.toLowerCase()), now, by)); };
+  if (title) { text = text.replace(idRe('^(#\\s+{id}\\s+·\\s+).*$', 'm'), (_, head) => `${head}${title}`); lines.push(bodyLine(issue.id, 'title', issue.title, title, by)); }
+  if (flags.where !== undefined) { text = setField(text, 'Where', fieldText(flags.where)); lines.push(fieldLine(issue.id, 'Where', flags.where, heldField(issue, 'Where'), by)); }
+  if (flags.what !== undefined) section('What', 'what', bodyText(flags.what));
+  if (flags.why !== undefined) section('Why', 'why', bodyText(flags.why));
+  if (flags.acceptance !== undefined) { const heading = acceptanceHeading(issue, profile); const now = acceptanceText(flags.acceptance); text = setSection(text, heading, now); lines.push(bodyLine(issue.id, 'acceptance', held('acceptance'), now, by)); }
+  for (const [h, v] of sections) section(h, h, bodyText(v));
+  if (flags.changelog !== undefined) section('Changelog', 'changelog', changelogText(flags.changelog));
+  logChanges(root, lines);
   writeAtomic(issue.file, text);
-  appendLog(root, `${issue.id} body · ${named.join(', ')}${title ? ` · title was "${issue.title}"` : ''}`);
-  return { id: issue.id, set: named };
+  // Said on the command line only: a rewritten What, Why or Acceptance that names issues nothing orders with this one.
+  const note = flags.caller === 'cli' && ['what', 'why', 'acceptance'].some((k) => named.includes(k)) ? unorderedNotes(root, profile, issue.id) : [];
+  return { id: issue.id, set: named, ...(note.length ? { note: note.join('\n') } : {}) };
 }
 
-export function cmdSource(root, rawId, list, dry = false) {
+export function cmdSource(root, rawId, list, dry = false, by = undefined) {
   const issue = findIssue(root, rawId);
   need(issue, `no such issue: ${rawId}`);
+  const editor = editorOf(by);
   const sources = sourceList(list);
   need(sources.length, 'source requires <report dir>#<finding id>[,...]');
   if (dry) return { id: issue.id, sources };
+  logChanges(root, [fieldLine(issue.id, 'Source', sources.join(', '), heldField(issue, 'Source'), editor)]);
   writeAtomic(issue.file, setField(readText(issue.file), 'Source', sources.join(', ')));
-  appendLog(root, `${issue.id} source · ${sources.join(', ')}`);
   return { id: issue.id, sources };
 }
 
-export function cmdAfter(root, rawId, raw, { clear = false, dry = false } = {}) {
+export function cmdAfter(root, rawId, raw, { clear = false, dry = false, by } = {}) {
   const issue = findIssue(root, rawId);
   need(issue, `no such issue: ${rawId}`);
+  const editor = editorOf(by);
   if (clear) {
     need(raw === undefined, 'after takes either <ids> or --clear, not both');
     need(issue.fields.after !== undefined, `${issue.id} has no After field to clear`);
     if (dry) return { id: issue.id, after: [], cleared: true };
+    logChanges(root, [fieldLine(issue.id, 'After', '', heldField(issue, 'After'), editor)]);
     writeAtomic(issue.file, removeFirstField(readText(issue.file), 'After'));
-    appendLog(root, `${issue.id} after · cleared`);
     return { id: issue.id, after: [], cleared: true };
   }
   need(raw !== undefined, 'after requires <ids> — the issues this one waits on (or --clear)');
   const ids = afterList(root, issue.id, raw);
   if (dry) return { id: issue.id, after: ids };
+  logChanges(root, [fieldLine(issue.id, 'After', ids.join(', '), heldField(issue, 'After'), editor)]);
   writeAtomic(issue.file, setField(readText(issue.file), 'After', ids.join(', ')));
-  appendLog(root, `${issue.id} after ${ids.join(', ')}`);
   return { id: issue.id, after: ids };
 }
 
@@ -353,7 +440,8 @@ export function cmdList(root, flags) {
   let rows = loadIssues(root);
   // Finished business (terminal: done, dropped, and deferred work, which waits) is not in the default list:
   // --status or --all shows it.
-  if (!flags.all && !flags.status) rows = rows.filter((i) => profile.unfinished(i.status));
+  // An issue whose number another file carries is listed whatever its status: the log's state of it may be another's.
+  if (!flags.all && !flags.status) rows = rows.filter((i) => profile.unfinished(i.status) || i.shared);
   if (flags.status) rows = rows.filter((i) => i.status === flags.status);
   if (flags.kind) rows = rows.filter((i) => i.kind === flags.kind);
   if (flags.tag) rows = rows.filter((i) => i.tags.includes(flags.tag));
@@ -384,8 +472,8 @@ function issuesFor(root, rawIds, readOnly = false) {
   const all = loadIssues(root);
   const missing = keys.filter((k) => !all.some((i) => idKey(i.id) === k));
   need(missing.length === 0, `no such issue: ${missing.join(', ')}${keys.length > 1 ? ' — nothing was written' : ''}`);
-  const found = keys.map((k) => all.find((i) => idKey(i.id) === k));
-  if (!readOnly && found.some((i) => needsRaisedFormat(i.id))) raiseFormat(root);
+  const found = keys.map((k) => issueNamed(all, k));
+  if (!readOnly && found.some((i) => needsRaisedFormat(i.id))) needFormat(root, 'plain-number');
   return found;
 }
 // One id in, the same object as always out; a list in, an array of them.
@@ -400,7 +488,7 @@ export function eachIssue(root, rawIds, run) {
   const all = loadIssues(root);
   const missing = keys.filter((k) => !all.some((i) => idKey(i.id) === k));
   need(missing.length === 0, `no such issue: ${missing.join(', ')} — nothing was written`);
-  const ids = keys.map((k) => all.find((i) => idKey(i.id) === k).id);
+  const ids = keys.map((k) => issueNamed(all, k).id);
   for (const id of ids) {
     resetCaches();
     try { run(id, true); } catch (e) { throw new Error(/nothing was written/.test(e.message) ? e.message : `${e.message} — nothing was written`); }
@@ -433,17 +521,54 @@ export function setRouteOf(root, name) { return setRoute(loadProfile(root), name
 // field <ids> <name> "<value>" | field <ids> <name> --clear: one field written on every issue, the tool's own (Resources)
 // or one the profile declares. A field is emptied with clear and never with an empty value.
 export function cmdField(root, rawIds, name, value, flags = {}) {
+  needNoOwnersWords('the field', value);
   const profile = loadProfile(root);
-  need(name !== undefined && String(name).trim() !== '', 'field requires <name> — Resources, or a field the loop\'s profile declares');
-  const own = EMPTIED_BY_FIELD[String(name).toLowerCase()];
-  if (own && !profile.field(name)) return emptyOwnField(root, rawIds, own, value, flags);
-  const route = setRoute(profile, name);
-  need(route !== 'status', `${name} is not a field: Resources, or one this loop's profile declares${profile.declaredFields.length ? ` (${profile.declaredFields.map((f) => f.name).join(', ')})` : ''}`);
+  const writable = () => [...DESCRIPTION_FIELDS, ...profile.fields.map((f) => f.name)].join(', ');
+  need(name !== undefined && String(name).trim() !== '', `field requires <name> — a field of the description: ${writable()}`);
+  editorOf(flags.by);
+  const key = String(name).trim().toLowerCase();
+  need(setRoute(profile, name) !== 'status' || DESCRIPTION_FIELDS.some((f) => f.toLowerCase() === key), `${name} is not a field of the description, which field writes: ${writable()}; ${notWrittenByField(profile, key)}`);
   const clear = flags.clear === true;
   need(!clear || value === undefined, 'field takes either a value or --clear, not both');
   need(clear || (value !== undefined && String(value).trim() !== ''), `field ${name} "<value>" — the value is required, or --clear to empty it`);
-  const written = clear ? '' : value;
-  return route === 'field' ? setDeclaredField(root, rawIds, profile.field(name), written, flags) : setResources(root, rawIds, written, flags);
+  if (profile.field(name)) return setDeclaredField(root, rawIds, profile.field(name), clear ? '' : value, flags);
+  if (key === 'resources') return setResources(root, rawIds, clear ? '' : value, flags);
+  const own = EMPTIED_BY_FIELD[key];
+  if (own && clear) return emptyOwnField(root, rawIds, own, flags);
+  const one = (results, field) => { const list = [].concat(results).map((o) => ({ id: o.id, field, value: fieldText(readFieldOf(root, o.id, field)) })); return isBulk(rawIds) ? list : list[0]; };
+  switch (key) {
+    case 'title': need(!clear, 'Title cannot be empty — body <ids> --title "<t>" replaces it'); return one(eachIssue(root, rawIds, (id, dry) => cmdBody(root, id, { title: value, by: flags.by }, dry)), 'Title');
+    case 'where': return one(eachIssue(root, rawIds, (id, dry) => cmdBody(root, id, { where: value, by: flags.by }, dry)), 'Where');
+    case 'files': return one(eachIssue(root, rawIds, (id, dry) => cmdFiles(root, id, value, dry, flags.by)), 'Files');
+    case 'source': return one(eachIssue(root, rawIds, (id, dry) => cmdSource(root, id, value, dry, flags.by)), 'Source');
+    case 'after': return one(eachIssue(root, rawIds, (id, dry) => cmdAfter(root, id, value, { dry, by: flags.by })), 'After');
+    case 'repo': return one(eachIssue(root, rawIds, (id, dry) => cmdRepo(root, id, value, { dry, by: flags.by })), 'Repo');
+    case 'tags': return one(cmdTagList(root, rawIds, value, flags.by), 'Tags');
+    default: return setDeclaredField(root, rawIds, builtInField(profile, key), clear ? '' : value, flags);
+  }
+}
+// A header field of the tool's own that every issue carries, as setDeclaredField writes it: Priority, Tier and Kind
+// checked against their values (the profile's, for Tier and Kind), Found by a free name; none of them is ever empty.
+function builtInField(profile, key) {
+  if (key === 'priority') return { name: 'Priority', key, enum: PRIORITIES, builtin: true };
+  if (key === 'tier') return { name: 'Tier', key, enum: profile.tiers, builtin: true };
+  if (key === 'kind') return { name: 'Kind', key, enum: profile.kinds, builtin: true };
+  return { name: 'Found by', key: 'found by', enum: null, builtin: true };
+}
+// What a field holds in the issue's file now, read again after a write.
+function readFieldOf(root, id, field) {
+  const issue = findIssue(root, id);
+  return field === 'Title' ? issue.title : issue.fields[field.toLowerCase()];
+}
+// Why a name is not one field writes, and which command writes it instead: the status and the lease move with set, a
+// merge is recorded by merged, a section is written by body, and the history has no edit.
+function notWrittenByField(profile, key) {
+  if (key === 'status' || profile.statuses.includes(key)) return 'a status is moved by set <ids> <status> "<why>"';
+  if (['branch', 'worker', 'model', 'since', 'worktree'].includes(key)) return 'the lease (Branch, Worker, Model, Since) is written by set <ids> in-progress';
+  if (['merged', 'merge check', 'ci'].includes(key)) return 'a merge and its CI are recorded by merged <ids> --sha <sha> | --ci <state>';
+  if (key === 'evidence' || key === 'reviews') return 'the history is never edited: a row or an approve is taken back by retract, a ruling replaced by decide --supersedes';
+  if (['what', 'why', 'acceptance', 'changelog', ...profile.sections.map((s) => s.toLowerCase())].includes(key)) return `a section is written by body <ids> --${['what', 'why', 'acceptance', 'changelog'].includes(key) ? key : 'section "<Heading>=<text>"'}`;
+  return 'a section is written by body, a status by set, a merge by merged';
 }
 // The lease flags (--branch, --worker, --model, --worktree) a call gives. They belong to a move into a status that holds
 // a claim; a call that writes a field refuses them.
@@ -467,6 +592,7 @@ export function cmdSetField(root, rawIds, field, value, flags = {}) {
 }
 
 export function cmdSet(root, rawIds, status, why, flags = {}) {
+  needNoOwnersWords('the move', why, flags);
   const caller = flags.caller ?? 'record';
   need(SET_CALLERS.includes(caller), `caller must be one of: ${SET_CALLERS.join(', ')} (got "${caller}")`);
   const profile = loadProfile(root);
@@ -495,6 +621,7 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   need(flags.base === undefined || caller === 'record', 'base is named by a library call through record.mjs only — the command line checks against the branch checked out');
   need(flags.base === undefined || (typeof flags.base === 'string' && fieldText(flags.base) !== '' && !flags.base.startsWith('-')), 'base names a branch or ref — the one the merge landed in');
   if (profile.is(status, 'closes-record')) {
+    for (const issue of issues) { const refusal = unattributedRefusal(issue, `moved → ${status}`); need(!refusal, `${refusal}${nothing}`); }
     const loop = readLoop(jarlDir(root));
     for (const issue of issues) { const refusal = doneRefusalIn(root, loop, issue, flags.base); need(!refusal, `${refusal}${nothing}`); }
   }
@@ -577,6 +704,7 @@ function rewriteHeader(root, rawIds, status, why, flags) {
   need(why === undefined && flags.base === undefined && !leaseFlagsGiven(flags).length, '--header rewrites the header from the log and takes no reason, lease flag or base');
   const issues = issuesFor(root, rawIds);
   for (const issue of issues) {
+    need(!issue.byHeader, `${issue.id} is read from its header: the log files ${issue.id} ${issue.byHeader?.filings} times and cannot say which file its lines were written for, so no header is written from it`);
     need(issue.onFile !== null, `${issue.id} is not in the log, so there is nothing to write its header from — jarl.mjs set ${issue.id} ${status} puts it there`);
     need(issue.status === status, `${issue.id} is ${issue.status} in the log: jarl.mjs set ${issue.id} ${issue.status} --header writes its header from it, and set ${issue.id} ${status} without --header moves it`);
   }
@@ -591,32 +719,33 @@ function rewriteHeader(root, rawIds, status, why, flags) {
   return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, status: issue.status, header: true })));
 }
 
-// The optional header fields of the tool's own that field empties (and only empties: each has a command that writes it).
+// The optional header fields of the tool's own that field --clear empties.
 const EMPTIED_BY_FIELD = { files: 'Files', source: 'Source', where: 'Where', tags: 'Tags', after: 'After', repo: 'Repo' };
-const WRITTEN_BY = { files: 'files <ids> p,q', source: 'source <ids> <dir>#<id>', where: 'body <ids> --where "<w>"', tags: 'tag <ids> +a -b', after: 'after <ids> <after-ids>', repo: 'repo <ids> <name|path>' };
-// field <ids> <field> <value>: one declared field written on every issue in the call (checked against its enum first),
-// with one log line each. An empty value clears it, unless the field is required (or is Kind or Tier).
+// field <ids> <field> <value>: one declared field (or Priority, Tier, Kind, Found by) written on every issue in the call,
+// checked against its enum first, with one log line each. An empty value clears it, unless the field is required or built in.
 function setDeclaredField(root, rawIds, field, value, flags) {
   needNoLeaseFlags(flags, `the field ${field.name}`);
   need(value !== undefined, `field <ids> ${field.name} "<value>" — the value is required${field.enum ? ` (one of: ${field.enum.join(', ')})` : ''}`);
+  const by = editorOf(flags.by);
   const profile = loadProfile(root);
   const v = fieldValue(profile, field, value);
   need(v || (!field.required && !field.builtin), `${field.name} cannot be empty${field.enum ? ` — one of: ${field.enum.join(', ')}` : ''}`);
   const issues = issuesFor(root, rawIds);
+  logChanges(root, issues.map((issue) => fieldLine(issue.id, field.name, v, heldField(issue, field.name), by)));
   for (const issue of issues) writeAtomic(issue.file, setField(readText(issue.file), field.name, v));
-  appendLogLines(root, issues.map((issue) => `${issue.id} field ${field.name} · ${v || '(cleared)'}`));
   return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, field: field.name, value: v })));
 }
 
 // field <ids> <Files|Source|Where|Tags|After|Repo> --clear: the field is emptied (After and Repo as their own commands empty them).
-function emptyOwnField(root, rawIds, name, value, flags) {
+function emptyOwnField(root, rawIds, name, flags) {
   const key = name.toLowerCase();
-  need(flags.clear === true && value === undefined, `${name} is written with its own command: ${WRITTEN_BY[key]}; field empties it with --clear`);
   if (key === 'after' || key === 'repo') {
-    const done = [].concat(eachIssue(root, rawIds, (id, dry) => (key === 'after' ? cmdAfter(root, id, undefined, { clear: true, dry }) : cmdRepo(root, id, undefined, { clear: true, dry })))).map((o) => ({ id: o.id, field: name, value: '' }));
+    const done = [].concat(eachIssue(root, rawIds, (id, dry) => (key === 'after' ? cmdAfter(root, id, undefined, { clear: true, dry, by: flags.by }) : cmdRepo(root, id, undefined, { clear: true, dry, by: flags.by })))).map((o) => ({ id: o.id, field: name, value: '' }));
     return isBulk(rawIds) ? done : done[0];
   }
+  const by = editorOf(flags.by);
   const issues = issuesFor(root, rawIds);
+  logChanges(root, issues.map((issue) => fieldLine(issue.id, name, '', heldField(issue, name), by)));
   for (const issue of issues) writeAtomic(issue.file, key === 'source' ? removeFirstField(readText(issue.file), name) : setField(readText(issue.file), name, ''));
   return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, field: name, value: '' })));
 }
@@ -632,9 +761,10 @@ function setResources(root, rawIds, value, flags) {
     need(/^[A-Za-z0-9._:/-]+$/.test(n), `resource names are single words of letters, digits and . _ : / - ("${n}" is not): name the thing, e.g. gate, db-server, port-8080`);
     if (!names.some((x) => x.toLowerCase() === n.toLowerCase())) names.push(n);
   }
+  const by = editorOf(flags.by);
   const issues = issuesFor(root, rawIds);
+  logChanges(root, issues.map((issue) => fieldLine(issue.id, 'Resources', names.join(', '), heldField(issue, 'Resources'), by)));
   for (const issue of issues) writeAtomic(issue.file, setField(readText(issue.file), 'Resources', names.join(', ')));
-  appendLogLines(root, issues.map((issue) => `${issue.id} field Resources · ${names.join(', ') || '(cleared)'}`));
   return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, field: 'Resources', value: names.join(', ') })));
 }
 
@@ -665,6 +795,12 @@ function doneRefusalIn(root, loop, issue, base) {
   if (profile.doneGate.approve === 'none') return null;
   const code = carriesCode(issue);
   if (g.selfApproved) return `${issue.id}'s live approve is by a worker of this issue or its branch — a self-approve does not count as review: jarl.mjs review ${issue.id} approve --by <${code ? 'fresh reviewer' : 'fresh reviewer|jarl'}> "<findings>"`;
+  // A changes verdict with no approve after it is named as the cause, with its reviewer and day, so whoever is refused
+  // sees the review that stands in the way.
+  if (!g.approved && g.lastReview === 'changes') {
+    const changes = [...g.trail].reverse().find((r) => r.verdict === 'changes');
+    return `${issue.id}'s latest review is a changes verdict by ${changes.by || 'a reviewer not recorded'} of ${changes.at}, and no approve came after it — a fresh reviewer reads the issue and the diff first: jarl.mjs review ${issue.id} approve|changes --by <reviewer> "<findings>"`;
+  }
   if (!g.approved) return `${issue.id} has no approving review newer than its last round${g.tracked ? ' or reopen' : ''} — a fresh reviewer reads the issue and the diff first: jarl.mjs review ${issue.id} approve|changes --by <reviewer> "<findings>"`;
   if (code && !g.fresh) return `${issue.id} ${freshRuleText(issue, g.live)}: jarl.mjs review ${issue.id} approve|changes --by <fresh reviewer> "<findings>"`;
   return null;
@@ -709,7 +845,7 @@ function doneNote(issue, root) {
   }
   const m = mergedOf(issue);
   // A merge that carries its check (a passing check, or the red it landed on) needs no CI state to be told apart from an unrecorded one.
-  const decided = () => { const line = lastMerge(journalById(root).get(issue.id) || []); return Boolean(line && (line.check || line.red)); };
+  const decided = () => { const line = issue.byHeader ? null : lastMerge(journalById(root).get(issue.id) || []); return Boolean(line && (line.check || line.red)); };
   if (m && m.ci !== 'green' && m.ci !== 'none' && !(m.ci === null && decided())) notes.push(`merged ${m.sha}, CI ${m.ci || 'not recorded'} — record it when known: jarl.mjs merged ${issue.id} --ci green|red`);
   return notes.length ? { note: notes.join('; ') } : {};
 }
@@ -717,6 +853,16 @@ function doneNote(issue, root) {
 // The Proof rows an issue holds inside the done gate's window: the --ran/--saw rows the worker wrote, not retracted.
 function proofSince(g, issue) { return g.tracked ? g.rowsSince : evidenceRows(issue).length; }
 const EVIDENCE_HOW = (id) => `jarl.mjs evidence ${id} --ran "<command>" --saw "<what it printed>"`;
+
+// What a merge refused for want of its --sha says next: the head of the branch the issue's lease records, as the ready
+// command that records it, or, where no branch is recorded or it has no single head here, that the sha has to be given.
+function noMergeHow(root, issue, ci) {
+  const branch = fieldText(issue.fields.branch);
+  const tip = branchTip(root, issue);
+  if (tip && !tip.includes(',')) return `the head of ${branch}, the branch its lease records, is ${tip}; once it has landed, record it: jarl.mjs merged ${issue.id} --sha ${tip} --ci ${ci}`;
+  if (!branch) return `its lease records no branch, so no head is offered; once it has landed, give its sha: jarl.mjs merged ${issue.id} --sha <sha> --ci ${ci}`;
+  return `${branch} has no single head in the repositories here, so no head is offered; once it has landed, give its sha: jarl.mjs merged ${issue.id} --sha <sha> --ci ${ci}`;
+}
 
 // merged <ids> --sha <sha> [--ran "<check>" --saw "<summary>" | --red <id>] [--ci pending|green|red|none] [--repo <path>]
 // — the merge as a field, not as prose: the sha, where it landed, the check that decided it and the CI state. --ran and
@@ -728,6 +874,7 @@ const EVIDENCE_HOW = (id) => `jarl.mjs evidence ${id} --ran "<command>" --saw "<
 // is noted, never refused (the merge may be in a clone not fetched here). It records; it never decides whether anything
 // may land.
 export function cmdMerged(root, rawIds, flags) {
+  needNoOwnersWords('the merge', flags);
   const cli = flags.caller === 'cli';
   need(flags.sha !== undefined || flags.ci !== undefined, 'merged needs --sha <sha> (and optionally --ci), or --ci alone on issues that already record a merge');
   if (flags.sha !== undefined) need(/^[0-9a-f]{4,64}$/i.test(String(flags.sha)), `--sha is a commit id, 4 to 64 hex characters (got "${flags.sha}")`);
@@ -739,6 +886,7 @@ export function cmdMerged(root, rawIds, flags) {
   need(!(rows && flags.red !== undefined), 'a merge landed on red carries no passing check: give --ran/--saw for a green check, or --red <id> for a red one, not both');
   const issues = issuesFor(root, rawIds);
   const nothing = issues.length > 1 ? ' — nothing was written' : '';
+  for (const issue of issues) { const refusal = unattributedRefusal(issue, 'merged'); need(!refusal, `${refusal}${nothing}`); }
   let cause = null;
   if (flags.red !== undefined) {
     need(typeof flags.red === 'string' && fieldText(flags.red), '--red needs the id of the issue that tracks the cause');
@@ -747,7 +895,7 @@ export function cmdMerged(root, rawIds, flags) {
     need(!issues.some((i) => i.id === tracked.id), `--red names the issue that tracks the cause of a red check outside the branch; ${tracked.id} is the issue being merged${nothing}`);
     cause = tracked.id;
   }
-  if (flags.sha === undefined) for (const issue of issues) need(mergedOf(issue), `${issue.id} records no merge yet — give --sha: jarl.mjs merged ${issue.id} --sha <sha> --ci ${flags.ci}${nothing}`);
+  if (flags.sha === undefined) for (const issue of issues) need(mergedOf(issue), `${issue.id} records no merge yet — ${noMergeHow(root, issue, flags.ci)}${nothing}`);
   const pickedRepo = flags.repo !== undefined ? repoFromInput(root, String(flags.repo)) : null;
   const repoPath = pickedRepo ? pickedRepo.main : null;
   const repoIn = pickedRepo ? ` in ${noSeparators(pickedRepo.value)}` : '';
@@ -974,7 +1122,8 @@ function cleanUpAfterMerge(root, issues, sha, repoPath, named = []) {
   return results;
 }
 
-export function cmdTag(root, rawIds, ops) {
+export function cmdTag(root, rawIds, ops, by = undefined) {
+  const editor = editorOf(by);
   const issues = issuesFor(root, rawIds);
   for (const op of ops) need(/^[+-]./.test(op), `tags are +name or -name, not "${op}"`);
   const results = issues.map((issue) => {
@@ -982,32 +1131,50 @@ export function cmdTag(root, rawIds, ops) {
     for (const op of ops) { if (op.startsWith('+')) tags.add(op.slice(1)); else tags.delete(op.slice(1)); }
     return { issue, tags: [...tags].sort() };
   });
+  return writeTags(root, rawIds, results, editor, (r) => ({ id: r.issue.id, tags: r.tags }));
+}
+// field <ids> Tags "a, b": the tags replaced by the list given, as tag writes them.
+function cmdTagList(root, rawIds, value, by) {
+  const editor = editorOf(by);
+  const tags = [...new Set(splitList(value))].sort();
+  const results = issuesFor(root, rawIds).map((issue) => ({ issue, tags }));
+  return writeTags(root, rawIds, results, editor, (r) => ({ id: r.issue.id, tags: r.tags }));
+}
+function writeTags(root, rawIds, results, by, out) {
+  logChanges(root, results.map((r) => fieldLine(r.issue.id, 'Tags', r.tags.join(', '), heldField(r.issue, 'Tags'), by)));
   for (const r of results) writeAtomic(r.issue.file, setField(readText(r.issue.file), 'Tags', r.tags.join(', ')));
-  return oneOrMany(rawIds, results.map((r) => ({ id: r.issue.id, tags: r.tags })));
+  return oneOrMany(rawIds, results.map(out));
 }
 
-export function cmdPrio(root, rawIds, prio) {
+export function cmdPrio(root, rawIds, prio, by = undefined) {
   need(PRIORITIES.includes(String(prio)), 'priority is 1, 2 or 3');
+  const editor = editorOf(by);
   const issues = issuesFor(root, rawIds);
+  logChanges(root, issues.map((issue) => fieldLine(issue.id, 'Priority', String(prio), heldField(issue, 'Priority'), editor)));
   for (const issue of issues) writeAtomic(issue.file, setField(readText(issue.file), 'Priority', String(prio)));
   return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, priority: String(prio) })));
 }
 
-export function cmdFiles(root, rawId, list, dry = false) {
+export function cmdFiles(root, rawId, list, dry = false, by = undefined) {
   const issue = findIssue(root, rawId);
   need(issue, `no such issue: ${rawId}`);
+  const editor = editorOf(by);
   const files = pathList(list);
-  if (!dry) writeAtomic(issue.file, setField(readText(issue.file), 'Files', files.join(', ')));
+  if (!dry) {
+    logChanges(root, [fieldLine(issue.id, 'Files', files.join(', '), heldField(issue, 'Files'), editor)]);
+    writeAtomic(issue.file, setField(readText(issue.file), 'Files', files.join(', ')));
+  }
   return { id: issue.id, files };
 }
 
-export function cmdRepo(root, rawId, path, { clear = false, dry = false } = {}) {
+export function cmdRepo(root, rawId, path, { clear = false, dry = false, by } = {}) {
   const issue = findIssue(root, rawId);
   need(issue, `no such issue: ${rawId}`);
+  const editor = editorOf(by);
   if (clear) {
     need(issue.fields.repo, `${issue.id} has no Repo field to clear`);
     if (dry) return { id: issue.id, repo: null, cleared: true };
-    appendLog(root, `${issue.id} repo · cleared · was ${noSeparators(issue.fields.repo)}`);
+    logChanges(root, [fieldLine(issue.id, 'Repo', '', issue.fields.repo, editor)]);
     const text = removeFirstField(readText(issue.file), 'Repo');
     writeAtomic(issue.file, text);
     return { id: issue.id, repo: null, cleared: true };
@@ -1020,7 +1187,7 @@ export function cmdRepo(root, rawId, path, { clear = false, dry = false } = {}) 
   const was = fieldText(issue.fields.repo);
   const notes = picked.map((p) => p.note).filter(Boolean);
   if (was === repos.join(', ')) return { id: issue.id, repo: was, repos, unchanged: true, notes };
-  appendLog(root, `${issue.id} repo · ${noSeparators(repos.join(', '))}${was ? ` · was ${noSeparators(was)}` : ''}`);
+  logChanges(root, [fieldLine(issue.id, 'Repo', repos.join(', '), was, editor)]);
   writeAtomic(issue.file, setField(readText(issue.file), 'Repo', repos.join(', ')));
   return { id: issue.id, repo: repos.join(', '), repos, notes };
 }

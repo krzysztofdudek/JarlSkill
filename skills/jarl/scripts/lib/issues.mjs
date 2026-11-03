@@ -1,11 +1,11 @@
 // An issue file: its header fields, its sections, the rows of its Evidence and the entries of its Reviews.
 
 import { existsSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { CI_STATES, fieldText, need, oneBreak, splitList } from './base.mjs';
 import { issuesDir, jarlDir } from './where.mjs';
 import { readText } from './files.mjs';
-import { ISSUE_FILE_RE, cmpId, idKey, idRe, writtenForms, writtenId } from './ids.mjs';
+import { ISSUE_FILE_RE, cmpId, idKey, idRe, newNumber, writtenForms, writtenId } from './ids.mjs';
 import { loadProfile } from './profile.mjs';
 import { DECISION_HEAD, DECISION_META } from './journal.mjs';
 import { eventsById, issueState, loopEvents } from './log.mjs';
@@ -66,13 +66,26 @@ function issuesAt(recordDir, profile, events = loopEvents(recordDir, profile)) {
   if (!existsSync(dir)) return [];
   const by = eventsById(events);
   const forms = writtenForms(readdirSync(dir));
-  return readdirSync(dir).filter((f) => ISSUE_FILE_RE.test(f)).sort((a, b) => cmpId(ISSUE_FILE_RE.exec(a)[1], ISSUE_FILE_RE.exec(b)[1]) || (a < b ? -1 : a > b ? 1 : 0))
-    .map((f) => {
-      const issue = withProfile(parseIssue(readText(join(dir, f)), join(dir, f)), profile);
-      // An After names an issue as the loop writes it: the form its file carries, whatever form the After line gives.
-      issue.after = issue.after.map((x) => writtenId(x, forms));
-      return withRecordState(issue, issueState(profile, by.get(issue.id) || []));
-    });
+  const parsed = readdirSync(dir).filter((f) => ISSUE_FILE_RE.test(f)).sort((a, b) => cmpId(ISSUE_FILE_RE.exec(a)[1], ISSUE_FILE_RE.exec(b)[1]) || (a < b ? -1 : a > b ? 1 : 0))
+    .map((f) => withProfile(parseIssue(readText(join(dir, f)), join(dir, f)), profile));
+  const files = new Map();
+  for (const i of parsed) if (i.id !== null) files.set(idKey(i.id), (files.get(idKey(i.id)) || 0) + 1);
+  const issues = parsed.map((issue) => {
+    // An After names an issue as the loop writes it: the form its file carries, whatever form the After line gives.
+    issue.after = issue.after.map((x) => writtenId(x, forms));
+    const events = by.get(issue.id) || [];
+    // Filings are counted by what they file: a filing line repeated with the same title (a line copied in the log) files
+    // the same issue again, while two titles under one number are two issues.
+    const filings = new Set(events.filter((e) => e.type === 'filed').map((e) => e.text.replace(/^filed \S+ · /, ''))).size;
+    // A number two files carry, or one the log files more than once, is one the log cannot attribute: it cannot say which
+    // file its lines were written for. Such an issue is read from its own header, never from the log.
+    if (issue.id !== null && (files.get(idKey(issue.id)) > 1 || filings > 1)) return headerRead(issue, filings);
+    return withRecordState(issue, issueState(profile, events));
+  });
+  // An issue whose number another file carries too holds the files of that number in `shared`, which the views print;
+  // every other issue has no such key.
+  for (const s of sharedNumbers(issues)) for (const i of s.issues) i.shared = s.issues.map((x) => `issues/${basename(x.file)}`);
+  return issues;
 }
 // The header fields the commands render from the journal, as the fields of an issue name them.
 const RENDERED_FIELDS = ['branch', 'worker', 'model', 'since', 'merged', 'merge check', 'ci'];
@@ -89,6 +102,15 @@ function withRecordState(issue, state) {
     if (state[k] !== null) issue.fields[k] = state[k];
     else delete issue.fields[k];
   }
+  return issue;
+}
+// An issue whose number the log cannot attribute, as its header says: onFile is the header itself, so nothing reads as a
+// disagreement with the log, and `byHeader` (not enumerable) holds how many times the log files that number.
+function headerRead(issue, filings) {
+  const onFile = { status: issue.status, ...Object.fromEntries(RENDERED_FIELDS.map((k) => [k, issue.fields[k] ?? null])) };
+  Object.defineProperty(issue, 'onFile', { value: onFile, enumerable: false, configurable: true });
+  Object.defineProperty(issue, 'byHeader', { value: { filings }, enumerable: false, configurable: true });
+  issue.fields.status = issue.status;
   return issue;
 }
 // An issue read under the loop's profile: one written with no Status starts where the profile's issues start.
@@ -131,10 +153,66 @@ function namedPairs(list, flag, known, what) {
   return out;
 }
 
-export function findIssue(root, rawId) {
-  const key = idKey(rawId);
-  return loadIssues(root).find((i) => idKey(i.id) === key) || null;
+
+// ---- issues: one number, two files ---------------------------------------------------------------------------
+//
+// The write lock hands out numbers within one checkout and its worktrees. Two clones of a committed loop, or two branches
+// of one checkout, that each file an issue take the same number, and git merges the two files without a conflict because
+// their names differ. The log names an issue by its number alone, so every line for that number is read for each file,
+// and a command that moved one of them would move both. Such a number names no issue until one of the files is given
+// another: the commands that address an issue by number refuse it, and verify and the views name both files. The log's
+// lines for it stay unattributed after that: a number the log files more than once is read from its file's header, never from the log.
+
+// The numbers two or more issue files carry, each with its issues in the order the loop reads them.
+export function sharedNumbers(issues) {
+  const byKey = new Map();
+  for (const i of issues) if (i.id !== null) byKey.set(idKey(i.id), [...(byKey.get(idKey(i.id)) || []), i]);
+  return [...byKey.values()].filter((list) => list.length > 1).map((list) => ({ id: list[0].id, issues: list }));
 }
+// The mark a view prints on the line of an issue whose number another file carries: the first files of that number, and a
+// count of the rest, so a line stays one line however many files share it.
+export function sharedMark(files) {
+  return `number shared: ${files.slice(0, 3).join(', ')}${files.length > 3 ? ` and ${files.length - 3} more` : ''}`;
+}
+// The files of one shared number as the record names them: issues/<file>, joined with "and".
+function sharedFiles(list) {
+  const names = list.map((i) => `issues/${basename(i.file)}`);
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
+// What a shared number means and what the coordinator does about it, for a refusal and for verify. `all` is every issue
+// of the loop, so the free number named is one the loop does not hold. It names no header to write: the log cannot say
+// which file its lines were written for, so each file is read from its own header.
+export function sharedNumberText(shared, all) {
+  const id = shared.id;
+  // The free number is written as the shared one is: padded to its width in a loop whose numbers carry leading zeros.
+  const free = newNumber(all.reduce((m, i) => (i.id !== null && /^\d+$/.test(i.id) ? Math.max(m, Number(i.id)) : m), 0) + 1, /^0\d/.test(id) ? id.length : 0);
+  const filings = Math.max(0, ...shared.issues.map((i) => i.byHeader?.filings ?? 0));
+  const head = `${shared.issues.length} issue files carry the number ${id}: ${sharedFiles(shared.issues)}.`;
+  const rename = `give ${filings > 1 ? 'one of the files' : 'the copy'} a number the loop does not hold, such as ${free} (rename it to ${free}-… and write ${free} in its first line), and put it in the log at the status its own file reads (jarl.mjs set ${free} <status>; a renumbered issue starts its record anew, so one that was done needs its proof and a fresh review again)`;
+  if (filings > 1) return `${head} Two copies of the loop that each filed an issue and were merged leave this: the log files ${id} ${filings} times. The log names an issue by its number alone, so it cannot say which file its lines for ${id} were written for, and no command moves or edits one of these files alone. Each file is read from its own header, never from the log: its status, branch and lease are what the file says, it is never closed or approved under this number, because the log cannot tell whose its rows, approves, rounds and merges are (the work is filed again under a new number instead), and the log's state of ${id} is never to be written into any of them. The coordinator settles it by hand: ${rename}, then write in a log note which of the lines already written for ${id} belong to which file (jarl.mjs log "…"). The file that keeps ${id} is still read from its own header after that, because the log goes on filing ${id} more than once`;
+  return `${head} The log files ${id} ${filings ? 'once' : 'never'}, so ${filings ? 'one of these files was made outside Jarl\'s commands, by a copy or by hand' : 'none of these files was filed by Jarl\'s commands'}, and Jarl cannot tell which file is the copy. No command moves or edits one of these files alone, and while they share ${id} each is read from its own header. The coordinator settles it by hand: ${rename}. ${id} is then one file the log files ${filings ? 'once' : 'never'}, which Jarl reads like any issue: if the file renumbered was the original, the copy that keeps ${id} takes the original's lines in the log, and Jarl cannot see that a copy was made`;
+}
+// The note on a number the log files more than once while one issue file carries it: one line, not a disagreement.
+export function headerReadText(id, filings, file) {
+  return `${id} is read from its header (${file}): the log files ${id} ${filings} times and cannot say which file its lines were written for, so it is never closed or approved`;
+}
+// The refusal of a move that rests on the log's proof (a close, an approve, a merge) for an issue read from its header:
+// the log's rows, approves, rounds and merges under its number may be another issue's, so none of them can clear it.
+export function unattributedRefusal(issue, what) {
+  if (!issue.byHeader) return null;
+  const id = issue.id;
+  return `${id} cannot be ${what}: the log files ${id} ${issue.byHeader.filings} times, so it cannot tell which issue the rows, approves, rounds and merges under ${id} belong to, and an issue under this number is never closed or approved. File the work again under a new number (jarl.mjs new "<title>") and carry it on there; this one can then be dropped (jarl.mjs set ${id} dropped "<why>")`;
+}
+// The one issue `rawId` names among `issues`, or null when none does. A number two files carry is refused, with both files
+// named: a move or an edit by that number would land on each of them in the log.
+export function issueNamed(issues, rawId) {
+  const key = idKey(rawId);
+  const hits = issues.filter((i) => i.id !== null && idKey(i.id) === key);
+  if (hits.length > 1) throw new Error(sharedNumberText({ id: hits[0].id, issues: hits }, issues));
+  return hits[0] || null;
+}
+// The issue `rawId` names in the loop at `root`, or null; a number two files carry is refused (see issueNamed).
+export function findIssue(root, rawId) { return issueNamed(loadIssues(root), rawId); }
 
 function setField(text, name, value) {
   // Only the header holds fields: a line in a section body that looks like one (a pasted finding) is text.

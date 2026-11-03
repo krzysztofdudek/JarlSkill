@@ -2,6 +2,7 @@
 
 import { existsSync } from 'node:fs';
 import { CI_STATES, fieldText, need } from './base.mjs';
+import { needNoOwnersWords } from './owner.mjs';
 import { jarlDir, plainRelative } from './where.mjs';
 import { readText, writeAtomic } from './files.mjs';
 import { idKey, idRe, issueForms, writtenId } from './ids.mjs';
@@ -155,6 +156,7 @@ const MOVE_SHAPE = idRe('^{id} →');
 // change) is refused and names the command that writes it, so every line the views and the gate read as state was
 // written by the command that owns it, with that command's checks.
 export function appendNote(root, event) {
+  needNoOwnersWords('the note', event);
   const text = oneLine(event);
   const id = LEADING_ID.exec(text)?.[1] ?? null;
   need(!MOVE_SHAPE.test(text), `log writes a note, and "${text.length > 80 ? `${text.slice(0, 77)}...` : text}" has the shape of a move (an id, an arrow): the command that writes moves is ${LINE_WRITERS.move}`);

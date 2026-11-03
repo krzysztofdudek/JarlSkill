@@ -14,12 +14,13 @@
 import { fileURLToPath } from 'node:url';
 import * as R from './record.mjs';
 import {
-  ROUNDS_BEFORE_TAKEOVER, need, resetCaches, withLock, readText, isEntry, cmdSet, cmdField, setRouteOf, eachIssue, cmdBody, cmdSource, cmdAfter, cmdFiles, cmdRepo, cmdRound,
+  ROUNDS_BEFORE_TAKEOVER, need, resetCaches, withLock, readText, isEntry, cmdSet, cmdField, setRouteOf, eachIssue, cmdBody, cmdSource, cmdAfter, cmdFiles, cmdRepo, cmdRound, cmdTag, cmdPrio,
   cmdProfile, cmdArchive, cmdList, cmdNext, renderNext, cmdMode, cmdClose, cmdCheck, cmdBranches, cmdTips, cmdQueue,
   cmdChangelog, cmdHandoffRead, cmdHandoffWrite, cmdReport, cmdImport, cmdSources, cmdAnswerMany, cmdModels, renderModels,
   issuesNaming, questionFor, cmdGoal, cmdGoalSet, cmdRepoBase, whereOf, cmdVerify, renderVerify, renderCheckNotes,
   renderProfile, renderTips, renderQueue, renderResume, renderStatus, renderImport, renderSources, renderList, recordTypeLog, recordRuleLog,
   runDecisionsDriver, mergeFlags, describeNew, renderNewReply, issueView, attachmentStates, evidenceTable, renderBranches, renderDecide, renderDecisions,
+  cmdNextAs, renderNextAs, askerSection,
 } from './jarl-lib.mjs';
 import { writeAreaDecision, writeRuleRatification } from './yg-edge.mjs';
 
@@ -56,10 +57,40 @@ commands:
                                                  (repeatable) write the fields and sections the loop's profile declares
                                                  (a field's default when not given; a required one must be given)
   body <ids> [--title "<t>"] [--where "<w>"] [--what "<w>"] [--why "<w>"] [--acceptance "<line>"]... [--changelog "<entry>"]...
-      [--section "<Heading>=<text>"]...
-                                                 set or replace the title (the file keeps its name; the old title goes
-                                                 into the log), the Where field and the What, Why, Acceptance and
-                                                 Changelog sections, and a section the profile declares
+      [--section "<Heading>=<text>"]... [--by who]
+                                                 the description commands, body to after below: every part of an issue's
+                                                 description is changed by one of them, and each change writes one log
+                                                 line per issue and part with what the part held before and, when --by
+                                                 names one, who changed it (a value it already holds writes none); the history (evidence, verdicts,
+                                                 merges, rulings, answers) has no edit, only retract and decide
+                                                 --supersedes, and the status moves only with set. body sets or
+                                                 replaces the title (the file keeps its name), the Where field and the
+                                                 What, Why, Acceptance and Changelog sections, and a section the
+                                                 profile declares
+  field <ids> <name> "<value>" | <ids> <name> --clear [--by who]
+                                                 write one header field of the description on every id: Title,
+                                                 Priority, Tier, Kind, Found by, Tags, Files, Repo, After, Source,
+                                                 Where, Resources (the exclusive resources the issue holds while its
+                                                 lease lasts, as "a, b", loop-wide names; next never offers two issues
+                                                 holding one) or a field the loop's profile declares, each checked as
+                                                 its own command checks it (Priority, Tier, Kind and a declared field
+                                                 against their values); a list field (Tags, Files, Repo, After, Source)
+                                                 is replaced whole; --clear empties an optional one, and Title,
+                                                 Priority, Tier, Kind, Found by and a required field are never empty;
+                                                 any other name is refused with the names field writes and the command
+                                                 that writes it instead
+  tag <ids> +a -b ... [--by who]                 add and remove tags
+  prio <ids> 1|2|3 [--by who]                    set priority
+  files <ids> p,q,... [--by who]                 declare the files the issues touch
+  repo <ids> <name|path>[,<name|path>...] [--by who] | <ids> --clear [--by who] | --base <name> <branch>
+                                                 name the repository the issue's code lives in — its name, its checkout,
+                                                 a worktree of it or a file inside it, several as one comma list — or
+                                                 remove the field; --base changes the base branch a declared repository
+                                                 is held against; every change is logged (see --repo below)
+  source <ids> <dir>#<id>,... [--by who]         set the Source field of issues filed by hand
+  after <ids> <after-ids> | <ids> --clear [--by who]
+                                                 the issues these wait on: next does not offer one until each is
+                                                 done or dropped, and status counts it as waiting
   import <findings.json> [--source <dir>] [--kind k] [--prio 1|2|3] [--tier t] [--tags a,b] [--repo <name|path>]
       [--found-by who] [--only <finding ids>] [--adopt] [--dry-run] [--field "<Name>=<value>"]...
                                                  one issue per finding, with Source: <dir>#<finding id>; a finding
@@ -69,9 +100,6 @@ commands:
                                                  --tags, --repo and --only repeat, or take a comma list
   sources [<findings.json>...] [--source <dir>]  per report: its findings, the issues filed from them and their
                                                  status; with a findings file, the findings nobody filed too
-  source <ids> <dir>#<id>,...                    set the Source field of issues filed by hand
-  after <ids> <after-ids> | <ids> --clear        the issues these wait on: next does not offer one until each is
-                                                 done or dropped, and status counts it as waiting
   evidence <ids> "<text>" | --ran "<command>" --saw "<what it printed>" | <id> --file <path> --slot <name>
                                                  append a free-text note (under ### Notes), or one checkable row per --ran/--saw
                                                  pair (repeatable; under ### Proof, after the last row);
@@ -86,7 +114,7 @@ commands:
                                                  approve stays, struck through; <n> retracts the n-th evidence row (the
                                                  number show prints before each row, counted over the whole Evidence
                                                  section) and note-<n> the n-th free-text note (show prints note-<n> before it): the row or note stays, struck
-                                                 through, and show leaves a retracted note out unless --full; the done gate and the metrics
+                                                 through, and show leaves a retracted note and its reason out unless --full; the done gate and the metrics
                                                  do not count what is retracted; the first retraction of a loop raises its record format to
                                                  2, so a reader that knows only format 1 refuses the loop instead of
                                                  counting what was taken back
@@ -117,14 +145,6 @@ commands:
                                                  the last start, reopen or filing; approves after those or a red
                                                  round), a --ran/--saw row — a free-text note never counts alone —
                                                  and a live approve
-  field <ids> <name> "<value>" | <ids> <name> --clear
-                                                 write one field on every id: Resources (the exclusive resources the
-                                                 issue holds while its lease lasts, as "a, b", loop-wide names; next
-                                                 never offers two issues holding one) or a field the loop's profile
-                                                 declares (checked against its values); --clear empties it, and the
-                                                 same --clear empties Files, Source, Where, Tags, After and Repo too
-                                                 (each is written by its own command); a required field is never
-                                                 empty; one log line per issue
   merged <ids> --sha <sha> [--ran "<check>" --saw "<summary>" | --red <id>] [--ci pending|green|red|none] [--repo <name|path>] [--keep] | <ids> --ci <state>
                                                  the merge as fields: Merged (sha, and where with --repo) and CI
                                                  (only when given; pending: a pushed commit whose CI will report;
@@ -141,19 +161,23 @@ commands:
                                                  local branch (git worktree remove, git branch -d, never a force)
                                                  when that is safe, and names why it kept them when it is not;
                                                  --keep skips it
-  tag <ids> +a -b ...                            add and remove tags
-  prio <ids> 1|2|3                               set priority
-  files <ids> p,q,...                            declare the files the issues touch
-  repo <ids> <name|path>[,<name|path>...] | <ids> --clear | --base <name> <branch>
-                                                 name the repository the issue's code lives in — its name, its checkout,
-                                                 a worktree of it or a file inside it, several as one comma list — or
-                                                 remove the field; --base changes the base branch a declared repository
-                                                 is held against; every change is logged (see --repo below)
-  next [--limit n] [--all]                       the open issues ready to start: no file shared with an in-progress one, every
+  next [--limit n] [--all] [--as <who>]          the open issues ready to start: no file shared with an in-progress one, every
                                                  After issue done or dropped, no open stuck or stop question on it; a file is
                                                  its repository and its path (see --repo below); one with no acceptance line
                                                  or no declared files is marked; --all adds the others in groups (held by a
-                                                 file and by whom, waiting on After, held by a question), --json rows carry a group
+                                                 file and by whom, waiting on After, held by a question), --json rows carry a group;
+                                                 --as <who> lists instead what is on the owner, the jarl, a coordinator or
+                                                 a person by name now, each line with the command that moves it (it takes
+                                                 no --limit): the owner holds the questions and the items to ratify; the
+                                                 jarl the ready issues, the leases, a proof
+                                                 with no verdict, changes asked, an approve not merged, and a ruling that
+                                                 settles issues none of which is live (with no slice in the loop, a
+                                                 coordinator's lines are the jarl's); derived from the profile's status
+                                                 flags, the verdicts, the questions and the rulings; at most seven lines,
+                                                 the owner's first, then by how many issues each holds up, then how many
+                                                 more; --all every line and the issues waiting on that one, "waits on X
+                                                 via N"; under an external scheduler the issues in play are left out and
+                                                 the composer's command named
   review <ids> approve|changes --by <reviewer> [--model <m>] [--relayed] "<findings>"
                                                  the reviewer's verdict; --model is the model the reviewer was raised on
                                                  (stored as given); --relayed marks a verdict recorded by someone else in
@@ -210,21 +234,28 @@ commands:
                                                  several ratify items as a comma list take one answer, one ruling each,
                                                  each naming the batch it was answered in; on a ratify item whose
                                                  ruling names a rule, the rule's ratification names who answered
-  resume [--log n] [--ready n] [--ci]            read-only, the boot: everything a session picks the loop up from,
+  resume [--log n] [--ready n] [--ci] [--as <who>]
+                                                 read-only, the boot: everything a session picks the loop up from,
                                                  assembled live — goal and counts, rulings in force, in flight with
                                                  leases (and stale ones), waiting on After, questions, ratify items,
                                                  the next ready issues (n, default 10), the merge queue, merges with
                                                  CI pending or red, the tips of every repository the issues name,
                                                  loop files not committed, and the last log lines (n, default 15);
-                                                 no network unless --ci asks gh for the CI of each pushed tip
+                                                 no network unless --ci asks gh for the CI of each pushed tip;
+                                                 --as <who> ends it with what next --as <who> prints
   log "<event>"                                  append one dated note to the journal; a line that reads as a filing, a move,
                                                  a round, a verdict, a retraction, an evidence row, a merge, a CI state or
                                                  a body change is refused, and the refusal names the command that writes it
-  decide <slug> "<ruling>" [--by who] [--supersedes <slug>] [--settles <ids>] [--area <type> [--reach n] [--rule <id>]]
+  decide <slug> "<ruling>" [--by who [--quote "<words>"]] [--under <slug>] [--supersedes <slug>] [--settles <ids>] [--area <type> [--reach n] [--rule <id>]]
                                                  append a ruling (slug: letters, digits, . _ -); refuses a duplicate slug;
-                                                 --by records who ruled (default owner); --supersedes marks the ruling it replaces
-                                                 ruling "Superseded by" in place; --settles writes the ruling into each
-                                                 named issue's evidence (its status is unchanged); --area marks a ruling
+                                                 --by records who ruled (the coordinator when it is left out; a name that
+                                                 reads as owner is owner); --by owner needs --quote, his own words, kept as
+                                                 the ruling's last line, and no other text of the record may hold
+                                                 "The owner's words:" in any spelling; --under names the ruling in force a ruling
+                                                 by the jarl or a coordinator rests on, kept as the text's last paragraph
+                                                 "Made under: <slug>", shown with the ruling by decisions and resume; --supersedes marks
+                                                 the ruling it replaces "Superseded by" in place; --settles writes the ruling,
+                                                 with who ruled, into each named issue's evidence (its status is unchanged); --area marks a ruling
                                                  about a whole type of code, --reach how many files that type holds,
                                                  --rule the graph's rule it admits on that type (its id):
                                                  close puts it to the owner for ratification
@@ -235,13 +266,15 @@ commands:
                                                  was and what it is: "Check (<repository>): <command>" or a bare
                                                  "Check: <command>", "Model (<tier>): <models>" (a tier the profile
                                                  declares) or "Coordinators: <names>"; the rest of goal.md stays as written
-  status [--stale-hours n] [--by repo|tag|kind|prio|<field>] [--tag <t>]
-                                                 --tag computes every part of status over the issues carrying that tag only
+  status [--stale-hours n] [--by repo|tag|kind|prio|<field>] [--tag <t>] [--as <who>]
+                                                 --tag computes every part of status over the issues carrying that tag only;
+                                                 --as <who> ends it with what next --as <who> prints
                                                  the log is the record of an issue's status, lease, merge and CI; a header
                                                  that disagrees is never believed, and status prints one "record:" line
                                                  for it, with how to write the header back or make it the record (resume
                                                  and show print it too; --json carries disagreements when there are any)
-                                                 the goal, when the loop opened and last moved,
+                                                 the goal, when the loop opened and last moved, its record format (and,
+                                                 where a composer runs the loop, what is off there),
                                                  then one line: open, in flight, waiting, done, dropped, deferred,
                                                  open questions, to ratify, merged with CI pending or red; then who
                                                  reviewed the done work (fresh, coordinator, self, unrecorded); then,
@@ -286,13 +319,15 @@ commands:
                                                  (dispatchable, lease, settles-dependents, terminal, closes-record,
                                                  needs-reason), the status a new issue starts in, the values of Kind and
                                                  Tier, the fields and sections its issues carry and the heading of their
-                                                 acceptance; the built-in one when the loop has none; with a file, that
-                                                 file checked against the profile schema instead
+                                                 acceptance, the record format beside the formats this Jarl reads; the
+                                                 built-in one when the loop has none; with a file, that file checked
+                                                 against the profile schema instead
   verify                                         read-only, with no lock and no network: the record read strictly. Each
                                                  reader lists the lines it does not place (the log, the goal, the issue
                                                  headers, the questions and the rulings), the profile is checked, a
                                                  retraction must point at an entry the log holds, a line that needs the
-                                                 raised record format is found in a loop that is not in it, a header
+                                                 raised record format is found in a loop that is not in it (the check
+                                                 names the loop's format), a header
                                                  that disagrees with the log is listed, each declared repository is
                                                  checked by name and root commits, each worktree a lease holds belongs
                                                  to a repository its issue names, and an open issue that cites a
@@ -335,7 +370,10 @@ all of them or on none, with one log line per issue.
 
 An issue number is a plain number: 7, 195, 1000. A number written with leading zeros (007) or with a # (#7) is the
 same issue as 7. Questions are numbered the same way (a-7, a-1000). Numbers are compared as numbers, so 999 comes
-before 1000.
+before 1000. Jarl never raises the record format of a loop whose profile names an external scheduler: a new number
+is written there with three digits (007), which every record format reads, and a write that needs a raised format (a
+retraction, a repository given by its name alone, a number of 1000 or more) is refused, naming what it would have
+written; a repository given by its path keeps its path there.
 
 Flags: a flag the command does not take is an error. A value flag takes the next argument whatever it
 starts with (--ran "--help" records a row), or inline as --flag=value. A bare -- ends the flags: put a
@@ -396,20 +434,20 @@ export const COMMAND_FLAGS = {
     where: 'value', what: 'value', why: 'value', acceptance: 'many', source: 'many', after: 'many', changelog: 'many', template: 'value',
     field: 'many', section: 'many',
   },
-  body: { title: 'value', where: 'value', what: 'value', why: 'value', acceptance: 'many', changelog: 'many', section: 'many' },
+  body: { title: 'value', where: 'value', what: 'value', why: 'value', acceptance: 'many', changelog: 'many', section: 'many', by: 'value' },
   import: {
     source: 'value', kind: 'value', prio: 'value', tier: 'value', tags: 'many', repo: 'many', 'found-by': 'value',
     only: 'many', adopt: 'bool', 'dry-run': 'bool', field: 'many',
   },
   sources: { source: 'value' },
-  source: {},
-  after: { clear: 'bool' },
+  source: { by: 'value' },
+  after: { clear: 'bool', by: 'value' },
   evidence: { ran: 'many', saw: 'many', file: 'value', slot: 'value' },
-  retract: { by: 'value' }, field: { clear: 'bool' },
+  retract: { by: 'value' }, field: { clear: 'bool', by: 'value' },
   list: { status: 'value', kind: 'value', tag: 'value', prio: 'value', grep: 'value', match: 'many', all: 'bool' },
-  show: { full: 'bool' }, set: { branch: 'value', worker: 'value', model: 'value', worktree: 'value', header: 'bool' }, tag: {}, prio: {}, files: {},
-  repo: { clear: 'bool', base: 'bool' },
-  next: { limit: 'value', all: 'bool' },
+  show: { full: 'bool' }, set: { branch: 'value', worker: 'value', model: 'value', worktree: 'value', header: 'bool' }, tag: { by: 'value' }, prio: { by: 'value' }, files: { by: 'value' },
+  repo: { clear: 'bool', base: 'bool', by: 'value' },
+  next: { limit: 'value', all: 'bool', as: 'value' },
   review: { by: 'value', model: 'value', relayed: 'bool' }, round: { findings: 'value' },
   models: { by: 'value', with: 'many', archives: 'bool' },
   scope: { branch: 'value', base: 'value', repo: 'value' },
@@ -417,11 +455,11 @@ export const COMMAND_FLAGS = {
   merged: { sha: 'value', ci: 'value', repo: 'value', ran: 'many', saw: 'many', red: 'value', keep: 'bool' },
   ask: { kind: 'value', target: 'value', issue: 'value', option: 'many' },
   answer: { by: 'value', option: 'value' },
-  resume: { log: 'value', ready: 'value', ci: 'bool' },
+  resume: { log: 'value', ready: 'value', ci: 'bool', as: 'value' },
   handoff: { summary: 'value', next: 'many', log: 'value', ready: 'value', ci: 'bool' },
-  log: {}, decide: { settles: 'many', by: 'value', supersedes: 'value', area: 'value', reach: 'value', rule: 'value' }, decisions: { live: 'bool' },
+  log: {}, decide: { settles: 'many', by: 'value', quote: 'value', under: 'value', supersedes: 'value', area: 'value', reach: 'value', rule: 'value' }, decisions: { live: 'bool' },
   goal: { set: 'value' },
-  status: { 'stale-hours': 'value', by: 'value', tag: 'value' }, archive: {}, report: { found: 'bool' }, tips: {}, mode: {},
+  status: { 'stale-hours': 'value', by: 'value', tag: 'value', as: 'value' }, archive: {}, report: { found: 'bool' }, tips: {}, mode: {},
   queue: { repo: 'value', base: 'value' }, changelog: { repo: 'value' },
   close: { force: 'bool', batch: 'bool' }, profile: {}, verify: {},
 };
@@ -507,14 +545,14 @@ export const COMMAND_ARGS = {
 export const COMMAND_SUMMARY = {
   init: 'Open a loop: create .jarl/ with the goal, out of git by default, committed or permanent when asked.',
   new: 'File an issue under the next free number, with its fields and its What, Why and Acceptance.',
-  body: 'Set or replace the title, the Where field and the What, Why, Acceptance, Changelog and profile sections of issues.',
+  body: 'Set or replace the title, the Where field and the What, Why, Acceptance, Changelog and profile sections of issues, logging what each part held and who changed it when named.',
   import: 'File one issue per finding of a findings file, skipping findings already filed.',
   sources: 'Per findings report: its findings, the issues filed from them and their status.',
   source: 'Set the Source field of issues filed by hand.',
   after: 'Set or clear the issues these wait on before next offers them.',
   evidence: 'Append a free-text note, or checkable rows of what ran and what it printed, to issues; or record a file as an attachment of a slot (--file, --slot).',
   retract: 'Take back the newest approve of an issue (what: review), one evidence row by its number (what: the number) or one evidence note (what: note-<n>), by an entry that says who and why.',
-  field: 'Write one field on issues, Resources or a field the profile declares, or empty any optional field with clear.',
+  field: 'Write one header field of the description on issues (Title, Priority, Tier, Kind, Found by, Tags, Files, Repo, After, Source, Where, Resources or a profile field), or empty an optional one with clear, logging what it held and who changed it when named.',
   list: 'List the issues, the unfinished ones by default, filtered by status, kind, tag, priority or a field.',
   show: 'Print one issue as the done gate sees it (its current window, rows numbered), or the whole file with --full.',
   set: 'Change the status of issues, with the reason logged.',
@@ -523,7 +561,7 @@ export const COMMAND_SUMMARY = {
   prio: 'Set the priority of issues.',
   files: 'Declare the files issues touch.',
   repo: 'Name the repository (or several) the code of issues lives in, or clear it.',
-  next: 'The open issues ready to start: no file shared with work in progress, every After issue settled, no open question on them; all adds the held and waiting ones in groups.',
+  next: 'The open issues ready to start: no file shared with work in progress, every After issue settled, no open question on them; all adds the held and waiting ones in groups; as lists what is on the owner, the jarl or a named person, each line with its command.',
   review: 'Record a reviewer\'s verdict (approve or changes) on issues, with the reviewer and the findings.',
   round: 'Record one red round on issues; every third prints the takeover block for a fresh worker.',
   models: 'Per model as worker and as reviewer, per kind of issue: the counts, clean first passes and verdicts the record holds, with the words fits, below, new and may clear; reads other loops and archives too.',
@@ -531,13 +569,13 @@ export const COMMAND_SUMMARY = {
   branches: 'Every worker branch with its issues, commits beyond the base, worktree state, stale leases and done branches, in the loop\'s repository and every repository its issues name (repo narrows it to one).',
   ask: 'File a question the owner has to answer (stop, stuck, lower, charter or ratify).',
   answer: 'Record the owner\'s answer to a question, the option chosen or the words given, as a ruling and close the question; several ratify items take one answer.',
-  resume: 'The boot: everything a session picks the loop up from, assembled live.',
+  resume: 'The boot: everything a session picks the loop up from, assembled live; as ends it with what is on the one who asks.',
   handoff: 'read: resume, then the handoff file the loop holds, if any; write: writes nothing.',
   log: 'Append one dated note to the loop\'s journal; a line that reads as a move, a verdict or another line of state is refused.',
   decide: 'Append a ruling, optionally superseding one, settling issues or covering an area of code.',
   decisions: 'The rulings with who ruled and what superseded them.',
   goal: 'The goal as goal.md holds it, or one machine line of it set (Check, Model or Coordinators), with a log line that says what it was and what it is now.',
-  status: 'The goal, the counts by status, the reviews, stale leases and what awaits ratification.',
+  status: 'The goal, the counts by status, the reviews, stale leases and what awaits ratification; as ends it with what is on the one who asks.',
   archive: 'Put the current loop away under .jarl/archive/ so a new one can open here.',
   report: 'What was done, dropped, deferred and still open, ready for the changelog, with the loop metrics.',
   tips: 'Per repository the loop names: the tips of worker, feature and main branches, ahead/behind and CI; fetches nothing.',
@@ -616,6 +654,14 @@ function readLists(cmd, rest, flags) {
     if (Object.hasOwn(flagsOf(cmd), field) && flags[field] !== undefined) out.flags[field] = listItems(flags[field], kind, `--${field}`).join(',');
   }
   return out;
+}
+
+// The value of field for a header field that holds a list (Tags, Files, Repo, After, Source), read by the same rule as the
+// commands that write those fields; any other field's value is one text, passed as it is.
+const FIELD_LISTS = { tags: 'name', files: 'path', repo: 'path', after: 'name', source: 'name' };
+function fieldListValue(name, value) {
+  const kind = FIELD_LISTS[String(name ?? '').trim().toLowerCase()];
+  return kind === undefined || value === undefined ? value : listItems(value, kind, String(name).trim()).join(',');
 }
 
 const ARITY = Object.fromEntries(Object.entries({ ...COMMAND_ARGS, ...Object.fromEntries(Object.entries(COMMAND_ALIASES).map(([name, c]) => [name, COMMAND_ARGS[c]])) }).filter(([, a]) => !a.some((n) => n.endsWith('...'))).map(([c, a]) => [c, a.length]));
@@ -717,9 +763,9 @@ export function dispatch(root, commandName, rest, flags) {
       // The command line says caller 'cli': the notes (the tier a new issue got) are for it, never for a library caller.
       case 'new': out = R.newIssue(root, rest[0], { ...flags, caller: 'cli', width: undefined }); out = { ...out, ...describeNew(out.file) }; text = renderNewReply(out); warn = out.note ? [out.note] : []; break;
       // body, source, after, files, repo and round take the list grammar: eachIssue checks every id before it writes one.
-      case 'body': out = eachIssue(root, rest[0], (id, dry) => cmdBody(root, id, flags, dry)); text = each(out, (o) => `${o.id} body: ${o.set.join(', ')}`); break;
-      case 'source': out = eachIssue(root, rest[0], (id, dry) => cmdSource(root, id, rest[1], dry)); text = each(out, (o) => `${o.id} source: ${o.sources.join(', ')}`); break;
-      case 'after': out = eachIssue(root, rest[0], (id, dry) => cmdAfter(root, id, rest[1], { clear: flags.clear === true, dry })); text = each(out, (o) => `${o.id} after: ${o.cleared ? 'cleared' : o.after.join(', ')}`); break;
+      case 'body': out = eachIssue(root, rest[0], (id, dry) => cmdBody(root, id, { ...flags, caller: 'cli' }, dry)); text = each(out, (o) => `${o.id} body: ${o.set.join(', ')}`); warn = [].concat(out).filter((o) => o.note).map((o) => o.note); break;
+      case 'source': out = eachIssue(root, rest[0], (id, dry) => cmdSource(root, id, rest[1], dry, flags.by)); text = each(out, (o) => `${o.id} source: ${o.sources.join(', ')}`); break;
+      case 'after': out = eachIssue(root, rest[0], (id, dry) => cmdAfter(root, id, rest[1], { clear: flags.clear === true, dry, by: flags.by })); text = each(out, (o) => `${o.id} after: ${o.cleared ? 'cleared' : o.after.join(', ')}`); break;
       case 'import': out = cmdImport(root, rest[0], flags); text = renderImport(out); break;
       case 'sources': out = cmdSources(root, rest, flags); text = renderSources(out); break;
       case 'list': out = cmdList(root, flags); text = renderList(out, R.loadProfile(root)); break;
@@ -731,17 +777,18 @@ export function dispatch(root, commandName, rest, flags) {
           out = cmdField(root, rest[0], rest[1], clearing ? undefined : rest[2], { ...flags, clear: clearing });
         } else out = setCommand(root, rest[0], rest[1], rest[2], flags);
         text = each(out, (o) => (o.field ? renderField(o) : o.header ? `header of ${o.id} rewritten from the log: ${o.status}` : `${o.id} → ${o.status}${o.branch ? ` · ${o.branch}` : ''}${o.worker ? ` · ${o.worker}` : ''}`)); warn = [].concat(out).filter((o) => o.note).map((o) => `note: ${o.id} ${o.note}`); break;
-      case 'field': out = cmdField(root, rest[0], rest[1], rest[2], flags); text = each(out, renderField); break;
-      case 'tag': out = R.setTags(root, rest[0], rest.slice(1)); text = each(out, (o) => `${o.id} tags: ${o.tags.join(', ') || '(none)'}`); break;
-      case 'prio': out = R.setPriority(root, rest[0], rest[1]); text = each(out, (o) => `${o.id} priority ${o.priority}`); break;
-      case 'files': out = eachIssue(root, rest[0], (id, dry) => cmdFiles(root, id, rest[1], dry)); text = each(out, (o) => `${o.id} files: ${o.files.join(', ') || '(none)'}`); break;
+      case 'field': out = cmdField(root, rest[0], rest[1], fieldListValue(rest[1], rest[2]), flags); text = each(out, renderField); break;
+      // tag and prio run under the lock dispatch holds, with who changed them; record.setTags and setPriority are the same writes.
+      case 'tag': out = cmdTag(root, rest[0], rest.slice(1), flags.by); text = each(out, (o) => `${o.id} tags: ${o.tags.join(', ') || '(none)'}`); break;
+      case 'prio': out = cmdPrio(root, rest[0], rest[1], flags.by); text = each(out, (o) => `${o.id} priority ${o.priority}`); break;
+      case 'files': out = eachIssue(root, rest[0], (id, dry) => cmdFiles(root, id, rest[1], dry, flags.by)); text = each(out, (o) => `${o.id} files: ${o.files.join(', ') || '(none)'}`); break;
       case 'repo':
         if (flags.base) {
-          need(!flags.clear, 'repo --base takes a repository name and a branch, and no --clear');
+          need(!flags.clear && flags.by === undefined, 'repo --base takes a repository name and a branch, and no --clear or --by: it changes how a repository is declared, not an issue\'s description');
           out = cmdRepoBase(root, rest[0], rest[1]);
           text = out.unchanged ? `${out.name} base: ${out.base} (unchanged)` : `${out.name} base: ${out.base} (was ${out.was ?? 'none'})`;
         } else {
-          out = eachIssue(root, rest[0], (id, dry) => cmdRepo(root, id, rest[1], { clear: flags.clear === true, dry }));
+          out = eachIssue(root, rest[0], (id, dry) => cmdRepo(root, id, rest[1], { clear: flags.clear === true, dry, by: flags.by }));
           text = each(out, (o) => `${o.id} repo: ${o.cleared ? 'cleared' : o.repo}${o.unchanged ? ' (unchanged)' : ''}`);
           warn = [].concat(out).flatMap((o) => (o.notes || []).map((n) => `note: ${n}`));
         }
@@ -756,6 +803,11 @@ export function dispatch(root, commandName, rest, flags) {
         break;
       // One computation of the rows: the ready ones are listed, and the rest says how many are held or waiting.
       case 'next': {
+        if (flags.as !== undefined) {
+          need(flags.limit === undefined, '--limit counts the ready issues of next; next --as prints at most seven lines, and --all every line');
+          out = cmdNextAs(root, flags); text = renderNextAs(out);
+          break;
+        }
         const rows = cmdNext(root, { ...flags, all: true });
         out = rows.scheduler || flags.all ? rows : rows.filter((r) => r.ready);
         text = rows.scheduler ? rows.note : renderNext(out, flags.all === true, rows.length - out.length);
@@ -772,17 +824,17 @@ export function dispatch(root, commandName, rest, flags) {
       case 'ask': out = R.ask(root, rest[0], { ...flags, width: undefined }); text = askText(out); break;
       // The library's answer (jarl-record/1) takes no opts: --by and --option reach the answer through jarl-lib.mjs, under the lock held here.
       case 'answer': out = cmdAnswerMany(root, rest[0], rest[1], flags); break;   // text below: the type log is written outside the lock
-      case 'resume': out = R.resumeData(root, flags); text = renderResume(out, R.loadProfile(root)); break;
+      case 'resume': out = R.resumeData(root, flags); text = renderResume(out, R.loadProfile(root)); ({ out, text } = endWithAsker(root, flags, out, text)); break;
       case 'handoff':
         need(rest[0] === undefined || rest[0] === 'read' || rest[0] === 'write', `handoff takes read or write (got "${rest[0]}") — the state is assembled live by resume`);
         if (rest[0] === 'write') { out = cmdHandoffWrite(); text = out.note; } else { out = cmdHandoffRead(root, flags); text = out.text; }
         break;
       case 'report': out = cmdReport(root, flags); text = out.text; break;
       case 'log': out = R.appendLog(root, rest[0]); text = 'logged'; break;
-      case 'decide': out = R.decide(root, rest[0], rest[1], flags); text = renderDecide(out); decideNotes(root, rest[0], flags, warn); break;
+      case 'decide': out = R.decide(root, rest[0], rest[1], flags); text = renderDecide(out); decideNotes(root, rest[0], out.by, flags, warn); break;
       case 'decisions': out = R.decisions(root, flags); text = renderDecisions(out); break;
       case 'goal': out = flags.set === undefined ? cmdGoal(root) : cmdGoalSet(root, flags.set); text = flags.set === undefined ? out.goal : out.unchanged ? `goal line unchanged: ${out.shown}` : `goal line ${out.replaced ? 'changed' : 'added'}: ${out.shown}${out.replaced ? ` (was ${out.was})` : ''}`; break;
-      case 'status': out = R.statusData(root, flags); text = renderStatus(out, R.loadProfile(root)); break;
+      case 'status': out = R.statusData(root, flags); text = renderStatus(out, R.loadProfile(root)); ({ out, text } = endWithAsker(root, flags, out, text)); break;
       case 'tips': out = cmdTips(root); text = renderTips(out); break;
       case 'queue': out = cmdQueue(root, flags); text = renderQueue(out); break;
       case 'changelog': out = cmdChangelog(root, rest[0], flags); text = out.text || '(no changelog fragment on these issues)'; warn = out.missing.length ? [`note: no changelog fragment: ${out.missing.join(', ')} — record one with: jarl.mjs body <id> --changelog "Added: …"`] : []; break;
@@ -802,6 +854,13 @@ export function dispatch(root, commandName, rest, flags) {
   // written twice, nor into a checkout the composer's work never reaches.
   if (cmd === 'answer') text = [].concat(out).map((one) => answered(root, one, warn)).join('\n');
   return { out, text, warn, aliases };
+}
+
+// status --as and resume --as: the view, then the asker's list as next --as prints it (`as` in --json).
+function endWithAsker(root, flags, out, text) {
+  if (flags.as === undefined) return { out, text };
+  const asker = askerSection(root, flags.as);
+  return { out: { ...out, as: asker.as }, text: `${text}\n\n${asker.text}` };
 }
 
 // The line each command prints for one result.
@@ -836,8 +895,8 @@ function askText(out) {
 
 // The notes a decide says on stderr: the owner's word with no question in the record behind it, and the open issues that name the
 // ruling a supersession replaces, so the jarl rewrites them now.
-function decideNotes(root, slug, flags, warn) {
-  if (flags.by === 'owner' && !questionFor(root, slug)) warn.push(`note: no question in the record asks about ${slug}: a ruling by the owner with no question behind it is recorded as he gave it`);
+function decideNotes(root, slug, by, flags, warn) {
+  if (by === 'owner' && !questionFor(root, slug)) warn.push(`note: no question in the record asks about ${slug}: a ruling by the owner with no question behind it is recorded as he gave it`);
   if (flags.supersedes !== undefined) {
     const open = issuesNaming(root, flags.supersedes);
     if (open.length) warn.push(`note: open issues name ${flags.supersedes}: ${open.map((i) => i.id).join(', ')} — rewrite them to ${slug}`);
