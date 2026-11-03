@@ -3,7 +3,7 @@
 
 import { fieldText, need } from './base.mjs';
 import { jarlDir } from './where.mjs';
-import { cmpId, idKey } from './ids.mjs';
+import { cmpId, idKey, idsCited } from './ids.mjs';
 import { mergedOf } from './issues.mjs';
 import { carriesCode, gateOf, readLoop } from './loop.mjs';
 import { reasonWord, shellWord, waitingOn } from './commands.mjs';
@@ -52,16 +52,11 @@ function issueRows(ctx) {
   const evidence = `--ran "<command>" --saw "<what it printed>"`;
   const verdict = (id) => `jarl.mjs review ${id} approve|changes --by <reviewer> "<findings>"`;
   for (const i of loop.issues.filter((x) => profile.is(x.status, 'holds-claim') && !waitingOn(x, loop.byId, profile).length)) {
-    const g = gateOf(loop, i.id);
     const mark = inFlightMark(loop, i);
     const worker = fieldText(i.fields.worker) || null;
     const base = { id: i.id, title: i.title, priority: i.priority, holder: JARL_HOLDER, ...(worker ? { doer: worker } : {}) };
     const withWorker = worker ? `with worker ${worker}` : 'in progress';
-    // A round sends the work back: until the worker records a row after it, the issue is the worker's again.
-    const events = loop.eventsById.get(i.id) || [];
-    const lastRound = events.filter((e) => e.type === 'round').reduce((n, e) => Math.max(n, e.n), -1);
-    const rowsAfterRound = g.rowLog.filter((r) => !r.retracted && r.inWindow && r.n > lastRound).length;
-    const backAfterRound = lastRound >= 0 && rowsAfterRound === 0 && mark === 'rows-no-verdict';
+    const backAfterRound = sentBack(loop, i, mark);
     if (mark === 'no-rows' || backAfterRound) {
       out.push({ ...base, what: 'worker', says: `${withWorker}${fieldText(i.fields.since) ? ` since ${fieldText(i.fields.since)}` : ''}, ${backAfterRound ? 'sent back by a round, no new proof yet' : 'no proof yet'}; the worker records it`, command: `jarl.mjs evidence ${i.id} ${evidence}` });
       continue;
@@ -73,8 +68,9 @@ function issueRows(ctx) {
         command: merge ? `jarl.mjs merged ${i.id} --sha <sha> --ran "<check>" --saw "<summary>"` : `jarl.mjs set ${i.id} ${closeStatus} "<why>"` });
       continue;
     }
+    if (mark === 'rows-no-verdict' && carriesCode(i)) continue;   // listed together below
     if (mark === 'rows-no-verdict') {
-      out.push({ ...base, what: 'review', says: carriesCode(i) ? 'proof recorded, no verdict; raise a fresh reviewer' : 'proof recorded, no verdict; raise a reviewer', command: verdict(i.id) });
+      out.push({ ...base, what: 'review', says: 'proof recorded, no verdict; raise a reviewer', command: verdict(i.id) });
       continue;
     }
     if (mark === 'approved-not-fresh') {
@@ -95,7 +91,59 @@ function issueRows(ctx) {
     }
     out.push({ ...base, what: 'close', says: mark === 'merged' ? 'merged; close it' : 'approved; close it', command: `jarl.mjs set ${i.id} ${closeStatus} "<why>"` });
   }
+  out.push(...reviewRow(ctx, verdict));
   return out;
+}
+
+// A round sends the work back: until the worker records a row after it, the issue is the worker's again.
+function sentBack(loop, issue, mark) {
+  const lastRound = (loop.eventsById.get(issue.id) || []).filter((e) => e.type === 'round').reduce((n, e) => Math.max(n, e.n), -1);
+  const rowsAfterRound = gateOf(loop, issue.id).rowLog.filter((r) => !r.retracted && r.inWindow && r.n > lastRound).length;
+  return lastRound >= 0 && rowsAfterRound === 0 && mark === 'rows-no-verdict';
+}
+
+// The issues in play whose code has proof and no verdict, and waits for a fresh reviewer.
+function awaitingReview(loop, profile) {
+  if (profile.doneGate.approve === 'none') return [];
+  return loop.issues.filter((i) => profile.is(i.status, 'holds-claim') && !waitingOn(i, loop.byId, profile).length && carriesCode(i)
+    && inFlightMark(loop, i) === 'rows-no-verdict' && !sentBack(loop, i, 'rows-no-verdict'));
+}
+
+// The proofs of code with no verdict, as one line: a fresh reviewer for all of them at once, or, where the jarl cannot
+// raise agents, a question asking the owner to start a fresh session. The record cannot tell the two apart, so the line
+// offers both. A proof that an open question of that wording names is the owner's: it leaves the jarl's list, and the
+// issues that wait on it wait on the owner. A question whose issues all have a verdict holds nothing.
+const REVIEW_ASK = 'start a fresh session to review';
+// The sentence a question opens with to ask for a review: the phrase, then "issue" or "issues" and the one list of numbers
+// that runs on from it, joined by a comma and a space, by and or or between spaces, or by an ampersand. The list ends
+// at the first thing that is not a join and a number, so a number later in the question is not asked about.
+const ASKED_NUMBER = '#?\\d+(?![\\w/-])(?![.,:]\\d)';
+const ASKED_JOIN = '(?:,\\s+(?:(?:and|or)\\s+)?|\\s+(?:and|or)\\s+|\\s*&\\s*)';
+const REVIEW_ASK_RE = new RegExp(`^${REVIEW_ASK} issues?\\s+${ASKED_NUMBER}(?:${ASKED_JOIN}${ASKED_NUMBER})*`, 'i');
+// The issues a question asks for a fresh review of, by key: the issues of that one list the loop holds (idsCited reads the
+// numbers of the sentence); none for any other question.
+function reviewAskKeys(loop, question) {
+  const m = REVIEW_ASK_RE.exec(question);
+  return m ? idsCited(m[0], loop.byId).map(idKey) : [];
+}
+// The proofs awaiting a fresh reviewer that an open question names: the ones the owner holds.
+function heldByOwner(loop, awaiting) {
+  const asked = new Set(loop.asks.filter((a) => a.state === 'open').flatMap((a) => reviewAskKeys(loop, a.question)));
+  return awaiting.filter((i) => asked.has(idKey(i.id))).map((i) => i.id);
+}
+const joinIds = (issues) => issues.map((i) => i.id).join(', ');
+function reviewRow(ctx, verdict) {
+  const todo = ctx.awaiting.filter((i) => !ctx.onOwner.has(i.id));
+  if (!todo.length) return [];
+  const ids = joinIds(todo);
+  const only = todo.length === 1 ? todo[0] : null;
+  const worker = only ? fieldText(only.fields.worker) : '';
+  const priority = todo.map((i) => i.priority).filter((p) => p !== undefined).sort()[0];
+  return [{
+    what: 'review', id: todo[0].id, ids: todo.map((i) => i.id), title: only ? only.title : '', priority, holder: JARL_HOLDER, ...(worker ? { doer: worker } : {}),
+    says: `proof recorded, no verdict; raise a fresh reviewer for ${ids}; if you cannot raise agents, ask the owner to start a fresh session`,
+    command: `${only ? verdict(only.id) : verdict('<id>')}, or jarl.mjs ask "${REVIEW_ASK} issue${todo.length === 1 ? '' : 's'} ${ids}"`,
+  }];
 }
 
 // The owner's rows: every open question and every item to ratify. A ratify item blocks nothing.
@@ -103,7 +151,11 @@ function questionRows(ctx) {
   return ctx.loop.asks.filter((a) => a.state === 'open').map((a) => {
     const ref = `a-${a.id}`;
     if (a.kind === 'ratify') return { what: 'ratify', ask: a.id, title: a.question, holder: OWNER_HOLDER, says: `to ratify${a.issue ? ` (issue ${a.issue})` : ''}`, command: `jarl.mjs answer ${ref} "yes" --by owner (or "reject")` };
-    return { what: 'question', ask: a.id, kind: a.kind || 'stuck', title: a.question, holder: OWNER_HOLDER, says: `question (${a.kind || 'stuck'})${a.issue ? ` on issue ${a.issue}` : ''}`, command: `jarl.mjs answer ${ref} "<answer>"` };
+    // A question that asks for a fresh review holds the proofs it names, as far as they still await one.
+    const keys = new Set(reviewAskKeys(ctx.loop, a.question));
+    const reviewing = ctx.loop.issues.filter((i) => ctx.onOwner.has(i.id) && keys.has(idKey(i.id))).map((i) => i.id);
+    return { what: 'question', ask: a.id, kind: a.kind || 'stuck', title: a.question, holder: OWNER_HOLDER, ...(reviewing.length ? { reviewing } : {}),
+      says: `question (${a.kind || 'stuck'})${a.issue ? ` on issue ${a.issue}` : ''}${reviewing.length ? `, the fresh review of ${reviewing.join(', ')} waits on it` : keys.size ? ', no issue it names awaits a review now' : ''}`, command: `jarl.mjs answer ${ref} "<answer>"` };
   });
 }
 
@@ -144,25 +196,28 @@ export function ballRows(root) {
   const loop = readLoop(jarlDir(root));
   const { profile } = loop;
   const scheduled = profile.scheduler !== null;
-  const ctx = { root, loop, profile, next: scheduled ? [] : nextRows(root, {}) };
+  const awaiting = scheduled ? [] : awaitingReview(loop, profile);
+  const ctx = { root, loop, profile, next: scheduled ? [] : nextRows(root, {}), awaiting, onOwner: new Set(heldByOwner(loop, awaiting)) };
   const rows = ROW_SOURCES.filter((s) => !(scheduled && SCHEDULING.has(s))).flatMap((s) => s(ctx));
   // Who each issue holds up: the issues in play whose After names it, not settled yet, and for a question the issue it holds.
   const active = loop.issues.filter((i) => profile.active(i.status));
   const dependents = new Map();
   for (const i of active) for (const a of waitingOn(i, loop.byId, profile)) dependents.set(a, [...(dependents.get(a) || []), i.id]);
   const heldByQuestion = new Map(ctx.next.filter((r) => r.group === 'held-by-question').flatMap((r) => r.questions.map((q) => [q, r.id])));
+  const upOf = (ids) => [...new Set(ids.flatMap((id) => dependents.get(id) || []))];
   for (const r of rows) {
-    if (r.id !== undefined) r.holdsUp = dependents.get(r.id) || [];
-    else if (r.what === 'question') r.holdsUp = heldByQuestion.has(r.ask) ? [heldByQuestion.get(r.ask)] : [];
+    if (r.ids) r.holdsUp = upOf(r.ids);
+    else if (r.id !== undefined) r.holdsUp = dependents.get(r.id) || [];
+    else if (r.what === 'question') r.holdsUp = [...new Set([...(heldByQuestion.has(r.ask) ? [heldByQuestion.get(r.ask)] : []), ...upOf(r.reviewing || [])])];
     else r.holdsUp = [];
   }
   const weight = (r) => (r.what === 'question' && r.kind === 'stop' ? Number.MAX_SAFE_INTEGER : r.holdsUp.length);
   rows.sort((a, b) => (b.holder === OWNER_HOLDER) - (a.holder === OWNER_HOLDER) || weight(b) - weight(a)
     || (a.what === 'ratify') - (b.what === 'ratify')
     || String(a.priority ?? '9').localeCompare(String(b.priority ?? '9')) || cmpRef(a, b));
-  return { loop, rows, scheduled, waiting: waitingRows(loop, rows, ctx.next) };
+  return { loop, rows, scheduled, waiting: waitingRows(loop, rows, ctx.next, ctx.onOwner) };
 }
-const refOf = (r) => (r.id !== undefined ? r.id : r.ask !== undefined ? `a-${r.ask}` : r.ruling);
+const refOf = (r) => (r.ids ? r.ids.join(', ') : r.id !== undefined ? r.id : r.ask !== undefined ? `a-${r.ask}` : r.ruling);
 // Issues before questions before rulings; issues and questions by number, rulings by name.
 function cmpRef(a, b) {
   const rank = (r) => (r.id !== undefined ? 0 : r.ask !== undefined ? 1 : 2);
@@ -173,9 +228,10 @@ function cmpRef(a, b) {
 // The issues that wait on another, each with whom it waits on through which issue: its After followed to the issues that
 // wait on nothing themselves, and the holder of each of those. A held issue (a file or a resource taken) waits on the
 // issue that holds it.
-function waitingRows(loop, rows, next) {
+function waitingRows(loop, rows, next, onOwner) {
   const { profile, byId } = loop;
-  const holderOfIssue = new Map(rows.filter((r) => r.id !== undefined).map((r) => [r.id, r.holder]));
+  const holderOfIssue = new Map(rows.filter((r) => r.id !== undefined).flatMap((r) => (r.ids || [r.id]).map((id) => [id, r.holder])));
+  for (const id of onOwner) holderOfIssue.set(id, OWNER_HOLDER);
   const heldBy = new Map(next.filter((r) => r.heldBy && r.heldBy.length && !r.ready).map((r) => [r.id, r.heldBy]));
   const questionOf = new Map(next.filter((r) => r.group === 'held-by-question').map((r) => [r.id, r.questions]));
   const roots = (i, seen = new Set()) => {
@@ -238,7 +294,7 @@ export function cmdNextAs(root, flags = {}) {
 }
 
 export function renderNextAs(o) {
-  const line = (r) => `- ${refOf(r)}${r.what === 'ruling' ? '' : ` ${short(r.title)}`}: ${r.says}${r.doer && r.what !== 'worker' ? ` (worker ${r.doer})` : ''} — ${r.command}${r.holdsUp.length ? ` · holds up ${r.holdsUp.slice(0, 5).join(', ')}${r.holdsUp.length > 5 ? ` and ${r.holdsUp.length - 5} more` : ''}` : ''}`;
+  const line = (r) => `- ${refOf(r)}${r.what === 'ruling' || !r.title ? '' : ` ${short(r.title)}`}: ${r.says}${r.doer && r.what !== 'worker' ? ` (worker ${r.doer})` : ''} — ${r.command}${r.holdsUp.length ? ` · holds up ${r.holdsUp.slice(0, 5).join(', ')}${r.holdsUp.length > 5 ? ` and ${r.holdsUp.length - 5} more` : ''}` : ''}`;
   const out = [`On ${holderWord(o.as)} (${o.total})`];
   if (!o.total) out.push(`- (nothing is on ${holderWord(o.as)})`);
   out.push(...o.rows.map(line));
