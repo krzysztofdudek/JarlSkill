@@ -1597,14 +1597,19 @@ export function cmdNew(root, title, rawFlags) {
 
 // The items of a list field: a comma list, or a list of such texts, one item each.
 function splitList(v) { return [].concat(v ?? []).map((x) => String(x ?? '')).join(',').split(',').map((s) => s.trim()).filter(Boolean); }
-// A list given as the text of a list (["a", "b"]) would put brackets and quotes into its items. Text that reads as a list
-// of more than one item, or an item in quotes, is refused; a single item in brackets ([1], a file of that name) is a name.
+// A list given as the text of a list (["a", "b"], or ["a"]) would put brackets and quotes into its items. Text that parses
+// as a list of strings, of any length, or an item wrapped in quotes is refused; a name in brackets that is not such a list
+// ([1], src/[id]/page.tsx) is an ordinary name.
+const readsAsStringList = (s) => {
+  const t = s.trim();
+  if (!t.startsWith("[") || !t.endsWith("]")) return false;
+  try { const p = JSON.parse(t); return Array.isArray(p) && p.length > 0 && p.every((x) => typeof x === "string"); } catch { return false; }
+};
 function needNotListText(v, what) {
-  const text = [].concat(v ?? []).map(String).join(",").trim();
-  let parsed = null;
-  if (text.startsWith("[") && text.endsWith("]")) { try { parsed = JSON.parse(text); } catch { parsed = null; } }
-  need(!(Array.isArray(parsed) && parsed.length > 1) && !splitList(v).some((s) => s.startsWith('"') || s.endsWith('"')),
-    `${what} takes items one by one (a, b): text that reads as a list of several items, or an item in quotes, is refused — got ${JSON.stringify(text)}`);
+  const parts = [].concat(v ?? []).map(String);
+  const text = parts.join(",").trim();
+  need(![text, ...parts].some(readsAsStringList) && !splitList(v).some((s) => s.startsWith('"') || s.endsWith('"')),
+    `${what} takes items one by one (a, b): text that parses as a list of strings, of any length, or an item wrapped in quotes is refused — got ${JSON.stringify(text)}`);
 }
 // Tags are single words: brackets, quotes and backticks are never part of one.
 export function tagList(v) {

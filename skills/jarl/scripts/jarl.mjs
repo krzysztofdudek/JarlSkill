@@ -494,7 +494,7 @@ export const COMMAND_ARGS = {
   init: ['goal'], new: ['title'], body: ['id'], import: ['file'], sources: ['files...'], source: ['id', 'refs...'],
   after: ['id', 'ids...'], evidence: ['ids', 'text?'], retract: ['id', 'what', 'reason'], field: ['ids', 'name', 'value?'],
   list: [], show: ['id'], set: ['ids', 'status', 'why?'],
-  merged: ['ids'], tag: ['ids', 'ops...'], prio: ['ids', 'priority'], files: ['id', 'paths...'], repo: ['id', 'path?'],
+  merged: ['ids'], tag: ['ids', 'ops...'], prio: ['ids', 'priority'], files: ['id', 'paths...'], repo: ['id', 'path...'],
   next: [], review: ['ids', 'verdict', 'findings'], round: ['id', 'what'], models: [], scope: ['id?'], branches: [],
   ask: ['question'], answer: ['id', 'answer?'], resume: [], handoff: ['action?'], log: ['event'],
   decide: ['slug', 'ruling'], decisions: [], goal: [], status: [], archive: ['slug'], report: [], tips: [], queue: [],
@@ -671,7 +671,7 @@ export function dispatch(root, commandName, rest, flags) {
           out = cmdRepoBase(root, rest[0], rest[1]);
           text = out.unchanged ? `${out.name} base: ${out.base} (unchanged)` : `${out.name} base: ${out.base} (was ${out.was ?? 'none'})`;
         } else {
-          out = eachIssue(root, rest[0], (id, dry) => cmdRepo(root, id, rest[1], { clear: flags.clear === true, dry }));
+          out = eachIssue(root, rest[0], (id, dry) => cmdRepo(root, id, itemsAfterId(rest), { clear: flags.clear === true, dry }));
           text = each(out, (o) => `${o.id} repo: ${o.cleared ? 'cleared' : o.repo}${o.unchanged ? ' (unchanged)' : ''}`);
           warn = [].concat(out).flatMap((o) => (o.notes || []).map((n) => `note: ${n}`));
         }

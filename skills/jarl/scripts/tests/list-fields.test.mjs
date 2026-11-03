@@ -65,7 +65,7 @@ test('after and source take a list and store its items', () => {
   assert.equal(header(issueText(root, 3), 'After'), '1, 2');
   call(root, 'source', { id: '3', refs: ['core/r#a', 'core/r#b'] });
   assert.equal(header(issueText(root, 3), 'Source'), 'core/r#a, core/r#b');
-  refused(() => raw(root, 'after', { id: '3', ids: '["1", "2"]' }), /reads as a list of several items/i);
+  refused(() => raw(root, 'after', { id: '3', ids: '["1", "2"]' }), /parses as a list of strings/i);
 });
 
 test('files, source and after refuse an item that starts with - and say where flags go', () => {
@@ -132,4 +132,39 @@ test('import takes tags, repo and only as lists through the tool', () => {
   const text = issueText(root, 1);
   assert.equal(header(text, 'Tags'), 'drift, processes');
   assert.equal(header(text, 'Repo').split(',').length, 2);
+});
+
+test('a one-item list written as text is refused in every list field, by the tool and by the command line', () => {
+  const root = loop();
+  call(root, 'new', { title: 'a' });
+  call(root, 'new', { title: 'b' });
+  const onePerField = [
+    ['files', { id: '2', paths: '["a.mjs"]' }, ['2', '["a.mjs"]']],
+    ['source', { id: '2', refs: '["core/r#a"]' }, ['2', '["core/r#a"]']],
+    ['after', { id: '2', ids: '["1"]' }, ['2', '["1"]']],
+    ['new', { title: 'c', files: '["a.mjs"]' }, null],
+    ['new', { title: 'c', tags: '["drift"]' }, null],
+    ['new', { title: 'c', source: '["core/r#a"]' }, null],
+    ['new', { title: 'c', after: '["1"]' }, null],
+  ];
+  for (const [cmd, input, argv] of onePerField) {
+    refused(() => raw(root, cmd, input), /parses as a list of strings|plain word/);
+    if (argv) assert.match(refuses(root, cmd, ...argv), /parses as a list of strings/);
+  }
+  assert.ok(!issueText(root, 2).includes('["'), 'nothing with brackets and quotes was stored');
+  call(root, 'files', { id: '2', paths: ['[1]', 'src/[id]/page.tsx'] });
+  assert.equal(header(issueText(root, 2), 'Files'), '[1], src/[id]/page.tsx');
+});
+
+test('the repo tool takes its repositories as a list', () => {
+  const root = loop();
+  const one = gitRepo().dir;
+  const two = gitRepo().dir;
+  call(root, 'new', { title: 'a' });
+  call(root, 'repo', { id: '1', path: [one, two] });
+  const repo = header(issueText(root, 1), 'Repo');
+  assert.equal(repo.split(',').length, 2);
+  assert.ok(!/[[\]"]/.test(repo), repo);
+  const tools = Object.fromEntries(mcp.buildTools().map((t) => [t.name, t.inputSchema]));
+  assert.equal(tools.jarl_repo.properties.path.type, 'array');
 });
