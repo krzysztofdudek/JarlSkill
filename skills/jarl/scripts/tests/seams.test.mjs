@@ -1,5 +1,5 @@
-// The seams of the library, held by greps over its text so that no later change can erode them while it is still one
-// module. The library is cut into sections by its `// ---- <title> ---` headers; each rule names the section that owns a
+// The seams of the library, held by greps over its text (the modules of lib/, read as one) so that no later change can
+// erode them. The library is cut into sections by its `// ---- <title> ---` headers; each rule names the section that owns a
 // thing and fails on any line outside it. Every rule has a case below that proves it fails on a sample that breaks it.
 //
 //   1  only the journal sections name the loop's files (log, decisions, asks, goal) or hold the stamp pattern, and the
@@ -18,7 +18,10 @@ const SCRIPTS = new URL('../', import.meta.url);
 const read = (name) => readFileSync(new URL(name, SCRIPTS), 'utf8');
 // The prose of the skill: SKILL.md and every file of references/, by the name each is read under.
 const SKILL_FILES = Object.fromEntries(['SKILL.md', ...readdirSync(new URL('../references/', SCRIPTS)).filter((f) => f.endsWith('.md')).sort().map((f) => `references/${f}`)].map((f) => [f, new URL(`../${f}`, SCRIPTS)]));
-const LIB = read('jarl-lib.mjs');
+// The library is the modules of lib/, read as one text; each module opens a section of its own, named by its file, so
+// what stands before its first header is in no other module's section.
+const LIB_FILES = readdirSync(new URL('lib/', SCRIPTS)).filter((f) => f.endsWith('.mjs')).sort().map((f) => `lib/${f}`);
+const LIB = LIB_FILES.map((f) => `// ---- ${f} ---\n${read(f)}`).join('\n');
 
 const HEADER = /^\/\/ ---- (.+?) -{3,}\s*$/;
 // The text as [{ title, lines: [{ n, text }] }]; what stands before the first header is the section ''.
@@ -182,8 +185,8 @@ function datedComments(name, text, pattern = DATED) {
 }
 
 test('rule 7: no comment in the scripts names a version or a past', () => {
-  const files = readdirSync(SCRIPTS).filter((f) => f.endsWith('.mjs'));
-  assert.ok(files.includes('jarl-lib.mjs') && files.includes('jarl.mjs') && files.includes('record.mjs'));
+  const files = [...readdirSync(SCRIPTS).filter((f) => f.endsWith('.mjs')), ...LIB_FILES];
+  assert.ok(files.includes('jarl-lib.mjs') && files.includes('jarl.mjs') && files.includes('record.mjs') && files.includes('lib/base.mjs'));
   assert.deepEqual(files.flatMap((f) => datedComments(f, read(f))), []);
   assert.equal(datedComments('x.mjs', 'const a = 1; // kept for 6.1.0 readers\n// an older loop\n// the lease since the last move\nconst u = "https://example.com";\n// compatible with a reader\n').length, 3);
   assert.equal(datedComments('x.mjs', '// a 6.1.x reader\n// the v2 shape\n// since 6.2\n// a ratio of 0.5 lines\n// nothing dated here\n').length, 4, 'N.N.x, vN and N.N are version-shaped');
@@ -255,7 +258,7 @@ function taskRefs(name, text, prose = false) {
 }
 
 test('rule 8: no comment, test title or prose line names a task by number or tells its story', () => {
-  const scripts = readdirSync(SCRIPTS).filter((f) => f.endsWith('.mjs'));
+  const scripts = [...readdirSync(SCRIPTS).filter((f) => f.endsWith('.mjs')), ...LIB_FILES];
   const tests = readdirSync(new URL('tests/', SCRIPTS)).filter((f) => f.endsWith('.mjs') && f !== 'seams.test.mjs');
   const prose = { ...SKILL_FILES, 'README.md': new URL('../../../README.md', SCRIPTS), 'CLAUDE.md': new URL('../../../CLAUDE.md', SCRIPTS), 'CHANGELOG.md': new URL('../../../CHANGELOG.md', SCRIPTS) };
   assert.deepEqual([

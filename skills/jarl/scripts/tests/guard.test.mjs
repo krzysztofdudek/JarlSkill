@@ -41,7 +41,8 @@ const allows = (e, f) => (e.rule === '*' || e.rule === f.rule) && (e.subject ===
 
 test('the family guard: only the places guard.allow lists reach another tool, and every entry is used', () => {
   const entries = parseAllow(readFileSync(`${REPO}/guard.allow`, 'utf8'));
-  const found = readdirSync(SCRIPTS).filter((f) => f.endsWith('.mjs')).flatMap((f) => findings(`${PREFIX}${f}`, readFileSync(`${SCRIPTS}/${f}`, 'utf8')));
+  const scripts = [...readdirSync(SCRIPTS).filter((f) => f.endsWith('.mjs')), ...readdirSync(`${SCRIPTS}/lib`).filter((f) => f.endsWith('.mjs')).map((f) => `lib/${f}`)];
+  const found = scripts.flatMap((f) => findings(`${PREFIX}${f}`, readFileSync(`${SCRIPTS}/${f}`, 'utf8')));
   const loose = found.filter((f) => !entries.some((e) => allows(e, f)));
   assert.deepEqual(loose.map((f) => `${f.file}:${f.line} [${f.rule}] ${f.subject}`), [], 'code that reaches another family tool outside guard.allow');
   const unused = entries.filter((e) => !found.some((f) => allows(e, f)));
