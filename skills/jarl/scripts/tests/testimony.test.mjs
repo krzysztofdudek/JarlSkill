@@ -55,7 +55,7 @@ test('three lines through every command that writes text: whole in the issue, th
   jarl(root, 'decide', 'multi-ruling', three('ruling'), '--settles', id);
   assert.ok(has(read(root, 'decisions.md'), 'ruling'));
   const after = readFileSync(L.findIssue(root, id).file, 'utf8');
-  assert.match(after, /Ruling multi-ruling: ruling line one/);
+  assert.match(after, /Ruling multi-ruling \(by coordinator\): ruling line one/);
   assert.match(after, /multi-ruling/);
   assert.match(after, /ask-1/);
   assert.match(after, /decisions\.md/);

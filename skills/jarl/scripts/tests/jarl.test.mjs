@@ -1163,7 +1163,7 @@ test('ask --kind ratify blocks nothing, is listed in status and the handoff, and
   jarl(root, 'evidence', '1', '--ran', 'check', '--saw', 'green');
   jarl(root, 'set', '1', 'done', 'merged');
   jarl(root, 'answer', 'a-1', 'ratified', '--by', 'owner');
-  assert.match(jarl(root, 'show', '1'), /Ruling ask-1 \(ratify\): ratified/);
+  assert.match(jarl(root, 'show', '1'), /Ruling ask-1 \(ratify, by owner\): ratified/);
   assert.match(jarl(root, 'status'), /questions 0$/m);
 });
 
@@ -1190,10 +1190,10 @@ test('After holds an issue out of next and counts it as waiting; decide --settle
   jarl(root, 'after', '5', '--clear');
   assert.equal(JSON.parse(jarl(root, 'show', '5', '--json')).fields.after, undefined);
   // A ruling names what it settles: the ruling goes into each issue's evidence, the status stays.
-  assert.match(jarl(root, 'decide', 'numbers', 'the core ships on one number', '--settles', '4'), /decided numbers · by owner · written into 4/);
+  assert.match(jarl(root, 'decide', 'numbers', 'the core ships on one number', '--settles', '4'), /decided numbers · by coordinator · written into 4/);
   const four = JSON.parse(jarl(root, 'show', '4', '--json'));
   assert.equal(four.status, 'open');
-  assert.match(four.sections.evidence, /Ruling numbers: the core ships on one number/);
+  assert.match(four.sections.evidence, /Ruling numbers \(by coordinator\): the core ships on one number/);
   assert.match(readFileSync(join(root, '.jarl', 'decisions.md'), 'utf8'), /the core ships on one number\n\n\*\*Settles:\*\* 4/);
   assert.match(refuses(root, 'decide', 'other', 'x', '--settles', '4,77'), /no such issue: 77/);
   assert.doesNotMatch(readFileSync(join(root, '.jarl', 'decisions.md'), 'utf8'), /other/, 'a refused ruling writes nothing');
@@ -1672,7 +1672,7 @@ test('decide --by owner with no question in the record prints a notice on stderr
   const root = repo();
   jarl(root, 'init', 'goal');
   jarl(root, 'new', 'rewrite the flag handling', '--what', 'Follows flag-rule as it stands.');
-  assert.match(run(root, ['decide', 'quiet-rule', 'Keep the default.', '--by', 'owner']).stderr, /no question in the record/);
+  assert.match(run(root, ['decide', 'quiet-rule', 'Keep the default.', '--by', 'owner', '--quote', 'Keep it.']).stderr, /no question in the record/);
   assert.equal(run(root, ['decide', 'mandate-rule', 'Keep the default.', '--by', 'jarl']).stderr, '');
   jarl(root, 'decide', 'flag-rule', 'Keep the flag.', '--by', 'jarl');
   const r = run(root, ['decide', 'flag-rule-two', 'Keep the flag, now.', '--by', 'jarl', '--supersedes', 'flag-rule']);
@@ -1973,7 +1973,7 @@ test('the supersession notice finds a slug at the end of a sentence and does not
   assert.doesNotMatch(r.stderr, /, 10\b/, 'the longer slug is not found');
 });
 
-test('decide with no --by prints no notice: the owner is the default, and a notice is for an owner named on the command line', () => {
+test('decide with no --by prints no notice: the coordinator is the default, and a notice is for an owner named on the command line', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
   assert.equal(run(root, ['decide', 'default-rule', 'Keep it.']).stderr, '');
@@ -2046,7 +2046,7 @@ test('the decision reader lists text before the first ruling, a ruling heading t
   const lib = await import(LIB_URL);
   const root = repo();
   jarl(root, 'init', 'goal');
-  jarl(root, 'decide', 'rule-a', 'Keep a.', '--by', 'owner');
+  jarl(root, 'decide', 'rule-a', 'Keep a.', '--by', 'owner', '--quote', 'Keep a.');
   const path = join(root, '.jarl', 'decisions.md');
   writeFileSync(path, `${readFileSync(path, 'utf8')}\n## 2026-10-19 rule-b without a dot\n## 2026-10-19 · rule-a\nAgain.\n`);
   const skipped = [];

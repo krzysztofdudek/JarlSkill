@@ -162,7 +162,7 @@ test('status and report show who reviewed the done work', () => {
 test('decide: slugs are validated and compared as strings — q.r is not a duplicate of qxr, specials never crash', () => {
   const root = loop();
   jarl(root, 'decide', 'qxr', 'one');
-  assert.match(jarl(root, 'decide', 'q.r', 'two'), /^decided q\.r · by owner$/);
+  assert.match(jarl(root, 'decide', 'q.r', 'two'), /^decided q\.r · by coordinator$/);
   assert.match(refuses(root, 'decide', 'q.r', 'three'), /duplicate slug: q\.r/);
   for (const bad of ['a+b', '(x', 'a b', '[z]', 'x'.repeat(81), 'ż', '.dot']) {
     assert.match(refuses(root, 'decide', bad, 'r'), /a ruling's slug is letters, digits/, bad);
@@ -177,18 +177,18 @@ test('decide --supersedes marks the old ruling, --by records who ruled, decision
   jarl(root, 'decide', 'no-subagents', 'Work without subagents.');
   jarl(root, 'decide', 'keep', 'Keep this.', '--by', 'jarl');
   assert.match(refuses(root, 'decide', 'subagents', 'x', '--supersedes', 'nope'), /no ruling nope in decisions.md/);
-  assert.equal(jarl(root, 'decide', 'subagents-again', 'Use fresh reviewers again. $1 $& kept', '--supersedes', 'no-subagents'), 'decided subagents-again · by owner · supersedes no-subagents');
+  assert.equal(jarl(root, 'decide', 'subagents-again', 'Use fresh reviewers again. $1 $& kept', '--supersedes', 'no-subagents'), 'decided subagents-again · by coordinator · supersedes no-subagents');
   const text = readFileSync(join(root, '.jarl', 'decisions.md'), 'utf8');
-  assert.match(text, /## \d{4}-\d{2}-\d{2} · no-subagents\nWork without subagents\.\n\n\*\*By:\*\* owner\n\*\*Superseded by:\*\* subagents-again \(\d{4}-\d{2}-\d{2}\)\n\n## \d{4}-\d{2}-\d{2} · keep\nKeep this\.\n\n\*\*By:\*\* jarl\n/);
-  assert.match(text, /· subagents-again\nUse fresh reviewers again\. \$1 \$& kept\n\n\*\*By:\*\* owner\n\*\*Supersedes:\*\* no-subagents\n$/);
+  assert.match(text, /## \d{4}-\d{2}-\d{2} · no-subagents\nWork without subagents\.\n\n\*\*By:\*\* coordinator\n\*\*Superseded by:\*\* subagents-again \(\d{4}-\d{2}-\d{2}\)\n\n## \d{4}-\d{2}-\d{2} · keep\nKeep this\.\n\n\*\*By:\*\* jarl\n/);
+  assert.match(text, /· subagents-again\nUse fresh reviewers again\. \$1 \$& kept\n\n\*\*By:\*\* coordinator\n\*\*Supersedes:\*\* no-subagents\n$/);
   assert.match(refuses(root, 'decide', 'third', 'x', '--supersedes', 'no-subagents'), /already superseded by subagents-again/);
   const all = JSON.parse(jarl(root, 'decisions', '--json'));
-  assert.deepEqual(all.map((d) => [d.slug, d.by, d.supersededBy]), [['no-subagents', 'owner', 'subagents-again'], ['keep', 'jarl', null], ['subagents-again', 'owner', null]]);
+  assert.deepEqual(all.map((d) => [d.slug, d.by, d.supersededBy]), [['no-subagents', 'coordinator', 'subagents-again'], ['keep', 'jarl', null], ['subagents-again', 'coordinator', null]]);
   const live = jarl(root, 'decisions', '--live');
   assert.doesNotMatch(live, /no-subagents ·|· no-subagents —/);
-  assert.match(live, /· subagents-again · by owner · supersedes no-subagents — Use fresh reviewers again/);
-  assert.match(jarl(root, 'decisions'), /no-subagents · by owner · SUPERSEDED by subagents-again/);
-  assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /decided subagents-again · by owner · supersedes no-subagents/);
+  assert.match(live, /· subagents-again · by coordinator · supersedes no-subagents — Use fresh reviewers again/);
+  assert.match(jarl(root, 'decisions'), /no-subagents · by coordinator · SUPERSEDED by subagents-again/);
+  assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /decided subagents-again · by coordinator · supersedes no-subagents/);
 });
 
 // ---- 278: several repositories -------------------------------------------------------------------
