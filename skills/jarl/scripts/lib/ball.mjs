@@ -1,7 +1,7 @@
 // What is on whom: every open thing of the loop has one holder who must move next, derived from the record and never
 // stored, and next --as <holder> lists what is on that one, each line with the command that moves it.
 
-import { fieldText, need } from './base.mjs';
+import { PROMISE_KIND, WAIT_KIND, fieldText, need } from './base.mjs';
 import { jarlDir } from './where.mjs';
 import { cmpId, idKey, idsCited } from './ids.mjs';
 import { mergedOf } from './issues.mjs';
@@ -30,6 +30,12 @@ export function holderOf(name) {
   return plain;
 }
 const holderWord = (h) => (h === OWNER_HOLDER || h === JARL_HOLDER ? `the ${h}` : h);
+// One holder however its name is cased or spaced: Dana Smith and dana  smith are one person.
+const holderKey = (h) => String(h).toLowerCase().replace(/\s+/g, ' ');
+const sameHolder = (a, b) => holderKey(a) === holderKey(b);
+// Who keeps a promise: the one its Found by names (the jarl when it names nobody). Who a wait is held by: its Person.
+const makerOf = (issue) => holderOf(fieldText(issue.fields['found by']) || JARL_HOLDER);
+const personOf = (issue) => (fieldText(issue.fields.person) ? holderOf(fieldText(issue.fields.person)) : null);
 
 // The status a move of each kind goes into, read from the profile's flags: the first status that holds the claim, and
 // the first that closes the record (else the first terminal one).
@@ -52,10 +58,11 @@ function issueRows(ctx) {
   }
   const evidence = `--ran "<command>" --saw "<what it printed>"`;
   const verdict = (id) => `jarl.mjs review ${id} approve|changes --by <reviewer> "<findings>"`;
-  for (const i of loop.issues.filter((x) => profile.is(x.status, 'holds-claim') && !waitingOn(x, loop.byId, profile).length)) {
+  // A wait has rows of its own (keptRows); a promise in a lease is worked as any issue, and its maker holds each line.
+  for (const i of loop.issues.filter((x) => profile.is(x.status, 'holds-claim') && profile.keptKind(x.kind) !== WAIT_KIND && !waitingOn(x, loop.byId, profile).length)) {
     const mark = inFlightMark(loop, i);
     const worker = fieldText(i.fields.worker) || null;
-    const base = { id: i.id, title: i.title, priority: i.priority, holder: JARL_HOLDER, ...(worker ? { doer: worker } : {}) };
+    const base = { id: i.id, title: i.title, priority: i.priority, holder: profile.keptKind(i.kind) === PROMISE_KIND ? makerOf(i) : JARL_HOLDER, ...(worker ? { doer: worker } : {}) };
     const withWorker = worker ? `with worker ${worker}` : 'in progress';
     const backAfterRound = sentBack(loop, i, mark);
     if (mark === 'no-rows' || backAfterRound) {
@@ -72,7 +79,7 @@ function issueRows(ctx) {
         command: merge ? `jarl.mjs merged ${i.id} --sha <sha> --ran "<check>" --saw "<summary>"` : `jarl.mjs set ${i.id} ${closeStatus} "<why>"` });
       continue;
     }
-    if (mark === 'rows-no-verdict' && carriesCode(i)) continue;   // listed together below
+    if (mark === 'rows-no-verdict' && carriesCode(i) && profile.keptKind(i.kind) !== PROMISE_KIND) continue;   // listed together below
     if (mark === 'rows-no-verdict') {
       out.push({ ...base, what: 'review', says: 'proof recorded, no verdict; raise a reviewer', command: verdict(i.id) });
       continue;
@@ -110,7 +117,7 @@ function sentBack(loop, issue, mark) {
 // The issues in play whose code has proof and no verdict, and waits for a fresh reviewer.
 function awaitingReview(loop, profile) {
   if (profile.doneGate.approve === 'none') return [];
-  return loop.issues.filter((i) => profile.is(i.status, 'holds-claim') && !waitingOn(i, loop.byId, profile).length && carriesCode(i)
+  return loop.issues.filter((i) => profile.is(i.status, 'holds-claim') && !profile.keptKind(i.kind) && !waitingOn(i, loop.byId, profile).length && carriesCode(i)
     && inFlightMark(loop, i) === 'rows-no-verdict' && !sentBack(loop, i, 'rows-no-verdict'));
 }
 
@@ -149,6 +156,36 @@ function reviewRow(ctx, verdict) {
     says: `proof recorded, no verdict; raise a fresh reviewer for ${ids}; if you cannot raise agents, ask the owner to start a fresh session`,
     command: `${only ? verdict(only.id) : verdict('<id>')}, or jarl.mjs ask "${REVIEW_ASK} issue${todo.length === 1 ? '' : 's'} ${ids}"`,
   }];
+}
+
+// The rows of a promise and of a wait, which next never offers to a worker: an open promise is on whoever made it until
+// it is kept and closed; a wait is on its outside person until what was waited for comes (the first proof row records
+// it), with when to check, and then on the jarl to close. Either ends when its issue leaves play.
+function keptRows(ctx) {
+  const { loop, profile } = ctx;
+  const closeStatus = statusWith(profile, 'closes-record', 'terminal');
+  const verdict = `approve|changes --by <reviewer> "<findings>"`;
+  const out = [];
+  const kept = loop.issues.filter((i) => profile.active(i.status) && !waitingOn(i, loop.byId, profile).length
+    && (profile.keptKind(i.kind) === WAIT_KIND || (profile.keptKind(i.kind) === PROMISE_KIND && !profile.is(i.status, 'holds-claim'))));
+  for (const i of kept) {
+    const mark = inFlightMark(loop, i);
+    const base = { id: i.id, title: i.title, priority: i.priority, kind: i.kind };
+    const promise = i.kind === PROMISE_KIND;
+    const holder = promise ? makerOf(i) : mark === 'no-rows' ? personOf(i) || JARL_HOLDER : JARL_HOLDER;
+    const when = fieldText(i.fields['check when']) || 'not said';
+    if (mark === 'no-rows') {
+      out.push(promise
+        ? { ...base, what: 'promise', holder, says: `promised by ${holderWord(holder)}; keep it, then record what was done`, command: `jarl.mjs evidence ${i.id} --ran "<what was done>" --saw "<what came of it>"` }
+        : { ...base, what: 'wait', holder, checkWhen: when, says: `waits on ${holderWord(holder)}, check when ${when}; when it comes, record it`, command: `jarl.mjs evidence ${i.id} --ran "<how it was checked>" --saw "<what came>"` });
+      continue;
+    }
+    const done = promise ? 'kept' : 'it came';
+    if (mark === 'rows-no-verdict' || mark === 'approved-not-fresh') out.push({ ...base, what: 'review', holder, says: `${done}, proof recorded, no verdict; review it`, command: `jarl.mjs review ${i.id} ${verdict}` });
+    else if (mark === 'changes-requested') out.push({ ...base, what: 'changes', holder, says: `${done}, changes asked by its reviewer; answer them and ask for a new verdict`, command: `jarl.mjs review ${i.id} ${verdict}` });
+    else out.push({ ...base, what: 'close', holder, says: `${done}, approved; close it`, command: `jarl.mjs set ${i.id} ${closeStatus} "<why>"` });
+  }
+  return out;
 }
 
 // The rows of the acceptance lines only the owner ticks, on the issues in play: a line whose material is not there yet is
@@ -215,7 +252,7 @@ function closedOn(loop, issue, slug) {
 
 // The sources of the rows, in order. Each reads the record through the context and gives rows { what, holder, says,
 // command, and id, ask or ruling }; a kind of open thing the record learns to hold adds its own source here.
-export const ROW_SOURCES = [issueRows, ownerLineRows, questionRows, rulingRows];
+export const ROW_SOURCES = [issueRows, keptRows, ownerLineRows, questionRows, rulingRows];
 // The rows a composer's scheduler owns: under an external scheduler Jarl lists only the others.
 const SCHEDULING = new Set([issueRows]);
 
@@ -316,13 +353,15 @@ function waitingRows(loop, rows, next, onOwner) {
 export function cmdNextAs(root, flags = {}) {
   const holder = holderOf(flags.as);
   const { loop, rows, scheduled, waiting } = ballRows(root);
-  const mine = rows.filter((r) => r.holder === holder);
+  const mine = rows.filter((r) => sameHolder(r.holder, holder));
   const all = flags.all === true;
   const shown = all ? mine : mine.slice(0, BALL_SHOWN);
-  const waits = waiting.filter((w) => w.on === holder);
+  const waits = waiting.filter((w) => sameHolder(w.on, holder));
   const coordinator = holder !== JARL_HOLDER && holder !== OWNER_HOLDER && loop.coordinators.some((c) => fieldText(c).toLowerCase() === holder.toLowerCase());
+  // A person is named as the record writes the name, whatever case the asker typed.
+  const spelled = mine.length ? mine[0].holder : waits.length ? waits[0].on : holder;
   return {
-    as: holder, rows: shown, total: mine.length, more: mine.length - shown.length,
+    as: spelled, rows: shown, total: mine.length, more: mine.length - shown.length,
     waiting: all ? waits : [], waitingTotal: waits.length,
     ...(coordinator ? { note: 'with no slice in the loop, what a coordinator holds is the jarl\'s: jarl.mjs next --as jarl' } : {}),
     ...(scheduled ? { scheduler: loop.profile.scheduler, schedulerNote: `the issues in play are the composer's: ${schedulerNote(loop.profile.scheduler)}` } : {}),

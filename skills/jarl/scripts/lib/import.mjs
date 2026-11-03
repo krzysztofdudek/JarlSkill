@@ -2,7 +2,7 @@
 
 import { existsSync } from 'node:fs';
 import { resolve, dirname, basename, relative, isAbsolute } from 'node:path';
-import { KINDS, PRIORITIES, fieldText, need, slugify, splitList } from './base.mjs';
+import { KEPT_KINDS, KINDS, PRIORITIES, fieldText, need, slugify, splitList } from './base.mjs';
 import { git } from './git.mjs';
 import { canonical } from './where.mjs';
 import { readText } from './files.mjs';
@@ -89,7 +89,8 @@ export function findingsOf(json) {
       localId: f.localId || id,
       angle: f.angle || null,
       title: title.length > 140 ? `${title.slice(0, 139)}…` : title,
-      kind: KINDS.includes(kindRaw) ? kindRaw : (KIND_OF[kindRaw] || 'bug'),
+      // A finding is work: it is never filed as a promise or a wait, which new files with who holds them.
+      kind: KINDS.includes(kindRaw) && !KEPT_KINDS.includes(kindRaw) ? kindRaw : (KIND_OF[kindRaw] || 'bug'),
       priority: PRIORITIES.includes(prioRaw) ? prioRaw : (PRIO_OF[prioRaw] || '2'),
       where: String(f.where || f.surfaces || ''),
       what: [claim && `Claim: ${claim}`, typeof f.truth === 'string' && f.truth && `Truth: ${f.truth}`, typeof f.evidence === 'string' ? f.evidence : ''].filter(Boolean).join('\n\n'),
@@ -166,11 +167,12 @@ export function cmdImport(root, file, flags) {
   const { dir, findings: read } = readFindings(file, flags);
   const profile = loadProfile(root);
   if (flags.kind !== undefined) need(profile.kinds.includes(flags.kind), `--kind must be one of: ${profile.kinds.join(', ')}`);
+  need(!profile.keptKind(flags.kind), `--kind ${flags.kind}: a finding is work, never a promise or a wait — file one of those with jarl.mjs new "<title>" --kind ${flags.kind}`);
   if (flags.prio !== undefined) need(PRIORITIES.includes(String(flags.prio)), '--prio must be 1, 2 or 3');
   if (flags.tier !== undefined) need(profile.tiers.includes(String(flags.tier)), `--tier must be one of: ${profile.tiers.join(', ')}`);
   // A finding's kind is mapped onto the built-in kinds; under a profile with kinds of its own, one it does not
   // name is filed under the profile's default kind.
-  const findings = profile.declared ? read.map((f) => (profile.kinds.includes(f.kind) ? f : { ...f, kind: profile.kindDefault })) : read;
+  const findings = profile.declared ? read.map((f) => (profile.kinds.includes(f.kind) && !profile.keptKind(f.kind) ? f : { ...f, kind: profile.kindDefault })) : read;
   if (flags.repo !== undefined) repoList(root, flags.repo);
   let chosen = findings;
   if (flags.only !== undefined) {

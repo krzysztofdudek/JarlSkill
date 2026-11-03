@@ -2,7 +2,7 @@
 
 import { existsSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { fieldText, need } from './base.mjs';
+import { PROMISE_KIND, fieldText, need } from './base.mjs';
 import { needNoOwnersWords } from './owner.mjs';
 import { git } from './git.mjs';
 import { jarlDir, stamp } from './where.mjs';
@@ -214,10 +214,11 @@ export function schedulerNote(cmd) { return `scheduling is led by the composer: 
 
 // next — on a loop with an external scheduler, { scheduler, note } and no list: Jarl computes nothing it cannot know.
 // By default the issues ready to start and nothing else; --all adds the others, each row carrying its group:
-// ready, held-by-file (a file an in-progress or earlier-offered issue holds), waiting-after (After not settled) or
-// held-by-question (an open stuck or stop question names the issue). A library caller reads the full list through
-// nextRows and filters it itself.
-export const NEXT_GROUPS = ['ready', 'held-by-file', 'held-by-resource', 'waiting-after', 'held-by-question'];
+// ready, held-by-file (a file an in-progress or earlier-offered issue holds), waiting-after (After not settled),
+// held-by-question (an open stuck or stop question names the issue), promise or wait (an issue of that kind, which is
+// never offered to a worker: next --as shows it on who holds it). A library caller reads the full list through nextRows
+// and filters it itself.
+export const NEXT_GROUPS = ['ready', 'held-by-file', 'held-by-resource', 'waiting-after', 'held-by-question', 'promise', 'wait'];
 export function cmdNext(root, flags) {
   const profile = loadProfile(root);
   if (profile.scheduler) return { scheduler: profile.scheduler, note: schedulerNote(profile.scheduler) };
@@ -231,12 +232,14 @@ export const nextRowsBuilds = () => builds.nextRows;
 // The model of a ready issue as next and resume show it: the default model of the issue's tier.
 const modelText = (m) => (m && m.default ? `  [model ${m.default}]` : '');
 
-const NEXT_HEADERS = { ready: 'Ready', 'held-by-file': 'Held by a file another issue holds', 'held-by-resource': 'Held by a resource another issue holds', 'waiting-after': 'Waiting on After', 'held-by-question': 'Held by an open question' };
+const NEXT_HEADERS = { ready: 'Ready', 'held-by-file': 'Held by a file another issue holds', 'held-by-resource': 'Held by a resource another issue holds', 'waiting-after': 'Waiting on After', 'held-by-question': 'Held by an open question', promise: 'Promises, kept by who made them', wait: 'Waits on an outside person' };
 export function renderNext(rows, all, held = 0) {
   const line = (r) => {
     const note = r.group === 'ready' ? [r.noAcceptance && 'no acceptance yet', r.noFiles && 'no files declared']
       : r.group === 'waiting-after' ? [`after ${r.after.join(', ')}`]
         : r.group === 'held-by-question' ? [`question ${r.questions.map((q) => `a-${q}`).join(', ')}`]
+          : r.group === 'promise' ? [`promised by ${r.by || 'nobody named'}`]
+            : r.group === 'wait' ? [`on ${r.person || 'nobody named'}, check when ${r.checkWhen || 'not said'}`]
           : [`waits on ${[...r.waitsOn, ...(r.resources || []).map((x) => `resource ${x}`)].join(', ')}, held by ${r.heldBy.join(', ')}`];
     return `${r.id}  P${r.priority}  ${r.title}${[...note, r.shared && sharedMark(r.shared)].filter(Boolean).map((n) => `  (${n})`).join('')}${modelText(r.model)}`;
   };
@@ -277,6 +280,11 @@ export function nextRows(root, flags = {}) {
     const base = { id: i.id, title: i.title, priority: i.priority, ...(i.files.length ? {} : { noFiles: true }), ...(i.shared ? { shared: i.shared } : {}) };
     if (after.length) { out.push({ ...base, group: 'waiting-after', after, waitsOn: [] }); continue; }
     if (asked.has(i.id)) { out.push({ ...base, group: 'held-by-question', questions: asked.get(i.id), waitsOn: [], after: [] }); continue; }
+    // A promise or a wait is kept by who holds it, not worked on by a worker: never offered, and it takes no file.
+    if (profile.keptKind(i.kind)) {
+      out.push({ ...base, group: i.kind, waitsOn: [], after: [], ...(i.kind === PROMISE_KIND ? { by: fieldText(i.fields['found by']) || null } : { person: fieldText(i.fields.person) || null, checkWhen: fieldText(i.fields['check when']) || null }) });
+      continue;
+    }
     const keys = keysOf(i);
     const held = keys.filter((k) => taken.has(k.key));
     const heldRes = resourcesOf(i).filter((r) => takenRes.has(r.key));

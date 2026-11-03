@@ -348,7 +348,7 @@ export function changelogEntries(issue) {
 // fields: the profile's declared fields, [name, value] in its order, each written after Where (empty when not given).
 // sections: the profile's extra sections, [heading, body], written after Acceptance. acceptanceHeading: the heading the
 // acceptance goes under. Without them the file holds the built-in fields and sections only.
-export function renderIssue({ id, title, status = 'open', kind, priority, tier, tags, files, repo, foundBy, where = '', what = '', why = '', acceptance = '', source = [], after = [], changelog = '', fields = [], sections = [], acceptanceHeading = 'Acceptance' }) {
+export function renderIssue({ id, title, status = 'open', kind, priority, tier, tags, files, repo, foundBy, person = '', checkWhen = '', where = '', what = '', why = '', acceptance = '', source = [], after = [], changelog = '', fields = [], sections = [], acceptanceHeading = 'Acceptance' }) {
   const body = (t) => (t ? `${t}\n` : '\n');
   const declared = fields.map(([n, v]) => `**${n}:**${v ? ` ${v}` : ''}\n`).join('');
   const extra = sections.map(([h, t]) => `## ${h}\n${body(t)}\n`).join('');
@@ -361,7 +361,7 @@ export function renderIssue({ id, title, status = 'open', kind, priority, tier, 
 **Tags:** ${tags.join(', ')}
 **Files:** ${files.join(', ')}
 ${repo ? `**Repo:** ${repo}\n` : ''}${after.length ? `**After:** ${after.join(', ')}\n` : ''}**Found by:** ${fieldText(foundBy)}
-${source.length ? `**Source:** ${source.join(', ')}\n` : ''}**Where:**${where ? ` ${fieldText(where)}` : ''}
+${person ? `**Person:** ${fieldText(person)}\n` : ''}${checkWhen ? `**Check when:** ${fieldText(checkWhen)}\n` : ''}${source.length ? `**Source:** ${source.join(', ')}\n` : ''}**Where:**${where ? ` ${fieldText(where)}` : ''}
 ${declared}
 ## What
 ${body(what)}
