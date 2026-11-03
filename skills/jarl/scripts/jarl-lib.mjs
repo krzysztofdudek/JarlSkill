@@ -1572,7 +1572,7 @@ export function cmdNew(root, title, rawFlags) {
     const tmp = join(dir, `.${id}.${process.pid}.tmp`);
     writeFileSync(tmp, renderIssue({
       id, title, status: profile.initial, kind, priority, tier, fields, sections, acceptanceHeading: profile.acceptance || 'Acceptance',
-      tags: splitList(flags.tags), files: pathList(flags.files), repo: picked.map((p) => p.value).join(', '), foundBy: flags['found-by'] || 'jarl',
+      tags: tagList(flags.tags), files: pathList(flags.files), repo: picked.map((p) => p.value).join(', '), foundBy: flags['found-by'] || 'jarl',
       where: flags.where, what: bodyText(flags.what), why: bodyText(flags.why), source, after,
       // A template's Acceptance and Changelog are taken as written (a list already); a flag replaces them.
       acceptance: flags.acceptance !== undefined ? acceptanceText(flags.acceptance) : bodyText(fromTemplate.acceptance),
@@ -1595,16 +1595,33 @@ export function cmdNew(root, title, rawFlags) {
   }
 }
 
-function splitList(v) { return String(v || '').split(',').map((s) => s.trim()).filter(Boolean); }
+// The items of a list field: a comma list, or a list of such texts, one item each.
+function splitList(v) { return [].concat(v ?? []).map((x) => String(x ?? '')).join(',').split(',').map((s) => s.trim()).filter(Boolean); }
+// A list given as the text of a list (["a", "b"]) holds one item that is the whole text; stored, it would put brackets and
+// quotes into the items. It is refused, and the message says how to give the items.
+function needNotListText(v, what) {
+  const text = [].concat(v ?? []).map(String).join(',').trim();
+  let parsed = null;
+  if (text.startsWith('[') && text.endsWith(']')) { try { parsed = JSON.parse(text); } catch { parsed = null; } }
+  need(!Array.isArray(parsed) && !splitList(v).some((s) => s.startsWith('"') || s.endsWith('"')),
+    `${what} is a list of items, not the text of a list: give each item on its own (a, b), without brackets or quotes — got ${JSON.stringify(text)}`);
+}
+// Tags are single words: brackets, quotes and backticks are never part of one.
+export function tagList(v) {
+  const tags = splitList(v);
+  for (const t of tags) need(!/[[\]"'`]/.test(t), `a tag is a plain word, without brackets or quotes — got ${JSON.stringify(t)}; give each tag on its own (drift, processes)`);
+  return tags;
+}
 // A path written into an issue (Files, Repo) is read on every OS the loop is checked out on, and git names files with
 // '/' everywhere: a path given on Windows is stored with '/' (C:\a\b → C:/a/b, which Windows reads the same). Elsewhere a
 // backslash is an ordinary file-name character and is kept.
 export function portablePath(p, platform = process.platform) { return platform === 'win32' ? p.replace(/\\/g, '/') : p; }
-function pathList(v) { return splitList(v).map((p) => portablePath(p)); }
+function pathList(v) { needNotListText(v, 'files'); return splitList(v).map((p) => portablePath(p)); }
 
 // A Source entry names one finding for good: the report's directory (dated, so unique) and the finding's id
 // inside it, <dir>#<id>. Several are one comma list.
 export function sourceList(v) {
+  needNotListText(v, 'source');
   const list = splitList(v);
   for (const s of list) need(/^[^#\s]+#[^#\s]+$/.test(s), `a source is <report dir>#<finding id>, e.g. core/research/2026-09-25-jarl#jarl-2-B2 — not "${s}"`);
   return list;
@@ -1613,6 +1630,8 @@ export function sourceList(v) {
 // The issues one waits on: each must exist and not be the issue itself, and the chain must not come back to
 // it — a cycle would leave every issue in it waiting for good with nothing to say so.
 function afterList(root, selfId, raw) {
+  needNotListText(raw, 'after');
+  raw = splitList(raw).join(',');
   const keys = expandIds(raw);
   const all = loadIssues(root);
   const missing = keys.filter((k) => !all.some((i) => idKey(i.id) === k));
@@ -2283,6 +2302,7 @@ function cleanUpAfterMerge(root, issues, sha, repoPath, named = []) {
 export function cmdTag(root, rawIds, ops) {
   const issues = issuesFor(root, rawIds);
   for (const op of ops) need(/^[+-]./.test(op), `tags are +name or -name, not "${op}"`);
+  tagList(ops.filter((op) => op.startsWith('+')).map((op) => op.slice(1)));
   const results = issues.map((issue) => {
     const tags = new Set(issue.tags);
     for (const op of ops) { if (op.startsWith('+')) tags.add(op.slice(1)); else tags.delete(op.slice(1)); }
@@ -2302,6 +2322,7 @@ export function cmdPrio(root, rawIds, prio) {
 export function cmdFiles(root, rawId, list, dry = false) {
   const issue = findIssue(root, rawId);
   need(issue, `no such issue: ${rawId}`);
+  need(list !== undefined, 'files requires <paths>');
   const files = pathList(list);
   if (!dry) writeAtomic(issue.file, setField(readText(issue.file), 'Files', files.join(', ')));
   return { id: issue.id, files };

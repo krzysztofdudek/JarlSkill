@@ -380,13 +380,13 @@ export const GLOBAL_FLAGS = { json: 'bool', help: 'bool', root: 'value' };
 export const COMMAND_FLAGS = {
   init: { committed: 'bool', permanent: 'bool', profile: 'value' },
   new: {
-    kind: 'value', prio: 'value', tier: 'value', tags: 'value', files: 'value', repo: 'value', 'found-by': 'value',
-    where: 'value', what: 'value', why: 'value', acceptance: 'many', source: 'value', after: 'value', changelog: 'many', template: 'value',
+    kind: 'value', prio: 'value', tier: 'value', tags: 'many', files: 'many', repo: 'value', 'found-by': 'value',
+    where: 'value', what: 'value', why: 'value', acceptance: 'many', source: 'many', after: 'many', changelog: 'many', template: 'value',
     field: 'many', section: 'many',
   },
   body: { title: 'value', where: 'value', what: 'value', why: 'value', acceptance: 'many', changelog: 'many', section: 'many' },
   import: {
-    source: 'value', kind: 'value', prio: 'value', tier: 'value', tags: 'value', repo: 'value', 'found-by': 'value',
+    source: 'value', kind: 'value', prio: 'value', tier: 'value', tags: 'many', repo: 'value', 'found-by': 'value',
     only: 'value', adopt: 'bool', 'dry-run': 'bool', field: 'many',
   },
   sources: { source: 'value' },
@@ -481,10 +481,10 @@ export function parseArgs(argv) {
 // CLI and the tools. A name ending in ? may be left out; one ending in ... takes any number of words (tag's
 // +a -b, sources' findings files) and has no upper bound. A command's arity is how many names it has.
 export const COMMAND_ARGS = {
-  init: ['goal'], new: ['title'], body: ['id'], import: ['file'], sources: ['files...'], source: ['id', 'refs'],
-  after: ['id', 'ids?'], evidence: ['ids', 'text?'], retract: ['id', 'what', 'reason'], field: ['ids', 'name', 'value?'],
+  init: ['goal'], new: ['title'], body: ['id'], import: ['file'], sources: ['files...'], source: ['id', 'refs...'],
+  after: ['id', 'ids...'], evidence: ['ids', 'text?'], retract: ['id', 'what', 'reason'], field: ['ids', 'name', 'value?'],
   list: [], show: ['id'], set: ['ids', 'status', 'why?'],
-  merged: ['ids'], tag: ['ids', 'ops...'], prio: ['ids', 'priority'], files: ['id', 'paths'], repo: ['id', 'path?'],
+  merged: ['ids'], tag: ['ids', 'ops...'], prio: ['ids', 'priority'], files: ['id', 'paths...'], repo: ['id', 'path?'],
   next: [], review: ['ids', 'verdict', 'findings'], round: ['id', 'what'], models: [], scope: ['id?'], branches: [],
   ask: ['question'], answer: ['id', 'answer?'], resume: [], handoff: ['action?'], log: ['event'],
   decide: ['slug', 'ruling'], decisions: [], goal: [], status: [], archive: ['slug'], report: [], tips: [], queue: [],
@@ -537,6 +537,9 @@ export const COMMAND_SUMMARY = {
   close: 'Close the loop, filing the ratification batch first; it refuses while issues are open or in progress, or deferred where it removes the loop, unless force is set.',
 };
 const ARITY = Object.fromEntries(Object.entries({ ...COMMAND_ARGS, ...Object.fromEntries(Object.entries(COMMAND_ALIASES).map(([name, c]) => [name, COMMAND_ARGS[c]])) }).filter(([, a]) => !a.some((n) => n.endsWith('...'))).map(([c, a]) => [c, a.length]));
+
+// The list a command takes after its id argument: every word given, or nothing when none was.
+const itemsAfterId = (rest) => (rest.length > 1 ? rest.slice(1) : undefined);
 
 // The commands that write: each runs under .jarl/.lock (see withLock).
 export const MUTATING = new Set(['init', 'new', 'body', 'import', 'source', 'after', 'set', 'field', 'merged', 'tag', 'prio', 'files', 'repo', 'evidence', 'retract', 'review', 'round', 'ask', 'answer', 'log', 'decide', 'goal', 'archive', 'mode', 'close']);
@@ -635,8 +638,8 @@ export function dispatch(root, commandName, rest, flags) {
       case 'new': out = R.newIssue(root, rest[0], { ...flags, caller: 'cli', width: undefined }); out = { ...out, ...describeNew(out.file) }; text = renderNewReply(out); warn = out.note ? [out.note] : []; break;
       // body, source, after, files, repo and round take the list grammar: eachIssue checks every id before it writes one.
       case 'body': out = eachIssue(root, rest[0], (id, dry) => cmdBody(root, id, flags, dry)); text = each(out, (o) => `${o.id} body: ${o.set.join(', ')}`); break;
-      case 'source': out = eachIssue(root, rest[0], (id, dry) => cmdSource(root, id, rest[1], dry)); text = each(out, (o) => `${o.id} source: ${o.sources.join(', ')}`); break;
-      case 'after': out = eachIssue(root, rest[0], (id, dry) => cmdAfter(root, id, rest[1], { clear: flags.clear === true, dry })); text = each(out, (o) => `${o.id} after: ${o.cleared ? 'cleared' : o.after.join(', ')}`); break;
+      case 'source': out = eachIssue(root, rest[0], (id, dry) => cmdSource(root, id, itemsAfterId(rest), dry)); text = each(out, (o) => `${o.id} source: ${o.sources.join(', ')}`); break;
+      case 'after': out = eachIssue(root, rest[0], (id, dry) => cmdAfter(root, id, itemsAfterId(rest), { clear: flags.clear === true, dry })); text = each(out, (o) => `${o.id} after: ${o.cleared ? 'cleared' : o.after.join(', ')}`); break;
       case 'import': out = cmdImport(root, rest[0], flags); text = renderImport(out); break;
       case 'sources': out = cmdSources(root, rest, flags); text = renderSources(out); break;
       case 'list': out = cmdList(root, flags); text = renderList(out, R.loadProfile(root)); break;
@@ -651,7 +654,7 @@ export function dispatch(root, commandName, rest, flags) {
       case 'field': out = cmdField(root, rest[0], rest[1], rest[2], flags); text = each(out, renderField); break;
       case 'tag': out = R.setTags(root, rest[0], rest.slice(1)); text = each(out, (o) => `${o.id} tags: ${o.tags.join(', ') || '(none)'}`); break;
       case 'prio': out = R.setPriority(root, rest[0], rest[1]); text = each(out, (o) => `${o.id} priority ${o.priority}`); break;
-      case 'files': out = eachIssue(root, rest[0], (id, dry) => cmdFiles(root, id, rest[1], dry)); text = each(out, (o) => `${o.id} files: ${o.files.join(', ') || '(none)'}`); break;
+      case 'files': out = eachIssue(root, rest[0], (id, dry) => cmdFiles(root, id, itemsAfterId(rest), dry)); text = each(out, (o) => `${o.id} files: ${o.files.join(', ') || '(none)'}`); break;
       case 'repo':
         if (flags.base) {
           need(!flags.clear, 'repo --base takes a repository name and a branch, and no --clear');

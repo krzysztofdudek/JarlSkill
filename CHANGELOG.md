@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Tags, files and issue lists given as a list through the tools are stored item by item, so filtering by a tag finds the issue. A list written out as text, with brackets or quotes, is refused.
+
 ## [6.2.0] - 2026-10-19
 
 Jarl 6.2.0 makes the record of a loop more complete and more honest, and it keeps track of who did what. The file your assistant reads first is also shorter and clearer.
