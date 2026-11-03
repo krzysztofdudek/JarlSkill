@@ -410,3 +410,17 @@ test('jarl_set changes a status and jarl_field writes a field: each description 
   assert.equal(byName.jarl_set.description, 'WRITES the loop. Change the status of issues, with the reason logged.');
   assert.match(byName.jarl_field.description, /^WRITES the loop\. Write one field on issues, Resources or a field the profile declares, or empty any optional field with clear\./);
 });
+
+test('every tool refuses a field it does not take, names the fields it takes, and writes nothing', () => {
+  const root = loopDir('jarl-mcp-unknown-');
+  for (const t of TOOLS) {
+    const e = (() => { try { mcp.callTool(t.name, { bogus: 'x', root }); } catch (x) { return x; } })();
+    assert.ok(e, `${t.name} refuses an unknown field`);
+    assert.equal(e.code, -32602, `${t.name}: ${e.message}`);
+    assert.match(e.message, /unknown field "bogus" — it takes /, t.name);
+  }
+  refusedAsInvalid(() => mcp.callTool('jarl_new', { title: 'a', whyy: 'a reason that must not be lost', root }), /unknown field "whyy" — it takes .*\bwhy\b/);
+  refusedAsInvalid(() => mcp.callTool('jarl_new', { title: 'a', Why: 'a reason', root }), /unknown field "Why"/);
+  refusedAsInvalid(() => mcp.callTool('jarl_body', { id: '1', whyy: 'x', root }), /unknown field "whyy"/);
+  assert.equal(issuesIn(root), 0, 'no refused filing left an issue behind');
+});
