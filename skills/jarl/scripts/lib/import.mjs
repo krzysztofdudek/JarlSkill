@@ -26,16 +26,33 @@ import { schedulerNote } from './evidence.mjs';
 const KIND_OF = { defect: 'bug', inconsistency: 'bug', risk: 'gap', opportunity: 'gap' };
 const PRIO_OF = { blocker: '1', critical: '1', high: '1', medium: '2', major: '2', important: '2', low: '3', minor: '3' };
 
+// The keys of a finding the mapping below reads. A key outside them is refused, never dropped: a misspelled claim or
+// severity would otherwise file the issue with that field empty and nothing said.
+const FINDING_KEYS = ['id', 'title', 'claim', 'kind', 'priority', 'severity', 'where', 'surfaces', 'truth', 'evidence', 'impact', 'adopter_impact', 'proposal', 'suggested_fix', 'fix', 'effort', 'angle', 'localId'];
+function refuseUnknownKeys(f, label) {
+  if (!f || typeof f !== 'object') return f;
+  const unknown = Object.keys(f).filter((k) => !FINDING_KEYS.includes(k));
+  need(unknown.length === 0, `finding ${label} has a key Jarl does not read: ${unknown.map((k) => `"${k}"`).join(', ')}; the keys it takes are ${FINDING_KEYS.join(', ')} — nothing was filed`);
+  return f;
+}
+// A label for a finding in a refusal: its id, or its place in the list when it has none (the id check names that case).
+const labelOf = (f, n) => (f && f.id !== undefined ? `"${f.id}"` : `#${n + 1}`);
+const checkedList = (items) => items.map((f, n) => refuseUnknownKeys(f, labelOf(f, n)));
+
 export function findingsOf(json) {
   let list;
   // In the angles shape an id is unique only inside its angle (two angles may each have an F1), so the key
   // is <angle>/<id> there, always — never only when two collide, which would change a key once a later
   // edit of the file added a twin.
   if (Array.isArray(json) && json.some((x) => x && Array.isArray(x.surviving))) {
-    list = json.flatMap((x) => (x.surviving || []).map((f) => (f && f.id !== undefined && x.angle ? { ...f, id: `${slugify(String(x.angle))}/${f.id}`, localId: String(f.id), angle: slugify(String(x.angle)) } : f)));
-  } else if (Array.isArray(json)) list = json;
-  else if (json && Array.isArray(json.results)) list = json.results.flatMap((r) => r.kept || []);
-  else if (json && Array.isArray(json.findings)) list = json.findings;
+    list = json.flatMap((x) => (x.surviving || []).map((f, n) => {
+      const angle = x && x.angle ? slugify(String(x.angle)) : null;
+      refuseUnknownKeys(f, angle && f && f.id !== undefined ? `"${angle}/${f.id}"` : labelOf(f, n));
+      return f && f.id !== undefined && angle ? { ...f, id: `${angle}/${f.id}`, localId: String(f.id), angle } : f;
+    }));
+  } else if (Array.isArray(json)) list = checkedList(json);
+  else if (json && Array.isArray(json.results)) list = checkedList(json.results.flatMap((r) => r.kept || []));
+  else if (json && Array.isArray(json.findings)) list = checkedList(json.findings);
   else throw new Error('not a findings file this tool reads: expected an array of findings, an array of angles with `surviving`, or { results: [{ kept }] } — see references/jarl.md, "From research to issues"');
   const seen = new Set();
   const out = list.map((f, n) => {

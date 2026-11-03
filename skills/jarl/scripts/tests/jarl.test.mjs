@@ -1105,6 +1105,19 @@ test('import reads the angles shape and the results/kept shape; refuses a findin
   assert.match(refuses(root, 'import', findingsDir({ nope: 1 })), /not a findings file/);
 });
 
+test('import refuses a finding with a key it does not read, naming the finding and the key, in a dry run as well, and files nothing', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  const file = findingsDir([{ id: 'C-1', title: 'a', clam: 'the claim, misspelled', severety: 'high' }]);
+  const msg = refuses(root, 'import', file, '--source', 'r-keys');
+  assert.match(msg, /finding "C-1" has a key Jarl does not read: "clam", "severety"/);
+  assert.match(msg, /the keys it takes are id, title, claim, kind, priority, severity/);
+  assert.equal(refuses(root, 'import', file, '--source', 'r-keys', '--dry-run'), msg, 'a dry run refuses the same');
+  assert.equal(JSON.parse(jarl(root, 'list', '--all', '--json')).length, 0, 'nothing was filed');
+  const angles = findingsDir([{ angle: 'first hour', surviving: [{ id: 'F1', title: 'a', sevrity: 'minor' }] }]);
+  assert.match(refuses(root, 'import', angles, '--source', 'r-angles'), /finding "first-hour\/F1" has a key Jarl does not read: "sevrity"/);
+});
+
 test('import --adopt links the issues that already name the finding, once, without filing a duplicate', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
