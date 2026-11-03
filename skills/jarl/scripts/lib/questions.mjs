@@ -7,11 +7,11 @@ import { ASK_KINDS, HANDOFF_STALE_MS, fieldText, freeInline, need, noSeparators,
 import { jarlDir, today } from './where.mjs';
 import { appendAtomic, readText, writeAtomic } from './files.mjs';
 import { askNumber, idKey, issueForms, needsRaisedFormat, newNumber, writtenId } from './ids.mjs';
-import { loadProfile } from './profile.mjs';
+import { loadProfile, numberWidth } from './profile.mjs';
 import { ASKS_FILE, DECISIONS_FILE, STAMP_SRC, appendDecision, appendLog, appendLogLines, asksAt, asksPath, firstLine, loadDecisions, markDecision, parseStamp } from './journal.mjs';
 import { OWNER, carryingOwnersWords, needNoOwnersWords, quoteShown, rulingAuthor } from './owner.mjs';
 import { findIssue, freeBlock, loadIssues, noteText, parseIssue, placeEvidence, setSection } from './issues.mjs';
-import { raiseFormat } from './repositories.mjs';
+import { needFormat } from './repositories.mjs';
 import { coordinatorNames } from './loop.mjs';
 import { issuesFor } from './commands.mjs';
 
@@ -28,11 +28,11 @@ export function cmdAsk(root, question, flags) {
   need(kind !== 'lower' || flags.target, '--target is required for kind lower — nothing to weaken without naming it');
   need(kind === 'lower' || !flags.target, `--target has no meaning for kind "${kind}" — only lower names something to weaken`);
   const asks = loadAsks(root);
-  const id = newNumber(asks.reduce((m, a) => Math.max(m, Number(a.id)), 0) + 1, flags.width);
+  const id = newNumber(asks.reduce((m, a) => Math.max(m, Number(a.id)), 0) + 1, numberWidth(loadProfile(root), flags.width));
   // The issue is written as its file writes it, so a question about 007 names it 007 and raises nothing.
   const issueWritten = flags.issue ? writtenId(flags.issue, issueForms(jarlDir(root))) : null;
   // A question whose number is written plain (a-7, a-1000) or that names an issue so written raises the format first.
-  if (needsRaisedFormat(id) || (issueWritten !== null && needsRaisedFormat(issueWritten))) raiseFormat(root);
+  if (needsRaisedFormat(id) || (issueWritten !== null && needsRaisedFormat(issueWritten))) needFormat(root, 'plain-number');
   const path = asksPath(jarlDir(root));
   const target = kind === 'lower' ? ` · target ${flags.target}` : '';
   // flags.ruling is not a flag of the command line: the close's ratification batch passes it, and so may a composer

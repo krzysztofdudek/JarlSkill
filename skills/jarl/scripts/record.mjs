@@ -4,7 +4,9 @@
 //
 // The contract is RECORD_API and the exports below, each with its arity, enumerated by hand — never `export *`. The
 // suite's contract test (tests/record-contract.test.mjs) holds the exact list; adding, removing or re-shaping an export
-// fails it until RECORD_API is bumped (jarl-record/2, …) and the table of that contract is written beside this one.
+// fails it until RECORD_API is bumped and the table of that contract is written beside the others. RECORD_APIS names
+// every contract this module keeps, oldest first and RECORD_API last: each one's exports are still here with the same
+// parameters, so a caller written against any of them keeps working, and checks for its own version in RECORD_APIS.
 //
 // How to call it:
 // - `root` is the directory holding .jarl/ (resolveRoot turns a --root value, or nothing, into one).
@@ -29,10 +31,29 @@
 import { resolve } from 'node:path';
 import * as L from './jarl-lib.mjs';
 
-export const RECORD_API = 'jarl-record/1';
+export const RECORD_API = 'jarl-record/2';
+export const RECORD_APIS = Object.freeze(['jarl-record/1', RECORD_API]);
 
 const read = (fn) => { L.resetCaches(); return fn(); };
 const write = (root, fn) => { L.resetCaches(); return L.withLock(root, fn); };
+
+// ---- the record format ----------------------------------------------------------------------------
+
+// A loop's record carries its format (see loadProfile's format). This library reads the formats RECORD_FORMATS names
+// and refuses a loop of any other, before anything is read or written. A loop with no marker is format 1; the first
+// write of a line FORMAT_LINES names raises it to that line's format: 2 for a repository name, a number written plain
+// and a retraction, 3 for the rest. Format 3 holds everything format 2 holds. FORMAT_LINES is frozen: by name, each
+// line's { format, what, where, misread } — what the line is, where the record writes it, and what a reader that knows
+// only the formats below it would make of it.
+// A loop whose profile names an external scheduler is never raised: a composer runs it with its own copy of this
+// library, and Jarl leaves its format to the composer. A write of a line of a higher format there is refused, naming
+// the line, with nothing written, and the command line files its numbers with three digits there; the composer that
+// reads a higher format opens its loops with that "format" in the profile.
+export const RECORD_FORMATS = L.RECORD_FORMATS;
+export const FORMAT_LINES = L.FORMAT_LINES;
+// { format, reads, raises, off }: the loop's format, the formats this library reads, whether a write may raise the loop
+// (false under an external scheduler) and the names of the lines of FORMAT_LINES that are off in it.
+export function recordFormat(root) { return read(() => L.formatState(L.loadProfile(root))); }
 
 // ---- the loop: where it is, opening it, reading it ----------------------------------------------
 
@@ -70,7 +91,7 @@ export function evidenceRows(issue) { return L.evidenceRows(issue); }
 // A profile, as loadProfile, validateProfile, readProfileFile and DEFAULT_PROFILE give it, is contract in these fields:
 //   name, declared (false for the built-in one), initial, statuses (in order), kinds, kindDefault, tiers, tierDefault,
 //   fields (the extra header fields: [{ name, key, enum, default, required }]), sections (extra headings), acceptance
-//   (the acceptance heading, or null for "Acceptance"), format (the record format, 1 or 2: a loop without a marker is 1), scheduler (the external
+//   (the acceptance heading, or null for "Acceptance"), format (the record format, one of RECORD_FORMATS: a loop without a marker is 1), scheduler (the external
 //   scheduler's command, or null), doneGate ({ approve: 'fresh'|'none', 'requires-merged': boolean }), lifecycle ({ close: 'any'|'record', archive:
 //   'any'|'record', command: string|null } — 'record' refuses jarl close / archive and their MCP tools), and the questions
 //   is(status, flag), with(flag), flagsOf(status), setBy(status) ('any' or 'record'), active(status),
@@ -169,7 +190,8 @@ export function appendLog(root, event) {
 // ---- the views' data ------------------------------------------------------------------------------
 
 // status --json: opts { 'stale-hours', by }. It carries `disagreements` (one entry per header that disagrees with the
-// journal, with the line that says how to settle it) when there are any, and resumeData the same.
+// journal, with the line that says how to settle it) when there are any, and resumeData the same; and `recordFormat`,
+// what recordFormat returns.
 export function statusData(root, opts = {}) { return read(() => L.cmdStatus(root, opts)); }
 // resume --json: opts { log, ready, ci }.
 export function resumeData(root, opts = {}) { return read(() => L.cmdResume(root, opts)); }

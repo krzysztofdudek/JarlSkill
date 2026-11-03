@@ -6,7 +6,7 @@ import { KINDS, PRIORITIES, fieldText, need, slugify, splitList } from './base.m
 import { git } from './git.mjs';
 import { canonical } from './where.mjs';
 import { readText } from './files.mjs';
-import { DEFAULT_PROFILE, loadProfile } from './profile.mjs';
+import { DEFAULT_PROFILE, formatOffText, loadProfile } from './profile.mjs';
 import { appendLog } from './journal.mjs';
 import { PROPOSED, findIssue, loadIssues, sharedMark } from './issues.mjs';
 import { repoList, reposWhereLines } from './repositories.mjs';
@@ -261,7 +261,7 @@ function countsLine(o, profile) {
 const statusLabel = (st) => (st === 'in-progress' ? 'in flight' : st);
 
 export function renderStatus(o, profile = DEFAULT_PROFILE) {
-  const head = o.goal ? `goal: ${o.goal}\nopened ${o.opened || '?'} · last activity ${o.lastActivity || '?'}${o.archived ? ` · ${o.archived} archived loop(s)` : ''}${profile.declared ? ` · profile ${profile.name}` : ''}\n` : '';
+  const head = o.goal ? `goal: ${o.goal}\nopened ${o.opened || '?'} · last activity ${o.lastActivity || '?'}${o.archived ? ` · ${o.archived} archived loop(s)` : ''}${o.recordFormat ? ` · record format ${o.recordFormat.format}` : ''}${profile.declared ? ` · profile ${profile.name}` : ''}\n` : '';
   const line = countsLine(o, profile);
   const width = o.by ? Math.max(...Object.keys(o.by.groups).map((k) => k.length), 1) : 0;
   const by = o.by ? [`by ${o.by.key}:`, ...Object.entries(o.by.groups).map(([k, g]) => `  ${k.padEnd(width)}  ${profile.statuses.map((st) => `${statusLabel(st)} ${g[st]}`).join(' · ')}`)] : [];
@@ -271,6 +271,7 @@ export function renderStatus(o, profile = DEFAULT_PROFILE) {
     ...(o.headerRead || []).map((n) => `note: ${n.line}`),
     ...(o.check ? checkLines(o.check) : []),
     ...(o.scheduler ? [schedulerNote(o.scheduler)] : []),
+    ...(o.recordFormat && formatOffText(o.recordFormat) ? [formatOffText(o.recordFormat)] : []),
     ...by,
     ...(o.by && o.by.where && Object.keys(o.by.where).length ? ['where each repository is on this machine:', ...reposWhereLines(o.by.where)] : []),
     ...(o.by && o.by.key === 'repo' && o.check ?['merges by repository, with the check that decided each:', ...mergeCheckLines(o.check)] : []),

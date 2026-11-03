@@ -112,8 +112,8 @@ test('review --model [--relayed] writes the model and the relay mark after the k
   assert.throws(() => R.review(root, id, 'approve', 'a fourth look, nothing found', { by: 'rev-f', model: '  ' }), /--model needs a value/);
 });
 
-test('record.mjs takes model and relayed as optional keys and the contract stays jarl-record/1', () => {
-  assert.equal(R.RECORD_API, 'jarl-record/1');
+test('record.mjs takes model and relayed as optional keys, and jarl-record/1 is still a contract it keeps', () => {
+  assert.ok(R.RECORD_APIS.includes('jarl-record/1'));
   const root = loop();
   const { id } = R.newIssue(root, 'a thing', { acceptance: 'it works' });
   const lease = R.setStatus(root, id, 'in-progress', '', { branch: 'jarl/001-a', worker: 'w-one' });
