@@ -273,7 +273,45 @@ test('the third round prints a takeover block that says to raise the fresh worke
   R.addRound(root, id, 'red two');
   const r = R.addRound(root, id, 'red three');
   assert.equal(r.takeover, true);
-  assert.match(r.block, /one tier up from standard, or on a model other than mid-model/);
+  assert.match(r.block, /one tier up from standard \(to strong\), or put it on a model other than mid-model/);
+});
+
+test('the takeover advice from the strong tier names another model or a changed approach, never a tier above strong', () => {
+  const root = loop();
+  const { id } = R.newIssue(root, 'a thing', { acceptance: 'it works', tier: 'strong' });
+  R.setStatus(root, id, 'in-progress', '', { branch: 'jarl/001-a', worker: 'w-one', model: MID });
+  R.addRound(root, id, 'red one');
+  R.addRound(root, id, 'red two');
+  const r = R.addRound(root, id, 'red three');
+  assert.match(r.block, /strong is the top tier/);
+  assert.match(r.block, /a model other than mid-model, or change the approach/);
+  assert.doesNotMatch(r.block, /tier up/);
+});
+
+test('a takeover starts a new count: the block comes once per takeover, not on every round after the third', () => {
+  const root = loop();
+  const { id } = R.newIssue(root, 'a thing', { acceptance: 'it works', tier: 'standard' });
+  R.setStatus(root, id, 'in-progress', '', { branch: 'jarl/001-a', worker: 'w-one', model: MID });
+  const seen = [1, 2, 3, 4, 5, 6, 7].map((k) => R.addRound(root, id, `red ${k}`));
+  assert.deepEqual(seen.map((r) => r.takeover), [false, false, true, false, false, true, false]);
+  assert.deepEqual(seen.map((r) => r.block === null), [true, true, false, true, true, false, true]);
+  assert.deepEqual(seen.map((r) => r.since), [1, 2, 3, 1, 2, 3, 1]);
+  const out = cli(root, 'round', id, 'red 8').stdout;
+  assert.match(out, /round 8: 2 of 3 before a takeover; the rounds so far: show /);
+  assert.doesNotMatch(out, /## Takeover/);
+});
+
+test('a round records its count of findings and the takeover block lists them', () => {
+  const root = loop();
+  const { id } = R.newIssue(root, 'a thing', { acceptance: 'it works', tier: 'standard' });
+  R.setStatus(root, id, 'in-progress', '', { branch: 'jarl/001-a', worker: 'w-one', model: MID });
+  assert.equal(cli(root, 'round', id, 'red one', '--findings', '29').status, 0);
+  assert.equal(cli(root, 'round', id, 'red two', '--findings', '14').status, 0);
+  const out = cli(root, 'round', id, 'red three', '--findings', '3');
+  assert.match(out.stdout, /Findings per round: 29, 14, 3\./);
+  const bad = cli(root, 'round', id, 'red four', '--findings', 'many');
+  assert.notEqual(bad.status, 0);
+  assert.match(bad.stderr, /--findings must be a whole number/);
 });
 
 // ---- free text is never a field ------------------------------------------------------------------------------
