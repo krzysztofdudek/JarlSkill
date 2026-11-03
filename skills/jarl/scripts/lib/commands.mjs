@@ -17,7 +17,7 @@ import { FIELD_RE, RENDERED_FIELDS, acceptanceHeading, acceptanceLineCount, acce
 import { branchTip, commitRepoNames, defaultBase, isGitRepo, issueRepoPaths, issueRepos, mainCheckoutOf, needFormat, needRightCheckouts, repoFromInput, repoLabel, repoList, tipLines, whyNotDeletable, worktreeState, worktreesOf } from './repositories.mjs';
 import { FIELD_NAMES, carriesCode, gateOf, readLoop, unorderedNamings, unorderedText } from './loop.mjs';
 import { declaredChecks, lastMerge } from './metrics.mjs';
-import { modelLines, modelValue } from './models.mjs';
+import { modelLines, modelValue, spellingNote } from './models.mjs';
 import { slotRefusal } from './attachments.mjs';
 import { resetCaches } from './tips.mjs';
 
@@ -664,6 +664,9 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   // spaces can leave a separator in it and the reason is one segment of the line.
   const neutral = holds && why ? noSeparators(why) : why;
   const reason = holds && neutral && /^(branch|model|worker|worktree) /.test(neutral) ? `${neutral} · (reason)` : neutral;
+  // A model spelled another way than the record holds it is noted on the command line. The loop is read before this call
+  // writes its own line, so that line is not among the spellings the record holds.
+  const spelling = caller === 'cli' && model !== undefined ? spellingNote(readLoop(jarlDir(root)), model) : null;
   // The line goes first: a write that stops between the two leaves the journal, the record, ahead of the files, which the
   // views report, and never a file ahead of the record.
   appendLogLines(root, issues.map((issue) => `${issue.id} → ${status}${reason ? ` · ${reason}` : ''}${leaseNote ? ` · ${leaseNote}` : ''}`), since);
@@ -671,7 +674,7 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   // Said on the command line only, and only in a loop that declares model lines: a lease with no model (once per call).
   const leaseNoModel = caller === 'cli' && holds && model === undefined && modelLines(root).declared ? 'no --model on this lease — the loop declares its models, and a model that is not recorded can never be recovered' : null;
   const worktreeNote = caller === 'cli' && holds && flags.worktree !== undefined ? '--worktree was checked and is not recorded — the worktree of a lease is found through its branch' : null;
-  const leaseNotes = [leaseNoModel, worktreeNote].filter(Boolean).join('; ');
+  const leaseNotes = [leaseNoModel, worktreeNote, spelling].filter(Boolean).join('; ');
   return oneOrMany(rawIds, issues.map((issue, n) => ({ id: issue.id, status, ...(holds ? { since, ...(flags.branch !== undefined ? { branch: fieldText(flags.branch) } : {}), ...(flags.worker !== undefined ? { worker: fieldText(flags.worker) } : {}), ...(model !== undefined ? { model } : {}) } : {}), ...(profile.is(status, 'closes-record') ? doneNote(issue, root) : {}), ...(leaseNotes && n === 0 ? { note: leaseNotes } : {}) })));
 }
 
