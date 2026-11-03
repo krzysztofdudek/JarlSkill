@@ -7,7 +7,7 @@ import { canonical, jarlDir } from './where.mjs';
 import { readText } from './files.mjs';
 import { ISSUE_FILE_RE, cmpId, idKey, needsRaisedFormat } from './ids.mjs';
 import { RECORD_FORMAT_RAISED, loadProfile } from './profile.mjs';
-import { ASKS_FILE, DECISIONS_FILE, GOAL_FILE, LOG_FILE, goalLineOf, goalLines, loadDecisions, readGoal, takeoverEventOf } from './journal.mjs';
+import { ASKS_FILE, DECISIONS_FILE, GOAL_FILE, LOG_FILE, goalLineOf, goalLines, loadDecisions, readGoal } from './journal.mjs';
 import { loopEvents } from './log.mjs';
 import { parseIssue, sharedNumberText, sharedNumbers } from './issues.mjs';
 import { REPOS_DECLARED_IN, declaredNames, issueRepos, repoIdentity, repoValueKind, reposNamed, worktreesOf } from './repositories.mjs';
@@ -75,15 +75,6 @@ export function cmdVerify(root) {
     if (!profile.kinds.some((k) => k.toLowerCase() === line.qualifier.toLowerCase())) goalSkips.push({ n: i + 1, text, reason: `the profile declares no kind ${line.qualifier}, so the line applies to no issue: its kinds are ${profile.kinds.join(', ')}` });
   });
   for (const s of goalSkips) add('goal', `${GOAL_FILE} line ${s.n}`, `"${shownText(s.text)}" — ${s.reason}`, s.n);
-  // A Takeover line that reads other than goal --set last logged for its kind was edited by hand: the log holds no change,
-  // so the count takes the goal's value as the limit from the first round. Said as a note, never a finding.
-  const logged = new Map();
-  for (const e of events) { const m = e.id === null ? takeoverEventOf(e.text) : null; if (m) logged.set((m[2] ?? '').toLowerCase(), Number(m[3])); }
-  const taken = goalLines(goalText).takeovers;
-  for (const [kind, was] of logged) {
-    const reads = (kind ? taken.kinds[kind] : taken.bare) ?? null;
-    if (reads !== was) notes.push({ where: GOAL_FILE, what: `the Takeover line for ${kind ? `kind ${kind}` : 'the other kinds'} ${reads === null ? 'is gone' : `reads ${reads}`}, and goal --set last logged ${was}: the line was edited by hand, so the count takes ${reads === null ? 'the limit of the other lines or three' : reads} as the limit from the first round (change it with goal --set)` });
-  }
   for (const f of issueFilesOf(dir)) {
     const issueSkips = [];
     parseIssue(readText(join(dir, 'issues', f)), join(dir, 'issues', f), issueSkips);

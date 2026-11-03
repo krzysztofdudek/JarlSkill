@@ -24,7 +24,8 @@ import { STAMP_SRC, appendLog, logPath, oneLine } from './journal.mjs';
 //   move           a status change: from (null when the log names no status before the line), to, lease — { worker, model, branch }
 //                  for a move into a status that holds the claim and names a worker, else null — and model, the model a
 //                  lease line names (null without one)
-//   round          one red round
+//   round          one red round: takeover, true on the round that reached the loop's limit and printed the takeover
+//                  block, whose line carries the mark `takeover` after its number (`<id> round <n> · takeover · …`)
 //   row            one --ran/--saw evidence row
 //   verdict        a review: verdict (approve|changes), by, kind (as recorded), model, relayed
 //   retract-row    a retracted evidence row: row, its number
@@ -40,6 +41,8 @@ const LEADING_ID = idRe('^(?:filed )?({id})\\b');
 const RETRACT_ROW_LINE = idRe('^{id} evidence retract · row (\\d+)\\b');
 // The tip line: the branch's commit in each repository of the issue, joined by commas, alone on the line.
 const TIP_LINE = idRe('^{id} tip ([0-9a-f]{7,64}(?:,[0-9a-f]{7,64})*)$');
+// The round that took the issue over: the mark stands right after the round's number, before its findings and its text.
+const ROUND_TAKEOVER_LINE = /^\S+ round \d+ · takeover · /;
 // A move into a status that holds the claim is read by position, never by searching: after the arrow and the status come
 // the free reason (at most one segment, never searched for fields) and then the lease fields in the order set writes them
 // (branch, model, worker, worktree), each at most once; the worktree path is the rest of the line.
@@ -113,7 +116,7 @@ function eventParser(profile) {
       const model = found.model || null;
       return { type: 'move', from, to, lease: found.worker ? { worker: found.worker, model, branch: found.branch || null } : null, model };
     }
-    if (text.startsWith(`${id} round `)) return { type: 'round' };
+    if (text.startsWith(`${id} round `)) return ROUND_TAKEOVER_LINE.test(text) ? { type: 'round', takeover: true } : { type: 'round' };
     const r = REVIEW_LINE.exec(text);
     if (r) {
       const rest = text.slice(r[0].length);

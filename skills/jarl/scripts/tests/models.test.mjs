@@ -403,28 +403,104 @@ test('a limit of one reads as one time, and the takeover comes at every round', 
 });
 
 const goalFile = (root) => join(root, '.jarl', 'goal.md');
+// A Takeover line set in goal.md by hand, the way a person edits the goal: the line of that kind replaced where it
+// stands, or added at the end. No log line says so.
+function byHand(root, line) {
+  const label = line.slice(0, line.indexOf(':') + 1);
+  const text = readFileSync(goalFile(root), 'utf8');
+  const at = text.split('\n').findIndex((l) => l.startsWith(label));
+  writeFileSync(goalFile(root), at === -1 ? `${text.trimEnd()}\n${line}\n` : text.split('\n').map((l, k) => (k === at ? line : l)).join('\n'));
+}
+// The rounds of one issue as [takeover, since, limit], with the goal changed before the round where `changes` says so.
+function roundsWith(root, id, count, changes, change) {
+  const seen = [];
+  for (let k = 1; k <= count; k += 1) {
+    if (changes[k]) change(root, changes[k]);
+    const r = R.addRound(root, id, `red ${k}`);
+    seen.push([r.takeover, r.since, r.limit]);
+  }
+  return seen;
+}
+const viaGoalSet = (root, line) => assert.equal(cli(root, 'goal', '--set', line).status, 0);
 
-test('a takeover line edited by hand counts from the first round, and verify notes it without failing', () => {
-  const { root, id } = leased(null, 'docs');
-  assert.equal(cli(root, 'goal', '--set', 'Takeover (docs): 3').status, 0);
-  assert.equal(cli(root, 'verify').stdout.includes('note:'), false);
-  assert.equal(R.addRound(root, id, 'red one').takeover, false);
-  assert.equal(R.addRound(root, id, 'red two').takeover, false);
-  writeFileSync(goalFile(root), readFileSync(goalFile(root), 'utf8').replace('Takeover (docs): 3', 'Takeover (docs): 2'));
-  const out = cli(root, 'verify');
-  assert.equal(out.status, 0);
-  assert.match(out.stdout, /note: goal\.md: the Takeover line for kind docs reads 2, and goal --set last logged 3: the line was edited by hand/);
-  const third = R.addRound(root, id, 'red three');
-  assert.deepEqual([third.takeover, third.limit, third.since], [false, 2, 1]);
+test('a takeover line edited by hand counts like one set by goal --set: the limit is read from the goal at the next round', () => {
+  for (const change of [byHand, viaGoalSet]) {
+    const { root, id } = leased(null, 'docs');
+    const seen = roundsWith(root, id, 4, { 3: 'Takeover (docs): 2' }, change);
+    assert.deepEqual(seen, [[false, 1, 3], [false, 2, 3], [true, 3, 2], [false, 1, 2]], change.name);
+    const out = cli(root, 'verify');
+    assert.equal(out.status, 0, change.name);
+    assert.doesNotMatch(out.stdout + out.stderr, /Takeover|by hand/, change.name);
+  }
+  const logged = leased(null, 'docs');
+  viaGoalSet(logged.root, 'Takeover (docs): 3');
+  const seen = roundsWith(logged.root, logged.id, 3, { 3: 'Takeover (docs): 2' }, byHand);
+  assert.deepEqual(seen.map((r) => r[0]), [false, false, true], 'a hand edit after a goal --set of the same kind counts the same');
 });
 
-test('a replaced takeover value comes from the line in force, and one that was no number is said so in the log', () => {
-  const { root, id } = leased('Takeover (docs): 5\nTakeover (docs): 2', 'docs');
+test('a limit lowered with a takeover behind counts from that takeover and gives the next one at the next round', () => {
+  for (const change of [byHand, viaGoalSet]) {
+    const { root, id } = leased('Takeover: 4', 'docs');
+    const seen = roundsWith(root, id, 9, { 7: 'Takeover: 2' }, change);
+    assert.deepEqual(seen, [[false, 1, 4], [false, 2, 4], [false, 3, 4], [true, 4, 4], [false, 1, 4], [false, 2, 4], [true, 3, 2], [false, 1, 2], [true, 2, 2]], change.name);
+  }
+});
+
+test('a limit raised with a takeover behind waits until the rounds since that takeover reach it', () => {
+  for (const change of [byHand, viaGoalSet]) {
+    const { root, id } = leased('Takeover (docs): 2', 'docs');
+    const seen = roundsWith(root, id, 7, { 4: 'Takeover (docs): 4' }, change);
+    assert.deepEqual(seen, [[false, 1, 2], [true, 2, 2], [false, 1, 2], [false, 2, 4], [false, 3, 4], [true, 4, 4], [false, 1, 4]], change.name);
+  }
+});
+
+test('two kinds count apart: a changed line moves only the issues whose limit it is', () => {
+  const root = loop();
+  appendFileSync(goalFile(root), '\nTakeover (docs): 2\nTakeover: 4\n');
+  const issue = (kind) => {
+    const { id } = R.newIssue(root, `a ${kind} thing`, { acceptance: 'it works', tier: 'standard', kind });
+    R.setStatus(root, id, 'in-progress', '', { branch: `jarl/${id}-a`, worker: 'w-one', model: MID });
+    return id;
+  };
+  const docs = issue('docs');
+  const gap = issue('gap');
+  const round = (id) => { const r = R.addRound(root, id, 'red'); return [r.takeover, r.since, r.limit]; };
+  assert.deepEqual([round(docs), round(gap), round(docs), round(gap)], [[false, 1, 2], [false, 1, 4], [true, 2, 2], [false, 2, 4]]);
+  byHand(root, 'Takeover: 2');
+  assert.deepEqual([round(gap), round(docs)], [[true, 3, 2], [false, 1, 2]], 'the bare line moves the gap issue, not the docs one');
+  byHand(root, 'Takeover (docs): 3');
+  assert.deepEqual([round(docs), round(gap), round(docs), round(gap)], [[false, 2, 3], [false, 1, 2], [true, 3, 3], [true, 2, 2]]);
+});
+
+test('a limit lowered to one mid-loop takes over at the next round and at every round after it', () => {
+  const { root, id } = leased(null, 'docs');
+  const seen = roundsWith(root, id, 5, { 3: 'Takeover (docs): 1' }, byHand);
+  assert.deepEqual(seen, [[false, 1, 3], [false, 2, 3], [true, 3, 1], [true, 1, 1], [true, 1, 1]]);
+});
+
+test('the round that takes over carries the mark in its line, text that opens like the mark is not read as one, and the pinned frozen reader counts the rounds', () => {
+  assert.ok(oldJarlIsPinned());
+  const { root, id } = leased('Takeover (docs): 2', 'docs');
+  R.addRound(root, id, 'takeover · typed by hand');
+  assert.match(log(root), /· 001 round 1 · findings - · takeover · typed by hand$/m);
+  const second = cli(root, 'round', id, 'red two', '--findings', '3');
+  assert.match(second.stdout, /round 2 — takeover:/);
+  assert.match(log(root), /· 001 round 2 · takeover · findings 3 · red two$/m);
+  assert.match(second.stdout, /Findings per round: 3\./);
+  assert.deepEqual(L.loopEvents(join(root, '.jarl'), L.loadProfile(root)).filter((e) => e.type === 'round').map((e) => e.takeover === true), [false, true]);
+  assert.equal(OLD.roundsOf(root, id), 2);
+  for (const command of ['list', 'status', 'next', 'queue']) assert.equal(oldJarl(root, command, {}).ok, true, command);
+  OLD.cmdRound(root, id, 'red three');
+  assert.deepEqual([R.addRound(root, id, 'red four')].map((r) => [r.round, r.takeover, r.since]), [[4, true, 2]], 'a round the frozen reader wrote counts as a round with no mark');
+});
+
+test('a replaced takeover value comes from the line in force', () => {
+  const { root } = leased('Takeover (docs): 5\nTakeover (docs): 2', 'docs');
   assert.equal(cli(root, 'goal', '--set', 'Takeover (docs): 4').status, 0);
   assert.match(log(root), /goal line changed · Takeover \(docs\): 4 · was 2$/m);
   const odd = leased('Takeover (docs): often', 'docs');
   assert.equal(cli(odd.root, 'goal', '--set', 'Takeover (docs): 3').status, 0);
-  assert.match(log(odd.root), /goal line changed · Takeover \(docs\): 3 · was often \(not a number of rounds\)$/m);
+  assert.match(log(odd.root), /goal line changed · Takeover \(docs\): 3 · was often$/m);
   assert.deepEqual([1, 2, 3].map((k) => R.addRound(odd.root, odd.id, `red ${k}`).takeover), [false, false, true]);
 });
 

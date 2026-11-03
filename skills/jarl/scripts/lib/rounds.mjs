@@ -6,8 +6,8 @@ import { git } from './git.mjs';
 import { canonical, jarlDir, portablePath } from './where.mjs';
 import { branchIssueId, idKey, idsNamed } from './ids.mjs';
 import { DEFAULT_PROFILE, loadProfile } from './profile.mjs';
-import { appendLog, goalLines, oneLine, parseStamp, readGoal, takeoverEventOf } from './journal.mjs';
-import { journalById, loopEvents } from './log.mjs';
+import { appendLog, goalLines, oneLine, parseStamp, readGoal } from './journal.mjs';
+import { journalById } from './log.mjs';
 import { findIssue, loadIssues, mergedOf } from './issues.mjs';
 import { defaultBase, fileAt, isGitRepo, issuePlaces, issueRepoPaths, issueRepos, refsIn, repoFromInput, repoLabel, repoOf, reposNamed, worktreeState, worktreesOf } from './repositories.mjs';
 
@@ -17,10 +17,10 @@ export function roundsOf(root, id) {
   return (journalById(root).get(id) || []).filter((e) => e.type === 'round').length;
 }
 
-// The findings a round line records after its number, in the order of the rounds.
+// The findings a round line records after its number and its takeover mark, in the order of the rounds.
 const FINDINGS_MAX = 10000;
 function findingsOfRounds(entries) {
-  return entries.filter((e) => e.type === 'round').map((e) => /^\S+ round \d+ · findings (\d+) · /.exec(e.text)).map((m) => (m ? Number(m[1]) : null));
+  return entries.filter((e) => e.type === 'round').map((e) => /^\S+ round \d+ · (?:takeover · )?findings (\d+) · /.exec(e.text)).map((m) => (m ? Number(m[1]) : null));
 }
 
 // What to change for the fresh worker, from the tier the issue carries: a tier up while one exists, and from the top
@@ -39,48 +39,22 @@ function takeoverAdvice(tiers, tier, failed, n, takeovers) {
   return `${lead}${tier} is the top tier (${top}), so put it on a model other than ${model}${unknown}, or change the approach — ${tried}.`;
 }
 
-// Where an issue stands in the count to its next takeover, as of its last round. The limit is the goal's `Takeover
-// (<kind>): <rounds>` line for the kind, else its bare `Takeover: <rounds>` line, else three, and it is the one in force
-// at each round: the goal lines the log records being added or changed are replayed in the order of the log, from the
-// state they leave undone back to the state before the first. A takeover comes when the rounds since the last one reach
-// the limit in force; a limit lowered below the rounds already counted gives it at the next round, and a raised one
-// never gives it before the count reaches it. A line edited by hand leaves no log line: where the goal reads other than the
-// last value logged for a kind, the goal's value counts from the first round and the log's changes of that kind are left
-// out; verify notes it. Returns { limit, counted (rounds since the last takeover, this one
-// included), takeover, takeovers (so many up to and including this round) }.
-function takeoverStanding(root, issue) {
-  const kind = String(issue.kind).toLowerCase();
-  const goal = goalLines(readGoal(jarlDir(root))).takeovers;
-  const state = { bare: goal.bare, kinds: { ...goal.kinds } };
-  const events = loopEvents(jarlDir(root), loadProfile(root));
-  const changes = (e) => takeoverEventOf(e.text);
-  // The kinds ('' for the bare line) whose goal line is not the value the log last gave them: edited by hand.
-  const logged = new Map();
-  for (const e of events) { const m = e.id === null ? changes(e) : null; if (m) logged.set((m[2] ?? '').toLowerCase(), Number(m[3])); }
-  const byHand = new Set([...logged].filter(([q, v]) => ((q ? goal.kinds[q] : goal.bare) ?? null) !== v).map(([q]) => q));
-  const set = (q, value) => {
-    if (byHand.has((q ?? '').toLowerCase())) return;
-    if (q) state.kinds[q.toLowerCase()] = value; else state.bare = value;
-  };
-  for (const e of [...events].reverse()) {
-    const m = e.id === null ? changes(e) : null;
-    if (m) set(m[2], m[1].toLowerCase() === 'added' || m[4] === undefined ? null : Number(m[4]));
-  }
-  let counted = 0;
+// Where an issue stands in the count to its next takeover, before the round being recorded. The limit is read from the
+// goal each time, as it reads now: its `Takeover (<kind>): <rounds>` line for the kind, else its bare `Takeover: <rounds>`
+// line, else three. The count is of the red rounds since the last takeover (the last round marked `takeover`), or since the
+// first round. So a changed limit takes effect at the next round, whether goal --set or a hand edit changed it: a limit
+// lowered to the count or below gives the takeover at the next round, and a raised one waits for the count to reach it.
+// Returns { limit, since (the rounds since the last takeover), takeovers (the rounds marked so far) }.
+function takeoverStanding(root, issue, entries) {
+  const lines = goalLines(readGoal(jarlDir(root))).takeovers;
+  const limit = lines.kinds[String(issue.kind).toLowerCase()] ?? lines.bare ?? ROUNDS_BEFORE_TAKEOVER;
+  let since = 0;
   let takeovers = 0;
-  let standing = { limit: ROUNDS_BEFORE_TAKEOVER, counted: 0, takeover: false, takeovers: 0 };
-  for (const e of events) {
-    const m = e.id === null ? changes(e) : null;
-    if (m) { set(m[2], Number(m[3])); continue; }
-    if (e.id !== issue.id || e.type !== 'round') continue;
-    const limit = state.kinds[kind] ?? state.bare ?? ROUNDS_BEFORE_TAKEOVER;
-    counted += 1;
-    const takeover = counted >= limit;
-    if (takeover) takeovers += 1;
-    standing = { limit, counted, takeover, takeovers };
-    if (takeover) counted = 0;
+  for (const e of entries) {
+    if (e.type !== 'round') continue;
+    if (e.takeover) { takeovers += 1; since = 0; } else since += 1;
   }
-  return standing;
+  return { limit, since, takeovers };
 }
 
 const times = (k) => `${k} time${k === 1 ? '' : 's'}`;
@@ -94,9 +68,16 @@ export function cmdRound(root, rawId, what, dry = false, opts = {}) {
   need(issue, `no such issue: ${rawId}`);
   if (dry) return { id: issue.id };
   const n = roundsOf(root, issue.id) + 1;
-  appendLog(root, `${issue.id} round ${n} · ${found === undefined ? (/^findings \d+ · /.test(what) ? 'findings - · ' : '') : `findings ${Number(found)} · `}${what}`);
-  // A takeover starts a new count: the next one comes after as many rounds of the new worker as the limit then in force.
-  const { limit, counted: since, takeover, takeovers } = takeoverStanding(root, issue);
+  // A takeover starts a new count: the next one comes after as many rounds of the new worker as the goal's limit says
+  // at each of those rounds. The round that takes over is marked in its line, and the count reads the marks.
+  const standing = takeoverStanding(root, issue, journalById(root).get(issue.id) || []);
+  const { limit } = standing;
+  const since = standing.since + 1;
+  const takeover = since >= limit;
+  const takeovers = standing.takeovers + (takeover ? 1 : 0);
+  // Text that opens like a findings count or a takeover mark is set behind an empty count, so it is never read as either.
+  const typed = found === undefined ? (/^(?:findings \d+|takeover) · /.test(what) ? 'findings - · ' : '') : `findings ${Number(found)} · `;
+  appendLog(root, `${issue.id} round ${n} · ${takeover ? 'takeover · ' : ''}${typed}${what}`);
   const entries = journalById(root).get(issue.id) || [];
   const findings = findingsOfRounds(entries).filter((x) => x !== null);
   const trend = findings.length ? `Findings per round: ${findings.join(', ')}.\n\n` : '';
