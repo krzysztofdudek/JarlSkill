@@ -92,27 +92,35 @@ export function idsNamed(text, held, { introducedOnly = false } = {}) {
 // The issue numbers a prose text cites, as the loop writes them (`held`: a Set or Map of the ids the loop holds). Only an
 // explicit citation counts, and only a number that is a whole word:
 //   - after the word issue or task, singular or plural, in any case, of any length, with the numbers that run on from it
-//     joined by commas, and, or or an ampersand;
+//     joined by a comma and a space, by and or or between spaces, or by an ampersand (a comma with no space is no join);
 //   - after a hash sign, of any length;
 //   - alone in brackets with three or more digits, one or several joined the same way.
-// A number in a longer word (a sha, a date, a file with a line), in a thousands group, a decimal or a dotted version,
-// beside a hyphen or a slash, or in brackets after the word with, status, code, exit or exits (an exit status) is no
-// citation. A hash number or a number in brackets followed by a unit of count or time (lines, characters, bytes, ms,
-// seconds, minutes, hours, days, percent, tests, rounds, files, times, items, kinds, a percent sign) is an amount.
+// A number in a longer word (a sha, a date, a file with a line), in a thousands group (a comma with no space before the next
+// digits), a decimal or a dotted version, beside a hyphen or a slash, or in brackets after the word with, status, code, exit
+// or exits (an exit status) is no citation. A range written with spaces around its hyphen cites the number before it only.
+// A hash number or a number in brackets followed by a unit of count or time (lines, characters, chars, bytes, ms, seconds,
+// minutes, hours, days, percent, tests, rounds, files, times, items, kinds, a percent sign) is an amount.
 const NUM = '#?\\d+(?![\\w/-])(?![.,:]\\d)';
-const JOIN = '(?:\\s*,\\s*(?:(?:and|or)\\s+)?|\\s+(?:and|or)\\s+|\\s*&\\s*)';
+const JOIN = '(?:,\\s+(?:(?:and|or)\\s+)?|\\s+(?:and|or)\\s+|\\s*&\\s*)';
 const UNITS = '(?:lines?|characters?|chars?|bytes?|ms|seconds?|minutes?|hours?|days?|percent|tests?|rounds?|files?|times?|items?|kinds?)\\b|%';
 const CITED = [
   new RegExp(`(?<![\\w./-])(?:issues?|tasks?)\\s+(${NUM}(?:${JOIN}${NUM})*)`, 'gi'),
   new RegExp(`(?<![\\w&/#.-])(#\\d+(?![\\w/-])(?![.,:]\\d))(?!\\s*(?:${UNITS}))`, 'gi'),
   new RegExp(`(?<![\\w.\\]-])(?<!\\b(?:with|status|code|exits?)\\s*)\\(\\s*(#?\\d{3,}(?![\\w/-])(?:${JOIN}#?\\d{3,}(?![\\w/-]))*)\\s*\\)(?!\\s*(?:${UNITS}))`, 'gi'),
 ];
+const KEYED = new WeakMap();
 export function idsCited(text, held) {
   const numbers = [];
   for (const re of CITED) for (const m of String(text || '').matchAll(re)) numbers.push(...m[1].match(/\d+/g));
   if (!numbers.length) return [];
-  const heldIds = [...(held.keys ? held.keys() : held)].map(String);
-  const byKey = new Map(heldIds.map((id) => [idKey(id), id]));
+  // The keyed form of `held` is made once for a set that does not change, so a loop of thousands of texts makes it once.
+  const size = held.size ?? [...held].length;
+  let keyed = KEYED.get(held);
+  if (!keyed || keyed.size !== size) {
+    keyed = { size, byKey: new Map([...(held.keys ? held.keys() : held)].map(String).map((id) => [idKey(id), id])) };
+    KEYED.set(held, keyed);
+  }
+  const { byKey } = keyed;
   return [...new Set(numbers.map(idKey))].filter((k) => byKey.has(k)).map((k) => byKey.get(k)).sort(cmpId);
 }
 

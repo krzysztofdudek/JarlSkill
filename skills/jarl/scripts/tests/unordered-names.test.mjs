@@ -20,12 +20,14 @@ function named() {
 }
 
 test('only an explicit citation counts: a number after the word issue or task, after a hash sign, or alone in brackets', () => {
-  const held = new Set(['1', '2', '12', '100', '101', '285', '1000', '1043', '128']);
+  const held = new Set(['1', '2', '5', '7', '12', '84', '85', '100', '101', '123', '184', '185', '285', '456', '1000', '1043', '128']);
   const ids = (text) => idsCited(text, held);
   assert.deepEqual(ids('needs issue 12 and 100'), ['12', '100']);
   assert.deepEqual(ids('Needs ISSUES 1, 2 and 12, or Task 100, or task 101.'), ['1', '2', '12', '100', '101']);
   assert.deepEqual(ids('issues 1, 2, and 12 & 100'), ['1', '2', '12', '100']);
   assert.deepEqual(ids('after #2, (101), (100, 1000) and (#285).'), ['2', '100', '101', '285', '1000']);
+  assert.deepEqual(ids('(184, 185), (184 and 185) and (184 & 100)'), ['100', '184', '185']);
+  assert.deepEqual(ids('issue 5 - 7 and issue 12 - 100'), ['5', '12'], 'a range cites the number before its hyphen, when spaces stand around the hyphen');
   assert.deepEqual(ids('issue 285.'), ['285']);
   assert.deepEqual(ids("issue 100's evidence"), ['100']);
   assert.deepEqual(ids('issue #12'), ['12']);
@@ -35,7 +37,7 @@ test('only an explicit citation counts: a number after the word issue or task, a
 });
 
 test('a plain amount, a position, an exit status or a part of a longer token is no citation', () => {
-  const held = new Set(['1', '2', '12', '100', '101', '128', '160', '285', '309', '1000', '1043']);
+  const held = new Set(['1', '2', '3', '4', '12', '84', '85', '100', '101', '123', '128', '160', '184', '185', '285', '309', '456', '1000', '1043']);
   const ids = (text) => idsCited(text, held);
   // Amounts of something: a bare number with a unit after it, or in no explicit citation at all.
   assert.deepEqual(ids('309 lines, 160 characters, 41,043 bytes, 285 ms, 100 percent, 101 tests, 12 files, 100%'), []);
@@ -55,6 +57,9 @@ test('a plain amount, a position, an exit status or a part of a longer token is 
   assert.deepEqual(ids('issues 100-101 and issue 12/13 and issue 100/101'), []);
   assert.deepEqual(ids('ask-100, a-101, reviewer-285, rev-1000-opus, jarl/100-x and non-issue 12'), []);
   assert.deepEqual(ids('foo(100) and bar[101] and 100'), []);
+  // A thousands group is no list, and a comma with no space is no join; a list of fewer than three digits is no bracket citation.
+  assert.deepEqual(ids('(123,456), (100,000), (184,185), (123,456,184) and issues 3,4 and issue 5-7'), []);
+  assert.deepEqual(ids('(84, 85) and (84,85) and (84 and 85)'), []);
 });
 
 test('sentences of a real loop name the issues they cite and none of the ids, counts and rulings they mention', () => {
@@ -121,16 +126,16 @@ test('new and body print the same note on stderr as verify, once, and no other c
   jarl(root, 'new', 'second', '--what', 'plain text');
   const filed = run(root, ['new', 'third', '--what', 'builds on issue 1', '--kind', 'gap', '--prio', '2', '--tier', 'standard']);
   assert.equal(filed.status, 0);
-  assert.deepEqual(unordered(filed.stderr).map((l) => l.replace(/ — .*$/, '')), ['note: 3 names issue 1 in What, Why or Acceptance, which is neither done nor dropped, and no After orders it with 3']);
+  assert.deepEqual(unordered(filed.stderr).map((l) => l.replace(/ — .*$/, '')), ['note: issue 3: names issue 1 in What, Why or Acceptance, which is neither done nor dropped, and no After orders it with 3']);
   const body = run(root, ['body', '3', '--acceptance', 'issue 2 is merged first and issue 1 too']);
   assert.equal(body.status, 0);
   assert.equal(body.stdout, '3 body: acceptance');
   const said = unordered(body.stderr);
   assert.equal(said.length, 1);
-  assert.match(said[0], /^note: 3 names issues 1, 2 in What, Why or Acceptance, which are neither done nor dropped/);
+  assert.match(said[0], /^note: issue 3: names issues 1, 2 in What, Why or Acceptance, which are neither done nor dropped/);
   const verified = unordered(run(root, ['verify']).stdout);
   assert.equal(verified.length, 1);
-  assert.equal(said[0].replace(/^note: 3 /, ''), verified[0].replace(/^note: issue 3: /, ''), 'the same words from body and verify');
+  assert.equal(said[0], verified[0], 'the same line from body and verify');
   // The note is not a record line, and a body that leaves What, Why and Acceptance alone says none.
   assert.doesNotMatch(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /which are neither done nor dropped/);
   assert.deepEqual(unordered(run(root, ['body', '3', '--title', 'third, renamed', '--changelog', 'Added: x']).stderr), []);

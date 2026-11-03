@@ -189,21 +189,20 @@ export function disagreementText(d) { return d.rewrite ? `${d.line}\n  or, with 
 export function unorderedNamings(issues, profile, only = null) {
   const held = new Map(issues.filter((i) => i.id !== null).map((i) => [i.id, i]));
   const byKey = new Map([...held.values()].map((i) => [idKey(i.id), i]));
-  // The issues an issue waits on through After, directly or through the chain; walked once for an issue, and only for one
-  // that cites or is cited, so a loop whose texts cite nothing walks nothing.
-  const chains = new Map();
-  const chainOf = (issue) => {
-    if (chains.has(issue)) return chains.get(issue);
+  // Whether `issue` waits on the issue with `id` through After, directly or through the chain: a walk that stops at the
+  // first sight of it, so an ordered pair costs the distance between the two and only an unordered pair walks the chain.
+  const waitsOn = (issue, id) => {
+    const want = idKey(id);
     const seen = new Set();
     const stack = [...issue.after];
     while (stack.length) {
       const key = idKey(stack.pop());
+      if (key === want) return true;
       if (seen.has(key)) continue;
       seen.add(key);
       stack.push(...(byKey.get(key)?.after || []));
     }
-    chains.set(issue, seen);
-    return seen;
+    return false;
   };
   const heading = (profile.acceptance || 'Acceptance').toLowerCase();
   const out = [];
@@ -211,7 +210,7 @@ export function unorderedNamings(issues, profile, only = null) {
     if (issue.id === null || !profile.unfinished(issue.status) || (only && !only.includes(issue.id))) continue;
     const text = [issue.sections.what, issue.sections.why, issue.sections[heading]].filter(Boolean).join('\n');
     const cited = idsCited(text, held).filter((id) => idKey(id) !== idKey(issue.id) && !profile.is(held.get(id).status, 'settles-dependents'));
-    const names = cited.filter((id) => !chainOf(issue).has(idKey(id)) && !chainOf(held.get(id)).has(idKey(issue.id)));
+    const names = cited.filter((id) => !waitsOn(issue, id) && !waitsOn(held.get(id), issue.id));
     if (names.length) out.push({ id: issue.id, names });
   }
   return out;

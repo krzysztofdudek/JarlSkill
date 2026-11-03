@@ -265,7 +265,7 @@ export function cmdNew(root, title, rawFlags) {
 
 // The notes for the text of an issue just written: one for the unfinished issues it names that nothing orders with it.
 function unorderedNotes(root, profile, id) {
-  return unorderedNamings(loadIssues(root), profile, [id]).map((n) => `note: ${n.id} ${unorderedText(n)}`);
+  return unorderedNamings(loadIssues(root), profile, [id]).map((n) => `note: issue ${n.id}: ${unorderedText(n)}`);
 }
 
 function pathList(v) { return splitList(v).map((p) => portablePath(p)); }
