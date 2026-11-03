@@ -13,7 +13,7 @@ import { outOfGit } from './loop-git.mjs';
 import { attachmentOf, journalById } from './log.mjs';
 import { acceptanceLineCount, alignRows, bodyText, evidenceParts, evidenceTable, loadIssues, mergedOf, noteText, parseIssue, placeEvidence, reviewEntries, setSection, sharedMark } from './issues.mjs';
 import { fileAt, raiseFormat, repoNames, reposWhere, tipLines, whereLines, whereOf } from './repositories.mjs';
-import { approveKind, carriesCode, disagreementText, gateOf, gateState, readLoop, recordDisagreements, reviewSplit, scopedLoop } from './loop.mjs';
+import { approveKind, carriesCode, disagreementText, gateOf, gateState, headerReadNotes, readLoop, recordDisagreements, reviewSplit, scopedLoop } from './loop.mjs';
 import { checkState, checkWaiting, checkWaitingText } from './metrics.mjs';
 import { builds, modelMarks } from './models.mjs';
 import { leaseProblems, staleHours } from './rounds.mjs';
@@ -110,7 +110,7 @@ export function issueView(root, issue, { full = false } = {}) {
   const numbered = (body, rows) => body.map((l, i) => { const r = rows.find((x) => x.start === i); return r ? l.replace(/^- /, `- [${r.n}] `) : l; });
   const g = full ? null : gateState(root, issue.id);
   const loop = readLoop(jarlDir(root));
-  const notes = [...recordDisagreements(loop).filter((d) => d.id === issue.id).map(disagreementText), ...checkWaiting(loop, [issue]).map(checkWaitingText), ...whereLines(whereOf(root, issue))];
+  const notes = [...recordDisagreements(loop).filter((d) => d.id === issue.id).map(disagreementText), ...headerReadNotes(loop).filter((n) => n.id === issue.id).map((n) => `note: ${n.line}`), ...checkWaiting(loop, [issue]).map(checkWaitingText), ...whereLines(whereOf(root, issue))];
   const out = [];
   for (const p of pieces) {
     if (p.name === null && notes.length) {
@@ -319,6 +319,9 @@ function statusOf(root, loop, flags) {
   c.closedGate = closedGateFlags(flags.tag === undefined ? loop : scopedLoop(loop, issues));
   const disagreements = recordDisagreements(flags.tag === undefined ? loop : scopedLoop(loop, issues));
   if (disagreements.length) c.disagreements = disagreements;
+  // The numbers read from their headers, one note each: not disagreements, the header is the record for them.
+  const byHeader = headerReadNotes(flags.tag === undefined ? loop : scopedLoop(loop, issues));
+  if (byHeader.length) c.headerRead = byHeader;
   const files = uncommittedLoopFiles(root);
   c.uncommitted = files === null ? null : files.length;
   // --by: the same five counts per repository, tag, kind or priority — a dashboard's table, read from the issues.

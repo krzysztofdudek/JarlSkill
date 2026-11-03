@@ -578,6 +578,7 @@ function rewriteHeader(root, rawIds, status, why, flags) {
   need(why === undefined && flags.base === undefined && !leaseFlagsGiven(flags).length, '--header rewrites the header from the log and takes no reason, lease flag or base');
   const issues = issuesFor(root, rawIds);
   for (const issue of issues) {
+    need(!issue.byHeader, `${issue.id} is read from its header: the log files ${issue.id} ${issue.byHeader?.filings} times and cannot say which file its lines were written for, so no header is written from it`);
     need(issue.onFile !== null, `${issue.id} is not in the log, so there is nothing to write its header from — jarl.mjs set ${issue.id} ${status} puts it there`);
     need(issue.status === status, `${issue.id} is ${issue.status} in the log: jarl.mjs set ${issue.id} ${issue.status} --header writes its header from it, and set ${issue.id} ${status} without --header moves it`);
   }

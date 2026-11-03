@@ -8,7 +8,7 @@ import { idKey, idRe } from './ids.mjs';
 import { profileAt } from './profile.mjs';
 import { asksAt, decisionsAt, goalLines, readGoal } from './journal.mjs';
 import { eventsById, loopEvents } from './log.mjs';
-import { alignRows, evidenceTable, issuesAt, mergedOf, refiledText, sharedNumberText, sharedNumbers } from './issues.mjs';
+import { alignRows, evidenceRows, evidenceTable, headerReadText, issuesAt, mergedOf, sharedNumberText, sharedNumbers } from './issues.mjs';
 import { branchTip } from './repositories.mjs';
 
 // ---- the loaded loop -------------------------------------------------------------------------------
@@ -53,7 +53,7 @@ function scopedLoop(loop, issues) { return makeLoop({ dir: loop.dir, root: loop.
 // Where the files disagree with the journal, which is the record: one entry { id, field, onFile, record, line } per
 // header field (Status, Branch, Worker, Model, Since, Merged, CI) whose value differs from the journal's, one per
 // issue the journal holds no filing and no move of (field 'journal'), and one per status a line of the journal moves an
-// issue into that the loop's profile does not list (field 'profile': the line reads as a note, not as a move), and one per number two issue files carry (field 'number', with the files) and one per number the log files more than once that one file carries (field 'refiled'), each in place of the fields and with no advice to write the log's value into a header. The
+// issue into that the loop's profile does not list (field 'profile': the line reads as a note, not as a move), and one per number two issue files carry (field 'number', with the files), each in place of the fields and with no advice to write the log's value into a header, and one per contradiction inside the header of an issue whose number the log cannot attribute (field 'header'), which is read from its header and never compared with the log. The
 // views never believe the header; they print these. Each line names how the disagreement is settled: the header written
 // back to the journal's value, which writes nothing else, or the move or merge that makes the header's value the
 // record, which writes a line of its own.
@@ -71,11 +71,10 @@ export function recordDisagreements(loop) {
   for (const issue of loop.issues) {
     if (issue.id === null || sharedFiles.has(issue.file)) continue;
     const id = issue.id;
-    // A number the log files more than once named several files at once, and its lines cannot be told apart: no line
-    // written later attributes them, so the header is never compared with them and no advice copies them into it.
-    const filings = (loop.eventsById.get(id) || []).filter((e) => e.type === 'filed').length;
-    if (filings > 1) {
-      out.push({ id, field: 'refiled', onFile: null, record: null, files: [`issues/${basename(issue.file)}`], line: `record: ${refiledText(id, filings, `issues/${basename(issue.file)}`)}` });
+    // A number the log cannot attribute is read from its header, so the header is never compared with the log; it is
+    // checked against itself, which still catches a hand edit that contradicts the file.
+    if (issue.byHeader) {
+      for (const what of headerContradictions(profile, issue)) out.push({ id, field: 'header', onFile: issue.status, record: null, line: `record: ${id} is read from its header (issues/${basename(issue.file)}), and the header contradicts itself: ${what}` });
       continue;
     }
     if (issue.onFile === null) {
@@ -91,8 +90,37 @@ export function recordDisagreements(loop) {
       if (file !== record) out.push(fieldDisagreement(profile, issue, field, file, record));
     }
   }
+  // A shared number's files are checked against themselves too: each is read from its own header while they share it.
+  for (const s of shared) for (const issue of s.issues) {
+    for (const what of headerContradictions(profile, issue)) out.push({ id: s.id, field: 'header', onFile: issue.status, record: null, line: `record: ${s.id} is read from its header (issues/${basename(issue.file)}), and the header contradicts itself: ${what}` });
+  }
   out.push(...unreadableMoves(loop));
   return out;
+}
+// What a header read as the record says against itself: a status the profile does not list, a lease that its status
+// does not hold or a status that holds one with no lease, a CI with no merge, and a closing status with no proof row
+// in the file's Evidence.
+function headerContradictions(profile, issue) {
+  const out = [];
+  const has = (k) => Boolean(fieldText(issue.fields[k]));
+  const st = issue.status;
+  if (!profile.statuses.includes(st)) { out.push(`its Status ${st} is not one the loop's profile lists`); return out; }
+  if (profile.is(st, 'holds-claim')) {
+    if (!has('since')) out.push(`its Status ${st} holds a lease, and it has no Since`);
+  } else {
+    for (const k of ['worker', 'since', 'worktree']) if (has(k)) out.push(`it carries ${k === 'worktree' ? 'Worktree' : FIELD_NAMES[k]}, and its Status ${st} holds no lease`);
+  }
+  if (has('ci') && !has('merged')) out.push('it carries CI and no Merged');
+  if (profile.is(st, 'closes-record') && evidenceRows(issue).length === 0) out.push(`its Status ${st} closes it, and its Evidence holds no --ran/--saw row`);
+  return out;
+}
+// The issues read from their headers because the log files their number more than once, while one file carries it: one
+// note each, { id, file, filings, line }. They are not disagreements: the header is the record for them.
+export function headerReadNotes(loop) {
+  return loop.issues.filter((i) => i.byHeader && !i.shared).map((i) => {
+    const file = `issues/${basename(i.file)}`;
+    return { id: i.id, file, filings: i.byHeader.filings, line: headerReadText(i.id, i.byHeader.filings, file) };
+  });
 }
 // The sentence about one header field: what the file holds against what the log holds.
 function disagreementSentence(name, file, record) {

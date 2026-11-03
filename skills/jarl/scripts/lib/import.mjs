@@ -234,6 +234,7 @@ export function renderStatus(o, profile = DEFAULT_PROFILE) {
   const more = [
     ...(o.tag !== undefined ? [`scoped to the issues tagged ${o.tag} — the counts above and the lists below are theirs only`] : []),
     ...(o.disagreements || []).map(disagreementText),
+    ...(o.headerRead || []).map((n) => `note: ${n.line}`),
     ...(o.check ? checkLines(o.check) : []),
     ...(o.scheduler ? [schedulerNote(o.scheduler)] : []),
     ...by,

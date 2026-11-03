@@ -11,7 +11,7 @@ import { ASKS_FILE, DECISIONS_FILE, GOAL_FILE, LOG_FILE, goalLines, loadDecision
 import { loopEvents } from './log.mjs';
 import { parseIssue, sharedNumberText, sharedNumbers } from './issues.mjs';
 import { REPOS_DECLARED_IN, declaredNames, issueRepos, repoIdentity, repoValueKind, reposNamed, worktreesOf } from './repositories.mjs';
-import { readLoop, recordDisagreements } from './loop.mjs';
+import { headerReadNotes, readLoop, recordDisagreements } from './loop.mjs';
 import { attachmentFindings } from './attachments.mjs';
 import { hasLiveLoop } from './commands.mjs';
 import { issuesNaming, loadAsks } from './questions.mjs';
@@ -94,13 +94,10 @@ export function cmdVerify(root) {
     }
   }
   retractionChecks(events, add);
-  // A shared number is the issues check's finding. A number the log files more than once, now one file's, is a note printed
-  // whole: no command can attribute its earlier lines, so it is said every time and never turns verify red.
-  for (const d of recordDisagreements(loop)) {
-    if (d.field === 'number') continue;
-    if (d.field === 'refiled') notes.push({ where: `issue ${d.id}`, what: d.line.slice('record: '.length) });
-    else add('headers', '', shownText(d.line));
-  }
+  // A shared number is the issues check's finding. A number the log files more than once, now one file's, is read from
+  // its header: a one-line note, while a contradiction inside that header is a finding, printed whole as the tool wrote it.
+  for (const d of recordDisagreements(loop)) if (d.field !== 'number') add('headers', '', d.field === 'header' ? d.line : shownText(d.line));
+  for (const n of headerReadNotes(loop)) notes.push({ where: `issue ${n.id}`, what: n.line });
   repositoryChecks(root, loop, add, notes);
   for (const i of loop.issues) {
     const lease = fieldText(i.fields.worktree);
