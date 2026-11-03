@@ -2171,7 +2171,9 @@ export function cmdMerged(root, rawIds, flags) {
   const named = `${repoIn}${checkText ? ` · check ${checkText}${sawText ? ` · saw ${sawText}` : ''}` : ''}${cause ? ` · landed red, cause ${cause}` : ''}${ci ? ` · CI ${ci}` : ''}`;
   // The line goes first, as in set: a write that stops between the two leaves the record ahead of the files.
   if (pickedRepo) commitRepoNames(root, [pickedRepo]);
-  appendLogLines(root, issues.map((issue) => (sha ? `${issue.id} merged ${sha}${named}` : `${issue.id} CI ${ci}`)));
+  // A merge line is followed by the tip of the branch that was merged: the cleanup may delete the branch, and the gate
+  // then reads the tip from here.
+  appendLogLines(root, issues.flatMap((issue) => (sha ? [`${issue.id} merged ${sha}${named}`, ...tipLines(root, issue)] : [`${issue.id} CI ${ci}`])));
   for (const issue of issues) {
     let text = readText(issue.file);
     if (sha) {
@@ -2551,7 +2553,7 @@ function changedText(recorded, now) { return `${recorded.path} does not match it
 // different size; the done gate and verify read the bytes.
 function slotState(root, issue, spec, g, hash = true) {
   const rows = g.rowLog.filter((e) => e.attach && e.attach.slot === spec.name);
-  const row = [...rows].reverse().find((e) => e.n > g.anchorN);
+  const row = [...rows].reverse().find((e) => e.inWindow);
   if (!row || row.retracted) return { state: 'missing', spec, outside: !row && rows.length > 0 };
   const now = inspectAttachment(root, issue.id, spec, row.attach.path, 'is gone', hash);
   if (now.problem) return { state: now.missing ? 'gone' : 'refused', spec, row, problem: now.problem };
@@ -2702,7 +2704,8 @@ export function cmdEvidence(root, rawIds, text, flags) {
     const current = (issue.sections.evidence || '').trim();
     writeAtomic(issue.file, setSection(readText(issue.file), 'Evidence', rows ? placeEvidence(current, 'proof', added, '\n') : placeEvidence(current, 'note', noteText(added, current), '\n\n')));
   }
-  appendLogLines(root, issues.flatMap((issue) => (rows ? rows.map((r) => `${issue.id} evidence row · ${firstLine(r.ran, "the issue's Evidence section")}`) : [`${issue.id} evidence · ${firstLine(text, "the issue's Evidence section")}`])));
+  // Each row line is followed by the tip of the issue's branch, so the gate knows which code the row was made on.
+  appendLogLines(root, issues.flatMap((issue) => (rows ? rows.flatMap((r) => [`${issue.id} evidence row · ${firstLine(r.ran, "the issue's Evidence section")}`, ...tipLines(root, issue)]) : [`${issue.id} evidence · ${firstLine(text, "the issue's Evidence section")}`])));
   return oneOrMany(rawIds, issues.map((issue) => (rows ? { id: issue.id, rows } : { id: issue.id })));
 }
 
@@ -3066,7 +3069,7 @@ export function inFlightMark(loop, issue) {
     if (!m) return 'approved';
     return m.ci === 'pending' || m.ci === 'red' ? 'merged-ci' : 'merged';
   }
-  const verdicts = g.trail.filter((r) => r.n > g.cut && !r.retracted && (r.verdict === 'approve' || r.verdict === 'changes'));
+  const verdicts = g.trail.filter((r) => r.inWindow && !r.retracted && (r.verdict === 'approve' || r.verdict === 'changes'));
   if (verdicts.length && verdicts[verdicts.length - 1].verdict === 'changes') return 'changes-requested';
   return g.rowsSince === 0 ? 'no-rows' : 'rows-no-verdict';
 }
@@ -3170,12 +3173,16 @@ export function cmdClose(root, flags = {}) {
 //   retract-row    a retracted evidence row: row, its number
 //   retract-review a retracted approve
 //   merged         a recorded merge: sha, repo, check, red, ci
+//   tip            the tip of the issue's branch when the line before it of the same issue (a row, a verdict, a merge) was
+//                  written: tip, the commit of the branch in each repository of the issue, in order, joined by commas
 //   ci             a CI state recorded alone: state
 //   body           a body change
 //   other          any other line
 const LOG_LINE = new RegExp(`^- (${STAMP_SRC}) · ([^\\n]*)$`);
 const LEADING_ID = idRe('^(?:filed )?({id})\\b');
 const RETRACT_ROW_LINE = idRe('^{id} evidence retract · row (\\d+)\\b');
+// The tip line: the branch's commit in each repository of the issue, joined by commas, alone on the line.
+const TIP_LINE = idRe('^{id} tip ([0-9a-f]{7,64}(?:,[0-9a-f]{7,64})*)$');
 // A move into a status that holds the claim is read by position, never by searching: after the arrow and the status come
 // the free reason (at most one segment, never searched for fields) and then the lease fields in the order set writes them
 // (branch, model, worker, worktree), each at most once; the worktree path is the rest of the line.
@@ -3267,6 +3274,8 @@ function eventParser(profile) {
       const line = mergeLineOf(id, text);
       if (line) return { type: 'merged', ...line };
     }
+    const tp = TIP_LINE.exec(text);
+    if (tp) return { type: 'tip', tip: tp[1] };
     if (text.startsWith(`${id} CI `) && CI_STATES.includes(text.slice(`${id} CI `.length))) return { type: 'ci', state: text.slice(`${id} CI `.length) };
     if (text.startsWith(`${id} body · `)) return { type: 'body' };
     return { type: 'other' };
@@ -3278,6 +3287,7 @@ const LINE_WRITERS = {
   filed: 'jarl.mjs new', move: 'jarl.mjs set <ids> <status>', round: 'jarl.mjs round <id>', verdict: 'jarl.mjs review <id> approve|changes',
   'retract-review': 'jarl.mjs retract <id> review', 'retract-row': 'jarl.mjs retract <id> <n>', row: 'jarl.mjs evidence <id> --ran "<command>" --saw "<what it printed>"',
   merged: 'jarl.mjs merged <id> --sha <sha>', ci: 'jarl.mjs merged <id> --ci <state>', body: 'jarl.mjs body <id>',
+  tip: 'jarl.mjs evidence, review or merged, which write the tip of the branch after their own line',
 };
 const MOVE_SHAPE = idRe('^{id} →');
 // A free line for the journal (the log command and record.appendLog): a note about the loop or an issue. A line that
@@ -3619,17 +3629,24 @@ export function gateState(root, id) {
 // a dispatchable status from one that closes the record or holds the claim, and any move out of a status that closes the
 // record) reset both, so a close rests only on proof and review recorded after the last of them. A red round
 // resets the cut alone: it spends the approve, while the rows the worker logged stay true.
-export function gateWindow(profile, events) {
-  let anchor = null; let cut = -1; let filed = false;
+// With `throughPauses`, a pause and a resume reset nothing: a move from a status that holds the claim back into a
+// dispatchable one, and a move into a status that holds the claim made after the issue already held it since the last
+// filing or reopen from a closed status. What is left is the window no pause can open: the gate keeps a row or an approve
+// from between the two windows when the tip it was made on is the branch's tip now.
+export function gateWindow(profile, events, { throughPauses = false } = {}) {
+  let anchor = null; let cut = -1; let filed = false; let held = false;
   for (const e of events) {
     if (e.type === 'filed') { if (!filed) { filed = true; anchor = e; cut = e.n; } continue; }
     if (e.type === 'round') { cut = e.n; continue; }
     if (e.type !== 'move') continue;
     const { from, to } = e;
     const start = profile.is(to, 'holds-claim') && !profile.is(from, 'holds-claim');
-    const reopen = profile.is(to, 'dispatchable') && (profile.is(from, 'closes-record') || profile.is(from, 'holds-claim'));
     const leavesClose = profile.is(from, 'closes-record') && !profile.is(to, 'closes-record');
-    if (start || reopen || leavesClose) { anchor = e; cut = e.n; }
+    const reopen = profile.is(to, 'dispatchable') && (profile.is(from, 'closes-record') || profile.is(from, 'holds-claim'));
+    const pause = throughPauses && !leavesClose && ((start && held) || (reopen && !profile.is(from, 'closes-record')));
+    if ((start || reopen || leavesClose) && !pause) { anchor = e; cut = e.n; }
+    if (leavesClose) held = false;
+    if (profile.is(to, 'holds-claim')) held = true;
   }
   return { anchor, cut };
 }
@@ -3639,10 +3656,26 @@ export function gateOf(loop, id) {
   const issue = loop.issues.find((i) => i.id === id) || null;
   const self = selfWorkers(events, issue, loop.branchWorkers);
   const { anchor, cut } = gateWindow(profile, events);
+  // The window no pause opens. A row or an approve between it and the window above counts when the tip it was made on is
+  // the branch's tip now: a pause and a resume leave the code as it was, and a new commit spends them.
+  const firm = gateWindow(profile, events, { throughPauses: true });
+  const firmAnchorN = firm.anchor ? firm.anchor.n : -1;
+  const anchorN = anchor ? anchor.n : -1;
   const evidence = []; const allReviews = [];
   const trail = [];   // every review line in order (approve, changes, retract), for the issue view
   const retractedRows = [];
+  // A tip line belongs to the line of the same issue just before it: a row, a verdict or a merge.
+  let before = null;
+  let mergeTip = null;   // the tip the newest merge was recorded on
   for (const e of events) {
+    if (e.type === 'tip') {
+      if (before && before.type === 'merged') mergeTip = e.tip;
+      else if (before && before.tip === undefined) before.tip = e.tip;
+      before = null;
+      continue;
+    }
+    before = null;
+    if (e.type === 'merged') { before = e; mergeTip = null; continue; }
     if (e.type === 'verdict') {
       // The kind is the one recorded, or the one today's names give, whichever is stricter: a name the goal
       // declares as a coordinator after its approve was logged as fresh does not stay fresh, and a name that
@@ -3652,6 +3685,7 @@ export function gateOf(loop, id) {
       const review = { n: e.n, at: e.at, verdict: e.verdict, by: e.by, kind, retracted: false };
       allReviews.push(review);
       trail.push(review);
+      before = review;
       continue;
     }
     // A retraction takes away the newest approve not yet retracted, and only that: it never touches a changes verdict.
@@ -3662,8 +3696,19 @@ export function gateOf(loop, id) {
       continue;
     }
     if (e.type === 'retract-row') { retractedRows.push(e.row); continue; }
-    if (e.type === 'row') evidence.push({ ...e, retracted: false });
+    if (e.type === 'row') { const row = { ...e, retracted: false }; evidence.push(row); before = row; }
   }
+  // The branch's tip now, read once and only when a row or a verdict between the two windows carries a tip: the branch
+  // in the issue's repositories, or, where it is gone (the cleanup after a merge deletes it), the tip the newest merge
+  // was recorded on.
+  let tipHere;
+  const now = () => {
+    if (tipHere === undefined) tipHere = (issue && loop.root && branchTip(loop.root, issue)) || mergeTip || null;
+    return tipHere;
+  };
+  const kept = (e, after) => e.n > after || (e.tip !== undefined && now() !== null && e.tip === now());
+  for (const e of evidence) e.inWindow = e.n > anchorN || (e.n > firmAnchorN && kept(e, anchorN));
+  for (const r of allReviews) r.inWindow = r.n > cut || (r.n > firm.cut && kept(r, cut));
   // A retraction names a row by its file-wide ordinal (evidenceTable: the one numbering show prints), and the journal's
   // row lines are matched to the file's rows (alignRows), so journal lines that merged in another order cannot retract
   // the wrong row. A retraction that cannot be resolved to exactly one row is never ignored: it is returned, and done
@@ -3685,7 +3730,7 @@ export function gateOf(loop, id) {
   for (let i = reviews.length - 1; i >= 0; i -= 1) { if (reviews[i].verdict === 'changes') { sinceChanges = reviews.slice(i + 1); break; } }
   let live = null;
   for (const r of sinceChanges) {
-    if (r.verdict !== 'approve' || r.n <= cut) continue;
+    if (r.verdict !== 'approve' || !r.inWindow) continue;
     const rw = KIND_WEIGHT[r.kind] ?? Infinity;
     const lw = live ? (KIND_WEIGHT[live.kind] ?? Infinity) : Infinity;
     if (!live || rw < lw || (rw === lw && r.n > live.n)) live = r;
@@ -3694,9 +3739,12 @@ export function gateOf(loop, id) {
     tracked: anchor !== null,
     anchor: anchor ? { at: anchor.at, what: anchor.type === 'filed' ? 'filed' : anchor.to } : null,
     unresolvedRetractions,
-    rowsSince: anchor ? evidence.filter((e) => e.n > anchor.n && !e.retracted).length : evidence.filter((e) => !e.retracted).length,
-    // What the issue view windows by: where the gate's window starts in the log, and the log's rows and review lines in order.
-    cut, anchorN: anchor ? anchor.n : -1, rowLog: evidence, trail,
+    rowsSince: evidence.filter((e) => e.inWindow && !e.retracted).length,
+    // What the issue view windows by: where the gate's window starts in the log, and the log's rows and review lines in
+    // order. A row or a verdict a pause did not spend opens it as far back as the first of them.
+    cut: Math.min(cut, ...allReviews.filter((r) => r.inWindow).map((r) => r.n - 1)),
+    anchorN: Math.min(anchorN, ...evidence.filter((e) => e.inWindow).map((e) => e.n - 1), ...allReviews.filter((r) => r.inWindow && r.n <= anchorN).map((r) => r.n - 1)),
+    rowLog: evidence, trail,
     lastReview: last ? last.verdict : null,
     lastApprove: [...reviews].reverse().find((r) => r.verdict === 'approve') || null,
     approved: Boolean(live && live.kind !== 'self'),
@@ -3722,7 +3770,7 @@ export function reviewSplit(loop) {
 // self-reviewed. `retracted` when the approve was taken back and none stands; `unrecorded` for an approve without --by.
 function approveKind(g) {
   if (g.live) return g.live.kind || 'unrecorded';
-  return g.trail.some((r) => r.verdict === 'approve' && r.retracted && r.n > g.cut) ? 'retracted' : 'unrecorded';
+  return g.trail.some((r) => r.verdict === 'approve' && r.retracted && r.inWindow) ? 'retracted' : 'unrecorded';
 }
 
 // The closed issues whose done gate does not hold on the record as it stands, each with its reason and the command that
@@ -4477,7 +4525,8 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
   }
   // The model and the relay mark come after the kind: a reader that parses only the name and the kind ignores what follows.
   const marks = `${model !== undefined ? `model ${model} · ` : ''}${relayed ? 'relayed · ' : ''}`;
-  appendLogLines(root, issues.map((issue, n) => `${issue.id} review ${verdict} · ${by ? `by ${by} (${kinds[n]}) · ` : ''}${marks}${loggedFinding(firstLine(findings, "the issue's Reviews section"))}`));
+  // Each verdict line is followed by the tip of the issue's branch: the code the verdict was given on.
+  appendLogLines(root, issues.flatMap((issue, n) => [`${issue.id} review ${verdict} · ${by ? `by ${by} (${kinds[n]}) · ` : ''}${marks}${loggedFinding(firstLine(findings, "the issue's Reviews section"))}`, ...tipLines(root, issue)]));
   // Recorded, never refused: a coordinator's approve on a code issue is a fact of the record, but it does not clear
   // the issue for done or the merge queue — the output says so at once. On the command line, in a loop that declares
   // its models, the model notes join it (see reviewModelNotes).
@@ -4953,6 +5002,22 @@ function issueRepos(root, issue) {
   const key = `${root}\n${loadProfile(root).format}\n${issue.fields.repo || ''}`;
   if (!REPO_OF.has(key)) REPO_OF.set(key, issueRepoPaths(root, issue).map(canonical));
   return REPO_OF.get(key);
+}
+// The tip of an issue's branch: the commit its Branch points to in each repository of the issue, in order, joined by
+// commas. Null when the issue records no branch, or when a repository is not here or does not hold the branch: a row or a
+// verdict written then carries no tip, and the gate reads it as one that does not outlive a pause.
+export function branchTip(root, issue) {
+  const branch = fieldText(issue.fields.branch);
+  if (!branch) return null;
+  const repos = issueRepos(root, issue);
+  if (!repos.length) return null;
+  const shas = repos.map((r) => (isGitRepo(r) ? refsIn(r).get(branch)?.sha : undefined));
+  return shas.every((s) => s && /^[0-9a-f]{7,64}$/.test(s)) ? shas.join(',') : null;
+}
+// The line written after a row, a verdict or a merge of `issue`: the tip of its branch now, or none (see branchTip).
+function tipLines(root, issue) {
+  const tip = branchTip(root, issue);
+  return tip ? [`${issue.id} tip ${tip}`] : [];
 }
 // The checkouts an issue's Repo field gives, as repoOf resolves them, or the loop's own repository where it names none.
 // `names` stands in for the Repo field where something else names the repository (a recorded merge). A value that does

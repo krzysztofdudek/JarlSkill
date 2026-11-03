@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Pausing a task and picking it up again no longer throws away its test results and its review, as long as nobody changed its code in between. A new change to the code still asks for new results and a new review.
+
 ## [6.2.0] - 2026-10-19
 
 Jarl 6.2.0 makes the record of a loop more complete and more honest, and it keeps track of who did what. The file your assistant reads first is also shorter and clearer.
