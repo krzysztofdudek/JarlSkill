@@ -355,7 +355,7 @@ test('tier field, rounds and takeover, asks and answers, handoff, report', () =>
   assert.match(refuses(root, 'new', 'x', '--tier', 'huge'), /--tier must be one of/);
   jarl(root, 'new', 'hard thing', '--tier', 'strong', '--found-by', 'tester, running the suite');
   assert.match(jarl(root, 'show', '1'), /\*\*Tier:\*\* strong/);
-  assert.match(jarl(root, 'round', '1', 'suite red'), /round 1 of 3/);
+  assert.match(jarl(root, 'round', '1', 'suite red'), /round 1: 1 of 3 before a takeover/);
   jarl(root, 'round', '1', 'still red');
   const r = JSON.parse(jarl(root, 'round', '1', 'red again', '--json'));
   assert.equal(r.takeover, true);

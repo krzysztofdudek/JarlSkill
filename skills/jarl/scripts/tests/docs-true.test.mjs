@@ -277,7 +277,7 @@ test('the first screen of SKILL.md starts a cold agent: resume an existing loop 
 
 test('models.md never puts the reviewer that clears an issue below the worker it reviews', () => {
   const models = skillText('references/models.md');
-  assert.match(models, /Workers start on the tier the issue's `Tier:` names, and a takeover raises the worker one tier up\. The reviewer whose approve clears the issue is never of the worker's own model and never ranked below the worker's model, every model that has held the issue's lease, and not the issue's tier/);
+  assert.match(models, /Workers start on the tier the issue's `Tier:` names, and a takeover offers a tier up, another model or a changed approach\. The reviewer whose approve clears the issue is never of the worker's own model and never ranked below the worker's model, every model that has held the issue's lease, and not the issue's tier/);
   assert.match(models, /never ranked below the worker's model \(every model that has held the issue's lease, whatever the issue's tier\)/);
   assert.doesNotMatch(models, /runs on that tier or above/);
   assert.match(models, /Readers and the merger run on the standard tier/);
