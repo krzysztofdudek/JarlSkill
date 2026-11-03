@@ -31,9 +31,9 @@ The built-in tiers are `light`, `standard` and `strong`, weakest first; `standar
 
 - `light`: a check or a test decides whether the work is right, the scope is written down, and nothing that protects changes — a mechanical edit, a filing from notes, a read-only inquiry, a first-pass review.
 - `standard`: a clear acceptance and a known place in the code — ordinary code, tests and documents.
-- `strong`: the cause is unknown (a flaky test included: it is often a real defect), a design, a record format or a contract, security or data integrity, anything that weakens or changes a protection, a takeover after three rounds, finishing another worker's uncommitted work.
+- `strong`: the cause is unknown (a flaky test included: it is often a real defect), a design, a record format or a contract, security or data integrity, anything that weakens or changes a protection, a takeover after the red rounds the loop allows, finishing another worker's uncommitted work.
 
-`new` without `--tier` records `standard` and says so on stderr (the command line only), with these criteria in a few words. The takeover block that the third `round` prints says to raise the fresh worker one tier up while one exists, put it on another model than the one that failed (which the lease names), or change the approach.
+`new` without `--tier` records `standard` and says so on stderr (the command line only), with these criteria in a few words. The takeover block that `round` prints when the red rounds after the last takeover reach the loop's limit (read from the goal at each round, three unless the goal says otherwise) says to raise the fresh worker one tier up while one exists, put it on another model than the one that failed (which the lease names), or change the approach.
 
 ## The loop's models
 

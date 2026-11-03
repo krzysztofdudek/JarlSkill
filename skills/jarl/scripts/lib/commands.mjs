@@ -154,7 +154,7 @@ function highestAcrossWorktrees(root) {
 export const TIER_CRITERIA = {
   light: 'a check or test decides, the scope is written down, nothing that protects changes',
   standard: 'a clear acceptance and a known place in the code',
-  strong: 'unknown cause (a flaky test too), a design, a record format or contract, security or data integrity, anything that weakens a protection, a takeover after three rounds, finishing another worker\'s uncommitted work',
+  strong: 'unknown cause (a flaky test too), a design, a record format or contract, security or data integrity, anything that weakens a protection, a takeover after the red rounds the loop allows, finishing another worker\'s uncommitted work',
 };
 function tierNote(profile, tier) {
   const builtIn = profile.tiers.length === TIERS.length && profile.tiers.every((t, k) => t === TIERS[k]);

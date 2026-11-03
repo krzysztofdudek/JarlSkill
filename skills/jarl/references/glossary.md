@@ -8,7 +8,7 @@ Each term below is defined here, once; the rest of the skill uses it in that sen
 | `loop` | The `.jarl/` directory and everything kept in it for one run of Jarl: the goal, the rulings, the issues and the log. |
 | `lease` | What an in-progress issue holds on its files, its branch and its worker, written as Since, Branch, Worker and Model. |
 | `package` | A set of issues that share one worker branch and are checked and merged together. |
-| `round` | One red attempt by a worker on an issue; the third round sends the issue to a takeover. |
+| `round` | One red attempt by a worker on an issue; the third round after the last takeover (or the count the goal sets for the issue's kind, read at each round) sends the issue to a takeover. |
 | `evidence row` | A numbered `--ran` and `--saw` pair under an issue's Evidence, the checkable record of what a command printed. |
 | `proof` | The evidence rows an issue holds, which the done gate reads as proof of the work. |
 | `note` | Free text under an issue's Notes, which explains the work and never counts as proof. |

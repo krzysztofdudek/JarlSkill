@@ -33,7 +33,7 @@ test('goalLines reads the goal, the checks, the checks per repository, the model
 });
 
 test('goalLines of a loop with no goal is empty, and a goal without lines carries only its first line', () => {
-  assert.deepEqual(L.goalLines(null), { goal: null, checks: [], checksByRepo: { bare: [], repos: {} }, models: [], coordinators: [] });
+  assert.deepEqual(L.goalLines(null), { goal: null, checks: [], checksByRepo: { bare: [], repos: {} }, models: [], coordinators: [], takeovers: { bare: null, kinds: {} } });
   const bare = L.goalLines('# Goal\n\n\nJust this\n');
   assert.equal(bare.goal, 'Just this');
   assert.deepEqual(bare.checks, []);
