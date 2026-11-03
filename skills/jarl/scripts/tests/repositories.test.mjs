@@ -92,11 +92,11 @@ test('repo changes the Repo field and the base with a log line each, and a chang
   const w = world('tool', 'lib');
   neu(w.hub, 'a', '--repo', 'tool');
   assert.equal(jarl(w.hub, 'repo', '1', 'lib'), '1 repo: lib');
-  assert.match(w.log(), /1 repo · lib · was tool/);
+  assert.match(w.log(), /1 field Repo · lib · was tool · by jarl/);
   assert.equal(jarl(w.hub, 'repo', '1', 'lib'), '1 repo: lib (unchanged)');
-  assert.equal((w.log().match(/1 repo · /g) || []).length, 1);
+  assert.equal((w.log().match(/1 field Repo · /g) || []).length, 1);
   assert.equal(jarl(w.hub, 'repo', '1', '--clear'), '1 repo: cleared');
-  assert.match(w.log(), /1 repo · cleared · was lib/);
+  assert.match(w.log(), /1 field Repo · \(cleared\) · was lib · by jarl/);
   assert.equal(jarl(w.hub, 'repo', '--base', 'tool', 'release/9'), 'tool base: release/9 (was main)');
   assert.match(w.decl(), /^- \*\*tool\*\* · roots [0-9a-f]{40} · origin none · base release\/9$/m);
   assert.match(w.log(), /repo tool base · was main · now release\/9/);
@@ -209,7 +209,7 @@ test('a loop that holds only paths is read by the frozen reader unchanged, whate
   R.setRepo(w.hub, '001', away);
   R.setRepo(w.hub, '001', undefined, { clear: true });
   R.setRepo(w.hub, '002', './sub');
-  assert.match(w.log(), /001 repo · /);
+  assert.match(w.log(), /001 field Repo · /);
   assert.equal(existsSync(join(w.hub, '.jarl', 'repos.md')), false, 'no name, no declaration');
   assert.equal(existsSync(join(w.hub, '.jarl', 'profile.json')), false, 'no name, no raised format');
   for (const command of ['list', 'status', 'next', 'queue', 'report']) assert.equal(oldJarl(w.hub, command, {}).ok, true, command);

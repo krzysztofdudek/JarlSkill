@@ -408,7 +408,7 @@ test('a JSON-RPC response from the client gets no answer; a malformed request st
 
 test('jarl_set changes a status and jarl_field writes a field: each description says so', () => {
   assert.equal(byName.jarl_set.description, 'WRITES the loop. Change the status of issues, with the reason logged.');
-  assert.match(byName.jarl_field.description, /^WRITES the loop\. Write one field on issues, Resources or a field the profile declares, or empty any optional field with clear\./);
+  assert.match(byName.jarl_field.description, /^WRITES the loop\. Write one header field of the description on issues \(Title, Priority, Tier, Kind, Found by, Tags, Files, Repo, After, Source, Where, Resources or a profile field\), or empty an optional one with clear, logging who changed it and what it held\./);
 });
 
 test('every tool refuses a field it does not take, names the fields it takes, and writes nothing', () => {

@@ -381,7 +381,7 @@ test('set <ids> <field> <value> writes a declared field, checked against its val
   assert.match(refuses(root, 'set', '1', 'kind', 'bug'), /Kind must be one of: feature, fix, chore/);
   assert.match(refuses(root, 'set', '1', 'Note', 'x', '--worker', 'w'), /--worker goes with a status, not with the field Note/);
   assert.match(refuses(root, 'set', '1', 'Files', 'x'), /status must be one of: [^\n]*\n$/);
-  assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /· 1 field Area-2 · cli\n.*· 2 field Area-2 · cli\n/);
+  assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /· 1 field Area-2 · cli · was core · by jarl\n.*· 2 field Area-2 · cli · was core · by jarl\n/);
   // A field line is not a status move: the done gate's replay does not read it as one.
   assert.equal(JSON.parse(jarl(root, 'show', '1', '--json')).status, 'proposed');
 });

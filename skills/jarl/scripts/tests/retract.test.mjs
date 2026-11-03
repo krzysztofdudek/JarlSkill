@@ -200,7 +200,7 @@ test('body --title changes the heading with a log entry; the file keeps its name
   assert.equal(issue.file, before, 'the file name is unchanged');
   assert.equal(issue.title, 'the right title');
   assert.match(readFileSync(before, 'utf8'), /^# 001 · the right title\n/);
-  assert.match(log(root), /001 body · title · title was "a wrong title"$/m);
+  assert.match(log(root), /001 body · title · was "a wrong title" · by jarl$/m);
   assert.match(jarl(root, 'list'), /the right title/);
   assert.match(refuses(root, 'body', id, '--title', '  '), /--title needs a title/);
   jarl(root, 'body', id, '--title', 'two\nlines', '--what', 'and a body too');
