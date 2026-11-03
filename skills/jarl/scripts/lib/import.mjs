@@ -13,7 +13,7 @@ import { repoList, reposWhereLines } from './repositories.mjs';
 import { closedGateLine, disagreementText, gateLine, needOneSlice } from './loop.mjs';
 import { checkLines, checkWaitingText, mergeCheckLines } from './metrics.mjs';
 import { cmdNew, cmdSource, needLiveLoop } from './commands.mjs';
-import { schedulerNote } from './evidence.mjs';
+import { leasedByText, schedulerNote } from './evidence.mjs';
 
 // ---- research findings into issues ----------------------------------------------------------------
 
@@ -293,7 +293,7 @@ export function renderStatus(o, profile = DEFAULT_PROFILE) {
     ...(o.waiting ? [`waiting (After not settled): ${o.waitingIds.join(', ')}`] : []),
     ...(o.noAcceptance.length ? [`in flight with no acceptance line: ${o.noAcceptance.join(', ')}`] : []),
     ...(o.closedGate || []).map(closedGateLine),
-    ...(o.inFlightRows || []).map((x) => `in flight ${x.id} · ${x.next}`),
+    ...(o.inFlightRows || []).map((x) => `in flight ${x.id}${leasedByText(x) ? ` · ${leasedByText(x)}` : ''} · ${x.next}`),
   ];
   return `${head}${line}${more.length ? `\n${more.join('\n')}` : ''}`;
 }

@@ -41,7 +41,19 @@ export function writeWhole(path, text) {
 // Several lines in one write: a bulk command's lines land together or not at all. A command that writes the same
 // moment into a header field takes the stamp once and passes it as `at`, so the two cannot fall in two minutes.
 export function appendLogLines(root, events, at = stamp()) {
-  appendAtomic(logPath(jarlDir(root)), '# Log\n\n', events.map((e) => `- ${at} · ${oneLine(e)}\n`).join(''));
+  const w = callWriter;
+  if (w && !w.raised) { w.raise(root); w.raised = true; }
+  appendAtomic(logPath(jarlDir(root)), '# Log\n\n', events.map((e) => `- ${at}${w ? ` by ${w.name}` : ''} · ${oneLine(e)}\n`).join(''));
+}
+// The writer one call names (its --by), for every line the call writes: withWriter sets it for the length of `fn` and
+// puts back what was there, so nothing outlives the call and a server that runs call after call keeps no name of its own.
+// `raise` runs once, before the first line, under the call's lock: it raises the record to the format that holds a
+// writer. A call that names nobody writes its lines with no writer.
+let callWriter = null;
+export function withWriter(name, raise, fn) {
+  const was = callWriter;
+  callWriter = name ? { name, raise, raised: false } : null;
+  try { return fn(); } finally { callWriter = was; }
 }
 
 // The log is one event per line: a text with line breaks never reaches it raw. A command that keeps the whole text

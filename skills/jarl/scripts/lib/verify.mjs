@@ -106,6 +106,10 @@ export function cmdVerify(root) {
       if (i.id !== null && needsRaisedFormat(i.id)) add('format', `issue ${i.id}`, 'its id needs the raised record format (an id of 1000 or more, or of fewer than three digits), and this loop is not in it');
     }
   }
+  // A line of a format the loop is not in: a writer after the stamp is held by format 3, and so is an escalation.
+  if (profile.format < FORMAT_LINES.writer.format) {
+    for (const e of events) if (e.writer !== null) add('format', `${LOG_FILE} line ${e.n + 1}`, `"${shownText(e.text)}" names its writer (${shownText(e.writer)}), which is written in record format ${FORMAT_LINES.writer.format}, and this loop is not in it`, e.n + 1);
+  }
   // A question of a format the loop is not in: an escalation is held by format 3.
   if (profile.format < FORMAT_LINES.escalation.format) {
     for (const a of loadAsks(root)) if (a.kind === 'escalation') add('format', `${ASKS_FILE} a-${a.id}`, `an escalation is written in record format ${FORMAT_LINES.escalation.format}, and this loop is not in it`);

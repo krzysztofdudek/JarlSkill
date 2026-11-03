@@ -14,7 +14,7 @@ import { cmdTips, renderTips } from './tips.mjs';
 import { reasonWord, waitingOn } from './commands.mjs';
 import { handoffAge, handoffPath } from './questions.mjs';
 import { answeredLines } from './journal.mjs';
-import { IN_FLIGHT_MARKS, closedGateFlags, modelText, nextRows, schedulerNote, statusOf, uncommittedLoopFiles } from './evidence.mjs';
+import { IN_FLIGHT_MARKS, closedGateFlags, leaseWriter, leasedByText, modelText, nextRows, schedulerNote, statusOf, uncommittedLoopFiles } from './evidence.mjs';
 import { cmdQueue, renderQueue } from './queue.mjs';
 import { countsLine } from './import.mjs';
 
@@ -63,7 +63,7 @@ export function cmdResume(root, flags = {}) {
   const declared = (i) => (profile.fields.length ? { fields: Object.fromEntries(profile.fields.map((f) => [f.name, fieldText(i.fields[f.key])]).filter(([, v]) => v)) } : {});
   const inFlight = issues.filter((i) => holds(i) && !unsettled(i)).map((i) => ({
     id: i.id, title: i.title, branch: i.fields.branch || null, worker: i.fields.worker || null, model: i.fields.model || null, since: i.fields.since || null,
-    stale: stale.get(i.id) || [], mark: marks.get(i.id), ...declared(i),
+    ...leaseWriter(loop, i), stale: stale.get(i.id) || [], mark: marks.get(i.id), ...declared(i),
   }));
   const waiting = issues.filter((i) => profile.active(i.status) && unsettled(i)).map((i) => ({
     id: i.id, title: i.title, status: i.status, after: waitingOn(i, byId, profile),
@@ -89,7 +89,7 @@ export function cmdResume(root, flags = {}) {
     uncommitted: uncommittedLoopFiles(root),
     ...(status.disagreements ? { disagreements: status.disagreements } : {}),
     ...(status.headerRead ? { headerRead: status.headerRead } : {}),
-    log: logN ? logLines.slice(-logN).map((e) => `${e.at} · ${e.text}`) : null,
+    log: logN ? logLines.slice(-logN).map((e) => `${e.at}${e.writer ? ` by ${e.writer}` : ''} · ${e.text}`) : null,
     legacyHandoff: kept ? { path: handoffPath(root), at: kept.at, ageMs: kept.ageMs } : null,
   };
 }
@@ -97,7 +97,7 @@ export function cmdResume(root, flags = {}) {
 export function renderResume(o, profile = DEFAULT_PROFILE) {
   const shownFields = (x) => (x.fields && Object.keys(x.fields).length ? ` · ${Object.entries(x.fields).map(([n, v]) => `${n}=${v}`).join(' ')}` : '');
   const sec = (title, lines, none) => (lines.length ? [`## ${title}`, ...lines, ''] : none === undefined ? [] : [`## ${title}`, none, '']);
-  const lease = (x) => [x.branch && `branch ${x.branch}`, x.worker && `worker ${x.worker}`, x.worker && x.model !== undefined && (x.model ? `model ${x.model}` : 'model not recorded'), x.since && `since ${x.since}`].filter(Boolean).join(' · ');
+  const lease = (x) => [x.branch && `branch ${x.branch}`, x.worker && `worker ${x.worker}`, x.worker && x.model !== undefined && (x.model ? `model ${x.model}` : 'model not recorded'), x.since && `since ${x.since}`, leasedByText(x)].filter(Boolean).join(' · ');
   const st = o.status;
   const head = [
     `# Resume${o.goal ? ` · ${o.goal}` : ''}`,

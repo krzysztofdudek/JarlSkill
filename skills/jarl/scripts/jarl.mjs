@@ -20,7 +20,7 @@ import {
   issuesNaming, questionFor, cmdGoal, cmdGoalSet, cmdRepoBase, whereOf, cmdVerify, renderVerify, renderCheckNotes,
   renderProfile, renderTips, renderQueue, renderResume, renderStatus, renderImport, renderSources, renderList, recordTypeLog, recordRuleLog,
   runDecisionsDriver, mergeFlags, describeNew, renderNewReply, issueView, attachmentStates, evidenceTable, renderBranches, renderDecide, renderDecisions,
-  cmdNextAs, renderNextAs, askerSection,
+  cmdNextAs, renderNextAs, askerSection, withWriter, editorOf, needFormat, formatState, readProfileFile, FORMAT_LINES,
 } from './jarl-lib.mjs';
 import { writeAreaDecision, writeRuleRatification } from './yg-edge.mjs';
 
@@ -29,7 +29,7 @@ export * from './jarl-lib.mjs';
 export const USAGE = `usage: jarl.mjs <command> [options]
 
 commands:
-  init "<goal>" [--committed] [--permanent] [--profile <file>]
+  init "<goal>" [--committed] [--permanent] [--profile <file>] [--by who]
                                                  create .jarl/ with the goal; by default it also writes .jarl/.gitignore
                                                  (* and **/*) so git never sees the loop, and every role working
                                                  outside the loop root passes --root <loop root>;
@@ -40,7 +40,7 @@ commands:
                                                  profile file (see profile below) and stores it as .jarl/profile.json
   new "<title>" [--kind k] [--prio 1|2|3] [--tier light|standard|strong] [--tags a,b] [--files p,q] [--repo <name|path>] [--found-by who]
       [--where "<w>"] [--what "<w>"] [--why "<w>"] [--acceptance "<line>"]... [--changelog "<entry>"]...
-      [--source <dir>#<id>,...] [--after <ids>] [--template <name>] [--field "<Name>=<value>"]... [--section "<Heading>=<text>"]...
+      [--source <dir>#<id>,...] [--after <ids>] [--template <name>] [--field "<Name>=<value>"]... [--section "<Heading>=<text>"]... [--by who]
                                                  file an issue under the next free number; without --tier it records
                                                  standard and says so on stderr, with what each tier is for (light: a check
                                                  or test decides; strong: unknown cause, design, record format, security);
@@ -94,7 +94,7 @@ commands:
                                                  the issues these wait on: next does not offer one until each is
                                                  done or dropped, and status counts it as waiting
   import <findings.json> [--source <dir>] [--kind k] [--prio 1|2|3] [--tier t] [--tags a,b] [--repo <name|path>]
-      [--found-by who] [--only <finding ids>] [--adopt] [--dry-run] [--field "<Name>=<value>"]...
+      [--found-by who] [--only <finding ids>] [--adopt] [--dry-run] [--field "<Name>=<value>"]... [--by who]
                                                  one issue per finding, with Source: <dir>#<finding id>; a finding
                                                  whose Source is already on an issue is skipped, so a re-run files
                                                  nothing twice; --dry-run prints what it would file; --adopt writes
@@ -102,7 +102,7 @@ commands:
                                                  --tags, --repo and --only repeat, or take a comma list
   sources [<findings.json>...] [--source <dir>]  per report: its findings, the issues filed from them and their
                                                  status; with a findings file, the findings nobody filed too
-  evidence <ids> "<text>" | --ran "<command>" --saw "<what it printed>" | <id> --file <path> --slot <name>
+  evidence <ids> "<text>" | --ran "<command>" --saw "<what it printed>" | <id> --file <path> --slot <name> [--by who]
                                                  append a free-text note (under ### Notes), or one checkable row per --ran/--saw
                                                  pair (repeatable; under ### Proof, after the last row);
                                                  --file --slot records one attachment as a Proof row: the slot, the path
@@ -131,7 +131,7 @@ commands:
                                                  field that disagrees with the log (see status), where each repository
                                                  written as a name is on this machine and the worktree git has on the
                                                  lease's branch (--json carries them as where)
-  set <ids> <status> "<why>" [--branch <b>] [--worker <name>] [--model <m>] [--worktree <path>] [--handover] [--header]
+  set <ids> <status> "<why>" [--branch <b>] [--worker <name>] [--model <m>] [--worktree <path>] [--handover] [--header] [--by who]
                                                  (<ids> <status-in-the-log> --header rewrites the header fields the log
                                                  renders from the log, writes no log line and is never a move)
                                                  change status; writes the log line in the same move; in-progress
@@ -152,7 +152,7 @@ commands:
                                                  the last start, reopen or filing; approves after those or a red
                                                  round), a --ran/--saw row — a free-text note never counts alone —
                                                  and a live approve
-  merged <ids> --sha <sha> [--ran "<check>" --saw "<summary>" | --red <id>] [--ci pending|green|red|none] [--repo <name|path>] [--keep] | <ids> --ci <state>
+  merged <ids> --sha <sha> [--ran "<check>" --saw "<summary>" | --red <id>] [--ci pending|green|red|none] [--repo <name|path>] [--keep] [--by who] | <ids> --ci <state>
                                                  the merge as fields: Merged (sha, and where with --repo) and CI
                                                  (only when given; pending: a pushed commit whose CI will report;
                                                  none: no CI to wait for), and a log line. --ran/--saw record the
@@ -203,7 +203,8 @@ commands:
                                                  fresh one when the issue carries code (a Branch or Merged field), and
                                                  the worker's Proof row; an approve on an issue with no Proof row says so;
                                                  findings need at least three words; a verdict is taken back with retract
-  round <ids> "<what failed>" [--findings <n>]    one red round on each, with the count of findings it left if given; every third round,
+  round <ids> "<what failed>" [--findings <n>] [--by who]
+                                                 one red round on each, with the count of findings it left if given; every third round,
                                                  or every n-th where the goal's "Takeover (<kind>): <n>" line for the issue's kind
                                                  or its bare "Takeover: <n>" line says so, prints the takeover block for a fresh
                                                  worker: a tier up, another model or a changed approach. The limit is read from the
@@ -236,7 +237,7 @@ commands:
                                                  acted on; read in --repo alone, else in the loop's own
                                                  repository, every repository an open or in-progress issue
                                                  names and every one where an issue not dropped records a Branch
-  ask "<question>" [--kind stop|stuck|lower|charter|ratify|escalation] [--target x] [--issue 7] [--slice <coordinator>] [--option "<label>: <effect>"]...
+  ask "<question>" [--kind stop|stuck|lower|charter|ratify|escalation] [--target x] [--issue 7] [--slice <coordinator>] [--option "<label>: <effect>"]... [--by who]
                                                  a question the owner has to answer; lower needs --target;
                                                  escalation is a coordinator's question to the jarl, who holds it:
                                                  it names its --slice or its --issue (or both), shows on next --as
@@ -266,7 +267,7 @@ commands:
                                                  <coordinator> keeps in flight, waiting, the questions, held and next
                                                  ready to that coordinator's slice, and the rulings, the merge queue,
                                                  the tips and the log whole
-  log "<event>"                                  append one dated note to the journal; a line that reads as a filing, a move,
+  log "<event>" [--by who]                       append one dated note to the journal; a line that reads as a filing, a move,
                                                  a round, a verdict, a retraction, an evidence row, a merge, a CI state or
                                                  a body change is refused, and the refusal names the command that writes it
   decide <slug> "<ruling>" [--by who [--quote "<words>"]] [--under <slug>] [--supersedes <slug>] [--settles <ids>] [--area <type> [--reach n] [--rule <id>]]
@@ -285,7 +286,7 @@ commands:
   decisions [--live]                             the rulings with who ruled and what superseded them; --live only
                                                  those still in force
   goal                                           the goal as goal.md holds it
-  goal --set "<machine line>"                    one machine line of the goal set, with a log line that says what it
+  goal --set "<machine line>" [--by who]         one machine line of the goal set, with a log line that says what it
                                                  was and what it is: "Check (<repository>): <command>" or a bare
                                                  "Check: <command>", "Model (<tier>): <models>" (a tier the profile
                                                  declares), "Coordinators: <names>" (each name a coordinator, which runs the slice of
@@ -320,7 +321,7 @@ commands:
                                                  repository, tag, kind, priority or a field the profile declares; --by repo
                                                  also prints where each repository is on this machine, its base and
                                                  whether its checkout is on it
-  archive "<slug>"                               put the current loop away under .jarl/archive/<yyyy.mm.dd>-<slug>/,
+  archive "<slug>" [--by who]                    put the current loop away under .jarl/archive/<yyyy.mm.dd>-<slug>/,
                                                  keeping the archive, the mode markers and .jarl/templates/, so init
                                                  can open a new loop here in the same mode; refused under a profile
                                                  whose "lifecycle" keeps archive to the record (it names the command)
@@ -344,7 +345,7 @@ commands:
   changelog <ids> [--repo <name|path>]           print the issues' ## Changelog entries grouped by section (Added,
                                                  Changed, Deprecated, Removed, Fixed, Security), ready to paste under
                                                  [Unreleased]; per repository when they span several; reads only
-  mode permanent                                 switch an existing committed loop to the permanent mode, with a
+  mode permanent [--by who]                      switch an existing committed loop to the permanent mode, with a
                                                  log line; refuses a default-mode loop (out of git — a permanent
                                                  record must be committed) and an already-permanent one
   profile [<file>]                               read-only: the loop's profile — its statuses and what each one means
@@ -365,7 +366,7 @@ commands:
                                                  to a repository its issue names, and an open issue that cites a
                                                  superseded ruling is listed; prints each check with its first findings,
                                                  and exits 2 when it finds something
-  close [--force] [--batch]                      refuse while anything is open or in progress, and, where it removes .jarl/,
+  close [--force] [--batch] [--by who]           refuse while anything is open or in progress, and, where it removes .jarl/,
                                                  while anything is deferred (the refusal names archive "<slug>", which
                                                  keeps the loop under .jarl/archive/, and --force, which removes the
                                                  loop with its open and deferred issues, keeping no copy); else remove the live
@@ -421,6 +422,13 @@ an item that begins or ends with a quote mark, a name (an id, a tag, a reference
 a bracket or a quote, and a path whose brackets do not pair up ([a, b]) or that is a quoted or empty list
 in brackets (["a"], []). A path whose brackets pair up is a name: [1], src/[id]/page.tsx, [...slug].
 
+--by who on init, new, import, evidence, set, merged, round, ask, log, goal, archive, mode and close: the writer of
+that one call, written into every log line the call writes, right after the stamp ("- <stamp> by <who> · ..."); the
+first such line raises the loop's record format to 3, and where a composer keeps the format the call is refused with
+nothing written. Nothing names a writer for a call that names none: no server, variable or other call does, and an
+unnamed lease shows as "(unnamed)" in a loop whose goal names coordinators. On the other commands --by is what they
+record: who changed the description, the reviewer, who answered, ruled or retracted.
+
 Writes: every command that writes holds .jarl/.lock while it runs (the holder's pid, host and time are
 inside), so parallel calls from workers, reviewers and the merger queue instead of losing each other's
 writes; a lock whose holder is gone is taken over, a live one that does not let go within 20 s fails the
@@ -460,40 +468,40 @@ Parallel workers in worktrees:
 // ones it does, never silently dropped.
 export const GLOBAL_FLAGS = { json: 'bool', help: 'bool', root: 'value' };
 export const COMMAND_FLAGS = {
-  init: { committed: 'bool', permanent: 'bool', profile: 'value' },
+  init: { committed: 'bool', permanent: 'bool', profile: 'value', by: 'value' },
   new: {
     kind: 'value', prio: 'value', tier: 'value', tags: 'many', files: 'many', repo: 'many', 'found-by': 'value',
     where: 'value', what: 'value', why: 'value', acceptance: 'many', source: 'many', after: 'many', changelog: 'many', template: 'value',
-    field: 'many', section: 'many',
+    field: 'many', section: 'many', by: 'value',
   },
   body: { title: 'value', where: 'value', what: 'value', why: 'value', acceptance: 'many', changelog: 'many', section: 'many', by: 'value' },
   import: {
     source: 'value', kind: 'value', prio: 'value', tier: 'value', tags: 'many', repo: 'many', 'found-by': 'value',
-    only: 'many', adopt: 'bool', 'dry-run': 'bool', field: 'many',
+    only: 'many', adopt: 'bool', 'dry-run': 'bool', field: 'many', by: 'value',
   },
   sources: { source: 'value' },
   source: { by: 'value' },
   after: { clear: 'bool', by: 'value' },
-  evidence: { ran: 'many', saw: 'many', file: 'value', slot: 'value' },
+  evidence: { ran: 'many', saw: 'many', file: 'value', slot: 'value', by: 'value' },
   retract: { by: 'value' }, field: { clear: 'bool', by: 'value' },
   list: { status: 'value', kind: 'value', tag: 'value', prio: 'value', grep: 'value', match: 'many', all: 'bool' },
-  show: { full: 'bool' }, set: { branch: 'value', worker: 'value', model: 'value', worktree: 'value', handover: 'bool', header: 'bool' }, tag: { by: 'value' }, prio: { by: 'value' }, files: { by: 'value' },
+  show: { full: 'bool' }, set: { branch: 'value', worker: 'value', model: 'value', worktree: 'value', handover: 'bool', header: 'bool', by: 'value' }, tag: { by: 'value' }, prio: { by: 'value' }, files: { by: 'value' },
   repo: { clear: 'bool', base: 'bool', by: 'value' },
   next: { limit: 'value', all: 'bool', as: 'value', slice: 'value' },
-  review: { by: 'value', model: 'value', relayed: 'bool' }, round: { findings: 'value' },
+  review: { by: 'value', model: 'value', relayed: 'bool' }, round: { findings: 'value', by: 'value' },
   models: { by: 'value', with: 'many', archives: 'bool' },
   scope: { branch: 'value', base: 'value', repo: 'value' },
   branches: { base: 'value', repo: 'value', 'stale-hours': 'value' },
-  merged: { sha: 'value', ci: 'value', repo: 'value', ran: 'many', saw: 'many', red: 'value', keep: 'bool' },
-  ask: { kind: 'value', target: 'value', issue: 'value', slice: 'value', option: 'many' },
+  merged: { sha: 'value', ci: 'value', repo: 'value', ran: 'many', saw: 'many', red: 'value', keep: 'bool', by: 'value' },
+  ask: { kind: 'value', target: 'value', issue: 'value', slice: 'value', option: 'many', by: 'value' },
   answer: { by: 'value', option: 'value' },
   resume: { log: 'value', ready: 'value', ci: 'bool', as: 'value', slice: 'value' },
   handoff: { summary: 'value', next: 'many', log: 'value', ready: 'value', ci: 'bool' },
-  log: {}, decide: { settles: 'many', by: 'value', quote: 'value', under: 'value', supersedes: 'value', area: 'value', reach: 'value', rule: 'value' }, decisions: { live: 'bool' },
-  goal: { set: 'value' },
-  status: { 'stale-hours': 'value', by: 'value', tag: 'value', as: 'value', slice: 'value' }, archive: {}, report: { found: 'bool' }, tips: {}, mode: {},
+  log: { by: 'value' }, decide: { settles: 'many', by: 'value', quote: 'value', under: 'value', supersedes: 'value', area: 'value', reach: 'value', rule: 'value' }, decisions: { live: 'bool' },
+  goal: { set: 'value', by: 'value' },
+  status: { 'stale-hours': 'value', by: 'value', tag: 'value', as: 'value', slice: 'value' }, archive: { by: 'value' }, report: { found: 'bool' }, tips: {}, mode: { by: 'value' },
   queue: { repo: 'value', base: 'value' }, changelog: { repo: 'value' },
-  close: { force: 'bool', batch: 'bool' }, profile: {}, verify: {},
+  close: { force: 'bool', batch: 'bool', by: 'value' }, profile: {}, verify: {},
 };
 
 // Flags a command reads besides the ones its usage shows: the spellings another form of the same operation takes
@@ -788,8 +796,10 @@ export function dispatch(root, commandName, rest, flags) {
   const aliases = [];   // the form to use when a call is spelled another way: said by the command line only, never by a tool
   const each = (o, f) => [].concat(o).map(f).join('\n');
   const writes = MUTATING.has(cmd);
+  const writer = writerOf(root, cmd, rest, flags);
   {
-    (writes ? (fn) => withLock(root, fn) : (fn) => fn())(() => {
+    (writes ? (fn) => withLock(root, fn) : (fn) => fn())(() => withWriter(writer, writer === null ? null : (r) => needFormat(r, 'writer'), () => {
+    if (writer !== null) needWriterFormat(root, cmd, flags);
     switch (cmd) {
       case 'init': out = R.initLoop(root, rest[0], { ...flags, caller: 'cli' }); text = `opened ${out.dir} · ${out.permanent ? 'permanent record, no branch' : out.committed ? 'committed with the work' : 'kept out of git'}${out.profile ? ` · profile ${out.profile}` : ''}`; warn = out.note ? [`note: ${out.note}`] : []; break;
       // The command line says caller 'cli': the notes (the tier a new issue got) are for it, never for a library caller.
@@ -878,7 +888,7 @@ export function dispatch(root, commandName, rest, flags) {
       case 'close': out = cmdClose(root, { ...flags, caller: 'cli' }); text = out.closed ? (out.kept ? `kept ${out.kept} · closed as a permanent record` : `removed ${out.removed}${out.archiveKept ? ' (the live loop; .jarl/archive/ is left in place)' : out.archiveRemoved ? ` (with .jarl/archive/: ${out.archiveRemoved.join(', ')})` : ''}`) + (out.deferred.length ? ` · ${out.deferred.length} deferred ${out.kept ? 'still waiting' : 'removed with the loop'}: ${out.deferred.join(', ')}` : '') + (out.uncommitted ? ` · ${out.uncommitted} loop file(s) not committed${out.kept ? ' — commit .jarl/' : ' before the removal'}` : '') + renderBatch(out.batch, out.kept ? 'kept' : 'removed') : renderBatch(out.batch, 'open').trimStart(); break;
       default: throw new Error(`unknown command: ${cmd}\n${USAGE}`);
     }
-    });
+    }));
   }
   // A ratified area ruling goes to the type's decision log after the answer is recorded and the lock let go: the
   // probe and the write run another tool, which may take a while, and other writers of the loop must not wait on it.
@@ -887,6 +897,26 @@ export function dispatch(root, commandName, rest, flags) {
   // written twice, nor into a checkout the composer's work never reaches.
   if (cmd === 'answer') text = [].concat(out).map((one) => answered(root, one, warn)).join('\n');
   return { out, text, warn, aliases };
+}
+
+// The commands whose --by names the writer of the call: every line the call writes into the log carries it, in its fixed
+// place after the stamp, under record format 3. The commands whose --by is part of what they record (the author of a
+// description change, the reviewer, who answered, ruled or retracted) keep it there: set naming a field and evidence
+// taking a row back are those too.
+export const WRITER_COMMANDS = Object.freeze(['init', 'new', 'import', 'evidence', 'set', 'merged', 'round', 'ask', 'log', 'goal', 'archive', 'mode', 'close']);
+function writerOf(root, cmd, rest, flags) {
+  if (!WRITER_COMMANDS.includes(cmd) || flags.by === undefined) return null;
+  if (cmd === 'evidence' && flags.retract !== undefined) return null;
+  if (cmd === 'set' && setRouteOf(root, rest[1]) === 'field') return null;
+  return editorOf(flags.by);
+}
+// A writer is written in record format 3: a loop that cannot be raised to it (its profile names an external scheduler,
+// or init's profile does) refuses the call before anything is written. The raise itself comes with the call's first line.
+function needWriterFormat(root, cmd, flags) {
+  const line = FORMAT_LINES.writer;
+  const profile = cmd === 'init' ? (flags.profile !== undefined ? readProfileFile(flags.profile).profile : null) : R.loadProfile(root);
+  if (profile === null || profile.format >= line.format || formatState(profile).raises) return;
+  throw new Error(`${line.what} (--by) needs record format ${line.format}, and this loop stays at format ${profile.format}: its profile names an external scheduler (${profile.scheduler}), the composer that reads this record, so Jarl never raises its format; leave --by out there — nothing was written`);
 }
 
 // status --as and resume --as: the view, then the asker's list as next --as prints it (`as` in --json).

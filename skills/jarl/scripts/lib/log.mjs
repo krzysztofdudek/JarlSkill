@@ -18,8 +18,8 @@ import { STAMP_SRC, appendLog, logPath, oneLine } from './journal.mjs';
 // needs a fact about the log (the done gate, the metrics, models, the rounds, tips, the timestamps status and resume
 // print) takes it from the typed event. A line kind is taught here once.
 //
-// An event is { n, at, text, id, type, … } with n the line's index in the file and id the issue the line is about
-// (null for a line about the loop). The types and what they add:
+// An event is { n, at, text, writer, id, type, … } with n the line's index in the file, writer the name the call that
+// wrote it gave (null when it named none) and id the issue the line is about (null for a line about the loop). The types and what they add:
 //   filed          the issue's filing
 //   move           a status change: from (null when the log names no status before the line), to, lease — { worker, model, branch }
 //                  for a move into a status that holds the claim and names a worker, else null — and model, the model a
@@ -40,7 +40,11 @@ import { STAMP_SRC, appendLog, logPath, oneLine } from './journal.mjs';
 //   ci             a CI state recorded alone: state
 //   body           a body change
 //   other          any other line
-const LOG_LINE = new RegExp(`^- (${STAMP_SRC}) · ([^\\n]*)$`);
+// A line names its writer, when the call that wrote it named one (--by), right after the stamp and before the separator:
+// `- <stamp> by <writer> · <text>`. The place is fixed and no text of the line can reach it, so a note can never pose as
+// a writer; a reader that knows no writer does not read the line as dated at all, and a loop that holds one is in
+// record format 3, which that reader refuses.
+const LOG_LINE = new RegExp(`^- (${STAMP_SRC})(?: by ([^·\\n]+?))? · ([^\\n]*)$`);
 const LEADING_ID = idRe('^(?:filed )?({id})\\b');
 const RETRACT_ROW_LINE = idRe('^{id} evidence retract · row (\\d+)\\b');
 const RETRACT_NOTE_LINE = idRe('^{id} evidence retract · note (\\d+)\\b');
@@ -192,8 +196,8 @@ export function mapMergeRepos(root, fn) {
   const held = issueForms(jarlDir(root));
   const next = log.split('\n').map((l) => {
     const m = LOG_LINE.exec(l);
-    const p = m && MERGE_REPO_PART.exec(m[2]);
-    return p && held.has(idKey(p[1])) && !p[3].includes(' · ') ?`- ${m[1]} · ${p[1]} merged ${p[2]} in ${fn(p[3])}${p[4]}` : l;
+    const p = m && MERGE_REPO_PART.exec(m[3]);
+    return p && held.has(idKey(p[1])) && !p[3].includes(' · ') ?`- ${m[1]}${m[2] ? ` by ${m[2]}` : ''} · ${p[1]} merged ${p[2]} in ${fn(p[3])}${p[4]}` : l;
   }).join('\n');
   if (next !== log) writeAtomic(path, next);
 }
@@ -216,15 +220,16 @@ export function loopEvents(dir, profile, skipped) {
       return;
     }
     // A line names its issue as it was written; the event carries the issue's own form, so it meets its issue's id.
-    const written = LEADING_ID.exec(m[2])?.[1] ?? null;
+    const [, at, writer = null, text] = m;
+    const written = LEADING_ID.exec(text)?.[1] ?? null;
     const id = written === null ? null : writtenId(written, forms);
-    const body = id === null ? { type: 'other' } : parse(written, m[2], lastStatus.get(id) ?? null);
-    if (skipped && written !== null) { const why = unplaced(profile, written, m[2], body); if (why) skipped.push({ n: n + 1, text: l, reason: why }); }
+    const body = id === null ? { type: 'other' } : parse(written, text, lastStatus.get(id) ?? null);
+    if (skipped && written !== null) { const why = unplaced(profile, written, text, body); if (why) skipped.push({ n: n + 1, text: l, reason: why }); }
     // A line the tool never writes with a strike-through: the reader takes it for a note, and a strike-through voids nothing.
-    if (skipped && /^~~/.test(m[2])) skipped.push({ n: n + 1, text: l, reason: 'a struck-through line: the reader takes it for a note, and a strike-through retracts nothing (a verdict is retracted with retract <id> review, an evidence row with retract <id> <n>)' });
+    if (skipped && /^~~/.test(text)) skipped.push({ n: n + 1, text: l, reason: 'a struck-through line: the reader takes it for a note, and a strike-through retracts nothing (a verdict is retracted with retract <id> review, an evidence row with retract <id> <n>)' });
     if (body.type === 'filed') { if (!lastStatus.has(id)) lastStatus.set(id, profile.initial); }
     else if (body.type === 'move') lastStatus.set(id, body.to);
-    events.push({ n, at: m[1], text: m[2], id, ...body });
+    events.push({ n, at, text, writer, id, ...body });
   });
   return events;
 }

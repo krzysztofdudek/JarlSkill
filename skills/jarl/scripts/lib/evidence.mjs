@@ -451,9 +451,19 @@ export function inFlightRows(loop, issues) {
   const { profile, byId } = loop;
   return issues.filter((i) => profile.is(i.status, 'holds-claim') && !waitingOn(i, byId, profile).length).map((i) => {
     const mark = inFlightMark(loop, i);
-    return { id: i.id, title: i.title, branch: i.fields.branch || null, worker: i.fields.worker || null, model: i.fields.model || null, since: i.fields.since || null, mark, next: IN_FLIGHT_MARKS[mark] };
+    return { id: i.id, title: i.title, branch: i.fields.branch || null, worker: i.fields.worker || null, model: i.fields.model || null, since: i.fields.since || null, ...leaseWriter(loop, i), mark, next: IN_FLIGHT_MARKS[mark] };
   });
 }
+// Who wrote an issue's lease, as { leasedBy }: the writer its last move into a lease status names. A loop whose goal names
+// coordinators shows an unnamed one as null, since several may lease there; in any other loop an unnamed write is the
+// jarl's, and the key is left out unless the line names someone.
+export function leaseWriter(loop, issue) {
+  const move = (loop.eventsById.get(issue.id) || []).filter((e) => e.type === 'move' && loop.profile.is(e.to, 'holds-claim')).pop();
+  const writer = move ? move.writer : null;
+  return writer !== null || loop.goalLines.coordinators.length ? { leasedBy: writer } : {};
+}
+// The writer of a lease as a view prints it.
+export const leasedByText = (x) => (x.leasedBy === undefined ? '' : `leased by ${x.leasedBy ?? '(unnamed)'}`);
 
 // A loop opened in the default mode, or opened --committed, has no way to become the
 // permanent record other than this: init is the only command that writes .jarl/.permanent for a new
