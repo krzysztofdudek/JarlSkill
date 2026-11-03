@@ -3,7 +3,8 @@
 // reason. A handover is logged in a shape every reader places, and the views stop alarming about the lease it ended.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gitRepo, jarl, refuses, run, loop } from './helpers.mjs';
 import { oldJarl, formatTwoJarl } from './old-jarl.mjs';
@@ -152,4 +153,35 @@ test('the record library holds the lease the same way and takes handover as an o
   const out = R.setStatus(root, '001', 'in-progress', 'fresh worker after three rounds', { branch: 'jarl/001-b', worker: 'wB', handover: true });
   assert.equal(out.handover, true);
   assert.equal(R.findIssue(root, '001').fields.worker, 'wB');
+});
+
+test('in a loop its composer schedules, two leases on one file and a second lease are the composer\'s to decide, and nothing refuses them', () => {
+  const mission = mkdtempSync(join(tmpdir(), 'jarl-lease-mission-'));
+  mkdirSync(join(mission, '.git'));
+  const file = join(mission, 'profile-source.json');
+  writeFileSync(file, JSON.stringify({
+    'jarl-profile': 1, format: 1, name: 'horde',
+    statuses: {
+      proposed: { flags: [], 'set-by': 'record' },
+      queued: { flags: ['dispatchable'], 'set-by': 'record' },
+      running: ['holds-claim'],
+      merged: { flags: ['settles-dependents', 'terminal', 'closes-record'], 'set-by': 'record' },
+      dropped: ['settles-dependents', 'terminal', 'needs-reason'],
+    },
+    'external-scheduler': 'horde.mjs tick',
+    'done-gate': { approve: 'none', 'requires-merged': true },
+  }));
+  R.initLoop(mission, 'a mission', { profile: file });
+  // Every ticket of one node declares that node's log, and the composer runs them at once.
+  for (const t of ['first ticket', 'second ticket']) R.newIssue(mission, t, { files: '.yggdrasil/model/orders/log.md, src/orders.mjs' });
+  R.setStatus(mission, '001,002', 'queued', 'planned');
+  R.setStatus(mission, '001', 'running', 'tick', { branch: 'horde/001', worker: 'agent-1' });
+  R.setStatus(mission, '002', 'running', 'tick', { branch: 'horde/002', worker: 'agent-2' });
+  R.setStatus(mission, '001', 'running', 'lease expired, reassigned', { branch: 'horde/001-b', worker: 'agent-3' });
+  assert.deepEqual(['001', '002'].map((id) => R.findIssue(mission, id).fields.worker), ['agent-3', 'agent-2']);
+  assert.equal(existsSync(join(mission, '.jarl', 'profile.json')), true);
+  assert.equal(R.loadProfile(mission).format, 1, 'the composer\'s loop keeps its format');
+  // A handover there is still a handover: checked, and logged.
+  R.setStatus(mission, '002', 'running', 'context grew', { branch: 'horde/002-b', worker: 'agent-4', handover: true });
+  assert.match(logText(mission), /002 → running · context grew · handover · branch horde\/002-b · worker agent-4\n/);
 });

@@ -693,7 +693,11 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
 //   holds, unless it joins that lease: the same branch, and the same worker when both name one. Issues leased in one
 //   call share one lease.
 // A move that names no new holder, or restates the one the issue has, takes nothing new and is never refused here.
+// A loop whose profile names an external scheduler is leased by its composer, which decides who holds what (several
+// issues it runs at once may share a file there), so neither refusal runs in it; a handover there is still checked
+// and logged.
 function needLeaseHolds(root, profile, issues, status, why, flags, handover, nothing) {
+  const composed = profile.scheduler !== null && profile.scheduler !== undefined;
   const named = (k) => (flags[k] !== undefined ? fieldText(flags[k]) : null);
   const leaseFlags = ['branch', 'model', 'worker'].filter((k) => named(k) !== null).map((k) => `--${k} ${named(k)}`).join(' ');
   const taken = new Set(issues.map((i) => i.id));
@@ -705,10 +709,11 @@ function needLeaseHolds(root, profile, issues, status, why, flags, handover, not
     if (handover) {
       need(leased(issue), `${issue.id} holds no lease to hand over — lease it without --handover: set ${issue.id} ${status} "<why>" ${leaseFlags}${nothing}`.replace(/ {2,}/g, ' '));
       need(replaces(issue), `--handover names the lease ${issue.id} already has (${holderText(issue)}) — a handover names the new --worker or --branch${nothing}`);
-    } else {
+    } else if (!composed) {
       need(!(leased(issue) && replaces(issue)), `${issue.id} is leased already (${holderText(issue)}) — a second lease would replace it in silence, and ${fieldText(issue.fields.worker) || 'its worker'} would go on working on a branch the record does not name; when the work changes hands, say why: jarl.mjs set ${issue.id} ${status} "<why the worker changed>" ${leaseFlags} --handover${nothing}`.replace(/ {2,}/g, ' '));
     }
   }
+  if (composed) return;
   // What the other leases hold: each file key and each resource, with the issue whose lease holds it.
   const others = loadIssues(root).filter((i) => !taken.has(i.id) && profile.is(i.status, 'holds-claim'));
   // The first holder of each, in the order of the record, so a refusal names the same issue every time.
