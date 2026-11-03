@@ -248,7 +248,7 @@ test('files, repo, after, body, round and source take a comma list with a range:
   assert.equal(field(root, '1', 'source'), ref);
 
   assert.equal(jarl(root, 'round', '1-2,4', 'the check failed').split('\n').length, 3);
-  assert.match(jarl(root, 'round', '1-2', 'failed again'), /^1 round 2 of 3 before a takeover\n2 round 2 of 3/);
+  assert.match(jarl(root, 'round', '1-2', 'failed again'), /^1 round 2: 2 of 3 before a takeover[^\n]*\n2 round 2: 2 of 3/);
   const rounds = logText(root);
   assert.match(refuses(root, 'round', '1-2,9', 'once more'), /no such issue: 9 — nothing was written/);
   assert.equal(logText(root), rounds);

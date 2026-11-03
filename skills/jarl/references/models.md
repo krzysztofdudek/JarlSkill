@@ -23,7 +23,7 @@ Opening the loop — reading the repository whole, writing the goal, the first r
 issues — is the one part that needs the strongest model in the room. The loop itself is clerical
 work over a tool that refuses what is wrong: the reeve, on the standard tier, runs it, hands out
 issues, reads reports and keeps the journal, and hands back to the jarl only on the four occasions
-named in [The reeve](jarl.md#the-reeve-handing-the-loop-down). Workers start on the tier the issue's `Tier:` names, and a takeover raises the worker one tier up. The reviewer whose approve clears the issue is never of the worker's own model and never ranked below the worker's model, every model that has held the issue's lease, and not the issue's tier (see [The approve that clears an issue](#the-approve-that-clears-an-issue)). Readers and the merger run on the standard tier. Say which tier is running in every report.
+named in [The reeve](jarl.md#the-reeve-handing-the-loop-down). Workers start on the tier the issue's `Tier:` names, and a takeover offers a tier up, another model or a changed approach. The reviewer whose approve clears the issue is never of the worker's own model and never ranked below the worker's model, every model that has held the issue's lease, and not the issue's tier (see [The approve that clears an issue](#the-approve-that-clears-an-issue)). Readers and the merger run on the standard tier. Say which tier is running in every report.
 
 ## The tiers, and when each fits
 
@@ -33,7 +33,7 @@ The built-in tiers are `light`, `standard` and `strong`, weakest first; `standar
 - `standard`: a clear acceptance and a known place in the code — ordinary code, tests and documents.
 - `strong`: the cause is unknown (a flaky test included: it is often a real defect), a design, a record format or a contract, security or data integrity, anything that weakens or changes a protection, a takeover after three rounds, finishing another worker's uncommitted work.
 
-`new` without `--tier` records `standard` and says so on stderr (the command line only), with these criteria in a few words. The takeover block that the third `round` prints says to raise the fresh worker one tier up, or on another model than the one that failed, which the lease names.
+`new` without `--tier` records `standard` and says so on stderr (the command line only), with these criteria in a few words. The takeover block that the third `round` prints says to raise the fresh worker one tier up while one exists, put it on another model than the one that failed (which the lease names), or change the approach.
 
 ## The loop's models
 
