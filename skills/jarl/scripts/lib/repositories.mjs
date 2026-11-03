@@ -12,6 +12,7 @@ import { PROFILE_VERSION, RECORD_FORMATS, RECORD_FORMAT_RAISED, loadProfile, pro
 import { appendLog } from './journal.mjs';
 import { withLock } from './lock.mjs';
 import { mapMergeRepos } from './log.mjs';
+import { loadIssues } from './issues.mjs';
 
 // ---- repositories: names, declarations and the one resolver ------------------------------------------------------
 //
@@ -349,13 +350,8 @@ export function repoFromInput(root, raw) {
 // Whether an issue of the loop already stores this checkout as a path. The note that says why a path is stored is said
 // once per loop: a later filing that names the same checkout by its path is silent.
 function storedAsPath(root, main) {
-  const dir = issuesDir(root);
-  if (!existsSync(dir)) return false;
   const place = canonical(main);
-  return readdirSync(dir).filter((f) => ISSUE_FILE_RE.test(f)).some((f) => {
-    const m = /^\*\*Repo:\*\* (.*)$/m.exec(readText(join(dir, f)));
-    return m !== null && splitList(m[1]).some((v) => repoValueKind(root, v) === 'path' && canonical(resolve(root, v)) === place);
-  });
+  return loadIssues(root).some((issue) => reposNamed(issue).some((v) => repoValueKind(root, v) === 'path' && canonical(resolve(root, v)) === place));
 }
 // The values of a --repo list (one name or path, or several as one comma list), each read by repoFromInput.
 function repoList(root, v) {
