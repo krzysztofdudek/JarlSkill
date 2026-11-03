@@ -6,7 +6,7 @@ import { git } from './git.mjs';
 import { canonical, jarlDir, portablePath } from './where.mjs';
 import { branchIssueId, idKey, idsNamed } from './ids.mjs';
 import { DEFAULT_PROFILE, loadProfile } from './profile.mjs';
-import { appendLog, goalLines, oneLine, parseStamp, readGoal } from './journal.mjs';
+import { appendLog, goalLines, oneLine, parseStamp, readGoal, takeoverEventOf } from './journal.mjs';
 import { journalById, loopEvents } from './log.mjs';
 import { findIssue, loadIssues, mergedOf } from './issues.mjs';
 import { defaultBase, fileAt, isGitRepo, issuePlaces, issueRepoPaths, issueRepos, refsIn, repoFromInput, repoLabel, repoOf, reposNamed, worktreeState, worktreesOf } from './repositories.mjs';
@@ -39,24 +39,29 @@ function takeoverAdvice(tiers, tier, failed, n, takeovers) {
   return `${lead}${tier} is the top tier (${top}), so put it on a model other than ${model}${unknown}, or change the approach — ${tried}.`;
 }
 
-// The goal-line events the log holds for the takeover count: `goal line added · Takeover (<kind>): <n>` and
-// `goal line changed · Takeover (<kind>): <n> · was <m>`, with the kind absent for the bare line.
-const TAKEOVER_EVENT = /^goal line (added|changed) · Takeover(?: \(([^)]+)\))?: (\d+)(?: · was (\d+))?$/i;
-
 // Where an issue stands in the count to its next takeover, as of its last round. The limit is the goal's `Takeover
 // (<kind>): <rounds>` line for the kind, else its bare `Takeover: <rounds>` line, else three, and it is the one in force
 // at each round: the goal lines the log records being added or changed are replayed in the order of the log, from the
 // state they leave undone back to the state before the first. A takeover comes when the rounds since the last one reach
 // the limit in force; a limit lowered below the rounds already counted gives it at the next round, and a raised one
-// never gives it before the count reaches it. Returns { limit, counted (rounds since the last takeover, this one
+// never gives it before the count reaches it. A line edited by hand leaves no log line: where the goal reads other than the
+// last value logged for a kind, the goal's value counts from the first round and the log's changes of that kind are left
+// out; verify notes it. Returns { limit, counted (rounds since the last takeover, this one
 // included), takeover, takeovers (so many up to and including this round) }.
 function takeoverStanding(root, issue) {
   const kind = String(issue.kind).toLowerCase();
   const goal = goalLines(readGoal(jarlDir(root))).takeovers;
   const state = { bare: goal.bare, kinds: { ...goal.kinds } };
-  const set = (q, value) => { if (q) state.kinds[q.toLowerCase()] = value; else state.bare = value; };
   const events = loopEvents(jarlDir(root), loadProfile(root));
-  const changes = (e) => TAKEOVER_EVENT.exec(e.text);
+  const changes = (e) => takeoverEventOf(e.text);
+  // The kinds ('' for the bare line) whose goal line is not the value the log last gave them: edited by hand.
+  const logged = new Map();
+  for (const e of events) { const m = e.id === null ? changes(e) : null; if (m) logged.set((m[2] ?? '').toLowerCase(), Number(m[3])); }
+  const byHand = new Set([...logged].filter(([q, v]) => ((q ? goal.kinds[q] : goal.bare) ?? null) !== v).map(([q]) => q));
+  const set = (q, value) => {
+    if (byHand.has((q ?? '').toLowerCase())) return;
+    if (q) state.kinds[q.toLowerCase()] = value; else state.bare = value;
+  };
   for (const e of [...events].reverse()) {
     const m = e.id === null ? changes(e) : null;
     if (m) set(m[2], m[1].toLowerCase() === 'added' || m[4] === undefined ? null : Number(m[4]));

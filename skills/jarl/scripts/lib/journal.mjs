@@ -238,7 +238,9 @@ export function goalWithLine(text, line) {
   let was = null;
   for (const l of String(text ?? '').replace(/\s+$/, '').split('\n')) {
     if (isMachineLine(l, line.key, line.qualifier)) {
-      if (!replaced) { out.push(shown); was = goalLineOf(l).value; }
+      if (!replaced) out.push(shown);
+      // The first line of a kind stands for them all, except a Takeover line: the last one is the one in force.
+      if (!replaced || line.key === 'takeover') was = goalLineOf(l).value;
       replaced = true;
       continue;
     }
@@ -247,6 +249,11 @@ export function goalWithLine(text, line) {
   if (!replaced) out.push('', shown);
   return { text: `${out.join('\n')}\n`, replaced, was, shown };
 }
+
+// The log line goal --set writes for a Takeover line, read back as the match [line, verb (added|changed), kind or undefined
+// for the bare line, the new rounds, the rounds it replaced or undefined when they were no number], or null.
+const TAKEOVER_EVENT = /^goal line (added|changed) · Takeover(?: \(([^)]+)\))?: (\d+)(?: · was (?:(\d+)|.*))?$/i;
+export function takeoverEventOf(text) { return TAKEOVER_EVENT.exec(String(text)); }
 
 // goal: the goal as goal.md holds it.
 export function cmdGoal(root) {
@@ -286,7 +293,9 @@ export function cmdGoalSet(root, text) {
   // A line that already holds this value is left alone: nothing is written and no log line says it changed.
   if (next.replaced && noSeparators(next.was) === value) return { shown: next.shown, replaced: true, was: next.was, unchanged: true };
   writeAtomic(goalPath(dir), next.text);
-  appendLog(root, `goal line ${next.replaced ? 'changed' : 'added'} · ${next.shown}${next.replaced ? ` · was ${noSeparators(next.was)}` : ''}`);
+  // A replaced Takeover value that was no number of rounds is said so: the count then has no earlier limit to go back to.
+  const unread = line.key === 'takeover' && next.replaced && takeoverRounds(next.was) === null ? ' (not a number of rounds)' : '';
+  appendLog(root, `goal line ${next.replaced ? 'changed' : 'added'} · ${next.shown}${next.replaced ? ` · was ${noSeparators(next.was)}${unread}` : ''}`);
   return { shown: next.shown, replaced: next.replaced, was: next.replaced ? next.was : null, unchanged: false };
 }
 

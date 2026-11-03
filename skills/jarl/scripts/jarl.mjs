@@ -179,7 +179,7 @@ commands:
                                                  findings need at least three words; a verdict is taken back with retract
   round <ids> "<what failed>" [--findings <n>]    one red round on each, with the count of findings it left if given; every third round,
                                                  or every n-th where the goal's "Takeover (<kind>): <n>" line says so for the issue's
-                                                 kind, prints the takeover block for a fresh worker: a tier up, another model or a changed approach
+                                                 kind, prints the takeover block for a fresh worker: a tier up, another model or a changed approach; the count is of the rounds since the last takeover
   models [--by repo|tag] [--with <root>]... [--archives]
                                                  read-only: per model as worker and as reviewer, per Kind · Tier, what the
                                                  record holds (units, clean first passes, changes, rounds, verdicts, checked
@@ -248,7 +248,7 @@ commands:
   goal --set "<machine line>"                    one machine line of the goal set, with a log line that says what it
                                                  was and what it is: "Check (<repository>): <command>" or a bare
                                                  "Check: <command>", "Model (<tier>): <models>" (a tier the profile
-                                                 declares), "Coordinators: <names>" or "Takeover (<kind>): <rounds>"; the rest of goal.md stays as written
+                                                 declares), "Coordinators: <names>" or "Takeover (<kind>): <rounds>"; the rest of goal.md stays as written. A Takeover line edited by hand counts as the limit from the first round: change it here
   status [--stale-hours n] [--by repo|tag|kind|prio|<field>] [--tag <t>]
                                                  --tag computes every part of status over the issues carrying that tag only
                                                  the log is the record of an issue's status, lease, merge and CI; a header

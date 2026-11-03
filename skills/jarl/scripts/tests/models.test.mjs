@@ -402,6 +402,32 @@ test('a limit of one reads as one time, and the takeover comes at every round', 
   assert.match(first.block, /attempted issue \S+ 1 time \(1 round in all\)/);
 });
 
+const goalFile = (root) => join(root, '.jarl', 'goal.md');
+
+test('a takeover line edited by hand counts from the first round, and verify notes it without failing', () => {
+  const { root, id } = leased(null, 'docs');
+  assert.equal(cli(root, 'goal', '--set', 'Takeover (docs): 3').status, 0);
+  assert.equal(cli(root, 'verify').stdout.includes('note:'), false);
+  assert.equal(R.addRound(root, id, 'red one').takeover, false);
+  assert.equal(R.addRound(root, id, 'red two').takeover, false);
+  writeFileSync(goalFile(root), readFileSync(goalFile(root), 'utf8').replace('Takeover (docs): 3', 'Takeover (docs): 2'));
+  const out = cli(root, 'verify');
+  assert.equal(out.status, 0);
+  assert.match(out.stdout, /note: goal\.md: the Takeover line for kind docs reads 2, and goal --set last logged 3: the line was edited by hand/);
+  const third = R.addRound(root, id, 'red three');
+  assert.deepEqual([third.takeover, third.limit, third.since], [false, 2, 1]);
+});
+
+test('a replaced takeover value comes from the line in force, and one that was no number is said so in the log', () => {
+  const { root, id } = leased('Takeover (docs): 5\nTakeover (docs): 2', 'docs');
+  assert.equal(cli(root, 'goal', '--set', 'Takeover (docs): 4').status, 0);
+  assert.match(log(root), /goal line changed · Takeover \(docs\): 4 · was 2$/m);
+  const odd = leased('Takeover (docs): often', 'docs');
+  assert.equal(cli(odd.root, 'goal', '--set', 'Takeover (docs): 3').status, 0);
+  assert.match(log(odd.root), /goal line changed · Takeover \(docs\): 3 · was often \(not a number of rounds\)$/m);
+  assert.deepEqual([1, 2, 3].map((k) => R.addRound(odd.root, odd.id, `red ${k}`).takeover), [false, false, true]);
+});
+
 test('verify lists a takeover line for a kind the profile does not declare', () => {
   const { root } = leased('Takeover (poetry): 2\nTakeover (docs): 2', 'docs');
   const out = cli(root, 'verify');

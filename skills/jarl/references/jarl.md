@@ -58,7 +58,7 @@ Every turn, in this order:
 5. **Review.** A worker's report is a hypothesis. Raise a **fresh one-shot reviewer** for every branch, however small: never the worker, never the merger. The discipline, the verdicts and the reviewer's brief are in [reviewer.md](reviewer.md). A verdict meant to clear an issue is recorded with `review`, never as an evidence note, and a verdict relayed by someone else is recorded with `review --relayed`.
 6. **Merge.** The merger (see [merger.md](merger.md)) does it: into the feature branch with a merge commit that names
    the issue, then `merged <id> --sha <merge sha> --ran "<check>" --saw "<what it printed>"`, `set <id> done` (which needs the worker's Proof row), worktree and branch removed. Red check means no merge, a round back to
-   the same worker with what failed, and, once the red rounds the loop allows are used (three unless the goal says otherwise), an issue about the issue.
+   the same worker with what failed, and, once the red rounds the loop allows are used (three unless the goal says otherwise; the limit is changed with `goal --set`, because a Takeover line edited by hand counts as the limit from the first round), an issue about the issue.
 7. **Repeat** until nothing is open, then close the branch (see [Closing the branch](#closing-the-branch)). Nothing is written for the next
    session: it boots from `resume`, so keep intent where `resume` reads it (see [Resuming a loop](#resuming-a-loop)).
 
