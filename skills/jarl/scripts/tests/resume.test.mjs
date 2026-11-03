@@ -139,6 +139,22 @@ test('resume in a git repository with no worker branches: Tips shows the feature
   assert.doesNotMatch(t, /^ {2}worker /m);
 });
 
+test('an answered question is listed by its answer and then its question, in resume and in decisions; a long answer keeps the question in view', () => {
+  const { hub } = world();
+  jarl(hub, 'ask', 'Should the fixes ship in 6.1.1?');
+  jarl(hub, 'answer', 'a-1', 'Yes, blocking right away');
+  jarl(hub, 'ask', 'Which way for the flag?', '--option', 'Keep: the flag stays', '--option', 'Drop: the flag goes');
+  jarl(hub, 'answer', 'a-2', '--option', 'Keep');
+  jarl(hub, 'ask', 'Which order for the rest?');
+  jarl(hub, 'answer', 'a-3', 'The owner chose the blocking option for every fix of the field report. '.repeat(3));
+  const r = jarl(hub, 'resume');
+  assert.match(r, /## Rulings in force \(3\)\n- \S+ · ask-1 · by owner — \*\*Answer:\*\* Yes, blocking right away · \*\*Question:\*\* Should the fixes ship in 6\.1\.1\?\n- \S+ · ask-2 · by owner — \*\*Chose:\*\* Keep · \*\*Question:\*\* Which way for the flag\?\n- \S+ · ask-3 · by owner — \*\*Answer:\*\* The owner chose the blocking option[^\n]*… · \*\*Question:\*\* Which order for the rest\?\n/);
+  const d = jarl(hub, 'decisions', '--live');
+  assert.match(d, / · ask-1 · by owner — \*\*Answer:\*\* Yes, blocking right away · \*\*Question:\*\* Should the fixes ship in 6\.1\.1\?$/m);
+  assert.match(d, / · ask-2 · by owner — \*\*Chose:\*\* Keep · \*\*Question:\*\* Which way for the flag\?$/m);
+  assert.match(d, / · ask-3 · by owner — \*\*Answer:\*\* The owner chose the blocking option[^\n]* · \*\*Question:\*\* Which order for the rest\?$/m);
+});
+
 test('commands run in one process read git afresh each time: a branch made between two of them is seen', async () => {
   const { dispatch } = await import(new URL('../jarl.mjs', import.meta.url).href);
   const { hub, tool } = world();
