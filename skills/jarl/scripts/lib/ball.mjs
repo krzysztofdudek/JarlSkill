@@ -70,6 +70,8 @@ function issueRows(ctx) {
     // approve (the merge, its CI and the close) stays the jarl's.
     const base = { id: i.id, title: i.title, priority: i.priority, holder, ...(worker ? { doer: worker } : {}) };
     const onJarl = { ...base, holder: JARL_HOLDER };
+    // An approve not merged is on the one holder the goal's Merger line names, who raises the merger; with none, the jarl.
+    const onMerger = { ...base, holder: ctx.merger };
     const withWorker = worker ? `with worker ${worker}` : 'in progress';
     const backAfterRound = sentBack(loop, i, mark);
     if (mark === 'no-rows' || backAfterRound) {
@@ -79,7 +81,7 @@ function issueRows(ctx) {
     if (mark === 'rows-no-verdict' && profile.doneGate.approve === 'none') {
       // A done gate that asks for no approve: the proof is enough, and the merge (when the gate asks for one) comes next.
       const merge = profile.doneGate['requires-merged'] && !mergedOf(i);
-      out.push({ ...onJarl, what: merge ? 'merge' : 'close', says: merge ? 'proof recorded, not merged; merge it' : 'proof recorded; close it',
+      out.push({ ...(merge ? onMerger : onJarl), what: merge ? 'merge' : 'close', says: merge ? 'proof recorded, not merged; merge it' : 'proof recorded; close it',
         command: merge ? `jarl.mjs merged ${i.id} --sha <sha> --ran "<check>" --saw "<summary>"` : `jarl.mjs set ${i.id} ${closeStatus} "<why>"` });
       continue;
     }
@@ -97,7 +99,7 @@ function issueRows(ctx) {
       continue;
     }
     if (mark === 'approved' && carriesCode(i)) {
-      out.push({ ...onJarl, what: 'merge', says: 'approved, not merged; merge it', command: `jarl.mjs merged ${i.id} --sha <sha> --ran "<check>" --saw "<summary>"` });
+      out.push({ ...onMerger, what: 'merge', says: 'approved, not merged; merge it', command: `jarl.mjs merged ${i.id} --sha <sha> --ran "<check>" --saw "<summary>"` });
       continue;
     }
     if (mark === 'merged-ci') {
@@ -221,7 +223,7 @@ export function ballRows(root) {
   const scheduled = profile.scheduler !== null;
   const awaiting = scheduled ? [] : awaitingReview(loop, profile);
   // Each issue reserves its files against the issues of its own slice: across slices only leases hold.
-  const ctx = { root, loop, profile, next: scheduled ? [] : nextRows(root, { perSlice: true }), awaiting, onOwner: new Set(heldByOwner(loop, awaiting)) };
+  const ctx = { root, loop, profile, merger: loop.goalLines.merger === null ? JARL_HOLDER : holderOf(loop.goalLines.merger), next: scheduled ? [] : nextRows(root, { perSlice: true }), awaiting, onOwner: new Set(heldByOwner(loop, awaiting)) };
   const rows = ROW_SOURCES.filter((s) => !(scheduled && SCHEDULING.has(s))).flatMap((s) => s(ctx));
   // Who each issue holds up: the issues in play whose After names it, not settled yet, and for a question the issue it holds.
   const active = loop.issues.filter((i) => profile.active(i.status));

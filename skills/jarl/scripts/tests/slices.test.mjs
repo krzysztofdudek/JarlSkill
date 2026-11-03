@@ -185,3 +185,25 @@ test('a loop holding an escalation is refused by the frozen reader of formats 1 
   assert.equal(two.ok, false);
   assert.match(two.error, /written for record format 3/);
 });
+
+test('the goal\'s Merger line names the one holder that raises the merger: every approve not merged is on it, in every slice', () => {
+  const root = twoSlices();
+  jarl(root, 'new', 'odin approved', '--tags', 'slice:odin', '--files', 'd.mjs');   // 6
+  jarl(root, 'new', 'thor approved', '--tags', 'slice:thor', '--files', 'e.mjs');   // 7
+  for (const id of ['6', '7']) {
+    jarl(root, 'set', id, 'in-progress', 'go', '--worker', `w${id}`, '--branch', `jarl/${id}`);
+    jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'green');
+    jarl(root, 'review', id, 'approve', '--by', 'rev', 'Checked every acceptance line against the diff; nothing left open');
+  }
+  const merges = (who) => json(root, 'next', '--as', who, '--all').rows.filter((r) => r.what === 'merge').map((r) => r.id);
+  assert.deepEqual(merges('jarl'), ['6', '7'], 'with no Merger line, the jarl');
+  assert.match(jarl(root, 'goal', '--set', 'Merger: thor'), /^goal line added: Merger: thor$/);
+  assert.deepEqual(merges('thor'), ['6', '7'], 'odin\'s approve too');
+  assert.deepEqual(merges('odin'), []);
+  assert.deepEqual(merges('jarl'), []);
+  jarl(root, 'goal', '--set', 'Merger: jarl');
+  assert.deepEqual(merges('jarl'), ['6', '7']);
+  assert.match(refuses(root, 'goal', '--set', 'Merger: odin, thor'), /a Merger line names one holder, the jarl or one coordinator of the Coordinators line: it is "Merger: <name>"/);
+  jarl(root, 'goal', '--set', 'Merger: loki');
+  assert.match(run(root, ['verify']).stdout, /Merger: loki" — loki is neither the jarl nor a coordinator of the Coordinators line, so no holder of the loop raises its merger/);
+});

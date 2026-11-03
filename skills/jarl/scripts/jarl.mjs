@@ -179,7 +179,8 @@ commands:
                                                  no --limit): the owner holds the questions and the items to ratify; the
                                                  coordinator of an issue's slice (the jarl, for an issue in no slice) its
                                                  ready issue, its lease, a proof with no verdict and changes asked; the
-                                                 jarl an approve not merged, the close, and a ruling that
+                                                 holder the goal's Merger line names (else the jarl) an approve not
+                                                 merged; the jarl the close, and a ruling that
                                                  settles issues none of which is live (with no slice in the loop, a
                                                  coordinator's lines are the jarl's); derived from the profile's status
                                                  flags, the verdicts, the questions and the rulings; at most seven lines,
@@ -288,7 +289,9 @@ commands:
                                                  was and what it is: "Check (<repository>): <command>" or a bare
                                                  "Check: <command>", "Model (<tier>): <models>" (a tier the profile
                                                  declares), "Coordinators: <names>" (each name a coordinator, which runs the slice of
-                                                 the issues tagged slice:<name>), "Takeover (<kind>): <rounds>" or a bare "Takeover: <rounds>"; the rest of goal.md stays as written
+                                                 the issues tagged slice:<name>), "Merger: <name>" (the jarl or one
+                                                 coordinator: the one holder that raises the merger, one merge at a time
+                                                 for every slice), "Takeover (<kind>): <rounds>" or a bare "Takeover: <rounds>"; the rest of goal.md stays as written
   status [--stale-hours n] [--by repo|tag|kind|prio|<field>] [--tag <t>] [--as <who>] [--slice <coordinator>]
                                                  --tag computes every part of status over the issues carrying that tag only;
                                                  --slice the same over one coordinator's slice (the issues tagged

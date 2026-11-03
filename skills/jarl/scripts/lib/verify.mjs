@@ -74,6 +74,12 @@ export function cmdVerify(root) {
     if (!line || line.key !== 'takeover' || line.qualifier === null || goalSkips.some((s) => s.n === i + 1)) return;
     if (!profile.kinds.some((k) => k.toLowerCase() === line.qualifier.toLowerCase())) goalSkips.push({ n: i + 1, text, reason: `the profile declares no kind ${line.qualifier}, so the line applies to no issue: its kinds are ${profile.kinds.join(', ')}` });
   });
+  // The Merger line names the jarl or a coordinator the Coordinators line lists: anyone else raises no merger in the record.
+  const lines = goalLines(goalText);
+  if (lines.merger !== null && lines.merger.toLowerCase() !== 'jarl' && !lines.coordinators.some((c) => c.toLowerCase() === lines.merger.toLowerCase())) {
+    const n = (goalText ?? '').split('\n').findIndex((t) => goalLineOf(t)?.key === 'merger');
+    goalSkips.push({ n: n + 1, text: (goalText ?? '').split('\n')[n], reason: `${lines.merger} is neither the jarl nor a coordinator of the Coordinators line, so no holder of the loop raises its merger` });
+  }
   for (const s of goalSkips) add('goal', `${GOAL_FILE} line ${s.n}`, `"${shownText(s.text)}" — ${s.reason}`, s.n);
   for (const f of issueFilesOf(dir)) {
     const issueSkips = [];

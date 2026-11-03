@@ -19,6 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A coordinator can look at its own part of the backlog alone: what to start next, the status and the resume each take the part's name. A task waiting in one part never holds back a task in another; only work already started does.
 - Asking Jarl what is waiting on a coordinator now lists the tasks of its part: the ones ready to start, the ones being worked on, the work waiting for a reviewer and the work sent back. Tasks in no part stay with whoever runs the loop.
 - A coordinator can send a question up to whoever runs the loop, naming its part of the backlog or the task, instead of going to the owner. The question shows on that person's list and in the coordinator's view, and the task it names waits for the answer. The first such question moves the loop to format 3.
+- The goal can name the one coordinator, or the person who runs the loop, who starts the merges, with a line such as `Merger: odin`. Every approved task waiting to be merged, in every part of the backlog, is then on that one list, so only one merge runs at a time.
 
 ### Changed
 
