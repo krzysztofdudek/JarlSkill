@@ -12,6 +12,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- A loop is marked with a new format the first time Jarl writes into it one of the new kinds of entries this release adds. From then on an earlier Jarl refuses that loop with a clear message instead of misreading it, so every copy of Jarl that works on the loop must be this release. A loop that another tool runs, such as a Horde mission, is never marked: those entries are switched off there, and Jarl says so. The status, the check of the record and the profile now show which format a loop is in.
+- Tools that build on Jarl's record library get a new version of its contract, which keeps everything the previous version offered.
 - If you copy Jarl's record library into your own tool, copy the `scripts/lib/` folder too. It now sits next to `record.mjs` and `jarl-lib.mjs`, and the library does not work without it.
 - When a new issue is filed without a kind or a priority, Jarl says which one it took and names the option that sets it, as it already does for the tier.
 

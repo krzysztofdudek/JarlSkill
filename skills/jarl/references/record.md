@@ -134,6 +134,21 @@ and files new issues; it never edits code.
 
 ## The format marker
 
-A record carries its format: Jarl reads the formats it knows and refuses a higher one. A format Jarl does not read is refused before anything else in the file, on every command, so a vendored copy and an installed Jarl that drifted apart stop loudly. Jarl reads formats 1 and 2. A loop without the marker is format 1; the first write of anything a reader that knows only format 1 would read wrongly in silence (a repository name in `Repo:`, an issue or ask numbered 1000 or more or written plain below 100, a retraction line) first writes `.jarl/profile.json` holding only `"jarl-profile": 1` and `"format": 2` (a loop that has a profile gets the key added), and such a reader then refuses the loop on every command instead of misreading it. A profile holding only those two keys changes nothing else: the loop keeps the built-in profile.
+A record carries its format: Jarl reads the formats it knows and refuses a higher one. A format Jarl does not read is refused before anything else in the file, on every command, so a vendored copy and an installed Jarl that drifted apart stop loudly. Jarl reads formats 1, 2 and 3. A loop without the marker is format 1; the first write of anything a reader that knows only format 1 would read wrongly in silence (a repository name in `Repo:`, an issue or ask numbered 1000 or more or written plain below 100, a retraction line) first writes `.jarl/profile.json` holding only `"jarl-profile": 1` and `"format": 2` (a loop that has a profile gets the key added), and such a reader then refuses the loop on every command instead of misreading it. A profile holding only those two keys changes nothing else: the loop keeps the built-in profile.
 
 The first retraction in a loop raises the loop's record format to 2 before its line is written, so that a reader that knows only format 1, which cannot read a retraction and would still count the approve or the row, refuses the loop instead of passing `done` where Jarl refuses. The first repository name a loop stores in `Repo:` raises the format, under the same lock, and writes a bare-word path as `./<word>`; what a `Repo:` value is in each format is in [Code in another repository](repositories.md#code-in-another-repository).
+
+Format 3 holds everything format 2 holds, and the lines of the table below, which a reader that knows only formats 1 and 2 would misread. The first write of one raises the loop to 3, under the lock, before the line is written, from format 1 or from format 2: a loop in format 1 has its bare-word paths written as `./<word>` first, as for format 2, and a loop in format 2 keeps its names. Such a reader then refuses the loop on every command, saying that it needs a Jarl that knows format 3. The read-only commands never raise a loop. `status` names the loop's format on its `opened` line, `verify` on its format check, and `profile` beside the formats this Jarl reads.
+
+| Line | Where it is written | What a reader of formats 1 and 2 does with it |
+|---|---|---|
+| an issue's key | the issue's header, its filed line and every log line about it | reads each line by its number alone, so the moves of two issues that took one number are mixed |
+| the writer of a write | the log line of the write, in a fixed place | does not place the line, so a lease or a verdict is read without the agent that wrote it |
+| an acceptance line only the owner ticks | the issue's acceptance | lets done pass while the line is not ticked |
+| the parent of a sub-issue | the sub-issue's header | reads the backlog as flat and offers a parent as work of its own |
+| one verdict over several issues | the verdict line of each issue it covers | counts one review as several |
+| the kinds promise and wait | the issue's header | refuses an issue of a kind it does not know |
+| a question of kind escalation | the question, among the loop's questions | refuses a question of a kind it does not know |
+| the retraction of a note | the log and the issue's notes, in the shape of a row's retraction | counts the note as standing |
+
+A loop whose profile names an external scheduler is run by a composer with its own copy of the record library, so Jarl never raises it to format 3. A write of one of these lines there is refused, naming the line, and nothing is written; the line is off in that loop, and `status`, `verify` and `profile` list what is off. A composer that reads format 3 opens its loops with `"format": 3` in the profile, and the lines are on there.

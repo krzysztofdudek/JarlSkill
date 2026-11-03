@@ -8,7 +8,7 @@ import { git } from './git.mjs';
 import { jarlDir, stamp } from './where.mjs';
 import { readText, writeAtomic } from './files.mjs';
 import { cmpId, isBulk } from './ids.mjs';
-import { SLOT_NAME_RE, loadProfile } from './profile.mjs';
+import { SLOT_NAME_RE, formatState, loadProfile } from './profile.mjs';
 import { appendLog, appendLogLines, firstLine } from './journal.mjs';
 import { outOfGit } from './loop-git.mjs';
 import { attachmentOf, journalById } from './log.mjs';
@@ -325,6 +325,8 @@ function statusOf(root, loop, flags) {
   // The numbers read from their headers, one note each: not disagreements, the header is the record for them.
   const byHeader = headerReadNotes(flags.tag === undefined ? loop : scopedLoop(loop, issues));
   if (byHeader.length) c.headerRead = byHeader;
+  // The record format: what the loop is in, what this Jarl reads, and the lines that are off where a composer keeps the format.
+  c.recordFormat = formatState(profile);
   const files = uncommittedLoopFiles(root);
   c.uncommitted = files === null ? null : files.length;
   // --by: the same five counts per repository, tag, kind or priority — a dashboard's table, read from the issues.

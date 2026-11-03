@@ -63,8 +63,8 @@ function mission(profile = HORDE) {
 // ---- the schema ----
 
 test('format: a record format this Jarl does not know is refused first and alone; the known one is accepted', () => {
-  const later = reason(() => R.validateProfile({ ...HORDE, format: 3, bogus: true }, 'p'));
-  assert.match(later, /written for record format 3, and this Jarl reads format 1, 2/);
+  const later = reason(() => R.validateProfile({ ...HORDE, format: 4, bogus: true }, 'p'));
+  assert.match(later, /written for record format 4, and this Jarl reads format 1, 2, 3/);
   assert.doesNotMatch(later, /bogus/, 'the other keys of a later format are not read at all');
   assert.match(reason(() => R.validateProfile({ ...HORDE, format: '1' }, 'p')), /record format "1"/);
   assert.equal(R.validateProfile(HORDE).format, 1);

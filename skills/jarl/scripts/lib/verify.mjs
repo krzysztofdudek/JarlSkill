@@ -6,7 +6,7 @@ import { fieldText, need } from './base.mjs';
 import { canonical, jarlDir } from './where.mjs';
 import { readText } from './files.mjs';
 import { ISSUE_FILE_RE, cmpId, idKey, needsRaisedFormat } from './ids.mjs';
-import { RECORD_FORMAT_RAISED, loadProfile } from './profile.mjs';
+import { RECORD_FORMAT_RAISED, formatOffText, formatState, loadProfile } from './profile.mjs';
 import { ASKS_FILE, DECISIONS_FILE, GOAL_FILE, LOG_FILE, goalLines, loadDecisions, readGoal } from './journal.mjs';
 import { loopEvents } from './log.mjs';
 import { parseIssue, sharedNumberText, sharedNumbers } from './issues.mjs';
@@ -115,7 +115,10 @@ export function cmdVerify(root) {
     for (const i of issuesNaming(root, slug)) add('superseded', `issue ${i.id}`, `cites the ruling ${slug} in What, Why or Acceptance, and ${by} supersedes it`);
   }
   for (const f of attachmentFindings(root, loop)) add('attachments', `issue ${f.id}`, f.what);
-  return verifyResult(found, notes, null, profile.doneGate['requires-slots'] !== undefined || found.some((f) => f.check === 'attachments'));
+  // The format of the loop, and the lines of a higher format that are off where a composer keeps it.
+  const format = formatState(profile);
+  if (formatOffText(format)) notes.push({ where: '', what: formatOffText(format) });
+  return verifyResult(found, notes, null, profile.doneGate['requires-slots'] !== undefined || found.some((f) => f.check === 'attachments'), format.format);
 }
 // The issue files of a loop, in the order the loop reads them.
 function issueFilesOf(dir) {
@@ -166,9 +169,12 @@ function repositoryChecks(root, loop, add, notes) {
   }
 }
 // The attachments check prints only for a loop whose profile declares slots, or that holds a finding of it.
-function verifyResult(found, notes, unread = null, attachments = false) {
+function verifyResult(found, notes, unread = null, attachments = false, format = null) {
   const checks = VERIFY_CHECKS.filter(([name]) => name !== 'attachments' || attachments).map(([name, label]) => ({
-    name, label, read: unread === null || name === 'profile',
+    name,
+    // The format check names the format the loop is in, once the profile is read.
+    label: name === 'format' && format !== null ? `${label} ${format}` : label,
+    read: unread === null || name === 'profile',
     // Findings with a line print in file order, the ones without after them, in the order they were found.
     findings: found.filter((f) => f.check === name)
       .map((f, k) => ({ ...f, k }))

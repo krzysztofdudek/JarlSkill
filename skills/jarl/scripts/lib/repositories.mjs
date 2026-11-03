@@ -8,7 +8,7 @@ import { git } from './git.mjs';
 import { canonical, issuesDir, jarlDir, portablePath } from './where.mjs';
 import { readText, writeAtomic } from './files.mjs';
 import { ISSUE_FILE_RE, branchNameProblem } from './ids.mjs';
-import { PROFILE_VERSION, RECORD_FORMATS, RECORD_FORMAT_RAISED, loadProfile, profilePath } from './profile.mjs';
+import { FORMAT_LINES, PROFILE_VERSION, RECORD_FORMATS, RECORD_FORMAT_RAISED, forgetProfile, formatState, loadProfile, profilePath } from './profile.mjs';
 import { appendLog } from './journal.mjs';
 import { withLock } from './lock.mjs';
 import { mapMergeRepos } from './log.mjs';
@@ -125,21 +125,36 @@ function repoEntries(root, issue) {
 
 // Raises the loop to a record format (default: RECORD_FORMAT_RAISED), before the write that needs it and under the same
 // lock: .jarl/profile.json becomes the marker (jarl-profile and format only) when the loop has none, and a declared
-// profile gets its "format" key set. One function, called by every write of an element a reader of format 1 would
+// profile gets its "format" key set. One function, called by every write of an element a reader of a lower format would
 // misread in silence; it never lowers the format, and it refuses a loop already in a format this Jarl does not read (loadProfile
-// throws). Returns true when it wrote.
-export function raiseFormat(root, to = RECORD_FORMAT_RAISED) {
+// throws). A loop whose profile names an external scheduler is never raised above RECORD_FORMAT_RAISED: the write is
+// refused, naming `what` it would have written, and nothing is written. Returns true when it wrote.
+export function raiseFormat(root, to = RECORD_FORMAT_RAISED, what = null) {
   need(RECORD_FORMATS.includes(to), `record format ${to} is not one this Jarl writes`);
   if (!existsSync(jarlDir(root))) return false;
   return withLock(root, () => {
-    if (loadProfile(root).format >= to) return false;
-    writeBarePaths(root);
+    const profile = loadProfile(root);
+    if (profile.format >= to) return false;
+    if (to > RECORD_FORMAT_RAISED && !formatState(profile).raises) {
+      const line = what || `a line of record format ${to}`;
+      throw new Error(`${line} needs record format ${to}, and this loop stays at format ${profile.format}: its profile names an external scheduler (${profile.scheduler}), the composer that reads this record, so Jarl never raises its format; ${line} is off in this loop until its profile says "format": ${to} — nothing was written`);
+    }
+    // A bare word is a path in format 1 and a name from format 2 on: only a loop in format 1 has paths to say again.
+    if (profile.format < RECORD_FORMAT_RAISED) writeBarePaths(root);
     const path = profilePath(root);
     const json = existsSync(path) ? JSON.parse(readText(path)) : { 'jarl-profile': PROFILE_VERSION };
     json.format = to;
     writeAtomic(path, `${JSON.stringify(json, null, 2)}\n`);
+    forgetProfile(root);
     return true;
   });
+}
+// Before a write of the line FORMAT_LINES names `name`, under the write's lock: the loop is raised to the line's format
+// (from format 1 or 2, whichever it is in), or the write is refused where the loop's composer keeps its format.
+export function needFormat(root, name) {
+  const line = Object.hasOwn(FORMAT_LINES, name) ? FORMAT_LINES[name] : null;
+  need(line, `${name} is not a line of the record format registry: its lines are ${Object.keys(FORMAT_LINES).join(', ')}`);
+  return raiseFormat(root, line.format, line.what);
 }
 
 // Where a loop's directory stands among the worktrees of its git repository, read-only (git rev-parse and the

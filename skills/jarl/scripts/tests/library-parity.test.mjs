@@ -56,7 +56,7 @@ export const COMMAND_LINE_ONLY = [
 
 // The exports of record.mjs that read the loop and touch no file of it through an operation. Every other function export
 // is an operation, and needs a parity case: the test below fails for one that has none.
-const READS = ['resolveRoot', 'jarlDir', 'hasLiveLoop', 'loadIssues', 'findIssue', 'decisions', 'loadAsks', 'parseIssue', 'renderIssue', 'mergedOf', 'evidenceRows', 'validateProfile', 'readProfileFile', 'loadProfile', 'describeProfile', 'withLock', 'writeAtomic', 'statusData', 'resumeData'];
+const READS = ['resolveRoot', 'jarlDir', 'hasLiveLoop', 'loadIssues', 'findIssue', 'decisions', 'loadAsks', 'parseIssue', 'renderIssue', 'mergedOf', 'evidenceRows', 'validateProfile', 'readProfileFile', 'loadProfile', 'describeProfile', 'withLock', 'writeAtomic', 'statusData', 'resumeData', 'recordFormat'];
 
 const TIME = /\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?Z?)?)?/g;
 // The padding of an id and nothing else: 003 reads as 3, a-001 as a-1. Applied only where a case says its ids differ in spelling.

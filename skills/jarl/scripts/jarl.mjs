@@ -254,7 +254,8 @@ commands:
                                                  that disagrees is never believed, and status prints one "record:" line
                                                  for it, with how to write the header back or make it the record (resume
                                                  and show print it too; --json carries disagreements when there are any)
-                                                 the goal, when the loop opened and last moved,
+                                                 the goal, when the loop opened and last moved, its record format (and,
+                                                 where a composer runs the loop, the lines of format 3 that are off),
                                                  then one line: open, in flight, waiting, done, dropped, deferred,
                                                  open questions, to ratify, merged with CI pending or red; then who
                                                  reviewed the done work (fresh, coordinator, self, unrecorded); then,
@@ -299,13 +300,15 @@ commands:
                                                  (dispatchable, lease, settles-dependents, terminal, closes-record,
                                                  needs-reason), the status a new issue starts in, the values of Kind and
                                                  Tier, the fields and sections its issues carry and the heading of their
-                                                 acceptance; the built-in one when the loop has none; with a file, that
-                                                 file checked against the profile schema instead
+                                                 acceptance, the record format beside the formats this Jarl reads; the
+                                                 built-in one when the loop has none; with a file, that file checked
+                                                 against the profile schema instead
   verify                                         read-only, with no lock and no network: the record read strictly. Each
                                                  reader lists the lines it does not place (the log, the goal, the issue
                                                  headers, the questions and the rulings), the profile is checked, a
                                                  retraction must point at an entry the log holds, a line that needs the
-                                                 raised record format is found in a loop that is not in it, a header
+                                                 raised record format is found in a loop that is not in it (the check
+                                                 names the loop's format), a header
                                                  that disagrees with the log is listed, each declared repository is
                                                  checked by name and root commits, each worktree a lease holds belongs
                                                  to a repository its issue names, and an open issue that cites a
