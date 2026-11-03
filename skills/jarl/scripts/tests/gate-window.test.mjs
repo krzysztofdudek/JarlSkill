@@ -1,12 +1,14 @@
 // One window for the done gate: the evidence anchor and the approve cut reset on the same events. A filing, a start and a
-// reopen reset both; a red round resets the approve alone.
+// reopen reset both; a red round resets the approve alone. A pause and a resume on an unchanged branch tip spend neither.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { jarl, loop as makeLoop, refuses } from './helpers.mjs';
+import { jarl, loop as makeLoop, refuses, gitRepo } from './helpers.mjs';
+import { oldJarl } from './old-jarl.mjs';
 
 const L = await import('../jarl-lib.mjs');
+const R = await import('../record.mjs');
 
 const loop = (n) => {
   const root = makeLoop({ prefix: 'jarl-window-', via: 'cli' });
@@ -78,6 +80,122 @@ test('gateWindow gives the anchor and the cut for every event, from each closing
     const stay = w(filed, move(4, 'in-progress', closing), move(9, closing, 'shipped'));
     assert.deepEqual([stay.anchor.n, stay.cut], [0, 0],`${closing} → another closing status keeps the window`);
   }
+});
+
+// A loop at the root of a git repository on main, its first issue leased on the branch jarl/1-x with one commit of its
+// own, proved and approved by a fresh reviewer. `commit` adds a commit on the branch; `fresh` reads the gate as a new
+// command does. With `library` the issue is filed by the library, as 001, so the loop stays in record format 1.
+function leased({ library = false } = {}) {
+  const { dir: root, g } = gitRepo({ prefix: 'jarl-pause-', branch: 'main' });
+  jarl(root, 'init', 'goal');
+  if (library) R.newIssue(root, 'issue 1', { acceptance: 'it works' }); else jarl(root, 'new', 'issue 1', '--acceptance', 'it works');
+  g('branch', 'jarl/1-x');
+  const commit = (name) => { g('checkout', '-q', 'jarl/1-x'); writeFileSync(join(root, `${name}.txt`), `${name}\n`); g('add', `${name}.txt`); g('commit', '-qm', name); g('checkout', '-q', 'main'); };
+  commit('work');
+  jarl(root, 'set', '1', 'in-progress', '--branch', 'jarl/1-x', '--worker', 'w1');
+  row(root, 1);
+  jarl(root, 'review', '1', 'approve', '--by', 'rev1', 'read the diff, nothing found');
+  const fresh = () => { L.resetCaches(); const s = L.gateState(root, '1'); return [s.rowsSince, s.approved]; };
+  assert.deepEqual(fresh(), [1, true]);
+  return { root, g, commit, fresh };
+}
+const resume = (root) => jarl(root, 'set', '1', 'in-progress', '--branch', 'jarl/1-x', '--worker', 'w1');
+
+test('a pause and a resume on the same branch tip keep the rows and the approve, through open and through deferred', () => {
+  for (const pause of [['open', 'reordered'], ['deferred', 'waits for the owner']]) {
+    const { root, fresh } = leased();
+    jarl(root, 'set', '1', ...pause);
+    resume(root);
+    assert.deepEqual(fresh(), [1, true], `in progress → ${pause[0]} → in progress`);
+    assert.match(jarl(root, 'show', '1'), /npm test/, 'the kept row is shown in the window');
+  }
+  const { root, fresh } = leased();
+  jarl(root, 'set', '1', 'open', 'reordered'); resume(root);
+  jarl(root, 'set', '1', 'deferred', 'later'); jarl(root, 'set', '1', 'open', 'back'); resume(root);
+  assert.deepEqual(fresh(), [1, true], 'several pauses in a row');
+});
+
+test('a new commit on the branch after a pause spends the rows and the approve; new ones count again', () => {
+  const { root, commit, fresh } = leased();
+  jarl(root, 'set', '1', 'open', 'reordered');
+  resume(root);
+  commit('more');
+  assert.deepEqual(fresh(), [0, false]);
+  assert.match(refuses(root, 'set', '1', 'done'), /no --ran\/--saw evidence row recorded since it was moved → in-progress/);
+  row(root, 1, 'pass on the new tip');
+  jarl(root, 'review', '1', 'approve', '--by', 'rev2', 'read the new commit, nothing found');
+  assert.deepEqual(fresh(), [1, true]);
+});
+
+test('a round and a reopen from done still spend what they spend, pause or no pause', () => {
+  const a = leased();
+  jarl(a.root, 'set', '1', 'open', 'reordered'); resume(a.root);
+  jarl(a.root, 'round', '1', 'the test was red');
+  assert.deepEqual(a.fresh(), [1, false], 'a round spends the approve, the row stays');
+  const b = leased();
+  jarl(b.root, 'set', '1', 'open', 'reordered'); resume(b.root);
+  b.g('merge', '-q', '--no-ff', 'jarl/1-x', '-m', 'merge');
+  jarl(b.root, 'merged', '1', '--sha', b.g('rev-parse', 'HEAD').trim(), '--keep');
+  jarl(b.root, 'set', '1', 'done');
+  jarl(b.root, 'set', '1', 'open', 'found a gap');
+  resume(b.root);
+  assert.deepEqual(b.fresh(), [0, false], 'a reopen from done spends both, though the tip is the same');
+});
+
+test('the window no pause opens: the first start, a reopen from a closed status and the start after it still open it', () => {
+  const profile = {
+    is: (st, flag) => ({ 'closes-record': ['done'], 'holds-claim': ['in-progress'], dispatchable: ['open'] }[flag] || []).includes(st),
+  };
+  const firm = (...events) => L.gateWindow(profile, [{ type: 'filed', n: 0 }, ...events], { throughPauses: true });
+  assert.equal(firm(move(3, 'open', 'in-progress')).anchor.n, 3, 'the first start');
+  const paused = [move(3, 'open', 'in-progress'), move(5, 'in-progress', 'open'), move(7, 'open', 'in-progress'), move(8, 'in-progress', 'deferred'), move(9, 'deferred', 'in-progress')];
+  assert.deepEqual([firm(...paused).anchor.n, firm(...paused).cut], [3, 3], 'pauses and resumes');
+  assert.deepEqual([firm(...paused, { type: 'round', n: 10 }).anchor.n, firm(...paused, { type: 'round', n: 10 }).cut], [3, 10], 'a round');
+  const reopened = [...paused, move(11, 'in-progress', 'done'), move(12, 'done', 'open')];
+  assert.equal(firm(...reopened).anchor.n, 12, 'a reopen from done');
+  assert.equal(firm(...reopened, move(14, 'open', 'in-progress')).anchor.n, 14, 'the start after a reopen from done');
+  assert.equal(L.gateWindow(profile, [{ type: 'filed', n: 0 }, ...paused]).anchor.n, 9, 'without throughPauses every resume opens it');
+});
+
+test('a merge whose cleanup deleted the branch: done reads the tip the merge was recorded on', () => {
+  const { root, g } = leased();
+  jarl(root, 'set', '1', 'open', 'reordered'); resume(root);
+  g('merge', '-q', '--no-ff', 'jarl/1-x', '-m', 'merge');
+  jarl(root, 'merged', '1', '--sha', g('rev-parse', 'HEAD').trim());
+  assert.equal(g('branch', '--list', 'jarl/1-x').trim(), '', 'the cleanup deleted the branch');
+  assert.equal(jarl(root, 'set', '1', 'done'), '1 → done');
+});
+
+test('rows and verdicts that carry no tip are spent by a pause and a resume', () => {
+  const { root, fresh } = leased();
+  const log = join(root, '.jarl', 'log.md');
+  writeFileSync(log, readFileSync(log, 'utf8').split('\n').filter((l) => !/ · 1 tip /.test(l)).join('\n'));
+  assert.deepEqual(fresh(), [1, true], 'without a pause nothing changes');
+  jarl(root, 'set', '1', 'open', 'reordered');
+  resume(root);
+  assert.deepEqual(fresh(), [0, false]);
+});
+
+test('a tip line is written by evidence, review and merged, right after their own line, and never by log', () => {
+  const { root, g } = leased();
+  const tip = g('rev-parse', 'jarl/1-x').trim();
+  const lines = readFileSync(join(root, '.jarl', 'log.md'), 'utf8').split('\n').map((l) => l.replace(/^- \S+ \S+ · /, ''));
+  const after = (re) => lines[lines.findIndex((l) => re.test(l)) + 1];
+  assert.equal(after(/^1 evidence row · /), `1 tip ${tip}`);
+  assert.equal(after(/^1 review approve · /), `1 tip ${tip}`);
+  assert.match(refuses(root, 'log', `1 tip ${tip}`), /reads as a tip line/);
+});
+
+test('the pinned frozen reader reads a loop with tip lines at format 1, and its gate refuses a resumed issue this Jarl lets through', () => {
+  const { root } = leased({ library: true });
+  assert.equal(existsSync(join(root, '.jarl', 'profile.json')), false, 'no format raised');
+  assert.equal(oldJarl(root, 'list', {}).ok, true);
+  assert.equal(oldJarl(root, 'status', {}).ok, true);
+  jarl(root, 'set', '1', 'open', 'reordered'); resume(root);
+  const r = oldJarl(root, 'set', {}, ['1', 'done', null, {}]);
+  assert.equal(r.ok, false);
+  assert.match(r.error, /no --ran\/--saw evidence row recorded since it was moved → in-progress/);
+  assert.equal(jarl(root, 'set', '1', 'done'), '001 → done', 'this Jarl keeps the row and the approve of the unchanged tip');
 });
 
 // A copy of a real loop (the directory that holds its .jarl), named by JARL_LIVE_LOOP: the gate is replayed over it, and
