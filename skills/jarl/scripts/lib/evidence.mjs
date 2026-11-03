@@ -3,6 +3,7 @@
 import { existsSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { fieldText, need } from './base.mjs';
+import { needNoOwnersWords } from './owner.mjs';
 import { git } from './git.mjs';
 import { jarlDir, stamp } from './where.mjs';
 import { readText, writeAtomic } from './files.mjs';
@@ -24,6 +25,7 @@ import { handoffAge, loadAsks, ratificationBatch } from './questions.mjs';
 // ---- commands: evidence ------------------------------------------------------------------------------
 
 export function cmdEvidence(root, rawIds, text, flags) {
+  needNoOwnersWords('the evidence', text, flags);
   const attaching = Boolean(flags) && (flags.file !== undefined || flags.slot !== undefined);
   need(!attaching || (text === undefined && flags.ran === undefined && flags.saw === undefined && flags.retract === undefined), 'evidence takes an attachment (--file with --slot), or free text, or --ran/--saw rows, or a retraction, not both');
   if (flags && flags.retract !== undefined) return retractEvidence(root, rawIds, text, flags);

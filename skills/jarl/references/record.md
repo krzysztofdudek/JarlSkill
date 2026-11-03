@@ -7,6 +7,7 @@ What lives in `.jarl/`, in which mode, in which format, and how the log decides 
 - [Where the loop lives](#where-the-loop-lives): the three modes, the ignore file, the merge drivers
 - [The files of the loop](#the-files-of-the-loop): `goal.md`, `decisions.md`, the issues, `log.md`, `repos.md`
 - [The log is the record](#the-log-is-the-record): the one tool that moves it
+- [The description and the history](#the-description-and-the-history): what can be changed, what is only taken back
 - [When a header disagrees with the log](#when-a-header-disagrees-with-the-log): what the log says, what the file says, how to settle it
 - [The write lock](#the-write-lock): concurrent writers, taking over a stale lock
 - [The issue file](#the-issue-file): the format of one issue, the built-in statuses, kinds and tiers
@@ -55,6 +56,14 @@ The tool writes thirteen paths in `.jarl/`, listed below, and the temporary file
 ## The log is the record
 
 **The log is the record, and one tool moves it**: `scripts/jarl.mjs` (Node, zero dependencies). An issue's status, its lease (Branch, Worker, Model, Since), its merge and CI state, its evidence rows and its verdicts are what the lines of `.jarl/log.md` say, read in order. The header fields of an issue file that show the status, the lease, the merge and the CI state are the tool's rendering of those lines, written in the same call, and every view and the done gate read the log. Every status change, tag, priority, ruling and log line goes through the tool, never through a hand edit — a status that changed without a log line did not change, and the tool is what makes that true rather than promised. A header edited by hand is never believed: it is printed as a disagreement (see [When a header disagrees with the log](#when-a-header-disagrees-with-the-log)).
+
+## The description and the history
+
+Each side of an issue, its description and its history, has one rule.
+
+**Every part of the description can be changed, and every change is logged.** The description is what the work is: the title, **Priority:**, **Tier:**, **Kind:**, **Found by:**, **Tags:**, **Files:**, **Repo:**, **After:**, **Source:**, **Where:**, **Resources:**, the fields a profile declares, and the What, Why, Acceptance and Changelog sections and the sections a profile declares. The description commands change it: `body` for the title, Where and the sections, `field <ids> <name>` for any header field of the description, and `tag`, `prio`, `files`, `repo`, `source` and `after` for theirs. Each change writes one log line per issue and part with what the part held before, and with who changed it when `--by` names someone (a write that names nobody carries no author, never a name nobody gave): `<id> field <Name> · <value> · was <old value>[ · by <who>]` for a header field, `<id> body · <part> · was "<old text>"[ · by <who>]` for the title or a section. The old title is kept whole; an old section by its first line (at most 120 characters) and its length, `was "<first line>" (<n> characters)`. A value stays on one line, a line break written as ⏎ and the log's separator `·` as `∙`. A part given the value it already holds writes no line. `field` refuses any other name, naming the fields it writes and the command that writes that one. Through the record library, `setField`, `setBody`, `setRepo` and `setAfter` take the writer as `opts.by`; `setTags`, `setPriority`, `setFiles` and `setSource` take no options, and their changes carry no author. No reader takes a description line as state: `log` writes a hand-written line of the `field` shape as a note, as it stands, and only the commands keep such lines true.
+
+**Nothing in the history is ever changed.** The history is what happened: the moves, the lease, evidence rows and notes, verdicts, merges and their CI, rulings and answers. The status and the lease move only through `set`, which keeps its rules; a merge and its CI are recorded by `merged`. Evidence, verdicts, merges, rulings and answers have no edit command at all: an evidence row or an approve is taken back by `retract`, which strikes it through and appends who and why, and a ruling is replaced by `decide --supersedes`, which leaves the old one in place, marked.
 
 ## When a header disagrees with the log
 

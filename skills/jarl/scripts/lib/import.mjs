@@ -26,16 +26,50 @@ import { schedulerNote } from './evidence.mjs';
 const KIND_OF = { defect: 'bug', inconsistency: 'bug', risk: 'gap', opportunity: 'gap' };
 const PRIO_OF = { blocker: '1', critical: '1', high: '1', medium: '2', major: '2', important: '2', low: '3', minor: '3' };
 
+// The keys of a finding the mapping below reads. Research writes further keys beside them (verifier, v, language, and
+// others), and those pass. A key one or two edits away from one of these, of three or more characters, is refused:
+// a misspelled claim or severity would otherwise file the issue with that field empty and nothing said.
+const FINDING_KEYS = ['id', 'title', 'claim', 'kind', 'priority', 'severity', 'where', 'surfaces', 'truth', 'evidence', 'impact', 'adopter_impact', 'proposal', 'suggested_fix', 'fix', 'effort'];
+// The number of single-character edits (insert, delete, replace) that turn one text into the other.
+function editDistance(a, b) {
+  let row = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i += 1) {
+    const next = [i];
+    for (let j = 1; j <= b.length; j += 1) next[j] = Math.min(row[j] + 1, next[j - 1] + 1, row[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    row = next;
+  }
+  return row[b.length];
+}
+function refuseMisspelledKeys(f, label) {
+  if (!f || typeof f !== 'object') return f;
+  const near = (k) => {
+    if (k.length < 3 || FINDING_KEYS.includes(k)) return null;
+    const best = FINDING_KEYS.reduce((m, key) => (editDistance(k, key) < editDistance(k, m) ? key : m));
+    const d = editDistance(k, best);
+    return d >= 1 && d <= 2 ? best : null;
+  };
+  const bad = Object.keys(f).map((k) => [k, near(k)]).filter(([, best]) => best);
+  need(bad.length === 0, `finding ${label} has ${bad.map(([k, best]) => `"${k}" (did you mean "${best}"?)`).join(', ')}, which look like misspelled keys; the keys a finding takes are ${FINDING_KEYS.join(', ')} — nothing was filed`);
+  return f;
+}
+// A label for a finding in a refusal: its id, or its place in the list when it has none (the id check names that case).
+const labelOf = (f, n) => (f && f.id !== undefined ? `"${f.id}"` : `#${n + 1}`);
+const checkedList = (items) => items.map((f, n) => refuseMisspelledKeys(f, labelOf(f, n)));
+
 export function findingsOf(json) {
   let list;
   // In the angles shape an id is unique only inside its angle (two angles may each have an F1), so the key
   // is <angle>/<id> there, always — never only when two collide, which would change a key once a later
   // edit of the file added a twin.
   if (Array.isArray(json) && json.some((x) => x && Array.isArray(x.surviving))) {
-    list = json.flatMap((x) => (x.surviving || []).map((f) => (f && f.id !== undefined && x.angle ? { ...f, id: `${slugify(String(x.angle))}/${f.id}`, localId: String(f.id), angle: slugify(String(x.angle)) } : f)));
-  } else if (Array.isArray(json)) list = json;
-  else if (json && Array.isArray(json.results)) list = json.results.flatMap((r) => r.kept || []);
-  else if (json && Array.isArray(json.findings)) list = json.findings;
+    list = json.flatMap((x) => (x.surviving || []).map((f, n) => {
+      const angle = x && x.angle ? slugify(String(x.angle)) : null;
+      refuseMisspelledKeys(f, angle && f && f.id !== undefined ? `"${angle}/${f.id}"` : labelOf(f, n));
+      return f && f.id !== undefined && angle ? { ...f, id: `${angle}/${f.id}`, localId: String(f.id), angle } : f;
+    }));
+  } else if (Array.isArray(json)) list = checkedList(json);
+  else if (json && Array.isArray(json.results)) list = checkedList(json.results.flatMap((r) => r.kept || []));
+  else if (json && Array.isArray(json.findings)) list = checkedList(json.findings);
   else throw new Error('not a findings file this tool reads: expected an array of findings, an array of angles with `surviving`, or { results: [{ kept }] } — see references/jarl.md, "From research to issues"');
   const seen = new Set();
   const out = list.map((f, n) => {

@@ -68,7 +68,7 @@ test('resume assembles every section live from the loop and the repositories its
   assert.equal(r.status, 0, r.stderr);
   const t = r.stdout;
   assert.match(t, /^# Resume · ship the export command\nopened \S+ \S+ · last activity \S+ \S+\nopen 4 · in flight 2 · waiting 1 · done 0 · dropped 0 · deferred 0 · questions 1 · to ratify 1 · merged, CI pending 1 · CI red 1\n/);
-  assert.match(t, /## Rulings in force \(1\)\n- \S+ · new-way · by owner — do it the new way\n\n/);
+  assert.match(t, /## Rulings in force \(1\)\n- \S+ · new-way · by coordinator — do it the new way\n\n/);
   assert.doesNotMatch(t, /old-way ·/, 'a superseded ruling is not in force');
   assert.match(t, /## In flight \(2\)\n- 1 in flight one · branch jarl\/1-one · worker w1 · model not recorded · since \S+ \S+\n {2}→ no evidence rows since the start[^\n]*\n- 5 queued five · branch jarl\/5-five · worker w5 · model not recorded · since \S+ \S+\n {2}→ approved and queued[^\n]*\n/);
   assert.match(t, /## Waiting — After not settled \(1\)\n- 2 waits for one \(after 1\)\n/);

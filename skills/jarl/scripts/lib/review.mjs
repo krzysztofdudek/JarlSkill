@@ -1,6 +1,7 @@
 // The review command.
 
 import { fieldText, need } from './base.mjs';
+import { needNoOwnersWords } from './owner.mjs';
 import { jarlDir, stamp } from './where.mjs';
 import { readText, writeAtomic } from './files.mjs';
 import { isBulk } from './ids.mjs';
@@ -42,6 +43,7 @@ function retractReview(root, rawIds, reason, flags) {
   return { id: issue.id, verdict: 'retract', by, kind, retracted: named, severities: [], acceptance: (issue.sections.acceptance || '').trim() };
 }
 export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
+  needNoOwnersWords('the review', findings, flags);
   need(verdict === 'approve' || verdict === 'changes' || verdict === 'retract', 'review requires approve|changes|retract');
   if (verdict === 'retract') return retractReview(root, rawIds, findings, flags);
   need(findings, 'review requires "<findings>" — what was read and what was found, even when nothing');

@@ -114,13 +114,13 @@ test('field writes Resources and the fields a profile declares; set takes status
   assert.equal(field(root, '1', 'resources'), 'gate, db');
   assert.equal(field(root, '1', 'note'), 'see the thread');
   assert.match(refuses(root, 'field', '1', 'Area', 'web'), /Area must be one of: core, cli/);
-  assert.match(refuses(root, 'field', '1', 'Bogus', 'x'), /Bogus is not a field: Resources, or one this loop's profile declares \(Area, Note\)/);
+  assert.match(refuses(root, 'field', '1', 'Bogus', 'x'), /Bogus is not a field of the description, which field writes: Title, Priority, Tier, Kind, Found by, Tags, Files, Repo, After, Source, Where, Resources, Area, Note/);
   assert.match(refuses(root, 'field', '1', 'open', 'x'), /open is not a field/);
   assert.match(refuses(root, 'field', '1', 'Note', 'x', '--worker', 'w'), /unknown flag --worker for field/);
   assert.match(refuses(root, 'set', '1', 'Note', 'x', '--worker', 'w'), /--worker goes with a status, not with the field Note/);
   assert.match(refuses(root, 'set', '1', 'Files', 'x'), /^status must be one of: open, in-progress, done, dropped, deferred\n$/);
   assert.match(refuses(root, 'set', '1', 'bogus', 'x'), /status must be one of: /);
-  assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /· 1 field Resources · gate, db\n.*· 2 field Resources · gate, db\n/);
+  assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /· 1 field Resources · gate, db · was \(none\)\n.*· 2 field Resources · gate, db · was \(none\)\n/);
 });
 
 test('set <ids> resources and set <ids> <profile field> write the field and say which verb to use', () => {
@@ -197,7 +197,9 @@ test('one idiom empties every field: --clear on After, Repo, Resources and a pro
     assert.match(said, new RegExp(`${name}: \\(cleared\\)`), name);
     for (const id of ['1', '2']) assert.ok(!field(root, id, name.toLowerCase()), `${name} of ${id}`);
   }
-  assert.match(refuses(root, 'field', '1', 'Files', 'a.txt'), /Files is written with its own command: files <ids> p,q/);
+  // field writes them as their own commands do, and empties them the same way.
+  assert.equal(jarl(root, 'field', '1', 'Files', 'a.txt'), '1 Files: a.txt');
+  assert.equal(field(root, '1', 'files'), 'a.txt');
   assert.match(refuses(root, 'field', '1', 'Note', ''), /the value is required, or --clear to empty it/);
   assert.match(refuses(root, 'field', '1', 'Note', 'x', '--clear'), /either a value or --clear, not both/);
 });

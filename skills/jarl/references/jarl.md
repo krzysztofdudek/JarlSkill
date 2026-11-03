@@ -102,6 +102,8 @@ Three shapes are read: a flat array of findings; an array of angles, each with i
 | Acceptance | `proposal`, `suggested_fix` or `fix`, as one line starting `Proposed by the finding`. That line is not counted as an acceptance line, so `next` keeps marking the issue until it is rewritten into something checkable. |
 | Evidence | nothing. `done` still needs evidence of the work. |
 
+Keys beyond the table pass without a word: research writes its own (a `verifier`, a `v`, a `language`). A key that is one or two edits away from a key in the table, and three or more characters long, is refused instead: `clam` for `claim` or `severety` for `severity` would otherwise file the issue with that field empty. A refusal names the finding, the key and its nearest key, and lists the keys a finding may carry. Import, `--dry-run` and `sources` refuse the same file alike, and nothing is filed.
+
 `sources [<findings.json>...]` is the coverage view. Per report it shows the findings, how many were filed, the unfiled ones (when the file is given) and the status of the issues filed from them, with one row per finding. A finding deliberately left unfiled is recorded as a ruling that names it, never as silence. An issue filed by hand from a finding takes `new --source` or `source <id> <dir>#<id>`.
 
 ## Templates
@@ -151,7 +153,7 @@ When the owner has handed the loop a mandate to decide on its own, or is away, h
 
 The loop neither waits for the owner nor guesses for them. Everything that is theirs goes through `ask`, and the work that does not depend on the answer goes on. The exact grammar in force is printed by `jarl --help`.
 
-- **A provisional decision** is a ruling plus a question that asks for the owner's word afterwards: `decide <slug> "<ruling>"`, then `ask --kind ratify --issue <id> "<what was decided, and why>"`. It is never left in evidence prose. It blocks nothing: the work goes on, `next` and `done` ignore it, and it waits as long as the owner needs. It is listed in `status` (`to ratify N`, one line each) and under its own heading in `resume` until the owner answers. `answer` records the answer as a ruling and writes it into the issue's evidence. When the owner rejects the choice, file the undoing as a new issue.
+- **A provisional decision** is a ruling plus a question that asks for the owner's word afterwards: `decide <slug> "<ruling>"` (recorded as the coordinator's), then `ask --kind ratify --issue <id> "<what was decided, and why>"`. It is never left in evidence prose. It blocks nothing: the work goes on, `next` and `done` ignore it, and it waits as long as the owner needs. It is listed in `status` (`to ratify N`, one line each) and under its own heading in `resume` until the owner answers. `answer` records the answer as a ruling and writes it into the issue's evidence. When the owner rejects the choice, file the undoing as a new issue.
 - **A question the jarl cannot settle** is `ask --kind stuck --issue <id> "<where you are, what you found, the options, your recommendation>"`. It holds only that issue: `next` does not offer it while the question is open, and every other issue goes on.
 - **At every boot** read the questions and the ratify items `resume` prints first: the owner may have answered in the meantime, and an answer is a ruling in force from then on.
 

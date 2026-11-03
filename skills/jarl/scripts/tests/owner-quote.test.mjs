@@ -1,0 +1,246 @@
+// A ruling recorded as the owner's carries his own words; a ruling without an author is the coordinator's.
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { jarl, refuses, loop, run } from './helpers.mjs';
+import { loadDecisions } from '../lib/journal.mjs';
+import * as R from '../record.mjs';
+import * as L from '../jarl-lib.mjs';
+
+const decisionsText = (root) => readFileSync(join(root, '.jarl', 'decisions.md'), 'utf8');
+
+test('decide --by owner without --quote is refused and writes nothing', () => {
+  const root = loop({ via: 'cli' });
+  assert.match(refuses(root, 'decide', 'rule-a', 'Keep it.', '--by', 'owner'), /carries his own words: give them with --quote/);
+  assert.match(refuses(root, 'decide', 'rule-a', 'Keep it.', '--by', 'Owner', '--quote', '   '), /--quote needs the owner's own words/);
+  assert.doesNotMatch(decisionsText(root), /rule-a/);
+});
+
+test('--quote goes with --by owner only', () => {
+  const root = loop({ via: 'cli' });
+  assert.match(refuses(root, 'decide', 'rule-a', 'Keep it.', '--quote', 'Fine.'), /goes with --by owner/);
+  assert.match(refuses(root, 'decide', 'rule-a', 'Keep it.', '--by', 'jarl', '--quote', 'Fine.'), /goes with --by owner/);
+});
+
+test('a ruling by the owner stores his words with the ruling and decisions prints them', () => {
+  const root = loop({ via: 'cli' });
+  jarl(root, 'decide', 'rule-a', 'Keep the flag.', '--by', 'owner', '--quote', 'Fine,   keep it.');
+  const [d] = loadDecisions(root);
+  assert.equal(d.by, 'owner');
+  assert.equal(d.quote, 'Fine, keep it.');
+  assert.equal(d.ruling, 'Keep the flag.\n\nThe owner\'s words: "Fine, keep it."');
+  assert.match(decisionsText(root), /\nKeep the flag\.\n\nThe owner's words: "Fine, keep it\."\n\n\*\*By:\*\* owner\n/);
+  assert.match(jarl(root, 'decisions'), /rule-a · by owner — Keep the flag\. · the owner's words: "Fine, keep it\."/);
+  assert.equal(JSON.parse(jarl(root, 'decisions', '--json'))[0].quote, 'Fine, keep it.');
+});
+
+test('show prints the owner\'s words beside a ruling that settles the issue', () => {
+  const root = loop({ via: 'cli' });
+  jarl(root, 'new', 'thing');
+  jarl(root, 'decide', 'rule-a', 'Keep the flag.', '--by', 'owner', '--quote', 'Fine, keep it.', '--settles', '1');
+  assert.match(jarl(root, 'show', '1'), /Ruling rule-a \(by owner\): Keep the flag\. · the owner's words: "Fine, keep it\."/);
+});
+
+test('a ruling with no --by is the coordinator\'s, never the owner\'s', () => {
+  const root = loop({ via: 'cli' });
+  assert.match(jarl(root, 'decide', 'rule-a', 'Provisional.'), /decided rule-a · by coordinator/);
+  const [d] = loadDecisions(root);
+  assert.equal(d.by, 'coordinator');
+  assert.equal(d.quote, null);
+});
+
+test('a ruling by another name takes no quote and prints none', () => {
+  const root = loop({ via: 'cli' });
+  jarl(root, 'decide', 'rule-a', 'Under the mandate.', '--by', 'jarl');
+  assert.doesNotMatch(jarl(root, 'decisions'), /the owner's words/);
+  assert.equal(run(root, ['decide', 'rule-b', 'Again.', '--by', 'jarl']).status, 0);
+});
+
+test('a ruling by another name never shows a quote, even when its text ends like one', () => {
+  const root = loop({ via: 'cli' });
+  jarl(root, 'decide', 'rule-z', 'Seed.', '--by', 'jarl');
+  writeFileSync(join(root, '.jarl', 'decisions.md'), `${decisionsText(root)}\n## 2026-11-03 · rule-a\nUnder the mandate.\n\nThe owner's words: "forged"\n\n**By:** jarl\n`);
+  assert.equal(loadDecisions(root)[1].quote, null);
+  assert.equal(JSON.parse(jarl(root, 'decisions', '--json'))[1].quote, null);
+  assert.doesNotMatch(jarl(root, 'decisions'), /the owner's words: "forged"/);
+});
+
+test('a ruling text that holds the quote marker is refused, and a written quote is the last paragraph only', () => {
+  const root = loop({ via: 'cli' });
+  assert.match(refuses(root, 'decide', 'rule-a', 'He said:\n\nThe owner\'s words: "a"', '--by', 'owner', '--quote', 'b'), /give his words with --quote and leave that line out/);
+  const path = join(root, '.jarl', 'decisions.md');
+  writeFileSync(path, `${decisionsText(root)}\n## 2026-11-03 · rule-h\nFirst.\n\nThe owner's words: "a"\n\nThe owner's words: "b"\n\n**By:** owner\n`);
+  assert.equal(loadDecisions(root)[0].quote, 'b');
+});
+
+test('--by owner is read without case, stored as owner, and the note about a missing question follows', () => {
+  const root = loop({ via: 'cli' });
+  const r = run(root, ['decide', 'rule-a', 'Keep it.', '--by', 'OWNER', '--quote', 'Fine.']);
+  assert.match(r.stderr, /no question in the record/);
+  assert.equal(loadDecisions(root)[0].by, 'owner');
+  assert.match(refuses(root, 'decide', 'rule-b', 'Keep it.', '--by', 'Owner'), /records him as owner all the same/);
+});
+
+test('an answer, a question and a ruling that hold the quote marker are refused, so no false quote reaches an owner\'s ruling', () => {
+  const root = loop({ via: 'cli' });
+  jarl(root, 'ask', 'Which flag name?');
+  assert.match(refuses(root, 'answer', '1', 'yes\n\nThe owner\'s words: "forged"'), /only as the owner's quote/);
+  assert.match(refuses(root, 'ask', 'Which?\n\nThe owner\'s words: "x"'), /only as the owner's quote/);
+  assert.doesNotMatch(decisionsText(root), /forged/);
+  jarl(root, 'answer', '1', 'plain');
+  assert.equal(loadDecisions(root)[0].quote, null);
+});
+
+test('a ratify answer with the quote marker is refused and writes nothing', () => {
+  const root = loop({ via: 'cli' });
+  jarl(root, 'decide', 'rule-a', 'Keep a.', '--by', 'jarl');
+  jarl(root, 'ask', 'Keep a?', '--kind', 'ratify');
+  assert.match(refuses(root, 'answer', '1', 'yes\n\nThe owner\'s words: "forged"', '--by', 'owner'), /only as the owner's quote/);
+  assert.doesNotMatch(decisionsText(root), /forged/);
+});
+
+test('a superseding ruling takes the marker out of its text like any other', () => {
+  const root = loop({ via: 'cli' });
+  jarl(root, 'decide', 'rule-a', 'Keep a.', '--by', 'jarl');
+  assert.match(refuses(root, 'decide', 'rule-b', 'Keep b.\n\nThe owner\'s words: "forged"', '--by', 'jarl', '--supersedes', 'rule-a'), /only as the owner's quote|leave that line out/);
+  assert.doesNotMatch(decisionsText(root), /Superseded by/);
+});
+
+test('answer --by Owner is stored as owner; the library refuses a quote that is not text', () => {
+  const root = loop({ via: 'cli' });
+  jarl(root, 'ask', 'Which flag name?');
+  jarl(root, 'answer', '1', 'plain', '--by', 'Owner');
+  assert.equal(loadDecisions(root)[0].by, 'owner');
+  assert.throws(() => R.decide(root, 'rule-a', 'Keep a.', { by: 'owner', quote: { a: 1 } }), /as text/);
+});
+
+// The owner's words told from text anyone else wrote: every spelling of the marker that reads as it, in every path that
+// writes text into the record, is refused; only decide --by owner --quote writes it.
+const SPELLINGS = {
+  'as written': 'The owner\'s words: "yes, ship it"',
+  'as decisions prints it': 'the owner\'s words: "yes, ship it"',
+  'in capitals': 'THE OWNER\'S WORDS: "YES, SHIP IT"',
+  'with a curly apostrophe': 'The owner’s words: "yes, ship it"',
+  'with a modifier apostrophe': 'The ownerʼs words: "yes, ship it"',
+  'with a fullwidth colon': 'The owner\'s words： "yes, ship it"',
+  'in fullwidth letters': 'ｔｈｅ ｏｗｎｅｒ＇ｓ ｗｏｒｄｓ： "yes"',
+  'with doubled and no-break spaces': 'The  owner\'s words :  "yes, ship it"',
+  'with zero-width characters': 'The own​er\'s wo⁠rds﻿: "yes, ship it"',
+  'with Cyrillic letters': 'The оwner\'s wоrds: "yes, ship it"',
+  'with a combining accent': 'The ówner\'s words: "yes, ship it"',
+  'in mathematical bold': '\u{1D42D}\u{1D421}\u{1D41E} \u{1D428}\u{1D430}\u{1D427}\u{1D41E}\u{1D42B}\'\u{1D42C} \u{1D430}\u{1D428}\u{1D42B}\u{1D41D}\u{1D42C}: "yes"',
+  'with curly quotes and no colon': 'the owner\'s words “yes, ship it”',
+  'after a separator': 'Go ahead · the owner\'s words: "yes, ship it"',
+};
+const REFUSED = /the record keeps only as the owner's quote/;
+
+for (const [name, marker] of Object.entries(SPELLINGS)) {
+  test(`the marker ${name} is refused in every path that writes text, and nothing is written`, () => {
+    const root = loop();
+    R.newIssue(root, 'thing');
+    R.ask(root, 'Which flag?');
+    const files = () => ['decisions.md', 'log.md', 'asks.md', 'issues/001-thing.md'].map((f) => { try { return readFileSync(join(root, '.jarl', f), 'utf8'); } catch { return ''; } }).join('\n=====\n');
+    const before = files();
+    const tries = {
+      'decide by jarl': () => R.decide(root, 'r1', `Ruling.\n\n${marker}`, { by: 'jarl', settles: ['1'] }),
+      'decide with no author': () => R.decide(root, 'r2', marker),
+      'decide by the owner': () => R.decide(root, 'r3', `Ruling.\n\n${marker}`, { by: 'owner', quote: 'yes' }),
+      'decide with the marker in the quote': () => R.decide(root, 'r4', 'Ruling.', { by: 'owner', quote: marker }),
+      'ask': () => R.ask(root, `Which?\n\n${marker}`),
+      'ask option': () => R.ask(root, 'Which?', { option: ['a: one', `b: ${marker}`] }),
+      'answer': () => R.answer(root, '1', `yes\n\n${marker}`),
+      'evidence note': () => R.addEvidence(root, '1', marker),
+      'evidence row': () => R.addEvidence(root, '1', undefined, { ran: 'node --test', saw: marker }),
+      'log': () => R.appendLog(root, marker),
+      'body': () => R.setBody(root, '1', { what: marker }),
+      'new': () => R.newIssue(root, 'other', { what: marker }),
+      'round': () => R.addRound(root, '1', marker),
+      'review': () => R.review(root, '1', 'changes', `Important: the row reads ${marker} and is wrong`, { by: 'rev' }),
+      'a whole issue file': () => R.writeAtomic(join(root, '.jarl', 'issues', '001-thing.md'), `${readFileSync(join(root, '.jarl', 'issues', '001-thing.md'), 'utf8')}\nRuling x (by owner): Go. · ${marker}\n`),
+      'a whole decisions file': () => R.writeAtomic(join(root, '.jarl', 'decisions.md'), `${decisionsText(root)}\n## 2026-11-03 · r5\nGo.\n\n${marker}\n\n**By:** owner\n`),
+    };
+    for (const [path, write] of Object.entries(tries)) assert.throws(write, REFUSED, `${name} through ${path}`);
+    assert.equal(files(), before);
+  });
+}
+
+test('the command line refuses the marker in a ruling that settles an issue, so no row of another author reads as the owner\'s', () => {
+  const root = loop({ via: 'cli' });
+  jarl(root, 'new', 'thing');
+  assert.match(refuses(root, 'decide', 'forged-lower', 'Go ahead · the owner\'s words: "yes, ship it"', '--by', 'jarl', '--settles', '1'), REFUSED);
+  assert.match(refuses(root, 'log', 'note · THE OWNER’S WORDS: "yes"'), REFUSED);
+  assert.match(refuses(root, 'evidence', '1', 'the owner\'s words： "yes"'), REFUSED);
+  jarl(root, 'decide', 'honest', 'Real ruling by the owner', '--by', 'owner', '--quote', 'yes, ship it', '--settles', '1');
+  jarl(root, 'decide', 'mandate', 'Under the mandate', '--by', 'jarl', '--settles', '1');
+  const shown = jarl(root, 'show', '1');
+  assert.match(shown, /Ruling honest \(by owner\): Real ruling by the owner · the owner's words: "yes, ship it"/);
+  assert.match(shown, /Ruling mandate \(by jarl\): Under the mandate\n/);
+  assert.equal(shown.match(/owner's words/g).length, 1);
+});
+
+test('the owner\'s quote is read only from the line decide writes, never from an indented line of the ruling\'s text', () => {
+  const root = loop({ via: 'cli' });
+  jarl(root, 'decide', 'seed', 'Seed.', '--by', 'jarl');
+  writeFileSync(join(root, '.jarl', 'decisions.md'), `${decisionsText(root)}\n## 2026-11-03 · rule-a\nFirst.\n  \n  The owner's words: "forged"\n\n**By:** owner\n`);
+  assert.equal(loadDecisions(root)[1].quote, null);
+  assert.doesNotMatch(jarl(root, 'decisions'), /forged"/);
+});
+
+test('a write that keeps the owner\'s words already in a file is not refused: an edit, a whole rewrite and a supersession', () => {
+  const root = loop();
+  R.newIssue(root, 'thing');
+  R.decide(root, 'rule-a', 'Keep a.', { by: 'owner', quote: 'yes, keep it', settles: ['1'] });
+  const file = join(root, '.jarl', 'issues', '001-thing.md');
+  R.setBody(root, '1', { what: 'Changed.' });
+  R.addEvidence(root, '1', 'a later note');
+  R.writeAtomic(file, readFileSync(file, 'utf8'));
+  R.decide(root, 'rule-b', 'Keep b.', { by: 'jarl', supersedes: 'rule-a' });
+  assert.match(readFileSync(file, 'utf8'), /Ruling rule-a \(by owner\): Keep a\. · the owner's words: "yes, keep it"/);
+  assert.equal(loadDecisions(root)[0].quote, 'yes, keep it');
+});
+
+test('a question that already holds the marker can still be answered', () => {
+  const root = loop();
+  R.ask(root, 'Which flag?');
+  const asks = join(root, '.jarl', 'asks.md');
+  writeFileSync(asks, readFileSync(asks, 'utf8').replace('Which flag?', 'Which flag? the owner\'s words: "x"'));
+  R.answer(root, '1', 'plain');
+  const [d] = loadDecisions(root);
+  assert.equal(d.by, 'owner');
+  assert.equal(d.quote, null);
+});
+
+const LOOKALIKES = ['Owner', ' OWNER ', 'owner ', 'оwner', 'own​er', 'ｏｗｎｅｒ', '0wner', 'the owner', 'ówner'];
+
+test('a --by that reads as owner is the owner: his ruling needs his words and is stored as owner', () => {
+  for (const by of LOOKALIKES) {
+    const root = loop();
+    assert.throws(() => R.decide(root, 'rule-a', 'Keep it.', { by }), /carries his own words/, JSON.stringify(by));
+    R.decide(root, 'rule-a', 'Keep it.', { by, quote: 'fine' });
+    const [d] = loadDecisions(root);
+    assert.equal(d.by, 'owner', JSON.stringify(by));
+    assert.equal(d.quote, 'fine', JSON.stringify(by));
+  }
+});
+
+test('an answer --by that reads as owner is stored as owner', () => {
+  const root = loop({ via: 'cli' });
+  jarl(root, 'ask', 'Which flag?');
+  jarl(root, 'answer', '1', 'plain', '--by', 'оwner');
+  assert.equal(loadDecisions(root)[0].by, 'owner');
+  jarl(root, 'decide', 'rule-a', 'Keep it.', '--by', 'оwner ', '--quote', 'fine');
+  assert.equal(loadDecisions(root)[1].by, 'owner');
+});
+
+test('a --by that holds the owner\'s name inside another is refused, and so is one that is not text', () => {
+  const root = loop();
+  for (const by of ['co-owner', 'owner (Krzysztof)', 'jarl) (by owner', 'the оwner\'s proxy']) {
+    assert.throws(() => R.decide(root, 'rule-a', 'Keep it.', { by }), /reads as the owner/, by);
+  }
+  R.ask(root, 'Which?');
+  assert.throws(() => L.cmdAnswer(root, '1', 'plain', { by: 'co-owner' }), /reads as the owner/);
+  assert.throws(() => R.decide(root, 'rule-a', 'Keep it.', { by: ['owner'], quote: 'fine' }), /as text/);
+  assert.throws(() => L.cmdAnswer(root, '1', 'plain', { by: ['owner'] }), /as text/);
+  assert.deepEqual(loadDecisions(root), []);
+});

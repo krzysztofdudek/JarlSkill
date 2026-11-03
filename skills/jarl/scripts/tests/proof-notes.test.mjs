@@ -280,7 +280,7 @@ test('a section that already holds content and no sub-heading is never converted
   jarl(root, 'evidence', '1', 'another note');
   jarl(root, 'decide', 'u-ruling', 'a ruling', '--settles', '1');
   jarl(root, 'set', '1', 'deferred', 'wait');
-  assert.equal(evidence(root, 1).trim(), '## Evidence\n\n- **ran:** old · **saw:** ok\n\nan old note\n- **ran:** next · **saw:** ok\n\nanother note\n\nRuling u-ruling: a ruling\n\nDeferred: wait');
+  assert.equal(evidence(root, 1).trim(), '## Evidence\n\n- **ran:** old · **saw:** ok\n\nan old note\n- **ran:** next · **saw:** ok\n\nanother note\n\nRuling u-ruling (by coordinator): a ruling\n\nDeferred: wait');
   assert.doesNotMatch(evidence(root, 1), /^### /m);
 });
 

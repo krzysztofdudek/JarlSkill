@@ -310,7 +310,7 @@ test('status moves only with a log line; done needs evidence; dropped needs a re
   jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', '12 pass, 0 fail');
   assert.match(refuses(root, 'set', '1', 'done'), /no approving review/);
   jarl(root, 'review', '1', 'changes', '--by', 'rev', 'Important: the new test never goes red');
-  assert.match(refuses(root, 'set', '1', 'done'), /no approving review/);
+  assert.match(refuses(root, 'set', '1', 'done'), /latest review is a changes verdict by rev of/);
   jarl(root, 'review', '1', 'approve', '--by', 'rev', 'read the diff; test red before, green after');
   jarl(root, 'set', '1', 'done');
   const log = readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
@@ -1105,6 +1105,34 @@ test('import reads the angles shape and the results/kept shape; refuses a findin
   assert.match(refuses(root, 'import', findingsDir({ nope: 1 })), /not a findings file/);
 });
 
+test('import refuses a finding with a misspelled key, naming the finding, the key and the keys a finding takes, in a dry run as well, and files nothing', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  const file = findingsDir([{ id: 'C-1', title: 'a', clam: 'the claim, misspelled', severety: 'high' }]);
+  const msg = refuses(root, 'import', file, '--source', 'r-keys');
+  assert.match(msg, /finding "C-1" has "clam" \(did you mean "claim"\?\), "severety" \(did you mean "severity"\?\)/);
+  assert.match(msg, /the keys a finding takes are id, title, claim, kind, priority, severity, where, surfaces, truth, evidence, impact, adopter_impact, proposal, suggested_fix, fix, effort/);
+  assert.doesNotMatch(msg, /localId|angle/, 'the keys import sets itself are not listed');
+  assert.equal(refuses(root, 'import', file, '--source', 'r-keys', '--dry-run'), msg, 'a dry run refuses the same');
+  assert.equal(JSON.parse(jarl(root, 'list', '--all', '--json')).length, 0, 'nothing was filed');
+  const angles = findingsDir([{ angle: 'first hour', surviving: [{ id: 'F1', title: 'a', sevrity: 'minor' }] }]);
+  assert.match(refuses(root, 'import', angles, '--source', 'r-angles'), /finding "first-hour\/F1" has "sevrity" \(did you mean "severity"\?\)/);
+});
+
+test('import, a dry run and sources take a findings file whose findings carry keys the mapping does not read, and file every finding', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  const file = fileURLToPath(new URL('./fixtures/findings-with-extra-keys.json', import.meta.url));
+  const source = 'core/research/2026-11-03-extra-keys';
+  const dry = JSON.parse(jarl(root, 'import', file, '--source', source, '--dry-run', '--json'));
+  assert.deepEqual(dry.filed.map((f) => f.finding), ['jarl-fr-1c239812', 'check-fill-lock-F1', 'GF-1']);
+  assert.equal(JSON.parse(jarl(root, 'list', '--all', '--json')).length, 0, 'a dry run files nothing');
+  const out = JSON.parse(jarl(root, 'import', file, '--source', source, '--json'));
+  assert.equal(out.filed.length, 3);
+  assert.match(jarl(root, 'import', file, '--source', source), /filed 0 · already filed 3/);
+  assert.match(jarl(root, 'sources', file, '--source', source), /^core\/research\/2026-11-03-extra-keys · 3 finding\(s\) · 3 filed/m);
+});
+
 test('import --adopt links the issues that already name the finding, once, without filing a duplicate', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
@@ -1135,7 +1163,7 @@ test('ask --kind ratify blocks nothing, is listed in status and the handoff, and
   jarl(root, 'evidence', '1', '--ran', 'check', '--saw', 'green');
   jarl(root, 'set', '1', 'done', 'merged');
   jarl(root, 'answer', 'a-1', 'ratified', '--by', 'owner');
-  assert.match(jarl(root, 'show', '1'), /Ruling ask-1 \(ratify\): ratified/);
+  assert.match(jarl(root, 'show', '1'), /Ruling ask-1 \(ratify, by owner\): ratified/);
   assert.match(jarl(root, 'status'), /questions 0$/m);
 });
 
@@ -1162,10 +1190,10 @@ test('After holds an issue out of next and counts it as waiting; decide --settle
   jarl(root, 'after', '5', '--clear');
   assert.equal(JSON.parse(jarl(root, 'show', '5', '--json')).fields.after, undefined);
   // A ruling names what it settles: the ruling goes into each issue's evidence, the status stays.
-  assert.match(jarl(root, 'decide', 'numbers', 'the core ships on one number', '--settles', '4'), /decided numbers · by owner · written into 4/);
+  assert.match(jarl(root, 'decide', 'numbers', 'the core ships on one number', '--settles', '4'), /decided numbers · by coordinator · written into 4/);
   const four = JSON.parse(jarl(root, 'show', '4', '--json'));
   assert.equal(four.status, 'open');
-  assert.match(four.sections.evidence, /Ruling numbers: the core ships on one number/);
+  assert.match(four.sections.evidence, /Ruling numbers \(by coordinator\): the core ships on one number/);
   assert.match(readFileSync(join(root, '.jarl', 'decisions.md'), 'utf8'), /the core ships on one number\n\n\*\*Settles:\*\* 4/);
   assert.match(refuses(root, 'decide', 'other', 'x', '--settles', '4,77'), /no such issue: 77/);
   assert.doesNotMatch(readFileSync(join(root, '.jarl', 'decisions.md'), 'utf8'), /other/, 'a refused ruling writes nothing');
@@ -1644,7 +1672,7 @@ test('decide --by owner with no question in the record prints a notice on stderr
   const root = repo();
   jarl(root, 'init', 'goal');
   jarl(root, 'new', 'rewrite the flag handling', '--what', 'Follows flag-rule as it stands.');
-  assert.match(run(root, ['decide', 'quiet-rule', 'Keep the default.', '--by', 'owner']).stderr, /no question in the record/);
+  assert.match(run(root, ['decide', 'quiet-rule', 'Keep the default.', '--by', 'owner', '--quote', 'Keep it.']).stderr, /no question in the record/);
   assert.equal(run(root, ['decide', 'mandate-rule', 'Keep the default.', '--by', 'jarl']).stderr, '');
   jarl(root, 'decide', 'flag-rule', 'Keep the flag.', '--by', 'jarl');
   const r = run(root, ['decide', 'flag-rule-two', 'Keep the flag, now.', '--by', 'jarl', '--supersedes', 'flag-rule']);
@@ -1945,7 +1973,7 @@ test('the supersession notice finds a slug at the end of a sentence and does not
   assert.doesNotMatch(r.stderr, /, 10\b/, 'the longer slug is not found');
 });
 
-test('decide with no --by prints no notice: the owner is the default, and a notice is for an owner named on the command line', () => {
+test('decide with no --by prints no notice: the coordinator is the default, and a notice is for an owner named on the command line', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
   assert.equal(run(root, ['decide', 'default-rule', 'Keep it.']).stderr, '');
@@ -2018,7 +2046,7 @@ test('the decision reader lists text before the first ruling, a ruling heading t
   const lib = await import(LIB_URL);
   const root = repo();
   jarl(root, 'init', 'goal');
-  jarl(root, 'decide', 'rule-a', 'Keep a.', '--by', 'owner');
+  jarl(root, 'decide', 'rule-a', 'Keep a.', '--by', 'owner', '--quote', 'Keep a.');
   const path = join(root, '.jarl', 'decisions.md');
   writeFileSync(path, `${readFileSync(path, 'utf8')}\n## 2026-10-19 rule-b without a dot\n## 2026-10-19 · rule-a\nAgain.\n`);
   const skipped = [];

@@ -1,6 +1,7 @@
 // Rounds, branches and checks.
 
 import { ROUNDS_BEFORE_TAKEOVER, STALE_HOURS, fieldText, need, noSeparators } from './base.mjs';
+import { needNoOwnersWords } from './owner.mjs';
 import { git } from './git.mjs';
 import { canonical, portablePath } from './where.mjs';
 import { branchIssueId, idKey, idsNamed } from './ids.mjs';
@@ -39,6 +40,7 @@ function takeoverAdvice(tiers, tier, failed, n, takeovers) {
 }
 
 export function cmdRound(root, rawId, what, dry = false, opts = {}) {
+  needNoOwnersWords('the round', what);
   need(what, 'round requires "<what failed>"');
   const found = opts.findings;
   need(found === undefined || (/^\d+$/.test(String(found)) && Number(found) <= FINDINGS_MAX), `--findings must be a whole number up to ${FINDINGS_MAX}`);

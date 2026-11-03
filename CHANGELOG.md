@@ -6,15 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Every part of an issue's description can now be corrected, including its tier, its kind and who found it, and the record keeps who changed it and what it said before. What happened to an issue, such as its test results, reviews and merges, is never edited, only taken back or replaced.
+
 ### Changed
 
 - If you copy Jarl's record library into your own tool, copy the `scripts/lib/` folder too. It now sits next to `record.mjs` and `jarl-lib.mjs`, and the library does not work without it.
+- When a new issue is filed without a kind or a priority, Jarl says which one it took and names the option that sets it, as it already does for the tier.
 
 ### Fixed
 
+- A research findings file with a misspelled field name is now refused, and the finding and the field are named, instead of filing the issue with that part left empty. A dry run refuses it the same way.
+- `models` on a loop that has no issue yet, such as a fresh copy of a committed loop, now reports an empty loop. Before, it said the loop was missing.
+- A ruling recorded as the owner's now needs the owner's own words, which are kept with the ruling and shown beside it. A ruling recorded without a name is now the coordinator's, no longer the owner's.
+- Every ruling written into an issue now says who made it. No other text in the record can look like the owner's own words, whatever spelling it uses.
 - Every tool now refuses a field it does not take, including the help tool, and names the fields it does take, so a misspelled field is never dropped without a word.
 - A merge recorded before its test run has finished now shows as waiting for its check in the status, the resume and the issue itself, with the command that records the check. It stops showing once the check, or the red check it landed on, is recorded.
 - Recording a merge now warns when the commit you give does not contain the branch's latest work or the latest state of the branch it is merged into, so a check that ran on the wrong version is noticed at once.
+- When a merge is recorded without its commit, Jarl now shows the latest commit of the issue's branch and the exact command that records it, so you do not have to look the commit up and retype the command.
+- When an issue cannot be finished because its latest review asks for changes, the message now names that review, with its reviewer and date, instead of a review round that was never recorded.
 - The first issue can be filed in a fresh copy of a loop that is kept in git, even when the loop had no issue yet when it was committed. Before, it stopped with an error about a missing folder.
 - After three failed rounds on a task, Jarl suggests a different model or a changed approach for the next worker, and never a level above the strongest. The next suggestion comes after three more rounds, not on every round. A round can record how many findings it left, so a task that is getting better can be told from one that is stuck.
 - Pausing a task and picking it up again no longer throws away its test results and its review, as long as nobody changed its code in between. A new change to the code still asks for new results and a new review.

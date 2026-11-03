@@ -2,6 +2,7 @@
 
 import { existsSync, readFileSync, writeFileSync, renameSync, unlinkSync } from 'node:fs';
 import { join, dirname, basename } from 'node:path';
+import { needNoNewOwnersWords } from './owner.mjs';
 
 const SLEEPER = new Int32Array(new SharedArrayBuffer(4));
 
@@ -28,15 +29,26 @@ export function renameRetry(from, to, rename = renameSync, platform = process.pl
   }
 }
 
+// A file of a loop's record (anything under a .jarl directory) takes no new line that reads as the owner's words but
+// the ones decide writes (see owner.mjs): every write of the record comes through here, whatever command or library call
+// made it.
+const IN_RECORD = /(?:^|[\\/])\.jarl[\\/]/;
+function needRecordText(path, before, text) { if (IN_RECORD.test(path)) needNoNewOwnersWords(before(), text, basename(path)); }
+
 // Written whole beside the target, then renamed over it: a reader sees the old file or the new one.
 export function writeAtomic(path, text) {
+  needRecordText(path, () => (existsSync(path) ? readText(path) : ''), text);
+  writeRaw(path, text);
+}
+function writeRaw(path, text) {
   const tmp = join(dirname(path), `.${basename(path)}.${process.pid}.tmp`);
   writeFileSync(tmp, text);
   try { renameRetry(tmp, path); } catch (e) { try { unlinkSync(tmp); } catch { /* gone */ } throw e; }
 }
 
 function appendAtomic(path, header, text) {
-  writeAtomic(path, (existsSync(path) ? readText(path) : header) + text);
+  needRecordText(path, () => '', text);
+  writeRaw(path, (existsSync(path) ? readText(path) : header) + text);
 }
 
 // Used by the other modules of the library, and not part of what jarl-lib.mjs exports.
