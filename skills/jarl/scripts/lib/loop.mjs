@@ -8,7 +8,7 @@ import { idKey, idRe } from './ids.mjs';
 import { profileAt } from './profile.mjs';
 import { asksAt, decisionsAt, goalLines, readGoal } from './journal.mjs';
 import { eventsById, loopEvents } from './log.mjs';
-import { alignRows, evidenceTable, issuesAt, mergedOf } from './issues.mjs';
+import { alignRows, evidenceTable, issuesAt, mergedOf, sharedNumberText, sharedNumbers } from './issues.mjs';
 import { branchTip } from './repositories.mjs';
 
 // ---- the loaded loop -------------------------------------------------------------------------------
@@ -53,7 +53,7 @@ function scopedLoop(loop, issues) { return makeLoop({ dir: loop.dir, root: loop.
 // Where the files disagree with the journal, which is the record: one entry { id, field, onFile, record, line } per
 // header field (Status, Branch, Worker, Model, Since, Merged, CI) whose value differs from the journal's, one per
 // issue the journal holds no filing and no move of (field 'journal'), and one per status a line of the journal moves an
-// issue into that the loop's profile does not list (field 'profile': the line reads as a note, not as a move). The
+// issue into that the loop's profile does not list (field 'profile': the line reads as a note, not as a move), and one per number two issue files carry (field 'number', with the files), in place of their fields. The
 // views never believe the header; they print these. Each line names how the disagreement is settled: the header written
 // back to the journal's value, which writes nothing else, or the move or merge that makes the header's value the
 // record, which writes a line of its own.
@@ -63,8 +63,13 @@ const ghostRe = idRe('^({id}) → (\\S+)');
 export function recordDisagreements(loop) {
   const { profile } = loop;
   const out = [];
+  // A number two files carry is one entry naming both: the log's lines for it are read for each file, so a header that
+  // differs from them may be the true one, and copying the log's value into it would move an issue nobody moved.
+  const shared = sharedNumbers(loop.issues);
+  const sharedFiles = new Set(shared.flatMap((s) => s.issues.map((i) => i.file)));
+  for (const s of shared) out.push({ id: s.id, field: 'number', onFile: null, record: null, files: s.issues.map((i) => `issues/${basename(i.file)}`), line: `record: ${sharedNumberText(s, loop.issues)}` });
   for (const issue of loop.issues) {
-    if (issue.id === null) continue;
+    if (issue.id === null || sharedFiles.has(issue.file)) continue;
     const id = issue.id;
     if (issue.onFile === null) {
       const status = profile.statuses.includes(issue.status) ? issue.status : profile.initial;

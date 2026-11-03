@@ -9,7 +9,7 @@ import { appendAtomic, readText, writeAtomic } from './files.mjs';
 import { askNumber, idKey, issueForms, needsRaisedFormat, newNumber, writtenId } from './ids.mjs';
 import { loadProfile } from './profile.mjs';
 import { ASKS_FILE, DECISIONS_FILE, STAMP_SRC, appendDecision, appendLog, appendLogLines, asksAt, asksPath, firstLine, loadDecisions, markDecision, parseStamp } from './journal.mjs';
-import { findIssue, freeBlock, loadIssues, noteText, parseIssue, placeEvidence, setSection } from './issues.mjs';
+import { freeBlock, findIssue, loadIssues, noteText, parseIssue, placeEvidence, setSection } from './issues.mjs';
 import { raiseFormat } from './repositories.mjs';
 import { coordinatorNames } from './loop.mjs';
 import { issuesFor } from './commands.mjs';
@@ -137,6 +137,8 @@ export function cmdAnswer(root, rawId, answer, flags = {}) {
   const key = askNumber(rawId);
   const ask = loadAsks(root).find((a) => idKey(a.id) === key);
   need(ask, `no such question: a-${key}`);
+  // The issue the answer is copied into is resolved before the first write, so a number two files carry writes nothing.
+  if (ask.issue) findIssue(root, ask.issue);
   const id = ask.id;
   const text = answer === undefined ? null : noSeparators(oneBreak(answer));
   const checked = answerChecks(root, ask, text, chosen);

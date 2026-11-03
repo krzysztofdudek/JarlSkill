@@ -12,7 +12,7 @@ import { DEFAULT_PROFILE, TOOL_FIELDS, loadProfile, profilePath, readProfileFile
 import { appendLog, appendLogLines, decisionsPath, goalPath, logPath } from './journal.mjs';
 import { JARL_GITIGNORE, JARL_GITIGNORE_COMMITTED, ensureLoopMerge, outOfGit } from './loop-git.mjs';
 import { journalById, mergeCheckText } from './log.mjs';
-import { FIELD_RE, RENDERED_FIELDS, acceptanceHeading, acceptanceLineCount, acceptanceText, bodyText, changelogText, evidenceParts, evidenceRows, evidenceTable, fieldValue, findIssue, loadIssues, mergedOf, namedPairs, needNoFieldTags, noteText, parseIssue, placeEvidence, removeFields, removeFirstField, renderIssue, setField, setSection } from './issues.mjs';
+import { FIELD_RE, RENDERED_FIELDS, acceptanceHeading, acceptanceLineCount, acceptanceText, bodyText, changelogText, evidenceParts, evidenceRows, evidenceTable, fieldValue, findIssue, issueNamed, loadIssues, mergedOf, namedPairs, needNoFieldTags, noteText, parseIssue, placeEvidence, removeFields, removeFirstField, renderIssue, setField, setSection } from './issues.mjs';
 import { commitRepoNames, defaultBase, isGitRepo, issueRepoPaths, issueRepos, mainCheckoutOf, needRightCheckouts, raiseFormat, repoFromInput, repoLabel, repoList, tipLines, whyNotDeletable, worktreeState, worktreesOf } from './repositories.mjs';
 import { FIELD_NAMES, carriesCode, gateOf, readLoop } from './loop.mjs';
 import { declaredChecks, lastMerge } from './metrics.mjs';
@@ -260,7 +260,7 @@ function afterList(root, selfId, raw) {
   const all = loadIssues(root);
   const missing = keys.filter((k) => !all.some((i) => idKey(i.id) === k));
   need(missing.length === 0, `no such issue: ${missing.join(', ')}`);
-  const ids = keys.map((k) => all.find((i) => idKey(i.id) === k).id);
+  const ids = keys.map((k) => issueNamed(all, k).id);
   need(!selfId || !ids.some((id) => idKey(id) === idKey(selfId)), `${selfId} cannot wait on itself`);
   if (selfId) {
     const byId = new Map(all.map((i) => [i.id, i]));
@@ -382,7 +382,7 @@ function issuesFor(root, rawIds, readOnly = false) {
   const all = loadIssues(root);
   const missing = keys.filter((k) => !all.some((i) => idKey(i.id) === k));
   need(missing.length === 0, `no such issue: ${missing.join(', ')}${keys.length > 1 ? ' — nothing was written' : ''}`);
-  const found = keys.map((k) => all.find((i) => idKey(i.id) === k));
+  const found = keys.map((k) => issueNamed(all, k));
   if (!readOnly && found.some((i) => needsRaisedFormat(i.id))) raiseFormat(root);
   return found;
 }
@@ -398,7 +398,7 @@ export function eachIssue(root, rawIds, run) {
   const all = loadIssues(root);
   const missing = keys.filter((k) => !all.some((i) => idKey(i.id) === k));
   need(missing.length === 0, `no such issue: ${missing.join(', ')} — nothing was written`);
-  const ids = keys.map((k) => all.find((i) => idKey(i.id) === k).id);
+  const ids = keys.map((k) => issueNamed(all, k).id);
   for (const id of ids) {
     resetCaches();
     try { run(id, true); } catch (e) { throw new Error(/nothing was written/.test(e.message) ? e.message : `${e.message} — nothing was written`); }

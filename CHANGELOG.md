@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Pausing a task and picking it up again no longer throws away its test results and its review, as long as nobody changed its code in between. A new change to the code still asks for new results and a new review.
 - Tags, files, issue numbers and the other lists can be given to the tools as a real list, and each item is stored on its own, so filtering by a tag finds the issue. A list typed out as text, in brackets with more than one item or with quotes, is refused with a message that says how to write it, and so is a tag or an issue number that holds a bracket or a quote mark, and any item that starts with a dash. A file name in brackets, such as [id], is kept as a path.
+- When two copies of a shared loop each file an issue and are then merged, both issues can get the same number. Jarl now says so and names both files, and it refuses to change either one by that number until you give one of them a new number.
 
 ## [6.2.0] - 2026-10-19
 

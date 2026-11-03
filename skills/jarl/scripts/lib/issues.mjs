@@ -1,7 +1,7 @@
 // An issue file: its header fields, its sections, the rows of its Evidence and the entries of its Reviews.
 
 import { existsSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { CI_STATES, fieldText, need, oneBreak, splitList } from './base.mjs';
 import { issuesDir, jarlDir } from './where.mjs';
 import { readText } from './files.mjs';
@@ -131,10 +131,42 @@ function namedPairs(list, flag, known, what) {
   return out;
 }
 
-export function findIssue(root, rawId) {
-  const key = idKey(rawId);
-  return loadIssues(root).find((i) => idKey(i.id) === key) || null;
+
+// ---- issues: one number, two files ---------------------------------------------------------------------------
+//
+// The write lock hands out numbers within one checkout and its worktrees. Two clones of a committed loop, or two branches
+// of one checkout, that each file an issue take the same number, and git merges the two files without a conflict because
+// their names differ. The log names an issue by its number alone, so every line for that number is read for each file,
+// and a command that moved one of them would move both. Such a number names no issue until one of the files is given
+// another: the commands that address an issue by number refuse it, and verify and the views name both files.
+
+// The numbers two or more issue files carry, each with its issues in the order the loop reads them.
+export function sharedNumbers(issues) {
+  const byKey = new Map();
+  for (const i of issues) if (i.id !== null) byKey.set(idKey(i.id), [...(byKey.get(idKey(i.id)) || []), i]);
+  return [...byKey.values()].filter((list) => list.length > 1).map((list) => ({ id: list[0].id, issues: list }));
 }
+// The files of one shared number as the record names them: issues/<file>, joined with "and".
+function sharedFiles(list) {
+  const names = list.map((i) => `issues/${basename(i.file)}`);
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
+// What a shared number means and how it is settled, for a refusal and for the views. `all` is every issue of the loop,
+// so the free number named is one the loop does not hold.
+export function sharedNumberText(shared, all) {
+  const free = all.reduce((m, i) => (i.id !== null && /^\d+$/.test(i.id) ? Math.max(m, Number(i.id)) : m), 0) + 1;
+  return `${shared.issues.length} issue files carry the number ${shared.id}: ${sharedFiles(shared.issues)} (two clones or branches of the loop each filed one, and the merge kept both). The log names an issue by its number alone, so every line for ${shared.id} is read for each of them, and nothing can move or edit one without the other — give one of them a number the loop does not hold, such as ${free}: rename its file to ${free}-… and write ${free} in its first line, then run jarl.mjs verify`;
+}
+// The one issue `rawId` names among `issues`, or null when none does. A number two files carry is refused, with both files
+// named: a move or an edit by that number would land on each of them in the log.
+export function issueNamed(issues, rawId) {
+  const key = idKey(rawId);
+  const hits = issues.filter((i) => i.id !== null && idKey(i.id) === key);
+  if (hits.length > 1) throw new Error(sharedNumberText({ id: hits[0].id, issues: hits }, issues));
+  return hits[0] || null;
+}
+// The issue `rawId` names in the loop at `root`, or null; a number two files carry is refused (see issueNamed).
+export function findIssue(root, rawId) { return issueNamed(loadIssues(root), rawId); }
 
 function setField(text, name, value) {
   // Only the header holds fields: a line in a section body that looks like one (a pasted finding) is text.
