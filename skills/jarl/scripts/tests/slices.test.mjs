@@ -101,3 +101,35 @@ test('status --slice and resume --slice are scoped to the slice, the way status 
   assert.match(jarl(root, 'resume', '--slice', 'odin'), /^scoped to the slice of odin, the issues tagged slice:odin: in flight, waiting, the questions, held and next ready are its own; the rulings, the merge queue, the tips and the log are the loop's$/m);
   assert.match(refuses(root, 'resume', '--slice', 'loki'), /no coordinator loki on the goal's Coordinators line/);
 });
+
+test('next --as <coordinator> holds its slice\'s ready issues, leases, proofs with no verdict and changes verdicts; the jarl keeps the issues in no slice and what follows an approve', () => {
+  const root = twoSlices();
+  jarl(root, 'new', 'odin proof', '--tags', 'slice:odin', '--files', 'd.mjs');     // 6
+  jarl(root, 'new', 'odin changes', '--tags', 'slice:odin', '--files', 'e.mjs');   // 7
+  jarl(root, 'new', 'thor approved', '--tags', 'slice:thor', '--files', 'f.mjs');  // 8
+  for (const id of ['6', '7', '8']) {
+    jarl(root, 'set', id, 'in-progress', 'go', '--worker', `w${id}`, '--branch', `jarl/${id}`);
+    jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'green');
+  }
+  jarl(root, 'review', '7', 'changes', '--by', 'rev', 'Important: the empty case fails');
+  jarl(root, 'review', '8', 'approve', '--by', 'rev', 'Checked every acceptance line against the diff; nothing left open');
+  const rows = (who) => json(root, 'next', '--as', who, '--all').rows.map((r) => [r.ids ? r.ids.join(',') : r.id, r.what, r.holder]);
+  assert.deepEqual(rows('odin'), [['1', 'ready', 'odin'], ['6', 'review', 'odin'], ['7', 'changes', 'odin']]);
+  assert.deepEqual(rows('THOR'), [['3', 'ready', 'thor'], ['5', 'worker', 'thor']], 'a name in any case; odin\'s open 1 does not reserve a.mjs against 3');
+  assert.deepEqual(rows('jarl'), [['4', 'ready', 'jarl'], ['8', 'merge', 'jarl']], 'the issue in no slice, and the approve not merged');
+  assert.match(jarl(root, 'next', '--as', 'odin'), /^On odin \(3\)\n- 1 odin first: ready to start, raise a worker — jarl\.mjs set 1 in-progress /);
+  assert.match(jarl(root, 'next', '--as', 'odin'), /^- 6 odin proof: proof recorded, no verdict; raise a fresh reviewer for 6;/m);
+  // A coordinator the line names whose slice has no issue says so, and so does one while the loop has no slice at all.
+  jarl(root, 'goal', '--set', 'Coordinators: odin, thor, frey');
+  assert.match(jarl(root, 'next', '--as', 'frey'), /^no issue carries slice:frey, so nothing of a slice is on frey: the issues in no slice are the jarl's \(jarl\.mjs next --as jarl\), and jarl\.mjs tag <ids> \+slice:frey gives frey its slice$/m);
+  assert.doesNotMatch(jarl(root, 'next', '--as', 'odin'), /no issue carries/);
+});
+
+test('the issues waiting on a slice\'s issue, through After or a file it reserves, wait on its coordinator', () => {
+  const root = twoSlices();
+  jarl(root, 'new', 'after odin\'s first', '--after', '1', '--files', 'g.mjs');   // 6
+  // 2 waits on 1 too: 1 reserves a.mjs within odin's slice.
+  assert.deepEqual(json(root, 'next', '--as', 'odin', '--all').waiting.map((w) => [w.id, w.on, w.via]), [['2', 'odin', ['1']], ['6', 'odin', ['1']]]);
+  assert.deepEqual(json(root, 'next', '--as', 'jarl', '--all').waiting, [], 'nothing waits on the jarl');
+  assert.deepEqual(json(root, 'next', '--as', 'odin', '--all').rows.find((r) => r.id === '1').holdsUp, ['6']);
+});

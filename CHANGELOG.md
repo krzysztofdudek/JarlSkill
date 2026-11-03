@@ -17,6 +17,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A loop can now say after how many failed rounds a kind of task is handed to a fresh worker, with a line such as `Takeover (docs): 2` in its goal. A line `Takeover: 4` sets it for every other kind, and a loop that says nothing keeps three. A changed number counts from the next failed round, and the rounds are counted from the last handover. Each round line now ends with its place in that count, which older Jarl versions and Horde read as a plain round; rounds an older Jarl wrote count a handover every third.
 - A coordinator named in the goal can run its own part of the backlog: tag an issue `slice:<name>` to put it in that coordinator's part. An issue belongs to one part at most, and the status shows who runs which part.
 - A coordinator can look at its own part of the backlog alone: what to start next, the status and the resume each take the part's name. A task waiting in one part never holds back a task in another; only work already started does.
+- Asking Jarl what is waiting on a coordinator now lists the tasks of its part: the ones ready to start, the ones being worked on, the work waiting for a reviewer and the work sent back. Tasks in no part stay with whoever runs the loop.
 
 ### Changed
 

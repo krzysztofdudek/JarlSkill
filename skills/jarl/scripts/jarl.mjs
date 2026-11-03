@@ -177,8 +177,9 @@ commands:
                                                  --as <who> lists instead what is on the owner, the jarl, a coordinator or
                                                  a person by name now, each line with the command that moves it (it takes
                                                  no --limit): the owner holds the questions and the items to ratify; the
-                                                 jarl the ready issues, the leases, a proof
-                                                 with no verdict, changes asked, an approve not merged, and a ruling that
+                                                 coordinator of an issue's slice (the jarl, for an issue in no slice) its
+                                                 ready issue, its lease, a proof with no verdict and changes asked; the
+                                                 jarl an approve not merged, the close, and a ruling that
                                                  settles issues none of which is live (with no slice in the loop, a
                                                  coordinator's lines are the jarl's); derived from the profile's status
                                                  flags, the verdicts, the questions and the rulings; at most seven lines,
