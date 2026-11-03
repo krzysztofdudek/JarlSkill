@@ -976,9 +976,12 @@ function mergeContentNotes(root, issue, sha, repoPath) {
 // What a merge says when the approve the gate stands on was recorded on another tip of the branch than the one at this
 // merge: the commits between the two landed without that review. A commit does not spend an approve inside the gate's
 // window, so this note is where it shows. The approve's tip is the tip line written after it, one sha per repository of
-// the issue, in the order branchTip gives; an approve with no tip line, or a branch not here to be read, is not compared.
-// A repository whose recorded commit holds the approved tip and not the branch's later one is left out: what landed there
-// is the commit that was reviewed, and the note on a merge without the branch names the rest.
+// the issue, in the order branchTip gives; an approve with no tip line, or a branch not here to be read (deleted before
+// the merge is recorded), is not compared. A repository whose recorded commit holds the approved tip and none of the
+// branch's commits after it is left out: what landed there is the commit that was reviewed, and the note on a merge
+// without the branch names the rest. A recorded commit that holds even one of those later commits landed code the review
+// did not see, and is noted. The commands the note gives follow the branch's first parents, so a merge of the base into
+// the branch shows as one merge and not as the base's commits; a conflict resolved inside such a merge is not shown.
 function approveTipNotes(root, issue, live, sha) {
   if (!live || !live.tip) return [];
   const now = branchTip(root, issue);
@@ -988,9 +991,15 @@ function approveTipNotes(root, issue, live, sha) {
   const was = live.tip.split(',');
   const is = now.split(',');
   const repos = issueRepos(root, issue);
-  const see = (dir, a, b) => `git -C ${shellWord(dir)} log --oneline ${short(a)}..${short(b)} and git -C ${shellWord(dir)} diff ${short(a)} ${short(b)}`;
-  const holds = (dir, ancestor) => git(dir, ['merge-base', '--is-ancestor', ancestor, sha]) !== null;
-  const reviewed = (dir, a, b) => git(dir, ['cat-file', '-e', `${sha}^{commit}`]) !== null && holds(dir, a) && !holds(dir, b);
+  const see = (dir, a, b) => { const range = `${short(a)}..${short(b)}`; return `git -C ${shellWord(dir)} log --oneline --first-parent --no-merges ${range} and git -C ${shellWord(dir)} log -p --first-parent --no-merges ${range}`; };
+  const count = (dir, args) => { const n = git(dir, ['rev-list', '--count', ...args]); return n === null ? null : Number(n); };
+  // The recorded commit is the reviewed one when it holds the approved tip and none of the commits the branch gained
+  // after it: the branch's commits beyond the approved tip number the same with and without those the commit holds.
+  const reviewed = (dir, a, b) => {
+    if (git(dir, ['cat-file', '-e', `${sha}^{commit}`]) === null || git(dir, ['merge-base', '--is-ancestor', a, sha]) === null) return false;
+    const beyond = count(dir, [b, `^${a}`]);
+    return beyond !== null && beyond === count(dir, [b, `^${a}`, `^${sha}`]);
+  };
   const who = live.by ? `by ${live.by} (${live.kind})` : 'by a reviewer not recorded';
   const again = `if it was meant to land, record a review of the tip that landed: jarl.mjs review ${issue.id} approve|changes --by <fresh reviewer> "<findings>"`;
   const head = `APPROVED ON ANOTHER TIP — ${issue.id}'s approve ${who} was recorded on ${branch}`;

@@ -127,11 +127,12 @@ test('merged without --sha on an issue whose lease records no branch says so, an
 // ---- the approve's tip against the tip being merged -------------------------------------------------------------------
 
 const APPROVED_ELSEWHERE = /APPROVED ON ANOTHER TIP/;
-// The commands the note gives to see what changed between two tips in a repository, its path as the shell takes it.
+// The commands the note gives to see the branch's own commits between two tips in a repository, and their changes, its
+// path as the shell takes it.
 const seeing = (dir, a, b) => {
   const at = realpathSync.native(dir);
   const word = /^[A-Za-z0-9_@%+=:,./-]+$/.test(at) ? at : `'${at}'`;
-  return `git -C ${word} log --oneline ${a}..${b} and git -C ${word} diff ${a} ${b}`;
+  return `git -C ${word} log --oneline --first-parent --no-merges ${a}..${b} and git -C ${word} log -p --first-parent --no-merges ${a}..${b}`;
 };
 // The fixture with its issue approved by a fresh reviewer on the branch as it stands, and a helper that adds a commit on
 // the branch after that approve.
@@ -180,6 +181,37 @@ test('a merge of the approved tip, while the branch has moved on, lands what was
   const out = said(repo, 'merged', '1', '--sha', git(repo, 'rev-parse', 'HEAD'), '--keep');
   assert.match(out, /MERGE WITHOUT THE BRANCH/);
   assert.doesNotMatch(out, APPROVED_ELSEWHERE);
+});
+
+test('a merge of a commit made after the approve, while the branch moved on again before it was recorded, is noted with the approved tip and the branch tip', () => {
+  const { repo, tip, later } = approved();
+  const landed = later('late.txt');
+  git(repo, 'merge', '-q', '--no-ff', '-m', 'merge a commit after the approve', landed);
+  const now = later('later.txt');
+  const out = said(repo, 'merged', '1', '--sha', git(repo, 'rev-parse', 'HEAD'), '--keep');
+  assert.match(out, /MERGE WITHOUT THE BRANCH/);
+  assert.match(out, APPROVED_ELSEWHERE);
+  assert.ok(out.includes(`recorded on jarl/1-x at ${tip.slice(0, 12)}, and the branch stands at ${now.slice(0, 12)} at this merge`), out);
+});
+
+test('after the base was merged into the branch, the commands of the note show only the branch\'s own commits', () => {
+  const { repo, tip, later } = approved();
+  commit(repo, 'base.txt', 'base\n');
+  git(repo, 'checkout', '-q', 'jarl/1-x');
+  git(repo, 'merge', '-q', '--no-ff', '-m', 'merge the base into the branch', 'main');
+  commit(repo, 'own.txt', 'own\n');
+  git(repo, 'checkout', '-q', 'main');
+  const now = git(repo, 'rev-parse', 'jarl/1-x');
+  git(repo, 'merge', '-q', '--no-ff', '-m', 'merge 1', 'jarl/1-x');
+  const out = said(repo, 'merged', '1', '--sha', git(repo, 'rev-parse', 'HEAD'), '--keep');
+  const [a, b] = [tip.slice(0, 12), now.slice(0, 12)];
+  assert.ok(out.includes(`see it: ${seeing(repo, a, b)}`), out);
+  const commits = git(repo, 'log', '--oneline', '--first-parent', '--no-merges', `${a}..${b}`);
+  assert.match(commits, /add own\.txt/);
+  assert.doesNotMatch(commits, /add base\.txt/);
+  const changes = git(repo, 'log', '-p', '--first-parent', '--no-merges', `${a}..${b}`);
+  assert.match(changes, /own\.txt/);
+  assert.doesNotMatch(changes, /base\.txt/);
 });
 
 test('a squash merge is noted when the branch moved after its approve, and not when it did not', () => {
