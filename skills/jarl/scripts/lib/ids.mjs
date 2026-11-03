@@ -89,6 +89,20 @@ export function idsNamed(text, held, { introducedOnly = false } = {}) {
   return out;
 }
 
+// The issue numbers a prose text cites. Only a word that is nothing but a number counts (029, 029., a number in brackets, a hash sign before it): a number
+// inside a longer word (a sha, a date, a dotted version, ask-001, reviewer-450, file.mjs:285, 12-14) names no issue, and neither
+// does a number that follows a word that counts something else (line 285, row 3, step 12, port 8080). Past that, idsNamed
+// decides which of the remaining numbers is an id the loop holds: three or more digits count by themselves, one or two
+// only after the word issue, issues or ticket (or a list that runs on from it) or with a hash sign.
+const COUNTED_WORDS = 'lines?|rows?|columns?|cols?|pages?|steps?|rounds?|ports?|versions?|exit|code|characters|chars|bytes|ms';
+export function idsCited(text, held) {
+  const blank = (s) => ' '.repeat(s.length);
+  const bare = String(text || '')
+    .replace(new RegExp(`\\b(?:${COUNTED_WORDS})\\s+#?\\d+(?:\\s*(?:,|and|or|&|-|–)\\s*\\d+)*`, 'gi'), blank)
+    .replace(/[\w#.:/@~+-]+/g, (token) => (/^#?\d+[.:]*$/.test(token) || !/\d/.test(token) ? token : blank(token)));
+  return idsNamed(bare, held);
+}
+
 // The number a branch name carries: `jarl/NNN-…`, `jarl/<who>/NNN-…` or `<who>/jarl/NNN-…`. Null when it carries none.
 function branchIssueId(name) {
   return idRe('^jarl/(?:[^/]+/)?({id})-').exec(name)?.[1] || idRe('^[^/]+/jarl/({id})-').exec(name)?.[1] || null;
