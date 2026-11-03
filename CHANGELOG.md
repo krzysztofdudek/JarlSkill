@@ -10,11 +10,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Every part of an issue's description can now be corrected, including its tier, its kind and who found it, and the record keeps who changed it and what it said before. What happened to an issue, such as its test results, reviews and merges, is never edited, only taken back or replaced.
 - You can ask Jarl what is waiting on one person: the owner's open questions, or the next step of every task for whoever runs the loop, each with the command that takes it. The status and the resume of a loop can end with that list.
+- A ruling made by the jarl or a coordinator can now name the ruling it rests on, such as the owner's mandate. The name is shown with the ruling in the list of rulings and in the resume, and a name that is not a ruling in force is refused.
+- When the text of an open issue mentions another unfinished issue by number and nothing orders the two, filing or editing that text and checking the record now print a note naming both, so you can say which comes first. The note changes nothing and never stops anything.
 
 - A loop can now say after how many failed rounds a kind of task is handed to a fresh worker, with a line such as `Takeover (docs): 2` in its goal. A line `Takeover: 4` sets it for every other kind, and a loop that says nothing keeps three. A changed number counts from the next failed round, and the rounds are counted from the last handover.
 
 ### Changed
 
+- A loop is marked with a new format, format 3, the first time Jarl writes into it one of the new kinds of entries this release adds. Format 3 is the format of Jarl 6.3.0: from then on an earlier Jarl refuses that loop with a clear message, saying it needs a Jarl that knows format 3, instead of misreading it, so every copy of Jarl that works on the loop must be 6.3.0 or later. The status, the check of the record and the profile now show which format a loop is in.
+- Jarl no longer changes the format of a loop that another tool runs, such as a Horde mission, so that tool can always read it. New issues and questions there get three-digit numbers, and anything that would need a newer format, such as taking back a piece of proof or naming a repository by a bare name, is refused with a message that says why. Jarl shows what is switched off in such a loop.
+- Tools that build on Jarl's record library get a new version of its contract, which keeps everything the previous version offered.
 - If you copy Jarl's record library into your own tool, copy the `scripts/lib/` folder too. It now sits next to `record.mjs` and `jarl-lib.mjs`, and the library does not work without it.
 - When a new issue is filed without a kind or a priority, Jarl says which one it took and names the option that sets it, as it already does for the tier.
 

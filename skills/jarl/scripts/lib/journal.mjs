@@ -7,7 +7,7 @@ import { jarlDir, stamp, today } from './where.mjs';
 import { appendAtomic, readText, writeAtomic } from './files.mjs';
 import { idKey, idRe, issueForms, writtenId } from './ids.mjs';
 import { loadProfile } from './profile.mjs';
-import { OWNER, carryingOwnersWords, needNoOwnersWords, quoteLine, quoteOf } from './owner.mjs';
+import { OWNER, carryingOwnersWords, needNoOwnersWords, quoteLine, quoteOf, underLine, underOf } from './owner.mjs';
 
 // ---- journal and decisions ----------------------------------------------------------------------
 
@@ -103,7 +103,7 @@ function decisionsAt(dir, skipped) {
     const ruleLog = /^(\S+) · (\S+)/.exec(field('Rule log').pop() || '');
     const first = (name) => (field(name).pop() || '').split(/\s/)[0] || null;
     return {
-      date: d.date, slug: d.slug, ruling, quote: field('By').pop() === OWNER ? quoteOf(d.body.slice(0, cut)) : null, by: field('By').pop() || null, supersedes: field('Supersedes').pop() || null, supersededBy: sup ? sup.split(/\s/)[0] : null, settles: splitList(field('Settles').pop()),
+      date: d.date, slug: d.slug, ruling, quote: field('By').pop() === OWNER ? quoteOf(d.body.slice(0, cut)) : null, under: field('By').pop() === OWNER ? null : underOf(d.body.slice(0, cut)), by: field('By').pop() || null, supersedes: field('Supersedes').pop() || null, supersededBy: sup ? sup.split(/\s/)[0] : null, settles: splitList(field('Settles').pop()),
       area: field('Area').pop() || null, reach: reach !== undefined && /^\d+$/.test(reach) ? Number(reach) : null, rule: field('Rule').pop() || null,
       ratified: first('Ratified'), rejected: first('Rejected'), typeLog: typeLog ? { type: typeLog[1], datetime: typeLog[2] } : null,
       ruleLog: ruleLog ? { rule: ruleLog[1], datetime: ruleLog[2] } : null,
@@ -133,8 +133,10 @@ function markDecision(root, slug, line, { text: given } = {}) {
 
 // The ruling is written as its caller gives it: structure at the start of a line, free text indented (freeInline, freeBlock).
 // The owner's words (quote, on a ruling by the owner only) are its last line, after a blank one, at the left edge: the one
-// line of a ruling no text given to decide can stand on (owner.mjs, quoteOf).
-export function appendDecision(root, slug, ruling, { by, quote, supersedes, area, reach, rule, settles } = {}) {
+// line of a ruling no text given to decide can stand on (owner.mjs, quoteOf). The ruling it rests on (under, on a ruling
+// by anyone but the owner) is the paragraph before, in the same form and for the same reason (owner.mjs, underOf).
+export function appendDecision(root, slug, ruling, { by, quote, under, supersedes, area, reach, rule, settles } = {}) {
+  need(under === undefined || under === null || (typeof under === 'string' && SLUG_RE.test(under) && by !== OWNER), 'the ruling a ruling rests on is the slug of a ruling, and a ruling by the owner rests on his own words');
   need(quote === undefined || quote === null || (typeof quote === 'string' && quote === fieldText(quote) && quote !== '' && by === OWNER), 'the owner\'s words are one line of text, kept with a ruling by the owner');
   if (quote) needNoOwnersWords('--quote', quote);
   need(typeof slug === 'string' && SLUG_RE.test(slug), `a ruling's slug is letters, digits and . _ - (starting with a letter or digit, at most 80 characters) — not "${slug}"; e.g. ${slugify(String(slug || 'ruling'))}`);
@@ -151,7 +153,7 @@ export function appendDecision(root, slug, ruling, { by, quote, supersedes, area
     text = markDecision(root, supersedes, `**Superseded by:** ${slug} (${today()})`, { text });
   }
   const meta = [settles?.length ? `**Settles:** ${settles.join(', ')}` : null, by ? `**By:** ${fieldText(by)}` : null, supersedes !== undefined ? `**Supersedes:** ${supersedes}` : null, area ? `**Area:** ${area}` : null, reach !== undefined && reach !== null ? `**Reach:** ${reach}` : null, rule ? `**Rule:** ${rule}` : null].filter(Boolean).join('\n');
-  const body = `${ruling.replace(/\s+$/, '')}${quote ? `\n\n${quoteLine(quote)}` : ''}`;
+  const body = `${ruling.replace(/\s+$/, '')}${under ? `\n\n${underLine(under)}` : ''}${quote ? `\n\n${quoteLine(quote)}` : ''}`;
   carryingOwnersWords([quote && quoteLine(quote)], () => writeAtomic(path, `${text.replace(/\s*$/, '')}\n\n## ${today()} · ${slug}\n${body}\n${meta ? `\n${meta}\n` : ''}`));
 }
 

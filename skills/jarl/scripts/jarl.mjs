@@ -249,12 +249,14 @@ commands:
   log "<event>"                                  append one dated note to the journal; a line that reads as a filing, a move,
                                                  a round, a verdict, a retraction, an evidence row, a merge, a CI state or
                                                  a body change is refused, and the refusal names the command that writes it
-  decide <slug> "<ruling>" [--by who [--quote "<words>"]] [--supersedes <slug>] [--settles <ids>] [--area <type> [--reach n] [--rule <id>]]
+  decide <slug> "<ruling>" [--by who [--quote "<words>"]] [--under <slug>] [--supersedes <slug>] [--settles <ids>] [--area <type> [--reach n] [--rule <id>]]
                                                  append a ruling (slug: letters, digits, . _ -); refuses a duplicate slug;
                                                  --by records who ruled (the coordinator when it is left out; a name that
                                                  reads as owner is owner); --by owner needs --quote, his own words, kept as
                                                  the ruling's last line, and no other text of the record may hold
-                                                 "The owner's words:" in any spelling; --supersedes marks
+                                                 "The owner's words:" in any spelling; --under names the ruling in force a ruling
+                                                 by the jarl or a coordinator rests on, kept as the text's last paragraph
+                                                 "Made under: <slug>", shown with the ruling by decisions and resume; --supersedes marks
                                                  the ruling it replaces "Superseded by" in place; --settles writes the ruling,
                                                  with who ruled, into each named issue's evidence (its status is unchanged); --area marks a ruling
                                                  about a whole type of code, --reach how many files that type holds,
@@ -274,7 +276,8 @@ commands:
                                                  that disagrees is never believed, and status prints one "record:" line
                                                  for it, with how to write the header back or make it the record (resume
                                                  and show print it too; --json carries disagreements when there are any)
-                                                 the goal, when the loop opened and last moved,
+                                                 the goal, when the loop opened and last moved, its record format (and,
+                                                 where a composer runs the loop, what is off there),
                                                  then one line: open, in flight, waiting, done, dropped, deferred,
                                                  open questions, to ratify, merged with CI pending or red; then who
                                                  reviewed the done work (fresh, coordinator, self, unrecorded); then,
@@ -319,13 +322,15 @@ commands:
                                                  (dispatchable, lease, settles-dependents, terminal, closes-record,
                                                  needs-reason), the status a new issue starts in, the values of Kind and
                                                  Tier, the fields and sections its issues carry and the heading of their
-                                                 acceptance; the built-in one when the loop has none; with a file, that
-                                                 file checked against the profile schema instead
+                                                 acceptance, the record format beside the formats this Jarl reads; the
+                                                 built-in one when the loop has none; with a file, that file checked
+                                                 against the profile schema instead
   verify                                         read-only, with no lock and no network: the record read strictly. Each
                                                  reader lists the lines it does not place (the log, the goal, the issue
                                                  headers, the questions and the rulings), the profile is checked, a
                                                  retraction must point at an entry the log holds, a line that needs the
-                                                 raised record format is found in a loop that is not in it, a header
+                                                 raised record format is found in a loop that is not in it (the check
+                                                 names the loop's format), a header
                                                  that disagrees with the log is listed, each declared repository is
                                                  checked by name and root commits, each worktree a lease holds belongs
                                                  to a repository its issue names, and an open issue that cites a
@@ -368,7 +373,10 @@ all of them or on none, with one log line per issue.
 
 An issue number is a plain number: 7, 195, 1000. A number written with leading zeros (007) or with a # (#7) is the
 same issue as 7. Questions are numbered the same way (a-7, a-1000). Numbers are compared as numbers, so 999 comes
-before 1000.
+before 1000. Jarl never raises the record format of a loop whose profile names an external scheduler: a new number
+is written there with three digits (007), which every record format reads, and a write that needs a raised format (a
+retraction, a repository given by its name alone, a number of 1000 or more) is refused, naming what it would have
+written; a repository given by its path keeps its path there.
 
 Flags: a flag the command does not take is an error. A value flag takes the next argument whatever it
 starts with (--ran "--help" records a row), or inline as --flag=value. A bare -- ends the flags: put a
@@ -452,7 +460,7 @@ export const COMMAND_FLAGS = {
   answer: { by: 'value', option: 'value' },
   resume: { log: 'value', ready: 'value', ci: 'bool', as: 'value' },
   handoff: { summary: 'value', next: 'many', log: 'value', ready: 'value', ci: 'bool' },
-  log: {}, decide: { settles: 'many', by: 'value', quote: 'value', supersedes: 'value', area: 'value', reach: 'value', rule: 'value' }, decisions: { live: 'bool' },
+  log: {}, decide: { settles: 'many', by: 'value', quote: 'value', under: 'value', supersedes: 'value', area: 'value', reach: 'value', rule: 'value' }, decisions: { live: 'bool' },
   goal: { set: 'value' },
   status: { 'stale-hours': 'value', by: 'value', tag: 'value', as: 'value' }, archive: {}, report: { found: 'bool' }, tips: {}, mode: {},
   queue: { repo: 'value', base: 'value' }, changelog: { repo: 'value' },
@@ -758,7 +766,7 @@ export function dispatch(root, commandName, rest, flags) {
       // The command line says caller 'cli': the notes (the tier a new issue got) are for it, never for a library caller.
       case 'new': out = R.newIssue(root, rest[0], { ...flags, caller: 'cli', width: undefined }); out = { ...out, ...describeNew(out.file) }; text = renderNewReply(out); warn = out.note ? [out.note] : []; break;
       // body, source, after, files, repo and round take the list grammar: eachIssue checks every id before it writes one.
-      case 'body': out = eachIssue(root, rest[0], (id, dry) => cmdBody(root, id, flags, dry)); text = each(out, (o) => `${o.id} body: ${o.set.join(', ')}`); break;
+      case 'body': out = eachIssue(root, rest[0], (id, dry) => cmdBody(root, id, { ...flags, caller: 'cli' }, dry)); text = each(out, (o) => `${o.id} body: ${o.set.join(', ')}`); warn = [].concat(out).filter((o) => o.note).map((o) => o.note); break;
       case 'source': out = eachIssue(root, rest[0], (id, dry) => cmdSource(root, id, rest[1], dry, flags.by)); text = each(out, (o) => `${o.id} source: ${o.sources.join(', ')}`); break;
       case 'after': out = eachIssue(root, rest[0], (id, dry) => cmdAfter(root, id, rest[1], { clear: flags.clear === true, dry, by: flags.by })); text = each(out, (o) => `${o.id} after: ${o.cleared ? 'cleared' : o.after.join(', ')}`); break;
       case 'import': out = cmdImport(root, rest[0], flags); text = renderImport(out); break;

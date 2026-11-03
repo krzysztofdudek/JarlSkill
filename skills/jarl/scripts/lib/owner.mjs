@@ -108,3 +108,18 @@ export function quoteOf(lines) {
   const m = /^The owner's words: "(.*)"$/.exec(lines[at]);
   return m ? m[1] : null;
 }
+
+// The ruling a ruling by the jarl or a coordinator rests on, kept as the last paragraph of its text: `Made under: <slug>`,
+// at the left edge after a blank line. It is a different marker from the owner's words and sits where only the owner's
+// words may, so a ruling by the owner never carries it and a ruling that carries it never reads as his.
+export const UNDER_MARKER = 'Made under:';
+export const underLine = (slug) => `${UNDER_MARKER} ${slug}`;
+// The slug named by the last paragraph of a ruling's text (lines as the file holds them, indents kept), under the same
+// shape quoteOf reads: the last line, at the left edge, after a blank line, and not the ruling's first line.
+export function underOf(lines) {
+  const at = lines.findLastIndex((l) => l.trim() !== '');
+  const first = lines.findIndex((l) => l.trim() !== '');
+  if (at <= first || lines[at - 1].trim() !== '') return null;
+  const m = /^Made under: ([A-Za-z0-9][A-Za-z0-9._-]{0,79})$/.exec(lines[at]);
+  return m ? m[1] : null;
+}
