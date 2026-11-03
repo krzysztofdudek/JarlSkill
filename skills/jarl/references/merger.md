@@ -82,6 +82,7 @@ batches), or that `jarl_branches` shows with commits beyond the base:
    Before moving to the next branch, `jarl_show <id>` and confirm it reads
    `done` — a write that silently failed to land is worse than one that never ran. The tool locks
    and refuses loudly, but a call whose error result (or exit code) nobody read is still a write nobody saw.
+Report after the check has finished and its result is recorded, never before: a merge recorded without a check or a red cause shows as `merged, waiting for its check` in `status`, `resume` and `show` until `jarl_merged` records it.
 Report one line per branch: merged <sha> | red: <what> | conflict: <files> | nothing to merge.
 When several approved branches wait and their declared files do not overlap, merge them one after
 another and run the check once for the batch; a red batch is rolled back whole (`git reset --keep`

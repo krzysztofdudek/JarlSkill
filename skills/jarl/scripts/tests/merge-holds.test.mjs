@@ -1,5 +1,6 @@
 // Recording a merge says, loudly and without refusing, when the recorded commit does not contain the tip of the issue's
-// branch, or does not contain the base as it stands while the commit is not yet in it.
+// branch, or does not contain the base as it stands while the commit is not yet in it; and a merge recorded with neither a
+// check nor a red cause is shown by status, resume and show as waiting for its check, until the check or the red cause is recorded.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
@@ -72,4 +73,29 @@ test('a merge landed in the base is not noted for the commits the base gained af
   const sha = git(repo, 'rev-parse', 'HEAD');
   commit(repo, 'c.txt', 'c\n');
   assert.doesNotMatch(said(repo, 'merged', '1', '--sha', sha, '--keep'), /MERGE WITHOUT/);
+});
+
+test('a merge recorded with neither a check nor a red cause shows in status and show as waiting for its check, until the check is recorded', () => {
+  const { repo } = fixture();
+  git(repo, 'merge', '-q', '--no-ff', '-m', 'merge 1', 'jarl/1-x');
+  const sha = git(repo, 'rev-parse', 'HEAD');
+  jarl(repo, 'merged', '1', '--sha', sha, '--keep');
+  const waiting = new RegExp(`waiting for its check: 1 \\(${sha.slice(0, 7)}[0-9a-f]*\\).*jarl\\.mjs merged 1 --sha ${sha}.* --ran`);
+  assert.match(jarl(repo, 'status'), waiting);
+  assert.match(jarl(repo, 'show', '1'), waiting);
+  assert.match(jarl(repo, 'resume'), waiting);
+  assert.deepEqual(JSON.parse(jarl(repo, 'status', '--json')).checkWaiting.map((w) => w.id), ['1']);
+  jarl(repo, 'merged', '1', '--sha', sha, '--ran', 'npm test', '--saw', 'all green', '--keep');
+  assert.doesNotMatch(jarl(repo, 'status'), /waiting for its check/);
+  assert.doesNotMatch(jarl(repo, 'show', '1'), /waiting for its check/);
+  assert.doesNotMatch(jarl(repo, 'resume'), /waiting for its check/);
+  assert.deepEqual(JSON.parse(jarl(repo, 'status', '--json')).checkWaiting, []);
+});
+
+test('a merge recorded on a red check with its cause is not shown as waiting for its check', () => {
+  const { repo } = fixture();
+  jarl(repo, 'new', 'the cause', '--acceptance', 'it is found');
+  git(repo, 'merge', '-q', '--no-ff', '-m', 'merge 1', 'jarl/1-x');
+  jarl(repo, 'merged', '1', '--sha', git(repo, 'rev-parse', 'HEAD'), '--red', '2', '--keep');
+  assert.doesNotMatch(jarl(repo, 'status'), /waiting for its check/);
 });
