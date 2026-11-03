@@ -15,7 +15,7 @@ import { JARL_GITIGNORE, JARL_GITIGNORE_COMMITTED, ensureLoopMerge, outOfGit } f
 import { HANDOVER_SEGMENT, journalById, mergeCheckText } from './log.mjs';
 import { FIELD_RE, RENDERED_FIELDS, acceptanceHeading, acceptanceLineCount, acceptanceText, bodyText, changelogText, evidenceNotes, evidenceParts, evidenceRows, evidenceTable, fieldValue, findIssue, issueNamed, loadIssues, mergedOf, namedPairs, needNoFieldTags, noteText, parseIssue, placeEvidence, removeFields, removeFirstField, renderIssue, setField, setSection, unattributedRefusal } from './issues.mjs';
 import { branchTip, commitRepoNames, defaultBase, fileKeysOf, isGitRepo, issueRepoPaths, issueRepos, mainCheckoutOf, needFormat, needRightCheckouts, repoFromInput, repoLabel, repoList, tipLines, whyNotDeletable, worktreeState, worktreesOf } from './repositories.mjs';
-import { FIELD_NAMES, carriesCode, gateOf, needOneSlice, readLoop, unorderedNamings, unorderedText } from './loop.mjs';
+import { FIELD_NAMES, activeSlices, carriesCode, gateOf, needOneSlice, readLoop, unorderedNamings, unorderedText } from './loop.mjs';
 import { declaredChecks, lastMerge } from './metrics.mjs';
 import { modelLines, modelValue, spellingNote } from './models.mjs';
 import { slotRefusal } from './attachments.mjs';
@@ -718,6 +718,15 @@ function needLeaseHolds(root, profile, issues, status, why, flags, handover, not
     }
   }
   if (composed) return;
+  // With more than one slice in play, a lease holds only what its issue declares, so one that declares nothing would
+  // collide with another slice's work unseen: it is refused until the issue declares its files or its resources.
+  const slices = activeSlices(readLoop(jarlDir(root)));
+  if (slices.length > 1) {
+    for (const issue of issues) {
+      if ((leased(issue) && !handover) || issue.files.length || issue.resources.length) continue;
+      need(false, `${issue.id} declares no Files or Resources, and ${slices.length} slices are in play (${slices.map((x) => x.tag).join(', ')}): across slices only leases hold, and a lease holds only what its issue declares — declare them first: jarl.mjs files ${issue.id} <path>,… or jarl.mjs field ${issue.id} Resources "<name>, …"${nothing}`);
+    }
+  }
   // What the other leases hold: each file key and each resource, with the issue whose lease holds it.
   const others = loadIssues(root).filter((i) => !taken.has(i.id) && profile.is(i.status, 'holds-claim'));
   // The first holder of each, in the order of the record, so a refusal names the same issue every time.

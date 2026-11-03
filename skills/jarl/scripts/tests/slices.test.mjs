@@ -207,3 +207,25 @@ test('the goal\'s Merger line names the one holder that raises the merger: every
   jarl(root, 'goal', '--set', 'Merger: loki');
   assert.match(run(root, ['verify']).stdout, /Merger: loki" — loki is neither the jarl nor a coordinator of the Coordinators line, so no holder of the loop raises its merger/);
 });
+
+test('with more than one slice in play, a lease on an issue that declares no Files or Resources is refused with the command to declare them', () => {
+  const root = loop();
+  jarl(root, 'goal', '--set', 'Coordinators: odin, thor');
+  jarl(root, 'new', 'odin bare', '--tags', 'slice:odin');                     // 1
+  jarl(root, 'new', 'thor files', '--tags', 'slice:thor', '--files', 'a.mjs'); // 2
+  jarl(root, 'new', 'no slice, bare');                                         // 3
+  const log = readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
+  for (const id of ['1', '3']) {
+    assert.match(refuses(root, 'set', id, 'in-progress', 'go', '--worker', 'w', '--branch', `jarl/${id}`), new RegExp(`^${id} declares no Files or Resources, and 2 slices are in play \\(slice:odin, slice:thor\\): across slices only leases hold, and a lease holds only what its issue declares — declare them first: jarl\\.mjs files ${id} <path>,… or jarl\\.mjs field ${id} Resources "<name>, …"$`, 'm'));
+  }
+  assert.equal(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), log, 'nothing was written');
+  jarl(root, 'set', '2', 'in-progress', 'go', '--worker', 'w2', '--branch', 'jarl/2');
+  jarl(root, 'field', '1', 'Resources', 'test-db');
+  jarl(root, 'set', '1', 'in-progress', 'go', '--worker', 'w1', '--branch', 'jarl/1');
+  // One slice in play: nothing to collide with across slices, and the lease goes through as before.
+  const one = loop();
+  jarl(one, 'new', 'odin bare', '--tags', 'slice:odin');
+  jarl(one, 'new', 'thor done', '--tags', 'slice:thor');
+  jarl(one, 'set', '2', 'dropped', 'not needed');
+  jarl(one, 'set', '1', 'in-progress', 'go', '--worker', 'w1', '--branch', 'jarl/1');
+});
