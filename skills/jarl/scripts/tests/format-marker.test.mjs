@@ -2,9 +2,9 @@
 // first write of an element a reader of format 1 would misread in silence raises it to 2 (raiseFormat), and the pinned
 // frozen reader (tests/old-jarl.mjs) then refuses the loop loudly instead of reading it wrong. The packages that add such an
 // element (a repository name, an id of 1000 or more, a retraction line) add their case to the last test here.
-// Format 3 holds the lines of FORMAT_LINES: the first write of one raises the loop to 3 (needFormat), and both frozen
+// Format 3 holds the lines of format 3 in FORMAT_LINES: the first write of one raises the loop to 3 (needFormat), and both frozen
 // readers, of format 1 and of formats 1 and 2, refuse it. A loop whose profile names an external scheduler (a composer
-// runs it) is never raised to 3: the write is refused and the line is off in that loop. The read-only commands never raise.
+// runs it) is never raised, to 2 or to 3: the write is refused and the line is off in that loop. The read-only commands never raise.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, writeFileSync, existsSync } from 'node:fs';
@@ -136,14 +136,14 @@ function composed(extra = {}) {
   return dir;
 }
 
-test('every line of the format registry is held by format 3 and says what it is, where it is written and how a reader of format 2 misreads it', () => {
+test('every line of the format registry is held by format 2 or 3 and says what it is, where it is written and how a reader of the formats below it misreads it', () => {
   const lines = Object.entries(L.FORMAT_LINES);
   assert.ok(lines.length > 0);
   assert.ok(Object.isFrozen(L.FORMAT_LINES));
   for (const [name, line] of lines) {
     assert.match(name, /^[a-z][a-z-]*$/, name);
     assert.ok(Object.isFrozen(line), name);
-    assert.equal(line.format, 3, name);
+    assert.ok([2, 3].includes(line.format), name);
     for (const k of ['what', 'where', 'misread']) assert.ok(typeof line[k] === 'string' && line[k].length > 10, `${name}.${k}`);
   }
   assert.equal(R.FORMAT_LINES, L.FORMAT_LINES, 'the library hands out the one registry');
@@ -208,7 +208,7 @@ test('a format-3 loop is refused by the frozen reader of format 1 and by the fro
   assert.match(jarl(root, 'list'), /first issue/, 'this Jarl reads the same loop');
 });
 
-test('a loop whose profile names an external scheduler is never raised to 3: the write is refused, the line is off there, and nothing is written', () => {
+test('a loop whose profile names an external scheduler is never raised: a write that needs format 3 or 2 is refused, the line is off there, and nothing is written', () => {
   const root = composed();
   const before = readFileSync(marker(root), 'utf8');
   const err = reason(() => L.withLock(root, () => L.needFormat(root, 'note-retraction')));
@@ -216,11 +216,12 @@ test('a loop whose profile names an external scheduler is never raised to 3: the
   assert.match(err, /the retraction of a note is off in this loop until its profile says "format": 3 — nothing was written$/);
   assert.equal(readFileSync(marker(root), 'utf8'), before);
   assert.match(reason(() => L.raiseFormat(root, 3)), /needs record format 3, and this loop stays at format 1/, 'the raise refuses, whoever calls it');
+  assert.match(reason(() => L.raiseFormat(root)), /needs record format 2, and this loop stays at format 1/, 'to format 2 as well');
   assert.equal(readFileSync(marker(root), 'utf8'), before);
   // The views say what is off.
   const state = R.recordFormat(root);
   assert.deepEqual(state, { format: 1, reads: [1, 2, 3], raises: false, off: Object.keys(L.FORMAT_LINES) });
-  const off = /record format 1: the profile names an external scheduler, so Jarl never raises it, and these lines of format 3 are off in this loop until the profile says "format": 3 — an issue's key, the writer of a write, .*, the retraction of a note$/m;
+  const off = /record format 1: the profile names an external scheduler, so Jarl never raises it, and these lines are off in this loop until the profile says the format that holds them — a repository name \(format 2\), .*, the retraction of a verdict or an evidence row \(format 2\), an issue's key \(format 3\), .*, the retraction of a note \(format 3\)$/m;
   assert.match(jarl(root, 'status'), off);
   assert.match(jarl(root, 'profile'), off);
   assert.match(jarl(root, 'verify'), new RegExp(`^note: ${off.source}`, 'm'));
@@ -262,11 +263,11 @@ test('status, verify and profile say the record format of the loop, and profile 
   assert.match(jarl(root, 'profile'), /^record format: 3 \(this Jarl reads 1, 2, 3\)$/m);
 });
 
-test('record.md lists every line of the format registry, in its order, with where it is written and what a reader of formats 1 and 2 does with it', () => {
+test('record.md lists every line of format 3 in the format registry, in its order, with where it is written and what a reader of formats 1 and 2 does with it', () => {
   const md = readFileSync(fileURLToPath(new URL('../../references/record.md', import.meta.url)), 'utf8');
   const head = md.indexOf('| Line | Where it is written | What a reader of formats 1 and 2 does with it |');
   assert.ok(head > md.indexOf('## The format marker'), 'the table stands under The format marker');
   const lines = md.slice(head).split('\n').slice(2);
   const rows = lines.slice(0, lines.findIndex((l) => !l.startsWith('| '))).map((l) => l.slice(2, -2).split(' | ').map((c) => c.replace(/`/g, '')));
-  assert.deepEqual(rows, Object.values(L.FORMAT_LINES).map((l) => [l.what, l.where, l.misread]));
+  assert.deepEqual(rows, Object.values(L.FORMAT_LINES).filter((l) => l.format === 3).map((l) => [l.what, l.where, l.misread]));
 });

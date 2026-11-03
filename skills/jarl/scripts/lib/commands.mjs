@@ -9,12 +9,12 @@ import { git, gitRun } from './git.mjs';
 import { canonical, issuesDir, jarlDir, portablePath, stamp, today } from './where.mjs';
 import { readText, renameRetry, writeAtomic } from './files.mjs';
 import { ISSUE_FILE_RE, branchNameProblem, cmpId, expandIds, idKey, idRe, isBulk, needsRaisedFormat, newNumber } from './ids.mjs';
-import { DEFAULT_PROFILE, TOOL_FIELDS, loadProfile, profilePath, readProfileFile } from './profile.mjs';
+import { DEFAULT_PROFILE, TOOL_FIELDS, loadProfile, numberWidth, profilePath, readProfileFile } from './profile.mjs';
 import { appendLog, appendLogLines, decisionsPath, goalPath, logPath } from './journal.mjs';
 import { JARL_GITIGNORE, JARL_GITIGNORE_COMMITTED, ensureLoopMerge, outOfGit } from './loop-git.mjs';
 import { journalById, mergeCheckText } from './log.mjs';
 import { FIELD_RE, RENDERED_FIELDS, acceptanceHeading, acceptanceLineCount, acceptanceText, bodyText, changelogText, evidenceParts, evidenceRows, evidenceTable, fieldValue, findIssue, issueNamed, loadIssues, mergedOf, namedPairs, needNoFieldTags, noteText, parseIssue, placeEvidence, removeFields, removeFirstField, renderIssue, setField, setSection, unattributedRefusal } from './issues.mjs';
-import { branchTip, commitRepoNames, defaultBase, isGitRepo, issueRepoPaths, issueRepos, mainCheckoutOf, needRightCheckouts, raiseFormat, repoFromInput, repoLabel, repoList, tipLines, whyNotDeletable, worktreeState, worktreesOf } from './repositories.mjs';
+import { branchTip, commitRepoNames, defaultBase, isGitRepo, issueRepoPaths, issueRepos, mainCheckoutOf, needFormat, needRightCheckouts, repoFromInput, repoLabel, repoList, tipLines, whyNotDeletable, worktreeState, worktreesOf } from './repositories.mjs';
 import { FIELD_NAMES, carriesCode, gateOf, readLoop } from './loop.mjs';
 import { declaredChecks, lastMerge } from './metrics.mjs';
 import { modelLines, modelValue } from './models.mjs';
@@ -223,9 +223,9 @@ export function cmdNew(root, title, rawFlags) {
   const elsewhere = highestAcrossWorktrees(root);
   let n = Math.max(taken().reduce((m, x) => Math.max(m, x), 0), elsewhere) + 1;
   for (let tries = 0; ; tries += 1) {
-    const id = newNumber(n, rawFlags.width);
+    const id = newNumber(n, numberWidth(profile, rawFlags.width));
     // The first issue of 1000 or more is a file a reader that knows only format 1 would skip in silence: the format is raised first.
-    if (needsRaisedFormat(id)) raiseFormat(root);
+    if (needsRaisedFormat(id)) needFormat(root, 'plain-number');
     const file = join(dir, `${id}-${slugify(title)}.md`);
     const tmp = join(dir, `.${id}.${process.pid}.tmp`);
     const rendered = renderIssue({
@@ -465,7 +465,7 @@ function issuesFor(root, rawIds, readOnly = false) {
   const missing = keys.filter((k) => !all.some((i) => idKey(i.id) === k));
   need(missing.length === 0, `no such issue: ${missing.join(', ')}${keys.length > 1 ? ' — nothing was written' : ''}`);
   const found = keys.map((k) => issueNamed(all, k));
-  if (!readOnly && found.some((i) => needsRaisedFormat(i.id))) raiseFormat(root);
+  if (!readOnly && found.some((i) => needsRaisedFormat(i.id))) needFormat(root, 'plain-number');
   return found;
 }
 // One id in, the same object as always out; a list in, an array of them.

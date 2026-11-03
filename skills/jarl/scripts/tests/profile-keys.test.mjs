@@ -4,7 +4,7 @@
 // done needs a merge the base holds, and a record format this Jarl does not know is refused before anything is read.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { sh } from './portable.mjs';
 import { FINDINGS } from './findings.mjs';
 import { run, jarl, refuses } from './helpers.mjs';
+import { oldJarl } from './old-jarl.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 const R = await import('../record.mjs');
@@ -244,7 +245,7 @@ test('every view tells the truth on a mission\'s loop: next, queue, status, resu
 
   // resume: in flight is true, the ready list and the merge queue are the composer's.
   const rs = json(root, 'resume');
-  assert.deepEqual(rs.inFlight.map((x) => [x.id, x.branch, x.worker]), [['2', 'jarl/2-flight', 'w2']]);
+  assert.deepEqual(rs.inFlight.map((x) => [x.id, x.branch, x.worker]), [['002', 'jarl/2-flight', 'w2']], 'the command line files a mission\'s tickets with three digits');
   assert.deepEqual(rs.next, []);
   assert.equal(rs.readyTotal, null);
   assert.deepEqual(rs.held, []);
@@ -257,12 +258,12 @@ test('every view tells the truth on a mission\'s loop: next, queue, status, resu
   const tips = json(root, 'tips');
   assert.equal(tips.repos.length, 1);
   const rows = tips.repos[0].rows.map((r) => [r.role, r.branch, r.issues || []]);
-  assert.deepEqual(rows, [['worker', 'jarl/2-flight', ['2']], ['feature', 'main', []]]);
+  assert.deepEqual(rows, [['worker', 'jarl/2-flight', ['002']], ['feature', 'main', []]]);
 
   // branches: the landed branch is done and deletable, the one in flight is not.
   const br = Object.fromEntries(json(root, 'branches').map((b) => [b.branch, b]));
   assert.equal(br['jarl/1-landed'].done, 'delete');
-  assert.deepEqual(br['jarl/1-landed'].issues, ['1']);
+  assert.deepEqual(br['jarl/1-landed'].issues, ['001']);
   assert.equal(br['jarl/2-flight'].done, null);
 
   // report: merged is the done work, with the merge it closed on; dropped with its reason; the rest still open.
@@ -271,13 +272,13 @@ test('every view tells the truth on a mission\'s loop: next, queue, status, resu
   assert.equal(rp.dropped, 1);
   assert.equal(rp.left, 3);
   assert.deepEqual(rp.statuses, st.statuses);
-  assert.equal(rp.issues.find((i) => i.id === '1').merged, sh(repo, 'git rev-parse HEAD'));
+  assert.equal(rp.issues.find((i) => i.id === '001').merged, sh(repo, 'git rev-parse HEAD'));
   assert.match(rp.text, /## Done \(1\)\nclosed on a merge in the base, no approve required \(this loop's done gate\)/);
-  assert.match(rp.text, /## Dropped \(1\)\n- 5 gone — out of scope/);
-  assert.match(rp.text, /## Still open \(3\)\n- 2 in flight \(running\)\n- 3 queued \(queued\)\n- 4 proposed \(proposed\)/);
+  assert.match(rp.text, /## Dropped \(1\)\n- 005 gone — out of scope/);
+  assert.match(rp.text, /## Still open \(3\)\n- 002 in flight \(running\)\n- 003 queued \(queued\)\n- 004 proposed \(proposed\)/);
 
   // list: the unfinished ones, by the profile's statuses.
-  assert.deepEqual(json(root, 'list').map((i) => [i.id, i.status]), [['2', 'running'], ['3', 'queued'], ['4', 'proposed']]);
+  assert.deepEqual(json(root, 'list').map((i) => [i.id, i.status]), [['002', 'running'], ['003', 'queued'], ['004', 'proposed']]);
 });
 
 test('no profile: next is still the list and queue the rows, with no scheduler key anywhere', () => {
@@ -293,4 +294,64 @@ test('no profile: next is still the list and queue the rows, with no scheduler k
   assert.equal(rs.readyTotal, 1);
   assert.equal('scheduler' in rs, false);
   assert.equal('scheduler' in json(root, 'queue'), false);
+});
+
+// ---- a composer's loop keeps its record format ----
+
+test('a loop opened with a composer\'s profile is never raised: new writes three digits, and a retraction, a repository name or a plain number is refused with nothing written', () => {
+  const { repo, root } = mission();
+  const marker = join(root, '.jarl', 'profile.json');
+  const log = () => readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
+  const issueFiles = () => readdirSync(join(root, '.jarl', 'issues')).sort();
+  const before = readFileSync(marker, 'utf8');
+  // new: the command line writes the number with three digits there, so the loop stays in format 1.
+  assert.match(jarl(root, 'new', 'first ticket'), /filed 001\b/);
+  assert.match(jarl(root, 'ask', 'which way?', '--issue', '1'), /a-001\b/);
+  assert.equal(readFileSync(marker, 'utf8'), before);
+  assert.equal(R.loadProfile(root).format, 1);
+  assert.equal(oldJarl(root, 'list', {}).ok, true, 'the frozen reader of format 1 reads the mission');
+  // A retraction of an evidence row.
+  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'ok');
+  let at = log();
+  assert.match(refuses(root, 'retract', '1', '1', '--by', 'rev', 'it ran in the wrong place'), /the retraction of a verdict or an evidence row needs record format 2, and this loop stays at format 1: its profile names an external scheduler \(horde\.mjs tick\), the composer that reads this record, so Jarl never raises its format; .* — nothing was written/);
+  assert.equal(log(), at);
+  assert.match(readFileSync(join(root, '.jarl', 'issues', issueFiles()[0]), 'utf8'), /^- \*\*ran:\*\* npm test/m, 'the row stands, not struck');
+  // A repository beside the loop's own checkout: given by its name alone it is refused, since format 1 holds no name;
+  // given by its path it keeps the path, which format 1 reads.
+  const toolName = `${repo.split(/[\\/]/).pop()}-tool`;
+  const tool = join(repo, '..', toolName);
+  mkdirSync(tool);
+  sh(tool, 'git init -q -b main && git config user.email t@t && git config user.name t && echo 1 > a.txt && git add -A && git commit -qm base');
+  const files = issueFiles();
+  at = log();
+  assert.match(refuses(root, 'new', 'named', '--repo', toolName), /a repository name needs record format 2, and this loop stays at format 1/);
+  assert.deepEqual(issueFiles(), files, 'no issue was filed');
+  assert.equal(log(), at);
+  const byPath = run(root, ['new', 'by its path', '--repo', tool]);
+  assert.equal(byPath.status, 0, byPath.stderr);
+  assert.match(byPath.stderr, /is stored as the path .*: the loop's profile names an external scheduler, so its record format stays at 1, which holds paths and no names/);
+  assert.match(readFileSync(join(root, '.jarl', 'issues', issueFiles().find((f) => f.startsWith('002-'))), 'utf8'), /^\*\*Repo:\*\* (\.\.?\/|\/)\S*-tool$/m);
+  assert.equal(oldJarl(root, 'list', {}).ok, true, 'the frozen reader of format 1 still reads the mission');
+  at = log();
+  // A number written plain, in a file made by hand: a write that names it is refused.
+  writeFileSync(join(root, '.jarl', 'issues', '7-plain.md'), readFileSync(join(root, '.jarl', 'issues', files[0]), 'utf8').replace(/^# 001 · first ticket$/m, '# 7 · plain'));
+  assert.match(refuses(root, 'tag', '7', '+x'), /a number written plain, below 100 or of 1000 or more needs record format 2, and this loop stays at format 1/);
+  assert.equal(log(), at);
+  assert.equal(readFileSync(marker, 'utf8'), before, 'the marker never moved');
+});
+
+test('an ordinary loop still raises its format as it always has: new writes a plain number and a retraction raises it to 2', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'jarl-keys-plain-'));
+  mkdirSync(join(dir, '.git'));
+  jarl(dir, 'init', 'the goal');
+  assert.match(jarl(dir, 'new', 'first'), /filed 1\b/);
+  assert.equal(R.loadProfile(dir).format, 2);
+  assert.equal(oldJarl(dir, 'list', {}).ok, false, 'the frozen reader of format 1 refuses it');
+  const library = mkdtempSync(join(tmpdir(), 'jarl-keys-library-'));
+  R.initLoop(library, 'the goal');
+  R.newIssue(library, 'first');
+  R.addEvidence(library, '1', undefined, { ran: 'npm test', saw: 'ok' });
+  assert.equal(R.loadProfile(library).format, 1);
+  R.addEvidence(library, '1', 'it ran in the wrong place', { retract: '1', by: 'rev' });
+  assert.equal(R.loadProfile(library).format, 2);
 });

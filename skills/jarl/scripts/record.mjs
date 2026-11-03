@@ -41,13 +41,14 @@ const write = (root, fn) => { L.resetCaches(); return L.withLock(root, fn); };
 
 // A loop's record carries its format (see loadProfile's format). This library reads the formats RECORD_FORMATS names
 // and refuses a loop of any other, before anything is read or written. A loop with no marker is format 1; the first
-// write of an element a reader of format 1 would misread raises it to 2, and the first write of a line FORMAT_LINES
-// names raises it to that line's format (3). Format 3 holds everything format 2 holds. FORMAT_LINES is frozen: by
-// name, each line's { format, what, where, misread } — what the line is, where the record writes it, and what a reader
-// that knows only the formats below it would make of it.
-// A loop whose profile names an external scheduler is never raised to format 3: a composer runs it with its own copy
-// of this library, and Jarl leaves its format to the composer. A write of a line of format 3 there is refused, naming
-// the line, with nothing written; the composer that reads format 3 opens its loops with "format": 3 in the profile.
+// write of a line FORMAT_LINES names raises it to that line's format: 2 for a repository name, a number written plain
+// and a retraction, 3 for the rest. Format 3 holds everything format 2 holds. FORMAT_LINES is frozen: by name, each
+// line's { format, what, where, misread } — what the line is, where the record writes it, and what a reader that knows
+// only the formats below it would make of it.
+// A loop whose profile names an external scheduler is never raised: a composer runs it with its own copy of this
+// library, and Jarl leaves its format to the composer. A write of a line of a higher format there is refused, naming
+// the line, with nothing written, and the command line files its numbers with three digits there; the composer that
+// reads a higher format opens its loops with that "format" in the profile.
 export const RECORD_FORMATS = L.RECORD_FORMATS;
 export const FORMAT_LINES = L.FORMAT_LINES;
 // { format, reads, raises, off }: the loop's format, the formats this library reads, whether a write may raise the loop

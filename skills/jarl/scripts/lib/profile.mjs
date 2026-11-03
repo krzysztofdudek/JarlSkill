@@ -61,29 +61,37 @@ export const DEFAULT_LIFECYCLE = Object.freeze({ close: 'any', archive: 'any', c
 // The format of the record (the issue files, the log, the rulings) this Jarl reads and writes. A profile may state the
 // format it was written for; one this Jarl does not know is refused before anything else, so a vendored copy and an
 // installed Jarl that drifted apart stop loudly instead of half-reading each other's loop.
-// Format 1 is a loop whose profile names no format, or that has no profile. Format 2 is raised, by raiseFormat, by the
-// first write of an element a reader that knows only format 1 would misread in silence (a repository name in Repo, an
-// id of 1000 or more, a retraction line); such a reader refuses the loop instead. Format 3 is raised, by needFormat, by
-// the first write of a line of FORMAT_LINES, which a reader that knows formats 1 and 2 only would misread; it holds
-// everything format 2 holds. A loop whose profile names an external scheduler is run by a composer that reads the
-// record with its own copy of the library, so Jarl never raises it to format 3: its profile says "format": 3 when the
-// composer reads it, and until then the lines of format 3 are off in that loop.
+// Format 1 is a loop whose profile names no format, or that has no profile. A loop is raised, by needFormat, by the
+// first write of a line of FORMAT_LINES, to that line's format, which a reader that knows only the formats below it
+// would misread in silence; such a reader refuses the loop instead. Format 2 holds a repository name in Repo, a number
+// written plain and a retraction; format 3 holds everything format 2 holds and the lines of format 3 below. A loop
+// whose profile names an external scheduler is run by a composer that reads the record with its own copy of the
+// library, so Jarl never raises its format: its profile says the format the composer reads, and until then the lines of
+// every higher format are off in that loop.
 export const RECORD_FORMAT = 1;
 export const RECORD_FORMATS = Object.freeze([1, 2, 3]);
 export const RECORD_FORMAT_RAISED = 2;
-// The lines of the record a reader that knows only formats 1 and 2 would misread in silence, by name: the format that
-// holds them, what the line is, where the record writes it, and what such a reader would make of it. A write of one
-// calls needFormat with its name, under the write's lock and before the line is written.
-export const FORMAT_LINES = Object.freeze(Object.fromEntries(Object.entries({
-  'issue-key': { what: "an issue's key", where: "the issue's header, its filed line and every log line about it", misread: 'reads each line by its number alone, so the moves of two issues that took one number are mixed' },
-  writer: { what: 'the writer of a write', where: 'the log line of the write, in a fixed place', misread: 'does not place the line, so a lease or a verdict is read without the agent that wrote it' },
-  'owner-line': { what: 'an acceptance line only the owner ticks', where: "the issue's acceptance", misread: 'lets done pass while the line is not ticked' },
-  parent: { what: 'the parent of a sub-issue', where: "the sub-issue's header", misread: 'reads the backlog as flat and offers a parent as work of its own' },
-  batch: { what: 'one verdict over several issues', where: 'the verdict line of each issue it covers', misread: 'counts one review as several' },
-  'promise-wait': { what: 'the kinds promise and wait', where: "the issue's header", misread: 'refuses an issue of a kind it does not know' },
-  escalation: { what: 'a question of kind escalation', where: 'the question, among the loop\'s questions', misread: 'refuses a question of a kind it does not know' },
-  'note-retraction': { what: 'the retraction of a note', where: "the log and the issue's notes, in the shape of a row's retraction", misread: 'counts the note as standing' },
-}).map(([name, line]) => [name, Object.freeze({ format: 3, ...line })])));
+// The lines of the record a reader that knows only the formats below a line's own would misread in silence, by name:
+// the format that holds them, what the line is, where the record writes it, and what such a reader would make of it. A
+// write of one calls needFormat with its name, under the write's lock and before the line is written.
+const LINES_OF = (format, lines) => Object.entries(lines).map(([name, line]) => [name, Object.freeze({ format, ...line })]);
+export const FORMAT_LINES = Object.freeze(Object.fromEntries([
+  ...LINES_OF(2, {
+    'repo-name': { what: 'a repository name', where: "the issue's Repo field", misread: 'reads the name as a path under the root of the loop' },
+    'plain-number': { what: 'a number written plain, below 100 or of 1000 or more', where: 'the name and the header of an issue file, the number of a question, and every line that names them', misread: 'does not read the issue or the question the number names' },
+    retraction: { what: 'the retraction of a verdict or an evidence row', where: 'the log, and the struck entry of the issue', misread: 'goes on counting the approve or the row' },
+  }),
+  ...LINES_OF(3, {
+    'issue-key': { what: "an issue's key", where: "the issue's header, its filed line and every log line about it", misread: 'reads each line by its number alone, so the moves of two issues that took one number are mixed' },
+    writer: { what: 'the writer of a write', where: 'the log line of the write, in a fixed place', misread: 'does not place the line, so a lease or a verdict is read without the agent that wrote it' },
+    'owner-line': { what: 'an acceptance line only the owner ticks', where: "the issue's acceptance", misread: 'lets done pass while the line is not ticked' },
+    parent: { what: 'the parent of a sub-issue', where: "the sub-issue's header", misread: 'reads the backlog as flat and offers a parent as work of its own' },
+    batch: { what: 'one verdict over several issues', where: 'the verdict line of each issue it covers', misread: 'counts one review as several' },
+    'promise-wait': { what: 'the kinds promise and wait', where: "the issue's header", misread: 'refuses an issue of a kind it does not know' },
+    escalation: { what: 'a question of kind escalation', where: 'the question, among the loop\'s questions', misread: 'refuses a question of a kind it does not know' },
+    'note-retraction': { what: 'the retraction of a note', where: "the log and the issue's notes, in the shape of a row's retraction", misread: 'counts the note as standing' },
+  }),
+]));
 // The record format of a loop as the views say it: its format, the formats this Jarl reads, whether a write may raise it
 // (never under an external scheduler) and, when it may not, the names of the lines of FORMAT_LINES that are off in it.
 export function formatState(profile) {
@@ -91,11 +99,15 @@ export function formatState(profile) {
   const off = raises ? [] : Object.keys(FORMAT_LINES).filter((name) => FORMAT_LINES[name].format > profile.format);
   return { format: profile.format, reads: [...RECORD_FORMATS], raises, off };
 }
-// The line a view prints when lines of FORMAT_LINES are off in the loop, or null.
+// The line a view prints when lines of FORMAT_LINES are off in the loop, or null: each with the format that holds it.
 function formatOffText(state) {
   if (!state.off.length) return null;
-  const to = Math.max(...state.off.map((name) => FORMAT_LINES[name].format));
-  return `record format ${state.format}: the profile names an external scheduler, so Jarl never raises it, and these lines of format ${to} are off in this loop until the profile says "format": ${to} — ${state.off.map((name) => FORMAT_LINES[name].what).join(', ')}`;
+  return `record format ${state.format}: the profile names an external scheduler, so Jarl never raises it, and these lines are off in this loop until the profile says the format that holds them — ${state.off.map((name) => `${FORMAT_LINES[name].what} (format ${FORMAT_LINES[name].format})`).join(', ')}`;
+}
+// The width a new issue or question number is written in, when its caller names none: three digits, which every format
+// reads, in a loop below format 2 that Jarl never raises; else the caller's (none: the number written plain).
+function numberWidth(profile, width) {
+  return width ?? (!formatState(profile).raises && profile.format < RECORD_FORMAT_RAISED ? 3 : undefined);
 }
 // The done gate a loop runs on: the built-in one (approve: fresh — a live approve by someone other than the worker,
 // from a fresh reviewer when the issue carries code) and no merge required. A profile may ask for a landed merge
@@ -426,4 +438,4 @@ export function cmdProfile(root, file) {
 }
 
 // Used by the other modules of the library, and not part of what jarl-lib.mjs exports.
-export { SLOT_NAME_RE, forgetProfile, formatOffText };
+export { SLOT_NAME_RE, forgetProfile, formatOffText, numberWidth };
