@@ -3,10 +3,10 @@
 import { ROUNDS_BEFORE_TAKEOVER, STALE_HOURS, fieldText, need, noSeparators } from './base.mjs';
 import { needNoOwnersWords } from './owner.mjs';
 import { git } from './git.mjs';
-import { canonical, portablePath } from './where.mjs';
+import { canonical, jarlDir, portablePath } from './where.mjs';
 import { branchIssueId, idKey, idsNamed } from './ids.mjs';
 import { DEFAULT_PROFILE, loadProfile } from './profile.mjs';
-import { appendLog, oneLine, parseStamp } from './journal.mjs';
+import { appendLog, goalLines, oneLine, parseStamp, readGoal } from './journal.mjs';
 import { journalById } from './log.mjs';
 import { findIssue, loadIssues, mergedOf } from './issues.mjs';
 import { defaultBase, fileAt, isGitRepo, issuePlaces, issueRepoPaths, issueRepos, refsIn, repoFromInput, repoLabel, repoOf, reposNamed, worktreeState, worktreesOf } from './repositories.mjs';
@@ -39,6 +39,13 @@ function takeoverAdvice(tiers, tier, failed, n, takeovers) {
   return `${lead}${tier} is the top tier (${top}), so put it on a model other than ${model}${unknown}, or change the approach — ${tried}.`;
 }
 
+// The red rounds after which an issue of this kind takes over: the goal's `Takeover (<kind>): <rounds>` line for the
+// kind, else its bare `Takeover: <rounds>` line, else three.
+function takeoverLimit(root, kind) {
+  const { takeovers } = goalLines(readGoal(jarlDir(root)));
+  return takeovers.kinds[String(kind).toLowerCase()] ?? takeovers.bare ?? ROUNDS_BEFORE_TAKEOVER;
+}
+
 export function cmdRound(root, rawId, what, dry = false, opts = {}) {
   needNoOwnersWords('the round', what);
   need(what, 'round requires "<what failed>"');
@@ -50,15 +57,16 @@ export function cmdRound(root, rawId, what, dry = false, opts = {}) {
   const n = roundsOf(root, issue.id) + 1;
   appendLog(root, `${issue.id} round ${n} · ${found === undefined ? (/^findings \d+ · /.test(what) ? 'findings - · ' : '') : `findings ${Number(found)} · `}${what}`);
   // A takeover starts a new count: the next one comes after as many rounds of the new worker.
-  const takeover = n % ROUNDS_BEFORE_TAKEOVER === 0;
-  const since = ((n - 1) % ROUNDS_BEFORE_TAKEOVER) + 1;
+  const limit = takeoverLimit(root, issue.kind);
+  const takeover = n % limit === 0;
+  const since = ((n - 1) % limit) + 1;
   const entries = journalById(root).get(issue.id) || [];
   const findings = findingsOfRounds(entries).filter((x) => x !== null);
   const trend = findings.length ? `Findings per round: ${findings.join(', ')}.\n\n` : '';
   const log = entries.filter((e) => e.type !== 'filed').map((e) => `- ${e.at} · ${e.text}`).join('\n');
-  const advice = takeoverAdvice(loadProfile(root).tiers, issue.tier, fieldText(issue.fields.model), ROUNDS_BEFORE_TAKEOVER, n / ROUNDS_BEFORE_TAKEOVER);
-  const block = takeover ? `## Takeover\n\n${advice}\n\n${trend}A prior worker attempted issue ${issue.id} ${ROUNDS_BEFORE_TAKEOVER} times (${n} rounds in all); the issue is yours now. Its rounds so far:\n\n\`\`\`\n${log}\n\`\`\`\n` : null;
-  return { id: issue.id, round: n, since, takeover, block, ...(found === undefined ? {} : { findings: Number(found) }) };
+  const advice = takeoverAdvice(loadProfile(root).tiers, issue.tier, fieldText(issue.fields.model), limit, n / limit);
+  const block = takeover ? `## Takeover\n\n${advice}\n\n${trend}A prior worker attempted issue ${issue.id} ${limit} times (${n} rounds in all); the issue is yours now. Its rounds so far:\n\n\`\`\`\n${log}\n\`\`\`\n` : null;
+  return { id: issue.id, round: n, since, limit, takeover, block, ...(found === undefined ? {} : { findings: Number(found) }) };
 }
 
 const ASSERT_RE = /\b(expect\(|assert\.|assert\(|assert |t\.(Error|Fatal|Errorf|Fatalf)\(|Assert\.|should\.|\.toBe|\.toEqual)/g;

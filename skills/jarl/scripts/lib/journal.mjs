@@ -161,19 +161,26 @@ function readGoal(dir) {
   return existsSync(path) ? readText(path) : null;
 }
 // The one grammar of a line the goal carries for the tool: `Check: <what runs>`, `Check (<repository>): <what runs>`,
-// `Model (<tier>): <model>[, <model>…]` and `Coordinators: <name>[, <name>…]`, each as a plain line, a list item, or in
-// bold. goalLines reads them all in one pass, so no other reader of the goal
-// repeats the pattern. It returns
+// `Model (<tier>): <model>[, <model>…]`, `Coordinators: <name>[, <name>…]`, `Takeover: <rounds>` and
+// `Takeover (<kind>): <rounds>`, each as a plain line, a list item, or in bold. goalLines reads them all in one pass, so
+// no other reader of the goal repeats the pattern. It returns
 //   goal           the first line of the goal, or null where the loop has none
 //   checks         every command the goal names, the loop's own first
 //   checksByRepo   { bare: the loop's own commands, repos: { <repository>: its commands } }
 //   models         [{ tier, models }] in the order written, `tier` as written
 //   coordinators   the names written on Coordinators lines
-const GOAL_LINE = /^\s*(?:[-*]\s+)?(?:\*\*)?(coordinators|check|model)(?:\s*\(([^)]+)\))?:(?:\*\*)?\s*(.+)$/i;
+//   takeovers      { bare: the rounds of the bare line or null, kinds: { <kind in lower case>: its rounds } }; the last line
+//                  written for a kind or for the bare line stands
+const GOAL_LINE = /^\s*(?:[-*]\s+)?(?:\*\*)?(coordinators|check|model|takeover)(?:\s*\(([^)]+)\))?:(?:\*\*)?\s*(.+)$/i;
+// The red rounds after which an issue takes over are a whole number from 1 to this.
+const TAKEOVER_MAX = 99;
+const takeoverRounds = (value) => (/^\d+$/.test(value.trim()) && Number(value) >= 1 && Number(value) <= TAKEOVER_MAX ? Number(value) : null);
+const TAKEOVER_REASON = `a Takeover line is "Takeover: <rounds>" or "Takeover (<kind>): <rounds>", with a whole number of rounds from 1 to ${TAKEOVER_MAX}`;
 // With `skipped` (an array), each machine line the grammar does not place is pushed onto it as { n, text, reason }: a
-// Check with no command, a Model with no tier or no model, a Coordinators line with a tier.
+// Check with no command, a Model with no tier or no model, a Coordinators line with a tier, a Takeover line whose
+// value is not a whole number of rounds.
 export function goalLines(text, skipped) {
-  const out = { goal: null, checks: [], checksByRepo: { bare: [], repos: {} }, models: [], coordinators: [] };
+  const out = { goal: null, checks: [], checksByRepo: { bare: [], repos: {} }, models: [], coordinators: [], takeovers: { bare: null, kinds: {} } };
   if (text == null) return out;
   const lines = text.split('\n');
   out.goal = lines.slice(2).find((l) => l.trim()) || '';
@@ -191,7 +198,12 @@ export function goalLines(text, skipped) {
       if (models.length) out.models.push({ tier: qualifier, models });
       else skip('a Model line names no model: it is "Model (<tier>): <model>[, <model>…]"');
     } else if (key === 'model') skip('a Model line names its tier in brackets: it is "Model (<tier>): <model>[, <model>…]"');
-    else if (key === 'check') {
+    else if (key === 'takeover') {
+      const rounds = takeoverRounds(value);
+      if (rounds === null) skip(TAKEOVER_REASON);
+      else if (qualifier) out.takeovers.kinds[qualifier.toLowerCase()] = rounds;
+      else out.takeovers.bare = rounds;
+    } else if (key === 'check') {
       const command = fieldText(value).replace(/^`(.*)`$/, '$1');
       if (!command) { skip('a Check line names no command: it is "Check: <what runs>" or "Check (<repository>): <what runs>"'); return; }
       if (qualifier) (out.checksByRepo.repos[qualifier] = out.checksByRepo.repos[qualifier] || []).push(command); else out.checksByRepo.bare.push(command);
@@ -203,7 +215,7 @@ export function goalLines(text, skipped) {
 
 // The machine lines the command line writes into the goal, and the words that label them. A line is read by GOAL_LINE, the
 // grammar goalLines reads, and written with the label the grammar takes.
-const MACHINE_LABEL = { check: 'Check', model: 'Model', coordinators: 'Coordinators' };
+const MACHINE_LABEL = { check: 'Check', model: 'Model', coordinators: 'Coordinators', takeover: 'Takeover' };
 // The machine line a text is, as { key, qualifier, value } (key lower case; qualifier as written, or null), or null.
 export function goalLineOf(text) {
   const m = GOAL_LINE.exec(String(text ?? ''));
@@ -244,15 +256,16 @@ export function cmdGoal(root) {
 }
 // goal --set "<machine line>": one machine line of the goal changed, and a log line that says what it was and what it is now.
 // The machine lines are Check (<repository>): <command> or a bare Check: <command>, Model (<tier>): <models> with a tier the
-// profile declares, and Coordinators: <names>. Any other line, a repository line among them, is refused: a repository joins
-// the loop by its own declaration, not by a line of the goal.
+// profile declares, Coordinators: <names>, and Takeover: <rounds> or Takeover (<kind>): <rounds> with a kind the profile
+// declares. Any other line, a repository line among them, is refused: a repository joins the loop by its own
+// declaration, not by a line of the goal.
 export function cmdGoalSet(root, text) {
   const dir = jarlDir(root);
   const old = readGoal(dir);
   need(old !== null, 'the loop has no goal: open it with init "<goal>"');
   need(!oneBreak(text).includes('\n'), 'goal --set takes one machine line: a line break in its value is refused');
   const line = goalLineOf(text);
-  need(line && line.value && MACHINE_LABEL[line.key], 'goal --set takes one machine line: "Check (<repository>): <command>" or "Check: <command>", "Model (<tier>): <model>, …" or "Coordinators: <name>, …"');
+  need(line && line.value && MACHINE_LABEL[line.key], 'goal --set takes one machine line: "Check (<repository>): <command>" or "Check: <command>", "Model (<tier>): <model>, …", "Coordinators: <name>, …" or "Takeover (<kind>): <rounds>"');
   let qualifier = line.qualifier;
   if (line.key === 'model') {
     need(qualifier !== null, 'a Model line names its tier: "Model (<tier>): <model>, …"');
@@ -261,8 +274,14 @@ export function cmdGoalSet(root, text) {
     need(qualifier !== null, `the profile declares no tier ${line.qualifier}: its tiers are ${loadProfile(root).tiers.join(', ')}`);
   }
   need(line.key !== 'coordinators' || qualifier === null, 'a Coordinators line takes no qualifier: "Coordinators: <name>, …"');
+  if (line.key === 'takeover' && qualifier !== null) {
+    const kinds = loadProfile(root).kinds;
+    qualifier = kinds.find((k) => k.toLowerCase() === qualifier.toLowerCase()) ?? null;
+    need(qualifier !== null, `the profile declares no kind ${line.qualifier}: its kinds are ${kinds.join(', ')}`);
+  }
   const value = noSeparators(line.value);
   need(value, 'goal --set needs a value after the colon');
+  need(line.key !== 'takeover' || takeoverRounds(value) !== null, `a Takeover line takes a whole number of rounds from 1 to ${TAKEOVER_MAX}: "Takeover: <rounds>" or "Takeover (<kind>): <rounds>"`);
   const next = goalWithLine(old, { key: line.key, qualifier, value });
   // A line that already holds this value is left alone: nothing is written and no log line says it changed.
   if (next.replaced && noSeparators(next.was) === value) return { shown: next.shown, replaced: true, was: next.was, unchanged: true };

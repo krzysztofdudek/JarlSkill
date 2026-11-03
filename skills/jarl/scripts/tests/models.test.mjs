@@ -318,6 +318,75 @@ test('a takeover starts a new count: the block comes once per takeover, not on e
   assert.doesNotMatch(out, /## Takeover/);
 });
 
+// An in-progress issue of a kind, in a loop whose goal carries the given lines.
+function leased(goalLines, kind) {
+  const root = loop();
+  if (goalLines) appendFileSync(join(root, '.jarl', 'goal.md'), `\n${goalLines}\n`);
+  const { id } = R.newIssue(root, `a ${kind} thing`, { acceptance: 'it works', tier: 'standard', kind });
+  R.setStatus(root, id, 'in-progress', '', { branch: `jarl/${id}-a`, worker: 'w-one', model: MID });
+  return { root, id };
+}
+
+test('a goal line sets the red rounds after which a kind of issue takes over, and the other kinds keep three', () => {
+  const { root, id } = leased('Takeover (docs): 2', 'docs');
+  const first = R.addRound(root, id, 'red one');
+  assert.equal(first.takeover, false);
+  assert.equal(first.limit, 2);
+  const second = R.addRound(root, id, 'red two');
+  assert.equal(second.takeover, true);
+  assert.match(second.block, /a prior worker attempted issue \S+ 2 times/i);
+  assert.match(second.block, /has failed this 2 times/);
+  assert.equal(R.addRound(root, id, 'red three').since, 1);
+  assert.equal(R.addRound(root, id, 'red four').takeover, true);
+  const other = leased('Takeover (docs): 2', 'bug');
+  const rounds = [1, 2, 3].map((k) => R.addRound(other.root, other.id, `red ${k}`));
+  assert.deepEqual(rounds.map((r) => [r.takeover, r.limit]), [[false, 3], [false, 3], [true, 3]]);
+});
+
+test('a loop without a takeover line keeps three, and a bare line sets the limit of every kind the loop does not name', () => {
+  const plain = leased(null, 'docs');
+  assert.deepEqual([1, 2, 3].map((k) => R.addRound(plain.root, plain.id, `red ${k}`)).map((r) => [r.takeover, r.limit]), [[false, 3], [false, 3], [true, 3]]);
+  const bare = leased('Takeover: 4\nTakeover (docs): 2', 'gap');
+  assert.deepEqual([1, 2, 3, 4].map((k) => R.addRound(bare.root, bare.id, `red ${k}`)).map((r) => [r.takeover, r.limit]), [[false, 4], [false, 4], [false, 4], [true, 4]]);
+});
+
+test('round prints how many rounds are left before a takeover by the limit of the issue\'s kind', () => {
+  const { root, id } = leased('- **Takeover (Docs):** 2', 'docs');
+  assert.match(cli(root, 'round', id, 'red one').stdout, /round 1: 1 of 2 before a takeover/);
+  assert.match(cli(root, 'round', id, 'red two').stdout, /round 2 — takeover:/);
+});
+
+test('goal --set writes a takeover line for a kind the profile declares and refuses what is not a count of rounds', () => {
+  const root = loop();
+  const set = (line) => cli(root, 'goal', '--set', line);
+  assert.equal(set('Takeover (DOCS): 2').status, 0);
+  assert.match(readFileSync(join(root, '.jarl', 'goal.md'), 'utf8'), /^Takeover \(docs\): 2$/m);
+  assert.equal(set('Takeover (docs): 5').status, 0);
+  assert.match(readFileSync(join(root, '.jarl', 'goal.md'), 'utf8'), /^Takeover \(docs\): 5$/m);
+  assert.match(log(root), /goal line changed · Takeover \(docs\): 5 · was 2/);
+  assert.equal(set('Takeover: 4').status, 0);
+  assert.match(set('Takeover (poetry): 2').stderr, /the profile declares no kind poetry/);
+  assert.match(set('Takeover (docs): 0').stderr, /whole number of rounds/);
+  assert.match(set('Takeover (docs): many').stderr, /whole number of rounds/);
+});
+
+test('verify lists a takeover line that is not a count of rounds', () => {
+  const { root } = leased('Takeover (docs): often\nTakeover: 0', 'docs');
+  const out = cli(root, 'verify');
+  assert.notEqual(out.status, 0);
+  assert.match(out.stdout + out.stderr, /Takeover \(docs\): often[^\n]*whole number of rounds/);
+  assert.match(out.stdout + out.stderr, /Takeover: 0[^\n]*whole number of rounds/);
+});
+
+test('a takeover line in the goal is read by the pinned frozen reader without a refusal and leaves the issues it lists as they are', () => {
+  assert.ok(oldJarlIsPinned());
+  const { root, id } = leased('Takeover (docs): 2\nTakeover: 4', 'docs');
+  R.addRound(root, id, 'red one');
+  for (const command of ['list', 'status', 'next', 'queue']) assert.equal(oldJarl(root, command, {}).ok, true, command);
+  assert.equal(OLD.findIssue(root, id).status, 'in-progress');
+  assert.equal(OLD.cmdList(root, {}).length, 1);
+});
+
 test('a round records its count of findings and the takeover block lists them', () => {
   const root = loop();
   const { id } = R.newIssue(root, 'a thing', { acceptance: 'it works', tier: 'standard' });

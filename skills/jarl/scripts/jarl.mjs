@@ -14,7 +14,7 @@
 import { fileURLToPath } from 'node:url';
 import * as R from './record.mjs';
 import {
-  ROUNDS_BEFORE_TAKEOVER, need, resetCaches, withLock, readText, isEntry, cmdSet, cmdField, setRouteOf, eachIssue, cmdBody, cmdSource, cmdAfter, cmdFiles, cmdRepo, cmdRound, cmdTag, cmdPrio,
+  need, resetCaches, withLock, readText, isEntry, cmdSet, cmdField, setRouteOf, eachIssue, cmdBody, cmdSource, cmdAfter, cmdFiles, cmdRepo, cmdRound, cmdTag, cmdPrio,
   cmdProfile, cmdArchive, cmdList, cmdNext, renderNext, cmdMode, cmdClose, cmdCheck, cmdBranches, cmdTips, cmdQueue,
   cmdChangelog, cmdHandoffRead, cmdHandoffWrite, cmdReport, cmdImport, cmdSources, cmdAnswerMany, cmdModels, renderModels,
   issuesNaming, questionFor, cmdGoal, cmdGoalSet, cmdRepoBase, whereOf, cmdVerify, renderVerify, renderCheckNotes,
@@ -177,8 +177,9 @@ commands:
                                                  fresh one when the issue carries code (a Branch or Merged field), and
                                                  the worker's Proof row; an approve on an issue with no Proof row says so;
                                                  findings need at least three words; a verdict is taken back with retract
-  round <ids> "<what failed>" [--findings <n>]    one red round on each, with the count of findings it left if given; every third round
-                                                 prints the takeover block for a fresh worker: a tier up, another model or a changed approach
+  round <ids> "<what failed>" [--findings <n>]    one red round on each, with the count of findings it left if given; every third round,
+                                                 or every n-th where the goal's "Takeover (<kind>): <n>" line says so for the issue's
+                                                 kind, prints the takeover block for a fresh worker: a tier up, another model or a changed approach
   models [--by repo|tag] [--with <root>]... [--archives]
                                                  read-only: per model as worker and as reviewer, per Kind · Tier, what the
                                                  record holds (units, clean first passes, changes, rounds, verdicts, checked
@@ -247,7 +248,7 @@ commands:
   goal --set "<machine line>"                    one machine line of the goal set, with a log line that says what it
                                                  was and what it is: "Check (<repository>): <command>" or a bare
                                                  "Check: <command>", "Model (<tier>): <models>" (a tier the profile
-                                                 declares) or "Coordinators: <names>"; the rest of goal.md stays as written
+                                                 declares), "Coordinators: <names>" or "Takeover (<kind>): <rounds>"; the rest of goal.md stays as written
   status [--stale-hours n] [--by repo|tag|kind|prio|<field>] [--tag <t>]
                                                  --tag computes every part of status over the issues carrying that tag only
                                                  the log is the record of an issue's status, lease, merge and CI; a header
@@ -538,7 +539,7 @@ export const COMMAND_SUMMARY = {
   repo: 'Name the repository (or several) the code of issues lives in, or clear it.',
   next: 'The open issues ready to start: no file shared with work in progress, every After issue settled, no open question on them; all adds the held and waiting ones in groups.',
   review: 'Record a reviewer\'s verdict (approve or changes) on issues, with the reviewer and the findings.',
-  round: 'Record one red round on issues; every third prints the takeover block for a fresh worker.',
+  round: 'Record one red round on issues; every third (or the count the goal sets for the kind of issue) prints the takeover block for a fresh worker.',
   models: 'Per model as worker and as reviewer, per kind of issue: the counts, clean first passes and verdicts the record holds, with the words fits, below, new and may clear; reads other loops and archives too.',
   scope: 'Measure the scope of a worker branch against its base: commits, diff inside the declared files, test changes; numbers, never a verdict.',
   branches: 'Every worker branch with its issues, commits beyond the base, worktree state, stale leases and done branches, in the loop\'s repository and every repository its issues name (repo narrows it to one).',
@@ -549,7 +550,7 @@ export const COMMAND_SUMMARY = {
   log: 'Append one dated note to the loop\'s journal; a line that reads as a move, a verdict or another line of state is refused.',
   decide: 'Append a ruling, optionally superseding one, settling issues or covering an area of code.',
   decisions: 'The rulings with who ruled and what superseded them.',
-  goal: 'The goal as goal.md holds it, or one machine line of it set (Check, Model or Coordinators), with a log line that says what it was and what it is now.',
+  goal: 'The goal as goal.md holds it, or one machine line of it set (Check, Model, Coordinators or Takeover), with a log line that says what it was and what it is now.',
   status: 'The goal, the counts by status, the reviews, stale leases and what awaits ratification.',
   archive: 'Put the current loop away under .jarl/archive/ so a new one can open here.',
   report: 'What was done, dropped, deferred and still open, ready for the changelog, with the loop metrics.',
@@ -787,7 +788,7 @@ export function dispatch(root, commandName, rest, flags) {
         if (rest[1] === 'retract') aliases.push('note: a verdict is retracted with: retract <id> review --by <who> "<reason>"');
         out = R.review(root, rest[0], rest[1], rest[2], { ...flags, caller: 'cli' }); text = each(out, renderReview); warn = [].concat(out).filter((o) => o.note).map((o) => `note: ${o.note}`); break;
       case 'models': out = cmdModels(root, flags); text = renderModels(out); break;
-      case 'round': out = eachIssue(root, rest[0], (id, dry) => cmdRound(root, id, rest[1], dry, flags)); text = each(out, (o) => (o.takeover ? `${o.id} round ${o.round} — takeover:\n\n${o.block}` : `${o.id} round ${o.round}: ${o.since} of ${ROUNDS_BEFORE_TAKEOVER} before a takeover; the rounds so far: show ${o.id}`)); break;
+      case 'round': out = eachIssue(root, rest[0], (id, dry) => cmdRound(root, id, rest[1], dry, flags)); text = each(out, (o) => (o.takeover ? `${o.id} round ${o.round} — takeover:\n\n${o.block}` : `${o.id} round ${o.round}: ${o.since} of ${o.limit} before a takeover; the rounds so far: show ${o.id}`)); break;
       case 'merged': out = R.recordMerged(root, rest[0], { ...flags, caller: 'cli' }); text = `${out.ids.join(', ')} ${out.sha ? `merged ${out.sha}` : 'merge'}${out.check ? ` · check ${out.check}` : ''}${out.red ? ` · landed red, cause ${out.red}` : ''}${out.ci ? ` · CI ${out.ci}` : ''}${(out.cleanup || []).map((c) => `\n${c.kept ? `kept ${c.branch}${c.worktree ? ` (worktree ${c.worktree} removed)` : ''} — ${c.kept}` : `removed ${c.worktree ? `the worktree ${c.worktree} and ` : ''}the branch ${c.branch}`}${(c.commands || []).length ? `\nafter looking at the files, remove them with:\n${c.commands.map((x) => `  ${x}`).join('\n')}` : ''}${out.cleanup.some((x) => x.repo !== c.repo) ? ` [${c.repo}]` : ''}`).join('')}`; warn = out.notes.map((n) => `note: ${n}`); break;
       case 'scope': out = cmdCheck(root, rest[0], flags); text = `${out.id === null ? `package ${out.ids.join(', ')} on ${out.branch}\n` : ''}${out.repo === root ? '' : `in ${out.repo}\n`}${out.items.map((i) => `${i.ok ? '✓' : '✗'} ${i.name} — ${i.note}`).join('\n')}${out.notes.length || out.notesOmitted ? `\n${renderCheckNotes(out)}` : ''}`; break;
       case 'branches': out = cmdBranches(root, flags); text = renderBranches(out, root); break;
