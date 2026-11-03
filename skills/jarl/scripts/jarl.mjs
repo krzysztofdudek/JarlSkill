@@ -219,10 +219,11 @@ commands:
   log "<event>"                                  append one dated note to the journal; a line that reads as a filing, a move,
                                                  a round, a verdict, a retraction, an evidence row, a merge, a CI state or
                                                  a body change is refused, and the refusal names the command that writes it
-  decide <slug> "<ruling>" [--by who] [--supersedes <slug>] [--settles <ids>] [--area <type> [--reach n] [--rule <id>]]
+  decide <slug> "<ruling>" [--by who [--quote "<words>"]] [--supersedes <slug>] [--settles <ids>] [--area <type> [--reach n] [--rule <id>]]
                                                  append a ruling (slug: letters, digits, . _ -); refuses a duplicate slug;
-                                                 --by records who ruled (default owner); --supersedes marks the ruling it replaces
-                                                 ruling "Superseded by" in place; --settles writes the ruling into each
+                                                 --by records who ruled (the coordinator when it is left out); --by owner needs
+                                                 --quote, his own words, kept as the ruling's last paragraph; --supersedes marks
+                                                 the ruling it replaces "Superseded by" in place; --settles writes the ruling into each
                                                  named issue's evidence (its status is unchanged); --area marks a ruling
                                                  about a whole type of code, --reach how many files that type holds,
                                                  --rule the graph's rule it admits on that type (its id):
@@ -418,7 +419,7 @@ export const COMMAND_FLAGS = {
   answer: { by: 'value', option: 'value' },
   resume: { log: 'value', ready: 'value', ci: 'bool' },
   handoff: { summary: 'value', next: 'many', log: 'value', ready: 'value', ci: 'bool' },
-  log: {}, decide: { settles: 'many', by: 'value', supersedes: 'value', area: 'value', reach: 'value', rule: 'value' }, decisions: { live: 'bool' },
+  log: {}, decide: { settles: 'many', by: 'value', quote: 'value', supersedes: 'value', area: 'value', reach: 'value', rule: 'value' }, decisions: { live: 'bool' },
   goal: { set: 'value' },
   status: { 'stale-hours': 'value', by: 'value', tag: 'value' }, archive: {}, report: { found: 'bool' }, tips: {}, mode: {},
   queue: { repo: 'value', base: 'value' }, changelog: { repo: 'value' },

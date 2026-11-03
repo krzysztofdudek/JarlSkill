@@ -8,7 +8,7 @@ import { jarlDir, today } from './where.mjs';
 import { appendAtomic, readText, writeAtomic } from './files.mjs';
 import { askNumber, idKey, issueForms, needsRaisedFormat, newNumber, writtenId } from './ids.mjs';
 import { loadProfile } from './profile.mjs';
-import { ASKS_FILE, DECISIONS_FILE, STAMP_SRC, appendDecision, appendLog, appendLogLines, asksAt, asksPath, firstLine, loadDecisions, markDecision, parseStamp } from './journal.mjs';
+import { ASKS_FILE, DECISIONS_FILE, STAMP_SRC, appendDecision, appendLog, appendLogLines, asksAt, asksPath, firstLine, loadDecisions, markDecision, parseStamp, withOwnerQuote } from './journal.mjs';
 import { findIssue, freeBlock, loadIssues, noteText, parseIssue, placeEvidence, setSection } from './issues.mjs';
 import { raiseFormat } from './repositories.mjs';
 import { coordinatorNames } from './loop.mjs';
@@ -237,27 +237,34 @@ function appendRuling(root, issues, line) {
   appendLogLines(root, issues.map((issue) => `${issue.id} evidence · ${line}`));
 }
 
-// decide <slug> "<ruling>" [--by who] [--supersedes <slug>] [--settles <ids>]: the ruling, who ruled (the owner
-// unless --by says otherwise: jarl for a choice the loop made under a mandate), the earlier ruling it replaces —
-// marked **Superseded by:** in place, so a reader of the decisions, and decisions --live, see it is not in
-// force — and the issues it settles.
+// decide <slug> "<ruling>" [--by who] [--quote "<words>"] [--supersedes <slug>] [--settles <ids>]: the ruling, who ruled
+// (the caller, recorded as the coordinator, unless --by says otherwise: jarl for a choice the loop made under a
+// mandate, owner for the owner's own, which needs his words in --quote, kept on one line as the ruling's last paragraph),
+// the earlier ruling it replaces — marked **Superseded by:** in place, so a reader of the decisions, and decisions --live,
+// see it is not in force — and the issues it settles. Nothing in the loop names the owner: the name `owner` is his.
 export function cmdDecide(root, slug, ruling, flags = {}) {
   need(slug && ruling, 'decide requires <slug> "<ruling>"');
   need(flags.by === undefined || fieldText(flags.by), '--by needs a value — who ruled: owner, jarl, or a name');
+  const byOwner = flags.by !== undefined && fieldText(flags.by).toLowerCase() === 'owner';
+  const quote = flags.quote !== undefined ? fieldText(flags.quote) : null;
+  need(flags.quote === undefined || quote, '--quote needs the owner\'s own words');
+  need(!byOwner || quote, `a ruling by the owner carries his own words: give them with --quote "<what he said>"; a ruling without --by is recorded as the coordinator's, and a question he asked is not a ruling`);
+  need(flags.quote === undefined || byOwner, '--quote is the owner\'s own words: it goes with --by owner');
   need(flags.area === undefined || AREA_RE.test(String(flags.area)), `--area names the type of code the ruling reaches, as the repository's graph names it: one word of letters, digits and . _ - (got "${flags.area}")`);
   need(flags.reach === undefined || flags.area !== undefined, '--reach counts the files of the --area type — it needs --area');
   need(flags.reach === undefined || /^\d+$/.test(String(flags.reach)), `--reach is how many files the area holds, a whole number (got "${flags.reach}")`);
   need(flags.rule === undefined || flags.area !== undefined, '--rule names the rule of the graph the ruling admits on the --area type — it needs --area');
   need(flags.rule === undefined || RULE_RE.test(String(flags.rule)), `--rule names a rule as the repository's graph names it: its id, segments of letters, digits and . _ - joined by / (got "${flags.rule}")`);
-  const by = flags.by !== undefined ? fieldText(flags.by) : 'owner';
+  const by = flags.by !== undefined ? fieldText(flags.by) : 'coordinator';
   const settles = flags.settles !== undefined ? issuesFor(root, flags.settles) : [];
   const area = flags.area !== undefined ? String(flags.area) : null;
   const reach = flags.reach !== undefined ? Number(flags.reach) : null;
   const rule = flags.rule !== undefined ? String(flags.rule) : null;
-  appendDecision(root, slug, freeBlock(oneBreak(ruling).trim()), { by, supersedes: flags.supersedes, area, reach, rule, settles: settles.map((i) => i.id) });
+  const text = freeBlock(oneBreak(ruling).trim());
+  appendDecision(root, slug, quote ? withOwnerQuote(text, quote) : text, { by, supersedes: flags.supersedes, area, reach, rule, settles: settles.map((i) => i.id) });
   appendLog(root, `decided ${slug} · by ${by}${flags.supersedes !== undefined ? ` · supersedes ${flags.supersedes}` : ''}${area ? ` · area ${area}${reach !== null ? ` (${reach} files)` : ''}${rule ? ` · rule ${rule}` : ''}` : ''}`);
-  if (settles.length) appendRuling(root, settles, `Ruling ${slug}: ${firstLine(oneBreak(ruling).trim(), `${DECISIONS_FILE}, ruling ${slug}`)}`);
-  return { slug, by, supersedes: flags.supersedes ?? null, settles: settles.map((i) => i.id), ...(area ? { area, reach, ...(rule ? { rule } : {}) } : {}) };
+  if (settles.length) appendRuling(root, settles, `Ruling ${slug}: ${firstLine(oneBreak(ruling).trim(), `${DECISIONS_FILE}, ruling ${slug}`)}${quote ? ` · the owner's words: "${firstLine(quote, `${DECISIONS_FILE}, ruling ${slug}`)}"` : ''}`);
+  return { slug, by, ...(quote ? { quote } : {}), supersedes: flags.supersedes ?? null, settles: settles.map((i) => i.id), ...(area ? { area, reach, ...(rule ? { rule } : {}) } : {}) };
 }
 
 // Whether a question of the record asks about a ruling: a ratify item naming it, or the question the ruling `ask-<n>` was
@@ -357,7 +364,8 @@ export function renderDecisions(rows) {
   if (!rows.length) return '(no rulings)';
   return rows.map((d) => {
     const area = d.area ? ` · area ${d.area}${d.rule ? ` · rule ${d.rule}` : ''}${d.ratified ? ' ratified' : d.rejected ? ' rejected' : ''}` : '';
-    return `${d.date} · ${d.slug}${d.by ? ` · by ${d.by}` : ''}${area}${d.supersededBy ? ` · SUPERSEDED by ${d.supersededBy}` : ''}${d.supersedes ? ` · supersedes ${d.supersedes}` : ''} — ${(d.ruling.split('\n').find((l) => l.trim()) || '').slice(0, 160)}`;
+    const quoted = d.quote ? ` · the owner's words: "${d.quote.split('\n')[0].slice(0, 160)}"` : '';
+    return `${d.date} · ${d.slug}${d.by ? ` · by ${d.by}` : ''}${area}${d.supersededBy ? ` · SUPERSEDED by ${d.supersededBy}` : ''}${d.supersedes ? ` · supersedes ${d.supersedes}` : ''} — ${(d.ruling.split('\n').find((l) => l.trim()) || '').slice(0, 160)}${quoted}`;
   }).join('\n');
 }
 
