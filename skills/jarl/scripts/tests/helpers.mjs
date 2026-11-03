@@ -38,8 +38,11 @@ export function skillLines() {
 
 // One run of the command line against the loop in `root`: the result of spawnSync, both streams as written. `env` is
 // added to the environment of the process.
+// The host's plugin root is taken out of the environment of every run, so a run sees it only when the test sets it.
 export function spawnJarl(root, args, { env, timeout = SPAWN_TIMEOUT } = {}) {
-  return spawnSync(process.execPath, [SCRIPT, ...args, '--root', root], { encoding: 'utf8', timeout, ...(env ? { env: { ...process.env, ...env } } : {}) });
+  const inherited = { ...process.env };
+  delete inherited.CLAUDE_PLUGIN_ROOT;
+  return spawnSync(process.execPath, [SCRIPT, ...args, '--root', root], { encoding: 'utf8', timeout, env: { ...inherited, ...env } });
 }
 // The same, as { status, stdout, stderr } with both streams trimmed.
 export function run(root, args, opts) {

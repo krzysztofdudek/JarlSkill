@@ -128,6 +128,31 @@ test('body logs each part it replaces by the first line and the length of what t
   assert.equal(R.findIssue(root, '1').sections.why.trim(), 'third why');
 });
 
+test('body --append adds to a section after what it holds, and logs the line a replacement logs', () => {
+  const root = profiledLoop();
+  jarl(root, 'body', '1', '--what', 'more what', '--append');
+  assert.equal(R.findIssue(root, '1').sections.what.trim(), 'old what\n\nmore what', 'the new text follows the text the section held, as its own paragraph');
+  assert.equal(lastLine(root), '1 body · what · was "old what" (8 characters)', 'the line says what the section held before the append');
+  jarl(root, 'body', '1', '--why', 'more why', '--append', '--by', 'w-two');
+  assert.equal(lastLine(root), '1 body · why · was "old why" (7 characters) · by w-two');
+  jarl(root, 'body', '1', '--acceptance', 'line b', '--append');
+  assert.equal(R.findIssue(root, '1').sections.acceptance.trim(), '- old line\n- line b', 'the new line joins the list the section held');
+  assert.equal(lastLine(root), '1 body · acceptance · was "old line" (8 characters)');
+  jarl(root, 'body', '1', '--changelog', 'Added: new entry', '--append');
+  assert.equal(R.findIssue(root, '1').sections.changelog.trim(), '- Fixed: old entry\n- Added: new entry');
+  assert.equal(lastLine(root), '1 body · changelog · was "- Fixed: old entry" (18 characters)');
+  jarl(root, 'body', '1', '--section', 'Design=more design', '--append');
+  assert.equal(R.findIssue(root, '1').sections.design.trim(), 'old design\n\nmore design');
+  assert.equal(lastLine(root), '1 body · Design · was "old design" (10 characters)');
+  jarl(root, 'body', '2', '--what', 'first what', '--append');
+  assert.equal(R.findIssue(root, '2').sections.what.trim(), 'first what', 'a section that holds nothing takes the text alone');
+  assert.equal(lastLine(root), '2 body · what · was (none)');
+  assert.match(refuses(root, 'body', '1', '--title', 'x', '--append'), /--append adds to a section/, 'the title is replaced, never appended to');
+  assert.match(refuses(root, 'body', '1', '--why', '', '--append'), /--append needs text to add to the Why section/);
+  jarl(root, 'body', '1', '--what', 'replaced');
+  assert.equal(R.findIssue(root, '1').sections.what.trim(), 'replaced', 'without --append a section is replaced, as before');
+});
+
 test('a name field does not write is refused with the names it writes and the command that writes that one', () => {
   const root = profiledLoop();
   const names = /Title, Priority, Tier, Kind, Found by, Tags, Files, Repo, After, Source, Where, Resources, Person, Check when, Area, Note/;

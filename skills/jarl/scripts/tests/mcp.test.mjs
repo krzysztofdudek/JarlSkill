@@ -444,3 +444,50 @@ test('the help tool takes the fields every tool takes and refuses any other', ()
   assert.equal(mcp.callTool('jarl_help', { root, json: true }).content[0].text, mcp.callTool('jarl_help').content[0].text);
   refusedAsInvalid(() => mcp.callTool('jarl_help', { root, bogus: 1 }), /unknown field "bogus" — it takes json, root/);
 });
+
+// A tool field whose name does not give its meaning carries an example in its description: a call of its own tool, as
+// JSON. Each example is held to the tool's fields and to the type each field takes.
+const exampleOf = (description) => /Example: (\{.*\})$/.exec(description ?? '')?.[1];
+test('a tool field whose name does not give its meaning carries an example that is a call of its own tool', () => {
+  const FIELDS = [
+    ['jarl_after', 'id'], ['jarl_after', 'ids'], ['jarl_evidence', 'ran'], ['jarl_evidence', 'saw'], ['jarl_review', 'verdict'],
+    ['jarl_review', 'findings'], ['jarl_decide', 'supersedes'], ['jarl_decisions', 'live'], ['jarl_body', 'append'],
+  ];
+  for (const [tool, field] of FIELDS) {
+    const props = byName[tool].inputSchema.properties;
+    const example = exampleOf(props[field].description);
+    assert.ok(example, `${tool} ${field} carries an example: ${props[field].description}`);
+    const call = JSON.parse(example);
+    for (const k of Object.keys(call)) assert.ok(props[k], `${tool} ${field}: the example names ${k}, which ${tool} does not take`);
+    assert.ok(field in call, `${tool} ${field}: the example gives ${field}`);
+    assert.equal(Array.isArray(call[field]) ? 'array' : typeof call[field], props[field].type, `${tool} ${field}: the example gives the type the field takes`);
+  }
+  const pairs = JSON.parse(exampleOf(byName.jarl_evidence.inputSchema.properties.ran.description));
+  assert.equal(pairs.ran.length, pairs.saw.length, 'the example pairs one saw with each ran');
+});
+
+test('a value of the wrong type is refused with a message naming the field and the type it takes', () => {
+  const root = loopDir('jarl-mcp-type-');
+  mcp.callTool('jarl_new', { title: 'one', root });
+  const WRONG = [
+    ['jarl_evidence', { ids: '1', ran: { command: 'npm test' }, saw: 'ok' }, /"ran" must be a string or a list of strings/],
+    ['jarl_evidence', { ids: '1', ran: ['npm test'], saw: [true] }, /"saw" must be a string or a list of strings/],
+    ['jarl_after', { id: '1', ids: { a: 1 } }, /"ids" must be a list of strings/],
+    ['jarl_decide', { slug: 'a-ruling', ruling: 'a ruling', supersedes: ['x'] }, /"supersedes" must be a string/],
+    ['jarl_decisions', { live: 'true' }, /"live" must be true or false/],
+    ['jarl_body', { id: '1', what: ['a', 'b'] }, /"what" must be a string/],
+    ['jarl_body', { id: '1', append: 'yes', why: 'x' }, /"append" must be true or false/],
+  ];
+  for (const [tool, input, re] of WRONG) refusedAsInvalid(() => mcp.callTool(tool, { ...input, root }), re);
+  assert.equal(issuesIn(root), 1, 'no refused call wrote anything');
+});
+
+test('jarl_body with append adds to the section the call names, and without it replaces that section', () => {
+  const root = loopDir('jarl-mcp-append-');
+  mcp.callTool('jarl_new', { title: 'one', acceptance: ['first line'], root });
+  const acceptanceOf = () => JSON.parse(mcp.callTool('jarl_show', { id: '1', json: true, root }).content[0].text).sections.acceptance.trim();
+  mcp.callTool('jarl_body', { id: '1', acceptance: ['second line'], append: true, root });
+  assert.equal(acceptanceOf(), '- first line\n- second line');
+  mcp.callTool('jarl_body', { id: '1', acceptance: ['third line'], root });
+  assert.equal(acceptanceOf(), 'third line', 'left out, append is false and the section is replaced');
+});
