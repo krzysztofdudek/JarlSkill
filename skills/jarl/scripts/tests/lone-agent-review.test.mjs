@@ -74,6 +74,20 @@ test('a question holds only the issues cited right after "issues", joined by com
   assert.deepEqual(grouped(), [['1', '2', '5', '6']], 'a version is no issue number');
 });
 
+test('a question holds the one list right after "issues": a later issue, hash number, task or version is not asked about', () => {
+  const root = loneLoop();
+  jarl(root, 'new', 'third change', '--files', 'e.mjs');
+  jarl(root, 'set', '5', 'in-progress', 'go', '--worker', 'me', '--branch', 'jarl/5');
+  jarl(root, 'evidence', '5', '--ran', 'npm test', '--saw', 'green');
+  const grouped = () => json(root, 'next', '--as', 'jarl', '--all').rows.filter((r) => r.ids).map((r) => r.ids);
+  const later = ['1 and 2 before issue 5 lands', '1, 2; #5 is next', '1, 2. Task 5 waits on them', '1, 2 (they hold up issue 5)', '1 & 2, then issues 5, 6.3.0'];
+  for (const [n, tail] of later.entries()) {
+    jarl(root, 'ask', `start a fresh session to review issues ${tail}`);
+    assert.deepEqual(grouped(), [['5']], tail);
+    jarl(root, 'answer', String(n + 1), 'done');
+  }
+});
+
 test('a question about one issue reads "issue", and a question whose issues all have a verdict holds nothing', () => {
   const root = loop();
   jarl(root, 'new', 'only change', '--files', 'a.mjs');

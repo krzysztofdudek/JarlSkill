@@ -9,13 +9,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - Every part of an issue's description can now be corrected, including its tier, its kind and who found it, and the record keeps who changed it and what it said before. What happened to an issue, such as its test results, reviews and merges, is never edited, only taken back or replaced.
-- You can ask Jarl what is waiting on one person: the owner's open questions, or the next step of every task for whoever runs the loop, each with the command that takes it. The status and the resume of a loop can end with that list.
+- You can ask Jarl what is waiting on one person: the owner's open questions, or the next step of every task for whoever runs the loop, each with the command that takes it. The status and the resume of a loop can end with that list. Work on code that waits for a review shows as one line naming all the tasks, with the question that asks the owner to start a fresh session if no reviewer can be raised; once that question is asked, the work shows on the owner's list.
 - A ruling made by the jarl or a coordinator can now name the ruling it rests on, such as the owner's mandate. The name is shown with the ruling in the list of rulings and in the resume, and a name that is not a ruling in force is refused.
 - When the text of an open issue mentions another unfinished issue by number and nothing orders the two, filing or editing that text and checking the record now print a note naming both, so you can say which comes first. The note changes nothing and never stops anything.
 
 ### Changed
 
-- When work on code is waiting for a review, the list for whoever runs the loop shows it as one line naming all the tasks, with the question that asks the owner to start a fresh session if no reviewer can be raised. Once that question is asked, the work shows on the owner's list.
 - If you copy Jarl's record library into your own tool, copy the `scripts/lib/` folder too. It now sits next to `record.mjs` and `jarl-lib.mjs`, and the library does not work without it.
 - When a new issue is filed without a kind or a priority, Jarl says which one it took and names the option that sets it, as it already does for the tier.
 

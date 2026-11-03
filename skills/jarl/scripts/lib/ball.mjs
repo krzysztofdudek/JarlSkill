@@ -114,10 +114,17 @@ function awaitingReview(loop, profile) {
 // offers both. A proof that an open question of that wording names is the owner's: it leaves the jarl's list, and the
 // issues that wait on it wait on the owner. A question whose issues all have a verdict holds nothing.
 const REVIEW_ASK = 'start a fresh session to review';
-// The issues a question asks for a fresh review of, by key: the issues it cites by number (idsCited); none for any other
-// question.
+// The sentence a question opens with to ask for a review: the phrase, then "issue" or "issues" and the one list of numbers
+// that runs on from it, joined by a comma and a space, by and or or between spaces, or by an ampersand. The list ends
+// at the first thing that is not a join and a number, so a number later in the question is not asked about.
+const ASKED_NUMBER = '#?\\d+(?![\\w/-])(?![.,:]\\d)';
+const ASKED_JOIN = '(?:,\\s+(?:(?:and|or)\\s+)?|\\s+(?:and|or)\\s+|\\s*&\\s*)';
+const REVIEW_ASK_RE = new RegExp(`^${REVIEW_ASK} issues?\\s+${ASKED_NUMBER}(?:${ASKED_JOIN}${ASKED_NUMBER})*`, 'i');
+// The issues a question asks for a fresh review of, by key: the issues of that one list the loop holds (idsCited reads the
+// numbers of the sentence); none for any other question.
 function reviewAskKeys(loop, question) {
-  return question.toLowerCase().startsWith(REVIEW_ASK) ? idsCited(question, loop.byId).map(idKey) : [];
+  const m = REVIEW_ASK_RE.exec(question);
+  return m ? idsCited(m[0], loop.byId).map(idKey) : [];
 }
 // The proofs awaiting a fresh reviewer that an open question names: the ones the owner holds.
 function heldByOwner(loop, awaiting) {
