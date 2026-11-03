@@ -11,7 +11,7 @@ import { ASKS_FILE, DECISIONS_FILE, GOAL_FILE, LOG_FILE, goalLines, loadDecision
 import { loopEvents } from './log.mjs';
 import { parseIssue, sharedNumberText, sharedNumbers } from './issues.mjs';
 import { REPOS_DECLARED_IN, declaredNames, issueRepos, repoIdentity, repoValueKind, reposNamed, worktreesOf } from './repositories.mjs';
-import { headerReadNotes, readLoop, recordDisagreements } from './loop.mjs';
+import { headerReadNotes, readLoop, recordDisagreements, unorderedNamings, unorderedText } from './loop.mjs';
 import { attachmentFindings } from './attachments.mjs';
 import { hasLiveLoop } from './commands.mjs';
 import { issuesNaming, loadAsks } from './questions.mjs';
@@ -99,6 +99,7 @@ export function cmdVerify(root) {
   for (const d of recordDisagreements(loop)) if (d.field !== 'number') add('headers', '', d.field === 'header' ? d.line : shownText(d.line));
   for (const n of headerReadNotes(loop)) notes.push({ where: `issue ${n.id}`, what: n.line });
   repositoryChecks(root, loop, add, notes);
+  for (const n of unorderedNamings(loop.issues, profile)) notes.push({ where: `issue ${n.id}`, what: unorderedText(n) });
   for (const i of loop.issues) {
     const lease = fieldText(i.fields.worktree);
     if (i.id === null || !lease || !profile.is(i.status, 'holds-claim')) continue;
