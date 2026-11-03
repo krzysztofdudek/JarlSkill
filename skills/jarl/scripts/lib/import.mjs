@@ -10,10 +10,10 @@ import { DEFAULT_PROFILE, formatOffText, loadProfile } from './profile.mjs';
 import { appendLog } from './journal.mjs';
 import { PROPOSED, findIssue, loadIssues, sharedMark } from './issues.mjs';
 import { repoList, reposWhereLines } from './repositories.mjs';
-import { closedGateLine, disagreementText, gateLine } from './loop.mjs';
+import { closedGateLine, disagreementText, gateLine, needOneSlice } from './loop.mjs';
 import { checkLines, checkWaitingText, mergeCheckLines } from './metrics.mjs';
 import { cmdNew, cmdSource, needLiveLoop } from './commands.mjs';
-import { schedulerNote } from './evidence.mjs';
+import { leasedByText, schedulerNote } from './evidence.mjs';
 
 // ---- research findings into issues ----------------------------------------------------------------
 
@@ -174,6 +174,7 @@ export function cmdImport(root, file, flags) {
   // name is filed under the profile's default kind.
   const findings = profile.declared ? read.map((f) => (profile.kinds.includes(f.kind) && !profile.keptKind(f.kind) ? f : { ...f, kind: profile.kindDefault })) : read;
   if (flags.repo !== undefined) repoList(root, flags.repo);
+  if (flags.tags !== undefined) needOneSlice(splitList(flags.tags));
   let chosen = findings;
   if (flags.only !== undefined) {
     const only = splitList(flags.only);
@@ -258,10 +259,15 @@ function countsLine(o, profile) {
   const rest = profile.statuses.filter((st) => !profile.active(st)).map((st) => ` · ${st} ${countOf(o, st)}`).join('');
   // Under an external scheduler Jarl does not reckon readiness: each dispatchable status by its own count instead.
   const head = o.scheduler ? ready.map((st) => `${st} ${countOf(o, st)}`).join(' · ') : `${ready.length === 1 ? ready[0] : 'ready'} ${o.ready}`;
-  return `${head} · in flight ${o.inFlight}${o.waiting ? ` · waiting ${o.waiting}` : ''}${rest} · questions ${o.questions}${o.ratify ? ` · to ratify ${o.ratify}` : ''}${o.ciPending.length ? ` · merged, CI pending ${o.ciPending.length}` : ''}${o.ciRed.length ? ` · CI red ${o.ciRed.length}` : ''}`;
+  return `${head} · in flight ${o.inFlight}${o.waiting ? ` · waiting ${o.waiting}` : ''}${rest} · questions ${o.questions}${o.escalations ? ` · escalations ${o.escalations}` : ''}${o.ratify ? ` · to ratify ${o.ratify}` : ''}${o.ciPending.length ? ` · merged, CI pending ${o.ciPending.length}` : ''}${o.ciRed.length ? ` · CI red ${o.ciRed.length}` : ''}`;
 }
 const statusLabel = (st) => (st === 'in-progress' ? 'in flight' : st);
 
+// The coordinators and their slices, one line: who runs which slice and how many of its issues are in play.
+function slicesLine(slices) {
+  const inPlay = (s) => `(${s.inPlay ? `${s.inPlay} in play` : 'none in play'})`;
+  return `slices: ${slices.map((s) => (s.declared ? `${s.coordinator} runs ${s.tag} ${inPlay(s)}` : `${s.tag} has no coordinator on the goal's Coordinators line ${inPlay(s)}: its approve counts as fresh until the line names ${s.coordinator}`)).join(' · ')}`;
+}
 export function renderStatus(o, profile = DEFAULT_PROFILE) {
   const head = o.goal ? `goal: ${o.goal}\nopened ${o.opened || '?'} · last activity ${o.lastActivity || '?'}${o.archived ? ` · ${o.archived} archived loop(s)` : ''}${o.recordFormat ? ` · record format ${o.recordFormat.format}` : ''}${profile.declared ? ` · profile ${profile.name}` : ''}\n` : '';
   const line = countsLine(o, profile);
@@ -269,6 +275,8 @@ export function renderStatus(o, profile = DEFAULT_PROFILE) {
   const by = o.by ? [`by ${o.by.key}:`, ...Object.entries(o.by.groups).map(([k, g]) => `  ${k.padEnd(width)}  ${profile.statuses.map((st) => `${statusLabel(st)} ${g[st]}`).join(' · ')}`)] : [];
   const more = [
     ...(o.tag !== undefined ? [`scoped to the issues tagged ${o.tag} — the counts above and the lists below are theirs only`] : []),
+    ...(o.slice !== undefined ? [`scoped to the slice of ${o.slice}, the issues tagged slice:${o.slice}, and the escalations that name it — the counts above and the lists below are theirs only`] : []),
+    ...(o.slices ? [slicesLine(o.slices)] : []),
     ...(o.disagreements || []).map(disagreementText),
     ...(o.headerRead || []).map((n) => `note: ${n.line}`),
     ...(o.check ? checkLines(o.check) : []),
@@ -287,7 +295,7 @@ export function renderStatus(o, profile = DEFAULT_PROFILE) {
     ...(o.waiting ? [`waiting (After not settled): ${o.waitingIds.join(', ')}`] : []),
     ...(o.noAcceptance.length ? [`in flight with no acceptance line: ${o.noAcceptance.join(', ')}`] : []),
     ...(o.closedGate || []).map(closedGateLine),
-    ...(o.inFlightRows || []).map((x) => `in flight ${x.id} · ${x.next}`),
+    ...(o.inFlightRows || []).map((x) => `in flight ${x.id}${leasedByText(x) ? ` · ${leasedByText(x)}` : ''} · ${x.next}`),
   ];
   return `${head}${line}${more.length ? `\n${more.join('\n')}` : ''}`;
 }

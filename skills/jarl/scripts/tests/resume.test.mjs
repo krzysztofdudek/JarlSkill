@@ -96,7 +96,7 @@ test('resume assembles every section live from the loop and the repositories its
 
   // JSON: the same sections as data.
   const o = JSON.parse(run(hub, ['resume', '--json'], { JARL_GH: ghStub(parent) }).stdout);
-  assert.deepEqual(Object.keys(o), ['goal', 'opened', 'lastActivity', 'archived', 'status', 'rulings', 'inFlight', 'waiting', 'questions', 'ratify', 'held', 'kept', 'next', 'readyTotal', 'queue', 'merged', 'tips', 'uncommitted', 'log', 'legacyHandoff']);
+  assert.deepEqual(Object.keys(o), ['goal', 'opened', 'lastActivity', 'archived', 'status', 'rulings', 'inFlight', 'waiting', 'questions', 'escalations', 'ratify', 'held', 'kept', 'next', 'readyTotal', 'queue', 'merged', 'tips', 'uncommitted', 'log', 'legacyHandoff']);
   assert.deepEqual(o.inFlight[0], { id: '1', title: 'in flight one', branch: 'jarl/1-one', worker: 'w1', model: null, since: o.inFlight[0].since, stale: [], mark: 'no-rows' });
   assert.deepEqual(o.merged.map((m) => [m.id, m.ci]), [['6', 'pending'], ['7', 'red']]);
   assert.equal(o.tips.ci, false);

@@ -15,7 +15,7 @@ import { JARL_GITIGNORE, JARL_GITIGNORE_COMMITTED, ensureLoopMerge, outOfGit } f
 import { HANDOVER_SEGMENT, journalById, mergeCheckText } from './log.mjs';
 import { FIELD_RE, RENDERED_FIELDS, acceptanceHeading, acceptanceLineCount, acceptanceText, bodyText, changelogText, evidenceNotes, evidenceParts, evidenceRows, evidenceTable, fieldValue, findIssue, issueNamed, loadIssues, mergedOf, namedPairs, needNoFieldTags, noteText, parseIssue, placeEvidence, removeFields, removeFirstField, renderIssue, setField, setSection, unattributedRefusal } from './issues.mjs';
 import { branchTip, commitRepoNames, defaultBase, fileKeysOf, isGitRepo, issueRepoPaths, issueRepos, mainCheckoutOf, needFormat, needRightCheckouts, repoFromInput, repoLabel, repoList, tipLines, whyNotDeletable, worktreeState, worktreesOf } from './repositories.mjs';
-import { FIELD_NAMES, carriesCode, gateOf, readLoop, unorderedNamings, unorderedText } from './loop.mjs';
+import { FIELD_NAMES, activeSlices, carriesCode, gateOf, isSliceTag, needOneSlice, readLoop, unorderedNamings, unorderedText } from './loop.mjs';
 import { declaredChecks, lastMerge } from './metrics.mjs';
 import { modelLines, modelValue, spellingNote } from './models.mjs';
 import { slotRefusal } from './attachments.mjs';
@@ -214,6 +214,7 @@ export function cmdNew(root, title, rawFlags) {
   const tier = String(flags.tier || profile.tierDefault);
   need(profile.tiers.includes(tier), `--tier must be one of: ${profile.tiers.join(', ')} — the tier of model the worker is raised on, mapped to a model by the platform running the loop`);
   const picked = flags.repo !== undefined ? repoList(root, flags.repo) : [];
+  needOneSlice(splitList(flags.tags));
   const source = sourceList(flags.source);
   const after = flags.after !== undefined ? afterList(root, null, flags.after) : [];
   // A line only the owner ticks names its material and what to check; its first write raises the record format.
@@ -764,6 +765,15 @@ function needLeaseHolds(root, profile, issues, status, why, flags, handover, not
     }
   }
   if (composed) return;
+  // With more than one slice in play, a lease holds only what its issue declares, so one that declares nothing would
+  // collide with another slice's work unseen: it is refused until the issue declares its files or its resources.
+  const slices = activeSlices(readLoop(jarlDir(root)));
+  if (slices.length > 1) {
+    for (const issue of issues) {
+      if ((leased(issue) && !handover) || issue.files.length || issue.resources.length) continue;
+      need(false, `${issue.id} declares no Files or Resources, and ${slices.length} slices are in play (${slices.map((x) => x.tag).join(', ')}): across slices only leases hold, and a lease holds only what its issue declares — declare them first: jarl.mjs files ${issue.id} <path>,… or jarl.mjs field ${issue.id} Resources "<name>, …"${nothing}`);
+    }
+  }
   // What the other leases hold: each file key and each resource, with the issue whose lease holds it.
   const others = loadIssues(root).filter((i) => !taken.has(i.id) && profile.is(i.status, 'holds-claim'));
   // The first holder of each, in the order of the record, so a refusal names the same issue every time.
@@ -1326,7 +1336,9 @@ export function cmdTag(root, rawIds, ops, by = undefined) {
   for (const op of ops) need(/^[+-]./.test(op), `tags are +name or -name, not "${op}"`);
   const results = issues.map((issue) => {
     const tags = new Set(issue.tags);
-    for (const op of ops) { if (op.startsWith('+')) tags.add(op.slice(1)); else tags.delete(op.slice(1)); }
+    // A slice tag is removed in any case: -slice:odin takes slice:Odin off too, as the two name one slice.
+    const sameTag = (t, name) => t === name || (isSliceTag(name) && t.toLowerCase() === name.toLowerCase());
+    for (const op of ops) { if (op.startsWith('+')) tags.add(op.slice(1)); else for (const t of [...tags]) if (sameTag(t, op.slice(1))) tags.delete(t); }
     return { issue, tags: [...tags].sort() };
   });
   return writeTags(root, rawIds, results, editor, (r) => ({ id: r.issue.id, tags: r.tags }));
@@ -1339,6 +1351,7 @@ function cmdTagList(root, rawIds, value, by) {
   return writeTags(root, rawIds, results, editor, (r) => ({ id: r.issue.id, tags: r.tags }));
 }
 function writeTags(root, rawIds, results, by, out) {
+  for (const r of results) needOneSlice(r.tags, { id: r.issue.id, held: r.issue.tags });
   logChanges(root, results.map((r) => fieldLine(r.issue.id, 'Tags', r.tags.join(', '), heldField(r.issue, 'Tags'), by)));
   for (const r of results) writeAtomic(r.issue.file, setField(readText(r.issue.file), 'Tags', r.tags.join(', ')));
   return oneOrMany(rawIds, results.map(out));

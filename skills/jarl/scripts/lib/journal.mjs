@@ -41,7 +41,19 @@ export function writeWhole(path, text) {
 // Several lines in one write: a bulk command's lines land together or not at all. A command that writes the same
 // moment into a header field takes the stamp once and passes it as `at`, so the two cannot fall in two minutes.
 export function appendLogLines(root, events, at = stamp()) {
-  appendAtomic(logPath(jarlDir(root)), '# Log\n\n', events.map((e) => `- ${at} · ${oneLine(e)}\n`).join(''));
+  const w = callWriter;
+  if (w && !w.raised) { w.raise(root); w.raised = true; }
+  appendAtomic(logPath(jarlDir(root)), '# Log\n\n', events.map((e) => `- ${at}${w ? ` by ${w.name}` : ''} · ${oneLine(e)}\n`).join(''));
+}
+// The writer one call names (its --by), for every line the call writes: withWriter sets it for the length of `fn` and
+// puts back what was there, so nothing outlives the call and a server that runs call after call keeps no name of its own.
+// `raise` runs once, before the first line, under the call's lock: it raises the record to the format that holds a
+// writer. A call that names nobody writes its lines with no writer.
+let callWriter = null;
+export function withWriter(name, raise, fn) {
+  const was = callWriter;
+  callWriter = name ? { name, raise, raised: false } : null;
+  try { return fn(); } finally { callWriter = was; }
 }
 
 // The log is one event per line: a text with line breaks never reaches it raw. A command that keeps the whole text
@@ -184,7 +196,8 @@ function readGoal(dir) {
 //   coordinators   the names written on Coordinators lines
 //   takeovers      { bare: the rounds of the bare line or null, kinds: { <kind in lower case>: its rounds } }; the last line
 //                  written for a kind or for the bare line stands
-const GOAL_LINE = /^\s*(?:[-*]\s+)?(?:\*\*)?(coordinators|check|model|takeover)(?:\s*\(([^)]+)\))?:(?:\*\*)?\s*(.+)$/i;
+const GOAL_LINE = /^\s*(?:[-*]\s+)?(?:\*\*)?(coordinators|merger|check|model|takeover)(?:\s*\(([^)]+)\))?:(?:\*\*)?\s*(.+)$/i;
+const MERGER_REASON = 'a Merger line names one holder, the jarl or one coordinator of the Coordinators line: it is "Merger: <name>"';
 // The red rounds after which an issue takes over are a whole number from 1 to this.
 const TAKEOVER_MAX = 99;
 const takeoverRounds = (value) => (/^\d+$/.test(value.trim()) && Number(value) >= 1 && Number(value) <= TAKEOVER_MAX ? Number(value) : null);
@@ -193,7 +206,7 @@ const TAKEOVER_REASON = `a Takeover line is "Takeover: <rounds>" or "Takeover (<
 // Check with no command, a Model with no tier or no model, a Coordinators line with a tier, a Takeover line whose
 // value is not a whole number of rounds.
 export function goalLines(text, skipped) {
-  const out = { goal: null, checks: [], checksByRepo: { bare: [], repos: {} }, models: [], coordinators: [], takeovers: { bare: null, kinds: {} } };
+  const out = { goal: null, checks: [], checksByRepo: { bare: [], repos: {} }, models: [], coordinators: [], merger: null, takeovers: { bare: null, kinds: {} } };
   if (text == null) return out;
   const lines = text.split('\n');
   out.goal = lines.slice(2).find((l) => l.trim()) || '';
@@ -206,6 +219,9 @@ export function goalLines(text, skipped) {
     const skip = (reason) => { if (skipped) skipped.push({ n: i + 1, text: line, reason }); };
     if (key === 'coordinators' && !m[2]) out.coordinators.push(...value.split(',').map((n) => fieldText(n)).filter(Boolean));
     else if (key === 'coordinators') skip('a Coordinators line takes no tier: it is "Coordinators: <name>[, <name>…]"');
+    // The one holder that raises the merger, one merge at a time across every slice: the jarl or one coordinator.
+    else if (key === 'merger' && !m[2] && !value.includes(',') && fieldText(value)) out.merger = fieldText(value);
+    else if (key === 'merger') skip(MERGER_REASON);
     else if (key === 'model' && m[2]) {
       const models = value.split(',').map((s) => fieldText(s).replace(/^`(.*)`$/, '$1')).filter(Boolean);
       if (models.length) out.models.push({ tier: qualifier, models });
@@ -228,7 +244,7 @@ export function goalLines(text, skipped) {
 
 // The machine lines the command line writes into the goal, and the words that label them. A line is read by GOAL_LINE, the
 // grammar goalLines reads, and written with the label the grammar takes.
-const MACHINE_LABEL = { check: 'Check', model: 'Model', coordinators: 'Coordinators', takeover: 'Takeover' };
+const MACHINE_LABEL = { check: 'Check', model: 'Model', coordinators: 'Coordinators', merger: 'Merger', takeover: 'Takeover' };
 // The machine line a text is, as { key, qualifier, value } (key lower case; qualifier as written, or null), or null.
 export function goalLineOf(text) {
   const m = GOAL_LINE.exec(String(text ?? ''));
@@ -280,7 +296,7 @@ export function cmdGoalSet(root, text) {
   need(old !== null, 'the loop has no goal: open it with init "<goal>"');
   need(!oneBreak(text).includes('\n'), 'goal --set takes one machine line: a line break in its value is refused');
   const line = goalLineOf(text);
-  need(line && line.value && MACHINE_LABEL[line.key], 'goal --set takes one machine line: "Check (<repository>): <command>" or "Check: <command>", "Model (<tier>): <model>, …", "Coordinators: <name>, …", "Takeover (<kind>): <rounds>" or "Takeover: <rounds>"');
+  need(line && line.value && MACHINE_LABEL[line.key], 'goal --set takes one machine line: "Check (<repository>): <command>" or "Check: <command>", "Model (<tier>): <model>, …", "Coordinators: <name>, …", "Merger: <name>", "Takeover (<kind>): <rounds>" or "Takeover: <rounds>"');
   let qualifier = line.qualifier;
   if (line.key === 'model') {
     need(qualifier !== null, 'a Model line names its tier: "Model (<tier>): <model>, …"');
@@ -289,6 +305,7 @@ export function cmdGoalSet(root, text) {
     need(qualifier !== null, `the profile declares no tier ${line.qualifier}: its tiers are ${loadProfile(root).tiers.join(', ')}`);
   }
   need(line.key !== 'coordinators' || qualifier === null, 'a Coordinators line takes no qualifier: "Coordinators: <name>, …"');
+  need(line.key !== 'merger' || (qualifier === null && !line.value.includes(',')), MERGER_REASON);
   if (line.key === 'takeover' && qualifier !== null) {
     const kinds = loadProfile(root).kinds;
     qualifier = kinds.find((k) => k.toLowerCase() === qualifier.toLowerCase()) ?? null;
@@ -306,7 +323,7 @@ export function cmdGoalSet(root, text) {
 }
 
 // A ratify item the close's batch filed names the area ruling it asks about: `· ruling <slug>`.
-const ASK_RE = idRe('^- \\*\\*a-({id})\\*\\* \\((open|answered)\\)(?: · (stop|stuck|lower|charter|ratify))?(?: · target (\\S+))?(?: · issue ({id}))?(?: · ruling ([A-Za-z0-9][A-Za-z0-9._-]{0,79}))? · (.*)$');
+const ASK_RE = idRe('^- \\*\\*a-({id})\\*\\* \\((open|answered)\\)(?: · (stop|stuck|lower|charter|ratify|escalation))?(?: · target (\\S+))?(?: · issue ({id}))?(?: · slice ([^\\s·]+))?(?: · ruling ([A-Za-z0-9][A-Za-z0-9._-]{0,79}))? · (.*)$');
 
 // An option of a question is its own line after the question: `- **a-<n>** option · <label> · <effect>`. Its label and effect
 // pass noSeparators, so the line splits on its separators alone. A question's indented lines never start with `- **a-`.
@@ -328,7 +345,7 @@ function asksAt(dir, skipped) {
   readText(path).split('\n').forEach((line, i) => {
     const skip = (reason) => { if (skipped) skipped.push({ n: i + 1, text: line, reason }); };
     const m = ASK_RE.exec(line);
-    if (m) { last = { id: m[1], state: m[2], kind: m[3] || null, target: m[4] || null, issue: m[5] ? writtenId(m[5], forms) : null, ...(m[6] ? { ruling: m[6] } : {}), question: m[7] }; out.push(last); return; }
+    if (m) { last = { id: m[1], state: m[2], kind: m[3] || null, target: m[4] || null, issue: m[5] ? writtenId(m[5], forms) : null, ...(m[6] ? { slice: m[6] } : {}), ...(m[7] ? { ruling: m[7] } : {}), question: m[8] }; out.push(last); return; }
     const o = ASK_OPTION_RE.exec(line);
     if (o) { const key = idKey(o[1]); options.set(key, [...(options.get(key) || []), { label: o[2], effect: o[3] }]); optionLines.push({ key, line: i + 1, text: line }); last = null; return; }
     if (last && line.startsWith('  ')) { last.question += `\n${line.slice(2)}`; return; }
