@@ -365,9 +365,13 @@ test('resume lists the open promises and waits on their own, with who holds each
   assert.deepEqual(o.held.map((h) => h.id), ['2']);
   assert.deepEqual(o.kept, [
     { id: '3', title: 'run the bench again', priority: '2', kind: 'promise', by: 'Ada' },
-    { id: '4', title: 'the licence key', priority: '2', kind: 'wait', person: 'Dana Smith', checkWhen: '2026-11-10' },
+    { id: '4', title: 'the licence key', priority: '2', kind: 'wait', person: 'Dana Smith', checkWhen: '2026-11-10', came: false },
   ]);
   assert.equal(o.held.length + o.kept.length + o.readyTotal, o.status.ready, 'ready, held and kept together are the open issues not waiting');
+  // With its proof recorded, the wait is shown as come: the jarl reviews and closes it.
+  jarl(root, 'evidence', '4', '--ran', 'asked Dana for the key', '--saw', 'the key arrived');
+  assert.match(jarl(root, 'resume'), /^- 4  P2  the licence key \(came from Dana Smith, proof recorded; the jarl reviews and closes it\)$/m);
+  assert.equal(json(root, 'resume').kept.find((k) => k.id === '4').came, true);
 });
 
 // A profile as a loop opened before Jarl kept promises and waits may hold it: a field Person of its own and a kind wait of its own.

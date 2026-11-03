@@ -14,7 +14,7 @@ import { cmdTips, renderTips } from './tips.mjs';
 import { reasonWord, waitingOn } from './commands.mjs';
 import { handoffAge, handoffPath } from './questions.mjs';
 import { answeredLines } from './journal.mjs';
-import { IN_FLIGHT_MARKS, closedGateFlags, modelText, nextRows, schedulerNote, statusOf, uncommittedLoopFiles } from './evidence.mjs';
+import { IN_FLIGHT_MARKS, closedGateFlags, inFlightMark, modelText, nextRows, schedulerNote, statusOf, uncommittedLoopFiles } from './evidence.mjs';
 import { cmdQueue, renderQueue } from './queue.mjs';
 import { countsLine } from './import.mjs';
 
@@ -72,8 +72,9 @@ export function cmdResume(root, flags = {}) {
   // Open, not waiting on After, and still not offered: a file it declares is taken by work in flight (or by a ready
   // issue ahead of it), or an open question names it. Ready, held and kept together are the open count on the status line.
   const held = next.filter((r) => !r.ready && !r.after.length && !KEPT_KINDS.includes(r.group)).map((r) => ({ id: r.id, title: r.title, priority: r.priority, files: r.waitsOn, heldBy: r.heldBy || [], ...(r.questions ? { questions: r.questions } : {}), ...(r.resources ? { resources: r.resources } : {}) }));
-  // Open promises and waits, never offered: each with who holds it (a promise its maker, a wait its person and when to check).
-  const keptRows = next.filter((r) => KEPT_KINDS.includes(r.group)).map((r) => ({ id: r.id, title: r.title, priority: r.priority, kind: r.group, ...(r.group === 'promise' ? { by: r.by } : { person: r.person, checkWhen: r.checkWhen }) }));
+  // Open promises and waits, never offered: each with who holds it (a promise its maker, a wait its person and when to check,
+  // until its proof records that what was waited for came, and the jarl reviews and closes it).
+  const keptRows = next.filter((r) => KEPT_KINDS.includes(r.group)).map((r) => ({ id: r.id, title: r.title, priority: r.priority, kind: r.group, ...(r.group === 'promise' ? { by: r.by } : { person: r.person, checkWhen: r.checkWhen, came: inFlightMark(loop, byId.get(r.id)) !== 'no-rows' }) }));
   const merged = issues.filter((i) => status.ciPending.includes(i.id) || status.ciRed.includes(i.id)).map((i) => ({ id: i.id, title: i.title, ...mergedOf(i) }));
   const logLines = loop.events;
   const kept = handoffAge(root, status.lastActivity);
@@ -121,7 +122,7 @@ export function renderResume(o, profile = DEFAULT_PROFILE, note = null) {
     ...sec(`Questions to the owner (${o.questions.length})`, o.questions.map((a) => `- a-${a.id} (${a.kind || 'stuck'})${a.issue ? ` issue ${a.issue}` : ''} · ${a.question}`), '- (nothing)'),
     ...sec(`To ratify (${o.ratify.length})`, o.ratify.map((a) => `- a-${a.id}${a.issue ? ` (issue ${a.issue})` : ''} · ${a.question}`)),
     ...sec(`Held — files in flight (${o.held.length})`, o.held.map((x) => `- ${x.id}  P${x.priority}  ${short(x.title)} (${x.questions ? `open question ${x.questions.map((q) => `a-${q}`).join(', ')}` : `${[...x.files, ...(x.resources || []).map((n) => `resource ${n}`)].join(', ')} held by ${x.heldBy.join(', ')}`})`)),
-    ...sec(`Promises and waits (${o.kept.length})`, o.kept.map((x) => `- ${x.id}  P${x.priority}  ${short(x.title)} (${x.kind === 'promise' ? `promised by ${x.by || 'nobody named'}` : `waits on ${x.person || 'nobody named'}, check when ${x.checkWhen || 'not said'}`})`)),
+    ...sec(`Promises and waits (${o.kept.length})`, o.kept.map((x) => `- ${x.id}  P${x.priority}  ${short(x.title)} (${x.kind === 'promise' ? `promised by ${x.by || 'nobody named'}` : x.came ? `came from ${x.person || 'nobody named'}, proof recorded; the jarl reviews and closes it` : `waits on ${x.person || 'nobody named'}, check when ${x.checkWhen || 'not said'}`})`)),
     ...(o.scheduler ? sec('Next ready and merge queue', [`- ${schedulerNote(o.scheduler)}`]) : [
       ...sec(`Next ready (${o.next.length} of ${o.readyTotal})`, o.next.map((r) => `- ${r.id}  P${r.priority}  ${short(r.title)}${shownFields(r)}${r.noAcceptance ? '  (no acceptance yet)' : ''}${modelText(r.model)}`), '- (nothing ready)'),
       ...sec('Merge queue', queue, '- (nothing approved waits to be merged)'),

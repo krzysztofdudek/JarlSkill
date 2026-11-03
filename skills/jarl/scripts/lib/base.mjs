@@ -6,8 +6,8 @@ export const STATUSES = ['open', 'in-progress', 'done', 'dropped', 'deferred'];
 export const KINDS = ['bug', 'gap', 'cleanup', 'docs', 'test', 'research', 'process', 'promise', 'wait'];
 // The two kinds that are not work to raise a worker on but something the loop keeps track of until the issue closes: a
 // promise, held by whoever made it (the one its Found by names), and a wait, held by the outside person its Person field
-// names until what was waited for comes, with when to check in its Check when field. A profile that lists either name
-// among its kinds gives it this meaning too.
+// names until what was waited for comes, with when to check in its Check when field. They hold in a loop whose profile
+// declares no kinds of its own and no field Person or Check when (see makeProfile); elsewhere they are off.
 export const PROMISE_KIND = 'promise';
 export const WAIT_KIND = 'wait';
 export const KEPT_KINDS = [PROMISE_KIND, WAIT_KIND];
