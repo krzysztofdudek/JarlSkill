@@ -3,7 +3,7 @@
 
 import { fieldText, need } from './base.mjs';
 import { jarlDir } from './where.mjs';
-import { cmpId, idKey } from './ids.mjs';
+import { cmpId, idKey, idsCited } from './ids.mjs';
 import { mergedOf } from './issues.mjs';
 import { carriesCode, gateOf, readLoop } from './loop.mjs';
 import { reasonWord, shellWord, waitingOn } from './commands.mjs';
@@ -114,18 +114,14 @@ function awaitingReview(loop, profile) {
 // offers both. A proof that an open question of that wording names is the owner's: it leaves the jarl's list, and the
 // issues that wait on it wait on the owner. A question whose issues all have a verdict holds nothing.
 const REVIEW_ASK = 'start a fresh session to review';
-// The issues a question cites: the numbers right after "issue" or "issues", joined by ", ", " and " or " & ". A number
-// followed by a dot and a digit (a version) is no issue number.
-const NUMBER = '\\d+(?!\\.\\d)';
-const REVIEW_ASK_RE = new RegExp(`^${REVIEW_ASK} issues? (${NUMBER}(?:(?:, | and | & )${NUMBER})*)`, 'i');
-// The issues a question asks for a fresh review of, by the key of each number; none for any other question.
-function reviewAskKeys(question) {
-  const m = REVIEW_ASK_RE.exec(question);
-  return m ? m[1].match(/\d+/g).map(idKey) : [];
+// The issues a question asks for a fresh review of, by key: the issues it cites by number (idsCited); none for any other
+// question.
+function reviewAskKeys(loop, question) {
+  return question.toLowerCase().startsWith(REVIEW_ASK) ? idsCited(question, loop.byId).map(idKey) : [];
 }
 // The proofs awaiting a fresh reviewer that an open question names: the ones the owner holds.
 function heldByOwner(loop, awaiting) {
-  const asked = new Set(loop.asks.filter((a) => a.state === 'open').flatMap((a) => reviewAskKeys(a.question)));
+  const asked = new Set(loop.asks.filter((a) => a.state === 'open').flatMap((a) => reviewAskKeys(loop, a.question)));
   return awaiting.filter((i) => asked.has(idKey(i.id))).map((i) => i.id);
 }
 const joinIds = (issues) => issues.map((i) => i.id).join(', ');
@@ -149,7 +145,7 @@ function questionRows(ctx) {
     const ref = `a-${a.id}`;
     if (a.kind === 'ratify') return { what: 'ratify', ask: a.id, title: a.question, holder: OWNER_HOLDER, says: `to ratify${a.issue ? ` (issue ${a.issue})` : ''}`, command: `jarl.mjs answer ${ref} "yes" --by owner (or "reject")` };
     // A question that asks for a fresh review holds the proofs it names, as far as they still await one.
-    const keys = new Set(reviewAskKeys(a.question));
+    const keys = new Set(reviewAskKeys(ctx.loop, a.question));
     const reviewing = ctx.loop.issues.filter((i) => ctx.onOwner.has(i.id) && keys.has(idKey(i.id))).map((i) => i.id);
     return { what: 'question', ask: a.id, kind: a.kind || 'stuck', title: a.question, holder: OWNER_HOLDER, ...(reviewing.length ? { reviewing } : {}),
       says: `question (${a.kind || 'stuck'})${a.issue ? ` on issue ${a.issue}` : ''}${reviewing.length ? `, the fresh review of ${reviewing.join(', ')} waits on it` : keys.size ? ', no issue it names awaits a review now' : ''}`, command: `jarl.mjs answer ${ref} "<answer>"` };
