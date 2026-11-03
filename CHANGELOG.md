@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - When the text of an open issue mentions another unfinished issue by number and nothing orders the two, filing or editing that text and checking the record now print a note naming both, so you can say which comes first. The note changes nothing and never stops anything.
 - A task can be handed to a new worker on purpose, with the reason it changed hands, and the record keeps that reason. The old worker's branch and folder are then no longer reported as a problem.
 - A loop can now say after how many failed rounds a kind of task is handed to a fresh worker, with a line such as `Takeover (docs): 2` in its goal. A line `Takeover: 4` sets it for every other kind, and a loop that says nothing keeps three. A changed number counts from the next failed round, and the rounds are counted from the last handover. Each round line now ends with its place in that count, which older Jarl versions and Horde read as a plain round; rounds an older Jarl wrote count a handover every third.
+- A loop can now record a promise someone made, or something it waits for from a person outside the loop, and each stays on that person's list, a wait with when to check, until it is closed. Jarl never gives either to a worker.
 
 ### Changed
 

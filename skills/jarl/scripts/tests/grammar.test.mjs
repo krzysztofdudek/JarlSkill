@@ -114,7 +114,7 @@ test('field writes Resources and the fields a profile declares; set takes status
   assert.equal(field(root, '1', 'resources'), 'gate, db');
   assert.equal(field(root, '1', 'note'), 'see the thread');
   assert.match(refuses(root, 'field', '1', 'Area', 'web'), /Area must be one of: core, cli/);
-  assert.match(refuses(root, 'field', '1', 'Bogus', 'x'), /Bogus is not a field of the description, which field writes: Title, Priority, Tier, Kind, Found by, Tags, Files, Repo, After, Source, Where, Resources, Area, Note/);
+  assert.match(refuses(root, 'field', '1', 'Bogus', 'x'), /Bogus is not a field of the description, which field writes: Title, Priority, Tier, Kind, Found by, Tags, Files, Repo, After, Source, Where, Resources, Person, Check when, Area, Note/);
   assert.match(refuses(root, 'field', '1', 'open', 'x'), /open is not a field/);
   assert.match(refuses(root, 'field', '1', 'Note', 'x', '--worker', 'w'), /unknown flag --worker for field/);
   assert.match(refuses(root, 'set', '1', 'Note', 'x', '--worker', 'w'), /--worker goes with a status, not with the field Note/);

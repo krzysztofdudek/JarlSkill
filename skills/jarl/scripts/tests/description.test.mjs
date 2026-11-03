@@ -130,7 +130,7 @@ test('body logs each part it replaces by the first line and the length of what t
 
 test('a name field does not write is refused with the names it writes and the command that writes that one', () => {
   const root = profiledLoop();
-  const names = /Title, Priority, Tier, Kind, Found by, Tags, Files, Repo, After, Source, Where, Resources, Area, Note/;
+  const names = /Title, Priority, Tier, Kind, Found by, Tags, Files, Repo, After, Source, Where, Resources, Person, Check when, Area, Note/;
   for (const [name, why] of [['Status', /set <ids> <status>/], ['done', /set <ids> <status>/], ['Branch', /written by set <ids> in-progress/], ['Worker', /written by set/], ['Merged', /recorded by merged/], ['CI', /recorded by merged/], ['Evidence', /history is never edited: .*retract.*decide --supersedes/], ['What', /body <ids> --what/], ['Design', /body <ids> --section/], ['Bogus', /a section is written by body/]]) {
     const said = refuses(root, 'field', '1', name, 'x');
     assert.match(said, new RegExp(`${name} is not a field of the description, which field writes: `), name);

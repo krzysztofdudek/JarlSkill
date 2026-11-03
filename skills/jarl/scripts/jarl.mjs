@@ -41,6 +41,7 @@ commands:
   new "<title>" [--kind k] [--prio 1|2|3] [--tier light|standard|strong] [--tags a,b] [--files p,q] [--repo <name|path>] [--found-by who]
       [--where "<w>"] [--what "<w>"] [--why "<w>"] [--acceptance "<line>"]... [--changelog "<entry>"]...
       [--source <dir>#<id>,...] [--after <ids>] [--template <name>] [--field "<Name>=<value>"]... [--section "<Heading>=<text>"]...
+      [--person "<name>" --check-when "<when>"]
                                                  file an issue under the next free number; without --tier it records
                                                  standard and says so on stderr, with what each tier is for (light: a check
                                                  or test decides; strong: unknown cause, design, record format, security);
@@ -55,7 +56,13 @@ commands:
                                                  and Files are defaults and its What, Why, Acceptance and Changelog the body,
                                                  each replaced by the flag when given; --field and --section
                                                  (repeatable) write the fields and sections the loop's profile declares
-                                                 (a field's default when not given; a required one must be given)
+                                                 (a field's default when not given; a required one must be given);
+                                                 two kinds are kept, never worked by a worker, and next never offers them:
+                                                 --kind promise is a promise, kept by whoever its --found-by names (the
+                                                 jarl when none), and --kind wait a wait on an outside person, which needs
+                                                 --person (who it is held by, the name next --as answers to) and
+                                                 --check-when (a date, or the event to check after); either ends when its
+                                                 issue closes
   body <ids> [--title "<t>"] [--where "<w>"] [--what "<w>"] [--why "<w>"] [--acceptance "<line>"]... [--changelog "<entry>"]...
       [--section "<Heading>=<text>"]... [--by who]
                                                  the description commands, body to after below: every part of an issue's
@@ -72,7 +79,9 @@ commands:
                                                  Priority, Tier, Kind, Found by, Tags, Files, Repo, After, Source,
                                                  Where, Resources (the exclusive resources the issue holds while its
                                                  lease lasts, as "a, b", loop-wide names; next never offers two issues
-                                                 holding one) or a field the loop's profile declares, each checked as
+                                                 holding one), Person and Check when (whom a wait is held by and when to
+                                                 check it: Kind becomes wait only once both are written, and neither
+                                                 is emptied on a wait) or a field the loop's profile declares, each checked as
                                                  its own command checks it (Priority, Tier, Kind and a declared field
                                                  against their values); a list field (Tags, Files, Repo, After, Source)
                                                  is replaced whole; --clear empties an optional one, and Title,
@@ -170,14 +179,17 @@ commands:
                                                  After issue done or dropped, no open stuck or stop question on it; a file is
                                                  its repository and its path (see --repo below); one with no acceptance line
                                                  or no declared files is marked; --all adds the others in groups (held by a
-                                                 file and by whom, waiting on After, held by a question), --json rows carry a group;
+                                                 file and by whom, waiting on After, held by a question, the promises and
+                                                 the waits, which it never offers), --json rows carry a group;
                                                  --as <who> lists instead what is on the owner, the jarl, a coordinator or
                                                  a person by name now, each line with the command that moves it (it takes
                                                  no --limit): the owner holds the questions and the items to ratify; the
                                                  jarl the ready issues, the leases, a proof
                                                  with no verdict, changes asked, an approve not merged, and a ruling that
                                                  settles issues none of which is live (with no slice in the loop, a
-                                                 coordinator's lines are the jarl's); derived from the profile's status
+                                                 coordinator's lines are the jarl's); a promise is on whoever its Found by
+                                                 names, and a wait on its Person, with when to check, until what was
+                                                 waited for is recorded, then on the jarl; derived from the profile's status
                                                  flags, the verdicts, the questions and the rulings; at most seven lines,
                                                  the owner's first, then by how many issues each holds up, then how many
                                                  more; --all every line and the issues waiting on that one, "waits on X
@@ -441,7 +453,7 @@ export const COMMAND_FLAGS = {
   new: {
     kind: 'value', prio: 'value', tier: 'value', tags: 'many', files: 'many', repo: 'many', 'found-by': 'value',
     where: 'value', what: 'value', why: 'value', acceptance: 'many', source: 'many', after: 'many', changelog: 'many', template: 'value',
-    field: 'many', section: 'many',
+    field: 'many', section: 'many', person: 'value', 'check-when': 'value',
   },
   body: { title: 'value', where: 'value', what: 'value', why: 'value', acceptance: 'many', changelog: 'many', section: 'many', by: 'value' },
   import: {
@@ -553,7 +565,7 @@ export const COMMAND_ARGS = {
 // The rest of what a command takes and does is its block of USAGE, which the jarl_help tool and --help print.
 export const COMMAND_SUMMARY = {
   init: 'Open a loop: create .jarl/ with the goal, out of git by default, committed or permanent when asked.',
-  new: 'File an issue under the next free number, with its fields and its What, Why and Acceptance.',
+  new: 'File an issue under the next free number, with its fields and its What, Why and Acceptance; a promise (kind promise) or a wait on an outside person (kind wait, with person and check-when).',
   body: 'Set or replace the title, the Where field and the What, Why, Acceptance, Changelog and profile sections of issues, logging what each part held and who changed it when named.',
   import: 'File one issue per finding of a findings file, skipping findings already filed.',
   sources: 'Per findings report: its findings, the issues filed from them and their status.',
@@ -561,7 +573,7 @@ export const COMMAND_SUMMARY = {
   after: 'Set or clear the issues these wait on before next offers them.',
   evidence: 'Append a free-text note, or checkable rows of what ran and what it printed, to issues; or record a file as an attachment of a slot (--file, --slot).',
   retract: 'Take back the newest approve of an issue (what: review), one evidence row by its number (what: the number) or one evidence note (what: note-<n>), by an entry that says who and why.',
-  field: 'Write one header field of the description on issues (Title, Priority, Tier, Kind, Found by, Tags, Files, Repo, After, Source, Where, Resources or a profile field), or empty an optional one with clear, logging what it held and who changed it when named.',
+  field: 'Write one header field of the description on issues (Title, Priority, Tier, Kind, Found by, Tags, Files, Repo, After, Source, Where, Resources, Person, Check when or a profile field), or empty an optional one with clear, logging what it held and who changed it when named.',
   list: 'List the issues, the unfinished ones by default, filtered by status, kind, tag, priority or a field.',
   show: 'Print one issue as the done gate sees it (its current window, rows numbered), or the whole file with --full.',
   set: 'Change the status of issues, with the reason logged.',
@@ -570,7 +582,7 @@ export const COMMAND_SUMMARY = {
   prio: 'Set the priority of issues.',
   files: 'Declare the files issues touch.',
   repo: 'Name the repository (or several) the code of issues lives in, or clear it.',
-  next: 'The open issues ready to start: no file shared with work in progress, every After issue settled, no open question on them; all adds the held and waiting ones in groups; as lists what is on the owner, the jarl or a named person, each line with its command.',
+  next: 'The open issues ready to start: no file shared with work in progress, every After issue settled, no open question on them, never a promise or a wait; all adds the held and waiting ones in groups; as lists what is on the owner, the jarl or a named person (a promise on its maker, a wait on its person), each line with its command.',
   review: 'Record a reviewer\'s verdict (approve or changes) on issues, with the reviewer and the findings.',
   round: 'Record one red round on issues; every third (or the count the goal sets for the kind of issue) prints the takeover block for a fresh worker.',
   models: 'Per model as worker and as reviewer, per kind of issue: the counts, clean first passes and verdicts the record holds, with the words fits, below, new and may clear; reads other loops and archives too.',

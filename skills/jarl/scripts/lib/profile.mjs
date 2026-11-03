@@ -125,7 +125,7 @@ export const DONE_GATE_APPROVE = ['fresh', 'none'];
 export const DEFAULT_DONE_GATE = Object.freeze({ approve: 'fresh', 'requires-merged': false });
 // Header fields the tool itself writes and reads: a profile cannot declare them. Kind and Tier are built in too, but
 // a profile may declare them to replace their values (an enum, and a default).
-export const TOOL_FIELDS = ['Status', 'Priority', 'Tags', 'Files', 'Repo', 'After', 'Found by', 'Source', 'Where', 'Branch', 'Worker', 'Worktree', 'Since', 'Merged', 'Merge check', 'CI', 'Resources'];
+export const TOOL_FIELDS = ['Status', 'Priority', 'Tags', 'Files', 'Repo', 'After', 'Found by', 'Source', 'Where', 'Branch', 'Worker', 'Worktree', 'Since', 'Merged', 'Merge check', 'CI', 'Resources', 'Person', 'Check when'];
 export const BUILTIN_SECTIONS = ['What', 'Why', 'Acceptance', 'Changelog', 'Evidence'];
 export const PROFILE_FIELD_RE = /^[A-Za-z][A-Za-z0-9 -]{0,39}$/;
 export const PROFILE_STATUS_RE = /^[a-z][a-z0-9-]{0,39}$/;

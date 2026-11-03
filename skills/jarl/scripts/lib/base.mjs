@@ -3,7 +3,14 @@
 
 // The built-in statuses, kinds and tiers: what a loop with no profile uses (see "the profile" below).
 export const STATUSES = ['open', 'in-progress', 'done', 'dropped', 'deferred'];
-export const KINDS = ['bug', 'gap', 'cleanup', 'docs', 'test', 'research', 'process'];
+export const KINDS = ['bug', 'gap', 'cleanup', 'docs', 'test', 'research', 'process', 'promise', 'wait'];
+// The two kinds that are not work to raise a worker on but something the loop keeps track of until the issue closes: a
+// promise, held by whoever made it (the one its Found by names), and a wait, held by the outside person its Person field
+// names until what was waited for comes, with when to check in its Check when field. A profile that lists either name
+// among its kinds gives it this meaning too.
+export const PROMISE_KIND = 'promise';
+export const WAIT_KIND = 'wait';
+export const KEPT_KINDS = [PROMISE_KIND, WAIT_KIND];
 export const PRIORITIES = ['1', '2', '3'];
 // Weakest first: the order of the list is the order of strength, which is how a loop's model lines rank its models.
 export const TIERS = ['light', 'standard', 'strong'];

@@ -3,7 +3,7 @@
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, openSync, closeSync, writeSync, unlinkSync, linkSync } from 'node:fs';
 import { join, resolve, relative, isAbsolute } from 'node:path';
-import { CI_STATES, LEASE_FIELDS, PRIORITIES, TIERS, fieldText, need, noSeparators, slugify, splitList } from './base.mjs';
+import { CI_STATES, KEPT_KINDS, LEASE_FIELDS, PRIORITIES, TIERS, WAIT_KIND, fieldText, need, noSeparators, slugify, splitList } from './base.mjs';
 import { needNoNewOwnersWords, needNoOwnersWords } from './owner.mjs';
 import { git, gitRun } from './git.mjs';
 import { canonical, issuesDir, jarlDir, portablePath, stamp, today } from './where.mjs';
@@ -202,6 +202,10 @@ export function cmdNew(root, title, rawFlags) {
   const kind = flags.kind || profile.kindDefault;
   const kindDefaulted = !flags.kind;
   need(profile.kinds.includes(kind), `--kind must be one of: ${profile.kinds.join(', ')}`);
+  const person = flags.person !== undefined ? keptValue('Person', flags.person) : '';
+  const checkWhen = flags['check-when'] !== undefined ? keptValue('Check when', flags['check-when']) : '';
+  need(kind === WAIT_KIND || (!person && !checkWhen), `--${person ? 'person' : 'check-when'} goes with --kind wait: it names the outside person a wait is held by and when to check it`);
+  need(kind !== WAIT_KIND || (person && checkWhen), `a wait names the outside person it is held by and when to check it: jarl.mjs new "<title>" --kind wait --person "<name>" --check-when "<a date, or the event to check after>"`);
   const priority = String(flags.prio || '2');
   const priorityDefaulted = !flags.prio;
   need(PRIORITIES.includes(priority), '--prio must be 1, 2 or 3');
@@ -210,6 +214,9 @@ export function cmdNew(root, title, rawFlags) {
   const picked = flags.repo !== undefined ? repoList(root, flags.repo) : [];
   const source = sourceList(flags.source);
   const after = flags.after !== undefined ? afterList(root, null, flags.after) : [];
+  // A promise and a wait are kinds a reader of formats 1 and 2 does not know: the loop is raised first, or, where a composer
+  // keeps its format, the filing is refused with nothing written.
+  if (KEPT_KINDS.includes(kind)) needFormat(root, 'promise-wait');
   commitRepoNames(root, picked);
   // The number is claimed by creating the file with a link, which never overwrites: when another
   // writer got there first (the lock makes that rare, not impossible — a hand-made file, a stale
@@ -230,7 +237,7 @@ export function cmdNew(root, title, rawFlags) {
     const tmp = join(dir, `.${id}.${process.pid}.tmp`);
     const rendered = renderIssue({
       id, title, status: profile.initial, kind, priority, tier, fields, sections, acceptanceHeading: profile.acceptance || 'Acceptance',
-      tags: splitList(flags.tags), files: pathList(flags.files), repo: picked.map((p) => p.value).join(', '), foundBy: flags['found-by'] || 'jarl',
+      tags: splitList(flags.tags), files: pathList(flags.files), repo: picked.map((p) => p.value).join(', '), foundBy: flags['found-by'] || 'jarl', person, checkWhen,
       where: flags.where, what: bodyText(flags.what), why: bodyText(flags.why), source, after,
       // A template's Acceptance and Changelog are taken as written (a list already); a flag replaces them.
       acceptance: flags.acceptance !== undefined ? acceptanceText(flags.acceptance) : bodyText(fromTemplate.acceptance),
@@ -318,7 +325,16 @@ export function waitingOn(issue, byId, profile = DEFAULT_PROFILE) {
 // approve is taken back by retract, a ruling replaced by decide --supersedes, and the status moves only through set.
 
 // The header fields of the description, each written by field and by its own command.
-export const DESCRIPTION_FIELDS = ['Title', 'Priority', 'Tier', 'Kind', 'Found by', 'Tags', 'Files', 'Repo', 'After', 'Source', 'Where', 'Resources'];
+export const DESCRIPTION_FIELDS = ['Title', 'Priority', 'Tier', 'Kind', 'Found by', 'Tags', 'Files', 'Repo', 'After', 'Source', 'Where', 'Resources', 'Person', 'Check when'];
+// A wait's Person (the outside person it is held by, the name next --as answers to) and its Check when (a date, or the
+// event to check after): each one value on one line, without the log's separator.
+function keptValue(name, value) {
+  const v = fieldText(value);
+  need(typeof value === 'string' && v, `${name} needs a value: ${name === 'Person' ? 'the outside person a wait is held by' : 'when to check a wait, a date or the event to check after'}`);
+  need(!/[\r\n]/.test(String(value).trim()), `${name} is one line (got ${JSON.stringify(String(value))})`);
+  need(!v.includes('·'), `${name} is one value — not a phrase with "·" in it (got "${v}")`);
+  return v;
+}
 // The name a description change records as its author, or null when the call names nobody: a write nobody named is
 // logged with no author at all, never under a name nobody gave. A name is one name on one line, without the log's
 // separator, which would let it be read as more than one segment of the line.
@@ -544,6 +560,8 @@ export function cmdField(root, rawIds, name, value, flags = {}) {
     case 'after': return one(eachIssue(root, rawIds, (id, dry) => cmdAfter(root, id, value, { dry, by: flags.by })), 'After');
     case 'repo': return one(eachIssue(root, rawIds, (id, dry) => cmdRepo(root, id, value, { dry, by: flags.by })), 'Repo');
     case 'tags': return one(cmdTagList(root, rawIds, value, flags.by), 'Tags');
+    case 'person': return setKeptField(root, rawIds, 'Person', clear ? '' : value, flags);
+    case 'check when': return setKeptField(root, rawIds, 'Check when', clear ? '' : value, flags);
     default: return setDeclaredField(root, rawIds, builtInField(profile, key), clear ? '' : value, flags);
   }
 }
@@ -803,9 +821,27 @@ function setDeclaredField(root, rawIds, field, value, flags) {
   const v = fieldValue(profile, field, value);
   need(v || (!field.required && !field.builtin), `${field.name} cannot be empty${field.enum ? ` — one of: ${field.enum.join(', ')}` : ''}`);
   const issues = issuesFor(root, rawIds);
+  if (field.key === 'kind' && v === WAIT_KIND) {
+    for (const issue of issues) need(fieldText(issue.fields.person) && fieldText(issue.fields['check when']), `${issue.id} becomes a wait only with the outside person it is held by and when to check it — first jarl.mjs field ${issue.id} Person "<name>" and jarl.mjs field ${issue.id} "Check when" "<a date, or the event to check after>"`);
+  }
+  if (field.key === 'kind' && KEPT_KINDS.includes(v) && issues.some((issue) => issue.kind !== v)) needFormat(root, 'promise-wait');
   logChanges(root, issues.map((issue) => fieldLine(issue.id, field.name, v, heldField(issue, field.name), by)));
   for (const issue of issues) writeAtomic(issue.file, setField(readText(issue.file), field.name, v));
   return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, field: field.name, value: v })));
+}
+
+// field <ids> Person "<name>" | "Check when" "<when>": what a wait is held by and when to check it. Written on any issue,
+// so an issue can become a wait (its Kind is written last); never emptied on a wait, which they hold.
+function setKeptField(root, rawIds, name, value, flags) {
+  needNoLeaseFlags(flags, `the field ${name}`);
+  const by = editorOf(flags.by);
+  const v = value === '' ? '' : keptValue(name, value);
+  const issues = issuesFor(root, rawIds);
+  for (const issue of issues) need(v || issue.kind !== WAIT_KIND, `${issue.id} is a wait, held by its Person and checked when its Check when says: ${name} is never empty on it — give it another kind first (jarl.mjs field ${issue.id} Kind <kind>)`);
+  if (v) needFormat(root, 'promise-wait');
+  logChanges(root, issues.map((issue) => fieldLine(issue.id, name, v, heldField(issue, name), by)));
+  for (const issue of issues) writeAtomic(issue.file, v ? setField(readText(issue.file), name, v) : removeFields(readText(issue.file), [name]));
+  return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, field: name, value: v })));
 }
 
 // field <ids> <Files|Source|Where|Tags|After|Repo> --clear: the field is emptied (After and Repo as their own commands empty them).
