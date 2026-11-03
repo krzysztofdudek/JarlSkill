@@ -460,7 +460,7 @@ test('a tool field whose name does not give its meaning carries an example that 
     const call = JSON.parse(example);
     for (const k of Object.keys(call)) assert.ok(props[k], `${tool} ${field}: the example names ${k}, which ${tool} does not take`);
     assert.ok(field in call, `${tool} ${field}: the example gives ${field}`);
-    assert.equal(Array.isArray(call[field]) ? 'array' : typeof call[field], props[field].type, `${tool} ${field}: the example gives the type the field takes`);
+    assert.ok([].concat(props[field].type).includes(Array.isArray(call[field]) ? 'array' : typeof call[field]), `${tool} ${field}: the example gives a type the field takes`);
   }
   const pairs = JSON.parse(exampleOf(byName.jarl_evidence.inputSchema.properties.ran.description));
   assert.equal(pairs.ran.length, pairs.saw.length, 'the example pairs one saw with each ran');

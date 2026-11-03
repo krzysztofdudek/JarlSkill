@@ -78,9 +78,9 @@ A list field holds items, and every list field of every command and tool reads t
 - **An item that starts with `-`** is refused: it is a flag in the wrong place, and after a bare `--` it is where a `--root` written last lands. The refusal says that flags go before the `--`.
 - **A list written as text** is refused, so brackets and quotes never become part of an item: an item that begins or ends with a quote mark (`"a"`, `'a'`); a name (an issue or question id, a tag, a reference, a finding id) that holds a bracket or a quote mark anywhere (`[drift]`, `["drift"`); a path (an item of Files or Repo) whose brackets do not pair up, which is what a comma inside `[a, b]` leaves, or that is a quoted or empty list in brackets (`["a.mjs"]`, `[]`).
 - **A path whose brackets pair up is a name**, because nothing tells it apart from one: `[1]`, `src/[id]/page.tsx`, `[...slug]`, `app/[[...slug]]/page.tsx`.
-- `tag`'s `+name` follows the rule of a name; a `-name` takes off any tag as it is stored, so a tag written with brackets is removed by its stored text.
+- `tag` reads a comma list in each operation, one tag for each name: `+a,b` adds `a` and `b`, and `-a,b` takes both off. A `+name` follows the rule of a name. A `-name` matches the tag as it is stored, brackets and quotes included.
 
-On the tools, the `ids` and `id` fields are typed as one string, because they come before other arguments and the adapter takes such an argument as one word; their description says that a list of strings is taken too, and it is. Every other list field is typed as a list of strings, and takes one string as well.
+On the tools, the `ids` and `id` fields are declared as one string or a list of strings. They come before other arguments, which the adapter types as one string alone, so the tools add the list declaration themselves; a list is joined into the one comma list the command reads. Every other list field is typed as a list of strings, and takes one string as well.
 
 Every command takes `--json` and `--help`. A subagent does not always inherit `CLAUDE_PLUGIN_ROOT`, so
 a worker's brief carries the absolute path to the script as well as the tools. Run from a worktree of the repository whose main checkout holds the loop, the script finds the

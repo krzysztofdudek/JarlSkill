@@ -49,6 +49,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Recording a merge now warns when the branch got new commits after its review was approved. The warning names the reviewed commit and the merged one, and gives the commands that show the difference and record a new review. The merge is still recorded.
 - `resume` and `decisions` show an answered question with its answer first, then the question.
 - `models` counts a model written with dots and the same model written with dashes, such as `claude-opus-5.5` and `claude-opus-5-5`, as one model, and its row names both spellings. A review or a task that uses the other spelling gets a note naming the spelling the record holds.
+- A comma in a `tag` command separates tags: `+a,b` adds `a` and `b`, and `-a,b` removes both. Before, the command added one tag named `a,b`.
 
 ## [6.2.0] - 2026-10-19
 

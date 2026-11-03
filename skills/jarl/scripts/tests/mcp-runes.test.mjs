@@ -14,11 +14,24 @@ import * as mcp from '../jarl-mcp.mjs';
 const SERVER = fileURLToPath(new URL('../jarl-mcp.mjs', import.meta.url));
 const listed = await listToolsOverStdio({ command: process.execPath, args: [SERVER] });
 
+// The id-list fields also carry a list declaration (listArgsOf in jarl-mcp.mjs). The table types each of them as one text,
+// and the adapter's parity checks that reading; list-fields.test.mjs checks the declaration.
+const asTable = (tool) => {
+  const cmd = Object.keys(mcp.TABLE.commands).find((c) => mcp.toolName(c) === tool.name);
+  const properties = Object.fromEntries(Object.entries(tool.inputSchema.properties).map(([field, schema]) => {
+    if (cmd === undefined || !mcp.listArgsOf(cmd).includes(field)) return [field, schema];
+    const { items: _items, ...rest } = schema;
+    return [field, { ...rest, type: 'string' }];
+  }));
+  return { ...tool, inputSchema: { ...tool.inputSchema, properties } };
+};
+const tableTools = listed.map(asTable);
+
 // A name a command answers to has a tool of its own, and the usage names only the command. The parity below holds the
 // commands and their tools; the tools that name a command under a second spelling are checked against that command apart.
 const ALIAS_TOOLS = Object.keys(COMMAND_ALIASES).map(mcp.toolName);
 const commandsOnly = { ...mcp.TABLE, commands: Object.fromEntries(Object.entries(mcp.TABLE.commands).filter(([name]) => !COMMAND_ALIASES[name])) };
-const commandTools = listed.filter((t) => !ALIAS_TOOLS.includes(t.name));
+const commandTools = tableTools.filter((t) => !ALIAS_TOOLS.includes(t.name));
 
 // The usage side checks that every command has its entry and no entry names a command the table lacks. Its flag check
 // is off: an entry's prose names other commands' flags (set's "--ran/--saw row", close's "init --permanent"), and
@@ -36,10 +49,10 @@ test('a name a command answers to has a tool of its own, with the same fields an
 });
 
 test('parity (Runes testkit): a tool that loses a field, or a command with no tool, is caught', () => {
-  const lost = listed.map((t) => (t.name === 'jarl_set' ? { ...t, inputSchema: { ...t.inputSchema, properties: { ...t.inputSchema.properties, worker: undefined } } } : t))
+  const lost = tableTools.map((t) => (t.name === 'jarl_set' ? { ...t, inputSchema: { ...t.inputSchema, properties: { ...t.inputSchema.properties, worker: undefined } } } : t))
     .map((t) => ({ ...t, inputSchema: { ...t.inputSchema, properties: Object.fromEntries(Object.entries(t.inputSchema.properties).filter(([, v]) => v)) } }));
   assert.match(parityProblems({ table: mcp.TABLE, tools: lost, toolOptions: mcp.TOOL_OPTIONS }).join('\n'), /tool jarl_set lacks "worker"/);
-  const fewer = listed.filter((t) => t.name !== 'jarl_tips');
+  const fewer = tableTools.filter((t) => t.name !== 'jarl_tips');
   assert.match(parityProblems({ table: mcp.TABLE, tools: fewer, toolOptions: mcp.TOOL_OPTIONS }).join('\n'), /command "tips" has no tool jarl_tips/);
 });
 
