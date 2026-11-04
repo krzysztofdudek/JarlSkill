@@ -80,7 +80,7 @@ To keep the loop in git instead, open it with `init "<goal>" --committed` (it tr
 
 ## What it does not do
 
-- It does not enforce architecture or hold a charter; that is [Yggdrasil](https://github.com/krzysztofdudek/Yggdrasil), the law beside this loop.
+- It does not enforce architecture; that is [Yggdrasil](https://github.com/krzysztofdudek/Yggdrasil), the law beside this loop.
 - It ships no machine gate of its own: where your repository has a check, name it with a `Check:` line in `goal.md` and the check decides what lands.
 - Without a `Check:` line the loop lands on the reviewers' testimony alone, and `status` and `report` say so at the top.
 - It records and displays; it never blocks code from landing.
