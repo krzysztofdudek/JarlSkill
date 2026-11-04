@@ -49,7 +49,7 @@ export function ciOf(repo, sha) {
   return { state, runs: runs.length, ...(pick ? { run: pick.databaseId ?? null, workflow: pick.workflowName ?? null, conclusion: pick.conclusion || pick.status || null } : {}) };
 }
 
-// The tips resume prints (--ci asks gh, --repo narrows them to one repository) — read-only: for the loop's own repository and every repository an open, in-progress or recently merged
+// The tips resume prints (--gh asks gh, --repo narrows them to one repository) — read-only: for the loop's own repository and every repository an open, in-progress or recently merged
 // issue names, the tip of each branch that matters there — the feature branches its in-progress issues record,
 // the branch its checkout is on (the release branch), and main — with ahead/behind against its upstream as last
 // fetched (nothing is fetched), and, when gh is on PATH, the CI of that exact commit. It never gates anything.

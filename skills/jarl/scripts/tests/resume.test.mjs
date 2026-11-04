@@ -78,15 +78,15 @@ test('resume assembles every section live from the loop and the repositories its
   assert.match(t, /## Next ready \(3 of 3\)\n- 4  P2  ready three  \(no acceptance yet\)\n- 6  P2  merged six  \(no acceptance yet\)\n- 7  P2  merged seven  \(no acceptance yet\)\n/);
   assert.match(t, /## Merge queue\n\[tool\] into release\n  1\. jarl\/5-five → 5  \+1  approved \S+ \S+ by rev  batch 1\n/);
   assert.match(t, /## Merged, CI pending or red \(2\)\n- 6 [0-9a-f]+ in tool · CI pending\n- 7 [0-9a-f]+ in tool · CI red\n/);
-  assert.match(t, /## Tips \(CI not asked — --ci asks gh\)\n/);
+  assert.match(t, /## Tips \(CI not asked — --gh asks gh\)\n/);
   assert.match(t, /^\[tool\] .*\n {2}worker {3}jarl\/1-one [0-9a-f]{12} {2}\+1\/-0 vs release {2}not pushed {2}→ 1\n {2}worker {3}jarl\/5-five [0-9a-f]{12} {2}\+1\/-0 vs release {2}not pushed {2}→ 5\n {2}feature {2}release [0-9a-f]{12} {2}= origin\/release\n {2}main {5}main [0-9a-f]{12} {2}= origin\/main$/m);
   assert.match(t, /## Loop files not committed \(\d+\) — commit \.jarl\/\n- \.jarl\/asks\.md\n/);
   assert.match(t, /## Last 15 log line\(s\)\n(- \S+ \S+ · .*\n){14}- \S+ \S+ · 7 merged /);
-  assert.equal(existsSync(join(parent, 'gh-calls')), false, 'no --ci: gh is never run');
+  assert.equal(existsSync(join(parent, 'gh-calls')), false, 'no --gh: gh is never run');
   assert.deepEqual(snapshot(hub), before, 'resume writes nothing: no log line, no lock, no file');
 
-  // --log and --ready narrow the two long sections; --ci asks gh for the pushed tips only.
-  const narrow = run(hub, ['resume', '--log', '2', '--ready', '1', '--ci'], { JARL_GH: ghStub(parent) }).stdout;
+  // --log and --ready narrow the two long sections; --gh asks gh for the pushed tips only.
+  const narrow = run(hub, ['resume', '--log', '2', '--ready', '1', '--gh'], { JARL_GH: ghStub(parent) }).stdout;
   assert.match(narrow, /## Next ready \(1 of 3\)\n- 4  P2  ready three  \(no acceptance yet\)\n\n/);
   assert.match(narrow, /## Last 2 log line\(s\)\n- \S+ \S+ · filed 7 · merged seven\n- \S+ \S+ · 7 merged \S+ in tool · CI red$/);
   assert.match(narrow, /## Tips\n/);
@@ -135,7 +135,7 @@ test('resume in a git repository with no worker branches: Tips shows the feature
   const { hub } = world();
   jarl(hub, 'new', 'one');
   const t = jarl(hub, 'resume');
-  assert.match(t, /## Tips \(CI not asked — --ci asks gh\)\n\[hub\] \S+\n {2}feature {2}main [0-9a-f]{12} {2}\(no upstream\) {2}not pushed\n\n## /);
+  assert.match(t, /## Tips \(CI not asked — --gh asks gh\)\n\[hub\] \S+\n {2}feature {2}main [0-9a-f]{12} {2}\(no upstream\) {2}not pushed\n\n## /);
   assert.doesNotMatch(t, /^ {2}worker /m);
 });
 
@@ -163,7 +163,7 @@ test('commands run in one process read git afresh each time: a branch made betwe
   assert.deepEqual(lease(), ['branch gone: jarl/1-one']);
   sh(tool, 'git branch jarl/1-one');
   assert.deepEqual(lease(), [], 'the branch made after the first call is seen by the second');
-  const tips = () => dispatch(hub, 'resume', [], { ci: true }).out.tips.repos.find((r) => r.repo === 'tool').rows.map((x) => x.branch);
+  const tips = () => dispatch(hub, 'resume', [], { gh: true }).out.tips.repos.find((r) => r.repo === 'tool').rows.map((x) => x.branch);
   assert.deepEqual(tips(), ['jarl/1-one', 'release', 'main']);
   // A repository that was not one yet, then is: the refusal is not remembered.
   const later = join(hub, '..', 'later');

@@ -32,11 +32,11 @@ function countFlag(flags, name, dflt) {
   return n;
 }
 
-// resume [--log n] [--ready n] [--ci] — read-only, no lock: the goal and where the loop stands (status), the
+// resume [--log n] [--ready n] [--gh] — read-only, no lock: the goal and where the loop stands (status), the
 // rulings in force, in flight with leases, waiting on After, the questions and the ratify items, the next ready
 // issues and the merge queue, the merges whose CI is pending or red, the tips of every repository the loop's
 // issues name, the loop files git has not committed, and the last n log lines. Nothing goes to the network
-// unless --ci asks gh for the CI of each pushed tip.
+// unless --gh asks gh for the CI of each pushed tip.
 export function cmdResume(root, flags = {}) {
   need(existsSync(jarlDir(root)), `no loop here: ${jarlDir(root)} does not exist — open one with jarl.mjs init "<goal>", or pass --root <the directory holding .jarl/>`);
   const logN = countFlag(flags, 'log', RESUME_LOG_LINES);
@@ -94,7 +94,7 @@ export function cmdResume(root, flags = {}) {
     questions: asks.filter((a) => a.kind !== 'ratify' && a.kind !== 'escalation' && a.kind !== 'rule'), escalations: asks.filter((a) => a.kind === 'escalation'), proposed: asks.filter((a) => a.kind === 'rule'), ratify: asks.filter((a) => a.kind === 'ratify'),
     held, kept: keptRows, next: ready.slice(0, readyN).map((r) => ({ id: r.id, title: r.title, priority: r.priority, ...(r.noAcceptance ? { noAcceptance: true } : {}), ...(r.model ? { model: r.model } : {}), ...declared(byId.get(r.id)) })), readyTotal: scheduled ? null : ready.length,
     ...(scheduled ? { scheduler: profile.scheduler } : {}),
-    queue: cmdQueue(root, { repo: flags.repo, base: flags.base }), merged, tips: cmdTips(root, { ci: flags.ci === true, repo: flags.repo }),
+    queue: cmdQueue(root, { repo: flags.repo, base: flags.base }), merged, tips: cmdTips(root, { ci: flags.gh === true, repo: flags.repo }),
     uncommitted: uncommittedLoopFiles(root),
     ...(status.disagreements ? { disagreements: status.disagreements } : {}),
     ...(status.headerRead ? { headerRead: status.headerRead } : {}),
@@ -145,7 +145,7 @@ export function renderResume(o, profile = DEFAULT_PROFILE, note = null, asked = 
     ]),
     ...sec(`Merged, CI pending or red (${o.merged.length})`, o.merged.map((m) => `- ${m.id} ${m.sha}${m.repo ? ` in ${m.repo}` : ''} · CI ${m.ci}`)),
     ...sec(`Merged, waiting for its check (${(o.status.checkWaiting || []).length})`, (o.status.checkWaiting || []).map((w) => `- ${checkWaitingText(w)}`)),
-    ...sec(`Tips${o.tips.ci ? '' : ' (CI not asked — --ci asks gh)'}`, tips),
+    ...sec(`Tips${o.tips.ci ? '' : ' (CI not asked — --gh asks gh)'}`, tips),
     ...(files.length ? sec(`Loop files not committed (${files.length}) — commit .jarl/`, [...files.slice(0, 20).map((f) => `- ${f}`), ...(files.length > 20 ? [`- … ${files.length - 20} more`] : [])]) : []),
     ...(o.log ? sec(`Last ${o.log.length} log line(s)`, o.log.map((l) => `- ${l}`), '- (empty log)') : []),
     ...(o.legacyHandoff ? [`(the loop holds a handoff file at .jarl/handoff.md${o.legacyHandoff.at ? `, written ${o.legacyHandoff.at}` : ''} — not the state; handoff read prints it)`] : []),

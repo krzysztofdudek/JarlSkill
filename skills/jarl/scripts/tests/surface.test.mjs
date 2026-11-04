@@ -70,7 +70,8 @@ test('field adds and removes the items of a list field, each issue keeping what 
   assert.deepEqual(issue(root, '1').files, ['src/b.mjs']);
   jarl(root, 'field', '1', 'After', '2', '--add');
   jarl(root, 'field', '1', 'After', '003', '--add');
-  assert.deepEqual(issue(root, '1').after, ['2', '3']);
+  jarl(root, 'field', '1', 'After', '02,3', '--add');
+  assert.deepEqual(issue(root, '1').after, ['2', '3'], 'an id held already, in any spelling, is not added again');
   jarl(root, 'field', '1', 'After', '2,3', '--remove');
   assert.deepEqual(issue(root, '1').after, [], 'a list emptied by --remove is emptied as --clear empties it');
   assert.equal(lastLine(root), '1 field After · (cleared) · was 2, 3');
@@ -79,6 +80,8 @@ test('field adds and removes the items of a list field, each issue keeping what 
   assert.deepEqual(issue(root, '1').sources, ['r/x#1', 'r/x#2']);
   jarl(root, 'field', '1', 'Resources', 'gate', '--add');
   jarl(root, 'field', '1', 'Resources', 'db', '--add');
+  jarl(root, 'field', '1', 'Resources', 'DB', '--add');
+  assert.deepEqual(issue(root, '1').resources, ['gate', 'db'], 'a resource held already, in another case, is not added again');
   jarl(root, 'field', '1', 'Resources', 'GATE', '--remove');
   assert.deepEqual(issue(root, '1').resources, ['db'], 'a resource is one name in any case');
   const count = logLines(root).length;
@@ -108,6 +111,9 @@ test('field adds a repository to Repo and takes it off by its name', () => {
   jarl(root, 'field', '1', 'Repo', a.dir);
   jarl(root, 'field', '1', 'Repo', b.dir, '--add');
   assert.equal(issue(root, '1').fields.repo.split(', ').length, 2);
+  jarl(root, 'field', '1', 'Repo', a.dir, '--add');
+  jarl(root, 'field', '1', 'Repo', `${b.dir}/a.txt`, '--add');
+  assert.equal(issue(root, '1').fields.repo.split(', ').length, 2, 'a repository held already, by its path or a file inside it, is not added again');
   const [first, second] = issue(root, '1').fields.repo.split(', ');
   jarl(root, 'field', '1', 'Repo', a.dir, '--remove');
   assert.equal(issue(root, '1').fields.repo, second, 'the repository given by its path is taken off as it is stored');
@@ -174,7 +180,7 @@ const FLAG_MEANINGS = {
   limit: ['how many ready issues', ['next']], as: ['the holder whose list is asked for', ['next', 'resume', 'status']], slice: ['a coordinator\'s slice', ['next', 'ask', 'resume', 'status']],
   relayed: ['a verdict recorded in the reviewer\'s name', ['review']], findings: ['how many findings a red round left', ['round']], with: ['another loop to read', ['models']], archives: ['this loop\'s archives read too', ['models']],
   base: ['the base branch a branch is held against', ['scope', 'branches', 'resume']], 'stale-hours': ['how long a lease may idle', ['branches', 'status']],
-  sha: ['the merge commit', ['merged']], ci: ['the CI state of a commit: merged records it, resume asks gh for it', ['merged', 'resume', 'handoff']], red: ['the issue a red landing is tracked by', ['merged']], keep: ['the worktree and branch kept', ['merged']],
+  sha: ['the merge commit', ['merged']], ci: ['the CI state of a merge', ['merged']], gh: ['the CI of each tip asked of gh', ['resume', 'handoff']], red: ['the issue a red landing is tracked by', ['merged']], keep: ['the worktree and branch kept', ['merged']],
   target: ['what a lower question weakens', ['ask']], issue: ['the issue a question is about', ['ask']], option: ['an option of a question', ['ask', 'answer']],
   'applies-to': ['whom a rule applies to', ['ask', 'decide']], until: ['when a rule ends', ['ask', 'decide']], to: ['who a rule is proposed to', ['ask']],
   log: ['how many log lines', ['resume', 'handoff']], ready: ['how many ready issues', ['resume', 'handoff']], summary: ['a summary, written nowhere', ['handoff']], next: ['a next step, written nowhere', ['handoff']],
@@ -195,6 +201,25 @@ test('a flag name means one thing across commands: --by names the author on ever
   }
   for (const cmd of MUTATING) assert.equal(COMMAND_FLAGS[cmd].by, 'value', `${cmd} writes, so it takes --by`);
   assert.ok(!['status', 'models'].some((c) => MUTATING.has(c)), 'the grouping views write nothing');
+  // One name, one shape: a flag that takes a value on one command takes one on every command, and a switch is a switch.
+  const shapes = {};
+  for (const flags of Object.values(COMMAND_FLAGS)) for (const [name, shape] of Object.entries(flags)) (shapes[name] = shapes[name] || new Set()).add(shape === 'bool' ? 'switch' : 'value');
+  assert.deepEqual(Object.entries(shapes).filter(([, s]) => s.size > 1).map(([n]) => n), [], 'no flag is a switch on one command and takes a value on another');
+  const switched = { ...COMMAND_FLAGS, list: { ...COMMAND_FLAGS.list, kind: 'bool' } };
+  const seen = {};
+  for (const flags of Object.values(switched)) for (const [name, shape] of Object.entries(flags)) (seen[name] = seen[name] || new Set()).add(shape === 'bool' ? 'switch' : 'value');
+  assert.equal(seen.kind.size, 2, 'the check sees list --kind turned into a switch');
+});
+
+test('the tools that record a judgement require and describe by, the author: answer, decide, review, retract and tick', () => {
+  const tools = Object.fromEntries(mcp.buildTools().map((t) => [t.name, t]));
+  for (const cmd of ['answer', 'decide', 'review', 'retract', 'tick']) {
+    const t = tools[mcp.toolName(cmd)];
+    assert.ok(t.inputSchema.required.includes('by'), `${cmd} requires by`);
+    assert.match(t.inputSchema.properties.by.description, /^Required: who /, `${cmd} describes by`);
+  }
+  assert.doesNotMatch(tools.jarl_answer.description, /the owner's answer/);
+  assert.ok(!tools.jarl_new.inputSchema.required?.includes('by'), 'a write that records no judgement takes by as an option');
 });
 
 test('status and models group with --group; --by on them is refused with the call that groups', () => {
@@ -318,7 +343,7 @@ test('the help gives each read-only view one purpose, on one line of its own', (
   assert.deepEqual([...named].sort(), [...views].sort(), 'one line for each read-only view, and no other');
 });
 
-test('the tips and the merge queue are sections of resume: --repo narrows both, --base sets the queue\'s base, --ci asks for the tips\' CI; tips and queue are refused with the resume call', () => {
+test('the tips and the merge queue are sections of resume: --repo narrows both, --base sets the queue\'s base, --gh asks for the tips\' CI; tips and queue are refused with the resume call', () => {
   const { dir } = gitRepo({ prefix: 'jarl-surface-fold-' });
   const other = gitRepo({ prefix: 'jarl-surface-fold-other-' });
   jarl(dir, 'init', 'goal');
@@ -326,13 +351,13 @@ test('the tips and the merge queue are sections of resume: --repo narrows both, 
   const all = JSON.parse(jarl(dir, 'resume', '--json'));
   assert.equal(all.tips.repos.length, 2, 'the tips of the loop\'s repository and of the one an issue names');
   assert.equal(all.queue.repos.length, 2);
-  assert.equal(all.tips.ci, false, 'no network unless --ci');
-  const narrowed = JSON.parse(jarl(dir, 'resume', '--repo', other.dir, '--base', 'main', '--ci', '--json'));
+  assert.equal(all.tips.ci, false, 'no network unless --gh');
+  const narrowed = JSON.parse(jarl(dir, 'resume', '--repo', other.dir, '--base', 'main', '--gh', '--json'));
   const name = basename(other.dir);
   assert.deepEqual(narrowed.tips.repos.map((r) => r.repo), [name]);
   assert.deepEqual(narrowed.queue.repos.map((r) => [r.repo, r.base]), [[name, 'main']]);
   assert.equal(narrowed.tips.ci, true);
-  assert.equal(refuses(dir, 'tips').trim(), 'tips is not a command; the tips are a section of resume, which asks gh for their CI with --ci: jarl.mjs resume --ci');
+  assert.equal(refuses(dir, 'tips').trim(), 'tips is not a command; the tips are a section of resume, which asks gh for their CI with --gh: jarl.mjs resume --gh');
   assert.equal(refuses(dir, 'queue', '--repo', 'tool', '--base', 'release').trim(), 'queue is not a command; the merge queue is a section of resume, its batches included: jarl.mjs resume --repo tool --base release');
   assert.equal(mcp.buildTools().some((t) => ['jarl_tips', 'jarl_queue'].includes(t.name)), false);
 });

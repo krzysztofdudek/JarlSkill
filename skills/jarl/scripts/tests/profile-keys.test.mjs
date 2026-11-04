@@ -255,7 +255,7 @@ test('every view tells the truth on a mission\'s loop: next, status, resume with
   assert.doesNotMatch(rsText, /## Next ready \(|## Merge queue|nothing ready/);
 
   // tips: the feature branch of the work in flight and the base, in the repository the loop lives in.
-  const tips = json(root, 'resume', '--ci').tips;
+  const tips = json(root, 'resume', '--gh').tips;
   assert.equal(tips.repos.length, 1);
   const rows = tips.repos[0].rows.map((r) => [r.role, r.branch, r.issues || []]);
   assert.deepEqual(rows, [['worker', 'jarl/2-flight', ['002']], ['feature', 'main', []]]);

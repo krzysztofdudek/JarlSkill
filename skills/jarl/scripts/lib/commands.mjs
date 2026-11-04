@@ -789,6 +789,10 @@ function editList(root, rawIds, key, value, mode, flags) {
   }
   // Two spellings of one item are one item: a repository by name or by path, an id with or without its leading zeros, a
   // resource in any case.
+  // An item added is written as the field stores it (a repository as its name or its path), and one the issue holds
+  // already, in any spelling of it, is not added again.
+  const adds = mode !== 'add' ? [] : key === 'repo' ? repoList(root, items.join(',')).map((p) => p.value) : items;
+  const sameItem = (a, b) => (key === 'after' ? idKey(a) === idKey(b) : key === 'resources' ? a.toLowerCase() === b.toLowerCase() : a === b);
   const removes = mode !== 'remove' ? null : (() => {
     if (key === 'repo') {
       let picked = [];
@@ -803,7 +807,7 @@ function editList(root, rawIds, key, value, mode, flags) {
     const issue = findIssue(root, id);
     need(issue, `no such issue: ${id}${LIST_ALL}`);
     const held = splitList(issue.fields[key]);
-    const next = mode === 'add' ? [...held, ...items.filter((x) => !held.includes(x))] : held.filter((x) => !removes(x));
+    const next = mode === 'add' ? [...held, ...adds.filter((x, n) => !held.some((h) => sameItem(h, x)) && !adds.slice(0, n).some((y) => sameItem(y, x)))] : held.filter((x) => !removes(x));
     if (next.length === 0) {
       if (held.length === 0) return { id: issue.id };
       if (dry) return { id: issue.id };

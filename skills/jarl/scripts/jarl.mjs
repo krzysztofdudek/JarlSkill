@@ -289,7 +289,7 @@ commands:
                                                  several ratify items as a comma list take one answer, one ruling each,
                                                  each naming the batch it was answered in; on a ratify item whose
                                                  ruling names a rule, the rule's ratification names who answered
-  resume [--log n] [--ready n] [--ci] [--repo <name|path>] [--base <b>] [--as <who>] [--slice <coordinator>]
+  resume [--log n] [--ready n] [--gh] [--repo <name|path>] [--base <b>] [--as <who>] [--slice <coordinator>]
                                                  read-only, the boot: everything a session picks the loop up from,
                                                  assembled live — goal and counts, rulings in force, in flight with
                                                  leases (and stale ones), waiting on After, questions, ratify items,
@@ -303,7 +303,7 @@ commands:
                                                  feature branch the checkout is on and main, ahead/behind their
                                                  upstream as last fetched, and the recent merges with their CI), loop
                                                  files not committed, and the last log lines (n, default 15); nothing
-                                                 is fetched, and no network unless --ci asks gh for the CI of each
+                                                 is fetched, and no network unless --gh asks gh for the CI of each
                                                  tip its upstream holds (else "not pushed"); --repo narrows the merge
                                                  queue and the tips to one repository, and --base replaces the
                                                  checkout's current branch as the merge queue's base;
@@ -551,8 +551,8 @@ export const COMMAND_FLAGS = {
   merged: { sha: 'value', ci: 'value', repo: 'value', ran: 'many', saw: 'many', red: 'value', keep: 'bool', by: 'value' },
   ask: { kind: 'value', target: 'value', issue: 'value', slice: 'value', option: 'many', 'applies-to': 'value', until: 'value', to: 'value', by: 'value' },
   answer: { by: 'value', option: 'value' },
-  resume: { log: 'value', ready: 'value', ci: 'bool', repo: 'value', base: 'value', as: 'value', slice: 'value' },
-  handoff: { summary: 'value', next: 'many', log: 'value', ready: 'value', ci: 'bool' },
+  resume: { log: 'value', ready: 'value', gh: 'bool', repo: 'value', base: 'value', as: 'value', slice: 'value' },
+  handoff: { summary: 'value', next: 'many', log: 'value', ready: 'value', gh: 'bool' },
   log: { by: 'value' }, decide: { settles: 'many', by: 'value', quote: 'value', under: 'value', supersedes: 'value', 'applies-to': 'value', until: 'value', area: 'value', reach: 'value', rule: 'value' }, decisions: { live: 'bool' },
   goal: { set: 'value', by: 'value' },
   status: { 'stale-hours': 'value', group: 'value', tag: 'value', as: 'value', slice: 'value' }, archive: { by: 'value' }, report: { found: 'bool', metrics: 'bool' }, mode: { by: 'value' },
@@ -652,6 +652,15 @@ export const COMMAND_ARGS = {
 };
 // One sentence per command: what it does, the MCP tool's whole description after "WRITES the loop." or "Read-only.".
 // The rest of what a command takes and does is its block of USAGE, which the jarl_help tool and --help print.
+// The writes that record a judgement, each with the author its --by names: every call of one names it, and its tool
+// requires the field by.
+export const AUTHOR_REQUIRED = Object.freeze({
+  answer: 'who answered: owner for the owner, jarl on an escalation, or a name',
+  decide: 'who ruled: jarl for a choice made under a mandate, owner with quote, or a coordinator',
+  review: 'who reviewed: a fresh reviewer\'s name, or jarl',
+  retract: 'who takes the record back',
+  tick: 'who ticks: owner, as only the owner ticks an owner line',
+});
 export const COMMAND_SUMMARY = {
   init: 'Open a loop: create .jarl/ with the goal, out of git by default, committed or permanent when asked.',
   new: 'File an issue under the next free number, with its fields and its What, Why and Acceptance; a promise (kind promise) or a wait on an outside person (kind wait, with person and check-when).',
@@ -674,8 +683,8 @@ export const COMMAND_SUMMARY = {
   scope: 'Measure the scope of a worker branch against its base: commits, diff inside the declared files, test changes; numbers, never a verdict.',
   branches: 'Every worker branch with its issues, commits beyond the base, worktree state, stale leases and done branches, in the loop\'s repository and every repository its issues name (repo narrows it to one).',
   ask: 'File a question the owner has to answer (stop, stuck, lower, charter or ratify).',
-  answer: 'Record the owner\'s answer to a question, the option chosen or the words given, as a ruling and close the question; several ratify items take one answer.',
-  resume: 'The boot: everything a session picks the loop up from, assembled live, the merge queue in its batches and the tips of every repository included (repo narrows those to one, ci asks gh for the tips\' CI); as ends it with what is on the one who asks.',
+  answer: 'Record the answer to a question, the option chosen or the words given, as a ruling by whoever by names, and close the question; several ratify items take one answer.',
+  resume: 'The boot: everything a session picks the loop up from, assembled live, the merge queue in its batches and the tips of every repository included (repo narrows those to one, gh asks gh for the tips\' CI); as ends it with what is on the one who asks.',
   handoff: 'read: resume, then the handoff file the loop holds, if any; write: writes nothing.',
   log: 'Append one dated note to the loop\'s journal; a line that reads as a move, a verdict or another line of state is refused.',
   decide: 'Append a ruling, optionally superseding one, settling issues or covering an area of code.',
@@ -792,7 +801,7 @@ function carried(flags, skip = []) {
 }
 const SECTION_FLAGS = { title: 'Title', where: 'Where', what: 'What', why: 'Why', acceptance: 'Acceptance', changelog: 'Changelog' };
 const LINE_SECTIONS = ['acceptance', 'changelog'];
-const BOOLS = ['json', 'help', 'clear', 'append', 'ci'];
+const BOOLS = ['json', 'help', 'clear', 'append', 'gh'];
 // The calls one part of the description takes: one, or for Acceptance and Changelog one per item, each after the first
 // added to what the one before wrote, so every item stays its own line.
 function partCalls(ids, part, items, append, by) {
@@ -801,7 +810,7 @@ function partCalls(ids, part, items, append, by) {
 // The words of a call without its --root, which the call that replaces it takes as it was given.
 const withoutRoot = (args) => args.filter((a, i) => a !== '--root' && args[i - 1] !== '--root' && !a.startsWith('--root='));
 export const REPLACED_COMMANDS = Object.freeze({
-  tips: (args) => { const { flags } = wordsOf(args, BOOLS); return `the tips are a section of resume, which asks gh for their CI with --ci: jarl.mjs resume --ci${carried(flags, ['ci'])}`; },
+  tips: (args) => { const { flags } = wordsOf(args, BOOLS); return `the tips are a section of resume, which asks gh for their CI with --gh: jarl.mjs resume --gh${carried(flags, ['gh'])}`; },
   queue: (args) => { const { flags } = wordsOf(args, BOOLS); return `the merge queue is a section of resume, its batches included: jarl.mjs resume${carried(flags)}`; },
   check: (args) => `a branch is measured by scope: jarl.mjs scope ${withoutRoot(args).map(shellWord).join(' ') || '[<id>] --branch <b>'}`,
   prio: (args) => { const { pos, flags } = wordsOf(args, BOOLS); return `the priority is a field: jarl.mjs field ${pos[0] ? shellWord(pos[0]) : '<ids>'} Priority ${pos[1] ? shellWord(pos[1]) : '<1|2|3>'}${carried(flags)}`; },

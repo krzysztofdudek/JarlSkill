@@ -20,7 +20,7 @@ test('resume\'s tips label a worker branch as a worker branch and the checkout b
   R.newIssue(dir, 'first', { acceptance: 'it works' });
   R.newIssue(dir, 'second', { acceptance: 'it works' });
   R.setStatus(dir, '2', 'in-progress', undefined, { branch: 'jarl/2-a', worker: 'w2' });
-  const o = JSON.parse(run(dir, ['resume', '--ci', '--json'], { env: NO_GH }).stdout).tips;
+  const o = JSON.parse(run(dir, ['resume', '--gh', '--json'], { env: NO_GH }).stdout).tips;
   assert.deepEqual(o.repos[0].rows.map((r) => [r.role, r.branch]), [['worker', 'jarl/2-a'], ['feature', 'feature']]);
 });
 

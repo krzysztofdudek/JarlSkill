@@ -691,7 +691,7 @@ for (const [trigger, raise] of Object.entries(TRIGGERS)) {
     assert.equal(L.whereOf(w.hub, issue).repos[0].path, w.api);
     assert.equal(JSON.parse(jarl(w.hub, 'status', '--group', 'repo', '--json')).by.where.api.path, w.api);
     assert.equal(JSON.parse(run(w.hub, ['scope', '1', '--branch', 'jarl/1-x', '--json']).stdout).repo, w.api);
-    const tips = jarl(w.hub, 'resume', '--ci');
+    const tips = jarl(w.hub, 'resume', '--gh');
     assert.match(tips, new RegExp(escaped(w.api)));
     assert.doesNotMatch(tips, new RegExp(`${escaped(w.sibling)}\\b`));
     assert.match(jarl(w.hub, 'branches'), /^\[api\] jarl\/1-x → 001 /m);

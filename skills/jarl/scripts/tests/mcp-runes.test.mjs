@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { assertParity, parityProblems } from '../vendor/runes/dist/testkit/parity.mjs';
 import { measureTools, formatToolsMeasure } from '../vendor/runes/dist/testkit/measure.mjs';
 import { listToolsOverStdio } from '../vendor/runes/dist/testkit/client.mjs';
-import { COMMAND_FLAGS, USAGE } from '../jarl.mjs';
+import { AUTHOR_REQUIRED, COMMAND_FLAGS, USAGE } from '../jarl.mjs';
 import * as mcp from '../jarl-mcp.mjs';
 
 const SERVER = fileURLToPath(new URL('../jarl-mcp.mjs', import.meta.url));
@@ -32,7 +32,11 @@ const tableTools = listed.map(asTable);
 // is off: an entry's prose names other commands' flags (set's "--ran/--saw row", close's "init --permanent"), and
 // mcp.test.mjs already holds each synopsis to its command's flags both ways.
 test('parity (Runes testkit): the table, the usage text and the tools the running server lists say the same thing', () => {
-  assertParity({ table: mcp.TABLE, usage: USAGE, usageOptions: { from: /^commands:/ }, usageFlags: false, tools: tableTools, toolOptions: mcp.TOOL_OPTIONS });
+  // A Runes table requires arguments only: the by a write that records a judgement requires (AUTHOR_REQUIRED, the CLI's
+  // own table) is checked apart, and left out here, so every other field is held to the Runes table.
+  const authored = (t) => (AUTHOR_REQUIRED[t.name.slice(mcp.TOOL_PREFIX.length)] ? { ...t, inputSchema: { ...t.inputSchema, required: t.inputSchema.required.filter((f) => f !== 'by') } } : t);
+  assertParity({ table: mcp.TABLE, usage: USAGE, usageOptions: { from: /^commands:/ }, usageFlags: false, tools: tableTools.map(authored), toolOptions: mcp.TOOL_OPTIONS });
+  for (const t of tableTools.filter((x) => AUTHOR_REQUIRED[x.name.slice(mcp.TOOL_PREFIX.length)])) assert.ok(t.inputSchema.required.includes('by'), `${t.name} requires by`);
 });
 
 test('every tool is a command of the table under its own name: no command answers to a second name', () => {

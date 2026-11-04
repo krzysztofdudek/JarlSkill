@@ -33,7 +33,7 @@
 // No dependencies beyond the vendored copy, Node 22+.
 import { resolve, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { COMMAND_ARGS, COMMAND_FLAGS, INTERNAL_COMMANDS, LIST_FIELDS, REPLACED_COMMANDS, replacedRefusal, flagsOf, COMMAND_SUMMARY, GLOBAL_FLAGS, MUTATING, USAGE, parseArgs, dispatch, findRoot, isEntry as isEntryOf, installVersion } from './jarl.mjs';
+import { AUTHOR_REQUIRED, COMMAND_ARGS, COMMAND_FLAGS, INTERNAL_COMMANDS, LIST_FIELDS, REPLACED_COMMANDS, replacedRefusal, flagsOf, COMMAND_SUMMARY, GLOBAL_FLAGS, MUTATING, USAGE, parseArgs, dispatch, findRoot, isEntry as isEntryOf, installVersion } from './jarl.mjs';
 import { defineTable } from './vendor/runes/dist/cli/index.mjs';
 import {
   buildTools as generateTools, argvFor as generateArgv, commandForTool, serveStdio, InvalidParams,
@@ -102,6 +102,7 @@ function describe(cmd, spec) {
 }
 function baseNote(cmd, field) {
   if (field === 'root') return ROOT_FIELD;
+  if (field === 'by' && AUTHOR_REQUIRED[cmd]) return `Required: ${AUTHOR_REQUIRED[cmd]}.`;
   if (field === 'ids' || (field === 'id' && LIST_ID_COMMANDS.has(cmd))) return IDS_FIELD;
   if (field === 'id' && cmd === 'answer') return ANSWER_ID_FIELD;
   if (cmd === 'field' && field === 'value') return 'The value of the part, one text: a comma list for a list field (Tags, Files, Repo, After, Source, Resources), one item per line for Acceptance and Changelog. Left out when clear is set. Example: {"ids": "12", "name": "Tags", "value": "docs,cli", "add": true}';
@@ -170,6 +171,8 @@ export function buildTools() {
     for (const field of cmd === null ? [] : listArgsOf(cmd)) {
       tool.inputSchema.properties[field] = { ...tool.inputSchema.properties[field], type: ['string', 'array'], items: { type: 'string' } };
     }
+    // A write that records a judgement names its author: the schema requires by, as the command line does.
+    if (cmd !== null && AUTHOR_REQUIRED[cmd]) tool.inputSchema.required = [...new Set([...(tool.inputSchema.required || []), 'by'])];
     return tool;
   });
 }
