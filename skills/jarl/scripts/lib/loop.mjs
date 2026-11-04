@@ -2,9 +2,9 @@
 // log disagree.
 
 import { resolve, dirname, basename } from 'node:path';
-import { CI_STATES, fieldText } from './base.mjs';
+import { CI_STATES, fieldText, need } from './base.mjs';
 import { jarlDir } from './where.mjs';
-import { idKey, idRe, idsCited } from './ids.mjs';
+import { idKey, idRe, idsCited, keyedIds } from './ids.mjs';
 import { profileAt } from './profile.mjs';
 import { asksAt, decisionsAt, goalLines, readGoal } from './journal.mjs';
 import { eventsById, loopEvents } from './log.mjs';
@@ -192,8 +192,9 @@ export function disagreementText(d) { return d.rewrite ? `${d.line}\n  or, with 
 export function unorderedNamings(issues, profile, only = null) {
   const held = new Map(issues.filter((i) => i.id !== null).map((i) => [i.id, i]));
   const byKey = new Map([...held.values()].map((i) => [idKey(i.id), i]));
+  const keyed = keyedIds(held);
   // Whether `issue` waits on the issue with `id` through After, directly or through the chain: a walk that stops at the
-  // first sight of it, so an ordered pair costs the distance between the two and only an unordered pair walks the chain.
+  // first sight of it and visits each issue once.
   const waitsOn = (issue, id) => {
     const want = idKey(id);
     const seen = new Set();
@@ -212,7 +213,7 @@ export function unorderedNamings(issues, profile, only = null) {
   for (const issue of issues) {
     if (issue.id === null || !profile.unfinished(issue.status) || (only && !only.includes(issue.id))) continue;
     const text = [issue.sections.what, issue.sections.why, issue.sections[heading]].filter(Boolean).join('\n');
-    const cited = idsCited(text, held).filter((id) => idKey(id) !== idKey(issue.id) && !profile.is(held.get(id).status, 'settles-dependents'));
+    const cited = idsCited(text, held, keyed).filter((id) => idKey(id) !== idKey(issue.id) && !profile.is(held.get(id).status, 'settles-dependents'));
     const names = cited.filter((id) => !waitsOn(issue, id) && !waitsOn(held.get(id), issue.id));
     if (names.length) out.push({ id: issue.id, names });
   }
@@ -241,6 +242,67 @@ export function reviewerKind(by, worker, coordinators = BASE_COORDINATORS) {
 // a `Coordinators:` line of the goal lists (see goalLines).
 export function coordinatorNames(root) { return coordinatorsIn(root, goalLines(readGoal(jarlDir(root)))); }
 function coordinatorsIn(root, lines) { return [...BASE_COORDINATORS, basename(resolve(root)), ...lines.coordinators]; }
+
+// ---- slices ----------------------------------------------------------------------------------------
+//
+// A slice is the part of the backlog one coordinator runs: the issues tagged slice:<coordinator>, the coordinator being a
+// name the goal's Coordinators line lists. The line names the coordinators and each one's slice is its name, so a reader
+// that knows no slices reads the same line as the names that review as the loop's director. An issue is in one slice
+// at most; an issue in none is the jarl's.
+export const SLICE_PREFIX = 'slice:';
+export const isSliceTag = (t) => String(t).toLowerCase().startsWith(SLICE_PREFIX);
+export function sliceTag(coordinator) { return `${SLICE_PREFIX}${coordinator}`; }
+// The coordinator whose slice an issue is in, as its tag names it, or null.
+export function sliceOf(issue) {
+  const tag = (issue.tags || []).find(isSliceTag);
+  return tag ? tag.slice(SLICE_PREFIX.length) : null;
+}
+// The same coordinator, in any case: slice:Odin and slice:odin are one slice.
+export const sameSlice = (a, b) => a !== null && b !== null && fieldText(a).toLowerCase() === fieldText(b).toLowerCase();
+// A write of an issue's tags keeps one slice tag at most, and a slice tag names its coordinator; slice names compare in any
+// case, so slice:Odin beside slice:odin is a second tag of one slice and refused too. `held` is what the issue carries
+// now, so a refusal says how to move it from the slice it is in, removing every slice tag it holds.
+export function needOneSlice(tags, { id = null, held = [] } = {}) {
+  const slices = [...new Set(tags.filter(isSliceTag))];
+  for (const t of slices) need(t.length > SLICE_PREFIX.length, `${t} names no coordinator: a slice is the tag slice:<coordinator>, the coordinator a name of the goal's Coordinators line`);
+  if (slices.length <= 1) return;
+  const heldSlices = held.filter(isSliceTag);
+  const was = heldSlices[0];
+  const to = was && slices.find((t) => !heldSlices.some((h) => h.toLowerCase() === t.toLowerCase()));
+  const same = was && !to ? slices.find((t) => !heldSlices.includes(t)) : null;
+  need(false, id !== null && was && to
+    ? `${id} is in ${was} already, and an issue is in one slice — to move it: jarl.mjs tag ${id} ${heldSlices.map((h) => `-${h}`).join(' ')} +${to}`
+    : id !== null && same
+      ? `${id} is in ${was} already, and ${same} names the same slice in another case — an issue carries one slice tag`
+      : `an issue is in one slice, and ${id !== null ? `${id} would carry` : 'the tags name'} ${slices.join(', ')} — keep one`);
+}
+// The slices of a loop: each coordinator the Coordinators line names, with its slice tag, then each slice a tag names
+// whose coordinator the line does not list (declared false: its coordinator's approve counts as fresh). inPlay counts the
+// issues of the slice still in play (open or in progress).
+export function slicesOf(loop) {
+  const { profile } = loop;
+  const out = new Map();
+  for (const name of loop.goalLines.coordinators) if (!out.has(name.toLowerCase())) out.set(name.toLowerCase(), { coordinator: name, tag: sliceTag(name), declared: true, inPlay: 0 });
+  for (const i of loop.issues) {
+    const name = sliceOf(i);
+    if (name === null) continue;
+    if (!out.has(name.toLowerCase())) out.set(name.toLowerCase(), { coordinator: name, tag: sliceTag(name), declared: false, inPlay: 0 });
+    if (profile.active(i.status)) out.get(name.toLowerCase()).inPlay += 1;
+  }
+  return [...out.values()];
+}
+// The coordinator a --slice names, as the record writes it: a name of the Coordinators line (`coordinators`) or of a
+// slice tag one of `issues` carries, in any case. Any other name is refused, naming the slices there are.
+export function sliceNamed(coordinators, issues, name) {
+  need(typeof name === 'string' && fieldText(name), '--slice names a coordinator: its slice is the issues tagged slice:<coordinator>');
+  const known = [...coordinators, ...issues.map(sliceOf).filter((s) => s !== null)];
+  const found = known.find((k) => sameSlice(k, name));
+  const names = [...new Map(known.map((k) => [k.toLowerCase(), k])).values()];
+  need(found !== undefined, `no coordinator ${fieldText(name)} on the goal's Coordinators line and no issue tagged ${sliceTag(fieldText(name))} — ${names.length ? `the slices are ${names.map(sliceTag).join(', ')}` : 'the loop has no slice: jarl.mjs goal --set "Coordinators: <names>", then jarl.mjs tag <ids> +slice:<name>'}`);
+  return found;
+}
+// The slices with an issue in play.
+export function activeSlices(loop) { return slicesOf(loop).filter((s) => s.inPlay > 0); }
 const KIND_WEIGHT = { fresh: 0, coordinator: 1, self: 2 };
 // An issue carries code when it records a branch or a merge. Only then does done (and the merge queue) need a
 // fresh approve; an issue with neither — a ruling, a note, a hub document — is still cleared by the coordinator.

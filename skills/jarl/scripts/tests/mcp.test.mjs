@@ -408,7 +408,7 @@ test('a JSON-RPC response from the client gets no answer; a malformed request st
 
 test('jarl_set changes a status and jarl_field writes a field: each description says so', () => {
   assert.equal(byName.jarl_set.description, 'WRITES the loop. Change the status of issues, with the reason logged.');
-  assert.match(byName.jarl_field.description, /^WRITES the loop\. Write one header field of the description on issues \(Title, Priority, Tier, Kind, Found by, Tags, Files, Repo, After, Source, Where, Resources or a profile field\), or empty an optional one with clear, logging what it held and who changed it when named\./);
+  assert.match(byName.jarl_field.description, /^WRITES the loop\. Write one header field of the description on issues \(Title, Priority, Tier, Kind, Found by, Tags, Files, Repo, After, Source, Where, Resources, Person, Check when or a profile field\), or empty an optional one with clear, logging what it held and who changed it when named\./);
 });
 
 test('every tool refuses a field it does not take, names the fields it takes, and writes nothing', () => {
@@ -460,7 +460,7 @@ test('a tool field whose name does not give its meaning carries an example that 
     const call = JSON.parse(example);
     for (const k of Object.keys(call)) assert.ok(props[k], `${tool} ${field}: the example names ${k}, which ${tool} does not take`);
     assert.ok(field in call, `${tool} ${field}: the example gives ${field}`);
-    assert.equal(Array.isArray(call[field]) ? 'array' : typeof call[field], props[field].type, `${tool} ${field}: the example gives the type the field takes`);
+    assert.ok([].concat(props[field].type).includes(Array.isArray(call[field]) ? 'array' : typeof call[field]), `${tool} ${field}: the example gives a type the field takes`);
   }
   const pairs = JSON.parse(exampleOf(byName.jarl_evidence.inputSchema.properties.ran.description));
   assert.equal(pairs.ran.length, pairs.saw.length, 'the example pairs one saw with each ran');

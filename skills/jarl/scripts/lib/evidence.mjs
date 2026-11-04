@@ -2,19 +2,19 @@
 
 import { existsSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { fieldText, need } from './base.mjs';
+import { PROMISE_KIND, fieldText, need } from './base.mjs';
 import { needNoOwnersWords } from './owner.mjs';
 import { git } from './git.mjs';
 import { jarlDir, stamp } from './where.mjs';
 import { readText, writeAtomic } from './files.mjs';
 import { cmpId, isBulk } from './ids.mjs';
 import { SLOT_NAME_RE, formatState, loadProfile } from './profile.mjs';
-import { appendLog, appendLogLines, firstLine } from './journal.mjs';
+import { appendLog, appendLogLines, firstLine, goalLines, readGoal } from './journal.mjs';
 import { outOfGit } from './loop-git.mjs';
 import { attachmentOf, journalById } from './log.mjs';
 import { acceptanceLineCount, alignRows, bodyText, evidenceNotes, evidenceParts, evidenceTable, loadIssues, mergedOf, noteText, parseIssue, placeEvidence, reviewEntries, setSection, sharedMark, struckNote } from './issues.mjs';
 import { fileKeysOf, needFormat, repoNames, reposWhere, tipLines, whereLines, whereOf } from './repositories.mjs';
-import { approveKind, carriesCode, disagreementText, gateOf, gateState, headerReadNotes, readLoop, recordDisagreements, reviewSplit, scopedLoop } from './loop.mjs';
+import { approveKind, carriesCode, disagreementText, gateOf, gateState, headerReadNotes, readLoop, recordDisagreements, reviewSplit, sameSlice, scopedLoop, sliceNamed, sliceOf, slicesOf } from './loop.mjs';
 import { checkState, checkWaiting, checkWaitingText } from './metrics.mjs';
 import { builds, modelMarks } from './models.mjs';
 import { leaseProblems, staleHours } from './rounds.mjs';
@@ -214,10 +214,11 @@ export function schedulerNote(cmd) { return `scheduling is led by the composer: 
 
 // next — on a loop with an external scheduler, { scheduler, note } and no list: Jarl computes nothing it cannot know.
 // By default the issues ready to start and nothing else; --all adds the others, each row carrying its group:
-// ready, held-by-file (a file an in-progress or earlier-offered issue holds), waiting-after (After not settled) or
-// held-by-question (an open stuck or stop question names the issue). A library caller reads the full list through
-// nextRows and filters it itself.
-export const NEXT_GROUPS = ['ready', 'held-by-file', 'held-by-resource', 'waiting-after', 'held-by-question'];
+// ready, held-by-file (a file an in-progress or earlier-offered issue holds), waiting-after (After not settled),
+// held-by-question (an open stuck or stop question names the issue), promise or wait (an issue of that kind, which is
+// never offered to a worker: next --as shows it on who holds it). A library caller reads the full list through nextRows
+// and filters it itself.
+export const NEXT_GROUPS = ['ready', 'held-by-file', 'held-by-resource', 'waiting-after', 'held-by-question', 'promise', 'wait'];
 export function cmdNext(root, flags) {
   const profile = loadProfile(root);
   if (profile.scheduler) return { scheduler: profile.scheduler, note: schedulerNote(profile.scheduler) };
@@ -231,12 +232,14 @@ export const nextRowsBuilds = () => builds.nextRows;
 // The model of a ready issue as next and resume show it: the default model of the issue's tier.
 const modelText = (m) => (m && m.default ? `  [model ${m.default}]` : '');
 
-const NEXT_HEADERS = { ready: 'Ready', 'held-by-file': 'Held by a file another issue holds', 'held-by-resource': 'Held by a resource another issue holds', 'waiting-after': 'Waiting on After', 'held-by-question': 'Held by an open question' };
+const NEXT_HEADERS = { ready: 'Ready', 'held-by-file': 'Held by a file another issue holds', 'held-by-resource': 'Held by a resource another issue holds', 'waiting-after': 'Waiting on After', 'held-by-question': 'Held by an open question', promise: 'Promises, kept by who made them', wait: 'Waits on an outside person' };
 export function renderNext(rows, all, held = 0) {
   const line = (r) => {
     const note = r.group === 'ready' ? [r.noAcceptance && 'no acceptance yet', r.noFiles && 'no files declared']
       : r.group === 'waiting-after' ? [`after ${r.after.join(', ')}`]
         : r.group === 'held-by-question' ? [`question ${r.questions.map((q) => `a-${q}`).join(', ')}`]
+          : r.group === 'promise' ? [`promised by ${r.by || 'nobody named'}`]
+            : r.group === 'wait' ? [`on ${r.person || 'nobody named'}, check when ${r.checkWhen || 'not said'}`]
           : [`waits on ${[...r.waitsOn, ...(r.resources || []).map((x) => `resource ${x}`)].join(', ')}, held by ${r.heldBy.join(', ')}`];
     return `${r.id}  P${r.priority}  ${r.title}${[...note, r.shared && sharedMark(r.shared)].filter(Boolean).map((n) => `  (${n})`).join('')}${modelText(r.model)}`;
   };
@@ -249,14 +252,21 @@ export function renderNext(rows, all, held = 0) {
     .map(([g, list]) => `${NEXT_HEADERS[g]} (${list.length})\n${list.map(line).join('\n')}`).join('\n\n');
 }
 
+// flags.slice offers only the issues of that coordinator's slice; flags.perSlice (the ball's) offers every issue, each
+// reserving its files against the issues of its own slice only. Across slices only leases hold: a file a lease holds is
+// taken for every slice, and a file an open issue of another slice declares is not.
 export function nextRows(root, flags = {}) {
   builds.nextRows += 1;
   const profile = loadProfile(root);
   const issues = loadIssues(root);
-  // An open question of kind stuck (the default) or stop that names an issue holds that issue back until it is answered.
+  const slice = flags.slice === undefined ? null : sliceNamed(goalLines(readGoal(jarlDir(root))).coordinators, issues, flags.slice);
+  const inScope = slice === null ? () => true : (i) => sameSlice(sliceOf(i), slice);
+  const groupOf = flags.perSlice ? (i) => (sliceOf(i) ?? '').toLowerCase() : () => '';
+  // An open question of kind stuck (the default), stop or escalation that names an issue holds that issue back until it
+  // is answered: no worker is raised on an issue whose question waits on the owner or the jarl.
   const asked = new Map();
   for (const a of loadAsks(root)) {
-    if (a.state !== 'open' || !a.issue || !['stuck', 'stop', null].includes(a.kind)) continue;
+    if (a.state !== 'open' || !a.issue || !['stuck', 'stop', 'escalation', null].includes(a.kind)) continue;
     asked.set(a.issue, [...(asked.get(a.issue) || []), a.id]);
   }
   // Files are compared as (repository, path) pairs: the same path in two repositories never holds
@@ -264,19 +274,33 @@ export function nextRows(root, flags = {}) {
   const keysOf = (i) => fileKeysOf(root, i);
   // Each taken file with the issue holding it: one in a lease status (in progress), or a dispatchable (open)
   // one offered earlier in this list.
-  const taken = new Map(issues.filter((i) => profile.is(i.status, 'holds-claim')).flatMap((i) => keysOf(i).map((k) => [k.key, i.id])));
+  const leasedFiles = issues.filter((i) => profile.is(i.status, 'holds-claim')).flatMap((i) => keysOf(i).map((k) => [k.key, i.id]));
   // Exclusive resources: names, loop-wide (no repository in the key), held by an issue for its lease's whole life. Resources
   // is a field the tool writes itself, so no profile declares a field of that name and the name has one meaning.
   const resourcesOf = (i) => i.resources.map((name) => ({ name, key: name.toLowerCase() }));
-  const takenRes = new Map(issues.filter((i) => profile.is(i.status, 'holds-claim')).flatMap((i) => resourcesOf(i).map((r) => [r.key, i.id])));
+  const leasedRes = issues.filter((i) => profile.is(i.status, 'holds-claim')).flatMap((i) => resourcesOf(i).map((r) => [r.key, i.id]));
+  // The files and resources taken in each group of the list (one group, or one per slice): the leases' own, then each
+  // issue the list offers.
+  const groups = new Map();
+  const takenIn = (i) => {
+    const g = groupOf(i);
+    if (!groups.has(g)) groups.set(g, { taken: new Map(leasedFiles), takenRes: new Map(leasedRes) });
+    return groups.get(g);
+  };
   const byId = new Map(issues.map((i) => [i.id, i]));
   const out = [];
-  for (const i of issues.filter((x) => profile.is(x.status, 'dispatchable')).sort((a, b) => a.priority.localeCompare(b.priority) || cmpId(a.id, b.id))) {
+  for (const i of issues.filter((x) => profile.is(x.status, 'dispatchable') && inScope(x)).sort((a, b) => a.priority.localeCompare(b.priority) || cmpId(a.id, b.id))) {
+    const { taken, takenRes } = takenIn(i);
     // An issue whose After issues are not all settled (done or dropped) is never offered, whatever its files.
     const after = waitingOn(i, byId, profile);
     const base = { id: i.id, title: i.title, priority: i.priority, ...(i.files.length ? {} : { noFiles: true }), ...(i.shared ? { shared: i.shared } : {}) };
     if (after.length) { out.push({ ...base, group: 'waiting-after', after, waitsOn: [] }); continue; }
     if (asked.has(i.id)) { out.push({ ...base, group: 'held-by-question', questions: asked.get(i.id), waitsOn: [], after: [] }); continue; }
+    // A promise or a wait is kept by who holds it, not worked on by a worker: never offered, and it takes no file.
+    if (profile.keptKind(i.kind)) {
+      out.push({ ...base, group: i.kind, waitsOn: [], after: [], ...(i.kind === PROMISE_KIND ? { by: fieldText(i.fields['found by']) || null } : { person: fieldText(i.fields.person) || null, checkWhen: fieldText(i.fields['check when']) || null }) });
+      continue;
+    }
     const keys = keysOf(i);
     const held = keys.filter((k) => taken.has(k.key));
     const heldRes = resourcesOf(i).filter((r) => takenRes.has(r.key));
@@ -328,8 +352,12 @@ function statusOf(root, loop, flags) {
   const every = loop.issues;
   // --tag: every section below is computed over the issues carrying that tag only; an After issue outside the tag is
   // still read for what it is (byId holds them all), so waiting means the same thing in the scope as in the whole.
+  // --slice: the same scoping over the issues of one coordinator's slice, and the escalations that name the slice.
+  need(flags.tag === undefined || flags.slice === undefined, '--tag and --slice each scope the view: give one');
   if (flags.tag !== undefined) need(typeof flags.tag === 'string' && flags.tag && every.some((i) => i.tags.includes(flags.tag)), `no issue carries the tag ${flags.tag}`);
-  const issues = flags.tag === undefined ? every : every.filter((i) => i.tags.includes(flags.tag));
+  const slice = flags.slice === undefined ? null : sliceNamed(loop.goalLines.coordinators, every, flags.slice);
+  const scoped = flags.tag !== undefined || slice !== null;
+  const issues = flags.tag !== undefined ? every.filter((i) => i.tags.includes(flags.tag)) : slice !== null ? every.filter((i) => sameSlice(sliceOf(i), slice)) : every;
   for (const i of issues) counts[i.status] = (counts[i.status] || 0) + 1;
   // Each status keeps its own count; waiting is the part of those in play (open, in progress) whose After issues
   // are not settled yet, so "in flight" in the text line means someone is working on it.
@@ -344,9 +372,11 @@ function statusOf(root, loop, flags) {
   if (profile.scheduler) c.scheduler = profile.scheduler;
   c.noAcceptance = issues.filter((i) => profile.is(i.status, 'holds-claim') && !acceptanceLineCount(i)).map((i) => i.id);
   const inScope = new Set(issues.map((i) => i.id));
-  const asks = loop.asks.filter((a) => a.state === 'open' && (flags.tag === undefined || (a.issue && inScope.has(a.issue))));
+  const asks = loop.asks.filter((a) => a.state === 'open' && (!scoped || (a.issue && inScope.has(a.issue)) || (slice !== null && sameSlice(a.slice ?? null, slice))));
   // A ratify item blocks nothing, so it is not counted among the questions the loop waits on.
-  c.questions = asks.filter((a) => a.kind !== 'ratify').length;
+  c.questions = asks.filter((a) => a.kind !== 'ratify' && a.kind !== 'escalation').length;
+  // The escalations a coordinator sent up, which the jarl answers: counted apart from the owner's questions.
+  c.escalations = asks.filter((a) => a.kind === 'escalation').length;
   c.toRatify = asks.filter((a) => a.kind === 'ratify');
   c.ratify = c.toRatify.length;
   // What a session needs to decide between continuing this loop and archiving it: the goal, when the
@@ -365,13 +395,13 @@ function statusOf(root, loop, flags) {
   c.ciRed = live.filter((i) => mergedOf(i)?.ci === 'red').map((i) => i.id);
   c.checkWaiting = checkWaiting(loop, issues);
   c.handoff = handoffAge(root, c.lastActivity);
-  c.reviews = reviewSplit(flags.tag === undefined ? loop : scopedLoop(loop, issues));
+  c.reviews = reviewSplit(!scoped ? loop : scopedLoop(loop, issues));
   c.inFlightRows = inFlightRows(loop, issues);
-  c.closedGate = closedGateFlags(flags.tag === undefined ? loop : scopedLoop(loop, issues));
-  const disagreements = recordDisagreements(flags.tag === undefined ? loop : scopedLoop(loop, issues));
+  c.closedGate = closedGateFlags(!scoped ? loop : scopedLoop(loop, issues));
+  const disagreements = recordDisagreements(!scoped ? loop : scopedLoop(loop, issues));
   if (disagreements.length) c.disagreements = disagreements;
   // The numbers read from their headers, one note each: not disagreements, the header is the record for them.
-  const byHeader = headerReadNotes(flags.tag === undefined ? loop : scopedLoop(loop, issues));
+  const byHeader = headerReadNotes(!scoped ? loop : scopedLoop(loop, issues));
   if (byHeader.length) c.headerRead = byHeader;
   // The record format: what the loop is in, what this Jarl reads, and the lines that are off where a composer keeps the format.
   c.recordFormat = formatState(profile);
@@ -392,6 +422,9 @@ function statusOf(root, loop, flags) {
   }
   // Last, so every key status --json carried before keeps its place.
   if (flags.tag !== undefined) c.tag = flags.tag;
+  if (slice !== null) c.slice = slice;
+  // The coordinators with their slices, once an issue carries a slice tag.
+  if (every.some((i) => sliceOf(i) !== null)) c.slices = slicesOf(loop);
   c.check = checkState(loop);
   return c;
 }
@@ -431,9 +464,19 @@ export function inFlightRows(loop, issues) {
     const mark = inFlightMark(loop, i);
     const wait = ENDS_DONE.has(mark) ? ownerLineWait(loop.root, loop, i) : null;
     const next = wait ? IN_FLIGHT_MARKS[mark].replace(/set it done$/, `${wait}, then set it done`) : IN_FLIGHT_MARKS[mark];
-    return { id: i.id, title: i.title, branch: i.fields.branch || null, worker: i.fields.worker || null, model: i.fields.model || null, since: i.fields.since || null, mark, next };
+    return { id: i.id, title: i.title, branch: i.fields.branch || null, worker: i.fields.worker || null, model: i.fields.model || null, since: i.fields.since || null, ...leaseWriter(loop, i), mark, next };
   });
 }
+// Who wrote an issue's lease, as { leasedBy }: the writer its last move into a lease status names. A loop whose goal names
+// coordinators shows an unnamed one as null, since several may lease there; in any other loop an unnamed write is the
+// jarl's, and the key is left out unless the line names someone.
+export function leaseWriter(loop, issue) {
+  const move = (loop.eventsById.get(issue.id) || []).filter((e) => e.type === 'move' && loop.profile.is(e.to, 'holds-claim')).pop();
+  const writer = move ? move.writer : null;
+  return writer !== null || loop.goalLines.coordinators.length ? { leasedBy: writer } : {};
+}
+// The writer of a lease as a view prints it.
+export const leasedByText = (x) => (x.leasedBy === undefined ? '' : `leased by ${x.leasedBy ?? '(unnamed)'}`);
 
 // A loop opened in the default mode, or opened --committed, has no way to become the
 // permanent record other than this: init is the only command that writes .jarl/.permanent for a new

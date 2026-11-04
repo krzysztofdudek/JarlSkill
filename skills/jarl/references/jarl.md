@@ -1,6 +1,6 @@
 # The jarl
 
-Read it when you open or resume a loop as the jarl, or when you hand the loop to a reeve. The terms are defined in [glossary.md](glossary.md).
+Read it when you open or resume a loop as the jarl, when you hand a slice of it to a coordinator, or when you run a slice as one. The terms are defined in [glossary.md](glossary.md).
 
 ## Contents
 
@@ -17,7 +17,7 @@ Read it when you open or resume a loop as the jarl, or when you hand the loop to
 - [Closing the branch](#closing-the-branch): the steps before the feature branch merges to `main`
 - [Standing permission to push the feature branch](#standing-permission-to-push-the-feature-branch)
 - [Closing a permanent loop](#closing-a-permanent-loop)
-- [The reeve: handing the loop down](#the-reeve-handing-the-loop-down): a long-lived assistant that runs the loop
+- [Coordinators: slices of the backlog](#coordinators-slices-of-the-backlog): who runs which part, when a coordinator escalates, one merger
 - [Talking to the owner](#talking-to-the-owner)
 
 ## The moments of work
@@ -87,9 +87,9 @@ What the next session needs lives where `resume` reads it:
 
 **An issue that waits on another says so.** `after <id> <ids>` (or `new --after`) records **After:**. `next` never offers it while any of those issues is still open, in progress or deferred, and `status` counts it as waiting, not as open or in flight, so "in flight" keeps meaning that someone is working on it. Do not park a blocked issue in `in-progress`. It is ordering and bookkeeping, not a schedule: no computed plan, no critical path. A ruling that settles issues names them, `decide <slug> "…" --settles <ids>`, and the ruling is written into each one's evidence. Closing the issue is still `set`, and `done` does not count a `Ruling …`, `Dropped:` or `Deferred:` line as evidence of the work.
 
-**A text that relies on another issue is ordered with it.** When the What, Why or Acceptance of an unfinished issue cites another issue by number, and that issue is neither done nor dropped, is not among the issues the first waits on through After (directly or through other After lines) and does not itself wait on the first, `verify` prints a note naming both, and `new` and `body` print the same note when the text is written (`body` only when it writes the What, Why or Acceptance). The note refuses nothing, changes no exit status and writes nothing to the record; it asks whether the text relies on the cited issue, and if so, `after` orders the two. `verify` shows the first twenty notes and counts the rest, and `new` and `body` show those of the issue they wrote. The cost is a walk of the After lines from each issue that cites another to the cited one, and back from the cited one when that finds nothing: an ordered pair costs the distance between the two, an unordered pair at most the size of the loop twice. On a chain of 2400 issues that each cite the one before, the check takes about 35 ms.
+**A text that relies on another issue is ordered with it.** When the What, Why or Acceptance of an unfinished issue cites another issue by number, and that issue is neither done nor dropped, is not among the issues the first waits on through After (directly or through other After lines) and does not itself wait on the first, `verify` prints a note naming both, and `new` and `body` print the same note when the text is written (`body` only when it writes the What, Why or Acceptance). The note refuses nothing, changes no exit status and writes nothing to the record; it asks whether the text relies on the cited issue, and if so, `after` orders the two. `verify` shows the first twenty notes and counts the rest, and `new` and `body` show those of the issue they wrote. The check walks the After lines for each citation it checks. First it walks from the citing issue to the cited one. If that walk finds nothing, it walks from the cited one back to the citing one. A walk visits each issue at most one time and stops when it reaches the issue it seeks. A pair in which the citing issue waits on the cited one costs the walk to that issue. A pair in which the cited issue waits on the citing one costs a walk over all the issues the citing one waits on through After, then the walk back to it. A pair in which neither waits on the other costs both walks in full, at most the size of the loop twice. On a chain of 2400 issues that each cite the one before, the check takes about 35 ms.
 
-Only an explicit citation counts, and only a number that is a whole word of its own: a number after the word issue or task (singular or plural, in any case), of any length, with the numbers that run on from it joined by a comma and a space, by and or or between spaces, or by an ampersand; a number after a hash sign, of any length; a number of three or more digits alone in brackets, or several of them in brackets joined the same way. A comma with no space joins nothing, so a number in a thousands group, or two numbers written with a comma and no space, names none, in brackets or after the word issue. A number inside a longer word (a sha, a date, a time, a file with a line, a name with a hyphen or a slash), a decimal or a dotted version, or beside a hyphen or a slash names none, so a range of issues written with a hyphen and no spaces names none: write the numbers out. A range written with spaces around its hyphen names the number before the hyphen only. A number after a hash sign or in brackets and followed by a unit (line, character, char, byte, ms, second, minute, hour, day, percent, test, round, file, time, item, kind, or a percent sign) is an amount, and so is a number in brackets after with, status, code, exit or exits (an exit status). A bare number outside brackets, after none of those words, names no issue, so a possessive such as a number followed by an apostrophe and s names none.
+Only an explicit citation counts, and only a number that is a whole word of its own: a number after the word issue or task (singular or plural, in any case), of any length, with the numbers that run on from it joined by a comma and a space, by and or or between spaces, or by an ampersand; a number after a hash sign, of any length; a number of three or more digits alone in brackets, or several of them in brackets joined the same way. A comma with no space joins nothing, so a number in a thousands group, or two numbers written with a comma and no space, names none, in brackets or after the word issue. Written as `issues <a>,<b>`, the list names neither number. A space after the comma, as in `issues <a>, <b>`, makes it name both. A bracketed list of two-digit numbers, such as `(12, 13)`, names none. A number inside a longer word (a sha, a date, a time, a file with a line, a name with a hyphen or a slash), a decimal or a dotted version, or beside a hyphen or a slash names none, so a range of issues written with a hyphen and no spaces names none: write the numbers out. A range written with spaces around its hyphen names the number before the hyphen only. A number after a hash sign or in brackets and followed by a unit (line, character, char, byte, ms, second, minute, hour, day, percent, test, round, file, time, item, kind, or a percent sign) is an amount, and so is a number in brackets after with, status, code, exit or exits (an exit status). A bare number outside brackets, after none of those words, names no issue, so a possessive such as a number followed by an apostrophe and s names none.
 
 ## From research to issues
 
@@ -209,39 +209,65 @@ while anything is open or in progress, and once clean it appends a closing line 
 leaves the directory in place — the record `--root` named stays where it was, for a later session
 or any other reader, to read.
 
-## The reeve: handing the loop down
+## Coordinators: slices of the backlog
 
-The jarl's context is spent best on the owner and on judgement, so once the loop is open the
-jarl raises **one long-lived reeve** on the standard tier and hands it the loop. The reeve runs
-this skill exactly as the jarl would — boot, file, pick, raise workers and reviewers, keep the
-merger fed — with one difference: it never talks to the owner. It reports to the
-jarl, in one line, on four occasions only: a research issue or a gap the goal did not foresee; a
-question the owner answered in a way that changes the goal; every few merges, the counts; and an
-empty queue. The jarl stays the one who answers the owner and rules on what the reeve raises.
-Everything the reeve raises is its own to reach — a worker, a reviewer, a merger — so the reeve
-holds all of them and the jarl holds the reeve. Its brief is this whole skill, plus the repository,
-the feature branch, the absolute path of the script for a session without the jarl tools, and the four occasions above.
+The jarl's context is spent best on the owner and on judgement, so once the loop is open the jarl
+hands parts of the backlog to **coordinators** on the standard tier and keeps the rest. The goal's
+`Coordinators:` line names them, and each one's slice is the issues tagged `slice:<name>`
+(`tag <ids> +slice:<name>`); an issue in no slice is the jarl's. A coordinator runs this skill over
+its slice exactly as the jarl would over the loop, with one difference: it never talks to the owner.
+It starts from `next --as <name>`, `status --slice <name>` and `resume --slice <name>`, leases,
+raises workers and reviewers on the tier each issue names, files what they find into its own slice,
+and sends rounds. Everything it raises is its own to reach, so the coordinator holds its workers and
+reviewers and the jarl holds the coordinators. Its brief is this whole skill, plus the repository,
+the feature branch, its slice, the absolute path of the script for a session without the jarl tools,
+and the four reasons to escalate below.
 
-A merger's report is the only signal that it has stopped touching the main checkout — not a delay,
-not an assumption that it "must be done by now", not a status the loop tracks some other way. The
-main checkout has exactly one writer at a time: while a merger's report is outstanding, nobody —
-not the reeve, not the jarl — runs a git command there or treats its work as settled, and no second
-merger is raised into it. A reeve that reconciles state by hand while a merger might still be
-running is writing into a tree another process is also writing into; that is the collision the
-sole-committer rule exists to prevent.
+**A level waits on the agents it raised, and returns only when the ball is on someone it did not
+raise.** A coordinator keeps working its slice, waiting on its own workers and reviewers, until
+`next --as <name>` holds nothing it can move; it returns to the jarl in one line only when what is
+left waits on the jarl, the owner, another slice or an outside person. The jarl does the same with
+its coordinators and talks with the owner whenever the ball is on the owner.
 
-The reeve does not guess which mode it is in. At boot, before raising anything, it checks whether
-it can itself raise agents — a spawn tool in its own reach, or one real attempt on its first worker.
-If it can, it holds every worker, reviewer and merger itself, exactly as above. If it cannot, it
-reports `no-spawn` to the jarl in one line and the relay below begins for the rest of the loop.
+**The four reasons a coordinator escalates.** It goes up with
+`ask "<question>" --kind escalation --slice <name>` (and `--issue <id>` when one issue is the
+subject), which the jarl holds and answers, for these four and no other:
+
+1. a gap or a finding outside its slice's goal;
+2. a decision that is the jarl's or the owner's;
+3. its slice empty, or blocked by another slice;
+4. a takeover that failed too.
+
+Counts are never pushed up: the jarl reads them with `status --slice <name>`. With more than one
+slice in play, each lease declares its Files or Resources, because across slices only leases hold.
+Pull before leasing and push right after when the loop is shared between clones.
+
+**One merger for the loop.** The goal's `Merger: <name>` line names the one holder, the jarl or one
+coordinator, that raises the merger; every approve not yet merged, in every slice, is on that
+holder's list. A merger's report is the only signal that it has stopped touching the main checkout —
+not a delay, not an assumption that it "must be done by now", not a status the loop tracks some other
+way. The main checkout has exactly one writer at a time: while a merger's report is outstanding,
+nobody — no coordinator, not the jarl — runs a git command there or treats its work as settled, and
+no second merger is raised into it. A coordinator that reconciles state by hand while a merger might
+still be running is writing into a tree another process is also writing into; that is the collision
+the sole-committer rule exists to prevent.
+
+**Who wrote what.** Every coordinator, worker and reviewer names itself on each write that takes
+`--by`: the record cannot tell agents apart otherwise, and a raised agent that calls its parent's
+server would write under no name at all.
+
+A coordinator does not guess whether it can raise agents. At boot, before raising anything, it
+checks — a spawn tool in its own reach, or one real attempt on its first worker. If it can, it holds
+every worker and reviewer itself, as above. If it cannot, it reports `no-spawn` to the jarl in one
+line and the relay below begins for the rest of the loop.
 
 On a platform where an agent raised by the jarl cannot raise agents of its own, the split stays and
-only the spawning moves: the reeve writes every brief to a file and sends the jarl one line per
+only the spawning moves: the coordinator writes every brief to a file and sends the jarl one line per
 spawn (`spawn <role> <id> tier=… worktree=… brief=<path>`); the jarl spawns from that line without
 reading the brief; every raised agent writes its report to a file and ends with one line naming it;
-the jarl forwards that one line to the reeve. A second round for the same worker, or feeding the
-merger again, is a resume, not a new spawn — the reeve sends `resume <id> brief=<path>` instead, and
-the jarl resumes that same agent without reading the brief. The jarl's context then carries
+the jarl forwards that one line to the coordinator. A second round for the same worker, or feeding the
+merger again, is a resume, not a new spawn — the coordinator sends `resume <id> brief=<path>` instead,
+and the jarl resumes that same agent without reading the brief. The jarl's context then carries
 pointers, not briefs and reports.
 
 ## Talking to the owner

@@ -18,7 +18,7 @@ Each term below is defined here, once; the rest of the skill uses it in that sen
 | `merge record` | The sha, the CI state and the merge check that a merge leaves on each issue it lands. |
 | `ruling` | A decision recorded in `decisions.md` with its slug, its date and who ruled it. |
 | `question` | An `ask` the owner must answer, of one type, which waits in the record until it is answered. |
-| `type` | The closed category of a question: `stop`, `stuck`, `lower`, `charter` or `ratify`. |
+| `type` | The closed category of a question: `stop`, `stuck`, `lower`, `charter`, `ratify` or `escalation`. |
 | `profile` | The file that names a loop's statuses, flags, fields and sections, read as data and never as rails of its own. |
 | `tier` | The strength an issue is given, `light`, `standard` or `strong`, which picks the models it may run on. |
 | `model` | The name of the model a worker or a reviewer ran on, recorded with the lease or the verdict. |

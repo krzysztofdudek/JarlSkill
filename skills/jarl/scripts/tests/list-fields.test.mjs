@@ -129,15 +129,17 @@ test('a list given through the tools is stored item by item, and filtering by a 
   assert.equal(readdirSync(join(fx.root, '.jarl', 'issues')).length, 6);
 });
 
-// The id lists come before other arguments, so their field is typed as one text; its description says it takes a list.
+// The id lists come before other arguments, which the adapter types as one text: the tools declare each of them as one
+// text or a list of strings, and the description says so.
 const ID_LISTS = (cmd, field) => field === 'ids' ? cmd !== 'after' : field === 'id';
 
-test('every list field of every tool says it takes a list: typed as one, or, for an id list, in its description', () => {
+test('every list field of every tool says it takes a list: declared as a list, or, for an id list, as one text or a list of strings', () => {
   const tools = Object.fromEntries(mcp.buildTools().map((t) => [t.name, t.inputSchema.properties]));
   for (const [cmd, field] of FIELDS) {
     const schema = tools[`jarl_${cmd}`][field];
     if (ID_LISTS(cmd, field)) {
-      assert.equal(schema.type, 'string', `${cmd} ${field}`);
+      assert.deepEqual(schema.type, ['string', 'array'], `${cmd} ${field}`);
+      assert.deepEqual(schema.items, { type: 'string' }, `${cmd} ${field}`);
       assert.match(schema.description, cmd === 'answer' ? /comma list/ : /comma list with ranges \(12,13 or 203-206\) or as a list of strings/, `${cmd} ${field}`);
     } else {
       assert.deepEqual(schema, { type: 'array', items: { type: 'string' }, ...(schema.minItems ? { minItems: 1 } : {}), description: schema.description }, `${cmd} ${field}`);
@@ -148,6 +150,17 @@ test('every list field of every tool says it takes a list: typed as one, or, for
   assert.equal(tools.jarl_source.refs.minItems, 1);
   assert.match(tools.jarl_after.ids.description, /waits on/);
   assert.doesNotMatch(tools.jarl_after.ids.description, /all of them change/);
+});
+
+test('the schema declares a list for the id field of each command that takes an id list, and for no other field', () => {
+  const declared = [];
+  for (const tool of mcp.buildTools()) {
+    for (const [field, schema] of Object.entries(tool.inputSchema.properties)) if (Array.isArray(schema.type)) declared.push(`${tool.name} ${field}`);
+  }
+  assert.deepEqual(declared.sort(), [
+    'jarl_after id', 'jarl_answer id', 'jarl_body id', 'jarl_changelog ids', 'jarl_evidence ids', 'jarl_field ids', 'jarl_files id',
+    'jarl_merged ids', 'jarl_prio ids', 'jarl_repo id', 'jarl_review ids', 'jarl_round id', 'jarl_set ids', 'jarl_source id', 'jarl_tag ids',
+  ].sort());
 });
 
 // A list written out as text, in every spelling the tools and the command line have been seen to pass, with `a` and
@@ -265,4 +278,25 @@ test('a tag stored with the brackets and quotes of a list can still be taken off
   jarl(fx.root, 'tag', '1', '-["drift"', '-"processes"]', '+drift', '+processes');
   assert.equal(header(issueText(fx.root, 1), 'Tags'), 'drift, processes');
   assert.match(jarl(fx.root, 'list', '--tag', 'drift'), /\ba\b/);
+});
+
+test('a comma list in a tag operation names one tag each: +a,b adds a and b, -a,b takes both off, on the command line and through the tool', () => {
+  const fx = fixture();
+  assert.match(jarl(fx.root, 'tag', '1', '+a,b'), / tags: a, b$/);
+  assert.equal(header(issueText(fx.root, 1), 'Tags'), 'a, b');
+  call(fx.root, 'tag', { ids: '1', ops: ['+c,d', '-a,b'] });
+  assert.equal(header(issueText(fx.root, 1), 'Tags'), 'c, d');
+  call(fx.root, 'tag', { ids: '1', ops: ['+e, f'] });
+  assert.equal(header(issueText(fx.root, 1), 'Tags'), 'c, d, e, f');
+  assert.match(jarl(fx.root, 'tag', '1', '-c,d'), / tags: e, f$/);
+});
+
+test('a tag operation with no name in it is refused, and so is one whose name starts with -, through the tool and on the command line, and nothing is written', () => {
+  const fx = fixture();
+  const before = snapshot(fx.root);
+  for (const op of ['+', '-', '+,', '-,']) assert.match(refuses(fx.root, 'tag', '1', op), /tags are \+name or -name/, op);
+  for (const op of ['+', '+,']) assert.match(refusedByTool(fx.root, 'tag', { ids: '1', ops: [op] }), /tags are \+name or -name/, op);
+  assert.match(refusedByTool(fx.root, 'tag', { ids: '1', ops: ['--root'] }), DASH_RULE);
+  assert.match(refusedByTool(fx.root, 'tag', { ids: '1', ops: ['--root'] }), DASH_HINT);
+  assert.equal(snapshot(fx.root), before);
 });

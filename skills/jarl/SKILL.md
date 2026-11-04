@@ -46,6 +46,7 @@ The other references, each read when its subject comes up:
 | `next` | the open issues ready to start; `--all` adds the held and waiting ones, in groups |
 | `next --as <who>` | what is on the owner, the jarl or a person by name now, each line with the command that moves it |
 | `new "<title>" --what … --acceptance …` | files an issue with its body |
+| `new "<title>" --kind promise` · `new "<title>" --kind wait --person "<name>" --check-when "<when>"` | records a promise, kept by whoever its Found by names, or a wait on a person outside the loop; `next` never offers either, `next --as` shows each on its holder until it closes |
 | `set <ids> in-progress "<why>" --branch <b> --worker <name> --model <m>` | leases issues before a worker is raised; with `--handover`, gives a leased issue to a new worker, `"<why>"` saying why |
 | `evidence <ids> --ran "<command>" --saw "<what it printed>"` | records proof |
 | `review <ids> approve\|changes --by <name> --model <m> "<findings>"` | records a verdict |
@@ -135,4 +136,4 @@ How rows, notes and the merge check sit in an issue, and when an issue may be se
 - **Leave it mergeable.** The work is committed on the branch and the checks the brief names pass there before the work is reported; the branch is not pushed, merged or rebased onto others unless the brief says so. Merging, and removing the worktree and the branch afterwards, is never the worker's job.
 <!-- RUNES:worker-worktree:END -->
 
-In Jarl the root a call passes is the loop root, the directory that holds `.jarl/` (the main checkout only when the loop lives at its root). In Jarl the coordinator is the jarl and the one who merges is the merger. The branch naming and the rest of the worker's rules are in [references/worker.md](references/worker.md#worker-branches).
+In Jarl the root a call passes is the loop root, the directory that holds `.jarl/` (the main checkout only when the loop lives at its root). In Jarl the coordinator is the jarl, or a coordinator the goal names over its slice of the backlog, and the one who merges is the merger. The branch naming and the rest of the worker's rules are in [references/worker.md](references/worker.md#worker-branches).

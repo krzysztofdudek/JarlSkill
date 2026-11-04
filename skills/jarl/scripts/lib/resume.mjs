@@ -1,20 +1,20 @@
 // Resume: the state a session picks the loop up from, assembled live; the handoff file and the report.
 
 import { existsSync } from 'node:fs';
-import { fieldText, need } from './base.mjs';
+import { KEPT_KINDS, fieldText, need } from './base.mjs';
 import { jarlDir } from './where.mjs';
 import { readText } from './files.mjs';
 import { DEFAULT_PROFILE, loadProfile } from './profile.mjs';
 import { mergedOf, sharedMark } from './issues.mjs';
 import { repoNames } from './repositories.mjs';
-import { closedGateLine, disagreementText, gateLine, gateOf, readLoop, reviewSplit } from './loop.mjs';
+import { closedGateLine, disagreementText, gateLine, gateOf, readLoop, reviewSplit, sameSlice, sliceNamed, sliceOf } from './loop.mjs';
 import { checkWaitingText, metricsOf, renderMetrics } from './metrics.mjs';
 import { ago } from './rounds.mjs';
 import { cmdTips, renderTips } from './tips.mjs';
 import { reasonWord, waitingOn } from './commands.mjs';
 import { handoffAge, handoffPath } from './questions.mjs';
 import { answeredLines } from './journal.mjs';
-import { IN_FLIGHT_MARKS, closedGateFlags, modelText, nextRows, schedulerNote, statusOf, uncommittedLoopFiles } from './evidence.mjs';
+import { IN_FLIGHT_MARKS, closedGateFlags, inFlightMark, leaseWriter, leasedByText, modelText, nextRows, schedulerNote, statusOf, uncommittedLoopFiles } from './evidence.mjs';
 import { cmdQueue, renderQueue } from './queue.mjs';
 import { countsLine } from './import.mjs';
 
@@ -41,8 +41,13 @@ export function cmdResume(root, flags = {}) {
   const logN = countFlag(flags, 'log', RESUME_LOG_LINES);
   const readyN = countFlag(flags, 'ready', RESUME_READY);
   const loop = readLoop(jarlDir(root));
-  const status = statusOf(root, loop, {});
-  const { profile, issues, byId } = loop;
+  // --slice: in flight, waiting, held, the questions and the next ready are the slice's own, as status --slice counts
+  // them; the rulings, the merge queue, the tips and the log stay the loop's, which every slice shares.
+  const slice = flags.slice === undefined ? null : sliceNamed(loop.goalLines.coordinators, loop.issues, flags.slice);
+  const status = statusOf(root, loop, slice === null ? {} : { slice });
+  const { profile, byId } = loop;
+  const issues = slice === null ? loop.issues : loop.issues.filter((i) => sameSlice(sliceOf(i), slice));
+  const inScope = new Set(issues.map((i) => i.id));
   const stale = new Map(status.stale.map((x) => [x.id, x.problems]));
   const marks = new Map(status.inFlightRows.map((x) => [x.id, x]));
   // An answered question's ruling also carries its answer line, which the text lists before the question.
@@ -59,33 +64,36 @@ export function cmdResume(root, flags = {}) {
   const inFlight = issues.filter((i) => holds(i) && !unsettled(i)).map((i) => ({
     id: i.id, title: i.title, branch: i.fields.branch || null, worker: i.fields.worker || null, model: i.fields.model || null, since: i.fields.since || null,
     // next only where it says more than the mark: the owner's tick of a line only he ticks, before done.
-    stale: stale.get(i.id) || [], mark: marks.get(i.id)?.mark, ...(marks.get(i.id) && marks.get(i.id).next !== IN_FLIGHT_MARKS[marks.get(i.id).mark] ? { next: marks.get(i.id).next } : {}), ...declared(i),
+    ...leaseWriter(loop, i), stale: stale.get(i.id) || [], mark: marks.get(i.id)?.mark, ...(marks.get(i.id) && marks.get(i.id).next !== IN_FLIGHT_MARKS[marks.get(i.id).mark] ? { next: marks.get(i.id).next } : {}), ...declared(i),
   }));
   const waiting = issues.filter((i) => profile.active(i.status) && unsettled(i)).map((i) => ({
     id: i.id, title: i.title, status: i.status, after: waitingOn(i, byId, profile),
     ...(holds(i) ? { branch: i.fields.branch || null, worker: i.fields.worker || null, model: i.fields.model || null, since: i.fields.since || null, stale: stale.get(i.id) || [] } : {}),
   }));
-  const asks = loop.asks.filter((a) => a.state === 'open');
+  const asks = loop.asks.filter((a) => a.state === 'open' && (slice === null || (a.issue && inScope.has(a.issue)) || sameSlice(a.slice ?? null, slice)));
   const scheduled = profile.scheduler !== null;
-  const next = scheduled ? [] : nextRows(root, {});
+  const next = scheduled ? [] : nextRows(root, slice === null ? {} : { slice });
   const ready = next.filter((r) => r.ready);
   // Open, not waiting on After, and still not offered: a file it declares is taken by work in flight (or by a ready
-  // issue ahead of it), or an open question names it. Ready and held together are the open count on the status line.
-  const held = next.filter((r) => !r.ready && !r.after.length).map((r) => ({ id: r.id, title: r.title, priority: r.priority, files: r.waitsOn, heldBy: r.heldBy || [], ...(r.questions ? { questions: r.questions } : {}), ...(r.resources ? { resources: r.resources } : {}) }));
+  // issue ahead of it), or an open question names it. Ready, held and kept together are the open count on the status line.
+  const held = next.filter((r) => !r.ready && !r.after.length && !KEPT_KINDS.includes(r.group)).map((r) => ({ id: r.id, title: r.title, priority: r.priority, files: r.waitsOn, heldBy: r.heldBy || [], ...(r.questions ? { questions: r.questions } : {}), ...(r.resources ? { resources: r.resources } : {}) }));
+  // Open promises and waits, never offered: each with who holds it (a promise its maker, a wait its person and when to check,
+  // until its proof records that what was waited for came, and the jarl reviews and closes it).
+  const keptRows = next.filter((r) => KEPT_KINDS.includes(r.group)).map((r) => ({ id: r.id, title: r.title, priority: r.priority, kind: r.group, ...(r.group === 'promise' ? { by: r.by } : { person: r.person, checkWhen: r.checkWhen, came: inFlightMark(loop, byId.get(r.id)) !== 'no-rows' }) }));
   const merged = issues.filter((i) => status.ciPending.includes(i.id) || status.ciRed.includes(i.id)).map((i) => ({ id: i.id, title: i.title, ...mergedOf(i) }));
   const logLines = loop.events;
   const kept = handoffAge(root, status.lastActivity);
   return {
-    goal: status.goal, opened: status.opened, lastActivity: status.lastActivity, archived: status.archived, status,
+    goal: status.goal, opened: status.opened, lastActivity: status.lastActivity, archived: status.archived, status, ...(slice !== null ? { slice } : {}),
     rulings, inFlight, waiting,
-    questions: asks.filter((a) => a.kind !== 'ratify'), ratify: asks.filter((a) => a.kind === 'ratify'),
-    held, next: ready.slice(0, readyN).map((r) => ({ id: r.id, title: r.title, priority: r.priority, ...(r.noAcceptance ? { noAcceptance: true } : {}), ...(r.model ? { model: r.model } : {}), ...declared(byId.get(r.id)) })), readyTotal: scheduled ? null : ready.length,
+    questions: asks.filter((a) => a.kind !== 'ratify' && a.kind !== 'escalation'), escalations: asks.filter((a) => a.kind === 'escalation'), ratify: asks.filter((a) => a.kind === 'ratify'),
+    held, kept: keptRows, next: ready.slice(0, readyN).map((r) => ({ id: r.id, title: r.title, priority: r.priority, ...(r.noAcceptance ? { noAcceptance: true } : {}), ...(r.model ? { model: r.model } : {}), ...declared(byId.get(r.id)) })), readyTotal: scheduled ? null : ready.length,
     ...(scheduled ? { scheduler: profile.scheduler } : {}),
     queue: cmdQueue(root), merged, tips: cmdTips(root, { ci: flags.ci === true }),
     uncommitted: uncommittedLoopFiles(root),
     ...(status.disagreements ? { disagreements: status.disagreements } : {}),
     ...(status.headerRead ? { headerRead: status.headerRead } : {}),
-    log: logN ? logLines.slice(-logN).map((e) => `${e.at} · ${e.text}`) : null,
+    log: logN ? logLines.slice(-logN).map((e) => `${e.at}${e.writer ? ` by ${e.writer}` : ''} · ${e.text}`) : null,
     legacyHandoff: kept ? { path: handoffPath(root), at: kept.at, ageMs: kept.ageMs } : null,
   };
 }
@@ -94,12 +102,13 @@ export function cmdResume(root, flags = {}) {
 export function renderResume(o, profile = DEFAULT_PROFILE, note = null) {
   const shownFields = (x) => (x.fields && Object.keys(x.fields).length ? ` · ${Object.entries(x.fields).map(([n, v]) => `${n}=${v}`).join(' ')}` : '');
   const sec = (title, lines, none) => (lines.length ? [`## ${title}`, ...lines, ''] : none === undefined ? [] : [`## ${title}`, none, '']);
-  const lease = (x) => [x.branch && `branch ${x.branch}`, x.worker && `worker ${x.worker}`, x.worker && x.model !== undefined && (x.model ? `model ${x.model}` : 'model not recorded'), x.since && `since ${x.since}`].filter(Boolean).join(' · ');
+  const lease = (x) => [x.branch && `branch ${x.branch}`, x.worker && `worker ${x.worker}`, x.worker && x.model !== undefined && (x.model ? `model ${x.model}` : 'model not recorded'), x.since && `since ${x.since}`, leasedByText(x)].filter(Boolean).join(' · ');
   const st = o.status;
   const head = [
     `# Resume${o.goal ? ` · ${o.goal}` : ''}`,
     `opened ${o.opened || '?'} · last activity ${o.lastActivity || '?'}${o.archived ? ` · ${o.archived} archived loop(s)` : ''}${profile.declared ? ` · profile ${profile.name}` : ''}`,
     countsLine(st, profile),
+    ...(o.slice !== undefined ? [`scoped to the slice of ${o.slice}, the issues tagged slice:${o.slice}: in flight, waiting, the questions, held and next ready are its own; the rulings, the merge queue, the tips and the log are the loop's`] : []),
     ...(note ? [note] : []),
     '',
   ];
@@ -117,8 +126,10 @@ export function renderResume(o, profile = DEFAULT_PROFILE, note = null) {
     ...sec(`In flight (${o.inFlight.length})`, o.inFlight.map((x) => `- ${x.id} ${short(x.title)}${shownFields(x)}${lease(x) ? ` · ${lease(x)}` : ''}${x.stale.length ? ` · STALE: ${x.stale.join('; ')}` : ''}${x.mark ? `\n  → ${x.next || IN_FLIGHT_MARKS[x.mark]}` : ''}`), '- (nothing)'),
     ...sec(`Waiting — After not settled (${o.waiting.length})`, o.waiting.map((x) => `- ${x.id} ${short(x.title)} (after ${x.after.join(', ')})${x.stale !== undefined ? ` · ${x.status === 'in-progress' ? 'in progress' : x.status}${lease(x) ? ` · ${lease(x)}` : ''}${x.stale.length ? ` · STALE: ${x.stale.join('; ')}` : ''}` : ''}`)),
     ...sec(`Questions to the owner (${o.questions.length})`, o.questions.map((a) => `- a-${a.id} (${a.kind || 'stuck'})${a.issue ? ` issue ${a.issue}` : ''} · ${a.question}`), '- (nothing)'),
+    ...sec(`Escalations to the jarl (${o.escalations.length})`, o.escalations.map((a) => `- a-${a.id}${a.slice ? ` slice:${a.slice}` : ''}${a.issue ? ` issue ${a.issue}` : ''} · ${a.question}`)),
     ...sec(`To ratify (${o.ratify.length})`, o.ratify.map((a) => `- a-${a.id}${a.issue ? ` (issue ${a.issue})` : ''} · ${a.question}`)),
     ...sec(`Held — files in flight (${o.held.length})`, o.held.map((x) => `- ${x.id}  P${x.priority}  ${short(x.title)} (${x.questions ? `open question ${x.questions.map((q) => `a-${q}`).join(', ')}` : `${[...x.files, ...(x.resources || []).map((n) => `resource ${n}`)].join(', ')} held by ${x.heldBy.join(', ')}`})`)),
+    ...sec(`Promises and waits (${o.kept.length})`, o.kept.map((x) => `- ${x.id}  P${x.priority}  ${short(x.title)} (${x.kind === 'promise' ? `promised by ${x.by || 'nobody named'}` : x.came ? `came from ${x.person || 'nobody named'}, proof recorded; the jarl reviews and closes it` : `waits on ${x.person || 'nobody named'}, check when ${x.checkWhen || 'not said'}`})`)),
     ...(o.scheduler ? sec('Next ready and merge queue', [`- ${schedulerNote(o.scheduler)}`]) : [
       ...sec(`Next ready (${o.next.length} of ${o.readyTotal})`, o.next.map((r) => `- ${r.id}  P${r.priority}  ${short(r.title)}${shownFields(r)}${r.noAcceptance ? '  (no acceptance yet)' : ''}${modelText(r.model)}`), '- (nothing ready)'),
       ...sec('Merge queue', queue, '- (nothing approved waits to be merged)'),
