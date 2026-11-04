@@ -200,7 +200,7 @@ function namedPairs(list, flag, known, what) {
     need(at > 0, `--${flag} takes <name>=<value> (got "${item}")`);
     const name = String(item).slice(0, at).trim();
     const hit = known.find((k) => k.toLowerCase() === name.toLowerCase());
-    need(hit, known.length ? `${name} is not a ${what} this loop's profile declares — it declares ${known.join(', ')}` : `this loop's profile declares no ${what}s — --${flag} names one (see: jarl.mjs profile)`);
+    need(hit, known.length ? `${name} is not a ${what} this loop's profile declares — it declares ${known.join(', ')}` : `this loop's profile declares no ${what}s — --${flag} names one it declares; the profile: jarl.mjs profile`);
     need(!out.has(hit), `--${flag} names ${hit} twice`);
     out.set(hit, String(item).slice(at + 1));
   }

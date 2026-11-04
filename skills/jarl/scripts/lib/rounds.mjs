@@ -66,7 +66,7 @@ export function cmdRound(root, rawId, what, dry = false, opts = {}) {
   needNoOwnersWords('the round', what);
   need(what, 'round requires "<text>", what failed: jarl.mjs round <ids> "<text>"');
   const found = opts.findings;
-  need(found === undefined || (/^\d+$/.test(String(found)) && Number(found) <= FINDINGS_MAX), `--findings must be a whole number up to ${FINDINGS_MAX}`);
+  need(found === undefined || (/^\d+$/.test(String(found)) && Number(found) <= FINDINGS_MAX), `--findings must be a whole number up to ${FINDINGS_MAX}: e.g. --findings 2`);
   const issue = findIssue(root, rawId);
   need(issue, `no such issue: ${rawId}`);
   if (dry) return { id: issue.id };

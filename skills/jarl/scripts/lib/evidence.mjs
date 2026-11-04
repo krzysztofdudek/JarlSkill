@@ -57,7 +57,7 @@ export function cmdEvidence(root, rawIds, text, flags) {
 const REVIEW_MIN_WORDS = 3;
 function needSaid(text, what) {
   const said = (String(text ?? '').match(/[\p{L}\p{N}]/gu) || []).length;
-  need(said >= 2, `${what} needs words — what was read and what was found, or why; got "${String(text ?? '').trim().slice(0, 20)}"`);
+  need(said >= 2, `${what} needs words — what was read and what was found, or why; got "${String(text ?? '').trim().slice(0, 20)}": jarl.mjs retract <id> review|<n>|note-<n> "<what was wrong, in words>" --by <who>`);
 }
 function retractedBy(flags, what) {
   need(flags.by !== undefined && fieldText(flags.by), `${what} needs --by <who> — whoever retracts it is recorded with the reason`);
@@ -78,7 +78,7 @@ function retractEvidence(root, rawIds, reason, flags) {
   const [issue] = issuesFor(root, rawIds);
   const text = readText(issue.file);
   const table = evidenceTable(parseIssue(text, issue.file).sections.evidence);
-  need(table.rows.length > 0, `${issue.id} has no evidence row to retract: jarl.mjs show ${issue.id} numbers what it holds`);
+  need(table.rows.length > 0, `${issue.id} has no evidence row to retract — what it holds: jarl.mjs show ${issue.id}`);
   const row = table.rows[n - 1];
   need(row, `${issue.id} has ${table.rows.length} evidence row${table.rows.length === 1 ? '' : 's'}: there is no row ${n}`);
   need(!row.retracted, `row ${n} of ${issue.id} is retracted already`);
@@ -503,7 +503,7 @@ export function cmdClose(root, flags = {}) {
   if (flags.batch) return { closed: false, batch: ratificationBatch(root), promotion: promotionBatch(root) };
   const profile = loadProfile(root);
   const left = loadIssues(root).filter((i) => profile.unfinished(i.status));
-  need(flags.force || left.length === 0, `${left.length} issue(s) still open or in progress: ${left.map((i) => i.id).join(', ')} — set each ${profile.with('terminal').filter((st) => profile.is(st, 'settles-dependents') || profile.is(st, 'closes-record')).join(' or ') || profile.with('terminal').join(' or ')}, or report them to the owner and run with --force`);
+  need(flags.force || left.length === 0, `${left.length} issue(s) still open or in progress: ${left.map((i) => i.id).join(', ')} — set each ${profile.with('terminal').filter((st) => profile.is(st, 'settles-dependents') || profile.is(st, 'closes-record')).join(' or ') || profile.with('terminal').join(' or ')}, or report them to the owner and close anyway: jarl.mjs close --force`);
   // A permanent loop is a record, not a stage cleared before a merge: close leaves the directory in
   // place and logs the close instead of removing it, so --root still finds the loop afterwards.
   // Deferred work is not open, but it is work that waits: where close removes the directory it would wait nowhere, so
@@ -543,7 +543,7 @@ export function cmdClose(root, flags = {}) {
 function attachmentRow(root, rawIds, flags) {
   need(!isBulk(rawIds), 'an attachment names one issue: evidence <id> --file <path> --slot <name>');
   need(flags.file !== undefined, '--slot needs --file <path>: the file of the slot, relative to the loop root');
-  need(flags.slot !== undefined, '--file needs --slot <name>: the slot of the issue\'s kind the file fills');
+  need(flags.slot !== undefined, '--file needs --slot <name>, the slot of the issue\'s kind the file fills: e.g. --slot <name>');
   need(typeof flags.file === 'string' && typeof flags.slot === 'string', '--file and --slot each take one value');
   const slot = flags.slot.trim();
   need(SLOT_NAME_RE.test(slot), `a slot name is lower-case letters, digits and - (starting with a letter or digit, at most 40 characters); got "${slot.slice(0, 40)}"`);
@@ -552,10 +552,10 @@ function attachmentRow(root, rawIds, flags) {
   const specs = requiredSlots(profile, issue);
   const spec = specs.find((s) => s.name === slot);
   const kind = issue.kind || profile.kindDefault;
-  need(spec, `the profile declares no slot "${slot}" for an issue of kind ${kind}${specs.length ? ` (its slots: ${specs.map((s) => s.name).join(', ')})` : ' — it requires no slots for that kind'}`);
+  need(spec, `the profile declares no slot "${slot}" for an issue of kind ${kind}${specs.length ? ` (its slots: ${specs.map((s) => s.name).join(', ')})` : ' — it requires no slots for that kind'}: jarl.mjs profile`);
   const rel = flags.file;
   const read = inspectAttachment(root, issue.id, spec, rel, 'is no such file');
-  need(!read.problem, read.missing ? `no such file: ${rel}, under the loop root` : read.problem);
+  need(!read.problem, read.missing ? `no such file: ${rel}, under the loop root; e.g. --file <path under the loop root>` : read.problem);
   return [{ ran: `attach ${slot} ${read.name} sha256:${read.sha256} size:${read.size}`, saw: `slot ${slot}: ${read.size} bytes` }];
 }
 

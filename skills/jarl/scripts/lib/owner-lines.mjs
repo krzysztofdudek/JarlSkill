@@ -139,15 +139,15 @@ export function ownerLineNotes(root, loop, issue) {
 // name, an owner line that names its material and what to check, the material there and no tick that counts already;
 // it raises the record format where the loop is not in it, and writes one log line.
 export function cmdTick(root, rawId, rawLine, flags = {}) {
-  need(flags.by !== undefined, 'tick needs --by owner: only the owner ticks an owner line, and the record says who did');
+  need(flags.by !== undefined, 'tick needs --by owner, as only the owner ticks an owner line and the record says who did: e.g. --by owner');
   const by = rulingAuthor(flags.by);
-  need(by === OWNER, `only the owner ticks an owner line: --by owner (got "${by}")`);
+  need(by === OWNER, `only the owner ticks an owner line (got "${by}"): e.g. --by owner`);
   const issue = findIssue(root, rawId);
   need(issue, `no such issue: ${rawId}`);
   const loop = readLoop(jarlDir(root));
   const states = ownerLineStates(root, loop, issue);
   const lines = acceptanceLines(issue);
-  need(states.length, `${issue.id} has no acceptance line marked as one only the owner ticks — mark one: ${OWNER_LINE_SHAPE}, written with jarl.mjs field ${issue.id} Acceptance "<every line of the section, one per line>"`);
+  need(states.length, `${issue.id} has no acceptance line marked as one only the owner ticks — mark one, ${OWNER_LINE_SHAPE}, among every line of the section: jarl.mjs field ${issue.id} Acceptance "<every line of the section, one per line>"`);
   const owners = `its owner lines: ${states.map((s) => s.n).join(', ')}`;
   need(/^\d+$/.test(String(rawLine ?? '').trim()) && Number(rawLine) > 0, `tick takes the number of the acceptance line, counted from 1 — ${owners}`);
   const n = Number(rawLine);

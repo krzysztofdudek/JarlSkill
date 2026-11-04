@@ -114,7 +114,7 @@ export function reportDirOf(file) {
 
 function readFindings(file, flags = {}) {
   need(file, 'a findings file is required: jarl.mjs import <findings.json>');
-  need(existsSync(file), `no such file: ${file}`);
+  need(existsSync(file), `no such file: ${file}: jarl.mjs import <findings.json>`);
   let json;
   try { json = JSON.parse(readText(file)); } catch (e) { throw new Error(`${file} is not JSON: ${e.message}`); }
   const dir = flags.source !== undefined ? String(flags.source).replace(/\/+$/, '') : reportDirOf(file);

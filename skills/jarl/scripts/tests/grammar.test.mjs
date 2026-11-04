@@ -160,7 +160,7 @@ test('one idiom empties every field: --clear on After, Repo, Resources and a pro
   // field writes them as their own commands do, and empties them the same way.
   assert.equal(jarl(root, 'field', '1', 'Files', 'a.txt'), '1 Files: a.txt');
   assert.equal(field(root, '1', 'files'), 'a.txt');
-  assert.match(refuses(root, 'field', '1', 'Note', ''), /field Note needs a value: jarl\.mjs field <ids> Note "<value>", or --clear to empty it/);
+  assert.match(refuses(root, 'field', '1', 'Note', ''), /field Note needs a value, or --clear to empty it: jarl\.mjs field <ids> Note "<value>"$/m);
   assert.match(refuses(root, 'field', '1', 'Note', 'x', '--clear'), /either a value or --clear, not both/);
 });
 
@@ -178,7 +178,7 @@ test('field and round take a comma list with a range: every id changes, or none'
   const afterLog = logText(root);
   assert.match(refuses(root, 'field', '1,3-4', 'After', '2'), /no such|cannot wait|cycle/);
   assert.equal(logText(root), afterLog);
-  assert.match(refuses(root, 'field', '1-2,4', 'After', '4'), /4 cannot wait on itself — nothing was written/);
+  assert.match(refuses(root, 'field', '1-2,4', 'After', '4'), /4 cannot wait on itself — nothing was written: jarl\.mjs list --all$/m);
   assert.equal(field(root, '1', 'after'), '4');
   assert.equal(jarl(root, 'field', '1-3', 'After', '--clear'), '1 After: (cleared)\n2 After: (cleared)\n3 After: (cleared)');
   jarl(root, 'field', '2', 'After', '4');

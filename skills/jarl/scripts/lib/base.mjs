@@ -61,5 +61,9 @@ function splitList(v) { return String(v || '').split(',').map((s) => s.trim()).f
 // survive in it at either end or inside and the text is one segment of the line.
 export function noSeparators(text) { return String(text ?? '').trim().replace(/\s*·\s*/g, ' - ').trim(); }
 
+// A word as a POSIX shell reads it back unchanged: as it is when it holds nothing the shell reads, else in single quotes,
+// a single quote inside written '\''. Every command Jarl prints for a person or an agent to run writes its words so.
+export function shellWord(s) { return /^[A-Za-z0-9_@%+=:,./#-]+$/.test(String(s)) ? String(s) : `'${String(s).replace(/'/g, `'\\''`)}'`; }
+
 // Used by the other modules of the library, and not part of what jarl-lib.mjs exports.
 export { LEASE_FIELDS, fieldText, freeInline, oneBreak, splitList };

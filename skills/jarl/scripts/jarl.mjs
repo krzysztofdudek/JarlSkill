@@ -980,7 +980,7 @@ export function dispatch(root, commandName, rest, flags) {
       case 'import': out = cmdImport(root, rest[0], flags); text = renderImport(out); break;
       case 'sources': out = cmdSources(root, rest, flags); text = renderSources(out); break;
       case 'list': out = cmdList(root, flags); text = renderList(out, R.loadProfile(root)); break;
-      case 'show': { const i = R.findIssue(root, rest[0]); need(i, `no such issue: ${rest[0]} — jarl.mjs list --all lists the issues`); const attachments = attachmentStates(root, i); out = { ...i, evidenceRows: evidenceTable(i.sections.evidence).rows.map(({ n, ran, saw, retracted }) => ({ n, ran, saw, retracted })), where: whereOf(root, i), ...(attachments.length ? { attachments } : {}) }; text = issueView(root, i, { full: Boolean(flags.full) }); break; }
+      case 'show': { const i = R.findIssue(root, rest[0]); need(i, `no such issue: ${rest[0]} — the issues: jarl.mjs list --all`); const attachments = attachmentStates(root, i); out = { ...i, evidenceRows: evidenceTable(i.sections.evidence).rows.map(({ n, ran, saw, retracted }) => ({ n, ran, saw, retracted })), where: whereOf(root, i), ...(attachments.length ? { attachments } : {}) }; text = issueView(root, i, { full: Boolean(flags.full) }); break; }
       case 'set':
         // A field is written by field, never by set: the refusal is the call that writes it.
         if (setRouteOf(root, rest[1]) === 'field') {
@@ -1041,7 +1041,9 @@ export function dispatch(root, commandName, rest, flags) {
         if (rest[0] === 'write') { out = cmdHandoffWrite(); text = out.note; } else { out = cmdHandoffRead(root, flags); text = out.text; }
         break;
       case 'report': out = cmdReport(root, flags); text = out.text; break;
-      case 'log': out = R.appendLog(root, rest[0]); text = 'logged'; break;
+      case 'log':
+        need(typeof rest[0] === 'string' && rest[0].trim(), 'log requires "<text>": jarl.mjs log "<text>"');
+        out = R.appendLog(root, rest[0]); text = 'logged'; break;
       case 'decide':
         need(flags.by !== undefined, `decide records who ruled, jarl under a mandate, owner with --quote "<his words>": jarl.mjs decide ${rest[0] === undefined ? '<slug>' : shellWord(rest[0])} ${rest[1] === undefined ? '"<text>"' : shellWord(rest[1])}${flagWords(flags)} --by <who>`);
         out = R.decide(root, rest[0], rest[1], flags); text = renderDecide(out); decideNotes(root, rest[0], out.by, flags, warn); break;

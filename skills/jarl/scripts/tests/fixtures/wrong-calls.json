@@ -1,0 +1,22 @@
+[
+  ["new"], ["new", "t", "--tier", "huge"], ["new", "t", "--kind", "task"], ["new", "t", "--prio", "7"], ["new", "t", "--after", "99"],
+  ["new", "t", "--tags", "slice:a,slice:b"], ["new", "t", "--kind", "wait"], ["new", "t", "--acceptance", "[owner] look"], ["new", "t", "--repo", "nowhere-at-all"],
+  ["new", "t", "--template", "nope"], ["new", "t", "--field", "Area=x"],
+  ["set", "1", "bogus"], ["set", "1", "done"], ["set", "1", "dropped"], ["set", "1", "in-progress", "--handover", "--worker", "w3"], ["set", "9", "done"], ["set", "1", "ready"],
+  ["set", "1", "open", "--branch", "b"], ["set", "1", "in-progress", "--model", "a · b"],
+  ["review", "1", "approve"], ["review", "1", "changes", "--by", "rev", "Minor: a small thing only"], ["review", "1", "changes", "--by", "rev", "this is not good"],
+  ["review", "1", "approve", "--by", "rev", "ok"], ["review", "1", "approve", "read it all, fine"], ["review", "2", "approve", "--by", "w2", "read it all, fine"], ["review", "1", "maybe", "--by", "rev", "read it all"],
+  ["merged", "1"], ["merged", "1", "--sha", "abc1234", "--ci", "blue"], ["merged", "1", "--ran", "npm test"], ["merged", "1", "--sha", "zzz"], ["merged", "1", "--sha", "abc1234", "--red", "99"],
+  ["evidence", "1", "--ran", "npm test"], ["evidence", "1"], ["evidence", "9", "note"], ["evidence", "1", "--file", "x.png", "--slot", "before"], ["evidence", "1", "--file", "x.png"],
+  ["field", "1", "Bogus", "x"], ["field", "1", "Priority", "7"], ["field", "1", "Tier", "huge"], ["field", "1", "Priority"], ["field", "1", "After", "9"], ["field", "1", "After", "1"],
+  ["field", "1", "Repo", "/nowhere/at/all"], ["field", "1", "Kind", "task"], ["field", "1", "Title", "--clear"], ["field", "1", "Resources", "two words"],
+  ["retract", "1", "1", "--by", "jarl", "wrong row"], ["retract", "1", "thing", "--by", "jarl", "wrong"], ["retract", "2", "1", "--by", "jarl", "x"], ["retract", "2", "review", "--by", "jarl", "the approve was wrong"],
+  ["answer", "a-9", "yes", "--by", "owner"], ["answer", "a-1", "--by", "owner"], ["answer", "a-1", "--option", "Keep", "--by", "owner"],
+  ["decide", "taken", "again", "--by", "jarl"], ["decide", "mine", "his", "--by", "owner"], ["decide", "x y", "bad slug", "--by", "jarl"], ["decide", "slug-only", "--by", "jarl"],
+  ["decide", "s2", "text", "--supersedes", "nope", "--by", "jarl"], ["decide", "s3", "text", "--reach", "3", "--by", "jarl"],
+  ["tick", "1", "1", "--by", "owner"], ["tick", "1", "x", "--by", "jarl"],
+  ["round", "1"], ["round", "1", "it failed", "--findings", "many"],
+  ["ask"], ["ask", "q?", "--kind", "bogus"], ["ask", "q?", "--kind", "lower"], ["ask", "q?", "--kind", "escalation"],
+  ["log"], ["log", "1 → done"], ["goal", "--set", "Nonsense: x"], ["base", "undeclared", "main"], ["archive"], ["renumber", "1"], ["mode", "permanent"], ["close"],
+  ["import", "/nowhere/findings.json"], ["init", "again"]
+]

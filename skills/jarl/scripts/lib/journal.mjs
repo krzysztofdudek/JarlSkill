@@ -212,7 +212,7 @@ export function appendDecision(root, slug, ruling, { by, quote, under, supersede
   if (supersedes !== undefined) {
     need(typeof supersedes === 'string' && SLUG_RE.test(supersedes) && supersedes !== slug, '--supersedes names the slug of an earlier ruling');
     const old = all.find((d) => d.slug === supersedes);
-    need(old, `no ruling ${supersedes} in ${DECISIONS_FILE} to supersede`);
+    need(old, `no ruling ${supersedes} in ${DECISIONS_FILE} to supersede — the rulings: jarl.mjs decisions`);
     need(!old.supersededBy, `${supersedes} is already superseded by ${old.supersededBy} — supersede that one instead`);
     text = markDecision(root, supersedes, `**Superseded by:** ${slug} (${today()})`, { text });
   }

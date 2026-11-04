@@ -3,7 +3,7 @@
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { ASK_KINDS, HANDOFF_STALE_MS, fieldText, freeInline, need, noSeparators, oneBreak } from './base.mjs';
+import { ASK_KINDS, HANDOFF_STALE_MS, fieldText, freeInline, need, noSeparators, oneBreak, shellWord } from './base.mjs';
 import { jarlDir, today } from './where.mjs';
 import { appendAtomic, readText, writeAtomic } from './files.mjs';
 import { askNumber, idKey, issueForms, needsRaisedFormat, newNumber, writtenId } from './ids.mjs';
@@ -26,11 +26,11 @@ export function cmdAsk(root, question, flags) {
   need(question, 'ask requires "<text>": jarl.mjs ask "<text>" --kind stuck --issue <id>');
   needNoOwnersWords('the question', question, flags);
   const kind = String(flags.kind || 'stuck');
-  need(ASK_KINDS.includes(kind), `--kind must be one of: ${ASK_KINDS.join(', ')} — stop (halt everything), stuck (this issue only), lower (weaken something protected, needs a target), charter (the goal itself), ratify (a choice already made under a mandate, awaiting the owner's word; blocks nothing), escalation (a coordinator's question to the jarl, naming its --slice or --issue), rule (a rule proposed with --applies-to, for the jarl to accept, or the owner with --to owner)`);
+  need(ASK_KINDS.includes(kind), `--kind must be one of: ${ASK_KINDS.join(', ')} — stop (halt everything), stuck (this issue only), lower (weaken something protected, needs a target), charter (the goal itself), ratify (a choice already made under a mandate, awaiting the owner's word; blocks nothing), escalation (a coordinator's question to the jarl, naming its --slice or --issue), rule (a rule proposed with --applies-to, for the jarl to accept, or the owner with --to owner); e.g. --kind stuck`);
   if (flags.issue !== undefined) need(findIssue(root, flags.issue), `no such issue: ${flags.issue}`);
   // An escalation goes up from a coordinator to the jarl, who holds it; it names the slice or the issue it is about, so it
   // stays in that slice's view. --slice names a slice of the loop, and only an escalation takes it.
-  need(kind !== 'escalation' || flags.issue !== undefined || flags.slice !== undefined, 'an escalation names what it is about: --slice <coordinator> (its slice) or --issue <id>, or both');
+  need(kind !== 'escalation' || flags.issue !== undefined || flags.slice !== undefined, 'an escalation names what it is about, its slice or its issue or both: e.g. --slice <coordinator>');
   need(kind === 'escalation' || flags.slice === undefined, `--slice goes with kind escalation only — a question of kind "${kind}" is the owner's, about the loop or one issue`);
   const slice = flags.slice === undefined ? null : sliceNamed(goalLines(readGoal(jarlDir(root))).coordinators, loadIssues(root), flags.slice);
   // A rule is proposed with whom it applies to, and the one who accepts it holds it: the jarl, or the owner where the rule
@@ -41,7 +41,7 @@ export function cmdAsk(root, question, flags) {
   need(flags.to === undefined || ['owner', 'jarl'].includes(String(flags.to)), `--to names who accepts the rule: jarl (the default) or owner (got "${flags.to}")`);
   const appliesTo = kind === 'rule' && flags['applies-to'] !== undefined ? scopeOf(root, flags) : null;
   const to = kind === 'rule' ? String(flags.to ?? (flags.ruling !== undefined ? OWNER : JARL)) : null;
-  need(kind !== 'lower' || flags.target, '--target is required for kind lower — nothing to weaken without naming it');
+  need(kind !== 'lower' || flags.target, '--target is required for kind lower — nothing to weaken without naming it: e.g. --target <what would get weaker>');
   need(kind === 'lower' || !flags.target, `--target has no meaning for kind "${kind}" — only lower names something to weaken`);
   const asks = loadAsks(root);
   const id = newNumber(asks.reduce((m, a) => Math.max(m, Number(a.id)), 0) + 1, numberWidth(loadProfile(root), flags.width));
@@ -125,7 +125,7 @@ function answerChecks(root, ask, answer, chosen) {
   const options = ask.options || [];
   let option = null;
   if (chosen !== null) {
-    need(options.length, `a-${id} offered no options: answer it with its text`);
+    need(options.length, `a-${id} offered no options, so it is answered in words: jarl.mjs answer a-${id} "<text>" --by <who>`);
     option = options.find((o) => o.label === noSeparators(chosen)) || null;
     need(option, `"${chosen}" is none of the options of a-${id}: ${options.map((o) => o.label).join(', ')}`);
   }
@@ -164,7 +164,7 @@ export function cmdAnswer(root, rawId, answer, flags = {}) {
   const chosen = flags.option === undefined ? null : noSeparators(flags.option);
   const key = askNumber(rawId);
   const ask = loadAsks(root).find((a) => idKey(a.id) === key);
-  need(ask, `no such question: a-${key} — jarl.mjs next --as owner --all lists the open ones`);
+  need(ask, `no such question: a-${key} — the open ones: jarl.mjs next --as owner --all`);
   // The issue the answer is copied into is resolved before the first write, so a number two files carry writes nothing.
   if (ask.issue) findIssue(root, ask.issue);
   const id = ask.id;
@@ -204,7 +204,7 @@ export function cmdAnswerMany(root, rawIds, answer, flags = {}) {
   // A question named twice is answered once: the list is taken in its order with each number kept at its first place.
   const found = [...new Set(raw.map(askNumber))].map((key) => {
     const ask = asks.find((a) => idKey(a.id) === key);
-    need(ask, `no such question: a-${key} — jarl.mjs next --as owner --all lists the open ones`);
+    need(ask, `no such question: a-${key} — the open ones: jarl.mjs next --as owner --all`);
     return ask;
   });
   const batch = found.length > 1 ? found.map((a) => a.id) : null;
@@ -300,7 +300,7 @@ function scopeOf(root, flags) {
 // --by that reads as it is it (rulingAuthor). The owner's words reach the record from --quote alone: the ruling's text and
 // every other flag are refused when they hold the marker in any spelling, and the row each settled issue gets names who ruled.
 export function cmdDecide(root, slug, ruling, flags = {}) {
-  need(slug && ruling, 'decide requires <slug> "<text>"');
+  need(slug && ruling, `decide requires <slug> "<text>": jarl.mjs decide ${slug ? shellWord(slug) : '<slug>'} "<text>" --by <who>`);
   const by = flags.by === undefined ? 'coordinator' : rulingAuthor(flags.by);
   const byOwner = by === OWNER;
   need(flags.quote === undefined || typeof flags.quote === 'string', '--quote is the owner\'s own words, as text');
@@ -311,9 +311,9 @@ export function cmdDecide(root, slug, ruling, flags = {}) {
   need(flags.quote === undefined || byOwner, '--quote is the owner\'s own words: it goes with --by owner');
   if (quote) needNoOwnersWords('--quote', quote);
   need(flags.area === undefined || AREA_RE.test(String(flags.area)), `--area names the type of code the ruling reaches, as the repository's graph names it: one word of letters, digits and . _ - (got "${flags.area}")`);
-  need(flags.reach === undefined || flags.area !== undefined, '--reach counts the files of the --area type — it needs --area');
+  need(flags.reach === undefined || flags.area !== undefined, '--reach counts the files of the --area type, so it needs --area: e.g. --area <type>');
   need(flags.reach === undefined || /^\d+$/.test(String(flags.reach)), `--reach is how many files the area holds, a whole number (got "${flags.reach}")`);
-  need(flags.rule === undefined || flags.area !== undefined, '--rule names the rule of the graph the ruling admits on the --area type — it needs --area');
+  need(flags.rule === undefined || flags.area !== undefined, '--rule names the rule of the graph the ruling admits on the --area type, so it needs --area: e.g. --area <type>');
   need(flags.rule === undefined || RULE_RE.test(String(flags.rule)), `--rule names a rule as the repository's graph names it: its id, segments of letters, digits and . _ - joined by / (got "${flags.rule}")`);
   need(flags.under === undefined || typeof flags.under === 'string', '--under names the slug of a ruling, as text');
   need(flags.under === undefined || !byOwner, '--under names the ruling a ruling by the jarl or a coordinator rests on; a ruling by the owner rests on his own words');

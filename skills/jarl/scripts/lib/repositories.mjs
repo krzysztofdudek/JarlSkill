@@ -3,7 +3,7 @@
 
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve, dirname, basename, relative, isAbsolute } from 'node:path';
-import { fieldText, need, noSeparators, splitList } from './base.mjs';
+import { fieldText, need, noSeparators, shellWord, splitList } from './base.mjs';
 import { git } from './git.mjs';
 import { canonical, issuesDir, jarlDir, portablePath } from './where.mjs';
 import { readText, writeAtomic } from './files.mjs';
@@ -66,7 +66,7 @@ export function repoOf(root, named) {
   const key = `${root}\n${loadProfile(root).format}\n${named}`;
   if (RESOLVED.has(key)) return RESOLVED.get(key);
   const { path: repo, name } = repoPlace(root, named);
-  need(isGitRepo(repo), name ? `${nameFix(root, name)} (${repo} is not a git repository)` : `not a git repository: ${repo} (a relative --repo or Repo path is read from the loop's root, ${root})`);
+  need(isGitRepo(repo), name ? `${nameFix(root, name)} (${repo} is not a git repository)` : `not a git repository: ${repo} (a relative --repo or Repo path is read from the loop's root, ${root}): e.g. --repo <name|path>`);
   // A subdirectory of a repository is not the repository: the paths git reports are relative to its root, so a
   // declared file or a removed test would be read from the wrong place and go unseen.
   const top = git(repo, ['rev-parse', '--show-toplevel']);
@@ -348,10 +348,10 @@ export function repoFromInput(root, raw) {
   // there is refused, never read as the repository around it.
   let kind = null;
   try { const st = statSync(spelled); kind = st.isDirectory() ? 'dir' : st.isFile() ? 'file' : null; } catch { kind = null; }
-  need(kind !== null || word, `not a git repository: ${spelled} does not exist (--repo ${JSON.stringify(given)}) — give the repository's name, its checkout, a worktree of it or a file inside it`);
+  need(kind !== null || word, `not a git repository: ${spelled} does not exist (--repo ${JSON.stringify(given)}) — give the repository's name, its checkout, a worktree of it or a file inside it: e.g. --repo <name|path>`);
   const isDir = kind === 'dir';
   const inside = isDir ? spelled : kind === 'file' ? dirname(spelled) : spelled;
-  need(isGitRepo(inside), word ? `${nameFix(root, given)} (${spelled} is not a git repository${isGitRepo(resolve(root, given)) ? `; ./${given} is a repository under the loop's root — a path is written with a leading ./` : ''})` :`not a git repository: ${spelled} (a relative --repo or Repo path is read from the loop's root, ${root})`);
+  need(isGitRepo(inside), word ? `${nameFix(root, given)} (${spelled} is not a git repository${isGitRepo(resolve(root, given)) ? `; ./${given} is a repository under the loop's root — a path is written with a leading ./` : ''}), or name another: e.g. --repo <name|path>` :`not a git repository: ${spelled} (a relative --repo or Repo path is read from the loop's root, ${root})`);
   const main = (mainCheckoutOf(inside) || {}).main ?? null;
   need(main !== null, `${inside} is a bare repository: it has no working tree to act on`);
   const candidates = [word ? given : null, isDir ? basename(spelled) : null, basename(main)];
@@ -464,7 +464,7 @@ function declareRepo(root, name, main) {
 export function cmdRepoBase(root, name, branch) {
   need(name !== undefined && branch !== undefined, 'base takes a repository name and a branch: jarl.mjs base <name> <branch>');
   const known = declaredRepos(root);
-  need(known.has(name), `${name} is not declared in this loop${known.size ? ` — it declares ${[...known.keys()].join(', ')}` : ''}; Jarl declares a repository the first time an issue names it`);
+  need(known.has(name), `${name} is not declared in this loop${known.size ? ` — it declares ${[...known.keys()].join(', ')}` : ''}; Jarl declares a repository the first time an issue names it: jarl.mjs field <id> Repo ${shellWord(name)}`);
   const base = fieldText(branch);
   need(base && !/[\r\n]/.test(String(branch)) && !base.includes(' · '), 'the base is one branch name on one line');
   const problem = branchNameProblem(base);

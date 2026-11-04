@@ -25,7 +25,7 @@ test('an ask with a kind that does not exist says the owner decides a ratify ite
 test('a close with open issues says the owner is told them, and how to close anyway', () => {
   const root = loop();
   jarl(root, 'new', 'still open');
-  assert.match(refuses(root, 'close'), /report them to the owner and run with --force/);
+  assert.match(refuses(root, 'close'), /report them to the owner and close anyway: jarl\.mjs close --force$/m);
 });
 
 test('a loop written in a record format this Jarl does not read says what the reader needs, and names no upgrade', () => {

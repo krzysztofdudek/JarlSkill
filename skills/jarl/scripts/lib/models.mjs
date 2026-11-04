@@ -26,7 +26,7 @@ const loggedFinding = (line) => (/^(model |relayed( ·|$))/i.test(line) ? `findi
 function modelValue(raw) {
   const m = fieldText(raw);
   need(typeof raw === 'string' && m, '--model needs a value — the platform\'s model id, with @<effort> where the platform has a reasoning-effort lever');
-  need(!m.includes(' · '), `--model is one value, the model id as the platform names it — not a phrase with " · " in it (got "${m}")`);
+  need(!m.includes(' · '), `--model is one value, the model id as the platform names it — not a phrase with " · " in it (got "${m}"); e.g. --model <model id>`);
   return m;
 }
 const baseModelId = (m) => String(m).split('@')[0];
