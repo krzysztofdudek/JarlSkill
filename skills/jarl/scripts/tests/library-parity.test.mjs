@@ -60,6 +60,8 @@ export const COMMAND_LINE_ONLY = [
 const READS = ['resolveRoot', 'jarlDir', 'hasLiveLoop', 'loadIssues', 'findIssue', 'decisions', 'loadAsks', 'parseIssue', 'renderIssue', 'mergedOf', 'evidenceRows', 'validateProfile', 'readProfileFile', 'loadProfile', 'describeProfile', 'withLock', 'writeAtomic', 'statusData', 'resumeData', 'recordFormat'];
 
 const TIME = /\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?Z?)?)?/g;
+// An issue's key: its filing stamp and four random letters, so the twin loops give one issue two keys.
+const KEY = /\b\d{8}T\d{4}-[a-z]{4}\b/g;
 // The padding of an id and nothing else: 003 reads as 3, a-001 as a-1. Applied only where a case says its ids differ in spelling.
 const spelling = (text) => text.replace(/(?<![\w.])(a-)?0+(\d)/g, '$1$2');
 // The files of a case whose ids are spelled with padding on one side: names and text, with the padding taken out.
@@ -69,7 +71,7 @@ const sameFiles = (a, b) => {
   return JSON.stringify(entries(a)) === JSON.stringify(entries(b));
 };
 
-// The loop's files as text, with both roots and the clock taken out; and, in a git checkout, its branches and worktrees.
+// The loop's files as text, with both roots, the clock and the issues' keys taken out; and, in a git checkout, its branches and worktrees.
 function snapshot(root, wt) {
   const dir = join(root, '.jarl');
   const files = {};
@@ -77,7 +79,7 @@ function snapshot(root, wt) {
   const scrub = (text) => {
     let t = text;
     for (const n of [existsOrNull(wt), wt, realpathSync(root), root]) if (n) t = t.split(n).join(n === wt || n === existsOrNull(wt) ? '<wt>' : '<root>');
-    return t.replace(TIME, '<time>');
+    return t.replace(KEY, '<key>').replace(TIME, '<time>');
   };
   const walk = (d) => {
     for (const e of readdirSync(d, { withFileTypes: true })) {
@@ -214,8 +216,9 @@ test('every record operation writes the same files and log lines as its command,
           raised = true;
         }
       }
-      if (raised || !sameFiles(aFiles, bFiles)) differing.add(c.name);
-      else assert.deepEqual(logLines(a.files), logLines(b.files), `${c.name}: log lines`);
+      // A case whose ids are spelled with padding on one side differs by that padding, whatever else is the same.
+      if (raised || !sameFiles(aFiles, bFiles) || (c.spell && !sameFiles(a.files, b.files))) differing.add(c.name);
+      if (sameFiles(aFiles, bFiles)) assert.deepEqual(logLines(aFiles), logLines(bFiles), `${c.name}: log lines`);
     } finally {
       for (const d of [lib, cli, wtLib, wtCli]) rmSync(d, { recursive: true, force: true });
     }

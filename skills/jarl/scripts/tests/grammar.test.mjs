@@ -15,8 +15,9 @@ const L = await import('../jarl-lib.mjs');
 
 const loop = () => makeLoop({ prefix: 'jarl-grammar-', goal: 'a goal', via: 'cli' });
 const issueText = (root, id) => readFileSync(R.findIssue(root, id).file, 'utf8');
-const logText = (root) => readFileSync(join(root, '.jarl', 'log.md'), 'utf8').replace(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}/g, '<t>');
-const scrubbed = (text) => text.replace(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}/g, '<t>');
+// The clock and the issues' keys (a filing stamp and four random letters) taken out, so twin loops read the same.
+const scrubbed = (text) => text.replace(/\b\d{8}T\d{4}-[a-z]{4}\b/g, '<key>').replace(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}/g, '<t>');
+const logText = (root) => scrubbed(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'));
 const field = (root, id, name) => JSON.parse(jarl(root, 'show', id, '--json')).fields[name];
 // An issue in progress on a branch, with one proof row and one approve.
 function worked(root, title = 'thing to do') {

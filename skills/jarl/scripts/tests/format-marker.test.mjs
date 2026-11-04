@@ -12,17 +12,17 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { formatTwoJarl, formatTwoJarlIsPinned, oldJarl, oldJarlIsPinned } from './old-jarl.mjs';
+import { fileAsBefore, formatTwoJarl, formatTwoJarlIsPinned, oldJarl, oldJarlIsPinned } from './old-jarl.mjs';
 import { jarl, refuses, run, loop as makeLoop } from './helpers.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 const L = await import('../jarl-lib.mjs');
 
-// The first issue is filed by the library, which writes its number with three digits, so the loop is format 1.
+// The first issue is filed with three digits and no key (fileAsBefore), so the loop is format 1.
 const R = await import('../record.mjs');
 const loop = () => {
   const dir = makeLoop({ prefix: 'jarl-format-', goal: 'a goal', via: 'cli' });
-  R.newIssue(dir, 'first issue', { acceptance: 'it works' });
+  fileAsBefore(dir, 'first issue', { acceptance: 'it works' });
   return dir;
 };
 const marker = (root) => join(root, '.jarl', 'profile.json');

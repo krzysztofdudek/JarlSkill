@@ -125,7 +125,7 @@ export const DONE_GATE_APPROVE = ['fresh', 'none'];
 export const DEFAULT_DONE_GATE = Object.freeze({ approve: 'fresh', 'requires-merged': false });
 // Header fields the tool itself writes and reads: a profile cannot declare them. Kind and Tier are built in too, but
 // a profile may declare them to replace their values (an enum, and a default).
-export const TOOL_FIELDS = ['Status', 'Priority', 'Tags', 'Files', 'Repo', 'After', 'Found by', 'Source', 'Where', 'Branch', 'Worker', 'Worktree', 'Since', 'Merged', 'Merge check', 'CI', 'Resources'];
+export const TOOL_FIELDS = ['Status', 'Key', 'Priority', 'Tags', 'Files', 'Repo', 'After', 'Found by', 'Source', 'Where', 'Branch', 'Worker', 'Worktree', 'Since', 'Merged', 'Merge check', 'CI', 'Resources'];
 // The fields of a wait, Person and Check when, which the tool writes beside the kinds promise and wait. A profile that
 // declares a field of either name, or its own Kind values, keeps its own meaning when its loop is read: the built-in
 // promise and wait are off in that loop. A profile file given to init or to profile <file> is refused when it declares

@@ -172,7 +172,7 @@ function unreadableMoves(loop) {
   for (const e of loop.events) {
     if (e.id === null || e.type !== 'other') continue;
     const m = ghostRe.exec(e.text);
-    if (!m || idKey(m[1]) !== idKey(e.id) || loop.profile.statuses.includes(m[2])) continue;
+    if (!m || idKey(m[1]) !== idKey(e.written ?? e.id) || loop.profile.statuses.includes(m[2])) continue;
     if (!/^[a-z][a-z0-9_-]*$/.test(m[2]) || !/^( · |$)/.test(e.text.slice(m[0].length))) continue;
     const key = `${e.id} ${m[2]}`;
     if (seen.has(key)) continue;

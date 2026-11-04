@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { jarl, refuses, run, skillText, loop as makeLoop } from './helpers.mjs';
-import { formatTwoJarl } from './old-jarl.mjs';
+import { fileAsFormatTwo, formatTwoJarl } from './old-jarl.mjs';
 
 const loop = () => makeLoop({ prefix: 'jarl-slice-', via: 'cli', dotGit: false });
 const json = (root, ...args) => JSON.parse(jarl(root, ...args, '--json'));
@@ -68,6 +68,18 @@ function twoSlices() {
   jarl(root, 'new', 'thor first', '--tags', 'slice:thor', '--files', 'a.mjs');                  // 3
   jarl(root, 'new', 'the jarl\'s', '--files', 'b.mjs');                                         // 4
   jarl(root, 'new', 'thor leased', '--tags', 'slice:thor', '--files', 'c.mjs');                 // 5
+  jarl(root, 'set', '5', 'in-progress', 'go', '--worker', 'w5', '--branch', 'jarl/5');
+  return root;
+}
+// The same loop with its issues filed with no key (fileAsFormatTwo), so it stays in format 2 until a line of format 3.
+function twoSlicesUnkeyed() {
+  const root = loop();
+  jarl(root, 'goal', '--set', 'Coordinators: odin, thor');
+  fileAsFormatTwo(root, 'odin first', { tags: 'slice:odin', files: 'a.mjs', prio: '1' });
+  fileAsFormatTwo(root, 'odin second', { tags: 'slice:odin', files: 'a.mjs' });
+  fileAsFormatTwo(root, 'thor first', { tags: 'slice:thor', files: 'a.mjs' });
+  fileAsFormatTwo(root, 'the jarl\'s', { files: 'b.mjs' });
+  fileAsFormatTwo(root, 'thor leased', { tags: 'slice:thor', files: 'c.mjs' });
   jarl(root, 'set', '5', 'in-progress', 'go', '--worker', 'w5', '--branch', 'jarl/5');
   return root;
 }
@@ -147,7 +159,7 @@ test('the issues waiting on a slice\'s issue, through After or a file it reserve
 });
 
 test('ask --kind escalation names its slice or issue, is held by the jarl, shows in the slice\'s views and holds its issue back', () => {
-  const root = twoSlices();
+  const root = twoSlicesUnkeyed();
   const before = readFileSync(join(root, '.jarl', 'profile.json'), 'utf8');
   assert.match(refuses(root, 'ask', 'is this ours?', '--kind', 'escalation'), /^an escalation names what it is about: --slice <coordinator> \(its slice\) or --issue <id>, or both$/m);
   assert.match(refuses(root, 'ask', 'is this ours?', '--slice', 'odin'), /^--slice goes with kind escalation only/m);
@@ -189,7 +201,7 @@ test('verify finds an escalation in a loop that is not in record format 3', () =
 });
 
 test('a loop holding an escalation is refused by the frozen reader of formats 1 and 2, which would refuse the kind it does not know', () => {
-  const root = twoSlices();
+  const root = twoSlicesUnkeyed();
   assert.equal(formatTwoJarl(root, 'list', {}).ok, true);
   jarl(root, 'ask', 'which first?', '--kind', 'escalation', '--slice', 'odin');
   const two = formatTwoJarl(root, 'list', {});
@@ -262,7 +274,7 @@ test('the jarl reference hands slices to coordinators: the four reasons to escal
 });
 
 test('a refused escalation writes nothing: the format is raised only after every check, right before the write', () => {
-  const root = twoSlices();
+  const root = twoSlicesUnkeyed();
   const profile = () => readFileSync(join(root, '.jarl', 'profile.json'), 'utf8');
   const before = profile();
   const log = readFileSync(join(root, '.jarl', 'log.md'), 'utf8');

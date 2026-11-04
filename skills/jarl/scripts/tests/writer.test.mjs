@@ -7,7 +7,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { jarl, refuses, run, loop as makeLoop } from './helpers.mjs';
-import { formatTwoJarl } from './old-jarl.mjs';
+import { fileAsFormatTwo, formatTwoJarl } from './old-jarl.mjs';
 import * as mcp from '../jarl-mcp.mjs';
 import * as L from '../jarl-lib.mjs';
 import { WRITER_COMMANDS, COMMAND_FLAGS } from '../jarl.mjs';
@@ -27,7 +27,8 @@ test('every command whose --by is not what it records takes one, and the table h
 
 test('a named write puts its writer after the stamp of every line it writes, and the first one raises the loop to format 3', () => {
   const root = loop();
-  jarl(root, 'new', 'one', '--files', 'a.mjs');
+  // Filed with no key (fileAsFormatTwo), which would raise the loop to 3 by itself.
+  fileAsFormatTwo(root, 'one', { files: 'a.mjs' });
   jarl(root, 'log', 'nobody named');
   const before = formatOf(root);
   assert.ok(before < 3);
@@ -43,7 +44,7 @@ test('a named write puts its writer after the stamp of every line it writes, and
   jarl(root, 'log', 'a named note', '--by', 'odin');
   const log = logOf(root);
   for (const [who, line] of [['odin', '1 → in-progress · go · branch jarl/1 · worker w1'], ['w1', '1 evidence row · npm test'], ['odin', '1 round 1 · '], ['the merger', '1 merged abc1234'], ['odin', 'asked a-1 (stuck) · which way?'], ['the jarl', 'goal line added · Coordinators: odin'], ['odin', 'filed 2 · two'], ['odin', 'a named note']]) {
-    assert.match(log, new RegExp(`^- ${STAMP} by ${who} · ${line.replace(/[.*+?()[\]|\\]/g, '\\$&')}`, 'm'), line);
+    assert.match(log, new RegExp(`^- ${STAMP}(?: key \\S+)? by ${who} · ${line.replace(/[.*+?()[\]|\\]/g, '\\$&')}`, 'm'), line);
   }
   // The reader places every line, writer and all, and the views read the moves as before.
   const events = L.loopEvents(join(root, '.jarl'), L.loadProfile(root));
@@ -98,7 +99,7 @@ test('where a composer keeps the format, --by is refused with nothing written, a
 
 test('the frozen reader of formats 1 and 2 reads a loop with no writer and refuses one that names a writer', () => {
   const root = loop();
-  jarl(root, 'new', 'one', '--files', 'a.mjs');
+  fileAsFormatTwo(root, 'one', { files: 'a.mjs' });
   assert.equal(formatTwoJarl(root, 'list', {}).ok, true);
   jarl(root, 'log', 'named', '--by', 'odin');
   const two = formatTwoJarl(root, 'list', {});

@@ -1,5 +1,6 @@
 // The one grammar of the number of an issue, a question and a branch, and of the name a branch may have.
 
+import { randomInt } from 'node:crypto';
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { need } from './base.mjs';
@@ -38,6 +39,17 @@ function issueForms(dir) { const d = join(dir, 'issues'); return writtenForms(ex
 export function newNumber(n, width) { return width ? String(n).padStart(width, '0') : String(n); }
 // The number of a question as the command line gives it: 12, the same with a hash in front, or a-12.
 function askNumber(raw) { return idKey(String(raw).replace(/^a-/, '')); }
+
+// The key of an issue: its filing stamp without its separators, T between the date and the time, then four random
+// letters (20261103T2044-kqvd). Two copies of a loop can give two issues one number; they never give them one key, so the
+// key tells the lines of the one from the lines of the other in the log. It holds no number standing alone: no reader of
+// the issue numbers in a text takes a part of it for one.
+export const KEY_SRC = '\\d{8}T\\d{4}-[a-z]{4}';
+export const KEY_RE = new RegExp(`^${KEY_SRC}$`);
+export function newIssueKey(at) {
+  const letters = Array.from({ length: 4 }, () => String.fromCharCode(97 + randomInt(26))).join('');
+  return `${String(at).replace(/[-:]/g, '').replace(' ', 'T')}-${letters}`;
+}
 
 // One id, or several as a comma list with ranges: `12,13,14` or `203-206,209` (no spaces: one argument, like --tags a,b).
 const MAX_BULK = 200;

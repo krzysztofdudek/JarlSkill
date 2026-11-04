@@ -8,8 +8,8 @@ import { needNoNewOwnersWords, needNoOwnersWords } from './owner.mjs';
 import { git, gitRun } from './git.mjs';
 import { canonical, issuesDir, jarlDir, portablePath, stamp, today } from './where.mjs';
 import { readText, renameRetry, writeAtomic } from './files.mjs';
-import { ISSUE_FILE_RE, branchNameProblem, cmpId, expandIds, idKey, idRe, isBulk, needsRaisedFormat, newNumber } from './ids.mjs';
-import { DEFAULT_PROFILE, TOOL_FIELDS, loadProfile, numberWidth, profilePath, readProfileFile } from './profile.mjs';
+import { ISSUE_FILE_RE, branchNameProblem, cmpId, expandIds, idKey, idRe, isBulk, needsRaisedFormat, newIssueKey, newNumber } from './ids.mjs';
+import { DEFAULT_PROFILE, FORMAT_LINES, TOOL_FIELDS, formatState, loadProfile, numberWidth, profilePath, readProfileFile } from './profile.mjs';
 import { appendLog, appendLogLines, decisionsPath, goalPath, logPath } from './journal.mjs';
 import { JARL_GITIGNORE, JARL_GITIGNORE_COMMITTED, ensureLoopMerge, outOfGit } from './loop-git.mjs';
 import { HANDOVER_SEGMENT, journalById, mergeCheckText } from './log.mjs';
@@ -225,6 +225,12 @@ export function cmdNew(root, title, rawFlags) {
   if (kept) needFormat(root, 'promise-wait');
   commitRepoNames(root, picked);
   if (ownerLined) needFormat(root, 'owner-line');
+  // The issue's key, its filing stamp and four random letters, raises the loop to the format that holds it. A loop a
+  // composer keeps stays in the format the composer reads, and its issues carry no key: they are told apart by number.
+  const keyed = formatState(loadProfile(root)).raises || loadProfile(root).format >= FORMAT_LINES['issue-key'].format;
+  if (keyed) needFormat(root, 'issue-key');
+  const at = stamp();
+  const key = keyed ? newIssueKey(at) : null;
   // The number is claimed by creating the file with a link, which never overwrites: when another
   // writer got there first (the lock makes that rare, not impossible — a hand-made file, a stale
   // lock broken early), the next number is tried instead of two issues sharing one.
@@ -243,7 +249,7 @@ export function cmdNew(root, title, rawFlags) {
     const file = join(dir, `${id}-${slugify(title)}.md`);
     const tmp = join(dir, `.${id}.${process.pid}.tmp`);
     const rendered = renderIssue({
-      id, title, status: profile.initial, kind, priority, tier, fields, sections, acceptanceHeading: profile.acceptance || 'Acceptance',
+      id, title, status: profile.initial, key, kind, priority, tier, fields, sections, acceptanceHeading: profile.acceptance || 'Acceptance',
       tags: splitList(flags.tags), files: pathList(flags.files), repo: picked.map((p) => p.value).join(', '), foundBy: flags['found-by'] || 'jarl', person, checkWhen,
       where: flags.where, what: bodyText(flags.what), why: bodyText(flags.why), source, after,
       // A template's Acceptance and Changelog are taken as written (a list already); a flag replaces them.
@@ -256,7 +262,7 @@ export function cmdNew(root, title, rawFlags) {
     let claimed = !taken().includes(n);
     // The filing goes into the journal first: a write that stops after it leaves the record ahead of the files (a filing
     // with no file, and the number is taken again), never a file the record does not hold.
-    if (claimed) appendLog(root, `filed ${id} · ${title}${rawFlags.template !== undefined ? ` · template ${rawFlags.template}` : ''}`);
+    if (claimed) appendLogLines(root, [{ text: `filed ${id} · ${title}${rawFlags.template !== undefined ? ` · template ${rawFlags.template}` : ''}`, key }], at);
     if (claimed) { try { claimed = claimFile(tmp, file); } catch (e) { unlinkSync(tmp); throw e; } }
     unlinkSync(tmp);
     if (claimed) {

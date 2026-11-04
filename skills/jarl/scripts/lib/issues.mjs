@@ -5,7 +5,7 @@ import { basename, join } from 'node:path';
 import { CI_STATES, fieldText, need, oneBreak, splitList } from './base.mjs';
 import { issuesDir, jarlDir } from './where.mjs';
 import { readText } from './files.mjs';
-import { ISSUE_FILE_RE, cmpId, idKey, idRe, newNumber, writtenForms, writtenId } from './ids.mjs';
+import { ISSUE_FILE_RE, KEY_RE, cmpId, idKey, idRe, newNumber, writtenForms, writtenId } from './ids.mjs';
 import { loadProfile } from './profile.mjs';
 import { DECISION_HEAD, DECISION_META } from './journal.mjs';
 import { eventsById, issueState, loopEvents } from './log.mjs';
@@ -70,16 +70,25 @@ function issuesAt(recordDir, profile, events = loopEvents(recordDir, profile)) {
     .map((f) => withProfile(parseIssue(readText(join(dir, f)), join(dir, f)), profile));
   const files = new Map();
   for (const i of parsed) if (i.id !== null) files.set(idKey(i.id), (files.get(idKey(i.id)) || 0) + 1);
+  const keyOf = issueKeyOf;
   const issues = parsed.map((issue) => {
     // An After names an issue as the loop writes it: the form its file carries, whatever form the After line gives.
     issue.after = issue.after.map((x) => writtenId(x, forms));
-    const events = by.get(issue.id) || [];
+    // An issue's lines are those that name its key, and those under its number that name no key: all of them for the one
+    // file of a number, and for a file with no key among files that carry one. A line that names another key is another
+    // issue's, even under the same number.
+    const key = keyOf(issue);
+    const alone = issue.id === null || files.get(idKey(issue.id)) === 1;
+    const events = (by.get(issue.id) || []).filter((e) => (key !== null && e.key === key) || ((e.key ?? null) === null && (key === null || alone)));
     // Filings are counted by what they file: a filing line repeated with the same title (a line copied in the log) files
     // the same issue again, while two titles under one number are two issues.
     const filings = new Set(events.filter((e) => e.type === 'filed').map((e) => e.text.replace(/^filed \S+ · /, ''))).size;
     // A number two files carry, or one the log files more than once, is one the log cannot attribute: it cannot say which
-    // file its lines were written for. Such an issue is read from its own header, never from the log.
-    if (issue.id !== null && (files.get(idKey(issue.id)) > 1 || filings > 1)) return headerRead(issue, filings);
+    // file its lines were written for. Such an issue is read from its own header, never from the log. Two files of one
+    // number that each carry their own key, and whose number has no line with no key that carries state, are attributed
+    // by their keys: each is read from its own lines.
+    const shared = issue.id !== null && files.get(idKey(issue.id)) > 1;
+    if (issue.id !== null && ((shared && !keyedApart(parsed, by, issue.id, keyOf)) || filings > 1)) return headerRead(issue, filings);
     return withRecordState(issue, issueState(profile, events));
   });
   // An issue whose number another file carries too holds the files of that number in `shared`, which the views print;
@@ -87,6 +96,18 @@ function issuesAt(recordDir, profile, events = loopEvents(recordDir, profile)) {
   for (const s of sharedNumbers(issues)) for (const i of s.issues) i.shared = s.issues.map((x) => `issues/${basename(x.file)}`);
   return issues;
 }
+// Whether the files that carry the number `id` are told apart by their keys: each carries a key no other of them carries,
+// at most one of them carries none, and every line under the number that carries state (a filing, a move, a row, a
+// verdict, a merge) names one of the keys, or names none where one file carries none, whose line it then is.
+export function keyedApart(parsed, by, id, keyOf = issueKeyOf) {
+  const same = parsed.filter((i) => i.id !== null && idKey(i.id) === idKey(id));
+  const keys = same.map(keyOf).filter((k) => k !== null);
+  const unkeyed = same.length - keys.length;
+  if (unkeyed > 1 || new Set(keys).size !== keys.length) return false;
+  return (by.get(id) || []).every((e) => e.type === 'other' || keys.includes(e.key) || ((e.key ?? null) === null && unkeyed === 1));
+}
+// The key an issue's header carries in the key's grammar, or null.
+export function issueKeyOf(issue) { return issue.fields.key && KEY_RE.test(issue.fields.key) ? issue.fields.key : null; }
 // The header fields the commands render from the journal, as the fields of an issue name them.
 const RENDERED_FIELDS = ['branch', 'worker', 'model', 'since', 'merged', 'merge check', 'ci'];
 // An issue with the state its journal gives in place of the one its header says. The header as read stays in
@@ -348,7 +369,7 @@ export function changelogEntries(issue) {
 // fields: the profile's declared fields, [name, value] in its order, each written after Where (empty when not given).
 // sections: the profile's extra sections, [heading, body], written after Acceptance. acceptanceHeading: the heading the
 // acceptance goes under. Without them the file holds the built-in fields and sections only.
-export function renderIssue({ id, title, status = 'open', kind, priority, tier, tags, files, repo, foundBy, person = '', checkWhen = '', where = '', what = '', why = '', acceptance = '', source = [], after = [], changelog = '', fields = [], sections = [], acceptanceHeading = 'Acceptance' }) {
+export function renderIssue({ id, title, status = 'open', key = null, kind, priority, tier, tags, files, repo, foundBy, person = '', checkWhen = '', where = '', what = '', why = '', acceptance = '', source = [], after = [], changelog = '', fields = [], sections = [], acceptanceHeading = 'Acceptance' }) {
   const body = (t) => (t ? `${t}\n` : '\n');
   const declared = fields.map(([n, v]) => `**${n}:**${v ? ` ${v}` : ''}\n`).join('');
   const extra = sections.map(([h, t]) => `## ${h}\n${body(t)}\n`).join('');
@@ -358,7 +379,7 @@ export function renderIssue({ id, title, status = 'open', kind, priority, tier, 
 **Kind:** ${kind}
 **Priority:** ${priority}
 **Tier:** ${tier}
-**Tags:** ${tags.join(', ')}
+${key ? `**Key:** ${key}\n` : ''}**Tags:** ${tags.join(', ')}
 **Files:** ${files.join(', ')}
 ${repo ? `**Repo:** ${repo}\n` : ''}${after.length ? `**After:** ${after.join(', ')}\n` : ''}**Found by:** ${fieldText(foundBy)}
 ${person ? `**Person:** ${fieldText(person)}\n` : ''}${checkWhen ? `**Check when:** ${fieldText(checkWhen)}\n` : ''}${source.length ? `**Source:** ${source.join(', ')}\n` : ''}**Where:**${where ? ` ${fieldText(where)}` : ''}
@@ -401,8 +422,9 @@ export function alignRows(id, rows, journalRows) {
   const used = new Set();
   return rows.map((row) => {
     const hit = journalRows.find((j) => {
-      if (used.has(j) || !j.text.startsWith(prefix)) return false;
-      const l = j.text.slice(prefix.length).replace(MORE_LINES, '');
+      const own = j.written === undefined ? prefix : `${j.written} evidence row · `;
+      if (used.has(j) || !j.text.startsWith(own)) return false;
+      const l = j.text.slice(own.length).replace(MORE_LINES, '');
       return row.first === l || row.first.startsWith(`${l} · **saw:**`);
     });
     if (hit) used.add(hit);

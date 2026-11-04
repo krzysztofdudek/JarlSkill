@@ -108,18 +108,18 @@ test('new numbers 1000 after 999, raises the record format before it writes, and
   const a = JSON.parse(jarl(root, 'new', 'one thousand', '--acceptance', 'it works', '--json'));
   assert.equal(a.id, '1000');
   assert.match(a.file, /1000-one-thousand\.md$/);
-  assert.equal(formatOf(root), 2);
+  assert.equal(formatOf(root), 3, 'the number and the key are written in the raised format, the key in 3');
   assert.equal(JSON.parse(jarl(root, 'new', 'one thousand one', '--json')).id, '1001');
   assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /filed 1000 · one thousand\n/);
   for (const command of ['list', 'status']) {
     const r = oldJarl(root, command, {});
     assert.equal(r.ok, false, command);
-    assert.match(r.error, /written for record format 2, and this Jarl reads format 1/, command);
+    assert.match(r.error, /written for record format 3, and this Jarl reads format 1/, command);
   }
   assert.ok(readdirSync(join(root, '.jarl', 'issues')).includes('998-old-998.md'), 'files below 1000 keep their names');
 });
 
-test('an existing loop of padded numbers reads and prints as written, and the first issue of 100 stays in format 1', () => {
+test('an existing loop of padded numbers reads and prints as written, and the number 100 needs no raise of its own', () => {
   const root = mkdtempSync(join(tmpdir(), 'jarl-ids-'));
   mkdirSync(join(root, '.git'));
   jarl(root, 'init', 'a goal');
@@ -128,9 +128,9 @@ test('an existing loop of padded numbers reads and prints as written, and the fi
   const a = JSON.parse(jarl(root, 'new', 'hundred', '--json'));
   assert.equal(a.id, '100');
   assert.match(a.file, /100-hundred\.md$/);
-  assert.equal(formatOf(root), 1, 'a number of three digits is written the same padded or not');
+  assert.equal(L.needsRaisedFormat(a.id), false, 'a number of three digits is written the same padded or not');
+  assert.equal(formatOf(root), 3, 'the key of the new issue raises the loop');
   assert.deepEqual(JSON.parse(jarl(root, 'list', '--json')).map((r) => r.id), ['099', '100']);
-  assert.equal(oldJarl(root, 'list', {}).ok, true);
 });
 
 test('the first write of an unpadded number of 1 to 99 raises the record format, and the frozen reader then refuses the loop', () => {
@@ -141,10 +141,10 @@ test('the first write of an unpadded number of 1 to 99 raises the record format,
   assert.equal(formatOf(root), 1);
   assert.equal(oldJarl(root, 'list', {}).ok, true, 'before: the frozen reader reads the loop');
   assert.equal(JSON.parse(jarl(root, 'new', 'eight', '--json')).id, '8');
-  assert.equal(formatOf(root), 2);
+  assert.equal(formatOf(root), 3, 'the number and the key are written in the raised format, the key in 3');
   const r = oldJarl(root, 'list', {});
   assert.equal(r.ok, false);
-  assert.match(r.error, /written for record format 2, and this Jarl reads format 1/);
+  assert.match(r.error, /written for record format 3, and this Jarl reads format 1/);
 });
 
 test('list, queue, next, show, set, after, ranges, review and the log work across 998 to 1001, by the CLI', () => {
@@ -180,7 +180,7 @@ test('the same commands work by the MCP tool', () => {
   const root = loopAt999();
   assert.match(tool(root, 'jarl_new', { title: 'thousand', acceptance: ['works'] }), /1000/);
   assert.match(tool(root, 'jarl_new', { title: 'thousand one' }), /1001/);
-  assert.equal(formatOf(root), 2);
+  assert.equal(formatOf(root), 3);
   const ids = JSON.parse(tool(root, 'jarl_list', { json: true })).map((r) => r.id);
   assert.deepEqual(ids, ['998', '999', '1000', '1001']);
   assert.match(tool(root, 'jarl_show', { id: '1000' }), /^# 1000 · thousand/);
@@ -207,11 +207,12 @@ test('questions: a-1000 and the plain 1000 in a question read and write the same
   assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /answered a-1000 · this one/);
   assert.deepEqual(L.loadAsks(root).map((a) => a.id), ['999', '1000']);
   // A question naming an issue of 1000 or more raises the format as well.
+  // The number 1000 is written as a file with no key, so the loop stays in format 1 until the question names it.
   const other = loopAt999();
-  jarl(other, 'new', 'thousand');
-  const raised = formatOf(other);
-  assert.equal(raised, 2);
+  writeFileSync(join(other, '.jarl', 'issues', '1000-thousand.md'), L.renderIssue({ id: '1000', title: 'thousand', kind: 'task', priority: '2', tier: 'standard', tags: [], files: [], repo: '', foundBy: 'jarl' }));
+  assert.equal(formatOf(other), 1);
   jarl(other, 'ask', 'about it', '--issue', '1000');
+  assert.equal(formatOf(other), 2, 'the question naming 1000 raised the format');
   assert.match(readFileSync(join(other, '.jarl', 'asks.md'), 'utf8'), /\(open\) · stuck · issue 1000 · about it/);
   assert.equal(L.loadAsks(other)[0].issue, '1000');
 });
@@ -266,9 +267,9 @@ test('a new number is plain on the command line and three digits from the record
   const lib = R.newIssue(root, 'library');
   assert.equal(lib.id, '001');
   assert.match(lib.file, /[\\/]001-library\.md$/);
-  assert.equal(formatOf(root), 1, 'a three-digit number raises nothing');
+  assert.equal(L.needsRaisedFormat(lib.id), false, 'a three-digit number needs no raise of its own');
   assert.equal(JSON.parse(jarl(root, 'new', 'command', '--json')).id, '2', 'the command line writes the next number plain');
-  assert.equal(formatOf(root), 2);
+  assert.equal(formatOf(root), 3, 'the keys of both raise the loop to 3, which holds the plain number too');
   assert.match(jarl(root, 'show', '1'), /^# 001 · library/, 'both writings read the same issue');
   assert.match(jarl(root, 'show', '#2'), /^# 2 · command/);
   const q = R.ask(root, 'which?', { kind: 'stuck' });

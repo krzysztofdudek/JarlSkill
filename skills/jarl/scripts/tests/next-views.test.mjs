@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { FINDINGS } from './findings.mjs';
-import { oldJarl } from './old-jarl.mjs';
+import { oldJarl, fileAsBefore } from './old-jarl.mjs';
 import { run, jarl, refuses, loop as makeLoop, SPAWN_TIMEOUT } from './helpers.mjs';
 import * as R from '../record.mjs';
 
@@ -240,9 +240,9 @@ test('an issue that declares a resource passes check on its real files; check, q
 
 test('set resources refuses a bad name and the lease flags; an empty value clears; the frozen reader ignores the field', () => {
   const hub = twoRepos();
-  // Filed by the library, so the loop stays format 1 for the frozen reader; the numbers are 001 and 002.
-  R.newIssue(hub, 'a', { files: 'a.mjs' });
-  R.newIssue(hub, 'b', { files: 'b.mjs' });
+  // Filed with three digits and no key (fileAsBefore), so the loop stays format 1 for the frozen reader.
+  fileAsBefore(hub, 'a', { files: 'a.mjs' });
+  fileAsBefore(hub, 'b', { files: 'b.mjs' });
   assert.match(refuses(hub, 'set', '1', 'resources', 'two words'), /resource names are single words/);
   jarl(hub, 'set', '1,2', 'resources', 'port-8080');
   assert.deepEqual(JSON.parse(jarl(hub, 'next', '--json')).map((r) => r.id), ['001'], '002 shares the resource, so it is held');

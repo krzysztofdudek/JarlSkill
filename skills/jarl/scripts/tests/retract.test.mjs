@@ -8,18 +8,18 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { oldJarl } from './old-jarl.mjs';
+import { fileAsBefore, oldJarl } from './old-jarl.mjs';
 import { jarl, refuses, loop as makeLoop } from './helpers.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 const L = await import('../jarl-lib.mjs');
-// Issues are filed by the library, whose number has three digits, so each loop stays format 1 until a retraction.
+// Issues are filed with three digits and no key (fileAsBefore), so each loop stays format 1 until a retraction.
 const R = await import('../record.mjs');
 
 const loop = () => makeLoop({ prefix: 'jarl-retract-', goal: 'a goal', via: 'cli' });
 // An issue in progress on a branch (a code issue), filed under 001 unless others exist.
 function started(root, title = 'thing to do') {
-  const id = R.newIssue(root, title, { acceptance: 'it works' }).id;
+  const id = fileAsBefore(root, title, { acceptance: 'it works' });
   jarl(root, 'set', id, 'in-progress', '--worker', 'w-one', '--branch', `jarl/${id}-x`);
   return id;
 }
@@ -193,7 +193,7 @@ test('the first retraction raises the format before its line is written; the pin
 
 test('body --title changes the heading with a log entry; the file keeps its name', () => {
   const root = loop();
-  const id = R.newIssue(root, 'a wrong title').id;
+  const id = fileAsBefore(root, 'a wrong title');
   const before = L.findIssue(root, id).file;
   assert.match(jarl(root, 'body', id, '--title', 'the right title'), /001 body: title/);
   const issue = L.findIssue(root, id);

@@ -2,7 +2,9 @@
 // committed loop, or two branches of one checkout, that each file an issue take the same number, and git merges the two
 // files without a conflict. These tests hold what Jarl does then: verify names both files, the views say it in place of
 // a header advice that would copy the log's state into a file it may not belong to, and every command that addresses an
-// issue by that number is refused with both files named, writing nothing.
+// issue by that number is refused with both files named, writing nothing. The issues here carry no key: they are filed
+// through the pinned frozen reader of formats 1 and 2 (fileAsFormatTwo), which writes none, so the log names them by
+// number alone. Issues told apart by their keys are the subject of two-copies.test.mjs.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -12,6 +14,7 @@ import { join } from 'node:path';
 import * as R from '../record.mjs';
 import { SPAWN_TIMEOUT, gitRepo, jarl, refuses, run } from './helpers.mjs';
 import { NO_EXCLUDES } from './portable.mjs';
+import { fileAsFormatTwo } from './old-jarl.mjs';
 
 const BOTH = /issues\/2-second-on-a\.md and issues\/2-second-on-b\.md/;
 
@@ -19,7 +22,7 @@ const BOTH = /issues\/2-second-on-a\.md and issues\/2-second-on-b\.md/;
 function committedLoop() {
   const { dir, g } = gitRepo({ branch: 'main' });
   jarl(dir, 'init', 'two drivers', '--committed');
-  jarl(dir, 'new', 'filed before the split', '--tier', 'light');
+  fileAsFormatTwo(dir, 'filed before the split', { tier: 'light' });
   g('add', '-A'); g('commit', '-qm', 'loop');
   return { dir, g };
 }
@@ -34,7 +37,7 @@ function cloneOf(dir) {
 }
 // Files one issue titled `title` in `at` and commits it.
 function fileAndCommit(at, title) {
-  jarl(at.dir, 'new', title, '--tier', 'light');
+  fileAsFormatTwo(at.dir, title, { tier: 'light' });
   at.g('add', '-A'); at.g('commit', '-qm', title);
 }
 // The issue files and the log of a loop, to show that a refusal wrote nothing.
@@ -113,7 +116,7 @@ test('while two files carry one number, every command that addresses it is refus
 
 test('an answer to a question about a number two files carry is refused before anything is written', () => {
   const a = committedLoop();
-  jarl(a.dir, 'new', 'second on A', '--tier', 'light');
+  fileAsFormatTwo(a.dir, 'second on A', { tier: 'light' });
   jarl(a.dir, 'ask', 'which way?', '--issue', '2');
   a.g('add', '-A'); a.g('commit', '-qm', 'a asks');
   a.g('checkout', '-q', '-b', 'other', 'HEAD~1');
@@ -395,7 +398,7 @@ test('import --adopt that would write into a number two files carry is refused b
   a.g('add', '-A'); a.g('commit', '-qm', 'a names a finding');
   const b = cloneOf(a.dir);
   fileAndCommit(a, 'second on A');
-  jarl(b.dir, 'new', 'second on B', '--tier', 'light', '--what', 'covers jarl-2-B5');
+  fileAsFormatTwo(b.dir, 'second on B', { tier: 'light', what: 'covers jarl-2-B5' });
   b.g('add', '-A'); b.g('commit', '-qm', 'b files');
   b.g('pull', '-q', '--no-rebase', '--no-edit', 'origin', 'main');
   const file = join(mkdtempSync(join(tmpdir(), 'jarl-shared-findings-')), 'findings.json');

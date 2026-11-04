@@ -1,13 +1,14 @@
 // The log: the one reader of every line the journal holds, which the review and the done gate stand on.
 
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { CI_STATES, fieldText, need } from './base.mjs';
 import { needNoOwnersWords } from './owner.mjs';
 import { jarlDir, plainRelative } from './where.mjs';
 import { readText, writeAtomic } from './files.mjs';
-import { idKey, idRe, issueForms, writtenId } from './ids.mjs';
+import { ISSUE_FILE_RE, KEY_SRC, idKey, idRe, issueForms, writtenId } from './ids.mjs';
 import { SLOT_NAME_RE, loadProfile } from './profile.mjs';
-import { STAMP_SRC, appendLog, logPath, oneLine } from './journal.mjs';
+import { STAMP_SRC, appendLog, headerKey, logPath, oneLine } from './journal.mjs';
 
 // ---- review and the done gate --------------------------------------------------------------------
 
@@ -46,8 +47,11 @@ import { STAMP_SRC, appendLog, logPath, oneLine } from './journal.mjs';
 // A line names its writer, when the call that wrote it named one (--by), right after the stamp and before the separator:
 // `- <stamp> by <writer> · <text>`. The place is fixed and no text of the line can reach it, so a note can never pose as
 // a writer; a reader that knows no writer does not read the line as dated at all, and a loop that holds one is in
-// record format 3, which that reader refuses.
-const LOG_LINE = new RegExp(`^- (${STAMP_SRC})(?: by ([^·\\n]+?))? · ([^\\n]*)$`);
+// record format 3, which that reader refuses. A line about an issue that carries a key names the key in the same way,
+// right after the stamp and before the writer: `- <stamp> key <key> by <writer> · <text>`. The key, not the number, says
+// which issue such a line is about: two issues that took one number in two copies of the loop keep their lines apart,
+// and an issue given another number keeps the lines written under its old one. A line with no key is read by its number.
+const LOG_LINE = new RegExp(`^- (${STAMP_SRC})(?: key (${KEY_SRC}))?(?: by ([^·\\n]+?))? · ([^\\n]*)$`);
 const LEADING_ID = idRe('^(?:filed )?({id})\\b');
 const RETRACT_ROW_LINE = idRe('^{id} evidence retract · row (\\d+)\\b');
 const RETRACT_NOTE_LINE = idRe('^{id} evidence retract · note (\\d+)\\b');
@@ -203,8 +207,8 @@ export function mapMergeRepos(root, fn) {
   const held = issueForms(jarlDir(root));
   const next = log.split('\n').map((l) => {
     const m = LOG_LINE.exec(l);
-    const p = m && MERGE_REPO_PART.exec(m[3]);
-    return p && held.has(idKey(p[1])) && !p[3].includes(' · ') ?`- ${m[1]}${m[2] ? ` by ${m[2]}` : ''} · ${p[1]} merged ${p[2]} in ${fn(p[3])}${p[4]}` : l;
+    const p = m && MERGE_REPO_PART.exec(m[4]);
+    return p && held.has(idKey(p[1])) && !p[3].includes(' · ') ?`- ${m[1]}${m[2] ? ` key ${m[2]}` : ''}${m[3] ? ` by ${m[3]}` : ''} · ${p[1]} merged ${p[2]} in ${fn(p[3])}${p[4]}` : l;
   }).join('\n');
   if (next !== log) writeAtomic(path, next);
 }
@@ -213,32 +217,58 @@ export function mapMergeRepos(root, fn) {
 // typed events. An issue's events carry the status it moved from, replayed from its own filing and moves. With `skipped`
 // (an array), each line the reader does not place is pushed onto it as { n, text, reason }, n the line's number: a line
 // that is not dated, and a line that reads as one of the kinds the log writes and parses as none of them (see unplaced).
-export function loopEvents(dir, profile, skipped) {
+// Each event carries `written`, the number as its line writes it, and `key`, the key the line names (null for none). A
+// line with a key is about the issue whose file carries that key, whatever number it was written under, and its id is
+// that issue's; a line with no key, or with a key no file carries, is about the issue its number names. `keys` (a Map of
+// key to the written id of the file that carries it) is read from the issue files when not handed in.
+export function loopEvents(dir, profile, skipped, keys) {
   const path = logPath(dir);
   if (!existsSync(path)) return [];
   const parse = eventParser(profile);
   const lastStatus = new Map();
   const events = [];
   const forms = issueForms(dir);
-  readText(path).split('\n').forEach((l, n) => {
+  const log = readText(path);
+  const keyed = keys ?? (KEYED_LINE.test(log) ? issueKeysAt(dir) : new Map());
+  log.split('\n').forEach((l, n) => {
     const m = LOG_LINE.exec(l);
     if (!m) {
       if (skipped && l.trim() !== '' && !l.startsWith('#')) skipped.push({ n: n + 1, text: l, reason: 'not a dated line: a line of the log is "- <date> <time> · <text>"' });
       return;
     }
     // A line names its issue as it was written; the event carries the issue's own form, so it meets its issue's id.
-    const [, at, writer = null, text] = m;
+    const [, at, key = null, writer = null, text] = m;
     const written = LEADING_ID.exec(text)?.[1] ?? null;
-    const id = written === null ? null : writtenId(written, forms);
-    const body = id === null ? { type: 'other' } : parse(written, text, lastStatus.get(id) ?? null);
+    const id = written === null ? null : (key !== null && keyed.has(key) ? keyed.get(key) : writtenId(written, forms));
+    // The status a move comes from is the one the same issue's lines left: by its key where the line names one.
+    const thread = key ?? id;
+    const body = id === null ? { type: 'other' } : parse(written, text, lastStatus.get(thread) ?? null);
     if (skipped && written !== null) { const why = unplaced(profile, written, text, body); if (why) skipped.push({ n: n + 1, text: l, reason: why }); }
     // A line the tool never writes with a strike-through: the reader takes it for a note, and a strike-through voids nothing.
     if (skipped && /^~~/.test(text)) skipped.push({ n: n + 1, text: l, reason: 'a struck-through line: the reader takes it for a note, and a strike-through retracts nothing (a verdict is retracted with retract <id> review, an evidence row with retract <id> <n>)' });
-    if (body.type === 'filed') { if (!lastStatus.has(id)) lastStatus.set(id, profile.initial); }
-    else if (body.type === 'move') lastStatus.set(id, body.to);
-    events.push({ n, at, text, writer, id, ...body });
+    if (body.type === 'filed') { if (!lastStatus.has(thread)) lastStatus.set(thread, profile.initial); }
+    else if (body.type === 'move') lastStatus.set(thread, body.to);
+    events.push({ n, at, text, writer, key, id, written, ...body });
   });
   return events;
+}
+// Whether a log holds a line with a key: only then are the issue files read for their keys.
+const KEYED_LINE = new RegExp(`^- ${STAMP_SRC} key ${KEY_SRC} `, 'm');
+// The keys the issue files under `dir` (the directory holding issues/) carry, each to the written id of its file. A key
+// two files carry names neither: it is left out, and their lines are read by number.
+export function issueKeysAt(dir) {
+  const d = join(dir, 'issues');
+  const out = new Map();
+  const twice = new Set();
+  for (const f of existsSync(d) ? readdirSync(d) : []) {
+    const m = ISSUE_FILE_RE.exec(f);
+    const key = m ? headerKey(readText(join(d, f))) : null;
+    if (key === null) continue;
+    if (out.has(key)) twice.add(key);
+    out.set(key, m[1]);
+  }
+  for (const k of twice) out.delete(k);
+  return out;
 }
 // Why a dated line of an issue is not placed, or null when it is: a line that reads as one of the kinds the log writes
 // (a review, a merge, a CI state, a body change, an evidence row or retraction, a tick) and that the parser placed as none of
@@ -290,7 +320,7 @@ export function issueState(profile, events) {
       held = true; s.status = e.to;
       if (profile.is(e.to, 'holds-claim')) {
         s.since = e.at;
-        const branch = leaseOfMove(e.text, e.id, e.to).branch;
+        const branch = leaseOfMove(e.text, e.written ?? e.id, e.to).branch;
         if (branch) s.branch = branch;
         if (e.lease) { s.worker = e.lease.worker; s.model = e.model; } else if (e.model) s.model = e.model;
       } else { s.worker = null; s.model = null; s.since = null; }

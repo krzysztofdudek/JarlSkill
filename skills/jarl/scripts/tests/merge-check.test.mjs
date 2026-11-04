@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import * as R from '../record.mjs';
-import { oldJarl } from './old-jarl.mjs';
+import { oldJarl, fileAsBefore } from './old-jarl.mjs';
 import { spawnJarl, jarl, refuses, loop as makeLoop, SPAWN_TIMEOUT } from './helpers.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
@@ -25,11 +25,12 @@ const issueText = (root, id) => { const dir = join(root, '.jarl', 'issues'); ret
 const git = (cwd, ...args) => spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { cwd, encoding: 'utf8', timeout: SPAWN_TIMEOUT });
 
 // A loop of one repository (the loop's own), with `n` issues filed.
-// With `padded`, the library files the issues, so the loop stays format 1 for the frozen reader.
+// With `padded`, the issues are filed as a loop filed before it held keys holds them (three digits, no key), so the loop
+// stays format 1 for the frozen reader.
 const loop = (n = 0, goal = 'goal', padded = false) => {
   const root = makeLoop({ prefix: 'jarl-mcheck-', goal, via: 'cli' });
   for (let k = 1; k <= n; k += 1) {
-    if (padded) R.newIssue(root, `issue ${k}`, { acceptance: 'it works' });
+    if (padded) fileAsBefore(root, `issue ${k}`, { acceptance: 'it works' });
     else jarl(root, 'new', `issue ${k}`, '--acceptance', 'it works');
   }
   return root;
@@ -66,7 +67,7 @@ test('merged --ran --saw records the check in the merge record, as a Merge check
     assert.doesNotMatch(issueText(root, id), /\*\*CI:\*\*/);
   }
   assert.doesNotMatch(log(root), /evidence row/);
-  assert.match(log(root), /^- \S+ \S+ · 2 merged abc1234 · check npm test · saw pass 12$/m);
+  assert.match(log(root), /^- \S+ \S+(?: key \S+)? · 2 merged abc1234 · check npm test · saw pass 12$/m);
   assert.doesNotMatch(log(root), /merged abc1234.*CI/);
   appendFileSync(join(root, '.jarl', 'goal.md'), '\nCheck: npm test\n');
   const st = jarl(root, 'status');
@@ -104,7 +105,7 @@ test('a library call keeps pending as the default CI state of a merge; the comma
 test('merged --red <id> records a landing on a red check whose cause another issue tracks, never counted as a passing check', () => {
   const root = loop(3);
   assert.equal(jarl(root, 'merged', '1', '--sha', 'abc1234', '--red', '3'), '1 merged abc1234 · landed red, cause 3');
-  assert.match(log(root), /^- \S+ \S+ · 1 merged abc1234 · landed red, cause 3$/m);
+  assert.match(log(root), /^- \S+ \S+(?: key \S+)? · 1 merged abc1234 · landed red, cause 3$/m);
   assert.match(refuses(root, 'merged', '2', '--sha', 'abc1234', '--red', '99'), /does not exist/);
   assert.match(refuses(root, 'merged', '2', '--sha', 'abc1234', '--red', '2'), /is the issue being merged/);
   assert.match(refuses(root, 'merged', '2', '--sha', 'abc1234', '--red', '3', '--ran', 'npm test', '--saw', 'fail'), /not both/);

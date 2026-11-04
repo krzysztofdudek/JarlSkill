@@ -1,12 +1,12 @@
 // The journal and the decisions: the loop's files, the log lines written, the rulings, the goal and the questions file.
 
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { join, dirname, basename } from 'node:path';
 import { fieldText, need, noSeparators, oneBreak, slugify, splitList } from './base.mjs';
 import { jarlDir, stamp, today } from './where.mjs';
 import { appendAtomic, readText, writeAtomic } from './files.mjs';
-import { idKey, idRe, issueForms, writtenId } from './ids.mjs';
-import { loadProfile } from './profile.mjs';
+import { ISSUE_FILE_RE, KEY_RE, idKey, idRe, issueForms, writtenId } from './ids.mjs';
+import { FORMAT_LINES, loadProfile } from './profile.mjs';
 import { OWNER, carryingOwnersWords, needNoOwnersWords, quoteLine, quoteOf, underLine, underOf } from './owner.mjs';
 
 // ---- journal and decisions ----------------------------------------------------------------------
@@ -40,10 +40,49 @@ export function writeWhole(path, text) {
 }
 // Several lines in one write: a bulk command's lines land together or not at all. A command that writes the same
 // moment into a header field takes the stamp once and passes it as `at`, so the two cannot fall in two minutes.
+// An event is the line's text, or { text, key } for a line that names its issue's key itself (the filing, written before
+// the issue's file exists). A line about an issue whose file carries a key is written with that key, in its fixed place
+// right after the stamp and before the writer: `- <stamp> key <key> by <writer> · <text>`. No text reaches that place.
 export function appendLogLines(root, events, at = stamp()) {
   const w = callWriter;
   if (w && !w.raised) { w.raise(root); w.raised = true; }
-  appendAtomic(logPath(jarlDir(root)), '# Log\n\n', events.map((e) => `- ${at}${w ? ` by ${w.name}` : ''} · ${oneLine(e)}\n`).join(''));
+  const keyOf = lineKeys(root, events);
+  appendAtomic(logPath(jarlDir(root)), '# Log\n\n', events.map((e) => {
+    const text = oneLine(typeof e === 'string' ? e : e.text);
+    const key = typeof e === 'string' ? keyOf(text) : e.key ?? null;
+    return `- ${at}${key ? ` key ${key}` : ''}${w ? ` by ${w.name}` : ''} · ${text}\n`;
+  }).join(''));
+}
+// The key each line of `events` is about, read from its issue's file: a line that opens with an issue's number (after
+// "filed", for a filing) takes the key of the one issue file of that number, when that file carries one and the loop is
+// in the format that holds keys. A number two files carry names no one issue, and its line is written with no key.
+const LEADING_ISSUE = idRe('^(?:filed )?({id})\\b');
+function lineKeys(root, events) {
+  const wanted = new Set(events.filter((e) => typeof e === 'string').map((e) => LEADING_ISSUE.exec(oneLine(e))?.[1]).filter(Boolean).map(idKey));
+  const none = () => null;
+  if (!wanted.size) return none;
+  const dir = join(jarlDir(root), 'issues');
+  if (!existsSync(dir) || loadProfile(root).format < FORMAT_LINES['issue-key'].format) return none;
+  const keys = new Map();
+  for (const f of readdirSync(dir)) {
+    const m = ISSUE_FILE_RE.exec(f);
+    if (!m || !wanted.has(idKey(m[1]))) continue;
+    keys.set(idKey(m[1]), [...(keys.get(idKey(m[1])) || []), headerKey(readText(join(dir, f)))]);
+  }
+  return (text) => {
+    const n = LEADING_ISSUE.exec(text)?.[1];
+    const found = n === undefined ? [] : keys.get(idKey(n)) || [];
+    return found.length === 1 ? found[0] : null;
+  };
+}
+// The key an issue's header carries, or null: a Key field of the header (before the first section) in the key's grammar.
+export function headerKey(text) {
+  for (const line of String(text).split('\n').slice(1)) {
+    if (line.startsWith('## ')) break;
+    const m = /^\*\*Key:\*\*\s*(\S+)\s*$/i.exec(line);
+    if (m) return KEY_RE.test(m[1]) ? m[1] : null;
+  }
+  return null;
 }
 // The writer one call names (its --by), for every line the call writes: withWriter sets it for the length of `fn` and
 // puts back what was there, so nothing outlives the call and a server that runs call after call keeps no name of its own.

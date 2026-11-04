@@ -14,13 +14,14 @@ export const OLD_JARL_FILE = fileURLToPath(new URL('./fixtures/jarl-6.1.0/jarl-l
 export const OLD_JARL_SHA256 = '6c735ff50f3ed41123fa4ecc02be76b9bbc96c8bd8223f7bea7ea0b068f713f0';
 export const FORMAT_TWO_JARL_FILE = fileURLToPath(new URL('./fixtures/jarl-6.2.0/jarl-lib.mjs', import.meta.url));
 export const FORMAT_TWO_JARL_SHA256 = '90ef7a44927b24e40ba8cbfed26de290ff15bef4daacd78a3733a82ce598fd35';
-const COMMANDS = { list: 'cmdList', status: 'cmdStatus', next: 'cmdNext', queue: 'cmdQueue', report: 'cmdReport', set: 'cmdSet', evidence: 'cmdEvidence', merged: 'cmdMerged' };
+const COMMANDS = { init: 'cmdInit', new: 'cmdNew', list: 'cmdList', status: 'cmdStatus', next: 'cmdNext', queue: 'cmdQueue', report: 'cmdReport', set: 'cmdSet', evidence: 'cmdEvidence', merged: 'cmdMerged' };
 
 const pinned = (file, sha) => createHash('sha256').update(readFileSync(file)).digest('hex') === sha;
 export function oldJarlIsPinned() { return pinned(OLD_JARL_FILE, OLD_JARL_SHA256); }
 export function formatTwoJarlIsPinned() { return pinned(FORMAT_TWO_JARL_FILE, FORMAT_TWO_JARL_SHA256); }
 
-// `args` are the arguments after the root, for the commands that take more than flags: set (ids, status, why, flags),
+// `args` are the arguments after the root, for the commands that take more than flags: init (goal, flags), new (title,
+// flags), set (ids, status, why, flags),
 // evidence (ids, text, flags) and merged (ids, flags). Without them the one argument is `flags`.
 export function oldJarl(root, command, flags = {}, args = null) {
   if (!oldJarlIsPinned()) throw new Error('the pinned Jarl 6.1.0 library was changed: it is a fixture, read-only');
@@ -39,4 +40,19 @@ function run(file, version, root, command, flags, args) {
   const r = spawnSync(process.execPath, ['--input-type=module', '-e', code], { encoding: 'utf8', timeout: 60_000 });
   if (r.status !== 0) throw new Error(`the pinned Jarl ${version} did not run: ${r.stderr}`);
   return JSON.parse(r.stdout);
+}
+
+// Files an issue in the loop at `root` as a loop filed before it held keys holds it: through the pinned Jarl 6.1.0, so its
+// number has three digits and it carries no key. Returns the id. A test of what an older reader makes of a loop this Jarl
+// writes into files its issues this way, because this Jarl's own filing writes a key, which raises the loop to format 3.
+export function fileAsBefore(root, title, flags = {}) {
+  const r = oldJarl(root, 'new', {}, [title, flags]);
+  if (!r.ok) throw new Error(`the pinned Jarl 6.1.0 did not file "${title}": ${r.error}`);
+  return r.value.id;
+}
+// The same through the pinned Jarl 6.2.0 (the reader of formats 1 and 2), which writes the number plain (2, not 002) and raises the loop to format 2 for it.
+export function fileAsFormatTwo(root, title, flags = {}) {
+  const r = formatTwoJarl(root, 'new', {}, [title, flags]);
+  if (!r.ok) throw new Error(`the pinned Jarl 6.2.0 did not file "${title}": ${r.error}`);
+  return r.value.id;
 }
