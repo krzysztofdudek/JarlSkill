@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, openSy
 import { join, resolve, relative, isAbsolute } from 'node:path';
 import { CI_STATES, LEASE_FIELDS, PRIORITIES, TIERS, WAIT_KIND, fieldText, need, noSeparators, slugify, splitList } from './base.mjs';
 import { needNoNewOwnersWords, needNoOwnersWords } from './owner.mjs';
-import { git, gitRun } from './git.mjs';
+import { git, gitBytes, gitRun } from './git.mjs';
 import { canonical, issuesDir, jarlDir, portablePath, stamp, today } from './where.mjs';
 import { readText, renameRetry, writeAtomic } from './files.mjs';
 import { ISSUE_FILE_RE, branchNameProblem, cmpId, expandIds, idKey, idRe, isBulk, needsRaisedFormat, newIssueKey, newNumber } from './ids.mjs';
@@ -151,6 +151,49 @@ function highestAcrossWorktrees(root) {
   return top;
 }
 
+// The highest issue number the loop's issue directory holds on any local branch or remote-tracking branch of its
+// repository (read-only, one git process for all of them): a clone or a branch that filed an issue this checkout has
+// not merged yet has taken that number, and a new issue here takes the next one. 0 outside git, and for a loop git does
+// not hold.
+function highestAcrossRefs(root) {
+  const prefix = git(root, ['rev-parse', '--show-prefix']);
+  if (prefix === null) return 0;
+  const refs = (git(root, ['for-each-ref', '--format=%(refname)', 'refs/heads', 'refs/remotes']) || '').split('\n').filter(Boolean);
+  if (!refs.length) return 0;
+  const out = gitBytes(root, ['cat-file', '--batch'], refs.map((r) => `${r}:${prefix}.jarl/issues\n`).join(''));
+  let top = 0;
+  for (const name of treeNames(out)) { const m = ISSUE_FILE_RE.exec(name); if (m) top = Math.max(top, Number(m[1])); }
+  return top;
+}
+// The names of the entries of every tree `git cat-file --batch` printed: each object is "<hash> <type> <size>", its bytes
+// and a line break; a tree's bytes are entries of "<mode> <name>", a zero byte and the entry's hash in binary. An object
+// git did not find is one line ("<name> missing") and holds no names.
+function treeNames(buf) {
+  const names = [];
+  if (!buf) return names;
+  let at = 0;
+  while (at < buf.length) {
+    const eol = buf.indexOf(10, at);
+    if (eol === -1) break;
+    const [hash, type, size] = buf.subarray(at, eol).toString('utf8').split(' ');
+    at = eol + 1;
+    if (size === undefined || !/^\d+$/.test(size)) continue;
+    const end = at + Number(size);
+    if (type === 'tree') {
+      const width = hash.length / 2;
+      for (let p = at; p < end;) {
+        const zero = buf.indexOf(0, p);
+        if (zero === -1 || zero >= end) break;
+        const entry = buf.subarray(p, zero).toString('utf8');
+        names.push(entry.slice(entry.indexOf(' ') + 1));
+        p = zero + 1 + width;
+      }
+    }
+    at = end + 1;
+  }
+  return names;
+}
+
 // When a tier is light, standard or strong: the criteria the skill gives, as a prior the measurements then refine.
 export const TIER_CRITERIA = {
   light: 'a check or test decides, the scope is written down, nothing that protects changes',
@@ -238,9 +281,10 @@ export function cmdNew(root, title, rawFlags) {
   // Git keeps no empty directory, so a clone of a loop committed before its first issue has none yet.
   mkdirSync(dir, { recursive: true });
   const taken = () => readdirSync(dir).map((f) => ISSUE_FILE_RE.exec(f)).filter(Boolean).map((m) => Number(m[1]));
-  // The highest number over this loop and its copies in every other worktree (read-only), so a lagging copy cannot hand
-  // out a number already used elsewhere. The issue files stay the only source: there is no counter file.
-  const elsewhere = highestAcrossWorktrees(root);
+  // The highest number over this loop, its copies in every other worktree and every local and remote-tracking branch of
+  // its repository (read-only), so a lagging copy cannot hand out a number already used elsewhere. The issue files stay
+  // the only source: there is no counter file.
+  const elsewhere = Math.max(highestAcrossWorktrees(root), highestAcrossRefs(root));
   let n = Math.max(taken().reduce((m, x) => Math.max(m, x), 0), elsewhere) + 1;
   for (let tries = 0; ; tries += 1) {
     const id = newNumber(n, numberWidth(profile, rawFlags.width));
