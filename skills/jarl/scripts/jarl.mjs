@@ -16,7 +16,7 @@ import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as R from './record.mjs';
 import {
-  need, resetCaches, withLock, readText, isEntry, cmdSet, cmdField, setRouteOf, eachIssue, cmdRound,
+  need, resetCaches, withLock, readText, isEntry, shellWord, cmdSet, cmdField, setRouteOf, eachIssue, cmdRound,
   cmdProfile, cmdArchive, cmdList, cmdNext, renderNext, cmdMode, cmdClose, cmdCheck, cmdBranches,
   cmdChangelog, cmdHandoffRead, cmdHandoffWrite, cmdReport, cmdImport, cmdSources, cmdAnswerMany, cmdModels, renderModels,
   issuesNaming, questionFor, cmdGoal, cmdGoalSet, cmdRepoBase, whereOf, cmdVerify, renderVerify, renderCheckNotes,
@@ -564,11 +564,21 @@ export const COMMAND_FLAGS = {
 export const INTERNAL_COMMANDS = Object.freeze(['handoff']);
 export const flagsOf = (cmd) => ({ ...(COMMAND_FLAGS[cmd] || {}) });
 // A flag one command does not take because its meaning is another flag's, or another command's: the refusal is the call
-// that does what was asked, built from the words given so far. --by names the author of a write and nothing else.
+// that does what was asked, built from every word of the call. --by names the author of a write and nothing else.
+const grouping = (cmd, bools) => (args) => {
+  const { flags } = wordsOf(args, bools);
+  return `${cmd} groups its counts with --group, and --by names the author of a write: jarl.mjs ${cmd} --group ${shellWord(flags.by?.[0] ?? 'repo')}${carried(flags, ['by'])}`;
+};
 const REFUSED_FLAGS = {
-  status: { by: (value) => `status groups its counts with --group, and --by names the author of a write: jarl.mjs status --group ${value ?? 'repo'}` },
-  models: { by: (value) => `models groups its counts with --group, and --by names the author of a write: jarl.mjs models --group ${value ?? 'repo'}` },
-  evidence: { retract: (value, positional) => `evidence takes nothing back: a row or a note is taken back with jarl.mjs retract ${positional[1] ?? '<id>'} ${value ?? '<n>'} --by <who> "<text>"` },
+  status: { by: grouping('status', ['json', 'help']) },
+  models: { by: grouping('models', ['json', 'help', 'archives']) },
+  evidence: {
+    retract: (args) => {
+      const { pos, flags } = wordsOf(args, ['json', 'help']);
+      const word = (v, none) => (v === undefined ? none : shellWord(v));
+      return `evidence takes nothing back: a row or a note is taken back with jarl.mjs retract ${word(pos[0], '<id>')} ${word(flags.retract?.[0], '<n>')} ${word(pos[1], '"<text>"')} --by ${word(flags.by?.[0], '<who>')}`;
+    },
+  },
 };
 
 export function parseArgs(argv) {
@@ -597,7 +607,7 @@ export function parseArgs(argv) {
     const kind = Object.hasOwn(t, name) ? t[name] : undefined;
     if (kind === undefined) {
       const refused = cmd !== undefined && REFUSED_FLAGS[cmd]?.[name];
-      if (refused) throw new Error(refused(inline ?? (argv[i + 1] !== undefined && !argv[i + 1].startsWith('--') ? argv[i + 1] : undefined), positional));
+      if (refused) throw new Error(refused(argv.slice(argv.indexOf(cmd) + 1)));
       const where = cmd === undefined ? `before the command — only ${named(GLOBAL_FLAGS)} may come before it` : `for ${cmd} — it takes ${named(t)}`;
       throw new Error(`unknown flag ${a} ${where}. A value that starts with -- goes after a bare --, e.g. evidence 7 -- "--json prints ok"`);
     }
@@ -758,55 +768,80 @@ function fieldListValue(name, value, remove) {
 // The commands the command line and the tools do not have, each with the call that does what was asked: the refusal is
 // one line that ends with that call, built from the words given where they say enough, so nothing is left to guess.
 // Every part of an issue's description is written by field, a repository's base by base, and a branch is measured by scope.
-const quoted = (v) => (/^[\w.:/#@,+-]+$/.test(String(v)) ? String(v) : JSON.stringify(String(v)));
+// Every word the caller gave is carried into the call, --by included, and written by shellWord, so the printed call, pasted
+// into a POSIX shell, passes each word as it was given: nothing in it expands or runs.
 function wordsOf(args, bools) {
   const pos = [];
   const flags = {};
+  let rest = false;
   for (let i = 0; i < args.length; i += 1) {
     const a = args[i];
-    if (a.startsWith('--') && a.length > 2) {
+    if (!rest && a === '--') { rest = true; continue; }
+    if (!rest && a.startsWith('--') && a.length > 2) {
       const [name, inline] = a.slice(2).split(/=(.*)/s);
       if (bools.includes(name)) flags[name] = true;
       else (flags[name] = flags[name] || []).push(inline ?? args[(i += 1)]);
-    } else if (a !== '--') pos.push(a);
+    } else pos.push(a);
   }
   return { pos, flags };
 }
+// The flags of a call written back, but those the replacing call names itself and --root, which the caller passes as before.
+function carried(flags, skip = []) {
+  return Object.entries(flags).filter(([k]) => k !== 'root' && !skip.includes(k))
+    .flatMap(([k, v]) => (v === true ? [`--${k}`] : v.map((x) => `--${k} ${shellWord(x)}`))).map((w) => ` ${w}`).join('');
+}
 const SECTION_FLAGS = { title: 'Title', where: 'Where', what: 'What', why: 'Why', acceptance: 'Acceptance', changelog: 'Changelog' };
+const LINE_SECTIONS = ['acceptance', 'changelog'];
+const BOOLS = ['json', 'help', 'clear', 'append', 'ci'];
+// The calls one part of the description takes: one, or for Acceptance and Changelog one per item, each after the first
+// added to what the one before wrote, so every item stays its own line.
+function partCalls(ids, part, items, append, by) {
+  return items.map((v, n) => `jarl.mjs field ${ids} ${shellWord(part)} ${shellWord(v)}${append || n > 0 ? ' --add' : ''}${by}`);
+}
 // The words of a call without its --root, which the call that replaces it takes as it was given.
 const withoutRoot = (args) => args.filter((a, i) => a !== '--root' && args[i - 1] !== '--root' && !a.startsWith('--root='));
 export const REPLACED_COMMANDS = Object.freeze({
-  tips: (args) => { const { flags } = wordsOf(args, ['json', 'help', 'ci']); return `the tips are a section of resume, which asks gh for their CI with --ci: jarl.mjs resume --ci${flags.repo ? ` --repo ${quoted(flags.repo[0])}` : ''}`; },
-  queue: (args) => { const { flags } = wordsOf(args, ['json', 'help', 'ci']); return `the merge queue is a section of resume, its batches included: jarl.mjs resume${flags.repo ? ` --repo ${quoted(flags.repo[0])}` : ''}${flags.base ? ` --base ${quoted(flags.base[0])}` : ''}`; },
-  check: (args) => `a branch is measured by scope: jarl.mjs scope ${withoutRoot(args).map(quoted).join(' ') || '[<id>] --branch <b>'}`,
-  prio: (args) => { const { pos } = wordsOf(args, []); return `the priority is a field: jarl.mjs field ${pos[0] ?? '<ids>'} Priority ${pos[1] ?? '<1|2|3>'}`; },
+  tips: (args) => { const { flags } = wordsOf(args, BOOLS); return `the tips are a section of resume, which asks gh for their CI with --ci: jarl.mjs resume --ci${carried(flags, ['ci'])}`; },
+  queue: (args) => { const { flags } = wordsOf(args, BOOLS); return `the merge queue is a section of resume, its batches included: jarl.mjs resume${carried(flags)}`; },
+  check: (args) => `a branch is measured by scope: jarl.mjs scope ${withoutRoot(args).map(shellWord).join(' ') || '[<id>] --branch <b>'}`,
+  prio: (args) => { const { pos, flags } = wordsOf(args, BOOLS); return `the priority is a field: jarl.mjs field ${pos[0] ? shellWord(pos[0]) : '<ids>'} Priority ${pos[1] ? shellWord(pos[1]) : '<1|2|3>'}${carried(flags)}`; },
   tag: (args) => {
-    const { pos } = wordsOf(args, []);
-    const ids = pos[0] ?? '<ids>';
-    const add = pos.slice(1).filter((o) => o.startsWith('+')).map((o) => o.slice(1));
-    const remove = pos.slice(1).filter((o) => o.startsWith('-')).map((o) => o.slice(1));
-    const calls = [...(remove.length ? [`jarl.mjs field ${ids} Tags --remove ${remove.join(',')}`] : []), ...(add.length ? [`jarl.mjs field ${ids} Tags --add ${add.join(',')}`] : [])];
-    return `tags are a field: ${calls.length ? calls.join(', then ') : `jarl.mjs field ${ids} Tags --add <tag> (or --remove <tag>)`}`;
+    const { pos, flags } = wordsOf(args, BOOLS);
+    const ids = pos[0] ? shellWord(pos[0]) : '<ids>';
+    const ops = pos.slice(1).flatMap((o) => o.slice(1).split(',').filter(Boolean).map((n) => [o.charAt(0), n]));
+    const add = ops.filter(([s]) => s === '+').map(([, n]) => n);
+    const remove = ops.filter(([s]) => s === '-').map(([, n]) => n);
+    const rest = carried(flags);
+    const calls = [...(remove.length ? [`jarl.mjs field ${ids} Tags --remove ${shellWord(remove.join(','))}${rest}`] : []), ...(add.length ? [`jarl.mjs field ${ids} Tags --add ${shellWord(add.join(','))}${rest}`] : [])];
+    return `tags are a field: ${calls.length ? calls.join(', then ') : `jarl.mjs field ${ids} Tags --add <tag>${rest}`}`;
   },
-  files: (args) => { const { pos } = wordsOf(args, []); return `the files are a field: jarl.mjs field ${pos[0] ?? '<ids>'} Files ${pos.length > 1 ? quoted(pos.slice(1).join(',')) : '<path>,<path>'}`; },
-  source: (args) => { const { pos } = wordsOf(args, []); return `the source is a field: jarl.mjs field ${pos[0] ?? '<ids>'} Source ${pos.length > 1 ? quoted(pos.slice(1).join(',')) : '<dir>#<id>'}`; },
-  after: (args) => { const { pos, flags } = wordsOf(args, ['clear']); return `the issues an issue waits on are a field: jarl.mjs field ${pos[0] ?? '<ids>'} After ${flags.clear ? '--clear' : pos.length > 1 ? pos.slice(1).join(',') : '<ids>'}`; },
+  files: (args) => {
+    const { pos, flags } = wordsOf(args, BOOLS);
+    const paths = pos.slice(1).flatMap((p) => p.split(',')).map((p) => p.trim()).filter(Boolean);
+    const value = pos.length > 1 && !paths.length ? '--clear' : paths.length ? shellWord(paths.join(',')) : '<path>,<path>';
+    return `the files are a field: jarl.mjs field ${pos[0] ? shellWord(pos[0]) : '<ids>'} Files ${value}${carried(flags)}`;
+  },
+  source: (args) => { const { pos, flags } = wordsOf(args, BOOLS); return `the source is a field: jarl.mjs field ${pos[0] ? shellWord(pos[0]) : '<ids>'} Source ${pos.length > 1 ? shellWord(pos.slice(1).join(',')) : '<dir>#<id>'}${carried(flags)}`; },
+  after: (args) => { const { pos, flags } = wordsOf(args, BOOLS); return `the issues an issue waits on are a field: jarl.mjs field ${pos[0] ? shellWord(pos[0]) : '<ids>'} After ${flags.clear ? '--clear' : pos.length > 1 ? shellWord(pos.slice(1).join(',')) : '<ids>'}${carried(flags, ['clear'])}`; },
   repo: (args) => {
-    const { pos, flags } = wordsOf(args, ['clear', 'base']);
-    if (flags.base) return `a repository's base is changed by base: jarl.mjs base ${pos[0] ?? '<name>'} ${pos[1] ?? '<branch>'}`;
-    return `the repository is a field: jarl.mjs field ${pos[0] ?? '<ids>'} Repo ${flags.clear ? '--clear' : pos.length > 1 ? quoted(pos.slice(1).join(',')) : '<name|path>'}`;
+    const { pos, flags } = wordsOf(args, [...BOOLS, 'base']);
+    if (flags.base) return `a repository's base is changed by base: jarl.mjs base ${pos[0] ? shellWord(pos[0]) : '<name>'} ${pos[1] ? shellWord(pos[1]) : '<branch>'}${carried(flags, ['base'])}`;
+    return `the repository is a field: jarl.mjs field ${pos[0] ? shellWord(pos[0]) : '<ids>'} Repo ${flags.clear ? '--clear' : pos.length > 1 ? shellWord(pos.slice(1).join(',')) : '<name|path>'}${carried(flags, ['clear'])}`;
   },
   body: (args) => {
-    const { pos, flags } = wordsOf(args, ['append']);
-    const ids = pos[0] ?? '<ids>';
+    const { pos, flags } = wordsOf(args, BOOLS);
+    const ids = pos[0] ? shellWord(pos[0]) : '<ids>';
+    const by = carried(flags, [...Object.keys(SECTION_FLAGS), 'section', 'append']);
     const calls = [];
     for (const [flag, part] of Object.entries(SECTION_FLAGS)) {
       const given = flags[flag];
       if (given === undefined) continue;
-      calls.push(`jarl.mjs field ${ids} ${part} ${quoted(given.join('\n'))}${flags.append && flag !== 'title' && flag !== 'where' ? ' --add' : ''}`);
+      const add = flags.append === true && flag !== 'title' && flag !== 'where';
+      const items = LINE_SECTIONS.includes(flag) ? given.flatMap((g) => String(g).split('\n')).filter((l) => l.trim()) : [given.at(-1)];
+      calls.push(...partCalls(ids, part, items, add, by));
     }
-    for (const s of flags.section || []) { const at = String(s).indexOf('='); calls.push(`jarl.mjs field ${ids} ${quoted(String(s).slice(0, at))} ${quoted(String(s).slice(at + 1))}${flags.append ? ' --add' : ''}`); }
-    return `every part of the description is written by field: ${calls.length ? calls.join(', then ') : `jarl.mjs field ${ids} <part> "<value>" (Title, Where, What, Why, Acceptance, Changelog or a section the profile declares; --add adds to a section)`}`;
+    for (const s of flags.section || []) { const at = String(s).indexOf('='); calls.push(...partCalls(ids, String(s).slice(0, at), [String(s).slice(at + 1)], flags.append === true, by)); }
+    return `every part of the description is written by field: ${calls.length ? calls.join(', then ') : `jarl.mjs field ${ids} <part> "<value>"${by} (Title, Where, What, Why, Acceptance, Changelog or a section the profile declares; --add adds to a section)`}`;
   },
 });
 export const replacedRefusal = (cmd, args = []) => `${cmd} is not a command; ${REPLACED_COMMANDS[cmd](args)}`;
@@ -950,7 +985,7 @@ export function dispatch(root, commandName, rest, flags) {
         // A field is written by field, never by set: the refusal is the call that writes it.
         if (setRouteOf(root, rest[1]) === 'field') {
           const clearing = rest[2] === undefined || (typeof rest[2] === 'string' && rest[2].trim() === '');
-          throw new Error(`${rest[1]} is a field, not a status: jarl.mjs field ${rest[0] ?? '<ids>'} ${/\s/.test(String(rest[1]).trim()) ? `"${String(rest[1]).trim()}"` : rest[1]} ${clearing ? '--clear' : quoted(rest[2])}`);
+          throw new Error(`${rest[1]} is a field, not a status: jarl.mjs field ${rest[0] === undefined ? '<ids>' : shellWord(rest[0])} ${shellWord(String(rest[1]).trim())} ${clearing ? '--clear' : shellWord(rest[2])}${flagWords(flags, ['branch', 'worker', 'model', 'worktree', 'handover', 'header'])}`);
         }
         out = setCommand(root, rest[0], rest[1], rest[2], flags);
         text = each(out, (o) => (o.header ? `header of ${o.id} rewritten from the log: ${o.status}` : `${o.id} → ${o.status}${o.branch ? ` · ${o.branch}` : ''}${o.worker ? ` · ${o.worker}` : ''}${o.handover ? ' · handed over' : ''}`)); warn = [].concat(out).filter((o) => o.note).map((o) => `note: ${o.id} ${o.note}`); break;
@@ -985,7 +1020,7 @@ export function dispatch(root, commandName, rest, flags) {
       }
       case 'review':
         // A verdict is taken back by retract alone: the refusal is that call, with the words given.
-        if (rest[1] === 'retract') throw new Error(`a verdict is taken back with retract: jarl.mjs retract ${rest[0] ?? '<id>'} review --by ${flags.by ?? '<who>'} ${rest[2] === undefined ? '"<text>"' : JSON.stringify(String(rest[2]))}`);
+        if (rest[1] === 'retract') throw new Error(`a verdict is taken back with retract: jarl.mjs retract ${rest[0] === undefined ? '<id>' : shellWord(rest[0])} review ${rest[2] === undefined ? '"<text>"' : shellWord(rest[2])} --by ${flags.by === undefined ? '<who>' : shellWord(flags.by)}`);
         out = R.review(root, rest[0], rest[1], rest[2], { ...flags, caller: 'cli' }); text = each(out, renderReview); warn = [].concat(out).filter((o) => o.note).map((o) => `note: ${o.note}`); break;
       case 'tick': out = cmdTick(root, rest[0], rest[1], flags); text = `${out.id} acceptance line ${out.line} ticked by ${out.by} at ${out.at}`; break;
       // --group is the grouping the views and the record library read as by.
@@ -998,7 +1033,7 @@ export function dispatch(root, commandName, rest, flags) {
       // The library's answer (jarl-record/1) takes no opts: --by and --option reach the answer through jarl-lib.mjs, under the lock held here.
       // A judgement names its author: an answer and a ruling are refused without --by, with the call that names one.
       case 'answer':
-        need(flags.by !== undefined, `answer records who answered: jarl.mjs answer ${rest[0] ?? 'a-<n>'} ${flags.option !== undefined ? `--option ${quoted(flags.option)}` : rest[1] === undefined ? '"<text>"' : JSON.stringify(String(rest[1]))} --by <who answered, owner for the owner>`);
+        need(flags.by !== undefined, `answer records who answered, owner for the owner: jarl.mjs answer ${rest[0] === undefined ? 'a-<n>' : shellWord(rest[0])}${flags.option !== undefined ? '' : rest[1] === undefined ? ' "<text>"' : ` ${shellWord(rest[1])}`}${flagWords(flags)} --by <who>`);
         out = cmdAnswerMany(root, rest[0], rest[1], flags); break;   // text below: the type log is written outside the lock
       case 'resume': out = R.resumeData(root, flags); text = renderResume(out, R.loadProfile(root), pluginVersionNote(), flags.as !== undefined); ({ out, text } = endWithAsker(root, flags, out, text)); break;
       case 'handoff':
@@ -1008,7 +1043,7 @@ export function dispatch(root, commandName, rest, flags) {
       case 'report': out = cmdReport(root, flags); text = out.text; break;
       case 'log': out = R.appendLog(root, rest[0]); text = 'logged'; break;
       case 'decide':
-        need(flags.by !== undefined, `decide records who ruled: jarl.mjs decide ${rest[0] ?? '<slug>'} ${rest[1] === undefined ? '"<text>"' : JSON.stringify(String(rest[1]))} --by <who ruled, jarl under a mandate, owner with --quote "<his words>">`);
+        need(flags.by !== undefined, `decide records who ruled, jarl under a mandate, owner with --quote "<his words>": jarl.mjs decide ${rest[0] === undefined ? '<slug>' : shellWord(rest[0])} ${rest[1] === undefined ? '"<text>"' : shellWord(rest[1])}${flagWords(flags)} --by <who>`);
         out = R.decide(root, rest[0], rest[1], flags); text = renderDecide(out); decideNotes(root, rest[0], out.by, flags, warn); break;
       case 'decisions': out = R.decisions(root, flags); text = renderDecisions(out); break;
       case 'goal': out = flags.set === undefined ? cmdGoal(root) : cmdGoalSet(root, flags.set); text = flags.set === undefined ? out.goal : out.unchanged ? `goal line unchanged: ${out.shown}` : `goal line ${out.replaced ? 'changed' : 'added'}: ${out.shown}${out.replaced ? ` (was ${out.was})` : ''}`; break;
@@ -1051,6 +1086,11 @@ function needWriterFormat(root, cmd, flags) {
   throw new Error(`${line.what} (--by) needs record format ${line.format}, and this loop stays at format ${profile.format}: its profile names an external scheduler (${profile.scheduler}), the composer that reads this record, so Jarl never raises its format; leave --by out there — nothing was written`);
 }
 
+// The flags a call was given, written back as words of a command (--root left to the caller, the names in skip left out).
+function flagWords(flags, skip = []) {
+  return Object.entries(flags).filter(([k, v]) => v !== undefined && v !== false && !['root', 'caller', ...skip].includes(k))
+    .flatMap(([k, v]) => (v === true ? [`--${k}`] : [].concat(v).map((x) => `--${k} ${shellWord(x)}`))).map((w) => ` ${w}`).join('');
+}
 // The flags of a grouping view with --group handed on as the grouping the library reads (by).
 function groupedBy(flags) {
   const { group, ...rest } = flags;

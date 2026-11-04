@@ -1461,7 +1461,9 @@ export function needLifecycle(root, op, caller = 'record') {
 // and holds nothing uncommitted and nothing untracked; and git itself accepts the removal and the delete.
 const TRUNK_NAME = /^(?:HEAD|main|master|trunk|develop|release\/.+)$/;
 // A word safe to paste into a shell: single-quoted unless it is plainly safe.
-export const shellWord = (s) => (/^[A-Za-z0-9_@%+=:,./-]+$/.test(s) ? s : `'${String(s).replace(/'/g, `'\\''`)}'`);
+// A word as a POSIX shell reads it back unchanged: as it is when it holds nothing the shell reads, else in single quotes,
+// a single quote inside written '\''. Every command Jarl prints for a person or an agent to run writes its words so.
+export const shellWord = (s) => (/^[A-Za-z0-9_@%+=:,./#-]+$/.test(String(s)) ? String(s) : `'${String(s).replace(/'/g, `'\\''`)}'`);
 const sameDir = (a, b) => canonical(a) === canonical(b);
 // The one wording for a worktree git lists whose directory is not there. Git marks such a worktree prunable or not
 // depending on how the directory went missing, and the lookup reads that as gone or as invisible; both are the same fact here.

@@ -54,8 +54,8 @@ test('retract takes back a verdict and an evidence row; the spellings through ev
   worked(root);
   const reason = 'the row and the verdict were read in the wrong place';
   const before = logText(root);
-  assert.equal(refuses(root, 'evidence', '1', '--retract', '1', '--by', 'jarl', reason).trim(), 'evidence takes nothing back: a row or a note is taken back with jarl.mjs retract 1 1 --by <who> "<text>"');
-  assert.equal(refuses(root, 'review', '1', 'retract', '--by', 'jarl', reason).trim(), `a verdict is taken back with retract: jarl.mjs retract 1 review --by jarl "${reason}"`);
+  assert.equal(refuses(root, 'evidence', '1', '--retract', '1', '--by', 'jarl', reason).trim(), `evidence takes nothing back: a row or a note is taken back with jarl.mjs retract 1 1 '${reason}' --by jarl`);
+  assert.equal(refuses(root, 'review', '1', 'retract', '--by', 'jarl', reason).trim(), `a verdict is taken back with retract: jarl.mjs retract 1 review '${reason}' --by jarl`);
   assert.equal(logText(root), before, 'a refused spelling writes nothing');
   for (const r of [run(root, ['retract', '1', '1', '--by', 'jarl', reason]), run(root, ['retract', '1', 'review', '--by', 'jarl', reason])]) {
     assert.equal(r.status, 0, r.stderr);
@@ -85,7 +85,7 @@ test('a tool call that names a retraction through evidence or review is refused,
   assert.throws(() => mcp.callTool('jarl_evidence', { ids: id, retract: '1', by: 'jarl', text: 'the row was wrong', root }), /unknown field "retract"/);
   const review = mcp.callTool('jarl_review', { ids: id, verdict: 'retract', by: 'jarl', text: 'the verdict was wrong', root });
   assert.ok(review.isError);
-  assert.match(said(review), /a verdict is taken back with retract: jarl\.mjs retract 001 review --by jarl/);
+  assert.match(said(review), /a verdict is taken back with retract: jarl\.mjs retract 001 review 'the verdict was wrong' --by jarl/);
   const verb = mcp.callTool('jarl_retract', { id, entry: 'review', by: 'jarl', text: 'a second try at the verdict', root });
   assert.ok(!verb.isError, said(verb));
 });
@@ -110,7 +110,7 @@ test('set given a field is refused with the field call that writes it, on the co
   const a = fieldedLoop();
   const before = logText(a);
   assert.equal(refuses(a, 'set', '1,2', 'resources', 'gate').trim(), 'resources is a field, not a status: jarl.mjs field 1,2 resources gate');
-  assert.equal(refuses(a, 'set', '1', 'Note', 'a note').trim(), 'Note is a field, not a status: jarl.mjs field 1 Note "a note"');
+  assert.equal(refuses(a, 'set', '1', 'Note', 'a note').trim(), "Note is a field, not a status: jarl.mjs field 1 Note 'a note'");
   for (const blank of ['', ' ']) assert.equal(refuses(a, 'set', '2', 'Note', blank).trim(), 'Note is a field, not a status: jarl.mjs field 2 Note --clear');
   const said = mcp.callTool('jarl_set', { ids: '3', status: 'resources', text: 'gate', root: a });
   assert.ok(said.isError);

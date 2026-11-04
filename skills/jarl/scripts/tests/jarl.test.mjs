@@ -1722,7 +1722,7 @@ test('answer takes a comma list of ratify items with one verdict, writes one rul
   jarl(root, 'ask', 'raised the limit', '--kind', 'ratify');
   jarl(root, 'ask', 'kept the flag', '--kind', 'ratify');
   jarl(root, 'ask', 'a stuck question', '--kind', 'stuck');
-  assert.match(refuses(root, 'answer', 'a-1', 'yes'), /answer records who answered: jarl\.mjs answer a-1 "yes" --by/);
+  assert.match(refuses(root, 'answer', 'a-1', 'yes'), /answer records who answered, owner for the owner: jarl\.mjs answer a-1 yes --by <who>$/m);
   for (const name of ['jarl', 'reeve', 'coordinator', basename(root)]) assert.match(refuses(root, 'answer', 'a-1', 'yes', '--by', name), /coordinator/);
   assert.match(refuses(root, 'answer', 'a-1,a-3', 'yes', '--by', 'owner'), /answered together only when each is a ratify item/);
   jarl(root, 'answer', '1,2', 'yes', '--by', 'owner');

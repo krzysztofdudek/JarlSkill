@@ -10,7 +10,7 @@ import { bodyText, parseIssue, reviewEntries, setSection, unattributedRefusal } 
 import { needFormat, tipLines } from './repositories.mjs';
 import { carriesCode, gateOf, readLoop, reviewerKind } from './loop.mjs';
 import { SEVERITIES, loggedFinding, modelLines, modelValue, reviewModelNotes, spellingNote } from './models.mjs';
-import { EVIDENCE_HOW, issuesFor, oneOrMany, proofSince } from './commands.mjs';
+import { EVIDENCE_HOW, issuesFor, oneOrMany, proofSince, shellWord } from './commands.mjs';
 import { REVIEW_MIN_WORDS, needSaid, retractedBy, struck } from './evidence.mjs';
 import { ownerLineWait } from './owner-lines.mjs';
 
@@ -49,14 +49,14 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
   if (verdict === 'retract') return retractReview(root, rawIds, findings, flags);
   need(findings, 'review requires "<text>" — what was read and what was found, even when nothing');
   const words = String(findings).split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
-  need(words >= REVIEW_MIN_WORDS, `the findings of a review need at least ${REVIEW_MIN_WORDS} words — what was read and what was found, even when nothing (got ${words} word${words === 1 ? '' : 's'}: "${String(findings).trim().slice(0, 40)}"): jarl.mjs review ${rawIds} ${verdict} --by ${flags.by ?? '<reviewer>'} "<what was read and what was found>"`);
+  need(words >= REVIEW_MIN_WORDS, `the findings of a review need at least ${REVIEW_MIN_WORDS} words — what was read and what was found, even when nothing (got ${words} word${words === 1 ? '' : 's'}: "${String(findings).trim().slice(0, 40)}"): jarl.mjs review ${shellWord(rawIds)} ${verdict} --by ${flags.by === undefined ? '<reviewer>' : shellWord(flags.by)} "<what was read and what was found>"`);
   need(flags.by === undefined || fieldText(flags.by), '--by needs a value — the reviewer\'s name');
   need(flags.by !== undefined, `a verdict needs --by <reviewer> — who read the diff: a fresh reviewer's name, or jarl when the loop's director reviewed it: jarl.mjs review ${rawIds} ${verdict} --by <reviewer> "<text>"`);
   const issues = issuesFor(root, rawIds);
   if (verdict === 'approve') for (const issue of issues) { const refusal = unattributedRefusal(issue, 'approved'); need(!refusal, `${refusal}${issues.length > 1 ? ' — nothing was written' : ''}`); }
   const severities = SEVERITIES.filter((s) => findings.includes(s));
   if (verdict === 'changes') {
-    need(severities.length > 0, `"changes" needs at least one finding ranked ${SEVERITIES.join('/')} — name the severity, not just the problem: jarl.mjs review ${rawIds} changes --by ${flags.by ?? '<reviewer>'} "Important: <what fails and where>"`);
+    need(severities.length > 0, `"changes" needs at least one finding ranked ${SEVERITIES.join('/')} — name the severity, not just the problem: jarl.mjs review ${shellWord(rawIds)} changes --by ${flags.by === undefined ? '<reviewer>' : shellWord(flags.by)} "Important: <what fails and where>"`);
     need(severities.some((s) => s !== 'Minor'), '"changes" needs a Critical or Important finding — Minor alone goes to evidence on an approve, it never bounces a branch');
   }
   const by = flags.by !== undefined ? fieldText(flags.by) : null;
