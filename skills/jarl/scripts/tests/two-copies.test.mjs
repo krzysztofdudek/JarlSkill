@@ -217,3 +217,25 @@ test('verify refuses an issue file that holds git conflict markers', () => {
   jarl(plain.dir, 'body', '1', '--what', 'A heading\n=======\nunder it');
   assert.equal(run(plain.dir, ['verify']).status, 0, 'a line of equals signs alone is text');
 });
+
+test('verify refuses a real git conflict whose side holds a fenced block', () => {
+  const a = committedLoop();
+  const b = cloneOf(a.dir);
+  jarl(a.dir, 'body', '1', '--what', 'run it as:\n```\nnpm test\n```');
+  a.g('add', '-A'); a.g('commit', '-qm', 'a edits 1 with a fence');
+  jarl(b.dir, 'body', '1', '--what', 'the text on B');
+  b.g('add', '-A'); b.g('commit', '-qm', 'b edits 1');
+  assert.throws(() => b.g('pull', '-q', '--no-rebase', '--no-edit', 'origin', 'main'), 'git cannot join the two texts');
+  const text = readFileSync(join(b.dir, '.jarl', 'issues', '1-filed-before-the-split.md'), 'utf8');
+  assert.match(text, /^<<<<<<< [\s\S]*^```$[\s\S]*^>>>>>>> /m, 'one side of the conflict holds the fence');
+  const r = run(b.dir, ['verify']);
+  assert.equal(r.status, 2, r.stdout);
+  assert.match(r.stdout, /"<<<<<<< [^"]*" — a git conflict marker/);
+});
+
+test('an opening marker with no closing marker after it is text', () => {
+  const a = committedLoop();
+  jarl(a.dir, 'body', '1', '--what', '<<<<<<< HEAD\nthe rest of the paragraph');
+  const r = run(a.dir, ['verify']);
+  assert.equal(r.status, 0, r.stdout);
+});

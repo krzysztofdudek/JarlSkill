@@ -16,19 +16,23 @@ import { eventsById, issueState, loopEvents } from './log.mjs';
 const CONFLICT_OPEN = /^<{7}(?: .*)?$/;
 const CONFLICT_MIDDLE = /^={7}$/;
 const CONFLICT_CLOSE = /^>{7}(?: .*)?$/;
-// The line numbers of the opening markers of the conflicts `lines` hold: an opening marker, a separator and a closing
-// marker, in that order, each a line of its own outside a fenced code block. A conflict quoted in a fence or inside a
-// line of text is text.
+// The line numbers of the opening markers of the conflicts `lines` hold: an opening marker outside a fenced code block,
+// then a separator and a closing marker, in that order, each a line of its own. Once a conflict opens it runs to its
+// closing marker whatever its sides hold, fences included, and the fence state is left as it was; a conflict quoted inside
+// a fence opened before it is text, and so is one quoted inside a line of text.
 function conflictsIn(lines) {
   const out = [];
   let fence = false;
   let open = null;
   let middle = false;
   lines.forEach((line, i) => {
-    if (/^(?:```|~~~)/.test(line)) { fence = !fence; open = null; middle = false; return; }
-    if (fence) return;
-    if (CONFLICT_OPEN.test(line)) { open = i + 1; middle = false; } else if (open !== null && CONFLICT_MIDDLE.test(line)) middle = true;
-    else if (open !== null && middle && CONFLICT_CLOSE.test(line)) { out.push(open); open = null; middle = false; }
+    if (open !== null) {
+      if (CONFLICT_MIDDLE.test(line)) middle = true;
+      else if (middle && CONFLICT_CLOSE.test(line)) { out.push(open); open = null; middle = false; }
+      return;
+    }
+    if (/^(?:```|~~~)/.test(line)) fence = !fence;
+    else if (!fence && CONFLICT_OPEN.test(line)) { open = i + 1; middle = false; }
   });
   return out;
 }
@@ -238,7 +242,7 @@ export function sharedNumberText(shared, all) {
   const keyed = shared.issues.filter((i) => issueKeyOf(i) !== null);
   if (keyed.length && shared.issues.every((i) => !i.byHeader)) {
     const keys = keyed.map((i) => `${issueKeyOf(i)} (issues/${basename(i.file)})`);
-    return `${head} Two copies of the loop that each filed an issue and were merged leave this. Each line of the log names the key of the issue it is about${keyed.length < shared.issues.length ? ', or no key for the one file that carries none' : ''}, so each file is read from its own lines, but no command addresses ${id} while two files carry it. Give one of them a free number, such as ${free}: jarl.mjs renumber ${id} --key <key>, with the key of the one to renumber — ${keys.join(', ')}. The issue renumbered keeps every line written under ${id}, which names its key, and no line of the log is rewritten`;
+    return `${head} Two copies of the loop that each filed an issue and were merged leave this. Each line of the log names the key of the issue it is about${keyed.length < shared.issues.length ? ', or no key for the one file that carries none' : ''}, so each file is read from its own lines, but no command addresses ${id} while two files carry it. Give one of them a free number: jarl.mjs renumber ${id} --key <key>, with the key of the one to renumber, takes the next one over every branch — ${keys.join(', ')}. The issue renumbered keeps every line written under ${id}, which names its key, and no line of the log is rewritten`;
   }
   const rename = `give ${filings > 1 ? 'one of the files' : 'the copy'} a number the loop does not hold, such as ${free} (rename it to ${free}-… and write ${free} in its first line), and put it in the log at the status its own file reads (jarl.mjs set ${free} <status>; a renumbered issue starts its record anew, so one that was done needs its proof and a fresh review again)`;
   if (filings > 1) return `${head} Two copies of the loop that each filed an issue and were merged leave this: the log files ${id} ${filings} times. The log names an issue by its number alone, so it cannot say which file its lines for ${id} were written for, and no command moves or edits one of these files alone. Each file is read from its own header, never from the log: its status, branch and lease are what the file says, it is never closed or approved under this number, because the log cannot tell whose its rows, approves, rounds and merges are (the work is filed again under a new number instead), and the log's state of ${id} is never to be written into any of them. The coordinator settles it by hand: ${rename}, then write in a log note which of the lines already written for ${id} belong to which file (jarl.mjs log "…"). The file that keeps ${id} is still read from its own header after that, because the log goes on filing ${id} more than once`;
