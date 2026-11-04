@@ -12,7 +12,7 @@
 // record.mjs (RECORD_API) is.
 
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as R from './record.mjs';
 import {
@@ -22,7 +22,7 @@ import {
   issuesNaming, questionFor, cmdGoal, cmdGoalSet, cmdRepoBase, whereOf, cmdVerify, renderVerify, renderCheckNotes,
   renderProfile, renderTips, renderQueue, renderResume, renderStatus, renderImport, renderSources, renderList, recordTypeLog, recordRuleLog,
   runDecisionsDriver, mergeFlags, describeNew, renderNewReply, issueView, attachmentStates, evidenceTable, renderBranches, renderDecide, renderDecisions,
-  cmdNextAs, renderNextAs, askerSection, cmdTick, withWriter, editorOf, needFormat, formatState, readProfileFile, FORMAT_LINES,
+  cmdNextAs, renderNextAs, askerSection, cmdTick, withWriter, editorOf, needFormat, formatState, readProfileFile, FORMAT_LINES, cmdRenumber,
 } from './jarl-lib.mjs';
 import { writeAreaDecision, writeRuleRatification } from './yg-edge.mjs';
 
@@ -66,6 +66,12 @@ commands:
                                                  --person (who it is held by, the name next --as answers to) and
                                                  --check-when (a date, or the event to check after); either ends when its
                                                  issue closes
+  renumber <id> --key <key> [--by who]
+                                                 of the issue files that carry one number after a merge of two copies
+                                                 of the loop, give the one whose header carries --key the next free
+                                                 number: its file is renamed and its first line rewritten; every log
+                                                 line about it names its key, so it keeps them, and no line is
+                                                 rewritten (verify names the files and their keys)
   body <ids> [--title "<t>"] [--where "<w>"] [--what "<w>"] [--why "<w>"] [--acceptance "<line>"]... [--changelog "<entry>"]...
       [--section "<Heading>=<text>"]... [--by who] [--append]
                                                  the description commands, body to after below: every part of an issue's
@@ -513,6 +519,7 @@ Parallel workers in worktrees:
 export const GLOBAL_FLAGS = { json: 'bool', help: 'bool', root: 'value' };
 export const COMMAND_FLAGS = {
   init: { committed: 'bool', permanent: 'bool', profile: 'value', by: 'value' },
+  renumber: { key: 'value', by: 'value' },
   new: {
     kind: 'value', prio: 'value', tier: 'value', tags: 'many', files: 'many', repo: 'many', 'found-by': 'value',
     where: 'value', what: 'value', why: 'value', acceptance: 'many', source: 'many', after: 'many', changelog: 'many', template: 'value',
@@ -615,7 +622,7 @@ export function parseArgs(argv) {
 // CLI and the tools. A name ending in ? may be left out; one ending in ... takes any number of words (tag's
 // +a -b, sources' findings files) and has no upper bound. A command's arity is how many names it has.
 export const COMMAND_ARGS = {
-  init: ['goal'], new: ['title'], body: ['id'], import: ['file'], sources: ['files...'], source: ['id', 'refs...'],
+  init: ['goal'], new: ['title'], renumber: ['id'], body: ['id'], import: ['file'], sources: ['files...'], source: ['id', 'refs...'],
   after: ['id', 'ids...'], evidence: ['ids', 'text?'], retract: ['id', 'what', 'reason'], field: ['ids', 'name', 'value?'],
   list: [], show: ['id'], set: ['ids', 'status', 'why?'],
   merged: ['ids'], tag: ['ids', 'ops...'], prio: ['ids', 'priority'], files: ['id', 'paths...'], repo: ['id', 'path...'],
@@ -629,6 +636,7 @@ export const COMMAND_ARGS = {
 export const COMMAND_SUMMARY = {
   init: 'Open a loop: create .jarl/ with the goal, out of git by default, committed or permanent when asked.',
   new: 'File an issue under the next free number, with its fields and its What, Why and Acceptance; a promise (kind promise) or a wait on an outside person (kind wait, with person and check-when).',
+  renumber: 'Give a free number to one of the issue files that carry one number after a merge, the one with the key named, keeping every line of the log written about it.',
   body: 'Set or replace the title, the Where field and the What, Why, Acceptance, Changelog and profile sections of issues, or add to those sections with append, logging what each part held and who changed it when named.',
   import: 'File one issue per finding of a findings file, skipping findings already filed.',
   sources: 'Per findings report: its findings, the issues filed from them and their status.',
@@ -766,7 +774,7 @@ function fieldListValue(name, value) {
 const ARITY = Object.fromEntries(Object.entries({ ...COMMAND_ARGS, ...Object.fromEntries(Object.entries(COMMAND_ALIASES).map(([name, c]) => [name, COMMAND_ARGS[c]])) }).filter(([, a]) => !a.some((n) => n.endsWith('...'))).map(([c, a]) => [c, a.length]));
 
 // The commands that write: each runs under .jarl/.lock (see withLock).
-export const MUTATING = new Set(['init', 'new', 'body', 'import', 'source', 'after', 'set', 'field', 'merged', 'tag', 'prio', 'files', 'repo', 'evidence', 'retract', 'review', 'round', 'tick', 'ask', 'answer', 'log', 'decide', 'goal', 'archive', 'mode', 'close']);
+export const MUTATING = new Set(['init', 'new', 'renumber', 'body', 'import', 'source', 'after', 'set', 'field', 'merged', 'tag', 'prio', 'files', 'repo', 'evidence', 'retract', 'review', 'round', 'tick', 'ask', 'answer', 'log', 'decide', 'goal', 'archive', 'mode', 'close']);
 
 // git's side of the loop: the merge driver git runs, and the settings a merger passes it. Neither reads a loop.
 function mergeDriverMain(args) {
@@ -894,6 +902,7 @@ export function dispatch(root, commandName, rest, flags) {
       case 'init': out = R.initLoop(root, rest[0], { ...flags, caller: 'cli' }); text = `opened ${out.dir} · ${out.permanent ? 'permanent record, no branch' : out.committed ? 'committed with the work' : 'kept out of git'}${out.profile ? ` · profile ${out.profile}` : ''}`; warn = out.note ? [`note: ${out.note}`] : []; break;
       // The command line says caller 'cli': the notes (the tier a new issue got) are for it, never for a library caller.
       case 'new': out = R.newIssue(root, rest[0], { ...flags, caller: 'cli', width: undefined }); out = { ...out, ...describeNew(out.file) }; text = renderNewReply(out); warn = out.note ? [out.note] : []; break;
+      case 'renumber': out = cmdRenumber(root, rest[0], flags); text = `${out.from} → ${out.id} · issues/${basename(out.file)} · key ${out.key}`; break;
       // body, source, after, files, repo and round take the list grammar: eachIssue checks every id before it writes one.
       case 'body': out = eachIssue(root, rest[0], (id, dry) => cmdBody(root, id, { ...flags, caller: 'cli' }, dry)); text = each(out, (o) => `${o.id} body: ${o.set.join(', ')}`); warn = [].concat(out).filter((o) => o.note).map((o) => o.note); break;
       case 'source': out = eachIssue(root, rest[0], (id, dry) => cmdSource(root, id, rest[1], dry, flags.by)); text = each(out, (o) => `${o.id} source: ${o.sources.join(', ')}`); break;
@@ -994,7 +1003,7 @@ export function dispatch(root, commandName, rest, flags) {
 // place after the stamp, under record format 3. The commands whose --by is part of what they record (the author of a
 // description change, the reviewer, who answered, ruled or retracted) keep it there: set naming a field and evidence
 // taking a row back are those too.
-export const WRITER_COMMANDS = Object.freeze(['init', 'new', 'import', 'evidence', 'set', 'merged', 'round', 'ask', 'log', 'goal', 'archive', 'mode', 'close']);
+export const WRITER_COMMANDS = Object.freeze(['init', 'new', 'renumber', 'import', 'evidence', 'set', 'merged', 'round', 'ask', 'log', 'goal', 'archive', 'mode', 'close']);
 function writerOf(root, cmd, rest, flags) {
   if (!WRITER_COMMANDS.includes(cmd) || flags.by === undefined) return null;
   if (cmd === 'evidence' && flags.retract !== undefined) return null;

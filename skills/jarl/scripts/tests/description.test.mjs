@@ -25,7 +25,7 @@ function profiledLoop() {
   jarl(root, 'new', 'third', '--tier', 'light');
   return root;
 }
-const logLines = (root) => readFileSync(join(root, '.jarl', 'log.md'), 'utf8').split('\n').map((l) => l.replace(/^- \d{4}-\d{2}-\d{2} \d{2}:\d{2} · /, ''));
+const logLines = (root) => readFileSync(join(root, '.jarl', 'log.md'), 'utf8').split('\n').map((l) => l.replace(/^- \d{4}-\d{2}-\d{2} \d{2}:\d{2}(?: key \S+)? · /, ''));
 const lastLine = (root) => logLines(root).filter(Boolean).at(-1);
 const show = (root, id) => JSON.parse(jarl(root, 'show', id, '--json'));
 

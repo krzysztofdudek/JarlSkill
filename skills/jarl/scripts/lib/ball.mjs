@@ -4,6 +4,7 @@
 import { PROMISE_KIND, WAIT_KIND, fieldText, need } from './base.mjs';
 import { cmpId, idKey, idsCited } from './ids.mjs';
 import { mergedOf } from './issues.mjs';
+import { leaseOfMove } from './log.mjs';
 import { carriesCode, gateOf, readLoop, sameSlice, sliceOf } from './loop.mjs';
 import { reasonWord, shellWord, waitingOn } from './commands.mjs';
 import { inFlightMark, nextRows, schedulerNote } from './evidence.mjs';
@@ -285,11 +286,63 @@ function closedOn(loop, issue, slug) {
   return moves.length > 0 && String(moves[moves.length - 1].text || '').includes(slug);
 }
 
+// The jarl's lease conflicts: an issue whose log leases it twice, by two writers, to two holders, with no move out of the
+// lease between the two lines and no handover. One copy of the loop refuses a lease another worker holds, so the two
+// lines come from two copies that each leased it before either saw the other, merged. Which lease stands is the jarl's
+// to settle.
+function leaseConflictRows(ctx) {
+  const { loop, profile } = ctx;
+  const leaseStatus = statusWith(profile, 'holds-claim');
+  const out = [];
+  for (const i of loop.issues) {
+    if (i.id === null || i.shared) continue;
+    const c = leaseConflict(profile, (loop.eventsById.get(i.id) || []).filter((e) => (e.key ?? null) === null || e.key === (i.fields.key || null)));
+    if (!c) continue;
+    const lease = (e) => `${e.writer}${e.lease?.worker ? ` (worker ${e.lease.worker}${e.lease.branch ? `, ${e.lease.branch}` : ''})` : ''} at ${e.at}`;
+    out.push({ what: 'conflict', id: i.id, title: i.title, priority: i.priority, holder: JARL_HOLDER,
+      says: `leased twice with no move out between: by ${lease(c.first)} and by ${lease(c.second)}, in two copies of the loop that each leased it before either saw the other; settle which lease stands`,
+      command: `jarl.mjs set ${i.id} ${leaseStatus} --handover --branch <branch> --worker <name> "<which lease stands>"` });
+  }
+  return out;
+}
+// The lease lines of one issue's `events` that still conflict, as { first, second }, or null. A lease line is a move into
+// the status the lease is taken in (the profile's first status that holds the claim) that names a worker or a branch; a
+// move between the statuses that hold the claim (running to landed) is the work going on, and takes no lease. Two lease
+// lines conflict when each names a writer, the writers differ, they name another worker or another branch, no move into
+// a status that does not hold the claim comes between them, and the second is no handover. A later handover or move out
+// settles it.
+export function leaseConflict(profile, events) {
+  const leaseStatus = statusWith(profile, 'holds-claim');
+  let held = null;
+  let conflict = null;
+  for (const e of events) {
+    if (e.type !== 'move') continue;
+    if (!profile.is(e.to, 'holds-claim')) { held = null; conflict = null; continue; }
+    const holder = e.to === leaseStatus ? leaseHolder(e) : null;
+    if (!holder) continue;
+    if (e.handover) conflict = null;
+    else if (held && held.e.writer !== null && e.writer !== null && !sameHolder(held.e.writer, e.writer) && !sameLease(held, holder)) conflict = { first: held.e, second: e };
+    held = { e, ...holder };
+  }
+  return conflict;
+}
+// The worker and the branch a lease line names, or null when it names neither.
+function leaseHolder(e) {
+  const worker = e.lease?.worker ?? null;
+  const branch = e.lease?.branch ?? leaseOfMove(e.text, e.written ?? e.id, e.to).branch ?? null;
+  return worker || branch ? { worker, branch } : null;
+}
+// Two lease lines that name one worker and one branch (where both name it) take one lease.
+function sameLease(a, b) {
+  const same = (x, y) => x === null || y === null || x === y;
+  return same(a.worker, b.worker) && same(a.branch, b.branch);
+}
+
 // The sources of the rows, in order. Each reads the record through the context and gives rows { what, holder, says,
 // command, and id, ask or ruling }; a kind of open thing the record learns to hold adds its own source here.
-export const ROW_SOURCES = [issueRows, keptRows, ownerLineRows, questionRows, rulingRows];
+export const ROW_SOURCES = [issueRows, leaseConflictRows, keptRows, ownerLineRows, questionRows, rulingRows];
 // The rows a composer's scheduler owns: under an external scheduler Jarl lists only the others.
-const SCHEDULING = new Set([issueRows]);
+const SCHEDULING = new Set([issueRows, leaseConflictRows]);
 
 // Every row of the loop, ordered as one display (never a schedule): the owner's rows first, then by how many issues each
 // holds up directly, an item to ratify after a question (it blocks nothing), then by priority and number. A question of

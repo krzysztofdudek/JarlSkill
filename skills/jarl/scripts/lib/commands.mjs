@@ -2,14 +2,14 @@
 // recorded merge makes redundant.
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, openSync, closeSync, writeSync, unlinkSync, linkSync } from 'node:fs';
-import { join, resolve, relative, isAbsolute } from 'node:path';
+import { basename, join, resolve, relative, isAbsolute } from 'node:path';
 import { CI_STATES, LEASE_FIELDS, PRIORITIES, TIERS, WAIT_KIND, fieldText, need, noSeparators, slugify, splitList } from './base.mjs';
 import { needNoNewOwnersWords, needNoOwnersWords } from './owner.mjs';
-import { git, gitRun } from './git.mjs';
+import { git, gitBytes, gitRun } from './git.mjs';
 import { canonical, issuesDir, jarlDir, portablePath, stamp, today } from './where.mjs';
 import { readText, renameRetry, writeAtomic } from './files.mjs';
-import { ISSUE_FILE_RE, branchNameProblem, cmpId, expandIds, idKey, idRe, isBulk, needsRaisedFormat, newNumber } from './ids.mjs';
-import { DEFAULT_PROFILE, TOOL_FIELDS, loadProfile, numberWidth, profilePath, readProfileFile } from './profile.mjs';
+import { ISSUE_FILE_RE, branchNameProblem, cmpId, expandIds, idKey, idRe, isBulk, needsRaisedFormat, newIssueKey, newNumber } from './ids.mjs';
+import { DEFAULT_PROFILE, FORMAT_LINES, TOOL_FIELDS, formatState, loadProfile, numberWidth, profilePath, readProfileFile } from './profile.mjs';
 import { appendLog, appendLogLines, decisionsPath, goalPath, logPath } from './journal.mjs';
 import { JARL_GITIGNORE, JARL_GITIGNORE_COMMITTED, ensureLoopMerge, outOfGit } from './loop-git.mjs';
 import { HANDOVER_SEGMENT, journalById, mergeCheckText } from './log.mjs';
@@ -151,6 +151,49 @@ function highestAcrossWorktrees(root) {
   return top;
 }
 
+// The highest issue number the loop's issue directory holds on any local branch or remote-tracking branch of its
+// repository (read-only, one git process for all of them): a clone or a branch that filed an issue this checkout has
+// not merged yet has taken that number, and a new issue here takes the next one. 0 outside git, and for a loop git does
+// not hold.
+function highestAcrossRefs(root) {
+  const prefix = git(root, ['rev-parse', '--show-prefix']);
+  if (prefix === null) return 0;
+  const refs = (git(root, ['for-each-ref', '--format=%(refname)', 'refs/heads', 'refs/remotes']) || '').split('\n').filter(Boolean);
+  if (!refs.length) return 0;
+  const out = gitBytes(root, ['cat-file', '--batch'], refs.map((r) => `${r}:${prefix}.jarl/issues\n`).join(''));
+  let top = 0;
+  for (const name of treeNames(out)) { const m = ISSUE_FILE_RE.exec(name); if (m) top = Math.max(top, Number(m[1])); }
+  return top;
+}
+// The names of the entries of every tree `git cat-file --batch` printed: each object is "<hash> <type> <size>", its bytes
+// and a line break; a tree's bytes are entries of "<mode> <name>", a zero byte and the entry's hash in binary. An object
+// git did not find is one line ("<name> missing") and holds no names.
+function treeNames(buf) {
+  const names = [];
+  if (!buf) return names;
+  let at = 0;
+  while (at < buf.length) {
+    const eol = buf.indexOf(10, at);
+    if (eol === -1) break;
+    const [hash, type, size] = buf.subarray(at, eol).toString('utf8').split(' ');
+    at = eol + 1;
+    if (size === undefined || !/^\d+$/.test(size)) continue;
+    const end = at + Number(size);
+    if (type === 'tree') {
+      const width = hash.length / 2;
+      for (let p = at; p < end;) {
+        const zero = buf.indexOf(0, p);
+        if (zero === -1 || zero >= end) break;
+        const entry = buf.subarray(p, zero).toString('utf8');
+        names.push(entry.slice(entry.indexOf(' ') + 1));
+        p = zero + 1 + width;
+      }
+    }
+    at = end + 1;
+  }
+  return names;
+}
+
 // When a tier is light, standard or strong: the criteria the skill gives, as a prior the measurements then refine.
 export const TIER_CRITERIA = {
   light: 'a check or test decides, the scope is written down, nothing that protects changes',
@@ -225,6 +268,13 @@ export function cmdNew(root, title, rawFlags) {
   if (kept) needFormat(root, 'promise-wait');
   commitRepoNames(root, picked);
   if (ownerLined) needFormat(root, 'owner-line');
+  // The issue's key, its filing stamp and four random letters, raises the loop to the format that holds it. A loop a
+  // composer keeps stays in the format the composer reads, and its issues carry no key: they are told apart by number; so
+  // are the issues of a loop whose profile declares a field Key of its own.
+  const keyed = loadProfile(root).keyed && (formatState(loadProfile(root)).raises || loadProfile(root).format >= FORMAT_LINES['issue-key'].format);
+  if (keyed) needFormat(root, 'issue-key');
+  const at = stamp();
+  const key = keyed ? newIssueKey(at) : null;
   // The number is claimed by creating the file with a link, which never overwrites: when another
   // writer got there first (the lock makes that rare, not impossible — a hand-made file, a stale
   // lock broken early), the next number is tried instead of two issues sharing one.
@@ -232,9 +282,10 @@ export function cmdNew(root, title, rawFlags) {
   // Git keeps no empty directory, so a clone of a loop committed before its first issue has none yet.
   mkdirSync(dir, { recursive: true });
   const taken = () => readdirSync(dir).map((f) => ISSUE_FILE_RE.exec(f)).filter(Boolean).map((m) => Number(m[1]));
-  // The highest number over this loop and its copies in every other worktree (read-only), so a lagging copy cannot hand
-  // out a number already used elsewhere. The issue files stay the only source: there is no counter file.
-  const elsewhere = highestAcrossWorktrees(root);
+  // The highest number over this loop, its copies in every other worktree and every local and remote-tracking branch of
+  // its repository (read-only), so a lagging copy cannot hand out a number already used elsewhere. The issue files stay
+  // the only source: there is no counter file.
+  const elsewhere = Math.max(highestAcrossWorktrees(root), highestAcrossRefs(root));
   let n = Math.max(taken().reduce((m, x) => Math.max(m, x), 0), elsewhere) + 1;
   for (let tries = 0; ; tries += 1) {
     const id = newNumber(n, numberWidth(profile, rawFlags.width));
@@ -243,7 +294,7 @@ export function cmdNew(root, title, rawFlags) {
     const file = join(dir, `${id}-${slugify(title)}.md`);
     const tmp = join(dir, `.${id}.${process.pid}.tmp`);
     const rendered = renderIssue({
-      id, title, status: profile.initial, kind, priority, tier, fields, sections, acceptanceHeading: profile.acceptance || 'Acceptance',
+      id, title, status: profile.initial, key, kind, priority, tier, fields, sections, acceptanceHeading: profile.acceptance || 'Acceptance',
       tags: splitList(flags.tags), files: pathList(flags.files), repo: picked.map((p) => p.value).join(', '), foundBy: flags['found-by'] || 'jarl', person, checkWhen,
       where: flags.where, what: bodyText(flags.what), why: bodyText(flags.why), source, after,
       // A template's Acceptance and Changelog are taken as written (a list already); a flag replaces them.
@@ -256,7 +307,7 @@ export function cmdNew(root, title, rawFlags) {
     let claimed = !taken().includes(n);
     // The filing goes into the journal first: a write that stops after it leaves the record ahead of the files (a filing
     // with no file, and the number is taken again), never a file the record does not hold.
-    if (claimed) appendLog(root, `filed ${id} · ${title}${rawFlags.template !== undefined ? ` · template ${rawFlags.template}` : ''}`);
+    if (claimed) appendLogLines(root, [{ text: `filed ${id} · ${title}${rawFlags.template !== undefined ? ` · template ${rawFlags.template}` : ''}`, key }], at);
     if (claimed) { try { claimed = claimFile(tmp, file); } catch (e) { unlinkSync(tmp); throw e; } }
     unlinkSync(tmp);
     if (claimed) {
@@ -275,6 +326,56 @@ export function cmdNew(root, title, rawFlags) {
     need(tries < 100, 'could not claim a free issue number after 100 tries');
     n = Math.max(n + 1, taken().reduce((m, x) => Math.max(m, x), 0) + 1);
   }
+}
+
+// renumber <id> --key <key>: of the issue files that carry one number after a merge, the one whose header carries `key`
+// is given the next free number (over this checkout, its worktrees and every branch, as new takes one): its file is
+// renamed and its first line says the new number. Every line the log holds about it names its key, so the issue keeps
+// them under its new number, and no line is rewritten: the log takes one line, `<new> renumbered from <old> · <file>`,
+// with the key, written before the file moves. A number one file carries, and a file with no key, are refused.
+export function cmdRenumber(root, rawId, flags = {}) {
+  needLiveLoop(root, '');
+  need(rawId !== undefined && /^#?\d+$/.test(String(rawId).trim()), 'renumber takes the number two issue files carry: jarl.mjs renumber <id> --key <key>');
+  const issues = loadIssues(root);
+  const same = issues.filter((i) => i.id !== null && idKey(i.id) === idKey(rawId));
+  need(same.length, `no such issue: ${rawId}`);
+  const old = same[0].id;
+  const named = (list) => list.map((i) => `issues/${basename(i.file)} (${i.fields.key ? `key ${fieldText(i.fields.key)}` : 'no key'})`).join(', ');
+  need(same.length > 1, `${old} is carried by one issue file, ${named(same)}: renumber gives a free number to one of the files that carry one number after a merge`);
+  need(flags.key !== undefined && String(flags.key).trim() !== '', `${old} is carried by ${named(same)}: name the one to give a free number with --key <key>`);
+  const key = String(flags.key).trim();
+  const pick = same.find((i) => i.fields.key === key);
+  need(pick, `no file of ${old} carries the key ${key}: ${named(same)}`);
+  needFormat(root, 'issue-key');
+  const profile = loadProfile(root);
+  const dir = issuesDir(root);
+  const before = readText(pick.file);
+  const rest = basename(pick.file).replace(/^\d+-/, '');
+  for (let n = nextFreeNumber(root, dir), tries = 0; ; n += 1, tries += 1) {
+    need(tries < 100, 'could not claim a free issue number after 100 tries');
+    const id = newNumber(n, numberWidth(profile));
+    if (needsRaisedFormat(id)) needFormat(root, 'plain-number');
+    const file = join(dir, `${id}-${rest}`);
+    if (existsSync(file)) continue;
+    const text = before.replace(idRe('^#(\\s+){id}(\\s+·)'), `#$1${id}$2`);
+    needNoNewOwnersWords(before, text, `${id}-${rest}`);
+    const tmp = join(dir, `.${id}.${process.pid}.tmp`);
+    writeFileSync(tmp, text);
+    // The line goes into the journal first: a write that stops after it leaves the line beside the file it names under
+    // its old number, which its key still finds.
+    appendLogLines(root, [{ text: `${id} renumbered from ${old} · issues/${id}-${rest}`, key }]);
+    let claimed;
+    try { claimed = claimFile(tmp, file); } finally { unlinkSync(tmp); }
+    if (!claimed) continue;
+    unlinkSync(pick.file);
+    return { id, from: old, key, file };
+  }
+}
+// The number a new issue takes: one above the highest the loop's issue files hold here, in its other worktrees and on
+// every local and remote-tracking branch.
+function nextFreeNumber(root, dir) {
+  const here = readdirSync(dir).map((f) => ISSUE_FILE_RE.exec(f)).filter(Boolean).reduce((m, x) => Math.max(m, Number(x[1])), 0);
+  return Math.max(here, highestAcrossWorktrees(root), highestAcrossRefs(root)) + 1;
 }
 
 // The notes for the text of an issue just written: one for the unfinished issues it names that nothing orders with it.

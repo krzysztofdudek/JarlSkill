@@ -361,7 +361,7 @@ function handedOverBranches(profile, events) {
   let current = null;
   for (const e of events) {
     if (e.type !== 'move' || !profile.is(e.to, 'holds-claim')) continue;
-    const branch = leaseOfMove(e.text, e.id, e.to).branch || null;
+    const branch = leaseOfMove(e.text, e.written ?? e.id, e.to).branch || null;
     if (e.handover && current && branch && branch !== current) out.set(current, branch);
     if (branch) current = branch;
   }

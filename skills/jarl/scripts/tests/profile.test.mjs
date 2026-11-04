@@ -261,8 +261,8 @@ test('no profile: no profile file, the same issue file byte for byte, the same l
   assert.ok(!existsSync(join(root, '.jarl', 'profile.json')));
   assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /· opened · g\n$/);
   jarl(root, 'new', 'plain issue', '--files', 'a.mjs', '--acceptance', 'it works');
-  const file = readFileSync(join(root, '.jarl', 'issues', '1-plain-issue.md'), 'utf8');
-  assert.equal(file, '# 1 · plain issue\n\n**Status:** open\n**Kind:** bug\n**Priority:** 2\n**Tier:** standard\n**Tags:** \n**Files:** a.mjs\n**Found by:** jarl\n**Where:**\n\n## What\n\n\n## Why\n\n\n## Acceptance\nit works\n\n## Evidence\n\n');
+  const file = readFileSync(join(root, '.jarl', 'issues', '1-plain-issue.md'), 'utf8').replace(/^\*\*Key:\*\* \d{8}T\d{4}-[a-z]{4}$/m, '**Key:** <key>');
+  assert.equal(file, '# 1 · plain issue\n\n**Status:** open\n**Kind:** bug\n**Priority:** 2\n**Tier:** standard\n**Key:** <key>\n**Tags:** \n**Files:** a.mjs\n**Found by:** jarl\n**Where:**\n\n## What\n\n\n## Why\n\n\n## Acceptance\nit works\n\n## Evidence\n\n');
   const st = JSON.parse(jarl(root, 'status', '--json'));
   assert.deepEqual(Object.keys(st).slice(0, 5), ['open', 'in-progress', 'done', 'dropped', 'deferred']);
   assert.ok(!('profile' in st));
@@ -341,8 +341,8 @@ test('new writes the declared fields after Where, the extra sections after Accep
   assert.match(refuses(root, 'new', 't', '--field', 'Area-2'), /--field takes <name>=<value>/);
   assert.match(refuses(root, 'new', 't', '--kind', 'bug', '--field', 'area-2=core'), /--kind must be one of: feature, fix, chore/);
   jarl(root, 'new', 'a thing', '--field', 'area-2=core', '--section', 'Plan=first this\nthen that', '--acceptance', 'it runs', '--tier', 'max');
-  const file = readFileSync(join(root, '.jarl', 'issues', '1-a-thing.md'), 'utf8');
-  assert.equal(file, '# 1 · a thing\n\n**Status:** proposed\n**Kind:** feature\n**Priority:** 2\n**Tier:** max\n**Tags:** \n**Files:** \n**Found by:** jarl\n**Where:**\n**Area-2:** core\n**Class:** b\n**Note:**\n\n## What\n\n\n## Why\n\n\n## Acceptance — evidence\nit runs\n\n## Plan\nfirst this\nthen that\n\n## Ports\n\n\n## Evidence\n\n');
+  const file = readFileSync(join(root, '.jarl', 'issues', '1-a-thing.md'), 'utf8').replace(/^\*\*Key:\*\* \d{8}T\d{4}-[a-z]{4}$/m, '**Key:** <key>');
+  assert.equal(file, '# 1 · a thing\n\n**Status:** proposed\n**Kind:** feature\n**Priority:** 2\n**Tier:** max\n**Key:** <key>\n**Tags:** \n**Files:** \n**Found by:** jarl\n**Where:**\n**Area-2:** core\n**Class:** b\n**Note:**\n\n## What\n\n\n## Why\n\n\n## Acceptance — evidence\nit runs\n\n## Plan\nfirst this\nthen that\n\n## Ports\n\n\n## Evidence\n\n');
   const shown = JSON.parse(jarl(root, 'show', '1', '--json'));
   assert.equal(shown.fields['area-2'], 'core');
   assert.equal(shown.sections.acceptance, 'it runs\n\n', 'the aliased heading reads as the acceptance');

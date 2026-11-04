@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { jarl, loop as makeLoop, refuses, gitRepo } from './helpers.mjs';
-import { oldJarl } from './old-jarl.mjs';
+import { oldJarl, fileAsBefore } from './old-jarl.mjs';
 
 const L = await import('../jarl-lib.mjs');
 const R = await import('../record.mjs');
@@ -88,7 +88,7 @@ test('gateWindow gives the anchor and the cut for every event, from each closing
 function leased({ library = false } = {}) {
   const { dir: root, g } = gitRepo({ prefix: 'jarl-pause-', branch: 'main' });
   jarl(root, 'init', 'goal');
-  if (library) R.newIssue(root, 'issue 1', { acceptance: 'it works' }); else jarl(root, 'new', 'issue 1', '--acceptance', 'it works');
+  if (library) fileAsBefore(root, 'issue 1', { acceptance: 'it works' }); else jarl(root, 'new', 'issue 1', '--acceptance', 'it works');
   g('branch', 'jarl/1-x');
   const commit = (name) => { g('checkout', '-q', 'jarl/1-x'); writeFileSync(join(root, `${name}.txt`), `${name}\n`); g('add', `${name}.txt`); g('commit', '-qm', name); g('checkout', '-q', 'main'); };
   commit('work');
@@ -179,7 +179,7 @@ test('rows and verdicts that carry no tip are spent by a pause and a resume', ()
 test('a tip line is written by evidence, review and merged, right after their own line, and never by log', () => {
   const { root, g } = leased();
   const tip = g('rev-parse', 'jarl/1-x').trim();
-  const lines = readFileSync(join(root, '.jarl', 'log.md'), 'utf8').split('\n').map((l) => l.replace(/^- \S+ \S+ · /, ''));
+  const lines = readFileSync(join(root, '.jarl', 'log.md'), 'utf8').split('\n').map((l) => l.replace(/^- \S+ \S+(?: key \S+)? · /, ''));
   const after = (re) => lines[lines.findIndex((l) => re.test(l)) + 1];
   assert.equal(after(/^1 evidence row · /), `1 tip ${tip}`);
   assert.equal(after(/^1 review approve · /), `1 tip ${tip}`);

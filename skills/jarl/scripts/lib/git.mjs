@@ -30,6 +30,11 @@ function gitHere(dir, args) {
   try { return exec('git', args, { cwd: dir, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { return null; }
 }
 const runGh = exec;
+// What git prints in `root` for `input` on its standard input, as bytes; null when it fails. A batch command reads many
+// objects in one process this way.
+function gitBytes(root, args, input) {
+  try { return exec('git', args, { cwd: root, input, stdio: ['pipe', 'pipe', 'ignore'], maxBuffer: GIT_OUTPUT }); } catch { return null; }
+}
 
 // Used by the other modules of the library, and not part of what jarl-lib.mjs exports.
-export { git, gitHere, gitRun, runGh };
+export { git, gitBytes, gitHere, gitRun, runGh };

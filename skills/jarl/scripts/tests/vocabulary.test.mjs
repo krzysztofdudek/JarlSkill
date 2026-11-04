@@ -41,9 +41,10 @@ function transcript(flag) {
   const set = jarlResult(dir, ['set', '2', 'running', '--branch', 'jarl/2-a', '--worker', 'w2']).stdout;
   const views = [['status'], ['next', '--all'], ['list', '--all'], ['queue'], ['show', '2'], ['resume']];
   const out = views.map((args) => jarlResult(dir, args).stdout);
-  // The directory's path and its name, the times and the commit ids of the two repositories are taken out: they differ by run.
+  // The directory's path and its name, the times, the issues' keys and the commit ids of the two repositories are taken
+  // out: they differ by run.
   const scrub = (text) => text.split(realpathSync(dir)).join('<root>').split(dir).join('<root>').split(basename(dir)).join('<name>')
-    .replace(/\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?/g, '<date>').replace(/\b[0-9a-f]{12}\b/g, '<sha>');
+    .replace(/\b\d{8}T\d{4}-[a-z]{4}\b/g, '<key>').replace(/\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?/g, '<date>').replace(/\b[0-9a-f]{12}\b/g, '<sha>');
   return scrub([set, ...out].join('\n----\n'));
 }
 

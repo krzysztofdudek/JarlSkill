@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { FINDINGS } from './findings.mjs';
 import { jarl, refuses, loop as makeLoop } from './helpers.mjs';
 import * as R from '../record.mjs';
+import { fileAsFormatTwo } from './old-jarl.mjs';
 import { BUILTIN_STATUSES } from '../jarl-lib.mjs';
 
 const loop = (initFlags = []) => makeLoop({ prefix: 'jarl-as-', via: 'cli', dotGit: false, initFlags });
@@ -315,17 +316,24 @@ test('a wait names its person and when to check: new refuses one without them, f
 });
 
 test('filing a promise or a wait raises the loop to record format 3, and a loop a composer keeps refuses it with nothing written', () => {
+  // The plain work is filed with no key (fileAsFormatTwo), so only the promise or the wait raises the loop to 3; a key
+  // would raise it by itself.
   const root = loop();
-  jarl(root, 'new', 'plain work', '--files', 'a.mjs');
+  fileAsFormatTwo(root, 'plain work', { files: 'a.mjs' });
   assert.ok(R.recordFormat(root).format < 3, 'plain work needs no raise to 3');
-  jarl(root, 'new', 'a promise', '--kind', 'promise');
+  jarl(root, 'field', '1', 'Kind', 'promise');
   assert.equal(profileJson(root).format, 3);
+  assert.equal(json(root, 'show', '1').kind, 'promise');
   const other = loop();
-  jarl(other, 'new', 'plain work', '--files', 'a.mjs');
+  fileAsFormatTwo(other, 'plain work', { files: 'a.mjs' });
   jarl(other, 'field', '1', 'Person', 'Dana');
   assert.equal(profileJson(other).format, 3, 'a Person is written in format 3 too');
+  const filed = loop();
+  fileAsFormatTwo(filed, 'plain work', { files: 'a.mjs' });
+  jarl(filed, 'new', 'a promise', '--kind', 'promise');
+  assert.equal(profileJson(filed).format, 3, 'and a promise filed by new');
   const third = loop();
-  jarl(third, 'new', 'plain work', '--files', 'a.mjs');
+  fileAsFormatTwo(third, 'plain work', { files: 'a.mjs' });
   jarl(third, 'field', '1', 'Kind', 'promise');
   assert.equal(profileJson(third).format, 3, 'and so is a kind made a promise by field');
   // A composer reads the record with its own copy of the library: Jarl never raises it, so the kinds are off there.
@@ -384,8 +392,9 @@ const OWN_WORDS = {
 test('a loop whose profile already declares a field Person or a kind wait reads as it did: its own field and kind keep their meaning, and the built-in promise and wait are off', () => {
   const root = loop();
   writeFileSync(join(root, '.jarl', 'profile.json'), JSON.stringify(OWN_WORDS));
-  jarl(root, 'new', 'hold the line', '--kind', 'wait', '--files', 'a.mjs', '--field', 'Person=Dana');   // its own kind wait
-  jarl(root, 'new', 'plain work', '--files', 'b.mjs');
+  // Filed with no key (fileAsFormatTwo), which would raise the loop to 3 by itself.
+  fileAsFormatTwo(root, 'hold the line', { kind: 'wait', files: 'a.mjs', field: 'Person=Dana' });   // its own kind wait
+  fileAsFormatTwo(root, 'plain work', { files: 'b.mjs' });
   for (const command of [['status'], ['list'], ['show', '1'], ['resume'], ['next']]) jarl(root, ...command);
   assert.deepEqual(json(root, 'next').map((r) => r.id), ['1', '2'], 'its own wait is work, offered as any other');
   assert.deepEqual(json(root, 'next', '--as', 'jarl').rows.map((r) => [r.id, r.what]), [['1', 'ready'], ['2', 'ready']]);

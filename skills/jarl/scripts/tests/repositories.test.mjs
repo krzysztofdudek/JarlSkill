@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import * as R from '../record.mjs';
 import { run, jarl, refuses, SPAWN_TIMEOUT } from './helpers.mjs';
-import { oldJarl, oldJarlIsPinned } from './old-jarl.mjs';
+import { oldJarl, oldJarlIsPinned, fileAsBefore } from './old-jarl.mjs';
 
 const L = await import('../jarl-lib.mjs');
 
@@ -75,12 +75,13 @@ test('two sibling repositories get names and a third that is not a sibling keeps
   assert.equal(neu(w.hub, 'again', '--repo', 'tool').status, 0);
   assert.equal(w.decl().split('\n').filter((l) => l.startsWith('- **')).length, 2, 'a repository is declared once');
   assert.equal((w.log().match(/repo tool declared/g) || []).length, 1);
-  assert.deepEqual(JSON.parse(readFileSync(join(w.hub, '.jarl', 'profile.json'), 'utf8')), { 'jarl-profile': 1, format: 2 });
+  assert.deepEqual(JSON.parse(readFileSync(join(w.hub, '.jarl', 'profile.json'), 'utf8')), { 'jarl-profile': 1, format: 3 }, 'the issues\' keys raise it to 3, which holds the names too');
 });
 
 test('an issue with no Repo is read in the root of the loop, and a loop that names no repository writes no declaration', () => {
   const w = world('tool');
-  R.newIssue(w.hub, 'plain');
+  // Filed with three digits and no key (fileAsBefore): nothing here raises the loop.
+  fileAsBefore(w.hub, 'plain');
   assert.doesNotMatch(w.issue(1), /\*\*Repo:\*\*/);
   assert.equal(existsSync(join(w.hub, '.jarl', 'repos.md')), false);
   assert.equal(existsSync(join(w.hub, '.jarl', 'profile.json')), false);
@@ -164,7 +165,7 @@ test('two repositories that share a directory name stay apart: the second keeps 
 test('the format of the loop decides how a value is read: a bare word is a path in format 1 and a name in format 2', () => {
   const w = world('tool');
   const nested = repoAt(join(w.hub, 'tool'));
-  R.newIssue(w.hub, 'a');
+  fileAsBefore(w.hub, 'a');
   writeFileSync(join(w.hub, '.jarl', 'issues', readdirSync(join(w.hub, '.jarl', 'issues'))[0]), w.issue(1).replace(/^(\*\*Files:\*\*.*)$/m, '$1\n**Repo:** tool'));
   assert.equal(L.loadProfile(w.hub).format, 1);
   assert.equal(L.repoOf(w.hub, 'tool'), nested, 'format 1: a path under the root of the loop');
@@ -181,12 +182,14 @@ test('the first name raises the record format under the lock, writes bare-word p
   assert.ok(oldJarlIsPinned());
   const w = world('tool');
   const nested = repoAt(join(w.hub, 'sub'));
-  R.newIssue(w.hub, 'nested');
+  // Filed with three digits and no key (fileAsBefore), so the name alone raises the loop.
+  fileAsBefore(w.hub, 'nested');
   const file = join(w.hub, '.jarl', 'issues', readdirSync(join(w.hub, '.jarl', 'issues'))[0]);
   writeFileSync(file, w.issue(1).replace(/^(\*\*Files:\*\*.*)$/m, '$1\n**Repo:** sub, ./other'));
   assert.equal(oldJarl(w.hub, 'list', {}).ok, true, 'before the first name the frozen reader reads the loop');
   assert.equal(L.loadProfile(w.hub).format, 1);
-  R.newIssue(w.hub, 'named', { repo: 'tool' });
+  fileAsBefore(w.hub, 'named');
+  R.setRepo(w.hub, '002', 'tool');
   assert.equal(L.loadProfile(w.hub).format, 2);
   assert.match(w.issue(1), /^\*\*Repo:\*\* \.\/sub, \.\/other$/m, 'the bare-word path says the same place unambiguously');
   assert.match(w.log(), /repo paths written as \.\/<word> in 0*1 · the record format is raised/);
@@ -204,8 +207,8 @@ test('a loop that holds only paths is read by the frozen reader unchanged, whate
   const w = world();
   repoAt(join(w.hub, 'sub'));
   const away = repoAt(join(tmp('jarl-away-'), 'far'));
-  R.newIssue(w.hub, 'one', { repo: './sub' });
-  R.newIssue(w.hub, 'two', { repo: away });
+  fileAsBefore(w.hub, 'one', { repo: './sub' });
+  fileAsBefore(w.hub, 'two', { repo: away });
   R.setRepo(w.hub, '001', away);
   R.setRepo(w.hub, '001', undefined, { clear: true });
   R.setRepo(w.hub, '002', './sub');
@@ -221,7 +224,7 @@ test('a loop that holds only paths is read by the frozen reader unchanged, whate
 test('a path-only loop reads the same after a lease that checks a worktree and stores none', () => {
   const w = world();
   const sub = repoAt(join(w.hub, 'sub'));
-  R.newIssue(w.hub, 'one', { repo: './sub' });
+  fileAsBefore(w.hub, 'one', { repo: './sub' });
   const wt = join(tmp('jarl-wt-'), 'sub-wt');
   git(sub, 'worktree', 'add', '-q', '-b', 'jarl/1-one', wt);
   jarl(w.hub, 'set', '1', 'in-progress', 'go', '--branch', 'jarl/1-one', '--worker', 'w1', '--worktree', wt);
@@ -643,11 +646,11 @@ function nestedWorld() {
   const sha = git(api, 'rev-parse', '--short', 'HEAD');
   const sibling = repoAt(join(w.parent, 'api'), { commits: [['sibling.txt', 'sibling\n']] });
   git(sibling, 'branch', 'jarl/1-x');
-  R.newIssue(w.hub, 'nested work');
+  fileAsBefore(w.hub, 'nested work');
   const first = join(w.hub, '.jarl', 'issues', readdirSync(join(w.hub, '.jarl', 'issues')).find((f) => f.startsWith('001-')));
   writeFileSync(first, readFileSync(first, 'utf8').replace(/^(\*\*Files:\*\*.*)$/m, '$1\n**Repo:** api'));
   R.setStatus(w.hub, '001', 'in-progress', '', { branch: 'jarl/1-x', worker: 'w1' });
-  R.newIssue(w.hub, 'second');
+  fileAsBefore(w.hub, 'second');
   R.setStatus(w.hub, '002', 'in-progress', '', { branch: 'jarl/2-y', worker: 'w2' });
   R.addEvidence(w.hub, '002', undefined, { ran: 't', saw: 'ok' });
   R.review(w.hub, '002', 'approve', 'read the diff, nothing found here', { by: 'rev' });
@@ -669,13 +672,15 @@ const TRIGGERS = {
   'the retraction of a review': (w) => jarl(w.hub, 'review', '2', 'retract', '--by', 'x', 'the approve was wrong'),
   'the retraction of an evidence row': (w) => jarl(w.hub, 'evidence', '2', '--retract', '1', '--by', 'x', 'the row was wrong'),
 };
+// A trigger that files an issue writes its key, which raises the loop to 3; the others raise it to 2.
+const RAISED_TO = { 'a name': 3, 'a plain issue number on new': 3, import: 3 };
 for (const [trigger, raise] of Object.entries(TRIGGERS)) {
   test(`${trigger} raises the format and every bare-word path keeps addressing the nested repository, never the sibling of the same name`, () => {
     const w = nestedWorld();
     assert.equal(L.loadProfile(w.hub).format, 1);
     assert.equal(oldJarl(w.hub, 'list', {}).ok, true);
     raise(w);
-    assert.equal(L.loadProfile(w.hub).format, 2);
+    assert.equal(L.loadProfile(w.hub).format, RAISED_TO[trigger] ?? 2);
     assert.match(w.issue(1), /^\*\*Repo:\*\* \.\/api$/m);
     assert.match(w.issue(1), new RegExp(`^\\*\\*Merged:\\*\\* ${w.sha} in \\./api$`, 'm'));
     assert.match(w.log(), new RegExp(`001 merged ${w.sha} in \\./api · CI green`));

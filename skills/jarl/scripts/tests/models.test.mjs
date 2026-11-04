@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import * as R from '../record.mjs';
-import { OLD_JARL_FILE, oldJarlIsPinned, oldJarl } from './old-jarl.mjs';
+import { OLD_JARL_FILE, fileAsBefore, oldJarlIsPinned, oldJarl } from './old-jarl.mjs';
 import { spawnJarl, loop as makeLoop, SPAWN_TIMEOUT } from './helpers.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
@@ -80,7 +80,7 @@ test('--model goes with in-progress only, needs a value and cannot hold the line
 
 test('a --worker or --branch value that holds the line separator is refused, so no name can be read as a model', () => {
   const root = loop();
-  const { id } = R.newIssue(root, 'a thing', { acceptance: 'it works' });
+  const id = fileAsBefore(root, 'a thing', { acceptance: 'it works' });
   const before = log(root);
   for (const bad of ['w-c · model evil', 'w-c ·  model evil', '· model evil', 'w-c · model evil ·']) {
     assert.throws(() => R.setStatus(root, id, 'in-progress', '', { branch: 'jarl/001-a', worker: bad }), /--worker is one name/, `worker ${bad}`);
@@ -140,7 +140,8 @@ test('the command line and the tables carry --model and --relayed', () => {
 test('the frozen reader reads the lease line with the model before the worker, the verdict line with model and relayed, and Tier light, without the format being raised', () => {
   assert.ok(oldJarlIsPinned());
   const root = loop();
-  const { id } = R.newIssue(root, 'a thing', { acceptance: 'it works', tier: 'light' });
+  const id = fileAsBefore(root, 'a thing', { acceptance: 'it works' });
+  assert.equal(cli(root, 'field', id, 'Tier', 'light').status, 0);
   R.setStatus(root, id, 'in-progress', 'go', { branch: 'jarl/001-a', worker: 'w-five', model: 'claude-sonnet-5-5@high' });
   // The frozen reader finds the worker of the lease, whatever the model before it says.
   assert.equal(OLD.findIssue(root, id).fields.worker, 'w-five');
@@ -160,7 +161,7 @@ test('the frozen reader reads the lease line with the model before the worker, t
 
 test('the other order would have been misread: the model after the worker makes the frozen reader accept the worker as its own reviewer (why the order matters)', () => {
   const root = loop();
-  const { id } = R.newIssue(root, 'a thing', { acceptance: 'it works' });
+  const id = fileAsBefore(root, 'a thing', { acceptance: 'it works' });
   appendFileSync(join(root, '.jarl', 'log.md'), `- 2026-10-18 10:00 · ${id} → in-progress · go · branch jarl/001-a · worker w-six · model m\n`);
   const text = issueText(root, id).replace('**Status:** open', '**Status:** in-progress');
   writeFileSync(L.findIssue(root, id).file, text);
@@ -341,10 +342,11 @@ test('a takeover starts a new count: the block comes once per takeover, not on e
 });
 
 // An in-progress issue of a kind, in a loop whose goal carries the given lines.
+// Filed with three digits and no key (fileAsBefore), as the frozen reader of format 1 reads it.
 function leased(goalLines, kind) {
   const root = loop();
   if (goalLines) appendFileSync(join(root, '.jarl', 'goal.md'), `\n${goalLines}\n`);
-  const { id } = R.newIssue(root, `a ${kind} thing`, { acceptance: 'it works', tier: 'standard', kind });
+  const id = fileAsBefore(root, `a ${kind} thing`, { acceptance: 'it works', tier: 'standard', kind });
   R.setStatus(root, id, 'in-progress', '', { branch: `jarl/${id}-a`, worker: 'w-one', model: MID });
   return { root, id };
 }
@@ -633,8 +635,9 @@ test('a count of findings is read from the flag only, never from the words of a 
 
 // ---- free text is never a field ------------------------------------------------------------------------------
 
+// Filed with three digits and no key (fileAsBefore), as the frozen reader of format 1 reads it.
 function reviewedUnit(root, findings, extra = {}) {
-  const { id } = R.newIssue(root, 'a thing', { acceptance: 'it works' });
+  const id = fileAsBefore(root, 'a thing', { acceptance: 'it works' });
   R.setStatus(root, id, 'in-progress', extra.reason ?? '', { branch: `jarl/${id}-x`, worker: 'w-one', ...(extra.model ? { model: extra.model } : {}) });
   R.addEvidence(root, id, undefined, { ran: 'npm test', saw: 'pass' });
   R.review(root, id, 'approve', findings, { by: 'rev-one' });
@@ -676,7 +679,7 @@ test('a lease reason that holds " · model " is neutralised on write and never r
   const id2 = reviewedUnit(bare, 'read the whole diff, found nothing', { reason: 'start · model fake-4 · more' });
   R.setStatus(bare, id2, 'done', 'merged', {});
   assert.deepEqual(L.cmdModels(bare, {}).workers.map((r) => r.model), [null]);
-  const { id: open } = R.newIssue(bare, 'another', { acceptance: 'it works' });
+  const open = fileAsBefore(bare, 'another', { acceptance: 'it works' });
   R.setStatus(bare, open, 'in-progress', 'start · model fake-5 · more', { branch: 'jarl/9-x', worker: 'w-two', model: MID });
   assert.throws(() => OLD.cmdReview(bare, open, 'approve', 'Minor: nothing to add here', { by: 'w-two' }), /self-approve/);
 });

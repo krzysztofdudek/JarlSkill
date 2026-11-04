@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { sh } from './portable.mjs';
 import { FINDINGS } from './findings.mjs';
 import { run, jarl, refuses } from './helpers.mjs';
-import { oldJarl } from './old-jarl.mjs';
+import { oldJarl, fileAsBefore } from './old-jarl.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 const R = await import('../record.mjs');
@@ -340,16 +340,17 @@ test('a loop opened with a composer\'s profile is never raised: new writes three
   assert.equal(readFileSync(marker, 'utf8'), before, 'the marker never moved');
 });
 
-test('an ordinary loop still raises its format as it always has: new writes a plain number and a retraction raises it to 2', () => {
+test('an ordinary loop is raised by what it is written: new writes a key and a plain number, and a retraction raises a loop of three-digit numbers to 2', () => {
   const dir = mkdtempSync(join(tmpdir(), 'jarl-keys-plain-'));
   mkdirSync(join(dir, '.git'));
   jarl(dir, 'init', 'the goal');
   assert.match(jarl(dir, 'new', 'first'), /filed 1\b/);
-  assert.equal(R.loadProfile(dir).format, 2);
+  assert.equal(R.loadProfile(dir).format, 3, 'the key is written in format 3');
   assert.equal(oldJarl(dir, 'list', {}).ok, false, 'the frozen reader of format 1 refuses it');
   const library = mkdtempSync(join(tmpdir(), 'jarl-keys-library-'));
   R.initLoop(library, 'the goal');
-  R.newIssue(library, 'first');
+  // Filed with three digits and no key (fileAsBefore), so nothing but the retraction raises the loop.
+  fileAsBefore(library, 'first');
   R.addEvidence(library, '1', undefined, { ran: 'npm test', saw: 'ok' });
   assert.equal(R.loadProfile(library).format, 1);
   R.addEvidence(library, '1', 'it ran in the wrong place', { retract: '1', by: 'rev' });

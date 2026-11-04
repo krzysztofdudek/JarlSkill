@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import * as R from '../record.mjs';
 import { jarl, refuses, run, loop as makeLoop } from './helpers.mjs';
 import { FINDINGS } from './findings.mjs';
-import { oldJarl } from './old-jarl.mjs';
+import { oldJarl, fileAsBefore } from './old-jarl.mjs';
 
 const L = await import('../jarl-lib.mjs');
 
@@ -19,11 +19,12 @@ const issueText = (root, id) => readFileSync(issueFile(root, id), 'utf8');
 const evidence = (root, id) => issueText(root, id).slice(issueText(root, id).indexOf('## Evidence'));
 
 // A loop with `n` code issues in progress on a branch, worked by w1, each approved by a fresh reviewer and holding no row.
-// With `padded`, the library files the issues: their numbers have three digits, so the loop stays format 1 (for the frozen reader).
+// With `padded`, the issues are filed as a loop filed before it held keys holds them (three digits, no key), so the loop
+// stays format 1 (for the frozen reader).
 function approved(n = 1, padded = false) {
   const root = makeLoop({ prefix: 'jarl-proofnotes-', via: 'cli' });
   for (let k = 1; k <= n; k += 1) {
-    if (padded) R.newIssue(root, `issue ${k}`, { acceptance: 'it works' });
+    if (padded) fileAsBefore(root, `issue ${k}`, { acceptance: 'it works' });
     else jarl(root, 'new', `issue ${k}`, '--acceptance', 'it works');
     jarl(root, 'set', String(k), 'in-progress', 'go', '--branch', `jarl/${k}-x`, '--worker', 'w1');
     jarl(root, 'review', String(k), 'approve', '--by', 'rev-fresh', FINDINGS);
@@ -54,7 +55,7 @@ test('the merge check lands in the merge record: the Merge check field beside Me
   const root = approved();
   assert.equal(jarl(root, 'merged', '1', '--sha', 'abc1234', '--ran', 'npm test', '--saw', '3 pass', '--ci', 'green', '--keep'), '1 merged abc1234 · check npm test · CI green');
   assert.match(issueText(root, 1), /^\*\*Merged:\*\* abc1234\n\*\*Merge check:\*\* npm test · saw 3 pass\n\*\*CI:\*\* green$/m);
-  assert.match(log(root), /^- \S+ \S+ · 1 merged abc1234 · check npm test · saw 3 pass · CI green$/m);
+  assert.match(log(root), /^- \S+ \S+(?: key \S+)? · 1 merged abc1234 · check npm test · saw 3 pass · CI green$/m);
 });
 
 test('a merge without a check removes the Merge check of the earlier merge; a CI line alone leaves it', () => {
@@ -189,7 +190,7 @@ function parts(root, id) {
 const fresh = (n = 1, padded = false) => {
   const root = makeLoop({ prefix: 'jarl-proofnotes-', via: 'cli' });
   for (let k = 1; k <= n; k += 1) {
-    if (padded) R.newIssue(root, `issue ${k}`, { acceptance: 'it works' });
+    if (padded) fileAsBefore(root, `issue ${k}`, { acceptance: 'it works' });
     else jarl(root, 'new', `issue ${k}`, '--acceptance', 'it works');
   }
   return root;
@@ -288,7 +289,7 @@ test('a section that already holds content and no sub-heading is never converted
 
 test('the frozen reader reads a loop in the split form right: done is refused on the merge check alone, accepted on a worker row, and the Deferred reason shows in report; the record format stays', () => {
   const root = approved(2, true);
-  R.newIssue(root, 'three', { acceptance: 'it works' });
+  fileAsBefore(root, 'three', { acceptance: 'it works' });
   jarl(root, 'evidence', '2', '--ran', 'npm test', '--saw', 'pass');
   jarl(root, 'evidence', '2', 'a note under Notes');
   jarl(root, 'decide', 'split-ruling', 'the split is read right', '--settles', '2');

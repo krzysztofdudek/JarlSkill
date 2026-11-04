@@ -1517,7 +1517,7 @@ test('stale leases are shown, never acted on: worktree gone, branch gone, idle',
   jarl(root, 'set', '3', 'in-progress', 'w');
   // The lease is as old as the journal's line for it: the stamp of that line is what ages it.
   const log = join(root, '.jarl', 'log.md');
-  writeFileSync(log, readFileSync(log, 'utf8').replace(/^- \d{4}-\d{2}-\d{2} \d{2}:\d{2}( · 3 → in-progress)/m, '- 2026-01-01 00:00$1'));
+  writeFileSync(log, readFileSync(log, 'utf8').replace(/^- \d{4}-\d{2}-\d{2} \d{2}:\d{2}((?: key \S+)? · 3 → in-progress)/m, '- 2026-01-01 00:00$1'));
   // The 2026-09-21 loss: a worktree deleted under a live lease.
   rmSync(wt, { recursive: true, force: true });
   const st = JSON.parse(jarl(root, 'status', '--json'));
@@ -1585,12 +1585,12 @@ test('a committed loop names the loop files git has not committed in status, han
   sh('git add -A && git commit -qm loop');
   assert.equal(JSON.parse(jarl(root, 'status', '--json')).uncommitted, 0);
   assert.doesNotMatch(jarl(root, 'status'), /not committed/);
-  // Filed by the library: its number has three digits, so the loop keeps its format and writes no profile file.
+  // Filed by the library: the issue's key raises the loop to the format that holds it, so the profile file is written too.
   (await import(new URL('../record.mjs', import.meta.url).href)).newIssue(root, 'one');
-  assert.match(jarl(root, 'status'), /^2 loop file\(s\) not committed — commit \.jarl\/ in the loop's repository$/m);
-  assert.match(jarl(root, 'resume'), /^## Loop files not committed \(2\) — commit \.jarl\/\n- \.jarl\/issues\/001-one\.md\n- \.jarl\/log\.md$/m);
+  assert.match(jarl(root, 'status'), /^3 loop file\(s\) not committed — commit \.jarl\/ in the loop's repository$/m);
+  assert.match(jarl(root, 'resume'), /^## Loop files not committed \(3\) — commit \.jarl\/\n- \.jarl\/issues\/001-one\.md\n- \.jarl\/log\.md\n- \.jarl\/profile\.json$/m);
   jarl(root, 'set', '1', 'dropped', 'no');
-  assert.match(jarl(root, 'close'), /closed as a permanent record · 2 loop file\(s\) not committed — commit \.jarl\//);
+  assert.match(jarl(root, 'close'), /closed as a permanent record · 3 loop file\(s\) not committed — commit \.jarl\//);
   sh('git add -A && git commit -qm record');
   assert.equal(JSON.parse(jarl(root, 'status', '--json')).uncommitted, 0);
 
@@ -1676,7 +1676,7 @@ test('outside a git repository a Branch lease is not reported gone, and resume s
 // ---- questions with options, and their answers ------------------------------------------------------------------
 
 const RECORD = await import(new URL('../record.mjs', import.meta.url).href);
-const { oldJarl, oldJarlIsPinned } = await import(new URL('./old-jarl.mjs', import.meta.url).href);
+const { fileAsBefore, oldJarl, oldJarlIsPinned } = await import(new URL('./old-jarl.mjs', import.meta.url).href);
 const { noSeparators: escapeFreeText } = await import(new URL('../jarl-lib.mjs', import.meta.url).href);
 const readRecord = (root, name) => readFileSync(join(root, '.jarl', name), 'utf8');
 
@@ -1772,9 +1772,9 @@ test('questions with options and their answers read through the frozen reader: t
   assert.equal(oldJarlIsPinned(), true);
   const root = repo();
   jarl(root, 'init', 'goal');
-  // The library writes three-digit numbers, which every reader of the format reads; the command line's plain numbers raise
-  // the format by their own rule (a number under three digits), which this test does not exercise.
-  RECORD.newIssue(root, 'flag work');
+  // The issue is filed as a loop filed before it held keys holds it, with three digits and no key, which every reader of
+  // the format reads: this Jarl's own filing writes a key, which a reader of format 1 refuses.
+  fileAsBefore(root, 'flag work');
   RECORD.setStatus(root, '001', 'in-progress', 'started', { branch: 'jarl/001-flag-work', worker: 'w-one' });
   RECORD.ask(root, 'which way?', { option: ['Keep: the flag stays', 'Drop: the flag goes'] });
   jarl(root, 'answer', 'a-001', '--option', 'Keep');
@@ -1867,7 +1867,7 @@ test('goal --set escapes the value: a separator in it reads back as a dash, and 
 test('an answer in the person\'s own words and a batch answer read through the frozen reader: worker parsed, self-approve refused, done passes, questions counted', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
-  RECORD.newIssue(root, 'flag work');
+  fileAsBefore(root, 'flag work');
   RECORD.setStatus(root, '001', 'in-progress', 'started', { branch: 'jarl/001-flag-work', worker: 'w-one' });
   RECORD.ask(root, 'which way?', { option: ['Keep: stays', 'Drop: goes'] });
   jarl(root, 'answer', 'a-001', 'x\n**Chose:** Keep\n- Keep: stays (chosen)');
@@ -1908,7 +1908,7 @@ test('goal --set refuses a line break in its value, naming the line, and writes 
 test('a Model line set through the command line reads through the frozen reader: worker parsed, self-approve refused, done passes, questions counted', () => {
   const root = repo();
   jarl(root, 'init', 'Ship it.');
-  RECORD.newIssue(root, 'flag work');
+  fileAsBefore(root, 'flag work');
   RECORD.setStatus(root, '001', 'in-progress', 'started', { branch: 'jarl/001-flag-work', worker: 'w-one' });
   jarl(root, 'goal', '--set', 'Model (strong): opus');
   jarl(root, 'goal', '--set', 'Coordinators: Ada');
@@ -2570,7 +2570,7 @@ test('verify on the real loops named by JARL_LIVE_LOOP: it runs to an end and pr
 test('goal lines set through the command line read through the frozen reader: the loop is read, the worker parsed, done passes', () => {
   const root = repo();
   jarl(root, 'init', 'Ship it.');
-  RECORD.newIssue(root, 'flag work');
+  fileAsBefore(root, 'flag work');
   RECORD.setStatus(root, '001', 'in-progress', 'started', { branch: 'jarl/001-flag-work', worker: 'w-one' });
   jarl(root, 'goal', '--set', 'Check (Grain): npm test');
   jarl(root, 'goal', '--set', 'Model (strong): opus');

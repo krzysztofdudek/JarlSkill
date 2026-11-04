@@ -5,23 +5,55 @@ import { basename, join } from 'node:path';
 import { CI_STATES, fieldText, need, oneBreak, splitList } from './base.mjs';
 import { issuesDir, jarlDir } from './where.mjs';
 import { readText } from './files.mjs';
-import { ISSUE_FILE_RE, cmpId, idKey, idRe, newNumber, writtenForms, writtenId } from './ids.mjs';
+import { ISSUE_FILE_RE, KEY_RE, cmpId, idKey, idRe, newNumber, writtenForms, writtenId } from './ids.mjs';
 import { loadProfile } from './profile.mjs';
 import { DECISION_HEAD, DECISION_META } from './journal.mjs';
 import { eventsById, issueState, loopEvents } from './log.mjs';
 
 // ---- issues ------------------------------------------------------------------------------------
 
+// The lines git writes around the two sides of a conflict it could not merge, each a line of its own.
+const CONFLICT_OPEN = /^<{7}(?: .*)?$/;
+const CONFLICT_MIDDLE = /^={7}$/;
+const CONFLICT_CLOSE = /^>{7}(?: .*)?$/;
+const CONFLICT_MARKERS = [CONFLICT_OPEN, CONFLICT_MIDDLE, CONFLICT_CLOSE];
+// The line numbers of the opening markers of the conflicts `lines` hold: the first opening marker, then the first
+// separator after it, then the first closing marker after that, and so on after each closing marker. Any other marker line
+// is passed over, so a stray marker inside a conflict's sides never hides it, and markers in another order are no
+// conflict. A fenced block is no exception, because git writes its markers inside a fence both sides share; text the tool
+// writes holds no marker line (see escapeMarkers), so a conflict found is one a merge left.
+function conflictsIn(lines) {
+  const out = [];
+  let open = null;
+  let middle = false;
+  lines.forEach((line, i) => {
+    if (open === null) { if (CONFLICT_OPEN.test(line)) open = i + 1; }
+    else if (!middle) middle = CONFLICT_MIDDLE.test(line);
+    else if (CONFLICT_CLOSE.test(line)) { out.push(open); open = null; middle = false; }
+  });
+  return out;
+}
+// Text written into an issue never starts a line with a git conflict marker, so a conflict it quotes never reads as one a
+// merge left: a line that is a marker, or becomes one once its trailing blanks are trimmed, gets a backslash in front
+// (\<<<<<<< HEAD), which renders the same outside a code block. Lines are cut where the record's reader cuts them, at \n,
+// \r\n or \r, and the breaks are kept as given.
+function escapeMarkers(text) {
+  return String(text).split(/(\r\n?|\n)/).map((part, i) => (i % 2 === 0 && CONFLICT_MARKERS.some((re) => re.test(part.trimEnd())) ? `\\${part}` : part)).join('');
+}
 // A header field: **Name:** value. A name is letters, digits, spaces and dashes, so a profile's fields (Area-2) read
 // as fields; the built-in ones are letters and spaces only.
 const FIELD_RE = /^\*\*([A-Za-z0-9 -]+):\*\*\s*(.*)$/;
 
 // With `skipped` (an array), what the parser does not place is pushed onto it as { n, text, reason }: the first line when it
-// is not an issue's header, and a Resources line one of whose names is not a word (letters, digits and . _ : / -).
+// is not an issue's header, a Resources line one of whose names is not a word (letters, digits and . _ : / -), and the
+// opening marker of each conflict a merge left in the file (see conflictsIn).
 export function parseIssue(text, file, skipped) {
   const lines = text.split('\n');
   const head = idRe('^#\\s+({id})\\s+·\\s+(.*)$').exec(lines[0] || '');
   if (skipped && !head) skipped.push({ n: 1, text: lines[0] || '', reason: 'not an issue header: the first line is "# <id> · <title>"' });
+  // A merge git could not join leaves both sides in the file between its markers, and every reader would take the lines of
+  // both for the issue's own.
+  if (skipped) for (const n of conflictsIn(lines)) skipped.push({ n, text: lines[n - 1], reason: 'a git conflict marker: the file holds both sides of a merge git could not join, and the issue reads as both; keep one side of each conflict and remove the markers; if the lines only quote a conflict, put a backslash in front of each marker line (\\<<<<<<<) or remove them' });
   if (skipped) {
     lines.forEach((line, i) => {
       const f = FIELD_RE.exec(line);
@@ -70,16 +102,26 @@ function issuesAt(recordDir, profile, events = loopEvents(recordDir, profile)) {
     .map((f) => withProfile(parseIssue(readText(join(dir, f)), join(dir, f)), profile));
   const files = new Map();
   for (const i of parsed) if (i.id !== null) files.set(idKey(i.id), (files.get(idKey(i.id)) || 0) + 1);
+  // A loop whose profile declares a field Key of its own holds no key of the tool's: its Key is the profile's field.
+  const keyOf = profile.keyed === false ? () => null : issueKeyOf;
   const issues = parsed.map((issue) => {
     // An After names an issue as the loop writes it: the form its file carries, whatever form the After line gives.
     issue.after = issue.after.map((x) => writtenId(x, forms));
-    const events = by.get(issue.id) || [];
+    // An issue's lines are those that name its key, and those under its number that name no key: all of them for the one
+    // file of a number, and for a file with no key among files that carry one. A line that names another key is another
+    // issue's, even under the same number.
+    const key = keyOf(issue);
+    const alone = issue.id === null || files.get(idKey(issue.id)) === 1;
+    const events = (by.get(issue.id) || []).filter((e) => (key !== null && e.key === key) || ((e.key ?? null) === null && (key === null || alone)));
     // Filings are counted by what they file: a filing line repeated with the same title (a line copied in the log) files
     // the same issue again, while two titles under one number are two issues.
     const filings = new Set(events.filter((e) => e.type === 'filed').map((e) => e.text.replace(/^filed \S+ · /, ''))).size;
     // A number two files carry, or one the log files more than once, is one the log cannot attribute: it cannot say which
-    // file its lines were written for. Such an issue is read from its own header, never from the log.
-    if (issue.id !== null && (files.get(idKey(issue.id)) > 1 || filings > 1)) return headerRead(issue, filings);
+    // file its lines were written for. Such an issue is read from its own header, never from the log. Two files of one
+    // number that each carry their own key, and whose number has no line with no key that carries state, are attributed
+    // by their keys: each is read from its own lines.
+    const shared = issue.id !== null && files.get(idKey(issue.id)) > 1;
+    if (issue.id !== null && ((shared && !keyedApart(parsed, by, issue.id, keyOf)) || filings > 1)) return headerRead(issue, filings);
     return withRecordState(issue, issueState(profile, events));
   });
   // An issue whose number another file carries too holds the files of that number in `shared`, which the views print;
@@ -87,6 +129,18 @@ function issuesAt(recordDir, profile, events = loopEvents(recordDir, profile)) {
   for (const s of sharedNumbers(issues)) for (const i of s.issues) i.shared = s.issues.map((x) => `issues/${basename(x.file)}`);
   return issues;
 }
+// Whether the files that carry the number `id` are told apart by their keys: each carries a key no other of them carries,
+// at most one of them carries none, and every line under the number that carries state (a filing, a move, a row, a
+// verdict, a merge) names one of the keys, or names none where one file carries none, whose line it then is.
+export function keyedApart(parsed, by, id, keyOf = issueKeyOf) {
+  const same = parsed.filter((i) => i.id !== null && idKey(i.id) === idKey(id));
+  const keys = same.map(keyOf).filter((k) => k !== null);
+  const unkeyed = same.length - keys.length;
+  if (unkeyed > 1 || new Set(keys).size !== keys.length) return false;
+  return (by.get(id) || []).every((e) => e.type === 'other' || keys.includes(e.key) || ((e.key ?? null) === null && unkeyed === 1));
+}
+// The key an issue's header carries in the key's grammar, or null.
+export function issueKeyOf(issue) { return issue.fields.key && KEY_RE.test(issue.fields.key) ? issue.fields.key : null; }
 // The header fields the commands render from the journal, as the fields of an issue name them.
 const RENDERED_FIELDS = ['branch', 'worker', 'model', 'since', 'merged', 'merge check', 'ci'];
 // An issue with the state its journal gives in place of the one its header says. The header as read stays in
@@ -188,6 +242,12 @@ export function sharedNumberText(shared, all) {
   const free = newNumber(all.reduce((m, i) => (i.id !== null && /^\d+$/.test(i.id) ? Math.max(m, Number(i.id)) : m), 0) + 1, /^0\d/.test(id) ? id.length : 0);
   const filings = Math.max(0, ...shared.issues.map((i) => i.byHeader?.filings ?? 0));
   const head = `${shared.issues.length} issue files carry the number ${id}: ${sharedFiles(shared.issues)}.`;
+  // Files told apart by their keys are each read from their own lines: one of them is given a free number by renumber.
+  const keyed = shared.issues.filter((i) => issueKeyOf(i) !== null);
+  if (keyed.length && shared.issues.every((i) => !i.byHeader)) {
+    const keys = keyed.map((i) => `${issueKeyOf(i)} (issues/${basename(i.file)})`);
+    return `${head} Two copies of the loop that each filed an issue and were merged leave this. Each line of the log names the key of the issue it is about${keyed.length < shared.issues.length ? ', or no key for the one file that carries none' : ''}, so each file is read from its own lines, but no command addresses ${id} while two files carry it. Give one of them a free number: jarl.mjs renumber ${id} --key <key>, with the key of the one to renumber, takes the next one over every branch — ${keys.join(', ')}. The issue renumbered keeps every line written under ${id}, which names its key, and no line of the log is rewritten`;
+  }
   const rename = `give ${filings > 1 ? 'one of the files' : 'the copy'} a number the loop does not hold, such as ${free} (rename it to ${free}-… and write ${free} in its first line), and put it in the log at the status its own file reads (jarl.mjs set ${free} <status>; a renumbered issue starts its record anew, so one that was done needs its proof and a fresh review again)`;
   if (filings > 1) return `${head} Two copies of the loop that each filed an issue and were merged leave this: the log files ${id} ${filings} times. The log names an issue by its number alone, so it cannot say which file its lines for ${id} were written for, and no command moves or edits one of these files alone. Each file is read from its own header, never from the log: its status, branch and lease are what the file says, it is never closed or approved under this number, because the log cannot tell whose its rows, approves, rounds and merges are (the work is filed again under a new number instead), and the log's state of ${id} is never to be written into any of them. The coordinator settles it by hand: ${rename}, then write in a log note which of the lines already written for ${id} belong to which file (jarl.mjs log "…"). The file that keeps ${id} is still read from its own header after that, because the log goes on filing ${id} more than once`;
   return `${head} The log files ${id} ${filings ? 'once' : 'never'}, so ${filings ? 'one of these files was made outside Jarl\'s commands, by a copy or by hand' : 'none of these files was filed by Jarl\'s commands'}, and Jarl cannot tell which file is the copy. No command moves or edits one of these files alone, and while they share ${id} each is read from its own header. The coordinator settles it by hand: ${rename}. ${id} is then one file the log files ${filings ? 'once' : 'never'}, which Jarl reads like any issue: if the file renumbered was the original, the copy that keeps ${id} takes the original's lines in the log, and Jarl cannot see that a copy was made`;
@@ -262,9 +322,9 @@ function setSection(text, name, body) {
 
 // A body written into a section must not open a section of its own: a line starting with ## would end it
 // early and the rest would land under a heading nobody reads. Such a line is escaped (\##), which renders
-// the same and parses as text.
+// the same and parses as text; so is a line that reads as a git conflict marker (see escapeMarkers).
 export function bodyText(v) {
-  return String(v ?? '').replace(/\r\n?/g, '\n').split('\n').map((l) => l.replace(/^(\s*)(#+)(?=\s|$)/, (_, sp, h) => `${sp}\\${h}`)).join('\n').trim();
+  return escapeMarkers(String(v ?? '').replace(/\r\n?/g, '\n').split('\n').map((l) => l.replace(/^(\s*)(#+)(?=\s|$)/, (_, sp, h) => `${sp}\\${h}`)).join('\n').trim());
 }
 // A text for What, Why or a section that holds a matched opening and closing tag named after one of the issue's own
 // fields (<why>…</why>) is a call whose fields all went into one parameter: the other fields would be filed empty.
@@ -348,7 +408,7 @@ export function changelogEntries(issue) {
 // fields: the profile's declared fields, [name, value] in its order, each written after Where (empty when not given).
 // sections: the profile's extra sections, [heading, body], written after Acceptance. acceptanceHeading: the heading the
 // acceptance goes under. Without them the file holds the built-in fields and sections only.
-export function renderIssue({ id, title, status = 'open', kind, priority, tier, tags, files, repo, foundBy, person = '', checkWhen = '', where = '', what = '', why = '', acceptance = '', source = [], after = [], changelog = '', fields = [], sections = [], acceptanceHeading = 'Acceptance' }) {
+export function renderIssue({ id, title, status = 'open', key = null, kind, priority, tier, tags, files, repo, foundBy, person = '', checkWhen = '', where = '', what = '', why = '', acceptance = '', source = [], after = [], changelog = '', fields = [], sections = [], acceptanceHeading = 'Acceptance' }) {
   const body = (t) => (t ? `${t}\n` : '\n');
   const declared = fields.map(([n, v]) => `**${n}:**${v ? ` ${v}` : ''}\n`).join('');
   const extra = sections.map(([h, t]) => `## ${h}\n${body(t)}\n`).join('');
@@ -358,7 +418,7 @@ export function renderIssue({ id, title, status = 'open', kind, priority, tier, 
 **Kind:** ${kind}
 **Priority:** ${priority}
 **Tier:** ${tier}
-**Tags:** ${tags.join(', ')}
+${key ? `**Key:** ${key}\n` : ''}**Tags:** ${tags.join(', ')}
 **Files:** ${files.join(', ')}
 ${repo ? `**Repo:** ${repo}\n` : ''}${after.length ? `**After:** ${after.join(', ')}\n` : ''}**Found by:** ${fieldText(foundBy)}
 ${person ? `**Person:** ${fieldText(person)}\n` : ''}${checkWhen ? `**Check when:** ${fieldText(checkWhen)}\n` : ''}${source.length ? `**Source:** ${source.join(', ')}\n` : ''}**Where:**${where ? ` ${fieldText(where)}` : ''}
@@ -401,8 +461,9 @@ export function alignRows(id, rows, journalRows) {
   const used = new Set();
   return rows.map((row) => {
     const hit = journalRows.find((j) => {
-      if (used.has(j) || !j.text.startsWith(prefix)) return false;
-      const l = j.text.slice(prefix.length).replace(MORE_LINES, '');
+      const own = j.written === undefined ? prefix : `${j.written} evidence row · `;
+      if (used.has(j) || !j.text.startsWith(own)) return false;
+      const l = j.text.slice(own.length).replace(MORE_LINES, '');
       return row.first === l || row.first.startsWith(`${l} · **saw:**`);
     });
     if (hit) used.add(hit);
@@ -491,9 +552,10 @@ export function isUnsplit(section) {
 }
 // A note must not read as a sub-heading of the section: in a section written in parts, a line that starts with # is escaped
 // as a body is; in an unsplit one, only a line that is a sub-heading by itself.
-// A note whose own first line starts with ~~ is escaped, so that only a retraction strikes a note through.
+// A note whose own first line starts with ~~ is escaped, so that only a retraction strikes a note through. A line that
+// reads as a git conflict marker is escaped in both.
 function noteText(value, current) {
-  const text = isUnsplit(current) ? String(value).split('\n').map((l) => l.replace(/^(\s*)###(?=\s+(?:Proof|Notes)\s*$)/, '$1\\###')).join('\n') : bodyText(value);
+  const text = isUnsplit(current) ? escapeMarkers(String(value).split('\n').map((l) => l.replace(/^(\s*)###(?=\s+(?:Proof|Notes)\s*$)/, '$1\\###')).join('\n')) : bodyText(value);
   return text.replace(/^(- )?~~/, '$1\\~~');
 }
 // The Evidence section with one entry written into its part. `kind` is 'proof' (rows, one per line) or 'note' (text); `sep`

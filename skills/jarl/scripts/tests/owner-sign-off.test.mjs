@@ -94,7 +94,7 @@ test('set done refuses while an owner line is not ticked, naming the line, its m
   const ticked = json(root, 'tick', '1', '2', '--by', 'owner');
   assert.deepEqual([ticked.id, ticked.line, ticked.by], ['1', 2, 'owner']);
   assert.match(ticked.at, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
-  assert.match(logText(root), /^- \d{4}-\d{2}-\d{2} \d{2}:\d{2} · 1 tick · line 2 · by owner · \[owner\] the first cut reads well · material: renders\/cut\.txt · check: the pacing of the opening and the captions$/m);
+  assert.match(logText(root), /^- \d{4}-\d{2}-\d{2} \d{2}:\d{2}(?: key \S+)? · 1 tick · line 2 · by owner · \[owner\] the first cut reads well · material: renders\/cut\.txt · check: the pacing of the opening and the captions$/m);
   assert.match(jarl(root, 'show', '1'), /^owner's sign-off: acceptance line 2 ticked by owner \d{4}-\d{2}-\d{2} \d{2}:\d{2}$/m);
   jarl(root, 'set', '1', 'done', 'finished');
   assert.equal(json(root, 'show', '1').status, 'done');
@@ -168,7 +168,7 @@ test('a tick reads whole wherever the log is shown: the resume tail and the take
   produce(root);
   proveAndApprove(root);
   jarl(root, 'tick', '1', '2', '--by', 'owner');
-  const whole = /^- \d{4}-\d{2}-\d{2} \d{2}:\d{2} · 1 tick · line 2 · by owner · \[owner\] the first cut reads well · material: renders\/cut\.txt · check: the pacing of the opening and the captions$/m;
+  const whole = /^- \d{4}-\d{2}-\d{2} \d{2}:\d{2}(?: key \S+)? · 1 tick · line 2 · by owner · \[owner\] the first cut reads well · material: renders\/cut\.txt · check: the pacing of the opening and the captions$/m;
   assert.match(jarl(root, 'resume'), whole);
   assert.ok(json(root, 'resume').log.some((l) => /1 tick · line 2 · by owner · \[owner\] the first cut/.test(typeof l === 'string' ? l : `${l.text}`)), 'the resume --json tail holds the whole line');
   jarl(root, 'round', '1', 'the captions drift');

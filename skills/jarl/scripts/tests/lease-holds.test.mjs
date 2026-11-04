@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gitRepo, jarl, refuses, run, loop } from './helpers.mjs';
-import { oldJarl, formatTwoJarl } from './old-jarl.mjs';
+import { oldJarl, formatTwoJarl, fileAsBefore } from './old-jarl.mjs';
 import * as R from '../record.mjs';
 
 const logText = (root) => readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
@@ -109,7 +109,7 @@ test('a handover ends the old lease in the views: its worktree is not reported g
   const { dir, g } = gitRepo({ prefix: 'jarl-lease-repo-' });
   // A loop of format 1 kept in the repository, leased first through the frozen reader's own set, which records the worktree.
   R.initLoop(dir, 'goal');
-  R.newIssue(dir, 'one', { files: 'f.txt' });
+  fileAsBefore(dir, 'one', { files: 'f.txt' });
   const oldWt = `${dir}-wt-a`;
   g('worktree', 'add', '-q', '-b', 'jarl/001-a', oldWt);
   g('-C', oldWt, 'commit', '-q', '--allow-empty', '-m', 'first worker');
@@ -131,7 +131,7 @@ test('a handover ends the old lease in the views: its worktree is not reported g
 
 test('the frozen readers read a handover as the lease it is, with no raise of the format', () => {
   const root = loop({ prefix: 'jarl-lease-old-' });
-  R.newIssue(root, 'one', { files: 'f.txt' });
+  fileAsBefore(root, 'one', { files: 'f.txt' });
   R.setStatus(root, '001', 'in-progress', 'A', { branch: 'jarl/001-a', worker: 'wA' });
   R.setStatus(root, '001', 'in-progress', 'branch moved to a fresh worker', { branch: 'jarl/001-b', worker: 'wB', handover: true });
   assert.equal(existsSync(join(root, '.jarl', 'profile.json')), false, 'nothing here is misread, so the format stays');

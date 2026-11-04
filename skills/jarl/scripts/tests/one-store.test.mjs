@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as R from '../record.mjs';
 import { gitRepo, jarl, loop as makeLoop, refuses, skillFiles, skillText, spawnJarl } from './helpers.mjs';
-import { oldJarl, oldJarlIsPinned } from './old-jarl.mjs';
+import { oldJarl, oldJarlIsPinned, fileAsBefore } from './old-jarl.mjs';
 import { sh } from './portable.mjs';
 
 const L = await import('../jarl-lib.mjs');
@@ -186,10 +186,12 @@ test('a Merged header written by hand does not satisfy a done gate that wants a 
 
 test('the views of a loop moved only through the tool read the same as the header they replace, and the frozen reader counts the same', () => {
   const root = makeLoop();
-  // Filed by the library, so the loop stays format 1 for the frozen reader; the numbers are 001 to 003.
-  R.newIssue(root, 'one', { tier: 'light', acceptance: 'a' });
-  R.newIssue(root, 'two', { tier: 'light', acceptance: 'a' });
-  R.newIssue(root, 'three', { tier: 'light' });
+  // Filed with three digits and no key (fileAsBefore), so the loop stays format 1 for the frozen reader, which knows no
+  // tier light: the tier is written after.
+  fileAsBefore(root, 'one', { acceptance: 'a' });
+  fileAsBefore(root, 'two', { acceptance: 'a' });
+  fileAsBefore(root, 'three');
+  jarl(root, 'field', '1-3', 'Tier', 'light');
   jarl(root, 'set', '1', 'in-progress', '--branch', 'jarl/1-a', '--worker', 'w1', '--model', 'm1');
   jarl(root, 'set', '2', 'in-progress', '--worker', 'w2');
   jarl(root, 'set', '3', 'deferred', 'later');

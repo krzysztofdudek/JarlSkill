@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { oldJarl } from './old-jarl.mjs';
+import { oldJarl, fileAsBefore } from './old-jarl.mjs';
 import { jarl, loop as makeLoop } from './helpers.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
@@ -63,7 +63,7 @@ test('three lines through every command that writes text: whole in the issue, th
   jarl(root, 'log', three('log'));
   jarl(root, 'set', id, 'deferred', three('reason'));
   const log = read(root, 'log.md');
-  for (const l of log.split('\n').filter(Boolean)) assert.match(l, /^(# Log|- \d{4}-\d{2}-\d{2} \d{2}:\d{2} · .*)$/, `a log line is one line: ${JSON.stringify(l)}`);
+  for (const l of log.split('\n').filter(Boolean)) assert.match(l, /^(# Log|- \d{4}-\d{2}-\d{2} \d{2}:\d{2}(?: key \S+)? · .*)$/, `a log line is one line: ${JSON.stringify(l)}`);
   assert.match(log, /review changes · by reviewer-one \(fresh\) · Important: review line one \(\+2 more lines/);
   assert.ok(log.includes('log line three'), 'a log text with no other home keeps every line');
   assert.ok(log.includes('round line three'), 'a round keeps every line');
@@ -72,8 +72,9 @@ test('three lines through every command that writes text: whole in the issue, th
 
 test('a verdict line with its pointer, and a multi-line question, read right under the pinned frozen reader', async () => {
   const root = loop();
-  // Filed by the library, whose number has three digits, so the loop stays format 1 for the frozen reader.
-  const id = (await import('../record.mjs')).newIssue(root, 'old reader', { acceptance: 'it works' }).id;
+  // Filed as a loop filed before it held keys holds it, with three digits and no key, so the loop stays format 1 for the
+  // frozen reader.
+  const id = fileAsBefore(root, 'old reader', { acceptance: 'it works' });
   jarl(root, 'set', id, 'in-progress', '--worker', 'w-one', '--branch', 'jarl/1-x');
   jarl(root, 'review', id, 'changes', '--by', 'reviewer-one', `Important: ${three('review')}`);
   // Questions are filed by the library as well, so the loop stays format 1 for the frozen reader.
