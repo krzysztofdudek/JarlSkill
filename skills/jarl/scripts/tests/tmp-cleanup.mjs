@@ -1,39 +1,44 @@
-// Preloaded into every test process (`node --import`, set in package.json): every directory a test makes with mkdtemp in
-// the system temporary directory is removed when the process ends, however it ends. A passing test, a failing one and a
-// run stopped by a timeout or an interrupt all leave nothing behind, whatever the test did or forgot to do itself.
-import fs, { rmSync } from 'node:fs';
-import { syncBuiltinESMExports } from 'node:module';
-import { tmpdir } from 'node:os';
-import { basename, join, resolve, sep } from 'node:path';
+// Imported by every test file that makes anything in the system temporary directory (through `helpers.mjs` or on its own
+// line): the process gets a temporary directory of its own, announced to everything it starts through the environment, and
+// that directory is removed when the process ends, however it ends. Whatever a test makes under it, with mkdtemp, mkdir,
+// a child process or git, is removed with it, so a test file run on its own leaves nothing behind, whether it passed,
+// failed, timed out or was interrupted. The module is evaluated once per process, however many files import it.
+import fs from 'node:fs';
+import { constants, tmpdir } from 'node:os';
+import { join } from 'node:path';
 
-const made = new Set();
-const realMkdtempSync = fs.mkdtempSync;
-const base = resolve(tmpdir());
+const outer = tmpdir();
+const own = fs.mkdtempSync(join(outer, 'jarl-test-'));
+for (const name of ['TMPDIR', 'TMP', 'TEMP']) process.env[name] = own;
 
-fs.mkdtempSync = function mkdtempSync(prefix, options) {
-  const dir = realMkdtempSync.call(this, prefix, options);
-  if (typeof dir === 'string' && resolve(dir).startsWith(base + sep)) made.add(resolve(dir));
-  return dir;
-};
-syncBuiltinESMExports();
+// A test may leave a directory it made unreadable or read-only; the process makes its own directory writable again
+// before it removes it, so that one test's permission scenario does not leave a tree behind.
+function makeWritable(path) {
+  let stat;
+  try { stat = fs.lstatSync(path); } catch { return; }
+  if (!stat.isDirectory()) return;
+  try { fs.chmodSync(path, 0o700); } catch { /* the entry is gone or not ours */ }
+  let names = [];
+  try { names = fs.readdirSync(path); } catch { return; }
+  for (const name of names) makeWritable(join(path, name));
+}
 
 let swept = false;
 export function sweep() {
   if (swept) return;
   swept = true;
-  // A test also makes siblings of its directory (`<name>-wt`, `<name>-away`): worktrees and moved copies. The random
-  // part of `<name>` is unique, so every entry that starts with `<name>-` belongs to the same test.
-  let names = [];
-  try { names = fs.readdirSync(base); } catch { /* the temporary directory is gone */ }
-  const own = [...made].map((dir) => basename(dir));
-  const doomed = new Set(made);
-  for (const name of names) if (own.some((o) => name.startsWith(`${o}-`))) doomed.add(join(base, name));
-  for (const dir of doomed) {
-    try { rmSync(dir, { recursive: true, force: true, maxRetries: 3 }); } catch { /* a directory made unreadable by a test is the test's to restore */ }
+  try { fs.rmSync(own, { recursive: true, force: true, maxRetries: 3 }); } catch { /* retried below */ }
+  if (!fs.existsSync(own)) return;
+  makeWritable(own);
+  try { fs.rmSync(own, { recursive: true, force: true, maxRetries: 3 }); } catch { /* reported below */ }
+  if (fs.existsSync(own)) {
+    process.stderr.write(`the test process could not remove its temporary directory ${own}\n`);
+    process.exitCode = 1;
   }
 }
 
 process.on('exit', sweep);
+// A signal ends the process the way the shell reports it: 128 plus the signal number.
 for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
-  process.on(signal, () => { sweep(); process.exit(128); });
+  process.on(signal, () => { sweep(); process.exit(128 + constants.signals[signal]); });
 }

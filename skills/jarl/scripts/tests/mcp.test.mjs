@@ -1,6 +1,7 @@
 // The MCP server is the CLI over another wire: one tool per command, one field per argument and flag, generated
 // from the CLI's own tables and run through its dispatch. These tests hold the two together — a command, an
 // argument or a flag the tools do not carry fails here — and run the server the way a host starts it.
+import './tmp-cleanup.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, existsSync } from 'node:fs';

@@ -1,6 +1,7 @@
 // The vendored Runes code (the MCP adapter, the command table it reads, and the parity, measure and client parts of
 // the test kit), the shared skill fragments in SKILL.md (between the RUNES markers) and the vendoring tool are pinned
 // in vendor/runes.pin.json and checked by that tool, offline. The CI job adds the fresh-clone half.
+import './tmp-cleanup.mjs';
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
