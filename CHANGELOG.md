@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - You can ask Jarl what is waiting on one person: the owner's open questions, or the next step of every task for whoever runs the loop, each with the command that takes it. The status and the resume of a loop can end with that list. Work on code that waits for a review shows as one line naming all the tasks, with the question that asks the owner to start a fresh session if no reviewer can be raised; once that question is asked, the work shows on the owner's list.
 - A ruling made by the jarl or a coordinator can now name the ruling it rests on, such as the owner's mandate. The name is shown with the ruling in the list of rulings and in the resume, and a name that is not a ruling in force is refused.
 - When the text of an open issue mentions another unfinished issue by number and nothing orders the two, filing or editing that text and checking the record now print a note naming both, so you can say which comes first. The note changes nothing and never stops anything.
+- To have the note name another issue, write its number after the word issue, or with a hash sign in front of it, and put a space after each comma in a list of numbers. A list written with no space after its commas, or a bracketed list of two-digit numbers such as (12, 13), names no issue.
 - A task can be handed to a new worker on purpose, with the reason it changed hands, and the record keeps that reason. The old worker's branch and folder are then no longer reported as a problem.
 - A step you want to check yourself can be written into a task as a line only you can tick, naming what you are to look at and what to check. Jarl will not close the task until you tick it, and shows it in your list of things to do once there is something to look at.
 - A loop can now say after how many failed rounds a kind of task is handed to a fresh worker, with a line such as `Takeover (docs): 2` in its goal. A line `Takeover: 4` sets it for every other kind, and a loop that says nothing keeps three. A changed number counts from the next failed round, and the rounds are counted from the last handover. Each round line now ends with its place in that count, which older Jarl versions and Horde read as a plain round; rounds an older Jarl wrote count a handover every third.
@@ -29,6 +30,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A ruling can say whom it is for and until when: the whole loop, a role such as reviewers or workers, one coordinator's part of the backlog, a tag, a kind of task, a set of files, a repository or a moment of the work, and it can end on a date or when a task closes. Taking it back is a ruling that replaces it. The resume and the list of what is waiting on someone show that person the rules meant for them, in full, and the resume no longer lists every ruling.
 - Jarl gives coordinators, workers and reviewers its own working rules for their role, such as re-checking every acceptance line on each review round.
 - Anyone in the loop can propose a rule, for whoever runs the loop to accept, or for the owner when the rule is his. When the loop closes, each of its rules is offered to the owner: keep it for the next loop, write it into the repository's instructions for agents, make it a rule of the code, or drop it.
+- `report --metrics` prints only the loop's metrics, so the summary stays short even for a loop with hundreds of issues. `report` now prints the metrics before its lists of issues.
 
 ### Changed
 
@@ -62,6 +64,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Recording a merge now warns when the branch got new commits after its review was approved. The warning names the reviewed commit and the merged one, and gives the commands that show the difference and record a new review. The merge is still recorded.
 - `resume` and `decisions` show an answered question with its answer first, then the question.
 - `models` counts a model written with dots and the same model written with dashes, such as `claude-opus-5.5` and `claude-opus-5-5`, as one model, and its row names both spellings. A review or a task that uses the other spelling gets a note naming the spelling the record holds.
+- A comma in a `tag` command separates tags: `+a,b` adds `a` and `b`, and `-a,b` removes both. Before, the command added one tag named `a,b`.
 
 ## [6.2.0] - 2026-10-19
 

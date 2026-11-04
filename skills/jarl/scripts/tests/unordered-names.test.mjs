@@ -36,6 +36,16 @@ test('only an explicit citation counts: a number after the word issue or task, a
   assert.deepEqual(ids('issue 999'), [], 'an id the loop does not hold');
 });
 
+test('idsCited reads the set as it stands at each call, also when a change keeps the set size', () => {
+  const held = new Map([['7', {}], ['8', {}]]);
+  assert.deepEqual(idsCited('issue 7 and issue 8', held), ['7', '8']);
+  held.delete('7');
+  held.set('9', {});
+  assert.equal(held.size, 2, 'the set keeps its size');
+  assert.deepEqual(idsCited('issue 7 and issue 8', held), ['8'], 'an id that left the set is not cited');
+  assert.deepEqual(idsCited('issue 9', held), ['9'], 'an id that joined the set is cited');
+});
+
 test('a plain amount, a position, an exit status or a part of a longer token is no citation', () => {
   const held = new Set(['1', '2', '3', '4', '12', '84', '85', '100', '101', '123', '128', '160', '184', '185', '285', '309', '456', '1000', '1043']);
   const ids = (text) => idsCited(text, held);

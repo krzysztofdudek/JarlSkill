@@ -7,7 +7,7 @@ import { DEFAULT_PROFILE, loadProfile } from './profile.mjs';
 import { mergedOf, sharedMark } from './issues.mjs';
 import { repoNames } from './repositories.mjs';
 import { closedGateLine, disagreementText, gateLine, gateOf, readLoop, reviewSplit, sameSlice, sliceNamed, sliceOf } from './loop.mjs';
-import { checkWaitingText, metricsOf, renderMetrics, testimonyNote } from './metrics.mjs';
+import { checkWaitingText, metricsOf, renderMetrics } from './metrics.mjs';
 import { ago } from './rounds.mjs';
 import { cmdTips, renderTips } from './tips.mjs';
 import { reasonWord, waitingOn } from './commands.mjs';
@@ -178,9 +178,10 @@ function statusReason(evidence, word) {
   return last ? last[1].trim() : text;
 }
 
-// report [--found]: done (per repository when the done work spans more than one — an issue naming several is
+// report [--found] [--metrics]: done (per repository when the done work spans more than one — an issue naming several is
 // listed under each, for each repository's changelog), dropped, deferred, still open, and who reviewed the done
-// work; --found adds the issues someone other than the jarl found.
+// work; --found adds the issues someone other than the jarl found. The loop metrics come first, before the lists;
+// --metrics prints the heading, the goal and the metrics alone.
 export function cmdReport(root, flags = {}) {
   const loop = readLoop(jarlDir(root));
   const { profile, issues } = loop;
@@ -211,7 +212,9 @@ export function cmdReport(root, flags = {}) {
   });
   const metrics = metricsOf(loop, Date.now());
   const closedGate = closedGateFlags(loop);
-  const lines = [`# Report`, '', goal, '', ...(metrics.check.landsOn === 'testimony' ? [testimonyNote(metrics.check), ''] : []), `## Done (${done.length})`, ...(done.length ? [gateLine(profile, split, 'Reviewed by')] : []), ...doneLines,
+  // The testimony mark opens the metrics below when no merge carries the declared check, so the head is the heading and the goal.
+  const head = [`# Report`, '', goal, ''];
+  const lists = [`## Done (${done.length})`, ...(done.length ? [gateLine(profile, split, 'Reviewed by')] : []), ...doneLines,
     ...closedOther.flatMap((st) => {
       const on = issues.filter((i) => i.status === st);
       return ['', `## ${reasonWord(st)} (${on.length})`, ...on.map((i) => `- ${i.id} ${i.title}${mark(i)}${profile.is(st, 'needs-reason') ? ` — ${statusReason(i.sections.evidence, reasonWord(st))}` : ''}`)];
@@ -219,7 +222,8 @@ export function cmdReport(root, flags = {}) {
     ...(closedGate.length ? ['', `## Closed, gate does not hold (${closedGate.length})`, ...closedGate.map(closedGateLine)] : []),
     '', `## Still open (${left.length})`, ...left.map((i) => `- ${i.id} ${i.title}${mark(i)} (${i.status})`),
     ...(flags.found ? ['', `## Found along the way (${found.length})`, ...found.map((i) => `- ${i.id} ${i.title} — ${i.fields['found by']}`)] : []),
-    '', renderMetrics(metrics)];
+  ];
+  const lines = flags.metrics ? [...head, renderMetrics(metrics)] : [...head, renderMetrics(metrics), '', ...lists];
   return { done: done.length, dropped: dropped.length, deferred: deferred.length, left: left.length, found: found.length, reviews: split,
     ...(profile.declared ? { statuses: Object.fromEntries(profile.statuses.map((st) => [st, issues.filter((i) => i.status === st).length])) } : {}),
     byRepo: Object.fromEntries(repos.map((r) => [r, byRepo[r].map((i) => i.id)])), issues: rows, text: lines.join('\n') + '\n', check: metrics.check, metrics, closedGate };

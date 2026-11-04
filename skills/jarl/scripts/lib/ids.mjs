@@ -108,19 +108,17 @@ const CITED = [
   new RegExp(`(?<![\\w&/#.-])(#\\d+(?![\\w/-])(?![.,:]\\d))(?!\\s*(?:${UNITS}))`, 'gi'),
   new RegExp(`(?<![\\w.\\]-])(?<!\\b(?:with|status|code|exits?)\\s*)\\(\\s*(#?\\d{3,}(?![\\w/-])(?:${JOIN}#?\\d{3,}(?![\\w/-]))*)\\s*\\)(?!\\s*(?:${UNITS}))`, 'gi'),
 ];
-const KEYED = new WeakMap();
-export function idsCited(text, held) {
+// The keyed form of a set or map of ids: each id's key (see idKey) mapped to the id as written, read from the set as it
+// stands when it is made. Nothing is kept from one call to the next, so a change to the set shows at the next call. A
+// caller that asks about many texts builds the form before the first ask and passes it to idsCited.
+export function keyedIds(held) {
+  return new Map([...(held.keys ? held.keys() : held)].map(String).map((id) => [idKey(id), id]));
+}
+export function idsCited(text, held, keyed = null) {
   const numbers = [];
   for (const re of CITED) for (const m of String(text || '').matchAll(re)) numbers.push(...m[1].match(/\d+/g));
   if (!numbers.length) return [];
-  // The keyed form of `held` is made once for a set that does not change, so a loop of thousands of texts makes it once.
-  const size = held.size ?? [...held].length;
-  let keyed = KEYED.get(held);
-  if (!keyed || keyed.size !== size) {
-    keyed = { size, byKey: new Map([...(held.keys ? held.keys() : held)].map(String).map((id) => [idKey(id), id])) };
-    KEYED.set(held, keyed);
-  }
-  const { byKey } = keyed;
+  const byKey = keyed ?? keyedIds(held);
   return [...new Set(numbers.map(idKey))].filter((k) => byKey.has(k)).map((k) => byKey.get(k)).sort(cmpId);
 }
 

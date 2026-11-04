@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import * as R from '../record.mjs';
 import { jarl, loop as makeLoop } from './helpers.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
@@ -171,4 +172,60 @@ test('the library reads the same metrics the report prints', () => {
   const dir = loop();
   assert.deepEqual(L.loopMetrics(dir), json(dir, 'report').metrics);
   assert.deepEqual(L.declaredChecks(dir), []);
+});
+
+test('report prints the loop metrics before the lists of issues', () => {
+  const dir = loop();
+  jarl(dir, 'new', 'one', '--acceptance', 'it works');
+  const text = jarl(dir, 'report');
+  const metrics = text.indexOf('## Loop metrics');
+  assert.ok(metrics > 0, 'the report carries the loop metrics');
+  assert.ok(metrics < text.indexOf('## Still open'), 'the metrics come before the open issues');
+});
+
+test('report --metrics prints the title, the goal and the loop metrics, and no list of issues', () => {
+  const dir = loop('metrics alone');
+  jarl(dir, 'new', 'one', '--acceptance', 'it works');
+  const text = jarl(dir, 'report', '--metrics');
+  assert.match(text, /^# Report$/m);
+  assert.match(text, /^metrics alone$/m);
+  assert.match(text, /^## Loop metrics$/m);
+  assert.doesNotMatch(text, /^## (Done|Still open|Dropped|Deferred|Closed)/m);
+  assert.doesNotMatch(text, /^- 1 one/m);
+});
+
+test('report --metrics prints the same metric lines the full report prints', () => {
+  const dir = loop();
+  jarl(dir, 'new', 'one');
+  const block = (text) => text.slice(text.indexOf('## Loop metrics')).split('\n\n')[0];
+  assert.equal(block(jarl(dir, 'report', '--metrics')), block(jarl(dir, 'report')));
+});
+
+test('report --metrics stays under 10 KB on a loop of hundreds of issues, where the full report is larger', () => {
+  const dir = loop('a loop of hundreds of issues');
+  for (let i = 0; i < 300; i++) R.newIssue(dir, `item ${i} of the size check`);
+  const short = Buffer.byteLength(jarl(dir, 'report', '--metrics'));
+  const full = Buffer.byteLength(jarl(dir, 'report'));
+  assert.ok(short < 10_000, `the metrics alone take ${short} bytes`);
+  assert.ok(full > 10_000, `the full report takes ${full} bytes, more than the metrics alone`);
+});
+
+test('report --json keeps every key and every issue row, with or without --metrics', () => {
+  const dir = loop();
+  jarl(dir, 'new', 'one', '--acceptance', 'it works');
+  const keys = ['done', 'dropped', 'deferred', 'left', 'found', 'reviews', 'byRepo', 'issues', 'text', 'check', 'metrics', 'closedGate'];
+  const full = json(dir, 'report');
+  assert.deepEqual(Object.keys(full), keys);
+  assert.equal(full.issues.length, 1);
+  assert.match(full.text, /^## Still open \(1\)$/m);
+  assert.deepEqual(Object.keys(json(dir, 'report', '--metrics')), keys);
+  assert.equal(json(dir, 'report', '--metrics').issues.length, 1);
+});
+
+test('the testimony mark is printed once, as the first line of the loop metrics', () => {
+  const dir = loop();
+  jarl(dir, 'new', 'one');
+  const text = jarl(dir, 'report');
+  assert.equal(text.match(/^no check is declared/gm).length, 1);
+  assert.match(text, /^## Loop metrics\nno check is declared/m);
 });
