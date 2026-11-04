@@ -175,10 +175,11 @@ export function readCall(words) {
 // The global flags a call gave, each as the words it was written in: ['--root', 'x'], ['--root=x'], ['--json'].
 export function globalsOf(args) {
   // Read as the command line reads the call: a word taken as the value of a flag before it is no flag, and a --root
-  // given twice leaves which one was meant to the caller, so the form has a placeholder for it.
+  // given twice leaves which one was meant to the caller, so the form has a placeholder for it, as it has for a --root
+  // holding a line break, which no printed line carries.
   const flags = J.callOfArgv(args.map(String)).flags.filter(([k]) => k === 'root' || k === 'json');
   const roots = flags.filter(([k]) => k === 'root');
-  return flags.filter(([k, v]) => (k === 'json' ? v === true : roots.length === 1 && typeof v === 'string')).map(([k, v, spelt]) => (k === 'json' ? ['--json'] : spelt === '=' ? [`--root=${v}`] : ['--root', v]));
+  return flags.filter(([k, v]) => (k === 'json' ? v === true : roots.length === 1 && typeof v === 'string')).map(([k, v, spelt]) => (k === 'json' ? ['--json'] : L.breaksLine(v) ? ['--root', '<loop-root>'] : spelt === '=' ? [`--root=${v}`] : ['--root', v]));
 }
 // The reason of a refusal and its commands: the lines at its end that are commands of jarl.mjs, the last its form.
 export function partsOf(said) {
@@ -190,8 +191,74 @@ export function partsOf(said) {
 const HOLE = L.HOLE;
 // Flags a form never adds to what the call gave: they remove, keep or sign off something nobody asked for.
 const NEVER_ADDED = ['force', 'batch', 'keep', 'relayed', 'permanent', 'committed', 'header', 'adopt'];
-// Whether a reason names a word: as it was given, quoted as JSON, or in another case.
-export const names = (reason, word) => [String(word), JSON.stringify(String(word)).slice(1, -1)].some((w) => reason.includes(w) || reason.toLowerCase().includes(w.toLowerCase()));
+// Whether a reason names a word: as it was given, quoted as JSON, as Jarl echoes it (its line breaks escaped), or in
+// another case.
+export const names = (reason, word) => [String(word), JSON.stringify(String(word)).slice(1, -1), L.echoWord(word).slice(1, -1)].some((w) => reason.includes(w) || reason.toLowerCase().includes(w.toLowerCase()));
+// The commands a removed command is replaced by, and the steps a refusal may end with in place of the call's own form:
+// a question put, a loop archived, a part of the description written, a lease taken, an issue filed, a proof, a verdict,
+// a merge or a retraction recorded, a repository's base, a loop opened, or verify, which shows what to repair. No other
+// view ends a refusal, but the one a removed view is replaced by.
+const REPLACED_BY = { tips: ['resume'], queue: ['resume'], check: ['scope'], prio: ['field'], tag: ['field'], files: ['field'], source: ['field'], after: ['field'], repo: ['field', 'base'], body: ['field'], handoff: ['resume'] };
+const STEP_COMMANDS = ['ask', 'archive', 'field', 'set', 'new', 'evidence', 'review', 'merged', 'retract', 'base', 'init', 'verify'];
+// The words a form may hold that the call did not give and that are no placeholder: the parts of the description field
+// writes, and the entry retract takes a verdict back by.
+const STRUCTURAL = new Set([...['Title', 'Priority', 'Tier', 'Kind', 'Found by', 'Tags', 'Files', 'Repo', 'After', 'Source', 'Where', 'Resources', 'Person', 'Check when', 'What', 'Why', 'Acceptance', 'Changelog'], 'review']);
+// A plausible value for each placeholder, to fill a form with as a caller would: a word that stands where nothing is to be
+// given (a flag to leave out, a step the reason names) is taken out, with the value after it where it has one.
+const FILL = {
+  '<id>': '1', '<ids>': '1', '<another-id>': '3', '<another-issue>': '3', '<ids-the-loop-holds>': '1', '<ids-low-high>': '1-2', '<a-smaller-range>': '1-2',
+  '<the-id-new-prints>': '1', '<the-id-ask-prints>': 'a-1', '<an-issue-next-offers>': '1', '<question>': 'a-1', '<a-n>': 'a-1', '<n>': '1', '<n-or-note-n>': '1',
+  '<review-n-or-note-n>': '1', '<line>': '1', '<text>': 'a reason written in full', '<title>': 'a title', '<the-title-filed-again>': 'a title', '<goal>': 'a goal',
+  '<slug>': 'a-new-slug', '<a-new-slug>': 'a-new-slug', '<a-ruling>': 'a ruling written in full', '<a-ruling-in-force>': 'taken', '<value>': 'a value',
+  '<the-whole-new-value>': '2', '<the-whole-section>': 'a whole section', '<a-part-of-the-description>': 'What', '<part>': 'What', '<name=value>': 'Area=core',
+  '<field=value>': 'Priority=2', '<changelog-entry>': 'Fixed: a thing', '<owner-line>': '[owner] it reads well · material: docs/x.md · check: it reads', '<items>': 'a',
+  '<an-item-with-no-leading-dash>': 'a.mjs', '<an-item-without-quotes>': 'a.mjs', '<one-quoted-text>': 'a reason written in full', '<argument>': 'x', '<who>': 'jarl',
+  '<one-name>': 'jarl', '<reviewer>': 'rev-fresh', '<a-fresh-reviewer>': 'rev-fresh', '<the-owner-himself>': 'owner', '<owner-or-a-name>': 'jarl', '<who-asks>': 'jarl',
+  '<his-own-words>': 'we go this way', '<status>': 'deferred', '<status-in-the-log>': 'open', '<a-status-the-gate-allows>': 'deferred', '<kind>': 'bug', '<tier>': 'light',
+  '<prio>': '2', '<verdict>': 'changes', '<ci-state>': 'green', '<ask-kind>': 'stuck', '<jarl-or-owner>': 'jarl', '<option>': 'A', '<another-option>': 'B',
+  '<label:effect>': 'C: does c', '<mode>': 'permanent', '<group>': 'tag', '<name>': 'tool', '<names>': 'odin', '<name-or-path>': 'tool', '<coordinator>': 'odin',
+  '<slice:coordinator>': 'slice:odin', '<no-second-slice-tag>': 'ui', '<tag>': 'ui', '<a-tag-an-issue-carries>': 'core', '<key>': 'k', '<a-number-two-files-carry>': '4',
+  '<sha>': 'abc1234', '<command>': 'npm test', '<what-it-printed>': 'all 3 pass', '<what-was-wrong>': 'it ran on the wrong tree, so it does not count',
+  '<what-was-read-and-found>': 'Important: read the diff and the tests, one name is wrong', '<findings-with-a-severity>': 'Important: read the diff and the tests, one name is wrong',
+  '<what-failed>': 'the test of the walk failed on a refusal', '<what-the-branch-does>': 'a title', '<what-is-red>': 'the suite', '<what-would-get-weaker>': 'the gate', '<why>': 'a reason written in full',
+  '<why-the-worker-changed>': 'the first worker stopped', '<question-for-the-owner>': 'which way do we go?', '<yes-or-reject-first>': 'yes, as written', '<branch>': 'jarl/1-x',
+  '<worker-branch>': 'jarl/1-x', '<base-branch>': 'main', '<the-new-worker>': 'w9', '<the-worktree-of-the-lease>': '.', '<model-id>': 'opus', '<path>': 'a.mjs', '<paths>': 'a.mjs',
+  '<path-under-the-loop-root>': 'a.mjs', '<slot>': 'before', '<findings.json>': 'research/findings.json', '<profile.json>': 'profile.json', '<report-dir>': 'research',
+  '<report-dir#finding-id>': 'research#f-1', '<finding-ids>': 'f-1', '<template>': 'tmpl', '<the-main-checkout>': '.', '<loop-root>': '.', '<selectors>': 'loop',
+  '<selector>': 'role worker', '<role>': 'worker', '<moment>': 'start', '<date-or-event>': '2026-12-01', '<yyyy-mm-dd>': '2026-12-01', '<date-or-id>': '2026-12-01',
+  '<type>': 'module', '<rule-id>': 'r1', '<number-of-files>': '2', '<whole-number>': '2', '<count>': '2', '<hours>': '2', '<rounds>': '2', '<machine-line>': 'Check: npm test',
+  '<resource-name>': 'db', '<a-row-the-log-matches>': '1', '<material>': 'docs/x.md', '<what-to-check>': 'it reads well', '<placeholder>': 'x', '<a-jarl-command>': 'list',
+  '<--handover-or-none>': '--handover',
+};
+// Other plausible values of a placeholder whose value the context decides (a kind a flag goes with, a status a lease
+// goes with, an author the owner must be): the form passes when any filling is a call, or refused for another reason.
+const ALTERNATIVES = {
+  '<kind>': ['wait', 'promise'], '<status>': ['in-progress', 'open', 'done', 'dropped'], '<ask-kind>': ['escalation', 'rule', 'lower', 'ratify', 'stop', 'charter'],
+  '<who>': ['owner', 'rev-fresh'], '<verdict>': ['approve'], '<jarl-or-owner>': ['owner'], '<option>': ['B'], '<status-in-the-log>': ['in-progress'],
+  '<key>': [keyOf4()], '<question>': ['a-2', 'a-3'], '<name>': ['Dana', 'Area'], '<value>': ['2', 'core'], '<text>': ['Important: read the diff and the tests, one name is wrong'],
+};
+const LEFT_OUT = ['<a-flag-it-takes-or-none>', '<no-flag-here>', '<as-the-reason-says>', '<nothing-to-do>', '<as-the-view-shows>', '<one-kind-of-evidence-per-call>', '<no-word-here>'];
+// A printed command's words with each placeholder filled: a word that is one is replaced (or taken out), one that holds
+// one (a list item, a value part) has it replaced in place.
+export function filled(words, at = -1, other = null) {
+  const out = [];
+  for (let i = 0; i < words.length; i += 1) {
+    const w = words[i];
+    if (LEFT_OUT.includes(w)) { if (w === '<a-flag-it-takes-or-none>' && words[i + 1] === '<value>') i += 1; continue; }
+    if (i === at) { out.push(other); continue; }
+    out.push(Object.hasOwn(FILL, w) ? FILL[w] : String(w).replace(HOLE_ALL, (m) => FILL[m] ?? 'x'));
+  }
+  return out;
+}
+// Each filling of a form: every placeholder its first plausible value, then each placeholder in turn another of its own.
+function fillings(words) {
+  const out = [filled(words)];
+  words.forEach((w, i) => { for (const v of ALTERNATIVES[w] || []) out.push(filled(words, i, v)); });
+  return out;
+}
+const HOLE_ALL = new RegExp(HOLE.source, 'g');
+const shellQuote = (w) => `'${String(w).replace(/'/g, `'\\''`)}'`;
+const filesIn = (dir) => readdirSync(dir).filter((f) => f !== '.jarl' && f !== '.git').sort();
 
 // What is wrong with the refusal `said` of the wrong call `args` made on `loop` (copied with `opts`); `wrong` is the word
 // of the call the reason must name, or null. An empty list is a refusal that holds.
@@ -202,12 +269,16 @@ export function formProblems(args, said, loop, opts = {}, wrong = null) {
   const { reason, commands } = partsOf(said);
   if (!commands.length || !reason.trim()) return [`no reason and form on lines of their own: ${lines.at(-1)}`];
   const given = args.map(String);
+  const cmd = J.callOfArgv(given).cmd;
   const problems = [];
+  const parsed = [];
   for (const line of commands) {
     const calls = printedCalls(line);
     if (!calls || calls.length !== 1) { problems.push(`not one command for a shell: ${line}`); continue; }
     const words = calls[0];
+    parsed.push(words);
     for (const w of words) for (const m of w.matchAll(/<[^<>]*>/g)) if (!L.PLACEHOLDERS.includes(m[0]) && !given.some((g) => g.includes(m[0]))) problems.push(`prints ${m[0]}, no placeholder of the registry: ${line}`);
+    if (words.includes('<as-the-reason-says>')) problems.push(`a command that writes and holds no placeholder of its own was given one by the net: ${line}`);
     const c = readCall(words);
     if (MUTATING.has(c.cmd) && !words.some((w) => HOLE.test(w))) problems.push(`a command that writes, with no placeholder: pasted as printed it runs: ${line}`);
     for (const g of globalsOf(given)) if (!(g.length === 1 ? words.includes(g[0]) : words.some((w, i) => w === g[0] && words[i + 1] === g[1]))) problems.push(`drops ${g.join(' ')}, a global flag the call gave: ${line}`);
@@ -215,15 +286,41 @@ export function formProblems(args, said, loop, opts = {}, wrong = null) {
     for (const [k] of c.flags) if (NEVER_ADDED.includes(k) && !given.includes(`--${k}`) && !given.includes(k)) problems.push(`adds --${k}, which the call did not ask for: ${line}`);
   }
   if (wrong !== null && !names(reason, wrong)) problems.push(`the reason does not name ${JSON.stringify(wrong)}: ${reason.split('\n')[0].slice(0, 160)}`);
-  // Pasted as printed into each shell, on a fresh copy: refused for its placeholder, and nothing written in any loop.
+  const form = parsed.at(-1);
+  if (form) {
+    // The form is the called command, the command a removed one is replaced by, or a step; it holds no value Jarl chose.
+    const c = readCall(form);
+    const allowed = [cmd, ...(J.REMOVED_FORMS[cmd] || []), ...(REPLACED_BY[cmd] || []), ...STEP_COMMANDS];
+    if (!allowed.includes(c.cmd) && !HOLE.test(c.cmd)) problems.push(`ends with ${c.cmd}, neither the command called nor a step: ${commands.at(-1)}`);
+    const globals = new Set(globalsOf(given).flat());
+    for (const v of [...c.pos, ...c.flags.filter(([k]) => !Object.hasOwn(J.GLOBAL_FLAGS, k)).map(([, x]) => x).filter((x) => typeof x === 'string')]) {
+      if (HOLE.test(v) || given.includes(v) || globals.has(v) || STRUCTURAL.has(v) || given.some((g) => g.split(',').map((s) => s.trim()).includes(v))) continue;
+      problems.push(`holds ${JSON.stringify(v)}, a value the call did not give: ${commands.at(-1)}`);
+    }
+    // Filled with a plausible value for each placeholder and run where the call was made, the form is a call that runs,
+    // or one refused for another reason than the call was.
+    if (form.some((w) => HOLE.test(w))) {
+      const first = (t) => t.replace(/\n+$/, '').split('\n')[0];
+      const tried = fillings(form);
+      const same = (words) => { const again = run(copy(loop, opts), words); return again.status !== 0 && first(again.stderr) === first(reason); };
+      if (tried.every(same)) problems.push(`filled, the form is refused again for the same reason: ${tried[0].map(shellQuote).join(' ')}`);
+    }
+  }
+  // Pasted as printed into each shell, on a fresh copy: each command refused for its placeholder, and nothing written in
+  // any loop; the whole message pasted creates no file and writes nothing either.
   const before = JSON.stringify(snapshot(copy(loop, opts)));
-  for (const line of commands) {
-    for (const sh of SHELLS) {
+  for (const sh of SHELLS) {
+    for (const line of commands) {
       const dir = copy(loop, opts);
       const r = runPrinted(dir, line, sh);
       if (JSON.stringify(snapshot(dir)) !== before) problems.push(`pasted into ${sh}, it writes: ${line}`);
       if (HOLE.test(line) && (r.status === 0 || !/placeholder/.test(r.stderr))) problems.push(`pasted into ${sh}, it is not refused for its placeholder: ${line} — ${r.stderr.trim().split('\n')[0]}`);
     }
+    const dir = copy(loop, opts);
+    const files = filesIn(dir);
+    runPrinted(dir, said, sh);
+    if (JSON.stringify(snapshot(dir)) !== before) problems.push(`the whole message pasted into ${sh} writes: ${lines.at(-1)}`);
+    if (JSON.stringify(filesIn(dir)) !== JSON.stringify(files)) problems.push(`the whole message pasted into ${sh} makes a file (${filesIn(dir).filter((f) => !files.includes(f)).join(', ')}): ${reason.split('\n')[0].slice(0, 120)}`);
   }
   return problems;
 }

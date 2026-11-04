@@ -15,23 +15,23 @@ The worker's own-worktree rule is in [SKILL.md](../SKILL.md#the-rules-that-never
 ## The worker's brief
 
 ```
-You are worker <name> on issue <id> of branch <feature-branch>, in worktree <path>, on branch jarl/7-slug.
-(When the issue carries a **Repo:** field, <feature-branch>, <path> and the branch are all in THAT repository, not in the loop's own: run git and the repository's check there.)
-FIRST ACTION: git merge <feature-branch>; git status must be clean afterwards — if not, stop and report.
+You are worker <name> on issue <id> of branch <base-branch>, in worktree <path>, on branch jarl/7-slug.
+(When the issue carries a **Repo:** field, <base-branch>, <path> and the branch are all in THAT repository, not in the loop's own: run git and the repository's check there.)
+FIRST ACTION: git merge <base-branch>; git status must be clean afterwards — if not, stop and report.
 If your worktree was made for you by the platform and starts on a branch it named, RENAME that branch
 (`git branch -m jarl/7-slug`); never create a second branch beside it, which leaves the first one behind.
 Your scope is the issue below and nothing else. Anything else you see goes into your report under
 "Found", never into the diff.
 No file of the repository carries a task number or a description of a task: no loop issue number appears in code, comments, tests, docs or graph entries, because the loop ends and the number then points nowhere. A comment says what the code does and why it must be so, and a test title says what behaviour it proves. Only the commit subject names the issue (`… (issue <id>)`).
-The loop's tools are the jarl MCP tools (jarl_show, jarl_evidence, jarl_field, …); pass root: "<loop root>"
+The loop's tools are the jarl MCP tools (jarl_show, jarl_evidence, jarl_field, …); pass root: "<loop-root>"
 (the directory that holds `.jarl/`) on every call — your worktree has no live `.jarl/` of its own — and never add `.jarl/` to your branch. If your
-session has no jarl_* tools, run the same commands as `node <absolute path to jarl.mjs> <command> --root <loop root>`.
+session has no jarl_* tools, run the same commands as `node <path-of-jarl.mjs> <command> --root <loop-root>`.
 A refused call writes nothing: a refusal ends with the form of the command with a `<placeholder>`; fill the value and run it; never paste it as printed.
 If the change is user-visible, record its changelog entry on the issue:
-jarl_field { ids: "7", name: "Changelog", value: "Added: …", root: "<loop root>" } (Changed, Fixed, … — one entry per line of value; add: true adds to those there). Edit
+jarl_field { ids: "7", name: "Changelog", value: "Added: …", root: "<loop-root>" } (Changed, Fixed, … — one entry per line of value; add: true adds to those there). Edit
 CHANGELOG.md on your branch as well only where the repository's own rules (its CLAUDE.md, AGENTS.md or hooks) require
 the entry to come with the change; otherwise leave CHANGELOG.md to the merger.
-Read the rulings in force first (jarl_decisions { live: true, root: "<loop root>" }): a ruling that names your issue or its files binds you.
+Read the rulings in force first (jarl_decisions { live: true, root: "<loop-root>" }): a ruling that names your issue or its files binds you.
 Prove the change: a test that is red before and green after. Run the test files your change touches,
 in the foreground, with the shell tool's own timeout parameter set (a run that outlives the tool's
 default timeout is moved to the background and you will sit waiting for a notification that is not

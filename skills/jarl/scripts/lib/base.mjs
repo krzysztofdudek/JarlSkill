@@ -91,14 +91,14 @@ export class Refusal extends Error {
 // values allowed, the ids the loop holds, the word that was wrong.
 export const PLACEHOLDERS = Object.freeze([
   '<id>', '<ids>', '<another-id>', '<another-issue>', '<ids-the-loop-holds>', '<ids-low-high>', '<a-smaller-range>', '<the-id-new-prints>',
-  '<the-id-ask-prints>', '<an-issue-next-offers>', '<question>', '<a-n>', '<n>', '<n|note-n>', '<review|n|note-n>', '<line>',
+  '<the-id-ask-prints>', '<an-issue-next-offers>', '<question>', '<a-n>', '<n>', '<n-or-note-n>', '<review-n-or-note-n>', '<line>',
   '<text>', '<title>', '<the-title-filed-again>', '<goal>', '<slug>', '<a-new-slug>', '<a-ruling>', '<a-ruling-in-force>', '<value>',
   '<the-whole-new-value>', '<the-whole-section>', '<a-part-of-the-description>', '<part>', '<name=value>', '<field=value>',
   '<changelog-entry>', '<owner-line>', '<items>', '<an-item-with-no-leading-dash>', '<an-item-without-quotes>', '<one-quoted-text>',
   '<no-word-here>', '<argument>', '<who>', '<one-name>', '<reviewer>', '<a-fresh-reviewer>', '<the-owner-himself>', '<owner-or-a-name>',
   '<who-asks>', '<his-own-words>', '<status>', '<status-in-the-log>', '<a-status-the-gate-allows>', '<kind>', '<tier>', '<prio>',
-  '<verdict>', '<ci-state>', '<ask-kind>', '<jarl|owner>', '<option>', '<another-option>', '<label:effect>', '<mode>', '<group>',
-  '<name>', '<names>', '<name|path>', '<coordinator>', '<slice:coordinator>', '<no-second-slice-tag>', '<tag>', '<a-tag-an-issue-carries>', '<key>',
+  '<verdict>', '<ci-state>', '<ask-kind>', '<jarl-or-owner>', '<option>', '<another-option>', '<label:effect>', '<mode>', '<group>',
+  '<name>', '<names>', '<name-or-path>', '<coordinator>', '<slice:coordinator>', '<no-second-slice-tag>', '<tag>', '<a-tag-an-issue-carries>', '<key>',
   '<a-number-two-files-carry>', '<sha>', '<command>', '<what-it-printed>', '<what-was-wrong>', '<what-was-read-and-found>',
   '<findings-with-a-severity>', '<what-failed>', '<what-the-branch-does>', '<what-is-red>', '<what-would-get-weaker>', '<why>',
   '<why-the-worker-changed>', '<question-for-the-owner>', '<yes-or-reject-first>', '<branch>', '<worker-branch>', '<base-branch>',
@@ -107,7 +107,7 @@ export const PLACEHOLDERS = Object.freeze([
   '<loop-root>', '<selectors>', '<selector>', '<role>', '<moment>', '<date-or-event>', '<date-or-id>', '<material>', '<what-to-check>', '<yyyy-mm-dd>', '<type>', '<rule-id>', '<number-of-files>', '<whole-number>',
   '<count>', '<hours>', '<rounds>', '<machine-line>', '<resource-name>', '<a-row-the-log-matches>', '<a-flag-it-takes-or-none>',
   '<no-flag-here>', '<--handover-or-none>', '<one-kind-of-evidence-per-call>', '<a-jarl-command>', '<nothing-to-do>',
-  '<the-command-of-the-tool-that-runs-this-loop>', '<as-the-view-shows>', '<as-the-reason-says>', '<a-jarl-that-reads-this-format>',
+  '<the-command-of-the-tool-that-runs-this-loop>', '<as-the-view-shows>', '<as-the-reason-says>', '<a-jarl-that-reads-this-format>', '<placeholder>', '<path-of-jarl.mjs>',
 ]);
 const REGISTERED = new Set(PLACEHOLDERS);
 // Whether a value is one of the tool's own placeholders, the one test the command line refuses a value by.
@@ -192,6 +192,32 @@ export function shellWord(s) {
   const escaped = [...text].map((c) => (c === '\\' ? '\\\\' : LINE_BREAKING.test(c) ? escapedByte(c) : c)).join('');
   return `"$(printf '%b' ${quoted(escaped)})"`;
 }
-
+// A text Jarl prints with words of a call in it (a reason, a note), safe to read and to paste: each word of the call that
+// holds a character a reader may end a line at, or one a shell acts on inside double quotes ($ ` \ " !), is echoed in
+// single quotes with its line breaks escaped (\n, \u2028), wherever the text has it bare, in double quotes or quoted as
+// JSON; a part of such a word around each line break is escaped as well, for an echo that cut the word. No word of the
+// caller starts a line of its own in what Jarl prints, and none runs when the whole text is pasted into a shell. Every
+// line-breaking character but the line feed is never Jarl's own and is escaped wherever it stands.
+const LINE_BREAKING_ALL = new RegExp(LINE_BREAKING.source, 'g');
+const escapeBreaks = (s) => s.replace(LINE_BREAKING_ALL, (c) => (c === '\n' ? '\\n' : c === '\r' ? '\\r' : `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`));
+export const breaksLine = (s) => LINE_BREAKING.test(String(s));
+export const echoWord = (w) => `'${escapeBreaks(String(w)).replace(/'/g, `'\\''`)}'`;
+const SHELL_ACTIVE = /[$`\\"!]/;
+const MARK = /\uE000(\d+)\uE001/g;
+export function escapedEchoes(text, words = []) {
+  let out = String(text);
+  const marks = [];
+  const mark = (s) => { marks.push(s); return `\uE000${marks.length - 1}\uE001`; };
+  const echoed = [...new Set(words.map(String))].filter((w) => w.trim() && (breaksLine(w) || SHELL_ACTIVE.test(w))).sort((a, b) => b.length - a.length);
+  for (const w of echoed) {
+    const as = mark(echoWord(w));
+    for (const form of [JSON.stringify(w), `"${w}"`, w]) out = out.split(form).join(as);
+    for (const { index: at } of w.matchAll(LINE_BREAKING_ALL)) {
+      const part = w.slice(Math.max(0, at - 12), at + 13);
+      if (part.trim()) out = out.split(part).join(mark(escapeBreaks(part)));
+    }
+  }
+  return out.replace(/[\u0000-\u0008\u000b-\u001f\u007f\u0085\u2028\u2029]/g, escapeBreaks).replace(MARK, (_, n) => marks[Number(n)]);
+}
 // Used by the other modules of the library, and not part of what jarl-lib.mjs exports.
 export { LEASE_FIELDS, fieldText, freeInline, oneBreak, splitList };

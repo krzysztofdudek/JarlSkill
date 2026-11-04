@@ -369,7 +369,7 @@ test('no brief and no rule names the main checkout as the root a call passes: th
   const found = skillLines().filter(({ text }) => near(text) && !defines(text)).map(({ file, n, text }) => `${file}:${n}: ${text.slice(0, 80)}`);
   assert.deepEqual(found, []);
   for (const [file, text] of [['worker', skillText('references/worker.md')], ['reviewer', skillText('references/reviewer.md')], ['merger', skillText('references/merger.md')]]) {
-    assert.match(text, /<loop root>/, `the ${file} brief passes the loop root`);
+    assert.match(text, /<loop-root>/, `the ${file} brief passes the loop root`);
   }
   assert.match(skillText('SKILL.md'), /carries the absolute path of the loop root as `root`/);
   // The pinned block says the main checkout; Jarl's own sentence right after it says what the root is (the block itself is held byte-identical by the vendoring test).

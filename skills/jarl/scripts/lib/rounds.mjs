@@ -175,7 +175,7 @@ export function cmdCheck(root, rawId, flags) {
     const issue = findIssue(root, rawId);
     need(issue, `no such issue: ${rawId}`, () => ({ replace: rawId, value: '<id>' }));
     pkg = [issue];
-    need(flags.repo !== undefined || reposNamed(issue).length <= 1, `${issue.id} names several repositories (${reposNamed(issue).join(', ')}) — check one at a time with --repo <path>`, () => ({ flag: '--repo', value: hole('<name|path>') }));
+    need(flags.repo !== undefined || reposNamed(issue).length <= 1, `${issue.id} names several repositories (${reposNamed(issue).join(', ')}) — check one at a time with --repo <path>`, () => ({ flag: '--repo', value: hole('<name-or-path>') }));
   }
   const issue = pkg[0];
   const repo = flags.repo !== undefined ? repoFromInput(root, flags.repo).main : repoOf(root, reposNamed(issue)[0]);

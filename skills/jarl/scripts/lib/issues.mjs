@@ -356,7 +356,7 @@ export function needNoFieldTags(text, where) {
 const FILL_WITH = {
   why: (id) => `jarl.mjs field ${id} Why "<text>"`,
   acceptance: (id) => `jarl.mjs field ${id} Acceptance "<line>"`,
-  files: (id) => `jarl.mjs field ${id} Files p,q`,
+  files: (id) => `jarl.mjs field ${id} Files '<paths>'`,
   after: (id) => `jarl.mjs field ${id} After '<ids>'`,
   where: (id) => `jarl.mjs field ${id} Where '<text>'`,
   'found by': () => 'only at filing: new --found-by <who>',

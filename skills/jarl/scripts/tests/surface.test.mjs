@@ -237,7 +237,7 @@ test('status and models group with --group; --by on them is refused with the cal
 test('a verdict and an evidence row are taken back by retract alone; the other spellings and the second name of scope are refused with the call to use', () => {
   const root = fieldedLoop();
   jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'ok');
-  assert.equal(refuses(root, 'evidence', '1', '--retract', '1', '--by', 'jarl', 'wrong row').trim(), "evidence takes nothing back with --retract: a row or a note is taken back with retract\njarl.mjs retract '<id>' '<n|note-n>' '<why>' --by '<who>'");
+  assert.equal(refuses(root, 'evidence', '1', '--retract', '1', '--by', 'jarl', 'wrong row').trim(), "evidence takes nothing back with --retract: a row or a note is taken back with retract\njarl.mjs retract '<id>' '<n-or-note-n>' '<why>' --by '<who>'");
   assert.equal(refuses(root, 'review', '1', 'retract', '--by', 'jarl', 'wrong verdict').trim(), "a verdict is taken back with retract, not with review retract\njarl.mjs retract '<id>' review '<why>' --by '<who>'");
   assert.equal(refuses(root, 'check', '1', '--branch', 'jarl/1-a').trim(), "check is not a command; a branch is measured by scope\njarl.mjs scope '<id>' --branch '<worker-branch>'");
   assert.equal(mcp.buildTools().some((t) => t.name === 'jarl_check'), false, 'no tool answers to a second name');
@@ -330,7 +330,7 @@ test('the tips and the merge queue are sections of resume: --repo narrows both, 
   assert.deepEqual(narrowed.queue.repos.map((r) => [r.repo, r.base]), [[name, 'main']]);
   assert.equal(narrowed.tips.ci, true);
   assert.equal(refuses(dir, 'tips').trim(), 'tips is not a command; the tips are a section of resume, which asks gh for their CI with --gh\njarl.mjs resume --gh');
-  assert.equal(refuses(dir, 'queue', '--repo', 'tool', '--base', 'release').trim(), "queue is not a command; the merge queue is a section of resume, its batches included\njarl.mjs resume --repo '<name|path>' --base '<base-branch>'");
+  assert.equal(refuses(dir, 'queue', '--repo', 'tool', '--base', 'release').trim(), "queue is not a command; the merge queue is a section of resume, its batches included\njarl.mjs resume --repo '<name-or-path>' --base '<base-branch>'");
   assert.equal(mcp.buildTools().some((t) => ['jarl_tips', 'jarl_queue'].includes(t.name)), false);
 });
 
@@ -386,13 +386,13 @@ test('a removed form ends with the form of the command that replaces it: --by ke
   const root = fieldedLoop();
   jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'ok');
   const retract = refuses(root, 'evidence', '1', '--retract', '1', '--by', 'rev', 'ran on the wrong tree').trim();
-  assert.equal(retract, "evidence takes nothing back with --retract: a row or a note is taken back with retract\njarl.mjs retract '<id>' '<n|note-n>' '<why>' --by '<who>'");
+  assert.equal(retract, "evidence takes nothing back with --retract: a row or a note is taken back with retract\njarl.mjs retract '<id>' '<n-or-note-n>' '<why>' --by '<who>'");
   assert.equal(refuses(root, 'status', '--by', 'tag', '--tag', 'docs').trim(), "status groups its counts with --group, and --by names the author of a write\njarl.mjs status --group '<group>' --tag '<tag>'");
   assert.equal(refuses(root, 'files', '1', '').trim(), "files is not a command; the files are a field\njarl.mjs field '<ids>' Files --clear");
   assert.equal(refuses(root, 'prio', '1', '3', '--by', 'w2').trim(), "prio is not a command; the priority is a field\njarl.mjs field '<ids>' Priority '<prio>' --by '<who>'");
   assert.equal(refuses(root, 'set', '1', 'Area', 'cli', '--by', 'w2').trim(), "Area is a field, not a status: field writes it\njarl.mjs field '<ids>' Area '<value>' --by '<who>'");
   assert.equal(refuses(root, 'body', '1', '--title', 'new title', '--by', 'w2').trim(), "body is not a command; every part of the description is written by field, one call per part (--title is Title)\njarl.mjs field '<ids>' Title '<title>' --by '<who>'");
-  runFilled(root, formOf(retract), { '<id>': '1', '<n|note-n>': '1', '<why>': 'ran on the wrong tree', '<who>': 'rev' });
+  runFilled(root, formOf(retract), { '<id>': '1', '<n-or-note-n>': '1', '<why>': 'ran on the wrong tree', '<who>': 'rev' });
   assert.match(R.findIssue(root, '1').sections.evidence, /~~\*\*ran:\*\* npm test/);
 });
 
@@ -453,7 +453,7 @@ test('a tool refuses a field it does not take whose value another field or tool 
   assert.match(refused('jarl_resume', { ci: true }), /^jarl_resume: "ci" is not a field of this tool — its value goes in "gh": jarl_resume \{"gh":true\}$/);
   assert.match(refused('jarl_set', { ids: '1', status: 'deferred', why: 'later' }), /"why" is not a field of this tool — its value goes in "text": jarl_set \{"ids":"<ids>","status":"<status>","text":"<text>"\}$/);
   assert.match(refused('jarl_review', { ids: '1', verdict: 'approve', by: 'rev', findings: 'read it all here' }), /"findings" is not a field of this tool — its value goes in "text"/);
-  assert.match(refused('jarl_evidence', { ids: '1', retract: '2', by: 'jarl', text: 'the row ran elsewhere' }), /^jarl_evidence: "retract" is not a field of this tool — a row or a note is taken back with jarl_retract, and by names who takes it back: jarl_retract \{"id":"<id>","entry":"<n\|note-n>","by":"<who>","text":"<why>"\}$/);
+  assert.match(refused('jarl_evidence', { ids: '1', retract: '2', by: 'jarl', text: 'the row ran elsewhere' }), /^jarl_evidence: "retract" is not a field of this tool — a row or a note is taken back with jarl_retract, and by names who takes it back: jarl_retract \{"id":"<id>","entry":"<n-or-note-n>","by":"<who>","text":"<why>"\}$/);
   // A field no table names is refused with the fields the tool takes.
   assert.match(refused('jarl_status', { colour: 'red' }), /unknown field "colour" — it takes /);
 });

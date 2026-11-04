@@ -793,7 +793,7 @@ test('a path that does not exist, and a value with a line break or the log\'s se
   for (const [given, pattern] of [
     ['../alpha', /--repo "\.\.\/alpha"/],
     ['./subx', /--repo "\.\/subx"/],
-    ['./tool\n./x', /--repo ".*\\n.*" is on more than one line/],
+    ['./tool\n./x', /--repo '.*\\n.*' is on more than one line/],
     ['tool · x', /--repo "tool · x" is on more than one line or holds the log's separator/],
   ]) {
     for (const args of [['field', '1', 'Repo', given], ['new', 'b', '--tier', 'light', '--repo', given]]) {

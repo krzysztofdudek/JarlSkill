@@ -86,7 +86,7 @@ test('the reply of new keeps its first line, then lists what was parsed and each
   const bare = jarl(root, 'new', 'bare').split('\n');
   assert.match(bare[0], /^filed 1 · .*1-bare\.md$/);
   assert.match(bare[1], /^parsed: priority 2 · tier standard · kind bug · tags \(none\) · 0 acceptance lines · What 0 characters · Why 0 characters$/);
-  for (const [field, command] of [['why', 'field 1 Why'], ['acceptance', 'field 1 Acceptance'], ['files', 'field 1 Files p,q'], ['after', "field 1 After '<ids>'"], ['where', 'field 1 Where']]) {
+  for (const [field, command] of [['why', 'field 1 Why'], ['acceptance', 'field 1 Acceptance'], ['files', "field 1 Files '<paths>'"], ['after', "field 1 After '<ids>'"], ['where', 'field 1 Where']]) {
     assert.ok(bare[2].includes(`${field} (jarl.mjs ${command}`), `${field} is named with ${command}`);
   }
   const full = jarl(root, 'new', 'full', '--what', 'seven', '--why', 'yy', '--acceptance', 'a', '--acceptance', 'b', '--prio', '1', '--tags', 'x,y', '--files', 'a.mjs', '--where', 'here', '--after', '1').split('\n');

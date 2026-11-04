@@ -20,7 +20,7 @@ import { declaredChecks, lastMerge } from './metrics.mjs';
 import { modelLines, modelValue, spellingNote } from './models.mjs';
 import { slotRefusal } from './attachments.mjs';
 import { resetCaches } from './tips.mjs';
-import { needOwnerLines, ownerLineRefusal } from './owner-lines.mjs';
+import { needOwnerLines, ownerLineRefusal, ownerLineRewrite } from './owner-lines.mjs';
 
 // ---- commands ----------------------------------------------------------------------------------
 
@@ -344,8 +344,9 @@ export function cmdNew(root, title, rawFlags) {
 // with the key, written before the file moves. A number one file carries, and a file with no key, are refused.
 export function cmdRenumber(root, rawId, flags = {}) {
   needLiveLoop(root, '');
-  // Where the ready call names a number: a placeholder for one of those two files of the loop carry.
-  const carriedTwice = () => { const ids = loadIssues(root).filter((i) => i.id !== null).map((i) => i.id); const twice = [...new Set(ids.filter((id, n) => ids.findIndex((x) => idKey(x) === idKey(id)) !== n))]; return { arg: 0, value: hole('<a-number-two-files-carry>') }; };
+  // Where the ready call names a number: a placeholder for one of those two files of the loop carry; where no number
+  // is carried twice, verify, which shows what there is to repair.
+  const carriedTwice = () => { const ids = loadIssues(root).filter((i) => i.id !== null).map((i) => i.id); const twice = [...new Set(ids.filter((id, n) => ids.findIndex((x) => idKey(x) === idKey(id)) !== n))]; return twice.length ? { arg: 0, value: hole('<a-number-two-files-carry>') } : ['jarl.mjs', 'verify']; };
   need(rawId !== undefined && /^#?\d+$/.test(String(rawId).trim()), 'renumber takes the number two issue files carry', carriedTwice);
   const issues = loadIssues(root);
   const same = issues.filter((i) => i.id !== null && idKey(i.id) === idKey(rawId));
@@ -640,17 +641,20 @@ function issuesFor(root, rawIds, readOnly = false) {
 // One id in, the same object as always out; a list in, an array of them.
 function oneOrMany(rawIds, results) { return isBulk(rawIds) ? results : results[0]; }
 
-// The ready part of a refused move into a closing status: the step the issue lacks, read from the refusal, with a
-// placeholder for what only its maker knows (the command run, the reviewer, the sha, the owner's tick), then the move.
-function doneReady(refusal, issue) {
-  const r = String(refusal);
-  if (issue.byHeader) return refiled();
-  if (/no evidence|no --ran/.test(r)) return ['jarl.mjs', 'evidence', issue.id, '--ran', '<command>', '--saw', '<what-it-printed>'];
-  if (/approv|review/.test(r)) return ['jarl.mjs', 'review', issue.id, 'approve', '--by', '<a-fresh-reviewer>', '<what-was-read-and-found>'];
-  if (/records no merge|Merged/.test(r)) return ['jarl.mjs', 'merged', issue.id, '--sha', '<sha>'];
-  if (/slot|attach/.test(r)) return ['jarl.mjs', 'evidence', issue.id, '--file', '<path>', '--slot', '<slot>'];
-  if (/owner/.test(r)) return ['jarl.mjs', 'tick', issue.id, '<line>', '--by', '<the-owner-himself>'];
-  return { arg: 1, value: '<a-status-the-gate-allows>' };
+// The ready part of a refused move into a closing status, by the cause the gate names: the step that cause asks for, each
+// value only its maker knows a placeholder (the command run, the verdict and the reviewer, the sha, the file and the slot);
+// an owner line is his to tick, so its step is the question put to him, never his tick; a retraction the log cannot
+// place is shown by verify, before the form of the move.
+function doneReady(cause, issue) {
+  if (issue.byHeader || cause === 'unattributed') return refiled();
+  if (cause === 'evidence') return ['jarl.mjs', 'evidence', hole('<id>'), '--ran', hole('<command>'), '--saw', hole('<what-it-printed>')];
+  if (cause === 'approve') return ['jarl.mjs', 'review', hole('<ids>'), hole('<verdict>'), hole('<what-was-read-and-found>'), '--by', hole('<a-fresh-reviewer>')];
+  if (cause === 'merge') return ['jarl.mjs', 'merged', hole('<ids>'), '--sha', hole('<sha>')];
+  if (cause === 'slots') return ['jarl.mjs', 'evidence', hole('<id>'), '--file', hole('<path>'), '--slot', hole('<slot>')];
+  if (cause === 'owner') return ['jarl.mjs', 'ask', hole('<question-for-the-owner>'), '--issue', hole('<id>')];
+  if (cause === 'owner-rewrite') return ['jarl.mjs', 'field', hole('<ids>'), 'Acceptance', hole('<the-whole-section>')];
+  if (cause === 'retraction') return [{ first: ['jarl.mjs', 'verify'] }, { retry: true }];
+  return { arg: 1, value: hole('<a-status-the-gate-allows>') };
 }
 // The ready part for an issue whose number the log files twice, which is never closed, approved or merged: the work filed
 // again, and the call on the number new prints.
@@ -721,13 +725,13 @@ export function cmdField(root, rawIds, name, value, flags = {}) {
   const writes = DESCRIPTION_FIELDS.filter((f) => profile.kept || !['person', 'check when'].includes(f.toLowerCase()));
   const sections = sectionsOf(profile);
   const writable = () => [...writes, ...profile.fields.map((f) => f.name), ...sections].join(', ');
-  need(name !== undefined && String(name).trim() !== '', `field requires <name>, a part of the description: ${writable()} — e.g. jarl.mjs field '<ids>' Priority 1`, () => ({ arg: 1, value: '<a-part-of-the-description>' }));
+  need(name !== undefined && String(name).trim() !== '', `field requires <name>, a part of the description: ${writable()} — e.g. jarl.mjs field '<ids>' Priority '<prio>'`, () => ({ arg: 1, value: '<a-part-of-the-description>' }));
   editorOf(flags.by);
   const key = String(name).trim().toLowerCase();
   const mode = fieldMode(flags);
   const clear = mode === 'clear';
   const section = profile.field(name) ? undefined : sections.find((s) => s.toLowerCase() === key);
-  need(section !== undefined || setRoute(profile, name) !== 'status' || writes.some((f) => f.toLowerCase() === key), `${name} is not a part of the description, which field writes: ${writable()}; ${notWrittenByField(profile, key)}`, () => ({ replace: name, value: '<a-part-of-the-description>' }));
+  need(section !== undefined || setRoute(profile, name) !== 'status' || writes.some((f) => f.toLowerCase() === key), `${name} is not a part of the description, which field writes: ${writable()}; ${notWrittenByField(profile, key)}`, () => ({ arg: 1, value: hole('<a-part-of-the-description>') }));
   need(!clear || value === undefined, `field takes either a value or --clear, not both (got ${JSON.stringify(String(value))} and --clear)`, () => ([{ drop: '--clear' }, { arg: 2, value: hole('<value>') }]));
   need(clear || (value !== undefined && String(value).trim() !== ''), `field ${name} needs a value, or --clear to empty it`, () => ({ arg: 2, value: '<value>' }));
   if (section !== undefined) return writeSection(root, rawIds, section, clear ? '' : value, mode, flags);
@@ -915,9 +919,9 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   need(flags.base === undefined || caller === 'record', 'base is named by a library call through record.mjs only — the command line checks against the branch checked out', () => ({ rename: '--base', to: hole('<no-flag-here>') }));
   need(flags.base === undefined || (typeof flags.base === 'string' && fieldText(flags.base) !== '' && !flags.base.startsWith('-')), 'base names a branch or ref — the one the merge landed in', () => ({ rename: '--base', to: hole('<no-flag-here>') }));
   if (profile.is(status, 'closes-record')) {
-    for (const issue of issues) { const refusal = unattributedRefusal(issue, `moved → ${status}`); need(!refusal, nothing ? nothingWritten(refusal) : refusal, () => (doneReady(refusal, issue))); }
+    for (const issue of issues) { const refusal = unattributedRefusal(issue, `moved → ${status}`); need(!refusal, nothing ? nothingWritten(refusal) : refusal, () => (doneReady('unattributed', issue))); }
     const loop = readLoop(jarlDir(root));
-    for (const issue of issues) { const refusal = doneRefusalIn(root, loop, issue, flags.base); need(!refusal, nothing ? nothingWritten(refusal) : refusal, () => (doneReady(refusal, issue))); }
+    for (const issue of issues) { const gate = doneGateIn(root, loop, issue, flags.base); need(!gate, nothing ? nothingWritten(gate?.text) : gate?.text, () => (doneReady(gate.cause, issue))); }
   }
   // One lease for the whole call: every issue in a package gets the same Branch, Worker and Since. A lease records no
   // worktree: git allows a branch in at most one worktree, so the worktree of a lease is found through its branch. On the
@@ -1173,34 +1177,37 @@ function setResources(root, rawIds, value, flags) {
 // owner's tick of every acceptance line only he ticks (see owner-lines.mjs).
 // doneRefusal reads the loop for one issue; a caller checking several issues reads it once and asks doneRefusalIn.
 export function doneRefusal(root, issue) { return doneRefusalIn(root, readLoop(jarlDir(root)), issue, undefined); }
-// `base`: the branch or ref the merge landed in, when the caller names one.
-function doneRefusalIn(root, loop, issue, base) {
+function doneRefusalIn(root, loop, issue, base) { return doneGateIn(root, loop, issue, base)?.text ?? null; }
+// Why done refuses, as { text, cause }, or null: the cause (retraction, evidence, slots, merge, owner, approve) decides
+// the step a refusal of the move ends with. `base`: the branch or ref the merge landed in, when the caller names one.
+function doneGateIn(root, loop, issue, base) {
   const { profile } = loop;
   const g = gateOf(loop, issue.id);
   const how = EVIDENCE_HOW(issue.id);
   // A merge that records its check does not stand in for the worker's row: said to whoever is refused, the merger included.
   const mergeLine = lastMerge(loop.eventsById.get(issue.id) || []);
   const gap = mergeLine && mergeLine.check ? ` — the merge records a check (${mergeLine.check}), but that check is the merger's and does not stand in for the worker's row: the row is the worker's proof of the work, so the worker records what the work's own check ran and printed, and nobody types the merge check into Proof in its place` : '';
-  if (g.unresolvedRetractions.length) return `${issue.id} records a retraction of evidence row ${g.unresolvedRetractions.join(', ')} that matches no evidence line of the log, so which row it retracts is unknown and a retracted row might be counted — done refuses until that log line is repaired`;
-  if (!workEvidence(issue, profile)) return `${issue.id} has no evidence yet — record it first: ${how}${gap}`;
-  if (!g.tracked && !evidenceRows(issue).length) return `${issue.id} has no --ran/--saw evidence row — a free-text note alone is not proof of the work: ${how}${gap}`;
-  if (g.tracked && !g.rowsSince) return `${issue.id} has no --ran/--saw evidence row recorded since it was ${g.anchor.what === 'filed' ? 'filed' : `moved → ${g.anchor.what}`} (${g.anchor.at}) — a free-text note, or a row written before that (before a start or a reopen), is not proof of the work: ${how}${gap}`;
+  if (g.unresolvedRetractions.length) return { cause: 'retraction', text: `${issue.id} records a retraction of evidence row ${g.unresolvedRetractions.join(', ')} that matches no evidence line of the log, so which row it retracts is unknown and a retracted row might be counted — done refuses until that log line is repaired` };
+  if (!workEvidence(issue, profile)) return { cause: 'evidence', text: `${issue.id} has no evidence yet — record it first: ${how}${gap}` };
+  if (!g.tracked && !evidenceRows(issue).length) return { cause: 'evidence', text: `${issue.id} has no --ran/--saw evidence row — a free-text note alone is not proof of the work: ${how}${gap}` };
+  if (g.tracked && !g.rowsSince) return { cause: 'evidence', text: `${issue.id} has no --ran/--saw evidence row recorded since it was ${g.anchor.what === 'filed' ? 'filed' : `moved → ${g.anchor.what}`} (${g.anchor.at}) — a free-text note, or a row written before that (before a start or a reopen), is not proof of the work: ${how}${gap}` };
   const slots = slotRefusal(root, profile, issue, g);
-  if (slots) return slots;
-  if (profile.doneGate['requires-merged']) { const m = mergeRefusal(root, issue, base); if (m) return m; }
-  if (profile.doneGate.approve === 'none') return ownerLineRefusal(root, loop, issue);
+  if (slots) return { cause: 'slots', text: slots };
+  if (profile.doneGate['requires-merged']) { const m = mergeRefusal(root, issue, base); if (m) return { cause: 'merge', text: m }; }
+  const owner = () => { const text = ownerLineRefusal(root, loop, issue); return text ? { cause: ownerLineRewrite(root, loop, issue) ? 'owner-rewrite' : 'owner', text } : null; };
+  if (profile.doneGate.approve === 'none') return owner();
   const code = carriesCode(issue);
-  if (g.selfApproved) return `${issue.id}'s live approve is by a worker of this issue or its branch — a self-approve does not count as review: jarl.mjs review ${issue.id} approve --by '<a-fresh-reviewer>' '<text>'${code ? '' : ' (or jarl, on an issue that carries no code)'}`;
+  if (g.selfApproved) return { cause: 'approve', text: `${issue.id}'s live approve is by a worker of this issue or its branch — a self-approve does not count as review: jarl.mjs review ${issue.id} approve --by '<a-fresh-reviewer>' '<text>'${code ? '' : ' (or jarl, on an issue that carries no code)'}` };
   // A changes verdict with no approve after it is named as the cause, with its reviewer and day, so whoever is refused
   // sees the review that stands in the way.
   if (!g.approved && g.lastReview === 'changes') {
     const changes = [...g.trail].reverse().find((r) => r.verdict === 'changes');
-    return `${issue.id}'s latest review is a changes verdict by ${changes.by || 'a reviewer not recorded'} of ${changes.at}, and no approve came after it — a fresh reviewer reads the issue and the diff first: jarl.mjs review ${issue.id} '<verdict>' --by '<reviewer>' "<text>"`;
+    return { cause: 'approve', text: `${issue.id}'s latest review is a changes verdict by ${changes.by || 'a reviewer not recorded'} of ${changes.at}, and no approve came after it — a fresh reviewer reads the issue and the diff first: jarl.mjs review ${issue.id} '<verdict>' --by '<reviewer>' "<text>"` };
   }
-  if (!g.approved) return `${issue.id} has no approving review newer than its last round${g.tracked ? ' or reopen' : ''} — a fresh reviewer reads the issue and the diff first: jarl.mjs review ${issue.id} '<verdict>' --by '<reviewer>' "<text>"`;
-  if (code && !g.fresh) return `${issue.id} ${freshRuleText(issue, g.live)}: jarl.mjs review ${issue.id} '<verdict>' --by '<a-fresh-reviewer>' "<text>"`;
+  if (!g.approved) return { cause: 'approve', text: `${issue.id} has no approving review newer than its last round${g.tracked ? ' or reopen' : ''} — a fresh reviewer reads the issue and the diff first: jarl.mjs review ${issue.id} '<verdict>' --by '<reviewer>' "<text>"` };
+  if (code && !g.fresh) return { cause: 'approve', text: `${issue.id} ${freshRuleText(issue, g.live)}: jarl.mjs review ${issue.id} '<verdict>' --by '<a-fresh-reviewer>' "<text>"` };
   // Last, an acceptance line only the owner ticks: his look comes on top of the proof and the review, never instead.
-  return ownerLineRefusal(root, loop, issue);
+  return owner();
 }
 
 // The done gate's requires-merged: the issue records a merge (merged --sha) and that commit is in the base — the branch
@@ -1606,7 +1613,7 @@ function writeTags(root, rawIds, results, by, out) {
 }
 
 export function cmdPrio(root, rawIds, prio, by = undefined) {
-  need(PRIORITIES.includes(String(prio)), 'priority is 1, 2 or 3', () => (['jarl.mjs', 'field', '<ids>', 'Priority', '2']));
+  need(PRIORITIES.includes(String(prio)), 'priority is 1, 2 or 3', () => (['jarl.mjs', 'field', '<ids>', 'Priority', '<prio>']));
   const editor = editorOf(by);
   const issues = issuesFor(root, rawIds);
   logChanges(root, issues.map((issue) => fieldLine(issue.id, 'Priority', String(prio), heldField(issue, 'Priority'), editor)));
@@ -1638,7 +1645,7 @@ export function cmdRepo(root, rawId, path, { clear = false, dry = false, by } = 
     writeAtomic(issue.file, text);
     return { id: issue.id, repo: null, cleared: true };
   }
-  need(path !== undefined, 'repo requires <name|path> — the repository the issue\'s code lives in (its name, its checkout, a worktree of it or a file inside it), several as one comma list (or --clear to remove the field)', () => (['jarl.mjs', 'field', '<ids>', 'Repo', '<name|path>']));
+  need(path !== undefined, 'repo requires <name-or-path> — the repository the issue\'s code lives in (its name, its checkout, a worktree of it or a file inside it), several as one comma list (or --clear to remove the field)', () => (['jarl.mjs', 'field', '<ids>', 'Repo', '<name-or-path>']));
   const picked = repoList(root, path);
   if (dry) return { id: issue.id, repo: picked.map((p) => p.value).join(', ') };
   commitRepoNames(root, picked);

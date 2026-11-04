@@ -28,7 +28,7 @@ import { ownerLineNotes, ownerLineWait } from './owner-lines.mjs';
 export function cmdEvidence(root, rawIds, text, flags) {
   needNoOwnersWords('the evidence', text, flags);
   const attaching = Boolean(flags) && (flags.file !== undefined || flags.slot !== undefined);
-  need(!attaching || (text === undefined && flags.ran === undefined && flags.saw === undefined && flags.retract === undefined), 'evidence takes an attachment (--file with --slot), or free text, or --ran/--saw rows, or a retraction, not both: one call for each', () => ({ flag: hole('<one-kind-of-evidence-per-call>') }));
+  need(!attaching || (text === undefined && flags.ran === undefined && flags.saw === undefined && flags.retract === undefined), 'evidence takes an attachment (--file with --slot), or free text, or --ran/--saw rows, or a retraction, not both: one call for each', () => ([{ drop: '--file' }, { drop: '--slot' }]));
   if (flags && flags.retract !== undefined) return retractEvidence(root, rawIds, text, flags);
   let rows = null;
   if (attaching) rows = attachmentRow(root, rawIds, flags);
@@ -36,7 +36,7 @@ export function cmdEvidence(root, rawIds, text, flags) {
     rows = rowsOf(flags);
     // The log stores a command trimmed and cut to its first line, so the shape is judged on that, in any case.
     need(!rows.some((r) => attachmentOf(String(r.ran).replace(/\r\n?/g, '\n').trim().split('\n')[0].trim().toLowerCase())),'a row shaped as an attachment is written only by --file and --slot, which read the file and record its hash', () => ({ rename: '--ran', to: '<no-flag-here>' }));
-    need(text === undefined, `evidence takes free text or --ran/--saw rows, not both (got "${text}" as well) — a value starting with -- goes after a bare --, and a command of several words is one quoted --ran`, () => ({ arg: 1, value: hole('<one-kind-of-evidence-per-call>') }));
+    need(text === undefined, `evidence takes free text or --ran/--saw rows, not both (got "${text}" as well) — a value starting with -- goes after a bare --, and a command of several words is one quoted --ran`, () => ({ truncate: 2 }));
   } else {
     need(text, 'evidence requires a note or a row', () => ({ arg: 1, value: '<text>' }));
   }
@@ -71,7 +71,7 @@ function retractEvidence(root, rawIds, reason, flags) {
   const raw = String(flags.retract);
   const noteRaw = /^note-(\d+)$/.exec(raw);
   if (noteRaw) return retractNote(root, rawIds, reason, flags, Number(noteRaw[1]));
-  need(/^\d+$/.test(raw) && Number(raw) >= 1, `retract takes the number of an evidence row as show prints it (1, 2, …) or a note as note-1, note-2, …; got "${raw}"`, () => ({ replace: raw, value: '<n|note-n>' }));
+  need(/^\d+$/.test(raw) && Number(raw) >= 1, `retract takes the number of an evidence row as show prints it (1, 2, …) or a note as note-1, note-2, …; got "${raw}"`, () => ({ replace: raw, value: '<n-or-note-n>' }));
   const n = Number(raw);
   const by = retractedBy(flags, 'a retraction');
   needSaid(reason, 'a retraction');
@@ -80,7 +80,7 @@ function retractEvidence(root, rawIds, reason, flags) {
   const table = evidenceTable(parseIssue(text, issue.file).sections.evidence);
   // The rows a retraction can take: the ones not retracted, by the numbers show prints; with none, a note may be meant.
   const liveRows = table.rows.map((r, k) => (r.retracted ? null : String(k + 1))).filter(Boolean);
-  const rowFirst = () => ({ replace: raw, value: hole('<n|note-n>') });
+  const rowFirst = () => ({ replace: raw, value: hole('<n-or-note-n>') });
   need(table.rows.length > 0, `${issue.id} has no evidence row to retract (got ${raw})`, rowFirst);
   const row = table.rows[n - 1];
   need(row, `${issue.id} has ${table.rows.length} evidence row${table.rows.length === 1 ? '' : 's'}: there is no row ${n}`, rowFirst);
@@ -105,7 +105,7 @@ function retractEvidence(root, rawIds, reason, flags) {
 // A free-text note taken back: struck through where it stands, and an entry saying who retracted it and why appended to
 // Notes. The note numbers are the ones show prints as note-<n>, counted over the whole section.
 function retractNote(root, rawIds, reason, flags, n) {
-  need(n >= 1, `retract takes a note as note-1, note-2, …; got "note-${n}"`, () => ({ replace: String(flags.retract), value: '<n|note-n>' }));
+  need(n >= 1, `retract takes a note as note-1, note-2, …; got "note-${n}"`, () => ({ replace: String(flags.retract), value: '<n-or-note-n>' }));
   const by = retractedBy(flags, 'a retraction');
   needSaid(reason, 'a retraction');
   const [issue] = issuesFor(root, rawIds);
@@ -114,7 +114,7 @@ function retractNote(root, rawIds, reason, flags, n) {
   // The notes a retraction can take: the ones not retracted, as note-<n>; with none, a row may be meant.
   const given = String(flags.retract);
   const liveNotes = table.notes.map((x, k) => (x.retracted ? null : `note-${k + 1}`)).filter(Boolean);
-  const noteFirst = () => ({ replace: given, value: hole('<n|note-n>') });
+  const noteFirst = () => ({ replace: given, value: hole('<n-or-note-n>') });
   need(table.notes.length > 0, `${issue.id} has no evidence note to retract (got ${given})`, noteFirst);
   const note = table.notes[n - 1];
   need(note, `${issue.id} has ${table.notes.length} evidence note${table.notes.length === 1 ? '' : 's'}: there is no note ${n} (got ${given})`, noteFirst);

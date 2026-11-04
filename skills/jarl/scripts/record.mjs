@@ -19,7 +19,8 @@
 // - A refusal is a thrown Error whose message is the reason, then, on a line of its own, what the caller acts on: a jarl.mjs
 //   command, or the fix written out in words (the flag or the argument to give, a <placeholder> where a value only the
 //   caller knows goes); nothing is written then. The command line refuses the same call for the same reason and ends with
-//   the call itself fixed, which a library caller does not hold (references/composers.md, "The ready line of a refusal").
+//   the form of the command that does what was meant, each value a placeholder, which a library caller does not hold
+//   (references/composers.md, "The ready line of a refusal").
 // - Every call that writes holds .jarl/.lock for its whole length, and every file is written whole (writeAtomic). The
 //   lock is re-entrant per loop (a call inside withLock on the same loop keeps that lock; one on another loop takes
 //   that loop's own). withLock runs synchronous work only: a function that is async or returns a promise is refused.

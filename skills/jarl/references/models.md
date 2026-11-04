@@ -49,7 +49,7 @@ For an issue that is hard but clear, a higher effort on the same model is a chea
 
 ## Recording
 
-The one who spawns an agent knows the model it asked for; the agent often cannot name itself reliably. So the coordinator passes `--model` on the lease it writes before raising a worker (`set <ids> in-progress "<text>" --branch <b> --worker <name> --model <m>`), and writes the reviewer's model into the reviewer's brief, whose recording command carries it (`review <id> approve|changes --by <name> --model <the model you were raised on> "<text>"`). In a loop with model lines, a lease or a verdict without `--model` is noted on stderr, never refused.
+The one who spawns an agent knows the model it asked for; the agent often cannot name itself reliably. So the coordinator passes `--model` on the lease it writes before raising a worker (`set <ids> in-progress "<text>" --branch <worker-branch> --worker <name> --model <model-id>`), and writes the reviewer's model into the reviewer's brief, whose recording command carries it (`review <id> <verdict> --by <name> --model <model-id> "<text>"`). In a loop with model lines, a lease or a verdict without `--model` is noted on stderr, never refused.
 
 ## The approve that clears an issue
 

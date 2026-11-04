@@ -28,7 +28,7 @@ function retractReview(root, rawIds, reason, flags) {
   const table = reviewEntries(parseIssue(text, issue.file).sections.reviews);
   let target = null;
   for (let k = table.entries.length - 1; k >= 0; k -= 1) { const e = table.entries[k]; if (e.verdict === 'approve' && !e.retracted) { target = e; break; } }
-  need(g.lastApprove || target, `${issue.id} has no approve to retract — a retraction takes away the newest approve (review), never a "changes" verdict; a row or a note is retracted by its number`, () => ({ arg: 1, value: '<n|note-n>' }));
+  need(g.lastApprove || target, `${issue.id} has no approve to retract — a retraction takes away the newest approve (review), never a "changes" verdict; a row or a note is retracted by its number`, () => ({ arg: 1, value: '<n-or-note-n>' }));
   const who = g.lastApprove || target;
   const kind = reviewerKind(by, g.workers, coordinators);
   // The first retraction of a loop raises the record format, before its line is written: a reader of format 1 does not

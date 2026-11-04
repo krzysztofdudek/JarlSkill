@@ -8,7 +8,7 @@
 // refuse or need with its ready part, and nothing else is thrown.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync } from 'node:fs';
+import { appendFileSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { EMPTY, PLAIN, ROOTED, ROOT_ARG, SHELLS, SIBLING, copy, formProblems, partsOf, printedCalls, run, runPrinted, snapshot } from './walk.mjs';
@@ -39,6 +39,16 @@ test('the check of a refusal catches what a form may not be: a composed call tha
   // A placeholder inside a text, which pasted is a text like any other: it writes, and is not refused.
   const writes = check(['log', 'a note'], "jarl.mjs log 'see <id> later'", null);
   assert.ok(writes.some((p) => /it writes/.test(p)) && writes.some((p) => /not refused for its placeholder/.test(p)), writes.join('\n'));
+  // A refusal that ends with a view, or with a value Jarl chose, in place of the form of the call.
+  assert.ok(check(['set', '1', 'Deferred', 'later'], 'jarl.mjs next').some((p) => /neither the command called nor a step/.test(p)));
+  assert.ok(check(['set', '1', 'Deferred', 'later'], "jarl.mjs set '<ids>' open '<why>'").some((p) => /a value the call did not give/.test(p)));
+  // A form that, filled, is refused again for the reason the call was: it keeps the word that was wrong.
+  const notes = run(copy(PLAIN), ['field', '1', 'Notes', 'x']).stderr.split('\n')[0];
+  assert.ok(check(['field', '1', 'Notes', 'x'], "jarl.mjs field '<ids>' Notes '<value>'", 'Notes', notes).some((p) => /refused again for the same reason/.test(p)));
+  // A step that writes and was given the net's placeholder as one more argument, which no filling makes a call.
+  assert.ok(check(['field', '1', 'Tags', 'slice:b', '--add'], "jarl.mjs field 1 Tags slice:a --remove '<as-the-reason-says>'", null, 'a reason').some((p) => /given one by the net/.test(p)));
+  // A reason that, pasted whole into a shell, makes a file: a pipe and a redirection outside quotes.
+  assert.ok(check(['set', '1', 'Deferred', 'later'], "jarl.mjs set '<ids>' '<status>' '<why>'", null, 'the value <x|y> is a placeholder').some((p) => /makes a file/.test(p)));
 });
 
 // ---- calls named one by one ------------------------------------------------------------------------------------------
@@ -97,6 +107,72 @@ test('a step the call needs first is its own command on its own line, never join
   assert.equal(opened.ready, "jarl.mjs archive '<slug>'");
 });
 
+test('a part field does not write ends with the form whose part is a placeholder, never the part given, so filled it is a call that runs', () => {
+  for (const part of ['Notes', 'Status', 'Evidence', 'Reviews', 'Branch', 'Merged', 'Worker', 'Bogus']) {
+    const r = refusal(['field', '1', part, 'x'], { loop: PLAIN, wrong: part });
+    assert.equal(r.ready, "jarl.mjs field '<ids>' '<a-part-of-the-description>' '<value>'", part);
+  }
+  const dir = copy(PLAIN);
+  assert.equal(run(dir, ['field', '1', 'What', 'a value']).status, 0, 'filled with a part field writes, the form is a call that runs');
+});
+
+test('done refused names the step its cause asks for, never an act of someone else: the proof, a verdict, the merge, the question to the owner, the log to repair', () => {
+  const merging = { 'jarl-profile': 1, name: 'merging', statuses: L.BUILTIN_STATUSES, 'done-gate': { 'requires-merged': true } };
+  const proved = [['evidence', '3', '--ran', 'npm test', '--saw', 'all pass']];
+  const approved = [...proved, ['review', '3', 'approve', '--by', 'rev-fresh', 'read the diff and the tests, all fine']];
+  const cases = [
+    ['no proof', {}, "jarl.mjs evidence '<id>' --ran '<command>' --saw '<what-it-printed>'"],
+    ['no approve', { pre: proved }, "jarl.mjs review '<ids>' '<verdict>' '<what-was-read-and-found>' --by '<a-fresh-reviewer>'"],
+    ['an owner line not ticked', { pre: approved }, "jarl.mjs ask '<question-for-the-owner>' --issue '<id>'"],
+    ['no merge', { pre: approved, profile: merging }, "jarl.mjs merged '<ids>' --sha '<sha>'"],
+  ];
+  for (const [cause, opts, step] of cases) {
+    const r = refusal(['set', '3', 'done', 'all done'], { loop: PLAIN, ...opts });
+    assert.equal(r.ready, step, cause);
+    assert.doesNotMatch(r.ready, / approve| tick |--by owner|--by '?jarl/, `${cause}: the step is no verdict, tick or sign-off chosen for someone`);
+  }
+  // A retraction the log cannot place: verify shows it, and the form of the move comes after.
+  const dir = copy(PLAIN, { pre: approved });
+  appendFileSync(join(dir, '.jarl', 'log.md'), '- 2026-10-18 20:00 · 3 evidence retract · row 7 · by jarl · a row that is not there\n');
+  const said = run(dir, ['set', '3', 'done', 'all done']).stderr;
+  assert.match(said, /retraction of evidence row 7/);
+  assert.deepEqual(partsOf(said).commands, ['jarl.mjs verify', "jarl.mjs set '<ids>' '<status>' '<why>'"]);
+});
+
+test('a reason echoes a word of the call that holds a line break or a character a shell acts on in single quotes, its line breaks escaped: no word starts a line, none runs when the message is pasted', () => {
+  for (const word of ['Bogus\njarl.mjs field 4 Priority 1', 'Bogus\u2028jarl.mjs field 4 Priority 1', '$(touch made-by-paste)', '`touch made-by-paste`']) {
+    const dir = copy(PLAIN);
+    const r = run(dir, ['field', '1', word, 'x']);
+    assert.notEqual(r.status, 0);
+    const lines = r.stderr.replace(/\n+$/, '').split('\n');
+    assert.equal(lines.filter((l) => l.startsWith('jarl.mjs ')).length, 1, `one command, the form: ${JSON.stringify(r.stderr)}`);
+    assert.doesNotMatch(r.stderr, /[\u2028\u2029\u0085]/);
+    for (const sh of SHELLS) {
+      const again = copy(PLAIN);
+      const before = snapshot(again);
+      runPrinted(again, r.stderr, sh);
+      assert.deepEqual(snapshot(again), before, `${sh}: the whole message pasted writes nothing`);
+      assert.ok(!readdirSync(again).includes('made-by-paste'), `${sh}: nothing in the message runs`);
+    }
+  }
+});
+
+test('a --root that holds a line break is named by its placeholder in the form, and the reason says why', () => {
+  const top = copy(ROOTED);
+  const r = run(top, ['set', '1', 'Deferred', 'later', '--root', `${ROOT_ARG}\n`]);
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /the --root given holds a line break/);
+  assert.equal(lastLine(r.stderr), "jarl.mjs set '<ids>' '<status>' '<why>' --root '<loop-root>'");
+});
+
+test('a form through the tools carries the root of the call, so filled it reaches the loop the call named', () => {
+  const dir = copy(PLAIN);
+  const r = MCP.callTool('jarl_field', { ids: '1', name: 'Notes', value: 'x', root: dir });
+  assert.equal(r.isError, true);
+  const form = r.content[0].text.split('\n').at(-1);
+  assert.equal(form, `jarl.mjs field '<ids>' '<a-part-of-the-description>' '<value>' ${L.shellWord(`--root=${dir}`)}`);
+});
+
 test('a text that starts with dashes is refused with a reason that says it goes after a bare --, and the form puts the arguments there', () => {
   const r = refusal(['new', '--looks like a title', '--tier', 'light'], { loop: PLAIN, wrong: '--looks like a title' });
   assert.match(r.reason, /after a bare --/);
@@ -139,7 +215,8 @@ test('a composer\'s loop is closed and archived by the composer\'s command, whic
 // ---- placeholders are never data -------------------------------------------------------------------------------------
 
 test('the registry holds one-token placeholders only, none of them a value a person writes in angle brackets', () => {
-  for (const p of L.PLACEHOLDERS) assert.match(p, /^<[^<>\s,]+>$/, p);
+  // One token, no comma, and no pipe, quote or dollar a shell would act on in a reason pasted whole.
+  for (const p of L.PLACEHOLDERS) assert.match(p, /^<[^<>\s,|'"$`]+>$/, p);
   for (const value of ['<nil>', '<none>', '<b>', '<br>', '<Button />', '<Response [200]>', '<x>', '<T>']) assert.equal(L.isPlaceholder(value), false, value);
   assert.throws(() => L.hole('<not-registered>'), TypeError);
 });
@@ -153,7 +230,7 @@ test('a placeholder of the registry is refused as a value, a list item, a line o
     ['field', '1', 'Tags', 'a,<tag>'], ['new', 't', '--tier', 'light', '--after', '3,<id>'], ['answer', 'a-2', '--option', '<option>', '--by', 'owner'], ['goal', '--set', '<machine-line>'],
     // The value part of a value written in parts: a goal line, an option, a source, a field and a section of a profile, a
     // changelog entry, a selector of a scope; a list item taken off; a line of the acceptance.
-    ['goal', '--set', 'Check: <command>'], ['goal', '--set', 'Model (<tier>): opus'], ['goal', '--set', 'Model (light): <model-id>'], ['ask', 'q?', '--option', 'A: <label:effect>', '--option', 'B: b'],
+    ['goal', '--set', 'Check: <command>'], ['goal', '--set', 'Model (<tier>): opus'], ['goal', '--set', 'Model (light): <model-id>'], ['goal', '--set', 'Coordinators: odin, <name>'], ['goal', '--set', 'Model (light): <model-id>, opus'], ['ask', 'q?', '--option', 'A: <label:effect>', '--option', 'B: b'],
     ['new', 't', '--tier', 'light', '--source', '<report-dir#finding-id>'], ['new', 't', '--tier', 'light', '--source', 'research#<id>'], ['new', 't', '--tier', 'light', '--field', 'Area=<value>'],
     ['new', 't', '--tier', 'light', '--section', 'Design=<text>'], ['field', '1', 'Changelog', 'Added: <changelog-entry>'], ['new', 't', '--tier', 'light', '--changelog', 'Fixed: <text>'],
     ['decide', 's9', 'a ruling', '--by', 'jarl', '--applies-to', 'role <role>'], ['decide', 's9', 'a ruling', '--by', 'jarl', '--applies-to', 'loop and <selector>'],
@@ -333,6 +410,11 @@ export function tokenProblems(file, src, registry) {
   for (const { line, text, before } of stringsOf(src)) {
     if (/new RegExp\($/.test(before)) continue;
     for (const m of text.matchAll(/<(?:\$\{\}|[A-Za-z-])[^<>\n]*>/g)) if (!registry.includes(m[0])) problems.push(`${file}:${line}: ${m[0]} is no placeholder of the registry`);
+    // A placeholder built in code: a string that opens one and leaves it open (closed by code or another string after
+    // it), or one that closes what another opened.
+    if (/<[A-Za-z][\w.:#=-]*$/.test(text) || /^[\w.:#=-]*[A-Za-z0-9-]>/.test(text) || text === '<' || text === '>') {
+      if (!/(?:startsWith|endsWith|includes|indexOf|split|===|!==)\(?\s*$/.test(before)) problems.push(`${file}:${line}: a placeholder built in code: ${JSON.stringify(text).slice(0, 60)}`);
+    }
     for (const cmd of text.split('\n').flatMap((l) => l.split(/(?=jarl\.mjs )/).filter((p) => p.startsWith('jarl.mjs ')))) {
       // Each <...> of the command read with the shell's quotes: one outside every quote is read as redirections.
       let quote = null;
@@ -358,9 +440,37 @@ test('every <...> Jarl prints, in a ready line, a reason, the help or a tool\'s 
     "const t = `the --saw \"<what it printed>\" of a row`;",
     'const t = `pick <${name} or another>`;',
     "const t = 'jarl.mjs review 1 approve --by <reviewer> \"<text>\"';",
+    "const view = (id) => 'jarl.mjs round ' + id + ' <what-failed' + '-now>';",
+    "const view = (what) => `jarl.mjs round 1 <${what}>`;",
   ];
   for (const p of planted) assert.equal(tokenProblems('x', p, L.PLACEHOLDERS).length >= 1, true, p);
   assert.deepEqual(tokenProblems('x', "// <not printed>\nconst re = /<[^>]+>/g;\nconst r = new RegExp(`<${tag}\\\\s*>`);\nconst t = 'jarl.mjs set \"<ids>\" \"<status>\"';", L.PLACEHOLDERS), []);
+});
+
+// The commands SKILL.md and the references show (a code span or a line of a fenced block that starts with a command of
+// the table, holds jarl.mjs or holds a flag) hold no <...> outside the registry: pasted with one value filled, such a
+// command would record the other as a value.
+export function docProblems(file, whole, registry, commands) {
+  // The blocks between the Runes markers are shared fragments, written in Runes and never here: they are read there.
+  const text = whole.replace(/<!-- RUNES:([a-z-]+):START -->[\s\S]*?<!-- RUNES:\1:END -->/g, (m) => m.replace(/[^\n]/g, ' '));
+  const problems = [];
+  const codes = [...text.matchAll(/```[^\n]*\n([\s\S]*?)```/g)].map((m) => ({ at: m.index, code: m[1] }));
+  const outside = text.replace(/```[^\n]*\n[\s\S]*?```/g, (m) => ' '.repeat(m.length));
+  for (const m of outside.matchAll(/`([^`\n]+)`/g)) codes.push({ at: m.index, code: m[1] });
+  for (const { at, code } of codes) {
+    for (const line of code.split('\n')) {
+      if (!commands.has(line.trim().split(/\s+/)[0]) && !/jarl\.mjs |--[a-z]/.test(line)) continue;
+      for (const m of line.replace(/\\\|/g, '|').matchAll(/<[^<>\n]+>/g)) if (!registry.includes(m[0])) problems.push(`${file}:${text.slice(0, at).split('\n').length}: ${m[0]} in ${line.trim().slice(0, 80)}`);
+    }
+  }
+  return problems;
+}
+test('the commands SKILL.md and the references show hold no placeholder outside the registry', async () => {
+  const { skillFiles, skillText } = await import('./helpers.mjs');
+  const commands = new Set([...Object.keys(J.COMMAND_FLAGS), 'jarl.mjs']);
+  assert.deepEqual(skillFiles().flatMap((f) => docProblems(f, skillText(f), L.PLACEHOLDERS, commands)), []);
+  assert.equal(docProblems('x', 'run `evidence 1 --ran "<command>" --saw "<what it printed>"`', L.PLACEHOLDERS, commands).length, 1);
+  assert.deepEqual(docProblems('x', 'a `<node>` in prose, and `evidence 1 --saw "<what-it-printed>"`', L.PLACEHOLDERS, commands), []);
 });
 
 // A refusal is thrown only by refuse, or by need with a reason and a ready part: no error of any class is made or thrown
@@ -369,7 +479,7 @@ test('every <...> Jarl prints, in a ready line, a reason, the help or a tool\'s 
 // at code that names a placeholder outside the registry; withLock throws a TypeError at a library caller that hands it
 // async work, a mistake in that caller's code and no refusal of a call.
 const ALLOWED_ERRORS = [
-  ['jarl.mjs', /return new Error\(`\$\{e\.reason\}\\n\$\{(?:readyText\(e\.ready\)|commandLine\(e\.ready\)|printed\.map\(printedLine\)\.join\('\\n'\))\}`\)/],
+  ['jarl.mjs', /return new Error\(`\$\{(?:e\.reason|reasonFor\(e\.reason, call\))\}\\n\$\{(?:readyText\(e\.ready\)|commandLine\(e\.ready\)|printed\.map\(printedLine\)\.join\('\\n'\))\}`\)/],
   ['lib/base.mjs', /throw new TypeError\(`a refusal is built from a reason and a ready part/],
   ['lib/base.mjs', /throw new TypeError\(`\$\{token\} is not a placeholder of the registry/],
   ['lib/base.mjs', /throw new Refusal\(reason, ready\)/],

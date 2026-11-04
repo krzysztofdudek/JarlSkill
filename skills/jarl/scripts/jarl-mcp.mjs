@@ -186,14 +186,14 @@ function need(cond, msg) { if (!cond) throw invalid(msg); }
 // renamed there (by on status and models is group, ci on resume is gh), the name a free text had (why, findings, question
 // and the rest are text), and a retraction asked of evidence (retract's). The refusal names that field or tool, with the
 // form of the call written there, each value a placeholder: no value given is carried into a call composed for the caller.
-const FORM_VALUES = { ids: '<ids>', id: '<id>', status: '<status>', text: '<text>', verdict: '<verdict>', slug: '<slug>', title: '<title>', goal: '<goal>', name: '<name>', entry: '<n|note-n>', line: '<line>', mode: '<mode>', branch: '<branch>', group: '<group>', gh: true };
+const FORM_VALUES = { ids: '<ids>', id: '<id>', status: '<status>', text: '<text>', verdict: '<verdict>', slug: '<slug>', title: '<title>', goal: '<goal>', name: '<name>', entry: '<n-or-note-n>', line: '<line>', mode: '<mode>', branch: '<branch>', group: '<group>', gh: true };
 function needNoGoneField(cmd, fields) {
   const call = (tool, input) => `${toolName(tool)} ${JSON.stringify(input)}`;
   for (const name of Object.keys(fields)) {
     if (Object.hasOwn(COMMAND_FLAGS[cmd] || {}, name) || (COMMAND_ARGS[cmd] || []).some((a) => a.replace(/[?.]+$/, '') === name)) continue;
     const to = REMOVED_FLAGS[cmd]?.[name];
     if (to === 'retract') {
-      throw invalid(`${toolName(cmd)}: "${name}" is not a field of this tool — a row or a note is taken back with ${toolName('retract')}, and by names who takes it back: ${call('retract', { id: '<id>', entry: '<n|note-n>', by: '<who>', text: '<why>' })}`);
+      throw invalid(`${toolName(cmd)}: "${name}" is not a field of this tool — a row or a note is taken back with ${toolName('retract')}, and by names who takes it back: ${call('retract', { id: '<id>', entry: '<n-or-note-n>', by: '<who>', text: '<why>' })}`);
     }
     const field = to !== undefined ? to.replace(/^--/, '') : GONE_TEXT_NAMES[cmd] === name ? 'text' : null;
     if (field === null) continue;
@@ -260,8 +260,12 @@ export function callTool(name, input = {}, env = process.env, cwd = process.cwd(
   const asked = typeof name === 'string' && name.startsWith(TOOL_PREFIX) ? name.slice(TOOL_PREFIX.length) : null;
   if (cmd === null && asked !== null && Object.hasOwn(REPLACED_COMMANDS, asked)) throw invalid(`Unknown tool: ${name} — ${replacedMessage(asked)}`);
   if (cmd === null) throw invalid(`Unknown tool: ${name}`);
-  const argv = argvFor(cmd, input);
   const { root, from } = rootOf(input, env, cwd);
+  // The root the call named goes into the words the command line reads, before a bare --, as --root=, so a refusal's
+  // form carries it as the command line's does, and a form filled elsewhere reaches the same loop.
+  const words = argvFor(cmd, input);
+  const end = words.indexOf('--') === -1 ? words.length : words.indexOf('--');
+  const argv = from === 'root' ? [...words.slice(0, end), `--root=${root}`, ...words.slice(end)] : words;
   // A call that named no root is told which loop it reached, so a write never lands somewhere unseen. With
   // json: true this note (and the CLI's stderr notes) never become a second text block — a client that
   // concatenates the blocks to parse JSON would otherwise get invalid JSON — they go into _meta instead.

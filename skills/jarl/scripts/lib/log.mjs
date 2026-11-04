@@ -176,7 +176,7 @@ function eventParser(profile) {
 // The command that writes each kind of line that carries state: what the free log refuses to write in its place.
 const LINE_WRITERS = {
   filed: 'jarl.mjs new', move: 'jarl.mjs set "<ids>" "<status>"', round: 'jarl.mjs round "<id>"', verdict: 'jarl.mjs review "<id>" "<verdict>"',
-  'retract-review': 'jarl.mjs retract "<id>" review', 'retract-row': 'jarl.mjs retract "<id>" "<n>"', 'retract-note': 'jarl.mjs retract "<id>" "<n|note-n>"', row: 'jarl.mjs evidence "<id>" --ran "<command>" --saw "<what-it-printed>"',
+  'retract-review': 'jarl.mjs retract "<id>" review', 'retract-row': 'jarl.mjs retract "<id>" "<n>"', 'retract-note': 'jarl.mjs retract "<id>" "<n-or-note-n>"', row: 'jarl.mjs evidence "<id>" --ran "<command>" --saw "<what-it-printed>"',
   merged: 'jarl.mjs merged "<id>" --sha "<sha>"', ci: 'jarl.mjs merged "<id>" --ci "<ci-state>"', body: 'jarl.mjs field "<id>" "<part>" "<value>"', tick: 'jarl.mjs tick "<id>" "<line>" --by owner',
   tip: 'jarl.mjs evidence, review or merged, which write the tip of the branch after their own line',
 };
@@ -185,7 +185,7 @@ const LINE_CALLS = {
   filed: () => ['new', hole('<title>')], move: (ids) => ['set', ids, hole('<status>'), hole('<why>')], round: (id) => ['round', id, hole('<what-failed>')],
   verdict: (id) => ['review', id, hole('<verdict>'), hole('<findings-with-a-severity>'), '--by', hole('<reviewer>')],
   'retract-review': (id) => ['retract', id, 'review', hole('<why>'), '--by', hole('<who>')], 'retract-row': (id) => ['retract', id, hole('<n>'), hole('<why>'), '--by', hole('<who>')],
-  'retract-note': (id) => ['retract', id, hole('<n|note-n>'), hole('<why>'), '--by', hole('<who>')], row: (id) => ['evidence', id, '--ran', hole('<command>'), '--saw', hole('<what-it-printed>')],
+  'retract-note': (id) => ['retract', id, hole('<n-or-note-n>'), hole('<why>'), '--by', hole('<who>')], row: (id) => ['evidence', id, '--ran', hole('<command>'), '--saw', hole('<what-it-printed>')],
   merged: (id) => ['merged', id, '--sha', hole('<sha>')], ci: (id) => ['merged', id, '--ci', hole('<ci-state>')], body: (id) => ['field', id, hole('<part>'), hole('<value>')],
   tick: (id) => ['tick', id, hole('<line>'), '--by', hole('<the-owner-himself>')], tip: (id) => ['evidence', id, '--ran', hole('<command>'), '--saw', hole('<what-it-printed>')],
 };

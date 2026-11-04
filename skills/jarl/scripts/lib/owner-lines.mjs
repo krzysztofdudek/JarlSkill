@@ -126,6 +126,12 @@ export function ownerLineRefusal(root, loop, issue) {
   return `${issue.id} waits for the owner's sign-off on ${open.map(one).join('; and on ')}`;
 }
 
+// Whether done waits on an owner line to rewrite (marked where owner lines are off, or naming no material and no check)
+// rather than on the owner's tick.
+export function ownerLineRewrite(root, loop, issue) {
+  return ownerLineStates(root, loop, issue).filter((s) => !s.tick).some((s) => s.off || !whole(s));
+}
+
 // What done still waits for on an issue whose work is approved or merged, as the in-flight views say it, or null: the
 // owner's tick of each owner line not ticked, with the command, or the rewrite where owner lines are off.
 export function ownerLineWait(root, loop, issue) {

@@ -57,7 +57,7 @@ export function needNoOwnersWords(what, ...values) {
     else if (v && typeof v === 'object') Object.values(v).forEach(walk);
   };
   values.forEach(walk);
-  for (const t of texts) need(!holdsOwnersWords(t), REFUSAL(what), () => (['jarl.mjs', 'decide', '<slug>', '<text>', '--by', 'owner', '--quote', '<his-own-words>']));
+  for (const t of texts) need(!holdsOwnersWords(t), REFUSAL(what), { retry: true });
 }
 
 // The texts the writes inside `fn` may add that hold the marker: the quote decide writes, and text the record already
@@ -81,7 +81,7 @@ export function needNoNewOwnersWords(before, after, where) {
     const n = held.get(l) || 0;
     if (n) { held.set(l, n - 1); continue; }
     const rest = carried.reduce((t, c) => t.split(c).join(''), l);
-    need(!holdsOwnersWords(rest), REFUSAL(`a line written to ${where} ("${l.trim().slice(0, 80)}")`), () => (['jarl.mjs', 'decide', '<slug>', '<text>', '--by', 'owner', '--quote', '<his-own-words>']));
+    need(!holdsOwnersWords(rest), REFUSAL(`a line written to ${where} ("${l.trim().slice(0, 80)}")`), { retry: true });
   }
 }
 

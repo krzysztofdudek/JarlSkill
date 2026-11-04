@@ -16,7 +16,7 @@ import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as R from './record.mjs';
 import {
-  need, refuse, Refusal, isFix, isExternal, isPlaceholder, hole, HOLE, commandOf, printedLine, commandLine, readyText, resetCaches, withLock, readText, isEntry, cmdSet, cmdField, setRouteOf, eachIssue, cmdRound,
+  need, refuse, Refusal, isFix, isExternal, isPlaceholder, hole, HOLE, commandOf, printedLine, commandLine, readyText, breaksLine, escapedEchoes, shellWord, resetCaches, withLock, readText, isEntry, cmdSet, cmdField, setRouteOf, eachIssue, cmdRound,
   cmdProfile, cmdArchive, cmdList, cmdNext, renderNext, cmdMode, cmdClose, cmdCheck, cmdBranches,
   cmdChangelog, cmdHandoffRead, cmdHandoffWrite, cmdReport, cmdImport, cmdSources, cmdAnswerMany, cmdModels, renderModels,
   issuesNaming, questionFor, cmdGoal, cmdGoalSet, cmdRepoBase, whereOf, cmdVerify, renderVerify, renderCheckNotes,
@@ -41,7 +41,7 @@ commands:
                                                  .jarl/.permanent, and is not tied to a feature branch: close (below)
                                                  keeps the directory instead of removing it; --profile checks the
                                                  profile file (see profile below) and stores it as .jarl/profile.json
-  new "<title>" [--kind k] [--prio 1|2|3] [--tier light|standard|strong] [--tags a,b] [--files p,q] [--repo <name|path>] [--found-by who]
+  new "<title>" [--kind k] [--prio 1|2|3] [--tier light|standard|strong] [--tags a,b] [--files p,q] [--repo <name-or-path>] [--found-by who]
       [--where "<text>"] [--what "<text>"] [--why "<text>"] [--acceptance "<line>"]... [--changelog "<changelog-entry>"]...
       [--source <report-dir#finding-id>,...] [--after <ids>] [--template <name>] [--field "<name=value>"]... [--section "<name=value>"]...
       [--person "<name>" --check-when "<date-or-event>"] [--by who]
@@ -103,7 +103,7 @@ commands:
   base <name> <branch> [--by who]                the base branch a declared repository is held against, changed
                                                  with a log line that says what it was (a repository is declared
                                                  when an issue first names it; see --repo below)
-  import <findings.json> [--source <report-dir>] [--kind k] [--prio 1|2|3] [--tier t] [--tags a,b] [--repo <name|path>]
+  import <findings.json> [--source <report-dir>] [--kind k] [--prio 1|2|3] [--tier t] [--tags a,b] [--repo <name-or-path>]
       [--found-by who] [--only <finding-ids>] [--adopt] [--dry-run] [--field "<name=value>"]... [--by who]
                                                  one issue per finding, with Source: <report-dir#finding-id>; a finding
                                                  whose Source is already on an issue is skipped, so a re-run files
@@ -166,7 +166,7 @@ commands:
                                                  round), a --ran/--saw row — a free-text note never counts alone —
                                                  and a live approve, and the owner's tick of every acceptance line only he
                                                  ticks (see tick)
-  merged <ids> --sha <sha> [--ran "<command>" --saw "<what-it-printed>" | --red <id>] [--ci pending|green|red|none] [--repo <name|path>] [--keep] [--by who] | <ids> --ci <ci-state>
+  merged <ids> --sha <sha> [--ran "<command>" --saw "<what-it-printed>" | --red <id>] [--ci pending|green|red|none] [--repo <name-or-path>] [--keep] [--by who] | <ids> --ci <ci-state>
                                                  the merge as fields: Merged (sha, and where with --repo) and CI
                                                  (only when given; pending: a pushed commit whose CI will report;
                                                  none: no CI to wait for), and a log line. --ran/--saw record the
@@ -249,7 +249,7 @@ commands:
                                                  loop (its root, or an archive directory) and --archives this loop's own
                                                  archives, merged into one table that names the loops it read; a path that
                                                  is not a loop is refused; suggestions only, no lock, nothing written
-  scope [<id>] --branch <worker-branch> [--base <base-branch>] [--repo <name|path>]
+  scope [<id>] --branch <worker-branch> [--base <base-branch>] [--repo <name-or-path>]
                                                  commits beyond the base, diff inside the declared files, and the
                                                  change in test files and assertions — numbers, never a verdict;
                                                  notes for the added lines that name a loop issue by its number after
@@ -259,7 +259,7 @@ commands:
                                                  read in --repo, else the issue's Repo, else the loop's own repository;
                                                  with no id, the diff is bounded by the union of Files of every issue
                                                  that records that branch (a package on one branch, one call)
-  branches [--base <base-branch>] [--repo <name|path>] [--stale-hours n]
+  branches [--base <base-branch>] [--repo <name-or-path>] [--stale-hours n]
                                                  every jarl/7-* branch and every branch an issue records: the
                                                  issues on it, commits beyond the base, worktree state, STALE leases
                                                  (worktree gone, branch gone, idle over n hours, default 6) and
@@ -289,7 +289,7 @@ commands:
                                                  several ratify items as a comma list take one answer, one ruling each,
                                                  each naming the batch it was answered in; on a ratify item whose
                                                  ruling names a rule, the rule's ratification names who answered
-  resume [--log n] [--ready n] [--gh] [--repo <name|path>] [--base <base-branch>] [--as <who>] [--slice <coordinator>]
+  resume [--log n] [--ready n] [--gh] [--repo <name-or-path>] [--base <base-branch>] [--as <who>] [--slice <coordinator>]
                                                  read-only, the boot: everything a session picks the loop up from,
                                                  assembled live — goal and counts, rulings in force, in flight with
                                                  leases (and stale ones), waiting on After, questions, ratify items,
@@ -382,7 +382,7 @@ commands:
                                                  someone other than the jarl; --metrics prints the heading, the goal and the
                                                  metrics alone; --json also carries one row per issue and the metrics (see
                                                  references/commands.md, "Loop metrics")
-  changelog <ids> [--repo <name|path>]           print the issues' ## Changelog entries grouped by section (Added,
+  changelog <ids> [--repo <name-or-path>]           print the issues' ## Changelog entries grouped by section (Added,
                                                  Changed, Deprecated, Removed, Fixed, Security), ready to paste under
                                                  [Unreleased]; per repository when they span several; reads only
   mode permanent [--by who]                      switch an existing committed loop to the permanent mode, with a
@@ -484,7 +484,7 @@ inside), so parallel calls from workers, reviewers and the merger queue instead 
 writes; a lock whose holder is gone is taken over, a live one that does not let go within 20 s fails the
 call with nothing written. Files are replaced whole, never half-written.
 
---repo <name|path>: another repository, for a loop that keeps its issues in one repository while its
+--repo <name-or-path>: another repository, for a loop that keeps its issues in one repository while its
 workers change another: its name (the directory git clone gives it), its checkout, a worktree of it or a
 file inside it, always reduced to its main checkout. Branches, the base (that checkout's current
 branch), diffs and assertions are then read there. A name resolves to the sibling of the loop's main
@@ -579,7 +579,7 @@ const RENAMED_FLAGS = {
   handoff: { ci: { to: '--gh', why: 'resume asks gh for the CI of the tips with --gh; --ci is the CI state merged records' } },
 };
 // The forms of the commands that take a removed form's place: a row or a note is taken back by retract, a verdict too.
-const RETRACT_FORM = ['jarl.mjs', 'retract', hole('<id>'), hole('<n|note-n>'), hole('<why>'), '--by', hole('<who>')];
+const RETRACT_FORM = ['jarl.mjs', 'retract', hole('<id>'), hole('<n-or-note-n>'), hole('<why>'), '--by', hole('<who>')];
 const RETRACT_REVIEW_FORM = ['jarl.mjs', 'retract', hole('<id>'), 'review', hole('<why>'), '--by', hole('<who>')];
 // The form of field writing one part: its value the placeholder of the part, or --clear; --by where the call named one.
 const fieldForm = (part, { clear = false, by = false, add = false, remove = false } = {}) => ['jarl.mjs', 'field', hole('<ids>'), part, ...(clear ? ['--clear'] : [hole(PART_HOLES[String(part).trim().toLowerCase()] ?? '<value>')]), ...(add ? ['--add'] : []), ...(remove ? ['--remove'] : []), ...(by ? ['--by', hole('<who>')] : [])];
@@ -694,25 +694,25 @@ function shapeOf(call, fixes) {
 // and of the value field writes, by the part it writes.
 const ARG_HOLES = {
   ids: '<ids>', id: '<id>', title: '<title>', goal: '<goal>', files: '<findings.json>', 'import file': '<findings.json>', 'profile file': '<profile.json>',
-  'retract entry': '<review|n|note-n>', 'retract text': '<why>', 'field name': '<part>', 'base name': '<name>', 'base branch': '<branch>',
+  'retract entry': '<review-n-or-note-n>', 'retract text': '<why>', 'field name': '<part>', 'base name': '<name>', 'base branch': '<branch>',
   'set status': '<status>', 'set text': '<why>', 'review verdict': '<verdict>', 'review text': '<what-was-read-and-found>', 'round text': '<what-failed>',
   'tick line': '<line>', 'answer id': '<question>', 'decide slug': '<slug>', 'decide text': '<a-ruling>', 'archive slug': '<slug>', 'mode mode': '<mode>',
   text: '<text>',
 };
 const FLAG_HOLES = {
-  by: '<who>', kind: '<kind>', 'ask kind': '<ask-kind>', prio: '<prio>', tier: '<tier>', tags: '<tag>', tag: '<tag>', files: '<paths>', repo: '<name|path>',
+  by: '<who>', kind: '<kind>', 'ask kind': '<ask-kind>', prio: '<prio>', tier: '<tier>', tags: '<tag>', tag: '<tag>', files: '<paths>', repo: '<name-or-path>',
   'found-by': '<who>', where: '<text>', what: '<text>', why: '<text>', acceptance: '<line>', source: '<report-dir#finding-id>', 'sources source': '<report-dir>',
   'import source': '<report-dir>', after: '<ids>', changelog: '<changelog-entry>', template: '<template>', field: '<name=value>', section: '<name=value>',
   person: '<name>', 'check-when': '<date-or-event>', profile: '<profile.json>', key: '<key>', only: '<finding-ids>', ran: '<command>', saw: '<what-it-printed>',
   file: '<path>', slot: '<slot>', status: '<status>', grep: '<text>', match: '<field=value>', branch: '<worker-branch>', worker: '<the-new-worker>',
   model: '<model-id>', worktree: '<the-worktree-of-the-lease>', limit: '<whole-number>', as: '<who>', slice: '<coordinator>', findings: '<findings.json>',
   group: '<group>', with: '<loop-root>', base: '<base-branch>', 'stale-hours': '<hours>', sha: '<sha>', ci: '<ci-state>', red: '<what-is-red>',
-  target: '<what-would-get-weaker>', issue: '<id>', option: '<option>', 'applies-to': '<selectors>', until: '<yyyy-mm-dd>', to: '<jarl|owner>', log: '<count>',
+  target: '<what-would-get-weaker>', issue: '<id>', option: '<option>', 'applies-to': '<selectors>', until: '<yyyy-mm-dd>', to: '<jarl-or-owner>', log: '<count>',
   ready: '<count>', summary: '<text>', next: '<text>', settles: '<ids>', quote: '<his-own-words>', under: '<slug>', supersedes: '<a-ruling-in-force>',
   rule: '<rule-id>', set: '<machine-line>',
 };
 const PART_HOLES = {
-  title: '<title>', priority: '<prio>', tier: '<tier>', kind: '<kind>', tags: '<tag>', files: '<paths>', repo: '<name|path>', after: '<ids>',
+  title: '<title>', priority: '<prio>', tier: '<tier>', kind: '<kind>', tags: '<tag>', files: '<paths>', repo: '<name-or-path>', after: '<ids>',
   source: '<report-dir#finding-id>', acceptance: '<line>', changelog: '<changelog-entry>', person: '<name>', 'check when': '<date-or-event>',
   resources: '<resource-name>', 'found by': '<who>', where: '<text>', what: '<text>', why: '<text>',
 };
@@ -722,11 +722,13 @@ const argHole = (c, i) => {
   return hole(ARG_HOLES[`${c.cmd} ${name}`] ?? ARG_HOLES[name] ?? '<value>');
 };
 const valueHole = (cmd, k) => hole(FLAG_HOLES[`${cmd} ${k}`] ?? FLAG_HOLES[k] ?? '<value>');
-// A global flag of the call as it was given: --root x or --root=x, --json; a --root with no value, its placeholder.
+// A global flag of the call as it was given: --root x or --root=x, --json (a switch, whatever value it was refused for);
+// a --root with no value, or one holding a line break that no printed line can carry, its placeholder.
 function globalWords(k, v, spelt) {
-  if (v === true) return [`--${k}`];
-  if (spelt === '=' && typeof v === 'string') return [`--${k}=${v}`];
-  return [`--${k}`, typeof v === 'string' ? v : hole('<loop-root>')];
+  if (v === true || GLOBAL_FLAGS[k] === 'bool') return [`--${k}`];
+  if (typeof v !== 'string' || breaksLine(v)) return [`--${k}`, hole('<loop-root>')];
+  if (spelt === '=') return [`--${k}=${v}`];
+  return [`--${k}`, v];
 }
 // The form of a call: jarl.mjs, its command, the placeholder of each argument it takes (the ones it requires, and the
 // ones the call gave), each flag of the call with the placeholder of its value (a switch as it is, one flag of a name),
@@ -750,6 +752,8 @@ function formOf(c, dashes) {
     if (seen.has(k)) continue;
     seen.add(k);
     if (Object.hasOwn(GLOBAL_FLAGS, k)) flags.push(...globalWords(k, v, spelt));
+    // A flag that goes away is left out; a flag the caller is to name keeps a place for its value.
+    else if (k === '<no-flag-here>') continue;
     else if (k.startsWith('<')) flags.push(k, ...(typeof v === 'string' ? [hole('<value>')] : []));
     else if (v === true || flagsOf(c.cmd)[k] === 'bool') flags.push(`--${k}`);
     else flags.push(`--${k}`, isPlaceholder(v) && v.trim() !== '<value>' ? v.trim() : valueHole(c.cmd, k));
@@ -771,7 +775,14 @@ export function refusalFor(e, call) {
     ? [...fixes.filter((f) => f.first !== undefined).map((f) => commandOf(f.first)), formOf(shapeOf(call, fixes), fixes.some((f) => f.dashes))]
     : [commandOf(e.ready)];
   const printed = lines.map((words) => withGlobals(words, call)).map((words) => (MUTATING.has(words[1]) && !words.some((w) => HOLE.test(String(w))) ? [...words, hole('<as-the-reason-says>')] : words));
-  return new Error(`${e.reason}\n${printed.map(printedLine).join('\n')}`);
+  return new Error(`${reasonFor(e.reason, call)}\n${printed.map(printedLine).join('\n')}`);
+}
+// The reason as printed: every word of the call it echoes with its line breaks escaped, so no word of the caller starts
+// a line; and where the call's --root holds a line break, why the form names it by its placeholder.
+function reasonFor(reason, call) {
+  const root = call.flags.find(([k]) => k === 'root')?.[1];
+  const words = [call.cmd, ...call.args, ...call.flags.flatMap(([k, v]) => [k, `--${k}`, v])].filter((w) => typeof w === 'string');
+  return `${escapedEchoes(reason, words)}${typeof root === 'string' && breaksLine(root) ? ' (the --root given holds a line break, which no printed line carries: the form names the loop root by its placeholder)' : ''}`;
 }
 // A command of a ready line with each global flag of the call (--root, --json) it does not name, written as the call
 // wrote it (--root x or --root=x), before a bare -- so it is read as a flag.
@@ -797,7 +808,7 @@ export function parseArgs(argv) {
 // so a form pasted as printed, unfilled, writes nothing and opens no loop.
 function needNoPlaceholderWord(argv) {
   const holes = argv.map(String).map((a) => (a.startsWith('--') && a.includes('=') ? a.slice(a.indexOf('=') + 1) : a)).filter(isPlaceholder);
-  need(holes.length === 0, `${[...new Set(holes)].join(', ')} ${new Set(holes).size === 1 ? 'is a placeholder' : 'are placeholders'} of a form Jarl printed — write the value in its place; nothing was written`, { retry: true });
+  need(holes.length === 0, `${[...new Set(holes)].map(shellWord).join(', ')} ${new Set(holes).size === 1 ? 'is a placeholder' : 'are placeholders'} of a form Jarl printed — write the value in its place; nothing was written`, { retry: true });
 }
 function parseWords(argv) {
   const positional = [];
@@ -970,7 +981,7 @@ export function listItems(value, kind, field) {
   const dashed = items.filter((s) => s.startsWith('-'));
   need(dashed.length === 0, `${field}: an item cannot start with - — got ${dashed.map((s) => JSON.stringify(s)).join(' ')} (everything after a bare -- is an argument, so flags such as --root go before it)`, () => ({ replace: dashed[0], value: hole('<an-item-with-no-leading-dash>') }));
   const holes = items.filter(isPlaceholder);
-  need(holes.length === 0, `${field}: ${holes.join(', ')} ${holes.length === 1 ? 'is a placeholder' : 'are placeholders'} — write the value in its place; nothing was written`, { retry: true });
+  need(holes.length === 0, `${field}: ${holes.map(shellWord).join(', ')} ${holes.length === 1 ? 'is a placeholder' : 'are placeholders'} — write the value in its place; nothing was written`, { retry: true });
   need(!items.some((s) => piecesOfListText(s, kind)), `${field} takes its items one by one: one item, a comma list (a,b) or a list of strings; ${kind === 'name' ? 'a list written as text, an item in quotes or a name holding a bracket or a quote mark' : 'a list written as text or an item in quotes'} is refused — got ${JSON.stringify(text)}`, () => { const bad = items.find((s) => piecesOfListText(s, kind)); return { replace: bad, value: hole('<an-item-without-quotes>') }; });
   return items;
 }
@@ -997,12 +1008,13 @@ function readLists(cmd, rest, flags) {
 // The placeholders a call holds where a value goes: a whole value, a line of a value that holds one item per line, or the
 // value part of a value written in parts — the value side of Name=value (--field, --section) and of Label: effect
 // (--option), each side of dir#id (--source and the Source field), the entry of Section: entry (--changelog and the
-// Changelog section), the qualifier and the value of a goal line (Model (light): opus), and each selector of --applies-to
-// and its value (role worker). A text that holds <x> among other words is a text, and is not one of them.
+// Changelog section), the qualifier, the value and each comma item of the value of a goal line (Model (light): opus,
+// haiku), and each selector of --applies-to and its value (role worker). A text that holds <x> among other words is a
+// text, and is not one of them.
 const PART_OF = {
   field: (v) => [v.slice(v.indexOf('=') + 1)], section: (v) => [v.slice(v.indexOf('=') + 1)], option: (v) => [v.slice(v.indexOf(':') + 1)],
   source: (v) => v.split(',').flatMap((s) => s.split('#')), changelog: (v) => v.split('\n').map((l) => l.slice(l.indexOf(':') + 1)),
-  set: (v) => { const m = /^[^:(]*(?:\(([^)]*)\))?\s*:(.*)$/s.exec(v); return m ? [m[1] ?? '', m[2]] : []; },
+  set: (v) => { const m = /^[^:(]*(?:\(([^)]*)\))?\s*:(.*)$/s.exec(v); return m ? [m[1] ?? '', m[2], ...m[2].split(',')] : []; },
   'applies-to': (v) => v.split(/\s+and\s+/i).flatMap((s) => [s.trim(), s.trim().split(/\s+/).slice(1).join(' ')]),
 };
 // The parts that hold one item per line.
@@ -1027,7 +1039,7 @@ function fieldListValue(name, value, remove) {
   const items = [].concat(value).map(String).join(',').split(',').map((s) => s.trim()).filter(Boolean);
   const dashed = items.find((s) => s.startsWith('-'));
   need(dashed === undefined, `${String(name).trim()}: an item cannot start with - — got ${JSON.stringify(dashed)} (everything after a bare -- is an argument, so flags such as --root go before it)`, () => ({ replace: dashed, value: hole('<an-item-with-no-leading-dash>') }));
-  need(!items.some(isPlaceholder), `${String(name).trim()}: ${items.filter(isPlaceholder).join(', ')} — a placeholder: write the value in its place; nothing was written`, { retry: true });
+  need(!items.some(isPlaceholder), `${String(name).trim()}: ${items.filter(isPlaceholder).map(shellWord).join(', ')} — a placeholder: write the value in its place; nothing was written`, { retry: true });
   return items.join(',');
 }
 
@@ -1213,14 +1225,18 @@ function setCommand(root, ids, name, value, flags) { return cmdSet(root, ids, na
 // Every call starts from empty caches, so a caller that runs many commands in one process (a server) sees each
 // time what is on disk and in git now, exactly as a fresh process would.
 export function dispatch(root, commandName, rest, flags) {
-  try { return dispatchCall(root, commandName, rest, flags); } catch (e) { throw refusalFor(e, callOf(commandName, rest, flags)); }
+  let r;
+  try { r = dispatchCall(root, commandName, rest, flags); } catch (e) { throw refusalFor(e, callOf(commandName, rest, flags)); }
+  // A note echoes words of the call as a reason does: line breaks escaped, a word a shell acts on in single quotes.
+  const words = [commandName, ...rest, ...Object.values(flags).flat()].filter((w) => typeof w === 'string');
+  return { ...r, warn: (r.warn || []).map((w) => escapedEchoes(w, words)) };
 }
 function dispatchCall(root, commandName, rest, flags) {
   const cmd = commandName;
   if (Object.hasOwn(REPLACED_COMMANDS, cmd)) replacedRefusal(cmd, rest);
   // A placeholder a refusal printed, pasted unfilled, is never recorded: every value the call takes is checked for one.
   const holes = placeholdersIn(cmd, rest, flags);
-  need(holes.length === 0, `${holes.join(', ')} ${holes.length === 1 ? 'is a placeholder' : 'are placeholders'}: write the value in its place — nothing was written`, { retry: true });
+  need(holes.length === 0, `${holes.map(shellWord).join(', ')} ${holes.length === 1 ? 'holds a placeholder' : 'hold placeholders'}: write the value in its place — nothing was written`, { retry: true });
   // An argument the command requires and the call left out is named, and the form has a placeholder for it.
   const missing = (COMMAND_ARGS[cmd] || []).filter((a, n) => !/[?.]$/.test(a) && rest[n] === undefined && !(cmd === 'set' && a === 'status' && flags.header));
   need(missing.length === 0, `${cmd} requires ${missing.map((a) => `its ${a}`).join(' and ')}: the form below has a placeholder for each value`, { retry: true });
@@ -1265,7 +1281,7 @@ function dispatchCall(root, commandName, rest, flags) {
         out = R.addEvidence(root, rest[0], rest[1], flags); text = each(out, renderEvidence); break;
       // One verb takes back a verdict and an evidence row: the review's newest approve, or the row by its number.
       case 'retract':
-        need(rest[1] === 'review' || /^(note-)?\d+$/.test(rest[1] ?? ''), `retract takes review (the newest approve) or the number of an evidence row, or note-<n> for a note, got "${rest[1] ?? ''}"`, () => [...(rest[0] === undefined ? [{ arg: 0, value: '<id>' }] : []), { arg: 1, value: '<review|n|note-n>' }, ...(rest[2] === undefined ? [{ arg: 2, value: '<what-was-wrong>' }] : []), ...(flags.by === undefined ? [{ flag: '--by', value: '<who>' }] : [])]);
+        need(rest[1] === 'review' || /^(note-)?\d+$/.test(rest[1] ?? ''), `retract takes review (the newest approve) or the number of an evidence row, or note-<n> for a note, got "${rest[1] ?? ''}"`, () => [...(rest[0] === undefined ? [{ arg: 0, value: '<id>' }] : []), { arg: 1, value: '<review-n-or-note-n>' }, ...(rest[2] === undefined ? [{ arg: 2, value: '<what-was-wrong>' }] : []), ...(flags.by === undefined ? [{ flag: '--by', value: '<who>' }] : [])]);
         if (rest[1] === 'review') { out = R.review(root, rest[0], 'retract', rest[2], { by: flags.by, caller: 'cli' }); text = each(out, renderReview); warn = [].concat(out).filter((o) => o.note).map((o) => `note: ${o.note}`); } else { out = R.addEvidence(root, rest[0], rest[2], { retract: rest[1], by: flags.by }); text = each(out, renderEvidence); }
         break;
       // One computation of the rows: the ready ones are listed, and the rest says how many are held or waiting.
@@ -1313,7 +1329,7 @@ function dispatchCall(root, commandName, rest, flags) {
       case 'decisions': out = R.decisions(root, flags); text = renderDecisions(out); break;
       case 'goal': out = flags.set === undefined ? cmdGoal(root) : cmdGoalSet(root, flags.set); text = flags.set === undefined ? out.goal : out.unchanged ? `goal line unchanged: ${out.shown}` : `goal line ${out.replaced ? 'changed' : 'added'}: ${out.shown}${out.replaced ? ` (was ${out.was})` : ''}`; break;
       case 'status': out = R.statusData(root, groupedBy(flags)); text = renderStatus(out, R.loadProfile(root)); ({ out, text } = endWithAsker(root, flags, out, text)); break;
-      case 'changelog': out = cmdChangelog(root, rest[0], flags); text = out.text || '(no changelog fragment on these issues)'; warn = out.missing.length ? [`note: no changelog fragment: ${out.missing.join(', ')} — record one with: jarl.mjs field '<id>' Changelog 'Added: <changelog-entry>'`] : []; break;
+      case 'changelog': out = cmdChangelog(root, rest[0], flags); text = out.text || '(no changelog fragment on these issues)'; warn = out.missing.length ? [`note: no changelog fragment: ${out.missing.join(', ')} — record one with: jarl.mjs field '<id>' Changelog 'Added: <changelog-entry>' --add`] : []; break;
       case 'archive': out = cmdArchive(root, rest[0], { caller: 'cli' }); text = `archived → ${out.archived}${out.leftOpen.length ? ` · ${out.leftOpen.length} still open or in progress: ${out.leftOpen.join(', ')}` : ''} · open a new loop with: jarl.mjs init "<goal>"`; break;
       case 'mode': out = cmdMode(root, rest[0]); text = 'now permanent · not tied to a feature branch; close keeps the directory'; break;
       case 'profile': out = cmdProfile(root, rest[0]); text = renderProfile(out); break;
