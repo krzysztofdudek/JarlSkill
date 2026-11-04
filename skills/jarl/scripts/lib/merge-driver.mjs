@@ -14,7 +14,7 @@ import { decisionsDriverCommand, guardedDriver } from './loop-git.mjs';
 // pin a `**Superseded by:**` line to the wrong ruling and let two rulings each supersede one ruling. They get a
 // driver of their own, mergeDecisionsTexts, run by git as `jarl.mjs merge-driver decisions %O %A %B`.
 
-const SINGLE_VALUED = new Set(['By', 'Supersedes', 'Superseded by', 'Area', 'Reach', 'Ratified', 'Rejected', 'Type log']);
+const SINGLE_VALUED = new Set(['Applies to', 'By', 'Supersedes', 'Superseded by', 'Area', 'Reach', 'Ratified', 'Rejected', 'Type log']);
 
 // The decisions as blocks: the text before the first ruling, then one block per `## <date> · <slug>` heading — the
 // same reading loadDecisions makes — each with its ruling text and its closing field lines kept apart.

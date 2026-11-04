@@ -12,8 +12,9 @@ import { ASKS_FILE, DECISIONS_FILE, STAMP_SRC, answeredLines, appendDecision, ap
 import { OWNER, carryingOwnersWords, needNoOwnersWords, quoteShown, rulingAuthor } from './owner.mjs';
 import { findIssue, freeBlock, loadIssues, noteText, parseIssue, placeEvidence, setSection } from './issues.mjs';
 import { needFormat } from './repositories.mjs';
-import { coordinatorNames, sliceNamed } from './loop.mjs';
+import { coordinatorNames, readLoop, sliceNamed } from './loop.mjs';
 import { issuesFor } from './commands.mjs';
+import { appliesToLine, loopRules, parseScope, parseUntil } from './rules.mjs';
 
 // ---- questions to the owner and the handoff -------------------------------------------------
 
@@ -257,6 +258,21 @@ function appendRuling(root, issues, line) {
   appendLogLines(root, issues.map((issue) => `${issue.id} evidence · ${line}`));
 }
 
+// The Applies to line of --applies-to and --until, or null when neither is given: the selectors whom the rule applies to,
+// and its end, a date or an issue of the loop. --until ends a rule, so it needs --applies-to.
+function scopeOf(root, flags) {
+  if (flags['applies-to'] === undefined) {
+    need(flags.until === undefined, '--until ends a rule with a scope: it needs --applies-to "<selectors>"');
+    return null;
+  }
+  need(typeof flags['applies-to'] === 'string', '--applies-to names whom the rule applies to, as text');
+  const selectors = parseScope(flags['applies-to']);
+  const until = flags.until === undefined ? null : parseUntil(String(flags.until));
+  if (until && until.issue) [{ id: until.issue }] = issuesFor(root, until.issue);
+  for (const s of selectors.filter((x) => x.word === 'issue')) [{ id: s.value }] = issuesFor(root, s.value);
+  return appliesToLine(selectors, until);
+}
+
 // decide <slug> "<ruling>" [--by who] [--quote "<words>"] [--supersedes <slug>] [--settles <ids>]: the ruling, who ruled
 // (the caller, recorded as the coordinator, unless --by says otherwise: jarl for a choice the loop made under a
 // mandate, owner for the owner's own, which needs his words in --quote, kept on one line as the ruling's last paragraph),
@@ -289,17 +305,18 @@ export function cmdDecide(root, slug, ruling, flags = {}) {
     need(inForce.includes(under), `--under ${under ? `"${under}"` : 'needs a slug'} is not a ruling in force of this loop; the rulings in force: ${inForce.length ? inForce.join(', ') : '(none)'}`);
   }
   const settles = flags.settles !== undefined ? issuesFor(root, flags.settles) : [];
+  const appliesTo = scopeOf(root, flags);
   const area = flags.area !== undefined ? String(flags.area) : null;
   const reach = flags.reach !== undefined ? Number(flags.reach) : null;
   const rule = flags.rule !== undefined ? String(flags.rule) : null;
   const text = freeBlock(oneBreak(ruling).trim());
-  appendDecision(root, slug, text, { by, quote, under, supersedes: flags.supersedes, area, reach, rule, settles: settles.map((i) => i.id) });
-  appendLog(root, `decided ${slug} · by ${by}${flags.supersedes !== undefined ? ` · supersedes ${flags.supersedes}` : ''}${area ? ` · area ${area}${reach !== null ? ` (${reach} files)` : ''}${rule ? ` · rule ${rule}` : ''}` : ''}`);
+  appendDecision(root, slug, text, { by, quote, under, supersedes: flags.supersedes, area, reach, rule, settles: settles.map((i) => i.id), appliesTo });
+  appendLog(root, `decided ${slug} · by ${by}${appliesTo ? ` · applies to ${appliesTo}` : ''}${flags.supersedes !== undefined ? ` · supersedes ${flags.supersedes}` : ''}${area ? ` · area ${area}${reach !== null ? ` (${reach} files)` : ''}${rule ? ` · rule ${rule}` : ''}` : ''}`);
   if (settles.length) {
     const shown = quote ? quoteShown(quote) : null;
     carryingOwnersWords([shown], () => appendRuling(root, settles, `Ruling ${slug} (by ${by}): ${firstLine(oneBreak(ruling).trim(), `${DECISIONS_FILE}, ruling ${slug}`)}${shown ? ` · ${shown}` : ''}`));
   }
-  return { slug, by, ...(quote ? { quote } : {}), ...(under ? { under } : {}), supersedes: flags.supersedes ?? null, settles: settles.map((i) => i.id), ...(area ? { area, reach, ...(rule ? { rule } : {}) } : {}) };
+  return { slug, by, ...(quote ? { quote } : {}), ...(under ? { under } : {}), ...(appliesTo ? { appliesTo } : {}), supersedes: flags.supersedes ?? null, settles: settles.map((i) => i.id), ...(area ? { area, reach, ...(rule ? { rule } : {}) } : {}) };
 }
 
 // Whether a question of the record asks about a ruling: a ratify item naming it, or the question the ruling `ask-<n>` was
@@ -385,14 +402,21 @@ export function ratificationBatch(root) {
 
 // decisions [--live]: the rulings, oldest first, each with who ruled and what superseded it; --live leaves out
 // the superseded ones — what a session reads at boot as the rulings in force.
+// A ruling with a scope carries it (appliesTo, the line as written) and, once it has ended, why (ended); --live
+// leaves out an ended rule too.
 export function cmdDecisions(root, flags = {}) {
-  const all = loadDecisions(root);
-  return flags.live ? all.filter((d) => !d.supersededBy) : all;
+  const loop = readLoop(jarlDir(root));
+  const ends = new Map(loopRules(loop, today()).map((r) => [r.slug, r]));
+  const all = loop.decisions.map((d) => {
+    const r = ends.get(d.slug);
+    return r && !d.supersededBy && (r.ended || r.unread) ? { ...d, ...(r.ended ? { ended: r.ended } : {}), ...(r.unread ? { unread: r.unread } : {}) } : d;
+  });
+  return flags.live ? all.filter((d) => !d.supersededBy && !d.ended) : all;
 }
 // decide: what was ruled, and what the ruling did to the others.
 export function renderDecide(out) {
   const area = out.area ? ` · area ${out.area}${out.reach !== null ? ` (${out.reach} file${out.reach === 1 ? '' : 's'})` : ''}${out.rule ? ` · rule ${out.rule}` : ''} · put to ratification at close` : '';
-  return `decided ${out.slug} · by ${out.by}${out.under ? ` · under ${out.under}` : ''}${out.supersedes ? ` · supersedes ${out.supersedes}` : ''}${out.settles.length ? ` · written into ${out.settles.join(', ')}` : ''}${area}`;
+  return `decided ${out.slug} · by ${out.by}${out.appliesTo ? ` · applies to ${out.appliesTo}` : ''}${out.under ? ` · under ${out.under}` : ''}${out.supersedes ? ` · supersedes ${out.supersedes}` : ''}${out.settles.length ? ` · written into ${out.settles.join(', ')}` : ''}${area}`;
 }
 // decisions: one line per ruling, its first line cut at 160 characters; an answered question's ruling is its answer, then
 // its question, each cut at 160 characters.
@@ -403,7 +427,8 @@ export function renderDecisions(rows) {
     const quoted = d.quote ? ` · ${quoteShown(d.quote.split('\n')[0].slice(0, 160))}` : '';
     const answered = answeredLines(d);
     const shown = answered ? `${answered.answer.slice(0, 160)} · ${answered.question.slice(0, 160)}` : (d.ruling.split('\n').find((l) => l.trim()) || '').slice(0, 160);
-    return `${d.date} · ${d.slug}${d.by ? ` · by ${d.by}` : ''}${d.under ? ` · under ${d.under}` : ''}${area}${d.supersededBy ? ` · SUPERSEDED by ${d.supersededBy}` : ''}${d.supersedes ? ` · supersedes ${d.supersedes}` : ''} — ${shown}${quoted}`;
+    const scope = d.appliesTo ? ` · applies to ${d.appliesTo}${d.ended ? ` · ENDED: ${d.ended}` : ''}${d.unread ? ` · reaches no one: ${d.unread}` : ''}` : '';
+    return `${d.date} · ${d.slug}${d.by ? ` · by ${d.by}` : ''}${d.under ? ` · under ${d.under}` : ''}${scope}${area}${d.supersededBy ? ` · SUPERSEDED by ${d.supersededBy}` : ''}${d.supersedes ? ` · supersedes ${d.supersedes}` : ''} — ${shown}${quoted}`;
   }).join('\n');
 }
 

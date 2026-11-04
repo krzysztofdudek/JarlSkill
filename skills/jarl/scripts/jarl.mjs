@@ -304,7 +304,7 @@ commands:
   log "<event>" [--by who]                       append one dated note to the journal; a line that reads as a filing, a move,
                                                  a round, a verdict, a retraction, an evidence row, a merge, a CI state or
                                                  a body change is refused, and the refusal names the command that writes it
-  decide <slug> "<ruling>" [--by who [--quote "<words>"]] [--under <slug>] [--supersedes <slug>] [--settles <ids>] [--area <type> [--reach n] [--rule <id>]]
+  decide <slug> "<ruling>" [--by who [--quote "<words>"]] [--under <slug>] [--supersedes <slug>] [--settles <ids>] [--applies-to "<selectors>" [--until <date|id>]] [--area <type> [--reach n] [--rule <id>]]
                                                  append a ruling (slug: letters, digits, . _ -); refuses a duplicate slug;
                                                  --by records who ruled (the coordinator when it is left out; a name that
                                                  reads as owner is owner); --by owner needs --quote, his own words, kept as
@@ -313,7 +313,11 @@ commands:
                                                  by the jarl or a coordinator rests on, kept as the text's last paragraph
                                                  "Made under: <slug>", shown with the ruling by decisions and resume; --supersedes marks
                                                  the ruling it replaces "Superseded by" in place; --settles writes the ruling,
-                                                 with who ruled, into each named issue's evidence (its status is unchanged); --area marks a ruling
+                                                 with who ruled, into each named issue's evidence (its status is unchanged); --applies-to makes it
+                                                 a rule with a scope, printed whole to every reader it matches: loop, or
+                                                 selectors joined by "and" (role, slice, moment, issue, tag, kind, tier,
+                                                 files, repo, each with one value); --until ends it after a date or when
+                                                 an issue closes, and a ruling that supersedes it revokes it; --area marks a ruling
                                                  about a whole type of code, --reach how many files that type holds,
                                                  --rule the graph's rule it admits on that type (its id):
                                                  close puts it to the owner for ratification
@@ -531,7 +535,7 @@ export const COMMAND_FLAGS = {
   answer: { by: 'value', option: 'value' },
   resume: { log: 'value', ready: 'value', ci: 'bool', as: 'value', slice: 'value' },
   handoff: { summary: 'value', next: 'many', log: 'value', ready: 'value', ci: 'bool' },
-  log: { by: 'value' }, decide: { settles: 'many', by: 'value', quote: 'value', under: 'value', supersedes: 'value', area: 'value', reach: 'value', rule: 'value' }, decisions: { live: 'bool' },
+  log: { by: 'value' }, decide: { settles: 'many', by: 'value', quote: 'value', under: 'value', supersedes: 'value', 'applies-to': 'value', until: 'value', area: 'value', reach: 'value', rule: 'value' }, decisions: { live: 'bool' },
   goal: { set: 'value', by: 'value' },
   status: { 'stale-hours': 'value', by: 'value', tag: 'value', as: 'value', slice: 'value' }, archive: { by: 'value' }, report: { found: 'bool' }, tips: {}, mode: { by: 'value' },
   queue: { repo: 'value', base: 'value' }, changelog: { repo: 'value' },
