@@ -274,20 +274,64 @@ test('verify refuses a real git conflict inside a fenced block both sides share'
   assert.match(r.stdout, /issues\/1-filed-before-the-split\.md line \d+: "<<<<<<< [^"]*" — a git conflict marker/);
 });
 
-test('a lone opening marker is no conflict and hides none after it', () => {
+test('a lone opening marker is no conflict, and a conflict after it is still refused', () => {
   const a = committedLoop();
   const file = join(a.dir, '.jarl', 'issues', '1-filed-before-the-split.md');
   const lone = readFileSync(file, 'utf8').replace('## What\n', '## What\n<<<<<<< HEAD\nthe rest of the paragraph\n```\na fence opened after it\n');
   writeFileSync(file, lone);
   const clean = run(a.dir, ['verify']);
   assert.equal(clean.status, 0, clean.stdout);
-  const both = lone.replace('## Why\n', '## Why\n<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> main\n');
-  writeFileSync(file, both);
-  const at = both.split('\n').lastIndexOf('<<<<<<< HEAD') + 1;
+  writeFileSync(file, lone.replace('## Why\n', '## Why\n<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> main\n'));
   const r = run(a.dir, ['verify']);
   assert.equal(r.status, 2, r.stdout);
-  assert.match(r.stdout, new RegExp(`issues/1-filed-before-the-split\\.md line ${at}: "<<<<<<< HEAD" — a git conflict marker`));
-  assert.doesNotMatch(r.stdout, new RegExp(`line ${both.split('\n').indexOf('<<<<<<< HEAD') + 1}:`), 'the lone marker is not named');
+  assert.match(r.stdout, /issues\/1-filed-before-the-split\.md line \d+: "<<<<<<< HEAD" — a git conflict marker/);
+});
+
+// A real pull whose conflict holds, on one side, a marker line the tool did not write (a hand edit, or text written raw):
+// `edit` turns the text the tool wrote on that side into the text with the stray line.
+for (const [shape, side, edit] of [
+  ['an opening marker after the separator', 'a', (t) => t.replace('the text on A\n', 'the text on A\n<<<<<<< lone line\n')],
+  ['a closing marker before the separator', 'b', (t) => t.replace('the text on B\n', 'the text on B\n>>>>>>> lone line\n')],
+]) {
+  test(`verify refuses a real git conflict whose side holds ${shape}`, () => {
+    const a = committedLoop();
+    const b = cloneOf(a.dir);
+    for (const [at, name] of [[a, 'A'], [b, 'B']]) {
+      jarl(at.dir, 'body', '1', '--what', `the text on ${name}`);
+      if (side === name.toLowerCase()) {
+        const file = join(at.dir, '.jarl', 'issues', '1-filed-before-the-split.md');
+        writeFileSync(file, edit(readFileSync(file, 'utf8')));
+      }
+      at.g('add', '-A'); at.g('commit', '-qm', `${name} edits 1`);
+    }
+    assert.throws(() => b.g('pull', '-q', '--no-rebase', '--no-edit', 'origin', 'main'), 'git cannot join the two texts');
+    const text = issueText(b.dir, '1-filed-before-the-split.md');
+    const order = side === 'a' ? /^<<<<<<< HEAD\nthe text on B\n=======\nthe text on A\n<<<<<<< lone line\n>>>>>>> \S+\n/m : /^<<<<<<< HEAD\nthe text on B\n>>>>>>> lone line\n=======\nthe text on A\n>>>>>>> \S+\n/m;
+    assert.match(text, order, 'git left the stray line inside the conflict');
+    const r = run(b.dir, ['verify']);
+    assert.equal(r.status, 2, r.stdout);
+    assert.match(r.stdout, /issues\/1-filed-before-the-split\.md line \d+: "<<<<<<< HEAD" — a git conflict marker/);
+  });
+}
+
+test('markers in another order than opening, separator, closing are no conflict', () => {
+  const a = committedLoop();
+  const file = join(a.dir, '.jarl', 'issues', '1-filed-before-the-split.md');
+  const base = readFileSync(file, 'utf8');
+  for (const lines of ['>>>>>>> main\n=======\n<<<<<<< HEAD\n', '=======\n', '>>>>>>> main\n<<<<<<< HEAD\n=======\n', '<<<<<<< HEAD\n>>>>>>> main\n']) {
+    writeFileSync(file, base.replace('## What\n', `## What\n${lines}`));
+    const r = run(a.dir, ['verify']);
+    assert.equal(r.status, 0, `${JSON.stringify(lines)}: ${r.stdout}`);
+  }
+});
+
+test('the refusal says what to do with markers that only quote a conflict', () => {
+  const a = committedLoop();
+  const file = join(a.dir, '.jarl', 'issues', '1-filed-before-the-split.md');
+  writeFileSync(file, readFileSync(file, 'utf8').replace('## What\n', '## What\n<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> main\n'));
+  const r = run(a.dir, ['verify']);
+  assert.equal(r.status, 2, r.stdout);
+  assert.match(r.stdout, /if the lines only quote a conflict, put a backslash in front of each marker line \(\\<<<<<<<\) or remove them/);
 });
 
 test('with CRLF line endings, a real conflict is refused, and text with CRLF breaks that quotes one is written escaped, a note into an Evidence section with no parts included', () => {

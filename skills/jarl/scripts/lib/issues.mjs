@@ -17,20 +17,19 @@ const CONFLICT_OPEN = /^<{7}(?: .*)?$/;
 const CONFLICT_MIDDLE = /^={7}$/;
 const CONFLICT_CLOSE = /^>{7}(?: .*)?$/;
 const CONFLICT_MARKERS = [CONFLICT_OPEN, CONFLICT_MIDDLE, CONFLICT_CLOSE];
-// The line numbers of the opening markers of the conflicts `lines` hold: an opening marker, then a separator, then a
-// closing marker, in that order, wherever they stand. A fenced block is no exception, because git writes its markers
-// inside a fence both sides share; text the tool writes holds no marker line (see escapeMarkers), so a conflict found is
-// one a merge left. An opening marker with no separator and closing marker after it is text and hides nothing: the next
-// opening marker starts the conflict anew.
+// The line numbers of the opening markers of the conflicts `lines` hold: the first opening marker, then the first
+// separator after it, then the first closing marker after that, and so on after each closing marker. Any other marker line
+// is passed over, so a stray marker inside a conflict's sides never hides it, and markers in another order are no
+// conflict. A fenced block is no exception, because git writes its markers inside a fence both sides share; text the tool
+// writes holds no marker line (see escapeMarkers), so a conflict found is one a merge left.
 function conflictsIn(lines) {
   const out = [];
   let open = null;
   let middle = false;
   lines.forEach((line, i) => {
-    if (CONFLICT_OPEN.test(line)) { open = i + 1; middle = false; }
-    else if (open === null) return;
-    else if (CONFLICT_MIDDLE.test(line)) middle = true;
-    else if (CONFLICT_CLOSE.test(line)) { if (middle) out.push(open); open = null; middle = false; }
+    if (open === null) { if (CONFLICT_OPEN.test(line)) open = i + 1; }
+    else if (!middle) middle = CONFLICT_MIDDLE.test(line);
+    else if (CONFLICT_CLOSE.test(line)) { out.push(open); open = null; middle = false; }
   });
   return out;
 }
@@ -54,7 +53,7 @@ export function parseIssue(text, file, skipped) {
   if (skipped && !head) skipped.push({ n: 1, text: lines[0] || '', reason: 'not an issue header: the first line is "# <id> · <title>"' });
   // A merge git could not join leaves both sides in the file between its markers, and every reader would take the lines of
   // both for the issue's own.
-  if (skipped) for (const n of conflictsIn(lines)) skipped.push({ n, text: lines[n - 1], reason: 'a git conflict marker: the file holds both sides of a merge git could not join, and the issue reads as both; keep one side of each conflict and remove the markers' });
+  if (skipped) for (const n of conflictsIn(lines)) skipped.push({ n, text: lines[n - 1], reason: 'a git conflict marker: the file holds both sides of a merge git could not join, and the issue reads as both; keep one side of each conflict and remove the markers; if the lines only quote a conflict, put a backslash in front of each marker line (\\<<<<<<<) or remove them' });
   if (skipped) {
     lines.forEach((line, i) => {
       const f = FIELD_RE.exec(line);
