@@ -109,9 +109,12 @@ test('new from a linked worktree of a committed loop is refused and names the ma
   // The main checkout moves on by two issues; the worktree keeps the copy it was cut with.
   jarl(root, 'new', 'second'); jarl(root, 'new', 'third');
   assert.deepEqual(readdirSync(join(wt, '.jarl', 'issues')), ['1-first.md']);
-  const said = refuses(wt, 'new', 'from the worktree');
+  const r = run(wt, ['new', 'from the worktree']);
+  assert.notEqual(r.status, 0);
+  const said = r.stderr;
   assert.match(said, /is a linked worktree of .*, which holds this loop/);
   assert.ok(said.includes(basename(root)), 'it names the main checkout as the root to pass');
+  assert.ok(said.split('\n').at(-1).includes(`--root `) && said.split('\n').at(-1).includes(basename(root)) && !said.split('\n').at(-1).includes(basename(wt)), 'the ready line passes the main checkout as the root, in place of the worktree');
   assert.deepEqual(readdirSync(join(wt, '.jarl', 'issues')), ['1-first.md'], 'nothing was written');
   // A worktree copy that holds a higher number (999 here) than the main checkout counts: the next number is 1000.
   const high = join(wt, '.jarl', 'issues', '999-high.md');
@@ -486,7 +489,7 @@ test('a round after an approve spends the approve', () => {
   jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
   jarl(root, 'round', '1', 'merger: suite red after merge');
   assert.match(refuses(root, 'set', '1', 'done'), /no approving review/);
-  assert.match(refuses(root, 'review', '1', 'maybe', 'x'), /^review takes approve or changes \(got "maybe"\)\njarl\.mjs review 1 '<approve\|changes>' x --by '<reviewer>'\n$/);
+  assert.match(refuses(root, 'review', '1', 'maybe', 'x'), /^review takes approve or changes \(got "maybe"\)\njarl\.mjs review 1 '<verdict>' x --by '<reviewer>'\n$/);
   jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
   jarl(root, 'set', '1', 'done');
 });
@@ -958,7 +961,7 @@ test('a bulk call with one bad id, or one issue failing its precondition, writes
   for (const t of ['a', 'b']) jarl(root, 'new', t);
   const before = () => [readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), jarl(root, 'show', '1'), jarl(root, 'show', '2')].join('\n');
   const snap = before();
-  assert.match(refuses(root, 'evidence', '1,2,9', 'note'), /no such issue: 9 — nothing was written/);
+  assert.match(refuses(root, 'evidence', '1,2,9', 'note'), /no such issue: 9 \(asked for as 1,2,9\) — nothing was written/);
   assert.match(refuses(root, 'field', '1-3', 'Tags', '--add', 'x'), /no such issue: 3/);
   assert.match(refuses(root, 'set', '1,2', 'bogus'), /status must be one of/);
   // 1 is ready for done, 2 is not: neither moves.
@@ -1470,7 +1473,7 @@ test('check --branch refuses a branch no issue holds, and says how many commits 
   jarl(root, 'new', 'one', '--files', 'a.txt');
   git('git checkout -q -b feature && echo more >> a.txt && git commit -qam work && git checkout -q main');
   const msg = refuses(root, 'scope', '--branch', 'feature', '--base', 'main');
-  assert.match(msg, /^no issue records branch feature: it carries 1 commit\(s\) beyond main and no issue holds it \(work without an issue\) — file the issue, then set it in-progress --branch feature\njarl\.mjs new '<what-the-branch-does>' --tier '<light\|standard\|strong>' && jarl\.mjs set '<the-id-new-prints>' in-progress '<why>' --branch feature && jarl\.mjs scope --branch feature --base main\n$/);
+  assert.match(msg, /^no issue records branch feature: it carries 1 commit\(s\) beyond main and no issue holds it \(work without an issue\) — file the issue, then set it in-progress --branch feature\njarl\.mjs new '<what-the-branch-does>' --tier '<tier>' && jarl\.mjs set '<the-id-new-prints>' in-progress '<why>' --branch feature && jarl\.mjs scope --branch feature --base main\n$/);
   assert.match(refuses(root, 'scope', '--branch', 'jarl/none'), /^no issue records branch jarl\/none — name one/);
 });
 

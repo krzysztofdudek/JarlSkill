@@ -13,7 +13,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { basename, join, relative } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -22,6 +22,7 @@ import { bashBin, NO_EXCLUDES } from './portable.mjs';
 
 const J = await import('../jarl.mjs');
 const L = await import('../jarl-lib.mjs');
+const MCP = await import('../jarl-mcp.mjs');
 const { COMMAND_ARGS, COMMAND_FLAGS, GLOBAL_FLAGS, MUTATING, REPLACED_COMMANDS, REMOVED_FLAGS, REMOVED_FORMS } = J;
 const { STATUSES, KINDS, TIERS, PRIORITIES, ASK_KINDS, CI_STATES } = L;
 const fixture = (name) => JSON.parse(readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8'));
@@ -87,6 +88,24 @@ function siblingLoop() {
 }
 const PLAIN = plainLoop();
 const SIBLING = siblingLoop();
+// A checkout with a loop at its root and the plain loop in releases/r1, no checkout of its own: a call given --root
+// releases/r1 from the top reaches the plain loop, and a line that dropped it would reach the loop at the root.
+function rootedLoop() {
+  const top = mkdtempSync(join(tmpdir(), 'jarl-refusals-rooted-'));
+  mkdirSync(join(top, '.git'));
+  jarl(top, 'init', 'the loop at the root');
+  jarl(top, 'new', 'root one', '--tier', 'light', '--acceptance', 'it works');
+  cpSync(PLAIN.dir, join(top, 'releases', 'r1'), { recursive: true, filter: (s) => basename(s) !== '.git' });
+  cpSync(join(PLAIN.dir, 'research'), join(top, 'research'), { recursive: true });
+  mkdirSync(join(top, 'releases', 'r2'));
+  return { ...PLAIN, dir: top, cwd: '' };
+}
+const ROOTED = rootedLoop();
+const ROOT_ARG = 'releases/r1';
+// The directory of the same checkout where no loop lives yet, for init.
+const ROOT_EMPTY = 'releases/r2';
+// A checkout with no loop, where init opens one.
+const EMPTY = (() => { const dir = mkdtempSync(join(tmpdir(), 'jarl-refusals-empty-')); mkdirSync(join(dir, '.git')); return { dir, cwd: '', held: {}, options: {} }; })();
 
 // A fresh copy of a loop, with a profile written in and the calls of `pre` run first; the directory a call runs in.
 function copy(loop, { profile, pre } = {}) {
@@ -104,7 +123,15 @@ const unix = (p) => (process.platform === 'win32' ? p.replace(/\\/g, '/') : p);
 function shell(cwd, line, body) {
   return spawnSync(bashBin(), ['-c', `jarl.mjs() { ${body}; }\n${line}`], { cwd, encoding: 'utf8', timeout: 60000, env: { ...process.env, JARL_NODE: unix(process.execPath), JARL_SCRIPT: unix(SCRIPT) } });
 }
-export function runPrinted(cwd, line) { return shell(cwd, line, '"$JARL_NODE" "$JARL_SCRIPT" "$@"'); }
+// The shells a printed line is pasted into: sh and zsh, where the machine has them, with an executable jarl.mjs on the PATH
+// that runs this script; bash with jarl.mjs a function where it has neither (Git for Windows).
+const SHELLS = process.platform === 'win32' ? ['bash'] : ['/bin/sh', ...(existsSync('/bin/zsh') ? ['/bin/zsh'] : [])];
+const sq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
+const BIN = process.platform === 'win32' ? null : (() => { const d = mkdtempSync(join(tmpdir(), 'jarl-refusals-bin-')); writeFileSync(join(d, 'jarl.mjs'), `#!/bin/sh\nexec ${sq(process.execPath)} ${sq(SCRIPT)} "$@"\n`, { mode: 0o755 }); return d; })();
+export function runPrinted(cwd, line, sh = SHELLS[0]) {
+  if (sh === 'bash') return shell(cwd, line, '"$JARL_NODE" "$JARL_SCRIPT" "$@"');
+  return spawnSync(sh, [...(sh.endsWith('zsh') ? ['-f'] : []), '-c', line], { cwd, encoding: 'utf8', timeout: 60000, env: { ...process.env, PATH: `${BIN}:${process.env.PATH}` } });
+}
 // The calls of a printed command line as the shell passes them: each one's words, jarl.mjs left out.
 export function printedCalls(line) {
   const r = shell(tmpdir(), line, "printf '\\036'; printf '%s\\037' \"$@\"");
@@ -112,20 +139,19 @@ export function printedCalls(line) {
   return r.stdout.split('\x1e').slice(1).map((c) => c.split('\x1f').slice(0, -1));
 }
 
-// Every file under .jarl/ but the lock, with what changes from one run to another (a time, an issue's random key) masked.
+// Every file of every loop under the directory (each .jarl/ in it, at any depth) but the lock, with what changes from one
+// run to another (a time, an issue's random key) masked.
 function snapshot(cwd) {
-  const top = join(cwd, '.jarl');
   const out = {};
-  if (!existsSync(top)) return out;
-  const walk = (d) => {
+  const walk = (d, inLoop) => {
     for (const f of readdirSync(d)) {
       const p = join(d, f);
-      if (f === '.lock') continue;
-      if (statSync(p).isDirectory()) walk(p);
-      else out[relative(top, p)] = readFileSync(p, 'utf8').replace(/\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?Z?)?/g, 'TIME').replace(/\b\d{8}T\d{4}-[a-z0-9]+\b/g, 'KEY');
+      if (f === '.lock' || f === '.git') continue;
+      if (statSync(p).isDirectory()) walk(p, inLoop || f === '.jarl');
+      else if (inLoop) out[relative(cwd, p)] = readFileSync(p, 'utf8').replace(/\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?Z?)?/g, 'TIME').replace(/\b\d{8}T\d{4}-[a-z0-9]+\b/g, 'KEY');
     }
   };
-  walk(top);
+  walk(cwd, false);
   return out;
 }
 
@@ -176,6 +202,8 @@ function argOfFlag(cmd, name) {
 }
 const caseOf = (value, set) => { if (set.includes(value)) return value; const same = set.filter((s) => s.toLowerCase() === String(value).toLowerCase()); return same.length === 1 ? same[0] : null; };
 
+// The global flags of a call (--root, --json), which every call it is written as carries.
+const globalsOf = (c) => c.flags.filter(([k]) => Object.hasOwn(GLOBAL_FLAGS, k));
 // What a wrong call meant, read by this test from the words given and the loop it is made on: the calls it is with only one
 // of the corrections the tool may print as a line that runs — a value of a closed set in its own case, a removed form (a
 // command, a flag, a tool field's name given as a flag) in the form that replaces it with every word given, a text after a
@@ -192,19 +220,19 @@ export function meant(args, loop) {
     if (to === 'retract') {
       const by = flagOf(c, 'by');
       if (typeof by !== 'string' || c.pos.length !== 2 || typeof flagOf(c, 'retract') !== 'string') return null;
-      return [{ cmd: 'retract', pos: [c.pos[0], flagOf(c, 'retract'), c.pos[1]], flags: [['by', by]] }];
+      return [{ cmd: 'retract', pos: [c.pos[0], flagOf(c, 'retract'), c.pos[1]], flags: [['by', by], ...globalsOf(c)] }];
     }
     c = { ...c, flags: c.flags.map(([k, v]) => (k === old ? [to.replace(/^--/, ''), v] : [k, v])) };
   }
   if (cmd === 'review' && c.pos[1] === 'retract') {
     const by = flagOf(c, 'by');
     if (typeof by !== 'string' || c.pos.length !== 3) return null;
-    return [{ cmd: 'retract', pos: [c.pos[0], 'review', c.pos[2]], flags: [['by', by]] }];
+    return [{ cmd: 'retract', pos: [c.pos[0], 'review', c.pos[2]], flags: [['by', by], ...globalsOf(c)] }];
   }
   if (cmd === 'set' && c.pos[1] !== undefined && PARTS.some((p) => p.toLowerCase() === c.pos[1].toLowerCase()) && !STATUSES.includes(c.pos[1])) {
     const by = flagOf(c, 'by');
     const clearing = c.pos[2] === undefined || c.pos[2].trim() === '';
-    return [{ cmd: 'field', pos: [c.pos[0], c.pos[1], ...(clearing ? [] : [c.pos[2]])], flags: [...(typeof by === 'string' ? [['by', by]] : []), ...(clearing ? [['clear', true]] : [])] }];
+    return [{ cmd: 'field', pos: [c.pos[0], c.pos[1], ...(clearing ? [] : [c.pos[2]])], flags: [...globalsOf(c), ...(typeof by === 'string' ? [['by', by]] : []), ...(clearing ? [['clear', true]] : [])] }];
   }
   // Flags the command does not take: one that names an argument becomes that argument where its place is free.
   for (const [k, v] of c.flags) {
@@ -251,7 +279,7 @@ const REPLACED_SHAPES = new Proxy({ json: 'bool', help: 'bool', clear: 'bool', a
 function replacedMeant(cmd, rest) {
   const c = readCall([cmd, ...rest], REPLACED_SHAPES);
   const by = flagOf(c, 'by');
-  const author = typeof by === 'string' ? [['by', by]] : [];
+  const author = [...(typeof by === 'string' ? [['by', by]] : []), ...globalsOf(c)];
   const field = (part, ...more) => ({ cmd: 'field', pos: [c.pos[0], part, ...more.filter((m) => typeof m === 'string')], flags: [...author, ...more.filter(Array.isArray)] });
   if (cmd === 'tips' || cmd === 'queue') return [{ cmd: 'resume', pos: [], flags: [...(cmd === 'tips' ? [['gh', true]] : []), ...c.flags.filter(([k]) => k !== 'gh')] }];
   if (cmd === 'check') return c.pos.length || flagOf(c, 'branch') !== undefined ? [{ cmd: 'scope', pos: c.pos, flags: c.flags }] : null;
@@ -316,8 +344,8 @@ export function refusalProblems(args, said, loop, opts = {}) {
   const holes = calls.flat().filter((w) => HOLE.test(w) && !given.some((g) => g.includes(w.match(HOLE)[0])));
   const last = readCall(calls.at(-1));
   const problems = [];
-  // Every placeholder the line prints is one token, with no space and no comma, so no reader of a list or a text splits it.
-  for (const w of calls.flat()) for (const m of w.matchAll(/<[^<>]*>/g)) if (!given.some((g) => g.includes(m[0])) && /[\s,]/.test(m[0])) problems.push(`prints the placeholder ${m[0]}, which holds a space or a comma: ${ready}`);
+  // Every placeholder the line prints is one of the registry, each one token with no space and no comma.
+  for (const w of calls.flat()) for (const m of w.matchAll(/<[^<>]*>/g)) if (!given.some((g) => g.includes(m[0])) && !L.PLACEHOLDERS.includes(m[0])) problems.push(`prints ${m[0]}, which is no placeholder of the registry: ${ready}`);
   // The author: a ready line names the author the call named, or a placeholder for one, and never another.
   const by = readCall([cmd, ...given]).flags.find(([k, v]) => k === 'by' && typeof v === 'string')?.[1];
   for (const c of calls.map((w) => readCall(w))) for (const [k, v] of c.flags) if (k === 'by' && typeof v === 'string' && !HOLE.test(v) && v !== by) problems.push(`names --by ${v}, an author the call did not name: ${ready}`);
@@ -328,16 +356,19 @@ export function refusalProblems(args, said, loop, opts = {}) {
     // word it holds is one the call gave or a placeholder; pasted unfilled, it is refused and writes nothing.
     const allowed = [cmd, ...(REMOVED_FORMS[cmd] || []), ...(REPLACED_BY[cmd] || [])];
     if (unknown ? !HOLE.test(last.cmd) : !allowed.includes(last.cmd)) problems.push(`the call with a placeholder calls ${last.cmd}, not ${allowed.join(' or ')}: ${ready}`);
-    const known = new Set([...given, ...given.map((g) => g.toLowerCase()), ...given.flatMap((g) => g.split(/\s+/)), ...PARTS, 'review', '--', last.cmd]);
+    // The items of a removed tag call are its words without the + or - before them.
+    const plain = cmd === 'tag' ? given.map((g) => g.replace(/^[+-]/, '')) : given;
+    const known = new Set([...plain, ...plain.map((g) => g.toLowerCase()), ...plain.flatMap((g) => g.split(/\s+/)), ...PARTS, 'review', '--', last.cmd]);
     for (const w of calls.at(-1).slice(1)) if (!HOLE.test(w) && !w.startsWith('--') && !known.has(w) && !known.has(w.toLowerCase()) && !given.some((g) => g.split(',').map((s) => s.trim()).includes(w))) problems.push(`writes ${JSON.stringify(w)}, a value the call did not give: ${ready}`);
     // Every word the call gave is in the line, a placeholder keeping it in its token, but the one the reason names as wrong.
-    const dropped = readCall([cmd, ...given]);
+    const dropped = readCall([cmd, ...plain]);
     const values = [...dropped.pos, ...dropped.flags.flatMap(([k, v]) => [`--${k}`, ...(typeof v === 'string' ? [v] : [])])].filter((v) => v !== '');
     const kept = calls.flat().map((w) => w.toLowerCase());
     const reason = reasonOf(said).toLowerCase();
     // A value is kept whole, item by item (a comma list), or word by word with at most the one word the reason names.
     const bare = (v) => v.toLowerCase().replace(/^["'`[\]]+|["'`[\]]+$/g, '');
-    const has = (v) => v !== '' && (kept.some((w) => w === bare(v) || w.includes(bare(v)) || w.includes(tokenOf(bare(v)))) || reason.includes(bare(v)));
+    // The reason names a value as it was given, or quoted as JSON (a newline written \n).
+    const has = (v) => v !== '' && (kept.some((w) => w === bare(v) || w.includes(bare(v)) || w.includes(tokenOf(bare(v)))) || reason.includes(bare(v)) || reason.includes(JSON.stringify(bare(v)).slice(1, -1)));
     const keeps = (v) => {
       if (has(v)) return true;
       const items = v.split(',').map((s) => s.trim()).filter(Boolean);
@@ -347,10 +378,12 @@ export function refusalProblems(args, said, loop, opts = {}) {
     };
     const lost = values.filter((v) => !keeps(v));
     if (lost.length) problems.push(`drops ${lost.map((v) => JSON.stringify(v)).join(', ')}, which the call gave and the reason does not name as wrong: ${ready}`);
-    const dir = copy(loop, opts);
-    const pasted = runPrinted(dir, ready);
-    if (pasted.status === 0) problems.push(`pasted with its placeholder unfilled, it runs: ${ready}`);
-    if (JSON.stringify(snapshot(dir)) !== JSON.stringify(before)) problems.push(`pasted with its placeholder unfilled, it writes: ${ready}`);
+    for (const sh of SHELLS) {
+      const dir = copy(loop, opts);
+      const pasted = runPrinted(dir, ready, sh);
+      if (pasted.status === 0) problems.push(`pasted into ${sh} with its placeholder unfilled, it runs: ${ready}`);
+      if (JSON.stringify(snapshot(dir)) !== JSON.stringify(before)) problems.push(`pasted into ${sh} with its placeholder unfilled, it writes: ${ready}`);
+    }
     return problems;
   }
   // The call fixed, or a step and then the call: the calls the call meant, word for word, after the steps.
@@ -373,19 +406,23 @@ export function refusalProblems(args, said, loop, opts = {}) {
     problems.push(`is not the call meant (${words(intended[n]).join(' ')}): ${ready}`);
   });
   if (partly) {
-    const dir = copy(loop, opts);
-    const once = runPrinted(dir, ready);
-    if (once.status === 0 || JSON.stringify(snapshot(dir)) !== JSON.stringify(before)) problems.push(`corrected in part, it runs or writes: ${ready}`);
+    for (const sh of SHELLS) {
+      const dir = copy(loop, opts);
+      const once = runPrinted(dir, ready, sh);
+      if (once.status === 0 || JSON.stringify(snapshot(dir)) !== JSON.stringify(before)) problems.push(`corrected in part, pasted into ${sh} it runs or writes: ${ready}`);
+    }
     return problems;
   }
   for (const s of steps) if (!STEPS.includes(s.cmd) || (s.cmd === 'set' && s.pos[1] !== 'in-progress')) problems.push(`runs ${s.cmd} as a step before the call: ${ready}`);
-  // Run: the line by the shell, and the steps then the calls meant on another copy; the two records are the same.
-  const a = copy(loop, opts);
-  const pasted = runPrinted(a, ready);
+  // Run: the line by each shell, and the steps then the calls meant on another copy; the records are the same.
   const b = copy(loop, opts);
   for (const c of [...steps, ...intended]) if (run(b, words(c)).status !== 0) break;
-  if (JSON.stringify(snapshot(a)) !== JSON.stringify(snapshot(b))) problems.push(`pasted, it writes another record than the call meant: ${ready}`);
-  if (pasted.status !== 0 && reasonOf(pasted.stderr) === reasonOf(said)) problems.push(`pasted, it is refused for the same reason: ${ready}`);
+  for (const sh of SHELLS) {
+    const a = copy(loop, opts);
+    const pasted = runPrinted(a, ready, sh);
+    if (JSON.stringify(snapshot(a)) !== JSON.stringify(snapshot(b))) problems.push(`pasted into ${sh}, it writes another record than the call meant: ${ready}`);
+    if (pasted.status !== 0 && reasonOf(pasted.stderr) === reasonOf(said)) problems.push(`pasted into ${sh}, it is refused for the same reason: ${ready}`);
+  }
   return problems;
 }
 
@@ -463,7 +500,7 @@ export function generateWrongCalls() {
   for (const cmd of Object.keys(J.AUTHOR_REQUIRED)) { const valid = VALID[cmd]; const at = valid.indexOf('--by'); if (at !== -1) calls.push([cmd, ...valid.slice(0, at), ...valid.slice(at + 2)]); }
   // Calls refused for the state of the loop, as they are written: a close with work open, a loop out of git made
   // permanent, a loop opened where one lives.
-  calls.push(['close'], ['close', '--by', 'jarl'], ['mode', 'permanent'], ['init', 'g', '--by', 'jarl']);
+  calls.push(['close'], ['close', '--by', 'jarl'], ['mode', 'permanent']);
   for (const [cmd, flags] of Object.entries(REMOVED_FLAGS)) for (const flag of Object.keys(flags)) calls.push([cmd, ...(VALID[cmd] || []), `--${flag}`, ...(flag === 'retract' ? ['1'] : flag === 'by' ? ['repo'] : [])]);
   for (const cmd of Object.keys(REPLACED_COMMANDS)) calls.push([cmd, '1']);
   // A dashed item after another in a list, a range over ids the loop lacks or written backwards, a lease another worker
@@ -474,7 +511,18 @@ export function generateWrongCalls() {
     ['set', '2', 'in-progress', 'start', '--worker', 'w-other', '--branch', 'jarl/2-other'], ['evidence', '1', '--ran', 'npm', 'test', '--saw', 'ok'], ['evidence', '1', '--ran', 'npm test', '--saw', 'pass', '3'],
     ['set', '1', 'deferred', 'not', 'now'], ['review', '1', 'approve', '--by', 'rev', 'read', 'it', 'all'],
   );
-  return calls.map((a) => (a[0] === 'base' ? { args: a, loop: SIBLING } : a));
+  // base runs where a repository is declared, and init where no loop lives yet; and init where one lives.
+  return [...calls.map((a) => (a[0] === 'base' ? { args: a, loop: SIBLING } : a[0] === 'init' ? { args: a, loop: EMPTY } : a)), { args: ['init', 'g', '--by', 'jarl'], loop: PLAIN }];
+}
+// Each generated call given --root (one in three written --root=), run from the top of a checkout whose own loop the call
+// does not name: the line it prints must reach the loop the call named, and leave the other untouched. init names the
+// directory of the checkout that holds no loop yet, base the checkout of the loop with a sibling repository.
+export function rootedWrongCalls() {
+  return generateWrongCalls().map((c, n) => {
+    const { args, loop } = Array.isArray(c) ? { args: c, loop: PLAIN } : c;
+    const [on, root] = loop === SIBLING ? [{ ...SIBLING, cwd: '' }, SIBLING.cwd] : loop === EMPTY ? [ROOTED, ROOT_EMPTY] : [ROOTED, ROOT_ARG];
+    return { args: [args[0], ...(n % 3 === 2 ? [`--root=${root}`] : ['--root', root]), ...args.slice(1)], loop: on };
+  });
 }
 
 test('the check of a refusal catches a ready line that does what the call did not mean', () => {
@@ -482,7 +530,7 @@ test('the check of a refusal catches a ready line that does what the call did no
   const check = (args, line) => refusalProblems(args, said(line), PLAIN);
   // A refusal that holds: the call fixed, mechanically, and the call with a placeholder.
   assert.deepEqual(check(['set', '1', 'Deferred', 'later'], "jarl.mjs set 1 deferred later"), []);
-  assert.deepEqual(check(['set', '1', 'bogus', 'later'], "jarl.mjs set 1 '<open|in-progress|done|dropped|deferred>' later"), []);
+  assert.deepEqual(check(['set', '1', 'bogus', 'later'], "jarl.mjs set 1 '<status>' later"), []);
   // The ready part taken off, and an unrelated command after the reason.
   assert.match(refusalProblems(['set', '1', 'bogus'], 'status must be one of: open', PLAIN)[0], /no reason and ready command/);
   assert.match(check(['set', '1', 'bogus'], 'jarl.mjs list --all')[0], /a value was chosen|not the call meant/);
@@ -503,6 +551,13 @@ test('every generated wrong call of every writing command is refused, writes not
   const calls = generateWrongCalls();
   assert.ok(calls.length >= 200, `the walk makes ${calls.length} calls`);
   const { found } = walk(calls, PLAIN, { mustRefuse: true });
+  assert.deepEqual(found, []);
+});
+
+test('every generated wrong call given --root ends with a line that carries it: pasted where the call was made, it reaches the loop the call named and leaves the loop of the checkout untouched', () => {
+  const calls = rootedWrongCalls();
+  assert.ok(calls.length >= 200, `the walk makes ${calls.length} calls`);
+  const { found } = walk(calls, ROOTED, { mustRefuse: true });
   assert.deepEqual(found, []);
 });
 
@@ -535,24 +590,24 @@ function refusal(args, opts = {}) {
 
 test('a status outside the set is fixed only by its case: a leased issue is never moved to open, a done one never reopened', () => {
   const leased = refusal(['set', '2', 'Done', 'all merged']);
-  assert.equal(leased.ready, "jarl.mjs set 2 done 'all merged'");
+  assert.equal(leased.ready, "jarl.mjs set 2 'done' 'all merged'");
   assert.equal(leased.issue('2').status, 'in-progress', 'done is refused there, and the lease holds');
   assert.equal(leased.issue('2').fields.worker, 'w-beta');
   const done = refusal(['set', '1', 'Dropped', 'duplicate of 4'], { pre: [['set', '1', 'done', 'finished']] });
   assert.equal(done.ready, "jarl.mjs set 1 dropped 'duplicate of 4'");
   assert.equal(done.issue('1').status, 'dropped');
   const bogus = refusal(['set', '2', 'finished', 'all merged']);
-  assert.match(bogus.ready, /^jarl\.mjs set 2 '<open\|in-progress\|done\|dropped\|deferred>' 'all merged'$/);
+  assert.equal(bogus.ready, "jarl.mjs set 2 '<status>' 'all merged'");
   assert.equal(bogus.issue('2').status, 'in-progress');
 });
 
 test('an option, a question and an author are never chosen for the caller: the owner\'s choice, another question and his ratification stay his', () => {
   assert.equal(refusal(['answer', 'a-2', '--option', 'b', '--by', 'owner']).ready, 'jarl.mjs answer a-2 --option B --by owner');
   const other = refusal(['answer', 'a-2', '--option', 'second', '--by', 'owner']);
-  assert.match(other.ready, /--option '<A\|B>'/);
+  assert.match(other.ready, /--option '<option>'/);
   assert.equal(L.loadAsks(other.pasted).find((a) => a.id === '2').state, 'open');
   const none = refusal(['answer', 'a-4', 'yes', '--by', 'owner']);
-  assert.match(none.ready, /^jarl\.mjs answer '<a-1\|a-2\|a-3>' yes --by owner$/);
+  assert.equal(none.ready, "jarl.mjs answer '<question>' yes --by owner");
   assert.ok(L.loadAsks(none.pasted).every((a) => a.state === 'open'), 'no question is answered');
   const ratify = refusal(['answer', 'a-3', 'yes', '--by', 'jarl']);
   assert.doesNotMatch(ratify.ready, /--by owner\b/);
@@ -561,14 +616,14 @@ test('an option, a question and an author are never chosen for the caller: the o
   assert.doesNotMatch(tick.ready, /\bfield\b|\[owner\]/, 'no owner line is made up');
   assert.doesNotMatch(readFileSync(L.findIssue(tick.pasted, '1').file, 'utf8'), /\[owner\]/);
   const self = refusal(['review', '2', 'approve', '--by', 'w-beta', 'read it all and it is fine'], { pre: [['evidence', '2', '--ran', 'npm test', '--saw', 'pass 2']] });
-  assert.match(self.ready, /--by '<a-fresh-reviewer-not-w-beta>'/);
+  assert.match(self.ready, /--by '<a-fresh-reviewer>'/);
   assert.notEqual(run(self.pasted, ['set', '2', 'done', 'merged']).status, 0, 'the pasted line records no approve, so done stays refused');
 });
 
 test('close with open issues ends with the question to the owner, never with close --force', () => {
   const r = refusal(['close', '--by', 'jarl']);
   assert.doesNotMatch(r.ready, /--force/);
-  assert.match(r.ready, /^jarl\.mjs ask '<close-the-loop-with-1-2-3-4-still-open\?>' --by jarl$/);
+  assert.equal(r.ready, "jarl.mjs ask '<question-for-the-owner>' --by jarl");
   assert.ok(existsSync(join(r.pasted, '.jarl', 'goal.md')));
 });
 
@@ -581,21 +636,21 @@ test('a part field does not write, and a line taken off a section, end with a pl
   const r = refusal(['field', '4', 'Acceptance', 'delta works', '--remove']);
   assert.equal(L.findIssue(r.pasted, '4').sections.acceptance, L.findIssue(copy(SIBLING), '4').sections.acceptance);
   assert.match(L.findIssue(r.pasted, '4').sections.acceptance, /delta works[\s\S]*and still works/);
-  assert.match(r.ready, /'<the-whole-Acceptance-section-without-delta-works>'/);
+  assert.match(r.ready, /'<the-whole-section>'/);
 });
 
 test('a tier, a kind and a goal line outside their sets keep the value given in a placeholder, or take only its case', () => {
   assert.equal(refusal(['new', 't', '--tier', 'Strong']).ready, 'jarl.mjs new t --tier strong');
-  assert.match(refusal(['new', 't', '--tier', 'stong']).ready, /--tier '<light\|standard\|strong>'/);
+  assert.match(refusal(['new', 't', '--tier', 'stong']).ready, /--tier '<tier>'/);
   const goal = refusal(['goal', '--set', 'Model (huge): opus']);
-  assert.equal(goal.ready, "jarl.mjs goal --set 'Model (<light|standard|strong>): opus'");
+  assert.equal(goal.ready, "jarl.mjs goal --set 'Model (<tier>): opus'");
   // A profile that declares its own fields of a wait keeps no promise among its kinds: the kind is never another one.
   const dir = mkdtempSync(join(tmpdir(), 'jarl-refusals-kinds-'));
   mkdirSync(join(dir, '.git'));
   jarl(dir, 'init', 'goal');
   writeFileSync(join(dir, '.jarl', 'profile.json'), JSON.stringify({ 'jarl-profile': 1, name: 'kinded', statuses: L.BUILTIN_STATUSES, fields: { Person: {} } }));
   const r = run(dir, ['new', 't', '--tier', 'light', '--kind', 'promise']);
-  assert.match(r.stderr.trim().split('\n').at(-1), /--kind '<bug\|gap\|cleanup\|docs\|test\|research\|process>'$/);
+  assert.match(r.stderr.trim().split('\n').at(-1), /--kind '<kind>'$/);
 });
 
 test('a ready line keeps every word given: a title that starts with --, a text given as an unknown flag, a takeover\'s reason, a short finding, a path that starts with -', () => {
@@ -606,11 +661,11 @@ test('a ready line keeps every word given: a title that starts with --, a text g
   assert.match(text.ready, /'what it is'/);
   assert.ok(!L.loadIssues(text.pasted).some((i) => i.title === 't'), 'nothing is filed without the text');
   const takeover = refusal(['set', '2', 'in-progress', 'take over', '--worker', 'w-new']);
-  assert.equal(takeover.ready, "jarl.mjs set 2 in-progress 'take over' --worker w-new '<--handover-to-end-the-lease-of-w-beta-or-none>'");
+  assert.equal(takeover.ready, "jarl.mjs set 2 in-progress 'take over' --worker w-new '<--handover-or-none>'");
   assert.equal(takeover.issue('2').fields.worker, 'w-beta', 'pasted unfilled, the lease another worker holds stays his');
-  assert.match(refusal(['review', '2', 'changes', '--by', 'rev-q', 'Important: x']).ready, /'<Important:-x-in-at-least-3-words>'/);
+  assert.match(refusal(['review', '2', 'changes', '--by', 'rev-q', 'Important: x']).ready, /'<what-was-read-and-found>'/);
   const path = refusal(['field', '1', 'Files', '-x.mjs', '--add']);
-  assert.match(path.ready, /'<item-for--x\.mjs-with-no-leading-dash>'/);
+  assert.match(path.ready, /'<an-item-with-no-leading-dash>'/);
   assert.doesNotMatch(path.ready, / x\.mjs/);
 });
 
@@ -630,20 +685,26 @@ test('a ready line is not refused again for the reason the call was: a value wit
 
 // ---- placeholders are never data -------------------------------------------------------------------------------------
 
-test('a value, a list item or the value part of a value written in parts that is one placeholder is refused, with nothing written; a text that holds angle brackets among other words is written', () => {
+
+test('the registry holds one-token placeholders only, none of them a value a person writes in angle brackets', () => {
+  for (const p of L.PLACEHOLDERS) assert.match(p, /^<[^<>\s,]+>$/, p);
+  for (const value of ['<nil>', '<none>', '<b>', '<br>', '<Button />', '<Response [200]>', '<x>', '<T>']) assert.equal(L.isPlaceholder(value), false, value);
+  assert.throws(() => L.hole('<not-registered>'), TypeError);
+});
+
+test('a placeholder of the registry is refused as a value, a list item, a line of a list held one per line, or the value part of a value written in parts, with nothing written', () => {
   const holes = [
     ['review', '1', 'approve', '--by', '<reviewer>', 'read it all, fine'], ['retract', '1', '1', '--by', '<who>', 'the row was wrong'],
-    ['evidence', '1', '--ran', '<command>', '--saw', 'ok'], ['evidence', '1', '--ran', 'npm test', '--saw', '<what it printed>'],
-    ['set', '3', 'in-progress', 'start', '--worker', 'w3', '--branch', '<worker branch>'], ['field', '1', 'Title', '<title>'], ['new', '<title>', '--tier', 'light'],
-    ['answer', 'a-1', '<text>', '--by', 'owner'], ['decide', 's9', '<text>', '--by', 'jarl'], ['decide', '<slug>', 'a ruling', '--by', 'jarl'],
-    ['field', '1', 'Tags', 'a,<tag>'], ['new', 't', '--tier', 'light', '--after', '3,<id>'], ['log', '<a note that is not shaped as a move>'],
-    ['answer', 'a-2', '--option', '<A|B>', '--by', 'owner'], ['goal', '--set', '<Model (light|standard|strong): opus>'],
+    ['evidence', '1', '--ran', '<command>', '--saw', 'ok'], ['evidence', '1', '--ran', 'npm test', '--saw', '<what-it-printed>'],
+    ['set', '3', 'in-progress', 'start', '--worker', 'w3', '--branch', '<worker-branch>'], ['field', '1', 'Title', '<title>'], ['new', '<title>', '--tier', 'light'],
+    ['answer', 'a-1', '<text>', '--by', 'owner'], ['decide', 's9', '<text>', '--by', 'jarl'], ['decide', '<slug>', 'a ruling', '--by', 'jarl'], ['log', '<text>'],
+    ['field', '1', 'Tags', 'a,<tag>'], ['new', 't', '--tier', 'light', '--after', '3,<id>'], ['answer', 'a-2', '--option', '<option>', '--by', 'owner'], ['goal', '--set', '<machine-line>'],
     // The value part of a value written in parts: a goal line, an option, a source, a field and a section of a profile, a
-    // changelog entry, a selector of a scope; and a list item taken off.
-    ['goal', '--set', 'Check: <command>'], ['goal', '--set', 'Model (<light|standard|strong>): opus'], ['ask', 'q?', '--option', 'A: <effect>', '--option', 'B: b'],
-    ['new', 't', '--tier', 'light', '--source', '<dir>#<id>'], ['new', 't', '--tier', 'light', '--source', 'research#<id>'], ['new', 't', '--tier', 'light', '--field', 'Area=<value>'],
-    ['new', 't', '--tier', 'light', '--section', 'Design=<text>'], ['field', '1', 'Changelog', 'Added: <entry>'], ['new', 't', '--tier', 'light', '--changelog', 'Fixed: <what changed>'],
-    ['decide', 's9', 'a ruling', '--by', 'jarl', '--applies-to', 'role <role>'], ['field', '1', 'Tags', 'core,<a-tag>', '--remove'], ['field', '1', 'Source', 'r/x#<id>'],
+    // changelog entry, a selector of a scope; a list item taken off; a line of the acceptance.
+    ['goal', '--set', 'Check: <command>'], ['goal', '--set', 'Model (<tier>): opus'], ['ask', 'q?', '--option', 'A: <label:effect>', '--option', 'B: b'],
+    ['new', 't', '--tier', 'light', '--source', '<report-dir#finding-id>'], ['new', 't', '--tier', 'light', '--source', 'research#<id>'], ['new', 't', '--tier', 'light', '--field', 'Area=<value>'],
+    ['new', 't', '--tier', 'light', '--section', 'Design=<text>'], ['field', '1', 'Changelog', 'Added: <changelog-entry>'], ['new', 't', '--tier', 'light', '--changelog', 'Fixed: <text>'],
+    ['decide', 's9', 'a ruling', '--by', 'jarl', '--applies-to', 'role <who>'], ['field', '1', 'Tags', 'core,<tag>', '--remove'], ['field', '1', 'Source', 'r/x#<id>'], ['field', '1', 'Acceptance', 'a line\n<text>'],
   ];
   for (const args of holes) {
     const dir = copy(PLAIN);
@@ -653,13 +714,91 @@ test('a value, a list item or the value part of a value written in parts that is
     assert.match(r.stderr, /placeholder/, args.join(' '));
     assert.deepEqual(snapshot(dir), before, args.join(' '));
   }
+});
+
+test('a value written in angle brackets that is no placeholder of the registry is a value, recorded as it was given', () => {
   const genuine = [
-    ['evidence', '1', '--ran', 'node a.mjs <in.txt', '--saw', 'Vec<T> is fine'], ['field', '1', 'Title', 'the <b> tag is escaped'],
-    ['new', 'Map<K, V> leaks', '--tier', 'light'], ['decide', 's9', 'use <x> where it fits', '--by', 'jarl'], ['log', '<x> and more'], ['review', '1', 'approve', '--by', 'rev', '<html> renders, all fine'],
-    ['new', 'Jarl: <b> handling', '--tier', 'light'], ['field', '1', 'Where', 'the <tag> in a.mjs, line 3'], ['evidence', '1', '--ran', 'npm test', '--saw', 'it printed <b>ok</b>'],
-    ['field', '1', 'Changelog', 'Fixed: a <b> tag is escaped'], ['ask', 'q?', '--option', 'A: keep <b> as it is', '--option', 'B: drop it'], ['goal', '--set', 'Check: node run.mjs <in.txt'],
+    [['evidence', '1', '--ran', 'node a.mjs <in.txt', '--saw', 'Vec<T> is fine'], 'Vec<T> is fine'], [['field', '1', 'Title', 'the <b> tag is escaped'], 'the <b> tag is escaped'],
+    [['new', 'Map<K, V> leaks', '--tier', 'light'], 'Map<K, V> leaks'], [['decide', 's9', 'use <x> where it fits', '--by', 'jarl'], 'use <x> where it fits'], [['log', '<x> and more'], '<x> and more'],
+    [['review', '1', 'approve', '--by', 'rev', '<html> renders, all fine'], '<html> renders, all fine'], [['new', 'Jarl: <b> handling', '--tier', 'light'], 'Jarl: <b> handling'],
+    [['field', '1', 'Where', 'the <tag> in a.mjs, line 3'], 'the <tag> in a.mjs, line 3'], [['evidence', '1', '--ran', 'npm test', '--saw', 'it printed <b>ok</b>'], 'it printed <b>ok</b>'],
+    [['field', '1', 'Changelog', 'Fixed: a <b> tag is escaped'], 'Fixed: a <b> tag is escaped'], [['ask', 'q?', '--option', 'A: keep <b> as it is', '--option', 'B: drop it'], 'keep <b> as it is'],
+    [['goal', '--set', 'Check: node run.mjs <in.txt'], 'node run.mjs <in.txt'], [['evidence', '1', '--ran', 'curl x', '--saw', '<nil>'], '<nil>'], [['evidence', '1', '--ran', 'curl x', '--saw', '<none>'], '<none>'],
+    [['evidence', '1', '--ran', 'curl x', '--saw', '<Response [200]>'], '<Response [200]>'], [['new', '<Button />', '--tier', 'light'], '<Button />'], [['field', '1', 'Title', '<nil>'], '<nil>'],
+    [['log', '<none>'], '<none>'], [['new', 't', '--tier', 'light', '--acceptance', '<br>'], '<br>'], [['field', '1', 'What', '<class int>'], '<class int>'],
   ];
-  for (const args of genuine) assert.equal(run(copy(PLAIN), args).status, 0, args.join(' '));
+  for (const [args, text] of genuine) {
+    const dir = copy(PLAIN);
+    const r = run(dir, args);
+    assert.equal(r.status, 0, `${args.join(' ')}: ${r.stderr}`);
+    assert.ok(Object.values(snapshot(dir)).some((t) => t.includes(text)), `${args.join(' ')}: ${text} is written as given`);
+  }
+});
+
+// The tools run the command line's own parser and dispatch, so a tool call is the command line's call: each placeholder of
+// the registry, given as each text or list value of each writing tool, is refused before anything is written.
+test('each placeholder of the registry is refused in every text or list value a writing tool takes, with nothing written', () => {
+  const dir = copy(PLAIN);
+  const before = snapshot(dir);
+  const FILL = { ids: '1', id: '1', text: 'a reason here', status: 'deferred', verdict: 'approve', name: 'Priority', value: '1', slug: 's9', goal: 'g', title: 't', file: 'research/findings.json', mode: 'permanent', line: '1', entry: '1', by: 'jarl', key: 'k', branch: 'main' };
+  const misses = [];
+  let calls = 0;
+  for (const tool of MCP.buildTools().filter((t) => /^WRITES/.test(t.description))) {
+    const props = tool.inputSchema.properties;
+    // A path field takes an absolute path: a placeholder in one is refused as no absolute path, before Jarl reads it.
+    const paths = MCP.PATH_FIELDS[tool.name.replace(/^jarl_/, '')] || [];
+    const base = Object.fromEntries((tool.inputSchema.required || []).map((k) => [k, paths.includes(k) ? join(dir, 'research', 'findings.json') : tool.name === 'jarl_answer' && k === 'id' ? 'a-1' : FILL[k] ?? 'x']));
+    for (const [field, p] of Object.entries(props)) {
+      if (['root', 'json'].includes(field) || ![].concat(p.type).includes('string')) continue;
+      for (const hole of L.PLACEHOLDERS) {
+        calls += 1;
+        let said;
+        try { const r = MCP.callTool(tool.name, { ...base, [field]: hole, root: dir }); said = r.isError ? r.content.map((c) => c.text).join('\n') : null; } catch (e) { said = `invalid: ${e.message}`; }
+        const refused = said !== null && (/placeholder/.test(said) || (paths.includes(field) && /must be an absolute path/.test(said)));
+        if (!refused) misses.push(`${tool.name} ${field} ${hole}: ${said === null ? 'went through' : said.split('\n')[0]}`);
+      }
+    }
+  }
+  assert.ok(calls > 1000, `${calls} calls`);
+  assert.deepEqual(misses, []);
+  assert.deepEqual(snapshot(dir), before);
+});
+
+test('a line printed for a call given --root . from inside a loop that is no checkout of its own carries it, and pasted there reaches that loop', () => {
+  const top = copy(ROOTED);
+  const inner = join(top, ROOT_ARG);
+  const r = run(inner, ['set', '1', 'Deferred', 'not now', '--root', '.']);
+  const ready = r.stderr.trim().split('\n').at(-1);
+  assert.equal(ready, "jarl.mjs set 1 deferred 'not now' --root .");
+  for (const sh of SHELLS) {
+    const again = copy(ROOTED);
+    assert.equal(runPrinted(join(again, ROOT_ARG), ready, sh).status, 0, sh);
+    assert.equal(L.findIssue(join(again, ROOT_ARG), '1').status, 'deferred', sh);
+    assert.deepEqual(L.loadIssues(again).map((i) => i.status), ['open'], `${sh}: the loop of the checkout is untouched`);
+  }
+});
+
+// ---- the shell ---------------------------------------------------------------------------------------------------------
+
+test('every word of a printed command is written by one function, which leaves a word bare only when no shell reads anything in it', () => {
+  const { shellWord } = L;
+  for (const w of ['abc', '--by', 'a/b.c', '1,2', 'x@y:z%+', 'jarl/1-a', '_x', '.hidden', '/abs/path']) assert.equal(shellWord(w), w, w);
+  for (const w of ['#12', '=x', '~x', '&&', ';', '|', '{', '}', '!', 'if', 'done', 'a b', '', 'a#b', 'a=b', "it's", '$(id)', '`id`', '*', '?', '[a]', '%1']) assert.notEqual(shellWord(w), w, w);
+  // Printed calls, given word by word, and the commands a refusal names: nothing builds a command line as a text.
+  for (const [cmd, build] of Object.entries(REPLACED_COMMANDS)) {
+    const said = build(['1', '--by', 'jarl', '--root', 'r1']);
+    assert.ok(Array.isArray(said.calls) && said.calls.every((c) => Array.isArray(c) && c.every((w) => typeof w === 'string')), cmd);
+  }
+  const problems = [];
+  for (const f of sourceFiles()) {
+    const src = readFileSync(join(SOURCES, f), 'utf8');
+    for (const { line, text } of readyParts(src)) if (/`[^`]*jarl\.mjs [^`]*\$\{/.test(text) || /\bline:/.test(text)) problems.push(`${f}:${line}: a command built as a text: ${text.slice(0, 80)}`);
+    for (const name of MAKES_HOLES) {
+      const at = src.search(new RegExp(`(?:const|function) ${name}\\b`));
+      if (at !== -1 && /`[^`]*jarl\.mjs [^`]*\$\{/.test(src.slice(at, src.indexOf('\n', at + 1) === -1 ? undefined : src.indexOf('\n', at + 1)))) problems.push(`${f}: ${name} builds a command as a text`);
+    }
+  }
+  assert.deepEqual(problems, []);
 });
 
 // ---- texts that start with -- ----------------------------------------------------------------------------------------
@@ -694,8 +833,9 @@ test('a ready call whose text starts with -- writes the text after a bare --, an
 const SOURCES = fileURLToPath(new URL('../', import.meta.url));
 const sourceFiles = () => ['jarl.mjs', 'record.mjs', ...readdirSync(join(SOURCES, 'lib')).filter((f) => f.endsWith('.mjs')).map((f) => `lib/${f}`)];
 const ALLOWED_ERRORS = [
-  ['jarl.mjs', /return new Error\(`\$\{e\.reason\}\\n\$\{ready\}`\)/],
+  ['jarl.mjs', /return new Error\(`\$\{e\.reason\}\\n\$\{(?:readyText\(e\.ready\)|commandLine\(e\.ready\)|printedLine\(commands\))\}`\)/],
   ['lib/base.mjs', /throw new TypeError\(`a refusal is built from a reason and a ready part/],
+  ['lib/base.mjs', /throw new TypeError\(`\$\{token\} is not a placeholder of the registry/],
   ['lib/base.mjs', /throw new Refusal\(reason, ready\)/],
   ['lib/lock.mjs', /throw new TypeError\(ASYNC_REFUSAL\)/],
 ];
@@ -776,7 +916,7 @@ test('every ready part of the sources names its correction from the table, or ho
   // And the command line keeps a line that would run without a correction named from running: it gets a placeholder.
   const said = J.refusalFor(new L.Refusal('a reason', { arg: 1, value: 'open' }), { cmd: 'set', args: ['1', 'bogus'], flags: [] }).message;
   assert.match(said.split('\n').at(-1), /^jarl\.mjs set 1 open '<as-the-reason-says>'$/);
-  assert.equal(J.refusalFor(new L.Refusal('a reason', { arg: 1, value: 'done', fix: 'case' }), { cmd: 'set', args: ['1', 'Done'], flags: [] }).message.split('\n').at(-1), 'jarl.mjs set 1 done');
+  assert.equal(J.refusalFor(new L.Refusal('a reason', { arg: 1, value: 'done', fix: 'case' }), { cmd: 'set', args: ['1', 'Done'], flags: [] }).message.split('\n').at(-1), "jarl.mjs set 1 'done'");
 });
 test('every refusal of the sources is built by refuse or need with its ready part; no other error of any class is made or thrown', async () => {
   const problems = [];

@@ -293,7 +293,7 @@ test('a wait is on its named outside person, with when to check, and what comes 
 
 test('a wait names its person and when to check: new refuses one without them, field makes an issue a wait only once both are written, and neither is emptied on it', () => {
   const root = loop();
-  assert.match(refuses(root, 'new', 'the key', '--kind', 'wait'), /^a wait names the outside person it is held by and when to check it\njarl\.mjs new 'the key' --kind wait --person '<name>' --check-when '<a-date-or-the-event-to-check-after>'\n$/);
+  assert.match(refuses(root, 'new', 'the key', '--kind', 'wait'), /^a wait names the outside person it is held by and when to check it\njarl\.mjs new 'the key' --kind wait --person '<name>' --check-when '<date-or-event>'\n$/);
   assert.match(refuses(root, 'new', 'the key', '--kind', 'wait', '--person', 'Dana'), /a wait names the outside person/);
   assert.match(refuses(root, 'new', 'the key', '--kind', 'promise', '--person', 'Dana'), /--person goes with --kind wait/);
   assert.match(refuses(root, 'new', 'the key', '--check-when', 'Friday'), /--check-when goes with --kind wait/);
@@ -407,7 +407,7 @@ test('a loop whose profile already declares a field Person or a kind wait reads 
   // A profile that declares only the field keeps the built-in work kinds, without promise and wait.
   const other = loop();
   writeFileSync(join(other, '.jarl', 'profile.json'), JSON.stringify({ 'jarl-profile': 1, name: 'own-field', statuses: BUILTIN_STATUSES, fields: { Person: {} } }));
-  assert.match(refuses(other, 'new', 'a promise', '--kind', 'promise'), /^--kind must be one of: bug, gap, cleanup, docs, test, research, process \(got "promise"\)\njarl\.mjs new 'a promise' --kind '<bug\|gap\|cleanup\|docs\|test\|research\|process>'\n$/);
+  assert.match(refuses(other, 'new', 'a promise', '--kind', 'promise'), /^--kind must be one of: bug, gap, cleanup, docs, test, research, process \(got "promise"\)\njarl\.mjs new 'a promise' --kind '<kind>'\n$/);
   jarl(other, 'new', 'work', '--files', 'a.mjs', '--field', 'Person=Dana');
   assert.deepEqual(json(other, 'next').map((r) => r.id), ['1']);
 });

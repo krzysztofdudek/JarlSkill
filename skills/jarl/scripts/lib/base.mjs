@@ -66,9 +66,8 @@ function fieldText(v) { return oneBreak(v).replace(/\s+/g, ' ').trim(); }
 // the flag toArg to the at-th argument, { command } writes another command in place of the one given, { first } is a
 // command to run before the call, printed before it with &&, and an array applies several. A ready command of another
 // command than the refused one is a step before the call too, unless the command line's table of removed forms names that
-// command as the one that does what the call asked. { line } is a command line whose words were quoted with shellWord as
-// it was built, printed as it is; { external } is a command of the tool that runs the loop, named by its profile, printed
-// as it is. A refusal with no ready part cannot be built: refuse and need throw a TypeError instead.
+// command as the one that does what the call asked. { calls } is several calls of jarl.mjs, each an array of its words,
+// printed joined by &&; { external } is a command of the tool that runs the loop, named by its profile, printed as it is. A refusal with no ready part cannot be built: refuse and need throw a TypeError instead.
 //
 // What the last line writes is decided for each refusal, never by choosing a value. It is a line that runs only where the
 // ready part names one of the corrections below (fix: '<name>'), each mechanical, none able to change what the call
@@ -91,30 +90,51 @@ export class Refusal extends Error {
     this.ready = ready;
   }
 }
-// A placeholder: a value written as one angle-bracketed token, where a value only the caller knows goes. Jarl prints one
-// as a single token with no space and no comma, <hyphenated-words> or <a|b|c> for a closed set, so a list reader never
-// splits it; the command line refuses a whole value written so wherever it takes one (with spaces too: <some words>), so it
-// is never recorded as data. A text that holds <x> among other words is a text.
-export const isPlaceholder = (v) => typeof v === 'string' && /^<[^<>\/][^<>]*>$/.test(v.trim());
-// The shape of a placeholder as Jarl prints it, found anywhere in a word.
-export const HOLE = /<[^<>\s,]+>/;
-// The token of a placeholder: its words joined by hyphens, with no space, comma or angle bracket left in it.
-const tokenOf = (text) => String(text ?? '').replace(/[<>]/g, '').trim().replace(/[\s,]+/g, '-') || 'value';
-export const hole = (text) => `<${tokenOf(text)}>`;
-// The placeholder of a value of a closed set: the values allowed, joined by |.
-export const placeholderOf = (values) => `<${[...new Set([].concat(values).map(tokenOf))].join('|')}>`;
+// A placeholder: one angle-bracketed token where a value only the caller knows goes. Jarl prints only the placeholders of
+// this closed registry, each one token with no space and no comma, so no reader of a list or a text splits it; the
+// command line refuses a value only where it is exactly one of them (a whole value, a list item, a line of a list held one
+// per line, or the value part of a value written in parts), so a ready line pasted unfilled writes nothing, and any other
+// value written in angle brackets (<nil>, <none>, <Button />) is a value, recorded as given. What the placeholder stands
+// for is said by the reason before it: the values allowed, the ids the loop holds, the word that was wrong.
+export const PLACEHOLDERS = Object.freeze([
+  '<id>', '<ids>', '<another-id>', '<another-issue>', '<ids-the-loop-holds>', '<ids-low-high>', '<a-smaller-range>', '<the-id-new-prints>',
+  '<the-id-ask-prints>', '<an-issue-next-offers>', '<question>', '<a-n>', '<n>', '<n|note-n>', '<review|n|note-n>', '<line>',
+  '<text>', '<title>', '<the-title-filed-again>', '<goal>', '<slug>', '<a-new-slug>', '<a-ruling>', '<a-ruling-in-force>', '<value>',
+  '<the-whole-new-value>', '<the-whole-section>', '<a-part-of-the-description>', '<part>', '<name=value>', '<field=value>',
+  '<changelog-entry>', '<owner-line>', '<items>', '<an-item-with-no-leading-dash>', '<an-item-without-quotes>', '<one-quoted-text>',
+  '<no-word-here>', '<argument>', '<who>', '<one-name>', '<reviewer>', '<a-fresh-reviewer>', '<the-owner-himself>', '<owner-or-a-name>',
+  '<who-asks>', '<his-own-words>', '<status>', '<status-in-the-log>', '<a-status-the-gate-allows>', '<kind>', '<tier>', '<prio>',
+  '<verdict>', '<ci-state>', '<ask-kind>', '<jarl|owner>', '<option>', '<another-option>', '<label:effect>', '<mode>', '<group>',
+  '<name>', '<names>', '<name|path>', '<coordinator>', '<slice:coordinator>', '<no-second-slice-tag>', '<tag>', '<a-tag-an-issue-carries>', '<key>',
+  '<a-number-two-files-carry>', '<sha>', '<command>', '<what-it-printed>', '<what-was-wrong>', '<what-was-read-and-found>',
+  '<findings-with-a-severity>', '<what-failed>', '<what-the-branch-does>', '<what-is-red>', '<what-would-get-weaker>', '<why>',
+  '<why-the-worker-changed>', '<question-for-the-owner>', '<yes-or-reject-first>', '<branch>', '<worker-branch>', '<base-branch>',
+  '<the-new-worker>', '<the-worktree-of-the-lease>', '<model-id>', '<path>', '<paths>', '<path-under-the-loop-root>', '<slot>',
+  '<findings.json>', '<profile.json>', '<report-dir>', '<report-dir#finding-id>', '<finding-ids>', '<template>', '<the-main-checkout>',
+  '<loop-root>', '<selectors>', '<selector>', '<role>', '<moment>', '<date-or-event>', '<yyyy-mm-dd>', '<type>', '<rule-id>', '<number-of-files>', '<whole-number>',
+  '<count>', '<hours>', '<rounds>', '<machine-line>', '<resource-name>', '<a-row-the-log-matches>', '<a-flag-it-takes-or-none>',
+  '<no-flag-here>', '<--handover-or-none>', '<one-kind-of-evidence-per-call>', '<a-jarl-command>', '<nothing-to-do>',
+  '<the-command-of-the-tool-that-runs-this-loop>', '<as-the-view-shows>', '<as-the-reason-says>', '<a-jarl-that-reads-this-format>',
+]);
+const REGISTERED = new Set(PLACEHOLDERS);
+// Whether a value is one of the tool's own placeholders, the one test the command line refuses a value by.
+export const isPlaceholder = (v) => typeof v === 'string' && REGISTERED.has(v.trim());
+// A placeholder of the registry, by its text: the one way code names one, so an unregistered one cannot be printed.
+export function hole(token) {
+  if (!REGISTERED.has(token)) throw new TypeError(`${token} is not a placeholder of the registry (lib/base.mjs, PLACEHOLDERS)`);
+  return token;
+}
+// The placeholders of the registry a printed line holds, found anywhere in its words.
+export const HOLE = new RegExp(PLACEHOLDERS.map((p) => p.replace(/[|.#=:]/g, (c) => `\\${c}`)).join('|'));
 // Where only a view tells what to change (the record read strictly, the profile, the rulings): the view, which writes
 // nothing, then the call with a placeholder for what the view shows.
-export const afterView = (view, why) => [{ first: view }, { flag: hole(why) }];
-// A word of a printed command that is a whole placeholder, written as one token.
-const asToken = (w) => (isPlaceholder(w) ? hole(String(w).trim().slice(1, -1)) : String(w));
-// A text the caller gave, shown inside a reason: whole, its angle brackets left out.
-export const shown = (text) => String(text ?? '').replace(/[<>]/g, '').trim();
+export const afterView = (view) => [{ first: view }, { flag: hole('<as-the-view-shows>') }];
 // The value a refusal writes where a value outside a closed set was given: the one value of the set it is but for case,
-// which cannot change what was meant, else the placeholder of the set. The fix that writes it names the correction case.
-export function oneOf(given, allowed) {
+// which cannot change what was meant, else the placeholder of the set, the reason naming its values. The fix that writes
+// it names the correction case.
+export function oneOf(given, allowed, placeholder) {
   const same = allowed.filter((a) => String(a).toLowerCase() === String(given ?? '').trim().toLowerCase());
-  return same.length === 1 ? String(same[0]) : placeholderOf(allowed);
+  return same.length === 1 ? String(same[0]) : hole(placeholder);
 }
 const FIX_KEYS = ['flag', 'arg', 'drop', 'replace', 'truncate', 'retry', 'rename', 'toArg', 'command', 'first'];
 const isFix = (r) => r !== null && typeof r === 'object' && !Array.isArray(r) && FIX_KEYS.some((k) => Object.hasOwn(r, k));
@@ -126,7 +146,7 @@ export function namesCorrection(ready) {
 }
 function checkReady(ready) {
   for (const p of [].concat(ready)) if (p !== null && typeof p === 'object' && !Array.isArray(p) && p.fix !== undefined && !Object.hasOwn(CORRECTIONS, p.fix)) return false;
-  if (isLine(ready) || isExternal(ready)) return true;
+  if (isCalls(ready) || isExternal(ready)) return true;
   if (Array.isArray(ready) && ready.length && ready.every(isFix)) return ready.every((f) => f.first === undefined || checkReady(f.first));
   if (isFix(ready)) return ready.first === undefined || checkReady(ready.first);
   const words = Array.isArray(ready) ? ready.map(String) : typeof ready === 'string' ? commandWords(ready) : [];
@@ -141,23 +161,26 @@ export function commandWords(text) {
   for (const m of String(text).matchAll(re)) words.push(m[1] !== undefined ? m[1] : m[2] !== undefined ? m[2].replace(/'\\''/g, "'") : m[3] ?? m[4]);
   return words;
 }
-// A command line built word by word with shellWord already ({ line }), printed as it is.
-const isLine = (r) => r !== null && typeof r === 'object' && !Array.isArray(r) && typeof r.line === 'string' && /^jarl\.mjs \S/.test(r.line);
-// A command as the shell is given it: every word quoted where the shell would read it, && kept between two commands, and a
-// word that is a placeholder written as one token.
-export function commandLine(ready) {
-  if (isLine(ready)) return ready.line;
-  if (isExternal(ready)) return ready.external.trim();
-  const words = Array.isArray(ready) ? ready.map(String) : commandWords(ready);
-  return words.map((w) => (w === '&&' ? w : shellWord(asToken(w)))).join(' ');
+// Commands given word by word ({ calls: [['jarl.mjs', ...], ...] }), printed one after the other, joined by &&.
+const isCalls = (r) => r !== null && typeof r === 'object' && !Array.isArray(r) && Array.isArray(r.calls) && r.calls.length > 0 && r.calls.every((c) => Array.isArray(c) && c[0] === 'jarl.mjs' && c.length > 1);
+// The words of each command of a ready part that is no fix: its calls, or the one command it is.
+export function commandsOfReady(ready) {
+  if (isCalls(ready)) return ready.calls.map((c) => c.map((w) => (w === undefined || w === null ? hole('<value>') : String(w))));
+  return [Array.isArray(ready) ? ready.map(String) : commandWords(ready)];
 }
-export { asToken };
+// Commands as the shell is given them: every word written by shellWord, the one function every printed word goes through,
+// and two commands joined by &&.
+export const printedLine = (commands) => commands.map((words) => words.map(shellWord).join(' ')).join(' && ');
+export function commandLine(ready) {
+  if (isExternal(ready)) return ready.external.trim();
+  return printedLine(commandsOfReady(ready));
+}
 // The ready part as a text, for a caller that holds no call (the record library): a fix is written as the flag or the
 // argument it asks for.
 export function readyText(ready) {
   const fixes = [].concat(ready).filter(isFix);
   if (!fixes.length) return commandLine(ready);
-  const w = (v) => shellWord(asToken(v));
+  const w = (v) => shellWord(v);
   return fixes.map((f) => (f.first !== undefined ? `after ${commandLine(f.first)}` : f.drop !== undefined ? `without ${f.drop}${f.value === undefined || f.value === null ? '' : ` ${w(f.value)}`}` : f.flag !== undefined ? `${f.flag}${f.value === undefined ? '' : ` ${w(f.value)}`}`
     : f.retry ? 'the same call again' : f.rename !== undefined ? `${w(f.to)} in place of ${f.rename}` : f.toArg !== undefined ? `the value of ${f.toArg} as argument ${f.at + 1}` : f.command !== undefined ? `${w(f.command)} in place of the command`
       : f.replace !== undefined ? `${w(f.value)} in place of ${shellWord(f.replace)}` : f.truncate !== undefined ? `no word after the first ${f.truncate}${f.value === undefined ? '' : `, then ${w(f.value)}`}` : `argument ${f.arg + 1}: ${w(f.value)}`)).join(' ');
@@ -177,11 +200,14 @@ function splitList(v) { return String(v || '').split(',').map((s) => s.trim()).f
 // survive in it at either end or inside and the text is one segment of the line.
 export function noSeparators(text) { return String(text ?? '').trim().replace(/\s*·\s*/g, ' - ').trim(); }
 
-// A word as a POSIX shell reads it back unchanged: as it is when it holds nothing the shell reads, else in single quotes,
-// a single quote inside written '\''. A word with line breaks is printed by printf, one quoted line per argument, so the
-// command stays on one line, and a refusal's ready command on its last line. Every command Jarl prints for a person or an
-// agent to run writes its words so.
-const quoted = (s) => (/^[A-Za-z0-9_@%+=:,./#-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`);
+// A word as sh, bash and zsh read it back unchanged: bare only when it starts with a letter, a digit, _ . / or - and holds
+// nothing but letters, digits and _ . / : @ % + , - after it, and is no reserved word of a shell; else in single quotes, a
+// single quote inside written '\''. So a word that starts with # (a comment), = or ~ (zsh and bash expand them), an operator
+// (&&, ;, |) and every other word is quoted. A word with line breaks is printed by printf, one quoted line per argument,
+// so the command stays on one line, and a refusal's ready command on its last line. Every word Jarl prints in a command for
+// a person or an agent to run is written so, through printedLine.
+const RESERVED_WORDS = new Set(['!', '{', '}', '[[', ']]', 'case', 'coproc', 'do', 'done', 'elif', 'else', 'esac', 'fi', 'for', 'function', 'if', 'in', 'select', 'then', 'time', 'until', 'while']);
+const quoted = (s) => (/^[A-Za-z0-9_./-][A-Za-z0-9_./:@%+,-]*$/.test(s) && !RESERVED_WORDS.has(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`);
 export function shellWord(s) {
   const text = String(s);
   if (!/[\r\n]/.test(text)) return quoted(text);

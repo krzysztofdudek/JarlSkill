@@ -60,8 +60,8 @@ export function expandIds(raw) {
     const range = /^(\d+)-#?(\d+)$/.exec(part);
     if (range) {
       const [a, b] = [Number(range[1]), Number(range[2])];
-      need(a <= b, `range ${part} runs backwards: the ids it was meant for are not read from it (${b}-${a}, or ${a},${b}?)`, () => ({ replace: part, value: hole(`ids for ${part} low-high or as a list`) }));
-      need(b - a < MAX_BULK, `range ${part} spans more than ${MAX_BULK} issues`, () => ({ replace: part, value: '<a smaller range>' }));
+      need(a <= b, `range ${part} runs backwards: the ids it was meant for are not read from it (${b}-${a}, or ${a},${b}?)`, () => ({ replace: part, value: hole('<ids-low-high>') }));
+      need(b - a < MAX_BULK, `range ${part} spans more than ${MAX_BULK} issues`, () => ({ replace: part, value: '<a-smaller-range>' }));
       for (let n = a; n <= b; n += 1) out.push(String(n));
     } else {
       need(/^\d+$/.test(part), `not an issue id: "${part}" — ids are numbers, several as a comma list with ranges: 12,13 or 203-206,209`, () => ({ replace: part, value: '<id>' }));

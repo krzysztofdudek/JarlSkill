@@ -2,7 +2,7 @@
 
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { CI_STATES, fieldText, need, shown } from './base.mjs';
+import { CI_STATES, fieldText, hole, need } from './base.mjs';
 import { needNoOwnersWords } from './owner.mjs';
 import { jarlDir, plainRelative } from './where.mjs';
 import { readText, writeAtomic } from './files.mjs';
@@ -180,6 +180,16 @@ const LINE_WRITERS = {
   merged: 'jarl.mjs merged <id> --sha <sha>', ci: 'jarl.mjs merged <id> --ci <state>', body: 'jarl.mjs field <id> <part> "<value>"', tick: 'jarl.mjs tick <id> <line> --by owner',
   tip: 'jarl.mjs evidence, review or merged, which write the tip of the branch after their own line',
 };
+// The same commands as the ready call a refusal of the line ends with: the id the line names, a placeholder for each
+// value the line does not give.
+const LINE_CALLS = {
+  filed: () => ['new', hole('<title>')], move: (id) => ['set', id, hole('<status>'), hole('<why>')], round: (id) => ['round', id, hole('<what-failed>')],
+  verdict: (id) => ['review', id, hole('<verdict>'), hole('<findings-with-a-severity>'), '--by', hole('<reviewer>')],
+  'retract-review': (id) => ['retract', id, 'review', hole('<why>'), '--by', hole('<who>')], 'retract-row': (id) => ['retract', id, hole('<n>'), hole('<why>'), '--by', hole('<who>')],
+  'retract-note': (id) => ['retract', id, hole('<n|note-n>'), hole('<why>'), '--by', hole('<who>')], row: (id) => ['evidence', id, '--ran', hole('<command>'), '--saw', hole('<what-it-printed>')],
+  merged: (id) => ['merged', id, '--sha', hole('<sha>')], ci: (id) => ['merged', id, '--ci', hole('<ci-state>')], body: (id) => ['field', id, hole('<part>'), hole('<value>')],
+  tick: (id) => ['tick', id, hole('<line>'), '--by', hole('<the-owner-himself>')], tip: (id) => ['evidence', id, '--ran', hole('<command>'), '--saw', hole('<what-it-printed>')],
+};
 const MOVE_SHAPE = idRe('^{id} →');
 // A free line for the journal (the log command and record.appendLog): a note about the loop or an issue. A line that
 // reads as one of the kinds above (a filing, a move, a round, a verdict, a retraction, a row, a merge, a CI state, a body
@@ -189,9 +199,9 @@ export function appendNote(root, event) {
   needNoOwnersWords('the note', event);
   const text = oneLine(event);
   const id = LEADING_ID.exec(text)?.[1] ?? null;
-  need(!MOVE_SHAPE.test(text), `log writes a note, and "${text.length > 80 ? `${text.slice(0, 77)}...` : text}" has the shape of a move (an id, an arrow), which set writes: ${LINE_WRITERS.move} "<text>"`, () => { const m = /^(\S+)\s+→\s*(\S+)?\s*(.*)$/s.exec(text.trim()); return ['jarl.mjs', 'set', m?.[1] ?? '<ids>', m?.[2] ?? '<status>', `<the reason of the move${m?.[3] ? `: ${shown(m[3])}` : ''}>`]; });
+  need(!MOVE_SHAPE.test(text), `log writes a note, and "${text.length > 80 ? `${text.slice(0, 77)}...` : text}" has the shape of a move (an id, an arrow), which set writes: ${LINE_WRITERS.move} "<text>"`, () => { const m = /^(\S+)\s+→\s*(\S+)?\s*(.*)$/s.exec(text.trim()); return ['jarl.mjs', 'set', m?.[1] ?? hole('<ids>'), m?.[2] ?? hole('<status>'), hole('<why>')]; });
   const type = id === null ? 'other' : parseEvent(id, text, loadProfile(root)).type;
-  need(type === 'other', `log writes a note, and "${text.length > 80 ? `${text.slice(0, 77)}...` : text}" reads as ${type === 'filed' ? 'a filing' : `a ${type.replace('-', ' ')} line`}, which the journal's own command writes with its checks: ${type === 'row' && attachmentOf(text.slice(`${id} evidence row · `.length)) ? 'jarl.mjs evidence <id> --file <path> --slot <name>' : LINE_WRITERS[type]}`, () => (type === 'tip' ? ['jarl.mjs', 'evidence', '<id>', '--ran', '<command>', '--saw', '<what it printed>'] : type === 'filed' ? ['jarl.mjs', 'new', '<title>'] : LINE_WRITERS[type].replace(' approve|changes', ' <approve|changes> --by <reviewer> <text>')));
+  need(type === 'other', `log writes a note, and "${text.length > 80 ? `${text.slice(0, 77)}...` : text}" reads as ${type === 'filed' ? 'a filing' : `a ${type.replace('-', ' ')} line`}, which the journal's own command writes with its checks: ${type === 'row' && attachmentOf(text.slice(`${id} evidence row · `.length)) ? 'jarl.mjs evidence <id> --file <path> --slot <name>' : LINE_WRITERS[type]}`, () => ['jarl.mjs', ...LINE_CALLS[type](id ?? hole('<id>'))]);
   appendLog(root, event);
 }
 

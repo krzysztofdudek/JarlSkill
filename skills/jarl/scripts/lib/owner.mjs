@@ -57,7 +57,7 @@ export function needNoOwnersWords(what, ...values) {
     else if (v && typeof v === 'object') Object.values(v).forEach(walk);
   };
   values.forEach(walk);
-  for (const t of texts) need(!holdsOwnersWords(t), REFUSAL(what), () => (['jarl.mjs', 'decide', '<slug>', '<text>', '--by', 'owner', '--quote', '<his own words>']));
+  for (const t of texts) need(!holdsOwnersWords(t), REFUSAL(what), () => (['jarl.mjs', 'decide', '<slug>', '<text>', '--by', 'owner', '--quote', '<his-own-words>']));
 }
 
 // The texts the writes inside `fn` may add that hold the marker: the quote decide writes, and text the record already
@@ -81,7 +81,7 @@ export function needNoNewOwnersWords(before, after, where) {
     const n = held.get(l) || 0;
     if (n) { held.set(l, n - 1); continue; }
     const rest = carried.reduce((t, c) => t.split(c).join(''), l);
-    need(!holdsOwnersWords(rest), REFUSAL(`a line written to ${where} ("${l.trim().slice(0, 80)}")`), () => (['jarl.mjs', 'decide', '<slug>', '<text>', '--by', 'owner', '--quote', '<his own words>']));
+    need(!holdsOwnersWords(rest), REFUSAL(`a line written to ${where} ("${l.trim().slice(0, 80)}")`), () => (['jarl.mjs', 'decide', '<slug>', '<text>', '--by', 'owner', '--quote', '<his-own-words>']));
   }
 }
 
@@ -94,7 +94,7 @@ export function rulingAuthor(by) {
   need(name, '--by needs a value — who ruled or answered: owner, jarl, or a name', () => ({ flag: '--by', value: '<who>' }));
   const letters = normalForm(name).replace(/[^\p{L}]/gu, '');
   if (letters === OWNER || letters === `the${OWNER}`) return OWNER;
-  need(!letters.includes(OWNER), `--by "${name}" reads as the owner and names someone else: write owner for the owner, and a name without "owner" in it for anyone else`, () => ({ flag: '--by', value: '<owner, or a name without owner in it>' }));
+  need(!letters.includes(OWNER), `--by "${name}" reads as the owner and names someone else: write owner for the owner, and a name without "owner" in it for anyone else`, () => ({ flag: '--by', value: '<owner-or-a-name>' }));
   return name;
 }
 

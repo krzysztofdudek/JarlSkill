@@ -3,7 +3,7 @@
 
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve, dirname, basename, relative, isAbsolute } from 'node:path';
-import { afterView, fieldText, need, noSeparators, refuse, shellWord, splitList } from './base.mjs';
+import { afterView, fieldText, hole, need, noSeparators, refuse, splitList } from './base.mjs';
 import { git } from './git.mjs';
 import { canonical, issuesDir, jarlDir, portablePath } from './where.mjs';
 import { readText, writeAtomic } from './files.mjs';
@@ -71,7 +71,7 @@ export function repoOf(root, named) {
   // declared file or a removed test would be read from the wrong place and go unseen.
   const top = git(repo, ['rev-parse', '--show-toplevel']);
   need(top !== null || git(repo, ['rev-parse', '--is-bare-repository']) !== 'true', `${repo} is a bare repository: it has no working tree to act on`, () => ({ replace: String(repo), value: '<name|path>' }));
-  need(top !== null && canonical(top) === canonical(repo), name ? `${repo} is inside the repository at ${top}, not its root — ${nameFix(root, name)}` : `${repo} is inside the repository at ${top}, not its root — name the root: ${portablePath(relative(canonical(root), canonical(top || repo))) || '.'}`, () => ({ replace: String(repo), value: `<${portablePath(relative(canonical(root), canonical(top || repo))) || '.'}, the root of that repository>` }));
+  need(top !== null && canonical(top) === canonical(repo), name ? `${repo} is inside the repository at ${top}, not its root — ${nameFix(root, name)}` : `${repo} is inside the repository at ${top}, not its root — name the root: ${portablePath(relative(canonical(root), canonical(top || repo))) || '.'}`, () => ({ replace: String(repo), value: hole('<name|path>') }));
   RESOLVED.set(key, repo);
   return repo;
 }
@@ -130,14 +130,14 @@ function repoEntries(root, issue) {
 // throws). A loop whose profile names an external scheduler is never raised: the write is refused, naming `what` it
 // would have written, and nothing is written. Returns true when it wrote.
 export function raiseFormat(root, to = RECORD_FORMAT_RAISED, what = null) {
-  need(RECORD_FORMATS.includes(to), `record format ${to} is not one this Jarl writes`, () => afterView(['jarl.mjs', 'profile'], 'as profile shows'));
+  need(RECORD_FORMATS.includes(to), `record format ${to} is not one this Jarl writes`, () => afterView(['jarl.mjs', 'profile']));
   if (!existsSync(jarlDir(root))) return false;
   return withLock(root, () => {
     const profile = loadProfile(root);
     if (profile.format >= to) return false;
     if (!formatState(profile).raises) {
       const line = what || `a line of record format ${to}`;
-      refuse(`${line} needs record format ${to}, and this loop stays at format ${profile.format}: its profile names an external scheduler (${profile.scheduler}), the composer that reads this record, so Jarl never raises its format; ${line} is off in this loop until its profile says "format": ${to} — nothing was written`, afterView(['jarl.mjs', 'profile'], 'a profile that raises the format'));
+      refuse(`${line} needs record format ${to}, and this loop stays at format ${profile.format}: its profile names an external scheduler (${profile.scheduler}), the composer that reads this record, so Jarl never raises its format; ${line} is off in this loop until its profile says "format": ${to} — nothing was written`, afterView(['jarl.mjs', 'profile']));
     }
     // A bare word is a path in format 1 and a name from format 2 on: only a loop in format 1 has paths to say again.
     if (profile.format < RECORD_FORMAT_RAISED) writeBarePaths(root);
@@ -154,7 +154,7 @@ export function raiseFormat(root, to = RECORD_FORMAT_RAISED, what = null) {
 // `what` names the write in the refusal when it is one part of the line (a field of a kind), else the line's own words do.
 export function needFormat(root, name, what = null) {
   const line = Object.hasOwn(FORMAT_LINES, name) ? FORMAT_LINES[name] : null;
-  need(line, `${name} is not a line of the record format registry: its lines are ${Object.keys(FORMAT_LINES).join(', ')}`, () => afterView(['jarl.mjs', 'profile'], 'as profile shows'));
+  need(line, `${name} is not a line of the record format registry: its lines are ${Object.keys(FORMAT_LINES).join(', ')}`, () => afterView(['jarl.mjs', 'profile']));
   return raiseFormat(root, line.format, what || line.what);
 }
 
@@ -465,7 +465,7 @@ function declareRepo(root, name, main) {
 export function cmdRepoBase(root, name, branch) {
   need(name !== undefined && branch !== undefined, 'base takes a repository name and a branch', () => [...(name === undefined ? [{ arg: 0, value: '<name>' }] : []), { arg: 1, value: '<branch>' }]);
   const known = declaredRepos(root);
-  need(known.has(name), `${name} is not declared in this loop${known.size ? ` — it declares ${[...known.keys()].join(', ')}` : ''}; Jarl declares a repository the first time an issue names it`, () => (`jarl.mjs field <id> Repo ${shellWord(name)}`));
+  need(known.has(name), `${name} is not declared in this loop${known.size ? ` — it declares ${[...known.keys()].join(', ')}` : ''}; Jarl declares a repository the first time an issue names it`, () => (['jarl.mjs', 'field', '<id>', 'Repo', name]));
   const base = fieldText(branch);
   need(base && !/[\r\n]/.test(String(branch)) && !base.includes(' · '), 'the base is one branch name on one line', () => ({ replace: String(branch), value: '<branch>' }));
   const problem = branchNameProblem(base);
@@ -509,7 +509,7 @@ export function needRightCheckouts(root, values) {
     if (repoValueKind(root, value) !== 'name') continue;
     repoOf(root, value);
     const found = repoIdentity(root, value);
-    need(found.state !== 'mismatch', found.fix, () => afterView(['jarl.mjs', 'verify'], 'as verify shows'));
+    need(found.state !== 'mismatch', found.fix, () => afterView(['jarl.mjs', 'verify']));
   }
 }
 // Why nothing may be deleted in the checkout `repo`, or null: it stands under a name (one of `values`) whose root commits

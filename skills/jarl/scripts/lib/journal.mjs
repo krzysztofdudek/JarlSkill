@@ -2,7 +2,7 @@
 
 import { existsSync, readdirSync } from 'node:fs';
 import { join, dirname, basename } from 'node:path';
-import { fieldText, hole, need, noSeparators, oneBreak, placeholderOf, splitList } from './base.mjs';
+import { fieldText, hole, need, noSeparators, oneBreak, splitList } from './base.mjs';
 import { jarlDir, stamp, today } from './where.mjs';
 import { appendAtomic, readText, writeAtomic } from './files.mjs';
 import { ISSUE_FILE_RE, KEY_RE, idKey, idRe, issueForms, writtenId } from './ids.mjs';
@@ -185,7 +185,7 @@ function markDecision(root, slug, line, { text: given } = {}) {
   const path = decisionsPath(jarlDir(root));
   const lines = (given ?? readText(path)).split('\n');
   const at = lines.findIndex((l) => { const h = DECISION_HEAD.exec(l); return h && h[2] === slug; });
-  need(at !== -1, `no ruling ${slug} in ${DECISIONS_FILE}`, () => ({ replace: slug, value: '<the slug of a ruling: jarl.mjs decisions>' }));
+  need(at !== -1, `no ruling ${slug} in ${DECISIONS_FILE}`, () => ({ replace: slug, value: '<a-ruling>' }));
   let end = lines.findIndex((l, n) => n > at && l.startsWith('## '));
   if (end === -1) end = lines.length;
   while (end - 1 > at && lines[end - 1].trim() === '') end -= 1;
@@ -200,20 +200,20 @@ function markDecision(root, slug, line, { text: given } = {}) {
 // line of a ruling no text given to decide can stand on (owner.mjs, quoteOf). The ruling it rests on (under, on a ruling
 // by anyone but the owner) is the paragraph before, in the same form and for the same reason (owner.mjs, underOf).
 export function appendDecision(root, slug, ruling, { by, quote, under, supersedes, area, reach, rule, settles, appliesTo } = {}) {
-  need(under === undefined || under === null || (typeof under === 'string' && SLUG_RE.test(under) && by !== OWNER), 'the ruling a ruling rests on is the slug of a ruling, and a ruling by the owner rests on his own words', () => ({ flag: '--under', value: '<the slug of a ruling in force, on a ruling not by the owner>' }));
-  need(quote === undefined || quote === null || (typeof quote === 'string' && quote === fieldText(quote) && quote !== '' && by === OWNER), 'the owner\'s words are one line of text, kept with a ruling by the owner', () => ({ flag: '--quote', value: '<his words, on one line>' }));
+  need(under === undefined || under === null || (typeof under === 'string' && SLUG_RE.test(under) && by !== OWNER), 'the ruling a ruling rests on is the slug of a ruling, and a ruling by the owner rests on his own words', () => ({ flag: '--under', value: '<a-ruling-in-force>' }));
+  need(quote === undefined || quote === null || (typeof quote === 'string' && quote === fieldText(quote) && quote !== '' && by === OWNER), 'the owner\'s words are one line of text, kept with a ruling by the owner', () => ({ flag: '--quote', value: '<his-own-words>' }));
   if (quote) needNoOwnersWords('--quote', quote);
-  need(typeof slug === 'string' && SLUG_RE.test(slug), `a ruling's slug is letters, digits and . _ - (starting with a letter or digit, at most 80 characters) — not "${slug}"`, () => ({ arg: 0, value: '<a slug: letters, digits and . _ ->' }));
+  need(typeof slug === 'string' && SLUG_RE.test(slug), `a ruling's slug is letters, digits and . _ - (starting with a letter or digit, at most 80 characters) — not "${slug}"`, () => ({ arg: 0, value: '<slug>' }));
   const path = decisionsPath(jarlDir(root));
   const existing = existsSync(path) ? readText(path) : '# Decisions\n';
   const all = loadDecisions(root);
-  need(!all.some((d) => d.slug === slug), `duplicate slug: ${slug} — a ruling that replaces it takes a new slug and --supersedes ${slug}`, () => ({ arg: 0, value: `<a new slug, with --supersedes ${slug} if it replaces it>` }));
+  need(!all.some((d) => d.slug === slug), `duplicate slug: ${slug} — a ruling that replaces it takes a new slug and --supersedes ${slug}`, () => ({ arg: 0, value: hole('<a-new-slug>') }));
   let text = existing;
   if (supersedes !== undefined) {
     need(typeof supersedes === 'string' && SLUG_RE.test(supersedes) && supersedes !== slug, '--supersedes names the slug of an earlier ruling', () => ({ flag: '--supersedes', value: '<slug>' }));
     const old = all.find((d) => d.slug === supersedes);
-    need(old, `no ruling ${supersedes} in ${DECISIONS_FILE} to supersede — the rulings: jarl.mjs decisions`, () => ({ flag: '--supersedes', value: '<the slug of a ruling in force: jarl.mjs decisions --live>' }));
-    need(!old.supersededBy, `${supersedes} is already superseded by ${old.supersededBy} — supersede that one instead`, () => ({ flag: '--supersedes', value: `<${old.supersededBy}, which superseded ${supersedes}, or another ruling in force>` }));
+    need(old, `no ruling ${supersedes} in ${DECISIONS_FILE} to supersede — the rulings: jarl.mjs decisions`, () => ({ flag: '--supersedes', value: '<a-ruling-in-force>' }));
+    need(!old.supersededBy, `${supersedes} is already superseded by ${old.supersededBy} — supersede that one instead`, () => ({ flag: '--supersedes', value: hole('<a-ruling-in-force>') }));
     text = markDecision(root, supersedes, `**Superseded by:** ${slug} (${today()})`, { text });
   }
   const meta = [appliesTo ? `**Applies to:** ${fieldText(appliesTo)}` : null, settles?.length ? `**Settles:** ${settles.join(', ')}` : null, by ? `**By:** ${fieldText(by)}` : null, supersedes !== undefined ? `**Supersedes:** ${supersedes}` : null, area ? `**Area:** ${area}` : null, reach !== undefined && reach !== null ? `**Reach:** ${reach}` : null, rule ? `**Rule:** ${rule}` : null].filter(Boolean).join('\n');
@@ -335,26 +335,26 @@ export function cmdGoalSet(root, text) {
   const dir = jarlDir(root);
   const old = readGoal(dir);
   need(old !== null, 'the loop has no goal: open it with init "<goal>"', () => (['jarl.mjs', 'init', '<goal>']));
-  need(!oneBreak(text).includes('\n'), 'goal --set takes one machine line: a line break in its value is refused', () => ({ flag: '--set', value: '<one machine line>' }));
+  need(!oneBreak(text).includes('\n'), 'goal --set takes one machine line: a line break in its value is refused', () => ({ flag: '--set', value: '<machine-line>' }));
   const line = goalLineOf(text);
-  need(line && line.value && MACHINE_LABEL[line.key], `goal --set takes one machine line (got "${text}"): ` + '"Check (<repository>): <command>" or "Check: <command>", "Model (<tier>): <model>, …", "Coordinators: <name>, …", "Merger: <name>", "Takeover (<kind>): <rounds>" or "Takeover: <rounds>"', () => ({ flag: '--set', value: '<a machine line: Check, Model (tier), Coordinators, Merger or Takeover, a colon, its value>' }));
+  need(line && line.value && MACHINE_LABEL[line.key], `goal --set takes one machine line (got "${text}"): ` + '"Check (<repository>): <command>" or "Check: <command>", "Model (<tier>): <model>, …", "Coordinators: <name>, …", "Merger: <name>", "Takeover (<kind>): <rounds>" or "Takeover: <rounds>"', () => ({ flag: '--set', value: '<machine-line>' }));
   let qualifier = line.qualifier;
   if (line.key === 'model') {
-    need(qualifier !== null, 'a Model line names its tier: "Model (<tier>): <model>, …"', () => ({ flag: '--set', value: `Model (${placeholderOf(loadProfile(root).tiers)}): ${line.value}` }));
+    need(qualifier !== null, 'a Model line names its tier: "Model (<tier>): <model>, …"', () => ({ flag: '--set', value: `Model (${hole('<tier>')}): ${line.value}` }));
     const profile = loadProfile(root);
     qualifier = profile.tiers.find((t) => t.toLowerCase() === qualifier.toLowerCase()) ?? null;
-    need(qualifier !== null, `the profile declares no tier ${line.qualifier}: its tiers are ${loadProfile(root).tiers.join(', ')}`, () => ({ flag: '--set', value: `Model (${placeholderOf(loadProfile(root).tiers)}): ${line.value}` }));
+    need(qualifier !== null, `the profile declares no tier ${line.qualifier}: its tiers are ${loadProfile(root).tiers.join(', ')}`, () => ({ flag: '--set', value: `Model (${hole('<tier>')}): ${line.value}` }));
   }
-  need(line.key !== 'coordinators' || qualifier === null, 'a Coordinators line takes no qualifier: "Coordinators: <name>, …"', () => ({ flag: '--set', value: `Coordinators (${hole('no qualifier')}): ${line.value}` }));
-  need(line.key !== 'merger' || (qualifier === null && !line.value.includes(',')), MERGER_REASON, () => ({ flag: '--set', value: `Merger: ${hole(`one name of ${line.value}`)}` }));
+  need(line.key !== 'coordinators' || qualifier === null, 'a Coordinators line takes no qualifier: "Coordinators: <name>, …"', () => ({ flag: '--set', value: `Coordinators (${hole('<machine-line>')}): ${line.value}` }));
+  need(line.key !== 'merger' || (qualifier === null && !line.value.includes(',')), MERGER_REASON, () => ({ flag: '--set', value: `Merger: ${hole('<one-name>')}` }));
   if (line.key === 'takeover' && qualifier !== null) {
     const kinds = loadProfile(root).kinds;
     qualifier = kinds.find((k) => k.toLowerCase() === qualifier.toLowerCase()) ?? null;
-    need(qualifier !== null, `the profile declares no kind ${line.qualifier}: its kinds are ${kinds.join(', ')}`, () => ({ flag: '--set', value: `Takeover (${placeholderOf(kinds)}): ${line.value}` }));
+    need(qualifier !== null, `the profile declares no kind ${line.qualifier}: its kinds are ${kinds.join(', ')}`, () => ({ flag: '--set', value: `Takeover (${hole('<kind>')}): ${line.value}` }));
   }
   const value = noSeparators(line.value);
-  need(value, 'goal --set needs a value after the colon', () => ({ flag: '--set', value: `${String(text).split(':')[0].trim()}: ${hole('its value')}` }));
-  need(line.key !== 'takeover' || takeoverRounds(value) !== null, `a Takeover line takes a whole number of rounds from 1 to ${TAKEOVER_MAX} (got "${value}"): "Takeover: <rounds>" or "Takeover (<kind>): <rounds>"`, () => ({ flag: '--set', value: `${String(text).split(':')[0].trim()}: ${hole(`1 to ${TAKEOVER_MAX} rounds`)}` }));
+  need(value, 'goal --set needs a value after the colon', () => ({ flag: '--set', value: `${String(text).split(':')[0].trim()}: ${hole('<value>')}` }));
+  need(line.key !== 'takeover' || takeoverRounds(value) !== null, `a Takeover line takes a whole number of rounds from 1 to ${TAKEOVER_MAX} (got "${value}"): "Takeover: <rounds>" or "Takeover (<kind>): <rounds>"`, () => ({ flag: '--set', value: `${String(text).split(':')[0].trim()}: ${hole('<rounds>')}` }));
   const next = goalWithLine(old, { key: line.key, qualifier, value });
   // A line that already holds this value is left alone: nothing is written and no log line says it changed.
   if (next.replaced && noSeparators(next.was) === value) return { shown: next.shown, replaced: true, was: next.was, unchanged: true };

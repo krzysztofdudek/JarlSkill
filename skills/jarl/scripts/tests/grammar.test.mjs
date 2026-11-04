@@ -101,7 +101,7 @@ test('field writes Resources and the fields a profile declares; set takes status
   assert.match(refuses(root, 'field', '1', 'open', 'x'), /open is not a part of the description/);
   assert.match(refuses(root, 'field', '1', 'Note', 'x', '--worker', 'w'), /unknown flag --worker for field/);
   assert.equal(refuses(root, 'set', '1', 'Note', 'x', '--worker', 'w').trim(), 'Note is a field, not a status\njarl.mjs field 1 Note x');
-  assert.match(refuses(root, 'set', '1', 'Files', 'x'), /^status must be one of: open, in-progress, done, dropped, deferred \(got "Files"\)\njarl\.mjs set 1 '<open\|in-progress\|done\|dropped\|deferred>' x\n$/);
+  assert.match(refuses(root, 'set', '1', 'Files', 'x'), /^status must be one of: open, in-progress, done, dropped, deferred \(got "Files"\)\njarl\.mjs set 1 '<status>' x\n$/);
   assert.match(refuses(root, 'set', '1', 'bogus', 'x'), /status must be one of: /);
   assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /· 1 field Resources · gate, db · was \(none\)\n.*· 2 field Resources · gate, db · was \(none\)\n/);
 });
@@ -171,7 +171,7 @@ test('field and round take a comma list with a range: every id changes, or none'
   assert.equal(jarl(root, 'field', '1-2,4', 'Files', 'a.txt,b.txt'), '1 Files: a.txt, b.txt\n2 Files: a.txt, b.txt\n4 Files: a.txt, b.txt');
   assert.deepEqual(['1', '2', '3', '4'].map((id) => field(root, id, 'files')), ['a.txt, b.txt', 'a.txt, b.txt', '', 'a.txt, b.txt']);
   const filed = ['1', '2', '3', '4'].map((id) => issueText(root, id));
-  assert.match(refuses(root, 'field', '1-2,9', 'Files', 'z.txt'), /no such issue: 9 — nothing was written/);
+  assert.match(refuses(root, 'field', '1-2,9', 'Files', 'z.txt'), /no such issue: 9 \(asked for as 1-2,9\) — nothing was written/);
   assert.deepEqual(['1', '2', '3', '4'].map((id) => issueText(root, id)), filed);
 
   assert.equal(jarl(root, 'field', '1-3', 'After', '4'), '1 After: 4\n2 After: 4\n3 After: 4');
@@ -192,27 +192,27 @@ test('field and round take a comma list with a range: every id changes, or none'
   assert.ok(!repoOf('3'));
   assert.match(refuses(root, 'field', '1-3', 'Repo', '--clear'), /3 has no Repo field to clear — nothing was written/);
   assert.ok(repoOf('1') && repoOf('2'));
-  assert.match(refuses(root, 'field', '1-2,9', 'Repo', dir), /no such issue: 9 — nothing was written/);
+  assert.match(refuses(root, 'field', '1-2,9', 'Repo', dir), /no such issue: 9 \(asked for as 1-2,9\) — nothing was written/);
   assert.equal(jarl(root, 'field', '1-2,4', 'Repo', '--clear').split('\n').length, 3);
 
   assert.equal(jarl(root, 'field', '1-2,4', 'What', 'the same text'), '1 What: the same text\n2 What: the same text\n4 What: the same text');
   assert.match(issueText(root, '4'), /## What\n\s*the same text/);
   assert.doesNotMatch(issueText(root, '3'), /the same text/);
   const bodied = ['1', '2', '3', '4'].map((id) => issueText(root, id));
-  assert.match(refuses(root, 'field', '1-2,9', 'Why', 'a reason'), /no such issue: 9 — nothing was written/);
+  assert.match(refuses(root, 'field', '1-2,9', 'Why', 'a reason'), /no such issue: 9 \(asked for as 1-2,9\) — nothing was written/);
   assert.deepEqual(['1', '2', '3', '4'].map((id) => issueText(root, id)), bodied);
 
   const ref = 'core/research/2026-10-01-report#r-1';
   assert.equal(jarl(root, 'field', '1-2,4', 'Source', ref), `1 Source: ${ref}\n2 Source: ${ref}\n4 Source: ${ref}`);
   assert.deepEqual(['1', '2', '3', '4'].map((id) => field(root, id, 'source')), [ref, ref, undefined, ref]);
-  assert.match(refuses(root, 'field', '1-2,9', 'Source', 'core/research/2026-10-02-report#r-2'), /no such issue: 9 — nothing was written/);
+  assert.match(refuses(root, 'field', '1-2,9', 'Source', 'core/research/2026-10-02-report#r-2'), /no such issue: 9 \(asked for as 1-2,9\) — nothing was written/);
   assert.match(refuses(root, 'field', '1-2', 'Source', 'not a source'), /a source is <report dir>#<finding id>/);
   assert.equal(field(root, '1', 'source'), ref);
 
   assert.equal(jarl(root, 'round', '1-2,4', 'the check failed').split('\n').length, 3);
   assert.match(jarl(root, 'round', '1-2', 'failed again'), /^1 round 2: 2 of 3 before a takeover[^\n]*\n2 round 2: 2 of 3/);
   const rounds = logText(root);
-  assert.match(refuses(root, 'round', '1-2,9', 'once more'), /no such issue: 9 — nothing was written/);
+  assert.match(refuses(root, 'round', '1-2,9', 'once more'), /no such issue: 9 \(asked for as 1-2,9\) — nothing was written/);
   assert.equal(logText(root), rounds);
 });
 

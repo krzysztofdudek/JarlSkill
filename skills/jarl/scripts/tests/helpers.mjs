@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as R from '../record.mjs';
+import { shellWord } from '../jarl-lib.mjs';
 import { NO_EXCLUDES } from './portable.mjs';
 
 export const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
@@ -57,11 +58,25 @@ export function jarlResult(root, args, opts) {
 }
 // What the command prints, trimmed.
 export function jarl(root, ...args) { return jarlResult(root, args).stdout; }
-// What the command says when it refuses, as written (with its closing newline); a call that succeeds fails the test.
+// What the command says when it refuses (with its closing newline); a call that succeeds fails the test. Every call of
+// these tests gives --root, last, and the ready line carries it into each command it prints: it is taken out of the line,
+// so a test reads the call as it would be without it, and a ready line that drops it fails the test. After a bare -- the
+// --root is two arguments, not a flag, and the line is read as it is.
 export function refuses(root, ...args) {
   const r = spawnJarl(root, args);
   assert.notEqual(r.status, 0, `expected a refusal: ${args.join(' ')}`);
-  return r.stderr ?? '';
+  return args.includes('--') ? r.stderr ?? '' : withoutRoot(r.stderr ?? '', root);
+}
+// A refusal's text with the --root of the call taken out of its ready line, which must carry it in every command.
+export function withoutRoot(text, root) {
+  const lines = text.replace(/\n$/, '').split('\n');
+  const ready = lines.at(-1);
+  if (!ready.startsWith('jarl.mjs ')) return text;
+  const flag = ` --root ${shellWord(root)}`;
+  const commands = ready.split(/ && (?=jarl\.mjs )/);
+  assert.ok(commands.every((c) => c.includes(flag)), `the ready line carries the call's --root in every command: ${ready}`);
+  lines[lines.length - 1] = commands.map((c) => c.replace(flag, '')).join(' && ');
+  return `${lines.join('\n')}${text.endsWith('\n') ? '\n' : ''}`;
 }
 
 // A directory with a loop in it. `dotGit` makes it a checkout (an empty .git); `via` opens the loop through the library
