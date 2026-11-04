@@ -64,7 +64,7 @@ const times = (k) => `${k} time${k === 1 ? '' : 's'}`;
 
 export function cmdRound(root, rawId, what, dry = false, opts = {}) {
   needNoOwnersWords('the round', what);
-  need(what, 'round requires "<text>": jarl.mjs round <ids> "<what failed>"');
+  need(what, 'round requires "<text>", what failed: jarl.mjs round <ids> "<text>"');
   const found = opts.findings;
   need(found === undefined || (/^\d+$/.test(String(found)) && Number(found) <= FINDINGS_MAX), `--findings must be a whole number up to ${FINDINGS_MAX}`);
   const issue = findIssue(root, rawId);

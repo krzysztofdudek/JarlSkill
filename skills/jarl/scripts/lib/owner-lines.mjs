@@ -36,7 +36,7 @@ function ownerLineOf(text) {
 }
 const whole = (o) => Boolean(o.what && o.material && o.check);
 
-// The owner lines of an acceptance text that new and body are given: a marked line that does not name its material and
+// The owner lines of an acceptance text that new and field are given: a marked line that does not name its material and
 // what to check is refused, naming the shape. True when the text holds an owner line, so the write raises the format.
 export function needOwnerLines(acceptance) {
   let held = false;

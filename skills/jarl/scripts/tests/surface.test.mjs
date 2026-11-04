@@ -3,10 +3,10 @@
 // call that does it. A flag name means one thing across commands, and every flag a command takes is named below with it.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, mkdtempSync } from 'node:fs';
+import { readFileSync, readdirSync, writeFileSync, mkdtempSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { jarl, refuses, loop as makeLoop, gitRepo } from './helpers.mjs';
+import { jarl, refuses, loop as makeLoop, gitRepo, SKILL_DIR, skillText } from './helpers.mjs';
 import * as R from '../record.mjs';
 
 const L = await import('../jarl-lib.mjs');
@@ -330,4 +330,29 @@ test('the tips and the merge queue are sections of resume: --repo narrows both, 
   assert.equal(refuses(dir, 'tips').trim(), 'tips is not a command; the tips are a section of resume, which asks gh for their CI with --ci: jarl.mjs resume --ci');
   assert.equal(refuses(dir, 'queue', '--repo', 'tool', '--base', 'release').trim(), 'queue is not a command; the merge queue is a section of resume, its batches included: jarl.mjs resume --repo tool --base release');
   assert.equal(mcp.buildTools().some((t) => ['jarl_tips', 'jarl_queue'].includes(t.name)), false);
+});
+
+// A command the surface does not have, written as a command: in code quotes with an argument after it, as a call of the
+// script or of a tool, or a flag in a spelling the surface refuses. A JSON key in quotes (`after`, `check`), a selector of a
+// rule (`tag <tag>`, `files <path>`) and a word of a sentence are not commands, and do not match.
+const GONE = 'body|tag|prio|files|repo|source|after|tips|queue|check|handoff';
+const STALE = [
+  new RegExp(`\`(?:${GONE}) (?:<ids?>|\\d|--|\\+|-[a-z]|"|')`),
+  new RegExp(`\\bjarl\\.mjs (?:${GONE})\\b`),
+  new RegExp(`\\bjarl_(?:${GONE})\\b`),
+  /\b(?:status|models) [^`|]*--by\b/, /\bevidence [^`|]*--retract\b/, /\breview <ids?> retract\b/, /\bfindings: "/,
+];
+test('SKILL.md, the references, the help, the tool descriptions and the server instructions use no command or flag the surface refuses', () => {
+  const init = mcp.handle({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
+  const texts = [
+    ...['SKILL.md', ...readdirSync(join(SKILL_DIR, 'references')).map((f) => `references/${f}`)].map((f) => [f, skillText(f)]),
+    ['the help', J.USAGE], ['the tool descriptions', mcp.buildTools().map((t) => t.description).join('\n')], ['the server instructions', init.result.instructions],
+  ];
+  const hits = [];
+  for (const [name, text] of texts) {
+    text.split('\n').forEach((line, i) => { for (const re of STALE) if (re.test(line)) hits.push(`${name}:${i + 1}: ${line.slice(0, 160)}`); });
+  }
+  assert.deepEqual(hits, []);
+  // The test itself fires on the forms it is for.
+  for (const line of ['run `tag 7 +a` first', 'jarl.mjs prio 7 1', 'jarl_body { id: "7" }', '`status --by repo`', 'findings: "x"']) assert.ok(STALE.some((re) => re.test(line)), line);
 });

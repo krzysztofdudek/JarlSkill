@@ -2037,7 +2037,7 @@ test('the supersession notice finds a slug at the end of a sentence and does not
   assert.doesNotMatch(r.stderr, /, 10\b/, 'the longer slug is not found');
 });
 
-test('decide with no --by prints no notice: the coordinator is the default, and a notice is for an owner named on the command line', () => {
+test('decide --by coordinator prints no notice: a notice is for a ruling by the owner with no question behind it', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
   assert.equal(run(root, ['decide', 'default-rule', 'Keep it.', '--by', 'coordinator']).stderr, '');

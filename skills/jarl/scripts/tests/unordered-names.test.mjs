@@ -105,7 +105,7 @@ test('verify notes each open issue whose text names an unordered open issue, nam
   assert.equal(r.status, 0, 'a note is not a finding');
   assert.match(r.stdout, /^verify: clean/);
   assert.deepEqual(unordered(r.stdout).map((l) => l.replace(/ — .*$/, '')), ['note: issue 4: names issues 1, 2 in What, Why or Acceptance, which are neither done nor dropped, and no After orders them with 4']);
-  assert.match(r.stdout, /if the text relies on them, order the two with: jarl\.mjs after/);
+  assert.match(r.stdout, /if the text relies on them, order the two with: jarl\.mjs field 4 After 1,2$/m);
 });
 
 test('an After that orders the two, directly or through a chain, or a settled named issue, takes the note away', () => {
