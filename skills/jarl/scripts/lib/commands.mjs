@@ -269,8 +269,9 @@ export function cmdNew(root, title, rawFlags) {
   commitRepoNames(root, picked);
   if (ownerLined) needFormat(root, 'owner-line');
   // The issue's key, its filing stamp and four random letters, raises the loop to the format that holds it. A loop a
-  // composer keeps stays in the format the composer reads, and its issues carry no key: they are told apart by number.
-  const keyed = formatState(loadProfile(root)).raises || loadProfile(root).format >= FORMAT_LINES['issue-key'].format;
+  // composer keeps stays in the format the composer reads, and its issues carry no key: they are told apart by number; so
+  // are the issues of a loop whose profile declares a field Key of its own.
+  const keyed = loadProfile(root).keyed && (formatState(loadProfile(root)).raises || loadProfile(root).format >= FORMAT_LINES['issue-key'].format);
   if (keyed) needFormat(root, 'issue-key');
   const at = stamp();
   const key = keyed ? newIssueKey(at) : null;

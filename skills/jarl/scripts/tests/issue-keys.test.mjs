@@ -61,8 +61,27 @@ test('the key is the tool\'s: no profile declares it, field refuses to write it,
   jarl(root, 'log', 'key 20260101T0000-abcd · a note that names a key');
   assert.match(logOf(root), new RegExp(`^- ${STAMP} · key 20260101T0000-abcd · a note that names a key$`, 'm'), 'text never reaches the key\'s place');
   const file = join(mkdtempSync(join(tmpdir(), 'jarl-keys-p-')), 'p.json');
-  writeFileSync(file, JSON.stringify({ 'jarl-profile': 1, statuses: { open: ['dispatchable'], done: ['terminal', 'closes-record', 'settles-dependents'] }, fields: { Key: {} } }));
-  assert.throws(() => R.readProfileFile(file), /Key/);
+  writeFileSync(file, JSON.stringify({ 'jarl-profile': 1, statuses: { open: ['dispatchable'], 'in-progress': ['holds-claim'], done: ['terminal', 'closes-record', 'settles-dependents'] }, fields: { Key: {} } }));
+  assert.throws(() => R.readProfileFile(file), /it declares the field Key, which Jarl reserves for an issue's key — rename it in the profile/);
+  assert.match(refuses(root, 'profile', file), /reserves for an issue's key/);
+  assert.match(refuses(mkdtempSync(join(tmpdir(), 'jarl-keys-init-')), 'init', 'goal', '--profile', file), /reserves for an issue's key/);
+});
+
+test('a loop already open with a profile that declares a field Key keeps its own field, and its issues get no key of the tool\'s', () => {
+  const root = mkdtempSync(join(tmpdir(), 'jarl-keys-own-'));
+  mkdirSync(join(root, '.git'));
+  R.initLoop(root, 'an older loop');
+  writeFileSync(join(root, '.jarl', 'profile.json'), JSON.stringify({ 'jarl-profile': 1, name: 'own-key', statuses: { open: ['dispatchable'], 'in-progress': ['holds-claim'], done: ['terminal', 'closes-record', 'settles-dependents'], dropped: ['terminal', 'needs-reason'] }, fields: { Key: {} } }));
+  jarl(root, 'new', 'tracked elsewhere', '--field', 'Key=PROJ-12');
+  jarl(root, 'set', '1', 'in-progress', '--branch', 'jarl/1-x', '--worker', 'w1');
+  assert.equal(keyOf(root, 1), 'PROJ-12', 'the field is the profile\'s own');
+  assert.doesNotMatch(logOf(root), / key /, 'no line names a key');
+  assert.ok(json(root, 'profile').format < 3, 'nothing raises it to the format of keys');
+  assert.equal(json(root, 'show', '1').fields.key, 'PROJ-12');
+  assert.equal(json(root, 'show', '1').fields.worker, 'w1');
+  assert.match(jarl(root, 'list'), /tracked elsewhere/);
+  const r = run(root, ['verify']);
+  assert.equal(r.status, 0, r.stdout);
 });
 
 test('a loop filed before its raise keeps its unkeyed lines read by number, and its first new issue is keyed beside them', () => {

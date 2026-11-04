@@ -62,7 +62,7 @@ function lineKeys(root, events) {
   const none = () => null;
   if (!wanted.size) return none;
   const dir = join(jarlDir(root), 'issues');
-  if (!existsSync(dir) || loadProfile(root).format < FORMAT_LINES['issue-key'].format) return none;
+  if (!existsSync(dir) || !loadProfile(root).keyed || loadProfile(root).format < FORMAT_LINES['issue-key'].format) return none;
   const keys = new Map();
   for (const f of readdirSync(dir)) {
     const m = ISSUE_FILE_RE.exec(f);

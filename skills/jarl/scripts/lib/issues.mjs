@@ -12,25 +12,40 @@ import { eventsById, issueState, loopEvents } from './log.mjs';
 
 // ---- issues ------------------------------------------------------------------------------------
 
-// The lines git writes before and after the two sides of a conflict it could not merge.
-const CONFLICT_OPEN = /^<{7}(?: |$)/;
-const CONFLICT_CLOSE = /^>{7}(?: |$)/;
+// The lines git writes around the two sides of a conflict it could not merge, each at the start of its line.
+const CONFLICT_OPEN = /^<{7}(?: .*)?$/;
+const CONFLICT_MIDDLE = /^={7}$/;
+const CONFLICT_CLOSE = /^>{7}(?: .*)?$/;
+// The line numbers of the opening markers of the conflicts `lines` hold: an opening marker, a separator and a closing
+// marker, in that order, each a line of its own outside a fenced code block. A conflict quoted in a fence or inside a
+// line of text is text.
+function conflictsIn(lines) {
+  const out = [];
+  let fence = false;
+  let open = null;
+  let middle = false;
+  lines.forEach((line, i) => {
+    if (/^(?:```|~~~)/.test(line)) { fence = !fence; open = null; middle = false; return; }
+    if (fence) return;
+    if (CONFLICT_OPEN.test(line)) { open = i + 1; middle = false; } else if (open !== null && CONFLICT_MIDDLE.test(line)) middle = true;
+    else if (open !== null && middle && CONFLICT_CLOSE.test(line)) { out.push(open); open = null; middle = false; }
+  });
+  return out;
+}
 // A header field: **Name:** value. A name is letters, digits, spaces and dashes, so a profile's fields (Area-2) read
 // as fields; the built-in ones are letters and spaces only.
 const FIELD_RE = /^\*\*([A-Za-z0-9 -]+):\*\*\s*(.*)$/;
 
 // With `skipped` (an array), what the parser does not place is pushed onto it as { n, text, reason }: the first line when it
 // is not an issue's header, a Resources line one of whose names is not a word (letters, digits and . _ : / -), and the
-// opening marker of each conflict a merge left in the file.
+// opening marker of each conflict a merge left in the file (see conflictsIn).
 export function parseIssue(text, file, skipped) {
   const lines = text.split('\n');
   const head = idRe('^#\\s+({id})\\s+·\\s+(.*)$').exec(lines[0] || '');
   if (skipped && !head) skipped.push({ n: 1, text: lines[0] || '', reason: 'not an issue header: the first line is "# <id> · <title>"' });
   // A merge git could not join leaves both sides in the file between its markers, and every reader would take the lines of
-  // both for the issue's own. A file that holds an opening and a closing marker holds a conflict.
-  if (skipped && lines.some((l) => CONFLICT_OPEN.test(l)) && lines.some((l) => CONFLICT_CLOSE.test(l))) {
-    lines.forEach((line, i) => { if (CONFLICT_OPEN.test(line)) skipped.push({ n: i + 1, text: line, reason: 'a git conflict marker: the file holds both sides of a merge git could not join, and the issue reads as both; keep one side of each conflict and remove the markers' }); });
-  }
+  // both for the issue's own.
+  if (skipped) for (const n of conflictsIn(lines)) skipped.push({ n, text: lines[n - 1], reason: 'a git conflict marker: the file holds both sides of a merge git could not join, and the issue reads as both; keep one side of each conflict and remove the markers' });
   if (skipped) {
     lines.forEach((line, i) => {
       const f = FIELD_RE.exec(line);
@@ -79,7 +94,8 @@ function issuesAt(recordDir, profile, events = loopEvents(recordDir, profile)) {
     .map((f) => withProfile(parseIssue(readText(join(dir, f)), join(dir, f)), profile));
   const files = new Map();
   for (const i of parsed) if (i.id !== null) files.set(idKey(i.id), (files.get(idKey(i.id)) || 0) + 1);
-  const keyOf = issueKeyOf;
+  // A loop whose profile declares a field Key of its own holds no key of the tool's: its Key is the profile's field.
+  const keyOf = profile.keyed === false ? () => null : issueKeyOf;
   const issues = parsed.map((issue) => {
     // An After names an issue as the loop writes it: the form its file carries, whatever form the After line gives.
     issue.after = issue.after.map((x) => writtenId(x, forms));

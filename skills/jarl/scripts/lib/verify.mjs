@@ -9,7 +9,7 @@ import { ISSUE_FILE_RE, cmpId, idKey, needsRaisedFormat } from './ids.mjs';
 import { FORMAT_LINES, RECORD_FORMAT_RAISED, formatOffText, formatState, loadProfile } from './profile.mjs';
 import { ASKS_FILE, DECISIONS_FILE, GOAL_FILE, LOG_FILE, goalLineOf, goalLines, loadDecisions, readGoal } from './journal.mjs';
 import { loopEvents } from './log.mjs';
-import { parseIssue, sharedNumberText, sharedNumbers } from './issues.mjs';
+import { issueKeyOf, parseIssue, sharedNumberText, sharedNumbers } from './issues.mjs';
 import { REPOS_DECLARED_IN, declaredNames, issueRepos, repoIdentity, repoValueKind, reposNamed, worktreesOf } from './repositories.mjs';
 import { headerReadNotes, readLoop, recordDisagreements, unorderedNamings, unorderedText } from './loop.mjs';
 import { attachmentFindings } from './attachments.mjs';
@@ -113,7 +113,7 @@ export function cmdVerify(root) {
   // An issue's key, in its header or in a log line, is held by format 3: a reader of a lower format reads the lines by
   // number alone.
   if (profile.format < FORMAT_LINES['issue-key'].format) {
-    for (const i of loop.issues) if (i.id !== null && i.fields.key) add('format', `issue ${i.id}`, `its header carries a key (${shownText(i.fields.key)}), which is written in record format ${FORMAT_LINES['issue-key'].format}, and this loop is not in it`);
+    for (const i of loop.issues) if (i.id !== null && profile.keyed && issueKeyOf(i)) add('format', `issue ${i.id}`, `its header carries a key (${shownText(i.fields.key)}), which is written in record format ${FORMAT_LINES['issue-key'].format}, and this loop is not in it`);
     for (const e of events) if (e.key) add('format', `${LOG_FILE} line ${e.n + 1}`, `"${shownText(e.text)}" names a key (${e.key}), which is written in record format ${FORMAT_LINES['issue-key'].format}, and this loop is not in it`, e.n + 1);
   }
   // A question of a format the loop is not in: an escalation is held by format 3.

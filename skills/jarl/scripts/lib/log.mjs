@@ -229,7 +229,7 @@ export function loopEvents(dir, profile, skipped, keys) {
   const events = [];
   const forms = issueForms(dir);
   const log = readText(path);
-  const keyed = keys ?? (KEYED_LINE.test(log) ? issueKeysAt(dir) : new Map());
+  const keyed = keys ?? (profile.keyed !== false && KEYED_LINE.test(log) ? issueKeysAt(dir) : new Map());
   log.split('\n').forEach((l, n) => {
     const m = LOG_LINE.exec(l);
     if (!m) {

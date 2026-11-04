@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, readdirSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SPAWN_TIMEOUT, gitRepo, jarl, run } from './helpers.mjs';
@@ -174,6 +174,31 @@ test('one writer leasing twice, a handover, and a move out between two leases ar
   jarl(a.dir, 'set', '1', 'open', 'back to the queue', '--by', 'coordinator A');
   jarl(a.dir, 'set', '1', 'in-progress', '--branch', 'jarl/1-y', '--worker', 'wb', '--by', 'coordinator B');
   assert.deepEqual(json(a.dir, 'next', '--as', 'jarl').rows.filter((r) => r.what === 'conflict'), []);
+});
+
+test('under a profile with two statuses that hold the lease, a worker\'s move from the first to the second is no second lease', () => {
+  const { dir, g } = gitRepo({ branch: 'main' });
+  const file = join(mkdtempSync(join(tmpdir(), 'jarl-copies-p-')), 'house.json');
+  writeFileSync(file, JSON.stringify({ 'jarl-profile': 1, name: 'house', statuses: { proposed: [], queued: ['dispatchable'], running: ['lease'], landed: ['lease'], merged: ['settles-dependents', 'terminal', 'closes-record'], dropped: ['terminal', 'needs-reason'] }, initial: 'queued' }));
+  jarl(dir, 'init', 'house', '--committed', '--profile', file);
+  jarl(dir, 'new', 'one', '--tier', 'light');
+  jarl(dir, 'set', '1', 'running', '--branch', 'jarl/1-one', '--worker', 'w1', '--by', 'coord');
+  jarl(dir, 'set', '1', 'landed', 'pushed', '--by', 'w1');
+  assert.deepEqual(json(dir, 'next', '--as', 'jarl').rows.filter((r) => r.what === 'conflict'), []);
+});
+
+test('a second writer that sets the lease the issue already has is no conflict', () => {
+  const a = committedLoop();
+  jarl(a.dir, 'set', '1', 'in-progress', '--branch', 'jarl/1-x', '--worker', 'w1', '--by', 'coordinator A');
+  jarl(a.dir, 'set', '1', 'in-progress', '--branch', 'jarl/1-x', '--worker', 'w1', '--by', 'coordinator B');
+  assert.deepEqual(json(a.dir, 'next', '--as', 'jarl').rows.filter((r) => r.what === 'conflict'), []);
+});
+
+test('verify reads a git conflict quoted in an issue\'s text as text', () => {
+  const a = committedLoop();
+  jarl(a.dir, 'body', '1', '--what', 'git left this in the file:\n```\n<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> main\n```\nand a line that quotes <<<<<<< HEAD inline');
+  const r = run(a.dir, ['verify']);
+  assert.equal(r.status, 0, r.stdout);
 });
 
 test('verify refuses an issue file that holds git conflict markers', () => {
