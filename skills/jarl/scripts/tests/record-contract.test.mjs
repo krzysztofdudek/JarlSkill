@@ -5,6 +5,7 @@
 // others, and freeze the new table's fingerprint in FROZEN. Every version RECORD_APIS names keeps its exports with their
 // parameters, so a caller written against it keeps working. A published version's table is never edited in place — its
 // fingerprint would no longer match. The same version goes on the family's contracts page.
+import './tmp-cleanup.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';

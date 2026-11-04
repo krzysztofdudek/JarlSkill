@@ -1,4 +1,5 @@
 // The write lock is re-entrant per loop, never across loops, and it runs only synchronous work.
+import './tmp-cleanup.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, existsSync, readFileSync, rmSync, symlinkSync, unlinkSync } from 'node:fs';

@@ -1,5 +1,6 @@
 // What the test files share: one spawn of the command line, the calls built on it, and the loops and repositories a
 // test sets up. Every spawn carries an explicit timeout, so a hung process fails the test instead of waiting for it.
+import './tmp-cleanup.mjs';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
