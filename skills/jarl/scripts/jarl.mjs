@@ -494,6 +494,24 @@ each file then starts with the name of the one it is in (one with no such name i
 scope on it takes --repo to say which one to read. show and status --group repo print where each
 repository, and the worktree of a lease, is on this machine; nothing resolved is written.
 
+views, one purpose each (read-only; resume, the boot, prints the parts of several of them):
+  resume      everything a session picks the loop up from, read live
+  status      where the loop stands, in counts
+  next        what can start now; with --as, what is on one holder and the command that moves it
+  list        the issues, filtered
+  show        one issue as the done gate sees it
+  decisions   the rulings and what superseded them
+  report      what was done, with the loop metrics
+  changelog   the changelog entries of issues
+  sources     a research report's findings against the issues filed from them
+  tips        where each repository's branches stand against their upstream
+  queue       what waits for the merger, in batches
+  branches    every worker branch with its issues and its state
+  scope       one worker branch measured against its issues' files
+  models      what the record says of each model as worker and reviewer
+  profile     the loop's profile, or a profile file checked
+  verify      the record read strictly, for what its readers do not place
+
 Parallel workers in worktrees:
   - Default mode: the loop is out of git and lives in the loop root (the directory that holds .jarl/), so every call, a worker's and the coordinator's, passes --root <loop root>.
   - Committed mode: the merger alone commits .jarl/, and a worker never does.

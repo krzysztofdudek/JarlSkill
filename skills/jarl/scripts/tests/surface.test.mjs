@@ -300,3 +300,15 @@ test('every refusal of a writing command ends with a ready command or names the 
   assert.deepEqual(bare, [], 'each refusal ends with a ready command or the flag to add');
   assert.equal(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), before, 'no refusal wrote a line');
 });
+
+test('the help gives each read-only view one purpose, on one line of its own', () => {
+  const { USAGE, COMMAND_FLAGS, MUTATING, INTERNAL_COMMANDS } = J;
+  const lines = USAGE.split('\n');
+  const at = lines.findIndex((l) => /^views, one purpose each/.test(l));
+  assert.ok(at > 0, 'the help has the views section');
+  const section = [];
+  for (const l of lines.slice(at + 1)) { if (!/^ {2}\S/.test(l)) break; section.push(l); }
+  const named = section.map((l) => /^ {2}([a-z]+) {2,}\S/.exec(l)?.[1]);
+  const views = Object.keys(COMMAND_FLAGS).filter((c) => !MUTATING.has(c) && !INTERNAL_COMMANDS.includes(c));
+  assert.deepEqual([...named].sort(), [...views].sort(), 'one line for each read-only view, and no other');
+});
