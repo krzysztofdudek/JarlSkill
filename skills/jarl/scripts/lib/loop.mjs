@@ -4,7 +4,7 @@
 import { resolve, dirname, basename } from 'node:path';
 import { CI_STATES, fieldText, need } from './base.mjs';
 import { jarlDir } from './where.mjs';
-import { idKey, idRe, idsCited } from './ids.mjs';
+import { idKey, idRe, idsCited, keyedIds } from './ids.mjs';
 import { profileAt } from './profile.mjs';
 import { asksAt, decisionsAt, goalLines, readGoal } from './journal.mjs';
 import { eventsById, loopEvents } from './log.mjs';
@@ -192,8 +192,9 @@ export function disagreementText(d) { return d.rewrite ? `${d.line}\n  or, with 
 export function unorderedNamings(issues, profile, only = null) {
   const held = new Map(issues.filter((i) => i.id !== null).map((i) => [i.id, i]));
   const byKey = new Map([...held.values()].map((i) => [idKey(i.id), i]));
+  const keyed = keyedIds(held);
   // Whether `issue` waits on the issue with `id` through After, directly or through the chain: a walk that stops at the
-  // first sight of it, so an ordered pair costs the distance between the two and only an unordered pair walks the chain.
+  // first sight of it and visits each issue once.
   const waitsOn = (issue, id) => {
     const want = idKey(id);
     const seen = new Set();
@@ -212,7 +213,7 @@ export function unorderedNamings(issues, profile, only = null) {
   for (const issue of issues) {
     if (issue.id === null || !profile.unfinished(issue.status) || (only && !only.includes(issue.id))) continue;
     const text = [issue.sections.what, issue.sections.why, issue.sections[heading]].filter(Boolean).join('\n');
-    const cited = idsCited(text, held).filter((id) => idKey(id) !== idKey(issue.id) && !profile.is(held.get(id).status, 'settles-dependents'));
+    const cited = idsCited(text, held, keyed).filter((id) => idKey(id) !== idKey(issue.id) && !profile.is(held.get(id).status, 'settles-dependents'));
     const names = cited.filter((id) => !waitsOn(issue, id) && !waitsOn(held.get(id), issue.id));
     if (names.length) out.push({ id: issue.id, names });
   }

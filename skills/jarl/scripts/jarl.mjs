@@ -365,14 +365,15 @@ commands:
                                                  keeping the archive, the mode markers and .jarl/templates/, so init
                                                  can open a new loop here in the same mode; refused under a profile
                                                  whose "lifecycle" keeps archive to the record (it names the command)
-  report [--found]                               what was done (per repository when it spans several), who reviewed it,
-                                                 dropped, deferred and still open — ready for the changelog; --found adds
-                                                 the issues found by someone other than the jarl; then the loop metrics
-                                                 (cycle time, rounds, reopenings, the share of fresh reviews, red CI after
-                                                 merge, follow-ups within 7 days — "no data" where the record holds none)
-                                                 and the landing banner, per repository "k of n merges carry the declared
-                                                 check", with the testimony mark as status shows it; --json also carries
-                                                 one row per issue and the metrics (see references/commands.md, "Loop metrics")
+  report [--found] [--metrics]                   the loop metrics first (cycle time, rounds, reopenings, the share of fresh
+                                                 reviews, red CI after merge, follow-ups within 7 days — "no data" where the
+                                                 record holds none) and the landing banner, per repository "k of n merges carry
+                                                 the declared check", with the testimony mark as status shows it; then what was
+                                                 done (per repository when it spans several), who reviewed it, dropped, deferred
+                                                 and still open — ready for the changelog; --found adds the issues found by
+                                                 someone other than the jarl; --metrics prints the heading, the goal and the
+                                                 metrics alone; --json also carries one row per issue and the metrics (see
+                                                 references/commands.md, "Loop metrics")
   tips                                           read-only: per repository the loop's issues name (open, in progress,
                                                  recently merged), the tip of each worker branch in flight, the feature
                                                  branch the checkout is on and main, ahead/behind their upstream as last fetched, and — when
@@ -540,7 +541,7 @@ export const COMMAND_FLAGS = {
   handoff: { summary: 'value', next: 'many', log: 'value', ready: 'value', ci: 'bool' },
   log: { by: 'value' }, decide: { settles: 'many', by: 'value', quote: 'value', under: 'value', supersedes: 'value', area: 'value', reach: 'value', rule: 'value' }, decisions: { live: 'bool' },
   goal: { set: 'value', by: 'value' },
-  status: { 'stale-hours': 'value', by: 'value', tag: 'value', as: 'value', slice: 'value' }, archive: { by: 'value' }, report: { found: 'bool' }, tips: {}, mode: { by: 'value' },
+  status: { 'stale-hours': 'value', by: 'value', tag: 'value', as: 'value', slice: 'value' }, archive: { by: 'value' }, report: { found: 'bool', metrics: 'bool' }, tips: {}, mode: { by: 'value' },
   queue: { repo: 'value', base: 'value' }, changelog: { repo: 'value' },
   close: { force: 'bool', batch: 'bool', by: 'value' }, profile: {}, verify: {},
 };
@@ -660,7 +661,7 @@ export const COMMAND_SUMMARY = {
   goal: 'The goal as goal.md holds it, or one machine line of it set (Check, Model, Coordinators or Takeover), with a log line that says what it was and what it is now.',
   status: 'The goal, the counts by status, the reviews, stale leases and what awaits ratification; as ends it with what is on the one who asks.',
   archive: 'Put the current loop away under .jarl/archive/ so a new one can open here.',
-  report: 'What was done, dropped, deferred and still open, ready for the changelog, with the loop metrics.',
+  report: 'What was done, dropped, deferred and still open, ready for the changelog, with the loop metrics first; set metrics for the metrics alone.',
   tips: 'Per repository the loop names: the tips of worker, feature and main branches, ahead/behind and CI; fetches nothing.',
   queue: 'The branches waiting for the merger, in approval order, cut into batches whose files do not overlap.',
   changelog: 'Print the issues\' changelog entries grouped by section, ready to paste under [Unreleased].',
@@ -713,6 +714,20 @@ export function listItems(value, kind, field) {
   need(!items.some((s) => piecesOfListText(s, kind)), `${field} takes its items one by one: one item, a comma list (a,b) or a list of strings; ${kind === 'name' ? 'a list written as text, an item in quotes or a name holding a bracket or a quote mark' : 'a list written as text or an item in quotes'} is refused — got ${JSON.stringify(text)}`);
   return items;
 }
+// A tag operation is +name or -name, and its name may be a comma list: +a,b adds a and b, and -a,b takes both off. Each
+// name becomes an operation of its own, and the tag command reads one name per operation. A +name is checked as an item
+// of a list (no quotes, brackets or leading dash). A -name is split at its commas and checked for a leading dash only:
+// it matches the tag as it is stored, so a tag stored with brackets or quotes can still be removed. An operation with no
+// name in it is refused.
+function tagOp(op) {
+  const sign = op.charAt(0);
+  if (sign !== '+' && sign !== '-') return [op];   // the tag command refuses it, naming the form
+  const names = sign === '+' ? listItems(op.slice(1), 'name', 'tag') : op.slice(1).split(',').map((s) => s.trim()).filter(Boolean);
+  const dashed = names.filter((s) => s.startsWith('-'));
+  need(dashed.length === 0, `tag: an item cannot start with - (got ${dashed.map((s) => JSON.stringify(s)).join(' ')}): everything after a bare -- is an argument, so flags such as --root go before it`);
+  need(names.length > 0, `tags are +name or -name, not "${op}"`);
+  return names.map((name) => sign + name);
+}
 // A command's arguments and flags with every list field read by listItems and written back as the one comma list the
 // commands read: a list argument that is last takes every word left (files 3 a.mjs b.mjs), and a list flag repeats.
 // repo --base takes a repository name and a branch, not a list, and no word beyond them.
@@ -727,7 +742,7 @@ function readLists(cmd, rest, flags) {
   COMMAND_ARGS[cmd].forEach((a, at) => {
     const field = a.replace(/[?.]+$/, '');
     const kind = fields[field];
-    if (kind === 'ops') { for (const op of rest.slice(at)) if (op.startsWith('+')) listItems(op.slice(1), 'name', 'tag'); return; }
+    if (kind === 'ops') { out.rest.splice(at, Infinity, ...rest.slice(at).flatMap(tagOp)); return; }
     if (kind === undefined) return;
     const given = a.endsWith('...') ? (rest.length > at ? rest.slice(at) : undefined) : rest[at];
     if (given === undefined) return;
