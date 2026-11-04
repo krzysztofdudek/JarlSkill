@@ -359,14 +359,15 @@ commands:
                                                  keeping the archive, the mode markers and .jarl/templates/, so init
                                                  can open a new loop here in the same mode; refused under a profile
                                                  whose "lifecycle" keeps archive to the record (it names the command)
-  report [--found]                               what was done (per repository when it spans several), who reviewed it,
-                                                 dropped, deferred and still open — ready for the changelog; --found adds
-                                                 the issues found by someone other than the jarl; then the loop metrics
-                                                 (cycle time, rounds, reopenings, the share of fresh reviews, red CI after
-                                                 merge, follow-ups within 7 days — "no data" where the record holds none)
-                                                 and the landing banner, per repository "k of n merges carry the declared
-                                                 check", with the testimony mark as status shows it; --json also carries
-                                                 one row per issue and the metrics (see references/commands.md, "Loop metrics")
+  report [--found] [--metrics]                   the loop metrics first (cycle time, rounds, reopenings, the share of fresh
+                                                 reviews, red CI after merge, follow-ups within 7 days — "no data" where the
+                                                 record holds none) and the landing banner, per repository "k of n merges carry
+                                                 the declared check", with the testimony mark as status shows it; then what was
+                                                 done (per repository when it spans several), who reviewed it, dropped, deferred
+                                                 and still open — ready for the changelog; --found adds the issues found by
+                                                 someone other than the jarl; --metrics prints the heading, the goal and the
+                                                 metrics alone; --json also carries one row per issue and the metrics (see
+                                                 references/commands.md, "Loop metrics")
   tips                                           read-only: per repository the loop's issues name (open, in progress,
                                                  recently merged), the tip of each worker branch in flight, the feature
                                                  branch the checkout is on and main, ahead/behind their upstream as last fetched, and — when
@@ -533,7 +534,7 @@ export const COMMAND_FLAGS = {
   handoff: { summary: 'value', next: 'many', log: 'value', ready: 'value', ci: 'bool' },
   log: { by: 'value' }, decide: { settles: 'many', by: 'value', quote: 'value', under: 'value', supersedes: 'value', area: 'value', reach: 'value', rule: 'value' }, decisions: { live: 'bool' },
   goal: { set: 'value', by: 'value' },
-  status: { 'stale-hours': 'value', by: 'value', tag: 'value', as: 'value', slice: 'value' }, archive: { by: 'value' }, report: { found: 'bool' }, tips: {}, mode: { by: 'value' },
+  status: { 'stale-hours': 'value', by: 'value', tag: 'value', as: 'value', slice: 'value' }, archive: { by: 'value' }, report: { found: 'bool', metrics: 'bool' }, tips: {}, mode: { by: 'value' },
   queue: { repo: 'value', base: 'value' }, changelog: { repo: 'value' },
   close: { force: 'bool', batch: 'bool', by: 'value' }, profile: {}, verify: {},
 };
@@ -652,7 +653,7 @@ export const COMMAND_SUMMARY = {
   goal: 'The goal as goal.md holds it, or one machine line of it set (Check, Model, Coordinators or Takeover), with a log line that says what it was and what it is now.',
   status: 'The goal, the counts by status, the reviews, stale leases and what awaits ratification; as ends it with what is on the one who asks.',
   archive: 'Put the current loop away under .jarl/archive/ so a new one can open here.',
-  report: 'What was done, dropped, deferred and still open, ready for the changelog, with the loop metrics.',
+  report: 'What was done, dropped, deferred and still open, ready for the changelog, with the loop metrics first; set metrics for the metrics alone.',
   tips: 'Per repository the loop names: the tips of worker, feature and main branches, ahead/behind and CI; fetches nothing.',
   queue: 'The branches waiting for the merger, in approval order, cut into batches whose files do not overlap.',
   changelog: 'Print the issues\' changelog entries grouped by section, ready to paste under [Unreleased].',

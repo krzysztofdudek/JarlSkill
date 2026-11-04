@@ -27,6 +27,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A loop can now record a promise someone made, or something it waits for from a person outside the loop, and each stays on that person's list, a wait with when to check, until it is closed. Jarl never gives either to a worker.
 - `body --append` adds text to a section of an issue after what the section already holds, instead of replacing it.
 - Jarl's command line prints its version with `--version`. The number matches the one the Jarl tools in your session report. When your shell exports `CLAUDE_PLUGIN_ROOT`, and the plugin there has another version than the copy you run, `resume` says so in one line; without that variable it says nothing.
+- `report --metrics` prints only the loop's metrics, so the summary stays short even for a loop with hundreds of issues. `report` now prints the metrics before its lists of issues.
 
 ### Changed
 
