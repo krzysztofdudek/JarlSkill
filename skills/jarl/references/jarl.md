@@ -67,6 +67,8 @@ Testing, stress and research sessions are the same loop with a different mix: so
 issues (they test, they probe, they read) while others take issues down. The stream never waits for
 the other side.
 
+A refused call writes nothing, and its last line is the call corrected, a step and then the call, or the call with a `<placeholder>`: read it, fill the placeholder, never paste it blind; brief every role to do the same.
+
 ## Resuming a loop
 
 Nothing is written for the next session. Everything it needs is in the loop's own files — the goal, the rulings, the issues with their leases and **After:**, the asks, the log — and in the repositories its issues name, so `resume` reads it all at the moment it is asked: nothing it prints can be stale, and a session that is cut off mid-turn leaves nothing unsaid. It holds no lock and writes nothing, so any role may run it at any time, and it needs no network (`--gh` adds the CI of each pushed tip through `gh`).

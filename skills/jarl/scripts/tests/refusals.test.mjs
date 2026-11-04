@@ -42,6 +42,10 @@ function plainLoop() {
   jarl(root, 'ask', 'ratify this', '--kind', 'ratify');
   jarl(root, 'decide', 'taken', 'a ruling', '--by', 'jarl');
   jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'ok');
+  // An owner line on 3, for tick, and a findings file, for import.
+  jarl(root, 'field', '3', 'Acceptance', '[owner] the page reads well · material: docs/x.md · check: it reads well', '--add');
+  mkdirSync(join(root, 'research'));
+  writeFileSync(join(root, 'research', 'findings.json'), JSON.stringify([{ id: 'f-1', title: 'a finding', where: 'x:1', evidence: 'e', proposal: 'p' }]));
   const other = mkdtempSync(join(tmpdir(), 'jarl-refusals-branch-'));
   cpSync(root, other, { recursive: true });
   const base = logOf(root);
@@ -171,14 +175,12 @@ function argOfFlag(cmd, name) {
   return (name === 'text' || OLD_TEXT[cmd] === name) && ['text', 'value', 'title', 'goal'].includes(names[last]) ? last : -1;
 }
 const caseOf = (value, set) => { if (set.includes(value)) return value; const same = set.filter((s) => s.toLowerCase() === String(value).toLowerCase()); return same.length === 1 ? same[0] : null; };
-const LIST_FLAGS = { new: ['tags', 'files', 'repo', 'source', 'after'], import: ['tags', 'repo', 'only'], decide: ['settles'] };
-const unquoted = (v) => String(v).split(',').map((s) => s.trim()).filter(Boolean).map((s) => s.replace(/^["'`[\]]+|["'`[\]]+$/g, '')).join(',');
 
-// What a wrong call meant, read by this test from the words given and the loop it is made on: the calls it is with only a
-// mechanical mistake corrected — a removed form written in the form that replaces it, a text moved after a bare --, a flag
-// that names an argument written as that argument, a value of a closed set written in its own case, a list written as
-// text written item by item, a repeated value given once, a takeover named with --handover, one call cut into the ones it
-// holds — or null, when the words given do not determine it.
+// What a wrong call meant, read by this test from the words given and the loop it is made on: the calls it is with only one
+// of the corrections the tool may print as a line that runs — a value of a closed set in its own case, a removed form (a
+// command, a flag, a tool field's name given as a flag) in the form that replaces it with every word given, a text after a
+// bare -- — or null, when the words given do not determine it: a range to read again, a lease to take over, words to join
+// or split, an item or a flag to add or drop are the caller's to say.
 export function meant(args, loop) {
   const [cmd, ...rest] = args;
   if (Object.hasOwn(REPLACED_COMMANDS, cmd)) return replacedMeant(cmd, rest);
@@ -211,18 +213,10 @@ export function meant(args, loop) {
     if (at === -1 || typeof v !== 'string' || c.flags.filter(([x]) => x === k).length > 1 || c.pos.length < at || c.pos.length >= argNames(cmd).length) return null;
     c = { ...without(c, k), pos: [...c.pos.slice(0, at), v, ...c.pos.slice(at)] };
   }
-  // A value flag given twice: the same value is one; a flag given last with no value after a value of it is nothing.
+  // A flag given twice, or given with no value: which value was meant is the caller's to say.
   for (const name of new Set(c.flags.map(([k]) => k))) {
     const given = c.flags.filter(([k]) => k === name);
-    if (given.some(([, v]) => v === null)) {
-      if (given.length > 1 && given.some(([, v]) => typeof v === 'string') && COMMAND_FLAGS[cmd][name] !== 'many') c = { ...c, flags: c.flags.filter(([k, v]) => !(k === name && v === null)) };
-      else return null;
-    }
-    const values = c.flags.filter(([k]) => k === name).map(([, v]) => v);
-    if (values.length > 1 && COMMAND_FLAGS[cmd][name] === 'value') {
-      if (new Set(values).size > 1) return null;
-      c = withFlags(without(c, name), [name, values[0]]);
-    }
+    if (given.some(([, v]) => v === null) || (given.length > 1 && COMMAND_FLAGS[cmd][name] === 'value')) return null;
   }
   // Values of a closed set in another case.
   for (const [where, set] of Object.entries(SETS[cmd] || {})) {
@@ -244,35 +238,9 @@ export function meant(args, loop) {
     c = { ...c, pos: [c.pos[0], c.pos[1], ok] };
   }
   if (cmd === 'answer' && typeof flagOf(c, 'option') === 'string') {
-    const offered = loop.options[c.pos[0]];
-    if (!offered) {
-      if (c.pos.length > 1) return null;
-      c = { ...without(c, 'option'), pos: [c.pos[0], flagOf(c, 'option')] };
-    } else {
-      const ok = caseOf(flagOf(c, 'option'), offered);
-      if (ok === null) return null;
-      c = withFlags(without(c, 'option'), ['option', ok]);
-    }
-  }
-  // A list written as text, written item by item.
-  if (cmd === 'field' && c.pos[2] !== undefined && ['tags', 'files', 'repo', 'after', 'source'].includes(String(c.pos[1]).toLowerCase()) && flagOf(c, 'remove') === undefined) c = { ...c, pos: [c.pos[0], c.pos[1], unquoted(c.pos[2])] };
-  for (const name of LIST_FLAGS[cmd] || []) {
-    const v = flagOf(c, name);
-    if (typeof v === 'string' && unquoted(v) !== v.split(',').map((s) => s.trim()).filter(Boolean).join(',')) c = withFlags(without(c, name), [name, unquoted(v)]);
-  }
-  // A lease taken over: the call names a new worker or branch for an issue another lease holds.
-  const held = loop.held[c.pos[0]];
-  if (cmd === 'set' && held && c.pos[1] === 'in-progress' && c.pos[2] && flagOf(c, 'handover') === undefined && ((flagOf(c, 'worker') ?? held.worker) !== held.worker || (flagOf(c, 'branch') ?? held.branch) !== held.branch)) c = withFlags(c, ['handover', true]);
-  // An evidence call that holds an attachment, a note and rows: one call for each.
-  if (cmd === 'evidence') {
-    const attach = ['file', 'slot'].some((k) => flagOf(c, k) !== undefined);
-    const rows = ['ran', 'saw'].some((k) => flagOf(c, k) !== undefined);
-    const note = c.pos.length > 1;
-    if ([attach, rows, note].filter(Boolean).length > 1) {
-      const rest = c.flags.filter(([k]) => !['file', 'slot', 'ran', 'saw'].includes(k));
-      const part = (keys, pos) => ({ cmd, pos, flags: [...rest, ...c.flags.filter(([k]) => keys.includes(k))].sort() });
-      return [...(attach ? [part(['file', 'slot'], [c.pos[0]])] : []), ...(note ? [part([], c.pos)] : []), ...(rows ? [part(['ran', 'saw'], [c.pos[0]])] : [])];
-    }
+    const ok = caseOf(flagOf(c, 'option'), loop.options[c.pos[0]] || []);
+    if (ok === null) return null;
+    c = withFlags(without(c, 'option'), ['option', ok]);
   }
   return [c];
 }
@@ -319,7 +287,9 @@ function replacedMeant(cmd, rest) {
   return null;
 }
 
-// The words of the reason and of a ready line, and whether a word holds a placeholder the call did not give.
+// The words of the reason and of a ready line, and whether a word holds a placeholder the call did not give. A placeholder
+// keeps a text given in its token, its words joined by hyphens.
+const tokenOf = (v) => String(v).replace(/[<>]/g, '').trim().replace(/[\s,]+/g, '-');
 const HOLE = /<[^<>]+>/;
 const reasonOf = (said) => said.trim().split('\n').slice(0, -1).join('\n');
 // The commands that do what a removed command did.
@@ -339,13 +309,15 @@ export function refusalProblems(args, said, loop, opts = {}) {
   // A loop run by a composer is closed and archived by its command, which the profile names.
   if (opts.profile?.lifecycle?.command && ready === opts.profile.lifecycle.command) return [];
   if (!/^jarl\.mjs \S/.test(ready)) return [`no ready command on the last line: ${ready}`];
-  if (!Object.hasOwn(COMMAND_FLAGS, cmd) && !Object.hasOwn(REPLACED_COMMANDS, cmd)) return ready === 'jarl.mjs --help' ? [] : [`an unknown command ends with the help: ${ready}`];
+  const unknown = !Object.hasOwn(COMMAND_FLAGS, cmd) && !Object.hasOwn(REPLACED_COMMANDS, cmd);
   const calls = printedCalls(ready);
   if (!calls || !calls.length) return [`the shell does not read it as calls of jarl.mjs: ${ready}`];
   const given = args.slice(1).map(String);
   const holes = calls.flat().filter((w) => HOLE.test(w) && !given.some((g) => g.includes(w.match(HOLE)[0])));
   const last = readCall(calls.at(-1));
   const problems = [];
+  // Every placeholder the line prints is one token, with no space and no comma, so no reader of a list or a text splits it.
+  for (const w of calls.flat()) for (const m of w.matchAll(/<[^<>]*>/g)) if (!given.some((g) => g.includes(m[0])) && /[\s,]/.test(m[0])) problems.push(`prints the placeholder ${m[0]}, which holds a space or a comma: ${ready}`);
   // The author: a ready line names the author the call named, or a placeholder for one, and never another.
   const by = readCall([cmd, ...given]).flags.find(([k, v]) => k === 'by' && typeof v === 'string')?.[1];
   for (const c of calls.map((w) => readCall(w))) for (const [k, v] of c.flags) if (k === 'by' && typeof v === 'string' && !HOLE.test(v) && v !== by) problems.push(`names --by ${v}, an author the call did not name: ${ready}`);
@@ -355,14 +327,26 @@ export function refusalProblems(args, said, loop, opts = {}) {
     // The call with a placeholder: of the command, of the one a removed form names, or a question put to the owner; every
     // word it holds is one the call gave or a placeholder; pasted unfilled, it is refused and writes nothing.
     const allowed = [cmd, ...(REMOVED_FORMS[cmd] || []), ...(REPLACED_BY[cmd] || [])];
-    if (!allowed.includes(last.cmd)) problems.push(`the call with a placeholder calls ${last.cmd}, not ${allowed.join(' or ')}: ${ready}`);
+    if (unknown ? !HOLE.test(last.cmd) : !allowed.includes(last.cmd)) problems.push(`the call with a placeholder calls ${last.cmd}, not ${allowed.join(' or ')}: ${ready}`);
     const known = new Set([...given, ...given.map((g) => g.toLowerCase()), ...given.flatMap((g) => g.split(/\s+/)), ...PARTS, 'review', '--', last.cmd]);
     for (const w of calls.at(-1).slice(1)) if (!HOLE.test(w) && !w.startsWith('--') && !known.has(w) && !known.has(w.toLowerCase()) && !given.some((g) => g.split(',').map((s) => s.trim()).includes(w))) problems.push(`writes ${JSON.stringify(w)}, a value the call did not give: ${ready}`);
+    // Every word the call gave is in the line, a placeholder keeping it in its token, but the one the reason names as wrong.
     const dropped = readCall([cmd, ...given]);
-    const values = [...dropped.pos, ...dropped.flags.map(([, v]) => v).filter((v) => typeof v === 'string')].filter((v) => v !== '');
-    const kept = calls.flat();
-    const lost = values.filter((v) => !kept.some((w) => w === v || w.toLowerCase() === v.toLowerCase() || w.includes(v)));
-    if (lost.length > 1) problems.push(`drops ${lost.map((v) => JSON.stringify(v)).join(', ')}, words the call gave: ${ready}`);
+    const values = [...dropped.pos, ...dropped.flags.flatMap(([k, v]) => [`--${k}`, ...(typeof v === 'string' ? [v] : [])])].filter((v) => v !== '');
+    const kept = calls.flat().map((w) => w.toLowerCase());
+    const reason = reasonOf(said).toLowerCase();
+    // A value is kept whole, item by item (a comma list), or word by word with at most the one word the reason names.
+    const bare = (v) => v.toLowerCase().replace(/^["'`[\]]+|["'`[\]]+$/g, '');
+    const has = (v) => v !== '' && (kept.some((w) => w === bare(v) || w.includes(bare(v)) || w.includes(tokenOf(bare(v)))) || reason.includes(bare(v)));
+    const keeps = (v) => {
+      if (has(v)) return true;
+      const items = v.split(',').map((s) => s.trim()).filter(Boolean);
+      if (items.length > 1) return items.every(keeps);
+      const wordsOf = v.split(/[\s:()=#]+/).filter(Boolean);
+      return wordsOf.length > 1 && wordsOf.filter((w) => !kept.some((k) => k.includes(bare(w)))).length <= 1 && wordsOf.every((w) => kept.some((k) => k.includes(bare(w))) || reason.includes(bare(w)));
+    };
+    const lost = values.filter((v) => !keeps(v));
+    if (lost.length) problems.push(`drops ${lost.map((v) => JSON.stringify(v)).join(', ')}, which the call gave and the reason does not name as wrong: ${ready}`);
     const dir = copy(loop, opts);
     const pasted = runPrinted(dir, ready);
     if (pasted.status === 0) problems.push(`pasted with its placeholder unfilled, it runs: ${ready}`);
@@ -376,7 +360,24 @@ export function refusalProblems(args, said, loop, opts = {}) {
   const steps = parsed.slice(0, parsed.length - intended.length);
   const ends = parsed.slice(parsed.length - intended.length);
   if (parsed.length < intended.length) return [...problems, `holds ${parsed.length} calls where the call meant ${intended.length}: ${ready}`];
-  ends.forEach((c, n) => { if (JSON.stringify(c) !== JSON.stringify(readCall(words(intended[n])))) problems.push(`is not the call meant (${words(intended[n]).join(' ')}): ${ready}`); });
+  // A call corrected one value at a time is the call meant, each value either as given or as meant: a value still wrong
+  // has it refused again, for that value, with nothing written.
+  const given1 = readCall([cmd, ...given]);
+  const stepwise = (c, m) => c.cmd === m.cmd && c.pos.length === m.pos.length && c.flags.length === m.flags.length
+    && c.pos.every((v, n) => v === m.pos[n] || v === given1.pos[n]) && c.flags.every(([k, v], n) => k === m.flags[n][0] && (v === m.flags[n][1] || given1.flags.some(([gk, gv]) => gk === k && gv === v)));
+  let partly = false;
+  ends.forEach((c, n) => {
+    const m = readCall(words(intended[n]));
+    if (JSON.stringify(c) === JSON.stringify(m)) return;
+    if (stepwise(c, m)) { partly = true; return; }
+    problems.push(`is not the call meant (${words(intended[n]).join(' ')}): ${ready}`);
+  });
+  if (partly) {
+    const dir = copy(loop, opts);
+    const once = runPrinted(dir, ready);
+    if (once.status === 0 || JSON.stringify(snapshot(dir)) !== JSON.stringify(before)) problems.push(`corrected in part, it runs or writes: ${ready}`);
+    return problems;
+  }
   for (const s of steps) if (!STEPS.includes(s.cmd) || (s.cmd === 'set' && s.pos[1] !== 'in-progress')) problems.push(`runs ${s.cmd} as a step before the call: ${ready}`);
   // Run: the line by the shell, and the steps then the calls meant on another copy; the two records are the same.
   const a = copy(loop, opts);
@@ -393,26 +394,29 @@ function walk(cases, loop, { mustRefuse }) {
   const found = [];
   let refused = 0;
   for (const c of cases) {
-    const { args, pre, profile } = Array.isArray(c) ? { args: c } : c;
+    const { args, pre, profile, loop: own } = Array.isArray(c) ? { args: c } : c;
     const opts = { pre, profile };
-    const dir = copy(loop, opts);
+    const on = own || loop;
+    const dir = copy(on, opts);
     const before = snapshot(dir);
     const r = run(dir, args);
     if (r.status === 0) { if (mustRefuse) found.push(`${JSON.stringify(args)}: went through`); continue; }
     refused += 1;
     if (JSON.stringify(snapshot(dir)) !== JSON.stringify(before)) found.push(`${JSON.stringify(args)}: refused and wrote`);
-    for (const p of refusalProblems(args, r.stderr, loop, opts)) found.push(`${JSON.stringify(args)}: ${p}`);
+    for (const p of refusalProblems(args, r.stderr, on, opts)) found.push(`${JSON.stringify(args)}: ${p}`);
   }
   return { found, refused };
 }
 
 // ---- the wrong calls of the command table ---------------------------------------------------------------------------
 
-// A call each writing command takes on the plain loop; the generator breaks it in every way the table names.
+// A call each writing command takes on the plain loop (base on the loop with a sibling repository, which declares one); the
+// generator breaks it in every way the table names. The key of one of the two files that carry 4, for renumber.
+function keyOf4() { const f = readdirSync(join(PLAIN.dir, '.jarl', 'issues')).find((x) => x.startsWith('4-')); return /^\*\*Key:\*\* (\S+)/m.exec(readFileSync(join(PLAIN.dir, '.jarl', 'issues', f), 'utf8'))?.[1] ?? 'k'; }
 const VALID = {
-  init: ['g'], new: ['t', '--tier', 'light'], renumber: ['1', '--key', 'k'], import: ['findings.json'], evidence: ['1', 'a note'],
+  init: ['g'], new: ['t', '--tier', 'light'], renumber: ['4', '--key', keyOf4()], import: ['research/findings.json'], evidence: ['1', 'a note'],
   retract: ['1', '1', '--by', 'jarl', 'the row was wrong'], field: ['1', 'Priority', '1'], base: ['tool', 'main'], set: ['1', 'deferred', 'later'],
-  merged: ['1', '--sha', 'abc1234'], review: ['1', 'approve', '--by', 'rev', 'read it all, fine'], round: ['1', 'it failed'], tick: ['1', '1', '--by', 'owner'],
+  merged: ['1', '--sha', 'abc1234'], review: ['1', 'approve', '--by', 'rev', 'read it all, fine'], round: ['1', 'it failed'], tick: ['3', '2', '--by', 'owner'],
   ask: ['which?'], answer: ['a-1', 'this way', '--by', 'owner'], log: ['a note'], decide: ['s1', 'a ruling', '--by', 'jarl'], goal: ['--set', 'Check: npm test'],
   archive: ['old'], mode: ['permanent'], close: [],
 };
@@ -455,16 +459,26 @@ export function generateWrongCalls() {
     }
     if (IDS_AT[cmd] !== undefined) { const wrong = [...valid]; wrong[at[IDS_AT[cmd]]] = '99'; calls.push([cmd, ...wrong]); }
   }
+  // A write that records a judgement, with its author left out.
+  for (const cmd of Object.keys(J.AUTHOR_REQUIRED)) { const valid = VALID[cmd]; const at = valid.indexOf('--by'); if (at !== -1) calls.push([cmd, ...valid.slice(0, at), ...valid.slice(at + 2)]); }
   // Calls refused for the state of the loop, as they are written: a close with work open, a loop out of git made
   // permanent, a loop opened where one lives.
   calls.push(['close'], ['close', '--by', 'jarl'], ['mode', 'permanent'], ['init', 'g', '--by', 'jarl']);
   for (const [cmd, flags] of Object.entries(REMOVED_FLAGS)) for (const flag of Object.keys(flags)) calls.push([cmd, ...(VALID[cmd] || []), `--${flag}`, ...(flag === 'retract' ? ['1'] : flag === 'by' ? ['repo'] : [])]);
   for (const cmd of Object.keys(REPLACED_COMMANDS)) calls.push([cmd, '1']);
-  return calls;
+  // A dashed item after another in a list, a range over ids the loop lacks or written backwards, a lease another worker
+  // holds, and words of one text given apart.
+  calls.push(
+    ['new', 't', '--tier', 'light', '--tags', 'ui,-x'], ['new', 't', '--tier', 'light', '--files', 'src/a.mjs,--b'], ['field', '1', 'Files', 'a.mjs,-b.mjs', '--add'], ['field', '1', 'Tags', 'core,-x', '--remove'],
+    ['set', '3-12', 'deferred', 'later'], ['round', '3-9', 'it failed'], ['field', '6-9', 'Priority', '1'], ['set', '3-2', 'dropped', 'duplicate of 1'], ['field', '3-1', 'Priority', '3'],
+    ['set', '2', 'in-progress', 'start', '--worker', 'w-other', '--branch', 'jarl/2-other'], ['evidence', '1', '--ran', 'npm', 'test', '--saw', 'ok'], ['evidence', '1', '--ran', 'npm test', '--saw', 'pass', '3'],
+    ['set', '1', 'deferred', 'not', 'now'], ['review', '1', 'approve', '--by', 'rev', 'read', 'it', 'all'],
+  );
+  return calls.map((a) => (a[0] === 'base' ? { args: a, loop: SIBLING } : a));
 }
 
 test('the check of a refusal catches a ready line that does what the call did not mean', () => {
-  const said = (line) => `a reason\n${line}`;
+  const said = (line) => `a reason (got "bogus")\n${line}`;
   const check = (args, line) => refusalProblems(args, said(line), PLAIN);
   // A refusal that holds: the call fixed, mechanically, and the call with a placeholder.
   assert.deepEqual(check(['set', '1', 'Deferred', 'later'], "jarl.mjs set 1 deferred later"), []);
@@ -479,7 +493,7 @@ test('the check of a refusal catches a ready line that does what the call did no
   // close --force, an author swapped in, and a placeholder inside a value that writes when pasted.
   assert.ok(check(['close', '--by', 'jarl'], 'jarl.mjs close --force --by jarl').some((p) => /--force/.test(p)));
   assert.ok(check(['answer', 'a-3', 'yes', '--by', 'jarl'], 'jarl.mjs answer a-3 yes --by owner').some((p) => /author/.test(p)));
-  assert.ok(check(['goal', '--set', 'Model (huge): opus'], "jarl.mjs goal --set 'Model (light): <model>'").some((p) => /writes/.test(p)));
+  assert.ok(check(['goal', '--set', 'Model (huge): opus'], "jarl.mjs goal --set 'Model (light): <model> or opus'").some((p) => /writes/.test(p)));
   // A word the call gave left out, and the same refusal again.
   assert.ok(check(['new', 't', '--tier', 'light', '--text', 'what it is'], 'jarl.mjs new t --tier light').length);
   assert.ok(check(['field', '1', 'Priority', '7'], 'jarl.mjs field 1 Priority 7').some((p) => /same reason|chosen/.test(p)));
@@ -547,14 +561,14 @@ test('an option, a question and an author are never chosen for the caller: the o
   assert.doesNotMatch(tick.ready, /\bfield\b|\[owner\]/, 'no owner line is made up');
   assert.doesNotMatch(readFileSync(L.findIssue(tick.pasted, '1').file, 'utf8'), /\[owner\]/);
   const self = refusal(['review', '2', 'approve', '--by', 'w-beta', 'read it all and it is fine'], { pre: [['evidence', '2', '--ran', 'npm test', '--saw', 'pass 2']] });
-  assert.match(self.ready, /--by '<a fresh reviewer, not w-beta>'/);
+  assert.match(self.ready, /--by '<a-fresh-reviewer-not-w-beta>'/);
   assert.notEqual(run(self.pasted, ['set', '2', 'done', 'merged']).status, 0, 'the pasted line records no approve, so done stays refused');
 });
 
 test('close with open issues ends with the question to the owner, never with close --force', () => {
   const r = refusal(['close', '--by', 'jarl']);
   assert.doesNotMatch(r.ready, /--force/);
-  assert.match(r.ready, /^jarl\.mjs ask '<close the loop with 1, 2, 3, 4 still open\?>' --by jarl$/);
+  assert.match(r.ready, /^jarl\.mjs ask '<close-the-loop-with-1-2-3-4-still-open\?>' --by jarl$/);
   assert.ok(existsSync(join(r.pasted, '.jarl', 'goal.md')));
 });
 
@@ -562,19 +576,19 @@ test('a part field does not write, and a line taken off a section, end with a pl
   for (const part of ['Notes', 'Status', 'Reviews', 'Merged', 'Worker']) {
     const r = refusal(['field', '1', part, 'x']);
     assert.doesNotMatch(r.ready, /Priority/, part);
-    assert.match(r.ready, /^jarl\.mjs field 1 '<a part of the description>' x$/, part);
+    assert.match(r.ready, /^jarl\.mjs field 1 '<a-part-of-the-description>' x$/, part);
   }
   const r = refusal(['field', '4', 'Acceptance', 'delta works', '--remove']);
   assert.equal(L.findIssue(r.pasted, '4').sections.acceptance, L.findIssue(copy(SIBLING), '4').sections.acceptance);
   assert.match(L.findIssue(r.pasted, '4').sections.acceptance, /delta works[\s\S]*and still works/);
-  assert.match(r.ready, /'<the whole Acceptance section, without what is to go>'/);
+  assert.match(r.ready, /'<the-whole-Acceptance-section-without-delta-works>'/);
 });
 
 test('a tier, a kind and a goal line outside their sets keep the value given in a placeholder, or take only its case', () => {
   assert.equal(refusal(['new', 't', '--tier', 'Strong']).ready, 'jarl.mjs new t --tier strong');
   assert.match(refusal(['new', 't', '--tier', 'stong']).ready, /--tier '<light\|standard\|strong>'/);
   const goal = refusal(['goal', '--set', 'Model (huge): opus']);
-  assert.equal(goal.ready, "jarl.mjs goal --set '<Model (light|standard|strong): opus>'");
+  assert.equal(goal.ready, "jarl.mjs goal --set 'Model (<light|standard|strong>): opus'");
   // A profile that declares its own fields of a wait keeps no promise among its kinds: the kind is never another one.
   const dir = mkdtempSync(join(tmpdir(), 'jarl-refusals-kinds-'));
   mkdirSync(join(dir, '.git'));
@@ -592,11 +606,11 @@ test('a ready line keeps every word given: a title that starts with --, a text g
   assert.match(text.ready, /'what it is'/);
   assert.ok(!L.loadIssues(text.pasted).some((i) => i.title === 't'), 'nothing is filed without the text');
   const takeover = refusal(['set', '2', 'in-progress', 'take over', '--worker', 'w-new']);
-  assert.equal(takeover.ready, "jarl.mjs set 2 in-progress 'take over' --worker w-new --handover");
-  assert.equal(takeover.issue('2').fields.worker, 'w-new');
-  assert.match(refusal(['review', '2', 'changes', '--by', 'rev-q', 'Important: x']).ready, /Important: x/);
+  assert.equal(takeover.ready, "jarl.mjs set 2 in-progress 'take over' --worker w-new '<--handover-to-end-the-lease-of-w-beta-or-none>'");
+  assert.equal(takeover.issue('2').fields.worker, 'w-beta', 'pasted unfilled, the lease another worker holds stays his');
+  assert.match(refusal(['review', '2', 'changes', '--by', 'rev-q', 'Important: x']).ready, /'<Important:-x-in-at-least-3-words>'/);
   const path = refusal(['field', '1', 'Files', '-x.mjs', '--add']);
-  assert.match(path.ready, /'<an item for -x\.mjs, not starting with a dash>'/);
+  assert.match(path.ready, /'<item-for--x\.mjs-with-no-leading-dash>'/);
   assert.doesNotMatch(path.ready, / x\.mjs/);
 });
 
@@ -616,7 +630,7 @@ test('a ready line is not refused again for the reason the call was: a value wit
 
 // ---- placeholders are never data -------------------------------------------------------------------------------------
 
-test('a value that is one placeholder is refused wherever a value is taken, with nothing written; a text that holds angle brackets among other words is written', () => {
+test('a value, a list item or the value part of a value written in parts that is one placeholder is refused, with nothing written; a text that holds angle brackets among other words is written', () => {
   const holes = [
     ['review', '1', 'approve', '--by', '<reviewer>', 'read it all, fine'], ['retract', '1', '1', '--by', '<who>', 'the row was wrong'],
     ['evidence', '1', '--ran', '<command>', '--saw', 'ok'], ['evidence', '1', '--ran', 'npm test', '--saw', '<what it printed>'],
@@ -624,6 +638,12 @@ test('a value that is one placeholder is refused wherever a value is taken, with
     ['answer', 'a-1', '<text>', '--by', 'owner'], ['decide', 's9', '<text>', '--by', 'jarl'], ['decide', '<slug>', 'a ruling', '--by', 'jarl'],
     ['field', '1', 'Tags', 'a,<tag>'], ['new', 't', '--tier', 'light', '--after', '3,<id>'], ['log', '<a note that is not shaped as a move>'],
     ['answer', 'a-2', '--option', '<A|B>', '--by', 'owner'], ['goal', '--set', '<Model (light|standard|strong): opus>'],
+    // The value part of a value written in parts: a goal line, an option, a source, a field and a section of a profile, a
+    // changelog entry, a selector of a scope; and a list item taken off.
+    ['goal', '--set', 'Check: <command>'], ['goal', '--set', 'Model (<light|standard|strong>): opus'], ['ask', 'q?', '--option', 'A: <effect>', '--option', 'B: b'],
+    ['new', 't', '--tier', 'light', '--source', '<dir>#<id>'], ['new', 't', '--tier', 'light', '--source', 'research#<id>'], ['new', 't', '--tier', 'light', '--field', 'Area=<value>'],
+    ['new', 't', '--tier', 'light', '--section', 'Design=<text>'], ['field', '1', 'Changelog', 'Added: <entry>'], ['new', 't', '--tier', 'light', '--changelog', 'Fixed: <what changed>'],
+    ['decide', 's9', 'a ruling', '--by', 'jarl', '--applies-to', 'role <role>'], ['field', '1', 'Tags', 'core,<a-tag>', '--remove'], ['field', '1', 'Source', 'r/x#<id>'],
   ];
   for (const args of holes) {
     const dir = copy(PLAIN);
@@ -636,6 +656,8 @@ test('a value that is one placeholder is refused wherever a value is taken, with
   const genuine = [
     ['evidence', '1', '--ran', 'node a.mjs <in.txt', '--saw', 'Vec<T> is fine'], ['field', '1', 'Title', 'the <b> tag is escaped'],
     ['new', 'Map<K, V> leaks', '--tier', 'light'], ['decide', 's9', 'use <x> where it fits', '--by', 'jarl'], ['log', '<x> and more'], ['review', '1', 'approve', '--by', 'rev', '<html> renders, all fine'],
+    ['new', 'Jarl: <b> handling', '--tier', 'light'], ['field', '1', 'Where', 'the <tag> in a.mjs, line 3'], ['evidence', '1', '--ran', 'npm test', '--saw', 'it printed <b>ok</b>'],
+    ['field', '1', 'Changelog', 'Fixed: a <b> tag is escaped'], ['ask', 'q?', '--option', 'A: keep <b> as it is', '--option', 'B: drop it'], ['goal', '--set', 'Check: node run.mjs <in.txt'],
   ];
   for (const args of genuine) assert.equal(run(copy(PLAIN), args).status, 0, args.join(' '));
 });
@@ -708,6 +730,54 @@ function needArity(src) {
   }
   return bad;
 }
+// The ready part of each need and refuse of a source, as written: the last argument of the call.
+function readyParts(src) {
+  const out = [];
+  for (const m of src.matchAll(/(?<![\w$.])(?:need|refuse)\(|\bL\.need\(/g)) {
+    if (/function (?:need|refuse)\(/.test(src.slice(Math.max(0, m.index - 9), m.index + 7))) continue;
+    let depth = 0; let q = null; let start = m.index + m[0].length; let i = start;
+    for (; i < src.length; i += 1) {
+      const c = src[i];
+      if (q) { if (c === '\\') i += 1; else if (c === q) q = null; continue; }
+      if (c === "'" || c === '"' || c === '`') { q = c; continue; }
+      if ('([{'.includes(c)) depth += 1;
+      else if (')]}'.includes(c)) { if (depth === 0) break; depth -= 1; }
+      else if (c === ',' && depth === 0) start = i + 1;
+    }
+    out.push({ line: src.slice(0, m.index).split('\n').length, text: src.slice(start, i).trim() });
+  }
+  return out;
+}
+// What a ready part is, read from its source: it names a correction of CORRECTIONS (fix: '<name>'), or it holds a
+// placeholder — written as one (a text that starts with <, hole, placeholderOf), or made by one of the functions below, each
+// of which returns a placeholder or a named correction, as the walk proves of every line they make.
+const MAKES_HOLES = ['afterView', 'refiled', 'askOwner', 'doneReady', 'openQuestion', 'openLine', 'carriedTwice', 'keysOf', 'rowFirst', 'noteFirst', 'scopeHole', 'verdictHole', 'ownerLineHole', 'flagHole', 'rewrite', 'retractInstead', 'OWNER_TICKS', 'LINE_WRITERS'];
+export function unnamedReadyParts(file, src, corrections) {
+  const problems = [];
+  for (const { line, text } of readyParts(src)) {
+    // A ready part handed on as it was built: need's own, and a refusal thrown again over several ids.
+    if (/^(?:e\.ready|typeof ready === 'function' \? ready\(\) : ready)$/.test(text)) continue;
+    const named = [...text.matchAll(/\bfix: '([a-z]+)'/g)].map((x) => x[1]);
+    for (const n of named) if (!Object.hasOwn(corrections, n)) problems.push(`${file}:${line}: names ${n}, which is no correction`);
+    const holds = /['"`]<|<\$\{|<[a-z]|\bhole\(|\bplaceholderOf\(|\bheld: true\b/.test(text) || MAKES_HOLES.some((h) => new RegExp(`\\b${h}\\b`).test(text));
+    if (!named.length && !holds) problems.push(`${file}:${line}: a ready part that names no correction and holds no placeholder: ${text.slice(0, 80)}`);
+  }
+  return problems;
+}
+test('every ready part of the sources names its correction from the table, or holds a placeholder', () => {
+  const problems = [];
+  for (const f of sourceFiles()) problems.push(...unnamedReadyParts(f, readFileSync(join(SOURCES, f), 'utf8'), L.CORRECTIONS));
+  assert.deepEqual(problems, []);
+  // The check reads a ready part that writes a value of its choosing, or names a correction the table lacks.
+  assert.equal(unnamedReadyParts('x', "need(a, 'reason', () => ({ arg: 1, value: 'open' }));", L.CORRECTIONS).length, 1);
+  assert.equal(unnamedReadyParts('x', "need(a, 'reason', () => ({ flag: '--handover' }));", L.CORRECTIONS).length, 1);
+  assert.equal(unnamedReadyParts('x', "need(a, 'reason', () => ({ replace: x, value: y, fix: 'guess' }));", L.CORRECTIONS).length, 1);
+  assert.deepEqual(unnamedReadyParts('x', "need(a, 'reason', () => ({ arg: 1, value: oneOf(s, set), fix: 'case' }));\nneed(b, 'r', { arg: 0, value: '<id>' });", L.CORRECTIONS), []);
+  // And the command line keeps a line that would run without a correction named from running: it gets a placeholder.
+  const said = J.refusalFor(new L.Refusal('a reason', { arg: 1, value: 'open' }), { cmd: 'set', args: ['1', 'bogus'], flags: [] }).message;
+  assert.match(said.split('\n').at(-1), /^jarl\.mjs set 1 open '<as-the-reason-says>'$/);
+  assert.equal(J.refusalFor(new L.Refusal('a reason', { arg: 1, value: 'done', fix: 'case' }), { cmd: 'set', args: ['1', 'Done'], flags: [] }).message.split('\n').at(-1), 'jarl.mjs set 1 done');
+});
 test('every refusal of the sources is built by refuse or need with its ready part; no other error of any class is made or thrown', async () => {
   const problems = [];
   for (const f of sourceFiles()) {

@@ -372,7 +372,7 @@ test('field <ids> <field> <value> writes a declared field, checked against its v
   jarl(root, 'new', 'b', '--field', 'Area-2=core');
   assert.equal(jarl(root, 'field', '1,2', 'area-2', 'cli'), '1 Area-2: cli\n2 Area-2: cli');
   assert.match(refuses(root, 'field', '1', 'Area-2', 'web'), /Area-2 must be one of: core, cli/);
-  assert.match(refuses(root, 'field', '1', 'Area-2', '--clear'), /Area-2 cannot be empty/);
+  assert.match(refuses(root, 'field', '1', 'Area-2', '--clear'), /Area-2 cannot be emptied with --clear/);
   assert.match(refuses(root, 'field', '1', 'Area-2'), /field Area-2 needs a value/);
   jarl(root, 'field', '1', 'Note', 'see the thread');
   jarl(root, 'field', '1', 'kind', 'fix');
@@ -436,7 +436,7 @@ test('no profile: --field, --section and a field in place of a status are refuse
   assert.match(refuses(root, 'new', 't', '--section', 'Plan=x'), /declares no sections/);
   jarl(root, 'new', 'a', '--kind', 'gap');
   jarl(root, 'new', 'b');
-  assert.match(refuses(root, 'set', '1', 'kind', 'gap'), /^status must be one of: open, in-progress, done, dropped, deferred\njarl\.mjs set 1 '<open\|in-progress\|done\|dropped\|deferred>' gap\n$/);
+  assert.match(refuses(root, 'set', '1', 'kind', 'gap'), /^status must be one of: open, in-progress, done, dropped, deferred \(got "kind"\)\njarl\.mjs set 1 '<open\|in-progress\|done\|dropped\|deferred>' gap\n$/);
   assert.deepEqual(JSON.parse(jarl(root, 'list', '--match', 'kind=gap', '--json')).map((i) => i.id), ['1']);
   assert.equal(jarl(root, 'list'), '1  P2  open        gap      a\n2  P2  open        bug      b');
 });

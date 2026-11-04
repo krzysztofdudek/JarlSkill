@@ -2,7 +2,7 @@
 
 import { existsSync, readdirSync } from 'node:fs';
 import { join, resolve, dirname, basename } from 'node:path';
-import { fieldText, need } from './base.mjs';
+import { fieldText, hole, need } from './base.mjs';
 import { canonical, jarlDir } from './where.mjs';
 import { cmpId } from './ids.mjs';
 import { loadProfile } from './profile.mjs';
@@ -287,7 +287,7 @@ function loopShape(path) {
 export function cmdModels(root, flags = {}) {
   builds.modelsTable += 1;
   need(flags.by === undefined || ['repo', 'tag'].includes(flags.by), `--group is one of: repo, tag (got "${flags.by}")`, () => ({ flag: '--group', value: '<repo|tag>' }));
-  need(flags.archives === undefined || flags.archives === true, '--archives takes no value', () => ({ flag: '--archives' }));
+  need(flags.archives === undefined || flags.archives === true, '--archives takes no value', () => ({ rename: '--archives', to: hole('--archives with no value') }));
   const lines = modelLines(root);
   const sources = [];
   const seen = new Set();

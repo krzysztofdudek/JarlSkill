@@ -100,12 +100,12 @@ export function withLock(root, fn) {
     }
     let text = ''; let mtimeMs = Date.now();
     try { text = readText(path); mtimeMs = statSync(path).mtimeMs; } catch {   // released meanwhile
-      if (Date.now() > until) refuse(`.jarl/.lock could not be taken within ${LOCK_WAIT_MS} ms — nothing was written; retry`, { retry: true });
+      if (Date.now() > until) refuse(`.jarl/.lock could not be taken within ${LOCK_WAIT_MS} ms — nothing was written; retry`, { retry: true, fix: 'step' });
       sleep(1 + Math.floor(Math.random() * 5));
       continue;
     }
     if (lockIsStale(text, mtimeMs)) { breakStaleLock(root, text); sleep(1 + Math.floor(Math.random() * 5)); continue; }
-    if (Date.now() > until) refuse(`.jarl/.lock is held by another jarl.mjs (${text.trim() || 'holder unknown'}) — nothing was written; retry, or remove ${path} if that process is gone`, { retry: true });
+    if (Date.now() > until) refuse(`.jarl/.lock is held by another jarl.mjs (${text.trim() || 'holder unknown'}) — nothing was written; retry, or remove ${path} if that process is gone`, { retry: true, fix: 'step' });
     sleep(10 + Math.floor(Math.random() * 40));
   }
   HELD.set(key, 1);

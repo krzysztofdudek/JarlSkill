@@ -2,7 +2,7 @@
 
 import { existsSync, readdirSync } from 'node:fs';
 import { join, dirname, basename } from 'node:path';
-import { fieldText, need, noSeparators, oneBreak, splitList } from './base.mjs';
+import { fieldText, hole, need, noSeparators, oneBreak, placeholderOf, splitList } from './base.mjs';
 import { jarlDir, stamp, today } from './where.mjs';
 import { appendAtomic, readText, writeAtomic } from './files.mjs';
 import { ISSUE_FILE_RE, KEY_RE, idKey, idRe, issueForms, writtenId } from './ids.mjs';
@@ -337,24 +337,24 @@ export function cmdGoalSet(root, text) {
   need(old !== null, 'the loop has no goal: open it with init "<goal>"', () => (['jarl.mjs', 'init', '<goal>']));
   need(!oneBreak(text).includes('\n'), 'goal --set takes one machine line: a line break in its value is refused', () => ({ flag: '--set', value: '<one machine line>' }));
   const line = goalLineOf(text);
-  need(line && line.value && MACHINE_LABEL[line.key], 'goal --set takes one machine line: "Check (<repository>): <command>" or "Check: <command>", "Model (<tier>): <model>, …", "Coordinators: <name>, …", "Merger: <name>", "Takeover (<kind>): <rounds>" or "Takeover: <rounds>"', () => ({ flag: '--set', value: '<a machine line: Check, Model (tier), Coordinators, Merger or Takeover, a colon, its value>' }));
+  need(line && line.value && MACHINE_LABEL[line.key], `goal --set takes one machine line (got "${text}"): ` + '"Check (<repository>): <command>" or "Check: <command>", "Model (<tier>): <model>, …", "Coordinators: <name>, …", "Merger: <name>", "Takeover (<kind>): <rounds>" or "Takeover: <rounds>"', () => ({ flag: '--set', value: '<a machine line: Check, Model (tier), Coordinators, Merger or Takeover, a colon, its value>' }));
   let qualifier = line.qualifier;
   if (line.key === 'model') {
-    need(qualifier !== null, 'a Model line names its tier: "Model (<tier>): <model>, …"', () => ({ flag: '--set', value: `<Model (${loadProfile(root).tiers.join('|')}): ${noSeparators(line.value)}>` }));
+    need(qualifier !== null, 'a Model line names its tier: "Model (<tier>): <model>, …"', () => ({ flag: '--set', value: `Model (${placeholderOf(loadProfile(root).tiers)}): ${line.value}` }));
     const profile = loadProfile(root);
     qualifier = profile.tiers.find((t) => t.toLowerCase() === qualifier.toLowerCase()) ?? null;
-    need(qualifier !== null, `the profile declares no tier ${line.qualifier}: its tiers are ${loadProfile(root).tiers.join(', ')}`, () => ({ flag: '--set', value: `<Model (${loadProfile(root).tiers.join('|')}): ${noSeparators(line.value)}>` }));
+    need(qualifier !== null, `the profile declares no tier ${line.qualifier}: its tiers are ${loadProfile(root).tiers.join(', ')}`, () => ({ flag: '--set', value: `Model (${placeholderOf(loadProfile(root).tiers)}): ${line.value}` }));
   }
-  need(line.key !== 'coordinators' || qualifier === null, 'a Coordinators line takes no qualifier: "Coordinators: <name>, …"', () => ({ flag: '--set', value: `<Coordinators: ${noSeparators(line.value)}>` }));
-  need(line.key !== 'merger' || (qualifier === null && !line.value.includes(',')), MERGER_REASON, () => ({ flag: '--set', value: `<Merger: one name of ${noSeparators(line.value)}>` }));
+  need(line.key !== 'coordinators' || qualifier === null, 'a Coordinators line takes no qualifier: "Coordinators: <name>, …"', () => ({ flag: '--set', value: `Coordinators (${hole('no qualifier')}): ${line.value}` }));
+  need(line.key !== 'merger' || (qualifier === null && !line.value.includes(',')), MERGER_REASON, () => ({ flag: '--set', value: `Merger: ${hole(`one name of ${line.value}`)}` }));
   if (line.key === 'takeover' && qualifier !== null) {
     const kinds = loadProfile(root).kinds;
     qualifier = kinds.find((k) => k.toLowerCase() === qualifier.toLowerCase()) ?? null;
-    need(qualifier !== null, `the profile declares no kind ${line.qualifier}: its kinds are ${kinds.join(', ')}`, () => ({ flag: '--set', value: `<Takeover (${kinds.join('|')}): ${noSeparators(line.value)}>` }));
+    need(qualifier !== null, `the profile declares no kind ${line.qualifier}: its kinds are ${kinds.join(', ')}`, () => ({ flag: '--set', value: `Takeover (${placeholderOf(kinds)}): ${line.value}` }));
   }
   const value = noSeparators(line.value);
-  need(value, 'goal --set needs a value after the colon', () => ({ flag: '--set', value: `<${String(text).split(':')[0].trim()}: its value>` }));
-  need(line.key !== 'takeover' || takeoverRounds(value) !== null, `a Takeover line takes a whole number of rounds from 1 to ${TAKEOVER_MAX}: "Takeover: <rounds>" or "Takeover (<kind>): <rounds>"`, () => ({ flag: '--set', value: `<${String(text).split(':')[0].trim()}: 1 to ${TAKEOVER_MAX} rounds>` }));
+  need(value, 'goal --set needs a value after the colon', () => ({ flag: '--set', value: `${String(text).split(':')[0].trim()}: ${hole('its value')}` }));
+  need(line.key !== 'takeover' || takeoverRounds(value) !== null, `a Takeover line takes a whole number of rounds from 1 to ${TAKEOVER_MAX} (got "${value}"): "Takeover: <rounds>" or "Takeover (<kind>): <rounds>"`, () => ({ flag: '--set', value: `${String(text).split(':')[0].trim()}: ${hole(`1 to ${TAKEOVER_MAX} rounds`)}` }));
   const next = goalWithLine(old, { key: line.key, qualifier, value });
   // A line that already holds this value is left alone: nothing is written and no log line says it changed.
   if (next.replaced && noSeparators(next.was) === value) return { shown: next.shown, replaced: true, was: next.was, unchanged: true };

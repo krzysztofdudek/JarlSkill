@@ -153,9 +153,9 @@ export function cmdTick(root, rawId, rawLine, flags = {}) {
   const loop = readLoop(jarlDir(root));
   const states = ownerLineStates(root, loop, issue);
   const lines = acceptanceLines(issue);
-  need(states.length, `${issue.id} has no acceptance line marked as one only the owner ticks — mark one, ${OWNER_LINE_SHAPE}, among every line of the section, agreed with him`, () => ({ arg: 1, value: `<the number of an owner line: ${issue.id} has none>` }));
+  need(states.length, `${issue.id} has no acceptance line marked as one only the owner ticks (got line ${rawLine}) — mark one, ${OWNER_LINE_SHAPE}, among every line of the section, agreed with him`, () => ({ arg: 1, value: `<the number of an owner line: ${issue.id} has none>` }));
   const owners = `its owner lines: ${states.map((s) => s.n).join(', ')}`;
-  need(/^\d+$/.test(String(rawLine ?? '').trim()) && Number(rawLine) > 0, `tick takes the number of the acceptance line, counted from 1 — ${owners}`, () => ({ arg: 1, value: placeholderOf(states.map((x) => x.n)) }));
+  need(/^\d+$/.test(String(rawLine ?? '').trim()) && Number(rawLine) > 0, `tick takes the number of the acceptance line, counted from 1 (got "${rawLine}") — ${owners}`, () => ({ arg: 1, value: placeholderOf(states.map((x) => x.n)) }));
   const n = Number(rawLine);
   need(n <= lines.length, `${issue.id} has ${lines.length} acceptance line${lines.length === 1 ? '' : 's'}: there is no line ${n}; ${owners}`, () => ({ arg: 1, value: placeholderOf(states.map((x) => x.n)) }));
   const s = states.find((x) => x.n === n);

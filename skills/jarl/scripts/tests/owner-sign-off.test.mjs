@@ -121,7 +121,7 @@ test('a tick counts for the line it was given on: a round spends it, and a line 
 test('tick takes the owner\'s word on an owner line whose material is there, once', () => {
   const root = signOffLoop();
   assert.match(refuses(root, 'tick', '1', '2'), /needs --by owner/);
-  assert.match(refuses(root, 'tick', '1', '2', '--by', 'jarl'), /^only the owner ticks an owner line \(got "jarl"\): he ticks it once he has reviewed its material, and nobody ticks it for him\njarl\.mjs tick 1 2 --by '<owner, once he has reviewed the material>'\n$/);
+  assert.match(refuses(root, 'tick', '1', '2', '--by', 'jarl'), /^only the owner ticks an owner line \(got "jarl"\): he ticks it once he has reviewed its material, and nobody ticks it for him\njarl\.mjs tick 1 2 --by '<owner-once-he-has-reviewed-the-material>'\n$/);
   assert.match(refuses(root, 'tick', '1', '1', '--by', 'owner'), /acceptance line 1 of 1 is not marked as one only the owner ticks; its owner lines: 2/);
   assert.match(refuses(root, 'tick', '1', '3', '--by', 'owner'), /1 has 2 acceptance lines: there is no line 3; its owner lines: 2/);
   assert.match(refuses(root, 'tick', '2', '1', '--by', 'owner'), /2 has no acceptance line marked as one only the owner ticks/);

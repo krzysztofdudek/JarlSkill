@@ -3,7 +3,7 @@
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { ASK_KINDS, HANDOFF_STALE_MS, fieldText, freeInline, need, noSeparators, oneBreak, oneOf, placeholderOf, shown } from './base.mjs';
+import { ASK_KINDS, HANDOFF_STALE_MS, afterView, fieldText, freeInline, hole, need, noSeparators, oneBreak, oneOf, placeholderOf, shown } from './base.mjs';
 import { jarlDir, today } from './where.mjs';
 import { appendAtomic, readText, writeAtomic } from './files.mjs';
 import { askNumber, idKey, issueForms, needsRaisedFormat, newNumber, writtenId } from './ids.mjs';
@@ -26,7 +26,7 @@ export function cmdAsk(root, question, flags) {
   need(question, 'ask requires "<text>"', { arg: 0, value: '<text>' });
   needNoOwnersWords('the question', question, flags);
   const kind = String(flags.kind || 'stuck');
-  need(ASK_KINDS.includes(kind), `--kind must be one of: ${ASK_KINDS.join(', ')} — stop (halt everything), stuck (this issue only), lower (weaken something protected, needs a target), charter (the goal itself), ratify (a choice already made under a mandate, awaiting the owner's word; blocks nothing), escalation (a coordinator's question to the jarl, naming its --slice or --issue), rule (a rule proposed with --applies-to, for the jarl to accept, or the owner with --to owner)`, () => ({ flag: '--kind', value: oneOf(kind, ASK_KINDS) }));
+  need(ASK_KINDS.includes(kind), `--kind must be one of: ${ASK_KINDS.join(', ')} (got "${kind}") — stop (halt everything), stuck (this issue only), lower (weaken something protected, needs a target), charter (the goal itself), ratify (a choice already made under a mandate, awaiting the owner's word; blocks nothing), escalation (a coordinator's question to the jarl, naming its --slice or --issue), rule (a rule proposed with --applies-to, for the jarl to accept, or the owner with --to owner)`, () => ({ flag: '--kind', value: oneOf(kind, ASK_KINDS), fix: 'case' }));
   if (flags.issue !== undefined) need(findIssue(root, flags.issue), `no such issue: ${flags.issue}`, () => ({ flag: '--issue', value: '<id>' }));
   // An escalation goes up from a coordinator to the jarl, who holds it; it names the slice or the issue it is about, so it
   // stays in that slice's view. --slice names a slice of the loop, and only an escalation takes it.
@@ -38,7 +38,7 @@ export function cmdAsk(root, question, flags) {
   need(kind === 'rule' || (flags['applies-to'] === undefined && flags.until === undefined && flags.to === undefined), `--applies-to, --until and --to go with kind rule — a question of kind "${kind}" proposes no rule`, () => ({ flag: '--kind', value: '<rule, or none of --applies-to, --until and --to>' }));
   need(kind !== 'rule' || flags.ruling !== undefined || flags['applies-to'] !== undefined, 'a rule is proposed with whom it applies to', () => ({ flag: '--applies-to', value: '<selectors>' }));
   need(kind !== 'rule' || flags.issue === undefined, 'a proposed rule holds no issue back: name the issue in its scope instead, --applies-to "issue <id>"', () => ({ rename: '--issue', to: '<no --issue: the issue goes in --applies-to>' }));
-  need(flags.to === undefined || ['owner', 'jarl'].includes(String(flags.to)), `--to names who accepts the rule: jarl (the default) or owner (got "${flags.to}")`, () => ({ flag: '--to', value: oneOf(flags.to, ['jarl', 'owner']) }));
+  need(flags.to === undefined || ['owner', 'jarl'].includes(String(flags.to)), `--to names who accepts the rule: jarl (the default) or owner (got "${flags.to}")`, () => ({ flag: '--to', value: oneOf(flags.to, ['jarl', 'owner']), fix: 'case' }));
   const appliesTo = kind === 'rule' && flags['applies-to'] !== undefined ? scopeOf(root, flags) : null;
   const to = kind === 'rule' ? String(flags.to ?? (flags.ruling !== undefined ? OWNER : JARL)) : null;
   need(kind !== 'lower' || flags.target, '--target is required for kind lower — nothing to weaken without naming it', () => ({ flag: '--target', value: '<what would get weaker>' }));
@@ -54,9 +54,9 @@ export function cmdAsk(root, question, flags) {
   if (flags.ruling !== undefined) {
     need(kind === 'ratify' || kind === 'rule', `a question naming a ruling is that ruling's ratification item — kind ratify — or its promotion — kind rule (got "${kind}")`, () => ({ flag: '--kind', value: '<ratify|rule>' }));
     const d = loadDecisions(root).find((x) => x.slug === String(flags.ruling));
-    need(d && (kind === 'rule' ? d.appliesTo : d.area), kind === 'rule' ? `no rule with a scope ${flags.ruling} in ${DECISIONS_FILE} to offer for promotion` : `no area ruling ${flags.ruling} in ${DECISIONS_FILE} to put to ratification`, () => (['jarl.mjs', 'decisions', '--live']));
-    need(!d.supersededBy && !d.ratified && !d.rejected, `${flags.ruling} is ${d.supersededBy ? `superseded by ${d.supersededBy}` : d.ratified ? 'already ratified' : 'already rejected'} — nothing to ratify`, () => (['jarl.mjs', 'decisions']));
-    need(!loadAsks(root).some((x) => x.ruling === d.slug), `${flags.ruling} has been put to ratification already`, () => (['jarl.mjs', 'status']));
+    need(d && (kind === 'rule' ? d.appliesTo : d.area), kind === 'rule' ? `no rule with a scope ${flags.ruling} in ${DECISIONS_FILE} to offer for promotion` : `no area ruling ${flags.ruling} in ${DECISIONS_FILE} to put to ratification`, () => afterView(['jarl.mjs', 'decisions', '--live'], 'a ruling decisions shows'));
+    need(!d.supersededBy && !d.ratified && !d.rejected, `${flags.ruling} is ${d.supersededBy ? `superseded by ${d.supersededBy}` : d.ratified ? 'already ratified' : 'already rejected'} — nothing to ratify`, () => afterView(['jarl.mjs', 'decisions'], 'a ruling decisions shows'));
+    need(!loadAsks(root).some((x) => x.ruling === d.slug), `${flags.ruling} has been put to ratification already`, () => afterView(['jarl.mjs', 'status'], 'as status shows'));
   }
   const ruling = (kind === 'ratify' || kind === 'rule') && flags.ruling ? ` · ruling ${flags.ruling}` : '';
   const proposed = kind === 'rule' ? ` · to ${to}${appliesTo ? ` · applies to ${appliesTo}` : ''}` : '';
@@ -137,9 +137,9 @@ function answerChecks(root, ask, answer, chosen) {
   const options = ask.options || [];
   let option = null;
   if (chosen !== null) {
-    need(options.length, `a-${id} offered no options, so it is answered in words`, () => [{ drop: '--option' }, { arg: 1, value: chosen }]);
+    need(options.length, `a-${id} offered no options, so it is answered in words, with no --option`, () => ({ rename: '--option', to: hole('no --option: the answer in words') }));
     option = options.find((o) => o.label === noSeparators(chosen)) || null;
-    need(option, `"${chosen}" is none of the options of a-${id}: ${options.map((o) => o.label).join(', ')}`, () => ({ replace: chosen, value: options.length ? oneOf(chosen, options.map((o) => o.label)) : '<label>' }));
+    need(option, `"${chosen}" is none of the options of a-${id}: ${options.map((o) => o.label).join(', ')}`, () => ({ replace: chosen, value: options.length ? oneOf(chosen, options.map((o) => o.label)) : '<label>', fix: 'case' }));
   }
   // A batch item asks about one area ruling, and its answer says one word first: yes or reject (tak or nie); so does a
   // proposed rule, which the answer accepts or rejects. A rule offered for promotion is answered with one of its options.
@@ -150,7 +150,7 @@ function answerChecks(root, ask, answer, chosen) {
   const verdict = ratifying || proposal ? ratifyVerdict(answer) : null;
   need(!ratifying || verdict, ratifying && !verdict ? ratifyRefusal(id, ask.ruling, answer) : '', () => ({ arg: 1, value: verdictHole(answer) }));
   need(!proposal || verdict, `a-${id} proposes a rule: the answer starts with one word — ${RATIFY_WORDS.join(', ')} to accept it, ${REJECT_WORDS.join(', ')} to reject it`, () => ({ arg: 1, value: verdictHole(answer) }));
-  need(!ratifying || ruling, `a-${id} ratifies ruling ${ask.ruling}, which is not in force in ${DECISIONS_FILE}`, () => (['jarl.mjs', 'decisions', '--live']));
+  need(!ratifying || ruling, `a-${id} ratifies ruling ${ask.ruling}, which is not in force in ${DECISIONS_FILE}`, () => afterView(['jarl.mjs', 'decisions', '--live'], 'a ruling decisions shows'));
   need(ask.kind !== 'rule' || !ask.ruling || chosen !== null, `a-${id} offers rule ${ask.ruling} for promotion: answer it with --option ${options.map((o) => o.label).join('|')}`, () => ({ flag: '--option', value: placeholderOf(options.map((o) => o.label)) }));
   return { verdict, ruling, rulings, option, options };
 }

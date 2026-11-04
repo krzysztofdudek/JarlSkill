@@ -3,7 +3,7 @@
 
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve, dirname, basename, relative, isAbsolute } from 'node:path';
-import { fieldText, need, noSeparators, refuse, shellWord, splitList } from './base.mjs';
+import { afterView, fieldText, need, noSeparators, refuse, shellWord, splitList } from './base.mjs';
 import { git } from './git.mjs';
 import { canonical, issuesDir, jarlDir, portablePath } from './where.mjs';
 import { readText, writeAtomic } from './files.mjs';
@@ -130,14 +130,14 @@ function repoEntries(root, issue) {
 // throws). A loop whose profile names an external scheduler is never raised: the write is refused, naming `what` it
 // would have written, and nothing is written. Returns true when it wrote.
 export function raiseFormat(root, to = RECORD_FORMAT_RAISED, what = null) {
-  need(RECORD_FORMATS.includes(to), `record format ${to} is not one this Jarl writes`, () => (['jarl.mjs', 'profile']));
+  need(RECORD_FORMATS.includes(to), `record format ${to} is not one this Jarl writes`, () => afterView(['jarl.mjs', 'profile'], 'as profile shows'));
   if (!existsSync(jarlDir(root))) return false;
   return withLock(root, () => {
     const profile = loadProfile(root);
     if (profile.format >= to) return false;
     if (!formatState(profile).raises) {
       const line = what || `a line of record format ${to}`;
-      refuse(`${line} needs record format ${to}, and this loop stays at format ${profile.format}: its profile names an external scheduler (${profile.scheduler}), the composer that reads this record, so Jarl never raises its format; ${line} is off in this loop until its profile says "format": ${to} — nothing was written`, ['jarl.mjs', 'profile']);
+      refuse(`${line} needs record format ${to}, and this loop stays at format ${profile.format}: its profile names an external scheduler (${profile.scheduler}), the composer that reads this record, so Jarl never raises its format; ${line} is off in this loop until its profile says "format": ${to} — nothing was written`, afterView(['jarl.mjs', 'profile'], 'a profile that raises the format'));
     }
     // A bare word is a path in format 1 and a name from format 2 on: only a loop in format 1 has paths to say again.
     if (profile.format < RECORD_FORMAT_RAISED) writeBarePaths(root);
@@ -154,7 +154,7 @@ export function raiseFormat(root, to = RECORD_FORMAT_RAISED, what = null) {
 // `what` names the write in the refusal when it is one part of the line (a field of a kind), else the line's own words do.
 export function needFormat(root, name, what = null) {
   const line = Object.hasOwn(FORMAT_LINES, name) ? FORMAT_LINES[name] : null;
-  need(line, `${name} is not a line of the record format registry: its lines are ${Object.keys(FORMAT_LINES).join(', ')}`, () => (['jarl.mjs', 'profile']));
+  need(line, `${name} is not a line of the record format registry: its lines are ${Object.keys(FORMAT_LINES).join(', ')}`, () => afterView(['jarl.mjs', 'profile'], 'as profile shows'));
   return raiseFormat(root, line.format, what || line.what);
 }
 
@@ -351,7 +351,8 @@ export function repoFromInput(root, raw) {
   need(kind !== null || word, `not a git repository: ${spelled} does not exist (--repo ${JSON.stringify(given)}) — give the repository's name, its checkout, a worktree of it or a file inside it`, () => ({ replace: String(given), value: '<name|path>' }));
   const isDir = kind === 'dir';
   const inside = isDir ? spelled : kind === 'file' ? dirname(spelled) : spelled;
-  need(isGitRepo(inside), word ? `${nameFix(root, given)} (${spelled} is not a git repository${isGitRepo(resolve(root, given)) ? `; ./${given} is a repository under the loop's root — a path is written with a leading ./` : ''}), or name another: e.g. --repo <name|path>` :`not a git repository: ${spelled} (a relative --repo or Repo path is read from the loop's root, ${root})`, () => ({ replace: String(given), value: '<name|path>' }));
+  const underRoot = isGitRepo(resolve(root, given)) ? `; ./${given} is a repository under the loop's root — a path is written with a leading ./` : '';
+  need(isGitRepo(inside), word ? `${nameFix(root, given)} (${spelled} is not a git repository${underRoot}), or name another: e.g. --repo <name|path>` :`not a git repository: ${spelled} (a relative --repo or Repo path is read from the loop's root, ${root})`, () => ({ replace: String(given), value: '<name|path>' }));
   const main = (mainCheckoutOf(inside) || {}).main ?? null;
   need(main !== null, `${inside} is a bare repository: it has no working tree to act on`, () => ({ replace: String(given), value: '<name|path>' }));
   const candidates = [word ? given : null, isDir ? basename(spelled) : null, basename(main)];
@@ -508,7 +509,7 @@ export function needRightCheckouts(root, values) {
     if (repoValueKind(root, value) !== 'name') continue;
     repoOf(root, value);
     const found = repoIdentity(root, value);
-    need(found.state !== 'mismatch', found.fix, () => (['jarl.mjs', 'verify']));
+    need(found.state !== 'mismatch', found.fix, () => afterView(['jarl.mjs', 'verify'], 'as verify shows'));
   }
 }
 // Why nothing may be deleted in the checkout `repo`, or null: it stands under a name (one of `values`) whose root commits

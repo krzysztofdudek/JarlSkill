@@ -166,10 +166,10 @@ export function cmdImport(root, file, flags) {
   needLiveLoop(root, ' — run: jarl.mjs init "<goal>"');
   const { dir, findings: read } = readFindings(file, flags);
   const profile = loadProfile(root);
-  if (flags.kind !== undefined) need(profile.kinds.includes(flags.kind), `--kind must be one of: ${profile.kinds.join(', ')}`, () => ({ flag: '--kind', value: oneOf(flags.kind, profile.kinds) }));
+  if (flags.kind !== undefined) need(profile.kinds.includes(flags.kind), `--kind must be one of: ${profile.kinds.join(', ')} (got "${flags.kind}")`, () => ({ flag: '--kind', value: oneOf(flags.kind, profile.kinds), fix: 'case' }));
   need(!profile.keptKind(flags.kind), `--kind ${flags.kind}: a finding is work, never a promise or a wait — file one of those with jarl.mjs new "<title>" --kind ${flags.kind}`, () => (['jarl.mjs', 'new', '<title>', '--kind', flags.kind]));
-  if (flags.prio !== undefined) need(PRIORITIES.includes(String(flags.prio)), '--prio must be 1, 2 or 3', () => ({ flag: '--prio', value: oneOf(flags.prio, PRIORITIES) }));
-  if (flags.tier !== undefined) need(profile.tiers.includes(String(flags.tier)), `--tier must be one of: ${profile.tiers.join(', ')}`, () => ({ flag: '--tier', value: oneOf(flags.tier, profile.tiers) }));
+  if (flags.prio !== undefined) need(PRIORITIES.includes(String(flags.prio)), `--prio must be 1, 2 or 3 (got "${flags.prio}")`, () => ({ flag: '--prio', value: oneOf(flags.prio, PRIORITIES), fix: 'case' }));
+  if (flags.tier !== undefined) need(profile.tiers.includes(String(flags.tier)), `--tier must be one of: ${profile.tiers.join(', ')} (got "${flags.tier}")`, () => ({ flag: '--tier', value: oneOf(flags.tier, profile.tiers), fix: 'case' }));
   // A finding's kind is mapped onto the built-in kinds; under a profile with kinds of its own, one it does not
   // name is filed under the profile's default kind.
   const findings = profile.declared ? read.map((f) => (profile.kinds.includes(f.kind) && !profile.keptKind(f.kind) ? f : { ...f, kind: profile.kindDefault })) : read;

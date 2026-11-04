@@ -166,7 +166,7 @@ test('a name field does not write is refused with the names it writes and the co
   assert.match(refuses(root, 'field', '1', 'Tier', 'huge'), /Tier must be one of: light, standard, strong/);
   assert.match(refuses(root, 'field', '1', 'Kind', 'task'), /Kind must be one of: bug, gap/);
   assert.match(refuses(root, 'field', '1', 'Priority', '7'), /Priority must be one of: 1, 2, 3/);
-  for (const name of ['Tier', 'Kind', 'Priority', 'Found by', 'Title']) assert.match(refuses(root, 'field', '1', name, '--clear'), new RegExp(`${name} cannot be empty`), name);
+  for (const name of ['Tier', 'Kind', 'Priority', 'Found by', 'Title']) assert.match(refuses(root, 'field', '1', name, '--clear'), new RegExp(`${name} cannot be emptied`), name);
   assert.match(refuses(root, 'field', '1', 'Tags', '[a, b]'), /Tags takes its items one by one/);
   assert.match(refuses(root, 'field', '1', 'Tier', 'strong', '--by', 'a · b'), /--by is one name/);
   assert.match(refuses(root, 'base', 'x', 'main', '--by', 'me'), /x is not declared in this loop/);

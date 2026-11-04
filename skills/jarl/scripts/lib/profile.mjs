@@ -2,7 +2,7 @@
 
 import { existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { KEPT_KINDS, KINDS, TIERS, TIER_DEFAULT, need, refuse } from './base.mjs';
+import { KEPT_KINDS, KINDS, TIERS, TIER_DEFAULT, afterView, need, refuse } from './base.mjs';
 import { jarlDir } from './where.mjs';
 import { readText } from './files.mjs';
 
@@ -156,7 +156,7 @@ export function validateProfile(json, where = 'the profile') {
   if (!isObj(json)) refuse(`${where} is not a JSON object`, ['jarl.mjs', 'profile', '<profile.json>']);
   // The record format first, and alone: a profile written for another format may mean anything by its other keys.
   if (json.format !== undefined && !RECORD_FORMATS.includes(json.format)) {
-    refuse(`${where} is written for record format ${JSON.stringify(json.format)}, and this Jarl reads format ${RECORD_FORMATS.join(', ')} — nothing was read or written; the reader needs a Jarl that knows format ${JSON.stringify(json.format)} (a vendored copy and the installed one must agree)`, ['jarl.mjs', '--version']);
+    refuse(`${where} is written for record format ${JSON.stringify(json.format)}, and this Jarl reads format ${RECORD_FORMATS.join(', ')} — nothing was read or written; the reader needs a Jarl that knows format ${JSON.stringify(json.format)} (a vendored copy and the installed one must agree)`, afterView(['jarl.mjs', '--version'], 'a Jarl that reads this format'));
   }
   // The format marker: a profile that holds only jarl-profile and format changes nothing in how the loop behaves (the
   // built-in profile, declared: false); it only says which format the record was written in.
@@ -403,7 +403,7 @@ export function profileAt(dir) {
   const hit = PROFILES.get(path);
   if (hit && hit.key === key) return hit.profile;
   let json;
-  try { json = JSON.parse(readText(path)); } catch (e) { refuse(`${path} is not JSON: ${e.message}`, ['jarl.mjs', 'profile']); }
+  try { json = JSON.parse(readText(path)); } catch (e) { refuse(`${path} is not JSON: ${e.message}`, afterView(['jarl.mjs', 'profile'], 'a profile that is JSON')); }
   const profile = validateProfile(json, path);
   PROFILES.set(path, { key, profile });
   return profile;
@@ -418,7 +418,7 @@ export function readProfileFile(file) {
   try { json = JSON.parse(readText(file)); } catch (e) { refuse(`${file} is not JSON: ${e.message}`, ['jarl.mjs', 'profile', '<profile.json>']); }
   const profile = validateProfile(json, file);
   const reserved = reservedNamesProblem(profile) || keyFieldProblem(profile);
-  need(!reserved, `${file} is not a valid profile: ${reserved}`, () => (['jarl.mjs', 'profile', file]));
+  need(!reserved, `${file} is not a valid profile: ${reserved}`, () => afterView(['jarl.mjs', 'profile', file], 'a profile file with no reserved name'));
   return { json, profile };
 }
 // What a profile file to be opened declares of the names the built-in promise and wait use, as one refusal, or null: a

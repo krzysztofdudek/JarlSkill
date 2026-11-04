@@ -54,7 +54,7 @@ test('retract takes back a verdict and an evidence row; the spellings through ev
   worked(root);
   const reason = 'the row and the verdict were read in the wrong place';
   const before = logText(root);
-  assert.equal(refuses(root, 'evidence', '1', '--retract', '1', '--by', 'jarl', reason).trim(), `evidence takes nothing back: a row or a note is taken back with retract\njarl.mjs retract 1 1 '${reason}' --by jarl`);
+  assert.equal(refuses(root, 'evidence', '1', '--retract', '1', '--by', 'jarl', reason).trim(), `evidence takes nothing back with --retract: a row or a note is taken back with retract\njarl.mjs retract 1 1 '${reason}' --by jarl`);
   assert.equal(refuses(root, 'review', '1', 'retract', '--by', 'jarl', reason).trim(), `a verdict is taken back with retract\njarl.mjs retract 1 review '${reason}' --by jarl`);
   assert.equal(logText(root), before, 'a refused spelling writes nothing');
   for (const r of [run(root, ['retract', '1', '1', '--by', 'jarl', reason]), run(root, ['retract', '1', 'review', '--by', 'jarl', reason])]) {
@@ -101,7 +101,7 @@ test('field writes Resources and the fields a profile declares; set takes status
   assert.match(refuses(root, 'field', '1', 'open', 'x'), /open is not a part of the description/);
   assert.match(refuses(root, 'field', '1', 'Note', 'x', '--worker', 'w'), /unknown flag --worker for field/);
   assert.equal(refuses(root, 'set', '1', 'Note', 'x', '--worker', 'w').trim(), 'Note is a field, not a status\njarl.mjs field 1 Note x');
-  assert.match(refuses(root, 'set', '1', 'Files', 'x'), /^status must be one of: open, in-progress, done, dropped, deferred\njarl\.mjs set 1 '<open\|in-progress\|done\|dropped\|deferred>' x\n$/);
+  assert.match(refuses(root, 'set', '1', 'Files', 'x'), /^status must be one of: open, in-progress, done, dropped, deferred \(got "Files"\)\njarl\.mjs set 1 '<open\|in-progress\|done\|dropped\|deferred>' x\n$/);
   assert.match(refuses(root, 'set', '1', 'bogus', 'x'), /status must be one of: /);
   assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /· 1 field Resources · gate, db · was \(none\)\n.*· 2 field Resources · gate, db · was \(none\)\n/);
 });
@@ -144,7 +144,7 @@ test('one idiom empties every field: --clear on After, Repo, Resources and a pro
   assert.doesNotMatch(text, /\*\*Repo:\*\*/);
   assert.doesNotMatch(text, /\*\*Resources:\*\*.*\S/);
   assert.match(text, /\*\*Note:\*\*\s*\n/);
-  assert.match(refuses(root, 'field', '1', 'Area', '--clear'), /Area cannot be empty/);
+  assert.match(refuses(root, 'field', '1', 'Area', '--clear'), /Area cannot be emptied with --clear/);
   // The optional header fields of the tool's own are emptied the same way, on a list too.
   jarl(root, 'field', '1-2', 'Files', 'a.txt');
   jarl(root, 'field', '1-2', 'Source', 'core/research/2026-10-01-report#r-1');
@@ -178,7 +178,7 @@ test('field and round take a comma list with a range: every id changes, or none'
   const afterLog = logText(root);
   assert.match(refuses(root, 'field', '1,3-4', 'After', '2'), /no such|cannot wait|cycle/);
   assert.equal(logText(root), afterLog);
-  assert.match(refuses(root, 'field', '1-2,4', 'After', '4'), /4 cannot wait on itself — nothing was written\njarl\.mjs field 1-2,4 After '<another id>'$/m);
+  assert.match(refuses(root, 'field', '1-2,4', 'After', '4'), /4 cannot wait on itself — nothing was written\njarl\.mjs field 1-2,4 After '<another-id>'$/m);
   assert.equal(field(root, '1', 'after'), '4');
   assert.equal(jarl(root, 'field', '1-3', 'After', '--clear'), '1 After: (cleared)\n2 After: (cleared)\n3 After: (cleared)');
   jarl(root, 'field', '2', 'After', '4');
