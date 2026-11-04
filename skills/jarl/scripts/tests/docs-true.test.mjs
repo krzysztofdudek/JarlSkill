@@ -220,7 +220,7 @@ test('record.md lists every path the tool writes in .jarl/, in the count it stat
   jarl(repo.dir, 'init', 'g', '--committed', '--profile', profile);
   jarl(repo.dir, 'new', 'one', '--repo', basename(sibling.dir));
   jarl(repo.dir, 'ask', 'which way?');
-  jarl(repo.dir, 'decide', 'a-ruling', 'a ruling');
+  jarl(repo.dir, 'decide', 'a-ruling', 'a ruling', '--by', 'coordinator');
   note(repo.dir);
   jarl(repo.dir, 'set', '1', 'dropped', 'not needed');
   jarl(repo.dir, 'archive', 'one');
@@ -310,7 +310,7 @@ test('every tool is described as it behaves: Read-only tools write nothing and W
   jarl(dir, 'init', 'g');
   jarl(dir, 'new', 'one', '--files', 'a.txt', '--acceptance', 'it works');
   jarl(dir, 'ask', 'which way?');
-  jarl(dir, 'decide', 'a-ruling', 'a ruling');
+  jarl(dir, 'decide', 'a-ruling', 'a ruling', '--by', 'coordinator');
   const before = snapshot(dir);
   const inputs = { show: { id: '1' }, changelog: { ids: '1' }, scope: { branch: 'feature' } };
   for (const tool of tools.filter((t) => t.description.startsWith('Read-only.'))) {

@@ -47,7 +47,7 @@ test('once the question for a fresh session is asked, the owner holds the ball a
   const owner = json(root, 'next', '--as', 'owner', '--all');
   assert.deepEqual(owner.rows.map((r) => [r.ask, r.what, r.reviewing, r.holdsUp]), [['1', 'question', ['1', '2'], ['4']]]);
   const digest = jarl(root, 'next', '--as', 'owner', '--all');
-  assert.match(digest, /^- a-1 start a fresh session to review issues 1, 2: question \(stuck\), the fresh review of 1, 2 waits on it — jarl\.mjs answer a-1 "<text>" · holds up 4$/m);
+  assert.match(digest, /^- a-1 start a fresh session to review issues 1, 2: question \(stuck\), the fresh review of 1, 2 waits on it — jarl\.mjs answer a-1 "<text>" --by owner · holds up 4$/m);
   assert.match(digest, /^Waiting on the owner \(1\)\n- 4 after the first: waits on the owner via 1$/m);
   const text = jarl(root, 'next', '--as', 'jarl', '--all');
   assert.match(text, /^On the jarl \(1\)$/m);
@@ -66,10 +66,10 @@ test('a question holds only the issues cited right after "issues", joined by com
   assert.deepEqual(grouped(), [['1', '2', '5', '6']]);
   jarl(root, 'ask', 'start a fresh session to review issues 1 and 2 before 5 lands. It waits on 6.3.0 and 6');
   assert.deepEqual(grouped(), [['5', '6']], 'a number after the list, after a period, or in a version stays with the jarl');
-  jarl(root, 'answer', '1', 'done');
+  jarl(root, 'answer', '1', 'done', '--by', 'owner');
   jarl(root, 'ask', 'start a fresh session to review issues 1, 2 & 5, then 6.3.0');
   assert.deepEqual(grouped(), [['6']], 'a comma and an ampersand join the list; the version ends it');
-  jarl(root, 'answer', '2', 'done');
+  jarl(root, 'answer', '2', 'done', '--by', 'owner');
   jarl(root, 'ask', 'start a fresh session to review issues 6.3.0');
   assert.deepEqual(grouped(), [['1', '2', '5', '6']], 'a version is no issue number');
 });
@@ -84,7 +84,7 @@ test('a question holds the one list right after "issues": a later issue, hash nu
   for (const [n, tail] of later.entries()) {
     jarl(root, 'ask', `start a fresh session to review issues ${tail}`);
     assert.deepEqual(grouped(), [['5']], tail);
-    jarl(root, 'answer', String(n + 1), 'done');
+    jarl(root, 'answer', String(n + 1), 'done', '--by', 'owner');
   }
 });
 
@@ -113,7 +113,7 @@ test('a proof recorded after the question is asked is the jarl\'s again, and the
   jarl(root, 'set', '5', 'in-progress', 'go', '--worker', 'me', '--branch', 'jarl/5');
   jarl(root, 'evidence', '5', '--ran', 'npm test', '--saw', 'green');
   assert.deepEqual(json(root, 'next', '--as', 'jarl', '--all').rows.filter((r) => r.ids).map((r) => r.ids), [['5']]);
-  jarl(root, 'answer', '1', 'reviewed in a fresh session');
+  jarl(root, 'answer', '1', 'reviewed in a fresh session', '--by', 'owner');
   assert.deepEqual(json(root, 'next', '--as', 'jarl', '--all').rows.filter((r) => r.ids).map((r) => r.ids), [['1', '2', '5']]);
   assert.deepEqual(json(root, 'next', '--as', 'owner', '--all').rows, []);
 });

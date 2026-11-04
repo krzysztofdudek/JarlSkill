@@ -79,7 +79,7 @@ test('007 and 7 are one issue wherever an id is read: show, after, lists, the lo
   assert.match(jarl(root, 'show', '#7'), /\*\*Status:\*\* in-progress/);
   assert.match(refuses(root, 'show', '9'), /no such issue: 9/);
   writeFileSync(join(root, '.jarl', 'asks.md'), '# Questions to the user\n\n- **a-007** (open) · stuck · which one?\n');
-  assert.match(jarl(root, 'answer', 'a-7', 'the padded one'), /007/);
+  assert.match(jarl(root, 'answer', 'a-7', 'the padded one', '--by', 'owner'), /007/);
   assert.match(readFileSync(join(root, '.jarl', 'asks.md'), 'utf8'), /\*\*a-007\*\* \(answered\)/);
   assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /answered a-007 · the padded one/);
   const held = new Map([['007', 1], ['8', 1]]);
@@ -202,7 +202,7 @@ test('questions: a-1000 and the plain 1000 in a question read and write the same
   assert.equal(q.id, '1000');
   assert.equal(formatOf(root), 2, 'the ask a-1000 raised the format before it wrote');
   assert.match(readFileSync(join(root, '.jarl', 'asks.md'), 'utf8'), /\*\*a-1000\*\* \(open\) · stuck · which one\?/);
-  assert.match(jarl(root, 'answer', 'a-1000', 'this one'), /1000/);
+  assert.match(jarl(root, 'answer', 'a-1000', 'this one', '--by', 'owner'), /1000/);
   assert.match(readFileSync(join(root, '.jarl', 'asks.md'), 'utf8'), /\*\*a-1000\*\* \(answered\)/);
   assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /answered a-1000 · this one/);
   assert.deepEqual(L.loadAsks(root).map((a) => a.id), ['999', '1000']);

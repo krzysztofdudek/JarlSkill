@@ -49,7 +49,8 @@ const loop = ({ graph = false, permanent = false } = {}) => {
 };
 // A call with an environment of its own (no Yggdrasil unless the test names one): the shared run, with JARL_YG empty.
 // An answer names who answered (a ratify item needs it); a call that names no one is the owner's, as the defaults of these tests say.
-const named = (args) => (args[0] === 'answer' && !args.includes('--by') ? [...args, '--by', 'owner'] : args);
+// Every answer and ruling names its author: an answer the owner's, a ruling the coordinator's, unless the call names one.
+const named = (args) => (args.includes('--by') ? args : args[0] === 'answer' ? [...args, '--by', 'owner'] : args[0] === 'decide' ? [...args, '--by', 'coordinator'] : args);
 const run = (root, env, args) => runJarl(root, named(args), { env: { JARL_YG: '', ...env } });
 const jarl = (root, env, ...args) => jarlResult(root, named(args), { env: { JARL_YG: '', ...env } }).stdout;
 const json = (root, env, ...args) => JSON.parse(jarl(root, env, ...args, '--json'));

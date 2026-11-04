@@ -106,7 +106,7 @@ test('while two files carry one number, every command that addresses it is refus
     ['field', '2', 'Source', 'research/r#f1'],
     ['field', '2', 'Repo', '.'],
     ['retract', '2', '1', '--by', 'jarl', 'the row was wrong'],
-    ['decide', 'which-one', 'the ruling text', '--settles', '2'],
+    ['decide', 'which-one', 'the ruling text', '--settles', '2', '--by', 'jarl'],
   ];
   for (const args of calls) assert.match(refuses(dir, ...args), BOTH, args.join(' '));
   assert.deepEqual(snapshot(dir), before, 'no refusal wrote a line or a file');

@@ -249,3 +249,19 @@ test('a tool call writes its free text through the field text', () => {
   assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /an event/);
   assert.match(R.findIssue(root, '2').sections.evidence, /Deferred: later/);
 });
+
+test('every write that records a judgement names its author: review, answer, decide, retract and tick refuse a call without --by, with the call that names one', () => {
+  const root = fieldedLoop();
+  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'ok');
+  jarl(root, 'ask', 'which way?');
+  const before = readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
+  assert.match(refuses(root, 'review', '1', 'approve', 'read the diff, nothing found'), /a verdict needs --by <reviewer>/);
+  assert.equal(refuses(root, 'answer', 'a-1', 'this way').trim(), 'answer records who answered: jarl.mjs answer a-1 "this way" --by <who answered, owner for the owner>');
+  assert.equal(refuses(root, 'decide', 'the-way', 'we go this way').trim(), 'decide records who ruled: jarl.mjs decide the-way "we go this way" --by <who ruled, jarl under a mandate, owner with --quote "<his words>">');
+  assert.match(refuses(root, 'retract', '1', '1', 'the row was wrong'), /needs --by <who>/);
+  assert.match(refuses(root, 'tick', '1', '1'), /--by owner/);
+  assert.equal(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), before, 'nothing was written');
+  jarl(root, 'answer', 'a-1', 'this way', '--by', 'owner');
+  jarl(root, 'decide', 'the-way', 'we go this way', '--by', 'jarl');
+  assert.match(jarl(root, 'decisions'), /the-way · by jarl/);
+});

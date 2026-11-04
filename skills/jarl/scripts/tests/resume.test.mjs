@@ -40,8 +40,8 @@ function world() {
 test('resume assembles every section live from the loop and the repositories its issues name, and writes nothing', () => {
   const { parent, hub, tool } = world();
   // Rulings: one in force, one superseded (left out).
-  jarl(hub, 'decide', 'old-way', 'do it the old way');
-  jarl(hub, 'decide', 'new-way', 'do it the new way\nwith a second line', '--supersedes', 'old-way');
+  jarl(hub, 'decide', 'old-way', 'do it the old way', '--by', 'coordinator');
+  jarl(hub, 'decide', 'new-way', 'do it the new way\nwith a second line', '--supersedes', 'old-way', '--by', 'coordinator');
   // In flight with a lease, in the tool repository, with a worker branch one commit ahead.
   jarl(hub, 'new', 'in flight one', '--repo', '../tool', '--files', 'tool/src/a.mjs', '--acceptance', 'works');
   jarl(hub, 'set', '1', 'in-progress', 'raised', '--branch', 'jarl/1-one', '--worker', 'w1');
@@ -142,11 +142,11 @@ test('resume in a git repository with no worker branches: Tips shows the feature
 test('an answered question is listed by its answer and then its question in decisions, and resume counts it among the rulings in force', () => {
   const { hub } = world();
   jarl(hub, 'ask', 'Should the fixes ship in 6.1.1?');
-  jarl(hub, 'answer', 'a-1', 'Yes, blocking right away');
+  jarl(hub, 'answer', 'a-1', 'Yes, blocking right away', '--by', 'owner');
   jarl(hub, 'ask', 'Which way for the flag?', '--option', 'Keep: the flag stays', '--option', 'Drop: the flag goes');
-  jarl(hub, 'answer', 'a-2', '--option', 'Keep');
+  jarl(hub, 'answer', 'a-2', '--option', 'Keep', '--by', 'owner');
   jarl(hub, 'ask', 'Which order for the rest?');
-  jarl(hub, 'answer', 'a-3', 'The owner chose the blocking option for every fix of the field report. '.repeat(3));
+  jarl(hub, 'answer', 'a-3', 'The owner chose the blocking option for every fix of the field report. '.repeat(3), '--by', 'owner');
   assert.match(jarl(hub, 'resume'), /\n3 ruling\(s\) in force: jarl\.mjs decisions --live;/);
   const d = jarl(hub, 'decisions', '--live');
   assert.match(d, / · ask-1 · by owner — \*\*Answer:\*\* Yes, blocking right away · \*\*Question:\*\* Should the fixes ship in 6\.1\.1\?$/m);

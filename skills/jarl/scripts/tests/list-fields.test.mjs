@@ -60,7 +60,7 @@ const FIELDS = [
   ['import', 'tags', 'name', (list) => ({ file: 'FINDINGS', source: 'core/r', tags: list }), 'drift'],
   ['import', 'repo', 'path', (list) => ({ file: 'FINDINGS', source: 'core/r', repo: list }), 'ONE'],
   ['import', 'only', 'name', (list) => ({ file: 'FINDINGS', source: 'core/r', only: list }), 'f-1'],
-  ['decide', 'settles', 'name', (list) => ({ slug: 'ruled', text: 'a ruling', settles: list }), '1'],
+  ['decide', 'settles', 'name', (list) => ({ slug: 'ruled', text: 'a ruling', by: 'jarl', settles: list }), '1'],
   ['round', 'id', 'name', (list) => ({ id: list, text: 'it failed' }), '1'],
   ['evidence', 'ids', 'name', (list) => ({ ids: list, text: 'a note' }), '1'],
   ['field', 'ids', 'name', (list) => ({ ids: list, name: 'Resources', value: 'db' }), '1'],
@@ -111,7 +111,7 @@ test('a list given through the tools is stored item by item, and filtering by a 
   }
   call(fx.root, 'field', { ids: ['1', '2'], name: 'Files', value: 'x.mjs,y.mjs' });
   assert.equal(header(issueText(fx.root, 2), 'Files'), 'x.mjs, y.mjs');
-  call(fx.root, 'decide', { slug: 'ruled', text: 'a ruling', settles: ['1', '2'] });
+  call(fx.root, 'decide', { slug: 'ruled', text: 'a ruling', by: 'jarl', settles: ['1', '2'] });
   assert.match(readFileSync(join(fx.root, '.jarl', 'decisions.md'), 'utf8'), /\*\*Settles:\*\* 1, 2/);
   call(fx.root, 'import', { file: fx.findings, source: 'core/r', tags: ['drift', 'processes'], only: ['f-1', 'f-3'] });
   assert.equal(header(issueText(fx.root, 5), 'Tags'), 'drift, processes');

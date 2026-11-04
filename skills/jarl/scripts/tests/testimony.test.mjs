@@ -51,9 +51,9 @@ test('three lines through every command that writes text: whole in the issue, th
   const askId = JSON.parse(q).id;
   assert.ok(L.loadAsks(root).find((a) => a.id === askId).question.split('\n').length === 3, 'the question keeps its lines');
   assert.ok(has(read(root, 'asks.md'), 'question'));
-  jarl(root, 'answer', askId, three('answer'));
+  jarl(root, 'answer', askId, three('answer'), '--by', 'owner');
   assert.ok(has(read(root, 'decisions.md'), 'question') && has(read(root, 'decisions.md'), 'answer'), 'the ruling holds the whole question and answer');
-  jarl(root, 'decide', 'multi-ruling', three('ruling'), '--settles', id);
+  jarl(root, 'decide', 'multi-ruling', three('ruling'), '--settles', id, '--by', 'coordinator');
   assert.ok(has(read(root, 'decisions.md'), 'ruling'));
   const after = readFileSync(L.findIssue(root, id).file, 'utf8');
   assert.match(after, /Ruling multi-ruling \(by coordinator\): ruling line one/);

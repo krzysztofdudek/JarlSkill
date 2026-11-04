@@ -63,7 +63,7 @@ test('next says so when nothing is ready but something is held, and an answered 
   jarl(root, 'new', 'asked', '--files', 'a.mjs');
   jarl(root, 'ask', 'which?', '--kind', 'stop', '--issue', '1');
   assert.match(jarl(root, 'next'), /nothing is ready to start.*next --all/);
-  jarl(root, 'answer', '1', 'this one');
+  jarl(root, 'answer', '1', 'this one', '--by', 'owner');
   assert.deepEqual(JSON.parse(jarl(root, 'next', '--json')).map((r) => r.id), ['1']);
 });
 

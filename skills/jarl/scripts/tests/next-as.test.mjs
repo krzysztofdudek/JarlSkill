@@ -69,14 +69,14 @@ test('next --as owner lists the questions and the items to ratify, most held-up 
   const o = json(root, 'next', '--as', 'owner');
   assert.deepEqual(o.rows.map((r) => [r.ask, r.what, r.holdsUp]), [['1', 'question', ['8']], ['2', 'ratify', []]]);
   const text = jarl(root, 'next', '--as', 'the Owner');
-  assert.match(text, /^On the owner \(2\)\n- a-1 which way\?: question \(stuck\) on issue 8 — jarl\.mjs answer a-1 "<text>" · holds up 8\n- a-2 ratify the naming: to ratify — jarl\.mjs answer a-2 "yes" --by owner \(or "reject"\)$/m);
+  assert.match(text, /^On the owner \(2\)\n- a-1 which way\?: question \(stuck\) on issue 8 — jarl\.mjs answer a-1 "<text>" --by owner · holds up 8\n- a-2 ratify the naming: to ratify — jarl\.mjs answer a-2 "yes" --by owner \(or "reject"\)$/m);
   assert.match(text, /^and 1 issue\(s\) waiting on the owner: jarl\.mjs next --as owner --all$/m);
   const digest = jarl(root, 'next', '--as', 'owner', '--all');
   assert.match(digest, /^Waiting on the owner \(1\)\n- 9 waits on the asked one: waits on the owner via 8$/m);
   const jarlAll = jarl(root, 'next', '--as', 'jarl', '--all');
   assert.match(jarlAll, /^Waiting on the jarl \(4\)\n- 7 waits on the ready one: waits on the jarl via 1\n- 10 after the approved one: waits on the jarl via 5\n- 11 also after the approved one: waits on the jarl via 5\n- 12 after two: waits on the jarl via 1, 5$/m);
   // An answer releases the issue: the question leaves the owner's list, and 8 is ready on the jarl's.
-  jarl(root, 'answer', '1', 'this way');
+  jarl(root, 'answer', '1', 'this way', '--by', 'owner');
   assert.deepEqual(json(root, 'next', '--as', 'owner').rows.map((r) => r.ask), ['2']);
   assert.deepEqual(json(root, 'next', '--as', 'jarl', '--all').rows.find((r) => r.id === '8').holdsUp, ['9']);
   // A question comes before an item to ratify, which blocks nothing, and a stop question before every other.
@@ -127,17 +127,17 @@ test('a ruling that settles issues none of which is live, and none finished on i
   jarl(root, 'new', 'folded away', '--files', 'a.mjs');      // 1
   jarl(root, 'new', 'dropped on the ruling', '--files', 'b.mjs'); // 2
   jarl(root, 'new', 'still open', '--files', 'c.mjs');       // 3
-  jarl(root, 'decide', 'keep-the-work', 'The work of 1 is kept.', '--settles', '1');
-  jarl(root, 'decide', 'drop-the-work', 'Issue 2 is not needed.', '--settles', '2');
-  jarl(root, 'decide', 'open-work', 'Issue 3 does it.', '--settles', '3');
+  jarl(root, 'decide', 'keep-the-work', 'The work of 1 is kept.', '--settles', '1', '--by', 'coordinator');
+  jarl(root, 'decide', 'drop-the-work', 'Issue 2 is not needed.', '--settles', '2', '--by', 'coordinator');
+  jarl(root, 'decide', 'open-work', 'Issue 3 does it.', '--settles', '3', '--by', 'coordinator');
   jarl(root, 'set', '1', 'dropped', 'folded into another task');
   jarl(root, 'set', '2', 'dropped', 'not needed, ruling drop-the-work');
   const o = json(root, 'next', '--as', 'jarl', '--all');
   assert.deepEqual(o.rows.filter((r) => r.what === 'ruling').map((r) => r.ruling), ['keep-the-work']);
-  assert.match(jarl(root, 'next', '--as', 'jarl', '--all'), /^- keep-the-work: ruling in force; the work it settles has no live issue: 1 is dropped; file the work and settle it — jarl\.mjs new "<title>", then jarl\.mjs decide <slug> "<text>" --supersedes keep-the-work --settles <id>$/m);
+  assert.match(jarl(root, 'next', '--as', 'jarl', '--all'), /^- keep-the-work: ruling in force; the work it settles has no live issue: 1 is dropped; file the work and settle it — jarl\.mjs new "<title>", then jarl\.mjs decide <slug> "<text>" --by jarl --supersedes keep-the-work --settles <id>$/m);
   // A ruling that supersedes it takes the line away.
   jarl(root, 'new', 'the kept work', '--files', 'd.mjs');   // 4
-  jarl(root, 'decide', 'keep-the-work-in-4', 'The work of 1 is done in 4.', '--supersedes', 'keep-the-work', '--settles', '4');
+  jarl(root, 'decide', 'keep-the-work-in-4', 'The work of 1 is done in 4.', '--supersedes', 'keep-the-work', '--settles', '4', '--by', 'coordinator');
   assert.deepEqual(json(root, 'next', '--as', 'jarl', '--all').rows.filter((r) => r.what === 'ruling'), []);
 });
 
@@ -212,7 +212,7 @@ test('on a loop opened with Horde\'s profile, next --as lists only what is not s
   assert.match(text, /^the issues in play are the composer's: scheduling is led by the composer: Horde's tick\.mjs --horde <mission>/m);
   assert.doesNotMatch(text, /queued ticket|running ticket/);
   const owner = jarl(root, 'next', '--as', 'owner');
-  assert.match(owner, /^- a-001 which tier is the default\?: question \(stop\) — jarl\.mjs answer a-001 "<text>"$/m);
+  assert.match(owner, /^- a-001 which tier is the default\?: question \(stop\) — jarl\.mjs answer a-001 "<text>" --by owner$/m);
   assert.match(jarl(root, 'resume', '--as', 'owner'), /## On the owner \(1\)\n- a-001 [^\n]*\nthe issues in play are the composer's: [^\n]*$/);
 });
 

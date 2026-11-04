@@ -272,7 +272,7 @@ commands:
                                                  escalation is a coordinator's question to the jarl, who holds it:
                                                  it names its --slice or its --issue (or both), shows on next --as
                                                  jarl and in that slice's views, holds its issue back as stuck does,
-                                                 and is answered by the jarl (answer with no --by records the jarl);
+                                                 and is answered by the jarl (answer a-<n> "<text>" --by jarl);
                                                  listed at boot until answered; ratify is a choice already made
                                                  under a mandate, awaiting the owner's word, and blocks nothing;
                                                  rule proposes the question's text as a rule with the scope of
@@ -280,11 +280,12 @@ commands:
                                                  with --to owner, and answered yes, which makes it a rule in force, or reject;
                                                  --option gives the choices, at least two, repeated for each one:
                                                  the question prints with its options for the choice window
-  answer <ids> "<text>" | --option <label> [--by who]
+  answer <ids> "<text>" --by <who> | <ids> --option <label> --by <who>
                                                  records the answer as a ruling and closes the question: the option
                                                  chosen, marked in the ruling's list of options, or the answer in the
-                                                 person's own words; --by records who answered (default owner; the jarl on an escalation) and
-                                                 is required on a ratify item, which names no coordinator of the loop;
+                                                 person's own words; --by, which every answer takes, records who answered (owner
+                                                 for the owner, jarl on an escalation), and on a ratify item names no
+                                                 coordinator of the loop;
                                                  several ratify items as a comma list take one answer, one ruling each,
                                                  each naming the batch it was answered in; on a ratify item whose
                                                  ruling names a rule, the rule's ratification names who answered
@@ -303,10 +304,10 @@ commands:
   log "<text>" [--by who]                       append one dated note to the journal; a line that reads as a filing, a move,
                                                  a round, a verdict, a retraction, an evidence row, a merge, a CI state or
                                                  a body change is refused, and the refusal names the command that writes it
-  decide <slug> "<text>" [--by who [--quote "<words>"]] [--under <slug>] [--supersedes <slug>] [--settles <ids>] [--applies-to "<selectors>" [--until <date|id>]] [--area <type> [--reach n] [--rule <id>]]
+  decide <slug> "<text>" --by <who> [--quote "<words>"] [--under <slug>] [--supersedes <slug>] [--settles <ids>] [--applies-to "<selectors>" [--until <date|id>]] [--area <type> [--reach n] [--rule <id>]]
                                                  append a ruling (slug: letters, digits, . _ -); refuses a duplicate slug;
-                                                 --by records who ruled (the coordinator when it is left out; a name that
-                                                 reads as owner is owner); --by owner needs --quote, his own words, kept as
+                                                 --by, which every ruling takes, records who ruled (jarl for a choice
+                                                 made under a mandate; a name that reads as owner is owner); --by owner needs --quote, his own words, kept as
                                                  the ruling's last line, and no other text of the record may hold
                                                  "The owner's words:" in any spelling; --under names the ruling in force a ruling
                                                  by the jarl or a coordinator rests on, kept as the text's last paragraph
@@ -978,7 +979,10 @@ export function dispatch(root, commandName, rest, flags) {
       case 'branches': out = cmdBranches(root, flags); text = renderBranches(out, root); break;
       case 'ask': out = R.ask(root, rest[0], { ...flags, width: undefined }); text = askText(out); break;
       // The library's answer (jarl-record/1) takes no opts: --by and --option reach the answer through jarl-lib.mjs, under the lock held here.
-      case 'answer': out = cmdAnswerMany(root, rest[0], rest[1], flags); break;   // text below: the type log is written outside the lock
+      // A judgement names its author: an answer and a ruling are refused without --by, with the call that names one.
+      case 'answer':
+        need(flags.by !== undefined, `answer records who answered: jarl.mjs answer ${rest[0] ?? 'a-<n>'} ${flags.option !== undefined ? `--option ${quoted(flags.option)}` : rest[1] === undefined ? '"<text>"' : JSON.stringify(String(rest[1]))} --by <who answered, owner for the owner>`);
+        out = cmdAnswerMany(root, rest[0], rest[1], flags); break;   // text below: the type log is written outside the lock
       case 'resume': out = R.resumeData(root, flags); text = renderResume(out, R.loadProfile(root), pluginVersionNote(), flags.as !== undefined); ({ out, text } = endWithAsker(root, flags, out, text)); break;
       case 'handoff':
         need(rest[0] === undefined || rest[0] === 'read' || rest[0] === 'write', `handoff takes read or write (got "${rest[0]}") — the state is assembled live by resume`);
@@ -986,7 +990,9 @@ export function dispatch(root, commandName, rest, flags) {
         break;
       case 'report': out = cmdReport(root, flags); text = out.text; break;
       case 'log': out = R.appendLog(root, rest[0]); text = 'logged'; break;
-      case 'decide': out = R.decide(root, rest[0], rest[1], flags); text = renderDecide(out); decideNotes(root, rest[0], out.by, flags, warn); break;
+      case 'decide':
+        need(flags.by !== undefined, `decide records who ruled: jarl.mjs decide ${rest[0] ?? '<slug>'} ${rest[1] === undefined ? '"<text>"' : JSON.stringify(String(rest[1]))} --by <who ruled, jarl under a mandate, owner with --quote "<his words>">`);
+        out = R.decide(root, rest[0], rest[1], flags); text = renderDecide(out); decideNotes(root, rest[0], out.by, flags, warn); break;
       case 'decisions': out = R.decisions(root, flags); text = renderDecisions(out); break;
       case 'goal': out = flags.set === undefined ? cmdGoal(root) : cmdGoalSet(root, flags.set); text = flags.set === undefined ? out.goal : out.unchanged ? `goal line unchanged: ${out.shown}` : `goal line ${out.replaced ? 'changed' : 'added'}: ${out.shown}${out.replaced ? ` (was ${out.was})` : ''}`; break;
       case 'status': out = R.statusData(root, groupedBy(flags)); text = renderStatus(out, R.loadProfile(root)); ({ out, text } = endWithAsker(root, flags, out, text)); break;

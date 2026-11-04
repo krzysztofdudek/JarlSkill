@@ -200,7 +200,7 @@ test('a row, a note, a ruling, an answer, a Deferred reason and a retraction eac
   const root = fresh(2);
   jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'red');
   jarl(root, 'evidence', '1', 'a free note');
-  jarl(root, 'decide', 'probe-ruling', 'the probe settles on the split', '--settles', '1');
+  jarl(root, 'decide', 'probe-ruling', 'the probe settles on the split', '--settles', '1', '--by', 'coordinator');
   jarl(root, 'ask', 'keep the split?', '--kind', 'ratify', '--issue', '1');
   jarl(root, 'answer', 'a-1', 'kept', '--by', 'owner');
   jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'green');
@@ -279,7 +279,7 @@ test('a section that already holds content and no sub-heading is never converted
   // Both writers are the same here: the rows of the section, then the note.
   jarl(root, 'evidence', '1', '--ran', 'next', '--saw', 'ok');
   jarl(root, 'evidence', '1', 'another note');
-  jarl(root, 'decide', 'u-ruling', 'a ruling', '--settles', '1');
+  jarl(root, 'decide', 'u-ruling', 'a ruling', '--settles', '1', '--by', 'coordinator');
   jarl(root, 'set', '1', 'deferred', 'wait');
   assert.equal(evidence(root, 1).trim(), '## Evidence\n\n- **ran:** old · **saw:** ok\n\nan old note\n- **ran:** next · **saw:** ok\n\nanother note\n\nRuling u-ruling (by coordinator): a ruling\n\nDeferred: wait');
   assert.doesNotMatch(evidence(root, 1), /^### /m);
@@ -292,7 +292,7 @@ test('the frozen reader reads a loop in the split form right: done is refused on
   fileAsBefore(root, 'three', { acceptance: 'it works' });
   jarl(root, 'evidence', '2', '--ran', 'npm test', '--saw', 'pass');
   jarl(root, 'evidence', '2', 'a note under Notes');
-  jarl(root, 'decide', 'split-ruling', 'the split is read right', '--settles', '2');
+  jarl(root, 'decide', 'split-ruling', 'the split is read right', '--settles', '2', '--by', 'coordinator');
   for (const id of ['1', '2']) jarl(root, 'merged', id, '--sha', 'abc1234', '--ran', 'npm test', '--saw', '3 pass', '--keep');
   jarl(root, 'set', '3', 'deferred', 'waits for the probe of 2');
   assert.match(evidence(root, 2), /### Proof[\s\S]*### Notes/);

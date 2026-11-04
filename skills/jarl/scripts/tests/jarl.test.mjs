@@ -340,8 +340,8 @@ test('tags, priority and next respect file overlap', () => {
 test('decide refuses a duplicate slug; close refuses while open, removes when clean', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
-  jarl(root, 'decide', 'no-new-constants', 'every number needs an origin');
-  assert.match(refuses(root, 'decide', 'no-new-constants', 'again'), /duplicate slug/);
+  jarl(root, 'decide', 'no-new-constants', 'every number needs an origin', '--by', 'coordinator');
+  assert.match(refuses(root, 'decide', 'no-new-constants', 'again', '--by', 'coordinator'), /duplicate slug/);
   jarl(root, 'new', 'thing');
   assert.match(refuses(root, 'close'), /still open/);
   jarl(root, 'set', '1', 'dropped', 'out of scope');
@@ -364,9 +364,9 @@ test('tier field, rounds and takeover, asks and answers, handoff, report', () =>
   const a = JSON.parse(jarl(root, 'ask', 'keep the old flag?', '--issue', '1', '--json'));
   assert.equal(a.id, '1');
   assert.match(jarl(root, 'status'), /questions 1/);
-  jarl(root, 'answer', 'a-1', 'yes, keep it');
+  jarl(root, 'answer', 'a-1', 'yes, keep it', '--by', 'owner');
   assert.match(readFileSync(join(root, '.jarl', 'decisions.md'), 'utf8'), /ask-1[\s\S]*yes, keep it/);
-  assert.match(refuses(root, 'answer', '1', 'again'), /already answered/);
+  assert.match(refuses(root, 'answer', '1', 'again', '--by', 'owner'), /already answered/);
   assert.doesNotMatch(jarl(root, 'handoff', 'read'), /Earlier handoff/, 'no handoff file: nothing shown as history');
   jarl(root, 'set', '1', 'in-progress', 'raised');
   const h = jarl(root, 'resume');
@@ -1254,12 +1254,12 @@ test('After holds an issue out of next and counts it as waiting; decide --settle
   jarl(root, 'field', '5', 'After', '--clear');
   assert.equal(JSON.parse(jarl(root, 'show', '5', '--json')).fields.after, undefined);
   // A ruling names what it settles: the ruling goes into each issue's evidence, the status stays.
-  assert.match(jarl(root, 'decide', 'numbers', 'the core ships on one number', '--settles', '4'), /decided numbers · by coordinator · written into 4/);
+  assert.match(jarl(root, 'decide', 'numbers', 'the core ships on one number', '--settles', '4', '--by', 'coordinator'), /decided numbers · by coordinator · written into 4/);
   const four = JSON.parse(jarl(root, 'show', '4', '--json'));
   assert.equal(four.status, 'open');
   assert.match(four.sections.evidence, /Ruling numbers \(by coordinator\): the core ships on one number/);
   assert.match(readFileSync(join(root, '.jarl', 'decisions.md'), 'utf8'), /the core ships on one number\n\n\*\*Settles:\*\* 4/);
-  assert.match(refuses(root, 'decide', 'other', 'x', '--settles', '4,77'), /no such issue: 77/);
+  assert.match(refuses(root, 'decide', 'other', 'x', '--settles', '4,77', '--by', 'coordinator'), /no such issue: 77/);
   assert.doesNotMatch(readFileSync(join(root, '.jarl', 'decisions.md'), 'utf8'), /other/, 'a refused ruling writes nothing');
 });
 
@@ -1294,7 +1294,7 @@ test('done: a ruling, a drop reason or a free-text note alone is not evidence; a
   const root = repo();
   jarl(root, 'init', 'goal');
   jarl(root, 'new', 'settled', '--acceptance', 'npm test passes', '--acceptance', 'docs say so');
-  jarl(root, 'decide', 'rule', 'keep it', '--settles', '1');
+  jarl(root, 'decide', 'rule', 'keep it', '--settles', '1', '--by', 'coordinator');
   jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
   assert.match(refuses(root, 'set', '1', 'done', 'x'), /1 has no evidence yet/);
   jarl(root, 'evidence', '1', 'merged abc');
@@ -1701,19 +1701,19 @@ test('answer with --option marks the option chosen in the ruling; the answer in 
   jarl(root, 'init', 'goal');
   jarl(root, 'ask', 'which way?', '--option', 'Keep: the flag stays', '--option', 'Drop: the flag goes');
   jarl(root, 'ask', 'which pair?', '--option', 'A: a', '--option', 'B: b');
-  assert.match(refuses(root, 'answer', 'a-1', '--option', 'Nope'), /none of the options of a-1: Keep, Drop/);
-  assert.match(refuses(root, 'answer', 'a-1', 'my words', '--option', 'Keep'), /not both/);
-  assert.match(refuses(root, 'answer', 'a-2'), /answer requires/);
-  jarl(root, 'answer', 'a-1', '--option', 'Drop');
+  assert.match(refuses(root, 'answer', 'a-1', '--option', 'Nope', '--by', 'owner'), /none of the options of a-1: Keep, Drop/);
+  assert.match(refuses(root, 'answer', 'a-1', 'my words', '--option', 'Keep', '--by', 'owner'), /not both/);
+  assert.match(refuses(root, 'answer', 'a-2', '--by', 'owner'), /answer requires/);
+  jarl(root, 'answer', 'a-1', '--option', 'Drop', '--by', 'owner');
   const first = readRecord(root, 'decisions.md');
   assert.match(first, /\*\*Chose:\*\* Drop/);
   assert.match(first, /^- Drop: the flag goes \(chosen\)$/m);
   assert.match(first, /^- Keep: the flag stays$/m);
-  jarl(root, 'answer', 'a-2', 'both A and B');
+  jarl(root, 'answer', 'a-2', 'both A and B', '--by', 'owner');
   const second = readRecord(root, 'decisions.md').split('## ').at(-1);
   assert.match(second, /\*\*Answer in own words:\*\* both A and B/);
   assert.doesNotMatch(second, /chosen|\*\*Chose:\*\*/);
-  assert.match(refuses(root, 'answer', 'a-1', '--option', 'Keep'), /already answered/);
+  assert.match(refuses(root, 'answer', 'a-1', '--option', 'Keep', '--by', 'owner'), /already answered/);
 });
 
 test('answer takes a comma list of ratify items with one verdict, writes one ruling each naming the batch, and needs a named answerer', () => {
@@ -1722,7 +1722,7 @@ test('answer takes a comma list of ratify items with one verdict, writes one rul
   jarl(root, 'ask', 'raised the limit', '--kind', 'ratify');
   jarl(root, 'ask', 'kept the flag', '--kind', 'ratify');
   jarl(root, 'ask', 'a stuck question', '--kind', 'stuck');
-  assert.match(refuses(root, 'answer', 'a-1', 'yes'), /needs --by/);
+  assert.match(refuses(root, 'answer', 'a-1', 'yes'), /answer records who answered: jarl\.mjs answer a-1 "yes" --by/);
   for (const name of ['jarl', 'reeve', 'coordinator', basename(root)]) assert.match(refuses(root, 'answer', 'a-1', 'yes', '--by', name), /coordinator/);
   assert.match(refuses(root, 'answer', 'a-1,a-3', 'yes', '--by', 'owner'), /answered together only when each is a ratify item/);
   jarl(root, 'answer', '1,2', 'yes', '--by', 'owner');
@@ -1759,7 +1759,7 @@ test('a question with options whose label or answer holds any separator and word
     const ask = RECORD.loadAsks(root).find((a) => a.id === String(n));
     assert.equal(ask.options[0].label, want(s), `the label of ${JSON.stringify(s)}`);
     assert.equal(ask.options[0].effect, `effect ${n}`);
-    jarl(root, 'answer', `a-${n}`, '--option', s);
+    jarl(root, 'answer', `a-${n}`, '--option', s, '--by', 'owner');
     const line = readRecord(root, 'log.md').split('\n').find((l) => l.includes(`answered a-${n} ·`));
     const parts = line.split(' · ');
     assert.equal(parts.length, 3, `the log line of ${JSON.stringify(s)} has three fields: ${line}`);
@@ -1778,7 +1778,7 @@ test('questions with options and their answers read through the frozen reader: t
   fileAsBefore(root, 'flag work');
   RECORD.setStatus(root, '001', 'in-progress', 'started', { branch: 'jarl/001-flag-work', worker: 'w-one' });
   RECORD.ask(root, 'which way?', { option: ['Keep: the flag stays', 'Drop: the flag goes'] });
-  jarl(root, 'answer', 'a-001', '--option', 'Keep');
+  jarl(root, 'answer', 'a-001', '--option', 'Keep', '--by', 'owner');
   RECORD.ask(root, 'still open?', { option: ['Yes: wait: then', 'No: go on'] });
   for (const command of ['list', 'status', 'next', 'queue']) assert.deepEqual(oldJarl(root, command, {}).error ?? null, null, command);
   assert.match(JSON.stringify(oldJarl(root, 'list', {}).value), /w-one/, 'the worker is parsed');
@@ -1871,7 +1871,7 @@ test('an answer in the person\'s own words and a batch answer read through the f
   fileAsBefore(root, 'flag work');
   RECORD.setStatus(root, '001', 'in-progress', 'started', { branch: 'jarl/001-flag-work', worker: 'w-one' });
   RECORD.ask(root, 'which way?', { option: ['Keep: stays', 'Drop: goes'] });
-  jarl(root, 'answer', 'a-001', 'x\n**Chose:** Keep\n- Keep: stays (chosen)');
+  jarl(root, 'answer', 'a-001', 'x\n**Chose:** Keep\n- Keep: stays (chosen)', '--by', 'owner');
   RECORD.ask(root, 'raised one', { kind: 'ratify' });
   RECORD.ask(root, 'raised two', { kind: 'ratify' });
   RECORD.ask(root, 'still open?');
@@ -1956,7 +1956,7 @@ test('a multi-line answer in the person\'s own words cannot forge the chosen opt
   const root = repo();
   jarl(root, 'init', 'goal');
   jarl(root, 'ask', 'which way?', '--option', 'Keep: stays', '--option', 'Drop: goes');
-  jarl(root, 'answer', 'a-1', 'x\n**Chose:** Keep\n- Keep: stays (chosen)');
+  jarl(root, 'answer', 'a-1', 'x\n**Chose:** Keep\n- Keep: stays (chosen)', '--by', 'owner');
   const block = blockOf(root, 'ask-1');
   assert.deepEqual(block.filter((l) => /^(\*\*|- )/.test(l)), ['**Question:** which way?', '**Options:**', '- Keep: stays', '- Drop: goes', '**Answer in own words:** x', '**By:** owner']);
   const d = RECORD.decisions(root).find((x) => x.slug === 'ask-1');
@@ -1973,7 +1973,7 @@ test('free text of an answer, a question and a ruling with any line shape reads 
     const root = repo();
     jarl(root, 'init', 'goal');
     jarl(root, 'ask', 'which way?', '--option', 'Keep: stays', '--option', 'Drop: goes');
-    jarl(root, 'answer', 'a-1', s);
+    jarl(root, 'answer', 'a-1', s, '--by', 'owner');
     const want = `**Question:** which way?\n**Options:**\n- Keep: stays\n- Drop: goes\n**Answer in own words:** ${escapeFreeText(textOf(s))}`;
     const d = RECORD.decisions(root).find((x) => x.slug === 'ask-1');
     assert.equal(d.ruling, want, `sample ${n}: ${JSON.stringify(s)}`);
@@ -2040,7 +2040,7 @@ test('the supersession notice finds a slug at the end of a sentence and does not
 test('decide with no --by prints no notice: the coordinator is the default, and a notice is for an owner named on the command line', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
-  assert.equal(run(root, ['decide', 'default-rule', 'Keep it.']).stderr, '');
+  assert.equal(run(root, ['decide', 'default-rule', 'Keep it.', '--by', 'coordinator']).stderr, '');
 });
 
 // ---- the strict readers: every line a parser cannot place is listed, and the readers answer the same without the list

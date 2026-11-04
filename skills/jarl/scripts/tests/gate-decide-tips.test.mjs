@@ -161,27 +161,27 @@ test('status and report show who reviewed the done work', () => {
 
 test('decide: slugs are validated and compared as strings — q.r is not a duplicate of qxr, specials never crash', () => {
   const root = loop();
-  jarl(root, 'decide', 'qxr', 'one');
-  assert.match(jarl(root, 'decide', 'q.r', 'two'), /^decided q\.r · by coordinator$/);
-  assert.match(refuses(root, 'decide', 'q.r', 'three'), /duplicate slug: q\.r/);
+  jarl(root, 'decide', 'qxr', 'one', '--by', 'coordinator');
+  assert.match(jarl(root, 'decide', 'q.r', 'two', '--by', 'coordinator'), /^decided q\.r · by coordinator$/);
+  assert.match(refuses(root, 'decide', 'q.r', 'three', '--by', 'coordinator'), /duplicate slug: q\.r/);
   for (const bad of ['a+b', '(x', 'a b', '[z]', 'x'.repeat(81), 'ż', '.dot']) {
-    assert.match(refuses(root, 'decide', bad, 'r'), /a ruling's slug is letters, digits/, bad);
+    assert.match(refuses(root, 'decide', bad, 'r', '--by', 'coordinator'), /a ruling's slug is letters, digits/, bad);
   }
-  const lead = spawnSync(process.execPath, [SCRIPT, '--root', root, 'decide', '--', '-lead', 'r'], { encoding: 'utf8', timeout: SPAWN_TIMEOUT });
+  const lead = spawnSync(process.execPath, [SCRIPT, '--root', root, 'decide', '--by', 'coordinator', '--', '-lead', 'r'], { encoding: 'utf8', timeout: SPAWN_TIMEOUT });
   assert.match(lead.stderr, /a ruling's slug is letters, digits/);
   assert.match(refuses(root, 'decide', 'answers', 'r', '--by', ''), /--by needs a value/);
 });
 
 test('decide --supersedes marks the old ruling, --by records who ruled, decisions --live lists what is in force', () => {
   const root = loop();
-  jarl(root, 'decide', 'no-subagents', 'Work without subagents.');
+  jarl(root, 'decide', 'no-subagents', 'Work without subagents.', '--by', 'coordinator');
   jarl(root, 'decide', 'keep', 'Keep this.', '--by', 'jarl');
-  assert.match(refuses(root, 'decide', 'subagents', 'x', '--supersedes', 'nope'), /no ruling nope in decisions.md/);
-  assert.equal(jarl(root, 'decide', 'subagents-again', 'Use fresh reviewers again. $1 $& kept', '--supersedes', 'no-subagents'), 'decided subagents-again · by coordinator · supersedes no-subagents');
+  assert.match(refuses(root, 'decide', 'subagents', 'x', '--supersedes', 'nope', '--by', 'coordinator'), /no ruling nope in decisions.md/);
+  assert.equal(jarl(root, 'decide', 'subagents-again', 'Use fresh reviewers again. $1 $& kept', '--supersedes', 'no-subagents', '--by', 'coordinator'), 'decided subagents-again · by coordinator · supersedes no-subagents');
   const text = readFileSync(join(root, '.jarl', 'decisions.md'), 'utf8');
   assert.match(text, /## \d{4}-\d{2}-\d{2} · no-subagents\nWork without subagents\.\n\n\*\*By:\*\* coordinator\n\*\*Superseded by:\*\* subagents-again \(\d{4}-\d{2}-\d{2}\)\n\n## \d{4}-\d{2}-\d{2} · keep\nKeep this\.\n\n\*\*By:\*\* jarl\n/);
   assert.match(text, /· subagents-again\nUse fresh reviewers again\. \$1 \$& kept\n\n\*\*By:\*\* coordinator\n\*\*Supersedes:\*\* no-subagents\n$/);
-  assert.match(refuses(root, 'decide', 'third', 'x', '--supersedes', 'no-subagents'), /already superseded by subagents-again/);
+  assert.match(refuses(root, 'decide', 'third', 'x', '--supersedes', 'no-subagents', '--by', 'coordinator'), /already superseded by subagents-again/);
   const all = JSON.parse(jarl(root, 'decisions', '--json'));
   assert.deepEqual(all.map((d) => [d.slug, d.by, d.supersededBy]), [['no-subagents', 'coordinator', 'subagents-again'], ['keep', 'jarl', null], ['subagents-again', 'coordinator', null]]);
   const live = jarl(root, 'decisions', '--live');
@@ -299,7 +299,7 @@ test('tips and report key a repository by its root: a loop in a subdirectory and
 test('decisions read a ruling\'s own fields from its closing block only: a line of the ruling that starts with **By:** is text', () => {
   const root = loop();
   jarl(root, 'decide', 'quoted', '**By:** this line is part of the ruling\nand the ruling goes on', '--by', 'jarl');
-  jarl(root, 'decide', 'next', 'x', '--supersedes', 'quoted');
+  jarl(root, 'decide', 'next', 'x', '--supersedes', 'quoted', '--by', 'coordinator');
   const d = JSON.parse(jarl(root, 'decisions', '--json'))[0];
   assert.equal(d.by, 'jarl');
   assert.equal(d.supersededBy, 'next');

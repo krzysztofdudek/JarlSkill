@@ -19,7 +19,7 @@ const decisionsFile = (root) => readFileSync(join(root, '.jarl', 'decisions.md')
 test('decide --applies-to writes the scope as the first line of the ruling\'s closing block, and decisions shows it', () => {
   const root = loop();
   jarl(root, 'new', 'ui work', '--tags', 'ui');
-  const out = jarl(root, 'decide', 'review-ui', 'Every ui change is shown in a screenshot.', '--applies-to', 'role reviewer and tag ui', '--until', '2999-12-31', '--settles', '1');
+  const out = jarl(root, 'decide', 'review-ui', 'Every ui change is shown in a screenshot.', '--applies-to', 'role reviewer and tag ui', '--until', '2999-12-31', '--settles', '1', '--by', 'coordinator');
   assert.match(out, /decided review-ui · by coordinator · applies to role reviewer and tag ui · until 2999-12-31/);
   assert.match(decisionsFile(root), /Every ui change is shown in a screenshot\.\n\n\*\*Applies to:\*\* role reviewer and tag ui · until 2999-12-31\n\*\*Settles:\*\* 1\n\*\*By:\*\* coordinator\n/);
   const [d] = json(root, 'decisions');
@@ -30,24 +30,24 @@ test('decide --applies-to writes the scope as the first line of the ruling\'s cl
 
 test('decide --applies-to refuses a selector it does not know, a role or a moment it does not know, and --until alone', () => {
   const root = loop();
-  assert.match(refuses(root, 'decide', 'x', 'text', '--applies-to', 'colour blue'), /"colour blue" is not a selector of --applies-to: loop, or selectors joined by "and"/);
-  assert.match(refuses(root, 'decide', 'x', 'text', '--applies-to', 'role painter'), /role painter is not a role a rule reaches: jarl, coordinator, worker, reviewer, merger, takeover/);
-  assert.match(refuses(root, 'decide', 'x', 'text', '--applies-to', 'moment lunch'), /moment lunch is not a moment of work: filing, start, review, round, merge, done, close/);
-  assert.match(refuses(root, 'decide', 'x', 'text', '--applies-to', 'loop and role worker'), /loop takes no other selector/);
-  assert.match(refuses(root, 'decide', 'x', 'text', '--until', '2999-01-01'), /--until ends a rule with a scope: it needs --applies-to/);
-  assert.match(refuses(root, 'decide', 'x', 'text', '--applies-to', 'loop', '--until', 'soon'), /--until is a date \(yyyy-mm-dd\)/);
-  assert.match(refuses(root, 'decide', 'x', 'text', '--applies-to', 'issue 9'), /no such issue: 9/);
+  assert.match(refuses(root, 'decide', 'x', 'text', '--applies-to', 'colour blue', '--by', 'coordinator'), /"colour blue" is not a selector of --applies-to: loop, or selectors joined by "and"/);
+  assert.match(refuses(root, 'decide', 'x', 'text', '--applies-to', 'role painter', '--by', 'coordinator'), /role painter is not a role a rule reaches: jarl, coordinator, worker, reviewer, merger, takeover/);
+  assert.match(refuses(root, 'decide', 'x', 'text', '--applies-to', 'moment lunch', '--by', 'coordinator'), /moment lunch is not a moment of work: filing, start, review, round, merge, done, close/);
+  assert.match(refuses(root, 'decide', 'x', 'text', '--applies-to', 'loop and role worker', '--by', 'coordinator'), /loop takes no other selector/);
+  assert.match(refuses(root, 'decide', 'x', 'text', '--until', '2999-01-01', '--by', 'coordinator'), /--until ends a rule with a scope: it needs --applies-to/);
+  assert.match(refuses(root, 'decide', 'x', 'text', '--applies-to', 'loop', '--until', 'soon', '--by', 'coordinator'), /--until is a date \(yyyy-mm-dd\)/);
+  assert.match(refuses(root, 'decide', 'x', 'text', '--applies-to', 'issue 9', '--by', 'coordinator'), /no such issue: 9/);
   assert.equal(json(root, 'decisions').length, 0, 'nothing was written');
 });
 
 test('a rule ends after its date, when its issue closes, or when a ruling supersedes it; decisions --live leaves an ended rule out', () => {
   const root = loop();
   jarl(root, 'new', 'the work');
-  jarl(root, 'decide', 'past', 'Old rule.', '--applies-to', 'loop', '--until', '2000-01-01');
-  jarl(root, 'decide', 'future', 'Standing rule.', '--applies-to', 'loop', '--until', '2999-01-01');
-  jarl(root, 'decide', 'while-1', 'Rule while the work is open.', '--applies-to', 'role worker', '--until', '1');
-  jarl(root, 'decide', 'revoked', 'A rule taken back.', '--applies-to', 'role reviewer');
-  jarl(root, 'decide', 'revoke-it', 'The rule revoked is no longer needed.', '--supersedes', 'revoked');
+  jarl(root, 'decide', 'past', 'Old rule.', '--applies-to', 'loop', '--until', '2000-01-01', '--by', 'coordinator');
+  jarl(root, 'decide', 'future', 'Standing rule.', '--applies-to', 'loop', '--until', '2999-01-01', '--by', 'coordinator');
+  jarl(root, 'decide', 'while-1', 'Rule while the work is open.', '--applies-to', 'role worker', '--until', '1', '--by', 'coordinator');
+  jarl(root, 'decide', 'revoked', 'A rule taken back.', '--applies-to', 'role reviewer', '--by', 'coordinator');
+  jarl(root, 'decide', 'revoke-it', 'The rule revoked is no longer needed.', '--supersedes', 'revoked', '--by', 'coordinator');
   const live = () => json(root, 'decisions', '--live').map((d) => d.slug);
   assert.deepEqual(live(), ['future', 'while-1', 'revoke-it']);
   assert.match(jarl(root, 'decisions'), /past · by coordinator · applies to loop · until 2000-01-01 · ENDED: ended 2000-01-01/);
@@ -84,14 +84,14 @@ function rulesLoop() {
   jarl(root, 'new', 'odin ui', '--tags', 'slice:odin,ui', '--files', 'a.mjs');       // 1
   jarl(root, 'new', 'frigg work', '--tags', 'slice:frigg', '--files', 'b.mjs');      // 2
   jarl(root, 'new', 'jarl ui', '--tags', 'ui', '--files', 'c.mjs');                  // 3
-  jarl(root, 'decide', 'loop-rule', LONG, '--applies-to', 'loop');
-  jarl(root, 'decide', 'coordinators', 'Coordinators report in one line.', '--applies-to', 'role coordinator');
-  jarl(root, 'decide', 'odin-only', 'Odin keeps the ui screens together.', '--applies-to', 'slice odin');
-  jarl(root, 'decide', 'frigg-only', 'Frigg asks before touching the parser.', '--applies-to', 'slice frigg');
-  jarl(root, 'decide', 'ui-workers', 'A ui worker attaches a screenshot.', '--applies-to', 'role worker and tag ui');
-  jarl(root, 'decide', 'reviewers', 'Reviewers run the suite themselves.', '--applies-to', 'role reviewer');
-  jarl(root, 'decide', 'at-merge', 'The jarl reads the diff once more before a merge.', '--applies-to', 'role jarl and moment merge');
-  jarl(root, 'decide', 'gone', 'An ended rule.', '--applies-to', 'loop', '--until', '2000-01-01');
+  jarl(root, 'decide', 'loop-rule', LONG, '--applies-to', 'loop', '--by', 'coordinator');
+  jarl(root, 'decide', 'coordinators', 'Coordinators report in one line.', '--applies-to', 'role coordinator', '--by', 'coordinator');
+  jarl(root, 'decide', 'odin-only', 'Odin keeps the ui screens together.', '--applies-to', 'slice odin', '--by', 'coordinator');
+  jarl(root, 'decide', 'frigg-only', 'Frigg asks before touching the parser.', '--applies-to', 'slice frigg', '--by', 'coordinator');
+  jarl(root, 'decide', 'ui-workers', 'A ui worker attaches a screenshot.', '--applies-to', 'role worker and tag ui', '--by', 'coordinator');
+  jarl(root, 'decide', 'reviewers', 'Reviewers run the suite themselves.', '--applies-to', 'role reviewer', '--by', 'coordinator');
+  jarl(root, 'decide', 'at-merge', 'The jarl reads the diff once more before a merge.', '--applies-to', 'role jarl and moment merge', '--by', 'coordinator');
+  jarl(root, 'decide', 'gone', 'An ended rule.', '--applies-to', 'loop', '--until', '2000-01-01', '--by', 'coordinator');
   return root;
 }
 const slugs = (o) => o.rules.map((r) => r.slug);
@@ -192,7 +192,7 @@ test('an agent proposes a rule: the ball is on the jarl, or on the owner where t
   assert.ok(!json(root, 'next', '--as', 'owner').rows.some((r) => r.what === 'rule'));
   assert.ok(!slugs(json(root, 'next', '--as', 'w1')).includes(`ask-${asked.id}`), 'a proposal reaches no one');
   assert.match(jarl(root, 'resume'), new RegExp(`## Rules proposed \\(1\\)\\n- a-${asked.id} to jarl · applies to role worker · A worker runs the linter`));
-  assert.match(refuses(root, 'answer', `a-${asked.id}`, 'maybe'), /proposes a rule: the answer starts with one word/);
+  assert.match(refuses(root, 'answer', `a-${asked.id}`, 'maybe', '--by', 'owner'), /proposes a rule: the answer starts with one word/);
   jarl(root, 'answer', `a-${asked.id}`, 'yes', '--by', 'jarl');
   const rule = json(root, 'next', '--as', 'w1').rules.find((r) => r.slug === `ask-${asked.id}`);
   assert.equal(rule.text, 'A worker runs the linter before it reports.');
@@ -202,7 +202,7 @@ test('an agent proposes a rule: the ball is on the jarl, or on the owner where t
   const his = json(root, 'ask', 'Nothing is pushed on a Friday.', '--kind', 'rule', '--applies-to', 'loop', '--to', 'owner');
   assert.ok(json(root, 'next', '--as', 'owner').rows.some((r) => r.what === 'rule' && r.ask === his.id));
   assert.match(refuses(root, 'answer', `a-${his.id}`, 'yes', '--by', 'jarl'), /proposes a rule to the owner: it is his to accept or reject/);
-  jarl(root, 'answer', `a-${his.id}`, 'reject');
+  jarl(root, 'answer', `a-${his.id}`, 'reject', '--by', 'owner');
   assert.ok(!json(root, 'next', '--as', 'w1').rules.some((r) => r.slug === `ask-${his.id}`), 'a rejected rule reaches no one');
   assert.match(refuses(root, 'ask', 'x', '--kind', 'rule'), /a rule is proposed with whom it applies to/);
   assert.match(refuses(root, 'ask', 'x', '--kind', 'rule', '--applies-to', 'loop', '--issue', '1'), /a proposed rule holds no issue back/);
@@ -212,10 +212,10 @@ test('an agent proposes a rule: the ball is on the jarl, or on the owner where t
 test('close offers each rule of the loop for promotion, on the owner, with four ways it goes on; Jarl\'s own rules and an ended rule are not offered', () => {
   const root = loop();
   jarl(root, 'new', 'work');
-  jarl(root, 'decide', 'standing', 'Reports name their branch.', '--applies-to', 'loop');
-  jarl(root, 'decide', 'for-reviewers', 'Reviewers run the suite.', '--applies-to', 'role reviewer');
-  jarl(root, 'decide', 'old', 'Gone.', '--applies-to', 'loop', '--until', '2000-01-01');
-  jarl(root, 'decide', 'plain', 'A ruling with no scope.');
+  jarl(root, 'decide', 'standing', 'Reports name their branch.', '--applies-to', 'loop', '--by', 'coordinator');
+  jarl(root, 'decide', 'for-reviewers', 'Reviewers run the suite.', '--applies-to', 'role reviewer', '--by', 'coordinator');
+  jarl(root, 'decide', 'old', 'Gone.', '--applies-to', 'loop', '--until', '2000-01-01', '--by', 'coordinator');
+  jarl(root, 'decide', 'plain', 'A ruling with no scope.', '--by', 'coordinator');
   const out = json(root, 'close', '--batch');
   assert.deepEqual(out.promotion.items.map((i) => i.ruling), ['standing', 'for-reviewers']);
   const text = jarl(root, 'close', '--batch');
@@ -224,9 +224,9 @@ test('close offers each rule of the loop for promotion, on the owner, with four 
   const onOwner = json(root, 'next', '--as', 'owner').rows.filter((r) => r.what === 'promotion');
   assert.deepEqual(onOwner.map((r) => r.ruling), ['standing', 'for-reviewers']);
   assert.equal(onOwner[0].command, 'jarl.mjs answer a-1 --option carry|instructions|law|drop --by owner');
-  assert.match(refuses(root, 'answer', 'a-1', 'yes'), /offers rule standing for promotion: answer it with --option carry\|instructions\|law\|drop/);
+  assert.match(refuses(root, 'answer', 'a-1', 'yes', '--by', 'owner'), /offers rule standing for promotion: answer it with --option carry\|instructions\|law\|drop/);
   jarl(root, 'answer', 'a-1', '--option', 'carry', '--by', 'owner');
-  jarl(root, 'answer', 'a-2', '--option', 'drop');
+  jarl(root, 'answer', 'a-2', '--option', 'drop', '--by', 'owner');
   const [a1, a2] = ['ask-1', 'ask-2'].map((slug) => json(root, 'decisions').find((d) => d.slug === slug));
   assert.match(a1.ruling, /\*\*Chose:\*\* carry/);
   assert.match(a2.ruling, /\*\*Chose:\*\* drop/);
@@ -240,7 +240,7 @@ test('a loop whose composer keeps its format is offered no promotion, and says w
   const file = join(mkdtempSync(join(tmpdir(), 'jarl-rules-profile-')), 'profile.json');
   writeFileSync(file, JSON.stringify({ 'jarl-profile': 1, name: 'composed', statuses: BUILTIN_STATUSES, 'external-scheduler': 'the composer tick' }));
   jarl(root, 'init', 'a mission', '--profile', file);
-  jarl(root, 'decide', 'standing', 'Reports name their branch.', '--applies-to', 'loop');
+  jarl(root, 'decide', 'standing', 'Reports name their branch.', '--applies-to', 'loop', '--by', 'coordinator');
   const out = json(root, 'close', '--batch');
   assert.deepEqual(out.promotion.items, []);
   assert.match(out.promotion.off, /1 rule\(s\) of the loop are not offered for promotion: a question of kind rule needs record format 3/);
@@ -252,7 +252,7 @@ test('a rule of two lines, written by decide or proposed and accepted, is printe
   const root = loop();
   jarl(root, 'new', 'work');
   jarl(root, 'set', '1', 'in-progress', 'go', '--worker', 'w1', '--branch', 'jarl/1-work');
-  jarl(root, 'decide', 'two-lines', 'First line of the rule.\nSecond line of the rule.', '--applies-to', 'loop');
+  jarl(root, 'decide', 'two-lines', 'First line of the rule.\nSecond line of the rule.', '--applies-to', 'loop', '--by', 'coordinator');
   const asked = json(root, 'ask', 'First line of the proposal.\nSecond line of the proposal.', '--kind', 'rule', '--applies-to', 'loop');
   jarl(root, 'answer', `a-${asked.id}`, 'yes', '--by', 'jarl');
   const whole = (text) => {
@@ -275,7 +275,7 @@ test('in a loop with no slice the jarl is the one coordinator and is given the c
 
 test('a plain close that removes the loop names no answer for the promotion questions that left with it', () => {
   const root = loop();
-  jarl(root, 'decide', 'standing', 'Reports name their branch.', '--applies-to', 'loop');
+  jarl(root, 'decide', 'standing', 'Reports name their branch.', '--applies-to', 'loop', '--by', 'coordinator');
   const text = jarl(root, 'close');
   assert.match(text, /\n1 rule\(s\) of the loop were offered for promotion and left with it unanswered: close --batch offers them before the loop goes/);
   assert.doesNotMatch(text, /answer <a-id>|--option carry/);

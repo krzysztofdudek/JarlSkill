@@ -189,8 +189,8 @@ test('ask --kind escalation names its slice or issue, is held by the jarl, shows
   // One that names only an issue is in the view of the issue's slice.
   jarl(root, 'ask', 'is 3 in thor\'s goal?', '--kind', 'escalation', '--issue', '3');
   assert.equal(json(root, 'status', '--slice', 'thor').escalations, 1);
-  // Answered with no --by, it is the jarl's ruling.
-  jarl(root, 'answer', 'a-1', 'odin goes first');
+  // Answered by the jarl, it is the jarl's ruling.
+  jarl(root, 'answer', 'a-1', 'odin goes first', '--by', 'jarl');
   assert.match(readFileSync(join(root, '.jarl', 'decisions.md'), 'utf8'), /## \d{4}-\d{2}-\d{2} · ask-1\n[\s\S]*?\*\*By:\*\* jarl/);
   assert.equal(json(root, 'next', '--slice', 'odin', '--all').find((r) => r.id === '2').group, 'held-by-file', 'the answer releases the issue');
 });

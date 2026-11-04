@@ -258,7 +258,7 @@ function questionRows(ctx) {
     const keys = new Set(reviewAskKeys(ctx.loop, a.question));
     const reviewing = ctx.loop.issues.filter((i) => ctx.onOwner.has(i.id) && keys.has(idKey(i.id))).map((i) => i.id);
     return { what: 'question', ask: a.id, kind: a.kind || 'stuck', title: a.question, holder: OWNER_HOLDER, ...(reviewing.length ? { reviewing } : {}),
-      says: `question (${a.kind || 'stuck'})${a.issue ? ` on issue ${a.issue}` : ''}${reviewing.length ? `, the fresh review of ${reviewing.join(', ')} waits on it` : keys.size ? ', no issue it names awaits a review now' : ''}`, command: `jarl.mjs answer ${ref} "<text>"` };
+      says: `question (${a.kind || 'stuck'})${a.issue ? ` on issue ${a.issue}` : ''}${reviewing.length ? `, the fresh review of ${reviewing.join(', ')} waits on it` : keys.size ? ', no issue it names awaits a review now' : ''}`, command: `jarl.mjs answer ${ref} "<text>" --by owner` };
   });
 }
 
@@ -274,7 +274,7 @@ function rulingRows(ctx) {
     if (live || named.some((i) => !i.missing && closedOn(loop, i, d.slug))) continue;
     out.push({ what: 'ruling', ruling: d.slug, title: d.slug, holder: JARL_HOLDER,
       says: `ruling in force; the work it settles has no live issue: ${named.map((i) => (i.missing ? `${i.id} is not in the loop` : `${i.id} is ${i.status}`)).join(', ')}; file the work and settle it`,
-      command: `jarl.mjs new "<title>", then jarl.mjs decide <slug> "<text>" --supersedes ${d.slug} --settles <id>` });
+      command: `jarl.mjs new "<title>", then jarl.mjs decide <slug> "<text>" --by jarl --supersedes ${d.slug} --settles <id>` });
   }
   return out;
 }

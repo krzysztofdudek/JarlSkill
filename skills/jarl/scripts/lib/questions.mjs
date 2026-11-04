@@ -306,7 +306,7 @@ export function cmdDecide(root, slug, ruling, flags = {}) {
   need(flags.quote === undefined || typeof flags.quote === 'string', '--quote is the owner\'s own words, as text');
   const quote = flags.quote !== undefined ? fieldText(flags.quote) : null;
   need(flags.quote === undefined || quote, '--quote needs the owner\'s own words');
-  need(!byOwner || quote, `a ruling by the owner carries his own words: give them with --quote "<what he said>"; a ruling without --by is recorded as the coordinator's, and a question he asked is not a ruling; a loop that names its owner otherwise records him as owner all the same, for the name owner is the rule`);
+  need(!byOwner || quote, `a ruling by the owner carries his own words: give them with --quote "<what he said>"; a question he asked is not a ruling; a loop that names its owner otherwise records him as owner all the same, for the name owner is the rule`);
   needNoOwnersWords('the ruling', slug, ruling, { ...flags, quote: undefined });
   need(flags.quote === undefined || byOwner, '--quote is the owner\'s own words: it goes with --by owner');
   if (quote) needNoOwnersWords('--quote', quote);
