@@ -705,6 +705,20 @@ export function listItems(value, kind, field) {
   need(!items.some((s) => piecesOfListText(s, kind)), `${field} takes its items one by one: one item, a comma list (a,b) or a list of strings; ${kind === 'name' ? 'a list written as text, an item in quotes or a name holding a bracket or a quote mark' : 'a list written as text or an item in quotes'} is refused — got ${JSON.stringify(text)}`);
   return items;
 }
+// A tag operation is +name or -name, and its name may be a comma list: +a,b adds a and b, and -a,b takes both off. Each
+// name becomes an operation of its own, and the tag command reads one name per operation. A +name is checked as an item
+// of a list (no quotes, brackets or leading dash). A -name is split at its commas and checked for a leading dash only:
+// it matches the tag as it is stored, so a tag stored with brackets or quotes can still be removed. An operation with no
+// name in it is refused.
+function tagOp(op) {
+  const sign = op.charAt(0);
+  if (sign !== '+' && sign !== '-') return [op];   // the tag command refuses it, naming the form
+  const names = sign === '+' ? listItems(op.slice(1), 'name', 'tag') : op.slice(1).split(',').map((s) => s.trim()).filter(Boolean);
+  const dashed = names.filter((s) => s.startsWith('-'));
+  need(dashed.length === 0, `tag: an item cannot start with - (got ${dashed.map((s) => JSON.stringify(s)).join(' ')}): everything after a bare -- is an argument, so flags such as --root go before it`);
+  need(names.length > 0, `tags are +name or -name, not "${op}"`);
+  return names.map((name) => sign + name);
+}
 // A command's arguments and flags with every list field read by listItems and written back as the one comma list the
 // commands read: a list argument that is last takes every word left (files 3 a.mjs b.mjs), and a list flag repeats.
 // repo --base takes a repository name and a branch, not a list, and no word beyond them.
@@ -719,7 +733,7 @@ function readLists(cmd, rest, flags) {
   COMMAND_ARGS[cmd].forEach((a, at) => {
     const field = a.replace(/[?.]+$/, '');
     const kind = fields[field];
-    if (kind === 'ops') { for (const op of rest.slice(at)) if (op.startsWith('+')) listItems(op.slice(1), 'name', 'tag'); return; }
+    if (kind === 'ops') { out.rest.splice(at, Infinity, ...rest.slice(at).flatMap(tagOp)); return; }
     if (kind === undefined) return;
     const given = a.endsWith('...') ? (rest.length > at ? rest.slice(at) : undefined) : rest[at];
     if (given === undefined) return;
