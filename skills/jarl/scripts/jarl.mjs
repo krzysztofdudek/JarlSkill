@@ -841,10 +841,12 @@ function renderBatch(batch, loop) {
   return `${head}\n${batch.items.map((i) => `- ${i.ask} · ${i.question}`).join('\n')}\n${tail}`;
 }
 // The rules of the loop offered for promotion at its close, each a question on the owner with the four ways it goes on.
-function renderPromotion(p) {
+// Where close removed the loop the questions went with it, so no answer is offered for them.
+function renderPromotion(p, loop) {
   if (!p) return '';
   if (p.off) return `\n${p.off}`;
   if (!p.items.length) return '';
+  if (loop === 'removed') return `\n${p.items.length} rule(s) of the loop were offered for promotion and left with it unanswered: close --batch offers them before the loop goes`;
   return `\nrules of the loop to promote (${p.items.length}) — answer each with one way: jarl.mjs answer <a-id> --option carry|instructions|law|drop --by owner\n${p.items.map((i) => `- ${i.ask} · ${i.question}`).join('\n')}`;
 }
 function renderRuleLog(r, t) {
@@ -974,7 +976,7 @@ export function dispatch(root, commandName, rest, flags) {
       case 'mode': out = cmdMode(root, rest[0]); text = 'now permanent · not tied to a feature branch; close keeps the directory'; break;
       case 'profile': out = cmdProfile(root, rest[0]); text = renderProfile(out); break;
       case 'verify': out = cmdVerify(root); text = renderVerify(out); break;
-      case 'close': out = cmdClose(root, { ...flags, caller: 'cli' }); text = out.closed ? (out.kept ? `kept ${out.kept} · closed as a permanent record` : `removed ${out.removed}${out.archiveKept ? ' (the live loop; .jarl/archive/ is left in place)' : out.archiveRemoved ? ` (with .jarl/archive/: ${out.archiveRemoved.join(', ')})` : ''}`) + (out.deferred.length ? ` · ${out.deferred.length} deferred ${out.kept ? 'still waiting' : 'removed with the loop'}: ${out.deferred.join(', ')}` : '') + (out.uncommitted ? ` · ${out.uncommitted} loop file(s) not committed${out.kept ? ' — commit .jarl/' : ' before the removal'}` : '') + renderBatch(out.batch, out.kept ? 'kept' : 'removed') + renderPromotion(out.promotion) : (renderBatch(out.batch, 'open') + renderPromotion(out.promotion)).trimStart(); break;
+      case 'close': out = cmdClose(root, { ...flags, caller: 'cli' }); text = out.closed ? (out.kept ? `kept ${out.kept} · closed as a permanent record` : `removed ${out.removed}${out.archiveKept ? ' (the live loop; .jarl/archive/ is left in place)' : out.archiveRemoved ? ` (with .jarl/archive/: ${out.archiveRemoved.join(', ')})` : ''}`) + (out.deferred.length ? ` · ${out.deferred.length} deferred ${out.kept ? 'still waiting' : 'removed with the loop'}: ${out.deferred.join(', ')}` : '') + (out.uncommitted ? ` · ${out.uncommitted} loop file(s) not committed${out.kept ? ' — commit .jarl/' : ' before the removal'}` : '') + renderBatch(out.batch, out.kept ? 'kept' : 'removed') + renderPromotion(out.promotion, out.kept ? 'kept' : 'removed') : (renderBatch(out.batch, 'open') + renderPromotion(out.promotion, 'open')).trimStart(); break;
       default: throw new Error(`unknown command: ${cmd}\n${USAGE}`);
     }
     }));

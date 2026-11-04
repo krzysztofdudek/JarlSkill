@@ -13,7 +13,7 @@ import { cmdTips, renderTips } from './tips.mjs';
 import { reasonWord, waitingOn } from './commands.mjs';
 import { handoffAge, handoffPath } from './questions.mjs';
 import { answeredLines } from './journal.mjs';
-import { ruleLines, rulesFor } from './rules.mjs';
+import { loopRules, ruleLines, rulesFor } from './rules.mjs';
 import { jarlDir, today } from './where.mjs';
 import { IN_FLIGHT_MARKS, closedGateFlags, inFlightMark, leaseWriter, leasedByText, modelText, nextRows, schedulerNote, statusOf, uncommittedLoopFiles } from './evidence.mjs';
 import { cmdQueue, renderQueue } from './queue.mjs';
@@ -52,7 +52,9 @@ export function cmdResume(root, flags = {}) {
   const stale = new Map(status.stale.map((x) => [x.id, x.problems]));
   const marks = new Map(status.inFlightRows.map((x) => [x.id, x]));
   // An answered question's ruling also carries its answer line, which the text lists before the question.
-  const rulings = loop.decisions.filter((d) => !d.supersededBy).map((d) => {
+  // In force as decisions --live counts it: neither superseded nor a rule that has ended.
+  const ended = new Set(loopRules(loop, today()).filter((r) => r.ended).map((r) => r.slug));
+  const rulings = loop.decisions.filter((d) => !d.supersededBy && !ended.has(d.slug)).map((d) => {
     const answered = answeredLines(d);
     return { date: d.date, slug: d.slug, by: d.by, under: d.under, line: (d.ruling.split('\n').find((l) => l.trim()) || '').trim(), ...(answered ? { answer: answered.answer } : {}) };
   });

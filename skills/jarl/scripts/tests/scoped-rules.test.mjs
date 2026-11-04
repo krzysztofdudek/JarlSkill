@@ -125,17 +125,18 @@ test('resume prints the rules of the whole loop and a count of the rulings, not 
   const root = rulesLoop();
   const text = jarl(root, 'resume');
   assert.doesNotMatch(text, /## Rulings in force/);
-  assert.match(text, /\n8 ruling\(s\) in force: jarl\.mjs decisions --live; resume --as <who> adds the rules that match whoever asks\n/);
+  assert.match(text, /\n7 ruling\(s\) in force: jarl\.mjs decisions --live; resume --as <who> adds the rules that match whoever asks\n/);
   assert.match(text, /## Rules for the whole loop \(1\)\n- loop-rule · loop · by coordinator — /);
   assert.ok(text.includes(LONG));
   assert.doesNotMatch(text, /Odin keeps|Coordinators report|An ended rule/);
   const asked = jarl(root, 'resume', '--as', 'odin');
   assert.doesNotMatch(asked, /## Rules for the whole loop/);
-  assert.match(asked, /\n8 ruling\(s\) in force: jarl\.mjs decisions --live\n/);
+  assert.match(asked, /\n7 ruling\(s\) in force: jarl\.mjs decisions --live\n/);
   assert.match(asked, /Rules for odin \(6\)\n- loop-rule · loop · by coordinator/);
   assert.match(asked, /Odin keeps the ui screens together\./);
   assert.doesNotMatch(asked, /Frigg asks/);
-  assert.equal(json(root, 'resume').rulings.length, 8, 'the JSON still holds every ruling in force');
+  assert.equal(json(root, 'resume').rulings.length, 7, 'the JSON holds every ruling in force, the ended rule left out');
+  assert.deepEqual(json(root, 'resume').rulings.map((d) => d.slug), json(root, 'decisions', '--live').map((d) => d.slug), 'resume and decisions --live agree on what is in force');
 });
 
 test('every rule Jarl ships is quoted whole from the reference it names, and each role the acceptance names has its rules', () => {
@@ -245,4 +246,37 @@ test('a loop whose composer keeps its format is offered no promotion, and says w
   assert.match(out.promotion.off, /1 rule\(s\) of the loop are not offered for promotion: a question of kind rule needs record format 3/);
   assert.match(refuses(root, 'ask', 'A rule.', '--kind', 'rule', '--applies-to', 'loop'), /a question of kind rule needs record format 3, and this loop stays at format 1/);
   assert.deepEqual(json(root, 'next', '--as', 'owner').rules.map((r) => r.slug), ['standing']);
+});
+
+test('a rule of two lines, written by decide or proposed and accepted, is printed whole in every view that prints rules', () => {
+  const root = loop();
+  jarl(root, 'new', 'work');
+  jarl(root, 'set', '1', 'in-progress', 'go', '--worker', 'w1', '--branch', 'jarl/1-work');
+  jarl(root, 'decide', 'two-lines', 'First line of the rule.\nSecond line of the rule.', '--applies-to', 'loop');
+  const asked = json(root, 'ask', 'First line of the proposal.\nSecond line of the proposal.', '--kind', 'rule', '--applies-to', 'loop');
+  jarl(root, 'answer', `a-${asked.id}`, 'yes', '--by', 'jarl');
+  const whole = (text) => {
+    assert.match(text, /- two-lines · loop · by coordinator — First line of the rule\.\n  Second line of the rule\./);
+    assert.match(text, new RegExp(`- ask-${asked.id} · loop · by jarl — First line of the proposal\\.\\n  Second line of the proposal\\.(\\n|$)`));
+  };
+  for (const args of [['resume'], ['resume', '--as', 'w1'], ['next', '--as', 'w1'], ['next', '--as', 'jarl'], ['status', '--as', 'owner']]) whole(jarl(root, ...args));
+  assert.equal(json(root, 'next', '--as', 'w1').rules.find((r) => r.slug === `ask-${asked.id}`).text, 'First line of the proposal.\nSecond line of the proposal.');
+});
+
+test('in a loop with no slice the jarl is the one coordinator and is given the coordinator\'s rules; with a slice it is not', () => {
+  const root = loop();
+  jarl(root, 'new', 'work');
+  const coordinatorRules = (o) => slugs(o).filter((s) => s.startsWith('jarl:coordinator-'));
+  assert.deepEqual(coordinatorRules(json(root, 'next', '--as', 'jarl')), ['jarl:coordinator-escalates', 'jarl:coordinator-pull-push', 'jarl:coordinator-scope-holds']);
+  jarl(root, 'goal', '--set', 'Coordinators: odin');
+  jarl(root, 'tag', '1', '+slice:odin');
+  assert.deepEqual(coordinatorRules(json(root, 'next', '--as', 'jarl')), []);
+});
+
+test('a plain close that removes the loop names no answer for the promotion questions that left with it', () => {
+  const root = loop();
+  jarl(root, 'decide', 'standing', 'Reports name their branch.', '--applies-to', 'loop');
+  const text = jarl(root, 'close');
+  assert.match(text, /\n1 rule\(s\) of the loop were offered for promotion and left with it unanswered: close --batch offers them before the loop goes/);
+  assert.doesNotMatch(text, /answer <a-id>|--option carry/);
 });

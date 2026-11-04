@@ -9,6 +9,7 @@
 
 import { fieldText, need } from './base.mjs';
 import { idKey } from './ids.mjs';
+import { answeredLines } from './journal.mjs';
 import { sameSlice, sliceOf } from './loop.mjs';
 import { repoNames } from './repositories.mjs';
 
@@ -155,11 +156,13 @@ export function loopRules(loop, today) {
   });
 }
 // The text a rule delivers: its ruling, or, for an accepted proposal (the answer to a question of kind rule), the rule
-// it proposed.
+// it proposed, every line of it: the question, up to the line of its answer.
 function ruleText(d) {
-  const first = d.ruling.split('\n')[0] || '';
-  if (/^ask-\d+$/.test(d.slug) && first.startsWith('**Question:** ')) return first.slice('**Question:** '.length).trim();
-  return d.ruling;
+  const lines = d.ruling.split('\n');
+  if (!/^ask-\d+$/.test(d.slug) || !lines[0].startsWith('**Question:** ')) return d.ruling;
+  const answered = answeredLines(d);
+  const end = answered ? lines.findIndex((l, n) => n > 0 && l.trim() === answered.answer) : -1;
+  return [lines[0].slice('**Question:** '.length), ...lines.slice(1, end === -1 ? lines.length : end)].join('\n').trim();
 }
 // The rules that match a reader, whole: the loop's rules in force first, then Jarl's own.
 export function rulesFor(root, loop, reader, today) {
