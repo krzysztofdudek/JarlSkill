@@ -20,12 +20,15 @@ for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
 
 child.on('close', (code, signal) => {
   const left = readdirSync(empty);
-  rmSync(empty, { recursive: true, force: true, maxRetries: 3 });
+  // The leftovers are named before anything is removed, and a removal that fails is reported without hiding the failure.
+  if (left.length > 0) process.stderr.write(`the suite left ${left.length} ${left.length === 1 ? 'entry' : 'entries'} in an empty temporary directory: ${left.join(', ')}\n`);
+  let removed = true;
+  try { rmSync(empty, { recursive: true, force: true, maxRetries: 3 }); } catch (error) {
+    removed = false;
+    process.stderr.write(`the suite could not remove its temporary directory ${empty}: ${error.message}\n`);
+  }
   const ended = signal ?? stoppedBy;
   if (ended) process.exit(128 + constants.signals[ended]);
-  if (left.length > 0) {
-    process.stderr.write(`the suite left ${left.length} ${left.length === 1 ? 'entry' : 'entries'} in an empty temporary directory: ${left.join(', ')}\n`);
-    process.exit(1);
-  }
+  if (left.length > 0 || !removed) process.exit(code || 1);
   process.exit(code ?? 1);
 });

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { constants, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,6 +12,7 @@ const SUITE = fileURLToPath(new URL('./suite.mjs', import.meta.url));
 const PACKAGE = fileURLToPath(new URL('../package.json', import.meta.url));
 const CLEAN_FIXTURE = fileURLToPath(new URL('./fixtures/tmp-clean-suite.mjs', import.meta.url));
 const LEAKING_FIXTURE = fileURLToPath(new URL('./fixtures/tmp-leaking-suite.mjs', import.meta.url));
+const LOCKED_FIXTURE = fileURLToPath(new URL('./fixtures/tmp-locked-suite.mjs', import.meta.url));
 
 // A scratch temporary directory of its own for a child process, removed after the test whatever the test did.
 function scratch(t) {
@@ -72,7 +73,7 @@ test('a process that failed, or threw, leaves no temporary directory', (t) => {
 });
 
 for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
-  test(`a process stopped by ${signal} leaves no temporary directory and exits with 128 plus the signal number`, (t) => {
+  test(`a process stopped by ${signal} leaves no temporary directory and exits with 128 plus the signal number`, { skip: process.platform === 'win32' && 'Windows ends a process that signals itself at once, without running a handler, and has no SIGHUP' }, (t) => {
     const tmp = scratch(t);
     const r = child(tmp, `import { mkdtempSync } from 'node:fs'; import { tmpdir } from 'node:os'; import { join } from 'node:path';
       mkdtempSync(join(tmpdir(), 'jarl-signal-')); process.kill(process.pid, '${signal}'); setTimeout(() => {}, 10000);`);
@@ -130,4 +131,18 @@ test('the suite runner passes the failing exit status of the suite through', (t)
   const r = spawnSync(process.execPath, [SUITE, failing], { encoding: 'utf8', timeout: SPAWN_TIMEOUT, env: envWith(tmp) });
   assert.equal(r.status, 1, r.stdout + r.stderr);
   assert.doesNotMatch(r.stderr, /the suite left/);
+});
+
+const NOT_STOPPED = process.platform === 'win32' ? 'a read-only directory does not stop a removal on Windows' : process.getuid?.() === 0 ? 'a removal running as root is not stopped by a read-only directory' : false;
+test('the suite runner names the leftovers before it removes them, and a removal that fails still fails the run', { skip: NOT_STOPPED }, (t) => {
+  const tmp = scratch(t);
+  const r = spawnSync(process.execPath, [SUITE, LOCKED_FIXTURE], { encoding: 'utf8', timeout: SPAWN_TIMEOUT, env: envWith(tmp) });
+  for (const name of readdirSync(tmp)) {
+    const locked = join(tmp, name, 'fixture-locked');
+    if (existsSync(locked)) chmodSync(locked, 0o700);
+  }
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  const named = r.stderr.indexOf('the suite left 1 entry in an empty temporary directory: fixture-locked');
+  assert.ok(named >= 0, r.stderr);
+  assert.ok(r.stderr.indexOf('the suite could not remove its temporary directory') > named, r.stderr);
 });
