@@ -22,23 +22,25 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const ISSUE_RE = /^#?\d+$/;
 const SCOPE_SHAPE = 'loop, or selectors joined by "and": role <role>, slice <coordinator>, moment <moment>, issue <id>, tag <tag>, kind <kind>, tier <tier>, files <path or pattern>, repo <repository>';
 
+// Where one selector of a scope is refused: a placeholder for the scope with that selector rewritten, the others kept.
+const scopeHole = (raw, part, what) => `<${raw.replace(part, `${what} in place of ${part}`)}>`;
 // The selectors of an Applies to text, as [{ word, value }]. A refusal names the shape.
 export function parseScope(text) {
   const raw = fieldText(text);
-  need(raw, `--applies-to names whom the rule applies to: ${SCOPE_SHAPE}`, () => ({ flag: '--applies-to', value: 'loop' }));
+  need(raw, `--applies-to names whom the rule applies to: ${SCOPE_SHAPE}`, () => ({ flag: '--applies-to', value: '<loop, or selectors joined by and>' }));
   const parts = raw.split(/\s+and\s+/i).map((p) => p.trim());
   const selectors = parts.map((p) => {
     if (/^loop$/i.test(p)) return { word: 'loop', value: null };
     const m = /^([a-z]+)\s+(\S+)$/i.exec(p);
-    need(m && RULE_SELECTORS.includes(m[1].toLowerCase()) && m[1].toLowerCase() !== 'loop', `"${p}" is not a selector of --applies-to: ${SCOPE_SHAPE}`, () => ({ flag: '--applies-to', value: 'loop' }));
+    need(m && RULE_SELECTORS.includes(m[1].toLowerCase()) && m[1].toLowerCase() !== 'loop', `"${p}" is not a selector of --applies-to: ${SCOPE_SHAPE}`, () => ({ flag: '--applies-to', value: scopeHole(raw, p, 'a selector and its value') }));
     const word = m[1].toLowerCase();
     const value = m[2];
-    if (word === 'role') need(RULE_ROLES.includes(value.toLowerCase()), `role ${value} is not a role a rule reaches: ${RULE_ROLES.join(', ')}`, () => ({ flag: '--applies-to', value: `role ${RULE_ROLES[0]}` }));
-    if (word === 'moment') need(RULE_MOMENTS.includes(value.toLowerCase()), `moment ${value} is not a moment of work: ${RULE_MOMENTS.join(', ')}`, () => ({ flag: '--applies-to', value: `moment ${RULE_MOMENTS[0]}` }));
-    if (word === 'issue') need(ISSUE_RE.test(value), `issue ${value} is not an issue number`, () => ({ flag: '--applies-to', value: 'issue <id>' }));
+    if (word === 'role') need(RULE_ROLES.includes(value.toLowerCase()), `role ${value} is not a role a rule reaches: ${RULE_ROLES.join(', ')}`, () => ({ flag: '--applies-to', value: scopeHole(raw, p, `role ${RULE_ROLES.join('|')}`) }));
+    if (word === 'moment') need(RULE_MOMENTS.includes(value.toLowerCase()), `moment ${value} is not a moment of work: ${RULE_MOMENTS.join(', ')}`, () => ({ flag: '--applies-to', value: scopeHole(raw, p, `moment ${RULE_MOMENTS.join('|')}`) }));
+    if (word === 'issue') need(ISSUE_RE.test(value), `issue ${value} is not an issue number`, () => ({ flag: '--applies-to', value: scopeHole(raw, p, 'issue and its number') }));
     return { word, value: word === 'role' || word === 'moment' ? value.toLowerCase() : word === 'issue' ? value.replace(/^#/, '') : value };
   });
-  need(!(selectors.length > 1 && selectors.some((s) => s.word === 'loop')), 'loop takes no other selector: a rule of the loop reaches every reader of it', () => ({ flag: '--applies-to', value: 'loop' }));
+  need(!(selectors.length > 1 && selectors.some((s) => s.word === 'loop')), 'loop takes no other selector: a rule of the loop reaches every reader of it', () => ({ flag: '--applies-to', value: `<loop alone, or ${parts.filter((x) => !/^loop$/i.test(x)).join(' and ')}>` }));
   return selectors;
 }
 

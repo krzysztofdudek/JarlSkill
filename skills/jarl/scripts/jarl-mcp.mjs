@@ -33,7 +33,7 @@
 // No dependencies beyond the vendored copy, Node 22+.
 import { resolve, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { AUTHOR_REQUIRED, COMMAND_ARGS, COMMAND_FLAGS, INTERNAL_COMMANDS, LIST_FIELDS, REPLACED_COMMANDS, replacedMessage, flagsOf, COMMAND_SUMMARY, GLOBAL_FLAGS, MUTATING, USAGE, parseArgs, dispatch, findRoot, isEntry as isEntryOf, installVersion } from './jarl.mjs';
+import { AUTHOR_REQUIRED, COMMAND_ARGS, COMMAND_FLAGS, GONE_TEXT_NAMES, INTERNAL_COMMANDS, LIST_FIELDS, REMOVED_FLAGS, REPLACED_COMMANDS, replacedMessage, flagsOf, COMMAND_SUMMARY, GLOBAL_FLAGS, MUTATING, USAGE, parseArgs, dispatch, findRoot, isEntry as isEntryOf, installVersion } from './jarl.mjs';
 import { defineTable } from './vendor/runes/dist/cli/index.mjs';
 import {
   buildTools as generateTools, argvFor as generateArgv, commandForTool, serveStdio, InvalidParams,
@@ -182,6 +182,26 @@ export function buildTools() {
 const invalid = (msg) => Object.assign(new InvalidParams(msg), { code: -32602 });
 function need(cond, msg) { if (!cond) throw invalid(msg); }
 
+// A field a tool does not take whose value another field takes, or another tool, from the command line's tables: a flag
+// renamed there (by on status and models is group, ci on resume is gh), the name a free text had (why, findings, question
+// and the rest are text), and a retraction asked of evidence (retract's). The refusal names that field or tool, with the
+// call as it is written there, every value given carried.
+function needNoGoneField(cmd, fields) {
+  const call = (tool, input) => `${toolName(tool)} ${JSON.stringify(input)}`;
+  for (const name of Object.keys(fields)) {
+    if (Object.hasOwn(COMMAND_FLAGS[cmd] || {}, name) || (COMMAND_ARGS[cmd] || []).some((a) => a.replace(/[?.]+$/, '') === name)) continue;
+    const to = REMOVED_FLAGS[cmd]?.[name];
+    if (to === 'retract') {
+      const { ids, text, by } = fields;
+      throw invalid(`${toolName(cmd)}: "${name}" is not a field of this tool — a row or a note is taken back with ${toolName('retract')}, and by names who takes it back: ${call('retract', { id: ids ?? '<id>', entry: String(fields[name]), by: by ?? '<who>', text: text ?? '<text>' })}`);
+    }
+    const field = to !== undefined ? to.replace(/^--/, '') : GONE_TEXT_NAMES[cmd] === name ? 'text' : null;
+    if (field === null) continue;
+    const { [name]: value, ...rest } = fields;
+    throw invalid(`${toolName(cmd)}: "${name}" is not a field of this tool — its value goes in "${field}": ${call(cmd, { ...rest, [field]: value })}`);
+  }
+}
+
 // A tool call back into the argv the CLI would be given: the command, every flag inline (--name=value, so a value
 // that starts with -- is never read as a flag), then a bare -- and the arguments in order — the adapter's argvFor.
 // parseArgs then checks it exactly as it checks a command line. "root" is checked here and resolved by the caller,
@@ -192,6 +212,7 @@ export function argvFor(cmd, input = {}) {
     need(typeof input.root === 'string' && input.root.trim() !== '' && isAbsolute(input.root.trim()), `${toolName(cmd)}: "root" must be the absolute path of the directory that holds .jarl/ (got ${JSON.stringify(input.root)}) — leave it out to use JARL_ROOT or the server's working directory`);
   }
   const { root: _root, ...fields } = input;
+  needNoGoneField(cmd, fields);
   // A list flag repeats and a list argument that comes last takes many words, so the adapter carries a list for them.
   // An id list comes before other arguments, so the adapter takes it as one word: given as a list of strings, it
   // reaches the command line as the one comma list it reads there. listItems in dispatch checks the items either way.

@@ -2,7 +2,7 @@
 
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { CI_STATES, fieldText, need } from './base.mjs';
+import { CI_STATES, fieldText, need, shown } from './base.mjs';
 import { needNoOwnersWords } from './owner.mjs';
 import { jarlDir, plainRelative } from './where.mjs';
 import { readText, writeAtomic } from './files.mjs';
@@ -189,9 +189,9 @@ export function appendNote(root, event) {
   needNoOwnersWords('the note', event);
   const text = oneLine(event);
   const id = LEADING_ID.exec(text)?.[1] ?? null;
-  need(!MOVE_SHAPE.test(text), `log writes a note, and "${text.length > 80 ? `${text.slice(0, 77)}...` : text}" has the shape of a move (an id, an arrow), which set writes: ${LINE_WRITERS.move} "<text>"`, () => { const m = /^(\S+)\s+→\s*(\S+)?\s*(.*)$/s.exec(text.trim()); return ['jarl.mjs', 'set', m?.[1] ?? '<ids>', m?.[2] ?? '<status>', m?.[3] || '<text>']; });
+  need(!MOVE_SHAPE.test(text), `log writes a note, and "${text.length > 80 ? `${text.slice(0, 77)}...` : text}" has the shape of a move (an id, an arrow), which set writes: ${LINE_WRITERS.move} "<text>"`, () => { const m = /^(\S+)\s+→\s*(\S+)?\s*(.*)$/s.exec(text.trim()); return ['jarl.mjs', 'set', m?.[1] ?? '<ids>', m?.[2] ?? '<status>', `<the reason of the move${m?.[3] ? `: ${shown(m[3])}` : ''}>`]; });
   const type = id === null ? 'other' : parseEvent(id, text, loadProfile(root)).type;
-  need(type === 'other', `log writes a note, and "${text.length > 80 ? `${text.slice(0, 77)}...` : text}" reads as ${type === 'filed' ? 'a filing' : `a ${type.replace('-', ' ')} line`}, which the journal's own command writes with its checks: ${type === 'row' && attachmentOf(text.slice(`${id} evidence row · `.length)) ? 'jarl.mjs evidence <id> --file <path> --slot <name>' : LINE_WRITERS[type]}`, () => (type === 'tip' ? ['jarl.mjs', 'evidence', '<id>', '--ran', '<command>', '--saw', '<what it printed>'] : LINE_WRITERS[type].replace(' approve|changes', ' approve --by <reviewer> <text>')));
+  need(type === 'other', `log writes a note, and "${text.length > 80 ? `${text.slice(0, 77)}...` : text}" reads as ${type === 'filed' ? 'a filing' : `a ${type.replace('-', ' ')} line`}, which the journal's own command writes with its checks: ${type === 'row' && attachmentOf(text.slice(`${id} evidence row · `.length)) ? 'jarl.mjs evidence <id> --file <path> --slot <name>' : LINE_WRITERS[type]}`, () => (type === 'tip' ? ['jarl.mjs', 'evidence', '<id>', '--ran', '<command>', '--saw', '<what it printed>'] : type === 'filed' ? ['jarl.mjs', 'new', '<title>'] : LINE_WRITERS[type].replace(' approve|changes', ' <approve|changes> --by <reviewer> <text>')));
   appendLog(root, event);
 }
 

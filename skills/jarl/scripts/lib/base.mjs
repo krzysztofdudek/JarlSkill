@@ -61,11 +61,25 @@ function fieldText(v) { return oneBreak(v).replace(/\s+/g, ' ').trim(); }
 // add: true } gives a flag that repeats one more value), { arg, value } sets the n-th argument after the command, { drop }
 // takes a flag off ({ drop, value } only the one with that value, and value null the one given with none), { replace, value } writes value where the call gave
 // replace (a word, or one item of a comma list), { truncate: n } keeps the first n words, { retry: true } is the call again
-// as it was given, { rename, to } writes a flag under another name, { first } is a command to run before the call, printed
-// before it with &&, and an array applies several. A ready command of another command than the refused one is a step
-// before the call too, unless the command line's table of removed forms names that command as the one that does what the
-// call asked. { line } is a command line whose words were quoted with shellWord as it was built, printed as it is. A refusal with no ready part cannot be built: refuse and need throw a TypeError instead, and a test of the
-// sources finds every need and refuse that names none.
+// as it was given, { rename, to } writes a flag under another name (a placeholder as to writes the placeholder where the
+// flag's name was, its value kept), { toArg, at } moves the value of the flag toArg to the at-th argument, { split } is the
+// call as several calls, one per group of flags it names (the flags of no group go with each), { first } is a command to
+// run before the call, printed before it with &&, and an array applies several. A ready command of another command than
+// the refused one is a step before the call too, unless the command line's table of removed forms names that command as
+// the one that does what the call asked. { line } is a command line whose words were quoted with shellWord as it was
+// built, printed as it is; { external } is a command of the tool that runs the loop, named by its profile, printed as it
+// is. A refusal with no ready part cannot be built: refuse and need throw a TypeError instead, and a test of the sources
+// finds every need and refuse that names none.
+//
+// What the ready part writes is one of three things, decided for each refusal and never by choosing a value: the call
+// fixed, carrying every word the caller gave, where the fix is mechanical and cannot change what was meant (a removed form
+// and the form that replaces it, a bare -- before a text that starts with dashes, the right name or place for the same
+// value, a value of a closed set written in another case); a step that has to come first, then the call; or, where what
+// was meant is not determined by the words given (a value outside the allowed set, an id the loop does not hold, a part
+// the command does not write, an author who may not do this), the call with a placeholder where that value goes, naming
+// the values allowed. A placeholder is always a whole value, so a ready line pasted unfilled is refused for it and writes
+// nothing; and a ready line never does an act that is someone else's (an owner's answer, a ratification, an approve, a
+// sign-off, close --force, a removal of text): it says who does it and ends with the placeholder or the question to ask.
 export class Refusal extends Error {
   constructor(reason, ready) {
     super(`${reason}\n${readyText(ready)}`);
@@ -73,10 +87,25 @@ export class Refusal extends Error {
     this.ready = ready;
   }
 }
-const FIX_KEYS = ['flag', 'arg', 'drop', 'replace', 'truncate', 'retry', 'rename', 'first'];
+// A placeholder: a value written as one angle-bracketed token (<id>, <open|done>, <what was read>), where a value only the
+// caller knows goes. Only a whole value is one: a text that holds <x> among other words is a text. The command line
+// refuses a placeholder wherever it takes a value, so it is never recorded as data.
+export const isPlaceholder = (v) => typeof v === 'string' && /^<[^<>]+>$/.test(v.trim());
+// The placeholder of a value of a closed set: the values allowed, joined by |.
+export const placeholderOf = (values) => `<${[].concat(values).map(String).join('|')}>`;
+// A text the caller gave, as it goes inside a placeholder that asks for it rewritten: whole, its angle brackets left out.
+export const shown = (text) => String(text ?? '').replace(/[<>]/g, '').trim();
+// The value a refusal writes where a value outside a closed set was given: the one value of the set it is but for case,
+// which cannot change what was meant, else the placeholder of the set.
+export function oneOf(given, allowed) {
+  const same = allowed.filter((a) => String(a).toLowerCase() === String(given ?? '').trim().toLowerCase());
+  return same.length === 1 ? String(same[0]) : placeholderOf(allowed);
+}
+const FIX_KEYS = ['flag', 'arg', 'drop', 'replace', 'truncate', 'retry', 'rename', 'toArg', 'split', 'first'];
 const isFix = (r) => r !== null && typeof r === 'object' && !Array.isArray(r) && FIX_KEYS.some((k) => Object.hasOwn(r, k));
+const isExternal = (r) => r !== null && typeof r === 'object' && !Array.isArray(r) && typeof r.external === 'string' && r.external.trim() !== '';
 function checkReady(ready) {
-  if (isLine(ready)) return true;
+  if (isLine(ready) || isExternal(ready)) return true;
   if (Array.isArray(ready) && ready.length && ready.every(isFix)) return ready.every((f) => f.first === undefined || checkReady(f.first));
   if (isFix(ready)) return ready.first === undefined || checkReady(ready.first);
   const words = Array.isArray(ready) ? ready.map(String) : typeof ready === 'string' ? commandWords(ready) : [];
@@ -96,6 +125,7 @@ const isLine = (r) => r !== null && typeof r === 'object' && !Array.isArray(r) &
 // A command as the shell is given it: every word quoted where the shell would read it, && kept between two commands.
 export function commandLine(ready) {
   if (isLine(ready)) return ready.line;
+  if (isExternal(ready)) return ready.external.trim();
   const words = Array.isArray(ready) ? ready.map(String) : commandWords(ready);
   return words.map((w) => (w === '&&' ? w : shellWord(w))).join(' ');
 }
@@ -105,9 +135,10 @@ export function readyText(ready) {
   const fixes = [].concat(ready).filter(isFix);
   if (!fixes.length) return commandLine(ready);
   return fixes.map((f) => (f.first !== undefined ? `after ${commandLine(f.first)}` : f.drop !== undefined ? `without ${f.drop}${f.value === undefined ? '' : ` ${shellWord(f.value)}`}` : f.flag !== undefined ? `${f.flag}${f.value === undefined ? '' : ` ${shellWord(f.value)}`}`
-    : f.retry ? 'the same call again' : f.rename !== undefined ? `${f.to} in place of ${f.rename}` : f.replace !== undefined ? `${shellWord(f.value)} in place of ${shellWord(f.replace)}` : f.truncate !== undefined ? `no word after the first ${f.truncate}` : `argument ${f.arg + 1}: ${shellWord(f.value)}`)).join(' ');
+    : f.retry ? 'the same call again' : f.rename !== undefined ? `${shellWord(f.to)} in place of ${f.rename}` : f.toArg !== undefined ? `the value of ${f.toArg} as argument ${f.at + 1}` : f.split !== undefined ? `one call for each of ${f.split.map((g) => g.map((k) => `--${k}`).join(' ')).join(', ')}`
+      : f.replace !== undefined ? `${shellWord(f.value)} in place of ${shellWord(f.replace)}` : f.truncate !== undefined ? `no word after the first ${f.truncate}` : `argument ${f.arg + 1}: ${shellWord(f.value)}`)).join(' ');
 }
-export { isFix };
+export { isFix, isExternal };
 export function refuse(reason, ready) {
   if (typeof reason !== 'string' || !reason.trim() || !checkReady(ready)) throw new TypeError(`a refusal is built from a reason and a ready part (a jarl.mjs command or a fix of the call): ${JSON.stringify(reason)}`);
   throw new Refusal(reason, ready);

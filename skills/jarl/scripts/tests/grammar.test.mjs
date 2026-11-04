@@ -82,7 +82,7 @@ test('a tool call that names a retraction through evidence or review is refused,
   const root = loop();
   const id = worked(root);
   const said = (r) => r.content.map((c) => c.text).join('\n');
-  assert.throws(() => mcp.callTool('jarl_evidence', { ids: id, retract: '1', by: 'jarl', text: 'the row was wrong', root }), /unknown field "retract"/);
+  assert.throws(() => mcp.callTool('jarl_evidence', { ids: id, retract: '1', by: 'jarl', text: 'the row was wrong', root }), /"retract" is not a field of this tool — a row or a note is taken back with jarl_retract, and by names who takes it back: jarl_retract \{"id":"001","entry":"1","by":"jarl","text":"the row was wrong"\}$/);
   const review = mcp.callTool('jarl_review', { ids: id, verdict: 'retract', by: 'jarl', text: 'the verdict was wrong', root });
   assert.ok(review.isError);
   assert.match(said(review), /a verdict is taken back with retract\njarl\.mjs retract 001 review 'the verdict was wrong' --by jarl$/);
@@ -101,7 +101,7 @@ test('field writes Resources and the fields a profile declares; set takes status
   assert.match(refuses(root, 'field', '1', 'open', 'x'), /open is not a part of the description/);
   assert.match(refuses(root, 'field', '1', 'Note', 'x', '--worker', 'w'), /unknown flag --worker for field/);
   assert.equal(refuses(root, 'set', '1', 'Note', 'x', '--worker', 'w').trim(), 'Note is a field, not a status\njarl.mjs field 1 Note x');
-  assert.match(refuses(root, 'set', '1', 'Files', 'x'), /^status must be one of: open, in-progress, done, dropped, deferred\njarl\.mjs set 1 open x\n$/);
+  assert.match(refuses(root, 'set', '1', 'Files', 'x'), /^status must be one of: open, in-progress, done, dropped, deferred\njarl\.mjs set 1 '<open\|in-progress\|done\|dropped\|deferred>' x\n$/);
   assert.match(refuses(root, 'set', '1', 'bogus', 'x'), /status must be one of: /);
   assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /· 1 field Resources · gate, db · was \(none\)\n.*· 2 field Resources · gate, db · was \(none\)\n/);
 });

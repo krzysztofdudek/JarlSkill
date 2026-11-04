@@ -2,7 +2,7 @@
 
 import { existsSync } from 'node:fs';
 import { resolve, dirname, basename, relative, isAbsolute } from 'node:path';
-import { KEPT_KINDS, KINDS, PRIORITIES, fieldText, need, refuse, slugify, splitList } from './base.mjs';
+import { KEPT_KINDS, KINDS, PRIORITIES, fieldText, need, oneOf, refuse, slugify, splitList } from './base.mjs';
 import { git } from './git.mjs';
 import { canonical } from './where.mjs';
 import { readText } from './files.mjs';
@@ -113,8 +113,8 @@ export function reportDirOf(file) {
 }
 
 function readFindings(file, flags = {}) {
-  need(file, 'a findings file is required', 'jarl.mjs import <findings.json>');
-  need(existsSync(file), `no such file: ${file}`, `jarl.mjs import <findings.json>`);
+  need(file, 'a findings file is required', () => ({ arg: 0, value: '<findings.json>' }));
+  need(existsSync(file), `no such file: ${file}`, () => ({ arg: 0, value: '<findings.json>' }));
   let json;
   try { json = JSON.parse(readText(file)); } catch (e) { refuse(`${file} is not JSON: ${e.message}`, ['jarl.mjs', 'import', '<findings.json>', '--dry-run']); }
   const dir = flags.source !== undefined ? String(flags.source).replace(/\/+$/, '') : reportDirOf(file);
@@ -166,10 +166,10 @@ export function cmdImport(root, file, flags) {
   needLiveLoop(root, ' — run: jarl.mjs init "<goal>"');
   const { dir, findings: read } = readFindings(file, flags);
   const profile = loadProfile(root);
-  if (flags.kind !== undefined) need(profile.kinds.includes(flags.kind), `--kind must be one of: ${profile.kinds.join(', ')}`, () => ({ flag: '--kind', value: `${profile.kindDefault}` }));
+  if (flags.kind !== undefined) need(profile.kinds.includes(flags.kind), `--kind must be one of: ${profile.kinds.join(', ')}`, () => ({ flag: '--kind', value: oneOf(flags.kind, profile.kinds) }));
   need(!profile.keptKind(flags.kind), `--kind ${flags.kind}: a finding is work, never a promise or a wait — file one of those with jarl.mjs new "<title>" --kind ${flags.kind}`, () => (['jarl.mjs', 'new', '<title>', '--kind', flags.kind]));
-  if (flags.prio !== undefined) need(PRIORITIES.includes(String(flags.prio)), '--prio must be 1, 2 or 3', () => ({ flag: '--prio', value: '2' }));
-  if (flags.tier !== undefined) need(profile.tiers.includes(String(flags.tier)), `--tier must be one of: ${profile.tiers.join(', ')}`, () => ({ flag: '--tier', value: `${profile.tierDefault}` }));
+  if (flags.prio !== undefined) need(PRIORITIES.includes(String(flags.prio)), '--prio must be 1, 2 or 3', () => ({ flag: '--prio', value: oneOf(flags.prio, PRIORITIES) }));
+  if (flags.tier !== undefined) need(profile.tiers.includes(String(flags.tier)), `--tier must be one of: ${profile.tiers.join(', ')}`, () => ({ flag: '--tier', value: oneOf(flags.tier, profile.tiers) }));
   // A finding's kind is mapped onto the built-in kinds; under a profile with kinds of its own, one it does not
   // name is filed under the profile's default kind.
   const findings = profile.declared ? read.map((f) => (profile.kinds.includes(f.kind) && !profile.keptKind(f.kind) ? f : { ...f, kind: profile.kindDefault })) : read;
@@ -179,7 +179,7 @@ export function cmdImport(root, file, flags) {
   if (flags.only !== undefined) {
     const only = splitList(flags.only);
     const unknown = only.filter((id) => !findings.some((f) => f.id === id));
-    need(unknown.length === 0, `not in ${file}: ${unknown.join(', ')}`, () => ({ drop: '--only' }));
+    need(unknown.length === 0, `not in ${file}: ${unknown.join(', ')}`, () => ({ flag: '--only', value: '<the finding ids the file holds>' }));
     chosen = findings.filter((f) => only.includes(f.id));
   }
   const issues = loadIssues(root);
@@ -226,7 +226,7 @@ export function cmdSources(root, files, flags = {}) {
   const filedAs = bySource(issues);
   const reports = new Map();   // dir -> ordered finding ids
   const add = (dir, id) => { if (!reports.has(dir)) reports.set(dir, []); if (!reports.get(dir).includes(id)) reports.get(dir).push(id); };
-  need(files.length <= 1 || flags.source === undefined, '--source names one report directory: give one findings file with it', () => ({ drop: '--source' }));
+  need(files.length <= 1 || flags.source === undefined, '--source names one report directory: give one findings file with it', () => ({ rename: '--source', to: '<--source with one findings file, or none>' }));
   const mentionKey = new Map();
   for (const file of files) { const { dir, findings } = readFindings(file, flags); findings.forEach((f) => { add(dir, f.id); mentionKey.set(`${dir}#${f.id}`, f); }); }
   for (const key of filedAs.keys()) { const at = key.indexOf('#'); add(key.slice(0, at), key.slice(at + 1)); }

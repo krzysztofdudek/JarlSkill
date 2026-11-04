@@ -28,7 +28,7 @@ const short = (t, n = RESUME_TITLE) => (t.length > n ? `${t.slice(0, n - 1)}…`
 function countFlag(flags, name, dflt) {
   if (flags[name] === undefined) return dflt;
   const n = Number(flags[name]);
-  need(Number.isInteger(n) && n >= 0, `--${name} takes a whole number, 0 or more (got "${flags[name]}")`, () => ({ flag: `--${name}`, value: String(dflt) }));
+  need(Number.isInteger(n) && n >= 0, `--${name} takes a whole number, 0 or more (got "${flags[name]}")`, () => ({ flag: `--${name}`, value: `<a whole number, 0 or more; ${dflt} when left out>` }));
   return n;
 }
 

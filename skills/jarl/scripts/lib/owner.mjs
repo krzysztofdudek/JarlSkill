@@ -94,7 +94,7 @@ export function rulingAuthor(by) {
   need(name, '--by needs a value — who ruled or answered: owner, jarl, or a name', () => ({ flag: '--by', value: '<who>' }));
   const letters = normalForm(name).replace(/[^\p{L}]/gu, '');
   if (letters === OWNER || letters === `the${OWNER}`) return OWNER;
-  need(!letters.includes(OWNER), `--by "${name}" reads as the owner and names someone else: write owner for the owner, and a name without "owner" in it for anyone else`, () => ({ flag: '--by', value: 'owner' }));
+  need(!letters.includes(OWNER), `--by "${name}" reads as the owner and names someone else: write owner for the owner, and a name without "owner" in it for anyone else`, () => ({ flag: '--by', value: '<owner, or a name without owner in it>' }));
   return name;
 }
 

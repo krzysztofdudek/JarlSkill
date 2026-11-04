@@ -88,7 +88,7 @@ test('field adds and removes the items of a list field, each issue keeping what 
   jarl(root, 'field', '1', 'Tags', 'a', '--add');
   jarl(root, 'field', '1', 'Tags', 'zzz', '--remove');
   assert.equal(logLines(root).length, count, 'an item held already, or not held at all, writes nothing');
-  assert.match(refuses(root, 'field', '1', 'Priority', '1', '--add'), /^Priority holds one value, so it is replaced, never added to or taken from; .*\njarl\.mjs field 1 Priority 1\n$/);
+  assert.match(refuses(root, 'field', '1', 'Priority', '1', '--add'), /^Priority holds one value, so it is replaced, never added to or taken from; .*\njarl\.mjs field 1 Priority '<the whole new Priority>'\n$/);
   assert.match(refuses(root, 'field', '1', 'Tags', 'a', '--add', '--clear'), /field takes one of --add, --remove and --clear, not --add and --clear/);
   assert.match(refuses(root, 'field', '1', 'Tags', '--add'), /^field Tags needs a value, or --clear to empty it\njarl\.mjs field 1 Tags '<value>' --add\n$/);
 });
@@ -229,7 +229,7 @@ test('status and models group with --group; --by on them is refused with the cal
   assert.equal(JSON.parse(jarl(root, 'status', '--group', 'kind', '--json')).by.key, 'kind');
   assert.equal(refuses(root, 'status', '--by', 'repo').trim(), 'status groups its counts with --group, and --by names the author of a write\njarl.mjs status --group repo');
   assert.equal(refuses(root, 'models', '--by', 'tag').trim(), 'models groups its counts with --group, and --by names the author of a write\njarl.mjs models --group tag');
-  assert.match(refuses(root, 'status', '--group', 'colour'), /^--group is one of: repo, tag, kind, prio, area \(got "colour"\)\njarl\.mjs status --group repo\n$/);
+  assert.match(refuses(root, 'status', '--group', 'colour'), /^--group is one of: repo, tag, kind, prio, area \(got "colour"\)\njarl\.mjs status --group '<repo\|tag\|kind\|prio\|area>'\n$/);
   assert.equal(JSON.parse(jarl(root, 'models', '--group', 'tag', '--json')).by, 'tag');
 });
 
@@ -395,6 +395,9 @@ const STALE = [
   new RegExp(`\\bjarl_(?:${GONE})\\b`),
   /\b(?:status|models) [^`|]*--by\b/, /\bevidence [^`|]*--retract\b/, /\breview <ids?> retract\b/,
   /\bresume [^`|]*--ci\b/,
+  // A repository's base through repo, a verdict taken back through review, and the tool fields those forms had.
+  /(?<![-\w])repo (?:<[^>]+>|[\w.-]+) --base\b/, /\breview (?!retract\b)(?:<[^>]+>|[\w,-]+) retract\b/,
+  /\bjarl_evidence\b[^`\n]*?[{,]\s*"?retract"?\s*:/, /\bjarl_(?:status|models)\b[^`\n]*?[{,]\s*"?by"?\s*:/, /\bjarl_(?:resume|handoff)\b[^`\n]*?[{,]\s*"?ci"?\s*:/,
   new RegExp(`\\b(?:${OLD_TEXT_NAMES}): "`),
   new RegExp(`"<(?:${OLD_TEXT_NAMES})>"`),
   // A call with its id or slug (not a flag named alone, not an elided …) and words after it.
@@ -420,7 +423,22 @@ test('SKILL.md, the references, the help, the tool descriptions and the server i
     'jarl_review { ids: "1", verdict: "approve", findings: "read it" }', 'jarl_set { ids: "1", status: "deferred", why: "later" }', 'jarl_ask { question: "which?" }',
     'jarl_decide { slug: "s", ruling: "r" }', 'jarl_answer { id: "a-1", answer: "yes" }', 'jarl_log { event: "x" }', 'jarl_retract { reason: "x" }', 'jarl_evidence { what: "x" }',
     '`jarl.mjs answer a-1 "yes"`', '`decide the-way "we go"`', 'jarl.mjs round 1 "<why>"', 'jarl.mjs review 1 approve --by r "<findings>"',
+    'the base moves with `repo tool --base develop`', 'or repo <name> --base <branch>', 'take it back with `review 7 retract --by r "x"`', 'review <n> retract',
+    'jarl_evidence { ids: "1", retract: "2" }', 'jarl_status { by: "repo" }', 'jarl_models {"by": "tag"}', 'jarl_resume { ci: true }',
   ];
   for (const line of planted) assert.equal(staleHits([['SKILL.md', `${texts[0][1]}\n${line}`]]).length, 1, line);
-  for (const line of ['`jarl.mjs answer a-1 "yes" --by owner`', '`decide the-way "we go" --by jarl`', '`answer` records who answered']) assert.deepEqual(staleHits([['x', line]]), [], line);
+  for (const line of ['`jarl.mjs answer a-1 "yes" --by owner`', '`decide the-way "we go" --by jarl`', '`answer` records who answered', 'resume --repo tool --base main', '`7 review retract · by r`', 'jarl_status { group: "repo" }', 'jarl_resume { gh: true }']) assert.deepEqual(staleHits([['x', line]]), [], line);
+});
+
+test('a tool refuses a field it does not take whose value another field or tool takes, naming that one, with the call written there', () => {
+  const root = fieldedLoop();
+  const refused = (tool, input) => mcp.handle({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: tool, arguments: { root, ...input } } }).error.message;
+  assert.match(refused('jarl_status', { by: 'repo' }), /^jarl_status: "by" is not a field of this tool — its value goes in "group": jarl_status \{"group":"repo"\}$/);
+  assert.match(refused('jarl_models', { by: 'tag' }), /"by" is not a field of this tool — its value goes in "group"/);
+  assert.match(refused('jarl_resume', { ci: true }), /^jarl_resume: "ci" is not a field of this tool — its value goes in "gh": jarl_resume \{"gh":true\}$/);
+  assert.match(refused('jarl_set', { ids: '1', status: 'deferred', why: 'later' }), /"why" is not a field of this tool — its value goes in "text": jarl_set \{"ids":"1","status":"deferred","text":"later"\}$/);
+  assert.match(refused('jarl_review', { ids: '1', verdict: 'approve', by: 'rev', findings: 'read it all here' }), /"findings" is not a field of this tool — its value goes in "text"/);
+  assert.match(refused('jarl_evidence', { ids: '1', retract: '2', by: 'jarl', text: 'the row ran elsewhere' }), /^jarl_evidence: "retract" is not a field of this tool — a row or a note is taken back with jarl_retract, and by names who takes it back: jarl_retract \{"id":"1","entry":"2","by":"jarl","text":"the row ran elsewhere"\}$/);
+  // A field no table names is refused with the fields the tool takes.
+  assert.match(refused('jarl_status', { colour: 'red' }), /unknown field "colour" — it takes /);
 });

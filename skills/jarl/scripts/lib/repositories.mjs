@@ -71,7 +71,7 @@ export function repoOf(root, named) {
   // declared file or a removed test would be read from the wrong place and go unseen.
   const top = git(repo, ['rev-parse', '--show-toplevel']);
   need(top !== null || git(repo, ['rev-parse', '--is-bare-repository']) !== 'true', `${repo} is a bare repository: it has no working tree to act on`, () => ({ replace: String(repo), value: '<name|path>' }));
-  need(top !== null && canonical(top) === canonical(repo), name ? `${repo} is inside the repository at ${top}, not its root — ${nameFix(root, name)}` : `${repo} is inside the repository at ${top}, not its root — name the root: ${portablePath(relative(canonical(root), canonical(top || repo))) || '.'}`, () => ({ replace: String(repo), value: top }));
+  need(top !== null && canonical(top) === canonical(repo), name ? `${repo} is inside the repository at ${top}, not its root — ${nameFix(root, name)}` : `${repo} is inside the repository at ${top}, not its root — name the root: ${portablePath(relative(canonical(root), canonical(top || repo))) || '.'}`, () => ({ replace: String(repo), value: `<${portablePath(relative(canonical(root), canonical(top || repo))) || '.'}, the root of that repository>` }));
   RESOLVED.set(key, repo);
   return repo;
 }

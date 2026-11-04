@@ -1,6 +1,6 @@
 // Rounds, branches and checks.
 
-import { ROUNDS_BEFORE_TAKEOVER, STALE_HOURS, fieldText, need, noSeparators } from './base.mjs';
+import { ROUNDS_BEFORE_TAKEOVER, STALE_HOURS, fieldText, need, noSeparators, placeholderOf } from './base.mjs';
 import { needNoOwnersWords } from './owner.mjs';
 import { git } from './git.mjs';
 import { canonical, jarlDir, portablePath } from './where.mjs';
@@ -66,7 +66,7 @@ export function cmdRound(root, rawId, what, dry = false, opts = {}) {
   needNoOwnersWords('the round', what);
   need(what, 'round requires "<text>", what failed', () => ({ arg: 1, value: '<what failed>' }));
   const found = opts.findings;
-  need(found === undefined || (/^\d+$/.test(String(found)) && Number(found) <= FINDINGS_MAX), `--findings must be a whole number up to ${FINDINGS_MAX}`, () => ({ flag: '--findings', value: `2` }));
+  need(found === undefined || (/^\d+$/.test(String(found)) && Number(found) <= FINDINGS_MAX), `--findings must be a whole number up to ${FINDINGS_MAX}`, () => ({ flag: '--findings', value: `<the count of findings left, 0 to ${FINDINGS_MAX}>` }));
   const issue = findIssue(root, rawId);
   need(issue, `no such issue: ${rawId}`, () => ({ replace: rawId, value: '<id>' }));
   if (dry) return { id: issue.id };
@@ -165,17 +165,17 @@ export function cmdCheck(root, rawId, flags) {
   if (rawId === undefined) {
     const profile = loadProfile(root);
     pkg = loadIssues(root).filter((i) => i.fields.branch === flags.branch && (profile.is(i.status, 'holds-claim') || profile.is(i.status, 'closes-record')));
-    if (!pkg.length) need(false, unrecordedBranch(root, flags), () => [{ first: ['jarl.mjs', 'new', '<what the branch does>', '--tier', 'standard'] }, { first: ['jarl.mjs', 'set', '<the id new prints>', 'in-progress', '<why>', '--branch', flags.branch] }, { retry: true }]);
+    if (!pkg.length) need(false, unrecordedBranch(root, flags), () => [{ first: ['jarl.mjs', 'new', '<what the branch does>', '--tier', placeholderOf(loadProfile(root).tiers)] }, { first: ['jarl.mjs', 'set', '<the id new prints>', 'in-progress', '<why>', '--branch', flags.branch] }, { retry: true }]);
     if (flags.repo === undefined) {
       const repos = new Map();
       for (const i of pkg) for (const r of issuePlaces(root, i)) repos.set(r, [...(repos.get(r) || []), i.id]);
-      need(repos.size === 1, `the issues on ${flags.branch} name different repositories (${[...repos.values()].map((ids) => ids.join(', ')).join(' | ')}) — check them one by one, or pass --repo`, () => ({ arg: 0, value: [...repos.values()][0][0] }));
+      need(repos.size === 1, `the issues on ${flags.branch} name different repositories (${[...repos.values()].map((ids) => ids.join(', ')).join(' | ')}) — check them one by one, or pass --repo`, () => ({ arg: 0, value: placeholderOf([...repos.values()].flat()) }));
     }
   } else {
     const issue = findIssue(root, rawId);
     need(issue, `no such issue: ${rawId}`, () => ({ replace: rawId, value: '<id>' }));
     pkg = [issue];
-    need(flags.repo !== undefined || reposNamed(issue).length <= 1, `${issue.id} names several repositories (${reposNamed(issue).join(', ')}) — check one at a time with --repo <path>`, () => ({ flag: '--repo', value: reposNamed(issue)[0] }));
+    need(flags.repo !== undefined || reposNamed(issue).length <= 1, `${issue.id} names several repositories (${reposNamed(issue).join(', ')}) — check one at a time with --repo <path>`, () => ({ flag: '--repo', value: placeholderOf(reposNamed(issue)) }));
   }
   const issue = pkg[0];
   const repo = flags.repo !== undefined ? repoFromInput(root, flags.repo).main : repoOf(root, reposNamed(issue)[0]);
@@ -261,7 +261,7 @@ export function renderBranches(rows, root) {
 function staleHours(flags) {
   if (flags['stale-hours'] === undefined) return STALE_HOURS;
   const h = Number(flags['stale-hours']);
-  need(Number.isFinite(h) && h > 0, `--stale-hours takes a positive number of hours (got "${flags['stale-hours']}")`, () => ({ flag: '--stale-hours', value: '6' }));
+  need(Number.isFinite(h) && h > 0, `--stale-hours takes a positive number of hours (got "${flags['stale-hours']}")`, () => ({ flag: '--stale-hours', value: '<hours, a positive number>' }));
   return h;
 }
 

@@ -2,7 +2,7 @@
 
 import { existsSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { PROMISE_KIND, fieldText, need } from './base.mjs';
+import { PROMISE_KIND, fieldText, need, oneOf, placeholderOf } from './base.mjs';
 import { needNoOwnersWords } from './owner.mjs';
 import { git } from './git.mjs';
 import { jarlDir, stamp } from './where.mjs';
@@ -28,15 +28,15 @@ import { ownerLineNotes, ownerLineWait } from './owner-lines.mjs';
 export function cmdEvidence(root, rawIds, text, flags) {
   needNoOwnersWords('the evidence', text, flags);
   const attaching = Boolean(flags) && (flags.file !== undefined || flags.slot !== undefined);
-  need(!attaching || (text === undefined && flags.ran === undefined && flags.saw === undefined && flags.retract === undefined), 'evidence takes an attachment (--file with --slot), or free text, or --ran/--saw rows, or a retraction, not both', () => ({ drop: '--file' }));
+  need(!attaching || (text === undefined && flags.ran === undefined && flags.saw === undefined && flags.retract === undefined), 'evidence takes an attachment (--file with --slot), or free text, or --ran/--saw rows, or a retraction, not both: one call for each', () => ({ split: [['file', 'slot'], ...(text !== undefined ? [['arguments']] : []), ...(flags.ran !== undefined || flags.saw !== undefined ? [['ran', 'saw']] : [])] }));
   if (flags && flags.retract !== undefined) return retractEvidence(root, rawIds, text, flags);
   let rows = null;
   if (attaching) rows = attachmentRow(root, rawIds, flags);
   else if (flags && (flags.ran !== undefined || flags.saw !== undefined)) {
     rows = rowsOf(flags);
     // The log stores a command trimmed and cut to its first line, so the shape is judged on that, in any case.
-    need(!rows.some((r) => attachmentOf(String(r.ran).replace(/\r\n?/g, '\n').trim().split('\n')[0].trim().toLowerCase())),'a row shaped as an attachment is written only by --file and --slot, which read the file and record its hash', () => ({ drop: '--ran' }));
-    need(text === undefined, `evidence takes free text or --ran/--saw rows, not both (got "${text}" as well) — a value starting with -- goes after a bare --`, () => ({ replace: text, value: '' }));
+    need(!rows.some((r) => attachmentOf(String(r.ran).replace(/\r\n?/g, '\n').trim().split('\n')[0].trim().toLowerCase())),'a row shaped as an attachment is written only by --file and --slot, which read the file and record its hash', () => ({ rename: '--ran', to: '<--file with --slot, which read the file>' }));
+    need(text === undefined, `evidence takes free text or --ran/--saw rows, not both (got "${text}" as well) — a value starting with -- goes after a bare --; one call for each`, () => ({ split: [['arguments'], ['ran', 'saw']] }));
   } else {
     need(text, 'evidence requires a note or a row', () => ({ arg: 1, value: '<text>' }));
   }
@@ -66,29 +66,30 @@ function retractedBy(flags, what) {
 const struck = (line) => line.replace(/^- /, '- ~~');
 
 function retractEvidence(root, rawIds, reason, flags) {
-  need(!isBulk(rawIds), 'retract names one issue and one row or note', () => ({ replace: rawIds, value: String(rawIds).split(',')[0] }));
+  need(!isBulk(rawIds), 'retract names one issue and one row or note', () => ({ arg: 0, value: placeholderOf(String(rawIds).split(',').map((s) => s.trim()).filter(Boolean)) }));
   need(flags.ran === undefined && flags.saw === undefined, 'a retraction takes a row or note number and a reason, not a new --ran/--saw row', () => ({ drop: '--ran' }));
   const raw = String(flags.retract);
   const noteRaw = /^note-(\d+)$/.exec(raw);
   if (noteRaw) return retractNote(root, rawIds, reason, flags, Number(noteRaw[1]));
-  need(/^\d+$/.test(raw) && Number(raw) >= 1, `retract takes the number of an evidence row as show prints it (1, 2, …) or a note as note-1, note-2, …; got "${raw}"`, () => ({ replace: raw, value: '1' }));
+  need(/^\d+$/.test(raw) && Number(raw) >= 1, `retract takes the number of an evidence row as show prints it (1, 2, …) or a note as note-1, note-2, …; got "${raw}"`, () => ({ replace: raw, value: '<n|note-n>' }));
   const n = Number(raw);
   const by = retractedBy(flags, 'a retraction');
   needSaid(reason, 'a retraction');
   const [issue] = issuesFor(root, rawIds);
   const text = readText(issue.file);
   const table = evidenceTable(parseIssue(text, issue.file).sections.evidence);
-  // With no row to take back, the row comes first: the ready call records one and retracts it by its number.
-  const rowFirst = () => [{ first: ['jarl.mjs', 'evidence', issue.id, '--ran', '<command>', '--saw', '<what it printed>'] }, { replace: raw, value: String(table.rows.length + 1) }];
+  // The rows a retraction can take: the ones not retracted, by the numbers show prints; with none, a note may be meant.
+  const liveRows = table.rows.map((r, k) => (r.retracted ? null : String(k + 1))).filter(Boolean);
+  const rowFirst = () => ({ replace: raw, value: liveRows.length ? placeholderOf(liveRows) : `<note-n: ${issue.id} has no row to retract>` });
   need(table.rows.length > 0, `${issue.id} has no evidence row to retract`, rowFirst);
   const row = table.rows[n - 1];
-  need(row, `${issue.id} has ${table.rows.length} evidence row${table.rows.length === 1 ? '' : 's'}: there is no row ${n}`, () => ({ replace: raw, value: String(table.rows.length) }));
+  need(row, `${issue.id} has ${table.rows.length} evidence row${table.rows.length === 1 ? '' : 's'}: there is no row ${n}`, rowFirst);
   const live = table.rows.findLastIndex((r) => !r.retracted);
-  need(!row.retracted, `row ${n} of ${issue.id} is retracted already${live === -1 ? ', as is every row it holds' : `; row ${live + 1} is not`}`, () => (live === -1 ? rowFirst() : { replace: raw, value: String(live + 1) }));
+  need(!row.retracted, `row ${n} of ${issue.id} is retracted already${live === -1 ? ', as is every row it holds' : `; row ${live + 1} is not`}`, rowFirst);
   // An issue read from its header has no log rows of its own: its file's rows are the only ones.
   const journalRows = issue.byHeader ? [] : (journalById(root).get(issue.id) || []).filter((e) => e.type === 'row');
-  need(journalRows.length === 0 || journalRows.length === table.rows.length, `${issue.id} holds ${table.rows.length} evidence row${table.rows.length === 1 ? '' : 's'} and its log ${journalRows.length}, so the row numbers cannot be matched to the log; nothing was written`, () => (['jarl.mjs', 'verify']));
-  need(journalRows.length === 0 || alignRows(issue.id, table.rows, journalRows)[n - 1], `row ${n} of ${issue.id} matches no evidence line of the log, so its retraction could not be told from another row's; nothing was written`, () => (['jarl.mjs', 'verify']));
+  need(journalRows.length === 0 || journalRows.length === table.rows.length, `${issue.id} holds ${table.rows.length} evidence row${table.rows.length === 1 ? '' : 's'} and its log ${journalRows.length}, so the row numbers cannot be matched to the log; nothing was written; what the record holds: jarl.mjs verify`, () => ({ replace: raw, value: '<a row the log matches>' }));
+  need(journalRows.length === 0 || alignRows(issue.id, table.rows, journalRows)[n - 1], `row ${n} of ${issue.id} matches no evidence line of the log, so its retraction could not be told from another row's; nothing was written; what the record holds: jarl.mjs verify`, () => ({ replace: raw, value: '<a row the log matches>' }));
   // The first retraction of a loop raises the record format, before its line is written: a reader of format 1 does not
   // read a retraction and would go on counting the row, so it must refuse the loop instead.
   needFormat(root, 'retraction');
@@ -104,20 +105,21 @@ function retractEvidence(root, rawIds, reason, flags) {
 // A free-text note taken back: struck through where it stands, and an entry saying who retracted it and why appended to
 // Notes. The note numbers are the ones show prints as note-<n>, counted over the whole section.
 function retractNote(root, rawIds, reason, flags, n) {
-  need(n >= 1, `retract takes a note as note-1, note-2, …; got "note-${n}"`, () => ({ replace: `note-${n}`, value: 'note-1' }));
+  need(n >= 1, `retract takes a note as note-1, note-2, …; got "note-${n}"`, () => ({ replace: String(flags.retract), value: '<note-n>' }));
   const by = retractedBy(flags, 'a retraction');
   needSaid(reason, 'a retraction');
   const [issue] = issuesFor(root, rawIds);
   const text = readText(issue.file);
   const table = evidenceNotes(parseIssue(text, issue.file).sections.evidence);
-  // With no note to take back, the note comes first: the ready call writes one and retracts it by its number.
+  // The notes a retraction can take: the ones not retracted, as note-<n>; with none, a row may be meant.
   const given = String(flags.retract);
-  const noteFirst = () => [{ first: ['jarl.mjs', 'evidence', issue.id, '<the note>'] }, { replace: given, value: `note-${table.notes.length + 1}` }];
+  const liveNotes = table.notes.map((x, k) => (x.retracted ? null : `note-${k + 1}`)).filter(Boolean);
+  const noteFirst = () => ({ replace: given, value: liveNotes.length ? placeholderOf(liveNotes) : `<a row number: ${issue.id} has no note to retract>` });
   need(table.notes.length > 0, `${issue.id} has no evidence note to retract`, noteFirst);
   const note = table.notes[n - 1];
-  need(note, `${issue.id} has ${table.notes.length} evidence note${table.notes.length === 1 ? '' : 's'}: there is no note ${n}`, () => ({ replace: given, value: `note-${table.notes.length}` }));
+  need(note, `${issue.id} has ${table.notes.length} evidence note${table.notes.length === 1 ? '' : 's'}: there is no note ${n}`, noteFirst);
   const live = table.notes.findLastIndex((x) => !x.retracted);
-  need(!note.retracted, `note ${n} of ${issue.id} is retracted already${live === -1 ? ', as is every note it holds' : `; note ${live + 1} is not`}`, () => (live === -1 ? noteFirst() : { replace: given, value: `note-${live + 1}` }));
+  need(!note.retracted, `note ${n} of ${issue.id} is retracted already${live === -1 ? ', as is every note it holds' : `; note ${live + 1} is not`}`, noteFirst);
   // The format is raised before the line is written, as a row's retraction does: a reader of format 1 would show the note.
   needFormat(root, 'note-retraction');
   const entry = `- **retracted:** note ${n} · by ${by} · ${stamp().slice(0, 10)}\n${bodyText(reason).split('\n').map((l) => (l ? `  ${l}` : '')).join('\n')}`;
@@ -360,8 +362,8 @@ function statusOf(root, loop, flags) {
   // --tag: every section below is computed over the issues carrying that tag only; an After issue outside the tag is
   // still read for what it is (byId holds them all), so waiting means the same thing in the scope as in the whole.
   // --slice: the same scoping over the issues of one coordinator's slice, and the escalations that name the slice.
-  need(flags.tag === undefined || flags.slice === undefined, '--tag and --slice each scope the view: give one', () => ({ drop: '--slice' }));
-  if (flags.tag !== undefined) need(typeof flags.tag === 'string' && flags.tag && every.some((i) => i.tags.includes(flags.tag)), `no issue carries the tag ${flags.tag}`, () => ({ drop: '--tag' }));
+  need(flags.tag === undefined || flags.slice === undefined, '--tag and --slice each scope the view: give one', () => ({ rename: '--slice', to: '<--slice instead of --tag, or none>' }));
+  if (flags.tag !== undefined) need(typeof flags.tag === 'string' && flags.tag && every.some((i) => i.tags.includes(flags.tag)), `no issue carries the tag ${flags.tag}`, () => ({ flag: '--tag', value: '<a tag an issue carries>' }));
   const slice = flags.slice === undefined ? null : sliceNamed(loop.goalLines.coordinators, every, flags.slice);
   const scoped = flags.tag !== undefined || slice !== null;
   const issues = flags.tag !== undefined ? every.filter((i) => i.tags.includes(flags.tag)) : slice !== null ? every.filter((i) => sameSlice(sliceOf(i), slice)) : every;
@@ -418,7 +420,7 @@ function statusOf(root, loop, flags) {
   if (flags.by !== undefined) {
     // Or a field the profile declares: one group per value it holds.
     const declared = profile.fields.find((f) => f.key === String(flags.by).toLowerCase());
-    need(STATUS_BY.includes(flags.by) || declared, `--group is one of: ${[...STATUS_BY, ...profile.fields.map((f) => f.key)].join(', ')} (got "${flags.by}")`, `jarl.mjs status --group repo`);
+    need(STATUS_BY.includes(flags.by) || declared, `--group is one of: ${[...STATUS_BY, ...profile.fields.map((f) => f.key)].join(', ')} (got "${flags.by}")`, () => ({ flag: '--group', value: placeholderOf([...STATUS_BY, ...profile.fields.map((f) => f.key)]) }));
     const keysOf = declared ? (i) => [fieldText(i.fields[declared.key]) || '(none)'] : { repo: (i) => repoNames(root, i), tag: (i) => (i.tags.length ? i.tags : ['(none)']), kind: (i) => [i.kind || '(none)'], prio: (i) => [i.priority] }[flags.by];
     const groups = {};
     for (const i of issues) for (const k of keysOf(i)) {
@@ -493,16 +495,19 @@ export const leasedByText = (x) => (x.leasedBy === undefined ? '' : `leased by $
 // and only init decides that. Idempotent it is not: running it twice on an already-permanent loop
 // refuses clearly instead of silently doing nothing, so a session never mistakes a no-op for a check.
 export function cmdMode(root, mode) {
-  need(mode, 'mode requires a target', 'jarl.mjs mode permanent');
-  need(mode === 'permanent', `mode only supports "permanent" today (got "${mode}")`, { arg: 0, value: 'permanent' });
+  need(mode, 'mode requires a target: permanent', { arg: 0, value: '<permanent>' });
+  need(mode === 'permanent', `mode takes "permanent" (got "${mode}")`, { arg: 0, value: oneOf(mode, ['permanent']) });
   needLiveLoop(root, '');
   need(!outOfGit(root), 'this loop is out of git (default mode) — a permanent record must be committed, and only init decides .jarl/.gitignore, so there is no in-place switch. Start a fresh loop with', 'jarl.mjs init "<goal>" --permanent');
-  need(!existsSync(join(jarlDir(root), '.permanent')), 'already a permanent record (.jarl/.permanent exists) — nothing to do', () => (['jarl.mjs', 'status']));
+  need(!existsSync(join(jarlDir(root), '.permanent')), 'already a permanent record (.jarl/.permanent exists) — nothing to do; the loop: jarl.mjs status', { external: 'jarl.mjs status' });
   writeAtomic(join(jarlDir(root), '.permanent'), PERMANENT_MARKER);
   appendLog(root, 'mode → permanent · not tied to a feature branch; close keeps the directory');
   return { permanent: true };
 }
 
+// The ready part where an act is the owner's (removing a loop that still holds work): the question to put to him, its
+// text the caller's to write, the call's author carried.
+function askOwner(question, flags) { return ['jarl.mjs', 'ask', question, ...(typeof flags.by === 'string' ? ['--by', flags.by] : [])]; }
 export function cmdClose(root, flags = {}) {
   needLiveLoop(root, '');
   needLifecycle(root, 'close', flags.caller);
@@ -510,14 +515,14 @@ export function cmdClose(root, flags = {}) {
   if (flags.batch) return { closed: false, batch: ratificationBatch(root), promotion: promotionBatch(root) };
   const profile = loadProfile(root);
   const left = loadIssues(root).filter((i) => profile.unfinished(i.status));
-  need(flags.force || left.length === 0, `${left.length} issue(s) still open or in progress: ${left.map((i) => i.id).join(', ')} — set each ${profile.with('terminal').filter((st) => profile.is(st, 'settles-dependents') || profile.is(st, 'closes-record')).join(' or ') || profile.with('terminal').join(' or ')}, or report them to the owner and close anyway`, `jarl.mjs close --force`);
+  need(flags.force || left.length === 0, `${left.length} issue(s) still open or in progress: ${left.map((i) => i.id).join(', ')} — set each ${profile.with('terminal').filter((st) => profile.is(st, 'settles-dependents') || profile.is(st, 'closes-record')).join(' or ') || profile.with('terminal').join(' or ')}, or report them to the owner, who decides whether the loop closes with them (close --force removes it with them)`, () => askOwner(`<close the loop with ${left.length <= 10 ? left.map((i) => i.id).join(', ') : `${left.length} issues`} still open?>`, flags));
   // A permanent loop is a record, not a stage cleared before a merge: close leaves the directory in
   // place and logs the close instead of removing it, so --root still finds the loop afterwards.
   // Deferred work is not open, but it is work that waits: where close removes the directory it would wait nowhere, so
   // the default mode refuses until the deferred issues are archived or --force removes them; a permanent loop keeps them.
   const deferred = loadIssues(root).filter((i) => i.status === 'deferred').map((i) => i.id);
   const permanent = existsSync(join(jarlDir(root), '.permanent'));
-  need(permanent || flags.force || deferred.length === 0, `${deferred.length} issue(s) deferred: ${deferred.join(', ')} — close removes .jarl/ with them, and deferred work waits, it is not gone. Keep it: jarl.mjs archive "<slug>" puts the loop under .jarl/archive/ with its deferred issues. Or remove it with them`, `jarl.mjs close --force`);
+  need(permanent || flags.force || deferred.length === 0, `${deferred.length} issue(s) deferred: ${deferred.join(', ')} — close removes .jarl/ with them, and deferred work waits, it is not gone. Keep it: jarl.mjs archive "<slug>" puts the loop under .jarl/archive/ with its deferred issues. Or remove it with them, on the owner's word (close --force)`, () => (['jarl.mjs', 'archive', '<slug>', ...(typeof flags.by === 'string' ? ['--by', flags.by] : [])]));
   // The ratification batch is assembled here and never holds the close: in a permanent loop its items stay open for
   // the owner's word; in a loop on a branch the rulings no one ratified leave with the directory, rulings of that loop.
   // In the committed mode the archive is committed content: leaving it would put .jarl/archive/ on the branch that merges to
@@ -525,7 +530,7 @@ export function cmdClose(root, flags = {}) {
   const archiveDir = join(jarlDir(root), 'archive');
   const archived = existsSync(archiveDir) ? readdirSync(archiveDir) : [];
   const committedMode = !permanent && !outOfGit(root);
-  need(!committedMode || flags.force || archived.length === 0, `.jarl/archive/ holds ${archived.length} archived loop(s): ${archived.join(', ')} — in the committed mode the archive is committed content, and close would leave it on the branch that merges to main. Move it out of the tree, or remove it with the loop`, `jarl.mjs close --force`);
+  need(!committedMode || flags.force || archived.length === 0, `.jarl/archive/ holds ${archived.length} archived loop(s): ${archived.join(', ')} — in the committed mode the archive is committed content, and close would leave it on the branch that merges to main. Move it out of the tree, or remove it with the loop on the owner's word (close --force)`, () => askOwner(`<close the loop, removing .jarl/archive/ with it?>`, flags));
   const batch = ratificationBatch(root);
   const promotion = promotionBatch(root);
   // A committed loop's files git never saw are named, not refused: in the permanent mode they (and the closing
@@ -548,7 +553,7 @@ export function cmdClose(root, flags = {}) {
 
 // The row `evidence <id> --file <path> --slot <name>` writes, after every check; nothing is written here.
 function attachmentRow(root, rawIds, flags) {
-  need(!isBulk(rawIds), 'an attachment names one issue: evidence <id> --file <path> --slot <name>', () => ({ replace: rawIds, value: String(rawIds).split(',')[0] }));
+  need(!isBulk(rawIds), 'an attachment names one issue: evidence <id> --file <path> --slot <name>', () => ({ arg: 0, value: placeholderOf(String(rawIds).split(',').map((s) => s.trim()).filter(Boolean)) }));
   need(flags.file !== undefined, '--slot needs --file <path>: the file of the slot, relative to the loop root', () => ({ flag: '--file', value: '<path under the loop root>' }));
   need(flags.slot !== undefined, '--file needs --slot <name>, the slot of the issue\'s kind the file fills', () => ({ flag: '--slot', value: '<name>' }));
   need(typeof flags.file === 'string' && typeof flags.slot === 'string', '--file and --slot each take one value', () => (['jarl.mjs', 'evidence', '<id>', '--file', '<path>', '--slot', '<name>']));
@@ -559,7 +564,7 @@ function attachmentRow(root, rawIds, flags) {
   const specs = requiredSlots(profile, issue);
   const spec = specs.find((s) => s.name === slot);
   const kind = issue.kind || profile.kindDefault;
-  need(spec, `the profile declares no slot "${slot}" for an issue of kind ${kind}${specs.length ? ` (its slots: ${specs.map((s) => s.name).join(', ')})` : ' — it requires no slots for that kind, so the file is described in a note'}`, () => (specs.length ? { replace: slot, value: specs[0].name } : [{ drop: '--file' }, { drop: '--slot' }, { arg: 1, value: `<what ${flags.file} shows>` }]));
+  need(spec, `the profile declares no slot "${slot}" for an issue of kind ${kind}${specs.length ? ` (its slots: ${specs.map((s) => s.name).join(', ')})` : ' — it requires no slots for that kind, so the file is described in a note'}`, () => (specs.length ? { replace: slot, value: placeholderOf(specs.map((s) => s.name)) } : [{ drop: '--file' }, { drop: '--slot' }, { arg: 1, value: `<what ${flags.file} shows>` }]));
   const rel = flags.file;
   const read = inspectAttachment(root, issue.id, spec, rel, 'is no such file');
   need(!read.problem, read.missing ? `no such file: ${rel}, under the loop root; e.g. --file <path under the loop root>` : read.problem, () => ({ flag: '--file', value: '<path under the loop root>' }));

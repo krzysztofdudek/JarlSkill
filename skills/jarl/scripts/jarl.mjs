@@ -16,7 +16,7 @@ import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as R from './record.mjs';
 import {
-  need, refuse, Refusal, isFix, commandLine, readyText, resetCaches, withLock, readText, isEntry, shellWord, cmdSet, cmdField, setRouteOf, eachIssue, cmdRound,
+  need, refuse, Refusal, isFix, isExternal, isPlaceholder, placeholderOf, commandLine, readyText, resetCaches, withLock, readText, isEntry, shellWord, cmdSet, cmdField, setRouteOf, eachIssue, cmdRound,
   cmdProfile, cmdArchive, cmdList, cmdNext, renderNext, cmdMode, cmdClose, cmdCheck, cmdBranches,
   cmdChangelog, cmdHandoffRead, cmdHandoffWrite, cmdReport, cmdImport, cmdSources, cmdAnswerMany, cmdModels, renderModels,
   issuesNaming, questionFor, cmdGoal, cmdGoalSet, cmdRepoBase, whereOf, cmdVerify, renderVerify, renderCheckNotes,
@@ -455,6 +455,10 @@ starts with (--ran "--help" records a row), or inline as --flag=value. A bare --
 note or a title that starts with -- after it, and every flag (--root too) before it. Words beyond what a
 command reads are an error.
 
+Refusals: a refused call writes nothing, and the last line of what it says is a command to paste: the call fixed,
+a step and then the call, or the call with a <placeholder> where a value only the caller knows goes, naming the
+values allowed. A value that is one <placeholder> is refused wherever a value is taken, so it is never recorded.
+
 Lists (the <ids> above; new's --tags, --files, --repo, --source, --after; import's --tags, --repo, --only;
 decide's --settles; the value field gives Tags, Files, Repo, After and Source): one item, or several as one
 comma list (a,b); a list flag also repeats; a tool takes the same text or a list of strings, one item each.
@@ -571,25 +575,51 @@ const RENAMED_FLAGS = {
   resume: { ci: { to: '--gh', why: 'resume asks gh for the CI of the tips with --gh; --ci is the CI state merged records' } },
   handoff: { ci: { to: '--gh', why: 'resume asks gh for the CI of the tips with --gh; --ci is the CI state merged records' } },
 };
-// evidence --retract: the row or the note is taken back by retract, with the words of the call.
+// evidence --retract: the row or the note is taken back by retract, with the words of the call; a word the call did not
+// give is a placeholder.
 function retractInstead(call) {
   const value = (name) => call.flags.find(([k]) => k === name)?.[1];
-  return callWords({ cmd: 'retract', flags: [['by', value('by') ?? '<who>']], args: [call.args[0] ?? '<id>', value('retract') ?? '<n>', call.args[1] ?? '<text>'] });
+  const by = value('by');
+  const n = value('retract');
+  return callWords({ cmd: 'retract', flags: [['by', typeof by === 'string' ? by : '<who>']], args: [call.args[0] ?? '<id>', typeof n === 'string' ? n : '<n|note-n>', call.args[1] ?? '<text>'] });
 }
 // The flags whose name the surface does not have, each with what replaces it: a flag of the same command, or a call.
 export const REMOVED_FLAGS = Object.freeze({ ...Object.fromEntries(Object.entries(RENAMED_FLAGS).map(([c, f]) => [c, Object.fromEntries(Object.entries(f).map(([k, v]) => [k, v.to]))])), evidence: { retract: 'retract' } });
+// The names a command's free text had in the tools, where it is now text: a flag or a tool field of that name is the text,
+// and the refusal puts it where the text goes.
+export const GONE_TEXT_NAMES = Object.freeze({ set: 'why', review: 'findings', round: 'what', ask: 'question', answer: 'answer', log: 'event', decide: 'ruling', retract: 'reason' });
 // The forms of a call the surface does not have because another command does what they ask, each with that command: a
-// field's name where set takes a status (field writes it), a view where set takes a status (next lists what is ready to
-// start, review records a verdict), a line given to log that reads as a line another command writes with its checks, a
-// retraction asked of evidence or of review, and a handoff action resume answers. A refusal of such a call ends with that command; a
-// refusal of any other call ends with the call fixed, or with a step and then the call.
+// field's name where set takes a status (field writes it), a line given to log that reads as a line another command writes
+// with its checks, a retraction asked of evidence or of review, a handoff action resume answers, a close that only the
+// owner may let go on (the question put to him) or that archive does without losing work, and a loop made permanent in
+// place where only init makes one. A refusal of such a call ends with that command; a refusal of any other call ends with
+// the call fixed, a step and then the call, or the call with a placeholder.
 export const REMOVED_FORMS = Object.freeze({
-  set: ['field', 'next', 'review'],
+  set: ['field'],
+  close: ['ask', 'archive'],
+  mode: ['init'],
   log: ['new', 'set', 'round', 'review', 'retract', 'evidence', 'merged', 'field', 'tick'],
   evidence: ['retract'],
   review: ['retract'],
   handoff: ['resume'],
 });
+// A word that starts with -- and holds a space is no flag: a flag's name holds none, so it is a text given where a text
+// goes, without the bare -- before it.
+const textNotFlag = (a) => a.startsWith('--') && a.length > 2 && /\s/.test(a.indexOf('=') === -1 ? a.slice(2) : a.slice(2, a.indexOf('=')));
+// The argument a flag of a command names when the command takes it as an argument: its own name (--title on new, --status
+// on set), or text, or the name the text had (GONE_TEXT_NAMES), for the command's free text, its last argument. -1 when it
+// names none.
+const FREE_TEXT_ARGS = ['text', 'value', 'title', 'goal'];
+const argumentNames = (cmd) => (COMMAND_ARGS[cmd] || []).map((a) => a.replace(/[?.]+$/, ''));
+export function argumentOfFlag(cmd, name) {
+  const names = argumentNames(cmd);
+  const own = names.indexOf(name);
+  if (own !== -1) return own;
+  const last = names.length - 1;
+  return (name === 'text' || GONE_TEXT_NAMES[cmd] === name) && FREE_TEXT_ARGS.includes(names[last]) ? last : -1;
+}
+// The placeholder where a flag the command does not take was given: the caller names the flag, or leaves it out.
+const flagHole = (cmd) => `<a flag ${cmd} takes, or none>`;
 
 // A call as the refusal of it sees it: the command, its flags in the order given ([name, value], true for a switch) and
 // its arguments. Read from the words of the command line leniently, so a call the parser refused is read as well.
@@ -599,7 +629,7 @@ export function callOfArgv(argv) {
   for (let i = 0; i < argv.length; i += 1) {
     const a = String(argv[i]);
     if (!rest && a === '--') { rest = true; continue; }
-    if (rest || !a.startsWith('--') || a.length === 2) { if (call.cmd === undefined) call.cmd = a; else call.args.push(a); continue; }
+    if (rest || !a.startsWith('--') || a.length === 2 || textNotFlag(a)) { if (call.cmd === undefined) call.cmd = a; else call.args.push(a); continue; }
     const eq = a.indexOf('=');
     const name = eq === -1 ? a.slice(2) : a.slice(2, eq);
     const shape = { ...GLOBAL_FLAGS, ...(COMMAND_FLAGS[call.cmd] || {}) }[name];
@@ -624,9 +654,21 @@ function fixedCall(call, fixes) {
   const c = { cmd: call.cmd, flags: call.flags.map(([k, v]) => [k, v]), args: [...call.args] };
   const swap = (v, bad, good) => (v === bad ? good : typeof v === 'string' && bad !== '' && v.split(',').map((s) => s.trim()).includes(bad) ? v.split(',').map((s) => (s.trim() === bad ? good : s.trim())).join(',') : v);
   for (const f of [].concat(fixes)) {
-    if (f.retry || f.first !== undefined) continue;
-    if (f.truncate !== undefined) { c.args = c.args.slice(0, Math.max(0, f.truncate - 1)); continue; }
-    if (f.rename !== undefined) { c.flags = c.flags.map(([k, v]) => (k === f.rename.replace(/^--/, '') ? [f.to.replace(/^--/, ''), v] : [k, v])); continue; }
+    if (f.retry || f.first !== undefined || f.split !== undefined) continue;
+    // Words beyond what the command reads: the free text they may be written in one with, or a placeholder after them.
+    if (f.truncate !== undefined) { c.args = c.args.slice(0, Math.max(0, f.truncate - 1)); if (f.value !== undefined) { if (f.text && c.args.length) c.args[c.args.length - 1] = String(f.value); else c.args.push(String(f.value)); } continue; }
+    if (f.rename !== undefined) { const to = f.to.startsWith('<') ? f.to : f.to.replace(/^--/, ''); c.flags = c.flags.map(([k, v]) => (k === f.rename.replace(/^--/, '') ? [to, v] : [k, v])); continue; }
+    // The value of a flag that names an argument goes where that argument goes, when the arguments given leave its place
+    // free; else the flag's name becomes a placeholder and its value stays.
+    if (f.toArg !== undefined) {
+      const name = f.toArg.replace(/^--/, '');
+      const at = c.flags.findIndex(([k]) => k === name);
+      if (at === -1) continue;
+      const value = c.flags[at][1];
+      const arity = (COMMAND_ARGS[c.cmd] || []).length;
+      if (typeof value === 'string' && c.flags.filter(([k]) => k === name).length === 1 && c.args.length >= f.at && c.args.length < arity) { c.flags.splice(at, 1); c.args.splice(f.at, 0, value); } else c.flags[at] = [flagHole(c.cmd), value];
+      continue;
+    }
     if (f.drop !== undefined) {
       const name = f.drop.replace(/^--/, '');
       const at = f.value === undefined ? -1 : c.flags.findLastIndex(([k, v]) => k === name && (f.value === null ? v === undefined : v === String(f.value)));
@@ -658,17 +700,26 @@ function fixedCall(call, fixes) {
 // first and the arguments after a bare --, where none of them is read as a flag.
 function callWords(c) {
   const flags = [];
-  for (const [k, v] of c.flags) { flags.push(`--${k}`); if (v !== true) flags.push(v ?? `<${k}>`); }
+  // A flag whose name is a placeholder is written as the placeholder, its value after it.
+  for (const [k, v] of c.flags) { flags.push(k.startsWith('<') ? k : `--${k}`); if (v !== true) flags.push(v ?? `<${k}>`); }
   if (c.args.some((a) => a.startsWith('-'))) return ['jarl.mjs', c.cmd, ...flags, '--', ...c.args];
   return ['jarl.mjs', c.cmd, ...c.args, ...flags];
+}
+// A call cut into several, one per group of flags (the name ARGUMENTS stands for the arguments after the first): each call
+// keeps the first argument and the flags of no group, so every word given is in one of them.
+const ARGUMENTS = 'arguments';
+function splitCall(c, groups) {
+  const grouped = groups.flat();
+  return groups.map((g) => ({ cmd: c.cmd, args: g.includes(ARGUMENTS) ? [...c.args] : c.args.slice(0, 1), flags: c.flags.filter(([k]) => g.includes(k) || !grouped.includes(k)) }));
 }
 // The commands a printed command line calls, in order.
 const commandsOf = (line) => [...String(line).matchAll(/(?:^|&& )jarl\.mjs (\S+)/g)].map((m) => m[1].replace(/^'|'$/g, ''));
 // The one way a refusal reaches whoever made the call: its reason, then, last and on a line of its own, the ready
 // command. A fix makes it the call fixed, after the steps the fix names; a command of the refused command, or of the
 // command the table of removed forms names for it, is printed as it is; any other command is a step, so the call
-// follows it. A refusal of a command the surface has therefore always ends with a call to that command or to the one
-// that does what it asked.
+// follows it; a command of the tool that runs the loop ({ external }) is printed as it is. A refusal of a command the
+// surface has therefore ends with a call to that command or to the one that does what it asked: fixed, after a step, or
+// with a placeholder where the value only the caller knows goes (see lib/base.mjs, "refusals").
 export function refusalFor(e, call) {
   if (!(e instanceof Refusal)) return e;
   const fixes = [].concat(e.ready).filter(isFix);
@@ -676,8 +727,11 @@ export function refusalFor(e, call) {
   let ready;
   if (fixes.length && call?.cmd) {
     const steps = fixes.filter((f) => f.first !== undefined).map((f) => commandLine(f.first));
-    ready = [...steps, commandLine(callWords(fixedCall(call, fixes)))].join(' && ');
+    const split = fixes.find((f) => f.split !== undefined);
+    const fixed = fixedCall(call, fixes);
+    ready = [...steps, ...(split ? splitCall(fixed, split.split) : [fixed]).map((x) => commandLine(callWords(x)))].join(' && ');
   } else if (fixes.length) ready = readyText(e.ready);
+  else if (isExternal(e.ready)) ready = commandLine(e.ready);
   else {
     ready = commandLine(e.ready);
     const last = commandsOf(ready).at(-1);
@@ -718,10 +772,14 @@ function parseWords(argv) {
       if (renamed) refuse(renamed.why, { rename: `--${name}`, to: renamed.to });
       if (cmd === 'evidence' && name === 'retract') refuse('evidence takes nothing back: a row or a note is taken back with retract', retractInstead(callOfArgv(argv)));
       if (cmd === undefined) refuse(`unknown flag ${a} before the command — only ${named(GLOBAL_FLAGS)} may come before it`, ['jarl.mjs', '--help']);
-      refuse(`unknown flag ${a} for ${cmd} — it takes ${named(flagsOf(cmd))}; a value that starts with -- goes after a bare --`, { drop: `--${name}` });
+      if (textNotFlag(a)) refuse(`${JSON.stringify(a)} is a text, not a flag: a text that starts with -- goes after a bare --, with every flag before it`, { retry: true });
+      // A flag named as an argument of the command (its own name, text, or the name its text had) is that argument.
+      const at = argumentOfFlag(cmd, name);
+      if (at !== -1) refuse(`${cmd} takes its ${COMMAND_ARGS[cmd][at].replace(/[?.]+$/, '')} as argument ${at + 1}, not as --${name}`, { toArg: `--${name}`, at });
+      refuse(`unknown flag ${a} for ${cmd} — it takes ${named(flagsOf(cmd))}; a text that starts with -- goes after a bare --`, { rename: `--${name}`, to: flagHole(cmd) });
     }
     if (kind === 'bool') {
-      need(inline === undefined, `--${name} takes no value`, () => ({ flag: `--${name}` }));
+      need(inline === undefined, `--${name} takes no value: it is given, or left out`, () => ({ rename: `--${name}`, to: `<--${name}, or no --${name}>` }));
       flags[name] = true;
       continue;
     }
@@ -734,7 +792,8 @@ function parseWords(argv) {
     }
     if (kind === 'many') flags[name] = flags[name] === undefined ? value : [].concat(flags[name], value);
     else {
-      need(flags[name] === undefined, `--${name} given twice — it takes one value`, () => ({ drop: `--${name}`, value }));
+      // The same value twice is one; two values leave which one was meant open.
+      need(flags[name] === undefined, `--${name} given twice — it takes one value`, () => (flags[name] === value ? { drop: `--${name}`, value } : [{ drop: `--${name}`, value }, { flag: `--${name}`, value: placeholderOf([flags[name], value]) }]));
       flags[name] = value;
     }
   }
@@ -742,7 +801,7 @@ function parseWords(argv) {
   // --root written last would land, and a call that silently lost its --root would write to another loop.
   if (cmd !== undefined && Object.hasOwn(ARITY, cmd)) {
     const extra = positional.slice(1 + ARITY[cmd]);
-    need(extra.length === 0, `${cmd} takes at most ${ARITY[cmd]} argument${ARITY[cmd] === 1 ? '' : 's'} — unexpected: ${extra.map((x) => JSON.stringify(x)).join(' ')}${rest ? ' (everything after a bare -- is an argument, so flags such as --root go before it)' : ''}; several ids are one argument: 12,13 or 203-206`, () => ({ truncate: 1 + ARITY[cmd] }));
+    need(extra.length === 0, `${cmd} takes at most ${ARITY[cmd]} argument${ARITY[cmd] === 1 ? '' : 's'} — unexpected: ${extra.map((x) => JSON.stringify(x)).join(' ')}${rest ? ' (everything after a bare -- is an argument, so flags such as --root go before it)' : ''}; several ids are one argument: 12,13 or 203-206`, () => ({ truncate: 1 + ARITY[cmd], text: FREE_TEXT_ARGS.includes(argumentNames(cmd).at(-1)), value: FREE_TEXT_ARGS.includes(argumentNames(cmd).at(-1)) ? `<${positional.slice(ARITY[cmd]).join(' ')}: one text, in quotes>` : `<no word for ${extra.join(' ')}>` }));
   }
   return { positional, flags };
 }
@@ -847,7 +906,9 @@ export function listItems(value, kind, field) {
   const text = [].concat(value ?? []).map(String).join(',');
   const items = text.split(',').map((s) => s.trim()).filter(Boolean);
   const dashed = items.filter((s) => s.startsWith('-'));
-  need(dashed.length === 0, `${field}: an item cannot start with - — got ${dashed.map((s) => JSON.stringify(s)).join(' ')} (everything after a bare -- is an argument, so flags such as --root go before it)`, () => ({ replace: dashed[0], value: dashed[0].replace(/^-+/, '') }));
+  need(dashed.length === 0, `${field}: an item cannot start with - — got ${dashed.map((s) => JSON.stringify(s)).join(' ')} (everything after a bare -- is an argument, so flags such as --root go before it)`, () => ({ replace: dashed[0], value: `<an item for ${dashed[0]}, not starting with a dash>` }));
+  const holes = items.filter(isPlaceholder);
+  need(holes.length === 0, `${field}: ${holes.join(', ')} ${holes.length === 1 ? 'is a placeholder' : 'are placeholders'} — write the value in its place; nothing was written`, { retry: true });
   need(!items.some((s) => piecesOfListText(s, kind)), `${field} takes its items one by one: one item, a comma list (a,b) or a list of strings; ${kind === 'name' ? 'a list written as text, an item in quotes or a name holding a bracket or a quote mark' : 'a list written as text or an item in quotes'} is refused — got ${JSON.stringify(text)}`, () => ({ replace: text, value: items.map((s) => s.replace(/^["'`[\]]+|["'`[\]]+$/g, '')).join(',') }));
   return items;
 }
@@ -880,7 +941,9 @@ function fieldListValue(name, value, remove) {
   if (kind === undefined || value === undefined) return value;
   if (!remove) return listItems(value, kind, String(name).trim()).join(',');
   const items = [].concat(value).map(String).join(',').split(',').map((s) => s.trim()).filter(Boolean);
-  need(!items.some((s) => s.startsWith('-')), `${String(name).trim()}: an item cannot start with - (everything after a bare -- is an argument, so flags such as --root go before it)`, () => ({ replace: items.find((s) => s.startsWith('-')) ?? '', value: (items.find((s) => s.startsWith('-')) ?? '').replace(/^-+/, '') }));
+  const dashed = items.find((s) => s.startsWith('-'));
+  need(dashed === undefined, `${String(name).trim()}: an item cannot start with - (everything after a bare -- is an argument, so flags such as --root go before it)`, () => ({ replace: dashed, value: `<an item for ${dashed}, not starting with a dash>` }));
+  need(!items.some(isPlaceholder), `${String(name).trim()}: ${items.filter(isPlaceholder).join(', ')} — a placeholder: write the value in its place; nothing was written`, { retry: true });
   return items.join(',');
 }
 
@@ -938,10 +1001,10 @@ export const REPLACED_COMMANDS = Object.freeze({
   files: (args) => {
     const { pos, flags } = wordsOf(args, BOOLS);
     const paths = pos.slice(1).flatMap((p) => p.split(',')).map((p) => p.trim()).filter(Boolean);
-    const value = pos.length > 1 && !paths.length ? '--clear' : paths.length ? shellWord(paths.join(',')) : shellWord('<path>,<path>');
+    const value = pos.length > 1 && !paths.length ? '--clear' : paths.length ? shellWord(paths.join(',')) : shellWord('<paths>');
     return `the files are a field: jarl.mjs field ${pos[0] ? shellWord(pos[0]) : shellWord('<ids>')} Files ${value}${carried(flags)}`;
   },
-  source: (args) => { const { pos, flags } = wordsOf(args, BOOLS); return `the source is a field: jarl.mjs field ${pos[0] ? shellWord(pos[0]) : shellWord('<ids>')} Source ${pos.length > 1 ? shellWord(pos.slice(1).join(',')) : shellWord('<dir>#<id>')}${carried(flags)}`; },
+  source: (args) => { const { pos, flags } = wordsOf(args, BOOLS); return `the source is a field: jarl.mjs field ${pos[0] ? shellWord(pos[0]) : shellWord('<ids>')} Source ${pos.length > 1 ? shellWord(pos.slice(1).join(',')) : shellWord('<dir#id>')}${carried(flags)}`; },
   after: (args) => { const { pos, flags } = wordsOf(args, BOOLS); return `the issues an issue waits on are a field: jarl.mjs field ${pos[0] ? shellWord(pos[0]) : shellWord('<ids>')} After ${flags.clear ? '--clear' : pos.length > 1 ? shellWord(pos.slice(1).join(',')) : shellWord('<ids>')}${carried(flags, ['clear'])}`; },
   repo: (args) => {
     const { pos, flags } = wordsOf(args, [...BOOLS, 'base']);
@@ -1094,6 +1157,9 @@ export function dispatch(root, commandName, rest, flags) {
 function dispatchCall(root, commandName, rest, flags) {
   const cmd = commandName;
   if (Object.hasOwn(REPLACED_COMMANDS, cmd)) replacedRefusal(cmd, rest);
+  // A placeholder a refusal printed, pasted unfilled, is never recorded: every value the call takes is checked for one.
+  const holes = [...rest, ...Object.entries(flags).filter(([k]) => !['root', 'caller'].includes(k)).flatMap(([, v]) => [].concat(v))].filter(isPlaceholder);
+  need(holes.length === 0, `${holes.join(', ')} ${holes.length === 1 ? 'is a placeholder' : 'are placeholders'}: write the value in its place — nothing was written`, { retry: true });
   ({ rest, flags } = readLists(cmd, rest, flags));
   resetCaches();
   let out;
@@ -1113,7 +1179,7 @@ function dispatchCall(root, commandName, rest, flags) {
       case 'import': out = cmdImport(root, rest[0], flags); text = renderImport(out); break;
       case 'sources': out = cmdSources(root, rest, flags); text = renderSources(out); break;
       case 'list': out = cmdList(root, flags); text = renderList(out, R.loadProfile(root)); break;
-      case 'show': { const i = R.findIssue(root, rest[0]); need(i, `no such issue: ${rest[0]} — the issues`, `jarl.mjs list --all`); const attachments = attachmentStates(root, i); out = { ...i, evidenceRows: evidenceTable(i.sections.evidence).rows.map(({ n, ran, saw, retracted }) => ({ n, ran, saw, retracted })), where: whereOf(root, i), ...(attachments.length ? { attachments } : {}) }; text = issueView(root, i, { full: Boolean(flags.full) }); break; }
+      case 'show': { const i = R.findIssue(root, rest[0]); need(i, `no such issue: ${rest[0]} — the issues: jarl.mjs list --all`, { arg: 0, value: '<id>' }); const attachments = attachmentStates(root, i); out = { ...i, evidenceRows: evidenceTable(i.sections.evidence).rows.map(({ n, ran, saw, retracted }) => ({ n, ran, saw, retracted })), where: whereOf(root, i), ...(attachments.length ? { attachments } : {}) }; text = issueView(root, i, { full: Boolean(flags.full) }); break; }
       case 'set':
         // A field is written by field, never by set: the refusal is the call that writes it.
         if (setRouteOf(root, rest[1]) === 'field') {
@@ -1135,7 +1201,7 @@ function dispatchCall(root, commandName, rest, flags) {
         out = R.addEvidence(root, rest[0], rest[1], flags); text = each(out, renderEvidence); break;
       // One verb takes back a verdict and an evidence row: the review's newest approve, or the row by its number.
       case 'retract':
-        need(rest[1] === 'review' || /^(note-)?\d+$/.test(rest[1] ?? ''), `retract takes review (the newest approve) or the number of an evidence row, or note-<n> for a note, got "${rest[1] ?? ''}"`, () => [...(rest[0] === undefined ? [{ arg: 0, value: '<id>' }] : []), { arg: 1, value: '1' }, ...(rest[2] === undefined ? [{ arg: 2, value: '<what was wrong, in words>' }] : []), ...(flags.by === undefined ? [{ flag: '--by', value: '<who>' }] : [])]);
+        need(rest[1] === 'review' || /^(note-)?\d+$/.test(rest[1] ?? ''), `retract takes review (the newest approve) or the number of an evidence row, or note-<n> for a note, got "${rest[1] ?? ''}"`, () => [...(rest[0] === undefined ? [{ arg: 0, value: '<id>' }] : []), { arg: 1, value: '<review|n|note-n>' }, ...(rest[2] === undefined ? [{ arg: 2, value: '<what was wrong, in words>' }] : []), ...(flags.by === undefined ? [{ flag: '--by', value: '<who>' }] : [])]);
         if (rest[1] === 'review') { out = R.review(root, rest[0], 'retract', rest[2], { by: flags.by, caller: 'cli' }); text = each(out, renderReview); warn = [].concat(out).filter((o) => o.note).map((o) => `note: ${o.note}`); } else { out = R.addEvidence(root, rest[0], rest[2], { retract: rest[1], by: flags.by }); text = each(out, renderEvidence); }
         break;
       // One computation of the rows: the ready ones are listed, and the rest says how many are held or waiting.

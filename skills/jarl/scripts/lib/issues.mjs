@@ -2,7 +2,7 @@
 
 import { existsSync, readdirSync } from 'node:fs';
 import { basename, join } from 'node:path';
-import { CI_STATES, fieldText, need, oneBreak, refuse, splitList } from './base.mjs';
+import { CI_STATES, fieldText, need, oneBreak, oneOf, placeholderOf, refuse, shown, splitList } from './base.mjs';
 import { issuesDir, jarlDir } from './where.mjs';
 import { readText } from './files.mjs';
 import { ISSUE_FILE_RE, KEY_RE, cmpId, idKey, idRe, newNumber, writtenForms, writtenId } from './ids.mjs';
@@ -189,7 +189,7 @@ function acceptanceHeading(issue, profile) {
 export function fieldValue(profile, field, raw) {
   const v = fieldText(raw);
   const f = typeof field === 'string' ? profile.field(field) : field;
-  if (f && f.enum && v !== '') need(f.enum.includes(v), `${f.name} must be one of: ${f.enum.join(', ')} (got "${v}")`, () => ({ replace: v, value: f.enum[0] }));
+  if (f && f.enum && v !== '') need(f.enum.includes(v), `${f.name} must be one of: ${f.enum.join(', ')} (got "${v}")`, () => ({ replace: v, value: oneOf(v, f.enum) }));
   return v;
 }
 // Name=value pairs from a repeatable flag (--field, --section), each name one the profile declares.
@@ -197,11 +197,11 @@ function namedPairs(list, flag, known, what) {
   const out = new Map();
   for (const item of [].concat(list ?? [])) {
     const at = String(item).indexOf('=');
-    need(at > 0, `--${flag} takes <name>=<value> (got "${item}")`, () => ({ replace: String(item), value: `${String(item).split('=')[0] || '<name>'}=<value>` }));
+    need(at > 0, `--${flag} takes <name>=<value> (got "${item}")`, () => ({ replace: String(item), value: `<${shown(String(item).split('=')[0]) || 'name'}=its value>` }));
     const name = String(item).slice(0, at).trim();
     const hit = known.find((k) => k.toLowerCase() === name.toLowerCase());
-    need(hit, known.length ? `${name} is not a ${what} this loop's profile declares — it declares ${known.join(', ')}` : `this loop's profile declares no ${what}s — --${flag} names one it declares; the profile: jarl.mjs profile`, () => (known.length ? { replace: String(item), value: `${known[0]}=${String(item).slice(String(item).indexOf('=') + 1)}` } : { drop: `--${flag}` }));
-    need(!out.has(hit), `--${flag} names ${hit} twice`, () => (['jarl.mjs', 'profile']));
+    need(hit, known.length ? `${name} is not a ${what} this loop's profile declares — it declares ${known.join(', ')}` : `this loop's profile declares no ${what}s — --${flag} names one it declares; the profile: jarl.mjs profile`, () => (known.length ? { replace: String(item), value: `<${known.join('|')}=${shown(String(item).slice(String(item).indexOf('=') + 1))}>` } : { rename: `--${flag}`, to: `<no --${flag}: the profile declares none>` }));
+    need(!out.has(hit), `--${flag} names ${hit} twice`, () => ({ replace: String(item), value: `<${hit} given once: drop this one or the other>` }));
     out.set(hit, String(item).slice(at + 1));
   }
   return out;
@@ -268,7 +268,7 @@ export function unattributedRefusal(issue, what) {
 export function issueNamed(issues, rawId) {
   const key = idKey(rawId);
   const hits = issues.filter((i) => i.id !== null && idKey(i.id) === key);
-  if (hits.length > 1) refuse(sharedNumberText({ id: hits[0].id, issues: hits }, issues), ['jarl.mjs', 'renumber', hits[0].id, '--key', hits[1].key ?? '<key>']);
+  if (hits.length > 1) refuse(sharedNumberText({ id: hits[0].id, issues: hits }, issues), ['jarl.mjs', 'renumber', hits[0].id, '--key', hits.every((h) => h.key) ? placeholderOf(hits.map((h) => h.key)) : '<key>']);
   return hits[0] || null;
 }
 // The issue `rawId` names in the loop at `root`, or null; a number two files carry is refused (see issueNamed).
@@ -392,7 +392,7 @@ export const CHANGELOG_SECTIONS = ['Added', 'Changed', 'Deprecated', 'Removed', 
 export function changelogText(v) {
   const lines = [].concat(v ?? []).map(fieldText).filter(Boolean).map((l) => l.replace(/^-\s+/, ''));
   // A section with nothing after it would print an empty bullet under that heading: refused, not guessed at.
-  for (const l of lines) need(!new RegExp(`^(${CHANGELOG_SECTIONS.join('|')}):\\s*$`, 'i').test(l), `changelog entry "${l}" has no text — write the line after the section`, () => ({ flag: '--changelog', value: `${l.replace(/:\s*$/, '')}: <what changed>` }));
+  for (const l of lines) need(!new RegExp(`^(${CHANGELOG_SECTIONS.join('|')}):\\s*$`, 'i').test(l), `changelog entry "${l}" has no text — write the line after the section`, () => ({ replace: l, value: `<${l.replace(/:\s*$/, '')}: what changed>` }));
   return lines.map((l) => `- ${l}`).join('\n');
 }
 // The entries of an issue's ## Changelog section, each with its section: the one it opens with, else Fixed for a bug
