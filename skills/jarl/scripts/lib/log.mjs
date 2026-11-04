@@ -189,9 +189,9 @@ export function appendNote(root, event) {
   needNoOwnersWords('the note', event);
   const text = oneLine(event);
   const id = LEADING_ID.exec(text)?.[1] ?? null;
-  need(!MOVE_SHAPE.test(text), `log writes a note, and "${text.length > 80 ? `${text.slice(0, 77)}...` : text}" has the shape of a move (an id, an arrow), which set writes: ${LINE_WRITERS.move} "<text>"`);
+  need(!MOVE_SHAPE.test(text), `log writes a note, and "${text.length > 80 ? `${text.slice(0, 77)}...` : text}" has the shape of a move (an id, an arrow), which set writes: ${LINE_WRITERS.move} "<text>"`, () => { const m = /^(\S+)\s+→\s*(\S+)?\s*(.*)$/s.exec(text.trim()); return ['jarl.mjs', 'set', m?.[1] ?? '<ids>', m?.[2] ?? '<status>', m?.[3] || '<text>']; });
   const type = id === null ? 'other' : parseEvent(id, text, loadProfile(root)).type;
-  need(type === 'other', `log writes a note, and "${text.length > 80 ? `${text.slice(0, 77)}...` : text}" reads as ${type === 'filed' ? 'a filing' : `a ${type.replace('-', ' ')} line`}, which the journal's own command writes with its checks: ${type === 'row' && attachmentOf(text.slice(`${id} evidence row · `.length)) ? 'jarl.mjs evidence <id> --file <path> --slot <name>' : LINE_WRITERS[type]}`);
+  need(type === 'other', `log writes a note, and "${text.length > 80 ? `${text.slice(0, 77)}...` : text}" reads as ${type === 'filed' ? 'a filing' : `a ${type.replace('-', ' ')} line`}, which the journal's own command writes with its checks: ${type === 'row' && attachmentOf(text.slice(`${id} evidence row · `.length)) ? 'jarl.mjs evidence <id> --file <path> --slot <name>' : LINE_WRITERS[type]}`, () => (type === 'tip' ? ['jarl.mjs', 'evidence', '<id>', '--ran', '<command>', '--saw', '<what it printed>'] : LINE_WRITERS[type].replace(' approve|changes', ' approve --by <reviewer> <text>')));
   appendLog(root, event);
 }
 

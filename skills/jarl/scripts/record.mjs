@@ -189,7 +189,7 @@ export function answer(root, id, text) { return write(root, () => L.cmdAnswer(ro
 // A free note for the journal. A line that reads as a filing, a move, a round, a verdict, a retraction, an evidence row, a
 // merge, a CI state or a body change is refused and names the operation that writes it.
 export function appendLog(root, event) {
-  return write(root, () => { L.need(event, 'log requires "<event>"'); L.appendNote(root, event); return { logged: event }; });
+  return write(root, () => { L.need(event, 'log requires "<text>"', () => (['jarl.mjs', 'log', '<text>'])); L.appendNote(root, event); return { logged: event }; });
 }
 
 // ---- the views' data ------------------------------------------------------------------------------
@@ -198,5 +198,6 @@ export function appendLog(root, event) {
 // journal, with the line that says how to settle it) when there are any, and resumeData the same; and `recordFormat`,
 // what recordFormat returns.
 export function statusData(root, opts = {}) { return read(() => L.cmdStatus(root, opts)); }
-// resume --json: opts { log, ready, ci }.
+// resume --json: opts { log, ready, ci }; ci asks gh for the CI of the tips, as the command line's --gh does, and gh is
+// taken as the same key.
 export function resumeData(root, opts = {}) { return read(() => L.cmdResume(root, opts)); }

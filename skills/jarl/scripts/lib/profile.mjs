@@ -2,7 +2,7 @@
 
 import { existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { KEPT_KINDS, KINDS, TIERS, TIER_DEFAULT, need } from './base.mjs';
+import { KEPT_KINDS, KINDS, TIERS, TIER_DEFAULT, need, refuse } from './base.mjs';
 import { jarlDir } from './where.mjs';
 import { readText } from './files.mjs';
 
@@ -153,10 +153,10 @@ export function validateProfile(json, where = 'the profile') {
   const say = (m) => bad.push(m);
   const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
   const oneLine = (v) => typeof v === 'string' && v.trim() !== '' && !/[\r\n]/.test(v);
-  if (!isObj(json)) throw new Error(`${where} is not a JSON object`);
+  if (!isObj(json)) refuse(`${where} is not a JSON object`, ['jarl.mjs', 'profile', '<profile.json>']);
   // The record format first, and alone: a profile written for another format may mean anything by its other keys.
   if (json.format !== undefined && !RECORD_FORMATS.includes(json.format)) {
-    throw new Error(`${where} is written for record format ${JSON.stringify(json.format)}, and this Jarl reads format ${RECORD_FORMATS.join(', ')} — nothing was read or written; the reader needs a Jarl that knows format ${JSON.stringify(json.format)} (a vendored copy and the installed one must agree)`);
+    refuse(`${where} is written for record format ${JSON.stringify(json.format)}, and this Jarl reads format ${RECORD_FORMATS.join(', ')} — nothing was read or written; the reader needs a Jarl that knows format ${JSON.stringify(json.format)} (a vendored copy and the installed one must agree)`, ['jarl.mjs', '--version']);
   }
   // The format marker: a profile that holds only jarl-profile and format changes nothing in how the loop behaves (the
   // built-in profile, declared: false); it only says which format the record was written in.
@@ -287,7 +287,7 @@ export function validateProfile(json, where = 'the profile') {
       if (bad.length === before) lifecycle = Object.freeze({ close: l.close ?? 'any', archive: l.archive ?? 'any', command: l.command === undefined ? null : l.command.trim() });
     }
   }
-  if (bad.length) throw new Error(`${where} is not a valid profile:\n- ${bad.join('\n- ')}`);
+  if (bad.length) refuse(`${where} is not a valid profile:\n- ${bad.join('\n- ')}`, ['jarl.mjs', 'profile', '<profile.json>']);
   return makeProfile({ name: json.name || 'custom', statuses: statuses.map((s) => [s, [...flagsOf.get(s)]]), initial, fields, sections, acceptance, declared: true, setBy, scheduler, doneGate, lifecycle, format: json.format ?? RECORD_FORMAT });
 }
 
@@ -403,7 +403,7 @@ export function profileAt(dir) {
   const hit = PROFILES.get(path);
   if (hit && hit.key === key) return hit.profile;
   let json;
-  try { json = JSON.parse(readText(path)); } catch (e) { throw new Error(`${path} is not JSON: ${e.message}`); }
+  try { json = JSON.parse(readText(path)); } catch (e) { refuse(`${path} is not JSON: ${e.message}`, ['jarl.mjs', 'profile']); }
   const profile = validateProfile(json, path);
   PROFILES.set(path, { key, profile });
   return profile;
@@ -412,13 +412,13 @@ export function profileAt(dir) {
 // clock did not move between the two writes.
 function forgetProfile(root) { PROFILES.delete(profilePath(root)); }
 export function readProfileFile(file) {
-  need(typeof file === 'string' && file.trim(), '--profile needs the path of a profile file');
-  need(existsSync(file), `no such profile file: ${file}`);
+  need(typeof file === 'string' && file.trim(), '--profile needs the path of a profile file', () => ({ flag: '--profile', value: '<profile.json>' }));
+  need(existsSync(file), `no such profile file: ${file}`, () => ({ flag: '--profile', value: '<profile.json>' }));
   let json;
-  try { json = JSON.parse(readText(file)); } catch (e) { throw new Error(`${file} is not JSON: ${e.message}`); }
+  try { json = JSON.parse(readText(file)); } catch (e) { refuse(`${file} is not JSON: ${e.message}`, ['jarl.mjs', 'profile', '<profile.json>']); }
   const profile = validateProfile(json, file);
   const reserved = reservedNamesProblem(profile) || keyFieldProblem(profile);
-  need(!reserved, `${file} is not a valid profile: ${reserved}`);
+  need(!reserved, `${file} is not a valid profile: ${reserved}`, () => (['jarl.mjs', 'profile', file]));
   return { json, profile };
 }
 // What a profile file to be opened declares of the names the built-in promise and wait use, as one refusal, or null: a

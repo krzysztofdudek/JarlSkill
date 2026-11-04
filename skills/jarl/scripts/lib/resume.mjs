@@ -28,7 +28,7 @@ const short = (t, n = RESUME_TITLE) => (t.length > n ? `${t.slice(0, n - 1)}…`
 function countFlag(flags, name, dflt) {
   if (flags[name] === undefined) return dflt;
   const n = Number(flags[name]);
-  need(Number.isInteger(n) && n >= 0, `--${name} takes a whole number, 0 or more (got "${flags[name]}")`);
+  need(Number.isInteger(n) && n >= 0, `--${name} takes a whole number, 0 or more (got "${flags[name]}")`, () => ({ flag: `--${name}`, value: String(dflt) }));
   return n;
 }
 
@@ -38,7 +38,7 @@ function countFlag(flags, name, dflt) {
 // issues name, the loop files git has not committed, and the last n log lines. Nothing goes to the network
 // unless --gh asks gh for the CI of each pushed tip.
 export function cmdResume(root, flags = {}) {
-  need(existsSync(jarlDir(root)), `no loop here: ${jarlDir(root)} does not exist — open one with jarl.mjs init "<goal>", or pass --root <the directory holding .jarl/>`);
+  need(existsSync(jarlDir(root)), `no loop here: ${jarlDir(root)} does not exist — open one with jarl.mjs init "<goal>", or pass --root <the directory holding .jarl/>`, () => (['jarl.mjs', 'init', '<goal>']));
   const logN = countFlag(flags, 'log', RESUME_LOG_LINES);
   const readyN = countFlag(flags, 'ready', RESUME_READY);
   const loop = readLoop(jarlDir(root));
@@ -88,13 +88,15 @@ export function cmdResume(root, flags = {}) {
   const merged = issues.filter((i) => status.ciPending.includes(i.id) || status.ciRed.includes(i.id)).map((i) => ({ id: i.id, title: i.title, ...mergedOf(i) }));
   const logLines = loop.events;
   const kept = handoffAge(root, status.lastActivity);
+  // The CI of the tips is asked of gh by the command line's --gh and by the library's ci, the key resumeData has kept
+  // since its first contract; gh is taken there too, with the same meaning.
   return {
     goal: status.goal, opened: status.opened, lastActivity: status.lastActivity, archived: status.archived, status, ...(slice !== null ? { slice } : {}),
     rulings, rules, inFlight, waiting,
     questions: asks.filter((a) => a.kind !== 'ratify' && a.kind !== 'escalation' && a.kind !== 'rule'), escalations: asks.filter((a) => a.kind === 'escalation'), proposed: asks.filter((a) => a.kind === 'rule'), ratify: asks.filter((a) => a.kind === 'ratify'),
     held, kept: keptRows, next: ready.slice(0, readyN).map((r) => ({ id: r.id, title: r.title, priority: r.priority, ...(r.noAcceptance ? { noAcceptance: true } : {}), ...(r.model ? { model: r.model } : {}), ...declared(byId.get(r.id)) })), readyTotal: scheduled ? null : ready.length,
     ...(scheduled ? { scheduler: profile.scheduler } : {}),
-    queue: cmdQueue(root, { repo: flags.repo, base: flags.base }), merged, tips: cmdTips(root, { ci: flags.gh === true, repo: flags.repo }),
+    queue: cmdQueue(root, { repo: flags.repo, base: flags.base }), merged, tips: cmdTips(root, { ci: flags.gh === true || flags.ci === true, repo: flags.repo }),
     uncommitted: uncommittedLoopFiles(root),
     ...(status.disagreements ? { disagreements: status.disagreements } : {}),
     ...(status.headerRead ? { headerRead: status.headerRead } : {}),

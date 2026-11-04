@@ -25,7 +25,7 @@ const short = (t, n = TITLE) => (t.length > n ? `${t.slice(0, n - 1)}…` : t);
 // The name the asker gives, read as a holder: a name that reads as owner is the owner, jarl is the jarl, any other name
 // is kept as given (a coordinator or an outside person).
 export function holderOf(name) {
-  need(typeof name === 'string' && fieldText(name), '--as names who asks: owner, jarl, a coordinator or a person by name');
+  need(typeof name === 'string' && fieldText(name), '--as names who asks: owner, jarl, a coordinator or a person by name', () => ({ flag: '--as', value: 'jarl' }));
   const plain = fieldText(name);
   const letters = plain.toLowerCase().replace(/[^\p{L}]/gu, '');
   if (letters === OWNER_HOLDER || letters === `the${OWNER_HOLDER}`) return OWNER_HOLDER;

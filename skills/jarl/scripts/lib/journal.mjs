@@ -35,7 +35,7 @@ export function appendLog(root, event) {
 // never written whole, so no line of it is replaced or dropped behind the record's back.
 export function writeWhole(path, text) {
   const dir = dirname(path);
-  need(!(basename(path).toLowerCase() === LOG_FILE.toLowerCase() && (existsSync(join(dir, 'issues')) || existsSync(goalPath(dir)))), `${path} is the loop's journal: it is appended to (record.appendLog), never written whole`);
+  need(!(basename(path).toLowerCase() === LOG_FILE.toLowerCase() && (existsSync(join(dir, 'issues')) || existsSync(goalPath(dir)))), `${path} is the loop's journal: it is appended to (record.appendLog), never written whole`, () => (['jarl.mjs', 'log', '<text>']));
   writeAtomic(path, text);
 }
 // Several lines in one write: a bulk command's lines land together or not at all. A command that writes the same
@@ -185,7 +185,7 @@ function markDecision(root, slug, line, { text: given } = {}) {
   const path = decisionsPath(jarlDir(root));
   const lines = (given ?? readText(path)).split('\n');
   const at = lines.findIndex((l) => { const h = DECISION_HEAD.exec(l); return h && h[2] === slug; });
-  need(at !== -1, `no ruling ${slug} in ${DECISIONS_FILE}`);
+  need(at !== -1, `no ruling ${slug} in ${DECISIONS_FILE}`, () => { const slugs = lines.map((l) => DECISION_HEAD.exec(l)?.[2]).filter(Boolean); return { replace: slug, value: slugs.at(-1) ?? '<slug>' }; });
   let end = lines.findIndex((l, n) => n > at && l.startsWith('## '));
   if (end === -1) end = lines.length;
   while (end - 1 > at && lines[end - 1].trim() === '') end -= 1;
@@ -200,20 +200,20 @@ function markDecision(root, slug, line, { text: given } = {}) {
 // line of a ruling no text given to decide can stand on (owner.mjs, quoteOf). The ruling it rests on (under, on a ruling
 // by anyone but the owner) is the paragraph before, in the same form and for the same reason (owner.mjs, underOf).
 export function appendDecision(root, slug, ruling, { by, quote, under, supersedes, area, reach, rule, settles, appliesTo } = {}) {
-  need(under === undefined || under === null || (typeof under === 'string' && SLUG_RE.test(under) && by !== OWNER), 'the ruling a ruling rests on is the slug of a ruling, and a ruling by the owner rests on his own words');
-  need(quote === undefined || quote === null || (typeof quote === 'string' && quote === fieldText(quote) && quote !== '' && by === OWNER), 'the owner\'s words are one line of text, kept with a ruling by the owner');
+  need(under === undefined || under === null || (typeof under === 'string' && SLUG_RE.test(under) && by !== OWNER), 'the ruling a ruling rests on is the slug of a ruling, and a ruling by the owner rests on his own words', () => ({ drop: '--under' }));
+  need(quote === undefined || quote === null || (typeof quote === 'string' && quote === fieldText(quote) && quote !== '' && by === OWNER), 'the owner\'s words are one line of text, kept with a ruling by the owner', () => ({ flag: '--quote', value: '<his words, on one line>' }));
   if (quote) needNoOwnersWords('--quote', quote);
-  need(typeof slug === 'string' && SLUG_RE.test(slug), `a ruling's slug is letters, digits and . _ - (starting with a letter or digit, at most 80 characters) — not "${slug}": jarl.mjs decide ${slugify(String(slug || 'ruling'))} "<text>" --by <who>`);
+  need(typeof slug === 'string' && SLUG_RE.test(slug), `a ruling's slug is letters, digits and . _ - (starting with a letter or digit, at most 80 characters) — not "${slug}"`, () => (`jarl.mjs decide ${slugify(String(slug || 'ruling'))} "<text>" --by <who>`));
   const path = decisionsPath(jarlDir(root));
   const existing = existsSync(path) ? readText(path) : '# Decisions\n';
   const all = loadDecisions(root);
-  need(!all.some((d) => d.slug === slug), `duplicate slug: ${slug} — a ruling that replaces it takes a new slug and --supersedes ${slug}: jarl.mjs decide <new slug> "<text>" --by <who> --supersedes ${slug}`);
+  need(!all.some((d) => d.slug === slug), `duplicate slug: ${slug} — a ruling that replaces it takes a new slug and --supersedes ${slug}`, () => (`jarl.mjs decide <new slug> "<text>" --by <who> --supersedes ${slug}`));
   let text = existing;
   if (supersedes !== undefined) {
-    need(typeof supersedes === 'string' && SLUG_RE.test(supersedes) && supersedes !== slug, '--supersedes names the slug of an earlier ruling');
+    need(typeof supersedes === 'string' && SLUG_RE.test(supersedes) && supersedes !== slug, '--supersedes names the slug of an earlier ruling', () => ({ flag: '--supersedes', value: '<slug>' }));
     const old = all.find((d) => d.slug === supersedes);
-    need(old, `no ruling ${supersedes} in ${DECISIONS_FILE} to supersede — the rulings: jarl.mjs decisions`);
-    need(!old.supersededBy, `${supersedes} is already superseded by ${old.supersededBy} — supersede that one instead`);
+    need(old, `no ruling ${supersedes} in ${DECISIONS_FILE} to supersede — the rulings: jarl.mjs decisions`, () => { const live = all.filter((d) => !d.supersededBy).at(-1); return live ? { flag: '--supersedes', value: live.slug } : { drop: '--supersedes' }; });
+    need(!old.supersededBy, `${supersedes} is already superseded by ${old.supersededBy} — supersede that one instead`, () => ({ flag: '--supersedes', value: old.supersededBy }));
     text = markDecision(root, supersedes, `**Superseded by:** ${slug} (${today()})`, { text });
   }
   const meta = [appliesTo ? `**Applies to:** ${fieldText(appliesTo)}` : null, settles?.length ? `**Settles:** ${settles.join(', ')}` : null, by ? `**By:** ${fieldText(by)}` : null, supersedes !== undefined ? `**Supersedes:** ${supersedes}` : null, area ? `**Area:** ${area}` : null, reach !== undefined && reach !== null ? `**Reach:** ${reach}` : null, rule ? `**Rule:** ${rule}` : null].filter(Boolean).join('\n');
@@ -323,7 +323,7 @@ export function goalWithLine(text, line) {
 // goal: the goal as goal.md holds it.
 export function cmdGoal(root) {
   const text = readGoal(jarlDir(root));
-  need(text !== null, `the loop has no goal: open it with init "<goal>"`);
+  need(text !== null, `the loop has no goal: open it with init "<goal>"`, () => (['jarl.mjs', 'init', '<goal>']));
   return { goal: text.replace(/\s+$/, '') };
 }
 // goal --set "<machine line>": one machine line of the goal changed, and a log line that says what it was and what it is now.
@@ -334,27 +334,27 @@ export function cmdGoal(root) {
 export function cmdGoalSet(root, text) {
   const dir = jarlDir(root);
   const old = readGoal(dir);
-  need(old !== null, 'the loop has no goal: open it with init "<goal>"');
-  need(!oneBreak(text).includes('\n'), 'goal --set takes one machine line: a line break in its value is refused');
+  need(old !== null, 'the loop has no goal: open it with init "<goal>"', () => (['jarl.mjs', 'init', '<goal>']));
+  need(!oneBreak(text).includes('\n'), 'goal --set takes one machine line: a line break in its value is refused', () => ({ flag: '--set', value: 'Check: <command>' }));
   const line = goalLineOf(text);
-  need(line && line.value && MACHINE_LABEL[line.key], 'goal --set takes one machine line: "Check (<repository>): <command>" or "Check: <command>", "Model (<tier>): <model>, …", "Coordinators: <name>, …", "Merger: <name>", "Takeover (<kind>): <rounds>" or "Takeover: <rounds>": jarl.mjs goal --set "Check: <command>"');
+  need(line && line.value && MACHINE_LABEL[line.key], 'goal --set takes one machine line: "Check (<repository>): <command>" or "Check: <command>", "Model (<tier>): <model>, …", "Coordinators: <name>, …", "Merger: <name>", "Takeover (<kind>): <rounds>" or "Takeover: <rounds>"', 'jarl.mjs goal --set "Check: <command>"');
   let qualifier = line.qualifier;
   if (line.key === 'model') {
-    need(qualifier !== null, 'a Model line names its tier: "Model (<tier>): <model>, …"');
+    need(qualifier !== null, 'a Model line names its tier: "Model (<tier>): <model>, …"', () => ({ flag: '--set', value: 'Model (<tier>): <model>' }));
     const profile = loadProfile(root);
     qualifier = profile.tiers.find((t) => t.toLowerCase() === qualifier.toLowerCase()) ?? null;
-    need(qualifier !== null, `the profile declares no tier ${line.qualifier}: its tiers are ${loadProfile(root).tiers.join(', ')}`);
+    need(qualifier !== null, `the profile declares no tier ${line.qualifier}: its tiers are ${loadProfile(root).tiers.join(', ')}`, () => ({ flag: '--set', value: `Model (${loadProfile(root).tiers[0]}): <model>` }));
   }
-  need(line.key !== 'coordinators' || qualifier === null, 'a Coordinators line takes no qualifier: "Coordinators: <name>, …"');
-  need(line.key !== 'merger' || (qualifier === null && !line.value.includes(',')), MERGER_REASON);
+  need(line.key !== 'coordinators' || qualifier === null, 'a Coordinators line takes no qualifier: "Coordinators: <name>, …"', () => ({ flag: '--set', value: 'Coordinators: <name>, <name>' }));
+  need(line.key !== 'merger' || (qualifier === null && !line.value.includes(',')), MERGER_REASON, () => ({ flag: '--set', value: 'Merger: jarl' }));
   if (line.key === 'takeover' && qualifier !== null) {
     const kinds = loadProfile(root).kinds;
     qualifier = kinds.find((k) => k.toLowerCase() === qualifier.toLowerCase()) ?? null;
-    need(qualifier !== null, `the profile declares no kind ${line.qualifier}: its kinds are ${kinds.join(', ')}`);
+    need(qualifier !== null, `the profile declares no kind ${line.qualifier}: its kinds are ${kinds.join(', ')}`, () => ({ flag: '--set', value: `Takeover (${kinds[0]}): 3` }));
   }
   const value = noSeparators(line.value);
-  need(value, 'goal --set needs a value after the colon');
-  need(line.key !== 'takeover' || takeoverRounds(value) !== null, `a Takeover line takes a whole number of rounds from 1 to ${TAKEOVER_MAX}: "Takeover: <rounds>" or "Takeover (<kind>): <rounds>"`);
+  need(value, 'goal --set needs a value after the colon', () => ({ flag: '--set', value: 'Check: <command>' }));
+  need(line.key !== 'takeover' || takeoverRounds(value) !== null, `a Takeover line takes a whole number of rounds from 1 to ${TAKEOVER_MAX}: "Takeover: <rounds>" or "Takeover (<kind>): <rounds>"`, () => ({ flag: '--set', value: 'Takeover: 3' }));
   const next = goalWithLine(old, { key: line.key, qualifier, value });
   // A line that already holds this value is left alone: nothing is written and no log line says it changed.
   if (next.replaced && noSeparators(next.was) === value) return { shown: next.shown, replaced: true, was: next.was, unchanged: true };

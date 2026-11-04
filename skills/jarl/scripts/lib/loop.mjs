@@ -264,7 +264,7 @@ export const sameSlice = (a, b) => a !== null && b !== null && fieldText(a).toLo
 // now, so a refusal says how to move it from the slice it is in, removing every slice tag it holds.
 export function needOneSlice(tags, { id = null, held = [] } = {}) {
   const slices = [...new Set(tags.filter(isSliceTag))];
-  for (const t of slices) need(t.length > SLICE_PREFIX.length, `${t} names no coordinator: a slice is the tag slice:<coordinator>, the coordinator a name of the goal's Coordinators line`);
+  for (const t of slices) need(t.length > SLICE_PREFIX.length, `${t} names no coordinator: a slice is the tag slice:<coordinator>, the coordinator a name of the goal's Coordinators line`, () => ({ replace: t, value: 'slice:<coordinator>' }));
   if (slices.length <= 1) return;
   const heldSlices = held.filter(isSliceTag);
   const was = heldSlices[0];
@@ -274,7 +274,7 @@ export function needOneSlice(tags, { id = null, held = [] } = {}) {
     ? `${id} is in ${was} already, and an issue is in one slice — to move it: jarl.mjs field ${id} Tags --remove ${heldSlices.join(',')}, then jarl.mjs field ${id} Tags --add ${to}`
     : id !== null && same
       ? `${id} is in ${was} already, and ${same} names the same slice in another case — an issue carries one slice tag`
-      : `an issue is in one slice, and ${id !== null ? `${id} would carry` : 'the tags name'} ${slices.join(', ')} — keep one${id !== null ? `: jarl.mjs field ${id} Tags --remove ${slices.slice(1).join(',')}` : `, e.g. --tags ${slices[0]}`}`);
+      : `an issue is in one slice, and ${id !== null ? `${id} would carry` : 'the tags name'} ${slices.join(', ')} — keep one${id !== null ? `: jarl.mjs field ${id} Tags --remove ${slices.slice(1).join(',')}` : `, e.g. --tags ${slices[0]}`}`, () => (id !== null && was && to ? ['jarl.mjs', 'field', id, 'Tags', '--remove', heldSlices.join(',')] : id !== null && same ? ['jarl.mjs', 'field', id, 'Tags', '--remove', same] : { replace: slices.slice(1).join(','), value: slices[0] }));
 }
 // The slices of a loop: each coordinator the Coordinators line names, with its slice tag, then each slice a tag names
 // whose coordinator the line does not list (declared false: its coordinator's approve counts as fresh). inPlay counts the
@@ -294,11 +294,11 @@ export function slicesOf(loop) {
 // The coordinator a --slice names, as the record writes it: a name of the Coordinators line (`coordinators`) or of a
 // slice tag one of `issues` carries, in any case. Any other name is refused, naming the slices there are.
 export function sliceNamed(coordinators, issues, name) {
-  need(typeof name === 'string' && fieldText(name), '--slice names a coordinator: its slice is the issues tagged slice:<coordinator>');
+  need(typeof name === 'string' && fieldText(name), '--slice names a coordinator: its slice is the issues tagged slice:<coordinator>', () => ({ flag: '--slice', value: '<coordinator>' }));
   const known = [...coordinators, ...issues.map(sliceOf).filter((s) => s !== null)];
   const found = known.find((k) => sameSlice(k, name));
   const names = [...new Map(known.map((k) => [k.toLowerCase(), k])).values()];
-  need(found !== undefined, `no coordinator ${fieldText(name)} on the goal's Coordinators line and no issue tagged ${sliceTag(fieldText(name))} — ${names.length ? `the slices are ${names.map(sliceTag).join(', ')}` : 'the loop has no slice: jarl.mjs goal --set "Coordinators: <names>", then jarl.mjs field <ids> Tags --add slice:<name>'}`);
+  need(found !== undefined, `no coordinator ${fieldText(name)} on the goal's Coordinators line and no issue tagged ${sliceTag(fieldText(name))} — ${names.length ? `the slices are ${names.map(sliceTag).join(', ')}` : 'the loop has no slice: jarl.mjs goal --set "Coordinators: <names>", then jarl.mjs field <ids> Tags --add slice:<name>'}`, () => (names.length ? { replace: fieldText(name), value: names[0] } : ['jarl.mjs', 'goal', '--set', 'Coordinators: <names>']));
   return found;
 }
 // The slices with an issue in play.

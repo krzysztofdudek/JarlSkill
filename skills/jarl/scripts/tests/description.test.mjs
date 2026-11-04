@@ -149,7 +149,7 @@ test('field --add adds to a section after what it holds, and logs the line a rep
   assert.equal(lastLine(root), '2 body · what · was (none)');
   assert.match(refuses(root, 'field', '1', 'Title', 'x', '--add'), /Title holds one value, so it is replaced, never added to or taken from/, 'the title is replaced, never appended to');
   assert.match(refuses(root, 'field', '1', 'Where', 'x', '--add'), /Where holds one value/);
-  assert.match(refuses(root, 'field', '1', 'Why', '', '--add'), /field Why needs a value, or --clear to empty it: jarl\.mjs field <ids> Why "<value>"$/m);
+  assert.match(refuses(root, 'field', '1', 'Why', '', '--add'), /^field Why needs a value, or --clear to empty it\njarl\.mjs field 1 Why '<value>' --add\n$/);
   jarl(root, 'field', '1', 'What', 'replaced');
   assert.equal(R.findIssue(root, '1').sections.what.trim(), 'replaced', 'without --add a section is replaced');
 });

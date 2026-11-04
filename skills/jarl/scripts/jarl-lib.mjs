@@ -9,7 +9,7 @@
 // The code lives in lib/, one module per part of the record, each importing only what it uses; this file is
 // the one surface over them that jarl.mjs, record.mjs and the tests import.
 
-export { STATUSES, KINDS, PRIORITIES, TIERS, TIER_DEFAULT, ASK_KINDS, CI_STATES, ROUNDS_BEFORE_TAKEOVER, STALE_HOURS, HANDOFF_STALE_MS, slugify, need, noSeparators } from './lib/base.mjs';
+export { STATUSES, KINDS, PRIORITIES, TIERS, TIER_DEFAULT, ASK_KINDS, CI_STATES, ROUNDS_BEFORE_TAKEOVER, STALE_HOURS, HANDOFF_STALE_MS, slugify, need, noSeparators, refuse, Refusal, isFix, commandLine, commandWords, readyText } from './lib/base.mjs';
 export { findRoot, jarlDir, issuesDir, portablePath, canonical } from './lib/where.mjs';
 export { readText, RENAME_RETRY_MS, renameRetry, writeAtomic } from './lib/files.mjs';
 export { ID_SRC, idKey, cmpId, needsRaisedFormat, writtenForms, writtenId, newNumber, expandIds, idsNamed } from './lib/ids.mjs';

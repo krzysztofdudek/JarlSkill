@@ -3,7 +3,7 @@
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, openSync, closeSync, writeSync, unlinkSync, linkSync } from 'node:fs';
 import { basename, join, resolve, relative, isAbsolute } from 'node:path';
-import { CI_STATES, LEASE_FIELDS, PRIORITIES, TIERS, WAIT_KIND, fieldText, need, noSeparators, shellWord, slugify, splitList } from './base.mjs';
+import { CI_STATES, LEASE_FIELDS, PRIORITIES, Refusal, TIERS, WAIT_KIND, fieldText, need, noSeparators, refuse, shellWord, slugify, splitList } from './base.mjs';
 import { needNoNewOwnersWords, needNoOwnersWords } from './owner.mjs';
 import { git, gitBytes, gitRun } from './git.mjs';
 import { canonical, issuesDir, jarlDir, portablePath, stamp, today } from './where.mjs';
@@ -30,10 +30,10 @@ const LIST_ALL = ' — the issues: jarl.mjs list --all';
 export const PERMANENT_MARKER = 'This loop is a permanent record: it is not tied to a feature branch, and `close` never removes this directory. See SKILL.md.\n';
 
 export function cmdInit(root, goal, flags = {}) {
-  need(flags.committed === undefined || flags.committed === true, '--committed takes no value — put the goal first: init "<goal>" --committed');
-  need(flags.permanent === undefined || flags.permanent === true, '--permanent takes no value — put the goal first: init "<goal>" --permanent');
-  need(goal, 'init requires "<goal>"');
-  need(!hasLiveLoop(root), '.jarl/ already exists here with a live loop — resume it, or archive it first: jarl.mjs archive "<slug>"');
+  need(flags.committed === undefined || flags.committed === true, '--committed takes no value — put the goal first: init "<goal>" --committed', () => ({ drop: '--committed' }));
+  need(flags.permanent === undefined || flags.permanent === true, '--permanent takes no value — put the goal first: init "<goal>" --permanent', () => ({ drop: '--permanent' }));
+  need(goal, 'init requires "<goal>"', () => ({ arg: 0, value: '<goal>' }));
+  need(!hasLiveLoop(root), '.jarl/ already exists here with a live loop — resume it, or archive it first', 'jarl.mjs archive "<slug>"');
   // The profile is read and checked before anything is written: a bad one leaves no half-opened loop behind.
   const prof = flags.profile !== undefined ? readProfileFile(flags.profile) : null;
   // A .jarl/ left behind by `archive` holds only archive/ and the mode markers, and the new loop
@@ -44,7 +44,7 @@ export function cmdInit(root, goal, flags = {}) {
   if (archived) {
     const kept = existsSync(join(jarlDir(root), '.permanent')) ? 'permanent' : outOfGit(root) ? 'default' : 'committed';
     const asked = permanent ? 'permanent' : committed ? 'committed' : null;
-    need(asked === null || asked === kept, `this .jarl/ keeps its archived loops in the ${kept} mode, and a new loop here keeps that mode — run init without --${asked}`);
+    need(asked === null || asked === kept, `this .jarl/ keeps its archived loops in the ${kept} mode, and a new loop here keeps that mode — run init without --${asked}`, () => ({ drop: `--${asked}` }));
     permanent = kept === 'permanent';
     committed = kept !== 'default';
   }
@@ -69,8 +69,8 @@ export function hasLiveLoop(root) {
 
 // The refusal for a command that needs a live loop: no .jarl/ at all, or one holding only archives.
 function needLiveLoop(root, next) {
-  need(existsSync(jarlDir(root)), `no .jarl/ here${next}`);
-  need(hasLiveLoop(root), `no live loop here — .jarl/ holds only archived loops${next}`);
+  need(existsSync(jarlDir(root)), `no .jarl/ here${next}`, () => (['jarl.mjs', 'init', '<goal>']));
+  need(hasLiveLoop(root), `no live loop here — .jarl/ holds only archived loops${next}`, () => (['jarl.mjs', 'init', '<goal>']));
 }
 
 // What stays in .jarl/ when a loop is archived: the archive itself, the markers that say how the loop lives in
@@ -83,12 +83,12 @@ const ARCHIVE_KEEPS = new Set(['archive', 'templates', '.gitignore', '.gitattrib
 // decisions, log, handoff. Open work is not a refusal (archiving is how a session sets old work
 // aside), but the result names it, and the loop's own log records the move before it goes.
 export function cmdArchive(root, slug, flags = {}) {
-  need(slug, 'archive requires "<slug>", a short name for the loop being put away: jarl.mjs archive "<slug>"');
-  need(hasLiveLoop(root), existsSync(jarlDir(root)) ? 'no loop to archive here — .jarl/ holds only earlier archives; open one with: jarl.mjs init "<goal>"' : 'no .jarl/ here');
+  need(slug, 'archive requires "<slug>", a short name for the loop being put away', 'jarl.mjs archive "<slug>"');
+  need(hasLiveLoop(root), existsSync(jarlDir(root)) ? 'no loop to archive here — .jarl/ holds only earlier archives; open one with: jarl.mjs init "<goal>"' : 'no .jarl/ here', () => (['jarl.mjs', 'init', '<goal>']));
   needLifecycle(root, 'archive', flags.caller);
   const name = `${today().replace(/-/g, '.')}-${slugify(slug)}`;
   const dest = join(jarlDir(root), 'archive', name);
-  need(!existsSync(dest), `.jarl/archive/${name} already exists — pick another slug`);
+  need(!existsSync(dest), `.jarl/archive/${name} already exists — pick another slug`, () => ({ replace: slug, value: `${slug}-2` }));
   const profile = loadProfile(root);
   const left = loadIssues(root).filter((i) => profile.unfinished(i.status)).map((i) => i.id);
   appendLog(root, `archived → .jarl/archive/${name}${left.length ? ` · ${left.length} still open or in progress: ${left.join(', ')}` : ''}`);
@@ -122,11 +122,11 @@ export function claimFile(tmp, file, link = linkSync) {
 export const TEMPLATE_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
 export function templatesDir(root) { return join(jarlDir(root), 'templates'); }
 export function readTemplate(root, name) {
-  need(typeof name === 'string' && TEMPLATE_RE.test(name), `a template is named by letters, digits and . _ - (the file .jarl/templates/<name>.md) — not "${name}"`);
+  need(typeof name === 'string' && TEMPLATE_RE.test(name), `a template is named by letters, digits and . _ - (the file .jarl/templates/<name>.md) — not "${name}"`, () => ({ replace: name, value: slugify(String(name ?? 'template')) }));
   const path = join(templatesDir(root), `${name}.md`);
   if (!existsSync(path)) {
     const have = existsSync(templatesDir(root)) ? readdirSync(templatesDir(root)).filter((f) => f.endsWith('.md')).map((f) => f.slice(0, -3)) : [];
-    throw new Error(`no template ${name} in ${templatesDir(root)} — ${have.length ? `templates here: ${have.join(', ')}` : 'none here yet; write one as an issue file without a number (see references/jarl.md, "Templates")'}, or file it without one: jarl.mjs new "<title>"`);
+    refuse(`no template ${name} in ${templatesDir(root)} — ${have.length ? `templates here: ${have.join(', ')}` : 'none here yet; write one as an issue file without a number (see references/jarl.md, "Templates")'}, or file it without one`, have.length ? { replace: name, value: have[0] } : { drop: '--template' });
   }
   // The template is read as an issue whose title line may be anything: only its fields and sections count. A template
   // that starts straight with a field has no title line, so that first field is read as a field, not dropped.
@@ -213,7 +213,7 @@ function defaultedNote(field, value, flag) {
 }
 
 export function cmdNew(root, title, rawFlags) {
-  need(title, 'new requires "<title>": jarl.mjs new "<title>" --tier light|standard|strong --acceptance "<line>"');
+  need(title, 'new requires "<title>"', { arg: 0, value: '<title>' });
   needNoOwnersWords('the new issue', title, rawFlags);
   // A title is the heading line of the issue: line breaks in it become spaces, so the lines after the first are not lost to the heading.
   if (/[\r\n]/.test(title)) title = String(title).split(/\r\n?|\n/).map((l) => l.trim()).filter(Boolean).join(' ');
@@ -221,7 +221,7 @@ export function cmdNew(root, title, rawFlags) {
   // A linked worktree of a committed loop holds only the copy it was cut with, so a number taken there may already be used
   // in the main checkout: file from the main checkout.
   const placed = mainCheckoutOf(root);
-  need(!placed || !placed.linked || !existsSync(jarlDir(placed.mainRoot)), `${root} is a linked worktree of ${placed?.mainRoot}, which holds this loop: its copy here may lag, and the number would be used twice — file from the main checkout: pass --root ${placed?.mainRoot}`);
+  need(!placed || !placed.linked || !existsSync(jarlDir(placed.mainRoot)), `${root} is a linked worktree of ${placed?.mainRoot}, which holds this loop: its copy here may lag, and the number would be used twice — file from the main checkout: pass --root ${placed?.mainRoot}`, () => ({ flag: '--root', value: placed?.mainRoot ?? '<the main checkout>' }));
   let flags = rawFlags;
   let fromTemplate = {};
   if (rawFlags.template !== undefined) {
@@ -237,7 +237,7 @@ export function cmdNew(root, title, rawFlags) {
   const fields = profile.fields.map((f) => {
     const raw = given.has(f.name) ? given.get(f.name) : fromTemplate.allFields?.[f.key] || f.default || '';
     const v = fieldValue(profile, f, raw);
-    need(!f.required || v, `${f.name} is required by this loop's profile — give it: --field "${f.name}=<value>"${f.enum ? ` (one of: ${f.enum.join(', ')})` : ''}`);
+    need(!f.required || v, `${f.name} is required by this loop's profile — give it${f.enum ? ` (one of: ${f.enum.join(', ')})` : ''}`, () => ({ flag: '--field', value: `${f.name}=${f.enum ? f.enum[0] : '<value>'}` }));
     return [f.name, v];
   });
   const givenSections = namedPairs(flags.section, 'section', profile.sections, 'section');
@@ -248,17 +248,17 @@ export function cmdNew(root, title, rawFlags) {
   if (profile.acceptance && fromTemplate.acceptance === undefined && fromTemplate.section) fromTemplate.acceptance = fromTemplate.section(profile.acceptance.toLowerCase());
   const kind = flags.kind || profile.kindDefault;
   const kindDefaulted = !flags.kind;
-  need(profile.kinds.includes(kind), `--kind must be one of: ${profile.kinds.join(', ')}; e.g. --kind ${profile.kindDefault}`);
+  need(profile.kinds.includes(kind), `--kind must be one of: ${profile.kinds.join(', ')}`, () => ({ flag: '--kind', value: `${profile.kindDefault}` }));
   const person = flags.person !== undefined ? keptValue('Person', flags.person) : '';
   const checkWhen = flags['check-when'] !== undefined ? keptValue('Check when', flags['check-when']) : '';
   const kept = profile.keptKind(kind);
-  need(kept === WAIT_KIND || (!person && !checkWhen), profile.kept ? `--${person ? 'person' : 'check-when'} goes with --kind wait: it names the outside person a wait is held by and when to check it` : `--${person ? 'person' : 'check-when'} is off in this loop: its profile declares its own kinds or a field Person or Check when, so the built-in promise and wait are off here — write a field the profile declares with --field "<Name>=<value>"`);
-  need(kept !== WAIT_KIND || (person && checkWhen), `a wait names the outside person it is held by and when to check it: jarl.mjs new "<title>" --kind wait --person "<name>" --check-when "<a date, or the event to check after>"`);
+  need(kept === WAIT_KIND || (!person && !checkWhen), profile.kept ? `--${person ? 'person' : 'check-when'} goes with --kind wait: it names the outside person a wait is held by and when to check it` : `--${person ? 'person' : 'check-when'} is off in this loop: its profile declares its own kinds or a field Person or Check when, so the built-in promise and wait are off here — write a field the profile declares with --field "<Name>=<value>"`, () => ({ drop: person ? '--person' : '--check-when' }));
+  need(kept !== WAIT_KIND || (person && checkWhen), `a wait names the outside person it is held by and when to check it`, () => [...(person ? [] : [{ flag: '--person', value: '<name>' }]), ...(checkWhen ? [] : [{ flag: '--check-when', value: '<a date, or the event to check after>' }])]);
   const priority = String(flags.prio || '2');
   const priorityDefaulted = !flags.prio;
-  need(PRIORITIES.includes(priority), '--prio must be 1, 2 or 3; e.g. --prio 2');
+  need(PRIORITIES.includes(priority), '--prio must be 1, 2 or 3', () => ({ flag: '--prio', value: '2' }));
   const tier = String(flags.tier || profile.tierDefault);
-  need(profile.tiers.includes(tier), `--tier must be one of: ${profile.tiers.join(', ')} — the tier of model the worker is raised on, mapped to a model by the platform running the loop; e.g. --tier ${profile.tierDefault}`);
+  need(profile.tiers.includes(tier), `--tier must be one of: ${profile.tiers.join(', ')} — the tier of model the worker is raised on, mapped to a model by the platform running the loop`, () => ({ flag: '--tier', value: `${profile.tierDefault}` }));
   const picked = flags.repo !== undefined ? repoList(root, flags.repo) : [];
   needOneSlice(splitList(flags.tags));
   const source = sourceList(flags.source);
@@ -326,7 +326,7 @@ export function cmdNew(root, title, rawFlags) {
       const note = notes.length ? { note: notes.join('\n') } : {};
       return { id, file, ...(rawFlags.template !== undefined ? { template: rawFlags.template } : {}), ...note };
     }
-    need(tries < 100, 'could not claim a free issue number after 100 tries');
+    need(tries < 100, 'could not claim a free issue number after 100 tries', () => (['jarl.mjs', 'verify']));
     n = Math.max(n + 1, taken().reduce((m, x) => Math.max(m, x), 0) + 1);
   }
 }
@@ -338,24 +338,26 @@ export function cmdNew(root, title, rawFlags) {
 // with the key, written before the file moves. A number one file carries, and a file with no key, are refused.
 export function cmdRenumber(root, rawId, flags = {}) {
   needLiveLoop(root, '');
-  need(rawId !== undefined && /^#?\d+$/.test(String(rawId).trim()), 'renumber takes the number two issue files carry: jarl.mjs renumber <id> --key <key>');
+  // The number the ready call names: one two files of the loop carry, when one is.
+  const carriedTwice = () => { const ids = loadIssues(root).filter((i) => i.id !== null).map((i) => i.id); return { arg: 0, value: ids.find((id, n) => ids.findIndex((x) => idKey(x) === idKey(id)) !== n) ?? '<the number two files carry>' }; };
+  need(rawId !== undefined && /^#?\d+$/.test(String(rawId).trim()), 'renumber takes the number two issue files carry', carriedTwice);
   const issues = loadIssues(root);
   const same = issues.filter((i) => i.id !== null && idKey(i.id) === idKey(rawId));
-  need(same.length, `no such issue: ${rawId}${LIST_ALL}`);
+  need(same.length, `no such issue: ${rawId}${LIST_ALL}`, () => ({ replace: rawId, value: '<id>' }));
   const old = same[0].id;
   const named = (list) => list.map((i) => `issues/${basename(i.file)} (${i.fields.key ? `key ${fieldText(i.fields.key)}` : 'no key'})`).join(', ');
-  need(same.length > 1, `${old} is carried by one issue file, ${named(same)}: renumber gives a free number to one of the files that carry one number after a merge, and the files that do: jarl.mjs verify`);
-  need(flags.key !== undefined && String(flags.key).trim() !== '', `${old} is carried by ${named(same)}: name the one to give a free number with --key <key>`);
+  need(same.length > 1, `${old} is carried by one issue file, ${named(same)}: renumber gives a free number to one of the files that carry one number after a merge, and the files that do: jarl.mjs verify`, carriedTwice);
+  need(flags.key !== undefined && String(flags.key).trim() !== '', `${old} is carried by ${named(same)}: name the one to give a free number with --key <key>`, () => ({ flag: '--key', value: fieldText(same.at(-1).fields.key ?? '') || '<key>' }));
   const key = String(flags.key).trim();
   const pick = same.find((i) => i.fields.key === key);
-  need(pick, `no file of ${old} carries the key ${key}: ${named(same)}`);
+  need(pick, `no file of ${old} carries the key ${key}: ${named(same)}`, () => ({ flag: '--key', value: fieldText(same.at(-1).fields.key ?? '') || '<key>' }));
   needFormat(root, 'issue-key');
   const profile = loadProfile(root);
   const dir = issuesDir(root);
   const before = readText(pick.file);
   const rest = basename(pick.file).replace(/^\d+-/, '');
   for (let n = nextFreeNumber(root, dir), tries = 0; ; n += 1, tries += 1) {
-    need(tries < 100, 'could not claim a free issue number after 100 tries');
+    need(tries < 100, 'could not claim a free issue number after 100 tries', () => (['jarl.mjs', 'verify']));
     const id = newNumber(n, numberWidth(profile));
     if (needsRaisedFormat(id)) needFormat(root, 'plain-number');
     const file = join(dir, `${id}-${rest}`);
@@ -392,7 +394,7 @@ function pathList(v) { return splitList(v).map((p) => portablePath(p)); }
 // inside it, <dir>#<id>. Several are one comma list.
 export function sourceList(v) {
   const list = splitList(v);
-  for (const s of list) need(/^[^#\s]+#[^#\s]+$/.test(s), `a source is <report dir>#<finding id>, e.g. core/research/2026-09-25-jarl#jarl-2-B2 — not "${s}"`);
+  for (const s of list) need(/^[^#\s]+#[^#\s]+$/.test(s), `a source is <report dir>#<finding id>, e.g. core/research/2026-09-25-jarl#jarl-2-B2 — not "${s}"`, () => ({ replace: s, value: '<report dir>#<finding id>' }));
   return list;
 }
 
@@ -402,16 +404,16 @@ function afterList(root, selfId, raw) {
   const keys = expandIds(raw);
   const all = loadIssues(root);
   const missing = keys.filter((k) => !all.some((i) => idKey(i.id) === k));
-  need(missing.length === 0, `no such issue: ${missing.join(', ')}${LIST_ALL}`);
+  need(missing.length === 0, `no such issue: ${missing.join(', ')}${LIST_ALL}`, () => ({ replace: missing[0], value: '<id>' }));
   const ids = keys.map((k) => issueNamed(all, k).id);
-  need(!selfId || !ids.some((id) => idKey(id) === idKey(selfId)), `${selfId} cannot wait on itself: jarl.mjs list --all`);
+  need(!selfId || !ids.some((id) => idKey(id) === idKey(selfId)), `${selfId} cannot wait on itself`, () => { const rest = ids.filter((id) => idKey(id) !== idKey(selfId)); return { arg: 2, value: rest.length ? rest.join(',') : '<another id>' }; });
   if (selfId) {
     const byId = new Map(all.map((i) => [i.id, i]));
     const seen = new Set();
     const stack = [...ids];
     while (stack.length) {
       const id = stack.pop();
-      need(idKey(id) !== idKey(selfId), `${selfId} after ${ids.join(', ')} would close a cycle: that chain of After already leads back to ${selfId}, so none of them would ever be offered`);
+      need(idKey(id) !== idKey(selfId), `${selfId} after ${ids.join(', ')} would close a cycle: that chain of After already leads back to ${selfId}, so none of them would ever be offered`, () => ({ replace: ids[0], value: '<id>' }));
       if (seen.has(id)) continue;
       seen.add(id);
       stack.push(...(byId.get(id)?.after || []));
@@ -441,9 +443,9 @@ export const DESCRIPTION_FIELDS = ['Title', 'Priority', 'Tier', 'Kind', 'Found b
 // event to check after): each one value on one line, without the log's separator.
 function keptValue(name, value) {
   const v = fieldText(value);
-  need(typeof value === 'string' && v, `${name} needs a value: ${name === 'Person' ? 'the outside person a wait is held by' : 'when to check a wait, a date or the event to check after'}`);
-  need(!/[\r\n]/.test(String(value).trim()), `${name} is one line (got ${JSON.stringify(String(value))})`);
-  need(!v.includes('·'), `${name} is one value — not a phrase with "·" in it (got "${v}")`);
+  need(typeof value === 'string' && v, `${name} needs a value: ${name === 'Person' ? 'the outside person a wait is held by' : 'when to check a wait, a date or the event to check after'}`, () => ({ replace: String(value ?? ''), value: name === 'Person' ? '<name>' : '<a date, or the event to check after>' }));
+  need(!/[\r\n]/.test(String(value).trim()), `${name} is one line (got ${JSON.stringify(String(value))})`, () => ({ replace: String(value), value: fieldText(value) }));
+  need(!v.includes('·'), `${name} is one value — not a phrase with "·" in it (got "${v}")`, () => ({ replace: String(value), value: v.replace(/·/g, '-') }));
   return v;
 }
 // The name a description change records as its author, or null when the call names nobody: a write nobody named is
@@ -452,9 +454,9 @@ function keptValue(name, value) {
 export function editorOf(by) {
   if (by === undefined || by === null) return null;
   const name = fieldText(by);
-  need(typeof by === 'string' && name, '--by needs a name: who changed the description');
-  need(!/[\r\n]/.test(String(by).trim()), `--by is one name on one line (got ${JSON.stringify(String(by))})`);
-  need(!name.includes('·'), `--by is one name — not a phrase with "·" in it (got "${name}")`);
+  need(typeof by === 'string' && name, '--by needs a name: who changed the description', () => ({ flag: '--by', value: '<who>' }));
+  need(!/[\r\n]/.test(String(by).trim()), `--by is one name on one line (got ${JSON.stringify(String(by))})`, () => ({ flag: '--by', value: fieldText(by) || '<who>' }));
+  need(!name.includes('·'), `--by is one name — not a phrase with "·" in it (got "${name}")`, () => ({ flag: '--by', value: name.replace(/·/g, '-') }));
   return name;
 }
 // The stand-in a description line writes for the log's separator inside a value, as ⏎ stands in for a line break: the
@@ -503,19 +505,19 @@ const joinParagraphs = (held, added) => (String(held ?? '').trim() ? `${String(h
 export function cmdBody(root, rawId, flags, dry = false) {
   needNoOwnersWords('the body', flags);
   const issue = findIssue(root, rawId);
-  need(issue, `no such issue: ${rawId}${LIST_ALL}`);
+  need(issue, `no such issue: ${rawId}${LIST_ALL}`, () => ({ replace: rawId, value: '<id>' }));
   const profile = loadProfile(root);
   const parts = ['title', 'where', 'what', 'why', 'acceptance', 'changelog', 'section'].filter((k) => flags[k] !== undefined);
-  need(parts.length, 'body needs at least one of --title, --where, --what, --why, --acceptance, --changelog, --section');
+  need(parts.length, 'body needs at least one of --title, --where, --what, --why, --acceptance, --changelog, --section', () => (['jarl.mjs', 'field', '<ids>', '<part>', '<value>']));
   const by = editorOf(flags.by);
   const title = flags.title === undefined ? null : fieldText(flags.title);
-  need(flags.title === undefined || title, '--title needs a title');
+  need(flags.title === undefined || title, '--title needs a title', () => (['jarl.mjs', 'field', '<ids>', 'Title', '<title>']));
   const sections = namedPairs(flags.section, 'section', profile.sections, 'section');
   const append = flags.append === true;
   if (append) {
-    need(flags.title === undefined && flags.where === undefined, '--append adds to a section (What, Why, Acceptance, Changelog or a profile section): the title and the Where field are replaced, not appended to');
+    need(flags.title === undefined && flags.where === undefined, '--append adds to a section (What, Why, Acceptance, Changelog or a profile section): the title and the Where field are replaced, not appended to', () => ({ drop: '--add' }));
     for (const [heading, v] of [['What', flags.what], ['Why', flags.why], ['Acceptance', flags.acceptance], ['Changelog', flags.changelog], ...sections]) {
-      need(v === undefined || [].concat(v).some((x) => fieldText(x) !== ''), `--append needs text to add to the ${heading} section, not an empty one`);
+      need(v === undefined || [].concat(v).some((x) => fieldText(x) !== ''), `--append needs text to add to the ${heading} section, not an empty one`, () => ({ replace: '', value: '<text>' }));
     }
   }
   needNoFieldTags(flags.what, 'the What text');
@@ -553,10 +555,10 @@ export function cmdBody(root, rawId, flags, dry = false) {
 
 export function cmdSource(root, rawId, list, dry = false, by = undefined) {
   const issue = findIssue(root, rawId);
-  need(issue, `no such issue: ${rawId}${LIST_ALL}`);
+  need(issue, `no such issue: ${rawId}${LIST_ALL}`, () => ({ replace: rawId, value: '<id>' }));
   const editor = editorOf(by);
   const sources = sourceList(list);
-  need(sources.length, 'source requires <report dir>#<finding id>[,...]');
+  need(sources.length, 'source requires <report dir>#<finding id>[,...]', () => (['jarl.mjs', 'field', '<ids>', 'Source', '<report dir>#<finding id>']));
   if (dry) return { id: issue.id, sources };
   logChanges(root, [fieldLine(issue.id, 'Source', sources.join(', '), heldField(issue, 'Source'), editor)]);
   writeAtomic(issue.file, setField(readText(issue.file), 'Source', sources.join(', ')));
@@ -565,17 +567,17 @@ export function cmdSource(root, rawId, list, dry = false, by = undefined) {
 
 export function cmdAfter(root, rawId, raw, { clear = false, dry = false, by } = {}) {
   const issue = findIssue(root, rawId);
-  need(issue, `no such issue: ${rawId}${LIST_ALL}`);
+  need(issue, `no such issue: ${rawId}${LIST_ALL}`, () => ({ replace: rawId, value: '<id>' }));
   const editor = editorOf(by);
   if (clear) {
-    need(raw === undefined, 'after takes either <ids> or --clear, not both');
-    need(issue.fields.after !== undefined, `${issue.id} has no After field to clear`);
+    need(raw === undefined, 'after takes either <ids> or --clear, not both', () => ({ drop: '--clear' }));
+    need(issue.fields.after !== undefined, `${issue.id} has no After field to clear`, () => ({ drop: '--clear' }));
     if (dry) return { id: issue.id, after: [], cleared: true };
     logChanges(root, [fieldLine(issue.id, 'After', '', heldField(issue, 'After'), editor)]);
     writeAtomic(issue.file, removeFirstField(readText(issue.file), 'After'));
     return { id: issue.id, after: [], cleared: true };
   }
-  need(raw !== undefined, 'after requires <ids> — the issues this one waits on (or --clear)');
+  need(raw !== undefined, 'after requires <ids> — the issues this one waits on (or --clear)', () => ({ arg: 2, value: '<ids>' }));
   const ids = afterList(root, issue.id, raw);
   if (dry) return { id: issue.id, after: ids };
   logChanges(root, [fieldLine(issue.id, 'After', ids.join(', '), heldField(issue, 'After'), editor)]);
@@ -598,10 +600,10 @@ export function cmdList(root, flags) {
   // profile declares — compared as written, without case in the name. An empty value matches an empty field.
   for (const w of [].concat(flags.match ?? [])) {
     const at = String(w).indexOf('=');
-    need(at > 0, `--match takes <field>=<value> (got "${w}")`);
+    need(at > 0, `--match takes <field>=<value> (got "${w}")`, () => ({ replace: String(w), value: `${String(w).split('=')[0] || 'Kind'}=<value>` }));
     const name = String(w).slice(0, at).trim().toLowerCase();
     const known = [...TOOL_FIELDS, 'Kind', 'Tier', ...profile.fields.map((f) => f.name)];
-    need(known.some((k) => k.toLowerCase() === name), `--match names a header field — one of: ${known.join(', ')} (got "${name}")`);
+    need(known.some((k) => k.toLowerCase() === name), `--match names a header field — one of: ${known.join(', ')} (got "${name}")`, () => ({ replace: String(w), value: `Kind=${String(w).split('=').slice(1).join('=')}` }));
     const value = fieldText(String(w).slice(at + 1));
     rows = rows.filter((i) => (name === 'status' ? i.status : fieldText(i.fields[name])) === value);
   }
@@ -619,7 +621,7 @@ function issuesFor(root, rawIds, readOnly = false) {
   const keys = expandIds(rawIds);
   const all = loadIssues(root);
   const missing = keys.filter((k) => !all.some((i) => idKey(i.id) === k));
-  need(missing.length === 0, `no such issue: ${missing.join(', ')}${keys.length > 1 ? ' — nothing was written' : ''}${LIST_ALL}`);
+  need(missing.length === 0, `no such issue: ${missing.join(', ')}${keys.length > 1 ? ' — nothing was written' : ''}${LIST_ALL}`, () => ({ replace: missing[0], value: '<id>' }));
   const found = keys.map((k) => issueNamed(all, k));
   if (!readOnly && found.some((i) => needsRaisedFormat(i.id))) needFormat(root, 'plain-number');
   return found;
@@ -627,12 +629,10 @@ function issuesFor(root, rawIds, readOnly = false) {
 // One id in, the same object as always out; a list in, an array of them.
 function oneOrMany(rawIds, results) { return isBulk(rawIds) ? results : results[0]; }
 
+// The ready part of a refused move into a closing status: the step the issue lacks, read from the issue.
+function doneReady(refusal, issue) { return /no evidence|no --ran/.test(String(refusal)) ? ['jarl.mjs', 'evidence', issue.id, '--ran', '<command>', '--saw', '<what it printed>'] : /approv|review/.test(String(refusal)) ? ['jarl.mjs', 'review', issue.id, 'approve', '--by', '<fresh reviewer>', '<text>'] : ['jarl.mjs', 'show', issue.id]; }
 // A refusal of a call on several ids says nothing was written, before the ready command it ends with.
-export function nothingWritten(message) {
-  if (typeof message !== 'string') return message;
-  const at = message.lastIndexOf(': jarl.mjs ');
-  return at < 0 ? `${message} — nothing was written` : `${message.slice(0, at)} — nothing was written${message.slice(at)}`;
-}
+export function nothingWritten(message) { return typeof message === 'string' ? `${message} — nothing was written` : message; }
 // A command that writes one issue at a time (files, repo, after, body, round, source) takes the list grammar too: `run(id,
 // dry)` does one issue's work and writes nothing when `dry` is true. Every id is resolved and run dry before the first
 // one is written, so a list lands on every id or on none; one id is run as it stands, with no pass before it.
@@ -641,11 +641,11 @@ export function eachIssue(root, rawIds, run) {
   const keys = expandIds(rawIds);
   const all = loadIssues(root);
   const missing = keys.filter((k) => !all.some((i) => idKey(i.id) === k));
-  need(missing.length === 0, `no such issue: ${missing.join(', ')} — nothing was written${LIST_ALL}`);
+  need(missing.length === 0, `no such issue: ${missing.join(', ')} — nothing was written${LIST_ALL}`, () => ({ replace: missing[0], value: '<id>' }));
   const ids = keys.map((k) => issueNamed(all, k).id);
   for (const id of ids) {
     resetCaches();
-    try { run(id, true); } catch (e) { throw new Error(/nothing was written/.test(e.message) ? e.message : nothingWritten(e.message)); }
+    try { run(id, true); } catch (e) { if (!(e instanceof Refusal)) throw e; refuse(/nothing was written/.test(e.reason) ? e.reason : nothingWritten(e.reason), e.ready); }
   }
   return ids.map((id) => { resetCaches(); return run(id, false); });
 }
@@ -682,7 +682,7 @@ function sectionsOf(profile) {
 // The one mode a field call writes in: set (a value alone), add, remove or clear.
 function fieldMode(flags) {
   const given = ['add', 'remove', 'clear'].filter((k) => flags[k] === true);
-  need(given.length <= 1, `field takes one of --add, --remove and --clear, not ${given.map((k) => `--${k}`).join(' and ')}: run one call for each`);
+  need(given.length <= 1, `field takes one of --add, --remove and --clear, not ${given.map((k) => `--${k}`).join(' and ')}: run one call for each`, () => (given.slice(1).map((k) => ({ drop: `--${k}` }))));
   return given[0] ?? 'set';
 }
 
@@ -697,19 +697,19 @@ export function cmdField(root, rawIds, name, value, flags = {}) {
   const writes = DESCRIPTION_FIELDS.filter((f) => profile.kept || !['person', 'check when'].includes(f.toLowerCase()));
   const sections = sectionsOf(profile);
   const writable = () => [...writes, ...profile.fields.map((f) => f.name), ...sections].join(', ');
-  need(name !== undefined && String(name).trim() !== '', `field requires <name>, a part of the description: ${writable()} — e.g. jarl.mjs field <ids> Priority 1`);
+  need(name !== undefined && String(name).trim() !== '', `field requires <name>, a part of the description: ${writable()} — e.g. jarl.mjs field <ids> Priority 1`, () => ({ arg: 1, value: 'Priority' }));
   editorOf(flags.by);
   const key = String(name).trim().toLowerCase();
   const mode = fieldMode(flags);
   const clear = mode === 'clear';
   const section = profile.field(name) ? undefined : sections.find((s) => s.toLowerCase() === key);
-  need(section !== undefined || setRoute(profile, name) !== 'status' || writes.some((f) => f.toLowerCase() === key), `${name} is not a part of the description, which field writes: ${writable()}; ${notWrittenByField(profile, key)}`);
-  need(!clear || value === undefined, `field takes either a value or --clear, not both: jarl.mjs field <ids> ${quoteName(name)} --clear`);
-  need(clear || (value !== undefined && String(value).trim() !== ''), `field ${name} needs a value, or --clear to empty it: jarl.mjs field <ids> ${quoteName(name)} "<value>"`);
+  need(section !== undefined || setRoute(profile, name) !== 'status' || writes.some((f) => f.toLowerCase() === key), `${name} is not a part of the description, which field writes: ${writable()}; ${notWrittenByField(profile, key)}`, () => ({ replace: name, value: writes[1] ?? 'Priority' }));
+  need(!clear || value === undefined, `field takes either a value or --clear, not both`, () => ({ arg: 2, value: '' }));
+  need(clear || (value !== undefined && String(value).trim() !== ''), `field ${name} needs a value, or --clear to empty it`, () => ({ arg: 2, value: '<value>' }));
   if (section !== undefined) return writeSection(root, rawIds, section, clear ? '' : value, mode, flags);
   if (mode === 'add' || mode === 'remove') {
     const list = LIST_KEYS.find((k) => k === key);
-    need(list, `${name} holds one value, so it is replaced, never added to or taken from: jarl.mjs field <ids> ${quoteName(name)} "<value>"; --add and --remove take the items of ${LIST_KEYS.map((k) => (k === 'repo' ? 'Repo' : k.charAt(0).toUpperCase() + k.slice(1))).join(', ')}, and --add the text of a section`);
+    need(list, `${name} holds one value, so it is replaced, never added to or taken from; --add and --remove take the items of ${LIST_KEYS.map((k) => (k === 'repo' ? 'Repo' : k.charAt(0).toUpperCase() + k.slice(1))).join(', ')}, and --add the text of a section`, [{ drop: '--add' }, { drop: '--remove' }]);
     return editList(root, rawIds, list, value, mode, flags);
   }
   if (profile.field(name)) return setDeclaredField(root, rawIds, profile.field(name), clear ? '' : value, flags);
@@ -718,7 +718,7 @@ export function cmdField(root, rawIds, name, value, flags = {}) {
   if (own && clear) return emptyOwnField(root, rawIds, own, flags);
   const one = (results, field) => { const list = [].concat(results).map((o) => ({ id: o.id, field, value: fieldText(readFieldOf(root, o.id, field)), ...(o.notes?.length ? { notes: o.notes } : {}) })); return isBulk(rawIds) ? list : list[0]; };
   switch (key) {
-    case 'title': need(!clear, 'Title cannot be empty, a value replaces it: jarl.mjs field <ids> Title "<title>"'); return one(eachIssue(root, rawIds, (id, dry) => cmdBody(root, id, { title: value, by: flags.by }, dry)), 'Title');
+    case 'title': need(!clear, 'Title cannot be empty, a value replaces it', [{ drop: '--clear' }, { arg: 2, value: '<title>' }]); return one(eachIssue(root, rawIds, (id, dry) => cmdBody(root, id, { title: value, by: flags.by }, dry)), 'Title');
     case 'where': return one(eachIssue(root, rawIds, (id, dry) => cmdBody(root, id, { where: value, by: flags.by }, dry)), 'Where');
     case 'files': return one(eachIssue(root, rawIds, (id, dry) => cmdFiles(root, id, value, dry, flags.by)), 'Files');
     case 'source': return one(eachIssue(root, rawIds, (id, dry) => cmdSource(root, id, value, dry, flags.by)), 'Source');
@@ -760,7 +760,7 @@ const quoteName = (name) => (/\s/.test(String(name).trim()) ? `"${String(name).t
 // text, its paragraph); --clear empties the section. Acceptance and Changelog take one line per item, so a value of several
 // lines is several items. A section holds text, so --remove has nothing to take items from.
 function writeSection(root, rawIds, heading, value, mode, flags) {
-  need(mode !== 'remove', `a section holds text, not items: write it whole with jarl.mjs field <ids> ${quoteName(heading)} "<text>", or add to it with --add`);
+  need(mode !== 'remove', `a section holds text, not items: write it whole with jarl.mjs field <ids> ${quoteName(heading)} "<text>", or add to it with --add`, () => ({ drop: '--remove' }));
   const profile = loadProfile(root);
   const key = heading.toLowerCase();
   const lines = (v) => String(v ?? '').replace(/\r\n?/g, '\n').split('\n').map((l) => l.trim().replace(/^-\s+/, '')).filter(Boolean);
@@ -781,7 +781,7 @@ function sectionOf(root, id, heading) { return findIssue(root, id).sections[head
 function editList(root, rawIds, key, value, mode, flags) {
   const name = { tags: 'Tags', files: 'Files', repo: 'Repo', after: 'After', source: 'Source', resources: 'Resources' }[key];
   const items = splitList(value);
-  need(items.length, `field ${name} --${mode} needs the items: jarl.mjs field <ids> ${name} --${mode} a,b`);
+  need(items.length, `field ${name} --${mode} needs the items`, () => ({ arg: 2, value: '<item>,<item>' }));
   if (key === 'tags') {
     const done = cmdTag(root, rawIds, items.map((t) => `${mode === 'add' ? '+' : '-'}${t}`), flags.by);
     const list = [].concat(done).map((o) => ({ id: o.id, field: name, value: o.tags.join(', ') }));
@@ -805,7 +805,7 @@ function editList(root, rawIds, key, value, mode, flags) {
   })();
   const results = [].concat(eachIssue(root, rawIds, (id, dry) => {
     const issue = findIssue(root, id);
-    need(issue, `no such issue: ${id}${LIST_ALL}`);
+    need(issue, `no such issue: ${id}${LIST_ALL}`, () => ({ replace: id, value: '<id>' }));
     const held = splitList(issue.fields[key]);
     const next = mode === 'add' ? [...held, ...adds.filter((x, n) => !held.some((h) => sameItem(h, x)) && !adds.slice(0, n).some((y) => sameItem(y, x)))] : held.filter((x) => !removes(x));
     if (next.length === 0) {
@@ -841,58 +841,58 @@ const LEASE_FLAGS = ['branch', 'worker', 'model', 'worktree'];
 function leaseFlagsGiven(flags) { return LEASE_FLAGS.filter((k) => flags[k] !== undefined); }
 function needNoLeaseFlags(flags, what) {
   const lease = [...leaseFlagsGiven(flags), ...(flags.handover !== undefined ? ['handover'] : [])];
-  need(!lease.length, `--${lease[0]} goes with a status, not with ${what}`);
+  need(!lease.length, `--${lease[0]} goes with a status, not with ${what}`, () => ({ drop: `--${lease[0]}` }));
 }
 // set with the name taken as a status (record.setStatus), or as a field the profile declares (record.setField): the
 // refusal of a name that is the other kind, in the command line's own words.
 export function cmdSetStatus(root, rawIds, status, why, flags = {}) {
   const profile = loadProfile(root);
-  need(profile.statuses.includes(status) || !profile.field(status), `${status} is a field this loop's profile declares, not a status — setField writes it`);
+  need(profile.statuses.includes(status) || !profile.field(status), `${status} is a field this loop's profile declares, not a status — setField writes it`, () => (['jarl.mjs', 'field', rawIds ?? '<ids>', status, why ?? '<value>']));
   return cmdSet(root, rawIds, status, why, flags);
 }
 export function cmdSetField(root, rawIds, field, value, flags = {}) {
   const profile = loadProfile(root);
-  need(profile.field(field) && !profile.statuses.includes(field), `${field} is not a field this loop's profile declares${profile.declaredFields.length ? ` — it declares ${profile.declaredFields.map((f) => f.name).join(', ')}` : ''}`);
+  need(profile.field(field) && !profile.statuses.includes(field), `${field} is not a field this loop's profile declares${profile.declaredFields.length ? ` — it declares ${profile.declaredFields.map((f) => f.name).join(', ')}` : ''}`, () => (['jarl.mjs', 'set', '<ids>', '<status>', '<text>']));
   return cmdSet(root, rawIds, field, value, flags);
 }
 
 export function cmdSet(root, rawIds, status, why, flags = {}) {
   needNoOwnersWords('the move', why, flags);
   const caller = flags.caller ?? 'record';
-  need(SET_CALLERS.includes(caller), `caller must be one of: ${SET_CALLERS.join(', ')} (got "${caller}")`);
+  need(SET_CALLERS.includes(caller), `caller must be one of: ${SET_CALLERS.join(', ')} (got "${caller}")`, () => (['jarl.mjs', 'set', '<ids>', '<status>', '<text>']));
   const profile = loadProfile(root);
   const route = setRoute(profile, status);
   if (route === 'field') return setDeclaredField(root, rawIds, profile.field(status), why, flags);
   if (route === 'resources') return setResources(root, rawIds, why, flags);
   if (flags.header) return rewriteHeader(root, rawIds, status, why, flags);
   // ready and the review words are views, not statuses: say which view answers the question the worker was asking.
-  need(profile.statuses.includes(status) || !/^(ready|review|in[-_ ]?review|ready[-_ ]for[-_ ]review|reviewing)$/i.test(String(status ?? '')), `${status} is a view here, not a status: \`next\` lists the issues ready to start, and \`status\` and \`resume\` mark each in-flight issue with what the record says (no evidence rows yet; rows and no verdict, so it waits for a reviewer; changes requested; approved and queued). Nothing needs setting: record the rows with \`evidence\`, and the reviewer's verdict with \`review\`. A loop that wants an explicit review status can declare one in its profile. Statuses here: ${profile.statuses.join(', ')}; the issues ready to start: jarl.mjs next`);
-  need(profile.statuses.includes(status), `status must be one of: ${profile.statuses.join(', ')}: jarl.mjs set <ids> <status> "<text>"`);
-  need(caller !== 'cli' || profile.setBy(status) !== 'record', `${status} is set by the record only — this loop's profile (${profile.name}) marks it "set-by": "record", so jarl set and the MCP tools cannot move an issue into it; the tool that runs the loop does${profile.scheduler ? ` (${profile.scheduler})` : ''}`);
+  need(profile.statuses.includes(status) || !/^(ready|review|in[-_ ]?review|ready[-_ ]for[-_ ]review|reviewing)$/i.test(String(status ?? '')), `${status} is a view here, not a status: \`next\` lists the issues ready to start, and \`status\` and \`resume\` mark each in-flight issue with what the record says (no evidence rows yet; rows and no verdict, so it waits for a reviewer; changes requested; approved and queued). Nothing needs setting: record the rows with \`evidence\`, and the reviewer's verdict with \`review\`. A loop that wants an explicit review status can declare one in its profile. Statuses here: ${profile.statuses.join(', ')}; the issues ready to start`, `jarl.mjs next`);
+  need(profile.statuses.includes(status), `status must be one of: ${profile.statuses.join(', ')}`, () => [...(rawIds === undefined ? [{ arg: 0, value: '<ids>' }] : []), { arg: 1, value: profile.statuses[0] }]);
+  need(caller !== 'cli' || profile.setBy(status) !== 'record', `${status} is set by the record only — this loop's profile (${profile.name}) marks it "set-by": "record", so jarl set and the MCP tools cannot move an issue into it; the tool that runs the loop does${profile.scheduler ? ` (${profile.scheduler})` : ''}`, () => ({ arg: 1, value: profile.statuses.find((s) => profile.setBy(s) !== 'record') ?? '<status>' }));
   const holds = profile.is(status, 'holds-claim');
   const lease = leaseFlagsGiven(flags);
-  need(!lease.length || holds, `--${lease[0]} goes with ${profile.with('holds-claim').join(' or ')} only — it records who works on the issue and where: jarl.mjs set <ids> ${profile.with('holds-claim')[0]} "<text>" --${lease[0]} <value>`);
-  need(flags.handover === undefined || typeof flags.handover === 'boolean', '--handover takes no value: the reason it is logged with is the move\'s own "<text>"');
+  need(!lease.length || holds, `--${lease[0]} goes with ${profile.with('holds-claim').join(' or ')} only — it records who works on the issue and where`, () => ({ replace: status, value: profile.with('holds-claim')[0] }));
+  need(flags.handover === undefined || typeof flags.handover === 'boolean', '--handover takes no value: the reason it is logged with is the move\'s own "<text>"', () => ({ drop: '--handover' }));
   const handover = flags.handover === true;
-  need(!handover || holds, `--handover goes with ${profile.with('holds-claim').join(' or ')} only — it hands a lease to a new worker or branch: jarl.mjs set <ids> ${profile.with('holds-claim')[0]} "<text>" --worker <name> --handover`);
-  for (const k of lease) need(typeof flags[k] === 'string' && fieldText(flags[k]), `--${k} needs a value`);
+  need(!handover || holds, `--handover goes with ${profile.with('holds-claim').join(' or ')} only — it hands a lease to a new worker or branch`, () => ({ replace: status, value: profile.with('holds-claim')[0] }));
+  for (const k of lease) need(typeof flags[k] === 'string' && fieldText(flags[k]), `--${k} needs a value`, () => ({ flag: `--${k}`, value: `<${k}>` }));
   const model = flags.model !== undefined ? modelValue(flags.model) : undefined;
   // A name is one value: with the log's own separator in it, the lease line would carry a field the caller did not give.
-  for (const k of ['worker', 'branch']) need(flags[k] === undefined || !` ${fieldText(flags[k])} `.includes(' · '), `--${k} is one name — not a phrase with " · " in it (got "${fieldText(flags[k])}")`);
+  for (const k of ['worker', 'branch']) need(flags[k] === undefined || !` ${fieldText(flags[k])} `.includes(' · '), `--${k} is one name — not a phrase with " · " in it (got "${fieldText(flags[k])}")`, () => ({ flag: `--${k}`, value: fieldText(flags[k]).replace(/ · /g, '-') }));
   // What is written into the lease is what the journal gives back unchanged: a value the reader would take for something else is refused.
-  for (const k of lease) { const problem = leaseValueProblem(k, flags[k]); need(!problem, `--${k} ${JSON.stringify(fieldText(flags[k]))} ${problem}`); }
+  for (const k of lease) { const problem = leaseValueProblem(k, flags[k]); need(!problem, `--${k} ${JSON.stringify(fieldText(flags[k]))} ${problem}`, () => ({ flag: `--${k}`, value: `<${k}>` })); }
   const issues = issuesFor(root, rawIds);
-  need(!profile.is(status, 'needs-reason') || why, REASON_TEXT[status] || `${status} needs a reason: jarl.mjs set <id> ${status} "<text>"`);
+  need(!profile.is(status, 'needs-reason') || why, REASON_TEXT[status] || `${status} needs a reason: jarl.mjs set <id> ${status} "<text>"`, () => ({ arg: 2, value: '<text>' }));
   const nothing = issues.length > 1 ? ' — nothing was written' : '';
   if (holds) needLeaseHolds(root, profile, issues, status, why, flags, handover, nothing);
   // base: the branch the composer landed the merge into, for the done gate's requires-merged (else the branch checked
   // out). A library call only: the command line has no --base, and dispatch never passes one through.
-  need(flags.base === undefined || caller === 'record', 'base is named by a library call through record.mjs only — the command line checks against the branch checked out');
-  need(flags.base === undefined || (typeof flags.base === 'string' && fieldText(flags.base) !== '' && !flags.base.startsWith('-')), 'base names a branch or ref — the one the merge landed in');
+  need(flags.base === undefined || caller === 'record', 'base is named by a library call through record.mjs only — the command line checks against the branch checked out', () => ({ drop: '--base' }));
+  need(flags.base === undefined || (typeof flags.base === 'string' && fieldText(flags.base) !== '' && !flags.base.startsWith('-')), 'base names a branch or ref — the one the merge landed in', () => ({ drop: '--base' }));
   if (profile.is(status, 'closes-record')) {
-    for (const issue of issues) { const refusal = unattributedRefusal(issue, `moved → ${status}`); need(!refusal, nothing ? nothingWritten(refusal) : refusal); }
+    for (const issue of issues) { const refusal = unattributedRefusal(issue, `moved → ${status}`); need(!refusal, nothing ? nothingWritten(refusal) : refusal, () => (doneReady(refusal, issue))); }
     const loop = readLoop(jarlDir(root));
-    for (const issue of issues) { const refusal = doneRefusalIn(root, loop, issue, flags.base); need(!refusal, nothing ? nothingWritten(refusal) : refusal); }
+    for (const issue of issues) { const refusal = doneRefusalIn(root, loop, issue, flags.base); need(!refusal, nothing ? nothingWritten(refusal) : refusal, () => (doneReady(refusal, issue))); }
   }
   // One lease for the whole call: every issue in a package gets the same Branch, Worker and Since. A lease records no
   // worktree: git allows a branch in at most one worktree, so the worktree of a lease is found through its branch. On the
@@ -972,13 +972,13 @@ function needLeaseHolds(root, profile, issues, status, why, flags, handover, not
   const leased = (i) => profile.is(i.status, 'holds-claim') && Boolean(i.fields.worker || i.fields.branch);
   // Another holder named by the call: a worker or a branch other than the one the lease already names.
   const replaces = (i) => ['worker', 'branch'].some((k) => named(k) !== null && i.fields[k] && named(k) !== fieldText(i.fields[k]));
-  if (handover) need(why, `--handover says why the work changes hands: jarl.mjs set ${issues.map((i) => i.id).join(',')} ${status} "<why the worker changed>" ${leaseFlags} --handover`.replace(/ {2,}/g, ' '));
+  if (handover) need(why, `--handover says why the work changes hands: jarl.mjs set ${issues.map((i) => i.id).join(',')} ${status} "<why the worker changed>" ${leaseFlags} --handover`.replace(/ {2,}/g, ' '), () => ({ arg: 2, value: '<why the worker changed>' }));
   for (const issue of issues) {
     if (handover) {
-      need(leased(issue), `${issue.id} holds no lease to hand over${nothing} — lease it without --handover: jarl.mjs set ${issue.id} ${status} "<text>" ${leaseFlags}`.replace(/ {2,}/g, ' ').trim());
-      need(replaces(issue), `--handover names the lease ${issue.id} already has (${holderText(issue)}) — a handover names the new --worker or --branch${nothing}`);
+      need(leased(issue), `${issue.id} holds no lease to hand over${nothing} — lease it without --handover: jarl.mjs set ${issue.id} ${status} "<text>" ${leaseFlags}`.replace(/ {2,}/g, ' ').trim(), () => ({ drop: '--handover' }));
+      need(replaces(issue), `--handover names the lease ${issue.id} already has (${holderText(issue)}) — a handover names the new --worker or --branch${nothing}`, () => ({ flag: '--worker', value: '<the new worker>' }));
     } else if (!composed) {
-      need(!(leased(issue) && replaces(issue)), `${issue.id} is leased already (${holderText(issue)}) — a second lease would replace it in silence, and ${fieldText(issue.fields.worker) || 'its worker'} would go on working on a branch the record does not name; when the work changes hands, say why: jarl.mjs set ${issue.id} ${status} "<why the worker changed>" ${leaseFlags} --handover${nothing}`.replace(/ {2,}/g, ' '));
+      need(!(leased(issue) && replaces(issue)), `${issue.id} is leased already (${holderText(issue)}) — a second lease would replace it in silence, and ${fieldText(issue.fields.worker) || 'its worker'} would go on working on a branch the record does not name; when the work changes hands, say why: jarl.mjs set ${issue.id} ${status} "<why the worker changed>" ${leaseFlags} --handover${nothing}`.replace(/ {2,}/g, ' '), () => ([{ arg: 2, value: '<why the worker changed>' }, { flag: '--handover' }]));
     }
   }
   if (composed) return;
@@ -988,7 +988,7 @@ function needLeaseHolds(root, profile, issues, status, why, flags, handover, not
   if (slices.length > 1) {
     for (const issue of issues) {
       if ((leased(issue) && !handover) || issue.files.length || issue.resources.length) continue;
-      need(false, `${issue.id} declares no Files or Resources, and ${slices.length} slices are in play (${slices.map((x) => x.tag).join(', ')}): across slices only leases hold, and a lease holds only what its issue declares — declare them first: jarl.mjs field ${issue.id} Files <path>,… or jarl.mjs field ${issue.id} Resources "<name>, …"${nothing}`);
+      need(false, `${issue.id} declares no Files or Resources, and ${slices.length} slices are in play (${slices.map((x) => x.tag).join(', ')}): across slices only leases hold, and a lease holds only what its issue declares — declare them first, its files or its resources (jarl.mjs field ${issue.id} Resources "<name>, …")${nothing}`, () => [{ first: ['jarl.mjs', 'field', issue.id, 'Files', '<path>,…'] }, { retry: true }]);
     }
   }
   // What the other leases hold: each file key and each resource, with the issue whose lease holds it.
@@ -1012,7 +1012,7 @@ function needLeaseHolds(root, profile, issues, status, why, flags, handover, not
     if (!held.length) continue;
     const { what, by } = held[0];
     const join = by.fields.branch ? `, or put ${issue.id} in ${by.id}'s lease: set ${issue.id} ${status} "<text>" --branch ${fieldText(by.fields.branch)}${by.fields.worker ? ` --worker ${fieldText(by.fields.worker)}` : ''}` : '';
-    need(false, `${issue.id} ${what}, which ${by.id} holds in its lease (${holderText(by)}) — two leases on one file or resource collide; wait until ${by.id} leaves its lease (next offers ${issue.id} then)${join}${nothing}`);
+    need(false, `${issue.id} ${what}, which ${by.id} holds in its lease (${holderText(by)}) — two leases on one file or resource collide; wait until ${by.id} leaves its lease (next offers ${issue.id} then)${join}${nothing}`, () => (['jarl.mjs', 'next', '--all']));
   }
 }
 // Who holds an issue's lease, as the refusals name it: its worker, branch and start, and its slice tag when it has one.
@@ -1027,8 +1027,8 @@ function needWorktreeOfLease(root, issue, branch, path) {
   if (!existsSync(path)) return;
   const repos = issueRepoPaths(root, issue).filter(isGitRepo);
   const listed = repos.flatMap((r) => (worktreesOf(r) || []).filter((w) => sameDir(w.path, path)));
-  need(listed.length > 0, `--worktree ${path} is not a worktree of ${repos.length ? repos.map((r) => repoLabel(r)).join(' or ') : 'a repository of ' + issue.id} — a lease is its branch, and the worktree is found through it`);
-  need(!branch || listed.some((w) => w.branch === branch), `--worktree ${path} has ${listed[0].branch ?? 'no branch'} checked out, not ${branch}, the branch of the lease`);
+  need(listed.length > 0, `--worktree ${path} is not a worktree of ${repos.length ? repos.map((r) => repoLabel(r)).join(' or ') : 'a repository of ' + issue.id} — a lease is its branch, and the worktree is found through it`, () => ({ drop: '--worktree' }));
+  need(!branch || listed.some((w) => w.branch === branch), `--worktree ${path} has ${listed[0].branch ?? 'no branch'} checked out, not ${branch}, the branch of the lease`, () => ({ drop: '--worktree' }));
 }
 
 // Why a lease value (--branch, --worker, --model, --worktree) cannot be written, or null when the lease line gives it
@@ -1045,14 +1045,14 @@ function leaseValueProblem(flag, raw) {
 // set <ids> <status> --header: writes the header fields the log renders (Status, Branch, Worker, Model, Since, Merged, CI)
 // of each issue from the log, and writes no log line; the status named is the one the log holds, so it is never a move.
 function rewriteHeader(root, rawIds, status, why, flags) {
-  need(status !== undefined, 'set <ids> <status-in-the-log> --header: name the status the log holds for the issue (status shows it); --header rewrites the header from the log and moves nothing');
-  need(loadProfile(root).statuses.includes(status), `${status} is not a status this loop's profile lists (${loadProfile(root).statuses.join(', ')}): --header rewrites a header from the log and moves nothing, so it names the status the log holds`);
-  need(why === undefined && flags.base === undefined && !leaseFlagsGiven(flags).length && flags.handover === undefined, '--header rewrites the header from the log and takes no reason, lease flag, --handover or base');
+  need(status !== undefined, 'set <ids> <status-in-the-log> --header: name the status the log holds for the issue (status shows it); --header rewrites the header from the log and moves nothing', () => ({ arg: 1, value: '<the status the log holds>' }));
+  need(loadProfile(root).statuses.includes(status), `${status} is not a status this loop's profile lists (${loadProfile(root).statuses.join(', ')})`, () => ({ arg: 1, value: '<the status the log holds>' }));
+  need(why === undefined && flags.base === undefined && !leaseFlagsGiven(flags).length && flags.handover === undefined, '--header rewrites the header from the log and takes no reason, lease flag, --handover or base', () => ({ drop: '--handover' }));
   const issues = issuesFor(root, rawIds);
   for (const issue of issues) {
-    need(!issue.byHeader, `${issue.id} is read from its header: the log files ${issue.id} ${issue.byHeader?.filings} times and cannot say which file its lines were written for, so no header is written from it`);
-    need(issue.onFile !== null, `${issue.id} is not in the log, so there is nothing to write its header from — jarl.mjs set ${issue.id} ${status} puts it there`);
-    need(issue.status === status, `${issue.id} is ${issue.status} in the log: jarl.mjs set ${issue.id} ${issue.status} --header writes its header from it, and set ${issue.id} ${status} without --header moves it`);
+    need(!issue.byHeader, `${issue.id} is read from its header: the log files ${issue.id} ${issue.byHeader?.filings} times and cannot say which file its lines were written for, so no header is written from it`, () => (['jarl.mjs', 'verify']));
+    need(issue.onFile !== null, `${issue.id} is not in the log, so there is nothing to write its header from: jarl.mjs set ${issue.id} ${status} without --header puts it there`, () => [{ first: ['jarl.mjs', 'set', issue.id, status, '<why>'] }, { retry: true }]);
+    need(issue.status === status, `${issue.id} is ${issue.status} in the log: set ${issue.id} ${issue.status} --header writes its header from it, and jarl.mjs set ${issue.id} ${status} without --header moves it`, () => ({ replace: status, value: issue.status }));
   }
   for (const issue of issues) {
     let text = setField(readText(issue.file), 'Status', issue.status);
@@ -1071,14 +1071,14 @@ const EMPTIED_BY_FIELD = { files: 'Files', source: 'Source', where: 'Where', tag
 // checked against its enum first, with one log line each. An empty value clears it, unless the field is required or built in.
 function setDeclaredField(root, rawIds, field, value, flags) {
   needNoLeaseFlags(flags, `the field ${field.name}`);
-  need(value !== undefined, `field <ids> ${field.name} "<value>" — the value is required${field.enum ? ` (one of: ${field.enum.join(', ')})` : ''}`);
+  need(value !== undefined, `field <ids> ${field.name} "<value>" — the value is required${field.enum ? ` (one of: ${field.enum.join(', ')})` : ''}`, () => ({ arg: 2, value: field.enum ? field.enum[0] : '<value>' }));
   const by = editorOf(flags.by);
   const profile = loadProfile(root);
   const v = fieldValue(profile, field, value);
-  need(v || (!field.required && !field.builtin), `${field.name} cannot be empty${field.enum ? ` — one of: ${field.enum.join(', ')}` : ''}`);
+  need(v || (!field.required && !field.builtin), `${field.name} cannot be empty${field.enum ? ` — one of: ${field.enum.join(', ')}` : ''}`, () => [{ drop: '--clear' }, { arg: 2, value: field.enum ? field.enum[0] : '<value>' }]);
   const issues = issuesFor(root, rawIds);
   if (field.key === 'kind' && profile.keptKind(v) === WAIT_KIND) {
-    for (const issue of issues) need(fieldText(issue.fields.person) && fieldText(issue.fields['check when']), `${issue.id} becomes a wait only with the outside person it is held by and when to check it — first jarl.mjs field ${issue.id} Person "<name>" and jarl.mjs field ${issue.id} "Check when" "<a date, or the event to check after>"`);
+    for (const issue of issues) need(fieldText(issue.fields.person) && fieldText(issue.fields['check when']), `${issue.id} becomes a wait only with the outside person it is held by and when to check it — first jarl.mjs field ${issue.id} Person "<name>" and jarl.mjs field ${issue.id} "Check when" "<a date, or the event to check after>"`, () => (['jarl.mjs', 'field', issues.find((i) => !fieldText(i.fields.person))?.id ?? '<id>', 'Person', '<name>']));
   }
   if (field.key === 'kind' && profile.keptKind(v) && issues.some((issue) => issue.kind !== v)) needFormat(root, 'promise-wait');
   logChanges(root, issues.map((issue) => fieldLine(issue.id, field.name, v, heldField(issue, field.name), by)));
@@ -1094,7 +1094,7 @@ function setKeptField(root, rawIds, name, value, flags) {
   const by = editorOf(flags.by);
   const v = value === '' ? '' : keptValue(name, value);
   const issues = issuesFor(root, rawIds);
-  for (const issue of issues) need(v || profile.keptKind(issue.kind) !== WAIT_KIND, `${issue.id} is a wait, held by its Person and checked when its Check when says: ${name} is never empty on it — give it another kind first (jarl.mjs field ${issue.id} Kind <kind>)`);
+  for (const issue of issues) need(v || profile.keptKind(issue.kind) !== WAIT_KIND, `${issue.id} is a wait, held by its Person and checked when its Check when says: ${name} is never empty on it — give it another kind first (jarl.mjs field ${issue.id} Kind <kind>)`, () => (['jarl.mjs', 'field', issues[0]?.id ?? '<id>', 'Kind', '<kind>']));
   if (v) needFormat(root, 'promise-wait', `the field ${name} of a wait`);
   logChanges(root, issues.map((issue) => fieldLine(issue.id, name, v, heldField(issue, name), by)));
   for (const issue of issues) writeAtomic(issue.file, v ? setField(readText(issue.file), name, v) : removeFields(readText(issue.file), [name]));
@@ -1122,14 +1122,14 @@ function emptyOwnField(root, rawIds, name, flags) {
 function resourceNames(value) {
   const names = [];
   for (const n of splitList(fieldText(value))) {
-    need(/^[A-Za-z0-9._:/-]+$/.test(n), `resource names are single words of letters, digits and . _ : / - ("${n}" is not), naming the thing: jarl.mjs field <ids> Resources gate,db-server,port-8080`);
+    need(/^[A-Za-z0-9._:/-]+$/.test(n), `resource names are single words of letters, digits and . _ : / - ("${n}" is not), naming the thing`, () => ({ replace: n, value: n.replace(/[^A-Za-z0-9._:/-]+/g, '-') }));
     if (!names.some((x) => x.toLowerCase() === n.toLowerCase())) names.push(n);
   }
   return names;
 }
 function setResources(root, rawIds, value, flags) {
   needNoLeaseFlags(flags, 'the field Resources');
-  need(value !== undefined, 'the field Resources needs a value: jarl.mjs field <ids> Resources "<name>[, <name>...]", or --clear to empty it');
+  need(value !== undefined, 'the field Resources needs a value', 'jarl.mjs field <ids> Resources "<name>[, <name>...]", or --clear to empty it');
   const names = resourceNames(value);
   const by = editorOf(flags.by);
   const issues = issuesFor(root, rawIds);
@@ -1248,26 +1248,26 @@ function noMergeHow(root, issue, ci) {
 export function cmdMerged(root, rawIds, flags) {
   needNoOwnersWords('the merge', flags);
   const cli = flags.caller === 'cli';
-  need(flags.sha !== undefined || flags.ci !== undefined, `merged needs --sha <sha> (and optionally --ci), or --ci alone on issues that already record a merge: jarl.mjs merged ${rawIds ?? '<ids>'} --sha <sha> --ran "<check>" --saw "<summary>"`);
-  if (flags.sha !== undefined) need(/^[0-9a-f]{4,64}$/i.test(String(flags.sha)), `--sha is a commit id, 4 to 64 hex characters (got "${flags.sha}"); e.g. --sha <the merge commit's sha>`);
-  if (flags.ci !== undefined) need(CI_STATES.includes(flags.ci), `--ci must be one of: ${CI_STATES.join(', ')} — none means the repository has no CI to wait for; e.g. --ci green`);
-  need(flags.repo === undefined || flags.sha !== undefined, '--repo names where --sha landed; give it with --sha');
+  need(flags.sha !== undefined || flags.ci !== undefined, `merged needs --sha <sha> (and optionally --ci), or --ci alone on issues that already record a merge`, () => ({ flag: '--sha', value: '<sha>' }));
+  if (flags.sha !== undefined) need(/^[0-9a-f]{4,64}$/i.test(String(flags.sha)), `--sha is a commit id, 4 to 64 hex characters (got "${flags.sha}")`, () => ({ flag: '--sha', value: `<the merge commit's sha>` }));
+  if (flags.ci !== undefined) need(CI_STATES.includes(flags.ci), `--ci must be one of: ${CI_STATES.join(', ')} — none means the repository has no CI to wait for`, () => ({ flag: '--ci', value: `green` }));
+  need(flags.repo === undefined || flags.sha !== undefined, '--repo names where --sha landed; give it with --sha', () => ({ flag: '--sha', value: '<sha>' }));
   const rows = flags.ran !== undefined || flags.saw !== undefined ? rowsOf(flags) : null;
-  need(!rows || flags.sha !== undefined, '--ran and --saw record the check that decided the merge; give them with --sha');
-  need(flags.red === undefined || flags.sha !== undefined, '--red names the issue that tracks why the merge landed on a red check; give it with --sha');
-  need(!(rows && flags.red !== undefined), 'a merge landed on red carries no passing check: give --ran/--saw for a green check, or --red <id> for a red one, not both');
+  need(!rows || flags.sha !== undefined, '--ran and --saw record the check that decided the merge; give them with --sha', () => ({ flag: '--sha', value: '<sha>' }));
+  need(flags.red === undefined || flags.sha !== undefined, '--red names the issue that tracks why the merge landed on a red check; give it with --sha', () => ({ flag: '--sha', value: '<sha>' }));
+  need(!(rows && flags.red !== undefined), 'a merge landed on red carries no passing check: give --ran/--saw for a green check, or --red <id> for a red one, not both', () => ({ drop: '--red' }));
   const issues = issuesFor(root, rawIds);
   const nothing = issues.length > 1 ? ' — nothing was written' : '';
-  for (const issue of issues) { const refusal = unattributedRefusal(issue, 'merged'); need(!refusal, nothing ? nothingWritten(refusal) : refusal); }
+  for (const issue of issues) { const refusal = unattributedRefusal(issue, 'merged'); need(!refusal, nothing ? nothingWritten(refusal) : refusal, () => ({ flag: '--sha', value: '<sha>' })); }
   let cause = null;
   if (flags.red !== undefined) {
-    need(typeof flags.red === 'string' && fieldText(flags.red), '--red needs the id of the issue that tracks the cause');
+    need(typeof flags.red === 'string' && fieldText(flags.red), '--red needs the id of the issue that tracks the cause', () => ({ flag: '--red', value: '<id>' }));
     const tracked = findIssue(root, fieldText(flags.red));
-    need(tracked, `--red names an issue that does not exist: ${flags.red}${nothing} — file the cause first: jarl.mjs new "<what is red>"`);
-    need(!issues.some((i) => i.id === tracked.id), `--red names the issue that tracks the cause of a red check outside the branch; ${tracked.id} is the issue being merged${nothing}`);
+    need(tracked, `--red names an issue that does not exist: ${flags.red}${nothing} — file the cause first`, () => [{ first: ['jarl.mjs', 'new', '<what is red>', '--tier', 'standard'] }, { flag: '--red', value: '<the id new prints>' }]);
+    need(!issues.some((i) => i.id === tracked.id), `--red names the issue that tracks the cause of a red check outside the branch; ${tracked.id} is the issue being merged${nothing}`, () => ({ flag: '--red', value: '<the id of another issue>' }));
     cause = tracked.id;
   }
-  if (flags.sha === undefined) for (const issue of issues) need(mergedOf(issue), `${issue.id} records no merge yet — ${noMergeHow(root, issue, flags.ci)}${nothing}`);
+  if (flags.sha === undefined) for (const issue of issues) need(mergedOf(issue), `${issue.id} records no merge yet — ${noMergeHow(root, issue, flags.ci)}${nothing}`, () => ({ flag: '--sha', value: '<sha>' }));
   const pickedRepo = flags.repo !== undefined ? repoFromInput(root, String(flags.repo)) : null;
   const repoPath = pickedRepo ? pickedRepo.main : null;
   const repoIn = pickedRepo ? ` in ${noSeparators(pickedRepo.value)}` : '';
@@ -1445,18 +1445,19 @@ export function workEvidence(issue, profile = DEFAULT_PROFILE) {
 function rowsOf(flags) {
   const rans = [].concat(flags.ran ?? []);
   const saws = [].concat(flags.saw ?? []);
-  need(rans.length && saws.length && [...rans, ...saws].every((v) => typeof v === 'string' && v.trim()), 'a row needs both --ran "<command>" and --saw "<what it printed>", each with a value: jarl.mjs evidence <ids> --ran "<command>" --saw "<what it printed>"');
-  need(rans.length === saws.length, `--ran and --saw must repeat the same number of times (got ${rans.length} --ran, ${saws.length} --saw)`);
+  need(rans.length && saws.length && [...rans, ...saws].every((v) => typeof v === 'string' && v.trim()), 'a row needs both --ran "<command>" and --saw "<what it printed>", each with a value', () => (!rans.length || rans.some((v) => typeof v !== 'string' || !v.trim()) ? { flag: '--ran', value: '<command>' } : { flag: '--saw', value: '<what it printed>' }));
+  // The flag given fewer times is given once more, after the ones the call holds.
+  need(rans.length === saws.length, `--ran and --saw must repeat the same number of times (got ${rans.length} --ran, ${saws.length} --saw)`, () => (rans.length > saws.length ? { flag: '--saw', value: '<what it printed>', add: true } : { flag: '--ran', value: '<command>', add: true }));
   return rans.map((ran, i) => ({ ran, saw: saws[i] }));
 }
 
 // A loop whose profile keeps close or archive to the record ("lifecycle") refuses them from the command line and the
 // MCP tools (caller 'cli'), naming the composer's command; a library caller ('record', the default) passes.
 export function needLifecycle(root, op, caller = 'record') {
-  need(SET_CALLERS.includes(caller), `caller must be one of: ${SET_CALLERS.join(', ')} (got "${caller}")`);
+  need(SET_CALLERS.includes(caller), `caller must be one of: ${SET_CALLERS.join(', ')} (got "${caller}")`, () => (['jarl.mjs', 'set', '<ids>', '<status>', '<text>']));
   if (caller !== 'cli') return;
   const profile = loadProfile(root);
-  need(profile.lifecycle[op] !== 'record', `this loop is ${op === 'close' ? 'closed' : 'archived'} by the tool that runs it, never by jarl ${op} — its profile (${profile.name}) marks "lifecycle": { "${op}": "record" }, so jarl ${op} and the MCP tools refuse, and nothing was ${op === 'close' ? 'closed or removed' : 'moved'}${profile.lifecycle.command ? `; run: ${profile.lifecycle.command}` : ''}`);
+  need(profile.lifecycle[op] !== 'record', `this loop is ${op === 'close' ? 'closed' : 'archived'} by the tool that runs it, never by jarl ${op} — its profile (${profile.name}) marks "lifecycle": { "${op}": "record" }, so jarl ${op} and the MCP tools refuse, and nothing was ${op === 'close' ? 'closed or removed' : 'moved'}${profile.lifecycle.command ? `; run: ${profile.lifecycle.command}` : ''}`, () => (profile.lifecycle.command ? ['jarl.mjs', 'status'] : ['jarl.mjs', 'status']));
 }
 
 // ---- the cleanup a recorded merge makes redundant -------------------------------------------------------------------
@@ -1555,7 +1556,7 @@ function cleanUpAfterMerge(root, issues, sha, repoPath, named = []) {
 export function cmdTag(root, rawIds, ops, by = undefined) {
   const editor = editorOf(by);
   const issues = issuesFor(root, rawIds);
-  for (const op of ops) need(/^[+-]./.test(op), `tags are +name or -name, not "${op}"`);
+  for (const op of ops) need(/^[+-]./.test(op), `tags are +name or -name, not "${op}"`, () => (['jarl.mjs', 'field', '<ids>', 'Tags', '--add', '<tag>']));
   const results = issues.map((issue) => {
     const tags = new Set(issue.tags);
     // A slice tag is removed in any case: -slice:odin takes slice:Odin off too, as the two name one slice.
@@ -1580,7 +1581,7 @@ function writeTags(root, rawIds, results, by, out) {
 }
 
 export function cmdPrio(root, rawIds, prio, by = undefined) {
-  need(PRIORITIES.includes(String(prio)), 'priority is 1, 2 or 3');
+  need(PRIORITIES.includes(String(prio)), 'priority is 1, 2 or 3', () => (['jarl.mjs', 'field', '<ids>', 'Priority', '2']));
   const editor = editorOf(by);
   const issues = issuesFor(root, rawIds);
   logChanges(root, issues.map((issue) => fieldLine(issue.id, 'Priority', String(prio), heldField(issue, 'Priority'), editor)));
@@ -1590,7 +1591,7 @@ export function cmdPrio(root, rawIds, prio, by = undefined) {
 
 export function cmdFiles(root, rawId, list, dry = false, by = undefined) {
   const issue = findIssue(root, rawId);
-  need(issue, `no such issue: ${rawId}${LIST_ALL}`);
+  need(issue, `no such issue: ${rawId}${LIST_ALL}`, () => ({ replace: rawId, value: '<id>' }));
   const editor = editorOf(by);
   const files = pathList(list);
   if (!dry) {
@@ -1602,17 +1603,17 @@ export function cmdFiles(root, rawId, list, dry = false, by = undefined) {
 
 export function cmdRepo(root, rawId, path, { clear = false, dry = false, by } = {}) {
   const issue = findIssue(root, rawId);
-  need(issue, `no such issue: ${rawId}${LIST_ALL}`);
+  need(issue, `no such issue: ${rawId}${LIST_ALL}`, () => ({ replace: rawId, value: '<id>' }));
   const editor = editorOf(by);
   if (clear) {
-    need(issue.fields.repo, `${issue.id} has no Repo field to clear`);
+    need(issue.fields.repo, `${issue.id} has no Repo field to clear`, () => ({ drop: '--clear' }));
     if (dry) return { id: issue.id, repo: null, cleared: true };
     logChanges(root, [fieldLine(issue.id, 'Repo', '', issue.fields.repo, editor)]);
     const text = removeFirstField(readText(issue.file), 'Repo');
     writeAtomic(issue.file, text);
     return { id: issue.id, repo: null, cleared: true };
   }
-  need(path !== undefined, 'repo requires <name or path> — the repository the issue\'s code lives in (its name, its checkout, a worktree of it or a file inside it), several as one comma list (or --clear to remove the field)');
+  need(path !== undefined, 'repo requires <name or path> — the repository the issue\'s code lives in (its name, its checkout, a worktree of it or a file inside it), several as one comma list (or --clear to remove the field)', () => (['jarl.mjs', 'field', '<ids>', 'Repo', '<name|path>']));
   const picked = repoList(root, path);
   if (dry) return { id: issue.id, repo: picked.map((p) => p.value).join(', ') };
   commitRepoNames(root, picked);

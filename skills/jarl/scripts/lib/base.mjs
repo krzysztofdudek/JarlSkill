@@ -52,7 +52,68 @@ function freeInline(text) { return oneBreak(text).split('\n').join('\n  '); }
 
 function fieldText(v) { return oneBreak(v).replace(/\s+/g, ' ').trim(); }
 
-export function need(cond, msg) { if (!cond) throw new Error(msg); }
+// ---- refusals ------------------------------------------------------------------------------------------------
+//
+// Every refusal is built here, from two parts: the reason, and the ready part a refused caller acts on, which the
+// refusal prints last, on a line of its own. The ready part is a command (a text or an array of words starting with
+// jarl.mjs, each word quoted for a POSIX shell when it is printed), or a fix of the call that was refused, which the
+// command line, holding the call, turns into the same call fixed: { flag, value } adds or replaces a flag ({ flag, value,
+// add: true } gives a flag that repeats one more value), { arg, value } sets the n-th argument after the command, { drop }
+// takes a flag off ({ drop, value } only the one with that value, and value null the one given with none), { replace, value } writes value where the call gave
+// replace (a word, or one item of a comma list), { truncate: n } keeps the first n words, { retry: true } is the call again
+// as it was given, { rename, to } writes a flag under another name, { first } is a command to run before the call, printed
+// before it with &&, and an array applies several. A ready command of another command than the refused one is a step
+// before the call too, unless the command line's table of removed forms names that command as the one that does what the
+// call asked. { line } is a command line whose words were quoted with shellWord as it was built, printed as it is. A refusal with no ready part cannot be built: refuse and need throw a TypeError instead, and a test of the
+// sources finds every need and refuse that names none.
+export class Refusal extends Error {
+  constructor(reason, ready) {
+    super(`${reason}\n${readyText(ready)}`);
+    this.reason = reason;
+    this.ready = ready;
+  }
+}
+const FIX_KEYS = ['flag', 'arg', 'drop', 'replace', 'truncate', 'retry', 'rename', 'first'];
+const isFix = (r) => r !== null && typeof r === 'object' && !Array.isArray(r) && FIX_KEYS.some((k) => Object.hasOwn(r, k));
+function checkReady(ready) {
+  if (isLine(ready)) return true;
+  if (Array.isArray(ready) && ready.length && ready.every(isFix)) return ready.every((f) => f.first === undefined || checkReady(f.first));
+  if (isFix(ready)) return ready.first === undefined || checkReady(ready.first);
+  const words = Array.isArray(ready) ? ready.map(String) : typeof ready === 'string' ? commandWords(ready) : [];
+  return words[0] === 'jarl.mjs' && words.length > 1;
+}
+// The words of a command written as a text: a word in double or single quotes is one word without its quotes, a
+// <placeholder> is part of the word it stands in with its brackets (spaces and all: <path>,<path> is one word), and
+// the rest splits at spaces; && joins two commands.
+export function commandWords(text) {
+  const words = [];
+  const re = /"((?:[^"\\]|\\.)*)"|'((?:[^']|'\\'')*)'|((?:<[^>]*>|[^\s"'<])+)|(\S+)/g;
+  for (const m of String(text).matchAll(re)) words.push(m[1] !== undefined ? m[1] : m[2] !== undefined ? m[2].replace(/'\\''/g, "'") : m[3] ?? m[4]);
+  return words;
+}
+// A command line built word by word with shellWord already ({ line }), printed as it is.
+const isLine = (r) => r !== null && typeof r === 'object' && !Array.isArray(r) && typeof r.line === 'string' && /^jarl\.mjs \S/.test(r.line);
+// A command as the shell is given it: every word quoted where the shell would read it, && kept between two commands.
+export function commandLine(ready) {
+  if (isLine(ready)) return ready.line;
+  const words = Array.isArray(ready) ? ready.map(String) : commandWords(ready);
+  return words.map((w) => (w === '&&' ? w : shellWord(w))).join(' ');
+}
+// The ready part as a text, for a caller that holds no call (the record library): a fix is written as the flag or the
+// argument it asks for.
+export function readyText(ready) {
+  const fixes = [].concat(ready).filter(isFix);
+  if (!fixes.length) return commandLine(ready);
+  return fixes.map((f) => (f.first !== undefined ? `after ${commandLine(f.first)}` : f.drop !== undefined ? `without ${f.drop}${f.value === undefined ? '' : ` ${shellWord(f.value)}`}` : f.flag !== undefined ? `${f.flag}${f.value === undefined ? '' : ` ${shellWord(f.value)}`}`
+    : f.retry ? 'the same call again' : f.rename !== undefined ? `${f.to} in place of ${f.rename}` : f.replace !== undefined ? `${shellWord(f.value)} in place of ${shellWord(f.replace)}` : f.truncate !== undefined ? `no word after the first ${f.truncate}` : `argument ${f.arg + 1}: ${shellWord(f.value)}`)).join(' ');
+}
+export { isFix };
+export function refuse(reason, ready) {
+  if (typeof reason !== 'string' || !reason.trim() || !checkReady(ready)) throw new TypeError(`a refusal is built from a reason and a ready part (a jarl.mjs command or a fix of the call): ${JSON.stringify(reason)}`);
+  throw new Refusal(reason, ready);
+}
+// The ready part may be an arrow, computed only when the condition fails: what it reads may not exist while the call is right.
+export function need(cond, reason, ready) { if (!cond) refuse(reason, typeof ready === 'function' ? ready() : ready); }
 
 function splitList(v) { return String(v || '').split(',').map((s) => s.trim()).filter(Boolean); }
 
@@ -62,8 +123,15 @@ function splitList(v) { return String(v || '').split(',').map((s) => s.trim()).f
 export function noSeparators(text) { return String(text ?? '').trim().replace(/\s*·\s*/g, ' - ').trim(); }
 
 // A word as a POSIX shell reads it back unchanged: as it is when it holds nothing the shell reads, else in single quotes,
-// a single quote inside written '\''. Every command Jarl prints for a person or an agent to run writes its words so.
-export function shellWord(s) { return /^[A-Za-z0-9_@%+=:,./#-]+$/.test(String(s)) ? String(s) : `'${String(s).replace(/'/g, `'\\''`)}'`; }
+// a single quote inside written '\''. A word with line breaks is printed by printf, one quoted line per argument, so the
+// command stays on one line, and a refusal's ready command on its last line. Every command Jarl prints for a person or an
+// agent to run writes its words so.
+const quoted = (s) => (/^[A-Za-z0-9_@%+=:,./#-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`);
+export function shellWord(s) {
+  const text = String(s);
+  if (!/[\r\n]/.test(text)) return quoted(text);
+  return `"$(printf '%s\\n' ${text.split(/\r\n?|\n/).map(quoted).join(' ')})"`;
+}
 
 // Used by the other modules of the library, and not part of what jarl-lib.mjs exports.
 export { LEASE_FIELDS, fieldText, freeInline, oneBreak, splitList };

@@ -45,7 +45,7 @@ function profileProblems(message) {
 // Every finding of the loop in `root`, as the checks print them, and the notes; a profile that does not parse ends the
 // reading, because every other reader goes through the profile.
 export function cmdVerify(root) {
-  need(hasLiveLoop(root), 'verify reads a loop: there is no .jarl/ with a goal here — open one with jarl.mjs init "<goal>", or name the loop with --root');
+  need(hasLiveLoop(root), 'verify reads a loop: there is no .jarl/ with a goal here — open one with jarl.mjs init "<goal>", or name the loop with --root', () => (['jarl.mjs', 'init', '<goal>']));
   const found = [];
   const notes = [];
   // n is the line of the file the finding is about, where it has one: a check's findings print in file order.

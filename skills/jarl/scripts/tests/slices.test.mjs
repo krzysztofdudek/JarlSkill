@@ -163,7 +163,7 @@ test('the issues waiting on a slice\'s issue, through After or a file it reserve
 test('ask --kind escalation names its slice or issue, is held by the jarl, shows in the slice\'s views and holds its issue back', () => {
   const root = twoSlicesUnkeyed();
   const before = readFileSync(join(root, '.jarl', 'profile.json'), 'utf8');
-  assert.match(refuses(root, 'ask', 'is this ours?', '--kind', 'escalation'), /^an escalation names what it is about, its slice or its issue or both: e\.g\. --slice <coordinator>$/m);
+  assert.match(refuses(root, 'ask', 'is this ours?', '--kind', 'escalation'), /^an escalation names what it is about, its slice or its issue or both\njarl\.mjs ask 'is this ours\?' --kind escalation --slice '<coordinator>'\n$/);
   assert.match(refuses(root, 'ask', 'is this ours?', '--slice', 'odin'), /^--slice goes with kind escalation only/m);
   assert.match(refuses(root, 'ask', 'is this ours?', '--kind', 'escalation', '--slice', 'loki'), /no coordinator loki on the goal's Coordinators line/);
   assert.equal(readFileSync(join(root, '.jarl', 'profile.json'), 'utf8'), before, 'a refusal raises nothing');
@@ -241,7 +241,7 @@ test('with more than one slice in play, a lease on an issue that declares no Fil
   jarl(root, 'new', 'no slice, bare');                                         // 3
   const log = readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
   for (const id of ['1', '3']) {
-    assert.match(refuses(root, 'set', id, 'in-progress', 'go', '--worker', 'w', '--branch', `jarl/${id}`), new RegExp(`^${id} declares no Files or Resources, and 2 slices are in play \\(slice:odin, slice:thor\\): across slices only leases hold, and a lease holds only what its issue declares — declare them first: jarl\\.mjs field ${id} Files <path>,… or jarl\\.mjs field ${id} Resources "<name>, …"$`, 'm'));
+    assert.match(refuses(root, 'set', id, 'in-progress', 'go', '--worker', 'w', '--branch', `jarl/${id}`), new RegExp(`^${id} declares no Files or Resources, and 2 slices are in play \\(slice:odin, slice:thor\\): across slices only leases hold, and a lease holds only what its issue declares — declare them first, its files or its resources \\(jarl\\.mjs field ${id} Resources "<name>, …"\\)\njarl\\.mjs field ${id} Files '<path>,…' && jarl\\.mjs set ${id} in-progress go --worker w --branch jarl/${id}\n$`));
   }
   assert.equal(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), log, 'nothing was written');
   jarl(root, 'set', '2', 'in-progress', 'go', '--worker', 'w2', '--branch', 'jarl/2');

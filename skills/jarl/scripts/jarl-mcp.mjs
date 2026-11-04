@@ -33,7 +33,7 @@
 // No dependencies beyond the vendored copy, Node 22+.
 import { resolve, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { AUTHOR_REQUIRED, COMMAND_ARGS, COMMAND_FLAGS, INTERNAL_COMMANDS, LIST_FIELDS, REPLACED_COMMANDS, replacedRefusal, flagsOf, COMMAND_SUMMARY, GLOBAL_FLAGS, MUTATING, USAGE, parseArgs, dispatch, findRoot, isEntry as isEntryOf, installVersion } from './jarl.mjs';
+import { AUTHOR_REQUIRED, COMMAND_ARGS, COMMAND_FLAGS, INTERNAL_COMMANDS, LIST_FIELDS, REPLACED_COMMANDS, replacedMessage, flagsOf, COMMAND_SUMMARY, GLOBAL_FLAGS, MUTATING, USAGE, parseArgs, dispatch, findRoot, isEntry as isEntryOf, installVersion } from './jarl.mjs';
 import { defineTable } from './vendor/runes/dist/cli/index.mjs';
 import {
   buildTools as generateTools, argvFor as generateArgv, commandForTool, serveStdio, InvalidParams,
@@ -237,7 +237,7 @@ export function callTool(name, input = {}, env = process.env, cwd = process.cwd(
   const cmd = commandForTool(TABLE, name, TOOL_OPTIONS);
   // A tool the server does not have, under the name of a command the CLI refuses with its replacement: the same line.
   const asked = typeof name === 'string' && name.startsWith(TOOL_PREFIX) ? name.slice(TOOL_PREFIX.length) : null;
-  if (cmd === null && asked !== null && Object.hasOwn(REPLACED_COMMANDS, asked)) throw invalid(`Unknown tool: ${name} — ${replacedRefusal(asked)}`);
+  if (cmd === null && asked !== null && Object.hasOwn(REPLACED_COMMANDS, asked)) throw invalid(`Unknown tool: ${name} — ${replacedMessage(asked)}`);
   if (cmd === null) throw invalid(`Unknown tool: ${name}`);
   const argv = argvFor(cmd, input);
   const { root, from } = rootOf(input, env, cwd);

@@ -73,7 +73,7 @@ test('a branch is measured by scope alone: check is refused with the scope call 
   const check = run(dir, ['check', '1', '--branch', 'jarl/1-a']);
   assert.notEqual(check.status, 0);
   assert.equal(check.stdout, '');
-  assert.equal(check.stderr, 'check is not a command; a branch is measured by scope: jarl.mjs scope 1 --branch jarl/1-a');
+  assert.equal(check.stderr, 'check is not a command; a branch is measured by scope\njarl.mjs scope 1 --branch jarl/1-a');
 });
 
 // The text the skill, the help and the tool descriptions speak in: one place where each rule below is checked.

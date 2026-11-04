@@ -10,6 +10,7 @@ import { sh, ghStub } from './portable.mjs';
 import { run as runJarl, jarl, refuses, loop as makeLoop, SPAWN_TIMEOUT } from './helpers.mjs';
 import { fileURLToPath } from 'node:url';
 import { FINDINGS } from './findings.mjs';
+import * as R from '../record.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 
@@ -258,6 +259,13 @@ test('resume\'s tips: branch tips against their upstream, CI from gh for pushed 
   assert.equal(none.gh, false);
   assert.equal(none.repos.find((x) => x.repo === 'tool').rows.find((x) => x.branch === 'main').ci, undefined);
   assert.equal(readFileSync(join(hub, '.jarl', 'log.md'), 'utf8'), log, 'resume writes nothing');
+  // The library asks gh with ci, the key of its contract, and with gh, the command line's name, alike; with neither, it
+  // does not ask.
+  const was = process.env.JARL_GH;
+  process.env.JARL_GH = gh;
+  try {
+    assert.deepEqual([R.resumeData(hub, { ci: true }).tips.gh, R.resumeData(hub, { gh: true }).tips.gh, R.resumeData(hub, {}).tips.gh], [true, true, null], 'null: gh was not asked');
+  } finally { if (was === undefined) delete process.env.JARL_GH; else process.env.JARL_GH = was; }
 });
 
 test('resume\'s tips: a worker branch of a multi-repository issue is shown where it is, GONE only when no named repository has it; a detached HEAD is no release branch', () => {

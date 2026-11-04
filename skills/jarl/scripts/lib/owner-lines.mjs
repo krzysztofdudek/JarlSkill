@@ -35,6 +35,9 @@ function ownerLineOf(text) {
   return { what, material: value(parts[1], 'material'), check: value(parts[2], 'check') };
 }
 const whole = (o) => Boolean(o.what && o.material && o.check);
+// An owner line in the shape, with what a marked line names kept and the rest written out in words a refusal's ready
+// call can carry as they are (a <placeholder> is refused here): the result, the branch's diff, what the issue asks.
+const ownerLine = (o = {}) => `[owner] ${o.what ?? 'the result'} · material: ${o.material ?? 'the diff of the branch'} · check: ${o.check ?? 'it does what the issue asks'}`;
 
 // The owner lines of an acceptance text that new and field are given: a marked line that does not name its material and
 // what to check is refused, naming the shape. True when the text holds an owner line, so the write raises the format.
@@ -43,7 +46,7 @@ export function needOwnerLines(acceptance) {
   for (const text of acceptanceLines({ sections: { acceptance } })) {
     const o = ownerLineOf(text);
     if (!o) continue;
-    need(whole(o), `acceptance line "${text}" is marked as one only the owner ticks, and it must name the material he reviews (a path, a link or an artifact) and what he checks: ${OWNER_LINE_SHAPE}; e.g. --acceptance "[owner] <line> · material: <path> · check: <what to check>"`);
+    need(whole(o), `acceptance line "${text}" is marked as one only the owner ticks, and it must name the material he reviews (a path, a link or an artifact) and what he checks: ${OWNER_LINE_SHAPE}`, () => ({ replace: text, value: ownerLine(o) }));
     held = true;
   }
   return held;
@@ -139,25 +142,28 @@ export function ownerLineNotes(root, loop, issue) {
 // name, an owner line that names its material and what to check, the material there and no tick that counts already;
 // it raises the record format where the loop is not in it, and writes one log line.
 export function cmdTick(root, rawId, rawLine, flags = {}) {
-  need(flags.by !== undefined, 'tick needs --by owner, as only the owner ticks an owner line and the record says who did: e.g. --by owner');
+  need(flags.by !== undefined, 'tick needs --by owner, as only the owner ticks an owner line and the record says who did', () => ({ flag: '--by', value: 'owner' }));
   const by = rulingAuthor(flags.by);
-  need(by === OWNER, `only the owner ticks an owner line (got "${by}"): e.g. --by owner`);
+  need(by === OWNER, `only the owner ticks an owner line (got "${by}")`, () => ({ flag: '--by', value: `owner` }));
   const issue = findIssue(root, rawId);
-  need(issue, `no such issue: ${rawId}`);
+  need(issue, `no such issue: ${rawId}`, () => ({ replace: rawId, value: '<id>' }));
   const loop = readLoop(jarlDir(root));
   const states = ownerLineStates(root, loop, issue);
   const lines = acceptanceLines(issue);
-  need(states.length, `${issue.id} has no acceptance line marked as one only the owner ticks — mark one, ${OWNER_LINE_SHAPE}, among every line of the section: jarl.mjs field ${issue.id} Acceptance "<every line of the section, one per line>"`);
+  need(states.length, `${issue.id} has no acceptance line marked as one only the owner ticks — mark one, ${OWNER_LINE_SHAPE}, among every line of the section`, () => [{ first: ['jarl.mjs', 'field', issue.id, 'Acceptance', '--add', ownerLine()] }, { arg: 1, value: String(lines.length + 1) }]);
   const owners = `its owner lines: ${states.map((s) => s.n).join(', ')}`;
-  need(/^\d+$/.test(String(rawLine ?? '').trim()) && Number(rawLine) > 0, `tick takes the number of the acceptance line, counted from 1 — ${owners}`);
+  need(/^\d+$/.test(String(rawLine ?? '').trim()) && Number(rawLine) > 0, `tick takes the number of the acceptance line, counted from 1 — ${owners}`, () => ({ arg: 1, value: '1' }));
   const n = Number(rawLine);
-  need(n <= lines.length, `${issue.id} has ${lines.length} acceptance line${lines.length === 1 ? '' : 's'}: there is no line ${n}; ${owners}`);
+  need(n <= lines.length, `${issue.id} has ${lines.length} acceptance line${lines.length === 1 ? '' : 's'}: there is no line ${n}; ${owners}`, () => ({ arg: 1, value: String(lines.length) }));
   const s = states.find((x) => x.n === n);
-  need(s, `acceptance line ${n} of ${issue.id} is not marked as one only the owner ticks; ${owners}`);
-  need(!loop.profile.is(issue.status, 'terminal'), `${issue.id} is ${issue.status}: nothing waits for the owner's tick`);
-  need(!s.off, `acceptance line ${n} of ${issue.id} cannot be ticked: ${s.why}; rewrite it without the [owner] mark: ${rewrite(issue.id)}`);
-  need(!s.tick, `acceptance line ${n} of ${issue.id} is ticked already, by ${s.tick && s.tick.by} at ${s.tick && s.tick.at}`);
-  need(s.ready, `the material of acceptance line ${n} of ${issue.id} is not there yet: ${s.why} — the owner ticks the line once he has reviewed it; nothing was written`);
+  // The owner line the ready call ticks: the first one not ticked yet; with none left, a line the owner adds first.
+  const open = states.find((x) => !x.tick && !x.off);
+  const openLine = () => (open ? { arg: 1, value: String(open.n) } : [{ first: ['jarl.mjs', 'field', issue.id, 'Acceptance', '--add', ownerLine()] }, { arg: 1, value: String(lines.length + 1) }]);
+  need(s, `acceptance line ${n} of ${issue.id} is not marked as one only the owner ticks; ${owners}`, openLine);
+  need(!loop.profile.is(issue.status, 'terminal'), `${issue.id} is ${issue.status}: nothing waits for the owner's tick until it is open again`, () => ({ first: ['jarl.mjs', 'set', issue.id, loop.profile.statuses.find((x) => !loop.profile.is(x, 'terminal')) ?? '<status>', '<why it waits for the owner again>'] }));
+  need(!s.off, `acceptance line ${n} of ${issue.id} cannot be ticked: ${s.why}; rewrite it without the [owner] mark: ${rewrite(issue.id)}`, () => (rewrite(issue.id)));
+  need(!s.tick, `acceptance line ${n} of ${issue.id} is ticked already, by ${s.tick && s.tick.by} at ${s.tick && s.tick.at}`, openLine);
+  need(s.ready, `the material of acceptance line ${n} of ${issue.id} is not there yet: ${s.why} — the owner ticks the line once he has reviewed it; nothing was written`, () => (['jarl.mjs', 'evidence', issue.id, '--ran', '<command>', '--saw', '<what it printed>']));
   needFormat(root, 'owner-line');
   const at = stamp();
   appendLogLines(root, [`${issue.id} tick · line ${n} · by ${by} · ${s.text}`], at);

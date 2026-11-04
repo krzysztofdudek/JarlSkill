@@ -88,9 +88,9 @@ test('field adds and removes the items of a list field, each issue keeping what 
   jarl(root, 'field', '1', 'Tags', 'a', '--add');
   jarl(root, 'field', '1', 'Tags', 'zzz', '--remove');
   assert.equal(logLines(root).length, count, 'an item held already, or not held at all, writes nothing');
-  assert.match(refuses(root, 'field', '1', 'Priority', '1', '--add'), /Priority holds one value, so it is replaced, never added to or taken from: jarl\.mjs field <ids> Priority "<value>"/);
+  assert.match(refuses(root, 'field', '1', 'Priority', '1', '--add'), /^Priority holds one value, so it is replaced, never added to or taken from; .*\njarl\.mjs field 1 Priority 1\n$/);
   assert.match(refuses(root, 'field', '1', 'Tags', 'a', '--add', '--clear'), /field takes one of --add, --remove and --clear, not --add and --clear/);
-  assert.match(refuses(root, 'field', '1', 'Tags', '--add'), /field Tags needs a value, or --clear to empty it: jarl\.mjs field <ids> Tags "<value>"$/m);
+  assert.match(refuses(root, 'field', '1', 'Tags', '--add'), /^field Tags needs a value, or --clear to empty it\njarl\.mjs field 1 Tags '<value>' --add\n$/);
 });
 
 test('a slice: tag keeps its one-slice rule through --add, and the refusal is the two calls that move the issue', () => {
@@ -120,40 +120,40 @@ test('field adds a repository to Repo and takes it off by its name', () => {
   assert.notEqual(first, second);
 });
 
-test('the commands that wrote one part each are refused with one line that ends with the field call doing what was asked', () => {
+test('the commands that wrote one part each are refused with the reason, then on its own line the field call doing what was asked', () => {
   const root = fieldedLoop();
   const cases = [
-    [['prio', '1', '3'], 'prio is not a command; the priority is a field: jarl.mjs field 1 Priority 3'],
-    [['tag', '1', '+a', '-b'], 'tag is not a command; tags are a field: jarl.mjs field 1 Tags --remove b, then jarl.mjs field 1 Tags --add a'],
-    [['files', '1', 'a.mjs', 'b.mjs'], 'files is not a command; the files are a field: jarl.mjs field 1 Files a.mjs,b.mjs'],
-    [['source', '1', 'r/x#1'], 'source is not a command; the source is a field: jarl.mjs field 1 Source r/x#1'],
-    [['after', '1', '2'], 'after is not a command; the issues an issue waits on are a field: jarl.mjs field 1 After 2'],
-    [['after', '1', '--clear'], 'after is not a command; the issues an issue waits on are a field: jarl.mjs field 1 After --clear'],
-    [['repo', '1', '--clear'], 'repo is not a command; the repository is a field: jarl.mjs field 1 Repo --clear'],
-    [['repo', '--base', 'tool', 'main'], "repo is not a command; a repository's base is changed by base: jarl.mjs base tool main"],
-    [['body', '1', '--why', 'a reason', '--acceptance', 'a line', '--append'], "body is not a command; every part of the description is written by field: jarl.mjs field 1 Why 'a reason' --add, then jarl.mjs field 1 Acceptance 'a line' --add"],
+    [['prio', '1', '3'], 'prio is not a command; the priority is a field\njarl.mjs field 1 Priority 3'],
+    [['tag', '1', '+a', '-b'], 'tag is not a command; tags are a field\njarl.mjs field 1 Tags --remove b && jarl.mjs field 1 Tags --add a'],
+    [['files', '1', 'a.mjs', 'b.mjs'], 'files is not a command; the files are a field\njarl.mjs field 1 Files a.mjs,b.mjs'],
+    [['source', '1', 'r/x#1'], 'source is not a command; the source is a field\njarl.mjs field 1 Source r/x#1'],
+    [['after', '1', '2'], 'after is not a command; the issues an issue waits on are a field\njarl.mjs field 1 After 2'],
+    [['after', '1', '--clear'], 'after is not a command; the issues an issue waits on are a field\njarl.mjs field 1 After --clear'],
+    [['repo', '1', '--clear'], 'repo is not a command; the repository is a field\njarl.mjs field 1 Repo --clear'],
+    [['repo', '--base', 'tool', 'main'], "repo is not a command; a repository's base is changed by base\njarl.mjs base tool main"],
+    [['body', '1', '--why', 'a reason', '--acceptance', 'a line', '--append'], "body is not a command; every part of the description is written by field, one call per part\njarl.mjs field 1 Why 'a reason' --add && jarl.mjs field 1 Acceptance 'a line' --add"],
   ];
   for (const [args, line] of cases) {
     const said = refuses(root, ...args);
     assert.equal(said.trim(), line, args.join(' '));
-    assert.equal(said.trim().split('\n').length, 1, `${args[0]}: one line`);
+    assert.equal(said.trim().split('\n').length, 2, `${args[0]}: the reason and the ready line`);
   }
   assert.equal(issue(root, '1').priority, '2', 'a refused call writes nothing');
   const tool = mcp.handle({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'jarl_prio', arguments: { root } } });
-  assert.match(tool.error.message, /^Unknown tool: jarl_prio — prio is not a command; the priority is a field: jarl\.mjs field <ids> Priority <1\|2\|3>$/);
+  assert.match(tool.error.message, /^Unknown tool: jarl_prio — prio is not a command; the priority is a field\njarl\.mjs field '<ids>' Priority '<1\|2\|3>'$/);
 });
 
 test('set takes statuses only: a field given to it is refused with the field call that writes it', () => {
   const root = fieldedLoop();
-  assert.equal(refuses(root, 'set', '1', 'Area', 'cli').trim(), 'Area is a field, not a status: jarl.mjs field 1 Area cli');
-  assert.equal(refuses(root, 'set', '1', 'resources', 'gate, db').trim(), "resources is a field, not a status: jarl.mjs field 1 resources 'gate, db'");
+  assert.equal(refuses(root, 'set', '1', 'Area', 'cli').trim(), 'Area is a field, not a status\njarl.mjs field 1 Area cli');
+  assert.equal(refuses(root, 'set', '1', 'resources', 'gate, db').trim(), "resources is a field, not a status\njarl.mjs field 1 resources 'gate, db'");
   assert.equal(issue(root, '1').fields.area, 'core');
 });
 
 test('base is the command that changes the base branch of a declared repository', () => {
   const root = makeLoop({ prefix: 'jarl-surface-base-', via: 'cli' });
   assert.match(refuses(root, 'base', 'nothing-here', 'main'), /nothing-here is not declared in this loop/);
-  assert.match(refuses(root, 'base', 'nothing-here'), /base takes a repository name and a branch: jarl\.mjs base <name> <branch>/);
+  assert.match(refuses(root, 'base', 'nothing-here'), /^base takes a repository name and a branch\njarl\.mjs base nothing-here '<branch>'\n$/);
 });
 
 // Every flag of the command table with the one thing it means, and the commands that take it. A flag added to a command,
@@ -227,18 +227,18 @@ test('status and models group with --group; --by on them is refused with the cal
   jarl(root, 'field', '1', 'Tags', 'docs');
   assert.match(jarl(root, 'status', '--group', 'tag'), /by tag:\n {2}\(none\) .*\n {2}docs /);
   assert.equal(JSON.parse(jarl(root, 'status', '--group', 'kind', '--json')).by.key, 'kind');
-  assert.equal(refuses(root, 'status', '--by', 'repo').trim(), 'status groups its counts with --group, and --by names the author of a write: jarl.mjs status --group repo');
-  assert.equal(refuses(root, 'models', '--by', 'tag').trim(), 'models groups its counts with --group, and --by names the author of a write: jarl.mjs models --group tag');
-  assert.match(refuses(root, 'status', '--group', 'colour'), /--group is one of: repo, tag, kind, prio, area \(got "colour"\): jarl\.mjs status --group repo/);
+  assert.equal(refuses(root, 'status', '--by', 'repo').trim(), 'status groups its counts with --group, and --by names the author of a write\njarl.mjs status --group repo');
+  assert.equal(refuses(root, 'models', '--by', 'tag').trim(), 'models groups its counts with --group, and --by names the author of a write\njarl.mjs models --group tag');
+  assert.match(refuses(root, 'status', '--group', 'colour'), /^--group is one of: repo, tag, kind, prio, area \(got "colour"\)\njarl\.mjs status --group repo\n$/);
   assert.equal(JSON.parse(jarl(root, 'models', '--group', 'tag', '--json')).by, 'tag');
 });
 
 test('a verdict and an evidence row are taken back by retract alone; the other spellings and the second name of scope are refused with the call to use', () => {
   const root = fieldedLoop();
   jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'ok');
-  assert.equal(refuses(root, 'evidence', '1', '--retract', '1', '--by', 'jarl', 'wrong row').trim(), "evidence takes nothing back: a row or a note is taken back with jarl.mjs retract 1 1 'wrong row' --by jarl");
-  assert.equal(refuses(root, 'review', '1', 'retract', '--by', 'jarl', 'wrong verdict').trim(), "a verdict is taken back with retract: jarl.mjs retract 1 review 'wrong verdict' --by jarl");
-  assert.equal(refuses(root, 'check', '1', '--branch', 'jarl/1-a').trim(), 'check is not a command; a branch is measured by scope: jarl.mjs scope 1 --branch jarl/1-a');
+  assert.equal(refuses(root, 'evidence', '1', '--retract', '1', '--by', 'jarl', 'wrong row').trim(), "evidence takes nothing back: a row or a note is taken back with retract\njarl.mjs retract 1 1 'wrong row' --by jarl");
+  assert.equal(refuses(root, 'review', '1', 'retract', '--by', 'jarl', 'wrong verdict').trim(), "a verdict is taken back with retract\njarl.mjs retract 1 review 'wrong verdict' --by jarl");
+  assert.equal(refuses(root, 'check', '1', '--branch', 'jarl/1-a').trim(), 'check is not a command; a branch is measured by scope\njarl.mjs scope 1 --branch jarl/1-a');
   assert.equal(mcp.buildTools().some((t) => t.name === 'jarl_check'), false, 'no tool answers to a second name');
   assert.equal(mcp.buildTools().find((t) => t.name === 'jarl_evidence').inputSchema.properties.retract, undefined);
 });
@@ -282,8 +282,8 @@ test('every write that records a judgement names its author: review, answer, dec
   jarl(root, 'ask', 'which way?');
   const before = readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
   assert.match(refuses(root, 'review', '1', 'approve', 'read the diff, nothing found'), /a verdict needs --by <reviewer>/);
-  assert.equal(refuses(root, 'answer', 'a-1', 'this way').trim(), "answer records who answered, owner for the owner: jarl.mjs answer a-1 'this way' --by <who>");
-  assert.equal(refuses(root, 'decide', 'the-way', 'we go this way').trim(), 'decide records who ruled, jarl under a mandate, owner with --quote "<his words>": jarl.mjs decide the-way \'we go this way\' --by <who>');
+  assert.equal(refuses(root, 'answer', 'a-1', 'this way').trim(), "answer records who answered, owner for the owner\njarl.mjs answer a-1 'this way' --by '<who>'");
+  assert.equal(refuses(root, 'decide', 'the-way', 'we go this way').trim(), 'decide records who ruled, jarl under a mandate, owner with --quote "<his words>"\njarl.mjs decide the-way \'we go this way\' --by \'<who>\'');
   assert.match(refuses(root, 'retract', '1', '1', 'the row was wrong'), /needs --by <who>/);
   assert.match(refuses(root, 'tick', '1', '1'), /--by owner/);
   assert.equal(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), before, 'nothing was written');
@@ -292,44 +292,8 @@ test('every write that records a judgement names its author: review, answer, dec
   assert.match(jarl(root, 'decisions'), /the-way · by jarl/);
 });
 
-// A call that writes, wrong in a way an agent writes it: every writing command, each with a required argument left out, an
-// enum value that is none of its values, and the other ways a call goes wrong. Each is refused, writes nothing, and ends
-// with a call that would do it or with the flag to add and a value.
-const WRONG_CALLS = JSON.parse(readFileSync(new URL('./fixtures/wrong-calls.json', import.meta.url), 'utf8'));
-// The last line of a refusal ends with its ready command: from the last ": jarl.mjs", ", then jarl.mjs" or "e.g. --" to the
-// end of the line, and the rest of that line is words of a command (a quoted value, a <placeholder> or a parenthesis
-// aside), never prose after it.
-const PROSE_WORDS = new Set(['the', 'a', 'an', 'is', 'are', 'of', 'to', 'it', 'its', 'lists', 'numbers', 'replaces', 'which', 'that', 'and', 'names', 'holds', 'or']);
-const prose = (words) => words.split(/\s+/).some((w) => PROSE_WORDS.has(w) || /[.;—]$/.test(w) || w === '—');
-function endsReady(said) {
-  const last = said.trim().split('\n').at(-1);
-  const at = Math.max(...[': jarl.mjs ', ', then jarl.mjs ', ': e.g. --', '; e.g. --', ', e.g. --'].map((m) => last.lastIndexOf(m)));
-  if (at < 0) return false;
-  const cmd = last.slice(at).replace(/^(?::|;|,) (?:then )?(?:e\.g\. )?/, '');
-  return /^(?:jarl\.mjs |--[a-z])/.test(cmd) && !prose(cmd.replace(/"[^"]*"|'[^']*'|<[^>]*>|\([^)]*\)/g, ' '));
-}
-
-test('every refusal of a writing command ends with a ready command or the flag to add, on its last line, and writes nothing', () => {
-  assert.ok(WRONG_CALLS.length >= 70, 'the walk covers every writing command');
-  for (const ok of ['x: jarl.mjs list --all', 'x; e.g. --tier standard', 'x: jarl.mjs set <ids> <status> "<text>"']) assert.ok(endsReady(ok), ok);
-  for (const bad of ['x: jarl.mjs list --all lists the issues', 'x — set it first', 'jarl.mjs show 1 numbers what it holds\nmore']) assert.ok(!endsReady(bad), bad);
-  const root = mkdtempSync(join(tmpdir(), 'jarl-surface-refusals-'));
-  mkdirSync(join(root, '.git'));
-  jarl(root, 'init', 'goal');
-  jarl(root, 'new', 'one', '--tier', 'light', '--acceptance', 'a');
-  jarl(root, 'new', 'two', '--tier', 'light', '--acceptance', 'a');
-  jarl(root, 'set', '2', 'in-progress', '--worker', 'w2', '--branch', 'jarl/2-two');
-  jarl(root, 'ask', 'which?');
-  jarl(root, 'decide', 'taken', 'a ruling', '--by', 'jarl');
-  const before = readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
-  const bare = [];
-  for (const args of WRONG_CALLS) {
-    const said = refuses(root, ...args);
-    if (!endsReady(said)) bare.push(`${args.join(' ')}\n    ${said.trim().split('\n').at(-1)}`);
-  }
-  assert.deepEqual(bare, [], 'each refusal ends with a ready command or the flag to add');
-  assert.equal(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), before, 'no refusal wrote a line');
-});
+// The walk of the wrong calls of every writing command, and the check that each refusal ends with a ready command, are in
+// refusals.test.mjs.
 
 test('the help gives each read-only view one purpose, on one line of its own', () => {
   const { USAGE, COMMAND_FLAGS, MUTATING, INTERNAL_COMMANDS } = J;
@@ -357,18 +321,19 @@ test('the tips and the merge queue are sections of resume: --repo narrows both, 
   assert.deepEqual(narrowed.tips.repos.map((r) => r.repo), [name]);
   assert.deepEqual(narrowed.queue.repos.map((r) => [r.repo, r.base]), [[name, 'main']]);
   assert.equal(narrowed.tips.ci, true);
-  assert.equal(refuses(dir, 'tips').trim(), 'tips is not a command; the tips are a section of resume, which asks gh for their CI with --gh: jarl.mjs resume --gh');
-  assert.equal(refuses(dir, 'queue', '--repo', 'tool', '--base', 'release').trim(), 'queue is not a command; the merge queue is a section of resume, its batches included: jarl.mjs resume --repo tool --base release');
+  assert.equal(refuses(dir, 'tips').trim(), 'tips is not a command; the tips are a section of resume, which asks gh for their CI with --gh\njarl.mjs resume --gh');
+  assert.equal(refuses(dir, 'queue', '--repo', 'tool', '--base', 'release').trim(), 'queue is not a command; the merge queue is a section of resume, its batches included\njarl.mjs resume --repo tool --base release');
   assert.equal(mcp.buildTools().some((t) => ['jarl_tips', 'jarl_queue'].includes(t.name)), false);
 });
 
-// The calls a refusal ends with, as a shell would be given them: from the first jarl.mjs to the end, one per ", then".
-const callsOf = (said) => said.slice(said.indexOf('jarl.mjs ')).trim().split(', then jarl.mjs ').map((c, n) => (n ? `jarl.mjs ${c}` : c));
-// One printed call run through a POSIX shell against the loop, the script standing where jarl.mjs stands.
+// The calls a refusal ends with, as a shell would be given them: its last line, one call per &&.
+const callsOf = (said) => said.trim().split('\n').at(-1).split(' && ');
+// One printed call run through a POSIX shell against the loop, the script standing where jarl.mjs stands; --root goes
+// before the command, where it is read even when the call ends with a bare -- and its arguments.
 function runPrinted(root, call, fill = {}) {
   let line = call;
   for (const [from, to] of Object.entries(fill)) line = line.split(from).join(to);
-  const r = spawnSync('/bin/sh', ['-c', `"$JARL_NODE" "$JARL_SCRIPT" ${line.slice('jarl.mjs '.length)} --root "$JARL_LOOP"`], { encoding: 'utf8', env: { ...process.env, JARL_NODE: process.execPath, JARL_SCRIPT: SCRIPT, JARL_LOOP: root, HOME: '/home-not-expanded' }, timeout: 120000 });
+  const r = spawnSync('/bin/sh', ['-c', `"$JARL_NODE" "$JARL_SCRIPT" --root "$JARL_LOOP" ${line.slice('jarl.mjs '.length)}`], { encoding: 'utf8', env: { ...process.env, JARL_NODE: process.execPath, JARL_SCRIPT: SCRIPT, JARL_LOOP: root, HOME: '/home-not-expanded' }, timeout: 120000 });
   assert.equal(r.status, 0, `${line}\n${r.stderr}`);
 }
 const sectionsOf = (root, id) => { const i = R.findIssue(root, id); return { what: i.sections.what, why: i.sections.why, acceptance: i.sections.acceptance, changelog: i.sections.changelog, tags: i.tags, priority: i.priority }; };
@@ -380,7 +345,7 @@ test('a printed call, run through a shell, writes what the refused call meant: $
   const viaPrinted = fieldedLoop();
   const viaField = fieldedLoop();
   const said = refuses(viaPrinted, 'body', '1', '--what', nasty.join(' / '), '--why', nasty[2], '--acceptance', nasty[0], '--acceptance', nasty[1], '--changelog', `Fixed: ${nasty[0]}`, '--by', "w-1's");
-  assert.equal(said.trim().split(', then ').length, 5, 'one call per part, and one per acceptance line');
+  assert.equal(callsOf(said).length, 5, 'one call per part, and one per acceptance line');
   for (const call of callsOf(said)) runPrinted(viaPrinted, call);
   jarl(viaField, 'field', '1', 'What', nasty.join(' / '), '--by', "w-1's");
   jarl(viaField, 'field', '1', 'Why', nasty[2], '--by', "w-1's");
@@ -406,12 +371,12 @@ test('a printed call, run through a shell, writes what the refused call meant: $
 test('a replacing call carries every word the caller gave: --by, the reason of a retraction, the filters of status, and Files emptied as --clear', () => {
   const root = fieldedLoop();
   jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'ok');
-  assert.equal(refuses(root, 'evidence', '1', '--retract', '1', '--by', 'rev', 'ran on the wrong tree').trim(), "evidence takes nothing back: a row or a note is taken back with jarl.mjs retract 1 1 'ran on the wrong tree' --by rev");
-  assert.equal(refuses(root, 'status', '--by', 'tag', '--tag', 'docs').trim(), 'status groups its counts with --group, and --by names the author of a write: jarl.mjs status --group tag --tag docs');
-  assert.equal(refuses(root, 'files', '1', '').trim(), 'files is not a command; the files are a field: jarl.mjs field 1 Files --clear');
-  assert.equal(refuses(root, 'prio', '1', '3', '--by', 'w2').trim(), 'prio is not a command; the priority is a field: jarl.mjs field 1 Priority 3 --by w2');
-  assert.equal(refuses(root, 'set', '1', 'Area', 'cli', '--by', 'w2').trim(), 'Area is a field, not a status: jarl.mjs field 1 Area cli --by w2');
-  assert.equal(refuses(root, 'body', '1', '--title', 'new title', '--by', 'w2').trim(), "body is not a command; every part of the description is written by field: jarl.mjs field 1 Title 'new title' --by w2");
+  assert.equal(refuses(root, 'evidence', '1', '--retract', '1', '--by', 'rev', 'ran on the wrong tree').trim(), "evidence takes nothing back: a row or a note is taken back with retract\njarl.mjs retract 1 1 'ran on the wrong tree' --by rev");
+  assert.equal(refuses(root, 'status', '--by', 'tag', '--tag', 'docs').trim(), 'status groups its counts with --group, and --by names the author of a write\njarl.mjs status --group tag --tag docs');
+  assert.equal(refuses(root, 'files', '1', '').trim(), 'files is not a command; the files are a field\njarl.mjs field 1 Files --clear');
+  assert.equal(refuses(root, 'prio', '1', '3', '--by', 'w2').trim(), 'prio is not a command; the priority is a field\njarl.mjs field 1 Priority 3 --by w2');
+  assert.equal(refuses(root, 'set', '1', 'Area', 'cli', '--by', 'w2').trim(), 'Area is a field, not a status\njarl.mjs field 1 Area cli --by w2');
+  assert.equal(refuses(root, 'body', '1', '--title', 'new title', '--by', 'w2').trim(), "body is not a command; every part of the description is written by field, one call per part\njarl.mjs field 1 Title 'new title' --by w2");
   for (const call of callsOf(refuses(root, 'evidence', '1', '--retract', '1', '--by', 'rev', 'ran on the wrong tree'))) runPrinted(root, call);
   assert.match(R.findIssue(root, '1').sections.evidence, /~~\*\*ran:\*\* npm test/);
 });
@@ -420,23 +385,42 @@ test('a replacing call carries every word the caller gave: --by, the reason of a
 // script or of a tool, or a flag in a spelling the surface refuses. A JSON key in quotes (`after`, `check`), a selector of a
 // rule (`tag <tag>`, `files <path>`) and a word of a sentence are not commands, and do not match.
 const GONE = 'body|tag|prio|files|repo|source|after|tips|queue|check|handoff';
+// The names free text had in a tool before it was text, as a field of a tool call or a placeholder of a command.
+const OLD_TEXT_NAMES = 'findings|why|question|ruling|answer|event|reason|what';
+// A call of answer or decide, in code quotes or after jarl.mjs, that names no author.
+const UNAUTHORED = /(?:`|jarl\.mjs )((?:answer|decide) [^`]*?)(?:`|$)/g;
 const STALE = [
   new RegExp(`\`(?:${GONE}) (?:<ids?>|\\d|--|\\+|-[a-z]|"|')`),
   new RegExp(`\\bjarl\\.mjs (?:${GONE})\\b`),
   new RegExp(`\\bjarl_(?:${GONE})\\b`),
-  /\b(?:status|models) [^`|]*--by\b/, /\bevidence [^`|]*--retract\b/, /\breview <ids?> retract\b/, /\bfindings: "/,
+  /\b(?:status|models) [^`|]*--by\b/, /\bevidence [^`|]*--retract\b/, /\breview <ids?> retract\b/,
+  /\bresume [^`|]*--ci\b/,
+  new RegExp(`\\b(?:${OLD_TEXT_NAMES}): "`),
+  new RegExp(`"<(?:${OLD_TEXT_NAMES})>"`),
+  // A call with its id or slug (not a flag named alone, not an elided …) and words after it.
+  { test: (line) => [...line.matchAll(UNAUTHORED)].some((m) => /^(?:answer|decide) (?!-|…)\S+ \S/.test(m[1]) && !/--by\b/.test(m[1])) },
 ];
+function staleHits(texts) {
+  const hits = [];
+  for (const [name, text] of texts) {
+    text.split('\n').forEach((line, i) => { for (const re of STALE) if (re.test(line)) hits.push(`${name}:${i + 1}: ${line.slice(0, 160)}`); });
+  }
+  return hits;
+}
 test('SKILL.md, the references, the help, the tool descriptions and the server instructions use no command or flag the surface refuses', () => {
   const init = mcp.handle({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
   const texts = [
     ...['SKILL.md', ...readdirSync(join(SKILL_DIR, 'references')).map((f) => `references/${f}`)].map((f) => [f, skillText(f)]),
     ['the help', J.USAGE], ['the tool descriptions', mcp.buildTools().map((t) => t.description).join('\n')], ['the server instructions', init.result.instructions],
   ];
-  const hits = [];
-  for (const [name, text] of texts) {
-    text.split('\n').forEach((line, i) => { for (const re of STALE) if (re.test(line)) hits.push(`${name}:${i + 1}: ${line.slice(0, 160)}`); });
-  }
-  assert.deepEqual(hits, []);
-  // The test itself fires on the forms it is for.
-  for (const line of ['run `tag 7 +a` first', 'jarl.mjs prio 7 1', 'jarl_body { id: "7" }', '`status --by repo`', 'findings: "x"']) assert.ok(STALE.some((re) => re.test(line)), line);
+  assert.deepEqual(staleHits(texts), []);
+  // Each form, planted in SKILL.md, turns the check red: the check reads the texts it is for, and fires on each form.
+  const planted = [
+    'run `tag 7 +a` first', 'jarl.mjs prio 7 1', 'jarl_body { id: "7" }', '`status --by repo`', 'resume asks gh with `resume --ci`',
+    'jarl_review { ids: "1", verdict: "approve", findings: "read it" }', 'jarl_set { ids: "1", status: "deferred", why: "later" }', 'jarl_ask { question: "which?" }',
+    'jarl_decide { slug: "s", ruling: "r" }', 'jarl_answer { id: "a-1", answer: "yes" }', 'jarl_log { event: "x" }', 'jarl_retract { reason: "x" }', 'jarl_evidence { what: "x" }',
+    '`jarl.mjs answer a-1 "yes"`', '`decide the-way "we go"`', 'jarl.mjs round 1 "<why>"', 'jarl.mjs review 1 approve --by r "<findings>"',
+  ];
+  for (const line of planted) assert.equal(staleHits([['SKILL.md', `${texts[0][1]}\n${line}`]]).length, 1, line);
+  for (const line of ['`jarl.mjs answer a-1 "yes" --by owner`', '`decide the-way "we go" --by jarl`', '`answer` records who answered']) assert.deepEqual(staleHits([['x', line]]), [], line);
 });

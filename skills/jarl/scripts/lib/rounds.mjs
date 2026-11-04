@@ -64,11 +64,11 @@ const times = (k) => `${k} time${k === 1 ? '' : 's'}`;
 
 export function cmdRound(root, rawId, what, dry = false, opts = {}) {
   needNoOwnersWords('the round', what);
-  need(what, 'round requires "<text>", what failed: jarl.mjs round <ids> "<text>"');
+  need(what, 'round requires "<text>", what failed', () => ({ arg: 1, value: '<what failed>' }));
   const found = opts.findings;
-  need(found === undefined || (/^\d+$/.test(String(found)) && Number(found) <= FINDINGS_MAX), `--findings must be a whole number up to ${FINDINGS_MAX}: e.g. --findings 2`);
+  need(found === undefined || (/^\d+$/.test(String(found)) && Number(found) <= FINDINGS_MAX), `--findings must be a whole number up to ${FINDINGS_MAX}`, () => ({ flag: '--findings', value: `2` }));
   const issue = findIssue(root, rawId);
-  need(issue, `no such issue: ${rawId}`);
+  need(issue, `no such issue: ${rawId}`, () => ({ replace: rawId, value: '<id>' }));
   if (dry) return { id: issue.id };
   const n = roundsOf(root, issue.id) + 1;
   // A takeover starts a new count: the next one comes after as many rounds of the new worker as the goal's limit says
@@ -160,22 +160,22 @@ function unrecordedBranch(root, flags) {
 }
 
 export function cmdCheck(root, rawId, flags) {
-  need(flags.branch, 'scope requires --branch <worker branch>');
+  need(flags.branch, 'scope requires --branch <worker branch>', () => ({ flag: '--branch', value: '<worker branch>' }));
   let pkg;
   if (rawId === undefined) {
     const profile = loadProfile(root);
     pkg = loadIssues(root).filter((i) => i.fields.branch === flags.branch && (profile.is(i.status, 'holds-claim') || profile.is(i.status, 'closes-record')));
-    if (!pkg.length) need(false, unrecordedBranch(root, flags));
+    if (!pkg.length) need(false, unrecordedBranch(root, flags), () => [{ first: ['jarl.mjs', 'new', '<what the branch does>', '--tier', 'standard'] }, { first: ['jarl.mjs', 'set', '<the id new prints>', 'in-progress', '<why>', '--branch', flags.branch] }, { retry: true }]);
     if (flags.repo === undefined) {
       const repos = new Map();
       for (const i of pkg) for (const r of issuePlaces(root, i)) repos.set(r, [...(repos.get(r) || []), i.id]);
-      need(repos.size === 1, `the issues on ${flags.branch} name different repositories (${[...repos.values()].map((ids) => ids.join(', ')).join(' | ')}) — check them one by one, or pass --repo`);
+      need(repos.size === 1, `the issues on ${flags.branch} name different repositories (${[...repos.values()].map((ids) => ids.join(', ')).join(' | ')}) — check them one by one, or pass --repo`, () => ({ arg: 0, value: [...repos.values()][0][0] }));
     }
   } else {
     const issue = findIssue(root, rawId);
-    need(issue, `no such issue: ${rawId}`);
+    need(issue, `no such issue: ${rawId}`, () => ({ replace: rawId, value: '<id>' }));
     pkg = [issue];
-    need(flags.repo !== undefined || reposNamed(issue).length <= 1, `${issue.id} names several repositories (${reposNamed(issue).join(', ')}) — check one at a time with --repo <path>`);
+    need(flags.repo !== undefined || reposNamed(issue).length <= 1, `${issue.id} names several repositories (${reposNamed(issue).join(', ')}) — check one at a time with --repo <path>`, () => ({ flag: '--repo', value: reposNamed(issue)[0] }));
   }
   const issue = pkg[0];
   const repo = flags.repo !== undefined ? repoFromInput(root, flags.repo).main : repoOf(root, reposNamed(issue)[0]);
@@ -183,9 +183,9 @@ export function cmdCheck(root, rawId, flags) {
   const where = repo === root ? '' : ` in ${repo}`;
   const base = flags.base || defaultBase(repo);
   const tip = git(repo, ['rev-parse', '--verify', flags.branch]);
-  need(tip, `no such branch: ${flags.branch}${where}`);
+  need(tip, `no such branch: ${flags.branch}${where}`, () => ({ flag: '--branch', value: '<worker branch>' }));
   const mergeBase = git(repo, ['merge-base', base, flags.branch]);
-  need(mergeBase, `no merge base between ${base} and ${flags.branch}${where}`);
+  need(mergeBase, `no merge base between ${base} and ${flags.branch}${where}`, () => ({ flag: '--base', value: '<base branch>' }));
   const commits = (git(repo, ['rev-list', '--count', `${mergeBase}..${flags.branch}`]) || '0');
   const changed = (git(repo, ['diff', '--name-only', `${mergeBase}..${flags.branch}`]) || '').split('\n').filter(Boolean);
   // A change proves itself with a test and announces itself in the changelog, so neither is ever
@@ -261,7 +261,7 @@ export function renderBranches(rows, root) {
 function staleHours(flags) {
   if (flags['stale-hours'] === undefined) return STALE_HOURS;
   const h = Number(flags['stale-hours']);
-  need(Number.isFinite(h) && h > 0, `--stale-hours takes a positive number of hours (got "${flags['stale-hours']}")`);
+  need(Number.isFinite(h) && h > 0, `--stale-hours takes a positive number of hours (got "${flags['stale-hours']}")`, () => ({ flag: '--stale-hours', value: '6' }));
   return h;
 }
 

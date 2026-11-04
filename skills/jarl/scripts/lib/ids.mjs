@@ -54,17 +54,17 @@ export function newIssueKey(at) {
 // One id, or several as a comma list with ranges: `12,13,14` or `203-206,209` (no spaces: one argument, like --tags a,b).
 const MAX_BULK = 200;
 export function expandIds(raw) {
-  need(raw !== undefined && String(raw).trim() !== '', 'an issue id is required — one id, or several as a comma list with ranges: 12,13 or 203-206,209');
+  need(raw !== undefined && String(raw).trim() !== '', 'an issue id is required — one id, or several as a comma list with ranges: 12,13 or 203-206,209', () => ({ arg: 0, value: '<id>' }));
   const out = [];
   for (const part of String(raw).split(',').map((p) => p.trim().replace(/^#/, ''))) {
     const range = /^(\d+)-#?(\d+)$/.exec(part);
     if (range) {
       const [a, b] = [Number(range[1]), Number(range[2])];
-      need(a <= b, `range ${part} runs backwards — write it low-high`);
-      need(b - a < MAX_BULK, `range ${part} spans more than ${MAX_BULK} issues`);
+      need(a <= b, `range ${part} runs backwards — write it low-high`, () => ({ replace: part, value: part.split('-').reverse().join('-') }));
+      need(b - a < MAX_BULK, `range ${part} spans more than ${MAX_BULK} issues`, () => ({ replace: part, value: '<a smaller range>' }));
       for (let n = a; n <= b; n += 1) out.push(String(n));
     } else {
-      need(/^\d+$/.test(part), `not an issue id: "${part}" — ids are numbers, several as a comma list with ranges: 12,13 or 203-206,209`);
+      need(/^\d+$/.test(part), `not an issue id: "${part}" — ids are numbers, several as a comma list with ranges: 12,13 or 203-206,209`, () => ({ replace: part, value: '<id>' }));
       out.push(idKey(part));
     }
   }
