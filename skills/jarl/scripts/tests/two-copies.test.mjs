@@ -137,3 +137,58 @@ for (const [shape, make] of [
     assert.equal(json(b.dir, 'show', '3').status, 'in-progress', 'a move of 2 does not reach 3');
   });
 }
+
+// Two clones that each lease the first issue before either sees the other, by two writers, the second merging the first. Both
+// leases write the issue's header, which git cannot join: the merge keeps the first clone's file, and the log, merged by
+// union, keeps both lease lines.
+function leasedInTwoClones({ byB = 'coordinator B', handover = false } = {}) {
+  const a = committedLoop();
+  const b = cloneOf(a.dir);
+  jarl(a.dir, 'set', '1', 'in-progress', '--branch', 'jarl/1-on-a', '--worker', 'wa', '--by', 'coordinator A');
+  a.g('add', '-A'); a.g('commit', '-qm', 'a leases 1');
+  jarl(b.dir, 'set', '1', 'in-progress', '--branch', 'jarl/1-on-b', '--worker', 'wb', '--by', byB);
+  b.g('add', '-A'); b.g('commit', '-qm', 'b leases 1');
+  assert.throws(() => b.g('pull', '-q', '--no-rebase', '--no-edit', 'origin', 'main'), 'the two headers conflict');
+  b.g('checkout', '--theirs', '.jarl/issues/1-filed-before-the-split.md');
+  b.g('add', '-A'); b.g('commit', '-qm', 'merge, keeping the first clone\'s file');
+  if (handover) jarl(b.dir, 'set', '1', 'in-progress', 'the lease on B stands', '--handover', '--branch', 'jarl/1-on-b', '--worker', 'wb', '--by', 'jarl');
+  return b;
+}
+
+test('two leases of one issue by two writers, with no move out between them and no handover, show on the jarl\'s list as a conflict', () => {
+  const b = leasedInTwoClones();
+  const rows = json(b.dir, 'next', '--as', 'jarl').rows.filter((r) => r.what === 'conflict');
+  assert.equal(rows.length, 1, JSON.stringify(rows));
+  assert.equal(rows[0].id, '1');
+  assert.match(rows[0].says, /leased twice with no move out between: by coordinator (A|B) \(worker w[ab], jarl\/1-on-[ab]\) at .* and by coordinator (A|B) \(worker w[ab], jarl\/1-on-[ab]\) at /);
+  assert.match(rows[0].command, /^jarl\.mjs set 1 in-progress --handover /);
+  assert.match(jarl(b.dir, 'next', '--as', 'jarl'), /1 .*leased twice with no move out between/);
+});
+
+test('one writer leasing twice, a handover, and a move out between two leases are no conflict', () => {
+  for (const b of [leasedInTwoClones({ byB: 'coordinator A' }), leasedInTwoClones({ handover: true })]) {
+    assert.deepEqual(json(b.dir, 'next', '--as', 'jarl').rows.filter((r) => r.what === 'conflict'), []);
+  }
+  const a = committedLoop();
+  jarl(a.dir, 'set', '1', 'in-progress', '--branch', 'jarl/1-x', '--worker', 'wa', '--by', 'coordinator A');
+  jarl(a.dir, 'set', '1', 'open', 'back to the queue', '--by', 'coordinator A');
+  jarl(a.dir, 'set', '1', 'in-progress', '--branch', 'jarl/1-y', '--worker', 'wb', '--by', 'coordinator B');
+  assert.deepEqual(json(a.dir, 'next', '--as', 'jarl').rows.filter((r) => r.what === 'conflict'), []);
+});
+
+test('verify refuses an issue file that holds git conflict markers', () => {
+  const a = committedLoop();
+  const b = cloneOf(a.dir);
+  jarl(a.dir, 'body', '1', '--what', 'the text on A');
+  a.g('add', '-A'); a.g('commit', '-qm', 'a edits 1');
+  jarl(b.dir, 'body', '1', '--what', 'the text on B');
+  b.g('add', '-A'); b.g('commit', '-qm', 'b edits 1');
+  assert.throws(() => b.g('pull', '-q', '--no-rebase', '--no-edit', 'origin', 'main'), 'git cannot join the two texts');
+  assert.match(readFileSync(join(b.dir, '.jarl', 'issues', '1-filed-before-the-split.md'), 'utf8'), /^<<<<<<< /m);
+  const r = run(b.dir, ['verify']);
+  assert.equal(r.status, 2, r.stdout);
+  assert.match(r.stdout, /issues\/1-filed-before-the-split\.md line \d+: "<<<<<<< [^"]*" — a git conflict marker/);
+  const plain = committedLoop();
+  jarl(plain.dir, 'body', '1', '--what', 'A heading\n=======\nunder it');
+  assert.equal(run(plain.dir, ['verify']).status, 0, 'a line of equals signs alone is text');
+});
