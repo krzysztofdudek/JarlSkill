@@ -24,6 +24,9 @@ import { needOwnerLines, ownerLineRefusal } from './owner-lines.mjs';
 
 // ---- commands ----------------------------------------------------------------------------------
 
+// What a refusal of an id the loop does not hold ends with: the call that lists the ids it holds.
+const LIST_ALL = ' — jarl.mjs list --all lists the issues';
+
 export const PERMANENT_MARKER = 'This loop is a permanent record: it is not tied to a feature branch, and `close` never removes this directory. See SKILL.md.\n';
 
 export function cmdInit(root, goal, flags = {}) {
@@ -210,7 +213,7 @@ function defaultedNote(field, value, flag) {
 }
 
 export function cmdNew(root, title, rawFlags) {
-  need(title, 'new requires "<title>"');
+  need(title, 'new requires "<title>": jarl.mjs new "<title>" --tier light|standard|strong --acceptance "<line>"');
   needNoOwnersWords('the new issue', title, rawFlags);
   // A title is the heading line of the issue: line breaks in it become spaces, so the lines after the first are not lost to the heading.
   if (/[\r\n]/.test(title)) title = String(title).split(/\r\n?|\n/).map((l) => l.trim()).filter(Boolean).join(' ');
@@ -245,7 +248,7 @@ export function cmdNew(root, title, rawFlags) {
   if (profile.acceptance && fromTemplate.acceptance === undefined && fromTemplate.section) fromTemplate.acceptance = fromTemplate.section(profile.acceptance.toLowerCase());
   const kind = flags.kind || profile.kindDefault;
   const kindDefaulted = !flags.kind;
-  need(profile.kinds.includes(kind), `--kind must be one of: ${profile.kinds.join(', ')}`);
+  need(profile.kinds.includes(kind), `--kind must be one of: ${profile.kinds.join(', ')}; e.g. --kind ${profile.kindDefault}`);
   const person = flags.person !== undefined ? keptValue('Person', flags.person) : '';
   const checkWhen = flags['check-when'] !== undefined ? keptValue('Check when', flags['check-when']) : '';
   const kept = profile.keptKind(kind);
@@ -253,9 +256,9 @@ export function cmdNew(root, title, rawFlags) {
   need(kept !== WAIT_KIND || (person && checkWhen), `a wait names the outside person it is held by and when to check it: jarl.mjs new "<title>" --kind wait --person "<name>" --check-when "<a date, or the event to check after>"`);
   const priority = String(flags.prio || '2');
   const priorityDefaulted = !flags.prio;
-  need(PRIORITIES.includes(priority), '--prio must be 1, 2 or 3');
+  need(PRIORITIES.includes(priority), '--prio must be 1, 2 or 3; e.g. --prio 2');
   const tier = String(flags.tier || profile.tierDefault);
-  need(profile.tiers.includes(tier), `--tier must be one of: ${profile.tiers.join(', ')} — the tier of model the worker is raised on, mapped to a model by the platform running the loop`);
+  need(profile.tiers.includes(tier), `--tier must be one of: ${profile.tiers.join(', ')} — the tier of model the worker is raised on, mapped to a model by the platform running the loop; e.g. --tier ${profile.tierDefault}`);
   const picked = flags.repo !== undefined ? repoList(root, flags.repo) : [];
   needOneSlice(splitList(flags.tags));
   const source = sourceList(flags.source);
@@ -338,7 +341,7 @@ export function cmdRenumber(root, rawId, flags = {}) {
   need(rawId !== undefined && /^#?\d+$/.test(String(rawId).trim()), 'renumber takes the number two issue files carry: jarl.mjs renumber <id> --key <key>');
   const issues = loadIssues(root);
   const same = issues.filter((i) => i.id !== null && idKey(i.id) === idKey(rawId));
-  need(same.length, `no such issue: ${rawId}`);
+  need(same.length, `no such issue: ${rawId}${LIST_ALL}`);
   const old = same[0].id;
   const named = (list) => list.map((i) => `issues/${basename(i.file)} (${i.fields.key ? `key ${fieldText(i.fields.key)}` : 'no key'})`).join(', ');
   need(same.length > 1, `${old} is carried by one issue file, ${named(same)}: renumber gives a free number to one of the files that carry one number after a merge`);
@@ -399,7 +402,7 @@ function afterList(root, selfId, raw) {
   const keys = expandIds(raw);
   const all = loadIssues(root);
   const missing = keys.filter((k) => !all.some((i) => idKey(i.id) === k));
-  need(missing.length === 0, `no such issue: ${missing.join(', ')}`);
+  need(missing.length === 0, `no such issue: ${missing.join(', ')}${LIST_ALL}`);
   const ids = keys.map((k) => issueNamed(all, k).id);
   need(!selfId || !ids.some((id) => idKey(id) === idKey(selfId)), `${selfId} cannot wait on itself`);
   if (selfId) {
@@ -500,7 +503,7 @@ const joinParagraphs = (held, added) => (String(held ?? '').trim() ? `${String(h
 export function cmdBody(root, rawId, flags, dry = false) {
   needNoOwnersWords('the body', flags);
   const issue = findIssue(root, rawId);
-  need(issue, `no such issue: ${rawId}`);
+  need(issue, `no such issue: ${rawId}${LIST_ALL}`);
   const profile = loadProfile(root);
   const parts = ['title', 'where', 'what', 'why', 'acceptance', 'changelog', 'section'].filter((k) => flags[k] !== undefined);
   need(parts.length, 'body needs at least one of --title, --where, --what, --why, --acceptance, --changelog, --section');
@@ -550,7 +553,7 @@ export function cmdBody(root, rawId, flags, dry = false) {
 
 export function cmdSource(root, rawId, list, dry = false, by = undefined) {
   const issue = findIssue(root, rawId);
-  need(issue, `no such issue: ${rawId}`);
+  need(issue, `no such issue: ${rawId}${LIST_ALL}`);
   const editor = editorOf(by);
   const sources = sourceList(list);
   need(sources.length, 'source requires <report dir>#<finding id>[,...]');
@@ -562,7 +565,7 @@ export function cmdSource(root, rawId, list, dry = false, by = undefined) {
 
 export function cmdAfter(root, rawId, raw, { clear = false, dry = false, by } = {}) {
   const issue = findIssue(root, rawId);
-  need(issue, `no such issue: ${rawId}`);
+  need(issue, `no such issue: ${rawId}${LIST_ALL}`);
   const editor = editorOf(by);
   if (clear) {
     need(raw === undefined, 'after takes either <ids> or --clear, not both');
@@ -616,7 +619,7 @@ function issuesFor(root, rawIds, readOnly = false) {
   const keys = expandIds(rawIds);
   const all = loadIssues(root);
   const missing = keys.filter((k) => !all.some((i) => idKey(i.id) === k));
-  need(missing.length === 0, `no such issue: ${missing.join(', ')}${keys.length > 1 ? ' — nothing was written' : ''}`);
+  need(missing.length === 0, `no such issue: ${missing.join(', ')}${keys.length > 1 ? ' — nothing was written' : ''}${LIST_ALL}`);
   const found = keys.map((k) => issueNamed(all, k));
   if (!readOnly && found.some((i) => needsRaisedFormat(i.id))) needFormat(root, 'plain-number');
   return found;
@@ -632,7 +635,7 @@ export function eachIssue(root, rawIds, run) {
   const keys = expandIds(rawIds);
   const all = loadIssues(root);
   const missing = keys.filter((k) => !all.some((i) => idKey(i.id) === k));
-  need(missing.length === 0, `no such issue: ${missing.join(', ')} — nothing was written`);
+  need(missing.length === 0, `no such issue: ${missing.join(', ')} — nothing was written${LIST_ALL}`);
   const ids = keys.map((k) => issueNamed(all, k).id);
   for (const id of ids) {
     resetCaches();
@@ -792,7 +795,7 @@ function editList(root, rawIds, key, value, mode, flags) {
   })();
   const results = [].concat(eachIssue(root, rawIds, (id, dry) => {
     const issue = findIssue(root, id);
-    need(issue, `no such issue: ${id}`);
+    need(issue, `no such issue: ${id}${LIST_ALL}`);
     const held = splitList(issue.fields[key]);
     const next = mode === 'add' ? [...held, ...items.filter((x) => !held.includes(x))] : held.filter((x) => !removes(x));
     if (next.length === 0) {
@@ -853,8 +856,8 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   if (route === 'resources') return setResources(root, rawIds, why, flags);
   if (flags.header) return rewriteHeader(root, rawIds, status, why, flags);
   // ready and the review words are views, not statuses: say which view answers the question the worker was asking.
-  need(profile.statuses.includes(status) || !/^(ready|review|in[-_ ]?review|ready[-_ ]for[-_ ]review|reviewing)$/i.test(String(status ?? '')), `${status} is a view here, not a status: \`next\` lists the issues ready to start, and \`status\` and \`resume\` mark each in-flight issue with what the record says (no evidence rows yet; rows and no verdict, so it waits for a reviewer; changes requested; approved and queued). Nothing needs setting: record the rows with \`evidence\`, and the reviewer's verdict with \`review\`. A loop that wants an explicit review status can declare one in its profile. Statuses here: ${profile.statuses.join(', ')}`);
-  need(profile.statuses.includes(status), `status must be one of: ${profile.statuses.join(', ')}`);
+  need(profile.statuses.includes(status) || !/^(ready|review|in[-_ ]?review|ready[-_ ]for[-_ ]review|reviewing)$/i.test(String(status ?? '')), `${status} is a view here, not a status: \`next\` lists the issues ready to start, and \`status\` and \`resume\` mark each in-flight issue with what the record says (no evidence rows yet; rows and no verdict, so it waits for a reviewer; changes requested; approved and queued). Nothing needs setting: record the rows with \`evidence\`, and the reviewer's verdict with \`review\`. A loop that wants an explicit review status can declare one in its profile. Statuses here: ${profile.statuses.join(', ')}: jarl.mjs next lists the issues ready to start`);
+  need(profile.statuses.includes(status), `status must be one of: ${profile.statuses.join(', ')}: jarl.mjs set <ids> <status> "<text>"`);
   need(caller !== 'cli' || profile.setBy(status) !== 'record', `${status} is set by the record only — this loop's profile (${profile.name}) marks it "set-by": "record", so jarl set and the MCP tools cannot move an issue into it; the tool that runs the loop does${profile.scheduler ? ` (${profile.scheduler})` : ''}`);
   const holds = profile.is(status, 'holds-claim');
   const lease = leaseFlagsGiven(flags);
@@ -959,7 +962,7 @@ function needLeaseHolds(root, profile, issues, status, why, flags, handover, not
   const leased = (i) => profile.is(i.status, 'holds-claim') && Boolean(i.fields.worker || i.fields.branch);
   // Another holder named by the call: a worker or a branch other than the one the lease already names.
   const replaces = (i) => ['worker', 'branch'].some((k) => named(k) !== null && i.fields[k] && named(k) !== fieldText(i.fields[k]));
-  if (handover) need(why, `--handover says why the work changes hands: set ${issues.map((i) => i.id).join(',')} ${status} "<why the worker changed>" ${leaseFlags} --handover`.replace(/ {2,}/g, ' '));
+  if (handover) need(why, `--handover says why the work changes hands: jarl.mjs set ${issues.map((i) => i.id).join(',')} ${status} "<why the worker changed>" ${leaseFlags} --handover`.replace(/ {2,}/g, ' '));
   for (const issue of issues) {
     if (handover) {
       need(leased(issue), `${issue.id} holds no lease to hand over — lease it without --handover: set ${issue.id} ${status} "<text>" ${leaseFlags}${nothing}`.replace(/ {2,}/g, ' '));
@@ -1235,9 +1238,9 @@ function noMergeHow(root, issue, ci) {
 export function cmdMerged(root, rawIds, flags) {
   needNoOwnersWords('the merge', flags);
   const cli = flags.caller === 'cli';
-  need(flags.sha !== undefined || flags.ci !== undefined, 'merged needs --sha <sha> (and optionally --ci), or --ci alone on issues that already record a merge');
+  need(flags.sha !== undefined || flags.ci !== undefined, `merged needs --sha <sha> (and optionally --ci), or --ci alone on issues that already record a merge: jarl.mjs merged ${rawIds ?? '<ids>'} --sha <sha> --ran "<check>" --saw "<summary>"`);
   if (flags.sha !== undefined) need(/^[0-9a-f]{4,64}$/i.test(String(flags.sha)), `--sha is a commit id, 4 to 64 hex characters (got "${flags.sha}")`);
-  if (flags.ci !== undefined) need(CI_STATES.includes(flags.ci), `--ci must be one of: ${CI_STATES.join(', ')} — none means the repository has no CI to wait for`);
+  if (flags.ci !== undefined) need(CI_STATES.includes(flags.ci), `--ci must be one of: ${CI_STATES.join(', ')} — none means the repository has no CI to wait for; e.g. --ci green`);
   need(flags.repo === undefined || flags.sha !== undefined, '--repo names where --sha landed; give it with --sha');
   const rows = flags.ran !== undefined || flags.saw !== undefined ? rowsOf(flags) : null;
   need(!rows || flags.sha !== undefined, '--ran and --saw record the check that decided the merge; give them with --sha');
@@ -1432,7 +1435,7 @@ export function workEvidence(issue, profile = DEFAULT_PROFILE) {
 function rowsOf(flags) {
   const rans = [].concat(flags.ran ?? []);
   const saws = [].concat(flags.saw ?? []);
-  need(rans.length && saws.length && [...rans, ...saws].every((v) => typeof v === 'string' && v.trim()), 'a row needs both --ran "<command>" and --saw "<what it printed>", each with a value');
+  need(rans.length && saws.length && [...rans, ...saws].every((v) => typeof v === 'string' && v.trim()), 'a row needs both --ran "<command>" and --saw "<what it printed>", each with a value: jarl.mjs evidence <ids> --ran "<command>" --saw "<what it printed>"');
   need(rans.length === saws.length, `--ran and --saw must repeat the same number of times (got ${rans.length} --ran, ${saws.length} --saw)`);
   return rans.map((ran, i) => ({ ran, saw: saws[i] }));
 }
@@ -1577,7 +1580,7 @@ export function cmdPrio(root, rawIds, prio, by = undefined) {
 
 export function cmdFiles(root, rawId, list, dry = false, by = undefined) {
   const issue = findIssue(root, rawId);
-  need(issue, `no such issue: ${rawId}`);
+  need(issue, `no such issue: ${rawId}${LIST_ALL}`);
   const editor = editorOf(by);
   const files = pathList(list);
   if (!dry) {
@@ -1589,7 +1592,7 @@ export function cmdFiles(root, rawId, list, dry = false, by = undefined) {
 
 export function cmdRepo(root, rawId, path, { clear = false, dry = false, by } = {}) {
   const issue = findIssue(root, rawId);
-  need(issue, `no such issue: ${rawId}`);
+  need(issue, `no such issue: ${rawId}${LIST_ALL}`);
   const editor = editorOf(by);
   if (clear) {
     need(issue.fields.repo, `${issue.id} has no Repo field to clear`);

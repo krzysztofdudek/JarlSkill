@@ -189,7 +189,7 @@ function acceptanceHeading(issue, profile) {
 export function fieldValue(profile, field, raw) {
   const v = fieldText(raw);
   const f = typeof field === 'string' ? profile.field(field) : field;
-  if (f && f.enum && v !== '') need(f.enum.includes(v), `${f.name} must be one of: ${f.enum.join(', ')} (got "${v}")`);
+  if (f && f.enum && v !== '') need(f.enum.includes(v), `${f.name} must be one of: ${f.enum.join(', ')} (got "${v}"): jarl.mjs field <ids> ${/\s/.test(f.name) ? `"${f.name}"` : f.name} ${f.enum[0]}`);
   return v;
 }
 // Name=value pairs from a repeatable flag (--field, --section), each name one the profile declares.

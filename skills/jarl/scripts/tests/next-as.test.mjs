@@ -407,7 +407,7 @@ test('a loop whose profile already declares a field Person or a kind wait reads 
   // A profile that declares only the field keeps the built-in work kinds, without promise and wait.
   const other = loop();
   writeFileSync(join(other, '.jarl', 'profile.json'), JSON.stringify({ 'jarl-profile': 1, name: 'own-field', statuses: BUILTIN_STATUSES, fields: { Person: {} } }));
-  assert.match(refuses(other, 'new', 'a promise', '--kind', 'promise'), /--kind must be one of: bug, gap, cleanup, docs, test, research, process$/m);
+  assert.match(refuses(other, 'new', 'a promise', '--kind', 'promise'), /--kind must be one of: bug, gap, cleanup, docs, test, research, process; e\.g\. --kind bug$/m);
   jarl(other, 'new', 'work', '--files', 'a.mjs', '--field', 'Person=Dana');
   assert.deepEqual(json(other, 'next').map((r) => r.id), ['1']);
 });

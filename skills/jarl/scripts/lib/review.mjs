@@ -45,18 +45,18 @@ function retractReview(root, rawIds, reason, flags) {
 }
 export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
   needNoOwnersWords('the review', findings, flags);
-  need(verdict === 'approve' || verdict === 'changes' || verdict === 'retract', 'review requires approve|changes|retract');
+  need(verdict === 'approve' || verdict === 'changes' || verdict === 'retract', `review takes approve or changes: jarl.mjs review ${rawIds ?? '<ids>'} approve|changes --by <reviewer> "<text>"`);
   if (verdict === 'retract') return retractReview(root, rawIds, findings, flags);
   need(findings, 'review requires "<text>" — what was read and what was found, even when nothing');
   const words = String(findings).split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
-  need(words >= REVIEW_MIN_WORDS, `the findings of a review need at least ${REVIEW_MIN_WORDS} words — what was read and what was found, even when nothing (got ${words} word${words === 1 ? '' : 's'}: "${String(findings).trim().slice(0, 40)}")`);
+  need(words >= REVIEW_MIN_WORDS, `the findings of a review need at least ${REVIEW_MIN_WORDS} words — what was read and what was found, even when nothing (got ${words} word${words === 1 ? '' : 's'}: "${String(findings).trim().slice(0, 40)}"): jarl.mjs review ${rawIds} ${verdict} --by ${flags.by ?? '<reviewer>'} "<what was read and what was found>"`);
   need(flags.by === undefined || fieldText(flags.by), '--by needs a value — the reviewer\'s name');
-  need(flags.by !== undefined, `a verdict needs --by <reviewer> — who read the diff: a fresh reviewer's name, or jarl when the loop's director reviewed it`);
+  need(flags.by !== undefined, `a verdict needs --by <reviewer> — who read the diff: a fresh reviewer's name, or jarl when the loop's director reviewed it: jarl.mjs review ${rawIds} ${verdict} --by <reviewer> "<text>"`);
   const issues = issuesFor(root, rawIds);
   if (verdict === 'approve') for (const issue of issues) { const refusal = unattributedRefusal(issue, 'approved'); need(!refusal, `${refusal}${issues.length > 1 ? ' — nothing was written' : ''}`); }
   const severities = SEVERITIES.filter((s) => findings.includes(s));
   if (verdict === 'changes') {
-    need(severities.length > 0, `"changes" needs at least one finding ranked ${SEVERITIES.join('/')} — name the severity, not just the problem`);
+    need(severities.length > 0, `"changes" needs at least one finding ranked ${SEVERITIES.join('/')} — name the severity, not just the problem: jarl.mjs review ${rawIds} changes --by ${flags.by ?? '<reviewer>'} "Important: <what fails and where>"`);
     need(severities.some((s) => s !== 'Minor'), '"changes" needs a Critical or Important finding — Minor alone goes to evidence on an approve, it never bounces a branch');
   }
   const by = flags.by !== undefined ? fieldText(flags.by) : null;
@@ -72,7 +72,7 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
     const self = [...gateOf(loop, issue.id).workers];
     const kind = reviewerKind(by, self, loop.coordinators);
     const who = self.length === 1 ? `${self[0]} is the issue's worker` : self.length > 1 ? `${self.join(', ')} have all held ${issue.id}'s lease` : '';
-    need(verdict !== 'approve' || kind !== 'self', `${issue.id}: an approve by ${by} is a self-approve${who ? ` (${who})` : ''} and does not count as review — a fresh reviewer, or the jarl, reads the diff${issues.length > 1 ? ' — nothing was written' : ''}`);
+    need(verdict !== 'approve' || kind !== 'self', `${issue.id}: an approve by ${by} is a self-approve${who ? ` (${who})` : ''} and does not count as review — a fresh reviewer, or the jarl, reads the diff${issues.length > 1 ? ' — nothing was written' : ''}: jarl.mjs review ${issue.id} approve --by <fresh reviewer> "<text>"`);
     return kind;
   });
   // The whole findings go under the issue's ## Reviews (before Evidence, which stays last); the log keeps the verdict

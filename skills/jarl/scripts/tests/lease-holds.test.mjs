@@ -96,7 +96,7 @@ test('a handover with its reason is accepted and logged, and the new lease repla
 
 test('a handover needs its reason, a lease to replace and a change of holder', () => {
   const { root } = twoOnOneFile();
-  assert.match(refuses(root, 'set', '1', 'in-progress', '--branch', 'jarl/1-one', '--worker', 'wA', '--handover'), /--handover says why the work changes hands: set 1 in-progress "<why the worker changed>"/);
+  assert.match(refuses(root, 'set', '1', 'in-progress', '--branch', 'jarl/1-one', '--worker', 'wA', '--handover'), /--handover says why the work changes hands: jarl\.mjs set 1 in-progress "<why the worker changed>"/);
   assert.match(refuses(root, 'set', '1', 'in-progress', 'nobody', '--branch', 'jarl/1-one', '--worker', 'wA', '--handover'), /1 holds no lease to hand over/);
   jarl(root, 'set', '1', 'in-progress', 'A', '--branch', 'jarl/1-one', '--worker', 'wA');
   assert.match(refuses(root, 'set', '1', 'in-progress', 'same', '--branch', 'jarl/1-one', '--worker', 'wA', '--handover'), /names the lease 1 already has/);

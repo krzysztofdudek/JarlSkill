@@ -43,7 +43,7 @@ export function needOwnerLines(acceptance) {
   for (const text of acceptanceLines({ sections: { acceptance } })) {
     const o = ownerLineOf(text);
     if (!o) continue;
-    need(whole(o), `acceptance line "${text}" is marked as one only the owner ticks, and it must name the material he reviews (a path, a link or an artifact) and what he checks: ${OWNER_LINE_SHAPE}`);
+    need(whole(o), `acceptance line "${text}" is marked as one only the owner ticks, and it must name the material he reviews (a path, a link or an artifact) and what he checks: ${OWNER_LINE_SHAPE}; e.g. --acceptance "[owner] <line> · material: <path> · check: <what to check>"`);
     held = true;
   }
   return held;

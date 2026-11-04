@@ -47,6 +47,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The counts of `status` and `models` are grouped with `--group` (`status --group repo`), and `--by` always names who did a write. `check` is no longer a second name for `scope`, and a review or a piece of proof is taken back only with `retract`. Each of the old spellings is refused with the call to use instead.
 - Free text is given the same way to every command: as the last argument on the command line, and as the field `text` in the tools, whether it is a note, a reason, a review's findings, a question, an answer or a ruling. The tool field that names what `retract` takes back is `entry`.
 - An answer and a ruling now always say who gave them: `answer` and `decide` need `--by`, as a review, a retraction and the owner's tick already did. Nothing is taken to be the owner's or the coordinator's when no name is given.
+- When Jarl refuses a call, the message now ends with a call that would work, or the option to add with an example value, so the next try does not have to be guessed.
 - The tools show an example for the value `field` writes and its `add` and `remove`, the rows of `evidence`, the verdict and findings of `review`, `decide`'s `supersedes` and the `live` view of `decisions`.
 
 ### Fixed

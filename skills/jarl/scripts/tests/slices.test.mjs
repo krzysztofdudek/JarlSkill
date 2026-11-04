@@ -19,14 +19,14 @@ test('field Tags and new refuse a second slice: tag on one issue, and say how to
   const file = readFileSync(json(root, 'show', '1').file, 'utf8');
   assert.match(refuses(root, 'field', '1', 'Tags', '--add', 'slice:thor'), /^1 is in slice:odin already, and an issue is in one slice — to move it: jarl\.mjs field 1 Tags --remove slice:odin, then jarl\.mjs field 1 Tags --add slice:thor$/m);
   assert.match(refuses(root, 'field', '1', 'Tags', 'slice:odin, slice:thor'), /^1 is in slice:odin already, and an issue is in one slice — to move it: jarl\.mjs field 1 Tags --remove slice:odin, then jarl\.mjs field 1 Tags --add slice:thor$/m);
-  assert.match(refuses(root, 'new', 'two', '--tags', 'slice:odin,slice:thor'), /^an issue is in one slice, and the tags name slice:odin, slice:thor — keep one$/m);
+  assert.match(refuses(root, 'new', 'two', '--tags', 'slice:odin,slice:thor'), /^an issue is in one slice, and the tags name slice:odin, slice:thor — keep one, e\.g\. --tags slice:odin$/m);
   assert.match(refuses(root, 'field', '1', 'Tags', '--add', 'slice:'), /^slice: names no coordinator: a slice is the tag slice:<coordinator>/m);
   assert.equal(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), log, 'a refusal writes no log line');
   assert.equal(readFileSync(json(root, 'show', '1').file, 'utf8'), file, 'nor the issue');
   // Slice names compare in any case: the same slice written another way is a second slice tag, refused too.
   assert.match(refuses(root, 'field', '1', 'Tags', '--add', 'slice:Odin'), /^1 is in slice:odin already, and slice:Odin names the same slice in another case — an issue carries one slice tag$/m);
   assert.match(refuses(root, 'field', '1', 'Tags', 'docs, slice:odin, slice:ODIN'), /^1 is in slice:odin already, and slice:ODIN names the same slice in another case — an issue carries one slice tag$/m);
-  assert.match(refuses(root, 'new', 'two', '--tags', 'slice:odin,slice:Odin'), /^an issue is in one slice, and the tags name slice:odin, slice:Odin — keep one$/m);
+  assert.match(refuses(root, 'new', 'two', '--tags', 'slice:odin,slice:Odin'), /^an issue is in one slice, and the tags name slice:odin, slice:Odin — keep one, e\.g\. --tags slice:odin$/m);
   assert.equal(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), log);
   // Moving an issue is a removal and an addition, and a slice tag is removed in any case.
   jarl(root, 'field', '1', 'Tags', '--remove', 'slice:ODIN');

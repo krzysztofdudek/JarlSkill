@@ -265,3 +265,38 @@ test('every write that records a judgement names its author: review, answer, dec
   jarl(root, 'decide', 'the-way', 'we go this way', '--by', 'jarl');
   assert.match(jarl(root, 'decisions'), /the-way · by jarl/);
 });
+
+// A call that writes, wrong in a way an agent writes it: each is refused, and the refusal ends with a call that would
+// do it, or names the flag to add with a value (e.g. --tier standard).
+const WRONG_CALLS = [
+  ['new'], ['new', 't', '--tier', 'huge'], ['new', 't', '--kind', 'task'], ['new', 't', '--prio', '7'], ['new', 't', '--after', '99'],
+  ['new', 't', '--tags', 'slice:a,slice:b'], ['new', 't', '--kind', 'wait'], ['new', 't', '--acceptance', '[owner] look'],
+  ['set', '1', 'bogus'], ['set', '1', 'done'], ['set', '1', 'dropped'], ['set', '1', 'in-progress', '--handover', '--worker', 'w3'], ['set', '9', 'done'], ['set', '1', 'ready'],
+  ['review', '1', 'changes', '--by', 'rev', 'this is not good'], ['review', '1', 'approve', '--by', 'rev', 'ok'], ['review', '1', 'approve', 'read it all, fine'],
+  ['review', '2', 'approve', '--by', 'w2', 'read it all, fine'], ['review', '1', 'maybe', '--by', 'rev', 'read it all'],
+  ['merged', '1'], ['merged', '1', '--sha', 'abc1234', '--ci', 'blue'], ['merged', '1', '--ran', 'npm test'],
+  ['evidence', '1', '--ran', 'npm test'], ['evidence', '1'], ['evidence', '9', 'note'],
+  ['field', '1', 'Bogus', 'x'], ['field', '1', 'Priority', '7'], ['field', '1', 'Tier', 'huge'], ['field', '1', 'Priority'], ['field', '1', 'After', '9'],
+  ['retract', '1', '1', '--by', 'jarl', 'wrong row'], ['retract', '1', 'thing', '--by', 'jarl', 'wrong'],
+  ['answer', 'a-9', 'yes', '--by', 'owner'], ['answer', 'a-1', '--by', 'owner'],
+  ['decide', 'taken', 'again', '--by', 'jarl'], ['decide', 'mine', 'his', '--by', 'owner'], ['decide', 'x y', 'bad slug', '--by', 'jarl'],
+  ['tick', '1', '1', '--by', 'owner'], ['round', '1'], ['ask'], ['log', '1 → done'], ['goal', '--set', 'Nonsense: x'],
+];
+const READY = /jarl\.mjs \S|e\.g\. --[a-z][a-z-]* \S/;
+
+test('every refusal of a writing command ends with a ready command or names the flag to add, and writes nothing', () => {
+  const root = makeLoop({ prefix: 'jarl-surface-refusals-', via: 'cli' });
+  jarl(root, 'new', 'one', '--tier', 'light', '--acceptance', 'a');
+  jarl(root, 'new', 'two', '--tier', 'light', '--acceptance', 'a');
+  jarl(root, 'set', '2', 'in-progress', '--worker', 'w2', '--branch', 'jarl/2-two');
+  jarl(root, 'ask', 'which?');
+  jarl(root, 'decide', 'taken', 'a ruling', '--by', 'jarl');
+  const before = readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
+  const bare = [];
+  for (const args of WRONG_CALLS) {
+    const said = refuses(root, ...args).trim();
+    if (!READY.test(said)) bare.push(`${args.join(' ')}\n    ${said}`);
+  }
+  assert.deepEqual(bare, [], 'each refusal ends with a ready command or the flag to add');
+  assert.equal(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), before, 'no refusal wrote a line');
+});

@@ -38,7 +38,7 @@ export function cmdEvidence(root, rawIds, text, flags) {
     need(!rows.some((r) => attachmentOf(String(r.ran).replace(/\r\n?/g, '\n').trim().split('\n')[0].trim().toLowerCase())),'a row shaped as an attachment is written only by --file and --slot, which read the file and record its hash');
     need(text === undefined, `evidence takes free text or --ran/--saw rows, not both (got "${text}" as well) — a value starting with -- goes after a bare --`);
   } else {
-    need(text, 'evidence requires "<what was run and what it printed>", or --ran "<command>" --saw "<what it printed>"');
+    need(text, 'evidence requires a note or a row: jarl.mjs evidence <ids> --ran "<command>" --saw "<what it printed>"');
   }
   const issues = issuesFor(root, rawIds);
   // A row is one list item: the lines of a multi-line command or output after the first are indented under it.
@@ -78,7 +78,7 @@ function retractEvidence(root, rawIds, reason, flags) {
   const [issue] = issuesFor(root, rawIds);
   const text = readText(issue.file);
   const table = evidenceTable(parseIssue(text, issue.file).sections.evidence);
-  need(table.rows.length > 0, `${issue.id} has no evidence row to retract`);
+  need(table.rows.length > 0, `${issue.id} has no evidence row to retract: jarl.mjs show ${issue.id} numbers what it holds`);
   const row = table.rows[n - 1];
   need(row, `${issue.id} has ${table.rows.length} evidence row${table.rows.length === 1 ? '' : 's'}: there is no row ${n}`);
   need(!row.retracted, `row ${n} of ${issue.id} is retracted already`);

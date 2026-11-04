@@ -23,7 +23,7 @@ export function loadAsks(root, skipped) { return asksAt(jarlDir(root), skipped);
 const JARL = 'jarl';
 
 export function cmdAsk(root, question, flags) {
-  need(question, 'ask requires "<text>"');
+  need(question, 'ask requires "<text>": jarl.mjs ask "<text>" --kind stuck --issue <id>');
   needNoOwnersWords('the question', question, flags);
   const kind = String(flags.kind || 'stuck');
   need(ASK_KINDS.includes(kind), `--kind must be one of: ${ASK_KINDS.join(', ')} — stop (halt everything), stuck (this issue only), lower (weaken something protected, needs a target), charter (the goal itself), ratify (a choice already made under a mandate, awaiting the owner's word; blocks nothing), escalation (a coordinator's question to the jarl, naming its --slice or --issue), rule (a rule proposed with --applies-to, for the jarl to accept, or the owner with --to owner)`);
@@ -121,7 +121,7 @@ function answerChecks(root, ask, answer, chosen) {
   const id = ask.id;
   need(ask.state === 'open', `a-${id} is already answered`);
   need(!(chosen !== null && answer), `answer takes --option <label> or the answer, not both — a-${id}`);
-  need(answer || chosen !== null, 'answer requires "<text>" or --option <label>');
+  need(answer || chosen !== null, `answer requires "<text>" or --option <label>: jarl.mjs answer a-${id} "<text>" --by <who>`);
   const options = ask.options || [];
   let option = null;
   if (chosen !== null) {
@@ -164,7 +164,7 @@ export function cmdAnswer(root, rawId, answer, flags = {}) {
   const chosen = flags.option === undefined ? null : noSeparators(flags.option);
   const key = askNumber(rawId);
   const ask = loadAsks(root).find((a) => idKey(a.id) === key);
-  need(ask, `no such question: a-${key}`);
+  need(ask, `no such question: a-${key} — jarl.mjs next --as owner --all lists the open ones`);
   // The issue the answer is copied into is resolved before the first write, so a number two files carry writes nothing.
   if (ask.issue) findIssue(root, ask.issue);
   const id = ask.id;
@@ -204,7 +204,7 @@ export function cmdAnswerMany(root, rawIds, answer, flags = {}) {
   // A question named twice is answered once: the list is taken in its order with each number kept at its first place.
   const found = [...new Set(raw.map(askNumber))].map((key) => {
     const ask = asks.find((a) => idKey(a.id) === key);
-    need(ask, `no such question: a-${key}`);
+    need(ask, `no such question: a-${key} — jarl.mjs next --as owner --all lists the open ones`);
     return ask;
   });
   const batch = found.length > 1 ? found.map((a) => a.id) : null;
@@ -306,7 +306,7 @@ export function cmdDecide(root, slug, ruling, flags = {}) {
   need(flags.quote === undefined || typeof flags.quote === 'string', '--quote is the owner\'s own words, as text');
   const quote = flags.quote !== undefined ? fieldText(flags.quote) : null;
   need(flags.quote === undefined || quote, '--quote needs the owner\'s own words');
-  need(!byOwner || quote, `a ruling by the owner carries his own words: give them with --quote "<what he said>"; a question he asked is not a ruling; a loop that names its owner otherwise records him as owner all the same, for the name owner is the rule`);
+  need(!byOwner || quote, `a ruling by the owner carries his own words: give them with --quote "<what he said>"; a question he asked is not a ruling; a loop that names its owner otherwise records him as owner all the same, for the name owner is the rule: jarl.mjs decide ${slug} "<text>" --by owner --quote "<what he said>"`);
   needNoOwnersWords('the ruling', slug, ruling, { ...flags, quote: undefined });
   need(flags.quote === undefined || byOwner, '--quote is the owner\'s own words: it goes with --by owner');
   if (quote) needNoOwnersWords('--quote', quote);

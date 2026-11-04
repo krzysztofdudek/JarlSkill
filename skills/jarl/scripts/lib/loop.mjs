@@ -274,7 +274,7 @@ export function needOneSlice(tags, { id = null, held = [] } = {}) {
     ? `${id} is in ${was} already, and an issue is in one slice — to move it: jarl.mjs field ${id} Tags --remove ${heldSlices.join(',')}, then jarl.mjs field ${id} Tags --add ${to}`
     : id !== null && same
       ? `${id} is in ${was} already, and ${same} names the same slice in another case — an issue carries one slice tag`
-      : `an issue is in one slice, and ${id !== null ? `${id} would carry` : 'the tags name'} ${slices.join(', ')} — keep one`);
+      : `an issue is in one slice, and ${id !== null ? `${id} would carry` : 'the tags name'} ${slices.join(', ')} — keep one${id !== null ? `: jarl.mjs field ${id} Tags --remove ${slices.slice(1).join(',')}` : `, e.g. --tags ${slices[0]}`}`);
 }
 // The slices of a loop: each coordinator the Coordinators line names, with its slice tag, then each slice a tag names
 // whose coordinator the line does not list (declared false: its coordinator's approve counts as fresh). inPlay counts the
