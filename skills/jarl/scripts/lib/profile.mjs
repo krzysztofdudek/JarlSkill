@@ -89,6 +89,7 @@ export const FORMAT_LINES = Object.freeze(Object.fromEntries([
     batch: { what: 'one verdict over several issues', where: 'the verdict line of each issue it covers', misread: 'counts one review as several' },
     'promise-wait': { what: 'the kinds promise and wait', where: "the issue's header", misread: 'refuses an issue of a kind it does not know' },
     escalation: { what: 'a question of kind escalation', where: 'the question, among the loop\'s questions', misread: 'refuses a question of a kind it does not know' },
+    'rule-proposal': { what: 'a question of kind rule', where: 'the question, among the loop\'s questions', misread: 'reads a proposed rule as a question to the owner and its answer as a ruling with no scope' },
     'note-retraction': { what: 'the retraction of a note', where: "the log and the issue's notes, in the shape of a row's retraction", misread: 'counts the note as standing' },
   }),
 ]));

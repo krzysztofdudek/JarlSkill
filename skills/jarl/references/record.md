@@ -152,6 +152,7 @@ Format 3 holds everything format 2 holds, and the lines of the table below, whic
 | one verdict over several issues | the verdict line of each issue it covers | counts one review as several |
 | the kinds promise and wait | the issue's header | refuses an issue of a kind it does not know |
 | a question of kind escalation | the question, among the loop's questions | refuses a question of a kind it does not know |
+| a question of kind rule | the question, among the loop's questions | reads a proposed rule as a question to the owner and its answer as a ruling with no scope |
 | the retraction of a note | the log and the issue's notes, in the shape of a row's retraction | counts the note as standing |
 
 A loop whose profile names an external scheduler is run by a composer with its own copy of the record library, so Jarl never raises its format, to 2 or to 3. A write there that needs a higher format (a repository given by its name alone, a retraction, a number of 1000 or more, or one of the lines of format 3) is refused, naming what it would have written, and nothing is written; it is off in that loop, and `status`, `verify` and `profile` list what is off, each with its format. A new issue or question number is written there with three digits (`007`), which every format reads, and a repository given by its path keeps its path. A composer that reads a higher format opens its loops with that `"format"` in the profile, and what it holds is on there.

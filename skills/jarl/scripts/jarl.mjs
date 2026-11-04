@@ -271,7 +271,7 @@ commands:
                                                  acted on; read in --repo alone, else in the loop's own
                                                  repository, every repository an open or in-progress issue
                                                  names and every one where an issue not dropped records a Branch
-  ask "<question>" [--kind stop|stuck|lower|charter|ratify|escalation] [--target x] [--issue 7] [--slice <coordinator>] [--option "<label>: <effect>"]... [--by who]
+  ask "<question>" [--kind stop|stuck|lower|charter|ratify|escalation|rule] [--target x] [--issue 7] [--slice <coordinator>] [--option "<label>: <effect>"]... [--applies-to "<selectors>" [--until <date|id>] [--to owner]] [--by who]
                                                  a question the owner has to answer; lower needs --target;
                                                  escalation is a coordinator's question to the jarl, who holds it:
                                                  it names its --slice or its --issue (or both), shows on next --as
@@ -279,6 +279,9 @@ commands:
                                                  and is answered by the jarl (answer with no --by records the jarl);
                                                  listed at boot until answered; ratify is a choice already made
                                                  under a mandate, awaiting the owner's word, and blocks nothing;
+                                                 rule proposes the question's text as a rule with the scope of
+                                                 --applies-to (as decide takes it), held by the jarl, or by the owner
+                                                 with --to owner, and answered yes, which makes it a rule in force, or reject;
                                                  --option gives the choices, at least two, repeated for each one:
                                                  the question prints with its options for the choice window
   answer <ids> "<answer>" | --option <label> [--by who]
@@ -311,7 +314,7 @@ commands:
                                                  the ruling's last line, and no other text of the record may hold
                                                  "The owner's words:" in any spelling; --under names the ruling in force a ruling
                                                  by the jarl or a coordinator rests on, kept as the text's last paragraph
-                                                 "Made under: <slug>", shown with the ruling by decisions and resume; --supersedes marks
+                                                 "Made under: <slug>", shown with the ruling by decisions and with a rule by the views; --supersedes marks
                                                  the ruling it replaces "Superseded by" in place; --settles writes the ruling,
                                                  with who ruled, into each named issue's evidence (its status is unchanged); --applies-to makes it
                                                  a rule with a scope, printed whole to every reader it matches: loop, or
@@ -415,7 +418,9 @@ commands:
                                                  kept instead: it logs the close and the directory stays as the record;
                                                  first it files the ratification batch — at most 10 area rulings, widest
                                                  reach first, each a ratify item answered yes or reject — and never waits
-                                                 for it; --batch files the batch only and closes nothing; a ratified
+                                                 for it, and offers each rule of the loop with a scope for promotion,
+                                                 a question on the owner answered --option carry, instructions, law or
+                                                 drop; --batch files the batch only and closes nothing; a ratified
                                                  area ruling is written into the type's decision log (yg log add
                                                  --type) when the repository has a graph and a working yg, and one
                                                  naming a rule also ratifies it (yg log add --aspect --ratify);
@@ -531,7 +536,7 @@ export const COMMAND_FLAGS = {
   scope: { branch: 'value', base: 'value', repo: 'value' },
   branches: { base: 'value', repo: 'value', 'stale-hours': 'value' },
   merged: { sha: 'value', ci: 'value', repo: 'value', ran: 'many', saw: 'many', red: 'value', keep: 'bool', by: 'value' },
-  ask: { kind: 'value', target: 'value', issue: 'value', slice: 'value', option: 'many', by: 'value' },
+  ask: { kind: 'value', target: 'value', issue: 'value', slice: 'value', option: 'many', 'applies-to': 'value', until: 'value', to: 'value', by: 'value' },
   answer: { by: 'value', option: 'value' },
   resume: { log: 'value', ready: 'value', ci: 'bool', as: 'value', slice: 'value' },
   handoff: { summary: 'value', next: 'many', log: 'value', ready: 'value', ci: 'bool' },
@@ -820,6 +825,13 @@ function renderBatch(batch, loop) {
   const tail = { open: 'nothing closed; the loop goes on', kept: 'unanswered items stay open in the record', removed: 'unanswered, they left with the loop as its own rulings' }[loop];
   return `${head}\n${batch.items.map((i) => `- ${i.ask} · ${i.question}`).join('\n')}\n${tail}`;
 }
+// The rules of the loop offered for promotion at its close, each a question on the owner with the four ways it goes on.
+function renderPromotion(p) {
+  if (!p) return '';
+  if (p.off) return `\n${p.off}`;
+  if (!p.items.length) return '';
+  return `\nrules of the loop to promote (${p.items.length}) — answer each with one way: jarl.mjs answer <a-id> --option carry|instructions|law|drop --by owner\n${p.items.map((i) => `- ${i.ask} · ${i.question}`).join('\n')}`;
+}
 function renderRuleLog(r, t) {
   if (!r || !t) return '';
   if (t.state === 'written') return ` · rule ${r.rule} ratified in its own log (by ${t.by}${t.datetime ? `, ${t.datetime}` : ''})`;
@@ -929,7 +941,7 @@ export function dispatch(root, commandName, rest, flags) {
       case 'ask': out = R.ask(root, rest[0], { ...flags, width: undefined }); text = askText(out); break;
       // The library's answer (jarl-record/1) takes no opts: --by and --option reach the answer through jarl-lib.mjs, under the lock held here.
       case 'answer': out = cmdAnswerMany(root, rest[0], rest[1], flags); break;   // text below: the type log is written outside the lock
-      case 'resume': out = R.resumeData(root, flags); text = renderResume(out, R.loadProfile(root), pluginVersionNote()); ({ out, text } = endWithAsker(root, flags, out, text)); break;
+      case 'resume': out = R.resumeData(root, flags); text = renderResume(out, R.loadProfile(root), pluginVersionNote(), flags.as !== undefined); ({ out, text } = endWithAsker(root, flags, out, text)); break;
       case 'handoff':
         need(rest[0] === undefined || rest[0] === 'read' || rest[0] === 'write', `handoff takes read or write (got "${rest[0]}") — the state is assembled live by resume`);
         if (rest[0] === 'write') { out = cmdHandoffWrite(); text = out.note; } else { out = cmdHandoffRead(root, flags); text = out.text; }
@@ -947,7 +959,7 @@ export function dispatch(root, commandName, rest, flags) {
       case 'mode': out = cmdMode(root, rest[0]); text = 'now permanent · not tied to a feature branch; close keeps the directory'; break;
       case 'profile': out = cmdProfile(root, rest[0]); text = renderProfile(out); break;
       case 'verify': out = cmdVerify(root); text = renderVerify(out); break;
-      case 'close': out = cmdClose(root, { ...flags, caller: 'cli' }); text = out.closed ? (out.kept ? `kept ${out.kept} · closed as a permanent record` : `removed ${out.removed}${out.archiveKept ? ' (the live loop; .jarl/archive/ is left in place)' : out.archiveRemoved ? ` (with .jarl/archive/: ${out.archiveRemoved.join(', ')})` : ''}`) + (out.deferred.length ? ` · ${out.deferred.length} deferred ${out.kept ? 'still waiting' : 'removed with the loop'}: ${out.deferred.join(', ')}` : '') + (out.uncommitted ? ` · ${out.uncommitted} loop file(s) not committed${out.kept ? ' — commit .jarl/' : ' before the removal'}` : '') + renderBatch(out.batch, out.kept ? 'kept' : 'removed') : renderBatch(out.batch, 'open').trimStart(); break;
+      case 'close': out = cmdClose(root, { ...flags, caller: 'cli' }); text = out.closed ? (out.kept ? `kept ${out.kept} · closed as a permanent record` : `removed ${out.removed}${out.archiveKept ? ' (the live loop; .jarl/archive/ is left in place)' : out.archiveRemoved ? ` (with .jarl/archive/: ${out.archiveRemoved.join(', ')})` : ''}`) + (out.deferred.length ? ` · ${out.deferred.length} deferred ${out.kept ? 'still waiting' : 'removed with the loop'}: ${out.deferred.join(', ')}` : '') + (out.uncommitted ? ` · ${out.uncommitted} loop file(s) not committed${out.kept ? ' — commit .jarl/' : ' before the removal'}` : '') + renderBatch(out.batch, out.kept ? 'kept' : 'removed') + renderPromotion(out.promotion) : (renderBatch(out.batch, 'open') + renderPromotion(out.promotion)).trimStart(); break;
       default: throw new Error(`unknown command: ${cmd}\n${USAGE}`);
     }
     }));

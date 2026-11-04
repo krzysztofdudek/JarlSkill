@@ -174,7 +174,7 @@ A ratified area ruling is written into the type's decision log (`yg log add --ty
 
 ## Rules with a scope
 
-A rule every worker, every reviewer of one tag or the coordinator of one slice must follow is written once, as a ruling that says whom it applies to: `decide <slug> "<rule>" --applies-to "<selectors>"`, the selectors `loop`, or one or more of `role <role>`, `slice <coordinator>`, `moment <moment>`, `issue <id>`, `tag <tag>`, `kind <kind>`, `tier <tier>`, `files <path>` and `repo <repository>` joined by `and`, each of which must hold. `--until <date>` ends it after that day and `--until <id>` when that issue closes; a ruling that supersedes it revokes it. `resume --as <who>` and `next --as <who>` print the rules that match whoever asks, whole, and none other; Jarl's own rules for each role, quoted from these references, come with them.
+A rule every worker, every reviewer of one tag or the coordinator of one slice must follow is written once, as a ruling that says whom it applies to: `decide <slug> "<rule>" --applies-to "<selectors>"`, the selectors `loop`, or one or more of `role <role>`, `slice <coordinator>`, `moment <moment>`, `issue <id>`, `tag <tag>`, `kind <kind>`, `tier <tier>`, `files <path>` and `repo <repository>` joined by `and`, each of which must hold. `--until <date>` ends it after that day and `--until <id>` when that issue closes; a ruling that supersedes it revokes it. `resume --as <who>` and `next --as <who>` print the rules that match whoever asks, whole, and none other; Jarl's own rules for each role, quoted from these references, come with them. An agent that learns a lesson proposes it: `ask "<rule>" --kind rule --applies-to "<selectors>"`, on the jarl to accept (`answer <a-id> "yes" --by jarl`, or `"reject"`), or with `--to owner` on the owner where the rule is his; accepted, it reaches every reader it matches. `close` (and `close --batch`, before the loop goes) offers each rule of the loop for promotion, a question on the owner answered with one way it goes on: `carry` into the next loop, `instructions` in the repository's agent instructions, `law` for a rule about code, written as an area ruling (see [Rulings about an area](#rulings-about-an-area)), or `drop`; the jarl writes the rule where the answer says.
 
 ## Closing the branch
 
@@ -185,7 +185,7 @@ Before the feature branch merges to `main`, in this order:
    register the repository asks for; entries still on issues (see [Changelog fragments](worker.md#changelog-fragments)) are
    printed by `changelog <ids>`.
 3. The repository's own check is green on the branch tip.
-4. `jarl_close` with `batch` (`close --batch`) puts the area rulings to the owner (see [Rulings about an area](#rulings-about-an-area)); answer what they answer, and go on either way.
+4. `jarl_close` with `batch` (`close --batch`) puts the area rulings to the owner (see [Rulings about an area](#rulings-about-an-area)) and offers him each rule of the loop for promotion (see [Rules with a scope](#rules-with-a-scope)); answer what they answer, and go on either way.
 5. `jarl_close` removes `.jarl/` — it refuses while anything is still open or deferred: `archive "<slug>"` keeps the deferred work under `.jarl/archive/`, and `close --force` removes the loop with it and keeps no copy. In the committed mode
    that removal is the last commit, so `main` never carries the directory; for that reason `close` also
    refuses while `.jarl/archive/` holds anything (move it out of the tree, or pass `--force`, which
@@ -246,6 +246,8 @@ subject), which the jarl holds and answers, for these four and no other:
 Counts are never pushed up: the jarl reads them with `status --slice <name>`. With more than one
 slice in play, each lease declares its Files or Resources, because across slices only leases hold.
 Pull before leasing and push right after when the loop is shared between clones.
+One shared review covers only issues that are one contract or one screen, at most four.
+An issue's scope does not grow once it is leased: a new ask becomes a new issue.
 
 **One merger for the loop.** The goal's `Merger: <name>` line names the one holder, the jarl or one
 coordinator, that raises the merger; every approve not yet merged, in every slice, is on that

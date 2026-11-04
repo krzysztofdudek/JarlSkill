@@ -325,7 +325,7 @@ export function cmdGoalSet(root, text) {
 }
 
 // A ratify item the close's batch filed names the area ruling it asks about: `· ruling <slug>`.
-const ASK_RE = idRe('^- \\*\\*a-({id})\\*\\* \\((open|answered)\\)(?: · (stop|stuck|lower|charter|ratify|escalation))?(?: · target (\\S+))?(?: · issue ({id}))?(?: · slice ([^\\s·]+))?(?: · ruling ([A-Za-z0-9][A-Za-z0-9._-]{0,79}))? · (.*)$');
+const ASK_RE = idRe('^- \\*\\*a-({id})\\*\\* \\((open|answered)\\)(?: · (stop|stuck|lower|charter|ratify|escalation|rule))?(?: · target (\\S+))?(?: · issue ({id}))?(?: · slice ([^\\s·]+))?(?: · ruling ([A-Za-z0-9][A-Za-z0-9._-]{0,79}))?(?: · to (owner|jarl))?(?: · applies to ([^·]+?(?: · until [^·]+?)?))? · (.*)$');
 
 // An option of a question is its own line after the question: `- **a-<n>** option · <label> · <effect>`. Its label and effect
 // pass noSeparators, so the line splits on its separators alone. A question's indented lines never start with `- **a-`.
@@ -347,7 +347,7 @@ function asksAt(dir, skipped) {
   readText(path).split('\n').forEach((line, i) => {
     const skip = (reason) => { if (skipped) skipped.push({ n: i + 1, text: line, reason }); };
     const m = ASK_RE.exec(line);
-    if (m) { last = { id: m[1], state: m[2], kind: m[3] || null, target: m[4] || null, issue: m[5] ? writtenId(m[5], forms) : null, ...(m[6] ? { slice: m[6] } : {}), ...(m[7] ? { ruling: m[7] } : {}), question: m[8] }; out.push(last); return; }
+    if (m) { last = { id: m[1], state: m[2], kind: m[3] || null, target: m[4] || null, issue: m[5] ? writtenId(m[5], forms) : null, ...(m[6] ? { slice: m[6] } : {}), ...(m[7] ? { ruling: m[7] } : {}), ...(m[8] ? { to: m[8] } : {}), ...(m[9] ? { appliesTo: m[9] } : {}), question: m[10] }; out.push(last); return; }
     const o = ASK_OPTION_RE.exec(line);
     if (o) { const key = idKey(o[1]); options.set(key, [...(options.get(key) || []), { label: o[2], effect: o[3] }]); optionLines.push({ key, line: i + 1, text: line }); last = null; return; }
     if (last && line.startsWith('  ')) { last.question += `\n${line.slice(2)}`; return; }

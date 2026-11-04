@@ -100,7 +100,7 @@ test('ask takes --kind as an option that defaults to stuck, as the reference wri
   assert.match(jarl(dir, 'status', '--json'), /"questions": 1/);
   const asks = readFileSync(join(dir, '.jarl', 'asks.md'), 'utf8');
   assert.match(asks, /stuck/);
-  assert.match(skillText('references/commands.md'), /\| `ask "<question>" \[--kind stop\\\|stuck\\\|lower\\\|charter\\\|ratify\\\|escalation\]/);
+  assert.match(skillText('references/commands.md'), /\| `ask "<question>" \[--kind stop\\\|stuck\\\|lower\\\|charter\\\|ratify\\\|escalation\\\|rule\]/);
 });
 
 test('close --force closes with issues still open, as the reference says, and refuses without it', () => {

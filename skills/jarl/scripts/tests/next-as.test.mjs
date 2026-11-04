@@ -144,7 +144,7 @@ test('a named coordinator holds nothing while the loop has no slices, and an out
   jarl(root, 'new', 'ready', '--files', 'a.mjs');
   jarl(root, 'goal', '--set', 'Coordinators: Ada');
   const ada = jarl(root, 'next', '--as', 'Ada');
-  assert.match(ada, /^On Ada \(0\)\n- \(nothing is on Ada\)\nwith no slice in the loop, what a coordinator holds is the jarl's: jarl\.mjs next --as jarl$/);
+  assert.match(ada, /^On Ada \(0\)\n- \(nothing is on Ada\)\nwith no slice in the loop, what a coordinator holds is the jarl's: jarl\.mjs next --as jarl\n\nRules for Ada \(3\)\n- jarl:coordinator-escalates · role coordinator · references\/jarl\.md — /);
   assert.equal(json(root, 'next', '--as', 'Ada').rows.length, 0);
   assert.equal(jarl(root, 'next', '--as', 'Dana Smith'), 'On Dana Smith (0)\n- (nothing is on Dana Smith)');
   assert.equal(json(root, 'next', '--as', 'jarl').rows.length, 1);

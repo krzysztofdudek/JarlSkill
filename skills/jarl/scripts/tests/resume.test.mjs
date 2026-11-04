@@ -68,7 +68,7 @@ test('resume assembles every section live from the loop and the repositories its
   assert.equal(r.status, 0, r.stderr);
   const t = r.stdout;
   assert.match(t, /^# Resume · ship the export command\nopened \S+ \S+ · last activity \S+ \S+\nopen 4 · in flight 2 · waiting 1 · done 0 · dropped 0 · deferred 0 · questions 1 · to ratify 1 · merged, CI pending 1 · CI red 1\n/);
-  assert.match(t, /## Rulings in force \(1\)\n- \S+ · new-way · by coordinator — do it the new way\n\n/);
+  assert.match(t, /\n1 ruling\(s\) in force: jarl\.mjs decisions --live; resume --as <who> adds the rules that match whoever asks\n\n## Rules for the whole loop \(0\)\n- \(none\)\n\n/);
   assert.doesNotMatch(t, /old-way ·/, 'a superseded ruling is not in force');
   assert.match(t, /## In flight \(2\)\n- 1 in flight one · branch jarl\/1-one · worker w1 · model not recorded · since \S+ \S+\n {2}→ no evidence rows since the start[^\n]*\n- 5 queued five · branch jarl\/5-five · worker w5 · model not recorded · since \S+ \S+\n {2}→ approved and queued[^\n]*\n/);
   assert.match(t, /## Waiting — After not settled \(1\)\n- 2 waits for one \(after 1\)\n/);
@@ -139,7 +139,7 @@ test('resume in a git repository with no worker branches: Tips shows the feature
   assert.doesNotMatch(t, /^ {2}worker /m);
 });
 
-test('an answered question is listed by its answer and then its question, in resume and in decisions; a long answer keeps the question in view', () => {
+test('an answered question is listed by its answer and then its question in decisions, and resume counts it among the rulings in force', () => {
   const { hub } = world();
   jarl(hub, 'ask', 'Should the fixes ship in 6.1.1?');
   jarl(hub, 'answer', 'a-1', 'Yes, blocking right away');
@@ -147,8 +147,7 @@ test('an answered question is listed by its answer and then its question, in res
   jarl(hub, 'answer', 'a-2', '--option', 'Keep');
   jarl(hub, 'ask', 'Which order for the rest?');
   jarl(hub, 'answer', 'a-3', 'The owner chose the blocking option for every fix of the field report. '.repeat(3));
-  const r = jarl(hub, 'resume');
-  assert.match(r, /## Rulings in force \(3\)\n- \S+ · ask-1 · by owner — \*\*Answer:\*\* Yes, blocking right away · \*\*Question:\*\* Should the fixes ship in 6\.1\.1\?\n- \S+ · ask-2 · by owner — \*\*Chose:\*\* Keep · \*\*Question:\*\* Which way for the flag\?\n- \S+ · ask-3 · by owner — \*\*Answer:\*\* The owner chose the blocking option[^\n]*… · \*\*Question:\*\* Which order for the rest\?\n/);
+  assert.match(jarl(hub, 'resume'), /\n3 ruling\(s\) in force: jarl\.mjs decisions --live;/);
   const d = jarl(hub, 'decisions', '--live');
   assert.match(d, / · ask-1 · by owner — \*\*Answer:\*\* Yes, blocking right away · \*\*Question:\*\* Should the fixes ship in 6\.1\.1\?$/m);
   assert.match(d, / · ask-2 · by owner — \*\*Chose:\*\* Keep · \*\*Question:\*\* Which way for the flag\?$/m);
@@ -280,7 +279,7 @@ test('a copy of a live loop from before resume: resume reads it, handoff read sh
   const before = snapshot(copy);
   const r = run(copy, ['resume'], { JARL_GH: join(copy, 'no-gh') });
   assert.equal(r.status, 0, r.stderr);
-  for (const h of ['## Rulings in force', '## In flight', '## Questions to the owner', '## Next ready', '## Merge queue', '## Last 15 log line(s)']) assert.ok(r.stdout.includes(h), h);
+  for (const h of ['ruling(s) in force: jarl.mjs decisions --live', '## Rules for the whole loop', '## In flight', '## Questions to the owner', '## Next ready', '## Merge queue', '## Last 15 log line(s)']) assert.ok(r.stdout.includes(h), h);
   assert.match(r.stdout, /the loop holds a handoff file at \.jarl\/handoff\.md/);
   const h = run(copy, ['handoff', 'read'], { JARL_GH: join(copy, 'no-gh') }).stdout;
   assert.match(h, /\n## Earlier handoff — history, written \S+ \S+, \S+ ago; not the current state\n\*\*At:\*\* /);

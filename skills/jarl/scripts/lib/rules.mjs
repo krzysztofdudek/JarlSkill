@@ -150,7 +150,7 @@ export function ruleMatches(root, rule, reader) {
 export function loopRules(loop, today) {
   return loop.decisions.filter((d) => d.appliesTo).map((d) => {
     const read = readAppliesTo(d.appliesTo);
-    const rule = { slug: d.slug, date: d.date, by: d.by, text: ruleText(d), scope: read.selectors ? scopeText(read.selectors) : d.appliesTo, selectors: read.selectors, until: read.until, supersededBy: d.supersededBy, ...(read.unread ? { unread: read.unread } : {}) };
+    const rule = { slug: d.slug, date: d.date, by: d.by, under: d.under, text: ruleText(d), scope: read.selectors ? scopeText(read.selectors) : d.appliesTo, selectors: read.selectors, until: read.until, supersededBy: d.supersededBy, ...(read.unread ? { unread: read.unread } : {}) };
     return { ...rule, ended: ruleEnd(rule, loop, today) };
   });
 }
@@ -166,9 +166,10 @@ export function rulesFor(root, loop, reader, today) {
   const own = loopRules(loop, today).filter((r) => !r.ended && ruleMatches(root, r, reader));
   return [...own, ...BUILTIN_RULES.filter((r) => ruleMatches(root, r, reader))];
 }
-// One rule as a view prints it: its slug and scope, its end when it has one, then its text whole, each further line indented.
+// One rule as a view prints it: its slug and scope, its end when it has one, who ruled and the ruling it rests on (Jarl's
+// own: the reference it is quoted from), then its text whole, each further line indented.
 export function ruleLines(r) {
-  const head = `- ${r.slug} · ${r.scope}${r.until ? ` · ${untilText(r.until)}` : ''}${r.builtin ? ` · ${r.source}` : ''}`;
+  const head = `- ${r.slug} · ${r.scope}${r.until ? ` · ${untilText(r.until)}` : ''}${r.builtin ? ` · ${r.source}` : `${r.by ? ` · by ${r.by}` : ''}${r.under ? ` · under ${r.under}` : ''}`}`;
   const lines = String(r.text).split('\n');
   return [`${head} — ${lines[0]}`, ...lines.slice(1).map((l) => `  ${l}`)];
 }

@@ -26,14 +26,14 @@ test('decide --under keeps the ruling it rests on as the last paragraph of the r
   assert.equal(loadDecisions(root).find((x) => x.slug === 'standing-mandate').under, null);
 });
 
-test('a ruling that names the ruling it rests on is shown with it by decisions and resume', () => {
+test('a ruling that names the ruling it rests on is shown with it by decisions, and by resume as a rule of the loop', () => {
   const root = loop({ via: 'cli' });
   mandate(root);
-  jarl(root, 'decide', 'pick-a', 'Take option a.', '--under', 'standing-mandate');
-  assert.match(jarl(root, 'decisions'), /pick-a · by coordinator · under standing-mandate — Take option a\./);
+  jarl(root, 'decide', 'pick-a', 'Take option a.', '--under', 'standing-mandate', '--applies-to', 'loop');
+  assert.match(jarl(root, 'decisions'), /pick-a · by coordinator · under standing-mandate · applies to loop — Take option a\./);
   assert.match(jarl(root, 'decisions', '--live'), /pick-a · by coordinator · under standing-mandate/);
   assert.equal(JSON.parse(jarl(root, 'decisions', '--json')).find((x) => x.slug === 'pick-a').under, 'standing-mandate');
-  assert.match(jarl(root, 'resume'), /- \S+ · pick-a · by coordinator · under standing-mandate — Take option a\./);
+  assert.match(jarl(root, 'resume'), /\n- pick-a · loop · by coordinator · under standing-mandate — Take option a\./);
   assert.doesNotMatch(jarl(root, 'resume'), /standing-mandate · by owner · under/);
 });
 

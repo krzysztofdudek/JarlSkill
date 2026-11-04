@@ -2,7 +2,6 @@
 
 import { existsSync } from 'node:fs';
 import { KEPT_KINDS, fieldText, need } from './base.mjs';
-import { jarlDir } from './where.mjs';
 import { readText } from './files.mjs';
 import { DEFAULT_PROFILE, loadProfile } from './profile.mjs';
 import { mergedOf, sharedMark } from './issues.mjs';
@@ -14,6 +13,8 @@ import { cmdTips, renderTips } from './tips.mjs';
 import { reasonWord, waitingOn } from './commands.mjs';
 import { handoffAge, handoffPath } from './questions.mjs';
 import { answeredLines } from './journal.mjs';
+import { ruleLines, rulesFor } from './rules.mjs';
+import { jarlDir, today } from './where.mjs';
 import { IN_FLIGHT_MARKS, closedGateFlags, inFlightMark, leaseWriter, leasedByText, modelText, nextRows, schedulerNote, statusOf, uncommittedLoopFiles } from './evidence.mjs';
 import { cmdQueue, renderQueue } from './queue.mjs';
 import { countsLine } from './import.mjs';
@@ -55,6 +56,8 @@ export function cmdResume(root, flags = {}) {
     const answered = answeredLines(d);
     return { date: d.date, slug: d.slug, by: d.by, under: d.under, line: (d.ruling.split('\n').find((l) => l.trim()) || '').trim(), ...(answered ? { answer: answered.answer } : {}) };
   });
+  // The rules every reader of the loop is given: those whose scope is the loop. The rest reach a reader through --as.
+  const rules = rulesFor(root, loop, { roles: new Set(), slice: null, moments: new Set(), issues: [] }, today());
   // In flight and waiting split the unfinished issues the way status counts them: an issue whose After is not
   // settled is waiting, in progress or not, so each section's count is the number on the counts line.
   const unsettled = (i) => waitingOn(i, byId, profile).length > 0;
@@ -85,8 +88,8 @@ export function cmdResume(root, flags = {}) {
   const kept = handoffAge(root, status.lastActivity);
   return {
     goal: status.goal, opened: status.opened, lastActivity: status.lastActivity, archived: status.archived, status, ...(slice !== null ? { slice } : {}),
-    rulings, inFlight, waiting,
-    questions: asks.filter((a) => a.kind !== 'ratify' && a.kind !== 'escalation'), escalations: asks.filter((a) => a.kind === 'escalation'), ratify: asks.filter((a) => a.kind === 'ratify'),
+    rulings, rules, inFlight, waiting,
+    questions: asks.filter((a) => a.kind !== 'ratify' && a.kind !== 'escalation' && a.kind !== 'rule'), escalations: asks.filter((a) => a.kind === 'escalation'), proposed: asks.filter((a) => a.kind === 'rule'), ratify: asks.filter((a) => a.kind === 'ratify'),
     held, kept: keptRows, next: ready.slice(0, readyN).map((r) => ({ id: r.id, title: r.title, priority: r.priority, ...(r.noAcceptance ? { noAcceptance: true } : {}), ...(r.model ? { model: r.model } : {}), ...declared(byId.get(r.id)) })), readyTotal: scheduled ? null : ready.length,
     ...(scheduled ? { scheduler: profile.scheduler } : {}),
     queue: cmdQueue(root), merged, tips: cmdTips(root, { ci: flags.ci === true }),
@@ -99,7 +102,7 @@ export function cmdResume(root, flags = {}) {
 }
 
 // The note, when there is one, is printed on the line after the counts.
-export function renderResume(o, profile = DEFAULT_PROFILE, note = null) {
+export function renderResume(o, profile = DEFAULT_PROFILE, note = null, asked = false) {
   const shownFields = (x) => (x.fields && Object.keys(x.fields).length ? ` · ${Object.entries(x.fields).map(([n, v]) => `${n}=${v}`).join(' ')}` : '');
   const sec = (title, lines, none) => (lines.length ? [`## ${title}`, ...lines, ''] : none === undefined ? [] : [`## ${title}`, none, '']);
   const lease = (x) => [x.branch && `branch ${x.branch}`, x.worker && `worker ${x.worker}`, x.worker && x.model !== undefined && (x.model ? `model ${x.model}` : 'model not recorded'), x.since && `since ${x.since}`, leasedByText(x)].filter(Boolean).join(' · ');
@@ -119,7 +122,10 @@ export function renderResume(o, profile = DEFAULT_PROFILE, note = null) {
   const files = o.uncommitted || [];
   return [
     ...head,
-    ...sec(`Rulings in force (${o.rulings.length})`, o.rulings.map((d) => `- ${d.date} · ${d.slug}${d.by ? ` · by ${d.by}` : ''}${d.under ? ` · under ${d.under}` : ''} — ${d.answer ? `${short(d.answer)} · ` : ''}${short(d.line)}`), '- (none)'),
+    // The rulings are counted, not printed: a reader is given the rules that match it, and decisions --live lists them all.
+    `${o.rulings.length} ruling(s) in force: jarl.mjs decisions --live${asked ? '' : '; resume --as <who> adds the rules that match whoever asks'}`,
+    '',
+    ...(asked ? [] : sec(`Rules for the whole loop (${o.rules.length})`, o.rules.flatMap(ruleLines), '- (none)')),
     ...sec(`The files disagree with the log (${(st.disagreements || []).length})`, (st.disagreements || []).map(disagreementText)),
     ...sec(`Read from their headers (${(st.headerRead || []).length})`, (st.headerRead || []).map((n) => `- ${n.line}`)),
     ...sec(`Closed, gate does not hold (${(st.closedGate || []).length})`, (st.closedGate || []).map(closedGateLine)),
@@ -127,6 +133,7 @@ export function renderResume(o, profile = DEFAULT_PROFILE, note = null) {
     ...sec(`Waiting — After not settled (${o.waiting.length})`, o.waiting.map((x) => `- ${x.id} ${short(x.title)} (after ${x.after.join(', ')})${x.stale !== undefined ? ` · ${x.status === 'in-progress' ? 'in progress' : x.status}${lease(x) ? ` · ${lease(x)}` : ''}${x.stale.length ? ` · STALE: ${x.stale.join('; ')}` : ''}` : ''}`)),
     ...sec(`Questions to the owner (${o.questions.length})`, o.questions.map((a) => `- a-${a.id} (${a.kind || 'stuck'})${a.issue ? ` issue ${a.issue}` : ''} · ${a.question}`), '- (nothing)'),
     ...sec(`Escalations to the jarl (${o.escalations.length})`, o.escalations.map((a) => `- a-${a.id}${a.slice ? ` slice:${a.slice}` : ''}${a.issue ? ` issue ${a.issue}` : ''} · ${a.question}`)),
+    ...sec(`Rules proposed (${o.proposed.length})`, o.proposed.map((a) => `- a-${a.id} to ${a.to || 'jarl'} · ${a.appliesTo ? `applies to ${a.appliesTo}` : 'offered for promotion'} · ${a.question}`)),
     ...sec(`To ratify (${o.ratify.length})`, o.ratify.map((a) => `- a-${a.id}${a.issue ? ` (issue ${a.issue})` : ''} · ${a.question}`)),
     ...sec(`Held — files in flight (${o.held.length})`, o.held.map((x) => `- ${x.id}  P${x.priority}  ${short(x.title)} (${x.questions ? `open question ${x.questions.map((q) => `a-${q}`).join(', ')}` : `${[...x.files, ...(x.resources || []).map((n) => `resource ${n}`)].join(', ')} held by ${x.heldBy.join(', ')}`})`)),
     ...sec(`Promises and waits (${o.kept.length})`, o.kept.map((x) => `- ${x.id}  P${x.priority}  ${short(x.title)} (${x.kind === 'promise' ? `promised by ${x.by || 'nobody named'}` : x.came ? `came from ${x.person || 'nobody named'}, proof recorded; the jarl reviews and closes it` : `waits on ${x.person || 'nobody named'}, check when ${x.checkWhen || 'not said'}`})`)),
