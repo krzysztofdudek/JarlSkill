@@ -258,7 +258,7 @@ export function cmdNew(root, title, rawFlags) {
   const person = flags.person !== undefined ? keptValue('Person', flags.person) : '';
   const checkWhen = flags['check-when'] !== undefined ? keptValue('Check when', flags['check-when']) : '';
   const kept = profile.keptKind(kind);
-  need(kept === WAIT_KIND || (!person && !checkWhen), profile.kept ? `--${person ? 'person' : 'check-when'} goes with --kind wait: it names the outside person a wait is held by and when to check it` : `--${person ? 'person' : 'check-when'} is off in this loop: its profile declares its own kinds or a field Person or Check when, so the built-in promise and wait are off here — write a field the profile declares with --field "<name=value>"`, () => (profile.kept ? { flag: '--kind', value: hole('<kind>') } : { rename: person ? '--person' : '--check-when', to: '<no-flag-here>' }));
+  need(kept === WAIT_KIND || (!person && !checkWhen), profile.kept ? `--${person ? 'person' : 'check-when'} goes with --kind wait: it names the outside person a wait is held by and when to check it` : `--${person ? 'person' : 'check-when'} is off in this loop: its profile declares its own kinds or a field Person or Check when, so the built-in promise and wait are off here — write a field the profile declares with --field "<name=value>"`, () => (profile.kept ? { flag: '--kind', value: hole('<kind>') } : [{ drop: '--person' }, { drop: '--check-when' }, { flag: '--field', value: hole('<name=value>') }]));
   need(kept !== WAIT_KIND || (person && checkWhen), `a wait names the outside person it is held by and when to check it`, () => [...(person ? [] : [{ flag: '--person', value: '<name>' }]), ...(checkWhen ? [] : [{ flag: '--check-when', value: '<date-or-event>' }])]);
   const priority = String(flags.prio || '2');
   const priorityDefaulted = !flags.prio;
@@ -779,7 +779,7 @@ function notWrittenByField(profile, key) {
   if (['merged', 'merge check', 'ci'].includes(key)) return 'a merge and its CI are recorded by merged: jarl.mjs merged "<ids>" --sha "<sha>"';
   if (['notes', 'proof'].includes(key)) return 'a note or a row of proof is added by evidence: jarl.mjs evidence "<ids>" "<text>", or --ran "<command>" --saw "<what-it-printed>"';
   if (key === 'evidence' || key === 'reviews') return 'the history is never edited: a note or a row is added by evidence and a verdict by review, a row or an approve is taken back by retract, a ruling replaced by decide --supersedes: jarl.mjs retract "<id>" "<n>" --by "<who>" "<text>"';
-  return 'a status is moved by set, a merge recorded by merged: jarl.mjs field "<ids>" "<part>" "<value>"';
+  return 'no other part goes by that name: a field or a section the loop\'s profile declares is among the names above, and the profile lists them: jarl.mjs profile';
 }
 // A name as the command line takes it: in quotes when it holds a space (Found by, Check when).
 const quoteName = (name) => (/\s/.test(String(name).trim()) ? `"${String(name).trim()}"` : String(name).trim());
@@ -1197,7 +1197,7 @@ function doneGateIn(root, loop, issue, base) {
   const owner = () => { const text = ownerLineRefusal(root, loop, issue); return text ? { cause: ownerLineRewrite(root, loop, issue) ? 'owner-rewrite' : 'owner', text } : null; };
   if (profile.doneGate.approve === 'none') return owner();
   const code = carriesCode(issue);
-  if (g.selfApproved) return { cause: 'approve', text: `${issue.id}'s live approve is by a worker of this issue or its branch — a self-approve does not count as review: jarl.mjs review ${issue.id} approve --by '<a-fresh-reviewer>' '<text>'${code ? '' : ' (or jarl, on an issue that carries no code)'}` };
+  if (g.selfApproved) return { cause: 'approve', text: `${issue.id}'s live approve is by a worker of this issue or its branch — a self-approve does not count as review: jarl.mjs review ${issue.id} '<verdict>' --by '<a-fresh-reviewer>' '<text>'${code ? '' : ' (or jarl, on an issue that carries no code)'}` };
   // A changes verdict with no approve after it is named as the cause, with its reviewer and day, so whoever is refused
   // sees the review that stands in the way.
   if (!g.approved && g.lastReview === 'changes') {
@@ -1250,7 +1250,7 @@ function doneNote(issue, root) {
   const m = mergedOf(issue);
   // A merge that carries its check (a passing check, or the red it landed on) needs no CI state to be told apart from an unrecorded one.
   const decided = () => { const line = issue.byHeader ? null : lastMerge(journalById(root).get(issue.id) || []); return Boolean(line && (line.check || line.red)); };
-  if (m && m.ci !== 'green' && m.ci !== 'none' && !(m.ci === null && decided())) notes.push(`merged ${m.sha}, CI ${m.ci || 'not recorded'} — record it when known: jarl.mjs merged ${issue.id} --ci green|red`);
+  if (m && m.ci !== 'green' && m.ci !== 'none' && !(m.ci === null && decided())) notes.push(`merged ${m.sha}, CI ${m.ci || 'not recorded'} — record it when known: jarl.mjs merged ${issue.id} --ci '<ci-state>'`);
   return notes.length ? { note: notes.join('; ') } : {};
 }
 
@@ -1258,14 +1258,16 @@ function doneNote(issue, root) {
 function proofSince(g, issue) { return g.tracked ? g.rowsSince : evidenceRows(issue).length; }
 const EVIDENCE_HOW = (id) => `jarl.mjs evidence ${id} --ran "<command>" --saw "<what-it-printed>"`;
 
-// What a merge refused for want of its --sha says next: the head of the branch the issue's lease records, as the ready
-// command that records it, or, where no branch is recorded or it has no single head here, that the sha has to be given.
-function noMergeHow(root, issue, ci) {
+// What a merge refused for want of its --sha says next: the head of the branch the issue's lease records, or, where no
+// branch is recorded or it has no single head here, that there is none; the sha that landed is the caller's to give, so
+// the command it names holds a placeholder for it and never the head.
+function noMergeHow(root, issue) {
   const branch = fieldText(issue.fields.branch);
   const tip = branchTip(root, issue);
-  if (tip && !tip.includes(',')) return `the head of ${branch}, the branch its lease records, is ${tip}; once it has landed, record it: jarl.mjs merged ${issue.id} --sha ${tip} --ci ${ci}`;
-  if (!branch) return `its lease records no branch, so no head is offered; once it has landed, give its sha: jarl.mjs merged ${issue.id} --sha '<sha>' --ci ${ci}`;
-  return `${branch} has no single head in the repositories here, so no head is offered; once it has landed, give its sha: jarl.mjs merged ${issue.id} --sha '<sha>' --ci ${ci}`;
+  const give = `once it has landed, give the sha that landed: jarl.mjs merged ${issue.id} --sha '<sha>' --ci '<ci-state>'`;
+  if (tip && !tip.includes(',')) return `the head of ${branch}, the branch its lease records, is ${tip}; ${give}`;
+  if (!branch) return `its lease records no branch, so no head is offered; ${give}`;
+  return `${branch} has no single head in the repositories here, so no head is offered; ${give}`;
 }
 
 // merged <ids> --sha <sha> [--ran "<command>" --saw "<what-it-printed>" | --red <id>] [--ci pending|green|red|none] [--repo <path>]
@@ -1299,7 +1301,7 @@ export function cmdMerged(root, rawIds, flags) {
     need(!issues.some((i) => i.id === tracked.id), `--red names the issue that tracks the cause of a red check outside the branch; ${tracked.id} is the issue being merged${nothing}`, () => ({ flag: '--red', value: '<another-issue>' }));
     cause = tracked.id;
   }
-  if (flags.sha === undefined) for (const issue of issues) need(mergedOf(issue), `${issue.id} records no merge yet — ${noMergeHow(root, issue, flags.ci)}${nothing}`, () => ({ flag: '--sha', value: '<sha>' }));
+  if (flags.sha === undefined) for (const issue of issues) need(mergedOf(issue), `${issue.id} records no merge yet — ${noMergeHow(root, issue)}${nothing}`, () => ({ flag: '--sha', value: '<sha>' }));
   const pickedRepo = flags.repo !== undefined ? repoFromInput(root, String(flags.repo)) : null;
   const repoPath = pickedRepo ? pickedRepo.main : null;
   const repoIn = pickedRepo ? ` in ${noSeparators(pickedRepo.value)}` : '';

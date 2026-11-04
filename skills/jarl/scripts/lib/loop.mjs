@@ -270,11 +270,13 @@ export function needOneSlice(tags, { id = null, held = [] } = {}) {
   const was = heldSlices[0];
   const to = was && slices.find((t) => !heldSlices.some((h) => h.toLowerCase() === t.toLowerCase()));
   const same = was && !to ? slices.find((t) => !heldSlices.includes(t)) : null;
+  // The tags to take off and the one to add are named, never written into a command: which slice the issue goes to is the
+  // caller's to say, so the steps below the reason are forms.
   need(false, id !== null && was && to
-    ? `${id} is in ${was} already, and an issue is in one slice — to move it: jarl.mjs field ${id} Tags --remove ${heldSlices.join(',')}, then jarl.mjs field ${id} Tags --add ${to}`
+    ? `${id} is in ${was} already, and an issue is in one slice — to move it, take ${heldSlices.join(' and ')} off with field --remove first, then add ${to} with field --add`
     : id !== null && same
       ? `${id} is in ${was} already, and ${same} names the same slice in another case — an issue carries one slice tag`
-      : `an issue is in one slice, and ${id !== null ? `${id} would carry` : 'the tags name'} ${slices.join(', ')} — keep one${id !== null ? `: jarl.mjs field ${id} Tags --remove ${slices.slice(1).join(',')}` : `, e.g. --tags ${slices[0]}`}`, () => (id !== null && was && to ? [{ first: ['jarl.mjs', 'field', hole('<ids>'), 'Tags', hole('<tag>'), '--remove'] }, { retry: true }] : { retry: true }));
+      : `an issue is in one slice, and ${id !== null ? `${id} would carry` : 'the tags name'} ${slices.join(', ')} — keep one${id !== null ? '' : `, e.g. --tags ${slices[0]}`}`, () => (id !== null && was && to ? [{ first: ['jarl.mjs', 'field', hole('<ids>'), 'Tags', hole('<tag>'), '--remove'] }, { retry: true }] : { retry: true }));
 }
 // The slices of a loop: each coordinator the Coordinators line names, with its slice tag, then each slice a tag names
 // whose coordinator the line does not list (declared false: its coordinator's approve counts as fresh). inPlay counts the

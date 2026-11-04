@@ -169,7 +169,7 @@ export function cmdCheck(root, rawId, flags) {
     if (flags.repo === undefined) {
       const repos = new Map();
       for (const i of pkg) for (const r of issuePlaces(root, i)) repos.set(r, [...(repos.get(r) || []), i.id]);
-      need(repos.size === 1, `the issues on ${flags.branch} name different repositories (${[...repos.values()].map((ids) => ids.join(', ')).join(' | ')}) — check them one by one, or pass --repo`, () => ({ arg: 0, value: hole('<id>') }));
+      need(repos.size === 1, `the issues on ${flags.branch} name different repositories (${[...repos.values()].map((ids) => ids.join(', ')).join('; ')}) — check them one by one, or pass --repo`, () => ({ arg: 0, value: hole('<id>') }));
     }
   } else {
     const issue = findIssue(root, rawId);

@@ -238,6 +238,9 @@ const ALTERNATIVES = {
   '<key>': [keyOf4()], '<question>': ['a-2', 'a-3'], '<name>': ['Dana', 'Area'], '<value>': ['2', 'core'], '<text>': ['Important: read the diff and the tests, one name is wrong'],
 };
 const LEFT_OUT = ['<a-flag-it-takes-or-none>', '<no-flag-here>', '<as-the-reason-says>', '<nothing-to-do>', '<as-the-view-shows>', '<one-kind-of-evidence-per-call>', '<no-word-here>'];
+// A printed command's words with each word that stands where nothing is to be given taken out, with the value after a
+// flag the caller is to name: the words that take a place in the call.
+const placed = (words) => words.filter((w, i) => !LEFT_OUT.includes(w) && !(w === '<value>' && words[i - 1] === '<a-flag-it-takes-or-none>'));
 // A printed command's words with each placeholder filled: a word that is one is replaced (or taken out), one that holds
 // one (a list item, a value part) has it replaced in place.
 export function filled(words, at = -1, other = null) {
@@ -284,8 +287,21 @@ export function formProblems(args, said, loop, opts = {}, wrong = null) {
     for (const g of globalsOf(given)) if (!(g.length === 1 ? words.includes(g[0]) : words.some((w, i) => w === g[0] && words[i + 1] === g[1]))) problems.push(`drops ${g.join(' ')}, a global flag the call gave: ${line}`);
     for (const [k, v] of c.flags) if (k === 'by' && typeof v === 'string' && !HOLE.test(v) && !given.includes(v)) problems.push(`names --by ${v}, an author the call did not name: ${line}`);
     for (const [k] of c.flags) if (NEVER_ADDED.includes(k) && !given.includes(`--${k}`) && !given.includes(k)) problems.push(`adds --${k}, which the call did not ask for: ${line}`);
+    // Every flag its command needs beside the ones it holds, and every argument it needs, as the command table says
+    // (formNeeds): filled, the line is not refused for a part it left out.
+    if (Object.hasOwn(COMMAND_FLAGS, c.cmd)) {
+      const needs = J.formNeeds(c.cmd, new Set(c.flags.map(([k]) => k)));
+      for (const k of needs.flags) problems.push(`leaves out --${k}, which ${c.cmd} needs with what it holds: ${line}`);
+      const held = readCall(placed(words)).pos.length;
+      if (held < needs.args) problems.push(`holds ${held} of the ${needs.args} arguments ${c.cmd} needs: ${line}`);
+    }
   }
   if (wrong !== null && !names(reason, wrong)) problems.push(`the reason does not name ${JSON.stringify(wrong)}: ${reason.split('\n')[0].slice(0, 160)}`);
+  // The reason prints no pipe and no angle bracket outside a placeholder of the registry, a text in double quotes and a
+  // word of the caller it echoes in single quotes: pasted whole into a shell, none of its own pipes or redirects.
+  const bare = [...new Set(given)].filter(Boolean).sort((a, b) => b.length - a.length)
+    .reduce((t, w) => t.split(L.echoWord(w)).join(' '), reason).replace(/"[^"\n]*"/g, ' ').replace(HOLE_ALL, ' ');
+  if (/[|<>]/.test(bare)) problems.push(`the reason prints ${bare.match(/[|<>]/)[0]} outside a placeholder and a quote: ${reason.split('\n')[0].slice(0, 160)}`);
   const form = parsed.at(-1);
   if (form) {
     // The form is the called command, the command a removed one is replaced by, or a step; it holds no value Jarl chose.
@@ -370,8 +386,9 @@ const capital = (v) => `${v.charAt(0).toUpperCase()}${v.slice(1)}`;
 const TEXT_AT = { evidence: 1, retract: 2, set: 2, review: 2, round: 1, ask: 0, answer: 1, log: 0, decide: 1 };
 const IDS_AT = { evidence: 0, retract: 0, field: 0, set: 0, merged: 0, review: 0, round: 0, tick: 0 };
 const OLD_TEXT = { set: 'why', review: 'findings', round: 'what', ask: 'question', answer: 'answer', log: 'event', decide: 'ruling', retract: 'reason' };
-// Words a shell reads something in, given as a text the call carries beside the word that is wrong.
-export const ODD = ['#12', '=x', '~', '~/x', '&&', ';', '|', 'a\nb', "it's", '"q"', '-x', '  leading', '', '$(touch pwned)', '`touch pwned`', '*', 'a\u2028b', 'a\u0085b', 'a\u2029b', 'a\rb'];
+// Words a shell reads something in, given as a text the call carries beside the word that is wrong, and as the word that
+// is wrong itself.
+export const ODD = ['#12', '=x', '~', '~/x', '&&', ';', '|', '>', 'a>made', '<in', '(x)', 'a\nb', "it's", '"q"', '-x', '  leading', '', '$(touch pwned)', '`touch pwned`', '*', 'a\u2028b', 'a\u0085b', 'a\u2029b', 'a\rb'];
 function positionalsOf(args) { const out = []; for (let i = 0; i < args.length; i += 1) { if (args[i].startsWith('--')) { i += args[i + 1] !== undefined && !args[i + 1].startsWith('--') ? 1 : 0; continue; } out.push(i); } return out; }
 export function generateWrongCalls() {
   const calls = [];
@@ -424,9 +441,14 @@ export function generateWrongCalls() {
     [['evidence', '1', '--ran', 'npm', 'test', '--saw', 'ok'], 'test'], [['evidence', '1', '--ran', 'npm test', '--saw', 'pass', '3'], '3'], [['set', '1', 'deferred', 'not', 'now'], 'now'],
     [['review', '1', 'approve', '--by', 'rev', 'read', 'it', 'all'], 'all'],
   ]) add(args, wrong);
-  // Odd words: each given as the text of a call refused for its status, as a title refused for its tier, and as a flag's name.
-  for (const w of ODD) { add(['set', '1', 'Deferred', w], 'Deferred'); add(['new', w, '--tier', 'Light'], w.trim() ? 'Light' : null); }
-  for (const name of ['--a;b', '--x|y', '--&&', '--#', '--$(touch pwned)', '--`id`', '--~']) add(['new', 't', '--tier', 'light', name, 'x'], name);
+  // Odd words: each given as the text of a call refused for its status, as a title refused for its tier, as the part field
+  // does not write, and as a flag's name, a command's and a question's.
+  for (const w of ODD) {
+    add(['set', '1', 'Deferred', w], 'Deferred'); add(['new', w, '--tier', 'Light'], w.trim() ? 'Light' : null);
+    if (w.trim() && !w.startsWith('-')) add(['field', '1', w, 'x'], w);
+  }
+  for (const name of ['--a;b', '--x|y', '--&&', '--#', '--$(touch pwned)', '--`id`', '--~', '--a>made', '--x<in']) add(['new', 't', '--tier', 'light', name, 'x'], name);
+  for (const [args, wrong] of [[['a>made'], 'a>made'], [['>'], '>'], [['answer', 'a-9>made', 'yes', '--by', 'owner'], 'a-9>made'], [['goal', '--set', 'Model (huge>made): opus'], 'huge>made'], [['merged', '1', '--sha', 'abc1234', '--red', '9>made'], '9>made']]) add(args, wrong);
   // The calls of the sixth review, and three more of their kind.
   for (const [args, wrong] of [
     [['tag', '4', '+x', 'bug'], 'tag'], [['prio', '4', '2', '3'], 'prio'], [['after', '3', '4', '--clear'], 'after'], [['body', '4', '--what', 'A', '--what', 'B'], 'body'],

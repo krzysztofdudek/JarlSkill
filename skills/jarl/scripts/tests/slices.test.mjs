@@ -17,8 +17,10 @@ test('field Tags and new refuse a second slice: tag on one issue, and say how to
   assert.deepEqual(tagsOf(root, '1'), ['docs', 'slice:odin']);
   const log = readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
   const file = readFileSync(json(root, 'show', '1').file, 'utf8');
-  assert.match(refuses(root, 'field', '1', 'Tags', '--add', 'slice:thor'), /^1 is in slice:odin already, and an issue is in one slice — to move it: jarl\.mjs field 1 Tags --remove slice:odin, then jarl\.mjs field 1 Tags --add slice:thor$/m);
-  assert.match(refuses(root, 'field', '1', 'Tags', 'slice:odin, slice:thor'), /^1 is in slice:odin already, and an issue is in one slice — to move it: jarl\.mjs field 1 Tags --remove slice:odin, then jarl\.mjs field 1 Tags --add slice:thor$/m);
+  const moving = refuses(root, 'field', '1', 'Tags', '--add', 'slice:thor');
+  assert.match(moving, /^1 is in slice:odin already, and an issue is in one slice — to move it, take slice:odin off with field --remove first, then add slice:thor with field --add$/m);
+  assert.match(moving, /\njarl\.mjs field '<ids>' Tags '<tag>' --remove\njarl\.mjs field '<ids>' Tags '<tag>' --add\n$/, 'the steps are forms: no command is composed that takes a tag off');
+  assert.match(refuses(root, 'field', '1', 'Tags', 'slice:odin, slice:thor'), /^1 is in slice:odin already, and an issue is in one slice — to move it, take slice:odin off with field --remove first, then add slice:thor with field --add$/m);
   assert.match(refuses(root, 'new', 'two', '--tags', 'slice:odin,slice:thor'), /^an issue is in one slice, and the tags name slice:odin, slice:thor — keep one, e\.g\. --tags slice:odin$/m);
   assert.match(refuses(root, 'field', '1', 'Tags', '--add', 'slice:'), /^slice: names no coordinator: a slice is the tag slice:<coordinator>/m);
   assert.equal(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), log, 'a refusal writes no log line');
@@ -32,13 +34,13 @@ test('field Tags and new refuse a second slice: tag on one issue, and say how to
   jarl(root, 'field', '1', 'Tags', '--remove', 'slice:ODIN');
   jarl(root, 'field', '1', 'Tags', '--add', 'slice:thor');
   assert.deepEqual(tagsOf(root, '1'), ['docs', 'slice:thor']);
-  // An issue that carries two spellings of one slice (a hand edit) is moved by the hint the refusal prints, which removes both.
+  // An issue that carries two spellings of one slice (a hand edit) is moved by the two forms filled with what the reason
+  // names: every slice tag the issue holds taken off, then the one to add.
   const path = json(root, 'show', '1').file;
   writeFileSync(path, readFileSync(path, 'utf8').replace(/^\*\*Tags:\*\* .*$/m, '**Tags:** docs, slice:Odin, slice:odin'));
-  const hint = /— to move it: jarl\.mjs (field 1 Tags --remove slice:Odin,slice:odin), then jarl\.mjs (field 1 Tags --add slice:thor)$/m.exec(refuses(root, 'field', '1', 'Tags', '--add', 'slice:thor'));
-  assert.ok(hint, 'the hint removes every slice tag the issue holds');
-  jarl(root, ...hint[1].split(' '));
-  jarl(root, ...hint[2].split(' '));
+  assert.match(refuses(root, 'field', '1', 'Tags', '--add', 'slice:thor'), /— to move it, take slice:Odin and slice:odin off with field --remove first, then add slice:thor with field --add$/m);
+  jarl(root, 'field', '1', 'Tags', 'slice:Odin,slice:odin', '--remove');
+  jarl(root, 'field', '1', 'Tags', 'slice:thor', '--add');
   assert.deepEqual(tagsOf(root, '1'), ['docs', 'slice:thor']);
 });
 

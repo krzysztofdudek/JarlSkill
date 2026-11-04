@@ -219,12 +219,14 @@ test('close offers each rule of the loop for promotion, on the owner, with four 
   const out = json(root, 'close', '--batch');
   assert.deepEqual(out.promotion.items.map((i) => i.ruling), ['standing', 'for-reviewers']);
   const text = jarl(root, 'close', '--batch');
-  assert.match(text, /rules of the loop to promote \(2\) — answer each with one way \(carry, instructions, law or drop\): jarl\.mjs answer '<question>' --option '<option>' --by owner\n- a-1 · rule standing · loop: "Reports name their branch\." — what becomes of it when the loop closes\n- a-2 · rule for-reviewers · role reviewer:/);
+  assert.match(text, /rules of the loop to promote \(2\) — answer each with one way \(carry, instructions, law or drop\): jarl\.mjs answer '<question>' --option '<option>' --by '<who>'\n- a-1 · rule standing · loop: "Reports name their branch\." — what becomes of it when the loop closes\n- a-2 · rule for-reviewers · role reviewer:/);
   assert.equal(json(root, 'close', '--batch').promotion.filed.length, 0, 'a rule is offered once');
   const onOwner = json(root, 'next', '--as', 'owner').rows.filter((r) => r.what === 'promotion');
   assert.deepEqual(onOwner.map((r) => r.ruling), ['standing', 'for-reviewers']);
   assert.equal(onOwner[0].command, 'jarl.mjs answer a-1 --option carry|instructions|law|drop --by owner');
-  assert.match(refuses(root, 'answer', 'a-1', 'yes', '--by', 'owner'), /offers rule standing for promotion: answer it with --option carry\|instructions\|law\|drop/);
+  const promoted = refuses(root, 'answer', 'a-1', 'yes', '--by', 'owner');
+  assert.match(promoted, /offers rule standing for promotion: answer it with --option and one of carry, instructions, law, drop\n/);
+  assert.match(promoted, /\njarl\.mjs answer '<question>' --by '<who>' --option '<option>'\n$/, 'the form takes the option in place of the words given');
   jarl(root, 'answer', 'a-1', '--option', 'carry', '--by', 'owner');
   jarl(root, 'answer', 'a-2', '--option', 'drop', '--by', 'owner');
   const [a1, a2] = ['ask-1', 'ask-2'].map((slug) => json(root, 'decisions').find((d) => d.slug === slug));

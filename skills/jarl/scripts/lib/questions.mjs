@@ -138,9 +138,9 @@ function answerChecks(root, ask, answer, chosen) {
   const options = ask.options || [];
   let option = null;
   if (chosen !== null) {
-    need(options.length, `a-${id} offered no options, so it is answered in words, with no --option`, () => ({ rename: '--option', to: hole('<no-flag-here>') }));
+    need(options.length, `a-${id} offered no options, so it is answered in words, with no --option`, () => [{ drop: '--option' }, { arg: 1, value: hole('<text>') }]);
     option = options.find((o) => o.label === noSeparators(chosen)) || null;
-    need(option, `"${chosen}" is none of the options of a-${id}: ${options.map((o) => o.label).join(', ')}`, () => ({ replace: chosen, value: options.length ? hole('<option>') : hole('<option>') }));
+    need(option, `"${chosen}" is none of the options of a-${id}: ${options.map((o) => o.label).join(', ')}`, () => ({ replace: chosen, value: hole('<option>') }));
   }
   // A batch item asks about one area ruling, and its answer says one word first: yes or reject (tak or nie); so does a
   // proposed rule, which the answer accepts or rejects. A rule offered for promotion is answered with one of its options.
@@ -152,7 +152,7 @@ function answerChecks(root, ask, answer, chosen) {
   need(!ratifying || verdict, ratifying && !verdict ? `${ratifyRefusal(id, ask.ruling, answer)}${answerGiven(answer)}` : '', () => ({ arg: 1, value: verdictHole() }));
   need(!proposal || verdict, `a-${id} proposes a rule: the answer starts with one word — ${RATIFY_WORDS.join(', ')} to accept it, ${REJECT_WORDS.join(', ')} to reject it${answerGiven(answer)}`, () => ({ arg: 1, value: verdictHole() }));
   need(!ratifying || ruling, `a-${id} ratifies ruling ${ask.ruling}, which is not in force in ${DECISIONS_FILE}`, () => afterView(['jarl.mjs', 'decisions', '--live']));
-  need(ask.kind !== 'rule' || !ask.ruling || chosen !== null, `a-${id} offers rule ${ask.ruling} for promotion: answer it with --option ${options.map((o) => o.label).join('|')}`, () => ({ flag: '--option', value: hole('<option>') }));
+  need(ask.kind !== 'rule' || !ask.ruling || chosen !== null, `a-${id} offers rule ${ask.ruling} for promotion: answer it with --option and one of ${options.map((o) => o.label).join(', ')}`, () => [{ truncate: 2 }, { flag: '--option', value: hole('<option>') }]);
   return { verdict, ruling, rulings, option, options };
 }
 

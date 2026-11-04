@@ -113,6 +113,6 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
 function nextAfterVerdict(issue, verdict, kind, wait = null) {
   if (verdict === 'changes') return `the jarl records the round — jarl.mjs round ${issue.id} "<text>" — and a worker is raised again to fix it`;
   if (carriesCode(issue) && kind === 'coordinator') return `a fresh reviewer's approve is next — jarl.mjs review ${issue.id} '<verdict>' --by '<a-fresh-reviewer>' "<text>" — then the merger lands it`;
-  if (carriesCode(issue)) return `the merger merges the branch and records it with one call — jarl.mjs merged ${issue.id} --sha '<sha>' --ran "<command>" --saw "<what-it-printed>" — then ${wait ? `${wait}, then ` : ''}jarl.mjs set ${issue.id} done, which needs a Proof row from the worker (the merge check is the merger's and is no proof); a worker never sets done`;
-  return `${wait ? `${wait}, then ` : ''}jarl.mjs set ${issue.id} done once the worker's Proof rows are recorded; a worker never sets done`;
+  if (carriesCode(issue)) return `the merger merges the branch and records it with one call — jarl.mjs merged ${issue.id} --sha '<sha>' --ran "<command>" --saw "<what-it-printed>" — then ${wait ? `${wait}, then ` : ''}jarl.mjs set ${issue.id} done '<why>', which needs a Proof row from the worker (the merge check is the merger's and is no proof); a worker never sets done`;
+  return `${wait ? `${wait}, then ` : ''}jarl.mjs set ${issue.id} done '<why>' once the worker's Proof rows are recorded; a worker never sets done`;
 }

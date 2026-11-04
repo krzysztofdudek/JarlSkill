@@ -93,11 +93,11 @@ test('field adds and removes the items of a list field, each issue keeping what 
   assert.match(refuses(root, 'field', '1', 'Tags', '--add'), /^field Tags needs a value, or --clear to empty it\njarl\.mjs field '<ids>' Tags '<tag>' --add\n$/);
 });
 
-test('a slice: tag keeps its one-slice rule through --add, and the refusal is the two calls that move the issue', () => {
+test('a slice: tag keeps its one-slice rule through --add, and the refusal names the two steps that move the issue, each a form', () => {
   const root = fieldedLoop();
   jarl(root, 'field', '1', 'Tags', 'slice:odin', '--add');
   const said = refuses(root, 'field', '1', 'Tags', 'slice:thor', '--add');
-  assert.match(said, /1 is in slice:odin already, and an issue is in one slice — to move it: jarl\.mjs field 1 Tags --remove slice:odin, then jarl\.mjs field 1 Tags --add slice:thor/);
+  assert.match(said, /1 is in slice:odin already, and an issue is in one slice — to move it, take slice:odin off with field --remove first, then add slice:thor with field --add/);
   jarl(root, 'field', '1', 'Tags', 'slice:odin', '--remove');
   jarl(root, 'field', '1', 'Tags', 'slice:thor', '--add');
   assert.deepEqual(issue(root, '1').tags, ['slice:thor']);

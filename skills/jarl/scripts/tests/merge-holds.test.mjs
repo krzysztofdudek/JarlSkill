@@ -101,12 +101,13 @@ test('a merge recorded on a red check with its cause is not shown as waiting for
   assert.doesNotMatch(jarl(repo, 'status'), /waiting for its check/);
 });
 
-test('merged without --sha is refused with the ready command carrying the head of the branch the lease records', () => {
+test('merged without --sha is refused naming the head of the branch the lease records, and the sha that landed is left for the caller to give', () => {
   const { repo, tip } = fixture();
   const out = refuses(repo, 'merged', '1', '--ci', 'green');
   assert.match(out, /records no merge yet/);
   assert.ok(out.includes(`the head of jarl/1-x, the branch its lease records, is ${tip}`), out);
-  assert.ok(out.includes(`jarl.mjs merged 1 --sha ${tip} --ci green`), out);
+  assert.ok(out.includes("give the sha that landed: jarl.mjs merged 1 --sha '<sha>' --ci '<ci-state>'"), out);
+  assert.ok(!out.includes(`--sha ${tip}`), `no command is composed with the head as the sha: ${out}`);
   assert.doesNotMatch(jarl(repo, 'show', '1'), /Merged:/);
 });
 
@@ -120,7 +121,7 @@ test('merged without --sha on an issue whose lease records no branch says so, an
   const out = refuses(repo, 'merged', '1', '--ci', 'green');
   assert.match(out, /records no merge yet/);
   assert.match(out, /its lease records no branch, so no head is offered/);
-  assert.ok(out.includes("jarl.mjs merged 1 --sha '<sha>' --ci green"), out);
+  assert.ok(out.includes("jarl.mjs merged 1 --sha '<sha>' --ci '<ci-state>'"), out);
   assert.doesNotMatch(jarl(repo, 'show', '1'), /Merged:/);
 });
 

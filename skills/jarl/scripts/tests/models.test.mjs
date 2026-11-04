@@ -389,7 +389,7 @@ test('goal --set writes a takeover line for a kind the profile declares and refu
   assert.match(readFileSync(join(root, '.jarl', 'goal.md'), 'utf8'), /^Takeover \(docs\): 5$/m);
   assert.match(log(root), /goal line changed · Takeover \(docs\): 5 · was 2/);
   assert.equal(set('Takeover: 4').status, 0);
-  assert.match(set('Takeover (poetry): 2').stderr, /the profile declares no kind poetry/);
+  assert.match(set('Takeover (poetry): 2').stderr, /the profile declares no kind "poetry"/);
   assert.match(set('Takeover (docs): 0').stderr, /whole number of rounds/);
   assert.match(set('Takeover (docs): many').stderr, /whole number of rounds/);
 });

@@ -343,14 +343,14 @@ export function cmdGoalSet(root, text) {
     need(qualifier !== null, 'a Model line names its tier: "Model (<tier>): <model-id>", more models after commas', () => ({ flag: '--set', value: `Model (${hole('<tier>')}): ${line.value}` }));
     const profile = loadProfile(root);
     qualifier = profile.tiers.find((t) => t.toLowerCase() === qualifier.toLowerCase()) ?? null;
-    need(qualifier !== null, `the profile declares no tier ${line.qualifier}: its tiers are ${loadProfile(root).tiers.join(', ')}`, () => ({ flag: '--set', value: `Model (${hole('<tier>')}): ${line.value}` }));
+    need(qualifier !== null, `the profile declares no tier ${JSON.stringify(line.qualifier)}: its tiers are ${loadProfile(root).tiers.join(', ')}`, () => ({ flag: '--set', value: `Model (${hole('<tier>')}): ${line.value}` }));
   }
   need(line.key !== 'coordinators' || qualifier === null, 'a Coordinators line takes no qualifier: "Coordinators: <name>, …"', () => ({ flag: '--set', value: `Coordinators (${hole('<machine-line>')}): ${line.value}` }));
   need(line.key !== 'merger' || (qualifier === null && !line.value.includes(',')), MERGER_REASON, () => ({ flag: '--set', value: `Merger: ${hole('<one-name>')}` }));
   if (line.key === 'takeover' && qualifier !== null) {
     const kinds = loadProfile(root).kinds;
     qualifier = kinds.find((k) => k.toLowerCase() === qualifier.toLowerCase()) ?? null;
-    need(qualifier !== null, `the profile declares no kind ${line.qualifier}: its kinds are ${kinds.join(', ')}`, () => ({ flag: '--set', value: `Takeover (${hole('<kind>')}): ${line.value}` }));
+    need(qualifier !== null, `the profile declares no kind ${JSON.stringify(line.qualifier)}: its kinds are ${kinds.join(', ')}`, () => ({ flag: '--set', value: `Takeover (${hole('<kind>')}): ${line.value}` }));
   }
   const value = noSeparators(line.value);
   need(value, 'goal --set needs a value after the colon', () => ({ flag: '--set', value: `${String(text).split(':')[0].trim()}: ${hole('<value>')}` }));

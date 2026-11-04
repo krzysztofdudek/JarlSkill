@@ -195,22 +195,30 @@ export function shellWord(s) {
 // A text Jarl prints with words of a call in it (a reason, a note), safe to read and to paste: each word of the call that
 // holds a character a reader may end a line at, or one a shell acts on inside double quotes ($ ` \ " !), is echoed in
 // single quotes with its line breaks escaped (\n, \u2028), wherever the text has it bare, in double quotes or quoted as
-// JSON; a part of such a word around each line break is escaped as well, for an echo that cut the word. No word of the
-// caller starts a line of its own in what Jarl prints, and none runs when the whole text is pasted into a shell. Every
-// line-breaking character but the line feed is never Jarl's own and is escaped wherever it stands.
+// JSON; a part of such a word around each line break is escaped as well, for an echo that cut the word. A word whose
+// only such characters are ones a shell acts on outside quotes (a redirection, a pipe, a command separator, a
+// parenthesis, a single quote) is echoed so where it stands bare as a word of the text (after a space or an opening
+// bracket, before a space, a closing bracket or punctuation), and left as it is in double quotes, where they are
+// letters; a ; or a > of Jarl's own, or inside one of its placeholders, stays as it is. No word of the caller starts a
+// line of its own in what Jarl prints, and none runs, redirects or pipes when the whole text is pasted into a shell.
+// Every line-breaking character but the line feed is never Jarl's own and is escaped wherever it stands.
 const LINE_BREAKING_ALL = new RegExp(LINE_BREAKING.source, 'g');
 const escapeBreaks = (s) => s.replace(LINE_BREAKING_ALL, (c) => (c === '\n' ? '\\n' : c === '\r' ? '\\r' : `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`));
 export const breaksLine = (s) => LINE_BREAKING.test(String(s));
 export const echoWord = (w) => `'${escapeBreaks(String(w)).replace(/'/g, `'\\''`)}'`;
 const SHELL_ACTIVE = /[$`\\"!]/;
+const SHELL_OPERATOR = /[<>|&;()']/;
 const MARK = /\uE000(\d+)\uE001/g;
+const literally = (w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const standingBare = (w) => new RegExp(`(?<=^|[\\s([{])${literally(w)}(?=$|[\\s)\\]},:;.])`, 'g');
 export function escapedEchoes(text, words = []) {
   let out = String(text);
   const marks = [];
   const mark = (s) => { marks.push(s); return `\uE000${marks.length - 1}\uE001`; };
-  const echoed = [...new Set(words.map(String))].filter((w) => w.trim() && (breaksLine(w) || SHELL_ACTIVE.test(w))).sort((a, b) => b.length - a.length);
+  const echoed = [...new Set(words.map(String))].filter((w) => w.trim() && (breaksLine(w) || SHELL_ACTIVE.test(w) || SHELL_OPERATOR.test(w))).sort((a, b) => b.length - a.length);
   for (const w of echoed) {
     const as = mark(echoWord(w));
+    if (!breaksLine(w) && !SHELL_ACTIVE.test(w)) { out = out.replace(standingBare(w), as); continue; }
     for (const form of [JSON.stringify(w), `"${w}"`, w]) out = out.split(form).join(as);
     for (const { index: at } of w.matchAll(LINE_BREAKING_ALL)) {
       const part = w.slice(Math.max(0, at - 12), at + 13);

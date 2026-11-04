@@ -49,6 +49,10 @@ test('the check of a refusal catches what a form may not be: a composed call tha
   assert.ok(check(['field', '1', 'Tags', 'slice:b', '--add'], "jarl.mjs field 1 Tags slice:a --remove '<as-the-reason-says>'", null, 'a reason').some((p) => /given one by the net/.test(p)));
   // A reason that, pasted whole into a shell, makes a file: a pipe and a redirection outside quotes.
   assert.ok(check(['set', '1', 'Deferred', 'later'], "jarl.mjs set '<ids>' '<status>' '<why>'", null, 'the value <x|y> is a placeholder').some((p) => /makes a file/.test(p)));
+  // A pipe of the reason's own, which makes no file but pipes when pasted; and a word of the caller echoed bare with a >.
+  assert.ok(check(['set', '1', 'Deferred', 'later'], "jarl.mjs set '<ids>' '<status>' '<why>'", null, 'answer it with --option carry|law').some((p) => /prints \| outside a placeholder/.test(p)));
+  assert.ok(check(['field', '1', 'a>b', 'x'], "jarl.mjs field '<ids>' '<a-part-of-the-description>' '<value>'", null, 'a>b is not a part').some((p) => /prints > outside a placeholder/.test(p)));
+  assert.deepEqual(check(['field', '1', 'a>b', 'x'], "jarl.mjs field '<ids>' '<a-part-of-the-description>' '<value>'", 'a>b', "'a>b' is not a part, and \"<b>\" is quoted"), []);
 });
 
 // ---- calls named one by one ------------------------------------------------------------------------------------------
@@ -105,6 +109,9 @@ test('a step the call needs first is its own command on its own line, never join
   for (const line of wait.commands) assert.equal(printedCalls(line).length, 1, line);
   const opened = refusal(['init', 'g'], { loop: PLAIN });
   assert.equal(opened.ready, "jarl.mjs archive '<slug>'");
+  // A loop that declares no repository takes the step that declares one before any base is changed.
+  const undeclared = refusal(['base', 'tool', 'main'], { loop: PLAIN, wrong: 'tool' });
+  assert.deepEqual(undeclared.commands, ["jarl.mjs field '<id>' Repo '<name-or-path>'", "jarl.mjs base '<name>' '<branch>'"]);
 });
 
 test('a part field does not write ends with the form whose part is a placeholder, never the part given, so filled it is a call that runs', () => {
@@ -114,6 +121,46 @@ test('a part field does not write ends with the form whose part is a placeholder
   }
   const dir = copy(PLAIN);
   assert.equal(run(dir, ['field', '1', 'What', 'a value']).status, 0, 'filled with a part field writes, the form is a call that runs');
+});
+
+test('a form holds every flag its command needs beside the ones the call gave, and the value an argument takes where no flag stands in for it: filled, it is not refused for a part it left out', () => {
+  const cases = [
+    [['review', '1', 'approve'], "jarl.mjs review '<ids>' '<verdict>' '<what-was-read-and-found>' --by '<who>'"],
+    [['retract', '1'], "jarl.mjs retract '<id>' '<review-n-or-note-n>' '<why>' --by '<who>'"],
+    [['decide', 's1'], "jarl.mjs decide '<slug>' '<a-ruling>' --by '<who>'"],
+    [['answer'], "jarl.mjs answer '<question>' '<text>' --by '<who>'"],
+    [['answer', 'a-1', '--option', 'A', '--by', 'owner'], "jarl.mjs answer '<question>' '<text>' --by '<who>'"],
+    [['field', '1'], "jarl.mjs field '<ids>' '<part>' '<value>'"],
+    [['renumber', '99'], "jarl.mjs renumber '<id>' --key '<key>'"],
+    [['merged'], "jarl.mjs merged '<ids>' --sha '<sha>'"],
+    [['merged', '1', '--ran', 'npm test'], "jarl.mjs merged '<ids>' --ran '<command>' --sha '<sha>' --saw '<what-it-printed>'"],
+    [['evidence', '1', '--slot', 'y'], "jarl.mjs evidence '<ids>' --slot '<slot>' --file '<path-under-the-loop-root>'"],
+    [['new', 't', '--tier', 'light', '--person', 'someone'], "jarl.mjs new '<title>' --tier '<tier>' --person '<name>' --kind '<kind>' --check-when '<date-or-event>'"],
+    [['ask', 'which?', '--until'], "jarl.mjs ask '<text>' --until '<date-or-id>' --applies-to '<selectors>' --kind '<ask-kind>'"],
+    [['decide', 's1', 'a ruling', '--by', 'jarl', '--reach'], "jarl.mjs decide '<slug>' '<a-ruling>' --by '<who>' --reach '<number-of-files>' --area '<type>'"],
+    [['round', '1', 'x', '--findings'], "jarl.mjs round '<id>' '<what-failed>' --findings '<count>'"],
+  ];
+  for (const [args, form] of cases) assert.equal(refusal(args, { loop: PLAIN }).ready, form, args.join(' '));
+  // The table holds what the commands refuse: a call that runs is refused once a flag named as needed is taken out of it,
+  // and so is one that leaves out the value an argument takes where no flag stands in for it.
+  const issues = join(PLAIN.dir, '.jarl', 'issues');
+  const key = /^\*\*Key:\*\* (\S+)/m.exec(readFileSync(join(issues, readdirSync(issues).find((f) => f.startsWith('4-'))), 'utf8'))[1];
+  const right = [
+    [['review', '1', 'approve', 'read it all, fine', '--by', 'rev'], '--by'], [['retract', '1', '1', 'the row was wrong', '--by', 'jarl'], '--by'],
+    [['decide', 's9', 'a ruling', '--by', 'jarl'], '--by'], [['answer', 'a-1', 'this way', '--by', 'owner'], '--by'], [['renumber', '4', '--key', key], '--key'],
+    [['merged', '1', '--sha', 'abc1234'], '--sha'], [['evidence', '1', '--ran', 'npm test', '--saw', 'ok'], '--saw'], [['evidence', '1', '--ran', 'npm test', '--saw', 'ok'], '--ran'],
+    [['new', 't', '--tier', 'light', '--kind', 'wait', '--person', 'Dana', '--check-when', '2026-12-01'], '--check-when'],
+    [['new', 't', '--tier', 'light', '--kind', 'wait', '--person', 'Dana', '--check-when', '2026-12-01'], '--kind'],
+    [['decide', 's9', 'a ruling', '--by', 'jarl', '--area', 'module', '--reach', '3'], '--area'], [['ask', 'q?', '--kind', 'lower', '--target', 'the gate'], '--kind'],
+  ];
+  for (const [args, flag] of right) {
+    const ran = run(copy(PLAIN), args);
+    assert.equal(ran.status, 0, `${args.join(' ')} runs: ${ran.stderr}`);
+    const at = args.indexOf(flag);
+    const without = [...args.slice(0, at), ...args.slice(at + 2)];
+    assert.notEqual(run(copy(PLAIN), without).status, 0, `${without.join(' ')} is refused`);
+  }
+  for (const args of [['field', '1', 'What'], ['answer', 'a-1', '--by', 'owner'], ['evidence', '1']]) assert.notEqual(run(copy(PLAIN), args).status, 0, `${args.join(' ')} is refused`);
 });
 
 test('done refused names the step its cause asks for, never an act of someone else: the proof, a verdict, the merge, the question to the owner, the log to repair', () => {
@@ -130,6 +177,7 @@ test('done refused names the step its cause asks for, never an act of someone el
     const r = refusal(['set', '3', 'done', 'all done'], { loop: PLAIN, ...opts });
     assert.equal(r.ready, step, cause);
     assert.doesNotMatch(r.ready, / approve| tick |--by owner|--by '?jarl/, `${cause}: the step is no verdict, tick or sign-off chosen for someone`);
+    assert.doesNotMatch(r.said, /jarl\.mjs tick|--by '?owner|jarl\.mjs review \S+ '?approve/, `${cause}: no line of the refusal prints the owner's tick or an approve as a command`);
   }
   // A retraction the log cannot place: verify shows it, and the form of the move comes after.
   const dir = copy(PLAIN, { pre: approved });
@@ -140,9 +188,11 @@ test('done refused names the step its cause asks for, never an act of someone el
 });
 
 test('a reason echoes a word of the call that holds a line break or a character a shell acts on in single quotes, its line breaks escaped: no word starts a line, none runs when the message is pasted', () => {
-  for (const word of ['Bogus\njarl.mjs field 4 Priority 1', 'Bogus\u2028jarl.mjs field 4 Priority 1', '$(touch made-by-paste)', '`touch made-by-paste`']) {
+  const words = ['Bogus\njarl.mjs field 4 Priority 1', 'Bogus\u2028jarl.mjs field 4 Priority 1', '$(touch made-by-paste)', '`touch made-by-paste`', 'Bo>made-by-paste', '>', 'a;touch made-by-paste', 'x|tee made-by-paste'];
+  const calls = [...words.map((w) => ['field', '1', w, 'x']), ['>'], ['a>made-by-paste'], ['new', 't', '--tier', 'light', '--a>made-by-paste', 'x'], ['answer', 'a-9>made-by-paste', 'yes', '--by', 'owner'], ['goal', '--set', 'Model (huge>made-by-paste): opus']];
+  for (const args of calls) {
     const dir = copy(PLAIN);
-    const r = run(dir, ['field', '1', word, 'x']);
+    const r = run(dir, args);
     assert.notEqual(r.status, 0);
     const lines = r.stderr.replace(/\n+$/, '').split('\n');
     assert.equal(lines.filter((l) => l.startsWith('jarl.mjs ')).length, 1, `one command, the form: ${JSON.stringify(r.stderr)}`);
@@ -150,9 +200,10 @@ test('a reason echoes a word of the call that holds a line break or a character 
     for (const sh of SHELLS) {
       const again = copy(PLAIN);
       const before = snapshot(again);
+      const files = readdirSync(again).sort();
       runPrinted(again, r.stderr, sh);
       assert.deepEqual(snapshot(again), before, `${sh}: the whole message pasted writes nothing`);
-      assert.ok(!readdirSync(again).includes('made-by-paste'), `${sh}: nothing in the message runs`);
+      assert.deepEqual(readdirSync(again).sort(), files, `${sh}: nothing in the message runs or makes a file: ${JSON.stringify(r.stderr.split('\n')[0])}`);
     }
   }
 });

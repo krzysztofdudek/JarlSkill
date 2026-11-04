@@ -35,7 +35,7 @@ export function cmdEvidence(root, rawIds, text, flags) {
   else if (flags && (flags.ran !== undefined || flags.saw !== undefined)) {
     rows = rowsOf(flags);
     // The log stores a command trimmed and cut to its first line, so the shape is judged on that, in any case.
-    need(!rows.some((r) => attachmentOf(String(r.ran).replace(/\r\n?/g, '\n').trim().split('\n')[0].trim().toLowerCase())),'a row shaped as an attachment is written only by --file and --slot, which read the file and record its hash', () => ({ rename: '--ran', to: '<no-flag-here>' }));
+    need(!rows.some((r) => attachmentOf(String(r.ran).replace(/\r\n?/g, '\n').trim().split('\n')[0].trim().toLowerCase())),'a row shaped as an attachment is written only by --file and --slot, which read the file and record its hash', () => ([{ drop: '--ran' }, { drop: '--saw' }, { flag: '--file', value: hole('<path>') }, { flag: '--slot', value: hole('<slot>') }]));
     need(text === undefined, `evidence takes free text or --ran/--saw rows, not both (got "${text}" as well) — a value starting with -- goes after a bare --, and a command of several words is one quoted --ran`, () => ({ truncate: 2 }));
   } else {
     need(text, 'evidence requires a note or a row', () => ({ arg: 1, value: '<text>' }));
@@ -67,7 +67,7 @@ const struck = (line) => line.replace(/^- /, '- ~~');
 
 function retractEvidence(root, rawIds, reason, flags) {
   need(!isBulk(rawIds), 'retract names one issue and one row or note', () => ({ arg: 0, value: hole('<id>') }));
-  need(flags.ran === undefined && flags.saw === undefined, 'a retraction takes a row or note number and a reason, not a new --ran/--saw row', () => ({ rename: '--ran', to: hole('<no-flag-here>') }));
+  need(flags.ran === undefined && flags.saw === undefined, 'a retraction takes a row or note number and a reason, not a new --ran/--saw row', () => ([{ drop: '--ran' }, { drop: '--saw' }]));
   const raw = String(flags.retract);
   const noteRaw = /^note-(\d+)$/.exec(raw);
   if (noteRaw) return retractNote(root, rawIds, reason, flags, Number(noteRaw[1]));

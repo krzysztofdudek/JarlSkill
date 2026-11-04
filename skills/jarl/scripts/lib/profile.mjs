@@ -259,7 +259,7 @@ export function validateProfile(json, where = 'the profile') {
   let doneGate = DEFAULT_DONE_GATE;
   if (json['done-gate'] !== undefined) {
     const g = json['done-gate'];
-    if (!isObj(g)) say('"done-gate" is an object: { "approve": "fresh" | "none", "requires-merged": true | false }');
+    if (!isObj(g)) say('"done-gate" is an object: { "approve": "fresh" or "none", "requires-merged": true or false }');
     else {
       const before = bad.length;
       for (const k of Object.keys(g)) if (!DONE_GATE_KEYS.includes(k)) say(`"done-gate": unknown key "${k}" — it takes ${DONE_GATE_KEYS.join(', ')}`);
@@ -278,7 +278,7 @@ export function validateProfile(json, where = 'the profile') {
   let lifecycle = DEFAULT_LIFECYCLE;
   if (json.lifecycle !== undefined) {
     const l = json.lifecycle;
-    if (!isObj(l)) say('"lifecycle" is an object: { "close": "any" | "record", "archive": "any" | "record", "command": "<the-command-of-the-tool-that-runs-this-loop>" }');
+    if (!isObj(l)) say('"lifecycle" is an object: { "close": "any" or "record", "archive": "any" or "record", "command": "<the-command-of-the-tool-that-runs-this-loop>" }');
     else {
       const before = bad.length;
       for (const k of Object.keys(l)) if (!LIFECYCLE_KEYS.includes(k)) say(`"lifecycle": unknown key "${k}" — it takes ${LIFECYCLE_KEYS.join(', ')}`);

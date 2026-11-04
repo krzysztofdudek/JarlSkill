@@ -88,7 +88,8 @@ test('set done refuses while an owner line is not ticked, naming the line, its m
   produce(root);
   proveAndApprove(root);
   const refusal = refuses(root, 'set', '1', 'done', 'finished');
-  assert.match(refusal, /^1 waits for the owner's sign-off on acceptance line 2, "the first cut reads well": he reviews renders\/cut\.txt and checks the pacing of the opening and the captions; only he ticks it, once he has looked: jarl\.mjs tick 1 2 --by owner/m);
+  assert.match(refusal, /^1 waits for the owner's sign-off on acceptance line 2, "the first cut reads well": he reviews renders\/cut\.txt and checks the pacing of the opening and the captions; only he ticks it, with tick, once he has looked, and nobody ticks it for him$/m);
+  assert.doesNotMatch(refusal, /jarl\.mjs tick|--by owner/, 'whoever is refused is not the owner: no command of his tick is printed');
   assert.equal(json(root, 'show', '1').status, 'in-progress', 'nothing was written');
 
   const ticked = json(root, 'tick', '1', '2', '--by', 'owner');
@@ -183,9 +184,10 @@ test('resume, status and review name the owner\'s tick as the step before done w
   produce(root);
   jarl(root, 'evidence', '1', '--ran', 'render the cut', '--saw', 'renders/cut.txt written');
   const reply = jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
-  assert.match(reply, /next: the owner ticks acceptance line 2 \(jarl\.mjs tick 1 2 --by owner\), then jarl\.mjs set 1 done once the worker's Proof rows are recorded/);
-  assert.match(jarl(root, 'resume'), /^ {2}→ approved and queued for the merge — next the merger lands it, then the owner ticks acceptance line 2 \(jarl\.mjs tick 1 2 --by owner\), then set it done$/m);
-  assert.match(jarl(root, 'status'), /^in flight 1 · approved and queued for the merge — next the merger lands it, then the owner ticks acceptance line 2 \(jarl\.mjs tick 1 2 --by owner\), then set it done$/m);
+  assert.match(reply, /next: the owner ticks acceptance line 2 with tick, once he has looked, then jarl\.mjs set 1 done '<why>' once the worker's Proof rows are recorded/);
+  assert.doesNotMatch(reply, /jarl\.mjs tick|--by owner/, 'the reviewer is not the owner: no command of his tick is printed to him');
+  assert.match(jarl(root, 'resume'), /^ {2}→ approved and queued for the merge — next the merger lands it, then the owner ticks acceptance line 2 with tick, once he has looked, then set it done$/m);
+  assert.match(jarl(root, 'status'), /^in flight 1 · approved and queued for the merge — next the merger lands it, then the owner ticks acceptance line 2 with tick, once he has looked, then set it done$/m);
   jarl(root, 'tick', '1', '2', '--by', 'owner');
   assert.match(jarl(root, 'resume'), /^ {2}→ approved and queued for the merge — next the merger lands it, then set it done$/m);
 });

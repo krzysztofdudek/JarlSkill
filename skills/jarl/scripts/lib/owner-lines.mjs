@@ -113,7 +113,8 @@ const reviewText = (s) => `he reviews ${s.material}${s.at ? ` (in ${s.at})` : ''
 const tickCommand = (id, n) => `jarl.mjs tick ${id} ${n} --by owner`;
 
 // Why done refuses for the owner lines of an issue, or null when every one is ticked: each line not ticked, with its
-// material and what to check.
+// material and what to check. Whoever is refused is not the owner, so the reason names his tick and prints no command of
+// it: the step it ends with is the question put to him.
 export function ownerLineRefusal(root, loop, issue) {
   const open = ownerLineStates(root, loop, issue).filter((s) => !s.tick);
   if (!open.length) return null;
@@ -121,7 +122,7 @@ export function ownerLineRefusal(root, loop, issue) {
     if (s.off) return `acceptance line ${s.n}, which is marked as one only the owner ticks, and ${s.why}; rewrite it without the [owner] mark: ${rewriteText(issue.id)}`;
     if (!whole(s)) return `acceptance line ${s.n} is marked as one only the owner ticks and does not name its material and what to check — rewrite it as ${OWNER_LINE_SHAPE}: ${rewriteText(issue.id)}`;
     const spent = s.spent ? `; his tick of ${s.spent.at} came before the work was sent back or started again, so it does not count` : '';
-    return `acceptance line ${s.n}, "${s.what}": ${reviewText(s)}; only he ticks it, once he has looked: ${tickCommand(issue.id, s.n)}${spent}`;
+    return `acceptance line ${s.n}, "${s.what}": ${reviewText(s)}; only he ticks it, with tick, once he has looked, and nobody ticks it for him${spent}`;
   };
   return `${issue.id} waits for the owner's sign-off on ${open.map(one).join('; and on ')}`;
 }
@@ -132,13 +133,14 @@ export function ownerLineRewrite(root, loop, issue) {
   return ownerLineStates(root, loop, issue).filter((s) => !s.tick).some((s) => s.off || !whole(s));
 }
 
-// What done still waits for on an issue whose work is approved or merged, as the in-flight views say it, or null: the
-// owner's tick of each owner line not ticked, with the command, or the rewrite where owner lines are off.
+// What done still waits for on an issue whose work is approved or merged, as a review's reply and the in-flight views say
+// it, or null: the owner's tick of each owner line not ticked, named and never printed as a command, since whoever reads
+// it is not the owner; or the rewrite where owner lines are off.
 export function ownerLineWait(root, loop, issue) {
   const open = ownerLineStates(root, loop, issue).filter((s) => !s.tick);
   if (!open.length) return null;
   if (open[0].off) return `the [owner] mark on acceptance line ${open.map((s) => s.n).join(', ')} is rewritten (${open[0].why}): ${rewriteText(issue.id)}`;
-  return `the owner ticks acceptance line ${open.map((s) => s.n).join(', ')} (${open.map((s) => tickCommand(issue.id, s.n)).join(', ')})`;
+  return `the owner ticks acceptance line ${open.map((s) => s.n).join(', ')} with tick, once he has looked`;
 }
 
 // The lines show prints under an issue's header: each owner line, ticked or not.

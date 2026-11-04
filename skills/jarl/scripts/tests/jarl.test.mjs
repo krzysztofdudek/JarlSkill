@@ -1836,7 +1836,7 @@ test('goal prints the goal; goal --set changes one machine line of each kind, wi
 test('goal --set refuses a Model line for a tier the profile does not declare, a repository line, a Coordinators qualifier and --amend', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
-  assert.match(refuses(root, 'goal', '--set', 'Model (vintage): opus'), /declares no tier vintage/);
+  assert.match(refuses(root, 'goal', '--set', 'Model (vintage): opus'), /declares no tier "vintage"/);
   assert.match(refuses(root, 'goal', '--set', 'Model: opus'), /names its tier/);
   assert.match(refuses(root, 'goal', '--set', 'Repository: grain'), /takes one machine line/);
   assert.match(refuses(root, 'goal', '--set', 'Coordinators (x): Ada'), /takes no qualifier/);

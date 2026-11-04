@@ -705,11 +705,11 @@ const FLAG_HOLES = {
   'import source': '<report-dir>', after: '<ids>', changelog: '<changelog-entry>', template: '<template>', field: '<name=value>', section: '<name=value>',
   person: '<name>', 'check-when': '<date-or-event>', profile: '<profile.json>', key: '<key>', only: '<finding-ids>', ran: '<command>', saw: '<what-it-printed>',
   file: '<path>', slot: '<slot>', status: '<status>', grep: '<text>', match: '<field=value>', branch: '<worker-branch>', worker: '<the-new-worker>',
-  model: '<model-id>', worktree: '<the-worktree-of-the-lease>', limit: '<whole-number>', as: '<who>', slice: '<coordinator>', findings: '<findings.json>',
-  group: '<group>', with: '<loop-root>', base: '<base-branch>', 'stale-hours': '<hours>', sha: '<sha>', ci: '<ci-state>', red: '<what-is-red>',
-  target: '<what-would-get-weaker>', issue: '<id>', option: '<option>', 'applies-to': '<selectors>', until: '<yyyy-mm-dd>', to: '<jarl-or-owner>', log: '<count>',
-  ready: '<count>', summary: '<text>', next: '<text>', settles: '<ids>', quote: '<his-own-words>', under: '<slug>', supersedes: '<a-ruling-in-force>',
-  rule: '<rule-id>', set: '<machine-line>',
+  model: '<model-id>', worktree: '<the-worktree-of-the-lease>', limit: '<whole-number>', as: '<who>', slice: '<coordinator>', findings: '<count>',
+  group: '<group>', with: '<loop-root>', base: '<base-branch>', 'stale-hours': '<hours>', sha: '<sha>', ci: '<ci-state>', red: '<another-issue>',
+  target: '<what-would-get-weaker>', issue: '<id>', option: '<option>', 'applies-to': '<selectors>', until: '<date-or-id>', to: '<jarl-or-owner>', log: '<count>',
+  ready: '<count>', summary: '<text>', next: '<text>', settles: '<ids>', quote: '<his-own-words>', under: '<a-ruling-in-force>', supersedes: '<a-ruling-in-force>',
+  rule: '<rule-id>', area: '<type>', reach: '<number-of-files>', set: '<machine-line>',
 };
 const PART_HOLES = {
   title: '<title>', priority: '<prio>', tier: '<tier>', kind: '<kind>', tags: '<tag>', files: '<paths>', repo: '<name-or-path>', after: '<ids>',
@@ -730,16 +730,44 @@ function globalWords(k, v, spelt) {
   if (spelt === '=') return [`--${k}=${v}`];
   return [`--${k}`, v];
 }
-// The form of a call: jarl.mjs, its command, the placeholder of each argument it takes (the ones it requires, and the
-// ones the call gave), each flag of the call with the placeholder of its value (a switch as it is, one flag of a name),
-// and its global flags as they were given. A placeholder the shape put in stands where it goes; no other value of the
-// call is printed, but the name of the part field writes. With dashes, the arguments come after a bare --.
+// The flags a call of a command needs beside the ones it gives, so that its form, filled, is a call the command takes and
+// not one refused for a part the form left out: the flag each command requires (the author of a judgement, the key of a
+// renumbering, the sha of a merge that moves no CI state alone), and the flags one given goes with (a row's --ran and
+// --saw, an attachment's --file and --slot, a wait's --person and --check-when with its --kind, the kind a question's
+// --target, --slice or rule scope belongs to, the scope a rule's --until and --to end and hold, the area a ruling's
+// --reach counts and its --rule is on). A flag named here as needed is refused when it is missing, by the command itself.
+export const GOES_WITH = Object.freeze({
+  evidence: { ran: ['saw'], saw: ['ran'], file: ['slot'], slot: ['file'] },
+  merged: { ran: ['saw'], saw: ['ran'] },
+  new: { person: ['check-when', 'kind'], 'check-when': ['person', 'kind'] },
+  ask: { target: ['kind'], slice: ['kind'], 'applies-to': ['kind'], until: ['applies-to', 'kind'], to: ['applies-to', 'kind'] },
+  decide: { reach: ['area'], rule: ['area'], until: ['applies-to'] },
+});
+// What a form of `cmd` holds when its call gives the flags named in `given`: the flags it needs (above), and how many
+// arguments, the optional last one included where no flag of the call stands in for it (the value field writes, but with
+// --clear; the words of an answer, but with --option; a note, but with a row or a file).
+export function formNeeds(cmd, given) {
+  const has = (k) => given.has(k);
+  const flags = [...(Object.hasOwn(AUTHOR_REQUIRED, cmd) ? ['by'] : []), ...(cmd === 'renumber' ? ['key'] : []), ...(cmd === 'merged' && !has('ci') ? ['sha'] : [])];
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const k of [...given, ...flags]) for (const w of GOES_WITH[cmd]?.[k] || []) if (!flags.includes(w)) { flags.push(w); grew = true; }
+  }
+  const valued = { field: !has('clear'), answer: !has('option'), evidence: !['ran', 'saw', 'file', 'slot'].some(has) }[cmd];
+  const required = (COMMAND_ARGS[cmd] || []).filter((a) => !/[?.]$/.test(a)).length;
+  return { flags: flags.filter((k) => !given.has(k)), args: valued ? argumentNames(cmd).length : required };
+}
+// The form of a call: jarl.mjs, its command, the placeholder of each argument it takes (the ones it needs, and the ones
+// the call gave), each flag of the call with the placeholder of its value (a switch as it is, one flag of a name), each
+// flag it needs beside them (formNeeds), and its global flags as they were given. A placeholder the shape put in stands
+// where it goes; no other value of the call is printed, but the name of the part field writes. With dashes, the
+// arguments come after a bare --.
 function formOf(c, dashes) {
   if (!Object.hasOwn(COMMAND_FLAGS, c.cmd)) return ['jarl.mjs', hole('<a-jarl-command>'), ...c.flags.filter(([k]) => Object.hasOwn(GLOBAL_FLAGS, k)).flatMap(([k, v, s]) => globalWords(k, v, s))];
   const names = argumentNames(c.cmd);
-  const required = COMMAND_ARGS[c.cmd].filter((a) => !/[?.]$/.test(a)).length;
+  const needs = formNeeds(c.cmd, new Set(c.flags.map(([k]) => k)));
   const args = [];
-  for (let i = 0; i < Math.max(required, Math.min(c.args.length, names.length)); i += 1) {
+  for (let i = 0; i < Math.max(needs.args, Math.min(c.args.length, names.length)); i += 1) {
     const v = c.args[i];
     // A placeholder the shape put in stands, but the generic one, where the argument has its own.
     if (isPlaceholder(v) && v.trim() !== '<value>') args.push(v.trim());
@@ -758,6 +786,9 @@ function formOf(c, dashes) {
     else if (v === true || flagsOf(c.cmd)[k] === 'bool') flags.push(`--${k}`);
     else flags.push(`--${k}`, isPlaceholder(v) && v.trim() !== '<value>' ? v.trim() : valueHole(c.cmd, k));
   }
+  // Each flag the form needs that the call did not give, with the placeholder of its value, before the global flags.
+  const globalAt = flags.findIndex((w) => /^--(?:root|json|help)(?:=|$)/.test(w));
+  flags.splice(globalAt === -1 ? flags.length : globalAt, 0, ...needs.flags.flatMap((k) => [`--${k}`, valueHole(c.cmd, k)]));
   return dashes ? ['jarl.mjs', c.cmd, ...flags, '--', ...args] : ['jarl.mjs', c.cmd, ...args, ...flags];
 }
 // The one way a refusal reaches whoever made the call: its reason, then its ready part, the last line (see lib/base.mjs,
@@ -847,7 +878,7 @@ function parseWords(argv) {
       refuse(`unknown flag ${a} for ${cmd} — it takes ${named(flagsOf(cmd))}; a text that starts with -- goes after a bare --`, { rename: `--${name}`, to: flagHole(cmd) });
     }
     if (kind === 'bool') {
-      need(inline === undefined, `--${name} takes no value: it is given, or left out`, () => ({ rename: `--${name}`, to: hole('<no-flag-here>') }));
+      need(inline === undefined, `--${name} takes no value: it is given, or left out (got ${JSON.stringify(a)})`, () => ({ rename: `--${name}`, to: hole('<no-flag-here>') }));
       flags[name] = true;
       continue;
     }
@@ -1195,7 +1226,7 @@ function renderPromotion(p, loop) {
   if (p.off) return `\n${p.off}`;
   if (!p.items.length) return '';
   if (loop === 'removed') return `\n${p.items.length} rule(s) of the loop were offered for promotion and left with it unanswered: close --batch offers them before the loop goes`;
-  return `\nrules of the loop to promote (${p.items.length}) — answer each with one way (carry, instructions, law or drop): jarl.mjs answer '<question>' --option '<option>' --by owner\n${p.items.map((i) => `- ${i.ask} · ${i.question}`).join('\n')}`;
+  return `\nrules of the loop to promote (${p.items.length}) — answer each with one way (carry, instructions, law or drop): jarl.mjs answer '<question>' --option '<option>' --by '<who>'\n${p.items.map((i) => `- ${i.ask} · ${i.question}`).join('\n')}`;
 }
 function renderRuleLog(r, t) {
   if (!r || !t) return '';
@@ -1329,7 +1360,7 @@ function dispatchCall(root, commandName, rest, flags) {
       case 'decisions': out = R.decisions(root, flags); text = renderDecisions(out); break;
       case 'goal': out = flags.set === undefined ? cmdGoal(root) : cmdGoalSet(root, flags.set); text = flags.set === undefined ? out.goal : out.unchanged ? `goal line unchanged: ${out.shown}` : `goal line ${out.replaced ? 'changed' : 'added'}: ${out.shown}${out.replaced ? ` (was ${out.was})` : ''}`; break;
       case 'status': out = R.statusData(root, groupedBy(flags)); text = renderStatus(out, R.loadProfile(root)); ({ out, text } = endWithAsker(root, flags, out, text)); break;
-      case 'changelog': out = cmdChangelog(root, rest[0], flags); text = out.text || '(no changelog fragment on these issues)'; warn = out.missing.length ? [`note: no changelog fragment: ${out.missing.join(', ')} — record one with: jarl.mjs field '<id>' Changelog 'Added: <changelog-entry>' --add`] : []; break;
+      case 'changelog': out = cmdChangelog(root, rest[0], flags); text = out.text || '(no changelog fragment on these issues)'; warn = out.missing.length ? [`note: no changelog fragment: ${out.missing.join(', ')} — record one with: jarl.mjs field '<id>' Changelog '<changelog-entry>' --add, its section first (Added, Changed, Deprecated, Removed, Fixed or Security, then a colon)`] : []; break;
       case 'archive': out = cmdArchive(root, rest[0], { caller: 'cli' }); text = `archived → ${out.archived}${out.leftOpen.length ? ` · ${out.leftOpen.length} still open or in progress: ${out.leftOpen.join(', ')}` : ''} · open a new loop with: jarl.mjs init "<goal>"`; break;
       case 'mode': out = cmdMode(root, rest[0]); text = 'now permanent · not tied to a feature branch; close keeps the directory'; break;
       case 'profile': out = cmdProfile(root, rest[0]); text = renderProfile(out); break;
