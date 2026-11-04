@@ -20,7 +20,7 @@ import { builds, modelMarks } from './models.mjs';
 import { leaseProblems, staleHours } from './rounds.mjs';
 import { attachmentLines, inspectAttachment, requiredSlots, slotProblems } from './attachments.mjs';
 import { ARCHIVE_KEEPS, PERMANENT_MARKER, issuesFor, needLifecycle, needLiveLoop, oneOrMany, rowsOf, waitingOn } from './commands.mjs';
-import { handoffAge, loadAsks, ratificationBatch } from './questions.mjs';
+import { handoffAge, loadAsks, promotionBatch, ratificationBatch } from './questions.mjs';
 import { ownerLineNotes, ownerLineWait } from './owner-lines.mjs';
 
 // ---- commands: evidence ------------------------------------------------------------------------------
@@ -374,7 +374,7 @@ function statusOf(root, loop, flags) {
   const inScope = new Set(issues.map((i) => i.id));
   const asks = loop.asks.filter((a) => a.state === 'open' && (!scoped || (a.issue && inScope.has(a.issue)) || (slice !== null && sameSlice(a.slice ?? null, slice))));
   // A ratify item blocks nothing, so it is not counted among the questions the loop waits on.
-  c.questions = asks.filter((a) => a.kind !== 'ratify' && a.kind !== 'escalation').length;
+  c.questions = asks.filter((a) => a.kind !== 'ratify' && a.kind !== 'escalation' && a.kind !== 'rule').length;
   // The escalations a coordinator sent up, which the jarl answers: counted apart from the owner's questions.
   c.escalations = asks.filter((a) => a.kind === 'escalation').length;
   c.toRatify = asks.filter((a) => a.kind === 'ratify');
@@ -500,7 +500,7 @@ export function cmdClose(root, flags = {}) {
   needLiveLoop(root, '');
   needLifecycle(root, 'close', flags.caller);
   // --batch files the ratification batch and closes nothing, so the owner can answer it before the loop goes.
-  if (flags.batch) return { closed: false, batch: ratificationBatch(root) };
+  if (flags.batch) return { closed: false, batch: ratificationBatch(root), promotion: promotionBatch(root) };
   const profile = loadProfile(root);
   const left = loadIssues(root).filter((i) => profile.unfinished(i.status));
   need(flags.force || left.length === 0, `${left.length} issue(s) still open or in progress: ${left.map((i) => i.id).join(', ')} — set each ${profile.with('terminal').filter((st) => profile.is(st, 'settles-dependents') || profile.is(st, 'closes-record')).join(' or ') || profile.with('terminal').join(' or ')}, or report them to the owner and run with --force`);
@@ -520,12 +520,13 @@ export function cmdClose(root, flags = {}) {
   const committedMode = !permanent && !outOfGit(root);
   need(!committedMode || flags.force || archived.length === 0, `.jarl/archive/ holds ${archived.length} archived loop(s): ${archived.join(', ')} — in the committed mode the archive is committed content, and close would leave it on the branch that merges to main. Move it out of the tree, or remove it with the loop: jarl.mjs close --force`);
   const batch = ratificationBatch(root);
+  const promotion = promotionBatch(root);
   // A committed loop's files git never saw are named, not refused: in the permanent mode they (and the closing
   // line) wait for a commit; in the committed mode the removal below is itself the change to commit.
   if (permanent) {
     appendLog(root, `closed · kept as a permanent record${deferred.length ? ` · ${deferred.length} deferred still waiting: ${deferred.join(', ')}` : ''}`);
     const files = uncommittedLoopFiles(root);
-    return { closed: true, removed: null, kept: jarlDir(root), leftOpen: left.map((i) => i.id), deferred, uncommitted: files === null ? null : files.length, batch };
+    return { closed: true, removed: null, kept: jarlDir(root), leftOpen: left.map((i) => i.id), deferred, uncommitted: files === null ? null : files.length, batch, promotion };
   }
   const files = uncommittedLoopFiles(root);
   // In the default mode an archive is never removed: close removes the live loop's files and leaves the archive, the mode
@@ -535,7 +536,7 @@ export function cmdClose(root, flags = {}) {
   if (keepArchive) {
     for (const entry of readdirSync(jarlDir(root))) if (!ARCHIVE_KEEPS.has(entry)) rmSync(join(jarlDir(root), entry), { recursive: true, force: true });
   } else rmSync(jarlDir(root), { recursive: true, force: true });
-  return { closed: true, removed: jarlDir(root), archiveKept: keepArchive ? archive : null, archiveRemoved: archived.length ? archived : null, kept: null, leftOpen: left.map((i) => i.id), deferred, uncommitted: files === null ? null : files.length, batch };
+  return { closed: true, removed: jarlDir(root), archiveKept: keepArchive ? archive : null, archiveRemoved: archived.length ? archived : null, kept: null, leftOpen: left.map((i) => i.id), deferred, uncommitted: files === null ? null : files.length, batch, promotion };
 }
 
 // The row `evidence <id> --file <path> --slot <name>` writes, after every check; nothing is written here.

@@ -28,6 +28,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A loop can now record a promise someone made, or something it waits for from a person outside the loop, and each stays on that person's list, a wait with when to check, until it is closed. Jarl never gives either to a worker.
 - `body --append` adds text to a section of an issue after what the section already holds, instead of replacing it.
 - Jarl's command line prints its version with `--version`. The number matches the one the Jarl tools in your session report. When your shell exports `CLAUDE_PLUGIN_ROOT`, and the plugin there has another version than the copy you run, `resume` says so in one line; without that variable it says nothing.
+- A ruling can say whom it is for and until when: the whole loop, a role such as reviewers or workers, one coordinator's part of the backlog, a tag, a kind of task, a set of files, a repository or a moment of the work, and it can end on a date or when a task closes. Taking it back is a ruling that replaces it. The resume and the list of what is waiting on someone show that person the rules meant for them, in full, and the resume no longer lists every ruling.
+- Jarl gives coordinators, workers and reviewers its own working rules for their role, such as re-checking every acceptance line on each review round.
+- Anyone in the loop can propose a rule, for whoever runs the loop to accept, or for the owner when the rule is his. When the loop closes, each of its rules is offered to the owner: keep it for the next loop, write it into the repository's instructions for agents, make it a rule of the code, or drop it.
 - `report --metrics` prints only the loop's metrics, so the summary stays short even for a loop with hundreds of issues. `report` now prints the metrics before its lists of issues.
 
 ### Changed

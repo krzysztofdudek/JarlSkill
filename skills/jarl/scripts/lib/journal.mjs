@@ -155,15 +155,17 @@ function decisionsAt(dir, skipped) {
     const first = (name) => (field(name).pop() || '').split(/\s/)[0] || null;
     return {
       date: d.date, slug: d.slug, ruling, quote: field('By').pop() === OWNER ? quoteOf(d.body.slice(0, cut)) : null, under: field('By').pop() === OWNER ? null : underOf(d.body.slice(0, cut)), by: field('By').pop() || null, supersedes: field('Supersedes').pop() || null, supersededBy: sup ? sup.split(/\s/)[0] : null, settles: splitList(field('Settles').pop()),
-      area: field('Area').pop() || null, reach: reach !== undefined && /^\d+$/.test(reach) ? Number(reach) : null, rule: field('Rule').pop() || null,
+      appliesTo: field('Applies to').pop() || null, area: field('Area').pop() || null, reach: reach !== undefined && /^\d+$/.test(reach) ? Number(reach) : null, rule: field('Rule').pop() || null,
       ratified: first('Ratified'), rejected: first('Rejected'), typeLog: typeLog ? { type: typeLog[1], datetime: typeLog[2] } : null,
       ruleLog: ruleLog ? { rule: ruleLog[1], datetime: ruleLog[2] } : null,
     };
   });
 }
-// The fields the tool writes into a ruling's closing block. Area, Reach and Rule come with the ruling (decide --area,
-// --reach, --rule); Superseded by, Ratified, Rejected, Type log and Rule log are added to an earlier ruling in place, later.
-const DECISION_META = /^\*\*(By|Supersedes|Superseded by|Settles|Area|Reach|Rule|Ratified|Rejected|Type log|Rule log):\*\*\s*(.*)$/;
+// The fields the tool writes into a ruling's closing block. Applies to, Area, Reach and Rule come with the ruling (decide
+// --applies-to, --area, --reach, --rule); Superseded by, Ratified, Rejected, Type log and Rule log are added to an earlier
+// ruling in place, later. Applies to is the block's first line: a reader that knows no such field ends the ruling's text
+// with it, so it shows the scope in words and still reads every field after it.
+const DECISION_META = /^\*\*(Applies to|By|Supersedes|Superseded by|Settles|Area|Reach|Rule|Ratified|Rejected|Type log|Rule log):\*\*\s*(.*)$/;
 // The answer line of an answered question's ruling (ask-<n>): the answer itself, the option chosen, or the answer in its own words.
 const ANSWER_LINE = /^\*\*(?:Answer|Answer in own words|Chose):\*\*/;
 // The answer line and the question line of an answered question's ruling, as the ruling holds them. Resume and decisions
@@ -197,7 +199,7 @@ function markDecision(root, slug, line, { text: given } = {}) {
 // The owner's words (quote, on a ruling by the owner only) are its last line, after a blank one, at the left edge: the one
 // line of a ruling no text given to decide can stand on (owner.mjs, quoteOf). The ruling it rests on (under, on a ruling
 // by anyone but the owner) is the paragraph before, in the same form and for the same reason (owner.mjs, underOf).
-export function appendDecision(root, slug, ruling, { by, quote, under, supersedes, area, reach, rule, settles } = {}) {
+export function appendDecision(root, slug, ruling, { by, quote, under, supersedes, area, reach, rule, settles, appliesTo } = {}) {
   need(under === undefined || under === null || (typeof under === 'string' && SLUG_RE.test(under) && by !== OWNER), 'the ruling a ruling rests on is the slug of a ruling, and a ruling by the owner rests on his own words');
   need(quote === undefined || quote === null || (typeof quote === 'string' && quote === fieldText(quote) && quote !== '' && by === OWNER), 'the owner\'s words are one line of text, kept with a ruling by the owner');
   if (quote) needNoOwnersWords('--quote', quote);
@@ -214,7 +216,7 @@ export function appendDecision(root, slug, ruling, { by, quote, under, supersede
     need(!old.supersededBy, `${supersedes} is already superseded by ${old.supersededBy} — supersede that one instead`);
     text = markDecision(root, supersedes, `**Superseded by:** ${slug} (${today()})`, { text });
   }
-  const meta = [settles?.length ? `**Settles:** ${settles.join(', ')}` : null, by ? `**By:** ${fieldText(by)}` : null, supersedes !== undefined ? `**Supersedes:** ${supersedes}` : null, area ? `**Area:** ${area}` : null, reach !== undefined && reach !== null ? `**Reach:** ${reach}` : null, rule ? `**Rule:** ${rule}` : null].filter(Boolean).join('\n');
+  const meta = [appliesTo ? `**Applies to:** ${fieldText(appliesTo)}` : null, settles?.length ? `**Settles:** ${settles.join(', ')}` : null, by ? `**By:** ${fieldText(by)}` : null, supersedes !== undefined ? `**Supersedes:** ${supersedes}` : null, area ? `**Area:** ${area}` : null, reach !== undefined && reach !== null ? `**Reach:** ${reach}` : null, rule ? `**Rule:** ${rule}` : null].filter(Boolean).join('\n');
   const body = `${ruling.replace(/\s+$/, '')}${under ? `\n\n${underLine(under)}` : ''}${quote ? `\n\n${quoteLine(quote)}` : ''}`;
   carryingOwnersWords([quote && quoteLine(quote)], () => writeAtomic(path, `${text.replace(/\s*$/, '')}\n\n## ${today()} · ${slug}\n${body}\n${meta ? `\n${meta}\n` : ''}`));
 }
@@ -362,7 +364,7 @@ export function cmdGoalSet(root, text) {
 }
 
 // A ratify item the close's batch filed names the area ruling it asks about: `· ruling <slug>`.
-const ASK_RE = idRe('^- \\*\\*a-({id})\\*\\* \\((open|answered)\\)(?: · (stop|stuck|lower|charter|ratify|escalation))?(?: · target (\\S+))?(?: · issue ({id}))?(?: · slice ([^\\s·]+))?(?: · ruling ([A-Za-z0-9][A-Za-z0-9._-]{0,79}))? · (.*)$');
+const ASK_RE = idRe('^- \\*\\*a-({id})\\*\\* \\((open|answered)\\)(?: · (stop|stuck|lower|charter|ratify|escalation|rule))?(?: · target (\\S+))?(?: · issue ({id}))?(?: · slice ([^\\s·]+))?(?: · ruling ([A-Za-z0-9][A-Za-z0-9._-]{0,79}))?(?: · to (owner|jarl))?(?: · applies to ([^·]+?(?: · until [^·]+?)?))? · (.*)$');
 
 // An option of a question is its own line after the question: `- **a-<n>** option · <label> · <effect>`. Its label and effect
 // pass noSeparators, so the line splits on its separators alone. A question's indented lines never start with `- **a-`.
@@ -384,7 +386,7 @@ function asksAt(dir, skipped) {
   readText(path).split('\n').forEach((line, i) => {
     const skip = (reason) => { if (skipped) skipped.push({ n: i + 1, text: line, reason }); };
     const m = ASK_RE.exec(line);
-    if (m) { last = { id: m[1], state: m[2], kind: m[3] || null, target: m[4] || null, issue: m[5] ? writtenId(m[5], forms) : null, ...(m[6] ? { slice: m[6] } : {}), ...(m[7] ? { ruling: m[7] } : {}), question: m[8] }; out.push(last); return; }
+    if (m) { last = { id: m[1], state: m[2], kind: m[3] || null, target: m[4] || null, issue: m[5] ? writtenId(m[5], forms) : null, ...(m[6] ? { slice: m[6] } : {}), ...(m[7] ? { ruling: m[7] } : {}), ...(m[8] ? { to: m[8] } : {}), ...(m[9] ? { appliesTo: m[9] } : {}), question: m[10] }; out.push(last); return; }
     const o = ASK_OPTION_RE.exec(line);
     if (o) { const key = idKey(o[1]); options.set(key, [...(options.get(key) || []), { label: o[2], effect: o[3] }]); optionLines.push({ key, line: i + 1, text: line }); last = null; return; }
     if (last && line.startsWith('  ')) { last.question += `\n${line.slice(2)}`; return; }

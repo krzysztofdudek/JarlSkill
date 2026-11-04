@@ -14,7 +14,7 @@ export const OLD_JARL_FILE = fileURLToPath(new URL('./fixtures/jarl-6.1.0/jarl-l
 export const OLD_JARL_SHA256 = '6c735ff50f3ed41123fa4ecc02be76b9bbc96c8bd8223f7bea7ea0b068f713f0';
 export const FORMAT_TWO_JARL_FILE = fileURLToPath(new URL('./fixtures/jarl-6.2.0/jarl-lib.mjs', import.meta.url));
 export const FORMAT_TWO_JARL_SHA256 = '90ef7a44927b24e40ba8cbfed26de290ff15bef4daacd78a3733a82ce598fd35';
-const COMMANDS = { init: 'cmdInit', new: 'cmdNew', list: 'cmdList', status: 'cmdStatus', next: 'cmdNext', queue: 'cmdQueue', report: 'cmdReport', set: 'cmdSet', evidence: 'cmdEvidence', merged: 'cmdMerged' };
+const COMMANDS = { init: 'cmdInit', new: 'cmdNew', list: 'cmdList', status: 'cmdStatus', next: 'cmdNext', queue: 'cmdQueue', report: 'cmdReport', set: 'cmdSet', evidence: 'cmdEvidence', merged: 'cmdMerged', decisions: 'cmdDecisions' };
 
 const pinned = (file, sha) => createHash('sha256').update(readFileSync(file)).digest('hex') === sha;
 export function oldJarlIsPinned() { return pinned(OLD_JARL_FILE, OLD_JARL_SHA256); }
