@@ -43,8 +43,8 @@ test('parity (Runes testkit): a tool that loses a field, or a command with no to
   const lost = tableTools.map((t) => (t.name === 'jarl_set' ? { ...t, inputSchema: { ...t.inputSchema, properties: { ...t.inputSchema.properties, worker: undefined } } } : t))
     .map((t) => ({ ...t, inputSchema: { ...t.inputSchema, properties: Object.fromEntries(Object.entries(t.inputSchema.properties).filter(([, v]) => v)) } }));
   assert.match(parityProblems({ table: mcp.TABLE, tools: lost, toolOptions: mcp.TOOL_OPTIONS }).join('\n'), /tool jarl_set lacks "worker"/);
-  const fewer = tableTools.filter((t) => t.name !== 'jarl_tips');
-  assert.match(parityProblems({ table: mcp.TABLE, tools: fewer, toolOptions: mcp.TOOL_OPTIONS }).join('\n'), /command "tips" has no tool jarl_tips/);
+  const fewer = tableTools.filter((t) => t.name !== 'jarl_branches');
+  assert.match(parityProblems({ table: mcp.TABLE, tools: fewer, toolOptions: mcp.TOOL_OPTIONS }).join('\n'), /command "branches" has no tool jarl_branches/);
 });
 
 test('the table is the CLI\'s: every command, and the server lists exactly the tools buildTools generates', () => {

@@ -17,10 +17,10 @@ import { fileURLToPath } from 'node:url';
 import * as R from './record.mjs';
 import {
   need, resetCaches, withLock, readText, isEntry, cmdSet, cmdField, setRouteOf, eachIssue, cmdRound,
-  cmdProfile, cmdArchive, cmdList, cmdNext, renderNext, cmdMode, cmdClose, cmdCheck, cmdBranches, cmdTips, cmdQueue,
+  cmdProfile, cmdArchive, cmdList, cmdNext, renderNext, cmdMode, cmdClose, cmdCheck, cmdBranches,
   cmdChangelog, cmdHandoffRead, cmdHandoffWrite, cmdReport, cmdImport, cmdSources, cmdAnswerMany, cmdModels, renderModels,
   issuesNaming, questionFor, cmdGoal, cmdGoalSet, cmdRepoBase, whereOf, cmdVerify, renderVerify, renderCheckNotes,
-  renderProfile, renderTips, renderQueue, renderResume, renderStatus, renderImport, renderSources, renderList, recordTypeLog, recordRuleLog,
+  renderProfile, renderResume, renderStatus, renderImport, renderSources, renderList, recordTypeLog, recordRuleLog,
   runDecisionsDriver, mergeFlags, describeNew, renderNewReply, issueView, attachmentStates, evidenceTable, renderBranches, renderDecide, renderDecisions,
   cmdNextAs, renderNextAs, askerSection, cmdTick, withWriter, editorOf, needFormat, formatState, readProfileFile, FORMAT_LINES, cmdRenumber,
 } from './jarl-lib.mjs';
@@ -289,14 +289,24 @@ commands:
                                                  several ratify items as a comma list take one answer, one ruling each,
                                                  each naming the batch it was answered in; on a ratify item whose
                                                  ruling names a rule, the rule's ratification names who answered
-  resume [--log n] [--ready n] [--ci] [--as <who>] [--slice <coordinator>]
+  resume [--log n] [--ready n] [--ci] [--repo <name|path>] [--base <b>] [--as <who>] [--slice <coordinator>]
                                                  read-only, the boot: everything a session picks the loop up from,
                                                  assembled live — goal and counts, rulings in force, in flight with
                                                  leases (and stale ones), waiting on After, questions, ratify items,
-                                                 the next ready issues (n, default 10), the merge queue, merges with
-                                                 CI pending or red, the tips of every repository the issues name,
-                                                 loop files not committed, and the last log lines (n, default 15);
-                                                 no network unless --ci asks gh for the CI of each pushed tip;
+                                                 the next ready issues (n, default 10), the merge queue (the branches
+                                                 waiting for the merger — an open or in-progress issue on it holds a
+                                                 live approve and the branch is ahead of its base — in the order they
+                                                 were approved, per repository, cut into batches whose declared files
+                                                 do not overlap; it runs no check and refuses nothing), merges with
+                                                 CI pending or red, the tips (per repository the issues name, open, in
+                                                 progress or recently merged: each worker branch in flight, the
+                                                 feature branch the checkout is on and main, ahead/behind their
+                                                 upstream as last fetched, and the recent merges with their CI), loop
+                                                 files not committed, and the last log lines (n, default 15); nothing
+                                                 is fetched, and no network unless --ci asks gh for the CI of each
+                                                 tip its upstream holds (else "not pushed"); --repo narrows the merge
+                                                 queue and the tips to one repository, and --base replaces the
+                                                 checkout's current branch as the merge queue's base;
                                                  --as <who> ends it with what next --as <who> prints; --slice
                                                  <coordinator> keeps in flight, waiting, the questions, held and next
                                                  ready to that coordinator's slice, and the rulings, the merge queue,
@@ -372,15 +382,6 @@ commands:
                                                  someone other than the jarl; --metrics prints the heading, the goal and the
                                                  metrics alone; --json also carries one row per issue and the metrics (see
                                                  references/commands.md, "Loop metrics")
-  tips                                           read-only: per repository the loop's issues name (open, in progress,
-                                                 recently merged), the tip of each worker branch in flight, the feature
-                                                 branch the checkout is on and main, ahead/behind their upstream as last fetched, and — when
-                                                 gh is on PATH — the CI of a tip its upstream holds (else "not pushed");
-                                                 nothing is fetched or written
-  queue [--repo <name|path>] [--base <b>]        read-only: the branches waiting for the merger — an open or in-progress
-                                                 issue on it holds a live approve and the branch is ahead of its base —
-                                                 in the order they were approved, per repository, cut into batches whose
-                                                 declared files do not overlap; it runs no check and refuses nothing
   changelog <ids> [--repo <name|path>]           print the issues' ## Changelog entries grouped by section (Added,
                                                  Changed, Deprecated, Removed, Fixed, Security), ready to paste under
                                                  [Unreleased]; per repository when they span several; reads only
@@ -495,7 +496,7 @@ scope on it takes --repo to say which one to read. show and status --group repo 
 repository, and the worktree of a lease, is on this machine; nothing resolved is written.
 
 views, one purpose each (read-only; resume, the boot, prints the parts of several of them):
-  resume      everything a session picks the loop up from, read live
+  resume      everything a session picks the loop up from, read live, the merge queue and the tips included
   status      where the loop stands, in counts
   next        what can start now; with --as, what is on one holder and the command that moves it
   list        the issues, filtered
@@ -504,8 +505,6 @@ views, one purpose each (read-only; resume, the boot, prints the parts of severa
   report      what was done, with the loop metrics
   changelog   the changelog entries of issues
   sources     a research report's findings against the issues filed from them
-  tips        where each repository's branches stand against their upstream
-  queue       what waits for the merger, in batches
   branches    every worker branch with its issues and its state
   scope       one worker branch measured against its issues' files
   models      what the record says of each model as worker and reviewer
@@ -552,12 +551,12 @@ export const COMMAND_FLAGS = {
   merged: { sha: 'value', ci: 'value', repo: 'value', ran: 'many', saw: 'many', red: 'value', keep: 'bool', by: 'value' },
   ask: { kind: 'value', target: 'value', issue: 'value', slice: 'value', option: 'many', 'applies-to': 'value', until: 'value', to: 'value', by: 'value' },
   answer: { by: 'value', option: 'value' },
-  resume: { log: 'value', ready: 'value', ci: 'bool', as: 'value', slice: 'value' },
+  resume: { log: 'value', ready: 'value', ci: 'bool', repo: 'value', base: 'value', as: 'value', slice: 'value' },
   handoff: { summary: 'value', next: 'many', log: 'value', ready: 'value', ci: 'bool' },
   log: { by: 'value' }, decide: { settles: 'many', by: 'value', quote: 'value', under: 'value', supersedes: 'value', 'applies-to': 'value', until: 'value', area: 'value', reach: 'value', rule: 'value' }, decisions: { live: 'bool' },
   goal: { set: 'value', by: 'value' },
-  status: { 'stale-hours': 'value', group: 'value', tag: 'value', as: 'value', slice: 'value' }, archive: { by: 'value' }, report: { found: 'bool', metrics: 'bool' }, tips: {}, mode: { by: 'value' },
-  queue: { repo: 'value', base: 'value' }, changelog: { repo: 'value' },
+  status: { 'stale-hours': 'value', group: 'value', tag: 'value', as: 'value', slice: 'value' }, archive: { by: 'value' }, report: { found: 'bool', metrics: 'bool' }, mode: { by: 'value' },
+  changelog: { repo: 'value' },
   close: { force: 'bool', batch: 'bool', by: 'value' }, profile: {}, verify: {},
 };
 
@@ -638,7 +637,7 @@ export const COMMAND_ARGS = {
   merged: ['ids'],
   next: [], review: ['ids', 'verdict', 'text'], round: ['id', 'text'], tick: ['id', 'line'], models: [], scope: ['id?'], branches: [],
   ask: ['text'], answer: ['id', 'text?'], resume: [], handoff: ['action?'], log: ['text'],
-  decide: ['slug', 'text'], decisions: [], goal: [], status: [], archive: ['slug'], report: [], tips: [], queue: [],
+  decide: ['slug', 'text'], decisions: [], goal: [], status: [], archive: ['slug'], report: [],
   changelog: ['ids'], mode: ['mode'], close: [], profile: ['file?'], verify: [],
 };
 // One sentence per command: what it does, the MCP tool's whole description after "WRITES the loop." or "Read-only.".
@@ -666,7 +665,7 @@ export const COMMAND_SUMMARY = {
   branches: 'Every worker branch with its issues, commits beyond the base, worktree state, stale leases and done branches, in the loop\'s repository and every repository its issues name (repo narrows it to one).',
   ask: 'File a question the owner has to answer (stop, stuck, lower, charter or ratify).',
   answer: 'Record the owner\'s answer to a question, the option chosen or the words given, as a ruling and close the question; several ratify items take one answer.',
-  resume: 'The boot: everything a session picks the loop up from, assembled live; as ends it with what is on the one who asks.',
+  resume: 'The boot: everything a session picks the loop up from, assembled live, the merge queue in its batches and the tips of every repository included (repo narrows those to one, ci asks gh for the tips\' CI); as ends it with what is on the one who asks.',
   handoff: 'read: resume, then the handoff file the loop holds, if any; write: writes nothing.',
   log: 'Append one dated note to the loop\'s journal; a line that reads as a move, a verdict or another line of state is refused.',
   decide: 'Append a ruling, optionally superseding one, settling issues or covering an area of code.',
@@ -675,8 +674,6 @@ export const COMMAND_SUMMARY = {
   status: 'The goal, the counts by status, the reviews, stale leases and what awaits ratification; as ends it with what is on the one who asks.',
   archive: 'Put the current loop away under .jarl/archive/ so a new one can open here.',
   report: 'What was done, dropped, deferred and still open, ready for the changelog, with the loop metrics first; set metrics for the metrics alone.',
-  tips: 'Per repository the loop names: the tips of worker, feature and main branches, ahead/behind and CI; fetches nothing.',
-  queue: 'The branches waiting for the merger, in approval order, cut into batches whose files do not overlap.',
   changelog: 'Print the issues\' changelog entries grouped by section, ready to paste under [Unreleased].',
   mode: 'Switch a committed loop to the permanent mode.',
   profile: 'The loop\'s profile (statuses, fields, sections), or a profile file checked against the schema.',
@@ -779,6 +776,8 @@ const SECTION_FLAGS = { title: 'Title', where: 'Where', what: 'What', why: 'Why'
 // The words of a call without its --root, which the call that replaces it takes as it was given.
 const withoutRoot = (args) => args.filter((a, i) => a !== '--root' && args[i - 1] !== '--root' && !a.startsWith('--root='));
 export const REPLACED_COMMANDS = Object.freeze({
+  tips: (args) => { const { flags } = wordsOf(args, ['json', 'help', 'ci']); return `the tips are a section of resume, which asks gh for their CI with --ci: jarl.mjs resume --ci${flags.repo ? ` --repo ${quoted(flags.repo[0])}` : ''}`; },
+  queue: (args) => { const { flags } = wordsOf(args, ['json', 'help', 'ci']); return `the merge queue is a section of resume, its batches included: jarl.mjs resume${flags.repo ? ` --repo ${quoted(flags.repo[0])}` : ''}${flags.base ? ` --base ${quoted(flags.base[0])}` : ''}`; },
   check: (args) => `a branch is measured by scope: jarl.mjs scope ${withoutRoot(args).map(quoted).join(' ') || '[<id>] --branch <b>'}`,
   prio: (args) => { const { pos } = wordsOf(args, []); return `the priority is a field: jarl.mjs field ${pos[0] ?? '<ids>'} Priority ${pos[1] ?? '<1|2|3>'}`; },
   tag: (args) => {
@@ -1014,8 +1013,6 @@ export function dispatch(root, commandName, rest, flags) {
       case 'decisions': out = R.decisions(root, flags); text = renderDecisions(out); break;
       case 'goal': out = flags.set === undefined ? cmdGoal(root) : cmdGoalSet(root, flags.set); text = flags.set === undefined ? out.goal : out.unchanged ? `goal line unchanged: ${out.shown}` : `goal line ${out.replaced ? 'changed' : 'added'}: ${out.shown}${out.replaced ? ` (was ${out.was})` : ''}`; break;
       case 'status': out = R.statusData(root, groupedBy(flags)); text = renderStatus(out, R.loadProfile(root)); ({ out, text } = endWithAsker(root, flags, out, text)); break;
-      case 'tips': out = cmdTips(root); text = renderTips(out); break;
-      case 'queue': out = cmdQueue(root, flags); text = renderQueue(out); break;
       case 'changelog': out = cmdChangelog(root, rest[0], flags); text = out.text || '(no changelog fragment on these issues)'; warn = out.missing.length ? [`note: no changelog fragment: ${out.missing.join(', ')} — record one with: jarl.mjs field <id> Changelog "Added: …"`] : []; break;
       case 'archive': out = cmdArchive(root, rest[0], { caller: 'cli' }); text = `archived → ${out.archived}${out.leftOpen.length ? ` · ${out.leftOpen.length} still open or in progress: ${out.leftOpen.join(', ')}` : ''} · open a new loop with: jarl.mjs init "<goal>"`; break;
       case 'mode': out = cmdMode(root, rest[0]); text = 'now permanent · not tied to a feature branch; close keeps the directory'; break;

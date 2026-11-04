@@ -259,7 +259,7 @@ test('a name that does not resolve is shown with its fix, refused by the command
   for (const args of [['scope', '1', '--branch', 'x'], ['new', 'x', '--tier', 'light', '--repo', 'tool'], ['field', '1', 'Repo', 'tool'], ['merged', '1', '--sha', 'abcd', '--repo', 'tool'], ['branches', '--repo', 'tool']]) {
     assert.match(refuses(w.hub, ...args), new RegExp(escaped(fix)), args.join(' '));
   }
-  for (const view of [['branches'], ['tips'], ['queue'], ['resume'], ['status'], ['next', '--all'], ['report']]) assert.equal(run(w.hub, view).status, 0, view.join(' '));
+  for (const view of [['branches'], ['resume'], ['status'], ['next', '--all'], ['report']]) assert.equal(run(w.hub, view).status, 0, view.join(' '));
 });
 
 test('a loop opened in a linked worktree resolves its siblings beside the main checkout', () => {
@@ -439,7 +439,7 @@ test('no command other than the identity check reads the root commits: a wrong c
   renameSync(w.tool, join(w.parent, 'tool-real'));
   repoAt(join(w.parent, 'tool'), { branch: 'feature', commits: [['other.txt', 'another repository\n']] });
   assert.equal(identity(w.hub, 'tool').state, 'mismatch');
-  for (const args of [['branches', '--repo', 'tool'], ['field', '1', 'Repo', 'tool'], ['new', 'again', '--tier', 'light', '--repo', 'tool'], ['tips'], ['status', '--group', 'repo']]) {
+  for (const args of [['branches', '--repo', 'tool'], ['field', '1', 'Repo', 'tool'], ['new', 'again', '--tier', 'light', '--repo', 'tool'], ['status', '--group', 'repo']]) {
     const r = run(w.hub, args);
     assert.equal(r.status, 0, `${args.join(' ')}: ${r.stderr}`);
     assert.doesNotMatch(r.stdout + r.stderr, /root commit/, args.join(' '));
@@ -691,11 +691,11 @@ for (const [trigger, raise] of Object.entries(TRIGGERS)) {
     assert.equal(L.whereOf(w.hub, issue).repos[0].path, w.api);
     assert.equal(JSON.parse(jarl(w.hub, 'status', '--group', 'repo', '--json')).by.where.api.path, w.api);
     assert.equal(JSON.parse(run(w.hub, ['scope', '1', '--branch', 'jarl/1-x', '--json']).stdout).repo, w.api);
-    const tips = jarl(w.hub, 'tips');
+    const tips = jarl(w.hub, 'resume', '--ci');
     assert.match(tips, new RegExp(escaped(w.api)));
     assert.doesNotMatch(tips, new RegExp(`${escaped(w.sibling)}\\b`));
     assert.match(jarl(w.hub, 'branches'), /^\[api\] jarl\/1-x → 001 /m);
-    assert.equal(run(w.hub, ['queue']).status, 0);
+    assert.equal(run(w.hub, ['resume']).status, 0);
     // The merge's cleanup removes the branch in the nested repository and leaves the sibling's alone.
     jarl(w.hub, 'merged', '1', '--sha', w.sha, '--ci', 'green');
     assert.equal(branchesOf(w.api).includes('jarl/1-x'), false);
@@ -728,11 +728,11 @@ test('every command that acts on a name that does not resolve refuses it with th
     if (emptyDirectoryThere) mkdirSync(w.tool);
     const fix = `put its checkout, or a symlink to it, at ${join(w.parent, 'tool')}`;
     const before = w.log() + w.issue(1);
-    for (const args of [['merged', '1', '--sha', 'abcd1234', '--ci', 'green'], ['merged', '1', '--sha', 'abcd1234', '--repo', 'tool'], ['scope', '1', '--branch', 'jarl/1-x'], ['branches', '--repo', 'tool'], ['queue', '--repo', 'tool']]) {
+    for (const args of [['merged', '1', '--sha', 'abcd1234', '--ci', 'green'], ['merged', '1', '--sha', 'abcd1234', '--repo', 'tool'], ['scope', '1', '--branch', 'jarl/1-x'], ['branches', '--repo', 'tool'], ['resume', '--repo', 'tool']]) {
       assert.match(refuses(w.hub, ...args), new RegExp(escaped(fix)), args.join(' '));
     }
     assert.equal(w.log() + w.issue(1), before, 'a refused call writes nothing');
-    for (const view of [['tips'], ['queue'], ['branches'], ['status', '--group', 'repo'], ['show', '1']]) assert.equal(run(w.hub, view).status, 0, view.join(' '));
+    for (const view of [['branches'], ['status', '--group', 'repo'], ['show', '1']]) assert.equal(run(w.hub, view).status, 0, view.join(' '));
     assert.match(jarl(w.hub, 'status', '--group', 'repo'), /the repository tool is not on this machine/);
     if (emptyDirectoryThere) renameSync(w.tool, `${w.tool}-empty`);
     renameSync(`${w.tool}-moved`, w.tool);

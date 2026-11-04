@@ -13,14 +13,14 @@ import { gitRepo, jarlResult, run, skillLines } from './helpers.mjs';
 
 const NO_GH = { JARL_GH: join(tmpdir(), 'jarl-vocab-no-gh') };
 
-test('tips labels a worker branch as a worker branch and the checkout branch by its role in the skill, the feature branch', () => {
+test('resume\'s tips label a worker branch as a worker branch and the checkout branch by its role in the skill, the feature branch', () => {
   const { dir, g } = gitRepo({ prefix: 'jarl-vocab-tips-', branch: 'feature' });
   g('branch', 'jarl/2-a');
   R.initLoop(dir, 'goal');
   R.newIssue(dir, 'first', { acceptance: 'it works' });
   R.newIssue(dir, 'second', { acceptance: 'it works' });
   R.setStatus(dir, '2', 'in-progress', undefined, { branch: 'jarl/2-a', worker: 'w2' });
-  const o = JSON.parse(run(dir, ['tips', '--json'], { env: NO_GH }).stdout);
+  const o = JSON.parse(run(dir, ['resume', '--ci', '--json'], { env: NO_GH }).stdout).tips;
   assert.deepEqual(o.repos[0].rows.map((r) => [r.role, r.branch]), [['worker', 'jarl/2-a'], ['feature', 'feature']]);
 });
 
@@ -39,7 +39,7 @@ function transcript(flag) {
   jarlResult(dir, ['new', 'first']);
   jarlResult(dir, ['new', 'second']);
   const set = jarlResult(dir, ['set', '2', 'running', '--branch', 'jarl/2-a', '--worker', 'w2']).stdout;
-  const views = [['status'], ['next', '--all'], ['list', '--all'], ['queue'], ['show', '2'], ['resume']];
+  const views = [['status'], ['next', '--all'], ['list', '--all'], ['show', '2'], ['resume']];
   const out = views.map((args) => jarlResult(dir, args).stdout);
   // The directory's path and its name, the times, the issues' keys and the commit ids of the two repositories are taken
   // out: they differ by run.

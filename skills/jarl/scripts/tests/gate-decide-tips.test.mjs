@@ -226,7 +226,7 @@ test('an issue may name several repositories: files per repository, next keeps t
 
 // ---- 282: tips -------------------------------------------------------------------------------------
 
-test('tips: branch tips against their upstream, CI from gh for pushed commits, nothing about CI without gh; it writes nothing', () => {
+test('resume\'s tips: branch tips against their upstream, CI from gh for pushed commits, nothing about CI without gh; it writes nothing', () => {
   const { parent, hub, tool } = reposBeside('tool');
   const bare = join(parent, 'tool.git');
   sh(parent, `git init -q --bare ${bare}`);
@@ -237,9 +237,9 @@ test('tips: branch tips against their upstream, CI from gh for pushed commits, n
   sh(tool, 'git branch jarl/1-w');
   const log = readFileSync(join(hub, '.jarl', 'log.md'), 'utf8');
   const gh = ghStub(parent, [{ conclusion: 'failure', status: 'completed', databaseId: 42, workflowName: 'CI' }, { conclusion: 'success', status: 'completed', databaseId: 41, workflowName: 'lint' }]);
-  const r = run(hub, ['tips', '--json'], { JARL_GH: gh });
+  const r = run(hub, ['resume', '--ci', '--json'], { JARL_GH: gh });
   assert.equal(r.status, 0, r.stderr);
-  const o = JSON.parse(r.stdout);
+  const o = JSON.parse(r.stdout).tips;
   assert.equal(o.gh, true);
   const t = o.repos.find((x) => x.repo === 'tool');
   const row = (b) => t.rows.find((x) => x.branch === b);
@@ -251,16 +251,16 @@ test('tips: branch tips against their upstream, CI from gh for pushed commits, n
   const mainSha = sh(tool, 'git rev-parse main');
   assert.deepEqual([row('main').role, row('main').pushed, row('main').ci], ['main', true, { state: 'red', runs: 2, run: 42, workflow: 'CI', conclusion: 'failure' }]);
   assert.equal(readFileSync(join(parent, 'gh-calls'), 'utf8').trim(), `run list --commit ${mainSha} --json conclusion,status,databaseId,workflowName --limit 20`);
-  const text = run(hub, ['tips'], { JARL_GH: gh }).stdout;
+  const text = run(hub, ['resume', '--ci'], { JARL_GH: gh }).stdout;
   assert.match(text, /\[tool\] .*\n {2}worker {3}jarl\/1-w [0-9a-f]{12} {2}= feature {2}not pushed {2}→ 1\n {2}feature {2}feature [0-9a-f]{12} {2}\+1\/-0 vs origin\/feature {2}not pushed\n {2}main {5}main [0-9a-f]{12} {2}= origin\/main {2}ci red \(run 42 CI\)/);
   // Without gh: the same view, with no CI and no error.
-  const none = JSON.parse(run(hub, ['tips', '--json'], { JARL_GH: join(parent, 'no-such-gh') }).stdout);
+  const none = JSON.parse(run(hub, ['resume', '--ci', '--json'], { JARL_GH: join(parent, 'no-such-gh') }).stdout).tips;
   assert.equal(none.gh, false);
   assert.equal(none.repos.find((x) => x.repo === 'tool').rows.find((x) => x.branch === 'main').ci, undefined);
-  assert.equal(readFileSync(join(hub, '.jarl', 'log.md'), 'utf8'), log, 'tips writes nothing');
+  assert.equal(readFileSync(join(hub, '.jarl', 'log.md'), 'utf8'), log, 'resume writes nothing');
 });
 
-test('tips: a worker branch of a multi-repository issue is shown where it is, GONE only when no named repository has it; a detached HEAD is no release branch', () => {
+test('resume\'s tips: a worker branch of a multi-repository issue is shown where it is, GONE only when no named repository has it; a detached HEAD is no release branch', () => {
   const { hub, tool, lib } = reposBeside('tool', 'lib');
   jarl(hub, 'init', 'goal');
   jarl(hub, 'new', 'cross', '--repo', '../tool,../lib', '--files', 'tool/src/a.mjs,lib/src/a.mjs');
@@ -268,18 +268,18 @@ test('tips: a worker branch of a multi-repository issue is shown where it is, GO
   sh(tool, 'git branch jarl/1-cross');
   sh(lib, 'git checkout -q --detach');
   const env = { JARL_GH: join(hub, 'no-gh') };
-  const o = JSON.parse(run(hub, ['tips', '--json'], env).stdout);
+  const o = JSON.parse(run(hub, ['resume', '--ci', '--json'], env).stdout).tips;
   const t = o.repos.find((x) => x.repo === 'tool');
   const l = o.repos.find((x) => x.repo === 'lib');
   assert.deepEqual(t.rows.find((x) => x.branch === 'jarl/1-cross').issues, ['1']);
   assert.equal(l.rows.some((x) => x.branch === 'jarl/1-cross'), false, 'not GONE in lib: tool has it');
   assert.equal(l.rows.some((x) => x.role === 'feature'), false, 'a detached HEAD is no feature branch');
   sh(tool, 'git branch -D jarl/1-cross');
-  const gone = JSON.parse(run(hub, ['tips', '--json'], env).stdout);
+  const gone = JSON.parse(run(hub, ['resume', '--ci', '--json'], env).stdout).tips;
   assert.equal(gone.repos.find((x) => x.repo === 'tool').rows.find((x) => x.branch === 'jarl/1-cross').missing, true);
 });
 
-test('tips and report key a repository by its root: a loop in a subdirectory and Repo ../.. are one repository', () => {
+test('resume\'s tips and report key a repository by its root: a loop in a subdirectory and Repo ../.. are one repository', () => {
   const { hub } = reposBeside();
   const root = join(hub, 'plans', 'release');
   mkdirSync(root, { recursive: true });
@@ -292,7 +292,7 @@ test('tips and report key a repository by its root: a loop in a subdirectory and
   const rep = JSON.parse(jarl(root, 'report', '--json'));
   assert.deepEqual(rep.byRepo, { hub: ['1', '2'] });
   assert.doesNotMatch(rep.text, /### /, 'one repository: no per-repository sections');
-  const o = JSON.parse(run(root, ['tips', '--json'], { JARL_GH: join(hub, 'no-gh') }).stdout);
+  const o = JSON.parse(run(root, ['resume', '--ci', '--json'], { JARL_GH: join(hub, 'no-gh') }).stdout).tips;
   assert.deepEqual(o.repos.map((r) => r.repo), ['hub']);
 });
 

@@ -94,7 +94,7 @@ export function cmdResume(root, flags = {}) {
     questions: asks.filter((a) => a.kind !== 'ratify' && a.kind !== 'escalation' && a.kind !== 'rule'), escalations: asks.filter((a) => a.kind === 'escalation'), proposed: asks.filter((a) => a.kind === 'rule'), ratify: asks.filter((a) => a.kind === 'ratify'),
     held, kept: keptRows, next: ready.slice(0, readyN).map((r) => ({ id: r.id, title: r.title, priority: r.priority, ...(r.noAcceptance ? { noAcceptance: true } : {}), ...(r.model ? { model: r.model } : {}), ...declared(byId.get(r.id)) })), readyTotal: scheduled ? null : ready.length,
     ...(scheduled ? { scheduler: profile.scheduler } : {}),
-    queue: cmdQueue(root), merged, tips: cmdTips(root, { ci: flags.ci === true }),
+    queue: cmdQueue(root, { repo: flags.repo, base: flags.base }), merged, tips: cmdTips(root, { ci: flags.ci === true, repo: flags.repo }),
     uncommitted: uncommittedLoopFiles(root),
     ...(status.disagreements ? { disagreements: status.disagreements } : {}),
     ...(status.headerRead ? { headerRead: status.headerRead } : {}),
@@ -117,8 +117,8 @@ export function renderResume(o, profile = DEFAULT_PROFILE, note = null, asked = 
     ...(note ? [note] : []),
     '',
   ];
-  // The tips and the merge queue as their own views print them; the merges still waiting on CI have a section of their own here.
-  const tips = o.tips.repos.length ? renderTips({ repos: o.tips.repos.map((r) => ({ ...r, merged: [] })) }).split('\n') : [];
+  // The tips, the recent merges of each repository with their CI among them, and the merge queue in its batches.
+  const tips = o.tips.repos.length ? renderTips({ repos: o.tips.repos }).split('\n') : [];
   const waiting = o.queue.repos.filter((r) => r.rows.length);
   const queue = waiting.length ? renderQueue({ repos: waiting }).split('\n') : [];
   const files = o.uncommitted || [];

@@ -163,7 +163,7 @@ test('commands run in one process read git afresh each time: a branch made betwe
   assert.deepEqual(lease(), ['branch gone: jarl/1-one']);
   sh(tool, 'git branch jarl/1-one');
   assert.deepEqual(lease(), [], 'the branch made after the first call is seen by the second');
-  const tips = () => dispatch(hub, 'tips', [], {}).out.repos.find((r) => r.repo === 'tool').rows.map((x) => x.branch);
+  const tips = () => dispatch(hub, 'resume', [], { ci: true }).out.tips.repos.find((r) => r.repo === 'tool').rows.map((x) => x.branch);
   assert.deepEqual(tips(), ['jarl/1-one', 'release', 'main']);
   // A repository that was not one yet, then is: the refusal is not remembered.
   const later = join(hub, '..', 'later');

@@ -217,7 +217,7 @@ test('a resource is held by an issue in progress; next never offers two issues t
   assert.deepEqual(held.map((r) => [r.id, r.heldBy]), [['2', ['1']], ['4', ['1']]]);
 });
 
-test('an issue that declares a resource passes check on its real files; check, queue and the file rules never read it', () => {
+test('an issue that declares a resource passes check on its real files; check, the merge queue and the file rules never read it', () => {
   const dir = mkdtempSync(join(tmpdir(), 'jarl-res-git-'));
   const git = (...a) => spawnSync('git', a, { cwd: dir, encoding: 'utf8', timeout: SPAWN_TIMEOUT });
   git('init', '-q', '-b', 'main'); git('config', 'user.email', 't@t'); git('config', 'user.name', 't'); git('config', 'core.excludesFile', '/dev/null');
@@ -235,7 +235,7 @@ test('an issue that declares a resource passes check on its real files; check, q
   assert.equal(scope.ok, true, 'a resource is not a file: the real change is inside the issue');
   assert.match(scope.note, /1 file\(s\), all inside/);
   assert.deepEqual(c.changed, ['a.mjs']);
-  assert.deepEqual(JSON.parse(jarl(dir, 'queue', '--json')).repos.flatMap((r) => r.rows), [], 'queue reads no resource');
+  assert.deepEqual(JSON.parse(jarl(dir, 'resume', '--json')).queue.repos.flatMap((r) => r.rows), [], 'queue reads no resource');
 });
 
 test('field Resources refuses a bad name; --clear empties it; the frozen reader ignores the field', () => {

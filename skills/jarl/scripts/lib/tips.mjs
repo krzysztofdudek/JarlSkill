@@ -5,7 +5,7 @@ import { git, runGh } from './git.mjs';
 import { jarlDir } from './where.mjs';
 import { parseStamp } from './journal.mjs';
 import { mergedOf } from './issues.mjs';
-import { HOMES, IS_REPO, REFS, REPO_OF, RESOLVED, TOP_OF, isGitRepo, issueRepoPaths, issueRepos, refsIn, reposNamed, topOf } from './repositories.mjs';
+import { HOMES, IS_REPO, REFS, REPO_OF, RESOLVED, TOP_OF, isGitRepo, issueRepoPaths, issueRepos, refsIn, repoFromInput, reposNamed, topOf } from './repositories.mjs';
 import { readLoop } from './loop.mjs';
 import { lastMerge } from './metrics.mjs';
 
@@ -49,13 +49,13 @@ export function ciOf(repo, sha) {
   return { state, runs: runs.length, ...(pick ? { run: pick.databaseId ?? null, workflow: pick.workflowName ?? null, conclusion: pick.conclusion || pick.status || null } : {}) };
 }
 
-// tips — read-only: for the loop's own repository and every repository an open, in-progress or recently merged
+// The tips resume prints (--ci asks gh, --repo narrows them to one repository) — read-only: for the loop's own repository and every repository an open, in-progress or recently merged
 // issue names, the tip of each branch that matters there — the feature branches its in-progress issues record,
 // the branch its checkout is on (the release branch), and main — with ahead/behind against its upstream as last
 // fetched (nothing is fetched), and, when gh is on PATH, the CI of that exact commit. It never gates anything.
 // A row's role says what the branch is in the skill: worker (a worker branch of an in-progress issue), feature (the
 // branch the checkout is on, the one the loop's work merges into) or main.
-export function cmdTips(root, { ci: askCi = true } = {}) {
+export function cmdTips(root, { ci: askCi = true, repo: only } = {}) {
   const loop = readLoop(jarlDir(root));
   const { issues, profile } = loop;
   const now = Date.now();
@@ -73,8 +73,12 @@ export function cmdTips(root, { ci: askCi = true } = {}) {
     const m = mergedOf(i);
     for (const r of issueRepoPaths(root, i, [...reposNamed(i), ...(m && m.repo ? [m.repo] : [])])) if (!repos.has(topOf(r))) repos.set(topOf(r), r);
   }
+  // repo narrows the tips to one repository, as the merge queue beside them is narrowed.
+  const onlyTop = only === undefined ? null : topOf(repoFromInput(root, only).main);
+  if (onlyTop !== null && !repos.has(onlyTop)) repos.set(onlyTop, repoFromInput(root, only).main);
   const out = [];
   for (const [real, repo] of repos) {
+    if (onlyTop !== null && real !== onlyTop) continue;
     if (!isGitRepo(repo)) continue;
     const current = git(repo, ['rev-parse', '--abbrev-ref', 'HEAD']);
     const refs = refsIn(repo);

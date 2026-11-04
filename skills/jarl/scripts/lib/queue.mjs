@@ -12,7 +12,8 @@ import { schedulerNote } from './evidence.mjs';
 
 // ---- the merge queue: derived, never stored --------------------------------------------------------
 
-// queue [--repo <path>] [--base <b>] — read-only: the branches waiting for the merger. A branch is in the queue when
+// The merge queue resume prints (--repo <path> narrows it, --base <b> sets its base) — read-only: the branches waiting
+// for the merger. A branch is in the queue when
 // an unsettled issue on it (open or in progress) holds a live approve — one no round, restart or reopen has spent,
 // by a fresh reviewer (the done gate's reading for an issue that carries code) — and the branch has commits its base does
 // not, so it is not merged yet. Rows are ordered by approval (the latest live approve on the branch, then the log's

@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync, mkdtempSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { jarl, refuses, loop as makeLoop, gitRepo } from './helpers.mjs';
 import * as R from '../record.mjs';
@@ -158,7 +158,7 @@ const FLAG_MEANINGS = {
   committed: ['the loop committed with the work', ['init']], permanent: ['the loop kept as a standing record', ['init']], profile: ['the profile file a loop opens with', ['init']],
   key: ['the key of one issue file', ['renumber']],
   prio: ['the priority of an issue', ['new', 'import', 'list']], tier: ['the tier of an issue', ['new', 'import']], tags: ['the tags of an issue', ['new', 'import']],
-  files: ['the files an issue touches', ['new']], repo: ['a repository, by its name or its path', ['new', 'import', 'scope', 'branches', 'merged', 'queue', 'changelog']],
+  files: ['the files an issue touches', ['new']], repo: ['a repository, by its name or its path', ['new', 'import', 'scope', 'branches', 'merged', 'resume', 'changelog']],
   'found-by': ['who found an issue', ['new', 'import']], where: ['the Where of an issue', ['new']], what: ['the What of an issue', ['new']], why: ['the Why of an issue', ['new']],
   acceptance: ['an acceptance line of an issue', ['new']], source: ['the research a finding comes from', ['new', 'import', 'sources']], after: ['the issues an issue waits on', ['new']],
   changelog: ['a changelog entry of an issue', ['new']], template: ['the template an issue starts from', ['new']], field: ['a profile field and its value, Name=value', ['new', 'import']],
@@ -172,7 +172,7 @@ const FLAG_MEANINGS = {
   worktree: ['the worktree a lease is checked against', ['set']], handover: ['a lease handed to a new worker', ['set']], header: ['the header rewritten from the log', ['set']],
   limit: ['how many ready issues', ['next']], as: ['the holder whose list is asked for', ['next', 'resume', 'status']], slice: ['a coordinator\'s slice', ['next', 'ask', 'resume', 'status']],
   relayed: ['a verdict recorded in the reviewer\'s name', ['review']], findings: ['how many findings a red round left', ['round']], with: ['another loop to read', ['models']], archives: ['this loop\'s archives read too', ['models']],
-  base: ['the base branch a branch is held against', ['scope', 'branches', 'queue']], 'stale-hours': ['how long a lease may idle', ['branches', 'status']],
+  base: ['the base branch a branch is held against', ['scope', 'branches', 'resume']], 'stale-hours': ['how long a lease may idle', ['branches', 'status']],
   sha: ['the merge commit', ['merged']], ci: ['the CI state of a commit: merged records it, resume asks gh for it', ['merged', 'resume', 'handoff']], red: ['the issue a red landing is tracked by', ['merged']], keep: ['the worktree and branch kept', ['merged']],
   target: ['what a lower question weakens', ['ask']], issue: ['the issue a question is about', ['ask']], option: ['an option of a question', ['ask', 'answer']],
   'applies-to': ['whom a rule applies to', ['ask', 'decide']], until: ['when a rule ends', ['ask', 'decide']], to: ['who a rule is proposed to', ['ask']],
@@ -311,4 +311,23 @@ test('the help gives each read-only view one purpose, on one line of its own', (
   const named = section.map((l) => /^ {2}([a-z]+) {2,}\S/.exec(l)?.[1]);
   const views = Object.keys(COMMAND_FLAGS).filter((c) => !MUTATING.has(c) && !INTERNAL_COMMANDS.includes(c));
   assert.deepEqual([...named].sort(), [...views].sort(), 'one line for each read-only view, and no other');
+});
+
+test('the tips and the merge queue are sections of resume: --repo narrows both, --base sets the queue\'s base, --ci asks for the tips\' CI; tips and queue are refused with the resume call', () => {
+  const { dir } = gitRepo({ prefix: 'jarl-surface-fold-' });
+  const other = gitRepo({ prefix: 'jarl-surface-fold-other-' });
+  jarl(dir, 'init', 'goal');
+  jarl(dir, 'new', 'elsewhere', '--tier', 'light', '--repo', other.dir);
+  const all = JSON.parse(jarl(dir, 'resume', '--json'));
+  assert.equal(all.tips.repos.length, 2, 'the tips of the loop\'s repository and of the one an issue names');
+  assert.equal(all.queue.repos.length, 2);
+  assert.equal(all.tips.ci, false, 'no network unless --ci');
+  const narrowed = JSON.parse(jarl(dir, 'resume', '--repo', other.dir, '--base', 'main', '--ci', '--json'));
+  const name = basename(other.dir);
+  assert.deepEqual(narrowed.tips.repos.map((r) => r.repo), [name]);
+  assert.deepEqual(narrowed.queue.repos.map((r) => [r.repo, r.base]), [[name, 'main']]);
+  assert.equal(narrowed.tips.ci, true);
+  assert.equal(refuses(dir, 'tips').trim(), 'tips is not a command; the tips are a section of resume, which asks gh for their CI with --ci: jarl.mjs resume --ci');
+  assert.equal(refuses(dir, 'queue', '--repo', 'tool', '--base', 'release').trim(), 'queue is not a command; the merge queue is a section of resume, its batches included: jarl.mjs resume --repo tool --base release');
+  assert.equal(mcp.buildTools().some((t) => ['jarl_tips', 'jarl_queue'].includes(t.name)), false);
 });

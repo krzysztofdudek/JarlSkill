@@ -296,7 +296,7 @@ function sameWork(root) {
   jarl(root, 'review', '3', 'approve', FINDINGS, '--by', 'jarl');
   jarl(root, 'set', '3', 'done', 'done');
   const views = {};
-  for (const v of [['next'], ['list', '--all'], ['status'], ['status', '--group', 'kind'], ['report'], ['resume', '--log', '0'], ['queue'], ['next', '--json']]) {
+  for (const v of [['next'], ['list', '--all'], ['status'], ['status', '--group', 'kind'], ['report'], ['resume', '--log', '0'], ['next', '--json']]) {
     views[v.join(' ')] = jarl(root, ...v).replace(/ · profile same/g, '').replace(new RegExp(root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '<root>').replace(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}/g, '<t>');
   }
   views.close = refuses(root, 'close');
@@ -502,7 +502,7 @@ test('branches: a branch is DONE → delete by flags — closed or given up (ter
   assert.equal(rows.find((r) => r.branch === 'feat/y').done, null, 'an issue parked on it keeps the branch');
 });
 
-test('queue takes only work in play: a proposed or blocked issue with a fresh approve on a branch is never queued', () => {
+test('the merge queue of resume takes only work in play: a proposed or blocked issue with a fresh approve on a branch is never queued', () => {
   const { dir, g } = gitRepo();
   jarl(dir, 'init', 'g', '--profile', profileFile(HOUSE));
   jarl(dir, 'new', 'a'); jarl(dir, 'new', 'b');
@@ -513,7 +513,7 @@ test('queue takes only work in play: a proposed or blocked issue with a fresh ap
   g('checkout', '-q', 'main');
   jarl(dir, 'review', '1,2', 'approve', FINDINGS, '--by', 'r');
   jarl(dir, 'set', '2', 'blocked', 'owner');
-  const rows = JSON.parse(jarl(dir, 'queue', '--json')).repos[0].rows;
+  const rows = JSON.parse(jarl(dir, 'resume', '--json')).queue.repos[0].rows;
   assert.deepEqual(rows.map((r) => r.branch), ['feat/a']);
 });
 

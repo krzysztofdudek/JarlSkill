@@ -37,12 +37,10 @@ The library and the command line write the same files and log lines for every op
 | `import` | files issues from a Markdown source | no function; newIssue files one issue | filing from a source is the composer's choice |
 | `next` | lists the open issues that can start now, and with `--as` what is on one holder (which `status --as` and `resume --as` end with) | no function; statusData carries the counts, and neither statusData nor resumeData takes `as` | ordering work is a composer's planner; Jarl offers what can run now, and says who moves next |
 | `tick` | records the owner's tick of an acceptance line only he ticks | no function | an owner line needs record format 3, which a composer's loop keeps off; the owner ticks at the command line or through the tools |
-| `queue` | lists the merge queue | no function | a listing for a person; a composer decides what lands |
 | `report` | writes the loop's text report with its metrics | no function | a summary for a person; a composer reports from its own record |
 | `scope` | reads a worker branch's diff against the files its issues declare | no function | it reads git; a composer's gate decides what lands |
 | A command or a flag the surface does not have | refuses it with one line that ends with the call doing what was asked | no command names, only functions called by name | a person or an agent guesses a form; a composer calls a function by its own name |
 | `branches` | lists each branch with the issues it carries and its state | no function | it reads git in the repositories the issues name; a view for a person |
-| `tips` | lists the tip of each worker branch in flight | no function | it reads git in every repository the issues name; a view for a person |
 | `verify` | checks the record with its own readers in strict mode | no function; the readers are the library's | a consistency read for a person; a composer uses the readers |
 | `models` | shows, per model, what the record holds as worker and as reviewer | no function | a reading of the record for choosing models; a view for a person |
 | `goal` | reads or sets the goal line | no function; initLoop writes the goal | the goal is written at init; a change of it is a decision of the person who runs the loop |
@@ -55,9 +53,9 @@ The library and the command line write the same files and log lines for every op
 
 ## What Jarl will not grow
 
-Jarl records, derives and displays; it never blocks code from landing. Every scale request is measured against that line. On Jarl's side: filing and importing issues, refusals at the level of the record (a `done` without evidence or a fresh approve, a self-approve, a cycle of After), review provenance, read-only views (`resume`, `status`, `report`, `tips`, `queue`, `branches`), ordering by After, branch packages, leases that are shown and never expire, merges and CI recorded as fields, changelog fragments, templates, and a profile that says, as data, which statuses and fields a loop's issues carry. Jarl itself ships none of the following, and a loop without a profile has none of them:
+Jarl records, derives and displays; it never blocks code from landing. Every scale request is measured against that line. On Jarl's side: filing and importing issues, refusals at the level of the record (a `done` without evidence or a fresh approve, a self-approve, a cycle of After), review provenance, read-only views (`resume`, with the merge queue and the tips, `status`, `report`, `branches`), ordering by After, branch packages, leases that are shown and never expire, merges and CI recorded as fields, changelog fragments, templates, and a profile that says, as data, which statuses and fields a loop's issues carry. Jarl itself ships none of the following, and a loop without a profile has none of them:
 
-1. **A merge queue that runs the repository's check and refuses the merge.** `queue` lists; it never lands anything.
+1. **A merge queue that runs the repository's check and refuses the merge.** The merge queue of `resume` lists; it never lands anything.
 2. **A `done` that waits for green CI.** CI is recorded and noted (`set done` says when it is not green), never required.
 3. **Leases that expire or are taken over automatically, or territory locks across loops.** A stale lease is shown for the jarl to act on; nothing moves by itself.
 4. **A release mode that refuses to tag or release.** A release checklist is issues filed from a template; the procedure belongs to the skill that runs releases, and the tags to each repository's own release workflow.

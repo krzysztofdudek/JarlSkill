@@ -16,8 +16,7 @@ const COMMANDS = {
   'resume.txt': ['resume'], 'next.txt': ['next', '--all'], 'next.json': ['next', '--all', '--json'],
   'report.txt': ['report'], 'report.json': ['report', '--json'],
   'models.txt': ['models'], 'models.json': ['models', '--json'],
-  'list.txt': ['list', '--all'], 'tips.txt': ['tips'], 'tips.json': ['tips', '--json'],
-  'queue.txt': ['queue'], 'branches.txt': ['branches'],
+  'list.txt': ['list', '--all'], 'resume.json': ['resume', '--json'], 'branches.txt': ['branches'],
 };
 const skip = !(LIVE && GOLDEN && existsSync(join(LIVE, '.jarl'))) && 'JARL_LIVE_LOOP (a copy of a real loop) and JARL_LIVE_GOLDEN (its golden outputs) are unset, or name nothing';
 

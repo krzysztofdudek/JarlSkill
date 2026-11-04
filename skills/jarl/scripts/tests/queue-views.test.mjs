@@ -29,7 +29,7 @@ function branchWith(dir, branch, file) {
 
 // ---- 284: the queue ------------------------------------------------------------------------------
 
-test('queue: approved, ahead of the base and not merged — in the order of approval; unapproved and merged branches stay out', () => {
+test('the merge queue of resume: approved, ahead of the base and not merged — in the order of approval; unapproved and merged branches stay out', () => {
   const root = repo();
   jarl(root, 'new', 'first', '--files', 'src/a.mjs');
   jarl(root, 'new', 'second', '--files', 'src/b.mjs');
@@ -44,7 +44,7 @@ test('queue: approved, ahead of the base and not merged — in the order of appr
   // 2 approved before 1: the queue follows the approvals, not the numbers.
   jarl(root, 'review', '2', 'approve', '--by', 'rev', FINDINGS);
   jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
-  const q = JSON.parse(jarl(root, 'queue', '--json'));
+  const q = JSON.parse(jarl(root, 'resume', '--json')).queue;
   assert.equal(q.repos.length, 1);
   const rows = q.repos[0].rows;
   assert.deepEqual(rows.map((r) => r.branch), ['jarl/2-second', 'jarl/1-first']);
@@ -53,15 +53,15 @@ test('queue: approved, ahead of the base and not merged — in the order of appr
   assert.equal(q.repos[0].base, 'feature');
   // Files do not overlap, so both go in one batch.
   assert.deepEqual(rows.map((r) => r.batch), [1, 1]);
-  const text = jarl(root, 'queue');
+  const text = /## Merge queue\n([\s\S]*?)(?:\n\n|$)/.exec(jarl(root, 'resume'))[1];
   assert.match(text, /1\. jarl\/2-second → 2/);
   assert.doesNotMatch(text, /\b4\b/);
   // Once merged into the base, a branch leaves the queue by itself.
   sh(root, 'git merge -q --no-ff jarl/2-second -m "merge 2"');
-  assert.deepEqual(JSON.parse(jarl(root, 'queue', '--json')).repos[0].rows.map((r) => r.branch), ['jarl/1-first']);
+  assert.deepEqual(JSON.parse(jarl(root, 'resume', '--json')).queue.repos[0].rows.map((r) => r.branch), ['jarl/1-first']);
 });
 
-test('queue: a round spends the approve, overlapping files start a new batch, a package lists who still waits for review', () => {
+test('the merge queue of resume: a round spends the approve, overlapping files start a new batch, a package lists who still waits for review', () => {
   const root = repo();
   jarl(root, 'new', 'a', '--files', 'src/a.mjs');
   jarl(root, 'new', 'b');
@@ -79,7 +79,7 @@ test('queue: a round spends the approve, overlapping files start a new batch, a 
   jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
   jarl(root, 'review', '2', 'approve', '--by', 'rev', FINDINGS);
   jarl(root, 'review', '3', 'approve', '--by', 'rev', FINDINGS);
-  let rows = JSON.parse(jarl(root, 'queue', '--json')).repos[0].rows;
+  let rows = JSON.parse(jarl(root, 'resume', '--json')).queue.repos[0].rows;
   const byBranch = Object.fromEntries(rows.map((r) => [r.branch, r]));
   assert.equal(byBranch['jarl/1-a'].batch, 1);
   assert.equal(byBranch['jarl/2-b'].batch, 2, 'the same file as 1 never rides in its batch');
@@ -88,11 +88,11 @@ test('queue: a round spends the approve, overlapping files start a new batch, a 
   assert.equal(byBranch['jarl/3-pkg'].ready, false);
   assert.equal(byBranch['jarl/1-a'].ready, true);
   jarl(root, 'round', '1', 'check red');
-  rows = JSON.parse(jarl(root, 'queue', '--json')).repos[0].rows;
+  rows = JSON.parse(jarl(root, 'resume', '--json')).queue.repos[0].rows;
   assert.ok(!rows.some((r) => r.branch === 'jarl/1-a'), 'a round spends the approve: the branch leaves the queue');
 });
 
-test('queue: an issue in another repository is queued there; --repo reads one repository; nothing is written', () => {
+test('the merge queue of resume: an issue in another repository is queued there; --repo reads one repository; nothing is written', () => {
   const parent = mkdtempSync(join(tmpdir(), 'jarl-queue-multi-'));
   const hub = join(parent, 'hub'); const tool = join(parent, 'tool');
   for (const d of [hub, tool]) { mkdirSync(d); sh(d, 'git init -q -b feature && git config user.email t@t && git config user.name t && git config core.excludesFile /dev/null && mkdir src && echo 1 > src/a.mjs && git add -A && git commit -qm base'); }
@@ -102,10 +102,10 @@ test('queue: an issue in another repository is queued there; --repo reads one re
   branchWith(tool, 'jarl/1-t', 'src/a.mjs');
   jarl(hub, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
   const before = readFileSync(join(hub, '.jarl', 'log.md'), 'utf8');
-  const q = JSON.parse(jarl(hub, 'queue', '--json'));
+  const q = JSON.parse(jarl(hub, 'resume', '--json')).queue;
   const toolRows = q.repos.find((r) => r.repo === 'tool').rows;
   assert.deepEqual(toolRows.map((r) => r.branch), ['jarl/1-t']);
-  assert.equal(JSON.parse(jarl(hub, 'queue', '--repo', '../tool', '--json')).repos.length, 1);
+  assert.equal(JSON.parse(jarl(hub, 'resume', '--repo', '../tool', '--json')).queue.repos.length, 1);
   assert.equal(readFileSync(join(hub, '.jarl', 'log.md'), 'utf8'), before, 'queue writes nothing');
 });
 
