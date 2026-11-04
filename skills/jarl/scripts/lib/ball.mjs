@@ -2,13 +2,14 @@
 // stored, and next --as <holder> lists what is on that one, each line with the command that moves it.
 
 import { PROMISE_KIND, WAIT_KIND, fieldText, need } from './base.mjs';
-import { jarlDir } from './where.mjs';
 import { cmpId, idKey, idsCited } from './ids.mjs';
 import { mergedOf } from './issues.mjs';
 import { carriesCode, gateOf, readLoop, sameSlice, sliceOf } from './loop.mjs';
 import { reasonWord, shellWord, waitingOn } from './commands.mjs';
 import { inFlightMark, nextRows, schedulerNote } from './evidence.mjs';
 import { ownerLineStates } from './owner-lines.mjs';
+import { ruleLines, rulesFor } from './rules.mjs';
+import { jarlDir, today } from './where.mjs';
 
 // The holders: the owner, the jarl, a named coordinator or a named outside person. A ready issue, a lease, a proof with no
 // verdict and a changes verdict are held by the coordinator whose slice the issue is in, and by the jarl for an issue in
@@ -244,6 +245,13 @@ function questionRows(ctx) {
     // An escalation goes up from a coordinator and is the jarl's: it names its slice or its issue.
     if (a.kind === 'escalation') return { what: 'escalation', ask: a.id, kind: a.kind, title: a.question, holder: JARL_HOLDER, ...(a.slice ? { slice: a.slice } : {}),
       says: `escalation${a.slice ? ` from slice:${a.slice}` : ''}${a.issue ? ` on issue ${a.issue}` : ''}`, command: `jarl.mjs answer ${ref} "<answer>" --by jarl` };
+    // A proposed rule is on the one it was proposed to, and so is a rule of the loop offered for promotion at its close.
+    if (a.kind === 'rule') {
+      const holder = a.to === OWNER_HOLDER ? OWNER_HOLDER : JARL_HOLDER;
+      return a.ruling
+        ? { what: 'promotion', ask: a.id, title: a.question, holder, ruling: a.ruling, says: `rule ${a.ruling} offered for promotion`, command: `jarl.mjs answer ${ref} --option ${(a.options || []).map((o) => o.label).join('|')} --by ${holder}` }
+        : { what: 'rule', ask: a.id, title: a.question, holder, says: `rule proposed${a.appliesTo ? ` for ${a.appliesTo}` : ''}`, command: `jarl.mjs answer ${ref} "yes" --by ${holder} (or "reject")` };
+    }
     if (a.kind === 'ratify') return { what: 'ratify', ask: a.id, title: a.question, holder: OWNER_HOLDER, says: `to ratify${a.issue ? ` (issue ${a.issue})` : ''}`, command: `jarl.mjs answer ${ref} "yes" --by owner (or "reject")` };
     // A question that asks for a fresh review holds the proofs it names, as far as they still await one.
     const keys = new Set(reviewAskKeys(ctx.loop, a.question));
@@ -383,10 +391,32 @@ function waitingRows(loop, rows, next, onOwner) {
 // coordinator holds the rows of its slice; while no issue carries its slice tag its rows are the jarl's, and the answer
 // says so. Under an external scheduler the rows of issues in play are the composer's, and the answer names its command
 // for them.
+// The moment of work each kind of row stands at: what a rule with a moment selector is read against.
+const MOMENT_OF = Object.freeze({ ready: 'start', worker: 'start', review: 'review', changes: 'round', merge: 'merge', ci: 'merge', close: 'done', 'sign-off': 'done' });
+// Who asks, as a rule reads a reader: its roles, its slice, the moments of work its list stands at and the issues it works
+// on. The jarl works on the issues in play in no slice and holds the filing and the close, and in a loop with no slice
+// it is the coordinator as well; a coordinator on the issues in
+// play of its slice, and files; a worker that holds a lease on its leased issues, at their start and, once a round sent
+// one back, at its round; anyone else on the issues of its own list.
+export function readerOf(loop, holder, mine) {
+  const { profile } = loop;
+  const inPlay = loop.issues.filter((i) => profile.active(i.status));
+  const rowIds = new Set(mine.flatMap((r) => (r.ids ? r.ids : r.id !== undefined ? [r.id] : [])));
+  const moments = new Set(mine.map((r) => MOMENT_OF[r.what]).filter(Boolean));
+  const issues = (pick) => loop.issues.filter((i) => rowIds.has(i.id) || pick(i));
+  // In a loop with no slice the jarl holds every lease and review, so it is the one coordinator too.
+  if (holder === JARL_HOLDER) return { roles: new Set(['jarl', ...(loop.issues.some((i) => sliceOf(i) !== null) ? [] : ['coordinator'])]), slice: null, moments: new Set([...moments, 'filing', 'close']), issues: issues((i) => inPlay.includes(i) && sliceOf(i) === null) };
+  if (loop.coordinators.some((c) => sameHolder(fieldText(c), holder))) return { roles: new Set(['coordinator']), slice: holder, moments: new Set([...moments, 'filing']), issues: issues((i) => inPlay.includes(i) && sameSlice(sliceOf(i), holder)) };
+  const leased = loop.issues.filter((i) => profile.is(i.status, 'holds-claim') && sameHolder(fieldText(i.fields.worker) || '', holder));
+  if (leased.length) return { roles: new Set(['worker']), slice: null, moments: new Set(['start', ...(leased.some((i) => sentBack(loop, i, inFlightMark(loop, i))) ? ['round'] : [])]), issues: leased };
+  return { roles: new Set(), slice: null, moments, issues: issues(() => false) };
+}
+
 export function cmdNextAs(root, flags = {}) {
   const holder = holderOf(flags.as);
   const { loop, rows, scheduled, waiting } = ballRows(root);
   const mine = rows.filter((r) => sameHolder(r.holder, holder));
+  const rules = rulesFor(root, loop, readerOf(loop, holder, mine), today());
   const all = flags.all === true;
   const shown = all ? mine : mine.slice(0, BALL_SHOWN);
   const waits = waiting.filter((w) => sameHolder(w.on, holder));
@@ -397,7 +427,7 @@ export function cmdNextAs(root, flags = {}) {
   // A person is named as the record writes the name, whatever case the asker typed.
   const spelled = mine.length ? mine[0].holder : waits.length ? waits[0].on : holder;
   return {
-    as: spelled, rows: shown, total: mine.length, more: mine.length - shown.length,
+    as: spelled, rows: shown, total: mine.length, more: mine.length - shown.length, rules,
     waiting: all ? waits : [], waitingTotal: waits.length,
     ...(note ? { note } : {}),
     ...(scheduled ? { scheduler: loop.profile.scheduler, schedulerNote: `the issues in play are the composer's: ${schedulerNote(loop.profile.scheduler)}` } : {}),
@@ -417,6 +447,7 @@ export function renderNextAs(o) {
   }
   if (o.note) out.push(o.note);
   if (o.schedulerNote) out.push(o.schedulerNote);
+  if (o.rules.length) out.push('', `Rules for ${holderWord(o.as)} (${o.rules.length})`, ...o.rules.flatMap(ruleLines));
   return out.join('\n');
 }
 

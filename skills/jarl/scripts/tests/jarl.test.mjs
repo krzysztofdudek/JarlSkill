@@ -370,7 +370,8 @@ test('tier field, rounds and takeover, asks and answers, handoff, report', () =>
   jarl(root, 'set', '1', 'in-progress', 'raised');
   const h = jarl(root, 'resume');
   assert.match(h, /## In flight \(1\)\n- 1 hard thing/);
-  assert.match(h, /## Rulings in force \(1\)\n- \S+ · ask-1 · by owner — \*\*Answer:\*\* yes, keep it · \*\*Question:\*\* keep the old flag\?/);
+  assert.match(h, /\n1 ruling\(s\) in force: jarl\.mjs decisions --live; resume --as <who> adds the rules that match whoever asks\n/);
+  assert.match(jarl(root, 'decisions', '--live'), / · ask-1 · by owner — \*\*Answer:\*\* yes, keep it · \*\*Question:\*\* keep the old flag\?$/m);
   const rep = jarl(root, 'report');
   assert.doesNotMatch(rep, /Found along the way/, 'the found section is opt-in');
   assert.match(jarl(root, 'report', '--found'), /Found along the way \(1\)/);

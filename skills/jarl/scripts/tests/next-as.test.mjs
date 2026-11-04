@@ -87,12 +87,13 @@ test('next --as owner lists the questions and the items to ratify, most held-up 
 test('next --as prints at most seven lines and counts the rest; --all prints every line', () => {
   const root = loop();
   for (let n = 1; n <= 9; n += 1) jarl(root, 'new', `task ${n}`, '--files', `t${n}.mjs`);
+  const listOf = (t) => t.split('\n\nRules for ')[0];
   const text = jarl(root, 'next', '--as', 'jarl');
-  assert.equal(text.split('\n').filter((l) => l.startsWith('- ')).length, 7);
+  assert.equal(listOf(text).split('\n').filter((l) => l.startsWith('- ')).length, 7);
   assert.match(text, /^and 2 more: jarl\.mjs next --as jarl --all$/m);
   assert.equal(json(root, 'next', '--as', 'jarl').more, 2);
   const all = jarl(root, 'next', '--as', 'jarl', '--all');
-  assert.equal(all.split('\n').filter((l) => l.startsWith('- ')).length, 9);
+  assert.equal(listOf(all).split('\n').filter((l) => l.startsWith('- ')).length, 9);
   assert.doesNotMatch(all, /more:/);
 });
 
@@ -144,7 +145,7 @@ test('a named coordinator holds nothing while the loop has no slices, and an out
   jarl(root, 'new', 'ready', '--files', 'a.mjs');
   jarl(root, 'goal', '--set', 'Coordinators: Ada');
   const ada = jarl(root, 'next', '--as', 'Ada');
-  assert.match(ada, /^On Ada \(0\)\n- \(nothing is on Ada\)\nwith no slice in the loop, what a coordinator holds is the jarl's: jarl\.mjs next --as jarl$/);
+  assert.match(ada, /^On Ada \(0\)\n- \(nothing is on Ada\)\nwith no slice in the loop, what a coordinator holds is the jarl's: jarl\.mjs next --as jarl\n\nRules for Ada \(3\)\n- jarl:coordinator-escalates · role coordinator · references\/jarl\.md — /);
   assert.equal(json(root, 'next', '--as', 'Ada').rows.length, 0);
   assert.equal(jarl(root, 'next', '--as', 'Dana Smith'), 'On Dana Smith (0)\n- (nothing is on Dana Smith)');
   assert.equal(json(root, 'next', '--as', 'jarl').rows.length, 1);
@@ -155,7 +156,7 @@ test('status --as and resume --as end with the asker\'s list; their --json carri
   const status = jarl(root, 'status', '--as', 'owner');
   assert.match(status, /\n\n## On the owner \(2\)\n- a-1 [^\n]*\n- a-2 [^\n]*\nand 1 issue\(s\) waiting on the owner: jarl\.mjs next --as owner --all$/);
   const resume = jarl(root, 'resume', '--as', 'jarl');
-  assert.match(resume, /\n\n## On the jarl \(6\)\n- 5 approved: [^\n]*\n(- [^\n]*\n){5}and 4 issue\(s\) waiting on the jarl: jarl\.mjs next --as jarl --all$/);
+  assert.match(resume, /\n\n## On the jarl \(6\)\n- 5 approved: [^\n]*\n(- [^\n]*\n){5}and 4 issue\(s\) waiting on the jarl: jarl\.mjs next --as jarl --all\n\nRules for the jarl \(4\)\n- jarl:coordinator-escalates /);
   assert.deepEqual(json(root, 'status', '--as', 'owner').as.rows.map((r) => r.ask), ['1', '2']);
   assert.equal(json(root, 'resume', '--as', 'jarl').as.total, 6);
   assert.equal(json(root, 'resume').as, undefined, 'without --as nothing is added');

@@ -15,7 +15,7 @@ export const PRIORITIES = ['1', '2', '3'];
 // Weakest first: the order of the list is the order of strength, which is how a loop's model lines rank its models.
 export const TIERS = ['light', 'standard', 'strong'];
 export const TIER_DEFAULT = 'standard';
-export const ASK_KINDS = ['stop', 'stuck', 'lower', 'charter', 'ratify', 'escalation'];
+export const ASK_KINDS = ['stop', 'stuck', 'lower', 'charter', 'ratify', 'escalation', 'rule'];
 export const CI_STATES = ['pending', 'green', 'red', 'none'];
 export const ROUNDS_BEFORE_TAKEOVER = 3;
 // A lease (Worker, Worktree, Since on an in-progress issue) whose branch saw no commit for this long is shown
