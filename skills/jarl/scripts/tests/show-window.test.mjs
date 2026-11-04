@@ -95,13 +95,13 @@ test('show: rows before the last start are not shown, and the ordinals in the bo
   assert.ok(json.sections.evidence.includes('a note after the restart'), '--json is complete');
 
   // The number the bounded view printed names the row retracted.
-  jarl(root, 'evidence', id, '--retract', '3', '--by', 'jarl', 'row three ran in the wrong place');
+  jarl(root, 'retract', id, '3', '--by', 'jarl', 'row three ran in the wrong place');
   const after = jarl(root, 'show', id);
   assert.match(after, /^- \[3\] ~~\*\*ran:\*\* new three · \*\*saw:\*\* new result three~~$/m);
   assert.match(after, /^- \[4\] \*\*ran:\*\* new four/m);
   assert.deepEqual(JSON.parse(jarl(root, 'show', id, '--json')).evidenceRows.map((r) => [r.n, r.retracted]), [[1, false], [2, false], [3, true], [4, false]]);
   // Row 1, an earlier one, is named by its number from --full.
-  jarl(root, 'evidence', id, '--retract', '1', '--by', 'jarl', 'row one belonged to another issue');
+  jarl(root, 'retract', id, '1', '--by', 'jarl', 'row one belonged to another issue');
   assert.match(file(root, id), /^- ~~\*\*ran:\*\* old one · \*\*saw:\*\* old result one~~$/m);
 });
 

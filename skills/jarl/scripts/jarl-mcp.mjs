@@ -33,7 +33,7 @@
 // No dependencies beyond the vendored copy, Node 22+.
 import { resolve, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { COMMAND_ALIASES, COMMAND_ARGS, COMMAND_FLAGS, INTERNAL_COMMANDS, LIST_FIELDS, REPLACED_COMMANDS, replacedRefusal, flagsOf, COMMAND_SUMMARY, GLOBAL_FLAGS, MUTATING, USAGE, parseArgs, dispatch, findRoot, isEntry as isEntryOf, installVersion } from './jarl.mjs';
+import { COMMAND_ARGS, COMMAND_FLAGS, INTERNAL_COMMANDS, LIST_FIELDS, REPLACED_COMMANDS, replacedRefusal, flagsOf, COMMAND_SUMMARY, GLOBAL_FLAGS, MUTATING, USAGE, parseArgs, dispatch, findRoot, isEntry as isEntryOf, installVersion } from './jarl.mjs';
 import { defineTable } from './vendor/runes/dist/cli/index.mjs';
 import {
   buildTools as generateTools, argvFor as generateArgv, commandForTool, serveStdio, InvalidParams,
@@ -55,14 +55,14 @@ export const argName = (a) => a.replace(/[?.]+$/, '');
 
 // What a command's table cannot say about its arguments, added to that tool's description.
 export const ARG_NOTES = {};
-// The list fields of a command (LIST_FIELDS in jarl.mjs), under the command a second name stands for.
-const listFieldsOf = (cmd) => LIST_FIELDS[COMMAND_ALIASES[cmd] ?? cmd] || {};
+// The list fields of a command (LIST_FIELDS in jarl.mjs).
+const listFieldsOf = (cmd) => LIST_FIELDS[cmd] || {};
 // The id-list fields of a command: its arguments that take the list grammar and are not the last words of the command
 // (the id of one issue, or the ids of several). The adapter types an argument that comes before others as one text, so
 // the tools declare each of these as a list too, and argvFor joins a list into the one comma list the command reads.
 export const listArgsOf = (cmd) => {
   const fields = listFieldsOf(cmd);
-  return (COMMAND_ARGS[COMMAND_ALIASES[cmd] ?? cmd] || []).filter((a) => !a.endsWith('...')).map((a) => a.replace(/\?$/, '')).filter((a) => Object.hasOwn(fields, a));
+  return (COMMAND_ARGS[cmd] || []).filter((a) => !a.endsWith('...')).map((a) => a.replace(/\?$/, '')).filter((a) => Object.hasOwn(fields, a));
 };
 // The commands that write one issue at a time and take the list grammar in their "id" field.
 const LIST_ID_COMMANDS = new Set(['round']);
@@ -78,13 +78,9 @@ const HELP = USAGE;
 const INSTRUCTIONS = 'Every jarl command is a tool, jarl_<command>, with its arguments and flags as fields. A description is one sentence; jarl_help answers with the full usage of every command. After a compaction, or any summary of your own context, you are starting a session: run jarl_resume before your next action; a summary is not the state of the loop.';
 
 // The CLI's tables as one Runes command table. An argument written `name...` in COMMAND_ARGS takes any number of
-// words, none included (tag's +a -b, sources' findings files): `name...?` in the Runes grammar.
-// A list a command cannot run without (files' paths, source's references) keeps its field required, with one item
-// at least ("" is the one item that clears Files).
-// A name a command answers to besides its own gets a tool of its own, with the command's arguments and summary.
-const NEEDS_ITEMS = new Set([]);
+// words, none included (sources' findings files): `name...?` in the Runes grammar.
 const entry = (cmd) => ({
-  args: COMMAND_ARGS[cmd].map((a) => (a.endsWith('...') && !NEEDS_ITEMS.has(`${cmd} ${a}`) ? `${a}?` : a)),
+  args: COMMAND_ARGS[cmd].map((a) => (a.endsWith('...') ? `${a}?` : a)),
   flags: flagsOf(cmd),
   summary: COMMAND_SUMMARY[cmd],
   writes: MUTATING.has(cmd),
@@ -97,7 +93,6 @@ export const TABLE = defineTable({
   globalFlags: GLOBAL_FLAGS,
   commands: {
     ...Object.fromEntries(Object.keys(COMMAND_FLAGS).map((cmd) => [cmd, entry(cmd)])),
-    ...Object.fromEntries(Object.entries(COMMAND_ALIASES).map(([name, cmd]) => [name, entry(cmd)])),
   },
 });
 
@@ -256,7 +251,7 @@ export function callTool(name, input = {}, env = process.env, cwd = process.cwd(
     if (input.json) return { content: [{ type: 'text', text }], isError: true, ...(loopNote ? { _meta: { 'jarl/loop': loopNote } } : {}) };
     return { content: [{ type: 'text', text }, ...(loopNote ? [{ type: 'text', text: loopNote }] : [])], isError: true };
   }
-  const isError = (COMMAND_ALIASES[cmd] ?? cmd) === 'scope' && !r.out.ok;   // scope's exit 2: a branch that failed its measure
+  const isError = cmd === 'scope' && !r.out.ok;   // scope's exit 2: a branch that failed its measure
   if (input.json) {
     const meta = { ...(r.warn.length ? { 'jarl/warn': r.warn.join('\n') } : {}), ...(loopNote ? { 'jarl/loop': loopNote } : {}) };
     return { content: [{ type: 'text', text: JSON.stringify(r.out, null, 2) }], isError, ...(Object.keys(meta).length ? { _meta: meta } : {}) };

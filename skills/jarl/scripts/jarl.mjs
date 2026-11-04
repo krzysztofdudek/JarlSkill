@@ -240,12 +240,12 @@ commands:
                                                  repositories or its worktree; it writes one log line that holds the line
                                                  as written, so a line rewritten after it waits for a new tick, and a red
                                                  round, a start or a reopen spends it as it spends an approve
-  models [--by repo|tag] [--with <root>]... [--archives]
+  models [--group repo|tag] [--with <root>]... [--archives]
                                                  read-only: per model as worker and as reviewer, per Kind · Tier, what the
                                                  record holds (units, clean first passes, changes, rounds, verdicts, checked
                                                  approves), every count with its n and a share only from n >= 5, with the
                                                  words fits, below, new and may clear; work with no recorded model
-                                                 is grouped by tier; --by slices by repository or tag; --with reads another
+                                                 is grouped by tier; --group slices by repository or tag; --with reads another
                                                  loop (its root, or an archive directory) and --archives this loop's own
                                                  archives, merged into one table that names the loops it read; a path that
                                                  is not a loop is refused; suggestions only, no lock, nothing written
@@ -330,7 +330,7 @@ commands:
                                                  the issues tagged slice:<name>), "Merger: <name>" (the jarl or one
                                                  coordinator: the one holder that raises the merger, one merge at a time
                                                  for every slice), "Takeover (<kind>): <rounds>" or a bare "Takeover: <rounds>"; the rest of goal.md stays as written
-  status [--stale-hours n] [--by repo|tag|kind|prio|<field>] [--tag <t>] [--as <who>] [--slice <coordinator>]
+  status [--stale-hours n] [--group repo|tag|kind|prio|<field>] [--tag <t>] [--as <who>] [--slice <coordinator>]
                                                  --tag computes every part of status over the issues carrying that tag only;
                                                  --slice the same over one coordinator's slice (the issues tagged
                                                  slice:<coordinator>), with the questions on them and the escalations
@@ -354,8 +354,8 @@ commands:
                                                  none and while no merge carries the declared check; then the choices awaiting ratification, stale
                                                  leases, the issues in flight with no acceptance line, and —
                                                  committed loops — the loop files
-                                                 git has not committed; --by adds the status counts per
-                                                 repository, tag, kind, priority or a field the profile declares; --by repo
+                                                 git has not committed; --group adds the status counts per
+                                                 repository, tag, kind, priority or a field the profile declares; --group repo
                                                  also prints where each repository is on this machine, its base and
                                                  whether its checkout is on it
   archive "<slug>" [--by who]                    put the current loop away under .jarl/archive/<yyyy.mm.dd>-<slug>/,
@@ -461,12 +461,14 @@ an item that begins or ends with a quote mark, a name (an id, a tag, a reference
 a bracket or a quote, and a path whose brackets do not pair up ([a, b]) or that is a quoted or empty list
 in brackets (["a"], []). A path whose brackets pair up is a name: [1], src/[id]/page.tsx, [...slug].
 
---by who on init, new, import, evidence, set, merged, round, ask, log, goal, base, archive, mode and close: the writer of
-that one call, written into every log line the call writes, right after the stamp ("- <stamp> by <who> · ..."); the
-first such line raises the loop's record format to 3, and where a composer keeps the format the call is refused with
-nothing written. Nothing names a writer for a call that names none: no server, variable or other call does, and an
-unnamed lease shows as "(unnamed)" in a loop whose goal names coordinators. On the other commands --by is what they
-record: who changed the description, the reviewer, who answered, ruled or retracted.
+--by who, on every command that writes and on no other, is the author of that one call. On field it is who changed
+the description, on review the reviewer, on answer, decide, retract and tick who answered, ruled, retracted or
+ticked; on the rest (init, new, import, evidence, set, merged, round, ask, log, goal, base, archive, mode, close,
+renumber) it is the writer, written into every log line the call writes, right after the stamp ("- <stamp> by <who>
+· ..."); the first such line raises the loop's record format to 3, and where a composer keeps the format the call is
+refused with nothing written. Nothing names an author for a call that names none: no server, variable or other call
+does, and an unnamed lease shows as "(unnamed)" in a loop whose goal names coordinators. Grouping is --group (status,
+models), and --kind is the kind of what a command files or filters.
 
 Writes: every command that writes holds .jarl/.lock while it runs (the holder's pid, host and time are
 inside), so parallel calls from workers, reviewers and the merger queue instead of losing each other's
@@ -488,7 +490,7 @@ a name. An issue that names a repository writes each of its files with that repo
 name first (tool/src/a.mjs for Repo tool): next then keeps the same path in two repositories apart,
 and scope matches the path after the name. An issue may name several repositories (Repo: tool, lib):
 each file then starts with the name of the one it is in (one with no such name is in the first), and
-scope on it takes --repo to say which one to read. show and status --by repo print where each
+scope on it takes --repo to say which one to read. show and status --group repo print where each
 repository, and the worktree of a lease, is on this machine; nothing resolved is written.
 
 Parallel workers in worktrees:
@@ -525,7 +527,7 @@ export const COMMAND_FLAGS = {
   show: { full: 'bool' }, set: { branch: 'value', worker: 'value', model: 'value', worktree: 'value', handover: 'bool', header: 'bool', by: 'value' },
   next: { limit: 'value', all: 'bool', as: 'value', slice: 'value' },
   review: { by: 'value', model: 'value', relayed: 'bool' }, round: { findings: 'value', by: 'value' }, tick: { by: 'value' },
-  models: { by: 'value', with: 'many', archives: 'bool' },
+  models: { group: 'value', with: 'many', archives: 'bool' },
   scope: { branch: 'value', base: 'value', repo: 'value' },
   branches: { base: 'value', repo: 'value', 'stale-hours': 'value' },
   merged: { sha: 'value', ci: 'value', repo: 'value', ran: 'many', saw: 'many', red: 'value', keep: 'bool', by: 'value' },
@@ -535,20 +537,21 @@ export const COMMAND_FLAGS = {
   handoff: { summary: 'value', next: 'many', log: 'value', ready: 'value', ci: 'bool' },
   log: { by: 'value' }, decide: { settles: 'many', by: 'value', quote: 'value', under: 'value', supersedes: 'value', 'applies-to': 'value', until: 'value', area: 'value', reach: 'value', rule: 'value' }, decisions: { live: 'bool' },
   goal: { set: 'value', by: 'value' },
-  status: { 'stale-hours': 'value', by: 'value', tag: 'value', as: 'value', slice: 'value' }, archive: { by: 'value' }, report: { found: 'bool', metrics: 'bool' }, tips: {}, mode: { by: 'value' },
+  status: { 'stale-hours': 'value', group: 'value', tag: 'value', as: 'value', slice: 'value' }, archive: { by: 'value' }, report: { found: 'bool', metrics: 'bool' }, tips: {}, mode: { by: 'value' },
   queue: { repo: 'value', base: 'value' }, changelog: { repo: 'value' },
   close: { force: 'bool', batch: 'bool', by: 'value' }, profile: {}, verify: {},
 };
 
-// Flags a command reads besides the ones its usage shows: the spellings another form of the same operation takes
-// (evidence --retract <n> is retract <id> <n>). The parser and the tools' fields carry them; the usage text does not.
-export const ALTERNATE_FLAGS = { evidence: { retract: 'value', by: 'value' } };
-// A name a command answers to besides its own: the command line and the tools run it under the command it names, and
-// the command line says which name to use. The help and the skill name the command only.
-export const COMMAND_ALIASES = Object.freeze({ check: 'scope' });
 // The commands the command line runs and the tool list leaves out: no tool, and no block in the usage text.
 export const INTERNAL_COMMANDS = Object.freeze(['handoff']);
-export const flagsOf = (cmd) => ({ ...(COMMAND_FLAGS[COMMAND_ALIASES[cmd] ?? cmd] || {}), ...(ALTERNATE_FLAGS[COMMAND_ALIASES[cmd] ?? cmd] || {}) });
+export const flagsOf = (cmd) => ({ ...(COMMAND_FLAGS[cmd] || {}) });
+// A flag one command does not take because its meaning is another flag's, or another command's: the refusal is the call
+// that does what was asked, built from the words given so far. --by names the author of a write and nothing else.
+const REFUSED_FLAGS = {
+  status: { by: (value) => `status groups its counts with --group, and --by names the author of a write: jarl.mjs status --group ${value ?? 'repo'}` },
+  models: { by: (value) => `models groups its counts with --group, and --by names the author of a write: jarl.mjs models --group ${value ?? 'repo'}` },
+  evidence: { retract: (value, positional) => `evidence takes nothing back: a row or a note is taken back with jarl.mjs retract ${positional[1] ?? '<id>'} ${value ?? '<n>'} --by <who> "<text>"` },
+};
 
 export function parseArgs(argv) {
   const positional = [];
@@ -565,7 +568,7 @@ export function parseArgs(argv) {
       if (cmd === undefined) {
         cmd = a;
         if (Object.hasOwn(REPLACED_COMMANDS, cmd)) throw new Error(replacedRefusal(cmd, argv.slice(i + 1)));
-        need(COMMAND_FLAGS[COMMAND_ALIASES[cmd] ?? cmd], `unknown command: ${cmd}\n${USAGE}`);
+        need(COMMAND_FLAGS[cmd], `unknown command: ${cmd}\n${USAGE}`);
       }
       continue;
     }
@@ -575,6 +578,8 @@ export function parseArgs(argv) {
     const t = table();
     const kind = Object.hasOwn(t, name) ? t[name] : undefined;
     if (kind === undefined) {
+      const refused = cmd !== undefined && REFUSED_FLAGS[cmd]?.[name];
+      if (refused) throw new Error(refused(inline ?? (argv[i + 1] !== undefined && !argv[i + 1].startsWith('--') ? argv[i + 1] : undefined), positional));
       const where = cmd === undefined ? `before the command — only ${named(GLOBAL_FLAGS)} may come before it` : `for ${cmd} — it takes ${named(t)}`;
       throw new Error(`unknown flag ${a} ${where}. A value that starts with -- goes after a bare --, e.g. evidence 7 -- "--json prints ok"`);
     }
@@ -752,7 +757,10 @@ function wordsOf(args, bools) {
   return { pos, flags };
 }
 const SECTION_FLAGS = { title: 'Title', where: 'Where', what: 'What', why: 'Why', acceptance: 'Acceptance', changelog: 'Changelog' };
+// The words of a call without its --root, which the call that replaces it takes as it was given.
+const withoutRoot = (args) => args.filter((a, i) => a !== '--root' && args[i - 1] !== '--root' && !a.startsWith('--root='));
 export const REPLACED_COMMANDS = Object.freeze({
+  check: (args) => `a branch is measured by scope: jarl.mjs scope ${withoutRoot(args).map(quoted).join(' ') || '[<id>] --branch <b>'}`,
   prio: (args) => { const { pos } = wordsOf(args, []); return `the priority is a field: jarl.mjs field ${pos[0] ?? '<ids>'} Priority ${pos[1] ?? '<1|2|3>'}`; },
   tag: (args) => {
     const { pos } = wordsOf(args, []);
@@ -785,7 +793,7 @@ export const REPLACED_COMMANDS = Object.freeze({
 });
 export const replacedRefusal = (cmd, args = []) => `${cmd} is not a command; ${REPLACED_COMMANDS[cmd](args)}`;
 
-const ARITY = Object.fromEntries(Object.entries({ ...COMMAND_ARGS, ...Object.fromEntries(Object.entries(COMMAND_ALIASES).map(([name, c]) => [name, COMMAND_ARGS[c]])) }).filter(([, a]) => !a.some((n) => n.endsWith('...'))).map(([c, a]) => [c, a.length]));
+const ARITY = Object.fromEntries(Object.entries(COMMAND_ARGS).filter(([, a]) => !a.some((n) => n.endsWith('...'))).map(([c, a]) => [c, a.length]));
 
 // The commands that write: each runs under .jarl/.lock (see withLock).
 export const MUTATING = new Set(['init', 'new', 'renumber', 'import', 'set', 'field', 'base', 'merged', 'evidence', 'retract', 'review', 'round', 'tick', 'ask', 'answer', 'log', 'decide', 'goal', 'archive', 'mode', 'close']);
@@ -843,16 +851,15 @@ function main() {
     console.error(e.message);
     process.exit(1);
   }
-  const { out, text, warn, aliases } = r;
-  if (COMMAND_ALIASES[cmd]) warn.unshift(`note: ${cmd} keeps working as a name of ${COMMAND_ALIASES[cmd]}; ${COMMAND_ALIASES[cmd]} is the name to use`);
+  const { out, text, warn } = r;
   // Said on the command line only, after the note is written whole: a long free-text note is hard to read back and
   // cannot be retracted by number; nothing is refused or cut.
-  if (cmd === 'evidence' && flags.ran === undefined && flags.retract === undefined && typeof rest[1] === 'string' && (rest[1].length > LONG_NOTE_CHARS || rest[1].trim().split('\n').length > LONG_NOTE_LINES)) {
+  if (cmd === 'evidence' && flags.ran === undefined && typeof rest[1] === 'string' && (rest[1].length > LONG_NOTE_CHARS || rest[1].trim().split('\n').length > LONG_NOTE_LINES)) {
     warn.push(`note: that evidence note is long (${rest[1].trim().length} characters, ${rest[1].trim().split('\n').length} lines) and was written whole; only its first line reaches the log, and a note is not a row that can be retracted by number — for proof of work, record it as --ran "<command>" --saw "<what it printed>"`);
   }
   console.log(flags.json ? JSON.stringify(out, null, 2) : text);
-  for (const w of [...aliases, ...warn]) console.error(w);
-  if (((COMMAND_ALIASES[cmd] ?? cmd) === 'scope' || cmd === 'verify') && !out.ok) process.exit(2);
+  for (const w of warn) console.error(w);
+  if ((cmd === 'scope' || cmd === 'verify') && !out.ok) process.exit(2);
 }
 
 // The ratification batch as close prints it: one line per item, then what became of the ones nobody answered.
@@ -899,13 +906,13 @@ function setCommand(root, ids, name, value, flags) { return cmdSet(root, ids, na
 // Every call starts from empty caches, so a caller that runs many commands in one process (a server) sees each
 // time what is on disk and in git now, exactly as a fresh process would.
 export function dispatch(root, commandName, rest, flags) {
-  const cmd = COMMAND_ALIASES[commandName] ?? commandName;
+  const cmd = commandName;
+  if (Object.hasOwn(REPLACED_COMMANDS, cmd)) throw new Error(replacedRefusal(cmd, rest));
   ({ rest, flags } = readLists(cmd, rest, flags));
   resetCaches();
   let out;
   let text;
   let warn = [];   // said on stderr, so a caller reading stdout sees the result alone
-  const aliases = [];   // the form to use when a call is spelled another way: said by the command line only, never by a tool
   const each = (o, f) => [].concat(o).map(f).join('\n');
   const writes = MUTATING.has(cmd);
   const writer = writerOf(root, cmd, rest, flags);
@@ -939,7 +946,6 @@ export function dispatch(root, commandName, rest, flags) {
         text = out.unchanged ? `${out.name} base: ${out.base} (unchanged)` : `${out.name} base: ${out.base} (was ${out.was ?? 'none'})`;
         break;
       case 'evidence':
-        if (flags.retract !== undefined) aliases.push(`note: an evidence row is retracted with: retract <id> ${flags.retract} --by <who> "<reason>"`);
         out = R.addEvidence(root, rest[0], rest[1], flags); text = each(out, renderEvidence); break;
       // One verb takes back a verdict and an evidence row: the review's newest approve, or the row by its number.
       case 'retract':
@@ -960,10 +966,12 @@ export function dispatch(root, commandName, rest, flags) {
         break;
       }
       case 'review':
-        if (rest[1] === 'retract') aliases.push('note: a verdict is retracted with: retract <id> review --by <who> "<reason>"');
+        // A verdict is taken back by retract alone: the refusal is that call, with the words given.
+        if (rest[1] === 'retract') throw new Error(`a verdict is taken back with retract: jarl.mjs retract ${rest[0] ?? '<id>'} review --by ${flags.by ?? '<who>'} ${rest[2] === undefined ? '"<text>"' : JSON.stringify(String(rest[2]))}`);
         out = R.review(root, rest[0], rest[1], rest[2], { ...flags, caller: 'cli' }); text = each(out, renderReview); warn = [].concat(out).filter((o) => o.note).map((o) => `note: ${o.note}`); break;
       case 'tick': out = cmdTick(root, rest[0], rest[1], flags); text = `${out.id} acceptance line ${out.line} ticked by ${out.by} at ${out.at}`; break;
-      case 'models': out = cmdModels(root, flags); text = renderModels(out); break;
+      // --group is the grouping the views and the record library read as by.
+      case 'models': out = cmdModels(root, groupedBy(flags)); text = renderModels(out); break;
       case 'round': out = eachIssue(root, rest[0], (id, dry) => cmdRound(root, id, rest[1], dry, flags)); text = each(out, (o) => (o.takeover ? `${o.id} round ${o.round} — takeover:\n\n${o.block}` : `${o.id} round ${o.round}: ${o.since} of ${o.limit} before a takeover; the rounds so far: show ${o.id}`)); break;
       case 'merged': out = R.recordMerged(root, rest[0], { ...flags, caller: 'cli' }); text = `${out.ids.join(', ')} ${out.sha ? `merged ${out.sha}` : 'merge'}${out.check ? ` · check ${out.check}` : ''}${out.red ? ` · landed red, cause ${out.red}` : ''}${out.ci ? ` · CI ${out.ci}` : ''}${(out.cleanup || []).map((c) => `\n${c.kept ? `kept ${c.branch}${c.worktree ? ` (worktree ${c.worktree} removed)` : ''} — ${c.kept}` : `removed ${c.worktree ? `the worktree ${c.worktree} and ` : ''}the branch ${c.branch}`}${(c.commands || []).length ? `\nafter looking at the files, remove them with:\n${c.commands.map((x) => `  ${x}`).join('\n')}` : ''}${out.cleanup.some((x) => x.repo !== c.repo) ? ` [${c.repo}]` : ''}`).join('')}`; warn = out.notes.map((n) => `note: ${n}`); break;
       case 'scope': out = cmdCheck(root, rest[0], flags); text = `${out.id === null ? `package ${out.ids.join(', ')} on ${out.branch}\n` : ''}${out.repo === root ? '' : `in ${out.repo}\n`}${out.items.map((i) => `${i.ok ? '✓' : '✗'} ${i.name} — ${i.note}`).join('\n')}${out.notes.length || out.notesOmitted ? `\n${renderCheckNotes(out)}` : ''}`; break;
@@ -981,7 +989,7 @@ export function dispatch(root, commandName, rest, flags) {
       case 'decide': out = R.decide(root, rest[0], rest[1], flags); text = renderDecide(out); decideNotes(root, rest[0], out.by, flags, warn); break;
       case 'decisions': out = R.decisions(root, flags); text = renderDecisions(out); break;
       case 'goal': out = flags.set === undefined ? cmdGoal(root) : cmdGoalSet(root, flags.set); text = flags.set === undefined ? out.goal : out.unchanged ? `goal line unchanged: ${out.shown}` : `goal line ${out.replaced ? 'changed' : 'added'}: ${out.shown}${out.replaced ? ` (was ${out.was})` : ''}`; break;
-      case 'status': out = R.statusData(root, flags); text = renderStatus(out, R.loadProfile(root)); ({ out, text } = endWithAsker(root, flags, out, text)); break;
+      case 'status': out = R.statusData(root, groupedBy(flags)); text = renderStatus(out, R.loadProfile(root)); ({ out, text } = endWithAsker(root, flags, out, text)); break;
       case 'tips': out = cmdTips(root); text = renderTips(out); break;
       case 'queue': out = cmdQueue(root, flags); text = renderQueue(out); break;
       case 'changelog': out = cmdChangelog(root, rest[0], flags); text = out.text || '(no changelog fragment on these issues)'; warn = out.missing.length ? [`note: no changelog fragment: ${out.missing.join(', ')} — record one with: jarl.mjs field <id> Changelog "Added: …"`] : []; break;
@@ -1000,7 +1008,7 @@ export function dispatch(root, commandName, rest, flags) {
   // its own code and into the tree it hands over: here the answer is recorded and nothing is sent, so no entry is ever
   // written twice, nor into a checkout the composer's work never reaches.
   if (cmd === 'answer') text = [].concat(out).map((one) => answered(root, one, warn)).join('\n');
-  return { out, text, warn, aliases };
+  return { out, text, warn };
 }
 
 // The commands whose --by names the writer of the call: every line the call writes into the log carries it, in its fixed
@@ -1010,7 +1018,6 @@ export function dispatch(root, commandName, rest, flags) {
 export const WRITER_COMMANDS = Object.freeze(['init', 'new', 'renumber', 'import', 'evidence', 'set', 'merged', 'round', 'ask', 'log', 'goal', 'base', 'archive', 'mode', 'close']);
 function writerOf(root, cmd, rest, flags) {
   if (!WRITER_COMMANDS.includes(cmd) || flags.by === undefined) return null;
-  if (cmd === 'evidence' && flags.retract !== undefined) return null;
   if (cmd === 'set' && setRouteOf(root, rest[1]) === 'field') return null;
   return editorOf(flags.by);
 }
@@ -1021,6 +1028,12 @@ function needWriterFormat(root, cmd, flags) {
   const profile = cmd === 'init' ? (flags.profile !== undefined ? readProfileFile(flags.profile).profile : null) : R.loadProfile(root);
   if (profile === null || profile.format >= line.format || formatState(profile).raises) return;
   throw new Error(`${line.what} (--by) needs record format ${line.format}, and this loop stays at format ${profile.format}: its profile names an external scheduler (${profile.scheduler}), the composer that reads this record, so Jarl never raises its format; leave --by out there — nothing was written`);
+}
+
+// The flags of a grouping view with --group handed on as the grouping the library reads (by).
+function groupedBy(flags) {
+  const { group, ...rest } = flags;
+  return group === undefined ? rest : { ...rest, by: group };
 }
 
 // status --as and resume --as: the view, then the asker's list as next --as prints it (`as` in --json).

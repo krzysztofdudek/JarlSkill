@@ -181,7 +181,7 @@ test('new --template reads .jarl/templates/<name>.md: its fields are defaults, i
 
 // ---- 289: views ------------------------------------------------------------------------------------
 
-test('status --by groups the counts by kind, tag, priority or repository; report --json carries one row per issue', () => {
+test('status --group groups the counts by kind, tag, priority or repository; report --json carries one row per issue', () => {
   const root = repo();
   jarl(root, 'new', 'a', '--kind', 'bug', '--tags', 'x,y');
   jarl(root, 'new', 'b', '--kind', 'gap', '--tags', 'x');
@@ -190,13 +190,13 @@ test('status --by groups the counts by kind, tag, priority or repository; report
   jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'ok');
   jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
   jarl(root, 'set', '1', 'done', 'ok');
-  const s = JSON.parse(jarl(root, 'status', '--by', 'kind', '--json'));
+  const s = JSON.parse(jarl(root, 'status', '--group', 'kind', '--json'));
   assert.deepEqual(s.by, { key: 'kind', groups: { bug: { open: 0, 'in-progress': 0, done: 1, dropped: 0, deferred: 0 }, gap: { open: 1, 'in-progress': 0, done: 0, dropped: 1, deferred: 0 } } });
-  const t = JSON.parse(jarl(root, 'status', '--by', 'tag', '--json'));
+  const t = JSON.parse(jarl(root, 'status', '--group', 'tag', '--json'));
   assert.deepEqual(Object.keys(t.by.groups).sort(), ['(none)', 'x', 'y']);
   assert.equal(t.by.groups.x.done, 1);
-  assert.match(jarl(root, 'status', '--by', 'repo'), /by repo:\n {2}jarl-queue-\S+ +open 1 · in flight 0 · done 1 · dropped 1 · deferred 0/);
-  assert.match(refuses(root, 'status', '--by', 'colour'), /--by is one of: repo, tag, kind, prio/);
+  assert.match(jarl(root, 'status', '--group', 'repo'), /by repo:\n {2}jarl-queue-\S+ +open 1 · in flight 0 · done 1 · dropped 1 · deferred 0/);
+  assert.match(refuses(root, 'status', '--group', 'colour'), /--group is one of: repo, tag, kind, prio/);
   // Without --by the shape is what it was.
   assert.equal(JSON.parse(jarl(root, 'status', '--json')).by, undefined);
   const rep = JSON.parse(jarl(root, 'report', '--json'));

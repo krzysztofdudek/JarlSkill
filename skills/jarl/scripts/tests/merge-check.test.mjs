@@ -1,7 +1,7 @@
 // A merge records the check that decided it: `merged <ids> --sha <sha> --ran "<check>" --saw "<summary>"` writes the
 // evidence row and a merge line that names the check; `merged --red <id>` records a landing on a red check whose cause
 // another issue tracks; no CI state is recorded unless it is given. `Check (<repo>): <command>` lines in goal.md name each
-// repository's command, and status --by repo and report count, per repository, the merges that carry a passing check row,
+// repository's command, and status --group repo and report count, per repository, the merges that carry a passing check row,
 // those that carry none and those landed on red. Every line written here is read by the pinned frozen reader
 // (tests/old-jarl.mjs) without a refusal and without a silent misreading.
 import { test } from 'node:test';
@@ -131,18 +131,18 @@ test('done notes no unrecorded CI for a merge that carries a passing check row, 
   assert.match(run(root, 'set', '2', 'done', 'merged').stderr, /2 merged abc1234, CI not recorded/);
 });
 
-test('status --by repo and report count, per repository, merges with a passing check row, with none and landed on red', () => {
+test('status --group repo and report count, per repository, merges with a passing check row, with none and landed on red', () => {
   const root = twoRepos(5, [3, 4, 5]);
   appendFileSync(join(root, '.jarl', 'goal.md'), '\nCheck (app): yg check\nCheck (lib): npm test\n');
   jarl(root, 'merged', '1', '--sha', 'abc1234', '--ran', 'yg check', '--saw', 'green');
   jarl(root, 'merged', '2', '--sha', 'abc1234');
   jarl(root, 'merged', '3', '--sha', 'abc1234', '--ran', 'npm test', '--saw', 'pass 9');
   jarl(root, 'merged', '4', '--sha', 'abc1234', '--red', '5');
-  const status = json(root, 'status', '--by', 'repo');
+  const status = json(root, 'status', '--group', 'repo');
   assert.deepEqual(status.check.byRepo.app, { repo: 'app', merges: 2, withCheck: 1, noCheck: 1, red: [], declared: ['yg check'], landsOn: 'partial', k: 1, n: 2 });
   assert.deepEqual(status.check.byRepo.lib, { repo: 'lib', merges: 2, withCheck: 1, noCheck: 0, red: [{ id: '4', cause: '5' }], declared: ['npm test'], landsOn: 'partial', k: 1, n: 2 });
   assert.deepEqual(status.check.merges, { merges: 4, withCheck: 2, noCheck: 1, red: [{ id: '4', cause: '5' }] });
-  const text = jarl(root, 'status', '--by', 'repo');
+  const text = jarl(root, 'status', '--group', 'repo');
   assert.match(text, /^merges by repository, with the check that decided each:$/m);
   assert.match(text, /^ {2}app {2}2 merge\(s\) · with the declared check 1 · without it 1 · landed on red 0 · declared yg check$/m);
   assert.match(text, /^ {2}lib {2}2 merge\(s\) · with the declared check 1 · without it 0 · landed on red 1 \(4, cause 5\) · declared npm test$/m);
@@ -250,6 +250,6 @@ test('the same next step is in the reply of the MCP tool, and a library call kee
   assert.match(r.content[0].text, /· next: the merger merges the branch and records it with one call/);
   const lib = R.review(root, '1', 'approve', FINDINGS, { by: 'rev-other' });
   assert.equal('next' in lib, false);
-  const retract = jarl(root, 'review', '1', 'retract', '--by', 'jarl', 'the approve read the wrong diff');
+  const retract = jarl(root, 'retract', '1', 'review', '--by', 'jarl', 'the approve read the wrong diff');
   assert.doesNotMatch(retract, /next:/);
 });

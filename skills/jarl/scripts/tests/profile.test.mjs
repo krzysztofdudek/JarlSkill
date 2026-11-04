@@ -249,7 +249,7 @@ test('status, list, report and close read the statuses by their flags', () => {
   assert.deepEqual(report.statuses, { proposed: 1, queued: 1, running: 0, landed: 0, merged: 0, blocked: 1, dropped: 1 });
   assert.match(report.text, /## Done \(0\)\n\n## Dropped \(1\)\n- 4 dropped one — no longer wanted\n\n## Still open \(3\)/);
   assert.match(refuses(root, 'close'), /3 issue\(s\) still open or in progress: 1, 2, 3 — set each merged,/);
-  assert.match(jarl(root, 'status', '--by', 'kind'), /bug {2}proposed 1 · queued 1 · running 0 · landed 0 · merged 0 · blocked 1 · dropped 1/);
+  assert.match(jarl(root, 'status', '--group', 'kind'), /bug {2}proposed 1 · queued 1 · running 0 · landed 0 · merged 0 · blocked 1 · dropped 1/);
   assert.match(jarl(root, 'resume'), /· profile house\nqueued 1 · in flight 0 · proposed 1/);
 });
 
@@ -296,7 +296,7 @@ function sameWork(root) {
   jarl(root, 'review', '3', 'approve', FINDINGS, '--by', 'jarl');
   jarl(root, 'set', '3', 'done', 'done');
   const views = {};
-  for (const v of [['next'], ['list', '--all'], ['status'], ['status', '--by', 'kind'], ['report'], ['resume', '--log', '0'], ['queue'], ['next', '--json']]) {
+  for (const v of [['next'], ['list', '--all'], ['status'], ['status', '--group', 'kind'], ['report'], ['resume', '--log', '0'], ['queue'], ['next', '--json']]) {
     views[v.join(' ')] = jarl(root, ...v).replace(/ · profile same/g, '').replace(new RegExp(root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '<root>').replace(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}/g, '<t>');
   }
   views.close = refuses(root, 'close');
@@ -388,7 +388,7 @@ test('field <ids> <field> <value> writes a declared field, checked against its v
   assert.equal(JSON.parse(jarl(root, 'show', '1', '--json')).status, 'proposed');
 });
 
-test('list --match filters on any header field; list and resume show the declared fields; status --by takes one', () => {
+test('list --match filters on any header field; list and resume show the declared fields; status --group takes one', () => {
   const root = fieldedLoop();
   jarl(root, 'new', 'a', '--field', 'Area-2=core');
   jarl(root, 'new', 'b', '--field', 'Area-2=cli', '--kind', 'fix');
@@ -407,8 +407,8 @@ test('list --match filters on any header field; list and resume show the declare
   assert.deepEqual(resume.inFlight[0].fields, { 'Area-2': 'cli', Class: 'b' });
   assert.deepEqual(resume.next.map((r) => r.fields['Area-2']), ['core', 'cli']);
   assert.match(jarl(root, 'resume'), /- 2 b · Area-2=cli Class=b · worker w/);
-  assert.match(jarl(root, 'status', '--by', 'area-2'), /by area-2:\n {2}cli +proposed 0 · queued 1 · running 1 .*\n {2}core +proposed 0 · queued 1/);
-  assert.match(refuses(root, 'status', '--by', 'bogus'), /--by is one of: repo, tag, kind, prio, area-2, class, note/);
+  assert.match(jarl(root, 'status', '--group', 'area-2'), /by area-2:\n {2}cli +proposed 0 · queued 1 · running 1 .*\n {2}core +proposed 0 · queued 1/);
+  assert.match(refuses(root, 'status', '--group', 'bogus'), /--group is one of: repo, tag, kind, prio, area-2, class, note/);
 });
 
 test('a template fills declared fields and sections; import takes --field and files under the profile\'s kinds', () => {

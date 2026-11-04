@@ -211,7 +211,7 @@ test('a retracted attachment row leaves its slot unfilled', () => {
   const root = loopWith();
   both(root);
   const n = L.evidenceTable(issueText(root, 1).slice(issueText(root, 1).indexOf('## Evidence'))).rows.findIndex((r) => r.ran.startsWith('attach after')) + 1;
-  jarl(root, 'evidence', '1', '--retract', String(n), '--by', 'rev', 'the picture shows the wrong screen');
+  jarl(root, 'retract', '1', String(n), '--by', 'rev', 'the picture shows the wrong screen');
   assert.match(refuses(root, 'set', '1', 'done'), /slot after: no file recorded/);
 });
 
@@ -392,7 +392,7 @@ test('retracting the newest row of a slot empties it and never brings back the r
   const text = issueText(root, 1);
   const rows = L.evidenceTable(text.slice(text.indexOf('## Evidence'))).rows;
   const newest = rows.map((r, i) => (r.ran.startsWith('attach after') ? i + 1 : 0)).filter(Boolean).pop();
-  jarl(root, 'evidence', '1', '--retract', String(newest), '--by', 'rev', 'the picture shows the wrong screen');
+  jarl(root, 'retract', '1', String(newest), '--by', 'rev', 'the picture shows the wrong screen');
   assert.match(refuses(root, 'set', '1', 'done'), /slot after: no file recorded/);
   assert.match(jarl(root, 'show', '1'), /- after: not recorded · place/);
   assert.match(jarl(root, 'verify'), /verify: clean/);

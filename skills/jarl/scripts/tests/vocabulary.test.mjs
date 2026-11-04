@@ -58,7 +58,7 @@ test('a profile validation message names the lease, and a status names the flag 
   assert.doesNotThrow(() => R.validateProfile({ 'jarl-profile': 1, statuses: { a: ['dispatchable'], b: ['lease'], c: ['terminal', 'settles-dependents'] } }));
 });
 
-test('scope and check give the same output, and only check says on stderr which name to use', () => {
+test('a branch is measured by scope alone: check is refused with the scope call that does the same', () => {
   const { dir, g } = gitRepo({ prefix: 'jarl-vocab-scope-', branch: 'feature' });
   g('checkout', '-q', '-b', 'jarl/1-a');
   writeFileSync(join(dir, 'a.txt'), 'changed\n');
@@ -67,14 +67,13 @@ test('scope and check give the same output, and only check says on stderr which 
   R.initLoop(dir, 'goal');
   R.newIssue(dir, 'first', { acceptance: 'it works' });
   R.setStatus(dir, '1', 'in-progress', undefined, { branch: 'jarl/1-a', worker: 'w1' });
-  for (const extra of [[], ['--json']]) {
-    const scope = run(dir, ['scope', '1', '--branch', 'jarl/1-a', ...extra]);
-    const check = run(dir, ['check', '1', '--branch', 'jarl/1-a', ...extra]);
-    assert.equal(check.stdout, scope.stdout, extra.join(' '));
-    assert.equal(check.status, scope.status, extra.join(' '));
-    assert.equal(scope.stderr, '', 'scope says nothing on stderr');
-    assert.match(check.stderr, /^note: check keeps working as a name of scope; scope is the name to use$/m);
-  }
+  const scope = run(dir, ['scope', '1', '--branch', 'jarl/1-a']);
+  assert.equal(scope.stderr, '', 'scope says nothing on stderr');
+  assert.match(scope.stdout, /diff inside declared files/);
+  const check = run(dir, ['check', '1', '--branch', 'jarl/1-a']);
+  assert.notEqual(check.status, 0);
+  assert.equal(check.stdout, '');
+  assert.equal(check.stderr, 'check is not a command; a branch is measured by scope: jarl.mjs scope 1 --branch jarl/1-a');
 });
 
 // The text the skill, the help and the tool descriptions speak in: one place where each rule below is checked.

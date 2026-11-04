@@ -168,7 +168,7 @@ test('commands run in one process read git afresh each time: a branch made betwe
   // A repository that was not one yet, then is: the refusal is not remembered.
   const later = join(hub, '..', 'later');
   mkdirSync(later);
-  assert.throws(() => dispatch(hub, 'check', ['1'], { branch: 'x', repo: '../later' }), /not a git repository/);
+  assert.throws(() => dispatch(hub, 'scope', ['1'], { branch: 'x', repo: '../later' }), /not a git repository/);
   sh(later, 'git init -q -b main && git config user.email t@t && git config user.name t && echo 1 > f && git add -A && git commit -qm base');
   assert.doesNotThrow(() => dispatch(hub, 'branches', [], { repo: '../later' }));
 });

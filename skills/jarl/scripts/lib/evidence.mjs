@@ -407,11 +407,11 @@ function statusOf(root, loop, flags) {
   c.recordFormat = formatState(profile);
   const files = uncommittedLoopFiles(root);
   c.uncommitted = files === null ? null : files.length;
-  // --by: the same five counts per repository, tag, kind or priority — a dashboard's table, read from the issues.
+  // --group (by, as the library takes it): the same five counts per repository, tag, kind or priority — a dashboard's table, read from the issues.
   if (flags.by !== undefined) {
     // Or a field the profile declares: one group per value it holds.
     const declared = profile.fields.find((f) => f.key === String(flags.by).toLowerCase());
-    need(STATUS_BY.includes(flags.by) || declared, `--by is one of: ${[...STATUS_BY, ...profile.fields.map((f) => f.key)].join(', ')} (got "${flags.by}")`);
+    need(STATUS_BY.includes(flags.by) || declared, `--group is one of: ${[...STATUS_BY, ...profile.fields.map((f) => f.key)].join(', ')} (got "${flags.by}"): jarl.mjs status --group repo`);
     const keysOf = declared ? (i) => [fieldText(i.fields[declared.key]) || '(none)'] : { repo: (i) => repoNames(root, i), tag: (i) => (i.tags.length ? i.tags : ['(none)']), kind: (i) => [i.kind || '(none)'], prio: (i) => [i.priority] }[flags.by];
     const groups = {};
     for (const i of issues) for (const k of keysOf(i)) {

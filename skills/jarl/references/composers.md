@@ -40,7 +40,7 @@ The library and the command line write the same files and log lines for every op
 | `queue` | lists the merge queue | no function | a listing for a person; a composer decides what lands |
 | `report` | writes the loop's text report with its metrics | no function | a summary for a person; a composer reports from its own record |
 | `scope` | reads a worker branch's diff against the files its issues declare | no function | it reads git; a composer's gate decides what lands |
-| Typing a command under another name | prints a note on stderr that gives the command's own name | no command names, only functions called by name | a note for a person typing at the command line; the tools and composers call a command by its own name |
+| A command or a flag the surface does not have | refuses it with one line that ends with the call doing what was asked | no command names, only functions called by name | a person or an agent guesses a form; a composer calls a function by its own name |
 | `branches` | lists each branch with the issues it carries and its state | no function | it reads git in the repositories the issues name; a view for a person |
 | `tips` | lists the tip of each worker branch in flight | no function | it reads git in every repository the issues name; a view for a person |
 | `verify` | checks the record with its own readers in strict mode | no function; the readers are the library's | a consistency read for a person; a composer uses the readers |

@@ -44,6 +44,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - When a new issue is filed without a kind or a priority, Jarl says which one it took and names the option that sets it, as it already does for the tier.
 - When more than one coordinator has work in play, a task can only be started once it says which files or shared resources it touches, so work in two parts of the backlog cannot collide unseen. The refusal names the command that adds them.
 - Every change to a task's description now goes through one command, `field`: give a part a value to replace it, or add to it, take items off it or clear it with `--add`, `--remove` or `--clear`, and a section such as the acceptance can be added to as well. The commands that each changed one part, `body`, `tag`, `prio`, `files`, `repo`, `source` and `after`, are gone: using one prints the `field` call that does the same. A repository's base branch is changed with `base`, and `set` takes statuses only.
+- The counts of `status` and `models` are grouped with `--group` (`status --group repo`), and `--by` always names who did a write. `check` is no longer a second name for `scope`, and a review or a piece of proof is taken back only with `retract`. Each of the old spellings is refused with the call to use instead.
 - The tools show an example for the value `field` writes and its `add` and `remove`, the rows of `evidence`, the verdict and findings of `review`, `decide`'s `supersedes` and the `live` view of `decisions`.
 
 ### Fixed

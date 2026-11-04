@@ -286,7 +286,7 @@ function loopShape(path) {
 }
 export function cmdModels(root, flags = {}) {
   builds.modelsTable += 1;
-  need(flags.by === undefined || ['repo', 'tag'].includes(flags.by), `--by is one of: repo, tag (got "${flags.by}")`);
+  need(flags.by === undefined || ['repo', 'tag'].includes(flags.by), `--group is one of: repo, tag (got "${flags.by}"): jarl.mjs models --group repo`);
   need(flags.archives === undefined || flags.archives === true, '--archives takes no value');
   const lines = modelLines(root);
   const sources = [];

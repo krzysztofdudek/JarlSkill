@@ -14,7 +14,7 @@ import { FINDINGS } from './findings.mjs';
 const SERVER = fileURLToPath(new URL('../jarl-mcp.mjs', import.meta.url));
 const CLI_SOURCE = readFileSync(fileURLToPath(new URL('../jarl.mjs', import.meta.url)), 'utf8');
 const PLUGIN = fileURLToPath(new URL('../../../../', import.meta.url));
-const { COMMAND_ALIASES, COMMAND_ARGS, COMMAND_FLAGS, GLOBAL_FLAGS, INTERNAL_COMMANDS, MUTATING, parseArgs, flagsOf } = await import('../jarl.mjs');
+const { COMMAND_ARGS, COMMAND_FLAGS, GLOBAL_FLAGS, INTERNAL_COMMANDS, MUTATING, parseArgs, flagsOf } = await import('../jarl.mjs');
 const mcp = await import('../jarl-mcp.mjs');
 // The commands that have a tool and a block in the usage text: every command but the internal ones.
 const publicOf = (names) => names.filter((c) => !INTERNAL_COMMANDS.includes(c));
@@ -34,13 +34,13 @@ test('parity: every command dispatch runs has its tables, its usage block and ex
   assert.deepEqual(Object.keys(COMMAND_FLAGS).sort(), commands, 'COMMAND_FLAGS names the commands dispatch runs');
   assert.deepEqual(Object.keys(COMMAND_ARGS).sort(), commands, 'COMMAND_ARGS names the commands dispatch runs');
   assert.deepEqual(Object.keys(mcp.usageBlocks()).sort(), publicOf(commands), 'USAGE describes the commands dispatch runs that are not internal');
-  assert.deepEqual(TOOLS.map((t) => t.name).sort(), [...publicOf(commands).map(mcp.toolName), ...Object.keys(COMMAND_ALIASES).map(mcp.toolName), 'jarl_help'].sort(), 'one tool per command that is not internal and per name it answers to, and help');
+  assert.deepEqual(TOOLS.map((t) => t.name).sort(), [...publicOf(commands).map(mcp.toolName), 'jarl_help'].sort(), 'one tool per command that is not internal, and help');
   for (const w of MUTATING) assert.ok(commands.includes(w), `MUTATING names ${w}, which dispatch does not run`);
 });
 
 test('parity: the tool set is the one this release documents — adding or removing a tool is a deliberate edit here', () => {
   assert.deepEqual(TOOLS.map((t) => t.name).sort(), [
-    'answer', 'archive', 'ask', 'base', 'branches', 'changelog', 'check', 'close', 'decide', 'decisions',
+    'answer', 'archive', 'ask', 'base', 'branches', 'changelog', 'close', 'decide', 'decisions',
     'evidence', 'field', 'goal', 'help', 'import', 'init', 'list', 'log', 'merged', 'mode', 'models', 'new', 'next',
     'profile', 'queue', 'renumber', 'report', 'resume', 'retract', 'review', 'round', 'scope', 'set', 'show', 'sources', 'status', 'tick', 'tips', 'verify',
   ].map(mcp.toolName));
@@ -226,7 +226,7 @@ test('a check that fails is the CLI exit 2: isError, with the items', () => {
   mcp.callTool('jarl_init', { goal: 'g', root });
   mcp.callTool('jarl_new', { title: 't', files: 'a.mjs', root });
   sh(root, 'git checkout -q -b jarl/1-t && echo 2 > b.mjs && git add -A && git commit -qm change && git checkout -q feature');
-  const r = mcp.callTool('jarl_check', { id: '1', branch: 'jarl/1-t', root });
+  const r = mcp.callTool('jarl_scope', { id: '1', branch: 'jarl/1-t', root });
   assert.equal(r.isError, true);
   assert.match(r.content[0].text, /✗/);
 });
@@ -325,7 +325,7 @@ test('a missing required field is refused as invalid params, as the schema decla
   refusedAsInvalid(() => mcp.callTool('jarl_set', { ids: '1', root }), /"status" is required/);
   refusedAsInvalid(() => mcp.callTool('jarl_review', { ids: '1', verdict: 'approve', root }), /"findings" is required/);
   for (const t of TOOLS) for (const f of t.inputSchema.required || []) assert.ok(t.inputSchema.properties[f], `${t.name}: required ${f} is a field`);
-  assert.equal(mcp.callTool('jarl_check', { branch: 'x', root }).isError, true, 'an optional argument left out goes through');
+  assert.equal(mcp.callTool('jarl_scope', { branch: 'x', root }).isError, true, 'an optional argument left out goes through');
 });
 
 test('with no root, every answer ends by naming the loop it reached and where that came from', () => {
@@ -380,7 +380,7 @@ test('with json: true, the answer is exactly one text block holding the JSON, wh
   mcp.callTool('jarl_init', { goal: 'g', root: c });
   mcp.callTool('jarl_new', { title: 't', files: 'a.mjs', root: c });
   sh(c, 'git checkout -q -b jarl/1-t && echo 2 > b.mjs && git add -A && git commit -qm change && git checkout -q feature');
-  const failedCheck = mcp.callTool('jarl_check', { id: '1', branch: 'jarl/1-t', root: c, json: true });
+  const failedCheck = mcp.callTool('jarl_scope', { id: '1', branch: 'jarl/1-t', root: c, json: true });
   assert.equal(failedCheck.isError, true);
   assert.equal(failedCheck.content.length, 1);
   assert.ok(JSON.parse(failedCheck.content[0].text).ok === false);

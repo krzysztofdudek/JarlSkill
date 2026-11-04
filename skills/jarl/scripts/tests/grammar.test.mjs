@@ -1,7 +1,6 @@
 // One grammar for the commands: --help exits 0, one retract verb for a verdict and an evidence row, set for statuses and
-// field for fields, one way to empty a field, and the list grammar on the commands that write one issue at a time. A
-// spelling that names the same operation through evidence, review or set is read as the verb, and says on stderr (the
-// command line only, never a tool reply) which verb to use.
+// field for fields, one way to empty a field, and the list grammar on the commands that write more than one issue. A
+// spelling that names the same operation through evidence, review or set is refused with the call of the verb.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, readFileSync } from 'node:fs';
@@ -50,62 +49,45 @@ test('--help prints the usage on stdout and exits 0', () => {
   assert.match(withCommand.stdout, /^usage: jarl\.mjs/);
 });
 
-test('retract takes back a verdict and an evidence row with the same results as the spellings that name them in review and evidence', () => {
-  const a = loop();
-  const b = loop();
-  const ida = worked(a);
-  const idb = worked(b);
-  assert.equal(ida, idb);
+test('retract takes back a verdict and an evidence row; the spellings through evidence and review are refused with the retract call', () => {
+  const root = loop();
+  worked(root);
   const reason = 'the row and the verdict were read in the wrong place';
-  const viaVerbs = [run(b, ['retract', '1', '1', '--by', 'jarl', reason]), run(b, ['retract', '1', 'review', '--by', 'jarl', reason])];
-  const viaForms = [run(a, ['evidence', '1', '--retract', '1', '--by', 'jarl', reason]), run(a, ['review', '1', 'retract', '--by', 'jarl', reason])];
-  for (const [i, r] of viaVerbs.entries()) {
+  const before = logText(root);
+  assert.equal(refuses(root, 'evidence', '1', '--retract', '1', '--by', 'jarl', reason).trim(), 'evidence takes nothing back: a row or a note is taken back with jarl.mjs retract 1 1 --by <who> "<text>"');
+  assert.equal(refuses(root, 'review', '1', 'retract', '--by', 'jarl', reason).trim(), `a verdict is taken back with retract: jarl.mjs retract 1 review --by jarl "${reason}"`);
+  assert.equal(logText(root), before, 'a refused spelling writes nothing');
+  for (const r of [run(root, ['retract', '1', '1', '--by', 'jarl', reason]), run(root, ['retract', '1', 'review', '--by', 'jarl', reason])]) {
     assert.equal(r.status, 0, r.stderr);
     assert.equal(r.stderr, '', 'the verb says nothing on stderr');
-    assert.equal(r.stdout, viaForms[i].stdout, 'the same reply');
-    assert.equal(viaForms[i].status, 0);
   }
-  assert.match(viaForms[0].stderr, /retract <id> 1 --by <who> "<reason>"/);
-  assert.match(viaForms[1].stderr, /retract <id> review --by <who> "<reason>"/);
-  assert.equal(scrubbed(issueText(a, ida)), scrubbed(issueText(b, idb)), 'the same file');
-  assert.equal(logText(a), logText(b), 'the same log');
-  assert.match(issueText(b, idb), /~~\*\*ran:\*\*/);
-  assert.match(issueText(b, idb), /~~\*\*approve\*\*/);
+  assert.match(issueText(root, '1'), /~~\*\*ran:\*\*/);
+  assert.match(issueText(root, '1'), /~~\*\*approve\*\*/);
 });
 
-test('retract refuses what the two spellings refuse, in the same words', () => {
-  const a = loop();
+test('retract refuses what it cannot take back, in words that name what it takes', () => {
   const b = loop();
-  worked(a);
   worked(b);
-  const pairs = [
-    [['retract', '1', '3', '--by', 'jarl', 'no such row here'], ['evidence', '1', '--retract', '3', '--by', 'jarl', 'no such row here']],
-    [['retract', '1', '1', 'because the row is wrong'], ['evidence', '1', '--retract', '1', 'because the row is wrong']],
-    [['retract', '1', 'review', '--by', 'jarl', 'x'], ['review', '1', 'retract', '--by', 'jarl', 'x']],
-    [['retract', '1,2', 'review', '--by', 'jarl', 'because I said so'], ['review', '1,2', 'retract', '--by', 'jarl', 'because I said so']],
-  ];
-  for (const [verb, form] of pairs) assert.equal(refuses(b, ...verb).replace(/\s+$/, ''), refuses(a, ...form).replace(/\s+$/, ''), verb.join(' '));
+  const before = logText(b);
+  assert.match(refuses(b, 'retract', '1', '3', '--by', 'jarl', 'no such row here'), /has 1 evidence row: there is no row 3/);
+  assert.match(refuses(b, 'retract', '1', '1', 'because the row is wrong'), /needs --by <who>/);
   assert.match(refuses(b, 'retract', '1', 'approve', '--by', 'jarl', 'what is this word'), /retract takes review .* or the number of an evidence row/);
   assert.match(refuses(b, 'retract', '1', '0', '--by', 'jarl', 'row zero does not exist'), /^retract takes the number of an evidence row/);
   assert.match(refuses(b, 'retract', '1,4', 'review', '--by', 'jarl', 'two issues at once'), /^retract names one issue/);
   assert.match(refuses(b, 'retract', '1,4', '1', '--by', 'jarl', 'two issues at once'), /^retract names one issue/);
-  assert.equal(logText(a), logText(b), 'nothing was written');
+  assert.equal(logText(b), before, 'nothing was written');
 });
 
-test('a tool call that retracts through evidence or review answers without the line that names the verb', () => {
+test('a tool call that names a retraction through evidence or review is refused, and jarl_retract takes it back', () => {
   const root = loop();
   const id = worked(root);
   const said = (r) => r.content.map((c) => c.text).join('\n');
-  const evidence = mcp.callTool('jarl_evidence', { ids: id, retract: '1', by: 'jarl', text: 'the row was wrong', root });
-  assert.ok(!evidence.isError, said(evidence));
-  assert.doesNotMatch(said(evidence), /note:/);
-  assert.equal(said(evidence).trim(), '001 evidence row 1 retracted by jarl');
+  assert.throws(() => mcp.callTool('jarl_evidence', { ids: id, retract: '1', by: 'jarl', text: 'the row was wrong', root }), /unknown field "retract"/);
   const review = mcp.callTool('jarl_review', { ids: id, verdict: 'retract', by: 'jarl', findings: 'the verdict was wrong', root });
-  assert.ok(!review.isError, said(review));
-  assert.doesNotMatch(said(review), /note:/);
+  assert.ok(review.isError);
+  assert.match(said(review), /a verdict is taken back with retract: jarl\.mjs retract 001 review --by jarl/);
   const verb = mcp.callTool('jarl_retract', { id, what: 'review', by: 'jarl', reason: 'a second try at the verdict', root });
-  assert.ok(verb.isError, 'no approve is left to retract');
-  assert.match(said(verb), /no approve to retract/);
+  assert.ok(!verb.isError, said(verb));
 });
 
 test('field writes Resources and the fields a profile declares; set takes statuses', () => {
@@ -248,6 +230,6 @@ test('the tools keep the field named id on every command that takes a list', () 
     assert.ok(props[field], `${cmd}: the ${field} field`);
     assert.match(props[field].description, /comma list with ranges/);
   }
-  assert.ok(tools.jarl_evidence.inputSchema.properties.retract, 'the retract field of evidence');
+  assert.equal(tools.jarl_evidence.inputSchema.properties.retract, undefined, 'evidence takes nothing back');
   for (const cmd of ['retract', 'field']) assert.ok(tools[`jarl_${cmd}`], `${cmd} has its tool`);
 });

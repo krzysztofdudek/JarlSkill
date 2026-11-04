@@ -230,7 +230,7 @@ test('an issue that declares a resource passes check on its real files; check, q
   git('checkout', '-q', '-b', 'work');
   writeFileSync(join(dir, 'a.mjs'), '2\n');
   git('commit', '-qam', 'work');
-  const c = JSON.parse(jarl(dir, 'check', '1', '--branch', 'work', '--base', 'main', '--json'));
+  const c = JSON.parse(jarl(dir, 'scope', '1', '--branch', 'work', '--base', 'main', '--json'));
   const scope = c.items.find((x) => x.name === 'diff inside declared files');
   assert.equal(scope.ok, true, 'a resource is not a file: the real change is inside the issue');
   assert.match(scope.note, /1 file\(s\), all inside/);

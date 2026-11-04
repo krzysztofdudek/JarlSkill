@@ -24,8 +24,8 @@ test('a done issue whose approve and proof row were retracted is flagged by ever
   row(root, 1);
   jarl(root, 'set', '1', 'done');
   jarl(root, 'merged', '1', '--sha', 'abc1234');
-  jarl(root, 'review', '1', 'retract', '--by', 'jarl', 'wrong diff was read');
-  jarl(root, 'evidence', '1', '--retract', '1', '--by', 'jarl', 'wrong command');
+  jarl(root, 'retract', '1', 'review', '--by', 'jarl', 'wrong diff was read');
+  jarl(root, 'retract', '1', '1', '--by', 'jarl', 'wrong command');
   for (const text of every(root)) {
     const lines = text.split('\n').filter((l) => !l.startsWith('#') && /\b1\b/.test(l) && /(^|\s)gate/.test(l));
     assert.equal(lines.length, 1, text);
@@ -48,7 +48,7 @@ test('report names a retracted approve retracted and never counts it as unrecord
   jarl(root, 'review', '1', 'approve', '--by', 'jarl', 'read the diff, nothing found');
   row(root, 1);
   jarl(root, 'set', '1', 'done');
-  jarl(root, 'review', '1', 'retract', '--by', 'jarl', 'wrong');
+  jarl(root, 'retract', '1', 'review', '--by', 'jarl', 'wrong');
   const report = json(root, 'report');
   assert.equal(report.reviews.retracted, 1);
   assert.equal(report.reviews.unrecorded, 0);
@@ -117,7 +117,7 @@ test('flagging refuses nothing and writes nothing', () => {
   const root = loop(1);
   jarl(root, 'review', '1', 'approve', '--by', 'jarl', 'read the diff, nothing found'); row(root, 1);
   jarl(root, 'set', '1', 'done');
-  jarl(root, 'review', '1', 'retract', '--by', 'jarl', 'wrong');
+  jarl(root, 'retract', '1', 'review', '--by', 'jarl', 'wrong');
   const before = files(root);
   every(root);
   assert.deepEqual(files(root), before);

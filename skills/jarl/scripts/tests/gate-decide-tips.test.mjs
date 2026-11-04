@@ -207,8 +207,8 @@ test('an issue may name several repositories: files per repository, next keeps t
   assert.equal(next.find((r) => r.id === '3').ready, true, 'another file in tool does not');
   // check: one repository at a time, bounded by the files declared in it.
   sh(tool, 'git checkout -q -b jarl/1-cross && echo 2 > src/a.mjs && echo 2 > src/b.mjs && git commit -qam w && git checkout -q feature');
-  assert.match(refuses(hub, 'check', '1', '--branch', 'jarl/1-cross'), /names several repositories/);
-  const r = run(hub, ['check', '1', '--branch', 'jarl/1-cross', '--repo', '../tool']);
+  assert.match(refuses(hub, 'scope', '1', '--branch', 'jarl/1-cross'), /names several repositories/);
+  const r = run(hub, ['scope', '1', '--branch', 'jarl/1-cross', '--repo', '../tool']);
   assert.equal(r.status, 2);
   assert.match(r.stdout, /✗ diff inside declared files — outside tool\/src\/a\.mjs: src\/b\.mjs/);
   // branches finds the branch in the repository that has it; the lease is not gone while one has it.

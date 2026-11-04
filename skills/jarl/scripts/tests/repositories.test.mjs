@@ -255,8 +255,8 @@ test('a name that does not resolve is shown with its fix, refused by the command
   const where = JSON.parse(jarl(w.hub, 'show', '1', '--json')).where;
   assert.deepEqual(where.repos.map((r) => [r.value, r.name, r.state]), [['tool', 'tool', 'missing']]);
   assert.match(where.repos[0].fix, new RegExp(escaped(fix)));
-  assert.match(jarl(w.hub, 'status', '--by', 'repo'), new RegExp(`^ {2}tool {2}the repository tool is not on this machine — ${escaped(fix)}$`, 'm'));
-  for (const args of [['check', '1', '--branch', 'x'], ['new', 'x', '--tier', 'light', '--repo', 'tool'], ['field', '1', 'Repo', 'tool'], ['merged', '1', '--sha', 'abcd', '--repo', 'tool'], ['branches', '--repo', 'tool']]) {
+  assert.match(jarl(w.hub, 'status', '--group', 'repo'), new RegExp(`^ {2}tool {2}the repository tool is not on this machine — ${escaped(fix)}$`, 'm'));
+  for (const args of [['scope', '1', '--branch', 'x'], ['new', 'x', '--tier', 'light', '--repo', 'tool'], ['field', '1', 'Repo', 'tool'], ['merged', '1', '--sha', 'abcd', '--repo', 'tool'], ['branches', '--repo', 'tool']]) {
     assert.match(refuses(w.hub, ...args), new RegExp(escaped(fix)), args.join(' '));
   }
   for (const view of [['branches'], ['tips'], ['queue'], ['resume'], ['status'], ['next', '--all'], ['report']]) assert.equal(run(w.hub, view).status, 0, view.join(' '));
@@ -301,7 +301,7 @@ test('a loop kept in a submodule finds a sibling submodule by name beside its wo
   assert.equal(L.repoOf(w.hub, 'tool'), w.tool);
   assert.match(jarl(w.hub, 'show', '1'), new RegExp(`^repository tool is at ${escaped(w.tool)}$`, 'm'));
   assert.deepEqual(JSON.parse(jarl(w.hub, 'branches', '--repo', 'tool', '--json')), []);
-  assert.equal(run(w.hub, ['check', '1', '--branch', 'main']).stderr.includes('.git/modules'), false);
+  assert.equal(run(w.hub, ['scope', '1', '--branch', 'main']).stderr.includes('.git/modules'), false);
   assert.equal(L.repoIdentity(w.hub, 'tool').state, 'verified');
 });
 
@@ -333,8 +333,8 @@ test('a bare repository under a name is refused as a bare repository', () => {
   assert.match(refuses(w.hub, 'field', '1', 'Repo', '../tool'), /is a bare repository: it has no working tree to act on/);
   const file = join(w.hub, '.jarl', 'issues', readdirSync(join(w.hub, '.jarl', 'issues'))[0]);
   writeFileSync(file, readFileSync(file, 'utf8').replace(/^(\*\*Files:\*\*.*)$/m, '$1\n**Repo:** ../tool'));
-  assert.match(refuses(w.hub, 'check', '1', '--branch', 'main'), /is a bare repository: it has no working tree to act on/);
-  assert.doesNotMatch(refuses(w.hub, 'check', '1', '--branch', 'main'), /at null/);
+  assert.match(refuses(w.hub, 'scope', '1', '--branch', 'main'), /is a bare repository: it has no working tree to act on/);
+  assert.doesNotMatch(refuses(w.hub, 'scope', '1', '--branch', 'main'), /at null/);
 });
 
 test('a loop outside git looks for a name beside its own directory', () => {
@@ -439,7 +439,7 @@ test('no command other than the identity check reads the root commits: a wrong c
   renameSync(w.tool, join(w.parent, 'tool-real'));
   repoAt(join(w.parent, 'tool'), { branch: 'feature', commits: [['other.txt', 'another repository\n']] });
   assert.equal(identity(w.hub, 'tool').state, 'mismatch');
-  for (const args of [['branches', '--repo', 'tool'], ['field', '1', 'Repo', 'tool'], ['new', 'again', '--tier', 'light', '--repo', 'tool'], ['tips'], ['status', '--by', 'repo']]) {
+  for (const args of [['branches', '--repo', 'tool'], ['field', '1', 'Repo', 'tool'], ['new', 'again', '--tier', 'light', '--repo', 'tool'], ['tips'], ['status', '--group', 'repo']]) {
     const r = run(w.hub, args);
     assert.equal(r.status, 0, `${args.join(' ')}: ${r.stderr}`);
     assert.doesNotMatch(r.stdout + r.stderr, /root commit/, args.join(' '));
@@ -557,7 +557,7 @@ test('a lease that holds a Worktree field keeps it and is read as it was written
 
 // ---- the views -------------------------------------------------------------------------------------
 
-test('status --by repo prints where each repository is, its base and whether its checkout is on it, on stdout only, and writes nothing', () => {
+test('status --group repo prints where each repository is, its base and whether its checkout is on it, on stdout only, and writes nothing', () => {
   const w = world('tool', 'lib');
   neu(w.hub, 'a', '--repo', 'tool');
   neu(w.hub, 'b', '--repo', 'lib');
@@ -565,14 +565,14 @@ test('status --by repo prints where each repository is, its base and whether its
   git(w.lib, 'checkout', '-q', '-b', 'topic');
   const snapshot = () => ['log.md', 'repos.md', 'profile.json'].map((f) => readFileSync(join(w.hub, '.jarl', f), 'utf8')).concat(readdirSync(join(w.hub, '.jarl', 'issues')).map((f) => readFileSync(join(w.hub, '.jarl', 'issues', f), 'utf8')));
   const before = snapshot();
-  const r = run(w.hub, ['status', '--by', 'repo']);
+  const r = run(w.hub, ['status', '--group', 'repo']);
   assert.equal(r.status, 0);
   assert.equal(r.stderr, '');
   assert.match(r.stdout, /^where each repository is on this machine:$/m);
   assert.match(r.stdout, new RegExp(`^ {2}tool {2}${escaped(w.tool)} · base main · on main$`, 'm'));
   assert.match(r.stdout, new RegExp(`^ {2}lib {2}${escaped(w.lib)} · base main · WARNING: its checkout is on topic, not on its base$`, 'm'));
   assert.match(r.stdout, new RegExp(`^ {2}hub {2}${escaped(w.hub)} · on main$`, 'm'));
-  const json = JSON.parse(jarl(w.hub, 'status', '--by', 'repo', '--json')).by.where;
+  const json = JSON.parse(jarl(w.hub, 'status', '--group', 'repo', '--json')).by.where;
   assert.deepEqual(json.lib, { name: 'lib', path: w.lib, state: 'here', base: 'main', current: 'topic', onBase: false });
   assert.equal(json.tool.onBase, true);
   assert.equal(json.hub.base, null);
@@ -669,8 +669,8 @@ const TRIGGERS = {
     jarl(w.hub, 'import', join(dir, 'findings.json'), '--source', 'core/research/2026-10-01-x');
   },
   'a question': (w) => jarl(w.hub, 'ask', 'which way?'),
-  'the retraction of a review': (w) => jarl(w.hub, 'review', '2', 'retract', '--by', 'x', 'the approve was wrong'),
-  'the retraction of an evidence row': (w) => jarl(w.hub, 'evidence', '2', '--retract', '1', '--by', 'x', 'the row was wrong'),
+  'the retraction of a review': (w) => jarl(w.hub, 'retract', '2', 'review', '--by', 'x', 'the approve was wrong'),
+  'the retraction of an evidence row': (w) => jarl(w.hub, 'retract', '2', '1', '--by', 'x', 'the row was wrong'),
 };
 // A trigger that files an issue writes its key, which raises the loop to 3; the others raise it to 2.
 const RAISED_TO = { 'a name': 3, 'a plain issue number on new': 3, import: 3 };
@@ -689,8 +689,8 @@ for (const [trigger, raise] of Object.entries(TRIGGERS)) {
     assert.equal(L.mergedOf(issue).repo, './api');
     assert.equal(L.repoOf(w.hub, L.mergedOf(issue).repo), w.api, 'the done gate reads the merge where it landed');
     assert.equal(L.whereOf(w.hub, issue).repos[0].path, w.api);
-    assert.equal(JSON.parse(jarl(w.hub, 'status', '--by', 'repo', '--json')).by.where.api.path, w.api);
-    assert.equal(JSON.parse(run(w.hub, ['check', '1', '--branch', 'jarl/1-x', '--json']).stdout).repo, w.api);
+    assert.equal(JSON.parse(jarl(w.hub, 'status', '--group', 'repo', '--json')).by.where.api.path, w.api);
+    assert.equal(JSON.parse(run(w.hub, ['scope', '1', '--branch', 'jarl/1-x', '--json']).stdout).repo, w.api);
     const tips = jarl(w.hub, 'tips');
     assert.match(tips, new RegExp(escaped(w.api)));
     assert.doesNotMatch(tips, new RegExp(`${escaped(w.sibling)}\\b`));
@@ -728,12 +728,12 @@ test('every command that acts on a name that does not resolve refuses it with th
     if (emptyDirectoryThere) mkdirSync(w.tool);
     const fix = `put its checkout, or a symlink to it, at ${join(w.parent, 'tool')}`;
     const before = w.log() + w.issue(1);
-    for (const args of [['merged', '1', '--sha', 'abcd1234', '--ci', 'green'], ['merged', '1', '--sha', 'abcd1234', '--repo', 'tool'], ['check', '1', '--branch', 'jarl/1-x'], ['branches', '--repo', 'tool'], ['queue', '--repo', 'tool']]) {
+    for (const args of [['merged', '1', '--sha', 'abcd1234', '--ci', 'green'], ['merged', '1', '--sha', 'abcd1234', '--repo', 'tool'], ['scope', '1', '--branch', 'jarl/1-x'], ['branches', '--repo', 'tool'], ['queue', '--repo', 'tool']]) {
       assert.match(refuses(w.hub, ...args), new RegExp(escaped(fix)), args.join(' '));
     }
     assert.equal(w.log() + w.issue(1), before, 'a refused call writes nothing');
-    for (const view of [['tips'], ['queue'], ['branches'], ['status', '--by', 'repo'], ['show', '1']]) assert.equal(run(w.hub, view).status, 0, view.join(' '));
-    assert.match(jarl(w.hub, 'status', '--by', 'repo'), /the repository tool is not on this machine/);
+    for (const view of [['tips'], ['queue'], ['branches'], ['status', '--group', 'repo'], ['show', '1']]) assert.equal(run(w.hub, view).status, 0, view.join(' '));
+    assert.match(jarl(w.hub, 'status', '--group', 'repo'), /the repository tool is not on this machine/);
     if (emptyDirectoryThere) renameSync(w.tool, `${w.tool}-empty`);
     renameSync(`${w.tool}-moved`, w.tool);
   }

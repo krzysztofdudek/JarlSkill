@@ -219,7 +219,7 @@ test('a run in a worktree finds the loop in the main checkout by itself, and an 
   // check and branches read the repository from there too.
   git(wt, 'commit', '-q', '--allow-empty', '-m', 'worker change');
   assert.match(jarlIn(wt, 'branches'), /jarl\/1-thing/);
-  const checked = JSON.parse(jarlIn(wt, 'check', '1', '--branch', 'jarl/1-thing', '--json'));
+  const checked = JSON.parse(jarlIn(wt, 'scope', '1', '--branch', 'jarl/1-thing', '--json'));
   assert.match(checked.items.find((i) => i.name === 'commits beyond base').note, /1 commit\(s\) on jarl\/1-thing beyond/);
   // Explicit --root wins, even one that has no loop.
   const elsewhere = repo();
@@ -246,11 +246,11 @@ test('a directory or a file inside a repository names that repository, a stored 
   jarl(hub, 'new', 'other', '--repo', '../tool/src');
   assert.match(jarl(hub, 'show', '2'), /^\*\*Repo:\*\* tool$/m);
   assert.deepEqual(JSON.parse(jarl(hub, 'branches', '--repo', '../tool/src', '--json')), []);
-  assert.doesNotMatch(run(hub, ['check', '1', '--branch', 'feature', '--repo', '../tool/src']).stderr, /not its root/);
+  assert.doesNotMatch(run(hub, ['scope', '1', '--branch', 'feature', '--repo', '../tool/src']).stderr, /not its root/);
   // A path stored into a subdirectory (written by hand) is not a repository's root: refused, naming the root to give.
   const issueFile = join(hub, '.jarl', 'issues', readdirSync(join(hub, '.jarl', 'issues')).find((f) => f.startsWith('1-')));
   writeFileSync(issueFile, readFileSync(issueFile, 'utf8').replace(/^\*\*Repo:\*\* .*$/m, '**Repo:** ../tool/src'));
-  assert.match(refuses(hub, 'check', '1', '--branch', 'feature'), /is inside the repository at .*tool, not its root — name the root: \.\.\/tool/);
+  assert.match(refuses(hub, 'scope', '1', '--branch', 'feature'), /is inside the repository at .*tool, not its root — name the root: \.\.\/tool/);
   // The root itself is fine, and the field can be cleared again.
   jarl(hub, 'field', '1', 'Repo', '../tool');
   assert.match(jarl(hub, 'show', '1'), /^\*\*Repo:\*\* tool$/m);
@@ -273,7 +273,7 @@ test('the repository name in Files: --repo strips it like the field does, an inn
 
   // 1. `check --repo` on an issue with no Repo field strips the name as the field would: tool/src/a.mjs is src/a.mjs.
   jarl(hub, 'new', 'change a', '--files', 'tool/src/a.mjs');
-  const byRepoFlag = JSON.parse(jarl(hub, 'check', '1', '--branch', 'jarl/1-a', '--repo', '../tool', '--json'));
+  const byRepoFlag = JSON.parse(jarl(hub, 'scope', '1', '--branch', 'jarl/1-a', '--repo', '../tool', '--json'));
   const scope = byRepoFlag.items.find((i) => i.name === 'diff inside declared files');
   assert.equal(scope.ok, true, scope.note);
 
@@ -390,7 +390,7 @@ test('check reads a worker branch: commits, declared files, removed tests, asser
   jarl(root, 'new', 'change a', '--files', 'src/a.mjs,tests/a.test.mjs');
   sh(root, `git add -A && git commit -qm jarl && git checkout -qb jarl/1-change-a && echo 'export const a = 2;' > src/a.mjs && printf 'assert.equal(1,1);\\n' > tests/a.test.mjs && echo x > src/b.mjs && echo '- entry' >> CHANGELOG.md && echo 'export {};' > tests/new.test.mjs && git add -A && git commit -qm work && git checkout -q feature`);
   let out;
-  try { jarl(root, 'check', '1', '--branch', 'jarl/1-change-a', '--base', 'feature', '--json'); } catch (e) { out = JSON.parse(e.stdout); }
+  try { jarl(root, 'scope', '1', '--branch', 'jarl/1-change-a', '--base', 'feature', '--json'); } catch (e) { out = JSON.parse(e.stdout); }
   assert.equal(out.ok, false);
   const byName = Object.fromEntries(out.items.map((i) => [i.name, i]));
   assert.equal(byName['commits beyond base'].ok, true);
@@ -411,7 +411,7 @@ test('check matches a declared file relative to a subdirectory, not just the rep
   jarl(root, 'init', 'goal', '--committed');
   jarl(root, 'new', 'change the skill body', '--files', 'SKILL.md');
   sh(root, `git add -A && git commit -qm jarl && git checkout -qb jarl/1-change-the-skill-body && echo two > skills/x/SKILL.md && git add -A && git commit -qm work && git checkout -q feature`);
-  const out = JSON.parse(jarl(root, 'check', '1', '--branch', 'jarl/1-change-the-skill-body', '--base', 'feature', '--json'));
+  const out = JSON.parse(jarl(root, 'scope', '1', '--branch', 'jarl/1-change-the-skill-body', '--base', 'feature', '--json'));
   const byName = Object.fromEntries(out.items.map((i) => [i.name, i]));
   assert.equal(byName['diff inside declared files'].ok, true, byName['diff inside declared files'].note);
 });
@@ -432,7 +432,7 @@ function scopeFixture(declare) {
   sh(root, `git add -A && git commit -qm jarl && git checkout -qb jarl/1-work && echo two > src/deep/a.mjs && echo two > src/b.mjs && echo two > other/deep/q.mjs && echo two > vendor/src/deep/z.mjs && echo two > other.txt && git add -A && git commit -qm work && git checkout -q feature`);
   return root;
 }
-const scopeNote = (root, ...args) => JSON.parse(withStderr(root, 'check', ...args, '--branch', 'jarl/1-work', '--base', 'feature', '--json').stdout).items.find((i) => i.name === 'diff inside declared files');
+const scopeNote = (root, ...args) => JSON.parse(withStderr(root, 'scope', ...args, '--branch', 'jarl/1-work', '--base', 'feature', '--json').stdout).items.find((i) => i.name === 'diff inside declared files');
 
 test('check on an issue with no declared files says so in one sentence and lists no file', () => {
   const root = scopeFixture((r) => jarl(r, 'new', 'work'));
@@ -662,7 +662,7 @@ test('check, branches and handoff read the repository an issue names, not the lo
     const mode = committed ? 'committed' : 'default';
 
     // The issue's Repo field: the branch, its base and its files all come from the tool repository.
-    const out = JSON.parse(jarl(hub, 'check', '1', '--branch', 'jarl/1-change-a', '--json'));
+    const out = JSON.parse(jarl(hub, 'scope', '1', '--branch', 'jarl/1-change-a', '--json'));
     const byName = Object.fromEntries(out.items.map((i) => [i.name, i]));
     assert.equal(out.base, 'feature', `${mode}: the base is the tool repository's current branch, not the hub's`);
     assert.equal(out.mergeBase, sh(tool, 'git rev-parse feature'), mode);
@@ -676,12 +676,12 @@ test('check, branches and handoff read the repository an issue names, not the lo
     assert.doesNotMatch(jarl(hub, 'show', '2'), /\*\*Repo:\*\*/, 'an issue that names no repository carries no Repo line');
 
     // --repo on the command does the same for an issue that names no repository; without it, the loop's own repository is read, as before.
-    assert.match(refuses(hub, 'check', '2', '--branch', 'jarl/1-change-a'), /no such branch/);
-    assert.equal(JSON.parse(jarl(hub, 'check', '2', '--branch', 'jarl/1-change-a', '--repo', '../tool', '--json')).ok, true, mode);
-    assert.match(refuses(hub, 'check', '1', '--branch', 'jarl/1-change-a', '--repo', '../nowhere'), /not a git repository/);
+    assert.match(refuses(hub, 'scope', '2', '--branch', 'jarl/1-change-a'), /no such branch/);
+    assert.equal(JSON.parse(jarl(hub, 'scope', '2', '--branch', 'jarl/1-change-a', '--repo', '../tool', '--json')).ok, true, mode);
+    assert.match(refuses(hub, 'scope', '1', '--branch', 'jarl/1-change-a', '--repo', '../nowhere'), /not a git repository/);
     jarl(hub, 'field', '2', 'Repo', '../tool');
     assert.match(jarl(hub, 'show', '2'), /^\*\*Repo:\*\* tool$/m);
-    assert.equal(JSON.parse(jarl(hub, 'check', '2', '--branch', 'jarl/1-change-a', '--json')).base, 'feature', mode);
+    assert.equal(JSON.parse(jarl(hub, 'scope', '2', '--branch', 'jarl/1-change-a', '--json')).base, 'feature', mode);
 
     // branches lists the worker branch in the tool repository, and the hub's own listing stays empty.
     const rows = JSON.parse(jarl(hub, 'branches', '--repo', '../tool', '--json'));
@@ -751,17 +751,17 @@ test('check matches a changed file against the files an issue declares in its ow
   jarl(hub, 'new', 'change b in tool', '--repo', '../tool', '--files', 'tool/src/b.mjs');
   sh(tool, `git worktree add -q -b jarl/1-change-a-in-tool ${parent}/wt-1 && cd ${parent}/wt-1 && echo 'export const a = 2;' > src/a.mjs && printf 'assert.equal(1,1);\\nassert.equal(2,2);\\n' > tests/a.test.mjs && echo '- a' >> CHANGELOG.md && git add -A && git commit -qm work`);
 
-  const out = JSON.parse(jarl(hub, 'check', '1', '--branch', 'jarl/1-change-a-in-tool', '--json'));
+  const out = JSON.parse(jarl(hub, 'scope', '1', '--branch', 'jarl/1-change-a-in-tool', '--json'));
   const byName = Object.fromEntries(out.items.map((i) => [i.name, i]));
   assert.deepEqual(out.changed, ['CHANGELOG.md', 'src/a.mjs', 'tests/a.test.mjs']);
   assert.equal(byName['diff inside declared files'].ok, true, byName['diff inside declared files'].note);
   assert.equal(byName['diff inside declared files'].note, '3 file(s), all inside');
   assert.equal(out.ok, true);
-  assert.match(jarl(hub, 'check', '1', '--branch', 'jarl/1-change-a-in-tool'), /^✓ diff inside declared files — 3 file\(s\), all inside$/m);
+  assert.match(jarl(hub, 'scope', '1', '--branch', 'jarl/1-change-a-in-tool'), /^✓ diff inside declared files — 3 file\(s\), all inside$/m);
 
   // Dropping the name does not widen the scope: another file of the same repository stays outside.
   let other;
-  try { jarl(hub, 'check', '2', '--branch', 'jarl/1-change-a-in-tool', '--json'); } catch (e) { other = JSON.parse(e.stdout); }
+  try { jarl(hub, 'scope', '2', '--branch', 'jarl/1-change-a-in-tool', '--json'); } catch (e) { other = JSON.parse(e.stdout); }
   const otherByName = Object.fromEntries(other.items.map((i) => [i.name, i]));
   assert.equal(otherByName['diff inside declared files'].ok, false);
   assert.equal(otherByName['diff inside declared files'].note, 'outside tool/src/b.mjs: src/a.mjs');
@@ -1431,14 +1431,14 @@ test('a package is one lease on one branch: set records it, check --branch bound
 
   sh(`git worktree add -q -b jarl/1-pkg ${wt} && cd ${wt} && echo A > a.txt && echo B > b.txt && git commit -qam work`);
   // One issue alone still fails for the files of the other; the package passes in one call.
-  const alone = withStderr(root, 'check', '1', '--branch', 'jarl/1-pkg');
+  const alone = withStderr(root, 'scope', '1', '--branch', 'jarl/1-pkg');
   assert.equal(alone.status, 2);
   assert.match(alone.stdout, /✗ diff inside declared files — outside a\.txt: b\.txt/);
-  const pkg = JSON.parse(jarl(root, 'check', '--branch', 'jarl/1-pkg', '--json'));
+  const pkg = JSON.parse(jarl(root, 'scope', '--branch', 'jarl/1-pkg', '--json'));
   assert.equal(pkg.ok, true, JSON.stringify(pkg.items));
   assert.deepEqual([pkg.id, pkg.ids], [null, ['1', '2']]);
-  assert.match(jarl(root, 'check', '--branch', 'jarl/1-pkg'), /^package 1, 2 on jarl\/1-pkg\n/);
-  assert.match(refuses(root, 'check', '--branch', 'jarl/none'), /no issue records branch jarl\/none/);
+  assert.match(jarl(root, 'scope', '--branch', 'jarl/1-pkg'), /^package 1, 2 on jarl\/1-pkg\n/);
+  assert.match(refuses(root, 'scope', '--branch', 'jarl/none'), /no issue records branch jarl\/none/);
 
   const rows = JSON.parse(jarl(root, 'branches', '--json'));
   assert.deepEqual(rows.map((r) => [r.branch, r.issues, r.stale, r.deletable]), [['jarl/1-pkg', ['1', '2'], [], false]]);
@@ -1453,14 +1453,14 @@ test('check --branch notes each added line that names a loop issue by its number
   git('git checkout -q -b feature');
   writeFileSync(join(root, 'a.txt'), 'keep\nsee issue 2 for it\nthe same as #3\nissue 9 is not ours\nyear 2026 and 2026-10-15\ntimeout 3 seconds\n');
   git('git commit -qam "work for issue 1"');
-  const out = JSON.parse(jarl(root, 'check', '1', '--branch', 'feature', '--base', 'main', '--json'));
+  const out = JSON.parse(jarl(root, 'scope', '1', '--branch', 'feature', '--base', 'main', '--json'));
   assert.equal(out.ok, true, 'the notes never change ok');
   assert.deepEqual(out.notes, [
     { kind: 'issue-number', file: 'a.txt', line: 2, ids: ['2'], text: 'see issue 2 for it' },
     { kind: 'issue-number', file: 'a.txt', line: 3, ids: ['3'], text: 'the same as #3' },
   ]);
   assert.equal(out.notesOmitted, 0);
-  const text = jarl(root, 'check', '1', '--branch', 'feature', '--base', 'main');
+  const text = jarl(root, 'scope', '1', '--branch', 'feature', '--base', 'main');
   assert.match(text, /^note a\.txt:2 names issue 2 · see issue 2 for it$/m);
   assert.match(text, /^note a\.txt:3 names issue 3 · the same as #3$/m);
 });
@@ -1469,9 +1469,9 @@ test('check --branch refuses a branch no issue holds, and says how many commits 
   const { root, sh: git } = gitLoop();
   jarl(root, 'new', 'one', '--files', 'a.txt');
   git('git checkout -q -b feature && echo more >> a.txt && git commit -qam work && git checkout -q main');
-  const msg = refuses(root, 'check', '--branch', 'feature', '--base', 'main');
+  const msg = refuses(root, 'scope', '--branch', 'feature', '--base', 'main');
   assert.match(msg, /^no issue records branch feature: it carries 1 commit\(s\) beyond main and no issue holds it \(work without an issue\) — file the issue, then set it in-progress --branch feature\n$/);
-  assert.match(refuses(root, 'check', '--branch', 'jarl/none'), /^no issue records branch jarl\/none — name one/);
+  assert.match(refuses(root, 'scope', '--branch', 'jarl/none'), /^no issue records branch jarl\/none — name one/);
 });
 
 test('branches marks with NO ISSUE a branch with commits that no issue holds, and no leased, empty, base or release branch', () => {
@@ -1499,11 +1499,11 @@ test('check --branch prints at most twenty issue notes and counts the rest', () 
   git('git checkout -q -b feature');
   writeFileSync(join(root, 'a.txt'), Array.from({ length: 25 }, (_, i) => `line ${i} cites issue 2`).join('\n') + '\n');
   git('git commit -qam work');
-  const out = JSON.parse(jarl(root, 'check', '1', '--branch', 'feature', '--base', 'main', '--json'));
+  const out = JSON.parse(jarl(root, 'scope', '1', '--branch', 'feature', '--base', 'main', '--json'));
   assert.equal(out.notes.length, 20);
   assert.equal(out.notesOmitted, 5);
   assert.equal(out.ok, true);
-  assert.match(jarl(root, 'check', '1', '--branch', 'feature', '--base', 'main'), /^… and 5 more notes not shown$/m);
+  assert.match(jarl(root, 'scope', '1', '--branch', 'feature', '--base', 'main'), /^… and 5 more notes not shown$/m);
 });
 
 test('stale leases are shown, never acted on: worktree gone, branch gone, idle', () => {
@@ -2164,7 +2164,7 @@ test('verify lists a retraction that points at a row the log does not hold', () 
   jarl(root, 'init', 'goal');
   jarl(root, 'new', 'first');
   jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'green');
-  jarl(root, 'evidence', '1', '--retract', '1', '--by', 'owner', 'the row is wrong');
+  jarl(root, 'retract', '1', '1', '--by', 'owner', 'the row is wrong');
   appendLines(root, `${DATED}1 evidence retract · row 9 · by owner · no such row`);
   const r = run(root, ['verify']);
   assert.equal(r.status, 2);
@@ -2381,7 +2381,7 @@ test('verify does not flag a Repo that holds a path, whatever it resolves to', (
 // (no finding of that kind, exit 0).
 const plain = () => { const root = repo(); jarl(root, 'init', 'goal'); return root; };
 const issued = () => { const root = plain(); jarl(root, 'new', 'first', '--what', 'Does one thing.'); return root; };
-const retracted = (root) => { jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'green'); jarl(root, 'evidence', '1', '--retract', '1', '--by', 'owner', 'the row is wrong'); return root; };
+const retracted = (root) => { jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'green'); jarl(root, 'retract', '1', '1', '--by', 'owner', 'the row is wrong'); return root; };
 const withIssueFile = (root, name, text) => { mkdirSync(ISSUES(root), { recursive: true }); writeFileSync(join(ISSUES(root), name), text); return root; };
 const editIssue1 = (root, from, to) => { const f = issueFile(root, 1); writeFileSync(f, readFileSync(f, 'utf8').replace(from, to)); };
 const verifyOn = (root) => run(root, ['verify']);
@@ -2409,17 +2409,17 @@ const ANOMALIES = [
   { name: 'a retraction of a "changes" verdict', pattern: /which the log holds as a "changes" verdict/, make: (bad) => {
     const root = issued();
     if (bad) { jarl(root, 'review', '1', 'changes', '--by', 'rv', 'Important: the reason is missing'); appendLines(root, `${DATED}1 review retract · by owner (coordinator) · retracts the approve by rv (fresh) of 2026-10-19 · the reason`); }
-    else { jarl(root, 'review', '1', 'approve', '--by', 'rv', FINDINGS); jarl(root, 'review', '1', 'retract', '--by', 'owner', 'the approve was wrong'); }
+    else { jarl(root, 'review', '1', 'approve', '--by', 'rv', FINDINGS); jarl(root, 'retract', '1', 'review', '--by', 'owner', 'the approve was wrong'); }
     return root;
   } },
   { name: 'a retraction line that names no approve', pattern: /the line names no approve, so it takes away none/, make: (bad) => {
     const root = issued();
     if (bad) appendLines(root, `${DATED}1 review retract · by owner (coordinator) · just a reason`);
-    else { jarl(root, 'review', '1', 'approve', '--by', 'rv', FINDINGS); jarl(root, 'review', '1', 'retract', '--by', 'owner', 'the approve was wrong'); }
+    else { jarl(root, 'review', '1', 'approve', '--by', 'rv', FINDINGS); jarl(root, 'retract', '1', 'review', '--by', 'owner', 'the approve was wrong'); }
     return root;
   } },
   { name: 'a retraction of an approve the log does not hold', pattern: /the log holds no approve by rv before it, so it points at no entry/, make: (bad) => {
-    const root = issued(); if (bad) appendLines(root, `${DATED}1 review retract · by owner (coordinator) · retracts the approve by rv (fresh) of 2026-10-19 · the reason`); else { jarl(root, 'review', '1', 'approve', '--by', 'rv', FINDINGS); jarl(root, 'review', '1', 'retract', '--by', 'owner', 'the approve was wrong'); } return root;
+    const root = issued(); if (bad) appendLines(root, `${DATED}1 review retract · by owner (coordinator) · retracts the approve by rv (fresh) of 2026-10-19 · the reason`); else { jarl(root, 'review', '1', 'approve', '--by', 'rv', FINDINGS); jarl(root, 'retract', '1', 'review', '--by', 'owner', 'the approve was wrong'); } return root;
   } },
   { name: 'a retraction in a loop whose record format was not raised', pattern: /a retraction is written in the raised record format, and this loop is not in it/, make: (bad) => {
     const root = plain(); appendLines(root, `${DATED}1 evidence row · npm test`); if (bad) appendLines(root, `${DATED}1 evidence retract · row 1 · by owner · the row is wrong`); return root;

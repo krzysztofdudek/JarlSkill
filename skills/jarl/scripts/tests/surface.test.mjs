@@ -1,6 +1,6 @@
 // The command surface: one command changes every part of an issue's description, with one grammar for setting, adding,
 // removing and clearing; a command or a spelling the surface does not have is refused with one line that ends with the
-// call that does it.
+// call that does it. A flag name means one thing across commands, and every flag a command takes is named below with it.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync, mkdtempSync } from 'node:fs';
@@ -11,6 +11,7 @@ import * as R from '../record.mjs';
 
 const L = await import('../jarl-lib.mjs');
 const mcp = await import('../jarl-mcp.mjs');
+const J = await import('../jarl.mjs');
 
 const PROFILE = { 'jarl-profile': 1, name: 'fielded', statuses: L.BUILTIN_STATUSES, fields: { Area: { enum: ['core', 'cli'] } }, sections: ['Design'] };
 function fieldedLoop() {
@@ -146,4 +147,72 @@ test('base is the command that changes the base branch of a declared repository'
   const root = makeLoop({ prefix: 'jarl-surface-base-', via: 'cli' });
   assert.match(refuses(root, 'base', 'nothing-here', 'main'), /nothing-here is not declared in this loop/);
   assert.match(refuses(root, 'base', 'nothing-here'), /base takes a repository name and a branch: jarl\.mjs base <name> <branch>/);
+});
+
+// Every flag of the command table with the one thing it means, and the commands that take it. A flag added to a command,
+// or a name given a second meaning, fails here until it is written down: the name keeps its meaning, or gets another name.
+const FLAG_MEANINGS = {
+  by: ['the author of the write: who wrote, changed, reviewed, answered, ruled, retracted or ticked', 'every command that writes'],
+  group: ['the counts grouped by repository, tag, kind, priority or a field', ['status', 'models']],
+  kind: ['the kind of the thing the command files or filters: an issue kind, a question kind', ['new', 'import', 'list', 'ask']],
+  committed: ['the loop committed with the work', ['init']], permanent: ['the loop kept as a standing record', ['init']], profile: ['the profile file a loop opens with', ['init']],
+  key: ['the key of one issue file', ['renumber']],
+  prio: ['the priority of an issue', ['new', 'import', 'list']], tier: ['the tier of an issue', ['new', 'import']], tags: ['the tags of an issue', ['new', 'import']],
+  files: ['the files an issue touches', ['new']], repo: ['a repository, by its name or its path', ['new', 'import', 'scope', 'branches', 'merged', 'queue', 'changelog']],
+  'found-by': ['who found an issue', ['new', 'import']], where: ['the Where of an issue', ['new']], what: ['the What of an issue', ['new']], why: ['the Why of an issue', ['new']],
+  acceptance: ['an acceptance line of an issue', ['new']], source: ['the research a finding comes from', ['new', 'import', 'sources']], after: ['the issues an issue waits on', ['new']],
+  changelog: ['a changelog entry of an issue', ['new']], template: ['the template an issue starts from', ['new']], field: ['a profile field and its value, Name=value', ['new', 'import']],
+  section: ['a profile section and its text, Heading=text', ['new']], person: ['the outside person a wait is held by', ['new']], 'check-when': ['when to check a wait', ['new']],
+  only: ['the findings to file', ['import']], adopt: ['a Source written onto an issue that names the finding', ['import']], 'dry-run': ['what would be filed, nothing written', ['import']],
+  ran: ['a command that ran', ['evidence', 'merged']], saw: ['what the command printed', ['evidence', 'merged']], file: ['the file of an attachment', ['evidence']], slot: ['the slot of an attachment', ['evidence']],
+  add: ['add to a part of the description', ['field']], remove: ['take items off a part of the description', ['field']], clear: ['empty a part of the description', ['field']],
+  status: ['the status the list keeps', ['list']], tag: ['the tag the view keeps', ['list', 'status']], grep: ['the text the list keeps', ['list']], match: ['a field value the list keeps', ['list']],
+  all: ['every row, not only the first or the unfinished', ['list', 'next']], full: ['the whole issue file', ['show']],
+  branch: ['a branch: the lease\'s, or the one measured', ['set', 'scope']], worker: ['the worker of a lease', ['set']], model: ['the model the agent was raised on', ['set', 'review']],
+  worktree: ['the worktree a lease is checked against', ['set']], handover: ['a lease handed to a new worker', ['set']], header: ['the header rewritten from the log', ['set']],
+  limit: ['how many ready issues', ['next']], as: ['the holder whose list is asked for', ['next', 'resume', 'status']], slice: ['a coordinator\'s slice', ['next', 'ask', 'resume', 'status']],
+  relayed: ['a verdict recorded in the reviewer\'s name', ['review']], findings: ['how many findings a red round left', ['round']], with: ['another loop to read', ['models']], archives: ['this loop\'s archives read too', ['models']],
+  base: ['the base branch a branch is held against', ['scope', 'branches', 'queue']], 'stale-hours': ['how long a lease may idle', ['branches', 'status']],
+  sha: ['the merge commit', ['merged']], ci: ['the CI state of a commit: merged records it, resume asks gh for it', ['merged', 'resume', 'handoff']], red: ['the issue a red landing is tracked by', ['merged']], keep: ['the worktree and branch kept', ['merged']],
+  target: ['what a lower question weakens', ['ask']], issue: ['the issue a question is about', ['ask']], option: ['an option of a question', ['ask', 'answer']],
+  'applies-to': ['whom a rule applies to', ['ask', 'decide']], until: ['when a rule ends', ['ask', 'decide']], to: ['who a rule is proposed to', ['ask']],
+  log: ['how many log lines', ['resume', 'handoff']], ready: ['how many ready issues', ['resume', 'handoff']], summary: ['a summary, written nowhere', ['handoff']], next: ['a next step, written nowhere', ['handoff']],
+  settles: ['the issues a ruling settles', ['decide']], quote: ['the owner\'s own words', ['decide']], under: ['the ruling a ruling rests on', ['decide']], supersedes: ['the ruling a ruling replaces', ['decide']],
+  area: ['the type of code a ruling reaches', ['decide']], reach: ['how many files that type holds', ['decide']], rule: ['the graph rule a ruling admits', ['decide']],
+  live: ['only the rulings in force', ['decisions']], set: ['a machine line of the goal', ['goal']], found: ['the issues found by others', ['report']], metrics: ['the metrics alone', ['report']],
+  force: ['close with work left', ['close']], batch: ['the ratification batch alone', ['close']],
+};
+
+test('a flag name means one thing across commands: --by names the author on every write and only there, grouping is --group, --kind the kind of what is filed or filtered', () => {
+  const { COMMAND_FLAGS, MUTATING } = J;
+  const takers = {};
+  for (const [cmd, flags] of Object.entries(COMMAND_FLAGS)) for (const name of Object.keys(flags)) (takers[name] = takers[name] || []).push(cmd);
+  assert.deepEqual(Object.keys(takers).sort(), Object.keys(FLAG_MEANINGS).sort(), 'every flag of the table has one meaning written down, and no meaning names a flag the table lacks');
+  for (const [name, [, commands]] of Object.entries(FLAG_MEANINGS)) {
+    const want = commands === 'every command that writes' ? [...MUTATING] : commands;
+    assert.deepEqual([...takers[name]].sort(), [...want].sort(), `--${name}: ${FLAG_MEANINGS[name][0]}`);
+  }
+  for (const cmd of MUTATING) assert.equal(COMMAND_FLAGS[cmd].by, 'value', `${cmd} writes, so it takes --by`);
+  assert.ok(!['status', 'models'].some((c) => MUTATING.has(c)), 'the grouping views write nothing');
+});
+
+test('status and models group with --group; --by on them is refused with the call that groups', () => {
+  const root = fieldedLoop();
+  jarl(root, 'field', '1', 'Tags', 'docs');
+  assert.match(jarl(root, 'status', '--group', 'tag'), /by tag:\n {2}\(none\) .*\n {2}docs /);
+  assert.equal(JSON.parse(jarl(root, 'status', '--group', 'kind', '--json')).by.key, 'kind');
+  assert.equal(refuses(root, 'status', '--by', 'repo').trim(), 'status groups its counts with --group, and --by names the author of a write: jarl.mjs status --group repo');
+  assert.equal(refuses(root, 'models', '--by', 'tag').trim(), 'models groups its counts with --group, and --by names the author of a write: jarl.mjs models --group tag');
+  assert.match(refuses(root, 'status', '--group', 'colour'), /--group is one of: repo, tag, kind, prio, area \(got "colour"\): jarl\.mjs status --group repo/);
+  assert.equal(JSON.parse(jarl(root, 'models', '--group', 'tag', '--json')).by, 'tag');
+});
+
+test('a verdict and an evidence row are taken back by retract alone; the other spellings and the second name of scope are refused with the call to use', () => {
+  const root = fieldedLoop();
+  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'ok');
+  assert.equal(refuses(root, 'evidence', '1', '--retract', '1', '--by', 'jarl', 'wrong row').trim(), 'evidence takes nothing back: a row or a note is taken back with jarl.mjs retract 1 1 --by <who> "<text>"');
+  assert.equal(refuses(root, 'review', '1', 'retract', '--by', 'jarl', 'wrong verdict').trim(), 'a verdict is taken back with retract: jarl.mjs retract 1 review --by jarl "wrong verdict"');
+  assert.equal(refuses(root, 'check', '1', '--branch', 'jarl/1-a').trim(), 'check is not a command; a branch is measured by scope: jarl.mjs scope 1 --branch jarl/1-a');
+  assert.equal(mcp.buildTools().some((t) => t.name === 'jarl_check'), false, 'no tool answers to a second name');
+  assert.equal(mcp.buildTools().find((t) => t.name === 'jarl_evidence').inputSchema.properties.retract, undefined);
 });

@@ -303,7 +303,7 @@ test('every tool is described as it behaves: Read-only tools write nothing and W
   const tools = mcp.buildTools().filter((t) => t.name !== 'jarl_help');
   for (const tool of tools) {
     const command = tool.name.slice('jarl_'.length);
-    const writes = MUTATING.has(({ check: 'scope' })[command] ?? command);
+    const writes = MUTATING.has(command);
     assert.ok(tool.description.startsWith(writes ? 'WRITES the loop. ' : 'Read-only. '), `${tool.name}: ${tool.description}`);
   }
   const { dir } = gitRepo({ prefix: 'jarl-docs-tools-' });
@@ -312,7 +312,7 @@ test('every tool is described as it behaves: Read-only tools write nothing and W
   jarl(dir, 'ask', 'which way?');
   jarl(dir, 'decide', 'a-ruling', 'a ruling');
   const before = snapshot(dir);
-  const inputs = { show: { id: '1' }, changelog: { ids: '1' }, scope: { branch: 'feature' }, check: { branch: 'feature' } };
+  const inputs = { show: { id: '1' }, changelog: { ids: '1' }, scope: { branch: 'feature' } };
   for (const tool of tools.filter((t) => t.description.startsWith('Read-only.'))) {
     const command = tool.name.slice('jarl_'.length);
     mcp.callTool(tool.name, { ...(inputs[command] ?? {}), root: dir });
@@ -397,7 +397,7 @@ test('the help and the tool descriptions name scope as the command that measures
   assert.doesNotMatch(text, /\bcheck (?:matches|on it|takes|reads|refuses)|\bon `?check`?\b|\bjarl(?:\.mjs)? check\b/);
   const byName = Object.fromEntries(mcp.buildTools().map((t) => [t.name, t.description]));
   assert.match(byName.jarl_scope, /scope of a worker branch/);
-  assert.match(byName.jarl_check, /scope of a worker branch/);
+  assert.equal(byName.jarl_check, undefined, 'no tool answers to check');
   assert.match(USAGE, /\bscope matches the path after the name/);
   assert.match(USAGE, /\bscope on it takes --repo/);
 });

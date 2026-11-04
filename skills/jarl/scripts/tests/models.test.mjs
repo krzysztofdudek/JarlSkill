@@ -815,7 +815,7 @@ test('a model written with dots sits on the goal line that writes it with dashes
   assert.match(notes(root, 'review', [id, 'approve', 'read it all, nothing found'], { by: 'rev-2', model: 'claude-opus-5.5' }), /same model as the worker's \(claude-opus-5\.5\)/);
 });
 
-test('models --by repo slices the same facts by repository; the text names n for every count and a share only from n >= 5', () => {
+test('models --group repo slices the same facts by repository; the text names n for every count and a share only from n >= 5', () => {
   const root = loop({ lines: true });
   mkdirSync(join(root, 'sub'));
   assert.equal(spawnSync('git', ['init', '-q'], { cwd: join(root, 'sub'), timeout: SPAWN_TIMEOUT }).status, 0);
@@ -826,7 +826,7 @@ test('models --by repo slices the same facts by repository; the text names n for
   assert.deepEqual(m.slices.map((s) => s.value).sort(), ['sub', basename(root)].sort());
   const own = m.slices.find((s) => s.value === basename(root));
   assert.equal(cell(own.workers, MID, 'bug · standard').units, 5);
-  assert.throws(() => L.cmdModels(root, { by: 'nonsense' }), /--by is one of: repo, tag/);
+  assert.throws(() => L.cmdModels(root, { by: 'nonsense' }), /--group is one of: repo, tag/);
   const text = L.renderModels(L.cmdModels(root, {}));
   assert.match(text, /mid-model/);
   assert.match(text, /units 7/);

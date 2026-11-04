@@ -204,7 +204,7 @@ test('a row, a note, a ruling, an answer, a Deferred reason and a retraction eac
   jarl(root, 'ask', 'keep the split?', '--kind', 'ratify', '--issue', '1');
   jarl(root, 'answer', 'a-1', 'kept', '--by', 'owner');
   jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'green');
-  jarl(root, 'evidence', '1', '--retract', '1', '--by', 'rev', 'the first run was on the wrong tree');
+  jarl(root, 'retract', '1', '1', '--by', 'rev', 'the first run was on the wrong tree');
   jarl(root, 'set', '1', 'deferred', 'waits for the probe of 2');
   const { proof, notes } = parts(root, 1);
   assert.equal(proof.trim(), '- ~~**ran:** npm test · **saw:** red~~\n- **ran:** npm test · **saw:** green');
@@ -258,7 +258,7 @@ test('a row written under Notes by a writer that does not know the parts is foll
   assert.deepEqual(rows, ['1:one', '2:two', '3:three']);
   assert.equal(parts(root, 1).notes.trim(), 'a note\n- **ran:** two · **saw:** ok\n- **ran:** three · **saw:** ok', 'the row follows the last row, under Notes');
   // A retraction names the same row after the new one was written.
-  jarl(root, 'evidence', '1', '--retract', '2', '--by', 'rev', 'two was the wrong run');
+  jarl(root, 'retract', '1', '2', '--by', 'rev', 'two was the wrong run');
   assert.match(evidence(root, 1), /^- ~~\*\*ran:\*\* two · \*\*saw:\*\* ok~~$/m);
   assert.match(evidence(root, 1), /^- \*\*ran:\*\* one · \*\*saw:\*\* ok$/m);
 });
