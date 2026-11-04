@@ -68,7 +68,7 @@ function issueRows(ctx) {
       says: 'ready to start, raise a worker', command: `jarl.mjs set ${r.id} ${leaseStatus} --branch <branch> --worker <name>` });
   }
   const evidence = `--ran "<command>" --saw "<what it printed>"`;
-  const verdict = (id) => `jarl.mjs review ${id} approve|changes --by <reviewer> "<findings>"`;
+  const verdict = (id) => `jarl.mjs review ${id} approve|changes --by <reviewer> "<text>"`;
   // A wait has rows of its own (keptRows); a promise in a lease is worked as any issue, and its maker holds each line.
   for (const i of loop.issues.filter((x) => profile.is(x.status, 'holds-claim') && profile.keptKind(x.kind) !== WAIT_KIND && !waitingOn(x, loop.byId, profile).length)) {
     const mark = inFlightMark(loop, i);
@@ -95,7 +95,7 @@ function issueRows(ctx) {
       const merge = profile.doneGate['requires-merged'] && !mergedOf(i);
       if (!merge && unticked) continue;
       out.push({ ...(merge ? onMerger : onJarl), what: merge ? 'merge' : 'close', says: merge ? 'proof recorded, not merged; merge it' : 'proof recorded; close it',
-        command: merge ? `jarl.mjs merged ${i.id} --sha <sha> --ran "<check>" --saw "<summary>"` : `jarl.mjs set ${i.id} ${closeStatus} "<why>"` });
+        command: merge ? `jarl.mjs merged ${i.id} --sha <sha> --ran "<check>" --saw "<summary>"` : `jarl.mjs set ${i.id} ${closeStatus} "<text>"` });
       continue;
     }
     if (mark === 'rows-no-verdict' && carriesCode(i) && profile.keptKind(i.kind) !== PROMISE_KIND) continue;   // listed together below
@@ -108,7 +108,7 @@ function issueRows(ctx) {
       continue;
     }
     if (mark === 'changes-requested') {
-      out.push({ ...base, what: 'changes', says: 'changes asked by its reviewer; send it back to a worker', command: `jarl.mjs round ${i.id} "<what failed>"` });
+      out.push({ ...base, what: 'changes', says: 'changes asked by its reviewer; send it back to a worker', command: `jarl.mjs round ${i.id} "<text>"` });
       continue;
     }
     if (mark === 'approved' && carriesCode(i)) {
@@ -120,7 +120,7 @@ function issueRows(ctx) {
       continue;
     }
     if (unticked) continue;
-    out.push({ ...onJarl, what: 'close', says: mark === 'merged' ? 'merged; close it' : 'approved; close it', command: `jarl.mjs set ${i.id} ${closeStatus} "<why>"` });
+    out.push({ ...onJarl, what: 'close', says: mark === 'merged' ? 'merged; close it' : 'approved; close it', command: `jarl.mjs set ${i.id} ${closeStatus} "<text>"` });
   }
   // One line per holder for the proofs of code with no verdict: each coordinator raises its own slice's reviewer.
   const byHolder = new Map();
@@ -188,7 +188,7 @@ function reviewRow(todo, holder, verdict) {
 function keptRows(ctx) {
   const { loop, profile } = ctx;
   const closeStatus = statusWith(profile, 'closes-record', 'terminal');
-  const verdict = `approve|changes --by <reviewer> "<findings>"`;
+  const verdict = `approve|changes --by <reviewer> "<text>"`;
   const out = [];
   const kept = loop.issues.filter((i) => profile.active(i.status) && !waitingOn(i, loop.byId, profile).length
     && (profile.keptKind(i.kind) === WAIT_KIND || (profile.keptKind(i.kind) === PROMISE_KIND && !profile.is(i.status, 'holds-claim'))));
@@ -207,7 +207,7 @@ function keptRows(ctx) {
     const done = promise ? 'kept' : 'it came';
     if (mark === 'rows-no-verdict' || mark === 'approved-not-fresh') out.push({ ...base, what: 'review', holder, says: `${done}, proof recorded, no verdict; review it`, command: `jarl.mjs review ${i.id} ${verdict}` });
     else if (mark === 'changes-requested') out.push({ ...base, what: 'changes', holder, says: `${done}, changes asked by its reviewer; answer them and ask for a new verdict`, command: `jarl.mjs review ${i.id} ${verdict}` });
-    else out.push({ ...base, what: 'close', holder, says: `${done}, approved; close it`, command: `jarl.mjs set ${i.id} ${closeStatus} "<why>"` });
+    else out.push({ ...base, what: 'close', holder, says: `${done}, approved; close it`, command: `jarl.mjs set ${i.id} ${closeStatus} "<text>"` });
   }
   return out;
 }
@@ -245,7 +245,7 @@ function questionRows(ctx) {
     const ref = `a-${a.id}`;
     // An escalation goes up from a coordinator and is the jarl's: it names its slice or its issue.
     if (a.kind === 'escalation') return { what: 'escalation', ask: a.id, kind: a.kind, title: a.question, holder: JARL_HOLDER, ...(a.slice ? { slice: a.slice } : {}),
-      says: `escalation${a.slice ? ` from slice:${a.slice}` : ''}${a.issue ? ` on issue ${a.issue}` : ''}`, command: `jarl.mjs answer ${ref} "<answer>" --by jarl` };
+      says: `escalation${a.slice ? ` from slice:${a.slice}` : ''}${a.issue ? ` on issue ${a.issue}` : ''}`, command: `jarl.mjs answer ${ref} "<text>" --by jarl` };
     // A proposed rule is on the one it was proposed to, and so is a rule of the loop offered for promotion at its close.
     if (a.kind === 'rule') {
       const holder = a.to === OWNER_HOLDER ? OWNER_HOLDER : JARL_HOLDER;
@@ -258,7 +258,7 @@ function questionRows(ctx) {
     const keys = new Set(reviewAskKeys(ctx.loop, a.question));
     const reviewing = ctx.loop.issues.filter((i) => ctx.onOwner.has(i.id) && keys.has(idKey(i.id))).map((i) => i.id);
     return { what: 'question', ask: a.id, kind: a.kind || 'stuck', title: a.question, holder: OWNER_HOLDER, ...(reviewing.length ? { reviewing } : {}),
-      says: `question (${a.kind || 'stuck'})${a.issue ? ` on issue ${a.issue}` : ''}${reviewing.length ? `, the fresh review of ${reviewing.join(', ')} waits on it` : keys.size ? ', no issue it names awaits a review now' : ''}`, command: `jarl.mjs answer ${ref} "<answer>"` };
+      says: `question (${a.kind || 'stuck'})${a.issue ? ` on issue ${a.issue}` : ''}${reviewing.length ? `, the fresh review of ${reviewing.join(', ')} waits on it` : keys.size ? ', no issue it names awaits a review now' : ''}`, command: `jarl.mjs answer ${ref} "<text>"` };
   });
 }
 
@@ -274,7 +274,7 @@ function rulingRows(ctx) {
     if (live || named.some((i) => !i.missing && closedOn(loop, i, d.slug))) continue;
     out.push({ what: 'ruling', ruling: d.slug, title: d.slug, holder: JARL_HOLDER,
       says: `ruling in force; the work it settles has no live issue: ${named.map((i) => (i.missing ? `${i.id} is not in the loop` : `${i.id} is ${i.status}`)).join(', ')}; file the work and settle it`,
-      command: `jarl.mjs new "<title>", then jarl.mjs decide <slug> "<ruling>" --supersedes ${d.slug} --settles <id>` });
+      command: `jarl.mjs new "<title>", then jarl.mjs decide <slug> "<text>" --supersedes ${d.slug} --settles <id>` });
   }
   return out;
 }

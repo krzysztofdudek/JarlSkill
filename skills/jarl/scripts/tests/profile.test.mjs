@@ -274,7 +274,7 @@ test('no profile: no profile file, the same issue file byte for byte, the same l
   assert.match(refuses(root, 'new', 'x', '--kind', 'feature'), /--kind must be one of: bug, gap, cleanup, docs, test, research, process/);
   assert.match(refuses(root, 'set', '1', 'in-progress', 'x', '--worker', ''), /--worker needs a value/);
   assert.match(refuses(root, 'set', '1', 'open', 'x', '--worker', 'w'), /--worker goes with in-progress only/);
-  assert.match(refuses(root, 'set', '1', 'deferred'), /deferred needs a reason: jarl\.mjs set <id> deferred "<why>" — work that waits, not work that is gone/);
+  assert.match(refuses(root, 'set', '1', 'deferred'), /deferred needs a reason: jarl\.mjs set <id> deferred "<text>" — work that waits, not work that is gone/);
 });
 
 // The same work, run on a loop with no profile and on one whose profile spells out the built-in statuses: every view

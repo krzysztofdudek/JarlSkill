@@ -643,8 +643,8 @@ export function eachIssue(root, rawIds, run) {
 
 // The refusal for a move into a needs-reason status given without one; the built-in two say what the status is for.
 const REASON_TEXT = {
-  dropped: 'dropped needs a reason: jarl.mjs set <id> dropped "<why>"',
-  deferred: 'deferred needs a reason: jarl.mjs set <id> deferred "<why>" — work that waits, not work that is gone',
+  dropped: 'dropped needs a reason: jarl.mjs set <id> dropped "<text>"',
+  deferred: 'deferred needs a reason: jarl.mjs set <id> deferred "<text>" — work that waits, not work that is gone',
 };
 // The line a needs-reason status writes under Evidence: its name with a capital, then the reason (Dropped: …).
 export function reasonWord(status) { return status.charAt(0).toUpperCase() + status.slice(1); }
@@ -859,7 +859,7 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   const holds = profile.is(status, 'holds-claim');
   const lease = leaseFlagsGiven(flags);
   need(!lease.length || holds, `--${lease[0]} goes with ${profile.with('holds-claim').join(' or ')} only — it records who works on the issue and where`);
-  need(flags.handover === undefined || typeof flags.handover === 'boolean', '--handover takes no value: the reason it is logged with is the move\'s own "<why>"');
+  need(flags.handover === undefined || typeof flags.handover === 'boolean', '--handover takes no value: the reason it is logged with is the move\'s own "<text>"');
   const handover = flags.handover === true;
   need(!handover || holds, `--handover goes with ${profile.with('holds-claim').join(' or ')} only — it hands a lease to a new worker or branch`);
   for (const k of lease) need(typeof flags[k] === 'string' && fieldText(flags[k]), `--${k} needs a value`);
@@ -869,7 +869,7 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   // What is written into the lease is what the journal gives back unchanged: a value the reader would take for something else is refused.
   for (const k of lease) { const problem = leaseValueProblem(k, flags[k]); need(!problem, `--${k} ${JSON.stringify(fieldText(flags[k]))} ${problem}`); }
   const issues = issuesFor(root, rawIds);
-  need(!profile.is(status, 'needs-reason') || why, REASON_TEXT[status] || `${status} needs a reason: jarl.mjs set <id> ${status} "<why>"`);
+  need(!profile.is(status, 'needs-reason') || why, REASON_TEXT[status] || `${status} needs a reason: jarl.mjs set <id> ${status} "<text>"`);
   const nothing = issues.length > 1 ? ' — nothing was written' : '';
   if (holds) needLeaseHolds(root, profile, issues, status, why, flags, handover, nothing);
   // base: the branch the composer landed the merge into, for the done gate's requires-merged (else the branch checked
@@ -962,7 +962,7 @@ function needLeaseHolds(root, profile, issues, status, why, flags, handover, not
   if (handover) need(why, `--handover says why the work changes hands: set ${issues.map((i) => i.id).join(',')} ${status} "<why the worker changed>" ${leaseFlags} --handover`.replace(/ {2,}/g, ' '));
   for (const issue of issues) {
     if (handover) {
-      need(leased(issue), `${issue.id} holds no lease to hand over — lease it without --handover: set ${issue.id} ${status} "<why>" ${leaseFlags}${nothing}`.replace(/ {2,}/g, ' '));
+      need(leased(issue), `${issue.id} holds no lease to hand over — lease it without --handover: set ${issue.id} ${status} "<text>" ${leaseFlags}${nothing}`.replace(/ {2,}/g, ' '));
       need(replaces(issue), `--handover names the lease ${issue.id} already has (${holderText(issue)}) — a handover names the new --worker or --branch${nothing}`);
     } else if (!composed) {
       need(!(leased(issue) && replaces(issue)), `${issue.id} is leased already (${holderText(issue)}) — a second lease would replace it in silence, and ${fieldText(issue.fields.worker) || 'its worker'} would go on working on a branch the record does not name; when the work changes hands, say why: jarl.mjs set ${issue.id} ${status} "<why the worker changed>" ${leaseFlags} --handover${nothing}`.replace(/ {2,}/g, ' '));
@@ -998,7 +998,7 @@ function needLeaseHolds(root, profile, issues, status, why, flags, handover, not
     ].filter((h) => !joins(h.by));
     if (!held.length) continue;
     const { what, by } = held[0];
-    const join = by.fields.branch ? `, or put ${issue.id} in ${by.id}'s lease: set ${issue.id} ${status} "<why>" --branch ${fieldText(by.fields.branch)}${by.fields.worker ? ` --worker ${fieldText(by.fields.worker)}` : ''}` : '';
+    const join = by.fields.branch ? `, or put ${issue.id} in ${by.id}'s lease: set ${issue.id} ${status} "<text>" --branch ${fieldText(by.fields.branch)}${by.fields.worker ? ` --worker ${fieldText(by.fields.worker)}` : ''}` : '';
     need(false, `${issue.id} ${what}, which ${by.id} holds in its lease (${holderText(by)}) — two leases on one file or resource collide; wait until ${by.id} leaves its lease (next offers ${issue.id} then)${join}${nothing}`);
   }
 }
@@ -1152,15 +1152,15 @@ function doneRefusalIn(root, loop, issue, base) {
   if (profile.doneGate['requires-merged']) { const m = mergeRefusal(root, issue, base); if (m) return m; }
   if (profile.doneGate.approve === 'none') return ownerLineRefusal(root, loop, issue);
   const code = carriesCode(issue);
-  if (g.selfApproved) return `${issue.id}'s live approve is by a worker of this issue or its branch — a self-approve does not count as review: jarl.mjs review ${issue.id} approve --by <${code ? 'fresh reviewer' : 'fresh reviewer|jarl'}> "<findings>"`;
+  if (g.selfApproved) return `${issue.id}'s live approve is by a worker of this issue or its branch — a self-approve does not count as review: jarl.mjs review ${issue.id} approve --by <${code ? 'fresh reviewer' : 'fresh reviewer|jarl'}> "<text>"`;
   // A changes verdict with no approve after it is named as the cause, with its reviewer and day, so whoever is refused
   // sees the review that stands in the way.
   if (!g.approved && g.lastReview === 'changes') {
     const changes = [...g.trail].reverse().find((r) => r.verdict === 'changes');
-    return `${issue.id}'s latest review is a changes verdict by ${changes.by || 'a reviewer not recorded'} of ${changes.at}, and no approve came after it — a fresh reviewer reads the issue and the diff first: jarl.mjs review ${issue.id} approve|changes --by <reviewer> "<findings>"`;
+    return `${issue.id}'s latest review is a changes verdict by ${changes.by || 'a reviewer not recorded'} of ${changes.at}, and no approve came after it — a fresh reviewer reads the issue and the diff first: jarl.mjs review ${issue.id} approve|changes --by <reviewer> "<text>"`;
   }
-  if (!g.approved) return `${issue.id} has no approving review newer than its last round${g.tracked ? ' or reopen' : ''} — a fresh reviewer reads the issue and the diff first: jarl.mjs review ${issue.id} approve|changes --by <reviewer> "<findings>"`;
-  if (code && !g.fresh) return `${issue.id} ${freshRuleText(issue, g.live)}: jarl.mjs review ${issue.id} approve|changes --by <fresh reviewer> "<findings>"`;
+  if (!g.approved) return `${issue.id} has no approving review newer than its last round${g.tracked ? ' or reopen' : ''} — a fresh reviewer reads the issue and the diff first: jarl.mjs review ${issue.id} approve|changes --by <reviewer> "<text>"`;
+  if (code && !g.fresh) return `${issue.id} ${freshRuleText(issue, g.live)}: jarl.mjs review ${issue.id} approve|changes --by <fresh reviewer> "<text>"`;
   // Last, an acceptance line only the owner ticks: his look comes on top of the proof and the review, never instead.
   return ownerLineRefusal(root, loop, issue);
 }
@@ -1295,7 +1295,7 @@ export function cmdMerged(root, rawIds, flags) {
     const loop = readLoop(jarlDir(root));
     for (const issue of issues) {
       const g = gateOf(loop, issue.id);
-      if (!g.fresh) notes.push(`MERGED WITHOUT A FRESH REVIEW — ${issue.id} ${g.live ? freshRuleText({ fields: { merged: sha } }, g.live) : 'holds no live approve at all (none, or spent by a later round, restart or reopen) — the fresh-review rule: a code issue needs an approve from a fresh reviewer before it merges'}; recorded as given, get the fresh review now: jarl.mjs review ${issue.id} approve|changes --by <fresh reviewer> "<findings>"`);
+      if (!g.fresh) notes.push(`MERGED WITHOUT A FRESH REVIEW — ${issue.id} ${g.live ? freshRuleText({ fields: { merged: sha } }, g.live) : 'holds no live approve at all (none, or spent by a later round, restart or reopen) — the fresh-review rule: a code issue needs an approve from a fresh reviewer before it merges'}; recorded as given, get the fresh review now: jarl.mjs review ${issue.id} approve|changes --by <fresh reviewer> "<text>"`);
       notes.push(...approveTipNotes(root, issue, g.live, sha));
     }
   }
@@ -1373,7 +1373,7 @@ function approveTipNotes(root, issue, live, sha) {
     return git(dir, ['merge-base', '--is-ancestor', a, sha]) !== null ? null : b;
   };
   const who = live.by ? `by ${live.by} (${live.kind})` : 'by a reviewer not recorded';
-  const again = `if it was meant to land, record a review of the tip that landed: jarl.mjs review ${issue.id} approve|changes --by <fresh reviewer> "<findings>"`;
+  const again = `if it was meant to land, record a review of the tip that landed: jarl.mjs review ${issue.id} approve|changes --by <fresh reviewer> "<text>"`;
   const head = `APPROVED ON ANOTHER TIP — ${issue.id}'s approve ${who} was recorded on ${branch}`;
   if (was.length !== repos.length) return [`${head} at ${was.map(short).join(', ')}, and the branch stands at ${is.map((s) => (s ? short(s) : 'gone')).join(', ')} at this merge, so that review did not see what changed between them; recorded as given, ${again}`];
   const here = repos.map((dir) => isGitRepo(dir) && git(dir, ['cat-file', '-e', `${sha}^{commit}`]) !== null);
@@ -1425,7 +1425,7 @@ export function workEvidence(issue, profile = DEFAULT_PROFILE) {
 // replace it: the merger's free-text note lands after the worker's rows. `set done` needs the section
 // non-empty, rows or not (not every issue's proof is a command).
 //
-// evidence <id> --retract <n> --by <who> "<reason>" retracts the n-th row (numbered over the whole Evidence section, as
+// evidence <id> --retract <n> --by <who> "<text>" retracts the n-th row (numbered over the whole Evidence section, as
 // show prints it) by an appended entry: the row stays, struck through, the entry names who retracted it and why, and
 // the done gate stops counting it. It only tightens: a row is taken away, never added or revived.
 // The --ran/--saw rows of a call, checked: each --ran has its --saw, each with a value.

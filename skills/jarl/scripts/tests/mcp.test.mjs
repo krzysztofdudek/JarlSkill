@@ -191,8 +191,8 @@ test('smoke: initialize, tools/list, status and a writing command on a temporary
 
     // The CLI's stderr notes come back as a second block.
     await s.call('jarl_evidence', { ids: '1', ran: 'npm test', saw: 'ok', root });
-    await s.call('jarl_review', { ids: '1', verdict: 'approve', findings: FINDINGS, by: 'jarl', root });
-    const done = await s.call('jarl_set', { ids: '1', status: 'done', why: 'finished', root });
+    await s.call('jarl_review', { ids: '1', verdict: 'approve', text: FINDINGS, by: 'jarl', root });
+    const done = await s.call('jarl_set', { ids: '1', status: 'done', text: 'finished', root });
     assert.equal(done.isError, false, done.content[0].text);
     assert.match(done.content[0].text, /1 → done/);
     assert.match(done.content[1]?.text || '', /^note: 1 /, 'two acceptance lines, one evidence row: the note the CLI prints on stderr');
@@ -215,7 +215,7 @@ test('smoke: JARL_ROOT in the server config names the loop when a call gives no 
     await s.request('initialize', {});
     assert.equal((await s.call('jarl_init', { goal: 'g' })).isError, false);
     assert.ok(existsSync(join(root, '.jarl', 'goal.md')));
-    assert.match((await s.call('jarl_log', { event: 'from the server' })).content[0].text, /logged/);
+    assert.match((await s.call('jarl_log', { text: 'from the server' })).content[0].text, /logged/);
     assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /from the server/);
   } finally { await s.stop(); }
 });
@@ -323,7 +323,7 @@ test('a missing required field is refused as invalid params, as the schema decla
   const root = loopDir('jarl-mcp-required-');
   refusedAsInvalid(() => mcp.callTool('jarl_new', { root }), /"title" is required/);
   refusedAsInvalid(() => mcp.callTool('jarl_set', { ids: '1', root }), /"status" is required/);
-  refusedAsInvalid(() => mcp.callTool('jarl_review', { ids: '1', verdict: 'approve', root }), /"findings" is required/);
+  refusedAsInvalid(() => mcp.callTool('jarl_review', { ids: '1', verdict: 'approve', root }), /"text" is required/);
   for (const t of TOOLS) for (const f of t.inputSchema.required || []) assert.ok(t.inputSchema.properties[f], `${t.name}: required ${f} is a field`);
   assert.equal(mcp.callTool('jarl_scope', { branch: 'x', root }).isError, true, 'an optional argument left out goes through');
 });
@@ -362,8 +362,8 @@ test('with json: true, the answer is exactly one text block holding the JSON, wh
   // A command that notes something on stderr (set's evidence note) still comes back as one block, the note in _meta.
   mcp.callTool('jarl_new', { title: 't', root: a });
   mcp.callTool('jarl_evidence', { ids: '1', ran: 'npm test', saw: 'ok', root: a });
-  mcp.callTool('jarl_review', { ids: '1', verdict: 'approve', findings: FINDINGS, by: 'jarl', root: a });
-  const withNote = mcp.callTool('jarl_set', { ids: '1', status: 'done', why: 'finished', root: a, json: true });
+  mcp.callTool('jarl_review', { ids: '1', verdict: 'approve', text: FINDINGS, by: 'jarl', root: a });
+  const withNote = mcp.callTool('jarl_set', { ids: '1', status: 'done', text: 'finished', root: a, json: true });
   assert.equal(withNote.isError, false, withNote.content[0].text);
   assert.equal(withNote.content.length, 1);
   assert.match(withNote._meta['jarl/warn'], /^note: 1 /);
@@ -451,7 +451,7 @@ const exampleOf = (description) => /Example: (\{.*\})$/.exec(description ?? '')?
 test('a tool field whose name does not give its meaning carries an example that is a call of its own tool', () => {
   const FIELDS = [
     ['jarl_field', 'value'], ['jarl_field', 'add'], ['jarl_field', 'remove'], ['jarl_evidence', 'ran'], ['jarl_evidence', 'saw'], ['jarl_review', 'verdict'],
-    ['jarl_review', 'findings'], ['jarl_decide', 'supersedes'], ['jarl_decisions', 'live'],
+    ['jarl_review', 'text'], ['jarl_decide', 'supersedes'], ['jarl_decisions', 'live'],
   ];
   for (const [tool, field] of FIELDS) {
     const props = byName[tool].inputSchema.properties;
@@ -473,7 +473,7 @@ test('a value of the wrong type is refused with a message naming the field and t
     ['jarl_evidence', { ids: '1', ran: { command: 'npm test' }, saw: 'ok' }, /"ran" must be a string or a list of strings/],
     ['jarl_evidence', { ids: '1', ran: ['npm test'], saw: [true] }, /"saw" must be a string or a list of strings/],
     ['jarl_field', { ids: { a: 1 }, name: 'After', value: '1' }, /"ids" must be a string/],
-    ['jarl_decide', { slug: 'a-ruling', ruling: 'a ruling', supersedes: ['x'] }, /"supersedes" must be a string/],
+    ['jarl_decide', { slug: 'a-ruling', text: 'a ruling', supersedes: ['x'] }, /"supersedes" must be a string/],
     ['jarl_decisions', { live: 'true' }, /"live" must be true or false/],
     ['jarl_field', { ids: '1', name: 'What', value: ['a', 'b'] }, /"value" must be a string/],
     ['jarl_field', { ids: '1', name: 'Why', value: 'x', add: 'yes' }, /"add" must be true or false/],

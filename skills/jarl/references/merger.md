@@ -53,7 +53,7 @@ batches), or that `jarl_branches` shows with commits beyond the base:
 3. Run the repository's own check in the foreground, with the shell tool's own timeout parameter set
    for the whole run, and wait for it. Red: roll back with `git reset --keep ORIG_HEAD` — never
    `--hard`, which would also discard what others wrote meanwhile — then
-   `jarl_round <id> "<what failed>"`, report. A red whose cause lies outside the branch (the base is red
+   `jarl_round <id> "<text>"`, report. A red whose cause lies outside the branch (the base is red
    without it) is not a round: rounds count the worker's failures, and the round that reaches the loop's limit raises a takeover of work that
    was right. Roll back, file the cause as its own issue, and leave the branch approved in the queue until the
    check is green; only on the jarl's ruling is it landed on red, with `jarl_merged <ids> --sha <merge sha> --red <cause id>`.

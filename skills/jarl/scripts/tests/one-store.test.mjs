@@ -240,8 +240,8 @@ test('a hand edit of Status is reported by status, resume and show as one line t
 
 const CASES = [
   { field: 'Status', edit: (t) => t.replace('**Status:** in-progress', '**Status:** open'), make: ['set', '1', 'open'] },
-  { field: 'Branch', edit: (t) => t.replace('**Branch:** jarl/1-a', '**Branch:** jarl/1-b'), make: ['set', '1', 'in-progress', '"<why>"', '--branch', 'jarl/1-b', '--handover'] },
-  { field: 'Worker', edit: (t) => t.replace('**Worker:** w1', '**Worker:** w9'), make: ['set', '1', 'in-progress', '"<why>"', '--worker', 'w9', '--handover'] },
+  { field: 'Branch', edit: (t) => t.replace('**Branch:** jarl/1-a', '**Branch:** jarl/1-b'), make: ['set', '1', 'in-progress', '"<text>"', '--branch', 'jarl/1-b', '--handover'] },
+  { field: 'Worker', edit: (t) => t.replace('**Worker:** w1', '**Worker:** w9'), make: ['set', '1', 'in-progress', '"<text>"', '--worker', 'w9', '--handover'] },
   { field: 'Model', edit: (t) => t.replace('**Model:** m1', '**Model:** m2'), make: ['set', '1', 'in-progress', '--model', 'm2'] },
   { field: 'Since', edit: (t) => t.replace(/^\*\*Since:\*\* .*$/m, '**Since:** 2026-01-01 00:00'), make: null },
   { field: 'Merged', edit: (t) => t.replace('**Merged:** abc1234', '**Merged:** deadbeef'), make: ['merged', '1', '--sha', 'deadbeef', '--ci', 'green', '--keep'] },

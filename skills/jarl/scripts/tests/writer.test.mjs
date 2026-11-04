@@ -121,9 +121,9 @@ test('the MCP tools take the writer per call, and the server keeps no name of it
   const root = loop();
   const env = { JARL_BY: 'server', JARL_WRITER: 'server', JARL_AS: 'server', USER: 'server' };
   mcp.callTool('jarl_new', { title: 'one', files: 'a.mjs', root }, env);
-  mcp.callTool('jarl_log', { event: 'unnamed', root }, env);
-  mcp.callTool('jarl_log', { event: 'named', by: 'w1', root }, env);
-  mcp.callTool('jarl_log', { event: 'unnamed again', root }, env);
+  mcp.callTool('jarl_log', { text: 'unnamed', root }, env);
+  mcp.callTool('jarl_log', { text: 'named', by: 'w1', root }, env);
+  mcp.callTool('jarl_log', { text: 'unnamed again', root }, env);
   const events = L.loopEvents(join(root, '.jarl'), L.loadProfile(root));
   assert.deepEqual(events.map((e) => [e.text, e.writer]).slice(-3), [['unnamed', null], ['named', 'w1'], ['unnamed again', null]], 'a writer lasts one call');
 });

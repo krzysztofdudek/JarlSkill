@@ -47,7 +47,7 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
   needNoOwnersWords('the review', findings, flags);
   need(verdict === 'approve' || verdict === 'changes' || verdict === 'retract', 'review requires approve|changes|retract');
   if (verdict === 'retract') return retractReview(root, rawIds, findings, flags);
-  need(findings, 'review requires "<findings>" — what was read and what was found, even when nothing');
+  need(findings, 'review requires "<text>" — what was read and what was found, even when nothing');
   const words = String(findings).split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
   need(words >= REVIEW_MIN_WORDS, `the findings of a review need at least ${REVIEW_MIN_WORDS} words — what was read and what was found, even when nothing (got ${words} word${words === 1 ? '' : 's'}: "${String(findings).trim().slice(0, 40)}")`);
   need(flags.by === undefined || fieldText(flags.by), '--by needs a value — the reviewer\'s name');
@@ -111,8 +111,8 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
 // round, which sends the work back to a worker raised again. A coordinator's approve on code does not clear it: a fresh
 // reviewer's approve is the next step. `wait` is what done also waits for: the owner's tick of a line only he ticks.
 function nextAfterVerdict(issue, verdict, kind, wait = null) {
-  if (verdict === 'changes') return `the jarl records the round — jarl.mjs round ${issue.id} "<what failed>" — and a worker is raised again to fix it`;
-  if (carriesCode(issue) && kind === 'coordinator') return `a fresh reviewer's approve is next — jarl.mjs review ${issue.id} approve|changes --by <fresh reviewer> "<findings>" — then the merger lands it`;
+  if (verdict === 'changes') return `the jarl records the round — jarl.mjs round ${issue.id} "<text>" — and a worker is raised again to fix it`;
+  if (carriesCode(issue) && kind === 'coordinator') return `a fresh reviewer's approve is next — jarl.mjs review ${issue.id} approve|changes --by <fresh reviewer> "<text>" — then the merger lands it`;
   if (carriesCode(issue)) return `the merger merges the branch and records it with one call — jarl.mjs merged ${issue.id} --sha <sha> --ran "<check>" --saw "<summary>" — then ${wait ? `${wait}, then ` : ''}jarl.mjs set ${issue.id} done, which needs a Proof row from the worker (the merge check is the merger's and is no proof); a worker never sets done`;
   return `${wait ? `${wait}, then ` : ''}jarl.mjs set ${issue.id} done once the worker's Proof rows are recorded; a worker never sets done`;
 }

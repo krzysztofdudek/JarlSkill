@@ -47,11 +47,11 @@ The other references, each read when its subject comes up:
 | `next --as <who>` | what is on the owner, the jarl or a person by name now, each line with the command that moves it |
 | `new "<title>" --what … --acceptance …` | files an issue with its body |
 | `new "<title>" --kind promise` · `new "<title>" --kind wait --person "<name>" --check-when "<when>"` | records a promise, kept by whoever its Found by names, or a wait on a person outside the loop; `next` never offers either, `next --as` shows each on its holder until it closes |
-| `set <ids> in-progress "<why>" --branch <b> --worker <name> --model <m>` | leases issues before a worker is raised; with `--handover`, gives a leased issue to a new worker, `"<why>"` saying why |
+| `set <ids> in-progress "<text>" --branch <b> --worker <name> --model <m>` | leases issues before a worker is raised; with `--handover`, gives a leased issue to a new worker, `"<text>"` saying why |
 | `evidence <ids> --ran "<command>" --saw "<what it printed>"` | records proof |
-| `review <ids> approve\|changes --by <name> --model <m> "<findings>"` | records a verdict |
+| `review <ids> approve\|changes --by <name> --model <m> "<text>"` | records a verdict |
 | `merged <ids> --sha <sha> --ran "<check>" --saw "<summary>"` | records a merge |
-| `set <ids> done "<why>"` | closes an issue: needs proof and a live approve, and the owner's tick of each line only he ticks |
+| `set <ids> done "<text>"` | closes an issue: needs proof and a live approve, and the owner's tick of each line only he ticks |
 | `tick <id> <line> --by owner` | the owner's tick of an acceptance line written `[owner] … · material: … · check: …` |
 | `ask` · `answer` · `decide` | the owner's questions and the rulings |
 | `report` · `close` | what was done; ends the loop |
@@ -73,7 +73,7 @@ Every command, its flags and its JSON are in [references/commands.md](references
 **The CLI is the fallback.** When a session has no such tools (a host without MCP, a subagent given none, a server that is not installed or not running), run the same command through the CLI, with the same effect; its help prints the usage.
 <!-- RUNES:mcp-first:END -->
 
-**Jarl's server.** Installed as a plugin, Jarl starts an MCP server named `jarl` by itself, every command of the tool a tool: `jarl_resume`, `jarl_status`, `jarl_new`, `jarl_set`, `jarl_evidence`, `jarl_review` and the rest, the writing ones included, plus `jarl_help`. The tools also take the same lock as the CLI. A description starts with `WRITES the loop` or `Read-only` and says in one sentence what the command does; `jarl_help` prints the full usage of every command, the same text as `--help`. This skill writes each command the way the tool's usage does (`set <ids> <status> "<why>" [--branch <b>]`), because that one table is what both the CLI and the tools are built from. The fields of every tool, and which loop a call reaches, are in [references/commands.md](references/commands.md#the-tools-and-their-fields). The server lives as long as the session, not in the worktree a role works in, so every brief says to pass `root` on every call.
+**Jarl's server.** Installed as a plugin, Jarl starts an MCP server named `jarl` by itself, every command of the tool a tool: `jarl_resume`, `jarl_status`, `jarl_new`, `jarl_set`, `jarl_evidence`, `jarl_review` and the rest, the writing ones included, plus `jarl_help`. The tools also take the same lock as the CLI. A description starts with `WRITES the loop` or `Read-only` and says in one sentence what the command does; `jarl_help` prints the full usage of every command, the same text as `--help`. This skill writes each command the way the tool's usage does (`set <ids> <status> "<text>" [--branch <b>]`), because that one table is what both the CLI and the tools are built from. The fields of every tool, and which loop a call reaches, are in [references/commands.md](references/commands.md#the-tools-and-their-fields). The server lives as long as the session, not in the worktree a role works in, so every brief says to pass `root` on every call.
 
 ### The CLI, when the tools are not there
 

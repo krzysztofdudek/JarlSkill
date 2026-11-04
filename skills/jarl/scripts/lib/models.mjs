@@ -360,7 +360,7 @@ const SEVERITIES = ['Critical', 'Important', 'Minor'];
 // self). An approve by the issue's own worker — its Worker field, or the worker of its last lease — is refused:
 // a self-approve is not a review.
 //
-// review <id> retract --by <who> "<reason>" retracts the newest approve not yet retracted, by an appended entry: the
+// review <id> retract --by <who> "<text>" retracts the newest approve not yet retracted, by an appended entry: the
 // approve stays in the issue, struck through, and the done gate and the metrics stop counting it. It only tightens:
 // a "changes" verdict is never retracted (that would revive an earlier acceptance) and a retraction is never retracted.
 

@@ -83,10 +83,10 @@ test('a tool call that names a retraction through evidence or review is refused,
   const id = worked(root);
   const said = (r) => r.content.map((c) => c.text).join('\n');
   assert.throws(() => mcp.callTool('jarl_evidence', { ids: id, retract: '1', by: 'jarl', text: 'the row was wrong', root }), /unknown field "retract"/);
-  const review = mcp.callTool('jarl_review', { ids: id, verdict: 'retract', by: 'jarl', findings: 'the verdict was wrong', root });
+  const review = mcp.callTool('jarl_review', { ids: id, verdict: 'retract', by: 'jarl', text: 'the verdict was wrong', root });
   assert.ok(review.isError);
   assert.match(said(review), /a verdict is taken back with retract: jarl\.mjs retract 001 review --by jarl/);
-  const verb = mcp.callTool('jarl_retract', { id, what: 'review', by: 'jarl', reason: 'a second try at the verdict', root });
+  const verb = mcp.callTool('jarl_retract', { id, entry: 'review', by: 'jarl', text: 'a second try at the verdict', root });
   assert.ok(!verb.isError, said(verb));
 });
 
@@ -112,7 +112,7 @@ test('set given a field is refused with the field call that writes it, on the co
   assert.equal(refuses(a, 'set', '1,2', 'resources', 'gate').trim(), 'resources is a field, not a status: jarl.mjs field 1,2 resources gate');
   assert.equal(refuses(a, 'set', '1', 'Note', 'a note').trim(), 'Note is a field, not a status: jarl.mjs field 1 Note "a note"');
   for (const blank of ['', ' ']) assert.equal(refuses(a, 'set', '2', 'Note', blank).trim(), 'Note is a field, not a status: jarl.mjs field 2 Note --clear');
-  const said = mcp.callTool('jarl_set', { ids: '3', status: 'resources', why: 'gate', root: a });
+  const said = mcp.callTool('jarl_set', { ids: '3', status: 'resources', text: 'gate', root: a });
   assert.ok(said.isError);
   assert.match(said.content[0].text, /^resources is a field, not a status: jarl\.mjs field 3 resources gate$/);
   assert.equal(logText(a), before);

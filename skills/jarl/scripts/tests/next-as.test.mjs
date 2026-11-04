@@ -51,9 +51,9 @@ test('next --as jarl lists each issue in play with the step it points to and the
   assert.match(text, /^- 5 approved: approved, not merged; merge it \(worker w5\) — jarl\.mjs merged 5 --sha <sha> --ran "<check>" --saw "<summary>" · holds up 10, 11, 12$/m);
   assert.match(text, /^- 1 ready one: ready to start, raise a worker — jarl\.mjs set 1 in-progress --branch <branch> --worker <name> · holds up 7, 12$/m);
   assert.match(text, /^- 2 with a worker: with worker w2 since .*, no proof yet; the worker records it — jarl\.mjs evidence 2 --ran "<command>" --saw "<what it printed>"$/m);
-  assert.match(text, /^- 3 proof no verdict: proof recorded, no verdict; raise a fresh reviewer for 3; if you cannot raise agents, ask the owner to start a fresh session \(worker w3\) — jarl\.mjs review 3 approve\|changes --by <reviewer> "<findings>", or jarl\.mjs ask "start a fresh session to review issue 3"$/m);
-  assert.match(text, /^- 4 changes asked: changes asked by its reviewer; send it back to a worker \(worker w4\) — jarl\.mjs round 4 "<what failed>"$/m);
-  assert.match(text, /^- 6 merged: merged; close it \(worker w6\) — jarl\.mjs set 6 done "<why>"$/m);
+  assert.match(text, /^- 3 proof no verdict: proof recorded, no verdict; raise a fresh reviewer for 3; if you cannot raise agents, ask the owner to start a fresh session \(worker w3\) — jarl\.mjs review 3 approve\|changes --by <reviewer> "<text>", or jarl\.mjs ask "start a fresh session to review issue 3"$/m);
+  assert.match(text, /^- 4 changes asked: changes asked by its reviewer; send it back to a worker \(worker w4\) — jarl\.mjs round 4 "<text>"$/m);
+  assert.match(text, /^- 6 merged: merged; close it \(worker w6\) — jarl\.mjs set 6 done "<text>"$/m);
   assert.doesNotMatch(text, /a-1|a-2|ratify/, 'the questions are the owner\'s');
   // A round sends the changes back to the worker until it records a new row; then the proof waits for a reviewer again.
   jarl(root, 'round', '4', 'the empty list');
@@ -69,7 +69,7 @@ test('next --as owner lists the questions and the items to ratify, most held-up 
   const o = json(root, 'next', '--as', 'owner');
   assert.deepEqual(o.rows.map((r) => [r.ask, r.what, r.holdsUp]), [['1', 'question', ['8']], ['2', 'ratify', []]]);
   const text = jarl(root, 'next', '--as', 'the Owner');
-  assert.match(text, /^On the owner \(2\)\n- a-1 which way\?: question \(stuck\) on issue 8 — jarl\.mjs answer a-1 "<answer>" · holds up 8\n- a-2 ratify the naming: to ratify — jarl\.mjs answer a-2 "yes" --by owner \(or "reject"\)$/m);
+  assert.match(text, /^On the owner \(2\)\n- a-1 which way\?: question \(stuck\) on issue 8 — jarl\.mjs answer a-1 "<text>" · holds up 8\n- a-2 ratify the naming: to ratify — jarl\.mjs answer a-2 "yes" --by owner \(or "reject"\)$/m);
   assert.match(text, /^and 1 issue\(s\) waiting on the owner: jarl\.mjs next --as owner --all$/m);
   const digest = jarl(root, 'next', '--as', 'owner', '--all');
   assert.match(digest, /^Waiting on the owner \(1\)\n- 9 waits on the asked one: waits on the owner via 8$/m);
@@ -119,7 +119,7 @@ test('the rows come from the profile\'s status flags, never from the names of th
   assert.deepEqual(o.rows.map((r) => [r.id, r.what]), [['1', 'ready'], ['2', 'review'], ['3', 'close']]);
   const text = jarl(root, 'next', '--as', 'jarl');
   assert.match(text, /— jarl\.mjs set 1 doing --branch <branch> --worker <name>$/m);
-  assert.match(text, /^- 3 approved plain: approved; close it \(worker w3\) — jarl\.mjs set 3 shipped "<why>"$/m);
+  assert.match(text, /^- 3 approved plain: approved; close it \(worker w3\) — jarl\.mjs set 3 shipped "<text>"$/m);
 });
 
 test('a ruling that settles issues none of which is live, and none finished on it, is the jarl\'s', () => {
@@ -134,7 +134,7 @@ test('a ruling that settles issues none of which is live, and none finished on i
   jarl(root, 'set', '2', 'dropped', 'not needed, ruling drop-the-work');
   const o = json(root, 'next', '--as', 'jarl', '--all');
   assert.deepEqual(o.rows.filter((r) => r.what === 'ruling').map((r) => r.ruling), ['keep-the-work']);
-  assert.match(jarl(root, 'next', '--as', 'jarl', '--all'), /^- keep-the-work: ruling in force; the work it settles has no live issue: 1 is dropped; file the work and settle it — jarl\.mjs new "<title>", then jarl\.mjs decide <slug> "<ruling>" --supersedes keep-the-work --settles <id>$/m);
+  assert.match(jarl(root, 'next', '--as', 'jarl', '--all'), /^- keep-the-work: ruling in force; the work it settles has no live issue: 1 is dropped; file the work and settle it — jarl\.mjs new "<title>", then jarl\.mjs decide <slug> "<text>" --supersedes keep-the-work --settles <id>$/m);
   // A ruling that supersedes it takes the line away.
   jarl(root, 'new', 'the kept work', '--files', 'd.mjs');   // 4
   jarl(root, 'decide', 'keep-the-work-in-4', 'The work of 1 is done in 4.', '--supersedes', 'keep-the-work', '--settles', '4');
@@ -212,7 +212,7 @@ test('on a loop opened with Horde\'s profile, next --as lists only what is not s
   assert.match(text, /^the issues in play are the composer's: scheduling is led by the composer: Horde's tick\.mjs --horde <mission>/m);
   assert.doesNotMatch(text, /queued ticket|running ticket/);
   const owner = jarl(root, 'next', '--as', 'owner');
-  assert.match(owner, /^- a-001 which tier is the default\?: question \(stop\) — jarl\.mjs answer a-001 "<answer>"$/m);
+  assert.match(owner, /^- a-001 which tier is the default\?: question \(stop\) — jarl\.mjs answer a-001 "<text>"$/m);
   assert.match(jarl(root, 'resume', '--as', 'owner'), /## On the owner \(1\)\n- a-001 [^\n]*\nthe issues in play are the composer's: [^\n]*$/);
 });
 
@@ -242,9 +242,9 @@ test('a promise is on whoever its Found by names until it is kept and closed, an
   assert.match(jarl(root, 'next', '--as', 'ada'), /^On Ada \(1\)\n- 4 send the summary to the jarl: promised by Ada; keep it, then record what was done — /);
   // Kept: the proof waits for a verdict, then the close, and the promise stays on its maker throughout.
   jarl(root, 'evidence', '4', '--ran', 'sent the summary', '--saw', 'the jarl has it');
-  assert.match(jarl(root, 'next', '--as', 'Ada'), /^- 4 send the summary to the jarl: kept, proof recorded, no verdict; review it — jarl\.mjs review 4 approve\|changes --by <reviewer> "<findings>"$/m);
+  assert.match(jarl(root, 'next', '--as', 'Ada'), /^- 4 send the summary to the jarl: kept, proof recorded, no verdict; review it — jarl\.mjs review 4 approve\|changes --by <reviewer> "<text>"$/m);
   jarl(root, 'review', '4', 'approve', '--by', 'jarl', FINDINGS);
-  assert.match(jarl(root, 'next', '--as', 'Ada'), /^- 4 send the summary to the jarl: kept, approved; close it — jarl\.mjs set 4 done "<why>"$/m);
+  assert.match(jarl(root, 'next', '--as', 'Ada'), /^- 4 send the summary to the jarl: kept, approved; close it — jarl\.mjs set 4 done "<text>"$/m);
   jarl(root, 'set', '4', 'done', 'the summary was sent');
   assert.equal(json(root, 'next', '--as', 'Ada').total, 0, 'a promise ends when its issue closes');
   // A promise given to a worker is worked as any issue, and its maker still holds each line.
@@ -284,9 +284,9 @@ test('a wait is on its named outside person, with when to check, and what comes 
   // It came: the proof is recorded, and the wait leaves the person for the jarl, who reviews and closes it.
   jarl(root, 'evidence', '1', '--ran', 'asked Dana for the key', '--saw', 'the key arrived by mail');
   assert.equal(json(root, 'next', '--as', 'Dana Smith').total, 0);
-  assert.match(jarl(root, 'next', '--as', 'jarl'), /^- 1 the licence key from the vendor: it came, proof recorded, no verdict; review it — jarl\.mjs review 1 approve\|changes --by <reviewer> "<findings>" · holds up 2$/m);
+  assert.match(jarl(root, 'next', '--as', 'jarl'), /^- 1 the licence key from the vendor: it came, proof recorded, no verdict; review it — jarl\.mjs review 1 approve\|changes --by <reviewer> "<text>" · holds up 2$/m);
   jarl(root, 'review', '1', 'approve', '--by', 'jarl', FINDINGS);
-  assert.match(jarl(root, 'next', '--as', 'jarl'), /^- 1 the licence key from the vendor: it came, approved; close it — jarl\.mjs set 1 done "<why>" · holds up 2$/m);
+  assert.match(jarl(root, 'next', '--as', 'jarl'), /^- 1 the licence key from the vendor: it came, approved; close it — jarl\.mjs set 1 done "<text>" · holds up 2$/m);
   jarl(root, 'set', '1', 'done', 'the key came');
   assert.deepEqual(json(root, 'next', '--as', 'jarl').rows.map((r) => [r.id, r.what]), [['2', 'ready']], 'the wait ended with its issue, and the work after it is ready');
 });

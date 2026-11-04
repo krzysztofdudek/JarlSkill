@@ -153,7 +153,7 @@ test('a merge of a branch that gained a commit after its approve names both tips
   const [a, b] = [tip.slice(0, 12), now.slice(0, 12)];
   assert.ok(out.includes(`approve by rev-fresh (fresh) was recorded on jarl/1-x at ${a}, and the branch stands at ${b} at this merge`), out);
   assert.ok(out.includes(`see it: ${seeing(repo, a, b)}`), out);
-  assert.ok(out.includes('jarl.mjs review 1 approve|changes --by <fresh reviewer> "<findings>"'), out);
+  assert.ok(out.includes('jarl.mjs review 1 approve|changes --by <fresh reviewer> "<text>"'), out);
   assert.doesNotMatch(out, /MERGE WITHOUT/);
   assert.match(jarl(repo, 'show', '1'), new RegExp(`Merged:\\*\\* ${sha}`));
 });

@@ -23,7 +23,7 @@ export function loadAsks(root, skipped) { return asksAt(jarlDir(root), skipped);
 const JARL = 'jarl';
 
 export function cmdAsk(root, question, flags) {
-  need(question, 'ask requires "<question>"');
+  need(question, 'ask requires "<text>"');
   needNoOwnersWords('the question', question, flags);
   const kind = String(flags.kind || 'stuck');
   need(ASK_KINDS.includes(kind), `--kind must be one of: ${ASK_KINDS.join(', ')} — stop (halt everything), stuck (this issue only), lower (weaken something protected, needs a target), charter (the goal itself), ratify (a choice already made under a mandate, awaiting the owner's word; blocks nothing), escalation (a coordinator's question to the jarl, naming its --slice or --issue), rule (a rule proposed with --applies-to, for the jarl to accept, or the owner with --to owner)`);
@@ -121,7 +121,7 @@ function answerChecks(root, ask, answer, chosen) {
   const id = ask.id;
   need(ask.state === 'open', `a-${id} is already answered`);
   need(!(chosen !== null && answer), `answer takes --option <label> or the answer, not both — a-${id}`);
-  need(answer || chosen !== null, 'answer requires "<answer>" or --option <label>');
+  need(answer || chosen !== null, 'answer requires "<text>" or --option <label>');
   const options = ask.options || [];
   let option = null;
   if (chosen !== null) {
@@ -291,7 +291,7 @@ function scopeOf(root, flags) {
   return appliesToLine(selectors, until);
 }
 
-// decide <slug> "<ruling>" [--by who] [--quote "<words>"] [--supersedes <slug>] [--settles <ids>]: the ruling, who ruled
+// decide <slug> "<text>" [--by who] [--quote "<words>"] [--supersedes <slug>] [--settles <ids>]: the ruling, who ruled
 // (the caller, recorded as the coordinator, unless --by says otherwise: jarl for a choice the loop made under a
 // mandate, owner for the owner's own, which needs his words in --quote, kept on one line as the ruling's last paragraph),
 // the ruling in force it rests on (--under, for a ruling by anyone but the owner, kept as the text's last paragraph
@@ -300,7 +300,7 @@ function scopeOf(root, flags) {
 // --by that reads as it is it (rulingAuthor). The owner's words reach the record from --quote alone: the ruling's text and
 // every other flag are refused when they hold the marker in any spelling, and the row each settled issue gets names who ruled.
 export function cmdDecide(root, slug, ruling, flags = {}) {
-  need(slug && ruling, 'decide requires <slug> "<ruling>"');
+  need(slug && ruling, 'decide requires <slug> "<text>"');
   const by = flags.by === undefined ? 'coordinator' : rulingAuthor(flags.by);
   const byOwner = by === OWNER;
   need(flags.quote === undefined || typeof flags.quote === 'string', '--quote is the owner\'s own words, as text');

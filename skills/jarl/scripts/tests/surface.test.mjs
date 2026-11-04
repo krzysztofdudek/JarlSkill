@@ -216,3 +216,36 @@ test('a verdict and an evidence row are taken back by retract alone; the other s
   assert.equal(mcp.buildTools().some((t) => t.name === 'jarl_check'), false, 'no tool answers to a second name');
   assert.equal(mcp.buildTools().find((t) => t.name === 'jarl_evidence').inputSchema.properties.retract, undefined);
 });
+
+// The commands that take free text: a note, a reason, findings, a question, an answer, a ruling.
+const FREE_TEXT = ['evidence', 'retract', 'set', 'review', 'round', 'ask', 'answer', 'log', 'decide'];
+
+test('free text has one name, text, in every tool, and one place in every command: its last argument', () => {
+  const { COMMAND_ARGS, USAGE } = J;
+  const blocks = mcp.usageBlocks(USAGE);
+  const tools = Object.fromEntries(mcp.buildTools().map((t) => [t.name, t.inputSchema.properties]));
+  for (const cmd of FREE_TEXT) {
+    assert.match(COMMAND_ARGS[cmd].at(-1), /^text\??$/, `${cmd}: the free text is its last argument, named text`);
+    assert.ok(tools[mcp.toolName(cmd)].text, `${cmd}: the tool's field is text`);
+    // The arguments of the form that takes text: its words without the options in brackets and the flags with their values.
+    const form = blocks[cmd].synopsis.split(' | ').find((f) => f.includes('"<text>"'));
+    let bare = form ?? '';
+    while (/\[[^[\]]*\]/.test(bare)) bare = bare.replace(/\[[^[\]]*\](?:\.\.\.)?/g, ' ');
+    const args = bare.replace(/--[a-z-]+(?: (?:"[^"]*"|<[^>]*>|[a-z|]+(?=\s|$)))?/g, ' ').trim();
+    assert.ok(args?.endsWith('"<text>"'), `${cmd}: the usage writes "<text>" last among its arguments: ${blocks[cmd].synopsis}`);
+  }
+  const names = Object.values(COMMAND_ARGS).flat().map((a) => a.replace(/[?.]+$/, ''));
+  for (const old of ['why', 'findings', 'what', 'question', 'answer', 'ruling', 'event', 'reason']) assert.ok(!names.includes(old), `no argument is named ${old}`);
+});
+
+test('a tool call writes its free text through the field text', () => {
+  const root = fieldedLoop();
+  const call = (name, input) => { const r = mcp.callTool(`jarl_${name}`, { ...input, root }); assert.equal(r.isError, false, `${name}: ${r.content[0].text}`); return r; };
+  call('evidence', { ids: '1', text: 'a note' });
+  call('round', { id: '1', text: 'the check failed' });
+  call('set', { ids: '2', status: 'deferred', text: 'later' });
+  call('log', { text: 'an event' });
+  call('ask', { text: 'which way?', kind: 'ratify' });
+  assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /an event/);
+  assert.match(R.findIssue(root, '2').sections.evidence, /Deferred: later/);
+});

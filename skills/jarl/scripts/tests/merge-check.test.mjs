@@ -228,7 +228,7 @@ test('the reply of review names the next step: an approve the merger\'s one merg
   const approve = jarl(root, 'review', '1', 'approve', '--by', 'rev-fresh', FINDINGS);
   assert.match(approve, /· next: the merger merges the branch and records it with one call — jarl\.mjs merged 1 --sha <sha> --ran "<check>" --saw "<summary>" — then jarl\.mjs set 1 done, which needs a Proof row from the worker \(the merge check is the merger's and is no proof\); a worker never sets done$/);
   const changes = jarl(root, 'review', '1', 'changes', '--by', 'rev-fresh', CHANGES);
-  assert.match(changes, /· next: the jarl records the round — jarl\.mjs round 1 "<what failed>" — and a worker is raised again to fix it$/);
+  assert.match(changes, /· next: the jarl records the round — jarl\.mjs round 1 "<text>" — and a worker is raised again to fix it$/);
   // A coordinator's approve on code keeps its note and points at the fresh reviewer.
   const coordinator = run(root, 'review', '1', 'approve', '--by', 'jarl', FINDINGS);
   assert.match(coordinator.stderr, /carries code and jarl is a coordinator/);
@@ -246,7 +246,7 @@ test('the same next step is in the reply of the MCP tool, and a library call kee
   const mcp = await import('../jarl-mcp.mjs');
   const root = loop(1);
   jarl(root, 'set', '1', 'in-progress', 'start', '--branch', 'jarl/1-a', '--worker', 'w-one');
-  const r = mcp.callTool('jarl_review', { ids: '1', verdict: 'approve', findings: FINDINGS, by: 'rev-fresh', root });
+  const r = mcp.callTool('jarl_review', { ids: '1', verdict: 'approve', text: FINDINGS, by: 'rev-fresh', root });
   assert.match(r.content[0].text, /· next: the merger merges the branch and records it with one call/);
   const lib = R.review(root, '1', 'approve', FINDINGS, { by: 'rev-other' });
   assert.equal('next' in lib, false);

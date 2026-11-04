@@ -100,7 +100,7 @@ export const BUILTIN_RULES = Object.freeze([
   { slug: 'jarl:worker-only-the-issue', scope: 'role worker', source: 'SKILL.md',
     text: 'Change only what the issue needs. Something else seen on the way is reported for filing, not fixed in passing.' },
   { slug: 'jarl:coordinator-escalates', scope: 'role coordinator', source: 'references/jarl.md',
-    text: "It goes up with `ask \"<question>\" --kind escalation --slice <name>` (and `--issue <id>` when one issue is the subject), which the jarl holds and answers, for these four and no other:\n1. a gap or a finding outside its slice's goal;\n2. a decision that is the jarl's or the owner's;\n3. its slice empty, or blocked by another slice;\n4. a takeover that failed too." },
+    text: "It goes up with `ask \"<text>\" --kind escalation --slice <name>` (and `--issue <id>` when one issue is the subject), which the jarl holds and answers, for these four and no other:\n1. a gap or a finding outside its slice's goal;\n2. a decision that is the jarl's or the owner's;\n3. its slice empty, or blocked by another slice;\n4. a takeover that failed too." },
   { slug: 'jarl:coordinator-pull-push', scope: 'role coordinator', source: 'references/jarl.md',
     text: 'Pull before leasing and push right after when the loop is shared between clones.' },
   { slug: 'jarl:coordinator-shared-review', scope: 'role coordinator and moment review', source: 'references/jarl.md',

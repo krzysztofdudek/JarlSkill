@@ -157,7 +157,7 @@ test('next --as puts an owner line on whoever produces its material, then on the
   // Ticked: off his list, and the close is the jarl's again; the issue after it is offered once it is done.
   jarl(root, 'tick', '1', '2', '--by', 'owner');
   assert.deepEqual(onOwner(), []);
-  assert.match(jarl(root, 'next', '--as', 'jarl', '--all'), /^- 1 cut the film: approved; close it \(worker w1\) — jarl\.mjs set 1 done "<why>" · holds up 2$/m);
+  assert.match(jarl(root, 'next', '--as', 'jarl', '--all'), /^- 1 cut the film: approved; close it \(worker w1\) — jarl\.mjs set 1 done "<text>" · holds up 2$/m);
   assert.deepEqual(json(root, 'next').map((r) => r.id), []);
   jarl(root, 'set', '1', 'done', 'finished');
   assert.deepEqual(json(root, 'next').map((r) => r.id), ['2']);

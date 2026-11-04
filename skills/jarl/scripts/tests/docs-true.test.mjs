@@ -100,7 +100,7 @@ test('ask takes --kind as an option that defaults to stuck, as the reference wri
   assert.match(jarl(dir, 'status', '--json'), /"questions": 1/);
   const asks = readFileSync(join(dir, '.jarl', 'asks.md'), 'utf8');
   assert.match(asks, /stuck/);
-  assert.match(skillText('references/commands.md'), /\| `ask "<question>" \[--kind stop\\\|stuck\\\|lower\\\|charter\\\|ratify\\\|escalation\\\|rule\]/);
+  assert.match(skillText('references/commands.md'), /\| `ask "<text>" \[--kind stop\\\|stuck\\\|lower\\\|charter\\\|ratify\\\|escalation\\\|rule\]/);
 });
 
 test('close --force closes with issues still open, as the reference says, and refuses without it', () => {
@@ -331,7 +331,7 @@ test('jarl_help prints the usage the command line prints, and the server instruc
 
 test('a tool call does what its description says: jarl_ask without a kind files a stuck question, jarl_close with force closes', () => {
   const root = loop({ prefix: 'jarl-docs-call-', via: 'cli' });
-  const asked = mcp.callTool('jarl_ask', { question: 'which way?', root });
+  const asked = mcp.callTool('jarl_ask', { text: 'which way?', root });
   assert.equal(asked.isError, false);
   assert.match(readFileSync(join(root, '.jarl', 'asks.md'), 'utf8'), /stuck/);
   mcp.callTool('jarl_new', { title: 'open', root });

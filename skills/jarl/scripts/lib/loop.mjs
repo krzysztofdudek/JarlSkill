@@ -82,7 +82,7 @@ export function recordDisagreements(loop) {
     }
     if (issue.onFile === null) {
       const status = profile.statuses.includes(issue.status) ? issue.status : profile.initial;
-      out.push({ id, field: 'journal', onFile: issue.status, record: null, line: `record: ${id} is not in the log (it holds no filing and no move), so its header is read as it stands — to put it in the log: jarl.mjs set ${id} ${status}${profile.is(status, 'needs-reason') ? ' "<why>"' : ''}${profile.is(status, 'closes-record') ? ' (through its checks)' : ''}` });
+      out.push({ id, field: 'journal', onFile: issue.status, record: null, line: `record: ${id} is not in the log (it holds no filing and no move), so its header is read as it stands — to put it in the log: jarl.mjs set ${id} ${status}${profile.is(status, 'needs-reason') ? ' "<text>"' : ''}${profile.is(status, 'closes-record') ? ' (through its checks)' : ''}` });
       continue;
     }
     for (const field of Object.keys(FIELD_NAMES)) {
@@ -137,13 +137,13 @@ function makeFileTheRecord(profile, issue, field, file) {
   if (!file) return '';
   if (field === 'status') {
     if (!profile.statuses.includes(file)) return '';
-    return `jarl.mjs set ${id} ${file}${profile.is(file, 'needs-reason') ? ' "<why>"' : ''} (a move into ${file}${profile.is(file, 'closes-record') ? ', through its checks' : ''})`;
+    return `jarl.mjs set ${id} ${file}${profile.is(file, 'needs-reason') ? ' "<text>"' : ''} (a move into ${file}${profile.is(file, 'closes-record') ? ', through its checks' : ''})`;
   }
   if (LEASE_KEYS.includes(field)) {
     if (!profile.is(issue.status, 'holds-claim')) return '';
     // Another worker or branch than the lease the log holds is a new holder: the lease is handed over, with its reason.
     const handover = (field === 'worker' || field === 'branch') && Boolean(issue.fields[field]);
-    return handover ? `jarl.mjs set ${id} ${issue.status} "<why>" --${field} ${file} --handover (a handover, a new move line, which stamps Since again)` : `jarl.mjs set ${id} ${issue.status} --${field} ${file} (a new move line, which stamps Since again)`;
+    return handover ? `jarl.mjs set ${id} ${issue.status} "<text>" --${field} ${file} --handover (a handover, a new move line, which stamps Since again)` : `jarl.mjs set ${id} ${issue.status} --${field} ${file} (a new move line, which stamps Since again)`;
   }
   if (field === 'merged') {
     const merge = /^\S+(?: in .+)?$/.test(file) ? mergedOf({ fields: { merged: file } }) : null;

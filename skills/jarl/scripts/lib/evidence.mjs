@@ -583,7 +583,7 @@ export function closedGateFlags(loop) {
       if (!g.rowsSince) flag(g.rowLog.some((r) => r.retracted && r.n > g.anchorN) ? 'its proof row was retracted' : `no --ran/--saw row since it was ${g.anchor.what === 'filed' ? 'filed' : `moved → ${g.anchor.what}`}`, `jarl.mjs evidence ${id} --ran "<command>" --saw "<what it printed>"`);
       for (const p of slotProblems(loop.root, profile, issue, g, false)) flag(`slot ${p.slot}: ${p.what}`, p.fix);
       if (profile.doneGate.approve !== 'none') {
-        const fresh = `jarl.mjs review ${id} approve --by <fresh reviewer> "<findings>"`;
+        const fresh = `jarl.mjs review ${id} approve --by <fresh reviewer> "<text>"`;
         const kind = approveKind(g);
         if (g.selfApproved) flag('its live approve is by a worker of this issue or its branch', fresh);
         else if (!g.approved) flag(kind === 'retracted' ? 'its approve was retracted' : g.trail.some((r) => r.verdict === 'approve') ? 'its approve is spent by a later round, restart, reopen or changes verdict' : 'it holds no approve', fresh);

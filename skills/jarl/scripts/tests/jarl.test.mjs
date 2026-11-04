@@ -1792,11 +1792,11 @@ test('the MCP answer tool takes one id, or a comma list of ratify items through 
   const mcp = await import(new URL('../jarl-mcp.mjs', import.meta.url).href);
   const root = repo();
   mcp.callTool('jarl_init', { goal: 'goal', root });
-  for (const question of ['raised the limit', 'kept the flag', 'dropped the old flag']) mcp.callTool('jarl_ask', { question, kind: 'ratify', root });
-  const one = mcp.callTool('jarl_answer', { id: 'a-1', answer: 'yes', by: 'owner', root });
+  for (const question of ['raised the limit', 'kept the flag', 'dropped the old flag']) mcp.callTool('jarl_ask', { text: question, kind: 'ratify', root });
+  const one = mcp.callTool('jarl_answer', { id: 'a-1', text: 'yes', by: 'owner', root });
   assert.equal(one.isError, false);
   assert.match(one.content[0].text, /answered a-1/);
-  const list = mcp.callTool('jarl_answer', { id: 'a-2,a-3', answer: 'yes', by: 'owner', root });
+  const list = mcp.callTool('jarl_answer', { id: 'a-2,a-3', text: 'yes', by: 'owner', root });
   assert.equal(list.isError, false);
   assert.match(list.content[0].text, /answered a-2[\s\S]*answered a-3/);
   assert.equal(RECORD.loadAsks(root).filter((a) => a.state === 'answered').length, 3);

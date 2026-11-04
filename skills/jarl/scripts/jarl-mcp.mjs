@@ -117,11 +117,11 @@ const EXAMPLES = {
     saw: 'What each command of ran printed, a list of strings in the same order. Example: {"ids": "12", "ran": ["npm test"], "saw": ["# pass 4 # fail 0"]}',
   },
   review: {
-    verdict: 'approve or changes: the verdict of this reviewer on each issue. Example: {"ids": "12", "verdict": "approve", "by": "rev-12", "findings": "Read the diff and the acceptance: every line holds."}',
-    findings: 'What the reviewer read and found, at least three words, also when nothing is wrong. Example: {"ids": "12", "verdict": "approve", "by": "rev-12", "findings": "Read the diff and the acceptance: every line holds."}',
+    verdict: 'approve or changes: the verdict of this reviewer on each issue. Example: {"ids": "12", "verdict": "approve", "by": "rev-12", "text": "Read the diff and the acceptance: every line holds."}',
+    text: 'What the reviewer read and found, at least three words, also when nothing is wrong. Example: {"ids": "12", "verdict": "approve", "by": "rev-12", "text": "Read the diff and the acceptance: every line holds."}',
   },
   decide: {
-    supersedes: 'The slug of the ruling this one replaces, which the record then marks as superseded. Example: {"slug": "subagents-again", "ruling": "Use fresh reviewers again.", "supersedes": "no-subagents"}',
+    supersedes: 'The slug of the ruling this one replaces, which the record then marks as superseded. Example: {"slug": "subagents-again", "text": "Use fresh reviewers again.", "by": "jarl", "supersedes": "no-subagents"}',
   },
   decisions: {
     live: 'true lists only the rulings still in force, those no later ruling supersedes. Example: {"live": true}',

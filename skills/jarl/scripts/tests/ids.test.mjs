@@ -187,9 +187,9 @@ test('the same commands work by the MCP tool', () => {
   tool(root, 'jarl_field', { ids: '1001', name: 'After', value: '998-1000' });
   assert.deepEqual(JSON.parse(tool(root, 'jarl_show', { id: '1001', json: true })).after, ['998', '999', '1000']);
   tool(root, 'jarl_set', { ids: '1000', status: 'in-progress', worker: 'w1' });
-  tool(root, 'jarl_review', { ids: '1000', verdict: 'approve', findings: FINDINGS, by: 'rev' });
+  tool(root, 'jarl_review', { ids: '1000', verdict: 'approve', text: FINDINGS, by: 'rev' });
   assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /· 1000 review approve/);
-  assert.match(tool(root, 'jarl_ask', { question: 'which?', issue: '1000' }), /a-1\b/);
+  assert.match(tool(root, 'jarl_ask', { text: 'which?', issue: '1000' }), /a-1\b/);
 });
 
 test('questions: a-1000 and the plain 1000 in a question read and write the same, and the first of either raises the format', () => {

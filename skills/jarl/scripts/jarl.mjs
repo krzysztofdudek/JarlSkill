@@ -121,7 +121,7 @@ commands:
                                                  the issue's kind, and the file lies at the slot's place, has an allowed
                                                  extension and at least the minimum size (at most 64 MiB); done checks every
                                                  required slot again on the disk
-  retract <id> review|<n>|note-<n> --by <who> "<reason>"  take a record back by an appended entry that says who and why; review retracts
+  retract <id> review|<n>|note-<n> --by <who> "<text>"  take a record back by an appended entry that says who and why; review retracts
                                                  the newest approve not yet retracted (never a "changes" verdict), and the
                                                  approve stays, struck through; <n> retracts the n-th evidence row (the
                                                  number show prints before each row, counted over the whole Evidence
@@ -141,7 +141,7 @@ commands:
                                                  field that disagrees with the log (see status), where each repository
                                                  written as a name is on this machine and the worktree git has on the
                                                  lease's branch (--json carries them as where)
-  set <ids> <status> "<why>" [--branch <b>] [--worker <name>] [--model <m>] [--worktree <path>] [--handover] [--header] [--by who]
+  set <ids> <status> "<text>" [--branch <b>] [--worker <name>] [--model <m>] [--worktree <path>] [--handover] [--header] [--by who]
                                                  (<ids> <status-in-the-log> --header rewrites the header fields the log
                                                  renders from the log, writes no log line and is never a move)
                                                  change status; writes the log line in the same move; in-progress
@@ -153,7 +153,7 @@ commands:
                                                  issue that declares no Files or Resources, naming the call that
                                                  declares them,
                                                  and --handover hands a leased issue to a new worker or branch, with
-                                                 "<why>" as the reason the worker changed, logged with the move and
+                                                 "<text>" as the reason the worker changed, logged with the move and
                                                  ending the old lease (its Worktree field goes); --model is the model the worker
                                                  was raised on, as the platform names it (with @<effort> where it has that
                                                  lever), stored as given; --worktree is a check and records nothing: a path
@@ -209,7 +209,7 @@ commands:
                                                  the composer's command named; --slice <coordinator> offers only the
                                                  issues of that coordinator's slice: across slices only leases hold, and
                                                  an open issue reserves its files against the issues of its own slice
-  review <ids> approve|changes --by <reviewer> [--model <m>] [--relayed] "<findings>"
+  review <ids> approve|changes --by <reviewer> [--model <m>] [--relayed] "<text>"
                                                  the reviewer's verdict; --model is the model the reviewer was raised on
                                                  (stored as given); --relayed marks a verdict recorded by someone else in
                                                  the reviewer's name, for a reviewer that cannot be resumed to record its
@@ -222,7 +222,7 @@ commands:
                                                  fresh one when the issue carries code (a Branch or Merged field), and
                                                  the worker's Proof row; an approve on an issue with no Proof row says so;
                                                  findings need at least three words; a verdict is taken back with retract
-  round <ids> "<what failed>" [--findings <n>] [--by who]
+  round <ids> "<text>" [--findings <n>] [--by who]
                                                  one red round on each, with the count of findings it left if given; every third round,
                                                  or every n-th where the goal's "Takeover (<kind>): <n>" line for the issue's kind
                                                  or its bare "Takeover: <n>" line says so, prints the takeover block for a fresh
@@ -267,7 +267,7 @@ commands:
                                                  acted on; read in --repo alone, else in the loop's own
                                                  repository, every repository an open or in-progress issue
                                                  names and every one where an issue not dropped records a Branch
-  ask "<question>" [--kind stop|stuck|lower|charter|ratify|escalation|rule] [--target x] [--issue 7] [--slice <coordinator>] [--option "<label>: <effect>"]... [--applies-to "<selectors>" [--until <date|id>] [--to owner]] [--by who]
+  ask "<text>" [--kind stop|stuck|lower|charter|ratify|escalation|rule] [--target x] [--issue 7] [--slice <coordinator>] [--option "<label>: <effect>"]... [--applies-to "<selectors>" [--until <date|id>] [--to owner]] [--by who]
                                                  a question the owner has to answer; lower needs --target;
                                                  escalation is a coordinator's question to the jarl, who holds it:
                                                  it names its --slice or its --issue (or both), shows on next --as
@@ -280,7 +280,7 @@ commands:
                                                  with --to owner, and answered yes, which makes it a rule in force, or reject;
                                                  --option gives the choices, at least two, repeated for each one:
                                                  the question prints with its options for the choice window
-  answer <ids> "<answer>" | --option <label> [--by who]
+  answer <ids> "<text>" | --option <label> [--by who]
                                                  records the answer as a ruling and closes the question: the option
                                                  chosen, marked in the ruling's list of options, or the answer in the
                                                  person's own words; --by records who answered (default owner; the jarl on an escalation) and
@@ -300,10 +300,10 @@ commands:
                                                  <coordinator> keeps in flight, waiting, the questions, held and next
                                                  ready to that coordinator's slice, and the rulings, the merge queue,
                                                  the tips and the log whole
-  log "<event>" [--by who]                       append one dated note to the journal; a line that reads as a filing, a move,
+  log "<text>" [--by who]                       append one dated note to the journal; a line that reads as a filing, a move,
                                                  a round, a verdict, a retraction, an evidence row, a merge, a CI state or
                                                  a body change is refused, and the refusal names the command that writes it
-  decide <slug> "<ruling>" [--by who [--quote "<words>"]] [--under <slug>] [--supersedes <slug>] [--settles <ids>] [--applies-to "<selectors>" [--until <date|id>]] [--area <type> [--reach n] [--rule <id>]]
+  decide <slug> "<text>" [--by who [--quote "<words>"]] [--under <slug>] [--supersedes <slug>] [--settles <ids>] [--applies-to "<selectors>" [--until <date|id>]] [--area <type> [--reach n] [--rule <id>]]
                                                  append a ruling (slug: letters, digits, . _ -); refuses a duplicate slug;
                                                  --by records who ruled (the coordinator when it is left out; a name that
                                                  reads as owner is owner); --by owner needs --quote, his own words, kept as
@@ -614,12 +614,12 @@ export function parseArgs(argv) {
 // +a -b, sources' findings files) and has no upper bound. A command's arity is how many names it has.
 export const COMMAND_ARGS = {
   init: ['goal'], new: ['title'], renumber: ['id'], import: ['file'], sources: ['files...'],
-  evidence: ['ids', 'text?'], retract: ['id', 'what', 'reason'], field: ['ids', 'name', 'value?'], base: ['name', 'branch'],
-  list: [], show: ['id'], set: ['ids', 'status', 'why?'],
+  evidence: ['ids', 'text?'], retract: ['id', 'entry', 'text'], field: ['ids', 'name', 'value?'], base: ['name', 'branch'],
+  list: [], show: ['id'], set: ['ids', 'status', 'text?'],
   merged: ['ids'],
-  next: [], review: ['ids', 'verdict', 'findings'], round: ['id', 'what'], tick: ['id', 'line'], models: [], scope: ['id?'], branches: [],
-  ask: ['question'], answer: ['id', 'answer?'], resume: [], handoff: ['action?'], log: ['event'],
-  decide: ['slug', 'ruling'], decisions: [], goal: [], status: [], archive: ['slug'], report: [], tips: [], queue: [],
+  next: [], review: ['ids', 'verdict', 'text'], round: ['id', 'text'], tick: ['id', 'line'], models: [], scope: ['id?'], branches: [],
+  ask: ['text'], answer: ['id', 'text?'], resume: [], handoff: ['action?'], log: ['text'],
+  decide: ['slug', 'text'], decisions: [], goal: [], status: [], archive: ['slug'], report: [], tips: [], queue: [],
   changelog: ['ids'], mode: ['mode'], close: [], profile: ['file?'], verify: [],
 };
 // One sentence per command: what it does, the MCP tool's whole description after "WRITES the loop." or "Read-only.".
@@ -631,7 +631,7 @@ export const COMMAND_SUMMARY = {
   import: 'File one issue per finding of a findings file, skipping findings already filed.',
   sources: 'Per findings report: its findings, the issues filed from them and their status.',
   evidence: 'Append a free-text note, or checkable rows of what ran and what it printed, to issues; or record a file as an attachment of a slot (--file, --slot).',
-  retract: 'Take back the newest approve of an issue (what: review), one evidence row by its number (what: the number) or one evidence note (what: note-<n>), by an entry that says who and why.',
+  retract: 'Take back the newest approve of an issue (entry: review), one evidence row by its number (entry: the number) or one evidence note (entry: note-<n>), by an entry that says who and why.',
   field: 'Change one part of the description of issues, a header field (Title, Priority, Tags, Files, After and the rest) or a section (What, Why, Acceptance, Changelog): a value replaces it, add and remove change the items of a list or add to a section, clear empties it; each change logs what the part held and who changed it when named.',
   base: 'Change the base branch a declared repository is held against, logging what it was.',
   list: 'List the issues, the unfinished ones by default, filtered by status, kind, tag, priority or a field.',

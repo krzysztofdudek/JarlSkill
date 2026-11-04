@@ -106,7 +106,7 @@ test('next --as prints the rules that match the asker, and none of another slice
   const text = jarl(root, 'next', '--as', 'odin');
   assert.match(text, /\nRules for odin \(6\)\n- loop-rule · loop · by coordinator — Every report names/);
   assert.ok(text.includes(LONG), 'a rule is printed whole');
-  assert.match(text, /- jarl:coordinator-escalates · role coordinator · references\/jarl\.md — It goes up with `ask "<question>" --kind escalation --slice <name>`[^\n]*\n  1\. a gap or a finding outside its slice's goal;/);
+  assert.match(text, /- jarl:coordinator-escalates · role coordinator · references\/jarl\.md — It goes up with `ask "<text>" --kind escalation --slice <name>`[^\n]*\n  1\. a gap or a finding outside its slice's goal;/);
   assert.doesNotMatch(text, /frigg-only|reviewers|ui-workers|gone/);
 });
 

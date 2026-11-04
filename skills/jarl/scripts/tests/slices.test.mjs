@@ -176,7 +176,7 @@ test('ask --kind escalation names its slice or issue, is held by the jarl, shows
   const jarlRows = json(root, 'next', '--as', 'jarl', '--all').rows;
   const row = jarlRows.find((r) => r.ask === '1');
   assert.deepEqual([row.what, row.holder, row.holdsUp], ['escalation', 'jarl', ['2']]);
-  assert.match(jarl(root, 'next', '--as', 'jarl'), /^- a-1 thor blocks odin on a\.mjs: which goes first\?: escalation from slice:odin on issue 2 — jarl\.mjs answer a-1 "<answer>" --by jarl · holds up 2$/m);
+  assert.match(jarl(root, 'next', '--as', 'jarl'), /^- a-1 thor blocks odin on a\.mjs: which goes first\?: escalation from slice:odin on issue 2 — jarl\.mjs answer a-1 "<text>" --by jarl · holds up 2$/m);
   assert.deepEqual(json(root, 'next', '--as', 'owner').rows, []);
   // The slice's views show it; another slice's do not; the owner's question count leaves it out.
   assert.equal(json(root, 'status', '--slice', 'odin').escalations, 1);
@@ -268,7 +268,7 @@ test('the jarl reference hands slices to coordinators: the four reasons to escal
     '3. its slice empty, or blocked by another slice;',
     '4. a takeover that failed too.',
   ]);
-  assert.match(section, /`ask "<question>" --kind escalation --slice <name>`/);
+  assert.match(section, /`ask "<text>" --kind escalation --slice <name>`/);
   assert.match(section.replace(/\n/g, ' '), /A level waits on the agents it raised, and returns only when the ball is on someone it did not raise\./);
   assert.match(section.replace(/\n/g, ' '), /The goal's `Merger: <name>` line names the one holder, the jarl or one coordinator, that raises the merger/);
   assert.match(section.replace(/\n/g, ' '), /Counts are never pushed up: the jarl reads them with `status --slice <name>`\./);

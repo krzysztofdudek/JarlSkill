@@ -261,7 +261,7 @@ export function headerReadText(id, filings, file) {
 export function unattributedRefusal(issue, what) {
   if (!issue.byHeader) return null;
   const id = issue.id;
-  return `${id} cannot be ${what}: the log files ${id} ${issue.byHeader.filings} times, so it cannot tell which issue the rows, approves, rounds and merges under ${id} belong to, and an issue under this number is never closed or approved. File the work again under a new number (jarl.mjs new "<title>") and carry it on there; this one can then be dropped (jarl.mjs set ${id} dropped "<why>")`;
+  return `${id} cannot be ${what}: the log files ${id} ${issue.byHeader.filings} times, so it cannot tell which issue the rows, approves, rounds and merges under ${id} belong to, and an issue under this number is never closed or approved. File the work again under a new number (jarl.mjs new "<title>") and carry it on there; this one can then be dropped (jarl.mjs set ${id} dropped "<text>")`;
 }
 // The one issue `rawId` names among `issues`, or null when none does. A number two files carry is refused, with both files
 // named: a move or an edit by that number would land on each of them in the log.
@@ -351,7 +351,7 @@ export function needNoFieldTags(text, where) {
 // What a new issue was filed with, read back from its file: for new's reply, which lists what was parsed and what was
 // left empty, each empty field with the command that fills it.
 const FILL_WITH = {
-  why: (id) => `jarl.mjs field ${id} Why "<why>"`,
+  why: (id) => `jarl.mjs field ${id} Why "<text>"`,
   acceptance: (id) => `jarl.mjs field ${id} Acceptance "<line>"`,
   files: (id) => `jarl.mjs field ${id} Files p,q`,
   after: (id) => `jarl.mjs field ${id} After <ids>`,
