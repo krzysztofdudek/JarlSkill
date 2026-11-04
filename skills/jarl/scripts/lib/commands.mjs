@@ -2,7 +2,7 @@
 // recorded merge makes redundant.
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, openSync, closeSync, writeSync, unlinkSync, linkSync } from 'node:fs';
-import { join, resolve, relative, isAbsolute } from 'node:path';
+import { basename, join, resolve, relative, isAbsolute } from 'node:path';
 import { CI_STATES, LEASE_FIELDS, PRIORITIES, TIERS, WAIT_KIND, fieldText, need, noSeparators, slugify, splitList } from './base.mjs';
 import { needNoNewOwnersWords, needNoOwnersWords } from './owner.mjs';
 import { git, gitBytes, gitRun } from './git.mjs';
@@ -325,6 +325,56 @@ export function cmdNew(root, title, rawFlags) {
     need(tries < 100, 'could not claim a free issue number after 100 tries');
     n = Math.max(n + 1, taken().reduce((m, x) => Math.max(m, x), 0) + 1);
   }
+}
+
+// renumber <id> --key <key>: of the issue files that carry one number after a merge, the one whose header carries `key`
+// is given the next free number (over this checkout, its worktrees and every branch, as new takes one): its file is
+// renamed and its first line says the new number. Every line the log holds about it names its key, so the issue keeps
+// them under its new number, and no line is rewritten: the log takes one line, `<new> renumbered from <old> · <file>`,
+// with the key, written before the file moves. A number one file carries, and a file with no key, are refused.
+export function cmdRenumber(root, rawId, flags = {}) {
+  needLiveLoop(root, '');
+  need(rawId !== undefined && /^#?\d+$/.test(String(rawId).trim()), 'renumber takes the number two issue files carry: jarl.mjs renumber <id> --key <key>');
+  const issues = loadIssues(root);
+  const same = issues.filter((i) => i.id !== null && idKey(i.id) === idKey(rawId));
+  need(same.length, `no such issue: ${rawId}`);
+  const old = same[0].id;
+  const named = (list) => list.map((i) => `issues/${basename(i.file)} (${i.fields.key ? `key ${fieldText(i.fields.key)}` : 'no key'})`).join(', ');
+  need(same.length > 1, `${old} is carried by one issue file, ${named(same)}: renumber gives a free number to one of the files that carry one number after a merge`);
+  need(flags.key !== undefined && String(flags.key).trim() !== '', `${old} is carried by ${named(same)}: name the one to give a free number with --key <key>`);
+  const key = String(flags.key).trim();
+  const pick = same.find((i) => i.fields.key === key);
+  need(pick, `no file of ${old} carries the key ${key}: ${named(same)}`);
+  needFormat(root, 'issue-key');
+  const profile = loadProfile(root);
+  const dir = issuesDir(root);
+  const before = readText(pick.file);
+  const rest = basename(pick.file).replace(/^\d+-/, '');
+  for (let n = nextFreeNumber(root, dir), tries = 0; ; n += 1, tries += 1) {
+    need(tries < 100, 'could not claim a free issue number after 100 tries');
+    const id = newNumber(n, numberWidth(profile));
+    if (needsRaisedFormat(id)) needFormat(root, 'plain-number');
+    const file = join(dir, `${id}-${rest}`);
+    if (existsSync(file)) continue;
+    const text = before.replace(idRe('^#(\\s+){id}(\\s+·)'), `#$1${id}$2`);
+    needNoNewOwnersWords(before, text, `${id}-${rest}`);
+    const tmp = join(dir, `.${id}.${process.pid}.tmp`);
+    writeFileSync(tmp, text);
+    // The line goes into the journal first: a write that stops after it leaves the line beside the file it names under
+    // its old number, which its key still finds.
+    appendLogLines(root, [{ text: `${id} renumbered from ${old} · issues/${id}-${rest}`, key }]);
+    let claimed;
+    try { claimed = claimFile(tmp, file); } finally { unlinkSync(tmp); }
+    if (!claimed) continue;
+    unlinkSync(pick.file);
+    return { id, from: old, key, file };
+  }
+}
+// The number a new issue takes: one above the highest the loop's issue files hold here, in its other worktrees and on
+// every local and remote-tracking branch.
+function nextFreeNumber(root, dir) {
+  const here = readdirSync(dir).map((f) => ISSUE_FILE_RE.exec(f)).filter(Boolean).reduce((m, x) => Math.max(m, Number(x[1])), 0);
+  return Math.max(here, highestAcrossWorktrees(root), highestAcrossRefs(root)) + 1;
 }
 
 // The notes for the text of an issue just written: one for the unfinished issues it names that nothing orders with it.

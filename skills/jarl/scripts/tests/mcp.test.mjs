@@ -42,7 +42,7 @@ test('parity: the tool set is the one this release documents — adding or remov
   assert.deepEqual(TOOLS.map((t) => t.name).sort(), [
     'after', 'answer', 'archive', 'ask', 'body', 'branches', 'changelog', 'check', 'close', 'decide', 'decisions',
     'evidence', 'field', 'files', 'goal', 'help', 'import', 'init', 'list', 'log', 'merged', 'mode', 'models', 'new', 'next', 'prio',
-    'profile', 'queue', 'repo', 'report', 'resume', 'retract', 'review', 'round', 'scope', 'set', 'show', 'source', 'sources', 'status', 'tag', 'tick', 'tips', 'verify',
+    'profile', 'queue', 'renumber', 'repo', 'report', 'resume', 'retract', 'review', 'round', 'scope', 'set', 'show', 'source', 'sources', 'status', 'tag', 'tick', 'tips', 'verify',
   ].map(mcp.toolName));
 });
 
