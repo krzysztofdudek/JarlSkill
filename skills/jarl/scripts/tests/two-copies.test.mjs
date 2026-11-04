@@ -194,9 +194,33 @@ test('a second writer that sets the lease the issue already has is no conflict',
   assert.deepEqual(json(a.dir, 'next', '--as', 'jarl').rows.filter((r) => r.what === 'conflict'), []);
 });
 
-test('verify reads a git conflict quoted in an issue\'s text as text', () => {
+// A text that quotes a whole git conflict, in a fence and out of one, and the same text as the tool writes it: each marker
+// line escaped with a backslash, every other line as given.
+const QUOTED = 'git left this in the file:\n```\n<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> main\n```\nand the same with no fence:\n<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> main\nand a line that quotes <<<<<<< HEAD inline';
+const ESCAPED = 'git left this in the file:\n```\n\\<<<<<<< HEAD\nours\n\\=======\ntheirs\n\\>>>>>>> main\n```\nand the same with no fence:\n\\<<<<<<< HEAD\nours\n\\=======\ntheirs\n\\>>>>>>> main\nand a line that quotes <<<<<<< HEAD inline';
+const issueText = (dir, file) => readFileSync(join(dir, '.jarl', 'issues', file), 'utf8');
+const MARKER_LINE = /^(?:<{7}|={7}|>{7})/m;
+
+test('text that quotes a git conflict, written through new, body, a note and a reason, has each marker line escaped, reads back as written, and verify reads it as text', () => {
   const a = committedLoop();
-  jarl(a.dir, 'body', '1', '--what', 'git left this in the file:\n```\n<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> main\n```\nand a line that quotes <<<<<<< HEAD inline');
+  assert.equal(json(a.dir, 'new', 'quotes a conflict', '--tier', 'light', '--what', QUOTED, '--why', 'quoted', '--acceptance', QUOTED).id, '2');
+  jarl(a.dir, 'body', '1', '--why', QUOTED);
+  jarl(a.dir, 'body', '1', '--what', `the opening line\n${QUOTED}`, '--append');
+  jarl(a.dir, 'evidence', '1', QUOTED);
+  jarl(a.dir, 'set', '2', 'dropped', QUOTED);
+  for (const file of issueFiles(a.dir)) assert.doesNotMatch(issueText(a.dir, file), MARKER_LINE, `${file} holds no marker line`);
+  const one = json(a.dir, 'show', '1');
+  const two = json(a.dir, 'show', '2');
+  assert.equal(two.sections.what.trim(), ESCAPED);
+  assert.equal(two.sections.acceptance.trim(), ESCAPED);
+  assert.equal(one.sections.why.trim(), ESCAPED);
+  assert.ok(one.sections.what.trim().endsWith(`the opening line\n${ESCAPED}`), one.sections.what);
+  assert.ok(one.sections.evidence.includes(ESCAPED), one.sections.evidence);
+  assert.ok(two.sections.evidence.includes(`Dropped: ${ESCAPED}`), two.sections.evidence);
+  // The escaped text written back as it reads is written as it is: an escape is never escaped again.
+  const before = issueText(a.dir, '1-filed-before-the-split.md');
+  jarl(a.dir, 'body', '1', '--why', one.sections.why);
+  assert.equal(issueText(a.dir, '1-filed-before-the-split.md'), before);
   const r = run(a.dir, ['verify']);
   assert.equal(r.status, 0, r.stdout);
 });
@@ -233,9 +257,63 @@ test('verify refuses a real git conflict whose side holds a fenced block', () =>
   assert.match(r.stdout, /"<<<<<<< [^"]*" — a git conflict marker/);
 });
 
-test('an opening marker with no closing marker after it is text', () => {
+test('verify refuses a real git conflict inside a fenced block both sides share', () => {
   const a = committedLoop();
-  jarl(a.dir, 'body', '1', '--what', '<<<<<<< HEAD\nthe rest of the paragraph');
+  jarl(a.dir, 'body', '1', '--what', 'run it as:\n```\nnpm test\n```');
+  a.g('add', '-A'); a.g('commit', '-qm', 'a fence in 1');
+  const b = cloneOf(a.dir);
+  jarl(a.dir, 'body', '1', '--what', 'run it as:\n```\nnpm test -- --on-a\n```');
+  a.g('add', '-A'); a.g('commit', '-qm', 'a edits the fence');
+  jarl(b.dir, 'body', '1', '--what', 'run it as:\n```\nnpm run on-b\n```');
+  b.g('add', '-A'); b.g('commit', '-qm', 'b edits the fence');
+  assert.throws(() => b.g('pull', '-q', '--no-rebase', '--no-edit', 'origin', 'main'), 'git cannot join the two lines');
+  const text = issueText(b.dir, '1-filed-before-the-split.md');
+  assert.match(text, /^```\n<<<<<<< [^\n]*\n[\s\S]*?^>>>>>>> [^\n]*\n```$/m, 'the markers sit inside the fence both sides hold');
+  const r = run(b.dir, ['verify']);
+  assert.equal(r.status, 2, r.stdout);
+  assert.match(r.stdout, /issues\/1-filed-before-the-split\.md line \d+: "<<<<<<< [^"]*" — a git conflict marker/);
+});
+
+test('a lone opening marker is no conflict and hides none after it', () => {
+  const a = committedLoop();
+  const file = join(a.dir, '.jarl', 'issues', '1-filed-before-the-split.md');
+  const lone = readFileSync(file, 'utf8').replace('## What\n', '## What\n<<<<<<< HEAD\nthe rest of the paragraph\n```\na fence opened after it\n');
+  writeFileSync(file, lone);
+  const clean = run(a.dir, ['verify']);
+  assert.equal(clean.status, 0, clean.stdout);
+  const both = lone.replace('## Why\n', '## Why\n<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> main\n');
+  writeFileSync(file, both);
+  const at = both.split('\n').lastIndexOf('<<<<<<< HEAD') + 1;
   const r = run(a.dir, ['verify']);
+  assert.equal(r.status, 2, r.stdout);
+  assert.match(r.stdout, new RegExp(`issues/1-filed-before-the-split\\.md line ${at}: "<<<<<<< HEAD" — a git conflict marker`));
+  assert.doesNotMatch(r.stdout, new RegExp(`line ${both.split('\n').indexOf('<<<<<<< HEAD') + 1}:`), 'the lone marker is not named');
+});
+
+test('with CRLF line endings, a real conflict is refused, and text with CRLF breaks that quotes one is written escaped, a note into an Evidence section with no parts included', () => {
+  const a = committedLoop();
+  const b = cloneOf(a.dir);
+  jarl(a.dir, 'body', '1', '--what', 'the text on A');
+  a.g('add', '-A'); a.g('commit', '-qm', 'a edits 1');
+  jarl(b.dir, 'body', '1', '--what', 'the text on B');
+  b.g('add', '-A'); b.g('commit', '-qm', 'b edits 1');
+  assert.throws(() => b.g('pull', '-q', '--no-rebase', '--no-edit', 'origin', 'main'), 'git cannot join the two texts');
+  const conflicted = join(b.dir, '.jarl', 'issues', '1-filed-before-the-split.md');
+  writeFileSync(conflicted, readFileSync(conflicted, 'utf8').replace(/\n/g, '\r\n'));
+  const refused = run(b.dir, ['verify']);
+  assert.equal(refused.status, 2, refused.stdout);
+  assert.match(refused.stdout, /"<<<<<<< [^"]*" — a git conflict marker/);
+  const c = committedLoop();
+  const file = join(c.dir, '.jarl', 'issues', '1-filed-before-the-split.md');
+  writeFileSync(file, readFileSync(file, 'utf8').replace(/## Evidence\s*$/, '## Evidence\nan old line written by hand\n'));
+  const crlf = QUOTED.replace(/\n/g, '\r\n');
+  jarl(c.dir, 'body', '1', '--what', crlf);
+  jarl(c.dir, 'evidence', '1', crlf);
+  const text = readFileSync(file, 'utf8');
+  assert.match(text, /## Evidence\nan old line written by hand\n/, 'the section has no parts');
+  assert.doesNotMatch(text.replace(/\r\n?/g, '\n'), MARKER_LINE);
+  assert.ok(json(c.dir, 'show', '1').sections.evidence.includes(ESCAPED));
+  writeFileSync(file, text.replace(/\r?\n/g, '\r\n'));
+  const r = run(c.dir, ['verify']);
   assert.equal(r.status, 0, r.stdout);
 });

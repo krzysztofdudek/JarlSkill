@@ -12,29 +12,34 @@ import { eventsById, issueState, loopEvents } from './log.mjs';
 
 // ---- issues ------------------------------------------------------------------------------------
 
-// The lines git writes around the two sides of a conflict it could not merge, each at the start of its line.
+// The lines git writes around the two sides of a conflict it could not merge, each a line of its own.
 const CONFLICT_OPEN = /^<{7}(?: .*)?$/;
 const CONFLICT_MIDDLE = /^={7}$/;
 const CONFLICT_CLOSE = /^>{7}(?: .*)?$/;
-// The line numbers of the opening markers of the conflicts `lines` hold: an opening marker outside a fenced code block,
-// then a separator and a closing marker, in that order, each a line of its own. Once a conflict opens it runs to its
-// closing marker whatever its sides hold, fences included, and the fence state is left as it was; a conflict quoted inside
-// a fence opened before it is text, and so is one quoted inside a line of text.
+const CONFLICT_MARKERS = [CONFLICT_OPEN, CONFLICT_MIDDLE, CONFLICT_CLOSE];
+// The line numbers of the opening markers of the conflicts `lines` hold: an opening marker, then a separator, then a
+// closing marker, in that order, wherever they stand. A fenced block is no exception, because git writes its markers
+// inside a fence both sides share; text the tool writes holds no marker line (see escapeMarkers), so a conflict found is
+// one a merge left. An opening marker with no separator and closing marker after it is text and hides nothing: the next
+// opening marker starts the conflict anew.
 function conflictsIn(lines) {
   const out = [];
-  let fence = false;
   let open = null;
   let middle = false;
   lines.forEach((line, i) => {
-    if (open !== null) {
-      if (CONFLICT_MIDDLE.test(line)) middle = true;
-      else if (middle && CONFLICT_CLOSE.test(line)) { out.push(open); open = null; middle = false; }
-      return;
-    }
-    if (/^(?:```|~~~)/.test(line)) fence = !fence;
-    else if (!fence && CONFLICT_OPEN.test(line)) { open = i + 1; middle = false; }
+    if (CONFLICT_OPEN.test(line)) { open = i + 1; middle = false; }
+    else if (open === null) return;
+    else if (CONFLICT_MIDDLE.test(line)) middle = true;
+    else if (CONFLICT_CLOSE.test(line)) { if (middle) out.push(open); open = null; middle = false; }
   });
   return out;
+}
+// Text written into an issue never starts a line with a git conflict marker, so a conflict it quotes never reads as one a
+// merge left: a line that is a marker, or becomes one once its trailing blanks are trimmed, gets a backslash in front
+// (\<<<<<<< HEAD), which renders the same outside a code block. Lines are cut where the record's reader cuts them, at \n,
+// \r\n or \r, and the breaks are kept as given.
+function escapeMarkers(text) {
+  return String(text).split(/(\r\n?|\n)/).map((part, i) => (i % 2 === 0 && CONFLICT_MARKERS.some((re) => re.test(part.trimEnd())) ? `\\${part}` : part)).join('');
 }
 // A header field: **Name:** value. A name is letters, digits, spaces and dashes, so a profile's fields (Area-2) read
 // as fields; the built-in ones are letters and spaces only.
@@ -318,9 +323,9 @@ function setSection(text, name, body) {
 
 // A body written into a section must not open a section of its own: a line starting with ## would end it
 // early and the rest would land under a heading nobody reads. Such a line is escaped (\##), which renders
-// the same and parses as text.
+// the same and parses as text; so is a line that reads as a git conflict marker (see escapeMarkers).
 export function bodyText(v) {
-  return String(v ?? '').replace(/\r\n?/g, '\n').split('\n').map((l) => l.replace(/^(\s*)(#+)(?=\s|$)/, (_, sp, h) => `${sp}\\${h}`)).join('\n').trim();
+  return escapeMarkers(String(v ?? '').replace(/\r\n?/g, '\n').split('\n').map((l) => l.replace(/^(\s*)(#+)(?=\s|$)/, (_, sp, h) => `${sp}\\${h}`)).join('\n').trim());
 }
 // A text for What, Why or a section that holds a matched opening and closing tag named after one of the issue's own
 // fields (<why>…</why>) is a call whose fields all went into one parameter: the other fields would be filed empty.
@@ -548,9 +553,10 @@ export function isUnsplit(section) {
 }
 // A note must not read as a sub-heading of the section: in a section written in parts, a line that starts with # is escaped
 // as a body is; in an unsplit one, only a line that is a sub-heading by itself.
-// A note whose own first line starts with ~~ is escaped, so that only a retraction strikes a note through.
+// A note whose own first line starts with ~~ is escaped, so that only a retraction strikes a note through. A line that
+// reads as a git conflict marker is escaped in both.
 function noteText(value, current) {
-  const text = isUnsplit(current) ? String(value).split('\n').map((l) => l.replace(/^(\s*)###(?=\s+(?:Proof|Notes)\s*$)/, '$1\\###')).join('\n') : bodyText(value);
+  const text = isUnsplit(current) ? escapeMarkers(String(value).split('\n').map((l) => l.replace(/^(\s*)###(?=\s+(?:Proof|Notes)\s*$)/, '$1\\###')).join('\n')) : bodyText(value);
   return text.replace(/^(- )?~~/, '$1\\~~');
 }
 // The Evidence section with one entry written into its part. `kind` is 'proof' (rows, one per line) or 'note' (text); `sep`
