@@ -274,7 +274,7 @@ test('no profile: no profile file, the same issue file byte for byte, the same l
   assert.match(refuses(root, 'new', 'x', '--kind', 'feature'), /--kind must be one of: bug, gap, cleanup, docs, test, research, process/);
   assert.match(refuses(root, 'set', '1', 'in-progress', 'x', '--worker', ''), /--worker needs a value/);
   assert.match(refuses(root, 'set', '1', 'open', 'x', '--worker', 'w'), /--worker goes with in-progress only/);
-  assert.match(refuses(root, 'set', '1', 'deferred'), /deferred needs a reason: jarl\.mjs set <id> deferred "<text>" — work that waits, not work that is gone/);
+  assert.match(refuses(root, 'set', '1', 'deferred'), /deferred needs a reason: jarl\.mjs set "<id>" deferred "<text>" — work that waits, not work that is gone/);
 });
 
 // The same work, run on a loop with no profile and on one whose profile spells out the built-in statuses: every view
@@ -335,7 +335,7 @@ function fieldedLoop() {
 
 test('new writes the declared fields after Where, the extra sections after Acceptance, under the profile\'s heading', () => {
   const root = fieldedLoop();
-  assert.match(refuses(root, 'new', 't'), /^Area-2 is required by this loop's profile — give it \(one of: core, cli\)\njarl\.mjs new t --field 'Area-2=<value>'\n$/);
+  assert.match(refuses(root, 'new', 't'), /^Area-2 is required by this loop's profile — give it \(one of: core, cli\)\njarl\.mjs new '<title>' --field '<name=value>'\n$/);
   assert.match(refuses(root, 'new', 't', '--field', 'Area-2=web'), /Area-2 must be one of: core, cli \(got "web"\)/);
   assert.match(refuses(root, 'new', 't', '--field', 'Bogus=1'), /Bogus is not a field this loop's profile declares — it declares Area-2, Class, Note/);
   assert.match(refuses(root, 'new', 't', '--field', 'Area-2'), /--field takes <name>=<value>/);
@@ -381,8 +381,8 @@ test('field <ids> <field> <value> writes a declared field, checked against its v
   assert.match(shown, /\*\*Note:\*\* see the thread/);
   assert.match(refuses(root, 'field', '1', 'kind', 'bug'), /Kind must be one of: feature, fix, chore/);
   assert.match(refuses(root, 'field', '1', 'Note', 'x', '--worker', 'w'), /unknown flag --worker for field/);
-  assert.equal(refuses(root, 'set', '1', 'Note', 'x').trim(), 'Note is a field, not a status\njarl.mjs field 1 Note x');
-  assert.match(refuses(root, 'set', '1', 'Files', 'x'), /^status must be one of: [^\n]*\njarl\.mjs set 1 '<status>' x\n$/);
+  assert.equal(refuses(root, 'set', '1', 'Note', 'x').trim(), "Note is a field, not a status: field writes it\njarl.mjs field '<ids>' Note '<value>'");
+  assert.match(refuses(root, 'set', '1', 'Files', 'x'), /^status must be one of: [^\n]*\njarl\.mjs set '<ids>' '<status>' '<why>'\n$/);
   assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /· 1 field Area-2 · cli · was core\n.*· 2 field Area-2 · cli · was core\n/);
   // A field line is not a status move: the done gate's replay does not read it as one.
   assert.equal(JSON.parse(jarl(root, 'show', '1', '--json')).status, 'proposed');
@@ -400,7 +400,7 @@ test('list --match filters on any header field; list and resume show the declare
   assert.deepEqual(ids('status=queued'), ['1', '2', '3']);
   assert.deepEqual(ids('Note='), ['1', '2', '3'], 'an empty value matches an empty field');
   assert.match(refuses(root, 'list', '--match', 'bogus=1'), /--match names a header field — one of: .*Area-2, Class, Note \(got "bogus"\)/);
-  assert.match(refuses(root, 'list', '--match', 'nothing'), /--match takes <field>=<value>/);
+  assert.match(refuses(root, 'list', '--match', 'nothing'), /--match takes <field=value>/);
   assert.match(jarl(root, 'list'), /^1 {2}P2 {2}queued {6}feature {2}a {2}Area-2=core Class=b$/m);
   jarl(root, 'set', '2', 'running', 'go', '--worker', 'w');
   const resume = JSON.parse(jarl(root, 'resume', '--json'));
@@ -436,7 +436,7 @@ test('no profile: --field, --section and a field in place of a status are refuse
   assert.match(refuses(root, 'new', 't', '--section', 'Plan=x'), /declares no sections/);
   jarl(root, 'new', 'a', '--kind', 'gap');
   jarl(root, 'new', 'b');
-  assert.match(refuses(root, 'set', '1', 'kind', 'gap'), /^status must be one of: open, in-progress, done, dropped, deferred \(got "kind"\)\njarl\.mjs set 1 '<status>' gap\n$/);
+  assert.match(refuses(root, 'set', '1', 'kind', 'gap'), /^status must be one of: open, in-progress, done, dropped, deferred \(got "kind"\)\njarl\.mjs set '<ids>' '<status>' '<why>'\n$/);
   assert.deepEqual(JSON.parse(jarl(root, 'list', '--match', 'kind=gap', '--json')).map((i) => i.id), ['1']);
   assert.equal(jarl(root, 'list'), '1  P2  open        gap      a\n2  P2  open        bug      b');
 });

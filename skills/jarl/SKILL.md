@@ -59,7 +59,7 @@ The other references, each read when its subject comes up:
 
 Every command, its flags and its JSON are in [references/commands.md](references/commands.md#the-commands). The exact options are printed by the tool: run `jarl.mjs --help`, or call `jarl_help`.
 
-A refused call writes nothing, and its last line is the call corrected, a step and then the call, or the call with a `<placeholder>`: read it, fill the placeholder, never paste it blind.
+A refused call writes nothing: a refusal ends with the form of the command with a `<placeholder>`; fill the value and run it; never paste it as printed.
 
 ## Calling the tool
 

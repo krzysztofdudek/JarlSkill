@@ -185,20 +185,20 @@ function need(cond, msg) { if (!cond) throw invalid(msg); }
 // A field a tool does not take whose value another field takes, or another tool, from the command line's tables: a flag
 // renamed there (by on status and models is group, ci on resume is gh), the name a free text had (why, findings, question
 // and the rest are text), and a retraction asked of evidence (retract's). The refusal names that field or tool, with the
-// call as it is written there, every value given carried.
+// form of the call written there, each value a placeholder: no value given is carried into a call composed for the caller.
+const FORM_VALUES = { ids: '<ids>', id: '<id>', status: '<status>', text: '<text>', verdict: '<verdict>', slug: '<slug>', title: '<title>', goal: '<goal>', name: '<name>', entry: '<n|note-n>', line: '<line>', mode: '<mode>', branch: '<branch>', group: '<group>', gh: true };
 function needNoGoneField(cmd, fields) {
   const call = (tool, input) => `${toolName(tool)} ${JSON.stringify(input)}`;
   for (const name of Object.keys(fields)) {
     if (Object.hasOwn(COMMAND_FLAGS[cmd] || {}, name) || (COMMAND_ARGS[cmd] || []).some((a) => a.replace(/[?.]+$/, '') === name)) continue;
     const to = REMOVED_FLAGS[cmd]?.[name];
     if (to === 'retract') {
-      const { ids, text, by } = fields;
-      throw invalid(`${toolName(cmd)}: "${name}" is not a field of this tool — a row or a note is taken back with ${toolName('retract')}, and by names who takes it back: ${call('retract', { id: ids ?? '<id>', entry: String(fields[name]), by: by ?? '<who>', text: text ?? '<text>' })}`);
+      throw invalid(`${toolName(cmd)}: "${name}" is not a field of this tool — a row or a note is taken back with ${toolName('retract')}, and by names who takes it back: ${call('retract', { id: '<id>', entry: '<n|note-n>', by: '<who>', text: '<why>' })}`);
     }
     const field = to !== undefined ? to.replace(/^--/, '') : GONE_TEXT_NAMES[cmd] === name ? 'text' : null;
     if (field === null) continue;
-    const { [name]: value, ...rest } = fields;
-    throw invalid(`${toolName(cmd)}: "${name}" is not a field of this tool — its value goes in "${field}": ${call(cmd, { ...rest, [field]: value })}`);
+    const form = Object.fromEntries((COMMAND_ARGS[cmd] || []).filter((a) => !/[?.]$/.test(a)).map((a) => [a, FORM_VALUES[a] ?? '<value>']));
+    throw invalid(`${toolName(cmd)}: "${name}" is not a field of this tool — its value goes in "${field}": ${call(cmd, { ...form, [field]: FORM_VALUES[field] ?? '<value>' })}`);
   }
 }
 

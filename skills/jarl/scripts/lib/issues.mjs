@@ -2,7 +2,7 @@
 
 import { existsSync, readdirSync } from 'node:fs';
 import { basename, join } from 'node:path';
-import { CI_STATES, fieldText, hole, need, oneBreak, oneOf, refuse, splitList } from './base.mjs';
+import { CI_STATES, fieldText, hole, need, oneBreak, refuse, splitList } from './base.mjs';
 import { issuesDir, jarlDir } from './where.mjs';
 import { readText } from './files.mjs';
 import { ISSUE_FILE_RE, KEY_RE, cmpId, idKey, idRe, newNumber, writtenForms, writtenId } from './ids.mjs';
@@ -189,7 +189,7 @@ function acceptanceHeading(issue, profile) {
 export function fieldValue(profile, field, raw) {
   const v = fieldText(raw);
   const f = typeof field === 'string' ? profile.field(field) : field;
-  if (f && f.enum && v !== '') need(f.enum.includes(v), `${f.name} must be one of: ${f.enum.join(', ')} (got "${v}")`, () => ({ replace: v, value: oneOf(v, f.enum, '<value>'), fix: 'case' }));
+  if (f && f.enum && v !== '') need(f.enum.includes(v), `${f.name} must be one of: ${f.enum.join(', ')} (got "${v}")`, () => ({ replace: v, value: hole('<value>') }));
   return v;
 }
 // Name=value pairs from a repeatable flag (--field, --section), each name one the profile declares.
@@ -249,9 +249,9 @@ export function sharedNumberText(shared, all) {
   const keyed = shared.issues.filter((i) => issueKeyOf(i) !== null);
   if (keyed.length && shared.issues.every((i) => !i.byHeader)) {
     const keys = keyed.map((i) => `${issueKeyOf(i)} (issues/${basename(i.file)})`);
-    return `${head} Two copies of the loop that each filed an issue and were merged leave this. Each line of the log names the key of the issue it is about${keyed.length < shared.issues.length ? ', or no key for the one file that carries none' : ''}, so each file is read from its own lines, but no command addresses ${id} while two files carry it. Give one of them a free number: jarl.mjs renumber ${id} --key <key>, with the key of the one to renumber, takes the next one over every branch — ${keys.join(', ')}. The issue renumbered keeps every line written under ${id}, which names its key, and no line of the log is rewritten`;
+    return `${head} Two copies of the loop that each filed an issue and were merged leave this. Each line of the log names the key of the issue it is about${keyed.length < shared.issues.length ? ', or no key for the one file that carries none' : ''}, so each file is read from its own lines, but no command addresses ${id} while two files carry it. Give one of them a free number: jarl.mjs renumber ${id} --key '<key>', with the key of the one to renumber, takes the next one over every branch — ${keys.join(', ')}. The issue renumbered keeps every line written under ${id}, which names its key, and no line of the log is rewritten`;
   }
-  const rename = `give ${filings > 1 ? 'one of the files' : 'the copy'} a number the loop does not hold, such as ${free} (rename it to ${free}-… and write ${free} in its first line), and put it in the log at the status its own file reads (jarl.mjs set ${free} <status>; a renumbered issue starts its record anew, so one that was done needs its proof and a fresh review again)`;
+  const rename = `give ${filings > 1 ? 'one of the files' : 'the copy'} a number the loop does not hold, such as ${free} (rename it to ${free}-… and write ${free} in its first line), and put it in the log at the status its own file reads (jarl.mjs set ${free} '<status>'; a renumbered issue starts its record anew, so one that was done needs its proof and a fresh review again)`;
   if (filings > 1) return `${head} Two copies of the loop that each filed an issue and were merged leave this: the log files ${id} ${filings} times. The log names an issue by its number alone, so it cannot say which file its lines for ${id} were written for, and no command moves or edits one of these files alone. Each file is read from its own header, never from the log: its status, branch and lease are what the file says, it is never closed or approved under this number, because the log cannot tell whose its rows, approves, rounds and merges are (the work is filed again under a new number instead), and the log's state of ${id} is never to be written into any of them. The coordinator settles it by hand: ${rename}, then write in a log note which of the lines already written for ${id} belong to which file (jarl.mjs log "…"). The file that keeps ${id} is still read from its own header after that, because the log goes on filing ${id} more than once`;
   return `${head} The log files ${id} ${filings ? 'once' : 'never'}, so ${filings ? 'one of these files was made outside Jarl\'s commands, by a copy or by hand' : 'none of these files was filed by Jarl\'s commands'}, and Jarl cannot tell which file is the copy. No command moves or edits one of these files alone, and while they share ${id} each is read from its own header. The coordinator settles it by hand: ${rename}. ${id} is then one file the log files ${filings ? 'once' : 'never'}, which Jarl reads like any issue: if the file renumbered was the original, the copy that keeps ${id} takes the original's lines in the log, and Jarl cannot see that a copy was made`;
 }
@@ -347,7 +347,7 @@ export function needNoFieldTags(text, where) {
   const outsideCode = kept.join('\n').replace(/(`+)[\s\S]*?\1/g, ' ');
   for (const tag of FIELD_TAGS) {
     if (new RegExp(`<${tag}\\s*>[\\s\\S]*?</${tag}\\s*>`, 'i').test(outsideCode)) {
-      refuse(`${where} holds a <${tag}>…</${tag}> pair: a field goes in its own parameter (${FIELD_FLAG[tag]}), never inside another text — nothing was written; pass each field on its own, or put the tags in backticks if you mean to write them`, { flag: FIELD_FLAG[tag], value: hole('<text>') });
+      refuse(`${where} holds an opening and a closing ${tag} tag in angle brackets: a field goes in its own parameter (${FIELD_FLAG[tag]}), never inside another text — nothing was written; pass each field on its own, or put the tags in backticks if you mean to write them`, { flag: FIELD_FLAG[tag], value: hole('<text>') });
     }
   }
 }
@@ -357,8 +357,8 @@ const FILL_WITH = {
   why: (id) => `jarl.mjs field ${id} Why "<text>"`,
   acceptance: (id) => `jarl.mjs field ${id} Acceptance "<line>"`,
   files: (id) => `jarl.mjs field ${id} Files p,q`,
-  after: (id) => `jarl.mjs field ${id} After <ids>`,
-  where: (id) => `jarl.mjs field ${id} Where "<where>"`,
+  after: (id) => `jarl.mjs field ${id} After '<ids>'`,
+  where: (id) => `jarl.mjs field ${id} Where '<text>'`,
   'found by': () => 'only at filing: new --found-by <who>',
 };
 export function describeNew(file) {

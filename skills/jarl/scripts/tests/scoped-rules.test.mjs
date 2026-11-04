@@ -219,7 +219,7 @@ test('close offers each rule of the loop for promotion, on the owner, with four 
   const out = json(root, 'close', '--batch');
   assert.deepEqual(out.promotion.items.map((i) => i.ruling), ['standing', 'for-reviewers']);
   const text = jarl(root, 'close', '--batch');
-  assert.match(text, /rules of the loop to promote \(2\) — answer each with one way: jarl\.mjs answer <a-id> --option carry\|instructions\|law\|drop --by owner\n- a-1 · rule standing · loop: "Reports name their branch\." — what becomes of it when the loop closes\n- a-2 · rule for-reviewers · role reviewer:/);
+  assert.match(text, /rules of the loop to promote \(2\) — answer each with one way \(carry, instructions, law or drop\): jarl\.mjs answer '<question>' --option '<option>' --by owner\n- a-1 · rule standing · loop: "Reports name their branch\." — what becomes of it when the loop closes\n- a-2 · rule for-reviewers · role reviewer:/);
   assert.equal(json(root, 'close', '--batch').promotion.filed.length, 0, 'a rule is offered once');
   const onOwner = json(root, 'next', '--as', 'owner').rows.filter((r) => r.what === 'promotion');
   assert.deepEqual(onOwner.map((r) => r.ruling), ['standing', 'for-reviewers']);

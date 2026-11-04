@@ -133,8 +133,8 @@ function decisionsAt(dir, skipped) {
       out.push({ date: h[1], slug: h[2], body: [] });
       return;
     }
-    if (skipped && /^## /.test(line)) skipped.push({ n: i + 1, text: line, reason: 'a ruling heading does not parse: it is "## <date> · <slug>"' });
-    else if (skipped && !out.length && line.trim() !== '' && !line.startsWith('# ')) skipped.push({ n: i + 1, text: line, reason: 'text before the first ruling: a ruling starts with "## <date> · <slug>"' });
+    if (skipped && /^## /.test(line)) skipped.push({ n: i + 1, text: line, reason: 'a ruling heading does not parse: it is "## <yyyy-mm-dd> · <slug>"' });
+    else if (skipped && !out.length && line.trim() !== '' && !line.startsWith('# ')) skipped.push({ n: i + 1, text: line, reason: 'text before the first ruling: a ruling starts with "## <yyyy-mm-dd> · <slug>"' });
     if (out.length) out[out.length - 1].body.push(line);
   });
   // A ruling's own fields (By, Supersedes, Superseded by, Settles) are the block the tool writes at the end of its
@@ -266,8 +266,8 @@ export function goalLines(text, skipped) {
     else if (key === 'model' && m[2]) {
       const models = value.split(',').map((s) => fieldText(s).replace(/^`(.*)`$/, '$1')).filter(Boolean);
       if (models.length) out.models.push({ tier: qualifier, models });
-      else skip('a Model line names no model: it is "Model (<tier>): <model>[, <model>…]"');
-    } else if (key === 'model') skip('a Model line names its tier in brackets: it is "Model (<tier>): <model>[, <model>…]"');
+      else skip('a Model line names no model: it is "Model (<tier>): <model-id>", more models after commas');
+    } else if (key === 'model') skip('a Model line names its tier in brackets: it is "Model (<tier>): <model-id>", more models after commas');
     else if (key === 'takeover') {
       const rounds = takeoverRounds(value);
       if (rounds === null) skip(TAKEOVER_REASON);
@@ -275,7 +275,7 @@ export function goalLines(text, skipped) {
       else out.takeovers.bare = rounds;
     } else if (key === 'check') {
       const command = fieldText(value).replace(/^`(.*)`$/, '$1');
-      if (!command) { skip('a Check line names no command: it is "Check: <what runs>" or "Check (<repository>): <what runs>"'); return; }
+      if (!command) { skip('a Check line names no command: it is "Check: <command>" or "Check (<name>): <command>"'); return; }
       if (qualifier) (out.checksByRepo.repos[qualifier] = out.checksByRepo.repos[qualifier] || []).push(command); else out.checksByRepo.bare.push(command);
     }
   });
@@ -337,10 +337,10 @@ export function cmdGoalSet(root, text) {
   need(old !== null, 'the loop has no goal: open it with init "<goal>"', () => (['jarl.mjs', 'init', '<goal>']));
   need(!oneBreak(text).includes('\n'), 'goal --set takes one machine line: a line break in its value is refused', () => ({ flag: '--set', value: '<machine-line>' }));
   const line = goalLineOf(text);
-  need(line && line.value && MACHINE_LABEL[line.key], `goal --set takes one machine line (got "${text}"): ` + '"Check (<repository>): <command>" or "Check: <command>", "Model (<tier>): <model>, …", "Coordinators: <name>, …", "Merger: <name>", "Takeover (<kind>): <rounds>" or "Takeover: <rounds>"', () => ({ flag: '--set', value: '<machine-line>' }));
+  need(line && line.value && MACHINE_LABEL[line.key], `goal --set takes one machine line (got "${text}"): ` + '"Check (<name>): <command>" or "Check: <command>", "Model (<tier>): <model-id>" (more models after commas), "Coordinators: <name>, …", "Merger: <name>", "Takeover (<kind>): <rounds>" or "Takeover: <rounds>"', () => ({ flag: '--set', value: '<machine-line>' }));
   let qualifier = line.qualifier;
   if (line.key === 'model') {
-    need(qualifier !== null, 'a Model line names its tier: "Model (<tier>): <model>, …"', () => ({ flag: '--set', value: `Model (${hole('<tier>')}): ${line.value}` }));
+    need(qualifier !== null, 'a Model line names its tier: "Model (<tier>): <model-id>", more models after commas', () => ({ flag: '--set', value: `Model (${hole('<tier>')}): ${line.value}` }));
     const profile = loadProfile(root);
     qualifier = profile.tiers.find((t) => t.toLowerCase() === qualifier.toLowerCase()) ?? null;
     need(qualifier !== null, `the profile declares no tier ${line.qualifier}: its tiers are ${loadProfile(root).tiers.join(', ')}`, () => ({ flag: '--set', value: `Model (${hole('<tier>')}): ${line.value}` }));

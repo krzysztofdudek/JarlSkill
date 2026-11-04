@@ -54,35 +54,27 @@ function fieldText(v) { return oneBreak(v).replace(/\s+/g, ' ').trim(); }
 
 // ---- refusals ------------------------------------------------------------------------------------------------
 //
-// Every refusal is built here, from two parts: the reason, and the ready part a refused caller acts on, which the
-// refusal prints last, on a line of its own. The ready part is a command (a text or an array of words starting with
-// jarl.mjs, each word quoted for a POSIX shell when it is printed), or a fix of the call that was refused, which the
-// command line, holding the call, turns into the same call fixed: { flag, value } adds or replaces a flag ({ flag, value,
-// add: true } gives a flag that repeats one more value), { arg, value } sets the n-th argument after the command, { drop }
-// takes a flag off ({ drop, value } only the one with that value, and value null the one given with none), { replace,
-// value } writes value where the call gave replace (a word, or one item of a comma list), { truncate: n } keeps the first
-// n words, { retry: true } is the call again as it was given, { rename, to } writes a flag under another name (a
-// placeholder as to writes the placeholder where the flag's name was, its value kept), { toArg, at } moves the value of
-// the flag toArg to the at-th argument, { command } writes another command in place of the one given, { first } is a
-// command to run before the call, printed before it with &&, and an array applies several. A ready command of another
-// command than the refused one is a step before the call too, unless the command line's table of removed forms names that
-// command as the one that does what the call asked. { calls } is several calls of jarl.mjs, each an array of its words,
-// printed joined by &&; { external } is a command of the tool that runs the loop, named by its profile, printed as it is. A refusal with no ready part cannot be built: refuse and need throw a TypeError instead.
-//
-// What the last line writes is decided for each refusal, never by choosing a value. It is a line that runs only where the
-// ready part names one of the corrections below (fix: '<name>'), each mechanical, none able to change what the call
-// meant; every other ready part holds a placeholder where a value only the caller knows goes (a value outside its set, an
-// id the loop does not hold, a range to read again, a lease to take over, words to join, an author who may not do this),
-// and a line with a placeholder pasted unfilled is refused for it and writes nothing. The command line checks it: a line
-// that would run without a correction named gets a placeholder of its own. A ready line never does an act that is
-// someone else's (an owner's answer, a ratification, an approve, a sign-off, close --force, a removal of text): it says who
-// does it and ends with the placeholder or the question to ask.
-export const CORRECTIONS = Object.freeze({
-  case: 'a value of a closed set given in another case, written as the set has it (Done: done)',
-  removed: 'a command, flag or tool field the surface does not have, written in the form that replaces it with every word given (prio 7 2: field 7 Priority 2; --why on set: its text)',
-  dashes: 'a text that starts with dashes, after a bare --',
-  step: 'a step the call needs first and that writes nothing the call did not ask for, then the call as it was given',
-});
+// Every refusal is built here, from two parts: the reason, which says what is wrong and names the word of the call that
+// is, and the ready part, which the refusal prints last, on a line of its own. No refusal ends with a call composed for
+// the caller: the last line is the form of the command that does what was meant, each value only the caller knows a
+// placeholder of the registry below, so the line pasted as printed is refused for its placeholder and writes nothing; the
+// caller fills the values and runs it. The ready part is one of:
+// - a shape of the refused call, which the command line, holding the call, prints as the call's form: its command, the
+//   placeholder of each argument, each flag with the placeholder of its value, its --root and --json as they were given.
+//   { flag, value } puts a flag in ({ flag, value, add: true } one more of a flag that repeats), { arg, value } an
+//   argument, { drop } takes a flag out ({ drop, value } the one given with that value, value null the one given with
+//   none), { replace, value } stands for the place of a word given, { truncate: n } keeps the first n words, { retry: true }
+//   is the call's own form, { rename, to } puts a flag under another name (a placeholder as to, where the flag is the
+//   caller's to name), { toArg, at } a flag's value as the at-th argument, { command } another command, { dashes: true }
+//   the arguments after a bare --, and an array several. A value that is a placeholder of the registry is printed where
+//   it goes; every other value is printed as the placeholder of its argument or flag. { first } is a read-only view,
+//   printed on a line of its own before the form;
+// - a command (an array of words, or a text, starting with jarl.mjs): the form of another command (the one a removed
+//   form names), or a step the caller takes first (a question put, an issue leased), printed alone and never joined to
+//   the call; a command that writes holds a placeholder;
+// - { external }: a command of the tool that runs the loop, named by its profile, printed as it is.
+// A refusal with no ready part cannot be built: refuse and need throw a TypeError instead. A ready line never does an act
+// that is someone else's (an owner's answer, a ratification, an approve, a sign-off, close --force, a removal of text).
 export class Refusal extends Error {
   constructor(reason, ready) {
     super(`${reason}\n${readyText(ready)}`);
@@ -91,11 +83,12 @@ export class Refusal extends Error {
   }
 }
 // A placeholder: one angle-bracketed token where a value only the caller knows goes. Jarl prints only the placeholders of
-// this closed registry, each one token with no space and no comma, so no reader of a list or a text splits it; the
-// command line refuses a value only where it is exactly one of them (a whole value, a list item, a line of a list held one
-// per line, or the value part of a value written in parts), so a ready line pasted unfilled writes nothing, and any other
-// value written in angle brackets (<nil>, <none>, <Button />) is a value, recorded as given. What the placeholder stands
-// for is said by the reason before it: the values allowed, the ids the loop holds, the word that was wrong.
+// this closed registry, each one token with no space and no comma, so no reader of a list or a text splits it, in its
+// ready lines, its reasons, its help and its tool descriptions alike; the command line refuses a value only where it is
+// exactly one of them (a whole value, a list item, a line of a list held one per line, or the value part of a value
+// written in parts), so a form pasted unfilled writes nothing, and any other value written in angle brackets (<nil>,
+// <none>, <Button />) is a value, recorded as given. What the placeholder stands for is said by the reason before it: the
+// values allowed, the ids the loop holds, the word that was wrong.
 export const PLACEHOLDERS = Object.freeze([
   '<id>', '<ids>', '<another-id>', '<another-issue>', '<ids-the-loop-holds>', '<ids-low-high>', '<a-smaller-range>', '<the-id-new-prints>',
   '<the-id-ask-prints>', '<an-issue-next-offers>', '<question>', '<a-n>', '<n>', '<n|note-n>', '<review|n|note-n>', '<line>',
@@ -111,7 +104,7 @@ export const PLACEHOLDERS = Object.freeze([
   '<why-the-worker-changed>', '<question-for-the-owner>', '<yes-or-reject-first>', '<branch>', '<worker-branch>', '<base-branch>',
   '<the-new-worker>', '<the-worktree-of-the-lease>', '<model-id>', '<path>', '<paths>', '<path-under-the-loop-root>', '<slot>',
   '<findings.json>', '<profile.json>', '<report-dir>', '<report-dir#finding-id>', '<finding-ids>', '<template>', '<the-main-checkout>',
-  '<loop-root>', '<selectors>', '<selector>', '<role>', '<moment>', '<date-or-event>', '<yyyy-mm-dd>', '<type>', '<rule-id>', '<number-of-files>', '<whole-number>',
+  '<loop-root>', '<selectors>', '<selector>', '<role>', '<moment>', '<date-or-event>', '<date-or-id>', '<material>', '<what-to-check>', '<yyyy-mm-dd>', '<type>', '<rule-id>', '<number-of-files>', '<whole-number>',
   '<count>', '<hours>', '<rounds>', '<machine-line>', '<resource-name>', '<a-row-the-log-matches>', '<a-flag-it-takes-or-none>',
   '<no-flag-here>', '<--handover-or-none>', '<one-kind-of-evidence-per-call>', '<a-jarl-command>', '<nothing-to-do>',
   '<the-command-of-the-tool-that-runs-this-loop>', '<as-the-view-shows>', '<as-the-reason-says>', '<a-jarl-that-reads-this-format>',
@@ -127,67 +120,47 @@ export function hole(token) {
 // The placeholders of the registry a printed line holds, found anywhere in its words.
 export const HOLE = new RegExp(PLACEHOLDERS.map((p) => p.replace(/[|.#=:]/g, (c) => `\\${c}`)).join('|'));
 // Where only a view tells what to change (the record read strictly, the profile, the rulings): the view, which writes
-// nothing, then the call with a placeholder for what the view shows.
+// nothing, on a line of its own, then the call's form with a placeholder for what the view shows.
 export const afterView = (view) => [{ first: view }, { flag: hole('<as-the-view-shows>') }];
-// The value a refusal writes where a value outside a closed set was given: the one value of the set it is but for case,
-// which cannot change what was meant, else the placeholder of the set, the reason naming its values. The fix that writes
-// it names the correction case.
-export function oneOf(given, allowed, placeholder) {
-  const same = allowed.filter((a) => String(a).toLowerCase() === String(given ?? '').trim().toLowerCase());
-  return same.length === 1 ? String(same[0]) : hole(placeholder);
-}
-const FIX_KEYS = ['flag', 'arg', 'drop', 'replace', 'truncate', 'retry', 'rename', 'toArg', 'command', 'first'];
+const FIX_KEYS = ['flag', 'arg', 'drop', 'replace', 'truncate', 'retry', 'rename', 'toArg', 'command', 'first', 'dashes'];
 const isFix = (r) => r !== null && typeof r === 'object' && !Array.isArray(r) && FIX_KEYS.some((k) => Object.hasOwn(r, k));
 const isExternal = (r) => r !== null && typeof r === 'object' && !Array.isArray(r) && typeof r.external === 'string' && r.external.trim() !== '';
-// Whether a ready part names a correction for each of its parts, so the line it makes may run.
-export function namesCorrection(ready) {
-  const parts = [].concat(ready);
-  return parts.length > 0 && parts.every((p) => p !== null && typeof p === 'object' && !Array.isArray(p) && Object.hasOwn(CORRECTIONS, p.fix ?? ''));
-}
-function checkReady(ready) {
-  for (const p of [].concat(ready)) if (p !== null && typeof p === 'object' && !Array.isArray(p) && p.fix !== undefined && !Object.hasOwn(CORRECTIONS, p.fix)) return false;
-  if (isCalls(ready) || isExternal(ready)) return true;
-  if (Array.isArray(ready) && ready.length && ready.every(isFix)) return ready.every((f) => f.first === undefined || checkReady(f.first));
-  if (isFix(ready)) return ready.first === undefined || checkReady(ready.first);
-  const words = Array.isArray(ready) ? ready.map(String) : typeof ready === 'string' ? commandWords(ready) : [];
-  return words[0] === 'jarl.mjs' && words.length > 1;
-}
 // The words of a command written as a text: a word in double or single quotes is one word without its quotes, a
-// <placeholder> is part of the word it stands in with its brackets (spaces and all), and the rest splits at spaces; &&
-// joins two commands.
+// <placeholder> is part of the word it stands in with its brackets, and the rest splits at spaces.
 export function commandWords(text) {
   const words = [];
   const re = /"((?:[^"\\]|\\.)*)"|'((?:[^']|'\\'')*)'|((?:<[^>]*>|[^\s"'<])+)|(\S+)/g;
   for (const m of String(text).matchAll(re)) words.push(m[1] !== undefined ? m[1] : m[2] !== undefined ? m[2].replace(/'\\''/g, "'") : m[3] ?? m[4]);
   return words;
 }
-// Commands given word by word ({ calls: [['jarl.mjs', ...], ...] }), printed one after the other, joined by &&.
-const isCalls = (r) => r !== null && typeof r === 'object' && !Array.isArray(r) && Array.isArray(r.calls) && r.calls.length > 0 && r.calls.every((c) => Array.isArray(c) && c[0] === 'jarl.mjs' && c.length > 1);
-// The words of each command of a ready part that is no fix: its calls, or the one command it is.
-export function commandsOfReady(ready) {
-  if (isCalls(ready)) return ready.calls.map((c) => c.map((w) => (w === undefined || w === null ? hole('<value>') : String(w))));
-  return [Array.isArray(ready) ? ready.map(String) : commandWords(ready)];
+// The words of a ready part that is a command.
+export const commandOf = (ready) => (Array.isArray(ready) ? ready.map((w) => (w === undefined || w === null ? hole('<value>') : String(w))) : commandWords(ready));
+const isCommand = (ready) => { const words = Array.isArray(ready) || typeof ready === 'string' ? commandOf(ready) : []; return words[0] === 'jarl.mjs' && words.length > 1; };
+function checkReady(ready) {
+  if (isExternal(ready)) return true;
+  if (Array.isArray(ready) && ready.length && ready.every(isFix)) return ready.every((f) => f.first === undefined || isCommand(f.first));
+  if (isFix(ready)) return ready.first === undefined || isCommand(ready.first);
+  return isCommand(ready);
 }
-// Commands as the shell is given them: every word written by shellWord, the one function every printed word goes through,
-// and two commands joined by &&.
-export const printedLine = (commands) => commands.map((words) => words.map(shellWord).join(' ')).join(' && ');
+// One command as the shell is given it: every word written by shellWord, the one function every printed word goes through.
+export const printedLine = (words) => words.map(shellWord).join(' ');
 export function commandLine(ready) {
   if (isExternal(ready)) return ready.external.trim();
-  return printedLine(commandsOfReady(ready));
+  return printedLine(commandOf(ready));
 }
-// The ready part as a text, for a caller that holds no call (the record library): a fix is written as the flag or the
-// argument it asks for.
+// The ready part as a text, for a caller that holds no call (the record library): a shape of the call is written as the
+// flag or the argument it asks for, its value a placeholder.
 export function readyText(ready) {
   const fixes = [].concat(ready).filter(isFix);
   if (!fixes.length) return commandLine(ready);
-  const w = (v) => shellWord(v);
-  return fixes.map((f) => (f.first !== undefined ? `after ${commandLine(f.first)}` : f.drop !== undefined ? `without ${f.drop}${f.value === undefined || f.value === null ? '' : ` ${w(f.value)}`}` : f.flag !== undefined ? `${f.flag}${f.value === undefined ? '' : ` ${w(f.value)}`}`
-    : f.retry ? 'the same call again' : f.rename !== undefined ? `${w(f.to)} in place of ${f.rename}` : f.toArg !== undefined ? `the value of ${f.toArg} as argument ${f.at + 1}` : f.command !== undefined ? `${w(f.command)} in place of the command`
+  const w = (v) => shellWord(isPlaceholder(v) ? v : hole('<value>'));
+  return fixes.map((f) => (f.first !== undefined ? `after ${commandLine(f.first)}` : f.drop !== undefined ? `without ${shellWord(f.drop)}` : f.flag !== undefined ? `${shellWord(f.flag)}${f.value === undefined ? '' : ` ${w(f.value)}`}`
+    : f.retry ? 'the call with its values filled' : f.dashes ? 'the arguments after a bare --' : f.rename !== undefined ? `${shellWord(f.to)} in place of ${shellWord(f.rename)}` : f.toArg !== undefined ? `the value of ${f.toArg} as argument ${f.at + 1}` : f.command !== undefined ? `${shellWord(f.command)} in place of the command`
       : f.replace !== undefined ? `${w(f.value)} in place of ${shellWord(f.replace)}` : f.truncate !== undefined ? `no word after the first ${f.truncate}${f.value === undefined ? '' : `, then ${w(f.value)}`}` : `argument ${f.arg + 1}: ${w(f.value)}`)).join(' ');
 }
 export { isFix, isExternal };
 export function refuse(reason, ready) {
-  if (typeof reason !== 'string' || !reason.trim() || !checkReady(ready)) throw new TypeError(`a refusal is built from a reason and a ready part (a jarl.mjs command or a fix of the call, a correction it names being one of ${Object.keys(CORRECTIONS).join(', ')}): ${JSON.stringify(reason)}`);
+  if (typeof reason !== 'string' || !reason.trim() || !checkReady(ready)) throw new TypeError(`a refusal is built from a reason and a ready part (a jarl.mjs command, a shape of the call, or an external command): ${JSON.stringify(reason)}`);
   throw new Refusal(reason, ready);
 }
 // The ready part may be an arrow, computed only when the condition fails: what it reads may not exist while the call is right.
@@ -203,15 +176,21 @@ export function noSeparators(text) { return String(text ?? '').trim().replace(/\
 // A word as sh, bash and zsh read it back unchanged: bare only when it starts with a letter, a digit, _ . / or - and holds
 // nothing but letters, digits and _ . / : @ % + , - after it, and is no reserved word of a shell; else in single quotes, a
 // single quote inside written '\''. So a word that starts with # (a comment), = or ~ (zsh and bash expand them), an operator
-// (&&, ;, |) and every other word is quoted. A word with line breaks is printed by printf, one quoted line per argument,
-// so the command stays on one line, and a refusal's ready command on its last line. Every word Jarl prints in a command for
-// a person or an agent to run is written so, through printedLine.
+// (&&, ;, |) and every other word is quoted. A word that holds a character a reader may take for the end of a line (CR,
+// LF, a vertical tab, a form feed, NEL, the Unicode line and paragraph separators) or any other control character is
+// printed by printf %b with that character written as the octal escapes of its bytes, so the command stays on one line,
+// for a reader that splits lines on Unicode separators too, and a refusal's ready command on its last line (a shell drops
+// the line breaks a word ends with). Every word Jarl prints in a command for a person or an agent to run is written so,
+// through printedLine.
 const RESERVED_WORDS = new Set(['!', '{', '}', '[[', ']]', 'case', 'coproc', 'do', 'done', 'elif', 'else', 'esac', 'fi', 'for', 'function', 'if', 'in', 'select', 'then', 'time', 'until', 'while']);
 const quoted = (s) => (/^[A-Za-z0-9_./-][A-Za-z0-9_./:@%+,-]*$/.test(s) && !RESERVED_WORDS.has(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`);
+const LINE_BREAKING = /[\u0000-\u0008\u000a-\u001f\u007f\u0085\u2028\u2029]/;
+const escapedByte = (c) => [...Buffer.from(c, 'utf8')].map((b) => `\\0${b.toString(8).padStart(3, '0')}`).join('');
 export function shellWord(s) {
   const text = String(s);
-  if (!/[\r\n]/.test(text)) return quoted(text);
-  return `"$(printf '%s\\n' ${text.split(/\r\n?|\n/).map(quoted).join(' ')})"`;
+  if (!LINE_BREAKING.test(text)) return quoted(text);
+  const escaped = [...text].map((c) => (c === '\\' ? '\\\\' : LINE_BREAKING.test(c) ? escapedByte(c) : c)).join('');
+  return `"$(printf '%b' ${quoted(escaped)})"`;
 }
 
 // Used by the other modules of the library, and not part of what jarl-lib.mjs exports.

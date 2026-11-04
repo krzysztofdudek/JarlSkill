@@ -175,15 +175,14 @@ function eventParser(profile) {
 
 // The command that writes each kind of line that carries state: what the free log refuses to write in its place.
 const LINE_WRITERS = {
-  filed: 'jarl.mjs new', move: 'jarl.mjs set <ids> <status>', round: 'jarl.mjs round <id>', verdict: 'jarl.mjs review <id> approve|changes',
-  'retract-review': 'jarl.mjs retract <id> review', 'retract-row': 'jarl.mjs retract <id> <n>', 'retract-note': 'jarl.mjs retract <id> note-<n>', row: 'jarl.mjs evidence <id> --ran "<command>" --saw "<what it printed>"',
-  merged: 'jarl.mjs merged <id> --sha <sha>', ci: 'jarl.mjs merged <id> --ci <state>', body: 'jarl.mjs field <id> <part> "<value>"', tick: 'jarl.mjs tick <id> <line> --by owner',
+  filed: 'jarl.mjs new', move: 'jarl.mjs set "<ids>" "<status>"', round: 'jarl.mjs round "<id>"', verdict: 'jarl.mjs review "<id>" "<verdict>"',
+  'retract-review': 'jarl.mjs retract "<id>" review', 'retract-row': 'jarl.mjs retract "<id>" "<n>"', 'retract-note': 'jarl.mjs retract "<id>" "<n|note-n>"', row: 'jarl.mjs evidence "<id>" --ran "<command>" --saw "<what-it-printed>"',
+  merged: 'jarl.mjs merged "<id>" --sha "<sha>"', ci: 'jarl.mjs merged "<id>" --ci "<ci-state>"', body: 'jarl.mjs field "<id>" "<part>" "<value>"', tick: 'jarl.mjs tick "<id>" "<line>" --by owner',
   tip: 'jarl.mjs evidence, review or merged, which write the tip of the branch after their own line',
 };
-// The same commands as the ready call a refusal of the line ends with: the id the line names, a placeholder for each
-// value the line does not give.
+// The form of the command that writes each kind of line, the last line of a refusal of that line given to log.
 const LINE_CALLS = {
-  filed: () => ['new', hole('<title>')], move: (id) => ['set', id, hole('<status>'), hole('<why>')], round: (id) => ['round', id, hole('<what-failed>')],
+  filed: () => ['new', hole('<title>')], move: (ids) => ['set', ids, hole('<status>'), hole('<why>')], round: (id) => ['round', id, hole('<what-failed>')],
   verdict: (id) => ['review', id, hole('<verdict>'), hole('<findings-with-a-severity>'), '--by', hole('<reviewer>')],
   'retract-review': (id) => ['retract', id, 'review', hole('<why>'), '--by', hole('<who>')], 'retract-row': (id) => ['retract', id, hole('<n>'), hole('<why>'), '--by', hole('<who>')],
   'retract-note': (id) => ['retract', id, hole('<n|note-n>'), hole('<why>'), '--by', hole('<who>')], row: (id) => ['evidence', id, '--ran', hole('<command>'), '--saw', hole('<what-it-printed>')],
@@ -199,9 +198,9 @@ export function appendNote(root, event) {
   needNoOwnersWords('the note', event);
   const text = oneLine(event);
   const id = LEADING_ID.exec(text)?.[1] ?? null;
-  need(!MOVE_SHAPE.test(text), `log writes a note, and "${text.length > 80 ? `${text.slice(0, 77)}...` : text}" has the shape of a move (an id, an arrow), which set writes: ${LINE_WRITERS.move} "<text>"`, () => { const m = /^(\S+)\s+→\s*(\S+)?\s*(.*)$/s.exec(text.trim()); return ['jarl.mjs', 'set', m?.[1] ?? hole('<ids>'), m?.[2] ?? hole('<status>'), hole('<why>')]; });
+  need(!MOVE_SHAPE.test(text), `log writes a note, and "${text.length > 80 ? `${text.slice(0, 77)}...` : text}" has the shape of a move (an id, an arrow), which set writes: ${LINE_WRITERS.move} "<text>"`, () => ['jarl.mjs', ...LINE_CALLS.move(hole('<ids>'))]);
   const type = id === null ? 'other' : parseEvent(id, text, loadProfile(root)).type;
-  need(type === 'other', `log writes a note, and "${text.length > 80 ? `${text.slice(0, 77)}...` : text}" reads as ${type === 'filed' ? 'a filing' : `a ${type.replace('-', ' ')} line`}, which the journal's own command writes with its checks: ${type === 'row' && attachmentOf(text.slice(`${id} evidence row · `.length)) ? 'jarl.mjs evidence <id> --file <path> --slot <name>' : LINE_WRITERS[type]}`, () => ['jarl.mjs', ...LINE_CALLS[type](id ?? hole('<id>'))]);
+  need(type === 'other', `log writes a note, and "${text.length > 80 ? `${text.slice(0, 77)}...` : text}" reads as ${type === 'filed' ? 'a filing' : `a ${type.replace('-', ' ')} line`}, which the journal's own command writes with its checks: ${type === 'row' && attachmentOf(text.slice(`${id} evidence row · `.length)) ? 'jarl.mjs evidence "<id>" --file "<path>" --slot "<name>"' : LINE_WRITERS[type]}`, () => ['jarl.mjs', ...LINE_CALLS[type](hole('<id>'))]);
   appendLog(root, event);
 }
 
@@ -243,7 +242,7 @@ export function loopEvents(dir, profile, skipped, keys) {
   log.split('\n').forEach((l, n) => {
     const m = LOG_LINE.exec(l);
     if (!m) {
-      if (skipped && l.trim() !== '' && !l.startsWith('#')) skipped.push({ n: n + 1, text: l, reason: 'not a dated line: a line of the log is "- <date> <time> · <text>"' });
+      if (skipped && l.trim() !== '' && !l.startsWith('#')) skipped.push({ n: n + 1, text: l, reason: 'not a dated line: a line of the log is "- yyyy-mm-dd hh:mm · <text>"' });
       return;
     }
     // A line names its issue as it was written; the event carries the issue's own form, so it meets its issue's id.
@@ -352,7 +351,7 @@ function movesInto(statuses) {
 }
 
 // The merge a log line records: `<id> merged <sha>[ in <repo>]`, then the fields it names in any order — `check <what
-// ran>` for a merge landed on a passing check, `saw <what it printed>` after it, `landed red, cause <id>` for one landed
+// ran>` for a merge landed on a passing check, `saw <what-it-printed>` after it, `landed red, cause <id>` for one landed
 // while its check was red for a cause outside the branch, and `CI <state>`. Null for any other line.
 export function mergeLineOf(id, text) {
   const parts = text.split(' · ');

@@ -171,7 +171,7 @@ export function validateProfile(json, where = 'the profile') {
   const statuses = [];
   const flagsOf = new Map();
   const setBy = new Map();
-  if (!isObj(json.statuses) || !Object.keys(json.statuses).length) say('"statuses" must be an object naming at least one status: { "<status>": ["<flag>", ...] }');
+  if (!isObj(json.statuses) || !Object.keys(json.statuses).length) say('"statuses" must be an object naming at least one status: { "<status>": ["<a-flag-it-takes-or-none>", ...] }');
   else {
     for (const [name, spec] of Object.entries(json.statuses)) {
       if (!PROFILE_STATUS_RE.test(name)) { say(`status "${name}" must be lower-case letters, digits and - (starting with a letter, at most 40 characters)`); continue; }
@@ -208,7 +208,7 @@ export function validateProfile(json, where = 'the profile') {
   if (initial && flagsOf.get(initial) && (flagsOf.get(initial).has('terminal') || flagsOf.get(initial).has('holds-claim'))) say(`a new issue starts in "${initial}", which is ${flagsOf.get(initial).has('terminal') ? 'terminal' : 'a lease'} — name another with "initial"`);
   // fields: { "<Name>": { enum?, default?, required? } }
   const fields = [];
-  if (json.fields !== undefined && !isObj(json.fields)) say('"fields" must be an object: { "<Field>": { "enum": [...], "default": "...", "required": true } }');
+  if (json.fields !== undefined && !isObj(json.fields)) say('"fields" must be an object: { "<name>": { "enum": [...], "default": "...", "required": true } }');
   for (const [name, spec] of Object.entries(isObj(json.fields) ? json.fields : {})) {
     if (!PROFILE_FIELD_RE.test(name) || name !== name.trim()) { say(`field "${name}" must be letters, digits, spaces and - (starting with a letter, at most 40 characters)`); continue; }
     if (TOOL_FIELDS.some((t) => t.toLowerCase() === name.toLowerCase())) { say(`field "${name}" is one the tool writes itself — a profile cannot declare it; rename the field in the profile, because the tool writes ${name} itself`); continue; }
@@ -278,7 +278,7 @@ export function validateProfile(json, where = 'the profile') {
   let lifecycle = DEFAULT_LIFECYCLE;
   if (json.lifecycle !== undefined) {
     const l = json.lifecycle;
-    if (!isObj(l)) say('"lifecycle" is an object: { "close": "any" | "record", "archive": "any" | "record", "command": "<the composer\'s command that closes or archives this loop>" }');
+    if (!isObj(l)) say('"lifecycle" is an object: { "close": "any" | "record", "archive": "any" | "record", "command": "<the-command-of-the-tool-that-runs-this-loop>" }');
     else {
       const before = bad.length;
       for (const k of Object.keys(l)) if (!LIFECYCLE_KEYS.includes(k)) say(`"lifecycle": unknown key "${k}" — it takes ${LIFECYCLE_KEYS.join(', ')}`);

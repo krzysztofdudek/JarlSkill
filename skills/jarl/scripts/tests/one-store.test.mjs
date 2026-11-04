@@ -689,7 +689,7 @@ test('the free log refuses an id and an arrow whatever follows, and a note of th
   const root = makeLoop();
   jarl(root, 'new', 'one', '--tier', 'light');
   for (const line of ['1 → see 3 for context', '1 → DONE', '1 →nowhere']) {
-    assert.match(refuses(root, 'log', line), /has the shape of a move.*jarl\.mjs set <ids> <status>/, line);
+    assert.match(refuses(root, 'log', line), /has the shape of a move.*jarl\.mjs set "<ids>" "<status>"/, line);
     assert.throws(() => R.appendLog(root, line), /shape of a move/);
   }
   appendFileSync(join(R.jarlDir(root), 'log.md'), '- 2026-10-01 09:00 · 1 → see 3 for context\n- 2026-10-01 09:01 · 1 → DONE\n');

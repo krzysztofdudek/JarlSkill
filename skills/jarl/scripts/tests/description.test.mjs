@@ -149,7 +149,7 @@ test('field --add adds to a section after what it holds, and logs the line a rep
   assert.equal(lastLine(root), '2 body · what · was (none)');
   assert.match(refuses(root, 'field', '1', 'Title', 'x', '--add'), /Title holds one value, so it is replaced, never added to or taken from/, 'the title is replaced, never appended to');
   assert.match(refuses(root, 'field', '1', 'Where', 'x', '--add'), /Where holds one value/);
-  assert.match(refuses(root, 'field', '1', 'Why', '', '--add'), /^field Why needs a value, or --clear to empty it\njarl\.mjs field 1 Why '<value>' --add\n$/);
+  assert.match(refuses(root, 'field', '1', 'Why', '', '--add'), /^field Why needs a value, or --clear to empty it\njarl\.mjs field '<ids>' Why '<text>' --add\n$/);
   jarl(root, 'field', '1', 'What', 'replaced');
   assert.equal(R.findIssue(root, '1').sections.what.trim(), 'replaced', 'without --add a section is replaced');
 });
@@ -157,7 +157,7 @@ test('field --add adds to a section after what it holds, and logs the line a rep
 test('a name field does not write is refused with the names it writes and the command that writes that one', () => {
   const root = profiledLoop();
   const names = /Title, Priority, Tier, Kind, Found by, Tags, Files, Repo, After, Source, Where, Resources, Person, Check when, Area, Note, What, Why, Acceptance, Changelog, Design/;
-  for (const [name, why] of [['Status', /jarl\.mjs set <ids> <status>/], ['done', /jarl\.mjs set <ids> <status>/], ['Branch', /written by set: jarl\.mjs set <ids> in-progress/], ['Worker', /written by set/], ['Merged', /recorded by merged: jarl\.mjs merged <ids> --sha <sha>/], ['CI', /recorded by merged/], ['Evidence', /history is never edited: .*retract.*decide --supersedes: jarl\.mjs retract/], ['Bogus', /a status is moved by set, a merge recorded by merged/]]) {
+  for (const [name, why] of [['Status', /jarl\.mjs set "<ids>" "<status>"/], ['done', /jarl\.mjs set "<ids>" "<status>"/], ['Branch', /written by set: jarl\.mjs set "<ids>" in-progress/], ['Worker', /written by set/], ['Merged', /recorded by merged: jarl\.mjs merged "<ids>" --sha "<sha>"/], ['CI', /recorded by merged/], ['Evidence', /history is never edited: .*retract.*decide --supersedes: jarl\.mjs retract/], ['Bogus', /a status is moved by set, a merge recorded by merged/]]) {
     const said = refuses(root, 'field', '1', name, 'x');
     assert.match(said, new RegExp(`${name} is not a part of the description, which field writes: `), name);
     assert.match(said, names, name);

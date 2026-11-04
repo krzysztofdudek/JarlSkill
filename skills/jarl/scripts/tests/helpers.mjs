@@ -67,15 +67,15 @@ export function refuses(root, ...args) {
   assert.notEqual(r.status, 0, `expected a refusal: ${args.join(' ')}`);
   return args.includes('--') ? r.stderr ?? '' : withoutRoot(r.stderr ?? '', root);
 }
-// A refusal's text with the --root of the call taken out of its ready line, which must carry it in every command.
+// A refusal's text with the --root of the call taken out of the commands it ends with (a step on its own line, then the
+// form), each of which must carry it.
 export function withoutRoot(text, root) {
   const lines = text.replace(/\n$/, '').split('\n');
-  const ready = lines.at(-1);
-  if (!ready.startsWith('jarl.mjs ')) return text;
   const flag = ` --root ${shellWord(root)}`;
-  const commands = ready.split(/ && (?=jarl\.mjs )/);
-  assert.ok(commands.every((c) => c.includes(flag)), `the ready line carries the call's --root in every command: ${ready}`);
-  lines[lines.length - 1] = commands.map((c) => c.replace(flag, '')).join(' && ');
+  for (let i = lines.length - 1; i > 0 && lines[i].startsWith('jarl.mjs '); i -= 1) {
+    assert.ok(lines[i].includes(flag), `the command carries the call's --root: ${lines[i]}`);
+    lines[i] = lines[i].replace(flag, '');
+  }
   return `${lines.join('\n')}${text.endsWith('\n') ? '\n' : ''}`;
 }
 

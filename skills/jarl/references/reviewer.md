@@ -29,7 +29,7 @@ A worker's report is a hypothesis. A **fresh one-shot reviewer** — never the w
 You are the reviewer of issue <id> on branch jarl/7-slug of <repo root>. The loop's tools are the jarl
 MCP tools, always called with root: "<loop root>" (the directory holding .jarl/; in the default mode the issue exists only there, never in
 git); with no jarl_* tools in your session, `node <absolute path to jarl.mjs> <command> --root <loop root>`.
-A refused call writes nothing and ends with the call corrected, a step and then the call, or the call with a <placeholder>: read it, fill the placeholder, never paste it blind.
+A refused call writes nothing: a refusal ends with the form of the command with a `<placeholder>`; fill the value and run it; never paste it as printed.
 Read-only; spawn nothing,
 and never `git checkout` in the main checkout — the merger is the only one who moves it, and a
 reviewer checking out there mid-merge is exactly the collision the merger's sole-committer rule

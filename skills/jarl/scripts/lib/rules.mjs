@@ -20,7 +20,7 @@ export const RULE_SELECTORS = Object.freeze(['loop', 'role', 'slice', 'moment', 
 const READER_SELECTORS = new Set(['loop', 'role', 'moment']);
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const ISSUE_RE = /^#?\d+$/;
-const SCOPE_SHAPE = 'loop, or selectors joined by "and": role <role>, slice <coordinator>, moment <moment>, issue <id>, tag <tag>, kind <kind>, tier <tier>, files <path or pattern>, repo <repository>';
+const SCOPE_SHAPE = 'loop, or selectors joined by "and": role <role>, slice <coordinator>, moment <moment>, issue <id>, tag <tag>, kind <kind>, tier <tier>, files <path>, repo <name>';
 
 // Where one selector of a scope is refused: the scope with that selector, or its value, a placeholder, the others kept.
 const scopeHole = (raw, part, words) => raw.replace(part, () => words);

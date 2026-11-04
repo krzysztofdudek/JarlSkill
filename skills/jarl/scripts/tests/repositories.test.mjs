@@ -192,7 +192,7 @@ test('the first name raises the record format under the lock, writes bare-word p
   R.setRepo(w.hub, '002', 'tool');
   assert.equal(L.loadProfile(w.hub).format, 2);
   assert.match(w.issue(1), /^\*\*Repo:\*\* \.\/sub, \.\/other$/m, 'the bare-word path says the same place unambiguously');
-  assert.match(w.log(), /repo paths written as \.\/<word> in 0*1 · the record format is raised/);
+  assert.match(w.log(), /repo paths written as \.\/ and the name in 0*1 · the record format is raised/);
   assert.equal(L.repoOf(w.hub, './sub'), nested);
   for (const command of ['list', 'status', 'next', 'queue']) {
     const r = oldJarl(w.hub, command, {});
@@ -822,7 +822,7 @@ test('a checkout with no branch is declared with no base, and says so', () => {
   git(w.tool, 'checkout', '-q', '--detach');
   const r = neu(w.hub, 'a', '--repo', 'tool');
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stderr, /note: tool has no branch checked out, so it is declared with no base — name one with jarl\.mjs base tool <branch>/);
+  assert.match(r.stderr, /note: tool has no branch checked out, so it is declared with no base — name one with jarl\.mjs base tool '<branch>'/);
   assert.match(w.decl(), /^- \*\*tool\*\* · roots [0-9a-f]{40} · origin none · base none$/m);
   assert.equal(L.declaredRepos(w.hub).get('tool').base, null);
   assert.equal(jarl(w.hub, 'base', 'tool', 'main'), 'tool base: main (was none)');

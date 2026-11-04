@@ -25,7 +25,7 @@ const MARK = /^\[owner\]\s*/i;
 const PART = (key) => new RegExp(`^${key}:\\s*(.*)$`, 'i');
 // A placeholder copied from the help names nothing.
 const PLACEHOLDER = /^<.*>$/;
-export const OWNER_LINE_SHAPE = '[owner] <line> · material: <path, link or artifact> · check: <what to check>';
+export const OWNER_LINE_SHAPE = '[owner] <line> · material: <material> · check: <what-to-check>';
 
 // One acceptance line read as an owner line: null when it is not marked; else { what, material, check }, each null when
 // the line does not name it in the shape above.
@@ -78,7 +78,7 @@ function placesOf(root, issue) {
 function linesOff(profile) { const f = formatState(profile); return !f.raises && profile.format < 3; }
 const offText = (profile) => `owner lines are off in this loop: its profile names an external scheduler (${profile.scheduler}) and keeps record format ${profile.format}, so no tick can be written here`;
 const rewrite = (id) => ['jarl.mjs', 'field', id, 'Acceptance', hole('<the-whole-section>')];
-const rewriteText = (id) => printedLine([rewrite(id)]);
+const rewriteText = (id) => printedLine(rewrite(id));
 
 // Each owner line of an issue as the gate and the views read it: { n, text, what, material, check, tick, spent, ready,
 // why, at, off }; off is true where owner lines are off in the loop (see linesOff). tick is the tick that counts ({ at, by }) or null, spent the newest tick of the same line that a red round,

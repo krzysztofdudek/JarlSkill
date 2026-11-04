@@ -21,7 +21,7 @@
   ["import", "/nowhere/findings.json"], ["init", "again"],
   ["set", "1", "open", "#12", "--bogus", "y"], ["set", "1", "In-progress", "#go", "--worker", "w1", "--branch", "jarl/1-a"], ["set", "1", "Deferred", "#12", "--by", "jarl"],
   ["set", "1", "open", "&&", "--bogus"], ["set", "1", "Deferred", "a; touch pwned"], ["set", "1", "Deferred", "a | tee pwned"], ["set", "1", "Deferred", "line one\n#two"], ["set", "1", "Deferred", " later"],
-  ["prio", "1", "3", "--by"], ["prio", "1", "3", "--x;echo hi"], ["tips", "--repo20 20 12 61 79 80 81 701 33 98 100 204 250 395 398 399 400touch pwned)"], ["body", "1", "--what", "#x", "--by"], ["tag", "1", "+#a", "--by"],
+  ["prio", "1", "3", "--by"], ["prio", "1", "3", "--x;echo hi"], ["tips", "--repo$(id -G; touch pwned)"], ["body", "1", "--what", "#x", "--by"], ["tag", "1", "+#a", "--by"],
   ["new", "=x", "--tier", "Light"], ["new", "~x", "--tier", "Light"], ["new", "!x", "--tier", "Light"], ["evidence", "1", ";", "--bogus", "y"], ["evidence", "1", "|", "--bogus", "y"],
   ["evidence", "1", "--ran", "=x", "--saw", "~y", "--bogus", "z"], ["field", "1", "Title", "#a title", "--bogus"], ["field", "1", "Priority", "High", "--by", "{x}"], ["review", "1", "Approve", "--by", "rev", "#read it all, it is fine"]
 ]

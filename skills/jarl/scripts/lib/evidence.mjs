@@ -2,7 +2,7 @@
 
 import { existsSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { PROMISE_KIND, fieldText, hole, need, oneOf } from './base.mjs';
+import { PROMISE_KIND, fieldText, hole, need } from './base.mjs';
 import { needNoOwnersWords } from './owner.mjs';
 import { git } from './git.mjs';
 import { jarlDir, stamp } from './where.mjs';
@@ -496,7 +496,7 @@ export const leasedByText = (x) => (x.leasedBy === undefined ? '' : `leased by $
 // refuses clearly instead of silently doing nothing, so a session never mistakes a no-op for a check.
 export function cmdMode(root, mode) {
   need(mode, 'mode requires a target: permanent', { arg: 0, value: '<mode>' });
-  need(mode === 'permanent', `mode takes "permanent" (got "${mode}")`, { arg: 0, value: oneOf(mode, ['permanent'], '<mode>'), fix: 'case' });
+  need(mode === 'permanent', `mode takes "permanent" (got "${mode}")`, { arg: 0, value: hole('<mode>') });
   needLiveLoop(root, '');
   need(!outOfGit(root), 'this loop is out of git (default mode) — a permanent record must be committed, and only init decides .jarl/.gitignore, so there is no in-place switch. Start a fresh loop with', 'jarl.mjs init "<goal>" --permanent');
   need(!existsSync(join(jarlDir(root), '.permanent')), 'already a permanent record (.jarl/.permanent exists) — nothing to do; the loop: jarl.mjs status', { arg: 0, value: hole('<nothing-to-do>') });
@@ -567,7 +567,7 @@ function attachmentRow(root, rawIds, flags) {
   need(spec, `the profile declares no slot "${slot}" for an issue of kind ${kind}${specs.length ? ` (its slots: ${specs.map((s) => s.name).join(', ')})` : ` — it requires no slots for that kind, so the file (${flags.file}) is described in a note, with no --file or --slot`}`, () => (specs.length ? { replace: slot, value: hole('<slot>') } : [{ drop: '--file' }, { drop: '--slot' }, { arg: 1, value: hole('<text>') }]));
   const rel = flags.file;
   const read = inspectAttachment(root, issue.id, spec, rel, 'is no such file');
-  need(!read.problem, read.missing ? `no such file: ${rel}, under the loop root; e.g. --file <path under the loop root>` : read.problem, () => ({ flag: '--file', value: '<path-under-the-loop-root>' }));
+  need(!read.problem, read.missing ? `no such file: ${rel}, under the loop root; e.g. --file <path-under-the-loop-root>` : read.problem, () => ({ flag: '--file', value: '<path-under-the-loop-root>' }));
   return [{ ran: `attach ${slot} ${read.name} sha256:${read.sha256} size:${read.size}`, saw: `slot ${slot}: ${read.size} bytes` }];
 }
 
@@ -592,10 +592,10 @@ export function closedGateFlags(loop) {
       const g = gateOf(loop, id);
       if (!g.tracked) continue;
       const code = carriesCode(issue);
-      if (!g.rowsSince) flag(g.rowLog.some((r) => r.retracted && r.n > g.anchorN) ? 'its proof row was retracted' : `no --ran/--saw row since it was ${g.anchor.what === 'filed' ? 'filed' : `moved → ${g.anchor.what}`}`, `jarl.mjs evidence ${id} --ran "<command>" --saw "<what it printed>"`);
+      if (!g.rowsSince) flag(g.rowLog.some((r) => r.retracted && r.n > g.anchorN) ? 'its proof row was retracted' : `no --ran/--saw row since it was ${g.anchor.what === 'filed' ? 'filed' : `moved → ${g.anchor.what}`}`, `jarl.mjs evidence ${id} --ran "<command>" --saw "<what-it-printed>"`);
       for (const p of slotProblems(loop.root, profile, issue, g, false)) flag(`slot ${p.slot}: ${p.what}`, p.fix);
       if (profile.doneGate.approve !== 'none') {
-        const fresh = `jarl.mjs review ${id} approve --by <fresh reviewer> "<text>"`;
+        const fresh = `jarl.mjs review ${id} approve --by '<a-fresh-reviewer>' "<text>"`;
         const kind = approveKind(g);
         if (g.selfApproved) flag('its live approve is by a worker of this issue or its branch', fresh);
         else if (!g.approved) flag(kind === 'retracted' ? 'its approve was retracted' : g.trail.some((r) => r.verdict === 'approve') ? 'its approve is spent by a later round, restart, reopen or changes verdict' : 'it holds no approve', fresh);

@@ -128,7 +128,7 @@ test('changelog: fragments recorded on the issue print grouped for [Unreleased];
   // body --changelog replaces the fragment, it never appends.
   jarl(root, 'field', '2', 'Changelog', 'Fixed: something else.');
   assert.equal(jarl(root, 'changelog', '2'), '### Fixed\n- something else.');
-  assert.match(refuses(root, 'changelog'), /changelog requires <ids>/);
+  assert.match(refuses(root, 'changelog'), /changelog requires its ids/);
   // A section with nothing after it is refused, on new and on body, and nothing is written.
   assert.match(refuses(root, 'field', '2', 'Changelog', 'Removed:'), /changelog entry "Removed:" has no text/);
   assert.match(refuses(root, 'new', 'x', '--changelog', 'fixed:  '), /has no text/);

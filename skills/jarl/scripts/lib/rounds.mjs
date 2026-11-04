@@ -160,7 +160,7 @@ function unrecordedBranch(root, flags) {
 }
 
 export function cmdCheck(root, rawId, flags) {
-  need(flags.branch, 'scope requires --branch <worker branch>', () => ({ flag: '--branch', value: '<worker-branch>' }));
+  need(flags.branch, 'scope requires --branch <worker-branch>', () => ({ flag: '--branch', value: '<worker-branch>' }));
   let pkg;
   if (rawId === undefined) {
     const profile = loadProfile(root);

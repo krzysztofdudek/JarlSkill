@@ -1,6 +1,6 @@
 // The review command.
 
-import { fieldText, hole, need, oneOf } from './base.mjs';
+import { fieldText, hole, need } from './base.mjs';
 import { needNoOwnersWords } from './owner.mjs';
 import { jarlDir, stamp } from './where.mjs';
 import { readText, writeAtomic } from './files.mjs';
@@ -45,7 +45,7 @@ function retractReview(root, rawIds, reason, flags) {
 }
 export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
   needNoOwnersWords('the review', findings, flags);
-  need(verdict === 'approve' || verdict === 'changes' || verdict === 'retract', `review takes approve or changes (got "${verdict}")`, () => [...(rawIds === undefined ? [{ arg: 0, value: '<ids>' }] : []), { arg: 1, value: oneOf(verdict, ['approve', 'changes'], '<verdict>'), fix: 'case' }, ...(findings === undefined ? [{ arg: 2, value: '<what-was-read-and-found>' }] : []), ...(flags.by === undefined ? [{ flag: '--by', value: '<reviewer>' }] : [])]);
+  need(verdict === 'approve' || verdict === 'changes' || verdict === 'retract', `review takes approve or changes (got "${verdict}")`, () => [...(rawIds === undefined ? [{ arg: 0, value: '<ids>' }] : []), { arg: 1, value: hole('<verdict>') }, ...(findings === undefined ? [{ arg: 2, value: '<what-was-read-and-found>' }] : []), ...(flags.by === undefined ? [{ flag: '--by', value: '<reviewer>' }] : [])]);
   if (verdict === 'retract') return retractReview(root, rawIds, findings, flags);
   need(findings, `review requires "<text>" — what was read and what was found, even when nothing`, () => ({ arg: 2, value: '<what-was-read-and-found>' }));
   const words = String(findings).split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
@@ -112,7 +112,7 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
 // reviewer's approve is the next step. `wait` is what done also waits for: the owner's tick of a line only he ticks.
 function nextAfterVerdict(issue, verdict, kind, wait = null) {
   if (verdict === 'changes') return `the jarl records the round — jarl.mjs round ${issue.id} "<text>" — and a worker is raised again to fix it`;
-  if (carriesCode(issue) && kind === 'coordinator') return `a fresh reviewer's approve is next — jarl.mjs review ${issue.id} approve|changes --by <fresh reviewer> "<text>" — then the merger lands it`;
-  if (carriesCode(issue)) return `the merger merges the branch and records it with one call — jarl.mjs merged ${issue.id} --sha <sha> --ran "<check>" --saw "<summary>" — then ${wait ? `${wait}, then ` : ''}jarl.mjs set ${issue.id} done, which needs a Proof row from the worker (the merge check is the merger's and is no proof); a worker never sets done`;
+  if (carriesCode(issue) && kind === 'coordinator') return `a fresh reviewer's approve is next — jarl.mjs review ${issue.id} '<verdict>' --by '<a-fresh-reviewer>' "<text>" — then the merger lands it`;
+  if (carriesCode(issue)) return `the merger merges the branch and records it with one call — jarl.mjs merged ${issue.id} --sha '<sha>' --ran "<command>" --saw "<what-it-printed>" — then ${wait ? `${wait}, then ` : ''}jarl.mjs set ${issue.id} done, which needs a Proof row from the worker (the merge check is the merger's and is no proof); a worker never sets done`;
   return `${wait ? `${wait}, then ` : ''}jarl.mjs set ${issue.id} done once the worker's Proof rows are recorded; a worker never sets done`;
 }

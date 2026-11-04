@@ -49,7 +49,7 @@ test('a drop-in copy of skills/jarl/ runs its own command and starts its own MCP
   cpSync(SKILL_DIR, copy, { recursive: true });
   assert.deepEqual(readdirSync(join(copy, 'references')).sort(), readdirSync(join(SKILL_DIR, 'references')).sort(), 'the references travel with the copy');
   const script = join(copy, 'scripts', 'jarl.mjs');
-  assert.match(node([script, '--help']).stdout, /^usage: jarl\.mjs <command>/);
+  assert.match(node([script, '--help']).stdout, /^usage: jarl\.mjs '<a-jarl-command>'/);
   const { dir } = gitRepo({ prefix: 'jarl-dropin-repo-' });
   assert.equal(node([script, 'init', 'a goal', '--root', dir]).status, 0);
   assert.match(node([script, 'status', '--root', dir]).stdout, /^goal: a goal/);

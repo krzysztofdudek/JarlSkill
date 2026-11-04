@@ -109,7 +109,7 @@ for (const [shape, make] of [
     const said = run(b.dir, ['verify']);
     assert.equal(said.status, 2, said.stdout);
     assert.match(said.stdout, /2 issue files carry the number 2: issues\/2-second-on-a\.md and issues\/2-second-on-b\.md/);
-    assert.match(said.stdout, new RegExp(`jarl\\.mjs renumber 2 --key <key>.*${keyA} \\(issues/2-second-on-a\\.md\\), ${keyB} \\(issues/2-second-on-b\\.md\\)`));
+    assert.match(said.stdout, new RegExp(`jarl\\.mjs renumber 2 --key '<key>'.*${keyA} \\(issues/2-second-on-a\\.md\\), ${keyB} \\(issues/2-second-on-b\\.md\\)`));
     assert.match(run(b.dir, ['set', '2', 'dropped', 'x']).stderr, /2 issue files carry the number 2/, 'a command that addresses 2 is refused');
     assert.match(run(b.dir, ['renumber', '2']).stderr, new RegExp(`name the one to give a free number with --key <key>`));
     assert.match(run(b.dir, ['renumber', '2', '--key', '20200101T0000-abcd']).stderr, /no file of 2 carries the key 20200101T0000-abcd/);

@@ -26,7 +26,7 @@ No file of the repository carries a task number or a description of a task: no l
 The loop's tools are the jarl MCP tools (jarl_show, jarl_evidence, jarl_field, …); pass root: "<loop root>"
 (the directory that holds `.jarl/`) on every call — your worktree has no live `.jarl/` of its own — and never add `.jarl/` to your branch. If your
 session has no jarl_* tools, run the same commands as `node <absolute path to jarl.mjs> <command> --root <loop root>`.
-A refused call writes nothing and ends with the call corrected, a step and then the call, or the call with a <placeholder>: read it, fill the placeholder, never paste it blind.
+A refused call writes nothing: a refusal ends with the form of the command with a `<placeholder>`; fill the value and run it; never paste it as printed.
 If the change is user-visible, record its changelog entry on the issue:
 jarl_field { ids: "7", name: "Changelog", value: "Added: …", root: "<loop root>" } (Changed, Fixed, … — one entry per line of value; add: true adds to those there). Edit
 CHANGELOG.md on your branch as well only where the repository's own rules (its CLAUDE.md, AGENTS.md or hooks) require

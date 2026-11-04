@@ -39,7 +39,7 @@ test('an issue with no worker row, merged with --ran and --saw, is refused by do
   assert.match(why, /1 has no evidence yet/);
   assert.match(why, /the merge records a check \(npm test\)/);
   assert.match(why, /does not stand in for the worker's row/);
-  assert.match(why, /jarl\.mjs evidence 1 --ran "<command>" --saw "<what it printed>"/);
+  assert.match(why, /jarl\.mjs evidence 1 --ran "<command>" --saw "<what-it-printed>"/);
   assert.doesNotMatch(log(root), /1 evidence row/, 'the merge wrote no row line');
   assert.doesNotMatch(issueText(root, 1), /\*\*ran:\*\*/, 'the merge wrote no row');
 });

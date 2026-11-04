@@ -411,14 +411,14 @@ function writeBarePaths(root) {
     rewritten.push(m[1]);
   }
   mapMergeRepos(root, dotted);
-  if (rewritten.length) appendLog(root, `repo paths written as ./<word> in ${rewritten.join(', ')} · the record format is raised`);
+  if (rewritten.length) appendLog(root, `repo paths written as ./ and the name in ${rewritten.join(', ')} · the record format is raised`);
 }
 // The names among the repositories read from a --repo list are declared (once), after the format is raised.
 function commitRepoNames(root, picked) {
   if (!picked.some((p) => p.name)) return;
   withLock(root, () => {
     needFormat(root, 'repo-name');
-    for (const p of picked) if (p.name && declareRepo(root, p.name, p.main) === 'no-base') p.note = `${p.name} has no branch checked out, so it is declared with no base — name one with jarl.mjs base ${p.name} <branch>`;
+    for (const p of picked) if (p.name && declareRepo(root, p.name, p.main) === 'no-base') p.note = `${p.name} has no branch checked out, so it is declared with no base — name one with jarl.mjs base ${p.name} '<branch>'`;
   });
 }
 
@@ -465,7 +465,7 @@ function declareRepo(root, name, main) {
 export function cmdRepoBase(root, name, branch) {
   need(name !== undefined && branch !== undefined, 'base takes a repository name and a branch', () => [...(name === undefined ? [{ arg: 0, value: '<name>' }] : []), { arg: 1, value: '<branch>' }]);
   const known = declaredRepos(root);
-  need(known.has(name), `${name} is not declared in this loop${known.size ? ` — it declares ${[...known.keys()].join(', ')}` : ''}; Jarl declares a repository the first time an issue names it`, () => (['jarl.mjs', 'field', '<id>', 'Repo', name]));
+  need(known.has(name), `${name} is not declared in this loop${known.size ? ` — it declares ${[...known.keys()].join(', ')}, names written as declared` : ''}; Jarl declares a repository the first time an issue names it (jarl.mjs field '<id>' Repo '<name|path>')`, () => ({ arg: 0, value: hole('<name>') }));
   const base = fieldText(branch);
   need(base && !/[\r\n]/.test(String(branch)) && !base.includes(' · '), 'the base is one branch name on one line', () => ({ replace: String(branch), value: '<branch>' }));
   const problem = branchNameProblem(base);

@@ -45,7 +45,7 @@ const MARKER_FORM = /owners(?:own)?words?[\p{P}\p{S}]*?[:"]/u;
 // Whether a text holds the marker in any spelling: the one test every writer of the record goes through.
 export function holdsOwnersWords(text) { return MARKER_FORM.test(normalForm(text)); }
 
-const REFUSAL = (what) => `${what} holds "${QUOTE_MARKER}" (in some spelling), which the record keeps only as the owner's quote, written by decide --by owner --quote "<his words>": give his words with --quote and leave that line out of the text`;
+const REFUSAL = (what) => `${what} holds "${QUOTE_MARKER}" (in some spelling), which the record keeps only as the owner's quote, written by decide --by owner --quote "<his-own-words>": give his words with --quote and leave that line out of the text`;
 
 // Every text a command was given, refused when any of them holds the marker: strings, and the strings inside lists and
 // objects, so a command checks all its flags in one call before it writes anything.

@@ -87,7 +87,7 @@ export function cmdVerify(root) {
     for (const s of issueSkips) add('issues', `issues/${shownText(f)} line ${s.n}`, `"${shownText(s.text)}" — ${s.reason}`);
   }
   for (const f of existsSync(join(dir, 'issues')) ? readdirSync(join(dir, 'issues')) : []) {
-    if (!ISSUE_FILE_RE.test(f)) add('issues', `issues/${shownText(f)}`, 'a file the loop does not read as an issue: an issue file is <number>-<title>.md');
+    if (!ISSUE_FILE_RE.test(f)) add('issues', `issues/${shownText(f)}`, 'a file the loop does not read as an issue: an issue file is its number, a dash and its title, ending in .md');
   }
   const loop = readLoop(dir);
   // A number two files carry: the files, then what it means and what the coordinator does (headers says nothing of their fields).

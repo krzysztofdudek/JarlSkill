@@ -38,7 +38,7 @@ function countFlag(flags, name, dflt) {
 // issues name, the loop files git has not committed, and the last n log lines. Nothing goes to the network
 // unless --gh asks gh for the CI of each pushed tip.
 export function cmdResume(root, flags = {}) {
-  need(existsSync(jarlDir(root)), `no loop here: ${jarlDir(root)} does not exist — open one with jarl.mjs init "<goal>", or pass --root <the directory holding .jarl/>`, () => (['jarl.mjs', 'init', '<goal>']));
+  need(existsSync(jarlDir(root)), `no loop here: ${jarlDir(root)} does not exist — open one with jarl.mjs init "<goal>", or pass --root '<loop-root>', the directory that holds .jarl/`, () => (['jarl.mjs', 'init', '<goal>']));
   const logN = countFlag(flags, 'log', RESUME_LOG_LINES);
   const readyN = countFlag(flags, 'ready', RESUME_READY);
   const loop = readLoop(jarlDir(root));

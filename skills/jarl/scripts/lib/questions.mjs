@@ -3,7 +3,7 @@
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { ASK_KINDS, HANDOFF_STALE_MS, afterView, fieldText, freeInline, hole, need, noSeparators, oneBreak, oneOf } from './base.mjs';
+import { ASK_KINDS, HANDOFF_STALE_MS, afterView, fieldText, freeInline, hole, need, noSeparators, oneBreak } from './base.mjs';
 import { jarlDir, today } from './where.mjs';
 import { appendAtomic, readText, writeAtomic } from './files.mjs';
 import { askNumber, idKey, issueForms, needsRaisedFormat, newNumber, writtenId } from './ids.mjs';
@@ -26,7 +26,7 @@ export function cmdAsk(root, question, flags) {
   need(question, 'ask requires "<text>"', { arg: 0, value: '<text>' });
   needNoOwnersWords('the question', question, flags);
   const kind = String(flags.kind || 'stuck');
-  need(ASK_KINDS.includes(kind), `--kind must be one of: ${ASK_KINDS.join(', ')} (got "${kind}") — stop (halt everything), stuck (this issue only), lower (weaken something protected, needs a target), charter (the goal itself), ratify (a choice already made under a mandate, awaiting the owner's word; blocks nothing), escalation (a coordinator's question to the jarl, naming its --slice or --issue), rule (a rule proposed with --applies-to, for the jarl to accept, or the owner with --to owner)`, () => ({ flag: '--kind', value: oneOf(kind, ASK_KINDS, '<ask-kind>'), fix: 'case' }));
+  need(ASK_KINDS.includes(kind), `--kind must be one of: ${ASK_KINDS.join(', ')} (got "${kind}") — stop (halt everything), stuck (this issue only), lower (weaken something protected, needs a target), charter (the goal itself), ratify (a choice already made under a mandate, awaiting the owner's word; blocks nothing), escalation (a coordinator's question to the jarl, naming its --slice or --issue), rule (a rule proposed with --applies-to, for the jarl to accept, or the owner with --to owner)`, () => ({ flag: '--kind', value: hole('<ask-kind>') }));
   if (flags.issue !== undefined) need(findIssue(root, flags.issue), `no such issue: ${flags.issue}`, () => ({ flag: '--issue', value: '<id>' }));
   // An escalation goes up from a coordinator to the jarl, who holds it; it names the slice or the issue it is about, so it
   // stays in that slice's view. --slice names a slice of the loop, and only an escalation takes it.
@@ -38,7 +38,7 @@ export function cmdAsk(root, question, flags) {
   need(kind === 'rule' || (flags['applies-to'] === undefined && flags.until === undefined && flags.to === undefined), `--applies-to, --until and --to go with kind rule — a question of kind "${kind}" proposes no rule`, () => ({ flag: '--kind', value: '<ask-kind>' }));
   need(kind !== 'rule' || flags.ruling !== undefined || flags['applies-to'] !== undefined, 'a rule is proposed with whom it applies to', () => ({ flag: '--applies-to', value: '<selectors>' }));
   need(kind !== 'rule' || flags.issue === undefined, 'a proposed rule holds no issue back: name the issue in its scope instead, --applies-to "issue <id>"', () => ({ rename: '--issue', to: '<no-flag-here>' }));
-  need(flags.to === undefined || ['owner', 'jarl'].includes(String(flags.to)), `--to names who accepts the rule: jarl (the default) or owner (got "${flags.to}")`, () => ({ flag: '--to', value: oneOf(flags.to, ['jarl', 'owner'], '<jarl|owner>'), fix: 'case' }));
+  need(flags.to === undefined || ['owner', 'jarl'].includes(String(flags.to)), `--to names who accepts the rule: jarl (the default) or owner (got "${flags.to}")`, () => ({ flag: '--to', value: hole('<jarl|owner>') }));
   const appliesTo = kind === 'rule' && flags['applies-to'] !== undefined ? scopeOf(root, flags) : null;
   const to = kind === 'rule' ? String(flags.to ?? (flags.ruling !== undefined ? OWNER : JARL)) : null;
   need(kind !== 'lower' || flags.target, '--target is required for kind lower — nothing to weaken without naming it', () => ({ flag: '--target', value: '<what-would-get-weaker>' }));
@@ -84,10 +84,10 @@ function askOptions(raw, kind) {
   const options = given.map((text) => {
     need(!oneBreak(text).includes('\n'), `--option takes one line: a label or an effect with a line break is refused (got "${String(text).trim()}")`, () => ({ replace: String(text), value: hole('<label:effect>') }));
     const m = /^([^:]*?):\s*(.*)$/s.exec(String(text).trim());
-    need(m, `--option takes "<label>: <effect>", with a colon between the label and the effect (got "${text}")`, () => ({ replace: String(text), value: hole('<label:effect>') }));
+    need(m, `--option takes "<label:effect>", with a colon between the label and the effect (got "${text}")`, () => ({ replace: String(text), value: hole('<label:effect>') }));
     const label = noSeparators(m[1]);
     const effect = noSeparators(m[2]);
-    need(label && effect, `--option needs a label and an effect: "<label>: <effect>" (got "${text}")`, () => ({ replace: String(text), value: hole('<label:effect>') }));
+    need(label && effect, `--option needs a label and an effect: "<label:effect>" (got "${text}")`, () => ({ replace: String(text), value: hole('<label:effect>') }));
     return { label, effect };
   });
   need(options.length >= 2, 'a question with options has at least two options: a choice between one is not a choice', () => ({ flag: '--option', value: '<another-option>', add: true }));
@@ -133,14 +133,14 @@ function openQuestion(root, not) {
 function answerChecks(root, ask, answer, chosen) {
   const id = ask.id;
   need(ask.state === 'open', `a-${id} is already answered`, () => openQuestion(root, id));
-  need(!(chosen !== null && answer), `answer takes --option <label> or the answer, not both — a-${id}`, () => ({ rename: '--option', to: '<no-flag-here>' }));
-  need(answer || chosen !== null, `answer requires "<text>" or --option <label>`, () => ({ arg: 1, value: '<text>' }));
+  need(!(chosen !== null && answer), `answer takes --option <option> or the answer, not both — a-${id}`, () => ({ rename: '--option', to: '<no-flag-here>' }));
+  need(answer || chosen !== null, `answer requires "<text>" or --option <option>`, () => ({ arg: 1, value: '<text>' }));
   const options = ask.options || [];
   let option = null;
   if (chosen !== null) {
     need(options.length, `a-${id} offered no options, so it is answered in words, with no --option`, () => ({ rename: '--option', to: hole('<no-flag-here>') }));
     option = options.find((o) => o.label === noSeparators(chosen)) || null;
-    need(option, `"${chosen}" is none of the options of a-${id}: ${options.map((o) => o.label).join(', ')}`, () => ({ replace: chosen, value: options.length ? oneOf(chosen, options.map((o) => o.label), '<option>') : hole('<option>'), fix: 'case' }));
+    need(option, `"${chosen}" is none of the options of a-${id}: ${options.map((o) => o.label).join(', ')}`, () => ({ replace: chosen, value: options.length ? hole('<option>') : hole('<option>') }));
   }
   // A batch item asks about one area ruling, and its answer says one word first: yes or reject (tak or nie); so does a
   // proposed rule, which the answer accepts or rejects. A rule offered for promotion is answered with one of its options.
@@ -319,7 +319,7 @@ export function cmdDecide(root, slug, ruling, flags = {}) {
   need(flags.quote === undefined || typeof flags.quote === 'string', '--quote is the owner\'s own words, as text', () => ({ flag: '--quote', value: '<his-own-words>' }));
   const quote = flags.quote !== undefined ? fieldText(flags.quote) : null;
   need(flags.quote === undefined || quote, '--quote needs the owner\'s own words', () => ({ flag: '--quote', value: '<his-own-words>' }));
-  need(!byOwner || quote, `a ruling by the owner carries his own words: give them with --quote "<what he said>"; a question he asked is not a ruling; a loop that names its owner otherwise records him as owner all the same, for the name owner is the rule`, () => ({ flag: '--quote', value: '<his-own-words>' }));
+  need(!byOwner || quote, `a ruling by the owner carries his own words: give them with --quote "<his-own-words>"; a question he asked is not a ruling; a loop that names its owner otherwise records him as owner all the same, for the name owner is the rule`, () => ({ flag: '--quote', value: '<his-own-words>' }));
   needNoOwnersWords('the ruling', slug, ruling, { ...flags, quote: undefined });
   need(flags.quote === undefined || byOwner, '--quote is the owner\'s own words: it goes with --by owner', () => ({ rename: '--quote', to: '<no-flag-here>' }));
   if (quote) needNoOwnersWords('--quote', quote);

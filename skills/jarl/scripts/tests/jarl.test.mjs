@@ -59,13 +59,13 @@ test('new refuses a text that holds a matched pair named after one of its own fi
   const root = repo();
   jarl(root, 'init', 'goal');
   const pair = '<what>the thing</what><why>because</why><prio>1</prio>';
-  assert.match(refuses(root, 'new', 't', '--what', pair), /the What text holds a <what>…<\/what> pair: a field goes in its own parameter \(--what\)/);
-  assert.match(refuses(root, 'new', 't', '--why', 'because <acceptance>\n- it works\n</acceptance>'), /the Why text holds a <acceptance>…<\/acceptance> pair.*\(--acceptance\)/);
-  assert.match(refuses(root, 'new', 't', '--what', 'fine', '--why', '<TAGS>a,b</Tags>'), /<tags>…<\/tags>/);
+  assert.match(refuses(root, 'new', 't', '--what', pair), /the What text holds an opening and a closing what tag in angle brackets: a field goes in its own parameter \(--what\)/);
+  assert.match(refuses(root, 'new', 't', '--why', 'because <acceptance>\n- it works\n</acceptance>'), /the Why text holds an opening and a closing acceptance tag in angle brackets.*\(--acceptance\)/);
+  assert.match(refuses(root, 'new', 't', '--what', 'fine', '--why', '<TAGS>a,b</Tags>'), /an opening and a closing tags tag in angle brackets/);
   assert.equal(readdirSync(join(root, '.jarl', 'issues')).length, 0, 'nothing was written');
   jarl(root, 'new', 'ok', '--what', 'fine');
-  assert.match(refuses(root, 'field', '1', 'Why', '<files>a.mjs</files>'), /the Why text holds a <files>…<\/files> pair.*\(--files\)/);
-  assert.match(refuses(root, 'field', '1', 'What', pair), /the What text holds a <what>/);
+  assert.match(refuses(root, 'field', '1', 'Why', '<files>a.mjs</files>'), /the Why text holds an opening and a closing files tag in angle brackets.*\(--files\)/);
+  assert.match(refuses(root, 'field', '1', 'What', pair), /the What text holds an opening and a closing what tag/);
   assert.doesNotMatch(readFileSync(join(root, '.jarl', 'issues', '1-ok.md'), 'utf8'), /<files>/);
 });
 
@@ -86,7 +86,7 @@ test('the reply of new keeps its first line, then lists what was parsed and each
   const bare = jarl(root, 'new', 'bare').split('\n');
   assert.match(bare[0], /^filed 1 · .*1-bare\.md$/);
   assert.match(bare[1], /^parsed: priority 2 · tier standard · kind bug · tags \(none\) · 0 acceptance lines · What 0 characters · Why 0 characters$/);
-  for (const [field, command] of [['why', 'field 1 Why'], ['acceptance', 'field 1 Acceptance'], ['files', 'field 1 Files p,q'], ['after', 'field 1 After <ids>'], ['where', 'field 1 Where']]) {
+  for (const [field, command] of [['why', 'field 1 Why'], ['acceptance', 'field 1 Acceptance'], ['files', 'field 1 Files p,q'], ['after', "field 1 After '<ids>'"], ['where', 'field 1 Where']]) {
     assert.ok(bare[2].includes(`${field} (jarl.mjs ${command}`), `${field} is named with ${command}`);
   }
   const full = jarl(root, 'new', 'full', '--what', 'seven', '--why', 'yy', '--acceptance', 'a', '--acceptance', 'b', '--prio', '1', '--tags', 'x,y', '--files', 'a.mjs', '--where', 'here', '--after', '1').split('\n');
@@ -489,7 +489,7 @@ test('a round after an approve spends the approve', () => {
   jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
   jarl(root, 'round', '1', 'merger: suite red after merge');
   assert.match(refuses(root, 'set', '1', 'done'), /no approving review/);
-  assert.match(refuses(root, 'review', '1', 'maybe', 'x'), /^review takes approve or changes \(got "maybe"\)\njarl\.mjs review 1 '<verdict>' x --by '<reviewer>'\n$/);
+  assert.match(refuses(root, 'review', '1', 'maybe', 'x'), /^review takes approve or changes \(got "maybe"\)\njarl\.mjs review '<ids>' '<verdict>' '<what-was-read-and-found>' --by '<reviewer>'\n$/);
   jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
   jarl(root, 'set', '1', 'done');
 });
@@ -800,7 +800,7 @@ test('archive puts the loop away under .jarl/archive/<date>-<slug>/, and init op
   const root = repo();
   jarl(root, 'init', 'first goal');
   jarl(root, 'new', 'left unfinished');
-  assert.match(refuses(root, 'init', 'second goal'), /archive it first\njarl\.mjs archive '<slug>' && jarl\.mjs init 'second goal'\n$/);
+  assert.match(refuses(root, 'init', 'second goal'), /archive it first\njarl\.mjs archive '<slug>'\n$/);
 
   const out = JSON.parse(jarl(root, 'archive', 'first round', '--json'));
   const day = new Date().toISOString().slice(0, 10).replace(/-/g, '.');
@@ -904,7 +904,7 @@ test('a value flag takes the next argument whatever it starts with; -- ends the 
   assert.match(raw('new', '--', '--json output drops key'), /^filed 2 /);
   // Refused loudly, naming what the command takes.
   assert.match(refuses(root, 'new', 'd', '--kidn', 'gap'), /unknown flag --kidn for new — it takes .*--kind/);
-  assert.match(refuses(root, 'evidence', '1', '--json prints ok'), /^"--json prints ok" is a text, not a flag: a text that starts with -- goes after a bare --.*\njarl\.mjs evidence -- 1 '--json prints ok'\n$/s);
+  assert.match(refuses(root, 'evidence', '1', '--json prints ok'), /^"--json prints ok" is a text, not a flag: a text that starts with -- goes after a bare --.*\njarl\.mjs evidence -- '<ids>' '<text>'\n$/s);
   assert.throws(() => raw('evidence', '1', '--ran'), (e) => /--ran needs a value/.test(String(e.stderr)));
   assert.match(refuses(root, 'new', 'x', '--kind', 'bug', '--kind', 'gap'), /--kind given twice/);
   assert.match(refuses(root, 'list', '--all=yes'), /--all takes no value/);
@@ -1139,7 +1139,7 @@ test('import files one issue per finding with a Source, never twice, and keeps E
   // A re-run files nothing; a hand-filed issue with --source counts as filed too.
   assert.match(jarl(root, 'import', file, '--source', 'core/research/2026-09-25-jarl'), /filed 0 · already filed 2/);
   jarl(root, 'new', 'by hand', '--source', 'core/research/2026-09-25-other#X-1');
-  assert.match(refuses(root, 'new', 'bad', '--source', 'no-hash'), /a source is <report dir>#<finding id>/);
+  assert.match(refuses(root, 'new', 'bad', '--source', 'no-hash'), /a source is <report-dir#finding-id>/);
   // Flags override the mapping.
   const file2 = findingsDir([{ id: 'Q-1', title: 'q', priority: 'high' }]);
   const o2 = JSON.parse(jarl(root, 'import', file2, '--source', 'r2', '--kind', 'docs', '--prio', '3', '--json'));
@@ -1473,7 +1473,7 @@ test('check --branch refuses a branch no issue holds, and says how many commits 
   jarl(root, 'new', 'one', '--files', 'a.txt');
   git('git checkout -q -b feature && echo more >> a.txt && git commit -qam work && git checkout -q main');
   const msg = refuses(root, 'scope', '--branch', 'feature', '--base', 'main');
-  assert.match(msg, /^no issue records branch feature: it carries 1 commit\(s\) beyond main and no issue holds it \(work without an issue\) — file the issue, then set it in-progress --branch feature\njarl\.mjs new '<what-the-branch-does>' --tier '<tier>' && jarl\.mjs set '<the-id-new-prints>' in-progress '<why>' --branch feature && jarl\.mjs scope --branch feature --base main\n$/);
+  assert.match(msg, /^no issue records branch feature: it carries 1 commit\(s\) beyond main and no issue holds it \(work without an issue\) — file the issue, then set it in-progress --branch feature\njarl\.mjs new '<what-the-branch-does>' --tier '<tier>'\njarl\.mjs set '<the-id-new-prints>' in-progress '<why>' --branch feature\njarl\.mjs scope --branch '<worker-branch>' --base '<base-branch>'\n$/);
   assert.match(refuses(root, 'scope', '--branch', 'jarl/none'), /^no issue records branch jarl\/none — name one/);
 });
 
@@ -1695,7 +1695,7 @@ test('ask records its options and prints them, ready for the choice window; a qu
   assert.equal(jarl(root, 'ask', 'plain yes or no?'), 'asked a-2');
   assert.equal(RECORD.loadAsks(root)[1].options, undefined);
   assert.match(refuses(root, 'ask', 'x', '--option', 'only one: alone'), /at least two options/);
-  assert.match(refuses(root, 'ask', 'x', '--option', 'no colon here'), /<label>: <effect>/);
+  assert.match(refuses(root, 'ask', 'x', '--option', 'no colon here'), /<label:effect>/);
   assert.match(refuses(root, 'ask', 'x', '--kind', 'ratify', '--option', 'A: a', '--option', 'B: b'), /ratify item is answered yes or reject/);
 });
 
@@ -1725,7 +1725,7 @@ test('answer takes a comma list of ratify items with one verdict, writes one rul
   jarl(root, 'ask', 'raised the limit', '--kind', 'ratify');
   jarl(root, 'ask', 'kept the flag', '--kind', 'ratify');
   jarl(root, 'ask', 'a stuck question', '--kind', 'stuck');
-  assert.match(refuses(root, 'answer', 'a-1', 'yes'), /^answer records who answered, owner for the owner\njarl\.mjs answer a-1 yes --by '<who>'\n$/);
+  assert.match(refuses(root, 'answer', 'a-1', 'yes'), /^answer records who answered with --by, owner for the owner\njarl\.mjs answer '<question>' '<text>' --by '<who>'\n$/);
   for (const name of ['jarl', 'reeve', 'coordinator', basename(root)]) assert.match(refuses(root, 'answer', 'a-1', 'yes', '--by', name), /coordinator/);
   assert.match(refuses(root, 'answer', 'a-1,a-3', 'yes', '--by', 'owner'), /answered together only when each is a ratify item/);
   jarl(root, 'answer', '1,2', 'yes', '--by', 'owner');

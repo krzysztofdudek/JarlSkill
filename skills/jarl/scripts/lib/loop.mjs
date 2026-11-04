@@ -298,7 +298,7 @@ export function sliceNamed(coordinators, issues, name) {
   const known = [...coordinators, ...issues.map(sliceOf).filter((s) => s !== null)];
   const found = known.find((k) => sameSlice(k, name));
   const names = [...new Map(known.map((k) => [k.toLowerCase(), k])).values()];
-  need(found !== undefined, `no coordinator ${fieldText(name)} on the goal's Coordinators line and no issue tagged ${sliceTag(fieldText(name))} — ${names.length ? `the slices are ${names.map(sliceTag).join(', ')}` : 'the loop has no slice: jarl.mjs goal --set "Coordinators: <names>", then jarl.mjs field <ids> Tags --add slice:<name>'}`, () => (names.length ? { replace: fieldText(name), value: hole('<coordinator>') } : ['jarl.mjs', 'goal', '--set', '<machine-line>']));
+  need(found !== undefined, `no coordinator ${fieldText(name)} on the goal's Coordinators line and no issue tagged ${sliceTag(fieldText(name))} — ${names.length ? `the slices are ${names.map(sliceTag).join(', ')}` : 'the loop has no slice: jarl.mjs goal --set "Coordinators: <names>", then jarl.mjs field "<ids>" Tags --add "<slice:coordinator>"'}`, () => (names.length ? { replace: fieldText(name), value: hole('<coordinator>') } : ['jarl.mjs', 'goal', '--set', '<machine-line>']));
   return found;
 }
 // The slices with an issue in play.
