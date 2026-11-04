@@ -12,7 +12,7 @@ import { issuesFor } from './commands.mjs';
 // changelog <ids> [--repo <path>] — the ## Changelog entries of those issues, grouped by Keep a Changelog section in
 // its order, ready to paste under [Unreleased] at merge time; one block per repository when the issues span several
 // (an issue naming two is printed under each), or only the one --repo names. Workers record their line on the issue
-// (new/body --changelog) instead of editing CHANGELOG.md, so parallel branches stop conflicting there; whoever merges
+// (new --changelog, or field <id> Changelog) instead of editing CHANGELOG.md, so parallel branches stop conflicting there; whoever merges
 // writes the file once. Reads only.
 export function cmdChangelog(root, rawIds, flags = {}) {
   need(rawIds !== undefined, 'changelog requires <ids> — the issues whose fragments to print, e.g. 284,288 or 203-206');

@@ -224,9 +224,9 @@ function ownerLineRows(ctx) {
     for (const s of states.filter((x) => !x.tick)) {
       const line = { ...base, line: s.n };
       if (s.off) {
-        out.push({ ...line, holder: JARL_HOLDER, says: `acceptance line ${s.n} is marked as the owner's, and ${s.why}; rewrite it without the mark`, command: `jarl.mjs body ${id} --acceptance "<line>"... (every line of the section)` });
+        out.push({ ...line, holder: JARL_HOLDER, says: `acceptance line ${s.n} is marked as the owner's, and ${s.why}; rewrite it without the mark`, command: `jarl.mjs field ${id} Acceptance "<every line of the section, one per line>"` });
       } else if (!s.material || !s.check || !s.what) {
-        out.push({ ...line, holder: JARL_HOLDER, says: `acceptance line ${s.n} is marked as the owner's and does not name its material and what to check; rewrite it`, command: `jarl.mjs body ${id} --acceptance "<line>"... (every line of the section)` });
+        out.push({ ...line, holder: JARL_HOLDER, says: `acceptance line ${s.n} is marked as the owner's and does not name its material and what to check; rewrite it`, command: `jarl.mjs field ${id} Acceptance "<every line of the section, one per line>"` });
       } else if (!s.ready) {
         // Its material is produced in the lease, so the line is on whoever holds the lease's rows: the coordinator of the
         // issue's slice, the jarl with none.
@@ -476,7 +476,7 @@ export function cmdNextAs(root, flags = {}) {
   const coordinator = holder !== JARL_HOLDER && holder !== OWNER_HOLDER && loop.coordinators.some((c) => fieldText(c).toLowerCase() === holder.toLowerCase());
   const sliced = loop.issues.some((i) => sliceOf(i) !== null);
   const ownSlice = loop.issues.some((i) => sameSlice(sliceOf(i), holder));
-  const note = !coordinator || ownSlice ? null : sliced ? `no issue carries slice:${holder}, so nothing of a slice is on ${holder}: the issues in no slice are the jarl's (jarl.mjs next --as jarl), and jarl.mjs tag <ids> +slice:${holder} gives ${holder} its slice` : 'with no slice in the loop, what a coordinator holds is the jarl\'s: jarl.mjs next --as jarl';
+  const note = !coordinator || ownSlice ? null : sliced ? `no issue carries slice:${holder}, so nothing of a slice is on ${holder}: the issues in no slice are the jarl's (jarl.mjs next --as jarl), and jarl.mjs field <ids> Tags --add slice:${holder} gives ${holder} its slice` : 'with no slice in the loop, what a coordinator holds is the jarl\'s: jarl.mjs next --as jarl';
   // A person is named as the record writes the name, whatever case the asker typed.
   const spelled = mine.length ? mine[0].holder : waits.length ? waits[0].on : holder;
   return {

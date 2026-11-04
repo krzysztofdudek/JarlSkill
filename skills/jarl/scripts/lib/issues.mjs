@@ -291,7 +291,7 @@ function setField(text, name, value) {
   return lines.join('\n');
 }
 
-// Remove the first line `**<Name>:** …`, in exactly that case, wherever it stands (what after --clear and repo --clear remove).
+// Remove the first line `**<Name>:** …`, in exactly that case, wherever it stands (what field --clear removes from After, Repo and Source).
 function removeFirstField(text, name) { return text.replace(new RegExp(`^\\*\\*${name}:\\*\\*.*\\n`, 'm'), ''); }
 
 // Remove header fields (only the header: a section line that looks like a field is text). A field that is
@@ -351,11 +351,11 @@ export function needNoFieldTags(text, where) {
 // What a new issue was filed with, read back from its file: for new's reply, which lists what was parsed and what was
 // left empty, each empty field with the command that fills it.
 const FILL_WITH = {
-  why: (id) => `jarl.mjs body ${id} --why "<why>"`,
-  acceptance: (id) => `jarl.mjs body ${id} --acceptance "<line>"`,
-  files: (id) => `jarl.mjs files ${id} p,q`,
-  after: (id) => `jarl.mjs after ${id} <ids>`,
-  where: (id) => `jarl.mjs body ${id} --where "<where>"`,
+  why: (id) => `jarl.mjs field ${id} Why "<why>"`,
+  acceptance: (id) => `jarl.mjs field ${id} Acceptance "<line>"`,
+  files: (id) => `jarl.mjs field ${id} Files p,q`,
+  after: (id) => `jarl.mjs field ${id} After <ids>`,
+  where: (id) => `jarl.mjs field ${id} Where "<where>"`,
   'found by': () => 'only at filing: new --found-by <who>',
 };
 export function describeNew(file) {

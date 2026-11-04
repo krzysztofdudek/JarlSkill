@@ -115,49 +115,26 @@ test('field writes Resources and the fields a profile declares; set takes status
   assert.equal(field(root, '1', 'resources'), 'gate, db');
   assert.equal(field(root, '1', 'note'), 'see the thread');
   assert.match(refuses(root, 'field', '1', 'Area', 'web'), /Area must be one of: core, cli/);
-  assert.match(refuses(root, 'field', '1', 'Bogus', 'x'), /Bogus is not a field of the description, which field writes: Title, Priority, Tier, Kind, Found by, Tags, Files, Repo, After, Source, Where, Resources, Person, Check when, Area, Note/);
-  assert.match(refuses(root, 'field', '1', 'open', 'x'), /open is not a field/);
+  assert.match(refuses(root, 'field', '1', 'Bogus', 'x'), /Bogus is not a part of the description, which field writes: Title, Priority, Tier, Kind, Found by, Tags, Files, Repo, After, Source, Where, Resources, Person, Check when, Area, Note, What, Why, Acceptance, Changelog;/);
+  assert.match(refuses(root, 'field', '1', 'open', 'x'), /open is not a part of the description/);
   assert.match(refuses(root, 'field', '1', 'Note', 'x', '--worker', 'w'), /unknown flag --worker for field/);
-  assert.match(refuses(root, 'set', '1', 'Note', 'x', '--worker', 'w'), /--worker goes with a status, not with the field Note/);
+  assert.equal(refuses(root, 'set', '1', 'Note', 'x', '--worker', 'w').trim(), 'Note is a field, not a status: jarl.mjs field 1 Note x');
   assert.match(refuses(root, 'set', '1', 'Files', 'x'), /^status must be one of: open, in-progress, done, dropped, deferred\n$/);
   assert.match(refuses(root, 'set', '1', 'bogus', 'x'), /status must be one of: /);
   assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /· 1 field Resources · gate, db · was \(none\)\n.*· 2 field Resources · gate, db · was \(none\)\n/);
 });
 
-test('set <ids> resources and set <ids> <profile field> write the field and say which verb to use', () => {
+test('set given a field is refused with the field call that writes it, on the command line and through the tool, and writes nothing', () => {
   const a = fieldedLoop();
-  const b = fieldedLoop();
-  const viaSet = [run(a, ['set', '1,2', 'resources', 'gate']), run(a, ['set', '1', 'Note', 'a note']), run(a, ['set', '2', 'Note', ''])];
-  const viaField = [run(b, ['field', '1,2', 'resources', 'gate']), run(b, ['field', '1', 'Note', 'a note']), run(b, ['field', '2', 'Note', '--clear'])];
-  for (const [i, r] of viaSet.entries()) {
-    assert.equal(r.status, 0, r.stderr);
-    assert.equal(r.stdout, viaField[i].stdout);
-    assert.equal(viaField[i].stderr, '');
-  }
-  assert.match(viaSet[0].stderr, /resources is a field, not a status — write it with: field <ids> resources "<value>"/);
-  assert.match(viaSet[2].stderr, /field <ids> Note --clear/);
-  for (const id of ['1', '2']) assert.equal(scrubbed(issueText(a, id)), scrubbed(issueText(b, id)));
-  assert.equal(logText(a), logText(b));
+  const before = logText(a);
+  assert.equal(refuses(a, 'set', '1,2', 'resources', 'gate').trim(), 'resources is a field, not a status: jarl.mjs field 1,2 resources gate');
+  assert.equal(refuses(a, 'set', '1', 'Note', 'a note').trim(), 'Note is a field, not a status: jarl.mjs field 1 Note "a note"');
+  for (const blank of ['', ' ']) assert.equal(refuses(a, 'set', '2', 'Note', blank).trim(), 'Note is a field, not a status: jarl.mjs field 2 Note --clear');
   const said = mcp.callTool('jarl_set', { ids: '3', status: 'resources', why: 'gate', root: a });
-  assert.ok(!said.isError, said.content[0].text);
-  assert.equal(said.content.length, 1, 'the tool reply carries no note');
-  assert.equal(field(a, '3', 'resources'), 'gate');
-  const profileField = mcp.callTool('jarl_set', { ids: '3', status: 'Note', why: 'through set', root: a });
-  assert.ok(!profileField.isError, profileField.content[0].text);
-  assert.equal(profileField.content.length, 1);
-  assert.equal(field(a, '3', 'note'), 'through set');
-  // A value that is empty once trimmed empties the field, on the command line and in the tools.
-  for (const blank of ['', ' ', '   ']) {
-    jarl(a, 'field', '1', 'Note', 'to go');
-    jarl(a, 'field', '1', 'resources', 'gate');
-    assert.equal(run(a, ['set', '1', 'Note', blank]).status, 0);
-    assert.equal(run(a, ['set', '1', 'resources', blank]).status, 0);
-    assert.equal(field(a, '1', 'note') || '', '');
-    assert.equal(field(a, '1', 'resources') || '', '');
-    jarl(a, 'field', '2', 'Note', 'to go');
-    assert.ok(!mcp.callTool('jarl_set', { ids: '2', status: 'Note', why: blank, root: a }).isError);
-    assert.equal(field(a, '2', 'note') || '', '');
-  }
+  assert.ok(said.isError);
+  assert.match(said.content[0].text, /^resources is a field, not a status: jarl\.mjs field 3 resources gate$/);
+  assert.equal(logText(a), before);
+  assert.equal(field(a, '3', 'resources') || '', '');
   const toolField = mcp.callTool('jarl_field', { ids: '3', name: 'Note', value: 'through field', root: a });
   assert.ok(!toolField.isError, toolField.content[0].text);
   assert.equal(toolField.content.length, 1);
@@ -173,13 +150,13 @@ test('one idiom empties every field: --clear on After, Repo, Resources and a pro
   const dir = gitRepo().dir;
   jarl(root, 'field', '1', 'resources', 'gate');
   jarl(root, 'field', '1', 'Note', 'to go');
-  jarl(root, 'after', '1', '2');
-  jarl(root, 'repo', '1', dir);
+  jarl(root, 'field', '1', 'After', '2');
+  jarl(root, 'field', '1', 'Repo', dir);
   assert.ok(field(root, '1', 'repo'));
   assert.equal(jarl(root, 'field', '1', 'resources', '--clear'), '1 Resources: (cleared)');
   assert.equal(jarl(root, 'field', '1', 'Note', '--clear'), '1 Note: (cleared)');
-  assert.equal(jarl(root, 'after', '1', '--clear'), '1 after: cleared');
-  assert.equal(jarl(root, 'repo', '1', '--clear'), '1 repo: cleared');
+  assert.equal(jarl(root, 'field', '1', 'After', '--clear'), '1 After: (cleared)');
+  assert.equal(jarl(root, 'field', '1', 'Repo', '--clear'), '1 Repo: (cleared)');
   const text = issueText(root, '1');
   assert.doesNotMatch(text, /\*\*After:\*\*/);
   assert.doesNotMatch(text, /\*\*Repo:\*\*/);
@@ -187,12 +164,12 @@ test('one idiom empties every field: --clear on After, Repo, Resources and a pro
   assert.match(text, /\*\*Note:\*\*\s*\n/);
   assert.match(refuses(root, 'field', '1', 'Area', '--clear'), /Area cannot be empty/);
   // The optional header fields of the tool's own are emptied the same way, on a list too.
-  jarl(root, 'files', '1-2', 'a.txt');
-  jarl(root, 'source', '1-2', 'core/research/2026-10-01-report#r-1');
-  jarl(root, 'body', '1-2', '--where', 'somewhere');
-  jarl(root, 'tag', '1-2', '+x');
-  jarl(root, 'after', '1-2', '3');
-  jarl(root, 'repo', '1-2', dir);
+  jarl(root, 'field', '1-2', 'Files', 'a.txt');
+  jarl(root, 'field', '1-2', 'Source', 'core/research/2026-10-01-report#r-1');
+  jarl(root, 'field', '1-2', 'Where', 'somewhere');
+  jarl(root, 'field', '1-2', 'Tags', '--add', 'x');
+  jarl(root, 'field', '1-2', 'After', '3');
+  jarl(root, 'field', '1-2', 'Repo', dir);
   for (const name of ['Files', 'Source', 'Where', 'Tags', 'After', 'Repo']) {
     const said = jarl(root, 'field', '1-2', name, '--clear');
     assert.match(said, new RegExp(`${name}: \\(cleared\\)`), name);
@@ -201,53 +178,53 @@ test('one idiom empties every field: --clear on After, Repo, Resources and a pro
   // field writes them as their own commands do, and empties them the same way.
   assert.equal(jarl(root, 'field', '1', 'Files', 'a.txt'), '1 Files: a.txt');
   assert.equal(field(root, '1', 'files'), 'a.txt');
-  assert.match(refuses(root, 'field', '1', 'Note', ''), /the value is required, or --clear to empty it/);
+  assert.match(refuses(root, 'field', '1', 'Note', ''), /field Note needs a value: jarl\.mjs field <ids> Note "<value>", or --clear to empty it/);
   assert.match(refuses(root, 'field', '1', 'Note', 'x', '--clear'), /either a value or --clear, not both/);
 });
 
-test('files, repo, after, body, round and source take a comma list with a range: every id changes, or none', () => {
+test('field and round take a comma list with a range: every id changes, or none', () => {
   const root = loop();
   issues(root, 4);
   const dir = gitRepo().dir;
-  assert.equal(jarl(root, 'files', '1-2,4', 'a.txt,b.txt'), '1 files: a.txt, b.txt\n2 files: a.txt, b.txt\n4 files: a.txt, b.txt');
+  assert.equal(jarl(root, 'field', '1-2,4', 'Files', 'a.txt,b.txt'), '1 Files: a.txt, b.txt\n2 Files: a.txt, b.txt\n4 Files: a.txt, b.txt');
   assert.deepEqual(['1', '2', '3', '4'].map((id) => field(root, id, 'files')), ['a.txt, b.txt', 'a.txt, b.txt', '', 'a.txt, b.txt']);
   const filed = ['1', '2', '3', '4'].map((id) => issueText(root, id));
-  assert.match(refuses(root, 'files', '1-2,9', 'z.txt'), /no such issue: 9 — nothing was written/);
+  assert.match(refuses(root, 'field', '1-2,9', 'Files', 'z.txt'), /no such issue: 9 — nothing was written/);
   assert.deepEqual(['1', '2', '3', '4'].map((id) => issueText(root, id)), filed);
 
-  assert.equal(jarl(root, 'after', '1-3', '4'), '1 after: 4\n2 after: 4\n3 after: 4');
+  assert.equal(jarl(root, 'field', '1-3', 'After', '4'), '1 After: 4\n2 After: 4\n3 After: 4');
   const afterLog = logText(root);
-  assert.match(refuses(root, 'after', '1,3-4', '2'), /no such|cannot wait|cycle/);
+  assert.match(refuses(root, 'field', '1,3-4', 'After', '2'), /no such|cannot wait|cycle/);
   assert.equal(logText(root), afterLog);
-  assert.match(refuses(root, 'after', '1-2,4', '4'), /4 cannot wait on itself — nothing was written/);
+  assert.match(refuses(root, 'field', '1-2,4', 'After', '4'), /4 cannot wait on itself — nothing was written/);
   assert.equal(field(root, '1', 'after'), '4');
-  assert.equal(jarl(root, 'after', '1-3', '--clear'), '1 after: cleared\n2 after: cleared\n3 after: cleared');
-  jarl(root, 'after', '2', '4');
-  assert.match(refuses(root, 'after', '1-2', '--clear'), /1 has no After field to clear — nothing was written/);
+  assert.equal(jarl(root, 'field', '1-3', 'After', '--clear'), '1 After: (cleared)\n2 After: (cleared)\n3 After: (cleared)');
+  jarl(root, 'field', '2', 'After', '4');
+  assert.match(refuses(root, 'field', '1-2', 'After', '--clear'), /1 has no After field to clear — nothing was written/);
   assert.equal(field(root, '2', 'after'), '4');
-  jarl(root, 'after', '2', '--clear');
+  jarl(root, 'field', '2', 'After', '--clear');
 
-  assert.equal(jarl(root, 'repo', '1-2,4', dir).split('\n').length, 3);
+  assert.equal(jarl(root, 'field', '1-2,4', 'Repo', dir).split('\n').length, 3);
   const repoOf = (id) => field(root, id, 'repo');
   assert.ok(repoOf('1') && repoOf('1') === repoOf('2') && repoOf('2') === repoOf('4'));
   assert.ok(!repoOf('3'));
-  assert.match(refuses(root, 'repo', '1-3', '--clear'), /3 has no Repo field to clear — nothing was written/);
+  assert.match(refuses(root, 'field', '1-3', 'Repo', '--clear'), /3 has no Repo field to clear — nothing was written/);
   assert.ok(repoOf('1') && repoOf('2'));
-  assert.match(refuses(root, 'repo', '1-2,9', dir), /no such issue: 9 — nothing was written/);
-  assert.equal(jarl(root, 'repo', '1-2,4', '--clear').split('\n').length, 3);
+  assert.match(refuses(root, 'field', '1-2,9', 'Repo', dir), /no such issue: 9 — nothing was written/);
+  assert.equal(jarl(root, 'field', '1-2,4', 'Repo', '--clear').split('\n').length, 3);
 
-  assert.equal(jarl(root, 'body', '1-2,4', '--what', 'the same text'), '1 body: what\n2 body: what\n4 body: what');
+  assert.equal(jarl(root, 'field', '1-2,4', 'What', 'the same text'), '1 What: the same text\n2 What: the same text\n4 What: the same text');
   assert.match(issueText(root, '4'), /## What\n\s*the same text/);
   assert.doesNotMatch(issueText(root, '3'), /the same text/);
   const bodied = ['1', '2', '3', '4'].map((id) => issueText(root, id));
-  assert.match(refuses(root, 'body', '1-2,9', '--why', 'a reason'), /no such issue: 9 — nothing was written/);
+  assert.match(refuses(root, 'field', '1-2,9', 'Why', 'a reason'), /no such issue: 9 — nothing was written/);
   assert.deepEqual(['1', '2', '3', '4'].map((id) => issueText(root, id)), bodied);
 
   const ref = 'core/research/2026-10-01-report#r-1';
-  assert.equal(jarl(root, 'source', '1-2,4', ref), `1 source: ${ref}\n2 source: ${ref}\n4 source: ${ref}`);
+  assert.equal(jarl(root, 'field', '1-2,4', 'Source', ref), `1 Source: ${ref}\n2 Source: ${ref}\n4 Source: ${ref}`);
   assert.deepEqual(['1', '2', '3', '4'].map((id) => field(root, id, 'source')), [ref, ref, undefined, ref]);
-  assert.match(refuses(root, 'source', '1-2,9', 'core/research/2026-10-02-report#r-2'), /no such issue: 9 — nothing was written/);
-  assert.match(refuses(root, 'source', '1-2', 'not a source'), /a source is <report dir>#<finding id>/);
+  assert.match(refuses(root, 'field', '1-2,9', 'Source', 'core/research/2026-10-02-report#r-2'), /no such issue: 9 — nothing was written/);
+  assert.match(refuses(root, 'field', '1-2', 'Source', 'not a source'), /a source is <report dir>#<finding id>/);
   assert.equal(field(root, '1', 'source'), ref);
 
   assert.equal(jarl(root, 'round', '1-2,4', 'the check failed').split('\n').length, 3);
@@ -260,16 +237,16 @@ test('files, repo, after, body, round and source take a comma list with a range:
 test('one id answers as an object and a list as an array, so a caller that sends one id sees what it always saw', () => {
   const root = loop();
   issues(root, 2);
-  assert.deepEqual(JSON.parse(jarl(root, 'files', '1', 'a.txt', '--json')), { id: '1', files: ['a.txt'] });
-  assert.deepEqual(JSON.parse(jarl(root, 'files', '1-2', 'a.txt', '--json')), [{ id: '1', files: ['a.txt'] }, { id: '2', files: ['a.txt'] }]);
+  assert.deepEqual(JSON.parse(jarl(root, 'field', '1', 'Files', 'a.txt', '--json')), { id: '1', field: 'Files', value: 'a.txt' });
+  assert.deepEqual(JSON.parse(jarl(root, 'field', '1-2', 'Files', 'a.txt', '--json')), [{ id: '1', field: 'Files', value: 'a.txt' }, { id: '2', field: 'Files', value: 'a.txt' }]);
 });
 
 test('the tools keep the field named id on every command that takes a list', () => {
   const tools = Object.fromEntries(mcp.buildTools().map((t) => [t.name, t]));
-  for (const cmd of ['body', 'source', 'after', 'files', 'repo', 'round']) {
+  for (const [cmd, field] of [['round', 'id'], ['field', 'ids']]) {
     const props = tools[`jarl_${cmd}`].inputSchema.properties;
-    assert.ok(props.id, `${cmd}: the id field`);
-    assert.match(props.id.description, /comma list with ranges/);
+    assert.ok(props[field], `${cmd}: the ${field} field`);
+    assert.match(props[field].description, /comma list with ranges/);
   }
   assert.ok(tools.jarl_evidence.inputSchema.properties.retract, 'the retract field of evidence');
   for (const cmd of ['retract', 'field']) assert.ok(tools[`jarl_${cmd}`], `${cmd} has its tool`);

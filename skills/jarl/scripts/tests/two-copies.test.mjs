@@ -204,8 +204,8 @@ const MARKER_LINE = /^(?:<{7}|={7}|>{7})/m;
 test('text that quotes a git conflict, written through new, body, a note and a reason, has each marker line escaped, reads back as written, and verify reads it as text', () => {
   const a = committedLoop();
   assert.equal(json(a.dir, 'new', 'quotes a conflict', '--tier', 'light', '--what', QUOTED, '--why', 'quoted', '--acceptance', QUOTED).id, '2');
-  jarl(a.dir, 'body', '1', '--why', QUOTED);
-  jarl(a.dir, 'body', '1', '--what', `the opening line\n${QUOTED}`, '--append');
+  jarl(a.dir, 'field', '1', 'Why', QUOTED);
+  jarl(a.dir, 'field', '1', 'What', `the opening line\n${QUOTED}`, '--add');
   jarl(a.dir, 'evidence', '1', QUOTED);
   jarl(a.dir, 'set', '2', 'dropped', QUOTED);
   for (const file of issueFiles(a.dir)) assert.doesNotMatch(issueText(a.dir, file), MARKER_LINE, `${file} holds no marker line`);
@@ -219,7 +219,7 @@ test('text that quotes a git conflict, written through new, body, a note and a r
   assert.ok(two.sections.evidence.includes(`Dropped: ${ESCAPED}`), two.sections.evidence);
   // The escaped text written back as it reads is written as it is: an escape is never escaped again.
   const before = issueText(a.dir, '1-filed-before-the-split.md');
-  jarl(a.dir, 'body', '1', '--why', one.sections.why);
+  jarl(a.dir, 'field', '1', 'Why', one.sections.why);
   assert.equal(issueText(a.dir, '1-filed-before-the-split.md'), before);
   const r = run(a.dir, ['verify']);
   assert.equal(r.status, 0, r.stdout);
@@ -228,9 +228,9 @@ test('text that quotes a git conflict, written through new, body, a note and a r
 test('verify refuses an issue file that holds git conflict markers', () => {
   const a = committedLoop();
   const b = cloneOf(a.dir);
-  jarl(a.dir, 'body', '1', '--what', 'the text on A');
+  jarl(a.dir, 'field', '1', 'What', 'the text on A');
   a.g('add', '-A'); a.g('commit', '-qm', 'a edits 1');
-  jarl(b.dir, 'body', '1', '--what', 'the text on B');
+  jarl(b.dir, 'field', '1', 'What', 'the text on B');
   b.g('add', '-A'); b.g('commit', '-qm', 'b edits 1');
   assert.throws(() => b.g('pull', '-q', '--no-rebase', '--no-edit', 'origin', 'main'), 'git cannot join the two texts');
   assert.match(readFileSync(join(b.dir, '.jarl', 'issues', '1-filed-before-the-split.md'), 'utf8'), /^<<<<<<< /m);
@@ -238,16 +238,16 @@ test('verify refuses an issue file that holds git conflict markers', () => {
   assert.equal(r.status, 2, r.stdout);
   assert.match(r.stdout, /issues\/1-filed-before-the-split\.md line \d+: "<<<<<<< [^"]*" — a git conflict marker/);
   const plain = committedLoop();
-  jarl(plain.dir, 'body', '1', '--what', 'A heading\n=======\nunder it');
+  jarl(plain.dir, 'field', '1', 'What', 'A heading\n=======\nunder it');
   assert.equal(run(plain.dir, ['verify']).status, 0, 'a line of equals signs alone is text');
 });
 
 test('verify refuses a real git conflict whose side holds a fenced block', () => {
   const a = committedLoop();
   const b = cloneOf(a.dir);
-  jarl(a.dir, 'body', '1', '--what', 'run it as:\n```\nnpm test\n```');
+  jarl(a.dir, 'field', '1', 'What', 'run it as:\n```\nnpm test\n```');
   a.g('add', '-A'); a.g('commit', '-qm', 'a edits 1 with a fence');
-  jarl(b.dir, 'body', '1', '--what', 'the text on B');
+  jarl(b.dir, 'field', '1', 'What', 'the text on B');
   b.g('add', '-A'); b.g('commit', '-qm', 'b edits 1');
   assert.throws(() => b.g('pull', '-q', '--no-rebase', '--no-edit', 'origin', 'main'), 'git cannot join the two texts');
   const text = readFileSync(join(b.dir, '.jarl', 'issues', '1-filed-before-the-split.md'), 'utf8');
@@ -259,12 +259,12 @@ test('verify refuses a real git conflict whose side holds a fenced block', () =>
 
 test('verify refuses a real git conflict inside a fenced block both sides share', () => {
   const a = committedLoop();
-  jarl(a.dir, 'body', '1', '--what', 'run it as:\n```\nnpm test\n```');
+  jarl(a.dir, 'field', '1', 'What', 'run it as:\n```\nnpm test\n```');
   a.g('add', '-A'); a.g('commit', '-qm', 'a fence in 1');
   const b = cloneOf(a.dir);
-  jarl(a.dir, 'body', '1', '--what', 'run it as:\n```\nnpm test -- --on-a\n```');
+  jarl(a.dir, 'field', '1', 'What', 'run it as:\n```\nnpm test -- --on-a\n```');
   a.g('add', '-A'); a.g('commit', '-qm', 'a edits the fence');
-  jarl(b.dir, 'body', '1', '--what', 'run it as:\n```\nnpm run on-b\n```');
+  jarl(b.dir, 'field', '1', 'What', 'run it as:\n```\nnpm run on-b\n```');
   b.g('add', '-A'); b.g('commit', '-qm', 'b edits the fence');
   assert.throws(() => b.g('pull', '-q', '--no-rebase', '--no-edit', 'origin', 'main'), 'git cannot join the two lines');
   const text = issueText(b.dir, '1-filed-before-the-split.md');
@@ -297,7 +297,7 @@ for (const [shape, side, edit] of [
     const a = committedLoop();
     const b = cloneOf(a.dir);
     for (const [at, name] of [[a, 'A'], [b, 'B']]) {
-      jarl(at.dir, 'body', '1', '--what', `the text on ${name}`);
+      jarl(at.dir, 'field', '1', 'What', `the text on ${name}`);
       if (side === name.toLowerCase()) {
         const file = join(at.dir, '.jarl', 'issues', '1-filed-before-the-split.md');
         writeFileSync(file, edit(readFileSync(file, 'utf8')));
@@ -337,9 +337,9 @@ test('the refusal says what to do with markers that only quote a conflict', () =
 test('with CRLF line endings, a real conflict is refused, and text with CRLF breaks that quotes one is written escaped, a note into an Evidence section with no parts included', () => {
   const a = committedLoop();
   const b = cloneOf(a.dir);
-  jarl(a.dir, 'body', '1', '--what', 'the text on A');
+  jarl(a.dir, 'field', '1', 'What', 'the text on A');
   a.g('add', '-A'); a.g('commit', '-qm', 'a edits 1');
-  jarl(b.dir, 'body', '1', '--what', 'the text on B');
+  jarl(b.dir, 'field', '1', 'What', 'the text on B');
   b.g('add', '-A'); b.g('commit', '-qm', 'b edits 1');
   assert.throws(() => b.g('pull', '-q', '--no-rebase', '--no-edit', 'origin', 'main'), 'git cannot join the two texts');
   const conflicted = join(b.dir, '.jarl', 'issues', '1-filed-before-the-split.md');
@@ -351,7 +351,7 @@ test('with CRLF line endings, a real conflict is refused, and text with CRLF bre
   const file = join(c.dir, '.jarl', 'issues', '1-filed-before-the-split.md');
   writeFileSync(file, readFileSync(file, 'utf8').replace(/## Evidence\s*$/, '## Evidence\nan old line written by hand\n'));
   const crlf = QUOTED.replace(/\n/g, '\r\n');
-  jarl(c.dir, 'body', '1', '--what', crlf);
+  jarl(c.dir, 'field', '1', 'What', crlf);
   jarl(c.dir, 'evidence', '1', crlf);
   const text = readFileSync(file, 'utf8');
   assert.match(text, /## Evidence\nan old line written by hand\n/, 'the section has no parts');

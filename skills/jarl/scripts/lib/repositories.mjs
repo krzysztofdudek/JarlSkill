@@ -417,7 +417,7 @@ function commitRepoNames(root, picked) {
   if (!picked.some((p) => p.name)) return;
   withLock(root, () => {
     needFormat(root, 'repo-name');
-    for (const p of picked) if (p.name && declareRepo(root, p.name, p.main) === 'no-base') p.note = `${p.name} has no branch checked out, so it is declared with no base — name one with repo --base ${p.name} <branch>`;
+    for (const p of picked) if (p.name && declareRepo(root, p.name, p.main) === 'no-base') p.note = `${p.name} has no branch checked out, so it is declared with no base — name one with jarl.mjs base ${p.name} <branch>`;
   });
 }
 
@@ -460,9 +460,9 @@ function declareRepo(root, name, main) {
   return base === null ? 'no-base' : true;
 }
 
-// repo --base <name> <branch>: changes the base of a declared repository, with a log line that says what it was.
+// base <name> <branch>: changes the base of a declared repository, with a log line that says what it was.
 export function cmdRepoBase(root, name, branch) {
-  need(name !== undefined && branch !== undefined, 'repo --base takes a repository name and a branch: jarl.mjs repo --base <name> <branch>');
+  need(name !== undefined && branch !== undefined, 'base takes a repository name and a branch: jarl.mjs base <name> <branch>');
   const known = declaredRepos(root);
   need(known.has(name), `${name} is not declared in this loop${known.size ? ` — it declares ${[...known.keys()].join(', ')}` : ''}; Jarl declares a repository the first time an issue names it`);
   const base = fieldText(branch);

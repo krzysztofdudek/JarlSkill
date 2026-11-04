@@ -71,7 +71,7 @@ test('queue: a round spends the approve, overlapping files start a new batch, a 
   jarl(root, 'set', '2', 'in-progress', 'go', '--branch', 'jarl/2-b', '--worker', 'w2');
   // Two leases that share a file are refused at the lease, yet a record can still hold them (a file declared after the
   // lease, two clones merged): the queue keeps them out of one batch all the same.
-  jarl(root, 'files', '2', 'src/a.mjs');
+  jarl(root, 'field', '2', 'Files', 'src/a.mjs');
   jarl(root, 'set', '3,4', 'in-progress', 'pkg', '--branch', 'jarl/3-pkg', '--worker', 'w3');
   branchWith(root, 'jarl/1-a', 'src/a.mjs');
   branchWith(root, 'jarl/2-b', 'src/a.mjs');
@@ -115,7 +115,7 @@ test('changelog: fragments recorded on the issue print grouped for [Unreleased];
   const root = repo();
   jarl(root, 'new', 'a feature', '--kind', 'gap', '--changelog', 'Added: `queue` shows the merge queue.', '--changelog', 'Changed: `report` groups by repository.');
   jarl(root, 'new', 'a bug', '--kind', 'bug');
-  jarl(root, 'body', '2', '--changelog', 'A value starting with $1 or $& is written as it is.');
+  jarl(root, 'field', '2', 'Changelog', 'A value starting with $1 or $& is written as it is.');
   jarl(root, 'new', 'silent');
   const shown = jarl(root, 'show', '1');
   assert.match(shown, /## Changelog\n- Added: `queue` shows the merge queue\.\n- Changed: `report` groups by repository\.\n\n## Evidence/);
@@ -126,11 +126,11 @@ test('changelog: fragments recorded on the issue print grouped for [Unreleased];
   const j = JSON.parse(jarl(root, 'changelog', '1,2', '--json'));
   assert.deepEqual(j.sections, { Added: ['`queue` shows the merge queue.'], Changed: ['`report` groups by repository.'], Fixed: ['A value starting with $1 or $& is written as it is.'] });
   // body --changelog replaces the fragment, it never appends.
-  jarl(root, 'body', '2', '--changelog', 'Fixed: something else.');
+  jarl(root, 'field', '2', 'Changelog', 'Fixed: something else.');
   assert.equal(jarl(root, 'changelog', '2'), '### Fixed\n- something else.');
   assert.match(refuses(root, 'changelog'), /changelog requires <ids>/);
   // A section with nothing after it is refused, on new and on body, and nothing is written.
-  assert.match(refuses(root, 'body', '2', '--changelog', 'Removed:'), /changelog entry "Removed:" has no text/);
+  assert.match(refuses(root, 'field', '2', 'Changelog', 'Removed:'), /changelog entry "Removed:" has no text/);
   assert.match(refuses(root, 'new', 'x', '--changelog', 'fixed:  '), /has no text/);
   assert.equal(jarl(root, 'changelog', '2'), '### Fixed\n- something else.');
 });

@@ -315,7 +315,7 @@ export function nextRows(root, flags = {}) {
     keys.forEach((k) => taken.set(k.key, i.id));
     resourcesOf(i).forEach((r) => takenRes.set(r.key, i.id));
     // Offered, but flagged: a worker raised on an issue with no acceptance line has nothing to prove, and
-    // the reviewer nothing to check it against. Fill it with body --acceptance before raising one.
+    // the reviewer nothing to check it against. Fill it with field <id> Acceptance before raising one.
     out.push({ ...base, group: 'ready', files: i.files, ready: true, waitsOn: [], after: [], ...(acceptanceLineCount(i) ? {} : { noAcceptance: true }) });
   }
   const limit = Number(flags.limit) || Infinity;

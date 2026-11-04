@@ -269,7 +269,7 @@ test('in a loop with no slice the jarl is the one coordinator and is given the c
   const coordinatorRules = (o) => slugs(o).filter((s) => s.startsWith('jarl:coordinator-'));
   assert.deepEqual(coordinatorRules(json(root, 'next', '--as', 'jarl')), ['jarl:coordinator-escalates', 'jarl:coordinator-pull-push', 'jarl:coordinator-scope-holds']);
   jarl(root, 'goal', '--set', 'Coordinators: odin');
-  jarl(root, 'tag', '1', '+slice:odin');
+  jarl(root, 'field', '1', 'Tags', '--add', 'slice:odin');
   assert.deepEqual(coordinatorRules(json(root, 'next', '--as', 'jarl')), []);
 });
 

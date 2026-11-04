@@ -68,8 +68,8 @@ test('a line marked as the owner\'s must name its material and what to check, an
 
   // body writes the mark by the same rule.
   jarl(root, 'new', 'second', '--acceptance', 'plain');
-  assert.match(refuses(root, 'body', '2', '--acceptance', '[owner] looks right'), /is marked as one only the owner ticks/);
-  jarl(root, 'body', '2', '--acceptance', '[Owner] looks right · material: https://example.com/preview · check: the colours');
+  assert.match(refuses(root, 'field', '2', 'Acceptance', '[owner] looks right'), /is marked as one only the owner ticks/);
+  jarl(root, 'field', '2', 'Acceptance', '[Owner] looks right · material: https://example.com/preview · check: the colours');
   assert.equal(json(root, 'show', '2').sections.acceptance.trim(), '[Owner] looks right · material: https://example.com/preview · check: the colours');
 });
 
@@ -112,7 +112,7 @@ test('a tick counts for the line it was given on: a round spends it, and a line 
   assert.match(refuses(root, 'set', '1', 'done', 'finished'), /waits for the owner's sign-off on acceptance line 2, .*; his tick of \d{4}-\d{2}-\d{2} \d{2}:\d{2} came before the work was sent back or started again, so it does not count/);
   jarl(root, 'tick', '1', '2', '--by', 'owner');
   // A rewritten line is another line: the tick of the old one does not hold it.
-  jarl(root, 'body', '1', '--acceptance', 'the cut renders', '--acceptance', `[owner] the second cut reads well · material: ${CUT} · check: the captions`);
+  jarl(root, 'field', '1', 'Acceptance', `the cut renders\n[owner] the second cut reads well · material: ${CUT} · check: the captions`);
   assert.match(refuses(root, 'set', '1', 'done', 'finished'), /waits for the owner's sign-off on acceptance line 2, "the second cut reads well"/);
   jarl(root, 'tick', '1', '2', '--by', 'owner');
   jarl(root, 'set', '1', 'done', 'finished');
@@ -202,9 +202,9 @@ test('in a loop run by a composer, an [owner] line written there by a Jarl that 
   jarl(dir, 'set', id, 'in-progress', 'go', '--worker', 'w1');
   jarl(dir, 'evidence', id, '--ran', 'render the cut', '--saw', 'written');
   jarl(dir, 'review', id, 'approve', '--by', 'rev', FINDINGS);
-  const off = /owner lines are off in this loop: its profile names an external scheduler \(the composer tick\) and keeps record format 1, so no tick can be written here; rewrite it without the \[owner\] mark: jarl\.mjs body 001 --acceptance/;
+  const off = /owner lines are off in this loop: its profile names an external scheduler \(the composer tick\) and keeps record format 1, so no tick can be written here; rewrite it without the \[owner\] mark: jarl\.mjs field 001 Acceptance/;
   assert.match(refuses(dir, 'set', id, 'done', 'finished'), off);
   assert.match(refuses(dir, 'tick', id, '1', '--by', 'owner'), off);
-  jarl(dir, 'body', id, '--acceptance', 'the first cut reads well');
+  jarl(dir, 'field', id, 'Acceptance', 'the first cut reads well');
   jarl(dir, 'set', id, 'done', 'finished');
 });

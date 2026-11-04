@@ -71,7 +71,7 @@ test('007 and 7 are one issue wherever an id is read: show, after, lists, the lo
   writeFileSync(join(root, '.jarl', 'issues', '8-plain.md'), L.renderIssue({ id: '8', title: 'plain', kind: 'task', priority: '2', tier: 'standard', tags: [], files: [], repo: '', foundBy: 'jarl' }));
   for (const form of ['7', '007', '#7']) assert.match(jarl(root, 'show', form), /^# 007 · padded/, form);
   assert.deepEqual(JSON.parse(jarl(root, 'list', '--json')).map((r) => r.id), ['007', '8'], 'sorted as numbers, each as its file writes it');
-  jarl(root, 'after', '8', '7');
+  jarl(root, 'field', '8', 'After', '7');
   assert.deepEqual(JSON.parse(jarl(root, 'show', '8', '--json')).after, ['007'], 'the After names the issue as its file writes it');
   jarl(root, 'set', '7', 'in-progress', '--worker', 'w1');
   assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /007 → in-progress/, 'the log writes the issue as its file writes it');
@@ -156,12 +156,12 @@ test('list, queue, next, show, set, after, ranges, review and the log work acros
   assert.match(jarl(root, 'show', '1000'), /^# 1000 · thousand/);
   assert.match(jarl(root, 'show', '#1001'), /^# 1001 · thousand one/);
   assert.match(refuses(root, 'show', '1002'), /no such issue: 1002/);
-  jarl(root, 'after', '1001', '999,1000');
+  jarl(root, 'field', '1001', 'After', '999,1000');
   assert.deepEqual(JSON.parse(jarl(root, 'show', '1001', '--json')).after, ['999', '1000']);
   assert.deepEqual(JSON.parse(jarl(root, 'next', '--json')).filter((r) => r.ready).map((r) => r.id), ['998', '999', '1000'], '1001 waits on 999 and 1000');
-  const tagged = JSON.parse(jarl(root, 'tag', '998-1001', '+range', '--json'));
+  const tagged = JSON.parse(jarl(root, 'field', '998-1001', 'Tags', '--add', 'range', '--json'));
   assert.deepEqual(tagged.map((r) => r.id), ['998', '999', '1000', '1001']);
-  jarl(root, 'prio', '999,1000', '1');
+  jarl(root, 'field', '999,1000', 'Priority', '1');
   assert.deepEqual(JSON.parse(jarl(root, 'list', '--json')).map((r) => r.id), ['999', '1000', '998', '1001']);
   jarl(root, 'set', '1000', 'in-progress', '--worker', 'w1');
   assert.match(jarl(root, 'show', '1000'), /\*\*Status:\*\* in-progress/);
@@ -184,7 +184,7 @@ test('the same commands work by the MCP tool', () => {
   const ids = JSON.parse(tool(root, 'jarl_list', { json: true })).map((r) => r.id);
   assert.deepEqual(ids, ['998', '999', '1000', '1001']);
   assert.match(tool(root, 'jarl_show', { id: '1000' }), /^# 1000 · thousand/);
-  tool(root, 'jarl_after', { id: '1001', ids: '998-1000' });
+  tool(root, 'jarl_field', { ids: '1001', name: 'After', value: '998-1000' });
   assert.deepEqual(JSON.parse(tool(root, 'jarl_show', { id: '1001', json: true })).after, ['998', '999', '1000']);
   tool(root, 'jarl_set', { ids: '1000', status: 'in-progress', worker: 'w1' });
   tool(root, 'jarl_review', { ids: '1000', verdict: 'approve', findings: FINDINGS, by: 'rev' });

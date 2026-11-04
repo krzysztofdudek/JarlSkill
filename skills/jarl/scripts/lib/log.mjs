@@ -177,7 +177,7 @@ function eventParser(profile) {
 const LINE_WRITERS = {
   filed: 'jarl.mjs new', move: 'jarl.mjs set <ids> <status>', round: 'jarl.mjs round <id>', verdict: 'jarl.mjs review <id> approve|changes',
   'retract-review': 'jarl.mjs retract <id> review', 'retract-row': 'jarl.mjs retract <id> <n>', 'retract-note': 'jarl.mjs retract <id> note-<n>', row: 'jarl.mjs evidence <id> --ran "<command>" --saw "<what it printed>"',
-  merged: 'jarl.mjs merged <id> --sha <sha>', ci: 'jarl.mjs merged <id> --ci <state>', body: 'jarl.mjs body <id>', tick: 'jarl.mjs tick <id> <line> --by owner',
+  merged: 'jarl.mjs merged <id> --sha <sha>', ci: 'jarl.mjs merged <id> --ci <state>', body: 'jarl.mjs field <id> <part> "<value>"', tick: 'jarl.mjs tick <id> <line> --by owner',
   tip: 'jarl.mjs evidence, review or merged, which write the tip of the branch after their own line',
 };
 const MOVE_SHAPE = idRe('^{id} →');

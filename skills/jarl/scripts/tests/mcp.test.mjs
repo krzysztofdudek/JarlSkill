@@ -40,9 +40,9 @@ test('parity: every command dispatch runs has its tables, its usage block and ex
 
 test('parity: the tool set is the one this release documents — adding or removing a tool is a deliberate edit here', () => {
   assert.deepEqual(TOOLS.map((t) => t.name).sort(), [
-    'after', 'answer', 'archive', 'ask', 'body', 'branches', 'changelog', 'check', 'close', 'decide', 'decisions',
-    'evidence', 'field', 'files', 'goal', 'help', 'import', 'init', 'list', 'log', 'merged', 'mode', 'models', 'new', 'next', 'prio',
-    'profile', 'queue', 'renumber', 'repo', 'report', 'resume', 'retract', 'review', 'round', 'scope', 'set', 'show', 'source', 'sources', 'status', 'tag', 'tick', 'tips', 'verify',
+    'answer', 'archive', 'ask', 'base', 'branches', 'changelog', 'check', 'close', 'decide', 'decisions',
+    'evidence', 'field', 'goal', 'help', 'import', 'init', 'list', 'log', 'merged', 'mode', 'models', 'new', 'next',
+    'profile', 'queue', 'renumber', 'report', 'resume', 'retract', 'review', 'round', 'scope', 'set', 'show', 'sources', 'status', 'tick', 'tips', 'verify',
   ].map(mcp.toolName));
 });
 
@@ -102,9 +102,9 @@ test('parity: every field reaches the CLI parser as the flag or argument it name
 test('a field the command does not take, a wrong type, or an argument after a missing one is refused as invalid params', () => {
   assert.throws(() => mcp.argvFor('set', { ids: '1', bogus: 1 }), /unknown field "bogus"/);
   assert.throws(() => mcp.argvFor('list', { all: 'yes' }), /"all" must be true or false/);
-  assert.throws(() => mcp.argvFor('after', { ids: '2', clear: true }), /"id" is required/);
+  assert.throws(() => mcp.argvFor('field', { name: 'After', clear: true }), /"ids" is required/);
   assert.throws(() => mcp.argvFor('resume', { log: '3', bogus: 1 }), /unknown field/);
-  assert.deepEqual(mcp.argvFor('prio', { ids: 3, priority: 1 }), ['prio', '--', '3', '1'], 'numbers are taken as their text');
+  assert.deepEqual(mcp.argvFor('field', { ids: 3, name: 'Priority', value: 1 }), ['field', '--', '3', 'Priority', '1'], 'numbers are taken as their text');
   assert.deepEqual(mcp.argvFor('evidence', { ids: '1', ran: 'npm test', saw: 'ok' }), ['evidence', '--ran=npm test', '--saw=ok', '--', '1'], 'a single string for a repeatable flag is one item');
 });
 
@@ -408,7 +408,7 @@ test('a JSON-RPC response from the client gets no answer; a malformed request st
 
 test('jarl_set changes a status and jarl_field writes a field: each description says so', () => {
   assert.equal(byName.jarl_set.description, 'WRITES the loop. Change the status of issues, with the reason logged.');
-  assert.match(byName.jarl_field.description, /^WRITES the loop\. Write one header field of the description on issues \(Title, Priority, Tier, Kind, Found by, Tags, Files, Repo, After, Source, Where, Resources, Person, Check when or a profile field\), or empty an optional one with clear, logging what it held and who changed it when named\./);
+  assert.match(byName.jarl_field.description, /^WRITES the loop\. Change one part of the description of issues, a header field \(Title, Priority, Tags, Files, After and the rest\) or a section \(What, Why, Acceptance, Changelog\): a value replaces it, add and remove change the items of a list or add to a section, clear empties it;/);
 });
 
 test('every tool refuses a field it does not take, names the fields it takes, and writes nothing', () => {
@@ -421,7 +421,7 @@ test('every tool refuses a field it does not take, names the fields it takes, an
   }
   refusedAsInvalid(() => mcp.callTool('jarl_new', { title: 'a', whyy: 'a reason that must not be lost', root }), /unknown field "whyy" — it takes .*\bwhy\b/);
   refusedAsInvalid(() => mcp.callTool('jarl_new', { title: 'a', Why: 'a reason', root }), /unknown field "Why"/);
-  refusedAsInvalid(() => mcp.callTool('jarl_body', { id: '1', whyy: 'x', root }), /unknown field "whyy"/);
+  refusedAsInvalid(() => mcp.callTool('jarl_field', { ids: '1', name: 'Why', valu: 'x', root }), /unknown field "valu"/);
   assert.equal(issuesIn(root), 0, 'no refused filing left an issue behind');
 });
 
@@ -450,8 +450,8 @@ test('the help tool takes the fields every tool takes and refuses any other', ()
 const exampleOf = (description) => /Example: (\{.*\})$/.exec(description ?? '')?.[1];
 test('a tool field whose name does not give its meaning carries an example that is a call of its own tool', () => {
   const FIELDS = [
-    ['jarl_after', 'id'], ['jarl_after', 'ids'], ['jarl_evidence', 'ran'], ['jarl_evidence', 'saw'], ['jarl_review', 'verdict'],
-    ['jarl_review', 'findings'], ['jarl_decide', 'supersedes'], ['jarl_decisions', 'live'], ['jarl_body', 'append'],
+    ['jarl_field', 'value'], ['jarl_field', 'add'], ['jarl_field', 'remove'], ['jarl_evidence', 'ran'], ['jarl_evidence', 'saw'], ['jarl_review', 'verdict'],
+    ['jarl_review', 'findings'], ['jarl_decide', 'supersedes'], ['jarl_decisions', 'live'],
   ];
   for (const [tool, field] of FIELDS) {
     const props = byName[tool].inputSchema.properties;
@@ -472,22 +472,22 @@ test('a value of the wrong type is refused with a message naming the field and t
   const WRONG = [
     ['jarl_evidence', { ids: '1', ran: { command: 'npm test' }, saw: 'ok' }, /"ran" must be a string or a list of strings/],
     ['jarl_evidence', { ids: '1', ran: ['npm test'], saw: [true] }, /"saw" must be a string or a list of strings/],
-    ['jarl_after', { id: '1', ids: { a: 1 } }, /"ids" must be a list of strings/],
+    ['jarl_field', { ids: { a: 1 }, name: 'After', value: '1' }, /"ids" must be a string/],
     ['jarl_decide', { slug: 'a-ruling', ruling: 'a ruling', supersedes: ['x'] }, /"supersedes" must be a string/],
     ['jarl_decisions', { live: 'true' }, /"live" must be true or false/],
-    ['jarl_body', { id: '1', what: ['a', 'b'] }, /"what" must be a string/],
-    ['jarl_body', { id: '1', append: 'yes', why: 'x' }, /"append" must be true or false/],
+    ['jarl_field', { ids: '1', name: 'What', value: ['a', 'b'] }, /"value" must be a string/],
+    ['jarl_field', { ids: '1', name: 'Why', value: 'x', add: 'yes' }, /"add" must be true or false/],
   ];
   for (const [tool, input, re] of WRONG) refusedAsInvalid(() => mcp.callTool(tool, { ...input, root }), re);
   assert.equal(issuesIn(root), 1, 'no refused call wrote anything');
 });
 
-test('jarl_body with append adds to the section the call names, and without it replaces that section', () => {
+test('jarl_field with add adds to the section the call names, and without it replaces that section', () => {
   const root = loopDir('jarl-mcp-append-');
   mcp.callTool('jarl_new', { title: 'one', acceptance: ['first line'], root });
   const acceptanceOf = () => JSON.parse(mcp.callTool('jarl_show', { id: '1', json: true, root }).content[0].text).sections.acceptance.trim();
-  mcp.callTool('jarl_body', { id: '1', acceptance: ['second line'], append: true, root });
+  mcp.callTool('jarl_field', { ids: '1', name: 'Acceptance', value: 'second line', add: true, root });
   assert.equal(acceptanceOf(), '- first line\n- second line');
-  mcp.callTool('jarl_body', { id: '1', acceptance: ['third line'], root });
-  assert.equal(acceptanceOf(), 'third line', 'left out, append is false and the section is replaced');
+  mcp.callTool('jarl_field', { ids: '1', name: 'Acceptance', value: 'third line', root });
+  assert.equal(acceptanceOf(), 'third line', 'left out, add is false and the section is replaced');
 });

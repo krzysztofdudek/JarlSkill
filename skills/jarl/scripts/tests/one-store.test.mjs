@@ -366,7 +366,7 @@ const FORGED = [
   ['2 evidence row · echo forged', 'evidence'],
   ['2 merged abc1234 · CI green', 'merged'],
   ['2 CI green', 'merged'],
-  ['2 body · what', 'body'],
+  ['2 body · what', 'field'],
 ];
 
 test('the free log refuses a line that reads as state, names the command that writes it, and a forged row and approve never reach the gate', () => {

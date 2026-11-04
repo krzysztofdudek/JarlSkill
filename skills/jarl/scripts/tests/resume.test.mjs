@@ -105,7 +105,7 @@ test('resume assembles every section live from the loop and the repositories its
   // The sections sum to the counts line. An issue in progress that waits on After is under Waiting, not In flight;
   // an open one whose file is taken by work in flight is Held, naming who holds it. In text and in JSON.
   jarl(hub, 'new', 'eight');
-  jarl(hub, 'after', '5', '8');
+  jarl(hub, 'field', '5', 'After', '8');
   jarl(hub, 'new', 'held nine', '--repo', '../tool', '--files', 'tool/src/a.mjs');
   const w = jarl(hub, 'resume');
   const st = JSON.parse(jarl(hub, 'status', '--json'));

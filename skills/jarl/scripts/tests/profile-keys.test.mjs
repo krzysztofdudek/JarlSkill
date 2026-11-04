@@ -335,7 +335,7 @@ test('a loop opened with a composer\'s profile is never raised: new writes three
   at = log();
   // A number written plain, in a file made by hand: a write that names it is refused.
   writeFileSync(join(root, '.jarl', 'issues', '7-plain.md'), readFileSync(join(root, '.jarl', 'issues', files[0]), 'utf8').replace(/^# 001 · first ticket$/m, '# 7 · plain'));
-  assert.match(refuses(root, 'tag', '7', '+x'), /a number written plain, below 100 or of 1000 or more needs record format 2, and this loop stays at format 1/);
+  assert.match(refuses(root, 'field', '7', 'Tags', '--add', 'x'), /a number written plain, below 100 or of 1000 or more needs record format 2, and this loop stays at format 1/);
   assert.equal(log(), at);
   assert.equal(readFileSync(marker, 'utf8'), before, 'the marker never moved');
 });

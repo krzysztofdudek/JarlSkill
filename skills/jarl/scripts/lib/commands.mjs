@@ -492,8 +492,8 @@ const heldField = (issue, name) => fieldText(issue.fields[name.toLowerCase()]);
 const itemsOf = (text) => String(text ?? '').split('\n').map((l) => l.trim().replace(/^-\s+/, '')).filter(Boolean);
 // The text a section holds after an append: what it held, then the added text as its own paragraph.
 const joinParagraphs = (held, added) => (String(held ?? '').trim() ? `${String(held).trim()}\n\n${added}` : added);
-// body <id>: the title, the Where field and the What, Why, Acceptance and Changelog sections, and the profile's sections,
-// set or replaced; with append, the text of each section is added after what it holds. Evidence is never written here:
+// The body of one issue (the writer of field's title, Where and sections, and of the library's setBody): the title, the
+// Where field and the What, Why, Acceptance and Changelog sections, and the profile's sections, set or replaced; with append, the text of each section is added after what it holds. Evidence is never written here:
 // it is the record of what was done, appended by evidence, never replaced.
 // `dry` checks everything the call would refuse and writes nothing: a list of ids is run dry on every id before the
 // first one is written (see eachIssue).
@@ -663,28 +663,53 @@ function setRoute(profile, name) {
 // What a name given to set is: 'status', or 'field' (a field the profile declares, or the built-in Resources).
 export function setRouteOf(root, name) { return setRoute(loadProfile(root), name) === 'status' ? 'status' : 'field'; }
 
-// field <ids> <name> "<value>" | field <ids> <name> --clear: one field written on every issue, the tool's own (Resources)
-// or one the profile declares. A field is emptied with clear and never with an empty value.
+// The header fields of the tool's own that hold a list, each item one name or path: field adds and removes items of these.
+const LIST_KEYS = ['tags', 'files', 'repo', 'after', 'source', 'resources'];
+// The sections of the description field writes, as their headings: What, Why, the acceptance (under the heading the
+// profile gives it), Changelog and the sections the profile declares.
+function sectionsOf(profile) {
+  return [...new Set(['What', 'Why', 'Acceptance', ...(profile.acceptance ? [profile.acceptance] : []), 'Changelog', ...profile.sections])];
+}
+// The one mode a field call writes in: set (a value alone), add, remove or clear.
+function fieldMode(flags) {
+  const given = ['add', 'remove', 'clear'].filter((k) => flags[k] === true);
+  need(given.length <= 1, `field takes one of --add, --remove and --clear, not ${given.map((k) => `--${k}`).join(' and ')}: run one call for each`);
+  return given[0] ?? 'set';
+}
+
+// field <ids> <name> ["<value>"] [--add | --remove | --clear]: one part of the description written on every issue — a
+// header field of the tool's own, a field the profile declares, or a section. A value alone replaces what the part holds;
+// --add adds the items of a list field, or the text after what a section holds; --remove takes the items off a list field;
+// --clear empties an optional part. A part is emptied with clear and never with an empty value.
 export function cmdField(root, rawIds, name, value, flags = {}) {
   needNoOwnersWords('the field', value);
   const profile = loadProfile(root);
   // Person and Check when are the tool's own where the built-in promise and wait hold, and a declared field's otherwise.
   const writes = DESCRIPTION_FIELDS.filter((f) => profile.kept || !['person', 'check when'].includes(f.toLowerCase()));
-  const writable = () => [...writes, ...profile.fields.map((f) => f.name)].join(', ');
-  need(name !== undefined && String(name).trim() !== '', `field requires <name> — a field of the description: ${writable()}`);
+  const sections = sectionsOf(profile);
+  const writable = () => [...writes, ...profile.fields.map((f) => f.name), ...sections].join(', ');
+  need(name !== undefined && String(name).trim() !== '', `field requires <name>, a part of the description: ${writable()} — e.g. jarl.mjs field <ids> Priority 1`);
   editorOf(flags.by);
   const key = String(name).trim().toLowerCase();
-  need(setRoute(profile, name) !== 'status' || writes.some((f) => f.toLowerCase() === key), `${name} is not a field of the description, which field writes: ${writable()}; ${notWrittenByField(profile, key)}`);
-  const clear = flags.clear === true;
-  need(!clear || value === undefined, 'field takes either a value or --clear, not both');
-  need(clear || (value !== undefined && String(value).trim() !== ''), `field ${name} "<value>" — the value is required, or --clear to empty it`);
+  const mode = fieldMode(flags);
+  const clear = mode === 'clear';
+  const section = profile.field(name) ? undefined : sections.find((s) => s.toLowerCase() === key);
+  need(section !== undefined || setRoute(profile, name) !== 'status' || writes.some((f) => f.toLowerCase() === key), `${name} is not a part of the description, which field writes: ${writable()}; ${notWrittenByField(profile, key)}`);
+  need(!clear || value === undefined, `field takes either a value or --clear, not both: jarl.mjs field <ids> ${quoteName(name)} --clear`);
+  need(clear || (value !== undefined && String(value).trim() !== ''), `field ${name} needs a value: jarl.mjs field <ids> ${quoteName(name)} "<value>", or --clear to empty it`);
+  if (section !== undefined) return writeSection(root, rawIds, section, clear ? '' : value, mode, flags);
+  if (mode === 'add' || mode === 'remove') {
+    const list = LIST_KEYS.find((k) => k === key);
+    need(list, `${name} holds one value, so it is replaced, never added to or taken from: jarl.mjs field <ids> ${quoteName(name)} "<value>"; --add and --remove take the items of ${LIST_KEYS.map((k) => (k === 'repo' ? 'Repo' : k.charAt(0).toUpperCase() + k.slice(1))).join(', ')}, and --add the text of a section`);
+    return editList(root, rawIds, list, value, mode, flags);
+  }
   if (profile.field(name)) return setDeclaredField(root, rawIds, profile.field(name), clear ? '' : value, flags);
   if (key === 'resources') return setResources(root, rawIds, clear ? '' : value, flags);
   const own = EMPTIED_BY_FIELD[key];
   if (own && clear) return emptyOwnField(root, rawIds, own, flags);
-  const one = (results, field) => { const list = [].concat(results).map((o) => ({ id: o.id, field, value: fieldText(readFieldOf(root, o.id, field)) })); return isBulk(rawIds) ? list : list[0]; };
+  const one = (results, field) => { const list = [].concat(results).map((o) => ({ id: o.id, field, value: fieldText(readFieldOf(root, o.id, field)), ...(o.notes?.length ? { notes: o.notes } : {}) })); return isBulk(rawIds) ? list : list[0]; };
   switch (key) {
-    case 'title': need(!clear, 'Title cannot be empty — body <ids> --title "<t>" replaces it'); return one(eachIssue(root, rawIds, (id, dry) => cmdBody(root, id, { title: value, by: flags.by }, dry)), 'Title');
+    case 'title': need(!clear, 'Title cannot be empty: jarl.mjs field <ids> Title "<title>" replaces it'); return one(eachIssue(root, rawIds, (id, dry) => cmdBody(root, id, { title: value, by: flags.by }, dry)), 'Title');
     case 'where': return one(eachIssue(root, rawIds, (id, dry) => cmdBody(root, id, { where: value, by: flags.by }, dry)), 'Where');
     case 'files': return one(eachIssue(root, rawIds, (id, dry) => cmdFiles(root, id, value, dry, flags.by)), 'Files');
     case 'source': return one(eachIssue(root, rawIds, (id, dry) => cmdSource(root, id, value, dry, flags.by)), 'Source');
@@ -710,14 +735,92 @@ function readFieldOf(root, id, field) {
   return field === 'Title' ? issue.title : issue.fields[field.toLowerCase()];
 }
 // Why a name is not one field writes, and which command writes it instead: the status and the lease move with set, a
-// merge is recorded by merged, a section is written by body, and the history has no edit.
+// merge is recorded by merged, and the history has no edit.
 function notWrittenByField(profile, key) {
-  if (key === 'status' || profile.statuses.includes(key)) return 'a status is moved by set <ids> <status> "<why>"';
-  if (['branch', 'worker', 'model', 'since', 'worktree'].includes(key)) return 'the lease (Branch, Worker, Model, Since) is written by set <ids> in-progress';
-  if (['merged', 'merge check', 'ci'].includes(key)) return 'a merge and its CI are recorded by merged <ids> --sha <sha> | --ci <state>';
-  if (key === 'evidence' || key === 'reviews') return 'the history is never edited: a row or an approve is taken back by retract, a ruling replaced by decide --supersedes';
-  if (['what', 'why', 'acceptance', 'changelog', ...profile.sections.map((s) => s.toLowerCase())].includes(key)) return `a section is written by body <ids> --${['what', 'why', 'acceptance', 'changelog'].includes(key) ? key : 'section "<Heading>=<text>"'}`;
-  return 'a section is written by body, a status by set, a merge by merged';
+  if (key === 'status' || profile.statuses.includes(key)) return 'a status is moved by set: jarl.mjs set <ids> <status> "<text>"';
+  if (['branch', 'worker', 'model', 'since', 'worktree'].includes(key)) return 'the lease (Branch, Worker, Model, Since) is written by set: jarl.mjs set <ids> in-progress "<text>" --branch <b> --worker <name>';
+  if (['merged', 'merge check', 'ci'].includes(key)) return 'a merge and its CI are recorded by merged: jarl.mjs merged <ids> --sha <sha>';
+  if (key === 'evidence' || key === 'reviews') return 'the history is never edited: a row or an approve is taken back by retract, a ruling replaced by decide --supersedes: jarl.mjs retract <id> <n> --by <who> "<text>"';
+  return 'a status is moved by set, a merge recorded by merged: jarl.mjs field <ids> <one of those names> "<value>"';
+}
+// A name as the command line takes it: in quotes when it holds a space (Found by, Check when).
+const quoteName = (name) => (/\s/.test(String(name).trim()) ? `"${String(name).trim()}"` : String(name).trim());
+
+// field <ids> <section> "<text>": a section of the description, as body writes it, with the body line it logs. A value
+// replaces what the section holds; --add puts it after that (a list of lines, Acceptance and Changelog, gains its lines; a
+// text, its paragraph); --clear empties the section. Acceptance and Changelog take one line per item, so a value of several
+// lines is several items. A section holds text, so --remove has nothing to take items from.
+function writeSection(root, rawIds, heading, value, mode, flags) {
+  need(mode !== 'remove', `a section holds text, not items: write it whole with jarl.mjs field <ids> ${quoteName(heading)} "<text>", or add to it with --add`);
+  const profile = loadProfile(root);
+  const key = heading.toLowerCase();
+  const lines = (v) => String(v ?? '').replace(/\r\n?/g, '\n').split('\n').map((l) => l.trim().replace(/^-\s+/, '')).filter(Boolean);
+  const isAcceptance = key === 'acceptance' || (profile.acceptance && key === profile.acceptance.toLowerCase());
+  const opts = isAcceptance ? { acceptance: lines(value) } : key === 'changelog' ? { changelog: lines(value) } : key === 'what' || key === 'why' ? { [key]: value } : { section: [`${heading}=${value}`] };
+  const results = [].concat(eachIssue(root, rawIds, (id, dry) => cmdBody(root, id, { ...opts, by: flags.by, append: mode === 'add', caller: flags.caller }, dry)));
+  const out = results.map((o) => ({ id: o.id, field: heading, value: fieldText(sectionOf(root, o.id, heading)), ...(o.note ? { note: o.note } : {}) }));
+  return isBulk(rawIds) ? out : out[0];
+}
+// What a section of an issue holds in its file now, read again after a write.
+function sectionOf(root, id, heading) { return findIssue(root, id).sections[heading.toLowerCase()] ?? ''; }
+
+// field <ids> <list field> "<items>" --add | --remove: the items added to what each issue holds (each item once, in the
+// order held, then the new ones), or taken off it; an item an issue does not hold is not there to take. Each issue is
+// written by the same writer as a replacement, so the line it logs is the one a replacement logs, and a list emptied by
+// --remove is emptied as --clear empties it. Tags go through tag's own operations: a slice: tag keeps its one-slice rule,
+// and a slice tag is taken off in any case.
+function editList(root, rawIds, key, value, mode, flags) {
+  const name = { tags: 'Tags', files: 'Files', repo: 'Repo', after: 'After', source: 'Source', resources: 'Resources' }[key];
+  const items = splitList(value);
+  need(items.length, `field ${name} --${mode} needs the items: jarl.mjs field <ids> ${name} --${mode} a,b`);
+  if (key === 'tags') {
+    const done = cmdTag(root, rawIds, items.map((t) => `${mode === 'add' ? '+' : '-'}${t}`), flags.by);
+    const list = [].concat(done).map((o) => ({ id: o.id, field: name, value: o.tags.join(', ') }));
+    return isBulk(rawIds) ? list : list[0];
+  }
+  // Two spellings of one item are one item: a repository by name or by path, an id with or without its leading zeros, a
+  // resource in any case.
+  const removes = mode !== 'remove' ? null : (() => {
+    if (key === 'repo') {
+      let picked = [];
+      try { picked = repoList(root, items.join(',')).map((p) => p.value); } catch { picked = []; }
+      return (x) => items.includes(x) || picked.includes(x);
+    }
+    if (key === 'after') { const keys = items.map((x) => idKey(x)); return (x) => keys.includes(idKey(x)); }
+    if (key === 'resources') { const low = items.map((x) => x.toLowerCase()); return (x) => low.includes(x.toLowerCase()); }
+    return (x) => items.includes(x);
+  })();
+  const results = [].concat(eachIssue(root, rawIds, (id, dry) => {
+    const issue = findIssue(root, id);
+    need(issue, `no such issue: ${id}`);
+    const held = splitList(issue.fields[key]);
+    const next = mode === 'add' ? [...held, ...items.filter((x) => !held.includes(x))] : held.filter((x) => !removes(x));
+    if (next.length === 0) {
+      if (held.length === 0) return { id: issue.id };
+      if (dry) return { id: issue.id };
+      return emptyListField(root, issue.id, name, flags);
+    }
+    const text = next.join(', ');
+    if (dry) {
+      if (key === 'files') cmdFiles(root, issue.id, text, true, flags.by);
+      else if (key === 'source') cmdSource(root, issue.id, text, true, flags.by);
+      else if (key === 'after') cmdAfter(root, issue.id, text, { dry: true, by: flags.by });
+      else if (key === 'repo') cmdRepo(root, issue.id, text, { dry: true, by: flags.by });
+      else resourceNames(text);
+      return { id: issue.id };
+    }
+    if (key === 'files') return cmdFiles(root, issue.id, text, false, flags.by);
+    if (key === 'source') return cmdSource(root, issue.id, text, false, flags.by);
+    if (key === 'after') return cmdAfter(root, issue.id, text, { by: flags.by });
+    if (key === 'repo') return cmdRepo(root, issue.id, text, { by: flags.by });
+    return setResources(root, issue.id, text, flags);
+  })).map((o) => ({ id: o.id, field: name, value: fieldText(findIssue(root, o.id).fields[key]), ...(o.notes?.length ? { notes: o.notes } : {}) }));
+  return isBulk(rawIds) ? results : results[0];
+}
+// A list field emptied by --remove, as --clear empties it.
+function emptyListField(root, id, name, flags) {
+  if (name === 'Resources') return setResources(root, id, '', flags);
+  return emptyOwnField(root, id, name, flags);
 }
 // The lease flags (--branch, --worker, --model, --worktree) a call gives. They belong to a move into a status that holds
 // a claim; a call that writes a field refuses them.
@@ -872,7 +975,7 @@ function needLeaseHolds(root, profile, issues, status, why, flags, handover, not
   if (slices.length > 1) {
     for (const issue of issues) {
       if ((leased(issue) && !handover) || issue.files.length || issue.resources.length) continue;
-      need(false, `${issue.id} declares no Files or Resources, and ${slices.length} slices are in play (${slices.map((x) => x.tag).join(', ')}): across slices only leases hold, and a lease holds only what its issue declares — declare them first: jarl.mjs files ${issue.id} <path>,… or jarl.mjs field ${issue.id} Resources "<name>, …"${nothing}`);
+      need(false, `${issue.id} declares no Files or Resources, and ${slices.length} slices are in play (${slices.map((x) => x.tag).join(', ')}): across slices only leases hold, and a lease holds only what its issue declares — declare them first: jarl.mjs field ${issue.id} Files <path>,… or jarl.mjs field ${issue.id} Resources "<name>, …"${nothing}`);
     }
   }
   // What the other leases hold: each file key and each resource, with the issue whose lease holds it.
@@ -1002,14 +1105,19 @@ function emptyOwnField(root, rawIds, name, flags) {
 // field <ids> resources "a, b": the exclusive resources an issue holds for the whole life of its lease (a port, a database
 // server, the machine's load), loop-wide and not files. Names are single words; an empty value clears the field. Only next
 // reads it: check, queue and the file rules do not.
-function setResources(root, rawIds, value, flags) {
-  needNoLeaseFlags(flags, 'the field Resources');
-  need(value !== undefined, 'field <ids> resources "<name>[, <name>...]" — the value is required (--clear empties the field)');
+// The names of a Resources value, checked: single words, each kept once whatever its case.
+function resourceNames(value) {
   const names = [];
   for (const n of splitList(fieldText(value))) {
-    need(/^[A-Za-z0-9._:/-]+$/.test(n), `resource names are single words of letters, digits and . _ : / - ("${n}" is not): name the thing, e.g. gate, db-server, port-8080`);
+    need(/^[A-Za-z0-9._:/-]+$/.test(n), `resource names are single words of letters, digits and . _ : / - ("${n}" is not): name the thing, e.g. jarl.mjs field <ids> Resources gate,db-server,port-8080`);
     if (!names.some((x) => x.toLowerCase() === n.toLowerCase())) names.push(n);
   }
+  return names;
+}
+function setResources(root, rawIds, value, flags) {
+  needNoLeaseFlags(flags, 'the field Resources');
+  need(value !== undefined, 'the field Resources needs a value: jarl.mjs field <ids> Resources "<name>[, <name>...]", or --clear to empty it');
+  const names = resourceNames(value);
   const by = editorOf(flags.by);
   const issues = issuesFor(root, rawIds);
   logChanges(root, issues.map((issue) => fieldLine(issue.id, 'Resources', names.join(', '), heldField(issue, 'Resources'), by)));

@@ -16,7 +16,7 @@ import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as R from './record.mjs';
 import {
-  need, resetCaches, withLock, readText, isEntry, cmdSet, cmdField, setRouteOf, eachIssue, cmdBody, cmdSource, cmdAfter, cmdFiles, cmdRepo, cmdRound, cmdTag, cmdPrio,
+  need, resetCaches, withLock, readText, isEntry, cmdSet, cmdField, setRouteOf, eachIssue, cmdRound,
   cmdProfile, cmdArchive, cmdList, cmdNext, renderNext, cmdMode, cmdClose, cmdCheck, cmdBranches, cmdTips, cmdQueue,
   cmdChangelog, cmdHandoffRead, cmdHandoffWrite, cmdReport, cmdImport, cmdSources, cmdAnswerMany, cmdModels, renderModels,
   issuesNaming, questionFor, cmdGoal, cmdGoalSet, cmdRepoBase, whereOf, cmdVerify, renderVerify, renderCheckNotes,
@@ -72,47 +72,37 @@ commands:
                                                  number: its file is renamed and its first line rewritten; every log
                                                  line about it names its key, so it keeps them, and no line is
                                                  rewritten (verify names the files and their keys)
-  body <ids> [--title "<t>"] [--where "<w>"] [--what "<w>"] [--why "<w>"] [--acceptance "<line>"]... [--changelog "<entry>"]...
-      [--section "<Heading>=<text>"]... [--by who] [--append]
-                                                 the description commands, body to after below: every part of an issue's
-                                                 description is changed by one of them, and each change writes one log
-                                                 line per issue and part with what the part held before and, when --by
-                                                 names one, who changed it (a value it already holds writes none); the history (evidence, verdicts,
-                                                 merges, rulings, answers) has no edit, only retract and decide
-                                                 --supersedes, and the status moves only with set. body sets or
-                                                 replaces the title (the file keeps its name), the Where field and the
-                                                 What, Why, Acceptance and Changelog sections, and a section the
-                                                 profile declares; with --append, the text is added after what the
-                                                 section holds (a list gains its new items), and the title and the
-                                                 Where field are not appended to
-  field <ids> <name> "<value>" | <ids> <name> --clear [--by who]
-                                                 write one header field of the description on every id: Title,
-                                                 Priority, Tier, Kind, Found by, Tags, Files, Repo, After, Source,
-                                                 Where, Resources (the exclusive resources the issue holds while its
-                                                 lease lasts, as "a, b", loop-wide names; next never offers two issues
-                                                 holding one), Person and Check when (whom a wait is held by and when to
-                                                 check it: Kind becomes wait only once both are written, and neither
-                                                 is emptied on a wait) or a field the loop's profile declares, each checked as
-                                                 its own command checks it (Priority, Tier, Kind and a declared field
-                                                 against their values); a list field (Tags, Files, Repo, After, Source)
-                                                 is replaced whole; --clear empties an optional one, and Title,
-                                                 Priority, Tier, Kind, Found by and a required field are never empty;
+  field <ids> <name> ["<value>"] [--add | --remove | --clear] [--by who]
+                                                 change one part of the description of every id, the one command for
+                                                 it: the header fields Title (the file keeps its name), Priority (1|2|3),
+                                                 Tier, Kind, Found by, Tags, Files, Repo (as --repo below), After (the
+                                                 issues it waits on: next does not offer it until each is done or
+                                                 dropped), Source (<dir>#<id>), Where, Resources (the exclusive resources
+                                                 the issue holds while its lease lasts, loop-wide names; next never
+                                                 offers two issues holding one), Person and Check when (whom a wait is
+                                                 held by and when to check it: Kind becomes wait only once both are
+                                                 written, and neither is emptied on a wait), a field the loop's profile
+                                                 declares, and the sections What, Why, Acceptance, Changelog and the ones
+                                                 the profile declares; a name is matched in any case, and one with a
+                                                 space is quoted ("Found by"). A value alone replaces what the part
+                                                 holds; --add adds the items of a list field (Tags, Files, Repo, After,
+                                                 Source, Resources) or the value after what a section holds (Acceptance
+                                                 and Changelog gain lines, the others a paragraph); --remove takes items
+                                                 off a list field; --clear empties an optional part (Title, Priority,
+                                                 Tier, Kind, Found by and a required field are never empty). A list
+                                                 field takes a comma list, and Acceptance and Changelog one item per
+                                                 line. Each value is checked as at filing (Tier and Kind against the
+                                                 profile; one slice:<coordinator> tag per issue, which puts it in that
+                                                 coordinator's slice), and each change writes one log line per issue
+                                                 and part with what the part held before and, when --by names one, who
+                                                 changed it (a value it already holds writes none); the history
+                                                 (evidence, verdicts, merges, rulings, answers) has no edit, only
+                                                 retract and decide --supersedes, and the status moves only with set;
                                                  any other name is refused with the names field writes and the command
                                                  that writes it instead
-  tag <ids> +a -b ... [--by who]                 add and remove tags; slice:<coordinator> puts the issue in that
-                                                 coordinator's slice, and an issue is in one slice at most: a second
-                                                 slice: tag is refused (here, in field Tags, new and import)
-  prio <ids> 1|2|3 [--by who]                    set priority
-  files <ids> p,q,... [--by who]                 declare the files the issues touch
-  repo <ids> <name|path>[,<name|path>...] [--by who] | <ids> --clear [--by who] | --base <name> <branch>
-                                                 name the repository the issue's code lives in — its name, its checkout,
-                                                 a worktree of it or a file inside it, several as one comma list — or
-                                                 remove the field; --base changes the base branch a declared repository
-                                                 is held against; every change is logged (see --repo below)
-  source <ids> <dir>#<id>,... [--by who]         set the Source field of issues filed by hand
-  after <ids> <after-ids> | <ids> --clear [--by who]
-                                                 the issues these wait on: next does not offer one until each is
-                                                 done or dropped, and status counts it as waiting
+  base <name> <branch> [--by who]                the base branch a declared repository is held against, changed
+                                                 with a log line that says what it was (a repository is declared
+                                                 when an issue first names it; see --repo below)
   import <findings.json> [--source <dir>] [--kind k] [--prio 1|2|3] [--tier t] [--tags a,b] [--repo <name|path>]
       [--found-by who] [--only <finding ids>] [--adopt] [--dry-run] [--field "<Name>=<value>"]... [--by who]
                                                  one issue per finding, with Source: <dir>#<finding id>; a finding
@@ -241,7 +231,7 @@ commands:
                                                  limit takes effect at the next round
   tick <id> <line> --by owner                    the owner's tick of an acceptance line only he ticks, by its number among
                                                  the issue's acceptance lines: a line written "[owner] <line> · material:
-                                                 <path, link or artifact> · check: <what to check>" (new and body refuse a
+                                                 <path, link or artifact> · check: <what to check>" (new and field refuse a
                                                  line so marked that names no material or nothing to check, and its first
                                                  write raises the record format to 3); done refuses while such a line is
                                                  not ticked; tick refuses a name other than the owner's, and a line whose
@@ -447,7 +437,7 @@ git merges (not loop commands: no --root, no lock, no tool of the MCP server):
                                                  so the drivers run whatever the clone holds: the decisions driver, and
                                                  with --yg Yggdrasil's log and lock drivers too
 
-<ids> (body, source, after, files, repo, round, evidence, review, set, field, tag, prio, merged, changelog): one id, or several as one comma list with ranges — 12,13,14 or
+<ids> (field, round, evidence, review, set, merged, changelog): one id, or several as one comma list with ranges — 12,13,14 or
 203-206,209. Every id and every precondition is checked before anything is written, so the call lands on
 all of them or on none, with one log line per issue.
 
@@ -464,15 +454,14 @@ note or a title that starts with -- after it, and every flag (--root too) before
 command reads are an error.
 
 Lists (the <ids> above; new's --tags, --files, --repo, --source, --after; import's --tags, --repo, --only;
-decide's --settles; the paths of files, the references of source, the ids of after, the repositories of repo):
-one item, or several as one comma list (a,b); a list flag also repeats, and files, source, after and repo
-also take their items as separate words; a tool takes the same text or a list of strings, one item each.
+decide's --settles; the value field gives Tags, Files, Repo, After and Source): one item, or several as one
+comma list (a,b); a list flag also repeats; a tool takes the same text or a list of strings, one item each.
 An item that starts with - is refused (it is a flag in the wrong place). A list written as text is refused:
 an item that begins or ends with a quote mark, a name (an id, a tag, a reference, a finding id) that holds
 a bracket or a quote, and a path whose brackets do not pair up ([a, b]) or that is a quoted or empty list
 in brackets (["a"], []). A path whose brackets pair up is a name: [1], src/[id]/page.tsx, [...slug].
 
---by who on init, new, import, evidence, set, merged, round, ask, log, goal, archive, mode and close: the writer of
+--by who on init, new, import, evidence, set, merged, round, ask, log, goal, base, archive, mode and close: the writer of
 that one call, written into every log line the call writes, right after the stamp ("- <stamp> by <who> · ..."); the
 first such line raises the loop's record format to 3, and where a composer keeps the format the call is refused with
 nothing written. Nothing names a writer for a call that names none: no server, variable or other call does, and an
@@ -525,19 +514,15 @@ export const COMMAND_FLAGS = {
     where: 'value', what: 'value', why: 'value', acceptance: 'many', source: 'many', after: 'many', changelog: 'many', template: 'value',
     field: 'many', section: 'many', person: 'value', 'check-when': 'value', by: 'value',
   },
-  body: { title: 'value', where: 'value', what: 'value', why: 'value', acceptance: 'many', changelog: 'many', section: 'many', by: 'value', append: 'bool' },
   import: {
     source: 'value', kind: 'value', prio: 'value', tier: 'value', tags: 'many', repo: 'many', 'found-by': 'value',
     only: 'many', adopt: 'bool', 'dry-run': 'bool', field: 'many', by: 'value',
   },
   sources: { source: 'value' },
-  source: { by: 'value' },
-  after: { clear: 'bool', by: 'value' },
   evidence: { ran: 'many', saw: 'many', file: 'value', slot: 'value', by: 'value' },
-  retract: { by: 'value' }, field: { clear: 'bool', by: 'value' },
+  retract: { by: 'value' }, field: { add: 'bool', remove: 'bool', clear: 'bool', by: 'value' }, base: { by: 'value' },
   list: { status: 'value', kind: 'value', tag: 'value', prio: 'value', grep: 'value', match: 'many', all: 'bool' },
-  show: { full: 'bool' }, set: { branch: 'value', worker: 'value', model: 'value', worktree: 'value', handover: 'bool', header: 'bool', by: 'value' }, tag: { by: 'value' }, prio: { by: 'value' }, files: { by: 'value' },
-  repo: { clear: 'bool', base: 'bool', by: 'value' },
+  show: { full: 'bool' }, set: { branch: 'value', worker: 'value', model: 'value', worktree: 'value', handover: 'bool', header: 'bool', by: 'value' },
   next: { limit: 'value', all: 'bool', as: 'value', slice: 'value' },
   review: { by: 'value', model: 'value', relayed: 'bool' }, round: { findings: 'value', by: 'value' }, tick: { by: 'value' },
   models: { by: 'value', with: 'many', archives: 'bool' },
@@ -579,6 +564,7 @@ export function parseArgs(argv) {
       positional.push(a);
       if (cmd === undefined) {
         cmd = a;
+        if (Object.hasOwn(REPLACED_COMMANDS, cmd)) throw new Error(replacedRefusal(cmd, argv.slice(i + 1)));
         need(COMMAND_FLAGS[COMMAND_ALIASES[cmd] ?? cmd], `unknown command: ${cmd}\n${USAGE}`);
       }
       continue;
@@ -622,10 +608,10 @@ export function parseArgs(argv) {
 // CLI and the tools. A name ending in ? may be left out; one ending in ... takes any number of words (tag's
 // +a -b, sources' findings files) and has no upper bound. A command's arity is how many names it has.
 export const COMMAND_ARGS = {
-  init: ['goal'], new: ['title'], renumber: ['id'], body: ['id'], import: ['file'], sources: ['files...'], source: ['id', 'refs...'],
-  after: ['id', 'ids...'], evidence: ['ids', 'text?'], retract: ['id', 'what', 'reason'], field: ['ids', 'name', 'value?'],
+  init: ['goal'], new: ['title'], renumber: ['id'], import: ['file'], sources: ['files...'],
+  evidence: ['ids', 'text?'], retract: ['id', 'what', 'reason'], field: ['ids', 'name', 'value?'], base: ['name', 'branch'],
   list: [], show: ['id'], set: ['ids', 'status', 'why?'],
-  merged: ['ids'], tag: ['ids', 'ops...'], prio: ['ids', 'priority'], files: ['id', 'paths...'], repo: ['id', 'path...'],
+  merged: ['ids'],
   next: [], review: ['ids', 'verdict', 'findings'], round: ['id', 'what'], tick: ['id', 'line'], models: [], scope: ['id?'], branches: [],
   ask: ['question'], answer: ['id', 'answer?'], resume: [], handoff: ['action?'], log: ['event'],
   decide: ['slug', 'ruling'], decisions: [], goal: [], status: [], archive: ['slug'], report: [], tips: [], queue: [],
@@ -637,22 +623,16 @@ export const COMMAND_SUMMARY = {
   init: 'Open a loop: create .jarl/ with the goal, out of git by default, committed or permanent when asked.',
   new: 'File an issue under the next free number, with its fields and its What, Why and Acceptance; a promise (kind promise) or a wait on an outside person (kind wait, with person and check-when).',
   renumber: 'Give a free number to one of the issue files that carry one number after a merge, the one with the key named, keeping every line of the log written about it.',
-  body: 'Set or replace the title, the Where field and the What, Why, Acceptance, Changelog and profile sections of issues, or add to those sections with append, logging what each part held and who changed it when named.',
   import: 'File one issue per finding of a findings file, skipping findings already filed.',
   sources: 'Per findings report: its findings, the issues filed from them and their status.',
-  source: 'Set the Source field of issues filed by hand.',
-  after: 'Set or clear the issues these wait on before next offers them.',
   evidence: 'Append a free-text note, or checkable rows of what ran and what it printed, to issues; or record a file as an attachment of a slot (--file, --slot).',
   retract: 'Take back the newest approve of an issue (what: review), one evidence row by its number (what: the number) or one evidence note (what: note-<n>), by an entry that says who and why.',
-  field: 'Write one header field of the description on issues (Title, Priority, Tier, Kind, Found by, Tags, Files, Repo, After, Source, Where, Resources, Person, Check when or a profile field), or empty an optional one with clear, logging what it held and who changed it when named.',
+  field: 'Change one part of the description of issues, a header field (Title, Priority, Tags, Files, After and the rest) or a section (What, Why, Acceptance, Changelog): a value replaces it, add and remove change the items of a list or add to a section, clear empties it; each change logs what the part held and who changed it when named.',
+  base: 'Change the base branch a declared repository is held against, logging what it was.',
   list: 'List the issues, the unfinished ones by default, filtered by status, kind, tag, priority or a field.',
   show: 'Print one issue as the done gate sees it (its current window, rows numbered), or the whole file with --full.',
   set: 'Change the status of issues, with the reason logged.',
   merged: 'Record a merge (sha, repository, the check that decided it, CI state) on issues and remove their finished worktree and branch when that is safe, or move the CI state of issues already merged.',
-  tag: 'Add and remove tags on issues.',
-  prio: 'Set the priority of issues.',
-  files: 'Declare the files issues touch.',
-  repo: 'Name the repository (or several) the code of issues lives in, or clear it.',
   next: 'The open issues ready to start: no file shared with work in progress, every After issue settled, no open question on them, never a promise or a wait; all adds the held and waiting ones in groups; as lists what is on the owner, the jarl or a named person (a promise on its maker, a wait on its person), each line with its command.',
   review: 'Record a reviewer\'s verdict (approve or changes) on issues, with the reviewer and the findings.',
   round: 'Record one red round on issues; every third (or the count the goal sets for the kind of issue) prints the takeover block for a fresh worker.',
@@ -688,11 +668,9 @@ export const LIST_FIELDS = {
   new: { tags: 'name', files: 'path', repo: 'path', source: 'name', after: 'name' },
   import: { tags: 'name', repo: 'path', only: 'name' },
   decide: { settles: 'name' },
-  body: { id: 'name' }, round: { id: 'name' }, answer: { id: 'name' },
-  source: { id: 'name', refs: 'name' }, after: { id: 'name', ids: 'name' },
-  files: { id: 'name', paths: 'path' }, repo: { id: 'name', path: 'path' },
+  round: { id: 'name' }, answer: { id: 'name' },
   evidence: { ids: 'name' }, field: { ids: 'name' }, set: { ids: 'name' }, merged: { ids: 'name' },
-  tag: { ids: 'name', ops: 'ops' }, prio: { ids: 'name' }, review: { ids: 'name' }, changelog: { ids: 'name' },
+  review: { ids: 'name' }, changelog: { ids: 'name' },
 };
 const QUOTED = /^["'`]|["'`]$/;
 // Whether one item of a list is a piece of a list written out as text: it begins or ends with a quote mark, or, for a
@@ -723,35 +701,15 @@ export function listItems(value, kind, field) {
   need(!items.some((s) => piecesOfListText(s, kind)), `${field} takes its items one by one: one item, a comma list (a,b) or a list of strings; ${kind === 'name' ? 'a list written as text, an item in quotes or a name holding a bracket or a quote mark' : 'a list written as text or an item in quotes'} is refused — got ${JSON.stringify(text)}`);
   return items;
 }
-// A tag operation is +name or -name, and its name may be a comma list: +a,b adds a and b, and -a,b takes both off. Each
-// name becomes an operation of its own, and the tag command reads one name per operation. A +name is checked as an item
-// of a list (no quotes, brackets or leading dash). A -name is split at its commas and checked for a leading dash only:
-// it matches the tag as it is stored, so a tag stored with brackets or quotes can still be removed. An operation with no
-// name in it is refused.
-function tagOp(op) {
-  const sign = op.charAt(0);
-  if (sign !== '+' && sign !== '-') return [op];   // the tag command refuses it, naming the form
-  const names = sign === '+' ? listItems(op.slice(1), 'name', 'tag') : op.slice(1).split(',').map((s) => s.trim()).filter(Boolean);
-  const dashed = names.filter((s) => s.startsWith('-'));
-  need(dashed.length === 0, `tag: an item cannot start with - (got ${dashed.map((s) => JSON.stringify(s)).join(' ')}): everything after a bare -- is an argument, so flags such as --root go before it`);
-  need(names.length > 0, `tags are +name or -name, not "${op}"`);
-  return names.map((name) => sign + name);
-}
 // A command's arguments and flags with every list field read by listItems and written back as the one comma list the
-// commands read: a list argument that is last takes every word left (files 3 a.mjs b.mjs), and a list flag repeats.
-// repo --base takes a repository name and a branch, not a list, and no word beyond them.
+// commands read: a list argument that is last takes every word left, and a list flag repeats.
 function readLists(cmd, rest, flags) {
   const fields = LIST_FIELDS[cmd];
-  if (cmd === 'repo' && flags.base) {
-    need(rest.length <= 2, `repo --base takes a repository name and a branch — unexpected: ${rest.slice(2).map((x) => JSON.stringify(x)).join(' ')} (everything after a bare -- is an argument, so flags such as --root go before it)`);
-    return { rest, flags };
-  }
   if (!fields) return { rest, flags };
   const out = { rest: [...rest], flags: { ...flags } };
   COMMAND_ARGS[cmd].forEach((a, at) => {
     const field = a.replace(/[?.]+$/, '');
     const kind = fields[field];
-    if (kind === 'ops') { out.rest.splice(at, Infinity, ...rest.slice(at).flatMap(tagOp)); return; }
     if (kind === undefined) return;
     const given = a.endsWith('...') ? (rest.length > at ? rest.slice(at) : undefined) : rest[at];
     if (given === undefined) return;
@@ -763,18 +721,74 @@ function readLists(cmd, rest, flags) {
   return out;
 }
 
-// The value of field for a header field that holds a list (Tags, Files, Repo, After, Source), read by the same rule as the
-// commands that write those fields; any other field's value is one text, passed as it is.
+// The value of field for a header field that holds a list (Tags, Files, Repo, After, Source), read by the one rule of a
+// list; any other part's value is one text, passed as it is. Items to remove are split at their commas and checked for a
+// leading dash only: they match an item as it is stored, so an item stored with brackets or quotes can still be taken off.
 const FIELD_LISTS = { tags: 'name', files: 'path', repo: 'path', after: 'name', source: 'name' };
-function fieldListValue(name, value) {
+function fieldListValue(name, value, remove) {
   const kind = FIELD_LISTS[String(name ?? '').trim().toLowerCase()];
-  return kind === undefined || value === undefined ? value : listItems(value, kind, String(name).trim()).join(',');
+  if (kind === undefined || value === undefined) return value;
+  if (!remove) return listItems(value, kind, String(name).trim()).join(',');
+  const items = [].concat(value).map(String).join(',').split(',').map((s) => s.trim()).filter(Boolean);
+  need(!items.some((s) => s.startsWith('-')), `${String(name).trim()}: an item cannot start with - (everything after a bare -- is an argument, so flags such as --root go before it)`);
+  return items.join(',');
 }
+
+// The commands the command line and the tools do not have, each with the call that does what was asked: the refusal is
+// one line that ends with that call, built from the words given where they say enough, so nothing is left to guess.
+// Every part of an issue's description is written by field, a repository's base by base, and a branch is measured by scope.
+const quoted = (v) => (/^[\w.:/#@,+-]+$/.test(String(v)) ? String(v) : JSON.stringify(String(v)));
+function wordsOf(args, bools) {
+  const pos = [];
+  const flags = {};
+  for (let i = 0; i < args.length; i += 1) {
+    const a = args[i];
+    if (a.startsWith('--') && a.length > 2) {
+      const [name, inline] = a.slice(2).split(/=(.*)/s);
+      if (bools.includes(name)) flags[name] = true;
+      else (flags[name] = flags[name] || []).push(inline ?? args[(i += 1)]);
+    } else if (a !== '--') pos.push(a);
+  }
+  return { pos, flags };
+}
+const SECTION_FLAGS = { title: 'Title', where: 'Where', what: 'What', why: 'Why', acceptance: 'Acceptance', changelog: 'Changelog' };
+export const REPLACED_COMMANDS = Object.freeze({
+  prio: (args) => { const { pos } = wordsOf(args, []); return `the priority is a field: jarl.mjs field ${pos[0] ?? '<ids>'} Priority ${pos[1] ?? '<1|2|3>'}`; },
+  tag: (args) => {
+    const { pos } = wordsOf(args, []);
+    const ids = pos[0] ?? '<ids>';
+    const add = pos.slice(1).filter((o) => o.startsWith('+')).map((o) => o.slice(1));
+    const remove = pos.slice(1).filter((o) => o.startsWith('-')).map((o) => o.slice(1));
+    const calls = [...(remove.length ? [`jarl.mjs field ${ids} Tags --remove ${remove.join(',')}`] : []), ...(add.length ? [`jarl.mjs field ${ids} Tags --add ${add.join(',')}`] : [])];
+    return `tags are a field: ${calls.length ? calls.join(', then ') : `jarl.mjs field ${ids} Tags --add <tag> (or --remove <tag>)`}`;
+  },
+  files: (args) => { const { pos } = wordsOf(args, []); return `the files are a field: jarl.mjs field ${pos[0] ?? '<ids>'} Files ${pos.length > 1 ? quoted(pos.slice(1).join(',')) : '<path>,<path>'}`; },
+  source: (args) => { const { pos } = wordsOf(args, []); return `the source is a field: jarl.mjs field ${pos[0] ?? '<ids>'} Source ${pos.length > 1 ? quoted(pos.slice(1).join(',')) : '<dir>#<id>'}`; },
+  after: (args) => { const { pos, flags } = wordsOf(args, ['clear']); return `the issues an issue waits on are a field: jarl.mjs field ${pos[0] ?? '<ids>'} After ${flags.clear ? '--clear' : pos.length > 1 ? pos.slice(1).join(',') : '<ids>'}`; },
+  repo: (args) => {
+    const { pos, flags } = wordsOf(args, ['clear', 'base']);
+    if (flags.base) return `a repository's base is changed by base: jarl.mjs base ${pos[0] ?? '<name>'} ${pos[1] ?? '<branch>'}`;
+    return `the repository is a field: jarl.mjs field ${pos[0] ?? '<ids>'} Repo ${flags.clear ? '--clear' : pos.length > 1 ? quoted(pos.slice(1).join(',')) : '<name|path>'}`;
+  },
+  body: (args) => {
+    const { pos, flags } = wordsOf(args, ['append']);
+    const ids = pos[0] ?? '<ids>';
+    const calls = [];
+    for (const [flag, part] of Object.entries(SECTION_FLAGS)) {
+      const given = flags[flag];
+      if (given === undefined) continue;
+      calls.push(`jarl.mjs field ${ids} ${part} ${quoted(given.join('\n'))}${flags.append && flag !== 'title' && flag !== 'where' ? ' --add' : ''}`);
+    }
+    for (const s of flags.section || []) { const at = String(s).indexOf('='); calls.push(`jarl.mjs field ${ids} ${quoted(String(s).slice(0, at))} ${quoted(String(s).slice(at + 1))}${flags.append ? ' --add' : ''}`); }
+    return `every part of the description is written by field: ${calls.length ? calls.join(', then ') : `jarl.mjs field ${ids} <part> "<value>" (Title, Where, What, Why, Acceptance, Changelog or a section the profile declares; --add adds to a section)`}`;
+  },
+});
+export const replacedRefusal = (cmd, args = []) => `${cmd} is not a command; ${REPLACED_COMMANDS[cmd](args)}`;
 
 const ARITY = Object.fromEntries(Object.entries({ ...COMMAND_ARGS, ...Object.fromEntries(Object.entries(COMMAND_ALIASES).map(([name, c]) => [name, COMMAND_ARGS[c]])) }).filter(([, a]) => !a.some((n) => n.endsWith('...'))).map(([c, a]) => [c, a.length]));
 
 // The commands that write: each runs under .jarl/.lock (see withLock).
-export const MUTATING = new Set(['init', 'new', 'renumber', 'body', 'import', 'source', 'after', 'set', 'field', 'merged', 'tag', 'prio', 'files', 'repo', 'evidence', 'retract', 'review', 'round', 'tick', 'ask', 'answer', 'log', 'decide', 'goal', 'archive', 'mode', 'close']);
+export const MUTATING = new Set(['init', 'new', 'renumber', 'import', 'set', 'field', 'base', 'merged', 'evidence', 'retract', 'review', 'round', 'tick', 'ask', 'answer', 'log', 'decide', 'goal', 'archive', 'mode', 'close']);
 
 // git's side of the loop: the merge driver git runs, and the settings a merger passes it. Neither reads a loop.
 function mergeDriverMain(args) {
@@ -903,36 +917,26 @@ export function dispatch(root, commandName, rest, flags) {
       // The command line says caller 'cli': the notes (the tier a new issue got) are for it, never for a library caller.
       case 'new': out = R.newIssue(root, rest[0], { ...flags, caller: 'cli', width: undefined }); out = { ...out, ...describeNew(out.file) }; text = renderNewReply(out); warn = out.note ? [out.note] : []; break;
       case 'renumber': out = cmdRenumber(root, rest[0], flags); text = `${out.from} → ${out.id} · issues/${basename(out.file)} · key ${out.key}`; break;
-      // body, source, after, files, repo and round take the list grammar: eachIssue checks every id before it writes one.
-      case 'body': out = eachIssue(root, rest[0], (id, dry) => cmdBody(root, id, { ...flags, caller: 'cli' }, dry)); text = each(out, (o) => `${o.id} body: ${o.set.join(', ')}`); warn = [].concat(out).filter((o) => o.note).map((o) => o.note); break;
-      case 'source': out = eachIssue(root, rest[0], (id, dry) => cmdSource(root, id, rest[1], dry, flags.by)); text = each(out, (o) => `${o.id} source: ${o.sources.join(', ')}`); break;
-      case 'after': out = eachIssue(root, rest[0], (id, dry) => cmdAfter(root, id, rest[1], { clear: flags.clear === true, dry, by: flags.by })); text = each(out, (o) => `${o.id} after: ${o.cleared ? 'cleared' : o.after.join(', ')}`); break;
       case 'import': out = cmdImport(root, rest[0], flags); text = renderImport(out); break;
       case 'sources': out = cmdSources(root, rest, flags); text = renderSources(out); break;
       case 'list': out = cmdList(root, flags); text = renderList(out, R.loadProfile(root)); break;
       case 'show': { const i = R.findIssue(root, rest[0]); need(i, `no such issue: ${rest[0]}`); const attachments = attachmentStates(root, i); out = { ...i, evidenceRows: evidenceTable(i.sections.evidence).rows.map(({ n, ran, saw, retracted }) => ({ n, ran, saw, retracted })), where: whereOf(root, i), ...(attachments.length ? { attachments } : {}) }; text = issueView(root, i, { full: Boolean(flags.full) }); break; }
       case 'set':
+        // A field is written by field, never by set: the refusal is the call that writes it.
         if (setRouteOf(root, rest[1]) === 'field') {
-          const clearing = typeof rest[2] === 'string' && rest[2].trim() === '';
-          aliases.push(`note: ${rest[1]} is a field, not a status — write it with: field <ids> ${rest[1]} ${clearing ? '--clear' : '"<value>"'}`);
-          out = cmdField(root, rest[0], rest[1], clearing ? undefined : rest[2], { ...flags, clear: clearing });
-        } else out = setCommand(root, rest[0], rest[1], rest[2], flags);
-        text = each(out, (o) => (o.field ? renderField(o) : o.header ? `header of ${o.id} rewritten from the log: ${o.status}` : `${o.id} → ${o.status}${o.branch ? ` · ${o.branch}` : ''}${o.worker ? ` · ${o.worker}` : ''}${o.handover ? ' · handed over' : ''}`)); warn = [].concat(out).filter((o) => o.note).map((o) => `note: ${o.id} ${o.note}`); break;
-      case 'field': out = cmdField(root, rest[0], rest[1], fieldListValue(rest[1], rest[2]), flags); text = each(out, renderField); break;
-      // tag and prio run under the lock dispatch holds, with who changed them; record.setTags and setPriority are the same writes.
-      case 'tag': out = cmdTag(root, rest[0], rest.slice(1), flags.by); text = each(out, (o) => `${o.id} tags: ${o.tags.join(', ') || '(none)'}`); break;
-      case 'prio': out = cmdPrio(root, rest[0], rest[1], flags.by); text = each(out, (o) => `${o.id} priority ${o.priority}`); break;
-      case 'files': out = eachIssue(root, rest[0], (id, dry) => cmdFiles(root, id, rest[1], dry, flags.by)); text = each(out, (o) => `${o.id} files: ${o.files.join(', ') || '(none)'}`); break;
-      case 'repo':
-        if (flags.base) {
-          need(!flags.clear && flags.by === undefined, 'repo --base takes a repository name and a branch, and no --clear or --by: it changes how a repository is declared, not an issue\'s description');
-          out = cmdRepoBase(root, rest[0], rest[1]);
-          text = out.unchanged ? `${out.name} base: ${out.base} (unchanged)` : `${out.name} base: ${out.base} (was ${out.was ?? 'none'})`;
-        } else {
-          out = eachIssue(root, rest[0], (id, dry) => cmdRepo(root, id, rest[1], { clear: flags.clear === true, dry, by: flags.by }));
-          text = each(out, (o) => `${o.id} repo: ${o.cleared ? 'cleared' : o.repo}${o.unchanged ? ' (unchanged)' : ''}`);
-          warn = [].concat(out).flatMap((o) => (o.notes || []).map((n) => `note: ${n}`));
+          const clearing = rest[2] === undefined || (typeof rest[2] === 'string' && rest[2].trim() === '');
+          throw new Error(`${rest[1]} is a field, not a status: jarl.mjs field ${rest[0] ?? '<ids>'} ${/\s/.test(String(rest[1]).trim()) ? `"${String(rest[1]).trim()}"` : rest[1]} ${clearing ? '--clear' : quoted(rest[2])}`);
         }
+        out = setCommand(root, rest[0], rest[1], rest[2], flags);
+        text = each(out, (o) => (o.header ? `header of ${o.id} rewritten from the log: ${o.status}` : `${o.id} → ${o.status}${o.branch ? ` · ${o.branch}` : ''}${o.worker ? ` · ${o.worker}` : ''}${o.handover ? ' · handed over' : ''}`)); warn = [].concat(out).filter((o) => o.note).map((o) => `note: ${o.id} ${o.note}`); break;
+      case 'field':
+        out = cmdField(root, rest[0], rest[1], fieldListValue(rest[1], rest[2], flags.remove === true), { ...flags, caller: 'cli' });
+        text = each(out, renderField);
+        warn = [].concat(out).flatMap((o) => (o.note ? [o.note] : []).concat((o.notes || []).map((n) => `note: ${n}`)));
+        break;
+      case 'base':
+        out = cmdRepoBase(root, rest[0], rest[1]);
+        text = out.unchanged ? `${out.name} base: ${out.base} (unchanged)` : `${out.name} base: ${out.base} (was ${out.was ?? 'none'})`;
         break;
       case 'evidence':
         if (flags.retract !== undefined) aliases.push(`note: an evidence row is retracted with: retract <id> ${flags.retract} --by <who> "<reason>"`);
@@ -980,7 +984,7 @@ export function dispatch(root, commandName, rest, flags) {
       case 'status': out = R.statusData(root, flags); text = renderStatus(out, R.loadProfile(root)); ({ out, text } = endWithAsker(root, flags, out, text)); break;
       case 'tips': out = cmdTips(root); text = renderTips(out); break;
       case 'queue': out = cmdQueue(root, flags); text = renderQueue(out); break;
-      case 'changelog': out = cmdChangelog(root, rest[0], flags); text = out.text || '(no changelog fragment on these issues)'; warn = out.missing.length ? [`note: no changelog fragment: ${out.missing.join(', ')} — record one with: jarl.mjs body <id> --changelog "Added: …"`] : []; break;
+      case 'changelog': out = cmdChangelog(root, rest[0], flags); text = out.text || '(no changelog fragment on these issues)'; warn = out.missing.length ? [`note: no changelog fragment: ${out.missing.join(', ')} — record one with: jarl.mjs field <id> Changelog "Added: …"`] : []; break;
       case 'archive': out = cmdArchive(root, rest[0], { caller: 'cli' }); text = `archived → ${out.archived}${out.leftOpen.length ? ` · ${out.leftOpen.length} still open or in progress: ${out.leftOpen.join(', ')}` : ''} · open a new loop with: jarl.mjs init "<goal>"`; break;
       case 'mode': out = cmdMode(root, rest[0]); text = 'now permanent · not tied to a feature branch; close keeps the directory'; break;
       case 'profile': out = cmdProfile(root, rest[0]); text = renderProfile(out); break;
@@ -1003,7 +1007,7 @@ export function dispatch(root, commandName, rest, flags) {
 // place after the stamp, under record format 3. The commands whose --by is part of what they record (the author of a
 // description change, the reviewer, who answered, ruled or retracted) keep it there: set naming a field and evidence
 // taking a row back are those too.
-export const WRITER_COMMANDS = Object.freeze(['init', 'new', 'renumber', 'import', 'evidence', 'set', 'merged', 'round', 'ask', 'log', 'goal', 'archive', 'mode', 'close']);
+export const WRITER_COMMANDS = Object.freeze(['init', 'new', 'renumber', 'import', 'evidence', 'set', 'merged', 'round', 'ask', 'log', 'goal', 'base', 'archive', 'mode', 'close']);
 function writerOf(root, cmd, rest, flags) {
   if (!WRITER_COMMANDS.includes(cmd) || flags.by === undefined) return null;
   if (cmd === 'evidence' && flags.retract !== undefined) return null;
@@ -1027,7 +1031,9 @@ function endWithAsker(root, flags, out, text) {
 }
 
 // The line each command prints for one result.
-const renderField = (o) => `${o.id} ${o.field}: ${o.value || '(cleared)'}`;
+// A section's text on one line, cut where it runs long; a header field as it is.
+const FIELD_SHOWN = 120;
+const renderField = (o) => { const v = String(o.value ?? '').split('\n').map((l) => l.trim()).filter(Boolean).join(' / '); return `${o.id} ${o.field}: ${v ? (v.length > FIELD_SHOWN ? `${v.slice(0, FIELD_SHOWN)}…` : v) : '(cleared)'}`; };
 const renderEvidence = (o) => (o.retractedNote ? `${o.id} evidence note ${o.retractedNote} retracted by ${o.by}` : o.retracted ? `${o.id} evidence row ${o.retracted} retracted by ${o.by}` : o.rows ? `${o.id} evidence row${o.rows.length > 1 ? 's' : ''} recorded` : `${o.id} evidence recorded`);
 const renderReview = (o) => (o.retracted ? `${o.id} review retracted by ${o.by} (${o.kind}): the approve ${o.retracted}` : `${o.id} review ${o.verdict}${o.by ? ` by ${o.by} (${o.kind})` : ''} · acceptance: ${o.acceptance ? o.acceptance.split('\n').join(' / ') : '(none on file)'}${o.next ? ` · next: ${o.next}` : ''}`);
 

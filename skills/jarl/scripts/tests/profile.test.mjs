@@ -357,29 +357,31 @@ test('an issue written with the aliased heading by another tool counts its accep
   writeFileSync(path, readFileSync(path, 'utf8').replace('## Acceptance — evidence\n\n', '## Acceptance — evidence\n- one\n- two\n'));
   jarl(root, 'set', '1', 'running', 'go');
   assert.deepEqual(JSON.parse(jarl(root, 'status', '--json')).noAcceptance, []);
-  jarl(root, 'body', '1', '--acceptance', 'three', '--section', 'Ports=in: a; out: b');
+  jarl(root, 'field', '1', 'Acceptance', 'three');
+  jarl(root, 'field', '1', 'Ports', 'in: a; out: b');
   const text = readFileSync(path, 'utf8');
-  assert.match(text, /## Acceptance — evidence\nthree\n\n## Plan/, 'body writes under the heading the file has');
+  assert.match(text, /## Acceptance — evidence\nthree\n\n## Plan/, 'field writes under the heading the file has');
   assert.doesNotMatch(text, /^## Acceptance$/m);
   assert.match(text, /## Ports\n+in: a; out: b\n/);
-  assert.match(refuses(root, 'body', '1', '--section', 'Why=x'), /Why is not a section this loop's profile declares — it declares Plan, Ports/);
+  assert.match(refuses(root, 'field', '1', 'Nope', 'x'), /Nope is not a part of the description, which field writes: .*Plan, Ports/);
 });
 
-test('set <ids> <field> <value> writes a declared field, checked against its values, one log line per issue', () => {
+test('field <ids> <field> <value> writes a declared field, checked against its values, one log line per issue', () => {
   const root = fieldedLoop();
   jarl(root, 'new', 'a', '--field', 'Area-2=core');
   jarl(root, 'new', 'b', '--field', 'Area-2=core');
-  assert.equal(jarl(root, 'set', '1,2', 'area-2', 'cli'), '1 Area-2: cli\n2 Area-2: cli');
-  assert.match(refuses(root, 'set', '1', 'Area-2', 'web'), /Area-2 must be one of: core, cli/);
-  assert.match(refuses(root, 'set', '1', 'Area-2', ''), /Area-2 cannot be empty/);
-  assert.match(refuses(root, 'set', '1', 'Area-2'), /the value is required/);
-  jarl(root, 'set', '1', 'Note', 'see the thread');
-  jarl(root, 'set', '1', 'kind', 'fix');
+  assert.equal(jarl(root, 'field', '1,2', 'area-2', 'cli'), '1 Area-2: cli\n2 Area-2: cli');
+  assert.match(refuses(root, 'field', '1', 'Area-2', 'web'), /Area-2 must be one of: core, cli/);
+  assert.match(refuses(root, 'field', '1', 'Area-2', '--clear'), /Area-2 cannot be empty/);
+  assert.match(refuses(root, 'field', '1', 'Area-2'), /field Area-2 needs a value/);
+  jarl(root, 'field', '1', 'Note', 'see the thread');
+  jarl(root, 'field', '1', 'kind', 'fix');
   const shown = jarl(root, 'show', '1');
   assert.match(shown, /\*\*Kind:\*\* fix/);
   assert.match(shown, /\*\*Note:\*\* see the thread/);
-  assert.match(refuses(root, 'set', '1', 'kind', 'bug'), /Kind must be one of: feature, fix, chore/);
-  assert.match(refuses(root, 'set', '1', 'Note', 'x', '--worker', 'w'), /--worker goes with a status, not with the field Note/);
+  assert.match(refuses(root, 'field', '1', 'kind', 'bug'), /Kind must be one of: feature, fix, chore/);
+  assert.match(refuses(root, 'field', '1', 'Note', 'x', '--worker', 'w'), /unknown flag --worker for field/);
+  assert.equal(refuses(root, 'set', '1', 'Note', 'x').trim(), 'Note is a field, not a status: jarl.mjs field 1 Note x');
   assert.match(refuses(root, 'set', '1', 'Files', 'x'), /status must be one of: [^\n]*\n$/);
   assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /· 1 field Area-2 · cli · was core\n.*· 2 field Area-2 · cli · was core\n/);
   // A field line is not a status move: the done gate's replay does not read it as one.
@@ -522,7 +524,7 @@ test('setField matches a field name without case: a hand-written **status:** is 
   const path = join(root, '.jarl', 'issues', '1-a.md');
   writeFileSync(path, readFileSync(path, 'utf8').replace('**Status:** open', '**status:** open').replace('**Tags:** ', '**tags:** x'));
   jarl(root, 'set', '1', 'deferred', 'later');
-  jarl(root, 'tag', '1', '+y');
+  jarl(root, 'field', '1', 'Tags', '--add', 'y');
   const text = readFileSync(path, 'utf8');
   assert.equal((text.match(/^\*\*status:\*\*/gim) || []).length, 1);
   assert.match(text, /^\*\*Status:\*\* deferred$/m);

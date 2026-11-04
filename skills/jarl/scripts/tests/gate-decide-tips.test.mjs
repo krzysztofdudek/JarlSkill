@@ -221,7 +221,7 @@ test('an issue may name several repositories: files per repository, next keeps t
   assert.match(rep, /### lib \(2\)\n- 1 cross \(bug\)\n- 2 only lib a \(bug\)/);
   assert.match(rep, /### tool \(1\)\n- 1 cross \(bug\)/);
   assert.deepEqual(JSON.parse(jarl(hub, 'report', '--json')).byRepo, { lib: ['1', '2'], tool: ['1'] });
-  assert.equal(jarl(hub, 'repo', '3', '../tool,../lib'), '3 repo: tool, lib');
+  assert.equal(jarl(hub, 'field', '3', 'Repo', '../tool,../lib'), '3 Repo: tool, lib');
 });
 
 // ---- 282: tips -------------------------------------------------------------------------------------

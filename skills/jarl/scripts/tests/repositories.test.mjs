@@ -92,20 +92,20 @@ test('an issue with no Repo is read in the root of the loop, and a loop that nam
 test('repo changes the Repo field and the base with a log line each, and a change to nothing writes nothing', () => {
   const w = world('tool', 'lib');
   neu(w.hub, 'a', '--repo', 'tool');
-  assert.equal(jarl(w.hub, 'repo', '1', 'lib'), '1 repo: lib');
+  assert.equal(jarl(w.hub, 'field', '1', 'Repo', 'lib'), '1 Repo: lib');
   assert.match(w.log(), /1 field Repo · lib · was tool$/m);
-  assert.equal(jarl(w.hub, 'repo', '1', 'lib'), '1 repo: lib (unchanged)');
+  assert.equal(jarl(w.hub, 'field', '1', 'Repo', 'lib'), '1 Repo: lib');
   assert.equal((w.log().match(/1 field Repo · /g) || []).length, 1);
-  assert.equal(jarl(w.hub, 'repo', '1', '--clear'), '1 repo: cleared');
+  assert.equal(jarl(w.hub, 'field', '1', 'Repo', '--clear'), '1 Repo: (cleared)');
   assert.match(w.log(), /1 field Repo · \(cleared\) · was lib$/m);
-  assert.equal(jarl(w.hub, 'repo', '--base', 'tool', 'release/9'), 'tool base: release/9 (was main)');
+  assert.equal(jarl(w.hub, 'base', 'tool', 'release/9'), 'tool base: release/9 (was main)');
   assert.match(w.decl(), /^- \*\*tool\*\* · roots [0-9a-f]{40} · origin none · base release\/9$/m);
   assert.match(w.log(), /repo tool base · was main · now release\/9/);
-  assert.equal(jarl(w.hub, 'repo', '--base', 'tool', 'release/9'), 'tool base: release/9 (unchanged)');
+  assert.equal(jarl(w.hub, 'base', 'tool', 'release/9'), 'tool base: release/9 (unchanged)');
   assert.equal((w.log().match(/repo tool base/g) || []).length, 1);
-  assert.match(refuses(w.hub, 'repo', '--base', 'ghost', 'x'), /ghost is not declared in this loop/);
-  assert.match(refuses(w.hub, 'repo', '--base', 'tool', 'a b'), /is not a branch name git accepts/);
-  assert.match(refuses(w.hub, 'repo', '--base', 'tool', 'a · b'), /one branch name on one line/);
+  assert.match(refuses(w.hub, 'base', 'ghost', 'x'), /ghost is not declared in this loop/);
+  assert.match(refuses(w.hub, 'base', 'tool', 'a b'), /is not a branch name git accepts/);
+  assert.match(refuses(w.hub, 'base', 'tool', 'a · b'), /one branch name on one line/);
 });
 
 test('a name is a plain token: letters, digits, dash, underscore and dot inside', () => {
@@ -127,11 +127,11 @@ test('--repo takes a name, a checkout, a worktree of it or a file inside it, all
   git(w.tool, 'worktree', 'add', '-q', '-b', 'side', wt);
   neu(w.hub, 'a');
   for (const given of ['tool', '../tool', w.tool, wt, join(wt, 'tool.txt'), join(w.tool, 'tool.txt')]) {
-    const r = run(w.hub, ['repo', '1', given]);
+    const r = run(w.hub, ['field', '1', 'Repo', given]);
     assert.equal(r.status, 0, `${given}: ${r.stderr}`);
     assert.match(w.issue(1), /^\*\*Repo:\*\* tool$/m, given);
   }
-  assert.match(refuses(w.hub, 'repo', '1', join(tmp('jarl-none-'), 'nothing')), /not a git repository/);
+  assert.match(refuses(w.hub, 'field', '1', 'Repo', join(tmp('jarl-none-'), 'nothing')), /not a git repository/);
 });
 
 test('a repository stored as a path is noted when the loop first stores it, and not again on the next filing', () => {
@@ -256,7 +256,7 @@ test('a name that does not resolve is shown with its fix, refused by the command
   assert.deepEqual(where.repos.map((r) => [r.value, r.name, r.state]), [['tool', 'tool', 'missing']]);
   assert.match(where.repos[0].fix, new RegExp(escaped(fix)));
   assert.match(jarl(w.hub, 'status', '--by', 'repo'), new RegExp(`^ {2}tool {2}the repository tool is not on this machine — ${escaped(fix)}$`, 'm'));
-  for (const args of [['check', '1', '--branch', 'x'], ['new', 'x', '--tier', 'light', '--repo', 'tool'], ['repo', '1', 'tool'], ['merged', '1', '--sha', 'abcd', '--repo', 'tool'], ['branches', '--repo', 'tool']]) {
+  for (const args of [['check', '1', '--branch', 'x'], ['new', 'x', '--tier', 'light', '--repo', 'tool'], ['field', '1', 'Repo', 'tool'], ['merged', '1', '--sha', 'abcd', '--repo', 'tool'], ['branches', '--repo', 'tool']]) {
     assert.match(refuses(w.hub, ...args), new RegExp(escaped(fix)), args.join(' '));
   }
   for (const view of [['branches'], ['tips'], ['queue'], ['resume'], ['status'], ['next', '--all'], ['report']]) assert.equal(run(w.hub, view).status, 0, view.join(' '));
@@ -330,7 +330,7 @@ test('a bare repository under a name is refused as a bare repository', () => {
   git(bare, 'init', '-q', '--bare');
   assert.match(refuses(w.hub, 'new', 'x', '--tier', 'light', '--repo', 'tool'), /tool is a bare repository: it has no working tree to act on/);
   R.newIssue(w.hub, 'a');
-  assert.match(refuses(w.hub, 'repo', '1', '../tool'), /is a bare repository: it has no working tree to act on/);
+  assert.match(refuses(w.hub, 'field', '1', 'Repo', '../tool'), /is a bare repository: it has no working tree to act on/);
   const file = join(w.hub, '.jarl', 'issues', readdirSync(join(w.hub, '.jarl', 'issues'))[0]);
   writeFileSync(file, readFileSync(file, 'utf8').replace(/^(\*\*Files:\*\*.*)$/m, '$1\n**Repo:** ../tool'));
   assert.match(refuses(w.hub, 'check', '1', '--branch', 'main'), /is a bare repository: it has no working tree to act on/);
@@ -439,7 +439,7 @@ test('no command other than the identity check reads the root commits: a wrong c
   renameSync(w.tool, join(w.parent, 'tool-real'));
   repoAt(join(w.parent, 'tool'), { branch: 'feature', commits: [['other.txt', 'another repository\n']] });
   assert.equal(identity(w.hub, 'tool').state, 'mismatch');
-  for (const args of [['branches', '--repo', 'tool'], ['repo', '1', 'tool'], ['new', 'again', '--tier', 'light', '--repo', 'tool'], ['tips'], ['status', '--by', 'repo']]) {
+  for (const args of [['branches', '--repo', 'tool'], ['field', '1', 'Repo', 'tool'], ['new', 'again', '--tier', 'light', '--repo', 'tool'], ['tips'], ['status', '--by', 'repo']]) {
     const r = run(w.hub, args);
     assert.equal(r.status, 0, `${args.join(' ')}: ${r.stderr}`);
     assert.doesNotMatch(r.stdout + r.stderr, /root commit/, args.join(' '));
@@ -796,7 +796,7 @@ test('a path that does not exist, and a value with a line break or the log\'s se
     ['./tool\n./x', /--repo ".*\\n.*" is on more than one line/],
     ['tool · x', /--repo "tool · x" is on more than one line or holds the log's separator/],
   ]) {
-    for (const args of [['repo', '1', given], ['new', 'b', '--tier', 'light', '--repo', given]]) {
+    for (const args of [['field', '1', 'Repo', given], ['new', 'b', '--tier', 'light', '--repo', given]]) {
       const said = refuses(w.hub, ...args);
       assert.match(said, pattern, JSON.stringify(given));
       assert.match(said, /not a git repository|more than one line/);
@@ -822,10 +822,10 @@ test('a checkout with no branch is declared with no base, and says so', () => {
   git(w.tool, 'checkout', '-q', '--detach');
   const r = neu(w.hub, 'a', '--repo', 'tool');
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stderr, /note: tool has no branch checked out, so it is declared with no base — name one with repo --base tool <branch>/);
+  assert.match(r.stderr, /note: tool has no branch checked out, so it is declared with no base — name one with jarl\.mjs base tool <branch>/);
   assert.match(w.decl(), /^- \*\*tool\*\* · roots [0-9a-f]{40} · origin none · base none$/m);
   assert.equal(L.declaredRepos(w.hub).get('tool').base, null);
-  assert.equal(jarl(w.hub, 'repo', '--base', 'tool', 'main'), 'tool base: main (was none)');
+  assert.equal(jarl(w.hub, 'base', 'tool', 'main'), 'tool base: main (was none)');
 });
 
 test('a name written in another case is the one declared name when the disk ignores case', (t) => {

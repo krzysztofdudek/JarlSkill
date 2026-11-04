@@ -49,7 +49,7 @@ test('the same holder restating its lease, or a move that names no lease, is not
 
 test('a lease on a file another lease holds is refused, naming the holding issue and its slice tag', () => {
   const { root } = twoOnOneFile();
-  jarl(root, 'tag', '1', '+slice:alpha');
+  jarl(root, 'field', '1', 'Tags', '--add', 'slice:alpha');
   jarl(root, 'set', '1', 'in-progress', 'A', '--branch', 'jarl/1-one', '--worker', 'wA');
   const before = logText(root);
   const said = refuses(root, 'set', '2', 'in-progress', 'held file', '--branch', 'jarl/2-two', '--worker', 'wC');

@@ -198,9 +198,9 @@ test('a resource is held by an issue in progress; next never offers two issues t
   jarl(hub, 'new', 'heavy run in lib', '--repo', './lib', '--files', 'lib/b.mjs');              // 2
   jarl(hub, 'new', 'light work', '--repo', './lib', '--files', 'lib/c.mjs');                    // 3
   jarl(hub, 'new', 'third heavy run', '--repo', './tool', '--files', 'tool/d.mjs');             // 4
-  jarl(hub, 'set', '1', 'resources', 'gate, Database');
-  jarl(hub, 'set', '2', 'resources', 'DataBase');
-  jarl(hub, 'set', '4', 'resources', 'gate');
+  jarl(hub, 'field', '1', 'Resources', 'gate, Database');
+  jarl(hub, 'field', '2', 'Resources', 'DataBase');
+  jarl(hub, 'field', '4', 'Resources', 'gate');
   assert.match(jarl(hub, 'show', '1'), /\*\*Resources:\*\* gate, Database/);
   // Nothing in progress: the first heavy one is offered, the others sharing a resource with an offered one are held.
   const rows = JSON.parse(jarl(hub, 'next', '--all', '--json'));
@@ -225,7 +225,7 @@ test('an issue that declares a resource passes check on its real files; check, q
   git('add', '-A'); git('commit', '-qm', 'base');
   jarl(dir, 'init', 'goal');
   jarl(dir, 'new', 'work', '--files', 'a.mjs');
-  jarl(dir, 'set', '1', 'resources', 'gate');
+  jarl(dir, 'field', '1', 'Resources', 'gate');
   jarl(dir, 'set', '1', 'in-progress', 'go', '--worker', 'w', '--branch', 'work');
   git('checkout', '-q', '-b', 'work');
   writeFileSync(join(dir, 'a.mjs'), '2\n');
@@ -238,18 +238,18 @@ test('an issue that declares a resource passes check on its real files; check, q
   assert.deepEqual(JSON.parse(jarl(dir, 'queue', '--json')).repos.flatMap((r) => r.rows), [], 'queue reads no resource');
 });
 
-test('set resources refuses a bad name and the lease flags; an empty value clears; the frozen reader ignores the field', () => {
+test('field Resources refuses a bad name; --clear empties it; the frozen reader ignores the field', () => {
   const hub = twoRepos();
   // Filed with three digits and no key (fileAsBefore), so the loop stays format 1 for the frozen reader.
   fileAsBefore(hub, 'a', { files: 'a.mjs' });
   fileAsBefore(hub, 'b', { files: 'b.mjs' });
-  assert.match(refuses(hub, 'set', '1', 'resources', 'two words'), /resource names are single words/);
-  jarl(hub, 'set', '1,2', 'resources', 'port-8080');
+  assert.match(refuses(hub, 'field', '1', 'Resources', 'two words'), /resource names are single words/);
+  jarl(hub, 'field', '1,2', 'Resources', 'port-8080');
   assert.deepEqual(JSON.parse(jarl(hub, 'next', '--json')).map((r) => r.id), ['001'], '002 shares the resource, so it is held');
   // The pinned frozen reader reads the field as any other it does not know: both issues are ready to it, nothing refused.
   for (const command of ['list', 'status', 'next', 'queue']) assert.equal(oldJarl(hub, command, {}).ok, true, command);
   assert.deepEqual(oldJarl(hub, 'next', {}).value.filter((r) => r.ready).map((r) => r.id), ['001', '002'], '6.1.0 ignores Resources');
-  jarl(hub, 'set', '2', 'resources', '');
+  jarl(hub, 'field', '2', 'Resources', '--clear');
   assert.deepEqual(JSON.parse(jarl(hub, 'next', '--json')).map((r) => r.id), ['001', '002']);
 });
 
@@ -261,5 +261,5 @@ test('Resources is a field the tool writes itself: a profile that declares a fie
   assert.match(refuses(hub, 'init', 'goal', '--profile', file), /field "Resources" is one the tool writes itself — a profile cannot declare it; rename the field in the profile, because the tool writes Resources itself/);
   jarl(hub, 'init', 'goal');
   assert.match(jarl(hub, 'new', 'a', '--files', 'a.mjs'), /1/);
-  assert.match(jarl(hub, 'set', '1', 'resources', 'shared'), /1 Resources: shared/, 'the name has one meaning: the exclusive resources');
+  assert.match(jarl(hub, 'field', '1', 'Resources', 'shared'), /1 Resources: shared/, 'the name has one meaning: the exclusive resources');
 });

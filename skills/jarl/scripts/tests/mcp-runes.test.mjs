@@ -72,11 +72,11 @@ test('budget step 1: a tool description is one sentence after whether it writes;
   assert.ok(help.content[0].text.startsWith(USAGE), 'jarl_help answers with the usage --help prints');
 });
 
-test('the server lists jarl_field for Resources and the profile\'s fields, with its own fields, and jarl_set for statuses alone', () => {
+test('the server lists jarl_field for every part of the description, with its own fields, and jarl_set for statuses alone', () => {
   const byName = Object.fromEntries(listed.map((t) => [t.name, t]));
-  assert.match(byName.jarl_field.description, /^WRITES the loop\. Write one header field of the description on issues \(Title, Priority, Tier, Kind, Found by, Tags, Files, Repo, After, Source, Where, Resources, Person, Check when or a profile field\), or empty an optional one with clear, logging what it held and who changed it when named\.$/);
-  assert.deepEqual(Object.keys(byName.jarl_field.inputSchema.properties).sort(), ['by', 'clear', 'ids', 'json', 'name', 'root', 'value']);
-  assert.equal(byName.jarl_field.inputSchema.properties.clear.type, 'boolean');
+  assert.match(byName.jarl_field.description, /^WRITES the loop\. Change one part of the description of issues, a header field \(Title, Priority, Tags, Files, After and the rest\) or a section \(What, Why, Acceptance, Changelog\): a value replaces it, add and remove change the items of a list or add to a section, clear empties it; each change logs what the part held and who changed it when named\.$/);
+  assert.deepEqual(Object.keys(byName.jarl_field.inputSchema.properties).sort(), ['add', 'by', 'clear', 'ids', 'json', 'name', 'remove', 'root', 'value']);
+  for (const flag of ['add', 'remove', 'clear']) assert.equal(byName.jarl_field.inputSchema.properties[flag].type, 'boolean');
   assert.equal(byName.jarl_set.description, 'WRITES the loop. Change the status of issues, with the reason logged.');
 });
 

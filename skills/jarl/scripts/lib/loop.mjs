@@ -271,7 +271,7 @@ export function needOneSlice(tags, { id = null, held = [] } = {}) {
   const to = was && slices.find((t) => !heldSlices.some((h) => h.toLowerCase() === t.toLowerCase()));
   const same = was && !to ? slices.find((t) => !heldSlices.includes(t)) : null;
   need(false, id !== null && was && to
-    ? `${id} is in ${was} already, and an issue is in one slice — to move it: jarl.mjs tag ${id} ${heldSlices.map((h) => `-${h}`).join(' ')} +${to}`
+    ? `${id} is in ${was} already, and an issue is in one slice — to move it: jarl.mjs field ${id} Tags --remove ${heldSlices.join(',')}, then jarl.mjs field ${id} Tags --add ${to}`
     : id !== null && same
       ? `${id} is in ${was} already, and ${same} names the same slice in another case — an issue carries one slice tag`
       : `an issue is in one slice, and ${id !== null ? `${id} would carry` : 'the tags name'} ${slices.join(', ')} — keep one`);
@@ -298,7 +298,7 @@ export function sliceNamed(coordinators, issues, name) {
   const known = [...coordinators, ...issues.map(sliceOf).filter((s) => s !== null)];
   const found = known.find((k) => sameSlice(k, name));
   const names = [...new Map(known.map((k) => [k.toLowerCase(), k])).values()];
-  need(found !== undefined, `no coordinator ${fieldText(name)} on the goal's Coordinators line and no issue tagged ${sliceTag(fieldText(name))} — ${names.length ? `the slices are ${names.map(sliceTag).join(', ')}` : 'the loop has no slice: jarl.mjs goal --set "Coordinators: <names>", then jarl.mjs tag <ids> +slice:<name>'}`);
+  need(found !== undefined, `no coordinator ${fieldText(name)} on the goal's Coordinators line and no issue tagged ${sliceTag(fieldText(name))} — ${names.length ? `the slices are ${names.map(sliceTag).join(', ')}` : 'the loop has no slice: jarl.mjs goal --set "Coordinators: <names>", then jarl.mjs field <ids> Tags --add slice:<name>'}`);
   return found;
 }
 // The slices with an issue in play.

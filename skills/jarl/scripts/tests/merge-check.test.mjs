@@ -42,7 +42,7 @@ function twoRepos(n, inLib) {
   const root = join(parent, 'app');
   jarl(root, 'init', 'two repositories');
   for (let k = 1; k <= n; k += 1) jarl(root, 'new', `issue ${k}`, '--acceptance', 'it works');
-  for (const id of inLib) jarl(root, 'repo', String(id), '../lib');
+  for (const id of inLib) jarl(root, 'field', String(id), 'Repo', '../lib');
   return root;
 }
 

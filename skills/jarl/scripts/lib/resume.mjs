@@ -167,7 +167,7 @@ export function cmdHandoffRead(root, flags = {}) {
 
 // handoff write — the state is assembled live by resume, so there is nothing to write. The command is accepted (with
 // its flags) so a script that calls it does not fail; it writes nothing — no file, no log line — and says so; exit 0.
-export const HANDOFF_TEXT = 'handoff writes nothing. The state a session resumes from is assembled live — run jarl.mjs resume. Put intent where it lives: order in priorities and After (prio, after), reasons in rulings (decide) and issue bodies (body).';
+export const HANDOFF_TEXT = 'handoff writes nothing. The state a session resumes from is assembled live — run jarl.mjs resume. Put intent where it lives: order in the Priority and After fields, reasons in rulings (decide) and in the issues\' sections (field).';
 export function cmdHandoffWrite() {
   return { retired: true, wrote: null, note: HANDOFF_TEXT };
 }

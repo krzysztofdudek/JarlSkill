@@ -19,10 +19,10 @@ const formatOf = (root) => json(root, 'profile').format;
 const STAMP = '\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}';
 
 test('every command whose --by is not what it records takes one, and the table holds no other', () => {
-  assert.deepEqual([...WRITER_COMMANDS].sort(), ['archive', 'ask', 'close', 'evidence', 'goal', 'import', 'init', 'log', 'merged', 'mode', 'new', 'renumber', 'round', 'set']);
+  assert.deepEqual([...WRITER_COMMANDS].sort(), ['archive', 'ask', 'base', 'close', 'evidence', 'goal', 'import', 'init', 'log', 'merged', 'mode', 'new', 'renumber', 'round', 'set']);
   for (const c of WRITER_COMMANDS) assert.equal(COMMAND_FLAGS[c].by, 'value', c);
-  // The commands that already took --by record it as the author, the reviewer or who answered, ruled or retracted.
-  for (const c of ['body', 'field', 'tag', 'prio', 'files', 'repo', 'source', 'after', 'retract', 'review', 'answer', 'decide']) assert.ok(!WRITER_COMMANDS.includes(c), c);
+  // The commands whose --by is part of what they record: the author of a description change, the reviewer, who answered, ruled or retracted.
+  for (const c of ['field', 'retract', 'review', 'answer', 'decide']) assert.ok(!WRITER_COMMANDS.includes(c), c);
 });
 
 test('a named write puts its writer after the stamp of every line it writes, and the first one raises the loop to format 3', () => {
