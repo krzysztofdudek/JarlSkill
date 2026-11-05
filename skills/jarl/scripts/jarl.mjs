@@ -22,7 +22,7 @@ import {
   issuesNaming, questionFor, cmdGoal, cmdGoalSet, cmdRepoBase, whereOf, cmdVerify, renderVerify, renderCheckNotes,
   renderProfile, renderResume, renderStatus, renderImport, renderSources, renderList, recordTypeLog, recordRuleLog,
   runDecisionsDriver, mergeFlags, describeNew, renderNewReply, issueView, attachmentStates, evidenceTable, renderBranches, renderDecide, renderDecisions,
-  cmdNextAs, renderNextAs, askerSection, renderBrief, cmdTick, withWriter, editorOf, needFormat, formatState, readProfileFile, FORMAT_LINES, cmdRenumber, cmdSplit,
+  needLoop, cmdNextAs, renderNextAs, askerSection, renderBrief, cmdTick, withWriter, editorOf, needFormat, formatState, readProfileFile, FORMAT_LINES, cmdRenumber, cmdSplit,
 } from './jarl-lib.mjs';
 import { writeAreaDecision, writeRuleRatification } from './yg-edge.mjs';
 
@@ -1352,6 +1352,9 @@ export function dispatch(root, commandName, rest, flags) {
   const words = [commandName, ...rest, ...Object.entries(flags).filter(([k]) => !Object.hasOwn(GLOBAL_FLAGS, k)).flatMap(([, v]) => [].concat(v))].filter((w) => typeof w === 'string');
   return { ...r, warn: (r.warn || []).map((w) => escapedEchoes(w, words)) };
 }
+// The writing commands that run where no loop is: init makes one. Every other write needs the loop to exist; the views
+// read an empty one where none is.
+const NEEDS_NO_LOOP = ['init'];
 function dispatchCall(root, commandName, rest, flags) {
   const cmd = commandName;
   if (Object.hasOwn(REPLACED_COMMANDS, cmd)) replacedRefusal(cmd, rest);
@@ -1363,6 +1366,7 @@ function dispatchCall(root, commandName, rest, flags) {
   // An argument the command requires and the call left out is named, and the form has a placeholder for it.
   const missing = (COMMAND_ARGS[cmd] || []).filter((a, n) => !/[?.]$/.test(a) && rest[n] === undefined && !(cmd === 'set' && a === 'status' && flags.header));
   need(missing.length === 0, `${cmd} requires ${missing.map((a) => `its ${a}`).join(' and ')}: the form below has a placeholder for each value`, { retry: true });
+  if (MUTATING.has(cmd) && !NEEDS_NO_LOOP.includes(cmd)) needLoop(root);
   ({ rest, flags } = readLists(cmd, rest, flags));
   resetCaches();
   let out;

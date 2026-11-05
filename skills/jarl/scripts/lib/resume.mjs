@@ -6,7 +6,7 @@ import { readText } from './files.mjs';
 import { DEFAULT_PROFILE, loadProfile } from './profile.mjs';
 import { mergedOf, sharedMark } from './issues.mjs';
 import { repoNames } from './repositories.mjs';
-import { closedGateLine, disagreementText, gateLine, gateOf, readLoop, reviewSplit, sameSlice, sliceNamed, sliceOf } from './loop.mjs';
+import { closedGateLine, disagreementText, gateLine, needLoop, gateOf, readLoop, reviewSplit, sameSlice, sliceNamed, sliceOf } from './loop.mjs';
 import { checkWaitingText, metricsOf, renderMetrics } from './metrics.mjs';
 import { ago } from './rounds.mjs';
 import { cmdTips, renderTips } from './tips.mjs';
@@ -38,7 +38,7 @@ function countFlag(flags, name, dflt) {
 // issues name, the loop files git has not committed, and the last n log lines. Nothing goes to the network
 // unless --gh asks gh for the CI of each pushed tip.
 export function cmdResume(root, flags = {}) {
-  need(existsSync(jarlDir(root)), `no loop here: ${jarlDir(root)} does not exist — open one with ${jarlLine('init', '<goal>')}, or pass --root "<loop-root>", the directory that holds .jarl/`, () => (['jarl.mjs', 'init', '<goal>']));
+  needLoop(root);
   const logN = countFlag(flags, 'log', RESUME_LOG_LINES);
   const readyN = countFlag(flags, 'ready', RESUME_READY);
   const loop = readLoop(jarlDir(root));

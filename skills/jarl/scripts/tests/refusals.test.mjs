@@ -8,7 +8,7 @@
 // refuse or need with its ready part, and nothing else is thrown.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { appendFileSync, existsSync, readFileSync, readdirSync } from 'node:fs';
+import { appendFileSync, cpSync, existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { EMPTY, PLAIN, ROOTED, ROOT_ARG, SHELLS, SIBLING, copy, formProblems, partsOf as partsOfRaw, printedCalls, run, runPrinted, snapshot } from './walk.mjs';
@@ -226,8 +226,10 @@ test('a reason echoes a word of the call that holds a line break or a character 
   }
 });
 
-test('a --root that holds a line break is named by its placeholder in the form, and the reason says why', () => {
+test('a --root that holds a line break is named by its placeholder in the form, and the reason says why', { skip: process.platform === 'win32' && 'a directory name cannot hold a line break on Windows, so no loop stands at that root' }, () => {
   const top = copy(ROOTED);
+  // The loop stands at that very root, so the refusal is the status's and not the missing loop's.
+  cpSync(join(top, ROOT_ARG), join(top, `${ROOT_ARG}\n`), { recursive: true });
   const r = run(top, ['set', '1', 'Deferred', 'later', '--root', `${ROOT_ARG}\n`]);
   assert.notEqual(r.status, 0);
   assert.match(r.stderr, /the --root given holds a line break/);
