@@ -65,12 +65,12 @@ test('field writes every header field of the description, each with a log line n
 
 test('the record library logs the writer its options name, and no author when they name none', () => {
   const root = profiledLoop();
-  R.setField(root, '1', 'Area', 'cli', { by: 'horde-architect' });
-  assert.equal(lastLine(root), '1 field Area · cli · was core · by horde-architect');
-  R.setBody(root, '1', { why: 'library why', by: 'horde-architect' });
-  assert.equal(lastLine(root), '1 body · why · was "old why" (7 characters) · by horde-architect');
-  R.setAfter(root, '1', '2', { by: 'horde-architect' });
-  assert.equal(lastLine(root), '1 field After · 2 · was (none) · by horde-architect');
+  R.setField(root, '1', 'Area', 'cli', { by: 'composer-x-architect' });
+  assert.equal(lastLine(root), '1 field Area · cli · was core · by composer-x-architect');
+  R.setBody(root, '1', { why: 'library why', by: 'composer-x-architect' });
+  assert.equal(lastLine(root), '1 body · why · was "old why" (7 characters) · by composer-x-architect');
+  R.setAfter(root, '1', '2', { by: 'composer-x-architect' });
+  assert.equal(lastLine(root), '1 field After · 2 · was (none) · by composer-x-architect');
   R.setAfter(root, '1', undefined, { clear: true });
   assert.equal(lastLine(root), '1 field After · (cleared) · was 2');
   R.setFiles(root, '1', 'a.mjs');

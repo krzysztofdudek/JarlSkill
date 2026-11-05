@@ -53,7 +53,7 @@ export const PROFILE_STATUS_KEYS = ['flags', 'set-by'];
 export const SET_BY = ['any', 'record'];
 // Who may end the loop itself: "lifecycle": { "close": "any" | "record", "archive": "any" | "record", "command": "<the
 // composer's own command>" }. 'record' refuses jarl close / jarl archive and their MCP tools (caller 'cli') and names the
-// command, so the record of a loop a composer keeps (Horde's mission) is never removed or moved out from under it by
+// command, so the record of a loop a composer keeps is never removed or moved out from under it by
 // Jarl's own lifecycle; a library caller (caller 'record') still may. The same two words as "set-by".
 export const LIFECYCLE_KEYS = ['close', 'archive', 'command'];
 export const LIFECYCLE_OPS = ['close', 'archive'];

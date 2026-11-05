@@ -1,5 +1,5 @@
 // The profile keys a composer's loop stands on:"set-by" on a status, "external-scheduler", "done-gate" and
-// "format". A loop run by a composer such as Horde must not be misread by Jarl's own views: a status only the composer
+// "format". A loop run by a composer must not be misread by Jarl's own views: a status only the composer
 // may set is refused to jarl set and the MCP tools, next and queue say who schedules instead of computing a ready list,
 // done needs a merge the base holds, and a record format this Jarl does not know is refused before anything is read.
 import { test } from 'node:test';
@@ -29,13 +29,13 @@ function file(obj) {
 }
 const reason = (fn) => { try { fn(); } catch (e) { return e.message; } throw new Error('expected a refusal'); };
 
-// A mission's profile in Horde's shape: a proposal and the queue belong to the composer (its planner's veto stands
+// A mission's profile in a composer's shape: a proposal and the queue belong to the composer (its planner's veto stands
 // between them), a merge is recorded only by its landing, the composer's tick schedules, and an issue closes on a merge
 // the base holds, with no approve of Jarl's own.
-const HORDE = {
+const COMPOSER = {
   'jarl-profile': 1,
   format: 1,
-  name: 'horde',
+  name: 'composer-x',
   statuses: {
     proposed: { flags: [], 'set-by': 'record' },
     queued: { flags: ['dispatchable'], 'set-by': 'record' },
@@ -46,16 +46,16 @@ const HORDE = {
     merged: { flags: ['settles-dependents', 'terminal', 'closes-record'], 'set-by': 'record' },
     dropped: ['settles-dependents', 'terminal', 'needs-reason'],
   },
-  'external-scheduler': 'horde.mjs tick',
+  'external-scheduler': 'composer-x.mjs tick',
   'done-gate': { approve: 'none', 'requires-merged': true },
 };
 
 // A real repository on main with the loop committed beside the code; the mission's loop lives in a subdirectory,
-// as Horde keeps it (.horde/hordes/<h>/.jarl/).
-function mission(profile = HORDE) {
+// as a composer keeps it (.composer-x/missions/<m>/.jarl/).
+function mission(profile = COMPOSER) {
   const repo = mkdtempSync(join(tmpdir(), 'jarl-keys-'));
   sh(repo, 'git init -q -b main && git config user.email t@t && git config user.name t && git config core.excludesFile /dev/null && mkdir src && echo 1 > src/a.mjs && git add -A && git commit -qm base');
-  const root = join(repo, '.horde', 'hordes', 'h1');
+  const root = join(repo, '.composer-x', 'missions', 'm1');
   mkdirSync(root, { recursive: true });
   jarl(root, 'init', 'the mission', '--committed', '--profile', file(profile));
   return { repo, root };
@@ -64,16 +64,16 @@ function mission(profile = HORDE) {
 // ---- the schema ----
 
 test('format: a record format this Jarl does not know is refused first and alone; the known one is accepted', () => {
-  const later = reason(() => R.validateProfile({ ...HORDE, format: 4, bogus: true }, 'p'));
+  const later = reason(() => R.validateProfile({ ...COMPOSER, format: 4, bogus: true }, 'p'));
   assert.match(later, /written for record format 4, and this Jarl reads format 1, 2, 3/);
   assert.doesNotMatch(later, /bogus/, 'the other keys of a later format are not read at all');
-  assert.match(reason(() => R.validateProfile({ ...HORDE, format: '1' }, 'p')), /record format "1"/);
-  assert.equal(R.validateProfile(HORDE).format, 1);
+  assert.match(reason(() => R.validateProfile({ ...COMPOSER, format: '1' }, 'p')), /record format "1"/);
+  assert.equal(R.validateProfile(COMPOSER).format, 1);
   assert.equal(R.DEFAULT_PROFILE.format, 1);
   // A loop opened on a later format refuses every command, the views too.
   const { root } = mission();
   const p = join(root, '.jarl', 'profile.json');
-  writeFileSync(p, JSON.stringify({ ...HORDE, format: 7 }));
+  writeFileSync(p, JSON.stringify({ ...COMPOSER, format: 7 }));
   assert.match(refuses(root, 'status'), /record format 7/);
   assert.match(refuses(root, 'list'), /record format 7/);
 });
@@ -90,15 +90,15 @@ test('set-by, external-scheduler and done-gate are checked with every other prob
   assert.match(e, /"external-scheduler" is the one-line command/);
   assert.match(e, /"done-gate": unknown key "extra"/);
   assert.match(e, /"approve": "none" is allowed only with "requires-merged": true/);
-  assert.match(reason(() => R.validateProfile({ ...HORDE, 'done-gate': { approve: 'none', 'requires-merged': false } })), /allowed only with "requires-merged": true/);
-  assert.match(reason(() => R.validateProfile({ ...HORDE, 'done-gate': { approve: 'fresh', 'requires-merged': 'yes' } })), /"requires-merged" is true or false/);
-  assert.match(reason(() => R.validateProfile({ ...HORDE, 'done-gate': 'none' })), /"done-gate" is an object/);
+  assert.match(reason(() => R.validateProfile({ ...COMPOSER, 'done-gate': { approve: 'none', 'requires-merged': false } })), /allowed only with "requires-merged": true/);
+  assert.match(reason(() => R.validateProfile({ ...COMPOSER, 'done-gate': { approve: 'fresh', 'requires-merged': 'yes' } })), /"requires-merged" is true or false/);
+  assert.match(reason(() => R.validateProfile({ ...COMPOSER, 'done-gate': 'none' })), /"done-gate" is an object/);
   // A status written as an object with no flags is a status with none; the list form still reads as before.
-  const p = R.validateProfile(HORDE);
+  const p = R.validateProfile(COMPOSER);
   assert.deepEqual(p.flagsOf('proposed'), []);
   assert.equal(p.setBy('queued'), 'record');
   assert.equal(p.setBy('running'), 'any');
-  assert.equal(p.scheduler, 'horde.mjs tick');
+  assert.equal(p.scheduler, 'composer-x.mjs tick');
   assert.deepEqual({ ...p.doneGate }, { approve: 'none', 'requires-merged': true });
   assert.deepEqual({ ...R.DEFAULT_PROFILE.doneGate }, { approve: 'fresh', 'requires-merged': false });
   assert.equal(R.DEFAULT_PROFILE.scheduler, null);
@@ -108,12 +108,12 @@ test('profile describes the new keys, as JSON and as text', () => {
   const { root } = mission();
   const d = json(root, 'profile');
   assert.deepEqual(d.statuses.filter((s) => s.setBy).map((s) => s.name), ['proposed', 'queued', 'merged']);
-  assert.equal(d.externalScheduler, 'horde.mjs tick');
+  assert.equal(d.externalScheduler, 'composer-x.mjs tick');
   assert.deepEqual(d.doneGate, { approve: 'none', 'requires-merged': true });
   assert.equal(d.format, 1);
   const t = jarl(root, 'profile');
   assert.match(t, /queued {2}dispatchable {2}\(set by the record only, never jarl set\)/);
-  assert.match(t, /external scheduler: horde\.mjs tick/);
+  assert.match(t, /external scheduler: composer-x\.mjs tick/);
   assert.match(t, /done gate: approve none · requires a merge in the base/);
 });
 
@@ -124,7 +124,7 @@ test('set-by record: jarl set and the MCP tools cannot move an issue into it; a 
   jarl(root, 'new', 'a ticket');
   const path = R.findIssue(root, '1').file;
   const before = readFileSync(path, 'utf8');
-  assert.match(refuses(root, 'set', '1', 'queued'), /queued is set by the record only — this loop's profile \(horde\) marks it "set-by": "record".*\(horde\.mjs tick\)/);
+  assert.match(refuses(root, 'set', '1', 'queued'), /queued is set by the record only — this loop's profile \(composer-x\) marks it "set-by": "record".*\(composer-x\.mjs tick\)/);
   // The MCP tools run through dispatch as the command line does: jarl_set is refused the same way.
   assert.throws(() => CLI.dispatch(root, 'set', ['1', 'queued'], {}), /queued is set by the record only/);
   assert.throws(() => R.setStatus(root, '1', 'queued', undefined, { caller: 'cli' }), /set by the record only/);
@@ -165,7 +165,7 @@ test('done-gate requires-merged: no merge, or a merge the base does not hold, is
 });
 
 test('done-gate requires-merged: a composer landing into a branch nobody has checked out names it as base; the command line cannot', () => {
-  // Horde lands a ticket into its team branch in a throwaway tree and moves the ref: the checkout stays on main, so the
+  // A composer lands an issue into its team branch in a throwaway tree and moves the ref: the checkout stays on main, so the
   // branch checked out is the wrong base, and the composer names the one it landed into.
   const { repo, root } = mission();
   jarl(root, 'new', 'ticket');
@@ -185,7 +185,7 @@ test('done-gate requires-merged: a composer landing into a branch nobody has che
 });
 
 test('done-gate requires-merged with approve fresh: the landed merge and the fresh approve are both asked for', () => {
-  const { repo, root } = mission({ ...HORDE, name: 'both', 'external-scheduler': undefined, 'done-gate': { approve: 'fresh', 'requires-merged': true }, statuses: { ...HORDE.statuses, merged: ['settles-dependents', 'terminal', 'closes-record'] } });
+  const { repo, root } = mission({ ...COMPOSER, name: 'both', 'external-scheduler': undefined, 'done-gate': { approve: 'fresh', 'requires-merged': true }, statuses: { ...COMPOSER.statuses, merged: ['settles-dependents', 'terminal', 'closes-record'] } });
   jarl(root, 'new', 'ticket');
   R.setStatus(root, '1', 'queued');
   jarl(root, 'set', '1', 'running', '--branch', 'jarl/1-t', '--worker', 'w1');
@@ -199,7 +199,7 @@ test('done-gate requires-merged with approve fresh: the landed merge and the fre
 });
 
 test('no done-gate: a loop without the key closes exactly as before — no merge asked for', () => {
-  const { root } = mission({ ...HORDE, name: 'plain', 'done-gate': undefined, 'external-scheduler': undefined, statuses: { ...HORDE.statuses, merged: ['settles-dependents', 'terminal', 'closes-record'] } });
+  const { root } = mission({ ...COMPOSER, name: 'plain', 'done-gate': undefined, 'external-scheduler': undefined, statuses: { ...COMPOSER.statuses, merged: ['settles-dependents', 'terminal', 'closes-record'] } });
   jarl(root, 'new', 'ticket');
   R.setStatus(root, '1', 'queued');
   jarl(root, 'set', '1', 'running', '--worker', 'w1');
@@ -226,20 +226,20 @@ test('every view tells the truth on a mission\'s loop: next, status, resume with
   jarl(root, 'set', '5', 'dropped', 'out of scope');
 
   // next and queue: the composer schedules, Jarl computes nothing.
-  assert.equal(jarl(root, 'next'), 'scheduling is led by the composer: horde.mjs tick');
-  assert.deepEqual(json(root, 'next'), { scheduler: 'horde.mjs tick', note: 'scheduling is led by the composer: horde.mjs tick' });
-  assert.match(jarl(root, 'resume'), /^## Next ready and merge queue\n- scheduling is led by the composer: horde\.mjs tick$/m);
+  assert.equal(jarl(root, 'next'), 'scheduling is led by the composer: composer-x.mjs tick');
+  assert.deepEqual(json(root, 'next'), { scheduler: 'composer-x.mjs tick', note: 'scheduling is led by the composer: composer-x.mjs tick' });
+  assert.match(jarl(root, 'resume'), /^## Next ready and merge queue\n- scheduling is led by the composer: composer-x\.mjs tick$/m);
   assert.deepEqual(json(root, 'resume').queue.repos, []);
 
   // status: the counts by status, no ready count of Jarl's own.
   const st = json(root, 'status');
   assert.equal(st.ready, null);
-  assert.equal(st.scheduler, 'horde.mjs tick');
+  assert.equal(st.scheduler, 'composer-x.mjs tick');
   assert.deepEqual(st.statuses, { proposed: 1, queued: 1, running: 1, landed: 0, changes: 0, held: 0, merged: 1, dropped: 1 });
   assert.equal(st.inFlight, 1);
   const stText = jarl(root, 'status');
-  assert.match(stText, /^goal: the mission\n.*profile horde\nqueued 1 · in flight 1 · proposed 1 · held 0 · merged 1 · dropped 1 · questions 0/);
-  assert.match(stText, /scheduling is led by the composer: horde\.mjs tick/);
+  assert.match(stText, /^goal: the mission\n.*profile composer-x\nqueued 1 · in flight 1 · proposed 1 · held 0 · merged 1 · dropped 1 · questions 0/);
+  assert.match(stText, /scheduling is led by the composer: composer-x\.mjs tick/);
   assert.match(stText, /closed on a merge in the base, no approve required/);
   assert.doesNotMatch(stText, /ready/);
 
@@ -249,9 +249,9 @@ test('every view tells the truth on a mission\'s loop: next, status, resume with
   assert.deepEqual(rs.next, []);
   assert.equal(rs.readyTotal, null);
   assert.deepEqual(rs.held, []);
-  assert.equal(rs.scheduler, 'horde.mjs tick');
+  assert.equal(rs.scheduler, 'composer-x.mjs tick');
   const rsText = jarl(root, 'resume');
-  assert.match(rsText, /## Next ready and merge queue\n- scheduling is led by the composer: horde\.mjs tick/);
+  assert.match(rsText, /## Next ready and merge queue\n- scheduling is led by the composer: composer-x\.mjs tick/);
   assert.doesNotMatch(rsText, /## Next ready \(|## Merge queue|nothing ready/);
 
   // tips: the feature branch of the work in flight and the base, in the repository the loop lives in.
@@ -313,7 +313,7 @@ test('a loop opened with a composer\'s profile is never raised: new writes three
   // A retraction of an evidence row.
   jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'ok');
   let at = log();
-  assert.match(refuses(root, 'retract', '1', '1', '--by', 'rev', 'it ran in the wrong place'), /the retraction of a verdict or an evidence row needs record format 2, and this loop stays at format 1: its profile names an external scheduler \(horde\.mjs tick\), the composer that reads this record, so Jarl never raises its format; .* — nothing was written/);
+  assert.match(refuses(root, 'retract', '1', '1', '--by', 'rev', 'it ran in the wrong place'), /the retraction of a verdict or an evidence row needs record format 2, and this loop stays at format 1: its profile names an external scheduler \(composer-x\.mjs tick\), the composer that reads this record, so Jarl never raises its format; .* — nothing was written/);
   assert.equal(log(), at);
   assert.match(readFileSync(join(root, '.jarl', 'issues', issueFiles()[0]), 'utf8'), /^- \*\*ran:\*\* npm test/m, 'the row stands, not struck');
   // A repository beside the loop's own checkout: given by its name alone it is refused, since format 1 holds no name;

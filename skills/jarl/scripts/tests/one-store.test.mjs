@@ -39,8 +39,8 @@ function withIssuesDirClosed(root, fn) {
 }
 
 // A profile in a composer's shape, and the status names a script uses under each profile.
-const HORDE = {
-  'jarl-profile': 1, format: 1, name: 'horde',
+const COMPOSER = {
+  'jarl-profile': 1, format: 1, name: 'composer-x',
   statuses: {
     proposed: { flags: [], 'set-by': 'record' },
     queued: { flags: ['dispatchable'], 'set-by': 'record' },
@@ -49,12 +49,12 @@ const HORDE = {
     merged: { flags: ['settles-dependents', 'terminal', 'closes-record'], 'set-by': 'record' },
     dropped: ['settles-dependents', 'terminal', 'needs-reason'],
   },
-  'external-scheduler': 'horde.mjs tick',
+  'external-scheduler': 'composer-x.mjs tick',
   'done-gate': { approve: 'none', 'requires-merged': true },
 };
 const SHAPES = {
   builtin: { names: { rest: 'open', work: 'in-progress', park: 'deferred' } },
-  horde: { names: { rest: 'queued', work: 'running', park: 'held' }, profile: HORDE },
+  composer: { names: { rest: 'queued', work: 'running', park: 'held' }, profile: COMPOSER },
 };
 function shapedLoop(shape) {
   const root = mkdtempSync(join(tmpdir(), 'jarl-one-store-'));
@@ -172,7 +172,7 @@ test('a removed Branch header does not turn a code issue into one a coordinator 
 
 test('a Merged header written by hand does not satisfy a done gate that wants a recorded merge', () => {
   const repo = gitRepo({ branch: 'main' });
-  const root = shapedLoop(SHAPES.horde);
+  const root = shapedLoop(SHAPES.composer);
   const { id } = R.newIssue(root, 'lands', { repo: repo.dir });
   R.setStatus(root, id, 'running', undefined, { branch: 'jarl/1-a', worker: 'w1' });
   R.addEvidence(root, id, undefined, { ran: 'node --test', saw: 'ok' });
@@ -410,7 +410,7 @@ test('a composer cannot write the journal whole through writeAtomic, and writes 
 
 test('a composer that moves tickets with the record operations and edits its own ticket fields under the lock reads the same in every view and the gate', () => {
   const repo = gitRepo({ branch: 'main' });
-  const root = shapedLoop(SHAPES.horde);
+  const root = shapedLoop(SHAPES.composer);
   const dir = R.jarlDir(root);
   const a = R.newIssue(root, 'lands on main', { repo: repo.dir }).id;
   const b = R.newIssue(root, 'waits in the queue', { repo: repo.dir }).id;
