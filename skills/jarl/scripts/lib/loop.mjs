@@ -10,6 +10,7 @@ import { asksAt, decisionsAt, goalLines, readGoal } from './journal.mjs';
 import { eventsById, isParentLine, loopEvents } from './log.mjs';
 import { alignRows, evidenceRows, evidenceTable, headerReadText, issuesAt, mergedOf, sharedNumberText, sharedNumbers } from './issues.mjs';
 import { branchTip } from './repositories.mjs';
+import { OWNER } from './owner.mjs';
 
 // ---- the loaded loop -------------------------------------------------------------------------------
 //
@@ -316,7 +317,9 @@ export function sliceNamed(coordinators, issues, name) {
 }
 // The slices with an issue in play.
 export function activeSlices(loop) { return slicesOf(loop).filter((s) => s.inPlay > 0); }
-const KIND_WEIGHT = { fresh: 0, coordinator: 1, self: 2 };
+const KIND_WEIGHT = { fresh: 0, waived: 0.5, coordinator: 1, self: 2 };
+// The note decide --waives-review writes into each issue it names, as the log holds it.
+const WAIVER_NOTE = /^\S+ evidence · Ruling (\S+) \(by owner\) waives the review\b/;
 // An issue carries code when it records a branch or a merge. Only then does done (and the merge queue) need a
 // fresh approve; an issue with neither — a ruling, a note, a hub document — is still cleared by the coordinator.
 export function carriesCode(issue) { return Boolean(fieldText(issue.fields.branch) || fieldText(issue.fields.merged)); }
@@ -450,6 +453,11 @@ export function gateOf(loop, id) {
   // A tip line belongs to the line of the same issue just before it: a row, a verdict or a merge.
   let before = null;
   let mergeTip = null;   // the tip the newest merge was recorded on
+  // The owner's waivers of this issue's review: rulings by the owner, carrying his words, in force, that name it under
+  // Waives review. Each stands where decide wrote it into the issue (its first note naming the ruling, and the tip after
+  // it), and counts as an approve counts: a start, a reopen or a red round spends it, and so does a new commit.
+  const waivers = new Map((loop.decisions || []).filter((d) => (d.waives || []).some((w) => idKey(w) === idKey(id)) && d.by === OWNER && d.quote && !d.supersededBy).map((d) => [d.slug, d]));
+  const waived = [];
   for (const e of events) {
     if (e.type === 'tip') {
       if (before && before.type === 'merged') mergeTip = e.tip;
@@ -473,13 +481,19 @@ export function gateOf(loop, id) {
     }
     // A retraction takes away the newest approve not yet retracted, and only that: it never touches a changes verdict.
     if (e.type === 'retract-review') {
-      const target = [...allReviews].reverse().find((x) => x.verdict === 'approve' && !x.retracted);
+      const target = [...allReviews].reverse().find((x) => x.verdict === 'approve' && x.kind !== 'waived' && !x.retracted);
       if (target) target.retracted = true;
       trail.push({ n: e.n, at: e.at, verdict: 'retract', retracted: false });
       continue;
     }
     if (e.type === 'retract-row') { retractedRows.push(e.row); continue; }
-    if (e.type === 'row') { const row = { ...e, retracted: false }; evidence.push(row); before = row; }
+    if (e.type === 'row') { const row = { ...e, retracted: false }; evidence.push(row); before = row; continue; }
+    const w = e.type === 'other' ? WAIVER_NOTE.exec(e.text || '') : null;
+    if (w && waivers.has(w[1]) && !waived.some((x) => x.ruling === w[1])) {
+      const review = { n: e.n, at: e.at, verdict: 'approve', by: OWNER, kind: 'waived', ruling: w[1], model: null, retracted: false };
+      allReviews.push(review); waived.push(review);
+      before = review;
+    }
   }
   // The branch's tip now, read once and only when a row or a verdict between the two windows carries a tip: the branch
   // in the issue's repositories, or, where it is gone (the cleanup after a merge deletes it), the tip the newest merge
@@ -491,7 +505,7 @@ export function gateOf(loop, id) {
   };
   const kept = (e, after) => e.n > after || (e.tip !== undefined && now() !== null && e.tip === now());
   for (const e of evidence) e.inWindow = e.n > anchorN || (e.n > firmAnchorN && kept(e, anchorN));
-  for (const r of allReviews) r.inWindow = r.n > cut || (r.n > firm.cut && kept(r, cut));
+  for (const r of allReviews) r.inWindow = (r.n > cut || (r.n > firm.cut && kept(r, cut))) && (r.kind !== 'waived' || r.tip === undefined || now() === null || r.tip === now());
   // A retraction names a row by its file-wide ordinal (evidenceTable: the one numbering show prints), and the journal's
   // row lines are matched to the file's rows (alignRows), so journal lines that merged in another order cannot retract
   // the wrong row. A retraction that cannot be resolved to exactly one row is never ignored: it is returned, and done
@@ -529,10 +543,11 @@ export function gateOf(loop, id) {
     anchorN: Math.min(anchorN, ...evidence.filter((e) => e.inWindow).map((e) => e.n - 1), ...allReviews.filter((r) => r.inWindow && r.n <= anchorN).map((r) => r.n - 1)),
     rowLog: evidence, trail,
     lastReview: last ? last.verdict : null,
-    lastApprove: [...reviews].reverse().find((r) => r.verdict === 'approve') || null,
+    lastApprove: [...reviews].reverse().find((r) => r.verdict === 'approve' && r.kind !== 'waived') || null,
     approved: Boolean(live && live.kind !== 'self'),
     selfApproved: Boolean(live && live.kind === 'self'),
-    fresh: Boolean(live && live.kind === 'fresh'),
+    fresh: Boolean(live && (live.kind === 'fresh' || live.kind === 'waived')),
+    waived: live && live.kind === 'waived' ? live.ruling : null,
     live,
     workers: self,
   };
@@ -544,7 +559,7 @@ export function reviewSplit(loop) {
   const split = { fresh: 0, coordinator: 0, self: 0, unrecorded: 0 };
   for (const i of loop.issues.filter((x) => loop.profile.is(x.status, 'closes-record'))) {
     const kind = approveKind(gateOf(loop, i.id));
-    if (kind === 'retracted') split.retracted = (split.retracted || 0) + 1; else split[kind] += 1;
+    if (kind === 'retracted' || kind === 'waived') split[kind] = (split[kind] || 0) + 1; else split[kind] += 1;
   }
   return split;
 }
@@ -563,7 +578,7 @@ function gateLine(profile, split, label) {
   if (profile.doneGate.approve !== 'none') return `${label}: ${renderSplit(split)}`;
   return `closed on a merge in the base, no approve required (this loop's done gate) · reviews recorded: ${renderSplit(split)}`;
 }
-function renderSplit(s) { return `fresh ${s.fresh} · coordinator ${s.coordinator} · self ${s.self}${s.retracted ? ` · retracted ${s.retracted}` : ''}${s.unrecorded ? ` · unrecorded ${s.unrecorded}` : ''}`; }
+function renderSplit(s) { return `fresh ${s.fresh}${s.waived ? ` · waived by the owner ${s.waived}` : ''} · coordinator ${s.coordinator} · self ${s.self}${s.retracted ? ` · retracted ${s.retracted}` : ''}${s.unrecorded ? ` · unrecorded ${s.unrecorded}` : ''}`; }
 
 // Used by the other modules of the library, and not part of what jarl-lib.mjs exports.
 export { FIELD_NAMES, approveKind, closedGateLine, gateLine, scopedLoop };

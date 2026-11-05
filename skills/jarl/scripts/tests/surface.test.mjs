@@ -189,7 +189,7 @@ const FLAG_MEANINGS = {
   target: ['what a lower question weakens', ['ask']], issue: ['the issue a question is about', ['ask']], option: ['an option of a question', ['ask', 'answer']],
   'applies-to': ['whom a rule applies to', ['ask', 'decide']], until: ['when a rule ends', ['ask', 'decide']], to: ['who a rule is proposed to', ['ask']],
   log: ['how many log lines', ['resume', 'handoff']], ready: ['how many ready issues', ['resume', 'handoff']], summary: ['a summary, written nowhere', ['handoff']], next: ['a next step, written nowhere', ['handoff']],
-  settles: ['the issues a ruling settles', ['decide']], quote: ['the owner\'s own words', ['decide']], under: ['the ruling a ruling rests on', ['decide']], supersedes: ['the ruling a ruling replaces', ['decide']],
+  settles: ['the issues a ruling settles', ['decide']], 'waives-review': ['the issues an owner\'s ruling closes without a review', ['decide']], quote: ['the owner\'s own words', ['decide']], under: ['the ruling a ruling rests on', ['decide']], supersedes: ['the ruling a ruling replaces', ['decide']],
   area: ['the type of code a ruling reaches', ['decide']], reach: ['how many files that type holds', ['decide']], rule: ['the graph rule a ruling admits', ['decide']],
   live: ['only the rulings in force', ['decisions']], set: ['a machine line of the goal', ['goal']], found: ['the issues found by others', ['report']], metrics: ['the metrics alone', ['report']],
   force: ['close with work left', ['close']], batch: ['the ratification batch alone', ['close']],

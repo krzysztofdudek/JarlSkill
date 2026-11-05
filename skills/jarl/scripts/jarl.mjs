@@ -355,7 +355,7 @@ commands:
   log "<text>" [--by who]                       append one dated note to the journal; a line that reads as a filing, a move,
                                                  a round, a verdict, a retraction, an evidence row, a merge, a CI state or
                                                  a body change is refused, and the refusal names the command that writes it
-  decide <slug> "<text>" --by <who> [--quote "<his-own-words>"] [--under <slug>] [--supersedes <slug>] [--settles <ids>] [--applies-to "<selectors>" [--until <date-or-id>]] [--area <type> [--reach n] [--rule <id>]]
+  decide <slug> "<text>" --by <who> [--quote "<his-own-words>"] [--under <slug>] [--supersedes <slug>] [--settles <ids>] [--waives-review <ids>] [--applies-to "<selectors>" [--until <date-or-id>]] [--area <type> [--reach n] [--rule <id>]]
                                                  append a ruling (slug: letters, digits, . _ -); refuses a duplicate slug;
                                                  --by, which every ruling takes, records who ruled (jarl for a choice
                                                  made under a mandate; a name that reads as owner is owner); --by owner needs --quote, his own words, kept as
@@ -364,7 +364,10 @@ commands:
                                                  by the jarl or a coordinator rests on, kept as the text's last paragraph
                                                  "Made under: <slug>", shown with the ruling by decisions and with a rule by the views; --supersedes marks
                                                  the ruling it replaces "Superseded by" in place; --settles writes the ruling,
-                                                 with who ruled, into each named issue's evidence (its status is unchanged); --applies-to makes it
+                                                 with who ruled, into each named issue's evidence (its status is unchanged);
+                                                 --waives-review, on a ruling by the owner alone, closes the named
+                                                 issues without a review: done and the merge queue take it for the
+                                                 approve until a round, a reopen or a new commit spends it; --applies-to makes it
                                                  a rule with a scope, printed whole to every reader it matches: loop, or
                                                  selectors joined by "and" (role, slice, moment, issue, tag, kind, tier,
                                                  files, repo, each with one value); --until ends it after a date or when
@@ -512,7 +515,7 @@ says why; replace every "<placeholder>" before running one. A value that is one 
 wherever a value is taken, so it is never recorded; any other text in angle brackets is a value.
 
 Lists (the <ids> above; new's --tags, --files, --repo, --source, --after; import's --tags, --repo, --only;
-decide's --settles; the value field gives Tags, Files, Repo, After and Source): one item, or several as one
+decide's --settles and --waives-review; the value field gives Tags, Files, Repo, After and Source): one item, or several as one
 comma list (a,b); a list flag also repeats; a tool takes the same text or a list of strings, one item each.
 An item that starts with - is refused (it is a flag in the wrong place). A list written as text is refused:
 an item that begins or ends with a quote mark, a name (an id, a tag, a reference, a finding id) that holds
@@ -610,7 +613,7 @@ export const COMMAND_FLAGS = {
   answer: { by: 'value', option: 'value' },
   resume: { log: 'value', ready: 'value', gh: 'bool', repo: 'value', base: 'value', as: 'value', slice: 'value' },
   handoff: { summary: 'value', next: 'many', log: 'value', ready: 'value', gh: 'bool' },
-  log: { by: 'value' }, decide: { settles: 'many', by: 'value', quote: 'value', under: 'value', supersedes: 'value', 'applies-to': 'value', until: 'value', area: 'value', reach: 'value', rule: 'value' }, decisions: { live: 'bool' },
+  log: { by: 'value' }, decide: { settles: 'many', 'waives-review': 'many', by: 'value', quote: 'value', under: 'value', supersedes: 'value', 'applies-to': 'value', until: 'value', area: 'value', reach: 'value', rule: 'value' }, decisions: { live: 'bool' },
   goal: { set: 'value', by: 'value' },
   status: { 'stale-hours': 'value', group: 'value', tag: 'value', as: 'value', slice: 'value' }, archive: { by: 'value' }, report: { found: 'bool', metrics: 'bool' }, mode: { by: 'value' },
   changelog: { repo: 'value' },
@@ -768,7 +771,7 @@ const FLAG_HOLES = {
   model: '<model-id>', worktree: '<the-worktree-of-the-lease>', limit: '<whole-number>', as: '<who>', slice: '<coordinator>', findings: '<count>', role: '<role>',
   group: '<group>', with: '<loop-root>', base: '<base-branch>', 'stale-hours': '<hours>', sha: '<sha>', ci: '<ci-state>', red: '<another-issue>',
   target: '<what-would-get-weaker>', issue: '<id>', option: '<option>', 'ask option': '<label:effect>', 'applies-to': '<selectors>', until: '<date-or-id>', to: '<jarl-or-owner>', log: '<count>',
-  ready: '<count>', summary: '<text>', next: '<text>', settles: '<ids>', quote: '<his-own-words>', under: '<a-ruling-in-force>', supersedes: '<a-ruling-in-force>',
+  ready: '<count>', summary: '<text>', next: '<text>', settles: '<ids>', 'waives-review': '<ids>', quote: '<his-own-words>', under: '<a-ruling-in-force>', supersedes: '<a-ruling-in-force>',
   rule: '<rule-id>', area: '<type>', reach: '<number-of-files>', set: '<machine-line>', line: '<line=id>', outside: '<finding-outside-the-issue>',
 };
 const PART_HOLES = {
@@ -1065,7 +1068,7 @@ export const COMMAND_SUMMARY = {
 export const LIST_FIELDS = {
   new: { tags: 'name', files: 'path', repo: 'path', source: 'name', after: 'name' },
   import: { tags: 'name', repo: 'path', only: 'name' },
-  decide: { settles: 'name' },
+  decide: { settles: 'name', 'waives-review': 'name' },
   round: { id: 'name' }, answer: { id: 'name' },
   evidence: { ids: 'name' }, field: { ids: 'name' }, set: { ids: 'name' }, merged: { ids: 'name' },
   review: { ids: 'name' }, changelog: { ids: 'name' },

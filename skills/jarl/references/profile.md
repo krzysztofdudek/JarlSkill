@@ -8,6 +8,7 @@ What counts as proof, what an issue needs before it is done, how a record is tak
 - [Attachments](#attachments): files a profile makes an issue carry before it is done
 - [The window of the done gate](#the-window-of-the-done-gate): which rows and approves count, and how the views flag a gate that does not hold
 - [The owner's sign-off](#the-owners-sign-off): an acceptance line only the owner ticks, with its material and what to check
+- [The owner's waiver of review](#the-owners-waiver-of-review): issues his ruling closes without a review
 - [Retracting a verdict or an evidence row](#retracting-a-verdict-or-an-evidence-row): taking a record back
 - [Profiles](#profiles): statuses and their flags, fields, sections, and the keys a composer uses
 
@@ -51,6 +52,10 @@ A stage the owner wants to see himself is an acceptance line only he ticks, agre
 - **Who holds it.** Until the material is there the line is on whoever produces it (in `next --as`, the jarl's line, its worker doing it); then it is on the owner, and his digest, `next --as owner --all`, gives the material and what to check, with the command that ticks it. A close the gate would refuse is not offered meanwhile.
 - **The tick.** `tick <id> <line> --by owner` records it, `<line>` the line's number among the issue's acceptance lines, as one log line that says who ticked it and holds the line as it was written, so a line rewritten after it waits for a tick of its own. It is refused for any name but the owner's, for a line not marked as his, for one already ticked and while the material is not there. A tick counts inside the window an approve counts in, through pauses: a red round, a start or a reopen spends it, and he looks again at the material made after it.
 - **Done** refuses while an owner line is not ticked, naming the line, its material and what to check; it is checked after the proof and the review, which it never stands in for. Work that must wait for his look waits on the issue with **After:**, and `next` does not offer it until that issue is done.
+
+## The owner's waiver of review
+
+The owner may close chosen issues without a review: `decide <slug> "<text>" --by owner --quote "<his-own-words>" --waives-review <ids>` records his ruling with a `**Waives review:** <ids>` line and writes it into each named issue, followed by the tip of its branch. `decide` refuses `--waives-review` on a ruling by anyone else. The done gate and the merge queue take the waiver for the approve, and for the fresh one a code issue needs, only while the ruling is the owner's, carries his words and is in force (a superseded one waives nothing), and inside the window an approve counts in: a start, a reopen or a red round spends it, and so does a new commit on the branch. The waiver stands for the review alone; the proof rows, the merge and his ticks are still asked for. `status` and `report` count the closed issues it cleared as `waived by the owner`, apart from fresh and coordinator reviews, and `show` names the ruling in the issue's notes. A reader that knows no such line reads the ruling's text with it and asks for the review all the same.
 
 ## Retracting a verdict or an evidence row
 

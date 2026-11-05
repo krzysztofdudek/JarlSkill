@@ -11,7 +11,7 @@ import { FORMAT_LINES, formatState, loadProfile, numberWidth } from './profile.m
 import { ASKS_FILE, DECISIONS_FILE, STAMP_SRC, answeredLines, appendDecision, appendLog, appendLogLines, asksAt, asksPath, firstLine, goalLines, loadDecisions, markDecision, parseStamp, readGoal } from './journal.mjs';
 import { OWNER, carryingOwnersWords, needNoOwnersWords, quoteShown, rulingAuthor } from './owner.mjs';
 import { findIssue, freeBlock, loadIssues, noteText, parseIssue, placeEvidence, setSection } from './issues.mjs';
-import { needFormat } from './repositories.mjs';
+import { needFormat, tipLines } from './repositories.mjs';
 import { readLoop, sliceNamed } from './loop.mjs';
 import { issuesFor } from './commands.mjs';
 import { appliesToLine, loopRules, parseScope, parseUntil } from './rules.mjs';
@@ -288,13 +288,13 @@ export function recordRuleLog(root, slug, ratification, result) {
 
 // A ruling written into issues' Evidence, after what is there, with one log line each. The status is left
 // alone: a ruling may settle the question and still leave work, and done keeps its own preconditions.
-function appendRuling(root, issues, line) {
+function appendRuling(root, issues, line, after = () => []) {
   for (const issue of issues) {
     const text = readText(issue.file);
     const current = (parseIssue(text, issue.file).sections.evidence || '').trim();
     writeAtomic(issue.file, setSection(text, 'Evidence', placeEvidence(current, 'note', noteText(line, current), '\n\n')));
   }
-  appendLogLines(root, issues.map((issue) => `${issue.id} evidence · ${line}`));
+  appendLogLines(root, issues.flatMap((issue) => [`${issue.id} evidence · ${line}`, ...after(issue)]));
 }
 
 // The Applies to line of --applies-to and --until, or null when neither is given: the selectors whom the rule applies to,
@@ -344,18 +344,27 @@ export function cmdDecide(root, slug, ruling, flags = {}) {
     need(inForce.includes(under), `--under ${under ? `"${under}"` : 'needs a slug'} is not a ruling in force of this loop; the rulings in force: ${inForce.length ? inForce.join(', ') : '(none)'}`, () => ({ flag: '--under', value: hole('<a-ruling-in-force>') }));
   }
   const settles = flags.settles !== undefined ? issuesFor(root, flags.settles) : [];
+  // A waiver of review is the owner's alone: a ruling of his, with his words, that names the issues it closes without one.
+  need(flags['waives-review'] === undefined || byOwner, `--waives-review closes the named issues without a review, which only the owner rules: a ruling by ${by} waives nothing`, () => [{ flag: '--by', value: hole('<the-owner-himself>') }, { flag: '--quote', value: hole('<his-own-words>') }]);
+  const waives = flags['waives-review'] !== undefined ? issuesFor(root, flags['waives-review']) : [];
   const appliesTo = scopeOf(root, flags);
   const area = flags.area !== undefined ? String(flags.area) : null;
   const reach = flags.reach !== undefined ? Number(flags.reach) : null;
   const rule = flags.rule !== undefined ? String(flags.rule) : null;
   const text = freeBlock(oneBreak(ruling).trim());
-  appendDecision(root, slug, text, { by, quote, under, supersedes: flags.supersedes, area, reach, rule, settles: settles.map((i) => i.id), appliesTo });
+  appendDecision(root, slug, text, { by, quote, under, supersedes: flags.supersedes, area, reach, rule, settles: settles.map((i) => i.id), appliesTo, waives: waives.map((i) => i.id) });
   appendLog(root, `decided ${slug} · by ${by}${appliesTo ? ` · applies to ${appliesTo}` : ''}${flags.supersedes !== undefined ? ` · supersedes ${flags.supersedes}` : ''}${area ? ` · area ${area}${reach !== null ? ` (${reach} files)` : ''}${rule ? ` · rule ${rule}` : ''}` : ''}`);
   if (settles.length) {
     const shown = quote ? quoteShown(quote) : null;
     carryingOwnersWords([shown], () => appendRuling(root, settles, `Ruling ${slug} (by ${by}): ${firstLine(oneBreak(ruling).trim(), `${DECISIONS_FILE}, ruling ${slug}`)}${shown ? ` · ${shown}` : ''}`));
   }
-  return { slug, by, ...(quote ? { quote } : {}), ...(under ? { under } : {}), ...(appliesTo ? { appliesTo } : {}), supersedes: flags.supersedes ?? null, settles: settles.map((i) => i.id), ...(area ? { area, reach, ...(rule ? { rule } : {}) } : {}) };
+  // Each waived issue carries the waiver where the done gate reads it, followed by the tip of its branch, as a verdict is:
+  // a new commit after it spends it.
+  if (waives.length) {
+    const shown = quoteShown(quote);
+    carryingOwnersWords([shown], () => appendRuling(root, waives, `Ruling ${slug} (by owner) waives the review: ${firstLine(oneBreak(ruling).trim(), `${DECISIONS_FILE}, ruling ${slug}`)} · ${shown}`, (issue) => tipLines(root, issue)));
+  }
+  return { slug, by, ...(waives.length ? { waives: waives.map((i) => i.id) } : {}), ...(quote ? { quote } : {}), ...(under ? { under } : {}), ...(appliesTo ? { appliesTo } : {}), supersedes: flags.supersedes ?? null, settles: settles.map((i) => i.id), ...(area ? { area, reach, ...(rule ? { rule } : {}) } : {}) };
 }
 
 // Whether a question of the record asks about a ruling: a ratify item naming it, or the question the ruling `ask-<n>` was
