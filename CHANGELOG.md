@@ -81,6 +81,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `resume` and `decisions` show an answered question with its answer first, then the question.
 - `models` counts a model written with dots and the same model written with dashes, such as `claude-opus-5.5` and `claude-opus-5-5`, as one model, and its row names both spellings. A review or a task that uses the other spelling gets a note naming the spelling the record holds.
 - A comma in a `tag` command separates tags: `+a,b` adds `a` and `b`, and `-a,b` removes both. Before, the command added one tag named `a,b`.
+- A task that is approved and carries no code is no longer shown as queued for the merge in the status and the resume, where the merge queue never lists it. They now say that no merge waits and that it is ready to be set done.
 
 ## [6.2.0] - 2026-10-19
 

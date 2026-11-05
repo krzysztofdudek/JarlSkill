@@ -120,6 +120,25 @@ test('a coordinator\'s approve on an issue that carries code is not "approved an
   assert.equal(marks()['2'], 'merged');
 });
 
+test('an approved issue that carries no code is not "queued for the merge": the merge queue lists nothing for it, and the view says so', () => {
+  const root = loop();
+  jarl(root, 'new', 'plain issue', '--files', 'a.md');
+  jarl(root, 'new', 'code issue', '--files', 'b.mjs');
+  jarl(root, 'set', '1', 'in-progress', 'go', '--worker', 'w1');
+  jarl(root, 'set', '2', 'in-progress', 'go', '--worker', 'w2', '--branch', 'jarl/2');
+  for (const id of ['1', '2']) {
+    jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'green');
+    jarl(root, 'review', id, 'approve', '--by', 'rev', FINDINGS);
+  }
+  const status = JSON.parse(jarl(root, 'status', '--json'));
+  assert.deepEqual(status.inFlightRows.map((r) => [r.id, r.mark]), [['1', 'approved'], ['2', 'approved']]);
+  assert.deepEqual(JSON.parse(jarl(root, 'resume', '--json')).queue.repos.flatMap((r) => r.rows), [], 'the queue lists nothing for either');
+  const text = jarl(root, 'status');
+  assert.match(text, /^in flight 1 · approved, and it carries no code, so no merge waits — next set it done$/m);
+  assert.match(text, /^in flight 2 · approved and queued for the merge — next the merger lands it, then set it done$/m);
+  assert.match(jarl(root, 'resume'), /^ {2}→ approved, and it carries no code, so no merge waits — next set it done$/m);
+});
+
 // ---- 281: status --tag ----------------------------------------------------------------------------------
 
 test('status --tag scopes every section to the issues carrying the tag', () => {
