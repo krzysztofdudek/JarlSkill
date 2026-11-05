@@ -23,7 +23,7 @@ A worker's report is a hypothesis. A **fresh one-shot reviewer** — never the w
 
 A change meant to alter nothing carries the tag `identical-output` and records that comparison as a proof row, the command and what it printed; its review may be on the light tier, and the comparison never stands in for it.
 
-A finding outside the issue is given with the verdict, `review <id> <verdict> --by <reviewer> --outside "<finding-outside-the-issue>" "<text>"`, one `--outside` each: Jarl files it as a new issue found by the reviewer, its Where the review, and refuses `changes` whose only Critical or Important findings are those.
+A finding outside the issue is given with the verdict, `review <id> <verdict> --by <reviewer> --outside "<finding-outside-the-issue>" "<text>"`, one `--outside` each (and `--field "<name=value>"` for a field the loop's profile requires): Jarl files it as a new issue whose Found by is the reviewer and whose Where is `the review of <id>`, and refuses `changes` whose only Critical or Important findings are those.
 
 **A reviewer records its own verdict**, as the last step of its brief. One that returned without recording is resumed to record it; the jarl relays the verdict (`review --relayed`) only when the reviewer cannot be resumed. Any verdict meant to clear an issue is recorded with `review`, never as an evidence note, and a verdict relayed by someone else is recorded with `review --relayed`. The reviewer's brief follows; `brief <id> --role reviewer` prints what the record holds for it: the issue, the rules that reach its reviewer, the rounds so far with their findings, the proof rows and the command that records the verdict.
 

@@ -237,14 +237,16 @@ commands:
                                                  the composer's command named; --slice <coordinator> offers only the
                                                  issues of that coordinator's slice: across slices only leases hold, and
                                                  an open issue reserves its files against the issues of its own slice
-  review <ids> <verdict> --by <reviewer> [--model <model-id>] [--relayed] [--outside "<finding-outside-the-issue>"]... "<text>"
+  review <ids> <verdict> --by <reviewer> [--model <model-id>] [--relayed] [--outside "<finding-outside-the-issue>"]... [--field "<name=value>"]... "<text>"
                                                  the reviewer's verdict; --model is the model the reviewer was raised on
                                                  (stored as given); --relayed marks a verdict recorded by someone else in
                                                  the reviewer's name, for a reviewer that cannot be resumed to record its
                                                  own; --outside (repeatable) is a finding outside the issue: each is
                                                  filed as a new issue, Found by the reviewer and Where the review, and
                                                  never turns the verdict to changes, so changes whose only Critical or
-                                                 Important findings are outside is refused; --by is required, recorded with its kind
+                                                 Important findings are outside is refused; --field (repeatable) is a
+                                                 field the profile declares, on each issue --outside files; every finding
+                                                 passes the filing's checks before anything is written; --by is required, recorded with its kind
                                                  (self for "self" or anyone who has held the issue's lease, across
                                                  takeovers, or the lease of another issue on its Branch — refused on an approve;
                                                  coordinator for coordinator, jarl, reeve, the loop's own name and
@@ -592,7 +594,7 @@ export const COMMAND_FLAGS = {
   list: { status: 'value', kind: 'value', tag: 'value', prio: 'value', grep: 'value', match: 'many', all: 'bool' },
   show: { full: 'bool' }, brief: { role: 'value', slice: 'value' }, set: { branch: 'value', worker: 'value', model: 'value', worktree: 'value', handover: 'bool', header: 'bool', by: 'value' },
   next: { limit: 'value', all: 'bool', as: 'value', slice: 'value' },
-  review: { by: 'value', model: 'value', relayed: 'bool', outside: 'many' }, round: { findings: 'value', by: 'value' }, tick: { by: 'value' },
+  review: { by: 'value', model: 'value', relayed: 'bool', outside: 'many', field: 'many' }, round: { findings: 'value', by: 'value' }, tick: { by: 'value' },
   models: { group: 'value', with: 'many', archives: 'bool' },
   scope: { branch: 'value', base: 'value', repo: 'value' },
   branches: { base: 'value', repo: 'value', 'stale-hours': 'value' },

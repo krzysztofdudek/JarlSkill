@@ -1,13 +1,13 @@
 // The review command.
 
-import { fieldText, hole, jarlLine, need } from './base.mjs';
+import { Refusal, fieldText, hole, jarlLine, need, refuse } from './base.mjs';
 import { needNoOwnersWords } from './owner.mjs';
 import { jarlDir, stamp } from './where.mjs';
 import { readText, writeAtomic } from './files.mjs';
 import { isBulk } from './ids.mjs';
 import { appendLog, appendLogLines, firstLine } from './journal.mjs';
 import { bodyText, parseIssue, reviewEntries, setSection, unattributedRefusal } from './issues.mjs';
-import { needFormat, reposNamed, tipLines } from './repositories.mjs';
+import { needFormat, tipLines } from './repositories.mjs';
 import { carriesCode, gateOf, readLoop, reviewerKind } from './loop.mjs';
 import { SEVERITIES, loggedFinding, modelLines, modelValue, reviewModelNotes, spellingNote } from './models.mjs';
 import { EVIDENCE_HOW, cmdNew, issuesFor, nothingWritten, oneOrMany, proofSince, refiled } from './commands.mjs';
@@ -46,6 +46,8 @@ function retractReview(root, rawIds, reason, flags) {
 export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
   needNoOwnersWords('the review', findings, flags);
   need(verdict === 'approve' || verdict === 'changes' || verdict === 'retract', `review takes approve or changes (got "${verdict}")`, () => [...(rawIds === undefined ? [{ arg: 0, value: '<ids>' }] : []), { arg: 1, value: hole('<verdict>') }, ...(findings === undefined ? [{ arg: 2, value: '<what-was-read-and-found>' }] : []), ...(flags.by === undefined ? [{ flag: '--by', value: '<reviewer>' }] : [])]);
+  // A retraction takes an approve back and files nothing: a finding outside the issue, or a field for one, goes with a verdict.
+  need(verdict !== 'retract' || (flags.outside === undefined && flags.field === undefined), 'a retraction files no finding outside the issue: a finding outside the issue goes with a verdict, review <ids> <verdict> --outside', () => [{ drop: '--outside' }, { drop: '--field' }]);
   if (verdict === 'retract') return retractReview(root, rawIds, findings, flags);
   need(findings, `review requires "<text>" — what was read and what was found, even when nothing`, () => ({ arg: 2, value: '<what-was-read-and-found>' }));
   const words = String(findings).split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
@@ -56,11 +58,14 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
   if (verdict === 'approve') for (const issue of issues) { const refusal = unattributedRefusal(issue, 'approved'); need(!refusal, issues.length > 1 ? nothingWritten(refusal) : refusal, refiled); }
   const severities = SEVERITIES.filter((s) => findings.includes(s));
   const outside = outsideFindings(flags.outside);
+  need(flags.field === undefined || outside.length, '--field names a field of the issues --outside files, and the call gives no --outside', () => ({ drop: '--field' }));
+  // The model the call named stays in every form it is refused with.
+  const withModel = flags.model !== undefined ? [{ flag: '--model', value: hole('<model-id>') }] : [];
   if (verdict === 'changes') {
     // The verdict judges the issue: a finding outside it is filed and never sends the work back, so a changes verdict needs
     // a Critical or Important finding of its own, not only one given with --outside.
     const weighty = (text) => SEVERITIES.some((s) => s !== 'Minor' && text.includes(s));
-    need(!outside.some(weighty) || weighty(findings), `"changes" sends the work back for a finding of the issue, and its only Critical or Important findings are outside the issue (--outside): each is filed as a new issue and never turns the verdict to changes — the verdict is the one the issue's own findings give`, () => [{ arg: 1, value: hole('<verdict>') }, { flag: '--by', value: hole('<reviewer>') }]);
+    need(!outside.some((o) => weighty(o.text)) || weighty(findings), `"changes" sends the work back for a finding of the issue, and its only Critical or Important findings are outside the issue (--outside): each is filed as a new issue and never turns the verdict to changes — the verdict is the one the issue's own findings give`, () => [{ arg: 1, value: hole('<verdict>') }, { flag: '--by', value: hole('<reviewer>') }, ...withModel]);
     need(severities.length > 0, `"changes" needs at least one finding ranked ${SEVERITIES.join('/')} — name the severity, not just the problem (got ${JSON.stringify(findings)})`, () => ({ arg: 2, value: hole('<findings-with-a-severity>') }));
     need(severities.some((s) => s !== 'Minor'), `"changes" needs a Critical or Important finding — Minor alone goes to evidence on an approve, it never bounces a branch`, () => ({ arg: 1, value: '<verdict>' }));
   }
@@ -80,9 +85,11 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
     need(verdict !== 'approve' || kind !== 'self', `${issue.id}: an approve by ${by} is a self-approve${who ? ` (${who})` : ''} and does not count as review — a fresh reviewer, or the jarl, reads the diff${issues.length > 1 ? ' — nothing was written' : ''}`, () => ({ flag: '--by', value: hole('<a-fresh-reviewer>') }));
     return kind;
   });
-  // Every check has passed: each finding outside the issue is filed first, as a new issue, and the verdict's entry names
-  // the issue it became under the findings of the issue itself.
-  const filed = outside.map((text) => fileOutside(root, issues, by, text));
+  // Every finding outside the issue passes every check of a filing before anything is written, so a review refused for one
+  // of them writes nothing at all; then each is filed, as a new issue, and the verdict's entry names the issue it became
+  // under the findings of the issue itself.
+  for (const o of outside) fileOutside(root, issues, by, o, flags, withModel, true);
+  const filed = outside.map((o) => fileOutside(root, issues, by, o, flags, withModel, false));
   const recorded = filed.length ? `${String(findings).trim()}\n${filed.map((f) => `outside the issue, filed as ${f.id}: ${f.first}`).join('\n')}` : findings;
   // The whole findings go under the issue's ## Reviews (before Evidence, which stays last); the log keeps the verdict
   // line the gate reads, the first line of the findings and a pointer.
@@ -122,20 +129,32 @@ function outsideFindings(raw) {
     const said = (String(v ?? '').match(/[\p{L}\p{N}]/gu) || []).length;
     need(typeof v === 'string' && said >= 2, `a finding outside the issue needs words — what was found and where (got "${String(v ?? '').trim().slice(0, 20)}")`, () => ({ replace: String(v ?? ''), value: hole('<finding-outside-the-issue>') }));
   }
-  return given.map((v) => bodyText(v).trim());
+  return given.map((v) => ({ given: v, text: bodyText(v).trim() }));
 }
 // The most of a finding's first line a title keeps; the finding is the issue's What, whole.
 const OUTSIDE_TITLE_CHARS = 100;
-// One finding outside the reviewed issues, filed as a new issue: its title the finding's first line, its What the finding,
-// found by the reviewer, its Where the review it came from, and the repositories the reviewed issues name, as they name
-// them. The reviewer is its finder; the reviewed issue is named in Where, so the finding is no follow-up of that issue's
-// own work.
-function fileOutside(root, issues, by, text) {
-  const first = text.split('\n')[0].trim();
+// The fixes of a filing's refusal that are also fixes of the review: a field of the profile (--field) and the loop's root.
+const REVIEW_TAKES = new Set(['--field', '--root']);
+// One finding outside the reviewed issues, filed as a new issue (Found by the reviewer, Where the review of the reviewed
+// issues, ruling outside-finding-found-by-reviewer-where-names-the-review): its title the finding's first line, its What
+// the finding, the fields the review's --field gives (a field the profile defaults takes its default), and the Repo the
+// reviewed issues hold once the filing's raises have run. Dry, it runs every check of the filing and writes nothing; a
+// refusal names the finding, and ends with the form of the review: the filing's own fix where review takes it, else the
+// finding's place.
+function fileOutside(root, issues, by, o, flags, withModel, dry) {
+  const first = o.text.split('\n')[0].trim();
   const title = first.length > OUTSIDE_TITLE_CHARS ? `${first.slice(0, OUTSIDE_TITLE_CHARS - 1)}…` : first;
-  const repos = [...new Set(issues.flatMap(reposNamed))];
-  const { id } = cmdNew(root, title, { what: text, 'found-by': by, where: `the review of ${issues.map((i) => i.id).join(', ')}`, ...(repos.length ? { repoAsHeld: repos.join(', ') } : {}) });
-  return { id, first };
+  const opts = { what: o.text, 'found-by': by, where: `the review of ${issues.map((i) => i.id).join(', ')}`, ...(flags.field !== undefined ? { field: flags.field } : {}) };
+  const from = { dry, repoOf: issues.map((i) => i.file) };
+  if (!dry) return { id: cmdNew(root, title, opts, from).id, first };
+  try { cmdNew(root, title, opts, from); } catch (e) {
+    if (!(e instanceof Refusal)) throw e;
+    const fixes = [].concat(e.ready);
+    const kept = fixes.every((f) => f && typeof f === 'object' && REVIEW_TAKES.has(f.flag));
+    const shown = first.length > 60 ? `${first.slice(0, 59)}…` : first;
+    refuse(`the finding outside the issue "${shown}" cannot be filed: ${e.reason}${/nothing was written/.test(e.reason) ? '' : ' — nothing was written'}`, [...(kept ? fixes : [{ replace: String(o.given), value: hole('<finding-outside-the-issue>') }]), { flag: '--by', value: hole('<reviewer>') }, ...withModel]);
+  }
+  return null;
 }
 
 // The one step a verdict leaves, named in its reply so nobody has to know the flow: an approve is followed by the merge

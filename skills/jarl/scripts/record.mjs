@@ -166,9 +166,11 @@ export function setSource(root, id, refs) { return write(root, () => L.cmdSource
 // row of the section; text and the retraction entry under ### Notes. An Evidence section that already holds content and
 // no sub-heading is appended to as it stands.
 export function addEvidence(root, ids, text, opts = {}) { return write(root, () => L.cmdEvidence(root, ids, text, opts)); }
-// verdict: approve | changes (findings of at least three words); opts { by }. verdict retract, with the reason as findings,
-// retracts the newest approve not yet retracted by an appended entry (never a changes verdict), and raises the record
-// format the first time, like addEvidence's retract.
+// verdict: approve | changes (findings of at least three words); opts { by, model, relayed, outside, field }: outside, one
+// finding outside the issue or a list, each filed as a new issue (Found by the reviewer, Where the review), field the
+// Name=value pairs those issues take; the result names them in filed. verdict retract, with the reason as findings,
+// retracts the newest approve not yet retracted by an appended entry (never a changes verdict, and never with outside or
+// field), and raises the record format the first time, like addEvidence's retract.
 export function review(root, ids, verdict, findings, opts = {}) { return write(root, () => L.cmdReview(root, ids, verdict, findings, opts)); }
 // opts { sha, ci, repo }, and the optional keys { ran, saw }: the check that decided the merge and what it printed. They
 // go to the merge record (the Merge check field and the merge line) and are never written as a Proof row, so a merge never

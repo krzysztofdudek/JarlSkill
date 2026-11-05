@@ -14,7 +14,7 @@ import { appendLog, appendLogLines, decisionsPath, goalPath, logPath } from './j
 import { JARL_GITIGNORE, JARL_GITIGNORE_COMMITTED, ensureLoopMerge, outOfGit } from './loop-git.mjs';
 import { HANDOVER_SEGMENT, journalById, mergeCheckText } from './log.mjs';
 import { FIELD_RE, PROPOSED, RENDERED_FIELDS, acceptanceHeading, acceptanceLineCount, acceptanceLines, acceptanceText, bodyText, changelogText, evidenceNotes, evidenceParts, evidenceRows, evidenceTable, fieldValue, findIssue, issueNamed, loadIssues, mergedOf, namedPairs, needNoFieldTags, noteText, parentCycle, parseIssue, placeEvidence, removeFields, removeFirstField, renderIssue, setField, setSection, unattributedRefusal, waitCycle } from './issues.mjs';
-import { branchTip, commitRepoNames, defaultBase, fileKeysOf, isGitRepo, issueRepoPaths, issueRepos, mainCheckoutOf, needFormat, needRightCheckouts, repoFromInput, repoLabel, repoList, tipLines, whyNotDeletable, worktreeState, worktreesOf } from './repositories.mjs';
+import { branchTip, commitRepoNames, defaultBase, fileKeysOf, isGitRepo, issueRepoPaths, issueRepos, mainCheckoutOf, needFormat, needRightCheckouts, repoFromInput, repoLabel, repoList, reposNamed, tipLines, whyNotDeletable, worktreeState, worktreesOf } from './repositories.mjs';
 import { FIELD_NAMES, activeSlices, carriesCode, gateOf, isSliceTag, needOneSlice, readLoop, sinceText, sliceOf, unorderedNamings, unorderedText } from './loop.mjs';
 import { declaredChecks, lastMerge } from './metrics.mjs';
 import { modelLines, modelValue, spellingNote } from './models.mjs';
@@ -214,7 +214,10 @@ function defaultedNote(field, value, flag) {
   return `note: no --${flag} given, so ${field} ${value} was recorded (the default); name it with --${flag}`;
 }
 
-export function cmdNew(root, title, rawFlags) {
+// `from`, a filing's own and never a flag or a library option (newIssue passes three arguments): { dry, repoOf }. dry runs
+// every check of the filing and writes nothing; repoOf (issue files) gives the new issue the Repo those issues hold once
+// every raise of the filing has run, so a finding a review files names its repositories as the reviewed issue does.
+export function cmdNew(root, title, rawFlags, from = {}) {
   need(title, 'new requires "<title>"', { arg: 0, value: '<title>' });
   needNoOwnersWords('the new issue', title, rawFlags);
   // A title is the heading line of the issue: line breaks in it become spaces, so the lines after the first are not lost to the heading.
@@ -266,15 +269,22 @@ export function cmdNew(root, title, rawFlags) {
   const tier = String(flags.tier || profile.tierDefault);
   need(profile.tiers.includes(tier), `--tier must be one of: ${profile.tiers.join(', ')} (got "${tier}") — the tier of model the worker is raised on, mapped to a model by the platform running the loop`, () => ({ flag: '--tier', value: hole('<tier>') }));
   const picked = flags.repo !== undefined ? repoList(root, flags.repo) : [];
-  // repoAsHeld, the library's alone: the Repo field of an issue the loop holds, written as it stands there, so an issue filed
-  // from another one (a finding a review files) names the same repositories, read when that issue's Repo was written.
-  const repoText = flags.repoAsHeld !== undefined ? fieldText(flags.repoAsHeld) : picked.map((p) => p.value).join(', ');
   needOneSlice(splitList(flags.tags));
   const source = sourceList(flags.source);
   const after = flags.after !== undefined ? afterList(root, null, flags.after) : [];
   // A line only the owner ticks names its material and what to check; its first write raises the record format.
   const acceptance = flags.acceptance !== undefined ? acceptanceText(flags.acceptance) : bodyText(fromTemplate.acceptance);
   const ownerLined = needOwnerLines(acceptance);
+  const render = (id, key, repo) => renderIssue({
+    id, title, status: profile.initial, key, kind, priority, tier, fields, sections, acceptanceHeading: profile.acceptance || 'Acceptance',
+    tags: splitList(flags.tags), files: pathList(flags.files), repo, foundBy: flags['found-by'] || 'jarl', person, checkWhen,
+    where: flags.where, what: bodyText(flags.what), why: bodyText(flags.why), source, after,
+    // A template's Acceptance and Changelog are taken as written (a list already); a flag replaces them.
+    acceptance,
+    changelog: flags.changelog !== undefined ? changelogText(flags.changelog) : bodyText(fromTemplate.changelog),
+  });
+  // A dry filing ends here, before the first write: the text the file would hold passes the record's check too.
+  if (from.dry) { needNoNewOwnersWords('', render('0', null, ''), `${slugify(title)}.md`); return { dry: true }; }
   // A promise and a wait are kinds a reader of formats 1 and 2 does not know: the loop is raised first, or, where a composer
   // keeps its format, the filing is refused with nothing written.
   if (kept) needFormat(root, 'promise-wait');
@@ -285,6 +295,8 @@ export function cmdNew(root, title, rawFlags) {
   // are the issues of a loop whose profile declares a field Key of its own.
   const keyed = loadProfile(root).keyed && (formatState(loadProfile(root)).raises || loadProfile(root).format >= FORMAT_LINES['issue-key'].format);
   if (keyed) needFormat(root, 'issue-key');
+  // Read after the raises, which write a bare path of a format-1 loop with a leading ./, so the pair names one place alike.
+  const repoText = from.repoOf ? [...new Set(from.repoOf.flatMap((f) => reposNamed(parseIssue(readText(f), f))))].join(', ') : picked.map((p) => p.value).join(', ');
   const at = stamp();
   const key = keyed ? newIssueKey(at) : null;
   // The number is claimed by creating the file with a link, which never overwrites: when another
@@ -305,14 +317,7 @@ export function cmdNew(root, title, rawFlags) {
     if (needsRaisedFormat(id)) needFormat(root, 'plain-number');
     const file = join(dir, `${id}-${slugify(title)}.md`);
     const tmp = join(dir, `.${id}.${process.pid}.tmp`);
-    const rendered = renderIssue({
-      id, title, status: profile.initial, key, kind, priority, tier, fields, sections, acceptanceHeading: profile.acceptance || 'Acceptance',
-      tags: splitList(flags.tags), files: pathList(flags.files), repo: repoText, foundBy: flags['found-by'] || 'jarl', person, checkWhen,
-      where: flags.where, what: bodyText(flags.what), why: bodyText(flags.why), source, after,
-      // A template's Acceptance and Changelog are taken as written (a list already); a flag replaces them.
-      acceptance,
-      changelog: flags.changelog !== undefined ? changelogText(flags.changelog) : bodyText(fromTemplate.changelog),
-    });
+    const rendered = render(id, key, repoText);
     // The file is claimed by a link, not through writeAtomic, so its text passes the record's one check here (a template too).
     needNoNewOwnersWords('', rendered, `${id}-${slugify(title)}.md`);
     writeFileSync(tmp, rendered);
