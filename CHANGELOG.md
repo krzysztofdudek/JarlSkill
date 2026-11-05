@@ -38,6 +38,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A task can be split into smaller tasks, and those split again, so the backlog becomes a tree. Each checkable line of the big task goes to one of the smaller ones or stays with it, and Jarl refuses a split that would lose a line. The big task waits until its smaller ones are done, then its coordinator checks the whole before it can be closed. The smaller tasks keep the order, the part of the backlog and the rules of the big one. The first split moves the loop to format 3, and a new profile that declares a field named Parent is refused.
 - A reviewer can hand in a problem it found outside the task with its verdict, and Jarl files it as a new task found by that reviewer. Such a problem never sends the work back; a verdict that would send it back for that alone is refused.
 - When a task's checkable lines grow after a worker took it, Jarl says so and names the new line, and the report counts these changes for each person who made them.
+- A change meant to leave the output exactly as it was can be tagged `identical-output`. Its worker records the before-and-after comparison as proof, and a lighter reviewer may approve it, but it still needs that review before it can be closed.
 
 ### Changed
 

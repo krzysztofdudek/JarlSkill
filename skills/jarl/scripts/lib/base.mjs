@@ -11,6 +11,11 @@ export const KINDS = ['bug', 'gap', 'cleanup', 'docs', 'test', 'research', 'proc
 export const PROMISE_KIND = 'promise';
 export const WAIT_KIND = 'wait';
 export const KEPT_KINDS = [PROMISE_KIND, WAIT_KIND];
+// The tag of a change meant to alter nothing (a refactor whose output is the same before and after): its comparison of the
+// output is a proof row, and its fresh review may be a light one that checks the comparison covers everything the change
+// touched. The comparison never stands in for the review.
+export const IDENTICAL_OUTPUT_TAG = 'identical-output';
+export const meantToAlterNothing = (issue) => (issue.tags || []).some((t) => String(t).toLowerCase() === IDENTICAL_OUTPUT_TAG);
 export const PRIORITIES = ['1', '2', '3'];
 // Weakest first: the order of the list is the order of strength, which is how a loop's model lines rank its models.
 export const TIERS = ['light', 'standard', 'strong'];

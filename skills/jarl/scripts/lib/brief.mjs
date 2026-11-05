@@ -4,7 +4,7 @@
 // slice's coordinator: its issues in play, its rules, its reference and its commands. It writes nothing and holds no lock.
 // A brief adds what the record holds to the role's reference, and never replaces it.
 
-import { fieldText, hole, jarlLine, need } from './base.mjs';
+import { IDENTICAL_OUTPUT_TAG, fieldText, hole, jarlLine, meantToAlterNothing, need } from './base.mjs';
 import { jarlDir, today } from './where.mjs';
 import { firstLine } from './journal.mjs';
 import { evidenceTable, issueNamed, reviewEntries } from './issues.mjs';
@@ -78,6 +78,13 @@ function issueBrief(root, loop, rawId, role) {
   if (role === 'worker' && profile.is(issue.status, 'terminal')) notes.push(`${issue.id} is ${issue.status}: a worker starts on it once it is reopened — ${jarlLine('set', issue.id, profile.initial, hole('<why>'))}`);
   const findings = findingsOf(loop, issue, events, notes);
   if (role === 'reviewer' && !proof.length) notes.push(`${issue.id} holds no proof row: a worker's missing rows are an Important finding`);
+  // A change meant to alter nothing: its worker records the comparison as a proof row, and its review may be light.
+  if (meantToAlterNothing(issue)) {
+    const meant = `${issue.id} is a change meant to alter nothing (tag ${IDENTICAL_OUTPUT_TAG})`;
+    notes.push(role === 'worker'
+      ? `${meant}: its comparison of the output before and after is a proof row, the command and what it printed — ${jarlLine('evidence', issue.id, '--ran', hole('<command>'), '--saw', hole('<what-it-printed>'))}`
+      : `${meant}: its review may be a light one, and it checks that the comparison in its proof rows covers everything the change touched; the comparison never stands in for the review`);
+  }
   const record = role === 'worker'
     ? [{ what: 'proof, one row per check', command: jarlLine('evidence', issue.id, '--ran', hole('<command>'), '--saw', hole('<what-it-printed>'), '--by', hole('<who>')) },
       { what: 'the changelog entry, for a change someone sees', command: jarlLine('field', issue.id, 'Changelog', hole('<changelog-entry>'), '--add', '--by', hole('<who>')) }]
