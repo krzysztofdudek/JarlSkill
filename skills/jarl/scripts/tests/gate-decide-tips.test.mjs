@@ -217,10 +217,11 @@ test('an issue may name several repositories: files per repository, next keeps t
   assert.doesNotMatch(jarl(hub, 'status'), /branch gone/);
   // report: per repository, an issue naming two under each.
   for (const id of ['1', '2']) { jarl(hub, 'evidence', id, '--ran', 't', '--saw', 'ok'); jarl(hub, 'review', id, 'approve', '--by', 'r', FINDINGS); }
+  jarl(hub, 'merged', '1', '--sha', 'abc1234', '--repo', '../tool', '--keep');
   jarl(hub, 'set', '1,2', 'done', 'ok');
   const rep = jarl(hub, 'report');
-  assert.match(rep, /### lib \(2\)\n- 1 cross \(bug\)\n- 2 only lib a \(bug\)/);
-  assert.match(rep, /### tool \(1\)\n- 1 cross \(bug\)/);
+  assert.match(rep, /### lib \(2\)\n- 1 cross \(bug\) · merged abc1234 in tool\n- 2 only lib a \(bug\)/);
+  assert.match(rep, /### tool \(1\)\n- 1 cross \(bug\) · merged abc1234 in tool/);
   assert.deepEqual(JSON.parse(jarl(hub, 'report', '--json')).byRepo, { lib: ['1', '2'], tool: ['1'] });
   assert.equal(jarl(hub, 'field', '3', 'Repo', '../tool,../lib'), '3 Repo: tool, lib');
 });

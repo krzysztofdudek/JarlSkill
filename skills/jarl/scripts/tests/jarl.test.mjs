@@ -1396,6 +1396,7 @@ test('a worktree is looked up through git by the lease branch: locked, invisible
   renameSync(wt4, join(away, 'wt4'));
   jarl(root, 'review', '4', 'approve', '--by', 'rev', FINDINGS);
   jarl(root, 'evidence', '4', '--ran', 'check', '--saw', 'green');
+  jarl(root, 'merged', '4', '--sha', sh('git rev-parse jarl/4-closed'), '--keep');
   jarl(root, 'set', '4', 'done', 'merged');
 
   const state = (branch, stored) => worktreeState(root, branch, stored);
@@ -1663,6 +1664,7 @@ test('DONE → delete needs the branch tip in the base, or in every recorded mer
   jarl(root, 'set', '4', 'in-progress', 'w', '--branch', 'jarl/4-dirty', '--worktree', wt);
   sh(`git worktree add -q -b jarl/4-dirty ${wt} && cd ${wt} && echo D > d.txt && git add d.txt && git commit -qm w && echo scratch > notes.txt`);
   sh('git merge -q --no-ff -m m4 jarl/4-dirty');
+  jarl(root, 'merged', '4', '--sha', sh('git rev-parse HEAD'), '--keep');
   close('4');
   assert.equal(mark('jarl/4-dirty'), 'dirty');
   assert.match(jarl(root, 'branches'), /^jarl\/4-dirty → 4 .*\(1 uncommitted\)  DONE \(worktree dirty\)$/m);

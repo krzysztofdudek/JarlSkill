@@ -320,6 +320,9 @@ const KIND_WEIGHT = { fresh: 0, coordinator: 1, self: 2 };
 // An issue carries code when it records a branch or a merge. Only then does done (and the merge queue) need a
 // fresh approve; an issue with neither — a ruling, a note, a hub document — is still cleared by the coordinator.
 export function carriesCode(issue) { return Boolean(fieldText(issue.fields.branch) || fieldText(issue.fields.merged)); }
+// A code issue whose branch is not merged: its lease records a Branch, and neither its Merged field nor its journal
+// records a merge. The one rule done refuses by and status flags a closed issue by: the merge comes before done.
+export function unmergedCode(issue, events) { return Boolean(fieldText(issue.fields.branch)) && !mergedOf(issue) && !events.some((e) => e.type === 'merged'); }
 
 // Every worker one issue's own journal has ever named on an in-progress move — a takeover replaces Worker but
 // is still the same issue, so every lease across every round counts, not only the latest.

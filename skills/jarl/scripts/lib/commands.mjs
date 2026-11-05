@@ -15,7 +15,7 @@ import { JARL_GITIGNORE, JARL_GITIGNORE_COMMITTED, ensureLoopMerge, outOfGit } f
 import { HANDOVER_SEGMENT, journalById, mergeCheckText } from './log.mjs';
 import { FIELD_RE, PROPOSED, RENDERED_FIELDS, acceptanceHeading, acceptanceLineCount, acceptanceLines, acceptanceText, bodyText, changelogText, evidenceNotes, evidenceParts, evidenceRows, evidenceTable, fieldValue, findIssue, issueNamed, loadIssues, mergedOf, namedPairs, needNoFieldTags, noteText, parentCycle, parseIssue, placeEvidence, removeFields, removeFirstField, renderIssue, setField, setSection, unattributedRefusal, waitCycle } from './issues.mjs';
 import { branchTip, commitRepoNames, defaultBase, fileKeysOf, isGitRepo, issueRepoPaths, issueRepos, mainCheckoutOf, needFormat, needRightCheckouts, repoFromInput, repoLabel, repoList, reposNamed, tipLines, whyNotDeletable, worktreeState, worktreesOf } from './repositories.mjs';
-import { FIELD_NAMES, activeSlices, carriesCode, gateOf, isSliceTag, needOneSlice, readLoop, sinceText, sliceOf, unorderedNamings, unorderedText } from './loop.mjs';
+import { FIELD_NAMES, activeSlices, carriesCode, unmergedCode, gateOf, isSliceTag, needOneSlice, readLoop, sinceText, sliceOf, unorderedNamings, unorderedText } from './loop.mjs';
 import { declaredChecks, lastMerge } from './metrics.mjs';
 import { modelLines, modelValue, spellingNote } from './models.mjs';
 import { slotRefusal } from './attachments.mjs';
@@ -1416,6 +1416,9 @@ function doneGateIn(root, loop, issue, base) {
   }
   if (!g.approved) return { cause: 'approve', text: `${issue.id} has no approving review newer than its last round${g.tracked ? ' or reopen' : ''}${g.anchor && g.anchor.what === 'whole' ? `, nor one since ${sinceText(g.anchor)}` : ''} — a fresh reviewer reads the issue and the diff first: ${jarlLine('review', issue.id, '<verdict>', '--by', '<reviewer>', '<text>')}` };
   if (code && !g.fresh) return { cause: 'approve', text: `${issue.id} ${freshRuleText(issue, g.live)}: ${jarlLine('review', issue.id, '<verdict>', '--by', '<a-fresh-reviewer>', '<text>')}` };
+  // A code issue is merged before it is done, the order the approve's reply names and the rule status flags a closed
+  // issue by; a profile that requires a landed merge has checked more than this above.
+  if (unmergedCode(issue, loop.eventsById.get(issue.id) || [])) return { cause: 'merge', text: `${issue.id} carries code (its lease records Branch ${fieldText(issue.fields.branch)}) and records no merge — a code issue is merged before it is done: the merger lands the branch and records it, ${jarlLine('merged', issue.id, '--sha', '<sha>')}, then done` };
   // Last, an acceptance line only the owner ticks: his look comes on top of the proof and the review, never instead.
   return owner();
 }

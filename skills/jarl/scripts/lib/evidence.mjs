@@ -14,7 +14,7 @@ import { outOfGit } from './loop-git.mjs';
 import { attachmentOf, journalById } from './log.mjs';
 import { acceptanceLineCount, alignRows, bodyText, evidenceNotes, evidenceParts, evidenceTable, loadIssues, mergedOf, noteText, parseIssue, placeEvidence, removeFields, reviewEntries, setSection, sharedMark, struckNote } from './issues.mjs';
 import { fileKeysOf, needFormat, repoNames, reposWhere, tipLines, whereLines, whereOf } from './repositories.mjs';
-import { approveKind, carriesCode, coordinatorOf, disagreementText, gateOf, gateState, headerReadNotes, readLoop, recordDisagreements, reviewSplit, sameSlice, scopedLoop, sinceText, sliceNamed, sliceOf, slicesOf } from './loop.mjs';
+import { approveKind, carriesCode, unmergedCode, coordinatorOf, disagreementText, gateOf, gateState, headerReadNotes, readLoop, recordDisagreements, reviewSplit, sameSlice, scopedLoop, sinceText, sliceNamed, sliceOf, slicesOf } from './loop.mjs';
 import { checkState, checkWaiting, checkWaitingText } from './metrics.mjs';
 import { builds, modelMarks } from './models.mjs';
 import { ago, leaseLiveness, leaseState, livenessOf, thresholdText } from './rounds.mjs';
@@ -674,7 +674,7 @@ export function closedGateFlags(loop) {
       }
       const doneAt = Math.max(-1, ...events.filter((e) => e.type === 'move' && profile.is(e.to, 'closes-record')).map((e) => e.n));
       if (merges.some((m) => m.n > doneAt)) flag('a merge was recorded after it went done', reopen);
-      if (fieldText(issue.fields.branch) && !merges.length && !mergedOf(issue)) flag('a code issue done with no merge recorded', reopen);
+      if (unmergedCode(issue, events)) flag('a code issue done with no merge recorded', reopen);
     }
     // Reopening resets the row and the approve, so when it is one of several repairs it comes first: the others would be wasted.
     if (repairs.length > 1 && repairs.includes(reopen)) repairs.splice(0, repairs.length, `${reopen} (it resets the row and the approve, so do it first)`, ...repairs.filter((r) => r !== reopen));

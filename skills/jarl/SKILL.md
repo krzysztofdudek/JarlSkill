@@ -54,7 +54,7 @@ The other references, each read when its subject comes up:
 | `brief <id> [--role reviewer]` · `brief --slice <coordinator>` | the brief a worker, a reviewer or a coordinator is raised with, assembled from the record |
 | `review <ids> <verdict> --by <name> --model <model-id> "<text>"` | records a verdict |
 | `merged <ids> --sha <sha> --ran "<command>" --saw "<what-it-printed>"` | records a merge |
-| `set <ids> done "<text>"` | closes an issue: needs proof and a live approve, and the owner's tick of each line only he ticks |
+| `set <ids> done "<text>"` | closes an issue: needs proof and a live approve, on a code issue its recorded merge, and the owner's tick of each line only he ticks |
 | `tick <id> <line> --by owner` | the owner's tick of an acceptance line written `[owner] … · material: … · check: …` |
 | `ask "<text>"` · `answer <id> "<text>" --by <who>` · `decide <slug> "<text>" --by <who>` | the owner's questions and the rulings |
 | `report` · `close` | what was done; ends the loop |

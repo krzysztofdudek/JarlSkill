@@ -43,6 +43,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- A task worked on its own branch can be closed only after its merge is recorded. Before, Jarl closed it without one and then flagged it as closed wrongly. A task without a branch closes as before.
 - A new loop cannot use the words Person and Check when for fields of its own, or promise and wait for kinds of its own, because Jarl now uses them itself. A loop that already uses them keeps working as before. Jarl's own promises and waits are off there, as they are in any loop whose profile lists its own kinds.
 - A task another worker already holds, or one that would touch a file or resource another worker holds, is now refused when you start it, naming who holds it, instead of quietly replacing that worker. To give a held task to someone else, say it is a handover and why.
 - A loop is marked with a new format, format 3, the first time Jarl writes into it one of the new kinds of entries this release adds. Format 3 is the format of Jarl 6.3.0: from then on an earlier Jarl refuses that loop with a clear message, saying it needs a Jarl that knows format 3, instead of misreading it, so every copy of Jarl that works on the loop must be 6.3.0 or later. The status, the check of the record and the profile now show which format a loop is in.

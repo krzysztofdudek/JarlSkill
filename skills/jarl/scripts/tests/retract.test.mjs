@@ -17,10 +17,12 @@ const L = await import('../jarl-lib.mjs');
 const R = await import('../record.mjs');
 
 const loop = () => makeLoop({ prefix: 'jarl-retract-', goal: 'a goal', via: 'cli' });
-// An issue in progress on a branch (a code issue), filed under 001 unless others exist.
+// An issue in progress on a branch (a code issue), filed under 001 unless others exist, with its merge recorded, so the
+// done gate stands on its rows and approves alone.
 function started(root, title = 'thing to do') {
   const id = fileAsBefore(root, title, { acceptance: 'it works' });
   jarl(root, 'set', id, 'in-progress', '--worker', 'w-one', '--branch', `jarl/${id}-x`);
+  jarl(root, 'merged', id, '--sha', 'abc1234', '--ci', 'none');
   return id;
 }
 const file = (root, id) => readFileSync(L.findIssue(root, id).file, 'utf8');

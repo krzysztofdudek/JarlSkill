@@ -193,7 +193,8 @@ commands:
                                                  whose CI is not green yet; done needs, inside one window (rows after
                                                  the last start, reopen or filing; approves after those or a red
                                                  round), a --ran/--saw row — a free-text note never counts alone —
-                                                 and a live approve, and the owner's tick of every acceptance line only he
+                                                 and a live approve, on an issue whose lease records a Branch a merge
+                                                 recorded (merged), and the owner's tick of every acceptance line only he
                                                  ticks (see tick)
   merged <ids> --sha <sha> [--ran "<command>" --saw "<what-it-printed>" | --red <id>] [--ci pending|green|red|none] [--repo <name-or-path>] [--keep] [--by who] | <ids> --ci <ci-state>
                                                  the merge as fields: Merged (sha, and where with --repo) and CI

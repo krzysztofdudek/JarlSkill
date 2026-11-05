@@ -25,7 +25,7 @@ function units(root, n, { model, changed = 0 } = {}) {
     R.addEvidence(root, id, undefined, { ran: 'npm test', saw: 'pass' });
     if (k < changed) R.review(root, id, 'changes', 'Important: the case is not handled', { by: 'rev-a' });
     R.review(root, id, 'approve', 'read the diff, nothing found', { by: 'rev-a' });
-    R.setStatus(root, id, 'done', 'merged', {});
+    R.recordMerged(root, id, { sha: 'abc1234' }); R.setStatus(root, id, 'done', 'merged', {});
   }
 }
 const cell = (m, model, key) => m.workers.find((r) => r.model === model).cells.find((c) => c.key === key);
