@@ -112,7 +112,7 @@ A closed loop has removed `.jarl/` itself. For an open one, delete `.jarl/` and 
 
 **Can a research report become issues?** Yes: `import <findings.json>` files one issue per finding, and a second run files nothing twice.
 
-**Can another tool read the loop?** `skills/jarl/scripts/record.mjs` is the one stable surface to vendor, under the contract `jarl-record/2`, which keeps every export of `jarl-record/1` ([the record as a library](skills/jarl/references/composers.md#the-record-as-a-library)).
+**Can another tool read the loop?** `skills/jarl/scripts/record.mjs` is the one stable surface to vendor, under the contract `jarl-record/3`, which keeps every export of `jarl-record/1` and `jarl-record/2` ([the record as a library](skills/jarl/references/composers.md#the-record-as-a-library)).
 
 ## Where it fits
 

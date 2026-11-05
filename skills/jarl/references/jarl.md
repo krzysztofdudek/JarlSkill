@@ -228,7 +228,8 @@ raises workers and reviewers on the tier each issue names, files what they find 
 and sends rounds. Everything it raises is its own to reach, so the coordinator holds its workers and
 reviewers and the jarl holds the coordinators. Its brief is this whole skill, plus the repository,
 the feature branch, its slice, the absolute path of the script for a session without the jarl tools,
-and the four reasons to escalate below.
+and the four reasons to escalate below; `brief --slice <name>` prints the part the record holds, and
+`brief <id>` and `brief <id> --role reviewer` the briefs of its workers and reviewers.
 
 **A level waits on the agents it raised, and returns only when the ball is on someone it did not
 raise.** A coordinator keeps working its slice, waiting on its own workers and reviewers, until

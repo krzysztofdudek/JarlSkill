@@ -22,7 +22,7 @@ import {
   issuesNaming, questionFor, cmdGoal, cmdGoalSet, cmdRepoBase, whereOf, cmdVerify, renderVerify, renderCheckNotes,
   renderProfile, renderResume, renderStatus, renderImport, renderSources, renderList, recordTypeLog, recordRuleLog,
   runDecisionsDriver, mergeFlags, describeNew, renderNewReply, issueView, attachmentStates, evidenceTable, renderBranches, renderDecide, renderDecisions,
-  cmdNextAs, renderNextAs, askerSection, cmdTick, withWriter, editorOf, needFormat, formatState, readProfileFile, FORMAT_LINES, cmdRenumber,
+  cmdNextAs, renderNextAs, askerSection, renderBrief, cmdTick, withWriter, editorOf, needFormat, formatState, readProfileFile, FORMAT_LINES, cmdRenumber,
 } from './jarl-lib.mjs';
 import { writeAreaDecision, writeRuleRatification } from './yg-edge.mjs';
 
@@ -141,6 +141,19 @@ commands:
                                                  field that disagrees with the log (see status), where each repository
                                                  written as a name is on this machine and the worktree git has on the
                                                  lease's branch (--json carries them as where)
+  brief <id> [--role worker|reviewer] | brief --slice <coordinator>
+                                                 read-only: the brief a role is raised with, assembled from the record:
+                                                 for an issue's worker (the default) or reviewer, the issue as show
+                                                 prints it (without the lines that name where a repository or a
+                                                 worktree is on this machine, a Worktree field of the header among
+                                                 them), the rules with a scope that reach that reader (the role, its
+                                                 moment, the issue) and Jarl's own, the rounds so far, the findings of
+                                                 the reviews that sent it back, the proof rows, the role's reference and
+                                                 the commands that record the result; with --slice, for that slice's
+                                                 coordinator: its issues in play, its rules, its reference and its
+                                                 commands; every part whole. A merger's brief is one for the whole loop
+                                                 (references/merger.md), and a worker after a takeover is given the
+                                                 rules of the takeover too
   set <ids> <status> "<text>" [--branch <worker-branch>] [--worker <name>] [--model <model-id>] [--worktree <path>] [--handover] [--header] [--by who]
                                                  (<ids> <status-in-the-log> --header rewrites the header fields the log
                                                  renders from the log, writes no log line and is never a move)
@@ -517,6 +530,7 @@ views, one purpose each (read-only; resume, the boot, prints the parts of severa
   next        what can start now; with --as, what is on one holder and the command that moves it
   list        the issues, filtered
   show        one issue as the done gate sees it
+  brief       what a worker, a reviewer or a coordinator is raised with
   decisions   the rulings and what superseded them
   report      what was done, with the loop metrics
   changelog   the changelog entries of issues
@@ -558,7 +572,7 @@ export const COMMAND_FLAGS = {
   evidence: { ran: 'many', saw: 'many', file: 'value', slot: 'value', by: 'value' },
   retract: { by: 'value' }, field: { add: 'bool', remove: 'bool', clear: 'bool', by: 'value' }, base: { by: 'value' },
   list: { status: 'value', kind: 'value', tag: 'value', prio: 'value', grep: 'value', match: 'many', all: 'bool' },
-  show: { full: 'bool' }, set: { branch: 'value', worker: 'value', model: 'value', worktree: 'value', handover: 'bool', header: 'bool', by: 'value' },
+  show: { full: 'bool' }, brief: { role: 'value', slice: 'value' }, set: { branch: 'value', worker: 'value', model: 'value', worktree: 'value', handover: 'bool', header: 'bool', by: 'value' },
   next: { limit: 'value', all: 'bool', as: 'value', slice: 'value' },
   review: { by: 'value', model: 'value', relayed: 'bool' }, round: { findings: 'value', by: 'value' }, tick: { by: 'value' },
   models: { group: 'value', with: 'many', archives: 'bool' },
@@ -724,7 +738,7 @@ const FLAG_HOLES = {
   'import source': '<report-dir>', after: '<ids-it-waits-on>', changelog: '<changelog-entry>', template: '<template>', field: '<name=value>', section: '<name=value>',
   person: '<name>', 'check-when': '<date-or-event>', profile: '<profile.json>', key: '<key>', only: '<finding-ids>', ran: '<command>', saw: '<what-it-printed>',
   file: '<path>', slot: '<slot>', status: '<status>', grep: '<text>', match: '<field=value>', branch: '<worker-branch>', worker: '<the-new-worker>',
-  model: '<model-id>', worktree: '<the-worktree-of-the-lease>', limit: '<whole-number>', as: '<who>', slice: '<coordinator>', findings: '<count>',
+  model: '<model-id>', worktree: '<the-worktree-of-the-lease>', limit: '<whole-number>', as: '<who>', slice: '<coordinator>', findings: '<count>', role: '<role>',
   group: '<group>', with: '<loop-root>', base: '<base-branch>', 'stale-hours': '<hours>', sha: '<sha>', ci: '<ci-state>', red: '<another-issue>',
   target: '<what-would-get-weaker>', issue: '<id>', option: '<option>', 'ask option': '<label:effect>', 'applies-to': '<selectors>', until: '<date-or-id>', to: '<jarl-or-owner>', log: '<count>',
   ready: '<count>', summary: '<text>', next: '<text>', settles: '<ids>', quote: '<his-own-words>', under: '<a-ruling-in-force>', supersedes: '<a-ruling-in-force>',
@@ -958,7 +972,7 @@ function parseWords(argv) {
 export const COMMAND_ARGS = {
   init: ['goal'], new: ['title'], renumber: ['id'], import: ['file'], sources: ['files...'],
   evidence: ['ids', 'text?'], retract: ['id', 'entry', 'text'], field: ['ids', 'name', 'value?'], base: ['name', 'branch'],
-  list: [], show: ['id'], set: ['ids', 'status', 'text?'],
+  list: [], show: ['id'], brief: ['id?'], set: ['ids', 'status', 'text?'],
   merged: ['ids'],
   next: [], review: ['ids', 'verdict', 'text'], round: ['id', 'text'], tick: ['id', 'line'], models: [], scope: ['id?'], branches: [],
   ask: ['text'], answer: ['id', 'text?'], resume: [], handoff: ['action?'], log: ['text'],
@@ -988,6 +1002,7 @@ export const COMMAND_SUMMARY = {
   base: 'Change the base branch a declared repository is held against, logging what it was.',
   list: 'List the issues, the unfinished ones by default, filtered by status, kind, tag, priority or a field.',
   show: 'Print one issue as the done gate sees it (its current window, rows numbered), or the whole file with --full.',
+  brief: 'The brief an issue\'s worker or reviewer, or a slice\'s coordinator, is raised with, assembled from the record: the issue as show prints it, the rules that reach that reader, the rounds so far and their findings, the proof rows, the role\'s reference and the commands that record the result.',
   set: 'Change the status of issues, with the reason logged.',
   merged: 'Record a merge (sha, repository, the check that decided it, CI state) on issues and remove their finished worktree and branch when that is safe, or move the CI state of issues already merged.',
   next: 'The open issues ready to start: no file shared with work in progress, every After issue settled, no open question on them, never a promise or a wait; all adds the held and waiting ones in groups; as lists what is on the owner, the jarl or a named person (a promise on its maker, a wait on its person), each line with its command.',
@@ -1343,6 +1358,7 @@ function dispatchCall(root, commandName, rest, flags) {
       case 'sources': out = cmdSources(root, rest, flags); text = renderSources(out); break;
       case 'list': out = cmdList(root, flags); text = renderList(out, R.loadProfile(root)); break;
       case 'show': { const i = R.findIssue(root, rest[0]); need(i, `no such issue: ${rest[0]} — the issues: ${jarlLine('list', '--all')}`, { arg: 0, value: '<id>' }); const attachments = attachmentStates(root, i); out = { ...i, evidenceRows: evidenceTable(i.sections.evidence).rows.map(({ n, ran, saw, retracted }) => ({ n, ran, saw, retracted })), where: whereOf(root, i), ...(attachments.length ? { attachments } : {}) }; text = issueView(root, i, { full: Boolean(flags.full) }); break; }
+      case 'brief': out = R.briefData(root, rest[0], flags); text = renderBrief(out); break;
       case 'set':
         // A field is written by field, never by set: the refusal ends with the form of the call that writes it.
         if (setRouteOf(root, rest[1]) === 'field') {

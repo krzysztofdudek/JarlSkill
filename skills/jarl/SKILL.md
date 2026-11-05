@@ -50,6 +50,7 @@ The other references, each read when its subject comes up:
 | `new "<title>" --kind promise` · `new "<title>" --kind wait --person "<name>" --check-when "<date-or-event>"` | records a promise, kept by whoever its Found by names, or a wait on a person outside the loop; `next` never offers either, `next --as` shows each on its holder until it closes |
 | `set <ids> in-progress "<text>" --branch <worker-branch> --worker <name> --model <model-id>` | leases issues before a worker is raised; with `--handover`, gives a leased issue to a new worker, `"<text>"` saying why |
 | `evidence <ids> --ran "<command>" --saw "<what-it-printed>"` | records proof |
+| `brief <id> [--role reviewer]` · `brief --slice <coordinator>` | the brief a worker, a reviewer or a coordinator is raised with, assembled from the record |
 | `review <ids> <verdict> --by <name> --model <model-id> "<text>"` | records a verdict |
 | `merged <ids> --sha <sha> --ran "<command>" --saw "<what-it-printed>"` | records a merge |
 | `set <ids> done "<text>"` | closes an issue: needs proof and a live approve, and the owner's tick of each line only he ticks |

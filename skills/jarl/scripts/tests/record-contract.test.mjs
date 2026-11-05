@@ -124,12 +124,69 @@ const CONTRACTS = {
     statusData: '(root, opts?)',
     resumeData: '(root, opts?)',
   },
+  'jarl-record/3': {
+    RECORD_API: 'value',
+    // the contracts this module keeps, and the record formats it reads, with the lines each format holds
+    RECORD_APIS: 'value',
+    RECORD_FORMATS: 'value',
+    FORMAT_LINES: 'value',
+    recordFormat: '(root)',
+    // the loop: where it is, opening it, reading it
+    resolveRoot: '(root, from)',
+    jarlDir: '(root)',
+    hasLiveLoop: '(root)',
+    initLoop: '(root, goal, opts?)',
+    loadIssues: '(root)',
+    findIssue: '(root, id)',
+    decisions: '(root, opts?)',
+    loadAsks: '(root)',
+    // an issue as text
+    parseIssue: '(text, file)',
+    renderIssue: '(spec)',
+    mergedOf: '(issue)',
+    evidenceRows: '(issue)',
+    // the profile
+    PROFILE_VERSION: 'value',
+    STATUS_FLAGS: 'value',
+    DEFAULT_PROFILE: 'value',
+    validateProfile: '(json, where)',
+    readProfileFile: '(file)',
+    loadProfile: '(root)',
+    describeProfile: '(profile)',
+    // one writer at a time
+    withLock: '(root, fn)',
+    writeAtomic: '(path, text)',
+    // operations on the record
+    newIssue: '(root, title, opts?)',
+    setStatus: '(root, ids, status, why, opts?)',
+    setField: '(root, ids, field, value, opts?)',
+    setBody: '(root, id, opts?)',
+    setTags: '(root, ids, ops)',
+    setPriority: '(root, ids, priority)',
+    setFiles: '(root, id, files)',
+    setRepo: '(root, id, path, opts?)',
+    setAfter: '(root, id, ids, opts?)',
+    setSource: '(root, id, refs)',
+    addEvidence: '(root, ids, text, opts?)',
+    review: '(root, ids, verdict, findings, opts?)',
+    recordMerged: '(root, ids, opts?)',
+    addRound: '(root, id, what)',
+    decide: '(root, slug, ruling, opts?)',
+    ask: '(root, question, opts?)',
+    answer: '(root, id, text)',
+    appendLog: '(root, event)',
+    // the views' data, and the brief a role is raised with
+    statusData: '(root, opts?)',
+    resumeData: '(root, opts?)',
+    briefData: '(root, id, opts?)',
+  },
 };
 
 // Each published table's fingerprint, frozen when the version was published.
 const FROZEN = {
   'jarl-record/1': '7635917fcee9a8c3cd25c5ed50c8d365523e7c10432542eed269e22a57a7a041',
   'jarl-record/2': 'ca7442fd9ed1c51380cd5bc8a51ad035d1ffaf39574148f0d2bd87406a2ed88b',
+  'jarl-record/3': '0b41c45a06326322b9ee8e4bcb5f0798ae1fb0f7685f42ab05c827a1991980e2',
 };
 
 // A function's parameters as written in its source: `opts = {}` reads as opts?.
@@ -154,14 +211,14 @@ const sorted = (t) => Object.fromEntries(Object.keys(t).sort().map((k) => [k, t[
 const fingerprint = (t) => createHash('sha256').update(JSON.stringify(sorted(t))).digest('hex');
 
 test('record.mjs declares its contract version, and its exports are exactly that version\'s table', () => {
-  assert.equal(R.RECORD_API, 'jarl-record/2');
+  assert.equal(R.RECORD_API, 'jarl-record/3');
   assert.ok(CONTRACTS[R.RECORD_API], `no table for ${R.RECORD_API} — write one in this test`);
   assert.deepEqual(signatureOf(R), sorted(CONTRACTS[R.RECORD_API]), `record.mjs does not match ${R.RECORD_API}: a changed export needs a new contract version`);
 });
 
 test('every contract record.mjs keeps is named in RECORD_APIS, and each one\'s exports are still there with the same parameters, so a caller of any of them keeps working', () => {
   assert.ok(Object.isFrozen(R.RECORD_APIS));
-  assert.deepEqual([...R.RECORD_APIS], ['jarl-record/1', 'jarl-record/2']);
+  assert.deepEqual([...R.RECORD_APIS], ['jarl-record/1', 'jarl-record/2', 'jarl-record/3']);
   assert.equal(R.RECORD_APIS[R.RECORD_APIS.length - 1], R.RECORD_API, 'the newest one is RECORD_API');
   const now = signatureOf(R);
   for (const version of R.RECORD_APIS) {

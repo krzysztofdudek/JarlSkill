@@ -34,6 +34,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `report --metrics` prints only the loop's metrics, so the summary stays short even for a loop with hundreds of issues. `report` now prints the metrics before its lists of issues.
 - Jarl now flags a task that seems stuck after 30 minutes instead of six hours: work with no commit, proof or note for that long, or proof waiting that long for a review, shows as idle in the status, the resume and its coordinator's list, and a task waiting on a shared resource shows how long ago the task holding it last moved. A line such as `Liveness: 60` in the goal changes the minutes.
 - The loop's report now counts, for each person who runs part of the loop, how many tasks they reopened after closing them and how many pieces of proof or approvals they took back, taken from the name each of those steps was recorded with.
+- Jarl can write the brief you hand to a worker, a reviewer or a coordinator, so you no longer write it by hand: the task, the rules meant for that person, what earlier reviews found, the proof so far and the command that records the result. A tool built on Jarl can get the same brief as data.
 
 ### Changed
 

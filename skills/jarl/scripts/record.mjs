@@ -35,8 +35,8 @@
 import { resolve } from 'node:path';
 import * as L from './jarl-lib.mjs';
 
-export const RECORD_API = 'jarl-record/2';
-export const RECORD_APIS = Object.freeze(['jarl-record/1', RECORD_API]);
+export const RECORD_API = 'jarl-record/3';
+export const RECORD_APIS = Object.freeze(['jarl-record/1', 'jarl-record/2', RECORD_API]);
 
 const read = (fn) => { L.resetCaches(); return fn(); };
 const write = (root, fn) => { L.resetCaches(); return L.withLock(root, fn); };
@@ -205,3 +205,12 @@ export function statusData(root, opts = {}) { return read(() => L.cmdStatus(root
 // resume --json: opts { log, ready, ci }; ci asks gh for the CI of the tips, as the command line's --gh does, and gh is
 // taken as the same key.
 export function resumeData(root, opts = {}) { return read(() => L.cmdResume(root, opts)); }
+// brief --json: the brief of an issue's worker (opts { role: 'worker' }, the default) or reviewer (role 'reviewer'), or,
+// with id null and opts { slice }, of that slice's coordinator. It carries the role, the roles and moments the rules were
+// matched for and the rules that match (each { slug, scope, until, by, under, builtin, source, text }), the count of the
+// rulings in force with the command that lists them (rulings { inForce, command }), the role's
+// reference ({ file, section }, inside the skill's directory), the commands that record the result ({ what, command },
+// each with a placeholder for every value) and notes; an issue's brief also the issue as show prints it (show, without
+// the lines that name where things are on this machine), its rounds, the findings of the reviews that sent it back and its
+// proof rows ({ n, ran, saw }), and a slice's its issues in play. Every part is whole: nothing is cut.
+export function briefData(root, id, opts = {}) { return read(() => L.cmdBrief(root, id, opts)); }
