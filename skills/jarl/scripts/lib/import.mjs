@@ -93,6 +93,8 @@ export function findingsOf(json) {
       kind: KINDS.includes(kindRaw) && !KEPT_KINDS.includes(kindRaw) ? kindRaw : (KIND_OF[kindRaw] || 'bug'),
       priority: PRIORITIES.includes(prioRaw) ? prioRaw : (PRIO_OF[prioRaw] || '2'),
       where: String(f.where || f.surfaces || ''),
+      // Whether the What opens with a label (Claim:, Truth:), which is what tells the issue import files from one written by hand.
+      claimOrTruth: Boolean(claim || (typeof f.truth === 'string' && f.truth)),
       what: [claim && `Claim: ${claim}`, typeof f.truth === 'string' && f.truth && `Truth: ${f.truth}`, typeof f.evidence === 'string' ? f.evidence : ''].filter(Boolean).join('\n\n'),
       why: [why, f.effort && `Effort (the finding's estimate): ${f.effort}`].filter(Boolean).join('\n\n'),
       acceptance: proposal ? `${PROPOSED} — make it checkable before a worker starts: ${proposal}` : '',
@@ -172,6 +174,8 @@ const paragraphsOf = (s) => bodyText(s).split(/\n\s*\n/).map(wordsOf).filter(Boo
 // run writes, and its What opens with the label import gives a finding's claim or its truth. An issue written by hand
 // under the Source, or adopted into it, holds its writer's own words and no such opening, and comparing it with the
 // finding would report a change on every run; one that names several findings is a package of them, not a copy of one.
+// A finding with neither a claim nor a truth is filed with a What that opens with its evidence, as a What written by hand
+// may: its issue cannot be told from one written by hand, so that finding is not compared, and the run says so.
 function filedByImport(issue, foundBy) {
   return issue.sources.length === 1
     && wordsOf(fieldText(issue.fields['found by'])) === wordsOf(foundBy)
@@ -213,15 +217,18 @@ export function cmdImport(root, file, flags) {
   }
   const issues = loadIssues(root);
   const filedAs = bySource(issues);
-  const out = { source: dir, findings: findings.length, considered: chosen.length, filed: [], already: [], changed: [], adopted: [], mentioned: [], ambiguous: [], dryRun: flags['dry-run'] === true };
-  const toFile = [];
   const foundBy = foundByOf(flags, dir);
+  const out = { source: dir, findings: findings.length, considered: chosen.length, filed: [], already: [], foundBy, compared: [], notCompared: [], changed: [], adopted: [], mentioned: [], ambiguous: [], dryRun: flags['dry-run'] === true };
+  const toFile = [];
   for (const f of chosen) {
     const key = `${dir}#${f.id}`;
     if (filedAs.has(key)) {
       out.already.push({ finding: f.id, issues: filedAs.get(key).map((i) => i.id) });
-      for (const i of filedAs.get(key)) {
-        const parts = filedByImport(i, foundBy) ? changedParts(i, f) : [];
+      const own = f.claimOrTruth ? filedAs.get(key).filter((i) => filedByImport(i, foundBy)) : [];
+      if (!own.length) { out.notCompared.push({ finding: f.id, reason: f.claimOrTruth ? 'no-issue-of-this-run' : 'no-claim-or-truth' }); continue; }
+      out.compared.push(f.id);
+      for (const i of own) {
+        const parts = changedParts(i, f);
         if (parts.length) out.changed.push({ finding: f.id, issue: i.id, status: i.status, parts });
       }
       continue;
@@ -340,12 +347,23 @@ export function renderStatus(o, profile = DEFAULT_PROFILE) {
   return `${head}${line}${more.length ? `\n${more.join('\n')}` : ''}`;
 }
 
-// A text under its label, every further line under the first one's text.
-const indented = (label, text) => text.split('\n').map((l, n) => (n === 0 ? `    ${label}${l}` : l ? `    ${' '.repeat(label.length)}${l}` : '')).join('\n');
+// A text under its label, every further line under the first one's text; an empty text leaves the label alone on its line.
+const indented = (label, text) => text.split('\n').map((l, n) => (n === 0 ? `    ${label}${l}`.trimEnd() : l ? `    ${' '.repeat(label.length)}${l}` : '')).join('\n');
+
+// How many of the findings already filed were compared with their issue, and why the others were not.
+function comparedLine(o) {
+  const count = (reason) => o.notCompared.filter((x) => x.reason === reason).length;
+  const why = [
+    count('no-claim-or-truth') && `${count('no-claim-or-truth')} with neither a claim nor a truth`,
+    count('no-issue-of-this-run') && `${count('no-issue-of-this-run')} with no issue that reads as filed by import with Found by "${o.foundBy}"`,
+  ].filter(Boolean);
+  return `compared ${o.compared.length} of ${o.already.length} already filed${why.length ? ` · not compared: ${why.join(', ')}` : ''}`;
+}
 
 export function renderImport(o) {
   const head = `${o.source}: ${o.findings} finding(s)${o.considered !== o.findings ? `, ${o.considered} chosen` : ''} · ${o.dryRun ? 'would file' : 'filed'} ${o.filed.length} · already filed ${o.already.length}${o.changed.length ? ` · changed since filed ${o.changed.length}` : ''}${o.adopted.length ? ` · adopted ${o.adopted.length}` : ''}${o.mentioned.length ? ` · named by an issue without Source ${o.mentioned.length} (--adopt links them)` : ''}${o.ambiguous.length ? ` · ambiguous ${o.ambiguous.length}` : ''}`;
   const rows = [
+    ...(o.already.length ? [comparedLine(o)] : []),
     ...o.filed.map((f) => `${o.dryRun ? 'would file' : `filed ${f.id}`} · ${f.finding} · ${f.kind} P${f.priority} · ${f.title}`),
     ...o.changed.flatMap((c) => c.parts.flatMap((p) => [
       `changed since filed · ${c.finding} · issue ${c.issue} (${c.status}) · ${p.part}`,

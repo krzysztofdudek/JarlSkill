@@ -278,12 +278,51 @@ test('two merged copies with one number on two issues: the hand-filed one stays 
   }
 });
 
-test('the log refuses a note shaped like the line import writes, and one shaped like a filing, naming the command that writes each', () => {
+// The shape of most research findings files: an id, a title, the evidence, a proposal and an effort, with no claim and no
+// truth. Import files each with a What that opens with its evidence, as a What written by hand may, so its issue cannot be
+// told from one written by hand.
+const evidenceOnly = (n, evidence) => ({ id: `E-${n}`, title: `Gap ${n}`, evidence, proposal: `Close gap ${n}.`, effort: 'small' });
+
+test('a finding with neither a claim nor a truth is not compared, and the run says how many it could not compare', () => {
   const root = loop();
-  jarl(root, 'new', 'by hand', '--source', `${SOURCE}#T-1`, '--what', 'Our own words.');
-  assert.match(refuses(root, 'log', `imported ${SOURCE} · 1 filed, 0 already filed`), /has the shape of the line import writes.*jarl\.mjs import "?<findings\.json>"?/);
-  assert.match(refuses(root, 'log', 'filed 1 · by hand'), /reads as a filing.*jarl\.mjs new "?<title>"?/);
-  assert.deepEqual(importing(root, findingsFile(written([finding({ claim: 'Another.' })]))).changed, []);
+  const first = [1, 2, 3].map((n) => evidenceOnly(n, `Gap ${n} as seen.`));
+  assert.equal(importing(root, findingsFile(written(first))).filed.length, 3);
+  const rewritten = findingsFile(written([1, 2, 3].map((n) => evidenceOnly(n, `Gap ${n} rewritten upstream.`))));
+  for (const more of [['--dry-run'], []]) {
+    const out = importing(root, rewritten, ...more);
+    assert.deepEqual(out.changed, []);
+    assert.deepEqual(out.compared, []);
+    assert.deepEqual(out.notCompared, [1, 2, 3].map((n) => ({ finding: `E-${n}`, reason: 'no-claim-or-truth' })));
+    const text = jarl(root, 'import', rewritten, '--source', SOURCE, ...more);
+    assert.doesNotMatch(text, /changed/);
+    assert.match(text, /^compared 0 of 3 already filed · not compared: 3 with neither a claim nor a truth$/m);
+  }
+});
+
+test('every run with findings already filed says how many it compared, and names each reason it left one: no claim or truth, or no issue of this run\'s Found by', () => {
+  const root = loop();
+  jarl(root, 'new', 'Print by hand', '--source', `${SOURCE}#T-2`, '--found-by', `research ${SOURCE}`, '--what', 'Our own words about printing.');
+  const list = [finding(), finding({ id: 'T-2', title: 'Print', claim: 'Users can print a report.' }), evidenceOnly(3, 'Gap 3 as seen.')];
+  importing(root, findingsFile(written(list)));
+  const file = findingsFile(written(list));
+  const same = importing(root, file);
+  assert.deepEqual([same.compared, same.notCompared], [['T-1'], [{ finding: 'T-2', reason: 'no-issue-of-this-run' }, { finding: 'E-3', reason: 'no-claim-or-truth' }]]);
+  assert.match(jarl(root, 'import', file, '--source', SOURCE), new RegExp(`^compared 1 of 3 already filed · not compared: 1 with neither a claim nor a truth, 1 with no issue that reads as filed by import with Found by "research ${SOURCE}"$`, 'm'));
+  const other = jarl(root, 'import', file, '--source', SOURCE, '--found-by', 'Research');
+  assert.match(other, /^compared 0 of 3 already filed · not compared: 1 with neither a claim nor a truth, 2 with no issue that reads as filed by import with Found by "Research"$/m, 'a re-run with another Found by, in another case too, says it compared none');
+  const all = importing(root, findingsFile(written([finding()])));
+  assert.deepEqual([all.compared, all.notCompared], [['T-1'], []]);
+  assert.match(jarl(root, 'import', findingsFile(written([finding()])), '--source', SOURCE), /^compared 1 of 1 already filed$/m);
+  assert.doesNotMatch(jarl(root, 'import', findingsFile(written([finding({ id: 'T-9' })])), '--source', SOURCE, '--dry-run'), /compared/, 'a run with nothing already filed compares nothing and says nothing of it');
+});
+
+test('an empty text of the issue leaves its label alone on the line, with no trailing space', () => {
+  const root = loop();
+  importing(root, findingsFile(written([finding({ impact: undefined })])));
+  const text = jarl(root, 'import', findingsFile(written([finding()])), '--source', SOURCE);
+  assert.match(text, /^changed since filed · T-1 · issue 1 \(open\) · Why$/m);
+  assert.match(text, /^ {4}issue:\n {4}finding: Reports cannot be opened in a sheet\.$/m);
+  assert.deepEqual(text.split('\n').filter((l) => / $/.test(l)), []);
 });
 
 test('a finding that loses words is a change as one that gains words is, and a paragraph added to the issue by hand is not', () => {

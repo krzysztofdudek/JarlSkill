@@ -120,7 +120,8 @@ commands:
                                                  whose Source is already on an issue is skipped, so a re-run files
                                                  nothing twice, and one whose text differs from the What or Why of
                                                  the issue import filed for it is reported with both texts (the
-                                                 issue is never rewritten);
+                                                 issue is never rewritten); a finding with neither a claim nor a
+                                                 truth is not compared;
                                                  --dry-run prints what it would file; --adopt writes
                                                  Source onto an existing issue that names the finding id but has none;
                                                  --tags, --repo and --only repeat, or take a comma list
@@ -1012,7 +1013,7 @@ export const COMMAND_SUMMARY = {
   init: 'Open a loop: create .jarl/ with the goal, out of git by default, committed or permanent when asked.',
   new: 'File an issue under the next free number, with its fields and its What, Why and Acceptance; a promise (kind promise) or a wait on an outside person (kind wait, with person and check-when).',
   renumber: 'Give a free number to one of the issue files that carry one number after a merge, the one with the key named, keeping every line of the log written about it.',
-  import: 'File one issue per finding of a findings file, skipping findings already filed and reporting those whose text changed.',
+  import: 'File one issue per finding of a findings file, skipping findings already filed and reporting those whose text changed; a finding with neither a claim nor a truth is not compared.',
   sources: 'Per findings report: its findings, the issues filed from them and their status.',
   evidence: 'Append a free-text note, or checkable rows of what ran and what it printed, to issues; or record a file as an attachment of a slot (--file, --slot).',
   retract: 'Take back the newest approve of an issue (entry: review), one evidence row by its number (entry: the number) or one evidence note (entry: note-<n>), by an entry that says who and why.',

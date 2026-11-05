@@ -190,9 +190,6 @@ const LINE_CALLS = {
   tick: (id) => ['tick', id, hole('<line>'), '--by', hole('<the-owner-himself>')], tip: (id) => ['evidence', id, '--ran', hole('<command>'), '--saw', hole('<what-it-printed>')],
 };
 const MOVE_SHAPE = idRe('^{id} →');
-// The line import writes after the filings of one run: the report directory and how many issues it filed. A note in its
-// shape would record an import that never ran, so only import writes it.
-const IMPORT_LINE = /^imported \S+ · \d+ filed\b/;
 // A free line for the journal (the log command and record.appendLog): a note about the loop or an issue. A line that
 // reads as one of the kinds above (a filing, a move, a round, a verdict, a retraction, a row, a merge, a CI state, a body
 // change or a tick) is refused and names the command that writes it, so every line the views and the gate read as state was
@@ -201,7 +198,6 @@ export function appendNote(root, event) {
   needNoOwnersWords('the note', event);
   const text = oneLine(event);
   const id = LEADING_ID.exec(text)?.[1] ?? null;
-  need(!IMPORT_LINE.test(text), `log writes a note, and "${text.length > 80 ? `${text.slice(0, 77)}...` : text}" has the shape of the line import writes after the issues it files, which only import writes: ${jarlLine('import', hole('<findings.json>'))}`, () => ['jarl.mjs', 'import', hole('<findings.json>')]);
   need(!MOVE_SHAPE.test(text), `log writes a note, and "${text.length > 80 ? `${text.slice(0, 77)}...` : text}" has the shape of a move (an id, an arrow), which set writes: ${lineWriter('move')}`, () => ['jarl.mjs', ...LINE_CALLS.move(hole('<ids>'))]);
   const type = id === null ? 'other' : parseEvent(id, text, loadProfile(root)).type;
   need(type === 'other', `log writes a note, and "${text.length > 80 ? `${text.slice(0, 77)}...` : text}" reads as ${type === 'filed' ? 'a filing' : `a ${type.replace('-', ' ')} line`}, which the journal's own command writes with its checks: ${type === 'row' && attachmentOf(text.slice(`${id} evidence row · `.length)) ? jarlLine('evidence', '<id>', '--file', '<path>', '--slot', '<slot>') : lineWriter(type)}`, () => ['jarl.mjs', ...LINE_CALLS[type](hole('<id>'))]);
