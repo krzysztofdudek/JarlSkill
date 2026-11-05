@@ -48,6 +48,17 @@ function stamp() { return new Date(nowMs()).toISOString().replace('T', ' ').slic
 // backslash is an ordinary file-name character and is kept.
 export function portablePath(p, platform = process.platform) { return platform === 'win32' ? p.replace(/\\/g, '/') : p; }
 
+// A file path as one key: portable (see portablePath), without a leading ./, a . segment, a doubled slash or a trailing
+// slash, so ./src/a.mjs, src//a.mjs, src/./a.mjs and src/a.mjs are one file. A .. segment is kept as written: what it
+// reaches depends on the file system. A path of Windows that starts with two slashes (a share) keeps them.
+export function normalPath(p, platform = process.platform) {
+  const text = portablePath(String(p ?? '').trim(), platform);
+  const share = platform === 'win32' && text.startsWith('//') && !text.startsWith('///') ? '//' : '';
+  const root = share || (text.startsWith('/') ? '/' : '');
+  const kept = text.split('/').filter((s) => s !== '' && s !== '.');
+  return root + (kept.length ? kept.join('/') : root ? '' : '.');
+}
+
 // A path as an attachment may name it: relative to the loop root, in plain segments, without whitespace.
 function plainRelative(file) {
   const text = String(file ?? '');

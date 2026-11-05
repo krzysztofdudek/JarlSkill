@@ -6,7 +6,7 @@ import { basename, join, resolve, relative, isAbsolute } from 'node:path';
 import { CI_STATES, LEASE_FIELDS, PRIORITIES, Refusal, TIERS, WAIT_KIND, afterView, fieldText, hole, jarlLine, need, noSeparators, refuse, shellWord, slugify, splitList } from './base.mjs';
 import { needNoNewOwnersWords, needNoOwnersWords } from './owner.mjs';
 import { git, gitBytes, gitRun } from './git.mjs';
-import { canonical, issuesDir, jarlDir, portablePath, stamp, today } from './where.mjs';
+import { canonical, issuesDir, jarlDir, normalPath, portablePath, stamp, today } from './where.mjs';
 import { readText, renameRetry, writeAtomic } from './files.mjs';
 import { ISSUE_FILE_RE, branchNameProblem, cmpId, expandIds, idKey, idRe, isBulk, itemNaming, needsRaisedFormat, newIssueKey, newNumber } from './ids.mjs';
 import { DEFAULT_PROFILE, FORMAT_LINES, PARENT_FIELD, TOOL_FIELDS, formatState, loadProfile, numberWidth, profilePath, readProfileFile } from './profile.mjs';
@@ -895,7 +895,7 @@ function editList(root, rawIds, key, value, mode, flags) {
   // An item added is written as the field stores it (a repository as its name or its path), and one the issue holds
   // already, in any spelling of it, is not added again.
   const adds = mode !== 'add' ? [] : key === 'repo' ? repoList(root, items.join(',')).map((p) => p.value) : items;
-  const sameItem = (a, b) => (key === 'after' ? idKey(a) === idKey(b) : key === 'resources' ? a.toLowerCase() === b.toLowerCase() : a === b);
+  const sameItem = (a, b) => (key === 'after' ? idKey(a) === idKey(b) : key === 'resources' ? a.toLowerCase() === b.toLowerCase() : key === 'files' ? normalPath(a) === normalPath(b) : a === b);
   const removes = mode !== 'remove' ? null : (() => {
     if (key === 'repo') {
       let picked = [];
@@ -904,6 +904,7 @@ function editList(root, rawIds, key, value, mode, flags) {
     }
     if (key === 'after') { const keys = items.map((x) => idKey(x)); return (x) => keys.includes(idKey(x)); }
     if (key === 'resources') { const low = items.map((x) => x.toLowerCase()); return (x) => low.includes(x.toLowerCase()); }
+    if (key === 'files') { const same = items.map((x) => normalPath(x)); return (x) => same.includes(normalPath(x)); }
     return (x) => items.includes(x);
   })();
   const results = [].concat(eachIssue(root, rawIds, (id, dry) => {

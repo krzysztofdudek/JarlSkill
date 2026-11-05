@@ -86,6 +86,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Dropping or deferring an issue with a reason of blanks is now refused with the command that gives a reason, as a missing reason is. A changelog entry that opens with a word and a colon that is not a changelog section, such as `Notes:`, is now refused with the list of sections, so it no longer ends up as plain text in the release notes.
 - Every command that writes, run where no loop is found, now says there is no loop there and names `--root` as the way to point at one. Before, `ask`, `log` and `decide` stopped with a file error, and `set`, `field` and the others said there was no such issue.
 - A tool call refused for its input, such as a root that is not an absolute path, a field the tool does not take or a value of the wrong type, now ends with the call that tool takes, each value to fill in marked. `list` given a status, a kind or a priority the loop does not know is now refused with the values it knows, instead of showing an empty list.
+- A file written with a leading `./`, a doubled or trailing slash, a `.` in the middle or, on Windows, backslashes is now the same file as the plain path. `next` and the leases hold an issue back on it, `scope` finds it in the diff, and `field Files --add` and `--remove` no longer add or miss it twice.
 
 ## [6.2.0] - 2026-10-19
 
