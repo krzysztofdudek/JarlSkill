@@ -1,5 +1,7 @@
-// A ratify item is the owner's: only an answer --by owner records it, and an answer --by anyone else is refused before
-// anything is written, ending with the form of the call. An ordinary question is answered by whoever --by names.
+// A ratify item is the owner's: only an answer --by owner records it, and its answer starts with the word that ratifies
+// or rejects (yes, ok, tak, … or reject, nie), whether the item asks about a ruling of the record or about a choice its
+// text describes. Anything else is refused before anything is written, ending with the form of the call. An ordinary
+// question is answered by whoever --by names, in any words.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -34,4 +36,22 @@ test('an ordinary question is answered by whoever --by names, in any words', () 
   jarl(root, 'answer', 'a-1', 'Postgres, for now', '--by', 'Jane Doe');
   assert.equal(JSON.parse(jarl(root, 'decisions', '--json')).find((d) => d.slug === 'ask-1').by, 'Jane Doe');
   assert.match(refuses(root, 'answer', 'a-1,a-2', 'yes', '--by', 'owner'), /answered together only when each is a ratify item/);
+});
+
+test('a ratify item with no ruling is answered with the word that ratifies or rejects first: anything else is refused', () => {
+  const root = loop();
+  for (const n of [1, 2, 3, 4]) jarl(root, 'ask', `choice ${n} made under the mandate`, '--kind', 'ratify');
+  const before = record(root);
+  for (const words of ['maybe later', 'I will think about it', 'no', 'fine by me']) {
+    const said = refuses(root, 'answer', 'a-1', words, '--by', 'owner');
+    assert.match(said, /^a-1 is a ratify item: the answer starts with one word — yes, ok, .*tak to ratify it, reject, rejected, nie to reject it|^a-1 is a ratify item: "no" is English no/, said);
+    assert.match(said, /\njarl\.mjs answer "<question>" "<yes-or-reject-first>" --by "<who>"\n$/, said);
+  }
+  assert.equal(record(root), before, 'a refused answer writes nothing');
+  jarl(root, 'answer', 'a-1', 'yes, keep it', '--by', 'owner');
+  jarl(root, 'answer', 'a-2', 'Tak.', '--by', 'owner');
+  jarl(root, 'answer', 'a-3', 'reject: undo it', '--by', 'owner');
+  jarl(root, 'answer', 'a-4', 'no nie', '--by', 'owner');
+  const asks = readFileSync(join(root, '.jarl', 'asks.md'), 'utf8');
+  for (const n of [1, 2, 3, 4]) assert.match(asks, new RegExp(`\\*\\*a-${n}\\*\\* \\(answered\\)`));
 });

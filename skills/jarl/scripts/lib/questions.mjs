@@ -115,8 +115,9 @@ const verdictHole = () => hole('<yes-or-reject-first>');
 const answerGiven = (answer) => ` (got ${JSON.stringify(String(answer ?? ''))})`;
 function ratifyRefusal(id, ruling, answer) {
   const first = String(answer).trim().split(/\s+/)[0].toLowerCase().replace(/[.,;:!?]+$/, '');
-  if (AMBIGUOUS_WORDS.includes(first)) return `a-${id} ratifies ruling ${ruling}: "${first}" is English no and colloquial Polish yes, so it decides nothing — answer tak or nie (yes or reject)`;
-  return `a-${id} ratifies ruling ${ruling}: the answer starts with one word — ${RATIFY_WORDS.join(', ')} to ratify it, ${REJECT_WORDS.join(', ')} to reject it`;
+  const item = ruling ? `a-${id} ratifies ruling ${ruling}` : `a-${id} is a ratify item`;
+  if (AMBIGUOUS_WORDS.includes(first)) return `${item}: "${first}" is English no and colloquial Polish yes, so it decides nothing — answer tak or nie (yes or reject)`;
+  return `${item}: the answer starts with one word — ${RATIFY_WORDS.join(', ')} to ratify it, ${REJECT_WORDS.join(', ')} to reject it`;
 }
 // A ratify item is the owner's to ratify or reject: an answer by anyone else is refused, the form asking for his --by.
 function needOwnersAnswer(ask, by) {
@@ -146,14 +147,16 @@ function answerChecks(root, ask, answer, chosen) {
     option = options.find((o) => o.label === noSeparators(chosen)) || null;
     need(option, `"${chosen}" is none of the options of a-${id}: ${options.map((o) => o.label).join(', ')}`, () => ({ replace: chosen, value: hole('<option>') }));
   }
-  // A batch item asks about one area ruling, and its answer says one word first: yes or reject (tak or nie); so does a
-  // proposed rule, which the answer accepts or rejects. A rule offered for promotion is answered with one of its options.
+  // A ratify item's answer says one word first: yes or reject (tak or nie), whether it asks about an area ruling of the
+  // batch or about a choice its text describes; so does a proposed rule, which the answer accepts or rejects. A rule
+  // offered for promotion is answered with one of its options.
+  const ratifyItem = ask.kind === 'ratify';
   const ratifying = Boolean(ask.ruling) && ask.kind !== 'rule';
   const proposal = ask.kind === 'rule' && !ask.ruling;
   const rulings = ratifying ? loadDecisions(root) : [];
   const ruling = ratifying ? rulings.find((d) => d.slug === ask.ruling) : null;
-  const verdict = ratifying || proposal ? ratifyVerdict(answer) : null;
-  need(!ratifying || verdict, ratifying && !verdict ? `${ratifyRefusal(id, ask.ruling, answer)}${answerGiven(answer)}` : '', () => ({ arg: 1, value: verdictHole() }));
+  const verdict = ratifyItem || ratifying || proposal ? ratifyVerdict(answer) : null;
+  need(!(ratifyItem || ratifying) || verdict, verdict ? '' : `${ratifyRefusal(id, ask.ruling, answer)}${answerGiven(answer)}`, () => ({ arg: 1, value: verdictHole() }));
   need(!proposal || verdict, `a-${id} proposes a rule: the answer starts with one word — ${RATIFY_WORDS.join(', ')} to accept it, ${REJECT_WORDS.join(', ')} to reject it${answerGiven(answer)}`, () => ({ arg: 1, value: verdictHole() }));
   need(!ratifying || ruling, `a-${id} ratifies ruling ${ask.ruling}, which is not in force in ${DECISIONS_FILE}`, () => afterView(['jarl.mjs', 'decisions', '--live']));
   need(ask.kind !== 'rule' || !ask.ruling || chosen !== null, `a-${id} offers rule ${ask.ruling} for promotion: answer it with --option and one of ${options.map((o) => o.label).join(', ')}`, () => [{ truncate: 2 }, { flag: '--option', value: hole('<option>') }]);

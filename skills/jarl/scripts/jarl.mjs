@@ -312,7 +312,9 @@ commands:
                                                  jarl and in that slice's views, holds its issue back as stuck does,
                                                  and is answered by the jarl (answer a-<n> "<text>" --by jarl);
                                                  listed at boot until answered; ratify is a choice already made
-                                                 under a mandate, awaiting the owner's word, and blocks nothing;
+                                                 under a mandate, awaiting the owner's word, and blocks nothing:
+                                                 its answer starts with yes or reject (ok, tak, nie, … as the
+                                                 refusal lists them), and any other is refused;
                                                  rule proposes the question's text as a rule with the scope of
                                                  --applies-to (as decide takes it), held by the jarl, or by the owner
                                                  with --to owner, and answered yes, which makes it a rule in force, or reject;
