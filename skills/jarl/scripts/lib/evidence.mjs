@@ -418,6 +418,8 @@ function statusOf(root, loop, flags) {
   // loop files nobody committed: all shown, none acted on.
   const leases = issues.filter((i) => profile.is(i.status, 'holds-claim')).map((i) => ({ id: i.id, ...leaseState(root, i, threshold.minutes, { events: loop.eventsById.get(i.id) || [] }) }));
   c.stale = leases.map((x) => ({ id: x.id, problems: x.problems })).filter((x) => x.problems.length);
+  // The liveness threshold of the call and where it came from, and the ages of every lease in the view (see leaseLiveness).
+  c.liveness = { minutes: threshold.minutes, from: threshold.from, leases: leases.map((x) => x.liveness) };
   const live = issues.filter((i) => i.status !== 'dropped');
   c.ciPending = live.filter((i) => mergedOf(i)?.ci === 'pending').map((i) => i.id);
   c.ciRed = live.filter((i) => mergedOf(i)?.ci === 'red').map((i) => i.id);
@@ -435,8 +437,6 @@ function statusOf(root, loop, flags) {
   c.recordFormat = formatState(profile);
   const files = uncommittedLoopFiles(root);
   c.uncommitted = files === null ? null : files.length;
-  // The liveness threshold of the call and where it came from, and the ages of every lease in the view (see leaseLiveness).
-  c.liveness = { minutes: threshold.minutes, from: threshold.from, leases: leases.map((x) => x.liveness) };
   // --group (by, as the library takes it): the same five counts per repository, tag, kind or priority — a dashboard's table, read from the issues.
   if (flags.by !== undefined) {
     // Or a field the profile declares: one group per value it holds.
