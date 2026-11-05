@@ -748,13 +748,16 @@ export function reasonWord(status) { return status.charAt(0).toUpperCase() + sta
 export const SET_CALLERS = ['cli', 'record'];
 
 // Where `set <ids> <name> …` goes, decided here and nowhere else: a field the profile declares (Kind and Tier too, when it
-// declares them) and that is no status, the built-in Resources field, or a move into a status.
+// declares them) and that is no status, the built-in Resources field, another header field of the tool's own (field
+// writes it), or a move into a status.
 function setRoute(profile, name) {
   if (name === undefined || profile.statuses.includes(name)) return 'status';
   if (profile.field(name)) return 'field';
-  return String(name).toLowerCase() === 'resources' ? 'resources' : 'status';
+  if (String(name).toLowerCase() === 'resources') return 'resources';
+  return fieldsWritten(profile).some((f) => f.toLowerCase() === String(name).trim().toLowerCase()) ? 'own' : 'status';
 }
-// What a name given to set is: 'status', or 'field' (a field the profile declares, or the built-in Resources).
+// What a name given to set is: 'status', or 'field' (a field the profile declares, a header field of the tool's own, or
+// the built-in Resources).
 export function setRouteOf(root, name) { return setRoute(loadProfile(root), name) === 'status' ? 'status' : 'field'; }
 
 // The header fields of the tool's own that hold a list, each item one name or path: field adds and removes items of these.
@@ -763,6 +766,11 @@ const LIST_KEYS = ['tags', 'files', 'repo', 'after', 'source', 'resources'];
 // profile gives it), Changelog and the sections the profile declares.
 function sectionsOf(profile) {
   return [...new Set(['What', 'Why', 'Acceptance', ...(profile.acceptance ? [profile.acceptance] : []), 'Changelog', ...profile.sections])];
+}
+// The header fields of the tool's own that field writes in this loop. Person and Check when are the tool's own where the
+// built-in promise and wait hold, and a declared field's otherwise; so is Parent where the issues form a tree.
+function fieldsWritten(profile) {
+  return DESCRIPTION_FIELDS.filter((f) => (profile.kept || !['person', 'check when'].includes(f.toLowerCase())) && (profile.tree || f !== PARENT_FIELD));
 }
 // The one mode a field call writes in: set (a value alone), add, remove or clear.
 function fieldMode(flags) {
@@ -778,9 +786,7 @@ function fieldMode(flags) {
 export function cmdField(root, rawIds, name, value, flags = {}) {
   needNoOwnersWords('the field', value);
   const profile = loadProfile(root);
-  // Person and Check when are the tool's own where the built-in promise and wait hold, and a declared field's otherwise;
-  // so is Parent where the issues form a tree.
-  const writes = DESCRIPTION_FIELDS.filter((f) => (profile.kept || !['person', 'check when'].includes(f.toLowerCase())) && (profile.tree || f !== PARENT_FIELD));
+  const writes = fieldsWritten(profile);
   const sections = sectionsOf(profile);
   const writable = () => [...writes, ...profile.fields.map((f) => f.name), ...sections].join(', ');
   need(name !== undefined && String(name).trim() !== '', `field requires <name>, a part of the description: ${writable()} — e.g. ${jarlLine('field', '<ids>', 'Priority', '<prio>')}`, () => ({ arg: 1, value: '<a-part-of-the-description>' }));
@@ -948,6 +954,7 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   need(SET_CALLERS.includes(caller), `caller must be one of: ${SET_CALLERS.join(', ')} (got "${caller}")`, () => (['jarl.mjs', 'set', '<ids>', '<status>', '<text>']));
   const profile = loadProfile(root);
   const route = setRoute(profile, status);
+  need(route !== 'own', `${String(status).trim()} is a field, not a status: field writes it`, () => (['jarl.mjs', 'field', hole('<ids>'), String(status).trim(), hole('<value>')]));
   if (route === 'field') return setDeclaredField(root, rawIds, profile.field(status), why, flags);
   if (route === 'resources') return setResources(root, rawIds, why, flags);
   if (flags.header) return rewriteHeader(root, rawIds, status, why, flags);

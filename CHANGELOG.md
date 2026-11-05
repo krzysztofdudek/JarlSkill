@@ -81,6 +81,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `resume` and `decisions` show an answered question with its answer first, then the question.
 - `models` counts a model written with dots and the same model written with dashes, such as `claude-opus-5.5` and `claude-opus-5-5`, as one model, and its row names both spellings. A review or a task that uses the other spelling gets a note naming the spelling the record holds.
 - A comma in a `tag` command separates tags: `+a,b` adds `a` and `b`, and `-a,b` removes both. Before, the command added one tag named `a,b`.
+- `set` given the name of an issue's own field, such as Priority, Tags, Files, Repo, After or Source, now says it is a field and ends with the `field` call that writes it, as it does for a field the profile declares. Before, it listed the statuses.
 
 ## [6.2.0] - 2026-10-19
 
