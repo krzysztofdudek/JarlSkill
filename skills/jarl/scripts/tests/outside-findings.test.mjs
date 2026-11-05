@@ -8,7 +8,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { gitRepo, jarl, refuses, run, windowsWords, loop as makeLoop } from './helpers.mjs';
+import { SPAWN_TIMEOUT, gitRepo, jarl, refuses, run, windowsWords, loop as makeLoop } from './helpers.mjs';
 import { fileAsBefore, oldJarl } from './old-jarl.mjs';
 import * as R from '../record.mjs';
 import * as L from '../jarl-lib.mjs';
@@ -142,7 +142,7 @@ test('the issue a finding outside a format-1 loop files names the reviewed issue
   const root = makeLoop({ prefix: 'jarl-outside-format1-', via: 'cli', dotGit: false });
   const tool = join(root, 'tool');
   mkdirSync(tool);
-  const g = (...a) => execFileSync('git', a, { cwd: tool, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  const g = (...a) => execFileSync('git', a, { cwd: tool, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: SPAWN_TIMEOUT });
   g('init', '-q', '-b', 'main'); g('config', 'user.email', 't@t'); g('config', 'user.name', 't');
   writeFileSync(join(tool, 'a.txt'), 'a\n'); g('add', '-A'); g('commit', '-qm', 'base');
   const id = fileAsBefore(root, 'the csv export', { acceptance: 'the export writes csv', repo: 'tool' });
