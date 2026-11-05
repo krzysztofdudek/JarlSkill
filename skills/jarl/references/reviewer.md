@@ -21,6 +21,8 @@ A worker's report is a hypothesis. A **fresh one-shot reviewer** — never the w
 - A change meant to alter nothing is reviewed by checking that its comparison of the output before and after covers everything the change touched.
 - The verdict judges the issue's acceptance and what the change itself broke; a finding outside that is filed as a new issue and never turns the verdict to changes.
 
+A finding outside the issue is given with the verdict, `review <id> <verdict> --by <reviewer> --outside "<finding-outside-the-issue>" "<text>"`, one `--outside` each: Jarl files it as a new issue found by the reviewer, its Where the review, and refuses `changes` whose only Critical or Important findings are those.
+
 **A reviewer records its own verdict**, as the last step of its brief. One that returned without recording is resumed to record it; the jarl relays the verdict (`review --relayed`) only when the reviewer cannot be resumed. Any verdict meant to clear an issue is recorded with `review`, never as an evidence note, and a verdict relayed by someone else is recorded with `review --relayed`. The reviewer's brief follows; `brief <id> --role reviewer` prints what the record holds for it: the issue, the rules that reach its reviewer, the rounds so far with their findings, the proof rows and the command that records the verdict.
 
 ## The reviewer's brief
@@ -42,5 +44,5 @@ Read the rulings in force (jarl_decisions { live: true, root: "<loop-root>" }): 
 Read the evidence rows the worker recorded: a worker's missing rows, red and green not recorded as --ran/--saw rows, are an Important finding.
 Answer four questions with evidence: does the diff meet the acceptance line literally (quote it in the findings; an issue with none is itself a finding); was the new test red before the change and green after; did anything outside the issue's scope move; and, for every review and above all after a round, did the change or the fix weaken anything that worked or protected before (a mode, a default, a guard, a test)?
 Rank every finding Critical / Important / Minor. Minor findings alone are an approve.
-Record your own verdict as your last step, with every field filled: jarl_review { ids: "7", verdict: "approve" or "changes", text: "<findings-with-a-severity>", by: "<reviewer>", model: "<model-id>", root: "<loop-root>" }, with one line each in text, its severity first, your own name in by and the model you run on in model. Your answer is that verdict and the findings, and it quotes the line review printed.
+Record your own verdict as your last step, with every field filled: jarl_review { ids: "7", verdict: "approve" or "changes", text: "<findings-with-a-severity>", by: "<reviewer>", model: "<model-id>", root: "<loop-root>" }, with one line each in text, its severity first, your own name in by and the model you run on in model. A finding outside the issue goes in outside, one item each, never in text: it is filed as a new issue and never turns the verdict to changes. Your answer is that verdict and the findings, and it quotes the line review printed.
 ```

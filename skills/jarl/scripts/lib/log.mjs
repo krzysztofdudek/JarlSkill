@@ -39,7 +39,8 @@ import { STAMP_SRC, appendLog, headerKey, logPath, oneLine } from './journal.mjs
 //   tip            the tip of the issue's branch when the line before it of the same issue (a row, a verdict, a merge) was
 //                  written: tip, the commit of the branch in each repository of the issue, in order, joined by commas
 //   ci             a CI state recorded alone: state
-//   body           a body change
+//   body           a body change: part, the part changed; grew, the numbers of the lines a change of a leased issue's
+//                  acceptance grew it by (null for none); by, the author the line names (null for none)
 //   tick           the owner's tick of an acceptance line only he ticks: line, its number when it was ticked, by, and
 //                  ownerLine, the line as it was written then, which is what the tick holds (a line rewritten after it is
 //                  another); the event's text stays the log line's whole text, as for every other kind
@@ -127,6 +128,17 @@ export function attachmentOf(ran) {
   if (!sha || !size || !SLOT_NAME_RE.test(p[1]) || p[2] === '' || plainRelative(p[2])) return null;
   return { slot: p[1], path: p[2], sha256: sha[1], size: Number(size[1]) };
 }
+// A description change of the title or a section, `<part> · was … [· grew after the lease: line <n>[, <n>…]] [· by <who>]`:
+// the part, the lines a change of a leased issue's acceptance grew it by (null when it grew nothing), and its author, the
+// --by of the call (null when it named nobody). A value in the line holds no separator (the writer puts a stand-in for one),
+// so each segment is read by its place.
+const GREW_SEGMENT = /^grew after the lease: line (\d+(?:, \d+)*)$/;
+function bodyEvent(rest) {
+  const parts = rest.split(' · ');
+  const by = parts.length > 2 && /^by .+$/.test(parts[parts.length - 1]) ? parts.pop().slice(3) : null;
+  const grew = parts.length > 2 ? GREW_SEGMENT.exec(parts[parts.length - 1]) : null;
+  return { type: 'body', part: parts[0], grew: grew ? grew[1].split(', ').map(Number) : null, by };
+}
 // One log line as an event, without its place in the file. `from` is the status the issue was in before the line.
 export function parseEvent(id, text, profile, from = null) {
   return eventParser(profile)(id, text, from);
@@ -170,7 +182,7 @@ function eventParser(profile) {
     const tp = TIP_LINE.exec(text);
     if (tp) return { type: 'tip', tip: tp[1] };
     if (text.startsWith(`${id} CI `) && CI_STATES.includes(text.slice(`${id} CI `.length))) return { type: 'ci', state: text.slice(`${id} CI `.length) };
-    if (text.startsWith(`${id} body · `)) return { type: 'body' };
+    if (text.startsWith(`${id} body · `)) return bodyEvent(text.slice(`${id} body · `.length));
     const tk = TICK_LINE.exec(text);
     if (tk) return { type: 'tick', line: Number(tk[1]), by: tk[2], ownerLine: tk[3] };
     return { type: 'other' };

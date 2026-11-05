@@ -7,10 +7,10 @@ import { readText, writeAtomic } from './files.mjs';
 import { isBulk } from './ids.mjs';
 import { appendLog, appendLogLines, firstLine } from './journal.mjs';
 import { bodyText, parseIssue, reviewEntries, setSection, unattributedRefusal } from './issues.mjs';
-import { needFormat, tipLines } from './repositories.mjs';
+import { needFormat, reposNamed, tipLines } from './repositories.mjs';
 import { carriesCode, gateOf, readLoop, reviewerKind } from './loop.mjs';
 import { SEVERITIES, loggedFinding, modelLines, modelValue, reviewModelNotes, spellingNote } from './models.mjs';
-import { EVIDENCE_HOW, issuesFor, nothingWritten, oneOrMany, proofSince, refiled } from './commands.mjs';
+import { EVIDENCE_HOW, cmdNew, issuesFor, nothingWritten, oneOrMany, proofSince, refiled } from './commands.mjs';
 import { REVIEW_MIN_WORDS, needSaid, retractedBy, struck } from './evidence.mjs';
 import { ownerLineWait } from './owner-lines.mjs';
 
@@ -55,7 +55,12 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
   const issues = issuesFor(root, rawIds);
   if (verdict === 'approve') for (const issue of issues) { const refusal = unattributedRefusal(issue, 'approved'); need(!refusal, issues.length > 1 ? nothingWritten(refusal) : refusal, refiled); }
   const severities = SEVERITIES.filter((s) => findings.includes(s));
+  const outside = outsideFindings(flags.outside);
   if (verdict === 'changes') {
+    // The verdict judges the issue: a finding outside it is filed and never sends the work back, so a changes verdict needs
+    // a Critical or Important finding of its own, not only one given with --outside.
+    const weighty = (text) => SEVERITIES.some((s) => s !== 'Minor' && text.includes(s));
+    need(!outside.some(weighty) || weighty(findings), `"changes" sends the work back for a finding of the issue, and its only Critical or Important findings are outside the issue (--outside): each is filed as a new issue and never turns the verdict to changes — the verdict is the one the issue's own findings give`, () => [{ arg: 1, value: hole('<verdict>') }, { flag: '--by', value: hole('<reviewer>') }]);
     need(severities.length > 0, `"changes" needs at least one finding ranked ${SEVERITIES.join('/')} — name the severity, not just the problem (got ${JSON.stringify(findings)})`, () => ({ arg: 2, value: hole('<findings-with-a-severity>') }));
     need(severities.some((s) => s !== 'Minor'), `"changes" needs a Critical or Important finding — Minor alone goes to evidence on an approve, it never bounces a branch`, () => ({ arg: 1, value: '<verdict>' }));
   }
@@ -75,19 +80,23 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
     need(verdict !== 'approve' || kind !== 'self', `${issue.id}: an approve by ${by} is a self-approve${who ? ` (${who})` : ''} and does not count as review — a fresh reviewer, or the jarl, reads the diff${issues.length > 1 ? ' — nothing was written' : ''}`, () => ({ flag: '--by', value: hole('<a-fresh-reviewer>') }));
     return kind;
   });
+  // Every check has passed: each finding outside the issue is filed first, as a new issue, and the verdict's entry names
+  // the issue it became under the findings of the issue itself.
+  const filed = outside.map((text) => fileOutside(root, issues, by, text));
+  const recorded = filed.length ? `${String(findings).trim()}\n${filed.map((f) => `outside the issue, filed as ${f.id}: ${f.first}`).join('\n')}` : findings;
   // The whole findings go under the issue's ## Reviews (before Evidence, which stays last); the log keeps the verdict
   // line the gate reads, the first line of the findings and a pointer.
   const day = stamp().slice(0, 10);
   for (const [n, issue] of issues.entries()) {
     const text = readText(issue.file);
     const current = (parseIssue(text, issue.file).sections.reviews || '').trim();
-    const entry = `- **${verdict}** · ${by ? `by ${by} (${kinds[n]}) · ` : ''}${day}${model !== undefined ? ` · model ${model}` : ''}${relayed ? ' · relayed' : ''}\n${bodyText(findings).split('\n').map((l) => (l ? `  ${l}` : '')).join('\n')}`;
+    const entry = `- **${verdict}** · ${by ? `by ${by} (${kinds[n]}) · ` : ''}${day}${model !== undefined ? ` · model ${model}` : ''}${relayed ? ' · relayed' : ''}\n${bodyText(recorded).split('\n').map((l) => (l ? `  ${l}` : '')).join('\n')}`;
     writeAtomic(issue.file, setSection(text, 'Reviews', current ? `${current}\n${entry}` : entry));
   }
   // The model and the relay mark come after the kind: a reader that parses only the name and the kind ignores what follows.
   const marks = `${model !== undefined ? `model ${model} · ` : ''}${relayed ? 'relayed · ' : ''}`;
   // Each verdict line is followed by the tip of the issue's branch: the code the verdict was given on.
-  appendLogLines(root, issues.flatMap((issue, n) => [`${issue.id} review ${verdict} · ${by ? `by ${by} (${kinds[n]}) · ` : ''}${marks}${loggedFinding(firstLine(findings, "the issue's Reviews section"))}`, ...tipLines(root, issue)]));
+  appendLogLines(root, issues.flatMap((issue, n) => [`${issue.id} review ${verdict} · ${by ? `by ${by} (${kinds[n]}) · ` : ''}${marks}${loggedFinding(firstLine(recorded, "the issue's Reviews section"))}`, ...tipLines(root, issue)]));
   // Recorded, never refused: a coordinator's approve on a code issue is a fact of the record, but it does not clear
   // the issue for done or the merge queue — the output says so at once. On the command line, in a loop that declares
   // its models, the model notes join it (see reviewModelNotes).
@@ -103,7 +112,30 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
   };
   // The verdict comes back with the acceptance it was given against, so a reviewer (and the merger reading
   // the output) sees what the approve claims is met — or that there was nothing to meet.
-  return oneOrMany(rawIds, issues.map((issue, n) => ({ id: issue.id, verdict, ...(by ? { by, kind: kinds[n] } : {}), ...(model !== undefined ? { model } : {}), ...(relayed ? { relayed } : {}), severities, acceptance: (issue.sections.acceptance || '').trim(), ...(flags.caller === 'cli' ? { next: nextAfterVerdict(issue, verdict, kinds[n], loop && verdict === 'approve' ? ownerLineWait(root, loop, issue) : null) } : {}), ...noteOf(issue, n) })));
+  return oneOrMany(rawIds, issues.map((issue, n) => ({ id: issue.id, verdict, ...(by ? { by, kind: kinds[n] } : {}), ...(model !== undefined ? { model } : {}), ...(relayed ? { relayed } : {}), severities, ...(filed.length ? { filed: filed.map((f) => f.id) } : {}), acceptance: (issue.sections.acceptance || '').trim(), ...(flags.caller === 'cli' ? { next: nextAfterVerdict(issue, verdict, kinds[n], loop && verdict === 'approve' ? ownerLineWait(root, loop, issue) : null) } : {}), ...noteOf(issue, n) })));
+}
+
+// The findings a review gives outside the issue (--outside, repeatable), each a text with words in it, as written.
+function outsideFindings(raw) {
+  const given = raw === undefined ? [] : [].concat(raw);
+  for (const v of given) {
+    const said = (String(v ?? '').match(/[\p{L}\p{N}]/gu) || []).length;
+    need(typeof v === 'string' && said >= 2, `a finding outside the issue needs words — what was found and where (got "${String(v ?? '').trim().slice(0, 20)}")`, () => ({ replace: String(v ?? ''), value: hole('<finding-outside-the-issue>') }));
+  }
+  return given.map((v) => bodyText(v).trim());
+}
+// The most of a finding's first line a title keeps; the finding is the issue's What, whole.
+const OUTSIDE_TITLE_CHARS = 100;
+// One finding outside the reviewed issues, filed as a new issue: its title the finding's first line, its What the finding,
+// found by the reviewer, its Where the review it came from, and the repositories the reviewed issues name, as they name
+// them. The reviewer is its finder; the reviewed issue is named in Where, so the finding is no follow-up of that issue's
+// own work.
+function fileOutside(root, issues, by, text) {
+  const first = text.split('\n')[0].trim();
+  const title = first.length > OUTSIDE_TITLE_CHARS ? `${first.slice(0, OUTSIDE_TITLE_CHARS - 1)}…` : first;
+  const repos = [...new Set(issues.flatMap(reposNamed))];
+  const { id } = cmdNew(root, title, { what: text, 'found-by': by, where: `the review of ${issues.map((i) => i.id).join(', ')}`, ...(repos.length ? { repoAsHeld: repos.join(', ') } : {}) });
+  return { id, first };
 }
 
 // The one step a verdict leaves, named in its reply so nobody has to know the flow: an approve is followed by the merge

@@ -237,11 +237,14 @@ commands:
                                                  the composer's command named; --slice <coordinator> offers only the
                                                  issues of that coordinator's slice: across slices only leases hold, and
                                                  an open issue reserves its files against the issues of its own slice
-  review <ids> <verdict> --by <reviewer> [--model <model-id>] [--relayed] "<text>"
+  review <ids> <verdict> --by <reviewer> [--model <model-id>] [--relayed] [--outside "<finding-outside-the-issue>"]... "<text>"
                                                  the reviewer's verdict; --model is the model the reviewer was raised on
                                                  (stored as given); --relayed marks a verdict recorded by someone else in
                                                  the reviewer's name, for a reviewer that cannot be resumed to record its
-                                                 own; --by is required, recorded with its kind
+                                                 own; --outside (repeatable) is a finding outside the issue: each is
+                                                 filed as a new issue, Found by the reviewer and Where the review, and
+                                                 never turns the verdict to changes, so changes whose only Critical or
+                                                 Important findings are outside is refused; --by is required, recorded with its kind
                                                  (self for "self" or anyone who has held the issue's lease, across
                                                  takeovers, or the lease of another issue on its Branch — refused on an approve;
                                                  coordinator for coordinator, jarl, reeve, the loop's own name and
@@ -589,7 +592,7 @@ export const COMMAND_FLAGS = {
   list: { status: 'value', kind: 'value', tag: 'value', prio: 'value', grep: 'value', match: 'many', all: 'bool' },
   show: { full: 'bool' }, brief: { role: 'value', slice: 'value' }, set: { branch: 'value', worker: 'value', model: 'value', worktree: 'value', handover: 'bool', header: 'bool', by: 'value' },
   next: { limit: 'value', all: 'bool', as: 'value', slice: 'value' },
-  review: { by: 'value', model: 'value', relayed: 'bool' }, round: { findings: 'value', by: 'value' }, tick: { by: 'value' },
+  review: { by: 'value', model: 'value', relayed: 'bool', outside: 'many' }, round: { findings: 'value', by: 'value' }, tick: { by: 'value' },
   models: { group: 'value', with: 'many', archives: 'bool' },
   scope: { branch: 'value', base: 'value', repo: 'value' },
   branches: { base: 'value', repo: 'value', 'stale-hours': 'value' },
@@ -757,7 +760,7 @@ const FLAG_HOLES = {
   group: '<group>', with: '<loop-root>', base: '<base-branch>', 'stale-hours': '<hours>', sha: '<sha>', ci: '<ci-state>', red: '<another-issue>',
   target: '<what-would-get-weaker>', issue: '<id>', option: '<option>', 'ask option': '<label:effect>', 'applies-to': '<selectors>', until: '<date-or-id>', to: '<jarl-or-owner>', log: '<count>',
   ready: '<count>', summary: '<text>', next: '<text>', settles: '<ids>', quote: '<his-own-words>', under: '<a-ruling-in-force>', supersedes: '<a-ruling-in-force>',
-  rule: '<rule-id>', area: '<type>', reach: '<number-of-files>', set: '<machine-line>', line: '<line=id>',
+  rule: '<rule-id>', area: '<type>', reach: '<number-of-files>', set: '<machine-line>', line: '<line=id>', outside: '<finding-outside-the-issue>',
 };
 const PART_HOLES = {
   title: '<title>', priority: '<prio>', tier: '<tier>', kind: '<kind>', tags: '<tag>', files: '<paths>', repo: '<name-or-path>', after: '<ids-it-waits-on>', parent: '<id>',
@@ -1391,6 +1394,7 @@ function dispatchCall(root, commandName, rest, flags) {
       case 'split':
         out = cmdSplit(root, rest[0], flags);
         text = `${out.id} split: ${out.lines.map((l) => (l.kept ? `line ${l.line} kept` : `line ${l.line} → ${l.to}`)).join(', ')} · sub-issues ${out.subs.join(', ')}`;
+        warn = out.notes || [];
         break;
       case 'base':
         out = cmdRepoBase(root, rest[0], rest[1]);
@@ -1504,7 +1508,7 @@ function endWithAsker(root, flags, out, text) {
 const FIELD_SHOWN = 120;
 const renderField = (o) => { const v = String(o.value ?? '').split('\n').map((l) => l.trim()).filter(Boolean).join(' / '); return `${o.id} ${o.field}: ${v ? (v.length > FIELD_SHOWN ? `${v.slice(0, FIELD_SHOWN)}…` : v) : '(cleared)'}`; };
 const renderEvidence = (o) => (o.retractedNote ? `${o.id} evidence note ${o.retractedNote} retracted by ${o.by}` : o.retracted ? `${o.id} evidence row ${o.retracted} retracted by ${o.by}` : o.rows ? `${o.id} evidence row${o.rows.length > 1 ? 's' : ''} recorded` : `${o.id} evidence recorded`);
-const renderReview = (o) => (o.retracted ? `${o.id} review retracted by ${o.by} (${o.kind}): the approve ${o.retracted}` : `${o.id} review ${o.verdict}${o.by ? ` by ${o.by} (${o.kind})` : ''} · acceptance: ${o.acceptance ? o.acceptance.split('\n').join(' / ') : '(none on file)'}${o.next ? ` · next: ${o.next}` : ''}`);
+const renderReview = (o) => (o.retracted ? `${o.id} review retracted by ${o.by} (${o.kind}): the approve ${o.retracted}` : `${o.id} review ${o.verdict}${o.by ? ` by ${o.by} (${o.kind})` : ''} · acceptance: ${o.acceptance ? o.acceptance.split('\n').join(' / ') : '(none on file)'}${o.filed ? ` · filed outside the issue: ${o.filed.join(', ')}` : ''}${o.next ? ` · next: ${o.next}` : ''}`);
 
 // One answer, after its ruling is recorded: a ratified area ruling goes to the type's decision log (and a rule's ratification
 // to the rule's own log) through the composer or the graph's tool, then the line the command prints for it.
