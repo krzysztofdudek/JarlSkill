@@ -170,9 +170,9 @@ test('next --as refuses an empty name and --limit, and names what it takes', () 
   assert.match(refuses(root, 'next', '--as', 'jarl', '--limit', '3'), /--limit counts the ready issues of next; next --as prints at most seven lines, and --all every line/);
 });
 
-// Horde's profile as Horde ships it: every status set by the record, an external scheduler, a done gate with no approve.
-const HORDE = {
-  'jarl-profile': 1, format: 1, name: 'horde',
+// A composer's profile as a composer ships it: every status set by the record, an external scheduler, a done gate with no approve.
+const COMPOSER = {
+  'jarl-profile': 1, format: 1, name: 'composer-x',
   statuses: {
     proposed: { flags: [], 'set-by': 'record' }, queued: { flags: ['dispatchable'], 'set-by': 'record' },
     running: { flags: ['holds-claim'], 'set-by': 'record' }, landed: { flags: [], 'set-by': 'record' },
@@ -183,15 +183,15 @@ const HORDE = {
   fields: { Kind: { enum: ['work', 'quality', 'prototype', 'revert'], default: 'work' }, Node: { required: true }, Class: { required: true } },
   sections: ['Scope', 'Notes for the worker'],
   'acceptance-heading': 'Acceptance — evidence',
-  'external-scheduler': "Horde's tick.mjs --horde <mission> (the director runs it; Jarl's next and queue do not schedule a mission)",
+  'external-scheduler': "composer-x's tick.mjs --mission <mission> (the director runs it; Jarl's next and queue do not schedule a mission)",
   'done-gate': { approve: 'none', 'requires-merged': true },
-  lifecycle: { close: 'record', archive: 'record', command: "Horde's horde.mjs done --horde <mission>" },
+  lifecycle: { close: 'record', archive: 'record', command: "composer-x's composer-x.mjs done --mission <mission>" },
 };
 
-test('on a loop opened with Horde\'s profile, next --as lists only what is not scheduling and names the composer\'s command for the rest', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'jarl-as-horde-'));
+test('on a loop opened with a composer\'s profile, next --as lists only what is not scheduling and names the composer\'s command for the rest', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'jarl-as-composer-'));
   const file = join(dir, 'jarl-profile.json');
-  writeFileSync(file, JSON.stringify(HORDE));
+  writeFileSync(file, JSON.stringify(COMPOSER));
   const root = join(dir, 'mission');
   R.initLoop(root, 'the mission', { profile: file });
   const ticket = (t) => R.newIssue(root, t, { field: ['Node=core', 'Class=standard'] }).id;
@@ -200,16 +200,16 @@ test('on a loop opened with Horde\'s profile, next --as lists only what is not s
   const gone = ticket('dropped ticket');
   R.setStatus(root, queued, 'queued');
   R.setStatus(root, running, 'queued');
-  R.setStatus(root, running, 'running', undefined, { worker: 'w-run', branch: 'horde/run' });
+  R.setStatus(root, running, 'running', undefined, { worker: 'w-run', branch: 'composer-x/run' });
   R.setStatus(root, gone, 'dropped');
   R.ask(root, 'which tier is the default?', { kind: 'stop' });
   R.decide(root, 'tickets-by-weight', 'Tickets are ranked by weight.', { settles: [gone] });
   const o = json(root, 'next', '--as', 'jarl', '--all');
   assert.deepEqual(o.rows.map((r) => r.what), ['ruling'], 'no ticket in play is listed: the scheduler holds them');
-  assert.match(o.schedulerNote, /Horde's tick\.mjs --horde <mission>/);
+  assert.match(o.schedulerNote, /composer-x's tick\.mjs --mission <mission>/);
   const text = jarl(root, 'next', '--as', 'jarl');
   assert.match(text, /^- tickets-by-weight: ruling in force; the work it settles has no live issue: 003 is dropped;/m);
-  assert.match(text, /^the issues in play are the composer's: scheduling is led by the composer: Horde's tick\.mjs --horde <mission>/m);
+  assert.match(text, /^the issues in play are the composer's: scheduling is led by the composer: composer-x's tick\.mjs --mission <mission>/m);
   assert.doesNotMatch(text, /queued ticket|running ticket/);
   const owner = jarl(root, 'next', '--as', 'owner');
   assert.match(owner, /^- a-001 which tier is the default\?: question \(stop\) — jarl\.mjs answer a-001 "<text>" --by owner$/m);

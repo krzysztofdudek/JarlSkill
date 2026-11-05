@@ -429,7 +429,7 @@ test('answer --by names who answered: the ruling records them and the rule ratif
   assert.equal(tool.inputSchema.properties.by.type, 'string');
 });
 
-// A loop a composer runs (its profile keeps close to the record: Horde's mission) is written into the graph by that
+// A loop a composer runs (its profile keeps close to the record) is written into the graph by that
 // composer, into the tree it hands over. The composer files its own batch through record.mjs ask with the
 // ruling named; the command line answering one of its items records the verdict and sends nothing, so no entry is
 // written twice or into a checkout the composer's work never reaches.

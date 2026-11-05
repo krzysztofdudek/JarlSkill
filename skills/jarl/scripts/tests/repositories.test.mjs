@@ -496,7 +496,7 @@ test('set --worktree through the command line refuses a wrong path and writes no
   // A path that does not exist is not checked; the right worktree passes.
   assert.equal(run(w.hub, [...lease, join(parent, 'not-yet')]).status, 0);
   assert.equal(run(w.hub, [...lease, good]).status, 0);
-  // The record library, which composers such as Horde call, accepts the key and stores nothing, with no refusal.
+  // The record library, which composers call, accepts the key and stores nothing, with no refusal.
   R.setStatus(w.hub, '1', 'open', 'back', {});
   const out = R.setStatus(w.hub, '1', 'in-progress', 'again', { branch: 'jarl/1-a', worker: 'w2', worktree: plain });
   assert.equal(out.status, 'in-progress');

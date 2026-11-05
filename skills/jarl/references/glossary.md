@@ -4,7 +4,7 @@ Each term below is defined here, once; the rest of the skill uses it in that sen
 
 | Term | Meaning |
 |---|---|
-| `issue` | A unit of work filed under a number in the loop, with its fields and its acceptance lines; Horde calls it a ticket. |
+| `issue` | A unit of work filed under a number in the loop, with its fields and its acceptance lines. |
 | `loop` | The `.jarl/` directory and everything kept in it for one run of Jarl: the goal, the rulings, the issues and the log. |
 | `lease` | What an in-progress issue holds on its files, its branch and its worker, written as Since, Branch, Worker and Model. |
 | `package` | A set of issues that share one worker branch and are checked and merged together. |
@@ -29,6 +29,6 @@ Each term below is defined here, once; the rest of the skill uses it in that sen
 | `worker` | The agent that does one issue in its own worktree, on its worker branch, and records the proof. |
 | `reviewer` | The agent that gives a verdict on an issue, with a standing. |
 | `merger` | The agent that lands an approved branch into the feature branch and records the merge. |
-| `composer` | A tool that runs its own loop on Jarl's record through the record library, such as Horde. |
+| `composer` | A tool that runs its own loop on Jarl's record through the record library. |
 | `scope` | The measure of a worker branch against its base: its commits, its diff inside the declared files and its test changes, as numbers with no verdict. |
 | `check` | The check that decides whether work lands: a goal's `Check` line, or the check the merger ran for a merge. |

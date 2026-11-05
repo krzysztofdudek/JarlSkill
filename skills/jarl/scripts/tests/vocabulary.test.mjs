@@ -111,8 +111,8 @@ test('the skill, the help and the descriptions speak only of Jarl as it is now: 
   assert.deepEqual(hits(DESCRIPTIONS, re), []);
 });
 
-test('ticket is a word of a composer quoted once, and the skill names the command only as scope', () => {
-  assert.deepEqual(hits(SKILL_LINES, /\bticket/i, SKILL_LABELS).filter((h) => !/Horde/.test(h)), []);
+test('the skill never says ticket, and names the command only as scope', () => {
+  assert.deepEqual(hits(SKILL_LINES, /\bticket/i, SKILL_LABELS), []);
   assert.deepEqual(hits(SKILL_LINES, /\bcheck (?:\[?<id>|--branch|--repo)|jarl_check/, SKILL_LABELS), []);
 });
 

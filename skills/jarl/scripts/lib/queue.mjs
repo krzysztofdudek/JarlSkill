@@ -19,7 +19,7 @@ import { schedulerNote } from './evidence.mjs';
 // not, so it is not merged yet. Rows are ordered by approval (the latest live approve on the branch, then the log's
 // order) and, per repository, cut into batches the way the merger's brief batches: a branch joins the current batch
 // while its declared files share none with it, and starts the next one otherwise. It computes, holds no lock and
-// writes nothing; it runs no check and refuses no merge — that is Horde's land.
+// writes nothing; it runs no check and refuses no merge — that is a composer's gate, never Jarl's.
 export function cmdQueue(root, flags = {}) {
   const profile = loadProfile(root);
   // Under an external scheduler the merge order is its own (and with approve: none no fresh approve would ever queue
