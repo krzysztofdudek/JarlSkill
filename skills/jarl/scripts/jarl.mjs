@@ -823,11 +823,14 @@ export function refusalFor(e, call, platform = process.platform) {
   if (isExternal(e.ready)) return new Error(`${e.reason}\n${commandLine(e.ready, shell)}`);
   if (!call) return new Error(`${e.reason}\n${readyText(e.ready, shell)}`);
   const fixes = [].concat(e.ready).filter(isFix);
+  // A call that gave --root more than once, wherever it wrote them, leaves which loop it meant to the caller.
+  const roots = new Set(call.flags.filter(([k]) => k === 'root').map(([, v]) => v));
+  const formed = roots.size > 1 ? { ...call, flags: [...call.flags.filter(([k]) => k !== 'root'), ['root', hole('<loop-root>')]] } : call;
   const lines = fixes.length
-    ? [...fixes.filter((f) => f.first !== undefined).map((f) => commandOf(f.first)), formOf(shapeOf(call, fixes), fixes.some((f) => f.dashes), shell)]
+    ? [...fixes.filter((f) => f.first !== undefined).map((f) => commandOf(f.first)), formOf(shapeOf(formed, fixes), fixes.some((f) => f.dashes), shell)]
     : [commandOf(e.ready)];
   let unprintable = false;
-  const printed = lines.map((words) => withGlobals(words, call, shell)).map((words) => words.map((w) => (printable(w, shell) ? w : ((unprintable = true), hole('<value>')))))
+  const printed = lines.map((words) => withGlobals(words, formed, shell)).map((words) => words.map((w) => (printable(w, shell) ? w : ((unprintable = true), hole('<value>')))))
     .map((words) => (MUTATING.has(words[1]) && !words.some((w) => HOLE.test(String(w))) ? [...words, hole('<as-the-reason-says>')] : words));
   return new Error(`${reasonFor(e.reason, call, shell, unprintable)}\n${printed.map((words) => printedLine(words, shell)).join('\n')}`);
 }
@@ -945,7 +948,8 @@ function parseWords(argv) {
     const left = plain.slice(1 + ARITY[cmd]);
     const text = FREE_TEXT_ARGS.includes(argumentNames(cmd).at(-1));
     const words = text ? plain.slice(ARITY[cmd]) : left;
-    const where = flagsMoved.length ? `; ${flagsMoved.map((x) => JSON.stringify(x)).join(' and ')} ${flagsMoved.length === 1 ? 'is a flag, which goes' : 'are flags, which go'} before the bare --` : rest ? ' (everything after a bare -- is an argument, so flags such as --root go before it)' : '';
+    const movedNames = [...new Set(flagsMoved.map((x) => x.split('=')[0]))];
+    const where = movedNames.length ? `; ${movedNames.map((x) => JSON.stringify(x)).join(' and ')} ${movedNames.length === 1 ? 'is a flag, which goes' : 'are flags, which go'} before the bare --` : rest ? ' (everything after a bare -- is an argument, so flags such as --root go before it)' : '';
     need(extra.length === 0, `${cmd} takes at most ${ARITY[cmd]} argument${ARITY[cmd] === 1 ? '' : 's'} — unexpected: ${extra.map((x) => JSON.stringify(x)).join(' ')}${where}${left.length ? `; several ids are one argument: 12,13 or 203-206${text ? `; the words ${words.map((x) => JSON.stringify(x)).join(' ')} are one ${argumentNames(cmd).at(-1)} only when quoted as one word` : ''}` : ''}`,
       () => [{ truncate: 1 + ARITY[cmd], text, ...(left.length ? { value: text ? hole('<one-quoted-text>') : hole('<no-word-here>') } : {}) }, ...(rest ? [{ dashes: true }] : [])]);
   }

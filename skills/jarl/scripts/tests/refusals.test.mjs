@@ -245,6 +245,8 @@ test('a --root, a --json or another flag written after a bare -- is named in the
     [['review', '1', 'approve', '--by', 'rev', '--', 'read it all, fine', `--root=${ROOT_ARG}`], `jarl.mjs review --by '<who>' '--root=${ROOT_ARG}' -- '<ids>' '<verdict>' '<what-was-read-and-found>'`],
     [['field', '1', 'What', '--', 'x', '--json', '--root', ROOT_ARG], `jarl.mjs field --json --root ${ROOT_ARG} -- '<ids>' What '<text>'`],
     [['new', '--', 't', '--tier', 'light', '--root', ROOT_ARG], `jarl.mjs new --tier '<tier>' --root ${ROOT_ARG} -- '<title>'`],
+    // Two of them, before and after the --, leave which loop was meant to the caller.
+    [['set', '--root', 'releases/r2', '1', 'deferred', '--', 'later', '--root', ROOT_ARG], "jarl.mjs set --root '<loop-root>' -- '<ids>' '<status>' '<why>'"],
   ];
   for (const [args, form] of cases) {
     const r = refusal(args, { loop: ROOTED });

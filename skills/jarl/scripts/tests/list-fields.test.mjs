@@ -33,7 +33,8 @@ const snapshot = (root) => {
 };
 const LIST_RULE = /takes its items one by one/;
 const DASH_RULE = /cannot start with -/;
-const DASH_HINT = /flags such as --root go before it/;
+// Where a flag goes: before the bare --, said of a list item that starts with a dash, or of a flag written after the --.
+const DASH_HINT = /flags such as --root go before it|is a flag, which goes before the bare --|are flags, which go before the bare --/;
 
 // A loop with three issues and two repositories beside it.
 function fixture() {
