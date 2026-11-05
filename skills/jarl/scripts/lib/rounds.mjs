@@ -467,4 +467,4 @@ function branchesIn(root, repo, flags, issues, minutes = LIVENESS_MINUTES) {
 }
 
 // Used by the other modules of the library, and not part of what jarl-lib.mjs exports.
-export { issuesOnBranch, livenessOf, loopRepos, thresholdText };
+export { issuesOnBranch, livenessOf, loopRepos, takeoverStanding, thresholdText };

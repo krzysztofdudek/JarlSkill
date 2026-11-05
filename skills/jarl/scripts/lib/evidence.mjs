@@ -12,7 +12,7 @@ import { SLOT_NAME_RE, formatState, loadProfile } from './profile.mjs';
 import { appendLog, appendLogLines, firstLine, goalLines, readGoal } from './journal.mjs';
 import { outOfGit } from './loop-git.mjs';
 import { attachmentOf, journalById } from './log.mjs';
-import { acceptanceLineCount, alignRows, bodyText, evidenceNotes, evidenceParts, evidenceTable, loadIssues, mergedOf, noteText, parseIssue, placeEvidence, reviewEntries, setSection, sharedMark, struckNote } from './issues.mjs';
+import { acceptanceLineCount, alignRows, bodyText, evidenceNotes, evidenceParts, evidenceTable, loadIssues, mergedOf, noteText, parseIssue, placeEvidence, removeFields, reviewEntries, setSection, sharedMark, struckNote } from './issues.mjs';
 import { fileKeysOf, needFormat, repoNames, reposWhere, tipLines, whereLines, whereOf } from './repositories.mjs';
 import { approveKind, carriesCode, disagreementText, gateOf, gateState, headerReadNotes, readLoop, recordDisagreements, reviewSplit, sameSlice, scopedLoop, sliceNamed, sliceOf, slicesOf } from './loop.mjs';
 import { checkState, checkWaiting, checkWaitingText } from './metrics.mjs';
@@ -135,12 +135,14 @@ function retractNote(root, rawIds, reason, flags, n) {
 // entries are matched to the log's lines in order: when the file and the log do not agree on how many there are (an
 // issue written by hand, a loop without a Reviews section) nothing is cut. Every evidence row carries its
 // ordinal [n], counted over the whole section, the number retract takes; --full prints the file with them. With places
-// false the lines that name where a repository and the lease's worktree are on this machine are left out, for a text
-// handed to an agent that may run on another one.
+// false the lines that name where a repository and the lease's worktree are on this machine, a Worktree field of the
+// header among them, are left out, for a text handed to an agent that may run on another one.
 export function issueView(root, issue, { full = false, places = true } = {}) {
   const pieces = [];
   let cur = { name: null, lines: [] };
-  for (const l of readText(issue.file).split('\n')) {
+  const text = readText(issue.file);
+  // A Worktree field in the header (a lease written by a Jarl that stored the worktree's path) names a place on a machine.
+  for (const l of (places ? text : removeFields(text, ['Worktree'])).split('\n')) {
     const h = /^##\s+(.*)$/.exec(l);
     if (h) { pieces.push(cur); cur = { name: h[1].trim().toLowerCase(), lines: [l] }; } else cur.lines.push(l);
   }

@@ -111,6 +111,56 @@ test('an issue whose file holds no Reviews section is briefed with the findings 
   assert.match(f.text, /^Important: the count is off by one on the last page\./);
 });
 
+// Lines a writer that keeps its verdicts and rounds in the journal alone writes, with no mark of a takeover on a round.
+const journalOnly = (root, ...texts) => {
+  const log = join(root, '.jarl', 'log.md');
+  writeFileSync(log, `${readFileSync(log, 'utf8').replace(/\n*$/, '\n')}${texts.map((t) => `- 2026-11-01 10:00 · ${t}\n`).join('')}`);
+};
+const issueFile = (root) => join(root, '.jarl', 'issues', readdirSync(join(root, '.jarl', 'issues'))[0]);
+
+test('the findings of a journal-only writer come first and those of the file after them, each verdict once, the file\'s whole', () => {
+  const root = loop();
+  jarl(root, 'new', 'the work');
+  journalOnly(root, '1 review changes · by old1 (fresh) · Important: the first finding, written in the journal alone.', '1 round 1 · the first round');
+  const second = 'Important: the second finding.\nMinor: its second line, kept whole.';
+  jarl(root, 'review', '1', 'changes', '--by', 'rev2', second);
+  jarl(root, 'round', '1', 'the second round');
+  const o = json(root, 'brief', '1', '--role', 'reviewer');
+  assert.equal(o.rounds.length, 2);
+  assert.deepEqual(o.findings.map((f) => [f.by, f.text]), [['old1', 'Important: the first finding, written in the journal alone.'], ['rev2', second]], 'every changes verdict once, oldest first');
+  assert.doesNotMatch(o.notes.join('\n'), /do not line up/);
+});
+
+test('a Reviews section that does not line up with the journal gives the findings of both, the journal\'s first, and says so', () => {
+  const root = loop();
+  jarl(root, 'new', 'the work');
+  jarl(root, 'review', '1', 'changes', '--by', 'rev1', 'Important: recorded by the tool.');
+  writeFileSync(issueFile(root), readFileSync(issueFile(root), 'utf8').replace(/(\n## Reviews\n[\s\S]*?)(?=\n## |$)/, '$1\n- **changes** · by hand (fresh) · 2026-11-01\n  Important: written into the file by hand.\n'));
+  const o = json(root, 'brief', '1', '--role', 'reviewer');
+  assert.deepEqual(o.findings.map((f) => f.by), ['rev1', 'rev1', 'hand']);
+  assert.match(o.notes.join('\n'), /the Reviews section of 1 \(2 entries\) and its log \(1 verdict lines\) do not line up: the findings of both are given, the log's first/);
+});
+
+test('a Worktree field a lease wrote into the header is left out of the brief, as every line that names a place on this machine is', () => {
+  const root = loop();
+  jarl(root, 'new', 'the work');
+  writeFileSync(issueFile(root), readFileSync(issueFile(root), 'utf8').replace(/(\*\*Status:\*\* [^\n]*\n)/, '$1**Worktree:** /home/someone/worktrees/1-the-work\n'));
+  assert.match(jarl(root, 'show', '1'), /\*\*Worktree:\*\* \/home\/someone\/worktrees\/1-the-work/);
+  const text = jarl(root, 'brief', '1');
+  assert.doesNotMatch(text, /Worktree:|\/home\/someone/);
+  assert.match(text, /\n# 1 · the work\n\n\*\*Status:\*\* open\n\*\*Kind:\*\* /);
+});
+
+test('a worker after a takeover a journal-only writer recorded, three rounds with no mark, is given the rules of the takeover; after two it is not', () => {
+  const root = rulesLoop();
+  journalOnly(root, '2 round 1 · a', '2 round 2 · b');
+  assert.deepEqual(json(root, 'brief', '2').roles, ['worker']);
+  journalOnly(root, '2 round 3 · c');
+  const o = json(root, 'brief', '2');
+  assert.deepEqual(o.roles, ['takeover', 'worker']);
+  assert.ok(slugs(o).includes('takeovers'));
+});
+
 test('a worker on an issue a round took over is given the rules of the takeover and of the round', () => {
   const root = rulesLoop();
   jarl(root, 'goal', '--set', 'Takeover: 1');

@@ -7,7 +7,8 @@
 import { fieldText, hole, jarlLine, need } from './base.mjs';
 import { jarlDir, today } from './where.mjs';
 import { evidenceTable, issueNamed, reviewEntries } from './issues.mjs';
-import { readLoop, sameSlice, sliceNamed, sliceOf } from './loop.mjs';
+import { gateOf, readLoop, sameSlice, sliceNamed, sliceOf } from './loop.mjs';
+import { takeoverStanding } from './rounds.mjs';
 import { loopRules, ruleLines, rulesFor } from './rules.mjs';
 import { issueView } from './evidence.mjs';
 
@@ -28,18 +29,25 @@ const REFERENCES = Object.freeze({
 const ruleOf = (r) => ({ slug: r.slug, scope: r.scope, until: r.until ?? null, by: r.by ?? null, under: r.under ?? null, builtin: r.builtin === true, source: r.source ?? null, text: r.text });
 const sorted = (set) => [...set].sort();
 
-// The findings of the reviews that sent the work back, whole: each "changes" entry of the issue's Reviews section, or,
-// for an issue whose file holds none, each "changes" line of its journal.
-function findingsOf(issue, events) {
+// The findings of the reviews that sent the work back, every "changes" verdict once, oldest first. The journal's review
+// lines are the gate's trail, the list show matches the Reviews section against; a writer that keeps verdicts in the
+// journal alone leaves no entry in the file, so the file's entries are the last ones of the trail. Where they line up,
+// a verdict the file holds is given whole from the file, and one only the journal holds from its line; where they do not
+// (a file written by hand, two copies merged), both lists are given whole and a note says so. `notes` gains that note.
+function findingsOf(loop, issue, events, notes) {
   const { lines, entries } = reviewEntries(issue.sections.reviews);
-  if (entries.length) {
-    return entries.filter((e) => e.verdict === 'changes').map((e) => ({
-      by: e.by, kind: e.kind, day: e.day,
-      text: lines.slice(e.start + 1, e.end + 1).map((l) => l.replace(/^ {2}/, '')).join('\n').trim(),
-    }));
-  }
+  const trail = gateOf(loop, issue.id).trail;
+  const fromFile = (e) => ({ by: e.by, kind: e.kind, day: e.day, text: lines.slice(e.start + 1, e.end + 1).map((l) => l.replace(/^ {2}/, '')).join('\n').trim() });
   // The line's verdict and reviewer are the entry's by and kind: the text is what follows them.
-  return events.filter((e) => e.type === 'verdict' && e.verdict === 'changes').map((e) => ({ by: e.by, kind: e.kind, day: e.at.slice(0, 10), text: e.text.slice(e.written.length + 1).replace(/^review changes · (?:by .+? \((?:fresh|coordinator|self)\) · )?/, '') }));
+  const fromLog = (t) => { const e = events.find((x) => x.n === t.n); return { by: t.by, kind: t.kind, day: t.at.slice(0, 10), text: e.text.slice(e.written.length + 1).replace(/^review changes · (?:by .+? \((?:fresh|coordinator|self)\) · )?/, '') }; };
+  const changes = (list) => list.filter(({ verdict }) => verdict === 'changes').map(({ found }) => found);
+  const before = trail.length - entries.length;
+  if (!trail.length) return changes(entries.map((e) => ({ verdict: e.verdict, found: fromFile(e) })));
+  if (before >= 0 && entries.every((e, k) => e.verdict === trail[before + k].verdict)) {
+    return changes(trail.map((t, j) => ({ verdict: t.verdict, found: j >= before ? fromFile(entries[j - before]) : fromLog(t) })));
+  }
+  notes.push(`the Reviews section of ${issue.id} (${entries.length} entries) and its log (${trail.length} verdict lines) do not line up: the findings of both are given, the log's first`);
+  return [...changes(trail.map((t) => ({ verdict: t.verdict, found: fromLog(t) }))), ...changes(entries.map((e) => ({ verdict: e.verdict, found: fromFile(e) })))];
 }
 
 function issueBrief(root, loop, rawId, role) {
@@ -47,7 +55,8 @@ function issueBrief(root, loop, rawId, role) {
   need(issue, `no such issue: ${rawId} — the issues: ${jarlLine('list', '--all')}`, () => ({ arg: 0, value: hole('<id>') }));
   const events = loop.eventsById.get(issue.id) || [];
   const rounds = events.filter((e) => e.type === 'round').map((e, n) => ({ round: n + 1, at: e.at, text: e.text.slice(e.written.length + 1) }));
-  const tookOver = events.some((e) => e.type === 'round' && e.standing?.takeover);
+  // A takeover as the round count reads it: a round line marked takeover, or, on a line with no mark, every third round.
+  const tookOver = takeoverStanding(root, issue, events).takeovers > 0;
   const roles = new Set([role, ...(role === 'worker' && tookOver ? ['takeover'] : [])]);
   const moments = new Set([role === 'worker' ? 'start' : 'review', ...(rounds.length ? ['round'] : [])]);
   // The reader the rules are matched against, as next --as and resume --as match theirs: the role, the moment and the issue.
@@ -56,6 +65,7 @@ function issueBrief(root, loop, rawId, role) {
   const { profile } = loop;
   const notes = [];
   if (role === 'worker' && profile.is(issue.status, 'terminal')) notes.push(`${issue.id} is ${issue.status}: a worker starts on it once it is reopened — ${jarlLine('set', issue.id, profile.initial, hole('<why>'))}`);
+  const findings = findingsOf(loop, issue, events, notes);
   if (role === 'reviewer' && !proof.length) notes.push(`${issue.id} holds no proof row: a worker's missing rows are an Important finding`);
   const record = role === 'worker'
     ? [{ what: 'proof, one row per check', command: jarlLine('evidence', issue.id, '--ran', hole('<command>'), '--saw', hole('<what-it-printed>'), '--by', hole('<who>')) },
@@ -64,7 +74,7 @@ function issueBrief(root, loop, rawId, role) {
   return {
     role, id: issue.id, title: issue.title, status: issue.status, roles: sorted(roles), moments: sorted(moments),
     show: issueView(root, issue, { places: false }).replace(/\s+$/, ''),
-    rules, rounds, findings: findingsOf(issue, events), proof, reference: REFERENCES[role], record, notes,
+    rules, rounds, findings, proof, reference: REFERENCES[role], record, notes,
   };
 }
 

@@ -144,8 +144,9 @@ commands:
   brief <id> [--role worker|reviewer] | brief --slice <coordinator>
                                                  read-only: the brief a role is raised with, assembled from the record:
                                                  for an issue's worker (the default) or reviewer, the issue as show
-                                                 prints it (without the lines that name where things are on this
-                                                 machine), the rules with a scope that reach that reader (the role, its
+                                                 prints it (without the lines that name where a repository or a
+                                                 worktree is on this machine, a Worktree field of the header among
+                                                 them), the rules with a scope that reach that reader (the role, its
                                                  moment, the issue) and Jarl's own, the rounds so far, the findings of
                                                  the reviews that sent it back, the proof rows, the role's reference and
                                                  the commands that record the result; with --slice, for that slice's
