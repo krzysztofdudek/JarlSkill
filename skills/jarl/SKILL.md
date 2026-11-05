@@ -46,7 +46,8 @@ The other references, each read when its subject comes up:
 | `next` | the open issues ready to start; `--all` adds the held and waiting ones, in groups |
 | `next --as <who>` | what is on the owner, the jarl or a person by name now, each line with the command that moves it |
 | `new "<title>" --what … --acceptance …` | files an issue with its body |
-| `field <ids> <name> "<value>" [--add\|--remove\|--clear]` | changes one part of an issue: a header field (Priority, Tags, After…) or a section (What, Acceptance…) |
+| `field <ids> <name> "<value>" [--add\|--remove\|--clear]` | changes one part of an issue: a header field (Priority, Tags, After, Parent…) or a section (What, Acceptance…) |
+| `split <id> --line <n>=<id>...` | shares a parent's acceptance lines out among its sub-issues; a line moved nowhere is refused |
 | `new "<title>" --kind promise` · `new "<title>" --kind wait --person "<name>" --check-when "<date-or-event>"` | records a promise, kept by whoever its Found by names, or a wait on a person outside the loop; `next` never offers either, `next --as` shows each on its holder until it closes |
 | `set <ids> in-progress "<text>" --branch <worker-branch> --worker <name> --model <model-id>` | leases issues before a worker is raised; with `--handover`, gives a leased issue to a new worker, `"<text>"` saying why |
 | `evidence <ids> --ran "<command>" --saw "<what-it-printed>"` | records proof |

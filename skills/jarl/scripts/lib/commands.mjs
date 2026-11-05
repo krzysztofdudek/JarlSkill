@@ -9,13 +9,13 @@ import { git, gitBytes, gitRun } from './git.mjs';
 import { canonical, issuesDir, jarlDir, portablePath, stamp, today } from './where.mjs';
 import { readText, renameRetry, writeAtomic } from './files.mjs';
 import { ISSUE_FILE_RE, branchNameProblem, cmpId, expandIds, idKey, idRe, isBulk, itemNaming, needsRaisedFormat, newIssueKey, newNumber } from './ids.mjs';
-import { DEFAULT_PROFILE, FORMAT_LINES, TOOL_FIELDS, formatState, loadProfile, numberWidth, profilePath, readProfileFile } from './profile.mjs';
+import { DEFAULT_PROFILE, FORMAT_LINES, PARENT_FIELD, TOOL_FIELDS, formatState, loadProfile, numberWidth, profilePath, readProfileFile } from './profile.mjs';
 import { appendLog, appendLogLines, decisionsPath, goalPath, logPath } from './journal.mjs';
 import { JARL_GITIGNORE, JARL_GITIGNORE_COMMITTED, ensureLoopMerge, outOfGit } from './loop-git.mjs';
 import { HANDOVER_SEGMENT, journalById, mergeCheckText } from './log.mjs';
-import { FIELD_RE, RENDERED_FIELDS, acceptanceHeading, acceptanceLineCount, acceptanceText, bodyText, changelogText, evidenceNotes, evidenceParts, evidenceRows, evidenceTable, fieldValue, findIssue, issueNamed, loadIssues, mergedOf, namedPairs, needNoFieldTags, noteText, parseIssue, placeEvidence, removeFields, removeFirstField, renderIssue, setField, setSection, unattributedRefusal } from './issues.mjs';
+import { FIELD_RE, PROPOSED, RENDERED_FIELDS, acceptanceHeading, acceptanceLineCount, acceptanceLines, acceptanceText, bodyText, changelogText, evidenceNotes, evidenceParts, evidenceRows, evidenceTable, fieldValue, findIssue, issueNamed, loadIssues, mergedOf, namedPairs, needNoFieldTags, noteText, parentCycle, parseIssue, placeEvidence, removeFields, removeFirstField, renderIssue, setField, setSection, unattributedRefusal, waitCycle } from './issues.mjs';
 import { branchTip, commitRepoNames, defaultBase, fileKeysOf, isGitRepo, issueRepoPaths, issueRepos, mainCheckoutOf, needFormat, needRightCheckouts, repoFromInput, repoLabel, repoList, tipLines, whyNotDeletable, worktreeState, worktreesOf } from './repositories.mjs';
-import { FIELD_NAMES, activeSlices, carriesCode, gateOf, isSliceTag, needOneSlice, readLoop, unorderedNamings, unorderedText } from './loop.mjs';
+import { FIELD_NAMES, activeSlices, carriesCode, gateOf, isSliceTag, needOneSlice, readLoop, sinceText, sliceOf, unorderedNamings, unorderedText } from './loop.mjs';
 import { declaredChecks, lastMerge } from './metrics.mjs';
 import { modelLines, modelValue, spellingNote } from './models.mjs';
 import { slotRefusal } from './attachments.mjs';
@@ -420,25 +420,31 @@ function afterList(root, selfId, raw) {
   const ids = keys.map((k) => issueNamed(all, k).id);
   need(!selfId || !ids.some((id) => idKey(id) === idKey(selfId)), `${selfId} cannot wait on itself`, () => ({ arg: 2, value: String(raw).split(',').map((s) => s.trim()).filter(Boolean).map((s) => (/^#?\d+$/.test(s) && idKey(s) === idKey(selfId) ? hole('<another-id>') : s)).join(',') }));
   if (selfId) {
-    const byId = new Map(all.map((i) => [i.id, i]));
-    const seen = new Set();
-    const stack = [...ids];
-    while (stack.length) {
-      const id = stack.pop();
-      need(idKey(id) !== idKey(selfId), `${selfId} after ${ids.join(', ')} would close a cycle: that chain of After already leads back to ${selfId}, so none of them would ever be offered`, () => ({ replace: ids[0], value: '<id>' }));
-      if (seen.has(id)) continue;
-      seen.add(id);
-      stack.push(...(byId.get(id)?.after || []));
-    }
+    // A wait runs through the tree too: a parent waits on its sub-issues, and a sub-issue on the After of every issue above it.
+    const cycle = waitCycle(all, selfId, { afters: new Map([[selfId, ids]]) });
+    const onPath = new Set(cycle ? cycle.ids : []);
+    const throughTree = all.some((i) => onPath.has(i.id) && i.tree && (i.tree.parent || i.tree.children.length));
+    need(!cycle, throughTree
+      ? `${selfId} after ${ids.join(', ')} would close a cycle through the tree (${cycle?.text}): a parent waits on its sub-issues and a sub-issue on the After of every issue above it, so none of them would ever be offered`
+      : `${selfId} after ${ids.join(', ')} would close a cycle: that chain of After already leads back to ${selfId} (${cycle?.text}), so none of them would ever be offered`, () => ({ replace: ids[0], value: '<id>' }));
   }
   return ids;
 }
 
-// The After issues not yet settled: an issue in a settles-dependents status settles (built-in: done and dropped);
-// any other does not (open, in progress, deferred). An After id with no issue behind it (removed by hand) holds
-// nothing back.
+// What an issue waits on, not yet settled (an issue in a settles-dependents status settles, built-in: done and dropped;
+// any other does not, open, in progress, deferred; an id with no issue behind it, removed by hand, holds nothing back):
+// after, its own After and the After of every issue above it in the tree, so going deeper breaks no order; and subs, its
+// own sub-issues, as a parent is offered only once each of them is settled.
+export function waitsOf(issue, byId, profile = DEFAULT_PROFILE) {
+  const open = (id) => byId.has(id) && !profile.is(byId.get(id).status, 'settles-dependents');
+  const tree = issue.tree || { ancestors: [], children: [] };
+  const after = [...new Set([...issue.after, ...tree.ancestors.flatMap((a) => a.after)])].filter(open);
+  return { after, subs: tree.children.map((c) => c.id).filter(open) };
+}
+// Everything an issue waits on, in one list: the After issues not settled, then its sub-issues not settled.
 export function waitingOn(issue, byId, profile = DEFAULT_PROFILE) {
-  return issue.after.filter((id) => byId.has(id) && !profile.is(byId.get(id).status, 'settles-dependents'));
+  const { after, subs } = waitsOf(issue, byId, profile);
+  return [...after, ...subs.filter((id) => !after.includes(id))];
 }
 
 // ---- the description of an issue -----------------------------------------------------------------
@@ -450,7 +456,7 @@ export function waitingOn(issue, byId, profile = DEFAULT_PROFILE) {
 // approve is taken back by retract, a ruling replaced by decide --supersedes, and the status moves only through set.
 
 // The header fields of the description, each written by field and by its own command.
-export const DESCRIPTION_FIELDS = ['Title', 'Priority', 'Tier', 'Kind', 'Found by', 'Tags', 'Files', 'Repo', 'After', 'Source', 'Where', 'Resources', 'Person', 'Check when'];
+export const DESCRIPTION_FIELDS = ['Title', 'Priority', 'Tier', 'Kind', 'Found by', 'Tags', 'Files', 'Repo', 'After', 'Parent', 'Source', 'Where', 'Resources', 'Person', 'Check when'];
 // A wait's Person (the outside person it is held by, the name next --as answers to) and its Check when (a date, or the
 // event to check after): each one value on one line, without the log's separator.
 function keptValue(name, value) {
@@ -614,7 +620,7 @@ export function cmdList(root, flags) {
     const at = String(w).indexOf('=');
     need(at > 0, `--match takes <field=value> (got "${w}")`, () => ({ replace: String(w), value: hole('<field=value>') }));
     const name = String(w).slice(0, at).trim().toLowerCase();
-    const known = [...TOOL_FIELDS, 'Kind', 'Tier', ...profile.fields.map((f) => f.name)];
+    const known = [...TOOL_FIELDS, 'Kind', 'Tier', ...(profile.tree ? [PARENT_FIELD] : []), ...profile.fields.map((f) => f.name)];
     need(known.some((k) => k.toLowerCase() === name), `--match names a header field — one of: ${known.join(', ')} (got "${name}")`, () => ({ replace: String(w), value: hole('<field=value>') }));
     const value = fieldText(String(w).slice(at + 1));
     rows = rows.filter((i) => (name === 'status' ? i.status : fieldText(i.fields[name])) === value);
@@ -623,7 +629,23 @@ export function cmdList(root, flags) {
     const re = new RegExp(flags.grep, 'i');
     rows = rows.filter((i) => re.test(readText(i.file)));
   }
-  return rows.sort((a, b) => a.priority.localeCompare(b.priority) || cmpId(a.id, b.id));
+  return treeOrder(rows.sort((a, b) => a.priority.localeCompare(b.priority) || cmpId(a.id, b.id)));
+}
+// The rows of a list in the order of the tree: each row with no row above it (its nearest listed ancestor) in the order
+// given, then the rows under it, depth first, each level in the order given. A row whose parents run in a circle stands on
+// its own, so no row is lost. A list with no sub-issue keeps the order given.
+function treeOrder(rows) {
+  const listed = new Set(rows);
+  const under = new Map();
+  const top = [];
+  for (const r of rows) {
+    const above = parentCycle(r) ? undefined : (r.tree ? r.tree.ancestors : []).find((a) => listed.has(a));
+    if (above) under.set(above, [...(under.get(above) || []), r]); else top.push(r);
+  }
+  const out = [];
+  const add = (r) => { out.push(r); for (const c of under.get(r) || []) add(c); };
+  top.forEach(add);
+  return out;
 }
 
 // Bulk ids: evidence, review, set, tag and prio take one id or several (see expandIds). Every id is resolved and every
@@ -654,6 +676,7 @@ function doneReady(cause, issue) {
   if (cause === 'owner') return ['jarl.mjs', 'ask', hole('<question-for-the-owner>'), '--issue', hole('<id>')];
   if (cause === 'owner-rewrite') return ['jarl.mjs', 'field', hole('<ids>'), 'Acceptance', hole('<the-whole-section>')];
   if (cause === 'retraction') return [{ first: ['jarl.mjs', 'verify'] }, { retry: true }];
+  if (cause === 'subs') return [{ first: ['jarl.mjs', 'show', issue.id] }, { retry: true }];
   return { arg: 1, value: hole('<a-status-the-gate-allows>') };
 }
 // The ready part for an issue whose number the log files twice, which is never closed, approved or merged: the work filed
@@ -721,8 +744,9 @@ function fieldMode(flags) {
 export function cmdField(root, rawIds, name, value, flags = {}) {
   needNoOwnersWords('the field', value);
   const profile = loadProfile(root);
-  // Person and Check when are the tool's own where the built-in promise and wait hold, and a declared field's otherwise.
-  const writes = DESCRIPTION_FIELDS.filter((f) => profile.kept || !['person', 'check when'].includes(f.toLowerCase()));
+  // Person and Check when are the tool's own where the built-in promise and wait hold, and a declared field's otherwise;
+  // so is Parent where the issues form a tree.
+  const writes = DESCRIPTION_FIELDS.filter((f) => (profile.kept || !['person', 'check when'].includes(f.toLowerCase())) && (profile.tree || f !== PARENT_FIELD));
   const sections = sectionsOf(profile);
   const writable = () => [...writes, ...profile.fields.map((f) => f.name), ...sections].join(', ');
   need(name !== undefined && String(name).trim() !== '', `field requires <name>, a part of the description: ${writable()} — e.g. ${jarlLine('field', '<ids>', 'Priority', '<prio>')}`, () => ({ arg: 1, value: '<a-part-of-the-description>' }));
@@ -753,6 +777,7 @@ export function cmdField(root, rawIds, name, value, flags = {}) {
     case 'after': return one(eachIssue(root, rawIds, (id, dry) => cmdAfter(root, id, value, { dry, by: flags.by })), 'After');
     case 'repo': return one(eachIssue(root, rawIds, (id, dry) => cmdRepo(root, id, value, { dry, by: flags.by })), 'Repo');
     case 'tags': return one(cmdTagList(root, rawIds, value, flags.by), 'Tags');
+    case 'parent': return setParent(root, rawIds, clear ? '' : value, flags);
     case 'person': return setKeptField(root, rawIds, 'Person', clear ? '' : value, flags);
     case 'check when': return setKeptField(root, rawIds, 'Check when', clear ? '' : value, flags);
     default: return setDeclaredField(root, rawIds, builtInField(profile, key), clear ? '' : value, flags);
@@ -911,6 +936,7 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   const issues = issuesFor(root, rawIds);
   need(!profile.is(status, 'needs-reason') || why, REASON_TEXT[status]?.() || `${status} needs a reason: ${jarlLine('set', '<id>', status, '<text>')}`, () => ({ arg: 2, value: '<text>' }));
   const nothing = issues.length > 1 ? ' — nothing was written' : '';
+  needTreeHolds(profile, issues, status, nothing);
   if (holds) needLeaseHolds(root, profile, issues, status, why, flags, handover, nothing);
   // base: the branch the composer landed the merge into, for the done gate's requires-merged (else the branch checked
   // out). A library call only: the command line has no --base, and dispatch never passes one through.
@@ -980,6 +1006,27 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   return oneOrMany(rawIds, issues.map((issue, n) => ({ id: issue.id, status, ...(handover ? { handover: true } : {}), ...(holds ? { since, ...(flags.branch !== undefined ? { branch: fieldText(flags.branch) } : {}), ...(flags.worker !== undefined ? { worker: fieldText(flags.worker) } : {}), ...(model !== undefined ? { model } : {}) } : {}), ...(profile.is(status, 'closes-record') ? doneNote(issue, root) : {}), ...(leaseNotes && n === 0 ? { note: leaseNotes } : {}) })));
 }
 
+// The tree holds through a move, so no unfinished issue sits under a finished one. An issue moved into a finished status
+// (terminal) takes its unfinished sub-issues along in the same call, a drop or a deferral of the whole; a move into the
+// status that closes the record waits instead in the done gate, for every sub-issue settled and the parent's own check.
+// An issue moved back into play is not under a finished issue, unless that one moves back into play in the same call.
+function needTreeHolds(profile, issues, status, nothing) {
+  const moving = new Set(issues.map((i) => i.id));
+  const form = () => ({ arg: 0, value: hole('<ids>') });
+  if (profile.is(status, 'terminal')) {
+    if (profile.is(status, 'closes-record')) return;
+    for (const issue of issues) {
+      const left = (issue.tree ? issue.tree.children : []).filter((c) => profile.unfinished(c.status) && !moving.has(c.id));
+      need(!left.length, `${issue.id} has sub-issues not finished: ${left.map((c) => `${c.id} (${c.status})`).join(', ')} — an issue goes ${status} with its sub-issues, so name them in the same call, or finish them first${nothing}`, form);
+    }
+    return;
+  }
+  for (const issue of issues) {
+    const above = (issue.tree ? issue.tree.ancestors : []).find((a) => profile.is(a.status, 'terminal') && !moving.has(a.id));
+    need(!above, `${issue.id} is under ${above?.id}, which is ${above?.status}: an issue is in play only under issues in play, so move ${above?.id} back into play in the same call, or first${nothing}`, form);
+  }
+}
+
 // A lease holds. Called under the write lock with the issues just read from the record, before anything is written:
 // - an issue a lease holds (a status that holds the claim, with a worker or a branch) is refused a lease that names
 //   another worker or branch, unless the call hands it over (--handover, with the move's reason as why); a handover
@@ -1044,7 +1091,8 @@ function needLeaseHolds(root, profile, issues, status, why, flags, handover, not
 }
 // Who holds an issue's lease, as the refusals name it: its worker, branch and start, and its slice tag when it has one.
 function holderText(issue) {
-  const slice = issue.tags.find((t) => t.startsWith('slice:'));
+  const name = sliceOf(issue);
+  const slice = name === null ? null : `slice:${name}`;
   return [issue.fields.worker && `worker ${fieldText(issue.fields.worker)}`, issue.fields.branch && `branch ${fieldText(issue.fields.branch)}`, issue.fields.since && `since ${fieldText(issue.fields.since)}`, slice].filter(Boolean).join(', ') || 'no worker or branch named';
 }
 
@@ -1128,6 +1176,125 @@ function setKeptField(root, rawIds, name, value, flags) {
   return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, field: name, value: v })));
 }
 
+// field <ids> Parent <id> | --clear: the issue each id is a sub-issue of, one number of the loop, or none. The tree holds:
+// no issue is its own parent or sits under its own sub-issue, no wait runs in a circle through the tree (a parent waits on
+// its sub-issues, a sub-issue on the After of every issue above it), and nothing is added under a finished parent, whose
+// own acceptance was checked against a whole without it. The first parent written raises the record format, since a
+// reader that knows no parent would read the backlog as flat and offer a parent as work of its own.
+function setParent(root, rawIds, value, flags) {
+  needNoLeaseFlags(flags, `the field ${PARENT_FIELD}`);
+  const by = editorOf(flags.by);
+  const issues = issuesFor(root, rawIds);
+  const nothing = issues.length > 1 ? ' — nothing was written' : '';
+  const out = (v) => oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, field: PARENT_FIELD, value: v })));
+  if (value === '') {
+    for (const issue of issues) need(issue.fields.parent !== undefined, `${issue.id} has no ${PARENT_FIELD} field to clear${nothing}`, () => ({ rename: '--clear', to: hole('<no-flag-here>') }));
+    logChanges(root, issues.map((issue) => fieldLine(issue.id, PARENT_FIELD, '', heldField(issue, PARENT_FIELD), by)));
+    for (const issue of issues) writeAtomic(issue.file, removeFields(readText(issue.file), [PARENT_FIELD]));
+    return out('');
+  }
+  const all = loadIssues(root);
+  const parent = parentNamed(all, value);
+  needUnder(all, loadProfile(root), issues, parent, nothing, () => ({ arg: 2, value: hole('<another-id>') }));
+  needFormat(root, 'parent');
+  logChanges(root, issues.map((issue) => fieldLine(issue.id, PARENT_FIELD, parent.id, heldField(issue, PARENT_FIELD), by)));
+  for (const issue of issues) writeAtomic(issue.file, setField(readText(issue.file), PARENT_FIELD, parent.id));
+  return out(parent.id);
+}
+// The issue a Parent value names: one number the loop holds, as the loop writes it.
+function parentNamed(all, value) {
+  const raw = fieldText(value).replace(/^#/, '');
+  need(/^\d+$/.test(raw), `the ${PARENT_FIELD} of an issue is the number of one issue of the loop (got "${fieldText(value)}")`, () => ({ arg: 2, value: hole('<id>') }));
+  const parent = issueNamed(all, raw);
+  need(parent, `no such issue: ${raw}${listAll()}`, () => ({ arg: 2, value: hole('<id>') }));
+  return parent;
+}
+// Whether `issues` may be put under `parent`, read from `all`, the loop as it stands: each check of the tree that a Parent
+// written by field or by split passes, refused with `ready` where another parent is the fix.
+function needUnder(all, profile, issues, parent, nothing, ready) {
+  for (const issue of issues) {
+    need(idKey(issue.id) !== idKey(parent.id), `${issue.id} cannot be its own parent${nothing}`, ready);
+    const above = [parent, ...parent.tree.ancestors];
+    const at = above.findIndex((a) => idKey(a.id) === idKey(issue.id));
+    need(at === -1, `${issue.id} cannot be a sub-issue of ${parent.id}: ${parent.id} is under ${issue.id} already (${above.slice(0, at + 1).map((a) => a.id).join(' → ')}), and the tree would run in a circle${nothing}`, ready);
+  }
+  need(!profile.is(parent.status, 'terminal'), `${parent.id} is ${parent.status}: its own acceptance was checked against a whole that a sub-issue added now would not be part of — reopen it first${nothing}`, () => [{ first: ['jarl.mjs', 'set', parent.id, profile.initial, hole('<why>')] }, { retry: true }]);
+  const parents = new Map(issues.map((i) => [i.id, parent.id]));
+  for (const issue of issues) {
+    const cycle = waitCycle(all, issue.id, { parents });
+    need(!cycle, `${issue.id} cannot be a sub-issue of ${parent.id}: a parent waits on its sub-issues and a sub-issue on the After of the issues above it, so ${cycle?.text} would wait in a circle and none of them would ever be offered${nothing}`, ready);
+  }
+}
+
+// split <id> --line <n>=<id>...: the acceptance of a parent shared out among its sub-issues, in one write. Every acceptance
+// line of the parent is named once: moved to an issue (<n>=<that issue>) or kept on the parent (<n>=<the parent>), so a
+// line named nowhere is refused and no line is lost. Each issue a line moves to becomes a sub-issue of the parent, as field
+// <id> Parent makes one, with every check of the tree, and gains the lines after the ones it holds; the parent keeps the
+// lines it keeps and every other line of its section (a finding's proposal) as it stands. It is a command of its own,
+// not a part field writes, because it writes several issues at once and its check, that every line lands somewhere, is
+// over all of them together: field writes one part, and a line dropped between two such writes would be seen by nobody.
+export function cmdSplit(root, rawId, flags = {}) {
+  needLiveLoop(root, '');
+  const by = editorOf(flags.by);
+  need(rawId !== undefined && /^#?\d+$/.test(String(rawId).trim()), `split takes the number of the parent whose acceptance is shared out (got "${rawId ?? ''}")`, () => ({ arg: 0, value: hole('<id>') }));
+  const all = loadIssues(root);
+  const profile = loadProfile(root);
+  const parent = issueNamed(all, rawId);
+  need(parent, `no such issue: ${rawId}${listAll()}`, () => ({ arg: 0, value: hole('<id>') }));
+  const lines = acceptanceLines(parent);
+  need(lines.length, `${parent.id} has no acceptance line to share out — an issue is put under it with ${jarlLine('field', '<ids>', PARENT_FIELD, parent.id)}`, () => (['jarl.mjs', 'field', hole('<ids>'), PARENT_FIELD, hole('<id>')]));
+  const given = [].concat(flags.line ?? []).map(String);
+  const shape = `<n>=<id>, an acceptance line's number and the issue it goes to (${parent.id} itself to keep it there)`;
+  need(given.length, `split names where each acceptance line of ${parent.id} goes, --line ${shape}, for each of its ${lines.length} line${lines.length === 1 ? '' : 's'}`, () => ({ flag: '--line', value: hole('<line=id>') }));
+  const placed = new Map();
+  for (const item of given) {
+    const m = /^\s*(\d+)\s*=\s*#?(\d+)\s*$/.exec(item);
+    const wrong = () => ({ replace: item, value: hole('<line=id>') });
+    need(m, `--line takes ${shape} (got "${item}")`, wrong);
+    const n = Number(m[1]);
+    need(n >= 1 && n <= lines.length, `${parent.id} has ${lines.length} acceptance line${lines.length === 1 ? '' : 's'}: there is no line ${n} (got "${item}")`, wrong);
+    const to = issueNamed(all, m[2]);
+    need(to, `no such issue: ${m[2]} (got "${item}")${listAll()}`, wrong);
+    need(!placed.has(n), `line ${n} of ${parent.id} is named twice ("${placed.get(n)?.item}" and "${item}"): a line goes to one issue`, () => ({ drop: '--line', value: item }));
+    placed.set(n, { to, item });
+  }
+  const lost = lines.map((_, k) => k + 1).filter((n) => !placed.has(n));
+  need(!lost.length, `${lost.length === 1 ? 'line' : 'lines'} ${lost.join(', ')} of ${parent.id} ${lost.length === 1 ? 'is' : 'are'} moved nowhere: a split names every acceptance line of the parent, moved to a sub-issue or kept on ${parent.id}, so no line is lost — ${lost.map((n) => `${n}: "${lines[n - 1]}"`).join('; ')}`, () => ({ flag: '--line', value: hole('<line=id>'), add: true }));
+  const subs = [...new Map([...placed.values()].filter((p) => idKey(p.to.id) !== idKey(parent.id)).map((p) => [p.to.id, p.to])).values()];
+  need(subs.length, `every line stays on ${parent.id}: a split moves at least one acceptance line to a sub-issue`, () => ({ replace: given[0], value: hole('<line=id>') }));
+  for (const sub of subs) {
+    const item = [...placed.values()].find((p) => p.to === sub).item;
+    need(sub.parent === null || idKey(sub.parent) === idKey(parent.id), `${sub.id} is a sub-issue of ${sub.parent}: a split moves lines to the sub-issues of ${parent.id}, or to issues with no parent (got "${item}")`, () => ({ replace: item, value: hole('<line=id>') }));
+    need(!profile.is(sub.status, 'terminal'), `${sub.id} is ${sub.status}: a line moved to it would never be checked — move it to an issue in play (got "${item}")`, () => ({ replace: item, value: hole('<line=id>') }));
+  }
+  const joining = subs.filter((s) => s.parent === null);
+  needUnder(all, profile, joining.length ? joining : subs, parent, '', () => ({ replace: [...placed.values()].find((p) => p.to !== parent).item, value: hole('<line=id>') }));
+  needFormat(root, 'parent');
+  // The parent's section with the moved lines taken out, the rest as it stands; each sub-issue's with its lines added.
+  let k = 0;
+  const keptText = (parent.sections.acceptance || '').split('\n').filter((raw) => {
+    const l = raw.trim().replace(/^- /, '');
+    if (l === '' || l.startsWith(PROPOSED)) return true;
+    k += 1;
+    return idKey(placed.get(k).to.id) === idKey(parent.id);
+  }).join('\n').trim();
+  const moved = (sub) => lines.filter((_, n) => placed.get(n + 1).to === sub);
+  const writes = [{ issue: parent, now: keptText }, ...subs.map((sub) => ({ issue: sub, now: acceptanceText([...itemsOf(sub.sections.acceptance), ...moved(sub)]) }))];
+  logChanges(root, [
+    ...joining.map((sub) => fieldLine(sub.id, PARENT_FIELD, parent.id, heldField(sub, PARENT_FIELD), by)),
+    ...writes.map((w) => bodyLine(w.issue.id, 'acceptance', w.issue.sections.acceptance, w.now, by)),
+  ]);
+  for (const w of writes) {
+    let text = setSection(readText(w.issue.file), acceptanceHeading(w.issue, profile), w.now);
+    if (joining.includes(w.issue)) text = setField(text, PARENT_FIELD, parent.id);
+    writeAtomic(w.issue.file, text);
+  }
+  return {
+    id: parent.id, subs: subs.map((s) => s.id),
+    lines: [...placed.entries()].sort((a, b) => a[0] - b[0]).map(([n, p]) => ({ line: n, to: p.to.id, kept: idKey(p.to.id) === idKey(parent.id) })),
+  };
+}
+
 // field <ids> <Files|Source|Where|Tags|After|Repo> --clear: the field is emptied (After and Repo as their own commands empty them).
 function emptyOwnField(root, rawIds, name, flags) {
   const key = name.toLowerCase();
@@ -1186,9 +1353,14 @@ function doneGateIn(root, loop, issue, base) {
   const mergeLine = lastMerge(loop.eventsById.get(issue.id) || []);
   const gap = mergeLine && mergeLine.check ? ` — the merge records a check (${mergeLine.check}), but that check is the merger's and does not stand in for the worker's row: the row is the worker's proof of the work, so the worker records what the work's own check ran and printed, and nobody types the merge check into Proof in its place` : '';
   if (g.unresolvedRetractions.length) return { cause: 'retraction', text: `${issue.id} records a retraction of evidence row ${g.unresolvedRetractions.join(', ')} that matches no evidence line of the log, so which row it retracts is unknown and a retracted row might be counted — done refuses until that log line is repaired` };
+  // A parent closes after the whole under it: every sub-issue settled, then its own acceptance checked against the whole.
+  const open = (issue.tree ? issue.tree.children : []).filter((c) => !profile.is(c.status, 'settles-dependents'));
+  if (open.length) return { cause: 'subs', text: `${issue.id} has sub-issues not closed: ${open.map((c) => `${c.id} (${c.status})`).join(', ')} — a parent is closed once each of its sub-issues is done or dropped and its own acceptance is then checked against the whole` };
   if (!workEvidence(issue, profile)) return { cause: 'evidence', text: `${issue.id} has no evidence yet — record it first: ${how}${gap}` };
   if (!g.tracked && !evidenceRows(issue).length) return { cause: 'evidence', text: `${issue.id} has no --ran/--saw evidence row — a free-text note alone is not proof of the work: ${how}${gap}` };
-  if (g.tracked && !g.rowsSince) return { cause: 'evidence', text: `${issue.id} has no --ran/--saw evidence row recorded since it was ${g.anchor.what === 'filed' ? 'filed' : `moved → ${g.anchor.what}`} (${g.anchor.at}) — a free-text note, or a row written before that (before a start or a reopen), is not proof of the work: ${how}${gap}` };
+  if (g.tracked && !g.rowsSince) return { cause: 'evidence', text: g.anchor.what === 'whole'
+    ? `${issue.id} has no --ran/--saw evidence row recorded since ${sinceText(g.anchor)} (${g.anchor.at}) — a parent's own acceptance is checked against the whole once every sub-issue is closed, and a row written before that is not that check: ${how}${gap}`
+    : `${issue.id} has no --ran/--saw evidence row recorded since ${sinceText(g.anchor)} (${g.anchor.at}) — a free-text note, or a row written before that (before a start or a reopen), is not proof of the work: ${how}${gap}` };
   const slots = slotRefusal(root, profile, issue, g);
   if (slots) return { cause: 'slots', text: slots };
   if (profile.doneGate['requires-merged']) { const m = mergeRefusal(root, issue, base); if (m) return { cause: 'merge', text: m }; }
@@ -1202,7 +1374,7 @@ function doneGateIn(root, loop, issue, base) {
     const changes = [...g.trail].reverse().find((r) => r.verdict === 'changes');
     return { cause: 'approve', text: `${issue.id}'s latest review is a changes verdict by ${changes.by || 'a reviewer not recorded'} of ${changes.at}, and no approve came after it — a fresh reviewer reads the issue and the diff first: ${jarlLine('review', issue.id, '<verdict>', '--by', '<reviewer>', '<text>')}` };
   }
-  if (!g.approved) return { cause: 'approve', text: `${issue.id} has no approving review newer than its last round${g.tracked ? ' or reopen' : ''} — a fresh reviewer reads the issue and the diff first: ${jarlLine('review', issue.id, '<verdict>', '--by', '<reviewer>', '<text>')}` };
+  if (!g.approved) return { cause: 'approve', text: `${issue.id} has no approving review newer than its last round${g.tracked ? ' or reopen' : ''}${g.anchor && g.anchor.what === 'whole' ? `, nor one since ${sinceText(g.anchor)}` : ''} — a fresh reviewer reads the issue and the diff first: ${jarlLine('review', issue.id, '<verdict>', '--by', '<reviewer>', '<text>')}` };
   if (code && !g.fresh) return { cause: 'approve', text: `${issue.id} ${freshRuleText(issue, g.live)}: ${jarlLine('review', issue.id, '<verdict>', '--by', '<a-fresh-reviewer>', '<text>')}` };
   // Last, an acceptance line only the owner ticks: his look comes on top of the proof and the review, never instead.
   return owner();
@@ -1333,7 +1505,7 @@ export function cmdMerged(root, rawIds, flags) {
     const loop = readLoop(jarlDir(root));
     for (const issue of issues) {
       const g = gateOf(loop, issue.id);
-      if (proofSince(g, issue) === 0) notes.push(`NO PROOF FROM THE WORKER — ${issue.id} holds no Proof row since it was ${g.tracked ? (g.anchor.what === 'filed' ? 'filed' : `moved → ${g.anchor.what}`) : 'filed'}; ${checkText ? 'the merge check is recorded in the merge record and is not proof' : 'the merge records no check, and a merge is not proof'}, so done refuses until the worker records it:${EVIDENCE_HOW(issue.id)}`);
+      if (proofSince(g, issue) === 0) notes.push(`NO PROOF FROM THE WORKER — ${issue.id} holds no Proof row since ${g.tracked ? sinceText(g.anchor) : 'it was filed'};${checkText ? 'the merge check is recorded in the merge record and is not proof' : 'the merge records no check, and a merge is not proof'}, so done refuses until the worker records it:${EVIDENCE_HOW(issue.id)}`);
     }
   }
   if (sha && loadProfile(root).doneGate.approve !== 'none') {

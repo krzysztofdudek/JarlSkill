@@ -13,7 +13,7 @@ import { repoList, reposWhereLines } from './repositories.mjs';
 import { closedGateLine, disagreementText, gateLine, needOneSlice } from './loop.mjs';
 import { checkLines, checkWaitingText, mergeCheckLines } from './metrics.mjs';
 import { cmdNew, cmdSource, needLiveLoop } from './commands.mjs';
-import { leasedByText, schedulerNote } from './evidence.mjs';
+import { leasedByText, schedulerNote, subsText } from './evidence.mjs';
 
 // ---- research findings into issues ----------------------------------------------------------------
 
@@ -273,6 +273,7 @@ export function renderStatus(o, profile = DEFAULT_PROFILE) {
   const line = countsLine(o, profile);
   const width = o.by ? Math.max(...Object.keys(o.by.groups).map((k) => k.length), 1) : 0;
   const by = o.by ? [`by ${o.by.key}:`, ...Object.entries(o.by.groups).map(([k, g]) => `  ${k.padEnd(width)}  ${profile.statuses.map((st) => `${statusLabel(st)} ${g[st]}`).join(' · ')}`)] : [];
+  const onSubs = new Set((o.waitingOnSubs || []).map((w) => w.id));
   const more = [
     ...(o.tag !== undefined ? [`scoped to the issues tagged ${o.tag} — the counts above and the lists below are theirs only`] : []),
     ...(o.slice !== undefined ? [`scoped to the slice of ${o.slice}, the issues tagged slice:${o.slice}, and the escalations that name it — the counts above and the lists below are theirs only`] : []),
@@ -292,7 +293,9 @@ export function renderStatus(o, profile = DEFAULT_PROFILE) {
     ...(profile.with('closes-record').some((st) => countOf(o, st)) ? [gateLine(profile, o.reviews, 'done reviewed by')] : []),
     ...(o.uncommitted ? [`${o.uncommitted} loop file(s) not committed — commit .jarl/ in the loop's repository`] : []),
     ...o.toRatify.map((a) => `ratify a-${a.id}${a.issue ? ` (issue ${a.issue})` : ''} · ${a.question}`),
-    ...(o.waiting ? [`waiting (After not settled): ${o.waitingIds.join(', ')}`] : []),
+    ...(o.waitingIds.some((id) => !onSubs.has(id)) ? [`waiting (After not settled): ${o.waitingIds.filter((id) => !onSubs.has(id)).join(', ')}`] : []),
+    ...(o.waitingOnSubs ? [`waiting on their sub-issues: ${o.waitingOnSubs.map((w) => `${w.id} (${w.subs.join(', ')})`).join(', ')}`] : []),
+    ...(o.parents || []).map((p) => `parent ${p.id} · sub-issues ${subsText(p.subs)} · ${p.next}`),
     ...(o.noAcceptance.length ? [`in flight with no acceptance line: ${o.noAcceptance.join(', ')}`] : []),
     ...(o.closedGate || []).map(closedGateLine),
     ...(o.inFlightRows || []).map((x) => `in flight ${x.id}${leasedByText(x) ? ` · ${leasedByText(x)}` : ''} · ${x.next}`),
@@ -325,9 +328,14 @@ export function renderSources(reports) {
 function declaredShown(i, profile) {
   return profile.fields.map((f) => [f.name, fieldText(i.fields[f.key])]).filter(([, v]) => v).map(([n, v]) => `${n}=${v}`).join(' ');
 }
+// The list shows the tree: a sub-issue stands indented under the nearest issue above it that the list holds, two spaces a
+// level, and one whose parent the list leaves out names it.
 export function renderList(rows, profile = DEFAULT_PROFILE) {
   if (rows.length === 0) return '(none)';
-  return rows.map((i) => { const d = declaredShown(i, profile); return `${i.id}  P${i.priority}  ${i.status.padEnd(11)} ${i.kind.padEnd(8)} ${i.title}${i.tags.length ? `  [${i.tags.join(', ')}]` : ''}${d ? `  ${d}` : ''}${i.shared ? `  (${sharedMark(i.shared)})` : ''}`; }).join('\n');
+  const listed = new Set(rows);
+  const depth = (i) => (i.tree ? i.tree.ancestors.filter((a) => listed.has(a)).length : 0);
+  const under = (i) => (i.tree && i.tree.parent && !listed.has(i.tree.parent) ? `  (sub-issue of ${i.tree.parent.id})` : '');
+  return rows.map((i) => { const d = declaredShown(i, profile); return `${'  '.repeat(depth(i))}${i.id}  P${i.priority}  ${i.status.padEnd(11)} ${i.kind.padEnd(8)} ${i.title}${i.tags.length ? `  [${i.tags.join(', ')}]` : ''}${d ? `  ${d}` : ''}${under(i)}${i.shared ? `  (${sharedMark(i.shared)})` : ''}`; }).join('\n');
 }
 
 // Used by the other modules of the library, and not part of what jarl-lib.mjs exports.

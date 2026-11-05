@@ -19,7 +19,7 @@ import { appendLogLines } from './journal.mjs';
 import { formatState } from './profile.mjs';
 import { acceptanceLines, evidenceRows, findIssue } from './issues.mjs';
 import { issueRepoPaths, needFormat, worktreeState } from './repositories.mjs';
-import { gateOf, gateWindow, readLoop } from './loop.mjs';
+import { gateOf, gateWindow, readLoop, wholeOf } from './loop.mjs';
 
 const MARK = /^\[owner\]\s*/i;
 const PART = (key) => new RegExp(`^${key}:\\s*(.*)$`, 'i');
@@ -89,7 +89,8 @@ export function ownerLineStates(root, loop, issue) {
   const lines = ownerLines(issue);
   if (!lines.length) return [];
   const events = loop.eventsById.get(issue.id) || [];
-  const { cut } = gateWindow(loop.profile, events, { throughPauses: true });
+  // A parent's lines are looked at against the whole: a tick or a proof made while a sub-issue was open is spent.
+  const cut = Math.max(gateWindow(loop.profile, events, { throughPauses: true }).cut, wholeOf(loop, issue)?.n ?? -1);
   const g = gateOf(loop, issue.id);
   const proven = g.tracked ? g.rowLog.some((r) => !r.retracted && r.n > cut) : evidenceRows(issue).length > 0;
   let places;

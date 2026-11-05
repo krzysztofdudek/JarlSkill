@@ -7,7 +7,7 @@ import { needNoOwnersWords } from './owner.mjs';
 import { jarlDir, plainRelative } from './where.mjs';
 import { readText, writeAtomic } from './files.mjs';
 import { ISSUE_FILE_RE, KEY_SRC, idKey, idRe, issueForms, writtenId } from './ids.mjs';
-import { SLOT_NAME_RE, loadProfile } from './profile.mjs';
+import { PARENT_FIELD, SLOT_NAME_RE, loadProfile } from './profile.mjs';
 import { STAMP_SRC, appendLog, headerKey, logPath, oneLine } from './journal.mjs';
 
 // ---- review and the done gate --------------------------------------------------------------------
@@ -297,6 +297,9 @@ function unplaced(profile, written, text, body) {
   if (body.type === 'verdict' && body.model === null && head && /^model /.test(text.slice(head[0].length))) return 'the model mark of the verdict does not parse: it is "model <name> · " after the reviewer';
   return null;
 }
+// Whether an event is the line that wrote its issue's Parent field (`<id> field Parent · <parent> · was …`), which makes the
+// issue a sub-issue of that parent, or takes it out from under one.
+export function isParentLine(e) { return e.type === 'other' && e.written !== null && e.written !== undefined && e.text.startsWith(`${e.written} field ${PARENT_FIELD} · `); }
 // The events of the issues, by the issue each line is about.
 export function eventsById(events) {
   const map = new Map();

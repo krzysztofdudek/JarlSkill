@@ -156,7 +156,7 @@ test('field --add adds to a section after what it holds, and logs the line a rep
 
 test('a name field does not write is refused with the names it writes and the command that writes that one', () => {
   const root = profiledLoop();
-  const names = /Title, Priority, Tier, Kind, Found by, Tags, Files, Repo, After, Source, Where, Resources, Person, Check when, Area, Note, What, Why, Acceptance, Changelog, Design/;
+  const names = /Title, Priority, Tier, Kind, Found by, Tags, Files, Repo, After, Parent, Source, Where, Resources, Person, Check when, Area, Note, What, Why, Acceptance, Changelog, Design/;
   for (const [name, why] of [['Status', /jarl\.mjs set "<ids>" "<status>"/], ['done', /jarl\.mjs set "<ids>" "<status>"/], ['Branch', /written by set: jarl\.mjs set "<ids>" in-progress/], ['Worker', /written by set/], ['Merged', /recorded by merged: jarl\.mjs merged "<ids>" --sha "<sha>"/], ['CI', /recorded by merged/], ['Evidence', /history is never edited: .*retract.*decide --supersedes: jarl\.mjs retract/], ['Bogus', /no other part goes by that name: .* the profile lists them: jarl\.mjs profile/]]) {
     const said = refuses(root, 'field', '1', name, 'x');
     assert.match(said, new RegExp(`${name} is not a part of the description, which field writes: `), name);

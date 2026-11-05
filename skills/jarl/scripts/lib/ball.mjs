@@ -5,7 +5,7 @@ import { PROMISE_KIND, WAIT_KIND, fieldText, jarlLine, need } from './base.mjs';
 import { cmpId, idKey, idsCited } from './ids.mjs';
 import { mergedOf } from './issues.mjs';
 import { leaseOfMove } from './log.mjs';
-import { carriesCode, gateOf, readLoop, sameSlice, sliceOf } from './loop.mjs';
+import { carriesCode, coordinatorOf, gateOf, readLoop, sameSlice, sliceOf } from './loop.mjs';
 import { reasonWord, waitingOn } from './commands.mjs';
 import { inFlightMark, nextRows, schedulerNote } from './evidence.mjs';
 import { ownerLineStates } from './owner-lines.mjs';
@@ -47,13 +47,13 @@ function statusWith(profile, flag, fallback) {
   return profile.statuses.find((s) => profile.is(s, flag)) || (fallback ? profile.statuses.find((s) => profile.is(s, fallback)) : undefined) || flag;
 }
 
-// The coordinator who holds an issue's rows: the one whose slice it is in, written as the Coordinators line writes the name
-// (as the tag writes it when the line does not list it), or the jarl for an issue in no slice.
-function sliceHolder(loop, issue) {
-  const slice = sliceOf(issue);
-  if (slice === null) return JARL_HOLDER;
-  return loop.goalLines.coordinators.find((c) => sameSlice(c, slice)) ?? slice;
-}
+// The coordinator who holds an issue's rows: the one whose slice it is in (see coordinatorOf), or the jarl.
+const sliceHolder = (loop, issue) => coordinatorOf(loop, issue);
+// A parent in a status that offers it is in play for its rows once its sub-issues are all settled: its own acceptance is
+// then checked against the whole, reviewed and closed, as a lease's work is. A parent in a lease is in play as any lease.
+const isParent = (i) => Boolean(i.tree && i.tree.children.length);
+const checking = (profile, i) => isParent(i) && profile.is(i.status, 'dispatchable');
+const inPlayForRows = (profile, i) => profile.is(i.status, 'holds-claim') || checking(profile, i);
 
 // The issue rows: what the record says about an issue in play, as the step it points to and who takes it. The worker of
 // a lease is the one who does the step, and the holder of its slice (the jarl, with none) still holds the line.
@@ -63,17 +63,25 @@ function issueRows(ctx) {
   const leaseStatus = statusWith(profile, 'holds-claim');
   const closeStatus = statusWith(profile, 'closes-record', 'terminal');
   const out = [];
-  // Open and offered by next: ready to start.
-  for (const r of ctx.next.filter((x) => x.ready)) {
+  // Open and offered by next: ready to start. A parent offered there is in play below, for its check.
+  for (const r of ctx.next.filter((x) => x.ready && !x.subs)) {
     out.push({ what: 'ready', id: r.id, title: r.title, priority: r.priority, holder: holderOfId(r.id),
       says: 'ready to start, raise a worker', command: jarlLine('set', r.id, leaseStatus, '--branch', '<branch>', '--worker', '<name>') });
   }
   const evidence = (id) => jarlLine('evidence', id, '--ran', '<command>', '--saw', '<what-it-printed>');
   const verdict = (id) => jarlLine('review', id, '<verdict>', '--by', '<reviewer>', '<text>');
   // A wait has rows of its own (keptRows); a promise in a lease is worked as any issue, and its maker holds each line.
-  for (const i of loop.issues.filter((x) => profile.is(x.status, 'holds-claim') && profile.keptKind(x.kind) !== WAIT_KIND && !waitingOn(x, loop.byId, profile).length)) {
+  for (const i of loop.issues.filter((x) => inPlayForRows(profile, x) && profile.keptKind(x.kind) !== WAIT_KIND && !waitingOn(x, loop.byId, profile).length)) {
     const mark = inFlightMark(loop, i);
     const worker = fieldText(i.fields.worker) || null;
+    const backAfterRound = sentBack(loop, i, mark);
+    if (checking(profile, i) && (mark === 'no-rows' || backAfterRound)) {
+      // Every sub-issue settled, and no proof since (or since a round sent it back): the coordinator of its slice checks
+      // the parent's own acceptance against the whole.
+      out.push({ id: i.id, title: i.title, priority: i.priority, holder: sliceHolder(loop, i), what: 'check', subs: i.tree.children.map((c) => c.id),
+        says: `its sub-issues are closed (${i.tree.children.map((c) => `${c.id} ${c.status}`).join(', ')}): check its own acceptance against the whole, and record what the check ran and printed`, command: evidence(i.id) });
+      continue;
+    }
     // A promise is on whoever made it; any other issue on the coordinator of its slice, for the lease, the proof with no
     // verdict and the changes verdict, and on the jarl with no slice. What follows an approve (the merge, its CI and the
     // close) stays the jarl's, a promise's its maker's.
@@ -84,7 +92,6 @@ function issueRows(ctx) {
     // An approve not merged is on the one holder the goal's Merger line names, who raises the merger; with none, the jarl.
     const onMerger = { ...base, holder: ctx.merger };
     const withWorker = worker ? `with worker ${worker}` : 'in progress';
-    const backAfterRound = sentBack(loop, i, mark);
     const since = fieldText(i.fields.since) ? ` since ${fieldText(i.fields.since)}` : '';
     const lv = ctx.liveness(i);
     if ((mark === 'no-rows' || backAfterRound) && lv.idle) {
@@ -109,7 +116,7 @@ function issueRows(ctx) {
     }
     if (mark === 'rows-no-verdict' && carriesCode(i) && profile.keptKind(i.kind) !== PROMISE_KIND) continue;   // listed together below
     if (mark === 'rows-no-verdict') {
-      out.push({ ...base, what: 'review', ...(lv.idle ? { idle: { ageMs: lv.ageMs, minutes: lv.minutes } } : {}), says: `proof recorded, no verdict${lv.idle ? ` for ${idleFor(lv)}` : ''}; raise a reviewer`, command: verdict(i.id) });
+      out.push({ ...base, what: 'review', ...(lv.idle ? { idle: { ageMs: lv.ageMs, minutes: lv.minutes } } : {}), says: `${checking(profile, i) ? 'checked against the whole' : 'proof recorded'}, no verdict${lv.idle ? ` for ${idleFor(lv)}` : ''}; raise a reviewer`, command: verdict(i.id) });
       continue;
     }
     if (mark === 'approved-not-fresh') {
@@ -153,7 +160,7 @@ function sentBack(loop, issue, mark) {
 // The issues in play whose code has proof and no verdict, and waits for a fresh reviewer.
 function awaitingReview(loop, profile) {
   if (profile.doneGate.approve === 'none') return [];
-  return loop.issues.filter((i) => profile.is(i.status, 'holds-claim') && !profile.keptKind(i.kind) && !waitingOn(i, loop.byId, profile).length && carriesCode(i)
+  return loop.issues.filter((i) => inPlayForRows(profile, i) && !profile.keptKind(i.kind) && !waitingOn(i, loop.byId, profile).length && carriesCode(i)
     && inFlightMark(loop, i) === 'rows-no-verdict' && !sentBack(loop, i, 'rows-no-verdict'));
 }
 
@@ -369,7 +376,7 @@ export function ballRows(root) {
   const scheduled = profile.scheduler !== null;
   const awaiting = scheduled ? [] : awaitingReview(loop, profile);
   // The owner lines of the issues in play that wait on nothing, read once for the issue rows and their own.
-  const inPlay = loop.issues.filter((i) => profile.is(i.status, 'holds-claim') && !waitingOn(i, loop.byId, profile).length);
+  const inPlay = loop.issues.filter((i) => inPlayForRows(profile, i) && !waitingOn(i, loop.byId, profile).length);
   const ownerStates = new Map(inPlay.map((i) => [i.id, ownerLineStates(root, loop, i)]).filter(([, s]) => s.length));
   // Each issue reserves its files against the issues of its own slice: across slices only leases hold.
   // The age of each lease, past the goal's liveness threshold or not, read once per issue (see leaseLiveness).
@@ -465,7 +472,7 @@ function waitingRows(loop, rows, next, onOwner) {
 // says so. Under an external scheduler the rows of issues in play are the composer's, and the answer names its command
 // for them.
 // The moment of work each kind of row stands at: what a rule with a moment selector is read against.
-const MOMENT_OF = Object.freeze({ ready: 'start', worker: 'start', idle: 'start', review: 'review', changes: 'round', merge: 'merge', ci: 'merge', close: 'done', 'sign-off': 'done' });
+const MOMENT_OF = Object.freeze({ ready: 'start', worker: 'start', idle: 'start', check: 'done', review: 'review', changes: 'round', merge: 'merge', ci: 'merge', close: 'done', 'sign-off': 'done' });
 // Who asks, as a rule reads a reader: its roles, its slice, the moments of work its list stands at and the issues it works
 // on. The jarl works on the issues in play in no slice and holds the filing and the close, and in a loop with no slice
 // it is the coordinator as well; a coordinator on the issues in

@@ -35,6 +35,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Jarl now flags a task that seems stuck after 30 minutes instead of six hours: work with no commit, proof or note for that long, or proof waiting that long for a review, shows as idle in the status, the resume and its coordinator's list, and a task waiting on a shared resource shows how long ago the task holding it last moved. A line such as `Liveness: 60` in the goal changes the minutes.
 - The loop's report now counts, for each person who runs part of the loop, how many tasks they reopened after closing them and how many pieces of proof or approvals they took back, taken from the name each of those steps was recorded with.
 - Jarl can write the brief you hand to a worker, a reviewer or a coordinator, so you no longer write it by hand: the task, the rules meant for that person, what earlier reviews found, the proof so far and the command that records the result. A tool built on Jarl can get the same brief as data.
+- A task can be split into smaller tasks, and those split again, so the backlog becomes a tree. Each checkable line of the big task goes to one of the smaller ones or stays with it, and Jarl refuses a split that would lose a line. The big task waits until its smaller ones are done, then its coordinator checks the whole before it can be closed. The smaller tasks keep the order, the part of the backlog and the rules of the big one. The first split moves the loop to format 3, and a new profile that declares a field named Parent is refused.
 
 ### Changed
 
