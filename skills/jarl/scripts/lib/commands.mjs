@@ -14,7 +14,7 @@ import { appendLog, appendLogLines, decisionsPath, goalPath, logPath } from './j
 import { JARL_GITIGNORE, JARL_GITIGNORE_COMMITTED, ensureLoopMerge, outOfGit } from './loop-git.mjs';
 import { HANDOVER_SEGMENT, journalById, mergeCheckText } from './log.mjs';
 import { FIELD_RE, PROPOSED, RENDERED_FIELDS, acceptanceHeading, acceptanceLineCount, acceptanceLines, acceptanceText, bodyText, changelogText, evidenceNotes, evidenceParts, evidenceRows, evidenceTable, fieldValue, findIssue, issueNamed, loadIssues, mergedOf, namedPairs, needNoFieldTags, noteText, parentCycle, parseIssue, placeEvidence, removeFields, removeFirstField, renderIssue, setField, setSection, unattributedRefusal, waitCycle } from './issues.mjs';
-import { branchTip, commitRepoNames, defaultBase, fileKeysOf, isGitRepo, issueRepoPaths, issueRepos, mainCheckoutOf, needFormat, needRightCheckouts, repoFromInput, repoLabel, repoList, reposNamed, tipLines, whyNotDeletable, worktreeState, worktreesOf } from './repositories.mjs';
+import { branchTip, commitRepoNames, declaredBaseOf, defaultBase, fileKeysOf, isGitRepo, issueRepoPaths, issueRepos, mainCheckoutOf, needFormat, needRightCheckouts, repoFromInput, repoLabel, repoList, reposNamed, tipLines, whyNotDeletable, worktreeState, worktreesOf } from './repositories.mjs';
 import { FIELD_NAMES, activeSlices, carriesCode, gateOf, isSliceTag, needOneSlice, readLoop, sinceText, sliceOf, unorderedNamings, unorderedText } from './loop.mjs';
 import { declaredChecks, lastMerge } from './metrics.mjs';
 import { modelLines, modelValue, spellingNote } from './models.mjs';
@@ -1580,9 +1580,11 @@ export function cmdMerged(root, rawIds, flags) {
 }
 
 // What a recorded merge commit holds of the branch and of its base, as notes (empty when it holds both, or when the
-// branch, the base or the commit is not here to be read). The branch tip is the branch as it stands now; the base is the
-// main checkout's branch as it stands now, asked for only while the commit is not yet in it: once the base holds the
-// commit, later commits on the base are no part of the merge.
+// branch, the base or the commit is not here to be read). The branch tip is the branch as it stands now. The base is the
+// repository's declared base when the checkout stands for a declared name and the branch exists there, else the branch the
+// checkout has open; it is asked for only while the commit is not yet in it: once the base holds the commit, later commits
+// on the base are no part of the merge. A commit that lacks the tip but holds every file the branch changed exactly as the
+// branch has it is a squash or a rebase merge: it carries the branch's work without its commits, and is named so.
 function mergeContentNotes(root, issue, sha, repoPath) {
   const branch = fieldText(issue.fields.branch);
   const repo = (repoPath ? [repoPath] : issueRepoPaths(root, issue)).filter(isGitRepo).find((r) => git(r, ['cat-file', '-e', `${sha}^{commit}`]) !== null);
@@ -1590,11 +1592,34 @@ function mergeContentNotes(root, issue, sha, repoPath) {
   const holds = (ancestor, ref) => git(repo, ['merge-base', '--is-ancestor', ancestor, ref]) !== null;
   const notes = [];
   const tip = branch ? git(repo, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}^{commit}`]) : null;
-  if (tip && !holds(tip, sha)) notes.push(`MERGE WITHOUT THE BRANCH — ${sha} does not contain the tip of ${branch} (${tip.slice(0, 12)}), so a check that ran on it did not run on the branch's work; the check runs on the merge result: merge the branch, check the result, and record that commit with ${jarlLine('merged', issue.id, '--sha', '<sha>')}`);
-  const base = defaultBase(repo);
+  const record = jarlLine('merged', issue.id, '--sha', '<sha>');
+  if (tip && !holds(tip, sha)) {
+    if (holdsChangesOf(repo, tip, sha)) notes.push(`SQUASH OR REBASE MERGE — ${sha} does not contain the commits of ${branch} (tip ${tip.slice(0, 12)}), but holds every file the branch changed exactly as the branch has it, so the branch's work landed without its commits, and the cleanup keeps ${branch} because its tip is in no merge`);
+    else notes.push(`MERGE WITHOUT THE BRANCH — ${sha} does not contain the tip of ${branch} (${tip.slice(0, 12)}) and does not hold the files the branch changed as the branch has them, so a check that ran on it did not run on the branch's work; the check runs on the merge result: merge the branch, check the result, and record that commit with ${record}`);
+  }
+  const base = declaredBaseOf(root, repo) ?? defaultBase(repo);
   const baseTip = base !== branch ? git(repo, ['rev-parse', '--verify', '--quiet', `${base}^{commit}`]) : null;
-  if (baseTip && !holds(sha, baseTip) && !holds(baseTip, sha)) notes.push(`MERGE WITHOUT THE BASE — ${sha} does not contain ${base} as it stands (${baseTip.slice(0, 12)}), so the check ran on a tree the base has moved past; the check runs on the merge result: merge the base into the result, check it again, and record that commit with ${jarlLine('merged', issue.id, '--sha', '<sha>')}`);
+  if (baseTip && !holds(sha, baseTip) && !holds(baseTip, sha)) notes.push(`MERGE WITHOUT THE BASE — ${sha} does not contain ${base} as it stands (${baseTip.slice(0, 12)}), so the check ran on a tree the base has moved past; the check runs on the merge result: merge the base into the result, check it again, and record that commit with ${record}`);
   return notes;
+}
+
+// Whether `sha` holds what `tip` changed on its way from the commit they share: every file the branch changed is, in `sha`,
+// exactly as the branch has it (a deletion included), and the branch changed at least one. A squash or a rebase merge
+// does; a commit made without the branch's work does not.
+function holdsChangesOf(repo, tip, sha) {
+  const mb = git(repo, ['merge-base', tip, sha]);
+  if (!mb) return false;
+  const changed = (git(repo, ['diff', '--name-only', '--no-renames', '-z', mb, tip]) || '').split('\0').filter(Boolean);
+  if (!changed.length) return false;
+  // The paths ride the command line, so they go in groups that stay under the shortest limit a platform has.
+  for (let at = 0; at < changed.length;) {
+    let size = 0;
+    const group = [];
+    while (at < changed.length && (!group.length || size + changed[at].length < 8000)) { size += changed[at].length + 1; group.push(changed[at]); at += 1; }
+    const differ = git(repo, ['--literal-pathspecs', 'diff', '--name-only', '-z', tip, sha, '--', ...group]);
+    if (differ === null || differ !== '') return false;
+  }
+  return true;
 }
 
 // What a merge says when the approve the gate stands on was recorded on another tip of the branch than the one at this

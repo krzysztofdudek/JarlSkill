@@ -15,7 +15,7 @@ import { attachmentOf, journalById } from './log.mjs';
 import { acceptanceLineCount, alignRows, bodyText, evidenceNotes, evidenceParts, evidenceTable, loadIssues, mergedOf, noteText, parseIssue, placeEvidence, removeFields, reviewEntries, setSection, sharedMark, struckNote } from './issues.mjs';
 import { fileKeysOf, needFormat, repoNames, reposWhere, tipLines, whereLines, whereOf } from './repositories.mjs';
 import { approveKind, carriesCode, coordinatorOf, disagreementText, gateOf, gateState, headerReadNotes, readLoop, recordDisagreements, reviewSplit, sameSlice, scopedLoop, sinceText, sliceNamed, sliceOf, slicesOf } from './loop.mjs';
-import { checkState, checkWaiting, checkWaitingText } from './metrics.mjs';
+import { checkState, checkWaiting, checkWaitingText, closedNoCheck } from './metrics.mjs';
 import { builds, modelMarks } from './models.mjs';
 import { ago, leaseLiveness, leaseState, livenessOf, thresholdText } from './rounds.mjs';
 import { attachmentLines, inspectAttachment, requiredSlots, slotProblems } from './attachments.mjs';
@@ -446,6 +446,7 @@ function statusOf(root, loop, flags) {
   c.ciPending = live.filter((i) => mergedOf(i)?.ci === 'pending').map((i) => i.id);
   c.ciRed = live.filter((i) => mergedOf(i)?.ci === 'red').map((i) => i.id);
   c.checkWaiting = checkWaiting(loop, issues);
+  c.closedNoCheck = closedNoCheck(loop, issues);
   c.handoff = handoffAge(root, c.lastActivity);
   c.reviews = reviewSplit(!scoped ? loop : scopedLoop(loop, issues));
   c.inFlightRows = inFlightRows(loop, issues);

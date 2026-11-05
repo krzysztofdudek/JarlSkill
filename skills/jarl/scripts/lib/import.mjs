@@ -11,7 +11,7 @@ import { appendLog } from './journal.mjs';
 import { PROPOSED, bodyText, findIssue, loadIssues, sharedMark } from './issues.mjs';
 import { repoList, reposWhereLines } from './repositories.mjs';
 import { closedGateLine, disagreementText, gateLine, needOneSlice } from './loop.mjs';
-import { checkLines, checkWaitingText, mergeCheckLines } from './metrics.mjs';
+import { checkLines, checkWaitingText, closedNoCheckText, mergeCheckLines } from './metrics.mjs';
 import { cmdNew, cmdSource, needLiveLoop } from './commands.mjs';
 import { leasedByText, schedulerNote, subsText } from './evidence.mjs';
 
@@ -334,6 +334,7 @@ export function renderStatus(o, profile = DEFAULT_PROFILE) {
     ...(o.ciPending.length ? [`merged, CI pending: ${o.ciPending.join(', ')}`] : []),
     ...(o.ciRed.length ? [`merged, CI red: ${o.ciRed.join(', ')}`] : []),
     ...(o.checkWaiting || []).map(checkWaitingText),
+    ...(o.closedNoCheck && o.closedNoCheck.length ? [closedNoCheckText(o.closedNoCheck)] : []),
     ...(profile.with('closes-record').some((st) => countOf(o, st)) ? [gateLine(profile, o.reviews, 'done reviewed by')] : []),
     ...(o.uncommitted ? [`${o.uncommitted} loop file(s) not committed — commit .jarl/ in the loop's repository`] : []),
     ...o.toRatify.map((a) => `ratify a-${a.id}${a.issue ? ` (issue ${a.issue})` : ''} · ${a.question}`),

@@ -76,6 +76,77 @@ test('a merge landed in the base is not noted for the commits the base gained af
   assert.doesNotMatch(said(repo, 'merged', '1', '--sha', sha, '--keep'), /MERGE WITHOUT/);
 });
 
+// A loop in `hub` whose first issue names the repository `tool` (a name), leased on jarl/1-x with one commit of its own.
+// The tool checkout stays on main, which has not gained what the branch `release` has: the declared base is release.
+function declaredBaseFixture() {
+  const parent = mkdtempSync(join(tmpdir(), 'jarl-holds-base-'));
+  const [hub, tool] = ['hub', 'tool'].map((name) => join(parent, name));
+  for (const dir of [hub, tool]) { mkdirSync(dir); git(dir, 'init', '-q', '-b', 'main'); commit(dir, 'a.txt', 'a\n'); }
+  jarl(hub, 'init', 'goal');
+  jarl(hub, 'new', 'issue one', '--repo', '../tool', '--acceptance', 'it works');
+  git(tool, 'checkout', '-q', '-b', 'release');
+  commit(tool, 'r.txt', 'r\n');
+  git(tool, 'checkout', '-q', '-b', 'jarl/1-x', 'main');
+  commit(tool, 'b.txt', 'b\n');
+  git(tool, 'checkout', '-q', 'main');
+  jarl(hub, 'set', '1', 'in-progress', 'start', '--branch', 'jarl/1-x', '--worker', 'w-one');
+  // A result that holds the branch and main, and lacks release.
+  git(tool, 'merge', '-q', '--no-ff', '-m', 'merge 1', 'jarl/1-x');
+  return { hub, tool, sha: git(tool, 'rev-parse', 'HEAD') };
+}
+
+test('the base is the repository\'s declared base, not the branch its main checkout has open', () => {
+  const { hub, tool, sha } = declaredBaseFixture();
+  assert.doesNotMatch(said(hub, 'merged', '1', '--sha', sha, '--keep'), /MERGE WITHOUT/, 'no base is declared as release yet: the open branch is the base');
+  jarl(hub, 'base', 'tool', 'release');
+  assert.equal(git(tool, 'rev-parse', '--abbrev-ref', 'HEAD'), 'main');
+  const out = said(hub, 'merged', '1', '--sha', sha, '--keep');
+  assert.match(out, /MERGE WITHOUT THE BASE — [0-9a-f]+ does not contain release as it stands/);
+  assert.doesNotMatch(out, /MERGE WITHOUT THE BRANCH/);
+});
+
+test('a result that holds the declared base is recorded without a note, whatever branch the main checkout has open', () => {
+  const { hub, tool } = declaredBaseFixture();
+  jarl(hub, 'base', 'tool', 'release');
+  git(tool, 'checkout', '-q', 'release');
+  git(tool, 'merge', '-q', '--no-ff', '-m', 'merge 1 into release', 'jarl/1-x');
+  const sha = git(tool, 'rev-parse', 'HEAD');
+  git(tool, 'checkout', '-q', 'main');
+  assert.doesNotMatch(said(hub, 'merged', '1', '--sha', sha, '--keep'), /MERGE WITHOUT/);
+});
+
+test('a declared base the repository does not hold falls back to the branch the main checkout has open', () => {
+  const { hub, sha } = declaredBaseFixture();
+  jarl(hub, 'base', 'tool', 'no-such-branch');
+  assert.doesNotMatch(said(hub, 'merged', '1', '--sha', sha, '--keep'), /MERGE WITHOUT/);
+});
+
+test('a squash merge is named a squash or rebase merge, not a merge without the branch', () => {
+  const { repo } = fixture();
+  git(repo, 'merge', '-q', '--squash', 'jarl/1-x');
+  git(repo, 'commit', '-qm', 'squash 1');
+  const out = said(repo, 'merged', '1', '--sha', git(repo, 'rev-parse', 'HEAD'), '--keep');
+  assert.match(out, /SQUASH OR REBASE MERGE — [0-9a-f]+ does not contain the commits of jarl\/1-x/);
+  assert.doesNotMatch(out, /MERGE WITHOUT/);
+});
+
+test('a rebase merge onto a base that moved on is named a squash or rebase merge', () => {
+  const { repo, tip } = fixture();
+  commit(repo, 'c.txt', 'c\n');
+  git(repo, 'cherry-pick', tip);
+  const out = said(repo, 'merged', '1', '--sha', git(repo, 'rev-parse', 'HEAD'), '--keep');
+  assert.match(out, /SQUASH OR REBASE MERGE/);
+  assert.doesNotMatch(out, /MERGE WITHOUT/);
+});
+
+test('a commit that holds some files of the branch but not as the branch has them is a merge without the branch', () => {
+  const { repo } = fixture();
+  commit(repo, 'b.txt', 'another b\n');
+  const out = said(repo, 'merged', '1', '--sha', git(repo, 'rev-parse', 'HEAD'), '--keep');
+  assert.match(out, /MERGE WITHOUT THE BRANCH — [0-9a-f]+ does not contain the tip of jarl\/1-x/);
+  assert.doesNotMatch(out, /SQUASH OR REBASE/);
+});
+
 test('a merge recorded with neither a check nor a red cause shows in status and show as waiting for its check, until the check is recorded', () => {
   const { repo } = fixture();
   git(repo, 'merge', '-q', '--no-ff', '-m', 'merge 1', 'jarl/1-x');
@@ -91,6 +162,22 @@ test('a merge recorded with neither a check nor a red cause shows in status and 
   assert.doesNotMatch(jarl(repo, 'show', '1'), /waiting for its check/);
   assert.doesNotMatch(jarl(repo, 'resume'), /waiting for its check/);
   assert.deepEqual(JSON.parse(jarl(repo, 'status', '--json')).checkWaiting, []);
+});
+
+test('an issue closed on a merge that never recorded a check is named by status, until the check is recorded', () => {
+  const { repo } = approved();
+  git(repo, 'merge', '-q', '--no-ff', '-m', 'merge 1', 'jarl/1-x');
+  const sha = git(repo, 'rev-parse', 'HEAD');
+  jarl(repo, 'merged', '1', '--sha', sha, '--keep');
+  jarl(repo, 'evidence', '1', '--ran', 'npm test', '--saw', 'all green');
+  assert.doesNotMatch(jarl(repo, 'status'), /closed with no check/, 'an open issue is waiting for its check, not closed without one');
+  assert.equal(jarl(repo, 'set', '1', 'done', 'merged'), '1 → done');
+  assert.doesNotMatch(jarl(repo, 'status'), /waiting for its check/);
+  assert.match(jarl(repo, 'status'), new RegExp(`closed with no check recorded on the merge: 1 \\(${sha}\\) — if its check ran, record it: jarl\\.mjs merged "<id>" --sha "<sha>" --ran`));
+  assert.deepEqual(JSON.parse(jarl(repo, 'status', '--json')).closedNoCheck, [{ id: '1', sha }]);
+  jarl(repo, 'merged', '1', '--sha', sha, '--ran', 'npm test', '--saw', 'all green', '--keep');
+  assert.doesNotMatch(jarl(repo, 'status'), /closed with no check/);
+  assert.deepEqual(JSON.parse(jarl(repo, 'status', '--json')).closedNoCheck, []);
 });
 
 test('a merge recorded on a red check with its cause is not shown as waiting for its check', () => {

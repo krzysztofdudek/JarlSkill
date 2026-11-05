@@ -333,6 +333,25 @@ export function checkWaiting(loop, issues = loop.issues) {
   }
   return out;
 }
+// The issues closed while their last merge carried no check and no red cause: closing clears the waiting-for-check mark, so
+// this is where it shows that the merge was never given one. Each is { id, sha, repo } as checkWaiting gives it.
+export function closedNoCheck(loop, issues = loop.issues) {
+  const out = [];
+  for (const i of issues) {
+    if (!loop.profile.is(i.status, 'closes-record')) continue;
+    const line = lastMerge(loop.eventsById.get(i.id) || []);
+    if (line && !line.check && !line.red) out.push({ id: i.id, sha: line.sha, ...(line.repo ? { repo: line.repo } : {}) });
+  }
+  return out;
+}
+// What status says of them: the first few issues, in one line with the count of the rest (the JSON holds them all), and
+// the command that records a check after the fact.
+const CLOSED_NO_CHECK_SHOWN = 8;
+export function closedNoCheckText(list) {
+  const shown = list.slice(0, CLOSED_NO_CHECK_SHOWN).map((w) => `${w.id} (${w.sha}${w.repo ? ` in ${w.repo}` : ''})`).join(', ');
+  const more = list.length > CLOSED_NO_CHECK_SHOWN ? `, and ${list.length - CLOSED_NO_CHECK_SHOWN} more` : '';
+  return `closed with no check recorded on the merge: ${shown}${more} — if its check ran, record it: ${jarlLine('merged', '<id>', '--sha', '<sha>', '--ran', '<command>', '--saw', '<what-it-printed>')}`;
+}
 // What status, resume and show say of one such merge, with the command that records the check.
 export function checkWaitingText(w) {
   return `merged, waiting for its check: ${w.id} (${w.sha}${w.repo ? ` in ${w.repo}` : ''}) — the merge is not finished until its check is recorded: ${jarlLine('merged', w.id, '--sha', w.sha, ...(w.repo ? ['--repo', w.repo] : []), '--ran', '<command>', '--saw', '<what-it-printed>')} (or --red "<id>" when it landed on a red check outside the branch)`;

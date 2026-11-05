@@ -462,6 +462,16 @@ export function declaredRepos(root) {
   }
   return out;
 }
+// The branch a repository is held against: the base its declaration names, when the checkout `dir` is the one a declared
+// name stands for and the branch exists there, else null (the branch the checkout has open is then the only base known).
+export function declaredBaseOf(root, dir) {
+  const real = canonical(dir);
+  for (const entry of declaredRepos(root).values()) {
+    if (!entry.base || canonical(repoPlace(root, entry.name).path) !== real) continue;
+    return git(dir, ['rev-parse', '--verify', '--quiet', `${entry.base}^{commit}`]) !== null ? entry.base : null;
+  }
+  return null;
+}
 function writeDeclarations(root, entries) {
   writeAtomic(reposPath(root), `${REPOS_HEADER}${entries.map((e) => `- **${e.name}** · ${declarationText(e)}`).join('\n')}\n`);
 }
