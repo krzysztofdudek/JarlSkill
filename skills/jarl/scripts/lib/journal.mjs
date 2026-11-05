@@ -237,17 +237,23 @@ function readGoal(dir) {
 //   coordinators   the names written on Coordinators lines
 //   takeovers      { bare: the rounds of the bare line or null, kinds: { <kind in lower case>: its rounds } }; the last line
 //                  written for a kind or for the bare line stands
-const GOAL_LINE = /^\s*(?:[-*]\s+)?(?:\*\*)?(coordinators|merger|check|model|takeover)(?:\s*\(([^)]+)\))?:(?:\*\*)?\s*(.+)$/i;
+//   liveness       the minutes of the `Liveness: <minutes>` line after which a lease or a proof with no activity is idle,
+//                  or null; the last line written stands
+const GOAL_LINE = /^\s*(?:[-*]\s+)?(?:\*\*)?(coordinators|merger|check|model|takeover|liveness)(?:\s*\(([^)]+)\))?:(?:\*\*)?\s*(.+)$/i;
 const MERGER_REASON = 'a Merger line names one holder, the jarl or one coordinator of the Coordinators line: it is "Merger: <name>"';
 // The red rounds after which an issue takes over are a whole number from 1 to this.
 const TAKEOVER_MAX = 99;
 const takeoverRounds = (value) => (/^\d+$/.test(value.trim()) && Number(value) >= 1 && Number(value) <= TAKEOVER_MAX ? Number(value) : null);
 const TAKEOVER_REASON = `a Takeover line is "Takeover: <rounds>" or "Takeover (<kind>): <rounds>", with a whole number of rounds from 1 to ${TAKEOVER_MAX}`;
+// The minutes of a Liveness line are a whole number from 1 to a week's.
+const LIVENESS_MAX = 10080;
+const livenessMinutes = (value) => (/^\d+$/.test(value.trim()) && Number(value) >= 1 && Number(value) <= LIVENESS_MAX ? Number(value) : null);
+const LIVENESS_REASON = `a Liveness line is "Liveness: <minutes>", with a whole number of minutes from 1 to ${LIVENESS_MAX} and no qualifier`;
 // With `skipped` (an array), each machine line the grammar does not place is pushed onto it as { n, text, reason }: a
 // Check with no command, a Model with no tier or no model, a Coordinators line with a tier, a Takeover line whose
-// value is not a whole number of rounds.
+// value is not a whole number of rounds, a Liveness line with a qualifier or a value that is not a whole number of minutes.
 export function goalLines(text, skipped) {
-  const out = { goal: null, checks: [], checksByRepo: { bare: [], repos: {} }, models: [], coordinators: [], merger: null, takeovers: { bare: null, kinds: {} } };
+  const out = { goal: null, checks: [], checksByRepo: { bare: [], repos: {} }, models: [], coordinators: [], merger: null, takeovers: { bare: null, kinds: {} }, liveness: null };
   if (text == null) return out;
   const lines = text.split('\n');
   out.goal = lines.slice(2).find((l) => l.trim()) || '';
@@ -273,6 +279,9 @@ export function goalLines(text, skipped) {
       if (rounds === null) skip(TAKEOVER_REASON);
       else if (qualifier) out.takeovers.kinds[qualifier.toLowerCase()] = rounds;
       else out.takeovers.bare = rounds;
+    } else if (key === 'liveness') {
+      const minutes = m[2] ? null : livenessMinutes(value);
+      if (minutes === null) skip(LIVENESS_REASON); else out.liveness = minutes;
     } else if (key === 'check') {
       const command = fieldText(value).replace(/^`(.*)`$/, '$1');
       if (!command) { skip('a Check line names no command: it is "Check: <command>" or "Check (<name>): <command>"'); return; }
@@ -285,7 +294,7 @@ export function goalLines(text, skipped) {
 
 // The machine lines the command line writes into the goal, and the words that label them. A line is read by GOAL_LINE, the
 // grammar goalLines reads, and written with the label the grammar takes.
-const MACHINE_LABEL = { check: 'Check', model: 'Model', coordinators: 'Coordinators', merger: 'Merger', takeover: 'Takeover' };
+const MACHINE_LABEL = { check: 'Check', model: 'Model', coordinators: 'Coordinators', merger: 'Merger', takeover: 'Takeover', liveness: 'Liveness' };
 // The machine line a text is, as { key, qualifier, value } (key lower case; qualifier as written, or null), or null.
 export function goalLineOf(text) {
   const m = GOAL_LINE.exec(String(text ?? ''));
@@ -309,8 +318,8 @@ export function goalWithLine(text, line) {
   for (const l of String(text ?? '').replace(/\s+$/, '').split('\n')) {
     if (isMachineLine(l, line.key, line.qualifier)) {
       if (!replaced) out.push(shown);
-      // The first line of a kind stands for them all, except a Takeover line: the last one is the one in force.
-      if (!replaced || line.key === 'takeover') was = goalLineOf(l).value;
+      // The first line of a kind stands for them all, except a Takeover or a Liveness line: the last one is the one in force.
+      if (!replaced || line.key === 'takeover' || line.key === 'liveness') was = goalLineOf(l).value;
       replaced = true;
       continue;
     }
@@ -328,16 +337,16 @@ export function cmdGoal(root) {
 }
 // goal --set "<machine line>": one machine line of the goal changed, and a log line that says what it was and what it is now.
 // The machine lines are Check (<repository>): <command> or a bare Check: <command>, Model (<tier>): <models> with a tier the
-// profile declares, Coordinators: <names>, and Takeover: <rounds> or Takeover (<kind>): <rounds> with a kind the profile
-// declares. Any other line, a repository line among them, is refused: a repository joins the loop by its own
-// declaration, not by a line of the goal.
+// profile declares, Coordinators: <names>, Takeover: <rounds> or Takeover (<kind>): <rounds> with a kind the profile
+// declares, and Liveness: <minutes>. Any other line, a repository line among them, is refused: a repository joins the loop
+// by its own declaration, not by a line of the goal.
 export function cmdGoalSet(root, text) {
   const dir = jarlDir(root);
   const old = readGoal(dir);
   need(old !== null, 'the loop has no goal: open it with init "<goal>"', () => (['jarl.mjs', 'init', '<goal>']));
   need(!oneBreak(text).includes('\n'), 'goal --set takes one machine line: a line break in its value is refused', () => ({ flag: '--set', value: '<machine-line>' }));
   const line = goalLineOf(text);
-  need(line && line.value && MACHINE_LABEL[line.key], `goal --set takes one machine line (got "${text}"): ` + '"Check (<name>): <command>" or "Check: <command>", "Model (<tier>): <model-id>" (more models after commas), "Coordinators: <name>, …", "Merger: <name>", "Takeover (<kind>): <rounds>" or "Takeover: <rounds>"', () => ({ flag: '--set', value: '<machine-line>' }));
+  need(line && line.value && MACHINE_LABEL[line.key], `goal --set takes one machine line (got "${text}"): ` + '"Check (<name>): <command>" or "Check: <command>", "Model (<tier>): <model-id>" (more models after commas), "Coordinators: <name>, …", "Merger: <name>", "Takeover (<kind>): <rounds>" or "Takeover: <rounds>", "Liveness: <minutes>"', () => ({ flag: '--set', value: '<machine-line>' }));
   let qualifier = line.qualifier;
   if (line.key === 'model') {
     need(qualifier !== null, 'a Model line names its tier: "Model (<tier>): <model-id>", more models after commas', () => ({ flag: '--set', value: `Model (${hole('<tier>')}): ${line.value}` }));
@@ -354,6 +363,7 @@ export function cmdGoalSet(root, text) {
   }
   const value = noSeparators(line.value);
   need(value, 'goal --set needs a value after the colon', () => ({ flag: '--set', value: `${String(text).split(':')[0].trim()}: ${hole('<value>')}` }));
+  need(line.key !== 'liveness' || (qualifier === null && livenessMinutes(value) !== null), `${LIVENESS_REASON} (got "${String(text).trim()}")`, () => ({ flag: '--set', value: `Liveness: ${hole('<minutes>')}` }));
   need(line.key !== 'takeover' || takeoverRounds(value) !== null, `a Takeover line takes a whole number of rounds from 1 to ${TAKEOVER_MAX} (got "${value}"): "Takeover: <rounds>" or "Takeover (<kind>): <rounds>"`, () => ({ flag: '--set', value: `${String(text).split(':')[0].trim()}: ${hole('<rounds>')}` }));
   const next = goalWithLine(old, { key: line.key, qualifier, value });
   // A line that already holds this value is left alone: nothing is written and no log line says it changed.

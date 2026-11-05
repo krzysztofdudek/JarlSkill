@@ -17,7 +17,7 @@ import { fileKeysOf, needFormat, repoNames, reposWhere, tipLines, whereLines, wh
 import { approveKind, carriesCode, disagreementText, gateOf, gateState, headerReadNotes, readLoop, recordDisagreements, reviewSplit, sameSlice, scopedLoop, sliceNamed, sliceOf, slicesOf } from './loop.mjs';
 import { checkState, checkWaiting, checkWaitingText } from './metrics.mjs';
 import { builds, modelMarks } from './models.mjs';
-import { leaseProblems, staleHours } from './rounds.mjs';
+import { ago, leaseLiveness, leaseState, livenessOf, thresholdText } from './rounds.mjs';
 import { attachmentLines, inspectAttachment, requiredSlots, slotProblems } from './attachments.mjs';
 import { ARCHIVE_KEEPS, PERMANENT_MARKER, issuesFor, needLifecycle, needLiveLoop, oneOrMany, rowsOf, waitingOn } from './commands.mjs';
 import { handoffAge, loadAsks, promotionBatch, ratificationBatch } from './questions.mjs';
@@ -241,6 +241,14 @@ export const nextRowsBuilds = () => builds.nextRows;
 // The model of a ready issue as next and resume show it: the default model of the issue's tier.
 const modelText = (m) => (m && m.default ? `  [model ${m.default}]` : '');
 
+// What a held row says of the leases that hold its resources: how long ago each was last active (see leaseLiveness), and
+// whether that is past the threshold.
+export function resourceAgeText(r) {
+  const holders = new Map((r.resourceHolders || []).filter((h) => h.ageMs !== undefined).map((h) => [h.by, h]));
+  const one = (h) => `last active ${ago(h.ageMs)} ago${h.idle ? `, past the ${thresholdText(h.minutes)} threshold` : ''}`;
+  if (!holders.size) return '';
+  return holders.size === 1 && r.heldBy.length === 1 ? `, ${one([...holders.values()][0])}` : `; ${[...holders.values()].map((h) => `${h.by} ${one(h)}`).join('; ')}`;
+}
 const NEXT_HEADERS = { ready: 'Ready', 'held-by-file': 'Held by a file another issue holds', 'held-by-resource': 'Held by a resource another issue holds', 'waiting-after': 'Waiting on After', 'held-by-question': 'Held by an open question', promise: 'Promises, kept by who made them', wait: 'Waits on an outside person' };
 export function renderNext(rows, all, held = 0) {
   const line = (r) => {
@@ -249,7 +257,7 @@ export function renderNext(rows, all, held = 0) {
         : r.group === 'held-by-question' ? [`question ${r.questions.map((q) => `a-${q}`).join(', ')}`]
           : r.group === 'promise' ? [`promised by ${r.by || 'nobody named'}`]
             : r.group === 'wait' ? [`on ${r.person || 'nobody named'}, check when ${r.checkWhen || 'not said'}`]
-          : [`waits on ${[...r.waitsOn, ...(r.resources || []).map((x) => `resource ${x}`)].join(', ')}, held by ${r.heldBy.join(', ')}`];
+          : [`waits on ${[...r.waitsOn, ...(r.resources || []).map((x) => `resource ${x}`)].join(', ')}, held by ${r.heldBy.join(', ')}${resourceAgeText(r)}`];
     return `${r.id}  P${r.priority}  ${r.title}${[...note, r.shared && sharedMark(r.shared)].filter(Boolean).map((n) => `  (${n})`).join('')}${modelText(r.model)}`;
   };
   if (!all) {
@@ -297,6 +305,16 @@ export function nextRows(root, flags = {}) {
     return groups.get(g);
   };
   const byId = new Map(issues.map((i) => [i.id, i]));
+  // The age of the lease that holds a resource, as { ageMs, idle, minutes } (see leaseLiveness); nothing for a holder that
+  // is not leased (an open issue offered ahead of it in this list).
+  const minutes = livenessOf(goalLines(readGoal(jarlDir(root)))).minutes;
+  const ages = new Map();
+  const holderAge = (id) => {
+    const h = byId.get(id);
+    if (!h || !profile.is(h.status, 'holds-claim')) return {};
+    if (!ages.has(id)) { const lv = leaseLiveness(root, h, minutes); ages.set(id, lv.ageMs === null ? {} : { ageMs: lv.ageMs, idle: lv.idle, minutes }); }
+    return ages.get(id);
+  };
   const out = [];
   for (const i of issues.filter((x) => profile.is(x.status, 'dispatchable') && inScope(x)).sort((a, b) => a.priority.localeCompare(b.priority) || cmpId(a.id, b.id))) {
     const { taken, takenRes } = takenIn(i);
@@ -316,7 +334,7 @@ export function nextRows(root, flags = {}) {
     if (held.length || heldRes.length) {
       out.push({
         ...base, group: held.length ? 'held-by-file' : 'held-by-resource', waitsOn: held.map((k) => k.f),
-        ...(heldRes.length ? { resources: heldRes.map((r) => r.name) } : {}),
+        ...(heldRes.length ? { resources: heldRes.map((r) => r.name), resourceHolders: heldRes.map((r) => ({ name: r.name, by: takenRes.get(r.key), ...holderAge(takenRes.get(r.key)) })) } : {}),
         heldBy: [...new Set([...held.map((k) => taken.get(k.key)), ...heldRes.map((r) => takenRes.get(r.key))])], after: [],
       });
       continue;
@@ -351,7 +369,7 @@ export function uncommittedLoopFiles(root) {
 export function cmdStatus(root, flags = {}) { return statusOf(root, readLoop(jarlDir(root)), flags); }
 // The status of a loop already read: a view that shows more than the status reads the loop once for all of it.
 function statusOf(root, loop, flags) {
-  const hours = staleHours(flags);
+  const threshold = livenessOf(loop.goalLines, flags);
   const { profile } = loop;
   // The count per status. Without a profile the five built-in counts are top-level keys; under a
   // profile they live under their own key, statuses, so no status name can overwrite a key of the view (waiting,
@@ -398,7 +416,10 @@ function statusOf(root, loop, flags) {
   c.archived = existsSync(archiveDir) ? readdirSync(archiveDir).length : 0;
   // Leases that look wrong (worktree gone, branch gone, idle), merges waiting on CI, the age of a handoff file left in the loop (JSON only) and the
   // loop files nobody committed: all shown, none acted on.
-  c.stale = issues.filter((i) => profile.is(i.status, 'holds-claim')).map((i) => ({ id: i.id, problems: leaseProblems(root, i, hours) })).filter((x) => x.problems.length);
+  const leases = issues.filter((i) => profile.is(i.status, 'holds-claim')).map((i) => ({ id: i.id, ...leaseState(root, i, threshold.minutes, { events: loop.eventsById.get(i.id) || [] }) }));
+  c.stale = leases.map((x) => ({ id: x.id, problems: x.problems })).filter((x) => x.problems.length);
+  // The liveness threshold of the call and where it came from, and the ages of every lease in the view (see leaseLiveness).
+  c.liveness = { minutes: threshold.minutes, from: threshold.from, leases: leases.map((x) => x.liveness) };
   const live = issues.filter((i) => i.status !== 'dropped');
   c.ciPending = live.filter((i) => mergedOf(i)?.ci === 'pending').map((i) => i.id);
   c.ciRed = live.filter((i) => mergedOf(i)?.ci === 'red').map((i) => i.id);

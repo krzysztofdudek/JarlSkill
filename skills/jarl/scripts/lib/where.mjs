@@ -34,8 +34,14 @@ function mainCheckoutWithLoop(dir) {
 export function jarlDir(root) { return join(root, '.jarl'); }
 export function issuesDir(root) { return join(jarlDir(root), 'issues'); }
 
-function today() { return new Date().toISOString().slice(0, 10); }
-function stamp() { return new Date().toISOString().replace('T', ' ').slice(0, 16); }
+// The clock every stamp Jarl writes and every age it reads is taken from. setClock is the tests' seam: a test sets the
+// moment (milliseconds since the epoch) to write and read a loop at times it names, and null puts the real clock back.
+// No command and no library call sets it.
+let clockMs = null;
+export function setClock(ms) { clockMs = ms ?? null; }
+export function nowMs() { return clockMs ?? Date.now(); }
+function today() { return new Date(nowMs()).toISOString().slice(0, 10); }
+function stamp() { return new Date(nowMs()).toISOString().replace('T', ' ').slice(0, 16); }
 
 // A path written into an issue (Files, Repo) is read on every OS the loop is checked out on, and git names files with
 // '/' everywhere: a path given on Windows is stored with '/' (C:\a\b → C:/a/b, which Windows reads the same). Elsewhere a

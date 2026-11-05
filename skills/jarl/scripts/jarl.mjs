@@ -262,7 +262,8 @@ commands:
   branches [--base <base-branch>] [--repo <name-or-path>] [--stale-hours n]
                                                  every jarl/7-* branch and every branch an issue records: the
                                                  issues on it, commits beyond the base, worktree state, STALE leases
-                                                 (worktree gone, branch gone, idle over n hours, default 6) and
+                                                 (worktree gone, branch gone, idle: no commit, row or log line for the
+                                                 goal's "Liveness: <minutes>", default 30, or n hours) and
                                                  DONE → delete, NO ISSUE for commits no issue holds; shown only, never
                                                  acted on; read in --repo alone, else in the loop's own
                                                  repository, every repository an open or in-progress issue
@@ -340,7 +341,10 @@ commands:
                                                  declares), "Coordinators: <names>" (each name a coordinator, which runs the slice of
                                                  the issues tagged slice:<name>), "Merger: <name>" (the jarl or one
                                                  coordinator: the one holder that raises the merger, one merge at a time
-                                                 for every slice), "Takeover (<kind>): <rounds>" or a bare "Takeover: <rounds>"; the rest of goal.md stays as written
+                                                 for every slice), "Takeover (<kind>): <rounds>" or a bare "Takeover: <rounds>",
+                                                 "Liveness: <minutes>" (a lease or a proof with no commit, row or log line
+                                                 for longer is idle, on its coordinator's list; default 30, and
+                                                 --stale-hours overrides it for one call); the rest of goal.md stays as written
   status [--stale-hours n] [--group repo|tag|kind|prio|<name>] [--tag <tag>] [--as <who>] [--slice <coordinator>]
                                                  --tag computes every part of status over the issues carrying that tag only;
                                                  --slice the same over one coordinator's slice (the issues tagged
@@ -1000,7 +1004,7 @@ export const COMMAND_SUMMARY = {
   log: 'Append one dated note to the loop\'s journal; a line that reads as a move, a verdict or another line of state is refused.',
   decide: 'Append a ruling, optionally superseding one, settling issues or covering an area of code.',
   decisions: 'The rulings with who ruled and what superseded them.',
-  goal: 'The goal as goal.md holds it, or one machine line of it set (Check, Model, Coordinators or Takeover), with a log line that says what it was and what it is now.',
+  goal: 'The goal as goal.md holds it, or one machine line of it set (Check, Model, Coordinators, Takeover or Liveness), with a log line that says what it was and what it is now.',
   status: 'The goal, the counts by status, the reviews, stale leases and what awaits ratification; as ends it with what is on the one who asks.',
   archive: 'Put the current loop away under .jarl/archive/ so a new one can open here.',
   report: 'What was done, dropped, deferred and still open, ready for the changelog, with the loop metrics first; set metrics for the metrics alone.',

@@ -1532,7 +1532,7 @@ test('stale leases are shown, never acted on: worktree gone, branch gone, idle',
   assert.deepEqual(st.stale.map((x) => x.id), ['1', '2', '3']);
   assert.match(st.stale[0].problems[0], /^worktree gone: /);
   assert.match(st.stale[1].problems[0], /^branch gone: jarl\/2-never-made$/);
-  assert.match(st.stale[2].problems[0], /^idle \d+d: lease since 2026-01-01 00:00$/);
+  assert.match(st.stale[2].problems[0], /^idle \d+d \(threshold 30m\): last log line \d+d ago, last row none, no branch, so no commit read$/);
   const text = jarl(root, 'status');
   assert.match(text, /^stale 1 · worktree gone: /m);
   assert.match(text, /^stale 3 · idle /m);

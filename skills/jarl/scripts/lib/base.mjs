@@ -18,9 +18,10 @@ export const TIER_DEFAULT = 'standard';
 export const ASK_KINDS = ['stop', 'stuck', 'lower', 'charter', 'ratify', 'escalation', 'rule'];
 export const CI_STATES = ['pending', 'green', 'red', 'none'];
 export const ROUNDS_BEFORE_TAKEOVER = 3;
-// A lease (Worker, Worktree, Since on an in-progress issue) whose branch saw no commit for this long is shown
-// as idle; --stale-hours on status and branches changes it. It is only ever shown, never acted on.
-export const STALE_HOURS = 6;
+// A lease whose issue saw no commit, no evidence row and no log line for this many minutes is shown as idle, and so is a
+// proof that waits this long for its verdict; the goal's Liveness line changes it, --stale-hours for one call. It is only
+// ever shown, never acted on.
+export const LIVENESS_MINUTES = 30;
 // A handoff file written more than this before the loop's last log line is read as stale (status --json).
 export const HANDOFF_STALE_MS = 60 * 60_000;
 // The lease fields: written by set in-progress, removed when the issue leaves in-progress. Branch stays: it
@@ -105,7 +106,7 @@ export const PLACEHOLDERS = Object.freeze([
   '<the-new-worker>', '<the-worktree-of-the-lease>', '<model-id>', '<path>', '<paths>', '<path-under-the-loop-root>', '<slot>',
   '<findings.json>', '<profile.json>', '<report-dir>', '<report-dir#finding-id>', '<finding-ids>', '<template>', '<the-main-checkout>',
   '<loop-root>', '<selectors>', '<selector>', '<role>', '<moment>', '<date-or-event>', '<date-or-id>', '<material>', '<what-to-check>', '<yyyy-mm-dd>', '<type>', '<rule-id>', '<number-of-files>', '<whole-number>',
-  '<count>', '<hours>', '<rounds>', '<machine-line>', '<resource-name>', '<a-row-the-log-matches>', '<a-flag-it-takes-or-none>',
+  '<count>', '<hours>', '<minutes>', '<rounds>', '<machine-line>', '<resource-name>', '<a-row-the-log-matches>', '<a-flag-it-takes-or-none>',
   '<no-flag-here>', '<--handover-or-none>', '<one-kind-of-evidence-per-call>', '<a-jarl-command>', '<nothing-to-do>',
   '<the-command-of-the-tool-that-runs-this-loop>', '<as-the-view-shows>', '<as-the-reason-says>', '<a-jarl-that-reads-this-format>', '<placeholder>', '<path-of-jarl.mjs>',
 ]);

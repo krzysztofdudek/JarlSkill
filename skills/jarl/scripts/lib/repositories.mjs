@@ -289,6 +289,24 @@ export function refsIn(repo) {
   return map;
 }
 
+// The fetched refs of a branch in a clone: <remote>/<branch> for each remote of the clone that has one, as last fetched,
+// each with the commit time of its tip. Jarl never fetches: a commit another clone pushed is seen only once this clone
+// fetched it.
+const FETCHED = new Map();
+export function fetchedRefs(repo, branch) {
+  if (!FETCHED.has(repo)) {
+    const map = new Map();
+    const out = git(repo, ['for-each-ref', '--format=%(refname)%00%(committerdate:unix)', 'refs/remotes']);
+    for (const line of (out || '').split('\n').filter(Boolean)) {
+      const [ref, ct] = line.split('\0');
+      map.set(ref.replace(/^refs\/remotes\//, ''), Number(ct) * 1000 || null);
+    }
+    FETCHED.set(repo, { map, remotes: (git(repo, ['remote']) || '').split('\n').map((r) => r.trim()).filter(Boolean) });
+  }
+  const { map, remotes } = FETCHED.get(repo);
+  return remotes.map((r) => `${r}/${branch}`).filter((ref) => map.has(ref)).map((ref) => ({ ref, committedMs: map.get(ref) }));
+}
+
 function defaultBase(root) {
   return git(root, ['rev-parse', '--abbrev-ref', 'HEAD']) || 'HEAD';
 }
@@ -588,4 +606,4 @@ export function reposWhereLines(where) {
 }
 
 // Used by the other modules of the library, and not part of what jarl-lib.mjs exports.
-export { HOMES, IS_REPO, REFS, REPO_OF, RESOLVED, TOP_OF, commitRepoNames, defaultBase, isGitRepo, issuePlaces, issueRepoPaths, issueRepos, repoLabel, repoList, repoNames, tipLines, topOf, worktreesOf };
+export { FETCHED, HOMES, IS_REPO, REFS, REPO_OF, RESOLVED, TOP_OF, commitRepoNames, defaultBase, isGitRepo, issuePlaces, issueRepoPaths, issueRepos, repoLabel, repoList, repoNames, tipLines, topOf, worktreesOf };

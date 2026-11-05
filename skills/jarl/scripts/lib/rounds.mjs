@@ -1,15 +1,15 @@
 // Rounds, branches and checks.
 
-import { ROUNDS_BEFORE_TAKEOVER, STALE_HOURS, fieldText, hole, need, noSeparators } from './base.mjs';
+import { LIVENESS_MINUTES, ROUNDS_BEFORE_TAKEOVER, fieldText, hole, need, noSeparators } from './base.mjs';
 import { needNoOwnersWords } from './owner.mjs';
 import { git } from './git.mjs';
-import { canonical, jarlDir, portablePath } from './where.mjs';
+import { canonical, jarlDir, nowMs, portablePath } from './where.mjs';
 import { branchIssueId, idKey, idsNamed } from './ids.mjs';
 import { DEFAULT_PROFILE, loadProfile } from './profile.mjs';
 import { appendLog, goalLines, oneLine, parseStamp, readGoal } from './journal.mjs';
 import { journalById, leaseOfMove } from './log.mjs';
 import { findIssue, loadIssues, mergedOf } from './issues.mjs';
-import { defaultBase, fileAt, isGitRepo, issuePlaces, issueRepoPaths, issueRepos, refsIn, repoFromInput, repoLabel, repoOf, reposNamed, worktreeState, worktreesOf } from './repositories.mjs';
+import { defaultBase, fetchedRefs, fileAt, isGitRepo, issuePlaces, issueRepoPaths, issueRepos, refsIn, repoFromInput, repoLabel, repoOf, reposNamed, worktreeState, worktreesOf } from './repositories.mjs';
 
 // ---- rounds, branches, checks ------------------------------------------------------------------
 
@@ -233,10 +233,10 @@ export function cmdCheck(root, rawId, flags) {
 // an open or in-progress issue names, each row carrying the repository's name. The boot reads this to see a worker
 // branch with commits as a report, and in a loop whose issues point at other repositories that is where they are.
 export function cmdBranches(root, flags) {
-  const hours = staleHours(flags);
+  const minutes = livenessOf(goalLines(readGoal(jarlDir(root))), flags).minutes;
   const issues = loadIssues(root);
   const repos = flags.repo !== undefined ? [repoFromInput(root, flags.repo).main] : loopRepos(root, issues);
-  return repos.flatMap((repo) => branchesIn(root, repo, flags, issues, hours));
+  return repos.flatMap((repo) => branchesIn(root, repo, flags, issues, minutes));
 }
 
 const DONE_BRANCH = { delete: '  DONE → delete', dirty: '  DONE (worktree dirty)', unknown: '  DONE (worktree state unknown)', unverified: '  DONE (merged by record, branch not in base) — verify' };
@@ -258,12 +258,18 @@ export function renderBranches(rows, root) {
   ].join('')).join('\n');
 }
 
-function staleHours(flags) {
-  if (flags['stale-hours'] === undefined) return STALE_HOURS;
-  const h = Number(flags['stale-hours']);
-  need(Number.isFinite(h) && h > 0, `--stale-hours takes a positive number of hours (got "${flags['stale-hours']}")`, () => ({ flag: '--stale-hours', value: '<hours>' }));
-  return h;
+// The liveness threshold of a call, as { minutes, from }: --stale-hours for that call alone (from is stale-hours), else
+// the goal's Liveness line (goal), else LIVENESS_MINUTES (default). `goal` is what goalLines reads.
+function livenessOf(goal, flags = {}) {
+  if (flags['stale-hours'] !== undefined) {
+    const h = Number(flags['stale-hours']);
+    need(Number.isFinite(h) && h > 0, `--stale-hours takes a positive number of hours (got "${flags['stale-hours']}")`, () => ({ flag: '--stale-hours', value: '<hours>' }));
+    return { minutes: h * 60, from: 'stale-hours' };
+  }
+  return goal.liveness !== null ? { minutes: goal.liveness, from: 'goal' } : { minutes: LIVENESS_MINUTES, from: 'default' };
 }
+// The threshold as the views print it: whole hours as hours, anything else in minutes.
+const thresholdText = (minutes) => (minutes >= 60 && minutes % 60 === 0 ? `${minutes / 60}h` : `${Math.round(minutes * 10) / 10}m`);
 
 // The loop's own repository, every repository an open or in-progress issue names, and every one an issue
 // records a Branch in (a done package's branch waits there to be deleted).
@@ -296,14 +302,62 @@ export function ago(ms) {
   return `${Math.floor(h / 24)}d`;
 }
 
-// What looks wrong with an in-progress issue's lease — shown, never acted on (no expiry, no takeover): its
-// recorded worktree is gone, its recorded branch is gone, or the lease has lasted more than `hours` and its branch
-// has no commit that recent either. An issue that records no lease fields has none of them and reads clean.
-export function leaseProblems(root, issue, hours = STALE_HOURS, now = Date.now()) {
-  if (!loadProfile(root).is(issue.status, 'holds-claim')) return [];
+// How long a lease has gone without a sign of work, read from the record and from git, never from a network: the newest
+// of its issue's log lines since the lease began (its rows among them, and the move that took the lease), and the newest
+// commit of its branch in each git repository the issue names, in this clone's own branches and in the refs it fetched
+// from each remote. Returns { id, minutes, ageMs, idle, since, lastLog, lastRow, lastCommit, branch, read }: ageMs from
+// the newest of them all (null when the record dates nothing), idle when it is past `minutes`; lastLog and lastRow as
+// { at, ageMs }, lastCommit as { ageMs, ref, clone }, each null when there is none; read, one entry per clone read, as
+// { clone, refs } with the refs of the branch it holds. `events` are the issue's events, read from the log when not given.
+export function leaseLiveness(root, issue, minutes = LIVENESS_MINUTES, { events, now = nowMs() } = {}) {
+  const profile = loadProfile(root);
+  const f = issue.fields;
+  const all = events ?? (journalById(root).get(issue.id) || []);
+  const start = all.filter((e) => e.type === 'move' && profile.is(e.to, 'holds-claim') && !profile.is(e.from, 'holds-claim')).pop();
+  const lease = start ? all.filter((e) => e.n >= start.n) : all;
+  const newest = (list) => list.reduce((best, e) => { const t = parseStamp(e.at); return t !== null && (best === null || t >= best.t) ? { t, at: e.at } : best; }, null);
+  const log = newest(lease);
+  const row = newest(lease.filter((e) => e.type === 'row'));
+  const branch = fieldText(f.branch) || null;
+  const read = [];
+  let commit = null;
+  if (branch) {
+    for (const repo of issueRepoPaths(root, issue).filter(isGitRepo)) {
+      const clone = canonical(repo);
+      const own = refsIn(repo).get(branch);
+      const tips = [...(own ? [{ ref: branch, committedMs: own.committedMs }] : []), ...fetchedRefs(repo, branch)];
+      read.push({ clone, refs: tips.map((t) => t.ref) });
+      for (const t of tips) if (t.committedMs && (!commit || t.committedMs > commit.t)) commit = { t: t.committedMs, ref: t.ref, clone };
+    }
+  }
+  const sinceMs = parseStamp(f.since);
+  const times = [log?.t, commit?.t, sinceMs].filter((t) => t !== null && t !== undefined);
+  const ageMs = times.length ? now - Math.max(...times) : null;
+  return {
+    id: issue.id, minutes, ageMs, idle: ageMs !== null && ageMs > minutes * 60_000, since: fieldText(f.since) || null,
+    lastLog: log ? { at: log.at, ageMs: now - log.t } : null, lastRow: row ? { at: row.at, ageMs: now - row.t } : null,
+    lastCommit: commit ? { ageMs: now - commit.t, ref: commit.ref, clone: commit.clone } : null, branch, read,
+  };
+}
+// The ages of a lease in words: the last log line, the last row and the last commit, then the clones and refs read.
+function livenessText(lv) {
+  const age = (x) => (x ? `${ago(x.ageMs)} ago` : 'none');
+  const commit = !lv.branch ? 'no branch, so no commit read'
+    : !lv.read.length ? `branch ${lv.branch} not read: no git repository of the issue here`
+      : `${lv.lastCommit ? `last commit ${ago(lv.lastCommit.ageMs)} ago on ${lv.lastCommit.ref}` : `no commit of ${lv.branch} found`}; ${lv.read.map((r) => `read in the clone ${r.clone}: ${r.refs.length ? `${r.refs.join(', ')}${r.refs.some((x) => x !== lv.branch) ? '' : ', no fetched ref'}` : `no ref of ${lv.branch}`}`).join('; ')}`;
+  return `last log line ${age(lv.lastLog)}, last row ${age(lv.lastRow)}, ${commit}`;
+}
+// A lease idle past its threshold, in words: how long, the threshold, and the ages it was read from.
+function idleText(lv) { return `idle ${ago(lv.ageMs)} (threshold ${thresholdText(lv.minutes)}): ${livenessText(lv)}`; }
+
+// What looks wrong with an in-progress issue's lease — shown, never acted on (no expiry, no takeover): its recorded
+// worktree is gone, its recorded branch is gone, or it is idle past `minutes` (see leaseLiveness). Returns { problems,
+// liveness }; liveness is null for an issue whose status holds no lease. An issue that records no lease fields is idle
+// by its log lines alone.
+export function leaseState(root, issue, minutes = LIVENESS_MINUTES, opts = {}) {
+  if (!loadProfile(root).is(issue.status, 'holds-claim')) return { problems: [], liveness: null };
   const f = issue.fields;
   const out = [];
-  let lastCommit = null;
   // Outside a git repository there is no branch to find, gone or not. An issue naming several repositories
   // keeps its branch while any of them has it.
   const repos = f.branch || f.worktree ? issueRepoPaths(root, issue).filter(isGitRepo) : [];
@@ -314,18 +368,12 @@ export function leaseProblems(root, issue, hours = STALE_HOURS, now = Date.now()
     const gone = states.find((s) => s.state === 'gone');
     if (!seen && gone) out.push(`worktree gone: ${gone.path}`);
   }
-  if (f.branch) {
-    const having = repos.filter((r) => refsIn(r).has(f.branch));
-    if (repos.length && !having.length) out.push(`branch gone: ${f.branch}`);
-    for (const r of having) { const t = refsIn(r).get(f.branch).committedMs; if (t && (!lastCommit || t > lastCommit)) lastCommit = t; }
-  }
-  const since = parseStamp(f.since);
-  const limit = hours * 3_600_000;
-  if (since !== null && now - since > limit && !(lastCommit && now - lastCommit <= limit)) {
-    out.push(`idle ${ago(now - since)}: lease since ${f.since}${lastCommit ? `, last commit ${ago(now - lastCommit)} ago` : ''}`);
-  }
-  return out;
+  if (f.branch && repos.length && !repos.some((r) => refsIn(r).has(f.branch))) out.push(`branch gone: ${f.branch}`);
+  const liveness = leaseLiveness(root, issue, minutes, opts);
+  if (liveness.idle) out.push(idleText(liveness));
+  return { problems: out, liveness };
 }
+export function leaseProblems(root, issue, minutes = LIVENESS_MINUTES, opts = {}) { return leaseState(root, issue, minutes, opts).problems; }
 
 // Whether a branch whose issues are all settled (done or dropped, at least one done) can go. 'delete': its tip
 // is in the base — an ancestor of it, or of every merge sha its done issues record (a squash or a merge made
@@ -375,7 +423,7 @@ function handedOverFrom(root, issues, realRepo, name, byId) {
     .filter((h) => h.to);
 }
 
-function branchesIn(root, repo, flags, issues, hours = STALE_HOURS) {
+function branchesIn(root, repo, flags, issues, minutes = LIVENESS_MINUTES) {
   const base = flags.base || defaultBase(repo);
   const real = canonical(repo);
   const named = (git(repo, ['branch', '--list', 'jarl/*', '--format=%(refname:short)']) || '').split('\n').filter(Boolean);
@@ -400,7 +448,7 @@ function branchesIn(root, repo, flags, issues, hours = STALE_HOURS) {
     const dirty = status === null ? null : status.split('\n').filter(Boolean).length;
     // Uncommitted changes that cannot be counted: a worktree git lists but this machine cannot see, or one that would not answer.
     const unknown = ws.state === 'elsewhere' || ws.state === 'invisible' || (ws.state === 'here' && dirty === null);
-    const stale = on.flatMap((i) => leaseProblems(root, i, hours).map((p) => `${i.id} ${p}`));
+    const stale = on.flatMap((i) => leaseProblems(root, i, minutes).map((p) => `${i.id} ${p}`));
     // Done → delete: every issue it carries is done or dropped (at least one done), and its work is in the
     // base — the branch is an ancestor of it, or every done issue records its merge.
     const done = doneMark(repo, base, name, on, dirty, loadProfile(root), unknown);
@@ -412,11 +460,11 @@ function branchesIn(root, repo, flags, issues, hours = STALE_HOURS) {
   // An in-progress issue whose recorded branch is not in the repository any more: a lease with nothing under it.
   const gone = leased.filter((b) => !exists(b)).map((name) => {
     const on = issuesOnBranch(root, issues, real, name);
-    const stale = on.flatMap((i) => leaseProblems(root, i, hours).map((p) => `${i.id} ${p}`));
+    const stale = on.flatMap((i) => leaseProblems(root, i, minutes).map((p) => `${i.id} ${p}`));
     return { repo: repoLabel(repo), branch: name, ahead: null, unticketed: false, worktree: null, dirty: null, unnamed: false, issues: on.map((i) => i.id), stale, done: null, deletable: false, missing: true };
   }).filter((r) => r.stale.length);
   return [...rows, ...gone];
 }
 
 // Used by the other modules of the library, and not part of what jarl-lib.mjs exports.
-export { issuesOnBranch, loopRepos, staleHours };
+export { issuesOnBranch, livenessOf, loopRepos, thresholdText };

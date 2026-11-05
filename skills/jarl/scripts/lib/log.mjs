@@ -32,9 +32,9 @@ import { STAMP_SRC, appendLog, headerKey, logPath, oneLine } from './journal.mjs
 //                  is counted at the fixed limit of three (see takeoverStanding)
 //   row            one --ran/--saw evidence row
 //   verdict        a review: verdict (approve|changes), by, kind (as recorded), model, relayed
-//   retract-row    a retracted evidence row: row, its number
-//   retract-note   a retracted evidence note: note, its number
-//   retract-review a retracted approve
+//   retract-row    a retracted evidence row: row, its number, and by, who retracted it (null when the line names nobody)
+//   retract-note   a retracted evidence note: note, its number, and by
+//   retract-review a retracted approve: target, the approve it takes away, and by
 //   merged         a recorded merge: sha, repo, check, red, ci
 //   tip            the tip of the issue's branch when the line before it of the same issue (a row, a verdict, a merge) was
 //                  written: tip, the commit of the branch in each repository of the issue, in order, joined by commas
@@ -112,6 +112,10 @@ function retractTarget(text) {
   const m = RETRACT_TARGET.exec(text);
   return m ? { by: m[1] ?? null, kind: m[2] ?? null } : null;
 }
+// Who wrote a retraction: the --by its call named, which its line carries after the row, the note or `review retract`
+// (`· by <name> ·`, an approve's retraction with the kind of that name after it), or null on a line that names nobody.
+const RETRACTED_BY = /^\S+ (?:evidence retract · (?:row|note) \d+|review retract) · by (.+?)(?: \((?:fresh|coordinator|self)\))?(?= · |$)/;
+const retractedBy = (text) => RETRACTED_BY.exec(text)?.[1] ?? null;
 
 // The slot facts of an attachment row's command, `attach <slot> <path> sha256:<hex> size:<bytes>`, as { slot, path, sha256,
 // size }; null for any other command. The row's journal line and its line in the issue file hold the same command.
@@ -150,11 +154,11 @@ function eventParser(profile) {
       const mm = /^model (.+?) · /.exec(rest);
       return { type: 'verdict', verdict: r[1], by: r[2] || null, kind: r[3] || null, model: mm ? mm[1] : null, relayed: /^relayed · /.test(mm ? rest.slice(mm[0].length) : rest) };
     }
-    if (text.startsWith(`${id} review retract`) && !/^\w/.test(text.slice(`${id} review retract`.length))) return { type: 'retract-review', target: retractTarget(text) };
+    if (text.startsWith(`${id} review retract`) && !/^\w/.test(text.slice(`${id} review retract`.length))) return { type: 'retract-review', target: retractTarget(text), by: retractedBy(text) };
     const rr = RETRACT_ROW_LINE.exec(text);
-    if (rr) return { type: 'retract-row', row: Number(rr[1]) };
+    if (rr) return { type: 'retract-row', row: Number(rr[1]), by: retractedBy(text) };
     const rn = RETRACT_NOTE_LINE.exec(text);
-    if (rn) return { type: 'retract-note', note: Number(rn[1]) };
+    if (rn) return { type: 'retract-note', note: Number(rn[1]), by: retractedBy(text) };
     if (text.startsWith(`${id} evidence row · `)) {
       const attach = attachmentOf(text.slice(`${id} evidence row · `.length));
       return attach ? { type: 'row', attach } : { type: 'row' };
