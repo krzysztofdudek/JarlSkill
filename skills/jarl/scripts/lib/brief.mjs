@@ -6,6 +6,7 @@
 
 import { fieldText, hole, jarlLine, need } from './base.mjs';
 import { jarlDir, today } from './where.mjs';
+import { firstLine } from './journal.mjs';
 import { evidenceTable, issueNamed, reviewEntries } from './issues.mjs';
 import { gateOf, readLoop, sameSlice, sliceNamed, sliceOf } from './loop.mjs';
 import { takeoverStanding } from './rounds.mjs';
@@ -29,25 +30,35 @@ const REFERENCES = Object.freeze({
 const ruleOf = (r) => ({ slug: r.slug, scope: r.scope, until: r.until ?? null, by: r.by ?? null, under: r.under ?? null, builtin: r.builtin === true, source: r.source ?? null, text: r.text });
 const sorted = (set) => [...set].sort();
 
-// The findings of the reviews that sent the work back, every "changes" verdict once, oldest first. The journal's review
-// lines are the gate's trail, the list show matches the Reviews section against; a writer that keeps verdicts in the
-// journal alone leaves no entry in the file, so the file's entries are the last ones of the trail. Where they line up,
-// a verdict the file holds is given whole from the file, and one only the journal holds from its line; where they do not
-// (a file written by hand, two copies merged), both lists are given whole and a note says so. `notes` gains that note.
+// The text of a Reviews entry as its writer gave it: the escape of a heading or a marker line taken off; and a findings
+// text as compared, that and its white space as one space.
+const unescaped = (s) => String(s).split('\n').map((l) => l.replace(/^(\s*)\\(?=[#<=>|])/, '$1')).join('\n');
+const sameText = (s) => unescaped(s).replace(/\s+/g, ' ').trim();
+const WHERE_WHOLE = "the issue's Reviews section";
+
+// The findings of the reviews that sent the work back. The log is the record, which every writer keeps: each "changes"
+// verdict line of the issue is one finding, in the log's order, once. An entry of the file's Reviews section is the same
+// verdict when it names the same reviewer and its text is the line's, whole or as the log writes a text of many lines (its
+// first line and where the rest is): then the finding is given whole from the file. Nothing is paired by order, by
+// verdict word or by day. A "changes" entry that is no verdict line of the log is listed after them, marked fileOnly, and
+// `notes` gains a note that says how many there are.
 function findingsOf(loop, issue, events, notes) {
   const { lines, entries } = reviewEntries(issue.sections.reviews);
-  const trail = gateOf(loop, issue.id).trail;
   const fromFile = (e) => ({ by: e.by, kind: e.kind, day: e.day, text: lines.slice(e.start + 1, e.end + 1).map((l) => l.replace(/^ {2}/, '')).join('\n').trim() });
-  // The line's verdict and reviewer are the entry's by and kind: the text is what follows them.
-  const fromLog = (t) => { const e = events.find((x) => x.n === t.n); return { by: t.by, kind: t.kind, day: t.at.slice(0, 10), text: e.text.slice(e.written.length + 1).replace(/^review changes · (?:by .+? \((?:fresh|coordinator|self)\) · )?/, '') }; };
-  const changes = (list) => list.filter(({ verdict }) => verdict === 'changes').map(({ found }) => found);
-  const before = trail.length - entries.length;
-  if (!trail.length) return changes(entries.map((e) => ({ verdict: e.verdict, found: fromFile(e) })));
-  if (before >= 0 && entries.every((e, k) => e.verdict === trail[before + k].verdict)) {
-    return changes(trail.map((t, j) => ({ verdict: t.verdict, found: j >= before ? fromFile(entries[j - before]) : fromLog(t) })));
-  }
-  notes.push(`the Reviews section of ${issue.id} (${entries.length} entries) and its log (${trail.length} verdict lines) do not line up: the findings of both are given, the log's first`);
-  return [...changes(trail.map((t) => ({ verdict: t.verdict, found: fromLog(t) }))), ...changes(entries.map((e) => ({ verdict: e.verdict, found: fromFile(e) })))];
+  const unmatched = entries.filter((e) => e.verdict === 'changes').map(fromFile);
+  const found = gateOf(loop, issue.id).trail.filter((t) => t.verdict === 'changes').map((t) => {
+    const e = events.find((x) => x.n === t.n);
+    // What the line holds after its verdict, its reviewer and the marks of a model and a relay.
+    let text = e.text.slice(e.written.length + 1).replace(/^review changes · (?:by .+? \((?:fresh|coordinator|self)\) · )?/, '');
+    if (e.model) text = text.replace(`model ${e.model} · `, '');
+    if (e.relayed) text = text.replace(/^relayed · /, '');
+    text = text.replace(/^findings: (?=model |relayed)/i, '');
+    const at = unmatched.findIndex((f) => f.by === t.by && [sameText(f.text), sameText(firstLine(unescaped(f.text), WHERE_WHOLE))].includes(sameText(text)));
+    const whole = at === -1 ? null : unmatched.splice(at, 1)[0];
+    return { by: t.by, kind: t.kind, day: t.at.slice(0, 10), text: whole ? whole.text : text };
+  });
+  if (unmatched.length) notes.push(`${unmatched.length} review(s) of the Reviews section of ${issue.id} match no verdict line of its log, which is the record: listed after the log's, marked in the issue file only`);
+  return [...found, ...unmatched.map((f) => ({ ...f, fileOnly: true }))];
 }
 
 function issueBrief(root, loop, rawId, role) {
@@ -138,7 +149,7 @@ export function renderBrief(o) {
     if (!o.findings.length) out.push('- (none)');
     for (const f of o.findings) {
       const [first, ...rest] = f.text.split('\n');
-      out.push(`- ${f.day ?? ''}${f.by ? ` · by ${f.by}${f.kind ? ` (${f.kind})` : ''}` : ''} — ${first}`, ...rest.map((l) => `  ${l}`));
+      out.push(`- ${f.day ?? ''}${f.by ? ` · by ${f.by}${f.kind ? ` (${f.kind})` : ''}` : ''}${f.fileOnly ? ' · in the issue file only' : ''} — ${first}`, ...rest.map((l) => `  ${l}`));
     }
     out.push('', `## Proof rows (${o.proof.length})`, ...(o.proof.length ? o.proof.map((r) => `- [${r.n}] ran: ${r.ran} · saw: ${r.saw}`) : ['- (none)']));
   }

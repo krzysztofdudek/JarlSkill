@@ -118,27 +118,90 @@ const journalOnly = (root, ...texts) => {
 };
 const issueFile = (root) => join(root, '.jarl', 'issues', readdirSync(join(root, '.jarl', 'issues'))[0]);
 
-test('the findings of a journal-only writer come first and those of the file after them, each verdict once, the file\'s whole', () => {
+// The findings a reviewer's brief lists, as [by, text], and the count its text heading gives, which is the number listed.
+const findingsListed = (root, id) => {
+  const o = json(root, 'brief', id, '--role', 'reviewer');
+  const heading = /\n## Findings of the reviews that sent it back \((\d+)\)\n/.exec(jarl(root, 'brief', id, '--role', 'reviewer'));
+  assert.equal(Number(heading[1]), o.findings.length, 'the heading counts what is listed');
+  return o;
+};
+const fileOnlyNote = /review\(s\) of the Reviews section of 1 match no verdict line of its log/;
+
+test('a journal-only writer\'s verdict first and a file\'s after it: every changes verdict of the log once, in the log\'s order, the file\'s whole', () => {
   const root = loop();
   jarl(root, 'new', 'the work');
   journalOnly(root, '1 review changes · by old1 (fresh) · Important: the first finding, written in the journal alone.', '1 round 1 · the first round');
   const second = 'Important: the second finding.\nMinor: its second line, kept whole.';
   jarl(root, 'review', '1', 'changes', '--by', 'rev2', second);
   jarl(root, 'round', '1', 'the second round');
-  const o = json(root, 'brief', '1', '--role', 'reviewer');
+  const o = findingsListed(root, '1');
   assert.equal(o.rounds.length, 2);
-  assert.deepEqual(o.findings.map((f) => [f.by, f.text]), [['old1', 'Important: the first finding, written in the journal alone.'], ['rev2', second]], 'every changes verdict once, oldest first');
-  assert.doesNotMatch(o.notes.join('\n'), /do not line up/);
+  assert.deepEqual(o.findings.map((f) => [f.by, f.text]), [['old1', 'Important: the first finding, written in the journal alone.'], ['rev2', second]]);
+  assert.doesNotMatch(o.notes.join('\n'), fileOnlyNote);
 });
 
-test('a Reviews section that does not line up with the journal gives the findings of both, the journal\'s first, and says so', () => {
+test('two journal-only verdicts, one this Jarl wrote, then a fourth journal-only one: rev-a to rev-d each once, in the log\'s order, rev-c whole', () => {
+  const root = loop();
+  jarl(root, 'new', 'the work');
+  journalOnly(root, '1 review changes · by rev-a (fresh) · Important: finding a.', '1 round 1 · a', '1 review changes · by rev-b (fresh) · Important: finding b.', '1 round 2 · b');
+  const c = 'Important: finding c.\nMinor: the second line of c.';
+  jarl(root, 'review', '1', 'changes', '--by', 'rev-c', c);
+  journalOnly(root, '1 round 3 · c', '1 review changes · by rev-d (fresh) · Important: finding d.');
+  const o = findingsListed(root, '1');
+  assert.deepEqual(o.findings.map((f) => [f.by, f.text]), [['rev-a', 'Important: finding a.'], ['rev-b', 'Important: finding b.'], ['rev-c', c], ['rev-d', 'Important: finding d.']]);
+  assert.doesNotMatch(o.notes.join('\n'), fileOnlyNote);
+});
+
+test('a file that lost its newest Reviews entry: each verdict once, the one the file holds whole and the other from its log line, no note', () => {
+  const root = loop();
+  jarl(root, 'new', 'the work');
+  jarl(root, 'review', '1', 'changes', '--by', 'rev-a', 'Important: finding a.\nMinor: a second line of a.');
+  jarl(root, 'review', '1', 'changes', '--by', 'rev-c', 'Important: finding c.');
+  writeFileSync(issueFile(root), readFileSync(issueFile(root), 'utf8').replace(/\n- \*\*changes\*\* · by rev-c [\s\S]*?(?=\n## |$)/, '\n'));
+  assert.doesNotMatch(readFileSync(issueFile(root), 'utf8'), /finding c/);
+  const o = findingsListed(root, '1');
+  assert.deepEqual(o.findings.map((f) => [f.by, f.text]), [['rev-a', 'Important: finding a.\nMinor: a second line of a.'], ['rev-c', 'Important: finding c.']]);
+  assert.deepEqual(o.notes.filter((n) => fileOnlyNote.test(n)), []);
+});
+
+test('a loop whose log holds no review line gives the file\'s entries, each once, marked as the issue file\'s alone', () => {
+  const root = loop();
+  jarl(root, 'new', 'the work');
+  jarl(root, 'review', '1', 'changes', '--by', 'rev1', 'Important: only the file keeps this.');
+  const log = join(root, '.jarl', 'log.md');
+  writeFileSync(log, readFileSync(log, 'utf8').split('\n').filter((l) => !/ · 1 review changes /.test(l)).join('\n'));
+  const o = findingsListed(root, '1');
+  assert.deepEqual(o.findings.map((f) => [f.by, f.text, f.fileOnly]), [['rev1', 'Important: only the file keeps this.', true]]);
+  assert.match(o.notes.join('\n'), /^1 review\(s\) of the Reviews section of 1 match no verdict line of its log, which is the record: listed after the log's, marked in the issue file only$/m);
+  assert.match(jarl(root, 'brief', '1', '--role', 'reviewer'), /\n- \d{4}-\d{2}-\d{2} · by rev1 \(fresh\) · in the issue file only — Important: only the file keeps this\.\n/);
+});
+
+test('an entry written into the file that is no verdict of the log is listed after the log\'s, marked, and the note says so', () => {
   const root = loop();
   jarl(root, 'new', 'the work');
   jarl(root, 'review', '1', 'changes', '--by', 'rev1', 'Important: recorded by the tool.');
   writeFileSync(issueFile(root), readFileSync(issueFile(root), 'utf8').replace(/(\n## Reviews\n[\s\S]*?)(?=\n## |$)/, '$1\n- **changes** · by hand (fresh) · 2026-11-01\n  Important: written into the file by hand.\n'));
-  const o = json(root, 'brief', '1', '--role', 'reviewer');
-  assert.deepEqual(o.findings.map((f) => f.by), ['rev1', 'rev1', 'hand']);
-  assert.match(o.notes.join('\n'), /the Reviews section of 1 \(2 entries\) and its log \(1 verdict lines\) do not line up: the findings of both are given, the log's first/);
+  const o = findingsListed(root, '1');
+  assert.deepEqual(o.findings.map((f) => [f.by, f.fileOnly === true]), [['rev1', false], ['hand', true]]);
+  assert.match(o.notes.join('\n'), fileOnlyNote);
+});
+
+test('two reviewers with the same findings text stay two findings, and so do two verdicts of one reviewer with the same text', () => {
+  const root = loop();
+  jarl(root, 'new', 'the work');
+  for (const by of ['rev1', 'rev2', 'rev2']) jarl(root, 'review', '1', 'changes', '--by', by, 'Important: the same text.');
+  const o = findingsListed(root, '1');
+  assert.deepEqual(o.findings.map((f) => [f.by, f.text, f.fileOnly === true]), [['rev1', 'Important: the same text.', false], ['rev2', 'Important: the same text.', false], ['rev2', 'Important: the same text.', false]]);
+});
+
+test('a finding of many lines, one of them like a merge marker and one like a heading, is one finding, given whole', () => {
+  const root = loop();
+  jarl(root, 'new', 'the work');
+  jarl(root, 'review', '1', 'changes', '--by', 'rev1', 'Important: the text holds a marker.\n<<<<<<< HEAD\n# like a heading\nthe last line.');
+  const o = findingsListed(root, '1');
+  assert.equal(o.findings.length, 1);
+  assert.match(o.findings[0].text, /^Important: the text holds a marker\.\n\\?<<<<<<< HEAD\n\\?# like a heading\nthe last line\.$/);
+  assert.equal(o.findings[0].fileOnly, undefined);
 });
 
 test('a Worktree field a lease wrote into the header is left out of the brief, as every line that names a place on this machine is', () => {
