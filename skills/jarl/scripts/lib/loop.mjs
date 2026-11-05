@@ -7,7 +7,7 @@ import { jarlDir } from './where.mjs';
 import { idKey, idRe, idsCited, keyedIds } from './ids.mjs';
 import { profileAt } from './profile.mjs';
 import { asksAt, decisionsAt, goalLines, readGoal } from './journal.mjs';
-import { eventsById, loopEvents } from './log.mjs';
+import { eventsById, isParentLine, loopEvents } from './log.mjs';
 import { alignRows, evidenceRows, evidenceTable, headerReadText, issuesAt, mergedOf, sharedNumberText, sharedNumbers } from './issues.mjs';
 import { branchTip } from './repositories.mjs';
 
@@ -252,10 +252,21 @@ function coordinatorsIn(root, lines) { return [...BASE_COORDINATORS, basename(re
 export const SLICE_PREFIX = 'slice:';
 export const isSliceTag = (t) => String(t).toLowerCase().startsWith(SLICE_PREFIX);
 export function sliceTag(coordinator) { return `${SLICE_PREFIX}${coordinator}`; }
-// The coordinator whose slice an issue is in, as its tag names it, or null.
+// The coordinator whose slice an issue is in, as its tag names it, or null. A sub-issue with no slice tag of its own is
+// in the slice of the nearest issue above it that carries one, so a slice can be a subtree.
 export function sliceOf(issue) {
-  const tag = (issue.tags || []).find(isSliceTag);
-  return tag ? tag.slice(SLICE_PREFIX.length) : null;
+  for (const i of [issue, ...(issue.tree ? issue.tree.ancestors : [])]) {
+    const tag = (i.tags || []).find(isSliceTag);
+    if (tag) return tag.slice(SLICE_PREFIX.length);
+  }
+  return null;
+}
+// Who holds an issue's rows of work: the coordinator whose slice it is in, written as the Coordinators line writes the
+// name (as the tag writes it when the line does not list it), or the jarl for an issue in no slice.
+export function coordinatorOf(loop, issue) {
+  const slice = sliceOf(issue);
+  if (slice === null) return 'jarl';
+  return loop.goalLines.coordinators.find((c) => sameSlice(c, slice)) ?? slice;
 }
 // The same coordinator, in any case: slice:Odin and slice:odin are one slice.
 export const sameSlice = (a, b) => a !== null && b !== null && fieldText(a).toLowerCase() === fieldText(b).toLowerCase();
@@ -390,16 +401,45 @@ export function gateWindow(profile, events, { throughPauses = false } = {}) {
   }
   return { anchor, cut };
 }
+// When the whole under a parent was last complete: the latest line of its sub-issues that closed one (a move into a status
+// that settles what waits on it) or made it a sub-issue (its Parent field written), as { n, at, id, how } with how
+// 'closed' or 'joined', or null for an issue with no sub-issues. A parent's own acceptance is checked against the whole,
+// so the done gate's window of a parent opens there, as it opens at a start or a reopen.
+export function wholeOf(loop, issue) {
+  let best = null;
+  for (const c of issue && issue.tree ? issue.tree.children : []) {
+    for (const e of loop.eventsById.get(c.id) || []) {
+      const how = e.type === 'move' && loop.profile.is(e.to, 'settles-dependents') ? 'closed' : isParentLine(e) ? 'joined' : null;
+      if (how && (!best || e.n > best.n)) best = { n: e.n, at: e.at, id: c.id, how };
+    }
+  }
+  return best;
+}
+// Since when the done gate counts an issue's proof, as a reason says it: since it was filed, moved into a status, or since
+// its last sub-issue closed or joined it.
+export function sinceText(anchor) {
+  if (anchor.what === 'filed') return 'it was filed';
+  if (anchor.what === 'whole') return `its last sub-issue, ${anchor.sub}, ${anchor.how === 'joined' ? 'joined it' : 'closed'}`;
+  return `it was moved → ${anchor.what}`;
+}
+
 export function gateOf(loop, id) {
   const { profile, coordinators } = loop;
   const events = loop.eventsById.get(id) || [];
   const issue = loop.issues.find((i) => i.id === id) || null;
   const self = selfWorkers(events, issue, loop.branchWorkers);
-  const { anchor, cut } = gateWindow(profile, events);
+  const own = gateWindow(profile, events);
   // The window no pause opens. A row or an approve between it and the window above counts when the tip it was made on is
   // the branch's tip now: a pause and a resume leave the code as it was, and a new commit spends them.
   const firm = gateWindow(profile, events, { throughPauses: true });
-  const firmAnchorN = firm.anchor ? firm.anchor.n : -1;
+  // A parent's window opens no earlier than the whole under it was complete: a proof or an approve made while a sub-issue
+  // was still open was not made against the whole.
+  const whole = wholeOf(loop, issue);
+  const later = (w) => (whole && (!w.anchor || whole.n > w.anchor.n) ? { anchor: { n: whole.n, at: whole.at, type: 'whole', sub: whole.id, how: whole.how }, cut: Math.max(w.cut, whole.n) } : w);
+  const { anchor, cut } = later(own);
+  const firmed = later(firm);
+  const firmAnchorN = firmed.anchor ? firmed.anchor.n : -1;
+  firm.cut = firmed.cut;
   const anchorN = anchor ? anchor.n : -1;
   const evidence = []; const allReviews = [];
   const trail = [];   // every review line in order (approve, changes, retract), for the issue view
@@ -477,7 +517,7 @@ export function gateOf(loop, id) {
   }
   return {
     tracked: anchor !== null,
-    anchor: anchor ? { at: anchor.at, what: anchor.type === 'filed' ? 'filed' : anchor.to } : null,
+    anchor: anchor ? { at: anchor.at, what: anchor.type === 'filed' ? 'filed' : anchor.type === 'whole' ? 'whole' : anchor.to, ...(anchor.type === 'whole' ? { sub: anchor.sub, how: anchor.how } : {}) } : null,
     unresolvedRetractions,
     rowsSince: evidence.filter((e) => e.inWindow && !e.retracted).length,
     // What the issue view windows by: where the gate's window starts in the log, and the log's rows and review lines in

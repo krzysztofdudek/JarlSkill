@@ -83,6 +83,9 @@ export function parseIssue(text, file, skipped) {
   // The exclusive resources it holds while its lease lasts (names, loop-wide, never files); next and the lease read them.
   issue.resources = splitList(issue.fields.resources);
   issue.sources = splitList(issue.fields.source);
+  // The issue it is a sub-issue of, as its Parent field writes it (without a #), or null for an issue with no parent.
+  const parent = fieldText(issue.fields.parent).replace(/^#/, '');
+  issue.parent = parent === '' ? null : parent;
   return issue;
 }
 
@@ -105,8 +108,10 @@ function issuesAt(recordDir, profile, events = loopEvents(recordDir, profile)) {
   // A loop whose profile declares a field Key of its own holds no key of the tool's: its Key is the profile's field.
   const keyOf = profile.keyed === false ? () => null : issueKeyOf;
   const issues = parsed.map((issue) => {
-    // An After names an issue as the loop writes it: the form its file carries, whatever form the After line gives.
+    // An After names an issue as the loop writes it: the form its file carries, whatever form the After line gives. So
+    // does a Parent, which a loop whose profile declares a field Parent of its own does not read as one.
     issue.after = issue.after.map((x) => writtenId(x, forms));
+    issue.parent = profile.tree === false || issue.parent === null ? null : writtenId(issue.parent, forms);
     // An issue's lines are those that name its key, and those under its number that name no key: all of them for the one
     // file of a number, and for a file with no key among files that carry one. A line that names another key is another
     // issue's, even under the same number.
@@ -127,7 +132,7 @@ function issuesAt(recordDir, profile, events = loopEvents(recordDir, profile)) {
   // An issue whose number another file carries too holds the files of that number in `shared`, which the views print;
   // every other issue has no such key.
   for (const s of sharedNumbers(issues)) for (const i of s.issues) i.shared = s.issues.map((x) => `issues/${basename(x.file)}`);
-  return issues;
+  return withTree(issues);
 }
 // Whether the files that carry the number `id` are told apart by their keys: each carries a key no other of them carries,
 // at most one of them carries none, and every line under the number that carries state (a filing, a move, a row, a
@@ -276,6 +281,85 @@ export function issueNamed(issues, rawId) {
 }
 // The issue `rawId` names in the loop at `root`, or null; a number two files carry is refused (see issueNamed).
 export function findIssue(root, rawId) { return issueNamed(loadIssues(root), rawId); }
+
+// ---- issues: the tree -------------------------------------------------------------------------------------------------
+//
+// An issue may name its parent in its header's Parent field, so the backlog is a tree whose ids stay flat numbers: the tree
+// is that one relation, and a sub-issue may have sub-issues of its own. A parent waits on its sub-issues as an issue waits
+// on its After, and a sub-issue waits on what the After of its parent, and of every issue above it, names, so going deeper
+// never breaks an order the backlog holds. A sub-issue with no slice tag of its own is in the slice of the nearest issue
+// above it that has one.
+
+// Each issue with its `tree` (not enumerable, so a copy of the issue does not carry it): parent, the issue its Parent names
+// (null for none, for a number the loop does not hold and for the issue itself); ancestors, from the parent up to the
+// root, a walk that stops at an issue it met already (parents that run in a cycle, written by hand); children, the issues
+// whose Parent names it, in the loop's order.
+function withTree(issues) {
+  const byKey = new Map();
+  for (const i of issues) if (i.id !== null && !byKey.has(idKey(i.id))) byKey.set(idKey(i.id), i);
+  for (const i of issues) Object.defineProperty(i, 'tree', { value: { parent: null, ancestors: [], children: [] }, enumerable: false, configurable: true });
+  for (const i of issues) {
+    const p = i.parent == null ? null : byKey.get(idKey(i.parent)) ?? null;
+    if (p && p !== i) { i.tree.parent = p; p.tree.children.push(i); }
+  }
+  for (const i of issues) {
+    const seen = new Set([i]);
+    for (let p = i.tree.parent; p && !seen.has(p); p = p.tree.parent) { seen.add(p); i.tree.ancestors.push(p); }
+  }
+  return issues;
+}
+// Whether an issue's parents run back to it: the walk up from it meets it again.
+export function parentCycle(issue) {
+  const top = issue.tree ? issue.tree.ancestors.at(-1) : null;
+  return Boolean(top && top.tree.parent === issue);
+}
+
+// An issue waits on its own After, on the After of every issue above it and on its own sub-issues. Read from `issues` with
+// the changes a write is about to make to `start` (`parents`: id to the parent it is given; `afters`: id to the After it
+// is given), the path of a cycle of such waits through `start` or an issue under it, the issues whose waits the change
+// moves, as { ids, text }: the ids as the loop writes them, first and last the same, and the path in words, a wait that
+// comes from the After of an issue above naming that issue; or null. Such a cycle leaves every issue in it waiting for
+// good, with nothing to say so.
+export function waitCycle(issues, start, { parents = new Map(), afters = new Map() } = {}) {
+  const byKey = new Map();
+  for (const i of issues) if (i.id !== null && !byKey.has(idKey(i.id))) byKey.set(idKey(i.id), i);
+  const key = (k) => idKey(k);
+  const parentOf = (k) => { const changed = [...parents].find(([c]) => key(c) === k); const p = changed ? changed[1] : byKey.get(k)?.parent; return p == null || !byKey.has(key(p)) ? null : key(p); };
+  const afterOf = (k) => { const changed = [...afters].find(([c]) => key(c) === k); return (changed ? changed[1] : byKey.get(k)?.after || []).map(key).filter((x) => byKey.has(x)); };
+  const children = new Map();
+  for (const k of byKey.keys()) { const p = parentOf(k); if (p !== null) children.set(p, [...(children.get(p) || []), k]); }
+  // Each wait of an issue as { to, via }: via is the issue above whose After it comes from, null for its own After and for
+  // a sub-issue.
+  const edges = (k) => {
+    const out = [...afterOf(k), ...(children.get(k) || [])].map((to) => ({ to, via: null }));
+    const seen = new Set([k]);
+    for (let p = parentOf(k); p !== null && !seen.has(p); p = parentOf(p)) { seen.add(p); out.push(...afterOf(p).map((to) => ({ to, via: p }))); }
+    return out;
+  };
+  const through = (from) => {
+    const prev = new Map();
+    const stack = [from];
+    while (stack.length) {
+      const k = stack.pop();
+      for (const { to, via } of edges(k)) {
+        if (to === from) {
+          const steps = [{ at: from, via }];
+          for (let at = k; at !== from; at = prev.get(at).from) steps.unshift({ at, via: prev.get(at).via });
+          const ids = [from, ...steps.map((s) => s.at)].map((x) => byKey.get(x).id);
+          const text = [byKey.get(from).id, ...steps.map((s) => `${byKey.get(s.at).id}${s.via === null ? '' : ` (the After of ${byKey.get(s.via).id})`}`)].join(' → ');
+          return { ids, text };
+        }
+        if (!prev.has(to)) { prev.set(to, { from: k, via }); stack.push(to); }
+      }
+    }
+    return null;
+  };
+  // The start, then every issue under it, once each.
+  const starts = [key(start)];
+  for (let i = 0; i < starts.length; i += 1) for (const c of children.get(starts[i]) || []) if (!starts.includes(c)) starts.push(c);
+  for (const k of starts) { if (!byKey.has(k)) continue; const cycle = through(k); if (cycle) return cycle; }
+  return null;
+}
 
 function setField(text, name, value) {
   // Only the header holds fields: a line in a section body that looks like one (a pasted finding) is text.

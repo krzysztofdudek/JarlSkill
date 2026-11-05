@@ -120,10 +120,11 @@ function fileMatches(pattern, file) {
   const re = new RegExp(`^${p.split('**').map((part) => part.split('*').map((s) => s.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('[^/]*')).join('.*')}$`);
   return re.test(f);
 }
-// Whether one issue holds every issue selector of a rule.
+// Whether one issue holds every issue selector of a rule. An issue selector holds for the issue it names and for every
+// issue under it in the tree, so a rule of a parent reaches its sub-issues.
 function issueHolds(root, issue, selectors) {
   return selectors.every(({ word, value }) => {
-    if (word === 'issue') return idKey(issue.id) === idKey(value);
+    if (word === 'issue') return [issue, ...(issue.tree ? issue.tree.ancestors : [])].some((i) => idKey(i.id) === idKey(value));
     if (word === 'tag') return (issue.tags || []).some((t) => t.toLowerCase() === value.toLowerCase());
     if (word === 'kind') return String(issue.kind).toLowerCase() === value.toLowerCase();
     if (word === 'tier') return String(issue.tier).toLowerCase() === value.toLowerCase();

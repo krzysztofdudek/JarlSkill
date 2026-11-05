@@ -22,7 +22,7 @@ import {
   issuesNaming, questionFor, cmdGoal, cmdGoalSet, cmdRepoBase, whereOf, cmdVerify, renderVerify, renderCheckNotes,
   renderProfile, renderResume, renderStatus, renderImport, renderSources, renderList, recordTypeLog, recordRuleLog,
   runDecisionsDriver, mergeFlags, describeNew, renderNewReply, issueView, attachmentStates, evidenceTable, renderBranches, renderDecide, renderDecisions,
-  cmdNextAs, renderNextAs, askerSection, renderBrief, cmdTick, withWriter, editorOf, needFormat, formatState, readProfileFile, FORMAT_LINES, cmdRenumber,
+  cmdNextAs, renderNextAs, askerSection, renderBrief, cmdTick, withWriter, editorOf, needFormat, formatState, readProfileFile, FORMAT_LINES, cmdRenumber, cmdSplit,
 } from './jarl-lib.mjs';
 import { writeAreaDecision, writeRuleRatification } from './yg-edge.mjs';
 
@@ -77,7 +77,11 @@ commands:
                                                  it: the header fields Title (the file keeps its name), Priority (1|2|3),
                                                  Tier, Kind, Found by, Tags, Files, Repo (as --repo below), After (the
                                                  issues it waits on: next does not offer it until each is done or
-                                                 dropped), Source (<report-dir#finding-id>), Where, Resources (the exclusive resources
+                                                 dropped), Parent (the one issue it is a sub-issue of: a parent waits on
+                                                 its sub-issues, a sub-issue on its parent's After, and a sub-issue with no
+                                                 slice tag is in its parent's slice; a parent that would sit under its own
+                                                 sub-issue, a wait in a circle and a finished parent are refused, and the
+                                                 first Parent raises the record format to 3), Source (<report-dir#finding-id>), Where, Resources (the exclusive resources
                                                  the issue holds while its lease lasts, loop-wide names; next never
                                                  offers two issues holding one), Person and Check when (whom a wait is
                                                  held by and when to check it: Kind becomes wait only once both are
@@ -100,6 +104,13 @@ commands:
                                                  retract and decide --supersedes, and the status moves only with set;
                                                  any other name is refused with the names field writes and the command
                                                  that writes it instead
+  split <id> --line "<line=id>"... [--by who]
+                                                 share out the acceptance of a parent among its sub-issues in one
+                                                 write: each --line <n>=<id> moves acceptance line n to issue <id>, or
+                                                 keeps it on the parent when <id> is the parent's own; every line is
+                                                 named once, and a line named nowhere is refused, so none is lost; each
+                                                 issue a line moves to becomes a sub-issue of the parent, as field Parent
+                                                 makes one, and gains the line after the ones it holds
   base <name> <branch> [--by who]                the base branch a declared repository is held against, changed
                                                  with a log line that says what it was (a repository is declared
                                                  when an issue first names it; see --repo below)
@@ -132,7 +143,8 @@ commands:
                                                  counting what was taken back
   list [--status s] [--kind k] [--tag t] [--prio p] [--grep re] [--match "<field=value>"]... [--all]
                                                  the issues not finished (open and in-progress) by default; --all for
-                                                 every status; --match keeps those whose header field holds the value
+                                                 every status; --match keeps those whose header field holds the value;
+                                                 each sub-issue stands indented under its parent
   show <id> [--full]                             print one issue as the done gate sees it: the header, What, Why,
                                                  Acceptance and Changelog, every Proof row (numbered [n]) and every
                                                  verdict in the done gate's window, Notes whole, every "changes" finding no later
@@ -197,7 +209,8 @@ commands:
                                                  --keep skips it
   next [--limit n] [--all] [--as <who>] [--slice <coordinator>]
                                                  the open issues ready to start: no file shared with an in-progress one, every
-                                                 After issue done or dropped, no open stuck or stop question on it; a file is
+                                                 After issue done or dropped (its parent's too), every sub-issue done or
+                                                 dropped, no open stuck or stop question on it; a file is
                                                  its repository and its path (see --repo below); one with no acceptance line
                                                  or no declared files is marked; --all adds the others in groups (held by a
                                                  file and by whom, waiting on After, held by a question, the promises and
@@ -208,7 +221,9 @@ commands:
                                                  coordinator of an issue's slice (the jarl, for an issue in no slice) its
                                                  ready issue, its lease, a proof with no verdict and changes asked; the
                                                  holder the goal's Merger line names (else the jarl) an approve not
-                                                 merged; the jarl the close, and a ruling that
+                                                 merged; a parent whose sub-issues are all done or dropped is its
+                                                 coordinator's to check its own acceptance against the whole, a proof
+                                                 row done waits for; the jarl the close, and a ruling that
                                                  settles issues none of which is live; an acceptance line only the owner
                                                  ticks is the jarl's (its worker producing it) until its material is
                                                  there, then the owner's, with the material and what to check (with no slice in the loop, a
@@ -492,8 +507,8 @@ an item that begins or ends with a quote mark, a name (an id, a tag, a reference
 a bracket or a quote, and a path whose brackets do not pair up ([a, b]) or that is a quoted or empty list
 in brackets (["a"], []). A path whose brackets pair up is a name: [1], src/[id]/page.tsx, [...slug].
 
---by who, on every command that writes and on no other, is the author of that one call. On field it is who changed
-the description, on review the reviewer, on answer, decide, retract and tick who answered, ruled, retracted or
+--by who, on every command that writes and on no other, is the author of that one call. On field and split it is who
+changed the description, on review the reviewer, on answer, decide, retract and tick who answered, ruled, retracted or
 ticked; on the rest (init, new, import, evidence, set, merged, round, ask, log, goal, base, archive, mode, close,
 renumber) it is the writer, written into every log line the call writes, right after the stamp ("- yyyy-mm-dd hh:mm by <who>
 · ..."); the first such line raises the loop's record format to 3, and where a composer keeps the format the call is
@@ -570,7 +585,7 @@ export const COMMAND_FLAGS = {
   },
   sources: { source: 'value' },
   evidence: { ran: 'many', saw: 'many', file: 'value', slot: 'value', by: 'value' },
-  retract: { by: 'value' }, field: { add: 'bool', remove: 'bool', clear: 'bool', by: 'value' }, base: { by: 'value' },
+  retract: { by: 'value' }, field: { add: 'bool', remove: 'bool', clear: 'bool', by: 'value' }, split: { line: 'many', by: 'value' }, base: { by: 'value' },
   list: { status: 'value', kind: 'value', tag: 'value', prio: 'value', grep: 'value', match: 'many', all: 'bool' },
   show: { full: 'bool' }, brief: { role: 'value', slice: 'value' }, set: { branch: 'value', worker: 'value', model: 'value', worktree: 'value', handover: 'bool', header: 'bool', by: 'value' },
   next: { limit: 'value', all: 'bool', as: 'value', slice: 'value' },
@@ -742,10 +757,10 @@ const FLAG_HOLES = {
   group: '<group>', with: '<loop-root>', base: '<base-branch>', 'stale-hours': '<hours>', sha: '<sha>', ci: '<ci-state>', red: '<another-issue>',
   target: '<what-would-get-weaker>', issue: '<id>', option: '<option>', 'ask option': '<label:effect>', 'applies-to': '<selectors>', until: '<date-or-id>', to: '<jarl-or-owner>', log: '<count>',
   ready: '<count>', summary: '<text>', next: '<text>', settles: '<ids>', quote: '<his-own-words>', under: '<a-ruling-in-force>', supersedes: '<a-ruling-in-force>',
-  rule: '<rule-id>', area: '<type>', reach: '<number-of-files>', set: '<machine-line>',
+  rule: '<rule-id>', area: '<type>', reach: '<number-of-files>', set: '<machine-line>', line: '<line=id>',
 };
 const PART_HOLES = {
-  title: '<title>', priority: '<prio>', tier: '<tier>', kind: '<kind>', tags: '<tag>', files: '<paths>', repo: '<name-or-path>', after: '<ids-it-waits-on>',
+  title: '<title>', priority: '<prio>', tier: '<tier>', kind: '<kind>', tags: '<tag>', files: '<paths>', repo: '<name-or-path>', after: '<ids-it-waits-on>', parent: '<id>',
   source: '<report-dir#finding-id>', acceptance: '<line>', changelog: '<changelog-entry>', person: '<name>', 'check when': '<date-or-event>',
   resources: '<resource-name>', 'found by': '<who>', where: '<text>', what: '<text>', why: '<text>',
 };
@@ -971,7 +986,7 @@ function parseWords(argv) {
 // +a -b, sources' findings files) and has no upper bound. A command's arity is how many names it has.
 export const COMMAND_ARGS = {
   init: ['goal'], new: ['title'], renumber: ['id'], import: ['file'], sources: ['files...'],
-  evidence: ['ids', 'text?'], retract: ['id', 'entry', 'text'], field: ['ids', 'name', 'value?'], base: ['name', 'branch'],
+  evidence: ['ids', 'text?'], retract: ['id', 'entry', 'text'], field: ['ids', 'name', 'value?'], split: ['id'], base: ['name', 'branch'],
   list: [], show: ['id'], brief: ['id?'], set: ['ids', 'status', 'text?'],
   merged: ['ids'],
   next: [], review: ['ids', 'verdict', 'text'], round: ['id', 'text'], tick: ['id', 'line'], models: [], scope: ['id?'], branches: [],
@@ -999,6 +1014,7 @@ export const COMMAND_SUMMARY = {
   evidence: 'Append a free-text note, or checkable rows of what ran and what it printed, to issues; or record a file as an attachment of a slot (--file, --slot).',
   retract: 'Take back the newest approve of an issue (entry: review), one evidence row by its number (entry: the number) or one evidence note (entry: note-<n>), by an entry that says who and why.',
   field: 'Change one part of the description of issues, a header field (Title, Priority, Tags, Files, After and the rest) or a section (What, Why, Acceptance, Changelog): a value replaces it, add and remove change the items of a list or add to a section, clear empties it; each change logs what the part held and who changed it when named.',
+  split: 'Share out the acceptance lines of a parent among its sub-issues in one write: each line is moved to an issue, which becomes a sub-issue, or kept on the parent, and a line moved nowhere is refused.',
   base: 'Change the base branch a declared repository is held against, logging what it was.',
   list: 'List the issues, the unfinished ones by default, filtered by status, kind, tag, priority or a field.',
   show: 'Print one issue as the done gate sees it (its current window, rows numbered), or the whole file with --full.',
@@ -1100,7 +1116,7 @@ function readLists(cmd, rest, flags) {
 // haiku), and each selector of --applies-to and its value (role worker). A text that holds <x> among other words is a
 // text, and is not one of them.
 const PART_OF = {
-  field: (v) => [v.slice(v.indexOf('=') + 1)], section: (v) => [v.slice(v.indexOf('=') + 1)], option: (v) => [v.slice(v.indexOf(':') + 1)],
+  field: (v) => [v.slice(v.indexOf('=') + 1)], section: (v) => [v.slice(v.indexOf('=') + 1)], option: (v) => [v.slice(v.indexOf(':') + 1)], line: (v) => (v.includes('=') ? [v.slice(0, v.indexOf('=')), v.slice(v.indexOf('=') + 1)] : []),
   source: (v) => v.split(',').flatMap((s) => s.split('#')), changelog: (v) => v.split('\n').map((l) => l.slice(l.indexOf(':') + 1)),
   set: (v) => { const m = /^[^:(]*(?:\(([^)]*)\))?\s*:(.*)$/s.exec(v); return m ? [m[1] ?? '', m[2], ...m[2].split(',')] : []; },
   'applies-to': (v) => v.split(/\s+and\s+/i).flatMap((s) => [s.trim(), s.trim().split(/\s+/).slice(1).join(' ')]),
@@ -1204,7 +1220,7 @@ export function replacedMessage(cmd, args = [], root = null) {
 const ARITY = Object.fromEntries(Object.entries(COMMAND_ARGS).filter(([, a]) => !a.some((n) => n.endsWith('...'))).map(([c, a]) => [c, a.length]));
 
 // The commands that write: each runs under .jarl/.lock (see withLock).
-export const MUTATING = new Set(['init', 'new', 'renumber', 'import', 'set', 'field', 'base', 'merged', 'evidence', 'retract', 'review', 'round', 'tick', 'ask', 'answer', 'log', 'decide', 'goal', 'archive', 'mode', 'close']);
+export const MUTATING = new Set(['init', 'new', 'renumber', 'import', 'set', 'field', 'split', 'base', 'merged', 'evidence', 'retract', 'review', 'round', 'tick', 'ask', 'answer', 'log', 'decide', 'goal', 'archive', 'mode', 'close']);
 // Whether a printed command (jarl.mjs, then its words) writes: a command of the set above, but goal, which writes only
 // with --set and else reads the goal.
 export const writes = (words) => MUTATING.has(words[1]) && !(words[1] === 'goal' && !words.some((w) => w === '--set' || String(w).startsWith('--set=')));
@@ -1371,6 +1387,10 @@ function dispatchCall(root, commandName, rest, flags) {
         out = cmdField(root, rest[0], rest[1], fieldListValue(rest[1], rest[2], flags.remove === true), { ...flags, caller: 'cli' });
         text = each(out, renderField);
         warn = [].concat(out).flatMap((o) => (o.note ? [o.note] : []).concat((o.notes || []).map((n) => `note: ${n}`)));
+        break;
+      case 'split':
+        out = cmdSplit(root, rest[0], flags);
+        text = `${out.id} split: ${out.lines.map((l) => (l.kept ? `line ${l.line} kept` : `line ${l.line} → ${l.to}`)).join(', ')} · sub-issues ${out.subs.join(', ')}`;
         break;
       case 'base':
         out = cmdRepoBase(root, rest[0], rest[1]);

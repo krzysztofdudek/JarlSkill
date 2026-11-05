@@ -10,12 +10,12 @@ import { closedGateLine, disagreementText, gateLine, gateOf, readLoop, reviewSpl
 import { checkWaitingText, metricsOf, renderMetrics } from './metrics.mjs';
 import { ago } from './rounds.mjs';
 import { cmdTips, renderTips } from './tips.mjs';
-import { reasonWord, waitingOn } from './commands.mjs';
+import { reasonWord, waitingOn, waitsOf } from './commands.mjs';
 import { handoffAge, handoffPath } from './questions.mjs';
 import { answeredLines } from './journal.mjs';
 import { loopRules, ruleLines, rulesFor } from './rules.mjs';
 import { jarlDir, today } from './where.mjs';
-import { IN_FLIGHT_MARKS, closedGateFlags, inFlightMark, leaseWriter, leasedByText, modelText, nextRows, resourceAgeText, schedulerNote, statusOf, uncommittedLoopFiles } from './evidence.mjs';
+import { IN_FLIGHT_MARKS, closedGateFlags, inFlightMark, leaseWriter, leasedByText, modelText, nextRows, resourceAgeText, schedulerNote, statusOf, subsText, uncommittedLoopFiles } from './evidence.mjs';
 import { cmdQueue, renderQueue } from './queue.mjs';
 import { countsLine } from './import.mjs';
 
@@ -71,8 +71,9 @@ export function cmdResume(root, flags = {}) {
     // next only where it says more than the mark: the owner's tick of a line only he ticks, before done.
     ...leaseWriter(loop, i), stale: stale.get(i.id) || [], mark: marks.get(i.id)?.mark, ...(marks.get(i.id) && marks.get(i.id).next !== IN_FLIGHT_MARKS[marks.get(i.id).mark] ? { next: marks.get(i.id).next } : {}), ...declared(i),
   }));
+  // A parent that waits on its sub-issues alone carries them as subs, and after only the After issues it waits on.
   const waiting = issues.filter((i) => profile.active(i.status) && unsettled(i)).map((i) => ({
-    id: i.id, title: i.title, status: i.status, after: waitingOn(i, byId, profile),
+    id: i.id, title: i.title, status: i.status, after: waitsOf(i, byId, profile).after, ...(waitsOf(i, byId, profile).after.length ? {} : { subs: waitsOf(i, byId, profile).subs }),
     ...(holds(i) ? { branch: i.fields.branch || null, worker: i.fields.worker || null, model: i.fields.model || null, since: i.fields.since || null, stale: stale.get(i.id) || [] } : {}),
   }));
   const asks = loop.asks.filter((a) => a.state === 'open' && (slice === null || (a.issue && inScope.has(a.issue)) || sameSlice(a.slice ?? null, slice)));
@@ -81,7 +82,7 @@ export function cmdResume(root, flags = {}) {
   const ready = next.filter((r) => r.ready);
   // Open, not waiting on After, and still not offered: a file it declares is taken by work in flight (or by a ready
   // issue ahead of it), or an open question names it. Ready, held and kept together are the open count on the status line.
-  const held = next.filter((r) => !r.ready && !r.after.length && !KEPT_KINDS.includes(r.group)).map((r) => ({ id: r.id, title: r.title, priority: r.priority, files: r.waitsOn, heldBy: r.heldBy || [], ...(r.questions ? { questions: r.questions } : {}), ...(r.resources ? { resources: r.resources, resourceHolders: r.resourceHolders } : {}) }));
+  const held = next.filter((r) => !r.ready && !r.after.length && r.group !== 'waiting-sub' && !KEPT_KINDS.includes(r.group)).map((r) => ({ id: r.id, title: r.title, priority: r.priority, files: r.waitsOn, heldBy: r.heldBy || [], ...(r.questions ? { questions: r.questions } : {}), ...(r.resources ? { resources: r.resources, resourceHolders: r.resourceHolders } : {}) }));
   // Open promises and waits, never offered: each with who holds it (a promise its maker, a wait its person and when to check,
   // until its proof records that what was waited for came, and the jarl reviews and closes it).
   const keptRows = next.filter((r) => KEPT_KINDS.includes(r.group)).map((r) => ({ id: r.id, title: r.title, priority: r.priority, kind: r.group, ...(r.group === 'promise' ? { by: r.by } : { person: r.person, checkWhen: r.checkWhen, came: inFlightMark(loop, byId.get(r.id)) !== 'no-rows' }) }));
@@ -100,6 +101,7 @@ export function cmdResume(root, flags = {}) {
     uncommitted: uncommittedLoopFiles(root),
     ...(status.disagreements ? { disagreements: status.disagreements } : {}),
     ...(status.headerRead ? { headerRead: status.headerRead } : {}),
+    ...(status.parents ? { parents: status.parents } : {}),
     log: logN ? logLines.slice(-logN).map((e) => `${e.at}${e.writer ? ` by ${e.writer}` : ''} · ${e.text}`) : null,
     legacyHandoff: kept ? { path: handoffPath(root), at: kept.at, ageMs: kept.ageMs } : null,
   };
@@ -134,7 +136,9 @@ export function renderResume(o, profile = DEFAULT_PROFILE, note = null, asked = 
     ...sec(`Read from their headers (${(st.headerRead || []).length})`, (st.headerRead || []).map((n) => `- ${n.line}`)),
     ...sec(`Closed, gate does not hold (${(st.closedGate || []).length})`, (st.closedGate || []).map(closedGateLine)),
     ...sec(`In flight (${o.inFlight.length})`, o.inFlight.map((x) => `- ${x.id} ${short(x.title)}${shownFields(x)}${lease(x) ? ` · ${lease(x)}` : ''}${x.stale.length ? ` · STALE: ${x.stale.join('; ')}` : ''}${x.mark ? `\n  → ${x.next || IN_FLIGHT_MARKS[x.mark]}` : ''}`), '- (nothing)'),
-    ...sec(`Waiting — After not settled (${o.waiting.length})`, o.waiting.map((x) => `- ${x.id} ${short(x.title)} (after ${x.after.join(', ')})${x.stale !== undefined ? ` · ${x.status === 'in-progress' ? 'in progress' : x.status}${lease(x) ? ` · ${lease(x)}` : ''}${x.stale.length ? ` · STALE: ${x.stale.join('; ')}` : ''}` : ''}`)),
+    ...sec(`Waiting — After not settled (${o.waiting.filter((x) => !x.subs).length})`, o.waiting.filter((x) => !x.subs).map((x) => `- ${x.id} ${short(x.title)} (after ${x.after.join(', ')})${x.stale !== undefined ? ` · ${x.status === 'in-progress' ? 'in progress' : x.status}${lease(x) ? ` · ${lease(x)}` : ''}${x.stale.length ? ` · STALE: ${x.stale.join('; ')}` : ''}` : ''}`)),
+    ...sec(`Waiting on their sub-issues (${o.waiting.filter((x) => x.subs).length})`, o.waiting.filter((x) => x.subs).map((x) => `- ${x.id} ${short(x.title)} (sub-issues ${x.subs.join(', ')} not closed)`)),
+    ...sec(`Parents whose sub-issues are closed (${(o.parents || []).length})`, (o.parents || []).map((p) => `- ${p.id} ${short(p.title)} · sub-issues ${subsText(p.subs)}\n  → ${p.next}`)),
     ...sec(`Questions to the owner (${o.questions.length})`, o.questions.map((a) => `- a-${a.id} (${a.kind || 'stuck'})${a.issue ? ` issue ${a.issue}` : ''} · ${a.question}`), '- (nothing)'),
     ...sec(`Escalations to the jarl (${o.escalations.length})`, o.escalations.map((a) => `- a-${a.id}${a.slice ? ` slice:${a.slice}` : ''}${a.issue ? ` issue ${a.issue}` : ''} · ${a.question}`)),
     ...sec(`Rules proposed (${o.proposed.length})`, o.proposed.map((a) => `- a-${a.id} to ${a.to || 'jarl'} · ${a.appliesTo ? `applies to ${a.appliesTo}` : 'offered for promotion'} · ${a.question}`)),
@@ -201,7 +205,8 @@ export function cmdReport(root, flags = {}) {
   const byRepo = {};
   for (const i of done) for (const r of repoNames(root, i)) (byRepo[r] = byRepo[r] || []).push(i);
   // An issue whose number another file carries too says so on its line, with the files of that number.
-  const mark = (i) => (i.shared ? ` (${sharedMark(i.shared)})` : '');
+  // A sub-issue says whose it is, so the report reads as the tree it was.
+  const mark = (i) => `${i.shared ? ` (${sharedMark(i.shared)})` : ''}${i.tree && i.tree.parent ? ` · sub-issue of ${i.tree.parent.id}` : ''}`;
   const row = (i) => `- ${i.id} ${i.title}${mark(i)} (${i.kind})${mergedOf(i) ? ` · merged ${mergedOf(i).sha}${mergedOf(i).repo ? ` in ${mergedOf(i).repo}` : ''}` : ''}`;
   const repos = Object.keys(byRepo).sort();
   const doneLines = repos.length > 1 ? repos.flatMap((r) => ['', `### ${r} (${byRepo[r].length})`, ...byRepo[r].map(row)]) : done.map(row);
@@ -212,7 +217,7 @@ export function cmdReport(root, flags = {}) {
   const rows = issues.map((i) => {
     const m = mergedOf(i);
     const a = gateOf(loop, i.id).live;
-    return { id: i.id, title: i.title, status: i.status, kind: i.kind, priority: i.priority, tier: i.tier, tags: i.tags, repos: repoNames(root, i), branch: i.fields.branch || null, after: i.after, sources: i.sources, merged: m ? m.sha : null, ci: m ? m.ci : null, review: a ? { by: a.by, kind: a.kind, at: a.at } : null, ...(i.shared ? { shared: i.shared } : {}) };
+    return { id: i.id, title: i.title, status: i.status, kind: i.kind, priority: i.priority, tier: i.tier, tags: i.tags, repos: repoNames(root, i), branch: i.fields.branch || null, after: i.after, sources: i.sources, merged: m ? m.sha : null, ci: m ? m.ci : null, review: a ? { by: a.by, kind: a.kind, at: a.at } : null, ...(i.shared ? { shared: i.shared } : {}), ...(i.parent !== null ? { parent: i.parent } : {}) };
   });
   const metrics = metricsOf(loop, Date.now());
   const closedGate = closedGateFlags(loop);

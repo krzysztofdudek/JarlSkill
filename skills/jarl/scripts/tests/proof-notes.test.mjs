@@ -78,8 +78,7 @@ test('the merge reply says when the issue holds no Proof row, and names the comm
   jarl(root, 'evidence', '2', '--ran', 'npm test', '--saw', 'pass');
   const r = run(root, ['merged', '1,2', '--sha', 'abc1234', '--ran', 'npm test', '--saw', '3 pass', '--keep']);
   assert.equal(r.status, 0);
-  assert.match(r.stderr, /note: NO PROOF FROM THE WORKER — 1 holds no Proof row since it was moved → in-progress/);
-  assert.match(r.stderr, /the merge check is recorded in the merge record and is not proof/);
+  assert.match(r.stderr, /note: NO PROOF FROM THE WORKER — 1 holds no Proof row since it was moved → in-progress; the merge check is recorded in the merge record and is not proof, so done refuses until the worker records it:/);
   assert.doesNotMatch(r.stderr, /NO PROOF FROM THE WORKER — 2/);
 });
 
@@ -123,7 +122,7 @@ test('the NO PROOF note says what the merge recorded: a check, or none', () => {
   const root = approved(2);
   jarl(root, 'new', 'cause', '--acceptance', 'it works');
   const bare = run(root, ['merged', '1', '--sha', 'abc1234', '--keep']);
-  assert.match(bare.stderr, /NO PROOF FROM THE WORKER — 1 holds no Proof row[^\n]*the merge records no check, and a merge is not proof/);
+  assert.match(bare.stderr, /NO PROOF FROM THE WORKER — 1 holds no Proof row since it was moved → in-progress; the merge records no check, and a merge is not proof, so done refuses until the worker records it:/);
   const red = run(root, ['merged', '2', '--sha', 'abc1234', '--red', '3', '--keep']);
   assert.match(red.stderr, /NO PROOF FROM THE WORKER — 2[^\n]*the merge records no check, and a merge is not proof/);
   assert.doesNotMatch(bare.stderr + red.stderr, /merge check is recorded/);

@@ -239,7 +239,7 @@ const FILL = {
   '<selector>': 'role worker', '<role>': 'worker', '<moment>': 'start', '<date-or-event>': '2026-12-01', '<yyyy-mm-dd>': '2026-12-01', '<date-or-id>': '2026-12-01',
   '<type>': 'module', '<rule-id>': 'r1', '<number-of-files>': '2', '<whole-number>': '2', '<count>': '2', '<hours>': '2', '<rounds>': '2', '<machine-line>': 'Check: npm test',
   '<resource-name>': 'db', '<a-row-the-log-matches>': '1', '<material>': 'docs/x.md', '<what-to-check>': 'it reads well', '<placeholder>': 'x', '<a-jarl-command>': 'list',
-  '<--handover-or-none>': '--handover',
+  '<--handover-or-none>': '--handover', '<line=id>': '1=2',
 };
 // Other plausible values of a placeholder whose value the context decides (a kind a flag goes with, a status a lease
 // goes with, an author the owner must be): the form passes when any filling is a call, or refused for another reason.
@@ -446,7 +446,7 @@ export function walkOutputs(cases, loop) {
 function keyOf4() { const f = readdirSync(join(PLAIN.dir, '.jarl', 'issues')).find((x) => x.startsWith('4-')); return /^\*\*Key:\*\* (\S+)/m.exec(readFileSync(join(PLAIN.dir, '.jarl', 'issues', f), 'utf8'))?.[1] ?? 'k'; }
 const VALID = {
   init: ['g'], new: ['t', '--tier', 'light'], renumber: ['4', '--key', keyOf4()], import: ['research/findings.json'], evidence: ['1', 'a note'],
-  retract: ['1', '1', '--by', 'jarl', 'the row was wrong'], field: ['1', 'Priority', '1'], base: ['tool', 'main'], set: ['1', 'deferred', 'later'],
+  retract: ['1', '1', '--by', 'jarl', 'the row was wrong'], field: ['1', 'Priority', '1'], split: ['1', '--line', '1=2'], base: ['tool', 'main'], set: ['1', 'deferred', 'later'],
   merged: ['1', '--sha', 'abc1234'], review: ['1', 'approve', '--by', 'rev', 'read it all, fine'], round: ['1', 'it failed'], tick: ['3', '2', '--by', 'owner'],
   ask: ['which?'], answer: ['a-1', 'this way', '--by', 'owner'], log: ['a note'], decide: ['s1', 'a ruling', '--by', 'jarl'], goal: ['--set', 'Check: npm test'],
   archive: ['old'], mode: ['permanent'], close: [],
@@ -459,7 +459,7 @@ const OUTSIDE = { '--tier': ['huge'], '--kind': ['task'], '--prio': ['7'], '--ci
 const misspelt = (v) => `${v.charAt(0)}${v.slice(2)}`;
 const capital = (v) => `${v.charAt(0).toUpperCase()}${v.slice(1)}`;
 const TEXT_AT = { evidence: 1, retract: 2, set: 2, review: 2, round: 1, ask: 0, answer: 1, log: 0, decide: 1 };
-const IDS_AT = { evidence: 0, retract: 0, field: 0, set: 0, merged: 0, review: 0, round: 0, tick: 0 };
+const IDS_AT = { evidence: 0, retract: 0, field: 0, split: 0, set: 0, merged: 0, review: 0, round: 0, tick: 0 };
 const OLD_TEXT = { set: 'why', review: 'findings', round: 'what', ask: 'question', answer: 'answer', log: 'event', decide: 'ruling', retract: 'reason' };
 // Words a shell reads something in, given as a text the call carries beside the word that is wrong, and as the word that
 // is wrong itself.

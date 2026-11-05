@@ -135,6 +135,9 @@ export const KEPT_FIELDS = ['Person', 'Check when'];
 // The field an issue's key is written in. A profile file given to init or to profile <file> that declares a field of that
 // name is refused; a loop already open with such a profile keeps its own field, and its issues get no key of the tool's.
 export const KEY_FIELD = 'Key';
+// The field a sub-issue names its parent in. A profile file given to init or to profile <file> that declares a field of
+// that name is refused; a loop already open with such a profile keeps its own field, and its issues form no tree.
+export const PARENT_FIELD = 'Parent';
 export const BUILTIN_SECTIONS = ['What', 'Why', 'Acceptance', 'Changelog', 'Evidence'];
 export const PROFILE_FIELD_RE = /^[A-Za-z][A-Za-z0-9 -]{0,39}$/;
 export const PROFILE_STATUS_RE = /^[a-z][a-z0-9-]{0,39}$/;
@@ -351,6 +354,8 @@ function makeProfile({ name, statuses, initial, fields = [], sections = [], acce
   const kept = !kind && !ownWords.length;
   // Whether new writes the tool's key here: never where the profile declares a field Key of its own.
   const keyed = !fields.some((f) => f.key === KEY_FIELD.toLowerCase());
+  // Whether the issues of the loop form a tree through the tool's Parent field: never where the profile declares its own.
+  const tree = !fields.some((f) => f.key === PARENT_FIELD.toLowerCase());
   const kinds = kind ? kind.enum : kept ? KINDS : KINDS.filter((k) => !KEPT_KINDS.includes(k));
   const tiers = tier ? tier.enum : TIERS;
   const p = {
@@ -363,7 +368,7 @@ function makeProfile({ name, statuses, initial, fields = [], sections = [], acce
     kinds, kindDefault: kind && kind.default ? kind.default : kinds[0],
     // Whether the built-in promise and wait hold here, and the kept kind an issue's kind is (null for any other, and
     // for every kind of a loop where they are off: a kind of the profile's own named wait is its own).
-    keyed, kept, keptKind: (k) => (kept && KEPT_KINDS.includes(k) ? k : null),
+    keyed, tree, kept, keptKind: (k) => (kept && KEPT_KINDS.includes(k) ? k : null),
     tiers, tierDefault: tier ? (tier.default || tiers[0]) : TIER_DEFAULT,
     // The fields the profile adds to the header (Kind and Tier are written in their fixed places).
     fields: fields.filter((f) => !f.builtin),
@@ -419,7 +424,7 @@ export function readProfileFile(file, { argument = false } = {}) {
   let json;
   try { json = JSON.parse(readText(file)); } catch (e) { refuse(`${file} is not JSON: ${e.message}`, ['jarl.mjs', 'profile', '<profile.json>']); }
   const profile = validateProfile(json, file);
-  const reserved = reservedNamesProblem(profile) || keyFieldProblem(profile);
+  const reserved = reservedNamesProblem(profile) || keyFieldProblem(profile) || parentFieldProblem(profile);
   need(!reserved, `${file} is not a valid profile: ${reserved}`, () => afterView(['jarl.mjs', 'profile', file]));
   return { json, profile };
 }
@@ -439,6 +444,11 @@ function reservedNamesProblem(profile) {
 function keyFieldProblem(profile) {
   const own = profile.declaredFields.find((f) => f.key === KEY_FIELD.toLowerCase());
   return own ? `it declares the field ${own.name}, which Jarl reserves for an issue's key — rename it in the profile` : null;
+}
+// What a profile file to be opened declares of the name a sub-issue's parent is written under, as a refusal, or null.
+function parentFieldProblem(profile) {
+  const own = profile.declaredFields.find((f) => f.key === PARENT_FIELD.toLowerCase());
+  return own ? `it declares the field ${own.name}, which Jarl reserves for the parent of a sub-issue — rename it in the profile` : null;
 }
 
 // The profile described, for `profile` and for a reader deciding whether a file is right.

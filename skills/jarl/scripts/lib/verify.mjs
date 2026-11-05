@@ -9,7 +9,7 @@ import { ISSUE_FILE_RE, cmpId, idKey, needsRaisedFormat } from './ids.mjs';
 import { FORMAT_LINES, RECORD_FORMAT_RAISED, formatOffText, formatState, loadProfile } from './profile.mjs';
 import { ASKS_FILE, DECISIONS_FILE, GOAL_FILE, LOG_FILE, goalLineOf, goalLines, loadDecisions, readGoal } from './journal.mjs';
 import { loopEvents } from './log.mjs';
-import { issueKeyOf, parseIssue, sharedNumberText, sharedNumbers } from './issues.mjs';
+import { issueKeyOf, parentCycle, parseIssue, sharedNumberText, sharedNumbers } from './issues.mjs';
 import { REPOS_DECLARED_IN, declaredNames, issueRepos, repoIdentity, repoValueKind, reposNamed, worktreesOf } from './repositories.mjs';
 import { headerReadNotes, readLoop, recordDisagreements, unorderedNamings, unorderedText } from './loop.mjs';
 import { attachmentFindings } from './attachments.mjs';
@@ -97,6 +97,16 @@ export function cmdVerify(root) {
     if (i.id === null) continue;
     for (const a of i.after) if (!known.has(idKey(a))) add('issues', `issue ${i.id}`, `waits on issue ${a} in its After field, which the loop does not hold`);
   }
+  // The tree as written: a Parent names another issue the loop holds, the parents above an issue never come back to it,
+  // and nothing unfinished sits under a finished issue (each refused at the write, and found here after a hand edit).
+  for (const i of loop.issues) {
+    if (i.id === null || i.parent === null) continue;
+    const finished = i.tree.ancestors.find((a) => profile.is(a.status, 'terminal'));
+    if (idKey(i.parent) === idKey(i.id)) add('issues', `issue ${i.id}`, 'names itself in its Parent field');
+    else if (!i.tree.parent) add('issues', `issue ${i.id}`, `names ${i.parent} in its Parent field, which the loop does not hold`);
+    else if (parentCycle(i)) add('issues', `issue ${i.id}`, `its parents come back to it (${[i, ...i.tree.ancestors, i].map((a) => a.id).join(' → ')}), so none of them is ever offered`);
+    else if (finished && profile.unfinished(i.status)) add('issues', `issue ${i.id}`, `is ${i.status} under ${finished.id}, which is ${finished.status}: reopen ${finished.id}, or finish ${i.id}`);
+  }
   if (profile.format < RECORD_FORMAT_RAISED) {
     for (const e of events) {
       // A retraction is a line of the log: it is found there, with the other findings of the log, in file order.
@@ -115,6 +125,10 @@ export function cmdVerify(root) {
   if (profile.format < FORMAT_LINES['issue-key'].format) {
     for (const i of loop.issues) if (i.id !== null && profile.keyed && issueKeyOf(i)) add('format', `issue ${i.id}`, `its header carries a key (${shownText(i.fields.key)}), which is written in record format ${FORMAT_LINES['issue-key'].format}, and this loop is not in it`);
     for (const e of events) if (e.key) add('format', `${LOG_FILE} line ${e.n + 1}`, `"${shownText(e.text)}" names a key (${e.key}), which is written in record format ${FORMAT_LINES['issue-key'].format}, and this loop is not in it`, e.n + 1);
+  }
+  // A parent is held by format 3: a reader of a lower format reads the backlog as flat.
+  if (profile.format < FORMAT_LINES.parent.format) {
+    for (const i of loop.issues) if (i.id !== null && i.parent !== null) add('format', `issue ${i.id}`, `its header names a parent (${shownText(i.parent)}), which is written in record format ${FORMAT_LINES.parent.format}, and this loop is not in it`);
   }
   // A question of a format the loop is not in: an escalation is held by format 3.
   if (profile.format < FORMAT_LINES.escalation.format) {

@@ -8,18 +8,18 @@ import { git } from './git.mjs';
 import { jarlDir, stamp } from './where.mjs';
 import { readText, writeAtomic } from './files.mjs';
 import { cmpId, isBulk } from './ids.mjs';
-import { SLOT_NAME_RE, formatState, loadProfile } from './profile.mjs';
+import { PARENT_FIELD, SLOT_NAME_RE, formatState, loadProfile } from './profile.mjs';
 import { appendLog, appendLogLines, firstLine, goalLines, readGoal } from './journal.mjs';
 import { outOfGit } from './loop-git.mjs';
 import { attachmentOf, journalById } from './log.mjs';
 import { acceptanceLineCount, alignRows, bodyText, evidenceNotes, evidenceParts, evidenceTable, loadIssues, mergedOf, noteText, parseIssue, placeEvidence, removeFields, reviewEntries, setSection, sharedMark, struckNote } from './issues.mjs';
 import { fileKeysOf, needFormat, repoNames, reposWhere, tipLines, whereLines, whereOf } from './repositories.mjs';
-import { approveKind, carriesCode, disagreementText, gateOf, gateState, headerReadNotes, readLoop, recordDisagreements, reviewSplit, sameSlice, scopedLoop, sliceNamed, sliceOf, slicesOf } from './loop.mjs';
+import { approveKind, carriesCode, coordinatorOf, disagreementText, gateOf, gateState, headerReadNotes, readLoop, recordDisagreements, reviewSplit, sameSlice, scopedLoop, sinceText, sliceNamed, sliceOf, slicesOf } from './loop.mjs';
 import { checkState, checkWaiting, checkWaitingText } from './metrics.mjs';
 import { builds, modelMarks } from './models.mjs';
 import { ago, leaseLiveness, leaseState, livenessOf, thresholdText } from './rounds.mjs';
 import { attachmentLines, inspectAttachment, requiredSlots, slotProblems } from './attachments.mjs';
-import { ARCHIVE_KEEPS, PERMANENT_MARKER, issuesFor, needLifecycle, needLiveLoop, oneOrMany, rowsOf, waitingOn } from './commands.mjs';
+import { ARCHIVE_KEEPS, PERMANENT_MARKER, issuesFor, needLifecycle, needLiveLoop, oneOrMany, rowsOf, waitingOn, waitsOf } from './commands.mjs';
 import { handoffAge, loadAsks, promotionBatch, ratificationBatch } from './questions.mjs';
 import { ownerLineNotes, ownerLineWait } from './owner-lines.mjs';
 
@@ -173,7 +173,7 @@ export function issueView(root, issue, { full = false, places = true } = {}) {
   };
   const g = full ? null : gateState(root, issue.id);
   const loop = readLoop(jarlDir(root));
-  const notes = [...recordDisagreements(loop).filter((d) => d.id === issue.id).map(disagreementText), ...headerReadNotes(loop).filter((n) => n.id === issue.id).map((n) => `note: ${n.line}`), ...checkWaiting(loop, [issue]).map(checkWaitingText), ...(places ? whereLines(whereOf(root, issue)) : []), ...ownerLineNotes(root, loop, issue)];
+  const notes = [...recordDisagreements(loop).filter((d) => d.id === issue.id).map(disagreementText), ...headerReadNotes(loop).filter((n) => n.id === issue.id).map((n) => `note: ${n.line}`), ...checkWaiting(loop, [issue]).map(checkWaitingText), ...(places ? whereLines(whereOf(root, issue)) : []), ...ownerLineNotes(root, loop, issue), ...treeLines(loop, issue)];
   const out = [];
   for (const p of pieces) {
     if (p.name === null && notes.length) {
@@ -220,6 +220,20 @@ export function issueView(root, issue, { full = false, places = true } = {}) {
   return `${shown.join('\n').replace(/\s+$/, '')}\n\n${attachments.length ? `${attachments.join('\n')}\n\n` : ''}The whole issue, with every earlier round and row: ${jarlLine('show', issue.id, '--full')}\n`;
 }
 
+// The lines show prints under an issue's header about its place in the tree: the parent it is a sub-issue of, its own
+// sub-issues with their statuses, and a Parent that names no issue the loop holds. Read from the loop as loaded, so the
+// statuses are the record's.
+function treeLines(loop, issue) {
+  const own = loop.issues.find((i) => i.file === issue.file);
+  if (!own || !own.tree) return [];
+  const { parent, children } = own.tree;
+  return [
+    parent && `sub-issue of ${parent.id} (${parent.status}): ${parent.title}`,
+    own.parent !== null && !parent && `its ${PARENT_FIELD} names ${own.parent}, which is no other issue the loop holds`,
+    children.length && `sub-issues: ${subsText(children)}`,
+  ].filter(Boolean);
+}
+
 // The words next, queue, status and resume say in place of what they would compute, on a loop whose profile names an
 // external scheduler: Jarl does not know that scheduler's edges (ports, leases, holds), so a ready list of its own would
 // offer work the loop's real scheduler holds back.
@@ -227,11 +241,11 @@ export function schedulerNote(cmd) { return `scheduling is led by the composer: 
 
 // next — on a loop with an external scheduler, { scheduler, note } and no list: Jarl computes nothing it cannot know.
 // By default the issues ready to start and nothing else; --all adds the others, each row carrying its group:
-// ready, held-by-file (a file an in-progress or earlier-offered issue holds), waiting-after (After not settled),
-// held-by-question (an open stuck or stop question names the issue), promise or wait (an issue of that kind, which is
-// never offered to a worker: next --as shows it on who holds it). A library caller reads the full list through nextRows
-// and filters it itself.
-export const NEXT_GROUPS = ['ready', 'held-by-file', 'held-by-resource', 'waiting-after', 'held-by-question', 'promise', 'wait'];
+// ready, held-by-file (a file an in-progress or earlier-offered issue holds), waiting-after (After not settled, the
+// issue's own or that of an issue above it), waiting-sub (a parent with a sub-issue not settled), held-by-question (an
+// open stuck or stop question names the issue), promise or wait (an issue of that kind, which is never offered to a
+// worker: next --as shows it on who holds it). A library caller reads the full list through nextRows and filters it itself.
+export const NEXT_GROUPS = ['ready', 'held-by-file', 'held-by-resource', 'waiting-after', 'waiting-sub', 'held-by-question', 'promise', 'wait'];
 export function cmdNext(root, flags) {
   const profile = loadProfile(root);
   if (profile.scheduler) return { scheduler: profile.scheduler, note: schedulerNote(profile.scheduler) };
@@ -253,11 +267,12 @@ export function resourceAgeText(r) {
   if (!holders.size) return '';
   return holders.size === 1 && r.heldBy.length === 1 ? `, ${one([...holders.values()][0])}` : `; ${[...holders.values()].map((h) => `${h.by} ${one(h)}`).join('; ')}`;
 }
-const NEXT_HEADERS = { ready: 'Ready', 'held-by-file': 'Held by a file another issue holds', 'held-by-resource': 'Held by a resource another issue holds', 'waiting-after': 'Waiting on After', 'held-by-question': 'Held by an open question', promise: 'Promises, kept by who made them', wait: 'Waits on an outside person' };
+const NEXT_HEADERS = { ready: 'Ready', 'held-by-file': 'Held by a file another issue holds', 'held-by-resource': 'Held by a resource another issue holds', 'waiting-after': 'Waiting on After', 'waiting-sub': 'Waiting on their sub-issues', 'held-by-question': 'Held by an open question', promise: 'Promises, kept by who made them', wait: 'Waits on an outside person' };
 export function renderNext(rows, all, held = 0) {
   const line = (r) => {
-    const note = r.group === 'ready' ? [r.noAcceptance && 'no acceptance yet', r.noFiles && 'no files declared']
+    const note = r.group === 'ready' ? [r.noAcceptance && 'no acceptance yet', r.noFiles && 'no files declared', r.subs && `sub-issues ${r.subs.join(', ')} closed: check its own acceptance against the whole`]
       : r.group === 'waiting-after' ? [`after ${r.after.join(', ')}`]
+        : r.group === 'waiting-sub' ? [`sub-issues ${r.subs.join(', ')} not closed`]
         : r.group === 'held-by-question' ? [`question ${r.questions.map((q) => `a-${q}`).join(', ')}`]
           : r.group === 'promise' ? [`promised by ${r.by || 'nobody named'}`]
             : r.group === 'wait' ? [`on ${r.person || 'nobody named'}, check when ${r.checkWhen || 'not said'}`]
@@ -322,10 +337,12 @@ export function nextRows(root, flags = {}) {
   const out = [];
   for (const i of issues.filter((x) => profile.is(x.status, 'dispatchable') && inScope(x)).sort((a, b) => a.priority.localeCompare(b.priority) || cmpId(a.id, b.id))) {
     const { taken, takenRes } = takenIn(i);
-    // An issue whose After issues are not all settled (done or dropped) is never offered, whatever its files.
-    const after = waitingOn(i, byId, profile);
+    // An issue whose After issues are not all settled (done or dropped), its own or those of an issue above it in the
+    // tree, is never offered, whatever its files; nor is a parent while a sub-issue of it is not settled.
+    const { after, subs } = waitsOf(i, byId, profile);
     const base = { id: i.id, title: i.title, priority: i.priority, ...(i.files.length ? {} : { noFiles: true }), ...(i.shared ? { shared: i.shared } : {}) };
     if (after.length) { out.push({ ...base, group: 'waiting-after', after, waitsOn: [] }); continue; }
+    if (subs.length) { out.push({ ...base, group: 'waiting-sub', subs, after: [], waitsOn: [] }); continue; }
     if (asked.has(i.id)) { out.push({ ...base, group: 'held-by-question', questions: asked.get(i.id), waitsOn: [], after: [] }); continue; }
     // A promise or a wait is kept by who holds it, not worked on by a worker: never offered, and it takes no file.
     if (profile.keptKind(i.kind)) {
@@ -347,7 +364,8 @@ export function nextRows(root, flags = {}) {
     resourcesOf(i).forEach((r) => takenRes.set(r.key, i.id));
     // Offered, but flagged: a worker raised on an issue with no acceptance line has nothing to prove, and
     // the reviewer nothing to check it against. Fill it with field <id> Acceptance before raising one.
-    out.push({ ...base, group: 'ready', files: i.files, ready: true, waitsOn: [], after: [], ...(acceptanceLineCount(i) ? {} : { noAcceptance: true }) });
+    // A parent whose sub-issues are all settled is offered too: its own acceptance is checked against the whole now.
+    out.push({ ...base, group: 'ready', files: i.files, ready: true, waitsOn: [], after: [], ...(acceptanceLineCount(i) ? {} : { noAcceptance: true }), ...(i.tree && i.tree.children.length ? { subs: i.tree.children.map((c) => c.id) } : {}) });
   }
   const limit = Number(flags.limit) || Infinity;
   let n = 0;
@@ -459,6 +477,12 @@ function statusOf(root, loop, flags) {
   if (slice !== null) c.slice = slice;
   // The coordinators with their slices, once an issue carries a slice tag.
   if (every.some((i) => sliceOf(i) !== null)) c.slices = slicesOf(loop);
+  // In a loop with sub-issues: the parents that wait on their sub-issues alone, and the parents whose sub-issues are all
+  // settled, each with the step it stands at (see parentChecks).
+  const subWaits = unfinished.map((i) => ({ id: i.id, ...waitsOf(i, byId, profile) })).filter((w) => w.subs.length && !w.after.length).map((w) => ({ id: w.id, subs: w.subs }));
+  if (subWaits.length) c.waitingOnSubs = subWaits;
+  const parents = parentChecks(loop, issues);
+  if (parents.length) c.parents = parents;
   c.check = checkState(loop);
   return c;
 }
@@ -501,6 +525,28 @@ export function inFlightRows(loop, issues) {
     return { id: i.id, title: i.title, branch: i.fields.branch || null, worker: i.fields.worker || null, model: i.fields.model || null, since: i.fields.since || null, ...leaseWriter(loop, i), mark, next };
   });
 }
+// The parents in a status that offers them (built-in: open) whose sub-issues are all settled and that wait on nothing else:
+// each is on the coordinator of its slice (the jarl, with none) to check its own acceptance against the whole and record
+// the check as a proof row, then reviewed and closed. A parent in a lease is worked as any issue in flight is. Each is
+// { id, title, subs: [{ id, status }], holder, mark, next }, mark as inFlightMark reads it and next the step in words.
+export function parentChecks(loop, issues) {
+  const { profile, byId } = loop;
+  return issues.filter((i) => i.tree && i.tree.children.length && profile.is(i.status, 'dispatchable') && !waitingOn(i, byId, profile).length).map((i) => {
+    const mark = inFlightMark(loop, i);
+    const holder = coordinatorOf(loop, i);
+    return { id: i.id, title: i.title, subs: i.tree.children.map((c) => ({ id: c.id, status: c.status })), holder, mark, next: parentStep(loop, i, mark, holder) };
+  });
+}
+function parentStep(loop, issue, mark, holder) {
+  if (mark === 'no-rows') return `${holder === 'jarl' ? 'the jarl' : holder} checks its own acceptance against the whole and records the check`;
+  if (mark === 'rows-no-verdict') return 'checked against the whole, it waits for a verdict';
+  if (mark === 'changes-requested') return 'changes asked on its check: it is checked again, then reviewed again';
+  if (mark === 'approved' && !carriesCode(issue)) return 'checked against the whole and approved: set it done';
+  return IN_FLIGHT_MARKS[mark];
+}
+// The sub-issues of a parent with their statuses, as the views print them: 12 done, 13 dropped.
+export const subsText = (subs) => subs.map((s) => `${s.id} ${s.status}`).join(', ');
+
 // Who wrote an issue's lease, as { leasedBy }: the writer its last move into a lease status names. A loop whose goal names
 // coordinators shows an unnamed one as null, since several may lease there; in any other loop an unnamed write is the
 // jarl's, and the key is left out unless the line names someone.
@@ -617,7 +663,7 @@ export function closedGateFlags(loop) {
       const g = gateOf(loop, id);
       if (!g.tracked) continue;
       const code = carriesCode(issue);
-      if (!g.rowsSince) flag(g.rowLog.some((r) => r.retracted && r.n > g.anchorN) ? 'its proof row was retracted' : `no --ran/--saw row since it was ${g.anchor.what === 'filed' ? 'filed' : `moved → ${g.anchor.what}`}`, jarlLine('evidence', id, '--ran', '<command>', '--saw', '<what-it-printed>'));
+      if (!g.rowsSince) flag(g.rowLog.some((r) => r.retracted && r.n > g.anchorN) ? 'its proof row was retracted' : `no --ran/--saw row since ${sinceText(g.anchor)}`, jarlLine('evidence', id, '--ran', '<command>', '--saw', '<what-it-printed>'));
       for (const p of slotProblems(loop.root, profile, issue, g, false)) flag(`slot ${p.slot}: ${p.what}`, p.fix);
       if (profile.doneGate.approve !== 'none') {
         const fresh = jarlLine('review', id, 'approve', '--by', '<a-fresh-reviewer>', '<text>');

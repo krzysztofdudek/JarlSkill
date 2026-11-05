@@ -99,7 +99,7 @@ function sliceBrief(root, loop, name) {
   if (!inPlay.length) notes.push(`no issue of the slice ${slice} is in play`);
   return {
     role: 'coordinator', slice, declared, roles: ['coordinator'], moments: [...COORDINATOR_MOMENTS].sort(),
-    issues: inPlay.map((i) => ({ id: i.id, title: i.title, status: i.status, worker: fieldText(i.fields.worker) || null })),
+    issues: inPlay.map((i) => ({ id: i.id, title: i.title, status: i.status, worker: fieldText(i.fields.worker) || null, ...(i.tree && i.tree.parent ? { parent: i.tree.parent.id } : {}) })),
     rules, reference: REFERENCES.coordinator,
     record: [{ what: 'what is on the coordinator now, each line with the command that moves it', command: jarlLine('next', '--as', slice) },
       { what: 'an escalation to the jarl, for one of the four reasons', command: jarlLine('ask', hole('<text>'), '--kind', 'escalation', '--slice', slice, '--by', slice) }],
@@ -137,7 +137,7 @@ export function renderBrief(o) {
     out.push(`The coordinator's brief for the slice ${o.slice} (slice:${o.slice}), assembled from the record; it writes nothing.`);
     out.push(...o.notes.map((n) => `note: ${n}`), '');
     out.push(`## The issues of the slice in play (${o.issues.length})`);
-    out.push(...(o.issues.length ? o.issues.map((i) => `- ${i.id} ${i.status}${i.worker ? ` · ${i.worker}` : ''} · ${i.title}`) : ['- (none)']));
+    out.push(...(o.issues.length ? o.issues.map((i) => `- ${i.id} ${i.status}${i.worker ? ` · ${i.worker}` : ''} · ${i.title}${i.parent ? ` · sub-issue of ${i.parent}` : ''}`) : ['- (none)']));
   } else {
     out.push(`The ${ROLE_WORD[o.role]} brief for issue ${o.id}, assembled from the record; it writes nothing.`);
     out.push(...o.notes.map((n) => `note: ${n}`), '', o.show);

@@ -97,7 +97,7 @@ test('field writes Resources and the fields a profile declares; set takes status
   assert.equal(field(root, '1', 'resources'), 'gate, db');
   assert.equal(field(root, '1', 'note'), 'see the thread');
   assert.match(refuses(root, 'field', '1', 'Area', 'web'), /Area must be one of: core, cli/);
-  assert.match(refuses(root, 'field', '1', 'Bogus', 'x'), /Bogus is not a part of the description, which field writes: Title, Priority, Tier, Kind, Found by, Tags, Files, Repo, After, Source, Where, Resources, Person, Check when, Area, Note, What, Why, Acceptance, Changelog;/);
+  assert.match(refuses(root, 'field', '1', 'Bogus', 'x'), /Bogus is not a part of the description, which field writes: Title, Priority, Tier, Kind, Found by, Tags, Files, Repo, After, Parent, Source, Where, Resources, Person, Check when, Area, Note, What, Why, Acceptance, Changelog;/);
   assert.match(refuses(root, 'field', '1', 'open', 'x'), /open is not a part of the description/);
   assert.match(refuses(root, 'field', '1', 'Note', 'x', '--worker', 'w'), /unknown flag --worker for field/);
   assert.equal(refuses(root, 'set', '1', 'Note', 'x', '--worker', 'w').trim(), "Note is a field, not a status: field writes it\njarl.mjs field \"<ids>\" Note \"<value>\"");

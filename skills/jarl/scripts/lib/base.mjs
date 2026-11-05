@@ -94,7 +94,7 @@ export const PLACEHOLDERS = Object.freeze([
   '<id>', '<ids>', '<ids-it-waits-on>', '<another-id>', '<another-issue>', '<ids-the-loop-holds>', '<ids-low-high>', '<a-smaller-range>', '<the-id-new-prints>',
   '<the-id-ask-prints>', '<an-issue-next-offers>', '<question>', '<a-n>', '<n>', '<n-or-note-n>', '<review-n-or-note-n>', '<line>',
   '<text>', '<title>', '<the-title-filed-again>', '<goal>', '<slug>', '<a-new-slug>', '<a-ruling>', '<a-ruling-in-force>', '<value>',
-  '<the-whole-new-value>', '<the-whole-section>', '<a-part-of-the-description>', '<part>', '<name=value>', '<field=value>',
+  '<the-whole-new-value>', '<the-whole-section>', '<a-part-of-the-description>', '<part>', '<name=value>', '<field=value>', '<line=id>',
   '<changelog-entry>', '<owner-line>', '<items>', '<an-item-with-no-leading-dash>', '<an-item-without-quotes>', '<one-quoted-text>',
   '<no-word-here>', '<argument>', '<who>', '<one-name>', '<reviewer>', '<a-fresh-reviewer>', '<the-owner-himself>', '<owner-or-a-name>',
   '<who-asks>', '<his-own-words>', '<status>', '<status-in-the-log>', '<a-status-the-gate-allows>', '<kind>', '<tier>', '<prio>',
