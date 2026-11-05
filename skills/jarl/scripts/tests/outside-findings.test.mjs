@@ -157,7 +157,7 @@ test('the issue a finding outside a format-1 loop files names the reviewed issue
   assert.equal(v.status, 0, v.stdout);
 });
 
-// A format-1 loop as the 6.1.0 reader files it: its issues name the checkout `tool` beside the loop's root bare, each leased
+// A format-1 loop as the frozen reader of format 1 files it: its issues name the checkout `tool` beside the loop's root bare, each leased
 // on a branch of its own with one commit past the base, and a proof row.
 function formatOneLeased(titles) {
   const root = makeLoop({ prefix: 'jarl-outside-tip-', via: 'cli', dotGit: false });
