@@ -443,7 +443,7 @@ const FILL_WITH = {
   files: (id) => jarlLine('field', id, 'Files', '<paths>'),
   after: (id) => jarlLine('field', id, 'After', '<ids-it-waits-on>'),
   where: (id) => jarlLine('field', id, 'Where', '<text>'),
-  'found by': () => 'only at filing: new --found-by <who>',
+  'found by': (id) => jarlLine('field', id, 'Found by', '<who>'),
 };
 export function describeNew(file) {
   const issue = parseIssue(readText(file), file);

@@ -18,6 +18,18 @@ function repo() {
   return dir;
 }
 
+test('the hint for an empty Found by is the field call that writes it, and that call fills it', async () => {
+  const { describeNew } = await import('../jarl-lib.mjs');
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  const { file } = JSON.parse(jarl(root, 'new', 'bare', '--json'));
+  writeFileSync(file, readFileSync(file, 'utf8').replace(/^\*\*Found by:\*\*.*$/m, '**Found by:**'));
+  const hint = describeNew(file).empty.find((e) => e.field === 'found by');
+  assert.equal(hint.fill, "jarl.mjs field 1 'Found by' \"<who>\"");
+  assert.equal(jarl(root, 'field', '1', 'Found by', 'rev-a'), '1 Found by: rev-a');
+  assert.equal(describeNew(file).empty.find((e) => e.field === 'found by'), undefined);
+});
+
 test('init, new, list, show', () => {
   const root = repo();
   jarl(root, 'init', 'make the export command handle every fixture');
