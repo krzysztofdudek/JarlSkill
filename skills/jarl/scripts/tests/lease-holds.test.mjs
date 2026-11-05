@@ -70,6 +70,62 @@ test('the holder is named without a slice when it has none, and a held resource 
   assert.doesNotMatch(said, /slice:/);
 });
 
+// Two issues that each hold a lease of their own, the first declaring f.txt and the resource db-server, the second g.txt.
+function twoLeasesOnTwoFiles() {
+  const { dir: root } = gitRepo({ prefix: 'jarl-lease-after-' });
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'one', '--files', 'f.txt', '--tier', 'standard', '--kind', 'gap', '--prio', '2');
+  jarl(root, 'new', 'two', '--files', 'g.txt', '--tier', 'standard', '--kind', 'gap', '--prio', '2');
+  jarl(root, 'field', '1', 'resources', 'db-server');
+  jarl(root, 'set', '1', 'in-progress', 'A', '--branch', 'jarl/1-one', '--worker', 'wA');
+  jarl(root, 'set', '2', 'in-progress', 'C', '--branch', 'jarl/2-two', '--worker', 'wC');
+  return root;
+}
+
+test('declaring a file after the lease that another lease holds is refused, naming the holder, and writes nothing', () => {
+  const root = twoLeasesOnTwoFiles();
+  const before = logText(root);
+  const said = refuses(root, 'field', '2', 'files', 'g.txt, f.txt');
+  assert.match(said, /2 declares f\.txt, which 1 holds in its lease \(worker wA, branch jarl\/1-one, since [^)]+\)/);
+  assert.match(said, /set 2 in-progress "<why-the-worker-changed>" --branch jarl\/1-one --worker wA --handover/, 'it names the call that puts the issue in the holder\'s package');
+  assert.equal(logText(root), before, 'nothing was written');
+  assert.equal(JSON.parse(jarl(root, 'show', '2', '--json')).fields.files, 'g.txt');
+  assert.match(refuses(root, 'field', '2', 'files', 'f.txt', '--add'), /2 declares f\.txt, which 1 holds in its lease/);
+  assert.equal(logText(root), before);
+});
+
+test('declaring a resource after the lease that another lease holds is refused, naming the holder, and writes nothing', () => {
+  const root = twoLeasesOnTwoFiles();
+  const before = logText(root);
+  assert.match(refuses(root, 'field', '2', 'resources', 'DB-Server'), /2 uses the resource DB-Server, which 1 holds in its lease \(worker wA, branch jarl\/1-one/);
+  assert.match(refuses(root, 'field', '2', 'resources', 'db-server', '--add'), /2 uses the resource db-server, which 1 holds in its lease/);
+  assert.equal(logText(root), before, 'nothing was written');
+  assert.equal(JSON.parse(jarl(root, 'show', '2', '--json')).fields.resources, undefined);
+});
+
+test('a call over several issues that one lease refuses writes nothing for any of them', () => {
+  const root = twoLeasesOnTwoFiles();
+  jarl(root, 'new', 'three', '--files', 'h.txt', '--tier', 'standard', '--kind', 'gap', '--prio', '2');
+  jarl(root, 'set', '3', 'in-progress', 'D', '--branch', 'jarl/3-three', '--worker', 'wD');
+  const before = logText(root);
+  assert.match(refuses(root, 'field', '2,3', 'files', '--add', 'f.txt'), /which 1 holds in its lease/);
+  assert.equal(logText(root), before);
+  assert.equal(JSON.parse(jarl(root, 'show', '3', '--json')).fields.files, 'h.txt');
+});
+
+test('declaring a file or a resource an issue may take is not refused: its own lease\'s, one nobody holds, an issue no lease holds', () => {
+  const root = twoLeasesOnTwoFiles();
+  jarl(root, 'field', '2', 'files', 'g.txt, k.txt');
+  jarl(root, 'field', '2', 'resources', 'cache');
+  jarl(root, 'field', '2', 'files', '--clear');
+  jarl(root, 'new', 'open one', '--files', 'm.txt', '--tier', 'standard', '--kind', 'gap', '--prio', '2');
+  jarl(root, 'field', '3', 'files', 'f.txt');
+  jarl(root, 'field', '3', 'resources', 'db-server');
+  // An issue that joins the holder's lease declares what the lease holds.
+  jarl(root, 'set', '3', 'in-progress', 'joins', '--branch', 'jarl/1-one', '--worker', 'wA');
+  jarl(root, 'field', '3', 'files', 'f.txt, n.txt');
+});
+
 test('issues leased in one call, or added to the lease that holds their file, share it', () => {
   const { root } = twoOnOneFile();
   jarl(root, 'set', '1,2', 'in-progress', 'a package', '--branch', 'jarl/1-pkg', '--worker', 'wA');

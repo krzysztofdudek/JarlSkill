@@ -1099,29 +1099,49 @@ function needLeaseHolds(root, profile, issues, status, why, flags, handover, not
       need(false, `${issue.id} declares no Files or Resources, and ${slices.length} slices are in play (${slices.map((x) => x.tag).join(', ')}): across slices only leases hold, and a lease holds only what its issue declares — declare them first, its files or its resources (${jarlLine('field', issue.id, 'Resources', '<resource-name>')})${nothing}`, () => [{ first: ['jarl.mjs', 'field', issue.id, 'Files', '<paths>'] }, { retry: true }]);
     }
   }
-  // What the other leases hold: each file key and each resource, with the issue whose lease holds it.
-  const others = loadIssues(root).filter((i) => !taken.has(i.id) && profile.is(i.status, 'holds-claim'));
-  // The first holder of each, in the order of the record, so a refusal names the same issue every time.
-  const files = new Map();
-  const resources = new Map();
-  for (const i of others) {
-    for (const k of fileKeysOf(root, i)) if (!files.has(k.key)) files.set(k.key, i);
-    for (const r of i.resources) if (!resources.has(r.toLowerCase())) resources.set(r.toLowerCase(), i);
-  }
+  const others = otherLeases(root, profile, taken);
   for (const issue of issues) {
     if (leased(issue) && !handover) continue;
-    const branch = named('branch') ?? fieldText(issue.fields.branch);
-    const worker = named('worker') ?? fieldText(issue.fields.worker);
-    const joins = (h) => (branch && h.fields.branch ? branch === fieldText(h.fields.branch) && (!worker || !h.fields.worker || worker === fieldText(h.fields.worker)) : !branch && !h.fields.branch && Boolean(worker) && worker === fieldText(h.fields.worker));
-    const held = [
-      ...fileKeysOf(root, issue).filter((k) => files.has(k.key)).map((k) => ({ what: `declares ${k.f}`, by: files.get(k.key) })),
-      ...issue.resources.filter((r) => resources.has(r.toLowerCase())).map((r) => ({ what: `uses the resource ${r}`, by: resources.get(r.toLowerCase()) })),
-    ].filter((h) => !joins(h.by));
+    const held = heldByOthers(root, others, issue, named('branch') ?? fieldText(issue.fields.branch), named('worker') ?? fieldText(issue.fields.worker), fileKeysOf(root, issue), issue.resources);
     if (!held.length) continue;
     const { what, by } = held[0];
     const join = by.fields.branch ? `, or put ${issue.id} in ${by.id}'s lease: set ${issue.id} ${status} "<text>" --branch ${fieldText(by.fields.branch)}${by.fields.worker ? ` --worker ${fieldText(by.fields.worker)}` : ''}` : '';
     need(false, `${issue.id} ${what}, which ${by.id} holds in its lease (${holderText(by)}) — two leases on one file or resource collide; wait until ${by.id} leaves its lease (next offers ${issue.id} then)${join}${nothing}; what is ready: ${jarlLine('next')}`, () => ({ arg: 0, value: '<an-issue-next-offers>' }));
   }
+}
+// What the leases of the issues outside `taken` hold: each file key and each resource, with the issue whose lease holds it.
+// The first holder of each, in the order of the record, so a refusal names the same issue every time.
+function otherLeases(root, profile, taken) {
+  const files = new Map();
+  const resources = new Map();
+  for (const i of loadIssues(root).filter((x) => !taken.has(x.id) && profile.is(x.status, 'holds-claim'))) {
+    for (const k of fileKeysOf(root, i)) if (!files.has(k.key)) files.set(k.key, i);
+    for (const r of i.resources) if (!resources.has(r.toLowerCase())) resources.set(r.toLowerCase(), i);
+  }
+  return { files, resources };
+}
+// The files (as fileKeysOf gives them) and resources of an issue that another lease holds, as { what, by }, leaving out what
+// the lease of `branch` and `worker` joins: the holder's own branch, and its worker when both name one.
+function heldByOthers(root, others, issue, branch, worker, fileKeys, resourceNames) {
+  const joins = (h) => (branch && h.fields.branch ? branch === fieldText(h.fields.branch) && (!worker || !h.fields.worker || worker === fieldText(h.fields.worker)) : !branch && !h.fields.branch && Boolean(worker) && worker === fieldText(h.fields.worker));
+  return [
+    ...fileKeys.filter((k) => others.files.has(k.key)).map((k) => ({ what: `declares ${k.f}`, by: others.files.get(k.key) })),
+    ...resourceNames.filter((r) => others.resources.has(r.toLowerCase())).map((r) => ({ what: `uses the resource ${r}`, by: others.resources.get(r.toLowerCase()) })),
+  ].filter((h) => !joins(h.by));
+}
+// A file or a resource declared on an issue a lease holds is taken into that lease, so it is refused when another lease holds
+// it, as a lease taken on it would be: a lease that guards what an issue declares is guarded wherever it is declared. What
+// the issue's own lease joins is allowed; an issue no lease holds is checked when it takes one; a loop its composer schedules
+// leaves the decision to the composer.
+function needFreeOfOtherLeases(root, issue, files, resources) {
+  const profile = loadProfile(root);
+  if (profile.scheduler !== null && profile.scheduler !== undefined) return;
+  if (!profile.is(issue.status, 'holds-claim') || !(issue.fields.worker || issue.fields.branch)) return;
+  const held = heldByOthers(root, otherLeases(root, profile, new Set([issue.id])), issue, fieldText(issue.fields.branch), fieldText(issue.fields.worker), fileKeysOf(root, { ...issue, files }), resources);
+  if (!held.length) return;
+  const { what, by } = held[0];
+  const join = by.fields.branch ? `, or put ${issue.id} in ${by.id}'s lease: ${jarlLine('set', issue.id, issue.status, '<why-the-worker-changed>', '--branch', fieldText(by.fields.branch), ...(by.fields.worker ? ['--worker', fieldText(by.fields.worker)] : []), '--handover')}` : '';
+  need(false, `${issue.id} ${what}, which ${by.id} holds in its lease (${holderText(by)}) — two leases on one file or resource collide; leave it out, or wait until ${by.id} leaves its lease${join}`, () => ({ arg: 2, value: resources.length ? '<resource-name>' : '<paths>' }));
 }
 // Who holds an issue's lease, as the refusals name it: its worker, branch and start, and its slice tag when it has one.
 function holderText(issue) {
@@ -1367,6 +1387,7 @@ function setResources(root, rawIds, value, flags) {
   const names = resourceNames(value);
   const by = editorOf(flags.by);
   const issues = issuesFor(root, rawIds);
+  for (const issue of issues) needFreeOfOtherLeases(root, issue, [], names.filter((n) => !issue.resources.some((r) => r.toLowerCase() === n.toLowerCase())));
   logChanges(root, issues.map((issue) => fieldLine(issue.id, 'Resources', names.join(', '), heldField(issue, 'Resources'), by)));
   for (const issue of issues) writeAtomic(issue.file, setField(readText(issue.file), 'Resources', names.join(', ')));
   return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, field: 'Resources', value: names.join(', ') })));
@@ -1868,6 +1889,7 @@ export function cmdFiles(root, rawId, list, dry = false, by = undefined) {
   need(issue, `no such issue: ${rawId}${listAll()}`, () => ({ replace: rawId, value: '<id>' }));
   const editor = editorOf(by);
   const files = pathList(list);
+  needFreeOfOtherLeases(root, issue, files.filter((f) => !issue.files.includes(f)), []);
   if (!dry) {
     logChanges(root, [fieldLine(issue.id, 'Files', files.join(', '), heldField(issue, 'Files'), editor)]);
     writeAtomic(issue.file, setField(readText(issue.file), 'Files', files.join(', ')));
