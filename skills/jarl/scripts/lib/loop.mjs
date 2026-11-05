@@ -465,7 +465,7 @@ export function gateOf(loop, id) {
       // turns out to have ever held the lease (self) does not stay fresh or coordinator either.
       let kind = e.kind;
       if (kind && e.by) { const now = reviewerKind(e.by, self, coordinators); if (KIND_WEIGHT[now] > KIND_WEIGHT[kind]) kind = now; }
-      const review = { n: e.n, at: e.at, verdict: e.verdict, by: e.by, kind, retracted: false };
+      const review = { n: e.n, at: e.at, verdict: e.verdict, by: e.by, kind, model: e.model ?? null, retracted: false };
       allReviews.push(review);
       trail.push(review);
       before = review;
