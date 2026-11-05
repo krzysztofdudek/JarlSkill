@@ -2,7 +2,7 @@
 
 import { existsSync } from 'node:fs';
 import { resolve, dirname, basename, relative, isAbsolute } from 'node:path';
-import { KEPT_KINDS, KINDS, PRIORITIES, fieldText, need, slugify, splitList } from './base.mjs';
+import { KEPT_KINDS, KINDS, PRIORITIES, fieldText, hole, jarlLine, need, refuse, slugify, splitList } from './base.mjs';
 import { git } from './git.mjs';
 import { canonical } from './where.mjs';
 import { readText } from './files.mjs';
@@ -18,7 +18,7 @@ import { leasedByText, schedulerNote } from './evidence.mjs';
 // ---- research findings into issues ----------------------------------------------------------------
 
 // A research round leaves a findings.json beside its report. import turns each finding into one issue whose
-// **Source:** is <report dir>#<finding id>: the report directory is dated, so the pair names that finding for
+// **Source:** is <report-dir#finding-id>: the report directory is dated, so the pair names that finding for
 // good, and a re-run skips every finding whose Source an issue already carries. The mapping (references/jarl.md, "From
 // research to issues") reads three shapes: a flat array of findings; an array of angles, each with its
 // surviving findings under `surviving`; and { results: [{ area, kept: [...] }] }. A finding without an id
@@ -49,7 +49,7 @@ function refuseMisspelledKeys(f, label) {
     return d >= 1 && d <= 2 ? best : null;
   };
   const bad = Object.keys(f).map((k) => [k, near(k)]).filter(([, best]) => best);
-  need(bad.length === 0, `finding ${label} has ${bad.map(([k, best]) => `"${k}" (did you mean "${best}"?)`).join(', ')}, which look like misspelled keys; the keys a finding takes are ${FINDING_KEYS.join(', ')} — nothing was filed`);
+  need(bad.length === 0, `finding ${label} has ${bad.map(([k, best]) => `"${k}" (did you mean "${best}"?)`).join(', ')}, which look like misspelled keys; the keys a finding takes are ${FINDING_KEYS.join(', ')} — nothing was filed`, () => (['jarl.mjs', 'import', '<findings.json>', '--dry-run']));
   return f;
 }
 // A label for a finding in a refusal: its id, or its place in the list when it has none (the id check names that case).
@@ -70,13 +70,13 @@ export function findingsOf(json) {
   } else if (Array.isArray(json)) list = checkedList(json);
   else if (json && Array.isArray(json.results)) list = checkedList(json.results.flatMap((r) => r.kept || []));
   else if (json && Array.isArray(json.findings)) list = checkedList(json.findings);
-  else throw new Error('not a findings file this tool reads: expected an array of findings, an array of angles with `surviving`, or { results: [{ kept }] } — see references/jarl.md, "From research to issues"');
+  else refuse('not a findings file this tool reads: expected an array of findings, an array of angles with `surviving`, or { results: [{ kept }] } — see references/jarl.md, "From research to issues"', ['jarl.mjs', 'import', '<findings.json>', '--dry-run']);
   const seen = new Set();
   const out = list.map((f, n) => {
-    need(f && typeof f === 'object' && (typeof f.id === 'string' || typeof f.id === 'number') && String(f.id).trim(), `finding #${n + 1} has no id — every finding needs one to be filed once and only once; nothing was filed`);
+    need(f && typeof f === 'object' && (typeof f.id === 'string' || typeof f.id === 'number') && String(f.id).trim(), `finding #${n + 1} has no id — every finding needs one to be filed once and only once; nothing was filed`, () => (['jarl.mjs', 'import', '<findings.json>', '--dry-run']));
     const id = String(f.id).trim();
-    need(!/[\s,#]/.test(id), `finding id "${id}" holds a space, a comma or a # — it cannot be a Source key; nothing was filed`);
-    need(!seen.has(id), `finding id ${id} appears twice in the file; nothing was filed`);
+    need(!/[\s,#]/.test(id), `finding id "${id}" holds a space, a comma or a # — it cannot be a Source key; nothing was filed`, () => (['jarl.mjs', 'import', '<findings.json>', '--dry-run']));
+    need(!seen.has(id), `finding id ${id} appears twice in the file; nothing was filed`, () => (['jarl.mjs', 'import', '<findings.json>', '--dry-run']));
     seen.add(id);
     const claim = typeof f.claim === 'string' ? f.claim : '';
     const title = String(f.title || claim.split(/(?<=[.!?])\s/)[0] || id).replace(/\s+/g, ' ').trim();
@@ -113,12 +113,12 @@ export function reportDirOf(file) {
 }
 
 function readFindings(file, flags = {}) {
-  need(file, 'a findings file is required: jarl.mjs import <findings.json>');
-  need(existsSync(file), `no such file: ${file}`);
+  need(file, 'a findings file is required', () => ({ arg: 0, value: '<findings.json>' }));
+  need(existsSync(file), `no such file: ${file}`, () => ({ arg: 0, value: '<findings.json>' }));
   let json;
-  try { json = JSON.parse(readText(file)); } catch (e) { throw new Error(`${file} is not JSON: ${e.message}`); }
+  try { json = JSON.parse(readText(file)); } catch (e) { refuse(`${file} is not JSON: ${e.message}`, ['jarl.mjs', 'import', '<findings.json>', '--dry-run']); }
   const dir = flags.source !== undefined ? String(flags.source).replace(/\/+$/, '') : reportDirOf(file);
-  need(dir && !/[\s,#]/.test(dir), `--source is the report directory alone, with no space, comma or # in it (got "${dir}")`);
+  need(dir && !/[\s,#]/.test(dir), `--source is the report directory alone, with no space, comma or # in it (got "${dir}")`, () => ({ flag: '--source', value: '<report-dir>' }));
   return { dir, findings: findingsOf(json) };
 }
 
@@ -163,13 +163,13 @@ function bySource(issues) {
 }
 
 export function cmdImport(root, file, flags) {
-  needLiveLoop(root, ' — run: jarl.mjs init "<goal>"');
+  needLiveLoop(root, ` — run: ${jarlLine('init', '<goal>')}`);
   const { dir, findings: read } = readFindings(file, flags);
   const profile = loadProfile(root);
-  if (flags.kind !== undefined) need(profile.kinds.includes(flags.kind), `--kind must be one of: ${profile.kinds.join(', ')}`);
-  need(!profile.keptKind(flags.kind), `--kind ${flags.kind}: a finding is work, never a promise or a wait — file one of those with jarl.mjs new "<title>" --kind ${flags.kind}`);
-  if (flags.prio !== undefined) need(PRIORITIES.includes(String(flags.prio)), '--prio must be 1, 2 or 3');
-  if (flags.tier !== undefined) need(profile.tiers.includes(String(flags.tier)), `--tier must be one of: ${profile.tiers.join(', ')}`);
+  if (flags.kind !== undefined) need(profile.kinds.includes(flags.kind), `--kind must be one of: ${profile.kinds.join(', ')} (got "${flags.kind}")`, () => ({ flag: '--kind', value: hole('<kind>') }));
+  need(!profile.keptKind(flags.kind), `--kind ${flags.kind}: a finding is work, never a promise or a wait — file one of those with ${jarlLine('new', '<title>', '--kind', flags.kind)}`, () => (['jarl.mjs', 'new', '<title>', '--kind', flags.kind]));
+  if (flags.prio !== undefined) need(PRIORITIES.includes(String(flags.prio)), `--prio must be 1, 2 or 3 (got "${flags.prio}")`, () => ({ flag: '--prio', value: hole('<prio>') }));
+  if (flags.tier !== undefined) need(profile.tiers.includes(String(flags.tier)), `--tier must be one of: ${profile.tiers.join(', ')} (got "${flags.tier}")`, () => ({ flag: '--tier', value: hole('<tier>') }));
   // A finding's kind is mapped onto the built-in kinds; under a profile with kinds of its own, one it does not
   // name is filed under the profile's default kind.
   const findings = profile.declared ? read.map((f) => (profile.kinds.includes(f.kind) && !profile.keptKind(f.kind) ? f : { ...f, kind: profile.kindDefault })) : read;
@@ -179,7 +179,7 @@ export function cmdImport(root, file, flags) {
   if (flags.only !== undefined) {
     const only = splitList(flags.only);
     const unknown = only.filter((id) => !findings.some((f) => f.id === id));
-    need(unknown.length === 0, `not in ${file}: ${unknown.join(', ')}`);
+    need(unknown.length === 0, `not in ${file}: ${unknown.join(', ')}`, () => ({ flag: '--only', value: '<finding-ids>' }));
     chosen = findings.filter((f) => only.includes(f.id));
   }
   const issues = loadIssues(root);
@@ -226,7 +226,7 @@ export function cmdSources(root, files, flags = {}) {
   const filedAs = bySource(issues);
   const reports = new Map();   // dir -> ordered finding ids
   const add = (dir, id) => { if (!reports.has(dir)) reports.set(dir, []); if (!reports.get(dir).includes(id)) reports.get(dir).push(id); };
-  need(files.length <= 1 || flags.source === undefined, '--source names one report directory: give one findings file with it');
+  need(files.length <= 1 || flags.source === undefined, '--source names one report directory: give one findings file with it', () => ({ rename: '--source', to: '<no-flag-here>' }));
   const mentionKey = new Map();
   for (const file of files) { const { dir, findings } = readFindings(file, flags); findings.forEach((f) => { add(dir, f.id); mentionKey.set(`${dir}#${f.id}`, f); }); }
   for (const key of filedAs.keys()) { const at = key.indexOf('#'); add(key.slice(0, at), key.slice(at + 1)); }

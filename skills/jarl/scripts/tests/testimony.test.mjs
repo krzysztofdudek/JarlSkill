@@ -26,7 +26,8 @@ test('three lines through every command that writes text: whole in the issue, th
   assert.equal(id, '1');
   const t = JSON.parse(jarl(root, 'new', three('title'), '--json')).id;
   assert.match(readFileSync(L.findIssue(root, t).file, 'utf8'), /^# 2 · title line one title line two title line three\n/, 'a title of three lines is one heading with every line');
-  jarl(root, 'body', id, '--what', three('body-what'), '--why', three('body-why'));
+  jarl(root, 'field', id, 'What', three('body-what'));
+  jarl(root, 'field', id, 'Why', three('body-why'));
   jarl(root, 'evidence', id, three('evidence'));
   jarl(root, 'evidence', id, '--ran', three('ran'), '--saw', three('saw'));
   jarl(root, 'set', id, 'in-progress', '--worker', 'w-one', '--branch', 'jarl/1-x');
@@ -50,9 +51,9 @@ test('three lines through every command that writes text: whole in the issue, th
   const askId = JSON.parse(q).id;
   assert.ok(L.loadAsks(root).find((a) => a.id === askId).question.split('\n').length === 3, 'the question keeps its lines');
   assert.ok(has(read(root, 'asks.md'), 'question'));
-  jarl(root, 'answer', askId, three('answer'));
+  jarl(root, 'answer', askId, three('answer'), '--by', 'owner');
   assert.ok(has(read(root, 'decisions.md'), 'question') && has(read(root, 'decisions.md'), 'answer'), 'the ruling holds the whole question and answer');
-  jarl(root, 'decide', 'multi-ruling', three('ruling'), '--settles', id);
+  jarl(root, 'decide', 'multi-ruling', three('ruling'), '--settles', id, '--by', 'coordinator');
   assert.ok(has(read(root, 'decisions.md'), 'ruling'));
   const after = readFileSync(L.findIssue(root, id).file, 'utf8');
   assert.match(after, /Ruling multi-ruling \(by coordinator\): ruling line one/);

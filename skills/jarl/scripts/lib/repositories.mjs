@@ -3,7 +3,7 @@
 
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve, dirname, basename, relative, isAbsolute } from 'node:path';
-import { fieldText, need, noSeparators, splitList } from './base.mjs';
+import { afterView, fieldText, hole, jarlLine, need, noSeparators, refuse, splitList } from './base.mjs';
 import { git } from './git.mjs';
 import { canonical, issuesDir, jarlDir, portablePath } from './where.mjs';
 import { readText, writeAtomic } from './files.mjs';
@@ -62,16 +62,16 @@ export function repoPlace(root, value) {
 const RESOLVED = new Map();
 export function repoOf(root, named) {
   if (named === undefined || named === '') return root;
-  need(typeof named === 'string', '--repo takes one name or path — the repository the code lives in');
+  need(typeof named === 'string', '--repo takes one name or path — the repository the code lives in', () => ({ flag: '--repo', value: '<name-or-path>' }));
   const key = `${root}\n${loadProfile(root).format}\n${named}`;
   if (RESOLVED.has(key)) return RESOLVED.get(key);
   const { path: repo, name } = repoPlace(root, named);
-  need(isGitRepo(repo), name ? `${nameFix(root, name)} (${repo} is not a git repository)` : `not a git repository: ${repo} (a relative --repo or Repo path is read from the loop's root, ${root})`);
+  need(isGitRepo(repo), name ? `${nameFix(root, name)} (${repo} is not a git repository)` : `not a git repository: ${repo} (a relative --repo or Repo path is read from the loop's root, ${root}): e.g. --repo <name-or-path>`, () => ({ replace: String(repo), value: '<name-or-path>' }));
   // A subdirectory of a repository is not the repository: the paths git reports are relative to its root, so a
   // declared file or a removed test would be read from the wrong place and go unseen.
   const top = git(repo, ['rev-parse', '--show-toplevel']);
-  need(top !== null || git(repo, ['rev-parse', '--is-bare-repository']) !== 'true', `${repo} is a bare repository: it has no working tree to act on`);
-  need(top !== null && canonical(top) === canonical(repo), name ? `${repo} is inside the repository at ${top}, not its root — ${nameFix(root, name)}` : `${repo} is inside the repository at ${top}, not its root — name the root: ${portablePath(relative(canonical(root), canonical(top || repo))) || '.'}`);
+  need(top !== null || git(repo, ['rev-parse', '--is-bare-repository']) !== 'true', `${repo} is a bare repository: it has no working tree to act on`, () => ({ replace: String(repo), value: '<name-or-path>' }));
+  need(top !== null && canonical(top) === canonical(repo), name ? `${repo} is inside the repository at ${top}, not its root — ${nameFix(root, name)}` : `${repo} is inside the repository at ${top}, not its root — name the root: ${portablePath(relative(canonical(root), canonical(top || repo))) || '.'}`, () => ({ replace: String(repo), value: hole('<name-or-path>') }));
   RESOLVED.set(key, repo);
   return repo;
 }
@@ -130,14 +130,14 @@ function repoEntries(root, issue) {
 // throws). A loop whose profile names an external scheduler is never raised: the write is refused, naming `what` it
 // would have written, and nothing is written. Returns true when it wrote.
 export function raiseFormat(root, to = RECORD_FORMAT_RAISED, what = null) {
-  need(RECORD_FORMATS.includes(to), `record format ${to} is not one this Jarl writes`);
+  need(RECORD_FORMATS.includes(to), `record format ${to} is not one this Jarl writes`, () => afterView(['jarl.mjs', 'profile']));
   if (!existsSync(jarlDir(root))) return false;
   return withLock(root, () => {
     const profile = loadProfile(root);
     if (profile.format >= to) return false;
     if (!formatState(profile).raises) {
       const line = what || `a line of record format ${to}`;
-      throw new Error(`${line} needs record format ${to}, and this loop stays at format ${profile.format}: its profile names an external scheduler (${profile.scheduler}), the composer that reads this record, so Jarl never raises its format; ${line} is off in this loop until its profile says "format": ${to} — nothing was written`);
+      refuse(`${line} needs record format ${to}, and this loop stays at format ${profile.format}: its profile names an external scheduler (${profile.scheduler}), the composer that reads this record, so Jarl never raises its format; ${line} is off in this loop until its profile says "format": ${to} — nothing was written`, afterView(['jarl.mjs', 'profile']));
     }
     // A bare word is a path in format 1 and a name from format 2 on: only a loop in format 1 has paths to say again.
     if (profile.format < RECORD_FORMAT_RAISED) writeBarePaths(root);
@@ -154,7 +154,7 @@ export function raiseFormat(root, to = RECORD_FORMAT_RAISED, what = null) {
 // `what` names the write in the refusal when it is one part of the line (a field of a kind), else the line's own words do.
 export function needFormat(root, name, what = null) {
   const line = Object.hasOwn(FORMAT_LINES, name) ? FORMAT_LINES[name] : null;
-  need(line, `${name} is not a line of the record format registry: its lines are ${Object.keys(FORMAT_LINES).join(', ')}`);
+  need(line, `${name} is not a line of the record format registry: its lines are ${Object.keys(FORMAT_LINES).join(', ')}`, () => afterView(['jarl.mjs', 'profile']));
   return raiseFormat(root, line.format, what || line.what);
 }
 
@@ -337,23 +337,24 @@ function pathTo(root, main) {
 // when the checkout sits where the convention looks for it, else the path (with a note saying why, so two repositories
 // that share a directory name stay apart). Writes nothing.
 export function repoFromInput(root, raw) {
-  need(typeof raw === 'string' && raw.trim() !== '', '--repo takes a repository: its name, its checkout, a worktree of it or a file inside it');
+  need(typeof raw === 'string' && raw.trim() !== '', '--repo takes a repository: its name, its checkout, a worktree of it or a file inside it', () => ({ flag: '--repo', value: '<name-or-path>' }));
   const given = portablePath(raw.trim());
-  need(!/[\r\n]/.test(given) && !given.includes(' · '), `--repo ${JSON.stringify(given)} is on more than one line or holds the log's separator: a repository is one name or one path`);
+  need(!/[\r\n]/.test(given) && !given.includes(' · '), `--repo ${JSON.stringify(given)} is on more than one line or holds the log's separator: a repository is one name or one path`, () => ({ replace: String(given), value: '<name-or-path>' }));
   const word = !PATH_START.test(given);
-  need(!word || REPO_NAME_RE.test(given), `${JSON.stringify(given)} is neither a path (it starts with . or /) nor a repository name (letters, digits, - _ and . inside)`);
+  need(!word || REPO_NAME_RE.test(given), `${JSON.stringify(given)} is neither a path (it starts with . or /) nor a repository name (letters, digits, - _ and . inside)`, () => ({ replace: String(given), value: '<name-or-path>' }));
   const home = loopHome(root);
   const spelled = word ? join(home, given) : resolve(root, given);
   // Only a directory, or an existing file (reduced to the directory it is in), names a repository: a path that is not
   // there is refused, never read as the repository around it.
   let kind = null;
   try { const st = statSync(spelled); kind = st.isDirectory() ? 'dir' : st.isFile() ? 'file' : null; } catch { kind = null; }
-  need(kind !== null || word, `not a git repository: ${spelled} does not exist (--repo ${JSON.stringify(given)}) — give the repository's name, its checkout, a worktree of it or a file inside it`);
+  need(kind !== null || word, `not a git repository: ${spelled} does not exist (--repo ${JSON.stringify(given)}) — give the repository's name, its checkout, a worktree of it or a file inside it`, () => ({ replace: String(given), value: '<name-or-path>' }));
   const isDir = kind === 'dir';
   const inside = isDir ? spelled : kind === 'file' ? dirname(spelled) : spelled;
-  need(isGitRepo(inside), word ? `${nameFix(root, given)} (${spelled} is not a git repository${isGitRepo(resolve(root, given)) ? `; ./${given} is a repository under the loop's root — a path is written with a leading ./` : ''})` :`not a git repository: ${spelled} (a relative --repo or Repo path is read from the loop's root, ${root})`);
+  const underRoot = isGitRepo(resolve(root, given)) ? `; ./${given} is a repository under the loop's root — a path is written with a leading ./` : '';
+  need(isGitRepo(inside), word ? `${nameFix(root, given)} (${spelled} is not a git repository${underRoot}), or name another: e.g. --repo <name-or-path>` :`not a git repository: ${spelled} (a relative --repo or Repo path is read from the loop's root, ${root})`, () => ({ replace: String(given), value: '<name-or-path>' }));
   const main = (mainCheckoutOf(inside) || {}).main ?? null;
-  need(main !== null, `${inside} is a bare repository: it has no working tree to act on`);
+  need(main !== null, `${inside} is a bare repository: it has no working tree to act on`, () => ({ replace: String(given), value: '<name-or-path>' }));
   const candidates = [word ? given : null, isDir ? basename(spelled) : null, basename(main)];
   let name = candidates.find((n, k) => n && REPO_NAME_RE.test(n) && candidates.indexOf(n) === k && canonical(join(home, n)) === main);
   // A loop Jarl never raises (its profile names an external scheduler) stays below the format that holds a name: a
@@ -381,9 +382,9 @@ function storedAsPath(root, main) {
 }
 // The values of a --repo list (one name or path, or several as one comma list), each read by repoFromInput.
 function repoList(root, v) {
-  need(typeof v === 'string', '--repo takes one name or path, or several as one comma list');
+  need(typeof v === 'string', '--repo takes one name or path, or several as one comma list', () => ({ flag: '--repo', value: '<name-or-path>' }));
   const items = splitList(v);
-  need(items.length, '--repo needs a name or a path');
+  need(items.length, '--repo needs a name or a path', () => ({ flag: '--repo', value: '<name-or-path>' }));
   return items.map((item) => repoFromInput(root, item));
 }
 
@@ -410,14 +411,14 @@ function writeBarePaths(root) {
     rewritten.push(m[1]);
   }
   mapMergeRepos(root, dotted);
-  if (rewritten.length) appendLog(root, `repo paths written as ./<word> in ${rewritten.join(', ')} · the record format is raised`);
+  if (rewritten.length) appendLog(root, `repo paths written as ./ and the name in ${rewritten.join(', ')} · the record format is raised`);
 }
 // The names among the repositories read from a --repo list are declared (once), after the format is raised.
 function commitRepoNames(root, picked) {
   if (!picked.some((p) => p.name)) return;
   withLock(root, () => {
     needFormat(root, 'repo-name');
-    for (const p of picked) if (p.name && declareRepo(root, p.name, p.main) === 'no-base') p.note = `${p.name} has no branch checked out, so it is declared with no base — name one with repo --base ${p.name} <branch>`;
+    for (const p of picked) if (p.name && declareRepo(root, p.name, p.main) === 'no-base') p.note = `${p.name} has no branch checked out, so it is declared with no base — name one with ${jarlLine('base', p.name, '<branch>')}`;
   });
 }
 
@@ -460,15 +461,16 @@ function declareRepo(root, name, main) {
   return base === null ? 'no-base' : true;
 }
 
-// repo --base <name> <branch>: changes the base of a declared repository, with a log line that says what it was.
+// base <name> <branch>: changes the base of a declared repository, with a log line that says what it was.
 export function cmdRepoBase(root, name, branch) {
-  need(name !== undefined && branch !== undefined, 'repo --base takes a repository name and a branch: jarl.mjs repo --base <name> <branch>');
+  need(name !== undefined && branch !== undefined, 'base takes a repository name and a branch', () => [...(name === undefined ? [{ arg: 0, value: '<name>' }] : []), { arg: 1, value: '<branch>' }]);
   const known = declaredRepos(root);
-  need(known.has(name), `${name} is not declared in this loop${known.size ? ` — it declares ${[...known.keys()].join(', ')}` : ''}; Jarl declares a repository the first time an issue names it`);
+  // A loop that declares none takes the step that declares one first, on a line of its own: no name is a base's before it.
+  need(known.has(name), `${name} is not declared in this loop${known.size ? ` — it declares ${[...known.keys()].join(', ')}, names written as declared` : ''}; Jarl declares a repository the first time an issue names it (${jarlLine('field', '<id>', 'Repo', '<name-or-path>')})`, () => (known.size ? { arg: 0, value: hole('<name>') } : [{ first: ['jarl.mjs', 'field', hole('<id>'), 'Repo', hole('<name-or-path>')] }, { arg: 0, value: hole('<name>') }]));
   const base = fieldText(branch);
-  need(base && !/[\r\n]/.test(String(branch)) && !base.includes(' · '), 'the base is one branch name on one line');
+  need(base && !/[\r\n]/.test(String(branch)) && !base.includes(' · '), 'the base is one branch name on one line', () => ({ replace: String(branch), value: '<branch>' }));
   const problem = branchNameProblem(base);
-  need(!problem, `${JSON.stringify(base)} ${problem}`);
+  need(!problem, `${JSON.stringify(base)} ${problem}`, () => ({ replace: String(branch), value: '<branch>' }));
   const was = known.get(name).base;
   if (was === base) return { name, base, was, unchanged: true };
   appendLog(root, `repo ${name} base · was ${was ?? 'none'} · now ${base}`);
@@ -508,7 +510,7 @@ export function needRightCheckouts(root, values) {
     if (repoValueKind(root, value) !== 'name') continue;
     repoOf(root, value);
     const found = repoIdentity(root, value);
-    need(found.state !== 'mismatch', found.fix);
+    need(found.state !== 'mismatch', found.fix, () => afterView(['jarl.mjs', 'verify']));
   }
 }
 // Why nothing may be deleted in the checkout `repo`, or null: it stands under a name (one of `values`) whose root commits

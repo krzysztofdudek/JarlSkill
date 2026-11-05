@@ -56,10 +56,10 @@ test('field writes every header field of the description, each with a log line n
   assert.equal(lastLine(root), '1 field Tier · light · was strong', 'a write that names nobody carries no author');
   const count = logLines(root).length;
   jarl(root, 'field', '1', 'Tier', 'light', '--by', 'w-one');
-  jarl(root, 'prio', '1', '1');
-  jarl(root, 'tag', '1', '+a');
+  jarl(root, 'field', '1', 'Priority', '1');
+  jarl(root, 'field', '1', 'Tags', '--add', 'a');
   jarl(root, 'field', '1', 'Title', 'a better title');
-  jarl(root, 'body', '1', '--what', 'old what');
+  jarl(root, 'field', '1', 'What', 'old what');
   assert.equal(logLines(root).length, count, 'a value the part already holds writes no line');
 });
 
@@ -83,28 +83,28 @@ test('the record library logs the writer its options name, and no author when th
   assert.equal(lastLine(root), '1 field Source · r/x#1 · was (none)');
 });
 
-test('the dedicated commands of the description log the old value and who changed it, by the one rule field follows', () => {
+test('field logs the old value and who changed it on a list of ids, an added and a removed item, and a cleared field', () => {
   const root = profiledLoop();
-  jarl(root, 'prio', '1,2', '3', '--by', 'coord');
+  jarl(root, 'field', '1,2', 'Priority', '3', '--by', 'coord');
   assert.deepEqual(logLines(root).filter((l) => / field Priority /.test(l)), ['1 field Priority · 3 · was 2 · by coord', '2 field Priority · 3 · was 2 · by coord']);
-  jarl(root, 'tag', '1', '+x', '+y');
-  jarl(root, 'tag', '1', '-x', '--by', 'coord');
+  jarl(root, 'field', '1', 'Tags', '--add', 'x,y');
+  jarl(root, 'field', '1', 'Tags', '--remove', 'x', '--by', 'coord');
   assert.equal(lastLine(root), '1 field Tags · y · was x, y · by coord');
-  jarl(root, 'files', '1', 'a.mjs');
-  jarl(root, 'files', '1', 'b.mjs', '--by', 'coord');
+  jarl(root, 'field', '1', 'Files', 'a.mjs');
+  jarl(root, 'field', '1', 'Files', 'b.mjs', '--by', 'coord');
   assert.equal(lastLine(root), '1 field Files · b.mjs · was a.mjs · by coord');
-  jarl(root, 'source', '1', 'r/x#1', '--by', 'coord');
+  jarl(root, 'field', '1', 'Source', 'r/x#1', '--by', 'coord');
   assert.equal(lastLine(root), '1 field Source · r/x#1 · was (none) · by coord');
-  jarl(root, 'after', '1', '3', '--by', 'coord');
-  jarl(root, 'after', '1', '--clear', '--by', 'coord');
+  jarl(root, 'field', '1', 'After', '3', '--by', 'coord');
+  jarl(root, 'field', '1', 'After', '--clear', '--by', 'coord');
   assert.equal(lastLine(root), '1 field After · (cleared) · was 3 · by coord');
   jarl(root, 'field', '1', 'Files', '--clear', '--by', 'coord');
   assert.equal(lastLine(root), '1 field Files · (cleared) · was b.mjs · by coord');
 });
 
-test('body logs each part it replaces by the first line and the length of what the part held, and who changed it', () => {
+test('field logs each section it replaces by the first line and the length of what the section held, and who changed it', () => {
   const root = profiledLoop();
-  jarl(root, 'body', '1', '--what', 'new what', '--why', 'new\nwhy', '--acceptance', 'line a', '--acceptance', 'line b', '--changelog', 'Fixed: new entry', '--section', 'Design=new design', '--by', 'w-two');
+  for (const [part, value] of [['What', 'new what'], ['Why', 'new\nwhy'], ['Acceptance', 'line a\nline b'], ['Design', 'new design'], ['Changelog', 'Fixed: new entry']]) jarl(root, 'field', '1', part, value, '--by', 'w-two');
   const lines = logLines(root).filter((l) => l.startsWith('1 body · '));
   assert.deepEqual(lines, [
     '1 body · what · was "old what" (8 characters) · by w-two',
@@ -113,14 +113,14 @@ test('body logs each part it replaces by the first line and the length of what t
     '1 body · Design · was "old design" (10 characters) · by w-two',
     '1 body · changelog · was "- Fixed: old entry" (18 characters) · by w-two',
   ]);
-  jarl(root, 'body', '1', '--why', 'third why');
+  jarl(root, 'field', '1', 'Why', 'third why');
   assert.equal(lastLine(root), '1 body · why · was "new" (7 characters)', 'a section is kept by its first line and its length');
   const long = `${'x'.repeat(300)}\nsecond line`;
-  jarl(root, 'body', '1', '--what', long);
-  jarl(root, 'body', '1', '--what', 'short');
+  jarl(root, 'field', '1', 'What', long);
+  jarl(root, 'field', '1', 'What', 'short');
   assert.equal(lastLine(root), `1 body · what · was "${'x'.repeat(120)}…" (${long.length} characters)`, 'the first line is cut, so the line stays short');
-  jarl(root, 'body', '1', '--title', 'a · dotted title');
-  jarl(root, 'body', '1', '--title', 'plain');
+  jarl(root, 'field', '1', 'Title', 'a · dotted title');
+  jarl(root, 'field', '1', 'Title', 'plain');
   assert.equal(lastLine(root), '1 body · title · was "a ∙ dotted title"', 'the log\'s separator in a value is written as its stand-in');
   jarl(root, 'field', '1', 'Found by', 'x · y');
   jarl(root, 'field', '1', 'Found by', 'owner');
@@ -128,57 +128,55 @@ test('body logs each part it replaces by the first line and the length of what t
   assert.equal(R.findIssue(root, '1').sections.why.trim(), 'third why');
 });
 
-test('body --append adds to a section after what it holds, and logs the line a replacement logs', () => {
+test('field --add adds to a section after what it holds, and logs the line a replacement logs', () => {
   const root = profiledLoop();
-  jarl(root, 'body', '1', '--what', 'more what', '--append');
+  jarl(root, 'field', '1', 'What', 'more what', '--add');
   assert.equal(R.findIssue(root, '1').sections.what.trim(), 'old what\n\nmore what', 'the new text follows the text the section held, as its own paragraph');
   assert.equal(lastLine(root), '1 body · what · was "old what" (8 characters)', 'the line says what the section held before the append');
-  jarl(root, 'body', '1', '--why', 'more why', '--append', '--by', 'w-two');
+  jarl(root, 'field', '1', 'Why', 'more why', '--add', '--by', 'w-two');
   assert.equal(lastLine(root), '1 body · why · was "old why" (7 characters) · by w-two');
-  jarl(root, 'body', '1', '--acceptance', 'line b', '--append');
+  jarl(root, 'field', '1', 'Acceptance', 'line b', '--add');
   assert.equal(R.findIssue(root, '1').sections.acceptance.trim(), '- old line\n- line b', 'the new line joins the list the section held');
   assert.equal(lastLine(root), '1 body · acceptance · was "old line" (8 characters)');
-  jarl(root, 'body', '1', '--changelog', 'Added: new entry', '--append');
+  jarl(root, 'field', '1', 'Changelog', 'Added: new entry', '--add');
   assert.equal(R.findIssue(root, '1').sections.changelog.trim(), '- Fixed: old entry\n- Added: new entry');
   assert.equal(lastLine(root), '1 body · changelog · was "- Fixed: old entry" (18 characters)');
-  jarl(root, 'body', '1', '--section', 'Design=more design', '--append');
+  jarl(root, 'field', '1', 'Design', 'more design', '--add');
   assert.equal(R.findIssue(root, '1').sections.design.trim(), 'old design\n\nmore design');
   assert.equal(lastLine(root), '1 body · Design · was "old design" (10 characters)');
-  jarl(root, 'body', '2', '--what', 'first what', '--append');
+  jarl(root, 'field', '2', 'What', 'first what', '--add');
   assert.equal(R.findIssue(root, '2').sections.what.trim(), 'first what', 'a section that holds nothing takes the text alone');
   assert.equal(lastLine(root), '2 body · what · was (none)');
-  assert.match(refuses(root, 'body', '1', '--title', 'x', '--append'), /--append adds to a section/, 'the title is replaced, never appended to');
-  assert.match(refuses(root, 'body', '1', '--why', '', '--append'), /--append needs text to add to the Why section/);
-  jarl(root, 'body', '1', '--what', 'replaced');
-  assert.equal(R.findIssue(root, '1').sections.what.trim(), 'replaced', 'without --append a section is replaced, as before');
+  assert.match(refuses(root, 'field', '1', 'Title', 'x', '--add'), /Title holds one value, so it is replaced, never added to or taken from/, 'the title is replaced, never appended to');
+  assert.match(refuses(root, 'field', '1', 'Where', 'x', '--add'), /Where holds one value/);
+  assert.match(refuses(root, 'field', '1', 'Why', '', '--add'), /^field Why needs a value, or --clear to empty it\njarl\.mjs field "<ids>" Why "<text>" --add\n$/);
+  jarl(root, 'field', '1', 'What', 'replaced');
+  assert.equal(R.findIssue(root, '1').sections.what.trim(), 'replaced', 'without --add a section is replaced');
 });
 
 test('a name field does not write is refused with the names it writes and the command that writes that one', () => {
   const root = profiledLoop();
-  const names = /Title, Priority, Tier, Kind, Found by, Tags, Files, Repo, After, Source, Where, Resources, Person, Check when, Area, Note/;
-  for (const [name, why] of [['Status', /set <ids> <status>/], ['done', /set <ids> <status>/], ['Branch', /written by set <ids> in-progress/], ['Worker', /written by set/], ['Merged', /recorded by merged/], ['CI', /recorded by merged/], ['Evidence', /history is never edited: .*retract.*decide --supersedes/], ['What', /body <ids> --what/], ['Design', /body <ids> --section/], ['Bogus', /a section is written by body/]]) {
+  const names = /Title, Priority, Tier, Kind, Found by, Tags, Files, Repo, After, Source, Where, Resources, Person, Check when, Area, Note, What, Why, Acceptance, Changelog, Design/;
+  for (const [name, why] of [['Status', /jarl\.mjs set "<ids>" "<status>"/], ['done', /jarl\.mjs set "<ids>" "<status>"/], ['Branch', /written by set: jarl\.mjs set "<ids>" in-progress/], ['Worker', /written by set/], ['Merged', /recorded by merged: jarl\.mjs merged "<ids>" --sha "<sha>"/], ['CI', /recorded by merged/], ['Evidence', /history is never edited: .*retract.*decide --supersedes: jarl\.mjs retract/], ['Bogus', /no other part goes by that name: .* the profile lists them: jarl\.mjs profile/]]) {
     const said = refuses(root, 'field', '1', name, 'x');
-    assert.match(said, new RegExp(`${name} is not a field of the description, which field writes: `), name);
+    assert.match(said, new RegExp(`${name} is not a part of the description, which field writes: `), name);
     assert.match(said, names, name);
     assert.match(said, why, name);
   }
   assert.match(refuses(root, 'field', '1', 'Tier', 'huge'), /Tier must be one of: light, standard, strong/);
   assert.match(refuses(root, 'field', '1', 'Kind', 'task'), /Kind must be one of: bug, gap/);
   assert.match(refuses(root, 'field', '1', 'Priority', '7'), /Priority must be one of: 1, 2, 3/);
-  for (const name of ['Tier', 'Kind', 'Priority', 'Found by', 'Title']) assert.match(refuses(root, 'field', '1', name, '--clear'), new RegExp(`${name} cannot be empty`), name);
+  for (const name of ['Tier', 'Kind', 'Priority', 'Found by', 'Title']) assert.match(refuses(root, 'field', '1', name, '--clear'), new RegExp(`${name} cannot be emptied`), name);
   assert.match(refuses(root, 'field', '1', 'Tags', '[a, b]'), /Tags takes its items one by one/);
   assert.match(refuses(root, 'field', '1', 'Tier', 'strong', '--by', 'a · b'), /--by is one name/);
-  assert.match(refuses(root, 'repo', '--base', 'x', 'main', '--by', 'me'), /no --clear or --by/);
+  assert.match(refuses(root, 'base', 'x', 'main', '--by', 'me'), /x is not declared in this loop/);
   assert.equal(show(root, '1').tier, 'standard', 'a refused call writes nothing');
 });
 
-test('the help lists the description commands together, and the reference says the history is only retracted or superseded', () => {
+test('the help has one command for the description, and the reference says the history is only retracted or superseded', () => {
   const at = (cmd) => USAGE.search(new RegExp(`^  ${cmd} `, 'm'));
-  const order = ['body', 'field', 'tag', 'prio', 'files', 'repo', 'source', 'after'].map(at);
-  assert.ok(order.every((n) => n > 0), 'each command has its block');
-  assert.deepEqual([...order].sort((a, b) => a - b), order, 'in one run, body first');
-  const between = USAGE.slice(order[0], order.at(-1)).match(/^ {2}[a-z]+ /gm).map((s) => s.trim());
-  assert.deepEqual(between, ['body', 'field', 'tag', 'prio', 'files', 'repo', 'source'], 'no other command among them');
+  assert.ok(at('field') > 0, 'field has its block');
+  for (const cmd of ['body', 'tag', 'prio', 'files', 'repo', 'source', 'after']) assert.equal(at(cmd), -1, `${cmd} has no block`);
   const record = skillText('references/record.md');
   assert.match(record, /## The description and the history/);
   assert.match(record, /Evidence, verdicts, merges, rulings and answers have no edit command at all/);
@@ -200,12 +198,12 @@ test('a loop whose description was changed by every command is read by the pinne
   jarl(root, 'field', '001', 'Kind', 'bug');
   jarl(root, 'field', '001', 'Found by', 'owner');
   jarl(root, 'field', '001', 'Title', 'a better title');
-  jarl(root, 'prio', '001', '1');
-  jarl(root, 'tag', '001', '+x');
-  jarl(root, 'files', '001', 'a.mjs');
-  jarl(root, 'source', '001', 'r/x#1');
-  jarl(root, 'after', '001', '002');
-  jarl(root, 'body', '001', '--what', 'w', '--why', 'y', '--acceptance', 'a', '--where', 'here');
+  jarl(root, 'field', '001', 'Priority', '1');
+  jarl(root, 'field', '001', 'Tags', '--add', 'x');
+  jarl(root, 'field', '001', 'Files', 'a.mjs');
+  jarl(root, 'field', '001', 'Source', 'r/x#1');
+  jarl(root, 'field', '001', 'After', '002');
+  for (const [part, value] of [['What', 'w'], ['Why', 'y'], ['Acceptance', 'a'], ['Where', 'here']]) jarl(root, 'field', '001', part, value);
   jarl(root, 'field', '001', 'Resources', 'gate');
   const list = oldJarl(root, 'list', { all: true });
   assert.equal(list.ok, true, list.error);

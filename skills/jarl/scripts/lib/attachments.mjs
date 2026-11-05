@@ -4,6 +4,7 @@ import { readFileSync, realpathSync, lstatSync, fstatSync, openSync, closeSync, 
 import { createHash } from 'node:crypto';
 import { join, relative, sep } from 'node:path';
 import { plainRelative } from './where.mjs';
+import { jarlLine } from './base.mjs';
 import { ATTACH_MAX_BYTES, loadProfile } from './profile.mjs';
 import { gateOf, gateState } from './loop.mjs';
 
@@ -126,7 +127,7 @@ export function slotProblems(root, profile, issue, g, hash = true) {
   for (const spec of requiredSlots(profile, issue)) {
     const s = slotState(root, issue, spec, g, hash);
     if (s.state === 'filled') continue;
-    out.push({ slot: spec.name, what: s.state === 'missing' ? (s.outside ? 'no file recorded inside the gate\'s window (a row from before the last start or reopen does not count)' : 'no file recorded') : s.problem, fix: `jarl.mjs evidence ${issue.id} --file <a file at ${slotPlace(spec, issue.id)}> --slot ${spec.name}` });
+    out.push({ slot: spec.name, what: s.state === 'missing' ? (s.outside ? 'no file recorded inside the gate\'s window (a row from before the last start or reopen does not count)' : 'no file recorded') : s.problem, fix: `${jarlLine('evidence', issue.id, '--file', '<path>', '--slot', spec.name)} (a file at ${slotPlace(spec, issue.id)})` });
   }
   return out;
 }

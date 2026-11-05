@@ -10,6 +10,7 @@ import { sh, ghStub } from './portable.mjs';
 import { run as runJarl, jarl, refuses, loop as makeLoop, SPAWN_TIMEOUT } from './helpers.mjs';
 import { fileURLToPath } from 'node:url';
 import { FINDINGS } from './findings.mjs';
+import * as R from '../record.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 
@@ -65,7 +66,7 @@ test('review: an approve needs --by, a self-approve by the worker is refused, an
   // A changes verdict needs --by too, and may come from the worker: it is recorded, not refused.
   jarl(root, 'review', '1', 'changes', '--by', 'opus-worker-3', 'Important: a self-check found a hole');
   assert.match(refuses(root, 'review', '1', 'changes', 'Important: no reviewer named'), /a verdict needs --by/);
-  const next = (id) => `the merger merges the branch and records it with one call — jarl.mjs merged ${id} --sha <sha> --ran "<check>" --saw "<summary>" — then jarl.mjs set ${id} done, which needs a Proof row from the worker (the merge check is the merger's and is no proof); a worker never sets done`;
+  const next = (id) => `the merger merges the branch and records it with one call — jarl.mjs merged ${id} --sha "<sha>" --ran "<command>" --saw "<what-it-printed>" — then jarl.mjs set ${id} done "<why>", which needs a Proof row from the worker (the merge check is the merger's and is no proof); a worker never sets done`;
   assert.equal(jarl(root, 'review', '1,2', 'approve', '--by', 'fresh-opus', FINDINGS), `1 review approve by fresh-opus (fresh) · acceptance: (none on file) · next: ${next('1')}\n2 review approve by fresh-opus (fresh) · acceptance: (none on file) · next: ${next('2')}`);
   assert.match(log(), /1 review approve · by fresh-opus \(fresh\) · read the diff, nothing found/);
   assert.match(jarl(root, 'review', '2', 'approve', '--by', 'jarl', FINDINGS), /by jarl \(coordinator\)/);
@@ -161,27 +162,27 @@ test('status and report show who reviewed the done work', () => {
 
 test('decide: slugs are validated and compared as strings — q.r is not a duplicate of qxr, specials never crash', () => {
   const root = loop();
-  jarl(root, 'decide', 'qxr', 'one');
-  assert.match(jarl(root, 'decide', 'q.r', 'two'), /^decided q\.r · by coordinator$/);
-  assert.match(refuses(root, 'decide', 'q.r', 'three'), /duplicate slug: q\.r/);
+  jarl(root, 'decide', 'qxr', 'one', '--by', 'coordinator');
+  assert.match(jarl(root, 'decide', 'q.r', 'two', '--by', 'coordinator'), /^decided q\.r · by coordinator$/);
+  assert.match(refuses(root, 'decide', 'q.r', 'three', '--by', 'coordinator'), /duplicate slug: q\.r/);
   for (const bad of ['a+b', '(x', 'a b', '[z]', 'x'.repeat(81), 'ż', '.dot']) {
-    assert.match(refuses(root, 'decide', bad, 'r'), /a ruling's slug is letters, digits/, bad);
+    assert.match(refuses(root, 'decide', bad, 'r', '--by', 'coordinator'), /a ruling's slug is letters, digits/, bad);
   }
-  const lead = spawnSync(process.execPath, [SCRIPT, '--root', root, 'decide', '--', '-lead', 'r'], { encoding: 'utf8', timeout: SPAWN_TIMEOUT });
+  const lead = spawnSync(process.execPath, [SCRIPT, '--root', root, 'decide', '--by', 'coordinator', '--', '-lead', 'r'], { encoding: 'utf8', timeout: SPAWN_TIMEOUT });
   assert.match(lead.stderr, /a ruling's slug is letters, digits/);
   assert.match(refuses(root, 'decide', 'answers', 'r', '--by', ''), /--by needs a value/);
 });
 
 test('decide --supersedes marks the old ruling, --by records who ruled, decisions --live lists what is in force', () => {
   const root = loop();
-  jarl(root, 'decide', 'no-subagents', 'Work without subagents.');
+  jarl(root, 'decide', 'no-subagents', 'Work without subagents.', '--by', 'coordinator');
   jarl(root, 'decide', 'keep', 'Keep this.', '--by', 'jarl');
-  assert.match(refuses(root, 'decide', 'subagents', 'x', '--supersedes', 'nope'), /no ruling nope in decisions.md/);
-  assert.equal(jarl(root, 'decide', 'subagents-again', 'Use fresh reviewers again. $1 $& kept', '--supersedes', 'no-subagents'), 'decided subagents-again · by coordinator · supersedes no-subagents');
+  assert.match(refuses(root, 'decide', 'subagents', 'x', '--supersedes', 'nope', '--by', 'coordinator'), /no ruling nope in decisions.md/);
+  assert.equal(jarl(root, 'decide', 'subagents-again', 'Use fresh reviewers again. $1 $& kept', '--supersedes', 'no-subagents', '--by', 'coordinator'), 'decided subagents-again · by coordinator · supersedes no-subagents');
   const text = readFileSync(join(root, '.jarl', 'decisions.md'), 'utf8');
   assert.match(text, /## \d{4}-\d{2}-\d{2} · no-subagents\nWork without subagents\.\n\n\*\*By:\*\* coordinator\n\*\*Superseded by:\*\* subagents-again \(\d{4}-\d{2}-\d{2}\)\n\n## \d{4}-\d{2}-\d{2} · keep\nKeep this\.\n\n\*\*By:\*\* jarl\n/);
   assert.match(text, /· subagents-again\nUse fresh reviewers again\. \$1 \$& kept\n\n\*\*By:\*\* coordinator\n\*\*Supersedes:\*\* no-subagents\n$/);
-  assert.match(refuses(root, 'decide', 'third', 'x', '--supersedes', 'no-subagents'), /already superseded by subagents-again/);
+  assert.match(refuses(root, 'decide', 'third', 'x', '--supersedes', 'no-subagents', '--by', 'coordinator'), /already superseded by subagents-again/);
   const all = JSON.parse(jarl(root, 'decisions', '--json'));
   assert.deepEqual(all.map((d) => [d.slug, d.by, d.supersededBy]), [['no-subagents', 'coordinator', 'subagents-again'], ['keep', 'jarl', null], ['subagents-again', 'coordinator', null]]);
   const live = jarl(root, 'decisions', '--live');
@@ -207,8 +208,8 @@ test('an issue may name several repositories: files per repository, next keeps t
   assert.equal(next.find((r) => r.id === '3').ready, true, 'another file in tool does not');
   // check: one repository at a time, bounded by the files declared in it.
   sh(tool, 'git checkout -q -b jarl/1-cross && echo 2 > src/a.mjs && echo 2 > src/b.mjs && git commit -qam w && git checkout -q feature');
-  assert.match(refuses(hub, 'check', '1', '--branch', 'jarl/1-cross'), /names several repositories/);
-  const r = run(hub, ['check', '1', '--branch', 'jarl/1-cross', '--repo', '../tool']);
+  assert.match(refuses(hub, 'scope', '1', '--branch', 'jarl/1-cross'), /names several repositories/);
+  const r = run(hub, ['scope', '1', '--branch', 'jarl/1-cross', '--repo', '../tool']);
   assert.equal(r.status, 2);
   assert.match(r.stdout, /✗ diff inside declared files — outside tool\/src\/a\.mjs: src\/b\.mjs/);
   // branches finds the branch in the repository that has it; the lease is not gone while one has it.
@@ -221,12 +222,12 @@ test('an issue may name several repositories: files per repository, next keeps t
   assert.match(rep, /### lib \(2\)\n- 1 cross \(bug\)\n- 2 only lib a \(bug\)/);
   assert.match(rep, /### tool \(1\)\n- 1 cross \(bug\)/);
   assert.deepEqual(JSON.parse(jarl(hub, 'report', '--json')).byRepo, { lib: ['1', '2'], tool: ['1'] });
-  assert.equal(jarl(hub, 'repo', '3', '../tool,../lib'), '3 repo: tool, lib');
+  assert.equal(jarl(hub, 'field', '3', 'Repo', '../tool,../lib'), '3 Repo: tool, lib');
 });
 
 // ---- 282: tips -------------------------------------------------------------------------------------
 
-test('tips: branch tips against their upstream, CI from gh for pushed commits, nothing about CI without gh; it writes nothing', () => {
+test('resume\'s tips: branch tips against their upstream, CI from gh for pushed commits, nothing about CI without gh; it writes nothing', () => {
   const { parent, hub, tool } = reposBeside('tool');
   const bare = join(parent, 'tool.git');
   sh(parent, `git init -q --bare ${bare}`);
@@ -237,9 +238,9 @@ test('tips: branch tips against their upstream, CI from gh for pushed commits, n
   sh(tool, 'git branch jarl/1-w');
   const log = readFileSync(join(hub, '.jarl', 'log.md'), 'utf8');
   const gh = ghStub(parent, [{ conclusion: 'failure', status: 'completed', databaseId: 42, workflowName: 'CI' }, { conclusion: 'success', status: 'completed', databaseId: 41, workflowName: 'lint' }]);
-  const r = run(hub, ['tips', '--json'], { JARL_GH: gh });
+  const r = run(hub, ['resume', '--gh', '--json'], { JARL_GH: gh });
   assert.equal(r.status, 0, r.stderr);
-  const o = JSON.parse(r.stdout);
+  const o = JSON.parse(r.stdout).tips;
   assert.equal(o.gh, true);
   const t = o.repos.find((x) => x.repo === 'tool');
   const row = (b) => t.rows.find((x) => x.branch === b);
@@ -251,16 +252,23 @@ test('tips: branch tips against their upstream, CI from gh for pushed commits, n
   const mainSha = sh(tool, 'git rev-parse main');
   assert.deepEqual([row('main').role, row('main').pushed, row('main').ci], ['main', true, { state: 'red', runs: 2, run: 42, workflow: 'CI', conclusion: 'failure' }]);
   assert.equal(readFileSync(join(parent, 'gh-calls'), 'utf8').trim(), `run list --commit ${mainSha} --json conclusion,status,databaseId,workflowName --limit 20`);
-  const text = run(hub, ['tips'], { JARL_GH: gh }).stdout;
+  const text = run(hub, ['resume', '--gh'], { JARL_GH: gh }).stdout;
   assert.match(text, /\[tool\] .*\n {2}worker {3}jarl\/1-w [0-9a-f]{12} {2}= feature {2}not pushed {2}→ 1\n {2}feature {2}feature [0-9a-f]{12} {2}\+1\/-0 vs origin\/feature {2}not pushed\n {2}main {5}main [0-9a-f]{12} {2}= origin\/main {2}ci red \(run 42 CI\)/);
   // Without gh: the same view, with no CI and no error.
-  const none = JSON.parse(run(hub, ['tips', '--json'], { JARL_GH: join(parent, 'no-such-gh') }).stdout);
+  const none = JSON.parse(run(hub, ['resume', '--gh', '--json'], { JARL_GH: join(parent, 'no-such-gh') }).stdout).tips;
   assert.equal(none.gh, false);
   assert.equal(none.repos.find((x) => x.repo === 'tool').rows.find((x) => x.branch === 'main').ci, undefined);
-  assert.equal(readFileSync(join(hub, '.jarl', 'log.md'), 'utf8'), log, 'tips writes nothing');
+  assert.equal(readFileSync(join(hub, '.jarl', 'log.md'), 'utf8'), log, 'resume writes nothing');
+  // The library asks gh with ci, the key of its contract, and with gh, the command line's name, alike; with neither, it
+  // does not ask.
+  const was = process.env.JARL_GH;
+  process.env.JARL_GH = gh;
+  try {
+    assert.deepEqual([R.resumeData(hub, { ci: true }).tips.gh, R.resumeData(hub, { gh: true }).tips.gh, R.resumeData(hub, {}).tips.gh], [true, true, null], 'null: gh was not asked');
+  } finally { if (was === undefined) delete process.env.JARL_GH; else process.env.JARL_GH = was; }
 });
 
-test('tips: a worker branch of a multi-repository issue is shown where it is, GONE only when no named repository has it; a detached HEAD is no release branch', () => {
+test('resume\'s tips: a worker branch of a multi-repository issue is shown where it is, GONE only when no named repository has it; a detached HEAD is no release branch', () => {
   const { hub, tool, lib } = reposBeside('tool', 'lib');
   jarl(hub, 'init', 'goal');
   jarl(hub, 'new', 'cross', '--repo', '../tool,../lib', '--files', 'tool/src/a.mjs,lib/src/a.mjs');
@@ -268,18 +276,18 @@ test('tips: a worker branch of a multi-repository issue is shown where it is, GO
   sh(tool, 'git branch jarl/1-cross');
   sh(lib, 'git checkout -q --detach');
   const env = { JARL_GH: join(hub, 'no-gh') };
-  const o = JSON.parse(run(hub, ['tips', '--json'], env).stdout);
+  const o = JSON.parse(run(hub, ['resume', '--gh', '--json'], env).stdout).tips;
   const t = o.repos.find((x) => x.repo === 'tool');
   const l = o.repos.find((x) => x.repo === 'lib');
   assert.deepEqual(t.rows.find((x) => x.branch === 'jarl/1-cross').issues, ['1']);
   assert.equal(l.rows.some((x) => x.branch === 'jarl/1-cross'), false, 'not GONE in lib: tool has it');
   assert.equal(l.rows.some((x) => x.role === 'feature'), false, 'a detached HEAD is no feature branch');
   sh(tool, 'git branch -D jarl/1-cross');
-  const gone = JSON.parse(run(hub, ['tips', '--json'], env).stdout);
+  const gone = JSON.parse(run(hub, ['resume', '--gh', '--json'], env).stdout).tips;
   assert.equal(gone.repos.find((x) => x.repo === 'tool').rows.find((x) => x.branch === 'jarl/1-cross').missing, true);
 });
 
-test('tips and report key a repository by its root: a loop in a subdirectory and Repo ../.. are one repository', () => {
+test('resume\'s tips and report key a repository by its root: a loop in a subdirectory and Repo ../.. are one repository', () => {
   const { hub } = reposBeside();
   const root = join(hub, 'plans', 'release');
   mkdirSync(root, { recursive: true });
@@ -292,14 +300,14 @@ test('tips and report key a repository by its root: a loop in a subdirectory and
   const rep = JSON.parse(jarl(root, 'report', '--json'));
   assert.deepEqual(rep.byRepo, { hub: ['1', '2'] });
   assert.doesNotMatch(rep.text, /### /, 'one repository: no per-repository sections');
-  const o = JSON.parse(run(root, ['tips', '--json'], { JARL_GH: join(hub, 'no-gh') }).stdout);
+  const o = JSON.parse(run(root, ['resume', '--gh', '--json'], { JARL_GH: join(hub, 'no-gh') }).stdout).tips;
   assert.deepEqual(o.repos.map((r) => r.repo), ['hub']);
 });
 
 test('decisions read a ruling\'s own fields from its closing block only: a line of the ruling that starts with **By:** is text', () => {
   const root = loop();
   jarl(root, 'decide', 'quoted', '**By:** this line is part of the ruling\nand the ruling goes on', '--by', 'jarl');
-  jarl(root, 'decide', 'next', 'x', '--supersedes', 'quoted');
+  jarl(root, 'decide', 'next', 'x', '--supersedes', 'quoted', '--by', 'coordinator');
   const d = JSON.parse(jarl(root, 'decisions', '--json'))[0];
   assert.equal(d.by, 'jarl');
   assert.equal(d.supersededBy, 'next');

@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { assertParity, parityProblems } from '../vendor/runes/dist/testkit/parity.mjs';
 import { measureTools, formatToolsMeasure } from '../vendor/runes/dist/testkit/measure.mjs';
 import { listToolsOverStdio } from '../vendor/runes/dist/testkit/client.mjs';
-import { COMMAND_ALIASES, COMMAND_FLAGS, USAGE } from '../jarl.mjs';
+import { AUTHOR_REQUIRED, COMMAND_FLAGS, USAGE } from '../jarl.mjs';
 import * as mcp from '../jarl-mcp.mjs';
 
 const SERVER = fileURLToPath(new URL('../jarl-mcp.mjs', import.meta.url));
@@ -27,37 +27,32 @@ const asTable = (tool) => {
 };
 const tableTools = listed.map(asTable);
 
-// A name a command answers to has a tool of its own, and the usage names only the command. The parity below holds the
-// commands and their tools; the tools that name a command under a second spelling are checked against that command apart.
-const ALIAS_TOOLS = Object.keys(COMMAND_ALIASES).map(mcp.toolName);
-const commandsOnly = { ...mcp.TABLE, commands: Object.fromEntries(Object.entries(mcp.TABLE.commands).filter(([name]) => !COMMAND_ALIASES[name])) };
-const commandTools = tableTools.filter((t) => !ALIAS_TOOLS.includes(t.name));
 
 // The usage side checks that every command has its entry and no entry names a command the table lacks. Its flag check
 // is off: an entry's prose names other commands' flags (set's "--ran/--saw row", close's "init --permanent"), and
 // mcp.test.mjs already holds each synopsis to its command's flags both ways.
 test('parity (Runes testkit): the table, the usage text and the tools the running server lists say the same thing', () => {
-  assertParity({ table: commandsOnly, usage: USAGE, usageOptions: { from: /^commands:/ }, usageFlags: false, tools: commandTools, toolOptions: mcp.TOOL_OPTIONS });
+  // A Runes table requires arguments only: the by a write that records a judgement requires (AUTHOR_REQUIRED, the CLI's
+  // own table) is checked apart, and left out here, so every other field is held to the Runes table.
+  const authored = (t) => (AUTHOR_REQUIRED[t.name.slice(mcp.TOOL_PREFIX.length)] ? { ...t, inputSchema: { ...t.inputSchema, required: t.inputSchema.required.filter((f) => f !== 'by') } } : t);
+  assertParity({ table: mcp.TABLE, usage: USAGE, usageOptions: { from: /^commands:/ }, usageFlags: false, tools: tableTools.map(authored), toolOptions: mcp.TOOL_OPTIONS });
+  for (const t of tableTools.filter((x) => AUTHOR_REQUIRED[x.name.slice(mcp.TOOL_PREFIX.length)])) assert.ok(t.inputSchema.required.includes('by'), `${t.name} requires by`);
 });
 
-test('a name a command answers to has a tool of its own, with the same fields and description as the command', () => {
-  const byName = Object.fromEntries(listed.map((t) => [t.name, t]));
-  for (const [name, cmd] of Object.entries(COMMAND_ALIASES)) {
-    assert.deepEqual(byName[mcp.toolName(name)].inputSchema, byName[mcp.toolName(cmd)].inputSchema, name);
-    assert.equal(byName[mcp.toolName(name)].description, byName[mcp.toolName(cmd)].description, name);
-  }
+test('every tool is a command of the table under its own name: no command answers to a second name', () => {
+  assert.deepEqual(listed.map((t) => t.name).filter((n) => n !== mcp.toolName('help')).sort(), Object.keys(COMMAND_FLAGS).filter((c) => c !== 'handoff').map(mcp.toolName).sort());
 });
 
 test('parity (Runes testkit): a tool that loses a field, or a command with no tool, is caught', () => {
   const lost = tableTools.map((t) => (t.name === 'jarl_set' ? { ...t, inputSchema: { ...t.inputSchema, properties: { ...t.inputSchema.properties, worker: undefined } } } : t))
     .map((t) => ({ ...t, inputSchema: { ...t.inputSchema, properties: Object.fromEntries(Object.entries(t.inputSchema.properties).filter(([, v]) => v)) } }));
   assert.match(parityProblems({ table: mcp.TABLE, tools: lost, toolOptions: mcp.TOOL_OPTIONS }).join('\n'), /tool jarl_set lacks "worker"/);
-  const fewer = tableTools.filter((t) => t.name !== 'jarl_tips');
-  assert.match(parityProblems({ table: mcp.TABLE, tools: fewer, toolOptions: mcp.TOOL_OPTIONS }).join('\n'), /command "tips" has no tool jarl_tips/);
+  const fewer = tableTools.filter((t) => t.name !== 'jarl_branches');
+  assert.match(parityProblems({ table: mcp.TABLE, tools: fewer, toolOptions: mcp.TOOL_OPTIONS }).join('\n'), /command "branches" has no tool jarl_branches/);
 });
 
 test('the table is the CLI\'s: every command, and the server lists exactly the tools buildTools generates', () => {
-  assert.deepEqual(Object.keys(mcp.TABLE.commands).sort(), [...Object.keys(COMMAND_FLAGS), ...Object.keys(COMMAND_ALIASES)].sort());
+  assert.deepEqual(Object.keys(mcp.TABLE.commands).sort(), Object.keys(COMMAND_FLAGS).sort());
   assert.deepEqual(listed, JSON.parse(JSON.stringify(mcp.buildTools())));
 });
 
@@ -72,11 +67,11 @@ test('budget step 1: a tool description is one sentence after whether it writes;
   assert.ok(help.content[0].text.startsWith(USAGE), 'jarl_help answers with the usage --help prints');
 });
 
-test('the server lists jarl_field for Resources and the profile\'s fields, with its own fields, and jarl_set for statuses alone', () => {
+test('the server lists jarl_field for every part of the description, with its own fields, and jarl_set for statuses alone', () => {
   const byName = Object.fromEntries(listed.map((t) => [t.name, t]));
-  assert.match(byName.jarl_field.description, /^WRITES the loop\. Write one header field of the description on issues \(Title, Priority, Tier, Kind, Found by, Tags, Files, Repo, After, Source, Where, Resources, Person, Check when or a profile field\), or empty an optional one with clear, logging what it held and who changed it when named\.$/);
-  assert.deepEqual(Object.keys(byName.jarl_field.inputSchema.properties).sort(), ['by', 'clear', 'ids', 'json', 'name', 'root', 'value']);
-  assert.equal(byName.jarl_field.inputSchema.properties.clear.type, 'boolean');
+  assert.match(byName.jarl_field.description, /^WRITES the loop\. Change one part of the description of issues, a header field \(Title, Priority, Tags, Files, After and the rest\) or a section \(What, Why, Acceptance, Changelog\): a value replaces it, add and remove change the items of a list or add to a section, clear empties it; each change logs what the part held and who changed it when named\.$/);
+  assert.deepEqual(Object.keys(byName.jarl_field.inputSchema.properties).sort(), ['add', 'by', 'clear', 'ids', 'json', 'name', 'remove', 'root', 'value']);
+  for (const flag of ['add', 'remove', 'clear']) assert.equal(byName.jarl_field.inputSchema.properties[flag].type, 'boolean');
   assert.equal(byName.jarl_set.description, 'WRITES the loop. Change the status of issues, with the reason logged.');
 });
 

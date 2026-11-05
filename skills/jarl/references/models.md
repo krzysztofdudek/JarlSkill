@@ -37,7 +37,7 @@ The built-in tiers are `light`, `standard` and `strong`, weakest first; `standar
 
 ## The loop's models
 
-A loop says which models it runs on, per tier, in `goal.md`: one line per tier, `Model (strong): <model>[, <model>…]`, in the same forms as `Check:` (a plain line, a list item, or bold). The first model on a line is the tier's default, the one `next` and `resume` show and the one raised unless the jarl chooses another from `models`; the other models are in the pool at that rank. The order of the tiers is the order of strength, so it ranks the models, the same id at another effort sitting where the id sits. A model on no line is unplaced: it may run, because nothing is refused, but its rank is unknown and as a reviewer it ranks below every placed model. A rule, a brief or this skill never names a model: the lines do, because ids go stale within weeks. The person who owns the loop edits them, or the jarl under a mandate with a ratify item; nothing moves by itself.
+A loop says which models it runs on, per tier, in `goal.md`: one line per tier, `Model (strong): <model-id>[, <model-id>…]`, in the same forms as `Check:` (a plain line, a list item, or bold). The first model on a line is the tier's default, the one `next` and `resume` show and the one raised unless the jarl chooses another from `models`; the other models are in the pool at that rank. The order of the tiers is the order of strength, so it ranks the models, the same id at another effort sitting where the id sits. A model on no line is unplaced: it may run, because nothing is refused, but its rank is unknown and as a reviewer it ranks below every placed model. A rule, a brief or this skill never names a model: the lines do, because ids go stale within weeks. The person who owns the loop edits them, or the jarl under a mandate with a ratify item; nothing moves by itself.
 
 ## How each platform maps the tiers
 
@@ -49,7 +49,7 @@ For an issue that is hard but clear, a higher effort on the same model is a chea
 
 ## Recording
 
-The one who spawns an agent knows the model it asked for; the agent often cannot name itself reliably. So the coordinator passes `--model` on the lease it writes before raising a worker (`set <ids> in-progress "<why>" --branch <b> --worker <name> --model <m>`), and writes the reviewer's model into the reviewer's brief, whose recording command carries it (`review <id> approve|changes --by <name> --model <the model you were raised on> "<findings>"`). In a loop with model lines, a lease or a verdict without `--model` is noted on stderr, never refused.
+The one who spawns an agent knows the model it asked for; the agent often cannot name itself reliably. So the coordinator passes `--model` on the lease it writes before raising a worker (`set <ids> in-progress "<text>" --branch <worker-branch> --worker <name> --model <model-id>`), and writes the reviewer's model into the reviewer's brief, whose recording command carries it (`review <id> <verdict> --by <name> --model <model-id> "<text>"`). In a loop with model lines, a lease or a verdict without `--model` is noted on stderr, never refused.
 
 ## The approve that clears an issue
 

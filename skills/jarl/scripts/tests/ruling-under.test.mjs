@@ -29,7 +29,7 @@ test('decide --under keeps the ruling it rests on as the last paragraph of the r
 test('a ruling that names the ruling it rests on is shown with it by decisions, and by resume as a rule of the loop', () => {
   const root = loop({ via: 'cli' });
   mandate(root);
-  jarl(root, 'decide', 'pick-a', 'Take option a.', '--under', 'standing-mandate', '--applies-to', 'loop');
+  jarl(root, 'decide', 'pick-a', 'Take option a.', '--under', 'standing-mandate', '--applies-to', 'loop', '--by', 'coordinator');
   assert.match(jarl(root, 'decisions'), /pick-a · by coordinator · under standing-mandate · applies to loop — Take option a\./);
   assert.match(jarl(root, 'decisions', '--live'), /pick-a · by coordinator · under standing-mandate/);
   assert.equal(JSON.parse(jarl(root, 'decisions', '--json')).find((x) => x.slug === 'pick-a').under, 'standing-mandate');
@@ -52,7 +52,7 @@ test('--under names a ruling in force, and anything else is refused with the rul
 
 test('--under on a loop with no ruling in force is refused and says there is none', () => {
   const root = loop({ via: 'cli' });
-  assert.match(refuses(root, 'decide', 'x-1', 'Text.', '--under', 'standing-mandate'), /the rulings in force: \(none\)/);
+  assert.match(refuses(root, 'decide', 'x-1', 'Text.', '--under', 'standing-mandate', '--by', 'coordinator'), /the rulings in force: \(none\)/);
 });
 
 test('a ruling by the owner takes no --under, and a malformed one is refused', () => {

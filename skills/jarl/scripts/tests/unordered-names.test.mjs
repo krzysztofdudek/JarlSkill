@@ -105,25 +105,39 @@ test('verify notes each open issue whose text names an unordered open issue, nam
   assert.equal(r.status, 0, 'a note is not a finding');
   assert.match(r.stdout, /^verify: clean/);
   assert.deepEqual(unordered(r.stdout).map((l) => l.replace(/ — .*$/, '')), ['note: issue 4: names issues 1, 2 in What, Why or Acceptance, which are neither done nor dropped, and no After orders them with 4']);
-  assert.match(r.stdout, /if the text relies on them, order the two with: jarl\.mjs after/);
+  assert.match(r.stdout, /if the text relies on them, order the two by adding them to After, which keeps what After holds: jarl\.mjs field 4 After 1,2 --add$/m);
+});
+
+test('the command the note ends with adds to After and keeps what After held: run as printed, an issue already waiting on another waits on both', () => {
+  const root = makeLoop({ prefix: 'jarl-unordered-keep-', via: 'cli' });
+  for (const t of ['first', 'second', 'third']) jarl(root, 'new', t, '--what', 'plain text');
+  jarl(root, 'field', '3', 'After', '1');
+  jarl(root, 'new', 'fourth', '--what', 'plain text');
+  const said = run(root, ['field', '3', 'What', 'relies on issue 4 for its data']);
+  assert.equal(said.status, 0, said.stderr);
+  const note = unordered(`${said.stdout}\n${said.stderr}`)[0];
+  const command = /: jarl\.mjs (field 3 After 4 --add)$/.exec(note ?? '');
+  assert.ok(command, `the note ends with the command that adds: ${note}`);
+  jarl(root, ...command[1].split(' '));
+  assert.deepEqual(R.findIssue(root, '3').after, ['1', '4'], 'the wait on 1 is kept, and 4 is added');
 });
 
 test('an After that orders the two, directly or through a chain, or a settled named issue, takes the note away', () => {
   const root = named();
-  jarl(root, 'after', '4', '1');
+  jarl(root, 'field', '4', 'After', '1');
   assert.deepEqual(unordered(run(root, ['verify']).stdout).map((l) => l.replace(/ — .*$/, '')), ['note: issue 4: names issue 2 in What, Why or Acceptance, which is neither done nor dropped, and no After orders it with 4']);
-  jarl(root, 'after', '1', '2');
+  jarl(root, 'field', '1', 'After', '2');
   assert.deepEqual(unordered(run(root, ['verify']).stdout), [], 'issue 2 is in the chain of 4 through issue 1');
-  jarl(root, 'after', '1', '--clear');
-  jarl(root, 'after', '4', '2');
+  jarl(root, 'field', '1', 'After', '--clear');
+  jarl(root, 'field', '4', 'After', '2');
   jarl(root, 'set', '1', 'dropped', 'not needed');
   assert.deepEqual(unordered(run(root, ['verify']).stdout), [], 'issue 1 is dropped, issue 2 is ordered');
 });
 
 test('a named issue that waits on the naming one is behind it and is not noted, nor is a naming issue that is done', () => {
   const root = named();
-  jarl(root, 'after', '1', '4');
-  jarl(root, 'after', '2', '4');
+  jarl(root, 'field', '1', 'After', '4');
+  jarl(root, 'field', '2', 'After', '4');
   assert.deepEqual(unordered(run(root, ['verify']).stdout), []);
   const other = named();
   jarl(other, 'set', '4', 'dropped', 'not needed');
@@ -137,9 +151,9 @@ test('new and body print the same note on stderr as verify, once, and no other c
   const filed = run(root, ['new', 'third', '--what', 'builds on issue 1', '--kind', 'gap', '--prio', '2', '--tier', 'standard']);
   assert.equal(filed.status, 0);
   assert.deepEqual(unordered(filed.stderr).map((l) => l.replace(/ — .*$/, '')), ['note: issue 3: names issue 1 in What, Why or Acceptance, which is neither done nor dropped, and no After orders it with 3']);
-  const body = run(root, ['body', '3', '--acceptance', 'issue 2 is merged first and issue 1 too']);
+  const body = run(root, ['field', '3', 'Acceptance', 'issue 2 is merged first and issue 1 too']);
   assert.equal(body.status, 0);
-  assert.equal(body.stdout, '3 body: acceptance');
+  assert.equal(body.stdout, '3 Acceptance: issue 2 is merged first and issue 1 too');
   const said = unordered(body.stderr);
   assert.equal(said.length, 1);
   assert.match(said[0], /^note: issue 3: names issues 1, 2 in What, Why or Acceptance, which are neither done nor dropped/);
@@ -148,9 +162,10 @@ test('new and body print the same note on stderr as verify, once, and no other c
   assert.equal(said[0], verified[0], 'the same line from body and verify');
   // The note is not a record line, and a body that leaves What, Why and Acceptance alone says none.
   assert.doesNotMatch(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /which are neither done nor dropped/);
-  assert.deepEqual(unordered(run(root, ['body', '3', '--title', 'third, renamed', '--changelog', 'Added: x']).stderr), []);
-  assert.deepEqual(unordered(run(root, ['after', '3', '1,2']).stderr), []);
-  assert.deepEqual(unordered(run(root, ['body', '3', '--why', 'issue 2 first']).stderr), [], 'the order holds, so the note is gone');
+  assert.deepEqual(unordered(run(root, ['field', '3', 'Title', 'third, renamed']).stderr), []);
+  assert.deepEqual(unordered(run(root, ['field', '3', 'Changelog', 'Added: x']).stderr), []);
+  assert.deepEqual(unordered(run(root, ['field', '3', 'After', '1,2']).stderr), []);
+  assert.deepEqual(unordered(run(root, ['field', '3', 'Why', 'issue 2 first']).stderr), [], 'the order holds, so the note is gone');
 });
 
 test('a library call files and rewrites the same text with no note in its result', async () => {

@@ -39,7 +39,7 @@ test('an issue with no worker row, merged with --ran and --saw, is refused by do
   assert.match(why, /1 has no evidence yet/);
   assert.match(why, /the merge records a check \(npm test\)/);
   assert.match(why, /does not stand in for the worker's row/);
-  assert.match(why, /jarl\.mjs evidence 1 --ran "<command>" --saw "<what it printed>"/);
+  assert.match(why, /jarl\.mjs evidence 1 --ran "<command>" --saw "<what-it-printed>"/);
   assert.doesNotMatch(log(root), /1 evidence row/, 'the merge wrote no row line');
   assert.doesNotMatch(issueText(root, 1), /\*\*ran:\*\*/, 'the merge wrote no row');
 });
@@ -200,11 +200,11 @@ test('a row, a note, a ruling, an answer, a Deferred reason and a retraction eac
   const root = fresh(2);
   jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'red');
   jarl(root, 'evidence', '1', 'a free note');
-  jarl(root, 'decide', 'probe-ruling', 'the probe settles on the split', '--settles', '1');
+  jarl(root, 'decide', 'probe-ruling', 'the probe settles on the split', '--settles', '1', '--by', 'coordinator');
   jarl(root, 'ask', 'keep the split?', '--kind', 'ratify', '--issue', '1');
   jarl(root, 'answer', 'a-1', 'kept', '--by', 'owner');
   jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'green');
-  jarl(root, 'evidence', '1', '--retract', '1', '--by', 'rev', 'the first run was on the wrong tree');
+  jarl(root, 'retract', '1', '1', '--by', 'rev', 'the first run was on the wrong tree');
   jarl(root, 'set', '1', 'deferred', 'waits for the probe of 2');
   const { proof, notes } = parts(root, 1);
   assert.equal(proof.trim(), '- ~~**ran:** npm test · **saw:** red~~\n- **ran:** npm test · **saw:** green');
@@ -258,7 +258,7 @@ test('a row written under Notes by a writer that does not know the parts is foll
   assert.deepEqual(rows, ['1:one', '2:two', '3:three']);
   assert.equal(parts(root, 1).notes.trim(), 'a note\n- **ran:** two · **saw:** ok\n- **ran:** three · **saw:** ok', 'the row follows the last row, under Notes');
   // A retraction names the same row after the new one was written.
-  jarl(root, 'evidence', '1', '--retract', '2', '--by', 'rev', 'two was the wrong run');
+  jarl(root, 'retract', '1', '2', '--by', 'rev', 'two was the wrong run');
   assert.match(evidence(root, 1), /^- ~~\*\*ran:\*\* two · \*\*saw:\*\* ok~~$/m);
   assert.match(evidence(root, 1), /^- \*\*ran:\*\* one · \*\*saw:\*\* ok$/m);
 });
@@ -279,7 +279,7 @@ test('a section that already holds content and no sub-heading is never converted
   // Both writers are the same here: the rows of the section, then the note.
   jarl(root, 'evidence', '1', '--ran', 'next', '--saw', 'ok');
   jarl(root, 'evidence', '1', 'another note');
-  jarl(root, 'decide', 'u-ruling', 'a ruling', '--settles', '1');
+  jarl(root, 'decide', 'u-ruling', 'a ruling', '--settles', '1', '--by', 'coordinator');
   jarl(root, 'set', '1', 'deferred', 'wait');
   assert.equal(evidence(root, 1).trim(), '## Evidence\n\n- **ran:** old · **saw:** ok\n\nan old note\n- **ran:** next · **saw:** ok\n\nanother note\n\nRuling u-ruling (by coordinator): a ruling\n\nDeferred: wait');
   assert.doesNotMatch(evidence(root, 1), /^### /m);
@@ -292,7 +292,7 @@ test('the frozen reader reads a loop in the split form right: done is refused on
   fileAsBefore(root, 'three', { acceptance: 'it works' });
   jarl(root, 'evidence', '2', '--ran', 'npm test', '--saw', 'pass');
   jarl(root, 'evidence', '2', 'a note under Notes');
-  jarl(root, 'decide', 'split-ruling', 'the split is read right', '--settles', '2');
+  jarl(root, 'decide', 'split-ruling', 'the split is read right', '--settles', '2', '--by', 'coordinator');
   for (const id of ['1', '2']) jarl(root, 'merged', id, '--sha', 'abc1234', '--ran', 'npm test', '--saw', '3 pass', '--keep');
   jarl(root, 'set', '3', 'deferred', 'waits for the probe of 2');
   assert.match(evidence(root, 2), /### Proof[\s\S]*### Notes/);

@@ -49,7 +49,7 @@ test('a drop-in copy of skills/jarl/ runs its own command and starts its own MCP
   cpSync(SKILL_DIR, copy, { recursive: true });
   assert.deepEqual(readdirSync(join(copy, 'references')).sort(), readdirSync(join(SKILL_DIR, 'references')).sort(), 'the references travel with the copy');
   const script = join(copy, 'scripts', 'jarl.mjs');
-  assert.match(node([script, '--help']).stdout, /^usage: jarl\.mjs <command>/);
+  assert.match(node([script, '--help']).stdout, /^usage: jarl\.mjs "<a-jarl-command>"/);
   const { dir } = gitRepo({ prefix: 'jarl-dropin-repo-' });
   assert.equal(node([script, 'init', 'a goal', '--root', dir]).status, 0);
   assert.match(node([script, 'status', '--root', dir]).stdout, /^goal: a goal/);
@@ -100,14 +100,14 @@ test('ask takes --kind as an option that defaults to stuck, as the reference wri
   assert.match(jarl(dir, 'status', '--json'), /"questions": 1/);
   const asks = readFileSync(join(dir, '.jarl', 'asks.md'), 'utf8');
   assert.match(asks, /stuck/);
-  assert.match(skillText('references/commands.md'), /\| `ask "<question>" \[--kind stop\\\|stuck\\\|lower\\\|charter\\\|ratify\\\|escalation\\\|rule\]/);
+  assert.match(skillText('references/commands.md'), /\| `ask "<text>" \[--kind stop\\\|stuck\\\|lower\\\|charter\\\|ratify\\\|escalation\\\|rule\]/);
 });
 
 test('close --force closes with issues still open, as the reference says, and refuses without it', () => {
   const { dir } = gitRepo({ prefix: 'jarl-docs-close-' });
   jarl(dir, 'init', 'g');
   jarl(dir, 'new', 'still open');
-  assert.match(refuses(dir, 'close'), /still open or in progress.*--force/);
+  assert.match(refuses(dir, 'close'), /still open or in progress.*close --force removes it with them\)\njarl\.mjs ask "<question-for-the-owner>"\n$/);
   assert.match(jarl(dir, 'close', '--force'), /^removed /);
   assert.equal(existsSync(join(dir, '.jarl')), false);
 });
@@ -220,7 +220,7 @@ test('record.md lists every path the tool writes in .jarl/, in the count it stat
   jarl(repo.dir, 'init', 'g', '--committed', '--profile', profile);
   jarl(repo.dir, 'new', 'one', '--repo', basename(sibling.dir));
   jarl(repo.dir, 'ask', 'which way?');
-  jarl(repo.dir, 'decide', 'a-ruling', 'a ruling');
+  jarl(repo.dir, 'decide', 'a-ruling', 'a ruling', '--by', 'coordinator');
   note(repo.dir);
   jarl(repo.dir, 'set', '1', 'dropped', 'not needed');
   jarl(repo.dir, 'archive', 'one');
@@ -303,16 +303,16 @@ test('every tool is described as it behaves: Read-only tools write nothing and W
   const tools = mcp.buildTools().filter((t) => t.name !== 'jarl_help');
   for (const tool of tools) {
     const command = tool.name.slice('jarl_'.length);
-    const writes = MUTATING.has(({ check: 'scope' })[command] ?? command);
+    const writes = MUTATING.has(command);
     assert.ok(tool.description.startsWith(writes ? 'WRITES the loop. ' : 'Read-only. '), `${tool.name}: ${tool.description}`);
   }
   const { dir } = gitRepo({ prefix: 'jarl-docs-tools-' });
   jarl(dir, 'init', 'g');
   jarl(dir, 'new', 'one', '--files', 'a.txt', '--acceptance', 'it works');
   jarl(dir, 'ask', 'which way?');
-  jarl(dir, 'decide', 'a-ruling', 'a ruling');
+  jarl(dir, 'decide', 'a-ruling', 'a ruling', '--by', 'coordinator');
   const before = snapshot(dir);
-  const inputs = { show: { id: '1' }, changelog: { ids: '1' }, scope: { branch: 'feature' }, check: { branch: 'feature' } };
+  const inputs = { show: { id: '1' }, changelog: { ids: '1' }, scope: { branch: 'feature' } };
   for (const tool of tools.filter((t) => t.description.startsWith('Read-only.'))) {
     const command = tool.name.slice('jarl_'.length);
     mcp.callTool(tool.name, { ...(inputs[command] ?? {}), root: dir });
@@ -331,7 +331,7 @@ test('jarl_help prints the usage the command line prints, and the server instruc
 
 test('a tool call does what its description says: jarl_ask without a kind files a stuck question, jarl_close with force closes', () => {
   const root = loop({ prefix: 'jarl-docs-call-', via: 'cli' });
-  const asked = mcp.callTool('jarl_ask', { question: 'which way?', root });
+  const asked = mcp.callTool('jarl_ask', { text: 'which way?', root });
   assert.equal(asked.isError, false);
   assert.match(readFileSync(join(root, '.jarl', 'asks.md'), 'utf8'), /stuck/);
   mcp.callTool('jarl_new', { title: 'open', root });
@@ -369,7 +369,7 @@ test('no brief and no rule names the main checkout as the root a call passes: th
   const found = skillLines().filter(({ text }) => near(text) && !defines(text)).map(({ file, n, text }) => `${file}:${n}: ${text.slice(0, 80)}`);
   assert.deepEqual(found, []);
   for (const [file, text] of [['worker', skillText('references/worker.md')], ['reviewer', skillText('references/reviewer.md')], ['merger', skillText('references/merger.md')]]) {
-    assert.match(text, /<loop root>/, `the ${file} brief passes the loop root`);
+    assert.match(text, /<loop-root>/, `the ${file} brief passes the loop root`);
   }
   assert.match(skillText('SKILL.md'), /carries the absolute path of the loop root as `root`/);
   // The pinned block says the main checkout; Jarl's own sentence right after it says what the root is (the block itself is held byte-identical by the vendoring test).
@@ -397,7 +397,7 @@ test('the help and the tool descriptions name scope as the command that measures
   assert.doesNotMatch(text, /\bcheck (?:matches|on it|takes|reads|refuses)|\bon `?check`?\b|\bjarl(?:\.mjs)? check\b/);
   const byName = Object.fromEntries(mcp.buildTools().map((t) => [t.name, t.description]));
   assert.match(byName.jarl_scope, /scope of a worker branch/);
-  assert.match(byName.jarl_check, /scope of a worker branch/);
+  assert.equal(byName.jarl_check, undefined, 'no tool answers to check');
   assert.match(USAGE, /\bscope matches the path after the name/);
   assert.match(USAGE, /\bscope on it takes --repo/);
 });

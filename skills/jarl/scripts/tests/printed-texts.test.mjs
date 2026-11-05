@@ -22,10 +22,10 @@ test('an ask with a kind that does not exist says the owner decides a ratify ite
   assert.doesNotMatch(err, /\buser\b/);
 });
 
-test('a close with open issues says the owner is told them, and how to close anyway', () => {
+test('a close with open issues says the owner decides on them, and ends with the question to put to him', () => {
   const root = loop();
   jarl(root, 'new', 'still open');
-  assert.match(refuses(root, 'close'), /report them to the owner and run with --force/);
+  assert.match(refuses(root, 'close'), /report them to the owner, who decides whether the loop closes with them \(close --force removes it with them\)\njarl\.mjs ask "<question-for-the-owner>"\n$/);
 });
 
 test('a loop written in a record format this Jarl does not read says what the reader needs, and names no upgrade', () => {

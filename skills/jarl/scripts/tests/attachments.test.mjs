@@ -156,8 +156,8 @@ test('done is refused until every required slot is filled, naming each missing s
   const root = loopWith();
   const why = refuses(root, 'set', '1', 'done');
   assert.match(why, /1 needs these attachments before done/);
-  assert.match(why, /slot before: no file recorded — jarl\.mjs evidence 1 --file <a file at attachments\/1\/before\.\*> --slot before/);
-  assert.match(why, /slot after: no file recorded — jarl\.mjs evidence 1 --file <a file at attachments\/1\/after\.\*> --slot after/);
+  assert.match(why, /slot before: no file recorded — jarl\.mjs evidence 1 --file "<path>" --slot before \(a file at attachments\/1\/before\.\*\)/);
+  assert.match(why, /slot after: no file recorded — jarl\.mjs evidence 1 --file "<path>" --slot after \(a file at attachments\/1\/after\.\*\)/);
   put(root, 'attachments/1/before.png');
   attach(root, 'before', 'attachments/1/before.png');
   const half = refuses(root, 'set', '1', 'done');
@@ -174,7 +174,7 @@ test('done is refused when a recorded file is gone', () => {
   unlinkSync(join(root, 'attachments', '1', 'before.png'));
   const why = refuses(root, 'set', '1', 'done');
   assert.match(why, /slot before: attachments\/1\/before\.png is gone/);
-  assert.match(why, /jarl\.mjs evidence 1 --file <a file at attachments\/1\/before\.\*> --slot before/);
+  assert.match(why, /jarl\.mjs evidence 1 --file "<path>" --slot before \(a file at attachments\/1\/before\.\*\)/);
   assert.doesNotMatch(why, /slot after/);
 });
 
@@ -211,7 +211,7 @@ test('a retracted attachment row leaves its slot unfilled', () => {
   const root = loopWith();
   both(root);
   const n = L.evidenceTable(issueText(root, 1).slice(issueText(root, 1).indexOf('## Evidence'))).rows.findIndex((r) => r.ran.startsWith('attach after')) + 1;
-  jarl(root, 'evidence', '1', '--retract', String(n), '--by', 'rev', 'the picture shows the wrong screen');
+  jarl(root, 'retract', '1', String(n), '--by', 'rev', 'the picture shows the wrong screen');
   assert.match(refuses(root, 'set', '1', 'done'), /slot after: no file recorded/);
 });
 
@@ -381,7 +381,7 @@ test('a row shaped as an attachment is refused by --ran in every spelling the lo
 
 test('the log refuses a hand-written attachment row and names --file and --slot', () => {
   const root = loopWith();
-  assert.match(refuses(root, 'log', `1 evidence row · attach before attachments/1/before.png sha256:${'0'.repeat(64)} size:5`), /jarl\.mjs evidence <id> --file <path> --slot <name>/);
+  assert.match(refuses(root, 'log', `1 evidence row · attach before attachments/1/before.png sha256:${'0'.repeat(64)} size:5`), /jarl\.mjs evidence "<id>" --file "<path>" --slot "<slot>"/);
 });
 
 test('retracting the newest row of a slot empties it and never brings back the row before it', () => {
@@ -392,7 +392,7 @@ test('retracting the newest row of a slot empties it and never brings back the r
   const text = issueText(root, 1);
   const rows = L.evidenceTable(text.slice(text.indexOf('## Evidence'))).rows;
   const newest = rows.map((r, i) => (r.ran.startsWith('attach after') ? i + 1 : 0)).filter(Boolean).pop();
-  jarl(root, 'evidence', '1', '--retract', String(newest), '--by', 'rev', 'the picture shows the wrong screen');
+  jarl(root, 'retract', '1', String(newest), '--by', 'rev', 'the picture shows the wrong screen');
   assert.match(refuses(root, 'set', '1', 'done'), /slot after: no file recorded/);
   assert.match(jarl(root, 'show', '1'), /- after: not recorded · place/);
   assert.match(jarl(root, 'verify'), /verify: clean/);

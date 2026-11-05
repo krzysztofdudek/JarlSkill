@@ -7,7 +7,7 @@
 // files, repo (the issue the reader works on). Every selector must hold, and the issue selectors for one and the same
 // issue. A rule ends at the end of its date, when its issue closes, or when a later ruling supersedes it.
 
-import { fieldText, need } from './base.mjs';
+import { fieldText, hole, need } from './base.mjs';
 import { idKey } from './ids.mjs';
 import { answeredLines } from './journal.mjs';
 import { sameSlice, sliceOf } from './loop.mjs';
@@ -20,25 +20,27 @@ export const RULE_SELECTORS = Object.freeze(['loop', 'role', 'slice', 'moment', 
 const READER_SELECTORS = new Set(['loop', 'role', 'moment']);
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const ISSUE_RE = /^#?\d+$/;
-const SCOPE_SHAPE = 'loop, or selectors joined by "and": role <role>, slice <coordinator>, moment <moment>, issue <id>, tag <tag>, kind <kind>, tier <tier>, files <path or pattern>, repo <repository>';
+const SCOPE_SHAPE = 'loop, or selectors joined by "and": role <role>, slice <coordinator>, moment <moment>, issue <id>, tag <tag>, kind <kind>, tier <tier>, files <path>, repo <name>';
 
+// Where one selector of a scope is refused: the scope with that selector, or its value, a placeholder, the others kept.
+const scopeHole = (raw, part, words) => raw.replace(part, () => words);
 // The selectors of an Applies to text, as [{ word, value }]. A refusal names the shape.
 export function parseScope(text) {
   const raw = fieldText(text);
-  need(raw, `--applies-to names whom the rule applies to: ${SCOPE_SHAPE}`);
+  need(raw, `--applies-to names whom the rule applies to: ${SCOPE_SHAPE}`, () => ({ flag: '--applies-to', value: '<selectors>' }));
   const parts = raw.split(/\s+and\s+/i).map((p) => p.trim());
   const selectors = parts.map((p) => {
     if (/^loop$/i.test(p)) return { word: 'loop', value: null };
     const m = /^([a-z]+)\s+(\S+)$/i.exec(p);
-    need(m && RULE_SELECTORS.includes(m[1].toLowerCase()) && m[1].toLowerCase() !== 'loop', `"${p}" is not a selector of --applies-to: ${SCOPE_SHAPE}`);
+    need(m && RULE_SELECTORS.includes(m[1].toLowerCase()) && m[1].toLowerCase() !== 'loop', `"${p}" is not a selector of --applies-to: ${SCOPE_SHAPE}`, () => ({ flag: '--applies-to', value: scopeHole(raw, p, hole('<selector>')) }));
     const word = m[1].toLowerCase();
     const value = m[2];
-    if (word === 'role') need(RULE_ROLES.includes(value.toLowerCase()), `role ${value} is not a role a rule reaches: ${RULE_ROLES.join(', ')}`);
-    if (word === 'moment') need(RULE_MOMENTS.includes(value.toLowerCase()), `moment ${value} is not a moment of work: ${RULE_MOMENTS.join(', ')}`);
-    if (word === 'issue') need(ISSUE_RE.test(value), `issue ${value} is not an issue number`);
+    if (word === 'role') need(RULE_ROLES.includes(value.toLowerCase()), `role ${value} is not a role a rule reaches: ${RULE_ROLES.join(', ')}`, () => ({ flag: '--applies-to', value: scopeHole(raw, p, `role ${hole('<role>')}`) }));
+    if (word === 'moment') need(RULE_MOMENTS.includes(value.toLowerCase()), `moment ${value} is not a moment of work: ${RULE_MOMENTS.join(', ')}`, () => ({ flag: '--applies-to', value: scopeHole(raw, p, `moment ${hole('<moment>')}`) }));
+    if (word === 'issue') need(ISSUE_RE.test(value), `issue ${value} is not an issue number`, () => ({ flag: '--applies-to', value: scopeHole(raw, p, `issue ${hole('<id>')}`) }));
     return { word, value: word === 'role' || word === 'moment' ? value.toLowerCase() : word === 'issue' ? value.replace(/^#/, '') : value };
   });
-  need(!(selectors.length > 1 && selectors.some((s) => s.word === 'loop')), 'loop takes no other selector: a rule of the loop reaches every reader of it');
+  need(!(selectors.length > 1 && selectors.some((s) => s.word === 'loop')), `loop takes no other selector: a rule of the loop reaches every reader of it (got "${raw}"); it is loop alone, or the other selectors without it`, () => ({ flag: '--applies-to', value: hole('<selectors>') }));
   return selectors;
 }
 
@@ -46,7 +48,7 @@ export function parseScope(text) {
 export function parseUntil(text) {
   const raw = fieldText(text).replace(/^issue\s+/i, '');
   if (DATE_RE.test(raw)) return { date: raw };
-  need(ISSUE_RE.test(raw), `--until is a date (yyyy-mm-dd), through which the rule holds, or the issue whose closing ends it (got "${fieldText(text)}")`);
+  need(ISSUE_RE.test(raw), `--until is a date (yyyy-mm-dd), through which the rule holds, or the issue whose closing ends it (got "${fieldText(text)}")`, () => ({ flag: '--until', value: '<yyyy-mm-dd>' }));
   return { issue: raw.replace(/^#/, '') };
 }
 
@@ -65,7 +67,7 @@ export function readAppliesTo(value) {
     let until = null;
     if (end !== undefined) {
       const m = /^until\s+(?:(\d{4}-\d{2}-\d{2})|issue\s+#?(\d+)\s+closes)$/i.exec(end.trim());
-      need(m, `"${end}" is not the end of a rule: until <yyyy-mm-dd> or until issue <id> closes`);
+      need(m, `"${end}" is not the end of a rule: until <yyyy-mm-dd> or until issue <id> closes`, () => ({ flag: '--until', value: '<yyyy-mm-dd>' }));
       until = m[1] ? { date: m[1] } : { issue: m[2] };
     }
     return { selectors, until };
@@ -100,7 +102,7 @@ export const BUILTIN_RULES = Object.freeze([
   { slug: 'jarl:worker-only-the-issue', scope: 'role worker', source: 'SKILL.md',
     text: 'Change only what the issue needs. Something else seen on the way is reported for filing, not fixed in passing.' },
   { slug: 'jarl:coordinator-escalates', scope: 'role coordinator', source: 'references/jarl.md',
-    text: "It goes up with `ask \"<question>\" --kind escalation --slice <name>` (and `--issue <id>` when one issue is the subject), which the jarl holds and answers, for these four and no other:\n1. a gap or a finding outside its slice's goal;\n2. a decision that is the jarl's or the owner's;\n3. its slice empty, or blocked by another slice;\n4. a takeover that failed too." },
+    text: "It goes up with `ask \"<text>\" --kind escalation --slice <name>` (and `--issue <id>` when one issue is the subject), which the jarl holds and answers, for these four and no other:\n1. a gap or a finding outside its slice's goal;\n2. a decision that is the jarl's or the owner's;\n3. its slice empty, or blocked by another slice;\n4. a takeover that failed too." },
   { slug: 'jarl:coordinator-pull-push', scope: 'role coordinator', source: 'references/jarl.md',
     text: 'Pull before leasing and push right after when the loop is shared between clones.' },
   { slug: 'jarl:coordinator-shared-review', scope: 'role coordinator and moment review', source: 'references/jarl.md',

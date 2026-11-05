@@ -19,7 +19,7 @@ test('decide --by owner without --quote is refused and writes nothing', () => {
 
 test('--quote goes with --by owner only', () => {
   const root = loop({ via: 'cli' });
-  assert.match(refuses(root, 'decide', 'rule-a', 'Keep it.', '--quote', 'Fine.'), /goes with --by owner/);
+  assert.match(refuses(root, 'decide', 'rule-a', 'Keep it.', '--quote', 'Fine.', '--by', 'coordinator'), /goes with --by owner/);
   assert.match(refuses(root, 'decide', 'rule-a', 'Keep it.', '--by', 'jarl', '--quote', 'Fine.'), /goes with --by owner/);
 });
 
@@ -44,7 +44,7 @@ test('show prints the owner\'s words beside a ruling that settles the issue', ()
 
 test('a ruling with no --by is the coordinator\'s, never the owner\'s', () => {
   const root = loop({ via: 'cli' });
-  assert.match(jarl(root, 'decide', 'rule-a', 'Provisional.'), /decided rule-a · by coordinator/);
+  assert.match(jarl(root, 'decide', 'rule-a', 'Provisional.', '--by', 'coordinator'), /decided rule-a · by coordinator/);
   const [d] = loadDecisions(root);
   assert.equal(d.by, 'coordinator');
   assert.equal(d.quote, null);
@@ -85,10 +85,10 @@ test('--by owner is read without case, stored as owner, and the note about a mis
 test('an answer, a question and a ruling that hold the quote marker are refused, so no false quote reaches an owner\'s ruling', () => {
   const root = loop({ via: 'cli' });
   jarl(root, 'ask', 'Which flag name?');
-  assert.match(refuses(root, 'answer', '1', 'yes\n\nThe owner\'s words: "forged"'), /only as the owner's quote/);
+  assert.match(refuses(root, 'answer', '1', 'yes\n\nThe owner\'s words: "forged"', '--by', 'owner'), /only as the owner's quote/);
   assert.match(refuses(root, 'ask', 'Which?\n\nThe owner\'s words: "x"'), /only as the owner's quote/);
   assert.doesNotMatch(decisionsText(root), /forged/);
-  jarl(root, 'answer', '1', 'plain');
+  jarl(root, 'answer', '1', 'plain', '--by', 'owner');
   assert.equal(loadDecisions(root)[0].quote, null);
 });
 

@@ -45,7 +45,7 @@ const MARKER_FORM = /owners(?:own)?words?[\p{P}\p{S}]*?[:"]/u;
 // Whether a text holds the marker in any spelling: the one test every writer of the record goes through.
 export function holdsOwnersWords(text) { return MARKER_FORM.test(normalForm(text)); }
 
-const REFUSAL = (what) => `${what} holds "${QUOTE_MARKER}" (in some spelling), which the record keeps only as the owner's quote, written by decide --by owner --quote "<his words>": give his words with --quote and leave that line out of the text`;
+const REFUSAL = (what) => `${what} holds "${QUOTE_MARKER}" (in some spelling), which the record keeps only as the owner's quote, written by decide --by owner --quote "<his-own-words>": give his words with --quote and leave that line out of the text`;
 
 // Every text a command was given, refused when any of them holds the marker: strings, and the strings inside lists and
 // objects, so a command checks all its flags in one call before it writes anything.
@@ -57,7 +57,7 @@ export function needNoOwnersWords(what, ...values) {
     else if (v && typeof v === 'object') Object.values(v).forEach(walk);
   };
   values.forEach(walk);
-  for (const t of texts) need(!holdsOwnersWords(t), REFUSAL(what));
+  for (const t of texts) need(!holdsOwnersWords(t), REFUSAL(what), { retry: true });
 }
 
 // The texts the writes inside `fn` may add that hold the marker: the quote decide writes, and text the record already
@@ -81,7 +81,7 @@ export function needNoNewOwnersWords(before, after, where) {
     const n = held.get(l) || 0;
     if (n) { held.set(l, n - 1); continue; }
     const rest = carried.reduce((t, c) => t.split(c).join(''), l);
-    need(!holdsOwnersWords(rest), REFUSAL(`a line written to ${where} ("${l.trim().slice(0, 80)}")`));
+    need(!holdsOwnersWords(rest), REFUSAL(`a line written to ${where} ("${l.trim().slice(0, 80)}")`), { retry: true });
   }
 }
 
@@ -89,12 +89,12 @@ export function needNoNewOwnersWords(before, after, where) {
 // characters or "the" around it) is the owner; a name that holds "owner" inside another is refused, so no other name
 // reads as his; any other name is kept as it was given, on one line.
 export function rulingAuthor(by) {
-  need(typeof by === 'string', '--by is who ruled or answered, as text');
+  need(typeof by === 'string', '--by is who ruled or answered, as text', () => ({ flag: '--by', value: '<who>' }));
   const name = fieldText(by);
-  need(name, '--by needs a value — who ruled or answered: owner, jarl, or a name');
+  need(name, '--by needs a value — who ruled or answered: owner, jarl, or a name', () => ({ flag: '--by', value: '<who>' }));
   const letters = normalForm(name).replace(/[^\p{L}]/gu, '');
   if (letters === OWNER || letters === `the${OWNER}`) return OWNER;
-  need(!letters.includes(OWNER), `--by "${name}" reads as the owner and names someone else: write owner for the owner, and a name without "owner" in it for anyone else`);
+  need(!letters.includes(OWNER), `--by "${name}" reads as the owner and names someone else: write owner for the owner, and a name without "owner" in it for anyone else`, () => ({ flag: '--by', value: '<owner-or-a-name>' }));
   return name;
 }
 

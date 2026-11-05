@@ -1,12 +1,12 @@
 // What is on whom: every open thing of the loop has one holder who must move next, derived from the record and never
 // stored, and next --as <holder> lists what is on that one, each line with the command that moves it.
 
-import { PROMISE_KIND, WAIT_KIND, fieldText, need } from './base.mjs';
+import { PROMISE_KIND, WAIT_KIND, fieldText, jarlLine, need } from './base.mjs';
 import { cmpId, idKey, idsCited } from './ids.mjs';
 import { mergedOf } from './issues.mjs';
 import { leaseOfMove } from './log.mjs';
 import { carriesCode, gateOf, readLoop, sameSlice, sliceOf } from './loop.mjs';
-import { reasonWord, shellWord, waitingOn } from './commands.mjs';
+import { reasonWord, waitingOn } from './commands.mjs';
 import { inFlightMark, nextRows, schedulerNote } from './evidence.mjs';
 import { ownerLineStates } from './owner-lines.mjs';
 import { ruleLines, rulesFor } from './rules.mjs';
@@ -25,7 +25,7 @@ const short = (t, n = TITLE) => (t.length > n ? `${t.slice(0, n - 1)}…` : t);
 // The name the asker gives, read as a holder: a name that reads as owner is the owner, jarl is the jarl, any other name
 // is kept as given (a coordinator or an outside person).
 export function holderOf(name) {
-  need(typeof name === 'string' && fieldText(name), '--as names who asks: owner, jarl, a coordinator or a person by name');
+  need(typeof name === 'string' && fieldText(name), '--as names who asks: owner, jarl, a coordinator or a person by name', () => ({ flag: '--as', value: '<who-asks>' }));
   const plain = fieldText(name);
   const letters = plain.toLowerCase().replace(/[^\p{L}]/gu, '');
   if (letters === OWNER_HOLDER || letters === `the${OWNER_HOLDER}`) return OWNER_HOLDER;
@@ -65,10 +65,10 @@ function issueRows(ctx) {
   // Open and offered by next: ready to start.
   for (const r of ctx.next.filter((x) => x.ready)) {
     out.push({ what: 'ready', id: r.id, title: r.title, priority: r.priority, holder: holderOfId(r.id),
-      says: 'ready to start, raise a worker', command: `jarl.mjs set ${r.id} ${leaseStatus} --branch <branch> --worker <name>` });
+      says: 'ready to start, raise a worker', command: jarlLine('set', r.id, leaseStatus, '--branch', '<branch>', '--worker', '<name>') });
   }
-  const evidence = `--ran "<command>" --saw "<what it printed>"`;
-  const verdict = (id) => `jarl.mjs review ${id} approve|changes --by <reviewer> "<findings>"`;
+  const evidence = (id) => jarlLine('evidence', id, '--ran', '<command>', '--saw', '<what-it-printed>');
+  const verdict = (id) => jarlLine('review', id, '<verdict>', '--by', '<reviewer>', '<text>');
   // A wait has rows of its own (keptRows); a promise in a lease is worked as any issue, and its maker holds each line.
   for (const i of loop.issues.filter((x) => profile.is(x.status, 'holds-claim') && profile.keptKind(x.kind) !== WAIT_KIND && !waitingOn(x, loop.byId, profile).length)) {
     const mark = inFlightMark(loop, i);
@@ -85,7 +85,7 @@ function issueRows(ctx) {
     const withWorker = worker ? `with worker ${worker}` : 'in progress';
     const backAfterRound = sentBack(loop, i, mark);
     if (mark === 'no-rows' || backAfterRound) {
-      out.push({ ...base, what: 'worker', says: `${withWorker}${fieldText(i.fields.since) ? ` since ${fieldText(i.fields.since)}` : ''}, ${backAfterRound ? 'sent back by a round, no new proof yet' : 'no proof yet'}; the worker records it`, command: `jarl.mjs evidence ${i.id} ${evidence}` });
+      out.push({ ...base, what: 'worker', says: `${withWorker}${fieldText(i.fields.since) ? ` since ${fieldText(i.fields.since)}` : ''}, ${backAfterRound ? 'sent back by a round, no new proof yet' : 'no proof yet'}; the worker records it`, command: evidence(i.id) });
       continue;
     }
     // A close the done gate would refuse for an owner line not ticked is not offered: that line's own row stands instead.
@@ -95,7 +95,7 @@ function issueRows(ctx) {
       const merge = profile.doneGate['requires-merged'] && !mergedOf(i);
       if (!merge && unticked) continue;
       out.push({ ...(merge ? onMerger : onJarl), what: merge ? 'merge' : 'close', says: merge ? 'proof recorded, not merged; merge it' : 'proof recorded; close it',
-        command: merge ? `jarl.mjs merged ${i.id} --sha <sha> --ran "<check>" --saw "<summary>"` : `jarl.mjs set ${i.id} ${closeStatus} "<why>"` });
+        command: merge ? jarlLine('merged', i.id, '--sha', '<sha>', '--ran', '<command>', '--saw', '<what-it-printed>') : jarlLine('set', i.id, closeStatus, '<text>') });
       continue;
     }
     if (mark === 'rows-no-verdict' && carriesCode(i) && profile.keptKind(i.kind) !== PROMISE_KIND) continue;   // listed together below
@@ -108,19 +108,19 @@ function issueRows(ctx) {
       continue;
     }
     if (mark === 'changes-requested') {
-      out.push({ ...base, what: 'changes', says: 'changes asked by its reviewer; send it back to a worker', command: `jarl.mjs round ${i.id} "<what failed>"` });
+      out.push({ ...base, what: 'changes', says: 'changes asked by its reviewer; send it back to a worker', command: jarlLine('round', i.id, '<text>') });
       continue;
     }
     if (mark === 'approved' && carriesCode(i)) {
-      out.push({ ...onMerger, what: 'merge', says: 'approved, not merged; merge it', command: `jarl.mjs merged ${i.id} --sha <sha> --ran "<check>" --saw "<summary>"` });
+      out.push({ ...onMerger, what: 'merge', says: 'approved, not merged; merge it', command: jarlLine('merged', i.id, '--sha', '<sha>', '--ran', '<command>', '--saw', '<what-it-printed>') });
       continue;
     }
     if (mark === 'merged-ci') {
-      out.push({ ...onJarl, what: 'ci', says: 'merged, its CI not green yet; record the result', command: `jarl.mjs merged ${i.id} --ci green|red` });
+      out.push({ ...onJarl, what: 'ci', says: 'merged, its CI not green yet; record the result', command: jarlLine('merged', i.id, '--ci', 'green|red') });
       continue;
     }
     if (unticked) continue;
-    out.push({ ...onJarl, what: 'close', says: mark === 'merged' ? 'merged; close it' : 'approved; close it', command: `jarl.mjs set ${i.id} ${closeStatus} "<why>"` });
+    out.push({ ...onJarl, what: 'close', says: mark === 'merged' ? 'merged; close it' : 'approved; close it', command: jarlLine('set', i.id, closeStatus, '<text>') });
   }
   // One line per holder for the proofs of code with no verdict: each coordinator raises its own slice's reviewer.
   const byHolder = new Map();
@@ -178,7 +178,7 @@ function reviewRow(todo, holder, verdict) {
   return [{
     what: 'review', id: todo[0].id, ids: todo.map((i) => i.id), title: only ? only.title : '', priority, holder, ...(worker ? { doer: worker } : {}),
     says: `proof recorded, no verdict; raise a fresh reviewer for ${ids}; if you cannot raise agents, ask the owner to start a fresh session`,
-    command: `${only ? verdict(only.id) : verdict('<id>')}, or jarl.mjs ask "${REVIEW_ASK} issue${todo.length === 1 ? '' : 's'} ${ids}"`,
+    command: `${only ? verdict(only.id) : verdict('<id>')}, or ${jarlLine('ask', `${REVIEW_ASK} issue${todo.length === 1 ? '' : 's'} ${ids}`)}`,
   }];
 }
 
@@ -188,7 +188,8 @@ function reviewRow(todo, holder, verdict) {
 function keptRows(ctx) {
   const { loop, profile } = ctx;
   const closeStatus = statusWith(profile, 'closes-record', 'terminal');
-  const verdict = `approve|changes --by <reviewer> "<findings>"`;
+  const verdict = (id) => jarlLine('review', id, '<verdict>', '--by', '<reviewer>', '<text>');
+  const evidence = (id) => jarlLine('evidence', id, '--ran', '<command>', '--saw', '<what-it-printed>');
   const out = [];
   const kept = loop.issues.filter((i) => profile.active(i.status) && !waitingOn(i, loop.byId, profile).length
     && (profile.keptKind(i.kind) === WAIT_KIND || (profile.keptKind(i.kind) === PROMISE_KIND && !profile.is(i.status, 'holds-claim'))));
@@ -200,14 +201,14 @@ function keptRows(ctx) {
     const when = fieldText(i.fields['check when']) || 'not said';
     if (mark === 'no-rows') {
       out.push(promise
-        ? { ...base, what: 'promise', holder, says: `promised by ${holderWord(holder)}; keep it, then record what was done`, command: `jarl.mjs evidence ${i.id} --ran "<what was done>" --saw "<what came of it>"` }
-        : { ...base, what: 'wait', holder, checkWhen: when, says: `waits on ${holderWord(holder)}, check when ${when}; when it comes, record it`, command: `jarl.mjs evidence ${i.id} --ran "<how it was checked>" --saw "<what came>"` });
+        ? { ...base, what: 'promise', holder, says: `promised by ${holderWord(holder)}; keep it, then record what was done`, command: evidence(i.id) }
+        : { ...base, what: 'wait', holder, checkWhen: when, says: `waits on ${holderWord(holder)}, check when ${when}; when it comes, record it`, command: evidence(i.id) });
       continue;
     }
     const done = promise ? 'kept' : 'it came';
-    if (mark === 'rows-no-verdict' || mark === 'approved-not-fresh') out.push({ ...base, what: 'review', holder, says: `${done}, proof recorded, no verdict; review it`, command: `jarl.mjs review ${i.id} ${verdict}` });
-    else if (mark === 'changes-requested') out.push({ ...base, what: 'changes', holder, says: `${done}, changes asked by its reviewer; answer them and ask for a new verdict`, command: `jarl.mjs review ${i.id} ${verdict}` });
-    else out.push({ ...base, what: 'close', holder, says: `${done}, approved; close it`, command: `jarl.mjs set ${i.id} ${closeStatus} "<why>"` });
+    if (mark === 'rows-no-verdict' || mark === 'approved-not-fresh') out.push({ ...base, what: 'review', holder, says: `${done}, proof recorded, no verdict; review it`, command: verdict(i.id) });
+    else if (mark === 'changes-requested') out.push({ ...base, what: 'changes', holder, says: `${done}, changes asked by its reviewer; answer them and ask for a new verdict`, command: verdict(i.id) });
+    else out.push({ ...base, what: 'close', holder, says: `${done}, approved; close it`, command: jarlLine('set', i.id, closeStatus, '<text>') });
   }
   return out;
 }
@@ -224,15 +225,15 @@ function ownerLineRows(ctx) {
     for (const s of states.filter((x) => !x.tick)) {
       const line = { ...base, line: s.n };
       if (s.off) {
-        out.push({ ...line, holder: JARL_HOLDER, says: `acceptance line ${s.n} is marked as the owner's, and ${s.why}; rewrite it without the mark`, command: `jarl.mjs body ${id} --acceptance "<line>"... (every line of the section)` });
+        out.push({ ...line, holder: JARL_HOLDER, says: `acceptance line ${s.n} is marked as the owner's, and ${s.why}; rewrite it without the mark`, command: jarlLine('field', id, 'Acceptance', '<the-whole-section>') });
       } else if (!s.material || !s.check || !s.what) {
-        out.push({ ...line, holder: JARL_HOLDER, says: `acceptance line ${s.n} is marked as the owner's and does not name its material and what to check; rewrite it`, command: `jarl.mjs body ${id} --acceptance "<line>"... (every line of the section)` });
+        out.push({ ...line, holder: JARL_HOLDER, says: `acceptance line ${s.n} is marked as the owner's and does not name its material and what to check; rewrite it`, command: jarlLine('field', id, 'Acceptance', '<the-whole-section>') });
       } else if (!s.ready) {
         // Its material is produced in the lease, so the line is on whoever holds the lease's rows: the coordinator of the
         // issue's slice, the jarl with none.
-        out.push({ ...line, holder: sliceHolder(ctx.loop, i), says: `acceptance line ${s.n} is the owner's to tick once its material is there (${s.material}); ${s.why}`, command: `jarl.mjs evidence ${id} --ran "<command>" --saw "<what it printed>"` });
+        out.push({ ...line, holder: sliceHolder(ctx.loop, i), says: `acceptance line ${s.n} is the owner's to tick once its material is there (${s.material}); ${s.why}`, command: jarlLine('evidence', id, '--ran', '<command>', '--saw', '<what-it-printed>') });
       } else {
-        out.push({ ...line, holder: OWNER_HOLDER, material: s.material, check: s.check, says: `acceptance line ${s.n} is yours to tick: review ${s.material}${s.at ? ` (in ${s.at})` : ''} and check ${s.check}`, command: `jarl.mjs tick ${id} ${s.n} --by owner` });
+        out.push({ ...line, holder: OWNER_HOLDER, material: s.material, check: s.check, says: `acceptance line ${s.n} is yours to tick: review ${s.material}${s.at ? ` (in ${s.at})` : ''} and check ${s.check}`, command: jarlLine('tick', id, s.n, '--by', 'owner') });
       }
     }
   }
@@ -245,20 +246,20 @@ function questionRows(ctx) {
     const ref = `a-${a.id}`;
     // An escalation goes up from a coordinator and is the jarl's: it names its slice or its issue.
     if (a.kind === 'escalation') return { what: 'escalation', ask: a.id, kind: a.kind, title: a.question, holder: JARL_HOLDER, ...(a.slice ? { slice: a.slice } : {}),
-      says: `escalation${a.slice ? ` from slice:${a.slice}` : ''}${a.issue ? ` on issue ${a.issue}` : ''}`, command: `jarl.mjs answer ${ref} "<answer>" --by jarl` };
+      says: `escalation${a.slice ? ` from slice:${a.slice}` : ''}${a.issue ? ` on issue ${a.issue}` : ''}`, command: jarlLine('answer', ref, '<text>', '--by', 'jarl') };
     // A proposed rule is on the one it was proposed to, and so is a rule of the loop offered for promotion at its close.
     if (a.kind === 'rule') {
       const holder = a.to === OWNER_HOLDER ? OWNER_HOLDER : JARL_HOLDER;
       return a.ruling
-        ? { what: 'promotion', ask: a.id, title: a.question, holder, ruling: a.ruling, says: `rule ${a.ruling} offered for promotion`, command: `jarl.mjs answer ${ref} --option ${(a.options || []).map((o) => o.label).join('|')} --by ${holder}` }
-        : { what: 'rule', ask: a.id, title: a.question, holder, says: `rule proposed${a.appliesTo ? ` for ${a.appliesTo}` : ''}`, command: `jarl.mjs answer ${ref} "yes" --by ${holder} (or "reject")` };
+        ? { what: 'promotion', ask: a.id, title: a.question, holder, ruling: a.ruling, says: `rule ${a.ruling} offered for promotion`, command: jarlLine('answer', ref, '--option', (a.options || []).map((o) => o.label).join('|'), '--by', holder) }
+        : { what: 'rule', ask: a.id, title: a.question, holder, says: `rule proposed${a.appliesTo ? ` for ${a.appliesTo}` : ''}`, command: `${jarlLine('answer', ref, 'yes', '--by', holder)} (or "reject")` };
     }
-    if (a.kind === 'ratify') return { what: 'ratify', ask: a.id, title: a.question, holder: OWNER_HOLDER, says: `to ratify${a.issue ? ` (issue ${a.issue})` : ''}`, command: `jarl.mjs answer ${ref} "yes" --by owner (or "reject")` };
+    if (a.kind === 'ratify') return { what: 'ratify', ask: a.id, title: a.question, holder: OWNER_HOLDER, says: `to ratify${a.issue ? ` (issue ${a.issue})` : ''}`, command: `${jarlLine('answer', ref, 'yes', '--by', 'owner')} (or "reject")` };
     // A question that asks for a fresh review holds the proofs it names, as far as they still await one.
     const keys = new Set(reviewAskKeys(ctx.loop, a.question));
     const reviewing = ctx.loop.issues.filter((i) => ctx.onOwner.has(i.id) && keys.has(idKey(i.id))).map((i) => i.id);
     return { what: 'question', ask: a.id, kind: a.kind || 'stuck', title: a.question, holder: OWNER_HOLDER, ...(reviewing.length ? { reviewing } : {}),
-      says: `question (${a.kind || 'stuck'})${a.issue ? ` on issue ${a.issue}` : ''}${reviewing.length ? `, the fresh review of ${reviewing.join(', ')} waits on it` : keys.size ? ', no issue it names awaits a review now' : ''}`, command: `jarl.mjs answer ${ref} "<answer>"` };
+      says: `question (${a.kind || 'stuck'})${a.issue ? ` on issue ${a.issue}` : ''}${reviewing.length ? `, the fresh review of ${reviewing.join(', ')} waits on it` : keys.size ? ', no issue it names awaits a review now' : ''}`, command: jarlLine('answer', ref, '<text>', '--by', 'owner') };
   });
 }
 
@@ -274,7 +275,7 @@ function rulingRows(ctx) {
     if (live || named.some((i) => !i.missing && closedOn(loop, i, d.slug))) continue;
     out.push({ what: 'ruling', ruling: d.slug, title: d.slug, holder: JARL_HOLDER,
       says: `ruling in force; the work it settles has no live issue: ${named.map((i) => (i.missing ? `${i.id} is not in the loop` : `${i.id} is ${i.status}`)).join(', ')}; file the work and settle it`,
-      command: `jarl.mjs new "<title>", then jarl.mjs decide <slug> "<ruling>" --supersedes ${d.slug} --settles <id>` });
+      command: `${jarlLine('new', '<title>')}, then ${jarlLine('decide', '<slug>', '<text>', '--by', 'jarl', '--supersedes', d.slug, '--settles', '<id>')}` });
   }
   return out;
 }
@@ -301,7 +302,7 @@ function leaseConflictRows(ctx) {
     const lease = (e) => `${e.writer}${e.lease?.worker ? ` (worker ${e.lease.worker}${e.lease.branch ? `, ${e.lease.branch}` : ''})` : ''} at ${e.at}`;
     out.push({ what: 'conflict', id: i.id, title: i.title, priority: i.priority, holder: JARL_HOLDER,
       says: `leased twice with no move out between: by ${lease(c.first)} and by ${lease(c.second)}, in two copies of the loop that each leased it before either saw the other; settle which lease stands`,
-      command: `jarl.mjs set ${i.id} ${leaseStatus} --handover --branch <branch> --worker <name> "<which lease stands>"` });
+      command: jarlLine('set', i.id, leaseStatus, '--handover', '--branch', '<branch>', '--worker', '<name>', '<why-the-worker-changed>') });
   }
   return out;
 }
@@ -476,7 +477,7 @@ export function cmdNextAs(root, flags = {}) {
   const coordinator = holder !== JARL_HOLDER && holder !== OWNER_HOLDER && loop.coordinators.some((c) => fieldText(c).toLowerCase() === holder.toLowerCase());
   const sliced = loop.issues.some((i) => sliceOf(i) !== null);
   const ownSlice = loop.issues.some((i) => sameSlice(sliceOf(i), holder));
-  const note = !coordinator || ownSlice ? null : sliced ? `no issue carries slice:${holder}, so nothing of a slice is on ${holder}: the issues in no slice are the jarl's (jarl.mjs next --as jarl), and jarl.mjs tag <ids> +slice:${holder} gives ${holder} its slice` : 'with no slice in the loop, what a coordinator holds is the jarl\'s: jarl.mjs next --as jarl';
+  const note = !coordinator || ownSlice ? null : sliced ? `no issue carries slice:${holder}, so nothing of a slice is on ${holder}: the issues in no slice are the jarl's (${jarlLine('next', '--as', 'jarl')}), and ${jarlLine('field', '<ids>', 'Tags', '--add', `slice:${holder}`)} gives ${holder} its slice` : `with no slice in the loop, what a coordinator holds is the jarl's: ${jarlLine('next', '--as', 'jarl')}`;
   // A person is named as the record writes the name, whatever case the asker typed.
   const spelled = mine.length ? mine[0].holder : waits.length ? waits[0].on : holder;
   return {
@@ -493,7 +494,7 @@ export function renderNextAs(o) {
   if (!o.total) out.push(`- (nothing is on ${holderWord(o.as)})`);
   out.push(...o.rows.map(line));
   const rest = [o.more && `${o.more} more`, !o.waiting.length && o.waitingTotal && `${o.waitingTotal} issue(s) waiting on ${holderWord(o.as)}`].filter(Boolean);
-  if (rest.length) out.push(`and ${rest.join(', and ')}: jarl.mjs next --as ${shellWord(o.as)} --all`);
+  if (rest.length) out.push(`and ${rest.join(', and ')}: ${jarlLine('next', '--as', o.as, '--all')}`);
   if (o.waiting.length) {
     out.push('', `Waiting on ${holderWord(o.as)} (${o.waiting.length})`);
     out.push(...o.waiting.map((w) => `- ${w.id} ${short(w.title)}: waits on ${holderWord(w.on)} via ${w.via.join(', ')}`));

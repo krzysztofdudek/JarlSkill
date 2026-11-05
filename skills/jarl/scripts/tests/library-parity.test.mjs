@@ -27,23 +27,25 @@ export const COMMAND_LINE_ONLY = [
   { item: 'Caller of a status or field move', cases: ['status as cli'], cli: 'asks as `cli`, so a status the profile marks `set-by: record` is refused', library: 'asks as `record` unless `caller: cli` is passed', why: 'a status the profile gives to the record\'s own tool is moved by the composer that runs the loop, not by a person at the command line' },
   { item: 'Worktree of a lease', cases: ['worktree as cli'], cli: 'refuses a `--worktree` that exists and is not a worktree of the lease\'s repository, or has another branch checked out', library: 'accepts it and stores nothing', why: 'the worktree of a lease is found through its branch; a composer that tracks worktrees checks them itself' },
   { item: 'Base of a done check', cases: [], cli: 'checks a done against the branch checked out in the merge\'s repository, and takes no base', library: 'takes `base`, the branch or ref a merge landed in, for a composer that lands into a branch not checked out', why: 'a person\'s merge lands in the checked-out branch; a composer names its own target, and no command-line call can name one' },
-  { item: 'Who answered', cases: ['answer with a name'], cli: 'records `--by` (default: owner)', library: 'records the owner; the contract\'s answer takes no name', why: 'a composer cannot name the ratifier through the library, because the answer keeps the arguments the contract names' },
+  { item: 'Who answered', cases: ['answer with a name'], cli: 'records `--by`, which it requires', library: 'records the owner; the contract\'s answer takes no name', why: 'a composer cannot name the ratifier through the library, because the answer keeps the arguments the contract names' },
+  { item: 'Who ruled', cases: ['decide by the jarl'], cli: 'records `--by`, which it requires', library: 'records the coordinator unless `by` names another', why: 'at the command line the author of a ruling is said, never assumed; a composer calls as the coordinator of its loop, which the contract\'s decide records when it names nobody' },
   { item: 'Ratified area rulings', cases: [], cli: 'writes the type\'s decision log and the rule\'s log through the Yggdrasil edge', library: 'returns the entries and writes neither', why: 'the Yggdrasil write is the only call from Jarl to another family tool; a composer writes into its own graph; no twin case exists, because it needs a loop with an area ruling and a graph' },
   { item: 'Replies and notes', cases: [], cli: 'prints notes and replies that depend on the caller: the goal that names no check (`init`), the tier of a new issue (`new`), the lease notes (`set`), the proof and fresh-review notes (`merged`), the model and proof notes and the next step (`review`), the owner\'s word with no question (`decide`), and a long free-text note (`evidence`)', library: 'writes the same files and prints none of them', why: 'the notes are for a person at the command line; the twin cases compare files and log lines, and the notes are neither' },
-  { item: 'Lists of ids', cases: [], cli: 'takes a list of ids (`12,13`, `203-206`) for `files`, `repo`, `after`, `body`, `round` and `source`, and checks every id before it writes one', library: 'takes one id for each of those operations', why: 'a person at the command line writes a package of issues in one call; a composer calls the operation for each id it holds and decides what a refusal on one of them means; no twin case exists, because the twin loops run one id' },
-  { item: 'The verbs `retract` and `field`', cases: [], cli: 'retracts an approve or an evidence row with `retract`, and writes Resources or a profile field with `field`, emptied with `--clear`', library: 'retracts with `review` (verdict `retract`) and `addEvidence` (`retract`); `setField` writes a field the profile declares, and `setStatus` with the name `resources` writes Resources; both empty a field with an empty value', why: 'the verbs are the command line\'s grammar over the operations; the library keeps the operations its contract names' },
+  { item: 'Lists of ids', cases: [], cli: 'takes a list of ids (`12,13`, `203-206`) for `field` and `round`, and checks every id before it writes one', library: '`setBody`, `setFiles`, `setRepo`, `setAfter` and `setSource` take one id each', why: 'a person at the command line writes a package of issues in one call; a composer calls the operation for each id it holds and decides what a refusal on one of them means; no twin case exists, because the twin loops run one id' },
+  { item: 'The verbs `retract` and `field`', cases: [], cli: 'retracts an approve or an evidence row with `retract`, and writes every part of the description with `field`: a value, `--add`, `--remove` or `--clear`', library: 'retracts with `review` (verdict `retract`) and `addEvidence` (`retract`); `setBody`, `setTags`, `setPriority`, `setFiles`, `setRepo`, `setAfter`, `setSource` and `setField` each write their part whole, and `setStatus` with the name `resources` writes Resources; a field is emptied with an empty value', why: 'the verbs are the command line\'s grammar over the operations; the library keeps the operations its contract names' },
+  { item: '`base`', cases: [], cli: 'changes the base branch a declared repository is held against', library: 'no function', why: 'a repository is declared by Jarl when an issue first names it; a change of its base is a decision of the person who runs the loop' },
   { item: '`close`', cases: [], cli: 'ends the loop: removes it, or keeps it as a permanent record', library: 'no function', why: 'ending a loop belongs to whoever runs it, and a profile may hand that to a composer' },
   { item: '`archive`', cases: [], cli: 'moves the loop under an archive directory and leaves the open issues named', library: 'no function', why: 'ending a loop belongs to whoever runs it, and a profile may hand that to a composer' },
   { item: '`mode`', cases: [], cli: 'makes the loop permanent, a mode of git', library: 'no function', why: 'the mode is written at init, and a change of it is a decision of the person who commits the record' },
   { item: '`import`', cases: [], cli: 'files issues from a Markdown source', library: 'no function; newIssue files one issue', why: 'filing from a source is the composer\'s choice' },
   { item: '`next`', cases: [], cli: 'lists the open issues that can start now, and with `--as` what is on one holder (which `status --as` and `resume --as` end with)', library: 'no function; statusData carries the counts, and neither statusData nor resumeData takes `as`', why: 'ordering work is a composer\'s planner; Jarl offers what can run now, and says who moves next' },
   { item: '`tick`', cases: [], cli: 'records the owner\'s tick of an acceptance line only he ticks', library: 'no function', why: 'an owner line needs record format 3, which a composer\'s loop keeps off; the owner ticks at the command line or through the tools' },
-  { item: '`queue`', cases: [], cli: 'lists the merge queue', library: 'no function', why: 'a listing for a person; a composer decides what lands' },
   { item: '`report`', cases: [], cli: 'writes the loop\'s text report with its metrics', library: 'no function', why: 'a summary for a person; a composer reports from its own record' },
   { item: '`scope`', cases: [], cli: 'reads a worker branch\'s diff against the files its issues declare', library: 'no function', why: 'it reads git; a composer\'s gate decides what lands' },
-  { item: 'Typing a command under another name', cases: [], cli: 'prints a note on stderr that gives the command\'s own name', library: 'no command names, only functions called by name', why: 'a note for a person typing at the command line; the tools and composers call a command by its own name' },
+  { item: 'A command or a flag the surface does not have', cases: [], cli: 'refuses it with its reason and, on the last line, the call doing what was asked', library: 'no command names, only functions called by name', why: 'a person or an agent guesses a form; a composer calls a function by its own name' },
+  { item: 'The ready line of a refusal', cases: [], cli: 'ends every refusal with the form of the command that does what was meant, a `<placeholder>` where each value only the caller knows goes, refused when pasted as printed (a step to take first is a command on its own line); it never names a value Jarl chose, nor an act that is someone else\'s', library: 'refuses with the same reason, and the last line of its message writes the fix out in words: the flag or the argument to give, with the same placeholders', why: 'a composer makes no command-line call whose form could be printed, and acts on the reason in its own code' },
+  { item: 'CI of the tips', cases: [], cli: '`resume --gh` asks gh for the CI of each pushed tip', library: '`resumeData` asks with `ci: true`, the key its contract has always named, or `gh: true`, the same', why: 'the command line names the flag after the program it runs, and `--ci` is merged\'s CI state; the contract keeps its key; no twin case exists, because gh is not run in the twin loops' },
   { item: '`branches`', cases: [], cli: 'lists each branch with the issues it carries and its state', library: 'no function', why: 'it reads git in the repositories the issues name; a view for a person' },
-  { item: '`tips`', cases: [], cli: 'lists the tip of each worker branch in flight', library: 'no function', why: 'it reads git in every repository the issues name; a view for a person' },
   { item: '`verify`', cases: [], cli: 'checks the record with its own readers in strict mode', library: 'no function; the readers are the library\'s', why: 'a consistency read for a person; a composer uses the readers' },
   { item: '`models`', cases: [], cli: 'shows, per model, what the record holds as worker and as reviewer', library: 'no function', why: 'a reading of the record for choosing models; a view for a person' },
   { item: '`goal`', cases: [], cli: 'reads or sets the goal line', library: 'no function; initLoop writes the goal', why: 'the goal is written at init; a change of it is a decision of the person who runs the loop' },
@@ -129,6 +131,13 @@ function recordOwned(root) {
   R.initLoop(root, 'g', { profile: file });
   R.newIssue(root, 't');
 }
+// A loop whose profile declares a field of its own, Area, on its one issue.
+function fielded(root) {
+  const file = join(root, 'profile.json');
+  writeFileSync(file, JSON.stringify({ 'jarl-profile': R.PROFILE_VERSION, name: 'p', statuses: { open: ['dispatchable'], 'in-progress': ['holds-claim'], done: ['settles-dependents', 'terminal', 'closes-record'] }, fields: { Area: {} } }));
+  R.initLoop(root, 'g', { profile: file });
+  R.newIssue(root, 't');
+}
 // A proven issue on a branch that is merged into the base, with a worktree of that branch beside the loop.
 function merged(root) {
   proven(root);
@@ -147,14 +156,14 @@ const CASES = [
   { op: 'setStatus', name: 'set done', pre: proven, lib: (root) => R.setStatus(root, '1', 'done'), cli: ['set', '1', 'done'] },
   { op: 'setStatus', name: 'status as cli', pre: recordOwned, lib: (root) => R.setStatus(root, '1', 'doing'), cli: ['set', '1', 'doing'], refusal: { lib: false, cli: true } },
   { op: 'setStatus', name: 'worktree as cli', pre: base, lib: (root) => R.setStatus(root, '1', 'in-progress', undefined, { branch: 'work/first', worker: 'w1', worktree: join(root, '.jarl') }), cli: (root) => ['set', '1', 'in-progress', '--branch', 'work/first', '--worker', 'w1', '--worktree', join(root, '.jarl')], refusal: { lib: false, cli: true } },
-  { op: 'setField', name: 'set field', pre: base, lib: (root) => R.setField(root, '1', 'Tier', 'strong'), cli: ['set', '1', 'tier', 'strong'] },
-  { op: 'setBody', name: 'body', pre: base, lib: (root) => R.setBody(root, '1', { what: 'the what' }), cli: ['body', '1', '--what', 'the what'] },
-  { op: 'setTags', name: 'tag', pre: base, lib: (root) => R.setTags(root, '1', ['+x']), cli: ['tag', '1', '+x'] },
-  { op: 'setPriority', name: 'prio', pre: base, lib: (root) => R.setPriority(root, '1', '1'), cli: ['prio', '1', '1'] },
-  { op: 'setFiles', name: 'files', pre: base, lib: (root) => R.setFiles(root, '1', 'a.mjs'), cli: ['files', '1', 'a.mjs'] },
-  { op: 'setRepo', name: 'repo', pre: base, lib: (root) => R.setRepo(root, '1', '.'), cli: ['repo', '1', '.'] },
-  { op: 'setAfter', name: 'after', pre: base, lib: (root) => R.setAfter(root, '1', '2'), cli: ['after', '1', '2'] },
-  { op: 'setSource', name: 'source', pre: base, lib: (root) => R.setSource(root, '1', 'https://example.test/a'), cli: ['source', '1', 'https://example.test/a'] },
+  { op: 'setField', name: 'field Area', pre: fielded, lib: (root) => R.setField(root, '1', 'Area', 'core'), cli: ['field', '1', 'Area', 'core'] },
+  { op: 'setBody', name: 'field What', pre: base, lib: (root) => R.setBody(root, '1', { what: 'the what' }), cli: ['field', '1', 'What', 'the what'] },
+  { op: 'setTags', name: 'field Tags --add', pre: base, lib: (root) => R.setTags(root, '1', ['+x']), cli: ['field', '1', 'Tags', 'x', '--add'] },
+  { op: 'setPriority', name: 'field Priority', pre: base, lib: (root) => R.setPriority(root, '1', '1'), cli: ['field', '1', 'Priority', '1'] },
+  { op: 'setFiles', name: 'field Files', pre: base, lib: (root) => R.setFiles(root, '1', 'a.mjs'), cli: ['field', '1', 'Files', 'a.mjs'] },
+  { op: 'setRepo', name: 'field Repo', pre: base, lib: (root) => R.setRepo(root, '1', '.'), cli: ['field', '1', 'Repo', '.'] },
+  { op: 'setAfter', name: 'field After', pre: base, lib: (root) => R.setAfter(root, '1', '2'), cli: ['field', '1', 'After', '2'] },
+  { op: 'setSource', name: 'field Source', pre: base, lib: (root) => R.setSource(root, '1', 'https://example.test/a'), cli: ['field', '1', 'Source', 'https://example.test/a'] },
   { op: 'addEvidence', name: 'evidence text', pre: base, lib: (root) => R.addEvidence(root, '1', 'a note'), cli: ['evidence', '1', 'a note'] },
   { op: 'addEvidence', name: 'evidence rows', pre: base, lib: (root) => R.addEvidence(root, '1', undefined, { ran: 'npm test', saw: 'ok' }), cli: ['evidence', '1', '--ran', 'npm test', '--saw', 'ok'] },
   { op: 'review', name: 'review', pre: base, lib: (root) => R.review(root, '1', 'approve', FINDINGS, { by: 'reviewer' }), cli: ['review', '1', 'approve', '--by', 'reviewer', FINDINGS] },
@@ -162,9 +171,10 @@ const CASES = [
   { op: 'recordMerged', name: 'merged with CI', pre: proven, lib: (root) => R.recordMerged(root, '1', { sha: 'abc1234', ci: 'green' }), cli: ['merged', '1', '--sha', 'abc1234', '--ci', 'green'] },
   { op: 'recordMerged', name: 'merge cleanup', git: true, pre: merged, lib: (root) => R.recordMerged(root, '1', { sha: head(root), ci: 'green' }), cli: (root) => ['merged', '1', '--sha', head(root), '--ci', 'green'] },
   { op: 'addRound', name: 'round', pre: base, lib: (root) => R.addRound(root, '1', 'failed once'), cli: ['round', '1', 'failed once'] },
-  { op: 'decide', name: 'decide', pre: base, lib: (root) => R.decide(root, 'one', 'first ruling'), cli: ['decide', 'one', 'first ruling'] },
+  { op: 'decide', name: 'decide', pre: base, lib: (root) => R.decide(root, 'one', 'first ruling'), cli: ['decide', 'one', 'first ruling', '--by', 'coordinator'] },
+  { op: 'decide', name: 'decide by the jarl', pre: base, lib: (root) => R.decide(root, 'one', 'first ruling'), cli: ['decide', 'one', 'first ruling', '--by', 'jarl'] },
   { op: 'ask', name: 'ask', pre: base, spell: true, lib: (root) => R.ask(root, 'which?', { issue: '1' }), cli: ['ask', 'which?', '--issue', '1'] },
-  { op: 'answer', name: 'answer', pre: (root) => { base(root); R.ask(root, 'which?', { issue: '1' }); }, lib: (root) => R.answer(root, 'a-001', 'this'), cli: ['answer', 'a-001', 'this'] },
+  { op: 'answer', name: 'answer', pre: (root) => { base(root); R.ask(root, 'which?', { issue: '1' }); }, lib: (root) => R.answer(root, 'a-001', 'this'), cli: ['answer', 'a-001', 'this', '--by', 'owner'] },
   { op: 'answer', name: 'answer with a name', pre: (root) => { base(root); R.ask(root, 'which?', { issue: '1' }); }, lib: (root) => R.answer(root, 'a-001', 'this'), cli: ['answer', 'a-001', 'this', '--by', 'Composer'] },
   { op: 'appendLog', name: 'log', pre: base, lib: (root) => R.appendLog(root, 'an event'), cli: ['log', 'an event'] },
 ];

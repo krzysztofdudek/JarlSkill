@@ -1,7 +1,7 @@
 // Resume: the state a session picks the loop up from, assembled live; the handoff file and the report.
 
 import { existsSync } from 'node:fs';
-import { KEPT_KINDS, fieldText, need } from './base.mjs';
+import { KEPT_KINDS, fieldText, hole, jarlLine, need } from './base.mjs';
 import { readText } from './files.mjs';
 import { DEFAULT_PROFILE, loadProfile } from './profile.mjs';
 import { mergedOf, sharedMark } from './issues.mjs';
@@ -28,17 +28,17 @@ const short = (t, n = RESUME_TITLE) => (t.length > n ? `${t.slice(0, n - 1)}…`
 function countFlag(flags, name, dflt) {
   if (flags[name] === undefined) return dflt;
   const n = Number(flags[name]);
-  need(Number.isInteger(n) && n >= 0, `--${name} takes a whole number, 0 or more (got "${flags[name]}")`);
+  need(Number.isInteger(n) && n >= 0, `--${name} takes a whole number, 0 or more (got "${flags[name]}")`, () => ({ flag: `--${name}`, value: hole('<whole-number>') }));
   return n;
 }
 
-// resume [--log n] [--ready n] [--ci] — read-only, no lock: the goal and where the loop stands (status), the
+// resume [--log n] [--ready n] [--gh] — read-only, no lock: the goal and where the loop stands (status), the
 // rulings in force, in flight with leases, waiting on After, the questions and the ratify items, the next ready
 // issues and the merge queue, the merges whose CI is pending or red, the tips of every repository the loop's
 // issues name, the loop files git has not committed, and the last n log lines. Nothing goes to the network
-// unless --ci asks gh for the CI of each pushed tip.
+// unless --gh asks gh for the CI of each pushed tip.
 export function cmdResume(root, flags = {}) {
-  need(existsSync(jarlDir(root)), `no loop here: ${jarlDir(root)} does not exist — open one with jarl.mjs init "<goal>", or pass --root <the directory holding .jarl/>`);
+  need(existsSync(jarlDir(root)), `no loop here: ${jarlDir(root)} does not exist — open one with ${jarlLine('init', '<goal>')}, or pass --root "<loop-root>", the directory that holds .jarl/`, () => (['jarl.mjs', 'init', '<goal>']));
   const logN = countFlag(flags, 'log', RESUME_LOG_LINES);
   const readyN = countFlag(flags, 'ready', RESUME_READY);
   const loop = readLoop(jarlDir(root));
@@ -88,13 +88,15 @@ export function cmdResume(root, flags = {}) {
   const merged = issues.filter((i) => status.ciPending.includes(i.id) || status.ciRed.includes(i.id)).map((i) => ({ id: i.id, title: i.title, ...mergedOf(i) }));
   const logLines = loop.events;
   const kept = handoffAge(root, status.lastActivity);
+  // The CI of the tips is asked of gh by the command line's --gh and by the library's ci, the key resumeData has kept
+  // since its first contract; gh is taken there too, with the same meaning.
   return {
     goal: status.goal, opened: status.opened, lastActivity: status.lastActivity, archived: status.archived, status, ...(slice !== null ? { slice } : {}),
     rulings, rules, inFlight, waiting,
     questions: asks.filter((a) => a.kind !== 'ratify' && a.kind !== 'escalation' && a.kind !== 'rule'), escalations: asks.filter((a) => a.kind === 'escalation'), proposed: asks.filter((a) => a.kind === 'rule'), ratify: asks.filter((a) => a.kind === 'ratify'),
     held, kept: keptRows, next: ready.slice(0, readyN).map((r) => ({ id: r.id, title: r.title, priority: r.priority, ...(r.noAcceptance ? { noAcceptance: true } : {}), ...(r.model ? { model: r.model } : {}), ...declared(byId.get(r.id)) })), readyTotal: scheduled ? null : ready.length,
     ...(scheduled ? { scheduler: profile.scheduler } : {}),
-    queue: cmdQueue(root), merged, tips: cmdTips(root, { ci: flags.ci === true }),
+    queue: cmdQueue(root, { repo: flags.repo, base: flags.base }), merged, tips: cmdTips(root, { ci: flags.gh === true || flags.ci === true, repo: flags.repo }),
     uncommitted: uncommittedLoopFiles(root),
     ...(status.disagreements ? { disagreements: status.disagreements } : {}),
     ...(status.headerRead ? { headerRead: status.headerRead } : {}),
@@ -117,15 +119,15 @@ export function renderResume(o, profile = DEFAULT_PROFILE, note = null, asked = 
     ...(note ? [note] : []),
     '',
   ];
-  // The tips and the merge queue as their own views print them; the merges still waiting on CI have a section of their own here.
-  const tips = o.tips.repos.length ? renderTips({ repos: o.tips.repos.map((r) => ({ ...r, merged: [] })) }).split('\n') : [];
+  // The tips, the recent merges of each repository with their CI among them, and the merge queue in its batches.
+  const tips = o.tips.repos.length ? renderTips({ repos: o.tips.repos }).split('\n') : [];
   const waiting = o.queue.repos.filter((r) => r.rows.length);
   const queue = waiting.length ? renderQueue({ repos: waiting }).split('\n') : [];
   const files = o.uncommitted || [];
   return [
     ...head,
     // The rulings are counted, not printed: a reader is given the rules that match it, and decisions --live lists them all.
-    `${o.rulings.length} ruling(s) in force: jarl.mjs decisions --live${asked ? '' : '; resume --as <who> adds the rules that match whoever asks'}`,
+    `${o.rulings.length} ruling(s) in force: ${jarlLine('decisions', '--live')}${asked ? '' : '; resume --as <who> adds the rules that match whoever asks'}`,
     '',
     ...(asked ? [] : sec(`Rules for the whole loop (${o.rules.length})`, o.rules.flatMap(ruleLines), '- (none)')),
     ...sec(`The files disagree with the log (${(st.disagreements || []).length})`, (st.disagreements || []).map(disagreementText)),
@@ -145,7 +147,7 @@ export function renderResume(o, profile = DEFAULT_PROFILE, note = null, asked = 
     ]),
     ...sec(`Merged, CI pending or red (${o.merged.length})`, o.merged.map((m) => `- ${m.id} ${m.sha}${m.repo ? ` in ${m.repo}` : ''} · CI ${m.ci}`)),
     ...sec(`Merged, waiting for its check (${(o.status.checkWaiting || []).length})`, (o.status.checkWaiting || []).map((w) => `- ${checkWaitingText(w)}`)),
-    ...sec(`Tips${o.tips.ci ? '' : ' (CI not asked — --ci asks gh)'}`, tips),
+    ...sec(`Tips${o.tips.ci ? '' : ' (CI not asked — --gh asks gh)'}`, tips),
     ...(files.length ? sec(`Loop files not committed (${files.length}) — commit .jarl/`, [...files.slice(0, 20).map((f) => `- ${f}`), ...(files.length > 20 ? [`- … ${files.length - 20} more`] : [])]) : []),
     ...(o.log ? sec(`Last ${o.log.length} log line(s)`, o.log.map((l) => `- ${l}`), '- (empty log)') : []),
     ...(o.legacyHandoff ? [`(the loop holds a handoff file at .jarl/handoff.md${o.legacyHandoff.at ? `, written ${o.legacyHandoff.at}` : ''} — not the state; handoff read prints it)`] : []),
@@ -167,7 +169,7 @@ export function cmdHandoffRead(root, flags = {}) {
 
 // handoff write — the state is assembled live by resume, so there is nothing to write. The command is accepted (with
 // its flags) so a script that calls it does not fail; it writes nothing — no file, no log line — and says so; exit 0.
-export const HANDOFF_TEXT = 'handoff writes nothing. The state a session resumes from is assembled live — run jarl.mjs resume. Put intent where it lives: order in priorities and After (prio, after), reasons in rulings (decide) and issue bodies (body).';
+export const HANDOFF_TEXT = 'handoff writes nothing. The state a session resumes from is assembled live — run resume. Put intent where it lives: order in the Priority and After fields, reasons in rulings (decide) and in the issues\' sections (field).';
 export function cmdHandoffWrite() {
   return { retired: true, wrote: null, note: HANDOFF_TEXT };
 }

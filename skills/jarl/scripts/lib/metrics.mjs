@@ -1,6 +1,6 @@
 // The check a loop lands on, and the loop's metrics (report --json).
 
-import { fieldText } from './base.mjs';
+import { fieldText, jarlLine } from './base.mjs';
 import { jarlDir } from './where.mjs';
 import { cmpId, idsNamed } from './ids.mjs';
 import { goalLines, readGoal } from './journal.mjs';
@@ -70,9 +70,9 @@ function carriesDeclared(line, commands) {
   const wanted = commands.map(norm);
   return line.check.split(' ; ').some((part) => wanted.includes(part.trim()));
 }
-export const TESTIMONY_NOTE = 'no merge carries the declared check — this loop lands on testimony alone: a review is recorded as testimony, not proof (a merge carries the check when its --ran text equals a command a Check line of the goal declares: merged <ids> --sha <sha> --ran "<check>" --saw "<summary>")';
+export const TESTIMONY_NOTE = 'no merge carries the declared check — this loop lands on testimony alone: a review is recorded as testimony, not proof (a merge carries the check when its --ran text equals a command a Check line of the goal declares: merged <ids> --sha <sha> --ran "<command>" --saw "<what-it-printed>")';
 // The mark for a goal that declares no Check line: no check is declared, so the merges are testimony whatever they record.
-export const TESTIMONY_NOTE_UNDECLARED = 'no check is declared — this loop lands its merges on testimony alone: a review is recorded as testimony, not proof (a Check line of the goal declares the command a merge must carry: merged <ids> --sha <sha> --ran "<check>" --saw "<summary>")';
+export const TESTIMONY_NOTE_UNDECLARED = 'no check is declared — this loop lands its merges on testimony alone: a review is recorded as testimony, not proof (a Check line of the goal declares the command a merge must carry: merged <ids> --sha <sha> --ran "<command>" --saw "<what-it-printed>")';
 // The testimony mark a goal gets: the undeclared one when the goal names no Check line at all, else the declared one.
 const testimonyNote = (c) => (c.declared ? TESTIMONY_NOTE : TESTIMONY_NOTE_UNDECLARED);
 // The landing banner: the testimony mark while no merge carries the declared check, then one line per repository, the count
@@ -298,5 +298,5 @@ export function checkWaiting(loop, issues = loop.issues) {
 }
 // What status, resume and show say of one such merge, with the command that records the check.
 export function checkWaitingText(w) {
-  return `merged, waiting for its check: ${w.id} (${w.sha}${w.repo ? ` in ${w.repo}` : ''}) — the merge is not finished until its check is recorded: jarl.mjs merged ${w.id} --sha ${w.sha}${w.repo ? ` --repo ${w.repo}` : ''} --ran "<the check command>" --saw "<what it printed>" (or --red <id> when it landed on a red check outside the branch)`;
+  return `merged, waiting for its check: ${w.id} (${w.sha}${w.repo ? ` in ${w.repo}` : ''}) — the merge is not finished until its check is recorded: ${jarlLine('merged', w.id, '--sha', w.sha, ...(w.repo ? ['--repo', w.repo] : []), '--ran', '<command>', '--saw', '<what-it-printed>')} (or --red "<id>" when it landed on a red check outside the branch)`;
 }

@@ -88,25 +88,25 @@ test('while two files carry one number, every command that addresses it is refus
     ['set', '2', 'in-progress', '--branch', 'jarl/2-x', '--worker', 'w1'],
     ['set', '2', 'dropped', 'not needed'],
     ['set', '1,2', 'deferred', 'later'],
-    ['prio', '2', '1'],
-    ['tag', '2', '+x'],
-    ['body', '2', '--why', 'because'],
-    ['files', '2', 'a.txt'],
+    ['field', '2', 'Priority', '1'],
+    ['field', '2', 'Tags', '--add', 'x'],
+    ['field', '2', 'Why', 'because'],
+    ['field', '2', 'Files', 'a.txt'],
     ['evidence', '2', 'a note'],
     ['review', '2', 'approve', '--by', 'stranger', 'read the diff and found nothing wrong'],
     ['round', '2', 'red'],
-    ['after', '1', '2'],
-    ['after', '2', '1'],
+    ['field', '1', 'After', '2'],
+    ['field', '2', 'After', '1'],
     ['new', 'third', '--tier', 'light', '--after', '2'],
     ['ask', 'which one?', '--issue', '2'],
     ['changelog', '2'],
     ['merged', '2', '--sha', 'abc1234', '--ran', 'npm test', '--saw', 'all green'],
     ['scope', '2', '--branch', 'jarl/2-x'],
     ['field', '2', 'Resources', 'db'],
-    ['source', '2', 'research/r#f1'],
-    ['repo', '2', '.'],
+    ['field', '2', 'Source', 'research/r#f1'],
+    ['field', '2', 'Repo', '.'],
     ['retract', '2', '1', '--by', 'jarl', 'the row was wrong'],
-    ['decide', 'which-one', 'the ruling text', '--settles', '2'],
+    ['decide', 'which-one', 'the ruling text', '--settles', '2', '--by', 'jarl'],
   ];
   for (const args of calls) assert.match(refuses(dir, ...args), BOTH, args.join(' '));
   assert.deepEqual(snapshot(dir), before, 'no refusal wrote a line or a file');
@@ -394,7 +394,7 @@ test('list, next and report mark both files of a shared number', () => {
 
 test('import --adopt that would write into a number two files carry is refused before it writes anything', () => {
   const a = committedLoop();
-  jarl(a.dir, 'body', '1', '--what', 'covers jarl-1-A1');
+  jarl(a.dir, 'field', '1', 'What', 'covers jarl-1-A1');
   a.g('add', '-A'); a.g('commit', '-qm', 'a names a finding');
   const b = cloneOf(a.dir);
   fileAndCommit(a, 'second on A');

@@ -33,7 +33,7 @@
 // No dependencies beyond the vendored copy, Node 22+.
 import { resolve, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { COMMAND_ALIASES, COMMAND_ARGS, COMMAND_FLAGS, INTERNAL_COMMANDS, LIST_FIELDS, flagsOf, COMMAND_SUMMARY, GLOBAL_FLAGS, MUTATING, USAGE, parseArgs, dispatch, findRoot, isEntry as isEntryOf, installVersion } from './jarl.mjs';
+import { AUTHOR_REQUIRED, COMMAND_ARGS, COMMAND_FLAGS, GONE_TEXT_NAMES, INTERNAL_COMMANDS, LIST_FIELDS, REMOVED_FLAGS, REPLACED_COMMANDS, replacedMessage, flagsOf, COMMAND_SUMMARY, GLOBAL_FLAGS, MUTATING, USAGE, parseArgs, dispatch, findRoot, isEntry as isEntryOf, installVersion } from './jarl.mjs';
 import { defineTable } from './vendor/runes/dist/cli/index.mjs';
 import {
   buildTools as generateTools, argvFor as generateArgv, commandForTool, serveStdio, InvalidParams,
@@ -55,17 +55,17 @@ export const argName = (a) => a.replace(/[?.]+$/, '');
 
 // What a command's table cannot say about its arguments, added to that tool's description.
 export const ARG_NOTES = {};
-// The list fields of a command (LIST_FIELDS in jarl.mjs), under the command a second name stands for.
-const listFieldsOf = (cmd) => LIST_FIELDS[COMMAND_ALIASES[cmd] ?? cmd] || {};
+// The list fields of a command (LIST_FIELDS in jarl.mjs).
+const listFieldsOf = (cmd) => LIST_FIELDS[cmd] || {};
 // The id-list fields of a command: its arguments that take the list grammar and are not the last words of the command
 // (the id of one issue, or the ids of several). The adapter types an argument that comes before others as one text, so
 // the tools declare each of these as a list too, and argvFor joins a list into the one comma list the command reads.
 export const listArgsOf = (cmd) => {
   const fields = listFieldsOf(cmd);
-  return (COMMAND_ARGS[COMMAND_ALIASES[cmd] ?? cmd] || []).filter((a) => !a.endsWith('...')).map((a) => a.replace(/\?$/, '')).filter((a) => Object.hasOwn(fields, a));
+  return (COMMAND_ARGS[cmd] || []).filter((a) => !a.endsWith('...')).map((a) => a.replace(/\?$/, '')).filter((a) => Object.hasOwn(fields, a));
 };
 // The commands that write one issue at a time and take the list grammar in their "id" field.
-const LIST_ID_COMMANDS = new Set(['body', 'source', 'after', 'files', 'repo', 'round']);
+const LIST_ID_COMMANDS = new Set(['round']);
 const IDS_FIELD = 'One id, or several as one comma list with ranges (12,13 or 203-206) or as a list of strings: all of them change, or none.';
 // Every other list field: one rule for all of them, listItems in jarl.mjs.
 const LIST_FIELD = 'One item, several as one comma list (a,b), or a list of strings, one item each. A list written as text (["a", "b"]), an item in quotes, or an item starting with - is refused.';
@@ -78,13 +78,9 @@ const HELP = USAGE;
 const INSTRUCTIONS = 'Every jarl command is a tool, jarl_<command>, with its arguments and flags as fields. A description is one sentence; jarl_help answers with the full usage of every command. After a compaction, or any summary of your own context, you are starting a session: run jarl_resume before your next action; a summary is not the state of the loop.';
 
 // The CLI's tables as one Runes command table. An argument written `name...` in COMMAND_ARGS takes any number of
-// words, none included (tag's +a -b, sources' findings files): `name...?` in the Runes grammar.
-// A list a command cannot run without (files' paths, source's references) keeps its field required, with one item
-// at least ("" is the one item that clears Files).
-// A name a command answers to besides its own gets a tool of its own, with the command's arguments and summary.
-const NEEDS_ITEMS = new Set(['files paths...', 'source refs...']);
+// words, none included (sources' findings files): `name...?` in the Runes grammar.
 const entry = (cmd) => ({
-  args: COMMAND_ARGS[cmd].map((a) => (a.endsWith('...') && !NEEDS_ITEMS.has(`${cmd} ${a}`) ? `${a}?` : a)),
+  args: COMMAND_ARGS[cmd].map((a) => (a.endsWith('...') ? `${a}?` : a)),
   flags: flagsOf(cmd),
   summary: COMMAND_SUMMARY[cmd],
   writes: MUTATING.has(cmd),
@@ -97,7 +93,6 @@ export const TABLE = defineTable({
   globalFlags: GLOBAL_FLAGS,
   commands: {
     ...Object.fromEntries(Object.keys(COMMAND_FLAGS).map((cmd) => [cmd, entry(cmd)])),
-    ...Object.fromEntries(Object.entries(COMMAND_ALIASES).map(([name, cmd]) => [name, entry(cmd)])),
   },
 });
 
@@ -107,9 +102,10 @@ function describe(cmd, spec) {
 }
 function baseNote(cmd, field) {
   if (field === 'root') return ROOT_FIELD;
-  if ((field === 'ids' && cmd !== 'after') || (field === 'id' && LIST_ID_COMMANDS.has(cmd))) return IDS_FIELD;
+  if (field === 'by' && AUTHOR_REQUIRED[cmd]) return `Required: ${AUTHOR_REQUIRED[cmd]}.`;
+  if (field === 'ids' || (field === 'id' && LIST_ID_COMMANDS.has(cmd))) return IDS_FIELD;
   if (field === 'id' && cmd === 'answer') return ANSWER_ID_FIELD;
-  if (field === 'ids' && cmd === 'after') return `The issues this one waits on. ${LIST_FIELD} Ids take ranges (203-206). Left out when clear is set.`;
+  if (cmd === 'field' && field === 'value') return 'The value of the part, one text: a comma list for a list field (Tags, Files, Repo, After, Source, Resources), one item per line for Acceptance and Changelog. Left out when clear is set. Example: {"ids": "12", "name": "Tags", "value": "docs,cli", "add": true}';
   if (['name', 'path'].includes(listFieldsOf(cmd)[field])) return LIST_FIELD;
   return undefined;
 }
@@ -117,26 +113,23 @@ function baseNote(cmd, field) {
 // tool as JSON, so one line shows the field, the fields beside it and the type each one takes. A test holds every example
 // to the fields and the types of its tool.
 const EXAMPLES = {
-  after: {
-    id: 'Every one of them waits on the issues in ids. Example: {"id": "12", "ids": ["10", "11"]}',
-    ids: 'Example: {"id": "12", "ids": ["10", "11"]}',
-  },
   evidence: {
     ran: 'One command per row, a list of strings. Row n pairs with the text at place n of saw. Example: {"ids": "12", "ran": ["npm test"], "saw": ["# pass 4 # fail 0"]}',
     saw: 'What each command of ran printed, a list of strings in the same order. Example: {"ids": "12", "ran": ["npm test"], "saw": ["# pass 4 # fail 0"]}',
   },
   review: {
-    verdict: 'approve or changes: the verdict of this reviewer on each issue. Example: {"ids": "12", "verdict": "approve", "by": "rev-12", "findings": "Read the diff and the acceptance: every line holds."}',
-    findings: 'What the reviewer read and found, at least three words, also when nothing is wrong. Example: {"ids": "12", "verdict": "approve", "by": "rev-12", "findings": "Read the diff and the acceptance: every line holds."}',
+    verdict: 'approve or changes: the verdict of this reviewer on each issue. Example: {"ids": "12", "verdict": "approve", "by": "rev-12", "text": "Read the diff and the acceptance: every line holds."}',
+    text: 'What the reviewer read and found, at least three words, also when nothing is wrong. Example: {"ids": "12", "verdict": "approve", "by": "rev-12", "text": "Read the diff and the acceptance: every line holds."}',
   },
   decide: {
-    supersedes: 'The slug of the ruling this one replaces, which the record then marks as superseded. Example: {"slug": "subagents-again", "ruling": "Use fresh reviewers again.", "supersedes": "no-subagents"}',
+    supersedes: 'The slug of the ruling this one replaces, which the record then marks as superseded. Example: {"slug": "subagents-again", "text": "Use fresh reviewers again.", "by": "jarl", "supersedes": "no-subagents"}',
   },
   decisions: {
     live: 'true lists only the rulings still in force, those no later ruling supersedes. Example: {"live": true}',
   },
-  body: {
-    append: 'true adds the text to what each named section holds, after it, instead of replacing it. Title and Where cannot be appended to. Example: {"id": "12", "acceptance": ["the new line"], "append": true}',
+  field: {
+    add: 'true adds the items of value to a list field, or value after what a section holds. Example: {"ids": "12", "name": "Acceptance", "value": "the new line", "add": true}',
+    remove: 'true takes the items of value off a list field. Example: {"ids": "12", "name": "Tags", "value": "docs", "remove": true}',
   },
 };
 function fieldNote(cmd, field) {
@@ -178,6 +171,8 @@ export function buildTools() {
     for (const field of cmd === null ? [] : listArgsOf(cmd)) {
       tool.inputSchema.properties[field] = { ...tool.inputSchema.properties[field], type: ['string', 'array'], items: { type: 'string' } };
     }
+    // A write that records a judgement names its author: the schema requires by, as the command line does.
+    if (cmd !== null && AUTHOR_REQUIRED[cmd]) tool.inputSchema.required = [...new Set([...(tool.inputSchema.required || []), 'by'])];
     return tool;
   });
 }
@@ -186,6 +181,28 @@ export function buildTools() {
 // the code where callers of this module read it.
 const invalid = (msg) => Object.assign(new InvalidParams(msg), { code: -32602 });
 function need(cond, msg) { if (!cond) throw invalid(msg); }
+
+// A field a tool does not take whose value another field takes, or another tool, from the command line's tables: a flag
+// renamed there (by on status and models is group, ci on resume is gh), the name a free text had (why, findings, question
+// and the rest are text), and a retraction asked of evidence (retract's). The refusal names that field or tool, with the
+// form of the call written there, each value a placeholder: no value given is carried into a call composed for the caller,
+// but its root and json, as given, so the form filled reaches the loop the call named.
+const FORM_VALUES = { ids: '<ids>', id: '<id>', status: '<status>', text: '<text>', verdict: '<verdict>', slug: '<slug>', title: '<title>', goal: '<goal>', name: '<name>', entry: '<n-or-note-n>', line: '<line>', mode: '<mode>', branch: '<branch>', group: '<group>', gh: true };
+function needNoGoneField(cmd, fields, carried = {}) {
+  const call = (tool, input) => `${toolName(tool)} ${JSON.stringify({ ...input, ...carried })}`;
+  for (const name of Object.keys(fields)) {
+    if (Object.hasOwn(COMMAND_FLAGS[cmd] || {}, name) || (COMMAND_ARGS[cmd] || []).some((a) => a.replace(/[?.]+$/, '') === name)) continue;
+    const to = REMOVED_FLAGS[cmd]?.[name];
+    if (to === 'retract') {
+      throw invalid(`${toolName(cmd)}: "${name}" is not a field of this tool — a row or a note is taken back with ${toolName('retract')}, and by names who takes it back: ${call('retract', { id: '<id>', entry: '<n-or-note-n>', by: '<who>', text: '<why>' })}`);
+    }
+    const field = to !== undefined ? to.replace(/^--/, '') : GONE_TEXT_NAMES[cmd] === name ? 'text' : null;
+    if (field === null) continue;
+    // The fields the tool requires, the author of a judgement among them.
+    const form = { ...Object.fromEntries((COMMAND_ARGS[cmd] || []).filter((a) => !/[?.]$/.test(a)).map((a) => [a, FORM_VALUES[a] ?? '<value>'])), ...(Object.hasOwn(AUTHOR_REQUIRED, cmd) ? { by: '<who>' } : {}) };
+    throw invalid(`${toolName(cmd)}: "${name}" is not a field of this tool — its value goes in "${field}": ${call(cmd, { ...form, [field]: FORM_VALUES[field] ?? '<value>' })}`);
+  }
+}
 
 // A tool call back into the argv the CLI would be given: the command, every flag inline (--name=value, so a value
 // that starts with -- is never read as a flag), then a bare -- and the arguments in order — the adapter's argvFor.
@@ -197,6 +214,7 @@ export function argvFor(cmd, input = {}) {
     need(typeof input.root === 'string' && input.root.trim() !== '' && isAbsolute(input.root.trim()), `${toolName(cmd)}: "root" must be the absolute path of the directory that holds .jarl/ (got ${JSON.stringify(input.root)}) — leave it out to use JARL_ROOT or the server's working directory`);
   }
   const { root: _root, ...fields } = input;
+  needNoGoneField(cmd, fields, Object.fromEntries(['json', 'root'].filter((k) => input[k] !== undefined).map((k) => [k, input[k]])));
   // A list flag repeats and a list argument that comes last takes many words, so the adapter carries a list for them.
   // An id list comes before other arguments, so the adapter takes it as one word: given as a list of strings, it
   // reaches the command line as the one comma list it reads there. listItems in dispatch checks the items either way.
@@ -240,9 +258,18 @@ export function callTool(name, input = {}, env = process.env, cwd = process.cwd(
     return { content: [{ type: 'text', text: HELP }], isError: false };
   }
   const cmd = commandForTool(TABLE, name, TOOL_OPTIONS);
+  // A tool the server does not have, under the name of a command the CLI refuses with its replacement: the same line.
+  const asked = typeof name === 'string' && name.startsWith(TOOL_PREFIX) ? name.slice(TOOL_PREFIX.length) : null;
+  // Its form carries the root the call gave, so filled it reaches the loop the call named.
+  const givenRoot = input !== null && typeof input === 'object' && typeof input.root === 'string' && isAbsolute(input.root.trim()) ? input.root : null;
+  if (cmd === null && asked !== null && Object.hasOwn(REPLACED_COMMANDS, asked)) throw invalid(`Unknown tool: ${name} — ${replacedMessage(asked, [], givenRoot)}`);
   if (cmd === null) throw invalid(`Unknown tool: ${name}`);
-  const argv = argvFor(cmd, input);
   const { root, from } = rootOf(input, env, cwd);
+  // The root the call named goes into the words the command line reads, before a bare --, as --root=, so a refusal's
+  // form carries it as the command line's does, and a form filled elsewhere reaches the same loop.
+  const words = argvFor(cmd, input);
+  const end = words.indexOf('--') === -1 ? words.length : words.indexOf('--');
+  const argv = from === 'root' ? [...words.slice(0, end), `--root=${root}`, ...words.slice(end)] : words;
   // A call that named no root is told which loop it reached, so a write never lands somewhere unseen. With
   // json: true this note (and the CLI's stderr notes) never become a second text block — a client that
   // concatenates the blocks to parse JSON would otherwise get invalid JSON — they go into _meta instead.
@@ -256,7 +283,7 @@ export function callTool(name, input = {}, env = process.env, cwd = process.cwd(
     if (input.json) return { content: [{ type: 'text', text }], isError: true, ...(loopNote ? { _meta: { 'jarl/loop': loopNote } } : {}) };
     return { content: [{ type: 'text', text }, ...(loopNote ? [{ type: 'text', text: loopNote }] : [])], isError: true };
   }
-  const isError = (COMMAND_ALIASES[cmd] ?? cmd) === 'scope' && !r.out.ok;   // scope's exit 2: a branch that failed its measure
+  const isError = cmd === 'scope' && !r.out.ok;   // scope's exit 2: a branch that failed its measure
   if (input.json) {
     const meta = { ...(r.warn.length ? { 'jarl/warn': r.warn.join('\n') } : {}), ...(loopNote ? { 'jarl/loop': loopNote } : {}) };
     return { content: [{ type: 'text', text: JSON.stringify(r.out, null, 2) }], isError, ...(Object.keys(meta).length ? { _meta: meta } : {}) };

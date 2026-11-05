@@ -33,7 +33,8 @@ const snapshot = (root) => {
 };
 const LIST_RULE = /takes its items one by one/;
 const DASH_RULE = /cannot start with -/;
-const DASH_HINT = /flags such as --root go before it/;
+// Where a flag goes: before the bare --, said of a list item that starts with a dash, or of a flag written after the --.
+const DASH_HINT = /flags such as --root go before it|is a flag, which goes before the bare --|are flags, which go before the bare --/;
 
 // A loop with three issues and two repositories beside it.
 function fixture() {
@@ -60,26 +61,15 @@ const FIELDS = [
   ['import', 'tags', 'name', (list) => ({ file: 'FINDINGS', source: 'core/r', tags: list }), 'drift'],
   ['import', 'repo', 'path', (list) => ({ file: 'FINDINGS', source: 'core/r', repo: list }), 'ONE'],
   ['import', 'only', 'name', (list) => ({ file: 'FINDINGS', source: 'core/r', only: list }), 'f-1'],
-  ['decide', 'settles', 'name', (list) => ({ slug: 'ruled', ruling: 'a ruling', settles: list }), '1'],
-  ['files', 'paths', 'path', (list) => ({ id: '3', paths: list }), 'a.mjs'],
-  ['source', 'refs', 'name', (list) => ({ id: '3', refs: list }), 'core/r#a'],
-  ['after', 'ids', 'name', (list) => ({ id: '3', ids: list }), '1'],
-  ['repo', 'path', 'path', (list) => ({ id: '3', path: list }), 'ONE'],
-  ['body', 'id', 'name', (list) => ({ id: list, where: 'w' }), '1'],
-  ['source', 'id', 'name', (list) => ({ id: list, refs: 'core/r#a' }), '1'],
-  ['after', 'id', 'name', (list) => ({ id: list, ids: '3' }), '1'],
-  ['files', 'id', 'name', (list) => ({ id: list, paths: 'a.mjs' }), '1'],
-  ['repo', 'id', 'name', (list) => ({ id: list, path: 'ONE' }), '1'],
-  ['round', 'id', 'name', (list) => ({ id: list, what: 'it failed' }), '1'],
+  ['decide', 'settles', 'name', (list) => ({ slug: 'ruled', text: 'a ruling', by: 'jarl', settles: list }), '1'],
+  ['round', 'id', 'name', (list) => ({ id: list, text: 'it failed' }), '1'],
   ['evidence', 'ids', 'name', (list) => ({ ids: list, text: 'a note' }), '1'],
   ['field', 'ids', 'name', (list) => ({ ids: list, name: 'Resources', value: 'db' }), '1'],
-  ['set', 'ids', 'name', (list) => ({ ids: list, status: 'deferred', why: 'later' }), '1'],
-  ['tag', 'ids', 'name', (list) => ({ ids: list, ops: ['+x'] }), '1'],
-  ['prio', 'ids', 'name', (list) => ({ ids: list, priority: '1' }), '1'],
-  ['review', 'ids', 'name', (list) => ({ ids: list, verdict: 'changes', by: 'rev', findings: 'Important: three words here' }), '1'],
+  ['set', 'ids', 'name', (list) => ({ ids: list, status: 'deferred', text: 'later' }), '1'],
+  ['review', 'ids', 'name', (list) => ({ ids: list, verdict: 'changes', by: 'rev', text: 'Important: three words here' }), '1'],
   ['merged', 'ids', 'name', (list) => ({ ids: list, sha: 'abc1234', ci: 'none' }), '1'],
   ['changelog', 'ids', 'name', (list) => ({ ids: list }), '1'],
-  ['answer', 'id', 'name', (list) => ({ id: list, answer: 'yes', by: 'owner' }), 'a-1'],
+  ['answer', 'id', 'name', (list) => ({ id: list, text: 'yes', by: 'owner' }), 'a-1'],
 ];
 // The input of a case with its placeholders filled in.
 const subOf = (fx, v) => (v === 'ONE' ? fx.one : v === 'TWO' ? fx.two : v === 'FINDINGS' ? fx.findings : v);
@@ -89,8 +79,8 @@ function inputFor(fx, build, list) {
 }
 function fullFixture() {
   const fx = { ...fixture(), findings: findingsFile() };
-  call(fx.root, 'ask', { question: 'first?', kind: 'ratify' });
-  call(fx.root, 'ask', { question: 'second?', kind: 'ratify' });
+  call(fx.root, 'ask', { text: 'first?', kind: 'ratify' });
+  call(fx.root, 'ask', { text: 'second?', kind: 'ratify' });
   return fx;
 }
 // A second item of the same kind, for a list of two.
@@ -114,15 +104,15 @@ test('a list given through the tools is stored item by item, and filtering by a 
   assert.equal(header(text, 'Repo').split(', ').length, 2);
   assert.ok(header(text, 'Files').includes('a/one.mjs') && header(text, 'Files').includes('b/two.mjs'));
   assert.match(call(fx.root, 'list', { tag: 'drift' }).content[0].text, /\bd\b/);
-  call(fx.root, 'tag', { ids: ['1', '2'], ops: ['+drift'] });
-  call(fx.root, 'prio', { ids: [1, 2], priority: '1' });
+  call(fx.root, 'field', { ids: ['1', '2'], name: 'Tags', value: 'drift', add: true });
+  call(fx.root, 'field', { ids: [1, 2], name: 'Priority', value: '1' });
   for (const n of [1, 2]) {
     assert.equal(header(issueText(fx.root, n), 'Tags'), 'drift');
     assert.equal(header(issueText(fx.root, n), 'Priority'), '1');
   }
-  call(fx.root, 'files', { id: ['1', '2'], paths: ['x.mjs', 'y.mjs'] });
+  call(fx.root, 'field', { ids: ['1', '2'], name: 'Files', value: 'x.mjs,y.mjs' });
   assert.equal(header(issueText(fx.root, 2), 'Files'), 'x.mjs, y.mjs');
-  call(fx.root, 'decide', { slug: 'ruled', ruling: 'a ruling', settles: ['1', '2'] });
+  call(fx.root, 'decide', { slug: 'ruled', text: 'a ruling', by: 'jarl', settles: ['1', '2'] });
   assert.match(readFileSync(join(fx.root, '.jarl', 'decisions.md'), 'utf8'), /\*\*Settles:\*\* 1, 2/);
   call(fx.root, 'import', { file: fx.findings, source: 'core/r', tags: ['drift', 'processes'], only: ['f-1', 'f-3'] });
   assert.equal(header(issueText(fx.root, 5), 'Tags'), 'drift, processes');
@@ -131,7 +121,7 @@ test('a list given through the tools is stored item by item, and filtering by a 
 
 // The id lists come before other arguments, which the adapter types as one text: the tools declare each of them as one
 // text or a list of strings, and the description says so.
-const ID_LISTS = (cmd, field) => field === 'ids' ? cmd !== 'after' : field === 'id';
+const ID_LISTS = (cmd, field) => field === 'ids' || field === 'id';
 
 test('every list field of every tool says it takes a list: declared as a list, or, for an id list, as one text or a list of strings', () => {
   const tools = Object.fromEntries(mcp.buildTools().map((t) => [t.name, t.inputSchema.properties]));
@@ -146,10 +136,7 @@ test('every list field of every tool says it takes a list: declared as a list, o
       assert.match(schema.description, /a list of strings, one item each/, `${cmd} ${field}`);
     }
   }
-  assert.equal(tools.jarl_files.paths.minItems, 1);
-  assert.equal(tools.jarl_source.refs.minItems, 1);
-  assert.match(tools.jarl_after.ids.description, /waits on/);
-  assert.doesNotMatch(tools.jarl_after.ids.description, /all of them change/);
+  assert.match(tools.jarl_field.value.description, /a comma list for a list field/);
 });
 
 test('the schema declares a list for the id field of each command that takes an id list, and for no other field', () => {
@@ -158,8 +145,7 @@ test('the schema declares a list for the id field of each command that takes an 
     for (const [field, schema] of Object.entries(tool.inputSchema.properties)) if (Array.isArray(schema.type)) declared.push(`${tool.name} ${field}`);
   }
   assert.deepEqual(declared.sort(), [
-    'jarl_after id', 'jarl_answer id', 'jarl_body id', 'jarl_changelog ids', 'jarl_evidence ids', 'jarl_field ids', 'jarl_files id',
-    'jarl_merged ids', 'jarl_prio ids', 'jarl_repo id', 'jarl_review ids', 'jarl_round id', 'jarl_set ids', 'jarl_source id', 'jarl_tag ids',
+    'jarl_answer id', 'jarl_changelog ids', 'jarl_evidence ids', 'jarl_field ids', 'jarl_merged ids', 'jarl_review ids', 'jarl_round id', 'jarl_set ids',
   ].sort());
 });
 
@@ -193,10 +179,10 @@ test('a list written as text is refused on the command line too, in every list a
   const cases = [
     ['new', 't', '--tags', '["drift", "processes"]'], ['new', 't', '--tags', '[drift]'], ['new', 't', '--files', '["a.mjs"]'],
     ['new', 't', '--files', '[a.mjs, b.mjs]'], ['new', 't', '--after', '["1"]'], ['new', 't', '--source', '[core/r#a, core/r#b]'],
-    ['new', 't', '--repo', `["${fx.one}"]`], ['files', '3', '["a.mjs"]'], ['files', '3', '[a.mjs,b.mjs]'], ['files', '3', "'a.mjs'"],
-    ['source', '3', '[core/r#a, core/r#b]'], ['source', '3', '"core/r#a"'], ['after', '3', '[1,2]'], ['repo', '3', `['${fx.one}']`],
-    ['tag', '[1, 2]', '+x'], ['prio', '["1"]', '1'], ['files', '"1"', 'a.mjs'], ['evidence', '[1]', 'note'],
-    ['decide', 'ruled', 'a ruling', '--settles', '[1, 2]'], ['tag', '1', '+["drift"]'], ['tag', '1', "+it's"],
+    ['new', 't', '--repo', `["${fx.one}"]`], ['field', '3', 'Files', '["a.mjs"]'], ['field', '3', 'Files', '[a.mjs,b.mjs]'], ['field', '3', 'Files', "'a.mjs'"],
+    ['field', '3', 'Source', '[core/r#a, core/r#b]'], ['field', '3', 'Source', '"core/r#a"'], ['field', '3', 'After', '[1,2]'], ['field', '3', 'Repo', `['${fx.one}']`],
+    ['field', '[1, 2]', 'Tags', 'x', '--add'], ['field', '["1"]', 'Priority', '1'], ['field', '"1"', 'Files', 'a.mjs'], ['evidence', '[1]', 'note'],
+    ['decide', 'ruled', 'a ruling', '--settles', '[1, 2]'], ['field', '1', 'Tags', '["drift"]', '--add'], ['field', '1', 'Tags', "it's", '--add'],
   ];
   for (const args of cases) assert.match(refuses(fx.root, ...args), LIST_RULE, args.join(' '));
   assert.equal(snapshot(fx.root), before);
@@ -205,9 +191,9 @@ test('a list written as text is refused on the command line too, in every list a
 test('a name with brackets that is not a list is a path, through the tools and on the command line', () => {
   const fx = fixture();
   const names = ['[1]', 'src/[id]/page.tsx', '[...slug]', 'app/[[...slug]]/page.tsx', '[a.mjs]'];
-  call(fx.root, 'files', { id: '1', paths: names });
+  call(fx.root, 'field', { ids: '1', name: 'Files', value: names.join(',') });
   assert.equal(header(issueText(fx.root, 1), 'Files'), names.join(', '));
-  jarl(fx.root, 'files', '2', names.join(','));
+  jarl(fx.root, 'field', '2', 'Files', names.join(','));
   assert.equal(header(issueText(fx.root, 2), 'Files'), names.join(', '));
   call(fx.root, 'new', { title: 'd', files: 'src/[id]/page.tsx,[1]' });
   assert.equal(header(issueText(fx.root, 4), 'Files'), 'src/[id]/page.tsx, [1]');
@@ -230,8 +216,8 @@ test('a flag written after a bare -- is refused on the command line with where f
   const fx = fixture();
   const before = snapshot(fx.root);
   for (const args of [
-    ['files', '3', 'a.mjs', '--', '--root', '/x'], ['source', '3', 'core/r#a', '--', '--root', '/x'], ['after', '3', '1', '--', '--root', '/x'],
-    ['repo', '3', fx.one, '--', '--root', '/x'], ['files', '3', '--', '--root'], ['after', '3', '--', '-1'], ['tag', '--', '-1', '+x'],
+    ['field', '3', 'Files', 'a.mjs', '--', '--root', '/x'], ['field', '3', 'Source', 'core/r#a', '--', '--root', '/x'], ['field', '3', 'After', '1', '--', '--root', '/x'],
+    ['field', '3', 'Repo', fx.one, '--', '--root', '/x'], ['field', '3', 'Files', '--', '--root'], ['field', '3', 'After', '--', '-1'], ['field', '--add', '--', '1', 'Tags', '-x'],
     ['new', 't', '--tags', '-x'], ['new', 't', '--files=--root'], ['decide', 'ruled', 'r', '--settles', '-1'],
   ]) {
     assert.match(refuses(fx.root, ...args), DASH_HINT, args.join(' '));
@@ -241,14 +227,14 @@ test('a flag written after a bare -- is refused on the command line with where f
 
 test('the command line keeps every spelling it takes: one value, a comma list, ranges, an empty list', () => {
   const fx = fixture();
-  jarl(fx.root, 'files', '1', 'a.mjs');
-  jarl(fx.root, 'files', '2', 'a.mjs, b.mjs');
+  jarl(fx.root, 'field', '1', 'Files', 'a.mjs');
+  jarl(fx.root, 'field', '2', 'Files', 'a.mjs, b.mjs');
   assert.equal(header(issueText(fx.root, 2), 'Files'), 'a.mjs, b.mjs');
-  jarl(fx.root, 'files', '1-2', 'c.mjs,d.mjs');
+  jarl(fx.root, 'field', '1-2', 'Files', 'c.mjs,d.mjs');
   assert.equal(header(issueText(fx.root, 1), 'Files'), 'c.mjs, d.mjs');
-  jarl(fx.root, 'tag', '1,2', '+x', '+y');
+  jarl(fx.root, 'field', '1,2', 'Tags', '--add', 'x,y');
   assert.equal(header(issueText(fx.root, 2), 'Tags'), 'x, y');
-  jarl(fx.root, 'after', '3', '1-2');
+  jarl(fx.root, 'field', '3', 'After', '1-2');
   assert.equal(header(issueText(fx.root, 3), 'After'), '1, 2');
   jarl(fx.root, 'new', 'd', '--tags', 'drift,processes', '--files', 'p.mjs,q.mjs', '--after', '1,3', '--source', 'core/r#a,core/r#b');
   const text = issueText(fx.root, 4);
@@ -256,47 +242,46 @@ test('the command line keeps every spelling it takes: one value, a comma list, r
   assert.equal(header(text, 'Files'), 'p.mjs, q.mjs');
   assert.equal(header(text, 'After'), '1, 3');
   assert.equal(header(text, 'Source'), 'core/r#a, core/r#b');
-  jarl(fx.root, 'repo', '1', `${fx.one},${fx.two}`);
+  jarl(fx.root, 'field', '1', 'Repo', `${fx.one},${fx.two}`);
   assert.equal(header(issueText(fx.root, 1), 'Repo').split(', ').length, 2);
-  jarl(fx.root, 'files', '1', '');
+  jarl(fx.root, 'field', '1', 'Files', '--clear');
   assert.equal(header(issueText(fx.root, 1), 'Files'), '');
-  jarl(fx.root, 'files', '2');
-  assert.equal(header(issueText(fx.root, 2), 'Files'), '');
-  call(fx.root, 'files', { id: '3', paths: '' });
+  call(fx.root, 'field', { ids: '3', name: 'Files', clear: true });
   assert.equal(header(issueText(fx.root, 3), 'Files'), '');
 });
 
-test('repo --base takes a name and a branch, and a word beyond them is refused', () => {
+test('base takes a name and a branch, and a word beyond them is refused', () => {
   const fx = fixture();
-  assert.match(refuses(fx.root, 'repo', '--base', 'tool', 'main', 'extra'), /takes a repository name and a branch — unexpected: "extra"/);
+  assert.match(refuses(fx.root, 'base', 'tool', 'main', 'extra'), /base takes at most 2 arguments — unexpected: "extra"/);
 });
 
 test('a tag stored with the brackets and quotes of a list can still be taken off', () => {
   const fx = fixture();
   const file = issueFile(fx.root, 1);
   writeFileSync(file, readFileSync(file, 'utf8').replace(/^\*\*Tags:\*\*.*$/m, '**Tags:** ["drift", "processes"]'));
-  jarl(fx.root, 'tag', '1', '-["drift"', '-"processes"]', '+drift', '+processes');
+  jarl(fx.root, 'field', '1', 'Tags', '["drift","processes"]', '--remove');
+  jarl(fx.root, 'field', '1', 'Tags', 'drift,processes', '--add');
   assert.equal(header(issueText(fx.root, 1), 'Tags'), 'drift, processes');
   assert.match(jarl(fx.root, 'list', '--tag', 'drift'), /\ba\b/);
 });
 
-test('a comma list in a tag operation names one tag each: +a,b adds a and b, -a,b takes both off, on the command line and through the tool', () => {
+test('field adds and removes a comma list of tags, one tag each, on the command line and through the tool', () => {
   const fx = fixture();
-  assert.match(jarl(fx.root, 'tag', '1', '+a,b'), / tags: a, b$/);
+  assert.match(jarl(fx.root, 'field', '1', 'Tags', '--add', 'a,b'), / Tags: a, b$/);
   assert.equal(header(issueText(fx.root, 1), 'Tags'), 'a, b');
-  call(fx.root, 'tag', { ids: '1', ops: ['+c,d', '-a,b'] });
+  call(fx.root, 'field', { ids: '1', name: 'Tags', value: 'c,d', add: true });
+  call(fx.root, 'field', { ids: '1', name: 'Tags', value: 'a,b', remove: true });
   assert.equal(header(issueText(fx.root, 1), 'Tags'), 'c, d');
-  call(fx.root, 'tag', { ids: '1', ops: ['+e, f'] });
+  call(fx.root, 'field', { ids: '1', name: 'Tags', value: 'e, f', add: true });
   assert.equal(header(issueText(fx.root, 1), 'Tags'), 'c, d, e, f');
-  assert.match(jarl(fx.root, 'tag', '1', '-c,d'), / tags: e, f$/);
+  assert.match(jarl(fx.root, 'field', '1', 'Tags', '--remove', 'c,d'), / Tags: e, f$/);
 });
 
-test('a tag operation with no name in it is refused, and so is one whose name starts with -, through the tool and on the command line, and nothing is written', () => {
+test('a tag to add or remove that is empty, or starts with -, is refused through the tool and on the command line, and nothing is written', () => {
   const fx = fixture();
   const before = snapshot(fx.root);
-  for (const op of ['+', '-', '+,', '-,']) assert.match(refuses(fx.root, 'tag', '1', op), /tags are \+name or -name/, op);
-  for (const op of ['+', '+,']) assert.match(refusedByTool(fx.root, 'tag', { ids: '1', ops: [op] }), /tags are \+name or -name/, op);
-  assert.match(refusedByTool(fx.root, 'tag', { ids: '1', ops: ['--root'] }), DASH_RULE);
-  assert.match(refusedByTool(fx.root, 'tag', { ids: '1', ops: ['--root'] }), DASH_HINT);
+  for (const mode of ['--add', '--remove']) for (const v of [',', ' , ']) assert.match(refuses(fx.root, 'field', '1', 'Tags', v, mode), /field Tags needs a value/, `${mode} ${v}`);
+  assert.match(refusedByTool(fx.root, 'field', { ids: '1', name: 'Tags', value: '--root', add: true }), DASH_RULE);
+  assert.match(refusedByTool(fx.root, 'field', { ids: '1', name: 'Tags', value: '--root', remove: true }), DASH_HINT);
   assert.equal(snapshot(fx.root), before);
 });

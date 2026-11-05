@@ -28,7 +28,7 @@ const log = (root) => readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
 const profileFile = (root) => join(root, '.jarl', 'profile.json');
 const doneRefusal = (root, id) => { try { jarl(root, 'set', id, 'done', 'merged'); return null; } catch (e) { return String(e.stderr); } };
 
-test('review retract: the newest approve is struck through and does not count, by an appended entry', () => {
+test('retract <id> review: the newest approve is struck through and does not count, by an appended entry', () => {
   const root = loop();
   const id = started(root);
   jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'pass 5');
@@ -36,7 +36,7 @@ test('review retract: the newest approve is struck through and does not count, b
   assert.equal(L.gateState(root, id).approved, true, 'before: the gate counts the approve');
   assert.equal(existsSync(profileFile(root)), false, 'no retraction yet: the record is still format 1');
 
-  const said = jarl(root, 'review', id, 'retract', '--by', 'jarl', 'I approved the wrong branch');
+  const said = jarl(root, 'retract', id, 'review', '--by', 'jarl', 'I approved the wrong branch');
   assert.match(said, /1 review retracted by jarl \(coordinator\): the approve by opus-reviewer-1 \(fresh\)/);
   assert.equal(L.gateState(root, id).approved, false, 'after: the gate does not count it');
   assert.match(doneRefusal(root, id), /no approving review/);
@@ -52,21 +52,21 @@ test('review retract: the newest approve is struck through and does not count, b
   assert.equal(doneRefusal(root, id), null);
 });
 
-test('review retract takes the newest approve not yet retracted, one at a time, and never a changes verdict', () => {
+test('retract <id> review takes the newest approve not yet retracted, one at a time, and never a changes verdict', () => {
   const root = loop();
   const id = started(root);
-  assert.match(refuses(root, 'review', id, 'retract', '--by', 'jarl', 'nothing to take back'), /no approve to retract/);
+  assert.match(refuses(root, 'retract', id, 'review', '--by', 'jarl', 'nothing to take back'), /no approve to retract/);
   assert.equal(existsSync(profileFile(root)), false, 'a refused retraction raises nothing');
   jarl(root, 'review', id, 'changes', '--by', 'rev-a', 'Important: the test never goes red');
-  assert.match(refuses(root, 'review', id, 'retract', '--by', 'jarl', 'try to revive the acceptance'), /no approve to retract.*never a "changes" verdict/);
+  assert.match(refuses(root, 'retract', id, 'review', '--by', 'jarl', 'try to revive the acceptance'), /no approve to retract.*never a "changes" verdict/);
   jarl(root, 'review', id, 'approve', '--by', 'rev-b', 'fixed, read it again');
   jarl(root, 'review', id, 'approve', '--by', 'rev-c', 'also read it');
-  jarl(root, 'review', id, 'retract', '--by', 'jarl', 'rev-c read the wrong diff');
+  jarl(root, 'retract', id, 'review', '--by', 'jarl', 'rev-c read the wrong diff');
   assert.equal(L.gateState(root, id).live.by, 'rev-b', 'rev-c was the newest, rev-b is live again');
-  jarl(root, 'review', id, 'retract', '--by', 'jarl', 'rev-b read the wrong diff too');
+  jarl(root, 'retract', id, 'review', '--by', 'jarl', 'rev-b read the wrong diff too');
   assert.equal(L.gateState(root, id).live, null);
   assert.equal(L.gateState(root, id).lastReview, 'changes', 'what is left is the changes verdict: a retraction never overrides it');
-  assert.match(refuses(root, 'review', id, 'retract', '--by', 'jarl', 'once more'), /no approve to retract/);
+  assert.match(refuses(root, 'retract', id, 'review', '--by', 'jarl', 'once more'), /no approve to retract/);
   assert.equal((file(root, id).match(/~~\*\*approve\*\*/g) || []).length, 2);
   assert.match(file(root, id), /\*\*changes\*\* · by rev-a \(fresh\)/, 'the changes entry is not struck');
   // The metrics do not count a retracted approve either.
@@ -81,14 +81,14 @@ test('a retraction needs --by and a reason with words, and names one issue', () 
   const root = loop();
   const id = started(root);
   jarl(root, 'review', id, 'approve', '--by', 'rev-a', 'read the diff');
-  assert.match(refuses(root, 'review', id, 'retract', 'because'), /needs --by/);
-  assert.match(refuses(root, 'review', id, 'retract', '--by', 'jarl', 'x'), /a retraction needs words/);
-  assert.match(refuses(root, 'review', '1,2', 'retract', '--by', 'jarl', 'because I said so'), /names one issue/);
+  assert.match(refuses(root, 'retract', id, 'review', 'because'), /needs --by/);
+  assert.match(refuses(root, 'retract', id, 'review', '--by', 'jarl', 'x'), /a retraction needs words/);
+  assert.match(refuses(root, 'retract', '1,2', 'review', '--by', 'jarl', 'because I said so'), /names one issue/);
   assert.equal(existsSync(profileFile(root)), false, 'nothing was raised or written');
   assert.equal(L.gateState(root, id).approved, true);
 });
 
-test('evidence --retract: the n-th row of the whole section is struck through and the gate stops counting it', () => {
+test('retract <id> <n>: the n-th row of the whole section is struck through and the gate stops counting it', () => {
   const root = loop();
   const id = started(root);
   jarl(root, 'evidence', id, 'a free-text note first');
@@ -98,14 +98,14 @@ test('evidence --retract: the n-th row of the whole section is struck through an
   assert.equal(refusal(), null, 'before: the rows and the approve open the gate');
   assert.deepEqual(L.evidenceTable(L.findIssue(root, id).sections.evidence).rows.map((r) => [r.n, r.ran, r.retracted]), [[1, 'cmd one', false], [2, 'cmd two', false]]);
 
-  assert.match(refuses(root, 'evidence', id, '--retract', '3', '--by', 'jarl', 'no such row'), /has 2 evidence rows: there is no row 3/);
-  assert.match(refuses(root, 'evidence', id, '--retract', 'two', '--by', 'jarl', 'not a number'), /takes the number of an evidence row/);
-  assert.match(refuses(root, 'evidence', id, '--retract', '1', 'because the row is wrong'), /needs --by/);
-  assert.match(refuses(root, 'evidence', id, '--retract', '1', '--by', 'jarl', '-'), /a retraction needs words/);
-  assert.match(refuses(root, 'evidence', id, '--retract', '1', '--by', 'jarl', 'x', '--ran', 'a', '--saw', 'b'), /not a new --ran\/--saw row|takes at most/);
+  assert.match(refuses(root, 'retract', id, '3', '--by', 'jarl', 'no such row'), /has 2 evidence rows: there is no row 3/);
+  assert.match(refuses(root, 'retract', id, 'two', '--by', 'jarl', 'not a number'), /retract takes review \(the newest approve\) or the number of an evidence row/);
+  assert.match(refuses(root, 'retract', id, '1', 'because the row is wrong'), /needs --by/);
+  assert.match(refuses(root, 'retract', id, '1', '--by', 'jarl', '-'), /a retraction needs words/);
+  assert.match(refuses(root, 'retract', id, '1', '--by', 'jarl', 'x', '--ran', 'a', '--saw', 'b'), /unknown flag --ran for retract/);
   assert.equal(existsSync(profileFile(root)) && JSON.parse(readFileSync(profileFile(root), 'utf8')).format, false, 'refused retractions raise nothing');
 
-  assert.equal(jarl(root, 'evidence', id, '--retract', '2', '--by', 'jarl', 'cmd two was run in the wrong place'), '001 evidence row 2 retracted by jarl');
+  assert.equal(jarl(root, 'retract', id, '2', '--by', 'jarl', 'cmd two was run in the wrong place'), '001 evidence row 2 retracted by jarl');
   assert.equal(L.gateState(root, id).rowsSince, 1, 'one row is left');
   assert.equal(refusal(), null);
   const text = file(root, id);
@@ -113,9 +113,9 @@ test('evidence --retract: the n-th row of the whole section is struck through an
   assert.match(text, /^- \*\*ran:\*\* cmd one · \*\*saw:\*\* wrong result$/m, 'another row is untouched');
   assert.match(text, /^- \*\*retracted:\*\* row 2 · by jarl · \d{4}-\d{2}-\d{2}\n  cmd two was run in the wrong place$/m);
   assert.match(log(root), /001 evidence retract · row 2 · by jarl · cmd two was run in the wrong place$/m);
-  assert.match(refuses(root, 'evidence', id, '--retract', '2', '--by', 'jarl', 'again'), /row 2 of 001 is retracted already/);
+  assert.match(refuses(root, 'retract', id, '2', '--by', 'jarl', 'again'), /row 2 of 001 is retracted already/);
   assert.equal(JSON.parse(readFileSync(profileFile(root), 'utf8')).format, 2);
-  jarl(root, 'evidence', id, '--retract', '1', '--by', 'jarl', 'cmd one printed the wrong result');
+  jarl(root, 'retract', id, '1', '--by', 'jarl', 'cmd one printed the wrong result');
   assert.equal(L.gateState(root, id).rowsSince, 0, 'every row is retracted');
   assert.match(refusal(), /no --ran\/--saw evidence row recorded since/);
   // A row of the work, recorded again, counts; the numbering never moves, so it is row 3.
@@ -136,10 +136,10 @@ test('a retraction strikes the row the file numbers, whatever order the journal 
   const [a, b, c] = lines.flatMap((l, i) => (l.includes(`${id} evidence row · `) ? [i] : []));
   [lines[a], lines[b], lines[c]] = [lines[b], lines[c], lines[a]];
   writeFileSync(logPath, lines.join('\n'));
-  jarl(root, 'evidence', id, '--retract', '1', '--by', 'jarl', 'alpha ran in the wrong place');
+  jarl(root, 'retract', id, '1', '--by', 'jarl', 'alpha ran in the wrong place');
   const state = L.gateState(root, id).rowLog.map((e) => [e.text.split(' · ').pop(), e.retracted]);
   assert.deepEqual(state.sort(), [['alpha check', true], ['beta check', false], ['beta check', false]], 'row 1 of the file is alpha, wherever its journal line is');
-  jarl(root, 'evidence', id, '--retract', '3', '--by', 'jarl', 'the second beta ran in the wrong place');
+  jarl(root, 'retract', id, '3', '--by', 'jarl', 'the second beta ran in the wrong place');
   assert.equal(L.gateState(root, id).rowLog.filter((e) => e.retracted).length, 2);
   assert.equal(L.gateState(root, id).rowsSince, 1);
 });
@@ -152,8 +152,8 @@ test('a retraction always finds its row: a command holding the saw marker, a com
     jarl(root, 'evidence', id, '--ran', ran, '--saw', saw);
     jarl(root, 'review', id, 'approve', '--by', 'rev-a', 'read the diff twice');
     assert.equal(L.gateState(root, id).rowsSince, 2);
-    jarl(root, 'evidence', id, '--retract', '2', '--by', 'jarl', 'wrong place entirely');
-    jarl(root, 'evidence', id, '--retract', '1', '--by', 'jarl', 'also the wrong place');
+    jarl(root, 'retract', id, '2', '--by', 'jarl', 'wrong place entirely');
+    jarl(root, 'retract', id, '1', '--by', 'jarl', 'also the wrong place');
     const g = L.gateState(root, id);
     assert.deepEqual(g.unresolvedRetractions, [], JSON.stringify(ran));
     assert.equal(g.rowsSince, 0, `both rows are retracted whatever they contain: ${JSON.stringify(ran)}`);
@@ -173,8 +173,8 @@ test('a retraction always finds its row: a command holding the saw marker, a com
 
 test('the first retraction raises the format before its line is written; the pinned frozen reader refuses the loop loudly', () => {
   for (const retract of [
-    (root, id) => jarl(root, 'review', id, 'retract', '--by', 'jarl', 'the approve was a mistake'),
-    (root, id) => jarl(root, 'evidence', id, '--retract', '1', '--by', 'jarl', 'the row was a mistake'),
+    (root, id) => jarl(root, 'retract', id, 'review', '--by', 'jarl', 'the approve was a mistake'),
+    (root, id) => jarl(root, 'retract', id, '1', '--by', 'jarl', 'the row was a mistake'),
   ]) {
     const root = loop();
     const id = started(root);
@@ -195,15 +195,16 @@ test('body --title changes the heading with a log entry; the file keeps its name
   const root = loop();
   const id = fileAsBefore(root, 'a wrong title');
   const before = L.findIssue(root, id).file;
-  assert.match(jarl(root, 'body', id, '--title', 'the right title'), /001 body: title/);
+  assert.match(jarl(root, 'field', id, 'Title', 'the right title'), /001 Title: the right title/);
   const issue = L.findIssue(root, id);
   assert.equal(issue.file, before, 'the file name is unchanged');
   assert.equal(issue.title, 'the right title');
   assert.match(readFileSync(before, 'utf8'), /^# 001 · the right title\n/);
   assert.match(log(root), /001 body · title · was "a wrong title"$/m);
   assert.match(jarl(root, 'list'), /the right title/);
-  assert.match(refuses(root, 'body', id, '--title', '  '), /--title needs a title/);
-  jarl(root, 'body', id, '--title', 'two\nlines', '--what', 'and a body too');
+  assert.match(refuses(root, 'field', id, 'Title', '  '), /^field Title needs a value, or --clear to empty it\njarl\.mjs field "<ids>" Title "<title>"\n$/);
+  jarl(root, 'field', id, 'Title', 'two\nlines');
+  jarl(root, 'field', id, 'What', 'and a body too');
   assert.equal(L.findIssue(root, id).title, 'two lines');
   assert.equal(oldJarl(root, 'list', {}).ok, true, 'a title change is nothing a 6.1.0 reader misreads');
 });

@@ -3,7 +3,7 @@
 import { randomInt } from 'node:crypto';
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { need } from './base.mjs';
+import { hole, need } from './base.mjs';
 
 // ---- ids: the one grammar of the number of an issue, a question and a branch ----------------------------------------
 
@@ -54,21 +54,30 @@ export function newIssueKey(at) {
 // One id, or several as a comma list with ranges: `12,13,14` or `203-206,209` (no spaces: one argument, like --tags a,b).
 const MAX_BULK = 200;
 export function expandIds(raw) {
-  need(raw !== undefined && String(raw).trim() !== '', 'an issue id is required — one id, or several as a comma list with ranges: 12,13 or 203-206,209');
+  need(raw !== undefined && String(raw).trim() !== '', 'an issue id is required — one id, or several as a comma list with ranges: 12,13 or 203-206,209', () => ({ arg: 0, value: '<id>' }));
   const out = [];
   for (const part of String(raw).split(',').map((p) => p.trim().replace(/^#/, ''))) {
     const range = /^(\d+)-#?(\d+)$/.exec(part);
     if (range) {
       const [a, b] = [Number(range[1]), Number(range[2])];
-      need(a <= b, `range ${part} runs backwards — write it low-high`);
-      need(b - a < MAX_BULK, `range ${part} spans more than ${MAX_BULK} issues`);
+      need(a <= b, `range ${part} runs backwards: the ids it was meant for are not read from it (${b}-${a}, or ${a},${b}?)`, () => ({ replace: part, value: hole('<ids-low-high>') }));
+      need(b - a < MAX_BULK, `range ${part} spans more than ${MAX_BULK} issues`, () => ({ replace: part, value: '<a-smaller-range>' }));
       for (let n = a; n <= b; n += 1) out.push(String(n));
     } else {
-      need(/^\d+$/.test(part), `not an issue id: "${part}" — ids are numbers, several as a comma list with ranges: 12,13 or 203-206,209`);
+      need(/^\d+$/.test(part), `not an issue id: "${part}" — ids are numbers, several as a comma list with ranges: 12,13 or 203-206,209`, () => ({ replace: part, value: '<id>' }));
       out.push(idKey(part));
     }
   }
   return [...new Set(out)];
+}
+// The item of a comma list of ids, an id or a range as it was written, that names the id key; the key itself where none does.
+export function itemNaming(raw, key) {
+  for (const part of String(raw ?? '').split(',').map((p) => p.trim())) {
+    const range = /^#?(\d+)-#?(\d+)$/.exec(part);
+    const [lo, hi] = range ? [Number(range[1]), Number(range[2])].sort((x, y) => x - y) : [];
+    if (range ? lo <= Number(key) && Number(key) <= hi : part !== '' && idKey(part) === idKey(key)) return part;
+  }
+  return String(key);
 }
 function isBulk(raw) { return /[,-]/.test(String(raw ?? '')); }
 

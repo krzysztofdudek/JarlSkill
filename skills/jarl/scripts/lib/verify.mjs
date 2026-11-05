@@ -2,7 +2,7 @@
 
 import { existsSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { fieldText, need } from './base.mjs';
+import { fieldText, jarlLine, need } from './base.mjs';
 import { canonical, jarlDir } from './where.mjs';
 import { readText } from './files.mjs';
 import { ISSUE_FILE_RE, cmpId, idKey, needsRaisedFormat } from './ids.mjs';
@@ -45,7 +45,7 @@ function profileProblems(message) {
 // Every finding of the loop in `root`, as the checks print them, and the notes; a profile that does not parse ends the
 // reading, because every other reader goes through the profile.
 export function cmdVerify(root) {
-  need(hasLiveLoop(root), 'verify reads a loop: there is no .jarl/ with a goal here — open one with jarl.mjs init "<goal>", or name the loop with --root');
+  need(hasLiveLoop(root), `verify reads a loop: there is no .jarl/ with a goal here — open one with ${jarlLine('init', '<goal>')}, or name the loop with --root`, () => (['jarl.mjs', 'init', '<goal>']));
   const found = [];
   const notes = [];
   // n is the line of the file the finding is about, where it has one: a check's findings print in file order.
@@ -87,7 +87,7 @@ export function cmdVerify(root) {
     for (const s of issueSkips) add('issues', `issues/${shownText(f)} line ${s.n}`, `"${shownText(s.text)}" — ${s.reason}`);
   }
   for (const f of existsSync(join(dir, 'issues')) ? readdirSync(join(dir, 'issues')) : []) {
-    if (!ISSUE_FILE_RE.test(f)) add('issues', `issues/${shownText(f)}`, 'a file the loop does not read as an issue: an issue file is <number>-<title>.md');
+    if (!ISSUE_FILE_RE.test(f)) add('issues', `issues/${shownText(f)}`, 'a file the loop does not read as an issue: an issue file is its number, a dash and its title, ending in .md');
   }
   const loop = readLoop(dir);
   // A number two files carry: the files, then what it means and what the coordinator does (headers says nothing of their fields).

@@ -86,7 +86,7 @@ test('the counts are per repository, and a row matching the other repository\'s 
   const root = join(parent, 'app');
   jarl(root, 'init', 'two repositories');
   for (let k = 1; k <= 4; k += 1) jarl(root, 'new', `issue ${k}`, '--acceptance', 'it works');
-  for (const id of [3, 4]) jarl(root, 'repo', String(id), '../lib');
+  for (const id of [3, 4]) jarl(root, 'field', String(id), 'Repo', '../lib');
   goal(root, '\nCheck (app): yg check\nCheck (lib): npm test\n');
   merge(root, 1, 'yg check');
   merge(root, 2, 'npm test');

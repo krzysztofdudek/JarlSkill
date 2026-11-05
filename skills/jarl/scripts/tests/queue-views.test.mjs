@@ -29,7 +29,7 @@ function branchWith(dir, branch, file) {
 
 // ---- 284: the queue ------------------------------------------------------------------------------
 
-test('queue: approved, ahead of the base and not merged — in the order of approval; unapproved and merged branches stay out', () => {
+test('the merge queue of resume: approved, ahead of the base and not merged — in the order of approval; unapproved and merged branches stay out', () => {
   const root = repo();
   jarl(root, 'new', 'first', '--files', 'src/a.mjs');
   jarl(root, 'new', 'second', '--files', 'src/b.mjs');
@@ -44,7 +44,7 @@ test('queue: approved, ahead of the base and not merged — in the order of appr
   // 2 approved before 1: the queue follows the approvals, not the numbers.
   jarl(root, 'review', '2', 'approve', '--by', 'rev', FINDINGS);
   jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
-  const q = JSON.parse(jarl(root, 'queue', '--json'));
+  const q = JSON.parse(jarl(root, 'resume', '--json')).queue;
   assert.equal(q.repos.length, 1);
   const rows = q.repos[0].rows;
   assert.deepEqual(rows.map((r) => r.branch), ['jarl/2-second', 'jarl/1-first']);
@@ -53,15 +53,15 @@ test('queue: approved, ahead of the base and not merged — in the order of appr
   assert.equal(q.repos[0].base, 'feature');
   // Files do not overlap, so both go in one batch.
   assert.deepEqual(rows.map((r) => r.batch), [1, 1]);
-  const text = jarl(root, 'queue');
+  const text = /## Merge queue\n([\s\S]*?)(?:\n\n|$)/.exec(jarl(root, 'resume'))[1];
   assert.match(text, /1\. jarl\/2-second → 2/);
   assert.doesNotMatch(text, /\b4\b/);
   // Once merged into the base, a branch leaves the queue by itself.
   sh(root, 'git merge -q --no-ff jarl/2-second -m "merge 2"');
-  assert.deepEqual(JSON.parse(jarl(root, 'queue', '--json')).repos[0].rows.map((r) => r.branch), ['jarl/1-first']);
+  assert.deepEqual(JSON.parse(jarl(root, 'resume', '--json')).queue.repos[0].rows.map((r) => r.branch), ['jarl/1-first']);
 });
 
-test('queue: a round spends the approve, overlapping files start a new batch, a package lists who still waits for review', () => {
+test('the merge queue of resume: a round spends the approve, overlapping files start a new batch, a package lists who still waits for review', () => {
   const root = repo();
   jarl(root, 'new', 'a', '--files', 'src/a.mjs');
   jarl(root, 'new', 'b');
@@ -71,7 +71,7 @@ test('queue: a round spends the approve, overlapping files start a new batch, a 
   jarl(root, 'set', '2', 'in-progress', 'go', '--branch', 'jarl/2-b', '--worker', 'w2');
   // Two leases that share a file are refused at the lease, yet a record can still hold them (a file declared after the
   // lease, two clones merged): the queue keeps them out of one batch all the same.
-  jarl(root, 'files', '2', 'src/a.mjs');
+  jarl(root, 'field', '2', 'Files', 'src/a.mjs');
   jarl(root, 'set', '3,4', 'in-progress', 'pkg', '--branch', 'jarl/3-pkg', '--worker', 'w3');
   branchWith(root, 'jarl/1-a', 'src/a.mjs');
   branchWith(root, 'jarl/2-b', 'src/a.mjs');
@@ -79,7 +79,7 @@ test('queue: a round spends the approve, overlapping files start a new batch, a 
   jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
   jarl(root, 'review', '2', 'approve', '--by', 'rev', FINDINGS);
   jarl(root, 'review', '3', 'approve', '--by', 'rev', FINDINGS);
-  let rows = JSON.parse(jarl(root, 'queue', '--json')).repos[0].rows;
+  let rows = JSON.parse(jarl(root, 'resume', '--json')).queue.repos[0].rows;
   const byBranch = Object.fromEntries(rows.map((r) => [r.branch, r]));
   assert.equal(byBranch['jarl/1-a'].batch, 1);
   assert.equal(byBranch['jarl/2-b'].batch, 2, 'the same file as 1 never rides in its batch');
@@ -88,11 +88,11 @@ test('queue: a round spends the approve, overlapping files start a new batch, a 
   assert.equal(byBranch['jarl/3-pkg'].ready, false);
   assert.equal(byBranch['jarl/1-a'].ready, true);
   jarl(root, 'round', '1', 'check red');
-  rows = JSON.parse(jarl(root, 'queue', '--json')).repos[0].rows;
+  rows = JSON.parse(jarl(root, 'resume', '--json')).queue.repos[0].rows;
   assert.ok(!rows.some((r) => r.branch === 'jarl/1-a'), 'a round spends the approve: the branch leaves the queue');
 });
 
-test('queue: an issue in another repository is queued there; --repo reads one repository; nothing is written', () => {
+test('the merge queue of resume: an issue in another repository is queued there; --repo reads one repository; nothing is written', () => {
   const parent = mkdtempSync(join(tmpdir(), 'jarl-queue-multi-'));
   const hub = join(parent, 'hub'); const tool = join(parent, 'tool');
   for (const d of [hub, tool]) { mkdirSync(d); sh(d, 'git init -q -b feature && git config user.email t@t && git config user.name t && git config core.excludesFile /dev/null && mkdir src && echo 1 > src/a.mjs && git add -A && git commit -qm base'); }
@@ -102,10 +102,10 @@ test('queue: an issue in another repository is queued there; --repo reads one re
   branchWith(tool, 'jarl/1-t', 'src/a.mjs');
   jarl(hub, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
   const before = readFileSync(join(hub, '.jarl', 'log.md'), 'utf8');
-  const q = JSON.parse(jarl(hub, 'queue', '--json'));
+  const q = JSON.parse(jarl(hub, 'resume', '--json')).queue;
   const toolRows = q.repos.find((r) => r.repo === 'tool').rows;
   assert.deepEqual(toolRows.map((r) => r.branch), ['jarl/1-t']);
-  assert.equal(JSON.parse(jarl(hub, 'queue', '--repo', '../tool', '--json')).repos.length, 1);
+  assert.equal(JSON.parse(jarl(hub, 'resume', '--repo', '../tool', '--json')).queue.repos.length, 1);
   assert.equal(readFileSync(join(hub, '.jarl', 'log.md'), 'utf8'), before, 'queue writes nothing');
 });
 
@@ -115,7 +115,7 @@ test('changelog: fragments recorded on the issue print grouped for [Unreleased];
   const root = repo();
   jarl(root, 'new', 'a feature', '--kind', 'gap', '--changelog', 'Added: `queue` shows the merge queue.', '--changelog', 'Changed: `report` groups by repository.');
   jarl(root, 'new', 'a bug', '--kind', 'bug');
-  jarl(root, 'body', '2', '--changelog', 'A value starting with $1 or $& is written as it is.');
+  jarl(root, 'field', '2', 'Changelog', 'A value starting with $1 or $& is written as it is.');
   jarl(root, 'new', 'silent');
   const shown = jarl(root, 'show', '1');
   assert.match(shown, /## Changelog\n- Added: `queue` shows the merge queue\.\n- Changed: `report` groups by repository\.\n\n## Evidence/);
@@ -126,11 +126,11 @@ test('changelog: fragments recorded on the issue print grouped for [Unreleased];
   const j = JSON.parse(jarl(root, 'changelog', '1,2', '--json'));
   assert.deepEqual(j.sections, { Added: ['`queue` shows the merge queue.'], Changed: ['`report` groups by repository.'], Fixed: ['A value starting with $1 or $& is written as it is.'] });
   // body --changelog replaces the fragment, it never appends.
-  jarl(root, 'body', '2', '--changelog', 'Fixed: something else.');
+  jarl(root, 'field', '2', 'Changelog', 'Fixed: something else.');
   assert.equal(jarl(root, 'changelog', '2'), '### Fixed\n- something else.');
-  assert.match(refuses(root, 'changelog'), /changelog requires <ids>/);
+  assert.match(refuses(root, 'changelog'), /changelog requires its ids/);
   // A section with nothing after it is refused, on new and on body, and nothing is written.
-  assert.match(refuses(root, 'body', '2', '--changelog', 'Removed:'), /changelog entry "Removed:" has no text/);
+  assert.match(refuses(root, 'field', '2', 'Changelog', 'Removed:'), /changelog entry "Removed:" has no text/);
   assert.match(refuses(root, 'new', 'x', '--changelog', 'fixed:  '), /has no text/);
   assert.equal(jarl(root, 'changelog', '2'), '### Fixed\n- something else.');
 });
@@ -181,7 +181,7 @@ test('new --template reads .jarl/templates/<name>.md: its fields are defaults, i
 
 // ---- 289: views ------------------------------------------------------------------------------------
 
-test('status --by groups the counts by kind, tag, priority or repository; report --json carries one row per issue', () => {
+test('status --group groups the counts by kind, tag, priority or repository; report --json carries one row per issue', () => {
   const root = repo();
   jarl(root, 'new', 'a', '--kind', 'bug', '--tags', 'x,y');
   jarl(root, 'new', 'b', '--kind', 'gap', '--tags', 'x');
@@ -190,13 +190,13 @@ test('status --by groups the counts by kind, tag, priority or repository; report
   jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'ok');
   jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
   jarl(root, 'set', '1', 'done', 'ok');
-  const s = JSON.parse(jarl(root, 'status', '--by', 'kind', '--json'));
+  const s = JSON.parse(jarl(root, 'status', '--group', 'kind', '--json'));
   assert.deepEqual(s.by, { key: 'kind', groups: { bug: { open: 0, 'in-progress': 0, done: 1, dropped: 0, deferred: 0 }, gap: { open: 1, 'in-progress': 0, done: 0, dropped: 1, deferred: 0 } } });
-  const t = JSON.parse(jarl(root, 'status', '--by', 'tag', '--json'));
+  const t = JSON.parse(jarl(root, 'status', '--group', 'tag', '--json'));
   assert.deepEqual(Object.keys(t.by.groups).sort(), ['(none)', 'x', 'y']);
   assert.equal(t.by.groups.x.done, 1);
-  assert.match(jarl(root, 'status', '--by', 'repo'), /by repo:\n {2}jarl-queue-\S+ +open 1 · in flight 0 · done 1 · dropped 1 · deferred 0/);
-  assert.match(refuses(root, 'status', '--by', 'colour'), /--by is one of: repo, tag, kind, prio/);
+  assert.match(jarl(root, 'status', '--group', 'repo'), /by repo:\n {2}jarl-queue-\S+ +open 1 · in flight 0 · done 1 · dropped 1 · deferred 0/);
+  assert.match(refuses(root, 'status', '--group', 'colour'), /--group is one of: repo, tag, kind, prio/);
   // Without --by the shape is what it was.
   assert.equal(JSON.parse(jarl(root, 'status', '--json')).by, undefined);
   const rep = JSON.parse(jarl(root, 'report', '--json'));

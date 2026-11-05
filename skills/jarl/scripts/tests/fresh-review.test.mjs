@@ -62,7 +62,7 @@ test('a code issue: a coordinator approve is recorded with a note, done refuses 
   assert.match(why, /carries code \(Branch is recorded\)/);
   assert.match(why, /by jarl \(coordinator\)/);
   assert.match(why, /fresh-review rule/);
-  assert.match(why, /--by <fresh reviewer>/);
+  assert.match(why, /--by "<a-fresh-reviewer>"/);
   // Every coordinator name is refused the same way.
   for (const by of ['reeve', 'coordinator', basename(root)]) {
     jarl(root, 'review', id, 'approve', '--by', by, FINDINGS);
@@ -95,16 +95,16 @@ test('a name goal.md declares a coordinator after its approve was logged as fres
   assert.ok(report.reviews, 'status still reads');
 });
 
-test('queue: a coordinator approve alone keeps a branch out; a fresh approve puts it in', () => {
+test('the merge queue of resume: a coordinator approve alone keeps a branch out; a fresh approve puts it in', () => {
   const root = loop();
   const id = codeIssue(root);
   const wt = mkdtempSync(join(tmpdir(), 'jarl-wt-'));
   sh(root, `git worktree add -q -b jarl/${id}-x ${wt} feature`);
   sh(wt, 'echo change >> a.mjs && git add -A && git commit -qm work');
   jarl(root, 'review', id, 'approve', '--by', 'jarl', FINDINGS);
-  assert.equal(JSON.parse(jarl(root, 'queue', '--json').stdout).repos[0].rows.length, 0);
+  assert.equal(JSON.parse(jarl(root, 'resume', '--json').stdout).queue.repos[0].rows.length, 0);
   jarl(root, 'review', id, 'approve', '--by', 'opus-reviewer-2', FINDINGS);
-  const rows = JSON.parse(jarl(root, 'queue', '--json').stdout).repos[0].rows;
+  const rows = JSON.parse(jarl(root, 'resume', '--json').stdout).queue.repos[0].rows;
   assert.deepEqual(rows.map((r) => r.issues), [[id]]);
   assert.equal(rows[0].by, 'opus-reviewer-2');
 });
@@ -167,7 +167,7 @@ test('a later coordinator approve does not spend an earlier, still-live fresh ap
   assert.match(jarl(root, 'set', id, 'done').stdout, new RegExp(`${id} → done`));
 });
 
-test('queue: a fresh approve stays live in the queue after a later coordinator approve', () => {
+test('the merge queue of resume: a fresh approve stays live in the queue after a later coordinator approve', () => {
   const root = loop();
   const id = codeIssue(root);
   const wt = mkdtempSync(join(tmpdir(), 'jarl-wt-'));
@@ -175,7 +175,7 @@ test('queue: a fresh approve stays live in the queue after a later coordinator a
   sh(wt, 'echo change >> a.mjs && git add -A && git commit -qm work');
   jarl(root, 'review', id, 'approve', '--by', 'opus-reviewer-5', FINDINGS);
   jarl(root, 'review', id, 'approve', '--by', 'coordinator', FINDINGS);
-  const rows = JSON.parse(jarl(root, 'queue', '--json').stdout).repos[0].rows;
+  const rows = JSON.parse(jarl(root, 'resume', '--json').stdout).queue.repos[0].rows;
   assert.deepEqual(rows.map((r) => r.issues), [[id]]);
   assert.equal(rows[0].by, 'opus-reviewer-5');
 });

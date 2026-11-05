@@ -9,7 +9,10 @@
 
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { fieldText, need } from './base.mjs';
+import { fieldText, hole, jarlLine, need, printCommand } from './base.mjs';
+
+// The author a refused tick names: the owner, who ticks a line himself once he has reviewed it.
+const OWNER_TICKS = '<the-owner-himself>';
 import { OWNER, rulingAuthor } from './owner.mjs';
 import { jarlDir, stamp } from './where.mjs';
 import { appendLogLines } from './journal.mjs';
@@ -22,7 +25,7 @@ const MARK = /^\[owner\]\s*/i;
 const PART = (key) => new RegExp(`^${key}:\\s*(.*)$`, 'i');
 // A placeholder copied from the help names nothing.
 const PLACEHOLDER = /^<.*>$/;
-export const OWNER_LINE_SHAPE = '[owner] <line> · material: <path, link or artifact> · check: <what to check>';
+export const OWNER_LINE_SHAPE = '[owner] <line> · material: <material> · check: <what-to-check>';
 
 // One acceptance line read as an owner line: null when it is not marked; else { what, material, check }, each null when
 // the line does not name it in the shape above.
@@ -35,15 +38,18 @@ function ownerLineOf(text) {
   return { what, material: value(parts[1], 'material'), check: value(parts[2], 'check') };
 }
 const whole = (o) => Boolean(o.what && o.material && o.check);
+// Where a marked line lacks a part: a placeholder for the line rewritten whole, with what it holds, as what the owner
+// reviews and checks is agreed with him and never written by Jarl.
+const ownerLineHole = () => hole('<owner-line>');
 
-// The owner lines of an acceptance text that new and body are given: a marked line that does not name its material and
+// The owner lines of an acceptance text that new and field are given: a marked line that does not name its material and
 // what to check is refused, naming the shape. True when the text holds an owner line, so the write raises the format.
 export function needOwnerLines(acceptance) {
   let held = false;
   for (const text of acceptanceLines({ sections: { acceptance } })) {
     const o = ownerLineOf(text);
     if (!o) continue;
-    need(whole(o), `acceptance line "${text}" is marked as one only the owner ticks, and it must name the material he reviews (a path, a link or an artifact) and what he checks: ${OWNER_LINE_SHAPE}`);
+    need(whole(o), `acceptance line "${text}" is marked as one only the owner ticks, and it must name the material he reviews (a path, a link or an artifact) and what he checks: ${OWNER_LINE_SHAPE}`, () => ({ replace: text, value: ownerLineHole(text) }));
     held = true;
   }
   return held;
@@ -71,7 +77,8 @@ function placesOf(root, issue) {
 // can be neither ticked nor kept: the views and the gate say so, and how to rewrite it.
 function linesOff(profile) { const f = formatState(profile); return !f.raises && profile.format < 3; }
 const offText = (profile) => `owner lines are off in this loop: its profile names an external scheduler (${profile.scheduler}) and keeps record format ${profile.format}, so no tick can be written here`;
-const rewrite = (id) => `jarl.mjs body ${id} --acceptance "<line>"... (every line of the section)`;
+const rewrite = (id) => ['jarl.mjs', 'field', id, 'Acceptance', hole('<the-whole-section>')];
+const rewriteText = (id) => printCommand(rewrite(id));
 
 // Each owner line of an issue as the gate and the views read it: { n, text, what, material, check, tick, spent, ready,
 // why, at, off }; off is true where owner lines are off in the loop (see linesOff). tick is the tick that counts ({ at, by }) or null, spent the newest tick of the same line that a red round,
@@ -103,29 +110,37 @@ export function ownerLineStates(root, loop, issue) {
 }
 
 const reviewText = (s) => `he reviews ${s.material}${s.at ? ` (in ${s.at})` : ''} and checks ${s.check}`;
-const tickCommand = (id, n) => `jarl.mjs tick ${id} ${n} --by owner`;
+const tickCommand = (id, n) => jarlLine('tick', id, n, '--by', 'owner');
 
 // Why done refuses for the owner lines of an issue, or null when every one is ticked: each line not ticked, with its
-// material and what to check.
+// material and what to check. Whoever is refused is not the owner, so the reason names his tick and prints no command of
+// it: the step it ends with is the question put to him.
 export function ownerLineRefusal(root, loop, issue) {
   const open = ownerLineStates(root, loop, issue).filter((s) => !s.tick);
   if (!open.length) return null;
   const one = (s) => {
-    if (s.off) return `acceptance line ${s.n}, which is marked as one only the owner ticks, and ${s.why}; rewrite it without the [owner] mark: ${rewrite(issue.id)}`;
-    if (!whole(s)) return `acceptance line ${s.n} is marked as one only the owner ticks and does not name its material and what to check — rewrite it as ${OWNER_LINE_SHAPE}: ${rewrite(issue.id)}`;
+    if (s.off) return `acceptance line ${s.n}, which is marked as one only the owner ticks, and ${s.why}; rewrite it without the [owner] mark: ${rewriteText(issue.id)}`;
+    if (!whole(s)) return `acceptance line ${s.n} is marked as one only the owner ticks and does not name its material and what to check — rewrite it as ${OWNER_LINE_SHAPE}: ${rewriteText(issue.id)}`;
     const spent = s.spent ? `; his tick of ${s.spent.at} came before the work was sent back or started again, so it does not count` : '';
-    return `acceptance line ${s.n}, "${s.what}": ${reviewText(s)}; only he ticks it, once he has looked: ${tickCommand(issue.id, s.n)}${spent}`;
+    return `acceptance line ${s.n}, "${s.what}": ${reviewText(s)}; only he ticks it, with tick, once he has looked, and nobody ticks it for him${spent}`;
   };
   return `${issue.id} waits for the owner's sign-off on ${open.map(one).join('; and on ')}`;
 }
 
-// What done still waits for on an issue whose work is approved or merged, as the in-flight views say it, or null: the
-// owner's tick of each owner line not ticked, with the command, or the rewrite where owner lines are off.
+// Whether done waits on an owner line to rewrite (marked where owner lines are off, or naming no material and no check)
+// rather than on the owner's tick.
+export function ownerLineRewrite(root, loop, issue) {
+  return ownerLineStates(root, loop, issue).filter((s) => !s.tick).some((s) => s.off || !whole(s));
+}
+
+// What done still waits for on an issue whose work is approved or merged, as a review's reply and the in-flight views say
+// it, or null: the owner's tick of each owner line not ticked, named and never printed as a command, since whoever reads
+// it is not the owner; or the rewrite where owner lines are off.
 export function ownerLineWait(root, loop, issue) {
   const open = ownerLineStates(root, loop, issue).filter((s) => !s.tick);
   if (!open.length) return null;
-  if (open[0].off) return `the [owner] mark on acceptance line ${open.map((s) => s.n).join(', ')} is rewritten (${open[0].why}): ${rewrite(issue.id)}`;
-  return `the owner ticks acceptance line ${open.map((s) => s.n).join(', ')} (${open.map((s) => tickCommand(issue.id, s.n)).join(', ')})`;
+  if (open[0].off) return `the [owner] mark on acceptance line ${open.map((s) => s.n).join(', ')} is rewritten (${open[0].why}): ${rewriteText(issue.id)}`;
+  return `the owner ticks acceptance line ${open.map((s) => s.n).join(', ')} with tick, once he has looked`;
 }
 
 // The lines show prints under an issue's header: each owner line, ticked or not.
@@ -139,25 +154,28 @@ export function ownerLineNotes(root, loop, issue) {
 // name, an owner line that names its material and what to check, the material there and no tick that counts already;
 // it raises the record format where the loop is not in it, and writes one log line.
 export function cmdTick(root, rawId, rawLine, flags = {}) {
-  need(flags.by !== undefined, 'tick needs --by owner: only the owner ticks an owner line, and the record says who did');
+  need(flags.by !== undefined, 'tick needs --by owner, as only the owner ticks an owner line and the record says who did', () => ({ flag: '--by', value: OWNER_TICKS }));
   const by = rulingAuthor(flags.by);
-  need(by === OWNER, `only the owner ticks an owner line: --by owner (got "${by}")`);
+  need(by === OWNER, `only the owner ticks an owner line (got "${by}"): he ticks it once he has reviewed its material, and nobody ticks it for him`, () => ({ flag: '--by', value: OWNER_TICKS }));
   const issue = findIssue(root, rawId);
-  need(issue, `no such issue: ${rawId}`);
+  need(issue, `no such issue: ${rawId}`, () => ({ replace: rawId, value: '<id>' }));
   const loop = readLoop(jarlDir(root));
   const states = ownerLineStates(root, loop, issue);
   const lines = acceptanceLines(issue);
-  need(states.length, `${issue.id} has no acceptance line marked as one only the owner ticks — mark one: ${OWNER_LINE_SHAPE}, written with jarl.mjs body ${issue.id} --acceptance "<line>"... (every line of the section)`);
+  need(states.length, `${issue.id} has no acceptance line marked as one only the owner ticks (got line ${rawLine}) — mark one, ${OWNER_LINE_SHAPE}, among every line of the section, agreed with him`, () => ({ arg: 1, value: hole('<line>') }));
   const owners = `its owner lines: ${states.map((s) => s.n).join(', ')}`;
-  need(/^\d+$/.test(String(rawLine ?? '').trim()) && Number(rawLine) > 0, `tick takes the number of the acceptance line, counted from 1 — ${owners}`);
+  need(/^\d+$/.test(String(rawLine ?? '').trim()) && Number(rawLine) > 0, `tick takes the number of the acceptance line, counted from 1 (got "${rawLine}") — ${owners}`, () => ({ arg: 1, value: hole('<line>') }));
   const n = Number(rawLine);
-  need(n <= lines.length, `${issue.id} has ${lines.length} acceptance line${lines.length === 1 ? '' : 's'}: there is no line ${n}; ${owners}`);
+  need(n <= lines.length, `${issue.id} has ${lines.length} acceptance line${lines.length === 1 ? '' : 's'}: there is no line ${n}; ${owners}`, () => ({ arg: 1, value: hole('<line>') }));
   const s = states.find((x) => x.n === n);
-  need(s, `acceptance line ${n} of ${issue.id} is not marked as one only the owner ticks; ${owners}`);
-  need(!loop.profile.is(issue.status, 'terminal'), `${issue.id} is ${issue.status}: nothing waits for the owner's tick`);
-  need(!s.off, `acceptance line ${n} of ${issue.id} cannot be ticked: ${s.why}; rewrite it without the [owner] mark: ${rewrite(issue.id)}`);
-  need(!s.tick, `acceptance line ${n} of ${issue.id} is ticked already, by ${s.tick && s.tick.by} at ${s.tick && s.tick.at}`);
-  need(s.ready, `the material of acceptance line ${n} of ${issue.id} is not there yet: ${s.why} — the owner ticks the line once he has reviewed it; nothing was written`);
+  // Where the line named is no owner line, or one ticked: a placeholder for the owner lines not ticked yet.
+  const open = states.filter((x) => !x.tick && !x.off).map((x) => x.n);
+  const openLine = () => ({ arg: 1, value: hole('<line>') });
+  need(s, `acceptance line ${n} of ${issue.id} is not marked as one only the owner ticks; ${owners}`, openLine);
+  need(!loop.profile.is(issue.status, 'terminal'), `${issue.id} is ${issue.status}: nothing waits for the owner's tick until it is open again`, () => ({ first: ['jarl.mjs', 'set', issue.id, hole('<status>'), '<why>'] }));
+  need(!s.off, `acceptance line ${n} of ${issue.id} cannot be ticked: ${s.why}; rewrite it without the [owner] mark: ${rewriteText(issue.id)}`, () => (rewrite(issue.id)));
+  need(!s.tick, `acceptance line ${n} of ${issue.id} is ticked already, by ${s.tick && s.tick.by} at ${s.tick && s.tick.at}`, openLine);
+  need(s.ready, `the material of acceptance line ${n} of ${issue.id} is not there yet: ${s.why} — the owner ticks the line once he has reviewed it; nothing was written`, () => (['jarl.mjs', 'evidence', issue.id, '--ran', '<command>', '--saw', '<what-it-printed>']));
   needFormat(root, 'owner-line');
   const at = stamp();
   appendLogLines(root, [`${issue.id} tick · line ${n} · by ${by} · ${s.text}`], at);

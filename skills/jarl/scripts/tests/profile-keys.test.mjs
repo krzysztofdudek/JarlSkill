@@ -210,7 +210,7 @@ test('no done-gate: a loop without the key closes exactly as before — no merge
 
 // ---- every view on a mission's loop ----
 
-test('every view tells the truth on a mission\'s loop: next, queue, status, resume, tips, branches, report, list', () => {
+test('every view tells the truth on a mission\'s loop: next, status, resume with its merge queue and tips, branches, report, list', () => {
   const { repo, root } = mission();
   // 1 merged and landed; 2 in flight on its branch; 3 queued but held back by the composer's own edges (Jarl
   // cannot see them); 4 proposed; 5 dropped.
@@ -228,8 +228,8 @@ test('every view tells the truth on a mission\'s loop: next, queue, status, resu
   // next and queue: the composer schedules, Jarl computes nothing.
   assert.equal(jarl(root, 'next'), 'scheduling is led by the composer: horde.mjs tick');
   assert.deepEqual(json(root, 'next'), { scheduler: 'horde.mjs tick', note: 'scheduling is led by the composer: horde.mjs tick' });
-  assert.equal(jarl(root, 'queue'), 'scheduling is led by the composer: horde.mjs tick');
-  assert.deepEqual(json(root, 'queue').repos, []);
+  assert.match(jarl(root, 'resume'), /^## Next ready and merge queue\n- scheduling is led by the composer: horde\.mjs tick$/m);
+  assert.deepEqual(json(root, 'resume').queue.repos, []);
 
   // status: the counts by status, no ready count of Jarl's own.
   const st = json(root, 'status');
@@ -255,7 +255,7 @@ test('every view tells the truth on a mission\'s loop: next, queue, status, resu
   assert.doesNotMatch(rsText, /## Next ready \(|## Merge queue|nothing ready/);
 
   // tips: the feature branch of the work in flight and the base, in the repository the loop lives in.
-  const tips = json(root, 'tips');
+  const tips = json(root, 'resume', '--gh').tips;
   assert.equal(tips.repos.length, 1);
   const rows = tips.repos[0].rows.map((r) => [r.role, r.branch, r.issues || []]);
   assert.deepEqual(rows, [['worker', 'jarl/2-flight', ['002']], ['feature', 'main', []]]);
@@ -281,7 +281,7 @@ test('every view tells the truth on a mission\'s loop: next, queue, status, resu
   assert.deepEqual(json(root, 'list').map((i) => [i.id, i.status]), [['002', 'running'], ['003', 'queued'], ['004', 'proposed']]);
 });
 
-test('no profile: next is still the list and queue the rows, with no scheduler key anywhere', () => {
+test('no profile: next is still the list and the merge queue of resume the rows, with no scheduler key anywhere', () => {
   const root = mkdtempSync(join(tmpdir(), 'jarl-keys-plain-'));
   mkdirSync(join(root, '.git'));
   jarl(root, 'init', 'goal');
@@ -293,7 +293,7 @@ test('no profile: next is still the list and queue the rows, with no scheduler k
   const rs = json(root, 'resume');
   assert.equal(rs.readyTotal, 1);
   assert.equal('scheduler' in rs, false);
-  assert.equal('scheduler' in json(root, 'queue'), false);
+  assert.equal('scheduler' in json(root, 'resume').queue, false);
 });
 
 // ---- a composer's loop keeps its record format ----
@@ -335,7 +335,7 @@ test('a loop opened with a composer\'s profile is never raised: new writes three
   at = log();
   // A number written plain, in a file made by hand: a write that names it is refused.
   writeFileSync(join(root, '.jarl', 'issues', '7-plain.md'), readFileSync(join(root, '.jarl', 'issues', files[0]), 'utf8').replace(/^# 001 · first ticket$/m, '# 7 · plain'));
-  assert.match(refuses(root, 'tag', '7', '+x'), /a number written plain, below 100 or of 1000 or more needs record format 2, and this loop stays at format 1/);
+  assert.match(refuses(root, 'field', '7', 'Tags', '--add', 'x'), /a number written plain, below 100 or of 1000 or more needs record format 2, and this loop stays at format 1/);
   assert.equal(log(), at);
   assert.equal(readFileSync(marker, 'utf8'), before, 'the marker never moved');
 });

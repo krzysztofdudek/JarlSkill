@@ -40,8 +40,8 @@ function world() {
 test('resume assembles every section live from the loop and the repositories its issues name, and writes nothing', () => {
   const { parent, hub, tool } = world();
   // Rulings: one in force, one superseded (left out).
-  jarl(hub, 'decide', 'old-way', 'do it the old way');
-  jarl(hub, 'decide', 'new-way', 'do it the new way\nwith a second line', '--supersedes', 'old-way');
+  jarl(hub, 'decide', 'old-way', 'do it the old way', '--by', 'coordinator');
+  jarl(hub, 'decide', 'new-way', 'do it the new way\nwith a second line', '--supersedes', 'old-way', '--by', 'coordinator');
   // In flight with a lease, in the tool repository, with a worker branch one commit ahead.
   jarl(hub, 'new', 'in flight one', '--repo', '../tool', '--files', 'tool/src/a.mjs', '--acceptance', 'works');
   jarl(hub, 'set', '1', 'in-progress', 'raised', '--branch', 'jarl/1-one', '--worker', 'w1');
@@ -78,15 +78,15 @@ test('resume assembles every section live from the loop and the repositories its
   assert.match(t, /## Next ready \(3 of 3\)\n- 4  P2  ready three  \(no acceptance yet\)\n- 6  P2  merged six  \(no acceptance yet\)\n- 7  P2  merged seven  \(no acceptance yet\)\n/);
   assert.match(t, /## Merge queue\n\[tool\] into release\n  1\. jarl\/5-five → 5  \+1  approved \S+ \S+ by rev  batch 1\n/);
   assert.match(t, /## Merged, CI pending or red \(2\)\n- 6 [0-9a-f]+ in tool · CI pending\n- 7 [0-9a-f]+ in tool · CI red\n/);
-  assert.match(t, /## Tips \(CI not asked — --ci asks gh\)\n/);
+  assert.match(t, /## Tips \(CI not asked — --gh asks gh\)\n/);
   assert.match(t, /^\[tool\] .*\n {2}worker {3}jarl\/1-one [0-9a-f]{12} {2}\+1\/-0 vs release {2}not pushed {2}→ 1\n {2}worker {3}jarl\/5-five [0-9a-f]{12} {2}\+1\/-0 vs release {2}not pushed {2}→ 5\n {2}feature {2}release [0-9a-f]{12} {2}= origin\/release\n {2}main {5}main [0-9a-f]{12} {2}= origin\/main$/m);
   assert.match(t, /## Loop files not committed \(\d+\) — commit \.jarl\/\n- \.jarl\/asks\.md\n/);
   assert.match(t, /## Last 15 log line\(s\)\n(- \S+ \S+ · .*\n){14}- \S+ \S+ · 7 merged /);
-  assert.equal(existsSync(join(parent, 'gh-calls')), false, 'no --ci: gh is never run');
+  assert.equal(existsSync(join(parent, 'gh-calls')), false, 'no --gh: gh is never run');
   assert.deepEqual(snapshot(hub), before, 'resume writes nothing: no log line, no lock, no file');
 
-  // --log and --ready narrow the two long sections; --ci asks gh for the pushed tips only.
-  const narrow = run(hub, ['resume', '--log', '2', '--ready', '1', '--ci'], { JARL_GH: ghStub(parent) }).stdout;
+  // --log and --ready narrow the two long sections; --gh asks gh for the pushed tips only.
+  const narrow = run(hub, ['resume', '--log', '2', '--ready', '1', '--gh'], { JARL_GH: ghStub(parent) }).stdout;
   assert.match(narrow, /## Next ready \(1 of 3\)\n- 4  P2  ready three  \(no acceptance yet\)\n\n/);
   assert.match(narrow, /## Last 2 log line\(s\)\n- \S+ \S+ · filed 7 · merged seven\n- \S+ \S+ · 7 merged \S+ in tool · CI red$/);
   assert.match(narrow, /## Tips\n/);
@@ -105,7 +105,7 @@ test('resume assembles every section live from the loop and the repositories its
   // The sections sum to the counts line. An issue in progress that waits on After is under Waiting, not In flight;
   // an open one whose file is taken by work in flight is Held, naming who holds it. In text and in JSON.
   jarl(hub, 'new', 'eight');
-  jarl(hub, 'after', '5', '8');
+  jarl(hub, 'field', '5', 'After', '8');
   jarl(hub, 'new', 'held nine', '--repo', '../tool', '--files', 'tool/src/a.mjs');
   const w = jarl(hub, 'resume');
   const st = JSON.parse(jarl(hub, 'status', '--json'));
@@ -135,18 +135,18 @@ test('resume in a git repository with no worker branches: Tips shows the feature
   const { hub } = world();
   jarl(hub, 'new', 'one');
   const t = jarl(hub, 'resume');
-  assert.match(t, /## Tips \(CI not asked — --ci asks gh\)\n\[hub\] \S+\n {2}feature {2}main [0-9a-f]{12} {2}\(no upstream\) {2}not pushed\n\n## /);
+  assert.match(t, /## Tips \(CI not asked — --gh asks gh\)\n\[hub\] \S+\n {2}feature {2}main [0-9a-f]{12} {2}\(no upstream\) {2}not pushed\n\n## /);
   assert.doesNotMatch(t, /^ {2}worker /m);
 });
 
 test('an answered question is listed by its answer and then its question in decisions, and resume counts it among the rulings in force', () => {
   const { hub } = world();
   jarl(hub, 'ask', 'Should the fixes ship in 6.1.1?');
-  jarl(hub, 'answer', 'a-1', 'Yes, blocking right away');
+  jarl(hub, 'answer', 'a-1', 'Yes, blocking right away', '--by', 'owner');
   jarl(hub, 'ask', 'Which way for the flag?', '--option', 'Keep: the flag stays', '--option', 'Drop: the flag goes');
-  jarl(hub, 'answer', 'a-2', '--option', 'Keep');
+  jarl(hub, 'answer', 'a-2', '--option', 'Keep', '--by', 'owner');
   jarl(hub, 'ask', 'Which order for the rest?');
-  jarl(hub, 'answer', 'a-3', 'The owner chose the blocking option for every fix of the field report. '.repeat(3));
+  jarl(hub, 'answer', 'a-3', 'The owner chose the blocking option for every fix of the field report. '.repeat(3), '--by', 'owner');
   assert.match(jarl(hub, 'resume'), /\n3 ruling\(s\) in force: jarl\.mjs decisions --live;/);
   const d = jarl(hub, 'decisions', '--live');
   assert.match(d, / · ask-1 · by owner — \*\*Answer:\*\* Yes, blocking right away · \*\*Question:\*\* Should the fixes ship in 6\.1\.1\?$/m);
@@ -163,12 +163,12 @@ test('commands run in one process read git afresh each time: a branch made betwe
   assert.deepEqual(lease(), ['branch gone: jarl/1-one']);
   sh(tool, 'git branch jarl/1-one');
   assert.deepEqual(lease(), [], 'the branch made after the first call is seen by the second');
-  const tips = () => dispatch(hub, 'tips', [], {}).out.repos.find((r) => r.repo === 'tool').rows.map((x) => x.branch);
+  const tips = () => dispatch(hub, 'resume', [], { gh: true }).out.tips.repos.find((r) => r.repo === 'tool').rows.map((x) => x.branch);
   assert.deepEqual(tips(), ['jarl/1-one', 'release', 'main']);
   // A repository that was not one yet, then is: the refusal is not remembered.
   const later = join(hub, '..', 'later');
   mkdirSync(later);
-  assert.throws(() => dispatch(hub, 'check', ['1'], { branch: 'x', repo: '../later' }), /not a git repository/);
+  assert.throws(() => dispatch(hub, 'scope', ['1'], { branch: 'x', repo: '../later' }), /not a git repository/);
   sh(later, 'git init -q -b main && git config user.email t@t && git config user.name t && echo 1 > f && git add -A && git commit -qm base');
   assert.doesNotThrow(() => dispatch(hub, 'branches', [], { repo: '../later' }));
 });
@@ -179,7 +179,7 @@ test('handoff takes its flags, writes nothing, says so and exits 0; handoff read
   const before = snapshot(hub);
   const r = run(hub, ['handoff', 'write', '--summary', 'the plan', '--next', 'raise one']);
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /^handoff writes nothing\. The state a session resumes from is assembled live — run jarl\.mjs resume\./);
+  assert.match(r.stdout, /^handoff writes nothing\. The state a session resumes from is assembled live — run resume\./);
   assert.deepEqual(snapshot(hub), before, 'no handoff.md, no log line');
   assert.equal(existsSync(join(hub, '.jarl', 'handoff.md')), false);
   assert.deepEqual(JSON.parse(jarl(hub, 'handoff', 'write', '--json')), { retired: true, wrote: null, note: r.stdout });

@@ -213,7 +213,7 @@ test('a loop whose profile names an external scheduler is never raised: a write 
   const before = readFileSync(marker(root), 'utf8');
   const err = reason(() => L.withLock(root, () => L.needFormat(root, 'note-retraction')));
   assert.match(err, /^the retraction of a note needs record format 3, and this loop stays at format 1: its profile names an external scheduler \(the composer tick\), the composer that reads this record, so Jarl never raises its format/);
-  assert.match(err, /the retraction of a note is off in this loop until its profile says "format": 3 — nothing was written$/);
+  assert.match(err, /the retraction of a note is off in this loop until its profile says "format": 3 — nothing was written\nafter jarl\.mjs profile "<as-the-view-shows>"$/);
   assert.equal(readFileSync(marker(root), 'utf8'), before);
   assert.match(reason(() => L.raiseFormat(root, 3)), /needs record format 3, and this loop stays at format 1/, 'the raise refuses, whoever calls it');
   assert.match(reason(() => L.raiseFormat(root)), /needs record format 2, and this loop stays at format 1/, 'to format 2 as well');

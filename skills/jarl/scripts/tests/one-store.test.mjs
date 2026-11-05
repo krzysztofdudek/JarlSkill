@@ -240,8 +240,8 @@ test('a hand edit of Status is reported by status, resume and show as one line t
 
 const CASES = [
   { field: 'Status', edit: (t) => t.replace('**Status:** in-progress', '**Status:** open'), make: ['set', '1', 'open'] },
-  { field: 'Branch', edit: (t) => t.replace('**Branch:** jarl/1-a', '**Branch:** jarl/1-b'), make: ['set', '1', 'in-progress', '"<why>"', '--branch', 'jarl/1-b', '--handover'] },
-  { field: 'Worker', edit: (t) => t.replace('**Worker:** w1', '**Worker:** w9'), make: ['set', '1', 'in-progress', '"<why>"', '--worker', 'w9', '--handover'] },
+  { field: 'Branch', edit: (t) => t.replace('**Branch:** jarl/1-a', '**Branch:** jarl/1-b'), make: ['set', '1', 'in-progress', '"<text>"', '--branch', 'jarl/1-b', '--handover'] },
+  { field: 'Worker', edit: (t) => t.replace('**Worker:** w1', '**Worker:** w9'), make: ['set', '1', 'in-progress', '"<text>"', '--worker', 'w9', '--handover'] },
   { field: 'Model', edit: (t) => t.replace('**Model:** m1', '**Model:** m2'), make: ['set', '1', 'in-progress', '--model', 'm2'] },
   { field: 'Since', edit: (t) => t.replace(/^\*\*Since:\*\* .*$/m, '**Since:** 2026-01-01 00:00'), make: null },
   { field: 'Merged', edit: (t) => t.replace('**Merged:** abc1234', '**Merged:** deadbeef'), make: ['merged', '1', '--sha', 'deadbeef', '--ci', 'green', '--keep'] },
@@ -366,7 +366,7 @@ const FORGED = [
   ['2 evidence row · echo forged', 'evidence'],
   ['2 merged abc1234 · CI green', 'merged'],
   ['2 CI green', 'merged'],
-  ['2 body · what', 'body'],
+  ['2 body · what', 'field'],
 ];
 
 test('the free log refuses a line that reads as state, names the command that writes it, and a forged row and approve never reach the gate', () => {
@@ -689,7 +689,7 @@ test('the free log refuses an id and an arrow whatever follows, and a note of th
   const root = makeLoop();
   jarl(root, 'new', 'one', '--tier', 'light');
   for (const line of ['1 → see 3 for context', '1 → DONE', '1 →nowhere']) {
-    assert.match(refuses(root, 'log', line), /has the shape of a move.*jarl\.mjs set <ids> <status>/, line);
+    assert.match(refuses(root, 'log', line), /has the shape of a move.*jarl\.mjs set "<ids>" "<status>"/, line);
     assert.throws(() => R.appendLog(root, line), /shape of a move/);
   }
   appendFileSync(join(R.jarlDir(root), 'log.md'), '- 2026-10-01 09:00 · 1 → see 3 for context\n- 2026-10-01 09:01 · 1 → DONE\n');

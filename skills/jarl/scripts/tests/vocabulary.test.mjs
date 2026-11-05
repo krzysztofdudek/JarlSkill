@@ -9,18 +9,18 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import * as R from '../record.mjs';
 import { COMMAND_SUMMARY, USAGE } from '../jarl.mjs';
-import { gitRepo, jarlResult, run, skillLines } from './helpers.mjs';
+import { gitRepo, jarlResult, posixForms, run, skillLines, spawnJarl, withoutRoot } from './helpers.mjs';
 
 const NO_GH = { JARL_GH: join(tmpdir(), 'jarl-vocab-no-gh') };
 
-test('tips labels a worker branch as a worker branch and the checkout branch by its role in the skill, the feature branch', () => {
+test('resume\'s tips label a worker branch as a worker branch and the checkout branch by its role in the skill, the feature branch', () => {
   const { dir, g } = gitRepo({ prefix: 'jarl-vocab-tips-', branch: 'feature' });
   g('branch', 'jarl/2-a');
   R.initLoop(dir, 'goal');
   R.newIssue(dir, 'first', { acceptance: 'it works' });
   R.newIssue(dir, 'second', { acceptance: 'it works' });
   R.setStatus(dir, '2', 'in-progress', undefined, { branch: 'jarl/2-a', worker: 'w2' });
-  const o = JSON.parse(run(dir, ['tips', '--json'], { env: NO_GH }).stdout);
+  const o = JSON.parse(run(dir, ['resume', '--gh', '--json'], { env: NO_GH }).stdout).tips;
   assert.deepEqual(o.repos[0].rows.map((r) => [r.role, r.branch]), [['worker', 'jarl/2-a'], ['feature', 'feature']]);
 });
 
@@ -39,7 +39,7 @@ function transcript(flag) {
   jarlResult(dir, ['new', 'first']);
   jarlResult(dir, ['new', 'second']);
   const set = jarlResult(dir, ['set', '2', 'running', '--branch', 'jarl/2-a', '--worker', 'w2']).stdout;
-  const views = [['status'], ['next', '--all'], ['list', '--all'], ['queue'], ['show', '2'], ['resume']];
+  const views = [['status'], ['next', '--all'], ['list', '--all'], ['show', '2'], ['resume']];
   const out = views.map((args) => jarlResult(dir, args).stdout);
   // The directory's path and its name, the times, the issues' keys and the commit ids of the two repositories are taken
   // out: they differ by run.
@@ -58,7 +58,7 @@ test('a profile validation message names the lease, and a status names the flag 
   assert.doesNotThrow(() => R.validateProfile({ 'jarl-profile': 1, statuses: { a: ['dispatchable'], b: ['lease'], c: ['terminal', 'settles-dependents'] } }));
 });
 
-test('scope and check give the same output, and only check says on stderr which name to use', () => {
+test('a branch is measured by scope alone: check is refused with the scope call that does the same', () => {
   const { dir, g } = gitRepo({ prefix: 'jarl-vocab-scope-', branch: 'feature' });
   g('checkout', '-q', '-b', 'jarl/1-a');
   writeFileSync(join(dir, 'a.txt'), 'changed\n');
@@ -67,14 +67,13 @@ test('scope and check give the same output, and only check says on stderr which 
   R.initLoop(dir, 'goal');
   R.newIssue(dir, 'first', { acceptance: 'it works' });
   R.setStatus(dir, '1', 'in-progress', undefined, { branch: 'jarl/1-a', worker: 'w1' });
-  for (const extra of [[], ['--json']]) {
-    const scope = run(dir, ['scope', '1', '--branch', 'jarl/1-a', ...extra]);
-    const check = run(dir, ['check', '1', '--branch', 'jarl/1-a', ...extra]);
-    assert.equal(check.stdout, scope.stdout, extra.join(' '));
-    assert.equal(check.status, scope.status, extra.join(' '));
-    assert.equal(scope.stderr, '', 'scope says nothing on stderr');
-    assert.match(check.stderr, /^note: check keeps working as a name of scope; scope is the name to use$/m);
-  }
+  const scope = run(dir, ['scope', '1', '--branch', 'jarl/1-a']);
+  assert.equal(scope.stderr, '', 'scope says nothing on stderr');
+  assert.match(scope.stdout, /diff inside declared files/);
+  const check = spawnJarl(dir, ['check', '1', '--branch', 'jarl/1-a']);
+  assert.notEqual(check.status, 0);
+  assert.equal(check.stdout, '');
+  assert.equal(withoutRoot(posixForms(check.stderr.trim()), dir),"check is not a command; a branch is measured by scope\njarl.mjs scope \"<id>\" --branch \"<worker-branch>\"");
 });
 
 // The text the skill, the help and the tool descriptions speak in: one place where each rule below is checked.

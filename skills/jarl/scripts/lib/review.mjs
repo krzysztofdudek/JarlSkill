@@ -1,6 +1,6 @@
 // The review command.
 
-import { fieldText, need } from './base.mjs';
+import { fieldText, hole, jarlLine, need } from './base.mjs';
 import { needNoOwnersWords } from './owner.mjs';
 import { jarlDir, stamp } from './where.mjs';
 import { readText, writeAtomic } from './files.mjs';
@@ -10,14 +10,14 @@ import { bodyText, parseIssue, reviewEntries, setSection, unattributedRefusal } 
 import { needFormat, tipLines } from './repositories.mjs';
 import { carriesCode, gateOf, readLoop, reviewerKind } from './loop.mjs';
 import { SEVERITIES, loggedFinding, modelLines, modelValue, reviewModelNotes, spellingNote } from './models.mjs';
-import { EVIDENCE_HOW, issuesFor, oneOrMany, proofSince } from './commands.mjs';
+import { EVIDENCE_HOW, issuesFor, nothingWritten, oneOrMany, proofSince, refiled } from './commands.mjs';
 import { REVIEW_MIN_WORDS, needSaid, retractedBy, struck } from './evidence.mjs';
 import { ownerLineWait } from './owner-lines.mjs';
 
 // ---- commands: review ---------------------------------------------------------------------------------
 
 function retractReview(root, rawIds, reason, flags) {
-  need(!isBulk(rawIds), 'retract names one issue');
+  need(!isBulk(rawIds), 'retract names one issue', () => ({ arg: 0, value: hole('<id>') }));
   const by = retractedBy(flags, 'a retraction');
   needSaid(reason, 'a retraction');
   const [issue] = issuesFor(root, rawIds);
@@ -28,7 +28,7 @@ function retractReview(root, rawIds, reason, flags) {
   const table = reviewEntries(parseIssue(text, issue.file).sections.reviews);
   let target = null;
   for (let k = table.entries.length - 1; k >= 0; k -= 1) { const e = table.entries[k]; if (e.verdict === 'approve' && !e.retracted) { target = e; break; } }
-  need(g.lastApprove || target, `${issue.id} has no approve to retract — a retraction takes away the newest approve, never a "changes" verdict`);
+  need(g.lastApprove || target, `${issue.id} has no approve to retract — a retraction takes away the newest approve (review), never a "changes" verdict; a row or a note is retracted by its number`, () => ({ arg: 1, value: '<n-or-note-n>' }));
   const who = g.lastApprove || target;
   const kind = reviewerKind(by, g.workers, coordinators);
   // The first retraction of a loop raises the record format, before its line is written: a reader of format 1 does not
@@ -45,23 +45,23 @@ function retractReview(root, rawIds, reason, flags) {
 }
 export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
   needNoOwnersWords('the review', findings, flags);
-  need(verdict === 'approve' || verdict === 'changes' || verdict === 'retract', 'review requires approve|changes|retract');
+  need(verdict === 'approve' || verdict === 'changes' || verdict === 'retract', `review takes approve or changes (got "${verdict}")`, () => [...(rawIds === undefined ? [{ arg: 0, value: '<ids>' }] : []), { arg: 1, value: hole('<verdict>') }, ...(findings === undefined ? [{ arg: 2, value: '<what-was-read-and-found>' }] : []), ...(flags.by === undefined ? [{ flag: '--by', value: '<reviewer>' }] : [])]);
   if (verdict === 'retract') return retractReview(root, rawIds, findings, flags);
-  need(findings, 'review requires "<findings>" — what was read and what was found, even when nothing');
+  need(findings, `review requires "<text>" — what was read and what was found, even when nothing`, () => ({ arg: 2, value: '<what-was-read-and-found>' }));
   const words = String(findings).split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
-  need(words >= REVIEW_MIN_WORDS, `the findings of a review need at least ${REVIEW_MIN_WORDS} words — what was read and what was found, even when nothing (got ${words} word${words === 1 ? '' : 's'}: "${String(findings).trim().slice(0, 40)}")`);
-  need(flags.by === undefined || fieldText(flags.by), '--by needs a value — the reviewer\'s name');
-  need(flags.by !== undefined, `a verdict needs --by <reviewer> — who read the diff: a fresh reviewer's name, or jarl when the loop's director reviewed it`);
+  need(words >= REVIEW_MIN_WORDS, `the findings of a review need at least ${REVIEW_MIN_WORDS} words — what was read and what was found, even when nothing (got ${words} word${words === 1 ? '' : 's'}: "${String(findings).trim().slice(0, 40)}")`, () => ({ arg: 2, value: hole('<what-was-read-and-found>') }));
+  need(flags.by === undefined || fieldText(flags.by), '--by needs a value — the reviewer\'s name', () => ({ flag: '--by', value: '<reviewer>' }));
+  need(flags.by !== undefined, `a verdict needs --by <reviewer> — who read the diff: a fresh reviewer's name, or jarl when the loop's director reviewed it`, () => ({ flag: '--by', value: '<reviewer>' }));
   const issues = issuesFor(root, rawIds);
-  if (verdict === 'approve') for (const issue of issues) { const refusal = unattributedRefusal(issue, 'approved'); need(!refusal, `${refusal}${issues.length > 1 ? ' — nothing was written' : ''}`); }
+  if (verdict === 'approve') for (const issue of issues) { const refusal = unattributedRefusal(issue, 'approved'); need(!refusal, issues.length > 1 ? nothingWritten(refusal) : refusal, refiled); }
   const severities = SEVERITIES.filter((s) => findings.includes(s));
   if (verdict === 'changes') {
-    need(severities.length > 0, `"changes" needs at least one finding ranked ${SEVERITIES.join('/')} — name the severity, not just the problem`);
-    need(severities.some((s) => s !== 'Minor'), '"changes" needs a Critical or Important finding — Minor alone goes to evidence on an approve, it never bounces a branch');
+    need(severities.length > 0, `"changes" needs at least one finding ranked ${SEVERITIES.join('/')} — name the severity, not just the problem (got ${JSON.stringify(findings)})`, () => ({ arg: 2, value: hole('<findings-with-a-severity>') }));
+    need(severities.some((s) => s !== 'Minor'), `"changes" needs a Critical or Important finding — Minor alone goes to evidence on an approve, it never bounces a branch`, () => ({ arg: 1, value: '<verdict>' }));
   }
   const by = flags.by !== undefined ? fieldText(flags.by) : null;
   const model = flags.model !== undefined ? modelValue(flags.model) : undefined;
-  need(flags.relayed === undefined || flags.relayed === true, '--relayed takes no value');
+  need(flags.relayed === undefined || flags.relayed === true, '--relayed takes no value', () => ({ rename: '--relayed', to: hole('<no-flag-here>') }));
   const relayed = flags.relayed === true;
   // The whole loop, not just the issues under review: a sibling elsewhere on the same Branch still counts for self.
   const loop = by ? readLoop(jarlDir(root)) : null;
@@ -72,7 +72,7 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
     const self = [...gateOf(loop, issue.id).workers];
     const kind = reviewerKind(by, self, loop.coordinators);
     const who = self.length === 1 ? `${self[0]} is the issue's worker` : self.length > 1 ? `${self.join(', ')} have all held ${issue.id}'s lease` : '';
-    need(verdict !== 'approve' || kind !== 'self', `${issue.id}: an approve by ${by} is a self-approve${who ? ` (${who})` : ''} and does not count as review — a fresh reviewer, or the jarl, reads the diff${issues.length > 1 ? ' — nothing was written' : ''}`);
+    need(verdict !== 'approve' || kind !== 'self', `${issue.id}: an approve by ${by} is a self-approve${who ? ` (${who})` : ''} and does not count as review — a fresh reviewer, or the jarl, reads the diff${issues.length > 1 ? ' — nothing was written' : ''}`, () => ({ flag: '--by', value: hole('<a-fresh-reviewer>') }));
     return kind;
   });
   // The whole findings go under the issue's ## Reviews (before Evidence, which stays last); the log keeps the verdict
@@ -111,8 +111,8 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
 // round, which sends the work back to a worker raised again. A coordinator's approve on code does not clear it: a fresh
 // reviewer's approve is the next step. `wait` is what done also waits for: the owner's tick of a line only he ticks.
 function nextAfterVerdict(issue, verdict, kind, wait = null) {
-  if (verdict === 'changes') return `the jarl records the round — jarl.mjs round ${issue.id} "<what failed>" — and a worker is raised again to fix it`;
-  if (carriesCode(issue) && kind === 'coordinator') return `a fresh reviewer's approve is next — jarl.mjs review ${issue.id} approve|changes --by <fresh reviewer> "<findings>" — then the merger lands it`;
-  if (carriesCode(issue)) return `the merger merges the branch and records it with one call — jarl.mjs merged ${issue.id} --sha <sha> --ran "<check>" --saw "<summary>" — then ${wait ? `${wait}, then ` : ''}jarl.mjs set ${issue.id} done, which needs a Proof row from the worker (the merge check is the merger's and is no proof); a worker never sets done`;
-  return `${wait ? `${wait}, then ` : ''}jarl.mjs set ${issue.id} done once the worker's Proof rows are recorded; a worker never sets done`;
+  if (verdict === 'changes') return `the jarl records the round — ${jarlLine('round', issue.id, '<text>')} — and a worker is raised again to fix it`;
+  if (carriesCode(issue) && kind === 'coordinator') return `a fresh reviewer's approve is next — ${jarlLine('review', issue.id, '<verdict>', '--by', '<a-fresh-reviewer>', '<text>')} — then the merger lands it`;
+  if (carriesCode(issue)) return `the merger merges the branch and records it with one call — ${jarlLine('merged', issue.id, '--sha', '<sha>', '--ran', '<command>', '--saw', '<what-it-printed>')} — then ${wait ? `${wait}, then ` : ''}${jarlLine('set', issue.id, 'done', '<why>')}, which needs a Proof row from the worker (the merge check is the merger's and is no proof); a worker never sets done`;
+  return `${wait ? `${wait}, then ` : ''}${jarlLine('set', issue.id, 'done', '<why>')} once the worker's Proof rows are recorded; a worker never sets done`;
 }

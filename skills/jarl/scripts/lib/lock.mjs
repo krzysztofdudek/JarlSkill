@@ -3,6 +3,7 @@
 import { existsSync, realpathSync, statSync, openSync, closeSync, writeSync, unlinkSync } from 'node:fs';
 import { hostname } from 'node:os';
 import { join, resolve } from 'node:path';
+import { refuse } from './base.mjs';
 import { jarlDir } from './where.mjs';
 import { RENAME_BUSY, readText, sleep, writeAtomic } from './files.mjs';
 import { JARL_GITIGNORE_COMMITTED, ensureLoopMerge } from './loop-git.mjs';
@@ -33,7 +34,7 @@ const ASYNC_REFUSAL = 'withLock takes a synchronous function: the lock is releas
 function isThenable(v) { return v !== null && (typeof v === 'object' || typeof v === 'function') && typeof v.then === 'function'; }
 function runSync(fn) {
   const out = fn();
-  if (isThenable(out)) throw new Error(ASYNC_REFUSAL);
+  if (isThenable(out)) throw new TypeError(ASYNC_REFUSAL);
   return out;
 }
 
@@ -78,7 +79,7 @@ function breakStaleLock(root, stale) {
 // Waiting for a lock held elsewhere blocks the whole thread (Atomics.wait), for up to LOCK_WAIT_MS (20 s): the
 // tool is synchronous by design, so a caller with an event loop to keep alive should call it off that loop.
 export function withLock(root, fn) {
-  if (typeof fn !== 'function' || fn.constructor?.name === 'AsyncFunction') throw new Error(ASYNC_REFUSAL);
+  if (typeof fn !== 'function' || fn.constructor?.name === 'AsyncFunction') throw new TypeError(ASYNC_REFUSAL);
   // Before init there is no .jarl/ to guard and nothing in it to lose: init runs unguarded.
   if (!existsSync(jarlDir(root))) return runSync(fn);
   const key = lockKey(root);
@@ -92,19 +93,19 @@ export function withLock(root, fn) {
       try { writeSync(fd, mine); } finally { closeSync(fd); }
       break;
     } catch (e) {
-      if (e.code === 'ENOENT') throw new Error(`no .jarl/ here any more — the loop was closed or archived while this command waited (${jarlDir(root)})`);
+      if (e.code === 'ENOENT') refuse(`no .jarl/ here any more — the loop was closed or archived while this command waited (${jarlDir(root)})`, ['jarl.mjs', 'init', '<goal>']);
       // Windows: a lock just released is "delete pending" while another process still has it open (a waiter reading
       // it), and creating it again is refused with EPERM until that handle closes — a busy lock, not an error.
       if (!(e.code === 'EEXIST' || (process.platform === 'win32' && RENAME_BUSY.has(e.code)))) throw e;
     }
     let text = ''; let mtimeMs = Date.now();
     try { text = readText(path); mtimeMs = statSync(path).mtimeMs; } catch {   // released meanwhile
-      if (Date.now() > until) throw new Error(`.jarl/.lock could not be taken within ${LOCK_WAIT_MS} ms — nothing was written; retry`);
+      if (Date.now() > until) refuse(`.jarl/.lock could not be taken within ${LOCK_WAIT_MS} ms — nothing was written; retry`, { retry: true });
       sleep(1 + Math.floor(Math.random() * 5));
       continue;
     }
     if (lockIsStale(text, mtimeMs)) { breakStaleLock(root, text); sleep(1 + Math.floor(Math.random() * 5)); continue; }
-    if (Date.now() > until) throw new Error(`.jarl/.lock is held by another jarl.mjs (${text.trim() || 'holder unknown'}) — nothing was written; retry, or remove ${path} if that process is gone`);
+    if (Date.now() > until) refuse(`.jarl/.lock is held by another jarl.mjs (${text.trim() || 'holder unknown'}) — nothing was written; retry, or remove ${path} if that process is gone`, { retry: true });
     sleep(10 + Math.floor(Math.random() * 40));
   }
   HELD.set(key, 1);

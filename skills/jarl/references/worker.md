@@ -15,22 +15,23 @@ The worker's own-worktree rule is in [SKILL.md](../SKILL.md#the-rules-that-never
 ## The worker's brief
 
 ```
-You are worker <name> on issue <id> of branch <feature-branch>, in worktree <path>, on branch jarl/7-slug.
-(When the issue carries a **Repo:** field, <feature-branch>, <path> and the branch are all in THAT repository, not in the loop's own: run git and the repository's check there.)
-FIRST ACTION: git merge <feature-branch>; git status must be clean afterwards — if not, stop and report.
+You are worker <name> on issue <id> of branch <base-branch>, in worktree <path>, on branch jarl/7-slug.
+(When the issue carries a **Repo:** field, <base-branch>, <path> and the branch are all in THAT repository, not in the loop's own: run git and the repository's check there.)
+FIRST ACTION: git merge <base-branch>; git status must be clean afterwards — if not, stop and report.
 If your worktree was made for you by the platform and starts on a branch it named, RENAME that branch
 (`git branch -m jarl/7-slug`); never create a second branch beside it, which leaves the first one behind.
 Your scope is the issue below and nothing else. Anything else you see goes into your report under
 "Found", never into the diff.
 No file of the repository carries a task number or a description of a task: no loop issue number appears in code, comments, tests, docs or graph entries, because the loop ends and the number then points nowhere. A comment says what the code does and why it must be so, and a test title says what behaviour it proves. Only the commit subject names the issue (`… (issue <id>)`).
-The loop's tools are the jarl MCP tools (jarl_show, jarl_evidence, jarl_body, …); pass root: "<loop root>"
+The loop's tools are the jarl MCP tools (jarl_show, jarl_evidence, jarl_field, …); pass root: "<loop-root>"
 (the directory that holds `.jarl/`) on every call — your worktree has no live `.jarl/` of its own — and never add `.jarl/` to your branch. If your
-session has no jarl_* tools, run the same commands as `node <absolute path to jarl.mjs> <command> --root <loop root>`.
+session has no jarl_* tools, run the same commands as `node <path-of-jarl.mjs> <command> --root <loop-root>`.
+A refused call writes nothing: a refusal ends with the form of the command with a `<placeholder>`; fill the value and run it; never paste it as printed. The commands Jarl prints are written for a POSIX shell (sh, bash, zsh) on macOS and Linux, and on Windows for PowerShell and cmd, whose double quotes Git Bash reads alike but for a path that starts with two backslashes, which it reads with one; replace every `<placeholder>` before running one.
 If the change is user-visible, record its changelog entry on the issue:
-jarl_body { id: "7", changelog: ["Added: …"], root: "<loop root>" } (Changed, Fixed, … — one item per line). Edit
+jarl_field { ids: "7", name: "Changelog", value: "Added: …", root: "<loop-root>" } (Changed, Fixed, … — one entry per line of value; add: true adds to those there). Edit
 CHANGELOG.md on your branch as well only where the repository's own rules (its CLAUDE.md, AGENTS.md or hooks) require
 the entry to come with the change; otherwise leave CHANGELOG.md to the merger.
-Read the rulings in force first (jarl_decisions { live: true, root: "<loop root>" }): a ruling that names your issue or its files binds you.
+Read the rulings in force first (jarl_decisions { live: true, root: "<loop-root>" }): a ruling that names your issue or its files binds you.
 Prove the change: a test that is red before and green after. Run the test files your change touches,
 in the foreground, with the shell tool's own timeout parameter set (a run that outlives the tool's
 default timeout is moved to the background and you will sit waiting for a notification that is not
@@ -52,6 +53,6 @@ Before you report, go through the closing checklist, every item, whatever the ti
 
 ## Changelog fragments
 
-Parallel branches that each add a line to `CHANGELOG.md` under `[Unreleased]` conflict at nearly every merge, in the one place every issue touches. So the entry lives on the issue until the merge: the worker records it with `body <id> --changelog "Added: …"` (repeat the flag for more lines; the jarl can file it with `new --changelog`), and leaves `CHANGELOG.md` alone on its branch — unless the repository's own rules (its CLAUDE.md, AGENTS.md or a hook) require the entry to come with the change, in which case it edits the file as those rules say and records the fragment too. An entry opens with its Keep a Changelog section — `Added:`, `Changed:`, `Deprecated:`, `Removed:`, `Fixed:` or `Security:` — and one without goes under Fixed for a `bug` and Changed for anything else. An issue with no user-visible change has no Changelog section.
+Parallel branches that each add a line to `CHANGELOG.md` under `[Unreleased]` conflict at nearly every merge, in the one place every issue touches. So the entry lives on the issue until the merge: the worker records it with `field <id> Changelog "Added: …"` (one entry per line; `--add` adds one to those there; the jarl can file it with `new --changelog`), and leaves `CHANGELOG.md` alone on its branch — unless the repository's own rules (its CLAUDE.md, AGENTS.md or a hook) require the entry to come with the change, in which case it edits the file as those rules say and records the fragment too. An entry opens with its Keep a Changelog section — `Added:`, `Changed:`, `Deprecated:`, `Removed:`, `Fixed:` or `Security:` — and one without goes under Fixed for a `bug` and Changed for anything else. An issue with no user-visible change has no Changelog section.
 
 `changelog <ids>` prints the entries of those issues grouped by section, in Keep a Changelog order, ready to paste under `[Unreleased]`; when the issues span several repositories it prints one block per repository (an issue naming two appears in both), and `--repo <path>` keeps one. An issue without an entry is named on stderr. The merger writes `CHANGELOG.md` once, after the merge (or the batch) is green, in its own commit on the feature branch: the entries are material, edited into the register the repository asks for and merged into an existing `[Unreleased]` entry when they cover the same feature, as in [Closing the branch](jarl.md#closing-the-branch). Nothing changes in the repository's layout: the fragment is a section of the issue, and the repository keeps its one changelog. A loop whose workers edit `CHANGELOG.md` themselves works the same way: `scope` counts a changelog edit as in scope.

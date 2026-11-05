@@ -28,7 +28,8 @@ test('a second lease on an issue another lease holds is refused, names the holde
   const before = logText(root);
   const said = refuses(root, 'set', '1', 'in-progress', 'B', '--branch', 'jarl/1-one-b', '--worker', 'wB');
   assert.match(said, /1 is leased already \(worker wA, branch jarl\/1-one, since /);
-  assert.match(said, /set 1 in-progress "<why the worker changed>" --branch jarl\/1-one-b --worker wB --handover/, 'the refusal ends with the command that hands the issue over');
+  assert.match(said, /set 1 in-progress "<why-the-worker-changed>" --branch jarl\/1-one-b --worker wB --handover/, 'the reason names the command that hands the issue over');
+  assert.equal(said.trim().split('\n').at(-1), "jarl.mjs set \"<ids>\" \"<status>\" \"<why>\" --branch \"<worker-branch>\" --worker \"<the-new-worker>\" \"<--handover-or-none>\"", 'the refusal ends with its form, the handover the caller\'s to give');
   assert.equal(logText(root), before, 'nothing was written');
   const one = JSON.parse(jarl(root, 'show', '1', '--json'));
   assert.equal(one.fields.worker, 'wA');
@@ -49,7 +50,7 @@ test('the same holder restating its lease, or a move that names no lease, is not
 
 test('a lease on a file another lease holds is refused, naming the holding issue and its slice tag', () => {
   const { root } = twoOnOneFile();
-  jarl(root, 'tag', '1', '+slice:alpha');
+  jarl(root, 'field', '1', 'Tags', '--add', 'slice:alpha');
   jarl(root, 'set', '1', 'in-progress', 'A', '--branch', 'jarl/1-one', '--worker', 'wA');
   const before = logText(root);
   const said = refuses(root, 'set', '2', 'in-progress', 'held file', '--branch', 'jarl/2-two', '--worker', 'wC');
@@ -96,7 +97,7 @@ test('a handover with its reason is accepted and logged, and the new lease repla
 
 test('a handover needs its reason, a lease to replace and a change of holder', () => {
   const { root } = twoOnOneFile();
-  assert.match(refuses(root, 'set', '1', 'in-progress', '--branch', 'jarl/1-one', '--worker', 'wA', '--handover'), /--handover says why the work changes hands: set 1 in-progress "<why the worker changed>"/);
+  assert.match(refuses(root, 'set', '1', 'in-progress', '--branch', 'jarl/1-one', '--worker', 'wA', '--handover'), /--handover says why the work changes hands: jarl\.mjs set 1 in-progress "<why-the-worker-changed>"/);
   assert.match(refuses(root, 'set', '1', 'in-progress', 'nobody', '--branch', 'jarl/1-one', '--worker', 'wA', '--handover'), /1 holds no lease to hand over/);
   jarl(root, 'set', '1', 'in-progress', 'A', '--branch', 'jarl/1-one', '--worker', 'wA');
   assert.match(refuses(root, 'set', '1', 'in-progress', 'same', '--branch', 'jarl/1-one', '--worker', 'wA', '--handover'), /names the lease 1 already has/);

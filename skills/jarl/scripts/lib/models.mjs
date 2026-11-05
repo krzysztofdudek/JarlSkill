@@ -2,7 +2,7 @@
 
 import { existsSync, readdirSync } from 'node:fs';
 import { join, resolve, dirname, basename } from 'node:path';
-import { fieldText, need } from './base.mjs';
+import { fieldText, hole, need } from './base.mjs';
 import { canonical, jarlDir } from './where.mjs';
 import { cmpId } from './ids.mjs';
 import { loadProfile } from './profile.mjs';
@@ -25,8 +25,8 @@ const loggedFinding = (line) => (/^(model |relayed( ·|$))/i.test(line) ? `findi
 // A --model value: the platform's model id as given, trimmed. One value, and never the log's own separator.
 function modelValue(raw) {
   const m = fieldText(raw);
-  need(typeof raw === 'string' && m, '--model needs a value — the platform\'s model id, with @<effort> where the platform has a reasoning-effort lever');
-  need(!m.includes(' · '), `--model is one value, the model id as the platform names it — not a phrase with " · " in it (got "${m}")`);
+  need(typeof raw === 'string' && m, '--model needs a value — the platform\'s model id, with @ and the effort where the platform has a reasoning-effort lever', () => ({ flag: '--model', value: '<model-id>' }));
+  need(!m.includes(' · '), `--model is one value, the model id as the platform names it — not a phrase with " · " in it (got "${m}")`, () => ({ flag: '--model', value: hole('<model-id>') }));
   return m;
 }
 const baseModelId = (m) => String(m).split('@')[0];
@@ -286,8 +286,8 @@ function loopShape(path) {
 }
 export function cmdModels(root, flags = {}) {
   builds.modelsTable += 1;
-  need(flags.by === undefined || ['repo', 'tag'].includes(flags.by), `--by is one of: repo, tag (got "${flags.by}")`);
-  need(flags.archives === undefined || flags.archives === true, '--archives takes no value');
+  need(flags.by === undefined || ['repo', 'tag'].includes(flags.by), `--group is one of: repo, tag (got "${flags.by}")`, () => ({ flag: '--group', value: '<group>' }));
+  need(flags.archives === undefined || flags.archives === true, '--archives takes no value', () => ({ rename: '--archives', to: hole('<no-flag-here>') }));
   const lines = modelLines(root);
   const sources = [];
   const seen = new Set();
@@ -298,15 +298,15 @@ export function cmdModels(root, flags = {}) {
     if (existsSync(dir)) for (const name of readdirSync(dir).sort()) if (loopShape(join(dir, name)) === 'archive') add(`archive ${name}`, join(dir, name), 'archive');
   }
   for (const p of [].concat(flags.with ?? [])) {
-    need(typeof p === 'string' && p, '--with takes a loop: the directory holding .jarl/, or an archived loop under .jarl/archive/');
+    need(typeof p === 'string' && p, '--with takes a loop: the directory holding .jarl/, or an archived loop under .jarl/archive/', () => ({ flag: '--with', value: '<loop-root>' }));
     let path = resolve(p);
     // A root's own .jarl/ is the same loop as the root.
     if (basename(path) === '.jarl' && loopShape(dirname(path)) === 'root') path = dirname(path);
     const shape = loopShape(path);
-    need(shape, `${p} is not a loop: it holds no .jarl/ with a log and issues, and is not an archived loop (an archive directory holds ${LOG_FILE} and issues/) — nothing was read`);
+    need(shape, `${p} is not a loop: it holds no .jarl/ with a log and issues, and is not an archived loop (an archive directory holds ${LOG_FILE} and issues/) — nothing was read`, () => ({ replace: p, value: '<loop-root>' }));
     add(p, path, shape);
   }
-  need(sources.length, `no loop to read here: ${root} holds no live loop — name one with --with <root>, or its archives with --archives`);
+  need(sources.length, `no loop to read here: ${root} holds no live loop — name one with --with <loop-root>, or its archives with --archives`, () => ({ flag: '--with', value: '<loop-root>' }));
   const facts = sources.map((s) => modelFacts(readLoop(s.shape === 'archive' ? s.path : jarlDir(s.path)), s.label, lines));
   const unitRows = facts.flatMap((f) => f.units);
   const verdictRows = facts.flatMap((f) => f.verdicts);
@@ -360,7 +360,7 @@ const SEVERITIES = ['Critical', 'Important', 'Minor'];
 // self). An approve by the issue's own worker — its Worker field, or the worker of its last lease — is refused:
 // a self-approve is not a review.
 //
-// review <id> retract --by <who> "<reason>" retracts the newest approve not yet retracted, by an appended entry: the
+// review <id> retract --by <who> "<text>" retracts the newest approve not yet retracted, by an appended entry: the
 // approve stays in the issue, struck through, and the done gate and the metrics stop counting it. It only tightens:
 // a "changes" verdict is never retracted (that would revive an earlier acceptance) and a retraction is never retracted.
 

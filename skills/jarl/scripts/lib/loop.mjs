@@ -2,7 +2,7 @@
 // log disagree.
 
 import { resolve, dirname, basename } from 'node:path';
-import { CI_STATES, fieldText, need } from './base.mjs';
+import { CI_STATES, fieldText, hole, jarlLine, need } from './base.mjs';
 import { jarlDir } from './where.mjs';
 import { idKey, idRe, idsCited, keyedIds } from './ids.mjs';
 import { profileAt } from './profile.mjs';
@@ -82,7 +82,7 @@ export function recordDisagreements(loop) {
     }
     if (issue.onFile === null) {
       const status = profile.statuses.includes(issue.status) ? issue.status : profile.initial;
-      out.push({ id, field: 'journal', onFile: issue.status, record: null, line: `record: ${id} is not in the log (it holds no filing and no move), so its header is read as it stands — to put it in the log: jarl.mjs set ${id} ${status}${profile.is(status, 'needs-reason') ? ' "<why>"' : ''}${profile.is(status, 'closes-record') ? ' (through its checks)' : ''}` });
+      out.push({ id, field: 'journal', onFile: issue.status, record: null, line: `record: ${id} is not in the log (it holds no filing and no move), so its header is read as it stands — to put it in the log: ${jarlLine('set', id, status, ...(profile.is(status, 'needs-reason') ? ['<text>'] : []))}${profile.is(status, 'closes-record') ? ' (through its checks)' : ''}` });
       continue;
     }
     for (const field of Object.keys(FIELD_NAMES)) {
@@ -137,21 +137,21 @@ function makeFileTheRecord(profile, issue, field, file) {
   if (!file) return '';
   if (field === 'status') {
     if (!profile.statuses.includes(file)) return '';
-    return `jarl.mjs set ${id} ${file}${profile.is(file, 'needs-reason') ? ' "<why>"' : ''} (a move into ${file}${profile.is(file, 'closes-record') ? ', through its checks' : ''})`;
+    return `${jarlLine('set', id, file, ...(profile.is(file, 'needs-reason') ? ['<text>'] : []))} (a move into ${file}${profile.is(file, 'closes-record') ? ', through its checks' : ''})`;
   }
   if (LEASE_KEYS.includes(field)) {
     if (!profile.is(issue.status, 'holds-claim')) return '';
     // Another worker or branch than the lease the log holds is a new holder: the lease is handed over, with its reason.
     const handover = (field === 'worker' || field === 'branch') && Boolean(issue.fields[field]);
-    return handover ? `jarl.mjs set ${id} ${issue.status} "<why>" --${field} ${file} --handover (a handover, a new move line, which stamps Since again)` : `jarl.mjs set ${id} ${issue.status} --${field} ${file} (a new move line, which stamps Since again)`;
+    return handover ? `${jarlLine('set', id, issue.status, '<text>', `--${field}`, file, '--handover')} (a handover, a new move line, which stamps Since again)` : `${jarlLine('set', id, issue.status, `--${field}`, file)} (a new move line, which stamps Since again)`;
   }
   if (field === 'merged') {
     const merge = /^\S+(?: in .+)?$/.test(file) ? mergedOf({ fields: { merged: file } }) : null;
     if (!merge) return '';
     const ci = fieldText(issue.onFile.ci);
-    return `jarl.mjs merged ${id} --sha ${merge.sha}${merge.repo ? ` --repo ${merge.repo}` : ''}${CI_STATES.includes(ci) ? ` --ci ${ci}` : ''} --keep (a new merge line)`;
+    return `${jarlLine('merged', id, '--sha', merge.sha, ...(merge.repo ? ['--repo', merge.repo] : []), ...(CI_STATES.includes(ci) ? ['--ci', ci] : []), '--keep')} (a new merge line)`;
   }
-  if (field === 'ci') return CI_STATES.includes(file) && issue.fields.merged ? `jarl.mjs merged ${id} --ci ${file} (a new CI line)` : '';
+  if (field === 'ci') return CI_STATES.includes(file) && issue.fields.merged ? `${jarlLine('merged', id, '--ci', file)} (a new CI line)` : '';
   return '';
 }
 // One entry for a header field that differs from the log. Its `rewrite` (not enumerable, so not in the JSON) is the
@@ -161,7 +161,7 @@ function fieldDisagreement(profile, issue, field, file, record) {
   const follow = record ? `write **${name}:** ${record} back into the header` : `remove the **${name}:** line from the header`;
   const make = makeFileTheRecord(profile, issue, field, file);
   const entry = { id: issue.id, field: name, onFile: file || null, record: record || null, line: `record: ${issue.id} ${disagreementSentence(name, file, record)}, which is the record — to follow the log, ${follow}${make ? `; to make the file's value the record, ${make}` : ''}` };
-  Object.defineProperty(entry, 'rewrite', { value: `jarl.mjs set ${issue.id} ${issue.status} --header`, enumerable: false });
+  Object.defineProperty(entry, 'rewrite', { value: jarlLine('set', issue.id, issue.status, '--header'), enumerable: false });
   return entry;
 }
 // The lines that have the shape of a move the tool writes (`<id> → <status>` alone or followed by ` · …`, the status a
@@ -219,10 +219,10 @@ export function unorderedNamings(issues, profile, only = null) {
   }
   return out;
 }
-// The note a text that names unordered issues gets, on one line: the same words from verify, new and body.
+// The note a text that names unordered issues gets, on one line: the same words from verify, new and field.
 export function unorderedText(n) {
   const [noun, it, is] = n.names.length === 1 ? ['issue', 'it', 'is'] : ['issues', 'them', 'are'];
-  return `names ${noun} ${n.names.join(', ')} in What, Why or Acceptance, which ${is} neither done nor dropped, and no After orders ${it} with ${n.id} — if the text relies on ${it}, order the two with: jarl.mjs after`;
+  return `names ${noun} ${n.names.join(', ')} in What, Why or Acceptance, which ${is} neither done nor dropped, and no After orders ${it} with ${n.id} — if the text relies on ${it}, order the two by adding ${it} to After, which keeps what After holds: ${jarlLine('field', n.id, 'After', n.names.join(','), '--add')}`;
 }
 
 // Who reviewed, as a kind: the word self, or anyone who has ever held the issue's lease — its own worker across
@@ -264,17 +264,19 @@ export const sameSlice = (a, b) => a !== null && b !== null && fieldText(a).toLo
 // now, so a refusal says how to move it from the slice it is in, removing every slice tag it holds.
 export function needOneSlice(tags, { id = null, held = [] } = {}) {
   const slices = [...new Set(tags.filter(isSliceTag))];
-  for (const t of slices) need(t.length > SLICE_PREFIX.length, `${t} names no coordinator: a slice is the tag slice:<coordinator>, the coordinator a name of the goal's Coordinators line`);
+  for (const t of slices) need(t.length > SLICE_PREFIX.length, `${t} names no coordinator: a slice is the tag slice:<coordinator>, the coordinator a name of the goal's Coordinators line`, () => ({ replace: t, value: '<slice:coordinator>' }));
   if (slices.length <= 1) return;
   const heldSlices = held.filter(isSliceTag);
   const was = heldSlices[0];
   const to = was && slices.find((t) => !heldSlices.some((h) => h.toLowerCase() === t.toLowerCase()));
   const same = was && !to ? slices.find((t) => !heldSlices.includes(t)) : null;
+  // The tags to take off and the one to add are named, never written into a command: which slice the issue goes to is the
+  // caller's to say, so the steps below the reason are forms.
   need(false, id !== null && was && to
-    ? `${id} is in ${was} already, and an issue is in one slice — to move it: jarl.mjs tag ${id} ${heldSlices.map((h) => `-${h}`).join(' ')} +${to}`
+    ? `${id} is in ${was} already, and an issue is in one slice — to move it, take ${heldSlices.join(' and ')} off with field --remove first, then add ${to} with field --add`
     : id !== null && same
       ? `${id} is in ${was} already, and ${same} names the same slice in another case — an issue carries one slice tag`
-      : `an issue is in one slice, and ${id !== null ? `${id} would carry` : 'the tags name'} ${slices.join(', ')} — keep one`);
+      : `an issue is in one slice, and ${id !== null ? `${id} would carry` : 'the tags name'} ${slices.join(', ')} — keep one${id !== null ? '' : `, e.g. --tags ${slices[0]}`}`, () => (id !== null && was && to ? [{ first: ['jarl.mjs', 'field', hole('<ids>'), 'Tags', hole('<tag>'), '--remove'] }, { retry: true }] : { retry: true }));
 }
 // The slices of a loop: each coordinator the Coordinators line names, with its slice tag, then each slice a tag names
 // whose coordinator the line does not list (declared false: its coordinator's approve counts as fresh). inPlay counts the
@@ -294,11 +296,11 @@ export function slicesOf(loop) {
 // The coordinator a --slice names, as the record writes it: a name of the Coordinators line (`coordinators`) or of a
 // slice tag one of `issues` carries, in any case. Any other name is refused, naming the slices there are.
 export function sliceNamed(coordinators, issues, name) {
-  need(typeof name === 'string' && fieldText(name), '--slice names a coordinator: its slice is the issues tagged slice:<coordinator>');
+  need(typeof name === 'string' && fieldText(name), '--slice names a coordinator: its slice is the issues tagged slice:<coordinator>', () => ({ flag: '--slice', value: '<coordinator>' }));
   const known = [...coordinators, ...issues.map(sliceOf).filter((s) => s !== null)];
   const found = known.find((k) => sameSlice(k, name));
   const names = [...new Map(known.map((k) => [k.toLowerCase(), k])).values()];
-  need(found !== undefined, `no coordinator ${fieldText(name)} on the goal's Coordinators line and no issue tagged ${sliceTag(fieldText(name))} — ${names.length ? `the slices are ${names.map(sliceTag).join(', ')}` : 'the loop has no slice: jarl.mjs goal --set "Coordinators: <names>", then jarl.mjs tag <ids> +slice:<name>'}`);
+  need(found !== undefined, `no coordinator ${fieldText(name)} on the goal's Coordinators line and no issue tagged ${sliceTag(fieldText(name))} — ${names.length ? `the slices are ${names.map(sliceTag).join(', ')}` : `the loop has no slice: ${jarlLine('goal', '--set', 'Coordinators: <names>')}, then ${jarlLine('field', '<ids>', 'Tags', '--add', '<slice:coordinator>')}`}`, () => (names.length ? { replace: fieldText(name), value: hole('<coordinator>') } : ['jarl.mjs', 'goal', '--set', '<machine-line>']));
   return found;
 }
 // The slices with an issue in play.

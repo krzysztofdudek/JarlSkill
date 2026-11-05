@@ -2,7 +2,7 @@
 
 import { existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { KEPT_KINDS, KINDS, TIERS, TIER_DEFAULT, need } from './base.mjs';
+import { KEPT_KINDS, KINDS, TIERS, TIER_DEFAULT, afterView, need, refuse } from './base.mjs';
 import { jarlDir } from './where.mjs';
 import { readText } from './files.mjs';
 
@@ -153,10 +153,10 @@ export function validateProfile(json, where = 'the profile') {
   const say = (m) => bad.push(m);
   const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
   const oneLine = (v) => typeof v === 'string' && v.trim() !== '' && !/[\r\n]/.test(v);
-  if (!isObj(json)) throw new Error(`${where} is not a JSON object`);
+  if (!isObj(json)) refuse(`${where} is not a JSON object`, ['jarl.mjs', 'profile', '<profile.json>']);
   // The record format first, and alone: a profile written for another format may mean anything by its other keys.
   if (json.format !== undefined && !RECORD_FORMATS.includes(json.format)) {
-    throw new Error(`${where} is written for record format ${JSON.stringify(json.format)}, and this Jarl reads format ${RECORD_FORMATS.join(', ')} — nothing was read or written; the reader needs a Jarl that knows format ${JSON.stringify(json.format)} (a vendored copy and the installed one must agree)`);
+    refuse(`${where} is written for record format ${JSON.stringify(json.format)}, and this Jarl reads format ${RECORD_FORMATS.join(', ')} — nothing was read or written; the reader needs a Jarl that knows format ${JSON.stringify(json.format)} (a vendored copy and the installed one must agree)`, afterView(['jarl.mjs', '--version']));
   }
   // The format marker: a profile that holds only jarl-profile and format changes nothing in how the loop behaves (the
   // built-in profile, declared: false); it only says which format the record was written in.
@@ -171,7 +171,7 @@ export function validateProfile(json, where = 'the profile') {
   const statuses = [];
   const flagsOf = new Map();
   const setBy = new Map();
-  if (!isObj(json.statuses) || !Object.keys(json.statuses).length) say('"statuses" must be an object naming at least one status: { "<status>": ["<flag>", ...] }');
+  if (!isObj(json.statuses) || !Object.keys(json.statuses).length) say('"statuses" must be an object naming at least one status: { "<status>": ["<a-flag-it-takes-or-none>", ...] }');
   else {
     for (const [name, spec] of Object.entries(json.statuses)) {
       if (!PROFILE_STATUS_RE.test(name)) { say(`status "${name}" must be lower-case letters, digits and - (starting with a letter, at most 40 characters)`); continue; }
@@ -208,7 +208,7 @@ export function validateProfile(json, where = 'the profile') {
   if (initial && flagsOf.get(initial) && (flagsOf.get(initial).has('terminal') || flagsOf.get(initial).has('holds-claim'))) say(`a new issue starts in "${initial}", which is ${flagsOf.get(initial).has('terminal') ? 'terminal' : 'a lease'} — name another with "initial"`);
   // fields: { "<Name>": { enum?, default?, required? } }
   const fields = [];
-  if (json.fields !== undefined && !isObj(json.fields)) say('"fields" must be an object: { "<Field>": { "enum": [...], "default": "...", "required": true } }');
+  if (json.fields !== undefined && !isObj(json.fields)) say('"fields" must be an object: { "<name>": { "enum": [...], "default": "...", "required": true } }');
   for (const [name, spec] of Object.entries(isObj(json.fields) ? json.fields : {})) {
     if (!PROFILE_FIELD_RE.test(name) || name !== name.trim()) { say(`field "${name}" must be letters, digits, spaces and - (starting with a letter, at most 40 characters)`); continue; }
     if (TOOL_FIELDS.some((t) => t.toLowerCase() === name.toLowerCase())) { say(`field "${name}" is one the tool writes itself — a profile cannot declare it; rename the field in the profile, because the tool writes ${name} itself`); continue; }
@@ -259,7 +259,7 @@ export function validateProfile(json, where = 'the profile') {
   let doneGate = DEFAULT_DONE_GATE;
   if (json['done-gate'] !== undefined) {
     const g = json['done-gate'];
-    if (!isObj(g)) say('"done-gate" is an object: { "approve": "fresh" | "none", "requires-merged": true | false }');
+    if (!isObj(g)) say('"done-gate" is an object: { "approve": "fresh" or "none", "requires-merged": true or false }');
     else {
       const before = bad.length;
       for (const k of Object.keys(g)) if (!DONE_GATE_KEYS.includes(k)) say(`"done-gate": unknown key "${k}" — it takes ${DONE_GATE_KEYS.join(', ')}`);
@@ -278,7 +278,7 @@ export function validateProfile(json, where = 'the profile') {
   let lifecycle = DEFAULT_LIFECYCLE;
   if (json.lifecycle !== undefined) {
     const l = json.lifecycle;
-    if (!isObj(l)) say('"lifecycle" is an object: { "close": "any" | "record", "archive": "any" | "record", "command": "<the composer\'s command that closes or archives this loop>" }');
+    if (!isObj(l)) say('"lifecycle" is an object: { "close": "any" or "record", "archive": "any" or "record", "command": "<the-command-of-the-tool-that-runs-this-loop>" }');
     else {
       const before = bad.length;
       for (const k of Object.keys(l)) if (!LIFECYCLE_KEYS.includes(k)) say(`"lifecycle": unknown key "${k}" — it takes ${LIFECYCLE_KEYS.join(', ')}`);
@@ -287,7 +287,7 @@ export function validateProfile(json, where = 'the profile') {
       if (bad.length === before) lifecycle = Object.freeze({ close: l.close ?? 'any', archive: l.archive ?? 'any', command: l.command === undefined ? null : l.command.trim() });
     }
   }
-  if (bad.length) throw new Error(`${where} is not a valid profile:\n- ${bad.join('\n- ')}`);
+  if (bad.length) refuse(`${where} is not a valid profile:\n- ${bad.join('\n- ')}`, ['jarl.mjs', 'profile', '<profile.json>']);
   return makeProfile({ name: json.name || 'custom', statuses: statuses.map((s) => [s, [...flagsOf.get(s)]]), initial, fields, sections, acceptance, declared: true, setBy, scheduler, doneGate, lifecycle, format: json.format ?? RECORD_FORMAT });
 }
 
@@ -403,7 +403,7 @@ export function profileAt(dir) {
   const hit = PROFILES.get(path);
   if (hit && hit.key === key) return hit.profile;
   let json;
-  try { json = JSON.parse(readText(path)); } catch (e) { throw new Error(`${path} is not JSON: ${e.message}`); }
+  try { json = JSON.parse(readText(path)); } catch (e) { refuse(`${path} is not JSON: ${e.message}`, afterView(['jarl.mjs', 'profile'])); }
   const profile = validateProfile(json, path);
   PROFILES.set(path, { key, profile });
   return profile;
@@ -411,14 +411,16 @@ export function profileAt(dir) {
 // A write of the profile file by this process: the next read reads it again, even when the file kept its size and the
 // clock did not move between the two writes.
 function forgetProfile(root) { PROFILES.delete(profilePath(root)); }
-export function readProfileFile(file) {
-  need(typeof file === 'string' && file.trim(), '--profile needs the path of a profile file');
-  need(existsSync(file), `no such profile file: ${file}`);
+// The file is init's --profile, or the argument of profile (`argument`): a refusal's form puts the path where it was given.
+export function readProfileFile(file, { argument = false } = {}) {
+  const where = () => (argument ? { arg: 0, value: '<profile.json>' } : { flag: '--profile', value: '<profile.json>' });
+  need(typeof file === 'string' && file.trim(), argument ? 'profile checks the profile file its argument names: give its path' : '--profile needs the path of a profile file', where);
+  need(existsSync(file), `no such profile file: ${file}`, where);
   let json;
-  try { json = JSON.parse(readText(file)); } catch (e) { throw new Error(`${file} is not JSON: ${e.message}`); }
+  try { json = JSON.parse(readText(file)); } catch (e) { refuse(`${file} is not JSON: ${e.message}`, ['jarl.mjs', 'profile', '<profile.json>']); }
   const profile = validateProfile(json, file);
   const reserved = reservedNamesProblem(profile) || keyFieldProblem(profile);
-  need(!reserved, `${file} is not a valid profile: ${reserved}`);
+  need(!reserved, `${file} is not a valid profile: ${reserved}`, () => afterView(['jarl.mjs', 'profile', file]));
   return { json, profile };
 }
 // What a profile file to be opened declares of the names the built-in promise and wait use, as one refusal, or null: a
@@ -471,7 +473,7 @@ export function renderProfile(d) {
   return lines.join('\n');
 }
 export function cmdProfile(root, file) {
-  if (file !== undefined) return { file, ...describeProfile(readProfileFile(file).profile) };
+  if (file !== undefined) return { file, ...describeProfile(readProfileFile(file, { argument: true }).profile) };
   return describeProfile(existsSync(jarlDir(root)) ? loadProfile(root) : DEFAULT_PROFILE);
 }
 

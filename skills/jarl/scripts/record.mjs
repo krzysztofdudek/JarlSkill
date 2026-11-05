@@ -16,7 +16,11 @@
 //   { sha, ci, repo }, { by, supersedes, settles }, …), plus caller on setStatus and setField. The opts keys named at
 //   each function below are part of the contract, as much as the parameters: renaming or dropping one bumps
 //   RECORD_API; a new optional key does not. The result of every call is what the command's --json prints.
-// - A refusal is a thrown Error whose message is the CLI's refusal, word for word; nothing is written then.
+// - A refusal is a thrown Error whose message is the reason, then, on a line of its own, what the caller acts on: a jarl.mjs
+//   command, or the fix written out in words (the flag or the argument to give, a <placeholder> where a value only the
+//   caller knows goes); nothing is written then. The command line refuses the same call for the same reason and ends with
+//   the form of the command that does what was meant, each value a placeholder, which a library caller does not hold
+//   (references/composers.md, "The ready line of a refusal").
 // - Every call that writes holds .jarl/.lock for its whole length, and every file is written whole (writeAtomic). The
 //   lock is re-entrant per loop (a call inside withLock on the same loop keeps that lock; one on another loop takes
 //   that loop's own). withLock runs synchronous work only: a function that is async or returns a promise is refused.
@@ -189,7 +193,7 @@ export function answer(root, id, text) { return write(root, () => L.cmdAnswer(ro
 // A free note for the journal. A line that reads as a filing, a move, a round, a verdict, a retraction, an evidence row, a
 // merge, a CI state or a body change is refused and names the operation that writes it.
 export function appendLog(root, event) {
-  return write(root, () => { L.need(event, 'log requires "<event>"'); L.appendNote(root, event); return { logged: event }; });
+  return write(root, () => { L.need(event, 'log requires "<text>"', () => (['jarl.mjs', 'log', '<text>'])); L.appendNote(root, event); return { logged: event }; });
 }
 
 // ---- the views' data ------------------------------------------------------------------------------
@@ -198,5 +202,6 @@ export function appendLog(root, event) {
 // journal, with the line that says how to settle it) when there are any, and resumeData the same; and `recordFormat`,
 // what recordFormat returns.
 export function statusData(root, opts = {}) { return read(() => L.cmdStatus(root, opts)); }
-// resume --json: opts { log, ready, ci }.
+// resume --json: opts { log, ready, ci }; ci asks gh for the CI of the tips, as the command line's --gh does, and gh is
+// taken as the same key.
 export function resumeData(root, opts = {}) { return read(() => L.cmdResume(root, opts)); }
