@@ -98,7 +98,7 @@ test('a review whose second finding outside the issue cannot be filed writes not
   const before = snapshot(root);
   const said = refuses(root, 'review', '1', 'approve', 'read the diff and the test, the export writes csv', '--by', 'rev-a', '--model', 'm-1',
     '--outside', 'Important: the json export drops the header row', '--outside', 'Important: a <why>reason</why> sits in the text');
-  assert.match(said, /^the finding outside the issue "Important: a <why>reason<\/why> sits in the text" cannot be filed: the What text holds an opening and a closing why tag/);
+  assert.match(said, /^the finding outside the issue "Important: a <why>reason<\/why> sits in the text" cannot be filed: it holds an opening and a closing why tag/);
   const form = said.trim().split('\n').pop();
   assert.doesNotMatch(form, /--why/, 'the form carries no flag review refuses');
   assert.match(form, /--model "<model-id>"/);
@@ -155,6 +155,67 @@ test('the issue a finding outside a format-1 loop files names the reviewed issue
   assert.equal(json(root, 'show', filedId).fields.repo, './tool', 'and the filed issue names it the same way');
   const v = run(root, ['verify']);
   assert.equal(v.status, 0, v.stdout);
+});
+
+// A format-1 loop as the 6.1.0 reader files it: its issues name the checkout `tool` beside the loop's root bare, each leased
+// on a branch of its own with one commit past the base, and a proof row.
+function formatOneLeased(titles) {
+  const root = makeLoop({ prefix: 'jarl-outside-tip-', via: 'cli', dotGit: false });
+  const tool = join(root, 'tool');
+  mkdirSync(tool);
+  const g = (...a) => execFileSync('git', a, { cwd: tool, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: SPAWN_TIMEOUT }).trim();
+  g('init', '-q', '-b', 'main'); g('config', 'user.email', 't@t'); g('config', 'user.name', 't');
+  writeFileSync(join(tool, 'a.txt'), 'a\n'); g('add', '-A'); g('commit', '-qm', 'base');
+  const ids = titles.map((t, k) => {
+    const id = fileAsBefore(root, t, { acceptance: 'it works', repo: 'tool' });
+    const branch = `jarl/${id}-work`;
+    g('checkout', '-q', '-b', branch, 'main'); writeFileSync(join(tool, `f${k}.txt`), `${k}\n`); g('add', '-A'); g('commit', '-qm', t); g('checkout', '-q', 'main');
+    assert.equal(oldJarl(root, 'set', {}, [id, 'in-progress', null, { branch, worker: `w${k}` }]).ok, true);
+    jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'tests 4, pass 4');
+    return id;
+  });
+  return { root, g, ids };
+}
+const tipLinesOf = (root) => logText(root).split('\n').map((l) => / · (\S+) tip ([0-9a-f]+)$/.exec(l)).filter(Boolean).map((m) => [m[1], m[2]]);
+
+test('a review whose finding outside the issue raises a format-1 loop records the tip of the reviewed branch as a review without one does', () => {
+  const runs = [[], ['--outside', 'Important: the importer drops the header row']].map((outside) => {
+    const { root, g, ids: [id] } = formatOneLeased(['the csv export']);
+    const before = tipLinesOf(root).length;
+    jarl(root, 'review', id, 'approve', 'read the diff and the test, the export writes csv', '--by', 'rev-a', ...outside);
+    assert.deepEqual(tipLinesOf(root).slice(before), [[id, g('rev-parse', `jarl/${id}-work`)]], outside.length ? 'with --outside' : 'without --outside');
+    // A commit past the approve: the merge of the new tip says the approve was given on another tip, either way.
+    g('checkout', '-q', `jarl/${id}-work`); writeFileSync(join(root, 'tool', 'late.txt'), 'late\n'); g('add', '-A'); g('commit', '-qm', 'late'); g('checkout', '-q', 'main');
+    const merged = run(root, ['merged', id, '--sha', g('rev-parse', `jarl/${id}-work`), '--ran', 'npm test', '--saw', 'tests 4, pass 4', '--keep']);
+    return `${merged.stdout}\n${merged.stderr}`;
+  });
+  for (const said of runs) assert.match(said, /APPROVED ON ANOTHER TIP/);
+});
+
+test('a bulk review whose finding outside the issues raises a format-1 loop records the tip of every reviewed branch', () => {
+  const { root, g, ids } = formatOneLeased(['the csv export', 'the json export']);
+  const before = tipLinesOf(root).length;
+  jarl(root, 'review', ids.join(','), 'approve', 'read both diffs and their tests, both exports work', '--by', 'rev-a', '--outside', 'Important: the importer drops the header row');
+  assert.deepEqual(tipLinesOf(root).slice(before), ids.map((id) => [id, g('rev-parse', `jarl/${id}-work`)]));
+});
+
+test('a review with a finding outside the issue in a format-3 loop records the tip of the reviewed branch', () => {
+  const { dir, g } = gitRepo({ prefix: 'jarl-outside-tip3-' });
+  const root = loop();
+  jarl(root, 'new', 'the csv export', '--acceptance', 'the export writes csv', '--repo', dir);
+  g('checkout', '-q', '-b', 'jarl/1-csv'); writeFileSync(join(dir, 'b.txt'), 'b\n'); g('add', '-A'); g('commit', '-qm', 'csv');
+  jarl(root, 'set', '1', 'in-progress', 'start', '--worker', 'w1', '--branch', 'jarl/1-csv');
+  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'tests 4, pass 4');
+  const before = tipLinesOf(root).length;
+  jarl(root, 'review', '1', 'approve', 'read the diff and the test, the export writes csv', '--by', 'rev-a', '--outside', 'Important: the importer drops the header row');
+  assert.deepEqual(tipLinesOf(root).slice(before), [['1', g('rev-parse', 'jarl/1-csv').trim()]]);
+});
+
+test('a finding that holds a field\'s tag pair is refused with a reason that names the pair and the way review takes it', () => {
+  const root = leased();
+  const said = refuses(root, 'review', '1', 'approve', 'read the diff and the test, the export writes csv', '--by', 'rev-a', '--outside', 'Important: a <why>reason</why> sits in the text');
+  assert.match(said, /holds an opening and a closing why tag in angle brackets, which the text of an issue never holds: write the finding without the tag pair, or put the tags in backticks/);
+  assert.doesNotMatch(said.trim().split('\n')[0], /--why/);
 });
 
 test('a finding outside an issue that names an undeclared repository is filed naming it the same way, so verify says the same of both', () => {

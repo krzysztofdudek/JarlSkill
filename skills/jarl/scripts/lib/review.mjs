@@ -13,6 +13,7 @@ import { SEVERITIES, loggedFinding, modelLines, modelValue, reviewModelNotes, sp
 import { EVIDENCE_HOW, cmdNew, issuesFor, nothingWritten, oneOrMany, proofSince, refiled } from './commands.mjs';
 import { REVIEW_MIN_WORDS, needSaid, retractedBy, struck } from './evidence.mjs';
 import { ownerLineWait } from './owner-lines.mjs';
+import { resetCaches } from './tips.mjs';
 
 // ---- commands: review ---------------------------------------------------------------------------------
 
@@ -102,8 +103,12 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
   }
   // The model and the relay mark come after the kind: a reader that parses only the name and the kind ignores what follows.
   const marks = `${model !== undefined ? `model ${model} · ` : ''}${relayed ? 'relayed · ' : ''}`;
-  // Each verdict line is followed by the tip of the issue's branch: the code the verdict was given on.
-  appendLogLines(root, issues.flatMap((issue, n) => [`${issue.id} review ${verdict} · ${by ? `by ${by} (${kinds[n]}) · ` : ''}${marks}${loggedFinding(firstLine(recorded, "the issue's Reviews section"))}`, ...tipLines(root, issue)]));
+  // Each verdict line is followed by the tip of the issue's branch: the code the verdict was given on. A filing may have
+  // raised the loop's format, which writes a bare format-1 path with a leading ./ and reads a bare word as a name: the
+  // issues are read again, and every lookup of a repository is made anew, so the tip is read where the Repo points now.
+  if (filed.length) resetCaches();
+  const reviewed = filed.length ? issuesFor(root, rawIds) : issues;
+  appendLogLines(root, reviewed.flatMap((issue, n) => [`${issue.id} review ${verdict} · ${by ? `by ${by} (${kinds[n]}) · ` : ''}${marks}${loggedFinding(firstLine(recorded, "the issue's Reviews section"))}`, ...tipLines(root, issue)]));
   // Recorded, never refused: a coordinator's approve on a code issue is a fact of the record, but it does not clear
   // the issue for done or the merge queue — the output says so at once. On the command line, in a loop that declares
   // its models, the model notes join it (see reviewModelNotes).
@@ -152,7 +157,10 @@ function fileOutside(root, issues, by, o, flags, withModel, dry) {
     const fixes = [].concat(e.ready);
     const kept = fixes.every((f) => f && typeof f === 'object' && REVIEW_TAKES.has(f.flag));
     const shown = first.length > 60 ? `${first.slice(0, 59)}…` : first;
-    refuse(`the finding outside the issue "${shown}" cannot be filed: ${e.reason}${/nothing was written/.test(e.reason) ? '' : ' — nothing was written'}`, [...(kept ? fixes : [{ replace: String(o.given), value: hole('<finding-outside-the-issue>') }]), { flag: '--by', value: hole('<reviewer>') }, ...withModel]);
+    // A field's tag pair in the finding: the filing's reason names a flag of new, which review does not take.
+    const tag = /holds an opening and a closing (\w+) tag in angle brackets/.exec(e.reason);
+    const why = tag ? `it holds an opening and a closing ${tag[1]} tag in angle brackets, which the text of an issue never holds: write the finding without the tag pair, or put the tags in backticks` : e.reason;
+    refuse(`the finding outside the issue "${shown}" cannot be filed: ${why}${/nothing was written/.test(why) ? '' : ' — nothing was written'}`, [...(kept ? fixes : [{ replace: String(o.given), value: hole('<finding-outside-the-issue>') }]), { flag: '--by', value: hole('<reviewer>') }, ...withModel]);
   }
   return null;
 }
