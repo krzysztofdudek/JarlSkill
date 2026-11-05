@@ -596,7 +596,7 @@ export function cmdBody(root, rawId, flags, dry = false) {
     lines.push(bodyLine(issue.id, 'acceptance', held('acceptance'), now, by, grew));
   }
   for (const [h, v] of sections) section(h, h, grow(h, bodyText(v)));
-  if (flags.changelog !== undefined) section('Changelog', 'changelog', changelogText(append ? [...itemsOf(held('changelog')), ...[].concat(flags.changelog)] : flags.changelog));
+  if (flags.changelog !== undefined) section('Changelog', 'changelog', changelogText(flags.changelog, append ? itemsOf(held('changelog')) : []));
   logChanges(root, lines);
   writeAtomic(issue.file, text);
   // Said on the command line only: a rewritten What, Why or Acceptance that names issues nothing orders with this one.
@@ -975,7 +975,7 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   // What is written into the lease is what the journal gives back unchanged: a value the reader would take for something else is refused.
   for (const k of lease) { const problem = leaseValueProblem(k, flags[k]); need(!problem, `--${k} ${JSON.stringify(fieldText(flags[k]))} ${problem}`, () => ({ flag: `--${k}`, value: hole('<value>') })); }
   const issues = issuesFor(root, rawIds);
-  need(!profile.is(status, 'needs-reason') || why, REASON_TEXT[status]?.() || `${status} needs a reason: ${jarlLine('set', '<id>', status, '<text>')}`, () => ({ arg: 2, value: '<text>' }));
+  need(!profile.is(status, 'needs-reason') || fieldText(why ?? ''), REASON_TEXT[status]?.() || `${status} needs a reason: ${jarlLine('set', '<id>', status, '<text>')}`, () => ({ arg: 2, value: '<text>' }));
   const nothing = issues.length > 1 ? ' — nothing was written' : '';
   needTreeHolds(profile, issues, status, nothing);
   if (holds) needLeaseHolds(root, profile, issues, status, why, flags, handover, nothing);

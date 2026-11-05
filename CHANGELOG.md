@@ -83,6 +83,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A comma in a `tag` command separates tags: `+a,b` adds `a` and `b`, and `-a,b` removes both. Before, the command added one tag named `a,b`.
 - `set` given the name of an issue's own field, such as Priority, Tags, Files, Repo, After or Source, now says it is a field and ends with the `field` call that writes it, as it does for a field the profile declares. Before, it listed the statuses.
 - When a new issue is filed with nobody named as having found it, the note on the empty field now gives the `field` call that sets it. Before, it said the name could only be given when filing.
+- Dropping or deferring an issue with a reason of blanks is now refused with the command that gives a reason, as a missing reason is. A changelog entry that opens with a word and a colon that is not a changelog section, such as `Notes:`, is now refused with the list of sections, so it no longer ends up as plain text in the release notes.
 
 ## [6.2.0] - 2026-10-19
 

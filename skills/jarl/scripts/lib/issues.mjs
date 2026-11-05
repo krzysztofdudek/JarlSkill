@@ -476,11 +476,18 @@ export function acceptanceText(v) {
 // --changelog repeats, one entry each: the line the repository's changelog gets for this issue, optionally opened by
 // its Keep a Changelog section (`Added: …`). An entry is one line, like a changelog bullet; several become a list.
 export const CHANGELOG_SECTIONS = ['Added', 'Changed', 'Deprecated', 'Removed', 'Fixed', 'Security'];
-export function changelogText(v) {
-  const lines = [].concat(v ?? []).map(fieldText).filter(Boolean).map((l) => l.replace(/^-\s+/, ''));
-  // A section with nothing after it would print an empty bullet under that heading: refused, not guessed at.
-  for (const l of lines) need(!new RegExp(`^(${CHANGELOG_SECTIONS.join('|')}):\\s*$`, 'i').test(l), `changelog entry "${l}" has no text — write the line after the section`, () => ({ replace: l, value: hole('<changelog-entry>') }));
-  return lines.map((l) => `- ${l}`).join('\n');
+// held: the entries the section holds already, kept as they are and not checked again.
+export function changelogText(v, held = []) {
+  const clean = (list) => [].concat(list ?? []).map(fieldText).filter(Boolean).map((l) => l.replace(/^-\s+/, ''));
+  const lines = clean(v);
+  for (const l of lines) {
+    // A section with nothing after it would print an empty bullet under that heading: refused, not guessed at.
+    need(!new RegExp(`^(${CHANGELOG_SECTIONS.join('|')}):\\s*$`, 'i').test(l), `changelog entry "${l}" has no text — write the line after the section`, () => ({ replace: l, value: hole('<changelog-entry>') }));
+    // A word and a colon open a section of the changelog; one it does not know would be printed as the text of the entry.
+    const head = /^([A-Za-z]+):(\s|$)/.exec(l);
+    need(!head || CHANGELOG_SECTIONS.some((s) => s.toLowerCase() === head[1].toLowerCase()), `changelog entry "${l}" opens with "${head?.[1]}:", which is no section of the changelog; the sections are ${CHANGELOG_SECTIONS.join(', ')}`, () => ({ replace: l, value: hole('<changelog-entry>') }));
+  }
+  return [...clean(held), ...lines].map((l) => `- ${l}`).join('\n');
 }
 // The entries of an issue's ## Changelog section, each with its section: the one it opens with, else Fixed for a bug
 // and Changed for anything else.

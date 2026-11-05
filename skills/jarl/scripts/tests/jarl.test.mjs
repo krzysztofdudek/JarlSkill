@@ -321,6 +321,10 @@ test('status moves only with a log line; done needs evidence; dropped needs a re
   jarl(root, 'new', 'thing');
   assert.match(refuses(root, 'set', '1', 'done'), /no evidence yet/);
   assert.match(refuses(root, 'set', '1', 'dropped'), /needs a reason/);
+  // A reason of blanks is no reason: the refusal ends with the form that gives one, and the issue stays open.
+  for (const blank of ['', ' ', '  \t ']) assert.equal(refuses(root, 'set', '1', 'dropped', blank).trim(), 'dropped needs a reason: jarl.mjs set "<id>" dropped "<text>"\njarl.mjs set "<ids>" "<status>" "<text>"');
+  assert.match(refuses(root, 'set', '1', 'deferred', ' '), /^deferred needs a reason: /);
+  assert.match(jarl(root, 'show', '1'), /open/);
   jarl(root, 'set', '1', 'in-progress', 'worker raised');
   jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', '12 pass, 0 fail');
   assert.match(refuses(root, 'set', '1', 'done'), /no approving review/);
