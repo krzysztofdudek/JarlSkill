@@ -150,8 +150,10 @@ test('a split that moves a line nowhere is refused, naming the line, and so are 
   const state = () => [logText(root), ...['1', '2', '3', '5', '6'].map((id) => textOf(root, id))];
   const before = state();
   const lost = refuses(root, 'split', '1', '--line', '1=2', '--line', '2=3');
-  assert.match(lost, /^line 3 of 1 is moved nowhere: a split names every acceptance line of the parent, moved to a sub-issue or kept on 1, so no line is lost — 3: "the docs describe both"\njarl\.mjs split "<id>" --line "<line=id>" --line "<line=id>"\n$/);
-  assert.match(refuses(root, 'split', '1', '--line', '1=2'), /^lines 2, 3 of 1 are moved nowhere: .* — 2: "it writes json"; 3: "the docs describe both"$/m);
+  // The form holds a place for each line the call gave and names each line still to place, so filled it is the whole split.
+  assert.match(lost, /^line 3 of 1 is moved nowhere: a split names every acceptance line of the parent, moved to a sub-issue or kept on 1, so no line is lost — 3: "the docs describe both"\njarl\.mjs split "<id>" --line "<line=id>" --line "<line=id>" --line '3=<id>'\n$/);
+  assert.match(refuses(root, 'split', '1', '--line', '1=2', '--by', 'odin'), /^lines 2, 3 of 1 are moved nowhere: .* — 2: "it writes json"; 3: "the docs describe both"\njarl\.mjs split "<id>" --line "<line=id>" --line '2=<id>' --line '3=<id>' --by "<who>"\n$/);
+  assert.match(refuses(root, 'split', '1', '--line', '1=2', '--line', '2=3', '--line', '3=<id>'), /placeholder/, 'the form pasted with a line left unfilled writes nothing');
   assert.match(refuses(root, 'split', '1'), /^split names where each acceptance line of 1 goes, --line <n>=<id>, an acceptance line's number and the issue it goes to \(1 itself to keep it there\), for each of its 3 lines$/m);
   assert.match(refuses(root, 'split', '1', '--line', '1=2', '--line', '1=3', '--line', '2=3', '--line', '3=1'), /^line 1 of 1 is named twice \("1=2" and "1=3"\): a line goes to one issue$/m);
   assert.match(refuses(root, 'split', '1', '--line', '4=2'), /^1 has 3 acceptance lines: there is no line 4 \(got "4=2"\)$/m);

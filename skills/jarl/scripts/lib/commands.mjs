@@ -1259,7 +1259,10 @@ export function cmdSplit(root, rawId, flags = {}) {
     placed.set(n, { to, item });
   }
   const lost = lines.map((_, k) => k + 1).filter((n) => !placed.has(n));
-  need(!lost.length, `${lost.length === 1 ? 'line' : 'lines'} ${lost.join(', ')} of ${parent.id} ${lost.length === 1 ? 'is' : 'are'} moved nowhere: a split names every acceptance line of the parent, moved to a sub-issue or kept on ${parent.id}, so no line is lost — ${lost.map((n) => `${n}: "${lines[n - 1]}"`).join('; ')}`, () => ({ flag: '--line', value: hole('<line=id>'), add: true }));
+  // The form holds a place for each line the call gave, then names each line still to place, its issue a placeholder: filled,
+  // it is the whole split.
+  need(!lost.length, `${lost.length === 1 ? 'line' : 'lines'} ${lost.join(', ')} of ${parent.id} ${lost.length === 1 ? 'is' : 'are'} moved nowhere: a split names every acceptance line of the parent, moved to a sub-issue or kept on ${parent.id}, so no line is lost — ${lost.map((n) => `${n}: "${lines[n - 1]}"`).join('; ')}`,
+    () => ['jarl.mjs', 'split', hole('<id>'), ...given.flatMap(() => ['--line', hole('<line=id>')]), ...lost.flatMap((n) => ['--line', `${n}=${hole('<id>')}`]), ...(flags.by !== undefined ? ['--by', hole('<who>')] : [])]);
   const subs = [...new Map([...placed.values()].filter((p) => idKey(p.to.id) !== idKey(parent.id)).map((p) => [p.to.id, p.to])).values()];
   need(subs.length, `every line stays on ${parent.id}: a split moves at least one acceptance line to a sub-issue`, () => ({ replace: given[0], value: hole('<line=id>') }));
   for (const sub of subs) {
@@ -1505,7 +1508,7 @@ export function cmdMerged(root, rawIds, flags) {
     const loop = readLoop(jarlDir(root));
     for (const issue of issues) {
       const g = gateOf(loop, issue.id);
-      if (proofSince(g, issue) === 0) notes.push(`NO PROOF FROM THE WORKER — ${issue.id} holds no Proof row since ${g.tracked ? sinceText(g.anchor) : 'it was filed'};${checkText ? 'the merge check is recorded in the merge record and is not proof' : 'the merge records no check, and a merge is not proof'}, so done refuses until the worker records it:${EVIDENCE_HOW(issue.id)}`);
+      if (proofSince(g, issue) === 0) notes.push(`NO PROOF FROM THE WORKER — ${issue.id} holds no Proof row since ${g.tracked ? sinceText(g.anchor) : 'it was filed'}; ${checkText ? 'the merge check is recorded in the merge record and is not proof' : 'the merge records no check, and a merge is not proof'}, so done refuses until the worker records it:${EVIDENCE_HOW(issue.id)}`);
     }
   }
   if (sha && loadProfile(root).doneGate.approve !== 'none') {
