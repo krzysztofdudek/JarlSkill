@@ -11,6 +11,7 @@ import { inFlightMark, nextRows, schedulerNote } from './evidence.mjs';
 import { ownerLineStates } from './owner-lines.mjs';
 import { ruleLines, rulesFor } from './rules.mjs';
 import { jarlDir, today } from './where.mjs';
+import { ago, leaseLiveness, livenessOf, thresholdText } from './rounds.mjs';
 
 // The holders: the owner, the jarl, a named coordinator or a named outside person. A ready issue, a lease, a proof with no
 // verdict and a changes verdict are held by the coordinator whose slice the issue is in, and by the jarl for an issue in
@@ -84,8 +85,16 @@ function issueRows(ctx) {
     const onMerger = { ...base, holder: ctx.merger };
     const withWorker = worker ? `with worker ${worker}` : 'in progress';
     const backAfterRound = sentBack(loop, i, mark);
+    const since = fieldText(i.fields.since) ? ` since ${fieldText(i.fields.since)}` : '';
+    const lv = ctx.liveness(i);
+    if ((mark === 'no-rows' || backAfterRound) && lv.idle) {
+      // Idle past the threshold: a worker stuck on a prompt or a lock writes nothing, so the act is the holder's.
+      out.push({ ...base, what: 'idle', idle: { ageMs: lv.ageMs, minutes: lv.minutes }, says: `${withWorker}${since}, no commit, row or log line for ${idleFor(lv)}: ask the worker whether it waits on a prompt or a lock, or hand the lease over`,
+        command: jarlLine('set', i.id, leaseStatus, '<why-the-worker-changed>', '--worker', '<the-new-worker>', '--handover') });
+      continue;
+    }
     if (mark === 'no-rows' || backAfterRound) {
-      out.push({ ...base, what: 'worker', says: `${withWorker}${fieldText(i.fields.since) ? ` since ${fieldText(i.fields.since)}` : ''}, ${backAfterRound ? 'sent back by a round, no new proof yet' : 'no proof yet'}; the worker records it`, command: evidence(i.id) });
+      out.push({ ...base, what: 'worker', says: `${withWorker}${since}, ${backAfterRound ? 'sent back by a round, no new proof yet' : 'no proof yet'}; the worker records it`, command: evidence(i.id) });
       continue;
     }
     // A close the done gate would refuse for an owner line not ticked is not offered: that line's own row stands instead.
@@ -100,7 +109,7 @@ function issueRows(ctx) {
     }
     if (mark === 'rows-no-verdict' && carriesCode(i) && profile.keptKind(i.kind) !== PROMISE_KIND) continue;   // listed together below
     if (mark === 'rows-no-verdict') {
-      out.push({ ...base, what: 'review', says: 'proof recorded, no verdict; raise a reviewer', command: verdict(i.id) });
+      out.push({ ...base, what: 'review', ...(lv.idle ? { idle: { ageMs: lv.ageMs, minutes: lv.minutes } } : {}), says: `proof recorded, no verdict${lv.idle ? ` for ${idleFor(lv)}` : ''}; raise a reviewer`, command: verdict(i.id) });
       continue;
     }
     if (mark === 'approved-not-fresh') {
@@ -128,9 +137,11 @@ function issueRows(ctx) {
     const h = sliceHolder(loop, i);
     byHolder.set(h, [...(byHolder.get(h) || []), i]);
   }
-  for (const [holder, todo] of byHolder) out.push(...reviewRow(todo, holder, verdict));
+  for (const [holder, todo] of byHolder) out.push(...reviewRow(todo, holder, verdict, ctx.liveness));
   return out;
 }
+// How long an idle lease or proof has had no sign of work, with the threshold it is past.
+const idleFor = (lv) => `${ago(lv.ageMs)} (threshold ${thresholdText(lv.minutes)})`;
 
 // A round sends the work back: until the worker records a row after it, the issue is the worker's again.
 function sentBack(loop, issue, mark) {
@@ -169,15 +180,19 @@ function heldByOwner(loop, awaiting) {
   return awaiting.filter((i) => asked.has(idKey(i.id))).map((i) => i.id);
 }
 const joinIds = (issues) => issues.map((i) => i.id).join(', ');
-function reviewRow(todo, holder, verdict) {
+// A proof that waits past the threshold for its verdict says how long: the one issue's age, or each idle issue's.
+function reviewRow(todo, holder, verdict, liveness) {
   if (!todo.length) return [];
   const ids = joinIds(todo);
   const only = todo.length === 1 ? todo[0] : null;
   const worker = only ? fieldText(only.fields.worker) : '';
   const priority = todo.map((i) => i.priority).filter((p) => p !== undefined).sort()[0];
+  const idle = todo.map((i) => liveness(i)).filter((lv) => lv.idle);
+  const waited = !idle.length ? '' : only ? ` for ${idleFor(idle[0])}` : ` for ${idle.map((lv) => `${ago(lv.ageMs)} on ${lv.id}`).join(', ')} (threshold ${thresholdText(idle[0].minutes)})`;
   return [{
     what: 'review', id: todo[0].id, ids: todo.map((i) => i.id), title: only ? only.title : '', priority, holder, ...(worker ? { doer: worker } : {}),
-    says: `proof recorded, no verdict; raise a fresh reviewer for ${ids}; if you cannot raise agents, ask the owner to start a fresh session`,
+    ...(idle.length ? { idle: idle.map((lv) => ({ id: lv.id, ageMs: lv.ageMs, minutes: lv.minutes })) } : {}),
+    says: `proof recorded, no verdict${waited}; raise a fresh reviewer for ${ids}; if you cannot raise agents, ask the owner to start a fresh session`,
     command: `${only ? verdict(only.id) : verdict('<id>')}, or ${jarlLine('ask', `${REVIEW_ASK} issue${todo.length === 1 ? '' : 's'} ${ids}`)}`,
   }];
 }
@@ -357,7 +372,11 @@ export function ballRows(root) {
   const inPlay = loop.issues.filter((i) => profile.is(i.status, 'holds-claim') && !waitingOn(i, loop.byId, profile).length);
   const ownerStates = new Map(inPlay.map((i) => [i.id, ownerLineStates(root, loop, i)]).filter(([, s]) => s.length));
   // Each issue reserves its files against the issues of its own slice: across slices only leases hold.
-  const ctx = { root, loop, profile, merger: loop.goalLines.merger === null ? JARL_HOLDER : holderOf(loop.goalLines.merger), next: scheduled ? [] : nextRows(root, { perSlice: true }), awaiting, onOwner: new Set(heldByOwner(loop, awaiting)), ownerStates };
+  // The age of each lease, past the goal's liveness threshold or not, read once per issue (see leaseLiveness).
+  const minutes = livenessOf(loop.goalLines).minutes;
+  const ages = new Map();
+  const liveness = (i) => { if (!ages.has(i.id)) ages.set(i.id, leaseLiveness(root, i, minutes, { events: loop.eventsById.get(i.id) || [] })); return ages.get(i.id); };
+  const ctx = { root, loop, profile, merger: loop.goalLines.merger === null ? JARL_HOLDER : holderOf(loop.goalLines.merger), next: scheduled ? [] : nextRows(root, { perSlice: true }), awaiting, onOwner: new Set(heldByOwner(loop, awaiting)), ownerStates, liveness };
   const rows = ROW_SOURCES.filter((s) => !(scheduled && SCHEDULING.has(s))).flatMap((s) => s(ctx));
   // Who each issue holds up: the issues in play whose After names it, not settled yet, and for a question the issue it holds.
   const active = loop.issues.filter((i) => profile.active(i.status));
@@ -446,7 +465,7 @@ function waitingRows(loop, rows, next, onOwner) {
 // says so. Under an external scheduler the rows of issues in play are the composer's, and the answer names its command
 // for them.
 // The moment of work each kind of row stands at: what a rule with a moment selector is read against.
-const MOMENT_OF = Object.freeze({ ready: 'start', worker: 'start', review: 'review', changes: 'round', merge: 'merge', ci: 'merge', close: 'done', 'sign-off': 'done' });
+const MOMENT_OF = Object.freeze({ ready: 'start', worker: 'start', idle: 'start', review: 'review', changes: 'round', merge: 'merge', ci: 'merge', close: 'done', 'sign-off': 'done' });
 // Who asks, as a rule reads a reader: its roles, its slice, the moments of work its list stands at and the issues it works
 // on. The jarl works on the issues in play in no slice and holds the filing and the close, and in a loop with no slice
 // it is the coordinator as well; a coordinator on the issues in
@@ -489,7 +508,7 @@ export function cmdNextAs(root, flags = {}) {
 }
 
 export function renderNextAs(o) {
-  const line = (r) => `- ${refOf(r)}${r.what === 'ruling' || !r.title ? '' : ` ${short(r.title)}`}: ${r.says}${r.doer && r.what !== 'worker' ? ` (worker ${r.doer})` : ''} — ${r.command}${r.holdsUp.length ? ` · holds up ${r.holdsUp.slice(0, 5).join(', ')}${r.holdsUp.length > 5 ? ` and ${r.holdsUp.length - 5} more` : ''}` : ''}`;
+  const line = (r) => `- ${refOf(r)}${r.what === 'ruling' || !r.title ? '' : ` ${short(r.title)}`}: ${r.says}${r.doer && r.what !== 'worker' && r.what !== 'idle' ? ` (worker ${r.doer})` : ''} — ${r.command}${r.holdsUp.length ? ` · holds up ${r.holdsUp.slice(0, 5).join(', ')}${r.holdsUp.length > 5 ? ` and ${r.holdsUp.length - 5} more` : ''}` : ''}`;
   const out = [`On ${holderWord(o.as)} (${o.total})`];
   if (!o.total) out.push(`- (nothing is on ${holderWord(o.as)})`);
   out.push(...o.rows.map(line));

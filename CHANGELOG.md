@@ -32,6 +32,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Jarl gives coordinators, workers and reviewers its own working rules for their role, such as re-checking every acceptance line on each review round.
 - Anyone in the loop can propose a rule, for whoever runs the loop to accept, or for the owner when the rule is his. When the loop closes, each of its rules is offered to the owner: keep it for the next loop, write it into the repository's instructions for agents, make it a rule of the code, or drop it.
 - `report --metrics` prints only the loop's metrics, so the summary stays short even for a loop with hundreds of issues. `report` now prints the metrics before its lists of issues.
+- Jarl now flags a task that seems stuck after 30 minutes instead of six hours: work with no commit, proof or note for that long, or proof waiting that long for a review, shows as idle in the status, the resume and its coordinator's list, and a task waiting on a shared resource shows how long ago the task holding it last moved. A line such as `Liveness: 60` in the goal changes the minutes.
 
 ### Changed
 
