@@ -65,7 +65,19 @@ export function jarl(root, ...args) { return jarlResult(root, args).stdout; }
 export function refuses(root, ...args) {
   const r = spawnJarl(root, args);
   assert.notEqual(r.status, 0, `expected a refusal: ${args.join(' ')}`);
-  return args.includes('--') ? r.stderr ?? '' : withoutRoot(r.stderr ?? '', root);
+  const said = posixForms(r.stderr ?? '');
+  return args.includes('--') ? said : withoutRoot(said, root);
+}
+// A refusal's text with the forms it ends with (each line of jarl.mjs at its end) as a POSIX shell has them. On Windows Jarl
+// writes them for PowerShell and cmd, each word bare or in double quotes and none holding a double quote (shellOf in
+// lib/base.mjs): the tests read every form in one spelling on every platform, and the quoting of each shell is tested
+// on its own, with the platform passed in.
+export const windowsWords = (line) => [...String(line).matchAll(/"([^"]*)"|([^\s"]+)/g)].map((m) => m[1] ?? m[2]);
+export function posixForms(text, platform = process.platform) {
+  if (platform !== 'win32') return text;
+  const lines = String(text).replace(/\n$/, '').split('\n');
+  for (let i = lines.length - 1; i >= 0 && lines[i].startsWith('jarl.mjs '); i -= 1) lines[i] = windowsWords(lines[i]).map((w) => shellWord(w)).join(' ');
+  return `${lines.join('\n')}${String(text).endsWith('\n') ? '\n' : ''}`;
 }
 // A refusal's text with the --root of the call taken out of the commands it ends with (a step on its own line, then the
 // form), each of which must carry it.

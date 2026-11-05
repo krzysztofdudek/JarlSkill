@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { spawnJarl, run, jarl, refuses, loop as makeLoop, gitRepo } from './helpers.mjs';
+import { spawnJarl, run, jarl, refuses, loop as makeLoop, gitRepo, posixForms } from './helpers.mjs';
 import * as R from '../record.mjs';
 
 const mcp = await import('../jarl-mcp.mjs');
@@ -81,8 +81,8 @@ test('retract refuses what it cannot take back, in words that name what it takes
 test('a tool call that names a retraction through evidence or review is refused, and jarl_retract takes it back', () => {
   const root = loop();
   const id = worked(root);
-  const said = (r) => r.content.map((c) => c.text).join('\n');
-  assert.throws(() => mcp.callTool('jarl_evidence', { ids: id, retract: '1', by: 'jarl', text: 'the row was wrong', root }), /"retract" is not a field of this tool — a row or a note is taken back with jarl_retract, and by names who takes it back: jarl_retract \{"id":"<id>","entry":"<n-or-note-n>","by":"<who>","text":"<why>"\}$/);
+  const said = (r) => posixForms(r.content.map((c) => c.text).join('\n'));
+  assert.throws(() => mcp.callTool('jarl_evidence', { ids: id, retract: '1', by: 'jarl', text: 'the row was wrong', root }), /"retract" is not a field of this tool — a row or a note is taken back with jarl_retract, and by names who takes it back: jarl_retract \{"id":"<id>","entry":"<n-or-note-n>","by":"<who>","text":"<why>","root":"[^"]+"\}$/);
   const review = mcp.callTool('jarl_review', { ids: id, verdict: 'retract', by: 'jarl', text: 'the verdict was wrong', root });
   assert.ok(review.isError);
   assert.match(said(review), /a verdict is taken back with retract, not with review retract\njarl\.mjs retract '<id>' review '<why>' --by '<who>' '--root=[^']+'$/);
@@ -114,7 +114,7 @@ test('set given a field is refused with the field call that writes it, on the co
   for (const blank of ['', ' ']) assert.equal(refuses(a, 'set', '2', 'Note', blank).trim(), "Note is a field, not a status: field writes it\njarl.mjs field '<ids>' Note --clear");
   const said = mcp.callTool('jarl_set', { ids: '3', status: 'resources', text: 'gate', root: a });
   assert.ok(said.isError);
-  assert.match(said.content[0].text, /^resources is a field, not a status: field writes it\njarl\.mjs field '<ids>' resources '<resource-name>' '--root=[^']+'$/);
+  assert.match(posixForms(said.content[0].text), /^resources is a field, not a status: field writes it\njarl\.mjs field '<ids>' resources '<resource-name>' '--root=[^']+'$/);
   assert.equal(logText(a), before);
   assert.equal(field(a, '3', 'resources') || '', '');
   const toolField = mcp.callTool('jarl_field', { ids: '3', name: 'Note', value: 'through field', root: a });

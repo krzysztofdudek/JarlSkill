@@ -67,7 +67,7 @@ Testing, stress and research sessions are the same loop with a different mix: so
 issues (they test, they probe, they read) while others take issues down. The stream never waits for
 the other side.
 
-A refused call writes nothing: a refusal ends with the form of the command with a `<placeholder>`; fill the value and run it; never paste it as printed. Brief every role to do the same.
+A refused call writes nothing: a refusal ends with the form of the command with a `<placeholder>`; fill the value and run it; never paste it as printed. Forms are written for a POSIX shell (sh, bash, zsh, Git Bash) on macOS and Linux and for PowerShell and cmd on Windows; replace every `<placeholder>` before running one. Brief every role to do the same.
 
 ## Resuming a loop
 

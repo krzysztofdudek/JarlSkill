@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import * as R from '../record.mjs';
 import { COMMAND_SUMMARY, USAGE } from '../jarl.mjs';
-import { gitRepo, jarlResult, run, skillLines, withoutRoot } from './helpers.mjs';
+import { gitRepo, jarlResult, posixForms, run, skillLines, withoutRoot } from './helpers.mjs';
 
 const NO_GH = { JARL_GH: join(tmpdir(), 'jarl-vocab-no-gh') };
 
@@ -73,7 +73,7 @@ test('a branch is measured by scope alone: check is refused with the scope call 
   const check = run(dir, ['check', '1', '--branch', 'jarl/1-a']);
   assert.notEqual(check.status, 0);
   assert.equal(check.stdout, '');
-  assert.equal(withoutRoot(check.stderr, dir), "check is not a command; a branch is measured by scope\njarl.mjs scope '<id>' --branch '<worker-branch>'");
+  assert.equal(withoutRoot(posixForms(check.stderr), dir),"check is not a command; a branch is measured by scope\njarl.mjs scope '<id>' --branch '<worker-branch>'");
 });
 
 // The text the skill, the help and the tool descriptions speak in: one place where each rule below is checked.

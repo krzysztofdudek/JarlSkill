@@ -185,10 +185,11 @@ function need(cond, msg) { if (!cond) throw invalid(msg); }
 // A field a tool does not take whose value another field takes, or another tool, from the command line's tables: a flag
 // renamed there (by on status and models is group, ci on resume is gh), the name a free text had (why, findings, question
 // and the rest are text), and a retraction asked of evidence (retract's). The refusal names that field or tool, with the
-// form of the call written there, each value a placeholder: no value given is carried into a call composed for the caller.
+// form of the call written there, each value a placeholder: no value given is carried into a call composed for the caller,
+// but its root and json, as given, so the form filled reaches the loop the call named.
 const FORM_VALUES = { ids: '<ids>', id: '<id>', status: '<status>', text: '<text>', verdict: '<verdict>', slug: '<slug>', title: '<title>', goal: '<goal>', name: '<name>', entry: '<n-or-note-n>', line: '<line>', mode: '<mode>', branch: '<branch>', group: '<group>', gh: true };
-function needNoGoneField(cmd, fields) {
-  const call = (tool, input) => `${toolName(tool)} ${JSON.stringify(input)}`;
+function needNoGoneField(cmd, fields, carried = {}) {
+  const call = (tool, input) => `${toolName(tool)} ${JSON.stringify({ ...input, ...carried })}`;
   for (const name of Object.keys(fields)) {
     if (Object.hasOwn(COMMAND_FLAGS[cmd] || {}, name) || (COMMAND_ARGS[cmd] || []).some((a) => a.replace(/[?.]+$/, '') === name)) continue;
     const to = REMOVED_FLAGS[cmd]?.[name];
@@ -212,7 +213,7 @@ export function argvFor(cmd, input = {}) {
     need(typeof input.root === 'string' && input.root.trim() !== '' && isAbsolute(input.root.trim()), `${toolName(cmd)}: "root" must be the absolute path of the directory that holds .jarl/ (got ${JSON.stringify(input.root)}) — leave it out to use JARL_ROOT or the server's working directory`);
   }
   const { root: _root, ...fields } = input;
-  needNoGoneField(cmd, fields);
+  needNoGoneField(cmd, fields, Object.fromEntries(['json', 'root'].filter((k) => input[k] !== undefined).map((k) => [k, input[k]])));
   // A list flag repeats and a list argument that comes last takes many words, so the adapter carries a list for them.
   // An id list comes before other arguments, so the adapter takes it as one word: given as a list of strings, it
   // reaches the command line as the one comma list it reads there. listItems in dispatch checks the items either way.

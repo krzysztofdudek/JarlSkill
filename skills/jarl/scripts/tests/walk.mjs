@@ -177,7 +177,18 @@ export function globalsOf(args) {
   // Read as the command line reads the call: a word taken as the value of a flag before it is no flag, and a --root
   // given twice leaves which one was meant to the caller, so the form has a placeholder for it, as it has for a --root
   // holding a line break, which no printed line carries.
-  const flags = J.callOfArgv(args.map(String)).flags.filter(([k]) => k === 'root' || k === 'json');
+  // A --root or --json written after a bare -- is counted too, read here and not by the code under test: it is an argument
+  // to the command line, and a flag the caller gave all the same.
+  const at = args.map(String).indexOf('--');
+  const after = [];
+  if (at !== -1) {
+    const rest = args.slice(at + 1).map(String);
+    for (let i = 0; i < rest.length; i += 1) {
+      if (rest[i] === '--json') after.push(['json', true]);
+      else if (rest[i] === '--root') { after.push(['root', rest[i + 1]]); i += 1; } else if (rest[i].startsWith('--root=')) after.push(['root', rest[i].slice('--root='.length), '=']);
+    }
+  }
+  const flags = [...J.callOfArgv((at === -1 ? args : args.slice(0, at)).map(String)).flags, ...after].filter(([k]) => k === 'root' || k === 'json');
   const roots = flags.filter(([k]) => k === 'root');
   return flags.filter(([k, v]) => (k === 'json' ? v === true : roots.length === 1 && typeof v === 'string')).map(([k, v, spelt]) => (k === 'json' ? ['--json'] : L.breaksLine(v) ? ['--root', '<loop-root>'] : spelt === '=' ? [`--root=${v}`] : ['--root', v]));
 }
@@ -215,7 +226,7 @@ const FILL = {
   '<an-item-with-no-leading-dash>': 'a.mjs', '<an-item-without-quotes>': 'a.mjs', '<one-quoted-text>': 'a reason written in full', '<argument>': 'x', '<who>': 'jarl',
   '<one-name>': 'jarl', '<reviewer>': 'rev-fresh', '<a-fresh-reviewer>': 'rev-fresh', '<the-owner-himself>': 'owner', '<owner-or-a-name>': 'jarl', '<who-asks>': 'jarl',
   '<his-own-words>': 'we go this way', '<status>': 'deferred', '<status-in-the-log>': 'open', '<a-status-the-gate-allows>': 'deferred', '<kind>': 'bug', '<tier>': 'light',
-  '<prio>': '2', '<verdict>': 'changes', '<ci-state>': 'green', '<ask-kind>': 'stuck', '<jarl-or-owner>': 'jarl', '<option>': 'A', '<another-option>': 'B',
+  '<prio>': '2', '<verdict>': 'changes', '<ci-state>': 'green', '<ask-kind>': 'stuck', '<jarl-or-owner>': 'jarl', '<option>': 'A', '<another-label:effect>': 'D: does d',
   '<label:effect>': 'C: does c', '<mode>': 'permanent', '<group>': 'tag', '<name>': 'tool', '<names>': 'odin', '<name-or-path>': 'tool', '<coordinator>': 'odin',
   '<slice:coordinator>': 'slice:odin', '<no-second-slice-tag>': 'ui', '<tag>': 'ui', '<a-tag-an-issue-carries>': 'core', '<key>': 'k', '<a-number-two-files-carry>': '4',
   '<sha>': 'abc1234', '<command>': 'npm test', '<what-it-printed>': 'all 3 pass', '<what-was-wrong>': 'it ran on the wrong tree, so it does not count',
@@ -461,9 +472,19 @@ export function generateWrongCalls() {
 // Each generated call given --root (one in three written --root=), and one in four --json too, run from the top of a
 // checkout whose own loop the call does not name: its form carries them as given, and pasted it writes in no loop.
 export function rootedWrongCalls() {
-  return generateWrongCalls().map((c, n) => {
+  const generated = generateWrongCalls().map((c, n) => {
     const [on, root] = c.loop === SIBLING ? [{ ...SIBLING, cwd: '' }, SIBLING.cwd] : c.loop === EMPTY ? [ROOTED, ROOT_EMPTY] : [ROOTED, ROOT_ARG];
     const globals = [...(n % 3 === 2 ? [`--root=${root}`] : ['--root', root]), ...(n % 4 === 1 ? ['--json'] : [])];
     return { ...c, args: [c.args[0], ...globals, ...c.args.slice(1)], loop: on };
   });
+  // --root and --json written after a bare --, where they are arguments: refused, and carried into the form before the --,
+  // with every flag of the command written there.
+  const afterDashes = [
+    [['evidence', '1', '--', '--json prints ok', '--root', ROOT_ARG], '--root'], [['set', '1', 'deferred', '--', 'later', '--root', ROOT_ARG], '--root'],
+    [['review', '1', 'approve', '--by', 'rev', '--', 'read it all, fine', `--root=${ROOT_ARG}`], `--root=${ROOT_ARG}`], [['field', '1', 'What', '--', 'x', '--json', '--root', ROOT_ARG], '--json'],
+    [['new', '--', 't', '--tier', 'light', '--root', ROOT_ARG], '--tier'], [['round', '1', '--', 'it failed', '--json', `--root=${ROOT_ARG}`], '--json'],
+    [['log', '--', 'a note', '--root', ROOT_ARG, '--json'], '--root'], [['ask', '--', 'which way?', '--kind', 'stuck', '--root', ROOT_ARG], '--kind'],
+    [['decide', 's9', '--', 'a ruling', '--by', 'jarl', '--root', ROOT_ARG], '--by'], [['set', '1', 'deferred', 'later', '--', '--root', ROOT_ARG], '--root'],
+  ].map(([args, wrong]) => ({ args, wrong, loop: ROOTED }));
+  return [...generated, ...afterDashes];
 }

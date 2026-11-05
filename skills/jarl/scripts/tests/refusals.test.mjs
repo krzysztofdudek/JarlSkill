@@ -11,13 +11,16 @@ import assert from 'node:assert/strict';
 import { appendFileSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { EMPTY, PLAIN, ROOTED, ROOT_ARG, SHELLS, SIBLING, copy, formProblems, partsOf, printedCalls, run, runPrinted, snapshot } from './walk.mjs';
+import { EMPTY, PLAIN, ROOTED, ROOT_ARG, SHELLS, SIBLING, copy, formProblems, partsOf as partsOfRaw, printedCalls, run, runPrinted, snapshot } from './walk.mjs';
+import { posixForms } from './helpers.mjs';
 
 const J = await import('../jarl.mjs');
 const L = await import('../jarl-lib.mjs');
 const MCP = await import('../jarl-mcp.mjs');
 const { MUTATING, REPLACED_COMMANDS } = J;
-const lastLine = (said) => said.replace(/\n+$/, '').split('\n').at(-1);
+// A refusal's forms as a POSIX shell has them, on every platform (posixForms); the walk's check reads them as printed.
+const lastLine = (said) => posixForms(said).replace(/\n+$/, '').split('\n').at(-1);
+const partsOf = (said) => partsOfRaw(posixForms(said));
 
 // ---- the check of a refusal ------------------------------------------------------------------------------------------
 
@@ -65,7 +68,7 @@ function refusal(args, { loop = SIBLING, wrong = null, ...opts } = {}) {
   assert.notEqual(r.status, 0, `${args.join(' ')} is refused`);
   assert.equal(JSON.stringify(snapshot(dir)), before, `${args.join(' ')} writes nothing`);
   assert.deepEqual(formProblems(args, r.stderr, loop, opts, wrong), [], args.join(' '));
-  return { said: r.stderr, ready: lastLine(r.stderr), ...partsOf(r.stderr) };
+  return { said: posixForms(r.stderr), ready: lastLine(r.stderr), ...partsOf(r.stderr) };
 }
 
 test('a removed command, given words it does not read or a value twice, ends with the form of the command that replaces it and drops or picks nothing', () => {
@@ -220,7 +223,7 @@ test('a form through the tools carries the root of the call, so filled it reache
   const dir = copy(PLAIN);
   const r = MCP.callTool('jarl_field', { ids: '1', name: 'Notes', value: 'x', root: dir });
   assert.equal(r.isError, true);
-  const form = r.content[0].text.split('\n').at(-1);
+  const form = lastLine(r.content[0].text);
   assert.equal(form, `jarl.mjs field '<ids>' '<a-part-of-the-description>' '<value>' ${L.shellWord(`--root=${dir}`)}`);
 });
 
@@ -233,6 +236,29 @@ test('a text that starts with dashes is refused with a reason that says it goes 
   const filled = r.ready.replace("'<tier>'", 'light').replace("'<title>'", "'--looks like a title'");
   assert.equal(runPrinted(dir, filled).status, 0, filled);
   assert.ok(L.loadIssues(dir).some((i) => i.title === '--looks like a title'));
+});
+
+test('a --root, a --json or another flag written after a bare -- is named in the reason as a flag that goes before it, and the form carries it there', () => {
+  const cases = [
+    [['evidence', '1', '--', '--json prints ok', '--root', ROOT_ARG], `jarl.mjs evidence --root ${ROOT_ARG} -- '<ids>' '<text>'`],
+    [['set', '1', 'deferred', '--', 'later', '--root', ROOT_ARG], `jarl.mjs set --root ${ROOT_ARG} -- '<ids>' '<status>' '<why>'`],
+    [['review', '1', 'approve', '--by', 'rev', '--', 'read it all, fine', `--root=${ROOT_ARG}`], `jarl.mjs review --by '<who>' '--root=${ROOT_ARG}' -- '<ids>' '<verdict>' '<what-was-read-and-found>'`],
+    [['field', '1', 'What', '--', 'x', '--json', '--root', ROOT_ARG], `jarl.mjs field --json --root ${ROOT_ARG} -- '<ids>' What '<text>'`],
+    [['new', '--', 't', '--tier', 'light', '--root', ROOT_ARG], `jarl.mjs new --tier '<tier>' --root ${ROOT_ARG} -- '<title>'`],
+  ];
+  for (const [args, form] of cases) {
+    const r = refusal(args, { loop: ROOTED });
+    assert.equal(r.ready, form, args.join(' '));
+    assert.match(r.reason, / is a flag, which goes before the bare --|are flags, which go before the bare --/, args.join(' '));
+    assert.doesNotMatch(r.reason, /are one text only when quoted/, `${args.join(' ')}: a flag is never offered as a word of a text`);
+  }
+  // Filled with the values of the call and run where the call was made, the form writes the loop the call named alone.
+  const top = copy(ROOTED);
+  const filled = `jarl.mjs evidence --root ${ROOT_ARG} -- 1 '--json prints ok'`;
+  assert.equal(runPrinted(top, filled).status, 0, filled);
+  assert.match(readFileSync(join(top, ROOT_ARG, '.jarl', 'log.md'), 'utf8'), /1 evidence · --json prints ok/);
+  assert.deepEqual(L.loadIssues(top).map((i) => i.id), ['1'], 'the loop of the working directory is untouched');
+  assert.doesNotMatch(readFileSync(join(top, '.jarl', 'log.md'), 'utf8'), /--json prints ok/);
 });
 
 test('a form filled where the call was made reaches the loop the call named: --root as given, both spellings and --root . from inside', () => {
@@ -320,7 +346,11 @@ test('every global flag that takes a value is checked for a placeholder: --root 
   // The form of init given --root with no value, pasted as printed, opens no loop in a directory named for its placeholder.
   const empty = copy(EMPTY);
   const ready = lastLine(run(empty, ['init', 'a goal', '--root']).stderr);
-  assert.equal(ready, "jarl.mjs init '<goal>' --root '<value>'");
+  assert.equal(ready, "jarl.mjs init '<goal>' --root '<loop-root>'");
+  // Given twice, the --root of the form is its placeholder too, the reason naming both.
+  const twice = run(copy(ROOTED), ['set', '1', 'Deferred', 'later', '--root', ROOT_ARG, '--root', 'releases/r2']).stderr;
+  assert.match(twice, /--root given twice \("releases\/r1" and "releases\/r2"\)/);
+  assert.equal(lastLine(twice), "jarl.mjs set '<ids>' '<status>' '<why>' --root '<loop-root>'");
   for (const sh of SHELLS) {
     assert.notEqual(runPrinted(empty, ready, sh).status, 0, sh);
     assert.deepEqual(readdirSync(empty), ['.git'], sh);
@@ -392,6 +422,97 @@ test('every word of a printed command is written by one function, which leaves a
     const said = build(['1', '--by', 'jarl', '--root', 'r1']);
     assert.ok(Array.isArray(said.form) && said.form[0] === 'jarl.mjs' && said.form.every((w) => typeof w === 'string'), cmd);
   }
+});
+
+// How a Windows program reads its command line (the rules of the C runtime, which node follows): words split at spaces
+// outside double quotes; a double quote opens or closes a quoted part; 2n backslashes before a double quote are n
+// backslashes and the quote counts, 2n+1 are n and a literal quote; any other backslash is itself.
+function windowsArgs(line) {
+  const out = [];
+  let word = null;
+  let quoted = false;
+  for (let i = 0; i < line.length; i += 1) {
+    const c = line[i];
+    if (c === '\\') {
+      let n = 0;
+      while (line[i + n] === '\\') n += 1;
+      if (line[i + n] === '"') { word = (word ?? '') + '\\'.repeat(Math.floor(n / 2)); if (n % 2) { word += '"'; i += n; } else i += n - 1; } else { word = (word ?? '') + '\\'.repeat(n); i += n - 1; }
+      continue;
+    }
+    if (c === '"') { quoted = !quoted; word = word ?? ''; continue; }
+    if (/\s/.test(c) && !quoted) { if (word !== null) out.push(word); word = null; continue; }
+    word = (word ?? '') + c;
+  }
+  if (word !== null) out.push(word);
+  return out;
+}
+// What cmd and PowerShell would read in a line other than what a program reads: in cmd a percent sign anywhere, and outside
+// double quotes a redirection, a pipe, an ampersand or a caret; in PowerShell a dollar sign or a backtick anywhere, and a
+// bare word holding anything but letters, digits and _ . / : = -.
+function windowsShellProblems(line) {
+  const problems = [];
+  if (/[%$`]/.test(line)) problems.push(`holds ${line.match(/[%$`]/)[0]}`);
+  let quoted = false;
+  for (const c of line) { if (c === '"') quoted = !quoted; else if (!quoted && /[<>|&^]/.test(c)) problems.push(`holds ${c} outside double quotes`); }
+  for (const w of line.match(/"[^"]*"|[^\s"]+/g) || []) if (!w.startsWith('"') && !/^[A-Za-z0-9_./:=-]+$/.test(w)) problems.push(`a bare word ${w}`);
+  return problems;
+}
+test('a form is written for the shell of its platform: a POSIX shell on macOS and Linux, PowerShell and cmd on Windows, where a word both do not read alike stands as its placeholder', () => {
+  assert.deepEqual(['linux', 'darwin', 'win32'].map(L.shellOf), ['posix', 'posix', 'windows']);
+  // Bare where both shells read the word as it is, else in double quotes, read alike by cmd, PowerShell and the program.
+  const readable = ['releases/r1', '--root=releases/r1', '<ids>', 'C:\\Users\\x\\r', '\\\\server\\share\\loops', 'C:\\Program Files\\loops', "it's", 'a^b', 'a&b', 'a|b', 'a<b>c', 'a b', '--', '', 'D:/loops/one'];
+  for (const w of readable) {
+    assert.equal(L.printable(w, 'windows'), true, JSON.stringify(w));
+    const line = `jarl.mjs ${L.shellWord(w, 'windows')}`;
+    assert.deepEqual(windowsArgs(line), ['jarl.mjs', w], line);
+    assert.deepEqual(windowsShellProblems(line), [], line);
+  }
+  assert.equal(L.shellWord('releases/r1', 'windows'), 'releases/r1');
+  assert.equal(L.shellWord('<ids>', 'windows'), '"<ids>"');
+  // Not printable there: a double quote, a percent sign, a dollar sign, a backtick, a line break of any kind, and a word to
+  // quote that ends with a backslash, which a program reads as an escape of the closing quote.
+  for (const w of ['say "hi"', '100%', '%PATH%', '$HOME', 'a`b', 'two\nlines', 'a\u2028b', 'a\rb', 'C:\\loops\\', 'C:\\my loops\\']) {
+    assert.equal(L.printable(w, 'windows'), false, JSON.stringify(w));
+    assert.equal(L.shellWord(w, 'windows'), '"<value>"', JSON.stringify(w));
+  }
+  // A POSIX shell takes every word, in single quotes or as a printf of its bytes.
+  for (const w of [...readable, '100%', '$HOME', 'two\nlines']) assert.equal(L.printable(w, 'posix'), true, JSON.stringify(w));
+  // The form builder, given the platform: the call's --root is carried in the quoting of that shell, or, where that shell
+  // cannot carry it, as its placeholder with the reason saying why; the placeholders are quoted alike.
+  const refused = (root, platform) => J.refusalFor(new L.Refusal('status must be one of: open, deferred (got "Deferred")', { arg: 1, value: L.hole('<status>') }), { cmd: 'set', args: ['1', 'Deferred', 'later'], flags: [['root', root]] }, platform).message;
+  const cases = [
+    ['C:\\Users\\x\\r', "--root 'C:\\Users\\x\\r'", '--root "C:\\Users\\x\\r"'],
+    ['C:\\Program Files\\loop', "--root 'C:\\Program Files\\loop'", '--root "C:\\Program Files\\loop"'],
+    ['\\\\server\\share\\loop', "--root '\\\\server\\share\\loop'", '--root "\\\\server\\share\\loop"'],
+    ["C:\\it's\\loop", "--root 'C:\\it'\\''s\\loop'", '--root "C:\\it\'s\\loop"'],
+    ['C:\\a&b^c\\loop', "--root 'C:\\a&b^c\\loop'", '--root "C:\\a&b^c\\loop"'],
+    ['C:\\100%\\loop', "--root 'C:\\100%\\loop'", '--root "<loop-root>"'],
+    ['C:\\say "hi"\\loop', "--root 'C:\\say \"hi\"\\loop'", '--root "<loop-root>"'],
+    ['C:\\loops\\', "--root 'C:\\loops\\'", '--root "<loop-root>"'],
+    ['releases/r1\n', "--root '<loop-root>'", '--root "<loop-root>"'],
+  ];
+  for (const [root, posix, windows] of cases) {
+    const onLinux = refused(root, 'linux');
+    const onWindows = refused(root, 'win32');
+    assert.equal(onLinux.split('\n').at(-1), `jarl.mjs set '<ids>' '<status>' '<why>' ${posix}`, JSON.stringify(root));
+    assert.equal(onWindows.split('\n').at(-1), `jarl.mjs set "<ids>" "<status>" "<why>" ${windows}`, JSON.stringify(root));
+    assert.deepEqual(windowsShellProblems(onWindows.split('\n').at(-1)), [], onWindows);
+    const said = windowsArgs(onWindows.split('\n').at(-1));
+    assert.deepEqual(said.slice(0, 5), ['jarl.mjs', 'set', '<ids>', '<status>', '<why>']);
+    assert.equal(said[6], windows.includes('<loop-root>') ? '<loop-root>' : root, JSON.stringify(root));
+    if (windows.includes('<loop-root>') && !root.includes('\n')) assert.match(onWindows, /\(the --root given holds a character that cmd and PowerShell read apart, or ends with a backslash a program reads as an escape: the form names the loop root by its placeholder\)/);
+  }
+  // A step and a form of another word that shell cannot carry: the placeholder, and the reason says why.
+  const step = J.refusalFor(new L.Refusal('a reason', [{ first: ['jarl.mjs', 'field', '1', 'Owner', '100%'] }, { retry: true }]), { cmd: 'set', args: ['1', 'x'], flags: [] }, 'win32').message;
+  assert.equal(step.split('\n').at(-2), 'jarl.mjs field 1 Owner "<value>"');
+  assert.match(step, /a word of the form holds a character that cmd and PowerShell read apart: the form names it by its placeholder/);
+});
+
+test('the walk pastes every line into sh and zsh on macOS and Linux, and on Windows into Git for Windows\' bash alone, which reads the forms of both shells', () => {
+  if (process.platform === 'win32') assert.deepEqual(SHELLS, ['bash']);
+  else { assert.equal(SHELLS[0], '/bin/sh'); assert.ok(SHELLS.every((s) => ['/bin/sh', '/bin/zsh'].includes(s))); }
+  // A Windows form pasted into bash is read as cmd and PowerShell read it: placeholders and quoted words alike.
+  for (const line of ['jarl.mjs set "<ids>" "<status>" "<why>" --root releases/r1', 'jarl.mjs field "<ids>" "Check when" "<date-or-event>"']) assert.deepEqual(printedCalls(line)[0], windowsArgs(line).slice(1), line);
 });
 
 // ---- the sources -----------------------------------------------------------------------------------------------------
@@ -499,8 +620,8 @@ test('every <...> Jarl prints, in a ready line, a reason, the help or a tool\'s 
 });
 
 // The commands SKILL.md and the references show (a code span or a line of a fenced block that starts with a command of
-// the table, holds jarl.mjs or holds a flag) hold no <...> outside the registry: pasted with one value filled, such a
-// command would record the other as a value.
+// the table, holds jarl.mjs, a flag or a tool call jarl_<tool> { ... }) hold no <...> outside the registry: pasted with
+// one value filled, such a command would record the other as a value.
 export function docProblems(file, whole, registry, commands) {
   // The blocks between the Runes markers are shared fragments, written in Runes and never here: they are read there.
   const text = whole.replace(/<!-- RUNES:([a-z-]+):START -->[\s\S]*?<!-- RUNES:\1:END -->/g, (m) => m.replace(/[^\n]/g, ' '));
@@ -510,7 +631,7 @@ export function docProblems(file, whole, registry, commands) {
   for (const m of outside.matchAll(/`([^`\n]+)`/g)) codes.push({ at: m.index, code: m[1] });
   for (const { at, code } of codes) {
     for (const line of code.split('\n')) {
-      if (!commands.has(line.trim().split(/\s+/)[0]) && !/jarl\.mjs |--[a-z]/.test(line)) continue;
+      if (!commands.has(line.trim().split(/\s+/)[0]) && !/jarl\.mjs |--[a-z]|\bjarl_[a-z]+ \{/.test(line)) continue;
       for (const m of line.replace(/\\\|/g, '|').matchAll(/<[^<>\n]+>/g)) if (!registry.includes(m[0])) problems.push(`${file}:${text.slice(0, at).split('\n').length}: ${m[0]} in ${line.trim().slice(0, 80)}`);
     }
   }
@@ -522,6 +643,9 @@ test('the commands SKILL.md and the references show hold no placeholder outside 
   assert.deepEqual(skillFiles().flatMap((f) => docProblems(f, skillText(f), L.PLACEHOLDERS, commands)), []);
   assert.equal(docProblems('x', 'run `evidence 1 --ran "<command>" --saw "<what it printed>"`', L.PLACEHOLDERS, commands).length, 1);
   assert.deepEqual(docProblems('x', 'a `<node>` in prose, and `evidence 1 --saw "<what-it-printed>"`', L.PLACEHOLDERS, commands), []);
+  // A tool call shown in a fenced block or a code span is read too, wherever it stands in the line.
+  assert.equal(docProblems('x', '```\nRecord it: jarl_review { ids: "7", by: "<your name>", root: "<loop-root>" }\n```\n', L.PLACEHOLDERS, commands).length, 1);
+  assert.equal(docProblems('x', 'then `jarl_show { id: "7", root: "<the loop>" }`', L.PLACEHOLDERS, commands).length, 1);
 });
 
 // A refusal is thrown only by refuse, or by need with a reason and a ready part: no error of any class is made or thrown
@@ -530,7 +654,7 @@ test('the commands SKILL.md and the references show hold no placeholder outside 
 // at code that names a placeholder outside the registry; withLock throws a TypeError at a library caller that hands it
 // async work, a mistake in that caller's code and no refusal of a call.
 const ALLOWED_ERRORS = [
-  ['jarl.mjs', /return new Error\(`\$\{(?:e\.reason|reasonFor\(e\.reason, call\))\}\\n\$\{(?:readyText\(e\.ready\)|commandLine\(e\.ready\)|printed\.map\(printedLine\)\.join\('\\n'\))\}`\)/],
+  ['jarl.mjs', /return new Error\(`\$\{(?:e\.reason|reasonFor\(e\.reason, call, shell, unprintable\))\}\\n\$\{(?:readyText\(e\.ready, shell\)|commandLine\(e\.ready, shell\)|printed\.map\(\(words\) => printedLine\(words, shell\)\)\.join\('\\n'\))\}`\)/],
   ['lib/base.mjs', /throw new TypeError\(`a refusal is built from a reason and a ready part/],
   ['lib/base.mjs', /throw new TypeError\(`\$\{token\} is not a placeholder of the registry/],
   ['lib/base.mjs', /throw new Refusal\(reason, ready\)/],

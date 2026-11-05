@@ -7,7 +7,8 @@ import { readFileSync, readdirSync, writeFileSync, mkdtempSync, mkdirSync } from
 import { basename, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
-import { jarl, refuses, loop as makeLoop, gitRepo, SKILL_DIR, SCRIPT, skillText } from './helpers.mjs';
+import { jarl, refuses, loop as makeLoop, gitRepo, SKILL_DIR, SCRIPT, skillText, posixForms } from './helpers.mjs';
+import { bashBin } from './portable.mjs';
 import * as R from '../record.mjs';
 
 const L = await import('../jarl-lib.mjs');
@@ -141,7 +142,7 @@ test('the commands that wrote one part each are refused with the reason, then on
   }
   assert.equal(issue(root, '1').priority, '2', 'a refused call writes nothing');
   const tool = mcp.handle({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'jarl_prio', arguments: { root } } });
-  assert.match(tool.error.message, /^Unknown tool: jarl_prio — prio is not a command; the priority is a field\njarl\.mjs field '<ids>' Priority '<prio>'$/);
+  assert.match(posixForms(tool.error.message), /^Unknown tool: jarl_prio — prio is not a command; the priority is a field\njarl\.mjs field '<ids>' Priority '<prio>'$/);
 });
 
 test('set takes statuses only: a field given to it is refused with the field call that writes it', () => {
@@ -298,7 +299,7 @@ test('every write that records a judgement names its author: review, answer, dec
 
 test('SKILL.md, the jarl\'s reference and each role\'s brief say that a refusal ends with the form of the command, filled before it is run and never pasted as printed', () => {
   for (const file of ['SKILL.md', 'references/jarl.md', 'references/worker.md', 'references/reviewer.md', 'references/merger.md']) {
-    assert.match(skillText(file), /a refusal ends with the form of the command with a `<placeholder>`; fill the value and run it; never paste it as printed/, file);
+    assert.match(skillText(file), /a refusal ends with the form of the command with a `<placeholder>`; fill the value and run it; never paste it as printed\. Forms are written for a POSIX shell \(sh, bash, zsh, Git Bash\) on macOS and Linux and for PowerShell and cmd on Windows; replace every `<placeholder>` before running one\./, file);
     assert.doesNotMatch(skillText(file), /the call corrected|paste it blind/, file);
   }
 });
@@ -338,12 +339,16 @@ test('the tips and the merge queue are sections of resume: --repo narrows both, 
 const formOf = (said) => said.trim().split('\n').at(-1);
 // A form filled as a caller fills it: each placeholder, as Jarl prints it, replaced by a value quoted by the same function,
 // then run through a POSIX shell against the loop, the script standing where jarl.mjs stands; --root goes before the
-// command, where it is read even when the form ends with a bare -- and its arguments.
+// command, where it is read even when the form ends with a bare -- and its arguments. The forms are read here as a POSIX
+// shell has them (refuses gives them so on every platform): sh on macOS and Linux, Git for Windows' bash on Windows,
+// each path given to it with forward slashes.
+const unix = (p) => (process.platform === 'win32' ? p.replace(/\\/g, '/') : p);
 function runFilled(root, form, fill) {
   let line = form;
   for (const [hole, value] of Object.entries(fill)) line = line.split(L.shellWord(hole)).join(L.shellWord(value));
   assert.doesNotMatch(line, /<[a-z][^<>\s]*>/, `every placeholder is filled: ${line}`);
-  const r = spawnSync('/bin/sh', ['-c', `"$JARL_NODE" "$JARL_SCRIPT" --root "$JARL_LOOP" ${line.slice('jarl.mjs '.length)}`], { encoding: 'utf8', env: { ...process.env, JARL_NODE: process.execPath, JARL_SCRIPT: SCRIPT, JARL_LOOP: root, HOME: '/home-not-expanded' }, timeout: 120000 });
+  const shell = process.platform === 'win32' ? bashBin() : '/bin/sh';
+  const r = spawnSync(shell, ['-c', `"$JARL_NODE" "$JARL_SCRIPT" --root "$JARL_LOOP" ${line.slice('jarl.mjs '.length)}`], { encoding: 'utf8', env: { ...process.env, JARL_NODE: unix(process.execPath), JARL_SCRIPT: unix(SCRIPT), JARL_LOOP: unix(root), HOME: '/home-not-expanded' }, timeout: 120000 });
   assert.equal(r.status, 0, `${line}\n${r.stderr}`);
 }
 const sectionsOf = (root, id) => { const i = R.findIssue(root, id); return { what: i.sections.what, why: i.sections.why, acceptance: i.sections.acceptance, changelog: i.sections.changelog, tags: i.tags, priority: i.priority }; };
@@ -448,12 +453,16 @@ test('SKILL.md, the references, the help, the tool descriptions and the server i
 test('a tool refuses a field it does not take whose value another field or tool takes, naming that one, with the call written there', () => {
   const root = fieldedLoop();
   const refused = (tool, input) => mcp.handle({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: tool, arguments: { root, ...input } } }).error.message;
-  assert.match(refused('jarl_status', { by: 'repo' }), /^jarl_status: "by" is not a field of this tool — its value goes in "group": jarl_status \{"group":"<group>"\}$/);
+  // The call written there carries the root and the json of the call as given, so filled it reaches the loop it named.
+  const rooted = `,"root":${JSON.stringify(root)}}`;
+  assert.ok(refused('jarl_status', { by: 'repo' }).startsWith('jarl_status: "by" is not a field of this tool — its value goes in "group": jarl_status {"group":"<group>"'));
+  assert.ok(refused('jarl_status', { by: 'repo' }).endsWith(rooted));
   assert.match(refused('jarl_models', { by: 'tag' }), /"by" is not a field of this tool — its value goes in "group"/);
-  assert.match(refused('jarl_resume', { ci: true }), /^jarl_resume: "ci" is not a field of this tool — its value goes in "gh": jarl_resume \{"gh":true\}$/);
-  assert.match(refused('jarl_set', { ids: '1', status: 'deferred', why: 'later' }), /"why" is not a field of this tool — its value goes in "text": jarl_set \{"ids":"<ids>","status":"<status>","text":"<text>"\}$/);
+  assert.ok(refused('jarl_resume', { ci: true }).endsWith(`jarl_resume {"gh":true${rooted}`));
+  assert.ok(refused('jarl_set', { ids: '1', status: 'deferred', why: 'later' }).endsWith(`"why" is not a field of this tool — its value goes in "text": jarl_set {"ids":"<ids>","status":"<status>","text":"<text>"${rooted}`));
+  assert.ok(refused('jarl_set', { ids: '1', status: 'deferred', why: 'later', json: true }).endsWith(`jarl_set {"ids":"<ids>","status":"<status>","text":"<text>","json":true${rooted}`));
   assert.match(refused('jarl_review', { ids: '1', verdict: 'approve', by: 'rev', findings: 'read it all here' }), /"findings" is not a field of this tool — its value goes in "text"/);
-  assert.match(refused('jarl_evidence', { ids: '1', retract: '2', by: 'jarl', text: 'the row ran elsewhere' }), /^jarl_evidence: "retract" is not a field of this tool — a row or a note is taken back with jarl_retract, and by names who takes it back: jarl_retract \{"id":"<id>","entry":"<n-or-note-n>","by":"<who>","text":"<why>"\}$/);
+  assert.match(refused('jarl_evidence', { ids: '1', retract: '2', by: 'jarl', text: 'the row ran elsewhere' }), /^jarl_evidence: "retract" is not a field of this tool — a row or a note is taken back with jarl_retract, and by names who takes it back: jarl_retract \{"id":"<id>","entry":"<n-or-note-n>","by":"<who>","text":"<why>","root":/);
   // A field no table names is refused with the fields the tool takes.
   assert.match(refused('jarl_status', { colour: 'red' }), /unknown field "colour" — it takes /);
 });

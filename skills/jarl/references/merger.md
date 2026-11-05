@@ -25,7 +25,7 @@ sees `.jarl/`, so the merger never commits it. Its brief:
 ```
 You are the merger of branch <base-branch> in <repo root>; the loop's tools are the jarl MCP tools, always
 called with root: "<loop-root>" (the directory holding .jarl/; with no jarl_* tools in your session, `node <path-of-jarl.mjs>
-<command> --root <loop-root>`); below, `jarl_x a --f v` is the tool jarl_x with those fields. A refused call writes nothing: a refusal ends with the form of the command with a `<placeholder>`; fill the value and run it; never paste it as printed. The loop is in the default, committed or permanent mode. In
+<command> --root <loop-root>`); below, `jarl_x a --f v` is the tool jarl_x with those fields. A refused call writes nothing: a refusal ends with the form of the command with a `<placeholder>`; fill the value and run it; never paste it as printed. Forms are written for a POSIX shell (sh, bash, zsh, Git Bash) on macOS and Linux and for PowerShell and cmd on Windows; replace every `<placeholder>` before running one. The loop is in the default, committed or permanent mode. In
 the permanent mode `.jarl/` is committed exactly as in the committed mode, and that commit is never
 later stripped — there is no last commit before a merge to `main` that removes it, because a permanent
 loop is never merged to `main` and never closed by removing `.jarl/`. Merging itself does not otherwise

@@ -90,10 +90,10 @@ function askOptions(raw, kind) {
     need(label && effect, `--option needs a label and an effect: "<label:effect>" (got "${text}")`, () => ({ replace: String(text), value: hole('<label:effect>') }));
     return { label, effect };
   });
-  need(options.length >= 2, 'a question with options has at least two options: a choice between one is not a choice', () => ({ flag: '--option', value: '<another-option>', add: true }));
+  need(options.length >= 2, 'a question with options has at least two options: a choice between one is not a choice', () => ({ flag: '--option', value: hole('<another-label:effect>'), add: true }));
   const labels = options.map((o) => o.label.toLowerCase());
   const twice = labels.find((l, i) => labels.indexOf(l) !== i);
-  need(!twice, 'the labels of a question\'s options are distinct', () => ({ replace: given.findLast((t) => noSeparators(String(t).split(':')[0]).toLowerCase() === twice), value: '<another-option>' }));
+  need(!twice, `the labels of a question's options are distinct (got ${JSON.stringify(twice)} twice)`, () => ({ flag: '--option', value: hole('<another-label:effect>'), add: true }));
   return options;
 }
 

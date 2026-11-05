@@ -411,9 +411,11 @@ export function profileAt(dir) {
 // A write of the profile file by this process: the next read reads it again, even when the file kept its size and the
 // clock did not move between the two writes.
 function forgetProfile(root) { PROFILES.delete(profilePath(root)); }
-export function readProfileFile(file) {
-  need(typeof file === 'string' && file.trim(), '--profile needs the path of a profile file', () => ({ flag: '--profile', value: '<profile.json>' }));
-  need(existsSync(file), `no such profile file: ${file}`, () => ({ flag: '--profile', value: '<profile.json>' }));
+// The file is init's --profile, or the argument of profile (`argument`): a refusal's form puts the path where it was given.
+export function readProfileFile(file, { argument = false } = {}) {
+  const where = () => (argument ? { arg: 0, value: '<profile.json>' } : { flag: '--profile', value: '<profile.json>' });
+  need(typeof file === 'string' && file.trim(), argument ? 'profile checks the profile file its argument names: give its path' : '--profile needs the path of a profile file', where);
+  need(existsSync(file), `no such profile file: ${file}`, where);
   let json;
   try { json = JSON.parse(readText(file)); } catch (e) { refuse(`${file} is not JSON: ${e.message}`, ['jarl.mjs', 'profile', '<profile.json>']); }
   const profile = validateProfile(json, file);
@@ -471,7 +473,7 @@ export function renderProfile(d) {
   return lines.join('\n');
 }
 export function cmdProfile(root, file) {
-  if (file !== undefined) return { file, ...describeProfile(readProfileFile(file).profile) };
+  if (file !== undefined) return { file, ...describeProfile(readProfileFile(file, { argument: true }).profile) };
   return describeProfile(existsSync(jarlDir(root)) ? loadProfile(root) : DEFAULT_PROFILE);
 }
 

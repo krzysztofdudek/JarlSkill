@@ -29,7 +29,7 @@ A worker's report is a hypothesis. A **fresh one-shot reviewer** — never the w
 You are the reviewer of issue <id> on branch jarl/7-slug of <repo root>. The loop's tools are the jarl
 MCP tools, always called with root: "<loop-root>" (the directory holding .jarl/; in the default mode the issue exists only there, never in
 git); with no jarl_* tools in your session, `node <path-of-jarl.mjs> <command> --root <loop-root>`.
-A refused call writes nothing: a refusal ends with the form of the command with a `<placeholder>`; fill the value and run it; never paste it as printed.
+A refused call writes nothing: a refusal ends with the form of the command with a `<placeholder>`; fill the value and run it; never paste it as printed. Forms are written for a POSIX shell (sh, bash, zsh, Git Bash) on macOS and Linux and for PowerShell and cmd on Windows; replace every `<placeholder>` before running one.
 Read-only; spawn nothing,
 and never `git checkout` in the main checkout — the merger is the only one who moves it, and a
 reviewer checking out there mid-merge is exactly the collision the merger's sole-committer rule
@@ -42,5 +42,5 @@ Read the rulings in force (jarl_decisions { live: true, root: "<loop-root>" }): 
 Read the evidence rows the worker recorded: a worker's missing rows, red and green not recorded as --ran/--saw rows, are an Important finding.
 Answer four questions with evidence: does the diff meet the acceptance line literally (quote it in the findings; an issue with none is itself a finding); was the new test red before the change and green after; did anything outside the issue's scope move; and, for every review and above all after a round, did the change or the fix weaken anything that worked or protected before (a mode, a default, a guard, a test)?
 Rank every finding Critical / Important / Minor. Minor findings alone are an approve.
-Record your own verdict as your last step, with every field filled: jarl_review { ids: "7", verdict: "approve" or "changes", text: "<one line each, severity first>", by: "<your name>", model: "<the model you run on>", root: "<loop-root>" }. Your answer is that verdict and the findings, and it quotes the line review printed.
+Record your own verdict as your last step, with every field filled: jarl_review { ids: "7", verdict: "approve" or "changes", text: "<findings-with-a-severity>", by: "<reviewer>", model: "<model-id>", root: "<loop-root>" }, with one line each in text, its severity first, your own name in by and the model you run on in model. Your answer is that verdict and the findings, and it quotes the line review printed.
 ```

@@ -893,8 +893,12 @@ test('a value flag takes the next argument whatever it starts with; -- ends the 
   jarl(root, 'evidence', '1', '--ran=go test ./...', '--saw=ok=all');
   const raw = (...args) => execFileSync(process.execPath, [SCRIPT, '--root', root, ...args], { encoding: 'utf8', timeout: SPAWN_TIMEOUT }).trim();
   raw('evidence', '1', '--', '--json prints ok');
-  // A --root written after the bare -- is an argument, and a surplus one is refused rather than dropped.
-  assert.match(refuses(root, 'evidence', '1', '--', 'x'), /unexpected: "--root".*flags such as --root go before it/s);
+  // A --root written after the bare -- is an argument, and a surplus one is refused rather than dropped; the reason says
+  // it is a flag, which goes before the --, and the form puts it there.
+  const after = refuses(root, 'evidence', '1', '--', 'x');
+  assert.match(after, /unexpected: "--root" "[^"]+"; "--root" is a flag, which goes before the bare --\n/);
+  assert.ok(after.trim().split('\n').at(-1).startsWith('jarl.mjs evidence --root '), after);
+  assert.ok(after.trim().split('\n').at(-1).endsWith(" -- '<ids>' '<text>'"), after);
   assert.match(refuses(root, 'set', '1', '2', 'done', 'why'), /set takes at most 3 arguments — unexpected: "why".*12,13/s);
   const shown = jarl(root, 'show', '1');
   assert.match(shown, /^- \[1\] \*\*ran:\*\* --help · \*\*saw:\*\* usage$/m);

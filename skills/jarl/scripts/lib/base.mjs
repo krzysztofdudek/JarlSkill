@@ -97,7 +97,7 @@ export const PLACEHOLDERS = Object.freeze([
   '<changelog-entry>', '<owner-line>', '<items>', '<an-item-with-no-leading-dash>', '<an-item-without-quotes>', '<one-quoted-text>',
   '<no-word-here>', '<argument>', '<who>', '<one-name>', '<reviewer>', '<a-fresh-reviewer>', '<the-owner-himself>', '<owner-or-a-name>',
   '<who-asks>', '<his-own-words>', '<status>', '<status-in-the-log>', '<a-status-the-gate-allows>', '<kind>', '<tier>', '<prio>',
-  '<verdict>', '<ci-state>', '<ask-kind>', '<jarl-or-owner>', '<option>', '<another-option>', '<label:effect>', '<mode>', '<group>',
+  '<verdict>', '<ci-state>', '<ask-kind>', '<jarl-or-owner>', '<option>', '<label:effect>', '<another-label:effect>', '<mode>', '<group>',
   '<name>', '<names>', '<name-or-path>', '<coordinator>', '<slice:coordinator>', '<no-second-slice-tag>', '<tag>', '<a-tag-an-issue-carries>', '<key>',
   '<a-number-two-files-carry>', '<sha>', '<command>', '<what-it-printed>', '<what-was-wrong>', '<what-was-read-and-found>',
   '<findings-with-a-severity>', '<what-failed>', '<what-the-branch-does>', '<what-is-red>', '<what-would-get-weaker>', '<why>',
@@ -142,21 +142,23 @@ function checkReady(ready) {
   if (isFix(ready)) return ready.first === undefined || isCommand(ready.first);
   return isCommand(ready);
 }
-// One command as the shell is given it: every word written by shellWord, the one function every printed word goes through.
-export const printedLine = (words) => words.map(shellWord).join(' ');
-export function commandLine(ready) {
+// One command as the shell is given it: every word written by shellWord, the one function every printed word goes through,
+// for the shell named (shellOf).
+export const printedLine = (words, shell = 'posix') => words.map((w) => shellWord(w, shell)).join(' ');
+export function commandLine(ready, shell = 'posix') {
   if (isExternal(ready)) return ready.external.trim();
-  return printedLine(commandOf(ready));
+  return printedLine(commandOf(ready), shell);
 }
 // The ready part as a text, for a caller that holds no call (the record library): a shape of the call is written as the
 // flag or the argument it asks for, its value a placeholder.
-export function readyText(ready) {
+export function readyText(ready, shell = 'posix') {
   const fixes = [].concat(ready).filter(isFix);
-  if (!fixes.length) return commandLine(ready);
-  const w = (v) => shellWord(isPlaceholder(v) ? v : hole('<value>'));
-  return fixes.map((f) => (f.first !== undefined ? `after ${commandLine(f.first)}` : f.drop !== undefined ? `without ${shellWord(f.drop)}` : f.flag !== undefined ? `${shellWord(f.flag)}${f.value === undefined ? '' : ` ${w(f.value)}`}`
-    : f.retry ? 'the call with its values filled' : f.dashes ? 'the arguments after a bare --' : f.rename !== undefined ? `${shellWord(f.to)} in place of ${shellWord(f.rename)}` : f.toArg !== undefined ? `the value of ${f.toArg} as argument ${f.at + 1}` : f.command !== undefined ? `${shellWord(f.command)} in place of the command`
-      : f.replace !== undefined ? `${w(f.value)} in place of ${shellWord(f.replace)}` : f.truncate !== undefined ? `no word after the first ${f.truncate}${f.value === undefined ? '' : `, then ${w(f.value)}`}` : `argument ${f.arg + 1}: ${w(f.value)}`)).join(' ');
+  if (!fixes.length) return commandLine(ready, shell);
+  const s = (v) => shellWord(v, shell);
+  const w = (v) => s(isPlaceholder(v) ? v : hole('<value>'));
+  return fixes.map((f) => (f.first !== undefined ? `after ${commandLine(f.first, shell)}` : f.drop !== undefined ? `without ${s(f.drop)}` : f.flag !== undefined ? `${s(f.flag)}${f.value === undefined ? '' : ` ${w(f.value)}`}`
+    : f.retry ? 'the call with its values filled' : f.dashes ? 'the arguments after a bare --' : f.rename !== undefined ? `${s(f.to)} in place of ${s(f.rename)}` : f.toArg !== undefined ? `the value of ${f.toArg} as argument ${f.at + 1}` : f.command !== undefined ? `${s(f.command)} in place of the command`
+      : f.replace !== undefined ? `${w(f.value)} in place of ${s(f.replace)}` : f.truncate !== undefined ? `no word after the first ${f.truncate}${f.value === undefined ? '' : `, then ${w(f.value)}`}` : `argument ${f.arg + 1}: ${w(f.value)}`)).join(' ');
 }
 export { isFix, isExternal };
 export function refuse(reason, ready) {
@@ -182,12 +184,30 @@ export function noSeparators(text) { return String(text ?? '').trim().replace(/\
 // for a reader that splits lines on Unicode separators too, and a refusal's ready command on its last line (a shell drops
 // the line breaks a word ends with). Every word Jarl prints in a command for a person or an agent to run is written so,
 // through printedLine.
+//
+// That is the quoting of a POSIX shell (sh, bash, zsh, Git Bash), the shell of macOS and Linux. The forms a refusal ends
+// with are written for the shell of the platform they are printed on (shellOf): on Windows, for PowerShell and cmd. There
+// a word is bare when it holds nothing but letters, digits and _ . / : = - (and is not --, which PowerShell may take for
+// its own), and else in double quotes, which both read alike for every other character: a space, a single quote, a < or
+// a >, & | ; ( ) ^ and a backslash inside. A word neither reads alike is not printable there (printable): a double quote,
+// a percent sign (cmd expands %name%), a dollar sign or a backtick (PowerShell expands them), a control character or a
+// line break (no quoting of theirs carries one, and no command substitution is printed), and a quoted word that ends with
+// a backslash (a program reads a backslash before the closing quote as an escape). Whoever builds a form prints such a
+// word as its placeholder and says why (see refusalFor in jarl.mjs); given one, shellWord prints the placeholder <value>.
 const RESERVED_WORDS = new Set(['!', '{', '}', '[[', ']]', 'case', 'coproc', 'do', 'done', 'elif', 'else', 'esac', 'fi', 'for', 'function', 'if', 'in', 'select', 'then', 'time', 'until', 'while']);
 const quoted = (s) => (/^[A-Za-z0-9_./-][A-Za-z0-9_./:@%+,-]*$/.test(s) && !RESERVED_WORDS.has(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`);
 const LINE_BREAKING = /[\u0000-\u0008\u000a-\u001f\u007f\u0085\u2028\u2029]/;
 const escapedByte = (c) => [...Buffer.from(c, 'utf8')].map((b) => `\\0${b.toString(8).padStart(3, '0')}`).join('');
-export function shellWord(s) {
+export const shellOf = (platform = process.platform) => (platform === 'win32' ? 'windows' : 'posix');
+const windowsBare = (s) => /^[A-Za-z0-9_./:=-]+$/.test(s) && s !== '--';
+export function printable(s, shell = 'posix') {
+  if (shell !== 'windows') return true;
   const text = String(s);
+  return !/["%$`]/.test(text) && !LINE_BREAKING.test(text) && (windowsBare(text) || !text.endsWith('\\'));
+}
+export function shellWord(s, shell = 'posix') {
+  const text = String(s);
+  if (shell === 'windows') return !printable(text, shell) ? `"${hole('<value>')}"` : windowsBare(text) ? text : `"${text}"`;
   if (!LINE_BREAKING.test(text)) return quoted(text);
   const escaped = [...text].map((c) => (c === '\\' ? '\\\\' : LINE_BREAKING.test(c) ? escapedByte(c) : c)).join('');
   return `"$(printf '%b' ${quoted(escaped)})"`;
