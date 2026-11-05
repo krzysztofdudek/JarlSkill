@@ -39,6 +39,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A reviewer can hand in a problem it found outside the task with its verdict, and Jarl files it as a new task found by that reviewer. Such a problem never sends the work back; a verdict that would send it back for that alone is refused.
 - When a task's checkable lines grow after a worker took it, Jarl says so and names the new line, and the report counts these changes for each person who made them.
 - A change meant to leave the output exactly as it was can be tagged `identical-output`. Its worker records the before-and-after comparison as proof, and a lighter reviewer may approve it, but it still needs that review before it can be closed.
+- Importing a findings file again, the same way as before, reports each finding whose text differs from the task the import filed for it, with both texts, and leaves the task as it was; a finding with neither a claim nor a truth is not compared. Outside tickets can be followed this way: file them under one parent task and import again whenever the tickets change.
 
 ### Changed
 
