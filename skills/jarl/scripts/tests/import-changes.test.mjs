@@ -5,8 +5,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { jarl, loop as makeLoop } from './helpers.mjs';
+import { dirname, join } from 'node:path';
+import { jarl, loop as makeLoop, refuses } from './helpers.mjs';
 
 const loop = () => makeLoop({ prefix: 'jarl-import-changes-', via: 'cli', dotGit: false });
 const json = (root, ...args) => JSON.parse(jarl(root, ...args, '--json'));
@@ -144,6 +144,48 @@ test('a change in one word is a change, not only a change in the end of the text
   importing(root, findingsFile(written([finding({ claim: 'Users can export a report as csv or xlsx.' })])));
   assert.equal(importing(root, findingsFile(written([finding({ claim: 'Users can export a report as csv or xls' })]))).changed.length, 1);
   assert.equal(importing(root, findingsFile(written([finding({ claim: 'Users can export a report as csv or xlsx.' })]))).changed.length, 0);
+});
+
+test('an import that stops after filing some issues still counts them as filed by import, so a later run reports their changes', () => {
+  const root = loop();
+  const refused = findingsFile(written([finding(), finding({ id: 'T-2', title: 'Print', claim: 'Users can <why>print</why> a report.' })]));
+  assert.match(refuses(root, 'import', refused, '--source', SOURCE), /closing why tag/);
+  assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /· imported ext\/2026-11-05-tickets · 1 filed, 0 already filed$/m, 'the filings of the run that stopped are closed by the line');
+  const fixed = findingsFile(written([finding(), finding({ id: 'T-2', title: 'Print', claim: 'Users can print a report.' })]));
+  assert.deepEqual(importing(root, fixed).filed.map((f) => f.finding), ['T-2']);
+  const both = findingsFile(written([finding({ claim: 'Users can export a report as xlsx.' }), finding({ id: 'T-2', title: 'Print', claim: 'Users can print a report in colour.' })]));
+  assert.deepEqual(importing(root, both).changed.map((c) => [c.finding, c.issue]), [['T-1', '1'], ['T-2', '2']]);
+});
+
+test('two files that carry one number are told apart by their keys: the hand-filed one stays silent, the imported one is reported', () => {
+  const root = loop();
+  importing(root, findingsFile(written([finding()])));
+  const imported = json(root, 'show', '1').file;
+  const text = readFileSync(imported, 'utf8');
+  assert.match(text, /^\*\*Key:\*\* /m, 'an issue import files carries a key');
+  const byHand = text.replace(/^\*\*Key:\*\*.*\n/m, '').replace('Export as csv', 'Printing by hand').replace(`${SOURCE}#T-1`, `${SOURCE}#T-2`).replace(/## What\n[\s\S]*?\n## Why/, '## What\nOur own words about printing.\n\n## Why');
+  writeFileSync(join(dirname(imported), '1-printing-by-hand.md'), byHand);
+  const next = findingsFile(written([finding({ claim: 'Users can export a report as xlsx.' }), finding({ id: 'T-2', title: 'Print', claim: 'Users can print a report.' })]));
+  const out = importing(root, next, '--dry-run');
+  assert.deepEqual(out.already.map((a) => a.finding), ['T-1', 'T-2']);
+  assert.deepEqual(out.changed.map((c) => c.finding), ['T-1']);
+});
+
+test('the log refuses a note shaped like the line import writes, and one shaped like a filing, naming the command that writes each', () => {
+  const root = loop();
+  jarl(root, 'new', 'by hand', '--source', `${SOURCE}#T-1`, '--what', 'Our own words.');
+  assert.match(refuses(root, 'log', `imported ${SOURCE} · 1 filed, 0 already filed`), /has the shape of the line import writes.*jarl\.mjs import "?<findings\.json>"?/);
+  assert.match(refuses(root, 'log', 'filed 1 · by hand'), /reads as a filing.*jarl\.mjs new "?<title>"?/);
+  assert.deepEqual(importing(root, findingsFile(written([finding({ claim: 'Another.' })]))).changed, []);
+});
+
+test('a finding that loses words is a change as one that gains words is, and a paragraph added to the issue by hand is not', () => {
+  const root = loop();
+  importing(root, findingsFile(written([finding({ claim: 'Users export csv. And xlsx.' })])));
+  assert.equal(importing(root, findingsFile(written([finding({ claim: 'Users export csv.' })]))).changed.length, 1, 'words lost at the end');
+  assert.equal(importing(root, findingsFile(written([finding({ claim: 'Users export csv. And xlsx. And pdf.' })]))).changed.length, 1, 'words gained at the end');
+  jarl(root, 'field', '1', 'What', `${json(root, 'show', '1').sections.what.trim()}\n\nA paragraph the coordinator added.`);
+  assert.equal(importing(root, findingsFile(written([finding({ claim: 'Users export csv. And xlsx.' })]))).changed.length, 0);
 });
 
 test('the same letters in another Unicode form are not a change', () => {

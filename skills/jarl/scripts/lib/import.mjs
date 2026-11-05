@@ -5,7 +5,7 @@ import { resolve, dirname, basename, relative, isAbsolute } from 'node:path';
 import { KEPT_KINDS, KINDS, PRIORITIES, fieldText, hole, jarlLine, need, refuse, slugify, splitList } from './base.mjs';
 import { git } from './git.mjs';
 import { canonical, jarlDir } from './where.mjs';
-import { loopEvents } from './log.mjs';
+import { IMPORT_LINE, loopEvents } from './log.mjs';
 import { readText } from './files.mjs';
 import { DEFAULT_PROFILE, formatOffText, loadProfile } from './profile.mjs';
 import { appendLog } from './journal.mjs';
@@ -165,33 +165,44 @@ function bySource(issues) {
 
 // The issues import filed, by the report directory they were filed from, read from the log: import writes one "filed"
 // line per issue it files, then one line "imported <dir> · <n> filed, …" straight after them, so the n lines before that
-// line are the filings of that run. A run whose n lines are not all filings (another writer's lines between them) names
-// none. An issue written by hand, or adopted into a Source, is in none of these runs: its words are its own.
+// line are the filings of that run (a run that stops after filing some writes the line for those before it stops). A run
+// whose n lines are not all filings (another writer's lines between them) names none. An issue written by hand, or adopted
+// into a Source, is in none of these runs: its words are its own. A filing is met by the key its line names, so two files
+// that carry one number are told apart; a line with no key names its issue by number, and only while one file carries it.
 function filedByImport(root) {
   const events = loopEvents(jarlDir(root), loadProfile(root));
   const out = new Map();
   events.forEach((e, at) => {
-    const m = /^imported (\S+) · (\d+) filed\b/.exec(e.text);
+    const m = IMPORT_LINE.exec(e.text);
     if (!m || at < Number(m[2])) return;
     const run = events.slice(at - Number(m[2]), at);
     if (!run.every((x) => x.type === 'filed' && x.id !== null)) return;
-    out.set(m[1], new Set([...(out.get(m[1]) || []), ...run.map((x) => x.id)]));
+    const held = out.get(m[1]) || { keys: new Set(), numbers: new Set() };
+    for (const x of run) (x.key ? held.keys : held.numbers).add(x.key || x.id);
+    out.set(m[1], held);
   });
   return out;
 }
+function importFiled(filed, dir, issue, issues) {
+  const held = filed.get(dir);
+  if (!held) return false;
+  if (issue.fields.key && held.keys.has(issue.fields.key)) return true;
+  return held.numbers.has(issue.id) && issues.filter((x) => x.id === issue.id).length === 1;
+}
 
 // A filed finding's text lives in the What and the Why of its issue, which keep being written to (a coordinator adds a
-// paragraph, a worker a note), so the finding is unchanged while every paragraph it would file today is still there. Words
-// are compared, not white space, line endings or the Unicode form of a letter, and the text is compared as the issue
-// stores it (a line that opens with # is escaped there). An issue that names several findings in its Source is a package
-// of them, not a copy of one: only an issue whose Source is this finding alone is compared.
+// paragraph, a worker a note), so the finding is unchanged while each paragraph it would file today is still a paragraph of
+// the issue, word for word. Words are compared, not white space, line endings or the Unicode form of a letter, and the text
+// is compared as the issue stores it (a line that opens with # is escaped there). An issue that names several findings in
+// its Source is a package of them, not a copy of one: only an issue whose Source is this finding alone is compared.
 const wordsOf = (s) => String(s).normalize('NFC').replace(/\s+/g, ' ').trim();
+const paragraphsOf = (s) => bodyText(s).split(/\n\s*\n/).map(wordsOf).filter(Boolean);
 function changedParts(issue, f) {
   if (issue.sources.length !== 1) return [];
   return [['What', f.what], ['Why', f.why]].flatMap(([part, now]) => {
     const held = issue.sections[part.toLowerCase()] ?? '';
-    const heldWords = ` ${wordsOf(held)} `;
-    const holds = bodyText(now).split(/\n\s*\n/).map(wordsOf).filter(Boolean).every((p) => heldWords.includes(` ${p} `));
+    const heldParagraphs = new Set(paragraphsOf(held));
+    const holds = paragraphsOf(now).every((p) => heldParagraphs.has(p));
     return holds ? [] : [{ part, issueText: held.trim(), findingText: String(now).trim() }];
   });
 }
@@ -227,7 +238,7 @@ export function cmdImport(root, file, flags) {
       out.already.push({ finding: f.id, issues: filedAs.get(key).map((i) => i.id) });
       for (const i of filedAs.get(key)) {
         imported ??= filedByImport(root);
-        const parts = imported.get(dir)?.has(i.id) ? changedParts(i, f) : [];
+        const parts = importFiled(imported, dir, i, issues) ? changedParts(i, f) : [];
         if (parts.length) out.changed.push({ finding: f.id, issue: i.id, status: i.status, parts });
       }
       continue;
@@ -251,14 +262,21 @@ export function cmdImport(root, file, flags) {
   // Every adopted issue is resolved before the first write, so a number two files carry refuses the import whole.
   const adopting = [...adopt].map(([id, keys]) => [id, [...findIssue(root, id).sources, ...keys]]);
   for (const [id, sources] of adopting) cmdSource(root, id, sources.join(','));
-  for (const { f, key } of toFile) {
-    const r = cmdNew(root, f.title, {
-      kind: flags.kind || f.kind, prio: flags.prio || f.priority, tier: flags.tier, tags: flags.tags, repo: flags.repo,
-      field: flags.field, 'found-by': flags['found-by'] || `research ${dir}`, where: f.where, what: f.what, why: f.why, acceptance: f.acceptance || undefined, source: key,
-    });
-    out.filed.push({ id: r.id, finding: f.id, source: key, title: f.title, kind: flags.kind || f.kind, priority: String(flags.prio || f.priority) });
+  const closing = () => appendLog(root, `imported ${dir} · ${out.filed.length} filed, ${out.already.length} already filed${out.adopted.length ? `, ${out.adopted.length} adopted` : ''}${out.mentioned.length ? `, ${out.mentioned.length} named by an issue without Source` : ''}${out.ambiguous.length ? `, ${out.ambiguous.length} ambiguous` : ''}`);
+  try {
+    for (const { f, key } of toFile) {
+      const r = cmdNew(root, f.title, {
+        kind: flags.kind || f.kind, prio: flags.prio || f.priority, tier: flags.tier, tags: flags.tags, repo: flags.repo,
+        field: flags.field, 'found-by': flags['found-by'] || `research ${dir}`, where: f.where, what: f.what, why: f.why, acceptance: f.acceptance || undefined, source: key,
+      });
+      out.filed.push({ id: r.id, finding: f.id, source: key, title: f.title, kind: flags.kind || f.kind, priority: String(flags.prio || f.priority) });
+    }
+  } catch (e) {
+    // A run that stops after filing some still closes its filings with the line, so they stay the filings of an import.
+    if (out.filed.length) closing();
+    throw e;
   }
-  appendLog(root, `imported ${dir} · ${out.filed.length} filed, ${out.already.length} already filed${out.adopted.length ? `, ${out.adopted.length} adopted` : ''}${out.mentioned.length ? `, ${out.mentioned.length} named by an issue without Source` : ''}${out.ambiguous.length ? `, ${out.ambiguous.length} ambiguous` : ''}`);
+  closing();
   return out;
 }
 
