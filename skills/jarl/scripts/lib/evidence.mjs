@@ -134,8 +134,10 @@ function retractNote(root, rawIds, reason, flags, n) {
 // earlier verdict; last, the exact call that prints everything. The window is read from the journal, where the file's
 // entries are matched to the log's lines in order: when the file and the log do not agree on how many there are (an
 // issue written by hand, a loop without a Reviews section) nothing is cut. Every evidence row carries its
-// ordinal [n], counted over the whole section, the number retract takes; --full prints the file with them.
-export function issueView(root, issue, { full = false } = {}) {
+// ordinal [n], counted over the whole section, the number retract takes; --full prints the file with them. With places
+// false the lines that name where a repository and the lease's worktree are on this machine are left out, for a text
+// handed to an agent that may run on another one.
+export function issueView(root, issue, { full = false, places = true } = {}) {
   const pieces = [];
   let cur = { name: null, lines: [] };
   for (const l of readText(issue.file).split('\n')) {
@@ -169,7 +171,7 @@ export function issueView(root, issue, { full = false } = {}) {
   };
   const g = full ? null : gateState(root, issue.id);
   const loop = readLoop(jarlDir(root));
-  const notes = [...recordDisagreements(loop).filter((d) => d.id === issue.id).map(disagreementText), ...headerReadNotes(loop).filter((n) => n.id === issue.id).map((n) => `note: ${n.line}`), ...checkWaiting(loop, [issue]).map(checkWaitingText), ...whereLines(whereOf(root, issue)), ...ownerLineNotes(root, loop, issue)];
+  const notes = [...recordDisagreements(loop).filter((d) => d.id === issue.id).map(disagreementText), ...headerReadNotes(loop).filter((n) => n.id === issue.id).map((n) => `note: ${n.line}`), ...checkWaiting(loop, [issue]).map(checkWaitingText), ...(places ? whereLines(whereOf(root, issue)) : []), ...ownerLineNotes(root, loop, issue)];
   const out = [];
   for (const p of pieces) {
     if (p.name === null && notes.length) {

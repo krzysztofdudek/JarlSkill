@@ -21,7 +21,7 @@ A worker's report is a hypothesis. A **fresh one-shot reviewer** — never the w
 - A change meant to alter nothing is reviewed by checking that its comparison of the output before and after covers everything the change touched.
 - The verdict judges the issue's acceptance and what the change itself broke; a finding outside that is filed as a new issue and never turns the verdict to changes.
 
-**A reviewer records its own verdict**, as the last step of its brief. One that returned without recording is resumed to record it; the jarl relays the verdict (`review --relayed`) only when the reviewer cannot be resumed. Any verdict meant to clear an issue is recorded with `review`, never as an evidence note, and a verdict relayed by someone else is recorded with `review --relayed`. The reviewer's brief follows.
+**A reviewer records its own verdict**, as the last step of its brief. One that returned without recording is resumed to record it; the jarl relays the verdict (`review --relayed`) only when the reviewer cannot be resumed. Any verdict meant to clear an issue is recorded with `review`, never as an evidence note, and a verdict relayed by someone else is recorded with `review --relayed`. The reviewer's brief follows; `brief <id> --role reviewer` prints what the record holds for it: the issue, the rules that reach its reviewer, the rounds so far with their findings, the proof rows and the command that records the verdict.
 
 ## The reviewer's brief
 
