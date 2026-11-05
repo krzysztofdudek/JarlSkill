@@ -36,7 +36,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The loop's report now counts, for each person who runs part of the loop, how many tasks they reopened after closing them and how many pieces of proof or approvals they took back, taken from the name each of those steps was recorded with.
 - Jarl can write the brief you hand to a worker, a reviewer or a coordinator, so you no longer write it by hand: the task, the rules meant for that person, what earlier reviews found, the proof so far and the command that records the result. A tool built on Jarl can get the same brief as data.
 - A task can be split into smaller tasks, and those split again, so the backlog becomes a tree. Each checkable line of the big task goes to one of the smaller ones or stays with it, and Jarl refuses a split that would lose a line. The big task waits until its smaller ones are done, then its coordinator checks the whole before it can be closed. The smaller tasks keep the order, the part of the backlog and the rules of the big one. The first split moves the loop to format 3, and a new profile that declares a field named Parent is refused.
-- Importing a findings file again reports each finding whose text differs from the task filed for it, with both texts, and leaves the task as it was. Outside tickets can be followed this way: file them under one parent task and import again whenever the tickets change.
+- Importing a findings file again, the same way as before, reports each finding whose text differs from the task the import filed for it, with both texts, and leaves the task as it was. Outside tickets can be followed this way: file them under one parent task and import again whenever the tickets change.
 
 ### Changed
 

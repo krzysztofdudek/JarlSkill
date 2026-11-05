@@ -190,9 +190,9 @@ const LINE_CALLS = {
   tick: (id) => ['tick', id, hole('<line>'), '--by', hole('<the-owner-himself>')], tip: (id) => ['evidence', id, '--ran', hole('<command>'), '--saw', hole('<what-it-printed>')],
 };
 const MOVE_SHAPE = idRe('^{id} →');
-// The line import writes after the filings of one run: the report directory and how many issues it filed. Import reads the
-// n lines before it as the issues it filed, so only import writes it.
-export const IMPORT_LINE = /^imported (\S+) · (\d+) filed\b/;
+// The line import writes after the filings of one run: the report directory and how many issues it filed. A note in its
+// shape would record an import that never ran, so only import writes it.
+const IMPORT_LINE = /^imported \S+ · \d+ filed\b/;
 // A free line for the journal (the log command and record.appendLog): a note about the loop or an issue. A line that
 // reads as one of the kinds above (a filing, a move, a round, a verdict, a retraction, a row, a merge, a CI state, a body
 // change or a tick) is refused and names the command that writes it, so every line the views and the gate read as state was
