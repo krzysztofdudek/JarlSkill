@@ -85,6 +85,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - When a new issue is filed with nobody named as having found it, the note on the empty field now gives the `field` call that sets it. Before, it said the name could only be given when filing.
 - Dropping or deferring an issue with a reason of blanks is now refused with the command that gives a reason, as a missing reason is. A changelog entry that opens with a word and a colon that is not a changelog section, such as `Notes:`, is now refused with the list of sections, so it no longer ends up as plain text in the release notes.
 - Every command that writes, run where no loop is found, now says there is no loop there and names `--root` as the way to point at one. Before, `ask`, `log` and `decide` stopped with a file error, and `set`, `field` and the others said there was no such issue.
+- A tool call refused for its input, such as a root that is not an absolute path, a field the tool does not take or a value of the wrong type, now ends with the call that tool takes, each value to fill in marked. `list` given a status, a kind or a priority the loop does not know is now refused with the values it knows, instead of showing an empty list.
 
 ## [6.2.0] - 2026-10-19
 

@@ -640,6 +640,17 @@ export function cmdAfter(root, rawId, raw, { clear = false, dry = false, by } = 
 export function cmdList(root, flags) {
   const profile = loadProfile(root);
   let rows = loadIssues(root);
+  // A filter names a value the loop knows (the profile's, or one an issue holds already): a value it does not know would
+  // list nothing and look like an empty loop.
+  const known = (flag, listed, held, value) => {
+    const given = flags[flag];
+    if (given === undefined || given === true) return;
+    const allowed = [...new Set([...listed, ...rows.map(held).filter(Boolean)])];
+    need(allowed.includes(String(given)), `--${flag} must be one of: ${allowed.join(', ')} (got "${given}")`, () => ({ flag: `--${flag}`, value }));
+  };
+  known('status', profile.statuses, (i) => i.status, hole('<status>'));
+  known('kind', profile.kinds, (i) => i.kind, hole('<kind>'));
+  known('prio', PRIORITIES, (i) => i.priority, hole('<prio>'));
   // Finished business (terminal: done, dropped, and deferred work, which waits) is not in the default list:
   // --status or --all shows it.
   // An issue whose number another file carries is listed whatever its status: the log's state of it may be another's.
