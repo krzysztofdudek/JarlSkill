@@ -81,6 +81,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `resume` and `decisions` show an answered question with its answer first, then the question.
 - `models` counts a model written with dots and the same model written with dashes, such as `claude-opus-5.5` and `claude-opus-5-5`, as one model, and its row names both spellings. A review or a task that uses the other spelling gets a note naming the spelling the record holds.
 - A comma in a `tag` command separates tags: `+a,b` adds `a` and `b`, and `-a,b` removes both. Before, the command added one tag named `a,b`.
+- Only the owner can answer an item waiting for his approval. An answer recorded in anyone else's name is refused.
 
 ## [6.2.0] - 2026-10-19
 

@@ -12,7 +12,7 @@ import { ASKS_FILE, DECISIONS_FILE, STAMP_SRC, answeredLines, appendDecision, ap
 import { OWNER, carryingOwnersWords, needNoOwnersWords, quoteShown, rulingAuthor } from './owner.mjs';
 import { findIssue, freeBlock, loadIssues, noteText, parseIssue, placeEvidence, setSection } from './issues.mjs';
 import { needFormat } from './repositories.mjs';
-import { coordinatorNames, readLoop, sliceNamed } from './loop.mjs';
+import { readLoop, sliceNamed } from './loop.mjs';
 import { issuesFor } from './commands.mjs';
 import { appliesToLine, loopRules, parseScope, parseUntil } from './rules.mjs';
 
@@ -118,6 +118,10 @@ function ratifyRefusal(id, ruling, answer) {
   if (AMBIGUOUS_WORDS.includes(first)) return `a-${id} ratifies ruling ${ruling}: "${first}" is English no and colloquial Polish yes, so it decides nothing — answer tak or nie (yes or reject)`;
   return `a-${id} ratifies ruling ${ruling}: the answer starts with one word — ${RATIFY_WORDS.join(', ')} to ratify it, ${REJECT_WORDS.join(', ')} to reject it`;
 }
+// A ratify item is the owner's to ratify or reject: an answer by anyone else is refused, the form asking for his --by.
+function needOwnersAnswer(ask, by) {
+  need(ask.kind !== 'ratify' || by === null || by === OWNER, `a-${ask.id} is a ratify item: it is the owner's to ratify or reject, and only his answer is recorded, --by owner (got "${by}")`, () => ({ flag: '--by', value: hole('<the-owner-himself>') }));
+}
 
 // What an answer is checked against before anything is written: the question, the answer text (or the chosen option's label),
 // and for a ratify item the verdict its words give. A refusal throws; a check with nothing to refuse returns the verdict
@@ -181,6 +185,7 @@ export function cmdAnswer(root, rawId, answer, flags = {}) {
   // The issue the answer is copied into is resolved before the first write, so a number two files carry writes nothing.
   if (ask.issue) findIssue(root, ask.issue);
   const id = ask.id;
+  needOwnersAnswer(ask, by);
   const text = answer === undefined ? null : noSeparators(oneBreak(answer));
   const checked = answerChecks(root, ask, text, chosen);
   const shown = chosen !== null ? chosen : text;
@@ -208,8 +213,8 @@ export function cmdAnswer(root, rawId, answer, flags = {}) {
 }
 
 // The CLI's answer: one id, or a comma list of ratify items answered together with one verdict. Every question is checked
-// before anything is written, so a refusal writes nothing. A ratify item names who answered (--by) and no coordinator of the
-// loop: the answer to it is a ruling of the person, not of the loop's own director.
+// before anything is written, so a refusal writes nothing. A ratify item is answered --by owner and by no one else: the
+// answer to it is the owner's ratification, which no one records for him.
 export function cmdAnswerMany(root, rawIds, answer, flags = {}) {
   const raw = String(rawIds ?? '').split(',').map((s) => s.trim()).filter(Boolean);
   need(raw.length, 'answer requires an id: one question, or several ratify items as a comma list', () => ({ arg: 0, value: '<a-n>' }));
@@ -225,8 +230,8 @@ export function cmdAnswerMany(root, rawIds, answer, flags = {}) {
   const by = flags.by === undefined ? undefined : rulingAuthor(flags.by);
   const item = found.find((a) => a.kind === 'ratify');
   if (item) {
-    need(by, `a-${item.id} is a ratify item, which needs --by: who answered (owner or a name)`, () => ({ flag: '--by', value: '<owner-or-a-name>' }));
-    need(!coordinatorNames(root).some((n) => n.toLowerCase() === by.toLowerCase()), `--by names a coordinator of the loop (${by}): a ratify item is answered by the owner or by a name, never by the loop's own director`, () => ({ flag: '--by', value: '<owner-or-a-name>' }));
+    need(by, `a-${item.id} is a ratify item, which needs --by owner: it is the owner's to ratify or reject`, () => ({ flag: '--by', value: hole('<the-owner-himself>') }));
+    for (const ask of found) needOwnersAnswer(ask, by);
   }
   // Every question is checked before the first write, so a refusal of one of them writes nothing.
   for (const ask of found) answerChecks(root, ask, answer === undefined ? null : noSeparators(answer), flags.option === undefined ? null : noSeparators(flags.option));

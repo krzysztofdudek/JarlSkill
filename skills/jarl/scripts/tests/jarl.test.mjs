@@ -1723,14 +1723,15 @@ test('answer with --option marks the option chosen in the ruling; the answer in 
   assert.match(refuses(root, 'answer', 'a-1', '--option', 'Keep', '--by', 'owner'), /already answered/);
 });
 
-test('answer takes a comma list of ratify items with one verdict, writes one ruling each naming the batch, and needs a named answerer', () => {
+test('answer takes a comma list of ratify items with one verdict, writes one ruling each naming the batch, and needs the owner as the answerer', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
   jarl(root, 'ask', 'raised the limit', '--kind', 'ratify');
   jarl(root, 'ask', 'kept the flag', '--kind', 'ratify');
   jarl(root, 'ask', 'a stuck question', '--kind', 'stuck');
   assert.match(refuses(root, 'answer', 'a-1', 'yes'), /^answer records who answered with --by, owner for the owner\njarl\.mjs answer "<question>" "<text>" --by "<who>"\n$/);
-  for (const name of ['jarl', 'reeve', 'coordinator', basename(root)]) assert.match(refuses(root, 'answer', 'a-1', 'yes', '--by', name), /coordinator/);
+  for (const name of ['jarl', 'reeve', 'coordinator', basename(root), 'Jane Doe']) assert.match(refuses(root, 'answer', 'a-1', 'yes', '--by', name), /is a ratify item: it is the owner's to ratify or reject/);
+  assert.match(refuses(root, 'answer', 'a-1,a-2', 'yes', '--by', 'reeve'), /a-1 is a ratify item: it is the owner's/);
   assert.match(refuses(root, 'answer', 'a-1,a-3', 'yes', '--by', 'owner'), /answered together only when each is a ratify item/);
   jarl(root, 'answer', '1,2', 'yes', '--by', 'owner');
   const text = readRecord(root, 'decisions.md');

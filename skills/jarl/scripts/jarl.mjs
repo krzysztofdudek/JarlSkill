@@ -322,11 +322,11 @@ commands:
                                                  records the answer as a ruling and closes the question: the option
                                                  chosen, marked in the ruling's list of options, or the answer in the
                                                  person's own words; --by, which every answer takes, records who answered (owner
-                                                 for the owner, jarl on an escalation), and on a ratify item names no
-                                                 coordinator of the loop;
+                                                 for the owner, jarl on an escalation), and on a ratify item is owner,
+                                                 whose item it is;
                                                  several ratify items as a comma list take one answer, one ruling each,
                                                  each naming the batch it was answered in; on a ratify item whose
-                                                 ruling names a rule, the rule's ratification names who answered
+                                                 ruling names a rule, the rule's ratification names the owner
   resume [--log n] [--ready n] [--gh] [--repo <name-or-path>] [--base <base-branch>] [--as <who>] [--slice <coordinator>]
                                                  read-only, the boot: everything a session picks the loop up from,
                                                  assembled live — goal and counts, rulings in force, in flight with
