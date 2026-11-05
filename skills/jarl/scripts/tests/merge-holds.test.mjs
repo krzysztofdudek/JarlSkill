@@ -441,7 +441,7 @@ test('two repositories recorded one after the other with their branches kept: th
 });
 
 // Two repositories beside a hub loop with the issue approved on a branch in each, and then the lib checkout moved out of
-// the place the issue's Repo field points to, as a repository that is no longer on this machine.
+// the place the issue's Repo field points to, as a repository that is missing from this machine.
 function twoRepositoriesOneAway() {
   const parent = mkdtempSync(join(tmpdir(), 'jarl-holds-away-'));
   const dirs = {};
@@ -463,12 +463,12 @@ function twoRepositoriesOneAway() {
   return { hub, tool, was, merge };
 }
 
-test('a repository that is no longer on this machine keeps the note silent when another repository\'s branch did not move', () => {
+test('a repository that is missing from this machine keeps the note silent when another repository\'s branch did not move', () => {
   const { hub, merge } = twoRepositoriesOneAway();
   assert.doesNotMatch(said(hub, 'merged', '1', '--sha', merge(), '--repo', '../tool', '--keep'), APPROVED_ELSEWHERE);
 });
 
-test('a repository that is no longer on this machine does not silence the note for the repository that is, when its branch moved', () => {
+test('a repository that is missing from this machine does not silence the note for the repository that is, when its branch moved', () => {
   const { hub, tool, was, merge } = twoRepositoriesOneAway();
   git(tool, 'checkout', '-q', 'jarl/1-x');
   commit(tool, 'late.txt', 'late\n');
