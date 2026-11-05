@@ -118,8 +118,9 @@ commands:
       [--found-by who] [--only <finding-ids>] [--adopt] [--dry-run] [--field "<name=value>"]... [--by who]
                                                  one issue per finding, with Source: <report-dir#finding-id>; a finding
                                                  whose Source is already on an issue is skipped, so a re-run files
-                                                 nothing twice, and one whose text differs from the What or Why its
-                                                 issue holds is reported with both texts (the issue is never rewritten);
+                                                 nothing twice, and one whose text differs from the What or Why of
+                                                 the issue import filed for it is reported with both texts (the
+                                                 issue is never rewritten);
                                                  --dry-run prints what it would file; --adopt writes
                                                  Source onto an existing issue that names the finding id but has none;
                                                  --tags, --repo and --only repeat, or take a comma list

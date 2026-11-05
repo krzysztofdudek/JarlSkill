@@ -119,3 +119,35 @@ test('an external requirement is a branch of the issue tree: the sub-issue of a 
   const out = importing(root, findingsFile(written([finding({ claim: 'Users can export a report as xlsx.' })])));
   assert.deepEqual(out.changed.map((c) => [c.finding, c.issue]), [['T-1', '2']]);
 });
+
+test('an issue filed by hand under a Source, and one adopted into it, is never reported, whatever its What says', () => {
+  const root = loop();
+  jarl(root, 'new', 'Export by hand', '--source', `${SOURCE}#T-1`, '--what', 'Our own account of the export, nothing like the finding.');
+  jarl(root, 'new', 'Print named by an issue', '--what', 'Covers T-2 of ext/2026-11-05-tickets in our words.');
+  const file = findingsFile(written([finding(), finding({ id: 'T-2', title: 'Print', claim: 'Users can print a report.' })]));
+  assert.deepEqual(importing(root, file, '--adopt').changed, []);
+  assert.deepEqual(importing(root, file).changed, []);
+  assert.deepEqual(importing(root, file, '--dry-run').changed, []);
+  assert.match(jarl(root, 'import', file, '--source', SOURCE), /already filed 2$/m);
+});
+
+test('only the issues filed by an import run are compared: a hand-filed issue beside imported ones stays silent, an imported one is reported', () => {
+  const root = loop();
+  jarl(root, 'new', 'Export by hand', '--source', `${SOURCE}#T-1`, '--what', 'Our own account of the export.');
+  importing(root, findingsFile(written([finding({ id: 'T-2', title: 'Print', claim: 'Users can print a report.' })])));
+  const changed = findingsFile(written([finding(), finding({ id: 'T-2', title: 'Print', claim: 'Users can print a report in colour.' })]));
+  assert.deepEqual(importing(root, changed).changed.map((c) => [c.finding, c.issue]), [['T-2', '2']]);
+});
+
+test('a change in one word is a change, not only a change in the end of the text', () => {
+  const root = loop();
+  importing(root, findingsFile(written([finding({ claim: 'Users can export a report as csv or xlsx.' })])));
+  assert.equal(importing(root, findingsFile(written([finding({ claim: 'Users can export a report as csv or xls' })]))).changed.length, 1);
+  assert.equal(importing(root, findingsFile(written([finding({ claim: 'Users can export a report as csv or xlsx.' })]))).changed.length, 0);
+});
+
+test('the same letters in another Unicode form are not a change', () => {
+  const root = loop();
+  importing(root, findingsFile(written([finding({ claim: 'Użytkownik eksportuje raport. Zażółć gęślą jaźń.'.normalize('NFC') })])));
+  assert.deepEqual(importing(root, findingsFile(written([finding({ claim: 'Użytkownik eksportuje raport. Zażółć gęślą jaźń.'.normalize('NFD') })]))).changed, []);
+});
