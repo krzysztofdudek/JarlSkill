@@ -8,7 +8,7 @@ import { canonical } from './where.mjs';
 import { readText } from './files.mjs';
 import { DEFAULT_PROFILE, formatOffText, loadProfile } from './profile.mjs';
 import { appendLog } from './journal.mjs';
-import { PROPOSED, findIssue, loadIssues, sharedMark } from './issues.mjs';
+import { PROPOSED, bodyText, findIssue, loadIssues, sharedMark } from './issues.mjs';
 import { repoList, reposWhereLines } from './repositories.mjs';
 import { closedGateLine, disagreementText, gateLine, needOneSlice } from './loop.mjs';
 import { checkLines, checkWaitingText, mergeCheckLines } from './metrics.mjs';
@@ -162,6 +162,22 @@ function bySource(issues) {
   return map;
 }
 
+// A filed finding's text lives in the What and the Why of its issue, which keep being written to (a coordinator adds a
+// paragraph, a worker a note), so the finding is unchanged while every paragraph it would file today is still there. Words
+// are compared, not white space or line endings, and the text is compared as the issue stores it (a line that opens with
+// # is escaped there). An issue that names several findings in its Source is a package of them, not a copy of one, and an
+// issue written by hand holds words of its own: only an issue whose Source is this finding alone is compared.
+const wordsOf = (s) => String(s).replace(/\s+/g, ' ').trim();
+function changedParts(issue, f) {
+  if (issue.sources.length !== 1) return [];
+  return [['What', f.what], ['Why', f.why]].flatMap(([part, now]) => {
+    const held = issue.sections[part.toLowerCase()] ?? '';
+    const heldWords = wordsOf(held);
+    const holds = bodyText(now).split(/\n\s*\n/).map(wordsOf).filter(Boolean).every((p) => heldWords.includes(p));
+    return holds ? [] : [{ part, issueText: held.trim(), findingText: String(now).trim() }];
+  });
+}
+
 export function cmdImport(root, file, flags) {
   needLiveLoop(root, ` — run: ${jarlLine('init', '<goal>')}`);
   const { dir, findings: read } = readFindings(file, flags);
@@ -184,11 +200,18 @@ export function cmdImport(root, file, flags) {
   }
   const issues = loadIssues(root);
   const filedAs = bySource(issues);
-  const out = { source: dir, findings: findings.length, considered: chosen.length, filed: [], already: [], adopted: [], mentioned: [], ambiguous: [], dryRun: flags['dry-run'] === true };
+  const out = { source: dir, findings: findings.length, considered: chosen.length, filed: [], already: [], changed: [], adopted: [], mentioned: [], ambiguous: [], dryRun: flags['dry-run'] === true };
   const toFile = [];
   for (const f of chosen) {
     const key = `${dir}#${f.id}`;
-    if (filedAs.has(key)) { out.already.push({ finding: f.id, issues: filedAs.get(key).map((i) => i.id) }); continue; }
+    if (filedAs.has(key)) {
+      out.already.push({ finding: f.id, issues: filedAs.get(key).map((i) => i.id) });
+      for (const i of filedAs.get(key)) {
+        const parts = changedParts(i, f);
+        if (parts.length) out.changed.push({ finding: f.id, issue: i.id, status: i.status, parts });
+      }
+      continue;
+    }
     const m = mentionOf(issues, f, dir);
     if (m.ambiguous) { out.ambiguous.push({ finding: f.id, issues: m.ambiguous }); continue; }
     if (m.issue) {
@@ -303,13 +326,21 @@ export function renderStatus(o, profile = DEFAULT_PROFILE) {
   return `${head}${line}${more.length ? `\n${more.join('\n')}` : ''}`;
 }
 
+// A text under its label, every further line under the first one's text.
+const indented = (label, text) => text.split('\n').map((l, n) => (n === 0 ? `    ${label}${l}` : l ? `    ${' '.repeat(label.length)}${l}` : '')).join('\n');
+
 export function renderImport(o) {
-  const head = `${o.source}: ${o.findings} finding(s)${o.considered !== o.findings ? `, ${o.considered} chosen` : ''} · ${o.dryRun ? 'would file' : 'filed'} ${o.filed.length} · already filed ${o.already.length}${o.adopted.length ? ` · adopted ${o.adopted.length}` : ''}${o.mentioned.length ? ` · named by an issue without Source ${o.mentioned.length} (--adopt links them)` : ''}${o.ambiguous.length ? ` · ambiguous ${o.ambiguous.length}` : ''}`;
+  const head = `${o.source}: ${o.findings} finding(s)${o.considered !== o.findings ? `, ${o.considered} chosen` : ''} · ${o.dryRun ? 'would file' : 'filed'} ${o.filed.length} · already filed ${o.already.length}${o.changed.length ? ` · changed since filed ${o.changed.length}` : ''}${o.adopted.length ? ` · adopted ${o.adopted.length}` : ''}${o.mentioned.length ? ` · named by an issue without Source ${o.mentioned.length} (--adopt links them)` : ''}${o.ambiguous.length ? ` · ambiguous ${o.ambiguous.length}` : ''}`;
   const rows = [
     ...o.filed.map((f) => `${o.dryRun ? 'would file' : `filed ${f.id}`} · ${f.finding} · ${f.kind} P${f.priority} · ${f.title}`),
+    ...o.changed.flatMap((c) => c.parts.flatMap((p) => [
+      `changed since filed · ${c.finding} · issue ${c.issue} (${c.status}) · ${p.part}`,
+      ...[['issue', p.issueText], ['finding', p.findingText]].map(([who, text]) => indented(`${who}:`.padEnd(9), text)),
+    ])),
     ...o.adopted.map((a) => `adopted ${a.issue} · ${a.finding}`),
     ...o.mentioned.map((m) => `named by ${m.issue} · ${m.finding}`),
     ...o.ambiguous.map((m) => `ambiguous · ${m.finding} · named by ${m.issues.join(', ')}`),
+    ...(o.changed.length ? ['import leaves the text of an issue as it is: the issue and the finding are shown as they stand'] : []),
   ];
   return [head, ...rows].join('\n');
 }
