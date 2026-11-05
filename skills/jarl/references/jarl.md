@@ -253,6 +253,7 @@ slice in play, each lease declares its Files or Resources, because across slices
 Pull before leasing and push right after when the loop is shared between clones.
 One shared review covers only issues that are one contract or one screen, at most four.
 An issue's scope does not grow once it is leased: a new ask becomes a new issue.
+A change that adds or rewrites a leased issue's acceptance line prints a note naming it and is logged, and `report` counts such changes per writer.
 
 **One merger for the loop.** The goal's `Merger: <name>` line names the one holder, the jarl or one
 coordinator, that raises the merger; every approve not yet merged, in every slice, is on that

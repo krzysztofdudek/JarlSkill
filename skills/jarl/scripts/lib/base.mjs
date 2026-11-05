@@ -11,6 +11,11 @@ export const KINDS = ['bug', 'gap', 'cleanup', 'docs', 'test', 'research', 'proc
 export const PROMISE_KIND = 'promise';
 export const WAIT_KIND = 'wait';
 export const KEPT_KINDS = [PROMISE_KIND, WAIT_KIND];
+// The tag of a change meant to alter nothing (a refactor whose output is the same before and after): its comparison of the
+// output is a proof row, and its fresh review may be a light one that checks the comparison covers everything the change
+// touched. The comparison never stands in for the review.
+export const IDENTICAL_OUTPUT_TAG = 'identical-output';
+export const meantToAlterNothing = (issue) => (issue.tags || []).some((t) => String(t).toLowerCase() === IDENTICAL_OUTPUT_TAG);
 export const PRIORITIES = ['1', '2', '3'];
 // Weakest first: the order of the list is the order of strength, which is how a loop's model lines rank its models.
 export const TIERS = ['light', 'standard', 'strong'];
@@ -101,7 +106,7 @@ export const PLACEHOLDERS = Object.freeze([
   '<verdict>', '<ci-state>', '<ask-kind>', '<jarl-or-owner>', '<option>', '<label:effect>', '<another-label:effect>', '<mode>', '<group>',
   '<name>', '<names>', '<name-or-path>', '<coordinator>', '<slice:coordinator>', '<no-second-slice-tag>', '<tag>', '<a-tag-an-issue-carries>', '<key>',
   '<a-number-two-files-carry>', '<sha>', '<command>', '<what-it-printed>', '<what-was-wrong>', '<what-was-read-and-found>',
-  '<findings-with-a-severity>', '<what-failed>', '<what-the-branch-does>', '<what-is-red>', '<what-would-get-weaker>', '<why>',
+  '<findings-with-a-severity>', '<finding-outside-the-issue>', '<what-failed>', '<what-the-branch-does>', '<what-is-red>', '<what-would-get-weaker>', '<why>',
   '<why-the-worker-changed>', '<question-for-the-owner>', '<yes-or-reject-first>', '<branch>', '<worker-branch>', '<base-branch>',
   '<the-new-worker>', '<the-worktree-of-the-lease>', '<model-id>', '<path>', '<paths>', '<path-under-the-loop-root>', '<slot>',
   '<findings.json>', '<profile.json>', '<report-dir>', '<report-dir#finding-id>', '<finding-ids>', '<template>', '<the-main-checkout>',

@@ -14,7 +14,7 @@ import { appendLog, appendLogLines, decisionsPath, goalPath, logPath } from './j
 import { JARL_GITIGNORE, JARL_GITIGNORE_COMMITTED, ensureLoopMerge, outOfGit } from './loop-git.mjs';
 import { HANDOVER_SEGMENT, journalById, mergeCheckText } from './log.mjs';
 import { FIELD_RE, PROPOSED, RENDERED_FIELDS, acceptanceHeading, acceptanceLineCount, acceptanceLines, acceptanceText, bodyText, changelogText, evidenceNotes, evidenceParts, evidenceRows, evidenceTable, fieldValue, findIssue, issueNamed, loadIssues, mergedOf, namedPairs, needNoFieldTags, noteText, parentCycle, parseIssue, placeEvidence, removeFields, removeFirstField, renderIssue, setField, setSection, unattributedRefusal, waitCycle } from './issues.mjs';
-import { branchTip, commitRepoNames, defaultBase, fileKeysOf, isGitRepo, issueRepoPaths, issueRepos, mainCheckoutOf, needFormat, needRightCheckouts, repoFromInput, repoLabel, repoList, tipLines, whyNotDeletable, worktreeState, worktreesOf } from './repositories.mjs';
+import { branchTip, commitRepoNames, defaultBase, fileKeysOf, isGitRepo, issueRepoPaths, issueRepos, mainCheckoutOf, needFormat, needRightCheckouts, repoFromInput, repoLabel, repoList, reposNamed, tipLines, whyNotDeletable, worktreeState, worktreesOf } from './repositories.mjs';
 import { FIELD_NAMES, activeSlices, carriesCode, gateOf, isSliceTag, needOneSlice, readLoop, sinceText, sliceOf, unorderedNamings, unorderedText } from './loop.mjs';
 import { declaredChecks, lastMerge } from './metrics.mjs';
 import { modelLines, modelValue, spellingNote } from './models.mjs';
@@ -214,7 +214,10 @@ function defaultedNote(field, value, flag) {
   return `note: no --${flag} given, so ${field} ${value} was recorded (the default); name it with --${flag}`;
 }
 
-export function cmdNew(root, title, rawFlags) {
+// `from`, a filing's own and never a flag or a library option (newIssue passes three arguments): { dry, repoOf }. dry runs
+// every check of the filing and writes nothing; repoOf (issue files) gives the new issue the Repo those issues hold once
+// every raise of the filing has run, so a finding a review files names its repositories as the reviewed issue does.
+export function cmdNew(root, title, rawFlags, from = {}) {
   need(title, 'new requires "<title>"', { arg: 0, value: '<title>' });
   needNoOwnersWords('the new issue', title, rawFlags);
   // A title is the heading line of the issue: line breaks in it become spaces, so the lines after the first are not lost to the heading.
@@ -272,6 +275,16 @@ export function cmdNew(root, title, rawFlags) {
   // A line only the owner ticks names its material and what to check; its first write raises the record format.
   const acceptance = flags.acceptance !== undefined ? acceptanceText(flags.acceptance) : bodyText(fromTemplate.acceptance);
   const ownerLined = needOwnerLines(acceptance);
+  const render = (id, key, repo) => renderIssue({
+    id, title, status: profile.initial, key, kind, priority, tier, fields, sections, acceptanceHeading: profile.acceptance || 'Acceptance',
+    tags: splitList(flags.tags), files: pathList(flags.files), repo, foundBy: flags['found-by'] || 'jarl', person, checkWhen,
+    where: flags.where, what: bodyText(flags.what), why: bodyText(flags.why), source, after,
+    // A template's Acceptance and Changelog are taken as written (a list already); a flag replaces them.
+    acceptance,
+    changelog: flags.changelog !== undefined ? changelogText(flags.changelog) : bodyText(fromTemplate.changelog),
+  });
+  // A dry filing ends here, before the first write: the text the file would hold passes the record's check too.
+  if (from.dry) { needNoNewOwnersWords('', render('0', null, ''), `${slugify(title)}.md`); return { dry: true }; }
   // A promise and a wait are kinds a reader of formats 1 and 2 does not know: the loop is raised first, or, where a composer
   // keeps its format, the filing is refused with nothing written.
   if (kept) needFormat(root, 'promise-wait');
@@ -282,6 +295,8 @@ export function cmdNew(root, title, rawFlags) {
   // are the issues of a loop whose profile declares a field Key of its own.
   const keyed = loadProfile(root).keyed && (formatState(loadProfile(root)).raises || loadProfile(root).format >= FORMAT_LINES['issue-key'].format);
   if (keyed) needFormat(root, 'issue-key');
+  // Read after the raises, which write a bare path of a format-1 loop with a leading ./, so the pair names one place alike.
+  const repoText = from.repoOf ? [...new Set(from.repoOf.flatMap((f) => reposNamed(parseIssue(readText(f), f))))].join(', ') : picked.map((p) => p.value).join(', ');
   const at = stamp();
   const key = keyed ? newIssueKey(at) : null;
   // The number is claimed by creating the file with a link, which never overwrites: when another
@@ -302,14 +317,7 @@ export function cmdNew(root, title, rawFlags) {
     if (needsRaisedFormat(id)) needFormat(root, 'plain-number');
     const file = join(dir, `${id}-${slugify(title)}.md`);
     const tmp = join(dir, `.${id}.${process.pid}.tmp`);
-    const rendered = renderIssue({
-      id, title, status: profile.initial, key, kind, priority, tier, fields, sections, acceptanceHeading: profile.acceptance || 'Acceptance',
-      tags: splitList(flags.tags), files: pathList(flags.files), repo: picked.map((p) => p.value).join(', '), foundBy: flags['found-by'] || 'jarl', person, checkWhen,
-      where: flags.where, what: bodyText(flags.what), why: bodyText(flags.why), source, after,
-      // A template's Acceptance and Changelog are taken as written (a list already); a flag replaces them.
-      acceptance,
-      changelog: flags.changelog !== undefined ? changelogText(flags.changelog) : bodyText(fromTemplate.changelog),
-    });
+    const rendered = render(id, key, repoText);
     // The file is claimed by a link, not through writeAtomic, so its text passes the record's one check here (a template too).
     needNoNewOwnersWords('', rendered, `${id}-${slugify(title)}.md`);
     writeFileSync(tmp, rendered);
@@ -494,14 +502,37 @@ const EXCERPT_CHARS = 120;
 // The line a change of the title or of a section writes, `<id> body · <part> · was "<old text>"[ · by <who>]`, or null
 // when the part already holds that text. The title is kept whole; a section by its first line (at most EXCERPT_CHARS)
 // and its length, so a long section never floods the log.
-function bodyLine(id, part, was, now, by) {
+// A change of the acceptance that grew a leased issue's scope carries `grew after the lease: line <n>[, <n>…]` after what
+// the part held and before its author: a segment of the description line every reader places by its start, so no reader
+// misreads a line that has one.
+function bodyLine(id, part, was, now, by, grew = []) {
   const old = String(was ?? '').trim();
   if (old === String(now ?? '').trim()) return null;
-  if (!old) return `${id} body · ${part} · was (none)${byPart(by)}`;
+  const mark = grew.length ? ` · ${GREW_MARK} ${grew.map((g) => g.n).join(', ')}` : '';
+  if (!old) return `${id} body · ${part} · was (none)${mark}${byPart(by)}`;
   if (part === 'title') return `${id} body · ${part} · was "${logValue(old)}"${byPart(by)}`;
   const first = old.split(/\r\n?|\n/)[0].trim();
   const cut = first.length > EXCERPT_CHARS ? `${first.slice(0, EXCERPT_CHARS)}…` : first;
-  return `${id} body · ${part} · was "${logValue(cut)}" (${old.length} characters)${byPart(by)}`;
+  return `${id} body · ${part} · was "${logValue(cut)}" (${old.length} characters)${mark}${byPart(by)}`;
+}
+// An issue's scope does not grow once it is leased. Every change of an acceptance (field and the library's setBody, which
+// write through cmdBody, and split) asks here which lines it grew: on an issue in a status that holds a lease, each line
+// the new acceptance holds that the old one did not (a line added, or one rewritten), with its number in the new
+// acceptance; nothing on an issue no lease holds, and nothing for a change that only takes lines away.
+const GREW_MARK ='grew after the lease: line';
+function grownLines(profile, issue, was, now) {
+  if (!profile.is(issue.status, 'holds-claim')) return [];
+  const held = new Map();
+  for (const l of acceptanceLines({ sections: { acceptance: String(was ?? '') } })) held.set(l, (held.get(l) || 0) + 1);
+  return acceptanceLines({ sections: { acceptance: String(now ?? '') } }).map((text, k) => ({ n: k + 1, text })).filter(({ text }) => {
+    const left = held.get(text) || 0;
+    if (left) held.set(text, left - 1);
+    return !left;
+  });
+}
+// The note a change that grew a leased issue's scope prints, naming each line it grew by.
+function grewNote(issue, grew) {
+  return `note: ${issue.id} is leased (${issue.status}), and its scope grew after the lease: ${grew.map((g) => `line ${g.n} "${g.text}"`).join('; ')} — an issue's scope does not grow once it is leased: a new ask is a new issue, ${jarlLine('new', hole('<title>'), '--acceptance', hole('<line>'))}`;
 }
 // The lines of a description change that are not null, appended in one write; nothing when every part was unchanged.
 function logChanges(root, lines) {
@@ -556,19 +587,22 @@ export function cmdBody(root, rawId, flags, dry = false) {
   if (flags.where !== undefined) { text = setField(text, 'Where', fieldText(flags.where)); lines.push(fieldLine(issue.id, 'Where', flags.where, heldField(issue, 'Where'), by)); }
   if (flags.what !== undefined) section('What', 'what', grow('What', bodyText(flags.what)));
   if (flags.why !== undefined) section('Why', 'why', grow('Why', bodyText(flags.why)));
+  let grew = [];
   if (flags.acceptance !== undefined) {
     const heading = acceptanceHeading(issue, profile);
     const now = acceptanceText(append ? [...itemsOf(held(heading.toLowerCase())), ...[].concat(flags.acceptance)] : flags.acceptance);
     text = setSection(text, heading, now);
-    lines.push(bodyLine(issue.id, 'acceptance', held('acceptance'), now, by));
+    grew = grownLines(profile, issue, held('acceptance'), now);
+    lines.push(bodyLine(issue.id, 'acceptance', held('acceptance'), now, by, grew));
   }
   for (const [h, v] of sections) section(h, h, grow(h, bodyText(v)));
   if (flags.changelog !== undefined) section('Changelog', 'changelog', changelogText(append ? [...itemsOf(held('changelog')), ...[].concat(flags.changelog)] : flags.changelog));
   logChanges(root, lines);
   writeAtomic(issue.file, text);
   // Said on the command line only: a rewritten What, Why or Acceptance that names issues nothing orders with this one.
-  const note = flags.caller === 'cli' && ['what', 'why', 'acceptance'].some((k) => named.includes(k)) ? unorderedNotes(root, profile, issue.id) : [];
-  return { id: issue.id, set: named, ...(note.length ? { note: note.join('\n') } : {}) };
+  // A scope grown after the lease is said with the lines it grew by; a library caller reads them as grew.
+  const note = flags.caller === 'cli' ? [...(grew.length ? [grewNote(issue, grew)] : []), ...(['what', 'why', 'acceptance'].some((k) => named.includes(k)) ? unorderedNotes(root, profile, issue.id) : [])] : [];
+  return { id: issue.id, set: named, ...(grew.length ? { grew } : {}), ...(note.length ? { note: note.join('\n') } : {}) };
 }
 
 export function cmdSource(root, rawId, list, dry = false, by = undefined) {
@@ -819,7 +853,7 @@ function writeSection(root, rawIds, heading, value, mode, flags) {
   const isAcceptance = key === 'acceptance' || (profile.acceptance && key === profile.acceptance.toLowerCase());
   const opts = isAcceptance ? { acceptance: lines(value) } : key === 'changelog' ? { changelog: lines(value) } : key === 'what' || key === 'why' ? { [key]: value } : { section: [`${heading}=${value}`] };
   const results = [].concat(eachIssue(root, rawIds, (id, dry) => cmdBody(root, id, { ...opts, by: flags.by, append: mode === 'add', caller: flags.caller }, dry)));
-  const out = results.map((o) => ({ id: o.id, field: heading, value: fieldText(sectionOf(root, o.id, heading)), ...(o.note ? { note: o.note } : {}) }));
+  const out = results.map((o) => ({ id: o.id, field: heading, value: fieldText(sectionOf(root, o.id, heading)), ...(o.grew ? { grew: o.grew } : {}), ...(o.note ? { note: o.note } : {}) }));
   return isBulk(rawIds) ? out : out[0];
 }
 // What a section of an issue holds in its file now, read again after a write.
@@ -1282,19 +1316,22 @@ export function cmdSplit(root, rawId, flags = {}) {
     return idKey(placed.get(k).to.id) === idKey(parent.id);
   }).join('\n').trim();
   const moved = (sub) => lines.filter((_, n) => placed.get(n + 1).to === sub);
-  const writes = [{ issue: parent, now: keptText }, ...subs.map((sub) => ({ issue: sub, now: acceptanceText([...itemsOf(sub.sections.acceptance), ...moved(sub)]) }))];
+  const writes = [{ issue: parent, now: keptText }, ...subs.map((sub) => ({ issue: sub, now: acceptanceText([...itemsOf(sub.sections.acceptance), ...moved(sub)]) }))]
+    .map((w) => ({ ...w, grew: grownLines(profile, w.issue, w.issue.sections.acceptance, w.now) }));
   logChanges(root, [
     ...joining.map((sub) => fieldLine(sub.id, PARENT_FIELD, parent.id, heldField(sub, PARENT_FIELD), by)),
-    ...writes.map((w) => bodyLine(w.issue.id, 'acceptance', w.issue.sections.acceptance, w.now, by)),
+    ...writes.map((w) => bodyLine(w.issue.id, 'acceptance', w.issue.sections.acceptance, w.now, by, w.grew)),
   ]);
   for (const w of writes) {
     let text = setSection(readText(w.issue.file), acceptanceHeading(w.issue, profile), w.now);
     if (joining.includes(w.issue)) text = setField(text, PARENT_FIELD, parent.id);
     writeAtomic(w.issue.file, text);
   }
+  const grown = writes.filter((w) => w.grew.length);
   return {
     id: parent.id, subs: subs.map((s) => s.id),
     lines: [...placed.entries()].sort((a, b) => a[0] - b[0]).map(([n, p]) => ({ line: n, to: p.to.id, kept: idKey(p.to.id) === idKey(parent.id) })),
+    ...(grown.length ? { grew: grown.map((w) => ({ id: w.issue.id, lines: w.grew })), notes: grown.map((w) => grewNote(w.issue, w.grew)) } : {}),
   };
 }
 

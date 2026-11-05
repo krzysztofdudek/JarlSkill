@@ -2,7 +2,7 @@
 
 import { existsSync, readdirSync } from 'node:fs';
 import { join, resolve, dirname, basename } from 'node:path';
-import { fieldText, hole, need } from './base.mjs';
+import { IDENTICAL_OUTPUT_TAG, fieldText, hole, meantToAlterNothing, need } from './base.mjs';
 import { canonical, jarlDir } from './where.mjs';
 import { cmpId } from './ids.mjs';
 import { loadProfile } from './profile.mjs';
@@ -77,6 +77,8 @@ function reviewModelNotes(issue, verdict, model, lines, events) {
   if (!leased.length) return [];
   if (leased.some((w) => modelKey(w) === modelKey(model))) return [`${issue.id}: an approve by the same model as the worker's (${model}) — a fresh instance is still a fresh reviewer, but the correlation risk is real; the approve that clears an issue comes from another model, not a lower-ranked one, until \`models\` says otherwise`];
   const top = Math.max(...leased.map(lines.rank));
+  // A change meant to alter nothing keeps its fresh review, and a light one may give it.
+  if (top >= 0 && lines.rank(model) < top && meantToAlterNothing(issue)) return [`${issue.id}: a change meant to alter nothing (tag ${IDENTICAL_OUTPUT_TAG}): a light review may clear it, one that checks the comparison of the output before and after covers everything the change touched`];
   if (top >= 0 && lines.rank(model) < top) return [`${issue.id}: ${model} ranks below the worker's model (${leased.find((w) => lines.rank(w) === top)})${lines.rank(model) < 0 ? ' — it is on no model line, and an unplaced model ranks below every placed one' : ''}; the approve that clears an issue comes from a model of at least the worker's rank, until \`models\` says it may clear`];
   return [];
 }

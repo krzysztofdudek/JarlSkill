@@ -19,7 +19,10 @@ test('a filing, a round, an evidence row and the retractions are typed', () => {
   assert.deepEqual(L.parseEvent('012', '012 evidence retract · row 3 · by rev · wrong', P), { type: 'retract-row', row: 3, by: 'rev' });
   assert.deepEqual(L.parseEvent('012', '012 evidence retract · note 2 · by odin · wrong', P), { type: 'retract-note', note: 2, by: 'odin' });
   assert.deepEqual(L.parseEvent('012', '012 review retract · by rev (fresh) · retracts the approve by x · why', P), { type: 'retract-review', target: { by: 'x', kind: null }, by: 'rev' });
-  assert.deepEqual(L.parseEvent('012', '012 body · what', P), { type: 'body' });
+  assert.deepEqual(L.parseEvent('012', '012 body · what', P), { type: 'body', part: 'what', grew: null, by: null });
+  assert.deepEqual(L.parseEvent('012', '012 body · why · was "x" (1 characters) · by odin', P), { type: 'body', part: 'why', grew: null, by: 'odin' });
+  assert.deepEqual(L.parseEvent('012', '012 body · acceptance · was "x" (1 characters) · grew after the lease: line 2, 3 · by odin', P), { type: 'body', part: 'acceptance', grew: [2, 3], by: 'odin' });
+  assert.deepEqual(L.parseEvent('012', '012 body · acceptance · was (none) · grew after the lease: line 1', P), { type: 'body', part: 'acceptance', grew: [1], by: null });
 });
 
 test('a line about another issue, or about the loop, is not an event of the issue', () => {
