@@ -10,6 +10,7 @@ import { sh } from './portable.mjs';
 import { fileURLToPath } from 'node:url';
 import { FINDINGS } from './findings.mjs';
 import { run, jarl, refuses } from './helpers.mjs';
+import * as R from '../record.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 
@@ -69,9 +70,11 @@ test('the merge queue of resume: a round spends the approve, overlapping files s
   jarl(root, 'new', 'd', '--files', 'src/b.mjs');
   jarl(root, 'set', '1', 'in-progress', 'go', '--branch', 'jarl/1-a', '--worker', 'w1');
   jarl(root, 'set', '2', 'in-progress', 'go', '--branch', 'jarl/2-b', '--worker', 'w2');
-  // Two leases that share a file are refused at the lease, yet a record can still hold them (a file declared after the
-  // lease, two clones merged): the queue keeps them out of one batch all the same.
-  jarl(root, 'field', '2', 'Files', 'src/a.mjs');
+  // Two leases that share a file are refused at the lease and when the file is declared after it, yet a record can still
+  // hold them (two clones merged, a file written by hand): the queue keeps them out of one batch all the same.
+  const file = R.findIssue(root, '2').file;
+  writeFileSync(file, readFileSync(file, 'utf8').replace(/^\*\*Files:\*\*.*$/m, '**Files:** src/a.mjs'));
+  assert.deepEqual(R.findIssue(root, '2').files, ['src/a.mjs']);
   jarl(root, 'set', '3,4', 'in-progress', 'pkg', '--branch', 'jarl/3-pkg', '--worker', 'w3');
   branchWith(root, 'jarl/1-a', 'src/a.mjs');
   branchWith(root, 'jarl/2-b', 'src/a.mjs');
