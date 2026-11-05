@@ -179,7 +179,7 @@ test('handoff takes its flags, writes nothing, says so and exits 0; handoff read
   const before = snapshot(hub);
   const r = run(hub, ['handoff', 'write', '--summary', 'the plan', '--next', 'raise one']);
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /^handoff writes nothing\. The state a session resumes from is assembled live — run jarl\.mjs resume\./);
+  assert.match(r.stdout, /^handoff writes nothing\. The state a session resumes from is assembled live — run resume\./);
   assert.deepEqual(snapshot(hub), before, 'no handoff.md, no log line');
   assert.equal(existsSync(join(hub, '.jarl', 'handoff.md')), false);
   assert.deepEqual(JSON.parse(jarl(hub, 'handoff', 'write', '--json')), { retired: true, wrote: null, note: r.stdout });

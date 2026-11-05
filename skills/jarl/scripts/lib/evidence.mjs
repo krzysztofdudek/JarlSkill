@@ -2,7 +2,7 @@
 
 import { existsSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { PROMISE_KIND, fieldText, hole, need } from './base.mjs';
+import { PROMISE_KIND, fieldText, hole, jarlLine, need } from './base.mjs';
 import { needNoOwnersWords } from './owner.mjs';
 import { git } from './git.mjs';
 import { jarlDir, stamp } from './where.mjs';
@@ -88,8 +88,8 @@ function retractEvidence(root, rawIds, reason, flags) {
   need(!row.retracted, `row ${n} of ${issue.id} is retracted already${live === -1 ? ', as is every row it holds' : `; row ${live + 1} is not`}`, rowFirst);
   // An issue read from its header has no log rows of its own: its file's rows are the only ones.
   const journalRows = issue.byHeader ? [] : (journalById(root).get(issue.id) || []).filter((e) => e.type === 'row');
-  need(journalRows.length === 0 || journalRows.length === table.rows.length, `${issue.id} holds ${table.rows.length} evidence row${table.rows.length === 1 ? '' : 's'} and its log ${journalRows.length}, so the row numbers cannot be matched to the log; nothing was written; what the record holds: jarl.mjs verify`, () => ({ replace: raw, value: '<a-row-the-log-matches>' }));
-  need(journalRows.length === 0 || alignRows(issue.id, table.rows, journalRows)[n - 1], `row ${n} of ${issue.id} matches no evidence line of the log, so its retraction could not be told from another row's; nothing was written; what the record holds: jarl.mjs verify`, () => ({ replace: raw, value: '<a-row-the-log-matches>' }));
+  need(journalRows.length === 0 || journalRows.length === table.rows.length, `${issue.id} holds ${table.rows.length} evidence row${table.rows.length === 1 ? '' : 's'} and its log ${journalRows.length}, so the row numbers cannot be matched to the log; nothing was written; what the record holds: ${jarlLine('verify')}`, () => ({ replace: raw, value: '<a-row-the-log-matches>' }));
+  need(journalRows.length === 0 || alignRows(issue.id, table.rows, journalRows)[n - 1], `row ${n} of ${issue.id} matches no evidence line of the log, so its retraction could not be told from another row's; nothing was written; what the record holds: ${jarlLine('verify')}`, () => ({ replace: raw, value: '<a-row-the-log-matches>' }));
   // The first retraction of a loop raises the record format, before its line is written: a reader of format 1 does not
   // read a retraction and would go on counting the row, so it must refuse the loop instead.
   needFormat(root, 'retraction');
@@ -213,7 +213,7 @@ export function issueView(root, issue, { full = false } = {}) {
   const attachments = attachmentLines(root, loadProfile(root), issue);
   const shown = out.filter((l) => l !== null);
   if (full) return attachments.length ? `${shown.join('\n').replace(/\s+$/, '')}\n\n${attachments.join('\n')}\n` : shown.join('\n');
-  return `${shown.join('\n').replace(/\s+$/, '')}\n\n${attachments.length ? `${attachments.join('\n')}\n\n` : ''}The whole issue, with every earlier round and row: jarl.mjs show ${issue.id} --full\n`;
+  return `${shown.join('\n').replace(/\s+$/, '')}\n\n${attachments.length ? `${attachments.join('\n')}\n\n` : ''}The whole issue, with every earlier round and row: ${jarlLine('show', issue.id, '--full')}\n`;
 }
 
 // The words next, queue, status and resume say in place of what they would compute, on a loop whose profile names an
@@ -498,8 +498,8 @@ export function cmdMode(root, mode) {
   need(mode, 'mode requires a target: permanent', { arg: 0, value: '<mode>' });
   need(mode === 'permanent', `mode takes "permanent" (got "${mode}")`, { arg: 0, value: hole('<mode>') });
   needLiveLoop(root, '');
-  need(!outOfGit(root), 'this loop is out of git (default mode) — a permanent record must be committed, and only init decides .jarl/.gitignore, so there is no in-place switch. Start a fresh loop with', 'jarl.mjs init "<goal>" --permanent');
-  need(!existsSync(join(jarlDir(root), '.permanent')), 'already a permanent record (.jarl/.permanent exists) — nothing to do; the loop: jarl.mjs status', { arg: 0, value: hole('<nothing-to-do>') });
+  need(!outOfGit(root), 'this loop is out of git (default mode) — a permanent record must be committed, and only init decides .jarl/.gitignore, so there is no in-place switch. Start a fresh loop with', ['jarl.mjs', 'init', '<goal>', '--permanent']);
+  need(!existsSync(join(jarlDir(root), '.permanent')), `already a permanent record (.jarl/.permanent exists) — nothing to do; the loop: ${jarlLine('status')}`, { arg: 0, value: hole('<nothing-to-do>') });
   writeAtomic(join(jarlDir(root), '.permanent'), PERMANENT_MARKER);
   appendLog(root, 'mode → permanent · not tied to a feature branch; close keeps the directory');
   return { permanent: true };
@@ -522,7 +522,7 @@ export function cmdClose(root, flags = {}) {
   // the default mode refuses until the deferred issues are archived or --force removes them; a permanent loop keeps them.
   const deferred = loadIssues(root).filter((i) => i.status === 'deferred').map((i) => i.id);
   const permanent = existsSync(join(jarlDir(root), '.permanent'));
-  need(permanent || flags.force || deferred.length === 0, `${deferred.length} issue(s) deferred: ${deferred.join(', ')} — close removes .jarl/ with them, and deferred work waits, it is not gone. Keep it: jarl.mjs archive "<slug>" puts the loop under .jarl/archive/ with its deferred issues. Or remove it with them, on the owner's word (close --force)`, () => (['jarl.mjs', 'archive', '<slug>', ...(typeof flags.by === 'string' ? ['--by', flags.by] : [])]));
+  need(permanent || flags.force || deferred.length === 0, `${deferred.length} issue(s) deferred: ${deferred.join(', ')} — close removes .jarl/ with them, and deferred work waits, it is not gone. Keep it: ${jarlLine('archive', '<slug>')} puts the loop under .jarl/archive/ with its deferred issues. Or remove it with them, on the owner's word (close --force)`, () => (['jarl.mjs', 'archive', '<slug>', ...(typeof flags.by === 'string' ? ['--by', flags.by] : [])]));
   // The ratification batch is assembled here and never holds the close: in a permanent loop its items stay open for
   // the owner's word; in a loop on a branch the rulings no one ratified leave with the directory, rulings of that loop.
   // In the committed mode the archive is committed content: leaving it would put .jarl/archive/ on the branch that merges to
@@ -585,17 +585,17 @@ export function closedGateFlags(loop) {
     const merges = events.filter((e) => e.type === 'merged');
     const reasons = []; const repairs = [];
     const flag = (reason, repair) => { reasons.push(reason); if (!repairs.includes(repair)) repairs.push(repair); };
-    const reopen = `jarl.mjs set ${id} open`;
+    const reopen = jarlLine('set', id, 'open');
     if (!profile.is(issue.status, 'closes-record')) {
       if (merges.length || mergedOf(issue)) flag(`a merge is recorded on a ${issue.status} issue`, reopen);
     } else {
       const g = gateOf(loop, id);
       if (!g.tracked) continue;
       const code = carriesCode(issue);
-      if (!g.rowsSince) flag(g.rowLog.some((r) => r.retracted && r.n > g.anchorN) ? 'its proof row was retracted' : `no --ran/--saw row since it was ${g.anchor.what === 'filed' ? 'filed' : `moved → ${g.anchor.what}`}`, `jarl.mjs evidence ${id} --ran "<command>" --saw "<what-it-printed>"`);
+      if (!g.rowsSince) flag(g.rowLog.some((r) => r.retracted && r.n > g.anchorN) ? 'its proof row was retracted' : `no --ran/--saw row since it was ${g.anchor.what === 'filed' ? 'filed' : `moved → ${g.anchor.what}`}`, jarlLine('evidence', id, '--ran', '<command>', '--saw', '<what-it-printed>'));
       for (const p of slotProblems(loop.root, profile, issue, g, false)) flag(`slot ${p.slot}: ${p.what}`, p.fix);
       if (profile.doneGate.approve !== 'none') {
-        const fresh = `jarl.mjs review ${id} approve --by '<a-fresh-reviewer>' "<text>"`;
+        const fresh = jarlLine('review', id, 'approve', '--by', '<a-fresh-reviewer>', '<text>');
         const kind = approveKind(g);
         if (g.selfApproved) flag('its live approve is by a worker of this issue or its branch', fresh);
         else if (!g.approved) flag(kind === 'retracted' ? 'its approve was retracted' : g.trail.some((r) => r.verdict === 'approve') ? 'its approve is spent by a later round, restart, reopen or changes verdict' : 'it holds no approve', fresh);

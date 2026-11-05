@@ -86,7 +86,7 @@ test('the reply of new keeps its first line, then lists what was parsed and each
   const bare = jarl(root, 'new', 'bare').split('\n');
   assert.match(bare[0], /^filed 1 · .*1-bare\.md$/);
   assert.match(bare[1], /^parsed: priority 2 · tier standard · kind bug · tags \(none\) · 0 acceptance lines · What 0 characters · Why 0 characters$/);
-  for (const [field, command] of [['why', 'field 1 Why'], ['acceptance', 'field 1 Acceptance'], ['files', "field 1 Files '<paths>'"], ['after', "field 1 After '<ids>'"], ['where', 'field 1 Where']]) {
+  for (const [field, command] of [['why', 'field 1 Why'], ['acceptance', 'field 1 Acceptance'], ['files', "field 1 Files \"<paths>\""], ['after', "field 1 After \"<ids-it-waits-on>\""], ['where', 'field 1 Where']]) {
     assert.ok(bare[2].includes(`${field} (jarl.mjs ${command}`), `${field} is named with ${command}`);
   }
   const full = jarl(root, 'new', 'full', '--what', 'seven', '--why', 'yy', '--acceptance', 'a', '--acceptance', 'b', '--prio', '1', '--tags', 'x,y', '--files', 'a.mjs', '--where', 'here', '--after', '1').split('\n');
@@ -489,7 +489,7 @@ test('a round after an approve spends the approve', () => {
   jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
   jarl(root, 'round', '1', 'merger: suite red after merge');
   assert.match(refuses(root, 'set', '1', 'done'), /no approving review/);
-  assert.match(refuses(root, 'review', '1', 'maybe', 'x'), /^review takes approve or changes \(got "maybe"\)\njarl\.mjs review '<ids>' '<verdict>' '<what-was-read-and-found>' --by '<reviewer>'\n$/);
+  assert.match(refuses(root, 'review', '1', 'maybe', 'x'), /^review takes approve or changes \(got "maybe"\)\njarl\.mjs review "<ids>" "<verdict>" "<what-was-read-and-found>" --by "<reviewer>"\n$/);
   jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
   jarl(root, 'set', '1', 'done');
 });
@@ -800,7 +800,7 @@ test('archive puts the loop away under .jarl/archive/<date>-<slug>/, and init op
   const root = repo();
   jarl(root, 'init', 'first goal');
   jarl(root, 'new', 'left unfinished');
-  assert.match(refuses(root, 'init', 'second goal'), /archive it first\njarl\.mjs archive '<slug>'\n$/);
+  assert.match(refuses(root, 'init', 'second goal'), /archive it first\njarl\.mjs archive "<slug>"\n$/);
 
   const out = JSON.parse(jarl(root, 'archive', 'first round', '--json'));
   const day = new Date().toISOString().slice(0, 10).replace(/-/g, '.');
@@ -898,7 +898,7 @@ test('a value flag takes the next argument whatever it starts with; -- ends the 
   const after = refuses(root, 'evidence', '1', '--', 'x');
   assert.match(after, /unexpected: "--root" "[^"]+"; "--root" is a flag, which goes before the bare --\n/);
   assert.ok(after.trim().split('\n').at(-1).startsWith('jarl.mjs evidence --root '), after);
-  assert.ok(after.trim().split('\n').at(-1).endsWith(" -- '<ids>' '<text>'"), after);
+  assert.ok(after.trim().split('\n').at(-1).endsWith(" -- \"<ids>\" \"<text>\""), after);
   assert.match(refuses(root, 'set', '1', '2', 'done', 'why'), /set takes at most 3 arguments — unexpected: "why".*12,13/s);
   const shown = jarl(root, 'show', '1');
   assert.match(shown, /^- \[1\] \*\*ran:\*\* --help · \*\*saw:\*\* usage$/m);
@@ -908,7 +908,7 @@ test('a value flag takes the next argument whatever it starts with; -- ends the 
   assert.match(raw('new', '--', '--json output drops key'), /^filed 2 /);
   // Refused loudly, naming what the command takes.
   assert.match(refuses(root, 'new', 'd', '--kidn', 'gap'), /unknown flag --kidn for new — it takes .*--kind/);
-  assert.match(refuses(root, 'evidence', '1', '--json prints ok'), /^"--json prints ok" is a text, not a flag: a text that starts with -- goes after a bare --.*\njarl\.mjs evidence -- '<ids>' '<text>'\n$/s);
+  assert.match(refuses(root, 'evidence', '1', '--json prints ok'), /^"--json prints ok" is a text, not a flag: a text that starts with -- goes after a bare --.*\njarl\.mjs evidence -- "<ids>" "<text>"\n$/s);
   assert.throws(() => raw('evidence', '1', '--ran'), (e) => /--ran needs a value/.test(String(e.stderr)));
   assert.match(refuses(root, 'new', 'x', '--kind', 'bug', '--kind', 'gap'), /--kind given twice/);
   assert.match(refuses(root, 'list', '--all=yes'), /--all takes no value/);
@@ -1477,7 +1477,7 @@ test('check --branch refuses a branch no issue holds, and says how many commits 
   jarl(root, 'new', 'one', '--files', 'a.txt');
   git('git checkout -q -b feature && echo more >> a.txt && git commit -qam work && git checkout -q main');
   const msg = refuses(root, 'scope', '--branch', 'feature', '--base', 'main');
-  assert.match(msg, /^no issue records branch feature: it carries 1 commit\(s\) beyond main and no issue holds it \(work without an issue\) — file the issue, then set it in-progress --branch feature\njarl\.mjs new '<what-the-branch-does>' --tier '<tier>'\njarl\.mjs set '<the-id-new-prints>' in-progress '<why>' --branch feature\njarl\.mjs scope --branch '<worker-branch>' --base '<base-branch>'\n$/);
+  assert.match(msg, /^no issue records branch feature: it carries 1 commit\(s\) beyond main and no issue holds it \(work without an issue\) — file the issue, then set it in-progress --branch feature\njarl\.mjs new "<what-the-branch-does>" --tier "<tier>"\njarl\.mjs set "<the-id-new-prints>" in-progress "<why>" --branch feature\njarl\.mjs scope --branch "<worker-branch>" --base "<base-branch>"\n$/);
   assert.match(refuses(root, 'scope', '--branch', 'jarl/none'), /^no issue records branch jarl\/none — name one/);
 });
 
@@ -1729,7 +1729,7 @@ test('answer takes a comma list of ratify items with one verdict, writes one rul
   jarl(root, 'ask', 'raised the limit', '--kind', 'ratify');
   jarl(root, 'ask', 'kept the flag', '--kind', 'ratify');
   jarl(root, 'ask', 'a stuck question', '--kind', 'stuck');
-  assert.match(refuses(root, 'answer', 'a-1', 'yes'), /^answer records who answered with --by, owner for the owner\njarl\.mjs answer '<question>' '<text>' --by '<who>'\n$/);
+  assert.match(refuses(root, 'answer', 'a-1', 'yes'), /^answer records who answered with --by, owner for the owner\njarl\.mjs answer "<question>" "<text>" --by "<who>"\n$/);
   for (const name of ['jarl', 'reeve', 'coordinator', basename(root)]) assert.match(refuses(root, 'answer', 'a-1', 'yes', '--by', name), /coordinator/);
   assert.match(refuses(root, 'answer', 'a-1,a-3', 'yes', '--by', 'owner'), /answered together only when each is a ratify item/);
   jarl(root, 'answer', '1,2', 'yes', '--by', 'owner');

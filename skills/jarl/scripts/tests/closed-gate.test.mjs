@@ -101,7 +101,7 @@ test('a merge recorded on an issue that went done with only a coordinator approv
     assert.ok(f, view);
     assert.match(f.reason, /carries code and holds no fresh approve/);
     assert.match(f.reason, /merge was recorded after it went done/);
-    assert.match(f.repair, /review 1 approve --by '<a-fresh-reviewer>'/);
+    assert.match(f.repair, /review 1 approve --by "<a-fresh-reviewer>"/);
   }
 });
 

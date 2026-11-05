@@ -3,7 +3,7 @@
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { ASK_KINDS, HANDOFF_STALE_MS, afterView, fieldText, freeInline, hole, need, noSeparators, oneBreak } from './base.mjs';
+import { ASK_KINDS, HANDOFF_STALE_MS, afterView, fieldText, freeInline, hole, jarlLine, need, noSeparators, oneBreak } from './base.mjs';
 import { jarlDir, today } from './where.mjs';
 import { appendAtomic, readText, writeAtomic } from './files.mjs';
 import { askNumber, idKey, issueForms, needsRaisedFormat, newNumber, writtenId } from './ids.mjs';
@@ -177,7 +177,7 @@ export function cmdAnswer(root, rawId, answer, flags = {}) {
   const chosen = flags.option === undefined ? null : noSeparators(flags.option);
   const key = askNumber(rawId);
   const ask = loadAsks(root).find((a) => idKey(a.id) === key);
-  need(ask, `no such question: a-${key} — the open ones: jarl.mjs next --as owner --all`, () => openQuestion(root));
+  need(ask, `no such question: a-${key} — the open ones: ${jarlLine('next', '--as', 'owner', '--all')}`, () => openQuestion(root));
   // The issue the answer is copied into is resolved before the first write, so a number two files carry writes nothing.
   if (ask.issue) findIssue(root, ask.issue);
   const id = ask.id;
@@ -217,7 +217,7 @@ export function cmdAnswerMany(root, rawIds, answer, flags = {}) {
   // A question named twice is answered once: the list is taken in its order with each number kept at its first place.
   const found = [...new Set(raw.map(askNumber))].map((key) => {
     const ask = asks.find((a) => idKey(a.id) === key);
-    need(ask, `no such question: a-${key} — the open ones: jarl.mjs next --as owner --all`, () => { const open = openQuestion(root); const item = raw.find((r) => askNumber(r) === key); return open.arg === 0 && raw.length > 1 ? { replace: item, value: open.value } : open; });
+    need(ask, `no such question: a-${key} — the open ones: ${jarlLine('next', '--as', 'owner', '--all')}`, () => { const open = openQuestion(root); const item = raw.find((r) => askNumber(r) === key); return open.arg === 0 && raw.length > 1 ? { replace: item, value: open.value } : open; });
     return ask;
   });
   const batch = found.length > 1 ? found.map((a) => a.id) : null;

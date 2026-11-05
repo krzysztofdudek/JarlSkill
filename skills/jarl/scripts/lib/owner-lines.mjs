@@ -9,7 +9,7 @@
 
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { fieldText, hole, need, printedLine } from './base.mjs';
+import { fieldText, hole, jarlLine, need, printCommand } from './base.mjs';
 
 // The author a refused tick names: the owner, who ticks a line himself once he has reviewed it.
 const OWNER_TICKS = '<the-owner-himself>';
@@ -78,7 +78,7 @@ function placesOf(root, issue) {
 function linesOff(profile) { const f = formatState(profile); return !f.raises && profile.format < 3; }
 const offText = (profile) => `owner lines are off in this loop: its profile names an external scheduler (${profile.scheduler}) and keeps record format ${profile.format}, so no tick can be written here`;
 const rewrite = (id) => ['jarl.mjs', 'field', id, 'Acceptance', hole('<the-whole-section>')];
-const rewriteText = (id) => printedLine(rewrite(id));
+const rewriteText = (id) => printCommand(rewrite(id));
 
 // Each owner line of an issue as the gate and the views read it: { n, text, what, material, check, tick, spent, ready,
 // why, at, off }; off is true where owner lines are off in the loop (see linesOff). tick is the tick that counts ({ at, by }) or null, spent the newest tick of the same line that a red round,
@@ -110,7 +110,7 @@ export function ownerLineStates(root, loop, issue) {
 }
 
 const reviewText = (s) => `he reviews ${s.material}${s.at ? ` (in ${s.at})` : ''} and checks ${s.check}`;
-const tickCommand = (id, n) => `jarl.mjs tick ${id} ${n} --by owner`;
+const tickCommand = (id, n) => jarlLine('tick', id, n, '--by', 'owner');
 
 // Why done refuses for the owner lines of an issue, or null when every one is ticked: each line not ticked, with its
 // material and what to check. Whoever is refused is not the owner, so the reason names his tick and prints no command of

@@ -49,7 +49,7 @@ test('a drop-in copy of skills/jarl/ runs its own command and starts its own MCP
   cpSync(SKILL_DIR, copy, { recursive: true });
   assert.deepEqual(readdirSync(join(copy, 'references')).sort(), readdirSync(join(SKILL_DIR, 'references')).sort(), 'the references travel with the copy');
   const script = join(copy, 'scripts', 'jarl.mjs');
-  assert.match(node([script, '--help']).stdout, /^usage: jarl\.mjs '<a-jarl-command>'/);
+  assert.match(node([script, '--help']).stdout, /^usage: jarl\.mjs "<a-jarl-command>"/);
   const { dir } = gitRepo({ prefix: 'jarl-dropin-repo-' });
   assert.equal(node([script, 'init', 'a goal', '--root', dir]).status, 0);
   assert.match(node([script, 'status', '--root', dir]).stdout, /^goal: a goal/);
@@ -107,7 +107,7 @@ test('close --force closes with issues still open, as the reference says, and re
   const { dir } = gitRepo({ prefix: 'jarl-docs-close-' });
   jarl(dir, 'init', 'g');
   jarl(dir, 'new', 'still open');
-  assert.match(refuses(dir, 'close'), /still open or in progress.*close --force removes it with them\)\njarl\.mjs ask '<question-for-the-owner>'\n$/);
+  assert.match(refuses(dir, 'close'), /still open or in progress.*close --force removes it with them\)\njarl\.mjs ask "<question-for-the-owner>"\n$/);
   assert.match(jarl(dir, 'close', '--force'), /^removed /);
   assert.equal(existsSync(join(dir, '.jarl')), false);
 });

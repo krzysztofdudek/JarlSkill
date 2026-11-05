@@ -2,7 +2,7 @@
 
 import { existsSync, readdirSync } from 'node:fs';
 import { basename, join } from 'node:path';
-import { CI_STATES, fieldText, hole, need, oneBreak, refuse, splitList } from './base.mjs';
+import { CI_STATES, fieldText, hole, jarlLine, need, oneBreak, refuse, splitList } from './base.mjs';
 import { issuesDir, jarlDir } from './where.mjs';
 import { readText } from './files.mjs';
 import { ISSUE_FILE_RE, KEY_RE, cmpId, idKey, idRe, newNumber, writtenForms, writtenId } from './ids.mjs';
@@ -202,7 +202,7 @@ function namedPairs(list, flag, known, what) {
     need(at > 0, `--${flag} takes <name>=<value> (got "${item}")`, () => ({ replace: String(item), value: hole('<name=value>') }));
     const name = String(item).slice(0, at).trim();
     const hit = known.find((k) => k.toLowerCase() === name.toLowerCase());
-    need(hit, known.length ? `${name} is not a ${what} this loop's profile declares — it declares ${known.join(', ')} (got "${item}")` : `this loop's profile declares no ${what}s — --${flag} names one it declares; the profile: jarl.mjs profile`, () => (known.length ? { replace: String(item), value: hole('<name=value>') } : { rename: `--${flag}`, to: hole('<no-flag-here>') }));
+    need(hit, known.length ? `${name} is not a ${what} this loop's profile declares — it declares ${known.join(', ')} (got "${item}")` : `this loop's profile declares no ${what}s — --${flag} names one it declares; the profile: ${jarlLine('profile')}`, () => (known.length ? { replace: String(item), value: hole('<name=value>') } : { rename: `--${flag}`, to: hole('<no-flag-here>') }));
     need(!out.has(hit), `--${flag} names ${hit} twice (${JSON.stringify(`${hit}=${out.get(hit)}`)} and ${JSON.stringify(String(item))})`, () => ({ replace: String(item), value: hole('<name=value>') }));
     out.set(hit, String(item).slice(at + 1));
     out.items.set(hit, String(item));
@@ -249,10 +249,10 @@ export function sharedNumberText(shared, all) {
   const keyed = shared.issues.filter((i) => issueKeyOf(i) !== null);
   if (keyed.length && shared.issues.every((i) => !i.byHeader)) {
     const keys = keyed.map((i) => `${issueKeyOf(i)} (issues/${basename(i.file)})`);
-    return `${head} Two copies of the loop that each filed an issue and were merged leave this. Each line of the log names the key of the issue it is about${keyed.length < shared.issues.length ? ', or no key for the one file that carries none' : ''}, so each file is read from its own lines, but no command addresses ${id} while two files carry it. Give one of them a free number: jarl.mjs renumber ${id} --key '<key>', with the key of the one to renumber, takes the next one over every branch — ${keys.join(', ')}. The issue renumbered keeps every line written under ${id}, which names its key, and no line of the log is rewritten`;
+    return `${head} Two copies of the loop that each filed an issue and were merged leave this. Each line of the log names the key of the issue it is about${keyed.length < shared.issues.length ? ', or no key for the one file that carries none' : ''}, so each file is read from its own lines, but no command addresses ${id} while two files carry it. Give one of them a free number: ${jarlLine('renumber', id, '--key', '<key>')}, with the key of the one to renumber, takes the next one over every branch — ${keys.join(', ')}. The issue renumbered keeps every line written under ${id}, which names its key, and no line of the log is rewritten`;
   }
-  const rename = `give ${filings > 1 ? 'one of the files' : 'the copy'} a number the loop does not hold, such as ${free} (rename it to ${free}-… and write ${free} in its first line), and put it in the log at the status its own file reads (jarl.mjs set ${free} '<status>'; a renumbered issue starts its record anew, so one that was done needs its proof and a fresh review again)`;
-  if (filings > 1) return `${head} Two copies of the loop that each filed an issue and were merged leave this: the log files ${id} ${filings} times. The log names an issue by its number alone, so it cannot say which file its lines for ${id} were written for, and no command moves or edits one of these files alone. Each file is read from its own header, never from the log: its status, branch and lease are what the file says, it is never closed or approved under this number, because the log cannot tell whose its rows, approves, rounds and merges are (the work is filed again under a new number instead), and the log's state of ${id} is never to be written into any of them. The coordinator settles it by hand: ${rename}, then write in a log note which of the lines already written for ${id} belong to which file (jarl.mjs log "…"). The file that keeps ${id} is still read from its own header after that, because the log goes on filing ${id} more than once`;
+  const rename = `give ${filings > 1 ? 'one of the files' : 'the copy'} a number the loop does not hold, such as ${free} (rename it to ${free}-… and write ${free} in its first line), and put it in the log at the status its own file reads (${jarlLine('set', free, '<status>')}; a renumbered issue starts its record anew, so one that was done needs its proof and a fresh review again)`;
+  if (filings > 1) return `${head} Two copies of the loop that each filed an issue and were merged leave this: the log files ${id} ${filings} times. The log names an issue by its number alone, so it cannot say which file its lines for ${id} were written for, and no command moves or edits one of these files alone. Each file is read from its own header, never from the log: its status, branch and lease are what the file says, it is never closed or approved under this number, because the log cannot tell whose its rows, approves, rounds and merges are (the work is filed again under a new number instead), and the log's state of ${id} is never to be written into any of them. The coordinator settles it by hand: ${rename}, then write in a log note which of the lines already written for ${id} belong to which file (${jarlLine('log', '<text>')}). The file that keeps ${id} is still read from its own header after that, because the log goes on filing ${id} more than once`;
   return `${head} The log files ${id} ${filings ? 'once' : 'never'}, so ${filings ? 'one of these files was made outside Jarl\'s commands, by a copy or by hand' : 'none of these files was filed by Jarl\'s commands'}, and Jarl cannot tell which file is the copy. No command moves or edits one of these files alone, and while they share ${id} each is read from its own header. The coordinator settles it by hand: ${rename}. ${id} is then one file the log files ${filings ? 'once' : 'never'}, which Jarl reads like any issue: if the file renumbered was the original, the copy that keeps ${id} takes the original's lines in the log, and Jarl cannot see that a copy was made`;
 }
 // The note on a number the log files more than once while one issue file carries it: one line, not a disagreement.
@@ -264,7 +264,7 @@ export function headerReadText(id, filings, file) {
 export function unattributedRefusal(issue, what) {
   if (!issue.byHeader) return null;
   const id = issue.id;
-  return `${id} cannot be ${what}: the log files ${id} ${issue.byHeader.filings} times, so it cannot tell which issue the rows, approves, rounds and merges under ${id} belong to, and an issue under this number is never closed or approved. File the work again under a new number (jarl.mjs new "<title>") and carry it on there; this one can then be dropped (jarl.mjs set ${id} dropped "<text>")`;
+  return `${id} cannot be ${what}: the log files ${id} ${issue.byHeader.filings} times, so it cannot tell which issue the rows, approves, rounds and merges under ${id} belong to, and an issue under this number is never closed or approved. File the work again under a new number (${jarlLine('new', '<title>')}) and carry it on there; this one can then be dropped (${jarlLine('set', id, 'dropped', '<text>')})`;
 }
 // The one issue `rawId` names among `issues`, or null when none does. A number two files carry is refused, with both files
 // named: a move or an edit by that number would land on each of them in the log.
@@ -354,11 +354,11 @@ export function needNoFieldTags(text, where) {
 // What a new issue was filed with, read back from its file: for new's reply, which lists what was parsed and what was
 // left empty, each empty field with the command that fills it.
 const FILL_WITH = {
-  why: (id) => `jarl.mjs field ${id} Why "<text>"`,
-  acceptance: (id) => `jarl.mjs field ${id} Acceptance "<line>"`,
-  files: (id) => `jarl.mjs field ${id} Files '<paths>'`,
-  after: (id) => `jarl.mjs field ${id} After '<ids>'`,
-  where: (id) => `jarl.mjs field ${id} Where '<text>'`,
+  why: (id) => jarlLine('field', id, 'Why', '<text>'),
+  acceptance: (id) => jarlLine('field', id, 'Acceptance', '<line>'),
+  files: (id) => jarlLine('field', id, 'Files', '<paths>'),
+  after: (id) => jarlLine('field', id, 'After', '<ids-it-waits-on>'),
+  where: (id) => jarlLine('field', id, 'Where', '<text>'),
   'found by': () => 'only at filing: new --found-by <who>',
 };
 export function describeNew(file) {

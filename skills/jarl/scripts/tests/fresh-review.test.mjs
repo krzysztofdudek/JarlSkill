@@ -62,7 +62,7 @@ test('a code issue: a coordinator approve is recorded with a note, done refuses 
   assert.match(why, /carries code \(Branch is recorded\)/);
   assert.match(why, /by jarl \(coordinator\)/);
   assert.match(why, /fresh-review rule/);
-  assert.match(why, /--by '<a-fresh-reviewer>'/);
+  assert.match(why, /--by "<a-fresh-reviewer>"/);
   // Every coordinator name is refused the same way.
   for (const by of ['reeve', 'coordinator', basename(root)]) {
     jarl(root, 'review', id, 'approve', '--by', by, FINDINGS);

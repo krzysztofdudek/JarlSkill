@@ -10,7 +10,7 @@ import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSyn
 import { basename, join, relative } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { jarl, SCRIPT } from './helpers.mjs';
+import { commandSpans, jarl, SCRIPT } from './helpers.mjs';
 import { bashBin, NO_EXCLUDES } from './portable.mjs';
 
 const J = await import('../jarl.mjs');
@@ -217,7 +217,7 @@ const STRUCTURAL = new Set([...['Title', 'Priority', 'Tier', 'Kind', 'Found by',
 // A plausible value for each placeholder, to fill a form with as a caller would: a word that stands where nothing is to be
 // given (a flag to leave out, a step the reason names) is taken out, with the value after it where it has one.
 const FILL = {
-  '<id>': '1', '<ids>': '1', '<another-id>': '3', '<another-issue>': '3', '<ids-the-loop-holds>': '1', '<ids-low-high>': '1-2', '<a-smaller-range>': '1-2',
+  '<id>': '1', '<ids>': '1', '<ids-it-waits-on>': '3', '<another-id>': '3', '<another-issue>': '3', '<ids-the-loop-holds>': '1', '<ids-low-high>': '1-2', '<a-smaller-range>': '1-2',
   '<the-id-new-prints>': '1', '<the-id-ask-prints>': 'a-1', '<an-issue-next-offers>': '1', '<question>': 'a-1', '<a-n>': 'a-1', '<n>': '1', '<n-or-note-n>': '1',
   '<review-n-or-note-n>': '1', '<line>': '1', '<text>': 'a reason written in full', '<title>': 'a title', '<the-title-filed-again>': 'a title', '<goal>': 'a goal',
   '<slug>': 'a-new-slug', '<a-new-slug>': 'a-new-slug', '<a-ruling>': 'a ruling written in full', '<a-ruling-in-force>': 'taken', '<value>': 'a value',
@@ -246,12 +246,12 @@ const FILL = {
 const ALTERNATIVES = {
   '<kind>': ['wait', 'promise'], '<status>': ['in-progress', 'open', 'done', 'dropped'], '<ask-kind>': ['escalation', 'rule', 'lower', 'ratify', 'stop', 'charter'],
   '<who>': ['owner', 'rev-fresh'], '<verdict>': ['approve'], '<jarl-or-owner>': ['owner'], '<option>': ['B'], '<status-in-the-log>': ['in-progress'],
-  '<key>': [keyOf4()], '<question>': ['a-2', 'a-3'], '<name>': ['Dana', 'Area'], '<value>': ['2', 'core'], '<text>': ['Important: read the diff and the tests, one name is wrong'],
+  '<key>': [keyOf4()], '<ids-it-waits-on>': ['2'], '<question>': ['a-2', 'a-3'], '<name>': ['Dana', 'Area'], '<value>': ['2', 'core'], '<text>': ['Important: read the diff and the tests, one name is wrong'],
 };
 const LEFT_OUT = ['<a-flag-it-takes-or-none>', '<no-flag-here>', '<as-the-reason-says>', '<nothing-to-do>', '<as-the-view-shows>', '<one-kind-of-evidence-per-call>', '<no-word-here>'];
 // A printed command's words with each word that stands where nothing is to be given taken out, with the value after a
 // flag the caller is to name: the words that take a place in the call.
-const placed = (words) => words.filter((w, i) => !LEFT_OUT.includes(w) && !(w === '<value>' && words[i - 1] === '<a-flag-it-takes-or-none>'));
+const placed = (words) => words.filter((w, i) => !LEFT_OUT.includes(w) && w !== '<--handover-or-none>' && !(w === '<value>' && words[i - 1] === '<a-flag-it-takes-or-none>'));
 // A printed command's words with each placeholder filled: a word that is one is replaced (or taken out), one that holds
 // one (a list item, a value part) has it replaced in place.
 export function filled(words, at = -1, other = null) {
@@ -294,7 +294,7 @@ export function formProblems(args, said, loop, opts = {}, wrong = null) {
     for (const w of words) for (const m of w.matchAll(/<[^<>]*>/g)) if (!L.PLACEHOLDERS.includes(m[0]) && !given.some((g) => g.includes(m[0]))) problems.push(`prints ${m[0]}, no placeholder of the registry: ${line}`);
     if (words.includes('<as-the-reason-says>')) problems.push(`a command that writes and holds no placeholder of its own was given one by the net: ${line}`);
     const c = readCall(words);
-    if (MUTATING.has(c.cmd) && !words.some((w) => HOLE.test(w))) problems.push(`a command that writes, with no placeholder: pasted as printed it runs: ${line}`);
+    if (J.writes(['jarl.mjs', ...words]) && !words.some((w) => HOLE.test(w))) problems.push(`a command that writes, with no placeholder: pasted as printed it runs: ${line}`);
     for (const g of globalsOf(given)) if (!(g.length === 1 ? words.includes(g[0]) : words.some((w, i) => w === g[0] && words[i + 1] === g[1]))) problems.push(`drops ${g.join(' ')}, a global flag the call gave: ${line}`);
     for (const [k, v] of c.flags) if (k === 'by' && typeof v === 'string' && !HOLE.test(v) && !given.includes(v)) problems.push(`names --by ${v}, an author the call did not name: ${line}`);
     for (const [k] of c.flags) if (NEVER_ADDED.includes(k) && !given.includes(`--${k}`) && !given.includes(k)) problems.push(`adds --${k}, which the call did not ask for: ${line}`);
@@ -305,6 +305,7 @@ export function formProblems(args, said, loop, opts = {}, wrong = null) {
       for (const k of needs.flags) problems.push(`leaves out --${k}, which ${c.cmd} needs with what it holds: ${line}`);
       const held = readCall(placed(words)).pos.length;
       if (held < needs.args) problems.push(`holds ${held} of the ${needs.args} arguments ${c.cmd} needs: ${line}`);
+      if (held > needs.most) problems.push(`holds ${held} arguments, and ${c.cmd} takes ${needs.most} with what it holds (one stands in for another): ${line}`);
     }
   }
   if (wrong !== null && !names(reason, wrong)) problems.push(`the reason does not name ${JSON.stringify(wrong)}: ${reason.split('\n')[0].slice(0, 160)}`);
@@ -372,6 +373,69 @@ export function walk(cases, loop, { mustRefuse }) {
     for (const p of formProblems(args, r.stderr, on, opts, wrong)) found.push(`${JSON.stringify(args)}: ${p}`);
   }
   return { found, refused };
+}
+
+// ---- the commands of answers, notes and views ---------------------------------------------------------------------------
+
+// The .jarl/ of the loop a call made in `cwd` names, as a key of snapshot: the one its --root names, else the one where it
+// was made.
+function loopNamed(cwd, args) {
+  const top = TOPS.get(cwd) ?? cwd;
+  const roots = J.callOfArgv(args.map(String)).flags.filter(([k]) => k === 'root').map(([, v]) => v);
+  const named = roots.length === 1 && typeof roots[0] === 'string' ? join(cwd, roots[0]) : cwd;
+  const rel = relative(top, named).split('\\').join('/');
+  return `${rel ? `${rel}/` : ''}.jarl/`;
+}
+const changedOutside = (before, after, prefix) => [...new Set([...Object.keys(before), ...Object.keys(after)])].map((k) => k.split('\\').join('/')).filter((k) => before[k] !== after[k] && !k.startsWith(prefix));
+// What is wrong with the commands a call that went through printed (its answer, its notes, a row of its view): each
+// carries the call's --root, and pasted into each shell, as printed and then filled with a plausible value for each
+// placeholder, writes in no loop but the one the call named; a command that holds a placeholder is refused for it when
+// pasted as printed, and writes nothing.
+export function outputProblems(args, out, loop, opts = {}) {
+  const problems = [];
+  const given = args.map(String);
+  const roots = globalsOf(given).filter((g) => g[0].startsWith('--root'));
+  const spans = commandSpans(out);
+  for (const { raw: line } of spans) {
+    const calls = printedCalls(line);
+    if (!calls || calls.length !== 1) { problems.push(`not one command for a shell: ${line}`); continue; }
+    const words = calls[0];
+    for (const g of roots) if (!(g.length === 1 ? words.includes(g[0]) : words.some((w, i) => w === g[0] && words[i + 1] === g[1]))) problems.push(`drops ${g.join(' ')}, a global flag the call gave: ${line}`);
+    for (const w of words) for (const m of w.matchAll(/<[^<>]*>/g)) if (!L.PLACEHOLDERS.includes(m[0]) && !given.some((g) => g.includes(m[0]))) problems.push(`prints ${m[0]}, no placeholder of the registry: ${line}`);
+    const holed = HOLE.test(line);
+    for (const sh of SHELLS) {
+      for (const [pasted, filledIn] of [[line, false], [`jarl.mjs ${L.printedLine(filled(words))}`, true]]) {
+        if (filledIn && !holed) continue;
+        const dir = copy(loop, opts);
+        const prefix = loopNamed(dir, given);
+        const before = snapshot(dir);
+        const r = runPrinted(dir, pasted, sh);
+        const after = snapshot(dir);
+        const outside = changedOutside(before, after, prefix);
+        if (outside.length) problems.push(`pasted ${filledIn ? 'filled ' : ''}into ${sh}, it writes outside the loop the call named (${outside.join(', ')}): ${pasted}`);
+        if (!filledIn && holed && (r.status === 0 || !/placeholder/.test(r.stderr) || JSON.stringify(after) !== JSON.stringify(before))) problems.push(`pasted into ${sh}, it is not refused for its placeholder: ${pasted} — ${r.stderr.trim().split('\n')[0]}`);
+      }
+    }
+  }
+  return { problems, commands: spans.length };
+}
+// Each call that goes through on a fresh copy, with the commands of what it printed checked by outputProblems.
+export function walkOutputs(cases, loop) {
+  const found = [];
+  let commands = 0;
+  for (const c of cases) {
+    const { args, pre, profile, loop: own } = Array.isArray(c) ? { args: c } : c;
+    const on = own || loop;
+    const opts = { pre, profile };
+    const dir = copy(on, opts);
+    const r = run(dir, args);
+    // verify and scope answer with exit 2 when they find something: that is their answer, printed whole.
+    if (r.status !== 0 && !(r.status === 2 && ['verify', 'scope'].includes(J.callOfArgv(args.map(String)).cmd))) { found.push(`${JSON.stringify(args)}: did not go through: ${r.stderr.trim().split('\n')[0]}`); continue; }
+    const checked = outputProblems(args, `${r.stdout}\n${r.stderr}`, on, opts);
+    commands += checked.commands;
+    for (const p of checked.problems) found.push(`${JSON.stringify(args)}: ${p}`);
+  }
+  return { found, commands };
 }
 
 // ---- the wrong calls of the command table ---------------------------------------------------------------------------

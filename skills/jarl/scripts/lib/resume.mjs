@@ -1,7 +1,7 @@
 // Resume: the state a session picks the loop up from, assembled live; the handoff file and the report.
 
 import { existsSync } from 'node:fs';
-import { KEPT_KINDS, fieldText, hole, need } from './base.mjs';
+import { KEPT_KINDS, fieldText, hole, jarlLine, need } from './base.mjs';
 import { readText } from './files.mjs';
 import { DEFAULT_PROFILE, loadProfile } from './profile.mjs';
 import { mergedOf, sharedMark } from './issues.mjs';
@@ -38,7 +38,7 @@ function countFlag(flags, name, dflt) {
 // issues name, the loop files git has not committed, and the last n log lines. Nothing goes to the network
 // unless --gh asks gh for the CI of each pushed tip.
 export function cmdResume(root, flags = {}) {
-  need(existsSync(jarlDir(root)), `no loop here: ${jarlDir(root)} does not exist — open one with jarl.mjs init "<goal>", or pass --root '<loop-root>', the directory that holds .jarl/`, () => (['jarl.mjs', 'init', '<goal>']));
+  need(existsSync(jarlDir(root)), `no loop here: ${jarlDir(root)} does not exist — open one with ${jarlLine('init', '<goal>')}, or pass --root "<loop-root>", the directory that holds .jarl/`, () => (['jarl.mjs', 'init', '<goal>']));
   const logN = countFlag(flags, 'log', RESUME_LOG_LINES);
   const readyN = countFlag(flags, 'ready', RESUME_READY);
   const loop = readLoop(jarlDir(root));
@@ -127,7 +127,7 @@ export function renderResume(o, profile = DEFAULT_PROFILE, note = null, asked = 
   return [
     ...head,
     // The rulings are counted, not printed: a reader is given the rules that match it, and decisions --live lists them all.
-    `${o.rulings.length} ruling(s) in force: jarl.mjs decisions --live${asked ? '' : '; resume --as <who> adds the rules that match whoever asks'}`,
+    `${o.rulings.length} ruling(s) in force: ${jarlLine('decisions', '--live')}${asked ? '' : '; resume --as <who> adds the rules that match whoever asks'}`,
     '',
     ...(asked ? [] : sec(`Rules for the whole loop (${o.rules.length})`, o.rules.flatMap(ruleLines), '- (none)')),
     ...sec(`The files disagree with the log (${(st.disagreements || []).length})`, (st.disagreements || []).map(disagreementText)),
@@ -169,7 +169,7 @@ export function cmdHandoffRead(root, flags = {}) {
 
 // handoff write — the state is assembled live by resume, so there is nothing to write. The command is accepted (with
 // its flags) so a script that calls it does not fail; it writes nothing — no file, no log line — and says so; exit 0.
-export const HANDOFF_TEXT = 'handoff writes nothing. The state a session resumes from is assembled live — run jarl.mjs resume. Put intent where it lives: order in the Priority and After fields, reasons in rulings (decide) and in the issues\' sections (field).';
+export const HANDOFF_TEXT = 'handoff writes nothing. The state a session resumes from is assembled live — run resume. Put intent where it lives: order in the Priority and After fields, reasons in rulings (decide) and in the issues\' sections (field).';
 export function cmdHandoffWrite() {
   return { retired: true, wrote: null, note: HANDOFF_TEXT };
 }

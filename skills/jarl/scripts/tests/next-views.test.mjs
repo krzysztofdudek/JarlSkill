@@ -93,7 +93,7 @@ test('in-flight rows carry one derived fact, in status and resume, text and json
   assert.equal(JSON.parse(jarl(root, 'status', '--json')).inFlightRows.find((r) => r.id === '3').mark, 'rows-no-verdict');
   const msg = refuses(root, 'set', '1', 'ready');
   assert.match(msg, /ready is a view here, not a status/);
-  assert.match(msg, /`next` lists the issues ready to start/);
+  assert.match(msg, /: next lists the issues ready to start/);
   assert.match(msg, /declare one in its profile/);
   assert.match(refuses(root, 'set', '1', 'review'), /review is a view here/);
   assert.match(refuses(root, 'set', '1', 'nonsense'), /^status must be one of: /m);

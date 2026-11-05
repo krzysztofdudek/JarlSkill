@@ -2,7 +2,7 @@
 
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { CI_STATES, fieldText, hole, need } from './base.mjs';
+import { CI_STATES, fieldText, hole, jarlLine, need } from './base.mjs';
 import { needNoOwnersWords } from './owner.mjs';
 import { jarlDir, plainRelative } from './where.mjs';
 import { readText, writeAtomic } from './files.mjs';
@@ -173,13 +173,9 @@ function eventParser(profile) {
   };
 }
 
-// The command that writes each kind of line that carries state: what the free log refuses to write in its place.
-const LINE_WRITERS = {
-  filed: 'jarl.mjs new', move: 'jarl.mjs set "<ids>" "<status>"', round: 'jarl.mjs round "<id>"', verdict: 'jarl.mjs review "<id>" "<verdict>"',
-  'retract-review': 'jarl.mjs retract "<id>" review', 'retract-row': 'jarl.mjs retract "<id>" "<n>"', 'retract-note': 'jarl.mjs retract "<id>" "<n-or-note-n>"', row: 'jarl.mjs evidence "<id>" --ran "<command>" --saw "<what-it-printed>"',
-  merged: 'jarl.mjs merged "<id>" --sha "<sha>"', ci: 'jarl.mjs merged "<id>" --ci "<ci-state>"', body: 'jarl.mjs field "<id>" "<part>" "<value>"', tick: 'jarl.mjs tick "<id>" "<line>" --by owner',
-  tip: 'jarl.mjs evidence, review or merged, which write the tip of the branch after their own line',
-};
+// The command that writes each kind of line that carries state: what the free log refuses to write in its place, as the
+// form below prints it; the tip of a branch is written by evidence, review and merged, each after its own line.
+const lineWriter = (type) => (type === 'tip' ? 'evidence, review or merged, which write the tip of the branch after their own line' : LINE_CALLS[type] ? jarlLine(...LINE_CALLS[type](type === 'move' ? hole('<ids>') : hole('<id>'))) : '');
 // The form of the command that writes each kind of line, the last line of a refusal of that line given to log.
 const LINE_CALLS = {
   filed: () => ['new', hole('<title>')], move: (ids) => ['set', ids, hole('<status>'), hole('<why>')], round: (id) => ['round', id, hole('<what-failed>')],
@@ -198,9 +194,9 @@ export function appendNote(root, event) {
   needNoOwnersWords('the note', event);
   const text = oneLine(event);
   const id = LEADING_ID.exec(text)?.[1] ?? null;
-  need(!MOVE_SHAPE.test(text), `log writes a note, and "${text.length > 80 ? `${text.slice(0, 77)}...` : text}" has the shape of a move (an id, an arrow), which set writes: ${LINE_WRITERS.move} "<text>"`, () => ['jarl.mjs', ...LINE_CALLS.move(hole('<ids>'))]);
+  need(!MOVE_SHAPE.test(text), `log writes a note, and "${text.length > 80 ? `${text.slice(0, 77)}...` : text}" has the shape of a move (an id, an arrow), which set writes: ${lineWriter('move')}`, () => ['jarl.mjs', ...LINE_CALLS.move(hole('<ids>'))]);
   const type = id === null ? 'other' : parseEvent(id, text, loadProfile(root)).type;
-  need(type === 'other', `log writes a note, and "${text.length > 80 ? `${text.slice(0, 77)}...` : text}" reads as ${type === 'filed' ? 'a filing' : `a ${type.replace('-', ' ')} line`}, which the journal's own command writes with its checks: ${type === 'row' && attachmentOf(text.slice(`${id} evidence row · `.length)) ? 'jarl.mjs evidence "<id>" --file "<path>" --slot "<name>"' : LINE_WRITERS[type]}`, () => ['jarl.mjs', ...LINE_CALLS[type](hole('<id>'))]);
+  need(type === 'other', `log writes a note, and "${text.length > 80 ? `${text.slice(0, 77)}...` : text}" reads as ${type === 'filed' ? 'a filing' : `a ${type.replace('-', ' ')} line`}, which the journal's own command writes with its checks: ${type === 'row' && attachmentOf(text.slice(`${id} evidence row · `.length)) ? jarlLine('evidence', '<id>', '--file', '<path>', '--slot', '<slot>') : lineWriter(type)}`, () => ['jarl.mjs', ...LINE_CALLS[type](hole('<id>'))]);
   appendLog(root, event);
 }
 

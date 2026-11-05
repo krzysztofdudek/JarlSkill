@@ -29,7 +29,7 @@ test('a second lease on an issue another lease holds is refused, names the holde
   const said = refuses(root, 'set', '1', 'in-progress', 'B', '--branch', 'jarl/1-one-b', '--worker', 'wB');
   assert.match(said, /1 is leased already \(worker wA, branch jarl\/1-one, since /);
   assert.match(said, /set 1 in-progress "<why-the-worker-changed>" --branch jarl\/1-one-b --worker wB --handover/, 'the reason names the command that hands the issue over');
-  assert.equal(said.trim().split('\n').at(-1), "jarl.mjs set '<ids>' '<status>' '<why>' --branch '<worker-branch>' --worker '<the-new-worker>' '<--handover-or-none>'", 'the refusal ends with its form, the handover the caller\'s to give');
+  assert.equal(said.trim().split('\n').at(-1), "jarl.mjs set \"<ids>\" \"<status>\" \"<why>\" --branch \"<worker-branch>\" --worker \"<the-new-worker>\" \"<--handover-or-none>\"", 'the refusal ends with its form, the handover the caller\'s to give');
   assert.equal(logText(root), before, 'nothing was written');
   const one = JSON.parse(jarl(root, 'show', '1', '--json'));
   assert.equal(one.fields.worker, 'wA');

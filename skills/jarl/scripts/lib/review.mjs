@@ -1,6 +1,6 @@
 // The review command.
 
-import { fieldText, hole, need } from './base.mjs';
+import { fieldText, hole, jarlLine, need } from './base.mjs';
 import { needNoOwnersWords } from './owner.mjs';
 import { jarlDir, stamp } from './where.mjs';
 import { readText, writeAtomic } from './files.mjs';
@@ -111,8 +111,8 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
 // round, which sends the work back to a worker raised again. A coordinator's approve on code does not clear it: a fresh
 // reviewer's approve is the next step. `wait` is what done also waits for: the owner's tick of a line only he ticks.
 function nextAfterVerdict(issue, verdict, kind, wait = null) {
-  if (verdict === 'changes') return `the jarl records the round — jarl.mjs round ${issue.id} "<text>" — and a worker is raised again to fix it`;
-  if (carriesCode(issue) && kind === 'coordinator') return `a fresh reviewer's approve is next — jarl.mjs review ${issue.id} '<verdict>' --by '<a-fresh-reviewer>' "<text>" — then the merger lands it`;
-  if (carriesCode(issue)) return `the merger merges the branch and records it with one call — jarl.mjs merged ${issue.id} --sha '<sha>' --ran "<command>" --saw "<what-it-printed>" — then ${wait ? `${wait}, then ` : ''}jarl.mjs set ${issue.id} done '<why>', which needs a Proof row from the worker (the merge check is the merger's and is no proof); a worker never sets done`;
-  return `${wait ? `${wait}, then ` : ''}jarl.mjs set ${issue.id} done '<why>' once the worker's Proof rows are recorded; a worker never sets done`;
+  if (verdict === 'changes') return `the jarl records the round — ${jarlLine('round', issue.id, '<text>')} — and a worker is raised again to fix it`;
+  if (carriesCode(issue) && kind === 'coordinator') return `a fresh reviewer's approve is next — ${jarlLine('review', issue.id, '<verdict>', '--by', '<a-fresh-reviewer>', '<text>')} — then the merger lands it`;
+  if (carriesCode(issue)) return `the merger merges the branch and records it with one call — ${jarlLine('merged', issue.id, '--sha', '<sha>', '--ran', '<command>', '--saw', '<what-it-printed>')} — then ${wait ? `${wait}, then ` : ''}${jarlLine('set', issue.id, 'done', '<why>')}, which needs a Proof row from the worker (the merge check is the merger's and is no proof); a worker never sets done`;
+  return `${wait ? `${wait}, then ` : ''}${jarlLine('set', issue.id, 'done', '<why>')} once the worker's Proof rows are recorded; a worker never sets done`;
 }

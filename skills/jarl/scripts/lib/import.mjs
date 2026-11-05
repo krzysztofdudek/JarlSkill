@@ -2,7 +2,7 @@
 
 import { existsSync } from 'node:fs';
 import { resolve, dirname, basename, relative, isAbsolute } from 'node:path';
-import { KEPT_KINDS, KINDS, PRIORITIES, fieldText, hole, need, refuse, slugify, splitList } from './base.mjs';
+import { KEPT_KINDS, KINDS, PRIORITIES, fieldText, hole, jarlLine, need, refuse, slugify, splitList } from './base.mjs';
 import { git } from './git.mjs';
 import { canonical } from './where.mjs';
 import { readText } from './files.mjs';
@@ -163,11 +163,11 @@ function bySource(issues) {
 }
 
 export function cmdImport(root, file, flags) {
-  needLiveLoop(root, ' — run: jarl.mjs init "<goal>"');
+  needLiveLoop(root, ` — run: ${jarlLine('init', '<goal>')}`);
   const { dir, findings: read } = readFindings(file, flags);
   const profile = loadProfile(root);
   if (flags.kind !== undefined) need(profile.kinds.includes(flags.kind), `--kind must be one of: ${profile.kinds.join(', ')} (got "${flags.kind}")`, () => ({ flag: '--kind', value: hole('<kind>') }));
-  need(!profile.keptKind(flags.kind), `--kind ${flags.kind}: a finding is work, never a promise or a wait — file one of those with jarl.mjs new "<title>" --kind ${flags.kind}`, () => (['jarl.mjs', 'new', '<title>', '--kind', flags.kind]));
+  need(!profile.keptKind(flags.kind), `--kind ${flags.kind}: a finding is work, never a promise or a wait — file one of those with ${jarlLine('new', '<title>', '--kind', flags.kind)}`, () => (['jarl.mjs', 'new', '<title>', '--kind', flags.kind]));
   if (flags.prio !== undefined) need(PRIORITIES.includes(String(flags.prio)), `--prio must be 1, 2 or 3 (got "${flags.prio}")`, () => ({ flag: '--prio', value: hole('<prio>') }));
   if (flags.tier !== undefined) need(profile.tiers.includes(String(flags.tier)), `--tier must be one of: ${profile.tiers.join(', ')} (got "${flags.tier}")`, () => ({ flag: '--tier', value: hole('<tier>') }));
   // A finding's kind is mapped onto the built-in kinds; under a profile with kinds of its own, one it does not

@@ -90,7 +90,7 @@ export class Refusal extends Error {
 // <none>, <Button />) is a value, recorded as given. What the placeholder stands for is said by the reason before it: the
 // values allowed, the ids the loop holds, the word that was wrong.
 export const PLACEHOLDERS = Object.freeze([
-  '<id>', '<ids>', '<another-id>', '<another-issue>', '<ids-the-loop-holds>', '<ids-low-high>', '<a-smaller-range>', '<the-id-new-prints>',
+  '<id>', '<ids>', '<ids-it-waits-on>', '<another-id>', '<another-issue>', '<ids-the-loop-holds>', '<ids-low-high>', '<a-smaller-range>', '<the-id-new-prints>',
   '<the-id-ask-prints>', '<an-issue-next-offers>', '<question>', '<a-n>', '<n>', '<n-or-note-n>', '<review-n-or-note-n>', '<line>',
   '<text>', '<title>', '<the-title-filed-again>', '<goal>', '<slug>', '<a-new-slug>', '<a-ruling>', '<a-ruling-in-force>', '<value>',
   '<the-whole-new-value>', '<the-whole-section>', '<a-part-of-the-description>', '<part>', '<name=value>', '<field=value>',
@@ -142,19 +142,63 @@ function checkReady(ready) {
   if (isFix(ready)) return ready.first === undefined || isCommand(ready.first);
   return isCommand(ready);
 }
-// One command as the shell is given it: every word written by shellWord, the one function every printed word goes through,
-// for the shell named (shellOf).
-export const printedLine = (words, shell = 'posix') => words.map((w) => shellWord(w, shell)).join(' ');
-export function commandLine(ready, shell = 'posix') {
+// ---- printed commands ----------------------------------------------------------------------------------------
+//
+// Every command Jarl prints is built by printCommand, and by nothing else: the form and the steps a refusal ends with, a
+// command a reason names, the one a note or a hint offers, the command of a row of a view. It takes the words (jarl.mjs
+// first) and the global flags of the call that prints it (--root and --json, as that call gave them, so the command
+// reaches the loop the call named: a view and a note print with the root of the loop they describe), and writes each
+// word in the quoting of the shell of the platform (shellOf, shellWord) and each placeholder of the registry in double
+// quotes, which sh, bash, zsh, PowerShell and cmd all read alike. A global flag the words name already is not added; a
+// --root the call gave twice, or one that shell cannot carry as it is, is its placeholder <loop-root>; any other word that
+// shell cannot carry is the placeholder <value>. The command line and the MCP server print for the call they run
+// (printingFor, around the call); the record library, which runs no call, prints with no global flag.
+let printing = null;
+export function printingFor(globals, fn, shell = shellOf()) {
+  const before = printing;
+  printing = { globals: [...globals], shell };
+  try { return fn(); } finally { printing = before; }
+}
+const current = () => printing ?? { globals: [], shell: shellOf() };
+// A global flag as the words of a command: --json and --help as switches (whatever value they were given), --root as the
+// call gave it (--root x, --root=x), or its placeholder where it has no value, is one, was given twice or holds what the
+// shell cannot carry (a line break, or on Windows a character cmd and PowerShell read apart).
+export const rootPrintable = (v, shell) => typeof v === 'string' && !isPlaceholder(v) && !LINE_BREAKING.test(v) && printable(v, shell) && printable(`--root=${v}`, shell);
+export function globalWords(k, v, spelt, shell = 'posix') {
+  if (k !== 'root') return [`--${k}`];
+  if (!rootPrintable(v, shell)) return ['--root', hole('<loop-root>')];
+  return spelt === '=' ? [`--root=${v}`] : ['--root', v];
+}
+export function printCommand(words, { globals = current().globals, shell = current().shell } = {}) {
+  const w = words.map((x) => (x === undefined || x === null ? hole('<value>') : String(x)));
+  let all = w;
+  if (w[0] === 'jarl.mjs') {
+    const end = w.indexOf('--') === -1 ? w.length : w.indexOf('--');
+    const names = (k, list) => list.some((x) => x === `--${k}` || x.startsWith(`--${k}=`));
+    const roots = new Set(globals.filter(([k]) => k === 'root').map(([, v]) => v));
+    const added = [];
+    for (const [k, v, spelt] of globals) {
+      if (names(k, w.slice(0, end)) || names(k, added)) continue;
+      added.push(...globalWords(k, k === 'root' && roots.size > 1 ? hole('<loop-root>') : v, spelt, shell));
+    }
+    all = [...w.slice(0, end), ...added, ...w.slice(end)];
+  }
+  return all.map((x) => (isPlaceholder(x) ? `"${x.trim()}"` : printable(x, shell) ? shellWord(x, shell) : `"${hole('<value>')}"`)).join(' ');
+}
+// A command of jarl.mjs as printed: printCommand of its words.
+export const jarlLine = (...words) => printCommand(['jarl.mjs', ...words]);
+// A command with no global flag carried, for the shell named.
+export const printedLine = (words, shell = 'posix') => printCommand(words, { globals: [], shell });
+export function commandLine(ready, shell = current().shell) {
   if (isExternal(ready)) return ready.external.trim();
-  return printedLine(commandOf(ready), shell);
+  return printCommand(commandOf(ready), { shell });
 }
 // The ready part as a text, for a caller that holds no call (the record library): a shape of the call is written as the
 // flag or the argument it asks for, its value a placeholder.
-export function readyText(ready, shell = 'posix') {
+export function readyText(ready, shell = current().shell) {
   const fixes = [].concat(ready).filter(isFix);
   if (!fixes.length) return commandLine(ready, shell);
-  const s = (v) => shellWord(v, shell);
+  const s = (v) => (isPlaceholder(v) ? `"${String(v).trim()}"` : shellWord(v, shell));
   const w = (v) => s(isPlaceholder(v) ? v : hole('<value>'));
   return fixes.map((f) => (f.first !== undefined ? `after ${commandLine(f.first, shell)}` : f.drop !== undefined ? `without ${s(f.drop)}` : f.flag !== undefined ? `${s(f.flag)}${f.value === undefined ? '' : ` ${w(f.value)}`}`
     : f.retry ? 'the call with its values filled' : f.dashes ? 'the arguments after a bare --' : f.rename !== undefined ? `${s(f.to)} in place of ${s(f.rename)}` : f.toArg !== undefined ? `the value of ${f.toArg} as argument ${f.at + 1}` : f.command !== undefined ? `${s(f.command)} in place of the command`
@@ -176,17 +220,17 @@ function splitList(v) { return String(v || '').split(',').map((s) => s.trim()).f
 export function noSeparators(text) { return String(text ?? '').trim().replace(/\s*·\s*/g, ' - ').trim(); }
 
 // A word as sh, bash and zsh read it back unchanged: bare only when it starts with a letter, a digit, _ . / or - and holds
-// nothing but letters, digits and _ . / : @ % + , - after it, and is no reserved word of a shell; else in single quotes, a
-// single quote inside written '\''. So a word that starts with # (a comment), = or ~ (zsh and bash expand them), an operator
+// nothing but letters, digits and _ . / : @ % + , - after it; else in single quotes, a single quote inside written '\''.
+// A word a shell reserves (done, if, then) is bare too: it is an argument, after jarl.mjs, where no shell reads one. So a word that starts with # (a comment), = or ~ (zsh and bash expand them), an operator
 // (&&, ;, |) and every other word is quoted. A word that holds a character a reader may take for the end of a line (CR,
 // LF, a vertical tab, a form feed, NEL, the Unicode line and paragraph separators) or any other control character is
 // printed by printf %b with that character written as the octal escapes of its bytes, so the command stays on one line,
 // for a reader that splits lines on Unicode separators too, and a refusal's ready command on its last line (a shell drops
 // the line breaks a word ends with). Every word Jarl prints in a command for a person or an agent to run is written so,
-// through printedLine.
+// through printCommand.
 //
-// That is the quoting of a POSIX shell (sh, bash, zsh, Git Bash), the shell of macOS and Linux. The forms a refusal ends
-// with are written for the shell of the platform they are printed on (shellOf): on Windows, for PowerShell and cmd. There
+// That is the quoting of a POSIX shell (sh, bash, zsh), the shell of macOS and Linux. The commands Jarl prints are
+// written for the shell of the platform they are printed on (shellOf): on Windows, for PowerShell and cmd. There
 // a word is bare when it holds nothing but letters, digits and _ . / : = - (and is not --, which PowerShell may take for
 // its own), and else in double quotes, which both read alike for every other character: a space, a single quote, a < or
 // a >, & | ; ( ) ^ and a backslash inside. A word neither reads alike is not printable there (printable): a double quote,
@@ -194,16 +238,18 @@ export function noSeparators(text) { return String(text ?? '').trim().replace(/\
 // line break (no quoting of theirs carries one, and no command substitution is printed), and a quoted word that ends with
 // a backslash (a program reads a backslash before the closing quote as an escape). Whoever builds a form prints such a
 // word as its placeholder and says why (see refusalFor in jarl.mjs); given one, shellWord prints the placeholder <value>.
-const RESERVED_WORDS = new Set(['!', '{', '}', '[[', ']]', 'case', 'coproc', 'do', 'done', 'elif', 'else', 'esac', 'fi', 'for', 'function', 'if', 'in', 'select', 'then', 'time', 'until', 'while']);
-const quoted = (s) => (/^[A-Za-z0-9_./-][A-Za-z0-9_./:@%+,-]*$/.test(s) && !RESERVED_WORDS.has(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`);
+const quoted = (s) => (/^[A-Za-z0-9_./-][A-Za-z0-9_./:@%+,-]*$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`);
 const LINE_BREAKING = /[\u0000-\u0008\u000a-\u001f\u007f\u0085\u2028\u2029]/;
 const escapedByte = (c) => [...Buffer.from(c, 'utf8')].map((b) => `\\0${b.toString(8).padStart(3, '0')}`).join('');
 export const shellOf = (platform = process.platform) => (platform === 'win32' ? 'windows' : 'posix');
 const windowsBare = (s) => /^[A-Za-z0-9_./:=-]+$/.test(s) && s !== '--';
+// Not printable on Windows besides: the typographic double quotes U+201C, U+201D and U+201E (PowerShell reads them as
+// double quotes), an exclamation mark (cmd expands !name! where delayed expansion is on), and an empty word (Windows
+// PowerShell, and some releases of PowerShell, drop an empty argument).
 export function printable(s, shell = 'posix') {
   if (shell !== 'windows') return true;
   const text = String(s);
-  return !/["%$`]/.test(text) && !LINE_BREAKING.test(text) && (windowsBare(text) || !text.endsWith('\\'));
+  return text !== '' && !/["%$`!“”„]/.test(text) && !LINE_BREAKING.test(text) && (windowsBare(text) || !text.endsWith('\\'));
 }
 export function shellWord(s, shell = 'posix') {
   const text = String(s);

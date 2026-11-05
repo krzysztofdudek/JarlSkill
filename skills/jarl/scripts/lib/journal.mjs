@@ -2,7 +2,7 @@
 
 import { existsSync, readdirSync } from 'node:fs';
 import { join, dirname, basename } from 'node:path';
-import { fieldText, hole, need, noSeparators, oneBreak, splitList } from './base.mjs';
+import { fieldText, hole, jarlLine, need, noSeparators, oneBreak, splitList } from './base.mjs';
 import { jarlDir, stamp, today } from './where.mjs';
 import { appendAtomic, readText, writeAtomic } from './files.mjs';
 import { ISSUE_FILE_RE, KEY_RE, idKey, idRe, issueForms, writtenId } from './ids.mjs';
@@ -212,7 +212,7 @@ export function appendDecision(root, slug, ruling, { by, quote, under, supersede
   if (supersedes !== undefined) {
     need(typeof supersedes === 'string' && SLUG_RE.test(supersedes) && supersedes !== slug, '--supersedes names the slug of an earlier ruling', () => ({ flag: '--supersedes', value: '<slug>' }));
     const old = all.find((d) => d.slug === supersedes);
-    need(old, `no ruling ${supersedes} in ${DECISIONS_FILE} to supersede — the rulings: jarl.mjs decisions`, () => ({ flag: '--supersedes', value: '<a-ruling-in-force>' }));
+    need(old, `no ruling ${supersedes} in ${DECISIONS_FILE} to supersede — the rulings: ${jarlLine('decisions')}`, () => ({ flag: '--supersedes', value: '<a-ruling-in-force>' }));
     need(!old.supersededBy, `${supersedes} is already superseded by ${old.supersededBy} — supersede that one instead`, () => ({ flag: '--supersedes', value: hole('<a-ruling-in-force>') }));
     text = markDecision(root, supersedes, `**Superseded by:** ${slug} (${today()})`, { text });
   }

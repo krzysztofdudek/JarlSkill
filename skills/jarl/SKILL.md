@@ -59,7 +59,7 @@ The other references, each read when its subject comes up:
 
 Every command, its flags and its JSON are in [references/commands.md](references/commands.md#the-commands). The exact options are printed by the tool: run `jarl.mjs --help`, or call `jarl_help`.
 
-A refused call writes nothing: a refusal ends with the form of the command with a `<placeholder>`; fill the value and run it; never paste it as printed. Forms are written for a POSIX shell (sh, bash, zsh, Git Bash) on macOS and Linux and for PowerShell and cmd on Windows; replace every `<placeholder>` before running one.
+A refused call writes nothing: a refusal ends with the form of the command with a `<placeholder>`; fill the value and run it; never paste it as printed. The commands Jarl prints are written for a POSIX shell (sh, bash, zsh) on macOS and Linux, and on Windows for PowerShell and cmd, whose double quotes Git Bash reads alike but for a path that starts with two backslashes, which it reads with one; replace every `<placeholder>` before running one.
 
 ## Calling the tool
 

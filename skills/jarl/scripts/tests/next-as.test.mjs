@@ -48,10 +48,10 @@ test('next --as jarl lists each issue in play with the step it points to and the
   assert.equal(o.rows.find((r) => r.id === '2').doer, 'w2');
   const text = jarl(root, 'next', '--as', 'jarl');
   assert.match(text, /^On the jarl \(6\)$/m);
-  assert.match(text, /^- 5 approved: approved, not merged; merge it \(worker w5\) — jarl\.mjs merged 5 --sha '<sha>' --ran "<command>" --saw "<what-it-printed>" · holds up 10, 11, 12$/m);
-  assert.match(text, /^- 1 ready one: ready to start, raise a worker — jarl\.mjs set 1 in-progress --branch '<branch>' --worker '<name>' · holds up 7, 12$/m);
+  assert.match(text, /^- 5 approved: approved, not merged; merge it \(worker w5\) — jarl\.mjs merged 5 --sha "<sha>" --ran "<command>" --saw "<what-it-printed>" · holds up 10, 11, 12$/m);
+  assert.match(text, /^- 1 ready one: ready to start, raise a worker — jarl\.mjs set 1 in-progress --branch "<branch>" --worker "<name>" · holds up 7, 12$/m);
   assert.match(text, /^- 2 with a worker: with worker w2 since .*, no proof yet; the worker records it — jarl\.mjs evidence 2 --ran "<command>" --saw "<what-it-printed>"$/m);
-  assert.match(text, /^- 3 proof no verdict: proof recorded, no verdict; raise a fresh reviewer for 3; if you cannot raise agents, ask the owner to start a fresh session \(worker w3\) — jarl\.mjs review 3 '<verdict>' --by '<reviewer>' "<text>", or jarl\.mjs ask "start a fresh session to review issue 3"$/m);
+  assert.match(text, /^- 3 proof no verdict: proof recorded, no verdict; raise a fresh reviewer for 3; if you cannot raise agents, ask the owner to start a fresh session \(worker w3\) — jarl\.mjs review 3 "<verdict>" --by "<reviewer>" "<text>", or jarl\.mjs ask 'start a fresh session to review issue 3'$/m);
   assert.match(text, /^- 4 changes asked: changes asked by its reviewer; send it back to a worker \(worker w4\) — jarl\.mjs round 4 "<text>"$/m);
   assert.match(text, /^- 6 merged: merged; close it \(worker w6\) — jarl\.mjs set 6 done "<text>"$/m);
   assert.doesNotMatch(text, /a-1|a-2|ratify/, 'the questions are the owner\'s');
@@ -69,7 +69,7 @@ test('next --as owner lists the questions and the items to ratify, most held-up 
   const o = json(root, 'next', '--as', 'owner');
   assert.deepEqual(o.rows.map((r) => [r.ask, r.what, r.holdsUp]), [['1', 'question', ['8']], ['2', 'ratify', []]]);
   const text = jarl(root, 'next', '--as', 'the Owner');
-  assert.match(text, /^On the owner \(2\)\n- a-1 which way\?: question \(stuck\) on issue 8 — jarl\.mjs answer a-1 "<text>" --by owner · holds up 8\n- a-2 ratify the naming: to ratify — jarl\.mjs answer a-2 "yes" --by owner \(or "reject"\)$/m);
+  assert.match(text, /^On the owner \(2\)\n- a-1 which way\?: question \(stuck\) on issue 8 — jarl\.mjs answer a-1 "<text>" --by owner · holds up 8\n- a-2 ratify the naming: to ratify — jarl\.mjs answer a-2 yes --by owner \(or "reject"\)$/m);
   assert.match(text, /^and 1 issue\(s\) waiting on the owner: jarl\.mjs next --as owner --all$/m);
   const digest = jarl(root, 'next', '--as', 'owner', '--all');
   assert.match(digest, /^Waiting on the owner \(1\)\n- 9 waits on the asked one: waits on the owner via 8$/m);
@@ -118,7 +118,7 @@ test('the rows come from the profile\'s status flags, never from the names of th
   const o = json(root, 'next', '--as', 'jarl');
   assert.deepEqual(o.rows.map((r) => [r.id, r.what]), [['1', 'ready'], ['2', 'review'], ['3', 'close']]);
   const text = jarl(root, 'next', '--as', 'jarl');
-  assert.match(text, /— jarl\.mjs set 1 doing --branch '<branch>' --worker '<name>'$/m);
+  assert.match(text, /— jarl\.mjs set 1 doing --branch "<branch>" --worker "<name>"$/m);
   assert.match(text, /^- 3 approved plain: approved; close it \(worker w3\) — jarl\.mjs set 3 shipped "<text>"$/m);
 });
 
@@ -134,7 +134,7 @@ test('a ruling that settles issues none of which is live, and none finished on i
   jarl(root, 'set', '2', 'dropped', 'not needed, ruling drop-the-work');
   const o = json(root, 'next', '--as', 'jarl', '--all');
   assert.deepEqual(o.rows.filter((r) => r.what === 'ruling').map((r) => r.ruling), ['keep-the-work']);
-  assert.match(jarl(root, 'next', '--as', 'jarl', '--all'), /^- keep-the-work: ruling in force; the work it settles has no live issue: 1 is dropped; file the work and settle it — jarl\.mjs new "<title>", then jarl\.mjs decide '<slug>' "<text>" --by jarl --supersedes keep-the-work --settles '<id>'$/m);
+  assert.match(jarl(root, 'next', '--as', 'jarl', '--all'), /^- keep-the-work: ruling in force; the work it settles has no live issue: 1 is dropped; file the work and settle it — jarl\.mjs new "<title>", then jarl\.mjs decide "<slug>" "<text>" --by jarl --supersedes keep-the-work --settles "<id>"$/m);
   // A ruling that supersedes it takes the line away.
   jarl(root, 'new', 'the kept work', '--files', 'd.mjs');   // 4
   jarl(root, 'decide', 'keep-the-work-in-4', 'The work of 1 is done in 4.', '--supersedes', 'keep-the-work', '--settles', '4', '--by', 'coordinator');
@@ -236,13 +236,13 @@ test('a promise is on whoever its Found by names until it is kept and closed, an
   // Each one is on its maker's list, with the command that moves it.
   const mine = json(root, 'next', '--as', 'jarl', '--all');
   assert.deepEqual(mine.rows.map((r) => [r.id, r.what]), [['2', 'promise'], ['1', 'ready']], 'the bench holds 5 up, so it comes first');
-  assert.match(jarl(root, 'next', '--as', 'jarl'), /^- 2 run the bench again after the fix: promised by the jarl; keep it, then record what was done — jarl\.mjs evidence 2 --ran '<command>' --saw '<what-it-printed>' · holds up 5$/m);
+  assert.match(jarl(root, 'next', '--as', 'jarl'), /^- 2 run the bench again after the fix: promised by the jarl; keep it, then record what was done — jarl\.mjs evidence 2 --ran "<command>" --saw "<what-it-printed>" · holds up 5$/m);
   assert.match(jarl(root, 'next', '--as', 'jarl', '--all'), /^- 5 after the bench: waits on the jarl via 2$/m);
   assert.match(jarl(root, 'next', '--as', 'owner'), /^On the owner \(1\)\n- 3 read the draft by Friday: promised by the owner; keep it, then record what was done — jarl\.mjs evidence 3 /);
   assert.match(jarl(root, 'next', '--as', 'ada'), /^On Ada \(1\)\n- 4 send the summary to the jarl: promised by Ada; keep it, then record what was done — /);
   // Kept: the proof waits for a verdict, then the close, and the promise stays on its maker throughout.
   jarl(root, 'evidence', '4', '--ran', 'sent the summary', '--saw', 'the jarl has it');
-  assert.match(jarl(root, 'next', '--as', 'Ada'), /^- 4 send the summary to the jarl: kept, proof recorded, no verdict; review it — jarl\.mjs review 4 '<verdict>' --by '<reviewer>' '<text>'$/m);
+  assert.match(jarl(root, 'next', '--as', 'Ada'), /^- 4 send the summary to the jarl: kept, proof recorded, no verdict; review it — jarl\.mjs review 4 "<verdict>" --by "<reviewer>" "<text>"$/m);
   jarl(root, 'review', '4', 'approve', '--by', 'jarl', FINDINGS);
   assert.match(jarl(root, 'next', '--as', 'Ada'), /^- 4 send the summary to the jarl: kept, approved; close it — jarl\.mjs set 4 done "<text>"$/m);
   jarl(root, 'set', '4', 'done', 'the summary was sent');
@@ -271,7 +271,7 @@ test('a wait is on its named outside person, with when to check, and what comes 
   const dana = jarl(root, 'next', '--as', 'dana smith', '--all');
   assert.equal(dana, [
     'On Dana Smith (1)',
-    "- 1 the licence key from the vendor: waits on Dana Smith, check when 2026-11-10; when it comes, record it — jarl.mjs evidence 1 --ran '<command>' --saw '<what-it-printed>' · holds up 2",
+    "- 1 the licence key from the vendor: waits on Dana Smith, check when 2026-11-10; when it comes, record it — jarl.mjs evidence 1 --ran \"<command>\" --saw \"<what-it-printed>\" · holds up 2",
     '',
     'Waiting on Dana Smith (1)',
     '- 2 install with the key: waits on Dana Smith via 1',
@@ -284,7 +284,7 @@ test('a wait is on its named outside person, with when to check, and what comes 
   // It came: the proof is recorded, and the wait leaves the person for the jarl, who reviews and closes it.
   jarl(root, 'evidence', '1', '--ran', 'asked Dana for the key', '--saw', 'the key arrived by mail');
   assert.equal(json(root, 'next', '--as', 'Dana Smith').total, 0);
-  assert.match(jarl(root, 'next', '--as', 'jarl'), /^- 1 the licence key from the vendor: it came, proof recorded, no verdict; review it — jarl\.mjs review 1 '<verdict>' --by '<reviewer>' '<text>' · holds up 2$/m);
+  assert.match(jarl(root, 'next', '--as', 'jarl'), /^- 1 the licence key from the vendor: it came, proof recorded, no verdict; review it — jarl\.mjs review 1 "<verdict>" --by "<reviewer>" "<text>" · holds up 2$/m);
   jarl(root, 'review', '1', 'approve', '--by', 'jarl', FINDINGS);
   assert.match(jarl(root, 'next', '--as', 'jarl'), /^- 1 the licence key from the vendor: it came, approved; close it — jarl\.mjs set 1 done "<text>" · holds up 2$/m);
   jarl(root, 'set', '1', 'done', 'the key came');
@@ -293,14 +293,14 @@ test('a wait is on its named outside person, with when to check, and what comes 
 
 test('a wait names its person and when to check: new refuses one without them, field makes an issue a wait only once both are written, and neither is emptied on it', () => {
   const root = loop();
-  assert.match(refuses(root, 'new', 'the key', '--kind', 'wait'), /^a wait names the outside person it is held by and when to check it\njarl\.mjs new '<title>' --kind '<kind>' --person '<name>' --check-when '<date-or-event>'\n$/);
+  assert.match(refuses(root, 'new', 'the key', '--kind', 'wait'), /^a wait names the outside person it is held by and when to check it\njarl\.mjs new "<title>" --kind "<kind>" --person "<name>" --check-when "<date-or-event>"\n$/);
   assert.match(refuses(root, 'new', 'the key', '--kind', 'wait', '--person', 'Dana'), /a wait names the outside person/);
   assert.match(refuses(root, 'new', 'the key', '--kind', 'promise', '--person', 'Dana'), /--person goes with --kind wait/);
   assert.match(refuses(root, 'new', 'the key', '--check-when', 'Friday'), /--check-when goes with --kind wait/);
   assert.match(refuses(root, 'new', 'the key', '--kind', 'wait', '--person', 'Dana · Lee', '--check-when', 'Friday'), /Person is one value — not a phrase with "·" in it/);
   assert.ok(!readdirSync(join(root, '.jarl', 'issues')).length, 'nothing was filed');
   jarl(root, 'new', 'the key', '--files', 'a.mjs');                                                                   // 1
-  assert.match(refuses(root, 'field', '1', 'Kind', 'wait'), /1 becomes a wait only with the outside person it is held by and when to check it — first jarl\.mjs field 1 Person "<name>" and jarl\.mjs field 1 "Check when" "<date-or-event>"/);
+  assert.match(refuses(root, 'field', '1', 'Kind', 'wait'), /1 becomes a wait only with the outside person it is held by and when to check it — first jarl\.mjs field 1 Person "<name>" and jarl\.mjs field 1 'Check when' "<date-or-event>"/);
   jarl(root, 'field', '1', 'Person', 'Dana');
   jarl(root, 'field', '1', 'Check when', 'Friday');
   jarl(root, 'field', '1', 'Kind', 'wait');
@@ -407,7 +407,7 @@ test('a loop whose profile already declares a field Person or a kind wait reads 
   // A profile that declares only the field keeps the built-in work kinds, without promise and wait.
   const other = loop();
   writeFileSync(join(other, '.jarl', 'profile.json'), JSON.stringify({ 'jarl-profile': 1, name: 'own-field', statuses: BUILTIN_STATUSES, fields: { Person: {} } }));
-  assert.match(refuses(other, 'new', 'a promise', '--kind', 'promise'), /^--kind must be one of: bug, gap, cleanup, docs, test, research, process \(got "promise"\)\njarl\.mjs new '<title>' --kind '<kind>'\n$/);
+  assert.match(refuses(other, 'new', 'a promise', '--kind', 'promise'), /^--kind must be one of: bug, gap, cleanup, docs, test, research, process \(got "promise"\)\njarl\.mjs new "<title>" --kind "<kind>"\n$/);
   jarl(other, 'new', 'work', '--files', 'a.mjs', '--field', 'Person=Dana');
   assert.deepEqual(json(other, 'next').map((r) => r.id), ['1']);
 });

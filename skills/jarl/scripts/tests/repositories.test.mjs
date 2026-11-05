@@ -822,7 +822,7 @@ test('a checkout with no branch is declared with no base, and says so', () => {
   git(w.tool, 'checkout', '-q', '--detach');
   const r = neu(w.hub, 'a', '--repo', 'tool');
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stderr, /note: tool has no branch checked out, so it is declared with no base — name one with jarl\.mjs base tool '<branch>'/);
+  assert.match(r.stderr, /note: tool has no branch checked out, so it is declared with no base — name one with jarl\.mjs base tool "<branch>"/);
   assert.match(w.decl(), /^- \*\*tool\*\* · roots [0-9a-f]{40} · origin none · base none$/m);
   assert.equal(L.declaredRepos(w.hub).get('tool').base, null);
   assert.equal(jarl(w.hub, 'base', 'tool', 'main'), 'tool base: main (was none)');

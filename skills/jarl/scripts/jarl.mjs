@@ -16,7 +16,7 @@ import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as R from './record.mjs';
 import {
-  need, refuse, Refusal, isFix, isExternal, isPlaceholder, hole, HOLE, commandOf, printedLine, commandLine, readyText, breaksLine, escapedEchoes, shellWord, shellOf, printable, resetCaches, withLock, readText, isEntry, cmdSet, cmdField, setRouteOf, eachIssue, cmdRound,
+  need, refuse, Refusal, isFix, isExternal, isPlaceholder, hole, HOLE, commandOf, printedLine, commandLine, readyText, breaksLine, escapedEchoes, shellWord, shellOf, printable, printCommand, printingFor, jarlLine, rootPrintable, resetCaches, withLock, readText, isEntry, cmdSet, cmdField, setRouteOf, eachIssue, cmdRound,
   cmdProfile, cmdArchive, cmdList, cmdNext, renderNext, cmdMode, cmdClose, cmdCheck, cmdBranches,
   cmdChangelog, cmdHandoffRead, cmdHandoffWrite, cmdReport, cmdImport, cmdSources, cmdAnswerMany, cmdModels, renderModels,
   issuesNaming, questionFor, cmdGoal, cmdGoalSet, cmdRepoBase, whereOf, cmdVerify, renderVerify, renderCheckNotes,
@@ -28,7 +28,7 @@ import { writeAreaDecision, writeRuleRatification } from './yg-edge.mjs';
 
 export * from './jarl-lib.mjs';
 
-export const USAGE = `usage: jarl.mjs '<a-jarl-command>' [options]
+export const USAGE = `usage: jarl.mjs "<a-jarl-command>" [options]
        jarl.mjs --version                        the version of this install, the one the MCP server reports
 
 commands:
@@ -459,11 +459,13 @@ Refusals: a refused call writes nothing. It says what is wrong, naming the word 
 line is the form of the command that does what was meant, a placeholder in angle brackets for each value only the
 caller knows: fill the values and run it, never paste it as printed (pasted as printed, it is refused for its
 placeholder). A step to take first is a command on its own line. The form keeps the call's --root and --json as
-given, wherever the call wrote them, and holds every flag the command needs. Forms are written for a POSIX shell
-(sh, bash, zsh, Git Bash) on macOS and Linux and for PowerShell and cmd on Windows, each word quoted for it; a word
-that shell cannot carry as it is stands as its placeholder, and the reason says why; replace every '<placeholder>'
-before running one. A value that is one of Jarl's placeholders is refused wherever a value is taken, so it is never
-recorded; any other text in angle brackets is a value.
+given, wherever the call wrote them, and holds every flag the command needs; every other command Jarl prints, in a
+reason, a note or a view, carries the call's --root. The commands Jarl prints are written for a POSIX shell (sh, bash,
+zsh) on macOS and Linux, and on Windows for PowerShell and cmd, whose double quotes Git Bash reads alike but for a
+path that starts with two backslashes, which it reads with one; each word is quoted for that shell and each
+placeholder is in double quotes; a word that shell cannot carry as it is stands as its placeholder, and the reason
+says why; replace every "<placeholder>" before running one. A value that is one of Jarl's placeholders is refused
+wherever a value is taken, so it is never recorded; any other text in angle brackets is a value.
 
 Lists (the <ids> above; new's --tags, --files, --repo, --source, --after; import's --tags, --repo, --only;
 decide's --settles; the value field gives Tags, Files, Repo, After and Source): one item, or several as one
@@ -715,7 +717,7 @@ const ARG_HOLES = {
 const FLAG_HOLES = {
   by: '<who>', kind: '<kind>', 'ask kind': '<ask-kind>', prio: '<prio>', tier: '<tier>', tags: '<tag>', tag: '<tag>', files: '<paths>', repo: '<name-or-path>',
   'found-by': '<who>', where: '<text>', what: '<text>', why: '<text>', acceptance: '<line>', source: '<report-dir#finding-id>', 'sources source': '<report-dir>',
-  'import source': '<report-dir>', after: '<ids>', changelog: '<changelog-entry>', template: '<template>', field: '<name=value>', section: '<name=value>',
+  'import source': '<report-dir>', after: '<ids-it-waits-on>', changelog: '<changelog-entry>', template: '<template>', field: '<name=value>', section: '<name=value>',
   person: '<name>', 'check-when': '<date-or-event>', profile: '<profile.json>', key: '<key>', only: '<finding-ids>', ran: '<command>', saw: '<what-it-printed>',
   file: '<path>', slot: '<slot>', status: '<status>', grep: '<text>', match: '<field=value>', branch: '<worker-branch>', worker: '<the-new-worker>',
   model: '<model-id>', worktree: '<the-worktree-of-the-lease>', limit: '<whole-number>', as: '<who>', slice: '<coordinator>', findings: '<count>',
@@ -725,7 +727,7 @@ const FLAG_HOLES = {
   rule: '<rule-id>', area: '<type>', reach: '<number-of-files>', set: '<machine-line>',
 };
 const PART_HOLES = {
-  title: '<title>', priority: '<prio>', tier: '<tier>', kind: '<kind>', tags: '<tag>', files: '<paths>', repo: '<name-or-path>', after: '<ids>',
+  title: '<title>', priority: '<prio>', tier: '<tier>', kind: '<kind>', tags: '<tag>', files: '<paths>', repo: '<name-or-path>', after: '<ids-it-waits-on>',
   source: '<report-dir#finding-id>', acceptance: '<line>', changelog: '<changelog-entry>', person: '<name>', 'check when': '<date-or-event>',
   resources: '<resource-name>', 'found by': '<who>', where: '<text>', what: '<text>', why: '<text>',
 };
@@ -735,16 +737,12 @@ const argHole = (c, i) => {
   return hole(ARG_HOLES[`${c.cmd} ${name}`] ?? ARG_HOLES[name] ?? '<value>');
 };
 const valueHole = (cmd, k) => hole(FLAG_HOLES[`${cmd} ${k}`] ?? FLAG_HOLES[k] ?? '<value>');
-// A global flag of the call as it was given: --root x or --root=x, --json (a switch, whatever value it was refused for);
-// a --root with no value or one to give (a placeholder), or one the shell of the form cannot carry (a line break, or on
-// Windows a character cmd and PowerShell read apart), its placeholder.
-function globalWords(k, v, spelt, shell = 'posix') {
-  if (v === true || GLOBAL_FLAGS[k] === 'bool') return [`--${k}`];
-  if (typeof v !== 'string' || isPlaceholder(v) || !rootPrintable(v, shell)) return [`--${k}`, hole('<loop-root>')];
-  if (spelt === '=') return [`--${k}=${v}`];
-  return [`--${k}`, v];
-}
-const rootPrintable = (v, shell) => !breaksLine(v) && printable(v, shell) && printable(`--root=${v}`, shell);
+// The global flags of a call a printed command carries (see printCommand in lib/base.mjs). A refusal's forms and steps
+// carry its --root and its --json: they are the call itself, filled. Every other command the call prints (in a reason,
+// a note, a hint or a row of a view) carries its --root, so it reaches the loop the call named; the --json says how that
+// call prints, and another command prints as its own caller asks.
+export const callGlobals = (call) => (call?.flags || []).filter(([k]) => k === 'root' || k === 'json');
+const rootOfCall = (call) => callGlobals(call).filter(([k]) => k === 'root');
 // The flags a call of a command needs beside the ones it gives, so that its form, filled, is a call the command takes and
 // not one refused for a part the form left out: the flag each command requires (the author of a judgement, the key of a
 // renumbering, the sha of a merge that moves no CI state alone), and the flags one given goes with (a row's --ran and
@@ -758,9 +756,10 @@ export const GOES_WITH = Object.freeze({
   ask: { target: ['kind'], slice: ['kind'], 'applies-to': ['kind'], until: ['applies-to', 'kind'], to: ['applies-to', 'kind'] },
   decide: { reach: ['area'], rule: ['area'], until: ['applies-to'] },
 });
-// What a form of `cmd` holds when its call gives the flags named in `given`: the flags it needs (above), and how many
-// arguments, the optional last one included where no flag of the call stands in for it (the value field writes, but with
-// --clear; the words of an answer, but with --option; a note, but with a row or a file).
+// What a form of `cmd` holds when its call gives the flags named in `given`: the flags it needs (above), how many
+// arguments at least, the optional last one included where no flag of the call stands in for it (the value field writes,
+// but with --clear; the words of an answer, but with --option; a note, but with a row or a file), and how many at most,
+// that last one left out where such a flag stands in for it, the command taking one or the other and never both.
 export function formNeeds(cmd, given) {
   const has = (k) => given.has(k);
   const flags = [...(Object.hasOwn(AUTHOR_REQUIRED, cmd) ? ['by'] : []), ...(cmd === 'renumber' ? ['key'] : []), ...(cmd === 'merged' && !has('ci') ? ['sha'] : [])];
@@ -770,19 +769,21 @@ export function formNeeds(cmd, given) {
   }
   const valued = { field: !has('clear'), answer: !has('option'), evidence: !['ran', 'saw', 'file', 'slot'].some(has) }[cmd];
   const required = (COMMAND_ARGS[cmd] || []).filter((a) => !/[?.]$/.test(a)).length;
-  return { flags: flags.filter((k) => !given.has(k)), args: valued ? argumentNames(cmd).length : required };
+  const all = argumentNames(cmd).length;
+  return { flags: flags.filter((k) => !given.has(k)), args: valued ? all : required, most: valued === false ? all - 1 : all };
 }
 // The form of a call: jarl.mjs, its command, the placeholder of each argument it takes (the ones it needs, and the ones
-// the call gave), each flag of the call with the placeholder of its value (a switch as it is, one flag of a name), each
-// flag it needs beside them (formNeeds), and its global flags as they were given. A placeholder the shape put in stands
-// where it goes; no other value of the call is printed, but the name of the part field writes. With dashes, the
-// arguments come after a bare --.
-function formOf(c, dashes, shell = 'posix') {
-  if (!Object.hasOwn(COMMAND_FLAGS, c.cmd)) return ['jarl.mjs', hole('<a-jarl-command>'), ...c.flags.filter(([k]) => Object.hasOwn(GLOBAL_FLAGS, k)).flatMap(([k, v, s]) => globalWords(k, v, s, shell))];
+// the call gave), each flag of the call with the placeholder of its value (a switch as it is, one flag of a name, but a
+// row's --ran and --saw as one pair for each row the call gave), and each flag it needs beside them (formNeeds); its
+// global flags are carried by printCommand. A placeholder the shape put in stands where it goes; no other value of the
+// call is printed, but the name of the part field writes. With dashes, the arguments come after a bare --.
+function formOf(c, dashes) {
+  if (!Object.hasOwn(COMMAND_FLAGS, c.cmd)) return ['jarl.mjs', hole('<a-jarl-command>')];
   const names = argumentNames(c.cmd);
-  const needs = formNeeds(c.cmd, new Set(c.flags.map(([k]) => k)));
+  const rows = c.cmd === 'evidence' || c.cmd === 'merged' ? Math.max(...['ran', 'saw'].map((r) => c.flags.filter(([k]) => k === r).length)) : 0;
+  const needs = formNeeds(c.cmd, new Set([...c.flags.map(([k]) => k), ...(rows ? ['ran', 'saw'] : [])]));
   const args = [];
-  for (let i = 0; i < Math.max(needs.args, Math.min(c.args.length, names.length)); i += 1) {
+  for (let i = 0; i < Math.min(needs.most, Math.max(needs.args, Math.min(c.args.length, names.length))); i += 1) {
     const v = c.args[i];
     // A placeholder the shape put in stands, but the generic one, where the argument has its own.
     if (isPlaceholder(v) && v.trim() !== '<value>') args.push(v.trim());
@@ -791,79 +792,68 @@ function formOf(c, dashes, shell = 'posix') {
   }
   const flags = [];
   const seen = new Set();
-  for (const [k, v, spelt] of c.flags) {
+  for (const [k, v] of c.flags) {
     // One flag of a name, but one more of a flag that repeats where the shape put in a placeholder of its own for it.
     const key = typeof v === 'string' && isPlaceholder(v) && v.trim() !== '<value>' && flagsOf(c.cmd)[k] === 'many' ? `${k} ${v.trim()}` : k;
-    if (seen.has(key)) continue;
+    if (seen.has(key) || Object.hasOwn(GLOBAL_FLAGS, k)) continue;
     seen.add(key);
-    if (Object.hasOwn(GLOBAL_FLAGS, k)) flags.push(...globalWords(k, v, spelt, shell));
     // A flag that goes away is left out; a flag the caller is to name keeps a place for its value.
-    else if (k === '<no-flag-here>') continue;
+    if (k === '<no-flag-here>') continue;
+    else if (rows && (k === 'ran' || k === 'saw')) { if (!seen.has('rows')) for (let n = 0; n < rows; n += 1) flags.push('--ran', valueHole(c.cmd, 'ran'), '--saw', valueHole(c.cmd, 'saw')); seen.add('rows'); }
     else if (k.startsWith('<')) flags.push(k, ...(typeof v === 'string' ? [hole('<value>')] : []));
     else if (v === true || flagsOf(c.cmd)[k] === 'bool') flags.push(`--${k}`);
     else flags.push(`--${k}`, isPlaceholder(v) && v.trim() !== '<value>' ? v.trim() : valueHole(c.cmd, k));
   }
-  // Each flag the form needs that the call did not give, with the placeholder of its value, before the global flags.
-  const globalAt = flags.findIndex((w) => /^--(?:root|json|help)(?:=|$)/.test(w));
-  flags.splice(globalAt === -1 ? flags.length : globalAt, 0, ...needs.flags.flatMap((k) => [`--${k}`, valueHole(c.cmd, k)]));
+  // Each flag the form needs that the call did not give, with the placeholder of its value.
+  flags.push(...needs.flags.flatMap((k) => [`--${k}`, valueHole(c.cmd, k)]));
   return dashes ? ['jarl.mjs', c.cmd, ...flags, '--', ...args] : ['jarl.mjs', c.cmd, ...args, ...flags];
 }
 // The one way a refusal reaches whoever made the call: its reason, then its ready part, the last line (see lib/base.mjs,
 // "refusals"). A shape of the call is printed as the call's form, after the view it names first on a line of its own; a
 // command is printed alone, never joined to the call; a command of the tool that runs the loop ({ external }) as it is.
-// Every command printed carries the global flags of the call as they were given, so a form filled where the call was
-// made reaches the loop the call named; one that writes and holds no placeholder gets one, so pasted as printed it is
-// refused and writes nothing; every word of it is written by printedLine.
-// Every form is written for the shell of the platform it is printed on (shellOf in lib/base.mjs): a POSIX shell on macOS
-// and Linux, PowerShell and cmd on Windows; `platform` names another one where a test asks for it. A word of a form that
-// shell cannot carry as it is (printable) is printed as its placeholder, and the reason says why.
+// Every command printed is built by printCommand (lib/base.mjs): it carries the global flags of the call as they were
+// given, wherever the call wrote them, so a form filled where the call was made reaches the loop the call named, and is
+// written for the shell of the platform it is printed on (shellOf): a POSIX shell on macOS and Linux, PowerShell and cmd
+// on Windows; `platform` names another one where a test asks for it. A word of a form that shell cannot carry as it is
+// (printable) is printed as its placeholder, and the reason says why. A form that writes and holds no placeholder gets
+// one, so pasted as printed it is refused and writes nothing.
 export function refusalFor(e, call, platform = process.platform) {
   if (!(e instanceof Refusal)) return e;
   const shell = shellOf(platform);
   if (isExternal(e.ready)) return new Error(`${e.reason}\n${commandLine(e.ready, shell)}`);
   if (!call) return new Error(`${e.reason}\n${readyText(e.ready, shell)}`);
   const fixes = [].concat(e.ready).filter(isFix);
-  // A call that gave --root more than once, wherever it wrote them, leaves which loop it meant to the caller.
-  const roots = new Set(call.flags.filter(([k]) => k === 'root').map(([, v]) => v));
-  const formed = roots.size > 1 ? { ...call, flags: [...call.flags.filter(([k]) => k !== 'root'), ['root', hole('<loop-root>')]] } : call;
+  const shaped = fixes.length ? shapeOf(call, fixes) : call;
   const lines = fixes.length
-    ? [...fixes.filter((f) => f.first !== undefined).map((f) => commandOf(f.first)), formOf(shapeOf(formed, fixes), fixes.some((f) => f.dashes), shell)]
+    ? [...fixes.filter((f) => f.first !== undefined).map((f) => commandOf(f.first)), formOf(shaped, fixes.some((f) => f.dashes))]
     : [commandOf(e.ready)];
   let unprintable = false;
-  const printed = lines.map((words) => withGlobals(words, formed, shell)).map((words) => words.map((w) => (printable(w, shell) ? w : ((unprintable = true), hole('<value>')))))
-    .map((words) => (MUTATING.has(words[1]) && !words.some((w) => HOLE.test(String(w))) ? [...words, hole('<as-the-reason-says>')] : words));
-  return new Error(`${reasonFor(e.reason, call, shell, unprintable)}\n${printed.map((words) => printedLine(words, shell)).join('\n')}`);
+  const printed = lines.map((words) => words.map((w) => (printable(w, shell) ? w : ((unprintable = true), hole('<value>')))))
+    .map((words) => (writes(words) && !words.some((w) => HOLE.test(String(w))) ? [...words, hole('<as-the-reason-says>')] : words));
+  // The globals of the call as the shape left them: a shape may name the loop root the form is for.
+  const globals = callGlobals(shaped);
+  return new Error(`${reasonFor(e.reason, call, shell, unprintable)}\n${printed.map((words) => printCommand(words, { globals, shell })).join('\n')}`);
 }
 // The reason as printed: every word of the call it echoes with its line breaks escaped, so no word of the caller starts
-// a line; and where the call's --root, or another word of the form, is one the shell of the form cannot carry, why the
-// form names it by its placeholder.
+// a line (but the global flags, which it prints only inside the commands printCommand built); and where the call's
+// --root, or another word of the form, is one the shell of the form cannot carry, why the form names it by its
+// placeholder.
 function reasonFor(reason, call, shell = 'posix', unprintable = false) {
   const root = call.flags.find(([k]) => k === 'root')?.[1];
-  const words = [call.cmd, ...call.args, ...call.flags.flatMap(([k, v]) => [k, `--${k}`, v])].filter((w) => typeof w === 'string');
+  const words = [call.cmd, ...call.args, ...call.flags.filter(([k]) => !Object.hasOwn(GLOBAL_FLAGS, k)).flatMap(([k, v]) => [k, `--${k}`, v])].filter((w) => typeof w === 'string');
   const rootNote = typeof root !== 'string' || isPlaceholder(root) || rootPrintable(root, shell) ? ''
     : breaksLine(root) ? ' (the --root given holds a line break, which no printed line carries: the form names the loop root by its placeholder)'
       : ' (the --root given holds a character that cmd and PowerShell read apart, or ends with a backslash a program reads as an escape: the form names the loop root by its placeholder)';
   const wordNote = unprintable ? ' (a word of the form holds a character that cmd and PowerShell read apart: the form names it by its placeholder)' : '';
   return `${escapedEchoes(reason, words)}${rootNote}${wordNote}`;
 }
-// A command of a ready line with each global flag of the call (--root, --json) it does not name, written as the call
-// wrote it (--root x or --root=x), before a bare -- so it is read as a flag.
-function withGlobals(words, call, shell = 'posix') {
-  if (words[0] !== 'jarl.mjs') return words;
-  const end = words.indexOf('--') === -1 ? words.length : words.indexOf('--');
-  const named = (k) => words.slice(0, end).some((w) => w === `--${k}` || String(w).startsWith(`--${k}=`));
-  const added = [];
-  for (const [k, v, spelt] of call.flags) {
-    if (!Object.hasOwn(GLOBAL_FLAGS, k) || named(k) || added.some((w) => w === `--${k}` || String(w).startsWith(`--${k}=`))) continue;
-    added.push(...globalWords(k, v, spelt, shell));
-  }
-  return [...words.slice(0, end), ...added, ...words.slice(end)];
-}
 
 // The names of the flags a call gave as --name=value, held on its parsed flags out of sight of every reader of them.
 const INLINE = Symbol('flags given as --name=value');
+// A call read is read for its own globals: a command a reason prints while the call is read carries them.
 export function parseArgs(argv) {
-  try { needNoPlaceholderWord(argv); return parseWords(argv); } catch (e) { throw refusalFor(e, callOfArgv(argv)); }
+  const call = callOfArgv(argv);
+  try { return printingFor(rootOfCall(call), () => { needNoPlaceholderWord(argv); return parseWords(argv); }); } catch (e) { throw refusalFor(e, call); }
 }
 // A word of the call that is one of the tool's placeholders, wherever it stands (the command, an argument, a flag's place,
 // a flag's value, the value of --name=value, a global flag's value such as --root's), is refused before the call is read,
@@ -910,7 +900,7 @@ function parseWords(argv) {
       refuse(`unknown flag ${a} for ${cmd} — it takes ${named(flagsOf(cmd))}; a text that starts with -- goes after a bare --`, { rename: `--${name}`, to: flagHole(cmd) });
     }
     if (kind === 'bool') {
-      need(inline === undefined, `--${name} takes no value: it is given, or left out (got ${JSON.stringify(a)})`, () => ({ rename: `--${name}`, to: hole('<no-flag-here>') }));
+      need(inline === undefined, `--${name} takes no value: it is given, or left out (got ${JSON.stringify(a)})`, () => (name === 'json' ? { flag: '--json' } : name === 'help' ? { drop: '--help' } : { rename: `--${name}`, to: hole('<no-flag-here>') }));
       flags[name] = true;
       continue;
     }
@@ -1185,9 +1175,10 @@ export function replacedRefusal(cmd, args = []) {
   const { why, form } = REPLACED_COMMANDS[cmd](args);
   refuse(`${cmd} is not a command; ${why}`, form);
 }
-// The same refusal as text, for a caller that reports it in a message of its own (the MCP server's unknown tool).
-export function replacedMessage(cmd, args = []) {
-  try { replacedRefusal(cmd, args); } catch (e) { return refusalFor(e, null).message; }
+// The same refusal as text, for a caller that reports it in a message of its own (the MCP server's unknown tool), its
+// form carrying the root the call named.
+export function replacedMessage(cmd, args = [], root = null) {
+  try { replacedRefusal(cmd, args); } catch (e) { return refusalFor(e, { cmd, args: [], flags: root === null ? [] : [['root', root, '=']] }).message; }
   return '';
 }
 
@@ -1195,6 +1186,9 @@ const ARITY = Object.fromEntries(Object.entries(COMMAND_ARGS).filter(([, a]) => 
 
 // The commands that write: each runs under .jarl/.lock (see withLock).
 export const MUTATING = new Set(['init', 'new', 'renumber', 'import', 'set', 'field', 'base', 'merged', 'evidence', 'retract', 'review', 'round', 'tick', 'ask', 'answer', 'log', 'decide', 'goal', 'archive', 'mode', 'close']);
+// Whether a printed command (jarl.mjs, then its words) writes: a command of the set above, but goal, which writes only
+// with --set and else reads the goal.
+export const writes = (words) => MUTATING.has(words[1]) && !(words[1] === 'goal' && !words.some((w) => w === '--set' || String(w).startsWith('--set=')));
 
 // git's side of the loop: the merge driver git runs, and the settings a merger passes it. Neither reads a loop.
 function mergeDriverMain(args) {
@@ -1263,7 +1257,7 @@ function main() {
 // The ratification batch as close prints it: one line per item, then what became of the ones nobody answered.
 function renderBatch(batch, loop) {
   if (!batch.items.length && !batch.waiting) return loop === 'open' ? 'no area ruling awaits ratification' : '';
-  const head = `\nto ratify (${batch.items.length}${batch.waiting ? `, ${batch.waiting} more at the next close` : ''}) — answer each with yes or reject (tak or nie): jarl.mjs answer '<question>' yes --by '<who>'`;
+  const head = `\nto ratify (${batch.items.length}${batch.waiting ? `, ${batch.waiting} more at the next close` : ''}) — answer each with yes or reject (tak or nie): ${jarlLine('answer', '<question>', 'yes', '--by', '<who>')}`;
   const tail = { open: 'nothing closed; the loop goes on', kept: 'unanswered items stay open in the record', removed: 'unanswered, they left with the loop as its own rulings' }[loop];
   return `${head}\n${batch.items.map((i) => `- ${i.ask} · ${i.question}`).join('\n')}\n${tail}`;
 }
@@ -1274,7 +1268,7 @@ function renderPromotion(p, loop) {
   if (p.off) return `\n${p.off}`;
   if (!p.items.length) return '';
   if (loop === 'removed') return `\n${p.items.length} rule(s) of the loop were offered for promotion and left with it unanswered: close --batch offers them before the loop goes`;
-  return `\nrules of the loop to promote (${p.items.length}) — answer each with one way (carry, instructions, law or drop): jarl.mjs answer '<question>' --option '<option>' --by '<who>'\n${p.items.map((i) => `- ${i.ask} · ${i.question}`).join('\n')}`;
+  return `\nrules of the loop to promote (${p.items.length}) — answer each with one way (carry, instructions, law or drop): ${jarlLine('answer', '<question>', '--option', '<option>', '--by', '<who>')}\n${p.items.map((i) => `- ${i.ask} · ${i.question}`).join('\n')}`;
 }
 function renderRuleLog(r, t) {
   if (!r || !t) return '';
@@ -1303,11 +1297,15 @@ function setCommand(root, ids, name, value, flags) { return cmdSet(root, ids, na
 // One command, run: its result (what --json prints), its text and the notes said on stderr. Throws on a refusal.
 // Every call starts from empty caches, so a caller that runs many commands in one process (a server) sees each
 // time what is on disk and in git now, exactly as a fresh process would.
+// Every command the call prints, in its answer, its notes, its JSON or its refusal, carries the call's --root and --json
+// (printingFor): a view and a note describe the loop the call named, and their commands reach it.
 export function dispatch(root, commandName, rest, flags) {
+  const call = callOf(commandName, rest, flags);
   let r;
-  try { r = dispatchCall(root, commandName, rest, flags); } catch (e) { throw refusalFor(e, callOf(commandName, rest, flags)); }
-  // A note echoes words of the call as a reason does: line breaks escaped, a word a shell acts on in single quotes.
-  const words = [commandName, ...rest, ...Object.values(flags).flat()].filter((w) => typeof w === 'string');
+  try { r = printingFor(rootOfCall(call), () => dispatchCall(root, commandName, rest, flags)); } catch (e) { throw refusalFor(e, call); }
+  // A note echoes words of the call as a reason does: line breaks escaped, a word a shell acts on in single quotes; the
+  // global flags it prints only inside the commands printCommand built.
+  const words = [commandName, ...rest, ...Object.entries(flags).filter(([k]) => !Object.hasOwn(GLOBAL_FLAGS, k)).flatMap(([, v]) => [].concat(v))].filter((w) => typeof w === 'string');
   return { ...r, warn: (r.warn || []).map((w) => escapedEchoes(w, words)) };
 }
 function dispatchCall(root, commandName, rest, flags) {
@@ -1340,7 +1338,7 @@ function dispatchCall(root, commandName, rest, flags) {
       case 'import': out = cmdImport(root, rest[0], flags); text = renderImport(out); break;
       case 'sources': out = cmdSources(root, rest, flags); text = renderSources(out); break;
       case 'list': out = cmdList(root, flags); text = renderList(out, R.loadProfile(root)); break;
-      case 'show': { const i = R.findIssue(root, rest[0]); need(i, `no such issue: ${rest[0]} — the issues: jarl.mjs list --all`, { arg: 0, value: '<id>' }); const attachments = attachmentStates(root, i); out = { ...i, evidenceRows: evidenceTable(i.sections.evidence).rows.map(({ n, ran, saw, retracted }) => ({ n, ran, saw, retracted })), where: whereOf(root, i), ...(attachments.length ? { attachments } : {}) }; text = issueView(root, i, { full: Boolean(flags.full) }); break; }
+      case 'show': { const i = R.findIssue(root, rest[0]); need(i, `no such issue: ${rest[0]} — the issues: ${jarlLine('list', '--all')}`, { arg: 0, value: '<id>' }); const attachments = attachmentStates(root, i); out = { ...i, evidenceRows: evidenceTable(i.sections.evidence).rows.map(({ n, ran, saw, retracted }) => ({ n, ran, saw, retracted })), where: whereOf(root, i), ...(attachments.length ? { attachments } : {}) }; text = issueView(root, i, { full: Boolean(flags.full) }); break; }
       case 'set':
         // A field is written by field, never by set: the refusal ends with the form of the call that writes it.
         if (setRouteOf(root, rest[1]) === 'field') {
@@ -1410,8 +1408,8 @@ function dispatchCall(root, commandName, rest, flags) {
       case 'decisions': out = R.decisions(root, flags); text = renderDecisions(out); break;
       case 'goal': out = flags.set === undefined ? cmdGoal(root) : cmdGoalSet(root, flags.set); text = flags.set === undefined ? out.goal : out.unchanged ? `goal line unchanged: ${out.shown}` : `goal line ${out.replaced ? 'changed' : 'added'}: ${out.shown}${out.replaced ? ` (was ${out.was})` : ''}`; break;
       case 'status': out = R.statusData(root, groupedBy(flags)); text = renderStatus(out, R.loadProfile(root)); ({ out, text } = endWithAsker(root, flags, out, text)); break;
-      case 'changelog': out = cmdChangelog(root, rest[0], flags); text = out.text || '(no changelog fragment on these issues)'; warn = out.missing.length ? [`note: no changelog fragment: ${out.missing.join(', ')} — record one with: jarl.mjs field '<id>' Changelog '<changelog-entry>' --add, its section first (Added, Changed, Deprecated, Removed, Fixed or Security, then a colon)`] : []; break;
-      case 'archive': out = cmdArchive(root, rest[0], { caller: 'cli' }); text = `archived → ${out.archived}${out.leftOpen.length ? ` · ${out.leftOpen.length} still open or in progress: ${out.leftOpen.join(', ')}` : ''} · open a new loop with: jarl.mjs init "<goal>"`; break;
+      case 'changelog': out = cmdChangelog(root, rest[0], flags); text = out.text || '(no changelog fragment on these issues)'; warn = out.missing.length ? [`note: no changelog fragment: ${out.missing.join(', ')} — record one with: ${jarlLine('field', '<id>', 'Changelog', '<changelog-entry>', '--add')}, its section first (Added, Changed, Deprecated, Removed, Fixed or Security, then a colon)`] : []; break;
+      case 'archive': out = cmdArchive(root, rest[0], { caller: 'cli' }); text = `archived → ${out.archived}${out.leftOpen.length ? ` · ${out.leftOpen.length} still open or in progress: ${out.leftOpen.join(', ')}` : ''} · open a new loop with: ${jarlLine('init', '<goal>')}`; break;
       case 'mode': out = cmdMode(root, rest[0]); text = 'now permanent · not tied to a feature branch; close keeps the directory'; break;
       case 'profile': out = cmdProfile(root, rest[0]); text = renderProfile(out); break;
       case 'verify': out = cmdVerify(root); text = renderVerify(out); break;

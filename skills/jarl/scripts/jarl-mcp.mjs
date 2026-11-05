@@ -198,7 +198,8 @@ function needNoGoneField(cmd, fields, carried = {}) {
     }
     const field = to !== undefined ? to.replace(/^--/, '') : GONE_TEXT_NAMES[cmd] === name ? 'text' : null;
     if (field === null) continue;
-    const form = Object.fromEntries((COMMAND_ARGS[cmd] || []).filter((a) => !/[?.]$/.test(a)).map((a) => [a, FORM_VALUES[a] ?? '<value>']));
+    // The fields the tool requires, the author of a judgement among them.
+    const form = { ...Object.fromEntries((COMMAND_ARGS[cmd] || []).filter((a) => !/[?.]$/.test(a)).map((a) => [a, FORM_VALUES[a] ?? '<value>'])), ...(Object.hasOwn(AUTHOR_REQUIRED, cmd) ? { by: '<who>' } : {}) };
     throw invalid(`${toolName(cmd)}: "${name}" is not a field of this tool — its value goes in "${field}": ${call(cmd, { ...form, [field]: FORM_VALUES[field] ?? '<value>' })}`);
   }
 }
@@ -259,7 +260,9 @@ export function callTool(name, input = {}, env = process.env, cwd = process.cwd(
   const cmd = commandForTool(TABLE, name, TOOL_OPTIONS);
   // A tool the server does not have, under the name of a command the CLI refuses with its replacement: the same line.
   const asked = typeof name === 'string' && name.startsWith(TOOL_PREFIX) ? name.slice(TOOL_PREFIX.length) : null;
-  if (cmd === null && asked !== null && Object.hasOwn(REPLACED_COMMANDS, asked)) throw invalid(`Unknown tool: ${name} — ${replacedMessage(asked)}`);
+  // Its form carries the root the call gave, so filled it reaches the loop the call named.
+  const givenRoot = input !== null && typeof input === 'object' && typeof input.root === 'string' && isAbsolute(input.root.trim()) ? input.root : null;
+  if (cmd === null && asked !== null && Object.hasOwn(REPLACED_COMMANDS, asked)) throw invalid(`Unknown tool: ${name} — ${replacedMessage(asked, [], givenRoot)}`);
   if (cmd === null) throw invalid(`Unknown tool: ${name}`);
   const { root, from } = rootOf(input, env, cwd);
   // The root the call named goes into the words the command line reads, before a bare --, as --root=, so a refusal's

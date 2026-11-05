@@ -3,7 +3,7 @@
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, openSync, closeSync, writeSync, unlinkSync, linkSync } from 'node:fs';
 import { basename, join, resolve, relative, isAbsolute } from 'node:path';
-import { CI_STATES, LEASE_FIELDS, PRIORITIES, Refusal, TIERS, WAIT_KIND, afterView, fieldText, hole, need, noSeparators, refuse, shellWord, slugify, splitList } from './base.mjs';
+import { CI_STATES, LEASE_FIELDS, PRIORITIES, Refusal, TIERS, WAIT_KIND, afterView, fieldText, hole, jarlLine, need, noSeparators, refuse, shellWord, slugify, splitList } from './base.mjs';
 import { needNoNewOwnersWords, needNoOwnersWords } from './owner.mjs';
 import { git, gitBytes, gitRun } from './git.mjs';
 import { canonical, issuesDir, jarlDir, portablePath, stamp, today } from './where.mjs';
@@ -25,7 +25,7 @@ import { needOwnerLines, ownerLineRefusal, ownerLineRewrite } from './owner-line
 // ---- commands ----------------------------------------------------------------------------------
 
 // What a refusal of an id the loop does not hold ends with: the call that lists the ids it holds.
-const LIST_ALL = ' — the issues: jarl.mjs list --all';
+const listAll = () => ` — the issues: ${jarlLine('list', '--all')}`;
 // The ids as they were asked for, where they name more than the ones missing (a range, a list).
 const askedAs = (raw, missing) => (String(raw) === missing.join(',') ? '' : ` (asked for as ${String(raw)})`);
 
@@ -35,7 +35,7 @@ export function cmdInit(root, goal, flags = {}) {
   need(flags.committed === undefined || flags.committed === true, '--committed takes no value — put the goal first: init "<goal>" --committed', () => ({ rename: '--committed', to: hole('<no-flag-here>') }));
   need(flags.permanent === undefined || flags.permanent === true, '--permanent takes no value — put the goal first: init "<goal>" --permanent', () => ({ rename: '--permanent', to: hole('<no-flag-here>') }));
   need(goal, 'init requires "<goal>"', () => ({ arg: 0, value: '<goal>' }));
-  need(!hasLiveLoop(root), '.jarl/ already exists here with a live loop — resume it, or archive it first', 'jarl.mjs archive "<slug>"');
+  need(!hasLiveLoop(root), '.jarl/ already exists here with a live loop — resume it, or archive it first', ['jarl.mjs', 'archive', '<slug>']);
   // The profile is read and checked before anything is written: a bad one leaves no half-opened loop behind.
   const prof = flags.profile !== undefined ? readProfileFile(flags.profile) : null;
   // A .jarl/ left behind by `archive` holds only archive/ and the mode markers, and the new loop
@@ -86,7 +86,7 @@ const ARCHIVE_KEEPS = new Set(['archive', 'templates', '.gitignore', '.gitattrib
 // aside), but the result names it, and the loop's own log records the move before it goes.
 export function cmdArchive(root, slug, flags = {}) {
   need(slug, 'archive requires "<slug>", a short name for the loop being put away', () => ({ arg: 0, value: '<slug>' }));
-  need(hasLiveLoop(root), existsSync(jarlDir(root)) ? 'no loop to archive here — .jarl/ holds only earlier archives; open one with: jarl.mjs init "<goal>"' : 'no .jarl/ here', () => (['jarl.mjs', 'init', '<goal>']));
+  need(hasLiveLoop(root), existsSync(jarlDir(root)) ? `no loop to archive here — .jarl/ holds only earlier archives; open one with: ${jarlLine('init', '<goal>')}` : 'no .jarl/ here', () => (['jarl.mjs', 'init', '<goal>']));
   needLifecycle(root, 'archive', flags.caller);
   const name = `${today().replace(/-/g, '.')}-${slugify(slug)}`;
   const dest = join(jarlDir(root), 'archive', name);
@@ -219,7 +219,7 @@ export function cmdNew(root, title, rawFlags) {
   needNoOwnersWords('the new issue', title, rawFlags);
   // A title is the heading line of the issue: line breaks in it become spaces, so the lines after the first are not lost to the heading.
   if (/[\r\n]/.test(title)) title = String(title).split(/\r\n?|\n/).map((l) => l.trim()).filter(Boolean).join(' ');
-  needLiveLoop(root, ' — run: jarl.mjs init "<goal>"');
+  needLiveLoop(root, ` — run: ${jarlLine('init', '<goal>')}`);
   // A linked worktree of a committed loop holds only the copy it was cut with, so a number taken there may already be used
   // in the main checkout: file from the main checkout.
   const placed = mainCheckoutOf(root);
@@ -350,10 +350,10 @@ export function cmdRenumber(root, rawId, flags = {}) {
   need(rawId !== undefined && /^#?\d+$/.test(String(rawId).trim()), 'renumber takes the number two issue files carry', carriedTwice);
   const issues = loadIssues(root);
   const same = issues.filter((i) => i.id !== null && idKey(i.id) === idKey(rawId));
-  need(same.length, `no such issue: ${rawId}${LIST_ALL}`, () => ({ replace: rawId, value: '<id>' }));
+  need(same.length, `no such issue: ${rawId}${listAll()}`, () => ({ replace: rawId, value: '<id>' }));
   const old = same[0].id;
   const named = (list) => list.map((i) => `issues/${basename(i.file)} (${i.fields.key ? `key ${fieldText(i.fields.key)}` : 'no key'})`).join(', ');
-  need(same.length > 1, `${old} is carried by one issue file, ${named(same)}: renumber gives a free number to one of the files that carry one number after a merge, and the files that do: jarl.mjs verify`, carriedTwice);
+  need(same.length > 1, `${old} is carried by one issue file, ${named(same)}: renumber gives a free number to one of the files that carry one number after a merge, and the files that do: ${jarlLine('verify')}`, carriedTwice);
   need(flags.key !== undefined && String(flags.key).trim() !== '', `${old} is carried by ${named(same)}: name the one to give a free number with --key <key>`, () => ({ flag: '--key', value: keysOf(same) }));
   const key = String(flags.key).trim();
   const pick = same.find((i) => i.fields.key === key);
@@ -416,7 +416,7 @@ function afterList(root, selfId, raw) {
   const keys = expandIds(raw);
   const all = loadIssues(root);
   const missing = keys.filter((k) => !all.some((i) => idKey(i.id) === k));
-  need(missing.length === 0, `no such issue: ${missing.join(', ')}${askedAs(raw, missing)}${LIST_ALL}`, () => ({ replace: itemNaming(raw, missing[0]), value: hole('<ids-the-loop-holds>') }));
+  need(missing.length === 0, `no such issue: ${missing.join(', ')}${askedAs(raw, missing)}${listAll()}`, () => ({ replace: itemNaming(raw, missing[0]), value: hole('<ids-the-loop-holds>') }));
   const ids = keys.map((k) => issueNamed(all, k).id);
   need(!selfId || !ids.some((id) => idKey(id) === idKey(selfId)), `${selfId} cannot wait on itself`, () => ({ arg: 2, value: String(raw).split(',').map((s) => s.trim()).filter(Boolean).map((s) => (/^#?\d+$/.test(s) && idKey(s) === idKey(selfId) ? hole('<another-id>') : s)).join(',') }));
   if (selfId) {
@@ -517,7 +517,7 @@ const joinParagraphs = (held, added) => (String(held ?? '').trim() ? `${String(h
 export function cmdBody(root, rawId, flags, dry = false) {
   needNoOwnersWords('the body', flags);
   const issue = findIssue(root, rawId);
-  need(issue, `no such issue: ${rawId}${LIST_ALL}`, () => ({ replace: rawId, value: '<id>' }));
+  need(issue, `no such issue: ${rawId}${listAll()}`, () => ({ replace: rawId, value: '<id>' }));
   const profile = loadProfile(root);
   const parts = ['title', 'where', 'what', 'why', 'acceptance', 'changelog', 'section'].filter((k) => flags[k] !== undefined);
   need(parts.length, 'body needs at least one of --title, --where, --what, --why, --acceptance, --changelog, --section', () => (['jarl.mjs', 'field', '<ids>', '<part>', '<value>']));
@@ -567,7 +567,7 @@ export function cmdBody(root, rawId, flags, dry = false) {
 
 export function cmdSource(root, rawId, list, dry = false, by = undefined) {
   const issue = findIssue(root, rawId);
-  need(issue, `no such issue: ${rawId}${LIST_ALL}`, () => ({ replace: rawId, value: '<id>' }));
+  need(issue, `no such issue: ${rawId}${listAll()}`, () => ({ replace: rawId, value: '<id>' }));
   const editor = editorOf(by);
   const sources = sourceList(list);
   need(sources.length, 'source requires <report-dir#finding-id>[,...]', () => (['jarl.mjs', 'field', '<ids>', 'Source', '<report-dir#finding-id>']));
@@ -579,7 +579,7 @@ export function cmdSource(root, rawId, list, dry = false, by = undefined) {
 
 export function cmdAfter(root, rawId, raw, { clear = false, dry = false, by } = {}) {
   const issue = findIssue(root, rawId);
-  need(issue, `no such issue: ${rawId}${LIST_ALL}`, () => ({ replace: rawId, value: '<id>' }));
+  need(issue, `no such issue: ${rawId}${listAll()}`, () => ({ replace: rawId, value: '<id>' }));
   const editor = editorOf(by);
   if (clear) {
     need(raw === undefined, 'after takes either <ids> or --clear, not both', () => ({ rename: '--clear', to: hole('<no-flag-here>') }));
@@ -633,7 +633,7 @@ function issuesFor(root, rawIds, readOnly = false) {
   const keys = expandIds(rawIds);
   const all = loadIssues(root);
   const missing = keys.filter((k) => !all.some((i) => idKey(i.id) === k));
-  need(missing.length === 0, `no such issue: ${missing.join(', ')}${askedAs(rawIds, missing)}${keys.length > 1 ? ' — nothing was written' : ''}${LIST_ALL}`, () => ({ replace: itemNaming(rawIds, missing[0]), value: hole('<ids-the-loop-holds>') }));
+  need(missing.length === 0, `no such issue: ${missing.join(', ')}${askedAs(rawIds, missing)}${keys.length > 1 ? ' — nothing was written' : ''}${listAll()}`, () => ({ replace: itemNaming(rawIds, missing[0]), value: hole('<ids-the-loop-holds>') }));
   const found = keys.map((k) => issueNamed(all, k));
   if (!readOnly && found.some((i) => needsRaisedFormat(i.id))) needFormat(root, 'plain-number');
   return found;
@@ -669,7 +669,7 @@ export function eachIssue(root, rawIds, run) {
   const keys = expandIds(rawIds);
   const all = loadIssues(root);
   const missing = keys.filter((k) => !all.some((i) => idKey(i.id) === k));
-  need(missing.length === 0, `no such issue: ${missing.join(', ')}${askedAs(rawIds, missing)} — nothing was written${LIST_ALL}`, () => ({ replace: itemNaming(rawIds, missing[0]), value: hole('<ids-the-loop-holds>') }));
+  need(missing.length === 0, `no such issue: ${missing.join(', ')}${askedAs(rawIds, missing)} — nothing was written${listAll()}`, () => ({ replace: itemNaming(rawIds, missing[0]), value: hole('<ids-the-loop-holds>') }));
   const ids = keys.map((k) => issueNamed(all, k).id);
   for (const id of ids) {
     resetCaches();
@@ -680,8 +680,8 @@ export function eachIssue(root, rawIds, run) {
 
 // The refusal for a move into a needs-reason status given without one; the built-in two say what the status is for.
 const REASON_TEXT = {
-  dropped: 'dropped needs a reason: jarl.mjs set "<id>" dropped "<text>"',
-  deferred: 'deferred needs a reason: jarl.mjs set "<id>" deferred "<text>" — work that waits, not work that is gone',
+  dropped: () => `dropped needs a reason: ${jarlLine('set', '<id>', 'dropped', '<text>')}`,
+  deferred: () => `deferred needs a reason: ${jarlLine('set', '<id>', 'deferred', '<text>')} — work that waits, not work that is gone`,
 };
 // The line a needs-reason status writes under Evidence: its name with a capital, then the reason (Dropped: …).
 export function reasonWord(status) { return status.charAt(0).toUpperCase() + status.slice(1); }
@@ -725,7 +725,7 @@ export function cmdField(root, rawIds, name, value, flags = {}) {
   const writes = DESCRIPTION_FIELDS.filter((f) => profile.kept || !['person', 'check when'].includes(f.toLowerCase()));
   const sections = sectionsOf(profile);
   const writable = () => [...writes, ...profile.fields.map((f) => f.name), ...sections].join(', ');
-  need(name !== undefined && String(name).trim() !== '', `field requires <name>, a part of the description: ${writable()} — e.g. jarl.mjs field '<ids>' Priority '<prio>'`, () => ({ arg: 1, value: '<a-part-of-the-description>' }));
+  need(name !== undefined && String(name).trim() !== '', `field requires <name>, a part of the description: ${writable()} — e.g. ${jarlLine('field', '<ids>', 'Priority', '<prio>')}`, () => ({ arg: 1, value: '<a-part-of-the-description>' }));
   editorOf(flags.by);
   const key = String(name).trim().toLowerCase();
   const mode = fieldMode(flags);
@@ -774,22 +774,20 @@ function readFieldOf(root, id, field) {
 // Why a name is not one field writes, and which command writes it instead: the status and the lease move with set, a
 // merge is recorded by merged, and the history has no edit.
 function notWrittenByField(profile, key) {
-  if (key === 'status' || profile.statuses.includes(key)) return 'a status is moved by set: jarl.mjs set "<ids>" "<status>" "<text>"';
-  if (['branch', 'worker', 'model', 'since', 'worktree'].includes(key)) return 'the lease (Branch, Worker, Model, Since) is written by set: jarl.mjs set "<ids>" in-progress "<text>" --branch "<worker-branch>" --worker "<name>"';
-  if (['merged', 'merge check', 'ci'].includes(key)) return 'a merge and its CI are recorded by merged: jarl.mjs merged "<ids>" --sha "<sha>"';
-  if (['notes', 'proof'].includes(key)) return 'a note or a row of proof is added by evidence: jarl.mjs evidence "<ids>" "<text>", or --ran "<command>" --saw "<what-it-printed>"';
-  if (key === 'evidence' || key === 'reviews') return 'the history is never edited: a note or a row is added by evidence and a verdict by review, a row or an approve is taken back by retract, a ruling replaced by decide --supersedes: jarl.mjs retract "<id>" "<n>" --by "<who>" "<text>"';
-  return 'no other part goes by that name: a field or a section the loop\'s profile declares is among the names above, and the profile lists them: jarl.mjs profile';
+  if (key === 'status' || profile.statuses.includes(key)) return `a status is moved by set: ${jarlLine('set', '<ids>', '<status>', '<text>')}`;
+  if (['branch', 'worker', 'model', 'since', 'worktree'].includes(key)) return `the lease (Branch, Worker, Model, Since) is written by set: ${jarlLine('set', '<ids>', 'in-progress', '<text>', '--branch', '<worker-branch>', '--worker', '<name>')}`;
+  if (['merged', 'merge check', 'ci'].includes(key)) return `a merge and its CI are recorded by merged: ${jarlLine('merged', '<ids>', '--sha', '<sha>')}`;
+  if (['notes', 'proof'].includes(key)) return `a note or a row of proof is added by evidence: ${jarlLine('evidence', '<ids>', '<text>')}, or ${jarlLine('evidence', '<ids>', '--ran', '<command>', '--saw', '<what-it-printed>')}`;
+  if (key === 'evidence' || key === 'reviews') return `the history is never edited: a note or a row is added by evidence and a verdict by review, a row or an approve is taken back by retract, a ruling replaced by decide --supersedes: ${jarlLine('retract', '<id>', '<n>', '--by', '<who>', '<text>')}`;
+  return `no other part goes by that name: a field or a section the loop's profile declares is among the names above, and the profile lists them: ${jarlLine('profile')}`;
 }
-// A name as the command line takes it: in quotes when it holds a space (Found by, Check when).
-const quoteName = (name) => (/\s/.test(String(name).trim()) ? `"${String(name).trim()}"` : String(name).trim());
 
 // field <ids> <section> "<text>": a section of the description, as body writes it, with the body line it logs. A value
 // replaces what the section holds; --add puts it after that (a list of lines, Acceptance and Changelog, gains its lines; a
 // text, its paragraph); --clear empties the section. Acceptance and Changelog take one line per item, so a value of several
 // lines is several items. A section holds text, so --remove has nothing to take items from.
 function writeSection(root, rawIds, heading, value, mode, flags) {
-  need(mode !== 'remove', `a section holds text, not items, so --remove takes nothing off it (got ${JSON.stringify(String(value ?? ''))}): write it whole with jarl.mjs field '<ids>' ${quoteName(heading)} "<text>", or add to it with --add`, () => ([{ drop: '--remove' }, { arg: 2, value: hole('<the-whole-section>') }]));
+  need(mode !== 'remove', `a section holds text, not items, so --remove takes nothing off it (got ${JSON.stringify(String(value ?? ''))}): write it whole with ${jarlLine('field', '<ids>', String(heading).trim(), '<text>')}, or add to it with --add`, () => ([{ drop: '--remove' }, { arg: 2, value: hole('<the-whole-section>') }]));
   const profile = loadProfile(root);
   const key = heading.toLowerCase();
   const lines = (v) => String(v ?? '').replace(/\r\n?/g, '\n').split('\n').map((l) => l.trim().replace(/^-\s+/, '')).filter(Boolean);
@@ -834,7 +832,7 @@ function editList(root, rawIds, key, value, mode, flags) {
   })();
   const results = [].concat(eachIssue(root, rawIds, (id, dry) => {
     const issue = findIssue(root, id);
-    need(issue, `no such issue: ${id}${LIST_ALL}`, () => ({ replace: id, value: '<id>' }));
+    need(issue, `no such issue: ${id}${listAll()}`, () => ({ replace: id, value: '<id>' }));
     const held = splitList(issue.fields[key]);
     const next = mode === 'add' ? [...held, ...adds.filter((x, n) => !held.some((h) => sameItem(h, x)) && !adds.slice(0, n).some((y) => sameItem(y, x)))] : held.filter((x) => !removes(x));
     if (next.length === 0) {
@@ -895,7 +893,7 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   if (route === 'resources') return setResources(root, rawIds, why, flags);
   if (flags.header) return rewriteHeader(root, rawIds, status, why, flags);
   // ready and the review words are views, not statuses: say which view answers the question the worker was asking.
-  need(profile.statuses.includes(status) || !/^(ready|review|in[-_ ]?review|ready[-_ ]for[-_ ]review|reviewing)$/i.test(String(status ?? '')), `${status} is a view here, not a status: \`next\` lists the issues ready to start, and \`status\` and \`resume\` mark each in-flight issue with what the record says (no evidence rows yet; rows and no verdict, so it waits for a reviewer; changes requested; approved and queued). Nothing needs setting: record the rows with \`evidence\`, and the reviewer's verdict with \`review\`. A loop that wants an explicit review status can declare one in its profile. Statuses here: ${profile.statuses.join(', ')}; the issues ready to start: jarl.mjs next`, () => ({ arg: 1, value: hole('<status>') }));
+  need(profile.statuses.includes(status) || !/^(ready|review|in[-_ ]?review|ready[-_ ]for[-_ ]review|reviewing)$/i.test(String(status ?? '')), `${status} is a view here, not a status: next lists the issues ready to start, and status and resume mark each in-flight issue with what the record says (no evidence rows yet; rows and no verdict, so it waits for a reviewer; changes requested; approved and queued). Nothing needs setting: record the rows with evidence, and the reviewer's verdict with review. A loop that wants an explicit review status can declare one in its profile. Statuses here: ${profile.statuses.join(', ')}; the issues ready to start: ${jarlLine('next')}`, () => ({ arg: 1, value: hole('<status>') }));
   need(profile.statuses.includes(status), `status must be one of: ${profile.statuses.join(', ')} (got "${status}")`, () => [...(rawIds === undefined ? [{ arg: 0, value: '<ids>' }] : []), { arg: 1, value: hole('<status>') }]);
   need(caller !== 'cli' || profile.setBy(status) !== 'record', `${status} is set by the record only — this loop's profile (${profile.name}) marks it "set-by": "record", so jarl set and the MCP tools cannot move an issue into it; the tool that runs the loop does${profile.scheduler ? ` (${profile.scheduler})` : ''}`, () => ({ arg: 1, value: hole('<status>') }));
   const holds = profile.is(status, 'holds-claim');
@@ -911,7 +909,7 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   // What is written into the lease is what the journal gives back unchanged: a value the reader would take for something else is refused.
   for (const k of lease) { const problem = leaseValueProblem(k, flags[k]); need(!problem, `--${k} ${JSON.stringify(fieldText(flags[k]))} ${problem}`, () => ({ flag: `--${k}`, value: hole('<value>') })); }
   const issues = issuesFor(root, rawIds);
-  need(!profile.is(status, 'needs-reason') || why, REASON_TEXT[status] || `${status} needs a reason: jarl.mjs set '<id>' ${status} "<text>"`, () => ({ arg: 2, value: '<text>' }));
+  need(!profile.is(status, 'needs-reason') || why, REASON_TEXT[status]?.() || `${status} needs a reason: ${jarlLine('set', '<id>', status, '<text>')}`, () => ({ arg: 2, value: '<text>' }));
   const nothing = issues.length > 1 ? ' — nothing was written' : '';
   if (holds) needLeaseHolds(root, profile, issues, status, why, flags, handover, nothing);
   // base: the branch the composer landed the merge into, for the done gate's requires-merged (else the branch checked
@@ -996,18 +994,18 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
 function needLeaseHolds(root, profile, issues, status, why, flags, handover, nothing) {
   const composed = profile.scheduler !== null && profile.scheduler !== undefined;
   const named = (k) => (flags[k] !== undefined ? fieldText(flags[k]) : null);
-  const leaseFlags = ['branch', 'model', 'worker'].filter((k) => named(k) !== null).map((k) => `--${k} ${named(k)}`).join(' ');
+  const leaseFlags = ['branch', 'model', 'worker'].filter((k) => named(k) !== null).flatMap((k) => [`--${k}`, named(k)]);
   const taken = new Set(issues.map((i) => i.id));
   const leased = (i) => profile.is(i.status, 'holds-claim') && Boolean(i.fields.worker || i.fields.branch);
   // Another holder named by the call: a worker or a branch other than the one the lease already names.
   const replaces = (i) => ['worker', 'branch'].some((k) => named(k) !== null && i.fields[k] && named(k) !== fieldText(i.fields[k]));
-  if (handover) need(why, `--handover says why the work changes hands: jarl.mjs set ${issues.map((i) => i.id).join(',')} ${status} "<why-the-worker-changed>" ${leaseFlags} --handover`.replace(/ {2,}/g, ' '), () => ({ arg: 2, value: '<why-the-worker-changed>' }));
+  if (handover) need(why, `--handover says why the work changes hands: ${jarlLine('set', issues.map((i) => i.id).join(','), status, '<why-the-worker-changed>', ...leaseFlags, '--handover')}`, () => ({ arg: 2, value: '<why-the-worker-changed>' }));
   for (const issue of issues) {
     if (handover) {
-      need(leased(issue), `${issue.id} holds no lease to hand over${nothing} — lease it without --handover: jarl.mjs set ${issue.id} ${status} "<text>" ${leaseFlags}`.replace(/ {2,}/g, ' ').trim(), () => ({ rename: '--handover', to: hole('<no-flag-here>') }));
+      need(leased(issue), `${issue.id} holds no lease to hand over${nothing} — lease it without --handover: ${jarlLine('set', issue.id, status, '<text>', ...leaseFlags)}`, () => ({ rename: '--handover', to: hole('<no-flag-here>') }));
       need(replaces(issue), `--handover names the lease ${issue.id} already has (${holderText(issue)}) — a handover names the new --worker or --branch${nothing}`, () => ({ flag: '--worker', value: '<the-new-worker>' }));
     } else if (!composed) {
-      need(!(leased(issue) && replaces(issue)), `${issue.id} is leased already (${holderText(issue)}) — a second lease would replace it in silence, and ${fieldText(issue.fields.worker) || 'its worker'} would go on working on a branch the record does not name; when the work changes hands, say why: jarl.mjs set ${issue.id} ${status} "<why-the-worker-changed>" ${leaseFlags} --handover${nothing}`.replace(/ {2,}/g, ' '), () => ([...(why ? [] : [{ arg: 2, value: '<why-the-worker-changed>' }]), { flag: hole('<--handover-or-none>') }]));
+      need(!(leased(issue) && replaces(issue)), `${issue.id} is leased already (${holderText(issue)}) — a second lease would replace it in silence, and ${fieldText(issue.fields.worker) || 'its worker'} would go on working on a branch the record does not name; when the work changes hands, say why: ${jarlLine('set', issue.id, status, '<why-the-worker-changed>', ...leaseFlags, '--handover')}${nothing}`, () => ([...(why ? [] : [{ arg: 2, value: '<why-the-worker-changed>' }]), { flag: hole('<--handover-or-none>') }]));
     }
   }
   if (composed) return;
@@ -1017,7 +1015,7 @@ function needLeaseHolds(root, profile, issues, status, why, flags, handover, not
   if (slices.length > 1) {
     for (const issue of issues) {
       if ((leased(issue) && !handover) || issue.files.length || issue.resources.length) continue;
-      need(false, `${issue.id} declares no Files or Resources, and ${slices.length} slices are in play (${slices.map((x) => x.tag).join(', ')}): across slices only leases hold, and a lease holds only what its issue declares — declare them first, its files or its resources (jarl.mjs field ${issue.id} Resources "<name>, …")${nothing}`, () => [{ first: ['jarl.mjs', 'field', issue.id, 'Files', '<paths>'] }, { retry: true }]);
+      need(false, `${issue.id} declares no Files or Resources, and ${slices.length} slices are in play (${slices.map((x) => x.tag).join(', ')}): across slices only leases hold, and a lease holds only what its issue declares — declare them first, its files or its resources (${jarlLine('field', issue.id, 'Resources', '<resource-name>')})${nothing}`, () => [{ first: ['jarl.mjs', 'field', issue.id, 'Files', '<paths>'] }, { retry: true }]);
     }
   }
   // What the other leases hold: each file key and each resource, with the issue whose lease holds it.
@@ -1041,7 +1039,7 @@ function needLeaseHolds(root, profile, issues, status, why, flags, handover, not
     if (!held.length) continue;
     const { what, by } = held[0];
     const join = by.fields.branch ? `, or put ${issue.id} in ${by.id}'s lease: set ${issue.id} ${status} "<text>" --branch ${fieldText(by.fields.branch)}${by.fields.worker ? ` --worker ${fieldText(by.fields.worker)}` : ''}` : '';
-    need(false, `${issue.id} ${what}, which ${by.id} holds in its lease (${holderText(by)}) — two leases on one file or resource collide; wait until ${by.id} leaves its lease (next offers ${issue.id} then)${join}${nothing}; what is ready: jarl.mjs next`, () => ({ arg: 0, value: '<an-issue-next-offers>' }));
+    need(false, `${issue.id} ${what}, which ${by.id} holds in its lease (${holderText(by)}) — two leases on one file or resource collide; wait until ${by.id} leaves its lease (next offers ${issue.id} then)${join}${nothing}; what is ready: ${jarlLine('next')}`, () => ({ arg: 0, value: '<an-issue-next-offers>' }));
   }
 }
 // Who holds an issue's lease, as the refusals name it: its worker, branch and start, and its slice tag when it has one.
@@ -1080,8 +1078,8 @@ function rewriteHeader(root, rawIds, status, why, flags) {
   const issues = issuesFor(root, rawIds);
   for (const issue of issues) {
     need(!issue.byHeader, `${issue.id} is read from its header: the log files ${issue.id} ${issue.byHeader?.filings} times and cannot say which file its lines were written for, so no header is written from it`, refiled);
-    need(issue.onFile !== null, `${issue.id} is not in the log, so there is nothing to write its header from: jarl.mjs set ${issue.id} ${status} without --header puts it there`, () => [{ first: ['jarl.mjs', 'set', issue.id, status, '<why>'] }, { retry: true }]);
-    need(issue.status === status, `${issue.id} is ${issue.status} in the log: set ${issue.id} ${issue.status} --header writes its header from it, and jarl.mjs set ${issue.id} ${status} without --header moves it`, () => ({ arg: 1, value: hole('<status-in-the-log>') }));
+    need(issue.onFile !== null, `${issue.id} is not in the log, so there is nothing to write its header from: ${jarlLine('set', issue.id, status, '<why>')} without --header puts it there`, () => [{ first: ['jarl.mjs', 'set', issue.id, status, '<why>'] }, { retry: true }]);
+    need(issue.status === status, `${issue.id} is ${issue.status} in the log: set ${issue.id} ${issue.status} --header writes its header from it, and ${jarlLine('set', issue.id, status, '<why>')} without --header moves it`, () => ({ arg: 1, value: hole('<status-in-the-log>') }));
   }
   for (const issue of issues) {
     let text = setField(readText(issue.file), 'Status', issue.status);
@@ -1107,7 +1105,7 @@ function setDeclaredField(root, rawIds, field, value, flags) {
   need(v || (!field.required && !field.builtin), `${field.name} cannot be emptied with --clear or an empty value${field.enum ? ` — one of: ${field.enum.join(', ')}` : ''}`, () => [{ drop: '--clear' }, { arg: 2, value: hole('<value>') }]);
   const issues = issuesFor(root, rawIds);
   if (field.key === 'kind' && profile.keptKind(v) === WAIT_KIND) {
-    for (const issue of issues) need(fieldText(issue.fields.person) && fieldText(issue.fields['check when']), `${issue.id} becomes a wait only with the outside person it is held by and when to check it — first jarl.mjs field ${issue.id} Person "<name>" and jarl.mjs field ${issue.id} "Check when" "<date-or-event>"`, () => { const lacking = issues.filter((i) => !fieldText(i.fields.person) || !fieldText(i.fields['check when'])).map((i) => i.id).join(','); return [{ first: ['jarl.mjs', 'field', lacking, 'Person', '<name>'] }, { first: ['jarl.mjs', 'field', lacking, 'Check when', '<date-or-event>'] }, { retry: true }]; });
+    for (const issue of issues) need(fieldText(issue.fields.person) && fieldText(issue.fields['check when']), `${issue.id} becomes a wait only with the outside person it is held by and when to check it — first ${jarlLine('field', issue.id, 'Person', '<name>')} and ${jarlLine('field', issue.id, 'Check when', '<date-or-event>')}`, () => { const lacking = issues.filter((i) => !fieldText(i.fields.person) || !fieldText(i.fields['check when'])).map((i) => i.id).join(','); return [{ first: ['jarl.mjs', 'field', lacking, 'Person', '<name>'] }, { first: ['jarl.mjs', 'field', lacking, 'Check when', '<date-or-event>'] }, { retry: true }]; });
   }
   if (field.key === 'kind' && profile.keptKind(v) && issues.some((issue) => issue.kind !== v)) needFormat(root, 'promise-wait');
   logChanges(root, issues.map((issue) => fieldLine(issue.id, field.name, v, heldField(issue, field.name), by)));
@@ -1123,7 +1121,7 @@ function setKeptField(root, rawIds, name, value, flags) {
   const by = editorOf(flags.by);
   const v = value === '' ? '' : keptValue(name, value);
   const issues = issuesFor(root, rawIds);
-  for (const issue of issues) need(v || profile.keptKind(issue.kind) !== WAIT_KIND, `${issue.id} is a wait, held by its Person and checked when its Check when says: ${name} is never empty on it — give it another kind first (jarl.mjs field ${issue.id} Kind '<kind>')`, () => (['jarl.mjs', 'field', issues[0]?.id ?? '<id>', 'Kind', '<kind>']));
+  for (const issue of issues) need(v || profile.keptKind(issue.kind) !== WAIT_KIND, `${issue.id} is a wait, held by its Person and checked when its Check when says: ${name} is never empty on it — give it another kind first (${jarlLine('field', issue.id, 'Kind', '<kind>')})`, () => (['jarl.mjs', 'field', issues[0]?.id ?? '<id>', 'Kind', '<kind>']));
   if (v) needFormat(root, 'promise-wait', `the field ${name} of a wait`);
   logChanges(root, issues.map((issue) => fieldLine(issue.id, name, v, heldField(issue, name), by)));
   for (const issue of issues) writeAtomic(issue.file, v ? setField(readText(issue.file), name, v) : removeFields(readText(issue.file), [name]));
@@ -1197,15 +1195,15 @@ function doneGateIn(root, loop, issue, base) {
   const owner = () => { const text = ownerLineRefusal(root, loop, issue); return text ? { cause: ownerLineRewrite(root, loop, issue) ? 'owner-rewrite' : 'owner', text } : null; };
   if (profile.doneGate.approve === 'none') return owner();
   const code = carriesCode(issue);
-  if (g.selfApproved) return { cause: 'approve', text: `${issue.id}'s live approve is by a worker of this issue or its branch — a self-approve does not count as review: jarl.mjs review ${issue.id} '<verdict>' --by '<a-fresh-reviewer>' '<text>'${code ? '' : ' (or jarl, on an issue that carries no code)'}` };
+  if (g.selfApproved) return { cause: 'approve', text: `${issue.id}'s live approve is by a worker of this issue or its branch — a self-approve does not count as review: ${jarlLine('review', issue.id, '<verdict>', '--by', '<a-fresh-reviewer>', '<text>')}${code ? '' : ' (or jarl, on an issue that carries no code)'}` };
   // A changes verdict with no approve after it is named as the cause, with its reviewer and day, so whoever is refused
   // sees the review that stands in the way.
   if (!g.approved && g.lastReview === 'changes') {
     const changes = [...g.trail].reverse().find((r) => r.verdict === 'changes');
-    return { cause: 'approve', text: `${issue.id}'s latest review is a changes verdict by ${changes.by || 'a reviewer not recorded'} of ${changes.at}, and no approve came after it — a fresh reviewer reads the issue and the diff first: jarl.mjs review ${issue.id} '<verdict>' --by '<reviewer>' "<text>"` };
+    return { cause: 'approve', text: `${issue.id}'s latest review is a changes verdict by ${changes.by || 'a reviewer not recorded'} of ${changes.at}, and no approve came after it — a fresh reviewer reads the issue and the diff first: ${jarlLine('review', issue.id, '<verdict>', '--by', '<reviewer>', '<text>')}` };
   }
-  if (!g.approved) return { cause: 'approve', text: `${issue.id} has no approving review newer than its last round${g.tracked ? ' or reopen' : ''} — a fresh reviewer reads the issue and the diff first: jarl.mjs review ${issue.id} '<verdict>' --by '<reviewer>' "<text>"` };
-  if (code && !g.fresh) return { cause: 'approve', text: `${issue.id} ${freshRuleText(issue, g.live)}: jarl.mjs review ${issue.id} '<verdict>' --by '<a-fresh-reviewer>' "<text>"` };
+  if (!g.approved) return { cause: 'approve', text: `${issue.id} has no approving review newer than its last round${g.tracked ? ' or reopen' : ''} — a fresh reviewer reads the issue and the diff first: ${jarlLine('review', issue.id, '<verdict>', '--by', '<reviewer>', '<text>')}` };
+  if (code && !g.fresh) return { cause: 'approve', text: `${issue.id} ${freshRuleText(issue, g.live)}: ${jarlLine('review', issue.id, '<verdict>', '--by', '<a-fresh-reviewer>', '<text>')}` };
   // Last, an acceptance line only the owner ticks: his look comes on top of the proof and the review, never instead.
   return owner();
 }
@@ -1218,7 +1216,7 @@ function doneGateIn(root, loop, issue, base) {
 function mergeRefusal(root, issue, base) {
   const m = mergedOf(issue);
   const gate = 'this loop\'s profile closes an issue only on a landed merge (done-gate "requires-merged": true)';
-  if (!m) return `${issue.id} records no merge — ${gate}: jarl.mjs merged ${issue.id} --sha '<sha>' once it has landed`;
+  if (!m) return `${issue.id} records no merge — ${gate}: ${jarlLine('merged', issue.id, '--sha', '<sha>')} once it has landed`;
   const repos = issueRepoPaths(root, issue, m.repo ? [m.repo] : undefined).filter(isGitRepo);
   if (!repos.length) return `${issue.id} records Merged ${m.sha}, but no repository it names is a git repository here — ${gate}, and the merge cannot be checked`;
   const ref = base === undefined ? 'HEAD' : base;
@@ -1226,7 +1224,7 @@ function mergeRefusal(root, issue, base) {
   const landed = repos.some((r) => git(r, ['merge-base', '--is-ancestor', m.sha, ref]) !== null);
   if (landed) return null;
   const where = repos.map((r) => `${base === undefined ? defaultBase(r) : base} in ${r}`).join(' or ');
-  return `${issue.id} records Merged ${m.sha}, which is not in the base (${where}) — ${gate}; merge it, or record the sha that landed: jarl.mjs merged ${issue.id} --sha '<sha>'`;
+  return `${issue.id} records Merged ${m.sha}, which is not in the base (${where}) — ${gate}; merge it, or record the sha that landed: ${jarlLine('merged', issue.id, '--sha', '<sha>')}`;
 }
 
 // The fresh-review rule, said the same way by done, review and merged: an issue that carries code (a Branch or a
@@ -1250,13 +1248,13 @@ function doneNote(issue, root) {
   const m = mergedOf(issue);
   // A merge that carries its check (a passing check, or the red it landed on) needs no CI state to be told apart from an unrecorded one.
   const decided = () => { const line = issue.byHeader ? null : lastMerge(journalById(root).get(issue.id) || []); return Boolean(line && (line.check || line.red)); };
-  if (m && m.ci !== 'green' && m.ci !== 'none' && !(m.ci === null && decided())) notes.push(`merged ${m.sha}, CI ${m.ci || 'not recorded'} — record it when known: jarl.mjs merged ${issue.id} --ci '<ci-state>'`);
+  if (m && m.ci !== 'green' && m.ci !== 'none' && !(m.ci === null && decided())) notes.push(`merged ${m.sha}, CI ${m.ci || 'not recorded'} — record it when known: ${jarlLine('merged', issue.id, '--ci', '<ci-state>')}`);
   return notes.length ? { note: notes.join('; ') } : {};
 }
 
 // The Proof rows an issue holds inside the done gate's window: the --ran/--saw rows the worker wrote, not retracted.
 function proofSince(g, issue) { return g.tracked ? g.rowsSince : evidenceRows(issue).length; }
-const EVIDENCE_HOW = (id) => `jarl.mjs evidence ${id} --ran "<command>" --saw "<what-it-printed>"`;
+const EVIDENCE_HOW = (id) => jarlLine('evidence', id, '--ran', '<command>', '--saw', '<what-it-printed>');
 
 // What a merge refused for want of its --sha says next: the head of the branch the issue's lease records, or, where no
 // branch is recorded or it has no single head here, that there is none; the sha that landed is the caller's to give, so
@@ -1264,7 +1262,7 @@ const EVIDENCE_HOW = (id) => `jarl.mjs evidence ${id} --ran "<command>" --saw "<
 function noMergeHow(root, issue) {
   const branch = fieldText(issue.fields.branch);
   const tip = branchTip(root, issue);
-  const give = `once it has landed, give the sha that landed: jarl.mjs merged ${issue.id} --sha '<sha>' --ci '<ci-state>'`;
+  const give = `once it has landed, give the sha that landed: ${jarlLine('merged', issue.id, '--sha', '<sha>', '--ci', '<ci-state>')}`;
   if (tip && !tip.includes(',')) return `the head of ${branch}, the branch its lease records, is ${tip}; ${give}`;
   if (!branch) return `its lease records no branch, so no head is offered; ${give}`;
   return `${branch} has no single head in the repositories here, so no head is offered; ${give}`;
@@ -1342,7 +1340,7 @@ export function cmdMerged(root, rawIds, flags) {
     const loop = readLoop(jarlDir(root));
     for (const issue of issues) {
       const g = gateOf(loop, issue.id);
-      if (!g.fresh) notes.push(`MERGED WITHOUT A FRESH REVIEW — ${issue.id} ${g.live ? freshRuleText({ fields: { merged: sha } }, g.live) : 'holds no live approve at all (none, or spent by a later round, restart or reopen) — the fresh-review rule: a code issue needs an approve from a fresh reviewer before it merges'}; recorded as given, get the fresh review now: jarl.mjs review ${issue.id} '<verdict>' --by '<a-fresh-reviewer>' "<text>"`);
+      if (!g.fresh) notes.push(`MERGED WITHOUT A FRESH REVIEW — ${issue.id} ${g.live ? freshRuleText({ fields: { merged: sha } }, g.live) : 'holds no live approve at all (none, or spent by a later round, restart or reopen) — the fresh-review rule: a code issue needs an approve from a fresh reviewer before it merges'}; recorded as given, get the fresh review now: ${jarlLine('review', issue.id, '<verdict>', '--by', '<a-fresh-reviewer>', '<text>')}`);
       notes.push(...approveTipNotes(root, issue, g.live, sha));
     }
   }
@@ -1380,10 +1378,10 @@ function mergeContentNotes(root, issue, sha, repoPath) {
   const holds = (ancestor, ref) => git(repo, ['merge-base', '--is-ancestor', ancestor, ref]) !== null;
   const notes = [];
   const tip = branch ? git(repo, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}^{commit}`]) : null;
-  if (tip && !holds(tip, sha)) notes.push(`MERGE WITHOUT THE BRANCH — ${sha} does not contain the tip of ${branch} (${tip.slice(0, 12)}), so a check that ran on it did not run on the branch's work; the check runs on the merge result: merge the branch, check the result, and record that commit with jarl.mjs merged ${issue.id} --sha '<sha>'`);
+  if (tip && !holds(tip, sha)) notes.push(`MERGE WITHOUT THE BRANCH — ${sha} does not contain the tip of ${branch} (${tip.slice(0, 12)}), so a check that ran on it did not run on the branch's work; the check runs on the merge result: merge the branch, check the result, and record that commit with ${jarlLine('merged', issue.id, '--sha', '<sha>')}`);
   const base = defaultBase(repo);
   const baseTip = base !== branch ? git(repo, ['rev-parse', '--verify', '--quiet', `${base}^{commit}`]) : null;
-  if (baseTip && !holds(sha, baseTip) && !holds(baseTip, sha)) notes.push(`MERGE WITHOUT THE BASE — ${sha} does not contain ${base} as it stands (${baseTip.slice(0, 12)}), so the check ran on a tree the base has moved past; the check runs on the merge result: merge the base into the result, check it again, and record that commit with jarl.mjs merged ${issue.id} --sha '<sha>'`);
+  if (baseTip && !holds(sha, baseTip) && !holds(baseTip, sha)) notes.push(`MERGE WITHOUT THE BASE — ${sha} does not contain ${base} as it stands (${baseTip.slice(0, 12)}), so the check ran on a tree the base has moved past; the check runs on the merge result: merge the base into the result, check it again, and record that commit with ${jarlLine('merged', issue.id, '--sha', '<sha>')}`);
   return notes;
 }
 
@@ -1420,7 +1418,7 @@ function approveTipNotes(root, issue, live, sha) {
     return git(dir, ['merge-base', '--is-ancestor', a, sha]) !== null ? null : b;
   };
   const who = live.by ? `by ${live.by} (${live.kind})` : 'by a reviewer not recorded';
-  const again = `if it was meant to land, record a review of the tip that landed: jarl.mjs review ${issue.id} '<verdict>' --by '<a-fresh-reviewer>' "<text>"`;
+  const again = `if it was meant to land, record a review of the tip that landed: ${jarlLine('review', issue.id, '<verdict>', '--by', '<a-fresh-reviewer>', '<text>')}`;
   const head = `APPROVED ON ANOTHER TIP — ${issue.id}'s approve ${who} was recorded on ${branch}`;
   if (was.length !== repos.length) return [`${head} at ${was.map(short).join(', ')}, and the branch stands at ${is.map((s) => (s ? short(s) : 'gone')).join(', ')} at this merge, so that review did not see what changed between them; recorded as given, ${again}`];
   const here = repos.map((dir) => isGitRepo(dir) && git(dir, ['cat-file', '-e', `${sha}^{commit}`]) !== null);
@@ -1625,7 +1623,7 @@ export function cmdPrio(root, rawIds, prio, by = undefined) {
 
 export function cmdFiles(root, rawId, list, dry = false, by = undefined) {
   const issue = findIssue(root, rawId);
-  need(issue, `no such issue: ${rawId}${LIST_ALL}`, () => ({ replace: rawId, value: '<id>' }));
+  need(issue, `no such issue: ${rawId}${listAll()}`, () => ({ replace: rawId, value: '<id>' }));
   const editor = editorOf(by);
   const files = pathList(list);
   if (!dry) {
@@ -1637,7 +1635,7 @@ export function cmdFiles(root, rawId, list, dry = false, by = undefined) {
 
 export function cmdRepo(root, rawId, path, { clear = false, dry = false, by } = {}) {
   const issue = findIssue(root, rawId);
-  need(issue, `no such issue: ${rawId}${LIST_ALL}`, () => ({ replace: rawId, value: '<id>' }));
+  need(issue, `no such issue: ${rawId}${listAll()}`, () => ({ replace: rawId, value: '<id>' }));
   const editor = editorOf(by);
   if (clear) {
     need(issue.fields.repo, `${issue.id} has no Repo field to clear`, () => ({ rename: '--clear', to: hole('<no-flag-here>') }));

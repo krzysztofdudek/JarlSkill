@@ -122,7 +122,7 @@ test('a tick counts for the line it was given on: a round spends it, and a line 
 test('tick takes the owner\'s word on an owner line whose material is there, once', () => {
   const root = signOffLoop();
   assert.match(refuses(root, 'tick', '1', '2'), /needs --by owner/);
-  assert.match(refuses(root, 'tick', '1', '2', '--by', 'jarl'), /^only the owner ticks an owner line \(got "jarl"\): he ticks it once he has reviewed its material, and nobody ticks it for him\njarl\.mjs tick '<id>' '<line>' --by '<the-owner-himself>'\n$/);
+  assert.match(refuses(root, 'tick', '1', '2', '--by', 'jarl'), /^only the owner ticks an owner line \(got "jarl"\): he ticks it once he has reviewed its material, and nobody ticks it for him\njarl\.mjs tick "<id>" "<line>" --by "<the-owner-himself>"\n$/);
   assert.match(refuses(root, 'tick', '1', '1', '--by', 'owner'), /acceptance line 1 of 1 is not marked as one only the owner ticks; its owner lines: 2/);
   assert.match(refuses(root, 'tick', '1', '3', '--by', 'owner'), /1 has 2 acceptance lines: there is no line 3; its owner lines: 2/);
   assert.match(refuses(root, 'tick', '2', '1', '--by', 'owner'), /2 has no acceptance line marked as one only the owner ticks/);
@@ -132,7 +132,7 @@ test('tick takes the owner\'s word on an owner line whose material is there, onc
   produce(root);
   jarl(root, 'tick', '1', '2', '--by', 'the Owner');
   assert.match(refuses(root, 'tick', '1', '2', '--by', 'owner'), /acceptance line 2 of 1 is ticked already, by owner at \d{4}-\d{2}-\d{2} \d{2}:\d{2}/);
-  assert.match(refuses(root, 'log', '1 tick · line 2 · by owner · [owner] x · material: y · check: z'), /reads as a tick line, .*jarl\.mjs tick "<id>" "<line>" --by owner/);
+  assert.match(refuses(root, 'log', '1 tick · line 2 · by owner · [owner] x · material: y · check: z'), /reads as a tick line, .*jarl\.mjs tick "<id>" "<line>" --by "<the-owner-himself>"/);
 });
 
 test('next --as puts an owner line on whoever produces its material, then on the owner with the material and the instruction, and what waits on it with After stays unoffered', () => {
@@ -184,7 +184,7 @@ test('resume, status and review name the owner\'s tick as the step before done w
   produce(root);
   jarl(root, 'evidence', '1', '--ran', 'render the cut', '--saw', 'renders/cut.txt written');
   const reply = jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
-  assert.match(reply, /next: the owner ticks acceptance line 2 with tick, once he has looked, then jarl\.mjs set 1 done '<why>' once the worker's Proof rows are recorded/);
+  assert.match(reply, /next: the owner ticks acceptance line 2 with tick, once he has looked, then jarl\.mjs set 1 done "<why>" once the worker's Proof rows are recorded/);
   assert.doesNotMatch(reply, /jarl\.mjs tick|--by owner/, 'the reviewer is not the owner: no command of his tick is printed to him');
   assert.match(jarl(root, 'resume'), /^ {2}→ approved and queued for the merge — next the merger lands it, then the owner ticks acceptance line 2 with tick, once he has looked, then set it done$/m);
   assert.match(jarl(root, 'status'), /^in flight 1 · approved and queued for the merge — next the merger lands it, then the owner ticks acceptance line 2 with tick, once he has looked, then set it done$/m);
