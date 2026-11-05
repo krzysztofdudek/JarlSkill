@@ -108,6 +108,11 @@ function issueRepoPaths(root, issue, names = reposNamed(issue)) {
   for (const n of namedRepos(names)) { try { out.push(repoOf(root, n)); } catch { /* not a repository here */ } }
   return out;
 }
+// The same, one place for each repository the issue names, in the order of its Repo field and canonical: a repository that
+// is not on this machine keeps its place as null, so a list kept per repository (the tips of a branch) still lines up.
+function issueRepoSlots(root, issue) {
+  return namedRepos(reposNamed(issue)).map((n) => { try { return canonical(repoOf(root, n)); } catch { return null; } });
+}
 // The values to resolve: the ones given, or undefined (the loop's own repository) where there are none.
 function namedRepos(names) { return names.length ? names : [undefined]; }
 // The canonical places an issue's Repo values point to, resolved or not: one key for one repository.
@@ -616,4 +621,4 @@ export function reposWhereLines(where) {
 }
 
 // Used by the other modules of the library, and not part of what jarl-lib.mjs exports.
-export { FETCHED, HOMES, IS_REPO, REFS, REPO_OF, RESOLVED, TOP_OF, commitRepoNames, defaultBase, isGitRepo, issuePlaces, issueRepoPaths, issueRepos, repoLabel, repoList, repoNames, tipLines, topOf, worktreesOf };
+export { FETCHED, HOMES, IS_REPO, REFS, REPO_OF, RESOLVED, TOP_OF, commitRepoNames, defaultBase, isGitRepo, issuePlaces, issueRepoPaths, issueRepoSlots, issueRepos, repoLabel, repoList, repoNames, tipLines, topOf, worktreesOf };

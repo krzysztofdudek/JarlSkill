@@ -14,7 +14,7 @@ import { appendLog, appendLogLines, decisionsPath, goalPath, logPath } from './j
 import { JARL_GITIGNORE, JARL_GITIGNORE_COMMITTED, ensureLoopMerge, outOfGit } from './loop-git.mjs';
 import { HANDOVER_SEGMENT, journalById, mergeCheckText } from './log.mjs';
 import { FIELD_RE, PROPOSED, RENDERED_FIELDS, acceptanceHeading, acceptanceLineCount, acceptanceLines, acceptanceText, bodyText, changelogText, evidenceNotes, evidenceParts, evidenceRows, evidenceTable, fieldValue, findIssue, issueNamed, loadIssues, mergedOf, namedPairs, needNoFieldTags, noteText, parentCycle, parseIssue, placeEvidence, removeFields, removeFirstField, renderIssue, setField, setSection, unattributedRefusal, waitCycle } from './issues.mjs';
-import { branchTip, commitRepoNames, declaredBaseOf, defaultBase, fileKeysOf, isGitRepo, issueRepoPaths, issueRepos, mainCheckoutOf, needFormat, needRightCheckouts, repoFromInput, repoLabel, repoList, reposNamed, tipLines, whyNotDeletable, worktreeState, worktreesOf } from './repositories.mjs';
+import { branchTip, commitRepoNames, declaredBaseOf, defaultBase, fileKeysOf, isGitRepo, issueRepoPaths, issueRepoSlots, issueRepos, mainCheckoutOf, needFormat, needRightCheckouts, repoFromInput, repoLabel, repoList, reposNamed, tipLines, whyNotDeletable, worktreeState, worktreesOf } from './repositories.mjs';
 import { FIELD_NAMES, activeSlices, carriesCode, gateOf, isSliceTag, needOneSlice, readLoop, sinceText, sliceOf, unorderedNamings, unorderedText } from './loop.mjs';
 import { declaredChecks, lastMerge } from './metrics.mjs';
 import { modelLines, modelValue, spellingNote } from './models.mjs';
@@ -1641,9 +1641,14 @@ function approveTipNotes(root, issue, live, sha) {
   if (!branch) return [];
   const short = (s) => s.slice(0, 12);
   const was = live.tip.split(',');
-  const repos = issueRepos(root, issue);
-  const is = repos.map((dir) => (isGitRepo(dir) ? git(dir, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}^{commit}`]) : null));
-  if (!is.some(Boolean) || is.join(',') === live.tip) return [];
+  // The approve's tips are one for each repository the issue names. A repository that is not on this machine keeps its place
+  // among them and is not compared, so the others still are and a tip that did not move is not said to have moved; tips that
+  // count another number of repositories than the issue names are compared against the ones that are here.
+  const slots = issueRepoSlots(root, issue);
+  const repos = was.length === slots.length ? slots : slots.filter(Boolean);
+  const is = repos.map((dir) => (dir && isGitRepo(dir) ? git(dir, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}^{commit}`]) : null));
+  const unmoved = was.length === repos.length && repos.every((dir, k) => !dir || is[k] === was[k]);
+  if (!is.some(Boolean) || unmoved) return [];
   const see = (dir, a, b) => `git -C ${shellWord(dir)} log --oneline --first-parent ${short(a)}..${short(b)} and git -C ${shellWord(dir)} diff ${short(a)} ${short(b)}`;
   const lines = (dir, args) => (git(dir, args) || '').split('\n').filter(Boolean);
   // The newest commit of the branch after the approved tip that the recorded commit holds; null when it holds none of
@@ -1658,7 +1663,7 @@ function approveTipNotes(root, issue, live, sha) {
   const again = `if it was meant to land, record a review of the tip that landed: ${jarlLine('review', issue.id, '<verdict>', '--by', '<a-fresh-reviewer>', '<text>')}`;
   const head = `APPROVED ON ANOTHER TIP — ${issue.id}'s approve ${who} was recorded on ${branch}`;
   if (was.length !== repos.length) return [`${head} at ${was.map(short).join(', ')}, and the branch stands at ${is.map((s) => (s ? short(s) : 'gone')).join(', ')} at this merge, so that review did not see what changed between them; recorded as given, ${again}`];
-  const here = repos.map((dir) => isGitRepo(dir) && git(dir, ['cat-file', '-e', `${sha}^{commit}`]) !== null);
+  const here = repos.map((dir) => Boolean(dir) && isGitRepo(dir) && git(dir, ['cat-file', '-e', `${sha}^{commit}`]) !== null);
   const away = here.some(Boolean) ? 'not in this merge' : 'not found here';
   const moved = [];
   repos.forEach((dir, k) => {
@@ -1669,7 +1674,7 @@ function approveTipNotes(root, issue, live, sha) {
     if (to) moved.push({ dir, a, b, to });
   });
   if (!moved.length) return [];
-  if (repos.length === 1) {
+  if (repos.filter(Boolean).length === 1) {
     const [m] = moved;
     if (m.away) return [`${head} at ${short(m.a)}, and the branch stands at ${short(m.b)}; ${short(sha)} is not found here, so what it holds cannot be read; see what changed: ${see(m.dir, m.a, m.b)}; ${again}`];
     const upTo = m.to === m.b ? `the branch stands at ${short(m.b)} at this merge, so what changed between them` : `this merge holds the branch up to ${short(m.to)} (it stands at ${short(m.b)} now), so what changed from ${short(m.a)} to ${short(m.to)}`;

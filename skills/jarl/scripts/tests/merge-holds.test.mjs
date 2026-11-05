@@ -4,7 +4,7 @@
 // and it says, never refusing, when the approve the gate stands on was recorded on another tip of the branch than the one merged.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
@@ -438,4 +438,44 @@ test('two repositories recorded one after the other with their branches kept: th
   const out = said(hub, 'merged', '1', '--sha', merge(lib), '--repo', '../lib', '--keep');
   assert.ok(out.includes(`in tool ${was} → ${now}, not in this merge, see it: ${seeing(tool, was, now)}`), out);
   assert.doesNotMatch(out, /not merged yet|landed without/);
+});
+
+// Two repositories beside a hub loop with the issue approved on a branch in each, and then the lib checkout moved out of
+// the place the issue's Repo field points to, as a repository that is no longer on this machine.
+function twoRepositoriesOneAway() {
+  const parent = mkdtempSync(join(tmpdir(), 'jarl-holds-away-'));
+  const dirs = {};
+  for (const name of ['hub', 'tool', 'lib']) {
+    dirs[name] = join(parent, name);
+    mkdirSync(dirs[name]);
+    git(dirs[name], 'init', '-q', '-b', 'main');
+    commit(dirs[name], 'a.txt', 'a\n');
+  }
+  const { hub, tool, lib } = dirs;
+  jarl(hub, 'init', 'goal');
+  jarl(hub, 'new', 'cross', '--repo', '../tool,../lib', '--acceptance', 'it works');
+  for (const r of [tool, lib]) { git(r, 'checkout', '-q', '-b', 'jarl/1-x'); commit(r, 'b.txt', 'b\n'); git(r, 'checkout', '-q', 'main'); }
+  jarl(hub, 'set', '1', 'in-progress', 'start', '--branch', 'jarl/1-x', '--worker', 'w-one');
+  jarl(hub, 'review', '1', 'approve', '--by', 'rev-fresh', 'read the diff, nothing found');
+  const was = git(tool, 'rev-parse', 'jarl/1-x').slice(0, 12);
+  renameSync(lib, join(parent, 'lib-moved-away'));
+  const merge = () => { git(tool, 'merge', '-q', '--no-ff', '-m', 'merge 1', 'jarl/1-x'); return git(tool, 'rev-parse', 'HEAD'); };
+  return { hub, tool, was, merge };
+}
+
+test('a repository that is no longer on this machine keeps the note silent when another repository\'s branch did not move', () => {
+  const { hub, merge } = twoRepositoriesOneAway();
+  assert.doesNotMatch(said(hub, 'merged', '1', '--sha', merge(), '--repo', '../tool', '--keep'), APPROVED_ELSEWHERE);
+});
+
+test('a repository that is no longer on this machine does not silence the note for the repository that is, when its branch moved', () => {
+  const { hub, tool, was, merge } = twoRepositoriesOneAway();
+  git(tool, 'checkout', '-q', 'jarl/1-x');
+  commit(tool, 'late.txt', 'late\n');
+  git(tool, 'checkout', '-q', 'main');
+  const now = git(tool, 'rev-parse', 'jarl/1-x').slice(0, 12);
+  const out = said(hub, 'merged', '1', '--sha', merge(), '--repo', '../tool', '--keep');
+  assert.match(out, APPROVED_ELSEWHERE);
+  assert.ok(out.includes(`recorded on jarl/1-x at ${was}, and the branch stands at ${now} at this merge`), out);
+  assert.ok(out.includes(`see it: ${seeing(tool, was, now)}`), out);
 });
