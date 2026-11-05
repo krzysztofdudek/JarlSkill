@@ -19,6 +19,7 @@ import { FIELD_NAMES, activeSlices, carriesCode, gateOf, isSliceTag, needOneSlic
 import { declaredChecks, lastMerge } from './metrics.mjs';
 import { modelLines, modelValue, spellingNote } from './models.mjs';
 import { slotRefusal } from './attachments.mjs';
+import { NOTE_LIMIT, addedContentNotes, addedNoteText } from './rounds.mjs';
 import { resetCaches } from './tips.mjs';
 import { needOwnerLines, ownerLineRefusal, ownerLineRewrite } from './owner-lines.mjs';
 
@@ -1559,6 +1560,7 @@ export function cmdMerged(root, rawIds, flags) {
   // Said, never refused: the check of a merge runs on the merge result, so a commit that lacks the branch tip, or lacks
   // the base as it stands before the merge landed there, was not the tree the check ran on.
   if (sha) for (const issue of issues) notes.push(...mergeContentNotes(root, issue, sha, repoPath));
+  if (sha) notes.push(...mergedAddedNotes(root, issues, sha, repoPath));
   // Said, never refused: a merge is a fact, and recording it is not the place to stop it. A merge whose issue holds
   // no fresh approve went in without the fresh review the rule asks for, and the note says so loudly.
   // Under a done gate with no approve (approve: none), the merge gate stands behind the issue, and no reviewer is owed.
@@ -1622,6 +1624,23 @@ function mergeContentNotes(root, issue, sha, repoPath) {
   const baseTip = base !== branch ? git(repo, ['rev-parse', '--verify', '--quiet', `${base}^{commit}`]) : null;
   if (baseTip && !holds(sha, baseTip) && !holds(baseTip, sha)) notes.push(`MERGE WITHOUT THE BASE — ${sha} does not contain ${base} as it stands (${baseTip.slice(0, 12)}), so the check ran on a tree the base has moved past; the check runs on the merge result: merge the base into the result, check it again, and record that commit with ${record}`);
   return notes;
+}
+
+// What the recorded commit brings into its first parent, as notes: each added line that starts a conflict marker and each
+// added file over the size Jarl accepts as an attachment (see addedContentNotes), up to NOTE_LIMIT with the rest counted.
+// A commit is read once per repository however many issues share it; a commit that is not here, or has no parent, says nothing.
+function mergedAddedNotes(root, issues, sha, repoPath) {
+  const found = new Set();
+  const all = [];
+  for (const issue of issues) {
+    const repo = (repoPath ? [repoPath] : issueRepoPaths(root, issue)).filter(isGitRepo).find((r) => git(r, ['cat-file', '-e', `${sha}^{commit}`]) !== null);
+    if (!repo || found.has(canonical(repo))) continue;
+    found.add(canonical(repo));
+    if (git(repo, ['rev-parse', '--verify', '--quiet', `${sha}^1`]) === null) continue;
+    all.push(...addedContentNotes(repo, `${sha}^1..${sha}`));
+  }
+  const shown = all.slice(0, NOTE_LIMIT).map((n) => `${addedNoteText(n)} (brought in by the merge)`);
+  return all.length > NOTE_LIMIT ? [...shown, `… and ${all.length - NOTE_LIMIT} more notes about what the merge brought in not shown`] : shown;
 }
 
 // Whether `sha` holds what `tip` changed on its way from the commit they share: every file the branch changed is, in `sha`,

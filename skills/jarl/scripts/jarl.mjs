@@ -210,7 +210,10 @@ commands:
                                                  merged. After it records a sha it removes the issue's worktree and
                                                  local branch (git worktree remove, git branch -d, never a force)
                                                  when that is safe, and names why it kept them when it is not;
-                                                 --keep skips it
+                                                 --keep skips it. It notes, and never refuses, a commit that lacks the
+                                                 branch tip or the base, a squash or rebase merge, and what the commit
+                                                 brings into its first parent that starts a conflict marker or is an
+                                                 added file over 64 MiB
   next [--limit n] [--all] [--as <who>] [--slice <coordinator>]
                                                  the open issues ready to start: no file shared with an in-progress one, every
                                                  After issue done or dropped (its parent's too), every sub-issue done or
@@ -290,7 +293,9 @@ commands:
                                                  commits beyond the base, diff inside the declared files, and the
                                                  change in test files and assertions — numbers, never a verdict;
                                                  notes for the added lines that name a loop issue by its number after
-                                                 the word issue or with a hash sign (at most 20 printed, the rest
+                                                 the word issue or with a hash sign, the added lines that start a
+                                                 conflict marker, and the added files over 64 MiB, the largest file
+                                                 Jarl accepts as an attachment (at most 20 printed, the rest
                                                  counted), which never change ok; a branch no issue records is refused
                                                  with its commit count;
                                                  read in --repo, else the issue's Repo, else the loop's own repository;

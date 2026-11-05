@@ -2,10 +2,10 @@
 
 import { LIVENESS_MINUTES, ROUNDS_BEFORE_TAKEOVER, fieldText, hole, need, noSeparators } from './base.mjs';
 import { needNoOwnersWords } from './owner.mjs';
-import { git } from './git.mjs';
+import { git, gitBytes } from './git.mjs';
 import { canonical, jarlDir, nowMs, portablePath } from './where.mjs';
 import { branchIssueId, idKey, idsNamed } from './ids.mjs';
-import { DEFAULT_PROFILE, loadProfile } from './profile.mjs';
+import { ATTACH_MAX_BYTES, DEFAULT_PROFILE, loadProfile } from './profile.mjs';
 import { appendLog, goalLines, oneLine, parseStamp, readGoal } from './journal.mjs';
 import { journalById, leaseOfMove } from './log.mjs';
 import { findIssue, loadIssues, mergedOf } from './issues.mjs';
@@ -106,11 +106,15 @@ function countAsserts(root, ref, files) {
 function isTestFile(f) { return /(^|\/)(test|tests|spec|__tests__)(\/|$)|\.(test|spec)\.[a-z]+$|_test\.[a-z]+$|Tests?\.[a-z]+$/.test(f); }
 
 // The most notes a check prints; the rest are counted, so a branch of thousands of lines cannot flood the output.
-const NOTE_LIMIT = 20;
-// The added lines of a diff that name an issue of the loop (`held`): each line the branch gives, its file and its number
-// in the branch, read from the hunks of a zero-context diff. Only added lines count, a removed line never does, and the
-// text of each is one line with its separators escaped.
-function issueNumberNotes(repo, range, held) {
+export const NOTE_LIMIT = 20;
+// A line that starts a conflict marker as git writes one: seven < or > followed by a space or nothing, or seven = alone.
+const markerStart = (text) => (/^(<{7}|>{7})(?: |$)/.test(text) || /^={7}$/.test(text));
+// The notes on what the diff of `range` adds: each added line that starts a conflict marker, each added file over
+// ATTACH_MAX_BYTES (the largest file Jarl accepts as an attachment, so the one size the record already calls too big),
+// and, where `held` (the ids of the loop) is given, each added line that names an issue. Only added lines and added files
+// count, a removed line or a file that grew never does. Each note is { kind, file, line, text, … } for a line, and
+// { kind: 'large-file', file, bytes } for a file.
+export function addedContentNotes(repo, range, { held = null } = {}) {
   const diff = git(repo, ['diff', '--no-color', '--no-ext-diff', '-U0', range]) || '';
   const notes = [];
   let file = null;
@@ -122,7 +126,8 @@ function issueNumberNotes(repo, range, held) {
       if (oldLeft > 0 && text.startsWith('-')) oldLeft -= 1;
       else if (newLeft > 0 && text.startsWith('+')) {
         const added = noSeparators(oneLine(text.slice(1)));
-        const ids = idsNamed(added, held, { introducedOnly: true });
+        if (markerStart(text.slice(1).replace(/\s+$/, ''))) notes.push({ kind: 'conflict-marker', file, line, text: added });
+        const ids = held ? idsNamed(added, held, { introducedOnly: true }) : [];
         if (ids.length) notes.push({ kind: 'issue-number', file, line, ids, text: added });
         newLeft -= 1;
         line += 1;
@@ -133,11 +138,38 @@ function issueNumberNotes(repo, range, held) {
     if (hunk) { oldLeft = Number(hunk[1] ?? 1); line = Number(hunk[2]); newLeft = Number(hunk[3] ?? 1); }
     else if (text.startsWith('+++ ')) file = text.startsWith('+++ b/') ? text.slice(6) : null;
   }
+  notes.push(...largeFileNotes(repo, range));
   return notes;
+}
+// The files the diff of `range` adds that are over ATTACH_MAX_BYTES, as { kind: 'large-file', file, bytes }, read from the
+// blobs the diff names in one batch call.
+function largeFileNotes(repo, range) {
+  const raw = git(repo, ['diff', '--raw', '--diff-filter=A', '--no-renames', '-z', range]);
+  if (!raw) return [];
+  const parts = raw.split('\0').filter(Boolean);
+  const added = [];
+  for (let k = 0; k + 1 < parts.length; k += 2) {
+    const fields = parts[k].split(' ');
+    if (fields.length >= 5 && /^[0-9a-f]+$/.test(fields[3]) && !/^0+$/.test(fields[3])) added.push({ file: parts[k + 1], blob: fields[3] });
+  }
+  if (!added.length) return [];
+  const sizes = gitBytes(repo, ['cat-file', '--batch-check=%(objectsize) %(objecttype)'], `${added.map((a) => a.blob).join('\n')}\n`);
+  if (sizes === null) return [];
+  const rows = sizes.toString('utf8').split('\n').filter(Boolean);
+  return added.flatMap((a, k) => {
+    const [bytes, type] = (rows[k] || '').split(' ');
+    return type === 'blob' && Number(bytes) > ATTACH_MAX_BYTES ? [{ kind: 'large-file', file: a.file, bytes: Number(bytes) }] : [];
+  });
+}
+// What one note says, on one line.
+export function addedNoteText(n) {
+  if (n.kind === 'conflict-marker') return `${n.file}:${n.line} starts a conflict marker · ${n.text}`;
+  if (n.kind === 'large-file') return `${n.file} is an added file of ${n.bytes} bytes, over the ${ATTACH_MAX_BYTES} bytes (64 MiB) Jarl accepts as an attachment`;
+  return `${n.file}:${n.line} names issue ${n.ids.join(', ')} · ${n.text}`;
 }
 // The lines a check prints for its notes: each note on one line, then how many were left out past the limit.
 export function renderCheckNotes(out) {
-  const lines = out.notes.map((n) => `note ${n.file}:${n.line} names issue ${n.ids.join(', ')} · ${n.text}`);
+  const lines = out.notes.map((n) => `note ${addedNoteText(n)}`);
   if (out.notesOmitted) lines.push(`… and ${out.notesOmitted} more notes not shown`);
   return lines.join('\n');
 }
@@ -221,7 +253,7 @@ export function cmdCheck(root, rawId, flags) {
     { name: 'test files', ok: removedTests.length === 0, note: removedTests.length ? `removed: ${removedTests.join(', ')}` : `${testsTip.length} on the branch, ${touchedTests.length} touched, none removed` },
     { name: 'assertions in touched tests', ok: assertsTip >= assertsBase, note: `${assertsBase} → ${assertsTip}` },
   ];
-  const notes = issueNumberNotes(repo, `${base}...${flags.branch}`, new Set(loadIssues(root).map((i) => i.id)));
+  const notes = addedContentNotes(repo, `${base}...${flags.branch}`, { held: new Set(loadIssues(root).map((i) => i.id)) });
   return { id: rawId === undefined ? null : issue.id, ids: pkg.map((i) => i.id), branch: flags.branch, repo, base, mergeBase, changed, items, notes: notes.slice(0, NOTE_LIMIT), notesOmitted: Math.max(0, notes.length - NOTE_LIMIT), ok: items.every((i) => i.ok) };
 }
 
