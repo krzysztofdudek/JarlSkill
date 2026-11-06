@@ -183,6 +183,7 @@ test('a loop is found at the root of a checkout and never in a subdirectory, whi
   assert.doesNotMatch(status(sub).stdout, /^goal:/, 'not found from inside the subdirectory that holds it');
   assert.doesNotMatch(status(dir).stdout, /^goal:/, 'not found from the checkout root above it');
   assert.match(status(dir, ['--root', sub]).stdout, /^goal: a loop in a subdirectory/);
+  assert.doesNotMatch(status(dir, [], { JARL_ROOT: sub }).stdout, /^goal:/, 'the command line does not read JARL_ROOT');
   assert.match(mcp.callTool('jarl_status', {}, { JARL_ROOT: sub }, dir).content[0].text, /^goal: a loop in a subdirectory/, 'a tool call reaches it through the server\'s JARL_ROOT');
   assert.doesNotMatch(mcp.callTool('jarl_status', {}, {}, sub).content[0].text, /^goal:/, 'a tool call finds nothing from inside the subdirectory');
   jarl(dir, 'init', 'a loop at the root');
@@ -238,7 +239,7 @@ test('record.md lists every path the tool writes in .jarl/, in the count it stat
 test('the README says who verifies: the fresh reviewer and the merger, and no more than the record gives', () => {
   const readme = readRoot('README.md');
   assert.match(readme, /a fresh reviewer reads the diff and checks that the new test was red before the change/);
-  assert.match(readme, /the merger merges into the branch with a commit that names the issue and runs the check on the result/);
+  assert.match(readme, /the merger merges into the feature branch with a commit that names the issue and runs the check on the result/);
   assert.match(readme, /nothing is closed without recorded evidence and an approve, from a fresh reviewer when the issue carries code/);
   assert.doesNotMatch(readme, /nothing is closed without recorded evidence and a fresh reviewer/);
   assert.match(readme, /The tool refuses an approve by a self \(the issue's worker, anyone who has held its lease, or a worker of another issue on the same branch\)/);
@@ -248,6 +249,19 @@ test('the README says who verifies: the fresh reviewer and the merger, and no mo
   }
   assert.match(readme, /fresh, coordinator, self or unrecorded/);
   assert.doesNotMatch(readme, /(?:four|five) (?:kinds of )?markdown files?/i, 'no count of the record\'s files the record contradicts');
+});
+
+test('the README names the branch the merger merges into, who reads JARL_ROOT, the gate that needs an approve and the labels of the review split', () => {
+  const readme = readRoot('README.md');
+  assert.doesNotMatch(readme, /merges into the branch/, 'the merger merges into the feature branch, not into the approved branch');
+  assert.match(readme, /the server's `JARL_ROOT`/);
+  assert.doesNotMatch(readme, /`--root`, `JARL_ROOT` or/, 'the command line does not read JARL_ROOT');
+  assert.match(readme, /a profile whose done gate asks no approve closes on recorded evidence and, if it requires one, a merge in the base/);
+  assert.match(readme, /fresh, coordinator, self or unrecorded, and retracted when an approve was taken back and none stands/);
+  const limits = readme.split(/^## /m).find((s) => s.startsWith('What it does not do'));
+  assert.ok(limits, 'the README has its limits section');
+  assert.doesNotMatch(limits, /finds a loop/, 'where the loop is found is not a limit of Jarl');
+  assert.match(readme, /never in a subdirectory/);
 });
 
 test('the manifests describe a loop whose evidence and fresh review decide what closes', () => {

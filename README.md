@@ -63,8 +63,8 @@ A plain skill folder: copy the whole [`skills/jarl/`](skills/jarl/) directory, `
 - Everything anybody sees becomes an issue before anything is touched, so there are no fixes on the side.
 - Issues that touch the same files run one after another; the rest run in parallel, each in its own worktree.
 - A worker's report counts as a claim until a fresh reviewer reads the diff and checks that the new test was red before the change and green after.
-- Once a branch is approved, the merger merges into the branch with a commit that names the issue and runs the check on the result.
-- In the record, nothing is closed without recorded evidence and an approve, from a fresh reviewer when the issue carries code. The tool refuses an approve by a self (the issue's worker, anyone who has held its lease, or a worker of another issue on the same branch), and `status` and `report` say who reviewed the done work: fresh, coordinator, self or unrecorded.
+- Once a branch is approved, the merger merges into the feature branch with a commit that names the issue and runs the check on the result.
+- In the record, nothing is closed without recorded evidence and an approve, from a fresh reviewer when the issue carries code; a profile whose done gate asks no approve closes on recorded evidence and, if it requires one, a merge in the base. The tool refuses an approve by a self (the issue's worker, anyone who has held its lease, or a worker of another issue on the same branch), and `status` and `report` say who reviewed the done work: fresh, coordinator, self or unrecorded, and retracted when an approve was taken back and none stands.
 - The agent asks you when a protection would weaken, the goal would change, or work reaches outside the session.
 - The next session runs `resume` and picks up from the files, not from memory.
 
@@ -91,7 +91,6 @@ To keep the loop in git instead, open it with `init "<goal>" --committed` (it tr
 - Without a `Check:` line the loop lands on the reviewers' testimony alone, and `status` and `report` say so at the top.
 - It records and displays; it never blocks code from landing.
 - By default the loop lives only in the checkout that opened it; another clone does not see it.
-- It finds a loop at the root of a checkout, or of the main checkout from a worktree that holds none, and never in a subdirectory; a loop kept in one is reached with `--root`, `JARL_ROOT` or a tool call's `root` field.
 
 ## Remove it
 
@@ -111,6 +110,8 @@ A closed loop has removed `.jarl/` itself. For an open one, delete `.jarl/` and 
 **Can the issues live in one repository while the code is in another?** Yes: name the other repository when you file an issue (`new "<title>" --repo <name>`), and the worker, the reviewer and the merger work there on its own feature branch.
 
 **Can a research report become issues?** Yes: `import <findings.json>` files one issue per finding, and a second run files nothing twice.
+
+**Where does Jarl look for the loop?** At the root of a checkout, or of the main checkout from a worktree that holds none, and never in a subdirectory. A loop kept in one is reached with `--root` on the command line, or with a tool call's `root` field or the server's `JARL_ROOT`.
 
 **Can another tool read the loop?** `skills/jarl/scripts/record.mjs` is the one stable surface to vendor, under the contract `jarl-record/3`, which keeps every export of `jarl-record/1` and `jarl-record/2` ([the record as a library](skills/jarl/references/composers.md#the-record-as-a-library)).
 
