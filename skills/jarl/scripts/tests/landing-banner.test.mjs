@@ -7,7 +7,7 @@ import { mkdtempSync, mkdirSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
-import { jarl, loop as makeLoop, SPAWN_TIMEOUT } from './helpers.mjs';
+import { jarl, spawnJarl, loop as makeLoop, SPAWN_TIMEOUT } from './helpers.mjs';
 
 const json = (root, ...args) => JSON.parse(jarl(root, ...args, '--json'));
 const goal = (root, text) => appendFileSync(join(root, '.jarl', 'goal.md'), text);
@@ -116,4 +116,22 @@ test('the help of status and report says when the testimony mark shows and what 
   const help = jarl(root, 'status', '--help');
   assert.match(help, /carry the declared check/);
   assert.doesNotMatch(help, /goal\.md has no "Check: <command>" line/);
+});
+
+test('the testimony mark of status and report names the merge that carries a check as a command of its own, with the call\'s --root, declared check or none', () => {
+  const root = loop(1);
+  const form = /: jarl\.mjs merged "<ids>" --sha "<sha>" --ran "<command>" --saw "<what-it-printed>" --root \S+\)/;
+  for (const view of ['status', 'report']) {
+    const said = spawnJarl(root, [view]).stdout;
+    assert.match(said, /^no check is declared — this loop lands its merges on testimony alone/m, view);
+    assert.match(said, form, view);
+  }
+  goal(root, '\nCheck: npm test\n');
+  jarl(root, 'set', '1', 'in-progress', 'go', '--worker', 'w1');
+  merge(root, 1, 'npm run lint');
+  for (const view of ['status', 'report']) {
+    const said = spawnJarl(root, [view]).stdout;
+    assert.match(said, /^no merge carries the declared check — this loop lands on testimony alone/m, view);
+    assert.match(said, form, view);
+  }
 });

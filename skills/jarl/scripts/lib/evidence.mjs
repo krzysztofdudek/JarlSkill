@@ -14,7 +14,7 @@ import { outOfGit } from './loop-git.mjs';
 import { attachmentOf, journalById } from './log.mjs';
 import { acceptanceLineCount, alignRows, bodyText, evidenceNotes, evidenceParts, evidenceTable, loadIssues, mergedOf, noteText, parseIssue, placeEvidence, removeFields, reviewEntries, setSection, sharedMark, struckNote } from './issues.mjs';
 import { fileKeysOf, needFormat, repoNames, reposWhere, tipLines, whereLines, whereOf } from './repositories.mjs';
-import { approveKind, awaitsMerge, carriesCode, inFlightMark, unmergedCode, coordinatorOf, disagreementText, gateOf, gateState, headerReadNotes, readLoop, recordDisagreements, reviewSplit, sameSlice, scopedLoop, sinceText, sliceNamed, sliceOf, slicesOf, waiverVoid } from './loop.mjs';
+import { approveKind, awaitsMerge, carriesCode, inFlightMark, sentBack, unmergedCode, coordinatorOf, disagreementText, gateOf, gateState, headerReadNotes, readLoop, recordDisagreements, reviewSplit, sameSlice, scopedLoop, sinceText, sliceNamed, sliceOf, slicesOf, waiverVoid } from './loop.mjs';
 import { checkState, checkWaiting, checkWaitingText, closedNoCheck } from './metrics.mjs';
 import { builds, modelMarks } from './models.mjs';
 import { ago, leaseLiveness, leaseState, livenessOf, thresholdText } from './rounds.mjs';
@@ -130,6 +130,31 @@ function retractNote(root, rawIds, reason, flags, n) {
   return { id: issue.id, retractedNote: n, by };
 }
 
+// The lines of an Evidence section a worker does not read, by index into `body` (its lines), and how many notes were
+// retracted: each retracted note with the blank line that follows it, and the entry that says who retracted a note and
+// why, with its indented lines, since a reason often restates the note.
+export function retractedNoteLines(body) {
+  const { notes } = evidenceNotes(body.join('\n'));
+  const hidden = new Set();
+  const taken = notes.filter((m) => m.retracted);
+  for (const x of taken) for (let i = x.start; i <= x.end + (body[x.end + 1] === '' ? 1 : 0); i += 1) hidden.add(i);
+  for (let i = 0; i < body.length; i += 1) {
+    if (!/^- \*\*retracted:\*\* note \d+/.test(body[i])) continue;
+    hidden.add(i);
+    while (i + 1 < body.length && (/^ {2}/.test(body[i + 1]) || (body[i + 1] === '' && /^ {2}/.test(body[i + 2] || '')))) { i += 1; hidden.add(i); }
+  }
+  return { hidden, count: taken.length };
+}
+// The line that says how many notes were hidden, so an absence is never silent.
+export const retractedNotesText = (n) => `(${n} note${n === 1 ? '' : 's'} retracted, not shown; the reasons are in the log and in show --full)`;
+// The Evidence section of an issue as a worker reads it: the text with the retracted notes and their reasons left out, and
+// how many notes that was.
+export function workerEvidence(text) {
+  const body = String(text || '').split('\n');
+  const { hidden, count } = retractedNoteLines(body);
+  return { text: body.filter((_, i) => !hidden.has(i)).join('\n'), retracted: count };
+}
+
 // show <id>: the issue as the done gate sees it. The header, What, Why, Acceptance, Changelog and any section of the
 // profile in full; of Reviews and Evidence only the gate's window — every verdict and every --ran/--saw row since
 // the last start or reopen — plus every "changes" finding no later approve has answered, and one line for each
@@ -153,17 +178,8 @@ export function issueView(root, issue, { full = false, places = true } = {}) {
   // in the whole file and left out (null) of the window a worker reads, with the blank line that follows it.
   const numbered = (body, rows) => {
     const { notes } = evidenceNotes(body.join('\n'));
-    const hidden = new Set();
-    const taken = notes.filter((m) => m.retracted);
-    if (!full) {
-      for (const x of taken) for (let i = x.start; i <= x.end + (body[x.end + 1] === '' ? 1 : 0); i += 1) hidden.add(i);
-      // The entry that says who retracted a note and why goes with it: a reason often restates the note.
-      for (let i = 0; i < body.length; i += 1) {
-        if (!/^- \*\*retracted:\*\* note \d+/.test(body[i])) continue;
-        hidden.add(i);
-        while (i + 1 < body.length && (/^ {2}/.test(body[i + 1]) || (body[i + 1] === '' && /^ {2}/.test(body[i + 2] || '')))) { i += 1; hidden.add(i); }
-      }
-    }
+    const { hidden: gone, count } = retractedNoteLines(body);
+    const hidden = full ? new Set() : gone;
     const shown = body.map((l, i) => {
       if (hidden.has(i)) return null;
       const r = rows.find((x) => x.start === i);
@@ -175,7 +191,7 @@ export function issueView(root, issue, { full = false, places = true } = {}) {
       const why = waiver ? waiverVoid(loop, waiver[1], issue.id) : null;
       return `${l.replace(/^(- )?/, `$1[note-${m.n}] `)}${why ? ` (${why}: it waives nothing)` : ''}`;
     });
-    return !full && taken.length ? [...shown, `(${taken.length} note${taken.length === 1 ? '' : 's'} retracted, not shown; the reasons are in the log and in show --full)`] : shown;
+    return !full && count ? [...shown, retractedNotesText(count)] : shown;
   };
   const g = full ? null : gateState(root, issue.id);
   const loop = readLoop(jarlDir(root));
@@ -506,12 +522,14 @@ export const IN_FLIGHT_MARKS = {
   'approved-not-fresh': 'approved by a coordinator only, and it carries code — neither the merge queue nor done accepts that: it waits for a fresh reviewer\'s approve',
   'approved-not-cleared': 'approved, and no approve it holds clears it under the loop\'s done gate — neither the merge queue nor done accepts that: it waits for an approve that does',
   merged: 'merged — nothing is left to land: set it done',
-  'merged-ci': 'merged, CI not green yet — next record the CI result (merged <id> --ci green|red), then set it done',
+  'merged-ci': 'merged, CI not green yet — next record the CI result with merged --ci, green or red, then set it done',
 };
 // The step a mark points to for one issue. An approved issue that carries no code never reaches the merge queue, which
 // lists branches, so it is told to be set done and not that it is queued.
 const APPROVED_NO_CODE = 'approved, and it carries no code, so no merge waits — next set it done';
-const inFlightStep = (mark, issue) => (mark === 'approved' && !carriesCode(issue) ? APPROVED_NO_CODE : IN_FLIGHT_MARKS[mark]);
+// An issue a round sent back whose worker has recorded no row since is the worker's again, not waiting for a reviewer.
+const SENT_BACK = 'sent back by a round, no new proof yet — it is back with the worker, who records new rows';
+const inFlightStep = (loop, mark, issue) => (mark === 'approved' && !carriesCode(issue) ? APPROVED_NO_CODE : sentBack(loop, issue, mark) ? SENT_BACK : IN_FLIGHT_MARKS[mark]);
 // The rows for the in-flight `issues` of a loop (its own issues, or the ones a view is scoped to). Where the mark ends in
 // setting the issue done and an acceptance line only the owner ticks is not ticked, next says that tick comes first.
 const ENDS_DONE = new Set(['approved', 'merged', 'merged-ci']);
@@ -520,7 +538,7 @@ export function inFlightRows(loop, issues) {
   return issues.filter((i) => profile.is(i.status, 'holds-claim') && !waitingOn(i, byId, profile).length).map((i) => {
     const mark = inFlightMark(loop, i);
     const wait = ENDS_DONE.has(mark) ? ownerLineWait(loop.root, loop, i) : null;
-    const step = inFlightStep(mark, i);
+    const step = inFlightStep(loop, mark, i);
     const next = wait ? step.replace(/set it done$/, `${wait}, then set it done`) : step;
     return { id: i.id, title: i.title, branch: i.fields.branch || null, worker: i.fields.worker || null, model: i.fields.model || null, since: i.fields.since || null, ...leaseWriter(loop, i), mark, next };
   });
@@ -539,6 +557,7 @@ export function parentChecks(loop, issues) {
 }
 function parentStep(loop, issue, mark, holder) {
   if (mark === 'no-rows') return `${holder === 'jarl' ? 'the jarl' : holder} checks its own acceptance against the whole and records the check`;
+  if (sentBack(loop, issue, mark)) return 'sent back by a round: it is checked against the whole again, then reviewed again';
   if (mark === 'rows-no-verdict') return 'checked against the whole, it waits for a verdict';
   if (mark === 'changes-requested') return 'changes asked on its check: it is checked again, then reviewed again';
   if (mark === 'approved' && !carriesCode(issue)) return 'checked against the whole and approved: set it done';
@@ -624,7 +643,7 @@ export function cmdClose(root, flags = {}) {
 
 // The row `evidence <id> --file <path> --slot <name>` writes, after every check; nothing is written here.
 function attachmentRow(root, rawIds, flags) {
-  need(!isBulk(rawIds), `an attachment names one issue, not ${rawIds}: evidence <id> --file <path> --slot <name>`, () => ({ arg: 0, value: hole('<id>') }));
+  need(!isBulk(rawIds), `an attachment names one issue, not ${rawIds}: ${jarlLine('evidence', '<id>', '--file', '<path>', '--slot', '<name>')}`, () => ({ arg: 0, value: hole('<id>') }));
   need(flags.file !== undefined, '--slot needs --file <path>: the file of the slot, relative to the loop root', () => ({ flag: '--file', value: '<path-under-the-loop-root>' }));
   need(flags.slot !== undefined, '--file needs --slot <name>, the slot of the issue\'s kind the file fills', () => ({ flag: '--slot', value: '<name>' }));
   need(typeof flags.file === 'string' && typeof flags.slot === 'string', '--file and --slot each take one value', () => (['jarl.mjs', 'evidence', '<id>', '--file', '<path>', '--slot', '<name>']));
@@ -656,7 +675,7 @@ export function closedGateFlags(loop) {
     const merges = events.filter((e) => e.type === 'merged');
     const reasons = []; const repairs = [];
     const flag = (reason, repair) => { reasons.push(reason); if (!repairs.includes(repair)) repairs.push(repair); };
-    const reopen = jarlLine('set', id, 'open');
+    const reopen = jarlLine('set', id, 'open', '<text>');
     if (!profile.is(issue.status, 'closes-record')) {
       if (merges.length || mergedOf(issue)) flag(`a merge is recorded on a ${issue.status} issue`, reopen);
     } else {

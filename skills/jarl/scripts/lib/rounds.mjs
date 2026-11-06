@@ -404,7 +404,8 @@ export function leaseState(root, issue, minutes = LIVENESS_MINUTES, opts = {}) {
     const gone = states.find((s) => s.state === 'gone');
     if (!seen && gone) out.push(`worktree gone: ${gone.path}`);
   }
-  if (f.branch && repos.length && !repos.some((r) => refsIn(r).has(f.branch))) out.push(`branch gone: ${f.branch}`);
+  // A branch another clone pushed and this clone fetched is not gone: the ages read the same refs.
+  if (f.branch && repos.length && !repos.some((r) => refsIn(r).has(f.branch) || fetchedRefs(r, f.branch).length)) out.push(`branch gone: ${f.branch}`);
   const measured = leaseLiveness(root, issue, minutes, opts);
   // A lease whose work is approved and waits for its merge (opts.approved) has nothing left for its worker, so the wait is
   // not the worker's and the lease is not idle for it: the merger's list shows it.

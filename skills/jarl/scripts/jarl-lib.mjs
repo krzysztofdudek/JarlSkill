@@ -22,14 +22,14 @@ export { parseIssue, loadIssues, parentCycle, waitCycle, fieldValue, findIssue, 
 export { raiseFormat, needFormat, mainCheckoutOf, worktreeState, fileAt, reposNamed, refsIn, REPOS_FILE, repoValueKind, repoPlace, repoOf, branchTip, originSpelling, repoFromInput, REPOS_HEADER, REPOS_DECLARED_IN, declaredNames, declaredRepos, cmdRepoBase, repoIdentity, needRightCheckouts, whyNotDeletable, whereOf, whereLines, reposWhere, reposWhereLines } from './lib/repositories.mjs';
 export { RULE_ROLES, RULE_MOMENTS, RULE_SELECTORS, BUILTIN_RULES, parseScope, parseUntil, readAppliesTo, ruleMatches, rulesFor } from './lib/rules.mjs';
 export { needLoop, readLoop, recordDisagreements, disagreementText, BASE_COORDINATORS, reviewerKind, coordinatorNames, carriesCode, inFlightMark, gateState, gateWindow, gateOf, wholeOf, sliceOf, coordinatorOf, reviewSplit } from './lib/loop.mjs';
-export { declaredChecksByRepo, declaredChecks, checkState, TESTIMONY_NOTE, TESTIMONY_NOTE_UNDECLARED, checkLines, mergeCheckLines, FOLLOW_UP_DAYS, loopMetrics, metricsOf, renderMetrics } from './lib/metrics.mjs';
+export { declaredChecksByRepo, declaredChecks, checkState, checkLines, mergeCheckLines, FOLLOW_UP_DAYS, loopMetrics, metricsOf, renderMetrics } from './lib/metrics.mjs';
 export { MODEL_MIN_N, modelLines, cmdModels, renderModels, modelMarks } from './lib/models.mjs';
 export { roundsOf, cmdRound, renderCheckNotes, cmdCheck, cmdBranches, renderBranches, ago, leaseProblems } from './lib/rounds.mjs';
 export { requiredSlots, slotProblems, attachmentStates } from './lib/attachments.mjs';
 export { TIPS_RECENT_MS, resetCaches, ciOf, cmdTips, renderTips } from './lib/tips.mjs';
 export { PERMANENT_MARKER, editorOf, cmdInit, hasLiveLoop, cmdArchive, claimFile, TEMPLATE_RE, templatesDir, readTemplate, TIER_CRITERIA, cmdNew, cmdRenumber, sourceList, waitingOn, waitsOf, cmdSplit, cmdBody, cmdSource, cmdAfter, cmdList, eachIssue, reasonWord, SET_CALLERS, setRouteOf, cmdField, cmdSetStatus, cmdSetField, cmdSet, doneRefusal, cmdMerged, shellWord, cmdTag, cmdPrio, cmdFiles, cmdRepo, workEvidence, needLifecycle } from './lib/commands.mjs';
 export { loadAsks, cmdAsk, RATIFY_WORDS, REJECT_WORDS, AMBIGUOUS_WORDS, cmdAnswer, cmdAnswerMany, recordTypeLog, recordRuleLog, cmdDecide, questionFor, issuesNaming, AREA_RE, RULE_RE, RATIFY_BATCH, ratificationBatch, PROMOTION_OPTIONS, promotionBatch, cmdDecisions, renderDecide, renderDecisions, handoffAge } from './lib/questions.mjs';
-export { cmdEvidence, issueView, schedulerNote, NEXT_GROUPS, cmdNext, modelsTableBuilds, nextRowsBuilds, renderNext, nextRows, uncommittedLoopFiles, cmdStatus, STATUS_BY, IN_FLIGHT_MARKS, inFlightRows, parentChecks, cmdMode, cmdClose, closedGateFlags } from './lib/evidence.mjs';
+export { cmdEvidence, issueView, workerEvidence, schedulerNote, NEXT_GROUPS, cmdNext, modelsTableBuilds, nextRowsBuilds, renderNext, nextRows, uncommittedLoopFiles, cmdStatus, STATUS_BY, IN_FLIGHT_MARKS, inFlightRows, parentChecks, cmdMode, cmdClose, closedGateFlags } from './lib/evidence.mjs';
 export { cmdQueue, renderQueue } from './lib/queue.mjs';
 export { OWNER_HOLDER, JARL_HOLDER, BALL_SHOWN, holderOf, ROW_SOURCES, ballRows, cmdNextAs, renderNextAs, askerSection } from './lib/ball.mjs';
 export { cmdReview } from './lib/review.mjs';

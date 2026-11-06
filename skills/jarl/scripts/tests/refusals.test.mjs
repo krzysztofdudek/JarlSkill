@@ -652,7 +652,14 @@ export function commandStringProblems(file, src) {
   const problems = [];
   const names = [...Object.keys(J.COMMAND_FLAGS), ...Object.keys(J.REPLACED_COMMANDS), 'merge-driver'];
   const built = new RegExp(`jarl\\.mjs (?:${names.join('|')}|["'<])(?![\\w-])`);
-  for (const { line, text } of stringsOf(src)) if (!text.startsWith('usage: ') && built.test(text)) problems.push(`${file}:${line}: a command built as a text: ${text.slice(0, 90)}`);
+  // A command named without jarl.mjs but written with its placeholders or flags (merged <ids> --sha <sha>) is a command
+  // line too: it is printed by the builder, which gives it the call's --root, or said in words.
+  const bare = new RegExp(`(?<![\\w.<-])(?:${names.join('|')})(?: <[a-z][a-z-]*>)+ --[a-z][\\w-]*(?: ["']?<[a-z][a-z-]*>)`);
+  for (const { line, text } of stringsOf(src)) {
+    if (text.startsWith('usage: ')) continue;
+    if (built.test(text)) problems.push(`${file}:${line}: a command built as a text: ${text.slice(0, 90)}`);
+    else if (bare.test(text)) problems.push(`${file}:${line}: a command written as a text: ${text.slice(0, 90)}`);
+  }
   if (file !== 'lib/base.mjs') src.split('\n').forEach((l, i) => { if (!/^\s*\/\//.test(l) && /\bprintedLine\(/.test(l)) problems.push(`${file}:${i + 1}: printedLine carries no global flag of the call`); });
   return problems;
 }
@@ -662,11 +669,12 @@ test('every command Jarl prints is built by printCommand, which carries the call
   assert.deepEqual(problems, []);
   // The check reads a command built as a text, in a string or a template, and the builder of a bare command; prose that
   // names jarl.mjs is no command.
-  for (const planted of ["const x = 'the issues: jarl.mjs list --all';", 'const x = (id) => `jarl.mjs set ${id} done`;', "const x = 'jarl.mjs \"<ids>\"';", 'const x = printedLine([\'jarl.mjs\', \'verify\']);']) assert.equal(commandStringProblems('lib/x.mjs', planted).length, 1, planted);
+  for (const planted of ["const x = 'the issues: jarl.mjs list --all';", 'const x = (id) => `jarl.mjs set ${id} done`;', "const x = 'jarl.mjs \"<ids>\"';", 'const x = printedLine([\'jarl.mjs\', \'verify\']);', "const x = 'a merge: merged <ids> --sha <sha> --ran \"<command>\"';"]) assert.equal(commandStringProblems('lib/x.mjs', planted).length, 1, planted);
   assert.deepEqual(commandStringProblems('lib/x.mjs', "const x = '.jarl/.lock is held by another jarl.mjs (pid 7)';\nconst y = jarlLine('list', '--all');"), []);
+  assert.deepEqual(commandStringProblems('lib/x.mjs', "const x = 'a retraction takes a row number, not a new --ran/--saw row; close --force removes the loop';"), [], 'a flag or a command named in prose is no command line');
   // A view and a note print through it with the root of the loop they describe: the command of a note carries --root.
   const said = J.dispatch(copy(PLAIN), 'field', ['3', 'What', 'relies on issue 1 for its data'], { root: 'r', json: true });
-  assert.ok(said.warn.some((w) => w.endsWith('jarl.mjs field 3 After 1 --add --root r')), said.warn.join('\n'));
+  assert.ok(said.warn.some((w) => w.endsWith('jarl.mjs field 3 After "<ids-it-waits-on>" --add --root r')), said.warn.join('\n'));
 });
 
 // The commands SKILL.md and the references show (a code span or a line of a fenced block that starts with a command of

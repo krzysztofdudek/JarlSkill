@@ -49,7 +49,7 @@ test('next --as jarl lists each issue in play with the step it points to and the
   const text = jarl(root, 'next', '--as', 'jarl');
   assert.match(text, /^On the jarl \(6\)$/m);
   assert.match(text, /^- 5 approved: approved, not merged; merge it \(worker w5\) — jarl\.mjs merged 5 --sha "<sha>" --ran "<command>" --saw "<what-it-printed>" · holds up 10, 11, 12$/m);
-  assert.match(text, /^- 1 ready one: ready to start, raise a worker — jarl\.mjs set 1 in-progress --branch "<branch>" --worker "<name>" · holds up 7, 12$/m);
+  assert.match(text, /^- 1 ready one: ready to start, raise a worker — jarl\.mjs set 1 in-progress --branch "<branch>" --worker "<name>" --model "<model-id>" · holds up 7, 12$/m);
   assert.match(text, /^- 2 with a worker: with worker w2 since .*, no proof yet; the worker records it — jarl\.mjs evidence 2 --ran "<command>" --saw "<what-it-printed>"$/m);
   assert.match(text, /^- 3 proof no verdict: proof recorded, no verdict; raise a fresh reviewer for 3; if you cannot raise agents, ask the owner to start a fresh session \(worker w3\) — jarl\.mjs review 3 "<verdict>" --by "<reviewer>" "<text>", or jarl\.mjs ask 'start a fresh session to review issue 3'$/m);
   assert.match(text, /^- 4 changes asked: changes asked by its reviewer; send it back to a worker \(worker w4\) — jarl\.mjs round 4 "<text>"$/m);
@@ -69,7 +69,7 @@ test('next --as owner lists the questions and the items to ratify, most held-up 
   const o = json(root, 'next', '--as', 'owner');
   assert.deepEqual(o.rows.map((r) => [r.ask, r.what, r.holdsUp]), [['1', 'question', ['8']], ['2', 'ratify', []]]);
   const text = jarl(root, 'next', '--as', 'the Owner');
-  assert.match(text, /^On the owner \(2\)\n- a-1 which way\?: question \(stuck\) on issue 8 — jarl\.mjs answer a-1 "<text>" --by owner · holds up 8\n- a-2 ratify the naming: to ratify — jarl\.mjs answer a-2 yes --by owner \(or "reject"\)$/m);
+  assert.match(text, /^On the owner \(2\)\n- a-1 which way\?: question \(stuck\) on issue 8 — jarl\.mjs answer a-1 "<text>" --by "<the-owner-himself>" · holds up 8\n- a-2 ratify the naming: to ratify — jarl\.mjs answer a-2 "<yes-or-reject-first>" --by "<the-owner-himself>"$/m);
   assert.match(text, /^and 1 issue\(s\) waiting on the owner: jarl\.mjs next --as owner --all$/m);
   const digest = jarl(root, 'next', '--as', 'owner', '--all');
   assert.match(digest, /^Waiting on the owner \(1\)\n- 9 waits on the asked one: waits on the owner via 8$/m);
@@ -118,7 +118,7 @@ test('the rows come from the profile\'s status flags, never from the names of th
   const o = json(root, 'next', '--as', 'jarl');
   assert.deepEqual(o.rows.map((r) => [r.id, r.what]), [['1', 'ready'], ['2', 'review'], ['3', 'close']]);
   const text = jarl(root, 'next', '--as', 'jarl');
-  assert.match(text, /— jarl\.mjs set 1 doing --branch "<branch>" --worker "<name>"$/m);
+  assert.match(text, /— jarl\.mjs set 1 doing --branch "<branch>" --worker "<name>" --model "<model-id>"$/m);
   assert.match(text, /^- 3 approved plain: approved; close it \(worker w3\) — jarl\.mjs set 3 shipped "<text>"$/m);
 });
 
@@ -139,6 +139,70 @@ test('a ruling that settles issues none of which is live, and none finished on i
   jarl(root, 'new', 'the kept work', '--files', 'd.mjs');   // 4
   jarl(root, 'decide', 'keep-the-work-in-4', 'The work of 1 is done in 4.', '--supersedes', 'keep-the-work', '--settles', '4', '--by', 'coordinator');
   assert.deepEqual(json(root, 'next', '--as', 'jarl', '--all').rows.filter((r) => r.what === 'ruling'), []);
+});
+
+test('a ruling is cited by its whole name: a longer name that starts with it, or ends with it, cites another ruling', () => {
+  const root = loop();
+  for (const n of ['a', 'b', 'c', 'd']) jarl(root, 'new', `work ${n}`, '--files', `${n}.mjs`);   // 1-4
+  jarl(root, 'decide', 'ask-01', 'Issue 1 is not needed.', '--settles', '1', '--by', 'coordinator');
+  jarl(root, 'decide', 'ask-02', 'Issue 2 is not needed.', '--settles', '2', '--by', 'coordinator');
+  jarl(root, 'decide', 'ask-03', 'Issue 3 is not needed.', '--settles', '3', '--by', 'coordinator');
+  jarl(root, 'decide', 'ask-04', 'Issue 4 is not needed.', '--settles', '4', '--by', 'coordinator');
+  jarl(root, 'set', '1', 'dropped', 'not needed, ruling ask-012');
+  jarl(root, 'set', '2', 'dropped', 'not needed, see old-ask-02');
+  jarl(root, 'set', '3', 'dropped', 'not needed (ruling ask-03).');
+  jarl(root, 'set', '4', 'dropped', 'not needed on ask-04.');
+  const rows = json(root, 'next', '--as', 'jarl', '--all').rows.filter((r) => r.what === 'ruling').map((r) => r.ruling);
+  assert.deepEqual(rows, ['ask-01', 'ask-02'], 'a reason that names another ruling, or the same name inside a longer one, does not finish the issue on this one');
+});
+
+test('resume and status say an issue a round sent back is back with its worker, as the list does, until the worker records a row', () => {
+  const root = stepsLoop();
+  const inFlight = (text, id) => text.split('\n').find((l) => l.startsWith(id) || l.startsWith(`- ${id} `) || l.startsWith(`in flight ${id} `));
+  jarl(root, 'round', '4', 'the empty list');
+  const resume = jarl(root, 'resume');
+  assert.match(resume, /^- 4 changes asked[^\n]*\n  → sent back by a round, no new proof yet — it is back with the worker, who records new rows$/m);
+  assert.doesNotMatch(resume, /^- 4 [^\n]*\n  → [^\n]*waits for a reviewer/m, 'the line does not say it waits for a reviewer');
+  assert.match(jarl(root, 'status'), /^in flight 4 · sent back by a round, no new proof yet — it is back with the worker, who records new rows$/m);
+  assert.match(inFlight(jarl(root, 'next', '--as', 'jarl', '--all'), '4'), /sent back by a round, no new proof yet; the worker records it/, 'the list says the same');
+  assert.equal(json(root, 'status').inFlightRows.find((r) => r.id === '4').next, 'sent back by a round, no new proof yet — it is back with the worker, who records new rows');
+  assert.equal(json(root, 'resume').inFlight.find((r) => r.id === '4').mark, 'rows-no-verdict', 'the mark names the rows and no verdict since the round');
+  jarl(root, 'evidence', '4', '--ran', 'npm test', '--saw', 'green again');
+  assert.match(jarl(root, 'resume'), /^- 4 changes asked[^\n]*\n  → evidence rows recorded, no verdict since the last start or round — it waits for a reviewer$/m);
+});
+
+test('status and resume end with the asker\'s list under a header that says it is the whole loop\'s when the view is scoped by a tag or a slice', () => {
+  const root = stepsLoop();
+  jarl(root, 'field', '1', 'Tags', 'ui');
+  assert.match(jarl(root, 'status', '--tag', 'ui', '--as', 'jarl'), /\n\n## On the jarl \(6\) — the whole loop's list, not only the issues tagged ui\n/);
+  assert.match(jarl(root, 'status', '--as', 'jarl'), /\n\n## On the jarl \(6\)\n/, 'an unscoped view says nothing of the kind');
+  jarl(root, 'goal', '--set', 'Coordinators: odin');
+  jarl(root, 'field', '2', 'Tags', 'slice:odin');
+  assert.match(jarl(root, 'resume', '--slice', 'odin', '--as', 'jarl'), /\n\n## On the jarl \(\d+\) — the whole loop's list, not only the slice of odin\n/);
+});
+
+test('a question of several lines is one row of next --as, its lines joined, and its title in --json is the question as asked', () => {
+  const root = loop();
+  jarl(root, 'ask', 'first line of the question\nsecond line that goes on\nthird', '--kind', 'stuck');
+  const text = jarl(root, 'next', '--as', 'owner');
+  assert.match(text, /^- a-1 first line of the question second line that goes on third: question \(stuck\) — jarl\.mjs answer a-1 /m);
+  assert.equal(text.split('\n').filter((l) => l.startsWith('-')).length, 1, text);
+  assert.equal(text.split('\n').length, 2, 'the list is the heading and one row');
+  assert.equal(json(root, 'next', '--as', 'owner').rows[0].title, 'first line of the question\nsecond line that goes on\nthird');
+  const status = jarl(root, 'status', '--as', 'owner');
+  assert.match(status, /\n\n## On the owner \(1\)\n- a-1 first line of the question second line that goes on third: /);
+});
+
+test('in a loop with slices the jarl is the coordinator of the issues in play in no slice, so the coordinator rules reach it while one is there', () => {
+  const root = loop();
+  jarl(root, 'goal', '--set', 'Coordinators: odin');
+  jarl(root, 'new', 'in a slice', '--files', 'a.mjs', '--tags', 'slice:odin');
+  jarl(root, 'new', 'in no slice', '--files', 'b.mjs');
+  const slugs = (o) => o.rules.map((r) => r.slug);
+  assert.deepEqual(slugs(json(root, 'next', '--as', 'jarl')), slugs(json(root, 'next', '--as', 'odin')), 'the jarl leases the issue in no slice under the rules odin leases its own under');
+  assert.ok(slugs(json(root, 'next', '--as', 'jarl')).includes('jarl:coordinator-scope-holds'));
+  jarl(root, 'set', '2', 'dropped', 'not needed');
+  assert.deepEqual(slugs(json(root, 'next', '--as', 'jarl')), [], 'with every issue in play in a slice the jarl holds no lease or review of its own');
 });
 
 test('a named coordinator holds nothing while the loop has no slices, and an outside person holds nothing yet', () => {
@@ -212,7 +276,7 @@ test('on a loop opened with a composer\'s profile, next --as lists only what is 
   assert.match(text, /^the issues in play are the composer's: scheduling is led by the composer: composer-x's tick\.mjs --loop <composed-loop>/m);
   assert.doesNotMatch(text, /queued issue|running issue/);
   const owner = jarl(root, 'next', '--as', 'owner');
-  assert.match(owner, /^- a-001 which tier is the default\?: question \(stop\) — jarl\.mjs answer a-001 "<text>" --by owner$/m);
+  assert.match(owner, /^- a-001 which tier is the default\?: question \(stop\) — jarl\.mjs answer a-001 "<text>" --by "<the-owner-himself>"$/m);
   assert.match(jarl(root, 'resume', '--as', 'owner'), /## On the owner \(1\)\n- a-001 [^\n]*\nthe issues in play are the composer's: [^\n]*$/);
 });
 

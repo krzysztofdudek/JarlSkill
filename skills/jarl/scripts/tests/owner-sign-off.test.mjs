@@ -152,7 +152,7 @@ test('next --as puts an owner line on whoever produces its material, then on the
   assert.deepEqual(onJarl(), []);
   assert.deepEqual(onOwner().map((r) => [r.id, r.line]), [['1', 2]]);
   const digest = jarl(root, 'next', '--as', 'owner', '--all');
-  assert.match(digest, /^On the owner \(1\)\n- 1 cut the film: acceptance line 2 is yours to tick: review renders\/cut\.txt and check the pacing of the opening and the captions \(worker w1\) — jarl\.mjs tick 1 2 --by owner · holds up 2$/m);
+  assert.match(digest, /^On the owner \(1\)\n- 1 cut the film: acceptance line 2 is yours to tick: review renders\/cut\.txt and check the pacing of the opening and the captions \(worker w1\) — jarl\.mjs tick 1 2 --by "<the-owner-himself>" · holds up 2$/m);
   assert.match(digest, /^Waiting on the owner \(1\)\n- 2 publish the film: waits on the owner via 1$/m);
   assert.deepEqual(json(root, 'next').map((r) => r.id), [], 'the issue that waits on it with After is not offered');
   // Ticked: off his list, and the close is the jarl's again; the issue after it is offered once it is done.

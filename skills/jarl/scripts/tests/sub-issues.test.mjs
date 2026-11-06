@@ -178,7 +178,7 @@ test('a parent whose sub-issues are all closed holds the ball on its coordinator
   const subsOpen = refuses(root, 'set', '1', 'done', 'finished');
   assert.match(subsOpen, /^1 has sub-issues not closed: 2 \(open\), 3 \(open\) — a parent is closed once each of its sub-issues is done or dropped and its own acceptance is then checked against the whole\njarl\.mjs show 1\njarl\.mjs set "<ids>" "<status>" "<why>"\n$/);
   const odin = () => jarl(root, 'next', '--as', 'odin');
-  assert.match(odin(), /^- 2 the csv writer: ready to start, raise a worker — jarl\.mjs set 2 in-progress --branch "<branch>" --worker "<name>" · holds up 1$/m, 'a sub-issue is in its parent\'s slice, and holds the parent up');
+  assert.match(odin(), /^- 2 the csv writer: ready to start, raise a worker — jarl\.mjs set 2 in-progress --branch "<branch>" --worker "<name>" --model "<model-id>" · holds up 1$/m, 'a sub-issue is in its parent\'s slice, and holds the parent up');
   assert.match(jarl(root, 'next', '--as', 'odin', '--all'), /^- 1 the export: waits on odin via 2, 3$/m);
   assert.match(jarl(root, 'resume'), /^## Waiting on their sub-issues \(1\)\n- 1 the export \(sub-issues 2, 3 not closed\)$/m);
   assert.doesNotMatch(jarl(root, 'resume'), /^## Held/m, 'a parent waiting on its sub-issues is not held by a file');
