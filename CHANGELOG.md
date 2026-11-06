@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- The owner can close chosen tasks without a review, by a decision of his that names them and keeps his own words. Nobody else can. The decision counts until the task is sent back, reopened or its code changes, and the status counts such tasks apart from reviewed ones. The first such decision moves the loop to format 3.
 - A note written on a task can be taken back, as an evidence row can, with who took it back and why. The issue view that a worker reads leaves a retracted note out, and the full view shows it struck through.
 - Every part of an issue's description can now be corrected, including its tier, its kind and who found it, and the record keeps who changed it and what it said before. What happened to an issue, such as its test results, reviews and merges, is never edited, only taken back or replaced.
 - You can ask Jarl what is waiting on one person: the owner's open questions, or the next step of every task for whoever runs the loop, each with the command that takes it. The status and the resume of a loop can end with that list. Work on code that waits for a review shows as one line naming all the tasks, with the question that asks the owner to start a fresh session if no reviewer can be raised; once that question is asked, the work shows on the owner's list.
@@ -44,6 +45,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Which reviews can close a task is set by the loop. By default any reviewer who is not the task's worker counts, whatever model it runs on, and the message after a review says plainly whether the task can now be closed. A loop can ask instead for a reviewer on another model than the worker's, or on one at least as strong, and then a review that does not meet it, or that does not say which model gave it, cannot close the task.
+- A task worked on its own branch can be closed only after its merge is recorded. Before, Jarl closed it without one and then flagged it as closed wrongly. A task without a branch closes as before.
 - A new loop cannot use the words Person and Check when for fields of its own, or promise and wait for kinds of its own, because Jarl now uses them itself. A loop that already uses them keeps working as before. Jarl's own promises and waits are off there, as they are in any loop whose profile lists its own kinds.
 - A task another worker already holds, or one that would touch a file or resource another worker holds, is now refused when you start it, naming who holds it, instead of quietly replacing that worker. Adding such a file or resource to a task that is already started is refused the same way. To give a held task to someone else, say it is a handover and why.
 - A loop is marked with a new format, format 3, the first time Jarl writes into it one of the new kinds of entries this release adds. Format 3 is the format of Jarl 6.3.0: from then on an earlier Jarl refuses that loop with a clear message, saying it needs a Jarl that knows format 3, instead of misreading it, so every copy of Jarl that works on the loop must be 6.3.0 or later. The status, the check of the record and the profile now show which format a loop is in.
@@ -90,6 +93,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A tool call refused for its input, such as a root that is not an absolute path, a field the tool does not take or a value of the wrong type, now ends with the call that tool takes, each value to fill in marked. `list` given a status, a kind or a priority the loop does not know is now refused with the values it knows, instead of showing an empty list.
 - A file written with a leading `./`, a doubled or trailing slash, a `.` in the middle or, on Windows, backslashes is now the same file as the plain path. `next` and the leases hold an issue back on it, `scope` finds it in the diff, and `field Files --add` and `--remove` no longer add or miss it twice.
 - A new profile that declares a section named like a header field of an issue (such as Tags, Where or Priority), or Notes, Reviews or Proof, is now refused when you open a loop with it or check it, with the list of names it cannot take. Such a section would hide the field or let a write replace the history the issue shows. A loop you already run with such a section keeps it.
+- Only the owner can answer an item waiting for his approval. An answer recorded in anyone else's name is refused.
+- An answer to an item waiting for the owner's approval must start with a word that approves or rejects it, such as yes or reject. Any other answer is refused, so it is always clear what the owner decided.
 
 ## [6.2.0] - 2026-10-19
 

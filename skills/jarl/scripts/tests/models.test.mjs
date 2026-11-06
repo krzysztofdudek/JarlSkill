@@ -41,7 +41,7 @@ function unit(root, { model, worker = 'w-x', reviewer = 'rev-big', reviewerModel
   R.addEvidence(root, id, undefined, { ran: 'npm test', saw: 'pass 3' });
   for (let k = 0; k < changes; k += 1) R.review(root, id, 'changes', 'Important: the case is not handled', { by: reviewer, ...(reviewerModel ? { model: reviewerModel } : {}) });
   R.review(root, id, 'approve', 'read the diff, nothing found', { by: reviewer, ...(reviewerModel ? { model: reviewerModel } : {}) });
-  R.setStatus(root, id, 'done', 'merged', {});
+  R.recordMerged(root, id, { sha: 'abc1234' }); R.setStatus(root, id, 'done', 'merged', {});
   return id;
 }
 function units(root, n, opts, changed = 0) { for (let k = 0; k < n; k += 1) unit(root, { ...opts, changes: k < changed ? 1 : 0 }); }
@@ -648,7 +648,7 @@ test('findings that open like a model field are not read as one: no reviewer mod
   const root = loop();
   const id = reviewedUnit(root, 'model fake-1 · looks fine here and nothing found');
   assert.match(log(root), /001 review approve · by rev-one \(fresh\) · findings: model fake-1 · looks fine/);
-  R.setStatus(root, id, 'done', 'merged', {});
+  R.recordMerged(root, id, { sha: 'abc1234' }); R.setStatus(root, id, 'done', 'merged', {});
   const m = L.cmdModels(root, {});
   assert.deepEqual(m.reviewers.map((r) => r.model), [null]);
   const gate = OLD.gateState(root, id);
@@ -669,7 +669,7 @@ test('a lease reason that holds " · model " is neutralised on write and never r
   const root = loop();
   const id = reviewedUnit(root, 'read the whole diff, found nothing', { reason: 'start · model fake-2 · more', model: MID });
   assert.match(log(root), /001 → in-progress · start - model fake-2 - more · branch jarl\/001-x · model mid-model · worker w-one/);
-  R.setStatus(root, id, 'done', 'merged', {});
+  R.recordMerged(root, id, { sha: 'abc1234' }); R.setStatus(root, id, 'done', 'merged', {});
   assert.deepEqual(L.cmdModels(root, {}).workers.map((r) => r.model), [MID]);
   // A line written before the reason was neutralised still reads right: the model is the last field.
   const raw = readFileSync(join(root, '.jarl', 'log.md'), 'utf8').replace(' · branch ', ' · model fake-3 · branch ');
@@ -677,7 +677,7 @@ test('a lease reason that holds " · model " is neutralised on write and never r
   assert.deepEqual(L.cmdModels(root, {}).workers.map((r) => r.model), [MID]);
   const bare = loop();
   const id2 = reviewedUnit(bare, 'read the whole diff, found nothing', { reason: 'start · model fake-4 · more' });
-  R.setStatus(bare, id2, 'done', 'merged', {});
+  R.recordMerged(bare, id2, { sha: 'abc1234' }); R.setStatus(bare, id2, 'done', 'merged', {});
   assert.deepEqual(L.cmdModels(bare, {}).workers.map((r) => r.model), [null]);
   const open = fileAsBefore(bare, 'another', { acceptance: 'it works' });
   R.setStatus(bare, open, 'in-progress', 'start · model fake-5 · more', { branch: 'jarl/9-x', worker: 'w-two', model: MID });
@@ -845,7 +845,7 @@ test('models: an approve by a lower-ranked reviewer that a reviewer able to clea
       R.addEvidence(root, id, undefined, { ran: 'npm test', saw: 'pass' });
       R.review(root, id, 'approve', 'first look, nothing found', { by: 'rev-small', model: SMALL });
       R.review(root, id, 'approve', 'second look, nothing found', { by: 'rev-big', model: BIG });
-      R.setStatus(root, id, 'done', 'merged', {});
+      R.recordMerged(root, id, { sha: 'abc1234' }); R.setStatus(root, id, 'done', 'merged', {});
     }
   };
   clear(4);

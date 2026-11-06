@@ -90,6 +90,7 @@ export const FORMAT_LINES = Object.freeze(Object.fromEntries([
     'promise-wait': { what: 'the kinds promise and wait', where: "the issue's header", misread: 'refuses an issue of a kind it does not know' },
     escalation: { what: 'a question of kind escalation', where: 'the question, among the loop\'s questions', misread: 'refuses a question of a kind it does not know' },
     'rule-proposal': { what: 'a question of kind rule', where: 'the question, among the loop\'s questions', misread: 'reads a proposed rule as a question to the owner and its answer as a ruling with no scope' },
+    'review-waiver': { what: "the owner's waiver of an issue's review", where: "the ruling's Waives review field and a note in each issue it names", misread: 'counts the closed issue as one with no approve recorded and says its gate does not hold' },
     'note-retraction': { what: 'the retraction of a note', where: "the log and the issue's notes, in the shape of a row's retraction", misread: 'counts the note as standing' },
   }),
 ]));
@@ -116,7 +117,12 @@ function numberWidth(profile, width) {
 // check, and Jarl records what it did. "requires-slots" names, per kind of issue, the attachments the issue must carry
 // before it is done, and "slots" declares each one: { "place": "attachments/<id>/before.*", "extensions": ["png"],
 // "min-size": 1000 } (see the attachments section).
-export const DONE_GATE_KEYS = ['approve', 'requires-merged', 'requires-slots', 'slots'];
+// "reviewer" says which approve clears an issue: "agent", the default, an agent other than its worker whatever its model
+// (the model is then advice); "other-model", and of a model no worker of the issue was leased on; "model-rank", and of a
+// model ranked at least as the worker's on the goal's model lines, a change meant to alter nothing excepted.
+export const DONE_GATE_KEYS = ['approve', 'requires-merged', 'requires-slots', 'slots', 'reviewer'];
+export const DONE_GATE_REVIEWER = ['agent', 'other-model', 'model-rank'];
+export const reviewerRule = (profile) => (profile.doneGate && profile.doneGate.reviewer) || DONE_GATE_REVIEWER[0];
 export const SLOT_KEYS = ['place', 'extensions', 'min-size'];
 // The largest file an attachment may be: a file over it is refused, never hashed.
 export const ATTACH_MAX_BYTES = 64 * 1024 * 1024;
@@ -273,7 +279,8 @@ export function validateProfile(json, where = 'the profile') {
       for (const k of Object.keys(g)) if (!DONE_GATE_KEYS.includes(k)) say(`"done-gate": unknown key "${k}" — it takes ${DONE_GATE_KEYS.join(', ')}`);
       if (g.approve !== undefined && !DONE_GATE_APPROVE.includes(g.approve)) say(`"done-gate": "approve" is one of ${DONE_GATE_APPROVE.join(', ')}`);
       if (g['requires-merged'] !== undefined && typeof g['requires-merged'] !== 'boolean') say('"done-gate": "requires-merged" is true or false');
-      const gate = { approve: g.approve ?? DEFAULT_DONE_GATE.approve, 'requires-merged': g['requires-merged'] ?? DEFAULT_DONE_GATE['requires-merged'] };
+      if (g.reviewer !== undefined && !DONE_GATE_REVIEWER.includes(g.reviewer)) say(`"done-gate": "reviewer" is one of ${DONE_GATE_REVIEWER.join(', ')}`);
+      const gate = { approve: g.approve ?? DEFAULT_DONE_GATE.approve, 'requires-merged': g['requires-merged'] ?? DEFAULT_DONE_GATE['requires-merged'], ...(g.reviewer !== undefined ? { reviewer: g.reviewer } : {}) };
       if (g['requires-slots'] !== undefined || g.slots !== undefined) {
         const kindField = fields.find((f) => f.key === 'kind');
         Object.assign(gate, validateSlots(g, kindField && kindField.enum ? kindField.enum : KINDS, say));
@@ -481,7 +488,7 @@ export function renderProfile(d) {
   if (d.sections.length) lines.push(`sections: ${d.sections.join(', ')}`);
   if (d.acceptanceHeading !== 'Acceptance') lines.push(`acceptance heading: ${d.acceptanceHeading}`);
   if (d.externalScheduler) lines.push(`external scheduler: ${d.externalScheduler} (next and queue show it instead of their own list)`);
-  if (d.doneGate.approve !== 'fresh' || d.doneGate['requires-merged']) lines.push(`done gate: approve ${d.doneGate.approve}${d.doneGate['requires-merged'] ? ' · requires a merge in the base' : ''}`);
+  if (d.doneGate.approve !== 'fresh' || d.doneGate['requires-merged'] || d.doneGate.reviewer) lines.push(`done gate: approve ${d.doneGate.approve}${d.doneGate['requires-merged'] ? ' · requires a merge in the base' : ''}${d.doneGate.reviewer ? ` · reviewer ${d.doneGate.reviewer}` : ''}`);
   for (const [kind, names] of Object.entries(d.doneGate['requires-slots'] || {})) {
     lines.push(`attachments: ${kind} needs ${names.join(', ')}`);
     for (const n of names) { const s = d.doneGate.slots[n]; if (s) lines.push(`  ${n}: ${s.place} · ${s.extensions.join(', ')} · at least ${s['min-size']} bytes`); }

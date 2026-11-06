@@ -6,11 +6,12 @@ import { resolve, dirname, basename } from 'node:path';
 import { CI_STATES, echoWord, fieldText, hole, jarlLine, need } from './base.mjs';
 import { jarlDir } from './where.mjs';
 import { idKey, idRe, idsCited, keyedIds } from './ids.mjs';
-import { profileAt } from './profile.mjs';
+import { FORMAT_LINES, profileAt, reviewerRule } from './profile.mjs';
 import { asksAt, decisionsAt, goalLines, readGoal } from './journal.mjs';
 import { eventsById, isParentLine, loopEvents } from './log.mjs';
 import { alignRows, evidenceRows, evidenceTable, headerReadText, issuesAt, mergedOf, sharedNumberText, sharedNumbers } from './issues.mjs';
 import { branchTip } from './repositories.mjs';
+import { OWNER } from './owner.mjs';
 
 // The refusal of a command that needs a loop where there is none: the directory the call looked in (echoed in single
 // quotes with its line breaks escaped, as the words of a call are, so it can neither start a line nor run when the text is
@@ -324,10 +325,30 @@ export function sliceNamed(coordinators, issues, name) {
 }
 // The slices with an issue in play.
 export function activeSlices(loop) { return slicesOf(loop).filter((s) => s.inPlay > 0); }
-const KIND_WEIGHT = { fresh: 0, coordinator: 1, self: 2 };
+const KIND_WEIGHT = { fresh: 0, waived: 0.5, coordinator: 1, self: 2 };
+// The note decide --waives-review writes into each issue it names, as the log holds it.
+const WAIVER_NOTE = /^\S+ evidence · Ruling (\S+) \(by owner\) waives the review\b/;
+// Why the ruling `slug` waives nothing for issue `id`, in a few words, or null when it waives its review: a waiver counts
+// only while its ruling is in the record, is in force, is the owner's with his words, names the issue under Waives
+// review, and the loop is in the record format that holds a waiver (a reader of the formats below it counts the issue as
+// unreviewed, so a waiver below that format counts here neither). The done gate reads it, and show says it beside a note
+// whose ruling does not count.
+function waiverVoid(loop, slug, id) {
+  const d = (loop.decisions || []).find((x) => x.slug === slug);
+  if (!d) return `no ruling ${slug} is in the record`;
+  if (d.supersededBy) return `superseded by ${d.supersededBy}`;
+  if (d.by !== OWNER || !d.quote) return 'the ruling is not the owner\'s with his words';
+  if (!(d.waives || []).some((w) => idKey(w) === idKey(id))) return `the ruling does not name ${id} under Waives review`;
+  const held = FORMAT_LINES['review-waiver'].format;
+  if (loop.profile.format < held) return `the loop is not in record format ${held}`;
+  return null;
+}
 // An issue carries code when it records a branch or a merge. Only then does done (and the merge queue) need a
 // fresh approve; an issue with neither — a ruling, a note, a hub document — is still cleared by the coordinator.
 export function carriesCode(issue) { return Boolean(fieldText(issue.fields.branch) || fieldText(issue.fields.merged)); }
+// A code issue whose branch is not merged: its lease records a Branch, and neither its Merged field nor its journal
+// records a merge. The one rule done refuses by and status flags a closed issue by: the merge comes before done.
+export function unmergedCode(issue, events) { return Boolean(fieldText(issue.fields.branch)) && !mergedOf(issue) && !events.some((e) => e.type === 'merged'); }
 
 // Every worker one issue's own journal has ever named on an in-progress move — a takeover replaces Worker but
 // is still the same issue, so every lease across every round counts, not only the latest.
@@ -368,7 +389,8 @@ function selfWorkers(events, issue, branches) {
 // - the window (gateWindow) holds the anchor and the cut; only --ran/--saw rows logged after the anchor count for done
 //   (a free-text note never does), so nothing written before a start, a reopen or the filing is proof of the work;
 // - an approve by anyone who has ever held the issue's lease (self — see selfWorkers) never counts;
-// - the live approve is the strongest one (fresh over coordinator over self) among those since whatever last
+// - the live approve is the strongest one (fresh over the owner's waiver over coordinator over self; the waiver over
+//   every approve where the profile's reviewer rule judges an approve's model) among those since whatever last
 //   reset the issue — the cut of the window (a round, a reopen, a start), or a later "changes" verdict still
 //   waiting on its own approve. A later, weaker approve never spends an earlier, still-live one: only those
 //   resets do — a coordinator's approve recorded after a live fresh one does not undo it;
@@ -455,6 +477,11 @@ export function gateOf(loop, id) {
   // A tip line belongs to the line of the same issue just before it: a row, a verdict or a merge.
   let before = null;
   let mergeTip = null;   // the tip the newest merge was recorded on
+  // The owner's waivers of this issue's review: the rulings waiverVoid finds nothing against. Each stands where decide
+  // wrote it into the issue (its first note naming the ruling, and the tip after it), and counts as an approve counts: a
+  // start, a reopen or a red round spends it, and so does a new commit.
+  const waivers = new Set((loop.decisions || []).filter((d) => d.waives && waiverVoid(loop, d.slug, id) === null).map((d) => d.slug));
+  const waived = [];
   for (const e of events) {
     if (e.type === 'tip') {
       if (before && before.type === 'merged') mergeTip = e.tip;
@@ -470,7 +497,7 @@ export function gateOf(loop, id) {
       // turns out to have ever held the lease (self) does not stay fresh or coordinator either.
       let kind = e.kind;
       if (kind && e.by) { const now = reviewerKind(e.by, self, coordinators); if (KIND_WEIGHT[now] > KIND_WEIGHT[kind]) kind = now; }
-      const review = { n: e.n, at: e.at, verdict: e.verdict, by: e.by, kind, retracted: false };
+      const review = { n: e.n, at: e.at, verdict: e.verdict, by: e.by, kind, model: e.model ?? null, retracted: false };
       allReviews.push(review);
       trail.push(review);
       before = review;
@@ -478,13 +505,19 @@ export function gateOf(loop, id) {
     }
     // A retraction takes away the newest approve not yet retracted, and only that: it never touches a changes verdict.
     if (e.type === 'retract-review') {
-      const target = [...allReviews].reverse().find((x) => x.verdict === 'approve' && !x.retracted);
+      const target = [...allReviews].reverse().find((x) => x.verdict === 'approve' && x.kind !== 'waived' && !x.retracted);
       if (target) target.retracted = true;
       trail.push({ n: e.n, at: e.at, verdict: 'retract', retracted: false });
       continue;
     }
     if (e.type === 'retract-row') { retractedRows.push(e.row); continue; }
-    if (e.type === 'row') { const row = { ...e, retracted: false }; evidence.push(row); before = row; }
+    if (e.type === 'row') { const row = { ...e, retracted: false }; evidence.push(row); before = row; continue; }
+    const w = e.type === 'other' ? WAIVER_NOTE.exec(e.text || '') : null;
+    if (w && waivers.has(w[1]) && !waived.some((x) => x.ruling === w[1])) {
+      const review = { n: e.n, at: e.at, verdict: 'approve', by: OWNER, kind: 'waived', ruling: w[1], model: null, retracted: false };
+      allReviews.push(review); waived.push(review);
+      before = review;
+    }
   }
   // The branch's tip now, read once and only when a row or a verdict between the two windows carries a tip: the branch
   // in the issue's repositories, or, where it is gone (the cleanup after a merge deletes it), the tip the newest merge
@@ -496,7 +529,7 @@ export function gateOf(loop, id) {
   };
   const kept = (e, after) => e.n > after || (e.tip !== undefined && now() !== null && e.tip === now());
   for (const e of evidence) e.inWindow = e.n > anchorN || (e.n > firmAnchorN && kept(e, anchorN));
-  for (const r of allReviews) r.inWindow = r.n > cut || (r.n > firm.cut && kept(r, cut));
+  for (const r of allReviews) r.inWindow = (r.n > cut || (r.n > firm.cut && kept(r, cut))) && (r.kind !== 'waived' || r.tip === undefined || now() === null || r.tip === now());
   // A retraction names a row by its file-wide ordinal (evidenceTable: the one numbering show prints), and the journal's
   // row lines are matched to the file's rows (alignRows), so journal lines that merged in another order cannot retract
   // the wrong row. A retraction that cannot be resolved to exactly one row is never ignored: it is returned, and done
@@ -516,11 +549,15 @@ export function gateOf(loop, id) {
   // approve. Among those, and past cut, the strongest kind wins, tie-broken by the more recent.
   let sinceChanges = reviews;
   for (let i = reviews.length - 1; i >= 0; i -= 1) { if (reviews[i].verdict === 'changes') { sinceChanges = reviews.slice(i + 1); break; } }
+  // Under a reviewer rule that judges the model of an approve, the owner's live waiver is the one that clears the issue,
+  // whatever approve it holds: done refuses an approve whose model the rule refuses, and a waiver is the owner's ruling
+  // that no review is needed, which no model rule judges. Under the default rule a fresh approve still stands first.
+  const weight = reviewerRule(profile) === 'agent' ? KIND_WEIGHT : { ...KIND_WEIGHT, waived: -1 };
   let live = null;
   for (const r of sinceChanges) {
     if (r.verdict !== 'approve' || !r.inWindow) continue;
-    const rw = KIND_WEIGHT[r.kind] ?? Infinity;
-    const lw = live ? (KIND_WEIGHT[live.kind] ?? Infinity) : Infinity;
+    const rw = weight[r.kind] ?? Infinity;
+    const lw = live ? (weight[live.kind] ?? Infinity) : Infinity;
     if (!live || rw < lw || (rw === lw && r.n > live.n)) live = r;
   }
   return {
@@ -534,10 +571,11 @@ export function gateOf(loop, id) {
     anchorN: Math.min(anchorN, ...evidence.filter((e) => e.inWindow).map((e) => e.n - 1), ...allReviews.filter((r) => r.inWindow && r.n <= anchorN).map((r) => r.n - 1)),
     rowLog: evidence, trail,
     lastReview: last ? last.verdict : null,
-    lastApprove: [...reviews].reverse().find((r) => r.verdict === 'approve') || null,
+    lastApprove: [...reviews].reverse().find((r) => r.verdict === 'approve' && r.kind !== 'waived') || null,
     approved: Boolean(live && live.kind !== 'self'),
     selfApproved: Boolean(live && live.kind === 'self'),
-    fresh: Boolean(live && live.kind === 'fresh'),
+    fresh: Boolean(live && (live.kind === 'fresh' || live.kind === 'waived')),
+    waived: live && live.kind === 'waived' ? live.ruling : null,
     live,
     workers: self,
   };
@@ -549,7 +587,7 @@ export function reviewSplit(loop) {
   const split = { fresh: 0, coordinator: 0, self: 0, unrecorded: 0 };
   for (const i of loop.issues.filter((x) => loop.profile.is(x.status, 'closes-record'))) {
     const kind = approveKind(gateOf(loop, i.id));
-    if (kind === 'retracted') split.retracted = (split.retracted || 0) + 1; else split[kind] += 1;
+    if (kind === 'retracted' || kind === 'waived') split[kind] = (split[kind] || 0) + 1; else split[kind] += 1;
   }
   return split;
 }
@@ -568,7 +606,7 @@ function gateLine(profile, split, label) {
   if (profile.doneGate.approve !== 'none') return `${label}: ${renderSplit(split)}`;
   return `closed on a merge in the base, no approve required (this loop's done gate) · reviews recorded: ${renderSplit(split)}`;
 }
-function renderSplit(s) { return `fresh ${s.fresh} · coordinator ${s.coordinator} · self ${s.self}${s.retracted ? ` · retracted ${s.retracted}` : ''}${s.unrecorded ? ` · unrecorded ${s.unrecorded}` : ''}`; }
+function renderSplit(s) { return `fresh ${s.fresh}${s.waived ? ` · waived by the owner ${s.waived}` : ''} · coordinator ${s.coordinator} · self ${s.self}${s.retracted ? ` · retracted ${s.retracted}` : ''}${s.unrecorded ? ` · unrecorded ${s.unrecorded}` : ''}`; }
 
 // Used by the other modules of the library, and not part of what jarl-lib.mjs exports.
-export { FIELD_NAMES, approveKind, closedGateLine, gateLine, scopedLoop };
+export { FIELD_NAMES, approveKind, closedGateLine, gateLine, scopedLoop, waiverVoid };

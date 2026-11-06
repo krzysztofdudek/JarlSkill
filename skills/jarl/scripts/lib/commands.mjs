@@ -9,15 +9,15 @@ import { git, gitBytes, gitRun } from './git.mjs';
 import { canonical, issuesDir, jarlDir, normalPath, portablePath, stamp, today } from './where.mjs';
 import { readText, renameRetry, writeAtomic } from './files.mjs';
 import { ISSUE_FILE_RE, branchNameProblem, cmpId, expandIds, idKey, idRe, isBulk, itemNaming, needsRaisedFormat, newIssueKey, newNumber } from './ids.mjs';
-import { DEFAULT_PROFILE, FORMAT_LINES, PARENT_FIELD, TOOL_FIELDS, formatState, loadProfile, numberWidth, profilePath, readProfileFile } from './profile.mjs';
+import { DEFAULT_PROFILE, FORMAT_LINES, PARENT_FIELD, TOOL_FIELDS, formatState, loadProfile, numberWidth, profilePath, readProfileFile, reviewerRule } from './profile.mjs';
 import { appendLog, appendLogLines, decisionsPath, goalPath, logPath } from './journal.mjs';
 import { JARL_GITIGNORE, JARL_GITIGNORE_COMMITTED, ensureLoopMerge, outOfGit } from './loop-git.mjs';
 import { HANDOVER_SEGMENT, journalById, mergeCheckText } from './log.mjs';
 import { FIELD_RE, PROPOSED, RENDERED_FIELDS, acceptanceHeading, acceptanceLineCount, acceptanceLines, acceptanceText, bodyText, changelogText, evidenceNotes, evidenceParts, evidenceRows, evidenceTable, fieldValue, findIssue, issueNamed, loadIssues, mergedOf, namedPairs, needNoFieldTags, noteText, parentCycle, parseIssue, placeEvidence, removeFields, removeFirstField, renderIssue, setField, setSection, unattributedRefusal, waitCycle } from './issues.mjs';
 import { branchTip, commitRepoNames, declaredBaseOf, defaultBase, fileKeysOf, isGitRepo, issueRepoPaths, issueRepoSlots, issueRepos, mainCheckoutOf, needFormat, needRightCheckouts, repoFromInput, repoLabel, repoList, reposNamed, tipLines, whyNotDeletable, worktreeState, worktreesOf } from './repositories.mjs';
-import { FIELD_NAMES, activeSlices, carriesCode, gateOf, isSliceTag, needOneSlice, readLoop, sinceText, sliceOf, unorderedNamings, unorderedText } from './loop.mjs';
+import { FIELD_NAMES, activeSlices, carriesCode, unmergedCode, gateOf, isSliceTag, needOneSlice, readLoop, sinceText, sliceOf, unorderedNamings, unorderedText } from './loop.mjs';
 import { declaredChecks, lastMerge } from './metrics.mjs';
-import { modelLines, modelValue, spellingNote } from './models.mjs';
+import { modelGateRefusal, modelLines, modelValue, spellingNote } from './models.mjs';
 import { slotRefusal } from './attachments.mjs';
 import { NOTE_LIMIT, addedContentNotes, addedNoteText } from './rounds.mjs';
 import { resetCaches } from './tips.mjs';
@@ -717,6 +717,7 @@ function doneReady(cause, issue) {
   if (issue.byHeader || cause === 'unattributed') return refiled();
   if (cause === 'evidence') return ['jarl.mjs', 'evidence', hole('<id>'), '--ran', hole('<command>'), '--saw', hole('<what-it-printed>')];
   if (cause === 'approve') return ['jarl.mjs', 'review', hole('<ids>'), hole('<verdict>'), hole('<what-was-read-and-found>'), '--by', hole('<a-fresh-reviewer>')];
+  if (cause === 'model') return ['jarl.mjs', 'review', hole('<ids>'), hole('<verdict>'), hole('<what-was-read-and-found>'), '--by', hole('<a-fresh-reviewer>'), '--model', hole('<model-id>')];
   if (cause === 'merge') return ['jarl.mjs', 'merged', hole('<ids>'), '--sha', hole('<sha>')];
   if (cause === 'slots') return ['jarl.mjs', 'evidence', hole('<id>'), '--file', hole('<path>'), '--slot', hole('<slot>')];
   if (cause === 'owner') return ['jarl.mjs', 'ask', hole('<question-for-the-owner>'), '--issue', hole('<id>')];
@@ -1440,7 +1441,7 @@ function setResources(root, rawIds, value, flags) {
 // doneRefusal reads the loop for one issue; a caller checking several issues reads it once and asks doneRefusalIn.
 export function doneRefusal(root, issue) { return doneRefusalIn(root, readLoop(jarlDir(root)), issue, undefined); }
 function doneRefusalIn(root, loop, issue, base) { return doneGateIn(root, loop, issue, base)?.text ?? null; }
-// Why done refuses, as { text, cause }, or null: the cause (retraction, evidence, slots, merge, owner, approve) decides
+// Why done refuses, as { text, cause }, or null: the cause (retraction, evidence, slots, merge, owner, approve, model) decides
 // the step a refusal of the move ends with. `base`: the branch or ref the merge landed in, when the caller names one.
 function doneGateIn(root, loop, issue, base) {
   const { profile } = loop;
@@ -1473,6 +1474,13 @@ function doneGateIn(root, loop, issue, base) {
   }
   if (!g.approved) return { cause: 'approve', text: `${issue.id} has no approving review newer than its last round${g.tracked ? ' or reopen' : ''}${g.anchor && g.anchor.what === 'whole' ? `, nor one since ${sinceText(g.anchor)}` : ''} — a fresh reviewer reads the issue and the diff first: ${jarlLine('review', issue.id, '<verdict>', '--by', '<reviewer>', '<text>')}` };
   if (code && !g.fresh) return { cause: 'approve', text: `${issue.id} ${freshRuleText(issue, g.live)}: ${jarlLine('review', issue.id, '<verdict>', '--by', '<a-fresh-reviewer>', '<text>')}` };
+  // The model of the approve, where the profile's reviewer rule makes it a gate; under the default it is advice only.
+  const rule = reviewerRule(profile);
+  const byModel = rule === 'agent' ? null : modelGateRefusal(issue, g.live, modelLines(root), loop.eventsById.get(issue.id) || [], rule);
+  if (byModel) return { cause: 'model', text: `${byModel}: ${jarlLine('review', issue.id, '<verdict>', '--by', '<a-fresh-reviewer>', '--model', '<model-id>', '<text>')}` };
+  // A code issue is merged before it is done, the order the approve's reply names and the rule status flags a closed
+  // issue by; a profile that requires a landed merge has checked more than this above.
+  if (unmergedCode(issue, loop.eventsById.get(issue.id) || [])) return { cause: 'merge', text: `${issue.id} carries code (its lease records Branch ${fieldText(issue.fields.branch)}) and records no merge — a code issue is merged before it is done: the merger lands the branch and records it, ${jarlLine('merged', issue.id, '--sha', '<sha>')}, then done` };
   // Last, an acceptance line only the owner ticks: his look comes on top of the proof and the review, never instead.
   return owner();
 }

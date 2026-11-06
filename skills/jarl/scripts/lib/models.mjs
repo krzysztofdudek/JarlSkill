@@ -69,18 +69,53 @@ function leaseModels(events) {
   return events.filter((e) => e.type === 'move' && e.model).map((e) => e.model);
 }
 
-// The notes a verdict gets on the command line in a loop that declares model lines: never a refusal.
-function reviewModelNotes(issue, verdict, model, lines, events) {
-  if (model === undefined) return [`${issue.id}: no --model on this verdict — the loop declares its models; record the model this reviewer was raised on`];
-  if (verdict !== 'approve') return [];
+// What the model of an approve is to the worker's, by the loop's reviewer rule (done-gate "reviewer"): null when there is
+// nothing to say, else { gap, gate } — gap the words that name the gap (the same model, or a lower rank), gate whether the
+// rule makes done refuse the approve for it. Under "agent" the model is advice and never a gate.
+const RULE_WORDS = {
+  agent: 'in this loop the approve that clears an issue is a separate agent\'s, whatever its model (done-gate "reviewer": "agent")',
+  'other-model': 'the profile asks for a reviewer of a model no worker of the issue was leased on (done-gate "reviewer": "other-model")',
+  'model-rank': 'the profile asks for a reviewer of a model ranked at least as the worker\'s (done-gate "reviewer": "model-rank")',
+};
+function modelGap(issue, model, lines, events, rule) {
   const leased = [...new Set(leaseModels(events))];
-  if (!leased.length) return [];
-  if (leased.some((w) => modelKey(w) === modelKey(model))) return [`${issue.id}: an approve by the same model as the worker's (${model}) — a fresh instance is still a fresh reviewer, but the correlation risk is real; the approve that clears an issue comes from another model, not a lower-ranked one, until \`models\` says otherwise`];
+  if (!leased.length || model == null) return null;
+  if (leased.some((w) => modelKey(w) === modelKey(model))) return { same: true, gap: `the same model as the worker's (${model})`, gate: rule === 'other-model' };
   const top = Math.max(...leased.map(lines.rank));
+  if (top < 0 || lines.rank(model) >= top) return null;
   // A change meant to alter nothing keeps its fresh review, and a light one may give it.
-  if (top >= 0 && lines.rank(model) < top && meantToAlterNothing(issue)) return [`${issue.id}: a change meant to alter nothing (tag ${IDENTICAL_OUTPUT_TAG}): a light review may clear it, one that checks the comparison of the output before and after covers everything the change touched`];
-  if (top >= 0 && lines.rank(model) < top) return [`${issue.id}: ${model} ranks below the worker's model (${leased.find((w) => lines.rank(w) === top)})${lines.rank(model) < 0 ? ' — it is on no model line, and an unplaced model ranks below every placed one' : ''}; the approve that clears an issue comes from a model of at least the worker's rank, until \`models\` says it may clear`];
-  return [];
+  if (meantToAlterNothing(issue)) return { light: true, gate: false };
+  return { below: leased.find((w) => lines.rank(w) === top), gap: `${model} ranks below the worker's model`, unplaced: lines.rank(model) < 0, gate: rule === 'model-rank' };
+}
+
+// The notes a verdict gets on the command line, where the loop declares model lines or its profile makes the model a
+// gate: never a refusal. Each says whether done accepts the approve and why, as advice or as a gate, never both.
+function reviewModelNotes(issue, verdict, model, lines, events, rule = 'agent') {
+  if (model === undefined) return [`${issue.id}: no --model on this verdict — ${rule === 'agent' ? 'the loop declares its models; record the model this reviewer was raised on' : `${RULE_WORDS[rule]}, so done refuses an approve that names no model`}`];
+  if (verdict !== 'approve') return [];
+  // A gate that has no worker's model to compare with cannot hold, and the note says so rather than staying silent.
+  if (rule !== 'agent' && !leaseModels(events).length) return [`${issue.id}: the lease of ${issue.id} records no model, so this loop's reviewer rule (done-gate "reviewer": "${rule}") has no worker's model to compare ${model} with — done accepts this approve; the rule holds where the lease names the worker's model`];
+  const gap = modelGap(issue, model, lines, events, rule);
+  if (!gap) return [];
+  if (gap.light) return [`${issue.id}: a change meant to alter nothing (tag ${IDENTICAL_OUTPUT_TAG}): a light review may clear it, one that checks the comparison of the output before and after covers everything the change touched`];
+  const what = gap.same ? `an approve by the same model as the worker's (${model})` : `${model} ranks below the worker's model (${gap.below})${gap.unplaced ? ' — it is on no model line, and an unplaced model ranks below every placed one' : ''}`;
+  if (gap.gate) return [`${issue.id}: ${what} — a gate in this loop: done refuses this approve, because ${RULE_WORDS[rule]}; an approve that meets it clears the issue`];
+  return [`${issue.id}: ${what} — advice, not a gate: done accepts this approve, because ${RULE_WORDS[rule]}; ${gap.same ? 'a reviewer of another model shares fewer of the worker\'s blind spots' : 'a reviewer of at least the worker\'s rank is the stronger check'}, until \`models\` says otherwise`];
+}
+
+// Why done refuses an issue's live approve under the loop's reviewer rule, or null: an approve that names no model, or a
+// model the rule refuses. Under "agent" the model never refuses. An approve that names no model is refused whether or not
+// the lease names one: the gate cannot tell what model gave it, and an approve it cannot place does not clear the issue.
+// One that names a model on an issue whose lease names none passes, as its note said: there is nothing to compare it with.
+function modelGateRefusal(issue, live, lines, events, rule) {
+  if (rule === 'agent' || !live || live.kind === 'waived') return null;
+  const by = live.by || 'a reviewer not recorded';
+  if (!live.model) return `${issue.id}'s live approve by ${by} names no model — ${RULE_WORDS[rule]}, so done refuses an approve that names no model`;
+  if (!leaseModels(events).length) return null;
+  const gap = modelGap(issue, live.model, lines, events, rule);
+  if (!gap || !gap.gate) return null;
+  return gap.same ? `${issue.id}'s live approve is by ${by} on ${live.model}, the model of its worker — this loop's ${RULE_WORDS[rule].replace(/^the /, '')}`
+    : `${issue.id}'s live approve is by ${by} on ${live.model}, which ranks below the worker's model (${gap.below}) — this loop's ${RULE_WORDS[rule].replace(/^the /, '')}`;
 }
 
 // The note a call gets on the command line when its --model spells a model the record holds in another spelling: null
@@ -372,4 +407,4 @@ const SEVERITIES = ['Critical', 'Important', 'Minor'];
 const builds = { modelsTable: 0, nextRows: 0 };
 
 // Used by the other modules of the library, and not part of what jarl-lib.mjs exports.
-export { SEVERITIES, builds, loggedFinding, modelValue, reviewModelNotes, spellingNote };
+export { SEVERITIES, builds, loggedFinding, modelGateRefusal, modelValue, reviewModelNotes, spellingNote };

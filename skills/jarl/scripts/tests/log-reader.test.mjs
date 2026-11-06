@@ -157,7 +157,7 @@ test('a hand-written line that is no verdict is not a changes verdict in the met
   const id = worked(root, 'closed work', { worker: 'w-one', branch: 'jarl/c' });
   R.addEvidence(root, id, undefined, { ran: 'npm test', saw: 'pass' });
   R.review(root, id, 'approve', 'read the diff, nothing found', { by: 'rev-a' });
-  R.setStatus(root, id, 'done', 'merged', {});
+  R.recordMerged(root, id, { sha: 'abc1234' }); R.setStatus(root, id, 'done', 'merged', {});
   appendToLog(root, `- 2030-01-01 00:00 · ${id} review changes needed more tests`);
   assert.equal(L.loopMetrics(root).rounds.changes, 0);
 });
@@ -167,7 +167,7 @@ test('an archived loop is read by its directory', () => {
   const id = worked(root, 'archived work', { worker: 'w-one', branch: 'jarl/y' });
   R.addEvidence(root, id, undefined, { ran: 'npm test', saw: 'pass' });
   R.review(root, id, 'approve', 'read the diff, nothing found', { by: 'rev-a' });
-  R.setStatus(root, id, 'done', 'merged', {});
+  R.recordMerged(root, id, { sha: 'abc1234' }); R.setStatus(root, id, 'done', 'merged', {});
   L.cmdArchive(root, 'done-loop');
   const dir = join(L.jarlDir(root), 'archive', readdirSync(join(L.jarlDir(root), 'archive'))[0]);
   const value = L.readLoop(dir);

@@ -14,7 +14,7 @@ import { outOfGit } from './loop-git.mjs';
 import { attachmentOf, journalById } from './log.mjs';
 import { acceptanceLineCount, alignRows, bodyText, evidenceNotes, evidenceParts, evidenceTable, loadIssues, mergedOf, noteText, parseIssue, placeEvidence, removeFields, reviewEntries, setSection, sharedMark, struckNote } from './issues.mjs';
 import { fileKeysOf, needFormat, repoNames, reposWhere, tipLines, whereLines, whereOf } from './repositories.mjs';
-import { approveKind, carriesCode, coordinatorOf, disagreementText, gateOf, gateState, headerReadNotes, readLoop, recordDisagreements, reviewSplit, sameSlice, scopedLoop, sinceText, sliceNamed, sliceOf, slicesOf } from './loop.mjs';
+import { approveKind, carriesCode, unmergedCode, coordinatorOf, disagreementText, gateOf, gateState, headerReadNotes, readLoop, recordDisagreements, reviewSplit, sameSlice, scopedLoop, sinceText, sliceNamed, sliceOf, slicesOf, waiverVoid } from './loop.mjs';
 import { checkState, checkWaiting, checkWaitingText, closedNoCheck } from './metrics.mjs';
 import { builds, modelMarks } from './models.mjs';
 import { ago, leaseLiveness, leaseState, livenessOf, thresholdText } from './rounds.mjs';
@@ -64,6 +64,8 @@ function retractedBy(flags, what) {
   return fieldText(flags.by);
 }
 const struck = (line) => line.replace(/^- /, '- ~~');
+// The waiver decide --waives-review writes into an issue's notes, as the file holds it: the ruling it names.
+const WAIVER_TEXT = /^(?:- )?Ruling (\S+) \(by owner\) waives the review\b/;
 
 function retractEvidence(root, rawIds, reason, flags) {
   need(!isBulk(rawIds), 'retract names one issue and one row or note', () => ({ arg: 0, value: hole('<id>') }));
@@ -167,7 +169,11 @@ export function issueView(root, issue, { full = false, places = true } = {}) {
       const r = rows.find((x) => x.start === i);
       if (r) return l.replace(/^- /, `- [${r.n}] `);
       const m = notes.find((x) => x.start === i);
-      return m ? l.replace(/^(- )?/, `$1[note-${m.n}] `) : l;
+      if (!m) return l;
+      // A waiver whose ruling does not count (superseded, or otherwise void) keeps its words and says why it waives nothing.
+      const waiver = WAIVER_TEXT.exec(l);
+      const why = waiver ? waiverVoid(loop, waiver[1], issue.id) : null;
+      return `${l.replace(/^(- )?/, `$1[note-${m.n}] `)}${why ? ` (${why}: it waives nothing)` : ''}`;
     });
     return !full && taken.length ? [...shown, `(${taken.length} note${taken.length === 1 ? '' : 's'} retracted, not shown; the reasons are in the log and in show --full)`] : shown;
   };
@@ -680,7 +686,7 @@ export function closedGateFlags(loop) {
       }
       const doneAt = Math.max(-1, ...events.filter((e) => e.type === 'move' && profile.is(e.to, 'closes-record')).map((e) => e.n));
       if (merges.some((m) => m.n > doneAt)) flag('a merge was recorded after it went done', reopen);
-      if (fieldText(issue.fields.branch) && !merges.length && !mergedOf(issue)) flag('a code issue done with no merge recorded', reopen);
+      if (unmergedCode(issue, events)) flag('a code issue done with no merge recorded', reopen);
     }
     // Reopening resets the row and the approve, so when it is one of several repairs it comes first: the others would be wasted.
     if (repairs.length > 1 && repairs.includes(reopen)) repairs.splice(0, repairs.length, `${reopen} (it resets the row and the approve, so do it first)`, ...repairs.filter((r) => r !== reopen));

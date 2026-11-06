@@ -93,6 +93,7 @@ test('brief <id> --role reviewer carries the rules of the reviewer, of the round
   assert.match(text, /\n## Recording the result\n- the verdict when a finding lies outside the issue, one --outside each \(filed as a new issue, never a reason for changes\): jarl\.mjs review 3 "<verdict>" "<findings-with-a-severity>" --by "<reviewer>" --model "<model-id>" --outside "<finding-outside-the-issue>"\n- the verdict, as the last step: jarl\.mjs review 3 "<verdict>" "<findings-with-a-severity>" --by "<reviewer>" --model "<model-id>"$/);
   // A done issue keeps its reviewer's brief; its worker's says it starts once reopened.
   jarl(root, 'review', '3', 'approve', '--by', 'rev2', FINDINGS);
+  jarl(root, 'merged', '3', '--sha', 'abc1234');
   jarl(root, 'set', '3', 'done', 'approved');
   assert.equal(json(root, 'brief', '3', '--role', 'reviewer').rounds.length, 1);
   assert.match(jarl(root, 'brief', '3'), /\nnote: 3 is done: a worker starts on it once it is reopened — jarl\.mjs set 3 open "<why>"\n/);

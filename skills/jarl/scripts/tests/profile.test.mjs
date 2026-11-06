@@ -491,6 +491,7 @@ test('branches: a branch is DONE → delete by flags — closed or given up (ter
   g('branch', 'feat/x'); g('branch', 'feat/y');
   jarl(dir, 'evidence', '1,3', '--ran', 't', '--saw', 'ok');
   jarl(dir, 'review', '1,3', 'approve', FINDINGS, '--by', 'r');
+  jarl(dir, 'merged', '1,3', '--sha', g('rev-parse', 'HEAD').trim(), '--keep');
   jarl(dir, 'set', '1', 'merged', 'in');
   jarl(dir, 'set', '2', 'abandoned', 'gone');
   jarl(dir, 'new', 'd'); jarl(dir, 'set', '4', 'queued', 'ok');

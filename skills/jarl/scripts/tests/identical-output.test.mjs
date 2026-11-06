@@ -2,7 +2,7 @@
 // after as a proof row, the command and what it printed. It keeps its fresh review, which may be a light one that checks
 // the comparison covers everything the change touched: an approve by a model below the worker's is said to be enough for
 // it, where on any other issue it is said not to clear. The comparison never stands in for the review: done refuses such
-// an issue with no approve.
+// an issue with no approve, unless the owner waived its review by a ruling of his.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -52,4 +52,12 @@ test('the briefs of a change meant to alter nothing say what its worker records 
   assert.match(jarl(root, 'brief', '1'), /^note: 1 is a change meant to alter nothing \(tag identical-output\): its comparison of the output before and after is a proof row, the command and what it printed — jarl\.mjs evidence 1 --ran "<command>" --saw "<what-it-printed>"$/m);
   assert.match(jarl(root, 'brief', '1', '--role', 'reviewer'), /^note: 1 is a change meant to alter nothing \(tag identical-output\): its review may be a light one, and it checks that the comparison in its proof rows covers everything the change touched; the comparison never stands in for the review$/m);
   assert.doesNotMatch(jarl(root, 'brief', '2', '--role', 'reviewer'), /meant to alter nothing \(tag/);
+});
+
+test('the owner\'s waiver of the review, and nothing else, closes a change meant to alter nothing with no approve', () => {
+  const root = refactorLoop();
+  jarl(root, 'merged', '1', '--sha', 'abc1234', '--ci', 'none', '--keep');
+  assert.match(refuses(root, 'set', '1', 'done', 'the output is the same'), /^1 has no approving review/);
+  jarl(root, 'decide', 'no-review-for-the-split', 'The split of the renderer closes on its comparison.', '--by', 'owner', '--quote', 'The comparison is enough for that one.', '--waives-review', '1');
+  assert.match(jarl(root, 'set', '1', 'done', 'the output is the same, the review waived'), /1 → done/);
 });

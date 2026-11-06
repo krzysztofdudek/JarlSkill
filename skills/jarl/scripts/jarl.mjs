@@ -193,7 +193,8 @@ commands:
                                                  whose CI is not green yet; done needs, inside one window (rows after
                                                  the last start, reopen or filing; approves after those or a red
                                                  round), a --ran/--saw row — a free-text note never counts alone —
-                                                 and a live approve, and the owner's tick of every acceptance line only he
+                                                 and a live approve, on an issue whose lease records a Branch a merge
+                                                 recorded (merged), and the owner's tick of every acceptance line only he
                                                  ticks (see tick)
   merged <ids> --sha <sha> [--ran "<command>" --saw "<what-it-printed>" | --red <id>] [--ci pending|green|red|none] [--repo <name-or-path>] [--keep] [--by who] | <ids> --ci <ci-state>
                                                  the merge as fields: Merged (sha, and where with --repo) and CI
@@ -318,7 +319,9 @@ commands:
                                                  jarl and in that slice's views, holds its issue back as stuck does,
                                                  and is answered by the jarl (answer a-<n> "<text>" --by jarl);
                                                  listed at boot until answered; ratify is a choice already made
-                                                 under a mandate, awaiting the owner's word, and blocks nothing;
+                                                 under a mandate, awaiting the owner's word, and blocks nothing:
+                                                 its answer starts with yes or reject (ok, tak, nie, … as the
+                                                 refusal lists them), and any other is refused;
                                                  rule proposes the question's text as a rule with the scope of
                                                  --applies-to (as decide takes it), held by the jarl, or by the owner
                                                  with --to owner, and answered yes, which makes it a rule in force, or reject;
@@ -328,11 +331,11 @@ commands:
                                                  records the answer as a ruling and closes the question: the option
                                                  chosen, marked in the ruling's list of options, or the answer in the
                                                  person's own words; --by, which every answer takes, records who answered (owner
-                                                 for the owner, jarl on an escalation), and on a ratify item names no
-                                                 coordinator of the loop;
+                                                 for the owner, jarl on an escalation), and on a ratify item is owner,
+                                                 whose item it is;
                                                  several ratify items as a comma list take one answer, one ruling each,
                                                  each naming the batch it was answered in; on a ratify item whose
-                                                 ruling names a rule, the rule's ratification names who answered
+                                                 ruling names a rule, the rule's ratification names the owner
   resume [--log n] [--ready n] [--gh] [--repo <name-or-path>] [--base <base-branch>] [--as <who>] [--slice <coordinator>]
                                                  read-only, the boot: everything a session picks the loop up from,
                                                  assembled live — goal and counts, rulings in force, in flight with
@@ -358,7 +361,7 @@ commands:
   log "<text>" [--by who]                       append one dated note to the journal; a line that reads as a filing, a move,
                                                  a round, a verdict, a retraction, an evidence row, a merge, a CI state or
                                                  a body change is refused, and the refusal names the command that writes it
-  decide <slug> "<text>" --by <who> [--quote "<his-own-words>"] [--under <slug>] [--supersedes <slug>] [--settles <ids>] [--applies-to "<selectors>" [--until <date-or-id>]] [--area <type> [--reach n] [--rule <id>]]
+  decide <slug> "<text>" --by <who> [--quote "<his-own-words>"] [--under <slug>] [--supersedes <slug>] [--settles <ids>] [--waives-review <ids>] [--applies-to "<selectors>" [--until <date-or-id>]] [--area <type> [--reach n] [--rule <id>]]
                                                  append a ruling (slug: letters, digits, . _ -); refuses a duplicate slug;
                                                  --by, which every ruling takes, records who ruled (jarl for a choice
                                                  made under a mandate; a name that reads as owner is owner); --by owner needs --quote, his own words, kept as
@@ -367,7 +370,10 @@ commands:
                                                  by the jarl or a coordinator rests on, kept as the text's last paragraph
                                                  "Made under: <slug>", shown with the ruling by decisions and with a rule by the views; --supersedes marks
                                                  the ruling it replaces "Superseded by" in place; --settles writes the ruling,
-                                                 with who ruled, into each named issue's evidence (its status is unchanged); --applies-to makes it
+                                                 with who ruled, into each named issue's evidence (its status is unchanged);
+                                                 --waives-review, on a ruling by the owner alone, closes the named
+                                                 issues without a review: done and the merge queue take it for the
+                                                 approve until a round, a reopen or a new commit spends it; --applies-to makes it
                                                  a rule with a scope, printed whole to every reader it matches: loop, or
                                                  selectors joined by "and" (role, slice, moment, issue, tag, kind, tier,
                                                  files, repo, each with one value); --until ends it after a date or when
@@ -515,7 +521,7 @@ says why; replace every "<placeholder>" before running one. A value that is one 
 wherever a value is taken, so it is never recorded; any other text in angle brackets is a value.
 
 Lists (the <ids> above; new's --tags, --files, --repo, --source, --after; import's --tags, --repo, --only;
-decide's --settles; the value field gives Tags, Files, Repo, After and Source): one item, or several as one
+decide's --settles and --waives-review; the value field gives Tags, Files, Repo, After and Source): one item, or several as one
 comma list (a,b); a list flag also repeats; a tool takes the same text or a list of strings, one item each.
 An item that starts with - is refused (it is a flag in the wrong place). A list written as text is refused:
 an item that begins or ends with a quote mark, a name (an id, a tag, a reference, a finding id) that holds
@@ -613,7 +619,7 @@ export const COMMAND_FLAGS = {
   answer: { by: 'value', option: 'value' },
   resume: { log: 'value', ready: 'value', gh: 'bool', repo: 'value', base: 'value', as: 'value', slice: 'value' },
   handoff: { summary: 'value', next: 'many', log: 'value', ready: 'value', gh: 'bool' },
-  log: { by: 'value' }, decide: { settles: 'many', by: 'value', quote: 'value', under: 'value', supersedes: 'value', 'applies-to': 'value', until: 'value', area: 'value', reach: 'value', rule: 'value' }, decisions: { live: 'bool' },
+  log: { by: 'value' }, decide: { settles: 'many', 'waives-review': 'many', by: 'value', quote: 'value', under: 'value', supersedes: 'value', 'applies-to': 'value', until: 'value', area: 'value', reach: 'value', rule: 'value' }, decisions: { live: 'bool' },
   goal: { set: 'value', by: 'value' },
   status: { 'stale-hours': 'value', group: 'value', tag: 'value', as: 'value', slice: 'value' }, archive: { by: 'value' }, report: { found: 'bool', metrics: 'bool' }, mode: { by: 'value' },
   changelog: { repo: 'value' },
@@ -771,7 +777,7 @@ const FLAG_HOLES = {
   model: '<model-id>', worktree: '<the-worktree-of-the-lease>', limit: '<whole-number>', as: '<who>', slice: '<coordinator>', findings: '<count>', role: '<role>',
   group: '<group>', with: '<loop-root>', base: '<base-branch>', 'stale-hours': '<hours>', sha: '<sha>', ci: '<ci-state>', red: '<another-issue>',
   target: '<what-would-get-weaker>', issue: '<id>', option: '<option>', 'ask option': '<label:effect>', 'applies-to': '<selectors>', until: '<date-or-id>', to: '<jarl-or-owner>', log: '<count>',
-  ready: '<count>', summary: '<text>', next: '<text>', settles: '<ids>', quote: '<his-own-words>', under: '<a-ruling-in-force>', supersedes: '<a-ruling-in-force>',
+  ready: '<count>', summary: '<text>', next: '<text>', settles: '<ids>', 'waives-review': '<ids>', quote: '<his-own-words>', under: '<a-ruling-in-force>', supersedes: '<a-ruling-in-force>',
   rule: '<rule-id>', area: '<type>', reach: '<number-of-files>', set: '<machine-line>', line: '<line=id>', outside: '<finding-outside-the-issue>',
 };
 const PART_HOLES = {
@@ -1068,7 +1074,7 @@ export const COMMAND_SUMMARY = {
 export const LIST_FIELDS = {
   new: { tags: 'name', files: 'path', repo: 'path', source: 'name', after: 'name' },
   import: { tags: 'name', repo: 'path', only: 'name' },
-  decide: { settles: 'name' },
+  decide: { settles: 'name', 'waives-review': 'name' },
   round: { id: 'name' }, answer: { id: 'name' },
   evidence: { ids: 'name' }, field: { ids: 'name' }, set: { ids: 'name' }, merged: { ids: 'name' },
   review: { ids: 'name' }, changelog: { ids: 'name' },

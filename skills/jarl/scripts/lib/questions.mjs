@@ -8,11 +8,11 @@ import { jarlDir, today } from './where.mjs';
 import { appendAtomic, readText, writeAtomic } from './files.mjs';
 import { askNumber, idKey, issueForms, needsRaisedFormat, newNumber, writtenId } from './ids.mjs';
 import { FORMAT_LINES, formatState, loadProfile, numberWidth } from './profile.mjs';
-import { ASKS_FILE, DECISIONS_FILE, STAMP_SRC, answeredLines, appendDecision, appendLog, appendLogLines, asksAt, asksPath, firstLine, goalLines, loadDecisions, markDecision, parseStamp, readGoal } from './journal.mjs';
+import { ASKS_FILE, DECISIONS_FILE, STAMP_SRC, answeredLines, appendDecision, appendLog, appendLogLines, asksAt, asksPath, firstLine, goalLines, loadDecisions, markDecision, needNewRuling, parseStamp, readGoal } from './journal.mjs';
 import { OWNER, carryingOwnersWords, needNoOwnersWords, quoteShown, rulingAuthor } from './owner.mjs';
 import { findIssue, freeBlock, loadIssues, noteText, parseIssue, placeEvidence, setSection } from './issues.mjs';
-import { needFormat } from './repositories.mjs';
-import { coordinatorNames, readLoop, sliceNamed } from './loop.mjs';
+import { needFormat, tipLines } from './repositories.mjs';
+import { readLoop, sliceNamed } from './loop.mjs';
 import { issuesFor } from './commands.mjs';
 import { appliesToLine, loopRules, parseScope, parseUntil } from './rules.mjs';
 
@@ -115,8 +115,13 @@ const verdictHole = () => hole('<yes-or-reject-first>');
 const answerGiven = (answer) => ` (got ${JSON.stringify(String(answer ?? ''))})`;
 function ratifyRefusal(id, ruling, answer) {
   const first = String(answer).trim().split(/\s+/)[0].toLowerCase().replace(/[.,;:!?]+$/, '');
-  if (AMBIGUOUS_WORDS.includes(first)) return `a-${id} ratifies ruling ${ruling}: "${first}" is English no and colloquial Polish yes, so it decides nothing — answer tak or nie (yes or reject)`;
-  return `a-${id} ratifies ruling ${ruling}: the answer starts with one word — ${RATIFY_WORDS.join(', ')} to ratify it, ${REJECT_WORDS.join(', ')} to reject it`;
+  const item = ruling ? `a-${id} ratifies ruling ${ruling}` : `a-${id} is a ratify item`;
+  if (AMBIGUOUS_WORDS.includes(first)) return `${item}: "${first}" is English no and colloquial Polish yes, so it decides nothing — answer tak or nie (yes or reject)`;
+  return `${item}: the answer starts with one word — ${RATIFY_WORDS.join(', ')} to ratify it, ${REJECT_WORDS.join(', ')} to reject it`;
+}
+// A ratify item is the owner's to ratify or reject: an answer by anyone else is refused, the form asking for his --by.
+function needOwnersAnswer(ask, by) {
+  need(ask.kind !== 'ratify' || by === null || by === OWNER, `a-${ask.id} is a ratify item: it is the owner's to ratify or reject, and only his answer is recorded, --by owner (got "${by}")`, () => ({ flag: '--by', value: hole('<the-owner-himself>') }));
 }
 
 // What an answer is checked against before anything is written: the question, the answer text (or the chosen option's label),
@@ -142,14 +147,16 @@ function answerChecks(root, ask, answer, chosen) {
     option = options.find((o) => o.label === noSeparators(chosen)) || null;
     need(option, `"${chosen}" is none of the options of a-${id}: ${options.map((o) => o.label).join(', ')}`, () => ({ replace: chosen, value: hole('<option>') }));
   }
-  // A batch item asks about one area ruling, and its answer says one word first: yes or reject (tak or nie); so does a
-  // proposed rule, which the answer accepts or rejects. A rule offered for promotion is answered with one of its options.
+  // A ratify item's answer says one word first: yes or reject (tak or nie), whether it asks about an area ruling of the
+  // batch or about a choice its text describes; so does a proposed rule, which the answer accepts or rejects. A rule
+  // offered for promotion is answered with one of its options.
+  const ratifyItem = ask.kind === 'ratify';
   const ratifying = Boolean(ask.ruling) && ask.kind !== 'rule';
   const proposal = ask.kind === 'rule' && !ask.ruling;
   const rulings = ratifying ? loadDecisions(root) : [];
   const ruling = ratifying ? rulings.find((d) => d.slug === ask.ruling) : null;
-  const verdict = ratifying || proposal ? ratifyVerdict(answer) : null;
-  need(!ratifying || verdict, ratifying && !verdict ? `${ratifyRefusal(id, ask.ruling, answer)}${answerGiven(answer)}` : '', () => ({ arg: 1, value: verdictHole() }));
+  const verdict = ratifyItem || ratifying || proposal ? ratifyVerdict(answer) : null;
+  need(!(ratifyItem || ratifying) || verdict, verdict ? '' : `${ratifyRefusal(id, ask.ruling, answer)}${answerGiven(answer)}`, () => ({ arg: 1, value: verdictHole() }));
   need(!proposal || verdict, `a-${id} proposes a rule: the answer starts with one word — ${RATIFY_WORDS.join(', ')} to accept it, ${REJECT_WORDS.join(', ')} to reject it${answerGiven(answer)}`, () => ({ arg: 1, value: verdictHole() }));
   need(!ratifying || ruling, `a-${id} ratifies ruling ${ask.ruling}, which is not in force in ${DECISIONS_FILE}`, () => afterView(['jarl.mjs', 'decisions', '--live']));
   need(ask.kind !== 'rule' || !ask.ruling || chosen !== null, `a-${id} offers rule ${ask.ruling} for promotion: answer it with --option and one of ${options.map((o) => o.label).join(', ')}`, () => [{ truncate: 2 }, { flag: '--option', value: hole('<option>') }]);
@@ -181,6 +188,7 @@ export function cmdAnswer(root, rawId, answer, flags = {}) {
   // The issue the answer is copied into is resolved before the first write, so a number two files carry writes nothing.
   if (ask.issue) findIssue(root, ask.issue);
   const id = ask.id;
+  needOwnersAnswer(ask, by);
   const text = answer === undefined ? null : noSeparators(oneBreak(answer));
   const checked = answerChecks(root, ask, text, chosen);
   const shown = chosen !== null ? chosen : text;
@@ -208,8 +216,8 @@ export function cmdAnswer(root, rawId, answer, flags = {}) {
 }
 
 // The CLI's answer: one id, or a comma list of ratify items answered together with one verdict. Every question is checked
-// before anything is written, so a refusal writes nothing. A ratify item names who answered (--by) and no coordinator of the
-// loop: the answer to it is a ruling of the person, not of the loop's own director.
+// before anything is written, so a refusal writes nothing. A ratify item is answered --by owner and by no one else: the
+// answer to it is the owner's ratification, which no one records for him.
 export function cmdAnswerMany(root, rawIds, answer, flags = {}) {
   const raw = String(rawIds ?? '').split(',').map((s) => s.trim()).filter(Boolean);
   need(raw.length, 'answer requires an id: one question, or several ratify items as a comma list', () => ({ arg: 0, value: '<a-n>' }));
@@ -225,8 +233,8 @@ export function cmdAnswerMany(root, rawIds, answer, flags = {}) {
   const by = flags.by === undefined ? undefined : rulingAuthor(flags.by);
   const item = found.find((a) => a.kind === 'ratify');
   if (item) {
-    need(by, `a-${item.id} is a ratify item, which needs --by: who answered (owner or a name)`, () => ({ flag: '--by', value: '<owner-or-a-name>' }));
-    need(!coordinatorNames(root).some((n) => n.toLowerCase() === by.toLowerCase()), `--by names a coordinator of the loop (${by}): a ratify item is answered by the owner or by a name, never by the loop's own director`, () => ({ flag: '--by', value: '<owner-or-a-name>' }));
+    need(by, `a-${item.id} is a ratify item, which needs --by owner: it is the owner's to ratify or reject`, () => ({ flag: '--by', value: hole('<the-owner-himself>') }));
+    for (const ask of found) needOwnersAnswer(ask, by);
   }
   // Every question is checked before the first write, so a refusal of one of them writes nothing.
   for (const ask of found) answerChecks(root, ask, answer === undefined ? null : noSeparators(answer), flags.option === undefined ? null : noSeparators(flags.option));
@@ -280,13 +288,13 @@ export function recordRuleLog(root, slug, ratification, result) {
 
 // A ruling written into issues' Evidence, after what is there, with one log line each. The status is left
 // alone: a ruling may settle the question and still leave work, and done keeps its own preconditions.
-function appendRuling(root, issues, line) {
+function appendRuling(root, issues, line, after = () => []) {
   for (const issue of issues) {
     const text = readText(issue.file);
     const current = (parseIssue(text, issue.file).sections.evidence || '').trim();
     writeAtomic(issue.file, setSection(text, 'Evidence', placeEvidence(current, 'note', noteText(line, current), '\n\n')));
   }
-  appendLogLines(root, issues.map((issue) => `${issue.id} evidence · ${line}`));
+  appendLogLines(root, issues.flatMap((issue) => [`${issue.id} evidence · ${line}`, ...after(issue)]));
 }
 
 // The Applies to line of --applies-to and --until, or null when neither is given: the selectors whom the rule applies to,
@@ -336,18 +344,31 @@ export function cmdDecide(root, slug, ruling, flags = {}) {
     need(inForce.includes(under), `--under ${under ? `"${under}"` : 'needs a slug'} is not a ruling in force of this loop; the rulings in force: ${inForce.length ? inForce.join(', ') : '(none)'}`, () => ({ flag: '--under', value: hole('<a-ruling-in-force>') }));
   }
   const settles = flags.settles !== undefined ? issuesFor(root, flags.settles) : [];
+  // A waiver of review is the owner's alone: a ruling of his, with his words, that names the issues it closes without one.
+  need(flags['waives-review'] === undefined || byOwner, `--waives-review closes the named issues without a review, which only the owner rules: a ruling by ${by} waives nothing`, () => [{ flag: '--by', value: hole('<the-owner-himself>') }, { flag: '--quote', value: hole('<his-own-words>') }]);
+  const waives = flags['waives-review'] !== undefined ? issuesFor(root, flags['waives-review']) : [];
   const appliesTo = scopeOf(root, flags);
   const area = flags.area !== undefined ? String(flags.area) : null;
   const reach = flags.reach !== undefined ? Number(flags.reach) : null;
   const rule = flags.rule !== undefined ? String(flags.rule) : null;
   const text = freeBlock(oneBreak(ruling).trim());
-  appendDecision(root, slug, text, { by, quote, under, supersedes: flags.supersedes, area, reach, rule, settles: settles.map((i) => i.id), appliesTo });
+  // A waiver is a line a reader of formats 1 and 2 would count as no review at all: the loop is raised to the format that
+  // holds it before the ruling is written and after the ruling's own refusals, so a refused ruling raises nothing; where a
+  // composer keeps the loop's format, the ruling is refused with nothing written.
+  if (waives.length) { needNewRuling(root, slug, flags.supersedes); needFormat(root, 'review-waiver'); }
+  appendDecision(root, slug, text, { by, quote, under, supersedes: flags.supersedes, area, reach, rule, settles: settles.map((i) => i.id), appliesTo, waives: waives.map((i) => i.id) });
   appendLog(root, `decided ${slug} · by ${by}${appliesTo ? ` · applies to ${appliesTo}` : ''}${flags.supersedes !== undefined ? ` · supersedes ${flags.supersedes}` : ''}${area ? ` · area ${area}${reach !== null ? ` (${reach} files)` : ''}${rule ? ` · rule ${rule}` : ''}` : ''}`);
   if (settles.length) {
     const shown = quote ? quoteShown(quote) : null;
     carryingOwnersWords([shown], () => appendRuling(root, settles, `Ruling ${slug} (by ${by}): ${firstLine(oneBreak(ruling).trim(), `${DECISIONS_FILE}, ruling ${slug}`)}${shown ? ` · ${shown}` : ''}`));
   }
-  return { slug, by, ...(quote ? { quote } : {}), ...(under ? { under } : {}), ...(appliesTo ? { appliesTo } : {}), supersedes: flags.supersedes ?? null, settles: settles.map((i) => i.id), ...(area ? { area, reach, ...(rule ? { rule } : {}) } : {}) };
+  // Each waived issue carries the waiver where the done gate reads it, followed by the tip of its branch, as a verdict is:
+  // a new commit after it spends it.
+  if (waives.length) {
+    const shown = quoteShown(quote);
+    carryingOwnersWords([shown], () => appendRuling(root, waives, `Ruling ${slug} (by owner) waives the review: ${firstLine(oneBreak(ruling).trim(), `${DECISIONS_FILE}, ruling ${slug}`)} · ${shown}`, (issue) => tipLines(root, issue)));
+  }
+  return { slug, by, ...(waives.length ? { waives: waives.map((i) => i.id) } : {}), ...(quote ? { quote } : {}), ...(under ? { under } : {}), ...(appliesTo ? { appliesTo } : {}), supersedes: flags.supersedes ?? null, settles: settles.map((i) => i.id), ...(area ? { area, reach, ...(rule ? { rule } : {}) } : {}) };
 }
 
 // Whether a question of the record asks about a ruling: a ratify item naming it, or the question the ruling `ask-<n>` was

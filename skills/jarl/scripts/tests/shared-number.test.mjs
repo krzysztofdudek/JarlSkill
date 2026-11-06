@@ -324,6 +324,7 @@ function closedOnOneSide(aPullsB, renamed = '2-second-on-a.md') {
   jarl(a.dir, 'set', '2', 'in-progress', '--branch', 'jarl/2-a', '--worker', 'w-a');
   jarl(a.dir, 'evidence', '2', '--ran', 'npm test', '--saw', 'all green');
   jarl(a.dir, 'review', '2', 'approve', '--by', 'rev-a', 'read the diff and found nothing wrong');
+  jarl(a.dir, 'merged', '2', '--sha', 'abc1234', '--keep');
   jarl(a.dir, 'set', '2', 'done');
   a.g('add', '-A'); a.g('commit', '-qm', 'a closes its 2');
   fileAndCommit(b, 'second on B');
@@ -377,6 +378,7 @@ test('a plain issue in the same loop closes on the rows and the approve its log 
   jarl(at.dir, 'set', '1', 'in-progress', '--branch', 'jarl/1-x', '--worker', 'w1');
   jarl(at.dir, 'evidence', '1', '--ran', 'npm test', '--saw', 'all green');
   jarl(at.dir, 'review', '1', 'approve', '--by', 'rev-1', 'read the diff and found nothing wrong');
+  jarl(at.dir, 'merged', '1', '--sha', 'abc1234', '--keep');
   assert.match(jarl(at.dir, 'set', '1', 'done'), /1 → done/);
 });
 

@@ -71,6 +71,7 @@ test('a code issue: a coordinator approve is recorded with a note, done refuses 
   assert.match(refuses(root, 'review', id, 'approve', '--by', 'self', FINDINGS), /self-approve/);
   const ok = jarl(root, 'review', id, 'approve', '--by', 'opus-reviewer-1', 'Minor: a name');
   assert.doesNotMatch(ok.stderr, /fresh-review rule/);
+  jarl(root, 'merged', id, '--sha', 'abc1234');
   assert.match(jarl(root, 'set', id, 'done').stdout, new RegExp(`${id} → done`));
 });
 
@@ -164,6 +165,7 @@ test('a later coordinator approve does not spend an earlier, still-live fresh ap
   // This particular approve is still noted as not clearing it by itself — but the earlier fresh one already did.
   assert.match(r.stderr, /this approve is recorded but does not clear it for done or the merge queue/);
   // The fresh approve from before is still live: done clears on it, not blocked by the later coordinator's own.
+  jarl(root, 'merged', id, '--sha', 'abc1234');
   assert.match(jarl(root, 'set', id, 'done').stdout, new RegExp(`${id} → done`));
 });
 

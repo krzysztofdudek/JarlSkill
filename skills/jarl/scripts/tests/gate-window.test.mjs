@@ -187,7 +187,7 @@ test('a tip line is written by evidence, review and merged, right after their ow
 });
 
 test('the pinned frozen reader reads a loop with tip lines at format 1, and its gate refuses a resumed issue this Jarl lets through', () => {
-  const { root } = leased({ library: true });
+  const { root, g } = leased({ library: true });
   assert.equal(existsSync(join(root, '.jarl', 'profile.json')), false, 'no format raised');
   assert.equal(oldJarl(root, 'list', {}).ok, true);
   assert.equal(oldJarl(root, 'status', {}).ok, true);
@@ -195,6 +195,7 @@ test('the pinned frozen reader reads a loop with tip lines at format 1, and its 
   const r = oldJarl(root, 'set', {}, ['1', 'done', null, {}]);
   assert.equal(r.ok, false);
   assert.match(r.error, /no --ran\/--saw evidence row recorded since it was moved → in-progress/);
+  jarl(root, 'merged', '1', '--sha', g('rev-parse', 'jarl/1-x').trim(), '--ci', 'none', '--keep');
   assert.equal(jarl(root, 'set', '1', 'done'), '001 → done', 'this Jarl keeps the row and the approve of the unchanged tip');
 });
 

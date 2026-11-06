@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { appendFileSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { jarl, loop as makeLoop } from './helpers.mjs';
+import { jarl, spawnJarl, loop as makeLoop } from './helpers.mjs';
 
 const json = (root, ...args) => JSON.parse(jarl(root, ...args, '--json'));
 const loop = (n) => {
@@ -80,7 +80,11 @@ test('a code issue done with no merge recorded is flagged', () => {
   const root = loop(2);
   jarl(root, 'set', '2', 'in-progress', '--worker', 'w2', '--branch', 'jarl/2-x');
   jarl(root, 'review', '2', 'approve', '--by', 'fresh-reviewer', 'read the diff, nothing found'); row(root, 2);
-  jarl(root, 'set', '2', 'done');
+  // done refuses it, so the close comes from a writer that does not hold the rule: the move line written into the log.
+  assert.equal(spawnJarl(root, ['set', '2', 'done']).status, 1);
+  const log = join(root, '.jarl', 'log.md');
+  const last = readFileSync(log, 'utf8').trim().split('\n').filter((l) => / · 2 /.test(l)).pop();
+  appendFileSync(log, `${last.split(' · ')[0]} · 2 → done\n`);
   for (const view of ['status', 'report', 'resume']) {
     const f = flagsOf(root)[view].find((x) => x.id === '2');
     assert.ok(f, view);
