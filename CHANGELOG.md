@@ -66,7 +66,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- A research findings file with a misspelled field name is now refused, and the finding and the field are named, instead of filing the issue with that part left empty. A dry run refuses it the same way.
+- A research findings file with a misspelled field name is now refused, and the finding and the field are named, instead of filing the issue with that part left empty. A dry run refuses it the same way. A field name counts as misspelled when it differs from a field Jarl reads only in capital letters, when it is one letter off a name of five letters or more, or when two neighbouring letters are swapped; any other extra field passes, and the import lists the extra fields it let through.
 - `models` on a loop that has no issue yet, such as a fresh copy of a committed loop, now reports an empty loop. Before, it said the loop was missing.
 - A ruling recorded as the owner's now needs the owner's own words, which are kept with the ruling and shown beside it. A ruling recorded without a name is now the coordinator's, no longer the owner's.
 - Every ruling written into an issue now says who made it. No other text in the record can look like the owner's own words, whatever spelling it uses.
