@@ -571,12 +571,15 @@ export function gateOf(loop, id) {
   const approves = sinceChanges.filter((r) => r.verdict === 'approve' && r.inWindow);
   // Whether the approves meet the loop's definition of an approved issue (the done gate's "clears"), read for an issue that
   // carries code and for this issue as it is: the reading done, the merge queue and the line after a verdict all take.
+  // Each reviewer of the definition is met by its strongest approve, so the approve that meets the default definition is
+  // the strongest of all, and a later approve of a weaker standing never takes its place.
   const code = issue ? carriesCode(issue) : false;
-  const forCode = clearing(clearsOf(profile), approves, true);
-  const cleared = code ? forCode : clearing(clearsOf(profile), approves, false);
-  // The live approve is the strongest; where the definition is met, the strongest of the approves that meet it.
+  const forCode = clearing(clearsOf(profile), approves, true, strongest);
+  const cleared = code ? forCode : clearing(clearsOf(profile), approves, false, strongest);
+  // The live approve is the strongest; where the definition is met without it, the strongest of the approves that meet it.
+  // A self-approve that stands strongest stays live, and the issue stays unapproved.
   let live = strongest(approves);
-  if (cleared.met && live && !cleared.by.has(live)) live = strongest([...cleared.by]);
+  if (cleared.met && live && live.kind !== 'self' && !cleared.by.has(live)) live = strongest([...cleared.by]);
   const approved = Boolean(live && live.kind !== 'self');
   return {
     tracked: anchor !== null,
@@ -595,8 +598,8 @@ export function gateOf(loop, id) {
     // fresh: the approves clear the issue as one that carries code; cleared: as the issue is. uncleared: why approves stand
     // and do not clear it — the fresh-review rule (coordinator), a bot the done gate does not name (bot), or the loop's own
     // definition (definition) — with the approves that stand.
-    fresh: forCode.met,
-    cleared: cleared.met,
+    fresh: approved && forCode.met,
+    cleared: approved && cleared.met,
     uncleared: approved && !cleared.met ? { cause: profile.doneGate.clears ? 'definition' : live.kind === 'bot' ? 'bot' : 'coordinator', standing: [...new Map(approves.filter((r) => r.kind !== 'self').map((r) => [`${r.by} (${r.kind})`, r])).keys()] } : null,
     waived: live && live.kind === 'waived' ? live.ruling : null,
     live,
@@ -606,20 +609,22 @@ export function gateOf(loop, id) {
 
 // An approve that stands for one reviewer of a done gate's "clears", on an issue that carries code or one that does not:
 // fresh, an agent that is neither the issue's worker, the loop's director, a bot nor the owner (the loop's director, or an
-// approve that names no reviewer, too on an issue with no code); owner, the owner's own approve; bot:<name>, that bot's.
+// approve that names no reviewer, too on an issue with no code); owner, the owner's own approve, given in his own standing
+// (a verdict recorded as a bot's under his name is a bot's); bot:<name>, that bot's.
 const isOwner = (by) => Boolean(by) && fieldText(by).toLowerCase() === OWNER;
 function standsFor(r, who, code) {
   if (r.kind === 'self' || r.kind === 'waived') return false;
-  if (who === 'owner') return isOwner(r.by);
+  if (who === 'owner') return r.kind === 'fresh' && isOwner(r.by);
   if (who === 'fresh') return (r.kind === 'fresh' && !isOwner(r.by)) || (!code && (r.kind === 'coordinator' || !r.kind));
   return r.kind === 'bot' && fieldText(r.by).toLowerCase() === who.slice(BOT_PREFIX.length).toLowerCase();
 }
 // Whether `approves` meet a done gate's "clears": some way it names, every reviewer of it with an approve that stands for
-// it; the owner's live waiver meets any. `by` holds the approves that meet it.
-function clearing(clears, approves, code) {
+// it, the strongest such approve as `strongest` ranks them; the owner's live waiver meets any. `by` holds the approves
+// that meet it.
+function clearing(clears, approves, code, strongest) {
   const by = new Set(approves.filter((r) => r.kind === 'waived'));
   for (const way of clears) {
-    const picks = way.map((who) => approves.filter((r) => standsFor(r, who, code)).pop());
+    const picks = way.map((who) => strongest(approves.filter((r) => standsFor(r, who, code))));
     if (picks.every(Boolean)) for (const r of picks) by.add(r);
   }
   return { met: by.size > 0, by };

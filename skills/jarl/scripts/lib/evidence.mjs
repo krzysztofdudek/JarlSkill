@@ -670,7 +670,13 @@ export function closedGateFlags(loop) {
         const kind = approveKind(g);
         if (g.selfApproved) flag('its live approve is by a worker of this issue or its branch', fresh);
         else if (!g.approved) flag(kind === 'retracted' ? 'its approve was retracted' : g.trail.some((r) => r.verdict === 'approve') ? 'its approve is spent by a later round, restart, reopen or changes verdict' : 'it holds no approve', fresh);
-        else if (code && !g.fresh) flag(`it carries code and holds no fresh approve (the live one is by ${g.live.by || 'a reviewer not recorded'}, ${g.live.kind || 'unrecorded'})`, fresh);
+        // The reading done, the merge queue and the line after a verdict take: the approves clear the issue as it is, with
+        // code or without; the fresh-review rule on code is named as such, any other cause as the loop's done gate.
+        else if (!g.cleared) {
+          const live = `the live one is by ${g.live.by || 'a reviewer not recorded'}, ${g.live.kind || 'unrecorded'}`;
+          if (code && g.uncleared.cause === 'coordinator') flag(`it carries code and holds no fresh approve (${live})`, fresh);
+          else flag(`it holds no approve that clears it under the loop's done gate (${live})`, g.uncleared.cause === 'bot' ? fresh : jarlLine('review', id, 'approve', '--by', '<reviewer>', '<text>'));
+        }
       }
       const doneAt = Math.max(-1, ...events.filter((e) => e.type === 'move' && profile.is(e.to, 'closes-record')).map((e) => e.n));
       if (merges.some((m) => m.n > doneAt)) flag('a merge was recorded after it went done', reopen);

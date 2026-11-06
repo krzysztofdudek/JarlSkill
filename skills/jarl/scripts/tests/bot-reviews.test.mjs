@@ -6,7 +6,7 @@
 // verdicts apart from fresh ones.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileAsBefore, formatTwoJarl, oldJarl } from './old-jarl.mjs';
@@ -139,6 +139,40 @@ test('the first bot verdict raises a loop of format 1 to format 3, which both re
   const before = log(composed);
   assert.match(refuses(composed, 'review', cid, 'approve', '--by', 'coderabbit', '--bot', FINDINGS), /a verdict by a bot needs record format 3, and this loop stays at format 1/);
   assert.equal(log(composed), before);
+});
+
+test('a bot\'s verdict given under the owner\'s name is a bot\'s, never the owner\'s: it does not clear', () => {
+  const root = botLoop();
+  assert.equal(review(root, '1', 'owner', '--bot').status, 0);
+  assert.match(log(root), / · 1 review approve · by owner \(bot\) · /);
+  assert.match(refuses(root, 'set', '1', 'done', 'the bot approved', '--by', 'jarl'), /^1's live approve is by owner \(bot\) — a bot's approve is recorded and counted apart/);
+  assert.equal(json(root, 'status').inFlightRows.find((x) => x.id === '1').mark, 'approved-not-cleared');
+  review(root, '4', 'owner', '--bot');
+  assert.match(refuses(root, 'set', '4', 'done', 'the bot approved', '--by', 'jarl'), /^4's live approve is by owner \(bot\)/);
+  // The owner's own approve clears both.
+  review(root, '1', 'owner');
+  review(root, '4', 'owner');
+  assert.equal(done(root, '1').status, 0);
+  assert.equal(done(root, '4').status, 0);
+});
+
+test('status flags an issue closed on a bot\'s approve alone by a move written into the log, with no code as with code', () => {
+  const root = botLoop();
+  const file = join(root, '.jarl', 'log.md');
+  for (const id of ['1', '4']) {
+    review(root, id, 'coderabbit', '--bot');
+    // done refuses it, so the close comes from a writer that does not hold the rule: the move line written into the log.
+    assert.equal(done(root, id).status, 1);
+    const last = log(root).trim().split('\n').filter((l) => new RegExp(` · ${id} `).test(l)).pop();
+    appendFileSync(file, `${last.split(' · ')[0]} · ${id} → done\n`);
+  }
+  const flags = json(root, 'status').closedGate;
+  for (const id of ['1', '4']) {
+    const f = flags.find((x) => x.id === id);
+    assert.ok(f, `${id} is flagged`);
+    assert.match(f.reason, /holds no approve that clears it under the loop's done gate \(the live one is by coderabbit, bot\)/);
+    assert.match(f.repair, new RegExp(`review ${id} approve --by "<a-fresh-reviewer>"`));
+  }
 });
 
 test('--bot names a bot, never the loop\'s director or the issue\'s worker', () => {
