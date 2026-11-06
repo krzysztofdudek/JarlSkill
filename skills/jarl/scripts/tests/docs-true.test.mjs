@@ -12,6 +12,7 @@ import { SCRIPT, SKILL_DIR, SPAWN_TIMEOUT, gitRepo, jarl, loop, refuses, run, sk
 
 const { COMMAND_FLAGS, INTERNAL_COMMANDS, MUTATING, USAGE } = await import('../jarl.mjs');
 const mcp = await import('../jarl-mcp.mjs');
+const { RECORD_API } = await import('../record.mjs');
 
 const PLUGIN = resolve(SKILL_DIR, '..', '..');
 const readRoot = (path) => readFileSync(join(PLUGIN, path), 'utf8');
@@ -271,6 +272,12 @@ test('the changelog\'s preamble, its Unreleased section and its newest released 
   const current = sections.slice(0, released + 1).join('## [');
   assert.deepEqual(current.match(/.*\bhorde\b.*/gi) || [], []);
   assert.match(sections.slice(released + 1).join('## ['), /\bHorde\b/, 'a section below keeps the history it was released with');
+});
+
+test('CLAUDE.md names the record contract that RECORD_API holds, and no other', () => {
+  const named = [...readRoot('CLAUDE.md').matchAll(/jarl-record\/\d+/g)].map((m) => m[0]);
+  assert.ok(named.length > 0, 'CLAUDE.md names the contract');
+  assert.deepEqual([...new Set(named)], [RECORD_API]);
 });
 
 test('the manifests describe a loop whose evidence and fresh review decide what closes', () => {

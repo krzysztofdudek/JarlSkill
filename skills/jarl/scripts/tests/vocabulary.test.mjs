@@ -128,8 +128,9 @@ test('the skill defines each glossary term once, in the one table of references/
   const outside = outsideEntries.map((e) => e.text);
   const outsideLabels = outsideEntries.map((e) => `${e.file}:${e.n}`);
   for (const term of TERMS) {
-    // A definition: the term, with an article, is or means a noun phrase, at the start of a line or a sentence.
-    const re = new RegExp(`(?:(?:^|[.;:]\\s+|^\\W*)(?:a|an|the)\\s+${term}s?\\s+(?:is|means)\\s+(?:a|an|the|one|any|what|every|when)\\b|^\\W*${term}\\W*\\s+means\\b)`, 'i');
+    // A definition: the term, with an article, is or means a noun phrase, or is followed by its appositive ("A term, a
+    // tool that …"), at the start of a line or a sentence.
+    const re = new RegExp(`(?:(?:^|[.;:]\\s+|^\\W*)(?:a|an|the)\\s+${term}s?\\s+(?:is|means)\\s+(?:a|an|the|one|any|what|every|when)\\b|(?:^|[.;:]\\s+|^\\W*)(?:a|an|the)\\s+${term}s?,\\s+(?:a|an)\\s+[^,.;]*?\\b(?:that|which|who)\\b|^\\W*${term}\\W*\\s+means\\b)`, 'i');
     assert.deepEqual(hits(outside, re, outsideLabels), [], `${term} is defined outside the glossary`);
   }
 });

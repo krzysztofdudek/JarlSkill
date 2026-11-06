@@ -408,7 +408,7 @@ test('a composer cannot write the journal whole through writeAtomic, and writes 
 
 // ---- a composer's flow through the record operations alone -------------------------------------------------
 
-test('a composer that moves tickets with the record operations and edits its own ticket fields under the lock reads the same in every view and the gate', () => {
+test('a composer that moves issues with the record operations and edits its own issue fields under the lock reads the same in every view and the gate', () => {
   const repo = gitRepo({ branch: 'main' });
   const root = shapedLoop(SHAPES.composer);
   const dir = R.jarlDir(root);
@@ -423,7 +423,7 @@ test('a composer that moves tickets with the record operations and edits its own
   R.setStatus(root, b, 'queued', undefined, {});
   R.setStatus(root, c, 'running', undefined, { branch: 'jarl/c', worker: 'w2' });
   R.addRound(root, c, 'the check was red');
-  // The composer's own edit of its own ticket fields, as its editTicket does: under the lock, whole file, no line of the journal.
+  // The composer's own edit of its own issue fields: under the lock, whole file, no line of the journal.
   const edit = (id, fn) => R.withLock(root, () => { const file = issueFile(root, id); R.writeAtomic(file, fn(readFileSync(file, 'utf8'))); });
   const logBefore = logLinesOf(root).length;
   edit(b, (t) => t.replace('\n## ', '\n**Team:** platform\n\n## '));
@@ -444,7 +444,7 @@ test('a composer that moves tickets with the record operations and edits its own
     for (const [name, n] of Object.entries(status.statuses)) assert.equal(n, byStatus[name] || 0, `status counts ${name} as the issues read`);
     assert.equal(status.inFlight, loop.issues.filter((i) => loop.profile.is(i.status, 'holds-claim')).length);
     assert.deepEqual(resume.inFlight.map((x) => x.id), loop.issues.filter((i) => loop.profile.is(i.status, 'holds-claim')).map((i) => i.id));
-    assert.deepEqual(status.closedGate, [], 'the closed ticket holds its gate');
+    assert.deepEqual(status.closedGate, [], 'the closed issue holds its gate');
     return { status, resume };
   };
   const first = agree();
@@ -452,7 +452,7 @@ test('a composer that moves tickets with the record operations and edits its own
   assert.equal(first.resume.disagreements, undefined);
   assert.equal(R.findIssue(root, b).fields.files, 'a.txt, b.txt');
   assert.match(readFileSync(issueFile(root, b), 'utf8'), /\*\*Team:\*\* platform/);
-  // The composer writes a status into a ticket's text: the views keep the status of the journal and say so.
+  // The composer writes a status into an issue's text: the views keep the status of the journal and say so.
   edit(b, (t) => t.replace('**Status:** queued', '**Status:** merged'));
   const second = agree();
   assert.equal(second.status.disagreements.length, 1);

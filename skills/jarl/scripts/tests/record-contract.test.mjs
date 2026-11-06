@@ -239,7 +239,7 @@ test('recordFormat says the format of a loop, the formats this library reads, wh
     const composed = mkdtempSync(join(tmpdir(), 'jarl-record-format-composed-'));
     const file = join(composed, 'profile.json');
     writeFileSync(file, JSON.stringify({ 'jarl-profile': R.PROFILE_VERSION, name: 'c', statuses: { open: ['dispatchable'], doing: ['holds-claim'], done: ['settles-dependents', 'terminal', 'closes-record'] }, 'external-scheduler': 'the composer' }));
-    R.initLoop(composed, 'the mission', { profile: file });
+    R.initLoop(composed, 'the composed goal', { profile: file });
     assert.deepEqual(R.recordFormat(composed), { format: 1, reads: [1, 2, 3], raises: false, off: Object.keys(R.FORMAT_LINES) });
     rmSync(composed, { recursive: true, force: true });
   } finally { rmSync(root, { recursive: true, force: true }); }
