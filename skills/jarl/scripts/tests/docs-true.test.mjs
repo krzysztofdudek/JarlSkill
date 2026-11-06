@@ -260,8 +260,11 @@ test('the README names the branch the merger merges into, who reads JARL_ROOT, t
   assert.doesNotMatch(readme, /`--root`, `JARL_ROOT` or/, 'the command line does not read JARL_ROOT');
   assert.match(readme, /a profile whose done gate asks no approve closes on recorded evidence and a merge in the base, which it must require/);
   assert.match(readme, /a profile can also require attached files before a kind of issue closes/);
-  const labels = renderSplit({ fresh: 1, waived: 1, coordinator: 1, self: 1, retracted: 1, unrecorded: 1 }).split(' · ').map((part) => part.replace(/ \d+$/, ''));
-  assert.equal(labels.length, 6, 'the split prints six labels');
+  const parts = renderSplit({ fresh: 1, waived: 1, coordinator: 1, self: 1, relayed: 1, bot: 1, retracted: 1, unrecorded: 1, botVerdicts: 1, relayedVerdicts: 1 }).split(' · ');
+  const counted = parts.filter((part) => part.startsWith('of every verdict recorded'));
+  const labels = parts.filter((part) => !counted.includes(part)).map((part) => part.replace(/ \d+$/, ''));
+  assert.equal(labels.length, 8, 'the split prints eight labels');
+  assert.equal(counted.length, 1, 'the split ends in one line counting the verdicts of relayed and bot');
   const line = readme.split('\n').find((l) => l.includes('say who reviewed the done work'));
   assert.ok(line, 'the README has the sentence about who reviewed the done work');
   const list = line.slice(line.indexOf('say who reviewed the done work:')).replace(/\([^)]*\)/g, '');
@@ -269,6 +272,11 @@ test('the README names the branch the merger merges into, who reads JARL_ROOT, t
     const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     assert.match(list, new RegExp(`(?:: |, |, and | and )${escaped}\\b`), `the README lists the review label "${label}" the code prints`);
   }
+  for (const kind of ['relayed', 'bot']) {
+    assert.match(counted[0], new RegExp(`\\b${kind} 1`), `the count line of the split names ${kind}`);
+    assert.match(list, new RegExp(`how many of every verdict recorded[^.;]*\\b${kind}\\b`), `the README says the count line counts the ${kind} verdicts`);
+  }
+  assert.match(line, /unless the done gate's `clears` setting names who clears an issue instead \(fresh, the owner, a named bot, or several reviewers who must approve together\)/, 'the README says in a clause what the clears setting does, and the sentence about what clears an issue gives way to it');
   assert.match(line, /waived by the owner \([^)]*waives the review[^)]*\)/, 'the README says in a clause what the waiver is');
   assert.match(line, /retracted when an approve was taken back and none stands/);
   const limits = readme.split(/^## /m).find((s) => s.startsWith('What it does not do'));
