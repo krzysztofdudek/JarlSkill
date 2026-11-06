@@ -5,7 +5,7 @@ import { PROMISE_KIND, WAIT_KIND, fieldText, jarlLine, need } from './base.mjs';
 import { cmpId, idKey, idsCited } from './ids.mjs';
 import { mergedOf } from './issues.mjs';
 import { leaseOfMove } from './log.mjs';
-import { carriesCode, coordinatorOf, gateOf, inFlightMark, readLoop, sameSlice, sliceOf } from './loop.mjs';
+import { carriesCode, coordinatorOf, inFlightMark, readLoop, sameSlice, sentBack, sliceOf } from './loop.mjs';
 import { reasonWord, waitingOn } from './commands.mjs';
 import { nextRows, schedulerNote } from './evidence.mjs';
 import { ownerLineStates } from './owner-lines.mjs';
@@ -66,7 +66,7 @@ function issueRows(ctx) {
   // Open and offered by next: ready to start. A parent offered there is in play below, for its check.
   for (const r of ctx.next.filter((x) => x.ready && !x.subs)) {
     out.push({ what: 'ready', id: r.id, title: r.title, priority: r.priority, holder: holderOfId(r.id),
-      says: 'ready to start, raise a worker', command: jarlLine('set', r.id, leaseStatus, '--branch', '<branch>', '--worker', '<name>') });
+      says: 'ready to start, raise a worker', command: jarlLine('set', r.id, leaseStatus, '--branch', '<branch>', '--worker', '<name>', '--model', '<model-id>') });
   }
   const evidence = (id) => jarlLine('evidence', id, '--ran', '<command>', '--saw', '<what-it-printed>');
   const verdict = (id) => jarlLine('review', id, '<verdict>', '--by', '<reviewer>', '<text>');
@@ -153,13 +153,6 @@ function issueRows(ctx) {
 }
 // How long an idle lease or proof has had no sign of work, with the threshold it is past.
 const idleFor = (lv) => `${ago(lv.ageMs)} (threshold ${thresholdText(lv.minutes)})`;
-
-// A round sends the work back: until the worker records a row after it, the issue is the worker's again.
-function sentBack(loop, issue, mark) {
-  const lastRound = (loop.eventsById.get(issue.id) || []).filter((e) => e.type === 'round').reduce((n, e) => Math.max(n, e.n), -1);
-  const rowsAfterRound = gateOf(loop, issue.id).rowLog.filter((r) => !r.retracted && r.inWindow && r.n > lastRound).length;
-  return lastRound >= 0 && rowsAfterRound === 0 && mark === 'rows-no-verdict';
-}
 
 // The issues in play whose code has proof and no verdict, and waits for a fresh reviewer.
 function awaitingReview(loop, profile) {
@@ -335,12 +328,15 @@ function rulingRows(ctx) {
 // An issue finished on the ruling: its reason, or the line of its last move, names the ruling.
 function closedOn(loop, issue, slug) {
   const reasons = [...(issue.sections.evidence || '').matchAll(new RegExp(`^${reasonWord(issue.status)}:\\s*(.*)$`, 'gm'))];
-  if (reasons.length && reasons[reasons.length - 1][1].includes(slug)) return true;
+  if (reasons.length && cites(reasons[reasons.length - 1][1], slug)) return true;
   const moves = (loop.eventsById.get(issue.id) || []).filter((e) => e.type === 'move');
-  return moves.length > 0 && String(moves[moves.length - 1].text || '').includes(slug);
+  return moves.length > 0 && cites(String(moves[moves.length - 1].text || ''), slug);
 }
 
 // The jarl's lease conflicts: an issue whose log leases it twice, by two writers, to two holders, with no move out of the
+// Whether a text names a ruling: the slug as a whole name, never as the start or the end of a longer one (ask-01 is not
+// named by ask-012, nor x-ask-01 by ask-01). A name ends at a character a slug cannot hold, and a full stop that closes a sentence ends it too.
+const cites = (text, slug) => new RegExp(`(?<![\\p{L}\\p{N}_.-])${slug.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}_-])(?!\\.[\\p{L}\\p{N}_-])`, 'u').test(text);
 // lease between the two lines and no handover. One copy of the loop refuses a lease another worker holds, so the two
 // lines come from two copies that each leased it before either saw the other, merged. Which lease stands is the jarl's
 // to settle.

@@ -692,6 +692,13 @@ export function inFlightMark(loop, issue) {
   if (verdicts.length && verdicts[verdicts.length - 1].verdict === 'changes') return 'changes-requested';
   return g.rowsSince === 0 ? 'no-rows' : 'rows-no-verdict';
 }
+// Whether a round sent the work back and the worker has recorded no row since: the issue is the worker's again, though its
+// mark still reads rows and no verdict.
+export function sentBack(loop, issue, mark) {
+  const lastRound = (loop.eventsById.get(issue.id) || []).filter((e) => e.type === 'round').reduce((n, e) => Math.max(n, e.n), -1);
+  const rowsAfterRound = gateOf(loop, issue.id).rowLog.filter((r) => !r.retracted && r.inWindow && r.n > lastRound).length;
+  return lastRound >= 0 && rowsAfterRound === 0 && mark === 'rows-no-verdict';
+}
 // Whether an issue holds a live approve and is not merged yet: the merger's to land, so its lease is not idle for that wait.
 export const awaitsMerge = (loop, issue) => inFlightMark(loop, issue) === 'approved';
 

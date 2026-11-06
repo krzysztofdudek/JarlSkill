@@ -14,7 +14,7 @@ import { outOfGit } from './loop-git.mjs';
 import { attachmentOf, journalById } from './log.mjs';
 import { acceptanceLineCount, alignRows, bodyText, evidenceNotes, evidenceParts, evidenceTable, loadIssues, mergedOf, noteText, parseIssue, placeEvidence, removeFields, reviewEntries, setSection, sharedMark, struckNote } from './issues.mjs';
 import { fileKeysOf, needFormat, repoNames, reposWhere, tipLines, whereLines, whereOf } from './repositories.mjs';
-import { approveKind, awaitsMerge, carriesCode, inFlightMark, unmergedCode, coordinatorOf, disagreementText, gateOf, gateState, headerReadNotes, readLoop, recordDisagreements, reviewSplit, sameSlice, scopedLoop, sinceText, sliceNamed, sliceOf, slicesOf, waiverVoid } from './loop.mjs';
+import { approveKind, awaitsMerge, carriesCode, inFlightMark, sentBack, unmergedCode, coordinatorOf, disagreementText, gateOf, gateState, headerReadNotes, readLoop, recordDisagreements, reviewSplit, sameSlice, scopedLoop, sinceText, sliceNamed, sliceOf, slicesOf, waiverVoid } from './loop.mjs';
 import { checkState, checkWaiting, checkWaitingText, closedNoCheck } from './metrics.mjs';
 import { builds, modelMarks } from './models.mjs';
 import { ago, leaseLiveness, leaseState, livenessOf, thresholdText } from './rounds.mjs';
@@ -511,7 +511,9 @@ export const IN_FLIGHT_MARKS = {
 // The step a mark points to for one issue. An approved issue that carries no code never reaches the merge queue, which
 // lists branches, so it is told to be set done and not that it is queued.
 const APPROVED_NO_CODE = 'approved, and it carries no code, so no merge waits — next set it done';
-const inFlightStep = (mark, issue) => (mark === 'approved' && !carriesCode(issue) ? APPROVED_NO_CODE : IN_FLIGHT_MARKS[mark]);
+// An issue a round sent back whose worker has recorded no row since is the worker's again, not waiting for a reviewer.
+const SENT_BACK = 'sent back by a round, no new proof yet — it is back with the worker, who records new rows';
+const inFlightStep = (loop, mark, issue) => (mark === 'approved' && !carriesCode(issue) ? APPROVED_NO_CODE : sentBack(loop, issue, mark) ? SENT_BACK : IN_FLIGHT_MARKS[mark]);
 // The rows for the in-flight `issues` of a loop (its own issues, or the ones a view is scoped to). Where the mark ends in
 // setting the issue done and an acceptance line only the owner ticks is not ticked, next says that tick comes first.
 const ENDS_DONE = new Set(['approved', 'merged', 'merged-ci']);
@@ -520,7 +522,7 @@ export function inFlightRows(loop, issues) {
   return issues.filter((i) => profile.is(i.status, 'holds-claim') && !waitingOn(i, byId, profile).length).map((i) => {
     const mark = inFlightMark(loop, i);
     const wait = ENDS_DONE.has(mark) ? ownerLineWait(loop.root, loop, i) : null;
-    const step = inFlightStep(mark, i);
+    const step = inFlightStep(loop, mark, i);
     const next = wait ? step.replace(/set it done$/, `${wait}, then set it done`) : step;
     return { id: i.id, title: i.title, branch: i.fields.branch || null, worker: i.fields.worker || null, model: i.fields.model || null, since: i.fields.since || null, ...leaseWriter(loop, i), mark, next };
   });
@@ -555,6 +557,7 @@ export function leaseWriter(loop, issue) {
   const writer = move ? move.writer : null;
   return writer !== null || loop.goalLines.coordinators.length ? { leasedBy: writer } : {};
 }
+  if (sentBack(loop, issue, mark)) return 'sent back by a round: it is checked against the whole again, then reviewed again';
 // The writer of a lease as a view prints it.
 export const leasedByText = (x) => (x.leasedBy === undefined ? '' : `leased by ${x.leasedBy ?? '(unnamed)'}`);
 

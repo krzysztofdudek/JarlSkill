@@ -93,7 +93,7 @@ Every open thing of a loop has one holder who moves next: the owner, the jarl, a
 
 | Open thing | Holder | The command that moves it |
 |---|---|---|
-| an issue ready to start | the coordinator of its slice; with no slice, the jarl | `set <id> <status> --branch <worker-branch> --worker <name>` |
+| an issue ready to start | the coordinator of its slice; with no slice, the jarl | `set <id> <status> --branch <worker-branch> --worker <name> --model <model-id>` |
 | a parent whose sub-issues are all done or dropped, and no proof after the last of them closed | the coordinator of its slice; with no slice, the jarl: it checks the parent's own acceptance against the whole | `evidence <id> --ran … --saw …`, then `review` and the close |
 | a lease with no proof yet, or sent back by a round | the coordinator of its slice (with no slice, the jarl), with its worker as the one who does it | `evidence <id> --ran … --saw …` |
 | a proof with no verdict, or an approve by a coordinator alone on an issue that carries code | the coordinator of its slice; with no slice, the jarl | `review <id> <verdict> --by <reviewer> …` |
