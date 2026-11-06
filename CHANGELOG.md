@@ -94,6 +94,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A file written with a leading `./`, a doubled or trailing slash, a `.` in the middle or, on Windows, backslashes is now the same file as the plain path. `next` and the leases hold an issue back on it, `scope` finds it in the diff, and `field Files --add` and `--remove` no longer add or miss it twice.
 - A new profile that declares a section named like a header field of an issue (such as Tags, Where or Priority), or Notes, Reviews or Proof, is now refused when you open a loop with it or check it, with the list of names it cannot take. Such a section would hide the field or let a write replace the history the issue shows. A loop you already run with such a section keeps it.
 - Only the owner can answer an item waiting for his approval. An answer recorded in anyone else's name is refused.
+- A findings file, a profile or a goal saved by an editor that puts a byte order mark at the start, as Windows editors do, is now read like any other. Before, a findings file saved that way was refused as not JSON.
 - An answer to an item waiting for the owner's approval must start with a word that approves or rejects it, such as yes or reject. Any other answer is refused, so it is always clear what the owner decided.
 
 ## [6.2.0] - 2026-10-19

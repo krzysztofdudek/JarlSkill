@@ -9,8 +9,10 @@ const SLEEPER = new Int32Array(new SharedArrayBuffer(4));
 function sleep(ms) { Atomics.wait(SLEEPER, 0, 0, ms); }
 
 // Every text file the loop keeps is read with its line endings as LF: a loop is committed, and a Windows checkout
-// with core.autocrlf (or an editor there) hands it back with CRLF, which every line-based parser here would misread.
-export function readText(path) { return readFileSync(path, 'utf8').replace(/\r\n?/g, '\n'); }
+// with core.autocrlf (or an editor there) hands it back with CRLF, which every line-based parser here would misread. A
+// byte order mark at the start (Windows editors write one) is no part of the text: it is dropped, so a findings file, a
+// profile and a goal read the same with or without it.
+export function readText(path) { return readFileSync(path, 'utf8').replace(/^﻿/, '').replace(/\r\n?/g, '\n'); }
 
 // Windows refuses a rename onto (or of) a file another process holds open — a reader without the lock, a virus
 // scanner, the search indexer — with EPERM, EACCES or EBUSY, for the moment that handle stays open. Such a rename
