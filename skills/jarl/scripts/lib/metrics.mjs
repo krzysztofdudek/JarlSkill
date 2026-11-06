@@ -211,8 +211,9 @@ export function metricsOf(loop, now) {
   const reopened = tracked.filter((i) => facts.get(i.id).reopens);
   const reopenings = { n: tracked.length, times: tracked.length ? reopened.reduce((s, i) => s + facts.get(i.id).reopens, 0) : null, issues: tracked.length ? reopened.map((i) => i.id) : null, noData: noData(!tracked.length, 'the journal tracks no issue') };
 
-  const kinds = { fresh: 0, coordinator: 0, self: 0, unrecorded: 0 };
-  const code = { fresh: 0, coordinator: 0, self: 0, unrecorded: 0 };
+  // A relayed fresh approve and a bot's are counted apart from the fresh ones.
+  const kinds = { fresh: 0, coordinator: 0, self: 0, relayed: 0, bot: 0, unrecorded: 0 };
+  const code = { fresh: 0, coordinator: 0, self: 0, relayed: 0, bot: 0, unrecorded: 0 };
   const reviewers = {};
   for (const i of closed) {
     const g = gateOf(loop, i.id);
@@ -221,8 +222,8 @@ export function metricsOf(loop, now) {
     if (carriesCode(i)) code[k] = (code[k] || 0) + 1;
     if (k === 'fresh') reviewers[g.live.by] = (reviewers[g.live.by] || 0) + 1;
   }
-  const recorded = kinds.fresh + kinds.coordinator + kinds.self;
-  const codeRecorded = code.fresh + code.coordinator + code.self;
+  const recorded = kinds.fresh + kinds.coordinator + kinds.self + kinds.relayed + kinds.bot;
+  const codeRecorded = code.fresh + code.coordinator + code.self + code.relayed + code.bot;
   const freshReviews = {
     n: closed.length, recorded, ...kinds, share: share(kinds.fresh, recorded),
     code: { n: codeRecorded + code.unrecorded + (code.retracted || 0), recorded: codeRecorded, ...code, share: share(code.fresh, codeRecorded) },
@@ -258,7 +259,32 @@ export function metricsOf(loop, now) {
     noData: noData(!anyFoundBy || !closedAt.length, !anyFoundBy ? 'no issue records Found by, so no follow-up can be traced to what it follows' : closed.length ? 'no closed issue outside research has its close in the journal' : 'nothing closed yet'),
   };
 
-  return { check: checkState(loop), cycleTime, leadTime, rounds, reopenings, freshReviews, redCiAfterMerge, followUps, slips: slipsOf(loop) };
+  return { check: checkState(loop), cycleTime, leadTime, rounds, reopenings, freshReviews, redCiAfterMerge, followUps, slips: slipsOf(loop), batches: batchesOf(loop) };
+}
+
+// The batched reviews: each verdict given on several issues at once, by the batch id its lines carry, in the order of the
+// log, as { id, verdict, by, at, issues, size, rounds }: the issues it covered, how many, and the red rounds recorded on
+// them after it.
+function batchesOf(loop) {
+  const byBatch = new Map();
+  for (const e of loop.events) {
+    if (e.type !== 'verdict' || !e.batch || e.id === null || !loop.byId.has(e.id)) continue;
+    if (!byBatch.has(e.batch)) byBatch.set(e.batch, { id: e.batch, verdict: e.verdict, by: e.by, at: e.at, lines: [] });
+    byBatch.get(e.batch).lines.push(e);
+  }
+  const batches = [...byBatch.values()].map(({ lines, ...b }) => {
+    const issues = [...new Set(lines.map((e) => e.id))];
+    const rounds = lines.reduce((s, line) => s + (loop.eventsById.get(line.id) || []).filter((e) => e.type === 'round' && e.n > line.n).length, 0);
+    return { ...b, issues, size: issues.length, rounds };
+  });
+  return { n: batches.length, batches };
+}
+// The batched reviews as report prints them: the first few with their issues, size, verdict and the rounds after each.
+const BATCHES_SHOWN = 8;
+function batchesLine(b) {
+  const over = new Set(b.batches.flatMap((x) => x.issues)).size;
+  const shown = b.batches.slice(0, BATCHES_SHOWN).map((x) => `${x.issues.join(', ')} (${x.size}, ${x.verdict}${x.by ? ` by ${x.by}` : ''}): ${x.rounds} round${x.rounds === 1 ? '' : 's'} after it`);
+  return `batched reviews: ${b.n} batch${b.n === 1 ? '' : 'es'} over ${over} issue${over === 1 ? '' : 's'} · ${shown.join('; ')}${b.n > BATCHES_SHOWN ? `; and ${b.n - BATCHES_SHOWN} more` : ''}`;
 }
 
 // The slips a coordinator records against its own work, per writer: the reopens after done (moves out of a status that
@@ -311,8 +337,9 @@ export function renderMetrics(m) {
     slipLine('reopened after done', m.slips.reopens),
     slipLine('retracted', m.slips.retractions),
     slipLine('scope grew after the lease', m.slips.scopeGrew),
-    `fresh reviews of closed work: ${f.noData ? nd(f) : `${f.fresh} of ${f.recorded} with a recorded reviewer (${pct(f.share)}) · coordinator ${f.coordinator} · self ${f.self}${f.retracted ? ` · retracted ${f.retracted}` : ''}${f.unrecorded ? ` · no data for ${f.unrecorded} (approved before --by)` : ''}${f.code.recorded ? ` · carrying code: ${f.code.fresh} of ${f.code.recorded} (${pct(f.code.share)})` : ''}`}`,
+    `fresh reviews of closed work: ${f.noData ? nd(f) : `${f.fresh} of ${f.recorded} with a recorded reviewer (${pct(f.share)}) · coordinator ${f.coordinator} · self ${f.self}${f.relayed || f.bot ? ` · relayed ${f.relayed} · bot ${f.bot}` : ''}${f.retracted ? ` · retracted ${f.retracted}` : ''}${f.unrecorded ? ` · no data for ${f.unrecorded} (approved before --by)` : ''}${f.code.recorded ? ` · carrying code: ${f.code.fresh} of ${f.code.recorded} (${pct(f.code.share)})` : ''}`}`,
     ...(Object.keys(f.reviewers).length ? [`fresh reviewers: ${Object.keys(f.reviewers).length}${Object.keys(f.reviewers).length > 5 ? ', most often' : ''} ${Object.entries(f.reviewers).slice(0, 5).map(([k, v]) => `${k} ${v}`).join(' · ')}`] : []),
+    ...(m.batches && m.batches.n ? [batchesLine(m.batches)] : []),
     `red CI after merge: ${m.redCiAfterMerge.noData ? nd(m.redCiAfterMerge) : `${m.redCiAfterMerge.red} of ${m.redCiAfterMerge.settled} settled (${pct(m.redCiAfterMerge.share)})${list(m.redCiAfterMerge.issues)}`}${m.redCiAfterMerge.pending.length ? ` · pending ${m.redCiAfterMerge.pending.length}` : ''}${m.redCiAfterMerge.none.length ? ` · no CI ${m.redCiAfterMerge.none.length}` : ''}`,
     `follow-ups within ${m.followUps.windowDays} days (Found by names the closed issue): ${m.followUps.noData ? nd(m.followUps) : `${m.followUps.withFollowUps} of ${m.followUps.n} closed${m.followUps.followUps.length ? `: ${m.followUps.followUps.map((x) => `${x.id} ← ${x.followUps.join(', ')}`).join('; ')}` : ''} · ${m.followUps.windowClosed ? `share ${m.followUps.windowClosedWithFollowUps} of ${m.followUps.windowClosed} whose ${m.followUps.windowDays} days have passed (${pct(m.followUps.share)})` : `share: no data (no close is ${m.followUps.windowDays} days old yet)`}${m.followUps.windowOpen ? ` · window still open for ${m.followUps.windowOpen}` : ''}`}`,
   ].join('\n');

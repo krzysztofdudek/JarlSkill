@@ -23,17 +23,17 @@ function loneLoop() {
   return root;
 }
 
-test('proofs of code with no verdict are one line on the jarl: raise a fresh reviewer for them, or ask the owner for a fresh session', () => {
+test('proofs of code with no verdict are one line on the jarl: one fresh reviewer per unit, or ask the owner for a fresh session', () => {
   const root = loneLoop();
   const o = json(root, 'next', '--as', 'jarl', '--all');
   const group = o.rows.find((r) => r.what === 'review' && r.ids);
   assert.deepEqual(group.ids, ['1', '2']);
-  assert.equal(group.says, 'proof recorded, no verdict; raise a fresh reviewer for 1, 2; if you cannot raise agents, ask the owner to start a fresh session');
+  assert.equal(group.says, 'proof recorded, no verdict; raise one fresh reviewer per unit: 1 · 2; if you cannot raise agents, ask the owner to start a fresh session');
   assert.ok(group.command.includes(ASK), group.command);
   assert.deepEqual(group.holdsUp, ['4']);
   assert.deepEqual(o.rows.filter((r) => r.what === 'review').map((r) => r.id), ['1', '3'], 'the proof of the issue without code keeps its own line');
   const text = jarl(root, 'next', '--as', 'jarl', '--all');
-  assert.match(text, new RegExp(`^- 1, 2: proof recorded, no verdict; raise a fresh reviewer for 1, 2; if you cannot raise agents, ask the owner to start a fresh session — jarl\\.mjs review "<id>" "<verdict>" --by "<reviewer>" "<text>", or ${ASK.replace(/[.\\"]/g, '\\$&')} · holds up 4$`, 'm'));
+  assert.match(text, new RegExp(`^- 1, 2: proof recorded, no verdict; raise one fresh reviewer per unit: 1 · 2; if you cannot raise agents, ask the owner to start a fresh session — jarl\\.mjs review "<ids>" "<verdict>" --by "<reviewer>" "<text>", or ${ASK.replace(/[.\\"]/g, '\\$&')} · holds up 4$`, 'm'));
   assert.match(text, /^- 3 a note: proof recorded, no verdict; raise a reviewer \(worker me\) — jarl\.mjs review 3 /m);
   assert.deepEqual(json(root, 'next', '--as', 'owner', '--all').rows, []);
 });

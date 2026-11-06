@@ -6,7 +6,7 @@ import { resolve, dirname, basename } from 'node:path';
 import { CI_STATES, echoWord, fieldText, hole, jarlLine, need } from './base.mjs';
 import { jarlDir } from './where.mjs';
 import { idKey, idRe, idsCited, keyedIds } from './ids.mjs';
-import { FORMAT_LINES, profileAt, reviewerRule } from './profile.mjs';
+import { BOT_PREFIX, FORMAT_LINES, botNames, clearsOf, clearsWords, profileAt, reviewerRule } from './profile.mjs';
 import { asksAt, decisionsAt, goalLines, readGoal } from './journal.mjs';
 import { eventsById, isParentLine, loopEvents } from './log.mjs';
 import { alignRows, evidenceRows, evidenceTable, headerReadText, issuesAt, mergedOf, sharedNumberText, sharedNumbers } from './issues.mjs';
@@ -33,8 +33,9 @@ export function needLoop(root) {
 //   goal          the text of the goal, or null; goalLines, what it carries for the tool (see goalLines)
 //   asks          the questions; decisions, the rulings
 //   coordinators  the names that review as the loop's director
+//   bots          the names of the bots the profile's done gate names
 //   branchWorkers every worker leased on each Branch, across every issue that records it
-// goal, goalLines, asks, decisions, coordinators and branchWorkers are read on first use.
+// goal, goalLines, asks, decisions, coordinators, bots and branchWorkers are read on first use.
 export function readLoop(dir) {
   const root = basename(dir) === '.jarl' ? dirname(dir) : dir;
   const profile = profileAt(dir);
@@ -53,6 +54,7 @@ function makeLoop({ dir, root, profile, issues, events }) {
     asks: once(() => asksAt(dir)),
     decisions: once(() => decisionsAt(dir)),
     coordinators: once(() => coordinatorsIn(root, loop.goalLines)),
+    bots: once(() => botNames(profile)),
     branchWorkers: once(() => branchWorkersOf(loop)),
   };
   for (const [key, read] of Object.entries(reads)) Object.defineProperty(loop, key, { enumerable: true, get: read });
@@ -237,14 +239,16 @@ export function unorderedText(n) {
 // Who reviewed, as a kind: the word self, or anyone who has ever held the issue's lease — its own worker across
 // every takeover, and the worker of any other issue sharing its Branch (a package, or an issue folded into the
 // same branch later) — is self too; the loop's own director — coordinator, jarl, reeve, the loop's own name (the
-// directory holding .jarl/) and any name the goal declares on a `Coordinators: a, b` line (coordinator); anyone
-// else (fresh). A name is compared without case and surrounding space. `worker` is a name, or a set of them.
+// directory holding .jarl/) and any name the goal declares on a `Coordinators: a, b` line (coordinator); a bot the
+// profile's done gate names (bot); anyone else (fresh). A name is compared without case and surrounding space. `worker`
+// is a name, or a set of them.
 export const BASE_COORDINATORS = ['coordinator', 'jarl', 'reeve'];
-export function reviewerKind(by, worker, coordinators = BASE_COORDINATORS) {
+export function reviewerKind(by, worker, coordinators = BASE_COORDINATORS, bots = []) {
   const b = fieldText(by).toLowerCase();
   const workers = worker == null ? [] : typeof worker === 'string' ? [worker] : [...worker];
   if (b === 'self' || workers.some((w) => b === fieldText(w).toLowerCase())) return 'self';
   if (coordinators.some((c) => fieldText(c).toLowerCase() === b)) return 'coordinator';
+  if (bots.some((n) => fieldText(n).toLowerCase() === b)) return 'bot';
   return 'fresh';
 }
 // The names that review as the loop's director in this loop: the fixed three, the loop's own name, and the names
@@ -325,7 +329,9 @@ export function sliceNamed(coordinators, issues, name) {
 }
 // The slices with an issue in play.
 export function activeSlices(loop) { return slicesOf(loop).filter((s) => s.inPlay > 0); }
-const KIND_WEIGHT = { fresh: 0, waived: 0.5, coordinator: 1, self: 2 };
+// How strong an approve of each standing is, strongest first. A bot's approve clears nothing unless the done gate names it,
+// so it stands below the loop's director's, which still clears an issue that carries no code.
+const KIND_WEIGHT = { fresh: 0, waived: 0.5, coordinator: 1, bot: 1.5, self: 2 };
 // The note decide --waives-review writes into each issue it names, as the log holds it.
 const WAIVER_NOTE = /^\S+ evidence · Ruling (\S+) \(by owner\) waives the review\b/;
 // Why the ruling `slug` waives nothing for issue `id`, in a few words, or null when it waives its review: a waiver counts
@@ -454,7 +460,7 @@ export function sinceText(anchor) {
 }
 
 export function gateOf(loop, id) {
-  const { profile, coordinators } = loop;
+  const { profile, coordinators, bots } = loop;
   const events = loop.eventsById.get(id) || [];
   const issue = loop.issues.find((i) => i.id === id) || null;
   const self = selfWorkers(events, issue, loop.branchWorkers);
@@ -496,8 +502,8 @@ export function gateOf(loop, id) {
       // declares as a coordinator after its approve was logged as fresh does not stay fresh, and a name that
       // turns out to have ever held the lease (self) does not stay fresh or coordinator either.
       let kind = e.kind;
-      if (kind && e.by) { const now = reviewerKind(e.by, self, coordinators); if (KIND_WEIGHT[now] > KIND_WEIGHT[kind]) kind = now; }
-      const review = { n: e.n, at: e.at, verdict: e.verdict, by: e.by, kind, model: e.model ?? null, retracted: false };
+      if (kind && e.by) { const now = reviewerKind(e.by, self, coordinators, bots); if (KIND_WEIGHT[now] > KIND_WEIGHT[kind]) kind = now; }
+      const review = { n: e.n, at: e.at, verdict: e.verdict, by: e.by, kind, model: e.model ?? null, relayed: Boolean(e.relayed), retracted: false };
       allReviews.push(review);
       trail.push(review);
       before = review;
@@ -553,13 +559,28 @@ export function gateOf(loop, id) {
   // whatever approve it holds: done refuses an approve whose model the rule refuses, and a waiver is the owner's ruling
   // that no review is needed, which no model rule judges. Under the default rule a fresh approve still stands first.
   const weight = reviewerRule(profile) === 'agent' ? KIND_WEIGHT : { ...KIND_WEIGHT, waived: -1 };
-  let live = null;
-  for (const r of sinceChanges) {
-    if (r.verdict !== 'approve' || !r.inWindow) continue;
-    const rw = weight[r.kind] ?? Infinity;
-    const lw = live ? (weight[live.kind] ?? Infinity) : Infinity;
-    if (!live || rw < lw || (rw === lw && r.n > live.n)) live = r;
-  }
+  const strongest = (list) => {
+    let best = null;
+    for (const r of list) {
+      const rw = weight[r.kind] ?? Infinity;
+      const bw = best ? (weight[best.kind] ?? Infinity) : Infinity;
+      if (!best || rw < bw || (rw === bw && r.n > best.n)) best = r;
+    }
+    return best;
+  };
+  const approves = sinceChanges.filter((r) => r.verdict === 'approve' && r.inWindow);
+  // Whether the approves meet the loop's definition of an approved issue (the done gate's "clears"), read for an issue that
+  // carries code and for this issue as it is: the reading done, the merge queue and the line after a verdict all take.
+  // Each reviewer of the definition is met by its strongest approve, so the approve that meets the default definition is
+  // the strongest of all, and a later approve of a weaker standing never takes its place.
+  const code = issue ? carriesCode(issue) : false;
+  const forCode = clearing(clearsOf(profile), approves, true, strongest);
+  const cleared = code ? forCode : clearing(clearsOf(profile), approves, false, strongest);
+  // The live approve is the strongest; where the definition is met without it, the strongest of the approves that meet it.
+  // A self-approve that stands strongest stays live, and the issue stays unapproved.
+  let live = strongest(approves);
+  if (cleared.met && live && live.kind !== 'self' && !cleared.by.has(live)) live = strongest([...cleared.by]);
+  const approved = Boolean(live && live.kind !== 'self');
   return {
     tracked: anchor !== null,
     anchor: anchor ? { at: anchor.at, what: anchor.type === 'filed' ? 'filed' : anchor.type === 'whole' ? 'whole' : anchor.to, ...(anchor.type === 'whole' ? { sub: anchor.sub, how: anchor.how } : {}) } : null,
@@ -572,30 +593,73 @@ export function gateOf(loop, id) {
     rowLog: evidence, trail,
     lastReview: last ? last.verdict : null,
     lastApprove: [...reviews].reverse().find((r) => r.verdict === 'approve' && r.kind !== 'waived') || null,
-    approved: Boolean(live && live.kind !== 'self'),
+    approved,
     selfApproved: Boolean(live && live.kind === 'self'),
-    fresh: Boolean(live && (live.kind === 'fresh' || live.kind === 'waived')),
+    // fresh: the approves clear the issue as one that carries code; cleared: as the issue is. uncleared: why approves stand
+    // and do not clear it — the fresh-review rule (coordinator), a bot the done gate does not name (bot), or the loop's own
+    // definition (definition) — with the approves that stand.
+    fresh: approved && forCode.met,
+    cleared: approved && cleared.met,
+    uncleared: approved && !cleared.met ? { cause: profile.doneGate.clears ? 'definition' : live.kind === 'bot' ? 'bot' : 'coordinator', standing: [...new Map(approves.filter((r) => r.kind !== 'self').map((r) => [`${r.by} (${r.kind})`, r])).keys()] } : null,
     waived: live && live.kind === 'waived' ? live.ruling : null,
     live,
     workers: self,
   };
 }
 
+// An approve that stands for one reviewer of a done gate's "clears", on an issue that carries code or one that does not:
+// fresh, an agent that is neither the issue's worker, the loop's director, a bot nor the owner (the loop's director, or an
+// approve that names no reviewer, too on an issue with no code); owner, the owner's own approve, given in his own standing
+// (a verdict recorded as a bot's under his name is a bot's); bot:<name>, that bot's.
+const isOwner = (by) => Boolean(by) && fieldText(by).toLowerCase() === OWNER;
+function standsFor(r, who, code) {
+  if (r.kind === 'self' || r.kind === 'waived') return false;
+  if (who === 'owner') return r.kind === 'fresh' && isOwner(r.by);
+  if (who === 'fresh') return (r.kind === 'fresh' && !isOwner(r.by)) || (!code && (r.kind === 'coordinator' || !r.kind));
+  return r.kind === 'bot' && fieldText(r.by).toLowerCase() === who.slice(BOT_PREFIX.length).toLowerCase();
+}
+// Whether `approves` meet a done gate's "clears": some way it names, every reviewer of it with an approve that stands for
+// it, the strongest such approve as `strongest` ranks them; the owner's live waiver meets any. `by` holds the approves
+// that meet it.
+function clearing(clears, approves, code, strongest) {
+  const by = new Set(approves.filter((r) => r.kind === 'waived'));
+  for (const way of clears) {
+    const picks = way.map((who) => strongest(approves.filter((r) => standsFor(r, who, code))));
+    if (picks.every(Boolean)) for (const r of picks) by.add(r);
+  }
+  return { met: by.size > 0, by };
+}
+// Why done refuses an issue whose approves stand and do not clear it, for a cause other than the fresh-review rule (which
+// freshRuleText says): a bot the done gate does not name, or the loop's own definition. Null when there is no such cause.
+export function unclearedText(loop, issue, g) {
+  const u = g.uncleared;
+  if (!u || u.cause === 'coordinator') return null;
+  const how = clearsWords(clearsOf(loop.profile));
+  if (u.cause === 'bot') return `${issue.id}'s live approve is by ${g.live.by} (bot) — a bot's approve is recorded and counted apart, and clears an issue only where the loop's done gate names that bot (done-gate "clears"); this loop clears on ${how}`;
+  return `${issue.id} holds no approve that clears it under this loop's done gate (done-gate "clears": ${how})${u.standing.length ? ` — the approves it holds are by ${u.standing.join(', ')}` : ''}`;
+}
+
 // Who reviewed the done issues: the kind of each one's last approve, and how many carry no reviewer at all
 // (an approve recorded without --by). Shown by status and report, never acted on.
+// A relayed fresh approve, and a bot's, are counted apart from the fresh ones (relayed, bot), and so, over every issue of the
+// loop, are the verdicts of each that the record holds (botVerdicts, relayedVerdicts); each of these four only when not 0.
 export function reviewSplit(loop) {
   const split = { fresh: 0, coordinator: 0, self: 0, unrecorded: 0 };
   for (const i of loop.issues.filter((x) => loop.profile.is(x.status, 'closes-record'))) {
     const kind = approveKind(gateOf(loop, i.id));
-    if (kind === 'retracted' || kind === 'waived') split[kind] = (split[kind] || 0) + 1; else split[kind] += 1;
+    split[kind] = (split[kind] || 0) + 1;
   }
-  return split;
+  const verdicts = loop.issues.flatMap((i) => (loop.eventsById.get(i.id) || []).filter((e) => e.type === 'verdict'));
+  const bot = verdicts.filter((e) => e.kind === 'bot' || (e.by && reviewerKind(e.by, [], [], loop.bots) === 'bot')).length;
+  const relayed = verdicts.filter((r) => r.relayed).length;
+  return { ...split, ...(bot ? { botVerdicts: bot } : {}), ...(relayed ? { relayedVerdicts: relayed } : {}) };
 }
 // The kind of the approve that stands behind an issue — the live one, the one that actually cleared it, not simply the
 // last one recorded: a later coordinator (or self) approve does not make an already-cleared issue read as coordinator- or
-// self-reviewed. `retracted` when the approve was taken back and none stands; `unrecorded` for an approve without --by.
+// self-reviewed. `relayed` for a fresh approve someone else recorded in the reviewer's name; `retracted` when the approve
+// was taken back and none stands; `unrecorded` for an approve without --by.
 function approveKind(g) {
-  if (g.live) return g.live.kind || 'unrecorded';
+  if (g.live) return g.live.kind === 'fresh' && g.live.relayed ? 'relayed' : g.live.kind || 'unrecorded';
   return g.trail.some((r) => r.verdict === 'approve' && r.retracted && r.inWindow) ? 'retracted' : 'unrecorded';
 }
 
@@ -606,7 +670,10 @@ function gateLine(profile, split, label) {
   if (profile.doneGate.approve !== 'none') return `${label}: ${renderSplit(split)}`;
   return `closed on a merge in the base, no approve required (this loop's done gate) · reviews recorded: ${renderSplit(split)}`;
 }
-function renderSplit(s) { return `fresh ${s.fresh}${s.waived ? ` · waived by the owner ${s.waived}` : ''} · coordinator ${s.coordinator} · self ${s.self}${s.retracted ? ` · retracted ${s.retracted}` : ''}${s.unrecorded ? ` · unrecorded ${s.unrecorded}` : ''}`; }
+function renderSplit(s) {
+  const apart = [s.botVerdicts ? `bot ${s.botVerdicts}` : null, s.relayedVerdicts ? `relayed ${s.relayedVerdicts}` : null].filter(Boolean);
+  return `fresh ${s.fresh}${s.waived ? ` · waived by the owner ${s.waived}` : ''} · coordinator ${s.coordinator} · self ${s.self}${s.relayed ? ` · relayed ${s.relayed}` : ''}${s.bot ? ` · bot ${s.bot}` : ''}${s.retracted ? ` · retracted ${s.retracted}` : ''}${s.unrecorded ? ` · unrecorded ${s.unrecorded}` : ''}${apart.length ? ` · of every verdict recorded, ${apart.join(' and ')}` : ''}`;
+}
 
 // What the record says about one in-flight issue, as one fact (the steps the marks point to are in evidence.mjs): no
 // evidence rows since the start; rows and no verdict since the last restart or round; changes requested; approved, with
@@ -614,8 +681,9 @@ function renderSplit(s) { return `fresh ${s.fresh}${s.waived ? ` · waived by th
 export function inFlightMark(loop, issue) {
   const g = gateOf(loop, issue.id);
   if (g.approved) {
-    // The same rule the done gate and the merge queue apply: an issue that carries code is cleared by a fresh approve only.
-    if (carriesCode(issue) && !g.fresh) return 'approved-not-fresh';
+    // The same reading the done gate and the merge queue take: an issue that carries code is cleared by a fresh approve
+    // only, and an approve the loop's definition of an approved issue does not accept clears nothing.
+    if (!g.cleared) return g.uncleared.cause === 'coordinator' ? 'approved-not-fresh' : 'approved-not-cleared';
     const m = mergedOf(issue);
     if (!m) return 'approved';
     return m.ci === 'pending' || m.ci === 'red' ? 'merged-ci' : 'merged';

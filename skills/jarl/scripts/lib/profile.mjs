@@ -87,6 +87,7 @@ export const FORMAT_LINES = Object.freeze(Object.fromEntries([
     'owner-line': { what: 'an acceptance line only the owner ticks', where: "the issue's acceptance", misread: 'lets done pass while the line is not ticked' },
     parent: { what: 'the parent of a sub-issue', where: "the sub-issue's header", misread: 'reads the backlog as flat and offers a parent as work of its own' },
     batch: { what: 'one verdict over several issues', where: 'the verdict line of each issue it covers', misread: 'counts one review as several' },
+    'bot-verdict': { what: 'a verdict by a bot', where: "the verdict line and the Reviews entry of the issue, as the reviewer's standing", misread: 'reads it as an approve with no reviewer recorded, which closes an issue that carries no code' },
     'promise-wait': { what: 'the kinds promise and wait', where: "the issue's header", misread: 'refuses an issue of a kind it does not know' },
     escalation: { what: 'a question of kind escalation', where: 'the question, among the loop\'s questions', misread: 'refuses a question of a kind it does not know' },
     'rule-proposal': { what: 'a question of kind rule', where: 'the question, among the loop\'s questions', misread: 'reads a proposed rule as a question to the owner and its answer as a ruling with no scope' },
@@ -120,9 +121,45 @@ function numberWidth(profile, width) {
 // "reviewer" says which approve clears an issue: "agent", the default, an agent other than its worker whatever its model
 // (the model is then advice); "other-model", and of a model no worker of the issue was leased on; "model-rank", and of a
 // model ranked at least as the worker's on the goal's model lines, a change meant to alter nothing excepted.
-export const DONE_GATE_KEYS = ['approve', 'requires-merged', 'requires-slots', 'slots', 'reviewer'];
+// "clears" is the loop's definition of an approved issue: the ways an issue is cleared, any one of which is enough, each a
+// reviewer whose approve clears it or a list of reviewers whose approves must all stand together. A reviewer is fresh (an
+// agent that is neither the issue's worker nor the loop's director, or the loop's director on an issue that carries no
+// code), owner, or bot:<name>, a bot the loop names. With no "clears", a fresh agent's approve or the owner's clears, and a
+// bot's never; the owner's waiver of an issue's review clears it whatever the definition.
+export const DONE_GATE_KEYS = ['approve', 'requires-merged', 'requires-slots', 'slots', 'reviewer', 'clears'];
 export const DONE_GATE_REVIEWER = ['agent', 'other-model', 'model-rank'];
 export const reviewerRule = (profile) => (profile.doneGate && profile.doneGate.reviewer) || DONE_GATE_REVIEWER[0];
+export const BOT_PREFIX = 'bot:';
+export const DEFAULT_CLEARS = Object.freeze([Object.freeze(['fresh']), Object.freeze(['owner'])]);
+export const clearsOf = (profile) => (profile.doneGate && profile.doneGate.clears) || DEFAULT_CLEARS;
+// The bots the loop's done gate names: a verdict by one of them is a bot's, with or without --bot.
+export const botNames = (profile) => [...new Set(clearsOf(profile).flat().filter((w) => w.startsWith(BOT_PREFIX)).map((w) => w.slice(BOT_PREFIX.length)))];
+// A done gate's "clears" in words: "an approve by a fresh agent and the bot x together, or by the owner".
+export function clearsWords(clears) {
+  const who = (w) => (w === 'fresh' ? 'a fresh agent' : w === 'owner' ? 'the owner' : `the bot ${w.slice(BOT_PREFIX.length)}`);
+  return `an approve by ${clears.map((alt) => `${alt.map(who).join(' and ')}${alt.length > 1 ? ' together' : ''}`).join(', or by ')}`;
+}
+const BOT_NAME_RE = /^[^\s,·][^,·\n]{0,79}$/;
+// The "clears" of a done gate, checked: every problem goes to `say`, and the frozen list of alternatives is returned.
+function validateClears(raw, say) {
+  if (!Array.isArray(raw) || !raw.length) { say('"done-gate": "clears" names at least one way an issue is cleared: ["fresh", "owner", "bot:<name>", ["fresh", "bot:<name>"]]'); return null; }
+  const word = (w) => {
+    if (w === 'fresh' || w === 'owner') return w;
+    if (typeof w === 'string' && w.toLowerCase().startsWith(BOT_PREFIX) && BOT_NAME_RE.test(w.slice(BOT_PREFIX.length).trim())) return `${BOT_PREFIX}${w.slice(BOT_PREFIX.length).trim()}`;
+    say(`"done-gate": "clears" names ${JSON.stringify(w)} — each entry is fresh, owner or bot:<name>, or a list of them that must all approve together`);
+    return null;
+  };
+  const alts = [];
+  for (const entry of raw) {
+    const list = Array.isArray(entry) ? entry : [entry];
+    if (!list.length) { say('"done-gate": "clears" holds an empty list — a list names the reviewers that must all approve together'); continue; }
+    const words = list.map(word);
+    if (words.some((w) => w === null)) continue;
+    if (new Set(words.map((w) => w.toLowerCase())).size !== words.length) say(`"done-gate": "clears" names one reviewer twice in ${JSON.stringify(entry)}`);
+    alts.push(Object.freeze(words));
+  }
+  return Object.freeze(alts);
+}
 export const SLOT_KEYS = ['place', 'extensions', 'min-size'];
 // The largest file an attachment may be: a file over it is refused, never hashed.
 export const ATTACH_MAX_BYTES = 64 * 1024 * 1024;
@@ -281,6 +318,11 @@ export function validateProfile(json, where = 'the profile') {
       if (g['requires-merged'] !== undefined && typeof g['requires-merged'] !== 'boolean') say('"done-gate": "requires-merged" is true or false');
       if (g.reviewer !== undefined && !DONE_GATE_REVIEWER.includes(g.reviewer)) say(`"done-gate": "reviewer" is one of ${DONE_GATE_REVIEWER.join(', ')}`);
       const gate = { approve: g.approve ?? DEFAULT_DONE_GATE.approve, 'requires-merged': g['requires-merged'] ?? DEFAULT_DONE_GATE['requires-merged'], ...(g.reviewer !== undefined ? { reviewer: g.reviewer } : {}) };
+      if (g.clears !== undefined) {
+        const clears = validateClears(g.clears, say);
+        if (clears) gate.clears = clears;
+        if (gate.approve === 'none') say('"done-gate": "clears" names whose approves clear an issue, and "approve": "none" asks for none — keep one of the two');
+      }
       if (g['requires-slots'] !== undefined || g.slots !== undefined) {
         const kindField = fields.find((f) => f.key === 'kind');
         Object.assign(gate, validateSlots(g, kindField && kindField.enum ? kindField.enum : KINDS, say));
@@ -488,7 +530,7 @@ export function renderProfile(d) {
   if (d.sections.length) lines.push(`sections: ${d.sections.join(', ')}`);
   if (d.acceptanceHeading !== 'Acceptance') lines.push(`acceptance heading: ${d.acceptanceHeading}`);
   if (d.externalScheduler) lines.push(`external scheduler: ${d.externalScheduler} (next and queue show it instead of their own list)`);
-  if (d.doneGate.approve !== 'fresh' || d.doneGate['requires-merged'] || d.doneGate.reviewer) lines.push(`done gate: approve ${d.doneGate.approve}${d.doneGate['requires-merged'] ? ' · requires a merge in the base' : ''}${d.doneGate.reviewer ? ` · reviewer ${d.doneGate.reviewer}` : ''}`);
+  if (d.doneGate.approve !== 'fresh' || d.doneGate['requires-merged'] || d.doneGate.reviewer || d.doneGate.clears) lines.push(`done gate: approve ${d.doneGate.approve}${d.doneGate['requires-merged'] ? ' · requires a merge in the base' : ''}${d.doneGate.reviewer ? ` · reviewer ${d.doneGate.reviewer}` : ''}${d.doneGate.clears ? ` · clears on ${clearsWords(d.doneGate.clears)}` : ''}`);
   for (const [kind, names] of Object.entries(d.doneGate['requires-slots'] || {})) {
     lines.push(`attachments: ${kind} needs ${names.join(', ')}`);
     for (const n of names) { const s = d.doneGate.slots[n]; if (s) lines.push(`  ${n}: ${s.place} · ${s.extensions.join(', ')} · at least ${s['min-size']} bytes`); }

@@ -22,6 +22,9 @@ export const meantToAlterNothing = (issue) => (issue.tags || []).some((t) => Str
 const COMPARISON_WORD = /\b(?:compar\w*|diffs?|cmp|identical|byte[- ]for[- ]byte|checksums?|sha\d*sum|md5(?:sum)?|hash(?:es)?)\b/i;
 export const namesComparison = (row) => COMPARISON_WORD.test(`${row.ran ?? ''} ${row.saw ?? ''}`);
 export const PRIORITIES = ['1', '2', '3'];
+// The standing a verdict's reviewer is recorded with, as every reader of a verdict line or a Reviews entry matches it:
+// the issue's own worker (self), the loop's director (coordinator), a bot, or anyone else (fresh).
+export const REVIEWER_KIND_SRC = 'fresh|coordinator|self|bot';
 // Weakest first: the order of the list is the order of strength, which is how a loop's model lines rank its models.
 export const TIERS = ['light', 'standard', 'strong'];
 export const TIER_DEFAULT = 'standard';

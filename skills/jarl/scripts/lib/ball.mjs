@@ -123,6 +123,10 @@ function issueRows(ctx) {
       out.push({ ...base, what: 'review', says: 'approved by a coordinator only, and it carries code; raise a fresh reviewer', command: verdict(i.id) });
       continue;
     }
+    if (mark === 'approved-not-cleared') {
+      out.push({ ...base, what: 'review', says: 'approved, and no approve it holds clears it under the loop\'s done gate; raise a reviewer whose approve does', command: verdict(i.id) });
+      continue;
+    }
     if (mark === 'changes-requested') {
       out.push({ ...base, what: 'changes', says: 'changes asked by its reviewer; send it back to a worker', command: jarlLine('round', i.id, '<text>') });
       continue;
@@ -187,20 +191,47 @@ function heldByOwner(loop, awaiting) {
   return awaiting.filter((i) => asked.has(idKey(i.id))).map((i) => i.id);
 }
 const joinIds = (issues) => issues.map((i) => i.id).join(', ');
+// The most issues one shared review covers: Jarl's own rule for the coordinator (jarl:coordinator-shared-review).
+export const SHARED_REVIEW_MAX = 4;
+// The units one fresh reviewer may take, out of the proofs that wait for a verdict, under that rule: a shared review only
+// over issues that are one contract or one screen, at most four. The record's mark of one contract is one branch: the issues
+// leased on it as one package, which one diff holds. A branch of more than four is cut into units as even as they come;
+// every other issue is a unit of its own. Each is { ids }, and a grouped one adds what it shares: { shares: 'branch', on }.
+function reviewUnits(todo) {
+  const byBranch = new Map();
+  for (const i of todo) {
+    const b = fieldText(i.fields.branch);
+    const key = b ? b : `\n${i.id}`;
+    byBranch.set(key, [...(byBranch.get(key) || []), i]);
+  }
+  const units = [];
+  for (const [key, issues] of byBranch) {
+    if (issues.length === 1) { units.push({ ids: [issues[0].id] }); continue; }
+    const parts = Math.ceil(issues.length / SHARED_REVIEW_MAX);
+    for (let p = 0, at = 0; p < parts; p += 1) {
+      const size = Math.ceil((issues.length - at) / (parts - p));
+      units.push({ ids: issues.slice(at, at + size).map((i) => i.id), shares: 'branch', on: key });
+      at += size;
+    }
+  }
+  return units.sort((a, b) => cmpId(a.ids[0], b.ids[0]));
+}
+const unitText = (u) => (u.shares ? `${u.ids.join(', ')} (one ${u.shares}, ${u.on})` : u.ids[0]);
 // A proof that waits past the threshold for its verdict says how long: the one issue's age, or each idle issue's.
 function reviewRow(todo, holder, verdict, liveness) {
   if (!todo.length) return [];
   const ids = joinIds(todo);
   const only = todo.length === 1 ? todo[0] : null;
+  const units = reviewUnits(todo);
   const worker = only ? fieldText(only.fields.worker) : '';
   const priority = todo.map((i) => i.priority).filter((p) => p !== undefined).sort()[0];
   const idle = todo.map((i) => liveness(i)).filter((lv) => lv.idle);
   const waited = !idle.length ? '' : only ? ` for ${idleFor(idle[0])}` : ` for ${idle.map((lv) => `${ago(lv.ageMs)} on ${lv.id}`).join(', ')} (threshold ${thresholdText(idle[0].minutes)})`;
   return [{
-    what: 'review', id: todo[0].id, ids: todo.map((i) => i.id), title: only ? only.title : '', priority, holder, ...(worker ? { doer: worker } : {}),
+    what: 'review', id: todo[0].id, ids: todo.map((i) => i.id), units, title: only ? only.title : '', priority, holder, ...(worker ? { doer: worker } : {}),
     ...(idle.length ? { idle: idle.map((lv) => ({ id: lv.id, ageMs: lv.ageMs, minutes: lv.minutes })) } : {}),
-    says: `proof recorded, no verdict${waited}; raise a fresh reviewer for ${ids}; if you cannot raise agents, ask the owner to start a fresh session`,
-    command: `${only ? verdict(only.id) : verdict('<id>')}, or ${jarlLine('ask', `${REVIEW_ASK} issue${todo.length === 1 ? '' : 's'} ${ids}`)}`,
+    says: `proof recorded, no verdict${waited}; ${only ? `raise a fresh reviewer for ${ids}` : `raise one fresh reviewer per unit: ${units.map(unitText).join(' · ')}`}; if you cannot raise agents, ask the owner to start a fresh session`,
+    command: `${only ? verdict(only.id) : verdict('<ids>')}, or ${jarlLine('ask', `${REVIEW_ASK} issue${todo.length === 1 ? '' : 's'} ${ids}`)}`,
   }];
 }
 
@@ -228,7 +259,7 @@ function keptRows(ctx) {
       continue;
     }
     const done = promise ? 'kept' : 'it came';
-    if (mark === 'rows-no-verdict' || mark === 'approved-not-fresh') out.push({ ...base, what: 'review', holder, says: `${done}, proof recorded, no verdict; review it`, command: verdict(i.id) });
+    if (mark === 'rows-no-verdict' || mark === 'approved-not-fresh' || mark === 'approved-not-cleared') out.push({ ...base, what: 'review', holder, says: `${done}, proof recorded, no verdict; review it`, command: verdict(i.id) });
     else if (mark === 'changes-requested') out.push({ ...base, what: 'changes', holder, says: `${done}, changes asked by its reviewer; answer them and ask for a new verdict`, command: verdict(i.id) });
     else out.push({ ...base, what: 'close', holder, says: `${done}, approved; close it`, command: jarlLine('set', i.id, closeStatus, '<text>') });
   }

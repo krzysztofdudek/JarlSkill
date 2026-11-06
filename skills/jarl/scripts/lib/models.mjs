@@ -20,8 +20,9 @@ import { filedAndClosed, followUpsOf, share } from './metrics.mjs';
 // from it is read-only and only ever suggests: Jarl never refuses, reroutes or changes anything by model.
 
 export const MODEL_MIN_N = 5;
-// A finding that opens like a field would read as one: its line gets a lead-in, so no free text is ever a model or a relay mark.
-const loggedFinding = (line) => (/^(model |relayed( ·|$))/i.test(line) ? `findings: ${line}` : line);
+// A finding that opens like a field would read as one: its line gets a lead-in, so no free text is ever a model, a relay
+// or a batch mark.
+const loggedFinding = (line) => (/^(model |relayed( ·|$)|batch )/i.test(line) ? `findings: ${line}` : line);
 
 // A --model value: the platform's model id as given, trimmed. One value, and never the log's own separator.
 function modelValue(raw) {
@@ -114,7 +115,8 @@ function reviewModelNotes(issue, verdict, model, lines, events, rule = 'agent') 
 // the lease names one: the gate cannot tell what model gave it, and an approve it cannot place does not clear the issue.
 // One that names a model on an issue whose lease names none passes, as its note said: there is nothing to compare it with.
 function modelGateRefusal(issue, live, lines, events, rule) {
-  if (rule === 'agent' || !live || live.kind === 'waived') return null;
+  // A bot's approve is not an agent's: the rule judges no model of it.
+  if (rule === 'agent' || !live || live.kind === 'waived' || live.kind === 'bot') return null;
   const by = live.by || 'a reviewer not recorded';
   if (!live.model) return `${issue.id}'s live approve by ${by} names no model — ${RULE_WORDS[rule]}, so done refuses an approve that names no model`;
   if (!leaseModels(events).length) return null;

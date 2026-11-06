@@ -2,7 +2,7 @@
 
 import { existsSync, readdirSync } from 'node:fs';
 import { basename, join } from 'node:path';
-import { CI_STATES, fieldText, hole, jarlLine, need, oneBreak, refuse, splitList } from './base.mjs';
+import { CI_STATES, REVIEWER_KIND_SRC, fieldText, hole, jarlLine, need, oneBreak, refuse, splitList } from './base.mjs';
 import { issuesDir, jarlDir } from './where.mjs';
 import { readText } from './files.mjs';
 import { ISSUE_FILE_RE, KEY_RE, cmpId, idKey, idRe, newNumber, writtenForms, writtenId } from './ids.mjs';
@@ -687,7 +687,7 @@ export function acceptanceLines(issue) {
 
 // ---- issues: the entries of a Reviews section ---------------------------------------------------------
 
-const REVIEW_ENTRY = /^- (~~)?\*\*(approve|changes|retract)\*\*(?: · by (.+?) \((fresh|coordinator|self)\))?(?: · (\d{4}-\d{2}-\d{2}))?/;
+const REVIEW_ENTRY = new RegExp(`^- (~~)?\\*\\*(approve|changes|retract)\\*\\*(?: · by (.+?) \\((${REVIEWER_KIND_SRC})\\))?(?: · (\\d{4}-\\d{2}-\\d{2}))?`);
 // The entries of a Reviews section in file order, each with the lines it spans.
 export function reviewEntries(text) {
   const lines = String(text || '').split('\n');

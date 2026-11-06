@@ -4,7 +4,7 @@
 // slice's coordinator: its issues in play, its rules, its reference and its commands. It writes nothing and holds no lock.
 // A brief adds what the record holds to the role's reference, and never replaces it.
 
-import { IDENTICAL_OUTPUT_TAG, fieldText, hole, jarlLine, meantToAlterNothing, need } from './base.mjs';
+import { IDENTICAL_OUTPUT_TAG, REVIEWER_KIND_SRC, fieldText, hole, jarlLine, meantToAlterNothing, need } from './base.mjs';
 import { jarlDir, today } from './where.mjs';
 import { firstLine } from './journal.mjs';
 import { evidenceTable, issueNamed, reviewEntries } from './issues.mjs';
@@ -48,11 +48,12 @@ function findingsOf(loop, issue, events, notes) {
   const unmatched = entries.filter((e) => e.verdict === 'changes').map(fromFile);
   const found = gateOf(loop, issue.id).trail.filter((t) => t.verdict === 'changes').map((t) => {
     const e = events.find((x) => x.n === t.n);
-    // What the line holds after its verdict, its reviewer and the marks of a model and a relay.
-    let text = e.text.slice(e.written.length + 1).replace(/^review changes · (?:by .+? \((?:fresh|coordinator|self)\) · )?/, '');
+    // What the line holds after its verdict, its reviewer and the marks of a model, a relay and a batch.
+    let text = e.text.slice(e.written.length + 1).replace(new RegExp(`^review changes · (?:by .+? \\((?:${REVIEWER_KIND_SRC})\\) · )?`), '');
     if (e.model) text = text.replace(`model ${e.model} · `, '');
     if (e.relayed) text = text.replace(/^relayed · /, '');
-    text = text.replace(/^findings: (?=model |relayed)/i, '');
+    if (e.batch) text = text.replace(`batch ${e.batch} · `, '');
+    text = text.replace(/^findings: (?=model |relayed|batch )/i, '');
     const at = unmatched.findIndex((f) => f.by === t.by && [sameText(f.text), sameText(firstLine(unescaped(f.text), WHERE_WHOLE))].includes(sameText(text)));
     const whole = at === -1 ? null : unmatched.splice(at, 1)[0];
     return { by: t.by, kind: t.kind, day: t.at.slice(0, 10), text: whole ? whole.text : text };

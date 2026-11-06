@@ -183,7 +183,7 @@ const FLAG_MEANINGS = {
   worktree: ['the worktree a lease is checked against', ['set']], handover: ['a lease handed to a new worker', ['set']], header: ['the header rewritten from the log', ['set']],
   limit: ['how many ready issues', ['next']], as: ['the holder whose list is asked for', ['next', 'resume', 'status']], slice: ['a coordinator\'s slice', ['next', 'ask', 'resume', 'status', 'brief']],
   role: ['the role a brief is written for', ['brief']],
-  relayed: ['a verdict recorded in the reviewer\'s name', ['review']], outside: ['a finding outside the reviewed issue, filed as a new issue', ['review']], findings: ['how many findings a red round left', ['round']], with: ['another loop to read', ['models']], archives: ['this loop\'s archives read too', ['models']],
+  relayed: ['a verdict recorded in the reviewer\'s name', ['review']], bot: ['a verdict recorded as a bot\'s', ['review']], outside: ['a finding outside the reviewed issue, filed as a new issue', ['review']], findings: ['how many findings a red round left', ['round']], with: ['another loop to read', ['models']], archives: ['this loop\'s archives read too', ['models']],
   base: ['the base branch a branch is held against', ['scope', 'branches', 'resume']], 'stale-hours': ['how long a lease may idle', ['branches', 'status']],
   sha: ['the merge commit', ['merged']], ci: ['the CI state of a merge', ['merged']], gh: ['the CI of each tip asked of gh', ['resume', 'handoff']], red: ['the issue a red landing is tracked by', ['merged']], keep: ['the worktree and branch kept', ['merged']],
   target: ['what a lower question weakens', ['ask']], issue: ['the issue a question is about', ['ask']], option: ['an option of a question', ['ask', 'answer']],
