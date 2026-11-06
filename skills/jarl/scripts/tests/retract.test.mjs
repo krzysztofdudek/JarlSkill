@@ -289,6 +289,89 @@ test('show --json and resume leave a retracted note and the reason of its retrac
   assert.equal(JSON.parse(jarl(plain, 'resume', '--json')).logRetractedNotes, undefined);
 });
 
+// What resume (text and --json) and show (text and --json) each say of an issue's notes: the tail's note lines and the counts.
+function seen(root, id) {
+  const text = jarl(root, 'resume');
+  const data = JSON.parse(jarl(root, 'resume', '--json'));
+  const shown = JSON.parse(jarl(root, 'show', id, '--json'));
+  const tail = (data.log || []).filter((l) => l.includes(`${id} evidence · `)).map((l) => l.replace(/^.* · (?=\d+ evidence · )/, ''));
+  const said = /^\((\d+) notes? retracted, not shown/m.exec(text);
+  return { tail, counted: data.logRetractedNotes || 0, said: said ? Number(said[1]) : 0, shownCount: shown.retractedNotes || 0, shownText: shown.sections.evidence };
+}
+
+test('a live note that starts with the words of a retracted note keeps its line in the tail, and every view counts one retracted note', () => {
+  const root = loop();
+  const id = started(root);
+  jarl(root, 'evidence', id, 'the build');
+  jarl(root, 'evidence', id, 'the build is green on every platform');
+  jarl(root, 'retract', id, 'note-1', '--by', 'jarl', 'restated in the next note');
+  const v = seen(root, id);
+  assert.deepEqual(v.tail, [`${id} evidence · the build is green on every platform`], 'the longer live note stays; the retracted note and its reason are out');
+  assert.match(v.shownText, /the build is green on every platform/);
+  assert.doesNotMatch(v.shownText, /^the build$/m);
+  assert.deepEqual([v.counted, v.said, v.shownCount], [1, 1, 1], 'resume, resume --json and show --json agree');
+  assert.match(jarl(root, 'show', id), /^\(1 note retracted, not shown/m);
+  // The other way round: the retracted note is the longer one.
+  const other = loop();
+  const oid = started(other);
+  jarl(other, 'evidence', oid, 'the build is green on every platform');
+  jarl(other, 'evidence', oid, 'the build');
+  jarl(other, 'retract', oid, 'note-1', '--by', 'jarl', 'wrong platform list');
+  const w = seen(other, oid);
+  assert.deepEqual(w.tail, [`${oid} evidence · the build`]);
+  assert.deepEqual([w.counted, w.said, w.shownCount], [1, 1, 1]);
+});
+
+test('of two notes with the same words the line hidden is the retracted note\'s own, by the order they were written', () => {
+  for (const [retracted, kept] of [['note-1', 'same words'], ['note-2', 'same words\nand a second line']]) {
+    const root = loop();
+    const id = started(root);
+    jarl(root, 'evidence', id, 'same words\nand a second line');
+    jarl(root, 'evidence', id, 'same words');
+    jarl(root, 'retract', id, retracted, '--by', 'jarl', 'the wrong one');
+    const v = seen(root, id);
+    const line = kept.includes('\n') ? `${id} evidence · same words (+1 more lines, whole text in the issue's Evidence section)` : `${id} evidence · same words`;
+    assert.deepEqual(v.tail, [line], `${retracted} retracted: the other note's line stays`);
+    assert.deepEqual([v.counted, v.said, v.shownCount], [1, 1, 1]);
+  }
+  // Two notes of identical text, one retracted: one line and one retraction are counted, not two.
+  const root = loop();
+  const id = started(root);
+  jarl(root, 'evidence', id, 'identical');
+  jarl(root, 'evidence', id, 'identical');
+  jarl(root, 'retract', id, 'note-2', '--by', 'jarl', 'written twice');
+  const v = seen(root, id);
+  assert.deepEqual(v.tail, [`${id} evidence · identical`]);
+  assert.deepEqual([v.counted, v.said, v.shownCount], [1, 1, 1]);
+});
+
+test('a retracted note of one issue hides nothing of another issue\'s notes with the same words', () => {
+  const root = loop();
+  const first = started(root, 'first thing');
+  const second = started(root, 'second thing');
+  jarl(root, 'evidence', first, 'the build');
+  jarl(root, 'evidence', second, 'the build');
+  jarl(root, 'evidence', second, 'the build is green');
+  jarl(root, 'retract', first, 'note-1', '--by', 'jarl', 'wrong issue');
+  const one = seen(root, first);
+  const two = seen(root, second);
+  assert.deepEqual(one.tail, []);
+  assert.deepEqual(two.tail, [`${second} evidence · the build`, `${second} evidence · the build is green`]);
+  assert.deepEqual([one.counted, one.said, one.shownCount], [1, 1, 1]);
+  assert.equal(two.shownCount, 0);
+});
+
+test('a retracted note of several lines hides its own line and nothing that starts like it', () => {
+  const root = loop();
+  const id = started(root);
+  jarl(root, 'evidence', id, 'checked on three platforms\nlinux passed\nmac passed');
+  jarl(root, 'evidence', id, 'checked on three platforms and all passed');
+  jarl(root, 'retract', id, 'note-1', '--by', 'jarl', 'the windows run was missing');
+  const v = seen(root, id);
+  assert.deepEqual(v.tail, [`${id} evidence · checked on three platforms and all passed`]);
+  assert.deepEqual([v.counted, v.said, v.shownCount], [1, 1, 1]);
+});
+
 test('a retracted note is read by neither the pinned frozen reader nor the done gate', () => {
   const root = loop();
   const id = started(root);

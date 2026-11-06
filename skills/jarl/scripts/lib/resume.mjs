@@ -33,22 +33,41 @@ function countFlag(flags, name, dflt) {
 }
 
 // The lines of the log tail a worker does not read: the line of each retracted note, and the line that retracts a note,
-// which carries its reason (a reason often restates the note), with how many notes were retracted in the tail. The note's
-// own line is found by its first line, which the line repeats.
+// which carries its reason (a reason often restates the note), with how many notes were retracted in the tail. A note's
+// own line is the issue's log line that repeats the note's whole first line, as the log writes it (a longer note adds
+// how many more lines it has). Notes of one issue with the same first line and their log lines are paired in order from
+// the newest, so only the line of the retracted note is hidden, never that of a live note that starts with the same words.
+const MORE_LINES = / \(\+\d+ more lines, whole text in the issue's Evidence section\)$/;
 function retractedNoteEvents(loop, events) {
-  const firsts = new Map();
+  const inTail = new Set(events);
+  const gone = new Set();
+  let own = 0;
   for (const issue of loop.issues) {
     if (issue.id === null) continue;
     const { lines, notes } = evidenceNotes(issue.sections.evidence || '');
-    const struck = notes.filter((m) => m.retracted).map((m) => lines[m.start].replace(/^(- )?~~/, '').replace(/~~\s*$/, '').trim());
-    if (struck.length) firsts.set(issue.id, struck);
+    if (!notes.some((m) => m.retracted)) continue;
+    const prefix = `${issue.id} evidence · `;
+    const written = new Map();
+    for (const e of loop.events) {
+      if (e.id !== issue.id || !e.text.startsWith(prefix)) continue;
+      const key = e.text.slice(prefix.length).replace(MORE_LINES, '').trim();
+      written.set(key, [...(written.get(key) || []), e]);
+    }
+    const byFirst = new Map();
+    for (const m of notes) {
+      const key = lines[m.start].replace(/^(- )?~~/, '').replace(/~~\s*$/, '').replace(/^\\~~/, '~~').trim();
+      byFirst.set(key, [...(byFirst.get(key) || []), m]);
+    }
+    for (const [key, same] of byFirst) {
+      const logged = written.get(key) || [];
+      for (let back = 1; back <= Math.min(same.length, logged.length); back += 1) {
+        const line = logged[logged.length - back];
+        if (same[same.length - back].retracted && inTail.has(line)) { gone.add(line); own += 1; }
+      }
+    }
   }
-  const gone = new Set();
   let retractions = 0;
-  let own = 0;
-  for (const e of events) {
-    if (e.type === 'retract-note') { gone.add(e); retractions += 1; } else if (e.id !== null && (firsts.get(e.id) || []).some((t) => e.text.startsWith(`${e.id} evidence · ${t}`))) { gone.add(e); own += 1; }
-  }
+  for (const e of events) if (e.type === 'retract-note') { gone.add(e); retractions += 1; }
   return { gone, retracted: Math.max(retractions, own) };
 }
 
