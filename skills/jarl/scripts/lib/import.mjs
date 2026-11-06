@@ -12,7 +12,7 @@ import { PROPOSED, bodyText, findIssue, loadIssues, sharedMark } from './issues.
 import { repoList, reposWhereLines } from './repositories.mjs';
 import { closedGateLine, disagreementText, gateLine, needOneSlice } from './loop.mjs';
 import { checkLines, checkWaitingText, closedNoCheckText, mergeCheckLines } from './metrics.mjs';
-import { cmdNew, cmdSource, givenFields, needLiveLoop, parentToFile, putUnder } from './commands.mjs';
+import { cmdNew, cmdSource, givenFields, needLiveLoop, nextIssueNumber, parentToFile, putUnder } from './commands.mjs';
 import { leasedByText, schedulerNote, subsText } from './evidence.mjs';
 
 // ---- research findings into issues ----------------------------------------------------------------
@@ -289,21 +289,25 @@ export function cmdImport(root, file, flags) {
     kind: flags.kind || f.kind, prio: flags.prio || f.priority, tier: flags.tier, tags: flags.tags, repo: flags.repo,
     field: flags.field, 'found-by': foundBy, where: f.where, what: f.what, why: f.why, acceptance: f.acceptance || undefined, source: key,
   });
-  for (const { f, key } of toFile) {
-    try { cmdNew(root, f.title, filing(f, key), { dry: true }); } catch (e) {
+  // The findings are filed in the order of the file, each taking the next number, so each is checked with the number it
+  // would take: a number the loop's record format cannot hold refuses the file before the first finding is filed.
+  const first = toFile.length ? nextIssueNumber(root) : 0;
+  toFile.forEach(({ f, key }, k) => {
+    try { cmdNew(root, f.title, filing(f, key), { dry: true, number: first + k }); } catch (e) {
       if (!(e instanceof Refusal)) throw e;
       refuse(`finding "${f.id}" cannot be filed: ${e.reason}${/nothing was (written|filed)/.test(e.reason) ? '' : ' — nothing was filed'}`, formOf(e.ready));
     }
-  }
+  });
+  // One issue may name several findings (a package of minor ones): its Source gets all of them, once.
+  const adopt = new Map();
+  for (const a of out.adopted) adopt.set(a.issue, [...(adopt.get(a.issue) || []), a.key]);
+  // Every adopted issue is resolved before the first write, a dry run included, so a number two files carry refuses the
+  // import whole, and the dry run refuses what the import would.
+  const adopting = [...adopt].map(([id, keys]) => [id, [...findIssue(root, id).sources, ...keys]]);
   if (out.dryRun) {
     out.filed = toFile.map(({ f, key }) => ({ id: null, finding: f.id, source: key, title: f.title, kind: flags.kind || f.kind, priority: String(flags.prio || f.priority) }));
     return out;
   }
-  // One issue may name several findings (a package of minor ones): its Source gets all of them, once.
-  const adopt = new Map();
-  for (const a of out.adopted) adopt.set(a.issue, [...(adopt.get(a.issue) || []), a.key]);
-  // Every adopted issue is resolved before the first write, so a number two files carry refuses the import whole.
-  const adopting = [...adopt].map(([id, keys]) => [id, [...findIssue(root, id).sources, ...keys]]);
   for (const [id, sources] of adopting) cmdSource(root, id, sources.join(','));
   for (const { f, key } of toFile) {
     const r = cmdNew(root, f.title, filing(f, key));

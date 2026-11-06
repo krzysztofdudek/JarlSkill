@@ -171,6 +171,13 @@ function highestAcrossRefs(root) {
   for (const name of treeNames(out)) { const m = ISSUE_FILE_RE.exec(name); if (m) top = Math.max(top, Number(m[1])); }
   return top;
 }
+// The number the next filing in this loop takes: one above the highest held by its issue files, its copies in every other
+// worktree and every branch of its repository. The issue files stay the only source: there is no counter file.
+export function nextIssueNumber(root) {
+  const dir = issuesDir(root);
+  const here = existsSync(dir) ? readdirSync(dir).map((f) => ISSUE_FILE_RE.exec(f)).filter(Boolean).reduce((m, x) => Math.max(m, Number(x[1])), 0) : 0;
+  return Math.max(here, highestAcrossWorktrees(root), highestAcrossRefs(root)) + 1;
+}
 // The names of the entries of every tree `git cat-file --batch` printed: each object is "<hash> <type> <size>", its bytes
 // and a line break; a tree's bytes are entries of "<mode> <name>", a zero byte and the entry's hash in binary. An object
 // git did not find is one line ("<name> missing") and holds no names.
@@ -228,9 +235,11 @@ export function givenFields(profile, list) {
   return given;
 }
 
-// `from`, a filing's own and never a flag or a library option (newIssue passes three arguments): { dry, repoOf }. dry runs
-// every check of the filing and writes nothing; repoOf (issue files) gives the new issue the Repo those issues hold once
-// every raise of the filing has run, so a finding a review files names its repositories as the reviewed issue does.
+// `from`, a filing's own and never a flag or a library option (newIssue passes three arguments): { dry, number, repoOf }.
+// dry runs every check of the filing and writes nothing; number, with dry, is the number the filing would take (the next
+// free one when absent), for a caller that checks several filings before the first of them is written; repoOf (issue
+// files) gives the new issue the Repo those issues hold once every raise of the filing has run, so a finding a review
+// files names its repositories as the reviewed issue does.
 export function cmdNew(root, title, rawFlags, from = {}) {
   need(title, 'new requires "<title>"', { arg: 0, value: '<title>' });
   needNoOwnersWords('the new issue', title, rawFlags);
@@ -294,9 +303,12 @@ export function cmdNew(root, title, rawFlags, from = {}) {
     changelog: flags.changelog !== undefined ? changelogText(flags.changelog) : bodyText(fromTemplate.changelog),
   });
   // A dry filing ends here, before the first write: the text the file would hold passes the record's check too.
-  // The raises the filing would make are checked as well, so a loop that refuses them is refused here, with nothing written.
+  // The raises the filing would make are checked as well, so a loop that refuses them is refused here, with nothing written:
+  // the number it would take among them (from.number, where filings before it in the same act take the ones below).
   if (from.dry) {
-    needNoNewOwnersWords('', render('0', null, ''), `${slugify(title)}.md`);
+    const id = newNumber(from.number ?? nextIssueNumber(root), numberWidth(profile, rawFlags.width));
+    needNoNewOwnersWords('', render(id, null, picked.map((p) => p.value).join(', ')), `${id}-${slugify(title)}.md`);
+    if (needsRaisedFormat(id)) needFormatHeld(root, 'plain-number', `issue number ${id}`);
     if (kept) needFormatHeld(root, 'promise-wait');
     if (picked.some((p) => p.name)) needFormatHeld(root, 'repo-name');
     if (ownerLined) needFormatHeld(root, 'owner-line');
@@ -324,10 +336,8 @@ export function cmdNew(root, title, rawFlags, from = {}) {
   mkdirSync(dir, { recursive: true });
   const taken = () => readdirSync(dir).map((f) => ISSUE_FILE_RE.exec(f)).filter(Boolean).map((m) => Number(m[1]));
   // The highest number over this loop, its copies in every other worktree and every local and remote-tracking branch of
-  // its repository (read-only), so a lagging copy cannot hand out a number already used elsewhere. The issue files stay
-  // the only source: there is no counter file.
-  const elsewhere = Math.max(highestAcrossWorktrees(root), highestAcrossRefs(root));
-  let n = Math.max(taken().reduce((m, x) => Math.max(m, x), 0), elsewhere) + 1;
+  // its repository (read-only), so a lagging copy cannot hand out a number already used elsewhere.
+  let n = nextIssueNumber(root);
   for (let tries = 0; ; tries += 1) {
     const id = newNumber(n, numberWidth(profile, rawFlags.width));
     // The first issue of 1000 or more is a file a reader that knows only format 1 would skip in silence: the format is raised first.
