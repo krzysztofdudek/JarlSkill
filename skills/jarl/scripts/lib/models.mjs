@@ -21,8 +21,12 @@ import { filedAndClosed, followUpsOf, share } from './metrics.mjs';
 
 export const MODEL_MIN_N = 5;
 // A finding that opens like a field would read as one: its line gets a lead-in, so no free text is ever a model, a relay
-// or a batch mark.
-const loggedFinding = (line) => (/^(model |relayed( ·|$)|batch )/i.test(line) ? `findings: ${line}` : line);
+// or a batch mark. A finding that opens with the lead-in before such a word gets one more, so the reader takes off exactly
+// one (findingOfLog) and gives back the text as it was written.
+const LEAD_IN = 'findings: ';
+const NEEDS_LEAD_IN = /^(?:findings: )*(?:model |relayed(?: ·|$)|batch )/i;
+const loggedFinding = (line) => (NEEDS_LEAD_IN.test(line) ? `${LEAD_IN}${line}` : line);
+const findingOfLog = (line) => (line.startsWith(LEAD_IN) && NEEDS_LEAD_IN.test(line.slice(LEAD_IN.length)) ? line.slice(LEAD_IN.length) : line);
 
 // A --model value: the platform's model id as given, trimmed. One value, and never the log's own separator.
 function modelValue(raw) {
@@ -431,4 +435,4 @@ const SEVERITIES = ['Critical', 'Important', 'Minor'];
 const builds = { modelsTable: 0, nextRows: 0 };
 
 // Used by the other modules of the library, and not part of what jarl-lib.mjs exports.
-export { SEVERITIES, builds, loggedFinding, modelRefusalOf, modelReviewForm, modelValue, reviewModelNotes, spellingNote };
+export { SEVERITIES, builds, findingOfLog, loggedFinding, modelRefusalOf, modelReviewForm, modelValue, reviewModelNotes, spellingNote };

@@ -201,8 +201,34 @@ test('a finding of many lines, one of them like a merge marker and one like a he
   jarl(root, 'review', '1', 'changes', '--by', 'rev1', 'Important: the text holds a marker.\n<<<<<<< HEAD\n# like a heading\nthe last line.');
   const o = findingsListed(root, '1');
   assert.equal(o.findings.length, 1);
-  assert.match(o.findings[0].text, /^Important: the text holds a marker\.\n\\?<<<<<<< HEAD\n\\?# like a heading\nthe last line\.$/);
+  assert.equal(o.findings[0].text, 'Important: the text holds a marker.\n<<<<<<< HEAD\n# like a heading\nthe last line.', 'given as the reviewer wrote it, without the escapes the file keeps');
+  assert.match(readFileSync(issueFile(root), 'utf8'), /\n {2}\\<<<<<<< HEAD\n {2}\\# like a heading\n/, 'the file keeps them escaped');
   assert.equal(o.findings[0].fileOnly, undefined);
+});
+
+test('a finding whose own text opens with the lead-in the log sets before a mark is listed once, matched and whole', () => {
+  const root = loop();
+  jarl(root, 'new', 'the work');
+  const texts = ['findings: model big-model was asked.\nImportant: the count is off.', 'findings: relayed · the count was read twice.\nImportant: the count is off.', 'model big-model is named first.\nImportant: the count is off.', 'findings: model big-model is one line. Important: the count is off.'];
+  texts.forEach((t, k) => jarl(root, 'review', '1', 'changes', '--by', `rev${k + 1}`, t));
+  const o = findingsListed(root, '1');
+  assert.deepEqual(o.findings.map((f) => [f.by, f.text, f.fileOnly === true]), texts.map((t, k) => [`rev${k + 1}`, t, false]));
+  assert.doesNotMatch(o.notes.join('\n'), fileOnlyNote);
+  for (const t of texts) assert.equal(o.findings.filter((f) => f.text === t).length, 1);
+});
+
+test('two verdicts of one reviewer with the same first line and line count, the file keeping only the newer: each keeps its own text', () => {
+  const root = loop();
+  jarl(root, 'new', 'the work');
+  const older = 'Important: the count is off.\nMinor: the older second line.';
+  const newer = 'Important: the count is off.\nMinor: the newer second line.';
+  jarl(root, 'review', '1', 'changes', '--by', 'rev1', older);
+  jarl(root, 'review', '1', 'changes', '--by', 'rev1', newer);
+  writeFileSync(issueFile(root), readFileSync(issueFile(root), 'utf8').replace(/\n- \*\*changes\*\* · by rev1 [^\n]*\n {2}Important: the count is off\.\n {2}Minor: the older second line\./, ''));
+  assert.doesNotMatch(readFileSync(issueFile(root), 'utf8'), /older second line/);
+  const o = findingsListed(root, '1');
+  assert.deepEqual(o.findings.map((f) => [f.by, f.text]), [['rev1', "Important: the count is off. (+1 more lines, whole text in the issue's Reviews section)"], ['rev1', newer]]);
+  assert.deepEqual(o.notes.filter((n) => fileOnlyNote.test(n)), []);
 });
 
 test('a Worktree field a lease wrote into the header is left out of the brief, as every line that names a place on this machine is', () => {

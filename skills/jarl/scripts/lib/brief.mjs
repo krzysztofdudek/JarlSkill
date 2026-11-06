@@ -10,6 +10,7 @@ import { firstLine } from './journal.mjs';
 import { evidenceTable, issueNamed, reviewEntries } from './issues.mjs';
 import { gateOf, readLoop, sameSlice, sliceNamed, sliceOf } from './loop.mjs';
 import { takenOver } from './rounds.mjs';
+import { findingOfLog } from './models.mjs';
 import { loopRules, ruleLines, rulesFor } from './rules.mjs';
 import { issueView } from './evidence.mjs';
 
@@ -39,25 +40,26 @@ const WHERE_WHOLE = "the issue's Reviews section";
 // The findings of the reviews that sent the work back. The log is the record, which every writer keeps: each "changes"
 // verdict line of the issue is one finding, in the log's order, once. An entry of the file's Reviews section is the same
 // verdict when it names the same reviewer and its text is the line's, whole or as the log writes a text of many lines (its
-// first line and where the rest is): then the finding is given whole from the file. Nothing is paired by order, by
-// verdict word or by day. A "changes" entry that is no verdict line of the log is listed after them, marked fileOnly, and
-// `notes` gains a note that says how many there are.
+// first line and where the rest is): then the finding is given whole from the file, as its writer gave it. Nothing is
+// paired by verdict word or by day. Where one reviewer's verdicts share that text, the newest line takes the newest
+// entry, so an entry the file holds never stands in for a verdict before it whose own entry is gone. A "changes" entry that is
+// no verdict line of the log is listed after them, marked fileOnly, and `notes` gains a note that says how many there are.
 function findingsOf(loop, issue, events, notes) {
   const { lines, entries } = reviewEntries(issue.sections.reviews);
-  const fromFile = (e) => ({ by: e.by, kind: e.kind, day: e.day, text: lines.slice(e.start + 1, e.end + 1).map((l) => l.replace(/^ {2}/, '')).join('\n').trim() });
+  const fromFile = (e) => ({ by: e.by, kind: e.kind, day: e.day, text: unescaped(lines.slice(e.start + 1, e.end + 1).map((l) => l.replace(/^ {2}/, '')).join('\n').trim()) });
   const unmatched = entries.filter((e) => e.verdict === 'changes').map(fromFile);
-  const found = gateOf(loop, issue.id).trail.filter((t) => t.verdict === 'changes').map((t) => {
+  const found = gateOf(loop, issue.id).trail.filter((t) => t.verdict === 'changes').reverse().map((t) => {
     const e = events.find((x) => x.n === t.n);
     // What the line holds after its verdict, its reviewer and the marks of a model, a relay and a batch.
     let text = e.text.slice(e.written.length + 1).replace(new RegExp(`^review changes · (?:by .+? \\((?:${REVIEWER_KIND_SRC})\\) · )?`), '');
     if (e.model) text = text.replace(`model ${e.model} · `, '');
     if (e.relayed) text = text.replace(/^relayed · /, '');
     if (e.batch) text = text.replace(`batch ${e.batch} · `, '');
-    text = text.replace(/^findings: (?=model |relayed|batch )/i, '');
-    const at = unmatched.findIndex((f) => f.by === t.by && [sameText(f.text), sameText(firstLine(unescaped(f.text), WHERE_WHOLE))].includes(sameText(text)));
+    text = findingOfLog(text);
+    const at = unmatched.findLastIndex((f) => f.by === t.by && [sameText(f.text), sameText(firstLine(f.text, WHERE_WHOLE))].includes(sameText(text)));
     const whole = at === -1 ? null : unmatched.splice(at, 1)[0];
     return { by: t.by, kind: t.kind, day: t.at.slice(0, 10), text: whole ? whole.text : text };
-  });
+  }).reverse();
   if (unmatched.length) notes.push(`${unmatched.length} review(s) of the Reviews section of ${issue.id} match no verdict line of its log, which is the record: listed after the log's, marked in the issue file only`);
   return [...found, ...unmatched.map((f) => ({ ...f, fileOnly: true }))];
 }
