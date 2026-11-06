@@ -4,7 +4,8 @@ import { basename } from 'node:path';
 import { git } from './git.mjs';
 import { canonical, jarlDir } from './where.mjs';
 import { branchGlobsFor } from './ids.mjs';
-import { loadProfile } from './profile.mjs';
+import { loadProfile, reviewerRule } from './profile.mjs';
+import { modelLines, modelRefusalOf } from './models.mjs';
 import { defaultBase, fileAt, isGitRepo, issueRepos, refsIn, repoFromInput } from './repositories.mjs';
 import { gateOf, readLoop } from './loop.mjs';
 import { issuesOnBranch, loopRepos } from './rounds.mjs';
@@ -34,6 +35,10 @@ export function cmdQueue(root, flags = {}) {
   // Every issue in the queue sits on a branch, so it carries code: only a fresh approve puts it there (the
   // fresh-review rule). One cleared by a coordinator alone waits, listed with its package as waiting for review.
   const approved = unsettled.filter((i) => gate.get(i.id).fresh);
+  // Under a reviewer rule that judges the model, an approve the done gate refuses for its model does not make its branch
+  // ready: the gate's own reading says so, and its words say what is missing.
+  const lines = reviewerRule(profile) === 'agent' ? null : modelLines(root);
+  const refused = new Map(approved.map((i) => [i.id, modelRefusalOf(root, loop, i, { gate: gate.get(i.id), lines })]).filter(([, why]) => why));
   const repos = flags.repo !== undefined ? [repoFromInput(root, flags.repo).main] : loopRepos(root, issues);
   const out = [];
   for (const repo of repos) {
@@ -64,7 +69,8 @@ export function cmdQueue(root, flags = {}) {
       const approves = on.map((i) => gate.get(i.id).live);
       const last = approves.reduce((a, b) => (!a || b.n > a.n ? b : a), null);
       const files = [...new Set(on.concat(others).flatMap((i) => i.files.map((f) => { const at = fileAt(root, i, f); return canonical(at.repo) === real ? at.path : null; }).filter(Boolean)))];
-      rows.push({ branch, issues: on.map((i) => i.id), waitingReview: others.map((i) => i.id), ready: others.length === 0, ahead, approvedAt: last.at, by: last.by, files, n: last.n });
+      const unaccepted = on.filter((i) => refused.has(i.id));
+      rows.push({ branch, issues: on.map((i) => i.id), waitingReview: others.map((i) => i.id), ...(unaccepted.length ? { waitingModel: unaccepted.map((i) => ({ id: i.id, missing: refused.get(i.id) })) } : {}), ready: others.length === 0 && unaccepted.length === 0, ahead, approvedAt: last.at, by: last.by, files, n: last.n });
     }
     rows.sort((a, b) => a.n - b.n);
     // Batches: consecutive rows whose declared files do not meet. A row with no files declared rides alone —
@@ -90,7 +96,7 @@ export function renderQueue(o) {
     lines.push(`[${r.repo}] into ${r.base}`);
     if (!r.rows.length) lines.push('  (nothing approved waits to be merged)');
     r.rows.forEach((x, n) => {
-      lines.push(`  ${n + 1}. ${x.branch} → ${x.issues.join(', ')}  +${x.ahead}  approved ${x.approvedAt}${x.by ? ` by ${x.by}` : ''}  batch ${x.batch}${x.ready ? '' : `  (waiting for review: ${x.waitingReview.join(', ')})`}`);
+      lines.push(`  ${n + 1}. ${x.branch} → ${x.issues.join(', ')}  +${x.ahead}  approved ${x.approvedAt}${x.by ? ` by ${x.by}` : ''}  batch ${x.batch}${x.ready ? '' : `  (${[...(x.waitingReview.length ? [`waiting for review: ${x.waitingReview.join(', ')}`] : []), ...(x.waitingModel ? [`waiting for an approve the reviewer rule accepts: ${x.waitingModel.map((m) => m.missing).join('; ')}`] : [])].join('; ')})`}`);
     });
   }
   return lines.join('\n') || '(nothing approved waits to be merged)';
