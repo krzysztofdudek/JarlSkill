@@ -608,5 +608,24 @@ function gateLine(profile, split, label) {
 }
 function renderSplit(s) { return `fresh ${s.fresh}${s.waived ? ` · waived by the owner ${s.waived}` : ''} · coordinator ${s.coordinator} · self ${s.self}${s.retracted ? ` · retracted ${s.retracted}` : ''}${s.unrecorded ? ` · unrecorded ${s.unrecorded}` : ''}`; }
 
+// What the record says about one in-flight issue, as one fact (the steps the marks point to are in evidence.mjs): no
+// evidence rows since the start; rows and no verdict since the last restart or round; changes requested; approved, with
+// the merge and its CI after it. A self approve is not a verdict that counts, so it reads as no verdict.
+export function inFlightMark(loop, issue) {
+  const g = gateOf(loop, issue.id);
+  if (g.approved) {
+    // The same rule the done gate and the merge queue apply: an issue that carries code is cleared by a fresh approve only.
+    if (carriesCode(issue) && !g.fresh) return 'approved-not-fresh';
+    const m = mergedOf(issue);
+    if (!m) return 'approved';
+    return m.ci === 'pending' || m.ci === 'red' ? 'merged-ci' : 'merged';
+  }
+  const verdicts = g.trail.filter((r) => r.inWindow && !r.retracted && (r.verdict === 'approve' || r.verdict === 'changes'));
+  if (verdicts.length && verdicts[verdicts.length - 1].verdict === 'changes') return 'changes-requested';
+  return g.rowsSince === 0 ? 'no-rows' : 'rows-no-verdict';
+}
+// Whether an issue holds a live approve and is not merged yet: the merger's to land, so its lease is not idle for that wait.
+export const awaitsMerge = (loop, issue) => inFlightMark(loop, issue) === 'approved';
+
 // Used by the other modules of the library, and not part of what jarl-lib.mjs exports.
 export { FIELD_NAMES, approveKind, closedGateLine, gateLine, scopedLoop, waiverVoid };

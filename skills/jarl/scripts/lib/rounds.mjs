@@ -9,6 +9,7 @@ import { ATTACH_MAX_BYTES, DEFAULT_PROFILE, loadProfile } from './profile.mjs';
 import { appendLog, goalLines, oneLine, parseStamp, readGoal } from './journal.mjs';
 import { journalById, leaseOfMove } from './log.mjs';
 import { findIssue, loadIssues, mergedOf } from './issues.mjs';
+import { awaitsMerge, readLoop } from './loop.mjs';
 import { defaultBase, fetchedRefs, fileAt, isGitRepo, issuePlaces, issueRepoPaths, issueRepos, refsIn, repoFromInput, repoLabel, repoOf, reposNamed, worktreeState, worktreesOf } from './repositories.mjs';
 
 // ---- rounds, branches, checks ------------------------------------------------------------------
@@ -268,7 +269,10 @@ export function cmdBranches(root, flags) {
   const minutes = livenessOf(goalLines(readGoal(jarlDir(root))), flags).minutes;
   const issues = loadIssues(root);
   const repos = flags.repo !== undefined ? [repoFromInput(root, flags.repo).main] : loopRepos(root, issues);
-  return repos.flatMap((repo) => branchesIn(root, repo, flags, issues, minutes));
+  // The leases that hold a live approve and wait for their merge are not idle for that wait (see leaseState).
+  const loop = readLoop(jarlDir(root));
+  const approved = new Set(loop.issues.filter((i) => loop.profile.is(i.status, 'holds-claim') && awaitsMerge(loop, i)).map((i) => i.id));
+  return repos.flatMap((repo) => branchesIn(root, repo, flags, issues, minutes, approved));
 }
 
 const DONE_BRANCH = { delete: '  DONE → delete', dirty: '  DONE (worktree dirty)', unknown: '  DONE (worktree state unknown)', unverified: '  DONE (merged by record, branch not in base) — verify' };
@@ -401,7 +405,10 @@ export function leaseState(root, issue, minutes = LIVENESS_MINUTES, opts = {}) {
     if (!seen && gone) out.push(`worktree gone: ${gone.path}`);
   }
   if (f.branch && repos.length && !repos.some((r) => refsIn(r).has(f.branch))) out.push(`branch gone: ${f.branch}`);
-  const liveness = leaseLiveness(root, issue, minutes, opts);
+  const measured = leaseLiveness(root, issue, minutes, opts);
+  // A lease whose work is approved and waits for its merge (opts.approved) has nothing left for its worker, so the wait is
+  // not the worker's and the lease is not idle for it: the merger's list shows it.
+  const liveness = opts.approved ? { ...measured, idle: false } : measured;
   if (liveness.idle) out.push(idleText(liveness));
   return { problems: out, liveness };
 }
@@ -455,7 +462,7 @@ function handedOverFrom(root, issues, realRepo, name, byId) {
     .filter((h) => h.to);
 }
 
-function branchesIn(root, repo, flags, issues, minutes = LIVENESS_MINUTES) {
+function branchesIn(root, repo, flags, issues, minutes = LIVENESS_MINUTES, approved = new Set()) {
   const base = flags.base || defaultBase(repo);
   const real = canonical(repo);
   const named = (git(repo, ['branch', '--list', 'jarl/*', '--format=%(refname:short)']) || '').split('\n').filter(Boolean);
@@ -480,7 +487,7 @@ function branchesIn(root, repo, flags, issues, minutes = LIVENESS_MINUTES) {
     const dirty = status === null ? null : status.split('\n').filter(Boolean).length;
     // Uncommitted changes that cannot be counted: a worktree git lists but this machine cannot see, or one that would not answer.
     const unknown = ws.state === 'elsewhere' || ws.state === 'invisible' || (ws.state === 'here' && dirty === null);
-    const stale = on.flatMap((i) => leaseProblems(root, i, minutes).map((p) => `${i.id} ${p}`));
+    const stale = on.flatMap((i) => leaseProblems(root, i, minutes, { approved: approved.has(i.id) }).map((p) => `${i.id} ${p}`));
     // Done → delete: every issue it carries is done or dropped (at least one done), and its work is in the
     // base — the branch is an ancestor of it, or every done issue records its merge.
     const done = doneMark(repo, base, name, on, dirty, loadProfile(root), unknown);
@@ -492,7 +499,7 @@ function branchesIn(root, repo, flags, issues, minutes = LIVENESS_MINUTES) {
   // An in-progress issue whose recorded branch is not in the repository any more: a lease with nothing under it.
   const gone = leased.filter((b) => !exists(b)).map((name) => {
     const on = issuesOnBranch(root, issues, real, name);
-    const stale = on.flatMap((i) => leaseProblems(root, i, minutes).map((p) => `${i.id} ${p}`));
+    const stale = on.flatMap((i) => leaseProblems(root, i, minutes, { approved: approved.has(i.id) }).map((p) => `${i.id} ${p}`));
     return { repo: repoLabel(repo), branch: name, ahead: null, unticketed: false, worktree: null, dirty: null, unnamed: false, issues: on.map((i) => i.id), stale, done: null, deletable: false, missing: true };
   }).filter((r) => r.stale.length);
   return [...rows, ...gone];

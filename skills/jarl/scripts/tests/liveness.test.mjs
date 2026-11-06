@@ -14,6 +14,7 @@ import * as L from '../jarl-lib.mjs';
 import * as W from '../lib/where.mjs';
 import { jarl, refuses, gitRepo, loop as makeLoop, SPAWN_TIMEOUT } from './helpers.mjs';
 import { oldJarl, formatTwoJarl } from './old-jarl.mjs';
+import { FINDINGS } from './findings.mjs';
 
 const MIN = 60_000;
 const T0 = Date.parse('2026-06-01T10:00:00Z');
@@ -205,6 +206,48 @@ test('goal --set takes a Liveness line of whole minutes, and the frozen readers 
     assert.equal(r.ok, true, r.error);
     assert.equal(r.value.goal, 'goal');
   }
+});
+
+test('a lease that holds a live approve and waits for its merge is not idle for that wait, and shows on the merger\'s list; a lease with no approve is idle as before', () => {
+  const { dir: root, g } = gitRepo({ prefix: 'jarl-live-approved-', branch: 'main' });
+  const commitAt = (minutes, file) => {
+    writeFileSync(join(root, file), `${minutes}\n`);
+    g('add', file);
+    const when = new Date(T0 + minutes * MIN).toISOString();
+    execFileSync('git', ['commit', '-qm', file], { cwd: root, env: { ...process.env, GIT_COMMITTER_DATE: when, GIT_AUTHOR_DATE: when }, timeout: SPAWN_TIMEOUT, stdio: 'ignore' });
+  };
+  at(0, () => {
+    R.initLoop(root, 'goal');
+    R.newIssue(root, 'approved', { files: 'a.txt', acceptance: 'a is done' });
+    R.newIssue(root, 'unapproved', { files: 'b.txt', acceptance: 'b is done' });
+    R.setStatus(root, '001', 'in-progress', 'w', { worker: 'w1', branch: 'jarl/1-approved' });
+    R.setStatus(root, '002', 'in-progress', 'w', { worker: 'w2', branch: 'jarl/2-unapproved' });
+  });
+  for (const [branch, file] of [['jarl/1-approved', 'a1.txt'], ['jarl/2-unapproved', 'b2.txt']]) {
+    g('checkout', '-q', '-b', branch);
+    commitAt(5, file);
+    g('checkout', '-q', 'main');
+  }
+  at(5, () => R.review(root, '001', 'approve', FINDINGS, { by: 'rev' }));
+  at(30, () => assert.deepEqual(R.statusData(root).stale, []));
+  at(36, () => {
+    const stale = R.statusData(root).stale;
+    assert.deepEqual(stale.map((x) => x.id), ['002'], 'only the lease with no approve is idle');
+    assert.match(stale[0].problems[0], /^idle 31m \(threshold 30m\)/);
+    assert.equal(R.statusData(root).liveness.leases.find((x) => x.id === '001').idle, false);
+    assert.equal(R.statusData(root).liveness.leases.find((x) => x.id === '002').idle, true);
+    const resume = resumeText(root);
+    assert.doesNotMatch(resume, /^- 001 .*STALE/m);
+    assert.match(resume, /^- 002 .*STALE: idle 31m/m);
+    const list = nextAs(root, 'jarl');
+    assert.match(list, /^- 001 approved: approved, not merged; merge it \(worker w1\) — jarl\.mjs merged 001 /m);
+    assert.doesNotMatch(list, /^- 001 .*no commit, row or log line/m);
+    assert.match(list, /^- 002 unapproved: with worker w2 .*, no commit, row or log line for 31m \(threshold 30m\)/m);
+    const branches = Object.fromEntries(L.cmdBranches(root, {}).map((b) => [b.branch, b.stale]));
+    assert.deepEqual(branches['jarl/1-approved'], []);
+    assert.equal(branches['jarl/2-unapproved'].length, 1);
+    assert.match(branches['jarl/2-unapproved'][0], /^002 idle 31m \(threshold 30m\)/);
+  });
 });
 
 // The command line, on the real clock: the lease's log lines are dated 45 minutes back, as a worker stuck on a prompt
