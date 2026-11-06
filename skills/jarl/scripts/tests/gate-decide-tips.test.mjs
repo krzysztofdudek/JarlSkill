@@ -68,7 +68,7 @@ test('review: an approve needs --by, a self-approve by the worker is refused, an
   assert.match(refuses(root, 'review', '1', 'changes', 'Important: no reviewer named'), /a verdict needs --by/);
   const next = (id) => `the merger merges the branch and records it with one call — jarl.mjs merged ${id} --sha "<sha>" --ran "<command>" --saw "<what-it-printed>" — then jarl.mjs set ${id} done "<why>", which needs a Proof row from the worker (the merge check is the merger's and is no proof); a worker never sets done`;
   assert.equal(jarl(root, 'review', '1,2', 'approve', '--by', 'fresh-opus', FINDINGS), `1 review approve by fresh-opus (fresh) · acceptance: (none on file) · next: ${next('1')}\n2 review approve by fresh-opus (fresh) · acceptance: (none on file) · next: ${next('2')}`);
-  assert.match(log(), /1 review approve · by fresh-opus \(fresh\) · read the diff, nothing found/);
+  assert.match(log(), /1 review approve · by fresh-opus \(fresh\) · batch \S+ · read the diff, nothing found/, 'one verdict on two issues carries its batch id after the standing');
   assert.match(jarl(root, 'review', '2', 'approve', '--by', 'jarl', FINDINGS), /by jarl \(coordinator\)/);
   // The worker is found from the lease line too once the Worker field is gone.
   jarl(root, 'evidence', '1', '--ran', 't', '--saw', 'ok');
