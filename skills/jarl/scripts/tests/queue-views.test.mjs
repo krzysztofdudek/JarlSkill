@@ -136,6 +136,16 @@ test('changelog: fragments recorded on the issue print grouped for [Unreleased];
   assert.match(refuses(root, 'field', '2', 'Changelog', 'Removed:'), /changelog entry "Removed:" has no text/);
   assert.match(refuses(root, 'new', 'x', '--changelog', 'fixed:  '), /has no text/);
   assert.equal(jarl(root, 'changelog', '2'), '### Fixed\n- something else.');
+  // A section the changelog does not know is refused with the sections it knows and the form that gives an entry, on field, add and new, and nothing is written.
+  const unknown = 'changelog entry "Bogus: text" opens with "Bogus:", which is no section of the changelog; the sections are Added, Changed, Deprecated, Removed, Fixed, Security\njarl.mjs field "<ids>" Changelog "<changelog-entry>"';
+  assert.equal(refuses(root, 'field', '2', 'Changelog', 'Bogus: text').trim(), unknown);
+  assert.equal(refuses(root, 'field', '2', 'Changelog', '--add', 'Bogus: text').trim(), `${unknown.replace('Changelog "<changelog-entry>"', 'Changelog "<changelog-entry>" --add')}`);
+  assert.match(refuses(root, 'new', 'x', '--changelog', 'Notes: text'), /opens with "Notes:", which is no section of the changelog; the sections are Added, Changed, Deprecated, Removed, Fixed, Security/);
+  assert.equal(jarl(root, 'changelog', '2'), '### Fixed\n- something else.');
+  // A section in any case is a known one, and text with a colon later in it is plain text.
+  jarl(root, 'field', '2', 'Changelog', '--add', 'SECURITY: closed a hole.');
+  jarl(root, 'field', '2', 'Changelog', '--add', 'Reads a file: no change.');
+  assert.equal(jarl(root, 'changelog', '2'), '### Fixed\n- something else.\n- Reads a file: no change.\n\n### Security\n- closed a hole.');
 });
 
 test('changelog: an issue naming several repositories prints under each; --repo keeps one', () => {

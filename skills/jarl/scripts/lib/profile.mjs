@@ -139,6 +139,11 @@ export const KEY_FIELD = 'Key';
 // that name is refused; a loop already open with such a profile keeps its own field, and its issues form no tree.
 export const PARENT_FIELD = 'Parent';
 export const BUILTIN_SECTIONS = ['What', 'Why', 'Acceptance', 'Changelog', 'Evidence'];
+// The names a section of a profile may not take: a header field of the tool's own (field writes it under that name, so a
+// section of the same name would hide it) and the parts the tool writes (a section of that name would let field overwrite
+// the history the file shows). A profile file given to init or to profile <file> that declares a section of such a name is
+// refused; a loop already open with such a profile keeps its own section.
+export const RESERVED_SECTION_NAMES = Object.freeze([...new Set([...TOOL_FIELDS, 'Title', 'Kind', 'Tier', 'Model', 'Parent', 'Key', ...KEPT_FIELDS, ...BUILTIN_SECTIONS, 'Notes', 'Reviews', 'Proof'])]);
 export const PROFILE_FIELD_RE = /^[A-Za-z][A-Za-z0-9 -]{0,39}$/;
 export const PROFILE_STATUS_RE = /^[a-z][a-z0-9-]{0,39}$/;
 // Names a status may not take: the words status and resume already print for something else (the counts line's
@@ -424,7 +429,7 @@ export function readProfileFile(file, { argument = false } = {}) {
   let json;
   try { json = JSON.parse(readText(file)); } catch (e) { refuse(`${file} is not JSON: ${e.message}`, ['jarl.mjs', 'profile', '<profile.json>']); }
   const profile = validateProfile(json, file);
-  const reserved = reservedNamesProblem(profile) || keyFieldProblem(profile) || parentFieldProblem(profile);
+  const reserved = reservedNamesProblem(profile) || keyFieldProblem(profile) || parentFieldProblem(profile) || sectionNamesProblem(profile);
   need(!reserved, `${file} is not a valid profile: ${reserved}`, () => afterView(['jarl.mjs', 'profile', file]));
   return { json, profile };
 }
@@ -444,6 +449,12 @@ function reservedNamesProblem(profile) {
 function keyFieldProblem(profile) {
   const own = profile.declaredFields.find((f) => f.key === KEY_FIELD.toLowerCase());
   return own ? `it declares the field ${own.name}, which Jarl reserves for an issue's key — rename it in the profile` : null;
+}
+// What a profile file to be opened declares of the names a section may not take (RESERVED_SECTION_NAMES), as a refusal, or null.
+function sectionNamesProblem(profile) {
+  const named = profile.sections.filter((s) => RESERVED_SECTION_NAMES.some((r) => r.toLowerCase() === s.toLowerCase()));
+  if (!named.length) return null;
+  return `it declares the section ${named.join(' and ')}, which is the name of a header field or of a part Jarl writes itself — the reserved names are ${RESERVED_SECTION_NAMES.join(', ')}; rename ${named.length === 1 ? 'it' : 'them'} in the profile`;
 }
 // What a profile file to be opened declares of the name a sub-issue's parent is written under, as a refusal, or null.
 function parentFieldProblem(profile) {

@@ -179,7 +179,8 @@ export function buildTools() {
 
 // A refusal of the call's input: a JSON-RPC -32602 error, never a tool result. The adapter's InvalidParams, carrying
 // the code where callers of this module read it.
-const invalid = (msg) => Object.assign(new InvalidParams(msg), { code: -32602 });
+// formed: the message ends with the form of the call already.
+const invalid = (msg, formed = false) => Object.assign(new InvalidParams(msg), { code: -32602, formed });
 function need(cond, msg) { if (!cond) throw invalid(msg); }
 
 // A field a tool does not take whose value another field takes, or another tool, from the command line's tables: a flag
@@ -194,14 +195,36 @@ function needNoGoneField(cmd, fields, carried = {}) {
     if (Object.hasOwn(COMMAND_FLAGS[cmd] || {}, name) || (COMMAND_ARGS[cmd] || []).some((a) => a.replace(/[?.]+$/, '') === name)) continue;
     const to = REMOVED_FLAGS[cmd]?.[name];
     if (to === 'retract') {
-      throw invalid(`${toolName(cmd)}: "${name}" is not a field of this tool — a row or a note is taken back with ${toolName('retract')}, and by names who takes it back: ${call('retract', { id: '<id>', entry: '<n-or-note-n>', by: '<who>', text: '<why>' })}`);
+      throw invalid(`${toolName(cmd)}: "${name}" is not a field of this tool — a row or a note is taken back with ${toolName('retract')}, and by names who takes it back: ${call('retract', { id: '<id>', entry: '<n-or-note-n>', by: '<who>', text: '<why>' })}`, true);
     }
     const field = to !== undefined ? to.replace(/^--/, '') : GONE_TEXT_NAMES[cmd] === name ? 'text' : null;
     if (field === null) continue;
     // The fields the tool requires, the author of a judgement among them.
     const form = { ...Object.fromEntries((COMMAND_ARGS[cmd] || []).filter((a) => !/[?.]$/.test(a)).map((a) => [a, FORM_VALUES[a] ?? '<value>'])), ...(Object.hasOwn(AUTHOR_REQUIRED, cmd) ? { by: '<who>' } : {}) };
-    throw invalid(`${toolName(cmd)}: "${name}" is not a field of this tool — its value goes in "${field}": ${call(cmd, { ...form, [field]: FORM_VALUES[field] ?? '<value>' })}`);
+    throw invalid(`${toolName(cmd)}: "${name}" is not a field of this tool — its value goes in "${field}": ${call(cmd, { ...form, [field]: FORM_VALUES[field] ?? '<value>' })}`, true);
   }
+}
+
+// The form of a tool's call: the tool and the fields it requires, each a placeholder, with the json and the root the call
+// gave. A root the refusal is about (not absolute, or a JARL_ROOT that is not) is its placeholder.
+function formOf(cmd, input, rootWrong) {
+  const given = input !== null && typeof input === 'object' && !Array.isArray(input) ? input : {};
+  const required = Object.fromEntries((COMMAND_ARGS[cmd] || []).filter((a) => !/[?.]$/.test(a)).map((a) => [a, FORM_VALUES[a] ?? '<value>']));
+  const author = Object.hasOwn(AUTHOR_REQUIRED, cmd) ? { by: '<who>' } : {};
+  const carried = {
+    ...(typeof given.json === 'boolean' ? { json: given.json } : {}),
+    ...(rootWrong ? { root: '<loop-root>' } : typeof given.root === 'string' && isAbsolute(given.root.trim()) ? { root: given.root } : {}),
+  };
+  return `${toolName(cmd)} ${JSON.stringify({ ...required, ...author, ...carried })}`;
+}
+// A refusal of the call's input ends with the form of the tool's call, once.
+function withForm(e, cmd, input) {
+  if (!(e instanceof InvalidParams) || e.formed) return e;
+  const root = input !== null && typeof input === 'object' ? input.root : undefined;
+  const rootWrong = (root !== undefined && !(typeof root === 'string' && root.trim() !== '' && isAbsolute(root.trim()))) || String(e.message).startsWith('JARL_ROOT');
+  e.message = `${e.message}\n${formOf(cmd, input, rootWrong)}`;
+  e.formed = true;
+  return e;
 }
 
 // A tool call back into the argv the CLI would be given: the command, every flag inline (--name=value, so a value
@@ -251,10 +274,10 @@ export function rootFor(input = {}, env = process.env, cwd = process.cwd()) { re
 // everything the CLI would print — its answer, its notes, its refusal — comes back as the result.
 export function callTool(name, input = {}, env = process.env, cwd = process.cwd()) {
   if (name === toolName('help')) {
-    if (input === null || typeof input !== 'object' || Array.isArray(input)) throw invalid(`${name}: arguments must be an object`);
+    if (input === null || typeof input !== 'object' || Array.isArray(input)) throw invalid(`${name}: arguments must be an object\n${toolName('help')} {}`, true);
     const shared = Object.keys(GLOBAL_FLAGS).filter((f) => f !== 'help');
     const extra = Object.keys(input).filter((k) => !shared.includes(k));
-    if (extra.length) throw invalid(`${name}: unknown field "${extra[0]}" — it takes ${shared.length ? shared.join(', ') : 'no fields'}`);
+    if (extra.length) throw invalid(`${name}: unknown field "${extra[0]}" — it takes ${shared.length ? shared.join(', ') : 'no fields'}\n${toolName('help')} {}`, true);
     return { content: [{ type: 'text', text: HELP }], isError: false };
   }
   const cmd = commandForTool(TABLE, name, TOOL_OPTIONS);
@@ -264,10 +287,15 @@ export function callTool(name, input = {}, env = process.env, cwd = process.cwd(
   const givenRoot = input !== null && typeof input === 'object' && typeof input.root === 'string' && isAbsolute(input.root.trim()) ? input.root : null;
   if (cmd === null && asked !== null && Object.hasOwn(REPLACED_COMMANDS, asked)) throw invalid(`Unknown tool: ${name} — ${replacedMessage(asked, [], givenRoot)}`);
   if (cmd === null) throw invalid(`Unknown tool: ${name}`);
-  const { root, from } = rootOf(input, env, cwd);
-  // The root the call named goes into the words the command line reads, before a bare --, as --root=, so a refusal's
-  // form carries it as the command line's does, and a form filled elsewhere reaches the same loop.
-  const words = argvFor(cmd, input);
+  let located;
+  let words;
+  try {
+    located = rootOf(input, env, cwd);
+    // The root the call named goes into the words the command line reads, before a bare --, as --root=, so a refusal's
+    // form carries it as the command line's does, and a form filled elsewhere reaches the same loop.
+    words = argvFor(cmd, input);
+  } catch (e) { throw withForm(e, cmd, input); }
+  const { root, from } = located;
   const end = words.indexOf('--') === -1 ? words.length : words.indexOf('--');
   const argv = from === 'root' ? [...words.slice(0, end), `--root=${root}`, ...words.slice(end)] : words;
   // A call that named no root is told which loop it reached, so a write never lands somewhere unseen. With

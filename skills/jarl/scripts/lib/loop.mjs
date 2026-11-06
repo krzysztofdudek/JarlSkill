@@ -1,8 +1,9 @@
 // The loaded loop: every issue with the state the log gives it, the done gate's window, and where a header and the
 // log disagree.
 
+import { existsSync } from 'node:fs';
 import { resolve, dirname, basename } from 'node:path';
-import { CI_STATES, fieldText, hole, jarlLine, need } from './base.mjs';
+import { CI_STATES, echoWord, fieldText, hole, jarlLine, need } from './base.mjs';
 import { jarlDir } from './where.mjs';
 import { idKey, idRe, idsCited, keyedIds } from './ids.mjs';
 import { profileAt } from './profile.mjs';
@@ -10,6 +11,13 @@ import { asksAt, decisionsAt, goalLines, readGoal } from './journal.mjs';
 import { eventsById, isParentLine, loopEvents } from './log.mjs';
 import { alignRows, evidenceRows, evidenceTable, headerReadText, issuesAt, mergedOf, sharedNumberText, sharedNumbers } from './issues.mjs';
 import { branchTip } from './repositories.mjs';
+
+// The refusal of a command that needs a loop where there is none: the directory the call looked in (echoed in single
+// quotes with its line breaks escaped, as the words of a call are, so it can neither start a line nor run when the text is
+// pasted), the --root that names the directory holding .jarl/, and the form that opens a loop in the root the call named.
+export function needLoop(root) {
+  need(existsSync(jarlDir(root)), `no loop here: ${echoWord(root)} holds no .jarl/ — open one with ${jarlLine('init', '<goal>')}, or pass --root "<loop-root>", the directory that holds .jarl/`, () => (['jarl.mjs', 'init', '<goal>']));
+}
 
 // ---- the loaded loop -------------------------------------------------------------------------------
 //

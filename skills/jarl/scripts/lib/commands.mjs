@@ -6,7 +6,7 @@ import { basename, join, resolve, relative, isAbsolute } from 'node:path';
 import { CI_STATES, LEASE_FIELDS, PRIORITIES, Refusal, TIERS, WAIT_KIND, afterView, fieldText, hole, jarlLine, need, noSeparators, refuse, shellWord, slugify, splitList } from './base.mjs';
 import { needNoNewOwnersWords, needNoOwnersWords } from './owner.mjs';
 import { git, gitBytes, gitRun } from './git.mjs';
-import { canonical, issuesDir, jarlDir, portablePath, stamp, today } from './where.mjs';
+import { canonical, issuesDir, jarlDir, normalPath, portablePath, stamp, today } from './where.mjs';
 import { readText, renameRetry, writeAtomic } from './files.mjs';
 import { ISSUE_FILE_RE, branchNameProblem, cmpId, expandIds, idKey, idRe, isBulk, itemNaming, needsRaisedFormat, newIssueKey, newNumber } from './ids.mjs';
 import { DEFAULT_PROFILE, FORMAT_LINES, PARENT_FIELD, TOOL_FIELDS, formatState, loadProfile, numberWidth, profilePath, readProfileFile } from './profile.mjs';
@@ -597,7 +597,7 @@ export function cmdBody(root, rawId, flags, dry = false) {
     lines.push(bodyLine(issue.id, 'acceptance', held('acceptance'), now, by, grew));
   }
   for (const [h, v] of sections) section(h, h, grow(h, bodyText(v)));
-  if (flags.changelog !== undefined) section('Changelog', 'changelog', changelogText(append ? [...itemsOf(held('changelog')), ...[].concat(flags.changelog)] : flags.changelog));
+  if (flags.changelog !== undefined) section('Changelog', 'changelog', changelogText(flags.changelog, append ? itemsOf(held('changelog')) : []));
   logChanges(root, lines);
   writeAtomic(issue.file, text);
   // Said on the command line only: a rewritten What, Why or Acceptance that names issues nothing orders with this one.
@@ -641,6 +641,17 @@ export function cmdAfter(root, rawId, raw, { clear = false, dry = false, by } = 
 export function cmdList(root, flags) {
   const profile = loadProfile(root);
   let rows = loadIssues(root);
+  // A filter names a value the loop knows (the profile's, or one an issue holds already): a value it does not know would
+  // list nothing and look like an empty loop.
+  const known = (flag, listed, held, value) => {
+    const given = flags[flag];
+    if (given === undefined || given === true) return;
+    const allowed = [...new Set([...listed, ...rows.map(held).filter(Boolean)])];
+    need(allowed.includes(String(given)), `--${flag} must be one of: ${allowed.join(', ')} (got "${given}")`, () => ({ flag: `--${flag}`, value }));
+  };
+  known('status', profile.statuses, (i) => i.status, hole('<status>'));
+  known('kind', profile.kinds, (i) => i.kind, hole('<kind>'));
+  known('prio', PRIORITIES, (i) => i.priority, hole('<prio>'));
   // Finished business (terminal: done, dropped, and deferred work, which waits) is not in the default list:
   // --status or --all shows it.
   // An issue whose number another file carries is listed whatever its status: the log's state of it may be another's.
@@ -760,13 +771,16 @@ export function reasonWord(status) { return status.charAt(0).toUpperCase() + sta
 export const SET_CALLERS = ['cli', 'record'];
 
 // Where `set <ids> <name> …` goes, decided here and nowhere else: a field the profile declares (Kind and Tier too, when it
-// declares them) and that is no status, the built-in Resources field, or a move into a status.
+// declares them) and that is no status, the built-in Resources field, another header field of the tool's own (field
+// writes it), or a move into a status.
 function setRoute(profile, name) {
   if (name === undefined || profile.statuses.includes(name)) return 'status';
   if (profile.field(name)) return 'field';
-  return String(name).toLowerCase() === 'resources' ? 'resources' : 'status';
+  if (String(name).toLowerCase() === 'resources') return 'resources';
+  return fieldsWritten(profile).some((f) => f.toLowerCase() === String(name).trim().toLowerCase()) ? 'own' : 'status';
 }
-// What a name given to set is: 'status', or 'field' (a field the profile declares, or the built-in Resources).
+// What a name given to set is: 'status', or 'field' (a field the profile declares, a header field of the tool's own, or
+// the built-in Resources).
 export function setRouteOf(root, name) { return setRoute(loadProfile(root), name) === 'status' ? 'status' : 'field'; }
 
 // The header fields of the tool's own that hold a list, each item one name or path: field adds and removes items of these.
@@ -775,6 +789,11 @@ const LIST_KEYS = ['tags', 'files', 'repo', 'after', 'source', 'resources'];
 // profile gives it), Changelog and the sections the profile declares.
 function sectionsOf(profile) {
   return [...new Set(['What', 'Why', 'Acceptance', ...(profile.acceptance ? [profile.acceptance] : []), 'Changelog', ...profile.sections])];
+}
+// The header fields of the tool's own that field writes in this loop. Person and Check when are the tool's own where the
+// built-in promise and wait hold, and a declared field's otherwise; so is Parent where the issues form a tree.
+function fieldsWritten(profile) {
+  return DESCRIPTION_FIELDS.filter((f) => (profile.kept || !['person', 'check when'].includes(f.toLowerCase())) && (profile.tree || f !== PARENT_FIELD));
 }
 // The one mode a field call writes in: set (a value alone), add, remove or clear.
 function fieldMode(flags) {
@@ -790,9 +809,7 @@ function fieldMode(flags) {
 export function cmdField(root, rawIds, name, value, flags = {}) {
   needNoOwnersWords('the field', value);
   const profile = loadProfile(root);
-  // Person and Check when are the tool's own where the built-in promise and wait hold, and a declared field's otherwise;
-  // so is Parent where the issues form a tree.
-  const writes = DESCRIPTION_FIELDS.filter((f) => (profile.kept || !['person', 'check when'].includes(f.toLowerCase())) && (profile.tree || f !== PARENT_FIELD));
+  const writes = fieldsWritten(profile);
   const sections = sectionsOf(profile);
   const writable = () => [...writes, ...profile.fields.map((f) => f.name), ...sections].join(', ');
   need(name !== undefined && String(name).trim() !== '', `field requires <name>, a part of the description: ${writable()} — e.g. ${jarlLine('field', '<ids>', 'Priority', '<prio>')}`, () => ({ arg: 1, value: '<a-part-of-the-description>' }));
@@ -890,7 +907,7 @@ function editList(root, rawIds, key, value, mode, flags) {
   // An item added is written as the field stores it (a repository as its name or its path), and one the issue holds
   // already, in any spelling of it, is not added again.
   const adds = mode !== 'add' ? [] : key === 'repo' ? repoList(root, items.join(',')).map((p) => p.value) : items;
-  const sameItem = (a, b) => (key === 'after' ? idKey(a) === idKey(b) : key === 'resources' ? a.toLowerCase() === b.toLowerCase() : a === b);
+  const sameItem = (a, b) => (key === 'after' ? idKey(a) === idKey(b) : key === 'resources' ? a.toLowerCase() === b.toLowerCase() : key === 'files' ? normalPath(a) === normalPath(b) : a === b);
   const removes = mode !== 'remove' ? null : (() => {
     if (key === 'repo') {
       let picked = [];
@@ -899,6 +916,7 @@ function editList(root, rawIds, key, value, mode, flags) {
     }
     if (key === 'after') { const keys = items.map((x) => idKey(x)); return (x) => keys.includes(idKey(x)); }
     if (key === 'resources') { const low = items.map((x) => x.toLowerCase()); return (x) => low.includes(x.toLowerCase()); }
+    if (key === 'files') { const same = items.map((x) => normalPath(x)); return (x) => same.includes(normalPath(x)); }
     return (x) => items.includes(x);
   })();
   const results = [].concat(eachIssue(root, rawIds, (id, dry) => {
@@ -960,6 +978,7 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   need(SET_CALLERS.includes(caller), `caller must be one of: ${SET_CALLERS.join(', ')} (got "${caller}")`, () => (['jarl.mjs', 'set', '<ids>', '<status>', '<text>']));
   const profile = loadProfile(root);
   const route = setRoute(profile, status);
+  need(route !== 'own', `${String(status).trim()} is a field, not a status: field writes it`, () => (['jarl.mjs', 'field', hole('<ids>'), String(status).trim(), hole('<value>')]));
   if (route === 'field') return setDeclaredField(root, rawIds, profile.field(status), why, flags);
   if (route === 'resources') return setResources(root, rawIds, why, flags);
   if (flags.header) return rewriteHeader(root, rawIds, status, why, flags);
@@ -980,7 +999,7 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   // What is written into the lease is what the journal gives back unchanged: a value the reader would take for something else is refused.
   for (const k of lease) { const problem = leaseValueProblem(k, flags[k]); need(!problem, `--${k} ${JSON.stringify(fieldText(flags[k]))} ${problem}`, () => ({ flag: `--${k}`, value: hole('<value>') })); }
   const issues = issuesFor(root, rawIds);
-  need(!profile.is(status, 'needs-reason') || why, REASON_TEXT[status]?.() || `${status} needs a reason: ${jarlLine('set', '<id>', status, '<text>')}`, () => ({ arg: 2, value: '<text>' }));
+  need(!profile.is(status, 'needs-reason') || fieldText(why ?? ''), REASON_TEXT[status]?.() || `${status} needs a reason: ${jarlLine('set', '<id>', status, '<text>')}`, () => ({ arg: 2, value: '<text>' }));
   const nothing = issues.length > 1 ? ' — nothing was written' : '';
   needTreeHolds(profile, issues, status, nothing);
   if (holds) needLeaseHolds(root, profile, issues, status, why, flags, handover, nothing);

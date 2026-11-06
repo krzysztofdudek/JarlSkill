@@ -5,7 +5,7 @@ import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve, dirname, basename, relative, isAbsolute } from 'node:path';
 import { afterView, fieldText, hole, jarlLine, need, noSeparators, refuse, splitList } from './base.mjs';
 import { git } from './git.mjs';
-import { canonical, issuesDir, jarlDir, portablePath } from './where.mjs';
+import { canonical, issuesDir, jarlDir, normalPath, portablePath } from './where.mjs';
 import { readText, writeAtomic } from './files.mjs';
 import { ISSUE_FILE_RE, branchNameProblem } from './ids.mjs';
 import { FORMAT_LINES, PROFILE_VERSION, RECORD_FORMATS, RECORD_FORMAT_RAISED, forgetProfile, formatState, loadProfile, profilePath } from './profile.mjs';
@@ -206,7 +206,9 @@ export function worktreeState(repo, branch, stored) {
   return { state: existsSync(dirname(stored)) ? 'gone' : 'invisible', path: stored };
 }
 
-export function fileAt(root, issue, declared) {
+export function fileAt(root, issue, written) {
+  // However it is spelled, a path is one key (see normalPath).
+  const declared = normalPath(written);
   const named = splitList(issue.fields.repo);
   if (!named.length) return { repo: root, path: declared };
   // Several repositories: the one whose name the entry starts with; an entry that starts with none of them is

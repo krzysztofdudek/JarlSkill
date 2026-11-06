@@ -101,7 +101,7 @@ test('field writes Resources and the fields a profile declares; set takes status
   assert.match(refuses(root, 'field', '1', 'open', 'x'), /open is not a part of the description/);
   assert.match(refuses(root, 'field', '1', 'Note', 'x', '--worker', 'w'), /unknown flag --worker for field/);
   assert.equal(refuses(root, 'set', '1', 'Note', 'x', '--worker', 'w').trim(), "Note is a field, not a status: field writes it\njarl.mjs field \"<ids>\" Note \"<value>\"");
-  assert.match(refuses(root, 'set', '1', 'Files', 'x'), /^status must be one of: open, in-progress, done, dropped, deferred \(got "Files"\)\njarl\.mjs set "<ids>" "<status>" "<why>"\n$/);
+  assert.equal(refuses(root, 'set', '1', 'Files', 'x').trim(), 'Files is a field, not a status: field writes it\njarl.mjs field "<ids>" Files "<paths>"');
   assert.match(refuses(root, 'set', '1', 'bogus', 'x'), /status must be one of: /);
   assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /· 1 field Resources · gate, db · was \(none\)\n.*· 2 field Resources · gate, db · was \(none\)\n/);
 });
@@ -125,6 +125,25 @@ test('set given a field is refused with the field call that writes it, on the co
   assert.ok(!cleared.isError, cleared.content[0].text);
   assert.equal(field(a, '3', 'note') || '', '');
   assert.ok(mcp.callTool('jarl_field', { ids: '3', name: 'Note', value: ' ', root: a }).isError);
+});
+
+test('set given a header field of the tool is refused with the field call that writes it, and writes nothing', () => {
+  const root = loop();
+  issues(root, 1);
+  const before = logText(root);
+  const text = issueText(root, '1');
+  const forms = { Priority: '"<prio>"', Tier: '"<tier>"', Kind: '"<kind>"', Tags: '"<tag>"', Files: '"<paths>"', Repo: '"<name-or-path>"', After: '"<ids-it-waits-on>"', Source: '"<report-dir#finding-id>"', Where: '"<text>"', Title: '"<title>"' };
+  for (const [name, hole] of Object.entries(forms)) {
+    assert.equal(refuses(root, 'set', '1', name, '1').trim(), `${name} is a field, not a status: field writes it\njarl.mjs field "<ids>" ${name} ${hole}`, name);
+  }
+  assert.equal(refuses(root, 'set', '1', 'tags', 'x', '--by', 'w').trim(), 'tags is a field, not a status: field writes it\njarl.mjs field "<ids>" tags "<tag>" --by "<who>"');
+  assert.equal(refuses(root, 'set', '1', 'Found by', 'someone').trim(), 'Found by is a field, not a status: field writes it\njarl.mjs field "<ids>" \'Found by\' "<who>"');
+  const said = mcp.callTool('jarl_set', { ids: '1', status: 'Priority', text: '1', root });
+  assert.ok(said.isError);
+  assert.match(posixForms(said.content[0].text), /^Priority is a field, not a status: field writes it\njarl\.mjs field "<ids>" Priority "<prio>" '--root=[^']+'$/);
+  assert.equal(logText(root), before);
+  assert.equal(issueText(root, '1'), text);
+  assert.throws(() => L.cmdSet(root, '1', 'Files', 'x'), /Files is a field, not a status: field writes it/);
 });
 
 test('one idiom empties every field: --clear on After, Repo, Resources and a profile field', () => {

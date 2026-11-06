@@ -18,6 +18,18 @@ function repo() {
   return dir;
 }
 
+test('the hint for an empty Found by is the field call that writes it, and that call fills it', async () => {
+  const { describeNew } = await import('../jarl-lib.mjs');
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  const { file } = JSON.parse(jarl(root, 'new', 'bare', '--json'));
+  writeFileSync(file, readFileSync(file, 'utf8').replace(/^\*\*Found by:\*\*.*$/m, '**Found by:**'));
+  const hint = describeNew(file).empty.find((e) => e.field === 'found by');
+  assert.equal(hint.fill, "jarl.mjs field 1 'Found by' \"<who>\"");
+  assert.equal(jarl(root, 'field', '1', 'Found by', 'rev-a'), '1 Found by: rev-a');
+  assert.equal(describeNew(file).empty.find((e) => e.field === 'found by'), undefined);
+});
+
 test('init, new, list, show', () => {
   const root = repo();
   jarl(root, 'init', 'make the export command handle every fixture');
@@ -309,6 +321,10 @@ test('status moves only with a log line; done needs evidence; dropped needs a re
   jarl(root, 'new', 'thing');
   assert.match(refuses(root, 'set', '1', 'done'), /no evidence yet/);
   assert.match(refuses(root, 'set', '1', 'dropped'), /needs a reason/);
+  // A reason of blanks is no reason: the refusal ends with the form that gives one, and the issue stays open.
+  for (const blank of ['', ' ', '  \t ']) assert.equal(refuses(root, 'set', '1', 'dropped', blank).trim(), 'dropped needs a reason: jarl.mjs set "<id>" dropped "<text>"\njarl.mjs set "<ids>" "<status>" "<text>"');
+  assert.match(refuses(root, 'set', '1', 'deferred', ' '), /^deferred needs a reason: /);
+  assert.match(jarl(root, 'show', '1'), /open/);
   jarl(root, 'set', '1', 'in-progress', 'worker raised');
   jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', '12 pass, 0 fail');
   assert.match(refuses(root, 'set', '1', 'done'), /no approving review/);
