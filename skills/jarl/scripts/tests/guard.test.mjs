@@ -7,23 +7,30 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { LEFT_THE_FAMILY } from './left-the-family.mjs';
 
 const SCRIPTS = fileURLToPath(new URL('..', import.meta.url));
 const REPO = fileURLToPath(new URL('../../../..', import.meta.url));
 const PREFIX = 'skills/jarl/scripts/';
 
 // The state directories (as a path segment inside a string) and the commands (a quoted word, or npx) of the other tools
-// of the family: a directory or a command of either can sit on a user's machine, and Jarl's code reaches into none of them.
-const REACH = [
-  { rule: 'state-path', re: /['"`/](\.yggdrasil|\.grain)(?=[/'"`]|$)/g },
-  { rule: 'spawn', re: /['"`](yg|yggdrasil|grain)['"`]|\b(npx)\b/g },
-];
+// of the family and of the tools that have left it (the one list in left-the-family.mjs): a directory or a command of
+// either can sit on a user's machine, and Jarl's code reaches into none of them.
+const escapeRe = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+function reachFor(left) {
+  const gone = left.map((name) => escapeRe(name.toLowerCase()));
+  return [
+    { rule: 'state-path', re: new RegExp(`['"\`/](\\.yggdrasil|\\.grain${gone.map((n) => `|\\.${n}`).join('')})(?=[/'"\`]|$)`, 'g') },
+    { rule: 'spawn', re: new RegExp(`['"\`](yg|yggdrasil|grain${gone.map((n) => `|${n}`).join('')})['"\`]|\\b(npx)\\b`, 'g') },
+  ];
+}
+const REACH = reachFor(LEFT_THE_FAMILY);
 
-function findings(file, text) {
+function findings(file, text, rules = REACH) {
   const out = [];
   text.split('\n').forEach((line, n) => {
     if (/^\s*(\/\/|\*|\/\*)/.test(line)) return;
-    for (const { rule, re } of REACH) for (const m of line.matchAll(re)) out.push({ file, line: n + 1, rule, subject: m[1] || m[2] });
+    for (const { rule, re } of rules) for (const m of line.matchAll(re)) out.push({ file, line: n + 1, rule, subject: m[1] || m[2] });
   });
   return out;
 }
@@ -59,4 +66,22 @@ test('the guard sees what it guards against, and not a comment', () => {
   assert.deepEqual(findings('x', "const s = `${root}/.grain/exports`;").map((f) => f.subject), ['.grain']);
   assert.deepEqual(findings('x', '// a comment names .yggdrasil/ and runs yg'), []);
   assert.deepEqual(findings('x', "const name = 'jarl';"), []);
+});
+
+test('the guard refuses the state path and the command of a tool that has left the family, wherever a line writes them', () => {
+  const [name] = LEFT_THE_FAMILY.map((n) => n.toLowerCase());
+  assert.deepEqual(findings('x', `const d = join(root, '.${name}');`).map((f) => [f.rule, f.subject]), [['state-path', `.${name}`]]);
+  assert.deepEqual(findings('x', 'const s = `${root}/.' + name + '/items`;').map((f) => [f.rule, f.subject]), [['state-path', `.${name}`]]);
+  assert.deepEqual(findings('x', `spawnSync('${name}', ['list']);`).map((f) => [f.rule, f.subject]), [['spawn', name]]);
+  assert.deepEqual(findings('x', `// a comment names .${name}/ and runs ${name}`), []);
+});
+
+test('a second name on the list of tools that have left the family makes its state path and its command refused too', () => {
+  const [first] = LEFT_THE_FAMILY.map((n) => n.toLowerCase());
+  const second = 'frobnicator';
+  const lines = [`const d = join(root, '.${second}');`, 'const s = `${root}/.' + second + '/items`;', `spawnSync('${second}', ['list']);`];
+  const subjects = (rules) => lines.flatMap((line) => findings('x', line, rules).map((f) => f.subject));
+  assert.deepEqual(subjects(reachFor(LEFT_THE_FAMILY)), [], 'a name that is not on the list is not refused');
+  assert.deepEqual(subjects(reachFor([...LEFT_THE_FAMILY, 'Frobnicator'])), [`.${second}`, `.${second}`, second]);
+  assert.deepEqual(findings('x', `spawnSync('${first}x', []);`, reachFor(LEFT_THE_FAMILY)), [], 'a command that only starts with a name on the list is another word');
 });

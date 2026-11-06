@@ -1,10 +1,10 @@
-<p align="center"><img src="assets/social-card.png" alt="Jarl: on a feature branch, the agent files everything it sees as an issue, gives each issue a worker in its own worktree, and closes nothing without recorded evidence and an approval, from a fresh reviewer when the issue carries code." width="720"></p>
+<p align="center"><img src="assets/social-card.png" alt="Jarl: on a feature branch, the agent files everything it sees as an issue, gives each issue a worker in its own worktree, and closes nothing without recorded evidence and an approval, from a fresh reviewer when the issue carries code, unless the loop's done gate asks no approve and a merge is enough." width="720"></p>
 
 # Jarl
 
 **Your feature branch has more issues than one agent can hold in its head, so it fixes one, forgets two, and loses the third in the diff.** Jarl makes the agent direct a crew instead of working alone.
 
-On a feature branch, the agent files everything it sees as an issue, gives each issue a worker in its own worktree, and closes nothing without recorded evidence and an approval, from a fresh reviewer when the issue carries code.
+On a feature branch, the agent files everything it sees as an issue, gives each issue a worker in its own worktree, and closes nothing without recorded evidence and an approval, from a fresh reviewer when the issue carries code, unless the loop's done gate asks no approve and a merge is enough.
 
 ## What you install
 
@@ -113,7 +113,7 @@ A closed loop has removed `.jarl/` itself. For an open one, delete `.jarl/` and 
 
 **Where does Jarl look for the loop?** At the root of a checkout, or of the main checkout from a worktree that holds none, and never in a subdirectory. A loop kept in one is reached with `--root` on the command line, or with a tool call's `root` field or the server's `JARL_ROOT`.
 
-**Can another tool read the loop?** `skills/jarl/scripts/record.mjs` is the one stable surface to vendor, under the contract `jarl-record/3` ([the record as a library](skills/jarl/references/composers.md#the-record-as-a-library)).
+**Can another tool read the loop?** `skills/jarl/scripts/record.mjs` is the one stable surface to vendor, under the contract `jarl-record/3`, which keeps every export of `jarl-record/1` and `jarl-record/2` ([the record as a library](skills/jarl/references/composers.md#the-record-as-a-library)).
 
 ## Where it fits
 

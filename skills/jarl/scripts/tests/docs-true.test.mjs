@@ -9,10 +9,11 @@ import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { SCRIPT, SKILL_DIR, SPAWN_TIMEOUT, gitRepo, jarl, loop, refuses, run, skillFiles, skillLines, skillText } from './helpers.mjs';
+import { LEFT_THE_FAMILY } from './left-the-family.mjs';
 
 const { COMMAND_FLAGS, INTERNAL_COMMANDS, MUTATING, USAGE } = await import('../jarl.mjs');
 const mcp = await import('../jarl-mcp.mjs');
-const { RECORD_API } = await import('../record.mjs');
+const { RECORD_API, RECORD_APIS } = await import('../record.mjs');
 const { renderSplit } = await import('../lib/loop.mjs');
 
 const PLUGIN = resolve(SKILL_DIR, '..', '..');
@@ -285,19 +286,19 @@ test('the README names the branch the merger merges into, who reads JARL_ROOT, t
   assert.match(readme, /never in a subdirectory/);
 });
 
-test('the README\'s opening says what closes an issue as the done gate does, and its record contract line names one contract', () => {
+test('the README\'s opening says what closes an issue as the done gate does, and its record contract line names the contract the library holds and the ones it keeps', () => {
   const readme = readRoot('README.md');
   assert.doesNotMatch(readme, /closes nothing without recorded evidence and a fresh reviewer/, 'an approval of a fresh reviewer is needed for code, not for every issue');
   const opening = readme.split('\n').filter((l) => l.includes('closes nothing without recorded evidence'));
   assert.equal(opening.length, 2, 'the picture\'s text and the opening line say it');
-  for (const l of opening) assert.match(l, /closes nothing without recorded evidence and an approval, from a fresh reviewer when the issue carries code\./);
+  for (const l of opening) assert.match(l, /closes nothing without recorded evidence and an approval, from a fresh reviewer when the issue carries code, unless the loop's done gate asks no approve and a merge is enough\./);
   const contract = readme.split('\n').find((l) => l.includes('record.mjs'));
   assert.ok(contract, 'the README names the record library');
-  assert.deepEqual([...new Set(contract.match(/jarl-record\/\d+/g))], [RECORD_API], 'the line names the contract the library holds and compares it with no other');
+  assert.equal(/under the contract `(jarl-record\/\d+)`/.exec(contract)?.[1], RECORD_API, 'the line names the contract the library holds as the current one');
+  assert.deepEqual([...new Set(contract.match(/jarl-record\/\d+/g))].sort(), [...RECORD_APIS].sort(), 'the line names exactly the contracts the library keeps');
+  assert.match(contract, new RegExp(`which keeps every export of ${RECORD_APIS.slice(0, -1).map((c) => `\`${c}\``).join(' and ')}`));
 });
 
-// The tools that have left the family, by name: the one list the changelog test reads. A tool that leaves is added here.
-const LEFT_THE_FAMILY = ['Horde'];
 const linesNaming = (text, names) => text.split('\n').filter((line) => names.some((name) => new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(line)));
 
 test('the changelog\'s preamble, its Unreleased section and its newest released section name no tool that left the family; the sections below keep their history', () => {
