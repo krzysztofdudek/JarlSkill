@@ -15,7 +15,7 @@ import { attachmentOf, journalById } from './log.mjs';
 import { acceptanceLineCount, alignRows, bodyText, evidenceNotes, evidenceParts, evidenceTable, loadIssues, mergedOf, noteText, parseIssue, placeEvidence, removeFields, reviewEntries, setSection, sharedMark, struckNote } from './issues.mjs';
 import { fileKeysOf, needFormat, repoNames, reposWhere, tipLines, whereLines, whereOf } from './repositories.mjs';
 import { approveKind, carriesCode, coordinatorOf, disagreementText, gateOf, gateState, headerReadNotes, readLoop, recordDisagreements, reviewSplit, sameSlice, scopedLoop, sinceText, sliceNamed, sliceOf, slicesOf } from './loop.mjs';
-import { checkState, checkWaiting, checkWaitingText } from './metrics.mjs';
+import { checkState, checkWaiting, checkWaitingText, closedNoCheck } from './metrics.mjs';
 import { builds, modelMarks } from './models.mjs';
 import { ago, leaseLiveness, leaseState, livenessOf, thresholdText } from './rounds.mjs';
 import { attachmentLines, inspectAttachment, requiredSlots, slotProblems } from './attachments.mjs';
@@ -446,6 +446,7 @@ function statusOf(root, loop, flags) {
   c.ciPending = live.filter((i) => mergedOf(i)?.ci === 'pending').map((i) => i.id);
   c.ciRed = live.filter((i) => mergedOf(i)?.ci === 'red').map((i) => i.id);
   c.checkWaiting = checkWaiting(loop, issues);
+  c.closedNoCheck = closedNoCheck(loop, issues);
   c.handoff = handoffAge(root, c.lastActivity);
   c.reviews = reviewSplit(!scoped ? loop : scopedLoop(loop, issues));
   c.inFlightRows = inFlightRows(loop, issues);
@@ -513,6 +514,10 @@ export function inFlightMark(loop, issue) {
   if (verdicts.length && verdicts[verdicts.length - 1].verdict === 'changes') return 'changes-requested';
   return g.rowsSince === 0 ? 'no-rows' : 'rows-no-verdict';
 }
+// The step a mark points to for one issue. An approved issue that carries no code never reaches the merge queue, which
+// lists branches, so it is told to be set done and not that it is queued.
+const APPROVED_NO_CODE = 'approved, and it carries no code, so no merge waits — next set it done';
+const inFlightStep = (mark, issue) => (mark === 'approved' && !carriesCode(issue) ? APPROVED_NO_CODE : IN_FLIGHT_MARKS[mark]);
 // The rows for the in-flight `issues` of a loop (its own issues, or the ones a view is scoped to). Where the mark ends in
 // setting the issue done and an acceptance line only the owner ticks is not ticked, next says that tick comes first.
 const ENDS_DONE = new Set(['approved', 'merged', 'merged-ci']);
@@ -521,7 +526,8 @@ export function inFlightRows(loop, issues) {
   return issues.filter((i) => profile.is(i.status, 'holds-claim') && !waitingOn(i, byId, profile).length).map((i) => {
     const mark = inFlightMark(loop, i);
     const wait = ENDS_DONE.has(mark) ? ownerLineWait(loop.root, loop, i) : null;
-    const next = wait ? IN_FLIGHT_MARKS[mark].replace(/set it done$/, `${wait}, then set it done`) : IN_FLIGHT_MARKS[mark];
+    const step = inFlightStep(mark, i);
+    const next = wait ? step.replace(/set it done$/, `${wait}, then set it done`) : step;
     return { id: i.id, title: i.title, branch: i.fields.branch || null, worker: i.fields.worker || null, model: i.fields.model || null, since: i.fields.since || null, ...leaseWriter(loop, i), mark, next };
   });
 }

@@ -108,6 +108,11 @@ function issueRepoPaths(root, issue, names = reposNamed(issue)) {
   for (const n of namedRepos(names)) { try { out.push(repoOf(root, n)); } catch { /* not a repository here */ } }
   return out;
 }
+// The same, one place for each repository the issue names, in the order of its Repo field and canonical: a repository that
+// is not on this machine keeps its place as null, so a list kept per repository (the tips of a branch) still lines up.
+function issueRepoSlots(root, issue) {
+  return namedRepos(reposNamed(issue)).map((n) => { try { return canonical(repoOf(root, n)); } catch { return null; } });
+}
 // The values to resolve: the ones given, or undefined (the loop's own repository) where there are none.
 function namedRepos(names) { return names.length ? names : [undefined]; }
 // The canonical places an issue's Repo values point to, resolved or not: one key for one repository.
@@ -462,6 +467,16 @@ export function declaredRepos(root) {
   }
   return out;
 }
+// The branch a repository is held against: the base its declaration names, when the checkout `dir` is the one a declared
+// name stands for and the branch exists there, else null (the branch the checkout has open is then the only base known).
+export function declaredBaseOf(root, dir) {
+  const real = canonical(dir);
+  for (const entry of declaredRepos(root).values()) {
+    if (!entry.base || canonical(repoPlace(root, entry.name).path) !== real) continue;
+    return git(dir, ['rev-parse', '--verify', '--quiet', `${entry.base}^{commit}`]) !== null ? entry.base : null;
+  }
+  return null;
+}
 function writeDeclarations(root, entries) {
   writeAtomic(reposPath(root), `${REPOS_HEADER}${entries.map((e) => `- **${e.name}** · ${declarationText(e)}`).join('\n')}\n`);
 }
@@ -606,4 +621,4 @@ export function reposWhereLines(where) {
 }
 
 // Used by the other modules of the library, and not part of what jarl-lib.mjs exports.
-export { FETCHED, HOMES, IS_REPO, REFS, REPO_OF, RESOLVED, TOP_OF, commitRepoNames, defaultBase, isGitRepo, issuePlaces, issueRepoPaths, issueRepos, repoLabel, repoList, repoNames, tipLines, topOf, worktreesOf };
+export { FETCHED, HOMES, IS_REPO, REFS, REPO_OF, RESOLVED, TOP_OF, commitRepoNames, defaultBase, isGitRepo, issuePlaces, issueRepoPaths, issueRepoSlots, issueRepos, repoLabel, repoList, repoNames, tipLines, topOf, worktreesOf };

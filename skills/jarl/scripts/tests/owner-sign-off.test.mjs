@@ -186,10 +186,10 @@ test('resume, status and review name the owner\'s tick as the step before done w
   const reply = jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
   assert.match(reply, /next: the owner ticks acceptance line 2 with tick, once he has looked, then jarl\.mjs set 1 done "<why>" once the worker's Proof rows are recorded/);
   assert.doesNotMatch(reply, /jarl\.mjs tick|--by owner/, 'the reviewer is not the owner: no command of his tick is printed to him');
-  assert.match(jarl(root, 'resume'), /^ {2}→ approved and queued for the merge — next the merger lands it, then the owner ticks acceptance line 2 with tick, once he has looked, then set it done$/m);
-  assert.match(jarl(root, 'status'), /^in flight 1 · approved and queued for the merge — next the merger lands it, then the owner ticks acceptance line 2 with tick, once he has looked, then set it done$/m);
+  assert.match(jarl(root, 'resume'), /^ {2}→ approved, and it carries no code, so no merge waits — next the owner ticks acceptance line 2 with tick, once he has looked, then set it done$/m);
+  assert.match(jarl(root, 'status'), /^in flight 1 · approved, and it carries no code, so no merge waits — next the owner ticks acceptance line 2 with tick, once he has looked, then set it done$/m);
   jarl(root, 'tick', '1', '2', '--by', 'owner');
-  assert.match(jarl(root, 'resume'), /^ {2}→ approved and queued for the merge — next the merger lands it, then set it done$/m);
+  assert.match(jarl(root, 'resume'), /^ {2}→ approved, and it carries no code, so no merge waits — next set it done$/m);
 });
 
 test('in a loop run by a composer, an [owner] line written there by a Jarl that did not know the mark makes done and tick say that owner lines are off and how to rewrite it', () => {

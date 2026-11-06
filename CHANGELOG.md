@@ -40,11 +40,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - When a task's checkable lines grow after a worker took it, Jarl says so and names the new line, and the report counts these changes for each person who made them.
 - A change meant to leave the output exactly as it was can be tagged `identical-output`. Its worker records the before-and-after comparison as proof, and a lighter reviewer may approve it, but it still needs that review before it can be closed.
 - Importing a findings file again, the same way as before, reports each finding whose text differs from the task the import filed for it, with both texts, and leaves the task as it was; a finding with neither a claim nor a truth is not compared. Outside tickets can be followed this way: file them under one parent task and import again whenever the tickets change.
+- `scope` and the recording of a merge now point out each added line that starts a conflict marker and each added file over 64 MiB, the largest file Jarl accepts as an attachment, with its file. They only say so and never stop a merge.
 
 ### Changed
 
 - A new loop cannot use the words Person and Check when for fields of its own, or promise and wait for kinds of its own, because Jarl now uses them itself. A loop that already uses them keeps working as before. Jarl's own promises and waits are off there, as they are in any loop whose profile lists its own kinds.
-- A task another worker already holds, or one that would touch a file or resource another worker holds, is now refused when you start it, naming who holds it, instead of quietly replacing that worker. To give a held task to someone else, say it is a handover and why.
+- A task another worker already holds, or one that would touch a file or resource another worker holds, is now refused when you start it, naming who holds it, instead of quietly replacing that worker. Adding such a file or resource to a task that is already started is refused the same way. To give a held task to someone else, say it is a handover and why.
 - A loop is marked with a new format, format 3, the first time Jarl writes into it one of the new kinds of entries this release adds. Format 3 is the format of Jarl 6.3.0: from then on an earlier Jarl refuses that loop with a clear message, saying it needs a Jarl that knows format 3, instead of misreading it, so every copy of Jarl that works on the loop must be 6.3.0 or later. The status, the check of the record and the profile now show which format a loop is in.
 - Jarl no longer changes the format of a loop that another tool runs, such as a Horde mission, so that tool can always read it. New issues and questions there get three-digit numbers, and anything that would need a newer format, such as taking back a piece of proof or naming a repository by a bare name, is refused with a message that says why. Jarl shows what is switched off in such a loop.
 - Tools that build on Jarl's record library get a new version of its contract, which keeps everything the previous version offered.
@@ -67,8 +68,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A ruling recorded as the owner's now needs the owner's own words, which are kept with the ruling and shown beside it. A ruling recorded without a name is now the coordinator's, no longer the owner's.
 - Every ruling written into an issue now says who made it. No other text in the record can look like the owner's own words, whatever spelling it uses.
 - Every tool now refuses a field it does not take, including the help tool, and names the fields it does take, so a misspelled field is never dropped without a word.
-- A merge recorded before its test run has finished now shows as waiting for its check in the status, the resume and the issue itself, with the command that records the check. It stops showing once the check, or the red check it landed on, is recorded.
-- Recording a merge now warns when the commit you give does not contain the branch's latest work or the latest state of the branch it is merged into, so a check that ran on the wrong version is noticed at once.
+- A merge recorded before its test run has finished now shows as waiting for its check in the status, the resume and the issue itself, with the command that records the check. It stops showing once the check, or the red check it landed on, is recorded. A task closed while its merge has no check recorded is named in the status.
+- Recording a merge now warns when the commit you give does not contain the branch's latest work or the latest state of the branch it is merged into, so a check that ran on the wrong version is noticed at once. That branch is the one the repository is declared with (`base`), and where none is declared, the one its main checkout has open. A squash or a rebase merge, which carries the branch's work without its commits, is named as such and not as a merge without the branch.
 - When a merge is recorded without its commit, Jarl now shows the latest commit of the issue's branch and the exact command that records it, so you do not have to look the commit up and retype the command.
 - When an issue cannot be finished because its latest review asks for changes, the message now names that review, with its reviewer and date, instead of a review round that was never recorded.
 - The first issue can be filed in a fresh copy of a loop that is kept in git, even when the loop had no issue yet when it was committed. Before, it stopped with an error about a missing folder.
@@ -81,6 +82,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `resume` and `decisions` show an answered question with its answer first, then the question.
 - `models` counts a model written with dots and the same model written with dashes, such as `claude-opus-5.5` and `claude-opus-5-5`, as one model, and its row names both spellings. A review or a task that uses the other spelling gets a note naming the spelling the record holds.
 - A comma in a `tag` command separates tags: `+a,b` adds `a` and `b`, and `-a,b` removes both. Before, the command added one tag named `a,b`.
+- A task that is approved and carries no code is no longer shown as queued for the merge in the status and the resume, where the merge queue never lists it. They now say that no merge waits and that it is ready to be set done.
 
 ## [6.2.0] - 2026-10-19
 

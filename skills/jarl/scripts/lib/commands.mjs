@@ -14,11 +14,12 @@ import { appendLog, appendLogLines, decisionsPath, goalPath, logPath } from './j
 import { JARL_GITIGNORE, JARL_GITIGNORE_COMMITTED, ensureLoopMerge, outOfGit } from './loop-git.mjs';
 import { HANDOVER_SEGMENT, journalById, mergeCheckText } from './log.mjs';
 import { FIELD_RE, PROPOSED, RENDERED_FIELDS, acceptanceHeading, acceptanceLineCount, acceptanceLines, acceptanceText, bodyText, changelogText, evidenceNotes, evidenceParts, evidenceRows, evidenceTable, fieldValue, findIssue, issueNamed, loadIssues, mergedOf, namedPairs, needNoFieldTags, noteText, parentCycle, parseIssue, placeEvidence, removeFields, removeFirstField, renderIssue, setField, setSection, unattributedRefusal, waitCycle } from './issues.mjs';
-import { branchTip, commitRepoNames, defaultBase, fileKeysOf, isGitRepo, issueRepoPaths, issueRepos, mainCheckoutOf, needFormat, needRightCheckouts, repoFromInput, repoLabel, repoList, reposNamed, tipLines, whyNotDeletable, worktreeState, worktreesOf } from './repositories.mjs';
+import { branchTip, commitRepoNames, declaredBaseOf, defaultBase, fileKeysOf, isGitRepo, issueRepoPaths, issueRepoSlots, issueRepos, mainCheckoutOf, needFormat, needRightCheckouts, repoFromInput, repoLabel, repoList, reposNamed, tipLines, whyNotDeletable, worktreeState, worktreesOf } from './repositories.mjs';
 import { FIELD_NAMES, activeSlices, carriesCode, gateOf, isSliceTag, needOneSlice, readLoop, sinceText, sliceOf, unorderedNamings, unorderedText } from './loop.mjs';
 import { declaredChecks, lastMerge } from './metrics.mjs';
 import { modelLines, modelValue, spellingNote } from './models.mjs';
 import { slotRefusal } from './attachments.mjs';
+import { NOTE_LIMIT, addedContentNotes, addedNoteText } from './rounds.mjs';
 import { resetCaches } from './tips.mjs';
 import { needOwnerLines, ownerLineRefusal, ownerLineRewrite } from './owner-lines.mjs';
 
@@ -728,11 +729,22 @@ export function eachIssue(root, rawIds, run) {
   const missing = keys.filter((k) => !all.some((i) => idKey(i.id) === k));
   need(missing.length === 0, `no such issue: ${missing.join(', ')}${askedAs(rawIds, missing)} — nothing was written${listAll()}`, () => ({ replace: itemNaming(rawIds, missing[0]), value: hole('<ids-the-loop-holds>') }));
   const ids = keys.map((k) => issueNamed(all, k).id);
-  for (const id of ids) {
-    resetCaches();
-    try { run(id, true); } catch (e) { if (!(e instanceof Refusal)) throw e; refuse(/nothing was written/.test(e.reason) ? e.reason : nothingWritten(e.reason), e.ready); }
-  }
+  inCall(() => {
+    for (const id of ids) {
+      resetCaches();
+      try { run(id, true); } catch (e) { if (!(e instanceof Refusal)) throw e; refuse(/nothing was written/.test(e.reason) ? e.reason : nothingWritten(e.reason), e.ready); }
+    }
+  });
   return ids.map((id) => { resetCaches(); return run(id, false); });
+}
+// What the issues of the call checked so far would hold once written, as { files, resources } by issue id, while a call over
+// several issues checks them all before writing any; null outside such a check. A later issue of the call is checked against
+// the lease of an earlier one as it will stand, so a call that would make two leases collide is refused whole.
+let declaredInCall = null;
+function inCall(check) {
+  const outer = declaredInCall;
+  declaredInCall = outer ?? new Map();
+  try { check(); } finally { declaredInCall = outer; }
 }
 
 // The refusal for a move into a needs-reason status given without one; the built-in two say what the status is for.
@@ -905,7 +917,7 @@ function editList(root, rawIds, key, value, mode, flags) {
       else if (key === 'source') cmdSource(root, issue.id, text, true, flags.by);
       else if (key === 'after') cmdAfter(root, issue.id, text, { dry: true, by: flags.by });
       else if (key === 'repo') cmdRepo(root, issue.id, text, { dry: true, by: flags.by });
-      else resourceNames(text);
+      else needFreeOfOtherLeases(root, issue, [], resourceNames(text).filter((n) => !issue.resources.some((r) => r.toLowerCase() === n.toLowerCase())), { resources: resourceNames(text) });
       return { id: issue.id };
     }
     if (key === 'files') return cmdFiles(root, issue.id, text, false, flags.by);
@@ -1099,29 +1111,54 @@ function needLeaseHolds(root, profile, issues, status, why, flags, handover, not
       need(false, `${issue.id} declares no Files or Resources, and ${slices.length} slices are in play (${slices.map((x) => x.tag).join(', ')}): across slices only leases hold, and a lease holds only what its issue declares — declare them first, its files or its resources (${jarlLine('field', issue.id, 'Resources', '<resource-name>')})${nothing}`, () => [{ first: ['jarl.mjs', 'field', issue.id, 'Files', '<paths>'] }, { retry: true }]);
     }
   }
-  // What the other leases hold: each file key and each resource, with the issue whose lease holds it.
-  const others = loadIssues(root).filter((i) => !taken.has(i.id) && profile.is(i.status, 'holds-claim'));
-  // The first holder of each, in the order of the record, so a refusal names the same issue every time.
-  const files = new Map();
-  const resources = new Map();
-  for (const i of others) {
-    for (const k of fileKeysOf(root, i)) if (!files.has(k.key)) files.set(k.key, i);
-    for (const r of i.resources) if (!resources.has(r.toLowerCase())) resources.set(r.toLowerCase(), i);
-  }
+  const others = otherLeases(root, profile, taken);
   for (const issue of issues) {
     if (leased(issue) && !handover) continue;
-    const branch = named('branch') ?? fieldText(issue.fields.branch);
-    const worker = named('worker') ?? fieldText(issue.fields.worker);
-    const joins = (h) => (branch && h.fields.branch ? branch === fieldText(h.fields.branch) && (!worker || !h.fields.worker || worker === fieldText(h.fields.worker)) : !branch && !h.fields.branch && Boolean(worker) && worker === fieldText(h.fields.worker));
-    const held = [
-      ...fileKeysOf(root, issue).filter((k) => files.has(k.key)).map((k) => ({ what: `declares ${k.f}`, by: files.get(k.key) })),
-      ...issue.resources.filter((r) => resources.has(r.toLowerCase())).map((r) => ({ what: `uses the resource ${r}`, by: resources.get(r.toLowerCase()) })),
-    ].filter((h) => !joins(h.by));
+    const held = heldByOthers(root, others, issue, named('branch') ?? fieldText(issue.fields.branch), named('worker') ?? fieldText(issue.fields.worker), fileKeysOf(root, issue), issue.resources);
     if (!held.length) continue;
     const { what, by } = held[0];
     const join = by.fields.branch ? `, or put ${issue.id} in ${by.id}'s lease: set ${issue.id} ${status} "<text>" --branch ${fieldText(by.fields.branch)}${by.fields.worker ? ` --worker ${fieldText(by.fields.worker)}` : ''}` : '';
     need(false, `${issue.id} ${what}, which ${by.id} holds in its lease (${holderText(by)}) — two leases on one file or resource collide; wait until ${by.id} leaves its lease (next offers ${issue.id} then)${join}${nothing}; what is ready: ${jarlLine('next')}`, () => ({ arg: 0, value: '<an-issue-next-offers>' }));
   }
+}
+// What the leases of the issues outside `taken` hold: each file key and each resource, with the issue whose lease holds it.
+// The first holder of each, in the order of the record, so a refusal names the same issue every time.
+function otherLeases(root, profile, taken) {
+  const files = new Map();
+  const resources = new Map();
+  for (const held of loadIssues(root).filter((x) => !taken.has(x.id) && profile.is(x.status, 'holds-claim'))) {
+    const i = declaredInCall?.has(held.id) ? { ...held, ...declaredInCall.get(held.id) } : held;
+    for (const k of fileKeysOf(root, i)) if (!files.has(k.key)) files.set(k.key, held);
+    for (const r of i.resources) if (!resources.has(r.toLowerCase())) resources.set(r.toLowerCase(), held);
+  }
+  return { files, resources };
+}
+// The files (as fileKeysOf gives them) and resources of an issue that another lease holds, as { what, by }, leaving out what
+// the lease of `branch` and `worker` joins: the holder's own branch, and its worker when both name one.
+function heldByOthers(root, others, issue, branch, worker, fileKeys, resourceNames) {
+  const joins = (h) => (branch && h.fields.branch ? branch === fieldText(h.fields.branch) && (!worker || !h.fields.worker || worker === fieldText(h.fields.worker)) : !branch && !h.fields.branch && Boolean(worker) && worker === fieldText(h.fields.worker));
+  return [
+    ...fileKeys.filter((k) => others.files.has(k.key)).map((k) => ({ what: `declares ${k.f}`, by: others.files.get(k.key) })),
+    ...resourceNames.filter((r) => others.resources.has(r.toLowerCase())).map((r) => ({ what: `uses the resource ${r}`, by: others.resources.get(r.toLowerCase()) })),
+  ].filter((h) => !joins(h.by));
+}
+// A file or a resource declared on an issue a lease holds is taken into that lease, so it is refused when another lease holds
+// it, as a lease taken on it would be: a lease that guards what an issue declares is guarded wherever it is declared. What
+// the issue's own lease joins is allowed; an issue no lease holds is checked when it takes one; a loop its composer schedules
+// leaves the decision to the composer. `files` and `resources` are what the call adds; `next` is what the issue holds once
+// the call is written, which a call over several issues keeps for the issues checked after this one.
+function needFreeOfOtherLeases(root, issue, files, resources, next) {
+  const profile = loadProfile(root);
+  if (profile.scheduler !== null && profile.scheduler !== undefined) return;
+  if (!profile.is(issue.status, 'holds-claim') || !(issue.fields.worker || issue.fields.branch)) return;
+  const held = heldByOthers(root, otherLeases(root, profile, new Set([issue.id])), issue, fieldText(issue.fields.branch), fieldText(issue.fields.worker), fileKeysOf(root, { ...issue, files }), resources);
+  if (!held.length) {
+    declaredInCall?.set(issue.id, { files: next.files ?? issue.files, resources: next.resources ?? issue.resources });
+    return;
+  }
+  const { what, by } = held[0];
+  const join = by.fields.branch ? `, or put ${issue.id} in ${by.id}'s lease: ${jarlLine('set', issue.id, issue.status, '<why-the-worker-changed>', '--branch', fieldText(by.fields.branch), ...(by.fields.worker ? ['--worker', fieldText(by.fields.worker)] : []), '--handover')}` : '';
+  need(false, `${issue.id} ${what}, which ${by.id} holds in its lease (${holderText(by)}) — two leases on one file or resource collide; leave it out, or wait until ${by.id} leaves its lease${join}`, () => ({ arg: 2, value: resources.length ? '<resource-name>' : '<paths>' }));
 }
 // Who holds an issue's lease, as the refusals name it: its worker, branch and start, and its slice tag when it has one.
 function holderText(issue) {
@@ -1367,6 +1404,7 @@ function setResources(root, rawIds, value, flags) {
   const names = resourceNames(value);
   const by = editorOf(flags.by);
   const issues = issuesFor(root, rawIds);
+  inCall(() => { for (const issue of issues) needFreeOfOtherLeases(root, issue, [], names.filter((n) => !issue.resources.some((r) => r.toLowerCase() === n.toLowerCase())), { resources: names }); });
   logChanges(root, issues.map((issue) => fieldLine(issue.id, 'Resources', names.join(', '), heldField(issue, 'Resources'), by)));
   for (const issue of issues) writeAtomic(issue.file, setField(readText(issue.file), 'Resources', names.join(', ')));
   return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, field: 'Resources', value: names.join(', ') })));
@@ -1538,6 +1576,7 @@ export function cmdMerged(root, rawIds, flags) {
   // Said, never refused: the check of a merge runs on the merge result, so a commit that lacks the branch tip, or lacks
   // the base as it stands before the merge landed there, was not the tree the check ran on.
   if (sha) for (const issue of issues) notes.push(...mergeContentNotes(root, issue, sha, repoPath));
+  if (sha) notes.push(...mergedAddedNotes(root, issues, sha, repoPath));
   // Said, never refused: a merge is a fact, and recording it is not the place to stop it. A merge whose issue holds
   // no fresh approve went in without the fresh review the rule asks for, and the note says so loudly.
   // Under a done gate with no approve (approve: none), the merge gate stands behind the issue, and no reviewer is owed.
@@ -1580,9 +1619,11 @@ export function cmdMerged(root, rawIds, flags) {
 }
 
 // What a recorded merge commit holds of the branch and of its base, as notes (empty when it holds both, or when the
-// branch, the base or the commit is not here to be read). The branch tip is the branch as it stands now; the base is the
-// main checkout's branch as it stands now, asked for only while the commit is not yet in it: once the base holds the
-// commit, later commits on the base are no part of the merge.
+// branch, the base or the commit is not here to be read). The branch tip is the branch as it stands now. The base is the
+// repository's declared base when the checkout stands for a declared name and the branch exists there, else the branch the
+// checkout has open; it is asked for only while the commit is not yet in it: once the base holds the commit, later commits
+// on the base are no part of the merge. A commit that lacks the tip but holds every file the branch changed exactly as the
+// branch has it is a squash or a rebase merge: it carries the branch's work without its commits, and is named so.
 function mergeContentNotes(root, issue, sha, repoPath) {
   const branch = fieldText(issue.fields.branch);
   const repo = (repoPath ? [repoPath] : issueRepoPaths(root, issue)).filter(isGitRepo).find((r) => git(r, ['cat-file', '-e', `${sha}^{commit}`]) !== null);
@@ -1590,11 +1631,51 @@ function mergeContentNotes(root, issue, sha, repoPath) {
   const holds = (ancestor, ref) => git(repo, ['merge-base', '--is-ancestor', ancestor, ref]) !== null;
   const notes = [];
   const tip = branch ? git(repo, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}^{commit}`]) : null;
-  if (tip && !holds(tip, sha)) notes.push(`MERGE WITHOUT THE BRANCH — ${sha} does not contain the tip of ${branch} (${tip.slice(0, 12)}), so a check that ran on it did not run on the branch's work; the check runs on the merge result: merge the branch, check the result, and record that commit with ${jarlLine('merged', issue.id, '--sha', '<sha>')}`);
-  const base = defaultBase(repo);
+  const record = jarlLine('merged', issue.id, '--sha', '<sha>');
+  if (tip && !holds(tip, sha)) {
+    if (holdsChangesOf(repo, tip, sha)) notes.push(`SQUASH OR REBASE MERGE — ${sha} does not contain the commits of ${branch} (tip ${tip.slice(0, 12)}), but holds every file the branch changed exactly as the branch has it, so the branch's work landed without its commits, and the cleanup keeps ${branch} because its tip is in no merge`);
+    else notes.push(`MERGE WITHOUT THE BRANCH — ${sha} does not contain the tip of ${branch} (${tip.slice(0, 12)}) and does not hold the files the branch changed as the branch has them, so a check that ran on it did not run on the branch's work; the check runs on the merge result: merge the branch, check the result, and record that commit with ${record}`);
+  }
+  const base = declaredBaseOf(root, repo) ?? defaultBase(repo);
   const baseTip = base !== branch ? git(repo, ['rev-parse', '--verify', '--quiet', `${base}^{commit}`]) : null;
-  if (baseTip && !holds(sha, baseTip) && !holds(baseTip, sha)) notes.push(`MERGE WITHOUT THE BASE — ${sha} does not contain ${base} as it stands (${baseTip.slice(0, 12)}), so the check ran on a tree the base has moved past; the check runs on the merge result: merge the base into the result, check it again, and record that commit with ${jarlLine('merged', issue.id, '--sha', '<sha>')}`);
+  if (baseTip && !holds(sha, baseTip) && !holds(baseTip, sha)) notes.push(`MERGE WITHOUT THE BASE — ${sha} does not contain ${base} as it stands (${baseTip.slice(0, 12)}), so the check ran on a tree the base has moved past; the check runs on the merge result: merge the base into the result, check it again, and record that commit with ${record}`);
   return notes;
+}
+
+// What the recorded commit brings into its first parent, as notes: each added line that starts a conflict marker and each
+// added file over the size Jarl accepts as an attachment (see addedContentNotes), up to NOTE_LIMIT with the rest counted.
+// A commit is read once per repository however many issues share it; a commit that is not here, or has no parent, says nothing.
+function mergedAddedNotes(root, issues, sha, repoPath) {
+  const found = new Set();
+  const all = [];
+  for (const issue of issues) {
+    const repo = (repoPath ? [repoPath] : issueRepoPaths(root, issue)).filter(isGitRepo).find((r) => git(r, ['cat-file', '-e', `${sha}^{commit}`]) !== null);
+    if (!repo || found.has(canonical(repo))) continue;
+    found.add(canonical(repo));
+    if (git(repo, ['rev-parse', '--verify', '--quiet', `${sha}^1`]) === null) continue;
+    all.push(...addedContentNotes(repo, `${sha}^1..${sha}`));
+  }
+  const shown = all.slice(0, NOTE_LIMIT).map((n) => `${addedNoteText(n)} (brought in by the merge)`);
+  return all.length > NOTE_LIMIT ? [...shown, `… and ${all.length - NOTE_LIMIT} more notes about what the merge brought in not shown`] : shown;
+}
+
+// Whether `sha` holds what `tip` changed on its way from the commit they share: every file the branch changed is, in `sha`,
+// exactly as the branch has it (a deletion included), and the branch changed at least one. A squash or a rebase merge
+// does; a commit made without the branch's work does not.
+function holdsChangesOf(repo, tip, sha) {
+  const mb = git(repo, ['merge-base', tip, sha]);
+  if (!mb) return false;
+  const changed = (git(repo, ['diff', '--name-only', '--no-renames', '-z', mb, tip]) || '').split('\0').filter(Boolean);
+  if (!changed.length) return false;
+  // The paths ride the command line, so they go in groups that stay under the shortest limit a platform has.
+  for (let at = 0; at < changed.length;) {
+    let size = 0;
+    const group = [];
+    while (at < changed.length && (!group.length || size + changed[at].length < 8000)) { size += changed[at].length + 1; group.push(changed[at]); at += 1; }
+    const differ = git(repo, ['--literal-pathspecs', 'diff', '--name-only', '-z', tip, sha, '--', ...group]);
+    if (differ === null || differ !== '') return false;
+  }
+  return true;
 }
 
 // What a merge says when the approve the gate stands on was recorded on another tip of the branch than the one at this
@@ -1616,9 +1697,14 @@ function approveTipNotes(root, issue, live, sha) {
   if (!branch) return [];
   const short = (s) => s.slice(0, 12);
   const was = live.tip.split(',');
-  const repos = issueRepos(root, issue);
-  const is = repos.map((dir) => (isGitRepo(dir) ? git(dir, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}^{commit}`]) : null));
-  if (!is.some(Boolean) || is.join(',') === live.tip) return [];
+  // The approve's tips are one for each repository the issue names. A repository that is not on this machine keeps its place
+  // among them and is not compared, so the others still are and a tip that did not move is not said to have moved; tips that
+  // count another number of repositories than the issue names are compared against the ones that are here.
+  const slots = issueRepoSlots(root, issue);
+  const repos = was.length === slots.length ? slots : slots.filter(Boolean);
+  const is = repos.map((dir) => (dir && isGitRepo(dir) ? git(dir, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}^{commit}`]) : null));
+  const unmoved = was.length === repos.length && repos.every((dir, k) => !dir || is[k] === was[k]);
+  if (!is.some(Boolean) || unmoved) return [];
   const see = (dir, a, b) => `git -C ${shellWord(dir)} log --oneline --first-parent ${short(a)}..${short(b)} and git -C ${shellWord(dir)} diff ${short(a)} ${short(b)}`;
   const lines = (dir, args) => (git(dir, args) || '').split('\n').filter(Boolean);
   // The newest commit of the branch after the approved tip that the recorded commit holds; null when it holds none of
@@ -1633,7 +1719,7 @@ function approveTipNotes(root, issue, live, sha) {
   const again = `if it was meant to land, record a review of the tip that landed: ${jarlLine('review', issue.id, '<verdict>', '--by', '<a-fresh-reviewer>', '<text>')}`;
   const head = `APPROVED ON ANOTHER TIP — ${issue.id}'s approve ${who} was recorded on ${branch}`;
   if (was.length !== repos.length) return [`${head} at ${was.map(short).join(', ')}, and the branch stands at ${is.map((s) => (s ? short(s) : 'gone')).join(', ')} at this merge, so that review did not see what changed between them; recorded as given, ${again}`];
-  const here = repos.map((dir) => isGitRepo(dir) && git(dir, ['cat-file', '-e', `${sha}^{commit}`]) !== null);
+  const here = repos.map((dir) => Boolean(dir) && isGitRepo(dir) && git(dir, ['cat-file', '-e', `${sha}^{commit}`]) !== null);
   const away = here.some(Boolean) ? 'not in this merge' : 'not found here';
   const moved = [];
   repos.forEach((dir, k) => {
@@ -1644,7 +1730,7 @@ function approveTipNotes(root, issue, live, sha) {
     if (to) moved.push({ dir, a, b, to });
   });
   if (!moved.length) return [];
-  if (repos.length === 1) {
+  if (repos.filter(Boolean).length === 1) {
     const [m] = moved;
     if (m.away) return [`${head} at ${short(m.a)}, and the branch stands at ${short(m.b)}; ${short(sha)} is not found here, so what it holds cannot be read; see what changed: ${see(m.dir, m.a, m.b)}; ${again}`];
     const upTo = m.to === m.b ? `the branch stands at ${short(m.b)} at this merge, so what changed between them` : `this merge holds the branch up to ${short(m.to)} (it stands at ${short(m.b)} now), so what changed from ${short(m.a)} to ${short(m.to)}`;
@@ -1838,6 +1924,7 @@ export function cmdFiles(root, rawId, list, dry = false, by = undefined) {
   need(issue, `no such issue: ${rawId}${listAll()}`, () => ({ replace: rawId, value: '<id>' }));
   const editor = editorOf(by);
   const files = pathList(list);
+  needFreeOfOtherLeases(root, issue, files.filter((f) => !issue.files.includes(f)), [], { files });
   if (!dry) {
     logChanges(root, [fieldLine(issue.id, 'Files', files.join(', '), heldField(issue, 'Files'), editor)]);
     writeAtomic(issue.file, setField(readText(issue.file), 'Files', files.join(', ')));
