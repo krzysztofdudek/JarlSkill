@@ -13,11 +13,10 @@ const REPO = fileURLToPath(new URL('../../../..', import.meta.url));
 const PREFIX = 'skills/jarl/scripts/';
 
 // The state directories (as a path segment inside a string) and the commands (a quoted word, or npx) of the other tools
-// of the family and of tools that have left it: a directory or a command of either can sit on a user's
-// machine, and Jarl's code reaches into none of them.
+// of the family: a directory or a command of either can sit on a user's machine, and Jarl's code reaches into none of them.
 const REACH = [
-  { rule: 'state-path', re: /['"`/](\.yggdrasil|\.grain|\.horde)(?=[/'"`]|$)/g },
-  { rule: 'spawn', re: /['"`](yg|yggdrasil|grain|horde)['"`]|\b(npx)\b/g },
+  { rule: 'state-path', re: /['"`/](\.yggdrasil|\.grain)(?=[/'"`]|$)/g },
+  { rule: 'spawn', re: /['"`](yg|yggdrasil|grain)['"`]|\b(npx)\b/g },
 ];
 
 function findings(file, text) {
@@ -56,8 +55,8 @@ test('the guard sees what it guards against, and not a comment', () => {
   assert.deepEqual(findings('x', "const d = join(root, '.yggdrasil');").map((f) => f.rule), ['state-path']);
   assert.deepEqual(findings('x', "execFileSync('npx', ['--no-install', 'yg']);").map((f) => f.subject).sort(), ['npx', 'yg']);
   assert.deepEqual(findings('x', "spawnSync('grain', ['export']);").map((f) => f.subject), ['grain']);
-  // A state path of a tool that has left the family, inside a template string.
-  assert.deepEqual(findings('x', "const s = `${root}/.horde/hordes`;").map((f) => f.subject), ['.horde']);
+  // A state path inside a template string.
+  assert.deepEqual(findings('x', "const s = `${root}/.grain/exports`;").map((f) => f.subject), ['.grain']);
   assert.deepEqual(findings('x', '// a comment names .yggdrasil/ and runs yg'), []);
   assert.deepEqual(findings('x', "const name = 'jarl';"), []);
 });

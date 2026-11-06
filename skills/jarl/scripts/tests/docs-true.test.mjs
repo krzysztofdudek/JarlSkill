@@ -277,6 +277,17 @@ test('the README names the branch the merger merges into, who reads JARL_ROOT, t
   assert.match(readme, /never in a subdirectory/);
 });
 
+test('the README\'s opening says what closes an issue as the done gate does, and its record contract line names one contract', () => {
+  const readme = readRoot('README.md');
+  assert.doesNotMatch(readme, /closes nothing without recorded evidence and a fresh reviewer/, 'an approval of a fresh reviewer is needed for code, not for every issue');
+  const opening = readme.split('\n').filter((l) => l.includes('closes nothing without recorded evidence'));
+  assert.equal(opening.length, 2, 'the picture\'s text and the opening line say it');
+  for (const l of opening) assert.match(l, /closes nothing without recorded evidence and an approval, from a fresh reviewer when the issue carries code\./);
+  const contract = readme.split('\n').find((l) => l.includes('record.mjs'));
+  assert.ok(contract, 'the README names the record library');
+  assert.deepEqual([...new Set(contract.match(/jarl-record\/\d+/g))], [RECORD_API], 'the line names the contract the library holds and compares it with no other');
+});
+
 test('the changelog\'s preamble, its Unreleased section and its newest released section name no tool that left the family; the sections below keep their history', () => {
   const sections = readRoot('CHANGELOG.md').split(/^## \[/m);
   const released = sections.findIndex((s, n) => n > 0 && !s.startsWith('Unreleased]'));
