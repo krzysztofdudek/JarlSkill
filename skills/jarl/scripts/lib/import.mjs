@@ -64,7 +64,7 @@ const EXTRA_KEYS = Symbol('extra keys');
 // What a refusal of a findings file ends with, by the command that reads it: import files, so a refusal says nothing was
 // filed and ends with its dry run; sources only reads.
 const READERS = {
-  import: { form: ['jarl.mjs', 'import', '<findings.json>', '--dry-run'], then: ' — nothing was filed', stop: '; nothing was filed' },
+  'import': { form: ['jarl.mjs', 'import', '<findings.json>', '--dry-run'], then: ' — nothing was filed', stop: '; nothing was filed' },
   sources: { form: ['jarl.mjs', 'sources', '<findings.json>'], then: '', stop: '' },
 };
 
