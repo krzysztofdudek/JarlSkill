@@ -48,7 +48,8 @@ function mostPairs(n, m, fits) {
 
 // The findings of the reviews that sent the work back. The log is the record, which every writer keeps: each "changes"
 // verdict line of the issue is one finding, in the log's order, once. An entry of the file's Reviews section can be a
-// line's when it names the same reviewer, records the same day, model, relay mark and batch wherever both record one, and
+// line's when it names the same reviewer, records the same day wherever both record one, the same model, relay mark and
+// batch, a missing one only where the other lacks it too, and
 // its text is the line's, whole or as the log writes a text of many lines (its first line and where the rest is); the
 // line's text is read both as it stands and with the lead-in a writer sets before a finding that opens like a mark taken
 // off, since not every writer sets it. Both the log and the file only ever add at the end, so the entries and the lines
@@ -74,8 +75,11 @@ function findingsOf(loop, issue, events, notes) {
     return { t, e, text, readings: [sameText(text), sameText(findingOfLog(text))] };
   });
   const agree = (a, b) => a === null || b === null || a === undefined || b === undefined || a === b;
-  const fit = verdicts.map((v) => kept.map((k) => k.finding.by === v.t.by && agree(k.finding.day, v.t.at.slice(0, 10)) && agree(k.model, v.e.model) && k.relayed === Boolean(v.e.relayed)
-    && agree(k.batch, v.e.batch) && k.texts.some((s) => v.readings.includes(s))));
+  // A writer that keeps an entry writes the model, the relay mark and the batch into the entry and into the line alike, or
+  // into neither: a mark one of the two holds and the other lacks is a different mark.
+  const same = (a, b) => (a ?? null) === (b ?? null);
+  const fit = verdicts.map((v) => kept.map((k) => k.finding.by === v.t.by && agree(k.finding.day, v.t.at.slice(0, 10)) && same(k.model, v.e.model) && k.relayed === Boolean(v.e.relayed)
+    && same(k.batch, v.e.batch) && k.texts.some((s) => v.readings.includes(s))));
   const fits = (i, j) => fit[i][j];
   const most = mostPairs(verdicts.length, kept.length, fits);
   const paired = new Map();
