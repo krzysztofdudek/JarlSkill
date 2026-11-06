@@ -288,13 +288,25 @@ test('the README\'s opening says what closes an issue as the done gate does, and
   assert.deepEqual([...new Set(contract.match(/jarl-record\/\d+/g))], [RECORD_API], 'the line names the contract the library holds and compares it with no other');
 });
 
+// The tools that have left the family, by name: the one list the changelog test reads. A tool that leaves is added here.
+const LEFT_THE_FAMILY = ['Horde'];
+const linesNaming = (text, names) => text.split('\n').filter((line) => names.some((name) => new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(line)));
+
 test('the changelog\'s preamble, its Unreleased section and its newest released section name no tool that left the family; the sections below keep their history', () => {
   const sections = readRoot('CHANGELOG.md').split(/^## \[/m);
   const released = sections.findIndex((s, n) => n > 0 && !s.startsWith('Unreleased]'));
   assert.ok(released > 0, 'the changelog holds a released section');
   const current = sections.slice(0, released + 1).join('## [');
-  assert.deepEqual(current.match(/.*\bhorde\b.*/gi) || [], []);
-  assert.match(sections.slice(released + 1).join('## ['), /\bHorde\b/, 'a section below keeps the history it was released with');
+  assert.deepEqual(linesNaming(current, LEFT_THE_FAMILY), []);
+  assert.ok(linesNaming(sections.slice(released + 1).join('## ['), LEFT_THE_FAMILY).length > 0, 'a section below keeps the history it was released with');
+});
+
+test('the list of tools that left the family catches each name on it, as a whole word and in any case, and only those', () => {
+  const text = 'Jarl works alone.\nHorde was a tool.\nfrobnicator is gone too.\nThe frobnicators stay out of it.';
+  assert.deepEqual(linesNaming(text, ['Horde']), ['Horde was a tool.']);
+  assert.deepEqual(linesNaming(text, ['Horde', 'Frobnicator']), ['Horde was a tool.', 'frobnicator is gone too.'], 'a second name on the list is caught');
+  assert.deepEqual(linesNaming(text, []), []);
+  assert.ok(LEFT_THE_FAMILY.includes('Horde'));
 });
 
 test('CLAUDE.md names the record contract that RECORD_API holds, and no other', () => {
