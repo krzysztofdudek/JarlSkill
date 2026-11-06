@@ -28,7 +28,7 @@ When bumping version, update the `version` in all five manifests (the root `plug
 This project maintains a [CHANGELOG.md](CHANGELOG.md) following the [Keep a Changelog](https://keepachangelog.com/) format. It follows the Yggdrasil family's one-number policy: the core (Yggdrasil, Grain and Jarl) ships together under one number, so a bump takes the family's release number, not a SemVer-derived one, and a release with breaking changes under a minor number says so in its section. A family release in which Jarl does not change still gets its section, saying "No changes in Jarl."
 
 When the owner says "bump version":
-1. Move `[Unreleased]` entries in `CHANGELOG.md` into a new version section with today's date
+1. Move `[Unreleased]` entries in `CHANGELOG.md` into a new version section with today's date, and read the preamble and that section for the name of a tool that has left the family (a test reads them; the sections below keep their history)
 2. Update the comparison links at the bottom of `CHANGELOG.md`
 3. Update the `version` in the root `plugin.json`, `.claude-plugin/plugin.json`, `.github/plugin/marketplace.json` (plugin entry), `.codex-plugin/plugin.json`, and `.cursor-plugin/plugin.json` to match
 4. Commit the bump and push to `main` — that's it.

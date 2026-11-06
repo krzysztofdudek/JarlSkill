@@ -264,6 +264,15 @@ test('the README names the branch the merger merges into, who reads JARL_ROOT, t
   assert.match(readme, /never in a subdirectory/);
 });
 
+test('the changelog\'s preamble, its Unreleased section and its newest released section name no tool that left the family; the sections below keep their history', () => {
+  const sections = readRoot('CHANGELOG.md').split(/^## \[/m);
+  const released = sections.findIndex((s, n) => n > 0 && !s.startsWith('Unreleased]'));
+  assert.ok(released > 0, 'the changelog holds a released section');
+  const current = sections.slice(0, released + 1).join('## [');
+  assert.deepEqual(current.match(/.*\bhorde\b.*/gi) || [], []);
+  assert.match(sections.slice(released + 1).join('## ['), /\bHorde\b/, 'a section below keeps the history it was released with');
+});
+
 test('the manifests describe a loop whose evidence and fresh review decide what closes', () => {
   for (const path of ['plugin.json', '.claude-plugin/plugin.json', '.codex-plugin/plugin.json', '.cursor-plugin/plugin.json']) {
     const { description } = JSON.parse(readRoot(path));
