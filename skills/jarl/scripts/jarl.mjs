@@ -228,7 +228,10 @@ commands:
                                                  a person by name now, each line with the command that moves it (it takes
                                                  no --limit): the owner holds the questions and the items to ratify; the
                                                  coordinator of an issue's slice (the jarl, for an issue in no slice) its
-                                                 ready issue, its lease, a proof with no verdict and changes asked; the
+                                                 ready issue, its lease, a proof with no verdict and changes asked, the
+                                                 proofs of code with no verdict on one line cut into units one fresh
+                                                 reviewer takes (the issues of one branch, at most four to a unit and
+                                                 named by its branch; every other issue alone); the
                                                  holder the goal's Merger line names (else the jarl) an approve not
                                                  merged; a parent whose sub-issues are all done or dropped is its
                                                  coordinator's to check its own acceptance against the whole, a proof

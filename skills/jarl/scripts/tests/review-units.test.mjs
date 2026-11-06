@@ -1,0 +1,74 @@
+// The proofs of code with no verdict on one holder's list are cut into units one fresh reviewer may take, under Jarl's own
+// rule for a shared review: one contract or one screen, at most four. The record's mark of one contract is one branch,
+// leased as one package and read as one diff; a package of more than four is cut into units as even as they come, and
+// every other issue is a unit of its own. Each grouped unit names what it shares, and a coordinator's list holds the units
+// of its slice alone.
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { jarl, loop as makeLoop } from './helpers.mjs';
+
+const json = (root, ...args) => JSON.parse(jarl(root, ...args, '--json'));
+const RULE = 'One shared review covers only issues that are one contract or one screen, at most four.';
+
+// Eight changes: the first six on one branch (a package), the last two each on a branch of its own, every one with a proof
+// row and no verdict; with `slice`, the package is in odin's slice and the other two in none.
+function inReview({ slice = false } = {}) {
+  const root = makeLoop({ prefix: 'jarl-units-', via: 'cli', dotGit: false });
+  if (slice) jarl(root, 'goal', '--set', 'Coordinators: odin');
+  for (let k = 1; k <= 8; k += 1) jarl(root, 'new', `change ${k}`, '--files', `f${k}.mjs`, '--acceptance', 'it works', ...(slice && k <= 6 ? ['--tags', 'slice:odin'] : []));
+  jarl(root, 'set', '1-6', 'in-progress', 'one package', '--worker', 'wa', '--branch', 'jarl/a');
+  jarl(root, 'set', '7', 'in-progress', 'go', '--worker', 'wb', '--branch', 'jarl/b');
+  jarl(root, 'set', '8', 'in-progress', 'go', '--worker', 'wc', '--branch', 'jarl/c');
+  for (let k = 1; k <= 8; k += 1) jarl(root, 'evidence', String(k), '--ran', 'npm test', '--saw', 'pass 3, fail 0');
+  return root;
+}
+const reviewRow = (o) => o.rows.find((r) => r.what === 'review' && r.ids);
+
+test('the proofs waiting for a verdict are cut into units one reviewer may take: a branch of at most four, each grouped unit naming its branch, every other issue alone', () => {
+  const root = inReview();
+  const row = reviewRow(json(root, 'next', '--as', 'jarl', '--all'));
+  assert.deepEqual(row.ids, ['1', '2', '3', '4', '5', '6', '7', '8']);
+  assert.deepEqual(row.units, [
+    { ids: ['1', '2', '3'], shares: 'branch', on: 'jarl/a' },
+    { ids: ['4', '5', '6'], shares: 'branch', on: 'jarl/a' },
+    { ids: ['7'] },
+    { ids: ['8'] },
+  ], 'a package of six is two units of three, never one of six or one of four and one of two');
+  assert.equal(row.says, 'proof recorded, no verdict; raise one fresh reviewer per unit: 1, 2, 3 (one branch, jarl/a) · 4, 5, 6 (one branch, jarl/a) · 7 · 8; if you cannot raise agents, ask the owner to start a fresh session');
+  assert.equal(row.command, "jarl.mjs review \"<ids>\" \"<verdict>\" --by \"<reviewer>\" \"<text>\", or jarl.mjs ask 'start a fresh session to review issues 1, 2, 3, 4, 5, 6, 7, 8'");
+  assert.match(jarl(root, 'next', '--as', 'jarl'), /^- 1, 2, 3, 4, 5, 6, 7, 8: proof recorded, no verdict; raise one fresh reviewer per unit: 1, 2, 3 \(one branch, jarl\/a\) · 4, 5, 6 \(one branch, jarl\/a\) · 7 · 8;/m);
+  assert.match(jarl(root, 'next', '--as', 'jarl'), new RegExp(`jarl:coordinator-shared-review · role coordinator and moment review · references/jarl\\.md — ${RULE.replace(/\./g, '\\.')}`), 'the rule the units follow comes with the list');
+});
+
+test('a package of four or fewer is one unit, and a reviewer\'s verdict on the unit is one batch', () => {
+  const root = inReview();
+  jarl(root, 'review', '1-4', 'approve', '--by', 'rev-a', 'read the diff of jarl/a, nothing found');
+  const batches = readFileSync(join(root, '.jarl', 'log.md'), 'utf8').split('\n').filter((l) => / review approve · /.test(l)).map((l) => / · batch (\S+) · /.exec(l)[1]);
+  assert.equal(batches.length, 4);
+  assert.equal(new Set(batches).size, 1, 'the four lines of the verdict carry one batch id');
+  const row = reviewRow(json(root, 'next', '--as', 'jarl', '--all'));
+  assert.deepEqual(row.units, [{ ids: ['5', '6'], shares: 'branch', on: 'jarl/a' }, { ids: ['7'] }, { ids: ['8'] }]);
+});
+
+test('a coordinator\'s list holds the units of its slice alone', () => {
+  const root = inReview({ slice: true });
+  assert.deepEqual(reviewRow(json(root, 'next', '--as', 'odin', '--all')).units, [
+    { ids: ['1', '2', '3'], shares: 'branch', on: 'jarl/a' },
+    { ids: ['4', '5', '6'], shares: 'branch', on: 'jarl/a' },
+  ]);
+  assert.deepEqual(reviewRow(json(root, 'next', '--as', 'jarl', '--all')).units, [{ ids: ['7'] }, { ids: ['8'] }]);
+  assert.match(jarl(root, 'next', '--as', 'jarl'), /^- 7, 8: proof recorded, no verdict; raise one fresh reviewer per unit: 7 · 8;/m);
+});
+
+test('one proof waiting alone keeps its line, with its own review command', () => {
+  const root = makeLoop({ prefix: 'jarl-units-one-', via: 'cli', dotGit: false });
+  jarl(root, 'new', 'only change', '--files', 'a.mjs');
+  jarl(root, 'set', '1', 'in-progress', 'go', '--worker', 'me', '--branch', 'jarl/1');
+  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'green');
+  const row = reviewRow(json(root, 'next', '--as', 'jarl'));
+  assert.deepEqual(row.units, [{ ids: ['1'] }]);
+  assert.match(row.says, /^proof recorded, no verdict; raise a fresh reviewer for 1;/);
+  assert.match(row.command, /^jarl\.mjs review 1 "<verdict>" --by "<reviewer>" "<text>", or /);
+});

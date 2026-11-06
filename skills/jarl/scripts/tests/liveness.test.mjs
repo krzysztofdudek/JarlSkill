@@ -130,11 +130,11 @@ test('proofs of code that wait past the threshold for a verdict say how long eac
   at(14, () => R.addEvidence(root, '002', undefined, { ran: 'npm test', saw: 'ok' }));
   at(40, () => {
     const odin = nextAs(root, 'odin');
-    assert.match(odin, /^- 001, 002: proof recorded, no verdict for 35m on 001 \(threshold 30m\); raise a fresh reviewer for 001, 002;/m);
+    assert.match(odin, /^- 001, 002: proof recorded, no verdict for 35m on 001 \(threshold 30m\); raise one fresh reviewer per unit: 001 · 002;/m);
     assert.deepEqual(L.cmdNextAs(root, { as: 'odin' }).rows[0].idle, [{ id: '001', ageMs: 35 * MIN, minutes: 30 }]);
     assert.doesNotMatch(nextAs(root, 'jarl'), /^- 001/m);
   });
-  at(50, () => assert.match(nextAs(root, 'odin'), /^- 001, 002: proof recorded, no verdict for 45m on 001, 36m on 002 \(threshold 30m\); raise a fresh reviewer/m));
+  at(50, () => assert.match(nextAs(root, 'odin'), /^- 001, 002: proof recorded, no verdict for 45m on 001, 36m on 002 \(threshold 30m\); raise one fresh reviewer per unit/m));
 });
 
 test('the ages read the branch\'s commits in this clone and its fetched refs, and say which they read', () => {
