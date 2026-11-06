@@ -4,11 +4,11 @@ import { Refusal, fieldText, hole, jarlLine, need, refuse } from './base.mjs';
 import { needNoOwnersWords } from './owner.mjs';
 import { jarlDir, stamp } from './where.mjs';
 import { readText, writeAtomic } from './files.mjs';
-import { isBulk } from './ids.mjs';
+import { isBulk, newIssueKey } from './ids.mjs';
 import { appendLog, appendLogLines, firstLine } from './journal.mjs';
 import { bodyText, parseIssue, reviewEntries, setSection, unattributedRefusal } from './issues.mjs';
 import { needFormat, tipLines } from './repositories.mjs';
-import { reviewerRule } from './profile.mjs';
+import { FORMAT_LINES, formatState, loadProfile, reviewerRule } from './profile.mjs';
 import { carriesCode, gateOf, readLoop, reviewerKind } from './loop.mjs';
 import { SEVERITIES, loggedFinding, modelLines, modelRefusalOf, modelReviewForm, modelValue, reviewModelNotes, spellingNote } from './models.mjs';
 import { EVIDENCE_HOW, cmdNew, issuesFor, nothingWritten, oneOrMany, proofSince, refiled } from './commands.mjs';
@@ -91,6 +91,11 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
   // of them writes nothing at all; then each is filed, as a new issue, and the verdict's entry names the issue it became
   // under the findings of the issue itself.
   for (const o of outside) fileOutside(root, issues, by, o, flags, withModel, true);
+  // One verdict given on several issues is one review: each of its lines carries the same batch id. The id is a line of
+  // record format 3, which a reader of the formats below would count as several reviews, so the first one raises the loop
+  // once every check has passed; a loop whose format a composer keeps records the verdict without it.
+  const batch = issues.length > 1 && holdsBatches(root) ? newIssueKey(stamp()) : null;
+  const raised = batch ? needFormat(root, 'batch') : false;
   const filed = outside.map((o) => fileOutside(root, issues, by, o, flags, withModel, false));
   const recorded = filed.length ? `${String(findings).trim()}\n${filed.map((f) => `outside the issue, filed as ${f.id}: ${f.first}`).join('\n')}` : findings;
   // The whole findings go under the issue's ## Reviews (before Evidence, which stays last); the log keeps the verdict
@@ -99,16 +104,18 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
   for (const [n, issue] of issues.entries()) {
     const text = readText(issue.file);
     const current = (parseIssue(text, issue.file).sections.reviews || '').trim();
-    const entry = `- **${verdict}** · ${by ? `by ${by} (${kinds[n]}) · ` : ''}${day}${model !== undefined ? ` · model ${model}` : ''}${relayed ? ' · relayed' : ''}\n${bodyText(recorded).split('\n').map((l) => (l ? `  ${l}` : '')).join('\n')}`;
+    const entry = `- **${verdict}** · ${by ? `by ${by} (${kinds[n]}) · ` : ''}${day}${model !== undefined ? ` · model ${model}` : ''}${relayed ? ' · relayed' : ''}${batch ? ` · batch ${batch}` : ''}\n${bodyText(recorded).split('\n').map((l) => (l ? `  ${l}` : '')).join('\n')}`;
     writeAtomic(issue.file, setSection(text, 'Reviews', current ? `${current}\n${entry}` : entry));
   }
-  // The model and the relay mark come after the kind: a reader that parses only the name and the kind ignores what follows.
-  const marks = `${model !== undefined ? `model ${model} · ` : ''}${relayed ? 'relayed · ' : ''}`;
-  // Each verdict line is followed by the tip of the issue's branch: the code the verdict was given on. A filing may have
-  // raised the loop's format, which writes a bare format-1 path with a leading ./ and reads a bare word as a name: the
-  // issues are read again, and every lookup of a repository is made anew, so the tip is read where the Repo points now.
-  if (filed.length) resetCaches();
-  const reviewed = filed.length ? issuesFor(root, rawIds) : issues;
+  // The model, the relay mark and the batch come after the kind: a reader that parses only the name and the kind ignores
+  // what follows.
+  const marks = `${model !== undefined ? `model ${model} · ` : ''}${relayed ? 'relayed · ' : ''}${batch ? `batch ${batch} · ` : ''}`;
+  // Each verdict line is followed by the tip of the issue's branch: the code the verdict was given on. A filing or the batch
+  // may have raised the loop's format, which writes a bare format-1 path with a leading ./ and reads a bare word as a name:
+  // the issues are read again, and every lookup of a repository is made anew, so the tip is read where the Repo points now.
+  const again = filed.length > 0 || raised;
+  if (again) resetCaches();
+  const reviewed = again ? issuesFor(root, rawIds) : issues;
   appendLogLines(root, reviewed.flatMap((issue, n) => [`${issue.id} review ${verdict} · ${by ? `by ${by} (${kinds[n]}) · ` : ''}${marks}${loggedFinding(firstLine(recorded, "the issue's Reviews section"))}`, ...tipLines(root, issue)]));
   // Recorded, never refused: a coordinator's approve on a code issue is a fact of the record, but it does not clear
   // the issue for done or the merge queue — the output says so at once. On the command line, in a loop that declares
@@ -130,7 +137,13 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
   // as it stands now, by the reading done itself uses, so the step the reply names is one that works.
   const written = flags.caller === 'cli' && verdict === 'approve' && rule !== 'agent' ? readLoop(jarlDir(root)) : null;
   const modelOf = (issue) => ({ rule, refused: Boolean(written && written.byId.has(issue.id) && modelRefusalOf(root, written, written.byId.get(issue.id))) });
-  return oneOrMany(rawIds, issues.map((issue, n) => ({ id: issue.id, verdict, ...(by ? { by, kind: kinds[n] } : {}), ...(model !== undefined ? { model } : {}), ...(relayed ? { relayed } : {}), severities, ...(filed.length ? { filed: filed.map((f) => f.id) } : {}), acceptance: (issue.sections.acceptance || '').trim(), ...(flags.caller === 'cli' ? { next: nextAfterVerdict(issue, verdict, kinds[n], loop && verdict === 'approve' ? ownerLineWait(root, loop, issue) : null, modelOf(issue)) } : {}), ...noteOf(issue, n) })));
+  return oneOrMany(rawIds, issues.map((issue, n) => ({ id: issue.id, verdict, ...(by ? { by, kind: kinds[n] } : {}), ...(model !== undefined ? { model } : {}), ...(relayed ? { relayed } : {}), ...(batch ? { batch } : {}), severities,...(filed.length ? { filed: filed.map((f) => f.id) } : {}), acceptance: (issue.sections.acceptance || '').trim(), ...(flags.caller === 'cli' ? { next: nextAfterVerdict(issue, verdict, kinds[n], loop && verdict === 'approve' ? ownerLineWait(root, loop, issue) : null, modelOf(issue)) } : {}), ...noteOf(issue, n) })));
+}
+
+// Whether the loop holds a batch id: it is in the format that holds one, or Jarl may raise it there.
+function holdsBatches(root) {
+  const profile = loadProfile(root);
+  return profile.format >= FORMAT_LINES.batch.format || formatState(profile).raises;
 }
 
 // The findings a review gives outside the issue (--outside, repeatable), each a text with words in it, as written.

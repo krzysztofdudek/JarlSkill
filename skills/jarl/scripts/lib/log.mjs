@@ -31,7 +31,8 @@ import { STAMP_SRC, appendLog, headerKey, logPath, oneLine } from './journal.mjs
 //                  on the round that reached the limit and printed the takeover block. A round line without a standing
 //                  is counted at the fixed limit of three (see takeoverStanding)
 //   row            one --ran/--saw evidence row
-//   verdict        a review: verdict (approve|changes), by, kind (as recorded), model, relayed
+//   verdict        a review: verdict (approve|changes), by, kind (as recorded), model, relayed, and batch, the id one verdict
+//                  given on several issues writes on each of its lines (null on a verdict on one issue)
 //   retract-row    a retracted evidence row: row, its number, and by, who retracted it (null when the line names nobody)
 //   retract-note   a retracted evidence note: note, its number, and by
 //   retract-review a retracted approve: target, the approve it takes away, and by
@@ -162,9 +163,14 @@ function eventParser(profile) {
     }
     const r = REVIEW_LINE.exec(text);
     if (r) {
-      const rest = text.slice(r[0].length);
+      // The marks after the reviewer, each in its fixed place: the model, the relay mark, the batch.
+      let rest = text.slice(r[0].length);
       const mm = /^model (.+?) · /.exec(rest);
-      return { type: 'verdict', verdict: r[1], by: r[2] || null, kind: r[3] || null, model: mm ? mm[1] : null, relayed: /^relayed · /.test(mm ? rest.slice(mm[0].length) : rest) };
+      if (mm) rest = rest.slice(mm[0].length);
+      const relayed = /^relayed · /.test(rest);
+      if (relayed) rest = rest.slice('relayed · '.length);
+      const bm = BATCH_MARK.exec(rest);
+      return { type: 'verdict', verdict: r[1], by: r[2] || null, kind: r[3] || null, model: mm ? mm[1] : null, relayed, batch: bm ? bm[1] : null };
     }
     if (text.startsWith(`${id} review retract`) && !/^\w/.test(text.slice(`${id} review retract`.length))) return { type: 'retract-review', target: retractTarget(text), by: retractedBy(text) };
     const rr = RETRACT_ROW_LINE.exec(text);
@@ -357,6 +363,9 @@ export function issueState(profile, events) {
 }
 
 const REVIEW_LINE = idRe('^{id} review (approve|changes) · (?:by (.+?) \\((fresh|coordinator|self)\\) · )?');
+// The batch a verdict belongs to: one verdict given on several issues writes the same id, of an issue key's shape, on the
+// line of each issue it covers, after the model and the relay mark.
+const BATCH_MARK = new RegExp(`^batch (${KEY_SRC}) · `);
 
 // A journal line that moves an issue into one of the statuses named: `NNN → <status>`, the status followed by the end
 // of the line or a space. Longest names first, so no status is read as a shorter one.

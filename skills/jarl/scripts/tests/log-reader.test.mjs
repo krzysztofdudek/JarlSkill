@@ -40,13 +40,17 @@ test('a move carries the status it left, the status it entered and its lease', (
   assert.equal(L.parseEvent('012', '012 → nowhere · x', P, 'open').type, 'other', 'a status the profile does not name is no move');
 });
 
-test('a verdict carries its reviewer, kind, model and relay mark', () => {
+test('a verdict carries its reviewer, kind, model, relay mark and batch', () => {
   assert.deepEqual(L.parseEvent('012', '012 review approve · by rev-a (fresh) · model m@low · relayed · all green', P),
-    { type: 'verdict', verdict: 'approve', by: 'rev-a', kind: 'fresh', model: 'm@low', relayed: true });
+    { type: 'verdict', verdict: 'approve', by: 'rev-a', kind: 'fresh', model: 'm@low', relayed: true, batch: null });
   assert.deepEqual(L.parseEvent('012', '012 review changes · by rev-a (coordinator) · fix it please', P),
-    { type: 'verdict', verdict: 'changes', by: 'rev-a', kind: 'coordinator', model: null, relayed: false });
+    { type: 'verdict', verdict: 'changes', by: 'rev-a', kind: 'coordinator', model: null, relayed: false, batch: null });
   assert.deepEqual(L.parseEvent('012', '012 review approve · looks fine to me', P),
-    { type: 'verdict', verdict: 'approve', by: null, kind: null, model: null, relayed: false });
+    { type: 'verdict', verdict: 'approve', by: null, kind: null, model: null, relayed: false, batch: null });
+  assert.deepEqual(L.parseEvent('012', '012 review approve · by rev-a (fresh) · model m@low · relayed · batch 20261106T1910-abcd · all green', P),
+    { type: 'verdict', verdict: 'approve', by: 'rev-a', kind: 'fresh', model: 'm@low', relayed: true, batch: '20261106T1910-abcd' });
+  assert.deepEqual(L.parseEvent('012', '012 review approve · by rev-a (fresh) · batch 20261106T1910-abcd · all green', P),
+    { type: 'verdict', verdict: 'approve', by: 'rev-a', kind: 'fresh', model: null, relayed: false, batch: '20261106T1910-abcd' });
 });
 
 test('a merge and a CI state are typed', () => {

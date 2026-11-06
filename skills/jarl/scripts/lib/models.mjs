@@ -20,8 +20,9 @@ import { filedAndClosed, followUpsOf, share } from './metrics.mjs';
 // from it is read-only and only ever suggests: Jarl never refuses, reroutes or changes anything by model.
 
 export const MODEL_MIN_N = 5;
-// A finding that opens like a field would read as one: its line gets a lead-in, so no free text is ever a model or a relay mark.
-const loggedFinding = (line) => (/^(model |relayed( ·|$))/i.test(line) ? `findings: ${line}` : line);
+// A finding that opens like a field would read as one: its line gets a lead-in, so no free text is ever a model, a relay
+// or a batch mark.
+const loggedFinding = (line) => (/^(model |relayed( ·|$)|batch )/i.test(line) ? `findings: ${line}` : line);
 
 // A --model value: the platform's model id as given, trimmed. One value, and never the log's own separator.
 function modelValue(raw) {

@@ -263,7 +263,9 @@ commands:
                                                  "done" needs an approve inside the gate's window, and a
                                                  fresh one when the issue carries code (a Branch or Merged field), and
                                                  the worker's Proof row; an approve on an issue with no Proof row says so;
-                                                 findings need at least three words; a verdict is taken back with retract
+                                                 findings need at least three words; a verdict is taken back with retract;
+                                                 a verdict on several ids is one review: each of its lines carries one
+                                                 batch id, and the first raises the record format to 3
   round <ids> "<text>" [--findings <n>] [--by who]
                                                  one red round on each, with the count of findings it left if given; every third round,
                                                  or every n-th where the goal's "Takeover (<kind>): <n>" line for the issue's kind
@@ -427,7 +429,8 @@ commands:
                                                  can open a new loop here in the same mode; refused under a profile
                                                  whose "lifecycle" keeps archive to the record (it names the command)
   report [--found] [--metrics]                   the loop metrics first (cycle time, rounds, reopenings, the share of fresh
-                                                 reviews, red CI after merge, follow-ups within 7 days — "no data" where the
+                                                 reviews, red CI after merge, follow-ups within 7 days, the batched reviews
+                                                 with their sizes and the rounds after each — "no data" where the
                                                  record holds none) and the landing banner, per repository "k of n merges carry
                                                  the declared check", with the testimony mark as status shows it; then what was
                                                  done (per repository when it spans several), who reviewed it, dropped, deferred
