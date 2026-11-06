@@ -643,7 +643,7 @@ export function cmdClose(root, flags = {}) {
 
 // The row `evidence <id> --file <path> --slot <name>` writes, after every check; nothing is written here.
 function attachmentRow(root, rawIds, flags) {
-  need(!isBulk(rawIds), `an attachment names one issue, not ${rawIds}: evidence <id> --file <path> --slot <name>`, () => ({ arg: 0, value: hole('<id>') }));
+  need(!isBulk(rawIds), `an attachment names one issue, not ${rawIds}: ${jarlLine('evidence', '<id>', '--file', '<path>', '--slot', '<name>')}`, () => ({ arg: 0, value: hole('<id>') }));
   need(flags.file !== undefined, '--slot needs --file <path>: the file of the slot, relative to the loop root', () => ({ flag: '--file', value: '<path-under-the-loop-root>' }));
   need(flags.slot !== undefined, '--file needs --slot <name>, the slot of the issue\'s kind the file fills', () => ({ flag: '--slot', value: '<name>' }));
   need(typeof flags.file === 'string' && typeof flags.slot === 'string', '--file and --slot each take one value', () => (['jarl.mjs', 'evidence', '<id>', '--file', '<path>', '--slot', '<name>']));

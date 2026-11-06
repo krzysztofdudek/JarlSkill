@@ -70,11 +70,15 @@ function carriesDeclared(line, commands) {
   const wanted = commands.map(norm);
   return line.check.split(' ; ').some((part) => wanted.includes(part.trim()));
 }
-export const TESTIMONY_NOTE = 'no merge carries the declared check — this loop lands on testimony alone: a review is recorded as testimony, not proof (a merge carries the check when its --ran text equals a command a Check line of the goal declares: merged <ids> --sha <sha> --ran "<command>" --saw "<what-it-printed>")';
-// The mark for a goal that declares no Check line: no check is declared, so the merges are testimony whatever they record.
-export const TESTIMONY_NOTE_UNDECLARED = 'no check is declared — this loop lands its merges on testimony alone: a review is recorded as testimony, not proof (a Check line of the goal declares the command a merge must carry: merged <ids> --sha <sha> --ran "<command>" --saw "<what-it-printed>")';
-// The testimony mark a goal gets: the undeclared one when the goal names no Check line at all, else the declared one.
-const testimonyNote = (c) => (c.declared ? TESTIMONY_NOTE : TESTIMONY_NOTE_UNDECLARED);
+// The testimony mark a goal gets: while no merge carries a declared check the merges are testimony whatever they record, and
+// the mark says so, with the form of the merge that carries one. A goal that names no Check line at all gets the undeclared
+// mark, else the declared one.
+const testimonyNote = (c) => {
+  const merge = jarlLine('merged', '<ids>', '--sha', '<sha>', '--ran', '<command>', '--saw', '<what-it-printed>');
+  return c.declared
+    ? `no merge carries the declared check — this loop lands on testimony alone: a review is recorded as testimony, not proof (a merge carries the check when its --ran text equals a command a Check line of the goal declares: ${merge})`
+    : `no check is declared — this loop lands its merges on testimony alone: a review is recorded as testimony, not proof (a Check line of the goal declares the command a merge must carry: ${merge})`;
+};
 // The landing banner: the testimony mark while no merge carries the declared check, then one line per repository, the count
 // of its merges that carry the declared check, or the mark that it declares none.
 export function checkLines(c) {
