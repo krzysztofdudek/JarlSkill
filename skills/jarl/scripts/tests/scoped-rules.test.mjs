@@ -241,7 +241,7 @@ test('a loop whose composer keeps its format is offered no promotion, and says w
   const root = mkdtempSync(join(tmpdir(), 'jarl-rules-composed-'));
   const file = join(mkdtempSync(join(tmpdir(), 'jarl-rules-profile-')), 'profile.json');
   writeFileSync(file, JSON.stringify({ 'jarl-profile': 1, name: 'composed', statuses: BUILTIN_STATUSES, 'external-scheduler': 'the composer tick' }));
-  jarl(root, 'init', 'a mission', '--profile', file);
+  jarl(root, 'init', 'a composed goal', '--profile', file);
   jarl(root, 'decide', 'standing', 'Reports name their branch.', '--applies-to', 'loop', '--by', 'coordinator');
   const out = json(root, 'close', '--batch');
   assert.deepEqual(out.promotion.items, []);

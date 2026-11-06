@@ -85,8 +85,8 @@ test('where a composer keeps the format, --by is refused with nothing written, a
   mkdirSync(join(dir, '.git'));
   const file = join(mkdtempSync(join(tmpdir(), 'jarl-writer-profile-')), 'profile.json');
   writeFileSync(file, JSON.stringify({ 'jarl-profile': 1, name: 'composed', statuses: L.BUILTIN_STATUSES, 'external-scheduler': 'the composer tick' }));
-  assert.match(refuses(dir, 'init', 'a mission', '--profile', file, '--by', 'odin'), /the writer of a write \(--by\) needs record format 3, and this loop stays at format 1: its profile names an external scheduler \(the composer tick\)/);
-  jarl(dir, 'init', 'a mission', '--profile', file);
+  assert.match(refuses(dir, 'init', 'a composed goal', '--profile', file, '--by', 'odin'), /the writer of a write \(--by\) needs record format 3, and this loop stays at format 1: its profile names an external scheduler \(the composer tick\)/);
+  jarl(dir, 'init', 'a composed goal', '--profile', file);
   jarl(dir, 'new', 'one', '--files', 'a.mjs');
   const log = logOf(dir);
   const issue = readFileSync(json(dir, 'show', '001').file, 'utf8');

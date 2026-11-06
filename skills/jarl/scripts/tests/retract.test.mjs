@@ -292,7 +292,7 @@ test('a loop run by a composer refuses the retraction of a note and writes nothi
   mkdirSync(join(dir, '.git'));
   const profile = join(mkdtempSync(join(tmpdir(), 'jarl-retract-profile-')), 'profile.json');
   writeFileSync(profile, JSON.stringify({ 'jarl-profile': 1, name: 'composed', statuses: L.BUILTIN_STATUSES, 'external-scheduler': 'the composer tick' }, null, 2));
-  jarl(dir, 'init', 'a mission', '--profile', profile);
+  jarl(dir, 'init', 'a composed goal', '--profile', profile);
   const id = R.newIssue(dir, 'first issue', { acceptance: 'it works' }).id;
   jarl(dir, 'evidence', id, 'a note');
   const before = file(dir, id);

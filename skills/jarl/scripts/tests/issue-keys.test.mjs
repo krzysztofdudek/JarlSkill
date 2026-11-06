@@ -114,7 +114,7 @@ test('a loop a composer keeps is never raised for a key: its issues are filed wi
   mkdirSync(join(repo, '.git'));
   const file = join(repo, 'p.json');
   writeFileSync(file, JSON.stringify({ 'jarl-profile': 1, format: 1, name: 'composer', statuses: { open: ['dispatchable'], running: ['holds-claim'], done: ['terminal', 'closes-record', 'settles-dependents'] }, 'external-scheduler': 'composer tick' }));
-  jarl(repo, 'init', 'the mission', '--profile', file);
+  jarl(repo, 'init', 'the composed goal', '--profile', file);
   jarl(repo, 'new', 'one');
   assert.equal(keyOf(repo, '001'), null);
   assert.doesNotMatch(logOf(repo), / key /);

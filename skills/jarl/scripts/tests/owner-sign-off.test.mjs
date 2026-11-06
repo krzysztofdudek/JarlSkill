@@ -78,7 +78,7 @@ test('a loop run by a composer refuses an owner line and writes nothing', () => 
   mkdirSync(join(dir, '.git'));
   const profile = join(mkdtempSync(join(tmpdir(), 'jarl-owner-line-profile-')), 'profile.json');
   writeFileSync(profile, JSON.stringify({ 'jarl-profile': 1, name: 'composed', statuses: L.BUILTIN_STATUSES, 'external-scheduler': 'the composer tick' }, null, 2));
-  jarl(dir, 'init', 'a mission', '--profile', profile);
+  jarl(dir, 'init', 'a composed goal', '--profile', profile);
   assert.match(refuses(dir, 'new', 'cut the film', '--acceptance', OWNER_LINE), /an acceptance line only the owner ticks needs record format 3, and this loop stays at format 1: its profile names an external scheduler.*nothing was written/s);
   assert.equal(R.loadIssues(dir).length, 0);
 });
@@ -197,7 +197,7 @@ test('in a loop run by a composer, an [owner] line written there by a Jarl that 
   mkdirSync(join(dir, '.git'));
   const profile = join(mkdtempSync(join(tmpdir(), 'jarl-owner-line-profile-')), 'profile.json');
   writeFileSync(profile, JSON.stringify({ 'jarl-profile': 1, name: 'composed', statuses: L.BUILTIN_STATUSES, 'external-scheduler': 'the composer tick' }, null, 2));
-  jarl(dir, 'init', 'a mission', '--profile', profile);
+  jarl(dir, 'init', 'a composed goal', '--profile', profile);
   const id = R.newIssue(dir, 'cut the film', { acceptance: 'the cut renders' }).id;
   const file = R.findIssue(dir, id).file;
   R.writeAtomic(file, readFileSync(file, 'utf8').replace('the cut renders', OWNER_LINE));

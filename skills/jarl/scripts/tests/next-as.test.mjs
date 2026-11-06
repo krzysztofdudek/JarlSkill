@@ -170,7 +170,7 @@ test('next --as refuses an empty name and --limit, and names what it takes', () 
   assert.match(refuses(root, 'next', '--as', 'jarl', '--limit', '3'), /--limit counts the ready issues of next; next --as prints at most seven lines, and --all every line/);
 });
 
-// A composer's profile as a composer ships it: every status set by the record, an external scheduler, a done gate with no approve.
+// A profile for a tool that runs its own loop: every status set by the record, an external scheduler, a done gate with no approve.
 const COMPOSER = {
   'jarl-profile': 1, format: 1, name: 'composer-x',
   statuses: {
@@ -183,34 +183,34 @@ const COMPOSER = {
   fields: { Kind: { enum: ['work', 'quality', 'prototype', 'revert'], default: 'work' }, Node: { required: true }, Class: { required: true } },
   sections: ['Scope', 'Notes for the worker'],
   'acceptance-heading': 'Acceptance — evidence',
-  'external-scheduler': "composer-x's tick.mjs --mission <mission> (the director runs it; Jarl's next and queue do not schedule a mission)",
+  'external-scheduler': "composer-x's tick.mjs --loop <composed-loop> (the director runs it; Jarl's next and queue do not schedule a composed loop)",
   'done-gate': { approve: 'none', 'requires-merged': true },
-  lifecycle: { close: 'record', archive: 'record', command: "composer-x's composer-x.mjs done --mission <mission>" },
+  lifecycle: { close: 'record', archive: 'record', command: "composer-x's composer-x.mjs done --loop <composed-loop>" },
 };
 
 test('on a loop opened with a composer\'s profile, next --as lists only what is not scheduling and names the composer\'s command for the rest', () => {
   const dir = mkdtempSync(join(tmpdir(), 'jarl-as-composer-'));
   const file = join(dir, 'jarl-profile.json');
   writeFileSync(file, JSON.stringify(COMPOSER));
-  const root = join(dir, 'mission');
-  R.initLoop(root, 'the mission', { profile: file });
-  const ticket = (t) => R.newIssue(root, t, { field: ['Node=core', 'Class=standard'] }).id;
-  const queued = ticket('queued ticket');
-  const running = ticket('running ticket');
-  const gone = ticket('dropped ticket');
+  const root = join(dir, 'composed');
+  R.initLoop(root, 'the composed goal', { profile: file });
+  const filed = (t) => R.newIssue(root, t, { field: ['Node=core', 'Class=standard'] }).id;
+  const queued = filed('queued issue');
+  const running = filed('running issue');
+  const gone = filed('dropped issue');
   R.setStatus(root, queued, 'queued');
   R.setStatus(root, running, 'queued');
   R.setStatus(root, running, 'running', undefined, { worker: 'w-run', branch: 'composer-x/run' });
   R.setStatus(root, gone, 'dropped');
   R.ask(root, 'which tier is the default?', { kind: 'stop' });
-  R.decide(root, 'tickets-by-weight', 'Tickets are ranked by weight.', { settles: [gone] });
+  R.decide(root, 'issues-by-weight', 'Issues are ranked by weight.', { settles: [gone] });
   const o = json(root, 'next', '--as', 'jarl', '--all');
-  assert.deepEqual(o.rows.map((r) => r.what), ['ruling'], 'no ticket in play is listed: the scheduler holds them');
-  assert.match(o.schedulerNote, /composer-x's tick\.mjs --mission <mission>/);
+  assert.deepEqual(o.rows.map((r) => r.what), ['ruling'], 'no issue in play is listed: the scheduler holds them');
+  assert.match(o.schedulerNote, /composer-x's tick\.mjs --loop <composed-loop>/);
   const text = jarl(root, 'next', '--as', 'jarl');
-  assert.match(text, /^- tickets-by-weight: ruling in force; the work it settles has no live issue: 003 is dropped;/m);
-  assert.match(text, /^the issues in play are the composer's: scheduling is led by the composer: composer-x's tick\.mjs --mission <mission>/m);
-  assert.doesNotMatch(text, /queued ticket|running ticket/);
+  assert.match(text, /^- issues-by-weight: ruling in force; the work it settles has no live issue: 003 is dropped;/m);
+  assert.match(text, /^the issues in play are the composer's: scheduling is led by the composer: composer-x's tick\.mjs --loop <composed-loop>/m);
+  assert.doesNotMatch(text, /queued issue|running issue/);
   const owner = jarl(root, 'next', '--as', 'owner');
   assert.match(owner, /^- a-001 which tier is the default\?: question \(stop\) — jarl\.mjs answer a-001 "<text>" --by owner$/m);
   assert.match(jarl(root, 'resume', '--as', 'owner'), /## On the owner \(1\)\n- a-001 [^\n]*\nthe issues in play are the composer's: [^\n]*$/);
@@ -340,14 +340,14 @@ test('filing a promise or a wait raises the loop to record format 3, and a loop 
   const dir = mkdtempSync(join(tmpdir(), 'jarl-as-composed-'));
   const file = join(dir, 'profile.json');
   writeFileSync(file, JSON.stringify({ 'jarl-profile': 1, name: 'composed', statuses: BUILTIN_STATUSES, 'external-scheduler': 'the composer tick' }));
-  const mission = loop(['--profile', file]);
-  const before = readFileSync(join(mission, '.jarl', 'profile.json'), 'utf8');
-  const log = readFileSync(join(mission, '.jarl', 'log.md'), 'utf8');
-  assert.match(refuses(mission, 'new', 'a promise', '--kind', 'promise'), /the kinds promise and wait needs record format 3, and this loop stays at format 1: its profile names an external scheduler \(the composer tick\)/);
-  assert.match(refuses(mission, 'new', 'a wait', '--kind', 'wait', '--person', 'Dana', '--check-when', 'Friday'), /needs record format 3/);
-  assert.equal(readFileSync(join(mission, '.jarl', 'profile.json'), 'utf8'), before);
-  assert.equal(readFileSync(join(mission, '.jarl', 'log.md'), 'utf8'), log, 'nothing was written');
-  assert.ok(!existsSync(join(mission, '.jarl', 'issues')) || !readdirSync(join(mission, '.jarl', 'issues')).length);
+  const composed = loop(['--profile', file]);
+  const before = readFileSync(join(composed, '.jarl', 'profile.json'), 'utf8');
+  const log = readFileSync(join(composed, '.jarl', 'log.md'), 'utf8');
+  assert.match(refuses(composed, 'new', 'a promise', '--kind', 'promise'), /the kinds promise and wait needs record format 3, and this loop stays at format 1: its profile names an external scheduler \(the composer tick\)/);
+  assert.match(refuses(composed, 'new', 'a wait', '--kind', 'wait', '--person', 'Dana', '--check-when', 'Friday'), /needs record format 3/);
+  assert.equal(readFileSync(join(composed, '.jarl', 'profile.json'), 'utf8'), before);
+  assert.equal(readFileSync(join(composed, '.jarl', 'log.md'), 'utf8'), log, 'nothing was written');
+  assert.ok(!existsSync(join(composed, '.jarl', 'issues')) || !readdirSync(join(composed, '.jarl', 'issues')).length);
 });
 
 test('a finding is never filed as a promise or a wait', () => {

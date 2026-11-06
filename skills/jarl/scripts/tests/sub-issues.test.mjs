@@ -85,7 +85,7 @@ test('in a loop a composer runs, a parent is off: field Parent and split are ref
   const dir = mkdtempSync(join(tmpdir(), 'jarl-tree-composed-'));
   const profile = join(mkdtempSync(join(tmpdir(), 'jarl-tree-profile-')), 'profile.json');
   writeFileSync(profile, JSON.stringify({ 'jarl-profile': 1, name: 'composed', statuses: L.BUILTIN_STATUSES, 'external-scheduler': 'the composer tick' }, null, 2));
-  jarl(dir, 'init', 'a mission', '--profile', profile);
+  jarl(dir, 'init', 'a composed goal', '--profile', profile);
   jarl(dir, 'new', 'one', '--acceptance', 'a', '--acceptance', 'b');
   jarl(dir, 'new', 'two');
   const log = logText(dir);

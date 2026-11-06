@@ -12,6 +12,8 @@ import { SCRIPT, SKILL_DIR, SPAWN_TIMEOUT, gitRepo, jarl, loop, refuses, run, sk
 
 const { COMMAND_FLAGS, INTERNAL_COMMANDS, MUTATING, USAGE } = await import('../jarl.mjs');
 const mcp = await import('../jarl-mcp.mjs');
+const { RECORD_API } = await import('../record.mjs');
+const { renderSplit } = await import('../lib/loop.mjs');
 
 const PLUGIN = resolve(SKILL_DIR, '..', '..');
 const readRoot = (path) => readFileSync(join(PLUGIN, path), 'utf8');
@@ -183,6 +185,7 @@ test('a loop is found at the root of a checkout and never in a subdirectory, whi
   assert.doesNotMatch(status(sub).stdout, /^goal:/, 'not found from inside the subdirectory that holds it');
   assert.doesNotMatch(status(dir).stdout, /^goal:/, 'not found from the checkout root above it');
   assert.match(status(dir, ['--root', sub]).stdout, /^goal: a loop in a subdirectory/);
+  assert.doesNotMatch(status(dir, [], { JARL_ROOT: sub }).stdout, /^goal:/, 'the command line does not read JARL_ROOT');
   assert.match(mcp.callTool('jarl_status', {}, { JARL_ROOT: sub }, dir).content[0].text, /^goal: a loop in a subdirectory/, 'a tool call reaches it through the server\'s JARL_ROOT');
   assert.doesNotMatch(mcp.callTool('jarl_status', {}, {}, sub).content[0].text, /^goal:/, 'a tool call finds nothing from inside the subdirectory');
   jarl(dir, 'init', 'a loop at the root');
@@ -238,7 +241,7 @@ test('record.md lists every path the tool writes in .jarl/, in the count it stat
 test('the README says who verifies: the fresh reviewer and the merger, and no more than the record gives', () => {
   const readme = readRoot('README.md');
   assert.match(readme, /a fresh reviewer reads the diff and checks that the new test was red before the change/);
-  assert.match(readme, /the merger merges into the branch with a commit that names the issue and runs the check on the result/);
+  assert.match(readme, /the merger merges into the feature branch with a commit that names the issue and runs the check on the result/);
   assert.match(readme, /nothing is closed without recorded evidence and an approve, from a fresh reviewer when the issue carries code/);
   assert.doesNotMatch(readme, /nothing is closed without recorded evidence and a fresh reviewer/);
   assert.match(readme, /The tool refuses an approve by a self \(the issue's worker, anyone who has held its lease, or a worker of another issue on the same branch\)/);
@@ -246,8 +249,47 @@ test('the README says who verifies: the fresh reviewer and the merger, and no mo
   for (const false_ of [/reproduced itself/i, /reproducing the acceptance/i, /runs the test suite itself/i, /blocks (?:code|a merge)/i, /Nobody writes a handoff/]) {
     assert.doesNotMatch(readme.replace(/never blocks code from landing/g, ''), false_);
   }
-  assert.match(readme, /fresh, coordinator, self or unrecorded/);
+  assert.match(readme, /say who reviewed the done work: fresh, /);
   assert.doesNotMatch(readme, /(?:four|five) (?:kinds of )?markdown files?/i, 'no count of the record\'s files the record contradicts');
+});
+
+test('the README names the branch the merger merges into, who reads JARL_ROOT, the gate that needs an approve and the labels of the review split', () => {
+  const readme = readRoot('README.md');
+  assert.doesNotMatch(readme, /merges into the branch/, 'the merger merges into the feature branch, not into the approved branch');
+  assert.match(readme, /the server's `JARL_ROOT`/);
+  assert.doesNotMatch(readme, /`--root`, `JARL_ROOT` or/, 'the command line does not read JARL_ROOT');
+  assert.match(readme, /a profile whose done gate asks no approve closes on recorded evidence and a merge in the base, which it must require/);
+  assert.match(readme, /a profile can also require attached files before a kind of issue closes/);
+  const labels = renderSplit({ fresh: 1, waived: 1, coordinator: 1, self: 1, retracted: 1, unrecorded: 1 }).split(' · ').map((part) => part.replace(/ \d+$/, ''));
+  assert.equal(labels.length, 6, 'the split prints six labels');
+  const line = readme.split('\n').find((l) => l.includes('say who reviewed the done work'));
+  assert.ok(line, 'the README has the sentence about who reviewed the done work');
+  const list = line.slice(line.indexOf('say who reviewed the done work:')).replace(/\([^)]*\)/g, '');
+  for (const label of labels) {
+    const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    assert.match(list, new RegExp(`(?:: |, |, and | and )${escaped}\\b`), `the README lists the review label "${label}" the code prints`);
+  }
+  assert.match(line, /waived by the owner \([^)]*waives the review[^)]*\)/, 'the README says in a clause what the waiver is');
+  assert.match(line, /retracted when an approve was taken back and none stands/);
+  const limits = readme.split(/^## /m).find((s) => s.startsWith('What it does not do'));
+  assert.ok(limits, 'the README has its limits section');
+  assert.doesNotMatch(limits, /finds a loop/, 'where the loop is found is not a limit of Jarl');
+  assert.match(readme, /never in a subdirectory/);
+});
+
+test('the changelog\'s preamble, its Unreleased section and its newest released section name no tool that left the family; the sections below keep their history', () => {
+  const sections = readRoot('CHANGELOG.md').split(/^## \[/m);
+  const released = sections.findIndex((s, n) => n > 0 && !s.startsWith('Unreleased]'));
+  assert.ok(released > 0, 'the changelog holds a released section');
+  const current = sections.slice(0, released + 1).join('## [');
+  assert.deepEqual(current.match(/.*\bhorde\b.*/gi) || [], []);
+  assert.match(sections.slice(released + 1).join('## ['), /\bHorde\b/, 'a section below keeps the history it was released with');
+});
+
+test('CLAUDE.md names the record contract that RECORD_API holds, and no other', () => {
+  const named = [...readRoot('CLAUDE.md').matchAll(/jarl-record\/\d+/g)].map((m) => m[0]);
+  assert.ok(named.length > 0, 'CLAUDE.md names the contract');
+  assert.deepEqual([...new Set(named)], [RECORD_API]);
 });
 
 test('the manifests describe a loop whose evidence and fresh review decide what closes', () => {

@@ -87,7 +87,7 @@ test('a lone tag, a pair in a code span and a pair in a fenced block are accepte
   jarl(root, 'new', 'lone', '--what', 'a lone <why> and a closing </what> are text');
   jarl(root, 'new', 'span', '--what', 'the tags `<why>` and `</why>` are named, or `<why>x</why>` whole');
   jarl(root, 'new', 'fence', '--what', 'see:\n```\n<what>the thing</what>\n<why>because</why>\n```\nand\n~~~~\n<tags>a</tags>\n~~~~\nend');
-  const own = 'A caller whose tool call carried every field inside the What parameter got tickets with no tags. The refusal must not catch a tag that is quoted, because this issue names such tags in code spans (`<what>`, `<why>`, `<prio>`); so only a matched opening and closing pair of a field name, outside code, is refused.';
+  const own = 'A caller whose tool call carried every field inside the What parameter got issues with no tags. The refusal must not catch a tag that is quoted, because this issue names such tags in code spans (`<what>`, `<why>`, `<prio>`); so only a matched opening and closing pair of a field name, outside code, is refused.';
   jarl(root, 'new', 'own', '--what', own);
   assert.equal(readdirSync(join(root, '.jarl', 'issues')).length, 4);
 });

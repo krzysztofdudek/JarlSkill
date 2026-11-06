@@ -263,9 +263,9 @@ test('the record library holds the lease the same way and takes handover as an o
 });
 
 test('in a loop its composer schedules, two leases on one file and a second lease are the composer\'s to decide, and nothing refuses them', () => {
-  const mission = mkdtempSync(join(tmpdir(), 'jarl-lease-mission-'));
-  mkdirSync(join(mission, '.git'));
-  const file = join(mission, 'profile-source.json');
+  const composed = mkdtempSync(join(tmpdir(), 'jarl-lease-composed-'));
+  mkdirSync(join(composed, '.git'));
+  const file = join(composed, 'profile-source.json');
   writeFileSync(file, JSON.stringify({
     'jarl-profile': 1, format: 1, name: 'composer-x',
     statuses: {
@@ -278,17 +278,17 @@ test('in a loop its composer schedules, two leases on one file and a second leas
     'external-scheduler': 'composer-x.mjs tick',
     'done-gate': { approve: 'none', 'requires-merged': true },
   }));
-  R.initLoop(mission, 'a mission', { profile: file });
-  // Every ticket of one node declares that node's log, and the composer runs them at once.
-  for (const t of ['first ticket', 'second ticket']) R.newIssue(mission, t, { files: '.yggdrasil/model/orders/log.md, src/orders.mjs' });
-  R.setStatus(mission, '001,002', 'queued', 'planned');
-  R.setStatus(mission, '001', 'running', 'tick', { branch: 'composer-x/001', worker: 'agent-1' });
-  R.setStatus(mission, '002', 'running', 'tick', { branch: 'composer-x/002', worker: 'agent-2' });
-  R.setStatus(mission, '001', 'running', 'lease expired, reassigned', { branch: 'composer-x/001-b', worker: 'agent-3' });
-  assert.deepEqual(['001', '002'].map((id) => R.findIssue(mission, id).fields.worker), ['agent-3', 'agent-2']);
-  assert.equal(existsSync(join(mission, '.jarl', 'profile.json')), true);
-  assert.equal(R.loadProfile(mission).format, 1, 'the composer\'s loop keeps its format');
+  R.initLoop(composed, 'a composed goal', { profile: file });
+  // Every issue of one node declares that node's log, and the composer runs them at once.
+  for (const t of ['first issue', 'second issue']) R.newIssue(composed, t, { files: '.yggdrasil/model/orders/log.md, src/orders.mjs' });
+  R.setStatus(composed, '001,002', 'queued', 'planned');
+  R.setStatus(composed, '001', 'running', 'tick', { branch: 'composer-x/001', worker: 'agent-1' });
+  R.setStatus(composed, '002', 'running', 'tick', { branch: 'composer-x/002', worker: 'agent-2' });
+  R.setStatus(composed, '001', 'running', 'lease expired, reassigned', { branch: 'composer-x/001-b', worker: 'agent-3' });
+  assert.deepEqual(['001', '002'].map((id) => R.findIssue(composed, id).fields.worker), ['agent-3', 'agent-2']);
+  assert.equal(existsSync(join(composed, '.jarl', 'profile.json')), true);
+  assert.equal(R.loadProfile(composed).format, 1, 'the composer\'s loop keeps its format');
   // A handover there is still a handover: checked, and logged.
-  R.setStatus(mission, '002', 'running', 'context grew', { branch: 'composer-x/002-b', worker: 'agent-4', handover: true });
-  assert.match(logText(mission), /002 → running · context grew · handover · branch composer-x\/002-b · worker agent-4\n/);
+  R.setStatus(composed, '002', 'running', 'context grew', { branch: 'composer-x/002-b', worker: 'agent-4', handover: true });
+  assert.match(logText(composed), /002 → running · context grew · handover · branch composer-x\/002-b · worker agent-4\n/);
 });

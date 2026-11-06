@@ -628,4 +628,4 @@ export function inFlightMark(loop, issue) {
 export const awaitsMerge = (loop, issue) => inFlightMark(loop, issue) === 'approved';
 
 // Used by the other modules of the library, and not part of what jarl-lib.mjs exports.
-export { FIELD_NAMES, approveKind, closedGateLine, gateLine, scopedLoop, waiverVoid };
+export { FIELD_NAMES, approveKind, closedGateLine, gateLine, renderSplit, scopedLoop, waiverVoid };

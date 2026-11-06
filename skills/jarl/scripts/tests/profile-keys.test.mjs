@@ -29,7 +29,7 @@ function file(obj) {
 }
 const reason = (fn) => { try { fn(); } catch (e) { return e.message; } throw new Error('expected a refusal'); };
 
-// A mission's profile in a composer's shape: a proposal and the queue belong to the composer (its planner's veto stands
+// A composed loop's profile in a composer's shape: a proposal and the queue belong to the composer (its planner's veto stands
 // between them), a merge is recorded only by its landing, the composer's tick schedules, and an issue closes on a merge
 // the base holds, with no approve of Jarl's own.
 const COMPOSER = {
@@ -50,14 +50,14 @@ const COMPOSER = {
   'done-gate': { approve: 'none', 'requires-merged': true },
 };
 
-// A real repository on main with the loop committed beside the code; the mission's loop lives in a subdirectory,
-// as a composer keeps it (.composer-x/missions/<m>/.jarl/).
-function mission(profile = COMPOSER) {
+// A real repository on main with the loop committed beside the code; the composed loop lives in a subdirectory,
+// as a composer keeps it (.composer-x/loops/<m>/.jarl/).
+function composedLoop(profile = COMPOSER) {
   const repo = mkdtempSync(join(tmpdir(), 'jarl-keys-'));
   sh(repo, 'git init -q -b main && git config user.email t@t && git config user.name t && git config core.excludesFile /dev/null && mkdir src && echo 1 > src/a.mjs && git add -A && git commit -qm base');
-  const root = join(repo, '.composer-x', 'missions', 'm1');
+  const root = join(repo, '.composer-x', 'loops', 'm1');
   mkdirSync(root, { recursive: true });
-  jarl(root, 'init', 'the mission', '--committed', '--profile', file(profile));
+  jarl(root, 'init', 'the composed goal', '--committed', '--profile', file(profile));
   return { repo, root };
 }
 
@@ -71,7 +71,7 @@ test('format: a record format this Jarl does not know is refused first and alone
   assert.equal(R.validateProfile(COMPOSER).format, 1);
   assert.equal(R.DEFAULT_PROFILE.format, 1);
   // A loop opened on a later format refuses every command, the views too.
-  const { root } = mission();
+  const { root } = composedLoop();
   const p = join(root, '.jarl', 'profile.json');
   writeFileSync(p, JSON.stringify({ ...COMPOSER, format: 7 }));
   assert.match(refuses(root, 'status'), /record format 7/);
@@ -105,7 +105,7 @@ test('set-by, external-scheduler and done-gate are checked with every other prob
 });
 
 test('profile describes the new keys, as JSON and as text', () => {
-  const { root } = mission();
+  const { root } = composedLoop();
   const d = json(root, 'profile');
   assert.deepEqual(d.statuses.filter((s) => s.setBy).map((s) => s.name), ['proposed', 'queued', 'merged']);
   assert.equal(d.externalScheduler, 'composer-x.mjs tick');
@@ -120,8 +120,8 @@ test('profile describes the new keys, as JSON and as text', () => {
 // ---- set-by: record ----
 
 test('set-by record: jarl set and the MCP tools cannot move an issue into it; a library call can, and moving out is anyone\'s', () => {
-  const { root } = mission();
-  jarl(root, 'new', 'a ticket');
+  const { root } = composedLoop();
+  jarl(root, 'new', 'an issue');
   const path = R.findIssue(root, '1').file;
   const before = readFileSync(path, 'utf8');
   assert.match(refuses(root, 'set', '1', 'queued'), /queued is set by the record only — this loop's profile \(composer-x\) marks it "set-by": "record".*\(composer-x\.mjs tick\)/);
@@ -140,8 +140,8 @@ test('set-by record: jarl set and the MCP tools cannot move an issue into it; a 
 // ---- done-gate ----
 
 test('done-gate requires-merged: no merge, or a merge the base does not hold, is refused; approve none asks for no review', () => {
-  const { repo, root } = mission();
-  jarl(root, 'new', 'ticket');
+  const { repo, root } = composedLoop();
+  jarl(root, 'new', 'an issue');
   R.setStatus(root, '1', 'queued');
   jarl(root, 'set', '1', 'running', '--branch', 'jarl/1-t', '--worker', 'w1');
   jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'pass 1');
@@ -167,8 +167,8 @@ test('done-gate requires-merged: no merge, or a merge the base does not hold, is
 test('done-gate requires-merged: a composer landing into a branch nobody has checked out names it as base; the command line cannot', () => {
   // A composer lands an issue into its team branch in a throwaway tree and moves the ref: the checkout stays on main, so the
   // branch checked out is the wrong base, and the composer names the one it landed into.
-  const { repo, root } = mission();
-  jarl(root, 'new', 'ticket');
+  const { repo, root } = composedLoop();
+  jarl(root, 'new', 'an issue');
   R.setStatus(root, '1', 'queued');
   jarl(root, 'set', '1', 'running', '--branch', 'h1-t1', '--worker', 'w1');
   jarl(root, 'evidence', '1', '--ran', 'land', '--saw', 'green');
@@ -185,8 +185,8 @@ test('done-gate requires-merged: a composer landing into a branch nobody has che
 });
 
 test('done-gate requires-merged with approve fresh: the landed merge and the fresh approve are both asked for', () => {
-  const { repo, root } = mission({ ...COMPOSER, name: 'both', 'external-scheduler': undefined, 'done-gate': { approve: 'fresh', 'requires-merged': true }, statuses: { ...COMPOSER.statuses, merged: ['settles-dependents', 'terminal', 'closes-record'] } });
-  jarl(root, 'new', 'ticket');
+  const { repo, root } = composedLoop({ ...COMPOSER, name: 'both', 'external-scheduler': undefined, 'done-gate': { approve: 'fresh', 'requires-merged': true }, statuses: { ...COMPOSER.statuses, merged: ['settles-dependents', 'terminal', 'closes-record'] } });
+  jarl(root, 'new', 'an issue');
   R.setStatus(root, '1', 'queued');
   jarl(root, 'set', '1', 'running', '--branch', 'jarl/1-t', '--worker', 'w1');
   jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'pass');
@@ -199,8 +199,8 @@ test('done-gate requires-merged with approve fresh: the landed merge and the fre
 });
 
 test('no done-gate: a loop without the key closes exactly as before — no merge asked for', () => {
-  const { root } = mission({ ...COMPOSER, name: 'plain', 'done-gate': undefined, 'external-scheduler': undefined, statuses: { ...COMPOSER.statuses, merged: ['settles-dependents', 'terminal', 'closes-record'] } });
-  jarl(root, 'new', 'ticket');
+  const { root } = composedLoop({ ...COMPOSER, name: 'plain', 'done-gate': undefined, 'external-scheduler': undefined, statuses: { ...COMPOSER.statuses, merged: ['settles-dependents', 'terminal', 'closes-record'] } });
+  jarl(root, 'new', 'an issue');
   R.setStatus(root, '1', 'queued');
   jarl(root, 'set', '1', 'running', '--worker', 'w1');
   jarl(root, 'evidence', '1', '--ran', 'x', '--saw', 'y');
@@ -208,10 +208,10 @@ test('no done-gate: a loop without the key closes exactly as before — no merge
   assert.match(jarl(root, 'set', '1', 'merged'), /1 → merged/);
 });
 
-// ---- every view on a mission's loop ----
+// ---- every view on a composed loop ----
 
-test('every view tells the truth on a mission\'s loop: next, status, resume with its merge queue and tips, branches, report, list', () => {
-  const { repo, root } = mission();
+test('every view tells the truth on a composed loop: next, status, resume with its merge queue and tips, branches, report, list', () => {
+  const { repo, root } = composedLoop();
   // 1 merged and landed; 2 in flight on its branch; 3 queued but held back by the composer's own edges (Jarl
   // cannot see them); 4 proposed; 5 dropped.
   for (const t of ['landed one', 'in flight', 'queued', 'proposed', 'gone']) jarl(root, 'new', t);
@@ -238,14 +238,14 @@ test('every view tells the truth on a mission\'s loop: next, status, resume with
   assert.deepEqual(st.statuses, { proposed: 1, queued: 1, running: 1, landed: 0, changes: 0, held: 0, merged: 1, dropped: 1 });
   assert.equal(st.inFlight, 1);
   const stText = jarl(root, 'status');
-  assert.match(stText, /^goal: the mission\n.*profile composer-x\nqueued 1 · in flight 1 · proposed 1 · held 0 · merged 1 · dropped 1 · questions 0/);
+  assert.match(stText, /^goal: the composed goal\n.*profile composer-x\nqueued 1 · in flight 1 · proposed 1 · held 0 · merged 1 · dropped 1 · questions 0/);
   assert.match(stText, /scheduling is led by the composer: composer-x\.mjs tick/);
   assert.match(stText, /closed on a merge in the base, no approve required/);
   assert.doesNotMatch(stText, /ready/);
 
   // resume: in flight is true, the ready list and the merge queue are the composer's.
   const rs = json(root, 'resume');
-  assert.deepEqual(rs.inFlight.map((x) => [x.id, x.branch, x.worker]), [['002', 'jarl/2-flight', 'w2']], 'the command line files a mission\'s tickets with three digits');
+  assert.deepEqual(rs.inFlight.map((x) => [x.id, x.branch, x.worker]), [['002', 'jarl/2-flight', 'w2']], 'the command line files a composed loop\'s issues with three digits');
   assert.deepEqual(rs.next, []);
   assert.equal(rs.readyTotal, null);
   assert.deepEqual(rs.held, []);
@@ -299,17 +299,17 @@ test('no profile: next is still the list and the merge queue of resume the rows,
 // ---- a composer's loop keeps its record format ----
 
 test('a loop opened with a composer\'s profile is never raised: new writes three digits, and a retraction, a repository name or a plain number is refused with nothing written', () => {
-  const { repo, root } = mission();
+  const { repo, root } = composedLoop();
   const marker = join(root, '.jarl', 'profile.json');
   const log = () => readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
   const issueFiles = () => readdirSync(join(root, '.jarl', 'issues')).sort();
   const before = readFileSync(marker, 'utf8');
   // new: the command line writes the number with three digits there, so the loop stays in format 1.
-  assert.match(jarl(root, 'new', 'first ticket'), /filed 001\b/);
+  assert.match(jarl(root, 'new', 'first issue'), /filed 001\b/);
   assert.match(jarl(root, 'ask', 'which way?', '--issue', '1'), /a-001\b/);
   assert.equal(readFileSync(marker, 'utf8'), before);
   assert.equal(R.loadProfile(root).format, 1);
-  assert.equal(oldJarl(root, 'list', {}).ok, true, 'the frozen reader of format 1 reads the mission');
+  assert.equal(oldJarl(root, 'list', {}).ok, true, 'the frozen reader of format 1 reads the composed loop');
   // A retraction of an evidence row.
   jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'ok');
   let at = log();
@@ -331,10 +331,10 @@ test('a loop opened with a composer\'s profile is never raised: new writes three
   assert.equal(byPath.status, 0, byPath.stderr);
   assert.match(byPath.stderr, /is stored as the path .*: the loop's profile names an external scheduler, so its record format stays at 1, which holds paths and no names/);
   assert.match(readFileSync(join(root, '.jarl', 'issues', issueFiles().find((f) => f.startsWith('002-'))), 'utf8'), /^\*\*Repo:\*\* (\.\.?\/|\/)\S*-tool$/m);
-  assert.equal(oldJarl(root, 'list', {}).ok, true, 'the frozen reader of format 1 still reads the mission');
+  assert.equal(oldJarl(root, 'list', {}).ok, true, 'the frozen reader of format 1 still reads the composed loop');
   at = log();
   // A number written plain, in a file made by hand: a write that names it is refused.
-  writeFileSync(join(root, '.jarl', 'issues', '7-plain.md'), readFileSync(join(root, '.jarl', 'issues', files[0]), 'utf8').replace(/^# 001 · first ticket$/m, '# 7 · plain'));
+  writeFileSync(join(root, '.jarl', 'issues', '7-plain.md'), readFileSync(join(root, '.jarl', 'issues', files[0]), 'utf8').replace(/^# 001 · first issue$/m, '# 7 · plain'));
   assert.match(refuses(root, 'field', '7', 'Tags', '--add', 'x'), /a number written plain, below 100 or of 1000 or more needs record format 2, and this loop stays at format 1/);
   assert.equal(log(), at);
   assert.equal(readFileSync(marker, 'utf8'), before, 'the marker never moved');

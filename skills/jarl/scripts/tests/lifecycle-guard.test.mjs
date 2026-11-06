@@ -1,6 +1,6 @@
-// The profile's "lifecycle" key: a loop a composer keeps (its mission) is closed and archived by the
-// composer, never by Jarl's own close and archive. A plain jarl close on a finished mission would delete .jarl/ with no way
-// back, and a plain jarl archive would move a live mission out from under the composer. Under "lifecycle": { "close": "record",
+// The profile's "lifecycle" key: a loop a composer keeps is closed and archived by the
+// composer, never by Jarl's own close and archive. A plain jarl close on a finished composed loop would delete .jarl/ with no way
+// back, and a plain jarl archive would move a live composed loop out from under the composer. Under "lifecycle": { "close": "record",
 // "archive": "record" } both commands and their MCP tools refuse, name the composer's command and write nothing, while
 // a library caller (the composer) still may.
 import { test } from 'node:test';
@@ -47,7 +47,7 @@ function snapshot(dir) {
   return out;
 }
 
-const COMMAND = 'composer-x.mjs done <mission>, then composer-x.mjs archive <mission>';
+const COMMAND = 'composer-x.mjs done <composed-loop>, then composer-x.mjs archive <composed-loop>';
 const COMPOSER = {
   'jarl-profile': 1,
   format: 1,
@@ -64,14 +64,14 @@ const COMPOSER = {
   lifecycle: { close: 'record', archive: 'record', command: COMMAND },
 };
 
-// A mission's loop as a composer keeps it, in a directory of its own inside a real repository, in the default mode
+// A composed loop as a composer keeps it, in a directory of its own inside a real repository, in the default mode
 // (out of git, where close removes .jarl/ outright): the case that lost the record for good.
-function mission(profile = COMPOSER) {
+function composedLoop(profile = COMPOSER) {
   const repo = mkdtempSync(join(tmpdir(), 'jarl-life-'));
   sh(repo, 'git init -q -b main && git config user.email t@t && git config user.name t && git config core.excludesFile /dev/null && echo 1 > a.txt && git add -A && git commit -qm base');
-  const root = join(repo, '.composer-x', 'missions', 'm1');
+  const root = join(repo, '.composer-x', 'loops', 'm1');
   mkdirSync(root, { recursive: true });
-  jarl(root, 'init', 'the mission', '--profile', file(profile));
+  jarl(root, 'init', 'the composed goal', '--profile', file(profile));
   return { repo, root };
 }
 
@@ -94,51 +94,51 @@ test('lifecycle: its keys and values are checked with every other problem; absen
 });
 
 test('profile describes lifecycle, as JSON and as text', () => {
-  const { root } = mission();
+  const { root } = composedLoop();
   assert.deepEqual(JSON.parse(jarl(root, 'profile', '--json')).lifecycle, { close: 'record', archive: 'record', command: COMMAND });
   assert.match(jarl(root, 'profile'), new RegExp(`lifecycle: close and archive by the record only, never jarl close / archive — ${COMMAND.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
 });
 
 // ---- the guard ----
 
-test('lifecycle record: jarl close refuses on a finished mission, --force and --batch too, naming the composer\'s command; nothing is removed', () => {
-  const { root } = mission();
-  jarl(root, 'new', 'a ticket');
+test('lifecycle record: jarl close refuses on a finished composed loop, --force and --batch too, naming the composer\'s command; nothing is removed', () => {
+  const { root } = composedLoop();
+  jarl(root, 'new', 'an issue');
   R.setStatus(root, '001', 'dropped', 'out of scope');
   const dir = join(root, '.jarl');
   const before = snapshot(dir);
   for (const args of [['close'], ['close', '--force'], ['close', '--batch']]) {
     const e = refuses(root, ...args);
     assert.match(e, /this loop is closed by the tool that runs it, never by jarl close — its profile \(composer-x\) marks "lifecycle": \{ "close": "record" \}/);
-    assert.match(e, /nothing was closed or removed; run: composer-x\.mjs done <mission>, then composer-x\.mjs archive <mission>/);
+    assert.match(e, /nothing was closed or removed; run: composer-x\.mjs done <composed-loop>, then composer-x\.mjs archive <composed-loop>/);
   }
   assert.ok(existsSync(dir), 'the record is still there');
   assert.deepEqual(snapshot(dir), before, 'a refusal writes nothing, not even a log line');
   assert.equal(R.findIssue(root, '001').status, 'dropped');
 });
 
-test('lifecycle record: jarl archive refuses on a live mission, naming the command; nothing is moved', () => {
-  const { root } = mission();
-  jarl(root, 'new', 'a live ticket');
+test('lifecycle record: jarl archive refuses on a live composed loop, naming the command; nothing is moved', () => {
+  const { root } = composedLoop();
+  jarl(root, 'new', 'a live issue');
   const dir = join(root, '.jarl');
   const before = snapshot(dir);
   const e = refuses(root, 'archive', 'old');
   assert.match(e, /this loop is archived by the tool that runs it, never by jarl archive — its profile \(composer-x\) marks "lifecycle": \{ "archive": "record" \}/);
-  assert.match(e, /nothing was moved; run: composer-x\.mjs done <mission>/);
+  assert.match(e, /nothing was moved; run: composer-x\.mjs done <composed-loop>/);
   assert.equal(existsSync(join(dir, 'archive')), false);
   assert.deepEqual(snapshot(dir), before);
   assert.ok(R.hasLiveLoop(root));
 });
 
 test('lifecycle record: the MCP tools refuse as the command line does — jarl_close and jarl_archive, and dispatch itself', () => {
-  const { root } = mission();
-  jarl(root, 'new', 'a ticket');
+  const { root } = composedLoop();
+  jarl(root, 'new', 'an issue');
   R.setStatus(root, '001', 'dropped', 'out of scope');
   const before = snapshot(join(root, '.jarl'));
   for (const [tool, input] of [['jarl_close', {}], ['jarl_close', { force: true }], ['jarl_close', { batch: true, json: true }], ['jarl_archive', { slug: 'old' }], ['jarl_archive', { slug: 'old', json: true }]]) {
     const r = MCP.callTool(tool, { ...input, root });
     assert.equal(r.isError, true, `${tool} ${JSON.stringify(input)} is refused`);
-    assert.match(r.content[0].text, /by the tool that runs it, never by jarl (close|archive).*run: composer-x\.mjs done <mission>/);
+    assert.match(r.content[0].text, /by the tool that runs it, never by jarl (close|archive).*run: composer-x\.mjs done <composed-loop>/);
   }
   assert.throws(() => CLI.dispatch(root, 'close', [], {}), /never by jarl close/);
   assert.throws(() => CLI.dispatch(root, 'archive', ['old'], {}), /never by jarl archive/);
@@ -148,26 +148,26 @@ test('lifecycle record: the MCP tools refuse as the command line does — jarl_c
 });
 
 test('lifecycle record: the composer, as a library caller, still closes and archives', () => {
-  const a = mission();
+  const a = composedLoop();
   L.withLock(a.root, () => L.cmdArchive(a.root, 'done'));
   assert.equal(R.hasLiveLoop(a.root), false);
   assert.equal(readdirSync(join(a.root, '.jarl', 'archive')).length, 1);
-  const b = mission();
-  jarl(b.root, 'new', 'a ticket');
+  const b = composedLoop();
+  jarl(b.root, 'new', 'an issue');
   R.setStatus(b.root, '001', 'dropped', 'out of scope');
   const out = L.withLock(b.root, () => L.cmdClose(b.root, {}));
   assert.equal(out.closed, true);
   assert.equal(existsSync(join(b.root, '.jarl')), false);
   // An unknown caller is refused, never read as the command line nor as the record.
-  const c = mission();
+  const c = composedLoop();
   assert.match(reason(() => L.cmdClose(c.root, { caller: 'mcp' })), /caller must be one of: cli, record/);
   assert.match(reason(() => L.cmdArchive(c.root, 'x', { caller: 'mcp' })), /caller must be one of: cli, record/);
 });
 
 test('lifecycle keeps only what it names: archive to the record, close anyone\'s', () => {
-  const { root } = mission({ ...COMPOSER, lifecycle: { archive: 'record' } });
+  const { root } = composedLoop({ ...COMPOSER, lifecycle: { archive: 'record' } });
   assert.match(refuses(root, 'archive', 'x'), /never by jarl archive — its profile \(composer-x\) marks "lifecycle": \{ "archive": "record" \}, so jarl archive and the MCP tools refuse, and nothing was moved$/m);
-  jarl(root, 'new', 'a ticket');
+  jarl(root, 'new', 'an issue');
   R.setStatus(root, '001', 'dropped', 'out of scope');
   assert.match(jarl(root, 'close'), /^removed /);
   assert.equal(existsSync(join(root, '.jarl')), false);
@@ -176,9 +176,9 @@ test('lifecycle keeps only what it names: archive to the record, close anyone\'s
 test('no lifecycle: close and archive from the command line work as before', () => {
   const { lifecycle, ...plain } = COMPOSER;
   assert.ok(lifecycle);
-  const { root } = mission(plain);
-  jarl(root, 'new', 'a ticket');
+  const { root } = composedLoop(plain);
+  jarl(root, 'new', 'an issue');
   assert.match(jarl(root, 'archive', 'old'), /^archived → /);
-  jarl(root, 'init', 'the next mission', '--profile', file(plain));
+  jarl(root, 'init', 'the next composed goal', '--profile', file(plain));
   assert.match(jarl(root, 'close'), /^removed /);
 });
