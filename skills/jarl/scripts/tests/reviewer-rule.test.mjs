@@ -30,6 +30,8 @@ function modelLoop(reviewer) {
     jarl(root, 'set', id, 'in-progress', '--worker', `w${id}`, '--model', 'm-strong', '--by', 'jarl');
     jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'pass 4, fail 0', '--by', `w${id}`);
   }
+  // The change meant to alter nothing holds the row that names its comparison, which its light review depends on.
+  jarl(root, 'evidence', '2', '--ran', 'cmp before.txt after.txt', '--saw', 'cmp printed nothing, exit 0', '--by', 'w2');
   return root;
 }
 const approve = (root, id, model) => run(root, ['review', id, 'approve', '--by', `rev-${model}`, '--model', model, 'read the diff and the rows, nothing found']);
