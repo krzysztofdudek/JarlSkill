@@ -79,7 +79,7 @@ test('the guard refuses the state path and the command of a tool that has left t
 test('a second name on the list of tools that have left the family makes its state path and its command refused too', () => {
   const [first] = LEFT_THE_FAMILY.map((n) => n.toLowerCase());
   const second = 'frobnicator';
-  const lines = [`const d = join(root, '.${second}');`, 'const s = `${root}/.' + second + '/items`;', `spawnSync('${second}', ['list']);`];
+  const lines = [`const d = join(root, '.${second}');`, 'const s = `${root}/.' + second + '/items`;', `start('${second}', ['list']);`];
   const subjects = (rules) => lines.flatMap((line) => findings('x', line, rules).map((f) => f.subject));
   assert.deepEqual(subjects(reachFor(LEFT_THE_FAMILY)), [], 'a name that is not on the list is not refused');
   assert.deepEqual(subjects(reachFor([...LEFT_THE_FAMILY, 'Frobnicator'])), [`.${second}`, `.${second}`, second]);
