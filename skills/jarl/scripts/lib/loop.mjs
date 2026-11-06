@@ -609,4 +609,4 @@ function gateLine(profile, split, label) {
 function renderSplit(s) { return `fresh ${s.fresh}${s.waived ? ` · waived by the owner ${s.waived}` : ''} · coordinator ${s.coordinator} · self ${s.self}${s.retracted ? ` · retracted ${s.retracted}` : ''}${s.unrecorded ? ` · unrecorded ${s.unrecorded}` : ''}`; }
 
 // Used by the other modules of the library, and not part of what jarl-lib.mjs exports.
-export { FIELD_NAMES, approveKind, closedGateLine, gateLine, scopedLoop, waiverVoid };
+export { FIELD_NAMES, approveKind, closedGateLine, gateLine, renderSplit, scopedLoop, waiverVoid };

@@ -13,6 +13,7 @@ import { SCRIPT, SKILL_DIR, SPAWN_TIMEOUT, gitRepo, jarl, loop, refuses, run, sk
 const { COMMAND_FLAGS, INTERNAL_COMMANDS, MUTATING, USAGE } = await import('../jarl.mjs');
 const mcp = await import('../jarl-mcp.mjs');
 const { RECORD_API } = await import('../record.mjs');
+const { renderSplit } = await import('../lib/loop.mjs');
 
 const PLUGIN = resolve(SKILL_DIR, '..', '..');
 const readRoot = (path) => readFileSync(join(PLUGIN, path), 'utf8');
@@ -248,7 +249,7 @@ test('the README says who verifies: the fresh reviewer and the merger, and no mo
   for (const false_ of [/reproduced itself/i, /reproducing the acceptance/i, /runs the test suite itself/i, /blocks (?:code|a merge)/i, /Nobody writes a handoff/]) {
     assert.doesNotMatch(readme.replace(/never blocks code from landing/g, ''), false_);
   }
-  assert.match(readme, /fresh, coordinator, self or unrecorded/);
+  assert.match(readme, /say who reviewed the done work: fresh, /);
   assert.doesNotMatch(readme, /(?:four|five) (?:kinds of )?markdown files?/i, 'no count of the record\'s files the record contradicts');
 });
 
@@ -257,8 +258,15 @@ test('the README names the branch the merger merges into, who reads JARL_ROOT, t
   assert.doesNotMatch(readme, /merges into the branch/, 'the merger merges into the feature branch, not into the approved branch');
   assert.match(readme, /the server's `JARL_ROOT`/);
   assert.doesNotMatch(readme, /`--root`, `JARL_ROOT` or/, 'the command line does not read JARL_ROOT');
-  assert.match(readme, /a profile whose done gate asks no approve closes on recorded evidence and, if it requires one, a merge in the base/);
-  assert.match(readme, /fresh, coordinator, self or unrecorded, and retracted when an approve was taken back and none stands/);
+  assert.match(readme, /a profile whose done gate asks no approve closes on recorded evidence and a merge in the base, which it must require/);
+  assert.match(readme, /a profile can also require attached files before a kind of issue closes/);
+  const labels = renderSplit({ fresh: 1, waived: 1, coordinator: 1, self: 1, retracted: 1, unrecorded: 1 }).split(' · ').map((part) => part.replace(/ \d+$/, ''));
+  assert.equal(labels.length, 6, 'the split prints six labels');
+  const line = readme.split('\n').find((l) => l.includes('say who reviewed the done work'));
+  assert.ok(line, 'the README has the sentence about who reviewed the done work');
+  for (const label of labels) assert.ok(line.includes(label), `the README names the review label "${label}" the code prints`);
+  assert.match(line, /waived by the owner \([^)]*waives the review[^)]*\)/, 'the README says in a clause what the waiver is');
+  assert.match(line, /retracted when an approve was taken back and none stands/);
   const limits = readme.split(/^## /m).find((s) => s.startsWith('What it does not do'));
   assert.ok(limits, 'the README has its limits section');
   assert.doesNotMatch(limits, /finds a loop/, 'where the loop is found is not a limit of Jarl');
