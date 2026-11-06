@@ -14,7 +14,7 @@ export const OLD_JARL_FILE = fileURLToPath(new URL('./fixtures/jarl-6.1.0/jarl-l
 export const OLD_JARL_SHA256 = '6c735ff50f3ed41123fa4ecc02be76b9bbc96c8bd8223f7bea7ea0b068f713f0';
 export const FORMAT_TWO_JARL_FILE = fileURLToPath(new URL('./fixtures/jarl-6.2.0/jarl-lib.mjs', import.meta.url));
 export const FORMAT_TWO_JARL_SHA256 = '90ef7a44927b24e40ba8cbfed26de290ff15bef4daacd78a3733a82ce598fd35';
-const COMMANDS = { init: 'cmdInit', new: 'cmdNew', import: 'cmdImport', list: 'cmdList', status: 'cmdStatus', next: 'cmdNext', queue: 'cmdQueue', report: 'cmdReport', set: 'cmdSet', evidence: 'cmdEvidence', merged: 'cmdMerged', decisions: 'cmdDecisions', round: 'cmdRound' };
+const COMMANDS = { init: 'cmdInit', new: 'cmdNew', import: 'cmdImport', list: 'cmdList', status: 'cmdStatus', next: 'cmdNext', queue: 'cmdQueue', report: 'cmdReport', set: 'cmdSet', evidence: 'cmdEvidence', merged: 'cmdMerged', decisions: 'cmdDecisions', round: 'cmdRound', review: 'cmdReview' };
 
 const pinned = (file, sha) => createHash('sha256').update(readFileSync(file)).digest('hex') === sha;
 export function oldJarlIsPinned() { return pinned(OLD_JARL_FILE, OLD_JARL_SHA256); }
@@ -22,7 +22,7 @@ export function formatTwoJarlIsPinned() { return pinned(FORMAT_TWO_JARL_FILE, FO
 
 // `args` are the arguments after the root, for the commands that take more than flags: init (goal, flags), new (title,
 // flags), import (findings file, flags), set (ids, status, why, flags),
-// evidence (ids, text, flags), merged (ids, flags) and round (id, text). Without them the one argument is `flags`.
+// evidence (ids, text, flags), merged (ids, flags), round (id, text) and review (ids, verdict, findings, flags). Without them the one argument is `flags`.
 export function oldJarl(root, command, flags = {}, args = null) {
   if (!oldJarlIsPinned()) throw new Error('the pinned Jarl 6.1.0 library was changed: it is a fixture, read-only');
   return run(OLD_JARL_FILE, '6.1.0', root, command, flags, args);
