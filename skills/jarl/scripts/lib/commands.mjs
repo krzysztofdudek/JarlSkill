@@ -729,11 +729,22 @@ export function eachIssue(root, rawIds, run) {
   const missing = keys.filter((k) => !all.some((i) => idKey(i.id) === k));
   need(missing.length === 0, `no such issue: ${missing.join(', ')}${askedAs(rawIds, missing)} — nothing was written${listAll()}`, () => ({ replace: itemNaming(rawIds, missing[0]), value: hole('<ids-the-loop-holds>') }));
   const ids = keys.map((k) => issueNamed(all, k).id);
-  for (const id of ids) {
-    resetCaches();
-    try { run(id, true); } catch (e) { if (!(e instanceof Refusal)) throw e; refuse(/nothing was written/.test(e.reason) ? e.reason : nothingWritten(e.reason), e.ready); }
-  }
+  inCall(() => {
+    for (const id of ids) {
+      resetCaches();
+      try { run(id, true); } catch (e) { if (!(e instanceof Refusal)) throw e; refuse(/nothing was written/.test(e.reason) ? e.reason : nothingWritten(e.reason), e.ready); }
+    }
+  });
   return ids.map((id) => { resetCaches(); return run(id, false); });
+}
+// What the issues of the call checked so far would hold once written, as { files, resources } by issue id, while a call over
+// several issues checks them all before writing any; null outside such a check. A later issue of the call is checked against
+// the lease of an earlier one as it will stand, so a call that would make two leases collide is refused whole.
+let declaredInCall = null;
+function inCall(check) {
+  const outer = declaredInCall;
+  declaredInCall = outer ?? new Map();
+  try { check(); } finally { declaredInCall = outer; }
 }
 
 // The refusal for a move into a needs-reason status given without one; the built-in two say what the status is for.
@@ -906,7 +917,7 @@ function editList(root, rawIds, key, value, mode, flags) {
       else if (key === 'source') cmdSource(root, issue.id, text, true, flags.by);
       else if (key === 'after') cmdAfter(root, issue.id, text, { dry: true, by: flags.by });
       else if (key === 'repo') cmdRepo(root, issue.id, text, { dry: true, by: flags.by });
-      else resourceNames(text);
+      else needFreeOfOtherLeases(root, issue, [], resourceNames(text).filter((n) => !issue.resources.some((r) => r.toLowerCase() === n.toLowerCase())), { resources: resourceNames(text) });
       return { id: issue.id };
     }
     if (key === 'files') return cmdFiles(root, issue.id, text, false, flags.by);
@@ -1115,9 +1126,10 @@ function needLeaseHolds(root, profile, issues, status, why, flags, handover, not
 function otherLeases(root, profile, taken) {
   const files = new Map();
   const resources = new Map();
-  for (const i of loadIssues(root).filter((x) => !taken.has(x.id) && profile.is(x.status, 'holds-claim'))) {
-    for (const k of fileKeysOf(root, i)) if (!files.has(k.key)) files.set(k.key, i);
-    for (const r of i.resources) if (!resources.has(r.toLowerCase())) resources.set(r.toLowerCase(), i);
+  for (const held of loadIssues(root).filter((x) => !taken.has(x.id) && profile.is(x.status, 'holds-claim'))) {
+    const i = declaredInCall?.has(held.id) ? { ...held, ...declaredInCall.get(held.id) } : held;
+    for (const k of fileKeysOf(root, i)) if (!files.has(k.key)) files.set(k.key, held);
+    for (const r of i.resources) if (!resources.has(r.toLowerCase())) resources.set(r.toLowerCase(), held);
   }
   return { files, resources };
 }
@@ -1133,13 +1145,17 @@ function heldByOthers(root, others, issue, branch, worker, fileKeys, resourceNam
 // A file or a resource declared on an issue a lease holds is taken into that lease, so it is refused when another lease holds
 // it, as a lease taken on it would be: a lease that guards what an issue declares is guarded wherever it is declared. What
 // the issue's own lease joins is allowed; an issue no lease holds is checked when it takes one; a loop its composer schedules
-// leaves the decision to the composer.
-function needFreeOfOtherLeases(root, issue, files, resources) {
+// leaves the decision to the composer. `files` and `resources` are what the call adds; `next` is what the issue holds once
+// the call is written, which a call over several issues keeps for the issues checked after this one.
+function needFreeOfOtherLeases(root, issue, files, resources, next) {
   const profile = loadProfile(root);
   if (profile.scheduler !== null && profile.scheduler !== undefined) return;
   if (!profile.is(issue.status, 'holds-claim') || !(issue.fields.worker || issue.fields.branch)) return;
   const held = heldByOthers(root, otherLeases(root, profile, new Set([issue.id])), issue, fieldText(issue.fields.branch), fieldText(issue.fields.worker), fileKeysOf(root, { ...issue, files }), resources);
-  if (!held.length) return;
+  if (!held.length) {
+    declaredInCall?.set(issue.id, { files: next.files ?? issue.files, resources: next.resources ?? issue.resources });
+    return;
+  }
   const { what, by } = held[0];
   const join = by.fields.branch ? `, or put ${issue.id} in ${by.id}'s lease: ${jarlLine('set', issue.id, issue.status, '<why-the-worker-changed>', '--branch', fieldText(by.fields.branch), ...(by.fields.worker ? ['--worker', fieldText(by.fields.worker)] : []), '--handover')}` : '';
   need(false, `${issue.id} ${what}, which ${by.id} holds in its lease (${holderText(by)}) — two leases on one file or resource collide; leave it out, or wait until ${by.id} leaves its lease${join}`, () => ({ arg: 2, value: resources.length ? '<resource-name>' : '<paths>' }));
@@ -1388,7 +1404,7 @@ function setResources(root, rawIds, value, flags) {
   const names = resourceNames(value);
   const by = editorOf(flags.by);
   const issues = issuesFor(root, rawIds);
-  for (const issue of issues) needFreeOfOtherLeases(root, issue, [], names.filter((n) => !issue.resources.some((r) => r.toLowerCase() === n.toLowerCase())));
+  inCall(() => { for (const issue of issues) needFreeOfOtherLeases(root, issue, [], names.filter((n) => !issue.resources.some((r) => r.toLowerCase() === n.toLowerCase())), { resources: names }); });
   logChanges(root, issues.map((issue) => fieldLine(issue.id, 'Resources', names.join(', '), heldField(issue, 'Resources'), by)));
   for (const issue of issues) writeAtomic(issue.file, setField(readText(issue.file), 'Resources', names.join(', ')));
   return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, field: 'Resources', value: names.join(', ') })));
@@ -1908,7 +1924,7 @@ export function cmdFiles(root, rawId, list, dry = false, by = undefined) {
   need(issue, `no such issue: ${rawId}${listAll()}`, () => ({ replace: rawId, value: '<id>' }));
   const editor = editorOf(by);
   const files = pathList(list);
-  needFreeOfOtherLeases(root, issue, files.filter((f) => !issue.files.includes(f)), []);
+  needFreeOfOtherLeases(root, issue, files.filter((f) => !issue.files.includes(f)), [], { files });
   if (!dry) {
     logChanges(root, [fieldLine(issue.id, 'Files', files.join(', '), heldField(issue, 'Files'), editor)]);
     writeAtomic(issue.file, setField(readText(issue.file), 'Files', files.join(', ')));

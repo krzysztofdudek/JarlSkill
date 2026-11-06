@@ -113,6 +113,56 @@ test('a call over several issues that one lease refuses writes nothing for any o
   assert.equal(JSON.parse(jarl(root, 'show', '3', '--json')).fields.files, 'h.txt');
 });
 
+test('a resource one lease holds is refused for a later issue of a call, and no earlier issue of the call is written, whatever the order', () => {
+  const root = twoLeasesOnTwoFiles();
+  jarl(root, 'new', 'three', '--files', 'h.txt', '--tier', 'standard', '--kind', 'gap', '--prio', '2');
+  const before = logText(root);
+  for (const ids of ['3,2', '2,3']) {
+    for (const form of [['--add'], []]) {
+      assert.match(refuses(root, 'field', ids, 'resources', 'db-server', ...form), /2 uses the resource db-server, which 1 holds in its lease \(worker wA, branch jarl\/1-one/);
+      assert.equal(logText(root), before, `nothing was logged by field ${ids} resources${form.length ? ' --add' : ''}`);
+      assert.equal(JSON.parse(jarl(root, 'show', '3', '--json')).fields.resources, undefined, 'the issue before the refused one is not written');
+      assert.equal(JSON.parse(jarl(root, 'show', '2', '--json')).fields.resources, undefined);
+    }
+  }
+});
+
+test('a file one lease holds is refused for a later issue of a call, and no earlier issue of the call is written, whatever the order', () => {
+  const root = twoLeasesOnTwoFiles();
+  jarl(root, 'new', 'three', '--files', 'h.txt', '--tier', 'standard', '--kind', 'gap', '--prio', '2');
+  const before = logText(root);
+  for (const ids of ['3,2', '2,3']) {
+    for (const form of [['--add'], []]) {
+      const list = form.length ? 'f.txt' : 'f.txt, g.txt, h.txt';
+      assert.match(refuses(root, 'field', ids, 'files', list, ...form), /declares f\.txt, which 1 holds in its lease \(worker wA, branch jarl\/1-one/);
+      assert.equal(logText(root), before, `nothing was logged by field ${ids} files${form.length ? ' --add' : ''}`);
+      assert.equal(JSON.parse(jarl(root, 'show', '3', '--json')).fields.files, 'h.txt', 'the issue before the refused one is not written');
+      assert.equal(JSON.parse(jarl(root, 'show', '2', '--json')).fields.files, 'g.txt');
+    }
+  }
+});
+
+test('issues of one call in two leases cannot both declare a file or a resource nobody holds yet: the call is refused whole, naming the issue it would make the holder', () => {
+  const root = twoLeasesOnTwoFiles();
+  jarl(root, 'new', 'three', '--files', 'h.txt', '--tier', 'standard', '--kind', 'gap', '--prio', '2');
+  jarl(root, 'set', '3', 'in-progress', 'D', '--branch', 'jarl/3-three', '--worker', 'wD');
+  const before = logText(root);
+  for (const ids of ['2,3', '3,2']) {
+    const first = ids.split(',')[0];
+    const second = ids.split(',')[1];
+    assert.match(refuses(root, 'field', ids, 'files', 'new.txt', '--add'), new RegExp(`${second} declares new\\.txt, which ${first} holds in its lease`));
+    assert.equal(logText(root), before, 'nothing was logged');
+    assert.doesNotMatch(JSON.parse(jarl(root, 'show', first, '--json')).fields.files, /new\.txt/);
+    assert.match(refuses(root, 'field', ids, 'resources', 'cache', '--add'), new RegExp(`${second} uses the resource cache, which ${first} holds in its lease`));
+    assert.match(refuses(root, 'field', ids, 'resources', 'cache'), new RegExp(`${second} uses the resource cache, which ${first} holds in its lease`));
+    assert.equal(logText(root), before, 'nothing was logged');
+    assert.equal(JSON.parse(jarl(root, 'show', first, '--json')).fields.resources, undefined);
+  }
+  // Issues in one lease share what they declare.
+  jarl(root, 'set', '3', 'in-progress', 'joins', '--branch', 'jarl/2-two', '--worker', 'wC', '--handover');
+  jarl(root, 'field', '2,3', 'files', 'new.txt', '--add');
+});
+
 test('declaring a file or a resource an issue may take is not refused: its own lease\'s, one nobody holds, an issue no lease holds', () => {
   const root = twoLeasesOnTwoFiles();
   jarl(root, 'field', '2', 'files', 'g.txt, k.txt');
