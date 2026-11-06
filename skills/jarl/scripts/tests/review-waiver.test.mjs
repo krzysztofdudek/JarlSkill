@@ -5,23 +5,33 @@
 // waiver. A round, a reopen or a new commit after it spends it, as it spends an approve.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { gitRepo, jarl, refuses, run } from './helpers.mjs';
+import { BUILTIN_STATUSES } from '../jarl-lib.mjs';
 import { fileAsBefore, formatTwoJarl, oldJarl } from './old-jarl.mjs';
 
 const json = (root, ...args) => JSON.parse(jarl(root, ...args, '--json'));
 const decisions = (root) => readFileSync(join(root, '.jarl', 'decisions.md'), 'utf8');
 
-// A loop in a git repository with one code issue on a branch one commit ahead of the base, its proof recorded.
-function codeLoop() {
+// A loop in a git repository with one code issue on a branch one commit ahead of the base, its proof recorded. `reviewer`
+// is the profile's done-gate reviewer rule (none: the default), and `model` the model the lease names (none: no model).
+function codeLoop({ reviewer, model } = {}) {
   const { dir: root, g } = gitRepo({ prefix: 'jarl-waiver-', branch: 'main' });
-  jarl(root, 'init', 'goal');
+  const flags = [];
+  if (reviewer) {
+    const dir = mkdtempSync(join(tmpdir(), 'jarl-waiver-profile-'));
+    writeFileSync(join(dir, 'profile.json'), JSON.stringify({ 'jarl-profile': 1, statuses: BUILTIN_STATUSES, initial: 'open', 'done-gate': { reviewer } }));
+    flags.push('--profile', join(dir, 'profile.json'));
+  }
+  jarl(root, 'init', 'goal', ...flags);
+  if (reviewer || model) for (const line of ['Model (light): m-light', 'Model (strong): m-strong']) jarl(root, 'goal', '--set', line);
   jarl(root, 'new', 'move the helper', '--acceptance', 'the output is the same', '--files', 'a.txt');
   g('checkout', '-q', '-b', 'jarl/1-move');
   writeFileSync(join(root, 'a.txt'), 'moved\n'); g('add', 'a.txt'); g('commit', '-qm', 'move');
   g('checkout', '-q', 'main');
-  jarl(root, 'set', '1', 'in-progress', '--worker', 'w1', '--branch', 'jarl/1-move', '--by', 'jarl');
+  jarl(root, 'set', '1', 'in-progress', '--worker', 'w1', '--branch', 'jarl/1-move', ...(model ? ['--model', model] : []), '--by', 'jarl');
   jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'pass 4, fail 0', '--by', 'w1');
   const commit = () => { g('checkout', '-q', 'jarl/1-move'); appendFileSync(join(root, 'a.txt'), 'more\n'); g('commit', '-qam', 'more'); g('checkout', '-q', 'main'); };
   return { root, g, commit };
@@ -153,4 +163,55 @@ test('show says a superseded waiver waives nothing, in the window and in the who
   assert.doesNotMatch(jarl(root, 'show', '1'), /waives nothing/);
   jarl(root, 'decide', 'review-1-after-all', 'Issue 1 is reviewed after all.', '--by', 'owner', '--quote', 'Have it reviewed.', '--supersedes', 'no-review-for-1');
   for (const full of [[], ['--full']]) assert.match(jarl(root, 'show', '1', ...full), /^.*Ruling no-review-for-1 \(by owner\) waives the review: .* \(superseded by review-1-after-all: it waives nothing\)$/m, full.join(' '));
+});
+
+// An approve the reviewer rule makes done refuse, by rule: one that names no model, and one whose model the rule refuses
+// (the worker's own under "other-model", a lower rank under "model-rank"), with the start of the refusal done gives.
+const REFUSED = [
+  { reviewer: 'other-model', approve: [], said: /^1's live approve by rev-x names no model — / },
+  { reviewer: 'other-model', model: 'm-strong', approve: ['--model', 'm-strong'], said: /^1's live approve is by rev-x on m-strong, the model of its worker — / },
+  { reviewer: 'model-rank', approve: [], said: /^1's live approve by rev-x names no model — / },
+  { reviewer: 'model-rank', model: 'm-strong', approve: ['--model', 'm-light'], said: /^1's live approve is by rev-x on m-light, which ranks below the worker's model \(m-strong\) — / },
+];
+const approveAs = (root, flags) => jarl(root, 'review', '1', 'approve', '--by', 'rev-x', ...flags, 'read the diff and the rows, nothing found');
+const mergeTip = (root, g) => jarl(root, 'merged', '1', '--sha', g('rev-parse', 'jarl/1-move').trim(), '--ci', 'none', '--keep', '--by', 'jarl');
+
+for (const c of REFUSED) {
+  const which = c.approve.length ? `an approve on ${c.approve[1]} (the lease on ${c.model})` : 'an approve that names no model';
+  test(`"${c.reviewer}": the owner's waiver clears the done gate past ${which} that the rule refuses, and status counts the issue as waived`, () => {
+    const { root, g } = codeLoop(c);
+    approveAs(root, c.approve);
+    mergeTip(root, g);
+    assert.match(refuses(root, 'set', '1', 'done', 'x', '--by', 'jarl'), c.said);
+    waive(root);
+    assert.match(jarl(root, 'show', '1'), /Ruling no-review-for-1 \(by owner\) waives the review/);
+    assert.match(jarl(root, 'set', '1', 'done', 'waived by the owner and merged', '--by', 'jarl'), /1 → done/);
+    const st = json(root, 'status');
+    assert.equal(st.reviews.waived, 1);
+    assert.equal(st.reviews.fresh, 0);
+    assert.deepEqual(st.closedGate, []);
+    assert.equal(formatTwoJarl(root, 'status', {}).ok, false, 'a reader of a lower format refuses the loop instead of counting the issue as unreviewed');
+  });
+
+  test(`"${c.reviewer}": a new commit after the waiver spends it, and done holds ${which} to the rule again`, () => {
+    const { root, g, commit } = codeLoop(c);
+    approveAs(root, c.approve);
+    waive(root);
+    commit();
+    mergeTip(root, g);
+    assert.match(refuses(root, 'set', '1', 'done', 'x', '--by', 'jarl'), c.said);
+  });
+}
+
+test('"agent", the default: an approve clears done whatever its model, and with a waiver beside it status counts the review as fresh', () => {
+  for (const model of [undefined, 'm-strong']) {
+    const { root, g } = codeLoop({ model });
+    approveAs(root, model ? ['--model', model] : []);
+    waive(root);
+    mergeTip(root, g);
+    assert.match(jarl(root, 'set', '1', 'done', 'approved and merged', '--by', 'jarl'), /1 → done/, `lease on ${model}`);
+    const st = json(root, 'status');
+    assert.equal(st.reviews.fresh, 1, `lease on ${model}`);
+    assert.equal(st.reviews.waived ?? 0, 0, `lease on ${model}`);
+  }
 });

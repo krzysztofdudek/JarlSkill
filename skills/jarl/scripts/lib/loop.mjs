@@ -5,7 +5,7 @@ import { resolve, dirname, basename } from 'node:path';
 import { CI_STATES, fieldText, hole, jarlLine, need } from './base.mjs';
 import { jarlDir } from './where.mjs';
 import { idKey, idRe, idsCited, keyedIds } from './ids.mjs';
-import { FORMAT_LINES, profileAt } from './profile.mjs';
+import { FORMAT_LINES, profileAt, reviewerRule } from './profile.mjs';
 import { asksAt, decisionsAt, goalLines, readGoal } from './journal.mjs';
 import { eventsById, isParentLine, loopEvents } from './log.mjs';
 import { alignRows, evidenceRows, evidenceTable, headerReadText, issuesAt, mergedOf, sharedNumberText, sharedNumbers } from './issues.mjs';
@@ -381,7 +381,8 @@ function selfWorkers(events, issue, branches) {
 // - the window (gateWindow) holds the anchor and the cut; only --ran/--saw rows logged after the anchor count for done
 //   (a free-text note never does), so nothing written before a start, a reopen or the filing is proof of the work;
 // - an approve by anyone who has ever held the issue's lease (self — see selfWorkers) never counts;
-// - the live approve is the strongest one (fresh over coordinator over self) among those since whatever last
+// - the live approve is the strongest one (fresh over the owner's waiver over coordinator over self; the waiver over
+//   every approve where the profile's reviewer rule judges an approve's model) among those since whatever last
 //   reset the issue — the cut of the window (a round, a reopen, a start), or a later "changes" verdict still
 //   waiting on its own approve. A later, weaker approve never spends an earlier, still-live one: only those
 //   resets do — a coordinator's approve recorded after a live fresh one does not undo it;
@@ -540,11 +541,15 @@ export function gateOf(loop, id) {
   // approve. Among those, and past cut, the strongest kind wins, tie-broken by the more recent.
   let sinceChanges = reviews;
   for (let i = reviews.length - 1; i >= 0; i -= 1) { if (reviews[i].verdict === 'changes') { sinceChanges = reviews.slice(i + 1); break; } }
+  // Under a reviewer rule that judges the model of an approve, the owner's live waiver is the one that clears the issue,
+  // whatever approve it holds: done refuses an approve whose model the rule refuses, and a waiver is the owner's ruling
+  // that no review is needed, which no model rule judges. Under the default rule a fresh approve still stands first.
+  const weight = reviewerRule(profile) === 'agent' ? KIND_WEIGHT : { ...KIND_WEIGHT, waived: -1 };
   let live = null;
   for (const r of sinceChanges) {
     if (r.verdict !== 'approve' || !r.inWindow) continue;
-    const rw = KIND_WEIGHT[r.kind] ?? Infinity;
-    const lw = live ? (KIND_WEIGHT[live.kind] ?? Infinity) : Infinity;
+    const rw = weight[r.kind] ?? Infinity;
+    const lw = live ? (weight[live.kind] ?? Infinity) : Infinity;
     if (!live || rw < lw || (rw === lw && r.n > live.n)) live = r;
   }
   return {
