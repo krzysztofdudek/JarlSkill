@@ -13,7 +13,9 @@ const P = L.DEFAULT_PROFILE;
 
 test('a filing, a round, an evidence row and the retractions are typed', () => {
   assert.deepEqual(L.parseEvent('012', 'filed 012 · a title', P), { type: 'filed' });
-  assert.deepEqual(L.parseEvent('012', '012 round 2 · red', P), { type: 'round' });
+  assert.deepEqual(L.parseEvent('012', '012 round 2 · red', P), { type: 'round', number: 2 });
+  assert.deepEqual(L.parseEvent('012', '012 round 3 (takeover 3 of 3) · red', P), { type: 'round', number: 3, standing: { takeover: true, count: 3, limit: 3 } });
+  assert.deepEqual(L.parseEvent('012', '012 round 4 · takeover 1 of 1 · red', P), { type: 'round', number: 4 });
   assert.deepEqual(L.parseEvent('012', '012 evidence row · node --test', P), { type: 'row' });
   assert.deepEqual(L.parseEvent('012', '012 evidence · a free note', P), { type: 'other' });
   assert.deepEqual(L.parseEvent('012', '012 evidence retract · row 3 · by rev · wrong', P), { type: 'retract-row', row: 3, by: 'rev' });

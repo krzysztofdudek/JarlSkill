@@ -81,12 +81,12 @@ test('brief <id> --role reviewer carries the rules of the reviewer, of the round
   assert.deepEqual(slugs(o), ['loop-rule', 'reviewers', 'jarl:reviewer-every-round', 'jarl:reviewer-light-tier', 'jarl:reviewer-tier-above', 'jarl:reviewer-identical-output', 'jarl:reviewer-judges-the-issue']);
   for (const absent of ['ui-workers', 'odin-only', 'coordinators', 'jarl:worker-only-the-issue']) assert.ok(!slugs(o).includes(absent), absent);
   assert.equal(o.rounds.length, 1);
-  assert.match(o.rounds[0].text, /^round 1 · count 1 of 3 · findings 2 · the count is off by one$/);
+  assert.match(o.rounds[0].text, /^round 1 \(count 1 of 3\) · findings 2 · the count is off by one$/);
   assert.deepEqual(o.findings.map((f) => [f.by, f.kind, f.text]), [['rev1', 'fresh', finding]], 'the finding is whole');
   assert.deepEqual(o.proof, [{ n: 1, ran: 'npm test', saw: 'tests 4, pass 3, fail 1' }, { n: 2, ran: 'npm test', saw: 'tests 4, pass 4, fail 0' }]);
   const text = jarl(root, 'brief', '3', '--role', 'reviewer');
   assert.match(text, /^The reviewer's brief for issue 3/);
-  assert.match(text, /\n## Rounds so far \(1\)\n- \d{4}-\d{2}-\d{2} \d{2}:\d{2} · round 1 · count 1 of 3 · findings 2 · the count is off by one\n/);
+  assert.match(text, /\n## Rounds so far \(1\)\n- \d{4}-\d{2}-\d{2} \d{2}:\d{2} · round 1 \(count 1 of 3\) · findings 2 · the count is off by one\n/);
   assert.match(text, /\n## Findings of the reviews that sent it back \(1\)\n- \d{4}-\d{2}-\d{2} · by rev1 \(fresh\) — Important: the count is off by one on the last page\.\n {2}Minor: the name/);
   assert.ok(text.includes('end of the finding.'));
   assert.match(text, /\n## Proof rows \(2\)\n- \[1\] ran: npm test · saw: tests 4, pass 3, fail 1\n- \[2\] ran: npm test · saw: tests 4, pass 4, fail 0\n/);
@@ -233,7 +233,7 @@ test('a worker on an issue a round took over is given the rules of the takeover 
   assert.deepEqual(o.roles, ['takeover', 'worker']);
   assert.deepEqual(o.moments, ['round', 'start']);
   assert.ok(slugs(o).includes('takeovers'));
-  assert.match(o.rounds[0].text, /^round 1 · takeover 1 of 1 · the screen is blank$/);
+  assert.match(o.rounds[0].text, /^round 1 \(takeover 1 of 1\) · the screen is blank$/);
 });
 
 test('brief --slice <coordinator> is the coordinator\'s: its issues in play, its rules and none of another slice or role, its reference and its commands', () => {

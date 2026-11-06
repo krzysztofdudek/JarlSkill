@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import * as R from '../record.mjs';
-import { OLD_JARL_FILE, fileAsBefore, oldJarlIsPinned, oldJarl } from './old-jarl.mjs';
+import { OLD_JARL_FILE, fileAsBefore, formatTwoJarl, formatTwoJarlIsPinned, oldJarlIsPinned, oldJarl } from './old-jarl.mjs';
 import { spawnJarl, loop as makeLoop, SPAWN_TIMEOUT } from './helpers.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
@@ -506,19 +506,19 @@ test('each round carries its standing in its line, text that opens like a standi
   assert.ok(oldJarlIsPinned());
   const { root, id } = leased('Takeover (docs): 2', 'docs');
   R.addRound(root, id, 'takeover 2 of 2 · typed by hand');
-  assert.match(log(root), /· 001 round 1 · count 1 of 2 · takeover 2 of 2 · typed by hand$/m);
+  assert.match(log(root), /· 001 round 1 \(count 1 of 2\) · takeover 2 of 2 · typed by hand$/m);
   const second = cli(root, 'round', id, 'red two', '--findings', '3');
   assert.match(second.stdout, /round 2 — takeover:/);
-  assert.match(log(root), /· 001 round 2 · takeover 2 of 2 · findings 3 · red two$/m);
+  assert.match(log(root), /· 001 round 2 \(takeover 2 of 2\) · findings 3 · red two$/m);
   assert.match(second.stdout, /Findings per round: 3\./);
   R.addRound(root, id, 'findings 7 · typed by hand');
-  assert.match(log(root), /· 001 round 3 · count 1 of 2 · findings - · findings 7 · typed by hand$/m);
+  assert.match(log(root), /· 001 round 3 \(count 1 of 2\) · findings - · findings 7 · typed by hand$/m);
   const rounds = L.loopEvents(join(root, '.jarl'), L.loadProfile(root)).filter((e) => e.type === 'round');
   assert.deepEqual(rounds.map((e) => e.standing), [{ takeover: false, count: 1, limit: 2 }, { takeover: true, count: 2, limit: 2 }, { takeover: false, count: 1, limit: 2 }]);
   assert.equal(OLD.roundsOf(root, id), 3);
   for (const command of ['list', 'status', 'next', 'queue']) assert.equal(oldJarl(root, command, {}).ok, true, command);
   OLD.cmdRound(root, id, 'red four');
-  assert.deepEqual([R.addRound(root, id, 'red five')].map((r) => [r.round, r.takeover, r.since]), [[5, true, 3]], 'a round the frozen reader wrote counts as one round with no standing');
+  assert.deepEqual([R.addRound(root, id, 'red five')].map((r) => [r.round, r.takeover, r.since]), [[5, false, 1]], 'a round the frozen reader wrote from the third on is the takeover it printed');
 });
 
 // An issue whose rounds the pinned frozen reader wrote, `count` of them, in a loop whose goal carries the given lines.
@@ -528,7 +528,7 @@ function roundsByFrozenReader(goalLines, count, text = (k) => `red ${k}`) {
   return { root, id };
 }
 
-test('rounds written with no standing count a takeover at every third, so the first round after a takeover starts a new count', () => {
+test('rounds written with no standing count as the takeover their writer printed, at every round from the third, so the first round after one starts a new count', () => {
   assert.ok(oldJarlIsPinned());
   const three = roundsByFrozenReader(null, 3);
   assert.deepEqual([4, 5, 6].map((k) => R.addRound(three.root, three.id, `red ${k}`)).map((r) => [r.round, r.takeover, r.since]), [[4, false, 1], [5, false, 2], [6, true, 3]]);
@@ -538,11 +538,51 @@ test('rounds written with no standing count a takeover at every third, so the fi
   const two = roundsByFrozenReader(null, 2);
   assert.equal(R.addRound(two.root, two.id, 'red 3').takeover, true, 'two rounds with no standing, then the third reaches three');
   const lowered = roundsByFrozenReader('Takeover (docs): 2', 4);
-  assert.deepEqual([5, 6].map((k) => R.addRound(lowered.root, lowered.id, `red ${k}`)).map((r) => [r.takeover, r.since, r.limit]), [[true, 2, 2], [false, 1, 2]], 'the rounds with no standing count at three; the goal\'s limit applies from the first round with one');
+  assert.deepEqual([5, 6].map((k) => R.addRound(lowered.root, lowered.id, `red ${k}`)).map((r) => [r.takeover, r.since, r.limit]), [[false, 1, 2], [true, 2, 2]], 'the rounds with no standing took over at the third and the fourth, as their writer printed; the goal\'s limit applies from the first round with a standing');
   const typed = roundsByFrozenReader(null, 1, () => 'takeover · typed by hand');
   assert.deepEqual([R.addRound(typed.root, typed.id, 'red 2')].map((r) => [r.takeover, r.since]), [[false, 2]], 'text that opens like a mark in a round with no standing is no takeover');
   const marked = readFileSync(join(two.root, '.jarl', 'log.md'), 'utf8');
-  assert.match(marked, /· 001 round 3 · takeover 3 of 3 · red 3$/m);
+  assert.match(marked, /· 001 round 3 \(takeover 3 of 3\) · red 3$/m);
+});
+
+// Each pinned frozen reader, as the round command of that reader runs it: the round it wrote and whether it printed a takeover.
+const FROZEN_READERS = [['6.1.0', oldJarl], ['6.2.0', formatTwoJarl]];
+const frozenRound = (reader, root, id, text) => {
+  const r = reader(root, 'round', {}, [id, text]);
+  assert.ok(r.ok, r.error);
+  return r.value;
+};
+
+test('with a limit other than three, the count after a round a frozen reader wrote follows the takeover that reader printed', () => {
+  assert.ok(oldJarlIsPinned() && formatTwoJarlIsPinned());
+  for (const [version, reader] of FROZEN_READERS) {
+    const { root, id } = leased('Takeover (docs): 2', 'docs');
+    assert.deepEqual([R.addRound(root, id, 'red 1'), R.addRound(root, id, 'red 2')].map((r) => r.takeover), [false, true], version);
+    const printed = frozenRound(reader, root, id, 'red 3');
+    assert.deepEqual([printed.round, printed.takeover], [3, true], `${version} prints a takeover at round 3 whatever the goal says`);
+    assert.deepEqual([R.addRound(root, id, 'red 4'), R.addRound(root, id, 'red 5')].map((r) => [r.round, r.takeover, r.since]), [[4, false, 1], [5, true, 2]], `${version}: the count starts again after the takeover it printed`);
+    const five = leased('Takeover (docs): 5', 'docs');
+    assert.equal(frozenRound(reader, five.root, five.id, 'red 1').takeover, false, version);
+    assert.equal(frozenRound(reader, five.root, five.id, 'red 2').takeover, false, version);
+    assert.deepEqual([3, 4].map((k) => R.addRound(five.root, five.id, `red ${k}`)).map((r) => [r.takeover, r.since]), [[false, 3], [false, 4]], `${version}: rounds it printed no takeover on keep counting`);
+    assert.equal(frozenRound(reader, five.root, five.id, 'red 5').takeover, true, version);
+    assert.deepEqual([R.addRound(five.root, five.id, 'red 6')].map((r) => [r.takeover, r.since]), [[false, 1]], version);
+  }
+});
+
+test('a round a frozen reader wrote whose text opens like a standing is a round with no standing, and its words never count', () => {
+  assert.ok(oldJarlIsPinned() && formatTwoJarlIsPinned());
+  for (const [version, reader] of FROZEN_READERS) {
+    const { root, id } = leased(null, 'docs');
+    frozenRound(reader, root, id, 'takeover 1 of 1 · typed by hand');
+    frozenRound(reader, root, id, 'count 1 of 3 · findings 9 · typed by hand');
+    const rounds = L.loopEvents(join(root, '.jarl'), L.loadProfile(root)).filter((e) => e.type === 'round');
+    assert.deepEqual(rounds.map((e) => e.standing ?? null), [null, null], version);
+    const third = R.addRound(root, id, 'red 3');
+    assert.deepEqual([third.takeover, third.since], [true, 3], `${version}: neither line reset the count`);
+    assert.match(log(root), /· 001 round 3 \(takeover 3 of 3\) · red 3$/m, version);
+    assert.equal(frozenRound(reader, root, id, 'red 4').round, 4, `${version} counts a round with a standing as a round`);
+  }
 });
 
 test('a replaced takeover value comes from the line in force', () => {
