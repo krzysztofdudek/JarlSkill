@@ -2,7 +2,7 @@
 
 import { existsSync } from 'node:fs';
 import { resolve, dirname, basename, relative, isAbsolute } from 'node:path';
-import { KEPT_KINDS, KINDS, PRIORITIES, fieldText, hole, jarlLine, need, refuse, slugify, splitList } from './base.mjs';
+import { KEPT_KINDS, KINDS, PRIORITIES, Refusal, fieldText, hole, isFix, jarlLine, need, refuse, slugify, splitList } from './base.mjs';
 import { git } from './git.mjs';
 import { canonical } from './where.mjs';
 import { readText } from './files.mjs';
@@ -12,7 +12,7 @@ import { PROPOSED, bodyText, findIssue, loadIssues, sharedMark } from './issues.
 import { repoList, reposWhereLines } from './repositories.mjs';
 import { closedGateLine, disagreementText, gateLine, needOneSlice } from './loop.mjs';
 import { checkLines, checkWaitingText, closedNoCheckText, mergeCheckLines } from './metrics.mjs';
-import { cmdNew, cmdSource, needLiveLoop } from './commands.mjs';
+import { cmdNew, cmdSource, givenFields, needLiveLoop, nextIssueNumber, parentToFile, putUnder } from './commands.mjs';
 import { leasedByText, schedulerNote, subsText } from './evidence.mjs';
 
 // ---- research findings into issues ----------------------------------------------------------------
@@ -27,9 +27,12 @@ const KIND_OF = { defect: 'bug', inconsistency: 'bug', risk: 'gap', opportunity:
 const PRIO_OF = { blocker: '1', critical: '1', high: '1', medium: '2', major: '2', important: '2', low: '3', minor: '3' };
 
 // The keys of a finding the mapping below reads. Research writes further keys beside them (verifier, v, language, and
-// others), and those pass. A key one or two edits away from one of these, of three or more characters, is refused:
-// a misspelled claim or severity would otherwise file the issue with that field empty and nothing said.
+// others), and those pass. Three misses of a mapped key are refused: the key in another case, a mapped key of five
+// letters or more missed by one letter (one added, left out or wrong), and a mapped key with two neighbouring letters
+// swapped. A misspelled claim or severity would otherwise file the issue with that field empty and nothing said; a shorter
+// key one letter off a mapped key (file, line, ids, fixed) is as likely a key of its own as a slip, so it passes.
 const FINDING_KEYS = ['id', 'title', 'claim', 'kind', 'priority', 'severity', 'where', 'surfaces', 'truth', 'evidence', 'impact', 'adopter_impact', 'proposal', 'suggested_fix', 'fix', 'effort'];
+const MISSED_BY_ONE_FROM = 5;
 // The number of single-character edits (insert, delete, replace) that turn one text into the other.
 function editDistance(a, b) {
   let row = Array.from({ length: b.length + 1 }, (_, j) => j);
@@ -40,23 +43,43 @@ function editDistance(a, b) {
   }
   return row[b.length];
 }
-function refuseMisspelledKeys(f, label) {
+// Whether `b` is `a` with two neighbouring, different letters swapped.
+function swapped(a, b) {
+  if (a.length !== b.length) return false;
+  let i = 0;
+  while (i < a.length && a[i] === b[i]) i += 1;
+  return i < a.length - 1 && a[i] === b[i + 1] && a[i + 1] === b[i] && a.slice(i + 2) === b.slice(i + 2);
+}
+// The mapped key a key is a miss of, or null where it is a mapped key or passes as a key of its own.
+function missedKey(key) {
+  if (FINDING_KEYS.includes(key)) return null;
+  const k = key.toLowerCase();
+  return FINDING_KEYS.find((m) => m === k) ?? FINDING_KEYS.find((m) => swapped(k, m)) ?? FINDING_KEYS.find((m) => m.length >= MISSED_BY_ONE_FROM && editDistance(k, m) === 1) ?? null;
+}
+// The keys a finding carries that the mapping does not read, in the order written.
+const extraKeysOf = (f) => Object.keys(f).filter((k) => !FINDING_KEYS.includes(k));
+// The extra keys of a finding of the angles shape, which is copied with the keys import sets itself.
+const EXTRA_KEYS = Symbol('extra keys');
+
+// What a refusal of a findings file ends with, by the command that reads it: import files, so a refusal says nothing was
+// filed and ends with its dry run; sources only reads.
+const READERS = {
+  'import': { form: ['jarl.mjs', 'import', '<findings.json>', '--dry-run'], then: ' — nothing was filed', stop: '; nothing was filed' },
+  sources: { form: ['jarl.mjs', 'sources', '<findings.json>'], then: '', stop: '' },
+};
+
+function refuseMisspelledKeys(f, label, reader) {
   if (!f || typeof f !== 'object') return f;
-  const near = (k) => {
-    if (k.length < 3 || FINDING_KEYS.includes(k)) return null;
-    const best = FINDING_KEYS.reduce((m, key) => (editDistance(k, key) < editDistance(k, m) ? key : m));
-    const d = editDistance(k, best);
-    return d >= 1 && d <= 2 ? best : null;
-  };
-  const bad = Object.keys(f).map((k) => [k, near(k)]).filter(([, best]) => best);
-  need(bad.length === 0, `finding ${label} has ${bad.map(([k, best]) => `"${k}" (did you mean "${best}"?)`).join(', ')}, which look like misspelled keys; the keys a finding takes are ${FINDING_KEYS.join(', ')} — nothing was filed`, () => (['jarl.mjs', 'import', '<findings.json>', '--dry-run']));
+  const bad = Object.keys(f).map((k) => [k, missedKey(k)]).filter(([, best]) => best);
+  need(bad.length === 0, `finding ${label} has ${bad.map(([k, best]) => `"${k}" (did you mean "${best}"?)`).join(', ')}, which look like misspelled keys; the keys a finding takes are ${FINDING_KEYS.join(', ')}${reader.then}`, () => reader.form);
   return f;
 }
 // A label for a finding in a refusal: its id, or its place in the list when it has none (the id check names that case).
 const labelOf = (f, n) => (f && f.id !== undefined ? `"${f.id}"` : `#${n + 1}`);
-const checkedList = (items) => items.map((f, n) => refuseMisspelledKeys(f, labelOf(f, n)));
 
-export function findingsOf(json) {
+export function findingsOf(json, command = 'import') {
+  const reader = READERS[command];
+  const checkedList = (items) => items.map((f, n) => refuseMisspelledKeys(f, labelOf(f, n), reader));
   let list;
   // In the angles shape an id is unique only inside its angle (two angles may each have an F1), so the key
   // is <angle>/<id> there, always — never only when two collide, which would change a key once a later
@@ -64,19 +87,19 @@ export function findingsOf(json) {
   if (Array.isArray(json) && json.some((x) => x && Array.isArray(x.surviving))) {
     list = json.flatMap((x) => (x.surviving || []).map((f, n) => {
       const angle = x && x.angle ? slugify(String(x.angle)) : null;
-      refuseMisspelledKeys(f, angle && f && f.id !== undefined ? `"${angle}/${f.id}"` : labelOf(f, n));
-      return f && f.id !== undefined && angle ? { ...f, id: `${angle}/${f.id}`, localId: String(f.id), angle } : f;
+      refuseMisspelledKeys(f, angle && f && f.id !== undefined ? `"${angle}/${f.id}"` : labelOf(f, n), reader);
+      return f && f.id !== undefined && angle ? { ...f, id: `${angle}/${f.id}`, localId: String(f.id), angle, [EXTRA_KEYS]: extraKeysOf(f) } : f;
     }));
   } else if (Array.isArray(json)) list = checkedList(json);
   else if (json && Array.isArray(json.results)) list = checkedList(json.results.flatMap((r) => r.kept || []));
   else if (json && Array.isArray(json.findings)) list = checkedList(json.findings);
-  else refuse('not a findings file this tool reads: expected an array of findings, an array of angles with `surviving`, or { results: [{ kept }] } — see references/jarl.md, "From research to issues"', ['jarl.mjs', 'import', '<findings.json>', '--dry-run']);
+  else refuse('not a findings file this tool reads: expected an array of findings, an array of angles with `surviving`, or { results: [{ kept }] } — see references/jarl.md, "From research to issues"', reader.form);
   const seen = new Set();
   const out = list.map((f, n) => {
-    need(f && typeof f === 'object' && (typeof f.id === 'string' || typeof f.id === 'number') && String(f.id).trim(), `finding #${n + 1} has no id — every finding needs one to be filed once and only once; nothing was filed`, () => (['jarl.mjs', 'import', '<findings.json>', '--dry-run']));
+    need(f && typeof f === 'object' && (typeof f.id === 'string' || typeof f.id === 'number') && String(f.id).trim(), `finding #${n + 1} has no id — every finding needs one to be filed once and only once${reader.stop}`, () => reader.form);
     const id = String(f.id).trim();
-    need(!/[\s,#]/.test(id), `finding id "${id}" holds a space, a comma or a # — it cannot be a Source key; nothing was filed`, () => (['jarl.mjs', 'import', '<findings.json>', '--dry-run']));
-    need(!seen.has(id), `finding id ${id} appears twice in the file; nothing was filed`, () => (['jarl.mjs', 'import', '<findings.json>', '--dry-run']));
+    need(!/[\s,#]/.test(id), `finding id "${id}" holds a space, a comma or a # — it cannot be a Source key${reader.stop}`, () => reader.form);
+    need(!seen.has(id), `finding id ${id} appears twice in the file${reader.stop}`, () => reader.form);
     seen.add(id);
     const claim = typeof f.claim === 'string' ? f.claim : '';
     const title = String(f.title || claim.split(/(?<=[.!?])\s/)[0] || id).replace(/\s+/g, ' ').trim();
@@ -88,6 +111,7 @@ export function findingsOf(json) {
       id,
       localId: f.localId || id,
       angle: f.angle || null,
+      extras: f[EXTRA_KEYS] ?? extraKeysOf(f),
       title: title.length > 140 ? `${title.slice(0, 139)}…` : title,
       // A finding is work: it is never filed as a promise or a wait, which new files with who holds them.
       kind: KINDS.includes(kindRaw) && !KEPT_KINDS.includes(kindRaw) ? kindRaw : (KIND_OF[kindRaw] || 'bug'),
@@ -114,14 +138,14 @@ export function reportDirOf(file) {
   return rel && !rel.startsWith('..') && !isAbsolute(rel) ? rel : basename(dir);
 }
 
-function readFindings(file, flags = {}) {
+function readFindings(file, flags = {}, command = 'import') {
   need(file, 'a findings file is required', () => ({ arg: 0, value: '<findings.json>' }));
   need(existsSync(file), `no such file: ${file}`, () => ({ arg: 0, value: '<findings.json>' }));
   let json;
-  try { json = JSON.parse(readText(file)); } catch (e) { refuse(`${file} is not JSON: ${e.message}`, ['jarl.mjs', 'import', '<findings.json>', '--dry-run']); }
+  try { json = JSON.parse(readText(file)); } catch (e) { refuse(`${file} is not JSON: ${e.message}`, READERS[command].form); }
   const dir = flags.source !== undefined ? String(flags.source).replace(/\/+$/, '') : reportDirOf(file);
   need(dir && !/[\s,#]/.test(dir), `--source is the report directory alone, with no space, comma or # in it (got "${dir}")`, () => ({ flag: '--source', value: '<report-dir>' }));
-  return { dir, findings: findingsOf(json) };
+  return { dir, findings: findingsOf(json, command) };
 }
 
 // An issue that records no Source often names its finding. That issue is found, never guessed at, and
@@ -195,6 +219,15 @@ function changedParts(issue, f) {
   });
 }
 
+// The ready part of the refusal of a finding the filing refused: the filing's own when it is a fix of a flag import takes
+// (or a command of another kind, a step to take first), else the form of the import, since the fix is in the findings file.
+const IMPORT_FIXES = new Set(['--kind', '--prio', '--tier', '--tags', '--repo', '--field', '--parent', '--root']);
+function formOf(ready) {
+  const fixes = [].concat(ready);
+  if (!fixes.every(isFix)) return ready;
+  return fixes.every((x) => IMPORT_FIXES.has(x.flag ?? x.drop)) ? ready : READERS.import.form;
+}
+
 export function cmdImport(root, file, flags) {
   needLiveLoop(root, ` — run: ${jarlLine('init', '<goal>')}`);
   const { dir, findings: read } = readFindings(file, flags);
@@ -203,6 +236,8 @@ export function cmdImport(root, file, flags) {
   need(!profile.keptKind(flags.kind), `--kind ${flags.kind}: a finding is work, never a promise or a wait — file one of those with ${jarlLine('new', '<title>', '--kind', flags.kind)}`, () => (['jarl.mjs', 'new', '<title>', '--kind', flags.kind]));
   if (flags.prio !== undefined) need(PRIORITIES.includes(String(flags.prio)), `--prio must be 1, 2 or 3 (got "${flags.prio}")`, () => ({ flag: '--prio', value: hole('<prio>') }));
   if (flags.tier !== undefined) need(profile.tiers.includes(String(flags.tier)), `--tier must be one of: ${profile.tiers.join(', ')} (got "${flags.tier}")`, () => ({ flag: '--tier', value: hole('<tier>') }));
+  // A --field pair is the call's, given once for every finding: a wrong one is refused as the call's own, naming the pair.
+  givenFields(profile, flags.field);
   // A finding's kind is mapped onto the built-in kinds; under a profile with kinds of its own, one it does not
   // name is filed under the profile's default kind.
   const findings = profile.declared ? read.map((f) => (profile.kinds.includes(f.kind) && !profile.keptKind(f.kind) ? f : { ...f, kind: profile.kindDefault })) : read;
@@ -242,23 +277,43 @@ export function cmdImport(root, file, flags) {
     }
     toFile.push({ f, key });
   }
+  // The keys of the findings about to be filed that the mapping does not read: they pass, and the run says which.
+  const extras = new Map();
+  for (const { f } of toFile) for (const k of f.extras) extras.set(k, [...(extras.get(k) || []), f.id]);
+  out.extras = [...extras].map(([key, findings]) => ({ key, findings }));
+  // A findings file is one act: the parent is held, and every finding to be filed passes the checks of the filing, before the
+  // first write (a dry run included), so a refusal leaves the loop as it was.
+  const parent = flags.parent !== undefined ? parentToFile(root, flags.parent, { flag: '--parent', value: hole('<id>') }) : null;
+  out.parent = parent ? parent.id : null;
+  const filing = (f, key) => ({
+    kind: flags.kind || f.kind, prio: flags.prio || f.priority, tier: flags.tier, tags: flags.tags, repo: flags.repo,
+    field: flags.field, 'found-by': foundBy, where: f.where, what: f.what, why: f.why, acceptance: f.acceptance || undefined, source: key,
+  });
+  // The findings are filed in the order of the file, each taking the next number, so each is checked with the number it
+  // would take: a number the loop's record format cannot hold refuses the file before the first finding is filed.
+  const first = toFile.length ? nextIssueNumber(root) : 0;
+  toFile.forEach(({ f, key }, k) => {
+    try { cmdNew(root, f.title, filing(f, key), { dry: true, number: first + k }); } catch (e) {
+      if (!(e instanceof Refusal)) throw e;
+      refuse(`finding "${f.id}" cannot be filed: ${e.reason}${/nothing was (written|filed)/.test(e.reason) ? '' : ' — nothing was filed'}`, formOf(e.ready));
+    }
+  });
+  // One issue may name several findings (a package of minor ones): its Source gets all of them, once.
+  const adopt = new Map();
+  for (const a of out.adopted) adopt.set(a.issue, [...(adopt.get(a.issue) || []), a.key]);
+  // Every adopted issue is resolved before the first write, a dry run included, so a number two files carry refuses the
+  // import whole, and the dry run refuses what the import would.
+  const adopting = [...adopt].map(([id, keys]) => [id, [...findIssue(root, id).sources, ...keys]]);
   if (out.dryRun) {
     out.filed = toFile.map(({ f, key }) => ({ id: null, finding: f.id, source: key, title: f.title, kind: flags.kind || f.kind, priority: String(flags.prio || f.priority) }));
     return out;
   }
-  // One issue may name several findings (a package of minor ones): its Source gets all of them, once.
-  const adopt = new Map();
-  for (const a of out.adopted) adopt.set(a.issue, [...(adopt.get(a.issue) || []), a.key]);
-  // Every adopted issue is resolved before the first write, so a number two files carry refuses the import whole.
-  const adopting = [...adopt].map(([id, keys]) => [id, [...findIssue(root, id).sources, ...keys]]);
   for (const [id, sources] of adopting) cmdSource(root, id, sources.join(','));
   for (const { f, key } of toFile) {
-    const r = cmdNew(root, f.title, {
-      kind: flags.kind || f.kind, prio: flags.prio || f.priority, tier: flags.tier, tags: flags.tags, repo: flags.repo,
-      field: flags.field, 'found-by': foundBy, where: f.where, what: f.what, why: f.why, acceptance: f.acceptance || undefined, source: key,
-    });
+    const r = cmdNew(root, f.title, filing(f, key));
     out.filed.push({ id: r.id, finding: f.id, source: key, title: f.title, kind: flags.kind || f.kind, priority: String(flags.prio || f.priority) });
   }
+  if (parent && out.filed.length) putUnder(root, out.filed.map((x) => x.id), parent, { by: flags.by });
   appendLog(root, `imported ${dir} · ${out.filed.length} filed, ${out.already.length} already filed${out.adopted.length ? `, ${out.adopted.length} adopted` : ''}${out.mentioned.length ? `, ${out.mentioned.length} named by an issue without Source` : ''}${out.ambiguous.length ? `, ${out.ambiguous.length} ambiguous` : ''}`);
   return out;
 }
@@ -272,10 +327,10 @@ export function cmdSources(root, files, flags = {}) {
   const add = (dir, id) => { if (!reports.has(dir)) reports.set(dir, []); if (!reports.get(dir).includes(id)) reports.get(dir).push(id); };
   need(files.length <= 1 || flags.source === undefined, '--source names one report directory: give one findings file with it', () => ({ rename: '--source', to: '<no-flag-here>' }));
   const mentionKey = new Map();
-  for (const file of files) { const { dir, findings } = readFindings(file, flags); findings.forEach((f) => { add(dir, f.id); mentionKey.set(`${dir}#${f.id}`, f); }); }
+  for (const file of files) { const { dir, findings } = readFindings(file, flags, 'sources'); findings.forEach((f) => { add(dir, f.id); mentionKey.set(`${dir}#${f.id}`, f); }); }
   for (const key of filedAs.keys()) { const at = key.indexOf('#'); add(key.slice(0, at), key.slice(at + 1)); }
   const fromFile = new Set();
-  for (const file of files) fromFile.add(readFindings(file, flags).dir);
+  for (const file of files) fromFile.add(readFindings(file, flags, 'sources').dir);
   return [...reports.entries()].map(([dir, ids]) => {
     const rows = ids.map((id) => {
       const on = filedAs.get(`${dir}#${id}`) || [];
@@ -362,9 +417,10 @@ function comparedLine(o) {
 }
 
 export function renderImport(o) {
-  const head = `${o.source}: ${o.findings} finding(s)${o.considered !== o.findings ? `, ${o.considered} chosen` : ''} · ${o.dryRun ? 'would file' : 'filed'} ${o.filed.length} · already filed ${o.already.length}${o.changed.length ? ` · changed since filed ${o.changed.length}` : ''}${o.adopted.length ? ` · adopted ${o.adopted.length}` : ''}${o.mentioned.length ? ` · named by an issue without Source ${o.mentioned.length} (--adopt links them)` : ''}${o.ambiguous.length ? ` · ambiguous ${o.ambiguous.length}` : ''}`;
+  const head = `${o.source}: ${o.findings} finding(s)${o.considered !== o.findings ? `, ${o.considered} chosen` : ''} · ${o.dryRun ? 'would file' : 'filed'} ${o.filed.length} · already filed ${o.already.length}${o.changed.length ? ` · changed since filed ${o.changed.length}` : ''}${o.adopted.length ? ` · adopted ${o.adopted.length}` : ''}${o.mentioned.length ? ` · named by an issue without Source ${o.mentioned.length} (--adopt links them)` : ''}${o.ambiguous.length ? ` · ambiguous ${o.ambiguous.length}` : ''}${o.parent ? ` · under ${o.parent}` : ''}`;
   const rows = [
     ...(o.already.length ? [comparedLine(o)] : []),
+    ...(o.extras.length ? [`extra keys let through, not read: ${o.extras.map((x) => `${x.key} (${x.findings.length} finding${x.findings.length === 1 ? '' : 's'})`).join(', ')}`] : []),
     ...o.filed.map((f) => `${o.dryRun ? 'would file' : `filed ${f.id}`} · ${f.finding} · ${f.kind} P${f.priority} · ${f.title}`),
     ...o.changed.flatMap((c) => c.parts.flatMap((p) => [
       `changed since filed · ${c.finding} · issue ${c.issue} (${c.status}) · ${p.part}`,

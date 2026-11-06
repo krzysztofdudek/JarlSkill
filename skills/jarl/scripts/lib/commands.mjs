@@ -14,7 +14,7 @@ import { appendLog, appendLogLines, decisionsPath, goalPath, logPath } from './j
 import { JARL_GITIGNORE, JARL_GITIGNORE_COMMITTED, ensureLoopMerge, outOfGit } from './loop-git.mjs';
 import { HANDOVER_SEGMENT, journalById, mergeCheckText } from './log.mjs';
 import { FIELD_RE, PROPOSED, RENDERED_FIELDS, acceptanceHeading, acceptanceLineCount, acceptanceLines, acceptanceText, bodyText, changelogText, evidenceNotes, evidenceParts, evidenceRows, evidenceTable, fieldValue, findIssue, issueNamed, loadIssues, mergedOf, namedPairs, needNoFieldTags, noteText, parentCycle, parseIssue, placeEvidence, removeFields, removeFirstField, renderIssue, setField, setSection, unattributedRefusal, waitCycle } from './issues.mjs';
-import { branchTip, commitRepoNames, declaredBaseOf, defaultBase, fileKeysOf, isGitRepo, issueRepoPaths, issueRepoSlots, issueRepos, mainCheckoutOf, needFormat, needRightCheckouts, repoFromInput, repoLabel, repoList, reposNamed, tipLines, whyNotDeletable, worktreeState, worktreesOf } from './repositories.mjs';
+import { branchTip, commitRepoNames, declaredBaseOf, defaultBase, fileKeysOf, isGitRepo, issueRepoPaths, issueRepoSlots, issueRepos, mainCheckoutOf, needFormat, needFormatHeld, needRightCheckouts, repoFromInput, repoLabel, repoList, reposNamed, tipLines, whyNotDeletable, worktreeState, worktreesOf } from './repositories.mjs';
 import { FIELD_NAMES, activeSlices, carriesCode, unmergedCode, gateOf, isSliceTag, needOneSlice, readLoop, sinceText, sliceOf, unclearedText, unorderedNamings, unorderedText } from './loop.mjs';
 import { declaredChecks, lastMerge } from './metrics.mjs';
 import { modelLines, modelRefusalOf, modelReviewForm, modelValue, spellingNote } from './models.mjs';
@@ -171,6 +171,13 @@ function highestAcrossRefs(root) {
   for (const name of treeNames(out)) { const m = ISSUE_FILE_RE.exec(name); if (m) top = Math.max(top, Number(m[1])); }
   return top;
 }
+// The number the next filing in this loop takes: one above the highest held by its issue files, its copies in every other
+// worktree and every branch of its repository. The issue files stay the only source: there is no counter file.
+export function nextIssueNumber(root) {
+  const dir = issuesDir(root);
+  const here = existsSync(dir) ? readdirSync(dir).map((f) => ISSUE_FILE_RE.exec(f)).filter(Boolean).reduce((m, x) => Math.max(m, Number(x[1])), 0) : 0;
+  return Math.max(here, highestAcrossWorktrees(root), highestAcrossRefs(root)) + 1;
+}
 // The names of the entries of every tree `git cat-file --batch` printed: each object is "<hash> <type> <size>", its bytes
 // and a line break; a tree's bytes are entries of "<mode> <name>", a zero byte and the entry's hash in binary. An object
 // git did not find is one line ("<name> missing") and holds no names.
@@ -215,9 +222,24 @@ function defaultedNote(field, value, flag) {
   return `note: no --${flag} given, so ${field} ${value} was recorded (the default); name it with --${flag}`;
 }
 
-// `from`, a filing's own and never a flag or a library option (newIssue passes three arguments): { dry, repoOf }. dry runs
-// every check of the filing and writes nothing; repoOf (issue files) gives the new issue the Repo those issues hold once
-// every raise of the filing has run, so a finding a review files names its repositories as the reviewed issue does.
+// The --field pairs of a filing: each one <name>=<value>, its name a field the profile declares, and its value one of the
+// field's values where the field has values. A pair that is not is refused with that pair and a placeholder in its place,
+// the reason naming the pair, so a caller that files many issues from one call checks the pairs once, as the call's own.
+export function givenFields(profile, list) {
+  const given = namedPairs(list, 'field', profile.fields.map((f) => f.name), 'field');
+  for (const f of profile.fields) {
+    const item = given.items.get(f.name);
+    const v = item === undefined ? '' : fieldText(given.get(f.name));
+    need(!f.enum || v === '' || f.enum.includes(v), `${f.name} must be one of: ${(f.enum || []).join(', ')} (got "${v}")`, () => ({ replace: item, value: `${String(item).slice(0, String(item).indexOf('='))}=${hole('<value>')}` }));
+  }
+  return given;
+}
+
+// `from`, a filing's own and never a flag or a library option (newIssue passes three arguments): { dry, number, repoOf }.
+// dry runs every check of the filing and writes nothing; number, with dry, is the number the filing would take (the next
+// free one when absent), for a caller that checks several filings before the first of them is written; repoOf (issue
+// files) gives the new issue the Repo those issues hold once every raise of the filing has run, so a finding a review
+// files names its repositories as the reviewed issue does.
 export function cmdNew(root, title, rawFlags, from = {}) {
   need(title, 'new requires "<title>"', { arg: 0, value: '<title>' });
   needNoOwnersWords('the new issue', title, rawFlags);
@@ -239,13 +261,9 @@ export function cmdNew(root, title, rawFlags, from = {}) {
   const profile = loadProfile(root);
   // The profile's fields and sections: a flag's value, else the template's, else the field's default. A required
   // field with none of them is refused; a value outside a field's enum is refused.
-  const given = namedPairs(flags.field, 'field', profile.fields.map((f) => f.name), 'field');
+  const given = givenFields(profile, flags.field);
   const fields = profile.fields.map((f) => {
     const raw = given.has(f.name) ? given.get(f.name) : fromTemplate.allFields?.[f.key] || f.default || '';
-    // A value given in --field Name=value outside the field's values: the pair with a placeholder for its value, the reason
-    // naming the values.
-    const item = given.items.get(f.name);
-    need(item === undefined || !f.enum || fieldText(raw) === '' || f.enum.includes(fieldText(raw)), `${f.name} must be one of: ${(f.enum || []).join(', ')} (got "${fieldText(raw)}")`, () => ({ replace: item, value: `${String(item).slice(0, String(item).indexOf('='))}=${hole('<value>')}` }));
     const v = fieldValue(profile, f, raw);
     need(!f.required || v, `${f.name} is required by this loop's profile — give it${f.enum ? ` (one of: ${f.enum.join(', ')})` : ''}`, () => ({ flag: '--field', value: `${f.name}=${hole('<value>')}`, add: true }));
     return [f.name, v];
@@ -285,7 +303,17 @@ export function cmdNew(root, title, rawFlags, from = {}) {
     changelog: flags.changelog !== undefined ? changelogText(flags.changelog) : bodyText(fromTemplate.changelog),
   });
   // A dry filing ends here, before the first write: the text the file would hold passes the record's check too.
-  if (from.dry) { needNoNewOwnersWords('', render('0', null, ''), `${slugify(title)}.md`); return { dry: true }; }
+  // The raises the filing would make are checked as well, so a loop that refuses them is refused here, with nothing written:
+  // the number it would take among them (from.number, where filings before it in the same act take the ones below).
+  if (from.dry) {
+    const id = newNumber(from.number ?? nextIssueNumber(root), numberWidth(profile, rawFlags.width));
+    needNoNewOwnersWords('', render(id, null, picked.map((p) => p.value).join(', ')), `${id}-${slugify(title)}.md`);
+    if (needsRaisedFormat(id)) needFormatHeld(root, 'plain-number', `issue number ${id}`);
+    if (kept) needFormatHeld(root, 'promise-wait');
+    if (picked.some((p) => p.name)) needFormatHeld(root, 'repo-name');
+    if (ownerLined) needFormatHeld(root, 'owner-line');
+    return { dry: true };
+  }
   // A promise and a wait are kinds a reader of formats 1 and 2 does not know: the loop is raised first, or, where a composer
   // keeps its format, the filing is refused with nothing written.
   if (kept) needFormat(root, 'promise-wait');
@@ -308,10 +336,8 @@ export function cmdNew(root, title, rawFlags, from = {}) {
   mkdirSync(dir, { recursive: true });
   const taken = () => readdirSync(dir).map((f) => ISSUE_FILE_RE.exec(f)).filter(Boolean).map((m) => Number(m[1]));
   // The highest number over this loop, its copies in every other worktree and every local and remote-tracking branch of
-  // its repository (read-only), so a lagging copy cannot hand out a number already used elsewhere. The issue files stay
-  // the only source: there is no counter file.
-  const elsewhere = Math.max(highestAcrossWorktrees(root), highestAcrossRefs(root));
-  let n = Math.max(taken().reduce((m, x) => Math.max(m, x), 0), elsewhere) + 1;
+  // its repository (read-only), so a lagging copy cannot hand out a number already used elsewhere.
+  let n = nextIssueNumber(root);
   for (let tries = 0; ; tries += 1) {
     const id = newNumber(n, numberWidth(profile, rawFlags.width));
     // The first issue of 1000 or more is a file a reader that knows only format 1 would skip in silence: the format is raised first.
@@ -1294,13 +1320,26 @@ function setParent(root, rawIds, value, flags) {
   return out(parent.id);
 }
 // The issue a Parent value names: one number the loop holds, as the loop writes it.
-function parentNamed(all, value) {
+function parentNamed(all, value, where = { arg: 2, value: hole('<id>') }) {
   const raw = fieldText(value).replace(/^#/, '');
-  need(/^\d+$/.test(raw), `the ${PARENT_FIELD} of an issue is the number of one issue of the loop (got "${fieldText(value)}")`, () => ({ arg: 2, value: hole('<id>') }));
+  need(/^\d+$/.test(raw), `the ${PARENT_FIELD} of an issue is the number of one issue of the loop (got "${fieldText(value)}")`, () => where);
   const parent = issueNamed(all, raw);
-  need(parent, `no such issue: ${raw}${listAll()}`, () => ({ arg: 2, value: hole('<id>') }));
+  need(parent, `no such issue: ${raw}${listAll()}`, () => where);
   return parent;
 }
+// The parent a filing names, checked as a sub-issue's parent is, before anything is filed: the profile keeps the tool's
+// own Parent, the loop holds the issue, it is not finished, and the record may be raised to hold a parent.
+export function parentToFile(root, value, where) {
+  const profile = loadProfile(root);
+  need(profile.tree, `${where.flag} files the ${PARENT_FIELD} the tool keeps, and this loop's profile declares a field ${PARENT_FIELD} of its own — write that field with --field`, () => [{ drop: where.flag }, { flag: '--field', value: hole('<name=value>'), add: true }]);
+  const all = loadIssues(root);
+  const parent = parentNamed(all, value, where);
+  needUnder(all, profile, [], parent, '', () => where);
+  needFormatHeld(root, 'parent');
+  return parent;
+}
+// The issues just filed, put under the parent parentToFile named: one write, one log line each.
+export function putUnder(root, ids, parent, flags = {}) { return setParent(root, ids.join(','), parent.id, flags); }
 // Whether `issues` may be put under `parent`, read from `all`, the loop as it stands: each check of the tree that a Parent
 // written by field or by split passes, refused with `ready` where another parent is the fix.
 function needUnder(all, profile, issues, parent, nothing, ready) {

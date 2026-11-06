@@ -173,7 +173,7 @@ const FLAG_MEANINGS = {
   acceptance: ['an acceptance line of an issue', ['new']], source: ['the research a finding comes from', ['new', 'import', 'sources']], after: ['the issues an issue waits on', ['new']],
   changelog: ['a changelog entry of an issue', ['new']], template: ['the template an issue starts from', ['new']], field: ['a profile field and its value, Name=value, of the issues the command files', ['new', 'import', 'review']],
   section: ['a profile section and its text, Heading=text', ['new']], person: ['the outside person a wait is held by', ['new']], 'check-when': ['when to check a wait', ['new']],
-  only: ['the findings to file', ['import']], adopt: ['a Source written onto an issue that names the finding', ['import']], 'dry-run': ['what would be filed, nothing written', ['import']],
+  only: ['the findings to file', ['import']], parent: ['the issue every issue a command files is put under', ['import']], adopt: ['a Source written onto an issue that names the finding', ['import']], 'dry-run': ['what would be filed, nothing written', ['import']],
   ran: ['a command that ran', ['evidence', 'merged']], saw: ['what the command printed', ['evidence', 'merged']], file: ['the file of an attachment', ['evidence']], slot: ['the slot of an attachment', ['evidence']],
   add: ['add to a part of the description', ['field']], remove: ['take items off a part of the description', ['field']], clear: ['empty a part of the description', ['field']],
   line: ['an acceptance line of a parent and the issue it goes to', ['split']],

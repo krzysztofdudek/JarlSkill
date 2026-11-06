@@ -43,6 +43,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Importing a findings file again, the same way as before, reports each finding whose text differs from the task the import filed for it, with both texts, and leaves the task as it was; a finding with neither a claim nor a truth is not compared. Outside tickets can be followed this way: file them under one parent task and import again whenever the tickets change.
 - One verdict given on several tasks at once is now recorded as one shared review, and the report lists each shared review with how many tasks it covered and how many failed rounds came after it. The first one moves the loop to format 3.
 - A review can be recorded as given by a bot, such as one that reviews pull requests. Each loop says in its profile whose approvals close a task: by default a separate agent's or the owner's, never a bot's, and a loop may add a bot it names or ask for several approvals together. The status and the report count bot and relayed reviews apart from the others. The first bot review moves the loop to format 3.
+- Importing research findings can put every task it files under one parent task with `--parent <id>`, so a set of outside requirements is filed as a tree in one call instead of one command per task.
 - `scope` and the recording of a merge now point out each added line that starts a conflict marker and each added file over 64 MiB, the largest file Jarl accepts as an attachment, with its file. They only say so and never stop a merge.
 
 ### Changed
@@ -68,7 +69,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- A research findings file with a misspelled field name is now refused, and the finding and the field are named, instead of filing the issue with that part left empty. A dry run refuses it the same way.
+- A research findings file with a misspelled field name is now refused, and the finding and the field are named, instead of filing the issue with that part left empty. A dry run refuses it the same way. A field name counts as misspelled when it differs from a field Jarl reads only in capital letters, when it is one letter off a name of five letters or more, or when two neighbouring letters are swapped; any other extra field passes, and the import lists the extra fields it let through.
 - `models` on a loop that has no issue yet, such as a fresh copy of a committed loop, now reports an empty loop. Before, it said the loop was missing.
 - A ruling recorded as the owner's now needs the owner's own words, which are kept with the ruling and shown beside it. A ruling recorded without a name is now the coordinator's, no longer the owner's.
 - Every ruling written into an issue now says who made it. No other text in the record can look like the owner's own words, whatever spelling it uses.
@@ -96,6 +97,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A file written with a leading `./`, a doubled or trailing slash, a `.` in the middle or, on Windows, backslashes is now the same file as the plain path. `next` and the leases hold an issue back on it, `scope` finds it in the diff, and `field Files --add` and `--remove` no longer add or miss it twice.
 - A new profile that declares a section named like a header field of an issue (such as Tags, Where or Priority), or Notes, Reviews or Proof, is now refused when you open a loop with it or check it, with the list of names it cannot take. Such a section would hide the field or let a write replace the history the issue shows. A loop you already run with such a section keeps it.
 - Only the owner can answer an item waiting for his approval. An answer recorded in anyone else's name is refused.
+- Importing research findings now checks every finding before it writes anything. If one cannot be filed, the whole file is refused, the finding is named and the loop stays as it was. Before, the findings ahead of it were already filed, or an issue already adopted, and a loop that cannot take a repository name wrote a change and then said nothing was written.
+- A findings file, a profile or a goal saved by an editor that puts a byte order mark at the start, as Windows editors do, is now read like any other. Before, a findings file saved that way was refused as not JSON.
 - An answer to an item waiting for the owner's approval must start with a word that approves or rejects it, such as yes or reject. Any other answer is refused, so it is always clear what the owner decided.
 
 ## [6.2.0] - 2026-10-19
