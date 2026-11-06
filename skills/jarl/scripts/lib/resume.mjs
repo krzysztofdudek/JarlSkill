@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs';
 import { KEPT_KINDS, fieldText, hole, jarlLine, need } from './base.mjs';
 import { readText } from './files.mjs';
 import { DEFAULT_PROFILE, loadProfile } from './profile.mjs';
-import { mergedOf, sharedMark } from './issues.mjs';
+import { evidenceNotes, mergedOf, sharedMark } from './issues.mjs';
 import { repoNames } from './repositories.mjs';
 import { closedGateLine, disagreementText, gateLine, inFlightMark, needLoop, gateOf, readLoop, reviewSplit, sameSlice, sliceNamed, sliceOf } from './loop.mjs';
 import { checkWaitingText, metricsOf, renderMetrics } from './metrics.mjs';
@@ -15,7 +15,7 @@ import { handoffAge, handoffPath } from './questions.mjs';
 import { answeredLines } from './journal.mjs';
 import { loopRules, ruleLines, rulesFor } from './rules.mjs';
 import { jarlDir, today } from './where.mjs';
-import { IN_FLIGHT_MARKS, closedGateFlags, leaseWriter, leasedByText, modelText, nextRows, resourceAgeText, schedulerNote, statusOf, subsText, uncommittedLoopFiles } from './evidence.mjs';
+import { IN_FLIGHT_MARKS, closedGateFlags, leaseWriter, retractedNotesText, leasedByText, modelText, nextRows, resourceAgeText, schedulerNote, statusOf, subsText, uncommittedLoopFiles } from './evidence.mjs';
 import { cmdQueue, renderQueue } from './queue.mjs';
 import { countsLine } from './import.mjs';
 
@@ -30,6 +30,26 @@ function countFlag(flags, name, dflt) {
   const n = Number(flags[name]);
   need(Number.isInteger(n) && n >= 0, `--${name} takes a whole number, 0 or more (got "${flags[name]}")`, () => ({ flag: `--${name}`, value: hole('<whole-number>') }));
   return n;
+}
+
+// The lines of the log tail a worker does not read: the line of each retracted note, and the line that retracts a note,
+// which carries its reason (a reason often restates the note), with how many notes were retracted in the tail. The note's
+// own line is found by its first line, which the line repeats.
+function retractedNoteEvents(loop, events) {
+  const firsts = new Map();
+  for (const issue of loop.issues) {
+    if (issue.id === null) continue;
+    const { lines, notes } = evidenceNotes(issue.sections.evidence || '');
+    const struck = notes.filter((m) => m.retracted).map((m) => lines[m.start].replace(/^(- )?~~/, '').replace(/~~\s*$/, '').trim());
+    if (struck.length) firsts.set(issue.id, struck);
+  }
+  const gone = new Set();
+  let retractions = 0;
+  let own = 0;
+  for (const e of events) {
+    if (e.type === 'retract-note') { gone.add(e); retractions += 1; } else if (e.id !== null && (firsts.get(e.id) || []).some((t) => e.text.startsWith(`${e.id} evidence · ${t}`))) { gone.add(e); own += 1; }
+  }
+  return { gone, retracted: Math.max(retractions, own) };
 }
 
 // resume [--log n] [--ready n] [--gh] — read-only, no lock: the goal and where the loop stands (status), the
@@ -87,7 +107,8 @@ export function cmdResume(root, flags = {}) {
   // until its proof records that what was waited for came, and the jarl reviews and closes it).
   const keptRows = next.filter((r) => KEPT_KINDS.includes(r.group)).map((r) => ({ id: r.id, title: r.title, priority: r.priority, kind: r.group, ...(r.group === 'promise' ? { by: r.by } : { person: r.person, checkWhen: r.checkWhen, came: inFlightMark(loop, byId.get(r.id)) !== 'no-rows' }) }));
   const merged = issues.filter((i) => status.ciPending.includes(i.id) || status.ciRed.includes(i.id)).map((i) => ({ id: i.id, title: i.title, ...mergedOf(i) }));
-  const logLines = loop.events;
+  const tail = logN ? loop.events.slice(-logN) : null;
+  const { gone, retracted } = tail ? retractedNoteEvents(loop, tail) : { gone: new Set(), retracted: 0 };
   const kept = handoffAge(root, status.lastActivity);
   // The CI of the tips is asked of gh by the command line's --gh and by the library's ci, the key resumeData has kept
   // since its first contract; gh is taken there too, with the same meaning.
@@ -102,7 +123,8 @@ export function cmdResume(root, flags = {}) {
     ...(status.disagreements ? { disagreements: status.disagreements } : {}),
     ...(status.headerRead ? { headerRead: status.headerRead } : {}),
     ...(status.parents ? { parents: status.parents } : {}),
-    log: logN ? logLines.slice(-logN).map((e) => `${e.at}${e.writer ? ` by ${e.writer}` : ''} · ${e.text}`) : null,
+    log: tail ? tail.filter((e) => !gone.has(e)).map((e) => `${e.at}${e.writer ? ` by ${e.writer}` : ''} · ${e.text}`) : null,
+    ...(retracted ? { logRetractedNotes: retracted } : {}),
     legacyHandoff: kept ? { path: handoffPath(root), at: kept.at, ageMs: kept.ageMs } : null,
   };
 }
@@ -153,7 +175,7 @@ export function renderResume(o, profile = DEFAULT_PROFILE, note = null, asked = 
     ...sec(`Merged, waiting for its check (${(o.status.checkWaiting || []).length})`, (o.status.checkWaiting || []).map((w) => `- ${checkWaitingText(w)}`)),
     ...sec(`Tips${o.tips.ci ? '' : ' (CI not asked — --gh asks gh)'}`, tips),
     ...(files.length ? sec(`Loop files not committed (${files.length}) — commit .jarl/`, [...files.slice(0, 20).map((f) => `- ${f}`), ...(files.length > 20 ? [`- … ${files.length - 20} more`] : [])]) : []),
-    ...(o.log ? sec(`Last ${o.log.length} log line(s)`, o.log.map((l) => `- ${l}`), '- (empty log)') : []),
+    ...(o.log ? sec(`Last ${o.log.length} log line(s)`, [...o.log.map((l) => `- ${l}`), ...(o.logRetractedNotes ? [retractedNotesText(o.logRetractedNotes)] : [])], '- (empty log)') : []),
     ...(o.legacyHandoff ? [`(the loop holds a handoff file at .jarl/handoff.md${o.legacyHandoff.at ? `, written ${o.legacyHandoff.at}` : ''} — not the state; handoff read prints it)`] : []),
   ].join('\n').replace(/\n+$/, '');
 }

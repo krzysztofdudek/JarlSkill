@@ -130,6 +130,31 @@ function retractNote(root, rawIds, reason, flags, n) {
   return { id: issue.id, retractedNote: n, by };
 }
 
+// The lines of an Evidence section a worker does not read, by index into `body` (its lines), and how many notes were
+// retracted: each retracted note with the blank line that follows it, and the entry that says who retracted a note and
+// why, with its indented lines, since a reason often restates the note.
+export function retractedNoteLines(body) {
+  const { notes } = evidenceNotes(body.join('\n'));
+  const hidden = new Set();
+  const taken = notes.filter((m) => m.retracted);
+  for (const x of taken) for (let i = x.start; i <= x.end + (body[x.end + 1] === '' ? 1 : 0); i += 1) hidden.add(i);
+  for (let i = 0; i < body.length; i += 1) {
+    if (!/^- \*\*retracted:\*\* note \d+/.test(body[i])) continue;
+    hidden.add(i);
+    while (i + 1 < body.length && (/^ {2}/.test(body[i + 1]) || (body[i + 1] === '' && /^ {2}/.test(body[i + 2] || '')))) { i += 1; hidden.add(i); }
+  }
+  return { hidden, count: taken.length };
+}
+// The line that says how many notes were hidden, so an absence is never silent.
+export const retractedNotesText = (n) => `(${n} note${n === 1 ? '' : 's'} retracted, not shown; the reasons are in the log and in show --full)`;
+// The Evidence section of an issue as a worker reads it: the text with the retracted notes and their reasons left out, and
+// how many notes that was.
+export function workerEvidence(text) {
+  const body = String(text || '').split('\n');
+  const { hidden, count } = retractedNoteLines(body);
+  return { text: body.filter((_, i) => !hidden.has(i)).join('\n'), retracted: count };
+}
+
 // show <id>: the issue as the done gate sees it. The header, What, Why, Acceptance, Changelog and any section of the
 // profile in full; of Reviews and Evidence only the gate's window — every verdict and every --ran/--saw row since
 // the last start or reopen — plus every "changes" finding no later approve has answered, and one line for each
@@ -153,17 +178,8 @@ export function issueView(root, issue, { full = false, places = true } = {}) {
   // in the whole file and left out (null) of the window a worker reads, with the blank line that follows it.
   const numbered = (body, rows) => {
     const { notes } = evidenceNotes(body.join('\n'));
-    const hidden = new Set();
-    const taken = notes.filter((m) => m.retracted);
-    if (!full) {
-      for (const x of taken) for (let i = x.start; i <= x.end + (body[x.end + 1] === '' ? 1 : 0); i += 1) hidden.add(i);
-      // The entry that says who retracted a note and why goes with it: a reason often restates the note.
-      for (let i = 0; i < body.length; i += 1) {
-        if (!/^- \*\*retracted:\*\* note \d+/.test(body[i])) continue;
-        hidden.add(i);
-        while (i + 1 < body.length && (/^ {2}/.test(body[i + 1]) || (body[i + 1] === '' && /^ {2}/.test(body[i + 2] || '')))) { i += 1; hidden.add(i); }
-      }
-    }
+    const { hidden: gone, count } = retractedNoteLines(body);
+    const hidden = full ? new Set() : gone;
     const shown = body.map((l, i) => {
       if (hidden.has(i)) return null;
       const r = rows.find((x) => x.start === i);
@@ -175,7 +191,7 @@ export function issueView(root, issue, { full = false, places = true } = {}) {
       const why = waiver ? waiverVoid(loop, waiver[1], issue.id) : null;
       return `${l.replace(/^(- )?/, `$1[note-${m.n}] `)}${why ? ` (${why}: it waives nothing)` : ''}`;
     });
-    return !full && taken.length ? [...shown, `(${taken.length} note${taken.length === 1 ? '' : 's'} retracted, not shown; the reasons are in the log and in show --full)`] : shown;
+    return !full && count ? [...shown, retractedNotesText(count)] : shown;
   };
   const g = full ? null : gateState(root, issue.id);
   const loop = readLoop(jarlDir(root));

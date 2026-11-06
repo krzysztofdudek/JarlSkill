@@ -21,7 +21,7 @@ import {
   cmdChangelog, cmdHandoffRead, cmdHandoffWrite, cmdReport, cmdImport, cmdSources, cmdAnswerMany, cmdModels, renderModels,
   issuesNaming, questionFor, cmdGoal, cmdGoalSet, cmdRepoBase, whereOf, cmdVerify, renderVerify, renderCheckNotes,
   renderProfile, renderResume, renderStatus, renderImport, renderSources, renderList, recordTypeLog, recordRuleLog,
-  runDecisionsDriver, mergeFlags, describeNew, renderNewReply, issueView, attachmentStates, evidenceTable, renderBranches, renderDecide, renderDecisions,
+  runDecisionsDriver, mergeFlags, describeNew, renderNewReply, issueView, workerEvidence, attachmentStates, evidenceTable, renderBranches, renderDecide, renderDecisions,
   needLoop, cmdNextAs, renderNextAs, askerSection, renderBrief, cmdTick, withWriter, editorOf, needFormat, formatState, readProfileFile, FORMAT_LINES, cmdRenumber, cmdSplit,
 } from './jarl-lib.mjs';
 import { writeAreaDecision, writeRuleRatification } from './yg-edge.mjs';
@@ -1408,7 +1408,7 @@ function dispatchCall(root, commandName, rest, flags) {
       case 'import': out = cmdImport(root, rest[0], flags); text = renderImport(out); break;
       case 'sources': out = cmdSources(root, rest, flags); text = renderSources(out); break;
       case 'list': out = cmdList(root, flags); text = renderList(out, R.loadProfile(root)); break;
-      case 'show': { const i = R.findIssue(root, rest[0]); need(i, `no such issue: ${rest[0]} — the issues: ${jarlLine('list', '--all')}`, { arg: 0, value: '<id>' }); const attachments = attachmentStates(root, i); out = { ...i, evidenceRows: evidenceTable(i.sections.evidence).rows.map(({ n, ran, saw, retracted }) => ({ n, ran, saw, retracted })), where: whereOf(root, i), ...(attachments.length ? { attachments } : {}) }; text = issueView(root, i, { full: Boolean(flags.full) }); break; }
+      case 'show': { const i = R.findIssue(root, rest[0]); need(i, `no such issue: ${rest[0]} — the issues: ${jarlLine('list', '--all')}`, { arg: 0, value: '<id>' }); const attachments = attachmentStates(root, i); out = { ...i, evidenceRows: evidenceTable(i.sections.evidence).rows.map(({ n, ran, saw, retracted }) => ({ n, ran, saw, retracted })), where: whereOf(root, i), ...(attachments.length ? { attachments } : {}) }; if (!flags.full) { const read = workerEvidence(i.sections.evidence); if (read.retracted) out = { ...out, sections: { ...i.sections, evidence: read.text }, retractedNotes: read.retracted }; } text = issueView(root, i, { full: Boolean(flags.full) }); break; }
       case 'brief': out = R.briefData(root, rest[0], flags); text = renderBrief(out); break;
       case 'set':
         // A field is written by field, never by set: the refusal ends with the form of the call that writes it.

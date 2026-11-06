@@ -257,6 +257,38 @@ test('a note is numbered as show prints it, retract takes it back with who and w
   assert.match(refuses(root, 'retract', id, 'note-1', '--by', 'jarl', '-'), /needs words/);
 });
 
+test('show --json and resume leave a retracted note and the reason of its retraction out for a worker, say how many were retracted, and show --full keeps them', () => {
+  const root = loop();
+  const id = started(root);
+  jarl(root, 'evidence', id, 'the first note stays');
+  jarl(root, 'evidence', id, 'the second note names a subject the worker must not see');
+  jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'pass 5');
+  jarl(root, 'retract', id, 'note-2', '--by', 'jarl', 'the owner withdrew the subject');
+  const worker = jarl(root, 'show', id, '--json');
+  assert.doesNotMatch(worker, /second note|subject|withdrew|retracted:\*\*/, 'the data a worker reads leaves the retracted note and its reason out');
+  const read = JSON.parse(worker);
+  assert.match(read.sections.evidence, /the first note stays/, 'the other notes stay');
+  assert.equal(read.retractedNotes, 1, 'it says how many notes were retracted');
+  assert.equal(read.evidenceRows.length, 1, 'the rows are the same');
+  const full = jarl(root, 'show', id, '--full', '--json');
+  assert.match(full, /second note names a subject/, 'the full data keeps the note');
+  assert.match(full, /the owner withdrew the subject/, 'and the reason');
+  assert.equal(JSON.parse(full).retractedNotes, undefined);
+  const resume = jarl(root, 'resume');
+  assert.doesNotMatch(resume, /second note|subject|withdrew/, 'the log tail leaves out the line of the note and the line that retracts it');
+  assert.match(resume, /^- [^\n]* · 001 evidence · the first note stays$/m, 'the other lines of the tail stay');
+  assert.match(resume, /^\(1 note retracted, not shown; the reasons are in the log and in show --full\)$/m);
+  const data = JSON.parse(jarl(root, 'resume', '--json'));
+  assert.doesNotMatch(JSON.stringify(data.log), /second note|subject|withdrew/);
+  assert.equal(data.logRetractedNotes, 1);
+  assert.match(log(root), /001 evidence retract · note 2 · by jarl · the owner withdrew the subject$/m, 'the log itself keeps the reason');
+  // A loop where no note was retracted shows its tail whole and says nothing of notes.
+  const plain = loop();
+  started(plain);
+  assert.doesNotMatch(jarl(plain, 'resume'), /retracted, not shown/);
+  assert.equal(JSON.parse(jarl(plain, 'resume', '--json')).logRetractedNotes, undefined);
+});
+
 test('a retracted note is read by neither the pinned frozen reader nor the done gate', () => {
   const root = loop();
   const id = started(root);
