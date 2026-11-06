@@ -48,11 +48,12 @@ function findingsOf(loop, issue, events, notes) {
   const unmatched = entries.filter((e) => e.verdict === 'changes').map(fromFile);
   const found = gateOf(loop, issue.id).trail.filter((t) => t.verdict === 'changes').map((t) => {
     const e = events.find((x) => x.n === t.n);
-    // What the line holds after its verdict, its reviewer and the marks of a model and a relay.
+    // What the line holds after its verdict, its reviewer and the marks of a model, a relay and a batch.
     let text = e.text.slice(e.written.length + 1).replace(/^review changes · (?:by .+? \((?:fresh|coordinator|self)\) · )?/, '');
     if (e.model) text = text.replace(`model ${e.model} · `, '');
     if (e.relayed) text = text.replace(/^relayed · /, '');
-    text = text.replace(/^findings: (?=model |relayed)/i, '');
+    if (e.batch) text = text.replace(`batch ${e.batch} · `, '');
+    text = text.replace(/^findings: (?=model |relayed|batch )/i, '');
     const at = unmatched.findIndex((f) => f.by === t.by && [sameText(f.text), sameText(firstLine(unescaped(f.text), WHERE_WHOLE))].includes(sameText(text)));
     const whole = at === -1 ? null : unmatched.splice(at, 1)[0];
     return { by: t.by, kind: t.kind, day: t.at.slice(0, 10), text: whole ? whole.text : text };

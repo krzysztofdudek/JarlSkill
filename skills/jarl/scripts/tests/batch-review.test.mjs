@@ -62,6 +62,8 @@ test('one verdict on several issues writes one batch id on each of its lines, ra
   const second = verdictLines(root).slice(3).map(batchOf);
   assert.equal(second[0], second[1]);
   assert.notEqual(second[0], ids[0]);
+  // The brief gives the findings of a batched changes verdict as the reviewer wrote them, without the batch mark.
+  assert.match(jarl(root, 'brief', '004'), /^- \d{4}-\d{2}-\d{2} · by rev-b \(fresh\) — Important: the edge case is not handled$/m);
 });
 
 test('the gate reads a batched verdict line as it reads any verdict: its reviewer, kind, model and relay mark', () => {
