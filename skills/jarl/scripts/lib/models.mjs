@@ -2,13 +2,13 @@
 
 import { existsSync, readdirSync } from 'node:fs';
 import { join, resolve, dirname, basename } from 'node:path';
-import { IDENTICAL_OUTPUT_TAG, fieldText, hole, meantToAlterNothing, need } from './base.mjs';
+import { IDENTICAL_OUTPUT_TAG, fieldText, hole, jarlLine, meantToAlterNothing, need } from './base.mjs';
 import { canonical, jarlDir } from './where.mjs';
 import { cmpId } from './ids.mjs';
-import { loadProfile } from './profile.mjs';
+import { loadProfile, reviewerRule } from './profile.mjs';
 import { GOAL_FILE, LOG_FILE, goalLines, logPath, readGoal } from './journal.mjs';
 import { repoLabel, reposNamed } from './repositories.mjs';
-import { readLoop } from './loop.mjs';
+import { gateOf, readLoop } from './loop.mjs';
 import { filedAndClosed, followUpsOf, share } from './metrics.mjs';
 
 // ---- the model of every worker and reviewer ------------------------------------------------------------------------
@@ -117,6 +117,19 @@ function modelGateRefusal(issue, live, lines, events, rule) {
   return gap.same ? `${issue.id}'s live approve is by ${by} on ${live.model}, the model of its worker — this loop's ${RULE_WORDS[rule].replace(/^the /, '')}`
     : `${issue.id}'s live approve is by ${by} on ${live.model}, which ranks below the worker's model (${gap.below}) — this loop's ${RULE_WORDS[rule].replace(/^the /, '')}`;
 }
+
+// The one reading of whether the done gate refuses an issue's live approve for its model, for a loop already read: the
+// refusal's words, or null when the rule is "agent", the approve is accepted, or there is no live approve. The done gate,
+// the line after a verdict and the merge queue all ask it, so none of them keeps a copy of the rule. `lines` are the
+// goal's model lines (modelLines) and `gate` the issue's gate (gateOf), each read once by a caller that has them already.
+function modelRefusalOf(root, loop, issue, { gate = null, lines = null } = {}) {
+  const rule = reviewerRule(loop.profile);
+  if (rule === 'agent') return null;
+  return modelGateRefusal(issue, (gate ?? gateOf(loop, issue.id)).live, lines ?? modelLines(root), loop.eventsById.get(issue.id) || [], rule);
+}
+// The form of the review that carries the model: what a refusal for the model ends with, and what the step after a
+// verdict names when the gate will refuse that verdict's approve.
+const modelReviewForm = (id) => jarlLine('review', id, '<verdict>', '--by', '<a-fresh-reviewer>', '--model', '<model-id>', '<text>');
 
 // The note a call gets on the command line when its --model spells a model the record holds in another spelling: null
 // when the record holds this spelling, or holds no spelling of the model. The loop is read before the call writes its line.
@@ -407,4 +420,4 @@ const SEVERITIES = ['Critical', 'Important', 'Minor'];
 const builds = { modelsTable: 0, nextRows: 0 };
 
 // Used by the other modules of the library, and not part of what jarl-lib.mjs exports.
-export { SEVERITIES, builds, loggedFinding, modelGateRefusal, modelValue, reviewModelNotes, spellingNote };
+export { SEVERITIES, builds, loggedFinding, modelRefusalOf, modelReviewForm, modelValue, reviewModelNotes, spellingNote };

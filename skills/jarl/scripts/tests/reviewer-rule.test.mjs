@@ -112,3 +112,43 @@ test('a profile names the reviewer rule with one of its values; any other is ref
   const root = makeLoop({ prefix: 'jarl-reviewer-rule-', via: 'cli' });
   assert.match(refuses(root, 'profile', join(dir, 'p.json')), /"done-gate": "reviewer" is one of agent, other-model, model-rank/);
 });
+
+// The step after an approve the rule refuses for its model is the review form that carries the model, the one a refusal of
+// done ends with; after an approve the rule accepts it is the step that follows an approve anywhere.
+const nextLine = (said) => (/ · next: (.*)$/m.exec(said.stdout) || [])[1];
+const modelForm = (root, id) => refuses(root, 'set', id, 'done', 'x', '--by', 'jarl').trim().split('\n').pop();
+
+for (const [rule, own, label] of [['other-model', 'm-strong', 'the worker\'s own model'], ['model-rank', 'm-light', 'a model ranked below the worker\'s']]) {
+  test(`"${rule}": the line after an approve with no model, or with ${label}, names the review form that carries the model, not done`, () => {
+    for (const given of [[], ['--model', own]]) {
+      const root = modelLoop(rule);
+      const said = run(root, ['review', '1', 'approve', '--by', 'rev-x', ...given, 'read the diff and the rows, nothing found']);
+      assert.equal(said.status, 0, said.stderr);
+      const form = modelForm(root, '1');
+      assert.match(form, /^jarl\.mjs review "<ids>" "<verdict>" "<what-was-read-and-found>" --by "<a-fresh-reviewer>" --model "<model-id>"$/);
+      assert.match(nextLine(said), /^done refuses this approve for its model \(done-gate "reviewer": "[a-z-]+"\), so an approve that names a model the rule accepts is next — jarl\.mjs review 1 "<verdict>" --by "<a-fresh-reviewer>" --model "<model-id>" "<text>" — then jarl\.mjs set 1 done "<why>" once the worker's Proof rows are recorded/, given.join(' '));
+    }
+  });
+
+  test(`"${rule}": the line after an approve the rule accepts, and after any approve under the default rule, is the step that follows an approve`, () => {
+    const root = modelLoop(rule);
+    const accepted = run(root, ['review', '1', 'approve', '--by', 'rev-x', '--model', rule === 'other-model' ? 'm-light' : 'm-strong', 'read the diff and the rows, nothing found']);
+    assert.equal(nextLine(accepted), 'jarl.mjs set 1 done "<why>" once the worker\'s Proof rows are recorded; a worker never sets done');
+    const plain = modelLoop();
+    const bare = run(plain, ['review', '1', 'approve', '--by', 'rev-x', 'read the diff and the rows, nothing found']);
+    assert.equal(nextLine(bare), 'jarl.mjs set 1 done "<why>" once the worker\'s Proof rows are recorded; a worker never sets done');
+  });
+
+  test(`"${rule}": on an issue that carries code the fresh reviewer's approve asked for after a coordinator's carries the model, and a refused fresh approve is followed by the form before the merge`, () => {
+    const root = modelLoop(rule);
+    jarl(root, 'new', 'a change with code', '--acceptance', 'it works');
+    jarl(root, 'set', '3', 'in-progress', '--worker', 'w3', '--model', 'm-strong', '--branch', 'jarl/3-code', '--by', 'jarl');
+    jarl(root, 'evidence', '3', '--ran', 'npm test', '--saw', 'pass 4, fail 0', '--by', 'w3');
+    const coordinator = run(root, ['review', '3', 'approve', '--by', 'jarl', 'read the diff and the rows, nothing found']);
+    assert.match(nextLine(coordinator), /^a fresh reviewer's approve is next — jarl\.mjs review 3 "<verdict>" --by "<a-fresh-reviewer>" --model "<model-id>" "<text>" — then the merger lands it$/);
+    const fresh = run(root, ['review', '3', 'approve', '--by', 'rev-x', ...(rule === 'model-rank' ? ['--model', 'm-light'] : ['--model', 'm-strong']), 'read the diff and the rows, nothing found']);
+    assert.match(nextLine(fresh), /^done refuses this approve for its model .* — jarl\.mjs review 3 "<verdict>" --by "<a-fresh-reviewer>" --model "<model-id>" "<text>" — then the merger merges the branch and records it with one call — jarl\.mjs merged 3 /);
+    const good = run(root, ['review', '3', 'approve', '--by', 'rev-y', '--model', rule === 'other-model' ? 'm-light' : 'm-strong', 'read the diff and the rows, nothing found']);
+    assert.match(nextLine(good), /^the merger merges the branch and records it with one call — /);
+  });
+}
