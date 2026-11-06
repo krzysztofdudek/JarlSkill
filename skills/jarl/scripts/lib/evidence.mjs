@@ -14,7 +14,7 @@ import { outOfGit } from './loop-git.mjs';
 import { attachmentOf, journalById } from './log.mjs';
 import { acceptanceLineCount, alignRows, bodyText, evidenceNotes, evidenceParts, evidenceTable, loadIssues, mergedOf, noteText, parseIssue, placeEvidence, removeFields, reviewEntries, setSection, sharedMark, struckNote } from './issues.mjs';
 import { fileKeysOf, needFormat, repoNames, reposWhere, tipLines, whereLines, whereOf } from './repositories.mjs';
-import { approveKind, carriesCode, unmergedCode, coordinatorOf, disagreementText, gateOf, gateState, headerReadNotes, readLoop, recordDisagreements, reviewSplit, sameSlice, scopedLoop, sinceText, sliceNamed, sliceOf, slicesOf, waiverVoid } from './loop.mjs';
+import { approveKind, awaitsMerge, carriesCode, inFlightMark, unmergedCode, coordinatorOf, disagreementText, gateOf, gateState, headerReadNotes, readLoop, recordDisagreements, reviewSplit, sameSlice, scopedLoop, sinceText, sliceNamed, sliceOf, slicesOf, waiverVoid } from './loop.mjs';
 import { checkState, checkWaiting, checkWaitingText, closedNoCheck } from './metrics.mjs';
 import { builds, modelMarks } from './models.mjs';
 import { ago, leaseLiveness, leaseState, livenessOf, thresholdText } from './rounds.mjs';
@@ -444,7 +444,7 @@ function statusOf(root, loop, flags) {
   c.archived = existsSync(archiveDir) ? readdirSync(archiveDir).length : 0;
   // Leases that look wrong (worktree gone, branch gone, idle), merges waiting on CI, the age of a handoff file left in the loop (JSON only) and the
   // loop files nobody committed: all shown, none acted on.
-  const leases = issues.filter((i) => profile.is(i.status, 'holds-claim')).map((i) => ({ id: i.id, ...leaseState(root, i, threshold.minutes, { events: loop.eventsById.get(i.id) || [] }) }));
+  const leases = issues.filter((i) => profile.is(i.status, 'holds-claim')).map((i) => ({ id: i.id, ...leaseState(root, i, threshold.minutes, { events: loop.eventsById.get(i.id) || [], approved: awaitsMerge(loop, i) }) }));
   c.stale = leases.map((x) => ({ id: x.id, problems: x.problems })).filter((x) => x.problems.length);
   // The liveness threshold of the call and where it came from, and the ages of every lease in the view (see leaseLiveness).
   c.liveness = { minutes: threshold.minutes, from: threshold.from, leases: leases.map((x) => x.liveness) };
@@ -507,19 +507,6 @@ export const IN_FLIGHT_MARKS = {
   merged: 'merged — nothing is left to land: set it done',
   'merged-ci': 'merged, CI not green yet — next record the CI result (merged <id> --ci green|red), then set it done',
 };
-export function inFlightMark(loop, issue) {
-  const g = gateOf(loop, issue.id);
-  if (g.approved) {
-    // The same rule the done gate and the merge queue apply: an issue that carries code is cleared by a fresh approve only.
-    if (carriesCode(issue) && !g.fresh) return 'approved-not-fresh';
-    const m = mergedOf(issue);
-    if (!m) return 'approved';
-    return m.ci === 'pending' || m.ci === 'red' ? 'merged-ci' : 'merged';
-  }
-  const verdicts = g.trail.filter((r) => r.inWindow && !r.retracted && (r.verdict === 'approve' || r.verdict === 'changes'));
-  if (verdicts.length && verdicts[verdicts.length - 1].verdict === 'changes') return 'changes-requested';
-  return g.rowsSince === 0 ? 'no-rows' : 'rows-no-verdict';
-}
 // The step a mark points to for one issue. An approved issue that carries no code never reaches the merge queue, which
 // lists branches, so it is told to be set done and not that it is queued.
 const APPROVED_NO_CODE = 'approved, and it carries no code, so no merge waits — next set it done';

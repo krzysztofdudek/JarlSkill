@@ -10,7 +10,7 @@ import { bodyText, parseIssue, reviewEntries, setSection, unattributedRefusal } 
 import { needFormat, tipLines } from './repositories.mjs';
 import { reviewerRule } from './profile.mjs';
 import { carriesCode, gateOf, readLoop, reviewerKind } from './loop.mjs';
-import { SEVERITIES, loggedFinding, modelLines, modelValue, reviewModelNotes, spellingNote } from './models.mjs';
+import { SEVERITIES, loggedFinding, modelLines, modelRefusalOf, modelReviewForm, modelValue, reviewModelNotes, spellingNote } from './models.mjs';
 import { EVIDENCE_HOW, cmdNew, issuesFor, nothingWritten, oneOrMany, proofSince, refiled } from './commands.mjs';
 import { REVIEW_MIN_WORDS, needSaid, retractedBy, struck } from './evidence.mjs';
 import { ownerLineWait } from './owner-lines.mjs';
@@ -126,7 +126,11 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
   };
   // The verdict comes back with the acceptance it was given against, so a reviewer (and the merger reading
   // the output) sees what the approve claims is met — or that there was nothing to meet.
-  return oneOrMany(rawIds, issues.map((issue, n) => ({ id: issue.id, verdict, ...(by ? { by, kind: kinds[n] } : {}), ...(model !== undefined ? { model } : {}), ...(relayed ? { relayed } : {}), severities, ...(filed.length ? { filed: filed.map((f) => f.id) } : {}), acceptance: (issue.sections.acceptance || '').trim(), ...(flags.caller === 'cli' ? { next: nextAfterVerdict(issue, verdict, kinds[n], loop && verdict === 'approve' ? ownerLineWait(root, loop, issue) : null) } : {}), ...noteOf(issue, n) })));
+  // Under a reviewer rule that judges the model, whether done refuses the approve just written for it is read from the loop
+  // as it stands now, by the reading done itself uses, so the step the reply names is one that works.
+  const written = flags.caller === 'cli' && verdict === 'approve' && rule !== 'agent' ? readLoop(jarlDir(root)) : null;
+  const modelOf = (issue) => ({ rule, refused: Boolean(written && written.byId.has(issue.id) && modelRefusalOf(root, written, written.byId.get(issue.id))) });
+  return oneOrMany(rawIds, issues.map((issue, n) => ({ id: issue.id, verdict, ...(by ? { by, kind: kinds[n] } : {}), ...(model !== undefined ? { model } : {}), ...(relayed ? { relayed } : {}), severities, ...(filed.length ? { filed: filed.map((f) => f.id) } : {}), acceptance: (issue.sections.acceptance || '').trim(), ...(flags.caller === 'cli' ? { next: nextAfterVerdict(issue, verdict, kinds[n], loop && verdict === 'approve' ? ownerLineWait(root, loop, issue) : null, modelOf(issue)) } : {}), ...noteOf(issue, n) })));
 }
 
 // The findings a review gives outside the issue (--outside, repeatable), each a text with words in it, as written.
@@ -171,9 +175,15 @@ function fileOutside(root, issues, by, o, flags, withModel, dry) {
 // (the merger lands it and records it with one call) and then done, which a worker never sets; changes are followed by a
 // round, which sends the work back to a worker raised again. A coordinator's approve on code does not clear it: a fresh
 // reviewer's approve is the next step. `wait` is what done also waits for: the owner's tick of a line only he ticks.
-function nextAfterVerdict(issue, verdict, kind, wait = null) {
+// `model` is the loop's reviewer rule and whether done refuses this approve for its model: under a rule that judges the
+// model, the fresh reviewer's approve is given with --model, and an approve the rule refuses is followed by the review
+// form that carries the model, before any step that depends on done accepting it.
+function nextAfterVerdict(issue, verdict, kind, wait = null, model = { rule: 'agent', refused: false }) {
   if (verdict === 'changes') return `the jarl records the round — ${jarlLine('round', issue.id, '<text>')} — and a worker is raised again to fix it`;
-  if (carriesCode(issue) && kind === 'coordinator') return `a fresh reviewer's approve is next — ${jarlLine('review', issue.id, '<verdict>', '--by', '<a-fresh-reviewer>', '<text>')} — then the merger lands it`;
-  if (carriesCode(issue)) return `the merger merges the branch and records it with one call — ${jarlLine('merged', issue.id, '--sha', '<sha>', '--ran', '<command>', '--saw', '<what-it-printed>')} — then ${wait ? `${wait}, then ` : ''}${jarlLine('set', issue.id, 'done', '<why>')}, which needs a Proof row from the worker (the merge check is the merger's and is no proof); a worker never sets done`;
-  return `${wait ? `${wait}, then ` : ''}${jarlLine('set', issue.id, 'done', '<why>')} once the worker's Proof rows are recorded; a worker never sets done`;
+  if (carriesCode(issue) && kind === 'coordinator') return `a fresh reviewer's approve is next — ${model.rule === 'agent' ? jarlLine('review', issue.id, '<verdict>', '--by', '<a-fresh-reviewer>', '<text>') : modelReviewForm(issue.id)} — then the merger lands it`;
+  const after = carriesCode(issue)
+    ? `the merger merges the branch and records it with one call — ${jarlLine('merged', issue.id, '--sha', '<sha>', '--ran', '<command>', '--saw', '<what-it-printed>')} — then ${wait ? `${wait}, then ` : ''}${jarlLine('set', issue.id, 'done', '<why>')}, which needs a Proof row from the worker (the merge check is the merger's and is no proof); a worker never sets done`
+    : `${wait ? `${wait}, then ` : ''}${jarlLine('set', issue.id, 'done', '<why>')} once the worker's Proof rows are recorded; a worker never sets done`;
+  if (model.refused) return `done refuses this approve for its model (done-gate "reviewer": "${model.rule}"), so an approve that names a model the rule accepts is next — ${modelReviewForm(issue.id)} — then ${after}`;
+  return after;
 }

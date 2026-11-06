@@ -6,7 +6,7 @@ import { readText } from './files.mjs';
 import { DEFAULT_PROFILE, loadProfile } from './profile.mjs';
 import { mergedOf, sharedMark } from './issues.mjs';
 import { repoNames } from './repositories.mjs';
-import { closedGateLine, disagreementText, gateLine, needLoop, gateOf, readLoop, reviewSplit, sameSlice, sliceNamed, sliceOf } from './loop.mjs';
+import { closedGateLine, disagreementText, gateLine, inFlightMark, needLoop, gateOf, readLoop, reviewSplit, sameSlice, sliceNamed, sliceOf } from './loop.mjs';
 import { checkWaitingText, metricsOf, renderMetrics } from './metrics.mjs';
 import { ago } from './rounds.mjs';
 import { cmdTips, renderTips } from './tips.mjs';
@@ -15,7 +15,7 @@ import { handoffAge, handoffPath } from './questions.mjs';
 import { answeredLines } from './journal.mjs';
 import { loopRules, ruleLines, rulesFor } from './rules.mjs';
 import { jarlDir, today } from './where.mjs';
-import { IN_FLIGHT_MARKS, closedGateFlags, inFlightMark, leaseWriter, leasedByText, modelText, nextRows, resourceAgeText, schedulerNote, statusOf, subsText, uncommittedLoopFiles } from './evidence.mjs';
+import { IN_FLIGHT_MARKS, closedGateFlags, leaseWriter, leasedByText, modelText, nextRows, resourceAgeText, schedulerNote, statusOf, subsText, uncommittedLoopFiles } from './evidence.mjs';
 import { cmdQueue, renderQueue } from './queue.mjs';
 import { countsLine } from './import.mjs';
 
