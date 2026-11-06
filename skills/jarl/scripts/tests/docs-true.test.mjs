@@ -264,7 +264,11 @@ test('the README names the branch the merger merges into, who reads JARL_ROOT, t
   assert.equal(labels.length, 6, 'the split prints six labels');
   const line = readme.split('\n').find((l) => l.includes('say who reviewed the done work'));
   assert.ok(line, 'the README has the sentence about who reviewed the done work');
-  for (const label of labels) assert.ok(line.includes(label), `the README names the review label "${label}" the code prints`);
+  const list = line.slice(line.indexOf('say who reviewed the done work:')).replace(/\([^)]*\)/g, '');
+  for (const label of labels) {
+    const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    assert.match(list, new RegExp(`(?:: |, |, and | and )${escaped}\\b`), `the README lists the review label "${label}" the code prints`);
+  }
   assert.match(line, /waived by the owner \([^)]*waives the review[^)]*\)/, 'the README says in a clause what the waiver is');
   assert.match(line, /retracted when an approve was taken back and none stands/);
   const limits = readme.split(/^## /m).find((s) => s.startsWith('What it does not do'));
