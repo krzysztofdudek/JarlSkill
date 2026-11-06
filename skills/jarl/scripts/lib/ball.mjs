@@ -333,10 +333,11 @@ function closedOn(loop, issue, slug) {
   return moves.length > 0 && cites(String(moves[moves.length - 1].text || ''), slug);
 }
 
-// The jarl's lease conflicts: an issue whose log leases it twice, by two writers, to two holders, with no move out of the
 // Whether a text names a ruling: the slug as a whole name, never as the start or the end of a longer one (ask-01 is not
 // named by ask-012, nor x-ask-01 by ask-01). A name ends at a character a slug cannot hold, and a full stop that closes a sentence ends it too.
 const cites = (text, slug) => new RegExp(`(?<![\\p{L}\\p{N}_.-])${slug.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}_-])(?!\\.[\\p{L}\\p{N}_-])`, 'u').test(text);
+
+// The jarl's lease conflicts: an issue whose log leases it twice, by two writers, to two holders, with no move out of the
 // lease between the two lines and no handover. One copy of the loop refuses a lease another worker holds, so the two
 // lines come from two copies that each leased it before either saw the other, merged. Which lease stands is the jarl's
 // to settle.

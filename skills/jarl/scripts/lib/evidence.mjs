@@ -541,6 +541,7 @@ export function parentChecks(loop, issues) {
 }
 function parentStep(loop, issue, mark, holder) {
   if (mark === 'no-rows') return `${holder === 'jarl' ? 'the jarl' : holder} checks its own acceptance against the whole and records the check`;
+  if (sentBack(loop, issue, mark)) return 'sent back by a round: it is checked against the whole again, then reviewed again';
   if (mark === 'rows-no-verdict') return 'checked against the whole, it waits for a verdict';
   if (mark === 'changes-requested') return 'changes asked on its check: it is checked again, then reviewed again';
   if (mark === 'approved' && !carriesCode(issue)) return 'checked against the whole and approved: set it done';
@@ -557,7 +558,6 @@ export function leaseWriter(loop, issue) {
   const writer = move ? move.writer : null;
   return writer !== null || loop.goalLines.coordinators.length ? { leasedBy: writer } : {};
 }
-  if (sentBack(loop, issue, mark)) return 'sent back by a round: it is checked against the whole again, then reviewed again';
 // The writer of a lease as a view prints it.
 export const leasedByText = (x) => (x.leasedBy === undefined ? '' : `leased by ${x.leasedBy ?? '(unnamed)'}`);
 
