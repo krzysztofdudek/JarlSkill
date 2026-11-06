@@ -101,7 +101,7 @@ test('next --as prints the rules that match the asker, and none of another slice
   const odin = json(root, 'next', '--as', 'odin');
   assert.deepEqual(slugs(odin), ['loop-rule', 'coordinators', 'odin-only', 'jarl:coordinator-escalates', 'jarl:coordinator-pull-push', 'jarl:coordinator-scope-holds']);
   assert.deepEqual(slugs(json(root, 'next', '--as', 'frigg')), ['loop-rule', 'coordinators', 'frigg-only', 'jarl:coordinator-escalates', 'jarl:coordinator-pull-push', 'jarl:coordinator-scope-holds']);
-  assert.deepEqual(slugs(json(root, 'next', '--as', 'jarl')), ['loop-rule'], 'no merge is waiting, so the rule of the merge is not the jarl\'s yet');
+  assert.deepEqual(slugs(json(root, 'next', '--as', 'jarl')), ['loop-rule', 'coordinators', 'jarl:coordinator-escalates', 'jarl:coordinator-pull-push', 'jarl:coordinator-scope-holds'], 'the jarl leases the issue in no slice, so it holds the coordinator\'s rules; no merge is waiting, so the rule of the merge is not its yet');
   assert.deepEqual(slugs(json(root, 'next', '--as', 'owner')), ['loop-rule']);
   const text = jarl(root, 'next', '--as', 'odin');
   assert.match(text, /\nRules for odin \(6\)\n- loop-rule · loop · by coordinator — Every report names/);
@@ -118,7 +118,7 @@ test('a worker holding a lease is given the rules of its role and of the issue i
   assert.deepEqual(slugs(json(root, 'next', '--as', 'w2')), ['loop-rule', 'frigg-only', 'jarl:worker-only-the-issue'], 'a slice reaches the worker of an issue in it');
   jarl(root, 'evidence', '3', '--ran', 'npm test', '--saw', 'pass 3');
   jarl(root, 'review', '3', 'approve', '--by', 'rev', FINDINGS);
-  assert.deepEqual(slugs(json(root, 'next', '--as', 'jarl')), ['loop-rule', 'at-merge']);
+  assert.deepEqual(slugs(json(root, 'next', '--as', 'jarl')), ['loop-rule', 'coordinators', 'at-merge', 'jarl:coordinator-escalates', 'jarl:coordinator-pull-push', 'jarl:coordinator-scope-holds']);
 });
 
 test('resume prints the rules of the whole loop and a count of the rulings, not every ruling; resume --as prints the asker\'s rules instead', () => {
@@ -205,6 +205,10 @@ test('an agent proposes a rule: the ball is on the jarl, or on the owner where t
   jarl(root, 'answer', `a-${his.id}`, 'reject', '--by', 'owner');
   assert.ok(!json(root, 'next', '--as', 'w1').rules.some((r) => r.slug === `ask-${his.id}`), 'a rejected rule reaches no one');
   assert.match(refuses(root, 'ask', 'x', '--kind', 'rule'), /a rule is proposed with whom it applies to/);
+  const withOptions = refuses(root, 'ask', 'x', '--kind', 'rule', '--applies-to', 'loop', '--option', 'a:one', '--option', 'b:two');
+  assert.match(withOptions, /^a proposed rule is answered yes or reject, so it takes no --option\n/);
+  assert.match(withOptions, /\njarl\.mjs ask "<text>" --kind "<ask-kind>" --applies-to "<selectors>"\n$/, 'the form leaves the options out');
+  assert.equal(json(root, 'ask', 'x', '--kind', 'rule', '--applies-to', 'loop').options, undefined, 'a proposed rule without options is filed');
   assert.match(refuses(root, 'ask', 'x', '--kind', 'rule', '--applies-to', 'loop', '--issue', '1'), /a proposed rule holds no issue back/);
   assert.match(refuses(root, 'ask', 'x', '--applies-to', 'loop'), /--applies-to, --until and --to go with kind rule/);
 });

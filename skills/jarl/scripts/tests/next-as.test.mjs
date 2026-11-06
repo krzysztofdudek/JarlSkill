@@ -181,6 +181,30 @@ test('status and resume end with the asker\'s list under a header that says it i
   assert.match(jarl(root, 'resume', '--slice', 'odin', '--as', 'jarl'), /\n\n## On the jarl \(\d+\) — the whole loop's list, not only the slice of odin\n/);
 });
 
+test('a question of several lines is one row of next --as, its lines joined, and its title in --json is the question as asked', () => {
+  const root = loop();
+  jarl(root, 'ask', 'first line of the question\nsecond line that goes on\nthird', '--kind', 'stuck');
+  const text = jarl(root, 'next', '--as', 'owner');
+  assert.match(text, /^- a-1 first line of the question second line that goes on third: question \(stuck\) — jarl\.mjs answer a-1 /m);
+  assert.equal(text.split('\n').filter((l) => l.startsWith('-')).length, 1, text);
+  assert.equal(text.split('\n').length, 2, 'the list is the heading and one row');
+  assert.equal(json(root, 'next', '--as', 'owner').rows[0].title, 'first line of the question\nsecond line that goes on\nthird');
+  const status = jarl(root, 'status', '--as', 'owner');
+  assert.match(status, /\n\n## On the owner \(1\)\n- a-1 first line of the question second line that goes on third: /);
+});
+
+test('in a loop with slices the jarl is the coordinator of the issues in play in no slice, so the coordinator rules reach it while one is there', () => {
+  const root = loop();
+  jarl(root, 'goal', '--set', 'Coordinators: odin');
+  jarl(root, 'new', 'in a slice', '--files', 'a.mjs', '--tags', 'slice:odin');
+  jarl(root, 'new', 'in no slice', '--files', 'b.mjs');
+  const slugs = (o) => o.rules.map((r) => r.slug);
+  assert.deepEqual(slugs(json(root, 'next', '--as', 'jarl')), slugs(json(root, 'next', '--as', 'odin')), 'the jarl leases the issue in no slice under the rules odin leases its own under');
+  assert.ok(slugs(json(root, 'next', '--as', 'jarl')).includes('jarl:coordinator-scope-holds'));
+  jarl(root, 'set', '2', 'dropped', 'not needed');
+  assert.deepEqual(slugs(json(root, 'next', '--as', 'jarl')), [], 'with every issue in play in a slice the jarl holds no lease or review of its own');
+});
+
 test('a named coordinator holds nothing while the loop has no slices, and an outside person holds nothing yet', () => {
   const root = loop();
   jarl(root, 'new', 'ready', '--files', 'a.mjs');

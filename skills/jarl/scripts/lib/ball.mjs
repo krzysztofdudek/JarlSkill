@@ -21,7 +21,8 @@ export const JARL_HOLDER = 'jarl';
 // How many lines next --as prints before it counts the rest; --all prints every one.
 export const BALL_SHOWN = 7;
 const TITLE = 70;
-const short = (t, n = TITLE) => (t.length > n ? `${t.slice(0, n - 1)}…` : t);
+// A title on one line: a question of several lines is one row, its lines joined.
+const short = (text, n = TITLE) => { const t = fieldText(text); return t.length > n ? `${t.slice(0, n - 1)}…` : t; };
 
 // The name the asker gives, read as a holder: a name that reads as owner is the owner, jarl is the jarl, any other name
 // is kept as given (a coordinator or an outside person).
@@ -502,8 +503,8 @@ function waitingRows(loop, rows, next, onOwner) {
 // The moment of work each kind of row stands at: what a rule with a moment selector is read against.
 const MOMENT_OF = Object.freeze({ ready: 'start', worker: 'start', idle: 'start', check: 'done', review: 'review', changes: 'round', merge: 'merge', ci: 'merge', close: 'done', 'sign-off': 'done' });
 // Who asks, as a rule reads a reader: its roles, its slice, the moments of work its list stands at and the issues it works
-// on. The jarl works on the issues in play in no slice and holds the filing and the close, and in a loop with no slice
-// it is the coordinator as well; a coordinator on the issues in
+// on. The jarl works on the issues in play in no slice and holds the filing and the close, and it is the coordinator of the
+// issues in play in no slice as well; a coordinator on the issues in
 // play of its slice, and files; a worker that holds a lease on its leased issues, at their start and, once a round sent
 // one back, at its round; anyone else on the issues of its own list.
 export function readerOf(loop, holder, mine) {
@@ -512,8 +513,9 @@ export function readerOf(loop, holder, mine) {
   const rowIds = new Set(mine.flatMap((r) => (r.ids ? r.ids : r.id !== undefined ? [r.id] : [])));
   const moments = new Set(mine.map((r) => MOMENT_OF[r.what]).filter(Boolean));
   const issues = (pick) => loop.issues.filter((i) => rowIds.has(i.id) || pick(i));
-  // In a loop with no slice the jarl holds every lease and review, so it is the one coordinator too.
-  if (holder === JARL_HOLDER) return { roles: new Set(['jarl', ...(loop.issues.some((i) => sliceOf(i) !== null) ? [] : ['coordinator'])]), slice: null, moments: new Set([...moments, 'filing', 'close']), issues: issues((i) => inPlay.includes(i) && sliceOf(i) === null) };
+  // The jarl holds every lease and review of an issue in no slice, so it is the coordinator of those issues too: in a loop
+  // with no slice, of every one; in a loop with slices, while an issue in play is in none.
+  if (holder === JARL_HOLDER) return { roles: new Set(['jarl', ...(inPlay.some((i) => sliceOf(i) === null) || !loop.issues.some((i) => sliceOf(i) !== null) ? ['coordinator'] : [])]), slice: null, moments: new Set([...moments, 'filing', 'close']), issues: issues((i) => inPlay.includes(i) && sliceOf(i) === null) };
   if (loop.coordinators.some((c) => sameHolder(fieldText(c), holder))) return { roles: new Set(['coordinator']), slice: holder, moments: new Set([...moments, 'filing']), issues: issues((i) => inPlay.includes(i) && sameSlice(sliceOf(i), holder)) };
   const leased = loop.issues.filter((i) => profile.is(i.status, 'holds-claim') && sameHolder(fieldText(i.fields.worker) || '', holder));
   if (leased.length) return { roles: new Set(['worker']), slice: null, moments: new Set(['start', ...(leased.some((i) => sentBack(loop, i, inFlightMark(loop, i))) ? ['round'] : [])]), issues: leased };

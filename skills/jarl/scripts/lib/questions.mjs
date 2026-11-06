@@ -61,7 +61,7 @@ export function cmdAsk(root, question, flags) {
   const ruling = (kind === 'ratify' || kind === 'rule') && flags.ruling ? ` · ruling ${flags.ruling}` : '';
   const proposed = kind === 'rule' ? ` · to ${to}${appliesTo ? ` · applies to ${appliesTo}` : ''}` : '';
   const asked = oneBreak(question).trim().split('\n');
-  const options = askOptions(flags.option, kind);
+  const options = askOptions(flags.option, kind, flags.ruling !== undefined);
   // Every check is done: the format is raised now, right before the write that needs it, so a refused question writes
   // nothing. A number written plain (a-7, a-1000), or an issue so written, needs format 2; an escalation, whose kind a
   // reader of formats 1 and 2 refuses, needs format 3.
@@ -75,12 +75,14 @@ export function cmdAsk(root, question, flags) {
 }
 
 // The options of a question, from `--option "<label>: <effect>"` (repeatable): at least two, each with its own label and
-// effect, the labels distinct whatever their case. A ratify item is answered yes or reject and takes none. Label and
+// effect, the labels distinct whatever their case. A ratify item and a proposed rule are answered yes or reject and take none
+// (only a rule offered for promotion carries its options). Label and
 // effect pass noSeparators, the one escape for free text beside a field.
-function askOptions(raw, kind) {
+function askOptions(raw, kind, offered) {
   const given = raw === undefined ? [] : [].concat(raw);
   if (!given.length) return [];
   need(kind !== 'ratify', 'a ratify item is answered yes or reject (tak or nie), so it takes no --option', () => ({ flag: '--kind', value: hole('<ask-kind>') }));
+  need(kind !== 'rule' || offered, 'a proposed rule is answered yes or reject, so it takes no --option', () => ({ drop: '--option' }));
   const options = given.map((text) => {
     need(!oneBreak(text).includes('\n'), `--option takes one line: a label or an effect with a line break is refused (got "${String(text).trim()}")`, () => ({ replace: String(text), value: hole('<label:effect>') }));
     const m = /^([^:]*?):\s*(.*)$/s.exec(String(text).trim());
