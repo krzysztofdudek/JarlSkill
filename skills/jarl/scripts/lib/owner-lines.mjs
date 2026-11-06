@@ -111,7 +111,7 @@ export function ownerLineStates(root, loop, issue) {
 }
 
 const reviewText = (s) => `he reviews ${s.material}${s.at ? ` (in ${s.at})` : ''} and checks ${s.check}`;
-const tickCommand = (id, n) => jarlLine('tick', id, n, '--by', 'owner');
+const tickCommand = (id, n) => jarlLine('tick', id, n, '--by', OWNER_TICKS);
 
 // Why done refuses for the owner lines of an issue, or null when every one is ticked: each line not ticked, with its
 // material and what to check. Whoever is refused is not the owner, so the reason names his tick and prints no command of

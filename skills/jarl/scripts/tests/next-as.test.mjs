@@ -69,7 +69,7 @@ test('next --as owner lists the questions and the items to ratify, most held-up 
   const o = json(root, 'next', '--as', 'owner');
   assert.deepEqual(o.rows.map((r) => [r.ask, r.what, r.holdsUp]), [['1', 'question', ['8']], ['2', 'ratify', []]]);
   const text = jarl(root, 'next', '--as', 'the Owner');
-  assert.match(text, /^On the owner \(2\)\n- a-1 which way\?: question \(stuck\) on issue 8 — jarl\.mjs answer a-1 "<text>" --by owner · holds up 8\n- a-2 ratify the naming: to ratify — jarl\.mjs answer a-2 yes --by owner \(or "reject"\)$/m);
+  assert.match(text, /^On the owner \(2\)\n- a-1 which way\?: question \(stuck\) on issue 8 — jarl\.mjs answer a-1 "<text>" --by "<the-owner-himself>" · holds up 8\n- a-2 ratify the naming: to ratify — jarl\.mjs answer a-2 "<yes-or-reject-first>" --by "<the-owner-himself>"$/m);
   assert.match(text, /^and 1 issue\(s\) waiting on the owner: jarl\.mjs next --as owner --all$/m);
   const digest = jarl(root, 'next', '--as', 'owner', '--all');
   assert.match(digest, /^Waiting on the owner \(1\)\n- 9 waits on the asked one: waits on the owner via 8$/m);
@@ -276,7 +276,7 @@ test('on a loop opened with a composer\'s profile, next --as lists only what is 
   assert.match(text, /^the issues in play are the composer's: scheduling is led by the composer: composer-x's tick\.mjs --loop <composed-loop>/m);
   assert.doesNotMatch(text, /queued issue|running issue/);
   const owner = jarl(root, 'next', '--as', 'owner');
-  assert.match(owner, /^- a-001 which tier is the default\?: question \(stop\) — jarl\.mjs answer a-001 "<text>" --by owner$/m);
+  assert.match(owner, /^- a-001 which tier is the default\?: question \(stop\) — jarl\.mjs answer a-001 "<text>" --by "<the-owner-himself>"$/m);
   assert.match(jarl(root, 'resume', '--as', 'owner'), /## On the owner \(1\)\n- a-001 [^\n]*\nthe issues in play are the composer's: [^\n]*$/);
 });
 

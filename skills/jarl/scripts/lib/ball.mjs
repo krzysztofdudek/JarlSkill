@@ -137,7 +137,7 @@ function issueRows(ctx) {
       continue;
     }
     if (mark === 'merged-ci') {
-      out.push({ ...onJarl, what: 'ci', says: 'merged, its CI not green yet; record the result', command: jarlLine('merged', i.id, '--ci', 'green|red') });
+      out.push({ ...onJarl, what: 'ci', says: 'merged, its CI not green yet; record the result', command: jarlLine('merged', i.id, '--ci', '<ci-state>') });
       continue;
     }
     if (unticked) continue;
@@ -280,7 +280,7 @@ function ownerLineRows(ctx) {
         // issue's slice, the jarl with none.
         out.push({ ...line, holder: sliceHolder(ctx.loop, i), says: `acceptance line ${s.n} is the owner's to tick once its material is there (${s.material}); ${s.why}`, command: jarlLine('evidence', id, '--ran', '<command>', '--saw', '<what-it-printed>') });
       } else {
-        out.push({ ...line, holder: OWNER_HOLDER, material: s.material, check: s.check, says: `acceptance line ${s.n} is yours to tick: review ${s.material}${s.at ? ` (in ${s.at})` : ''} and check ${s.check}`, command: jarlLine('tick', id, s.n, '--by', 'owner') });
+        out.push({ ...line, holder: OWNER_HOLDER, material: s.material, check: s.check, says: `acceptance line ${s.n} is yours to tick: review ${s.material}${s.at ? ` (in ${s.at})` : ''} and check ${s.check}`, command: jarlLine('tick', id, s.n, '--by', '<the-owner-himself>') });
       }
     }
   }
@@ -297,16 +297,17 @@ function questionRows(ctx) {
     // A proposed rule is on the one it was proposed to, and so is a rule of the loop offered for promotion at its close.
     if (a.kind === 'rule') {
       const holder = a.to === OWNER_HOLDER ? OWNER_HOLDER : JARL_HOLDER;
+      const by = holder === OWNER_HOLDER ? '<the-owner-himself>' : holder;
       return a.ruling
-        ? { what: 'promotion', ask: a.id, title: a.question, holder, ruling: a.ruling, says: `rule ${a.ruling} offered for promotion`, command: jarlLine('answer', ref, '--option', (a.options || []).map((o) => o.label).join('|'), '--by', holder) }
-        : { what: 'rule', ask: a.id, title: a.question, holder, says: `rule proposed${a.appliesTo ? ` for ${a.appliesTo}` : ''}`, command: `${jarlLine('answer', ref, 'yes', '--by', holder)} (or "reject")` };
+        ? { what: 'promotion', ask: a.id, title: a.question, holder, ruling: a.ruling, says: `rule ${a.ruling} offered for promotion: ${(a.options || []).map((o) => o.label).join(', ')}`, command: jarlLine('answer', ref, '--option', '<option>', '--by', by) }
+        : { what: 'rule', ask: a.id, title: a.question, holder, says: `rule proposed${a.appliesTo ? ` for ${a.appliesTo}` : ''}`, command: jarlLine('answer', ref, '<yes-or-reject-first>', '--by', by) };
     }
-    if (a.kind === 'ratify') return { what: 'ratify', ask: a.id, title: a.question, holder: OWNER_HOLDER, says: `to ratify${a.issue ? ` (issue ${a.issue})` : ''}`, command: `${jarlLine('answer', ref, 'yes', '--by', 'owner')} (or "reject")` };
+    if (a.kind === 'ratify') return { what: 'ratify', ask: a.id, title: a.question, holder: OWNER_HOLDER, says: `to ratify${a.issue ? ` (issue ${a.issue})` : ''}`, command: jarlLine('answer', ref, '<yes-or-reject-first>', '--by', '<the-owner-himself>') };
     // A question that asks for a fresh review holds the proofs it names, as far as they still await one.
     const keys = new Set(reviewAskKeys(ctx.loop, a.question));
     const reviewing = ctx.loop.issues.filter((i) => ctx.onOwner.has(i.id) && keys.has(idKey(i.id))).map((i) => i.id);
     return { what: 'question', ask: a.id, kind: a.kind || 'stuck', title: a.question, holder: OWNER_HOLDER, ...(reviewing.length ? { reviewing } : {}),
-      says: `question (${a.kind || 'stuck'})${a.issue ? ` on issue ${a.issue}` : ''}${reviewing.length ? `, the fresh review of ${reviewing.join(', ')} waits on it` : keys.size ? ', no issue it names awaits a review now' : ''}`, command: jarlLine('answer', ref, '<text>', '--by', 'owner') };
+      says: `question (${a.kind || 'stuck'})${a.issue ? ` on issue ${a.issue}` : ''}${reviewing.length ? `, the fresh review of ${reviewing.join(', ')} waits on it` : keys.size ? ', no issue it names awaits a review now' : ''}`, command: jarlLine('answer', ref, '<text>', '--by', '<the-owner-himself>') };
   });
 }
 

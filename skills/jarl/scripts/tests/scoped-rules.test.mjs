@@ -187,7 +187,7 @@ test('an agent proposes a rule: the ball is on the jarl, or on the owner where t
   assert.equal(asked.to, 'jarl');
   assert.equal(json(root, 'profile').format, 3, 'a proposed rule is a line of format 3');
   const onJarl = json(root, 'next', '--as', 'jarl').rows.find((r) => r.what === 'rule');
-  assert.equal(onJarl.command, `jarl.mjs answer a-${asked.id} yes --by jarl (or "reject")`);
+  assert.equal(onJarl.command, `jarl.mjs answer a-${asked.id} "<yes-or-reject-first>" --by jarl`);
   assert.match(onJarl.says, /rule proposed for role worker/);
   assert.ok(!json(root, 'next', '--as', 'owner').rows.some((r) => r.what === 'rule'));
   assert.ok(!slugs(json(root, 'next', '--as', 'w1')).includes(`ask-${asked.id}`), 'a proposal reaches no one');
@@ -227,7 +227,7 @@ test('close offers each rule of the loop for promotion, on the owner, with four 
   assert.equal(json(root, 'close', '--batch').promotion.filed.length, 0, 'a rule is offered once');
   const onOwner = json(root, 'next', '--as', 'owner').rows.filter((r) => r.what === 'promotion');
   assert.deepEqual(onOwner.map((r) => r.ruling), ['standing', 'for-reviewers']);
-  assert.equal(onOwner[0].command, "jarl.mjs answer a-1 --option 'carry|instructions|law|drop' --by owner");
+  assert.equal(onOwner[0].command, 'jarl.mjs answer a-1 --option "<option>" --by "<the-owner-himself>"');
   const promoted = refuses(root, 'answer', 'a-1', 'yes', '--by', 'owner');
   assert.match(promoted, /offers rule standing for promotion: answer it with --option and one of carry, instructions, law, drop\n/);
   assert.match(promoted, /\njarl\.mjs answer "<question>" --by "<who>" --option "<option>"\n$/, 'the form takes the option in place of the words given');

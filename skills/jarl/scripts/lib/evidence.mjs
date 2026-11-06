@@ -522,7 +522,7 @@ export const IN_FLIGHT_MARKS = {
   'approved-not-fresh': 'approved by a coordinator only, and it carries code — neither the merge queue nor done accepts that: it waits for a fresh reviewer\'s approve',
   'approved-not-cleared': 'approved, and no approve it holds clears it under the loop\'s done gate — neither the merge queue nor done accepts that: it waits for an approve that does',
   merged: 'merged — nothing is left to land: set it done',
-  'merged-ci': 'merged, CI not green yet — next record the CI result (merged <id> --ci green|red), then set it done',
+  'merged-ci': 'merged, CI not green yet — next record the CI result with merged --ci, green or red, then set it done',
 };
 // The step a mark points to for one issue. An approved issue that carries no code never reaches the merge queue, which
 // lists branches, so it is told to be set done and not that it is queued.
@@ -675,7 +675,7 @@ export function closedGateFlags(loop) {
     const merges = events.filter((e) => e.type === 'merged');
     const reasons = []; const repairs = [];
     const flag = (reason, repair) => { reasons.push(reason); if (!repairs.includes(repair)) repairs.push(repair); };
-    const reopen = jarlLine('set', id, 'open');
+    const reopen = jarlLine('set', id, 'open', '<text>');
     if (!profile.is(issue.status, 'closes-record')) {
       if (merges.length || mergedOf(issue)) flag(`a merge is recorded on a ${issue.status} issue`, reopen);
     } else {

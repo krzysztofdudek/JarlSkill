@@ -101,17 +101,17 @@ Every open thing of a loop has one holder who moves next: the owner, the jarl, a
 | changes asked | the coordinator of its slice; with no slice, the jarl | `round <id> "<text>"` |
 | a lease conflict: an issue the log leases twice, by two writers, with no move out of the lease between the two lines and no handover (two copies of the loop that each leased it before either saw the other, merged) | the jarl | `set <id> <status> --handover --branch <worker-branch> --worker <name> "<why-the-worker-changed>"` |
 | an approve not merged | the holder the goal's `Merger:` line names, the jarl or one coordinator, for every slice; with no such line, the jarl | `merged <id> --sha <sha> …` |
-| merged, or approved with no code, and no owner line waits for his tick | the jarl | `set <id> <status> "<text>"`, or `merged <id> --ci green\|red` while CI is pending |
+| merged, or approved with no code, and no owner line waits for his tick | the jarl | `set <id> <status> "<text>"`, or `merged <id> --ci <ci-state>` while CI is pending |
 | an acceptance line only the owner ticks, its material not there yet (no proof after the work was started or last sent back, or a path not found) | the jarl, with its worker as the one who produces it | `evidence <id> --ran … --saw …` |
-| an acceptance line only the owner ticks, its material there | the owner, with the material and what to check | `tick <id> <line> --by owner` |
-| a question, an item to ratify | the owner | `answer a-<n> … --by owner` |
+| an acceptance line only the owner ticks, its material there | the owner, with the material and what to check | `tick <id> <line> --by <the-owner-himself>` |
+| a question, an item to ratify | the owner | `answer a-<n> … --by <the-owner-himself>` |
 | an escalation (`ask --kind escalation`) | the jarl | `answer a-<n> "<text>" --by jarl` |
 | a ruling in force that settles issues none of which is live (open, in progress or done), and none finished on it | the jarl | `new`, then `decide … --supersedes <slug> --settles <id>` |
 | a promise (kind `promise`), open; once given to a worker, the rows of an issue in play | whoever its **Found by:** names, the owner, the jarl, a coordinator or anyone by name | `evidence <id> --ran … --saw …` to record it kept, then `review` and the close |
 | a wait (kind `wait`) with nothing recorded yet | the outside person its **Person:** names, with its **Check when:** | `evidence <id> --ran "<command>" --saw "<what-it-printed>"` when it comes |
 | a wait whose proof is recorded | the jarl | `review <id> …`, then the close |
 
-The coordinator of a slice is the name of its `slice:<coordinator>` tag, written as the goal's `Coordinators:` line writes it; with no slice in the loop, a coordinator's lines are the jarl's, and a coordinator whose slice holds no issue is told so. The rows of a slice reserve files within that slice only: across slices only leases hold. An issue waiting on **After:**, and a parent waiting on its sub-issues, is on nobody: `--all` shows it on the holder of the issue it waits through, as `waits on X via N`. Under a done gate with no approve, a proof is followed by the merge or the close. Under an external scheduler the issues in play are left out and the composer's command is named for them.
+A command that is the owner's act, his answer or his tick, is printed with `<the-owner-himself>` for `--by`, and a yes or a reject as `<yes-or-reject-first>`, so a line pasted as printed is refused and writes nothing until the one who holds it fills them in. The coordinator of a slice is the name of its `slice:<coordinator>` tag, written as the goal's `Coordinators:` line writes it; with no slice in the loop, a coordinator's lines are the jarl's, and a coordinator whose slice holds no issue is told so. The rows of a slice reserve files within that slice only: across slices only leases hold. An issue waiting on **After:**, and a parent waiting on its sub-issues, is on nobody: `--all` shows it on the holder of the issue it waits through, as `waits on X via N`. Under a done gate with no approve, a proof is followed by the merge or the close. Under an external scheduler the issues in play are left out and the composer's command is named for them.
 
 ## Views for dashboards
 

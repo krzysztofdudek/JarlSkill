@@ -233,7 +233,7 @@ export function unorderedNamings(issues, profile, only = null) {
 // The note a text that names unordered issues gets, on one line: the same words from verify, new and field.
 export function unorderedText(n) {
   const [noun, it, is] = n.names.length === 1 ? ['issue', 'it', 'is'] : ['issues', 'them', 'are'];
-  return `names ${noun} ${n.names.join(', ')} in What, Why or Acceptance, which ${is} neither done nor dropped, and no After orders ${it} with ${n.id} — if the text relies on ${it}, order the two by adding ${it} to After, which keeps what After holds: ${jarlLine('field', n.id, 'After', n.names.join(','), '--add')}`;
+  return `names ${noun} ${n.names.join(', ')} in What, Why or Acceptance, which ${is} neither done nor dropped, and no After orders ${it} with ${n.id} — if the text relies on ${it}, order the two by adding ${it} to After, which keeps what After holds: ${jarlLine('field', n.id, 'After', '<ids-it-waits-on>', '--add')}`;
 }
 
 // Who reviewed, as a kind: the word self, or anyone who has ever held the issue's lease — its own worker across

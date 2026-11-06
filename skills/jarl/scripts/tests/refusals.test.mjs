@@ -666,7 +666,7 @@ test('every command Jarl prints is built by printCommand, which carries the call
   assert.deepEqual(commandStringProblems('lib/x.mjs', "const x = '.jarl/.lock is held by another jarl.mjs (pid 7)';\nconst y = jarlLine('list', '--all');"), []);
   // A view and a note print through it with the root of the loop they describe: the command of a note carries --root.
   const said = J.dispatch(copy(PLAIN), 'field', ['3', 'What', 'relies on issue 1 for its data'], { root: 'r', json: true });
-  assert.ok(said.warn.some((w) => w.endsWith('jarl.mjs field 3 After 1 --add --root r')), said.warn.join('\n'));
+  assert.ok(said.warn.some((w) => w.endsWith('jarl.mjs field 3 After "<ids-it-waits-on>" --add --root r')), said.warn.join('\n'));
 });
 
 // The commands SKILL.md and the references show (a code span or a line of a fenced block that starts with a command of
