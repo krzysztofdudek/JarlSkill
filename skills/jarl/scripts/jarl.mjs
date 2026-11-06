@@ -115,7 +115,7 @@ commands:
                                                  with a log line that says what it was (a repository is declared
                                                  when an issue first names it; see --repo below)
   import <findings.json> [--source <report-dir>] [--kind k] [--prio 1|2|3] [--tier t] [--tags a,b] [--repo <name-or-path>]
-      [--found-by who] [--only <finding-ids>] [--adopt] [--dry-run] [--field "<name=value>"]... [--by who]
+      [--found-by who] [--only <finding-ids>] [--adopt] [--dry-run] [--field "<name=value>"]... [--parent <id>] [--by who]
                                                  one issue per finding, with Source: <report-dir#finding-id>; a finding
                                                  whose Source is already on an issue is skipped, so a re-run files
                                                  nothing twice, and one whose text differs from the What or Why of
@@ -125,7 +125,8 @@ commands:
                                                  --dry-run prints what it would file; --adopt writes
                                                  Source onto an existing issue that names the finding id but has none;
                                                  every finding is checked before the first write, so a refused import
-                                                 writes nothing; --tags, --repo and --only repeat, or take a comma list
+                                                 writes nothing; --parent files each issue it files under that parent;
+                                                 --tags, --repo and --only repeat, or take a comma list
   sources [<findings.json>...] [--source <report-dir>] per report: its findings, the issues filed from them and their
                                                  status; with a findings file, the findings nobody filed too
   evidence <ids> "<text>" | --ran "<command>" --saw "<what-it-printed>" | <id> --file <path> --slot <name> [--by who]
@@ -603,7 +604,7 @@ export const COMMAND_FLAGS = {
   },
   import: {
     source: 'value', kind: 'value', prio: 'value', tier: 'value', tags: 'many', repo: 'many', 'found-by': 'value',
-    only: 'many', adopt: 'bool', 'dry-run': 'bool', field: 'many', by: 'value',
+    only: 'many', adopt: 'bool', 'dry-run': 'bool', field: 'many', parent: 'value', by: 'value',
   },
   sources: { source: 'value' },
   evidence: { ran: 'many', saw: 'many', file: 'value', slot: 'value', by: 'value' },
@@ -779,7 +780,7 @@ const FLAG_HOLES = {
   group: '<group>', with: '<loop-root>', base: '<base-branch>', 'stale-hours': '<hours>', sha: '<sha>', ci: '<ci-state>', red: '<another-issue>',
   target: '<what-would-get-weaker>', issue: '<id>', option: '<option>', 'ask option': '<label:effect>', 'applies-to': '<selectors>', until: '<date-or-id>', to: '<jarl-or-owner>', log: '<count>',
   ready: '<count>', summary: '<text>', next: '<text>', settles: '<ids>', 'waives-review': '<ids>', quote: '<his-own-words>', under: '<a-ruling-in-force>', supersedes: '<a-ruling-in-force>',
-  rule: '<rule-id>', area: '<type>', reach: '<number-of-files>', set: '<machine-line>', line: '<line=id>', outside: '<finding-outside-the-issue>',
+  rule: '<rule-id>', area: '<type>', reach: '<number-of-files>', set: '<machine-line>', line: '<line=id>', outside: '<finding-outside-the-issue>', parent: '<id>',
 };
 const PART_HOLES = {
   title: '<title>', priority: '<prio>', tier: '<tier>', kind: '<kind>', tags: '<tag>', files: '<paths>', repo: '<name-or-path>', after: '<ids-it-waits-on>', parent: '<id>',

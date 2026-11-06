@@ -12,7 +12,7 @@ import { PROPOSED, bodyText, findIssue, loadIssues, sharedMark } from './issues.
 import { repoList, reposWhereLines } from './repositories.mjs';
 import { closedGateLine, disagreementText, gateLine, needOneSlice } from './loop.mjs';
 import { checkLines, checkWaitingText, closedNoCheckText, mergeCheckLines } from './metrics.mjs';
-import { cmdNew, cmdSource, needLiveLoop } from './commands.mjs';
+import { cmdNew, cmdSource, needLiveLoop, parentToFile, putUnder } from './commands.mjs';
 import { leasedByText, schedulerNote, subsText } from './evidence.mjs';
 
 // ---- research findings into issues ----------------------------------------------------------------
@@ -221,7 +221,7 @@ function changedParts(issue, f) {
 
 // The ready part of the refusal of a finding the filing refused: the filing's own when it is a fix of a flag import takes
 // (or a command of another kind, a step to take first), else the form of the import, since the fix is in the findings file.
-const IMPORT_FIXES = new Set(['--kind', '--prio', '--tier', '--tags', '--repo', '--field', '--root']);
+const IMPORT_FIXES = new Set(['--kind', '--prio', '--tier', '--tags', '--repo', '--field', '--parent', '--root']);
 function formOf(ready) {
   const fixes = [].concat(ready);
   if (!fixes.every(isFix)) return ready;
@@ -279,8 +279,10 @@ export function cmdImport(root, file, flags) {
   const extras = new Map();
   for (const { f } of toFile) for (const k of f.extras) extras.set(k, [...(extras.get(k) || []), f.id]);
   out.extras = [...extras].map(([key, findings]) => ({ key, findings }));
-  // A findings file is one act: every finding to be filed passes the checks of the filing before the
+  // A findings file is one act: the parent is held, and every finding to be filed passes the checks of the filing, before the
   // first write (a dry run included), so a refusal leaves the loop as it was.
+  const parent = flags.parent !== undefined ? parentToFile(root, flags.parent, { flag: '--parent', value: hole('<id>') }) : null;
+  out.parent = parent ? parent.id : null;
   const filing = (f, key) => ({
     kind: flags.kind || f.kind, prio: flags.prio || f.priority, tier: flags.tier, tags: flags.tags, repo: flags.repo,
     field: flags.field, 'found-by': foundBy, where: f.where, what: f.what, why: f.why, acceptance: f.acceptance || undefined, source: key,
@@ -305,6 +307,7 @@ export function cmdImport(root, file, flags) {
     const r = cmdNew(root, f.title, filing(f, key));
     out.filed.push({ id: r.id, finding: f.id, source: key, title: f.title, kind: flags.kind || f.kind, priority: String(flags.prio || f.priority) });
   }
+  if (parent && out.filed.length) putUnder(root, out.filed.map((x) => x.id), parent, { by: flags.by });
   appendLog(root, `imported ${dir} · ${out.filed.length} filed, ${out.already.length} already filed${out.adopted.length ? `, ${out.adopted.length} adopted` : ''}${out.mentioned.length ? `, ${out.mentioned.length} named by an issue without Source` : ''}${out.ambiguous.length ? `, ${out.ambiguous.length} ambiguous` : ''}`);
   return out;
 }
@@ -408,7 +411,7 @@ function comparedLine(o) {
 }
 
 export function renderImport(o) {
-  const head = `${o.source}: ${o.findings} finding(s)${o.considered !== o.findings ? `, ${o.considered} chosen` : ''} · ${o.dryRun ? 'would file' : 'filed'} ${o.filed.length} · already filed ${o.already.length}${o.changed.length ? ` · changed since filed ${o.changed.length}` : ''}${o.adopted.length ? ` · adopted ${o.adopted.length}` : ''}${o.mentioned.length ? ` · named by an issue without Source ${o.mentioned.length} (--adopt links them)` : ''}${o.ambiguous.length ? ` · ambiguous ${o.ambiguous.length}` : ''}`;
+  const head = `${o.source}: ${o.findings} finding(s)${o.considered !== o.findings ? `, ${o.considered} chosen` : ''} · ${o.dryRun ? 'would file' : 'filed'} ${o.filed.length} · already filed ${o.already.length}${o.changed.length ? ` · changed since filed ${o.changed.length}` : ''}${o.adopted.length ? ` · adopted ${o.adopted.length}` : ''}${o.mentioned.length ? ` · named by an issue without Source ${o.mentioned.length} (--adopt links them)` : ''}${o.ambiguous.length ? ` · ambiguous ${o.ambiguous.length}` : ''}${o.parent ? ` · under ${o.parent}` : ''}`;
   const rows = [
     ...(o.already.length ? [comparedLine(o)] : []),
     ...(o.extras.length ? [`extra keys let through, not read: ${o.extras.map((x) => `${x.key} (${x.findings.length} finding${x.findings.length === 1 ? '' : 's'})`).join(', ')}`] : []),

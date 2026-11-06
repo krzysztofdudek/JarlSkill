@@ -1300,13 +1300,26 @@ function setParent(root, rawIds, value, flags) {
   return out(parent.id);
 }
 // The issue a Parent value names: one number the loop holds, as the loop writes it.
-function parentNamed(all, value) {
+function parentNamed(all, value, where = { arg: 2, value: hole('<id>') }) {
   const raw = fieldText(value).replace(/^#/, '');
-  need(/^\d+$/.test(raw), `the ${PARENT_FIELD} of an issue is the number of one issue of the loop (got "${fieldText(value)}")`, () => ({ arg: 2, value: hole('<id>') }));
+  need(/^\d+$/.test(raw), `the ${PARENT_FIELD} of an issue is the number of one issue of the loop (got "${fieldText(value)}")`, () => where);
   const parent = issueNamed(all, raw);
-  need(parent, `no such issue: ${raw}${listAll()}`, () => ({ arg: 2, value: hole('<id>') }));
+  need(parent, `no such issue: ${raw}${listAll()}`, () => where);
   return parent;
 }
+// The parent a filing names, checked as a sub-issue's parent is, before anything is filed: the profile keeps the tool's
+// own Parent, the loop holds the issue, it is not finished, and the record may be raised to hold a parent.
+export function parentToFile(root, value, where) {
+  const profile = loadProfile(root);
+  need(profile.tree, `${where.flag} files the ${PARENT_FIELD} the tool keeps, and this loop's profile declares a field ${PARENT_FIELD} of its own — write that field with --field`, () => [{ drop: where.flag }, { flag: '--field', value: hole('<name=value>'), add: true }]);
+  const all = loadIssues(root);
+  const parent = parentNamed(all, value, where);
+  needUnder(all, profile, [], parent, '', () => where);
+  needFormatHeld(root, 'parent');
+  return parent;
+}
+// The issues just filed, put under the parent parentToFile named: one write, one log line each.
+export function putUnder(root, ids, parent, flags = {}) { return setParent(root, ids.join(','), parent.id, flags); }
 // Whether `issues` may be put under `parent`, read from `all`, the loop as it stands: each check of the tree that a Parent
 // written by field or by split passes, refused with `ready` where another parent is the fix.
 function needUnder(all, profile, issues, parent, nothing, ready) {

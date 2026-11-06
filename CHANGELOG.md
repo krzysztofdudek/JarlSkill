@@ -41,6 +41,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - When a task's checkable lines grow after a worker took it, Jarl says so and names the new line, and the report counts these changes for each person who made them.
 - A change meant to leave the output exactly as it was can be tagged `identical-output`. Its worker records the before-and-after comparison as proof, and a lighter reviewer may approve it, but it still needs that review before it can be closed. The tag alone changes nothing: the lighter review counts only when the proof also holds a row that names the comparison, and the tag is for the person who runs the loop to set, not for the worker.
 - Importing a findings file again, the same way as before, reports each finding whose text differs from the task the import filed for it, with both texts, and leaves the task as it was; a finding with neither a claim nor a truth is not compared. Outside tickets can be followed this way: file them under one parent task and import again whenever the tickets change.
+- Importing research findings can put every task it files under one parent task with `--parent <id>`, so a set of outside requirements is filed as a tree in one call instead of one command per task.
 - `scope` and the recording of a merge now point out each added line that starts a conflict marker and each added file over 64 MiB, the largest file Jarl accepts as an attachment, with its file. They only say so and never stop a merge.
 
 ### Changed
