@@ -397,10 +397,10 @@ export const ROW_SOURCES = [issueRows, leaseConflictRows, keptRows, ownerLineRow
 // The rows a composer's scheduler owns: under an external scheduler Jarl lists only the others.
 const SCHEDULING = new Set([issueRows, leaseConflictRows]);
 
-// Every row of the loop, ordered as one display (never a schedule): the owner's rows first, then by how many issues each
+// Every row of the loop, ordered as one display (never a schedule): the owner's rows first, then the rows idle past the threshold, then by how many issues each
 // holds up directly, an item to ratify after a question (it blocks nothing), then by priority and number. A question of
 // kind stop holds up the whole loop.
-export function ballRows(root) {
+export function ballRows(root, flags = {}) {
   const loop = readLoop(jarlDir(root));
   const { profile } = loop;
   const scheduled = profile.scheduler !== null;
@@ -410,7 +410,7 @@ export function ballRows(root) {
   const ownerStates = new Map(inPlay.map((i) => [i.id, ownerLineStates(root, loop, i)]).filter(([, s]) => s.length));
   // Each issue reserves its files against the issues of its own slice: across slices only leases hold.
   // The age of each lease, past the goal's liveness threshold or not, read once per issue (see leaseLiveness).
-  const minutes = livenessOf(loop.goalLines).minutes;
+  const minutes = livenessOf(loop.goalLines, flags).minutes;
   const ages = new Map();
   const liveness = (i) => { if (!ages.has(i.id)) ages.set(i.id, leaseLiveness(root, i, minutes, { events: loop.eventsById.get(i.id) || [] })); return ages.get(i.id); };
   const ctx = { root, loop, profile, merger: loop.goalLines.merger === null ? JARL_HOLDER : holderOf(loop.goalLines.merger), next: scheduled ? [] : nextRows(root, { perSlice: true }), awaiting, onOwner: new Set(heldByOwner(loop, awaiting)), ownerStates, liveness };
@@ -428,7 +428,9 @@ export function ballRows(root) {
     else r.holdsUp = [];
   }
   const weight = (r) => (r.what === 'question' && r.kind === 'stop' ? Number.MAX_SAFE_INTEGER : r.holdsUp.length);
-  rows.sort((a, b) => (b.holder === OWNER_HOLDER) - (a.holder === OWNER_HOLDER) || weight(b) - weight(a)
+  // A row idle past the threshold goes before the others of its holder: a worker that waits on a prompt or a lock writes
+  // nothing, so the list is where it is seen, and it must not fall past the seven lines shown.
+  rows.sort((a, b) => (b.holder === OWNER_HOLDER) - (a.holder === OWNER_HOLDER) || Boolean(b.idle) - Boolean(a.idle) || weight(b) - weight(a)
     || (a.what === 'ratify') - (b.what === 'ratify')
     || String(a.priority ?? '9').localeCompare(String(b.priority ?? '9')) || cmpRef(a, b));
   return { loop, rows, scheduled, waiting: waitingRows(loop, rows, ctx.next, ctx.onOwner) };
@@ -525,7 +527,7 @@ export function readerOf(loop, holder, mine) {
 
 export function cmdNextAs(root, flags = {}) {
   const holder = holderOf(flags.as);
-  const { loop, rows, scheduled, waiting } = ballRows(root);
+  const { loop, rows, scheduled, waiting } = ballRows(root, flags);
   const mine = rows.filter((r) => sameHolder(r.holder, holder));
   const rules = rulesFor(root, loop, readerOf(loop, holder, mine), today());
   const all = flags.all === true;
@@ -563,7 +565,7 @@ export function renderNextAs(o) {
 }
 
 // The asker's list at the end of status --as and resume --as: what next --as prints, under its own heading.
-export function askerSection(root, as) {
-  const o = cmdNextAs(root, { as });
+export function askerSection(root, as, flags = {}) {
+  const o = cmdNextAs(root, { as, ...(flags['stale-hours'] !== undefined ? { 'stale-hours': flags['stale-hours'] } : {}) });
   return { as: o, text: `## ${renderNextAs(o)}` };
 }

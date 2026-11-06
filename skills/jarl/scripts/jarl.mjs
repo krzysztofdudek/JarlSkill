@@ -1531,7 +1531,7 @@ function groupedBy(flags) {
 // status --as and resume --as: the view, then the asker's list as next --as prints it (`as` in --json).
 function endWithAsker(root, flags, out, text) {
   if (flags.as === undefined) return { out, text };
-  const asker = askerSection(root, flags.as);
+  const asker = askerSection(root, flags.as, flags);
   // The asker's list is the loop's, whatever the view is scoped to: a scoped view says so over the list.
   const scope = flags.tag !== undefined ? `the issues tagged ${flags.tag}` : flags.slice !== undefined ? `the slice of ${flags.slice}` : null;
   const [head, ...rest] = asker.text.split('\n');

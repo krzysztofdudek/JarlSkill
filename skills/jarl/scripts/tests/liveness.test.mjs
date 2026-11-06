@@ -171,6 +171,64 @@ test('the ages read the branch\'s commits in this clone and its fetched refs, an
   at(51, () => assert.equal(R.statusData(root).stale[0].problems[0], `idle 46m (threshold 30m): last log line 51m ago, last row none, last commit 46m ago on jarl/1-one; read in the clone ${L.canonical(root)}: jarl/1-one, no fetched ref`));
 });
 
+test('a branch that exists only as a fetched ref is not gone: the lease is aged by that ref', () => {
+  const { dir: root, g } = gitRepo({ prefix: 'jarl-live-fetched-', branch: 'main' });
+  at(0, () => {
+    R.initLoop(root, 'goal');
+    R.newIssue(root, 'one', { files: 'b.txt', acceptance: 'b is done' });
+    R.setStatus(root, '001', 'in-progress', 'w', { worker: 'w1', branch: 'jarl/1-one' });
+  });
+  g('checkout', '-q', '-b', 'jarl/1-one');
+  writeFileSync(join(root, 'b.txt'), 'b\n');
+  g('add', 'b.txt');
+  const when = new Date(T0 + 5 * MIN).toISOString();
+  execFileSync('git', ['commit', '-qm', 'b'], { cwd: root, env: { ...process.env, GIT_COMMITTER_DATE: when, GIT_AUTHOR_DATE: when }, timeout: SPAWN_TIMEOUT, stdio: 'ignore' });
+  g('remote', 'add', 'origin', 'https://example.invalid/repo.git');
+  g('update-ref', 'refs/remotes/origin/jarl/1-one', 'HEAD');
+  g('checkout', '-q', 'main');
+  g('branch', '-D', 'jarl/1-one');
+  at(10, () => assert.deepEqual(R.statusData(root).stale, [], 'the branch lives on origin, and its commit is 5 minutes old'));
+  at(40, () => {
+    const [problem] = R.statusData(root).stale[0].problems;
+    assert.match(problem, /^idle 35m \(threshold 30m\): .*last commit 35m ago on origin\/jarl\/1-one/);
+    assert.deepEqual(R.statusData(root).stale[0].problems.filter((p) => /^branch gone/.test(p)), []);
+  });
+  g('update-ref', '-d', 'refs/remotes/origin/jarl/1-one');
+  at(10, () => assert.deepEqual(R.statusData(root).stale[0].problems.filter((p) => /^branch gone/.test(p)), ['branch gone: jarl/1-one'], 'with no ref anywhere the branch is gone'));
+});
+
+test('status --stale-hours moves the threshold of the asker\'s list as it moves the rest of the call', () => {
+  const root = at(0, () => {
+    const r = makeLoop({ prefix: 'jarl-live-', dotGit: false });
+    R.newIssue(r, 'one', { files: 'a.mjs', acceptance: 'a is done' });
+    R.setStatus(r, '001', 'in-progress', 'w', { worker: 'w1' });
+    return r;
+  });
+  const row = (text) => text.split('\n').find((l) => l.startsWith('- 001 '));
+  assert.match(row(jarl(root, 'status', '--as', 'jarl')), /no commit, row or log line for \d+[dh] \(threshold 30m\)/, 'the default threshold is the goal\'s');
+  assert.match(row(jarl(root, 'status', '--as', 'jarl', '--stale-hours', '2')), /no commit, row or log line for \d+[dh] \(threshold 2h\)/, 'the override is the threshold of the list');
+  assert.match(row(jarl(root, 'status', '--as', 'jarl', '--stale-hours', '1000000')), /with worker w1 since 2026-06-01 10:00, no proof yet; the worker records it/, 'a lease younger than the override is not idle');
+  assert.deepEqual(JSON.parse(jarl(root, 'status', '--as', 'jarl', '--stale-hours', '1000000', '--json')).as.rows.map((r) => r.what), ['worker']);
+});
+
+test('a row idle past the threshold goes before the others of its holder, so it is among the seven lines shown', () => {
+  const root = at(0, () => {
+    const r = makeLoop({ prefix: 'jarl-live-', dotGit: false });
+    R.newIssue(r, 'the lease', { files: 'lease.mjs', acceptance: 'it is done', prio: '3' });
+    R.setStatus(r, '001', 'in-progress', 'w', { worker: 'w1' });
+    for (let n = 2; n <= 9; n += 1) R.newIssue(r, `ready ${n}`, { files: `f${n}.mjs`, acceptance: 'it is done', prio: '1' });
+    return r;
+  });
+  at(31, () => {
+    const list = L.cmdNextAs(root, { as: 'jarl' });
+    assert.equal(list.rows[0].what, 'idle', 'the idle lease heads the list');
+    assert.equal(list.rows[0].id, '001');
+    assert.equal(list.rows.length, 7);
+    assert.match(nextAs(root, 'jarl'), /^On the jarl \(9\)\n- 001 the lease: with worker w1 since [^\n]*, no commit, row or log line for 31m /);
+  });
+  at(20, () => assert.equal(L.cmdNextAs(root, { as: 'jarl' }).rows.some((r) => r.what === 'idle'), false, 'inside the threshold the lease is an ordinary row, and falls behind the ready issues'));
+});
+
 test('a held resource shows the issue that holds it and that holder\'s age', () => {
   const root = at(0, () => {
     const r = makeLoop({ prefix: 'jarl-live-', dotGit: false });

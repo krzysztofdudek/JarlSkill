@@ -89,7 +89,7 @@ and in committed mode a worktree holds only the copy it was cut with.
 
 ## What is on whom
 
-Every open thing of a loop has one holder who moves next: the owner, the jarl, a coordinator or a person by name. Jarl derives the holder from the record, from the status flags of the loop's profile, the verdicts, the questions and the rulings, never from the name of a status, and stores nothing. `next --as <who>` lists what is on that holder, `status --as <who>` and `resume --as <who>` end with the same list. The order is a display, not a schedule: the owner's lines first, then by how many issues each holds up, a question before an item to ratify, then by priority.
+Every open thing of a loop has one holder who moves next: the owner, the jarl, a coordinator or a person by name. Jarl derives the holder from the record, from the status flags of the loop's profile, the verdicts, the questions and the rulings, never from the name of a status, and stores nothing. `next --as <who>` lists what is on that holder, `status --as <who>` and `resume --as <who>` end with the same list. The order is a display, not a schedule: the owner's lines first, then a lease or a proof idle past the threshold, then by how many issues each holds up, a question before an item to ratify, then by priority.
 
 | Open thing | Holder | The command that moves it |
 |---|---|---|
