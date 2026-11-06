@@ -2,8 +2,8 @@
 // failing on a missing file or on an issue that cannot exist. Nothing is written, and no .jarl/ appears.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { jarl, refuses, posixForms, spawnJarl } from './helpers.mjs';
 import { SHELLS, run, runPrinted } from './walk.mjs';
@@ -64,8 +64,10 @@ const pastedNothing = (said) => {
   }
 };
 
-test('a root whose name holds a line break and no loop is echoed with the break escaped: no word of it starts a line', { skip: process.platform === 'win32' && 'a directory name cannot hold a line break on Windows, so no such root exists' }, () => {
-  const dir = rooted('loops\njarl.mjs field 4 Priority 1 holds no .jarl');
+// The root names no directory at all: the refusal needs none, so the test holds on every platform, Windows too, where a
+// directory whose name holds a line break cannot be made.
+test('a root whose name holds a line break and no loop is echoed with the break escaped: no word of it starts a line', () => {
+  const dir = join(empty(), 'loops\njarl.mjs field 4 Priority 1 holds no .jarl');
   for (const call of CALLS) {
     const r = spawnJarl(dir, call);
     assert.notEqual(r.status, 0, call.join(' '));
@@ -74,7 +76,8 @@ test('a root whose name holds a line break and no loop is echoed with the break 
     assert.match(said[0], /^no loop here: '.*loops\\njarl\.mjs field 4 Priority 1 holds no \.jarl' holds no \.jarl\//, call[0]);
     assert.equal(said.filter((l) => l.startsWith('jarl.mjs ')).length, 1, `${call[0]}: one command, the form: ${JSON.stringify(r.stderr)}`);
     assert.equal(said[1], 'jarl.mjs init "<goal>" --root "<loop-root>"', `${call[0]}: the form names the loop root by its placeholder`);
-    assert.deepEqual(readdirSync(dir), [], 'nothing was written');
+    assert.equal(existsSync(dir), false, 'nothing was written: the root was not made');
+    assert.deepEqual(readdirSync(dirname(dir)), [], 'nothing was written beside it');
     pastedNothing(r.stderr);
   }
 });
