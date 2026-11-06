@@ -163,9 +163,10 @@ function decisionsAt(dir, skipped) {
 }
 // The fields the tool writes into a ruling's closing block. Applies to, Area, Reach and Rule come with the ruling (decide
 // --applies-to, --area, --reach, --rule); Superseded by, Ratified, Rejected, Type log and Rule log are added to an earlier
-// ruling in place, later. Applies to is the block's first line, after Waives review (decide --waives-review, the issues a
-// ruling of the owner closes without a review): a reader that knows neither field ends the ruling's text with them, so it
-// shows them in words, still reads every field after them, and its done gate asks for the review all the same.
+// ruling in place, later. Applies to is the block's first line, after Waives review: a reader that knows no such field
+// ends the ruling's text with it, so it shows the scope in words and still reads every field after it. Waives review
+// (decide --waives-review, the issues a ruling of the owner closes without a review) is held by record format 3
+// (FORMAT_LINES 'review-waiver'): a reader of the formats below it would count the issues it closes as unreviewed.
 const DECISION_META = /^\*\*(Waives review|Applies to|By|Supersedes|Superseded by|Settles|Area|Reach|Rule|Ratified|Rejected|Type log|Rule log):\*\*\s*(.*)$/;
 // The answer line of an answered question's ruling (ask-<n>): the answer itself, the option chosen, or the answer in its own words.
 const ANSWER_LINE = /^\*\*(?:Answer|Answer in own words|Chose):\*\*/;
@@ -196,6 +197,20 @@ function markDecision(root, slug, line, { text: given } = {}) {
   return undefined;
 }
 
+// The refusals of a new ruling's slug and of the earlier ruling it supersedes, which write nothing. appendDecision asks
+// them before it writes; a caller that raises the record format for the ruling asks them before the raise, so a ruling
+// refused for its slug leaves the format as it was.
+export function needNewRuling(root, slug, supersedes) {
+  need(typeof slug === 'string' && SLUG_RE.test(slug), `a ruling's slug is letters, digits and . _ - (starting with a letter or digit, at most 80 characters) — not "${slug}"`, () => ({ arg: 0, value: '<slug>' }));
+  const all = loadDecisions(root);
+  need(!all.some((d) => d.slug === slug), `duplicate slug: ${slug} — a ruling that replaces it takes a new slug and --supersedes ${slug}`, () => ({ arg: 0, value: hole('<a-new-slug>') }));
+  if (supersedes === undefined) return;
+  need(typeof supersedes === 'string' && SLUG_RE.test(supersedes) && supersedes !== slug, '--supersedes names the slug of an earlier ruling', () => ({ flag: '--supersedes', value: '<slug>' }));
+  const old = all.find((d) => d.slug === supersedes);
+  need(old, `no ruling ${supersedes} in ${DECISIONS_FILE} to supersede — the rulings: ${jarlLine('decisions')}`, () => ({ flag: '--supersedes', value: '<a-ruling-in-force>' }));
+  need(!old.supersededBy, `${supersedes} is already superseded by ${old.supersededBy} — supersede that one instead`, () => ({ flag: '--supersedes', value: hole('<a-ruling-in-force>') }));
+}
+
 // The ruling is written as its caller gives it: structure at the start of a line, free text indented (freeInline, freeBlock).
 // The owner's words (quote, on a ruling by the owner only) are its last line, after a blank one, at the left edge: the one
 // line of a ruling no text given to decide can stand on (owner.mjs, quoteOf). The ruling it rests on (under, on a ruling
@@ -204,19 +219,11 @@ export function appendDecision(root, slug, ruling, { by, quote, under, supersede
   need(under === undefined || under === null || (typeof under === 'string' && SLUG_RE.test(under) && by !== OWNER), 'the ruling a ruling rests on is the slug of a ruling, and a ruling by the owner rests on his own words', () => ({ flag: '--under', value: '<a-ruling-in-force>' }));
   need(quote === undefined || quote === null || (typeof quote === 'string' && quote === fieldText(quote) && quote !== '' && by === OWNER), 'the owner\'s words are one line of text, kept with a ruling by the owner', () => ({ flag: '--quote', value: '<his-own-words>' }));
   if (quote) needNoOwnersWords('--quote', quote);
-  need(typeof slug === 'string' && SLUG_RE.test(slug), `a ruling's slug is letters, digits and . _ - (starting with a letter or digit, at most 80 characters) — not "${slug}"`, () => ({ arg: 0, value: '<slug>' }));
+  needNewRuling(root, slug, supersedes);
   const path = decisionsPath(jarlDir(root));
   const existing = existsSync(path) ? readText(path) : '# Decisions\n';
-  const all = loadDecisions(root);
-  need(!all.some((d) => d.slug === slug), `duplicate slug: ${slug} — a ruling that replaces it takes a new slug and --supersedes ${slug}`, () => ({ arg: 0, value: hole('<a-new-slug>') }));
   let text = existing;
-  if (supersedes !== undefined) {
-    need(typeof supersedes === 'string' && SLUG_RE.test(supersedes) && supersedes !== slug, '--supersedes names the slug of an earlier ruling', () => ({ flag: '--supersedes', value: '<slug>' }));
-    const old = all.find((d) => d.slug === supersedes);
-    need(old, `no ruling ${supersedes} in ${DECISIONS_FILE} to supersede — the rulings: ${jarlLine('decisions')}`, () => ({ flag: '--supersedes', value: '<a-ruling-in-force>' }));
-    need(!old.supersededBy, `${supersedes} is already superseded by ${old.supersededBy} — supersede that one instead`, () => ({ flag: '--supersedes', value: hole('<a-ruling-in-force>') }));
-    text = markDecision(root, supersedes, `**Superseded by:** ${slug} (${today()})`, { text });
-  }
+  if (supersedes !== undefined) text = markDecision(root, supersedes, `**Superseded by:** ${slug} (${today()})`, { text });
   const meta = [waives?.length ? `**Waives review:** ${waives.join(', ')}` : null, appliesTo ? `**Applies to:** ${fieldText(appliesTo)}` : null, settles?.length ? `**Settles:** ${settles.join(', ')}` : null, by ? `**By:** ${fieldText(by)}` : null, supersedes !== undefined ? `**Supersedes:** ${supersedes}` : null, area ? `**Area:** ${area}` : null, reach !== undefined && reach !== null ? `**Reach:** ${reach}` : null, rule ? `**Rule:** ${rule}` : null].filter(Boolean).join('\n');
   const body = `${ruling.replace(/\s+$/, '')}${under ? `\n\n${underLine(under)}` : ''}${quote ? `\n\n${quoteLine(quote)}` : ''}`;
   carryingOwnersWords([quote && quoteLine(quote)], () => writeAtomic(path, `${text.replace(/\s*$/, '')}\n\n## ${today()} · ${slug}\n${body}\n${meta ? `\n${meta}\n` : ''}`));

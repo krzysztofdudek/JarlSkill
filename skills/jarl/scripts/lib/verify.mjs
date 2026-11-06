@@ -134,6 +134,11 @@ export function cmdVerify(root) {
   if (profile.format < FORMAT_LINES.escalation.format) {
     for (const a of loadAsks(root)) if (a.kind === 'escalation') add('format', `${ASKS_FILE} a-${a.id}`, `an escalation is written in record format ${FORMAT_LINES.escalation.format}, and this loop is not in it`);
   }
+  // A waiver of review is held by format 3: below it the done gate does not count it, and a reader of a lower format
+  // counts the issue as unreviewed.
+  if (profile.format < FORMAT_LINES['review-waiver'].format) {
+    for (const d of rulings) if (d.waives) add('format', `${DECISIONS_FILE} ${d.slug}`, `a waiver of the review of ${d.waives.join(', ')} is written in record format ${FORMAT_LINES['review-waiver'].format}, and this loop is not in it`);
+  }
   retractionChecks(events, add);
   // A shared number is the issues check's finding. A number the log files more than once, now one file's, is read from
   // its header: a one-line note, while a contradiction inside that header is a finding, printed whole as the tool wrote it.

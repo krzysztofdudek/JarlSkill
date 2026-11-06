@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { gitRepo, jarl, refuses, run } from './helpers.mjs';
+import { fileAsBefore, formatTwoJarl, oldJarl } from './old-jarl.mjs';
 
 const json = (root, ...args) => JSON.parse(jarl(root, ...args, '--json'));
 const decisions = (root) => readFileSync(join(root, '.jarl', 'decisions.md'), 'utf8');
@@ -88,4 +89,68 @@ test('a superseded waiver, or a ruling whose words are not the owner\'s, waives 
   jarl(other.root, 'merged', '1', '--sha', other.g('rev-parse', 'jarl/1-move').trim(), '--ci', 'none', '--keep', '--by', 'jarl');
   assert.match(refuses(other.root, 'set', '1', 'done', 'x', '--by', 'jarl'), /no approving review/);
   assert.equal(run(other.root, ['status']).status, 0);
+});
+
+// A loop whose issue is filed with three digits and no key (fileAsBefore) and written with no writer, so it stays in
+// record format 1 until the waiver: one code issue on a branch, with its proof row and its merge recorded.
+function formatOneLoop() {
+  const { dir: root, g } = gitRepo({ prefix: 'jarl-waiver-format-', branch: 'main' });
+  jarl(root, 'init', 'goal');
+  const id = fileAsBefore(root, 'move the helper', { acceptance: 'the output is the same' });
+  g('checkout', '-q', '-b', 'jarl/move');
+  writeFileSync(join(root, 'a.txt'), 'moved\n'); g('add', 'a.txt'); g('commit', '-qm', 'move');
+  g('checkout', '-q', 'main');
+  jarl(root, 'set', id, 'in-progress', '--worker', 'w1', '--branch', 'jarl/move');
+  jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'pass 4, fail 0');
+  jarl(root, 'merged', id, '--sha', g('rev-parse', 'jarl/move').trim(), '--ci', 'none', '--keep');
+  return { root, id };
+}
+const format = (root) => json(root, 'profile').format;
+const waiveIn = (root, id, slug = 'no-review', extra = []) => jarl(root, 'decide', slug, 'Closes without a review.', '--by', 'owner', '--quote', 'No review for that one.', '--waives-review', id, ...extra);
+
+test('the first waiver raises the record format before it is written, so a reader of formats 1 and 2 refuses the loop with its own message instead of counting the issue as unreviewed', () => {
+  const { root, id } = formatOneLoop();
+  assert.equal(format(root), 1);
+  for (const read of [oldJarl, formatTwoJarl]) assert.equal(read(root, 'status', {}).ok, true, 'before the waiver, both readers of the lower formats read the loop');
+  waiveIn(root, id);
+  assert.equal(format(root), 3, 'the waiver raised the loop to the format that holds it');
+  assert.match(jarl(root, 'set', id, 'done', 'waived by the owner and merged'), new RegExp(`${id} → done`));
+  assert.match(jarl(root, 'status'), /waived by the owner 1/);
+  for (const command of ['status', 'report', 'list']) {
+    const two = formatTwoJarl(root, command, {});
+    assert.equal(two.ok, false, command);
+    assert.match(two.error, /written for record format 3, and this Jarl reads format 1, 2 — nothing was read or written; the reader needs a Jarl that knows format 3/, command);
+    const one = oldJarl(root, command, {});
+    assert.equal(one.ok, false, command);
+    assert.match(one.error, /written for record format 3, and this Jarl reads format 1 — /, command);
+  }
+});
+
+test('a waiver refused for its slug or the ruling it supersedes writes nothing and leaves the record format as it was', () => {
+  const { root, id } = formatOneLoop();
+  jarl(root, 'decide', 'taken', 'A ruling.', '--by', 'jarl');
+  const before = decisions(root);
+  assert.match(refuses(root, 'decide', 'taken', 'Closes without a review.', '--by', 'owner', '--quote', 'No review for that one.', '--waives-review', id), /^duplicate slug: taken/);
+  assert.match(refuses(root, 'decide', 'no-review', 'Closes without a review.', '--by', 'owner', '--quote', 'No review for that one.', '--waives-review', id, '--supersedes', 'no-such-ruling'), /^no ruling no-such-ruling /);
+  assert.match(refuses(root, 'decide', 'no review', 'Closes without a review.', '--by', 'owner', '--quote', 'No review for that one.', '--waives-review', id), /slug is letters, digits/);
+  assert.equal(decisions(root), before);
+  assert.equal(format(root), 1);
+  assert.equal(formatTwoJarl(root, 'status', {}).ok, true);
+});
+
+test('a waiver in a loop below the format that holds it waives nothing, and verify names it', () => {
+  const { root, id } = formatOneLoop();
+  waiveIn(root, id);
+  writeFileSync(join(root, '.jarl', 'profile.json'), JSON.stringify({ 'jarl-profile': 1, format: 1 }, null, 2));
+  assert.match(refuses(root, 'set', id, 'done', 'x'), /no approving review/);
+  const v = run(root, ['verify']);
+  assert.match(`${v.stdout}\n${v.stderr}`, /decisions\.md no-review: a waiver of the review of 001 is written in record format 3, and this loop is not in it/);
+});
+
+test('show says a superseded waiver waives nothing, in the window and in the whole issue', () => {
+  const { root } = codeLoop();
+  waive(root);
+  assert.doesNotMatch(jarl(root, 'show', '1'), /waives nothing/);
+  jarl(root, 'decide', 'review-1-after-all', 'Issue 1 is reviewed after all.', '--by', 'owner', '--quote', 'Have it reviewed.', '--supersedes', 'no-review-for-1');
+  for (const full of [[], ['--full']]) assert.match(jarl(root, 'show', '1', ...full), /^.*Ruling no-review-for-1 \(by owner\) waives the review: .* \(superseded by review-1-after-all: it waives nothing\)$/m, full.join(' '));
 });

@@ -8,7 +8,7 @@ import { jarlDir, today } from './where.mjs';
 import { appendAtomic, readText, writeAtomic } from './files.mjs';
 import { askNumber, idKey, issueForms, needsRaisedFormat, newNumber, writtenId } from './ids.mjs';
 import { FORMAT_LINES, formatState, loadProfile, numberWidth } from './profile.mjs';
-import { ASKS_FILE, DECISIONS_FILE, STAMP_SRC, answeredLines, appendDecision, appendLog, appendLogLines, asksAt, asksPath, firstLine, goalLines, loadDecisions, markDecision, parseStamp, readGoal } from './journal.mjs';
+import { ASKS_FILE, DECISIONS_FILE, STAMP_SRC, answeredLines, appendDecision, appendLog, appendLogLines, asksAt, asksPath, firstLine, goalLines, loadDecisions, markDecision, needNewRuling, parseStamp, readGoal } from './journal.mjs';
 import { OWNER, carryingOwnersWords, needNoOwnersWords, quoteShown, rulingAuthor } from './owner.mjs';
 import { findIssue, freeBlock, loadIssues, noteText, parseIssue, placeEvidence, setSection } from './issues.mjs';
 import { needFormat, tipLines } from './repositories.mjs';
@@ -352,6 +352,10 @@ export function cmdDecide(root, slug, ruling, flags = {}) {
   const reach = flags.reach !== undefined ? Number(flags.reach) : null;
   const rule = flags.rule !== undefined ? String(flags.rule) : null;
   const text = freeBlock(oneBreak(ruling).trim());
+  // A waiver is a line a reader of formats 1 and 2 would count as no review at all: the loop is raised to the format that
+  // holds it before the ruling is written and after the ruling's own refusals, so a refused ruling raises nothing; where a
+  // composer keeps the loop's format, the ruling is refused with nothing written.
+  if (waives.length) { needNewRuling(root, slug, flags.supersedes); needFormat(root, 'review-waiver'); }
   appendDecision(root, slug, text, { by, quote, under, supersedes: flags.supersedes, area, reach, rule, settles: settles.map((i) => i.id), appliesTo, waives: waives.map((i) => i.id) });
   appendLog(root, `decided ${slug} · by ${by}${appliesTo ? ` · applies to ${appliesTo}` : ''}${flags.supersedes !== undefined ? ` · supersedes ${flags.supersedes}` : ''}${area ? ` · area ${area}${reach !== null ? ` (${reach} files)` : ''}${rule ? ` · rule ${rule}` : ''}` : ''}`);
   if (settles.length) {

@@ -5,7 +5,7 @@ import { resolve, dirname, basename } from 'node:path';
 import { CI_STATES, fieldText, hole, jarlLine, need } from './base.mjs';
 import { jarlDir } from './where.mjs';
 import { idKey, idRe, idsCited, keyedIds } from './ids.mjs';
-import { profileAt } from './profile.mjs';
+import { FORMAT_LINES, profileAt } from './profile.mjs';
 import { asksAt, decisionsAt, goalLines, readGoal } from './journal.mjs';
 import { eventsById, isParentLine, loopEvents } from './log.mjs';
 import { alignRows, evidenceRows, evidenceTable, headerReadText, issuesAt, mergedOf, sharedNumberText, sharedNumbers } from './issues.mjs';
@@ -320,6 +320,21 @@ export function activeSlices(loop) { return slicesOf(loop).filter((s) => s.inPla
 const KIND_WEIGHT = { fresh: 0, waived: 0.5, coordinator: 1, self: 2 };
 // The note decide --waives-review writes into each issue it names, as the log holds it.
 const WAIVER_NOTE = /^\S+ evidence · Ruling (\S+) \(by owner\) waives the review\b/;
+// Why the ruling `slug` waives nothing for issue `id`, in a few words, or null when it waives its review: a waiver counts
+// only while its ruling is in the record, is in force, is the owner's with his words, names the issue under Waives
+// review, and the loop is in the record format that holds a waiver (a reader of the formats below it counts the issue as
+// unreviewed, so a waiver below that format counts here neither). The done gate reads it, and show says it beside a note
+// whose ruling does not count.
+function waiverVoid(loop, slug, id) {
+  const d = (loop.decisions || []).find((x) => x.slug === slug);
+  if (!d) return `no ruling ${slug} is in the record`;
+  if (d.supersededBy) return `superseded by ${d.supersededBy}`;
+  if (d.by !== OWNER || !d.quote) return 'the ruling is not the owner\'s with his words';
+  if (!(d.waives || []).some((w) => idKey(w) === idKey(id))) return `the ruling does not name ${id} under Waives review`;
+  const held = FORMAT_LINES['review-waiver'].format;
+  if (loop.profile.format < held) return `the loop is not in record format ${held}`;
+  return null;
+}
 // An issue carries code when it records a branch or a merge. Only then does done (and the merge queue) need a
 // fresh approve; an issue with neither — a ruling, a note, a hub document — is still cleared by the coordinator.
 export function carriesCode(issue) { return Boolean(fieldText(issue.fields.branch) || fieldText(issue.fields.merged)); }
@@ -453,10 +468,10 @@ export function gateOf(loop, id) {
   // A tip line belongs to the line of the same issue just before it: a row, a verdict or a merge.
   let before = null;
   let mergeTip = null;   // the tip the newest merge was recorded on
-  // The owner's waivers of this issue's review: rulings by the owner, carrying his words, in force, that name it under
-  // Waives review. Each stands where decide wrote it into the issue (its first note naming the ruling, and the tip after
-  // it), and counts as an approve counts: a start, a reopen or a red round spends it, and so does a new commit.
-  const waivers = new Map((loop.decisions || []).filter((d) => (d.waives || []).some((w) => idKey(w) === idKey(id)) && d.by === OWNER && d.quote && !d.supersededBy).map((d) => [d.slug, d]));
+  // The owner's waivers of this issue's review: the rulings waiverVoid finds nothing against. Each stands where decide
+  // wrote it into the issue (its first note naming the ruling, and the tip after it), and counts as an approve counts: a
+  // start, a reopen or a red round spends it, and so does a new commit.
+  const waivers = new Set((loop.decisions || []).filter((d) => d.waives && waiverVoid(loop, d.slug, id) === null).map((d) => d.slug));
   const waived = [];
   for (const e of events) {
     if (e.type === 'tip') {
@@ -581,4 +596,4 @@ function gateLine(profile, split, label) {
 function renderSplit(s) { return `fresh ${s.fresh}${s.waived ? ` · waived by the owner ${s.waived}` : ''} · coordinator ${s.coordinator} · self ${s.self}${s.retracted ? ` · retracted ${s.retracted}` : ''}${s.unrecorded ? ` · unrecorded ${s.unrecorded}` : ''}`; }
 
 // Used by the other modules of the library, and not part of what jarl-lib.mjs exports.
-export { FIELD_NAMES, approveKind, closedGateLine, gateLine, scopedLoop };
+export { FIELD_NAMES, approveKind, closedGateLine, gateLine, scopedLoop, waiverVoid };
