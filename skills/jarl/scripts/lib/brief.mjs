@@ -9,7 +9,7 @@ import { jarlDir, today } from './where.mjs';
 import { firstLine } from './journal.mjs';
 import { evidenceTable, issueNamed, reviewEntries } from './issues.mjs';
 import { gateOf, readLoop, sameSlice, sliceNamed, sliceOf } from './loop.mjs';
-import { takeoverStanding } from './rounds.mjs';
+import { takenOver } from './rounds.mjs';
 import { loopRules, ruleLines, rulesFor } from './rules.mjs';
 import { issueView } from './evidence.mjs';
 
@@ -67,8 +67,8 @@ function issueBrief(root, loop, rawId, role) {
   need(issue, `no such issue: ${rawId} — the issues: ${jarlLine('list', '--all')}`, () => ({ arg: 0, value: hole('<id>') }));
   const events = loop.eventsById.get(issue.id) || [];
   const rounds = events.filter((e) => e.type === 'round').map((e, n) => ({ round: n + 1, at: e.at, text: e.text.slice(e.written.length + 1) }));
-  // A takeover as the round count reads it: a round line marked takeover, or, on a line with no mark, every third round.
-  const tookOver = takeoverStanding(root, issue, events).takeovers > 0;
+  // A takeover as the record names one: a lease handed to a new worker with a reason that names a takeover (see takenOver).
+  const tookOver = takenOver(loop.profile, events);
   const roles = new Set([role, ...(role === 'worker' && tookOver ? ['takeover'] : [])]);
   const moments = new Set([role === 'worker' ? 'start' : 'review', ...(rounds.length ? ['round'] : [])]);
   // The reader the rules are matched against, as next --as and resume --as match theirs: the role, the moment and the issue.

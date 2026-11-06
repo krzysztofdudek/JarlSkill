@@ -215,25 +215,41 @@ test('a Worktree field a lease wrote into the header is left out of the brief, a
   assert.match(text, /\n# 1 · the work\n\n\*\*Status:\*\* open\n\*\*Kind:\*\* /);
 });
 
-test('a worker after a takeover a journal-only writer recorded, three rounds with no mark, is given the rules of the takeover; after two it is not', () => {
+test('three rounds with no mark that end with the same worker and no lease handed on give no takeover role', () => {
   const root = rulesLoop();
-  journalOnly(root, '2 round 1 · a', '2 round 2 · b');
-  assert.deepEqual(json(root, 'brief', '2').roles, ['worker']);
-  journalOnly(root, '2 round 3 · c');
+  journalOnly(root, '2 → in-progress · go · branch jarl/2-work · worker w-one', '2 round 1 · a', '2 round 2 · b', '2 round 3 · c', '2 round 4 · d');
   const o = json(root, 'brief', '2');
+  assert.deepEqual(o.roles, ['worker']);
+  assert.ok(!slugs(o).includes('takeovers'));
+});
+
+test('a lease handed to a new worker with a reason that names a takeover gives the takeover role, with no round line at all', () => {
+  const root = rulesLoop();
+  journalOnly(root, '2 → in-progress · go · branch jarl/2-work · worker w-one');
+  assert.deepEqual(json(root, 'brief', '2').roles, ['worker']);
+  journalOnly(root, '2 → in-progress · takeover after three rounds: a fresh strong worker · branch jarl/2-work · worker w-two');
+  const o = json(root, 'brief', '2');
+  assert.equal(o.rounds.length, 0);
   assert.deepEqual(o.roles, ['takeover', 'worker']);
   assert.ok(slugs(o).includes('takeovers'));
 });
 
-test('a worker on an issue a round took over is given the rules of the takeover and of the round', () => {
+test('a round that printed the takeover block gives the takeover role once the lease is handed over for it, and a handover for another reason gives none', () => {
   const root = rulesLoop();
   jarl(root, 'goal', '--set', 'Takeover: 1');
+  jarl(root, 'set', '1', 'in-progress', 'go', '--worker', 'w-one', '--branch', 'jarl/1-ui');
+  jarl(root, 'set', '3', 'in-progress', 'go', '--worker', 'w-three', '--branch', 'jarl/3-ui');
   jarl(root, 'round', '1', 'the screen is blank');
+  const before = json(root, 'brief', '1');
+  assert.deepEqual(before.roles, ['worker'], 'the block is advice: the same worker still holds the lease');
+  assert.deepEqual(before.moments, ['round', 'start']);
+  assert.match(before.rounds[0].text, /^round 1 \(takeover 1 of 1\) · the screen is blank$/);
+  jarl(root, 'set', '1', 'in-progress', 'Takeover after one round', '--worker', 'w-two', '--branch', 'jarl/1-ui', '--handover');
   const o = json(root, 'brief', '1');
   assert.deepEqual(o.roles, ['takeover', 'worker']);
-  assert.deepEqual(o.moments, ['round', 'start']);
   assert.ok(slugs(o).includes('takeovers'));
-  assert.match(o.rounds[0].text, /^round 1 \(takeover 1 of 1\) · the screen is blank$/);
+  jarl(root, 'set', '3', 'in-progress', 'the host restarted, a fresh session goes on', '--worker', 'w-four', '--branch', 'jarl/3-ui', '--handover');
+  assert.deepEqual(json(root, 'brief', '3').roles, ['worker']);
 });
 
 test('brief --slice <coordinator> is the coordinator\'s: its issues in play, its rules and none of another slice or role, its reference and its commands', () => {

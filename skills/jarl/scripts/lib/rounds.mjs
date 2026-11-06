@@ -68,6 +68,25 @@ function takeoverStanding(root, issue, entries) {
   return { limit, since, takeovers };
 }
 
+// A reason that names a takeover: takeover, take over, taken over, take-over, taking over, in any case.
+const TAKEOVER_REASON = /\btak(?:e|es|en|ing)[- ]?overs?\b/i;
+// Whether the issue was taken over, read from its moves alone: a move into a status that holds the claim, naming a worker
+// other than the one the lease before it named, with a reason that names a takeover. A round's count or its standing is
+// never one: the block a round prints is advice, and the takeover is the lease that changes hands on it, which an issue
+// with no round line can have too. `events` are the issue's events.
+function takenOver(profile, events) {
+  let leased = false;
+  let worker = null;
+  for (const e of events) {
+    if (e.type !== 'move' || !profile.is(e.to, 'holds-claim')) continue;
+    const next = e.lease ? e.lease.worker : null;
+    if (leased && next && next !== worker && TAKEOVER_REASON.test(leaseOfMove(e.text, e.written ?? e.id, e.to).reason)) return true;
+    leased = true;
+    if (next) worker = next;
+  }
+  return false;
+}
+
 const times = (k) => `${k} time${k === 1 ? '' : 's'}`;
 
 export function cmdRound(root, rawId, what, dry = false, opts = {}) {
@@ -517,4 +536,4 @@ function branchesIn(root, repo, flags, issues, minutes = LIVENESS_MINUTES, appro
 }
 
 // Used by the other modules of the library, and not part of what jarl-lib.mjs exports.
-export { issuesOnBranch, livenessOf, loopRepos, takeoverStanding, thresholdText };
+export { issuesOnBranch, livenessOf, loopRepos, takenOver, thresholdText };
