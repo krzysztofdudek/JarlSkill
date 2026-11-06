@@ -14,7 +14,7 @@ import { appendLog, appendLogLines, decisionsPath, goalPath, logPath } from './j
 import { JARL_GITIGNORE, JARL_GITIGNORE_COMMITTED, ensureLoopMerge, outOfGit } from './loop-git.mjs';
 import { HANDOVER_SEGMENT, journalById, mergeCheckText } from './log.mjs';
 import { FIELD_RE, PROPOSED, RENDERED_FIELDS, acceptanceHeading, acceptanceLineCount, acceptanceLines, acceptanceText, bodyText, changelogText, evidenceNotes, evidenceParts, evidenceRows, evidenceTable, fieldValue, findIssue, issueNamed, loadIssues, mergedOf, namedPairs, needNoFieldTags, noteText, parentCycle, parseIssue, placeEvidence, removeFields, removeFirstField, renderIssue, setField, setSection, unattributedRefusal, waitCycle } from './issues.mjs';
-import { branchTip, commitRepoNames, declaredBaseOf, defaultBase, fileKeysOf, isGitRepo, issueRepoPaths, issueRepoSlots, issueRepos, mainCheckoutOf, needFormat, needRightCheckouts, repoFromInput, repoLabel, repoList, reposNamed, tipLines, whyNotDeletable, worktreeState, worktreesOf } from './repositories.mjs';
+import { branchTip, commitRepoNames, declaredBaseOf, defaultBase, fileKeysOf, isGitRepo, issueRepoPaths, issueRepoSlots, issueRepos, mainCheckoutOf, needFormat, needFormatHeld, needRightCheckouts, repoFromInput, repoLabel, repoList, reposNamed, tipLines, whyNotDeletable, worktreeState, worktreesOf } from './repositories.mjs';
 import { FIELD_NAMES, activeSlices, carriesCode, unmergedCode, gateOf, isSliceTag, needOneSlice, readLoop, sinceText, sliceOf, unorderedNamings, unorderedText } from './loop.mjs';
 import { declaredChecks, lastMerge } from './metrics.mjs';
 import { modelLines, modelRefusalOf, modelReviewForm, modelValue, spellingNote } from './models.mjs';
@@ -285,7 +285,14 @@ export function cmdNew(root, title, rawFlags, from = {}) {
     changelog: flags.changelog !== undefined ? changelogText(flags.changelog) : bodyText(fromTemplate.changelog),
   });
   // A dry filing ends here, before the first write: the text the file would hold passes the record's check too.
-  if (from.dry) { needNoNewOwnersWords('', render('0', null, ''), `${slugify(title)}.md`); return { dry: true }; }
+  // The raises the filing would make are checked as well, so a loop that refuses them is refused here, with nothing written.
+  if (from.dry) {
+    needNoNewOwnersWords('', render('0', null, ''), `${slugify(title)}.md`);
+    if (kept) needFormatHeld(root, 'promise-wait');
+    if (picked.some((p) => p.name)) needFormatHeld(root, 'repo-name');
+    if (ownerLined) needFormatHeld(root, 'owner-line');
+    return { dry: true };
+  }
   // A promise and a wait are kinds a reader of formats 1 and 2 does not know: the loop is raised first, or, where a composer
   // keeps its format, the filing is refused with nothing written.
   if (kept) needFormat(root, 'promise-wait');

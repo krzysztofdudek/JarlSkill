@@ -124,7 +124,8 @@ commands:
                                                  truth is not compared;
                                                  --dry-run prints what it would file; --adopt writes
                                                  Source onto an existing issue that names the finding id but has none;
-                                                 --tags, --repo and --only repeat, or take a comma list
+                                                 every finding is checked before the first write, so a refused import
+                                                 writes nothing; --tags, --repo and --only repeat, or take a comma list
   sources [<findings.json>...] [--source <report-dir>] per report: its findings, the issues filed from them and their
                                                  status; with a findings file, the findings nobody filed too
   evidence <ids> "<text>" | --ran "<command>" --saw "<what-it-printed>" | <id> --file <path> --slot <name> [--by who]

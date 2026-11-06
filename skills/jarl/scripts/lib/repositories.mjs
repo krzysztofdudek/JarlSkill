@@ -140,10 +140,7 @@ export function raiseFormat(root, to = RECORD_FORMAT_RAISED, what = null) {
   return withLock(root, () => {
     const profile = loadProfile(root);
     if (profile.format >= to) return false;
-    if (!formatState(profile).raises) {
-      const line = what || `a line of record format ${to}`;
-      refuse(`${line} needs record format ${to}, and this loop stays at format ${profile.format}: its profile names an external scheduler (${profile.scheduler}), the composer that reads this record, so Jarl never raises its format; ${line} is off in this loop until its profile says "format": ${to} — nothing was written`, afterView(['jarl.mjs', 'profile']));
-    }
+    needRaisable(profile, to, what);
     // A bare word is a path in format 1 and a name from format 2 on: only a loop in format 1 has paths to say again.
     if (profile.format < RECORD_FORMAT_RAISED) writeBarePaths(root);
     const path = profilePath(root);
@@ -158,9 +155,27 @@ export function raiseFormat(root, to = RECORD_FORMAT_RAISED, what = null) {
 // (from format 1 or 2, whichever it is in), or the write is refused where the loop's composer keeps its format;
 // `what` names the write in the refusal when it is one part of the line (a field of a kind), else the line's own words do.
 export function needFormat(root, name, what = null) {
+  const line = lineNamed(name);
+  return raiseFormat(root, line.format, what || line.what);
+}
+// Whether the loop holds the line of FORMAT_LINES `name` or may be raised to hold it: the refusal needFormat would make,
+// made without writing, for a caller that checks a whole call before its first write.
+export function needFormatHeld(root, name, what = null) {
+  const line = lineNamed(name);
+  if (!existsSync(jarlDir(root))) return;
+  const profile = loadProfile(root);
+  if (profile.format < line.format) needRaisable(profile, line.format, what || line.what);
+}
+function lineNamed(name) {
   const line = Object.hasOwn(FORMAT_LINES, name) ? FORMAT_LINES[name] : null;
   need(line, `${name} is not a line of the record format registry: its lines are ${Object.keys(FORMAT_LINES).join(', ')}`, () => afterView(['jarl.mjs', 'profile']));
-  return raiseFormat(root, line.format, what || line.what);
+  return line;
+}
+// A loop whose profile names an external scheduler is never raised: the write that needs format `to` is refused.
+function needRaisable(profile, to, what) {
+  if (formatState(profile).raises) return;
+  const line = what || `a line of record format ${to}`;
+  refuse(`${line} needs record format ${to}, and this loop stays at format ${profile.format}: its profile names an external scheduler (${profile.scheduler}), the composer that reads this record, so Jarl never raises its format; ${line} is off in this loop until its profile says "format": ${to} — nothing was written`, afterView(['jarl.mjs', 'profile']));
 }
 
 // Where a loop's directory stands among the worktrees of its git repository, read-only (git rev-parse and the

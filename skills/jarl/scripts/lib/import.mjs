@@ -2,7 +2,7 @@
 
 import { existsSync } from 'node:fs';
 import { resolve, dirname, basename, relative, isAbsolute } from 'node:path';
-import { KEPT_KINDS, KINDS, PRIORITIES, fieldText, hole, jarlLine, need, refuse, slugify, splitList } from './base.mjs';
+import { KEPT_KINDS, KINDS, PRIORITIES, Refusal, fieldText, hole, isFix, jarlLine, need, refuse, slugify, splitList } from './base.mjs';
 import { git } from './git.mjs';
 import { canonical } from './where.mjs';
 import { readText } from './files.mjs';
@@ -219,6 +219,15 @@ function changedParts(issue, f) {
   });
 }
 
+// The ready part of the refusal of a finding the filing refused: the filing's own when it is a fix of a flag import takes
+// (or a command of another kind, a step to take first), else the form of the import, since the fix is in the findings file.
+const IMPORT_FIXES = new Set(['--kind', '--prio', '--tier', '--tags', '--repo', '--field', '--root']);
+function formOf(ready) {
+  const fixes = [].concat(ready);
+  if (!fixes.every(isFix)) return ready;
+  return fixes.every((x) => IMPORT_FIXES.has(x.flag ?? x.drop)) ? ready : READERS.import.form;
+}
+
 export function cmdImport(root, file, flags) {
   needLiveLoop(root, ` — run: ${jarlLine('init', '<goal>')}`);
   const { dir, findings: read } = readFindings(file, flags);
@@ -270,8 +279,20 @@ export function cmdImport(root, file, flags) {
   const extras = new Map();
   for (const { f } of toFile) for (const k of f.extras) extras.set(k, [...(extras.get(k) || []), f.id]);
   out.extras = [...extras].map(([key, findings]) => ({ key, findings }));
+  // A findings file is one act: every finding to be filed passes the checks of the filing before the
+  // first write (a dry run included), so a refusal leaves the loop as it was.
+  const filing = (f, key) => ({
+    kind: flags.kind || f.kind, prio: flags.prio || f.priority, tier: flags.tier, tags: flags.tags, repo: flags.repo,
+    field: flags.field, 'found-by': foundBy, where: f.where, what: f.what, why: f.why, acceptance: f.acceptance || undefined, source: key,
+  });
+  for (const { f, key } of toFile) {
+    try { cmdNew(root, f.title, filing(f, key), { dry: true }); } catch (e) {
+      if (!(e instanceof Refusal)) throw e;
+      refuse(`finding "${f.id}" cannot be filed: ${e.reason}${/nothing was (written|filed)/.test(e.reason) ? '' : ' — nothing was filed'}`, formOf(e.ready));
+    }
+  }
   if (out.dryRun) {
-    out.filed =toFile.map(({ f, key }) => ({ id: null, finding: f.id, source: key, title: f.title, kind: flags.kind || f.kind, priority: String(flags.prio || f.priority) }));
+    out.filed = toFile.map(({ f, key }) => ({ id: null, finding: f.id, source: key, title: f.title, kind: flags.kind || f.kind, priority: String(flags.prio || f.priority) }));
     return out;
   }
   // One issue may name several findings (a package of minor ones): its Source gets all of them, once.
@@ -281,10 +302,7 @@ export function cmdImport(root, file, flags) {
   const adopting = [...adopt].map(([id, keys]) => [id, [...findIssue(root, id).sources, ...keys]]);
   for (const [id, sources] of adopting) cmdSource(root, id, sources.join(','));
   for (const { f, key } of toFile) {
-    const r = cmdNew(root, f.title, {
-      kind: flags.kind || f.kind, prio: flags.prio || f.priority, tier: flags.tier, tags: flags.tags, repo: flags.repo,
-      field: flags.field, 'found-by': foundBy, where: f.where, what: f.what, why: f.why, acceptance: f.acceptance || undefined, source: key,
-    });
+    const r = cmdNew(root, f.title, filing(f, key));
     out.filed.push({ id: r.id, finding: f.id, source: key, title: f.title, kind: flags.kind || f.kind, priority: String(flags.prio || f.priority) });
   }
   appendLog(root, `imported ${dir} · ${out.filed.length} filed, ${out.already.length} already filed${out.adopted.length ? `, ${out.adopted.length} adopted` : ''}${out.mentioned.length ? `, ${out.mentioned.length} named by an issue without Source` : ''}${out.ambiguous.length ? `, ${out.ambiguous.length} ambiguous` : ''}`);

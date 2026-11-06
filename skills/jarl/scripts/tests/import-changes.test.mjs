@@ -206,12 +206,13 @@ test('a change in one word is a change, not only a change in the end of the text
   assert.equal(importing(root, findingsFile(written([finding({ claim: 'Users can export a report as csv or xlsx.' })]))).changed.length, 0);
 });
 
-test('an import refused partway leaves the issues it filed compared like any other: a later run reports their changes', () => {
+test('an import refused as a whole files nothing: a later run files every finding, compares them like any other and reports their changes', () => {
   const root = loop();
   const refused = findingsFile(written([finding(), finding({ id: 'T-2', title: 'Print', claim: 'Users can <why>print</why> a report.' })]));
   assert.match(refuses(root, 'import', refused, '--source', SOURCE), /closing why tag/);
+  assert.deepEqual(json(root, 'list', '--all'), []);
   const fixed = findingsFile(written([finding(), finding({ id: 'T-2', title: 'Print', claim: 'Users can print a report.' })]));
-  assert.deepEqual(importing(root, fixed).filed.map((f) => f.finding), ['T-2']);
+  assert.deepEqual(importing(root, fixed).filed.map((f) => f.finding), ['T-1', 'T-2']);
   assert.deepEqual(importing(root, fixed).changed, []);
   const both = findingsFile(written([finding({ claim: 'Users can export a report as xlsx.' }), finding({ id: 'T-2', title: 'Print', claim: 'Users can print a report in colour.' })]));
   assert.deepEqual(importing(root, both).changed.map((c) => [c.finding, c.issue]), [['T-1', '1'], ['T-2', '2']]);
