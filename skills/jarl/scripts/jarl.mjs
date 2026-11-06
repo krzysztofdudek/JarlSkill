@@ -211,7 +211,8 @@ commands:
                                                  local branch (git worktree remove, git branch -d, never a force)
                                                  when that is safe, and names why it kept them when it is not;
                                                  --keep skips it. It notes, and never refuses, a commit that lacks the
-                                                 branch tip or the base, a squash or rebase merge, and what the commit
+                                                 branch tip or the base (the repository's declared base, else the branch
+                                                 its main checkout has open), a squash or rebase merge, and what the commit
                                                  brings into its first parent that starts a conflict marker or is an
                                                  added file over 64 MiB
   next [--limit n] [--all] [--as <who>] [--slice <coordinator>]
