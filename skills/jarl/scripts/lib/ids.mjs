@@ -96,6 +96,8 @@ export function idsNamed(text, held, { introducedOnly = false } = {}) {
   // A number of one or two digits names an issue only when it is introduced: written #N, or in a list or range that
   // follows issue, issues or ticket (the list runs on over commas and and/or). Free text such as jarl-2-B2 names none.
   // A number of three or more digits names an issue whenever the loop holds it.
+  // The word ticket stays an introducer as ordinary English: people write it before a number as they write issue, and
+  // dropping it would stop notes already written that way from naming the issue they mean.
   let prevEnd = 0;
   let chain = false;
   for (const m of plain.matchAll(idRe('(?<![0-9A-Za-z])(#?)({id})(?:-(#?)({id}))?(?![0-9A-Za-z])', 'g'))) {

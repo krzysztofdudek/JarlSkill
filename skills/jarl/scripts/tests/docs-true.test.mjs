@@ -9,10 +9,11 @@ import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { SCRIPT, SKILL_DIR, SPAWN_TIMEOUT, gitRepo, jarl, loop, refuses, run, skillFiles, skillLines, skillText } from './helpers.mjs';
+import { LEFT_THE_FAMILY } from './left-the-family.mjs';
 
 const { COMMAND_FLAGS, INTERNAL_COMMANDS, MUTATING, USAGE } = await import('../jarl.mjs');
 const mcp = await import('../jarl-mcp.mjs');
-const { RECORD_API } = await import('../record.mjs');
+const { RECORD_API, RECORD_APIS } = await import('../record.mjs');
 const { renderSplit } = await import('../lib/loop.mjs');
 
 const PLUGIN = resolve(SKILL_DIR, '..', '..');
@@ -260,8 +261,11 @@ test('the README names the branch the merger merges into, who reads JARL_ROOT, t
   assert.doesNotMatch(readme, /`--root`, `JARL_ROOT` or/, 'the command line does not read JARL_ROOT');
   assert.match(readme, /a profile whose done gate asks no approve closes on recorded evidence and a merge in the base, which it must require/);
   assert.match(readme, /a profile can also require attached files before a kind of issue closes/);
-  const labels = renderSplit({ fresh: 1, waived: 1, coordinator: 1, self: 1, retracted: 1, unrecorded: 1 }).split(' · ').map((part) => part.replace(/ \d+$/, ''));
-  assert.equal(labels.length, 6, 'the split prints six labels');
+  const parts = renderSplit({ fresh: 1, waived: 1, coordinator: 1, self: 1, relayed: 1, bot: 1, retracted: 1, unrecorded: 1, botVerdicts: 1, relayedVerdicts: 1 }).split(' · ');
+  const counted = parts.filter((part) => part.startsWith('of every verdict recorded'));
+  const labels = parts.filter((part) => !counted.includes(part)).map((part) => part.replace(/ \d+$/, ''));
+  assert.equal(labels.length, 8, 'the split prints eight labels');
+  assert.equal(counted.length, 1, 'the split ends in one line counting the verdicts of relayed and bot');
   const line = readme.split('\n').find((l) => l.includes('say who reviewed the done work'));
   assert.ok(line, 'the README has the sentence about who reviewed the done work');
   const list = line.slice(line.indexOf('say who reviewed the done work:')).replace(/\([^)]*\)/g, '');
@@ -269,6 +273,11 @@ test('the README names the branch the merger merges into, who reads JARL_ROOT, t
     const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     assert.match(list, new RegExp(`(?:: |, |, and | and )${escaped}\\b`), `the README lists the review label "${label}" the code prints`);
   }
+  for (const kind of ['relayed', 'bot']) {
+    assert.match(counted[0], new RegExp(`\\b${kind} 1`), `the count line of the split names ${kind}`);
+    assert.match(list, new RegExp(`how many of every verdict recorded[^.;]*\\b${kind}\\b`), `the README says the count line counts the ${kind} verdicts`);
+  }
+  assert.match(line, /unless the done gate's `clears` setting names who clears an issue instead \(fresh, the owner, a named bot, or several reviewers who must approve together\)/, 'the README says in a clause what the clears setting does, and the sentence about what clears an issue gives way to it');
   assert.match(line, /waived by the owner \([^)]*waives the review[^)]*\)/, 'the README says in a clause what the waiver is');
   assert.match(line, /retracted when an approve was taken back and none stands/);
   const limits = readme.split(/^## /m).find((s) => s.startsWith('What it does not do'));
@@ -277,13 +286,36 @@ test('the README names the branch the merger merges into, who reads JARL_ROOT, t
   assert.match(readme, /never in a subdirectory/);
 });
 
+test('the README\'s opening says what closes an issue as the done gate does, and its record contract line names the contract the library holds and the ones it keeps', () => {
+  const readme = readRoot('README.md');
+  assert.doesNotMatch(readme, /closes nothing without recorded evidence and a fresh reviewer/, 'an approval of a fresh reviewer is needed for code, not for every issue');
+  const opening = readme.split('\n').filter((l) => l.includes('closes nothing without recorded evidence'));
+  assert.equal(opening.length, 2, 'the picture\'s text and the opening line say it');
+  for (const l of opening) assert.match(l, /closes nothing without recorded evidence and an approval, from a fresh reviewer when the issue carries code, unless the loop's done gate asks no approve and a merge is enough\./);
+  const contract = readme.split('\n').find((l) => l.includes('record.mjs'));
+  assert.ok(contract, 'the README names the record library');
+  assert.equal(/under the contract `(jarl-record\/\d+)`/.exec(contract)?.[1], RECORD_API, 'the line names the contract the library holds as the current one');
+  assert.deepEqual([...new Set(contract.match(/jarl-record\/\d+/g))].sort(), [...RECORD_APIS].sort(), 'the line names exactly the contracts the library keeps');
+  assert.match(contract, new RegExp(`which keeps every export of ${RECORD_APIS.slice(0, -1).map((c) => `\`${c}\``).join(' and ')}`));
+});
+
+const linesNaming = (text, names) => text.split('\n').filter((line) => names.some((name) => new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(line)));
+
 test('the changelog\'s preamble, its Unreleased section and its newest released section name no tool that left the family; the sections below keep their history', () => {
   const sections = readRoot('CHANGELOG.md').split(/^## \[/m);
   const released = sections.findIndex((s, n) => n > 0 && !s.startsWith('Unreleased]'));
   assert.ok(released > 0, 'the changelog holds a released section');
   const current = sections.slice(0, released + 1).join('## [');
-  assert.deepEqual(current.match(/.*\bhorde\b.*/gi) || [], []);
-  assert.match(sections.slice(released + 1).join('## ['), /\bHorde\b/, 'a section below keeps the history it was released with');
+  assert.deepEqual(linesNaming(current, LEFT_THE_FAMILY), []);
+  assert.ok(linesNaming(sections.slice(released + 1).join('## ['), LEFT_THE_FAMILY).length > 0, 'a section below keeps the history it was released with');
+});
+
+test('the list of tools that left the family catches each name on it, as a whole word and in any case, and only those', () => {
+  const text = 'Jarl works alone.\nHorde was a tool.\nfrobnicator is gone too.\nThe frobnicators stay out of it.';
+  assert.deepEqual(linesNaming(text, ['Horde']), ['Horde was a tool.']);
+  assert.deepEqual(linesNaming(text, ['Horde', 'Frobnicator']), ['Horde was a tool.', 'frobnicator is gone too.'], 'a second name on the list is caught');
+  assert.deepEqual(linesNaming(text, []), []);
+  assert.ok(LEFT_THE_FAMILY.includes('Horde'));
 });
 
 test('CLAUDE.md names the record contract that RECORD_API holds, and no other', () => {
