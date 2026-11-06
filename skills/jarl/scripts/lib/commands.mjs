@@ -215,6 +215,19 @@ function defaultedNote(field, value, flag) {
   return `note: no --${flag} given, so ${field} ${value} was recorded (the default); name it with --${flag}`;
 }
 
+// The --field pairs of a filing: each one <name>=<value>, its name a field the profile declares, and its value one of the
+// field's values where the field has values. A pair that is not is refused with that pair and a placeholder in its place,
+// the reason naming the pair, so a caller that files many issues from one call checks the pairs once, as the call's own.
+export function givenFields(profile, list) {
+  const given = namedPairs(list, 'field', profile.fields.map((f) => f.name), 'field');
+  for (const f of profile.fields) {
+    const item = given.items.get(f.name);
+    const v = item === undefined ? '' : fieldText(given.get(f.name));
+    need(!f.enum || v === '' || f.enum.includes(v), `${f.name} must be one of: ${(f.enum || []).join(', ')} (got "${v}")`, () => ({ replace: item, value: `${String(item).slice(0, String(item).indexOf('='))}=${hole('<value>')}` }));
+  }
+  return given;
+}
+
 // `from`, a filing's own and never a flag or a library option (newIssue passes three arguments): { dry, repoOf }. dry runs
 // every check of the filing and writes nothing; repoOf (issue files) gives the new issue the Repo those issues hold once
 // every raise of the filing has run, so a finding a review files names its repositories as the reviewed issue does.
@@ -239,13 +252,9 @@ export function cmdNew(root, title, rawFlags, from = {}) {
   const profile = loadProfile(root);
   // The profile's fields and sections: a flag's value, else the template's, else the field's default. A required
   // field with none of them is refused; a value outside a field's enum is refused.
-  const given = namedPairs(flags.field, 'field', profile.fields.map((f) => f.name), 'field');
+  const given = givenFields(profile, flags.field);
   const fields = profile.fields.map((f) => {
     const raw = given.has(f.name) ? given.get(f.name) : fromTemplate.allFields?.[f.key] || f.default || '';
-    // A value given in --field Name=value outside the field's values: the pair with a placeholder for its value, the reason
-    // naming the values.
-    const item = given.items.get(f.name);
-    need(item === undefined || !f.enum || fieldText(raw) === '' || f.enum.includes(fieldText(raw)), `${f.name} must be one of: ${(f.enum || []).join(', ')} (got "${fieldText(raw)}")`, () => ({ replace: item, value: `${String(item).slice(0, String(item).indexOf('='))}=${hole('<value>')}` }));
     const v = fieldValue(profile, f, raw);
     need(!f.required || v, `${f.name} is required by this loop's profile — give it${f.enum ? ` (one of: ${f.enum.join(', ')})` : ''}`, () => ({ flag: '--field', value: `${f.name}=${hole('<value>')}`, add: true }));
     return [f.name, v];

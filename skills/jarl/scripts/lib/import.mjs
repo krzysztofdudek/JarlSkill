@@ -12,7 +12,7 @@ import { PROPOSED, bodyText, findIssue, loadIssues, sharedMark } from './issues.
 import { repoList, reposWhereLines } from './repositories.mjs';
 import { closedGateLine, disagreementText, gateLine, needOneSlice } from './loop.mjs';
 import { checkLines, checkWaitingText, closedNoCheckText, mergeCheckLines } from './metrics.mjs';
-import { cmdNew, cmdSource, needLiveLoop, parentToFile, putUnder } from './commands.mjs';
+import { cmdNew, cmdSource, givenFields, needLiveLoop, parentToFile, putUnder } from './commands.mjs';
 import { leasedByText, schedulerNote, subsText } from './evidence.mjs';
 
 // ---- research findings into issues ----------------------------------------------------------------
@@ -236,6 +236,8 @@ export function cmdImport(root, file, flags) {
   need(!profile.keptKind(flags.kind), `--kind ${flags.kind}: a finding is work, never a promise or a wait — file one of those with ${jarlLine('new', '<title>', '--kind', flags.kind)}`, () => (['jarl.mjs', 'new', '<title>', '--kind', flags.kind]));
   if (flags.prio !== undefined) need(PRIORITIES.includes(String(flags.prio)), `--prio must be 1, 2 or 3 (got "${flags.prio}")`, () => ({ flag: '--prio', value: hole('<prio>') }));
   if (flags.tier !== undefined) need(profile.tiers.includes(String(flags.tier)), `--tier must be one of: ${profile.tiers.join(', ')} (got "${flags.tier}")`, () => ({ flag: '--tier', value: hole('<tier>') }));
+  // A --field pair is the call's, given once for every finding: a wrong one is refused as the call's own, naming the pair.
+  givenFields(profile, flags.field);
   // A finding's kind is mapped onto the built-in kinds; under a profile with kinds of its own, one it does not
   // name is filed under the profile's default kind.
   const findings = profile.declared ? read.map((f) => (profile.kinds.includes(f.kind) && !profile.keptKind(f.kind) ? f : { ...f, kind: profile.kindDefault })) : read;
