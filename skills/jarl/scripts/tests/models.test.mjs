@@ -510,7 +510,7 @@ test('each round carries its standing in its line, text that opens like a standi
   const second = cli(root, 'round', id, 'red two', '--findings', '3');
   assert.match(second.stdout, /round 2 — takeover:/);
   assert.match(log(root), /· 001 round 2 \(takeover 2 of 2\) · findings 3 · red two$/m);
-  assert.match(second.stdout, /Findings per round: 3\./);
+  assert.match(second.stdout, /Findings per round: -, 3 \(a dash: the round recorded no count\)\./);
   R.addRound(root, id, 'findings 7 · typed by hand');
   assert.match(log(root), /· 001 round 3 \(count 1 of 2\) · findings - · findings 7 · typed by hand$/m);
   const rounds = L.loopEvents(join(root, '.jarl'), L.loadProfile(root)).filter((e) => e.type === 'round');
@@ -663,6 +663,38 @@ test('a later takeover does not offer the tier up again, and a count above the b
   assert.notEqual(cli(root, 'round', id, 'red seven', '--findings', '10001').status, 0);
 });
 
+test('the findings per round keep each round in its place, a round with no count shown as a dash', () => {
+  const root = loop();
+  const { id } = R.newIssue(root, 'a thing', { acceptance: 'it works', tier: 'standard' });
+  R.setStatus(root, id, 'in-progress', '', { branch: 'jarl/001-a', worker: 'w-one', model: MID });
+  assert.equal(cli(root, 'round', id, 'red one', '--findings', '29').status, 0);
+  assert.equal(cli(root, 'round', id, 'red two').status, 0);
+  const out = cli(root, 'round', id, 'red three', '--findings', '3');
+  assert.match(out.stdout, /Findings per round: 29, -, 3 \(a dash: the round recorded no count\)\./);
+});
+
+test('a later takeover names every model that held the issue, and says nothing of one same model', () => {
+  const root = loop();
+  const { id } = R.newIssue(root, 'a thing', { acceptance: 'it works', tier: 'standard' });
+  R.setStatus(root, id, 'in-progress', '', { branch: 'jarl/001-a', worker: 'w-one', model: MID });
+  const first = [1, 2, 3].map((k) => R.addRound(root, id, `red ${k}`)).pop().block;
+  assert.match(first, /a model other than mid-model, or change the approach — the same model at the same tier has failed this 3 times/);
+  R.setStatus(root, id, 'in-progress', 'takeover after three rounds', { branch: 'jarl/001-a', worker: 'w-two', model: BIG, handover: true });
+  const second = [4, 5, 6].map((k) => R.addRound(root, id, `red ${k}`)).pop().block;
+  assert.match(second, /put it on a model that has not held this issue \(it was held on mid-model, big-model@high\), or change the approach/);
+  assert.doesNotMatch(second, /the same model|the last was/);
+});
+
+test('the takeover advice for an issue whose Tier is not one of the profile\'s offers no tier up', () => {
+  const root = loop();
+  const { id } = R.newIssue(root, 'a thing', { acceptance: 'it works', tier: 'standard' });
+  writeFileSync(join(root, '.jarl', 'profile.json'), JSON.stringify({ 'jarl-profile': 1, name: 'sized', statuses: { open: ['dispatchable'], 'in-progress': ['holds-claim'], done: ['terminal', 'closes-record', 'settles-dependents'] }, fields: { Tier: { enum: ['small', 'big', 'huge'], default: 'small' } } }));
+  R.setStatus(root, id, 'in-progress', '', { branch: 'jarl/001-a', worker: 'w-one', model: MID });
+  const block = [1, 2, 3].map((k) => R.addRound(root, id, `red ${k}`)).pop().block;
+  assert.match(block, /standard is not a tier of this loop's profile \(small, big, huge\), so put it on a model other than mid-model, or change the approach/);
+  assert.doesNotMatch(block, /tier up|to small/);
+});
+
 test('a count of findings is read from the flag only, never from the words of a round', () => {
   const root = loop();
   const { id } = R.newIssue(root, 'a thing', { acceptance: 'it works', tier: 'standard' });
@@ -670,7 +702,7 @@ test('a count of findings is read from the flag only, never from the words of a 
   R.addRound(root, id, 'findings 99 · typed by hand');
   cli(root, 'round', id, 'red two', '--findings', '4');
   const out = cli(root, 'round', id, 'red three', '--findings', '2').stdout;
-  assert.match(out, /Findings per round: 4, 2\./);
+  assert.match(out, /Findings per round: -, 4, 2 \(a dash: the round recorded no count\)\./);
 });
 
 // ---- free text is never a field ------------------------------------------------------------------------------
