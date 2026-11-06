@@ -153,6 +153,7 @@ Format 3 holds everything format 2 holds, and the lines of the table below, whic
 | an acceptance line only the owner ticks | the issue's acceptance | lets done pass while the line is not ticked |
 | the parent of a sub-issue | the sub-issue's header | reads the backlog as flat and offers a parent as work of its own |
 | one verdict over several issues | the verdict line of each issue it covers | counts one review as several |
+| a verdict by a bot | the verdict line and the Reviews entry of the issue, as the reviewer's standing | reads it as an approve with no reviewer recorded, which closes an issue that carries no code |
 | the kinds promise and wait | the issue's header | refuses an issue of a kind it does not know |
 | a question of kind escalation | the question, among the loop's questions | refuses a question of a kind it does not know |
 | a question of kind rule | the question, among the loop's questions | reads a proposed rule as a question to the owner and its answer as a ruling with no scope |

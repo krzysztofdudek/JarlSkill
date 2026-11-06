@@ -211,8 +211,9 @@ export function metricsOf(loop, now) {
   const reopened = tracked.filter((i) => facts.get(i.id).reopens);
   const reopenings = { n: tracked.length, times: tracked.length ? reopened.reduce((s, i) => s + facts.get(i.id).reopens, 0) : null, issues: tracked.length ? reopened.map((i) => i.id) : null, noData: noData(!tracked.length, 'the journal tracks no issue') };
 
-  const kinds = { fresh: 0, coordinator: 0, self: 0, unrecorded: 0 };
-  const code = { fresh: 0, coordinator: 0, self: 0, unrecorded: 0 };
+  // A relayed fresh approve and a bot's are counted apart from the fresh ones.
+  const kinds = { fresh: 0, coordinator: 0, self: 0, relayed: 0, bot: 0, unrecorded: 0 };
+  const code = { fresh: 0, coordinator: 0, self: 0, relayed: 0, bot: 0, unrecorded: 0 };
   const reviewers = {};
   for (const i of closed) {
     const g = gateOf(loop, i.id);
@@ -221,8 +222,8 @@ export function metricsOf(loop, now) {
     if (carriesCode(i)) code[k] = (code[k] || 0) + 1;
     if (k === 'fresh') reviewers[g.live.by] = (reviewers[g.live.by] || 0) + 1;
   }
-  const recorded = kinds.fresh + kinds.coordinator + kinds.self;
-  const codeRecorded = code.fresh + code.coordinator + code.self;
+  const recorded = kinds.fresh + kinds.coordinator + kinds.self + kinds.relayed + kinds.bot;
+  const codeRecorded = code.fresh + code.coordinator + code.self + code.relayed + code.bot;
   const freshReviews = {
     n: closed.length, recorded, ...kinds, share: share(kinds.fresh, recorded),
     code: { n: codeRecorded + code.unrecorded + (code.retracted || 0), recorded: codeRecorded, ...code, share: share(code.fresh, codeRecorded) },
@@ -336,7 +337,7 @@ export function renderMetrics(m) {
     slipLine('reopened after done', m.slips.reopens),
     slipLine('retracted', m.slips.retractions),
     slipLine('scope grew after the lease', m.slips.scopeGrew),
-    `fresh reviews of closed work: ${f.noData ? nd(f) : `${f.fresh} of ${f.recorded} with a recorded reviewer (${pct(f.share)}) · coordinator ${f.coordinator} · self ${f.self}${f.retracted ? ` · retracted ${f.retracted}` : ''}${f.unrecorded ? ` · no data for ${f.unrecorded} (approved before --by)` : ''}${f.code.recorded ? ` · carrying code: ${f.code.fresh} of ${f.code.recorded} (${pct(f.code.share)})` : ''}`}`,
+    `fresh reviews of closed work: ${f.noData ? nd(f) : `${f.fresh} of ${f.recorded} with a recorded reviewer (${pct(f.share)}) · coordinator ${f.coordinator} · self ${f.self}${f.relayed || f.bot ? ` · relayed ${f.relayed} · bot ${f.bot}` : ''}${f.retracted ? ` · retracted ${f.retracted}` : ''}${f.unrecorded ? ` · no data for ${f.unrecorded} (approved before --by)` : ''}${f.code.recorded ? ` · carrying code: ${f.code.fresh} of ${f.code.recorded} (${pct(f.code.share)})` : ''}`}`,
     ...(Object.keys(f.reviewers).length ? [`fresh reviewers: ${Object.keys(f.reviewers).length}${Object.keys(f.reviewers).length > 5 ? ', most often' : ''} ${Object.entries(f.reviewers).slice(0, 5).map(([k, v]) => `${k} ${v}`).join(' · ')}`] : []),
     ...(m.batches && m.batches.n ? [batchesLine(m.batches)] : []),
     `red CI after merge: ${m.redCiAfterMerge.noData ? nd(m.redCiAfterMerge) : `${m.redCiAfterMerge.red} of ${m.redCiAfterMerge.settled} settled (${pct(m.redCiAfterMerge.share)})${list(m.redCiAfterMerge.issues)}`}${m.redCiAfterMerge.pending.length ? ` · pending ${m.redCiAfterMerge.pending.length}` : ''}${m.redCiAfterMerge.none.length ? ` · no CI ${m.redCiAfterMerge.none.length}` : ''}`,

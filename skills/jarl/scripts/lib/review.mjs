@@ -9,7 +9,7 @@ import { appendLog, appendLogLines, firstLine } from './journal.mjs';
 import { bodyText, parseIssue, reviewEntries, setSection, unattributedRefusal } from './issues.mjs';
 import { needFormat, tipLines } from './repositories.mjs';
 import { FORMAT_LINES, formatState, loadProfile, reviewerRule } from './profile.mjs';
-import { carriesCode, gateOf, readLoop, reviewerKind } from './loop.mjs';
+import { carriesCode, gateOf, readLoop, reviewerKind, unclearedText } from './loop.mjs';
 import { SEVERITIES, loggedFinding, modelLines, modelRefusalOf, modelReviewForm, modelValue, reviewModelNotes, spellingNote } from './models.mjs';
 import { EVIDENCE_HOW, cmdNew, issuesFor, nothingWritten, oneOrMany, proofSince, refiled } from './commands.mjs';
 import { REVIEW_MIN_WORDS, needSaid, retractedBy, struck } from './evidence.mjs';
@@ -32,7 +32,7 @@ function retractReview(root, rawIds, reason, flags) {
   for (let k = table.entries.length - 1; k >= 0; k -= 1) { const e = table.entries[k]; if (e.verdict === 'approve' && !e.retracted) { target = e; break; } }
   need(g.lastApprove || target, `${issue.id} has no approve to retract — a retraction takes away the newest approve (review), never a "changes" verdict; a row or a note is retracted by its number`, () => ({ arg: 1, value: '<n-or-note-n>' }));
   const who = g.lastApprove || target;
-  const kind = reviewerKind(by, g.workers, coordinators);
+  const kind = reviewerKind(by, g.workers, coordinators, loop.bots);
   // The first retraction of a loop raises the record format, before its line is written: a reader of format 1 does not
   // read a retraction and would go on counting the approve, so it must refuse the loop instead.
   needFormat(root, 'retraction');
@@ -75,6 +75,7 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
   const model = flags.model !== undefined ? modelValue(flags.model) : undefined;
   need(flags.relayed === undefined || flags.relayed === true, '--relayed takes no value', () => ({ rename: '--relayed', to: hole('<no-flag-here>') }));
   const relayed = flags.relayed === true;
+  need(flags.bot === undefined || flags.bot === true, '--bot takes no value', () => ({ rename: '--bot', to: hole('<no-flag-here>') }));
   // The whole loop, not just the issues under review: a sibling elsewhere on the same Branch still counts for self.
   const loop = by ? readLoop(jarlDir(root)) : null;
   const kinds = issues.map((issue) => {
@@ -82,10 +83,12 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
     // Self is everyone who has ever held this issue's lease — its own worker across every takeover, and the
     // worker of any other issue sharing its Branch (a package) — not only its current Worker field.
     const self = [...gateOf(loop, issue.id).workers];
-    const kind = reviewerKind(by, self, loop.coordinators);
+    const kind = reviewerKind(by, self, loop.coordinators, loop.bots);
     const who = self.length === 1 ? `${self[0]} is the issue's worker` : self.length > 1 ? `${self.join(', ')} have all held ${issue.id}'s lease` : '';
     need(verdict !== 'approve' || kind !== 'self', `${issue.id}: an approve by ${by} is a self-approve${who ? ` (${who})` : ''} and does not count as review — a fresh reviewer, or the jarl, reads the diff${issues.length > 1 ? ' — nothing was written' : ''}`, () => ({ flag: '--by', value: hole('<a-fresh-reviewer>') }));
-    return kind;
+    // --bot records the verdict as a bot's: never the verdict of the loop's director, nor of anyone who held the lease.
+    need(flags.bot !== true || kind !== 'coordinator', `${by} reviews as the loop's director (coordinator), and --bot records a bot's verdict — a bot is named by its own name${issues.length > 1 ? ' — nothing was written' : ''}`, () => ({ flag: '--by', value: hole('<reviewer>') }));
+    return flags.bot === true && kind === 'fresh' ? 'bot' : kind;
   });
   // Every finding outside the issue passes every check of a filing before anything is written, so a review refused for one
   // of them writes nothing at all; then each is filed, as a new issue, and the verdict's entry names the issue it became
@@ -94,8 +97,11 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
   // One verdict given on several issues is one review: each of its lines carries the same batch id. The id is a line of
   // record format 3, which a reader of the formats below would count as several reviews, so the first one raises the loop
   // once every check has passed; a loop whose format a composer keeps records the verdict without it.
+  // A bot's verdict is a line of record format 3 too: a reader of the formats below would read it as an approve with no
+  // reviewer recorded. Where a composer keeps the loop's format it is refused, with nothing written.
+  const botRaised = kinds.includes('bot') ? needFormat(root, 'bot-verdict') : false;
   const batch = issues.length > 1 && holdsBatches(root) ? newIssueKey(stamp()) : null;
-  const raised = batch ? needFormat(root, 'batch') : false;
+  const raised = (batch ? needFormat(root, 'batch') : false) || botRaised;
   const filed = outside.map((o) => fileOutside(root, issues, by, o, flags, withModel, false));
   const recorded = filed.length ? `${String(findings).trim()}\n${filed.map((f) => `outside the issue, filed as ${f.id}: ${f.first}`).join('\n')}` : findings;
   // The whole findings go under the issue's ## Reviews (before Evidence, which stays last); the log keeps the verdict
@@ -135,9 +141,19 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
   // the output) sees what the approve claims is met — or that there was nothing to meet.
   // Under a reviewer rule that judges the model, whether done refuses the approve just written for it is read from the loop
   // as it stands now, by the reading done itself uses, so the step the reply names is one that works.
-  const written = flags.caller === 'cli' && verdict === 'approve' && rule !== 'agent' ? readLoop(jarlDir(root)) : null;
-  const modelOf = (issue) => ({ rule, refused: Boolean(written && written.byId.has(issue.id) && modelRefusalOf(root, written, written.byId.get(issue.id))) });
-  return oneOrMany(rawIds, issues.map((issue, n) => ({ id: issue.id, verdict, ...(by ? { by, kind: kinds[n] } : {}), ...(model !== undefined ? { model } : {}), ...(relayed ? { relayed } : {}), ...(batch ? { batch } : {}), severities,...(filed.length ? { filed: filed.map((f) => f.id) } : {}), acceptance: (issue.sections.acceptance || '').trim(), ...(flags.caller === 'cli' ? { next: nextAfterVerdict(issue, verdict, kinds[n], loop && verdict === 'approve' ? ownerLineWait(root, loop, issue) : null, modelOf(issue)) } : {}), ...noteOf(issue, n) })));
+  // The same holds for a bot's approve and for a loop that defines its approved issue: whether the approves clear the issue
+  // is read from the loop as it stands now.
+  const judged = rule !== 'agent' || kinds.includes('bot') || Boolean(loop && loop.profile.doneGate.clears);
+  const written = flags.caller === 'cli' && verdict === 'approve' && judged ? readLoop(jarlDir(root)) : null;
+  const writtenOf = (issue) => (written && written.byId.has(issue.id) ? written.byId.get(issue.id) : null);
+  const modelOf = (issue) => ({ rule, refused: Boolean(writtenOf(issue) && modelRefusalOf(root, written, writtenOf(issue))) });
+  const unclearedOf = (issue) => {
+    const now = writtenOf(issue);
+    const g = now ? gateOf(written, now.id) : null;
+    const text = g ? unclearedText(written, now, g) : null;
+    return text ? { text, cause: g.uncleared.cause } : null;
+  };
+  return oneOrMany(rawIds, issues.map((issue, n) => ({ id: issue.id, verdict, ...(by ? { by, kind: kinds[n] } : {}), ...(model !== undefined ? { model } : {}), ...(relayed ? { relayed } : {}), ...(batch ? { batch } : {}), severities, ...(filed.length ? { filed: filed.map((f) => f.id) } : {}), acceptance: (issue.sections.acceptance || '').trim(), ...(flags.caller === 'cli' ? { next: nextAfterVerdict(issue, verdict, kinds[n], loop && verdict === 'approve' ? ownerLineWait(root, loop, issue) : null, modelOf(issue), unclearedOf(issue)) } : {}), ...noteOf(issue, n) })));
 }
 
 // Whether the loop holds a batch id: it is in the format that holds one, or Jarl may raise it there.
@@ -191,8 +207,11 @@ function fileOutside(root, issues, by, o, flags, withModel, dry) {
 // `model` is the loop's reviewer rule and whether done refuses this approve for its model: under a rule that judges the
 // model, the fresh reviewer's approve is given with --model, and an approve the rule refuses is followed by the review
 // form that carries the model, before any step that depends on done accepting it.
-function nextAfterVerdict(issue, verdict, kind, wait = null, model = { rule: 'agent', refused: false }) {
+// `uncleared` is why the approves the issue holds now do not clear it, other than the fresh-review rule: a bot the done
+// gate does not name, or the loop's own definition of an approved issue; an approve that clears it is then next.
+function nextAfterVerdict(issue, verdict, kind, wait = null, model = { rule: 'agent', refused: false }, uncleared = null) {
   if (verdict === 'changes') return `the jarl records the round — ${jarlLine('round', issue.id, '<text>')} — and a worker is raised again to fix it`;
+  if (uncleared) return `${uncleared.text} — an approve that clears it is next — ${jarlLine('review', issue.id, '<verdict>', '--by', uncleared.cause === 'bot' ? '<a-fresh-reviewer>' : '<reviewer>', '<text>')}`;
   if (carriesCode(issue) && kind === 'coordinator') return `a fresh reviewer's approve is next — ${model.rule === 'agent' ? jarlLine('review', issue.id, '<verdict>', '--by', '<a-fresh-reviewer>', '<text>') : modelReviewForm(issue.id)} — then the merger lands it`;
   const after = carriesCode(issue)
     ? `the merger merges the branch and records it with one call — ${jarlLine('merged', issue.id, '--sha', '<sha>', '--ran', '<command>', '--saw', '<what-it-printed>')} — then ${wait ? `${wait}, then ` : ''}${jarlLine('set', issue.id, 'done', '<why>')}, which needs a Proof row from the worker (the merge check is the merger's and is no proof); a worker never sets done`

@@ -2,7 +2,7 @@
 
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { CI_STATES, fieldText, hole, jarlLine, need } from './base.mjs';
+import { CI_STATES, REVIEWER_KIND_SRC, fieldText, hole, jarlLine, need } from './base.mjs';
 import { needNoOwnersWords } from './owner.mjs';
 import { jarlDir, plainRelative } from './where.mjs';
 import { readText, writeAtomic } from './files.mjs';
@@ -109,14 +109,14 @@ export function leaseOfMove(text, id, to) {
 
 // The approve a retraction line takes away, as { by, kind } (by null for an approve with no reviewer recorded), or null
 // when the line names none. The line is written "retracts the approve by <name> (<kind>) of <date>".
-const RETRACT_TARGET = /retracts the approve (?:by (.+?)(?: \((fresh|coordinator|self)\))?(?: of \d{4}-\d{2}-\d{2})?|with no reviewer recorded)(?= · |$)/;
+const RETRACT_TARGET = new RegExp(`retracts the approve (?:by (.+?)(?: \\((${REVIEWER_KIND_SRC})\\))?(?: of \\d{4}-\\d{2}-\\d{2})?|with no reviewer recorded)(?= · |$)`);
 function retractTarget(text) {
   const m = RETRACT_TARGET.exec(text);
   return m ? { by: m[1] ?? null, kind: m[2] ?? null } : null;
 }
 // Who wrote a retraction: the --by its call named, which its line carries after the row, the note or `review retract`
 // (`· by <name> ·`, an approve's retraction with the kind of that name after it), or null on a line that names nobody.
-const RETRACTED_BY = /^\S+ (?:evidence retract · (?:row|note) \d+|review retract) · by (.+?)(?: \((?:fresh|coordinator|self)\))?(?= · |$)/;
+const RETRACTED_BY = new RegExp(`^\\S+ (?:evidence retract · (?:row|note) \\d+|review retract) · by (.+?)(?: \\((?:${REVIEWER_KIND_SRC})\\))?(?= · |$)`);
 const retractedBy = (text) => RETRACTED_BY.exec(text)?.[1] ?? null;
 
 // The slot facts of an attachment row's command, `attach <slot> <path> sha256:<hex> size:<bytes>`, as { slot, path, sha256,
@@ -362,7 +362,7 @@ export function issueState(profile, events) {
   return held ? s : null;
 }
 
-const REVIEW_LINE = idRe('^{id} review (approve|changes) · (?:by (.+?) \\((fresh|coordinator|self)\\) · )?');
+const REVIEW_LINE = idRe(`^{id} review (approve|changes) · (?:by (.+?) \\((${REVIEWER_KIND_SRC})\\) · )?`);
 // The batch a verdict belongs to: one verdict given on several issues writes the same id, of an issue key's shape, on the
 // line of each issue it covers, after the model and the relay mark.
 const BATCH_MARK = new RegExp(`^batch (${KEY_SRC}) · `);

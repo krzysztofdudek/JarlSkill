@@ -504,6 +504,7 @@ export const IN_FLIGHT_MARKS = {
   'changes-requested': 'changes requested — it is back with the worker, who fixes it and records new rows',
   approved: 'approved and queued for the merge — next the merger lands it, then set it done',
   'approved-not-fresh': 'approved by a coordinator only, and it carries code — neither the merge queue nor done accepts that: it waits for a fresh reviewer\'s approve',
+  'approved-not-cleared': 'approved, and no approve it holds clears it under the loop\'s done gate — neither the merge queue nor done accepts that: it waits for an approve that does',
   merged: 'merged — nothing is left to land: set it done',
   'merged-ci': 'merged, CI not green yet — next record the CI result (merged <id> --ci green|red), then set it done',
 };

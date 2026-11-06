@@ -123,6 +123,10 @@ function issueRows(ctx) {
       out.push({ ...base, what: 'review', says: 'approved by a coordinator only, and it carries code; raise a fresh reviewer', command: verdict(i.id) });
       continue;
     }
+    if (mark === 'approved-not-cleared') {
+      out.push({ ...base, what: 'review', says: 'approved, and no approve it holds clears it under the loop\'s done gate; raise a reviewer whose approve does', command: verdict(i.id) });
+      continue;
+    }
     if (mark === 'changes-requested') {
       out.push({ ...base, what: 'changes', says: 'changes asked by its reviewer; send it back to a worker', command: jarlLine('round', i.id, '<text>') });
       continue;
@@ -228,7 +232,7 @@ function keptRows(ctx) {
       continue;
     }
     const done = promise ? 'kept' : 'it came';
-    if (mark === 'rows-no-verdict' || mark === 'approved-not-fresh') out.push({ ...base, what: 'review', holder, says: `${done}, proof recorded, no verdict; review it`, command: verdict(i.id) });
+    if (mark === 'rows-no-verdict' || mark === 'approved-not-fresh' || mark === 'approved-not-cleared') out.push({ ...base, what: 'review', holder, says: `${done}, proof recorded, no verdict; review it`, command: verdict(i.id) });
     else if (mark === 'changes-requested') out.push({ ...base, what: 'changes', holder, says: `${done}, changes asked by its reviewer; answer them and ask for a new verdict`, command: verdict(i.id) });
     else out.push({ ...base, what: 'close', holder, says: `${done}, approved; close it`, command: jarlLine('set', i.id, closeStatus, '<text>') });
   }

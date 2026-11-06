@@ -4,7 +4,7 @@
 // slice's coordinator: its issues in play, its rules, its reference and its commands. It writes nothing and holds no lock.
 // A brief adds what the record holds to the role's reference, and never replaces it.
 
-import { IDENTICAL_OUTPUT_TAG, fieldText, hole, jarlLine, meantToAlterNothing, need } from './base.mjs';
+import { IDENTICAL_OUTPUT_TAG, REVIEWER_KIND_SRC, fieldText, hole, jarlLine, meantToAlterNothing, need } from './base.mjs';
 import { jarlDir, today } from './where.mjs';
 import { firstLine } from './journal.mjs';
 import { evidenceTable, issueNamed, reviewEntries } from './issues.mjs';
@@ -49,7 +49,7 @@ function findingsOf(loop, issue, events, notes) {
   const found = gateOf(loop, issue.id).trail.filter((t) => t.verdict === 'changes').map((t) => {
     const e = events.find((x) => x.n === t.n);
     // What the line holds after its verdict, its reviewer and the marks of a model, a relay and a batch.
-    let text = e.text.slice(e.written.length + 1).replace(/^review changes · (?:by .+? \((?:fresh|coordinator|self)\) · )?/, '');
+    let text = e.text.slice(e.written.length + 1).replace(new RegExp(`^review changes · (?:by .+? \\((?:${REVIEWER_KIND_SRC})\\) · )?`), '');
     if (e.model) text = text.replace(`model ${e.model} · `, '');
     if (e.relayed) text = text.replace(/^relayed · /, '');
     if (e.batch) text = text.replace(`batch ${e.batch} · `, '');

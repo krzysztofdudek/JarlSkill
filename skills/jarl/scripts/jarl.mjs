@@ -246,11 +246,12 @@ commands:
                                                  the composer's command named; --slice <coordinator> offers only the
                                                  issues of that coordinator's slice: across slices only leases hold, and
                                                  an open issue reserves its files against the issues of its own slice
-  review <ids> <verdict> --by <reviewer> [--model <model-id>] [--relayed] [--outside "<finding-outside-the-issue>"]... [--field "<name=value>"]... "<text>"
+  review <ids> <verdict> --by <reviewer> [--model <model-id>] [--relayed] [--bot] [--outside "<finding-outside-the-issue>"]... [--field "<name=value>"]... "<text>"
                                                  the reviewer's verdict; --model is the model the reviewer was raised on
                                                  (stored as given); --relayed marks a verdict recorded by someone else in
                                                  the reviewer's name, for a reviewer that cannot be resumed to record its
-                                                 own; --outside (repeatable) is a finding outside the issue: each is
+                                                 own; --bot records it as the verdict of the bot --by names (the first
+                                                 raises the record format to 3); --outside (repeatable) is a finding outside the issue: each is
                                                  filed as a new issue, Found by the reviewer and Where the review, and
                                                  never turns the verdict to changes, so changes whose only Critical or
                                                  Important findings are outside is refused; --field (repeatable) is a
@@ -259,10 +260,12 @@ commands:
                                                  (self for "self" or anyone who has held the issue's lease, across
                                                  takeovers, or the lease of another issue on its Branch — refused on an approve;
                                                  coordinator for coordinator, jarl, reeve, the loop's own name and
-                                                 names on a "Coordinators:" line in goal.md; fresh for anyone else);
+                                                 names on a "Coordinators:" line in goal.md; bot for --bot and a bot the
+                                                 profile's done gate names; fresh for anyone else);
                                                  "done" needs an approve inside the gate's window, and a
-                                                 fresh one when the issue carries code (a Branch or Merged field), and
-                                                 the worker's Proof row; an approve on an issue with no Proof row says so;
+                                                 fresh one when the issue carries code (a Branch or Merged field), or
+                                                 the approves the profile's done gate "clears" names (a bot's approve
+                                                 clears only there), and the worker's Proof row; an approve on an issue with no Proof row says so;
                                                  findings need at least three words; a verdict is taken back with retract;
                                                  a verdict on several ids is one review: each of its lines carries one
                                                  batch id, and the first raises the record format to 3
@@ -413,7 +416,8 @@ commands:
                                                  where a composer runs the loop, what is off there),
                                                  then one line: open, in flight, waiting, done, dropped, deferred,
                                                  open questions, to ratify, merged with CI pending or red; then who
-                                                 reviewed the done work (fresh, coordinator, self, unrecorded); then,
+                                                 reviewed the done work (fresh, coordinator, self, unrecorded, and
+                                                 relayed and bot verdicts apart from fresh ones); then,
                                                  per repository, "k of n merges carry the declared check" (a merge
                                                  carries it when its --ran text equals a command a Check line of
                                                  goal.md declares), the testimony mark for a repository that declares
@@ -613,7 +617,7 @@ export const COMMAND_FLAGS = {
   list: { status: 'value', kind: 'value', tag: 'value', prio: 'value', grep: 'value', match: 'many', all: 'bool' },
   show: { full: 'bool' }, brief: { role: 'value', slice: 'value' }, set: { branch: 'value', worker: 'value', model: 'value', worktree: 'value', handover: 'bool', header: 'bool', by: 'value' },
   next: { limit: 'value', all: 'bool', as: 'value', slice: 'value' },
-  review: { by: 'value', model: 'value', relayed: 'bool', outside: 'many', field: 'many' }, round: { findings: 'value', by: 'value' }, tick: { by: 'value' },
+  review: { by: 'value', model: 'value', relayed: 'bool', bot: 'bool', outside: 'many', field: 'many' }, round: { findings: 'value', by: 'value' }, tick: { by: 'value' },
   models: { group: 'value', with: 'many', archives: 'bool' },
   scope: { branch: 'value', base: 'value', repo: 'value' },
   branches: { base: 'value', repo: 'value', 'stale-hours': 'value' },
