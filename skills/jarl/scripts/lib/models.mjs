@@ -93,6 +93,8 @@ function modelGap(issue, model, lines, events, rule) {
 function reviewModelNotes(issue, verdict, model, lines, events, rule = 'agent') {
   if (model === undefined) return [`${issue.id}: no --model on this verdict — ${rule === 'agent' ? 'the loop declares its models; record the model this reviewer was raised on' : `${RULE_WORDS[rule]}, so done refuses an approve that names no model`}`];
   if (verdict !== 'approve') return [];
+  // A gate that has no worker's model to compare with cannot hold, and the note says so rather than staying silent.
+  if (rule !== 'agent' && !leaseModels(events).length) return [`${issue.id}: the lease of ${issue.id} records no model, so this loop's reviewer rule (done-gate "reviewer": "${rule}") has no worker's model to compare ${model} with — done accepts this approve; the rule holds where the lease names the worker's model`];
   const gap = modelGap(issue, model, lines, events, rule);
   if (!gap) return [];
   if (gap.light) return [`${issue.id}: a change meant to alter nothing (tag ${IDENTICAL_OUTPUT_TAG}): a light review may clear it, one that checks the comparison of the output before and after covers everything the change touched`];
@@ -102,11 +104,14 @@ function reviewModelNotes(issue, verdict, model, lines, events, rule = 'agent') 
 }
 
 // Why done refuses an issue's live approve under the loop's reviewer rule, or null: an approve that names no model, or a
-// model the rule refuses. Under "agent" the model never refuses.
+// model the rule refuses. Under "agent" the model never refuses. An approve that names no model is refused whether or not
+// the lease names one: the gate cannot tell what model gave it, and an approve it cannot place does not clear the issue.
+// One that names a model on an issue whose lease names none passes, as its note said: there is nothing to compare it with.
 function modelGateRefusal(issue, live, lines, events, rule) {
-  if (rule === 'agent' || !live || live.kind === 'waived' || !leaseModels(events).length) return null;
+  if (rule === 'agent' || !live || live.kind === 'waived') return null;
   const by = live.by || 'a reviewer not recorded';
-  if (!live.model) return `${issue.id}'s live approve by ${by} names no model — ${RULE_WORDS[rule]}`;
+  if (!live.model) return `${issue.id}'s live approve by ${by} names no model — ${RULE_WORDS[rule]}, so done refuses an approve that names no model`;
+  if (!leaseModels(events).length) return null;
   const gap = modelGap(issue, live.model, lines, events, rule);
   if (!gap || !gap.gate) return null;
   return gap.same ? `${issue.id}'s live approve is by ${by} on ${live.model}, the model of its worker — this loop's ${RULE_WORDS[rule].replace(/^the /, '')}`

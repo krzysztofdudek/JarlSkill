@@ -705,6 +705,7 @@ function doneReady(cause, issue) {
   if (issue.byHeader || cause === 'unattributed') return refiled();
   if (cause === 'evidence') return ['jarl.mjs', 'evidence', hole('<id>'), '--ran', hole('<command>'), '--saw', hole('<what-it-printed>')];
   if (cause === 'approve') return ['jarl.mjs', 'review', hole('<ids>'), hole('<verdict>'), hole('<what-was-read-and-found>'), '--by', hole('<a-fresh-reviewer>')];
+  if (cause === 'model') return ['jarl.mjs', 'review', hole('<ids>'), hole('<verdict>'), hole('<what-was-read-and-found>'), '--by', hole('<a-fresh-reviewer>'), '--model', hole('<model-id>')];
   if (cause === 'merge') return ['jarl.mjs', 'merged', hole('<ids>'), '--sha', hole('<sha>')];
   if (cause === 'slots') return ['jarl.mjs', 'evidence', hole('<id>'), '--file', hole('<path>'), '--slot', hole('<slot>')];
   if (cause === 'owner') return ['jarl.mjs', 'ask', hole('<question-for-the-owner>'), '--issue', hole('<id>')];
@@ -1383,7 +1384,7 @@ function setResources(root, rawIds, value, flags) {
 // doneRefusal reads the loop for one issue; a caller checking several issues reads it once and asks doneRefusalIn.
 export function doneRefusal(root, issue) { return doneRefusalIn(root, readLoop(jarlDir(root)), issue, undefined); }
 function doneRefusalIn(root, loop, issue, base) { return doneGateIn(root, loop, issue, base)?.text ?? null; }
-// Why done refuses, as { text, cause }, or null: the cause (retraction, evidence, slots, merge, owner, approve) decides
+// Why done refuses, as { text, cause }, or null: the cause (retraction, evidence, slots, merge, owner, approve, model) decides
 // the step a refusal of the move ends with. `base`: the branch or ref the merge landed in, when the caller names one.
 function doneGateIn(root, loop, issue, base) {
   const { profile } = loop;
@@ -1419,7 +1420,7 @@ function doneGateIn(root, loop, issue, base) {
   // The model of the approve, where the profile's reviewer rule makes it a gate; under the default it is advice only.
   const rule = reviewerRule(profile);
   const byModel = rule === 'agent' ? null : modelGateRefusal(issue, g.live, modelLines(root), loop.eventsById.get(issue.id) || [], rule);
-  if (byModel) return { cause: 'approve', text: `${byModel}: ${jarlLine('review', issue.id, '<verdict>', '--by', '<a-fresh-reviewer>', '--model', '<model-id>', '<text>')}` };
+  if (byModel) return { cause: 'model', text: `${byModel}: ${jarlLine('review', issue.id, '<verdict>', '--by', '<a-fresh-reviewer>', '--model', '<model-id>', '<text>')}` };
   // A code issue is merged before it is done, the order the approve's reply names and the rule status flags a closed
   // issue by; a profile that requires a landed merge has checked more than this above.
   if (unmergedCode(issue, loop.eventsById.get(issue.id) || [])) return { cause: 'merge', text: `${issue.id} carries code (its lease records Branch ${fieldText(issue.fields.branch)}) and records no merge — a code issue is merged before it is done: the merger lands the branch and records it, ${jarlLine('merged', issue.id, '--sha', '<sha>')}, then done` };

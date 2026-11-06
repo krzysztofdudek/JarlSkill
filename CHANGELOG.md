@@ -44,7 +44,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- Which reviews can close a task is set by the loop. By default any reviewer who is not the task's worker counts, whatever model it runs on, and the message after a review says plainly whether the task can now be closed. A loop can ask instead for a reviewer on another model than the worker's, or on one at least as strong, and then a review that does not meet it cannot close the task.
+- Which reviews can close a task is set by the loop. By default any reviewer who is not the task's worker counts, whatever model it runs on, and the message after a review says plainly whether the task can now be closed. A loop can ask instead for a reviewer on another model than the worker's, or on one at least as strong, and then a review that does not meet it, or that does not say which model gave it, cannot close the task.
 - A task worked on its own branch can be closed only after its merge is recorded. Before, Jarl closed it without one and then flagged it as closed wrongly. A task without a branch closes as before.
 - A new loop cannot use the words Person and Check when for fields of its own, or promise and wait for kinds of its own, because Jarl now uses them itself. A loop that already uses them keeps working as before. Jarl's own promises and waits are off there, as they are in any loop whose profile lists its own kinds.
 - A task another worker already holds, or one that would touch a file or resource another worker holds, is now refused when you start it, naming who holds it, instead of quietly replacing that worker. To give a held task to someone else, say it is a handover and why.
