@@ -44,8 +44,11 @@ commands:
   new "<title>" [--kind k] [--prio 1|2|3] [--tier light|standard|strong] [--tags a,b] [--files p,q] [--repo <name-or-path>] [--found-by who]
       [--where "<text>"] [--what "<text>"] [--why "<text>"] [--acceptance "<line>"]... [--changelog "<changelog-entry>"]...
       [--source <report-dir#finding-id>,...] [--after <ids>] [--template <name>] [--field "<name=value>"]... [--section "<name=value>"]...
-      [--person "<name>" --check-when "<date-or-event>"] [--by who]
-                                                 file an issue under the next free number; without --tier it records
+      [--person "<name>" --check-when "<date-or-event>"] [--range <name>] [--by who]
+                                                 file an issue under the next free number outside every range the goal
+                                                 declares, or with --range under the next free number of that range
+                                                 (a Range line of the goal; its first use raises the record format to 3);
+                                                 without --tier it records
                                                  standard and says so on stderr, with what each tier is for (light: a check
                                                  or test decides; strong: unknown cause, design, record format, security);
                                                  --repo names the repository
@@ -407,7 +410,10 @@ commands:
                                                  for every slice), "Takeover (<kind>): <rounds>" or a bare "Takeover: <rounds>",
                                                  "Liveness: <minutes>" (a lease or a proof with no commit, row or log line
                                                  for longer is idle, on its coordinator's list; default 30, and
-                                                 --stale-hours overrides it for one call); the rest of goal.md stays as written
+                                                 --stale-hours overrides it for one call), "Range (<name>): <from-to>" (the
+                                                 numbers new --range <name> files under: no two ranges share a number, and a
+                                                 range keeps the numbers it holds and takes in none filed outside it); the
+                                                 rest of goal.md stays as written
   status [--stale-hours n] [--group repo|tag|kind|prio|<name>] [--tag <tag>] [--as <who>] [--slice <coordinator>]
                                                  --tag computes every part of status over the issues carrying that tag only;
                                                  --slice the same over one coordinator's slice (the issues tagged
@@ -614,7 +620,7 @@ export const COMMAND_FLAGS = {
   new: {
     kind: 'value', prio: 'value', tier: 'value', tags: 'many', files: 'many', repo: 'many', 'found-by': 'value',
     where: 'value', what: 'value', why: 'value', acceptance: 'many', source: 'many', after: 'many', changelog: 'many', template: 'value',
-    field: 'many', section: 'many', person: 'value', 'check-when': 'value', by: 'value',
+    field: 'many', section: 'many', person: 'value', 'check-when': 'value', range: 'value', by: 'value',
   },
   import: {
     source: 'value', kind: 'value', prio: 'value', tier: 'value', tags: 'many', repo: 'many', 'found-by': 'value',
@@ -794,7 +800,7 @@ const FLAG_HOLES = {
   group: '<group>', with: '<loop-root>', base: '<base-branch>', 'stale-hours': '<hours>', sha: '<sha>', ci: '<ci-state>', red: '<another-issue>',
   target: '<what-would-get-weaker>', issue: '<id>', option: '<option>', 'ask option': '<label:effect>', 'applies-to': '<selectors>', until: '<date-or-id>', to: '<jarl-or-owner>', log: '<count>',
   ready: '<count>', summary: '<text>', next: '<text>', settles: '<ids>', 'waives-review': '<ids>', quote: '<his-own-words>', under: '<a-ruling-in-force>', supersedes: '<a-ruling-in-force>',
-  rule: '<rule-id>', area: '<type>', reach: '<number-of-files>', set: '<machine-line>', line: '<line=id>', outside: '<finding-outside-the-issue>', parent: '<id>',
+  rule: '<rule-id>', area: '<type>', reach: '<number-of-files>', set: '<machine-line>', line: '<line=id>', outside: '<finding-outside-the-issue>', parent: '<id>', range: '<name>',
 };
 const PART_HOLES = {
   title: '<title>', priority: '<prio>', tier: '<tier>', kind: '<kind>', tags: '<tag>', files: '<paths>', repo: '<name-or-path>', after: '<ids-it-waits-on>', parent: '<id>',

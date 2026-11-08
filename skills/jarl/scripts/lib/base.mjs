@@ -119,7 +119,7 @@ export const PLACEHOLDERS = Object.freeze([
   '<the-new-worker>', '<the-worktree-of-the-lease>', '<model-id>', '<path>', '<paths>', '<path-under-the-loop-root>', '<slot>',
   '<findings.json>', '<profile.json>', '<report-dir>', '<report-dir#finding-id>', '<finding-ids>', '<template>', '<the-main-checkout>',
   '<loop-root>', '<selectors>', '<selector>', '<role>', '<moment>', '<date-or-event>', '<date-or-id>', '<material>', '<what-to-check>', '<yyyy-mm-dd>', '<type>', '<rule-id>', '<number-of-files>', '<whole-number>',
-  '<count>', '<hours>', '<minutes>', '<rounds>', '<machine-line>', '<resource-name>', '<a-row-the-log-matches>', '<a-flag-it-takes-or-none>',
+  '<count>', '<hours>', '<minutes>', '<rounds>', '<machine-line>', '<from-to>', '<resource-name>', '<a-row-the-log-matches>', '<a-flag-it-takes-or-none>',
   '<no-flag-here>', '<--handover-or-none>', '<one-kind-of-evidence-per-call>', '<a-jarl-command>', '<nothing-to-do>',
   '<the-command-of-the-tool-that-runs-this-loop>', '<as-the-view-shows>', '<as-the-reason-says>', '<a-jarl-that-reads-this-format>', '<placeholder>', '<path-of-jarl.mjs>',
 ]);

@@ -10,7 +10,7 @@ import { canonical, issuesDir, jarlDir, normalPath, portablePath, stamp, today }
 import { readText, renameRetry, writeAtomic } from './files.mjs';
 import { ISSUE_FILE_RE, branchNameProblem, cmpId, expandIds, idKey, idRe, isBulk, itemNaming, needsRaisedFormat, newIssueKey, newNumber } from './ids.mjs';
 import { DEFAULT_PROFILE, FORMAT_LINES, PARENT_FIELD, TOOL_FIELDS, formatState, loadProfile, numberWidth, profilePath, readProfileFile } from './profile.mjs';
-import { appendLog, appendLogLines, decisionsPath, goalPath, logPath } from './journal.mjs';
+import { appendLog, appendLogLines, decisionsPath, goalLines, goalPath, logPath, readGoal } from './journal.mjs';
 import { JARL_GITIGNORE, JARL_GITIGNORE_COMMITTED, ensureLoopMerge, outOfGit } from './loop-git.mjs';
 import { HANDOVER_SEGMENT, journalById, mergeCheckText } from './log.mjs';
 import { FIELD_RE, PROPOSED, RENDERED_FIELDS, acceptanceHeading, acceptanceLineCount, acceptanceLines, acceptanceText, bodyText, changelogText, evidenceNotes, evidenceParts, evidenceRows, evidenceTable, fieldValue, findIssue, issueNamed, loadIssues, mergedOf, namedPairs, needNoFieldTags, noteText, parentCycle, parseIssue, placeEvidence, removeFields, removeFirstField, renderIssue, setField, setSection, unattributedRefusal, waitCycle } from './issues.mjs';
@@ -148,38 +148,61 @@ export function readTemplate(root, name) {
   };
 }
 
-// The highest issue number any copy of this loop holds (the main checkout and every linked worktree), 0 when none.
-function highestAcrossWorktrees(root) {
+// The issue numbers the files of a directory's listing hold.
+const numbersIn = (names) => names.map((f) => ISSUE_FILE_RE.exec(f)).filter(Boolean).map((m) => Number(m[1]));
+// The issue numbers any copy of this loop holds (the main checkout and every linked worktree).
+function numbersAcrossWorktrees(root) {
   const found = mainCheckoutOf(root);
-  let top = 0;
-  for (const copy of found ? found.copies : []) {
-    const dir = issuesDir(copy);
-    if (!existsSync(dir)) continue;
-    for (const f of readdirSync(dir)) { const m = ISSUE_FILE_RE.exec(f); if (m) top = Math.max(top, Number(m[1])); }
-  }
-  return top;
+  return (found ? found.copies : []).filter((copy) => existsSync(issuesDir(copy))).flatMap((copy) => numbersIn(readdirSync(issuesDir(copy))));
 }
 
-// The highest issue number the loop's issue directory holds on any local branch or remote-tracking branch of its
-// repository (read-only, one git process for all of them): a clone or a branch that filed an issue this checkout has
-// not merged yet has taken that number, and a new issue here takes the next one. 0 outside git, and for a loop git does
-// not hold.
-function highestAcrossRefs(root) {
+// The issue numbers the loop's issue directory holds on any local branch or remote-tracking branch of its repository
+// (read-only, one git process for all of them): a clone or a branch that filed an issue this checkout has not merged yet
+// has taken that number, and a new issue here takes the next one. None outside git, and for a loop git does not hold.
+function numbersAcrossRefs(root) {
   const prefix = git(root, ['rev-parse', '--show-prefix']);
-  if (prefix === null) return 0;
+  if (prefix === null) return [];
   const refs = (git(root, ['for-each-ref', '--format=%(refname)', 'refs/heads', 'refs/remotes']) || '').split('\n').filter(Boolean);
-  if (!refs.length) return 0;
-  const out = gitBytes(root, ['cat-file', '--batch'], refs.map((r) => `${r}:${prefix}.jarl/issues\n`).join(''));
-  let top = 0;
-  for (const name of treeNames(out)) { const m = ISSUE_FILE_RE.exec(name); if (m) top = Math.max(top, Number(m[1])); }
-  return top;
+  if (!refs.length) return [];
+  return numbersIn(treeNames(gitBytes(root, ['cat-file', '--batch'], refs.map((r) => `${r}:${prefix}.jarl/issues\n`).join(''))));
 }
-// The number the next filing in this loop takes: one above the highest held by its issue files, its copies in every other
-// worktree and every branch of its repository. The issue files stay the only source: there is no counter file.
-export function nextIssueNumber(root) {
+// The number the next filing in this loop takes, from the numbers held by its issue files, its copies in every other
+// worktree and every branch of its repository. The issue files stay the only source: there is no counter file. `range`
+// is a range the goal declares (see declaredRange), or null for the numbers outside every declared range.
+export function nextIssueNumber(root, range = null) {
   const dir = issuesDir(root);
-  const here = existsSync(dir) ? readdirSync(dir).map((f) => ISSUE_FILE_RE.exec(f)).filter(Boolean).reduce((m, x) => Math.max(m, Number(x[1])), 0) : 0;
-  return Math.max(here, highestAcrossWorktrees(root), highestAcrossRefs(root)) + 1;
+  const held = [...(existsSync(dir) ? numbersIn(readdirSync(dir)) : []), ...numbersAcrossWorktrees(root), ...numbersAcrossRefs(root)];
+  return numberAfter(held, rangesOf(root), range, 1);
+}
+// The ranges of numbers the goal declares, each { name, from, to }.
+const rangesOf = (root) => goalLines(readGoal(jarlDir(root))).ranges;
+const rangeAt = (ranges, n) => ranges.find((r) => n >= r.from && n <= r.to) || null;
+// The first free number of a series at `least` or above, `held` being the numbers already taken: in a declared range, one
+// above the highest number the range holds, or its first, and null when the range has none left; outside every range, one
+// above the highest number held outside them all, stepped past each range it falls in. A number held in one series never
+// moves the count of another.
+function numberAfter(held, ranges, range, least) {
+  if (range) {
+    const n = Math.max(held.filter((x) => x >= range.from && x <= range.to).reduce((m, x) => Math.max(m, x), range.from - 1) + 1, least);
+    return n <= range.to ? n : null;
+  }
+  let n = Math.max(held.filter((x) => !rangeAt(ranges, x)).reduce((m, x) => Math.max(m, x), 0) + 1, least);
+  for (let r = rangeAt(ranges, n); r; r = rangeAt(ranges, n)) n = r.to + 1;
+  return n;
+}
+// The range --range names among the ones the goal declares, matched in any case; a name the goal does not declare is
+// refused with the names it does, or with the goal line that declares one.
+function declaredRange(root, raw) {
+  const name = typeof raw === 'string' ? raw.trim() : '';
+  const ranges = rangesOf(root);
+  const range = ranges.find((r) => r.name.toLowerCase() === name.toLowerCase());
+  if (range) return range;
+  if (ranges.length) refuse(`the goal declares no range ${JSON.stringify(name)}: its ranges are ${ranges.map((r) => `${r.name} (${r.from}-${r.to})`).join(', ')}`, { flag: '--range', value: hole('<name>') });
+  refuse(`the goal declares no range ${JSON.stringify(name)}, nor any other: a range is a goal line, "Range (<name>): <from-to>"`, ['jarl.mjs', 'goal', '--set', `Range (${hole('<name>')}): ${hole('<from-to>')}`]);
+}
+// The refusal of a filing in a range that has no number left.
+function needRoomIn(range, n) {
+  need(n !== null, `the range ${range.name} (${range.from}-${range.to}) has no number left: widen it in the goal`, () => ['jarl.mjs', 'goal', '--set', `Range (${range.name}): ${hole('<from-to>')}`]);
 }
 // The names of the entries of every tree `git cat-file --batch` printed: each object is "<hash> <type> <size>", its bytes
 // and a line break; a tree's bytes are entries of "<mode> <name>", a zero byte and the entry's hash in binary. An object
@@ -297,6 +320,8 @@ export function cmdNew(root, title, rawFlags, from = {}) {
   // A line only the owner ticks names its material and what to check; its first write raises the record format.
   const acceptance = flags.acceptance !== undefined ? acceptanceText(flags.acceptance) : bodyText(fromTemplate.acceptance);
   const ownerLined = needOwnerLines(acceptance);
+  // A number from a range the goal declares, for a series of issues kept apart by number.
+  const range = rawFlags.range !== undefined ? declaredRange(root, rawFlags.range) : null;
   const render = (id, key, repo) => renderIssue({
     id, title, status: profile.initial, key, kind, priority, tier, fields, sections, acceptanceHeading: profile.acceptance || 'Acceptance',
     tags: splitList(flags.tags), files: pathList(flags.files), repo, foundBy: flags['found-by'] || 'jarl', person, checkWhen,
@@ -309,8 +334,11 @@ export function cmdNew(root, title, rawFlags, from = {}) {
   // The raises the filing would make are checked as well, so a loop that refuses them is refused here, with nothing written:
   // the number it would take among them (from.number, where filings before it in the same act take the ones below).
   if (from.dry) {
-    const id = newNumber(from.number ?? nextIssueNumber(root), numberWidth(profile, rawFlags.width));
+    const number = from.number ?? nextIssueNumber(root, range);
+    if (range) needRoomIn(range, number);
+    const id = newNumber(number, numberWidth(profile, rawFlags.width));
     needNoNewOwnersWords('', render(id, null, picked.map((p) => p.value).join(', ')), `${id}-${slugify(title)}.md`);
+    if (range) needFormatHeld(root, 'range-number');
     if (needsRaisedFormat(id)) needFormatHeld(root, 'plain-number', `issue number ${id}`);
     if (kept) needFormatHeld(root, 'promise-wait');
     if (picked.some((p) => p.name)) needFormatHeld(root, 'repo-name');
@@ -318,7 +346,10 @@ export function cmdNew(root, title, rawFlags, from = {}) {
     return { dry: true };
   }
   // A promise and a wait are kinds a reader of formats 1 and 2 does not know: the loop is raised first, or, where a composer
-  // keeps its format, the filing is refused with nothing written.
+  // keeps its format, the filing is refused with nothing written. So is a number from a declared range, which a reader that
+  // knows no range would count past.
+  if (range) needRoomIn(range, nextIssueNumber(root, range));
+  if (range) needFormat(root, 'range-number');
   if (kept) needFormat(root, 'promise-wait');
   commitRepoNames(root, picked);
   if (ownerLined) needFormat(root, 'owner-line');
@@ -338,9 +369,10 @@ export function cmdNew(root, title, rawFlags, from = {}) {
   // Git keeps no empty directory, so a clone of a loop committed before its first issue has none yet.
   mkdirSync(dir, { recursive: true });
   const taken = () => readdirSync(dir).map((f) => ISSUE_FILE_RE.exec(f)).filter(Boolean).map((m) => Number(m[1]));
-  // The highest number over this loop, its copies in every other worktree and every local and remote-tracking branch of
-  // its repository (read-only), so a lagging copy cannot hand out a number already used elsewhere.
-  let n = nextIssueNumber(root);
+  // The numbers over this loop, its copies in every other worktree and every local and remote-tracking branch of its
+  // repository (read-only), so a lagging copy cannot hand out a number already used elsewhere.
+  let n = nextIssueNumber(root, range);
+  if (range) needRoomIn(range, n);
   for (let tries = 0; ; tries += 1) {
     const id = newNumber(n, numberWidth(profile, rawFlags.width));
     // The first issue of 1000 or more is a file a reader that knows only format 1 would skip in silence: the format is raised first.
@@ -371,7 +403,8 @@ export function cmdNew(root, title, rawFlags, from = {}) {
       return { id, file, ...(rawFlags.template !== undefined ? { template: rawFlags.template } : {}), ...note };
     }
     need(tries < 100, 'could not claim a free issue number after 100 tries', () => afterView(['jarl.mjs', 'verify']));
-    n = Math.max(n + 1, taken().reduce((m, x) => Math.max(m, x), 0) + 1);
+    n = numberAfter(taken(), rangesOf(root), range, n + 1);
+    if (range) needRoomIn(range, n);
   }
 }
 
@@ -401,7 +434,11 @@ export function cmdRenumber(root, rawId, flags = {}) {
   const dir = issuesDir(root);
   const before = readText(pick.file);
   const rest = basename(pick.file).replace(/^\d+-/, '');
-  for (let n = nextFreeNumber(root, dir), tries = 0; ; n += 1, tries += 1) {
+  // The free number comes from the series the old one belongs to: its declared range, or the numbers outside every range.
+  const ranges = rangesOf(root);
+  const range = rangeAt(ranges, Number(old));
+  for (let n = nextIssueNumber(root, range), tries = 0; ; n = numberAfter([], ranges, range, n + 1), tries += 1) {
+    if (range) needRoomIn(range, n);
     need(tries < 100, 'could not claim a free issue number after 100 tries', () => afterView(['jarl.mjs', 'verify']));
     const id = newNumber(n, numberWidth(profile));
     if (needsRaisedFormat(id)) needFormat(root, 'plain-number');
@@ -426,13 +463,6 @@ function keysOf(files) {
   const keys = files.map((i) => fieldText(i.fields.key ?? '')).filter(Boolean);
   return hole('<key>');
 }
-// The number a new issue takes: one above the highest the loop's issue files hold here, in its other worktrees and on
-// every local and remote-tracking branch.
-function nextFreeNumber(root, dir) {
-  const here = readdirSync(dir).map((f) => ISSUE_FILE_RE.exec(f)).filter(Boolean).reduce((m, x) => Math.max(m, Number(x[1])), 0);
-  return Math.max(here, highestAcrossWorktrees(root), highestAcrossRefs(root)) + 1;
-}
-
 // The notes for the text of an issue just written: one for the unfinished issues it names that nothing orders with it.
 function unorderedNotes(root, profile, id) {
   return unorderedNamings(loadIssues(root), profile, [id]).map((n) => `note: issue ${n.id}: ${unorderedText(n)}`);
