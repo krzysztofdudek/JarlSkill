@@ -1,6 +1,7 @@
 // The review command.
 
-import { Refusal, fieldText, hole, jarlLine, need, refuse } from './base.mjs';
+import { isAbsolute } from 'node:path';
+import { Refusal, echoWord, fieldText, hole, jarlLine, need, refuse } from './base.mjs';
 import { needNoOwnersWords } from './owner.mjs';
 import { jarlDir, stamp } from './where.mjs';
 import { readText, writeAtomic } from './files.mjs';
@@ -73,6 +74,7 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
   }
   const by = flags.by !== undefined ? fieldText(flags.by) : null;
   const model = flags.model !== undefined ? modelValue(flags.model) : undefined;
+  const artifact = flags.artifact !== undefined ? artifactValue(flags.artifact) : undefined;
   need(flags.relayed === undefined || flags.relayed === true, '--relayed takes no value', () => ({ rename: '--relayed', to: hole('<no-flag-here>') }));
   const relayed = flags.relayed === true;
   need(flags.bot === undefined || flags.bot === true, '--bot takes no value', () => ({ rename: '--bot', to: hole('<no-flag-here>') }));
@@ -103,7 +105,10 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
   // reviewer recorded. Where a composer keeps the loop's format it is refused, with nothing written.
   const botRaised = kinds.includes('bot') ? needBotFormat(root) : false;
   const batch = issues.length > 1 && holdsBatches(root) ? newIssueKey(stamp()) : null;
-  const raised = (batch ? needFormat(root, 'batch') : false) || botRaised;
+  // The artifact a verdict judged is a line of record format 3 too: a reader of the formats below would read it as the
+  // first words of the findings. Only a verdict that names one raises the loop.
+  const artifactRaised = artifact !== undefined ? needFormat(root, 'artifact') : false;
+  const raised = (batch ? needFormat(root, 'batch') : false) || botRaised || artifactRaised;
   const filed = outside.map((o) => fileOutside(root, issues, by, o, flags, withModel, false));
   const recorded = filed.length ? `${String(findings).trim()}\n${filed.map((f) => `outside the issue, filed as ${f.id}: ${f.first}`).join('\n')}` : findings;
   // The whole findings go under the issue's ## Reviews (before Evidence, which stays last); the log keeps the verdict
@@ -112,12 +117,12 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
   for (const [n, issue] of issues.entries()) {
     const text = readText(issue.file);
     const current = (parseIssue(text, issue.file).sections.reviews || '').trim();
-    const entry = `- **${verdict}** · ${by ? `by ${by} (${kinds[n]}) · ` : ''}${day}${model !== undefined ? ` · model ${model}` : ''}${relayed ? ' · relayed' : ''}${batch ? ` · batch ${batch}` : ''}\n${bodyText(recorded).split('\n').map((l) => (l ? `  ${l}` : '')).join('\n')}`;
+    const entry = `- **${verdict}** · ${by ? `by ${by} (${kinds[n]}) · ` : ''}${day}${model !== undefined ? ` · model ${model}` : ''}${relayed ? ' · relayed' : ''}${batch ? ` · batch ${batch}` : ''}${artifact !== undefined ? ` · artifact ${artifact}` : ''}\n${bodyText(recorded).split('\n').map((l) => (l ? `  ${l}` : '')).join('\n')}`;
     writeAtomic(issue.file, setSection(text, 'Reviews', current ? `${current}\n${entry}` : entry));
   }
-  // The model, the relay mark and the batch come after the kind: a reader that parses only the name and the kind ignores
-  // what follows.
-  const marks = `${model !== undefined ? `model ${model} · ` : ''}${relayed ? 'relayed · ' : ''}${batch ? `batch ${batch} · ` : ''}`;
+  // The model, the relay mark, the batch and the artifact come after the kind: a reader that parses only the name and the
+  // kind ignores what follows.
+  const marks = `${model !== undefined ? `model ${model} · ` : ''}${relayed ? 'relayed · ' : ''}${batch ? `batch ${batch} · ` : ''}${artifact !== undefined ? `artifact ${artifact} · ` : ''}`;
   // Each verdict line is followed by the tip of the issue's branch: the code the verdict was given on. A filing or the batch
   // may have raised the loop's format, which writes a bare format-1 path with a leading ./ and reads a bare word as a name:
   // the issues are read again, and every lookup of a repository is made anew, so the tip is read where the Repo points now.
@@ -156,7 +161,25 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
     const text = g ? unclearedText(written, now, g) : null;
     return text ? { text, cause: g.uncleared.cause } : null;
   };
-  return oneOrMany(rawIds, issues.map((issue, n) => ({ id: issue.id, verdict, ...(by ? { by, kind: kinds[n] } : {}), ...(model !== undefined ? { model } : {}), ...(relayed ? { relayed } : {}), ...(batch ? { batch } : {}), severities, ...(filed.length ? { filed: filed.map((f) => f.id) } : {}), acceptance: (issue.sections.acceptance || '').trim(), ...(flags.caller === 'cli' ? { next: nextAfterVerdict(issue, verdict, kinds[n], loop && verdict === 'approve' ? ownerLineWait(root, loop, issue) : null, modelOf(issue), unclearedOf(issue)) } : {}), ...noteOf(issue, n) })));
+  return oneOrMany(rawIds, issues.map((issue, n) => ({ id: issue.id, verdict, ...(by ? { by, kind: kinds[n] } : {}), ...(model !== undefined ? { model } : {}), ...(relayed ? { relayed } : {}), ...(batch ? { batch } : {}), ...(artifact !== undefined ? { artifact } : {}), severities, ...(filed.length ? { filed: filed.map((f) => f.id) } : {}), acceptance: (issue.sections.acceptance || '').trim(), ...(flags.caller === 'cli' ? { next: nextAfterVerdict(issue, verdict, kinds[n], loop && verdict === 'approve' ? ownerLineWait(root, loop, issue) : null, modelOf(issue), unclearedOf(issue)) } : {}), ...noteOf(issue, n) })));
+}
+
+// An --artifact value: the render or file a verdict judged, stored as given, trimmed. The record is read on other machines
+// and is public, so it holds no place on one machine: a path that is absolute (on any platform, a home ~ included) or that
+// climbs above the root it is read from with .. is refused. A path is read against the root of the repository the work is
+// in, and a / or a \ both part its segments. It is one segment of the verdict line: no separator and no line break.
+function artifactValue(raw) {
+  const p = typeof raw === 'string' ? raw.trim() : '';
+  const form = () => ({ flag: '--artifact', value: hole('<path>') });
+  need(p !== '', '--artifact needs a value — the path of the render or file the verdict judged, inside the repository the work is in', form);
+  need(!/[\u0000-\u001f\u007f\u0085\u2028\u2029·]/.test(p), '--artifact is one path on one line, with no · in it', form);
+  need(!isAbsolute(p) && !/^[\\/~]/.test(p) && !/^[A-Za-z]:/.test(p), `--artifact names a path inside the repository the work is in, relative to its root, and ${echoWord(p)} is a place on one machine, which the record never holds`, form);
+  let depth = 0;
+  for (const s of p.split(/[\\/]/)) {
+    if (s === '..') depth -= 1; else if (s !== '' && s !== '.') depth += 1;
+    need(depth >= 0, `--artifact names a path inside the repository the work is in, and ${echoWord(p)} climbs out of it with ..`, form);
+  }
+  return p;
 }
 
 // The record format a bot's verdict needs, raised before the verdict is written. Where a composer keeps the loop's format,

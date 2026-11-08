@@ -33,8 +33,9 @@ import { STAMP_SRC, appendLog, headerKey, logPath, oneLine } from './journal.mjs
 //                  right after the number, so no text of its line can stand in the bracket. A round line without a standing
 //                  is read as the takeover its writer printed (see takeoverStanding)
 //   row            one --ran/--saw evidence row
-//   verdict        a review: verdict (approve|changes), by, kind (as recorded), model, relayed, and batch, the id one verdict
-//                  given on several issues writes on each of its lines (null on a verdict on one issue)
+//   verdict        a review: verdict (approve|changes), by, kind (as recorded), model, relayed, batch, the id one verdict
+//                  given on several issues writes on each of its lines (null on a verdict on one issue), and artifact,
+//                  the path of the render or file the verdict judged (null where it names none)
 //   retract-row    a retracted evidence row: row, its number, and by, who retracted it (null when the line names nobody)
 //   retract-note   a retracted evidence note: note, its number, and by
 //   retract-review a retracted approve: target, the approve it takes away, and by
@@ -188,14 +189,16 @@ function eventParser(profile) {
     }
     const r = REVIEW_LINE.exec(text);
     if (r) {
-      // The marks after the reviewer, each in its fixed place: the model, the relay mark, the batch.
+      // The marks after the reviewer, each in its fixed place: the model, the relay mark, the batch, the artifact.
       let rest = text.slice(r[0].length);
       const mm = /^model (.+?) · /.exec(rest);
       if (mm) rest = rest.slice(mm[0].length);
       const relayed = /^relayed · /.test(rest);
       if (relayed) rest = rest.slice('relayed · '.length);
       const bm = BATCH_MARK.exec(rest);
-      return { type: 'verdict', verdict: r[1], by: r[2] || null, kind: r[3] || null, model: mm ? mm[1] : null, relayed, batch: bm ? bm[1] : null };
+      if (bm) rest = rest.slice(bm[0].length);
+      const am = ARTIFACT_MARK.exec(rest);
+      return { type: 'verdict', verdict: r[1], by: r[2] || null, kind: r[3] || null, model: mm ? mm[1] : null, relayed, batch: bm ? bm[1] : null, artifact: am ? am[1] : null };
     }
     if (text.startsWith(`${id} review retract`) && !/^\w/.test(text.slice(`${id} review retract`.length))) return { type: 'retract-review', target: retractTarget(text), by: retractedBy(text) };
     const rr = RETRACT_ROW_LINE.exec(text);
@@ -399,6 +402,8 @@ const REVIEW_LINE = idRe(`^{id} review (approve|changes) · (?:by (.+?) \\((${RE
 // The batch a verdict belongs to: one verdict given on several issues writes the same id, of an issue key's shape, on the
 // line of each issue it covers, after the model and the relay mark.
 const BATCH_MARK = new RegExp(`^batch (${KEY_SRC}) · `);
+// The artifact a verdict judged, after the batch: a path, one segment of the line with no separator in it.
+const ARTIFACT_MARK = /^artifact ([^·\n]+?) · /;
 
 // A journal line that moves an issue into one of the statuses named: `NNN → <status>`, the status followed by the end
 // of the line or a space. Longest names first, so no status is read as a shorter one.

@@ -25,7 +25,7 @@ export const MODEL_MIN_N = 5;
 // or a batch mark. A finding that opens with the lead-in before such a word gets one more, so the reader takes off exactly
 // one (findingOfLog) and gives back the text as it was written.
 const LEAD_IN = 'findings: ';
-const NEEDS_LEAD_IN = /^(?:findings: )*(?:model |relayed(?: ·|$)|batch )/i;
+const NEEDS_LEAD_IN = /^(?:findings: )*(?:model |relayed(?: ·|$)|batch |artifact [^·\n]*? · )/i;
 const loggedFinding = (line) => (NEEDS_LEAD_IN.test(line) ? `${LEAD_IN}${line}` : line);
 const findingOfLog = (line) => (line.startsWith(LEAD_IN) && NEEDS_LEAD_IN.test(line.slice(LEAD_IN.length)) ? line.slice(LEAD_IN.length) : line);
 

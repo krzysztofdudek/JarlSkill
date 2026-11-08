@@ -256,9 +256,13 @@ commands:
                                                  the composer's command named; --slice <coordinator> offers only the
                                                  issues of that coordinator's slice: across slices only leases hold, and
                                                  an open issue reserves its files against the issues of its own slice
-  review <ids> <verdict> --by <reviewer> [--model <model-id>] [--relayed] [--bot] [--outside "<finding-outside-the-issue>"]... [--field "<name=value>"]... "<text>"
+  review <ids> <verdict> --by <reviewer> [--model <model-id>] [--relayed] [--bot] [--artifact <path>] [--outside "<finding-outside-the-issue>"]... [--field "<name=value>"]... "<text>"
                                                  the reviewer's verdict; --model is the model the reviewer was raised on
-                                                 (stored as given); --relayed marks a verdict recorded by someone else in
+                                                 (stored as given); --artifact is the render or file the verdict judged,
+                                                 a path inside the repository the work is in (an absolute one, or one
+                                                 that climbs out with .., is refused), which show prints with the verdict
+                                                 and report counts; it gates nothing, and the first raises the record
+                                                 format to 3; --relayed marks a verdict recorded by someone else in
                                                  the reviewer's name, for a reviewer that cannot be resumed to record its
                                                  own; --bot records it as the verdict of the bot --by names (the first
                                                  raises the record format to 3); --outside (repeatable) is a finding outside the issue: each is
@@ -444,7 +448,8 @@ commands:
                                                  whose "lifecycle" keeps archive to the record (it names the command)
   report [--found] [--metrics]                   the loop metrics first (cycle time, rounds, reopenings, the share of fresh
                                                  reviews, red CI after merge, follow-ups within 7 days, the batched reviews
-                                                 with their sizes and the rounds after each — "no data" where the
+                                                 with their sizes and the rounds after each, the verdicts that name an
+                                                 artifact where there are any — "no data" where the
                                                  record holds none) and the landing banner, per repository "k of n merges carry
                                                  the declared check", with the testimony mark as status shows it; then what was
                                                  done (per repository when it spans several), who reviewed it, dropped, deferred
@@ -632,7 +637,7 @@ export const COMMAND_FLAGS = {
   list: { status: 'value', kind: 'value', tag: 'value', prio: 'value', grep: 'value', match: 'many', all: 'bool' },
   show: { full: 'bool' }, brief: { role: 'value', slice: 'value' }, set: { branch: 'value', worker: 'value', model: 'value', worktree: 'value', handover: 'bool', header: 'bool', by: 'value' },
   next: { limit: 'value', all: 'bool', as: 'value', slice: 'value' },
-  review: { by: 'value', model: 'value', relayed: 'bool', bot: 'bool', outside: 'many', field: 'many' }, round: { findings: 'value', by: 'value' }, tick: { by: 'value' },
+  review: { by: 'value', model: 'value', relayed: 'bool', bot: 'bool', outside: 'many', field: 'many', artifact: 'value' }, round: { findings: 'value', by: 'value' }, tick: { by: 'value' },
   models: { group: 'value', with: 'many', archives: 'bool' },
   scope: { branch: 'value', base: 'value', repo: 'value' },
   branches: { base: 'value', repo: 'value', 'stale-hours': 'value' },
