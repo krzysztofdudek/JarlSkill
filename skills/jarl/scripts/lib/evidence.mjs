@@ -14,7 +14,7 @@ import { outOfGit } from './loop-git.mjs';
 import { attachmentOf, journalById, rowLinesText } from './log.mjs';
 import { acceptanceLineCount, acceptanceLines, alignRows, bodyText, evidenceNotes, evidenceParts, evidenceTable, loadIssues, mergedOf, noteLogText, noteText, parseIssue, placeEvidence, removeFields, reviewEntries, setSection, sharedMark, struckNote } from './issues.mjs';
 import { fileKeysOf, needFormat, repoNames, reposWhere, tipLinesOf, whereLines, whereOf } from './repositories.mjs';
-import { approveKind, carriesCode, sentBack, unmergedCode, unmergedText, coordinatorOf, disagreementText, gateOf, gateState, headerReadNotes, readLoop, recordDisagreements, reviewSplit, sameSlice, scopedLoop, sinceText, sliceNamed, sliceOf, slicesOf, waiverVoid, worksInPlace } from './loop.mjs';
+import { approveKind, carriesCode, sentBack, unmergedCode, unmergedText, coordinatorOf, disagreementText, gateOf, gateState, headerReadNotes, readLoop, recordDisagreements, reviewSplit, sameSlice, scopedLoop, sliceNamed, sliceOf, slicesOf, waiverVoid, worksInPlace } from './loop.mjs';
 import { checkState, checkWaiting, checkWaitingText, closedNoCheck } from './metrics.mjs';
 import { awaitsMerge, builds, gatedMark, modelMarks } from './models.mjs';
 import { ago, leaseLiveness, leaseState, livenessOf, thresholdText } from './rounds.mjs';
@@ -42,7 +42,7 @@ export function cmdEvidence(root, rawIds, text, flags) {
     need(text, 'evidence requires a note or a row', () => ({ arg: 1, value: '<text>' }));
   }
   const issues = issuesFor(root, rawIds);
-  const proved = provedLines(flags, rows, issues);
+  const proved = provedLines(root, flags, rows, issues);
   // A row is one list item: the lines of a multi-line command or output after the first are indented under it.
   const indented = (v) => String(v).replace(/\r\n?/g, '\n').trim().split('\n').join('\n  ');
   // The digest of each line named, per issue: the same number is another text in another issue.
@@ -62,11 +62,13 @@ export function cmdEvidence(root, rawIds, text, flags) {
 // order, read as the numbers the caller gave and, for each issue of the call, the digest of the line at that number now:
 // the digest is what a row stores, so a row keeps naming the text it was made for whatever happens to the numbers. A row of
 // proof names at least one line, every row of the call names them all, an attachment names none, and a note proves none.
-function provedLines(flags, rows, issues) {
+function provedLines(root, flags, rows, issues) {
   if (!flags) return null;
   const attachment = flags.file !== undefined;
   if (flags.line === undefined) {
-    if (rows && !attachment) refuse('a --ran/--saw row names the acceptance line it proves, by its number with --line: a row about nothing in particular proves nothing, and a free note is taken without --ran and --saw', { flag: '--line', value: hole('<line-number>') });
+    // A promise or a wait with no line is kept, not worked: the first row records what came, and has no line to name.
+    const kept = (i) => loadProfile(root).keptKind(i.kind) && !acceptanceLineCount(i);
+    if (rows && !attachment && !issues.every(kept)) refuse('a --ran/--saw row names the acceptance line it proves, by its number with --line: a row about nothing in particular proves nothing, and a free note is taken without --ran and --saw', { flag: '--line', value: hole('<line-number>') });
     return null;
   }
   const nothing = issues.length > 1 ? ' — nothing was written' : '';

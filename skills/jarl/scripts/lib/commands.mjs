@@ -21,7 +21,7 @@ import { limitNote, modelLines, modelRefusalOf, modelReviewForm, modelValue, mod
 import { slotRefusal } from './attachments.mjs';
 import { NOTE_LIMIT, addedContentNotes, addedNoteText } from './rounds.mjs';
 import { resetCaches } from './tips.mjs';
-import { closeForm, ownerLineRefusal, ownerLineRewrite } from './owner-lines.mjs';
+import { ownerLineRefusal, ownerLineRewrite } from './owner-lines.mjs';
 import { LINE_FORM, LINE_ROW_READY, lineDigest, lineRowForm, lineStates, lineStateText, needMarkedLines, unprovedMechanical } from './lines.mjs';
 
 // ---- commands ----------------------------------------------------------------------------------
@@ -1572,11 +1572,9 @@ export function cmdSplit(root, rawId, flags = {}) {
     writeAtomic(w.issue.file, text);
   }
   const grown = writes.filter((w) => w.grew.length);
-  // A row keeps the numbers it named: the parent's rows that name a line the split moved away, or whose number the lines
-  // taken out before it changed, are said, as field says them. A sub-issue's lines are added after its own and keep theirs.
-  const keptOrder = lines.map((_, k) => k + 1).filter((n) => idKey(placed.get(n).to.id) === idKey(parent.id));
-  const renumbered = linesRowsName(parent).filter((n) => keptOrder.indexOf(n) + 1 !== n);
-  const notes = [...grown.map((w) => grewNote(w.issue, w.grew)), ...(renumbered.length ? [rowNumbersNote(parent.id, renumbered)] : [])];
+  // A row names the text it proved: a split that takes a line a row names off the parent says so, as field does.
+  const rowsLost = rowsLostNote(parent, parent.sections.acceptance, keptText);
+  const notes = [...grown.map((w) => grewNote(w.issue, w.grew)), ...(rowsLost ? [rowsLost] : [])];
   return {
     id: parent.id, subs: subs.map((s) => s.id),
     lines: [...placed.entries()].sort((a, b) => a[0] - b[0]).map(([n, p]) => ({ line: n, to: p.to.id, kept: idKey(p.to.id) === idKey(parent.id) })),
@@ -1646,7 +1644,10 @@ function doneGateIn(root, loop, issue, base) {
   if (open.length) return { cause: 'subs', text: `${issue.id} has sub-issues not closed: ${open.map((c) => `${c.id} (${c.status})`).join(', ')} — a parent is closed once each of its sub-issues is done or dropped and its own acceptance is then checked against the whole` };
   // Done asks of every line what its method asks: rows here (read lines by the approve below, owner lines by his tick).
   const states = lineStates(loop, issue, g);
-  if (!states.length) return { cause: 'lines', text: `${issue.id} has no acceptance line, so there is nothing done can ask of it — write what it is to prove first: ${jarlLine('field', issue.id, 'Acceptance', LINE_FORM)}` };
+  // A promise or a wait with no line is kept, not worked: its row records what came, as ever.
+  if (!states.length && profile.keptKind(issue.kind)) {
+    if (g.tracked ? !g.rowsSince : !evidenceRows(issue).length) return { cause: 'evidence', text: `${issue.id} has no --ran/--saw row recorded${g.anchor ? ` since ${sinceText(g.anchor)}` : ''} — record what was done: ${jarlLine('evidence', issue.id, '--ran', '<command>', '--saw', '<what-it-printed>', '--by', '<who>')}` };
+  } else if (!states.length) return { cause: 'lines', text: `${issue.id} has no acceptance line, so there is nothing done can ask of it — write what it is to prove first: ${jarlLine('field', issue.id, 'Acceptance', LINE_FORM)}` };
   const unproved = unprovedMechanical(states);
   if (unproved.length) return { cause: 'evidence', text: `${issue.id} has lines whose method is not met${g.tracked && g.anchor ? ` (rows count since ${sinceText(g.anchor)})` : ''}: ${unproved.map(lineStateText).join('; ')} — ${lineRowForm(issue.id)}` };
   const slots = slotRefusal(root, profile, issue, g);
