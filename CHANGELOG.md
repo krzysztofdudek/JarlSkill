@@ -121,6 +121,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A task with code that is reopened, or sent back by a failed round, after its merge, or that gets new commits after it, can no longer be closed on that old merge: the merger records the merge of the code as it is now first. The status names a finished task that was closed on such a merge. A task merged once and never reopened closes as before.
 - Changing a long Where of a task now keeps only the first 120 characters of the old text and of the new one, and the length of each, in the log, as a changed section does. Before, the whole text went into the log.
 - The advice given to a worker who takes a task over no longer lists the folder on another machine where the earlier worker had its working copy.
+- The resume now shows each open question to the owner on one line, even one written over several lines. The question itself is kept as it was asked.
 
 ## [6.2.0] - 2026-10-19
 

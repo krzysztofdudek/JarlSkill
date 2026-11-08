@@ -155,7 +155,8 @@ test('set takes statuses only: a field given to it is refused with the field cal
 
 test('base is the command that changes the base branch of a declared repository', () => {
   const root = makeLoop({ prefix: 'jarl-surface-base-', via: 'cli' });
-  assert.match(refuses(root, 'base', 'nothing-here', 'main'), /nothing-here is not declared in this loop/);
+  // A loop that declares no repository: the step that declares one first, then the call's own form, each with placeholders.
+  assert.match(refuses(root, 'base', 'nothing-here', 'main'), /^nothing-here is not declared in this loop; Jarl declares a repository the first time an issue names it \(jarl\.mjs field "<id>" Repo "<name-or-path>"\)\njarl\.mjs field "<id>" Repo "<name-or-path>"\njarl\.mjs base "<name>" "<branch>"\n$/);
   assert.match(refuses(root, 'base', 'nothing-here'), /^base requires its branch: the form below has a placeholder for each value\njarl\.mjs base "<name>" "<branch>"\n$/);
 });
 

@@ -12,7 +12,7 @@ import { PARENT_FIELD, SLOT_NAME_RE, clearsOf, clearsWords, formatState, loadPro
 import { appendLog, appendLogLines, firstLine, goalLines, readGoal } from './journal.mjs';
 import { outOfGit } from './loop-git.mjs';
 import { attachmentOf, journalById, rowLinesText } from './log.mjs';
-import { acceptanceLineCount, alignRows, bodyText, evidenceNotes, evidenceParts, evidenceTable, loadIssues, mergedOf, noteText, parseIssue, placeEvidence, removeFields, reviewEntries, setSection, sharedMark, struckNote } from './issues.mjs';
+import { acceptanceLineCount, alignRows, bodyText, evidenceNotes, evidenceParts, evidenceTable, loadIssues, mergedOf, noteLogText, noteText, parseIssue, placeEvidence, removeFields, reviewEntries, setSection, sharedMark, struckNote } from './issues.mjs';
 import { fileKeysOf, needFormat, repoNames, reposWhere, tipLinesOf, whereLines, whereOf } from './repositories.mjs';
 import { approveKind, carriesCode, sentBack, unmergedCode, unmergedText, coordinatorOf, disagreementText, gateOf, gateState, headerReadNotes, readLoop, recordDisagreements, reviewSplit, sameSlice, scopedLoop, sinceText, sliceNamed, sliceOf, slicesOf, waiverVoid } from './loop.mjs';
 import { checkState, checkWaiting, checkWaitingText, closedNoCheck } from './metrics.mjs';
@@ -55,7 +55,7 @@ export function cmdEvidence(root, rawIds, text, flags) {
   }
   // Each row line is followed by the tip of the issue's branch, so the gate knows which code the row was made on.
   const tips = rows ? tipLinesOf(root, issues) : () => [];
-  appendLogLines(root, issues.flatMap((issue) => (rows ? rows.flatMap((r) => [`${issue.id} evidence row${mark} · ${firstLine(r.ran, "the issue's Evidence section")}`, ...tips(issue)]) : [`${issue.id} evidence · ${firstLine(text, "the issue's Evidence section")}`])));
+  appendLogLines(root, issues.flatMap((issue) => (rows ? rows.flatMap((r) => [`${issue.id} evidence row${mark} · ${firstLine(r.ran, "the issue's Evidence section")}`, ...tips(issue)]) : [noteLogText(issue.id, text)])));
   return oneOrMany(rawIds, issues.map((issue) => (rows ? { id: issue.id, rows, ...(proved.length ? { lines: proved } : {}) } : { id: issue.id })));
 }
 

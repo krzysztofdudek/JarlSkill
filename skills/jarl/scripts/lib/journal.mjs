@@ -109,10 +109,20 @@ function oneLine(event) {
   return String(event).replace(/\r\n?/g, '\n').trim().split('\n').map((l) => l.trim()).filter(Boolean).join(' ⏎ ');
 }
 // The first line of a text, and when there are more, how many and where the whole is kept.
+const moreLines = (n, where) => ` (+${n} more lines, whole text in ${where})`;
 export function firstLine(text, where) {
   const lines = String(text).replace(/\r\n?/g, '\n').trim().split('\n');
   const first = lines[0].trim();
-  return lines.length > 1 ? `${first} (+${lines.length - 1} more lines, whole text in ${where})` : first;
+  return lines.length > 1 ? `${first}${moreLines(lines.length - 1, where)}` : first;
+}
+// What firstLine wrote can have been read from: the first line of a text of one line, the logged words whole; and, when
+// they end with the pointer firstLine adds, the first line of a text of more lines, the words before it. A text of one
+// line can end with the pointer's words itself, so both readings stand.
+export function firstLineReadings(logged, where) {
+  const text = String(logged);
+  const m = new RegExp(` \\(\\+([1-9]\\d*) more lines, whole text in ${String(where).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\)$`).exec(text);
+  const pointer = m && moreLines(Number(m[1]), where) === m[0];
+  return [{ first: text, more: false }, ...(pointer ? [{ first: text.slice(0, m.index), more: true }] : [])];
 }
 
 // A ruling's slug names it for good: letters, digits, and . _ - inside, at most 80 characters. It is compared
