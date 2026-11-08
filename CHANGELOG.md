@@ -103,6 +103,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A findings file, a profile or a goal saved by an editor that puts a byte order mark at the start, as Windows editors do, is now read like any other. Before, a findings file saved that way was refused as not JSON.
 - An answer to an item waiting for the owner's approval must start with a word that approves or rejects it, such as yes or reject. Any other answer is refused, so it is always clear what the owner decided.
 - Taking back a review, a test result or a note in a loop that an older Jarl wrote no longer undoes the update of that task's repository field. Before, that one task kept the old form while every other task was updated.
+- Moving a task to another status with your name given, in a loop an older Jarl wrote, no longer undoes the update of that task's repository field. Before, the moved task kept the old form.
 
 ## [6.2.0] - 2026-10-19
 

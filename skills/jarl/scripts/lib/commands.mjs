@@ -1047,9 +1047,10 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   // library accepts the key and stores nothing.
   const since = stamp();
   if (holds && flags.worktree !== undefined && caller === 'cli') for (const issue of issues) needWorktreeOfLease(root, issue, flags.branch !== undefined ? fieldText(flags.branch) : fieldText(issue.fields.branch), resolve(root, fieldText(flags.worktree)));
-  const writes = issues.map((issue) => {
-    let text = readText(issue.file);
-    text = setField(text, 'Status', status);
+  // Each issue's change is applied to its file as it stands after the log line: the call's first line may raise the record
+  // format (its --by), and a raise from format 1 writes every bare Repo path of the loop again, this issue's too.
+  const writes = issues.map((issue) => ({ issue, edit: (read) => {
+    let text = setField(read, 'Status', status);
     if (holds) {
       if (flags.branch !== undefined) text = setField(text, 'Branch', fieldText(flags.branch));
       if (flags.worker !== undefined) text = setField(text, 'Worker', fieldText(flags.worker));
@@ -1069,8 +1070,8 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
       const line = `${reasonWord(status)}: ${noteText(why, written)}`;
       text = setSection(text, 'Evidence', placeEvidence(written, 'note', line, '\n\n'));
     }
-    return { issue, text };
-  });
+    return text;
+  } }));
   // The model goes before the worker: the worker is read as the text after "· worker " up to the end of the line (or up to
   // "· worktree " in a line that carries one), so a model written after it would become part of the worker's name.
   const leaseNote = [flags.branch !== undefined && `branch ${fieldText(flags.branch)}`, model !== undefined && `model ${model}`, flags.worker !== undefined && `worker ${fieldText(flags.worker)}`].filter(Boolean).join(' · ');
@@ -1094,7 +1095,7 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   // gate of the closed issue is read against it whatever the branch does after.
   const closes = profile.is(status, 'closes-record');
   appendLogLines(root, issues.flatMap((issue) => [`${issue.id} → ${status}${reason ? ` · ${reason}` : ''}${leaseNote ? ` · ${leaseNote}` : ''}`, ...(closes ? tipLines(root, issue) : [])]), since);
-  for (const w of writes) writeAtomic(w.issue.file, w.text);
+  for (const w of writes) writeAtomic(w.issue.file, w.edit(readText(w.issue.file)));
   // Said on the command line only, and only in a loop that declares model lines: a lease with no model (once per call).
   const leaseNoModel = caller === 'cli' && holds && model === undefined && modelLines(root).declared ? 'no --model on this lease — the loop declares its models, and a model that is not recorded can never be recovered' : null;
   const worktreeNote = caller === 'cli' && holds && flags.worktree !== undefined ? '--worktree was checked and is not recorded — the worktree of a lease is found through its branch' : null;
