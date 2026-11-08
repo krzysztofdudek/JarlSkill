@@ -110,6 +110,12 @@ test('the brief help and the commands reference say the same of a finding whose 
   assert.doesNotMatch(help, /every part whole\./, 'the help does not claim every part is whole without the exception');
 });
 
+test('the repositories reference ties a takeover to the goal\'s limit, not to a fixed number of rounds', () => {
+  const md = skillText('references/repositories.md');
+  assert.doesNotMatch(md, /takeover after three rounds/i);
+  assert.match(md, /A takeover, after as many red rounds as the goal's limit allows \(three unless it says otherwise\), is a handover too\./);
+});
+
 test('ask takes --kind as an option that defaults to stuck, as the reference writes it', () => {
   const { dir } = gitRepo({ prefix: 'jarl-docs-ask-' });
   jarl(dir, 'init', 'g');

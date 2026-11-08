@@ -7,7 +7,7 @@ import { canonical, jarlDir, nowMs, portablePath } from './where.mjs';
 import { branchIssueId, idKey, idsNamed } from './ids.mjs';
 import { ATTACH_MAX_BYTES, DEFAULT_PROFILE, loadProfile } from './profile.mjs';
 import { appendLog, goalLines, oneLine, parseStamp, readGoal } from './journal.mjs';
-import { journalById, leaseOfMove } from './log.mjs';
+import { journalById, leaseOfMove, withoutWorktree } from './log.mjs';
 import { findIssue, loadIssues, mergedOf } from './issues.mjs';
 import { awaitsMerge, readLoop } from './loop.mjs';
 import { defaultBase, fetchedRefs, fileAt, isGitRepo, issuePlaces, issueRepoPaths, issueRepos, refsIn, repoFromInput, repoLabel, repoOf, reposNamed, worktreeState, worktreesOf } from './repositories.mjs';
@@ -115,7 +115,8 @@ export function cmdRound(root, rawId, what, dry = false, opts = {}) {
   const findings = findingsOfRounds(entries);
   const gaps = findings.includes(null) ? ' (a dash: the round recorded no count)' : '';
   const trend = findings.some((x) => x !== null) ? `Findings per round: ${findings.map((x) => (x === null ? '-' : x)).join(', ')}${gaps}.\n\n` : '';
-  const log = entries.filter((e) => e.type !== 'filed').map((e) => `- ${e.at} · ${e.text}`).join('\n');
+  // A move line names the lease's worktree, a place on the machine that wrote it, and the block is read on another one.
+  const log = entries.filter((e) => e.type !== 'filed').map((e) => `- ${e.at} · ${e.type === 'move' ? withoutWorktree(e.text, e.written ?? e.id, e.to) : e.text}`).join('\n');
   const held = [...new Set([...entries.filter((e) => e.type === 'move' && e.model).map((e) => e.model), ...(fieldText(issue.fields.model) ? [fieldText(issue.fields.model)] : [])])];
   const advice = takeoverAdvice(loadProfile(root).tiers, issue.tier, held, since, takeovers);
   const block = takeover ? `## Takeover\n\n${advice}\n\n${trend}A prior worker attempted issue ${issue.id} ${times(since)} (${n} round${n === 1 ? "" : "s"} in all); the issue is yours now. Its rounds so far:\n\n\`\`\`\n${log}\n\`\`\`\n` : null;

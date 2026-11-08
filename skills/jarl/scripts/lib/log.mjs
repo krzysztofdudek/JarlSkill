@@ -117,6 +117,21 @@ export function leaseOfMove(text, id, to) {
   return { reason: '' };
 }
 
+// A move line without the worktree it names, which is a place on the machine that wrote it: the lease fields after the
+// reason stay and the segment from `worktree` on is cut, found by position as leaseOfMove finds the lease. A line that
+// names no worktree is returned as it is.
+export function withoutWorktree(text, id, to) {
+  const head = `${id} → ${to}`;
+  const segments = text.slice(head.length).split(' · ');
+  for (let k = 1; k <= segments.length; k += 1) {
+    const tail = segments.slice(k);
+    if (!leaseTail(tail)) continue;
+    const at = tail.findIndex((s) => /^worktree /.test(s));
+    return at === -1 ? text : `${head}${segments.slice(0, k + at).join(' · ')}`;
+  }
+  return text;
+}
+
 // The approve a retraction line takes away, as { by, kind } (by null for an approve with no reviewer recorded), or null
 // when the line names none. The line is written "retracts the approve by <name> (<kind>) of <date>".
 const RETRACT_TARGET = new RegExp(`retracts the approve (?:by (.+?)(?: \\((${REVIEWER_KIND_SRC})\\))?(?: of \\d{4}-\\d{2}-\\d{2})?|with no reviewer recorded)(?= · |$)`);
