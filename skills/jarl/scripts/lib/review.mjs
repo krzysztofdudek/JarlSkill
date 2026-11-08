@@ -11,7 +11,7 @@ import { needFormat, tipLines } from './repositories.mjs';
 import { FORMAT_LINES, formatState, loadProfile, reviewerRule } from './profile.mjs';
 import { carriesCode, gateOf, readLoop, reviewerKind, unclearedText } from './loop.mjs';
 import { SEVERITIES, loggedFinding, modelLines, modelRefusalOf, modelReviewForm, modelValue, reviewModelNotes, spellingNote } from './models.mjs';
-import { EVIDENCE_HOW, cmdNew, issuesFor, nothingWritten, oneOrMany, proofSince, refiled } from './commands.mjs';
+import { EVIDENCE_HOW, cmdNew, issuesFor, nextIssueNumber, nothingWritten, oneOrMany, proofSince, refiled } from './commands.mjs';
 import { REVIEW_MIN_WORDS, needSaid, raisedText, retractedBy, struck } from './evidence.mjs';
 import { ownerLineWait } from './owner-lines.mjs';
 import { resetCaches } from './tips.mjs';
@@ -92,8 +92,10 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
   });
   // Every finding outside the issue passes every check of a filing before anything is written, so a review refused for one
   // of them writes nothing at all; then each is filed, as a new issue, and the verdict's entry names the issue it became
-  // under the findings of the issue itself.
-  for (const o of outside) fileOutside(root, issues, by, o, flags, withModel, true);
+  // under the findings of the issue itself. They are filed in the order given, each taking the next number, so each is
+  // checked with the number it would take: one the loop's record format cannot hold refuses the review before the first.
+  const first = outside.length ? nextIssueNumber(root) : 0;
+  outside.forEach((o, k) => fileOutside(root, issues, by, o, flags, withModel, true, first + k));
   // One verdict given on several issues is one review: each of its lines carries the same batch id. The id is a line of
   // record format 3, which a reader of the formats below would count as several reviews, so the first one raises the loop
   // once every check has passed; a loop whose format a composer keeps records the verdict without it.
@@ -188,14 +190,14 @@ const REVIEW_TAKES = new Set(['--field', '--root']);
 // One finding outside the reviewed issues, filed as a new issue (Found by the reviewer, Where the review of the reviewed
 // issues, ruling outside-finding-found-by-reviewer-where-names-the-review): its title the finding's first line, its What
 // the finding, the fields the review's --field gives (a field the profile defaults takes its default), and the Repo the
-// reviewed issues hold once the filing's raises have run. Dry, it runs every check of the filing and writes nothing; a
-// refusal names the finding, and ends with the form of the review: the filing's own fix where review takes it, else the
-// finding's place.
-function fileOutside(root, issues, by, o, flags, withModel, dry) {
+// reviewed issues hold once the filing's raises have run. Dry, it runs every check of the filing with the number it would
+// take (`number`) and writes nothing; a refusal names the finding, and ends with the form of the review: the filing's own
+// fix where review takes it, else the finding's place.
+function fileOutside(root, issues, by, o, flags, withModel, dry, number) {
   const first = o.text.split('\n')[0].trim();
   const title = first.length > OUTSIDE_TITLE_CHARS ? `${first.slice(0, OUTSIDE_TITLE_CHARS - 1)}…` : first;
   const opts = { what: o.text, 'found-by': by, where: `the review of ${issues.map((i) => i.id).join(', ')}`, ...(flags.field !== undefined ? { field: flags.field } : {}) };
-  const from = { dry, repoOf: issues.map((i) => i.file) };
+  const from = { dry, repoOf: issues.map((i) => i.file), ...(dry ? { number } : {}) };
   if (!dry) return { id: cmdNew(root, title, opts, from).id, first };
   try { cmdNew(root, title, opts, from); } catch (e) {
     if (!(e instanceof Refusal)) throw e;

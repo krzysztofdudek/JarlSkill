@@ -12,6 +12,7 @@ import { SPAWN_TIMEOUT, gitRepo, jarl, refuses, run, windowsWords, loop as makeL
 import { fileAsBefore, oldJarl } from './old-jarl.mjs';
 import * as R from '../record.mjs';
 import * as L from '../jarl-lib.mjs';
+import { composed } from './import-kit.mjs';
 
 const loop = () => makeLoop({ prefix: 'jarl-outside-', via: 'cli', dotGit: false });
 const json = (root, ...args) => JSON.parse(jarl(root, ...args, '--json'));
@@ -209,6 +210,21 @@ test('a review with a finding outside the issue in a format-3 loop records the t
   const before = tipLinesOf(root).length;
   jarl(root, 'review', '1', 'approve', 'read the diff and the test, the export writes csv', '--by', 'rev-a', '--outside', 'Important: the importer drops the header row');
   assert.deepEqual(tipLinesOf(root).slice(before), [['1', g('rev-parse', 'jarl/1-csv').trim()]]);
+});
+
+test('on a loop that stays at its record format, the second finding outside the issue that would take a number the format cannot hold refuses the review before the first is filed', () => {
+  const hub = composed();
+  writeFileSync(join(hub, '.jarl', 'issues', '998-old-998.md'), L.renderIssue({ id: '998', title: 'old 998', kind: 'bug', priority: '2', tier: 'standard', tags: [], files: [], repo: '', foundBy: 'jarl' }));
+  jarl(hub, 'set', '001', 'in-progress', 'start', '--worker', 'w1');
+  jarl(hub, 'evidence', '001', '--ran', 'npm test', '--saw', 'tests 4, pass 4');
+  const before = snapshot(hub);
+  const said = refuses(hub, 'review', '001', 'approve', 'read the diff and the test, it works', '--by', 'rev-a', '--outside', 'Minor: the first thing seen', '--outside', 'Minor: the second thing seen');
+  assert.match(said, /^the finding outside the issue "Minor: the second thing seen" cannot be filed: issue number 1000 needs record format 2, and this loop stays at format 1: /);
+  assert.match(said, /nothing was written\n/);
+  assert.deepEqual(snapshot(hub), before, 'the refused review left the loop as it found it');
+  assert.deepEqual(issueFiles(hub), ['001', '998']);
+  // The one finding that fits is filed as 999.
+  assert.match(jarl(hub, 'review', '001', 'approve', 'read the diff and the test, it works', '--by', 'rev-a', '--outside', 'Minor: the first thing seen'), /filed outside the issue: 999/);
 });
 
 test('a finding that holds a field\'s tag pair is refused with a reason that names the pair and the way review takes it', () => {
