@@ -19,7 +19,8 @@ import { appliesToLine, loopRules, parseScope, parseUntil, underText, withUnder 
 // ---- questions to the owner and the handoff -------------------------------------------------
 
 export function loadAsks(root, skipped) { return asksAt(jarlDir(root), skipped); }
-// Who answers an escalation when the answer names nobody: the jarl, who holds it.
+// Who answers an escalation when the answer names nobody: the jarl, who holds it. Only the library takes such a call; the
+// command line refuses an answer without --by.
 const JARL = 'jarl';
 
 export function cmdAsk(root, question, flags) {
@@ -194,7 +195,8 @@ export function cmdAnswer(root, rawId, answer, flags = {}) {
   const text = answer === undefined ? null : noSeparators(oneBreak(answer));
   const checked = answerChecks(root, ask, text, chosen);
   const shown = chosen !== null ? chosen : text;
-  // An escalation is the jarl's to answer: an answer that names nobody is the jarl's there, and the owner's elsewhere.
+  // An escalation is the jarl's to answer: an answer that names nobody, which only the library takes (the command line
+  // refuses it), is the jarl's there, and the owner's elsewhere.
   // A proposed rule is accepted by the one it was proposed to: the jarl, or the owner, whose rule no one else accepts.
   need(!(ask.kind === 'rule' && ask.to === OWNER) || by === null || by === OWNER, `a-${id} proposes a rule to the owner: it is his to accept or reject, and only his answer is recorded --by owner`, () => ({ flag: '--by', value: '<the-owner-himself>' }));
   const author = by || (ask.kind === 'escalation' || (ask.kind === 'rule' && ask.to !== OWNER) ? JARL : OWNER);
