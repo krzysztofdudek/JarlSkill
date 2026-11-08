@@ -20,7 +20,7 @@ itself, and **the merger is the only committer in the main checkout**: everybody
 `.jarl/` through the tool and never runs a commit there — two committers in one checkout, one of
 them mid-merge, is how a conflict swallows the other's files. In the committed mode the merger commits `.jarl/` together
 with every merge, so the loop's state always rides the code it describes; in the default mode git never
-sees `.jarl/`, so the merger never commits it. Its brief:
+sees `.jarl/`, so the merger never commits it. An issue worked in place brings no branch: the merger commits its declared files as a commit of their own, between two merges, and none of the merge steps apply to it (see [Worked in place](jarl.md#worked-in-place)). Its brief:
 
 ```
 You are the merger of branch <base-branch> in <repo root>; the loop's tools are the jarl MCP tools, always

@@ -95,6 +95,8 @@ export const FORMAT_LINES = Object.freeze(Object.fromEntries([
     'note-retraction': { what: 'the retraction of a note', where: "the log and the issue's notes, in the shape of a row's retraction", misread: 'counts the note as standing' },
     'tip-mark': { what: 'the tip of a branch after a row, a verdict, a merge or a close', where: 'the log, with the tip mark before the separator', misread: 'takes the line for no line of the log, so it spends at a pause the rows and approves made on a tip that has not moved' },
     'proof-line': { what: 'the acceptance lines an evidence row proves', where: "the row in the issue's Proof and its log line, after the row's mark", misread: 'reads no row there, so done refuses an issue for want of the proof it holds' },
+    'range-number': { what: 'a number from a range the goal declares', where: 'the name and the header of an issue file, and the Range line of the goal', misread: 'files its next issue above the numbers of the range, so the series the loop keeps apart are mixed' },
+    'in-place': { what: 'the mark of an issue worked in place', where: "the tag in-place among the issue's Tags", misread: 'lets done pass with no commit of its files named' },
   }),
 ]));
 // The record format of a loop as the views say it: its format, the formats this Jarl reads, whether a write may raise it
@@ -480,9 +482,13 @@ export function readProfileFile(file, { argument = false } = {}) {
   let json;
   try { json = JSON.parse(readText(file)); } catch (e) { refuse(`${file} is not JSON: ${e.message}`, ['jarl.mjs', 'profile', '<profile.json>']); }
   const profile = validateProfile(json, file);
-  const reserved = reservedNamesProblem(profile) || keyFieldProblem(profile) || parentFieldProblem(profile) || sectionNamesProblem(profile);
+  const reserved = reservedProblem(profile);
   need(!reserved, `${file} is not a valid profile: ${reserved}`, () => afterView(['jarl.mjs', 'profile', file]));
   return { json, profile };
+}
+// What a profile to be opened, or a part to be added to a live loop's, declares of a name Jarl reserves, as one refusal, or null.
+function reservedProblem(profile) {
+  return reservedNamesProblem(profile) || keyFieldProblem(profile) || parentFieldProblem(profile) || sectionNamesProblem(profile);
 }
 // What a profile file to be opened declares of the names the built-in promise and wait use, as one refusal, or null: a
 // field named Person or Check when, and promise or wait among its own kinds. A loop already open with such a profile is
@@ -550,4 +556,4 @@ export function cmdProfile(root, file) {
 }
 
 // Used by the other modules of the library, and not part of what jarl-lib.mjs exports.
-export { SLOT_NAME_RE, forgetProfile, formatOffText, numberWidth };
+export { SLOT_NAME_RE, forgetProfile, formatOffText, numberWidth, reservedProblem };

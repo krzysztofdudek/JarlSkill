@@ -19,7 +19,7 @@ const formatOf = (root) => json(root, 'profile').format;
 const STAMP = '\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}';
 
 test('every command whose --by is not what it records takes one, and the table holds no other', () => {
-  assert.deepEqual([...WRITER_COMMANDS].sort(), ['archive', 'ask', 'base', 'close', 'evidence', 'goal', 'import', 'init', 'log', 'merged', 'mode', 'new', 'renumber', 'round', 'set']);
+  assert.deepEqual([...WRITER_COMMANDS].sort(), ['archive', 'ask', 'base', 'close', 'evidence', 'extend', 'goal', 'import', 'init', 'log', 'merged', 'mode', 'new', 'renumber', 'round', 'set']);
   for (const c of WRITER_COMMANDS) assert.equal(COMMAND_FLAGS[c].by, 'value', c);
   // The commands whose --by is part of what they record: the author of a description change, the reviewer, who answered, ruled or retracted.
   for (const c of ['field', 'retract', 'review', 'answer', 'decide']) assert.ok(!WRITER_COMMANDS.includes(c), c);

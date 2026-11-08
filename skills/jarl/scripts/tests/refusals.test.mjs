@@ -108,7 +108,7 @@ test('a step the call needs first is its own command on its own line, never join
   assert.equal(close.ready, "jarl.mjs ask \"<question-for-the-owner>\" --by jarl");
   assert.equal(close.commands.length, 1);
   const wait = refusal(['field', '1', 'Kind', 'wait'], { loop: PLAIN, wrong: 'wait' });
-  assert.deepEqual(wait.commands, ["jarl.mjs field 1 Person \"<name>\"", "jarl.mjs field 1 'Check when' \"<date-or-event>\"", "jarl.mjs field \"<ids>\" Kind \"<kind>\""]);
+  assert.deepEqual(wait.commands, ["jarl.mjs field \"<ids>\" Person \"<name>\"", "jarl.mjs field \"<ids>\" 'Check when' \"<date-or-event>\"", "jarl.mjs field \"<ids>\" Kind \"<kind>\""]);
   for (const line of wait.commands) assert.equal(printedCalls(line).length, 1, line);
   const opened = refusal(['init', 'g'], { loop: PLAIN });
   assert.equal(opened.ready, "jarl.mjs archive \"<slug>\"");

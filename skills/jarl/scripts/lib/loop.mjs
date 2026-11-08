@@ -357,6 +357,12 @@ function waiverVoid(loop, slug, id) {
 // An issue carries code when it records a branch or a merge. Only then does done (and the merge queue) need a
 // fresh approve; an issue with neither — a ruling, a note, a hub document — is still cleared by the coordinator.
 export function carriesCode(issue) { return Boolean(fieldText(issue.fields.branch) || fieldText(issue.fields.merged)); }
+// An issue worked in place carries the tag in-place: its worker writes the files it declares in the checkout of their repository,
+// with no branch and no merge, and they are committed in the main checkout once the approve stands. The tag means that only in a
+// loop of the record format that holds it (FORMAT_LINES 'in-place'), which its first write raises; below it, it is a tag
+// like any other.
+export const IN_PLACE_TAG = 'in-place';
+export function worksInPlace(profile, issue) { return Boolean(issue) && profile.format >= FORMAT_LINES['in-place'].format && issue.tags.includes(IN_PLACE_TAG); }
 // A code issue whose code as it is now is not merged, or null: its lease records a Branch, and its journal records no merge
 // that counts for that code (see mergeState of gateOf; a journal with no merge line leaves it to the Merged field), as
 // { why: 'none' } or the mergeState that says why. The one rule done refuses by and status flags a closed issue by: the
