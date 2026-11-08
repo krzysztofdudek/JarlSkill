@@ -45,8 +45,7 @@ export function writeWhole(path, text) {
 // with that key, in its fixed place right after the stamp and before the writer: `- <stamp> key <key> by <writer> ·
 // <text>`. A tip line carries the tip mark after the key and before the writer. No text reaches either place.
 export function appendLogLines(root, events, at = stamp()) {
-  const w = callWriter;
-  if (w && !w.raised) { w.raise(root); w.raised = true; }
+  const w = writerRaised(root);
   const keyOf = lineKeys(root, events);
   appendAtomic(logPath(jarlDir(root)), '# Log\n\n', events.map((e) => {
     const text = oneLine(typeof e === 'string' ? e : e.text);
@@ -100,6 +99,13 @@ export function withWriter(name, raise, fn) {
   const was = callWriter;
   callWriter = name ? { name, raise, raised: false } : null;
   try { return fn(); } finally { callWriter = was; }
+}
+// The writer of the call, after the raise its first line needs has run: a write that rewrites a file the raise rewrites
+// too (the profile) calls it first, and starts from the file as the raise left it. Null when the call names nobody.
+export function writerRaised(root) {
+  const w = callWriter;
+  if (w && !w.raised) { w.raise(root); w.raised = true; }
+  return w;
 }
 
 // The log is one event per line: a text with line breaks never reaches it raw. A command that keeps the whole text

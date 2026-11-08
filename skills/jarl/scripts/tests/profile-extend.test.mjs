@@ -8,9 +8,9 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { fileAsBefore, formatTwoJarl, oldJarl } from './old-jarl.mjs';
+import { fileAsBefore, fileAsFormatTwo, formatTwoJarl, oldJarl } from './old-jarl.mjs';
 import { jarl, jarlResult, refuses, run, loop as makeLoop } from './helpers.mjs';
-import { BUILTIN_STATUSES } from '../jarl-lib.mjs';
+import { BUILTIN_STATUSES, cmdExtend, needFormat, withWriter } from '../jarl-lib.mjs';
 import * as R from '../record.mjs';
 
 const profileFile = (root) => join(root, '.jarl', 'profile.json');
@@ -112,4 +112,53 @@ test('the frozen readers read a loop whose profile extend wrote, and extend rais
   assert.equal(filed.ok, true, filed.error);
   assert.match(issueText(root, filed.value.id), /^\*\*Area:\*\* ui$/m, 'the first reader files the field with its default');
   assert.match(issueText(root, filed.value.id), /^## Risks$/m, 'and the section');
+});
+
+// A loop in record format 1 with no profile, in format 2, in format 3, and in format 1 with a profile of its own.
+const FORMATS = [
+  ['format 1 with no profile', () => { const root = makeLoop({ prefix: 'jarl-extend-f1-' }); fileAsBefore(root, 'filed by the first reader'); return root; }, undefined],
+  ['format 2', () => { const root = makeLoop({ prefix: 'jarl-extend-f2-' }); fileAsFormatTwo(root, 'filed by the reader of formats 1 and 2'); return root; }, 2],
+  ['format 3', () => { const root = makeLoop({ prefix: 'jarl-extend-f3-', via: 'cli' }); jarl(root, 'new', 'filed with a key'); return root; }, 3],
+  ['format 1 with a profile of its own', () => {
+    const file = join(mkdtempSync(join(tmpdir(), 'jarl-extend-own-')), 'profile.json');
+    writeFileSync(file, JSON.stringify({ 'jarl-profile': 1, name: 'own', statuses: BUILTIN_STATUSES, sections: ['Plan'] }));
+    const root = makeLoop({ prefix: 'jarl-extend-own-', via: 'cli', initFlags: ['--profile', file] });
+    fileAsBefore(root, 'filed by the first reader');
+    return root;
+  }, undefined],
+];
+for (const [name, make, format] of FORMATS) {
+  test(`extend on a loop in ${name}: with no --by the format stays, with --by the raise stands under the part added, and verify is clean after each`, () => {
+    const root = make();
+    assert.equal(existsSync(profileFile(root)) ? profileJson(root).format : undefined, format);
+    jarl(root, 'extend', 'section', 'Risks');
+    assert.equal(profileJson(root).format, format, 'an extend that names nobody raises nothing');
+    assert.ok(profileJson(root).sections.includes('Risks'));
+    let r = run(root, ['verify']);
+    assert.equal(r.status, 0, r.stdout);
+    if (format === undefined) {
+      assert.equal(oldJarl(root, 'list', {}).ok, true, 'the first reader reads the extended loop');
+      assert.equal(formatTwoJarl(root, 'list', {}).ok, true, 'so does the reader of formats 1 and 2');
+    }
+    if (format === 2) assert.equal(formatTwoJarl(root, 'list', {}).ok, true, 'the reader of formats 1 and 2 reads it');
+    jarl(root, 'extend', 'field', 'Area', '--values', 'ui,api', '--by', 'jarl');
+    const json = profileJson(root);
+    assert.equal(json.format, 3, 'the writer raised the loop, and the profile written after it keeps the raise');
+    assert.ok(json.sections.includes('Risks') && json.fields.Area, 'and holds both parts');
+    assert.match(logText(root), /^- \S+ \S+ by jarl · profile extended · field Area: values ui, api$/m);
+    r = run(root, ['verify']);
+    assert.equal(r.status, 0, r.stdout);
+    assert.equal(formatTwoJarl(root, 'list', {}).ok, false, 'a reader of formats 1 and 2 refuses the raised loop');
+  });
+}
+
+test('a profile that cannot be written leaves no log line, with --by and without', () => {
+  const root = makeLoop({ prefix: 'jarl-extend-failed-', via: 'cli' });
+  jarl(root, 'new', 'one');
+  const held = snapshot(root);
+  // The temporary file the profile is written through is taken by a directory, so the write fails.
+  mkdirSync(join(root, '.jarl', `.profile.json.${process.pid}.tmp`));
+  assert.throws(() => cmdExtend(root, 'section', 'Risks', {}));
+  assert.throws(() => withWriter('jarl', (r) => needFormat(r, 'writer'), () => cmdExtend(root, 'section', 'Risks', { by: 'jarl' })));
+  assert.deepEqual(snapshot(root), held, 'nothing was logged and the profile is as it was');
 });

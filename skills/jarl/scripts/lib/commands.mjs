@@ -10,7 +10,7 @@ import { canonical, issuesDir, jarlDir, normalPath, portablePath, stamp, today }
 import { readText, renameRetry, writeAtomic } from './files.mjs';
 import { ISSUE_FILE_RE, branchNameProblem, cmpId, expandIds, idKey, idRe, isBulk, itemNaming, needsRaisedFormat, newIssueKey, newNumber } from './ids.mjs';
 import { BUILTIN_STATUSES, DEFAULT_PROFILE, FORMAT_LINES, LIFECYCLE_OPS, PARENT_FIELD, PROFILE_VERSION, TOOL_FIELDS, describeProfile, forgetProfile, formatState, loadProfile, numberWidth, profilePath, readProfileFile, reservedProblem, validateProfile } from './profile.mjs';
-import { appendLog, appendLogLines, decisionsPath, goalLines, goalPath, logPath, readGoal } from './journal.mjs';
+import { appendLog, appendLogLines, decisionsPath, goalLines, goalPath, logPath, readGoal, writerRaised } from './journal.mjs';
 import { JARL_GITIGNORE, JARL_GITIGNORE_COMMITTED, ensureLoopMerge, outOfGit } from './loop-git.mjs';
 import { HANDOVER_SEGMENT, journalById, mergeCheckText } from './log.mjs';
 import { FIELD_RE, PROPOSED, RENDERED_FIELDS, acceptanceHeading, alignRows, acceptanceLineCount, acceptanceLines, acceptanceText, bodyText, changelogText, evidenceNotes, evidenceParts, evidenceRows, evidenceTable, fieldValue, findIssue, issueNamed, loadIssues, mergedOf, namedPairs, needNoFieldTags, noteText, parentCycle, parseIssue, placeEvidence, removeFields, removeFirstField, renderIssue, setField, setSection, unattributedRefusal, waitCycle } from './issues.mjs';
@@ -966,19 +966,25 @@ export function cmdExtend(root, part, name, flags = {}) {
   const held = kind === 'section' ? sectionsOf(profile).some((s) => s.toLowerCase() === label.toLowerCase()) : profile.declaredFields.some((f) => f.key === label.toLowerCase());
   need(!held, `the profile already declares the ${kind} ${label}: ${jarlLine('profile')}`, () => ({ arg: 1, value: hole('<name>') }));
   const spec = kind === 'field' ? { ...(flags.values !== undefined ? { enum: splitList(flags.values) } : {}), ...(flags.default !== undefined ? { default: String(flags.default) } : {}), ...(flags.required === true ? { required: true } : {}) } : null;
-  const path = profilePath(root);
-  const raw = existsSync(path) ? JSON.parse(readText(path)) : null;
-  const base = raw && profile.declared ? raw : { 'jarl-profile': PROFILE_VERSION, ...(raw && raw.format !== undefined ? { format: raw.format } : {}), statuses: BUILTIN_STATUSES, initial: 'open' };
-  const json = kind === 'section' ? { ...base, sections: [...(base.sections || []), label] } : { ...base, fields: { ...(base.fields || {}), [label]: spec } };
-  let next;
-  try { next = validateProfile(json, `the profile with the ${kind} ${label}`); } catch (e) { if (e instanceof Refusal) refuse(e.reason, { retry: true }); throw e; }
+  // The profile as it would be: checked whole before anything is written.
+  const extended = () => {
+    const raw = existsSync(profilePath(root)) ? JSON.parse(readText(profilePath(root))) : null;
+    const base = raw && loadProfile(root).declared ? raw : { 'jarl-profile': PROFILE_VERSION, ...(raw && raw.format !== undefined ? { format: raw.format } : {}), statuses: BUILTIN_STATUSES, initial: 'open' };
+    const json = kind === 'section' ? { ...base, sections: [...(base.sections || []), label] } : { ...base, fields: { ...(base.fields || {}), [label]: spec } };
+    try { return { json, profile: validateProfile(json, `the profile with the ${kind} ${label}`) }; } catch (e) { if (e instanceof Refusal) refuse(e.reason, { retry: true }); throw e; }
+  };
+  extended();
   const reserved = reservedProblem(validateProfile({ 'jarl-profile': PROFILE_VERSION, statuses: BUILTIN_STATUSES, ...(kind === 'section' ? { sections: [label] } : { fields: { [label]: spec } }) }));
   need(!reserved, `the ${kind} ${label} is not added: ${reserved}`, () => ({ arg: 1, value: hole('<name>') }));
   const words = kind === 'section' ? `section ${label}` : `field ${label}${[spec.enum && `values ${spec.enum.join(', ')}`, spec.default && `default ${spec.default}`, spec.required && 'required'].filter(Boolean).map((w) => `; ${w}`).join('').replace(/^; /, ': ')}`;
-  appendLog(root, `profile extended · ${noSeparators(words)}`);
-  writeAtomic(path, `${JSON.stringify(json, null, 2)}\n`);
+  // The raise the call's writer needs comes first, and rewrites the profile: the part is added to the profile as the raise
+  // left it, and the log line follows the profile, so a profile that could not be written leaves no line behind.
+  writerRaised(root);
+  const next = extended();
+  writeAtomic(profilePath(root), `${JSON.stringify(next.json, null, 2)}\n`);
   forgetProfile(root);
-  return { part: kind, name: label, ...(spec ? { spec } : {}), profile: describeProfile(next) };
+  appendLog(root, `profile extended · ${noSeparators(words)}`);
+  return { part: kind, name: label, ...(spec ? { spec } : {}), profile: describeProfile(next.profile) };
 }
 
 // field <ids> <section> "<text>": a section of the description, as body writes it, with the body line it logs. A value
