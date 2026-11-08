@@ -10,7 +10,7 @@ import { canonical, issuesDir, jarlDir, normalPath, portablePath, stamp, today }
 import { readText, renameRetry, writeAtomic } from './files.mjs';
 import { ISSUE_FILE_RE, branchNameProblem, cmpId, expandIds, idKey, idRe, isBulk, itemNaming, needsRaisedFormat, newIssueKey, newNumber } from './ids.mjs';
 import { BUILTIN_STATUSES, DEFAULT_PROFILE, FORMAT_LINES, LIFECYCLE_OPS, PARENT_FIELD, PROFILE_VERSION, TOOL_FIELDS, describeProfile, forgetProfile, formatState, loadProfile, numberWidth, profilePath, readProfileFile, reservedProblem, validateProfile } from './profile.mjs';
-import { appendLog, appendLogLines, decisionsPath, goalLines, goalPath, logPath, readGoal, writerRaised } from './journal.mjs';
+import { appendLog, appendLogLines, decisionsPath, goalLines, goalPath, logPath, parseStamp, readGoal, writerRaised } from './journal.mjs';
 import { JARL_GITIGNORE, JARL_GITIGNORE_COMMITTED, ensureLoopMerge, outOfGit } from './loop-git.mjs';
 import { HANDOVER_SEGMENT, journalById, mergeCheckText } from './log.mjs';
 import { FIELD_RE, PROPOSED, RENDERED_FIELDS, acceptanceHeading, alignRows, acceptanceLineCount, acceptanceLines, acceptanceText, bodyText, changelogText, evidenceNotes, evidenceParts, evidenceRows, evidenceTable, fieldValue, findIssue, issueNamed, loadIssues, mergedOf, namedPairs, needNoFieldTags, noteText, parentCycle, parseIssue, placeEvidence, removeFields, removeFirstField, renderIssue, setField, setSection, unattributedRefusal, waitCycle } from './issues.mjs';
@@ -1126,7 +1126,7 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   // An issue worked in place is leased with no branch, on the files it declares, which keep two such issues apart.
   for (const issue of holds ? issues.filter((i) => worksInPlace(profile, i)) : []) {
     const given = ['branch', 'worktree'].filter((k) => flags[k] !== undefined);
-    need(!given.length, `${issue.id} is worked in place: its worker writes the files it declares in the loop's own checkout, with no branch and no worktree of its own${nothing}`, () => given.map((k) => ({ drop: `--${k}` })));
+    need(!given.length, `${issue.id} is worked in place: its worker writes the files it declares in the checkout of their repository, as it is checked out, with no branch and no worktree of its own${nothing}`, () => given.map((k) => ({ drop: `--${k}` })));
     need(issue.files.length, `${issue.id} is worked in place and declares no files: it names the files it writes before it is leased, so that next keeps two issues off one file${nothing}`, () => ['jarl.mjs', 'field', issue.id, 'Files', hole('<paths>')]);
   }
   // base: the branch the composer landed the merge into, for the done gate's requires-merged (else the branch checked
@@ -1665,25 +1665,42 @@ function doneGateIn(root, loop, issue, base, why) {
 function unprovedRefusal(issue, left) {
   return `${issue.id} has acceptance lines no Proof row names: ${left.map((l) => `line ${l.n} "${l.text}"`).join('; ')} — this loop names the line a row proves, and a row with no --line names none: record a row that names each, ${jarlLine('evidence', issue.id, '--ran', '<command>', '--saw', '<what-it-printed>', '--line', '<line>')}, or close it without one and say why: ${jarlLine('set', issue.id, 'done', '<why>')}`;
 }
-// Why an issue worked in place may not close yet, or null: no row of its proof inside the gate's window names a commit
-// that a repository of the issue holds on the branch it has checked out and that changes a file the issue declares. The
-// files are committed in the main checkout once the approve stands (by the merger where one runs, else the coordinator),
-// and that commit is recorded as a row; nothing is merged.
+// Why an issue worked in place may not close yet, or null. Each file it declares is placed in its repository as fileAt
+// places it (the loop's own, or the one its Repo names for that path). The issue closes when every such repository is a
+// git repository here, none of its declared files has a change its checkout has not committed (staged, unstaged or
+// untracked), and a row of its proof inside the gate's window names a commit that a repository holds on the branch it
+// has checked out, that changes a declared file of that repository, and that was committed at or after the minute of the
+// move the window starts at (the lease, a reopen or a red round): a commit made before the work began commits none of it.
+// The files are committed in the checkout of their repository once the approve stands (by the merger where one runs,
+// else the coordinator), and that commit is recorded as a row; nothing is merged.
 function inPlaceRefusal(root, loop, issue, g) {
   if (!worksInPlace(loop.profile, issue)) return null;
   const rows = evidenceTable(issue.sections.evidence).rows;
   const logged = alignRows(issue.id, rows, g.rowLog);
   const counted = rows.filter((r, k) => !r.retracted && r.saw !== '' && (!g.tracked || (logged[k] && logged[k].inWindow && !logged[k].retracted)));
   const shas = [...new Set(counted.flatMap((r) => `${r.ran} ${r.saw}`.match(/\b[0-9a-f]{7,40}\b/g) || []))];
-  const repos = issueRepoPaths(root, issue).filter(isGitRepo);
-  const declared = issue.files.map((f) => fileAt(root, issue, f).path.replace(/\/+$/, ''));
-  const touches = (f) => declared.some((d) => f === d || f.startsWith(`${d}/`) || f.endsWith(`/${d}`));
-  const committed = (repo, sha) => git(repo, ['merge-base', '--is-ancestor', sha, 'HEAD']) !== null
-    && (git(repo, ['diff-tree', '--root', '--no-commit-id', '--name-only', '-r', '--no-renames', sha]) || '').split('\n').some(touches);
-  if (shas.some((sha) => repos.some((repo) => committed(repo, sha)))) return null;
-  const why = repos.length ? `no row of its proof${g.tracked ? ` since ${sinceText(g.anchor)}` : ''} names a commit on the branch checked out that changes ${issue.files.join(', ')}` : 'no repository it names is a git repository here, so the commit of its files cannot be checked';
-  return `${issue.id} is worked in place, and ${why} — once the approve stands, its files are committed in the main checkout (by the merger where one runs, else the coordinator), and the commit is recorded as a row: ${jarlLine('evidence', issue.id, '--ran', '<command>', '--saw', '<what-it-printed>')}`;
+  // The declared files by the top of the repository they are in.
+  const byTop = new Map();
+  for (const f of issue.files) {
+    const at = fileAt(root, issue, f);
+    const top = isGitRepo(at.repo) ? git(at.repo, ['rev-parse', '--show-toplevel']) : null;
+    if (top === null) return `${issue.id} is worked in place, and ${f} is in ${repoLabel(at.repo)}, which is no git repository here, so the commit of its files cannot be checked — ${inPlaceStep(issue)}`;
+    byTop.set(top, [...(byTop.get(top) || []), at.path.replace(/\/+$/, '')]);
+  }
+  const touches = (paths) => (f) => paths.some((d) => f === d || f.startsWith(`${d}/`) || f.endsWith(`/${d}`));
+  for (const [top, paths] of byTop) {
+    const changed = [...(git(top, ['diff', '--name-only', '-z', '--no-renames', 'HEAD']) || '').split('\0'), ...(git(top, ['ls-files', '--others', '--exclude-standard', '-z']) || '').split('\0')].filter(Boolean);
+    const dirty = changed.filter(touches(paths));
+    if (dirty.length) return `${issue.id} is worked in place, and its checkout holds changes not committed to ${dirty.join(', ')} — ${inPlaceStep(issue)}`;
+  }
+  const from = g.tracked ? parseStamp(g.anchor.at) : null;
+  const committed = (top, paths, sha) => git(top, ['merge-base', '--is-ancestor', sha, 'HEAD']) !== null
+    && (from === null || Number(git(top, ['show', '-s', '--format=%ct', sha])) * 1000 >= from)
+    && (git(top, ['diff-tree', '--root', '--no-commit-id', '--name-only', '-r', '--no-renames', sha]) || '').split('\n').some(touches(paths));
+  if (shas.some((sha) => [...byTop].some(([top, paths]) => committed(top, paths, sha)))) return null;
+  return `${issue.id} is worked in place, and no row of its proof${g.tracked ? ` since ${sinceText(g.anchor)}` : ''} names a commit made after it, on the branch checked out, that changes ${issue.files.join(', ')} — ${inPlaceStep(issue)}`;
 }
+const inPlaceStep = (issue) => `once the approve stands, its files are committed in the checkout of their repository (by the merger where one runs, else the coordinator), and the commit is recorded as a row: ${jarlLine('evidence', issue.id, '--ran', '<command>', '--saw', '<what-it-printed>')}`;
 // Why a code issue's code as it is now is not merged (see unmergedCode), as done says it, or null.
 function unmergedRefusal(issue, g) {
   const u = unmergedCode(issue, g);
