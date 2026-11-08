@@ -197,7 +197,7 @@ export function ask(root, question, opts = {}) { return write(root, () => L.cmdA
 // once the entry is in the graph's log (the **Type log:** and **Rule log:** fields a writer adds to the ruling).
 export function answer(root, id, text) { return write(root, () => L.cmdAnswer(root, id, text)); }
 // A free note for the journal. A line that reads as a filing, a move, a round, a verdict, a retraction, an evidence row, a
-// branch tip, a merge, a CI state, a body change or the owner's tick of an acceptance line is refused and names the
+// branch tip, a merge, a CI state, a body change, the owner's tick of an acceptance line or its retraction is refused and names the
 // operation that writes it.
 export function appendLog(root, event) {
   return write(root, () => { L.need(event, 'log requires "<text>"', () => (['jarl.mjs', 'log', '<text>'])); L.appendNote(root, event); return { logged: event }; });

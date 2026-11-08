@@ -47,6 +47,8 @@ import { STAMP_SRC, appendLog, headerKey, logPath, oneLine } from './journal.mjs
 //   tick           the owner's tick of an acceptance line only he ticks: line, its number when it was ticked, by, and
 //                  ownerLine, the line as it was written then, which is what the tick holds (a line rewritten after it is
 //                  another); the event's text stays the log line's whole text, as for every other kind
+//   tick-retract   the owner's tick taken back: line, by, why and ownerLine, the line as the tick it takes back holds it;
+//                  it takes back the newest tick of that line before it that no other has taken back
 //   other          any other line
 // A line names its writer, when the call that wrote it named one (--by), right after the stamp and before the separator:
 // `- <stamp> by <writer> · <text>`. The place is fixed and no text of the line can reach it, so a note can never pose as
@@ -63,6 +65,9 @@ const RETRACT_NOTE_LINE = idRe('^{id} evidence retract · note (\\d+)\\b');
 const TIP_LINE = idRe('^{id} tip ([0-9a-f]{7,64}(?:,[0-9a-f]{7,64})*)$');
 // The owner's tick: the number the acceptance line had, who ticked it, then the line itself as it was written.
 const TICK_LINE = idRe('^{id} tick · line (\\d+) · by (.+?) · (\\[[^\\]]*\\].*)$');
+// The owner's tick taken back: the number the line had, who took it back, why (one segment, with no separator in it), then
+// the line as the tick holds it, so the tick it takes back is the newest one of that line before it.
+const TICK_RETRACT_LINE = idRe('^{id} tick retract · line (\\d+) · by ([^·]+?) · ([^·]+?) · (\\[[^\\]]*\\].*)$');
 // The standing of a round, right after its number and before its findings and its text: its count and the limit then.
 const ROUND_STANDING_LINE = /^\S+ round \d+ · (count|takeover) (\d+) of (\d+) · /;
 // A move into a status that holds the claim is read by position, never by searching: after the arrow and the status come
@@ -193,6 +198,8 @@ function eventParser(profile) {
     if (text.startsWith(`${id} body · `)) return bodyEvent(text.slice(`${id} body · `.length));
     const tk = TICK_LINE.exec(text);
     if (tk) return { type: 'tick', line: Number(tk[1]), by: tk[2], ownerLine: tk[3] };
+    const tr = TICK_RETRACT_LINE.exec(text);
+    if (tr) return { type: 'tick-retract', line: Number(tr[1]), by: tr[2], why: tr[3], ownerLine: tr[4] };
     return { type: 'other' };
   };
 }
@@ -208,7 +215,7 @@ const LINE_CALLS = {
   'retract-review': (id) => ['retract', id, 'review', hole('<why>'), '--by', hole('<who>')], 'retract-row': (id) => ['retract', id, hole('<n>'), hole('<why>'), '--by', hole('<who>')],
   'retract-note': (id) => ['retract', id, hole('<n-or-note-n>'), hole('<why>'), '--by', hole('<who>')], row: (id) => ['evidence', id, '--ran', hole('<command>'), '--saw', hole('<what-it-printed>')],
   merged: (id) => ['merged', id, '--sha', hole('<sha>')], ci: (id) => ['merged', id, '--ci', hole('<ci-state>')], body: (id) => ['field', id, hole('<part>'), hole('<value>')],
-  tick: (id) => ['tick', id, hole('<line>'), '--by', hole('<the-owner-himself>')], tip: (id) => ['evidence', id, '--ran', hole('<command>'), '--saw', hole('<what-it-printed>')],
+  tick: (id) => ['tick', id, hole('<line>'), '--by', hole('<the-owner-himself>')], 'tick-retract': (id) => ['retract', id, hole('<tick-n>'), hole('<why>'), '--by', hole('<the-owner-himself>')], tip: (id) => ['evidence', id, '--ran', hole('<command>'), '--saw', hole('<what-it-printed>')],
 };
 const MOVE_SHAPE = idRe('^{id} →');
 // A free line for the journal (the log command and record.appendLog): a note about the loop or an issue. A line that
@@ -303,7 +310,7 @@ export function issueKeysAt(dir) {
 // Why a dated line of an issue is not placed, or null when it is: a line that reads as one of the kinds the log writes
 // (a review, a merge, a CI state, a body change, an evidence row or retraction, a tick) and that the parser placed as none of
 // them; a move into a status that holds the claim whose worker or model does not parse; a verdict whose model mark does not.
-const LOG_KIND = /^(review|merged|CI|body|evidence (?:row|retract)|tick(?= · ))\b/;
+const LOG_KIND = /^(review|merged|CI|body|evidence (?:row|retract)|tick(?= · )|tick retract(?= · ))\b/;
 function unplaced(profile, written, text, body) {
   const rest = text.slice(written.length + 1);
   if (body.type === 'other') {

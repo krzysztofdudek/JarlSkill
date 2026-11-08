@@ -9,11 +9,11 @@
 
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { fieldText, hole, jarlLine, need, printCommand } from './base.mjs';
+import { fieldText, hole, jarlLine, need, noSeparators, oneBreak, printCommand } from './base.mjs';
 
 // The author a refused tick names: the owner, who ticks a line himself once he has reviewed it.
 const OWNER_TICKS = '<the-owner-himself>';
-import { OWNER, rulingAuthor } from './owner.mjs';
+import { OWNER, needNoOwnersWords, rulingAuthor } from './owner.mjs';
 import { jarlDir, stamp } from './where.mjs';
 import { appendLogLines } from './journal.mjs';
 import { formatState } from './profile.mjs';
@@ -95,10 +95,17 @@ export function ownerLineStates(root, loop, issue) {
   const proven = g.tracked ? g.rowLog.some((r) => !r.retracted && r.n > cut) : evidenceRows(issue).length > 0;
   let places;
   return lines.map((l) => {
-    const ticks = events.filter((e) => e.type === 'tick' && e.ownerLine === l.text);
+    // A tick taken back takes away the newest tick of the line before it that is still standing, and only that one.
+    const ticks = [];
+    let retracted = null;
+    for (const e of events) {
+      if (e.ownerLine !== l.text) continue;
+      if (e.type === 'tick') ticks.push(e);
+      if (e.type === 'tick-retract') { const t = ticks.pop(); if (t && e.n > cut) retracted = { at: e.at, by: e.by, why: e.why, tick: t.at }; }
+    }
     const live = ticks.filter((e) => e.n > cut).pop();
     const spent = live ? null : ticks.pop();
-    const state = { ...l, tick: live ? { at: live.at, by: live.by } : null, spent: spent ? { at: spent.at, by: spent.by } : null, ready: false, why: null, at: null, off: linesOff(loop.profile) };
+    const state = { ...l, tick: live ? { at: live.at, by: live.by } : null, spent: spent ? { at: spent.at, by: spent.by } : null, retracted: live ? null : retracted, ready: false, why: null, at: null, off: linesOff(loop.profile) };
     if (state.off) return { ...state, why: offText(loop.profile) };
     if (!whole(l)) return { ...state, why: 'the line does not name its material and what to check' };
     if (!proven) return { ...state, why: 'no proof of the work is recorded after it was started or last sent back' };
@@ -148,7 +155,7 @@ export function ownerLineWait(root, loop, issue) {
 export function ownerLineNotes(root, loop, issue) {
   return ownerLineStates(root, loop, issue).map((s) => (s.tick
     ? `owner's sign-off: acceptance line ${s.n} ticked by ${s.tick.by} ${s.tick.at}`
-    : `owner's sign-off: acceptance line ${s.n} not ticked — ${whole(s) && !s.off ? `${reviewText(s)}; ${s.ready ? `his to tick: ${tickCommand(issue.id, s.n)}` : `its material is not there yet: ${s.why}`}` : s.why}`));
+    : `owner's sign-off: acceptance line ${s.n} not ticked${s.retracted ? ` (his tick of ${s.retracted.tick} was taken back by ${s.retracted.by} ${s.retracted.at}: ${s.retracted.why})` : ''} — ${whole(s) && !s.off ?`${reviewText(s)}; ${s.ready ? `his to tick: ${tickCommand(issue.id, s.n)}` : `its material is not there yet: ${s.why}`}` : s.why}`));
 }
 
 // tick <id> <n> --by owner: the owner's tick of an owner line, once he has reviewed its material. It needs the owner by
@@ -175,10 +182,42 @@ export function cmdTick(root, rawId, rawLine, flags = {}) {
   need(s, `acceptance line ${n} of ${issue.id} is not marked as one only the owner ticks; ${owners}`, openLine);
   need(!loop.profile.is(issue.status, 'terminal'), `${issue.id} is ${issue.status}: nothing waits for the owner's tick until it is open again`, () => ({ first: ['jarl.mjs', 'set', issue.id, hole('<status>'), '<why>'] }));
   need(!s.off, `acceptance line ${n} of ${issue.id} cannot be ticked: ${s.why}; rewrite it without the [owner] mark: ${rewriteText(issue.id)}`, () => (rewrite(issue.id)));
-  need(!s.tick, `acceptance line ${n} of ${issue.id} is ticked already, by ${s.tick && s.tick.by} at ${s.tick && s.tick.at}`, openLine);
+  need(!s.tick, `acceptance line ${n} of ${issue.id} is ticked already, by ${s.tick && s.tick.by} at ${s.tick && s.tick.at}; a tick given by mistake is taken back with ${jarlLine('retract', issue.id, `tick-${n}`, '<why>', '--by', OWNER_TICKS)}`, openLine);
   need(s.ready, `the material of acceptance line ${n} of ${issue.id} is not there yet: ${s.why} — the owner ticks the line once he has reviewed it; nothing was written`, () => (['jarl.mjs', 'evidence', issue.id, '--ran', '<command>', '--saw', '<what-it-printed>']));
   needFormat(root, 'owner-line');
   const at = stamp();
   appendLogLines(root, [`${issue.id} tick · line ${n} · by ${by} · ${s.text}`], at);
   return { id: issue.id, line: n, by, at, text: s.text };
+}
+
+// retract <id> tick-<n> --by owner "<why>": the owner takes back his tick of an owner line, given by mistake. It needs the
+// owner by name, as the tick does, an owner line of that number with a tick that counts, and why; it writes one log line,
+// `<id> tick retract · line <n> · by owner · <why> · <the line>`, which takes back the newest tick of the line as written
+// and nothing else: the line waits for his tick again, and every other tick, approve and row stands. The line is of the
+// record format that holds owner lines, which a loop with a tick is in already.
+const TICK_ENTRY = /^tick-(\d+)$/;
+export function cmdRetractTick(root, rawId, entry, reason, flags = {}) {
+  need(flags.by !== undefined, 'retract of a tick needs --by owner: only the owner ticks an owner line, and only he takes his tick back', () => ({ flag: '--by', value: OWNER_TICKS }));
+  const by = rulingAuthor(flags.by);
+  need(by === OWNER, `only the owner takes back his tick of an owner line (got "${by}"), as only he ticks it`, () => ({ flag: '--by', value: OWNER_TICKS }));
+  need(fieldText(reason ?? ''), 'retract of a tick says why it is taken back', () => ({ arg: 2, value: hole('<why>') }));
+  needNoOwnersWords('the retraction', reason);
+  const issue = findIssue(root, rawId);
+  need(issue, `no such issue: ${rawId}`, () => ({ replace: rawId, value: '<id>' }));
+  const loop = readLoop(jarlDir(root));
+  const states = ownerLineStates(root, loop, issue);
+  const m = TICK_ENTRY.exec(String(entry ?? '').trim());
+  const n = m ? Number(m[1]) : NaN;
+  const ticked = states.filter((x) => x.tick).map((x) => x.n);
+  const which = ticked.length ? `the lines whose tick counts: ${ticked.join(', ')}` : `no owner line of ${issue.id} has a tick that counts`;
+  need(n > 0, `retract takes the owner's tick of an acceptance line as tick-<n>, n its number counted from 1 (got "${entry}") — ${which}`, () => ({ replace: String(entry), value: hole('<tick-n>') }));
+  const s = states.find((x) => x.n === n);
+  need(s, `acceptance line ${n} of ${issue.id} is not marked as one only the owner ticks — ${which}`, () => ({ replace: String(entry), value: hole('<tick-n>') }));
+  need(!loop.profile.is(issue.status, 'terminal'), `${issue.id} is ${issue.status}: a tick it was closed on is taken back once it is open again`, () => ({ first: ['jarl.mjs', 'set', issue.id, hole('<status>'), '<why>'] }));
+  need(s.tick, `acceptance line ${n} of ${issue.id} has no tick that counts${s.spent ? `: his tick of ${s.spent.at} was spent when the work was sent back or started again` : ''} — ${which}`, () => ({ replace: String(entry), value: hole('<tick-n>') }));
+  needFormat(root, 'owner-line');
+  const why = noSeparators(oneBreak(reason).split('\n').map((l) => l.trim()).filter(Boolean).join(' ⏎ '));
+  const at = stamp();
+  appendLogLines(root, [`${issue.id} tick retract · line ${n} · by ${by} · ${why} · ${s.text}`], at);
+  return { id: issue.id, line: n, by, at, retracted: s.tick.at, why, text: s.text };
 }
