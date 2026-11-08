@@ -12,7 +12,7 @@ import { PARENT_FIELD, SLOT_NAME_RE, formatState, loadProfile } from './profile.
 import { appendLog, appendLogLines, firstLine, goalLines, readGoal } from './journal.mjs';
 import { outOfGit } from './loop-git.mjs';
 import { attachmentOf, journalById } from './log.mjs';
-import { acceptanceLineCount, alignRows, bodyText, evidenceNotes, evidenceParts, evidenceTable, loadIssues, mergedOf, noteText, parseIssue, placeEvidence, removeFields, reviewEntries, setSection, sharedMark, struckNote } from './issues.mjs';
+import { acceptanceLineCount, alignRows, bodyText, evidenceNotes, evidenceParts, evidenceTable, loadIssues, mergedOf, noteLogText, noteText, parseIssue, placeEvidence, removeFields, reviewEntries, setSection, sharedMark, struckNote } from './issues.mjs';
 import { fileKeysOf, needFormat, repoNames, reposWhere, tipLines, whereLines, whereOf } from './repositories.mjs';
 import { approveKind, awaitsMerge, carriesCode, inFlightMark, sentBack, unmergedCode, unmergedText, coordinatorOf, disagreementText, gateOf, gateState, headerReadNotes, readLoop, recordDisagreements, reviewSplit, sameSlice, scopedLoop, sinceText, sliceNamed, sliceOf, slicesOf, waiverVoid } from './loop.mjs';
 import { checkState, checkWaiting, checkWaitingText, closedNoCheck } from './metrics.mjs';
@@ -49,7 +49,7 @@ export function cmdEvidence(root, rawIds, text, flags) {
     writeAtomic(issue.file, setSection(readText(issue.file), 'Evidence', rows ? placeEvidence(current, 'proof', added, '\n') : placeEvidence(current, 'note', noteText(added, current), '\n\n')));
   }
   // Each row line is followed by the tip of the issue's branch, so the gate knows which code the row was made on.
-  appendLogLines(root, issues.flatMap((issue) => (rows ? rows.flatMap((r) => [`${issue.id} evidence row · ${firstLine(r.ran, "the issue's Evidence section")}`, ...tipLines(root, issue)]) : [`${issue.id} evidence · ${firstLine(text, "the issue's Evidence section")}`])));
+  appendLogLines(root, issues.flatMap((issue) => (rows ? rows.flatMap((r) => [`${issue.id} evidence row · ${firstLine(r.ran, "the issue's Evidence section")}`, ...tipLines(root, issue)]) : [noteLogText(issue.id, text)])));
   return oneOrMany(rawIds, issues.map((issue) => (rows ? { id: issue.id, rows } : { id: issue.id })));
 }
 

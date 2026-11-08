@@ -395,6 +395,67 @@ test('a retracted note of several lines hides its own line and nothing that star
   assert.deepEqual([v.counted, v.said, v.shownCount], [1, 1, 1]);
 });
 
+test('a retracted note that starts with a list bullet, one escaped when written, and one whose own words end like the pointer of a longer note hide their own line, and a live one alike keeps its', () => {
+  const pointerWords = "the run is green (+2 more lines, whole text in the issue's Evidence section)";
+  for (const text of ['- a list item', '# like a heading', '<<<<<<< like a conflict', '~~looks struck', '- ~~a bullet that looks struck', pointerWords, 'ends like a strike ~~']) {
+    const root = loop();
+    const id = started(root);
+    jarl(root, 'evidence', id, text);
+    jarl(root, 'evidence', id, `${text}\nand a second line`);
+    jarl(root, 'evidence', id, 'a live note');
+    jarl(root, 'retract', id, 'note-1', '--by', 'jarl', 'the wrong words');
+    const v = seen(root, id);
+    assert.deepEqual(v.tail, [`${id} evidence · ${text} (+1 more lines, whole text in the issue's Evidence section)`, `${id} evidence · a live note`], text);
+    assert.deepEqual([v.counted, v.said, v.shownCount], [1, 1, 1], text);
+    // The other note of the two retracted instead: the line of the one of one line stays.
+    const other = loop();
+    const oid = started(other);
+    jarl(other, 'evidence', oid, text);
+    jarl(other, 'evidence', oid, `${text}\nand a second line`);
+    jarl(other, 'retract', oid, 'note-2', '--by', 'jarl', 'the wrong words');
+    const w = seen(other, oid);
+    assert.deepEqual(w.tail, [`${oid} evidence · ${text}`], text);
+    assert.deepEqual([w.counted, w.said, w.shownCount], [1, 1, 1], text);
+  }
+});
+
+// Every sequence of notes over words a note can open with, in an Evidence section in parts and in one with none (where a
+// note written by hand stands first, with no log line), each with every set of its notes retracted: the log tail of resume
+// leaves out exactly the lines the retracted notes wrote, in the order they were written, and counts them.
+test('the lines of retracted notes, over every sequence of notes that open alike, escaped or not, are paired with their notes by the order they were written', () => {
+  const root = loop();
+  const id = started(root);
+  const f = L.findIssue(root, id).file;
+  const logFile = join(root, '.jarl', 'log.md');
+  // The first retraction raises the record format; each history then starts from the issue and the log of before it.
+  const [baseFile, baseLog] = [file(root, id), log(root)];
+  jarl(root, 'evidence', id, 'raises the format');
+  jarl(root, 'retract', id, 'note-1', '--by', 'jarl', 'raises the format once');
+  const POOL = ['same', 'same\nwith more', '- same', '# same', '<<<<<<< same', '~~same', '### Notes', "same (+1 more lines, whole text in the issue's Evidence section)"];
+  const logged = (t) => { const ls = t.split('\n'); return ls.length > 1 ? `${ls[0]} (+${ls.length - 1} more lines, whole text in the issue's Evidence section)` : ls[0]; };
+  const words = (n) => (n === 0 ? [[]] : words(n - 1).flatMap((w) => POOL.map((p) => [...w, p])));
+  const sequences = [...words(1), ...words(2), ...words(3).filter((s) => s.every((t) => ['same', 'same\nwith more', '- same'].includes(t)))];
+  let histories = 0;
+  for (const unsplit of [false, true]) {
+    for (const notes of sequences) {
+      for (let mask = 1; mask < 2 ** notes.length; mask += 1) {
+        writeFileSync(f, baseFile.replace(/## Evidence\n[\s\S]*$/, unsplit ? '## Evidence\nsame\n' : '## Evidence\n'));
+        writeFileSync(logFile, baseLog);
+        for (const t of notes) R.addEvidence(root, id, t);
+        const first = unsplit ? 2 : 1;
+        notes.forEach((_, k) => { if (mask & (2 ** k)) R.addEvidence(root, id, 'taken back', { retract: `note-${k + first}`, by: 'jarl' }); });
+        const data = R.resumeData(root, { log: 100 });
+        const what = `${unsplit ? 'no parts' : 'parts'}: ${JSON.stringify(notes)}, retracted ${mask.toString(2)}`;
+        assert.deepEqual(data.log.filter((l) => / · \d+ evidence · /.test(l)).map((l) => l.replace(/^.* · (?=\d+ evidence · )/, '')), notes.filter((_, k) => !(mask & (2 ** k))).map((t) => `${id} evidence · ${logged(t)}`), what);
+        assert.ok(!data.log.some((l) => / evidence retract · /.test(l)), what);
+        assert.equal(data.logRetractedNotes, notes.filter((_, k) => mask & (2 ** k)).length, what);
+        histories += 1;
+      }
+    }
+  }
+  assert.equal(histories, 2 * (8 + 64 * 3 + 27 * 7));
+});
+
 test('a retracted note is read by neither the pinned frozen reader nor the done gate', () => {
   const root = loop();
   const id = started(root);

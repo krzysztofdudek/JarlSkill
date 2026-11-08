@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs';
 import { KEPT_KINDS, fieldText, hole, jarlLine, need } from './base.mjs';
 import { readText } from './files.mjs';
 import { DEFAULT_PROFILE, loadProfile } from './profile.mjs';
-import { evidenceNotes, mergedOf, sharedMark } from './issues.mjs';
+import { evidenceNotes, mergedOf, noteLineFits, sharedMark } from './issues.mjs';
 import { repoNames } from './repositories.mjs';
 import { closedGateLine, disagreementText, gateLine, inFlightMark, needLoop, gateOf, readLoop, reviewSplit, sameSlice, sliceNamed, sliceOf } from './loop.mjs';
 import { checkWaitingText, metricsOf, renderMetrics } from './metrics.mjs';
@@ -34,36 +34,27 @@ function countFlag(flags, name, dflt) {
 
 // The lines of the log tail a worker does not read: the line of each retracted note, and the line that retracts a note,
 // which carries its reason (a reason often restates the note), with how many notes were retracted in the tail. A note's
-// own line is the issue's log line that repeats the note's whole first line, as the log writes it (a longer note adds
-// how many more lines it has). Notes of one issue with the same first line and their log lines are paired in order from
-// the newest, so only the line of the retracted note is hidden, never that of a live note that starts with the same words.
-const MORE_LINES = / \(\+\d+ more lines, whole text in the issue's Evidence section\)$/;
+// own line is the issue's log line the note was written with (noteLineFits: the line's words, escaped as the note was,
+// are the note's first line). Notes and lines are both written in order, so they are paired from the newest back: each
+// line with the newest note before the last one paired that it fits. Only the line of the retracted note is hidden, never
+// that of a live note with the same words, and a note no line wrote (one written by hand) takes no line.
 function retractedNoteEvents(loop, events) {
   const inTail = new Set(events);
   const gone = new Set();
   let own = 0;
   for (const issue of loop.issues) {
     if (issue.id === null) continue;
-    const { lines, notes } = evidenceNotes(issue.sections.evidence || '');
+    const section = issue.sections.evidence || '';
+    const { lines, notes } = evidenceNotes(section);
     if (!notes.some((m) => m.retracted)) continue;
-    const prefix = `${issue.id} evidence · `;
-    const written = new Map();
-    for (const e of loop.events) {
-      if (e.id !== issue.id || !e.text.startsWith(prefix)) continue;
-      const key = e.text.slice(prefix.length).replace(MORE_LINES, '').trim();
-      written.set(key, [...(written.get(key) || []), e]);
-    }
-    const byFirst = new Map();
-    for (const m of notes) {
-      const key = lines[m.start].replace(/^(- )?~~/, '').replace(/~~\s*$/, '').replace(/^\\~~/, '~~').trim();
-      byFirst.set(key, [...(byFirst.get(key) || []), m]);
-    }
-    for (const [key, same] of byFirst) {
-      const logged = written.get(key) || [];
-      for (let back = 1; back <= Math.min(same.length, logged.length); back += 1) {
-        const line = logged[logged.length - back];
-        if (same[same.length - back].retracted && inTail.has(line)) { gone.add(line); own += 1; }
-      }
+    const written = loop.events.filter((e) => e.id === issue.id && e.text.startsWith(`${issue.id} evidence · `));
+    let before = notes.length;
+    for (let k = written.length - 1; k >= 0 && before > 0; k -= 1) {
+      let at = before - 1;
+      while (at >= 0 && !noteLineFits(issue.id, written[k].text, lines, notes[at], section)) at -= 1;
+      if (at < 0) continue;
+      before = at;
+      if (notes[at].retracted && inTail.has(written[k])) { gone.add(written[k]); own += 1; }
     }
   }
   let retractions = 0;

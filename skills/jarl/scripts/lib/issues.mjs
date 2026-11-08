@@ -7,7 +7,7 @@ import { issuesDir, jarlDir } from './where.mjs';
 import { readText } from './files.mjs';
 import { ISSUE_FILE_RE, KEY_RE, cmpId, idKey, idRe, newNumber, writtenForms, writtenId } from './ids.mjs';
 import { loadProfile } from './profile.mjs';
-import { DECISION_HEAD, DECISION_META } from './journal.mjs';
+import { DECISION_HEAD, DECISION_META, firstLine, firstLineReadings } from './journal.mjs';
 import { eventsById, issueState, loopEvents } from './log.mjs';
 
 // ---- issues ------------------------------------------------------------------------------------
@@ -652,6 +652,22 @@ export function isUnsplit(section) {
 function noteText(value, current) {
   const text = isUnsplit(current) ? escapeMarkers(String(value).split('\n').map((l) => l.replace(/^(\s*)###(?=\s+(?:Proof|Notes)\s*$)/, '$1\\###')).join('\n')) : bodyText(value);
   return text.replace(/^(- )?~~/, '$1\\~~');
+}
+// A note's line in the log: its issue, then the first line of its text as given, and how many more lines it has.
+const NOTE_WHERE = "the issue's Evidence section";
+export const noteLogText = (id, text) => `${id} evidence · ${firstLine(text, NOTE_WHERE)}`;
+// Whether a log line is the line of a note of the issue's Evidence `section`: a first line the line can have been written
+// from (firstLineReadings), escaped as noteText escaped it when the note was written, is the note's first line, a retraction's
+// strike taken off. The section's parts are those it had then, as no write adds a sub-heading to a section that has none. A
+// line written with no pointer is a note of one line.
+export function noteLineFits(id, logged, lines, note, section) {
+  const prefix = `${id} evidence · `;
+  if (!logged.startsWith(prefix)) return false;
+  let first = lines[note.start];
+  if (note.retracted) first = first.replace(/^(- )?~~/, '$1');
+  if (note.retracted && note.start === note.end) first = first.replace(/~~\s*$/, '');
+  const lead = /^\s*/.exec(first)[0];
+  return firstLineReadings(logged.slice(prefix.length), NOTE_WHERE).some((r) => (r.more || note.start === note.end) && noteText(`${lead}${r.first}`, section).split('\n')[0].trim() === first.trim());
 }
 // The Evidence section with one entry written into its part. `kind` is 'proof' (rows, one per line) or 'note' (text); `sep`
 // is what separates a note from the text before it. A proof entry goes after the last row of the section, wherever that
