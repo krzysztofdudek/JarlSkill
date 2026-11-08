@@ -104,6 +104,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - An answer to an item waiting for the owner's approval must start with a word that approves or rejects it, such as yes or reject. Any other answer is refused, so it is always clear what the owner decided.
 - Taking back a review, a test result or a note in a loop that an older Jarl wrote no longer undoes the update of that task's repository field. Before, that one task kept the old form while every other task was updated.
 - A question asking the owner to start a fresh session for a review now holds the review only when it is a plain question, not an item to ratify or an escalation, and a list of numbers written with no space after its commas is read as a list. The line for several tasks waiting for a review now names each task with its title and worker.
+- When two copies of a loop each leased the same task, the command Jarl offers to settle it now works whichever of the two leases you keep, including the one the task's file already shows. A conflict git left in an issue file after a stray opening line is reported at the line where the conflict itself begins.
 
 ## [6.2.0] - 2026-10-19
 

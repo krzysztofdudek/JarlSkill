@@ -8,7 +8,7 @@ import { jarlDir } from './where.mjs';
 import { idKey, idRe, idsCited, keyedIds } from './ids.mjs';
 import { BOT_PREFIX, FORMAT_LINES, botNames, clearsOf, clearsWords, profileAt, reviewerRule } from './profile.mjs';
 import { asksAt, decisionsAt, goalLines, readGoal } from './journal.mjs';
-import { eventsById, isParentLine, loopEvents } from './log.mjs';
+import { eventsById, isParentLine, leaseOfMove, loopEvents } from './log.mjs';
 import { alignRows, evidenceRows, evidenceTable, headerReadText, issuesAt, mergedOf, sharedNumberText, sharedNumbers } from './issues.mjs';
 import { branchTip } from './repositories.mjs';
 import { OWNER } from './owner.mjs';
@@ -712,6 +712,54 @@ export function sentBack(loop, issue, mark) {
 }
 // Whether an issue holds a live approve and is not merged yet: the merger's to land, so its lease is not idle for that wait.
 export const awaitsMerge = (loop, issue) => inFlightMark(loop, issue) === 'approved';
+
+// One holder however its name is cased or spaced: Dana Smith and dana  smith are one person.
+const holderKey = (h) => String(h).toLowerCase().replace(/\s+/g, ' ');
+export const sameHolder = (a, b) => holderKey(a) === holderKey(b);
+
+// The status a move of each kind goes into, read from the profile's flags: the first status that holds the claim, and
+// the first that closes the record (else the first terminal one).
+export function statusWith(profile, flag, fallback) {
+  return profile.statuses.find((s) => profile.is(s, flag)) || (fallback ? profile.statuses.find((s) => profile.is(s, fallback)) : undefined) || flag;
+}
+
+// The lease lines of one issue's `events` that still conflict, as { first, second }, or null. A lease line is a move into
+// the status the lease is taken in (the profile's first status that holds the claim) that names a worker or a branch; a
+// move between the statuses that hold the claim (running to landed) is the work going on, and takes no lease. Two lease
+// lines conflict when each names a writer, the writers differ, they name another worker or another branch, no move into
+// a status that does not hold the claim comes between them, and the second is no handover. A later handover or move out
+// settles it.
+export function leaseConflict(profile, events) {
+  const leaseStatus = statusWith(profile, 'holds-claim');
+  let held = null;
+  let conflict = null;
+  for (const e of events) {
+    if (e.type !== 'move') continue;
+    if (!profile.is(e.to, 'holds-claim')) { held = null; conflict = null; continue; }
+    const holder = e.to === leaseStatus ? leaseHolder(e) : null;
+    if (!holder) continue;
+    if (e.handover) conflict = null;
+    else if (held && held.e.writer !== null && e.writer !== null && !sameHolder(held.e.writer, e.writer) && !sameLease(held, holder)) conflict = { first: held.e, second: e };
+    held = { e, ...holder };
+  }
+  return conflict;
+}
+// The lease conflict an issue's own log lines hold, or null: the lines of its key (the lines of no key too), as the rows read them.
+export function leaseConflictOf(loop, issue) {
+  const events = (loop.eventsById.get(issue.id) || []).filter((e) => (e.key ?? null) === null || e.key === (issue.fields.key || null));
+  return leaseConflict(loop.profile, events);
+}
+// The worker and the branch a lease line names, or null when it names neither.
+function leaseHolder(e) {
+  const worker = e.lease?.worker ?? null;
+  const branch = e.lease?.branch ?? leaseOfMove(e.text, e.written ?? e.id, e.to).branch ?? null;
+  return worker || branch ? { worker, branch } : null;
+}
+// Two lease lines that name one worker and one branch (where both name it) take one lease.
+function sameLease(a, b) {
+  const same = (x, y) => x === null || y === null || x === y;
+  return same(a.worker, b.worker) && same(a.branch, b.branch);
+}
 
 // Used by the other modules of the library, and not part of what jarl-lib.mjs exports.
 export { FIELD_NAMES, approveKind, closedGateLine, gateLine, renderSplit, scopedLoop, waiverVoid };

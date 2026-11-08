@@ -165,6 +165,16 @@ test('two leases of one issue by two writers, with no move out between them and 
   assert.match(jarl(b.dir, 'next', '--as', 'jarl'), /1 .*leased twice with no move out between/);
 });
 
+test('the command a lease-conflict row offers settles the conflict whichever of the two leases is kept', () => {
+  for (const [worker, branch] of [['wa', 'jarl/1-on-a'], ['wb', 'jarl/1-on-b']]) {
+    const b = leasedInTwoClones();
+    const r = run(b.dir, ['set', '1', 'in-progress', 'the lease is settled', '--handover', '--branch', branch, '--worker', worker, '--by', 'jarl']);
+    assert.equal(r.status, 0, `${worker}: ${r.stderr}`);
+    assert.deepEqual(json(b.dir, 'next', '--as', 'jarl').rows.filter((x) => x.what === 'conflict'), [], worker);
+    assert.deepEqual([json(b.dir, 'show', '1').fields.worker, json(b.dir, 'show', '1').fields.branch], [worker, branch]);
+  }
+});
+
 test('one writer leasing twice, a handover, and a move out between two leases are no conflict', () => {
   for (const b of [leasedInTwoClones({ byB: 'coordinator A' }), leasedInTwoClones({ handover: true })]) {
     assert.deepEqual(json(b.dir, 'next', '--as', 'jarl').rows.filter((r) => r.what === 'conflict'), []);
@@ -281,10 +291,13 @@ test('a lone opening marker is no conflict, and a conflict after it is still ref
   writeFileSync(file, lone);
   const clean = run(a.dir, ['verify']);
   assert.equal(clean.status, 0, clean.stdout);
-  writeFileSync(file, lone.replace('## Why\n', '## Why\n<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> main\n'));
+  const both = lone.replace('## Why\n', '## Why\n<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> main\n');
+  writeFileSync(file, both);
+  const at = both.split('\n').lastIndexOf('<<<<<<< HEAD') + 1;
   const r = run(a.dir, ['verify']);
   assert.equal(r.status, 2, r.stdout);
-  assert.match(r.stdout, /issues\/1-filed-before-the-split\.md line \d+: "<<<<<<< HEAD" — a git conflict marker/);
+  assert.match(r.stdout, new RegExp(`issues/1-filed-before-the-split\\.md line ${at}: "<<<<<<< HEAD" — a git conflict marker`));
+  assert.doesNotMatch(r.stdout, new RegExp(`line ${both.split('\n').indexOf('<<<<<<< HEAD') + 1}:`), 'the lone marker is not named');
 });
 
 // A real pull whose conflict holds, on one side, a marker line the tool did not write (a hand edit, or text written raw):

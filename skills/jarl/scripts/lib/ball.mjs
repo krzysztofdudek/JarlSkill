@@ -4,8 +4,7 @@
 import { PROMISE_KIND, WAIT_KIND, fieldText, jarlLine, need } from './base.mjs';
 import { cmpId, idKey, idsCited } from './ids.mjs';
 import { mergedOf } from './issues.mjs';
-import { leaseOfMove } from './log.mjs';
-import { carriesCode, coordinatorOf, inFlightMark, readLoop, sameSlice, sentBack, sliceOf } from './loop.mjs';
+import { carriesCode, coordinatorOf, inFlightMark, leaseConflictOf, readLoop, sameHolder, sameSlice, sentBack, sliceOf, statusWith } from './loop.mjs';
 import { reasonWord, waitingOn } from './commands.mjs';
 import { nextRows, schedulerNote } from './evidence.mjs';
 import { ownerLineStates } from './owner-lines.mjs';
@@ -37,18 +36,9 @@ export function holderOf(name) {
   return plain;
 }
 const holderWord = (h) => (h === OWNER_HOLDER || h === JARL_HOLDER ? `the ${h}` : h);
-// One holder however its name is cased or spaced: Dana Smith and dana  smith are one person.
-const holderKey = (h) => String(h).toLowerCase().replace(/\s+/g, ' ');
-const sameHolder = (a, b) => holderKey(a) === holderKey(b);
 // Who keeps a promise: the one its Found by names (the jarl when it names nobody). Who a wait is held by: its Person.
 const makerOf = (issue) => holderOf(fieldText(issue.fields['found by']) || JARL_HOLDER);
 const personOf = (issue) => (fieldText(issue.fields.person) ? holderOf(fieldText(issue.fields.person)) : null);
-
-// The status a move of each kind goes into, read from the profile's flags: the first status that holds the claim, and
-// the first that closes the record (else the first terminal one).
-function statusWith(profile, flag, fallback) {
-  return profile.statuses.find((s) => profile.is(s, flag)) || (fallback ? profile.statuses.find((s) => profile.is(s, fallback)) : undefined) || flag;
-}
 
 // The coordinator who holds an issue's rows: the one whose slice it is in (see coordinatorOf), or the jarl.
 const sliceHolder = (loop, issue) => coordinatorOf(loop, issue);
@@ -354,7 +344,7 @@ function leaseConflictRows(ctx) {
   const out = [];
   for (const i of loop.issues) {
     if (i.id === null || i.shared) continue;
-    const c = leaseConflict(profile, (loop.eventsById.get(i.id) || []).filter((e) => (e.key ?? null) === null || e.key === (i.fields.key || null)));
+    const c = leaseConflictOf(loop, i);
     if (!c) continue;
     const lease = (e) => `${e.writer}${e.lease?.worker ? ` (worker ${e.lease.worker}${e.lease.branch ? `, ${e.lease.branch}` : ''})` : ''} at ${e.at}`;
     out.push({ what: 'conflict', id: i.id, title: i.title, priority: i.priority, holder: JARL_HOLDER,
@@ -362,38 +352,6 @@ function leaseConflictRows(ctx) {
       command: jarlLine('set', i.id, leaseStatus, '--handover', '--branch', '<branch>', '--worker', '<name>', '<why-the-worker-changed>') });
   }
   return out;
-}
-// The lease lines of one issue's `events` that still conflict, as { first, second }, or null. A lease line is a move into
-// the status the lease is taken in (the profile's first status that holds the claim) that names a worker or a branch; a
-// move between the statuses that hold the claim (running to landed) is the work going on, and takes no lease. Two lease
-// lines conflict when each names a writer, the writers differ, they name another worker or another branch, no move into
-// a status that does not hold the claim comes between them, and the second is no handover. A later handover or move out
-// settles it.
-export function leaseConflict(profile, events) {
-  const leaseStatus = statusWith(profile, 'holds-claim');
-  let held = null;
-  let conflict = null;
-  for (const e of events) {
-    if (e.type !== 'move') continue;
-    if (!profile.is(e.to, 'holds-claim')) { held = null; conflict = null; continue; }
-    const holder = e.to === leaseStatus ? leaseHolder(e) : null;
-    if (!holder) continue;
-    if (e.handover) conflict = null;
-    else if (held && held.e.writer !== null && e.writer !== null && !sameHolder(held.e.writer, e.writer) && !sameLease(held, holder)) conflict = { first: held.e, second: e };
-    held = { e, ...holder };
-  }
-  return conflict;
-}
-// The worker and the branch a lease line names, or null when it names neither.
-function leaseHolder(e) {
-  const worker = e.lease?.worker ?? null;
-  const branch = e.lease?.branch ?? leaseOfMove(e.text, e.written ?? e.id, e.to).branch ?? null;
-  return worker || branch ? { worker, branch } : null;
-}
-// Two lease lines that name one worker and one branch (where both name it) take one lease.
-function sameLease(a, b) {
-  const same = (x, y) => x === null || y === null || x === y;
-  return same(a.worker, b.worker) && same(a.branch, b.branch);
 }
 
 // The sources of the rows, in order. Each reads the record through the context and gives rows { what, holder, says,
