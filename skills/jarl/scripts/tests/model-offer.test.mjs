@@ -18,7 +18,7 @@ const log = (root) => readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
 const count = (root, word) => log(root).split('\n').filter((l) => l.includes(` · ${word} · `)).length;
 const offers = (root) => count(root, 'models offered');
 const closes = (root) => count(root, 'models offer closed');
-const OFFER = /^note: \S+ the goal declares no Model line, so no model is placed and none ranked; add one line for each tier: Model \(strong\): <model-id> for the jarl, Model \(standard\): <model-id> for the coordinators — jarl\.mjs goal --set "<machine-line>"$/m;
+const OFFER = /^note: \S+ is leased with a model and the goal declares no Model line, so no model is placed and none ranked; add one line for each tier: Model \(strong\): <model-id> for the jarl, Model \(standard\): <model-id> for the coordinators — jarl\.mjs goal --set "<machine-line>"$/m;
 let seq = 0;
 // A lease through the command line; `model` is the model of the agent raised for it.
 const lease = (root, { model = 'some-model' } = {}) => {

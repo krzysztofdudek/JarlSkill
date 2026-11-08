@@ -424,7 +424,7 @@ export function repoFromInput(root, raw) {
 }
 // The log line that records a note on a path was said, and the reason it gave: a later filing of the same checkout by its
 // path is silent while its reason is the same, and says its note again when the reason is another.
-const PATH_NOTED = / · repo path (.+) noted · (profile|occupied|elsewhere)$/;
+const PATH_NOTED = /^- \d{4}-\d\d-\d\d \d\d:\d\d(?: key \S+)?(?: by [^·]+)? · repo path (.+) noted · (profile|occupied|elsewhere)$/;
 const pathNotedLine = (value, reason) => `repo path ${noSeparators(value)} noted · ${reason}`;
 // Whether the log holds a note on this checkout stored as a path for this reason. Only the log is read.
 function notedPath(root, main, reason) {

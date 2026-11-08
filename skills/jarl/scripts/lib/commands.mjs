@@ -1108,7 +1108,9 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   const judged = closes ? readLoop(jarlDir(root)) : null;
   const closeTip = (issue) => { const tip = gateOf(judged, issue.id).closingTip(); return tip ? [`${issue.id} tip ${tip}`] : []; };
   appendLogLines(root, issues.flatMap((issue) => [`${issue.id} → ${status}${reason ? ` · ${reason}` : ''}${leaseNote ? ` · ${leaseNote}` : ''}`, ...(closes ? closeTip(issue) : [])]), since);
-  const modelOffer = caller === 'cli' && holds && leaseNote ? modelOfferAtLease(root, model) : null;
+  // The lines that remember the offer are written for every caller; its text is the command line's answer alone.
+  const offered = holds && leaseNote ? modelOfferAtLease(root, model) : null;
+  const modelOffer = caller === 'cli' ? offered : null;
   for (const w of writes) writeAtomic(w.issue.file, w.edit(readText(w.issue.file)));
   // Said on the command line only, and only in a loop that declares model lines: a lease with no model (once per call).
   const leaseNoModel = caller === 'cli' && holds && model === undefined && modelLines(root).declared ? 'no --model on this lease — the loop declares its models, and a model that is not recorded can never be recovered' : null;

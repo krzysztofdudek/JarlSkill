@@ -160,6 +160,15 @@ test('the note on a repository stored as a path is said again when the reason it
   assert.doesNotMatch(viaField.stderr, /stored as the path/);
 });
 
+test('a free note that holds the words of the line which remembers the path note does not stand for it', () => {
+  const w = world();
+  repoAt(join(w.hub, 'inner'));
+  jarl(w.hub, 'log', 'x · repo path ./inner noted · elsewhere');
+  const first = neu(w.hub, 'a', '--repo', './inner');
+  assert.match(first.stderr, /note: .* is stored as the path \.\/inner/, 'the note is still said');
+  assert.match(w.log(), /\n- \S+ \S+ · repo path \.\/inner noted · elsewhere\n/, 'and the line the filing wrote stands');
+});
+
 test('whether the note was said is read from the log: no issue file is read for a repository given on a call', () => {
   const w = world();
   repoAt(join(w.hub, 'inner'));

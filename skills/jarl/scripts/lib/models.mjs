@@ -95,7 +95,7 @@ export function modelOfferAtLease(root, model) {
   }
   if (model === undefined || last === 'offered') return null;
   appendLog(root, 'models offered · the goal declares no Model line at a lease that records a model');
-  return `the goal declares no Model line, so no model is placed and none ranked; add one line for each tier: Model (strong): <model-id> for the jarl, Model (standard): <model-id> for the coordinators — ${jarlLine('goal', '--set', hole('<machine-line>'))}`;
+  return `is leased with a model and the goal declares no Model line, so no model is placed and none ranked; add one line for each tier: Model (strong): <model-id> for the jarl, Model (standard): <model-id> for the coordinators — ${jarlLine('goal', '--set', hole('<machine-line>'))}`;
 }
 
 // Every model an issue was leased on, from its own journal (a takeover adds one).

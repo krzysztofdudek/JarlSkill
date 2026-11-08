@@ -252,6 +252,28 @@ test('a library caller gets no note and its results do not change', () => {
   assert.equal(made.note, undefined);
 });
 
+test('in a loop with no Model line the spelling note and the offer of the lines are each said on their own lease, and both on one lease, the spelling first', () => {
+  const root = loop();
+  const goal = readFileSync(join(root, '.jarl', 'goal.md'), 'utf8');
+  const ids = ['a', 'b', 'c', 'd'].map((t) => R.newIssue(root, t, { acceptance: 'it works' }).id);
+  const lease = (n, model) => notes(root, 'set', [ids[n], 'in-progress', 'go'], { branch: `jarl/${ids[n]}-x`, worker: `w-${n}`, model });
+  const offer = /is leased with a model and the goal declares no Model line/;
+  const spelling = /claude-opus-5\.5 is another spelling of claude-opus-5-5/;
+  const first = lease(0, 'claude-opus-5-5');
+  assert.match(first, offer);
+  assert.doesNotMatch(first, spelling, 'nothing held yet, so no other spelling');
+  const second = lease(1, 'claude-opus-5.5');
+  assert.match(second, spelling);
+  assert.doesNotMatch(second, offer, 'the offer is made once');
+  appendFileSync(join(root, '.jarl', 'goal.md'), LINES);
+  assert.equal(lease(2, 'claude-sonnet-5-5'), '', 'the lines are there: the offer closes in silence');
+  writeFileSync(join(root, '.jarl', 'goal.md'), goal);
+  const both = lease(3, 'claude-sonnet-5.5');
+  assert.match(both, /claude-sonnet-5\.5 is another spelling of claude-sonnet-5-5/);
+  assert.match(both, offer, 'offered again after the lines are gone');
+  assert.ok(both.search(/another spelling/) < both.search(offer), 'the spelling note comes first');
+});
+
 test('a lease that names another spelling of a model the record holds says which spelling the record holds; the spelling the record holds, and a library call, say nothing', () => {
   const root = loop({ lines: true });
   const first = R.newIssue(root, 'first', { acceptance: 'it works' }).id;
