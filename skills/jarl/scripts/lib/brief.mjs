@@ -6,7 +6,7 @@
 
 import { IDENTICAL_OUTPUT_TAG, REVIEWER_KIND_SRC, fieldText, hole, jarlLine, meantToAlterNothing, need } from './base.mjs';
 import { jarlDir, today } from './where.mjs';
-import { firstLine } from './journal.mjs';
+import { firstLine, firstLineReadings } from './journal.mjs';
 import { evidenceTable, issueNamed, reviewEntries } from './issues.mjs';
 import { gateOf, readLoop, sameSlice, sliceNamed, sliceOf } from './loop.mjs';
 import { takenOver } from './rounds.mjs';
@@ -155,8 +155,12 @@ function findingsOf(loop, issue, events, notes) {
   const left = kept.map((k, j) => ({ k, j })).filter(({ k, j }) => k.verdict === 'changes' && !paired.has(j));
   const alone = left.filter(({ j }) => !fitting(j)).length;
   const alike = left.length - alone;
+  // A finding given as its log line, which says the rest is in the Reviews section, while no entry left there fits it: an
+  // entry paired with another line is that line's, so the section holds nothing more of this one.
+  const pointing = said.filter(({ verdict, text }, i) => verdict === 'changes' && !sure.has(i) && firstLineReadings(text, WHERE_WHOLE).some((r) => r.more) && !left.some(({ j }) => fit[i][j])).length;
   if (alone) notes.push(`${alone} review(s) of the Reviews section of ${issue.id} match no verdict line of its log, which is the record: listed after the log's, marked in the issue file only`);
   if (alike) notes.push(`${alike} review(s) of the Reviews section of ${issue.id} fit a verdict line of its log that another line or entry of the same reviewer fits as well, and nothing the two record tells which is whose: those verdicts are given as the log's lines, and the entries are listed after them, marked in the issue file only`);
+  if (pointing) notes.push(`${pointing} finding(s) of ${issue.id} given as its log's line say the whole text is in its Reviews section, which holds no entry left for them: the first line is all the record keeps`);
   if (!ordered) notes.push(`no pairing in the log's order places every entry of the Reviews section of ${issue.id} that fits a verdict line of its log (the section holds them in another order, or more of them than the lines they fit): each entry is paired by what it records alone, its place telling nothing`);
   return [...found, ...left.map(({ k }) => ({ by: k.by, kind: k.kind, day: k.day, text: k.text, fileOnly: true }))];
 }
