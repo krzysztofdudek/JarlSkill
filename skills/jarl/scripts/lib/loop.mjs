@@ -615,6 +615,21 @@ export function gateOf(loop, id) {
     waived: live && live.kind === 'waived' ? live.ruling : null,
     live,
     workers: self,
+    // The tip a close of the issue records, read when asked, so that the closed issue's gate is read later as it was judged
+    // at the close, whatever the branch does after (a branch of the same name made again included): the tip the gate
+    // judges it on now. Where neither the branch nor its merge's tip line gives one, the gate judged it on no tip, and a
+    // tip that spends nothing it counted is recorded instead: a waiver counts only on the tip it was made on, so that one
+    // (waivers on two tips: none), else the newest tip a counted row or approve was made on. Every other row and approve
+    // inside the window counts whatever the tip, and one from ahead of a pause, which counts on no tip, can only be added.
+    // The commit a merge names is never taken: a squash or a merge commit is a tip no row or waiver was made on.
+    closingTip: () => {
+      if (now() !== null) return now();
+      const counted = [...evidence.filter((e) => e.inWindow && !e.retracted), ...approves].filter((x) => x.tip !== undefined);
+      const waivedOn = [...new Set(counted.filter((x) => x.kind === 'waived').map((x) => x.tip))];
+      if (waivedOn.length) return waivedOn.length === 1 ? waivedOn[0] : null;
+      const newest = counted.reduce((best, x) => (!best || x.n > best.n ? x : best), null);
+      return newest ? newest.tip : null;
+    },
   };
 }
 

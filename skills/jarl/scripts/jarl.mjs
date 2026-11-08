@@ -22,7 +22,7 @@ import {
   issuesNaming, questionFor, cmdGoal, cmdGoalSet, cmdRepoBase, whereOf, cmdVerify, renderVerify, renderCheckNotes,
   renderProfile, renderResume, renderStatus, renderImport, renderSources, renderList, recordTypeLog, recordRuleLog,
   runDecisionsDriver, mergeFlags, describeNew, renderNewReply, issueView, workerEvidence, attachmentStates, evidenceTable, renderBranches, renderDecide, renderDecisions,
-  needLoop, cmdNextAs, renderNextAs, askerSection, renderBrief, cmdTick, withWriter, editorOf, needFormat, formatState, readProfileFile, FORMAT_LINES, cmdRenumber, cmdSplit,
+  needLoop, cmdNextAs, renderNextAs, askerSection, renderBrief, cmdTick, cmdRetractTick, withWriter, editorOf, needFormat, formatState, readProfileFile, FORMAT_LINES, cmdRenumber, cmdSplit,
 } from './jarl-lib.mjs';
 import { writeAreaDecision, writeRuleRatification } from './yg-edge.mjs';
 
@@ -138,7 +138,7 @@ commands:
                                                  the issue's kind, and the file lies at the slot's place, has an allowed
                                                  extension and at least the minimum size (at most 64 MiB); done checks every
                                                  required slot again on the disk
-  retract <id> review|<n>|note-<n> --by <who> "<text>"  take a record back by an appended entry that says who and why; review retracts
+  retract <id> review|<n>|note-<n>|tick-<n> --by <who> "<text>"  take a record back by an appended entry that says who and why; review retracts
                                                  the newest approve not yet retracted (never a "changes" verdict), and the
                                                  approve stays, struck through; <n> retracts the n-th evidence row (the
                                                  number show prints before each row, counted over the whole Evidence
@@ -146,7 +146,8 @@ commands:
                                                  through, and show leaves a retracted note and its reason out unless --full; the done gate and the metrics
                                                  do not count what is retracted; the first retraction of a loop raises its record format to
                                                  2, so a reader that knows only format 1 refuses the loop instead of
-                                                 counting what was taken back
+                                                 counting what was taken back; tick-<n>, --by owner alone, takes back
+                                                 his tick of acceptance line n, and done waits for his tick again
   list [--status s] [--kind k] [--tag t] [--prio p] [--grep re] [--match "<field=value>"]... [--all]
                                                  the issues not finished (open and in-progress) by default; --all for
                                                  every status; --match keeps those whose header field holds the value;
@@ -180,7 +181,8 @@ commands:
                                                  for every id, so a package shares it; a lease holds: under the lock
                                                  it refuses an issue another worker or branch holds and a file or
                                                  resource another lease holds (naming the holder and its slice: tag),
-                                                 and, while more than one slice has an issue in play, a lease on an
+                                                 and, while more than one slice has an issue in play (the issues in
+                                                 no slice count as one), a lease on an
                                                  issue that declares no Files or Resources, naming the call that
                                                  declares them,
                                                  and --handover hands a leased issue to a new worker or branch, with
@@ -1045,7 +1047,7 @@ export const COMMAND_SUMMARY = {
   import: 'File one issue per finding of a findings file, skipping findings already filed and reporting those whose text changed; a finding with neither a claim nor a truth is not compared.',
   sources: 'Per findings report: its findings, the issues filed from them and their status.',
   evidence: 'Append a free-text note, or checkable rows of what ran and what it printed, to issues; or record a file as an attachment of a slot (--file, --slot).',
-  retract: 'Take back the newest approve of an issue (entry: review), one evidence row by its number (entry: the number) or one evidence note (entry: note-<n>), by an entry that says who and why.',
+  retract: 'Take back the newest approve of an issue (entry: review), one evidence row by its number (entry: the number), one evidence note (entry: note-<n>) or the owner\'s tick of an acceptance line (entry: tick-<n>), by an entry that says who and why.',
   field: 'Change one part of the description of issues, a header field (Title, Priority, Tags, Files, After and the rest) or a section (What, Why, Acceptance, Changelog): a value replaces it, add and remove change the items of a list or add to a section, clear empties it; each change logs what the part held and who changed it when named.',
   split: 'Share out the acceptance lines of a parent among its sub-issues in one write: each line is moved to an issue, which becomes a sub-issue, or kept on the parent, and a line moved nowhere is refused.',
   base: 'Change the base branch a declared repository is held against, logging what it was.',
@@ -1436,10 +1438,11 @@ function dispatchCall(root, commandName, rest, flags) {
         break;
       case 'evidence':
         out = R.addEvidence(root, rest[0], rest[1], flags); text = each(out, renderEvidence); break;
-      // One verb takes back a verdict and an evidence row: the review's newest approve, or the row by its number.
+      // One verb takes back a verdict, an evidence row and the owner's tick: the review's newest approve, the row by its
+      // number, the tick by the number of its acceptance line.
       case 'retract':
-        need(rest[1] === 'review' || /^(note-)?\d+$/.test(rest[1] ?? ''), `retract takes review (the newest approve) or the number of an evidence row, or note-<n> for a note, got "${rest[1] ?? ''}"`, () => [...(rest[0] === undefined ? [{ arg: 0, value: '<id>' }] : []), { arg: 1, value: '<review-n-or-note-n>' }, ...(rest[2] === undefined ? [{ arg: 2, value: '<what-was-wrong>' }] : []), ...(flags.by === undefined ? [{ flag: '--by', value: '<who>' }] : [])]);
-        if (rest[1] === 'review') { out = R.review(root, rest[0], 'retract', rest[2], { by: flags.by, caller: 'cli' }); text = each(out, renderReview); warn = [].concat(out).filter((o) => o.note).map((o) => `note: ${o.note}`); } else { out = R.addEvidence(root, rest[0], rest[2], { retract: rest[1], by: flags.by }); text = each(out, renderEvidence); }
+        need(rest[1] === 'review' || /^(note-|tick-)?\d+$/.test(rest[1] ?? ''), `retract takes review (the newest approve) or the number of an evidence row, note-<n> for a note, or tick-<n> for the owner's tick of acceptance line n, got "${rest[1] ?? ''}"`, () => [...(rest[0] === undefined ? [{ arg: 0, value: '<id>' }] : []), { arg: 1, value: '<review-n-or-note-n>' }, ...(rest[2] === undefined ? [{ arg: 2, value: '<what-was-wrong>' }] : []), ...(flags.by === undefined ? [{ flag: '--by', value: '<who>' }] : [])]);
+        if (/^tick-/.test(rest[1])) { out = cmdRetractTick(root, rest[0], rest[1], rest[2], flags); text = `${out.id} the owner's tick of acceptance line ${out.line} of ${out.retracted} taken back by ${out.by} at ${out.at}`; } else if (rest[1] === 'review') { out = R.review(root, rest[0], 'retract', rest[2], { by: flags.by, caller: 'cli' }); text = each(out, renderReview); warn = [].concat(out).filter((o) => o.note).map((o) => `note: ${o.note}`); } else { out = R.addEvidence(root, rest[0], rest[2], { retract: rest[1], by: flags.by }); text = each(out, renderEvidence); }
         break;
       // One computation of the rows: the ready ones are listed, and the rest says how many are held or waiting.
       case 'next': {

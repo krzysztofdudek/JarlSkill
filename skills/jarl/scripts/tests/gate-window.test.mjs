@@ -242,6 +242,81 @@ test('a done issue is judged against the tip recorded when it closed: a later co
   }
 });
 
+test('a close after a merge that deleted the branch records the tip the merge was recorded on, so a branch of the same name made again later leaves the closed gate holding', () => {
+  const { root, g, commit } = leased();
+  jarl(root, 'set', '1', 'open', 'reordered'); resume(root);
+  const tip = g('rev-parse', 'jarl/1-x').trim();
+  g('merge', '-q', '--no-ff', 'jarl/1-x', '-m', 'merge the work');
+  const sha = g('rev-parse', 'main').trim();
+  jarl(root, 'merged', '1', '--sha', sha, '--ci', 'none');
+  assert.equal(g('branch', '--list', 'jarl/1-x').trim(), '', 'the merge without --keep deleted the branch');
+  assert.equal(jarl(root, 'set', '1', 'done'), '1 → done');
+  g('branch', 'jarl/1-x', 'main');
+  commit('again');
+  L.resetCaches();
+  assert.deepEqual(JSON.parse(jarl(root, 'status', '--json')).closedGate, [], 'with the branch made again on other work, the closed issue\'s gate holds');
+  assert.doesNotMatch(jarl(root, 'status'), /\b1\b.*(no --ran|spent)/, 'status flags nothing');
+  const log = readFileSync(join(root, '.jarl', 'log.md'), 'utf8').trim().split('\n');
+  const close = log.findLastIndex((l) => / · 1 → done$/.test(l));
+  assert.match(log[close + 1] ?? '(no line after the close)', new RegExp(` · 1 tip ${tip}$`), 'the close is followed by the tip the merge was recorded on');
+});
+
+// An issue leased on its branch with one commit of work and a row, cleared by a fresh approve or by the owner's waiver of
+// its review; the branch landed on main by a merge commit or a squash, then deleted before the merge is recorded (deleted
+// by hand) or kept by it; and the issue closed. The close's own tip line, and the closed gate, are read after.
+function closedAfterLanding({ clears, how, deleted }) {
+  const { dir: root, g } = gitRepo({ prefix: 'jarl-close-tip-', branch: 'main' });
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'issue 1', '--acceptance', 'it works');
+  const commit = (branch, name) => { g('checkout', '-q', branch); writeFileSync(join(root, `${name}.txt`), `${name}\n`); g('add', `${name}.txt`); g('commit', '-qm', name); g('checkout', '-q', 'main'); };
+  g('branch', 'jarl/1-x');
+  commit('jarl/1-x', 'work');
+  jarl(root, 'set', '1', 'in-progress', '--branch', 'jarl/1-x', '--worker', 'w1');
+  row(root, 1);
+  if (clears === 'approve') jarl(root, 'review', '1', 'approve', '--by', 'rev1', 'read the diff, nothing found');
+  else jarl(root, 'decide', 'no-review-for-1', 'Issue 1 closes without a review: the comparison is enough.', '--by', 'owner', '--quote', 'No review for that one.', '--waives-review', '1');
+  const tip = g('rev-parse', 'jarl/1-x').trim();
+  if (how === 'squash') { g('merge', '-q', '--squash', 'jarl/1-x'); g('commit', '-qm', 'the work, squashed'); } else g('merge', '-q', '--no-ff', 'jarl/1-x', '-m', 'merge the work');
+  const sha = g('rev-parse', 'main').trim();
+  if (deleted) g('branch', '-q', '-D', 'jarl/1-x');
+  jarl(root, 'merged', '1', '--sha', sha, '--ci', 'none', ...(deleted ? [] : ['--keep']));
+  assert.equal(jarl(root, 'set', '1', 'done'), '1 → done');
+  const log = readFileSync(join(root, '.jarl', 'log.md'), 'utf8').trim().split('\n');
+  const after = log[log.findLastIndex((l) => / · 1 → done$/.test(l)) + 1] ?? '(no line after the close)';
+  const closedGate = () => { L.resetCaches(); return JSON.parse(jarl(root, 'status', '--json')).closedGate; };
+  return { g, tip, sha, after, closedGate, commit };
+}
+
+for (const clears of ['waiver', 'approve']) {
+  for (const how of ['merge', 'squash']) {
+    test(`a close cleared by ${clears === 'waiver' ? 'the owner\'s waiver' : 'a fresh approve'}, after a ${how === 'merge' ? 'merge commit' : 'squash'} recorded once the branch was deleted, records the tip the gate was judged on, never the commit the merge names, and the closed gate holds`, () => {
+      const { g, tip, sha, after, closedGate, commit } = closedAfterLanding({ clears, how, deleted: true });
+      assert.notEqual(sha, tip, 'the merge names a commit that is not on the branch');
+      assert.deepEqual(closedGate(), [], 'right after the close, the closed issue\'s gate holds');
+      assert.match(after, new RegExp(` · 1 tip ${tip}$`), 'the close is followed by the tip the row and the clearing were made on');
+      g('branch', 'jarl/1-x', 'main');
+      commit('jarl/1-x', 'other work');
+      assert.deepEqual(closedGate(), [], 'with a branch of the same name made again on other work, the closed issue\'s gate holds');
+    });
+  }
+  test(`a close cleared by ${clears === 'waiver' ? 'the owner\'s waiver' : 'a fresh approve'}, with the branch kept by the merge, records the branch's tip, and a later commit on it leaves the closed gate holding`, () => {
+    const { tip, after, closedGate, commit } = closedAfterLanding({ clears, how: 'merge', deleted: false });
+    assert.match(after, new RegExp(` · 1 tip ${tip}$`), 'the close is followed by the branch\'s tip');
+    assert.deepEqual(closedGate(), [], 'right after the close, the closed issue\'s gate holds');
+    commit('jarl/1-x', 'more');
+    assert.deepEqual(closedGate(), [], 'after a commit on the kept branch, the closed issue\'s gate holds');
+  });
+}
+
+test('a close where no branch, merge, row or approve gives a tip records none, and its gate holds', () => {
+  const root = loop(1);
+  row(root, 1); approve(root, 1);
+  assert.equal(jarl(root, 'set', '1', 'done'), '1 → done');
+  const log = readFileSync(join(root, '.jarl', 'log.md'), 'utf8').trim().split('\n');
+  assert.doesNotMatch(log[log.findLastIndex((l) => / · 1 → done$/.test(l)) + 1] ?? '', / · 1 tip /, 'no tip line follows the close');
+  assert.deepEqual(JSON.parse(jarl(root, 'status', '--json')).closedGate, []);
+});
+
 // A copy of a real loop (the directory that holds its .jarl), named by JARL_LIVE_LOOP: the gate is replayed over it, and
 // every close that rests on a row from before a reopen is listed.
 const LIVE = process.env.JARL_LIVE_LOOP || '';

@@ -249,7 +249,7 @@ subject), which the jarl holds and answers, for these four and no other:
 4. a takeover that failed too.
 
 Counts are never pushed up: the jarl reads them with `status --slice <name>`. With more than one
-slice in play, each lease declares its Files or Resources, because across slices only leases hold.
+slice in play (the issues in no slice count as one), each lease declares its Files or Resources, because across slices only leases hold.
 Pull before leasing and push right after when the loop is shared between clones.
 One shared review covers only issues that are one contract or one screen, at most four.
 An issue's scope does not grow once it is leased: a new ask becomes a new issue.

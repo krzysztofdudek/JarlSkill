@@ -522,10 +522,13 @@ const SEPARATOR_MARK = '∙';
 const logValue = (v) => String(v ?? '').replace(/\r\n?/g, '\n').split('\n').map((l) => l.trim()).filter(Boolean).join(' ⏎ ').replace(/·/g, SEPARATOR_MARK) || '(none)';
 const byPart = (by) => (by ? ` · by ${by}` : '');
 // The line a change of a header field writes, `<id> field <Name> · <value> · was <old value>[ · by <who>]`, or null when
-// the field already holds the value: a change to nothing writes no line.
+// the field already holds the value: a change to nothing writes no line. Where is free text of any length, so what it
+// held is kept as a section's first line is: at most EXCERPT_CHARS of it, and its length when it is cut.
 function fieldLine(id, name, value, was, by) {
   if (fieldText(value) === fieldText(was)) return null;
-  return `${id} field ${name} · ${fieldText(value) === '' ? '(cleared)' : logValue(value)} · was ${logValue(was)}${byPart(by)}`;
+  const held = fieldText(was);
+  const old = name === 'Where' && held.length > EXCERPT_CHARS ? `${logValue(held.slice(0, EXCERPT_CHARS))}… (${held.length} characters)` : logValue(was);
+  return `${id} field ${name} · ${fieldText(value) === '' ? '(cleared)' : logValue(value)} · was ${old}${byPart(by)}`;
 }
 // The most of a section's first line a body line keeps: the line stays one short line whatever the section holds.
 const EXCERPT_CHARS = 120;
@@ -997,8 +1000,11 @@ export function cmdSetStatus(root, rawIds, status, why, flags = {}) {
   need(profile.statuses.includes(status) || !profile.field(status), `${status} is a field this loop's profile declares, not a status — setField writes it`, () => (['jarl.mjs', 'field', rawIds ?? '<ids>', status, why ?? '<value>']));
   return cmdSet(root, rawIds, status, why, flags);
 }
+// The tool's own header fields a library caller also writes by name, as field writes them, with the writer flags.by names.
+const LIBRARY_OWN_FIELDS = ['tags', 'priority', 'files', 'source'];
 export function cmdSetField(root, rawIds, field, value, flags = {}) {
   const profile = loadProfile(root);
+  if (!profile.field(field) && LIBRARY_OWN_FIELDS.includes(String(field ?? '').trim().toLowerCase())) return cmdField(root, rawIds, field, value, { by: flags.by });
   need(profile.field(field) && !profile.statuses.includes(field), `${field} is not a field this loop's profile declares${profile.declaredFields.length ? ` — it declares ${profile.declaredFields.map((f) => f.name).join(', ')}` : ''}`, () => (['jarl.mjs', 'set', '<ids>', '<status>', '<text>']));
   return cmdSet(root, rawIds, field, value, flags);
 }
@@ -1050,9 +1056,10 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   // library accepts the key and stores nothing.
   const since = stamp();
   if (holds && flags.worktree !== undefined && caller === 'cli') for (const issue of issues) needWorktreeOfLease(root, issue, flags.branch !== undefined ? fieldText(flags.branch) : fieldText(issue.fields.branch), resolve(root, fieldText(flags.worktree)));
-  const writes = issues.map((issue) => {
-    let text = readText(issue.file);
-    text = setField(text, 'Status', status);
+  // Each issue's change is applied to its file as it stands after the log line: the call's first line may raise the record
+  // format (its --by), and a raise from format 1 writes every bare Repo path of the loop again, this issue's too.
+  const writes = issues.map((issue) => ({ issue, edit: (read) => {
+    let text = setField(read, 'Status', status);
     if (holds) {
       if (flags.branch !== undefined) text = setField(text, 'Branch', fieldText(flags.branch));
       if (flags.worker !== undefined) text = setField(text, 'Worker', fieldText(flags.worker));
@@ -1072,8 +1079,8 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
       const line = `${reasonWord(status)}: ${noteText(why, written)}`;
       text = setSection(text, 'Evidence', placeEvidence(written, 'note', line, '\n\n'));
     }
-    return { issue, text };
-  });
+    return text;
+  } }));
   // The model goes before the worker: the worker is read as the text after "· worker " up to the end of the line (or up to
   // "· worktree " in a line that carries one), so a model written after it would become part of the worker's name.
   const leaseNote = [flags.branch !== undefined && `branch ${fieldText(flags.branch)}`, model !== undefined && `model ${model}`, flags.worker !== undefined && `worker ${fieldText(flags.worker)}`].filter(Boolean).join(' · ');
@@ -1093,12 +1100,16 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   const spelling = caller === 'cli' && model !== undefined ? spellingNote(readLoop(jarlDir(root)), model) : null;
   // The line goes first: a write that stops between the two leaves the journal, the record, ahead of the files, which the
   // views report, and never a file ahead of the record.
-  // A move that closes the record is followed by the tip of the issue's branch, the tip the close was judged on, so the
-  // gate of the closed issue is read against it whatever the branch does after.
+  // A move that closes the record is followed by the tip the close was judged on: the tip of the issue's branch, or, where
+  // the branch is gone (a merge's cleanup deletes it), the tip its merge was recorded on, else the tip its counted waiver,
+  // row or approve was made on, and none where nothing gives one; never the commit the merge names. The gate of the
+  // closed issue is read against it whatever the branch does after, a branch of the same name made again included.
   const closes = profile.is(status, 'closes-record');
-  appendLogLines(root, issues.flatMap((issue) => [`${issue.id} → ${status}${reason ? ` · ${reason}` : ''}${leaseNote ? ` · ${leaseNote}` : ''}`, ...(closes ? tipLines(root, issue) : [])]), since);
+  const judged = closes ? readLoop(jarlDir(root)) : null;
+  const closeTip = (issue) => { const tip = gateOf(judged, issue.id).closingTip(); return tip ? [`${issue.id} tip ${tip}`] : []; };
+  appendLogLines(root, issues.flatMap((issue) => [`${issue.id} → ${status}${reason ? ` · ${reason}` : ''}${leaseNote ? ` · ${leaseNote}` : ''}`, ...(closes ? closeTip(issue) : [])]), since);
   if (holds && leaseNote) rememberModelOffer(root);
-  for (const w of writes) writeAtomic(w.issue.file, w.text);
+  for (const w of writes) writeAtomic(w.issue.file, w.edit(readText(w.issue.file)));
   // Said on the command line only, and only in a loop that declares model lines: a lease with no model (once per call).
   const leaseNoModel = caller === 'cli' && holds && model === undefined && modelLines(root).declared ? 'no --model on this lease — the loop declares its models, and a model that is not recorded can never be recovered' : null;
   const worktreeNote = caller === 'cli' && holds && flags.worktree !== undefined ? '--worktree was checked and is not recorded — the worktree of a lease is found through its branch' : null;
@@ -1158,12 +1169,15 @@ function needLeaseHolds(root, profile, issues, status, why, flags, handover, not
   }
   if (composed) return;
   // With more than one slice in play, a lease holds only what its issue declares, so one that declares nothing would
-  // collide with another slice's work unseen: it is refused until the issue declares its files or its resources.
-  const slices = activeSlices(readLoop(jarlDir(root)));
+  // collide with another slice's work unseen: it is refused until the issue declares its files or its resources. The issues
+  // in no slice, the jarl's own, are one more slice of work beside the coordinators' when one of them is in play.
+  const loop = readLoop(jarlDir(root));
+  const unsliced = loop.issues.some((i) => sliceOf(i) === null && loop.profile.active(i.status));
+  const slices = [...activeSlices(loop).map((x) => x.tag), ...(unsliced ? ['the issues in no slice'] : [])];
   if (slices.length > 1) {
     for (const issue of issues) {
       if ((leased(issue) && !handover) || issue.files.length || issue.resources.length) continue;
-      need(false, `${issue.id} declares no Files or Resources, and ${slices.length} slices are in play (${slices.map((x) => x.tag).join(', ')}): across slices only leases hold, and a lease holds only what its issue declares — declare them first, its files or its resources (${jarlLine('field', issue.id, 'Resources', '<resource-name>')})${nothing}`, () => [{ first: ['jarl.mjs', 'field', issue.id, 'Files', '<paths>'] }, { retry: true }]);
+      need(false, `${issue.id} declares no Files or Resources, and ${slices.length} slices are in play (${slices.join(', ')}): across slices only leases hold, and a lease holds only what its issue declares — declare them first, its files or its resources (${jarlLine('field', issue.id, 'Resources', '<resource-name>')})${nothing}`, () => [{ first: ['jarl.mjs', 'field', issue.id, 'Files', '<paths>'] }, { retry: true }]);
     }
   }
   const others = otherLeases(root, profile, taken);

@@ -105,7 +105,7 @@ export class Refusal extends Error {
 // values allowed, the ids the loop holds, the word that was wrong.
 export const PLACEHOLDERS = Object.freeze([
   '<id>', '<ids>', '<ids-it-waits-on>', '<another-id>', '<another-issue>', '<ids-the-loop-holds>', '<ids-low-high>', '<a-smaller-range>', '<the-id-new-prints>',
-  '<the-id-ask-prints>', '<an-issue-next-offers>', '<question>', '<a-n>', '<n>', '<n-or-note-n>', '<review-n-or-note-n>', '<line>',
+  '<the-id-ask-prints>', '<an-issue-next-offers>', '<question>', '<a-n>', '<n>', '<n-or-note-n>', '<review-n-or-note-n>', '<tick-n>', '<line>',
   '<text>', '<title>', '<the-title-filed-again>', '<goal>', '<slug>', '<a-new-slug>', '<a-ruling>', '<a-ruling-in-force>', '<value>',
   '<the-whole-new-value>', '<the-whole-section>', '<a-part-of-the-description>', '<part>', '<name=value>', '<field=value>', '<line=id>',
   '<changelog-entry>', '<owner-line>', '<items>', '<an-item-with-no-leading-dash>', '<an-item-without-quotes>', '<one-quoted-text>',
