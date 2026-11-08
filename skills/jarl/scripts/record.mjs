@@ -86,7 +86,7 @@ export function loadAsks(root) { return read(() => L.loadAsks(root)); }
 export function parseIssue(text, file) { return L.parseIssue(text, file); }
 export function renderIssue(spec) { return L.renderIssue(spec); }
 export function mergedOf(issue) { return L.mergedOf(issue); }
-// The checkable --ran/--saw rows of an issue's Evidence, as { ran, saw }, and lines, the numbers of the acceptance lines
+// The checkable --ran/--saw rows of an issue's Evidence, as { ran, saw }, and lines, the digests of the acceptance lines
 // it names, on a row that names any; a retracted row (struck through by addEvidence with opts { retract }) is not one.
 // The rows of the whole section are read, under ### Proof, under ### Notes or in a section with no sub-heading.
 export function evidenceRows(issue) { return L.evidenceRows(issue); }
@@ -139,9 +139,7 @@ export function newIssue(root, title, opts = {}) { return write(root, () => L.cm
 // the command line passes 'cli' too. setField takes the same opts.caller. The profile's done-gate decides what a move
 // into closes-record asks for (requires-merged: a recorded merge the base holds; approve: 'none': no approve). The base
 // is the branch checked out in the merge's repository, or opts.base (a branch or ref, library callers only) when the
-// composer landed the merge into a branch that is not checked out there. In a loop whose rows name acceptance lines,
-// a close that leaves lines no counted row names takes the reason for them as opts['without-rows'], written under Evidence
-// beside them; `why` is the move's reason and never stands for it.
+// composer landed the merge into a branch that is not checked out there.
 export function setStatus(root, ids, status, why, opts = {}) {
   return write(root, () => L.cmdSetStatus(root, ids, status, why, opts));
 }
@@ -165,9 +163,9 @@ export function setFiles(root, id, files) { return write(root, () => L.cmdFiles(
 export function setRepo(root, id, path, opts = {}) { return write(root, () => L.cmdRepo(root, id, path, { clear: opts.clear === true, by: opts.by })); }
 export function setAfter(root, id, ids, opts = {}) { return write(root, () => L.cmdAfter(root, id, ids, { clear: opts.clear === true, by: opts.by })); }
 export function setSource(root, id, refs) { return write(root, () => L.cmdSource(root, id, refs)); }
-// Free text, or opts { ran, saw } (one row per pair; text then undefined) with the optional key line (the numbers of the
-// acceptance lines every row of the call proves, as the command line's --line takes them; the first such row raises the
-// record format), or opts { retract: n, by } (n a row number, or note-<n> for a free-text note) with the reason as
+// Free text, or opts { ran, saw } (one row per pair; text then undefined) with the key line (the numbers of the
+// acceptance lines every row of the call proves, as the command line's --line takes them; each row stores the digest of
+// its line), or opts { retract: n, by } (n a row number, or note-<n> for a free-text note) with the reason as
 // text: the n-th row of the whole Evidence section (retracted rows counted) is struck through and an entry saying who
 // retracted it and why is appended; the done gate stops counting it. The first retraction raises the loop's record
 // format, so a Jarl that cannot read a retraction refuses the loop. Rows are written under ### Proof, after the last
