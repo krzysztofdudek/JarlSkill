@@ -143,9 +143,12 @@ export function newIssue(root, title, opts = {}) { return write(root, () => L.cm
 export function setStatus(root, ids, status, why, opts = {}) {
   return write(root, () => L.cmdSetStatus(root, ids, status, why, opts));
 }
-// A field the profile declares (Kind and Tier too, when it declares them), checked against its values. A change of the
-// description is logged with the old value, and with its writer when opts.by names one (setField, setBody, setRepo,
-// setAfter); setTags, setPriority, setFiles and setSource take no opts, so their changes are logged with no writer.
+// A field the profile declares (Kind and Tier too, when it declares them), checked against its values; and the tool's
+// own Tags, Priority, Files and Source by those names, each written as the command line's field writes it (Tags and Files
+// a whole comma list, Priority 1, 2 or 3, Source <report-dir#finding-id> refs). A change of the description is logged
+// with the old value, and with its writer when opts.by names one (setField, setBody, setRepo, setAfter); setTags,
+// setPriority, setFiles and setSource take no opts, so their changes are logged with no writer, and a caller that names
+// one writes those four fields through setField.
 export function setField(root, ids, field, value, opts = {}) {
   return write(root, () => L.cmdSetField(root, ids, field, value, opts));
 }

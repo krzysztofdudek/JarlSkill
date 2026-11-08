@@ -519,10 +519,13 @@ const SEPARATOR_MARK = '∙';
 const logValue = (v) => String(v ?? '').replace(/\r\n?/g, '\n').split('\n').map((l) => l.trim()).filter(Boolean).join(' ⏎ ').replace(/·/g, SEPARATOR_MARK) || '(none)';
 const byPart = (by) => (by ? ` · by ${by}` : '');
 // The line a change of a header field writes, `<id> field <Name> · <value> · was <old value>[ · by <who>]`, or null when
-// the field already holds the value: a change to nothing writes no line.
+// the field already holds the value: a change to nothing writes no line. Where is free text of any length, so what it
+// held is kept as a section's first line is: at most EXCERPT_CHARS of it, and its length when it is cut.
 function fieldLine(id, name, value, was, by) {
   if (fieldText(value) === fieldText(was)) return null;
-  return `${id} field ${name} · ${fieldText(value) === '' ? '(cleared)' : logValue(value)} · was ${logValue(was)}${byPart(by)}`;
+  const held = fieldText(was);
+  const old = name === 'Where' && held.length > EXCERPT_CHARS ? `${logValue(held.slice(0, EXCERPT_CHARS))}… (${held.length} characters)` : logValue(was);
+  return `${id} field ${name} · ${fieldText(value) === '' ? '(cleared)' : logValue(value)} · was ${old}${byPart(by)}`;
 }
 // The most of a section's first line a body line keeps: the line stays one short line whatever the section holds.
 const EXCERPT_CHARS = 120;
@@ -994,8 +997,11 @@ export function cmdSetStatus(root, rawIds, status, why, flags = {}) {
   need(profile.statuses.includes(status) || !profile.field(status), `${status} is a field this loop's profile declares, not a status — setField writes it`, () => (['jarl.mjs', 'field', rawIds ?? '<ids>', status, why ?? '<value>']));
   return cmdSet(root, rawIds, status, why, flags);
 }
+// The tool's own header fields a library caller also writes by name, as field writes them, with the writer flags.by names.
+const LIBRARY_OWN_FIELDS = ['tags', 'priority', 'files', 'source'];
 export function cmdSetField(root, rawIds, field, value, flags = {}) {
   const profile = loadProfile(root);
+  if (!profile.field(field) && LIBRARY_OWN_FIELDS.includes(String(field ?? '').trim().toLowerCase())) return cmdField(root, rawIds, field, value, { by: flags.by });
   need(profile.field(field) && !profile.statuses.includes(field), `${field} is not a field this loop's profile declares${profile.declaredFields.length ? ` — it declares ${profile.declaredFields.map((f) => f.name).join(', ')}` : ''}`, () => (['jarl.mjs', 'set', '<ids>', '<status>', '<text>']));
   return cmdSet(root, rawIds, field, value, flags);
 }
