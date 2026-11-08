@@ -134,6 +134,13 @@ test('the NO PROOF note of merged prints the evidence form with --line', () => {
   assert.match(plain.stderr, /evidence 1 --ran "<command>" --saw "<what-it-printed>" --line "<line-number>" --by "<who>"/);
 });
 
+test('the NO PROOF note prints the command apart from the colon before it', () => {
+  const root = approved(1);
+  const { stderr } = run(root, ['merged', '1', '--sha', 'abc1234', '--keep']);
+  assert.match(stderr, /until the worker records it: jarl\.mjs evidence 1 /);
+  assert.doesNotMatch(stderr, /records it:jarl\.mjs/);
+});
+
 test('a merge line from before the Merge check field existed is read for the field: no disagreement is printed when the header lacks it', () => {
   const root = approved();
   jarl(root, 'merged', '1', '--sha', 'abc1234', '--ran', 'npm test', '--saw', '3 pass', '--keep');
