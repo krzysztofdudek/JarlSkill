@@ -497,6 +497,20 @@ export function cmdDecisions(root, flags = {}) {
   });
   return flags.live ? all.filter((d) => !d.supersededBy && !d.ended) : all;
 }
+// The rulings in force, as decisions --live counts them, whose Settles names an issue the loop holds that is neither done
+// nor dropped (in a status that settles none of the issues waiting on it), each with those issues and their status: work
+// that was ruled and is not yet carried out.
+export function unsettledRulings(loop) {
+  const ended = new Set(loopRules(loop, today()).filter((r) => r.ended).map((r) => r.slug));
+  const out = [];
+  for (const d of loop.decisions) {
+    if (d.supersededBy || ended.has(d.slug) || !d.settles.length) continue;
+    const open = loop.issues.filter((i) => i.id !== null && d.settles.some((s) => idKey(s) === idKey(i.id)) && !loop.profile.is(i.status, 'settles-dependents'));
+    if (open.length) out.push({ slug: d.slug, issues: open.map((i) => ({ id: i.id, status: i.status })) });
+  }
+  return out;
+}
+export const unsettledText = (u) => `settles ${u.issues.map((i) => `${i.id} (${i.status})`).join(', ')}`;
 // decide: what was ruled, and what the ruling did to the others.
 export function renderDecide(out) {
   const area = out.area ? ` · area ${out.area}${out.reach !== null ? ` (${out.reach} file${out.reach === 1 ? '' : 's'})` : ''}${out.rule ? ` · rule ${out.rule}` : ''} · put to ratification at close` : '';

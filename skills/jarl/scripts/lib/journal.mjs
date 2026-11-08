@@ -2,8 +2,8 @@
 
 import { existsSync, readdirSync } from 'node:fs';
 import { join, dirname, basename } from 'node:path';
-import { fieldText, hole, jarlLine, need, noSeparators, oneBreak, splitList } from './base.mjs';
-import { jarlDir, stamp, today } from './where.mjs';
+import { fieldText, hole, jarlLine, need, noSeparators, oneBreak, refuse, splitList } from './base.mjs';
+import { issuesDir, jarlDir, stamp, today } from './where.mjs';
 import { appendAtomic, readText, writeAtomic } from './files.mjs';
 import { ISSUE_FILE_RE, KEY_RE, idKey, idRe, issueForms, writtenId } from './ids.mjs';
 import { FORMAT_LINES, loadProfile } from './profile.mjs';
@@ -45,8 +45,7 @@ export function writeWhole(path, text) {
 // with that key, in its fixed place right after the stamp and before the writer: `- <stamp> key <key> by <writer> ·
 // <text>`. A tip line carries the tip mark after the key and before the writer. No text reaches either place.
 export function appendLogLines(root, events, at = stamp()) {
-  const w = callWriter;
-  if (w && !w.raised) { w.raise(root); w.raised = true; }
+  const w = writerRaised(root);
   const keyOf = lineKeys(root, events);
   appendAtomic(logPath(jarlDir(root)), '# Log\n\n', events.map((e) => {
     const text = oneLine(typeof e === 'string' ? e : e.text);
@@ -100,6 +99,13 @@ export function withWriter(name, raise, fn) {
   const was = callWriter;
   callWriter = name ? { name, raise, raised: false } : null;
   try { return fn(); } finally { callWriter = was; }
+}
+// The writer of the call, after the raise its first line needs has run: a write that rewrites a file the raise rewrites
+// too (the profile) calls it first, and starts from the file as the raise left it. Null when the call names nobody.
+export function writerRaised(root) {
+  const w = callWriter;
+  if (w && !w.raised) { w.raise(root); w.raised = true; }
+  return w;
 }
 
 // The log is one event per line: a text with line breaks never reaches it raw. A command that keeps the whole text
@@ -264,7 +270,19 @@ function readGoal(dir) {
 //                  written for a kind or for the bare line stands
 //   liveness       the minutes of the `Liveness: <minutes>` line after which a lease or a proof with no activity is idle,
 //                  or null; the last line written stands
-const GOAL_LINE = /^\s*(?:[-*]\s+)?(?:\*\*)?(coordinators|merger|check|model|takeover|liveness)(?:\s*\(([^)]+)\))?:(?:\*\*)?\s*(.+)$/i;
+//   ranges         [{ name, from, to }], the numbers of each `Range (<name>): <from-to>` line, a series new --range files
+//                  in; the first line of a name stands, and a range that shares a number with one above it is not placed
+const GOAL_LINE = /^\s*(?:[-*]\s+)?(?:\*\*)?(coordinators|merger|check|model|takeover|liveness|range)(?:\s*\(([^)]+)\))?:(?:\*\*)?\s*(.+)$/i;
+// A range is named by letters, digits, _ and -, and spans whole numbers from its first to its last, both at least 1.
+const RANGE_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$/;
+const RANGE_REASON = 'a Range line is "Range (<name>): <from-to>": a name of letters, digits, _ and -, and two whole numbers from 1, the first at most the second';
+function rangeSpan(name, value) {
+  const m = /^\s*(\d{1,9})\s*-\s*(\d{1,9})\s*$/.exec(value);
+  if (!name || !RANGE_NAME_RE.test(name) || !m || Number(m[1]) < 1 || Number(m[1]) > Number(m[2])) return null;
+  return { name, from: Number(m[1]), to: Number(m[2]) };
+}
+const rangesMeet = (a, b) => a.from <= b.to && b.from <= a.to;
+const rangeWords = (r) => `${r.name} (${r.from}-${r.to})`;
 const MERGER_REASON = 'a Merger line names one holder, the jarl or one coordinator of the Coordinators line: it is "Merger: <name>"';
 // The red rounds after which an issue takes over are a whole number from 1 to this.
 const TAKEOVER_MAX = 99;
@@ -276,9 +294,10 @@ const livenessMinutes = (value) => (/^\d+$/.test(value.trim()) && Number(value) 
 const LIVENESS_REASON = `a Liveness line is "Liveness: <minutes>", with a whole number of minutes from 1 to ${LIVENESS_MAX} and no qualifier`;
 // With `skipped` (an array), each machine line the grammar does not place is pushed onto it as { n, text, reason }: a
 // Check with no command, a Model with no tier or no model, a Coordinators line with a tier, a Takeover line whose
-// value is not a whole number of rounds, a Liveness line with a qualifier or a value that is not a whole number of minutes.
+// value is not a whole number of rounds, a Liveness line with a qualifier or a value that is not a whole number of minutes,
+// a Range line that does not parse, names a range declared above it or shares numbers with one.
 export function goalLines(text, skipped) {
-  const out = { goal: null, checks: [], checksByRepo: { bare: [], repos: {} }, models: [], coordinators: [], merger: null, takeovers: { bare: null, kinds: {} }, liveness: null };
+  const out = { goal: null, checks: [], checksByRepo: { bare: [], repos: {} }, models: [], coordinators: [], merger: null, takeovers: { bare: null, kinds: {} }, liveness: null, ranges: [] };
   if (text == null) return out;
   const lines = text.split('\n');
   out.goal = lines.slice(2).find((l) => l.trim()) || '';
@@ -307,6 +326,14 @@ export function goalLines(text, skipped) {
     } else if (key === 'liveness') {
       const minutes = m[2] ? null : livenessMinutes(value);
       if (minutes === null) skip(LIVENESS_REASON); else out.liveness = minutes;
+    } else if (key === 'range') {
+      const span = rangeSpan(qualifier, value);
+      const same = span && out.ranges.find((r) => r.name.toLowerCase() === span.name.toLowerCase());
+      const met = span && out.ranges.find((r) => rangesMeet(r, span));
+      if (span === null) skip(RANGE_REASON);
+      else if (same) skip(`the range ${span.name} is declared on a line above: the first line of a range stands`);
+      else if (met) skip(`the range ${rangeWords(span)} shares numbers with the range ${rangeWords(met)} above it: two ranges never share a number`);
+      else out.ranges.push(span);
     } else if (key === 'check') {
       const command = fieldText(value).replace(/^`(.*)`$/, '$1');
       if (!command) { skip('a Check line names no command: it is "Check: <command>" or "Check (<name>): <command>"'); return; }
@@ -319,7 +346,7 @@ export function goalLines(text, skipped) {
 
 // The machine lines the command line writes into the goal, and the words that label them. A line is read by GOAL_LINE, the
 // grammar goalLines reads, and written with the label the grammar takes.
-const MACHINE_LABEL = { check: 'Check', model: 'Model', coordinators: 'Coordinators', merger: 'Merger', takeover: 'Takeover', liveness: 'Liveness' };
+const MACHINE_LABEL = { check: 'Check', model: 'Model', coordinators: 'Coordinators', merger: 'Merger', takeover: 'Takeover', liveness: 'Liveness', range: 'Range' };
 // The machine line a text is, as { key, qualifier, value } (key lower case; qualifier as written, or null), or null.
 export function goalLineOf(text) {
   const m = GOAL_LINE.exec(String(text ?? ''));
@@ -371,7 +398,7 @@ export function cmdGoalSet(root, text) {
   need(old !== null, 'the loop has no goal: open it with init "<goal>"', () => (['jarl.mjs', 'init', '<goal>']));
   need(!oneBreak(text).includes('\n'), 'goal --set takes one machine line: a line break in its value is refused', () => ({ flag: '--set', value: '<machine-line>' }));
   const line = goalLineOf(text);
-  need(line && line.value && MACHINE_LABEL[line.key], `goal --set takes one machine line (got "${text}"): ` + '"Check (<name>): <command>" or "Check: <command>", "Model (<tier>): <model-id>" (more models after commas), "Coordinators: <name>, …", "Merger: <name>", "Takeover (<kind>): <rounds>" or "Takeover: <rounds>", "Liveness: <minutes>"', () => ({ flag: '--set', value: '<machine-line>' }));
+  need(line && line.value && MACHINE_LABEL[line.key], `goal --set takes one machine line (got "${text}"): ` + '"Check (<name>): <command>" or "Check: <command>", "Model (<tier>): <model-id>" (more models after commas), "Coordinators: <name>, …", "Merger: <name>", "Takeover (<kind>): <rounds>" or "Takeover: <rounds>", "Liveness: <minutes>", "Range (<name>): <from-to>"', () => ({ flag: '--set', value: '<machine-line>' }));
   let qualifier = line.qualifier;
   if (line.key === 'model') {
     need(qualifier !== null, 'a Model line names its tier: "Model (<tier>): <model-id>", more models after commas', () => ({ flag: '--set', value: `Model (${hole('<tier>')}): ${line.value}` }));
@@ -386,7 +413,8 @@ export function cmdGoalSet(root, text) {
     qualifier = kinds.find((k) => k.toLowerCase() === qualifier.toLowerCase()) ?? null;
     need(qualifier !== null, `the profile declares no kind ${JSON.stringify(line.qualifier)}: its kinds are ${kinds.join(', ')}`, () => ({ flag: '--set', value: `Takeover (${hole('<kind>')}): ${line.value}` }));
   }
-  const value = noSeparators(line.value);
+  if (line.key === 'range') qualifier = rangeLine(root, old, line, text);
+  const value = line.key === 'range' ? line.value.replace(/\s+/g, '') : noSeparators(line.value);
   need(value, 'goal --set needs a value after the colon', () => ({ flag: '--set', value: `${String(text).split(':')[0].trim()}: ${hole('<value>')}` }));
   need(line.key !== 'liveness' || (qualifier === null && livenessMinutes(value) !== null), `${LIVENESS_REASON} (got "${String(text).trim()}")`, () => ({ flag: '--set', value: `Liveness: ${hole('<minutes>')}` }));
   need(line.key !== 'takeover' || takeoverRounds(value) !== null, `a Takeover line takes a whole number of rounds from 1 to ${TAKEOVER_MAX} (got "${value}"): "Takeover: <rounds>" or "Takeover (<kind>): <rounds>"`, () => ({ flag: '--set', value: `${String(text).split(':')[0].trim()}: ${hole('<rounds>')}` }));
@@ -396,6 +424,27 @@ export function cmdGoalSet(root, text) {
   writeAtomic(goalPath(dir), next.text);
   appendLog(root, `goal line ${next.replaced ? 'changed' : 'added'} · ${next.shown}${next.replaced ? ` · was ${noSeparators(next.was)}` : ''}`);
   return { shown: next.shown, replaced: next.replaced, was: next.replaced ? next.was : null, unchanged: false };
+}
+// The Range line goal --set writes: one that parses and shares no number with another declared range, and that keeps the
+// numbers of this checkout's issue files where they are: the ones the range held stay in it, and it takes in none filed
+// outside it. Returns the range's name as the goal already writes it, or as given for a new one.
+function rangeLine(root, old, line, text) {
+  const span = rangeSpan(line.qualifier, line.value);
+  need(span, `${RANGE_REASON} (got "${String(text).trim()}")`, () => ({ flag: '--set', value: `Range (${hole('<name>')}): ${hole('<from-to>')}` }));
+  const declared = goalLines(old).ranges;
+  const was = declared.find((r) => r.name.toLowerCase() === span.name.toLowerCase()) || null;
+  const name = was ? was.name : span.name;
+  const form = () => ({ flag: '--set', value: `Range (${name}): ${hole('<from-to>')}` });
+  const met = declared.find((r) => r !== was && rangesMeet(r, span));
+  if (met) refuse(`the range ${rangeWords(span)} shares numbers with the range ${rangeWords(met)}: two ranges never share a number`, form());
+  const dir = issuesDir(root);
+  const held = existsSync(dir) ? readdirSync(dir).map((f) => ISSUE_FILE_RE.exec(f)).filter(Boolean).map((m) => Number(m[1])) : [];
+  const within = (r, n) => r !== null && n >= r.from && n <= r.to;
+  const left = held.filter((n) => within(was, n) && !within(span, n));
+  const taken = held.filter((n) => within(span, n) && !within(was, n));
+  if (left.length) refuse(`the range ${rangeWords(span)} would leave out issue ${left.join(', ')}, numbered in the range ${rangeWords(was)}: a range keeps every number it holds`, form());
+  need(!taken.length, `the range ${rangeWords(span)} would take in issue ${taken.join(', ')}, numbered outside it: a range takes in no number filed elsewhere`, form);
+  return name;
 }
 
 // A ratify item the close's batch filed names the area ruling it asks about: `· ruling <slug>`.

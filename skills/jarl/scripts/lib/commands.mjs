@@ -9,13 +9,13 @@ import { git, gitBytes, gitRun } from './git.mjs';
 import { canonical, issuesDir, jarlDir, normalPath, portablePath, stamp, today } from './where.mjs';
 import { readText, renameRetry, writeAtomic } from './files.mjs';
 import { ISSUE_FILE_RE, branchNameProblem, cmpId, expandIds, idKey, idRe, isBulk, itemNaming, needsRaisedFormat, newIssueKey, newNumber } from './ids.mjs';
-import { DEFAULT_PROFILE, FORMAT_LINES, PARENT_FIELD, TOOL_FIELDS, formatState, loadProfile, numberWidth, profilePath, readProfileFile } from './profile.mjs';
-import { appendLog, appendLogLines, decisionsPath, goalPath, logPath } from './journal.mjs';
+import { BUILTIN_STATUSES, DEFAULT_PROFILE, FORMAT_LINES, LIFECYCLE_OPS, PARENT_FIELD, PROFILE_VERSION, TOOL_FIELDS, describeProfile, forgetProfile, formatState, loadProfile, numberWidth, profilePath, readProfileFile, reservedProblem, validateProfile } from './profile.mjs';
+import { appendLog, appendLogLines, decisionsPath, goalLines, goalPath, logPath, parseStamp, readGoal, writerRaised } from './journal.mjs';
 import { JARL_GITIGNORE, JARL_GITIGNORE_COMMITTED, ensureLoopMerge, outOfGit } from './loop-git.mjs';
 import { HANDOVER_SEGMENT, journalById, mergeCheckText } from './log.mjs';
-import { FIELD_RE, PROPOSED, RENDERED_FIELDS, acceptanceHeading, acceptanceLineCount, acceptanceLines, acceptanceText, bodyText, changelogText, evidenceNotes, evidenceParts, evidenceRows, evidenceTable, fieldValue, findIssue, issueNamed, loadIssues, mergedOf, namedPairs, needNoFieldTags, noteText, parentCycle, parseIssue, placeEvidence, removeFields, removeFirstField, renderIssue, setField, setSection, unattributedRefusal, waitCycle } from './issues.mjs';
-import { baseOf, branchTip, commitRepoNames, fileKeysOf, isGitRepo, issueRepoPaths, issueRepoSlots, issueRepos, mainCheckoutOf, needFormat, needFormatHeld, needRightCheckouts, repoFromInput, repoLabel, repoList, reposNamed, tipLinesOf, whyNotDeletable, worktreeState, worktreesOf } from './repositories.mjs';
-import { FIELD_NAMES, activeSlices, carriesCode, unmergedCode, unmergedText, gateOf, isSliceTag, leaseConflictOf, needOneSlice, readLoop, sinceText, sliceOf, unclearedText, unorderedNamings, unorderedText } from './loop.mjs';
+import { FIELD_RE, PROPOSED, RENDERED_FIELDS, acceptanceHeading, alignRows, acceptanceLineCount, acceptanceLines, acceptanceText, bodyText, changelogText, evidenceNotes, evidenceParts, evidenceRows, evidenceTable, fieldValue, findIssue, issueNamed, loadIssues, mergedOf, namedPairs, needNoFieldTags, noteText, parentCycle, parseIssue, placeEvidence, removeFields, removeFirstField, renderIssue, setField, setSection, unattributedRefusal, waitCycle } from './issues.mjs';
+import { baseOf, branchTip, commitRepoNames, fileAt, fileKeysOf, isGitRepo, issueRepoPaths, issueRepoSlots, issueRepos, mainCheckoutOf, needFormat, needFormatHeld, needRightCheckouts, repoFromInput, repoLabel, repoList, reposNamed, tipLinesOf, whyNotDeletable, worktreeState, worktreesOf } from './repositories.mjs';
+import { FIELD_NAMES, IN_PLACE_TAG, activeSlices, carriesCode, unmergedCode, unmergedText, gateOf, isSliceTag, leaseConflictOf, needOneSlice, readLoop, sinceText, sliceOf, unclearedText, unorderedNamings, unorderedText, worksInPlace } from './loop.mjs';
 import { declaredChecks, lastMerge } from './metrics.mjs';
 import { modelLines, modelRefusalOf, modelReviewForm, modelValue, modelOfferAtLease, spellingNote } from './models.mjs';
 import { slotRefusal } from './attachments.mjs';
@@ -148,38 +148,61 @@ export function readTemplate(root, name) {
   };
 }
 
-// The highest issue number any copy of this loop holds (the main checkout and every linked worktree), 0 when none.
-function highestAcrossWorktrees(root) {
+// The issue numbers the files of a directory's listing hold.
+const numbersIn = (names) => names.map((f) => ISSUE_FILE_RE.exec(f)).filter(Boolean).map((m) => Number(m[1]));
+// The issue numbers any copy of this loop holds (the main checkout and every linked worktree).
+function numbersAcrossWorktrees(root) {
   const found = mainCheckoutOf(root);
-  let top = 0;
-  for (const copy of found ? found.copies : []) {
-    const dir = issuesDir(copy);
-    if (!existsSync(dir)) continue;
-    for (const f of readdirSync(dir)) { const m = ISSUE_FILE_RE.exec(f); if (m) top = Math.max(top, Number(m[1])); }
-  }
-  return top;
+  return (found ? found.copies : []).filter((copy) => existsSync(issuesDir(copy))).flatMap((copy) => numbersIn(readdirSync(issuesDir(copy))));
 }
 
-// The highest issue number the loop's issue directory holds on any local branch or remote-tracking branch of its
-// repository (read-only, one git process for all of them): a clone or a branch that filed an issue this checkout has
-// not merged yet has taken that number, and a new issue here takes the next one. 0 outside git, and for a loop git does
-// not hold.
-function highestAcrossRefs(root) {
+// The issue numbers the loop's issue directory holds on any local branch or remote-tracking branch of its repository
+// (read-only, one git process for all of them): a clone or a branch that filed an issue this checkout has not merged yet
+// has taken that number, and a new issue here takes the next one. None outside git, and for a loop git does not hold.
+function numbersAcrossRefs(root) {
   const prefix = git(root, ['rev-parse', '--show-prefix']);
-  if (prefix === null) return 0;
+  if (prefix === null) return [];
   const refs = (git(root, ['for-each-ref', '--format=%(refname)', 'refs/heads', 'refs/remotes']) || '').split('\n').filter(Boolean);
-  if (!refs.length) return 0;
-  const out = gitBytes(root, ['cat-file', '--batch'], refs.map((r) => `${r}:${prefix}.jarl/issues\n`).join(''));
-  let top = 0;
-  for (const name of treeNames(out)) { const m = ISSUE_FILE_RE.exec(name); if (m) top = Math.max(top, Number(m[1])); }
-  return top;
+  if (!refs.length) return [];
+  return numbersIn(treeNames(gitBytes(root, ['cat-file', '--batch'], refs.map((r) => `${r}:${prefix}.jarl/issues\n`).join(''))));
 }
-// The number the next filing in this loop takes: one above the highest held by its issue files, its copies in every other
-// worktree and every branch of its repository. The issue files stay the only source: there is no counter file.
-export function nextIssueNumber(root) {
+// The number the next filing in this loop takes, from the numbers held by its issue files, its copies in every other
+// worktree and every branch of its repository. The issue files stay the only source: there is no counter file. `range`
+// is a range the goal declares (see declaredRange), or null for the numbers outside every declared range.
+export function nextIssueNumber(root, range = null) {
   const dir = issuesDir(root);
-  const here = existsSync(dir) ? readdirSync(dir).map((f) => ISSUE_FILE_RE.exec(f)).filter(Boolean).reduce((m, x) => Math.max(m, Number(x[1])), 0) : 0;
-  return Math.max(here, highestAcrossWorktrees(root), highestAcrossRefs(root)) + 1;
+  const held = [...(existsSync(dir) ? numbersIn(readdirSync(dir)) : []), ...numbersAcrossWorktrees(root), ...numbersAcrossRefs(root)];
+  return numberAfter(held, rangesOf(root), range, 1);
+}
+// The ranges of numbers the goal declares, each { name, from, to }.
+const rangesOf = (root) => goalLines(readGoal(jarlDir(root))).ranges;
+const rangeAt = (ranges, n) => ranges.find((r) => n >= r.from && n <= r.to) || null;
+// The first free number of a series at `least` or above, `held` being the numbers already taken: in a declared range, one
+// above the highest number the range holds, or its first, and null when the range has none left; outside every range, one
+// above the highest number held outside them all, stepped past each range it falls in. A number held in one series never
+// moves the count of another.
+function numberAfter(held, ranges, range, least) {
+  if (range) {
+    const n = Math.max(held.filter((x) => x >= range.from && x <= range.to).reduce((m, x) => Math.max(m, x), range.from - 1) + 1, least);
+    return n <= range.to ? n : null;
+  }
+  let n = Math.max(held.filter((x) => !rangeAt(ranges, x)).reduce((m, x) => Math.max(m, x), 0) + 1, least);
+  for (let r = rangeAt(ranges, n); r; r = rangeAt(ranges, n)) n = r.to + 1;
+  return n;
+}
+// The range --range names among the ones the goal declares, matched in any case; a name the goal does not declare is
+// refused with the names it does, or with the goal line that declares one.
+function declaredRange(root, raw) {
+  const name = typeof raw === 'string' ? raw.trim() : '';
+  const ranges = rangesOf(root);
+  const range = ranges.find((r) => r.name.toLowerCase() === name.toLowerCase());
+  if (range) return range;
+  if (ranges.length) refuse(`the goal declares no range ${JSON.stringify(name)}: its ranges are ${ranges.map((r) => `${r.name} (${r.from}-${r.to})`).join(', ')}`, { flag: '--range', value: hole('<name>') });
+  refuse(`the goal declares no range ${JSON.stringify(name)}, nor any other: a range is a goal line, "Range (<name>): <from-to>"`, ['jarl.mjs', 'goal', '--set', `Range (${hole('<name>')}): ${hole('<from-to>')}`]);
+}
+// The refusal of a filing in a range that has no number left.
+function needRoomIn(range, n) {
+  need(n !== null, `the range ${range.name} (${range.from}-${range.to}) has no number left: widen it in the goal`, () => ['jarl.mjs', 'goal', '--set', `Range (${range.name}): ${hole('<from-to>')}`]);
 }
 // The names of the entries of every tree `git cat-file --batch` printed: each object is "<hash> <type> <size>", its bytes
 // and a line break; a tree's bytes are entries of "<mode> <name>", a zero byte and the entry's hash in binary. An object
@@ -297,6 +320,9 @@ export function cmdNew(root, title, rawFlags, from = {}) {
   // A line only the owner ticks names its material and what to check; its first write raises the record format.
   const acceptance = flags.acceptance !== undefined ? acceptanceText(flags.acceptance) : bodyText(fromTemplate.acceptance);
   const ownerLined = needOwnerLines(acceptance);
+  // A number from a range the goal declares, for a series of issues kept apart by number.
+  const range = rawFlags.range !== undefined ? declaredRange(root, rawFlags.range) : null;
+  const inPlace = splitList(flags.tags).includes(IN_PLACE_TAG);
   const render = (id, key, repo) => renderIssue({
     id, title, status: profile.initial, key, kind, priority, tier, fields, sections, acceptanceHeading: profile.acceptance || 'Acceptance',
     tags: splitList(flags.tags), files: pathList(flags.files), repo, foundBy: flags['found-by'] || 'jarl', person, checkWhen,
@@ -309,8 +335,12 @@ export function cmdNew(root, title, rawFlags, from = {}) {
   // The raises the filing would make are checked as well, so a loop that refuses them is refused here, with nothing written:
   // the number it would take among them (from.number, where filings before it in the same act take the ones below).
   if (from.dry) {
-    const id = newNumber(from.number ?? nextIssueNumber(root), numberWidth(profile, rawFlags.width));
+    const number = from.number ?? nextIssueNumber(root, range);
+    if (range) needRoomIn(range, number);
+    const id = newNumber(number, numberWidth(profile, rawFlags.width));
     needNoNewOwnersWords('', render(id, null, picked.map((p) => p.value).join(', ')), `${id}-${slugify(title)}.md`);
+    if (range) needFormatHeld(root, 'range-number');
+    if (inPlace) needFormatHeld(root, 'in-place');
     if (needsRaisedFormat(id)) needFormatHeld(root, 'plain-number', `issue number ${id}`);
     if (kept) needFormatHeld(root, 'promise-wait');
     if (picked.some((p) => p.name)) needFormatHeld(root, 'repo-name');
@@ -318,7 +348,12 @@ export function cmdNew(root, title, rawFlags, from = {}) {
     return { dry: true };
   }
   // A promise and a wait are kinds a reader of formats 1 and 2 does not know: the loop is raised first, or, where a composer
-  // keeps its format, the filing is refused with nothing written.
+  // keeps its format, the filing is refused with nothing written. So is a number from a declared range, which a reader that
+  // knows no range would count past.
+  if (range) needRoomIn(range, nextIssueNumber(root, range));
+  if (range) needFormat(root, 'range-number');
+  // So is an issue worked in place, which a reader of formats 1 and 2 would close with no commit of its files named.
+  if (inPlace) needFormat(root, 'in-place');
   if (kept) needFormat(root, 'promise-wait');
   commitRepoNames(root, picked);
   if (ownerLined) needFormat(root, 'owner-line');
@@ -338,9 +373,10 @@ export function cmdNew(root, title, rawFlags, from = {}) {
   // Git keeps no empty directory, so a clone of a loop committed before its first issue has none yet.
   mkdirSync(dir, { recursive: true });
   const taken = () => readdirSync(dir).map((f) => ISSUE_FILE_RE.exec(f)).filter(Boolean).map((m) => Number(m[1]));
-  // The highest number over this loop, its copies in every other worktree and every local and remote-tracking branch of
-  // its repository (read-only), so a lagging copy cannot hand out a number already used elsewhere.
-  let n = nextIssueNumber(root);
+  // The numbers over this loop, its copies in every other worktree and every local and remote-tracking branch of its
+  // repository (read-only), so a lagging copy cannot hand out a number already used elsewhere.
+  let n = nextIssueNumber(root, range);
+  if (range) needRoomIn(range, n);
   for (let tries = 0; ; tries += 1) {
     const id = newNumber(n, numberWidth(profile, rawFlags.width));
     // The first issue of 1000 or more is a file a reader that knows only format 1 would skip in silence: the format is raised first.
@@ -371,7 +407,8 @@ export function cmdNew(root, title, rawFlags, from = {}) {
       return { id, file, ...(rawFlags.template !== undefined ? { template: rawFlags.template } : {}), ...note };
     }
     need(tries < 100, 'could not claim a free issue number after 100 tries', () => afterView(['jarl.mjs', 'verify']));
-    n = Math.max(n + 1, taken().reduce((m, x) => Math.max(m, x), 0) + 1);
+    n = numberAfter(taken(), rangesOf(root), range, n + 1);
+    if (range) needRoomIn(range, n);
   }
 }
 
@@ -401,7 +438,11 @@ export function cmdRenumber(root, rawId, flags = {}) {
   const dir = issuesDir(root);
   const before = readText(pick.file);
   const rest = basename(pick.file).replace(/^\d+-/, '');
-  for (let n = nextFreeNumber(root, dir), tries = 0; ; n += 1, tries += 1) {
+  // The free number comes from the series the old one belongs to: its declared range, or the numbers outside every range.
+  const ranges = rangesOf(root);
+  const range = rangeAt(ranges, Number(old));
+  for (let n = nextIssueNumber(root, range), tries = 0; ; n = numberAfter([], ranges, range, n + 1), tries += 1) {
+    if (range) needRoomIn(range, n);
     need(tries < 100, 'could not claim a free issue number after 100 tries', () => afterView(['jarl.mjs', 'verify']));
     const id = newNumber(n, numberWidth(profile));
     if (needsRaisedFormat(id)) needFormat(root, 'plain-number');
@@ -426,13 +467,6 @@ function keysOf(files) {
   const keys = files.map((i) => fieldText(i.fields.key ?? '')).filter(Boolean);
   return hole('<key>');
 }
-// The number a new issue takes: one above the highest the loop's issue files hold here, in its other worktrees and on
-// every local and remote-tracking branch.
-function nextFreeNumber(root, dir) {
-  const here = readdirSync(dir).map((f) => ISSUE_FILE_RE.exec(f)).filter(Boolean).reduce((m, x) => Math.max(m, Number(x[1])), 0);
-  return Math.max(here, highestAcrossWorktrees(root), highestAcrossRefs(root)) + 1;
-}
-
 // The notes for the text of an issue just written: one for the unfinished issues it names that nothing orders with it.
 function unorderedNotes(root, profile, id) {
   return unorderedNamings(loadIssues(root), profile, [id]).map((n) => `note: issue ${n.id}: ${unorderedText(n)}`);
@@ -757,6 +791,7 @@ function doneReady(cause, issue) {
   if (cause === 'clears') return ['jarl.mjs', 'review', hole('<ids>'), hole('<verdict>'), hole('<what-was-read-and-found>'), '--by', hole('<reviewer>')];
   if (cause === 'model') return ['jarl.mjs', 'review', hole('<ids>'), hole('<verdict>'), hole('<what-was-read-and-found>'), '--by', hole('<a-fresh-reviewer>'), '--model', hole('<model-id>')];
   if (cause === 'merge') return ['jarl.mjs', 'merged', hole('<ids>'), '--sha', hole('<sha>')];
+  if (cause === 'commit') return ['jarl.mjs', 'evidence', hole('<id>'), '--ran', hole('<command>'), '--saw', hole('<what-it-printed>')];
   if (cause === 'slots') return ['jarl.mjs', 'evidence', hole('<id>'), '--file', hole('<path>'), '--slot', hole('<slot>')];
   if (cause === 'owner') return ['jarl.mjs', 'ask', hole('<question-for-the-owner>'), '--issue', hole('<id>')];
   if (cause === 'owner-rewrite') return ['jarl.mjs', 'field', hole('<ids>'), 'Acceptance', hole('<the-whole-section>')];
@@ -910,6 +945,48 @@ function notWrittenByField(profile, key) {
   return `no other part goes by that name: a field or a section the loop's profile declares is among the names above, and the profile lists them: ${jarlLine('profile')}`;
 }
 
+// extend section "<name>" | extend field "<name>" [--values <a,b>] [--default <value>] [--required]: the profile of a live
+// loop gains one section or one field, checked as profile <file> checks a profile file, with a log line written first. A
+// loop with no profile of its own gets one: the built-in statuses and the part, in the record format the loop is in. The
+// issues already filed are not rewritten: each carries the part once field writes it, and a new issue is filed with it (a
+// field's default, when it has one and none is given). Kind and Tier keep the values the loop was opened with. The profile
+// of a loop a composer runs is the composer's, and is never changed here.
+export function cmdExtend(root, part, name, flags = {}) {
+  needLiveLoop(root, '');
+  const profile = loadProfile(root);
+  const kept = LIFECYCLE_OPS.some((op) => profile.lifecycle[op] === 'record');
+  if (profile.scheduler !== null || kept) refuse(`this loop is run by a composer (its profile, ${profile.name}, ${profile.scheduler !== null ? 'names an external scheduler' : 'keeps its lifecycle to the record'}), and its profile is the composer's: extend changes nothing in it — nothing was written`, profile.scheduler ?? profile.lifecycle.command ? { external: profile.scheduler ?? profile.lifecycle.command } : afterView(['jarl.mjs', 'profile']));
+  const kind = String(part ?? '').trim().toLowerCase();
+  need(kind === 'section' || kind === 'field', `extend adds a section or a field to the loop's profile (got ${JSON.stringify(String(part ?? ''))})`, () => ({ arg: 0, value: hole('<section-or-field>') }));
+  const label = typeof name === 'string' ? name.trim() : '';
+  need(label, `extend ${kind} needs the name of the ${kind}`, () => ({ arg: 1, value: hole('<name>') }));
+  const fieldFlags = ['values', 'default', 'required'].filter((k) => flags[k] !== undefined);
+  need(kind === 'field' || !fieldFlags.length, `--${fieldFlags[0]} goes with a field, not with a section`, () => fieldFlags.map((k) => ({ drop: `--${k}` })));
+  need(!['kind', 'tier'].includes(label.toLowerCase()), `${label} is built in, and its values are the ones the loop was opened with: extend adds a field of the loop's own`, () => ({ arg: 1, value: hole('<name>') }));
+  const held = kind === 'section' ? sectionsOf(profile).some((s) => s.toLowerCase() === label.toLowerCase()) : profile.declaredFields.some((f) => f.key === label.toLowerCase());
+  need(!held, `the profile already declares the ${kind} ${label}: ${jarlLine('profile')}`, () => ({ arg: 1, value: hole('<name>') }));
+  const spec = kind === 'field' ? { ...(flags.values !== undefined ? { enum: splitList(flags.values) } : {}), ...(flags.default !== undefined ? { default: String(flags.default) } : {}), ...(flags.required === true ? { required: true } : {}) } : null;
+  // The profile as it would be: checked whole before anything is written.
+  const extended = () => {
+    const raw = existsSync(profilePath(root)) ? JSON.parse(readText(profilePath(root))) : null;
+    const base = raw && loadProfile(root).declared ? raw : { 'jarl-profile': PROFILE_VERSION, ...(raw && raw.format !== undefined ? { format: raw.format } : {}), statuses: BUILTIN_STATUSES, initial: 'open' };
+    const json = kind === 'section' ? { ...base, sections: [...(base.sections || []), label] } : { ...base, fields: { ...(base.fields || {}), [label]: spec } };
+    try { return { json, profile: validateProfile(json, `the profile with the ${kind} ${label}`) }; } catch (e) { if (e instanceof Refusal) refuse(e.reason, { retry: true }); throw e; }
+  };
+  extended();
+  const reserved = reservedProblem(validateProfile({ 'jarl-profile': PROFILE_VERSION, statuses: BUILTIN_STATUSES, ...(kind === 'section' ? { sections: [label] } : { fields: { [label]: spec } }) }));
+  need(!reserved, `the ${kind} ${label} is not added: ${reserved}`, () => ({ arg: 1, value: hole('<name>') }));
+  const words = kind === 'section' ? `section ${label}` : `field ${label}${[spec.enum && `values ${spec.enum.join(', ')}`, spec.default && `default ${spec.default}`, spec.required && 'required'].filter(Boolean).map((w) => `; ${w}`).join('').replace(/^; /, ': ')}`;
+  // The raise the call's writer needs comes first, and rewrites the profile: the part is added to the profile as the raise
+  // left it, and the log line follows the profile, so a profile that could not be written leaves no line behind.
+  writerRaised(root);
+  const next = extended();
+  writeAtomic(profilePath(root), `${JSON.stringify(next.json, null, 2)}\n`);
+  forgetProfile(root);
+  appendLog(root, `profile extended · ${noSeparators(words)}`);
+  return { part: kind, name: label, ...(spec ? { spec } : {}), profile: describeProfile(next.profile) };
+}
+
 // field <ids> <section> "<text>": a section of the description, as body writes it, with the body line it logs. A value
 // replaces what the section holds; --add puts it after that (a list of lines, Acceptance and Changelog, gains its lines; a
 // text, its paragraph); --clear empties the section. Acceptance and Changelog take one line per item, so a value of several
@@ -1046,6 +1123,12 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   const nothing = issues.length > 1 ? ' — nothing was written' : '';
   needTreeHolds(profile, issues, status, nothing);
   if (holds) needLeaseHolds(root, profile, issues, status, why, flags, handover, nothing);
+  // An issue worked in place is leased with no branch, on the files it declares, which keep two such issues apart.
+  for (const issue of holds ? issues.filter((i) => worksInPlace(profile, i)) : []) {
+    const given = ['branch', 'worktree'].filter((k) => flags[k] !== undefined);
+    need(!given.length, `${issue.id} is worked in place: its worker writes the files it declares in the checkout of their repository, as it is checked out, with no branch and no worktree of its own${nothing}`, () => given.map((k) => ({ drop: `--${k}` })));
+    need(issue.files.length, `${issue.id} is worked in place and declares no files: it names the files it writes before it is leased, so that next keeps two issues off one file${nothing}`, () => ['jarl.mjs', 'field', issue.id, 'Files', hole('<paths>')]);
+  }
   // base: the branch the composer landed the merge into, for the done gate's requires-merged (else the branch checked
   // out). A library call only: the command line has no --base, and dispatch never passes one through.
   need(flags.base === undefined || caller === 'record', 'base is named by a library call through record.mjs only — the command line checks against the branch checked out', () => ({ rename: '--base', to: hole('<no-flag-here>') }));
@@ -1570,6 +1653,9 @@ function doneGateIn(root, loop, issue, base, why) {
   // issue by; a profile that requires a landed merge has checked more than this above.
   const unmerged = unmergedRefusal(issue, g);
   if (unmerged) return { cause: 'merge', text: unmerged };
+  // An issue worked in place has no merge: it closes on the commit of its files, which a row of its proof names.
+  const uncommitted = inPlaceRefusal(root, loop, issue, g);
+  if (uncommitted) return { cause: 'commit', text: uncommitted };
   // Last, an acceptance line no row names, in a loop that names them, and an acceptance line only the owner ticks: his
   // look comes on top of the proof and the review, never instead.
   return lines() || owner();
@@ -1579,6 +1665,42 @@ function doneGateIn(root, loop, issue, base, why) {
 function unprovedRefusal(issue, left) {
   return `${issue.id} has acceptance lines no Proof row names: ${left.map((l) => `line ${l.n} "${l.text}"`).join('; ')} — this loop names the line a row proves, and a row with no --line names none: record a row that names each, ${jarlLine('evidence', issue.id, '--ran', '<command>', '--saw', '<what-it-printed>', '--line', '<line>')}, or close it without one and say why: ${jarlLine('set', issue.id, 'done', '<why>')}`;
 }
+// Why an issue worked in place may not close yet, or null. Each file it declares is placed in its repository as fileAt
+// places it (the loop's own, or the one its Repo names for that path). The issue closes when every such repository is a
+// git repository here, none of its declared files has a change its checkout has not committed (staged, unstaged or
+// untracked), and a row of its proof inside the gate's window names a commit that a repository holds on the branch it
+// has checked out, that changes a declared file of that repository, and that was committed at or after the minute of the
+// move the window starts at (the lease, a reopen or a red round): a commit made before the work began commits none of it.
+// The files are committed in the checkout of their repository once the approve stands (by the merger where one runs,
+// else the coordinator), and that commit is recorded as a row; nothing is merged.
+function inPlaceRefusal(root, loop, issue, g) {
+  if (!worksInPlace(loop.profile, issue)) return null;
+  const rows = evidenceTable(issue.sections.evidence).rows;
+  const logged = alignRows(issue.id, rows, g.rowLog);
+  const counted = rows.filter((r, k) => !r.retracted && r.saw !== '' && (!g.tracked || (logged[k] && logged[k].inWindow && !logged[k].retracted)));
+  const shas = [...new Set(counted.flatMap((r) => `${r.ran} ${r.saw}`.match(/\b[0-9a-f]{7,40}\b/g) || []))];
+  // The declared files by the top of the repository they are in.
+  const byTop = new Map();
+  for (const f of issue.files) {
+    const at = fileAt(root, issue, f);
+    const top = isGitRepo(at.repo) ? git(at.repo, ['rev-parse', '--show-toplevel']) : null;
+    if (top === null) return `${issue.id} is worked in place, and ${f} is in ${repoLabel(at.repo)}, which is no git repository here, so the commit of its files cannot be checked — ${inPlaceStep(issue)}`;
+    byTop.set(top, [...(byTop.get(top) || []), at.path.replace(/\/+$/, '')]);
+  }
+  const touches = (paths) => (f) => paths.some((d) => f === d || f.startsWith(`${d}/`) || f.endsWith(`/${d}`));
+  for (const [top, paths] of byTop) {
+    const changed = [...(git(top, ['diff', '--name-only', '-z', '--no-renames', 'HEAD']) || '').split('\0'), ...(git(top, ['ls-files', '--others', '--exclude-standard', '-z']) || '').split('\0')].filter(Boolean);
+    const dirty = changed.filter(touches(paths));
+    if (dirty.length) return `${issue.id} is worked in place, and its checkout holds changes not committed to ${dirty.join(', ')} — ${inPlaceStep(issue)}`;
+  }
+  const from = g.tracked ? parseStamp(g.anchor.at) : null;
+  const committed = (top, paths, sha) => git(top, ['merge-base', '--is-ancestor', sha, 'HEAD']) !== null
+    && (from === null || Number(git(top, ['show', '-s', '--format=%ct', sha])) * 1000 >= from)
+    && (git(top, ['diff-tree', '--root', '--no-commit-id', '--name-only', '-r', '--no-renames', sha]) || '').split('\n').some(touches(paths));
+  if (shas.some((sha) => [...byTop].some(([top, paths]) => committed(top, paths, sha)))) return null;
+  return `${issue.id} is worked in place, and no row of its proof${g.tracked ? ` since ${sinceText(g.anchor)}` : ''} names a commit made after it, on the branch checked out, that changes ${issue.files.join(', ')} — ${inPlaceStep(issue)}`;
+}
+const inPlaceStep = (issue) => `once the approve stands, its files are committed in the checkout of their repository (by the merger where one runs, else the coordinator), and the commit is recorded as a row: ${jarlLine('evidence', issue.id, '--ran', '<command>', '--saw', '<what-it-printed>')}`;
 // Why a code issue's code as it is now is not merged (see unmergedCode), as done says it, or null.
 function unmergedRefusal(issue, g) {
   const u = unmergedCode(issue, g);
@@ -2045,6 +2167,10 @@ function cmdTagList(root, rawIds, value, by) {
 }
 function writeTags(root, rawIds, results, by, out) {
   for (const r of results) needOneSlice(r.tags, { id: r.issue.id, held: r.issue.tags });
+  // The mark of an issue worked in place goes on an issue with no branch and no merge: code is merged from its branch.
+  const marked = results.filter((r) => r.tags.includes(IN_PLACE_TAG) && !r.issue.tags.includes(IN_PLACE_TAG));
+  for (const r of marked) need(!carriesCode(r.issue), `${r.issue.id} carries code (${r.issue.fields.merged ? 'Merged' : 'Branch'} is recorded), which its merge lands: an issue worked in place has no branch and no merge, so it is not tagged ${IN_PLACE_TAG}`, () => ({ arg: 2, value: hole('<items>') }));
+  if (marked.length) needFormat(root, 'in-place');
   logChanges(root, results.map((r) => fieldLine(r.issue.id, 'Tags', r.tags.join(', '), heldField(r.issue, 'Tags'), by)));
   for (const r of results) writeAtomic(r.issue.file, setField(readText(r.issue.file), 'Tags', r.tags.join(', ')));
   return oneOrMany(rawIds, results.map(out));

@@ -14,7 +14,7 @@ import { outOfGit } from './loop-git.mjs';
 import { attachmentOf, journalById, rowLinesText } from './log.mjs';
 import { acceptanceLineCount, alignRows, bodyText, evidenceNotes, evidenceParts, evidenceTable, loadIssues, mergedOf, noteLogText, noteText, parseIssue, placeEvidence, removeFields, reviewEntries, setSection, sharedMark, struckNote } from './issues.mjs';
 import { fileKeysOf, needFormat, repoNames, reposWhere, tipLinesOf, whereLines, whereOf } from './repositories.mjs';
-import { approveKind, carriesCode, sentBack, unmergedCode, unmergedText, coordinatorOf, disagreementText, gateOf, gateState, headerReadNotes, readLoop, recordDisagreements, reviewSplit, sameSlice, scopedLoop, sinceText, sliceNamed, sliceOf, slicesOf, waiverVoid } from './loop.mjs';
+import { approveKind, carriesCode, sentBack, unmergedCode, unmergedText, coordinatorOf, disagreementText, gateOf, gateState, headerReadNotes, readLoop, recordDisagreements, reviewSplit, sameSlice, scopedLoop, sinceText, sliceNamed, sliceOf, slicesOf, waiverVoid, worksInPlace } from './loop.mjs';
 import { checkState, checkWaiting, checkWaitingText, closedNoCheck } from './metrics.mjs';
 import { awaitsMerge, builds, gatedMark, modelMarks } from './models.mjs';
 import { ago, leaseLiveness, leaseState, livenessOf, thresholdText } from './rounds.mjs';
@@ -559,7 +559,8 @@ export const IN_FLIGHT_MARKS = {
 const APPROVED_NO_CODE = 'approved, and it carries no code, so no merge waits — next set it done';
 // An issue a round sent back whose worker has recorded no row since is the worker's again, not waiting for a reviewer.
 const SENT_BACK = 'sent back by a round, no new proof yet — it is back with the worker, who records new rows';
-const inFlightStep = (loop, mark, issue) => (mark === 'approved' && !carriesCode(issue) ? APPROVED_NO_CODE : sentBack(loop, issue, mark) ? SENT_BACK : IN_FLIGHT_MARKS[mark]);
+const APPROVED_IN_PLACE = 'approved and worked in place, so no merge waits — next its files are committed, a row names the commit, and it is set done';
+const inFlightStep = (loop, mark, issue) => (mark === 'approved' && worksInPlace(loop.profile, issue) ? APPROVED_IN_PLACE : mark === 'approved' && !carriesCode(issue) ? APPROVED_NO_CODE : sentBack(loop, issue, mark) ? SENT_BACK : IN_FLIGHT_MARKS[mark]);
 // The rows for the in-flight `issues` of a loop (its own issues, or the ones a view is scoped to). Where the mark ends in
 // setting the issue done and an acceptance line only the owner ticks is not ticked, next says that tick comes first. An
 // approve the done gate refuses for its model is named with what is missing, in the gate's words.
