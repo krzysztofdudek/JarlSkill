@@ -12,8 +12,9 @@ import { ASKS_FILE, DECISIONS_FILE, STAMP_SRC, answeredLines, appendDecision, ap
 import { OWNER, carryingOwnersWords, needNoOwnersWords, quoteShown, rulingAuthor } from './owner.mjs';
 import { findIssue, freeBlock, loadIssues, noteText, parseIssue, placeEvidence, setSection } from './issues.mjs';
 import { needFormat, tipLinesOf } from './repositories.mjs';
-import { readLoop, sliceNamed } from './loop.mjs';
-import { issuesFor } from './commands.mjs';
+import { readLoop } from './loop.mjs';
+import { sliceNamed } from './slices.mjs';
+import { issuesFor } from './shared.mjs';
 import { appliesToLine, loopRules, parseScope, parseUntil, underText, withUnder } from './rules.mjs';
 
 // ---- questions to the owner and the handoff -------------------------------------------------

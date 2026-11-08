@@ -11,10 +11,16 @@ import { DEFAULT_PROFILE, FORMAT_LINES, formatOffText, formatState, loadProfile,
 import { appendLog } from './journal.mjs';
 import { PROPOSED, bodyText, findIssue, loadIssues, sharedMark } from './issues.mjs';
 import { repoList, reposWhereLines } from './repositories.mjs';
-import { closedGateLine, disagreementText, gateLine, needOneSlice } from './loop.mjs';
+import { closedGateLine, gateLine } from './gate.mjs';
+import { disagreementText } from './disagreements.mjs';
+import { needOneSlice } from './slices.mjs';
 import { checkLines, checkWaitingText, closedNoCheckText, mergeCheckLines } from './metrics.mjs';
 import { linesCountText } from './lines.mjs';
-import { cmdNew, cmdSource, editorOf, givenFields, needLiveLoop, nextIssueNumbers, parentToFile, putUnder } from './commands.mjs';
+import { needLiveLoop } from './shared.mjs';
+import { cmdNew, givenFields } from './new.mjs';
+import { cmdSource, editorOf } from './body.mjs';
+import { nextIssueNumbers } from './numbers.mjs';
+import { parentToFile, putUnder } from './setters.mjs';
 import { leasedByText, schedulerNote, subsText } from './evidence.mjs';
 
 // ---- research findings into issues ----------------------------------------------------------------

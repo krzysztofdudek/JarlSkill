@@ -10,7 +10,8 @@ import { loadProfile, reviewerRule } from './profile.mjs';
 import { GOAL_FILE, LOG_FILE, appendLog, goalLines, logPath, readGoal } from './journal.mjs';
 import { readText } from './files.mjs';
 import { repoLabel, reposNamed } from './repositories.mjs';
-import { carriesCode, gateOf, inFlightMark, readLoop } from './loop.mjs';
+import { carriesCode, gateOf, inFlightMark } from './gate.mjs';
+import { readLoop } from './loop.mjs';
 import { filedAndClosed, followUpsOf, share } from './metrics.mjs';
 
 // ---- the model of every worker and reviewer ------------------------------------------------------------------------

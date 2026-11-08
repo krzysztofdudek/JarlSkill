@@ -4,10 +4,13 @@
 import { PROMISE_KIND, WAIT_KIND, fieldText, jarlLine, need } from './base.mjs';
 import { cmpId, idKey, idsCited } from './ids.mjs';
 import { mergedOf } from './issues.mjs';
-import { carriesCode, coordinatorOf, holderKey, inFlightMark, leaseConflictOf, readLoop, sameHolder, sameSlice, sentBack, sliceOf, statusWith, worksInPlace } from './loop.mjs';
+import { carriesCode, holderKey, inFlightMark, leaseConflictOf, sameHolder, sentBack, statusWith, worksInPlace } from './gate.mjs';
+import { coordinatorOf, sameSlice, sliceOf } from './slices.mjs';
+import { readLoop } from './loop.mjs';
 import { gatedMark, modelReviewForm } from './models.mjs';
 import { issueRepos, repoLabel } from './repositories.mjs';
-import { reasonWord, waitingOn } from './commands.mjs';
+import { reasonWord } from './shared.mjs';
+import { waitingOn } from './after.mjs';
 import { mergeAgainWhy, nextRows, schedulerNote } from './evidence.mjs';
 import { ownerLineStates } from './owner-lines.mjs';
 import { ruleLines, rulesFor } from './rules.mjs';

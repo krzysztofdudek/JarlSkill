@@ -7,7 +7,8 @@ import { branchGlobsFor } from './ids.mjs';
 import { loadProfile, reviewerRule } from './profile.mjs';
 import { modelLines, modelRefusalOf } from './models.mjs';
 import { baseOf, fileAt, isGitRepo, issueRepos, refsIn, repoFromInput } from './repositories.mjs';
-import { gateOf, readLoop } from './loop.mjs';
+import { gateOf } from './gate.mjs';
+import { readLoop } from './loop.mjs';
 import { issuesOnBranch, loopRepos } from './rounds.mjs';
 import { mergeAgainWhy, schedulerNote } from './evidence.mjs';
 

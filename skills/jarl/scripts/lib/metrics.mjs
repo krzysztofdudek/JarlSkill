@@ -6,7 +6,8 @@ import { cmpId, idsNamed } from './ids.mjs';
 import { goalLines, readGoal } from './journal.mjs';
 import { mergedOf } from './issues.mjs';
 import { repoNames } from './repositories.mjs';
-import { approveKind, carriesCode, gateOf, readLoop } from './loop.mjs';
+import { approveKind, carriesCode, gateOf } from './gate.mjs';
+import { readLoop } from './loop.mjs';
 
 // ---- the check a loop lands on, and the loop's metrics (report --json) ----------------------------------------------
 
