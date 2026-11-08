@@ -170,6 +170,7 @@ test('a split that moves a line nowhere is refused, naming the line, and so are 
 test('a parent whose sub-issues are all closed holds the ball on its coordinator to check its own acceptance against the whole, and done refuses until that check is recorded and reviewed', () => {
   const root = exportLoop();
   jarl(root, 'goal', '--set', 'Coordinators: odin');
+  jarl(root, 'goal', '--set', 'Model (strong): big-model');
   jarl(root, 'field', '1', 'Tags', '--add', 'slice:odin');
   jarl(root, 'split', '1', '--line', '1=2', '--line', '2=3', '--line', '3=1');
   // Proof and an approve made before the whole exists are not the check.

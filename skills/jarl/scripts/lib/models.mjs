@@ -7,7 +7,8 @@ import { evidenceRows } from './issues.mjs';
 import { canonical, jarlDir } from './where.mjs';
 import { cmpId } from './ids.mjs';
 import { loadProfile, reviewerRule } from './profile.mjs';
-import { GOAL_FILE, LOG_FILE, goalLines, logPath, readGoal } from './journal.mjs';
+import { GOAL_FILE, LOG_FILE, appendLog, goalLines, logPath, readGoal } from './journal.mjs';
+import { readText } from './files.mjs';
 import { repoLabel, reposNamed } from './repositories.mjs';
 import { gateOf, readLoop } from './loop.mjs';
 import { filedAndClosed, followUpsOf, share } from './metrics.mjs';
@@ -68,6 +69,28 @@ function modelLinesIn(lines, profile) {
     defaultOf: (tier) => (byTier[tier] || [])[0] || null,
     placedTier: (model) => (rank(model) >= 0 ? profile.tiers[rank(model)] : null),
   };
+}
+
+// The offer of the Model lines. A lease in a loop whose goal declares none writes one log line, and the jarl's list holds
+// the offer while that line is the last of its kind and the goal still declares none; a lease that finds the lines
+// present writes the line that closes it, and a lease that finds them gone again offers once more. Only a lease writes: a
+// loop whose goal has Model lines from the start never writes either line.
+const OFFER_MARK = /^- \d{4}-\d\d-\d\d \d\d:\d\d(?: key \S+)?(?: by [^·]+)? · models (offered|offer closed) · /;
+function lastOfferMark(root) {
+  const path = logPath(jarlDir(root));
+  if (!existsSync(path)) return null;
+  let last = null;
+  for (const line of readText(path).split('\n')) last = OFFER_MARK.exec(line)?.[1] ?? last;
+  return last;
+}
+// Whether the offer stands now: made at a lease, not closed, and the goal still declares no Model line.
+export function modelOfferStands(root) { return lastOfferMark(root) === 'offered' && !modelLines(root).declared; }
+// Called under the write lock right after a lease is written.
+export function rememberModelOffer(root) {
+  const last = lastOfferMark(root);
+  if (!modelLines(root).declared) {
+    if (last !== 'offered') appendLog(root, 'models offered · the goal declares no Model line at a lease');
+  } else if (last === 'offered') appendLog(root, 'models offer closed · the goal declares a Model line at a lease');
 }
 
 // Every model an issue was leased on, from its own journal (a takeover adds one).

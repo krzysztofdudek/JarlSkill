@@ -6,13 +6,13 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { jarl, refuses, run, loop as makeLoop } from './helpers.mjs';
+import { jarl, refuses, run, MODELS_GOAL, loop as makeLoop } from './helpers.mjs';
 import { fileAsFormatTwo, formatTwoJarl } from './old-jarl.mjs';
 import * as mcp from '../jarl-mcp.mjs';
 import * as L from '../jarl-lib.mjs';
 import { WRITER_COMMANDS, COMMAND_FLAGS } from '../jarl.mjs';
 
-const loop = () => makeLoop({ prefix: 'jarl-writer-', via: 'cli', dotGit: false });
+const loop = () => makeLoop({ prefix: 'jarl-writer-', goal: MODELS_GOAL, via: 'cli', dotGit: false });
 const json = (root, ...args) => JSON.parse(jarl(root, ...args, '--json'));
 const logOf = (root) => readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
 const formatOf = (root) => json(root, 'profile').format;

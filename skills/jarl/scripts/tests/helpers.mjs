@@ -157,6 +157,9 @@ export function withoutRoot(text, root) {
 
 // A directory with a loop in it. `dotGit` makes it a checkout (an empty .git); `via` opens the loop through the library
 // (the default) or through the command line.
+// A goal that declares its models, for the loops whose tests lease agents and read the rows of the jarl's list: a goal with
+// no Model line adds one row of its own once an agent is leased.
+export const MODELS_GOAL = 'goal\n\nModel (strong): big-model\nModel (standard): mid-model';
 export function loop({ prefix = 'jarl-loop-', goal = 'goal', dotGit = true, via = 'library', initFlags = [] } = {}) {
   const root = mkdtempSync(join(tmpdir(), prefix));
   if (dotGit) mkdirSync(join(root, '.git'));

@@ -17,7 +17,7 @@ import { FIELD_RE, PROPOSED, RENDERED_FIELDS, acceptanceHeading, acceptanceLineC
 import { branchTip, commitRepoNames, declaredBaseOf, defaultBase, fileKeysOf, isGitRepo, issueRepoPaths, issueRepoSlots, issueRepos, mainCheckoutOf, needFormat, needFormatHeld, needRightCheckouts, repoFromInput, repoLabel, repoList, reposNamed, tipLines, whyNotDeletable, worktreeState, worktreesOf } from './repositories.mjs';
 import { FIELD_NAMES, activeSlices, carriesCode, unmergedCode, gateOf, isSliceTag, leaseConflictOf, needOneSlice, readLoop, sinceText, sliceOf, unclearedText, unorderedNamings, unorderedText } from './loop.mjs';
 import { declaredChecks, lastMerge } from './metrics.mjs';
-import { modelLines, modelRefusalOf, modelReviewForm, modelValue, spellingNote } from './models.mjs';
+import { modelLines, modelRefusalOf, modelReviewForm, modelValue, rememberModelOffer, spellingNote } from './models.mjs';
 import { slotRefusal } from './attachments.mjs';
 import { NOTE_LIMIT, addedContentNotes, addedNoteText } from './rounds.mjs';
 import { resetCaches } from './tips.mjs';
@@ -1097,6 +1097,7 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   // gate of the closed issue is read against it whatever the branch does after.
   const closes = profile.is(status, 'closes-record');
   appendLogLines(root, issues.flatMap((issue) => [`${issue.id} → ${status}${reason ? ` · ${reason}` : ''}${leaseNote ? ` · ${leaseNote}` : ''}`, ...(closes ? tipLines(root, issue) : [])]), since);
+  if (holds && leaseNote) rememberModelOffer(root);
   for (const w of writes) writeAtomic(w.issue.file, w.text);
   // Said on the command line only, and only in a loop that declares model lines: a lease with no model (once per call).
   const leaseNoModel = caller === 'cli' && holds && model === undefined && modelLines(root).declared ? 'no --model on this lease — the loop declares its models, and a model that is not recorded can never be recovered' : null;
