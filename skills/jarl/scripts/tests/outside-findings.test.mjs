@@ -228,6 +228,22 @@ test('on a loop that stays at its record format, the second finding outside the 
   assert.match(jarl(hub, 'review', '001', 'approve', 'read the diff and the test, it works', '--by', 'rev-a', '--outside', 'Minor: the first thing seen'), /filed outside the issue: 999/);
 });
 
+test('on a loop that stays at its record format, a second finding outside the issue that a declared range moves onto a number the format cannot hold refuses the review before the first is filed', () => {
+  const hub = composed();
+  writeFileSync(join(hub, '.jarl', 'issues', '997-old-997.md'), L.renderIssue({ id: '997', title: 'old 997', kind: 'bug', priority: '2', tier: 'standard', tags: [], files: [], repo: '', foundBy: 'jarl' }));
+  jarl(hub, 'goal', '--set', 'Range (film): 999-1001');
+  jarl(hub, 'set', '001', 'in-progress', 'start', '--worker', 'w1');
+  jarl(hub, 'evidence', '001', '--ran', 'npm test', '--saw', 'tests 4, pass 4');
+  const before = snapshot(hub);
+  const said = refuses(hub, 'review', '001', 'approve', 'read the diff and the test, it works', '--by', 'rev-a', '--outside', 'Minor: the first thing seen', '--outside', 'Minor: the second thing seen');
+  // The first finding takes 998; the second takes 1002, the number after the range 999 to 1001, which needs record format 2.
+  assert.match(said, /^the finding outside the issue "Minor: the second thing seen" cannot be filed: issue number 1002 needs record format 2, and this loop stays at format 1: /);
+  assert.match(said, /nothing was written\n/);
+  assert.deepEqual(snapshot(hub), before, 'the refused review left the loop as it found it');
+  assert.deepEqual(issueFiles(hub), ['001', '997']);
+  assert.match(jarl(hub, 'review', '001', 'approve', 'read the diff and the test, it works', '--by', 'rev-a', '--outside', 'Minor: the first thing seen'), /filed outside the issue: 998/);
+});
+
 test('on a loop that stays at its record format, a finding outside the issue that takes a number the format cannot hold ends with the profile view its reason names and the call\'s own form', () => {
   const hub = composed();
   writeFileSync(join(hub, '.jarl', 'issues', '999-old-999.md'), L.renderIssue({ id: '999', title: 'old 999', kind: 'bug', priority: '2', tier: 'standard', tags: [], files: [], repo: '', foundBy: 'jarl' }));
