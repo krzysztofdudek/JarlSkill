@@ -1090,7 +1090,10 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   const spelling = caller === 'cli' && model !== undefined ? spellingNote(readLoop(jarlDir(root)), model) : null;
   // The line goes first: a write that stops between the two leaves the journal, the record, ahead of the files, which the
   // views report, and never a file ahead of the record.
-  appendLogLines(root, issues.map((issue) => `${issue.id} → ${status}${reason ? ` · ${reason}` : ''}${leaseNote ? ` · ${leaseNote}` : ''}`), since);
+  // A move that closes the record is followed by the tip of the issue's branch, the tip the close was judged on, so the
+  // gate of the closed issue is read against it whatever the branch does after.
+  const closes = profile.is(status, 'closes-record');
+  appendLogLines(root, issues.flatMap((issue) => [`${issue.id} → ${status}${reason ? ` · ${reason}` : ''}${leaseNote ? ` · ${leaseNote}` : ''}`, ...(closes ? tipLines(root, issue) : [])]), since);
   for (const w of writes) writeAtomic(w.issue.file, w.text);
   // Said on the command line only, and only in a loop that declares model lines: a lease with no model (once per call).
   const leaseNoModel = caller === 'cli' && holds && model === undefined && modelLines(root).declared ? 'no --model on this lease — the loop declares its models, and a model that is not recorded can never be recovered' : null;
