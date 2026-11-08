@@ -142,10 +142,11 @@ test('next --as <coordinator> holds its slice\'s ready issues, leases, proofs wi
   jarl(root, 'review', '7', 'changes', '--by', 'rev', 'Important: the empty case fails');
   jarl(root, 'review', '8', 'approve', '--by', 'rev', 'Checked every acceptance line against the diff; nothing left open');
   const rows = (who) => json(root, 'next', '--as', who, '--all').rows.map((r) => [r.ids ? r.ids.join(',') : r.id, r.what, r.holder]);
-  assert.deepEqual(rows('odin'), [['1', 'ready', 'odin'], ['6', 'review', 'odin'], ['7', 'changes', 'odin']]);
-  assert.deepEqual(rows('THOR'), [['3', 'ready', 'thor'], ['5', 'worker', 'thor']], 'a name in any case; odin\'s open 1 does not reserve a.mjs against 3');
-  assert.deepEqual(rows('jarl'), [['4', 'ready', 'jarl'], ['8', 'merge', 'jarl']], 'the issue in no slice, and the approve not merged');
-  assert.match(jarl(root, 'next', '--as', 'odin'), /^On odin \(3\)\n- 1 odin first: ready to start, raise a worker — jarl\.mjs set 1 in-progress /);
+  assert.deepEqual(rows('odin'), [['6', 'review', 'odin'], ['7', 'changes', 'odin'], ['1', 'ready', 'odin']]);
+  assert.deepEqual(rows('THOR'), [['5', 'worker', 'thor'], ['3', 'ready', 'thor']], 'a name in any case; odin\'s open 1 does not reserve a.mjs against 3');
+  assert.deepEqual(rows('jarl'), [['8', 'merge', 'jarl'], ['4', 'ready', 'jarl']], 'the issue in no slice, and the approve not merged');
+  assert.match(jarl(root, 'next', '--as', 'odin'), /^On odin \(3\)\n- 6 odin proof: proof recorded, no verdict/);
+  assert.match(jarl(root, 'next', '--as', 'odin'), /^- 1 odin first: ready to start, raise a worker — jarl\.mjs set 1 in-progress /m);
   assert.match(jarl(root, 'next', '--as', 'odin'), /^- 6 odin proof: proof recorded, no verdict; raise a fresh reviewer for 6;/m);
   // A coordinator the line names whose slice has no issue says so, and so does one while the loop has no slice at all.
   jarl(root, 'goal', '--set', 'Coordinators: odin, thor, frey');

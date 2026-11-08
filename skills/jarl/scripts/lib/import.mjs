@@ -397,6 +397,7 @@ export function renderStatus(o, profile = DEFAULT_PROFILE) {
     ...(o.disagreements || []).map(disagreementText),
     ...(o.headerRead || []).map((n) => `note: ${n.line}`),
     ...(o.lines && o.lines.total ? [linesCountText(o.lines)] : []),
+    ...(o.stages ? [`stages: ${Object.entries(o.stages).map(([k, v]) => `${v} ${k}`).join(' · ')}`] : []),
     ...(o.check ? checkLines(o.check) : []),
     ...(o.scheduler ? [schedulerNote(o.scheduler)] : []),
     ...(o.recordFormat && formatOffText(o.recordFormat) ? [formatOffText(o.recordFormat)] : []),

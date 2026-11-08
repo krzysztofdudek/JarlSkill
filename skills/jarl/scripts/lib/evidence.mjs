@@ -14,7 +14,7 @@ import { outOfGit } from './loop-git.mjs';
 import { attachmentOf, journalById, rowLinesText } from './log.mjs';
 import { acceptanceLineCount, acceptanceLines, alignRows, bodyText, evidenceNotes, evidenceParts, evidenceTable, loadIssues, mergedOf, noteLogText, noteText, parseIssue, placeEvidence, removeFields, reviewEntries, setSection, sharedMark, struckNote } from './issues.mjs';
 import { fileKeysOf, needFormat, repoNames, reposWhere, tipLinesOf, whereLines, whereOf } from './repositories.mjs';
-import { approveKind, carriesCode, sentBack, unmergedCode, unmergedText, gateOf, gateState, reviewSplit, waiverVoid, worksInPlace } from './gate.mjs';
+import { approveKind, carriesCode, inFlightMark, sentBack, unmergedCode, unmergedText, gateOf, gateState, reviewSplit, waiverVoid, worksInPlace } from './gate.mjs';
 import { coordinatorOf, sameSlice, sliceNamed, sliceOf, slicesOf } from './slices.mjs';
 import { disagreementText, headerReadNotes, recordDisagreements } from './disagreements.mjs';
 import { readLoop, scopedLoop } from './loop.mjs';
@@ -211,7 +211,7 @@ export function workerEvidence(text) {
 // ordinal [n], counted over the whole section, the number retract takes; --full prints the file with them. With places
 // false the lines that name where a repository and the lease's worktree are on this machine, a Worktree field of the
 // header among them, are left out, for a text handed to an agent that may run on another one.
-export function issueView(root, issue, { full = false, places = true } = {}) {
+export function issueView(root, issue, { full = false, places = true, omit = [] } = {}) {
   const pieces = [];
   let cur = { name: null, lines: [] };
   const text = readText(issue.file);
@@ -254,6 +254,7 @@ export function issueView(root, issue, { full = false, places = true } = {}) {
       out.push(...head, ...notes, '');
       continue;
     }
+    if (omit.includes(p.name)) continue;
     if (p.name !== 'evidence' && p.name !== 'reviews') { out.push(...p.lines); continue; }
     const body = p.lines.slice(1);
     if (p.name === 'evidence') {
@@ -289,7 +290,9 @@ export function issueView(root, issue, { full = false, places = true } = {}) {
   const attachments = attachmentLines(root, loadProfile(root), issue);
   const shown = out.filter((l) => l !== null);
   if (full) return attachments.length ? `${shown.join('\n').replace(/\s+$/, '')}\n\n${attachments.join('\n')}\n` : shown.join('\n');
-  return `${shown.join('\n').replace(/\s+$/, '')}\n\n${attachments.length ? `${attachments.join('\n')}\n\n` : ''}The whole issue, with every earlier round and row: ${jarlLine('show', issue.id, '--full')}\n`;
+  // A view that leaves sections out is printed for one reader, and the pointer to the whole would hand them back.
+  const whole = omit.length ? '' : `\n\nThe whole issue, with every earlier round and row: ${jarlLine('show', issue.id, '--full')}`;
+  return `${shown.join('\n').replace(/\s+$/, '')}${attachments.length ? `\n\n${attachments.join('\n')}` : ''}${whole}\n`;
 }
 
 // The lines show prints under an issue's header about its place in the tree: the parent it is a sub-issue of, its own
@@ -421,12 +424,13 @@ export function nextRows(root, flags = {}) {
     // tree, is never offered, whatever its files; nor is a parent while a sub-issue of it is not settled.
     const { after, subs } = waitsOf(i, byId, profile);
     const base = { id: i.id, title: i.title, priority: i.priority, ...(i.files.length ? {} : { noFiles: true }), ...(i.shared ? { shared: i.shared } : {}) };
-    if (after.length) { out.push({ ...base, group: 'waiting-after', after, waitsOn: [] }); continue; }
-    // A parent waits on its open sub-issues, and a question holds it as well: a question on an issue holds every issue under
+    // A question holds the issue whatever else it waits on, its After included, so the question's own row knows what it
+    // holds up. A parent waits on its open sub-issues, and a question holds it as well: a question on an issue holds every issue under
     // it, so a parent in the middle of a tree is held by a question above it too. Each is a row of its own, the held row
     // first and the waiting row last, so the parent shows under both groups.
     const questions = questionsOn(i);
     if (questions.length) out.push({ ...base, group: 'held-by-question', questions, waitsOn: [], after: [] });
+    if (after.length) { out.push({ ...base, group: 'waiting-after', after, waitsOn: [] }); continue; }
     if (subs.length) out.push({ ...base, group: 'waiting-sub', subs, after: [], waitsOn: [] });
     if (subs.length || questions.length) continue;
     // A promise or a wait is kept by who holds it, not worked on by a worker: never offered, and it takes no file.
@@ -506,6 +510,7 @@ function statusOf(root, loop, flags) {
   if (profile.scheduler) c.scheduler = profile.scheduler;
   c.noAcceptance = issues.filter((i) => profile.is(i.status, 'holds-claim') && !acceptanceLineCount(i)).map((i) => i.id);
   c.lines = lineCounts(loop, issues.filter((i) => i.status !== 'dropped'));
+  c.stages = stageCounts(loop, issues);
   const inScope = new Set(issues.map((i) => i.id));
   const asks = loop.asks.filter((a) => a.state === 'open' && (!scoped || (a.issue && inScope.has(a.issue)) || (slice !== null && sameSlice(a.slice ?? null, slice))));
   // A ratify item blocks nothing, so it is not counted among the questions the loop waits on.
@@ -574,6 +579,22 @@ function statusOf(root, loop, flags) {
   return c;
 }
 export const STATUS_BY = ['repo', 'tag', 'kind', 'prio'];
+
+// The stages of the work, in the order the work moves through them: where each issue stands, one count each. A status
+// outside the built-in five, of a loop's own profile, keeps a stage of its own name.
+const STAGES = ['open', 'in work', 'to examine', 'changes', 'to merge', 'merged', 'done', 'dropped', 'deferred'];
+const STAGE_OF_MARK = { 'no-rows': 'in work', 'rows-no-verdict': 'to examine', 'changes-requested': 'changes', approved: 'to merge', 'approved-not-fresh': 'to examine', 'approved-not-cleared': 'to examine', 'approved-model-refused': 'to examine', merged: 'merged', 'merged-ci': 'merged' };
+function stageCounts(loop, issues) {
+  const { profile } = loop;
+  const counts = Object.fromEntries(STAGES.map((s) => [s, 0]));
+  for (const i of issues) {
+    const stage = profile.is(i.status, 'holds-claim')
+      ? (sentBack(loop, i, inFlightMark(loop, i)) ? 'in work' : STAGE_OF_MARK[gatedMark(loop, i).mark])
+      : profile.is(i.status, 'dispatchable') ? 'open' : profile.is(i.status, 'closes-record') ? 'done' : i.status;
+    counts[stage] = (counts[stage] ?? 0) + 1;
+  }
+  return counts;
+}
 
 // What the record says about one in-flight issue, as one fact and the step it points to (never a status, never stored):
 // no evidence rows since the start; rows and no verdict since the last restart or round; changes requested; approved

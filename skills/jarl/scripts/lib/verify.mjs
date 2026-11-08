@@ -83,8 +83,14 @@ export function cmdVerify(root) {
   // The Merger line names the jarl or a coordinator the Coordinators line lists: anyone else raises no merger in the record.
   const lines = goalLines(goalText);
   if (lines.merger !== null && lines.merger.toLowerCase() !== 'jarl' && !lines.coordinators.some((c) => c.toLowerCase() === lines.merger.toLowerCase())) {
-    const n = (goalText ?? '').split('\n').findIndex((t) => goalLineOf(t)?.key === 'merger');
+    const n = (goalText ?? '').split('\n').findIndex((t) => goalLineOf(t)?.key === 'merger' && goalLineOf(t)?.qualifier === null);
     goalSkips.push({ n: n + 1, text: (goalText ?? '').split('\n')[n], reason: `${lines.merger} is neither the jarl nor a coordinator of the Coordinators line, so no holder of the loop raises its merger` });
+  }
+  // A slice's own merger names a slice of the Coordinators line: another line names no slice, and no work reaches it.
+  for (const [, m] of Object.entries(lines.mergers)) {
+    if (lines.coordinators.some((c) => c.toLowerCase() === m.slice.toLowerCase())) continue;
+    const n = (goalText ?? '').split('\n').findIndex((t) => goalLineOf(t)?.key === 'merger' && goalLineOf(t)?.qualifier?.toLowerCase() === m.slice.toLowerCase());
+    goalSkips.push({ n: n + 1, text: (goalText ?? '').split('\n')[n], reason: `${m.slice} is no slice of the Coordinators line, so no work reaches its merger` });
   }
   for (const s of goalSkips) add('goal', `${GOAL_FILE} line ${s.n}`, `"${shownText(s.text)}" — ${s.reason}`, s.n);
   for (const f of issueFilesOf(dir)) {

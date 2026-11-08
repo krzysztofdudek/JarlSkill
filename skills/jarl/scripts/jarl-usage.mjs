@@ -140,21 +140,24 @@ commands:
                                                  field that disagrees with the log (see status), where each repository
                                                  written as a name is on this machine and the worktree git has on the
                                                  lease's branch (--json carries them as where)
-  brief <id> [--role worker|reviewer] | brief --slice <coordinator>
-                                                 read-only: the brief a role is raised with, assembled from the record:
-                                                 for an issue's worker (the default) or reviewer, the issue as show
-                                                 prints it (without the lines that name where a repository or a
-                                                 worktree is on this machine, a Worktree field of the header among
-                                                 them), the rules with a scope that reach that reader (the role, its
-                                                 moment, the issue) and Jarl's own, the rounds so far, the findings of
-                                                 the reviews that sent it back, the proof rows, the role's reference and
-                                                 the commands that record the result; with --slice, for that slice's
-                                                 coordinator: its issues in play, its rules, its reference and its
-                                                 commands; every part whole, except a finding the issue file has no
+  brief <ids> [--role worker|reviewer] | brief --role merger [--slice <coordinator>] | brief --slice <coordinator>
+                                                 read-only: the text an agent is raised with, assembled from the record,
+                                                 which it reads instead of the skill. <ids> are the issues of one lease
+                                                 (part of a lease is completed; two leases are refused). A worker's
+                                                 brief holds its role, the goal's first paragraph, each parent's
+                                                 purpose, the issue with its lines and their methods, the rules that
+                                                 reach it, the branch and worktree of the lease, the loop root and the
+                                                 tool's absolute path, each command with every known value filled, what
+                                                 it reports, and, after a handover, that the tree may be dirty. An
+                                                 examiner's (--role reviewer) holds its depth and tier, computed from
+                                                 the lines, the six steps, the changes to the lines since the lease, the
+                                                 proof as commands to re-run, the Assumed: notes and the previous
+                                                 findings, and no other note. A merger's (--role merger; --slice for a
+                                                 slice's own merger) is its whole procedure. With --slice alone, a
+                                                 slice's coordinator: its issues in play, its rules, its reference and
+                                                 its commands. Every part whole, except a finding the issue file has no
                                                  entry for: it shows as the log's line holds it, its first line and a
-                                                 count of the lines left out. A merger's brief is one for
-                                                 the whole loop (references/merger.md), and a worker after a takeover
-                                                 is given the rules of the takeover too
+                                                 count of the lines left out
   set <ids> <status> "<text>" [--branch <worker-branch>] [--worker <name>] [--model <model-id>] [--worktree <path>] [--handover] [--header] [--by who]
                                                  (<ids> <status-in-the-log> --header rewrites the header fields the log
                                                  renders from the log, writes no log line and is never a move)
@@ -326,7 +329,10 @@ commands:
                                                  repository, every repository an open or in-progress issue
                                                  names and every one where an issue not dropped records a Branch
   ask "<text>" [--kind stop|stuck|lower|charter|ratify|escalation|rule] [--target x] [--issue 7] [--slice <coordinator>] [--option "<label:effect>"]... [--applies-to "<selectors>" [--until <date-or-id>] [--to owner]] [--by who]
-                                                 a question the owner has to answer; lower needs --target;
+                                                 a question the owner has to answer; lower needs --target; stuck with
+                                                 --issue and --by the holder of its lease goes up instead, to the
+                                                 director of the issue's slice (the jarl with no slice), and to the
+                                                 owner when the asker is the director;
                                                  escalation is a coordinator's question to the jarl, who holds it:
                                                  it names its --slice or its --issue (or both), shows on next --as
                                                  jarl and in that slice's views, holds its issue back as stuck does,
@@ -403,8 +409,10 @@ commands:
                                                  "Check: <command>", "Model (<tier>): <model-id>" (a tier the profile
                                                  declares), "Coordinators: <names>" (each name a coordinator, which runs the slice of
                                                  the issues tagged slice:<name>), "Merger: <name>" (the jarl or one
-                                                 coordinator: the one holder that raises the merger, one merge at a time
-                                                 for every slice), "Takeover (<kind>): <rounds>" or a bare "Takeover: <rounds>",
+                                                 coordinator: the one holder that raises the merger of the feature branch),
+                                                 "Merger (<coordinator>): <name>" (a slice's own merger, in a worktree of its own, landing
+                                                 the slice's work on its integration branch jarl/slice-<coordinator>, which then lands on the
+                                                 feature branch as a merge with its check), "Takeover (<kind>): <rounds>" or a bare "Takeover: <rounds>",
                                                  "Liveness: <minutes>" (a lease or a proof with no commit, row or log line
                                                  for longer is idle, on its coordinator's list; default 30, and
                                                  --stale-hours overrides it for one call), "Range (<name>): <from-to>" (the

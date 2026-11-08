@@ -7,7 +7,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileAsBefore, formatTwoJarl } from './old-jarl.mjs';
 import { SPAWN_TIMEOUT, gitRepo, jarl, refuses, run } from './helpers.mjs';
@@ -217,6 +218,34 @@ test('the gate reads the repository its files are in when a hook has pointed git
   jarl(root, 'review', '1', 'approve', '--by', 'rev-1', FINDINGS);
   const env = { GIT_DIR: join(hook.dir, '.git'), GIT_INDEX_FILE: join(hook.dir, '.git', 'index'), GIT_PREFIX: '' };
   const r = run(root, ['set', '1', 'done', 'written and committed', '--by', 'jarl'], { env });
+  assert.equal(r.status, 0, r.stderr);
+});
+
+test('the gate finds a repository named by its Repo field from the checkout the hook runs in, whatever the hook points git at', () => {
+  const parent = mkdtempSync(join(tmpdir(), 'jarl-in-place-named-'));
+  const repoIn = (name) => {
+    const dir = join(parent, name);
+    mkdirSync(dir);
+    const g = (...a) => execFileSync('git', a, { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: SPAWN_TIMEOUT });
+    g('init', '-q', '-b', 'main');
+    g('config', 'user.email', 't@t'); g('config', 'user.name', 't');
+    writeFileSync(join(dir, 'a.txt'), 'a\n');
+    g('add', '-A'); g('commit', '-qm', 'base');
+    return { dir, g };
+  };
+  const hub = repoIn('hub');
+  const tool = repoIn('tool');
+  jarl(hub.dir, 'init', 'write the guides');
+  mkdirSync(join(tool.dir, 'docs'));
+  jarl(hub.dir, 'new', 'write the guide', '--repo', 'tool', '--tags', 'in-place', '--files', 'docs/guide.md', '--acceptance', '[read] it reads well');
+  jarl(hub.dir, 'set', '1', 'in-progress', '--worker', 'w1', '--by', 'jarl');
+  writeFileSync(join(tool.dir, 'docs', 'guide.md'), '# Guide\n');
+  tool.g('add', 'docs/guide.md'); tool.g('commit', '-qm', 'the guide');
+  jarl(hub.dir, 'evidence', '1', '--line', '1', '--ran', 'git commit', '--saw', `${shortHead(tool.g)} the guide`, '--by', 'w1');
+  jarl(hub.dir, 'review', '1', 'approve', '--by', 'rev-1', FINDINGS);
+  const elsewhere = gitRepo({ prefix: 'jarl-in-place-hook-other-', branch: 'main' });
+  const env = { GIT_DIR: join(elsewhere.dir, '.git'), GIT_INDEX_FILE: join(elsewhere.dir, '.git', 'index'), GIT_PREFIX: '' };
+  const r = run(hub.dir, ['set', '1', 'done', 'written and committed', '--by', 'jarl'], { env });
   assert.equal(r.status, 0, r.stderr);
 });
 

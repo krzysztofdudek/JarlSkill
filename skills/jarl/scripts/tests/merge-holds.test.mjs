@@ -133,7 +133,7 @@ test('scope, branches and the merge queue of resume read the declared base, as t
   };
   jarl(hub, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'all green');
   jarl(hub, 'review', '1', 'approve', '--by', 'rev-fresh', 'read the diff, nothing found');
-  assert.deepEqual(views(), { scope: ['main', false], ahead: 0, queue: ['main', []] }, 'no base is declared: the open branch, which holds the merge, is the base');
+  assert.deepEqual(views(), { scope: ['main', false], ahead: 0, queue: ['main', ['jarl/1-x']] }, 'no base is declared: the open branch, which holds the merge, is the base, and the merge is still to record');
   jarl(hub, 'base', 'tool', 'release');
   assert.deepEqual(views(), { scope: ['release', true], ahead: 1, queue: ['release', ['jarl/1-x']] }, 'the declared base does not hold the branch');
   assert.equal(JSON.parse(run(hub, ['scope', '1', '--branch', 'jarl/1-x', '--base', 'main', '--json']).stdout).base, 'main', '--base still names the base of one call');

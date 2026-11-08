@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- A worker, a reviewer or a merger is raised with one complete brief the tool prints, every command filled in, and reads nothing else for its role. What each agent is told to do next now shows a takeover that is due, sends a stuck worker's question to whoever directs its work, and lists the work nearest to landing first.
+
 - The owner can close chosen tasks without a review, by a decision of his that names them and keeps his own words. Nobody else can. The decision counts until the task is sent back, reopened or its code changes, and the status counts such tasks apart from reviewed ones. The first such decision moves the loop to format 3.
 - A note written on a task can be taken back, as an evidence row can, with who took it back and why. The issue view that a worker reads leaves a retracted note out, and the full view shows it struck through. A note that records the owner's own words can be taken back too.
 - The owner can take back a sign-off he gave by mistake on one step he checks himself, and say why. The task then waits for his sign-off on that step again, and nothing else is undone.
