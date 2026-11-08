@@ -290,6 +290,5 @@ test('the library\'s newIssue writes no Repo it did not check, and its review re
 test('the reviewer brief names the form that files a finding outside the issue with the verdict', () => {
   const root = leased();
   const brief = jarl(root, 'brief', '1', '--role', 'reviewer');
-  assert.match(brief, /^- the verdict when a finding lies outside the issue, one --outside each \(filed as a new issue, never a reason for changes\): jarl\.mjs review 1 "<verdict>" "<findings-with-a-severity>" --by "<reviewer>" --model "<model-id>" --outside "<finding-outside-the-issue>"$/m);
-  assert.match(brief, /\n- the verdict, as the last step: jarl\.mjs review 1 "<verdict>" "<findings-with-a-severity>" --by "<reviewer>" --model "<model-id>"$/);
+  assert.match(brief, /^- the verdict, as the last step \(with `--outside "<finding-outside-the-issue>"` for each finding outside the issue, filed as a new issue, never a reason for changes\): node [^\n]*jarl\.mjs review 1 "<verdict>" "<findings-with-a-severity>" --by "<reviewer>" --model "<model-id>"$/m);
 });

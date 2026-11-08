@@ -6,6 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { gitRepo, jarl, posixForms, refuses, spawnJarl, loop as makeLoop } from './helpers.mjs';
 import { shellWord } from '../jarl-lib.mjs';
 import * as R from '../record.mjs';
@@ -13,6 +14,7 @@ import { FINDINGS } from './findings.mjs';
 import { fileAsBefore, fileAsFormatTwo, formatTwoJarl, oldJarl } from './old-jarl.mjs';
 
 const { pairsInAnyOrder } = await import('../lib/brief.mjs');
+const SCRIPT_PATH = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 
 const loop = () => makeLoop({ prefix: 'jarl-brief-', via: 'cli', dotGit: false });
 const json = (root, ...args) => JSON.parse(jarl(root, ...args, '--json'));
@@ -52,17 +54,17 @@ test('brief <id> is the worker\'s: the issue as show prints it, the rules that r
   assert.deepEqual(o.moments, ['start']);
   assert.deepEqual(slugs(o), ['loop-rule', 'odin-only', 'ui-workers', 'jarl:worker-only-the-issue']);
   for (const absent of ['coordinators', 'frigg-only', 'reviewers', 'takeovers', 'gone', 'jarl:coordinator-escalates', 'jarl:reviewer-tier-above']) assert.ok(!slugs(o).includes(absent), absent);
-  assert.deepEqual(o.reference, { file: 'references/worker.md', section: "The worker's brief" });
+  assert.equal(o.reference, undefined, 'a raised agent reads its brief and nothing else');
   const text = jarl(root, 'brief', '1');
-  assert.match(text, /^The worker's brief for issue 1, assembled from the record; it writes nothing\.\n\n# 1 · odin ui\n/);
+  assert.match(text, /^The worker's brief for issue 1, assembled from the record\. Read nothing else for this job\.\n\n## The goal\n/);
   assert.ok(text.includes(jarl(root, 'show', '1')), 'the issue as show prints it');
   assert.ok(text.includes(LONG), 'a rule is printed whole');
-  assert.match(text, /\n## Rules for the worker of 1 \(4\)\n- loop-rule · loop · by coordinator — /);
+  assert.match(text, /\n## Rules that reach you\n- loop-rule · loop · by coordinator — /);
   assert.equal(o.rulings.inForce, json(root, 'decisions', '--live').length, 'every ruling in force is counted, as decisions --live lists them');
-  assert.match(text, /\n- jarl:worker-only-the-issue [^\n]*\n7 ruling\(s\) in force in the loop: jarl\.mjs decisions --live\n/);
-  assert.doesNotMatch(text, /Frigg asks|Reviewers run|Coordinators report|An ended rule|after a takeover/);
-  assert.match(text, /\n## The role\nreferences\/worker\.md, section "The worker's brief", in the jarl skill's directory/);
-  assert.match(text, /\n## Recording the result\n- proof, one row per check, naming the acceptance lines it proves: jarl\.mjs evidence 1 --ran "<command>" --saw "<what-it-printed>" --line "<line-number>" --by "<who>"\n- the changelog entry, for a change someone sees: jarl\.mjs field 1 Changelog "<changelog-entry>" --add --by "<who>"$/);
+  assert.match(text, /\n\d+ ruling\(s\) in force in the loop: jarl\.mjs decisions --live\n/);
+  assert.doesNotMatch(text, /Frigg asks|Reviewers run|Coordinators report|An ended rule|after a takeover|jarl:worker-only-the-issue/, 'the role\'s own shipped rule is said once, in the steps');
+  assert.doesNotMatch(text, /references\/worker\.md/);
+  assert.match(text, /\n## Commands\n- proof of a line of 1, one row per run: node [^\n]*jarl\.mjs evidence 1 --ran "<command>" --saw "<what-it-printed>" --line "<line-number>" --by "<who>"\n- a note, the choice a line leaves open: [^\n]*\n- stuck: [^\n]*\n- the changelog entry, for a change someone sees: node [^\n]*jarl\.mjs field 1 Changelog "<changelog-entry>" --add --by "<who>"\n/);
   // The worker of an issue in no slice gets no slice's rule, and the rule of a tag reaches it.
   assert.deepEqual(slugs(json(root, 'brief', '3')), ['loop-rule', 'ui-workers', 'jarl:worker-only-the-issue']);
   assert.deepEqual(slugs(json(root, 'brief', '2')), ['loop-rule', 'frigg-only', 'jarl:worker-only-the-issue']);
@@ -88,12 +90,12 @@ test('brief <id> --role reviewer carries the rules of the reviewer, of the round
   assert.deepEqual(o.findings.map((f) => [f.by, f.kind, f.text]), [['rev1', 'fresh', finding]], 'the finding is whole');
   assert.deepEqual(o.proof, [{ n: 1, ran: 'npm test', saw: 'tests 4, pass 3, fail 1', lines: ['1'] }, { n: 2, ran: 'npm test', saw: 'tests 4, pass 4, fail 0', lines: ['1'] }]);
   const text = jarl(root, 'brief', '3', '--role', 'reviewer');
-  assert.match(text, /^The reviewer's brief for issue 3/);
+  assert.match(text, /^The examiner's brief for issue 3, assembled from the record\. Read nothing else for this job\./);
   assert.match(text, /\n## Rounds so far \(1\)\n- \d{4}-\d{2}-\d{2} \d{2}:\d{2} · round 1 \(count 1 of 3\) · findings 2 · the count is off by one\n/);
   assert.match(text, /\n## Findings of the reviews that sent it back \(1\)\n- \d{4}-\d{2}-\d{2} · by rev1 \(fresh\) — Important: the count is off by one on the last page\.\n {2}Minor: the name/);
   assert.ok(text.includes('end of the finding.'));
-  assert.match(text, /\n## Proof rows \(2\)\n- \[1\] ran \(line 1\): npm test · saw: tests 4, pass 3, fail 1\n- \[2\] ran \(line 1\): npm test · saw: tests 4, pass 4, fail 0\n/);
-  assert.match(text, /\n## Recording the result\n- the verdict when a finding lies outside the issue, one --outside each \(filed as a new issue, never a reason for changes\): jarl\.mjs review 3 "<verdict>" "<findings-with-a-severity>" --by "<reviewer>" --model "<model-id>" --outside "<finding-outside-the-issue>"\n- the verdict, as the last step: jarl\.mjs review 3 "<verdict>" "<findings-with-a-severity>" --by "<reviewer>" --model "<model-id>"$/);
+  assert.match(text, /\n## Proof to re-run\n- 3 line 1 \[read\]|\n## Proof to re-run\n- \(no test, check or compare line\)/);
+  assert.match(text, /\n## Commands\n- [^\n]*\n- the verdict, as the last step \(with `--outside "<finding-outside-the-issue>"` for each finding outside the issue, filed as a new issue, never a reason for changes\): node [^\n]*jarl\.mjs review 3 "<verdict>" "<findings-with-a-severity>" --by "<reviewer>" --model "<model-id>"\n/);
   // A done issue keeps its reviewer's brief; its worker's says it starts once reopened.
   jarl(root, 'review', '3', 'approve', '--by', 'rev2', FINDINGS);
   jarl(root, 'merged', '3', '--sha', 'abc1234');
@@ -912,7 +914,8 @@ test('brief refuses an unknown id, a role it has no brief for, no id and no slic
   const root = rulesLoop();
   const before = snapshot(root);
   assert.match(refuses(root, 'brief', '9'), /^no such issue: 9 — the issues: jarl\.mjs list --all\njarl\.mjs brief "<id>"\n$/);
-  assert.match(refuses(root, 'brief', '1', '--role', 'merger'), /^--role is worker or reviewer \(got "merger"\): a merger's brief is one for the whole loop \(references\/merger\.md\), its branches the merge queue of resume, and a coordinator's is jarl\.mjs brief --slice "<coordinator>"\njarl\.mjs brief "<id>" --role "<role>"\n$/);
+  assert.match(refuses(root, 'brief', '1', '--role', 'scribe'), /^--role is worker, reviewer, merger \(got "scribe"\): a coordinator's brief is jarl\.mjs brief --slice "<coordinator>", and a merger's takes no id\n/);
+  assert.match(refuses(root, 'brief', '1', '--role', 'merger'), /^brief --role merger is the merger's and takes no id/);
   assert.match(refuses(root, 'brief'), /^brief takes the id of an issue; a coordinator's brief is jarl\.mjs brief --slice "<coordinator>"\njarl\.mjs brief "<id>"\n$/);
   assert.match(refuses(root, 'brief', '1', '--slice', 'odin'), /^brief --slice is the coordinator's brief and takes no id; an issue's brief is jarl\.mjs brief "<id>"\njarl\.mjs brief --slice "<coordinator>"\n$/);
   assert.match(refuses(root, 'brief', '--slice', 'odin', '--role', 'reviewer'), /^--role names the role of an issue's brief; brief --slice is the coordinator's\njarl\.mjs brief --slice "<coordinator>"\n$/);
@@ -920,7 +923,7 @@ test('brief refuses an unknown id, a role it has no brief for, no id and no slic
   assert.deepEqual(snapshot(root), before);
 });
 
-test('every command a brief prints carries the call\'s --root, and no line names where a repository or a worktree is on this machine', () => {
+test('every command a brief prints runs as printed: it carries the loop root, the tool by its absolute path, and every value the record holds', () => {
   const { dir, g } = gitRepo({ prefix: 'jarl-brief-git-' });
   jarl(dir, 'init', 'goal');
   jarl(dir, 'new', 'work in a worktree', '--acceptance', '[read] it works');
@@ -930,16 +933,15 @@ test('every command a brief prints carries the call\'s --root, and no line names
   assert.match(jarl(dir, 'show', '1'), /\nworktree of \S+ on jarl\/1-work: /, 'show names the worktree of the lease');
   for (const args of [['brief', '1'], ['brief', '1', '--role', 'reviewer']]) {
     const said = posixForms(spawnJarl(dir, args).stdout);
-    assert.doesNotMatch(said, /worktree of /);
+    assert.doesNotMatch(said, /worktree of /, 'the issue as shown names no place: the brief says where work is, on its own lines');
+    assert.ok(said.includes(`Tool: node ${SCRIPT_PATH}`), `the tool's absolute path: ${SCRIPT_PATH}`);
     const flag = ` --root ${shellWord(dir)}`;
-    const commands = said.split('\n').filter((l) => /jarl\.mjs \w/.test(l));
+    const commands = said.split('\n').filter((l) => /jarl\.mjs \w/.test(l) && !/Tool: node/.test(l));
     assert.ok(commands.length >= 2);
     for (const l of commands) for (const m of l.matchAll(/jarl\.mjs \w[^—]*/g)) assert.ok(m[0].includes(flag), `the command carries --root: ${m[0]}`);
-    assert.ok(!said.split(flag).join('').includes(dir), 'no path of this machine but the --root a command carries');
   }
-  // The record library prints with no global flag: its commands carry none.
   const o = R.briefData(dir, '1');
-  assert.ok(o.record.every((r) => !r.command.includes('--root')));
+  assert.ok(o.record.every((r) => r.command.includes('--root')), 'the record library prints the same commands');
   assert.deepEqual(o.rules, json(dir, 'brief', '1').rules, 'the library and the command line give one brief');
 });
 

@@ -35,7 +35,7 @@ test('a row names the acceptance lines it proves, by --line repeated or as a com
   assert.match(jarl(root, 'show', '1'), /^- \[1\] \*\*ran \(line 1, 3\):\*\* npm test/m, 'show prints the numbers the lines carry now');
   assert.deepEqual(JSON.parse(jarl(root, 'show', '1', '--json')).evidenceRows.map((r) => r.lines ?? null), [[one, three], [two]]);
   assert.deepEqual(R.evidenceRows(R.findIssue(root, '1')), [{ ran: 'npm test', saw: 'pass 3', lines: [one, three] }, { ran: 'npm run lint', saw: 'clean', lines: [two] }]);
-  assert.match(jarl(root, 'brief', '1'), /^- \[1\] ran \(line 1, 3\): npm test · saw: pass 3$/m, 'the brief prints the numbers');
+  assert.match(jarl(root, 'brief', '1'), /^- \[1\] \*\*ran \(line 1, 3\):\*\* npm test · \*\*saw:\*\* pass 3$/m, 'the brief prints the numbers');
   assert.match(jarl(root, 'brief', '1'), /evidence 1 --ran "<command>" --saw "<what-it-printed>" --line "<line-number>" --by "<who>"/, 'a worker is told to name the line and who ran it');
   const g = L.gateState(root, '1');
   assert.deepEqual(g.rowLog.map((r) => r.lines ?? null), [[one, three], [two]], 'the done gate reads them from the log');
