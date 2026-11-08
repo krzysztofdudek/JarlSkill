@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, readdirSync, existsSync, cpSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { sh, ghStub } from './portable.mjs';
 import { fileURLToPath } from 'node:url';
 import { FINDINGS } from './findings.mjs';
@@ -222,9 +222,10 @@ function bigLoop(count) {
 }
 
 // What resume costs on a large loop is judged against measurements of the same run, never against a fixed number of
-// seconds: the git processes it starts are counted (the same on a quiet machine and a busy one), and its time is set
-// against a git process started now and against its own time on a loop a quarter the size (load slows all three). A git
-// process per issue, or a pass over every issue for each issue, fails; a busy machine does not.
+// seconds or the speed of a machine's git: the git processes it starts are counted (the same on a quiet machine and a
+// busy one, and the count is the whole of its git cost), and its time is set against its own time on a loop a quarter
+// the size and against status on the same large loop (load slows all of them). A git process per issue, or a pass over
+// every issue for each issue, fails; a busy machine does not.
 test('resume stays fast on a loop of hundreds of issues naming another repository and a long log', async () => {
   const { dispatch } = await import(new URL('../jarl.mjs', import.meta.url).href);
   const large = bigLoop(425);
@@ -243,30 +244,35 @@ test('resume stays fast on a loop of hundreds of issues naming another repositor
     return readFileSync(trace, 'utf8').split('\n').filter((l) => /\btrace: (built-in|exec): /.test(l)).length;
   };
   // Resume starts one git process for each issue in flight and a fixed few besides, so the large loop may start that
-  // many more than the small one, and a few spare.
+  // many more than the small one, and three spare.
   const fewer = processes(small.hub);
   const used = processes(large.hub);
-  const allowed = large.inFlight - small.inFlight + 10;
+  const allowed = large.inFlight - small.inFlight + 3;
   assert.ok(used - fewer <= allowed, `resume started ${used} git processes on the large loop and ${fewer} on the small one; ${large.inFlight - small.inFlight} more issues in flight allow ${allowed} more`);
 
-  // time, against clocks measured in this run: a git process started on this machine now (the unit), and resume on a
-  // loop a quarter the size. The best of several runs of each, taken one after the other, so a busy machine moves the
-  // unit and the baseline with the large run. Linear growth is 4x for 4x the issues and a pass over every issue for
-  // each issue is 16x; resume costs about 150 units, and the bounds leave room for the noise of one run.
-  const best = (runs, fn) => {
-    let least = Infinity;
-    for (let i = 0; i < runs; i += 1) {
-      const t0 = process.hrtime.bigint();
-      fn();
-      least = Math.min(least, Number(process.hrtime.bigint() - t0) / 1e6);
+  // time, against clocks measured in this run and never against a machine's git: resume on a loop a quarter the size,
+  // and status on the large loop (the same loop read, without resume's own sections). The three are timed in turn, three
+  // rounds, and the least of each kept, so a busy machine slows all of them together. Linear growth is 4x for 4x the
+  // issues (resume measures about 3x) and a pass over every issue for each issue is 16x; resume measures about 1.2x
+  // status, and the bounds leave room for the noise of one run.
+  const timesInTurn = (rounds, fns) => {
+    const least = fns.map(() => Infinity);
+    for (let i = 0; i < rounds; i += 1) {
+      fns.forEach((fn, k) => {
+        const t0 = process.hrtime.bigint();
+        fn();
+        least[k] = Math.min(least[k], Number(process.hrtime.bigint() - t0) / 1e6);
+      });
     }
     return least;
   };
-  const unit = best(10, () => execFileSync('git', ['--version'], { stdio: 'ignore', timeout: 120_000 }));
-  const base = best(3, () => dispatch(small.hub, 'resume', [], {}));
-  const grown = best(3, () => dispatch(large.hub, 'resume', [], {}));
-  assert.ok(grown < unit * 400, `resume took ${grown.toFixed(0)} ms on the large loop, ${(grown / unit).toFixed(0)} times a git process (${unit.toFixed(1)} ms)`);
+  const [base, grown, reading] = timesInTurn(3, [
+    () => dispatch(small.hub, 'resume', [], {}),
+    () => dispatch(large.hub, 'resume', [], {}),
+    () => dispatch(large.hub, 'status', [], {}),
+  ]);
   assert.ok(grown < base * 7, `resume took ${grown.toFixed(0)} ms on the large loop and ${base.toFixed(0)} ms on one a quarter its size: ${(grown / base).toFixed(1)}x for 4x the issues`);
+  assert.ok(grown < reading * 4, `resume took ${grown.toFixed(0)} ms on the large loop and status, which reads the same loop, ${reading.toFixed(0)} ms: ${(grown / reading).toFixed(1)}x`);
 });
 
 // The live loop of the family release, when this checkout sits beside it: resume and handoff read on a copy, with
