@@ -3,7 +3,7 @@
 import { existsSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { PROMISE_KIND, fieldText, hole, jarlLine, need, refuse } from './base.mjs';
-import { needNoOwnersWords } from './owner.mjs';
+import { carryingOwnersWords, needNoOwnersWords } from './owner.mjs';
 import { git } from './git.mjs';
 import { jarlDir, stamp } from './where.mjs';
 import { readText, writeAtomic } from './files.mjs';
@@ -154,7 +154,10 @@ function retractNote(root, rawIds, reason, flags, n) {
   // The format is raised before the line is written, as a row's retraction does: a reader of format 1 would show the note.
   const raised = needFormat(root, 'note-retraction');
   const entry = `- **retracted:** note ${n} · by ${by} · ${stamp().slice(0, 10)}\n${bodyText(reason).split('\n').map((l) => (l ? `  ${l}` : '')).join('\n')}`;
-  writeAtomic(issue.file, setSection(raisedText(issue, text, raised), 'Evidence', placeEvidence(struckNote(table.lines, note).join('\n').trim(), 'note', entry, '\n')));
+  // A note that carries the owner's quote (a ruling's row) is struck through as it stands: its own lines are carried, so the
+  // strike does not read as a new line that looks like his words, while the reason and everything else stay checked.
+  const own = table.lines.slice(note.start, note.end + 1).map((l) => l.trim().replace(/^- /, ''));
+  carryingOwnersWords(own, () => writeAtomic(issue.file, setSection(raisedText(issue, text, raised), 'Evidence', placeEvidence(struckNote(table.lines, note).join('\n').trim(), 'note', entry, '\n'))));
   appendLog(root, `${issue.id} evidence retract · note ${n} · by ${by} · ${firstLine(reason, "the issue's Evidence section")}`);
   return { id: issue.id, retractedNote: n, by };
 }

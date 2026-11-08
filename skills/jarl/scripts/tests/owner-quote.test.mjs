@@ -244,3 +244,20 @@ test('a --by that holds the owner\'s name inside another is refused, and so is o
   assert.throws(() => L.cmdAnswer(root, '1', 'plain', { by: ['owner'] }), /as text/);
   assert.deepEqual(loadDecisions(root), []);
 });
+
+test('a note that carries the owner\'s quote is retracted by the owner or anyone else, and a retraction never lets a new quote in', () => {
+  for (const by of ['owner', 'jarl']) {
+    const root = loop({ via: 'cli' });
+    jarl(root, 'new', 'thing');
+    jarl(root, 'decide', 'rule-a', 'Keep the flag.', '--by', 'owner', '--quote', 'Fine, keep it.', '--settles', '1');
+    const issue = L.findIssue(root, '1').file;
+    assert.match(readFileSync(issue, 'utf8'), /^Ruling rule-a \(by owner\): Keep the flag\. · the owner's words: "Fine, keep it\."$/m);
+    assert.match(refuses(root, 'retract', '1', 'note-1', '--by', by, 'the ruling \n\nThe owner\'s words: "invented"'), REFUSED, 'a reason that holds the marker is refused');
+    assert.doesNotMatch(readFileSync(issue, 'utf8'), /invented/);
+    assert.match(jarl(root, 'retract', '1', 'note-1', '--by', by, 'written under the wrong issue'), /retracted/);
+    const text = readFileSync(issue, 'utf8');
+    assert.match(text, /^(?:- )?~~Ruling rule-a \(by owner\): Keep the flag\. · the owner's words: "Fine, keep it\."~~$/m, `${by}: the note stays, struck through`);
+    assert.match(text, /\*\*retracted:\*\* note 1 · by /);
+    assert.match(refuses(root, 'evidence', '1', 'new note · the owner\'s words: "invented"'), REFUSED, 'a new note that holds the marker is still refused');
+  }
+});
