@@ -65,6 +65,28 @@ for (const [rule, refusedModel, label] of [['other-model', 'm-strong', 'the mode
   });
 }
 
+for (const [rule, refusedModel] of [['other-model', 'm-strong'], ['model-rank', 'm-light']]) {
+  test(`"${rule}": the merge row and the in-flight mark read an approve the rule refuses for its model as the queue does, naming what is missing; an accepted approve still reads approved`, () => {
+    const dir = modelRepo(rule);
+    for (const n of [1, 2]) leased(dir, n);
+    approve(dir, 1, '--model', refusedModel);
+    approve(dir, 2, '--model', rule === 'other-model' ? 'm-light' : 'm-strong');
+    const rows = JSON.parse(jarl(dir, 'next', '--as', 'jarl', '--all', '--json')).rows;
+    const first = rows.find((r) => r.id === '1');
+    assert.equal(first.what, 'review');
+    assert.match(first.says, new RegExp(`^approved, and done refuses the approve for its model — 1's live approve is by rev-1 on ${refusedModel}, `));
+    assert.match(first.says, /; raise a reviewer whose approve the rule accepts$/);
+    assert.equal(first.command, 'jarl.mjs review 1 "<verdict>" --by "<a-fresh-reviewer>" --model "<model-id>" "<text>"');
+    assert.equal(rows.find((r) => r.id === '2').what, 'merge');
+    assert.doesNotMatch(jarl(dir, 'next', '--as', 'jarl', '--all'), /^- 1 .*approved, not merged; merge it/m);
+    const marks = Object.fromEntries(JSON.parse(jarl(dir, 'status', '--json')).inFlightRows.map((r) => [r.id, r]));
+    assert.equal(marks['1'].mark, 'approved-model-refused');
+    assert.match(marks['1'].next, new RegExp(`^approved, and done refuses its approve for its model — neither the merge queue nor done accepts that: it waits for an approve the reviewer rule accepts \\(1's live approve is by rev-1 on ${refusedModel}, `));
+    assert.equal(marks['2'].mark, 'approved');
+    assert.doesNotMatch(jarl(dir, 'resume'), /^- 1 .*queued for the merge/m);
+  });
+}
+
 test('by default the model never holds a branch back in the queue', () => {
   const dir = modelRepo();
   leased(dir, 1);

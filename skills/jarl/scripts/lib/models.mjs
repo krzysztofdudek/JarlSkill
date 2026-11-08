@@ -9,7 +9,7 @@ import { cmpId } from './ids.mjs';
 import { loadProfile, reviewerRule } from './profile.mjs';
 import { GOAL_FILE, LOG_FILE, goalLines, logPath, readGoal } from './journal.mjs';
 import { repoLabel, reposNamed } from './repositories.mjs';
-import { gateOf, readLoop } from './loop.mjs';
+import { gateOf, inFlightMark, readLoop } from './loop.mjs';
 import { filedAndClosed, followUpsOf, share } from './metrics.mjs';
 
 // ---- the model of every worker and reviewer ------------------------------------------------------------------------
@@ -139,6 +139,20 @@ function modelRefusalOf(root, loop, issue, { gate = null, lines = null } = {}) {
   if (rule === 'agent') return null;
   return modelGateRefusal(issue, (gate ?? gateOf(loop, issue.id)).live, lines ?? modelLines(root), loop.eventsById.get(issue.id) || [], rule);
 }
+// The in-flight mark of an issue as the done gate reads it, for every view that names its step: the record's own mark
+// (inFlightMark), except that an approve the gate refuses for its model clears nothing, so an issue that would read
+// approved or merged reads approved-model-refused, with the gate's words of what is missing (modelRefusalOf), as the
+// merge queue says. { mark, missing? }; `lines` are the goal's model lines, read from the loop when not given.
+const CLEARED_MARKS = new Set(['approved', 'merged', 'merged-ci']);
+function gatedMark(loop, issue, lines = null) {
+  const mark = inFlightMark(loop, issue);
+  if (!CLEARED_MARKS.has(mark) || reviewerRule(loop.profile) === 'agent') return { mark };
+  const missing = modelRefusalOf(loop.root, loop, issue, { lines: lines ?? modelLinesIn(loop.goalLines, loop.profile) });
+  return missing ? { mark: 'approved-model-refused', missing } : { mark };
+}
+// Whether an issue holds an approve the done gate accepts and is not merged yet: the merger's to land, so its lease is not
+// idle for that wait. An approve the gate refuses for its model waits for a reviewer, not for the merger.
+const awaitsMerge = (loop, issue) => gatedMark(loop, issue).mark === 'approved';
 // The form of the review that carries the model: what a refusal for the model ends with, and what the step after a
 // verdict names when the gate will refuse that verdict's approve.
 const modelReviewForm = (id) => jarlLine('review', id, '<verdict>', '--by', '<a-fresh-reviewer>', '--model', '<model-id>', '<text>');
@@ -435,4 +449,4 @@ const SEVERITIES = ['Critical', 'Important', 'Minor'];
 const builds = { modelsTable: 0, nextRows: 0 };
 
 // Used by the other modules of the library, and not part of what jarl-lib.mjs exports.
-export { SEVERITIES, builds, findingOfLog, loggedFinding, modelRefusalOf, modelReviewForm, modelValue, reviewModelNotes, spellingNote };
+export { SEVERITIES, awaitsMerge, builds, findingOfLog, gatedMark, loggedFinding, modelRefusalOf, modelReviewForm, modelValue, reviewModelNotes, spellingNote };

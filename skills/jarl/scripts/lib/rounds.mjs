@@ -9,8 +9,9 @@ import { ATTACH_MAX_BYTES, DEFAULT_PROFILE, loadProfile } from './profile.mjs';
 import { appendLog, goalLines, oneLine, parseStamp, readGoal } from './journal.mjs';
 import { journalById, leaseOfMove } from './log.mjs';
 import { findIssue, loadIssues, mergedOf } from './issues.mjs';
-import { awaitsMerge, readLoop } from './loop.mjs';
+import { readLoop } from './loop.mjs';
 import { defaultBase, fetchedRefs, fileAt, isGitRepo, issuePlaces, issueRepoPaths, issueRepos, refsIn, repoFromInput, repoLabel, repoOf, reposNamed, worktreeState, worktreesOf } from './repositories.mjs';
+import { awaitsMerge } from './models.mjs';
 
 // ---- rounds, branches, checks ------------------------------------------------------------------
 

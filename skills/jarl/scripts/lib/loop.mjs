@@ -725,8 +725,6 @@ export function sentBack(loop, issue, mark) {
   const rowsAfterRound = gateOf(loop, issue.id).rowLog.filter((r) => !r.retracted && r.inWindow && r.n > lastRound).length;
   return lastRound >= 0 && rowsAfterRound === 0 && mark === 'rows-no-verdict';
 }
-// Whether an issue holds a live approve and is not merged yet: the merger's to land, so its lease is not idle for that wait.
-export const awaitsMerge = (loop, issue) => inFlightMark(loop, issue) === 'approved';
 
 // Used by the other modules of the library, and not part of what jarl-lib.mjs exports.
 export { FIELD_NAMES, approveKind, closedGateLine, gateLine, renderSplit, scopedLoop, waiverVoid };

@@ -6,6 +6,7 @@ import { cmpId, idKey, idsCited } from './ids.mjs';
 import { mergedOf } from './issues.mjs';
 import { leaseOfMove } from './log.mjs';
 import { carriesCode, coordinatorOf, inFlightMark, readLoop, sameSlice, sentBack, sliceOf } from './loop.mjs';
+import { gatedMark, modelReviewForm } from './models.mjs';
 import { reasonWord, waitingOn } from './commands.mjs';
 import { nextRows, schedulerNote } from './evidence.mjs';
 import { ownerLineStates } from './owner-lines.mjs';
@@ -73,7 +74,7 @@ function issueRows(ctx) {
   const verdict = (id) => jarlLine('review', id, '<verdict>', '--by', '<reviewer>', '<text>');
   // A wait has rows of its own (keptRows); a promise in a lease is worked as any issue, and its maker holds each line.
   for (const i of loop.issues.filter((x) => inPlayForRows(profile, x) && profile.keptKind(x.kind) !== WAIT_KIND && !waitingOn(x, loop.byId, profile).length)) {
-    const mark = inFlightMark(loop, i);
+    const { mark, missing } = gatedMark(loop, i);
     const worker = fieldText(i.fields.worker) || null;
     const backAfterRound = sentBack(loop, i, mark);
     if (checking(profile, i) && (mark === 'no-rows' || backAfterRound)) {
@@ -126,6 +127,11 @@ function issueRows(ctx) {
     }
     if (mark === 'approved-not-cleared') {
       out.push({ ...base, what: 'review', says: 'approved, and no approve it holds clears it under the loop\'s done gate; raise a reviewer whose approve does', command: verdict(i.id) });
+      continue;
+    }
+    // The reading the merge queue and done take: an approve the reviewer rule refuses for its model is not merged or closed on.
+    if (mark === 'approved-model-refused') {
+      out.push({ ...base, what: 'review', says: `approved, and done refuses the approve for its model — ${missing}; raise a reviewer whose approve the rule accepts`, command: modelReviewForm(i.id) });
       continue;
     }
     if (mark === 'changes-requested') {
@@ -241,7 +247,7 @@ function keptRows(ctx) {
   const kept = loop.issues.filter((i) => profile.active(i.status) && !waitingOn(i, loop.byId, profile).length
     && (profile.keptKind(i.kind) === WAIT_KIND || (profile.keptKind(i.kind) === PROMISE_KIND && !profile.is(i.status, 'holds-claim'))));
   for (const i of kept) {
-    const mark = inFlightMark(loop, i);
+    const { mark } = gatedMark(loop, i);
     const base = { id: i.id, title: i.title, priority: i.priority, kind: i.kind };
     const promise = i.kind === PROMISE_KIND;
     const holder = promise ? makerOf(i) : mark === 'no-rows' ? personOf(i) || JARL_HOLDER : JARL_HOLDER;
@@ -253,7 +259,7 @@ function keptRows(ctx) {
       continue;
     }
     const done = promise ? 'kept' : 'it came';
-    if (mark === 'rows-no-verdict' || mark === 'approved-not-fresh' || mark === 'approved-not-cleared') out.push({ ...base, what: 'review', holder, says: `${done}, proof recorded, no verdict; review it`, command: verdict(i.id) });
+    if (mark === 'rows-no-verdict' || mark === 'approved-not-fresh' || mark === 'approved-not-cleared' || mark === 'approved-model-refused') out.push({ ...base, what: 'review', holder, says: `${done}, proof recorded, no verdict; review it`, command: verdict(i.id) });
     else if (mark === 'changes-requested') out.push({ ...base, what: 'changes', holder, says: `${done}, changes asked by its reviewer; answer them and ask for a new verdict`, command: verdict(i.id) });
     else out.push({ ...base, what: 'close', holder, says: `${done}, approved; close it`, command: jarlLine('set', i.id, closeStatus, '<text>') });
   }

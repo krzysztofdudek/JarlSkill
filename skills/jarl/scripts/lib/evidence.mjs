@@ -14,9 +14,9 @@ import { outOfGit } from './loop-git.mjs';
 import { attachmentOf, journalById } from './log.mjs';
 import { acceptanceLineCount, alignRows, bodyText, evidenceNotes, evidenceParts, evidenceTable, loadIssues, mergedOf, noteText, parseIssue, placeEvidence, removeFields, reviewEntries, setSection, sharedMark, struckNote } from './issues.mjs';
 import { fileKeysOf, needFormat, repoNames, reposWhere, tipLines, whereLines, whereOf } from './repositories.mjs';
-import { approveKind, awaitsMerge, carriesCode, inFlightMark, sentBack, unmergedCode, coordinatorOf, disagreementText, gateOf, gateState, headerReadNotes, readLoop, recordDisagreements, reviewSplit, sameSlice, scopedLoop, sinceText, sliceNamed, sliceOf, slicesOf, waiverVoid } from './loop.mjs';
+import { approveKind, carriesCode, sentBack, unmergedCode, coordinatorOf, disagreementText, gateOf, gateState, headerReadNotes, readLoop, recordDisagreements, reviewSplit, sameSlice, scopedLoop, sinceText, sliceNamed, sliceOf, slicesOf, waiverVoid } from './loop.mjs';
 import { checkState, checkWaiting, checkWaitingText, closedNoCheck } from './metrics.mjs';
-import { builds, modelMarks } from './models.mjs';
+import { awaitsMerge, builds, gatedMark, modelMarks } from './models.mjs';
 import { ago, leaseLiveness, leaseState, livenessOf, thresholdText } from './rounds.mjs';
 import { attachmentLines, inspectAttachment, requiredSlots, slotProblems } from './attachments.mjs';
 import { ARCHIVE_KEEPS, PERMANENT_MARKER, issuesFor, needLifecycle, needLiveLoop, oneOrMany, rowsOf, waitingOn, waitsOf } from './commands.mjs';
@@ -524,6 +524,7 @@ export const IN_FLIGHT_MARKS = {
   approved: 'approved and queued for the merge — next the merger lands it, then set it done',
   'approved-not-fresh': 'approved by a coordinator only, and it carries code — neither the merge queue nor done accepts that: it waits for a fresh reviewer\'s approve',
   'approved-not-cleared': 'approved, and no approve it holds clears it under the loop\'s done gate — neither the merge queue nor done accepts that: it waits for an approve that does',
+  'approved-model-refused': 'approved, and done refuses its approve for its model — neither the merge queue nor done accepts that: it waits for an approve the reviewer rule accepts',
   merged: 'merged — nothing is left to land: set it done',
   'merged-ci': 'merged, CI not green yet — next record the CI result with merged --ci, green or red, then set it done',
 };
@@ -534,14 +535,15 @@ const APPROVED_NO_CODE = 'approved, and it carries no code, so no merge waits �
 const SENT_BACK = 'sent back by a round, no new proof yet — it is back with the worker, who records new rows';
 const inFlightStep = (loop, mark, issue) => (mark === 'approved' && !carriesCode(issue) ? APPROVED_NO_CODE : sentBack(loop, issue, mark) ? SENT_BACK : IN_FLIGHT_MARKS[mark]);
 // The rows for the in-flight `issues` of a loop (its own issues, or the ones a view is scoped to). Where the mark ends in
-// setting the issue done and an acceptance line only the owner ticks is not ticked, next says that tick comes first.
+// setting the issue done and an acceptance line only the owner ticks is not ticked, next says that tick comes first. An
+// approve the done gate refuses for its model is named with what is missing, in the gate's words.
 const ENDS_DONE = new Set(['approved', 'merged', 'merged-ci']);
 export function inFlightRows(loop, issues) {
   const { profile, byId } = loop;
   return issues.filter((i) => profile.is(i.status, 'holds-claim') && !waitingOn(i, byId, profile).length).map((i) => {
-    const mark = inFlightMark(loop, i);
+    const { mark, missing } = gatedMark(loop, i);
     const wait = ENDS_DONE.has(mark) ? ownerLineWait(loop.root, loop, i) : null;
-    const step = inFlightStep(loop, mark, i);
+    const step = missing ? `${IN_FLIGHT_MARKS[mark]} (${missing})` : inFlightStep(loop, mark, i);
     const next = wait ? step.replace(/set it done$/, `${wait}, then set it done`) : step;
     return { id: i.id, title: i.title, branch: i.fields.branch || null, worker: i.fields.worker || null, model: i.fields.model || null, since: i.fields.since || null, ...leaseWriter(loop, i), mark, next };
   });
@@ -549,11 +551,11 @@ export function inFlightRows(loop, issues) {
 // The parents in a status that offers them (built-in: open) whose sub-issues are all settled and that wait on nothing else:
 // each is on the coordinator of its slice (the jarl, with none) to check its own acceptance against the whole and record
 // the check as a proof row, then reviewed and closed. A parent in a lease is worked as any issue in flight is. Each is
-// { id, title, subs: [{ id, status }], holder, mark, next }, mark as inFlightMark reads it and next the step in words.
+// { id, title, subs: [{ id, status }], holder, mark, next }, mark as gatedMark reads it and next the step in words.
 export function parentChecks(loop, issues) {
   const { profile, byId } = loop;
   return issues.filter((i) => i.tree && i.tree.children.length && profile.is(i.status, 'dispatchable') && !waitingOn(i, byId, profile).length).map((i) => {
-    const mark = inFlightMark(loop, i);
+    const { mark } = gatedMark(loop, i);
     const holder = coordinatorOf(loop, i);
     return { id: i.id, title: i.title, subs: i.tree.children.map((c) => ({ id: c.id, status: c.status })), holder, mark, next: parentStep(loop, i, mark, holder) };
   });
