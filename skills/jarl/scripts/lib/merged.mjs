@@ -103,8 +103,8 @@ export function cmdMerged(root, rawIds, flags) {
     for (const issue of issues) {
       const g = gateOf(loop, issue.id);
       const uncleared = g.fresh ? null : unclearedText(loop, issue, g);
-      if (uncleared) notes.push(`MERGED WITHOUT AN APPROVE THAT CLEARS IT — ${uncleared}; recorded as given, get that approve now: ${jarlLine('review', issue.id, '<verdict>', '--by', '<reviewer>', '<text>')}`);
-      else if (!g.fresh) notes.push(`MERGED WITHOUT A FRESH REVIEW — ${issue.id} ${g.live ? freshRuleText({ fields: { merged: sha } }, g.live, g.uncleared?.standing) : 'holds no live approve at all (none, or spent by a later round, restart or reopen) — the fresh-review rule: a code issue needs an approve from a fresh reviewer before it merges'}; recorded as given, get the fresh review now: ${jarlLine('review', issue.id, '<verdict>', '--by', '<a-fresh-reviewer>', '<text>')}`);
+      if (uncleared) notes.push(`MERGED WITHOUT AN APPROVE THAT CLEARS IT — ${uncleared}; recorded as given, get that approve now: ${jarlLine('review', issue.id, '<verdict>', '--by', '<reviewer>', '--model', '<model-id>', '<text>')}`);
+      else if (!g.fresh) notes.push(`MERGED WITHOUT A FRESH REVIEW — ${issue.id} ${g.live ? freshRuleText({ fields: { merged: sha } }, g.live, g.uncleared?.standing) : 'holds no live approve at all (none, or spent by a later round, restart or reopen) — the fresh-review rule: a code issue needs an approve from a fresh reviewer before it merges'}; recorded as given, get the fresh review now: ${jarlLine('review', issue.id, '<verdict>', '--by', '<a-fresh-reviewer>', '--model', '<model-id>', '<text>')}`);
       notes.push(...approveTipNotes(root, issue, g.live, sha));
     }
   }
@@ -236,7 +236,7 @@ function approveTipNotes(root, issue, live, sha) {
     return git(dir, ['merge-base', '--is-ancestor', a, sha]) !== null ? null : b;
   };
   const who = live.by ? `by ${live.by} (${live.kind})` : 'by a reviewer not recorded';
-  const again = `if it was meant to land, record a review of the tip that landed: ${jarlLine('review', issue.id, '<verdict>', '--by', '<a-fresh-reviewer>', '<text>')}`;
+  const again = `if it was meant to land, record a review of the tip that landed: ${jarlLine('review', issue.id, '<verdict>', '--by', '<a-fresh-reviewer>', '--model', '<model-id>', '<text>')}`;
   const head = `APPROVED ON ANOTHER TIP — ${issue.id}'s approve ${who} was recorded on ${branch}`;
   if (was.length !== repos.length) return [`${head} at ${was.map(short).join(', ')}, and the branch stands at ${is.map((s) => (s ? short(s) : 'gone')).join(', ')} at this merge, so that review did not see what changed between them; recorded as given, ${again}`];
   const here = repos.map((dir) => Boolean(dir) && isGitRepo(dir) && git(dir, ['cat-file', '-e', `${sha}^{commit}`]) !== null);

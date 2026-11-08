@@ -7,7 +7,7 @@ import { normalPath } from './where.mjs';
 import { readText, writeAtomic } from './files.mjs';
 import { idKey, isBulk } from './ids.mjs';
 import { BUILTIN_STATUSES, LIFECYCLE_OPS, PROFILE_VERSION, describeProfile, forgetProfile, loadProfile, profilePath, reservedProblem, validateProfile } from './profile.mjs';
-import { appendLog, writerRaised } from './journal.mjs';
+import { appendLog } from './journal.mjs';
 import { findIssue } from './issues.mjs';
 import { repoList } from './repositories.mjs';
 import { eachIssue, fieldsWritten, listAll, needLiveLoop, sectionsOf, setRoute } from './shared.mjs';
@@ -90,7 +90,7 @@ function readFieldOf(root, id, field) {
 // merge is recorded by merged, and the history has no edit.
 function notWrittenByField(profile, key) {
   if (key === 'status' || profile.statuses.includes(key)) return `a status is moved by set: ${jarlLine('set', '<ids>', '<status>', '<text>')}`;
-  if (['branch', 'worker', 'model', 'since', 'worktree'].includes(key)) return `the lease (Branch, Worker, Model, Since) is written by set: ${jarlLine('set', '<ids>', 'in-progress', '<text>', '--branch', '<worker-branch>', '--worker', '<name>')}`;
+  if (['branch', 'worker', 'model', 'since', 'worktree'].includes(key)) return `the lease (Branch, Worker, Model, Since) is written by set: ${jarlLine('set', '<ids>', 'in-progress', '<text>', '--branch', '<worker-branch>', '--worker', '<name>', '--model', '<model-id>')}`;
   if (['merged', 'merge check', 'ci'].includes(key)) return `a merge and its CI are recorded by merged: ${jarlLine('merged', '<ids>', '--sha', '<sha>')}`;
   if (['notes', 'proof'].includes(key)) return `a note or a row of proof is added by evidence: ${jarlLine('evidence', '<ids>', '<text>')}, or ${jarlLine('evidence', '<ids>', '--ran', '<command>', '--saw', '<what-it-printed>', '--line', '<line-number>', '--by', '<who>')}`;
   if (key === 'evidence' || key === 'reviews') return `the history is never edited: a note or a row is added by evidence and a verdict by review, a row or an approve is taken back by retract, a ruling replaced by decide --supersedes: ${jarlLine('retract', '<id>', '<n>', '--by', '<who>', '<text>')}`;
@@ -99,15 +99,15 @@ function notWrittenByField(profile, key) {
 
 // extend section "<name>" | extend field "<name>" [--values <a,b>] [--default <value>] [--required]: the profile of a live
 // loop gains one section or one field, checked as profile <file> checks a profile file, with a log line after it. A
-// loop with no profile of its own gets one: the built-in statuses and the part, in the record format the loop is in. The
+// loop with no profile of its own gets one: the built-in statuses and the part. The
 // issues already filed are not rewritten: each carries the part once field writes it, and a new issue is filed with it (a
 // field's default, when it has one and none is given). Kind and Tier keep the values the loop was opened with. The profile
-// of a loop a composer runs is the composer's, and is never changed here.
+// of a loop that keeps its lifecycle to the record is its own tool's, and is never changed here.
 export function cmdExtend(root, part, name, flags = {}) {
   needLiveLoop(root, '');
   const profile = loadProfile(root);
   const kept = LIFECYCLE_OPS.some((op) => profile.lifecycle[op] === 'record');
-  if (profile.scheduler !== null || kept) refuse(`this loop is run by a composer (its profile, ${profile.name}, ${profile.scheduler !== null ? 'names an external scheduler' : 'keeps its lifecycle to the record'}), and its profile is the composer's: extend changes nothing in it — nothing was written`, profile.scheduler ?? profile.lifecycle.command ? { external: profile.scheduler ?? profile.lifecycle.command } : afterView(['jarl.mjs', 'profile']));
+  if (kept) refuse(`this loop is run by a tool of its own (its profile, ${profile.name}, keeps its lifecycle to the record), and its profile is that tool's: extend changes nothing in it — nothing was written`, profile.lifecycle.command ? { external: profile.lifecycle.command } : afterView(['jarl.mjs', 'profile']));
   const kind = String(part ?? '').trim().toLowerCase();
   need(kind === 'section' || kind === 'field', `extend adds a section or a field to the loop's profile (got ${JSON.stringify(String(part ?? ''))})`, () => ({ arg: 0, value: hole('<section-or-field>') }));
   const label = typeof name === 'string' ? name.trim() : '';
@@ -124,7 +124,7 @@ export function cmdExtend(root, part, name, flags = {}) {
   // The profile as it would be: checked whole before anything is written.
   const extended = () => {
     const raw = existsSync(profilePath(root)) ? JSON.parse(readText(profilePath(root))) : null;
-    const base = raw && loadProfile(root).declared ? raw : { 'jarl-profile': PROFILE_VERSION, ...(raw && raw.format !== undefined ? { format: raw.format } : {}), statuses: BUILTIN_STATUSES, initial: 'open' };
+    const base = raw && loadProfile(root).declared ? raw : { 'jarl-profile': PROFILE_VERSION, statuses: BUILTIN_STATUSES, initial: 'open' };
     const json = kind === 'section' ? { ...base, sections: [...(base.sections || []), label] } : { ...base, fields: { ...(base.fields || {}), [label]: spec } };
     try { return { json, profile: validateProfile(json, `the profile with the ${kind} ${label}`) }; } catch (e) { if (e instanceof Refusal) refuse(e.reason, { retry: true }); throw e; }
   };
@@ -132,9 +132,6 @@ export function cmdExtend(root, part, name, flags = {}) {
   const reserved = reservedProblem(validateProfile({ 'jarl-profile': PROFILE_VERSION, statuses: BUILTIN_STATUSES, ...(kind === 'section' ? { sections: [label] } : { fields: { [label]: spec } }) }));
   need(!reserved, `the ${kind} ${label} is not added: ${reserved}`, () => ({ arg: 1, value: hole('<name>') }));
   const words = kind === 'section' ? `section ${label}` : `field ${label}${[spec.enum && `values ${spec.enum.join(', ')}`, spec.default && `default ${spec.default}`, spec.required && 'required'].filter(Boolean).map((w) => `; ${w}`).join('').replace(/^; /, ': ')}`;
-  // The raise the call's writer needs comes first, and rewrites the profile: the part is added to the profile as the raise
-  // left it, and the log line follows the profile, so a profile that could not be written leaves no line behind.
-  writerRaised(root);
   const next = extended();
   writeAtomic(profilePath(root), `${JSON.stringify(next.json, null, 2)}\n`);
   forgetProfile(root);
@@ -154,7 +151,7 @@ function writeSection(root, rawIds, heading, value, mode, flags) {
   const isAcceptance = key === 'acceptance' || (profile.acceptance && key === profile.acceptance.toLowerCase());
   const opts = isAcceptance ? { acceptance: lines(value) } : key === 'changelog' ? { changelog: lines(value) } : key === 'what' || key === 'why' ? { [key]: value } : { section: [`${heading}=${value}`] };
   const results = [].concat(eachIssue(root, rawIds, (id, dry) => cmdBody(root, id, { ...opts, by: flags.by, append: mode === 'add', caller: flags.caller }, dry)));
-  const out = results.map((o) => ({ id: o.id, field: heading, value: fieldText(sectionOf(root, o.id, heading)), ...(o.grew ? { grew: o.grew } : {}), ...(o.note ? { note: o.note } : {}) }));
+  const out = results.map((o) => ({ id: o.id, field: heading, value: fieldText(sectionOf(root, o.id, heading)), ...(o.note ? { note: o.note } : {}) }));
   return isBulk(rawIds) ? out : out[0];
 }
 

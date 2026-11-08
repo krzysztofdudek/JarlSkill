@@ -43,7 +43,7 @@ export const BUILTIN_STATUSES = {
 export const PROFILE_VERSION = 1;
 // The keys a profile file may hold. A key this list does not name is refused, so a profile written for a later
 // Jarl fails loudly here instead of being half-read.
-export const PROFILE_KEYS = ['jarl-profile', 'format', 'name', 'statuses', 'initial', 'fields', 'sections', 'acceptance-heading', 'external-scheduler', 'done-gate', 'lifecycle', 'models'];
+export const PROFILE_KEYS = ['jarl-profile', 'name', 'statuses', 'initial', 'fields', 'sections', 'acceptance-heading', 'done-gate', 'lifecycle', 'models'];
 // The models a loop may use, the owner's lever for cost: "models": { "ceiling": "<model-id>", "barred": ["<model-id>", ...] }.
 // The ceiling is the strongest model the loop may use, read by its tier on the goal's Model lines, so every model of a
 // stronger tier is above it; a barred model is one the loop may not use at all, at any effort when its id names none.
@@ -54,81 +54,16 @@ export const PROFILE_FIELD_KEYS = ['enum', 'default', 'required'];
 // A status written as an object instead of a list of flags: { "flags": [...], "set-by": "record" | "any" }.
 export const PROFILE_STATUS_KEYS = ['flags', 'set-by'];
 // Who may move an issue into a status: anyone ('any', the default), or only a library call through record.mjs
-// ('record') — the command line and the MCP tools are refused, so a composer's own gate (a veto held by one of its roles) cannot
-// be walked around with a set.
+// ('record') — the command line and the MCP tools are refused, so a gate the loop's own tool keeps cannot be walked around
+// with a set.
 export const SET_BY = ['any', 'record'];
 // Who may end the loop itself: "lifecycle": { "close": "any" | "record", "archive": "any" | "record", "command": "<the
-// composer's own command>" }. 'record' refuses jarl close / jarl archive and their MCP tools (caller 'cli') and names the
-// command, so the record of a loop a composer keeps is never removed or moved out from under it by
+// command of the tool that runs the loop>" }. 'record' refuses jarl close / jarl archive and their MCP tools (caller 'cli')
+// and names the command, so the record of a loop another tool keeps is never removed or moved out from under it by
 // Jarl's own lifecycle; a library caller (caller 'record') still may. The same two words as "set-by".
 export const LIFECYCLE_KEYS = ['close', 'archive', 'command'];
 export const LIFECYCLE_OPS = ['close', 'archive'];
 export const DEFAULT_LIFECYCLE = Object.freeze({ close: 'any', archive: 'any', command: null });
-// The format of the record (the issue files, the log, the rulings) this Jarl reads and writes. A profile may state the
-// format it was written for; one this Jarl does not know is refused before anything else, so a vendored copy and an
-// installed Jarl that drifted apart stop loudly instead of half-reading each other's loop.
-// Format 1 is a loop whose profile names no format, or that has no profile. A loop is raised, by needFormat, by the
-// first write of a line of FORMAT_LINES, to that line's format, which a reader that knows only the formats below it
-// would misread in silence; such a reader refuses the loop instead. Format 2 holds a repository name in Repo, a number
-// written plain and a retraction; format 3 holds everything format 2 holds and the lines of format 3 below. A loop
-// whose profile names an external scheduler is run by a composer that reads the record with its own copy of the
-// library, so Jarl never raises its format: its profile says the format the composer reads, and until then the lines of
-// every higher format are off in that loop.
-export const RECORD_FORMAT = 1;
-export const RECORD_FORMATS = Object.freeze([1, 2, 3]);
-export const RECORD_FORMAT_RAISED = 2;
-// The lines of the record a reader that knows only the formats below a line's own would misread in silence, by name:
-// the format that holds them, what the line is, where the record writes it, and what such a reader would make of it. A
-// write of one calls needFormat with its name, under the write's lock and before the line is written.
-const LINES_OF = (format, lines) => Object.entries(lines).map(([name, line]) => [name, Object.freeze({ format, ...line })]);
-export const FORMAT_LINES = Object.freeze(Object.fromEntries([
-  ...LINES_OF(2, {
-    'repo-name': { what: 'a repository name', where: "the issue's Repo field", misread: 'reads the name as a path under the root of the loop' },
-    'plain-number': { what: 'a number written plain, below 100 or of 1000 or more', where: 'the name and the header of an issue file, the number of a question, and every line that names them', misread: 'does not read the issue or the question the number names' },
-    retraction: { what: 'the retraction of a verdict or an evidence row', where: 'the log, and the struck entry of the issue', misread: 'goes on counting the approve or the row' },
-  }),
-  ...LINES_OF(3, {
-    'issue-key': { what: "an issue's key", where: "the issue's header, its filed line and every log line about it", misread: 'reads each line by its number alone, so the moves of two issues that took one number are mixed' },
-    writer: { what: 'the writer of a write', where: 'the log line of the write, in a fixed place', misread: 'does not place the line, so a lease or a verdict is read without the agent that wrote it' },
-    'owner-line': { what: 'an acceptance line only the owner ticks', where: "the issue's acceptance", misread: 'lets done pass while the line is not ticked' },
-    parent: { what: 'the parent of a sub-issue', where: "the sub-issue's header", misread: 'reads the backlog as flat and offers a parent as work of its own' },
-    batch: { what: 'one verdict over several issues', where: 'the verdict line of each issue it covers', misread: 'counts one review as several' },
-    'bot-verdict': { what: 'a verdict by a bot', where: "the verdict line and the Reviews entry of the issue, as the reviewer's standing", misread: 'reads it as an approve with no reviewer recorded, which closes an issue that carries no code' },
-    'promise-wait': { what: 'the kinds promise and wait', where: "the issue's header", misread: 'refuses an issue of a kind it does not know' },
-    escalation: { what: 'a question of kind escalation', where: 'the question, among the loop\'s questions', misread: 'refuses a question of a kind it does not know' },
-    'rule-proposal': { what: 'a question of kind rule', where: 'the question, among the loop\'s questions', misread: 'reads a proposed rule as a question to the owner and its answer as a ruling with no scope' },
-    'review-waiver': { what: "the owner's waiver of an issue's review", where: "the ruling's Waives review field and a note in each issue it names", misread: 'counts the closed issue as one with no approve recorded and says its gate does not hold' },
-    'note-retraction': { what: 'the retraction of a note', where: "the log and the issue's notes, in the shape of a row's retraction", misread: 'counts the note as standing' },
-    'tip-mark': { what: 'the tip of a branch after a row, a verdict, a merge or a close', where: 'the log, with the tip mark before the separator', misread: 'takes the line for no line of the log, so it spends at a pause the rows and approves made on a tip that has not moved' },
-    'proof-line': { what: 'the acceptance lines an evidence row proves', where: "the row in the issue's Proof and its log line, after the row's mark", misread: 'reads no row there, so done refuses an issue for want of the proof it holds' },
-    'range-number': { what: 'a number from a range the goal declares', where: 'the name and the header of an issue file, and the Range line of the goal', misread: 'files its next issue above the numbers of the range, so the series the loop keeps apart are mixed' },
-    'in-place': { what: 'the mark of an issue worked in place', where: "the tag in-place among the issue's Tags", misread: 'lets done pass with no commit of its files named' },
-    artifact: { what: 'the artifact a verdict judged', where: "the verdict line and the Reviews entry of the issue, after the reviewer's marks", misread: 'reads the artifact as the first words of the findings, so no verdict is counted as naming one' },
-  }),
-]));
-// The record format of a loop as the views say it: its format, the formats this Jarl reads, whether a write may raise it
-// (never under an external scheduler) and, when it may not, the names of the lines of FORMAT_LINES that are off in it.
-export function formatState(profile) {
-  const raises = profile.scheduler === null || profile.scheduler === undefined;
-  const off = raises ? [] : Object.keys(FORMAT_LINES).filter((name) => FORMAT_LINES[name].format > profile.format);
-  return { format: profile.format, reads: [...RECORD_FORMATS], raises, off };
-}
-// A loop whose profile names an external scheduler is never raised: the write that needs format `to` is refused.
-export function needRaisable(profile, to, what, ready = afterView(['jarl.mjs', 'profile'])) {
-  if (formatState(profile).raises) return;
-  const line = what || `a line of record format ${to}`;
-  refuse(`${line} needs record format ${to}, and this loop stays at format ${profile.format}: its profile names an external scheduler (${profile.scheduler}), the composer that reads this record, so Jarl never raises its format; ${line} is off in this loop until its profile says "format": ${to} — nothing was written`, ready);
-}
-// The line a view prints when lines of FORMAT_LINES are off in the loop, or null: each with the format that holds it.
-function formatOffText(state) {
-  if (!state.off.length) return null;
-  return `record format ${state.format}: the profile names an external scheduler, so Jarl never raises it, and these lines are off in this loop until the profile says the format that holds them — ${state.off.map((name) => `${FORMAT_LINES[name].what} (format ${FORMAT_LINES[name].format})`).join(', ')}`;
-}
-// The width a new issue or question number is written in, when its caller names none: three digits, which every format
-// reads, in a loop below format 2 that Jarl never raises; else the caller's (none: the number written plain).
-function numberWidth(profile, width) {
-  return width ?? (!formatState(profile).raises && profile.format < RECORD_FORMAT_RAISED ? 3 : undefined);
-}
 // The done gate a loop runs on: the built-in one (approve: fresh — a live approve by someone other than the worker,
 // from a fresh reviewer when the issue carries code) and no merge required. A profile may ask for a landed merge
 // (requires-merged) and, only with it, give up the approve (approve: none): the merge gate that landed it is then the
@@ -193,7 +128,7 @@ export const TOOL_FIELDS = ['Status', 'Priority', 'Tags', 'Files', 'Repo', 'Afte
 // either field or names promise or wait among its kinds (see reservedNamesProblem).
 export const KEPT_FIELDS = ['Person', 'Check when'];
 // The field an issue's key is written in. A profile file given to init or to profile <file> that declares a field of that
-// name is refused; a loop already open with such a profile keeps its own field, and its issues get no key of the tool's.
+// name is refused.
 export const KEY_FIELD = 'Key';
 // The field a sub-issue names its parent in. A profile file given to init or to profile <file> that declares a field of
 // that name is refused; a loop already open with such a profile keeps its own field, and its issues form no tree.
@@ -222,15 +157,6 @@ export function validateProfile(json, where = 'the profile') {
   const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
   const oneLine = (v) => typeof v === 'string' && v.trim() !== '' && !/[\r\n]/.test(v);
   if (!isObj(json)) refuse(`${where} is not a JSON object`, ['jarl.mjs', 'profile', '<profile.json>']);
-  // The record format first, and alone: a profile written for another format may mean anything by its other keys.
-  if (json.format !== undefined && !RECORD_FORMATS.includes(json.format)) {
-    refuse(`${where} is written for record format ${JSON.stringify(json.format)}, and this Jarl reads format ${RECORD_FORMATS.join(', ')} — nothing was read or written; the reader needs a Jarl that knows format ${JSON.stringify(json.format)} (a vendored copy and the installed one must agree)`, afterView(['jarl.mjs', '--version']));
-  }
-  // The format marker: a profile that holds only jarl-profile and format changes nothing in how the loop behaves (the
-  // built-in profile, declared: false); it only says which format the record was written in.
-  if (Object.keys(json).length === 2 && json['jarl-profile'] === PROFILE_VERSION && json.format !== undefined) {
-    return makeProfile({ name: 'built-in', statuses: Object.entries(BUILTIN_STATUSES), initial: 'open', declared: false, format: json.format });
-  }
   for (const k of Object.keys(json)) if (!PROFILE_KEYS.includes(k)) say(`unknown key "${k}" — a profile takes ${PROFILE_KEYS.join(', ')}`);
   if (json['jarl-profile'] !== PROFILE_VERSION) say(`"jarl-profile" must be ${PROFILE_VERSION} (the profile format this Jarl reads)`);
   if (json.name !== undefined && !(typeof json.name === 'string' && PROFILE_NAME_RE.test(json.name))) say('"name" is letters, digits and . _ - (starting with a letter or digit, at most 80 characters)');
@@ -316,13 +242,6 @@ export function validateProfile(json, where = 'the profile') {
     else if ([...BUILTIN_SECTIONS.filter((b) => b !== 'Acceptance'), ...sections].some((b) => b.toLowerCase() === h.toLowerCase())) say(`"acceptance-heading" "${h}" is already the heading of another section`);
     else if (h.toLowerCase() !== 'acceptance') acceptance = h;
   }
-  // external-scheduler: the command the loop's own scheduler is run by, shown in place of what next and queue compute.
-  let scheduler = null;
-  if (json['external-scheduler'] !== undefined) {
-    const x = json['external-scheduler'];
-    if (!oneLine(x) || x.length > 200) say('"external-scheduler" is the one-line command that schedules this loop\'s work (at most 200 characters), shown by next, queue, status and resume in place of their own ready list');
-    else scheduler = x.trim();
-  }
   // done-gate: { "approve": "fresh" | "none", "requires-merged": true | false }.
   let doneGate = DEFAULT_DONE_GATE;
   if (json['done-gate'] !== undefined) {
@@ -356,7 +275,7 @@ export function validateProfile(json, where = 'the profile') {
     else {
       const before = bad.length;
       for (const k of Object.keys(l)) if (!LIFECYCLE_KEYS.includes(k)) say(`"lifecycle": unknown key "${k}" — it takes ${LIFECYCLE_KEYS.join(', ')}`);
-      for (const op of LIFECYCLE_OPS) if (l[op] !== undefined && !SET_BY.includes(l[op])) say(`"lifecycle": "${op}" is one of ${SET_BY.join(', ')} (record: jarl ${op} and its MCP tool refuse, and the composer does it with its own command)`);
+      for (const op of LIFECYCLE_OPS) if (l[op] !== undefined && !SET_BY.includes(l[op])) say(`"lifecycle": "${op}" is one of ${SET_BY.join(', ')} (record: jarl ${op} and its MCP tool refuse, and the tool that runs the loop does it with its own command)`);
       if (l.command !== undefined && (!oneLine(l.command) || l.command.length > 200)) say('"lifecycle": "command" is the one-line command (at most 200 characters) that closes or archives this loop instead, named by the refusal');
       if (bad.length === before) lifecycle = Object.freeze({ close: l.close ?? 'any', archive: l.archive ?? 'any', command: l.command === undefined ? null : l.command.trim() });
     }
@@ -377,7 +296,7 @@ export function validateProfile(json, where = 'the profile') {
     }
   }
   if (bad.length) refuse(`${where} is not a valid profile:\n- ${bad.join('\n- ')}`, ['jarl.mjs', 'profile', '<profile.json>']);
-  return makeProfile({ name: json.name || 'custom', statuses: statuses.map((s) => [s, [...flagsOf.get(s)]]), initial, fields, sections, acceptance, declared: true, setBy, scheduler, doneGate, lifecycle, models, format: json.format ?? RECORD_FORMAT });
+  return makeProfile({ name: json.name || 'custom', statuses: statuses.map((s) => [s, [...flagsOf.get(s)]]), initial, fields, sections, acceptance, declared: true, setBy, doneGate, lifecycle, models });
 }
 
 // The "requires-slots" and "slots" keys of a done gate, checked against the kinds the profile allows: every problem goes to
@@ -430,7 +349,7 @@ function validateSlots(g, kinds, say) {
 
 // The profile as the tool reads it: flags looked up by status, the values Kind and Tier may take and their defaults,
 // the declared fields in order.
-function makeProfile({ name, statuses, initial, fields = [], sections = [], acceptance = null, declared, setBy = new Map(), scheduler = null, doneGate = DEFAULT_DONE_GATE, lifecycle = DEFAULT_LIFECYCLE, models = null, format = RECORD_FORMAT }) {
+function makeProfile({ name, statuses, initial, fields = [], sections = [], acceptance = null, declared, setBy = new Map(), doneGate = DEFAULT_DONE_GATE, lifecycle = DEFAULT_LIFECYCLE, models = null }) {
   const flags = new Map(statuses.map(([s, f]) => [s, new Set(f)]));
   const kind = fields.find((f) => f.key === 'kind');
   const tier = fields.find((f) => f.key === 'tier');
@@ -438,17 +357,14 @@ function makeProfile({ name, statuses, initial, fields = [], sections = [], acce
   // profile that declares Person or Check when keeps its field, and the two kinds are not among its kinds.
   const ownWords = fields.filter((f) => KEPT_FIELDS.some((k) => k.toLowerCase() === f.key)).map((f) => f.name);
   const kept = !kind && !ownWords.length;
-  // Whether new writes the tool's key here: never where the profile declares a field Key of its own.
-  const keyed = !fields.some((f) => f.key === KEY_FIELD.toLowerCase());
   // Whether the issues of the loop form a tree through the tool's Parent field: never where the profile declares its own.
   const tree = !fields.some((f) => f.key === PARENT_FIELD.toLowerCase());
   const kinds = kind ? kind.enum : kept ? KINDS : KINDS.filter((k) => !KEPT_KINDS.includes(k));
   const tiers = tier ? tier.enum : TIERS;
   const p = {
     name, declared, initial, sections, acceptance,
-    // The record format, the command of an external scheduler (null: next and queue compute their own), the done gate.
-    format, scheduler, doneGate,
-    // Who may close and archive the loop ('any', or 'record': never jarl close / archive), and the composer's command.
+    doneGate,
+    // Who may close and archive the loop ('any', or 'record': never jarl close / archive), and the command of the tool that does.
     lifecycle,
     // The models the loop may use: { ceiling, barred }, or null where the profile names none.
     models,
@@ -456,7 +372,7 @@ function makeProfile({ name, statuses, initial, fields = [], sections = [], acce
     kinds, kindDefault: kind && kind.default ? kind.default : kinds[0],
     // Whether the built-in promise and wait hold here, and the kept kind an issue's kind is (null for any other, and
     // for every kind of a loop where they are off: a kind of the profile's own named wait is its own).
-    keyed, tree, kept, keptKind: (k) => (kept && KEPT_KINDS.includes(k) ? k : null),
+    tree, kept, keptKind: (k) => (kept && KEPT_KINDS.includes(k) ? k : null),
     tiers, tierDefault: tier ? (tier.default || tiers[0]) : TIER_DEFAULT,
     // The fields the profile adds to the header (Kind and Tier are written in their fixed places).
     fields: fields.filter((f) => !f.builtin),
@@ -569,7 +485,7 @@ export function describeProfile(p) {
     statuses: p.statuses.map((s) => ({ name: s, flags: p.flagsOf(s).map(flagWord), ...(p.setBy(s) !== 'any' ? { setBy: p.setBy(s) } : {}) })),
     fields: p.declaredFields ? p.declaredFields.map((f) => ({ name: f.name, enum: f.enum, default: f.default, required: f.required })) : [],
     kinds: p.kinds, tiers: p.tiers, sections: p.sections, acceptanceHeading: p.acceptance || 'Acceptance',
-    format: p.format, externalScheduler: p.scheduler, doneGate: { ...p.doneGate }, lifecycle: { ...p.lifecycle },
+    doneGate: { ...p.doneGate }, lifecycle: { ...p.lifecycle },
     ...(p.models ? { models: { ceiling: p.models.ceiling, barred: [...p.models.barred] } } : {}),
   };
 }
@@ -581,7 +497,6 @@ export function renderProfile(d) {
   if (own.length) lines.push('fields:', ...own.map((f) => `  ${f.name}${f.enum ? `: ${f.enum.join(' | ')}` : ''}${f.default ? ` (default ${f.default})` : ''}${f.required ? ' (required)' : ''}`));
   if (d.sections.length) lines.push(`sections: ${d.sections.join(', ')}`);
   if (d.acceptanceHeading !== 'Acceptance') lines.push(`acceptance heading: ${d.acceptanceHeading}`);
-  if (d.externalScheduler) lines.push(`external scheduler: ${d.externalScheduler} (next and queue show it instead of their own list)`);
   if (d.doneGate.approve !== 'fresh' || d.doneGate['requires-merged'] || d.doneGate.reviewer || d.doneGate.clears) lines.push(`done gate: approve ${d.doneGate.approve}${d.doneGate['requires-merged'] ? ' · requires a merge in the base' : ''}${d.doneGate.reviewer ? ` · reviewer ${d.doneGate.reviewer}` : ''}${d.doneGate.clears ? ` · clears on ${clearsWords(d.doneGate.clears)}` : ''}`);
   for (const [kind, names] of Object.entries(d.doneGate['requires-slots'] || {})) {
     lines.push(`attachments: ${kind} needs ${names.join(', ')}`);
@@ -590,9 +505,6 @@ export function renderProfile(d) {
   const kept = LIFECYCLE_OPS.filter((op) => d.lifecycle[op] === 'record');
   if (kept.length) lines.push(`lifecycle: ${kept.join(' and ')} by the record only, never jarl ${kept.join(' / ')}${d.lifecycle.command ? ` — ${d.lifecycle.command}` : ''}`);
   if (d.models) lines.push(`models: ${[d.models.ceiling && `ceiling ${d.models.ceiling} (nothing of a stronger tier)`, d.models.barred.length && `barred ${d.models.barred.join(', ')}`].filter(Boolean).join(' · ')} — the owner's lever for cost; Jarl reads no usage or budget from the host`);
-  const state = formatState({ format: d.format, scheduler: d.externalScheduler });
-  lines.push(`record format: ${d.format} (this Jarl reads ${state.reads.join(', ')})`);
-  if (formatOffText(state)) lines.push(formatOffText(state));
   return lines.join('\n');
 }
 export function cmdProfile(root, file) {
@@ -601,4 +513,4 @@ export function cmdProfile(root, file) {
 }
 
 // Used by the other modules of the library, and not part of what jarl-lib.mjs exports.
-export { SLOT_NAME_RE, forgetProfile, formatOffText, numberWidth, reservedProblem };
+export { SLOT_NAME_RE, forgetProfile, reservedProblem };

@@ -1,25 +1,23 @@
 // The repositories of a loop: their names, their declarations, the one resolver, and where each one and
 // each worktree is on this machine.
 
-import { existsSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { join, resolve, dirname, basename, relative, isAbsolute } from 'node:path';
-import { afterView, echoWord, fieldText, hole, jarlLine, need, noSeparators, splitList } from './base.mjs';
+import { echoWord, fieldText, hole, jarlLine, need, noSeparators, splitList } from './base.mjs';
 import { git, gitHere } from './git.mjs';
-import { canonical, issuesDir, jarlDir, normalPath, portablePath } from './where.mjs';
+import { canonical, jarlDir, normalPath, portablePath } from './where.mjs';
 import { readText, writeAtomic } from './files.mjs';
-import { ISSUE_FILE_RE, branchNameProblem } from './ids.mjs';
-import { FORMAT_LINES, PROFILE_VERSION, RECORD_FORMATS, RECORD_FORMAT_RAISED, forgetProfile, formatState, loadProfile, needRaisable, profilePath } from './profile.mjs';
+import { branchNameProblem } from './ids.mjs';
+import { loadProfile } from './profile.mjs';
 import { appendLog, appendLogLines, logPath, tipLine } from './journal.mjs';
 import { withLock } from './lock.mjs';
-import { mapMergeRepos } from './log.mjs';
 
 // ---- repositories: names, declarations and the one resolver ------------------------------------------------------
 //
 // A repository an issue names is written as a name or as a path. The record holds identity and the machine holds
 // location. A name is the directory git clone gives the repository; it holds no path and resolves, here and nowhere
-// else, to the sibling of the loop's main checkout. A path is read from the loop's root. How a stored value reads
-// depends on the loop's record format: in format 1 every value is a path; in format 2 a value that starts with a dot, a
-// slash or a drive letter is a path, and anything else is a name. Jarl declares a name once, in .jarl/repos.md, with the
+// else, to the sibling of the loop's main checkout. A path is read from the loop's root: a stored value
+// that starts with a dot, a slash or a drive letter is a path, and anything else is a name. Jarl declares a name once, in .jarl/repos.md, with the
 // root commits of the repository (all of them), its origin as found and its base branch, and no path. The root commits
 // are read to declare a repository and to check one (repoIdentity); no other command reads them. Nothing resolved is
 // ever written: the views print where a repository is on this machine and store none of it.
@@ -29,7 +27,7 @@ const REPO_NAME_RE = /^[A-Za-z0-9_][A-Za-z0-9._-]*$/;
 const PATH_START = /^(?:[./\\]|[A-Za-z]:(?:[\\/]|$))/;
 // 'name' or 'path': how a stored Repo value (or the in-part of a recorded merge) reads in this loop.
 export function repoValueKind(root, value) {
-  return loadProfile(root).format >= RECORD_FORMAT_RAISED && !PATH_START.test(value) && REPO_NAME_RE.test(value) ? 'name' : 'path';
+  return !PATH_START.test(value) && REPO_NAME_RE.test(value) ? 'name' : 'path';
 }
 
 // The directory a name is looked for in: the parent of the loop's main checkout, found through git's common directory, so
@@ -62,7 +60,7 @@ const RESOLVED = new Map();
 export function repoOf(root, named) {
   if (named === undefined || named === '') return root;
   need(typeof named === 'string', '--repo takes one name or path — the repository the code lives in', () => ({ flag: '--repo', value: '<name-or-path>' }));
-  const key = `${root}\n${loadProfile(root).format}\n${named}`;
+  const key = `${root}\n${named}`;
   if (RESOLVED.has(key)) return RESOLVED.get(key);
   const { path: repo, name } = repoPlace(root, named);
   need(isGitRepo(repo), name ? `${nameFix(root, name)} (${echoWord(repo)} is not a git repository)` : `not a git repository: ${echoWord(repo)} (a relative --repo or Repo path is read from the loop's root, ${echoWord(root)}): e.g. --repo <name-or-path>`, () => ({ replace: String(repo), value: '<name-or-path>' }));
@@ -79,7 +77,7 @@ export function repoOf(root, named) {
 // spelling of the value in a run: a loop of hundreds of issues names a handful of repositories.
 const REPO_OF = new Map();
 function issueRepos(root, issue) {
-  const key = `${root}\n${loadProfile(root).format}\n${issue.fields.repo || ''}`;
+  const key = `${root}\n${issue.fields.repo || ''}`;
   if (!REPO_OF.has(key)) REPO_OF.set(key, issueRepoPaths(root, issue).map(canonical));
   return REPO_OF.get(key);
 }
@@ -96,14 +94,10 @@ export function branchTip(root, issue) {
 }
 // The tip lines of one write about `issues`, as a function of the issue that gives the line written after its row, verdict,
 // merge or close: the tip `tipOf` gives (the tip of its branch now, see branchTip), or none. Every tip is read before
-// anything is written; then, when one is there, the loop is raised once to the format that holds the tip mark. A loop
-// whose composer keeps its format below that one gets no tip line: the tip is off there, and the write goes on without it.
+// anything is written.
 function tipLinesOf(root, issues, tipOf = (issue) => branchTip(root, issue)) {
   const tips = new Map(issues.map((issue) => [issue, tipOf(issue)]));
-  const profile = [...tips.values()].some(Boolean) ? loadProfile(root) : null;
-  const held = profile !== null && (profile.format >= FORMAT_LINES['tip-mark'].format || formatState(profile).raises);
-  if (held) needFormat(root, 'tip-mark');
-  return (issue) => (held && tips.get(issue) ? [tipLine(issue.id, tips.get(issue))] : []);
+  return (issue) => (tips.get(issue) ? [tipLine(issue.id, tips.get(issue))] : []);
 }
 // The checkouts an issue's Repo field gives, as repoOf resolves them, or the loop's own repository where it names none.
 // `names` stands in for the Repo field where something else names the repository (a recorded merge). A value that does
@@ -131,50 +125,6 @@ function repoEntries(root, issue) {
   if (!named.length) return [{ label: repoLabel(topOf(root)), value: undefined }];
   const seen = new Set();
   return named.map((value) => { const p = repoPlace(root, value); return { label: p.name ?? repoLabel(topOf(canonical(p.path))), value }; }).filter((e) => !seen.has(e.label) && seen.add(e.label));
-}
-
-// Raises the loop to a record format (default: RECORD_FORMAT_RAISED), before the write that needs it and under the same
-// lock: .jarl/profile.json becomes the marker (jarl-profile and format only) when the loop has none, and a declared
-// profile gets its "format" key set. One function, called by every write of an element a reader of a lower format would
-// misread in silence; it never lowers the format, and it refuses a loop already in a format this Jarl does not read (loadProfile
-// throws). A loop whose profile names an external scheduler is never raised: the write is refused, naming `what` it
-// would have written, and nothing is written. Returns true when it wrote.
-export function raiseFormat(root, to = RECORD_FORMAT_RAISED, what = null) {
-  need(RECORD_FORMATS.includes(to), `record format ${to} is not one this Jarl writes`, () => afterView(['jarl.mjs', 'profile']));
-  if (!existsSync(jarlDir(root))) return false;
-  return withLock(root, () => {
-    const profile = loadProfile(root);
-    if (profile.format >= to) return false;
-    needRaisable(profile, to, what);
-    // A bare word is a path in format 1 and a name from format 2 on: only a loop in format 1 has paths to say again.
-    if (profile.format < RECORD_FORMAT_RAISED) writeBarePaths(root);
-    const path = profilePath(root);
-    const json = existsSync(path) ? JSON.parse(readText(path)) : { 'jarl-profile': PROFILE_VERSION };
-    json.format = to;
-    writeAtomic(path, `${JSON.stringify(json, null, 2)}\n`);
-    forgetProfile(root);
-    return true;
-  });
-}
-// Before a write of the line FORMAT_LINES names `name`, under the write's lock: the loop is raised to the line's format
-// (from format 1 or 2, whichever it is in), or the write is refused where the loop's composer keeps its format;
-// `what` names the write in the refusal when it is one part of the line (a field of a kind), else the line's own words do.
-export function needFormat(root, name, what = null) {
-  const line = lineNamed(name);
-  return raiseFormat(root, line.format, what || line.what);
-}
-// Whether the loop holds the line of FORMAT_LINES `name` or may be raised to hold it: the refusal needFormat would make,
-// made without writing, for a caller that checks a whole call before its first write.
-export function needFormatHeld(root, name, what = null) {
-  const line = lineNamed(name);
-  if (!existsSync(jarlDir(root))) return;
-  const profile = loadProfile(root);
-  if (profile.format < line.format) needRaisable(profile, line.format, what || line.what);
-}
-function lineNamed(name) {
-  const line = Object.hasOwn(FORMAT_LINES, name) ? FORMAT_LINES[name] : null;
-  need(line, `${name} is not a line of the record format registry: its lines are ${Object.keys(FORMAT_LINES).join(', ')}`, () => afterView(['jarl.mjs', 'profile']));
-  return line;
 }
 
 // Where a loop's directory stands among the worktrees of its git repository, read-only (git rev-parse and the
@@ -401,11 +351,7 @@ export function repoFromInput(root, raw) {
   need(main !== null, `${inside} is a bare repository: it has no working tree to act on`, () => ({ replace: String(given), value: '<name-or-path>' }));
   const candidates = [word ? given : null, isDir ? basename(spelled) : null, basename(main)];
   let name = candidates.find((n, k) => n && REPO_NAME_RE.test(n) && candidates.indexOf(n) === k && canonical(join(home, n)) === main);
-  // A loop Jarl never raises (its profile names an external scheduler) stays below the format that holds a name: a
-  // repository given by its path keeps its path there, and one given by its name only is refused when it is written.
-  const profile = loadProfile(root);
-  const keepsPath = !word && Boolean(name) && profile.format < RECORD_FORMAT_RAISED && !formatState(profile).raises;
-  if (name && !keepsPath) {
+  if (name) {
     // A disk that ignores case reads TOOL as tool: one repository has one name, the declared spelling or else the directory's own.
     const same = (n) => n.toLowerCase() === name.toLowerCase();
     name = [...declaredRepos(root).keys()].find((d) => same(d) && canonical(join(home, d)) === main) ??(same(basename(main)) ? basename(main) : name);
@@ -415,8 +361,8 @@ export function repoFromInput(root, raw) {
   const value = exact ? given : pathTo(root, main);
   const place = join(home, basename(main));
   const occupied = existsSync(place) && canonical(place) !== main;
-  const why = `${exact ? '' : `${given} is reduced to its main checkout; `}${keepsPath ? `the loop's profile names an external scheduler, so its record format stays at ${profile.format}, which holds paths and no names` : occupied ? `another repository stands at ${place}, where its name would resolve, so this one keeps its path` : `the checkout is not at ${place}, where a name would resolve — put it, or a symlink to it, there to name it`}`;
-  const reason = keepsPath ? 'profile' : occupied ? 'occupied' : 'elsewhere';
+  const why = `${exact ? '' : `${given} is reduced to its main checkout; `}${occupied ? `another repository stands at ${place}, where its name would resolve, so this one keeps its path` : `the checkout is not at ${place}, where a name would resolve — put it, or a symlink to it, there to name it`}`;
+  const reason = occupied ? 'occupied' : 'elsewhere';
   // The note is read when a caller asks for it, so a call that only reads the repository never looks at the log.
   const found = { main, name: null, value, reason };
   let note;
@@ -429,7 +375,7 @@ export function repoFromInput(root, raw) {
 }
 // The log line that records a note on a path was said, and the reason it gave: a later filing of the same checkout by its
 // path is silent while its reason is the same, and says its note again when the reason is another.
-const PATH_NOTED = /^- \d{4}-\d\d-\d\d \d\d:\d\d(?: key \S+)?(?: by [^·]+)? · repo path (.+) noted · (profile|occupied|elsewhere)$/;
+const PATH_NOTED = /^- \d{4}-\d\d-\d\d \d\d:\d\d(?: key \S+)?(?: by [^·]+)? · repo path (.+) noted · (occupied|elsewhere)$/;
 const pathNotedLine = (value, reason) => `repo path ${noSeparators(value)} noted · ${reason}`;
 // Whether the log holds a note on this checkout stored as a path for this reason. Only the log is read.
 function notedPath(root, main, reason) {
@@ -449,32 +395,7 @@ function repoList(root, v) {
   return items.map((item) => repoFromInput(root, item));
 }
 
-// Every raise of the record format (raiseFormat, whatever triggers it) first writes each bare-word path a format-1 loop
-// holds as ./<word>: the same place said so that format 2 does not read it as a name. The values are the Repo field of
-// every issue, the repository after "in" in a Merged field, and the same after "in" in the log's merge lines, which
-// the header is read against. A value that already starts with a dot, a slash or a drive letter is left as it is, so the
-// rewrite is idempotent. Called under the lock, before the marker is written.
-const BARE_REPO_LINE = /^(\*\*Repo:\*\* )(.*)$/m;
-const BARE_MERGED_FIELD = /^(\*\*Merged:\*\* \S+ in )(.+)$/m;
-const dotted = (v) => (PATH_START.test(v) ? v : `./${v}`);
-function writeBarePaths(root) {
-  const dir = issuesDir(root);
-  const rewritten = [];
-  for (const f of existsSync(dir) ? readdirSync(dir) : []) {
-    const m = ISSUE_FILE_RE.exec(f);
-    if (!m) continue;
-    const text = readText(join(dir, f));
-    const next = text
-      .replace(BARE_REPO_LINE, (all, head, value) => `${head}${splitList(value).map(dotted).join(', ')}`)
-      .replace(BARE_MERGED_FIELD, (all, head, value) => `${head}${dotted(value.trim())}`);
-    if (next === text) continue;
-    writeAtomic(join(dir, f), next);
-    rewritten.push(m[1]);
-  }
-  mapMergeRepos(root, dotted);
-  if (rewritten.length) appendLog(root, `repo paths written as ./ and the name in ${rewritten.join(', ')} · the record format is raised`);
-}
-// The names among the repositories read from a --repo list are declared (once), after the format is raised.
+// The names among the repositories read from a --repo list are declared (once).
 function commitRepoNames(root, picked) {
   // A path whose note is said now is logged with its reason, so the note is not said again for it.
   const said = picked.filter((p) => !p.name && p.note);
@@ -482,7 +403,6 @@ function commitRepoNames(root, picked) {
   withLock(root, () => {
     if (said.length) appendLogLines(root, said.map((p) => pathNotedLine(p.value, p.reason)));
     if (!picked.some((p) => p.name)) return;
-    needFormat(root, 'repo-name');
     for (const p of picked) if (p.name && declareRepo(root, p.name, p.main) === 'no-base') p.note =`${p.name} has no branch checked out, so it is declared with no base — name one with ${jarlLine('base', p.name, '<branch>')}`;
   });
 }

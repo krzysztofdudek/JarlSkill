@@ -57,21 +57,21 @@ export function doneGateIn(root, loop, issue, base) {
   const owner = () => { const text = ownerLineRefusal(root, loop, issue); return text ? { cause: ownerLineRewrite(root, loop, issue) ? 'owner-rewrite' : 'owner', text } : null; };
   if (profile.doneGate.approve === 'none') return owner();
   const code = carriesCode(issue);
-  if (g.selfApproved) return { cause: 'approve', text: `${issue.id}'s live approve is by a worker of this issue or its branch — a self-approve does not count as review: ${jarlLine('review', issue.id, '<verdict>', '--by', '<a-fresh-reviewer>', '<text>')}${code ? '' : ' (or jarl, on an issue that carries no code)'}` };
+  if (g.selfApproved) return { cause: 'approve', text: `${issue.id}'s live approve is by a worker of this issue or its branch — a self-approve does not count as review: ${jarlLine('review', issue.id, '<verdict>', '--by', '<a-fresh-reviewer>', '--model', '<model-id>', '<text>')}${code ? '' : ' (or jarl, on an issue that carries no code)'}` };
   // A changes verdict with no approve after it is named as the cause, with its reviewer and day, so whoever is refused
   // sees the review that stands in the way.
   if (!g.approved && (g.lastReview === 'changes' || g.standingChanges)) {
     const changes = g.standingChanges || [...g.trail].reverse().find((r) => r.verdict === 'changes');
     if (g.lastReview !== 'changes') return { cause: 'approve-standing', text: `${issue.id}'s changes verdict by ${changes.by || 'a reviewer not recorded'} of ${changes.at} stands until a round or a new commit — an approve recorded after it does not clear the issue: ${jarlLine('round', issue.id, '<what-failed>')}` };
-    return { cause: 'approve', text: `${issue.id}'s latest review is a changes verdict by ${changes.by || 'a reviewer not recorded'} of ${changes.at}, and no approve came after it — a fresh reviewer reads the issue and the diff first: ${jarlLine('review', issue.id, '<verdict>', '--by', '<reviewer>', '<text>')}` };
+    return { cause: 'approve', text: `${issue.id}'s latest review is a changes verdict by ${changes.by || 'a reviewer not recorded'} of ${changes.at}, and no approve came after it — a fresh reviewer reads the issue and the diff first: ${jarlLine('review', issue.id, '<verdict>', '--by', '<reviewer>', '--model', '<model-id>', '<text>')}` };
   }
-  if (!g.approved) return { cause: 'approve', text: `${issue.id} has no approving review newer than its last round${g.tracked ? ' or reopen' : ''}${g.anchor && g.anchor.what === 'whole' ? `, nor one since ${sinceText(g.anchor)}` : ''} — a fresh reviewer reads the issue and the diff first: ${jarlLine('review', issue.id, '<verdict>', '--by', '<reviewer>', '<text>')}` };
+  if (!g.approved) return { cause: 'approve', text: `${issue.id} has no approving review newer than its last round${g.tracked ? ' or reopen' : ''}${g.anchor && g.anchor.what === 'whole' ? `, nor one since ${sinceText(g.anchor)}` : ''} — a fresh reviewer reads the issue and the diff first: ${jarlLine('review', issue.id, '<verdict>', '--by', '<reviewer>', '--model', '<model-id>', '<text>')}` };
   // Approves that stand and do not clear it: a bot's the done gate does not name, or short of the loop's own definition.
   const uncleared = unclearedText(loop, issue, g);
   if (uncleared) return g.uncleared.cause === 'bot'
-    ? { cause: 'approve', text: `${uncleared} — an approve that clears it is next: ${jarlLine('review', issue.id, '<verdict>', '--by', '<a-fresh-reviewer>', '<text>')}` }
-    : { cause: 'clears', text: `${uncleared} — an approve that clears it is next: ${jarlLine('review', issue.id, '<verdict>', '--by', '<reviewer>', '<text>')}` };
-  if (code && !g.fresh) return { cause: 'approve', text: `${issue.id} ${freshRuleText(issue, g.live, g.uncleared?.standing)}: ${jarlLine('review', issue.id, '<verdict>', '--by', '<a-fresh-reviewer>', '<text>')}` };
+    ? { cause: 'approve', text: `${uncleared} — an approve that clears it is next: ${jarlLine('review', issue.id, '<verdict>', '--by', '<a-fresh-reviewer>', '--model', '<model-id>', '<text>')}` }
+    : { cause: 'clears', text: `${uncleared} — an approve that clears it is next: ${jarlLine('review', issue.id, '<verdict>', '--by', '<reviewer>', '--model', '<model-id>', '<text>')}` };
+  if (code && !g.fresh) return { cause: 'approve', text: `${issue.id} ${freshRuleText(issue, g.live, g.uncleared?.standing)}: ${jarlLine('review', issue.id, '<verdict>', '--by', '<a-fresh-reviewer>', '--model', '<model-id>', '<text>')}` };
   // The model of the approve, where the profile's reviewer rule makes it a gate; under the default it is advice only.
   const byModel = modelRefusalOf(root, loop, issue, { gate: g });
   if (byModel) return { cause: 'model', text: `${byModel}: ${modelReviewForm(issue.id)}` };
@@ -96,7 +96,7 @@ export function doneGateIn(root, loop, issue, base) {
 // The files are committed in the checkout of their repository once the approve stands (by the merger where one runs,
 // else the coordinator), and that commit is recorded as a row; nothing is merged.
 function inPlaceRefusal(root, loop, issue, g) {
-  if (!worksInPlace(loop.profile, issue)) return null;
+  if (!worksInPlace(issue)) return null;
   const rows = evidenceTable(issue.sections.evidence).rows;
   const logged = alignRows(issue.id, rows, g.rowLog);
   const counted = rows.filter((r, k) => !r.retracted && r.saw !== '' && (!g.tracked || (logged[k] && logged[k].inWindow && !logged[k].retracted)));
@@ -166,7 +166,7 @@ function unmergedRefusal(issue, g) {
 // The done gate's requires-merged: the issue records a merge (merged --sha) and that commit is in the base of the
 // repository where the merge was recorded (Merged's "in <repo>", else the issue's Repo, else the loop's own repository):
 // the base the merge note and the cleanup read too (see baseOf), or the branch a library caller names as opts.base (a
-// composer that lands into a branch nobody has checked out, such as a team branch, names it). A sha the repository does
+// caller that lands into a branch nobody has checked out, such as a team branch, names it). A sha the repository does
 // not know, or one not reachable from the base, is refused: a merge recorded is not a merge landed until the base holds it.
 // A merge that does not count for the code as it is now (see unmergedCode) is refused before its commit is looked for.
 function mergeRefusal(root, issue, base, g) {

@@ -5,7 +5,6 @@ import { readText, writeAtomic } from './files.mjs';
 import { idKey, isBulk } from './ids.mjs';
 import { PARENT_FIELD, loadProfile } from './profile.mjs';
 import { fieldValue, issueNamed, loadIssues, removeFields, removeFirstField, setField, waitCycle } from './issues.mjs';
-import { needFormat, needFormatHeld } from './repositories.mjs';
 import { eachIssue, inCall, issuesFor, listAll, oneOrMany } from './shared.mjs';
 import { cmdAfter, editorOf, fieldLine, heldField, keptValue, logChanges } from './body.mjs';
 import { needFreeOfOtherLeases, needNoLeaseFlags, resourceNames } from './leases.mjs';
@@ -30,7 +29,6 @@ export function setDeclaredField(root, rawIds, field, value, flags) {
     const checkWhen = ['jarl.mjs', 'field', hole('<ids>'), 'Check when', hole('<date-or-event>')];
     for (const issue of issues) need(fieldText(issue.fields.person) && fieldText(issue.fields['check when']), `${issue.id} becomes a wait only with the outside person it is held by and when to check it — first ${jarlLine(...person.slice(1))} and ${jarlLine(...checkWhen.slice(1))}`, () => [{ first: person }, { first: checkWhen }, { retry: true }]);
   }
-  if (field.key === 'kind' && profile.keptKind(v) && issues.some((issue) => issue.kind !== v)) needFormat(root, 'promise-wait');
   logChanges(root, issues.map((issue) => fieldLine(issue.id, field.name, v, heldField(issue, field.name), by)));
   for (const issue of issues) writeAtomic(issue.file, setField(readText(issue.file), field.name, v));
   return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, field: field.name, value: v })));
@@ -45,7 +43,6 @@ export function setKeptField(root, rawIds, name, value, flags) {
   const v = value === '' ? '' : keptValue(name, value);
   const issues = issuesFor(root, rawIds);
   for (const issue of issues) need(v || profile.keptKind(issue.kind) !== WAIT_KIND, `${issue.id} is a wait, held by its Person and checked when its Check when says: ${name} is never empty on it — give it another kind first (${jarlLine('field', hole('<ids>'), 'Kind', hole('<kind>'))})`, () => (['jarl.mjs', 'field', hole('<ids>'), 'Kind', hole('<kind>')]));
-  if (v) needFormat(root, 'promise-wait', `the field ${name} of a wait`);
   logChanges(root, issues.map((issue) => fieldLine(issue.id, name, v, heldField(issue, name), by)));
   for (const issue of issues) writeAtomic(issue.file, v ? setField(readText(issue.file), name, v) : removeFields(readText(issue.file), [name]));
   return oneOrMany(rawIds, issues.map((issue) => ({ id: issue.id, field: name, value: v })));
@@ -54,7 +51,7 @@ export function setKeptField(root, rawIds, name, value, flags) {
 // field <ids> Parent <id> | --clear: the issue each id is a sub-issue of, one number of the loop, or none. The tree holds:
 // no issue is its own parent or sits under its own sub-issue, no wait runs in a circle through the tree (a parent waits on
 // its sub-issues, a sub-issue on the After of every issue above it), and nothing is added under a finished parent, whose
-// own acceptance was checked against a whole without it. The first parent written raises the record format, since a
+// own acceptance was checked against a whole without it. A
 // reader that knows no parent would read the backlog as flat and offer a parent as work of its own.
 export function setParent(root, rawIds, value, flags) {
   needNoLeaseFlags(flags, `the field ${PARENT_FIELD}`);
@@ -71,7 +68,6 @@ export function setParent(root, rawIds, value, flags) {
   const all = loadIssues(root);
   const parent = parentNamed(all, value);
   needUnder(all, loadProfile(root), issues, parent, nothing, () => ({ arg: 2, value: hole('<another-id>') }));
-  needFormat(root, 'parent');
   logChanges(root, issues.map((issue) => fieldLine(issue.id, PARENT_FIELD, parent.id, heldField(issue, PARENT_FIELD), by)));
   for (const issue of issues) writeAtomic(issue.file, setField(readText(issue.file), PARENT_FIELD, parent.id));
   return out(parent.id);
@@ -87,14 +83,13 @@ function parentNamed(all, value, where = { arg: 2, value: hole('<id>') }) {
 }
 
 // The parent a filing names, checked as a sub-issue's parent is, before anything is filed: the profile keeps the tool's
-// own Parent, the loop holds the issue, it is not finished, and the record may be raised to hold a parent.
+// own Parent, the loop holds the issue and it is not finished.
 export function parentToFile(root, value, where) {
   const profile = loadProfile(root);
   need(profile.tree, `${where.flag} files the ${PARENT_FIELD} the tool keeps, and this loop's profile declares a field ${PARENT_FIELD} of its own — write that field with --field`, () => [{ drop: where.flag }, { flag: '--field', value: hole('<name=value>'), add: true }]);
   const all = loadIssues(root);
   const parent = parentNamed(all, value, where);
   needUnder(all, profile, [], parent, '', () => where);
-  needFormatHeld(root, 'parent');
   return parent;
 }
 

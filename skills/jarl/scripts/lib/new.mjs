@@ -6,12 +6,11 @@ import { PRIORITIES, TIERS, WAIT_KIND, afterView, echoWord, fieldText, hole, jar
 import { needNoNewOwnersWords, needNoOwnersWords } from './owner.mjs';
 import { issuesDir, jarlDir, stamp } from './where.mjs';
 import { readText } from './files.mjs';
-import { ISSUE_FILE_RE, idKey, idRe, needsRaisedFormat, newIssueKey, newNumber } from './ids.mjs';
-import { FORMAT_LINES, formatState, loadProfile, numberWidth } from './profile.mjs';
+import { ISSUE_FILE_RE, idKey, idRe, newIssueKey, newNumber } from './ids.mjs';
+import { loadProfile } from './profile.mjs';
 import { appendLogLines } from './journal.mjs';
 import { acceptanceHeading, acceptanceLines, acceptanceText, bodyText, changelogText, fieldValue, loadIssues, namedPairs, needNoFieldTags, parseIssue, renderIssue } from './issues.mjs';
-import { commitRepoNames, mainCheckoutOf, needFormat, needFormatHeld, repoList, reposNamed } from './repositories.mjs';
-import { IN_PLACE_TAG } from './gate.mjs';
+import { commitRepoNames, mainCheckoutOf, repoList, reposNamed } from './repositories.mjs';
 import { needOneSlice } from './slices.mjs';
 import { needMarkedLines, readLine } from './lines.mjs';
 import { listAll, needLiveLoop } from './shared.mjs';
@@ -53,7 +52,7 @@ export function givenFields(profile, list) {
 // `from`, a filing's own and never a flag or a library option (newIssue passes three arguments): { dry, number, repoOf }.
 // dry runs every check of the filing and writes nothing; number, with dry, is the number the filing would take (the next
 // free one when absent), for a caller that checks several filings before the first of them is written; repoOf (issue
-// files) gives the new issue the Repo those issues hold once every raise of the filing has run, so a finding a review
+// files) gives the new issue the Repo those issues hold, so a finding a review
 // files names its repositories as the reviewed issue does.
 export function cmdNew(root, title, rawFlags, from = {}) {
   need(title, 'new requires "<title>"', { arg: 0, value: '<title>' });
@@ -106,12 +105,11 @@ export function cmdNew(root, title, rawFlags, from = {}) {
   needOneSlice(splitList(flags.tags));
   const source = sourceList(flags.source);
   const after = flags.after !== undefined ? afterList(root, null, flags.after) : [];
-  // A line only the owner ticks names its material and what to check; its first write raises the record format.
+  // A line only the owner ticks names its material and what to check.
   const acceptance = flags.acceptance !== undefined ? acceptanceText(flags.acceptance) : bodyText(fromTemplate.acceptance);
-  const ownerLined = needMarkedLines(acceptance, (value) => ({ flag: '--acceptance', value }));
+  needMarkedLines(acceptance, (value) => ({ flag: '--acceptance', value }));
   // A number from a range the goal declares, for a series of issues kept apart by number.
   const range = rawFlags.range !== undefined ? declaredRange(root, rawFlags.range) : null;
-  const inPlace = splitList(flags.tags).includes(IN_PLACE_TAG);
   const render = (id, key, repo) => renderIssue({
     id, title, status: profile.initial, key, kind, priority, tier, fields, sections, acceptanceHeading: profile.acceptance || 'Acceptance',
     tags: splitList(flags.tags), files: pathList(flags.files), repo, foundBy: flags['found-by'] || 'jarl', person, checkWhen,
@@ -120,41 +118,21 @@ export function cmdNew(root, title, rawFlags, from = {}) {
     acceptance,
     changelog: flags.changelog !== undefined ? changelogText(flags.changelog) : bodyText(fromTemplate.changelog),
   });
-  // A dry filing ends here, before the first write: the text the file would hold passes the record's check too.
-  // The raises the filing would make are checked as well, so a loop that refuses them is refused here, with nothing written:
-  // the number it would take among them (from.number, where filings before it in the same act take the ones below).
+  // A dry filing ends here, before the first write: the text the file would hold passes the record's check too, with the
+  // number it would take among them (from.number, where filings before it in the same act take the ones below).
   if (from.dry) {
     const number = from.number ?? nextIssueNumber(root, range);
     if (range) needRoomIn(range, number);
-    const id = newNumber(number, numberWidth(profile, rawFlags.width));
+    const id = newNumber(number, rawFlags.width);
     needNoNewOwnersWords('', render(id, null, picked.map((p) => p.value).join(', ')), `${id}-${slugify(title)}.md`);
-    if (range) needFormatHeld(root, 'range-number');
-    if (inPlace) needFormatHeld(root, 'in-place');
-    if (needsRaisedFormat(id)) needFormatHeld(root, 'plain-number', `issue number ${id}`);
-    if (kept) needFormatHeld(root, 'promise-wait');
-    if (picked.some((p) => p.name)) needFormatHeld(root, 'repo-name');
-    if (ownerLined) needFormatHeld(root, 'owner-line');
     return { dry: true };
   }
-  // A promise and a wait are kinds a reader of formats 1 and 2 does not know: the loop is raised first, or, where a composer
-  // keeps its format, the filing is refused with nothing written. So is a number from a declared range, which a reader that
-  // knows no range would count past.
   if (range) needRoomIn(range, nextIssueNumber(root, range));
-  if (range) needFormat(root, 'range-number');
-  // So is an issue worked in place, which a reader of formats 1 and 2 would close with no commit of its files named.
-  if (inPlace) needFormat(root, 'in-place');
-  if (kept) needFormat(root, 'promise-wait');
   commitRepoNames(root, picked);
-  if (ownerLined) needFormat(root, 'owner-line');
-  // The issue's key, its filing stamp and four random letters, raises the loop to the format that holds it. A loop a
-  // composer keeps stays in the format the composer reads, and its issues carry no key: they are told apart by number; so
-  // are the issues of a loop whose profile declares a field Key of its own.
-  const keyed = loadProfile(root).keyed && (formatState(loadProfile(root)).raises || loadProfile(root).format >= FORMAT_LINES['issue-key'].format);
-  if (keyed) needFormat(root, 'issue-key');
-  // Read after the raises, which write a bare path of a format-1 loop with a leading ./, so the pair names one place alike.
   const repoText = from.repoOf ? [...new Set(from.repoOf.flatMap((f) => reposNamed(parseIssue(readText(f), f))))].join(', ') : picked.map((p) => p.value).join(', ');
   const at = stamp();
-  const key = keyed ? newIssueKey(at) : null;
+  // The issue's key, its filing stamp and four random letters.
+  const key = newIssueKey(at);
   // The number is claimed by creating the file with a link, which never overwrites: when another
   // writer got there first (the lock makes that rare, not impossible — a hand-made file, a stale
   // lock broken early), the next number is tried instead of two issues sharing one.
@@ -167,9 +145,7 @@ export function cmdNew(root, title, rawFlags, from = {}) {
   let n = nextIssueNumber(root, range);
   if (range) needRoomIn(range, n);
   for (let tries = 0; ; tries += 1) {
-    const id = newNumber(n, numberWidth(profile, rawFlags.width));
-    // The first issue of 1000 or more is a file a reader that knows only format 1 would skip in silence: the format is raised first.
-    if (needsRaisedFormat(id)) needFormat(root, 'plain-number');
+    const id = newNumber(n, rawFlags.width);
     const file = join(dir, `${id}-${slugify(title)}.md`);
     const tmp = join(dir, `.${id}.${process.pid}.tmp`);
     const rendered = render(id, key, repoText);
@@ -224,7 +200,6 @@ export function cmdRenumber(root, rawId, flags = {}) {
   const key = String(flags.key).trim();
   const pick = same.find((i) => i.fields.key === key);
   need(pick, `no file of ${old} carries the key ${key}: ${named(same)}`, () => ({ flag: '--key', value: keysOf(same) }));
-  needFormat(root, 'issue-key');
   const profile = loadProfile(root);
   const dir = issuesDir(root);
   const before = readText(pick.file);
@@ -235,8 +210,7 @@ export function cmdRenumber(root, rawId, flags = {}) {
   for (let n = nextIssueNumber(root, range), tries = 0; ; n = numberAfter([], ranges, range, n + 1), tries += 1) {
     if (range) needRoomIn(range, n);
     need(tries < 100, 'could not claim a free issue number after 100 tries', () => afterView(['jarl.mjs', 'verify']));
-    const id = newNumber(n, numberWidth(profile));
-    if (needsRaisedFormat(id)) needFormat(root, 'plain-number');
+    const id = newNumber(n);
     const file = join(dir, `${id}-${rest}`);
     if (existsSync(file)) continue;
     const text = before.replace(idRe('^#(\\s+){id}(\\s+·)'), `#$1${id}$2`);

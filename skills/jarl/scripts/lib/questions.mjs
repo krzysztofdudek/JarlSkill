@@ -6,12 +6,12 @@ import { join } from 'node:path';
 import { ASK_KINDS, HANDOFF_STALE_MS, afterView, fieldText, freeInline, hole, jarlLine, need, noSeparators, oneBreak } from './base.mjs';
 import { jarlDir, today } from './where.mjs';
 import { appendAtomic, readText, writeAtomic } from './files.mjs';
-import { askNumber, idKey, issueForms, needsRaisedFormat, newNumber, writtenId } from './ids.mjs';
-import { FORMAT_LINES, formatState, loadProfile, numberWidth } from './profile.mjs';
-import { ASKS_FILE, DECISIONS_FILE, STAMP_SRC, answeredLines, appendDecision, appendLog, appendLogLines, asksAt, asksPath, firstLine, goalLines, loadDecisions, markDecision, needNewRuling, parseStamp, readGoal } from './journal.mjs';
+import { askNumber, idKey, issueForms, newNumber, writtenId } from './ids.mjs';
+import { loadProfile } from './profile.mjs';
+import { ASKS_FILE, DECISIONS_FILE, STAMP_SRC, answeredLines, appendDecision, appendLog, appendLogLines, asksAt, asksPath, firstLine, goalLines, loadDecisions, markDecision, parseStamp, readGoal } from './journal.mjs';
 import { OWNER, carryingOwnersWords, needNoOwnersWords, quoteShown, rulingAuthor } from './owner.mjs';
 import { findIssue, freeBlock, loadIssues, noteText, parseIssue, placeEvidence, setSection } from './issues.mjs';
-import { needFormat, tipLinesOf } from './repositories.mjs';
+import { tipLinesOf } from './repositories.mjs';
 import { readLoop } from './loop.mjs';
 import { sliceNamed } from './slices.mjs';
 import { issuesFor } from './shared.mjs';
@@ -46,13 +46,13 @@ export function cmdAsk(root, question, flags) {
   need(kind !== 'lower' || flags.target, '--target is required for kind lower — nothing to weaken without naming it', () => ({ flag: '--target', value: '<what-would-get-weaker>' }));
   need(kind === 'lower' || !flags.target, `--target has no meaning for kind "${kind}" — only lower names something to weaken`, () => ({ flag: '--kind', value: '<ask-kind>' }));
   const asks = loadAsks(root);
-  const id = newNumber(asks.reduce((m, a) => Math.max(m, Number(a.id)), 0) + 1, numberWidth(loadProfile(root), flags.width));
-  // The issue is written as its file writes it, so a question about 007 names it 007 and raises nothing.
+  const id = newNumber(asks.reduce((m, a) => Math.max(m, Number(a.id)), 0) + 1, flags.width);
+  // The issue is written as its file writes it, so a question about 007 names it 007.
   const issueWritten = flags.issue ? writtenId(flags.issue, issueForms(jarlDir(root))) : null;
   const path = asksPath(jarlDir(root));
   const target = kind === 'lower' ? ` · target ${flags.target}` : '';
-  // flags.ruling is not a flag of the command line: the close's ratification batch passes it, and so may a composer
-  // filing its own batch (record.mjs ask). It names an area ruling in force that no item has asked about yet.
+  // flags.ruling is not a flag of the command line: the close's ratification batch passes it, and so may a library
+  // caller filing its own batch (record.mjs ask). It names an area ruling in force that no item has asked about yet.
   if (flags.ruling !== undefined) {
     need(kind === 'ratify' || kind === 'rule', `a question naming a ruling is that ruling's ratification item — kind ratify — or its promotion — kind rule (got "${kind}")`, () => ({ flag: '--kind', value: '<ask-kind>' }));
     const d = loadDecisions(root).find((x) => x.slug === String(flags.ruling));
@@ -64,12 +64,6 @@ export function cmdAsk(root, question, flags) {
   const proposed = kind === 'rule' ? ` · to ${to}${appliesTo ? ` · applies to ${appliesTo}` : ''}` : '';
   const asked = oneBreak(question).trim().split('\n');
   const options = askOptions(flags.option, kind, flags.ruling !== undefined);
-  // Every check is done: the format is raised now, right before the write that needs it, so a refused question writes
-  // nothing. A number written plain (a-7, a-1000), or an issue so written, needs format 2; an escalation, whose kind a
-  // reader of formats 1 and 2 refuses, needs format 3.
-  if (needsRaisedFormat(id) || (issueWritten !== null && needsRaisedFormat(issueWritten))) needFormat(root, 'plain-number');
-  if (kind === 'escalation') needFormat(root, 'escalation');
-  if (kind === 'rule') needFormat(root, 'rule-proposal');
   const optionLines = options.map((o) => `- **a-${id}** option · ${o.label} · ${o.effect}\n`).join('');
   appendAtomic(path, '# Questions to the owner\n\n',`- **a-${id}** (open) · ${kind}${target}${issueWritten !== null ? ` · issue ${issueWritten}` : ''}${slice !== null ? ` · slice ${slice}` : ''}${ruling}${proposed} · ${asked[0]}\n${asked.slice(1).map((l) => `  ${l}\n`).join('')}${optionLines}`);
   appendLog(root, `asked a-${id} (${kind}) · ${firstLine(asked.join('\n'), ASKS_FILE)}`);
@@ -250,7 +244,7 @@ export function cmdAnswerMany(root, rawIds, answer, flags = {}) {
 // A ratification answered: the ruling is marked in place. A ratified area ruling hands back the entry for the type's
 // decision log (typeDecision: { type, text, supersedes }) and, when it names a rule of the graph (decide --rule), the
 // ratification of that rule (ruleRatification: { rule, text }, with by when answer --by named who gave it) — what the command line writes through yg-edge.mjs,
-// the one place in Jarl that reaches another tool, and what a composer standing on record.mjs may write with its own
+// the one place in Jarl that reaches another tool, and what a caller standing on record.mjs may write with its own
 // code. This module never writes either: it reads and writes the loop's files only.
 function ratify(root, ruling, rulings, verdict, askId, by = null) {
   markDecision(root, ruling.slug, `**${verdict === 'ratified' ? 'Ratified' : 'Rejected'}:** a-${askId} (${today()})`);
@@ -361,10 +355,6 @@ export function cmdDecide(root, slug, ruling, flags = {}) {
   const reach = flags.reach !== undefined ? Number(flags.reach) : null;
   const rule = flags.rule !== undefined ? String(flags.rule) : null;
   const text = freeBlock(oneBreak(ruling).trim());
-  // A waiver is a line a reader of formats 1 and 2 would count as no review at all: the loop is raised to the format that
-  // holds it before the ruling is written and after the ruling's own refusals, so a refused ruling raises nothing; where a
-  // composer keeps the loop's format, the ruling is refused with nothing written.
-  if (waives.length) { needNewRuling(root, slug, flags.supersedes); needFormat(root, 'review-waiver'); }
   appendDecision(root, slug, text, { by, quote, under, supersedes: flags.supersedes, area, reach, rule, settles: settles.map((i) => i.id), appliesTo, waives: waives.map((i) => i.id) });
   appendLog(root, `decided ${slug} · by ${by}${appliesTo ? ` · applies to ${appliesTo}` : ''}${flags.supersedes !== undefined ? ` · supersedes ${flags.supersedes}` : ''}${area ? ` · area ${area}${reach !== null ? ` (${reach} files)` : ''}${rule ? ` · rule ${rule}` : ''}` : ''}`);
   if (settles.length) {
@@ -469,21 +459,14 @@ export const PROMOTION_OPTIONS = Object.freeze([
   { label: 'drop', effect: 'dropped with the loop' },
 ]);
 // The promotion offer: every open question offering a rule of the loop for promotion, and new ones filed, on the owner, for
-// each rule of the loop in force (its own, not Jarl's) that no question has offered yet. Nothing here blocks anything. A
-// loop that cannot be raised to the format that holds such a question (its composer keeps its format) is offered nothing,
-// and the offer says why.
+// each rule of the loop in force (its own, not Jarl's) that no question has offered yet. Nothing here blocks anything.
 export function promotionBatch(root) {
   const loop = readLoop(jarlDir(root));
-  const state = formatState(loop.profile);
-  const line = FORMAT_LINES['rule-proposal'];
   const offered = new Set(loop.asks.filter((a) => a.kind === 'rule' && a.ruling).map((a) => a.ruling));
   const rules = loopRules(loop, today()).filter((r) => !r.ended && !r.unread && !offered.has(r.slug));
-  if (rules.length && !state.raises && loop.profile.format < line.format) {
-    return { items: [], filed: [], off: `${rules.length} rule(s) of the loop are not offered for promotion: ${line.what} needs record format ${line.format}, which this loop's composer keeps it from` };
-  }
   const filed = rules.map((r) => cmdAsk(root, `rule ${r.slug} · ${r.scope}: "${firstSentence(r.text)}" — what becomes of it when the loop closes`, { kind: 'rule', ruling: r.slug, to: OWNER, option: PROMOTION_OPTIONS.map((o) => `${o.label}: ${o.effect}`) }).id);
   const items = loadAsks(root).filter((a) => a.kind === 'rule' && a.ruling && a.state === 'open').map((a) => ({ ask: `a-${a.id}`, ruling: a.ruling, question: a.question }));
-  return { items, filed: filed.map((id) => `a-${id}`), off: null };
+  return { items, filed: filed.map((id) => `a-${id}`) };
 }
 
 // decisions [--live]: the rulings, oldest first, each with who ruled and what superseded it; --live leaves out

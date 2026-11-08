@@ -4,11 +4,10 @@
 import { existsSync } from 'node:fs';
 import { Refusal, hole, jarlLine, need, refuse, shellWord } from './base.mjs';
 import { canonical, jarlDir } from './where.mjs';
-import { expandIds, idKey, isBulk, itemNaming, needsRaisedFormat } from './ids.mjs';
+import { expandIds, idKey, isBulk, itemNaming } from './ids.mjs';
 import { PARENT_FIELD, loadProfile } from './profile.mjs';
 import { goalPath } from './journal.mjs';
 import { issueNamed, loadIssues } from './issues.mjs';
-import { needFormat } from './repositories.mjs';
 import { resetCaches } from './tips.mjs';
 import { LINE_FORM, LINE_ROW_READY } from './lines.mjs';
 
@@ -35,14 +34,12 @@ export const DESCRIPTION_FIELDS = ['Title', 'Priority', 'Tier', 'Kind', 'Found b
 // Bulk ids: evidence, review, set, tag and prio take one id or several (see expandIds). Every id is resolved and every
 // precondition checked before anything is written, so a call either lands on all of them or on none;
 // each issue still gets its own log line.
-export function issuesFor(root, rawIds, readOnly = false) {
+export function issuesFor(root, rawIds) {
   const keys = expandIds(rawIds);
   const all = loadIssues(root);
   const missing = keys.filter((k) => !all.some((i) => idKey(i.id) === k));
   need(missing.length === 0, `no such issue: ${missing.join(', ')}${askedAs(rawIds, missing)}${keys.length > 1 ? ' — nothing was written' : ''}${listAll()}`, () => ({ replace: itemNaming(rawIds, missing[0]), value: hole('<ids-the-loop-holds>') }));
-  const found = keys.map((k) => issueNamed(all, k));
-  if (!readOnly && found.some((i) => needsRaisedFormat(i.id))) needFormat(root, 'plain-number');
-  return found;
+  return keys.map((k) => issueNamed(all, k));
 }
 
 // One id in, the same object as always out; a list in, an array of them.
@@ -57,8 +54,8 @@ export function doneReady(cause, issue) {
   if (cause === 'evidence') return LINE_ROW_READY();
   if (cause === 'lines') return ['jarl.mjs', 'field', hole('<id>'), 'Acceptance', LINE_FORM];
   if (cause === 'approve-standing') return ['jarl.mjs', 'round', hole('<id>'), hole('<what-failed>')];
-  if (cause === 'approve') return ['jarl.mjs', 'review', hole('<ids>'), hole('<verdict>'), hole('<what-was-read-and-found>'), '--by', hole('<a-fresh-reviewer>')];
-  if (cause === 'clears') return ['jarl.mjs', 'review', hole('<ids>'), hole('<verdict>'), hole('<what-was-read-and-found>'), '--by', hole('<reviewer>')];
+  if (cause === 'approve') return ['jarl.mjs', 'review', hole('<ids>'), hole('<verdict>'), hole('<what-was-read-and-found>'), '--by', hole('<a-fresh-reviewer>'), '--model', hole('<model-id>')];
+  if (cause === 'clears') return ['jarl.mjs', 'review', hole('<ids>'), hole('<verdict>'), hole('<what-was-read-and-found>'), '--by', hole('<reviewer>'), '--model', hole('<model-id>')];
   if (cause === 'model') return ['jarl.mjs', 'review', hole('<ids>'), hole('<verdict>'), hole('<what-was-read-and-found>'), '--by', hole('<a-fresh-reviewer>'), '--model', hole('<model-id>')];
   if (cause === 'merge') return ['jarl.mjs', 'merged', hole('<ids>'), '--sha', hole('<sha>')];
   if (cause === 'commit') return LINE_ROW_READY();
@@ -148,7 +145,7 @@ export function fieldsWritten(profile) {
 }
 
 // A loop whose profile keeps close or archive to the record ("lifecycle") refuses them from the command line and the
-// MCP tools (caller 'cli'), naming the composer's command; a library caller ('record', the default) passes.
+// MCP tools (caller 'cli'), naming the command of the tool that runs the loop; a library caller ('record', the default) passes.
 export function needLifecycle(root, op, caller = 'record') {
   need(SET_CALLERS.includes(caller), `caller must be one of: ${SET_CALLERS.join(', ')} (got "${caller}")`, () => (['jarl.mjs', 'set', '<ids>', '<status>', '<text>']));
   if (caller !== 'cli') return;

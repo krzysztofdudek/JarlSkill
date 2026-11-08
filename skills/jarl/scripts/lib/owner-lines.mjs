@@ -4,8 +4,7 @@
 // the log, `<id> tick · line <n> · by owner · <the line>`: it holds the line as it was written then, so a line rewritten
 // after it waits for a tick of its own, and it counts inside the window an approve counts in (a red round, a start or a
 // reopen spends it, a pause does not). The done gate refuses while a line is not ticked; next --as puts the line on
-// whoever produces its material until the material is there, then on the owner; the first write of a mark raises the
-// record format (FORMAT_LINES 'owner-line'), so a reader that would let done pass over it refuses the loop instead.
+// whoever produces its material until the material is there, then on the owner.
 
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -16,9 +15,8 @@ const OWNER_TICKS = '<the-owner-himself>';
 import { OWNER, needNoOwnersWords, rulingAuthor } from './owner.mjs';
 import { jarlDir, stamp } from './where.mjs';
 import { appendLogLines } from './journal.mjs';
-import { formatState } from './profile.mjs';
 import { acceptanceLines, evidenceRows, findIssue } from './issues.mjs';
-import { issueRepoPaths, needFormat, worktreeState } from './repositories.mjs';
+import { issueRepoPaths, worktreeState } from './repositories.mjs';
 import { gateOf, gateWindow, wholeOf } from './gate.mjs';
 import { readLoop } from './loop.mjs';
 
@@ -73,16 +71,11 @@ function placesOf(root, issue) {
   return [...new Set([root, ...repos, ...worktrees])];
 }
 
-// Whether owner lines are off in a loop: its profile names an external scheduler, so Jarl never raises its format, and
-// it keeps a format below the one that holds them. A line marked there (written by a Jarl that did not know the mark)
-// can be neither ticked nor kept: the views and the gate say so, and how to rewrite it.
-function linesOff(profile) { const f = formatState(profile); return !f.raises && profile.format < 3; }
-const offText = (profile) => `owner lines are off in this loop: its profile names an external scheduler (${profile.scheduler}) and keeps record format ${profile.format}, so no tick can be written here`;
 const rewrite = (id) => ['jarl.mjs', 'field', id, 'Acceptance', hole('<the-whole-section>')];
 const rewriteText = (id) => printCommand(rewrite(id));
 
 // Each owner line of an issue as the gate and the views read it: { n, text, what, material, check, tick, spent, ready,
-// why, at, off }; off is true where owner lines are off in the loop (see linesOff). tick is the tick that counts ({ at, by }) or null, spent the newest tick of the same line that a red round,
+// why, at }. tick is the tick that counts ({ at, by }) or null, spent the newest tick of the same line that a red round,
 // a start or a reopen spent. ready says whether the material is there: proof of the work recorded since it was started
 // or sent back, and, for a path, the file where the loop sees it (at: the place it was found, when that is not the
 // loop's root); why says what is missing when it is not.
@@ -106,8 +99,7 @@ export function ownerLineStates(root, loop, issue) {
     }
     const live = ticks.filter((e) => e.n > cut).pop();
     const spent = live ? null : ticks.pop();
-    const state = { ...l, tick: live ? { at: live.at, by: live.by } : null, spent: spent ? { at: spent.at, by: spent.by } : null, retracted: live ? null : retracted, ready: false, why: null, at: null, off: linesOff(loop.profile) };
-    if (state.off) return { ...state, why: offText(loop.profile) };
+    const state = { ...l, tick: live ? { at: live.at, by: live.by } : null, spent: spent ? { at: spent.at, by: spent.by } : null, retracted: live ? null : retracted, ready: false, why: null, at: null };
     if (!whole(l)) return { ...state, why: 'the line does not name its material and what to check' };
     if (!proven) return { ...state, why: 'no proof of the work is recorded after it was started or last sent back' };
     if (!asPath(l.material)) return { ...state, ready: true };
@@ -161,7 +153,7 @@ export function ownerLineNotes(root, loop, issue) {
 
 // tick <id> <n> --by owner: the owner's tick of an owner line, once he has reviewed its material. It needs the owner by
 // name, an owner line that names its material and what to check, the material there and no tick that counts already;
-// it raises the record format where the loop is not in it, and writes one log line.
+// it writes one log line.
 export function cmdTick(root, rawId, rawLine, flags = {}) {
   need(flags.by !== undefined, 'tick needs --by owner, as only the owner ticks an owner line and the record says who did', () => ({ flag: '--by', value: OWNER_TICKS }));
   const by = rulingAuthor(flags.by);
@@ -178,14 +170,12 @@ export function cmdTick(root, rawId, rawLine, flags = {}) {
   need(n <= lines.length, `${issue.id} has ${lines.length} acceptance line${lines.length === 1 ? '' : 's'}: there is no line ${n}; ${owners}`, () => ({ arg: 1, value: hole('<line-number>') }));
   const s = states.find((x) => x.n === n);
   // Where the line named is no owner line, or one ticked: a placeholder for the owner lines not ticked yet.
-  const open = states.filter((x) => !x.tick && !x.off).map((x) => x.n);
+  const open = states.filter((x) => !x.tick).map((x) => x.n);
   const openLine = () => ({ arg: 1, value: hole('<line-number>') });
   need(s, `acceptance line ${n} of ${issue.id} is not marked as one only the owner ticks; ${owners}`, openLine);
   need(!loop.profile.is(issue.status, 'terminal'), `${issue.id} is ${issue.status}: nothing waits for the owner's tick until it is open again`, () => ({ first: ['jarl.mjs', 'set', issue.id, hole('<status>'), '<why>'] }));
-  need(!s.off, `acceptance line ${n} of ${issue.id} cannot be ticked: ${s.why}; rewrite it without the [owner] mark: ${rewriteText(issue.id)}`, () => (rewrite(issue.id)));
   need(!s.tick, `acceptance line ${n} of ${issue.id} is ticked already, by ${s.tick && s.tick.by} at ${s.tick && s.tick.at}; a tick given by mistake is taken back with ${jarlLine('retract', issue.id, `tick-${n}`, '<why>', '--by', OWNER_TICKS)}`, openLine);
   need(s.ready, `the material of acceptance line ${n} of ${issue.id} is not there yet: ${s.why} — the owner ticks the line once he has reviewed it; nothing was written`, () => (['jarl.mjs', 'evidence', issue.id, '--ran', '<command>', '--saw', '<what-it-printed>', '--line', '<line-number>', '--by', '<who>']));
-  needFormat(root, 'owner-line');
   const at = stamp();
   appendLogLines(root, [`${issue.id} tick · line ${n} · by ${by} · ${s.text}`], at);
   return { id: issue.id, line: n, by, at, text: s.text };
@@ -194,8 +184,7 @@ export function cmdTick(root, rawId, rawLine, flags = {}) {
 // retract <id> tick-<n> --by owner "<why>": the owner takes back his tick of an owner line, given by mistake. It needs the
 // owner by name, as the tick does, an owner line of that number with a tick that counts, and why; it writes one log line,
 // `<id> tick retract · line <n> · by owner · <why> · <the line>`, which takes back the newest tick of the line as written
-// and nothing else: the line waits for his tick again, and every other tick, approve and row stands. The line is of the
-// record format that holds owner lines, which a loop with a tick is in already.
+// and nothing else: the line waits for his tick again, and every other tick, approve and row stands.
 const TICK_ENTRY = /^tick-(\d+)$/;
 export function cmdRetractTick(root, rawId, entry, reason, flags = {}) {
   need(flags.by !== undefined, 'retract of a tick needs --by owner: only the owner ticks an owner line, and only he takes his tick back', () => ({ flag: '--by', value: OWNER_TICKS }));
@@ -216,7 +205,6 @@ export function cmdRetractTick(root, rawId, entry, reason, flags = {}) {
   need(s, `acceptance line ${n} of ${issue.id} is not marked as one only the owner ticks — ${which}`, () => ({ replace: String(entry), value: hole('<tick-n>') }));
   need(!loop.profile.is(issue.status, 'terminal'), `${issue.id} is ${issue.status}: opening it again spends every tick it was closed on; a tick he gives after that is taken back while the issue is open`, () => ({ first: ['jarl.mjs', 'set', issue.id, hole('<status>'), hole('<why>')] }));
   need(s.tick, `acceptance line ${n} of ${issue.id} has no tick that counts${s.spent ? `: his tick of ${s.spent.at} was spent when the work was sent back or started again` : ''} — ${which}`, () => ({ replace: String(entry), value: hole('<tick-n>') }));
-  needFormat(root, 'owner-line');
   const why = noSeparators(oneBreak(reason).split('\n').map((l) => l.trim()).filter(Boolean).join(' ⏎ '));
   const at = stamp();
   appendLogLines(root, [`${issue.id} tick retract · line ${n} · by ${by} · ${why} · ${s.text}`], at);

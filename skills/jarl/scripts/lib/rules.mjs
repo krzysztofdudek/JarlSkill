@@ -91,12 +91,8 @@ export function ruleEnd(rule, loop, today) {
 export const BUILTIN_RULES = Object.freeze([
   { slug: 'jarl:reviewer-every-round', scope: 'role reviewer and moment round', source: 'references/reviewer.md',
     text: 'Every round, re-check every acceptance line of the issue, not only the findings of the round before.' },
-  { slug: 'jarl:reviewer-light-tier', scope: 'role reviewer and tier light', source: 'references/reviewer.md',
-    text: 'On work done on the light tier, re-run each command a proof row names.' },
   { slug: 'jarl:reviewer-tier-above', scope: 'role reviewer', source: 'references/reviewer.md',
     text: 'Work on a record format, a contract or what a person sees is reviewed a tier above the worker.' },
-  { slug: 'jarl:reviewer-identical-output', scope: 'role reviewer', source: 'references/reviewer.md',
-    text: 'A change meant to alter nothing is reviewed by checking that its comparison of the output before and after covers everything the change touched.' },
   { slug: 'jarl:reviewer-judges-the-issue', scope: 'role reviewer', source: 'references/reviewer.md',
     text: "The verdict judges the issue's acceptance and what the change itself broke; a finding outside that is filed as a new issue and never turns the verdict to changes." },
   { slug: 'jarl:worker-only-the-issue', scope: 'role worker', source: 'SKILL.md',
@@ -105,8 +101,6 @@ export const BUILTIN_RULES = Object.freeze([
     text: "It goes up with `ask \"<text>\" --kind escalation --slice <name>` (and `--issue <id>` when one issue is the subject), which the jarl holds and answers, for these four and no other:\n1. a gap or a finding outside its slice's goal;\n2. a decision that is the jarl's or the owner's;\n3. its slice empty, or blocked by another slice;\n4. a takeover that failed too." },
   { slug: 'jarl:coordinator-pull-push', scope: 'role coordinator', source: 'references/jarl.md',
     text: 'Pull before leasing and push right after when the loop is shared between clones.' },
-  { slug: 'jarl:coordinator-shared-review', scope: 'role coordinator and moment review', source: 'references/jarl.md',
-    text: 'One shared review covers only issues that are one contract or one screen, at most four.' },
   { slug: 'jarl:coordinator-scope-holds', scope: 'role coordinator', source: 'references/jarl.md',
     text: "An issue's scope does not grow once it is leased: a new ask becomes a new issue." },
 ].map((r) => Object.freeze({ ...r, selectors: parseScope(r.scope), until: null, builtin: true })));

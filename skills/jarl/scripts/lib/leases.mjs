@@ -54,11 +54,7 @@ export function needTreeHolds(profile, issues, status, nothing) {
 //   holds, unless it joins that lease: the same branch, and the same worker when both name one. Issues leased in one
 //   call share one lease.
 // A move that names no new holder, or restates the one the issue has, takes nothing new and is never refused here.
-// A loop whose profile names an external scheduler is leased by its composer, which decides who holds what (several
-// issues it runs at once may share a file there), so neither refusal runs in it; a handover there is still checked
-// and logged.
 export function needLeaseHolds(root, profile, issues, status, why, flags, handover, nothing) {
-  const composed = profile.scheduler !== null && profile.scheduler !== undefined;
   const named = (k) => (flags[k] !== undefined ? fieldText(flags[k]) : null);
   const leaseFlags = ['branch', 'model', 'worker'].filter((k) => named(k) !== null).flatMap((k) => [`--${k}`, named(k)]);
   const taken = new Set(issues.map((i) => i.id));
@@ -68,7 +64,7 @@ export function needLeaseHolds(root, profile, issues, status, why, flags, handov
   if (handover) need(why, `--handover says why the work changes hands: ${jarlLine('set', issues.map((i) => i.id).join(','), status, '<why-the-worker-changed>', ...leaseFlags, '--handover')}`, () => ({ arg: 2, value: '<why-the-worker-changed>' }));
   // A worker raised on an issue with no line has nothing to prove and a reviewer nothing to check it against.
   for (const issue of issues) need(acceptanceLineCount(issue) > 0, `${issue.id} has no acceptance line, so a lease would hold a worker to nothing that can be proved — every issue carries at least one line before it is leased${nothing}`, () => ['jarl.mjs', 'field', hole('<id>'), 'Acceptance', LINE_FORM]);
-  const everyIssue = handover && !composed ? loadIssues(root) : [];
+  const everyIssue = handover ? loadIssues(root) : [];
   for (const issue of issues) {
     if (handover) {
       need(leased(issue), `${issue.id} holds no lease to hand over${nothing} — lease it without --handover: ${jarlLine('set', issue.id, status, '<text>', ...leaseFlags)}`, () => ({ rename: '--handover', to: hole('<no-flag-here>') }));
@@ -76,11 +72,10 @@ export function needLeaseHolds(root, profile, issues, status, why, flags, handov
       need(!left.length, `${issue.id} shares its lease with ${left.map((i) => i.id).join(', ')} (${leaseWords(issue)}): a handover moves the whole lease or nothing, or two workers would hold one branch — name every issue of the lease${nothing}`, () => ['jarl.mjs', 'set', hole('<ids>'), status, hole('<why-the-worker-changed>'), '--worker', hole('<the-new-worker>'), '--handover', '--by', hole('<who>')]);
       // A lease the log holds twice is settled by a handover to either of its two holders, the one the issue's header already names too.
       need(replaces(issue) || ((named('worker') !== null || named('branch') !== null) && leaseConflictOf(readLoop(jarlDir(root)), issue) !== null), `--handover names the lease ${issue.id} already has (${holderText(issue)}) — a handover names the new --worker or --branch${nothing}`, () => ({ flag: '--worker', value: '<the-new-worker>' }));
-    } else if (!composed) {
+    } else {
       need(!(leased(issue) && replaces(issue)), `${issue.id} is leased already (${holderText(issue)}) — a second lease would replace it in silence, and ${fieldText(issue.fields.worker) || 'its worker'} would go on working on a branch the record does not name; when the work changes hands, say why: ${jarlLine('set', [issue.id, ...loadIssues(root).filter((x) => x.id !== issue.id && sameLease(profile, x, issue)).map((x) => x.id)].join(','), status, '<why-the-worker-changed>', ...leaseFlags, '--handover')}${nothing}`, () => ([...(why ? [] : [{ arg: 2, value: '<why-the-worker-changed>' }]), { flag: hole('<--handover-or-none>') }]));
     }
   }
-  if (composed) return;
   // With more than one slice in play, a lease holds only what its issue declares, so one that declares nothing would
   // collide with another slice's work unseen: it is refused until the issue declares its files or its resources. The issues
   // in no slice, the jarl's own, are one more slice of work beside the coordinators' when one of them is in play. The
@@ -139,12 +134,10 @@ function heldByOthers(root, others, issue, branch, worker, fileKeys, resourceNam
 
 // A file or a resource declared on an issue a lease holds is taken into that lease, so it is refused when another lease holds
 // it, as a lease taken on it would be: a lease that guards what an issue declares is guarded wherever it is declared. What
-// the issue's own lease joins is allowed; an issue no lease holds is checked when it takes one; a loop its composer schedules
-// leaves the decision to the composer. `files` and `resources` are what the call adds; `next` is what the issue holds once
+// the issue's own lease joins is allowed; an issue no lease holds is checked when it takes one. `files` and `resources` are what the call adds; `next` is what the issue holds once
 // the call is written, which a call over several issues keeps for the issues checked after this one.
 export function needFreeOfOtherLeases(root, issue, files, resources, next) {
   const profile = loadProfile(root);
-  if (profile.scheduler !== null && profile.scheduler !== undefined) return;
   if (!profile.is(issue.status, 'holds-claim') || !(issue.fields.worker || issue.fields.branch)) return;
   const held = heldByOthers(root, otherLeases(root, profile, new Set([issue.id])), issue, fieldText(issue.fields.branch), fieldText(issue.fields.worker), fileKeysOf(root, { ...issue, files }), resources);
   if (!held.length) {

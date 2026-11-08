@@ -8,12 +8,12 @@ import { git } from './git.mjs';
 import { jarlDir, stamp } from './where.mjs';
 import { readText, writeAtomic } from './files.mjs';
 import { cmpId, isBulk } from './ids.mjs';
-import { PARENT_FIELD, SLOT_NAME_RE, clearsOf, clearsWords, formatState, loadProfile } from './profile.mjs';
+import { PARENT_FIELD, SLOT_NAME_RE, clearsOf, clearsWords, loadProfile } from './profile.mjs';
 import { appendLog, appendLogLines, firstLine, goalLines, readGoal } from './journal.mjs';
 import { outOfGit } from './loop-git.mjs';
 import { attachmentOf, journalById, rowLinesText } from './log.mjs';
 import { acceptanceLineCount, acceptanceLines, alignRows, bodyText, evidenceNotes, evidenceParts, evidenceTable, loadIssues, mergedOf, noteLogText, noteText, parseIssue, placeEvidence, removeFields, reviewEntries, setSection, sharedMark, struckNote } from './issues.mjs';
-import { fileKeysOf, needFormat, repoNames, reposWhere, tipLinesOf, whereLines, whereOf } from './repositories.mjs';
+import { fileKeysOf, repoNames, reposWhere, tipLinesOf, whereLines, whereOf } from './repositories.mjs';
 import { approveKind, carriesCode, inFlightMark, sentBack, unmergedCode, unmergedText, gateOf, gateState, reviewSplit, waiverVoid, worksInPlace } from './gate.mjs';
 import { coordinatorOf, sameSlice, sliceNamed, sliceOf, slicesOf } from './slices.mjs';
 import { disagreementText, headerReadNotes, recordDisagreements } from './disagreements.mjs';
@@ -105,9 +105,6 @@ function retractedBy(flags, what) {
   return fieldText(flags.by);
 }
 const struck = (line) => line.replace(/^- /, '- ~~');
-// The text a write that raised the format starts from: a raise from format 1 writes the Repo and Merged paths of every
-// issue file again, this one's too, so the file is read again after it; the sections the write replaces are untouched by it.
-const raisedText = (issue, text, raised) => (raised ? readText(issue.file) : text);
 // The waiver decide --waives-review writes into an issue's notes, as the file holds it: the ruling it names.
 const WAIVER_TEXT = /^(?:- )?Ruling (\S+) \(by owner\) waives the review\b/;
 
@@ -136,14 +133,11 @@ function retractEvidence(root, rawIds, reason, flags) {
   const journalRows = issue.byHeader ? [] : (journalById(root).get(issue.id) || []).filter((e) => e.type === 'row');
   need(journalRows.length === 0 || journalRows.length === table.rows.length, `${issue.id} holds ${table.rows.length} evidence row${table.rows.length === 1 ? '' : 's'} and its log ${journalRows.length}, so the row numbers cannot be matched to the log; nothing was written; what the record holds: ${jarlLine('verify')}`, () => ({ replace: raw, value: '<a-row-the-log-matches>' }));
   need(journalRows.length === 0 || alignRows(issue.id, table.rows, journalRows)[n - 1], `row ${n} of ${issue.id} matches no evidence line of the log, so its retraction could not be told from another row's; nothing was written; what the record holds: ${jarlLine('verify')}`, () => ({ replace: raw, value: '<a-row-the-log-matches>' }));
-  // The first retraction of a loop raises the record format, before its line is written: a reader of format 1 does not
-  // read a retraction and would go on counting the row, so it must refuse the loop instead.
-  const raised = needFormat(root, 'retraction');
   const lines = table.lines.slice();
   lines[row.start] = struck(lines[row.start]);
   lines[row.end] = `${lines[row.end].trimEnd()}~~`;
   const entry = `- **retracted:** row ${n} · by ${by} · ${stamp().slice(0, 10)}\n${bodyText(reason).split('\n').map((l) => (l ? `  ${l}` : '')).join('\n')}`;
-  writeAtomic(issue.file, setSection(raisedText(issue, text, raised), 'Evidence', placeEvidence(lines.join('\n').trim(), 'note', entry, '\n')));
+  writeAtomic(issue.file, setSection(text, 'Evidence', placeEvidence(lines.join('\n').trim(), 'note', entry, '\n')));
   appendLog(root, `${issue.id} evidence retract · row ${n} · by ${by} · ${firstLine(reason, "the issue's Evidence section")}`);
   return { id: issue.id, retracted: n, by };
 }
@@ -166,13 +160,11 @@ function retractNote(root, rawIds, reason, flags, n) {
   need(note, `${issue.id} has ${table.notes.length} evidence note${table.notes.length === 1 ? '' : 's'}: there is no note ${n} (got ${given})`, noteFirst);
   const live = table.notes.findLastIndex((x) => !x.retracted);
   need(!note.retracted, `note ${n} of ${issue.id} is retracted already${live === -1 ? ', as is every note it holds' : `; note ${live + 1} is not`}`, noteFirst);
-  // The format is raised before the line is written, as a row's retraction does: a reader of format 1 would show the note.
-  const raised = needFormat(root, 'note-retraction');
   const entry = `- **retracted:** note ${n} · by ${by} · ${stamp().slice(0, 10)}\n${bodyText(reason).split('\n').map((l) => (l ? `  ${l}` : '')).join('\n')}`;
   // A note that carries the owner's quote (a ruling's row) is struck through as it stands: its own lines are carried, so the
   // strike does not read as a new line that looks like his words, while the reason and everything else stay checked.
   const own = table.lines.slice(note.start, note.end + 1).map((l) => l.trim().replace(/^- /, ''));
-  carryingOwnersWords(own, () => writeAtomic(issue.file, setSection(raisedText(issue, text, raised), 'Evidence', placeEvidence(struckNote(table.lines, note).join('\n').trim(), 'note', entry, '\n'))));
+  carryingOwnersWords(own, () => writeAtomic(issue.file, setSection(text, 'Evidence', placeEvidence(struckNote(table.lines, note).join('\n').trim(), 'note', entry, '\n'))));
   appendLog(root, `${issue.id} evidence retract · note ${n} · by ${by} · ${firstLine(reason, "the issue's Evidence section")}`);
   return { id: issue.id, retractedNote: n, by };
 }
@@ -309,12 +301,7 @@ function treeLines(loop, issue) {
   ].filter(Boolean);
 }
 
-// The words next, queue, status and resume say in place of what they would compute, on a loop whose profile names an
-// external scheduler: Jarl does not know that scheduler's edges (ports, leases, holds), so a ready list of its own would
-// offer work the loop's real scheduler holds back.
-export function schedulerNote(cmd) { return `scheduling is led by the composer: ${cmd}`; }
 
-// next — on a loop with an external scheduler, { scheduler, note } and no list: Jarl computes nothing it cannot know.
 // By default the issues ready to start and nothing else; --all adds the others, each row carrying its group:
 // ready, held-by-file (a file an in-progress or earlier-offered issue holds), waiting-after (After not settled, the
 // issue's own or that of an issue above it), waiting-sub (a parent with a sub-issue not settled), held-by-question (an
@@ -322,8 +309,6 @@ export function schedulerNote(cmd) { return `scheduling is led by the composer: 
 // worker: next --as shows it on who holds it). A library caller reads the full list through nextRows and filters it itself.
 export const NEXT_GROUPS = ['ready', 'held-by-file', 'held-by-resource', 'waiting-after', 'waiting-sub', 'held-by-question', 'promise', 'wait'];
 export function cmdNext(root, flags) {
-  const profile = loadProfile(root);
-  if (profile.scheduler) return { scheduler: profile.scheduler, note: schedulerNote(profile.scheduler) };
   const rows = nextRows(root, flags);
   return flags.all ? rows : rows.filter((r) => r.ready);
 }
@@ -504,10 +489,7 @@ function statusOf(root, loop, flags) {
   c.waitingIds = unfinished.filter((i) => waitingOn(i, byId, profile).length).map((i) => i.id);
   c.waiting = c.waitingIds.length;
   c.inFlight = unfinished.filter((i) => profile.is(i.status, 'holds-claim') && !c.waitingIds.includes(i.id)).length;
-  // Ready is Jarl's own reckoning (dispatchable, After settled); under an external scheduler it is not Jarl's to count:
-  // null, and scheduler names who counts it.
-  c.ready = profile.scheduler ? null : unfinished.filter((i) => profile.is(i.status, 'dispatchable') && !c.waitingIds.includes(i.id)).length;
-  if (profile.scheduler) c.scheduler = profile.scheduler;
+  c.ready = unfinished.filter((i) => profile.is(i.status, 'dispatchable') && !c.waitingIds.includes(i.id)).length;
   c.noAcceptance = issues.filter((i) => profile.is(i.status, 'holds-claim') && !acceptanceLineCount(i)).map((i) => i.id);
   c.lines = lineCounts(loop, issues.filter((i) => i.status !== 'dropped'));
   c.stages = stageCounts(loop, issues);
@@ -547,8 +529,6 @@ function statusOf(root, loop, flags) {
   // The numbers read from their headers, one note each: not disagreements, the header is the record for them.
   const byHeader = headerReadNotes(!scoped ? loop : scopedLoop(loop, issues));
   if (byHeader.length) c.headerRead = byHeader;
-  // The record format: what the loop is in, what this Jarl reads, and the lines that are off where a composer keeps the format.
-  c.recordFormat = formatState(profile);
   const files = uncommittedLoopFiles(root);
   c.uncommitted = files === null ? null : files.length;
   // --group (by, as the library takes it): the same five counts per repository, tag, kind or priority — a dashboard's table, read from the issues.
@@ -629,7 +609,7 @@ export function mergeAgainWhy(loop, issue) {
 const MODEL_REFUSED_MERGED = 'approved and merged, and done refuses its approve for its model: it waits for an approve the reviewer rule accepts';
 const mergedFor = (loop, issue) => Boolean(mergedOf(issue)) && !mergeAgainWhy(loop, issue);
 const approvedStep = (loop, issue) => { const again = mergeAgainWhy(loop, issue); return again ? `approved, and ${again} — next the merger lands it again and records the merge, then set it done` : IN_FLIGHT_MARKS.approved; };
-const inFlightStep = (loop, mark, issue) => (mark === 'approved' && worksInPlace(loop.profile, issue) ? APPROVED_IN_PLACE : mark === 'approved' && !carriesCode(issue) ? APPROVED_NO_CODE : mark === 'approved' ? approvedStep(loop, issue) : sentBack(loop, issue, mark) ? SENT_BACK : IN_FLIGHT_MARKS[mark]);
+const inFlightStep = (loop, mark, issue) => (mark === 'approved' && worksInPlace(issue) ? APPROVED_IN_PLACE : mark === 'approved' && !carriesCode(issue) ? APPROVED_NO_CODE : mark === 'approved' ? approvedStep(loop, issue) : sentBack(loop, issue, mark) ? SENT_BACK : IN_FLIGHT_MARKS[mark]);
 // The rows for the in-flight `issues` of a loop (its own issues, or the ones a view is scoped to). Where the mark ends in
 // setting the issue done and an acceptance line only the owner ticks is not ticked, next says that tick comes first. An
 // approve the done gate refuses for its model is named with what is missing, in the gate's words.
@@ -767,12 +747,15 @@ function attachmentRow(root, rawIds, flags) {
 // after it (an approve or a proof row retracted, a merge recorded later, a restart that spent the approve). Every issue
 // in a finished status is read: a closing one against the gate's own conditions, any other against the merge it records.
 export function closedGateFlags(loop) {
+  // An issue closed before the line a conversion ends with was closed under an earlier gate: it is not re-read against this one.
+  const convertedAt = loop.events.findLast((e) => e.type === 'converted')?.n ?? -1;
   const { profile } = loop;
   const flags = [];
   for (const issue of loop.issues) {
     if (!profile.is(issue.status, 'terminal')) continue;
     const id = issue.id;
     const events = loop.eventsById.get(id) || [];
+    if ((events.findLast((e) => e.type === 'move')?.n ?? -1) < convertedAt) continue;
     const merges = events.filter((e) => e.type === 'merged');
     const reasons = []; const repairs = [];
     const flag = (reason, repair) => { reasons.push(reason); if (!repairs.includes(repair)) repairs.push(repair); };
@@ -788,7 +771,7 @@ export function closedGateFlags(loop) {
       for (const s of unprovedMechanical(lineStates(loop, issue, g))) flag(`acceptance ${lineStateText(s)}`, lineRowForm(id));
       for (const p of slotProblems(loop.root, profile, issue, g, false)) flag(`slot ${p.slot}: ${p.what}`, p.fix);
       if (profile.doneGate.approve !== 'none') {
-        const fresh = jarlLine('review', id, 'approve', '--by', '<a-fresh-reviewer>', '<text>');
+        const fresh = jarlLine('review', id, 'approve', '--by', '<a-fresh-reviewer>', '--model', '<model-id>', '<text>');
         const kind = approveKind(g);
         if (g.selfApproved) flag('its live approve is by a worker of this issue or its branch', fresh);
         else if (!g.approved) flag(kind === 'retracted' ? 'its approve was retracted' : g.trail.some((r) => r.verdict === 'approve') ? 'its approve is spent by a later round, restart, reopen or changes verdict' : 'it holds no approve', fresh);
@@ -799,7 +782,7 @@ export function closedGateFlags(loop) {
           const held = `the approves it holds are by ${g.uncleared.standing.join(', ')}`;
           if (code && g.uncleared.cause === 'coordinator') flag(`it carries code and holds no fresh approve (${held})`, fresh);
           else if (g.uncleared.cause === 'bot') flag(`its live approve is a bot's, which clears an issue only where the loop's done gate names that bot (${held})`, fresh);
-          else flag(`it holds no approve that clears it under the loop's done gate (done-gate "clears": ${clearsWords(clearsOf(profile))}; ${held})`, jarlLine('review', id, 'approve', '--by', '<reviewer>', '<text>'));
+          else flag(`it holds no approve that clears it under the loop's done gate (done-gate "clears": ${clearsWords(clearsOf(profile))}; ${held})`, jarlLine('review', id, 'approve', '--by', '<reviewer>', '--model', '<model-id>', '<text>'));
         }
       }
       const doneAt = Math.max(-1, ...events.filter((e) => e.type === 'move' && profile.is(e.to, 'closes-record')).map((e) => e.n));
@@ -815,4 +798,4 @@ export function closedGateFlags(loop) {
 }
 
 // Used by the other modules of the library, and not part of what jarl-lib.mjs exports.
-export { REVIEW_MIN_WORDS, modelText, needSaid, raisedText, retractedBy, statusOf, struck };
+export { REVIEW_MIN_WORDS, modelText, needSaid, retractedBy, statusOf, struck };

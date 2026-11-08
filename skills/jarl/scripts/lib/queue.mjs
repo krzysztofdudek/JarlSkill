@@ -12,7 +12,7 @@ import { integrationBranch, sameSlice, sliceMerger, sliceOf } from './slices.mjs
 import { gateOf } from './gate.mjs';
 import { readLoop } from './loop.mjs';
 import { issuesOnBranch, loopRepos } from './rounds.mjs';
-import { mergeAgainWhy, schedulerNote } from './evidence.mjs';
+import { mergeAgainWhy } from './evidence.mjs';
 
 // ---- the merge queue: derived, never stored --------------------------------------------------------
 
@@ -23,14 +23,11 @@ import { mergeAgainWhy, schedulerNote } from './evidence.mjs';
 // not, so it is not merged yet. Rows are ordered by approval (the latest live approve on the branch, then the log's
 // order) and, per repository, cut into batches the way the merger's brief batches: a branch joins the current batch
 // while its declared files share none with it, and starts the next one otherwise. It computes, holds no lock and
-// writes nothing; it runs no check and refuses no merge — that is a composer's gate, never Jarl's. A branch its base
+// writes nothing; it runs no check and refuses no merge — that is the repository's gate, never Jarl's. A branch its base
 // already holds is listed as well when a red round spent the merge recorded on it: that row is marked record only, since
 // its merge is recorded again and nothing lands.
 export function cmdQueue(root, flags = {}) {
   const profile = loadProfile(root);
-  // Under an external scheduler the merge order is its own (and with approve: none no fresh approve would ever queue
-  // anything): { scheduler, note, repos: [] }.
-  if (profile.scheduler) return { scheduler: profile.scheduler, note: schedulerNote(profile.scheduler), repos: [] };
   const loop = readLoop(jarlDir(root));
   const { issues } = loop;
   // Only work in play (offered or worked on): an issue waiting in a status with no such flag (a proposal, a block) is
@@ -148,7 +145,6 @@ function finishRows(rows) {
 }
 
 export function renderQueue(o) {
-  if (o.scheduler) return o.note;
   const lines = [];
   for (const r of o.repos) {
     if (!r.rows.length && o.repos.length > 1) continue;

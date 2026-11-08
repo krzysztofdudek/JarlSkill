@@ -60,6 +60,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- A loop now states which version of Jarl's record it is in, on a line of its goal, and a loop in any other version is refused by every command, with the file that explains how an agent converts it. Every write names who made it, and every lease and review also names the model it ran on.
+- Jarl reads only the current record. Support for older records, for loops scheduled by another tool, for the identical-output tag (replaced by a line that compares the output before and after) and for the limit of four tasks to one shared review is gone.
 - Every acceptance line now starts with how it will be proved: `[test]`, `[check]`, `[compare]`, `[read]` or `[owner]`. A line without one is refused when you write it. A task cannot be started until it has at least one line.
 - A task closes when each line has what its method asks. A test needs a proof row from the worker and one from someone else. A read line needs an approve and no row.
 - A proof row now names the line it proves. If the text of that line changes, the row stops counting for it.

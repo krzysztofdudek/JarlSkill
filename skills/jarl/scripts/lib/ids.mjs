@@ -21,9 +21,6 @@ export function idKey(raw) {
   return /^\d+$/.test(s) ? s.replace(/^0+(?=\d)/, '') : s;
 }
 export const cmpId = (a, b) => Number(a) - Number(b);
-// The record format a written id needs before it is written: a number of fewer than three digits is written plain, and a
-// reader that expects three digits skips it in silence, as it skips a number of 1000 or more.
-export const needsRaisedFormat = (id) => /^\d+$/.test(String(id)) && (String(id).length < 3 || Number(id) >= 1000);
 // The written form of each issue number the issue files' names hold, by key: 007 for 007-x.md, 7 for 7-x.md.
 export function writtenForms(names) {
   const forms = new Map();

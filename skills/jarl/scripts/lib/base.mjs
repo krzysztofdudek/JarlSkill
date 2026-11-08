@@ -11,16 +11,6 @@ export const KINDS = ['bug', 'gap', 'cleanup', 'docs', 'test', 'research', 'proc
 export const PROMISE_KIND = 'promise';
 export const WAIT_KIND = 'wait';
 export const KEPT_KINDS = [PROMISE_KIND, WAIT_KIND];
-// The tag of a change meant to alter nothing (a refactor whose output is the same before and after): its comparison of the
-// output is a proof row, and its fresh review may be a light one that checks the comparison covers everything the change
-// touched. The comparison never stands in for the review. The tag alone relaxes nothing: anyone can set it, so a light
-// review is enough only for an issue that carries the tag and a proof row that names the comparison.
-export const IDENTICAL_OUTPUT_TAG = 'identical-output';
-export const meantToAlterNothing = (issue) => (issue.tags || []).some((t) => String(t).toLowerCase() === IDENTICAL_OUTPUT_TAG);
-// A proof row ({ ran, saw }) that names the comparison of the output before and after: its command or what it printed
-// says so with a word of a comparison (compare, diff, cmp, identical, byte for byte, a checksum or a hash).
-const COMPARISON_WORD = /\b(?:compar\w*|diffs?|cmp|identical|byte[- ]for[- ]byte|checksums?|sha\d*sum|md5(?:sum)?|hash(?:es)?)\b/i;
-export const namesComparison = (row) => COMPARISON_WORD.test(`${row.ran ?? ''} ${row.saw ?? ''}`);
 export const PRIORITIES = ['1', '2', '3'];
 // The standing a verdict's reviewer is recorded with, as every reader of a verdict line or a Reviews entry matches it:
 // the issue's own worker (self), the loop's director (coordinator), a bot, or anyone else (fresh).

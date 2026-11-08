@@ -5,13 +5,12 @@ import { join, resolve } from 'node:path';
 import { fieldText, jarlLine, need } from './base.mjs';
 import { canonical, jarlDir } from './where.mjs';
 import { readText } from './files.mjs';
-import { ISSUE_FILE_RE, cmpId, idKey, needsRaisedFormat } from './ids.mjs';
-import { FORMAT_LINES, RECORD_FORMAT_RAISED, formatOffText, formatState, loadProfile } from './profile.mjs';
+import { ISSUE_FILE_RE, cmpId, idKey } from './ids.mjs';
+import { loadProfile } from './profile.mjs';
 import { ASKS_FILE, DECISIONS_FILE, GOAL_FILE, LOG_FILE, goalLineOf, goalLines, loadDecisions, readGoal } from './journal.mjs';
 import { loopEvents } from './log.mjs';
-import { issueKeyOf, parentCycle, parseIssue, sharedNumberText, sharedNumbers } from './issues.mjs';
+import { parentCycle, parseIssue, sharedNumberText, sharedNumbers } from './issues.mjs';
 import { REPOS_DECLARED_IN, declaredNames, issueRepos, repoIdentity, repoValueKind, reposNamed, worktreesOf } from './repositories.mjs';
-import { IN_PLACE_TAG } from './gate.mjs';
 import { headerReadNotes, recordDisagreements } from './disagreements.mjs';
 import { readLoop, unorderedNamings, unorderedText } from './loop.mjs';
 import { attachmentFindings } from './attachments.mjs';
@@ -24,7 +23,7 @@ import { issuesNaming, loadAsks, unsettledRulings, unsettledText } from './quest
 // verify runs the readers of the record in their strict mode (see loopEvents, goalLines, parseIssue, loadAsks and
 // loadDecisions, and validateProfile, which lists every problem it finds) and reports what each one did not place. It
 // adds no grammar of its own: a line is placed by the reader that owns it, and what verify adds is what the readers do
-// not see — a retraction that points at nothing, the record format a line needs, the header that disagrees with the log,
+// not see — a retraction that points at nothing, the header that disagrees with the log,
 // the repositories the issues name, the worktrees the leases hold, the open issues that cite a superseded ruling and, as
 // notes, the rulings in force whose settled issues are not closed. It
 // takes no lock and no network and writes nothing; its exit status is the caller's (2 when it found something).
@@ -32,7 +31,7 @@ import { issuesNaming, loadAsks, unsettledRulings, unsettledText } from './quest
 // The checks in the order they print, with the part of the loop each one reads.
 const VERIFY_CHECKS = [
   ['profile', 'profile.json'], ['log', LOG_FILE], ['asks', ASKS_FILE], ['decisions', DECISIONS_FILE], ['goal', GOAL_FILE],
-  ['issues', 'issues/'], ['format', 'record format'], ['headers', 'issue headers'], ['repositories', REPOS_DECLARED_IN],
+  ['issues', 'issues/'], ['headers', 'issue headers'], ['repositories', REPOS_DECLARED_IN],
   ['leases', 'worktree leases'], ['superseded', 'open issues citing a superseded ruling'], ['attachments', 'recorded attachment files'],
 ];
 export const VERIFY_SHOWN = 20;
@@ -119,42 +118,6 @@ export function cmdVerify(root) {
     else if (parentCycle(i)) add('issues', `issue ${i.id}`, `its parents come back to it (${[i, ...i.tree.ancestors, i].map((a) => a.id).join(' → ')}), so none of them is ever offered`);
     else if (finished && profile.unfinished(i.status)) add('issues', `issue ${i.id}`, `is ${i.status} under ${finished.id}, which is ${finished.status}: reopen ${finished.id}, or finish ${i.id}`);
   }
-  if (profile.format < RECORD_FORMAT_RAISED) {
-    for (const e of events) {
-      // A retraction is a line of the log: it is found there, with the other findings of the log, in file order.
-      if (e.type === 'retract-row' || e.type === 'retract-review') add('format', `${LOG_FILE} line ${e.n + 1}`, `"${shownText(e.text)}" — a retraction is written in the raised record format, and this loop is not in it`, e.n + 1);
-    }
-    for (const i of loop.issues) {
-      if (i.id !== null && needsRaisedFormat(i.id)) add('format', `issue ${i.id}`, 'its id needs the raised record format (an id of 1000 or more, or of fewer than three digits), and this loop is not in it');
-    }
-  }
-  // A line of a format the loop is not in: a writer after the stamp is held by format 3, and so is an escalation.
-  if (profile.format < FORMAT_LINES.writer.format) {
-    for (const e of events) if (e.writer !== null) add('format', `${LOG_FILE} line ${e.n + 1}`, `"${shownText(e.text)}" names its writer (${shownText(e.writer)}), which is written in record format ${FORMAT_LINES.writer.format}, and this loop is not in it`, e.n + 1);
-  }
-  // An issue's key, in its header or in a log line, is held by format 3: a reader of a lower format reads the lines by
-  // number alone.
-  if (profile.format < FORMAT_LINES['issue-key'].format) {
-    for (const i of loop.issues) if (i.id !== null && profile.keyed && issueKeyOf(i)) add('format', `issue ${i.id}`, `its header carries a key (${shownText(i.fields.key)}), which is written in record format ${FORMAT_LINES['issue-key'].format}, and this loop is not in it`);
-    for (const e of events) if (e.key) add('format', `${LOG_FILE} line ${e.n + 1}`, `"${shownText(e.text)}" names a key (${e.key}), which is written in record format ${FORMAT_LINES['issue-key'].format}, and this loop is not in it`, e.n + 1);
-  }
-  // A parent is held by format 3: a reader of a lower format reads the backlog as flat.
-  if (profile.format < FORMAT_LINES.parent.format) {
-    for (const i of loop.issues) if (i.id !== null && i.parent !== null) add('format', `issue ${i.id}`, `its header names a parent (${shownText(i.parent)}), which is written in record format ${FORMAT_LINES.parent.format}, and this loop is not in it`);
-  }
-  // The tag in-place marks an issue worked in place from format 3 on; below it the tag is a tag like any other: said.
-  if (profile.format < FORMAT_LINES['in-place'].format) {
-    for (const i of loop.issues) if (i.id !== null && i.tags.includes(IN_PLACE_TAG)) notes.push({ where: `issue ${i.id}`, what: `its tag ${IN_PLACE_TAG} marks it as worked in place only in record format ${FORMAT_LINES['in-place'].format}, and this loop is in format ${profile.format}, so its done gate is the one of any issue with no branch` });
-  }
-  // A question of a format the loop is not in: an escalation is held by format 3.
-  if (profile.format < FORMAT_LINES.escalation.format) {
-    for (const a of loadAsks(root)) if (a.kind === 'escalation') add('format', `${ASKS_FILE} a-${a.id}`, `an escalation is written in record format ${FORMAT_LINES.escalation.format}, and this loop is not in it`);
-  }
-  // A waiver of review is held by format 3: below it the done gate does not count it, and a reader of a lower format
-  // counts the issue as unreviewed.
-  if (profile.format < FORMAT_LINES['review-waiver'].format) {
-    for (const d of rulings) if (d.waives) add('format', `${DECISIONS_FILE} ${d.slug}`, `a waiver of the review of ${d.waives.join(', ')} is written in record format ${FORMAT_LINES['review-waiver'].format}, and this loop is not in it`);
-  }
   retractionChecks(events, add);
   // A shared number is the issues check's finding. A number the log files more than once, now one file's, is read from
   // its header: a one-line note, while a contradiction inside that header is a finding, printed whole as the tool wrote it.
@@ -180,10 +143,7 @@ export function cmdVerify(root) {
   // A ruling in force whose settled issues are not all closed is work not yet carried out: said, never a finding.
   for (const u of unsettledRulings(loop)) notes.push({ where: `ruling ${u.slug}`, what: `${unsettledText(u)}, which ${u.issues.length === 1 ? 'is' : 'are'} neither done nor dropped` });
   for (const f of attachmentFindings(root, loop)) add('attachments', `issue ${f.id}`, f.what);
-  // The format of the loop, and the lines of a higher format that are off where a composer keeps it.
-  const format = formatState(profile);
-  if (formatOffText(format)) notes.push({ where: '', what: formatOffText(format) });
-  return verifyResult(found, notes, null, profile.doneGate['requires-slots'] !== undefined || found.some((f) => f.check === 'attachments'), format.format);
+  return verifyResult(found, notes, null, profile.doneGate['requires-slots'] !== undefined || found.some((f) => f.check === 'attachments'));
 }
 // The issue files of a loop, in the order the loop reads them.
 function issueFilesOf(dir) {
@@ -234,11 +194,10 @@ function repositoryChecks(root, loop, add, notes) {
   }
 }
 // The attachments check prints only for a loop whose profile declares slots, or that holds a finding of it.
-function verifyResult(found, notes, unread = null, attachments = false, format = null) {
+function verifyResult(found, notes, unread = null, attachments = false) {
   const checks = VERIFY_CHECKS.filter(([name]) => name !== 'attachments' || attachments).map(([name, label]) => ({
     name,
-    // The format check names the format the loop is in, once the profile is read.
-    label: name === 'format' && format !== null ? `${label} ${format}` : label,
+    label,
     read: unread === null || name === 'profile',
     // Findings with a line print in file order, the ones without after them, in the order they were found.
     findings: found.filter((f) => f.check === name)

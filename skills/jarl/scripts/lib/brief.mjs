@@ -6,7 +6,7 @@
 
 import { basename, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { IDENTICAL_OUTPUT_TAG, REVIEWER_KIND_SRC, fieldText, hole, jarlLine, meantToAlterNothing, need, printCommand } from './base.mjs';
+import { REVIEWER_KIND_SRC, fieldText, hole, jarlLine, need, printCommand } from './base.mjs';
 import { jarlDir, today } from './where.mjs';
 import { firstLine, firstLineReadings, goalLineOf, goalPath } from './journal.mjs';
 import { outOfGit } from './loop-git.mjs';
@@ -311,7 +311,7 @@ function parentPurpose(issue) {
 function leaseWhere(root, loop, issues) {
   const first = issues[0];
   const branch = fieldText(first.fields.branch) || null;
-  const inPlace = worksInPlace(loop.profile, first);
+  const inPlace = worksInPlace(first);
   const tier = loop.profile.tiers.reduce((best, t) => (issues.some((i) => i.tier === t) ? t : best), first.tier);
   const repos = [...new Set(issues.flatMap((i) => issueRepos(root, i)))].filter(isGitRepo).map((repo) => {
     const wt = branch ? worktreeState(repo, branch, fieldText(first.fields.worktree)) : null;
@@ -355,12 +355,6 @@ function issueData(root, loop, issue, role) {
   if (role === 'worker' && loop.profile.is(issue.status, 'terminal')) notes.push(`${issue.id} is ${issue.status}: a worker starts on it once it is reopened — ${jarlLine('set', issue.id, loop.profile.initial, hole('<why>'))}`);
   const findings = findingsOf(loop, issue, events, notes);
   if (role === 'reviewer' && !proof.length) notes.push(`${issue.id} holds no proof row: a worker's missing rows are an Important finding`);
-  if (meantToAlterNothing(issue)) {
-    const meant = `${issue.id} is a change meant to alter nothing (tag ${IDENTICAL_OUTPUT_TAG})`;
-    notes.push(role === 'worker'
-      ? `${meant}: its comparison of the output before and after is a proof row, the command and what it printed — ${jarlLine('evidence', issue.id, '--ran', hole('<command>'), '--saw', hole('<what-it-printed>'), '--line', hole('<line-number>'), '--by', hole('<who>'))}`
-      : `${meant}: its review may be a light one, and it checks that the comparison in its proof rows covers everything the change touched; the comparison never stands in for the review`);
-  }
   const data = {
     id: issue.id, title: issue.title, status: issue.status, tier: issue.tier,
     text: issueText(root, issue, role),

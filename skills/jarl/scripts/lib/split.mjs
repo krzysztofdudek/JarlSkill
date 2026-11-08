@@ -5,9 +5,8 @@ import { readText, writeAtomic } from './files.mjs';
 import { idKey } from './ids.mjs';
 import { PARENT_FIELD, loadProfile } from './profile.mjs';
 import { PROPOSED, acceptanceHeading, acceptanceLines, acceptanceText, issueNamed, loadIssues, setField, setSection } from './issues.mjs';
-import { needFormat } from './repositories.mjs';
 import { listAll, needLiveLoop } from './shared.mjs';
-import { bodyLine, editorOf, fieldLine, grewNote, grownLines, heldField, itemsOf, logChanges, rowsLostNote } from './body.mjs';
+import { bodyLine, editorOf, fieldLine, heldField, itemsOf, logChanges, rowsLostNote } from './body.mjs';
 import { needUnder } from './setters.mjs';
 
 // split <id> --line <n>=<id>...: the acceptance of a parent shared out among its sub-issues, in one write. Every acceptance
@@ -56,7 +55,6 @@ export function cmdSplit(root, rawId, flags = {}) {
   }
   const joining = subs.filter((s) => s.parent === null);
   needUnder(all, profile, joining.length ? joining : subs, parent, '', () => ({ replace: [...placed.values()].find((p) => p.to !== parent).item, value: hole('<line=id>') }));
-  needFormat(root, 'parent');
   // The parent's section with the moved lines taken out, the rest as it stands; each sub-issue's with its lines added.
   let k = 0;
   const keptText = (parent.sections.acceptance || '').split('\n').filter((raw) => {
@@ -66,25 +64,22 @@ export function cmdSplit(root, rawId, flags = {}) {
     return idKey(placed.get(k).to.id) === idKey(parent.id);
   }).join('\n').trim();
   const moved = (sub) => lines.filter((_, n) => placed.get(n + 1).to === sub);
-  const writes = [{ issue: parent, now: keptText }, ...subs.map((sub) => ({ issue: sub, now: acceptanceText([...itemsOf(sub.sections.acceptance), ...moved(sub)]) }))]
-    .map((w) => ({ ...w, grew: grownLines(profile, w.issue, w.issue.sections.acceptance, w.now) }));
+  const writes = [{ issue: parent, now: keptText }, ...subs.map((sub) => ({ issue: sub, now: acceptanceText([...itemsOf(sub.sections.acceptance), ...moved(sub)]) }))];
   logChanges(root, [
     ...joining.map((sub) => fieldLine(sub.id, PARENT_FIELD, parent.id, heldField(sub, PARENT_FIELD), by)),
-    ...writes.map((w) => bodyLine(w.issue.id, 'acceptance', w.issue.sections.acceptance, w.now, by, w.grew)),
+    ...writes.map((w) => bodyLine(w.issue.id, 'acceptance', w.issue.sections.acceptance, w.now, by)),
   ]);
   for (const w of writes) {
     let text = setSection(readText(w.issue.file), acceptanceHeading(w.issue, profile), w.now);
     if (joining.includes(w.issue)) text = setField(text, PARENT_FIELD, parent.id);
     writeAtomic(w.issue.file, text);
   }
-  const grown = writes.filter((w) => w.grew.length);
   // A row names the text it proved: a split that takes a line a row names off the parent says so, as field does.
   const rowsLost = rowsLostNote(parent, parent.sections.acceptance, keptText);
-  const notes = [...grown.map((w) => grewNote(w.issue, w.grew)), ...(rowsLost ? [rowsLost] : [])];
+  const notes = rowsLost ? [rowsLost] : [];
   return {
     id: parent.id, subs: subs.map((s) => s.id),
     lines: [...placed.entries()].sort((a, b) => a[0] - b[0]).map(([n, p]) => ({ line: n, to: p.to.id, kept: idKey(p.to.id) === idKey(parent.id) })),
-    ...(grown.length ? { grew: grown.map((w) => ({ id: w.issue.id, lines: w.grew })) } : {}),
     ...(notes.length ? { notes } : {}),
   };
 }

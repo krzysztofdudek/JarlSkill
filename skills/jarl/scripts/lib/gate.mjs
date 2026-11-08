@@ -3,7 +3,7 @@
 import { fieldText } from './base.mjs';
 import { jarlDir } from './where.mjs';
 import { idKey } from './ids.mjs';
-import { BOT_PREFIX, FORMAT_LINES, clearsOf, clearsWords, reviewerRule } from './profile.mjs';
+import { BOT_PREFIX, clearsOf, clearsWords, reviewerRule } from './profile.mjs';
 import { isParentLine, leaseOfMove } from './log.mjs';
 import { alignRows, evidenceNotes, evidenceTable, mergedOf } from './issues.mjs';
 import { branchTip } from './repositories.mjs';
@@ -19,18 +19,14 @@ const KIND_WEIGHT = { fresh: 0, waived: 0.5, coordinator: 1, bot: 1.5, self: 2 }
 const WAIVER_NOTE = /^\S+ evidence · Ruling (\S+) \(by owner\) waives the review\b/;
 
 // Why the ruling `slug` waives nothing for issue `id`, in a few words, or null when it waives its review: a waiver counts
-// only while its ruling is in the record, is in force, is the owner's with his words, names the issue under Waives
-// review, and the loop is in the record format that holds a waiver (a reader of the formats below it counts the issue as
-// unreviewed, so a waiver below that format counts here neither). The done gate reads it, and show says it beside a note
-// whose ruling does not count.
+// only while its ruling is in the record, is in force, is the owner's with his words and names the issue under Waives
+// review. The done gate reads it, and show says it beside a note whose ruling does not count.
 export function waiverVoid(loop, slug, id) {
   const d = (loop.decisions || []).find((x) => x.slug === slug);
   if (!d) return `no ruling ${slug} is in the record`;
   if (d.supersededBy) return `superseded by ${d.supersededBy}`;
   if (d.by !== OWNER || !d.quote) return 'the ruling is not the owner\'s with his words';
   if (!(d.waives || []).some((w) => idKey(w) === idKey(id))) return `the ruling does not name ${id} under Waives review`;
-  const held = FORMAT_LINES['review-waiver'].format;
-  if (loop.profile.format < held) return `the loop is not in record format ${held}`;
   if (waiverNoteRetracted(loop, slug, id)) return 'its note in the issue was retracted';
   return null;
 }
@@ -51,12 +47,10 @@ function waiverNoteRetracted(loop, slug, id) {
 export function carriesCode(issue) { return Boolean(fieldText(issue.fields.branch) || fieldText(issue.fields.merged)); }
 
 // An issue worked in place carries the tag in-place: its worker writes the files it declares in the checkout of their repository,
-// with no branch and no merge, and they are committed in the main checkout once the approve stands. The tag means that only in a
-// loop of the record format that holds it (FORMAT_LINES 'in-place'), which its first write raises; below it, it is a tag
-// like any other.
+// with no branch and no merge, and they are committed in the main checkout once the approve stands.
 export const IN_PLACE_TAG = 'in-place';
 
-export function worksInPlace(profile, issue) { return Boolean(issue) && profile.format >= FORMAT_LINES['in-place'].format && issue.tags.includes(IN_PLACE_TAG); }
+export function worksInPlace(issue) { return Boolean(issue) && issue.tags.includes(IN_PLACE_TAG); }
 
 // A code issue whose code as it is now is not merged, or null: its lease records a Branch, and its journal records no merge
 // that counts for that code (see mergeState of gateOf; a journal with no merge line leaves it to the Merged field), as

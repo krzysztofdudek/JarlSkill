@@ -5,10 +5,10 @@ import { join } from 'node:path';
 import { CI_STATES, REVIEWER_KIND_SRC, fieldText, hole, jarlLine, need } from './base.mjs';
 import { needNoOwnersWords } from './owner.mjs';
 import { jarlDir, plainRelative } from './where.mjs';
-import { readText, writeAtomic } from './files.mjs';
-import { ISSUE_FILE_RE, KEY_SRC, idKey, idRe, issueForms, writtenId } from './ids.mjs';
+import { readText } from './files.mjs';
+import { ISSUE_FILE_RE, KEY_SRC, idRe, issueForms, writtenId } from './ids.mjs';
 import { PARENT_FIELD, SLOT_NAME_RE, loadProfile } from './profile.mjs';
-import { STAMP_SRC, TIP_MARK, appendLog, headerKey, logPath, oneLine } from './journal.mjs';
+import { STAMP_SRC, TIP_MARK, UNRECORDED, appendLog, headerKey, logPath, oneLine } from './journal.mjs';
 
 // ---- review and the done gate --------------------------------------------------------------------
 
@@ -20,7 +20,7 @@ import { STAMP_SRC, TIP_MARK, appendLog, headerKey, logPath, oneLine } from './j
 // print) takes it from the typed event. A line kind is taught here once.
 //
 // An event is { n, at, text, writer, id, type, … } with n the line's index in the file, writer the name the call that
-// wrote it gave (null when it named none) and id the issue the line is about (null for a line about the loop). The types and what they add:
+// wrote it gave (null for the fixed value `unrecorded`: a line nobody named a writer for) and id the issue the line is about (null for a line about the loop). The types and what they add:
 //   filed          the issue's filing
 //   move           a status change: from (null when the log names no status before the line), to, lease — { worker, model, branch }
 //                  for a move into a status that holds the claim and names a worker, else null — and model, the model a
@@ -32,7 +32,8 @@ import { STAMP_SRC, TIP_MARK, appendLog, headerKey, logPath, oneLine } from './j
 //                  reached the limit and printed the takeover block. A writer that records no standing puts the separator
 //                  right after the number, so no text of its line can stand in the bracket. A round line without a standing
 //                  is read as the takeover its writer printed (see takeoverStanding)
-//   row            one --ran/--saw evidence row; lines, the numbers of the acceptance lines it names, on a row that names any
+//   row            one --ran/--saw evidence row; lines, the digests of the acceptance lines it names; history, on a row
+//                  from before the record named its lines: such a row counts for no line
 //   verdict        a review: verdict (approve|changes), by, kind (as recorded), model, relayed, batch, the id one verdict
 //                  given on several issues writes on each of its lines (null on a verdict on one issue), and artifact,
 //                  the path of the render or file the verdict judged (null where it names none)
@@ -46,24 +47,24 @@ import { STAMP_SRC, TIP_MARK, appendLog, headerKey, logPath, oneLine } from './j
 //                  under its stamp, where the write that made the line puts it. A line of the tip's text without the tip
 //                  mark before the separator, which only that write puts there, is no tip: it is read as a note
 //   ci             a CI state recorded alone: state
-//   body           a body change: part, the part changed; grew, the numbers of the lines a change of a leased issue's
-//                  acceptance grew it by (null for none); by, the author the line names (null for none)
+//   body           a body change: part, the part changed; by, the author the line names (null for none)
 //   tick           the owner's tick of an acceptance line only he ticks: line, its number when it was ticked, by, and
 //                  ownerLine, the line as it was written then, which is what the tick holds (a line rewritten after it is
 //                  another); the event's text stays the log line's whole text, as for every other kind
 //   tick-retract   the owner's tick taken back: line, by, why and ownerLine, the line as the tick it takes back holds it;
 //                  it takes back the newest tick of that line before it that no other has taken back
+//   converted      the line a conversion of the record ends with: an issue closed before it was closed by an earlier gate
 //   other          any other line
-// A line names its writer, when the call that wrote it named one (--by), right after the stamp and before the separator:
-// `- <stamp> by <writer> · <text>`. The place is fixed and no text of the line can reach it, so a note can never pose as
-// a writer; a reader that knows no writer does not read the line as dated at all, and a loop that holds one is in
-// record format 3, which that reader refuses. A line about an issue that carries a key names the key in the same way,
-// right after the stamp and before the writer: `- <stamp> key <key> by <writer> · <text>`. The key, not the number, says
-// which issue such a line is about: two issues that took one number in two copies of the loop keep their lines apart,
-// and an issue given another number keeps the lines written under its old one. A line with no key is read by its number.
+// The one shape of a line: `- <stamp> [key <key>] [tip] by <writer> · <text>`. The writer's place is fixed and no text of
+// the line can reach it, so a note can never pose as a writer. A line about an issue names its key in the same way, right
+// after the stamp and before the writer. The key, not the number, says which issue such a line is about: two issues that
+// took one number in two copies of the loop keep their lines apart, and an issue given another number keeps the lines
+// written under its old one. A line in another shape is no line of this record: the reader leaves it out and verify names it.
 // A tip line carries the tip mark after the key and before the writer: `- <stamp> key <key> tip by <writer> · <text>`.
-const LOG_LINE = new RegExp(`^- (${STAMP_SRC})(?: key (${KEY_SRC}))?(?: (${TIP_MARK}))?(?: by ([^·\\n]+?))? · ([^\\n]*)$`);
+const LOG_LINE = new RegExp(`^- (${STAMP_SRC})(?: key (${KEY_SRC}))?(?: (${TIP_MARK}))? by ([^·\\n]+?) · ([^\\n]*)$`);
 const LEADING_ID = idRe('^(?:filed )?({id})\\b');
+// The line a conversion of the record ends with. Only a conversion writes it: the log command refuses a note of this text.
+export const CONVERTED_LINE = 'converted';
 const RETRACT_ROW_LINE = idRe('^{id} evidence retract · row (\\d+)\\b');
 const RETRACT_NOTE_LINE = idRe('^{id} evidence retract · note (\\d+)\\b');
 // The tip line: the branch's commit in each repository of the issue, joined by commas, alone on the line.
@@ -153,13 +154,15 @@ export const lineDigests = (text) => (text ? text.split(', ') : []);
 // The mark a row that names `lines` adds after "ran" in the issue file and after "evidence row" in its log line: none for
 // a row that names no line.
 export const rowLinesText = (lines) => (lines && lines.length ? ` (line ${lines.join(', ')})` : '');
+// The mark of a row a conversion carried over from before the record named its lines: it counts for no line.
+export const HISTORY_ROW_MARK = ' (history)';
 // The head of a row's log line, `<id> evidence row (line a1b2c3d4e5f6) · `, before the row's command: the id as the line
 // writes it, the head's length and the digests of the lines it names. No text of the command reaches the head. Null for any
 // other line.
-const ROW_LINE_HEAD = new RegExp(`^(\\S+) evidence row(?: \\(line (${LINES_SRC})\\))? · `);
+const ROW_LINE_HEAD = new RegExp(`^(\\S+) evidence row(?: \\(line (${LINES_SRC})\\)|( \\(history\\)))? · `);
 export function rowLineHead(text) {
   const m = ROW_LINE_HEAD.exec(text);
-  return m ? { written: m[1], length: m[0].length, lines: lineDigests(m[2]) } : null;
+  return m ? { written: m[1], length: m[0].length, lines: lineDigests(m[2]), history: Boolean(m[3]) } : null;
 }
 
 // The slot facts of an attachment row's command, `attach <slot> <path> sha256:<hex> size:<bytes>`, as { slot, path, sha256,
@@ -172,22 +175,19 @@ export function attachmentOf(ran) {
   if (!sha || !size || !SLOT_NAME_RE.test(p[1]) || p[2] === '' || plainRelative(p[2])) return null;
   return { slot: p[1], path: p[2], sha256: sha[1], size: Number(size[1]) };
 }
-// A description change of the title or a section, `<part> · was … [· grew after the lease: line <n>[, <n>…]] [· by <who>]`:
-// the part, the lines a change of a leased issue's acceptance grew it by (null when it grew nothing), and its author, the
-// --by of the call (null when it named nobody). A value in the line holds no separator (the writer puts a stand-in for one),
+// A description change of the title or a section, `<part> · was … [· by <who>]`:
+// the part and its author, the --by of the call (null when it named nobody). A value in the line holds no separator (the writer puts a stand-in for one),
 // so each segment is read by its place.
-const GREW_SEGMENT = /^grew after the lease: line (\d+(?:, \d+)*)$/;
 // A change of the acceptance logs what it held whole, as one JSON string (see wholeValue in the commands): `was` is that
 // text, '' for a section that held nothing, and null for a part whose line holds no whole text.
 const WHOLE_WAS = /^was ("(?:[^"\\]|\\.)*")$/;
 function bodyEvent(rest) {
   const parts = rest.split(' · ');
   const by = parts.length > 2 && /^by .+$/.test(parts[parts.length - 1]) ? parts.pop().slice(3) : null;
-  const grew = parts.length > 2 ? GREW_SEGMENT.exec(parts[parts.length - 1]) : null;
   const whole = parts[0] === 'acceptance' ? WHOLE_WAS.exec(parts[1] ?? '') : null;
   let was = parts[0] === 'acceptance' && parts[1] === 'was (none)' ? '' : null;
   if (whole) { try { was = JSON.parse(whole[1]); } catch { was = null; } }
-  return { type: 'body', part: parts[0], grew: grew ? grew[1].split(', ').map(Number) : null, by, ...(parts[0] === 'acceptance' ? { was } : {}) };
+  return { type: 'body', part: parts[0], by, ...(parts[0] === 'acceptance' ? { was } : {}) };
 }
 // One log line as an event, without its place in the file. `from` is the status the issue was in before the line.
 export function parseEvent(id, text, profile, from = null) {
@@ -197,6 +197,7 @@ function eventParser(profile) {
   const moved = movesInto(profile.statuses);
   const claims = (st) => profile.is(st, 'holds-claim');
   return (id, text, from) => {
+    if (text === CONVERTED_LINE) return { type: 'converted' };
     if (text.startsWith(`filed ${id} `)) return { type: 'filed' };
     if (!text.startsWith(`${id} `) && text !== id) return { type: 'other' };
     const mv = moved.exec(text);
@@ -231,7 +232,7 @@ function eventParser(profile) {
     const row = rowLineHead(text);
     if (row && row.written === id) {
       const attach = attachmentOf(text.slice(row.length));
-      return { type: 'row', ...(attach ? { attach } : {}), ...(row.lines.length ? { lines: row.lines } : {}) };
+      return { type: 'row', ...(attach ? { attach } : {}), ...(row.lines.length ? { lines: row.lines } : {}), ...(row.history ? { history: true } : {}) };
     }
     if (text.startsWith(`${id} merged `)) {
       const line = mergeLineOf(id, text);
@@ -264,7 +265,7 @@ const LINE_CALLS = {
 };
 const MOVE_SHAPE = idRe('^{id} →');
 // The first group is set for the lease's lines, the second for the path note's.
-const REMEMBERED_NOTE = /^(?:(models (?:offered|offer closed)) · |repo path .+ noted · (?:profile|occupied|elsewhere)$)/;
+const REMEMBERED_NOTE = /^(?:(models (?:offered|offer closed)) · |repo path .+ noted · (?:occupied|elsewhere)$)/;
 // A free line for the journal (the log command and record.appendLog): a note about the loop or an issue. A line that
 // reads as one of the kinds above (a filing, a move, a round, a verdict, a retraction, a row, a tip, a merge, a CI state, a
 // body change or a tick) is refused and names the command that writes it, so every line the views and the gate read as state was
@@ -272,6 +273,7 @@ const REMEMBERED_NOTE = /^(?:(models (?:offered|offer closed)) · |repo path .+ 
 export function appendNote(root, event) {
   needNoOwnersWords('the note', event);
   const text = oneLine(event);
+  need(text !== CONVERTED_LINE, `log writes a note, and "${CONVERTED_LINE}" is the line a conversion of the record ends with: only a conversion writes it`, () => ({ arg: 0, value: hole('<text>') }));
   const id = LEADING_ID.exec(text)?.[1] ?? null;
   need(!MOVE_SHAPE.test(text), `log writes a note, and "${text.length > 80 ? `${text.slice(0, 77)}...` : text}" has the shape of a move (an id, an arrow), which set writes: ${lineWriter('move')}`, () => ['jarl.mjs', ...LINE_CALLS.move(hole('<ids>'))]);
   // The lines a lease and a repository given by its path write to remember what they said once: a note in their shape would open or close what they remember.
@@ -283,23 +285,6 @@ export function appendNote(root, event) {
   appendLog(root, event);
 }
 
-// Writes the repository after "in" of every merge line of the log as `fn(value)` gives it, the rest of the line as it was;
-// nothing is written when no line changes. Only the raise of the record format calls it.
-// Only a line the tool itself writes for a merge is touched: the id of an issue of the loop first, the sha, the repository,
-// then only the fixed segments (check, saw, landed red, CI) in the order merged writes them. Any other line is left as it is.
-const MERGE_REPO_PART = idRe('^({id}) merged ([0-9a-f]{4,64}) in ([^\\n]+?)((?: · check [^\\n]*?)?(?: · saw [^\\n]*?)?(?: · landed red, cause \\S+)?(?: · CI (?:pending|green|red|none))?)$');
-export function mapMergeRepos(root, fn) {
-  const path = logPath(jarlDir(root));
-  if (!existsSync(path)) return;
-  const log = readText(path);
-  const held = issueForms(jarlDir(root));
-  const next = log.split('\n').map((l) => {
-    const m = LOG_LINE.exec(l);
-    const p = m && MERGE_REPO_PART.exec(m[5]);
-    return p && held.has(idKey(p[1])) && !p[3].includes(' · ') ?`- ${m[1]}${m[2] ? ` key ${m[2]}` : ''}${m[3] ? ` ${m[3]}` : ''}${m[4] ? ` by ${m[4]}` : ''} · ${p[1]} merged ${p[2]} in ${fn(p[3])}${p[4]}` : l;
-  }).join('\n');
-  if (next !== log) writeAtomic(path, next);
-}
 
 // Every dated line of the loop's log under `dir` (the directory holding the goal, the log and issues/), in order, as
 // typed events. An issue's events carry the status it moved from, replayed from its own filing and moves. With `skipped`
@@ -317,15 +302,17 @@ export function loopEvents(dir, profile, skipped, keys) {
   const events = [];
   const forms = issueForms(dir);
   const log = readText(path);
-  const keyed = keys ?? (profile.keyed !== false && KEYED_LINE.test(log) ? issueKeysAt(dir) : new Map());
+  const keyed = keys ?? issueKeysAt(dir);
   log.split('\n').forEach((l, n) => {
     const m = LOG_LINE.exec(l);
     if (!m) {
-      if (skipped && l.trim() !== '' && !l.startsWith('#')) skipped.push({ n: n + 1, text: l, reason: 'not a dated line: a line of the log is "- yyyy-mm-dd hh:mm · <text>"' });
+      if (skipped && l.trim() !== '' && !l.startsWith('#')) skipped.push({ n: n + 1, text: l, reason: 'not a line of the current shape: a line of the log is "- yyyy-mm-dd hh:mm [key <key>] [tip] by <writer> · <text>"' });
       return;
     }
     // A line names its issue as it was written; the event carries the issue's own form, so it meets its issue's id.
-    const [, at, key = null, mark = null, writer = null, text] = m;
+    const [, at, key = null, mark = null, named, text] = m;
+    // A line no one named a writer for is read as having none, so it stands as neither the holder of a lease nor a name beside it.
+    const writer = named === UNRECORDED ? null : named;
     const written = LEADING_ID.exec(text)?.[1] ?? null;
     const id = written === null ? null : (key !== null && keyed.has(key) ? keyed.get(key) : writtenId(written, forms));
     // The status a move comes from is the one the same issue's lines left: by its key where the line names one.
@@ -333,11 +320,14 @@ export function loopEvents(dir, profile, skipped, keys) {
     const parsed = id === null ? { type: 'other' } : parse(written, text, lastStatus.get(thread) ?? null);
     // A tip counts only with the tip mark: a line of its text without it is a note, whoever wrote it.
     const unmarked = parsed.type === 'tip' && mark === null;
-    const body = unmarked ? { type: 'other' } : parsed;
+    // A line that carries state about an issue names the issue's key: one that does not is of an older shape, and is no state.
+    const unkeyed = key === null && written !== null && parsed.type !== 'other';
+    const body = unmarked || unkeyed ? { type: 'other' } : parsed;
+    if (skipped && unkeyed) skipped.push({ n: n + 1, text: l, reason: 'a line about an issue that names no key: a line about an issue is "- yyyy-mm-dd hh:mm key <key> by <writer> · <text>", and this one is read as a note' });
     if (skipped && unmarked) skipped.push({ n: n + 1, text: l, reason: 'a tip line without the tip mark before the separator: only the write of a row, a verdict, a merge or a close writes a tip, so this line is the tip of nothing' });
     // The mark on any other line is read past, the line by its text: said, since no write of Jarl's puts it there.
     if (skipped && mark !== null && parsed.type !== 'tip') skipped.push({ n: n + 1, text: l, reason: 'the tip mark on a line that is no tip line: only a tip line, written after a row, a verdict, a merge or a close, carries it, and this line is read by its text alone' });
-    if (skipped && written !== null) { const why = unplaced(profile, written, text, body); if (why) skipped.push({ n: n + 1, text: l, reason: why }); }
+    if (skipped && written !== null && !unkeyed) { const why = unplaced(profile, written, text, body); if (why) skipped.push({ n: n + 1, text: l, reason: why }); }
     // A line the tool never writes with a strike-through: the reader takes it for a note, and a strike-through voids nothing.
     if (skipped && /^~~/.test(text)) skipped.push({ n: n + 1, text: l, reason: 'a struck-through line: the reader takes it for a note, and a strike-through retracts nothing (a verdict is retracted with retract <id> review, an evidence row with retract <id> <n>)' });
     if (body.type === 'filed') { if (!lastStatus.has(thread)) lastStatus.set(thread, profile.initial); }
@@ -346,8 +336,6 @@ export function loopEvents(dir, profile, skipped, keys) {
   });
   return events;
 }
-// Whether a log holds a line with a key: only then are the issue files read for their keys.
-const KEYED_LINE = new RegExp(`^- ${STAMP_SRC} key ${KEY_SRC} `, 'm');
 // The keys the issue files under `dir` (the directory holding issues/) carry, each to the written id of its file. A key
 // two files carry names neither: it is left out, and their lines are read by number.
 export function issueKeysAt(dir) {
@@ -377,6 +365,8 @@ function unplaced(profile, written, text, body) {
   if (body.type === 'move' && profile.is(body.to, 'holds-claim') && !body.lease && !body.model && / · (worker|model) /.test(text)) {
     return 'the lease fields of the move do not parse: a worker and a model are one name each, written once, in the order branch, model, worker, worktree';
   }
+  // A row names the lines it proves, or is an attachment, or was marked as history when the record was converted.
+  if (body.type === 'row' && !body.lines && !body.attach && !body.history) return 'an evidence row that names no acceptance line: a row is "<id> evidence row (line <digest>) · …" or, carried over by a conversion, "<id> evidence row (history) · …"';
   // The model mark sits right after the reviewer, where the parser reads it: a word of the findings that reads as a mark is text.
   const head = REVIEW_LINE.exec(text);
   if (body.type === 'verdict' && body.model === null && head && /^model /.test(text.slice(head[0].length))) return 'the model mark of the verdict does not parse: it is "model <name> · " after the reviewer';
