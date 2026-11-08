@@ -194,6 +194,15 @@ test('the closed gate names the cause of an approve that does not clear, and eve
   assert.match(json(defined, 'status').closedGate.find((f) => f.id === '1').reason, /it holds no approve that clears it under the loop's done gate \(done-gate "clears": an approve by a fresh agent and the bot coderabbit together, or by the owner; the approves it holds are by rev-a \(fresh\)\)/);
 });
 
+test('done refuses a code issue holding a coordinator\'s approve and a bot\'s, naming both', () => {
+  const root = botLoop();
+  review(root, '1', 'jarl');
+  review(root, '1', 'coderabbit', '--bot');
+  const said = refuses(root, 'set', '1', 'done', 'two approves', '--by', 'jarl');
+  assert.match(said, /^1 carries code \(Merged is recorded\) and its live approve is by jarl \(coordinator\), and it holds the approve of coderabbit \(bot\) as well — the fresh-review rule: /);
+  assert.match(said, /a coordinator's approve does not clear it, and a bot's clears only where the loop's done gate names that bot:/);
+});
+
 test('a bot\'s verdict refused in a composer\'s loop ends with the profile view and the form of the call, with no value after --bot', () => {
   const composed = makeLoop({ prefix: 'jarl-bot-composed-form-', via: 'cli', initFlags: ['--profile', (() => {
     const file = join(mkdtempSync(join(tmpdir(), 'jarl-bot-profile-')), 'profile.json');

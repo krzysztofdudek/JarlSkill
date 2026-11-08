@@ -1535,7 +1535,7 @@ function doneGateIn(root, loop, issue, base) {
   if (uncleared) return g.uncleared.cause === 'bot'
     ? { cause: 'approve', text: `${uncleared} — an approve that clears it is next: ${jarlLine('review', issue.id, '<verdict>', '--by', '<a-fresh-reviewer>', '<text>')}` }
     : { cause: 'clears', text: `${uncleared} — an approve that clears it is next: ${jarlLine('review', issue.id, '<verdict>', '--by', '<reviewer>', '<text>')}` };
-  if (code && !g.fresh) return { cause: 'approve', text: `${issue.id} ${freshRuleText(issue, g.live)}: ${jarlLine('review', issue.id, '<verdict>', '--by', '<a-fresh-reviewer>', '<text>')}` };
+  if (code && !g.fresh) return { cause: 'approve', text: `${issue.id} ${freshRuleText(issue, g.live, g.uncleared?.standing)}: ${jarlLine('review', issue.id, '<verdict>', '--by', '<a-fresh-reviewer>', '<text>')}` };
   // The model of the approve, where the profile's reviewer rule makes it a gate; under the default it is advice only.
   const byModel = modelRefusalOf(root, loop, issue, { gate: g });
   if (byModel) return { cause: 'model', text: `${byModel}: ${modelReviewForm(issue.id)}` };
@@ -1567,9 +1567,13 @@ function mergeRefusal(root, issue, base) {
 
 // The fresh-review rule, said the same way by done, review and merged: an issue that carries code (a Branch or a
 // Merged field) needs its live approve from a fresh reviewer — an agent that neither wrote the code nor runs the loop.
-function freshRuleText(issue, live) {
+// `standing` names every approve that stands and does not clear it (gateOf's uncleared), so one the live approve outranks,
+// a bot's beside the coordinator's, is named too.
+function freshRuleText(issue, live, standing = []) {
   const who = live && live.by ? `${live.by} (${live.kind})` : 'a reviewer not recorded (an approve from before --by)';
-  return `carries code (${issue.fields.merged ? 'Merged' : 'Branch'} is recorded) and its live approve is by ${who} — the fresh-review rule: a code issue needs an approve from a fresh reviewer, an agent that neither wrote the code nor runs the loop; a coordinator's approve does not clear it`;
+  const others = standing.filter((s) => s !== who);
+  const bot = others.some((s) => s.endsWith(' (bot)'));
+  return `carries code (${issue.fields.merged ? 'Merged' : 'Branch'} is recorded) and its live approve is by ${who}${others.length ? `, and it holds the approve${others.length > 1 ? 's' : ''} of ${others.join(', ')} as well` : ''} — the fresh-review rule: a code issue needs an approve from a fresh reviewer, an agent that neither wrote the code nor runs the loop; a coordinator's approve does not clear it${bot ? ', and a bot\'s clears only where the loop\'s done gate names that bot' : ''}`;
 }
 
 // Said, never refused: done closes an issue whose acceptance is missing, or has more lines than the
@@ -1681,7 +1685,7 @@ export function cmdMerged(root, rawIds, flags) {
       const g = gateOf(loop, issue.id);
       const uncleared = g.fresh ? null : unclearedText(loop, issue, g);
       if (uncleared) notes.push(`MERGED WITHOUT AN APPROVE THAT CLEARS IT — ${uncleared}; recorded as given, get that approve now: ${jarlLine('review', issue.id, '<verdict>', '--by', '<reviewer>', '<text>')}`);
-      else if (!g.fresh) notes.push(`MERGED WITHOUT A FRESH REVIEW — ${issue.id} ${g.live ? freshRuleText({ fields: { merged: sha } }, g.live) : 'holds no live approve at all (none, or spent by a later round, restart or reopen) — the fresh-review rule: a code issue needs an approve from a fresh reviewer before it merges'}; recorded as given, get the fresh review now: ${jarlLine('review', issue.id, '<verdict>', '--by', '<a-fresh-reviewer>', '<text>')}`);
+      else if (!g.fresh) notes.push(`MERGED WITHOUT A FRESH REVIEW — ${issue.id} ${g.live ? freshRuleText({ fields: { merged: sha } }, g.live, g.uncleared?.standing) : 'holds no live approve at all (none, or spent by a later round, restart or reopen) — the fresh-review rule: a code issue needs an approve from a fresh reviewer before it merges'}; recorded as given, get the fresh review now: ${jarlLine('review', issue.id, '<verdict>', '--by', '<a-fresh-reviewer>', '<text>')}`);
       notes.push(...approveTipNotes(root, issue, g.live, sha));
     }
   }
