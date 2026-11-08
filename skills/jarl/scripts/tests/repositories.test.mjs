@@ -146,6 +146,34 @@ test('a repository stored as a path is noted when the loop first stores it, and 
   assert.match(w.issue(2), /^\*\*Repo:\*\* \.\/inner$/m);
 });
 
+test('the note on a repository stored as a path is said again when the reason it is stored as a path changes', () => {
+  const w = world();
+  repoAt(join(w.hub, 'inner'));
+  const first = neu(w.hub, 'a', '--repo', './inner');
+  assert.match(first.stderr, /note: .* is stored as the path \.\/inner: the checkout is not at .*, where a name would resolve/);
+  repoAt(join(w.parent, 'inner'), { commits: [['other.txt', 'other\n']] });
+  const second = neu(w.hub, 'b', '--repo', './inner');
+  assert.match(second.stderr, /note: .* is stored as the path \.\/inner: another repository stands at .*, where its name would resolve, so this one keeps its path/, 'a new reason is said');
+  const third = neu(w.hub, 'c', '--repo', './inner');
+  assert.doesNotMatch(third.stderr, /stored as the path/, 'the same reason is said once');
+  const viaField = run(w.hub, ['field', '3', 'Repo', './inner']);
+  assert.doesNotMatch(viaField.stderr, /stored as the path/);
+});
+
+test('whether the note was said is read from the log: no issue file is read for a repository given on a call', () => {
+  const w = world();
+  repoAt(join(w.hub, 'inner'));
+  neu(w.hub, 'a', '--repo', './inner');
+  const dir = join(w.hub, '.jarl', 'issues');
+  for (const f of readdirSync(dir)) writeFileSync(join(dir, f), 'not an issue\n');
+  L.resetCaches();
+  assert.equal(L.repoFromInput(w.hub, './inner').note, null, 'said once, from the log alone');
+  const fresh = world();
+  repoAt(join(fresh.hub, 'inner'));
+  L.resetCaches();
+  assert.match(L.repoFromInput(fresh.hub, './inner').note, /is stored as the path \.\/inner/);
+});
+
 test('two repositories that share a directory name stay apart: the second keeps its path', () => {
   const w = world('tool');
   const away = repoAt(join(tmp('jarl-away-'), 'tool'), { commits: [['other.txt', 'other\n']] });

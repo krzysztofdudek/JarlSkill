@@ -9,10 +9,9 @@ import { canonical, issuesDir, jarlDir, normalPath, portablePath } from './where
 import { readText, writeAtomic } from './files.mjs';
 import { ISSUE_FILE_RE, branchNameProblem } from './ids.mjs';
 import { FORMAT_LINES, PROFILE_VERSION, RECORD_FORMATS, RECORD_FORMAT_RAISED, forgetProfile, formatState, loadProfile, profilePath } from './profile.mjs';
-import { appendLog } from './journal.mjs';
+import { appendLog, appendLogLines, logPath } from './journal.mjs';
 import { withLock } from './lock.mjs';
 import { mapMergeRepos } from './log.mjs';
-import { loadIssues } from './issues.mjs';
 
 // ---- repositories: names, declarations and the one resolver ------------------------------------------------------
 //
@@ -412,13 +411,30 @@ export function repoFromInput(root, raw) {
   const place = join(home, basename(main));
   const occupied = existsSync(place) && canonical(place) !== main;
   const why = `${exact ? '' : `${given} is reduced to its main checkout; `}${keepsPath ? `the loop's profile names an external scheduler, so its record format stays at ${profile.format}, which holds paths and no names` : occupied ? `another repository stands at ${place}, where its name would resolve, so this one keeps its path` : `the checkout is not at ${place}, where a name would resolve — put it, or a symlink to it, there to name it`}`;
-  return { main, name: null, value, note: storedAsPath(root, main) ? null : `${given} is stored as the path ${value}: ${why}` };
+  const reason = keepsPath ? 'profile' : occupied ? 'occupied' : 'elsewhere';
+  // The note is read when a caller asks for it, so a call that only reads the repository never looks at the log.
+  const found = { main, name: null, value, reason };
+  let note;
+  Object.defineProperty(found, 'note', {
+    enumerable: true,
+    get: () => (note === undefined ? (note = notedPath(root, main, reason) ? null : `${given} is stored as the path ${value}: ${why}`) : note),
+    set: (text) => { note = text; },
+  });
+  return found;
 }
-// Whether an issue of the loop already stores this checkout as a path. The note that says why a path is stored is said
-// once per loop: a later filing that names the same checkout by its path is silent.
-function storedAsPath(root, main) {
+// The log line that records a note on a path was said, and the reason it gave: a later filing of the same checkout by its
+// path is silent while its reason is the same, and says its note again when the reason is another.
+const PATH_NOTED = / · repo path (.+) noted · (profile|occupied|elsewhere)$/;
+const pathNotedLine = (value, reason) => `repo path ${noSeparators(value)} noted · ${reason}`;
+// Whether the log holds a note on this checkout stored as a path for this reason. Only the log is read.
+function notedPath(root, main, reason) {
+  const log = logPath(jarlDir(root));
+  if (!existsSync(log)) return false;
   const place = canonical(main);
-  return loadIssues(root).some((issue) => reposNamed(issue).some((v) => repoValueKind(root, v) === 'path' && canonical(resolve(root, v)) === place));
+  return readText(log).split('\n').some((line) => {
+    const m = PATH_NOTED.exec(line);
+    return m !== null && m[2] === reason && canonical(resolve(root, m[1])) === place;
+  });
 }
 // The values of a --repo list (one name or path, or several as one comma list), each read by repoFromInput.
 function repoList(root, v) {
@@ -455,10 +471,14 @@ function writeBarePaths(root) {
 }
 // The names among the repositories read from a --repo list are declared (once), after the format is raised.
 function commitRepoNames(root, picked) {
-  if (!picked.some((p) => p.name)) return;
+  // A path whose note is said now is logged with its reason, so the note is not said again for it.
+  const said = picked.filter((p) => !p.name && p.note);
+  if (!picked.some((p) => p.name) && !said.length) return;
   withLock(root, () => {
+    if (said.length) appendLogLines(root, said.map((p) => pathNotedLine(p.value, p.reason)));
+    if (!picked.some((p) => p.name)) return;
     needFormat(root, 'repo-name');
-    for (const p of picked) if (p.name && declareRepo(root, p.name, p.main) === 'no-base') p.note = `${p.name} has no branch checked out, so it is declared with no base — name one with ${jarlLine('base', p.name, '<branch>')}`;
+    for (const p of picked) if (p.name && declareRepo(root, p.name, p.main) === 'no-base') p.note =`${p.name} has no branch checked out, so it is declared with no base — name one with ${jarlLine('base', p.name, '<branch>')}`;
   });
 }
 
