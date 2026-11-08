@@ -344,6 +344,21 @@ test('an issue approved after the round limit is on the merger, not on a takeove
   assert.deepEqual(queue(dir).repos[0].rows.map((r) => r.branch), ['jarl/1-hard']);
 });
 
+test('a merge recorded on the feature branch is read against it, though the slice\'s integration branch was cut with work of its own before the record', () => {
+  const { dir, g } = repo();
+  jarl(dir, 'goal', '--set', 'Coordinators: odin');
+  jarl(dir, 'goal', '--set', 'Merger (odin): mimir');
+  jarl(dir, 'new', 'sliced', '--tier', 'light', '--acceptance', '[test] a', '--tags', 'slice:odin', '--files', 'a.txt');
+  lease(dir, '1', 'w1', 'jarl/1-sliced');
+  branchWith(dir, 'jarl/1-sliced', 'a.txt');
+  jarl(dir, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'pass', '--by', 'w1');
+  jarl(dir, 'review', '1', 'approve', '--by', 'rev-1', FINDINGS);
+  branchWith(dir, 'jarl/slice-odin', 'b.txt');
+  sh(dir, 'git merge -q --no-ff jarl/1-sliced -m merge');
+  const said = run(dir, ['merged', '1', '--sha', shaOf(g, 'HEAD'), '--keep']);
+  assert.doesNotMatch(said.stderr, /MERGE WITHOUT THE BASE/);
+});
+
 test('an integration branch with commits and no recorded merge is in neither view', () => {
   const { dir, g } = repo();
   jarl(dir, 'goal', '--set', 'Coordinators: odin');

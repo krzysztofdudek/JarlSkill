@@ -3,13 +3,13 @@
 // whole.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
-import { mkdtempSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gitRepo, jarl, refuses, spawnJarl, loop as makeLoop } from './helpers.mjs';
-import { sh } from './portable.mjs';
+import { NO_EXCLUDES, sh } from './portable.mjs';
 import { FINDINGS } from './findings.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
@@ -223,11 +223,13 @@ test('next --as --json gives each raise-move its role, default model, branch and
 
 // A brief's own text, as the caps count it: without each issue's own block and without the sections of its record (rounds,
 // findings, proof rows), which grow with the issue and not with the role.
-const RECORD_SECTIONS = ['Proof to re-run', 'Rounds so far', 'Findings of the reviews', 'What the worker assumed'];
+const RECORD_SECTIONS = ['Proof to re-run', 'Rounds so far', 'Findings of the reviews', 'What the worker assumed', 'Rules that reach you'];
 function ownWords(root, args) {
   const o = json(root, 'brief', ...args);
   let text = jarl(root, 'brief', ...args);
   for (const issue of o.issues || []) text = text.replace(issue.text, '');
+  // The repository list grows with the loop and not with the role.
+  text = text.split('\n').filter((l) => !/^Repository \S+ \(/.test(l)).join('\n');
   text = text.split('\n## ').filter((part, k) => k === 0 || !RECORD_SECTIONS.some((s) => part.startsWith(s))).join('\n## ');
   return words(text);
 }
@@ -253,6 +255,43 @@ test('the briefs hold their word caps with a long goal and many lines, the issue
   assert.ok(counts.workerOne <= 700, `worker ${counts.workerOne} words`);
   assert.ok(counts.examiner <= 500, `examiner ${counts.examiner} words`);
   assert.ok(counts.merger <= 900, `merger ${counts.merger} words`);
+});
+
+test('a merger\'s brief on a committed loop over five repositories, with rules of its own, stays well inside its cap', () => {
+  const parent = mkdtempSync(join(tmpdir(), 'jarl-brief-many-repos-'));
+  const repoAt = (name) => {
+    const dir = join(parent, name);
+    mkdirSync(dir);
+    const g = (...a) => execFileSync('git', a, { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 120_000 });
+    g('init', '-q', '-b', 'main');
+    g('config', 'user.email', 't@t'); g('config', 'user.name', 't');
+    g('config', 'core.excludesFile', NO_EXCLUDES);
+    writeFileSync(join(dir, 'a.txt'), 'a\n');
+    g('add', '-A'); g('commit', '-qm', 'base');
+    return dir;
+  };
+  const hub = repoAt('hub');
+  jarl(hub, 'init', LONG_GOAL, '--committed');
+  for (let n = 1; n <= 5; n += 1) {
+    repoAt(`tool${n}`);
+    jarl(hub, 'new', `work ${n}`, '--tier', 'light', '--why', 'w', '--acceptance', '[test] t', '--repo', `../tool${n}`, '--files', 'a.txt');
+  }
+  jarl(hub, 'decide', 'merger-note', `A long rule for the merger: ${'it reaches only the merger and says so at length. '.repeat(30)}`, '--applies-to', 'role merger', '--by', 'jarl');
+  const own = ownWords(hub, ['--role', 'merger']);
+  const text = jarl(hub, 'brief', '--role', 'merger');
+  assert.match(text, /A long rule for the merger/, 'the rule reaches it');
+  assert.match(text, /The loop is committed/);
+  assert.equal(text.split('\n').filter((l) => /^Repository tool\d/.test(l)).length, 5);
+  assert.ok(own <= 800, `merger ${own} words, with room to spare under 900`);
+});
+
+test('a [check] line with no declared check to land on says what done asks for: rows, not the landing', () => {
+  const root = loop();
+  jarl(root, 'new', 'no check declared', '--tier', 'standard', '--why', 'w', '--acceptance', '[check] the suite passes', '--files', 'a.mjs');
+  lease(root, '1', 'w-1', 'jarl/1-a');
+  const text = jarl(root, 'brief', '1', '--role', 'reviewer');
+  assert.doesNotMatch(text, /the landing proves: no row is owed/);
+  assert.match(text, /1 line 1 \[check\]: the goal declares no check for it, so done asks for rows: a row by the worker and one by you, each naming the line/);
 });
 
 test('the goal\'s first paragraph is cut at a fixed length with the pointer to where the rest is', () => {
