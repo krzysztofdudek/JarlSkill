@@ -5,14 +5,15 @@ import { resolve, dirname, basename, relative, isAbsolute } from 'node:path';
 import { KEPT_KINDS, KINDS, PRIORITIES, Refusal, fieldText, hole, isFix, jarlLine, need, refuse, slugify, splitList } from './base.mjs';
 import { git } from './git.mjs';
 import { canonical } from './where.mjs';
+import { needsRaisedFormat, newNumber } from './ids.mjs';
 import { readText } from './files.mjs';
-import { DEFAULT_PROFILE, formatOffText, loadProfile } from './profile.mjs';
+import { DEFAULT_PROFILE, FORMAT_LINES, formatOffText, formatState, loadProfile, numberWidth } from './profile.mjs';
 import { appendLog } from './journal.mjs';
 import { PROPOSED, bodyText, findIssue, loadIssues, sharedMark } from './issues.mjs';
 import { repoList, reposWhereLines } from './repositories.mjs';
 import { closedGateLine, disagreementText, gateLine, needOneSlice } from './loop.mjs';
 import { checkLines, checkWaitingText, closedNoCheckText, mergeCheckLines } from './metrics.mjs';
-import { cmdNew, cmdSource, givenFields, needLiveLoop, nextIssueNumber, parentToFile, putUnder } from './commands.mjs';
+import { cmdNew, cmdSource, editorOf, givenFields, needLiveLoop, nextIssueNumber, parentToFile, putUnder } from './commands.mjs';
 import { leasedByText, schedulerNote, subsText } from './evidence.mjs';
 
 // ---- research findings into issues ----------------------------------------------------------------
@@ -284,18 +285,26 @@ export function cmdImport(root, file, flags) {
   // A findings file is one act: the parent is held, and every finding to be filed passes the checks of the filing, before the
   // first write (a dry run included), so a refusal leaves the loop as it was.
   const parent = flags.parent !== undefined ? parentToFile(root, flags.parent, { flag: '--parent', value: hole('<id>') }) : null;
+  // The writer the parent's lines name is checked here as well, for a library caller the command line does not check.
+  if (parent) editorOf(flags.by);
   out.parent = parent ? parent.id : null;
   const filing = (f, key) => ({
     kind: flags.kind || f.kind, prio: flags.prio || f.priority, tier: flags.tier, tags: flags.tags, repo: flags.repo,
     field: flags.field, 'found-by': foundBy, where: f.where, what: f.what, why: f.why, acceptance: f.acceptance || undefined, source: key,
   });
   // The findings are filed in the order of the file, each taking the next number, so each is checked with the number it
-  // would take: a number the loop's record format cannot hold refuses the file before the first finding is filed.
+  // would take: a number the loop's record format cannot hold refuses the file before the first finding is filed, and the
+  // way out is the findings ahead of it, chosen with --only (or the format its profile says).
   const first = toFile.length ? nextIssueNumber(root) : 0;
+  const holdsAny = formatState(profile).raises || profile.format >= FORMAT_LINES['plain-number'].format;
+  const width = numberWidth(profile);
   toFile.forEach(({ f, key }, k) => {
     try { cmdNew(root, f.title, filing(f, key), { dry: true, number: first + k }); } catch (e) {
       if (!(e instanceof Refusal)) throw e;
-      refuse(`finding "${f.id}" cannot be filed: ${e.reason}${/nothing was (written|filed)/.test(e.reason) ? '' : ' — nothing was filed'}`, formOf(e.ready));
+      const edge = !holdsAny && needsRaisedFormat(newNumber(first + k, width));
+      const fits = edge && !needsRaisedFormat(newNumber(first, width));
+      refuse(`finding "${f.id}" cannot be filed: ${e.reason}${/nothing was (written|filed)/.test(e.reason) ? '' : ' — nothing was filed'}${fits ? '; the findings that take a number below it can be filed with --only' : ''}`,
+        fits ? { flag: '--only', value: hole('<finding-ids>') } : edge ? [{ first: ['jarl.mjs', 'profile'] }, { retry: true }] : formOf(e.ready));
     }
   });
   // One issue may name several findings (a package of minor ones): its Source gets all of them, once.
