@@ -326,6 +326,12 @@ test('a missing required field is refused as invalid params, as the schema decla
   refusedAsInvalid(() => mcp.callTool('jarl_set', { ids: '1', root }), /"status" is required/);
   refusedAsInvalid(() => mcp.callTool('jarl_review', { ids: '1', verdict: 'approve', root }), /"text" is required/);
   for (const t of TOOLS) for (const f of t.inputSchema.required || []) assert.ok(t.inputSchema.properties[f], `${t.name}: required ${f} is a field`);
+  // A field's placeholder is the one of its command: tick's line is a number, split's a number and the issue it goes to.
+  refusedAsInvalid(() => mcp.callTool('jarl_tick', { id: '1', root }), /"line" is required[\s\S]*\njarl_tick \{"id":"<id>","line":"<line-number>"/);
+  assert.equal(mcp.formValue('tick', 'line'), '<line-number>');
+  assert.equal(mcp.formValue('split', 'line'), '<line=id>');
+  assert.equal(mcp.formValue('evidence', 'line'), '<line-number>');
+  assert.equal(mcp.formValue('show', 'id'), '<id>');
   assert.equal(mcp.callTool('jarl_scope', { branch: 'x', root }).isError, true, 'an optional argument left out goes through');
 });
 

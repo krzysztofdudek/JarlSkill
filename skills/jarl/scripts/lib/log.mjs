@@ -250,7 +250,7 @@ const LINE_CALLS = {
   'retract-review': (id) => ['retract', id, 'review', hole('<why>'), '--by', hole('<who>')], 'retract-row': (id) => ['retract', id, hole('<n>'), hole('<why>'), '--by', hole('<who>')],
   'retract-note': (id) => ['retract', id, hole('<n-or-note-n>'), hole('<why>'), '--by', hole('<who>')], row: (id) => ['evidence', id, '--ran', hole('<command>'), '--saw', hole('<what-it-printed>')],
   merged: (id) => ['merged', id, '--sha', hole('<sha>')], ci: (id) => ['merged', id, '--ci', hole('<ci-state>')], body: (id) => ['field', id, hole('<part>'), hole('<value>')],
-  tick: (id) => ['tick', id, hole('<line>'), '--by', hole('<the-owner-himself>')], 'tick-retract': (id) => ['retract', id, hole('<tick-n>'), hole('<why>'), '--by', hole('<the-owner-himself>')], tip: (id) => ['evidence', id, '--ran', hole('<command>'), '--saw', hole('<what-it-printed>')],
+  tick: (id) => ['tick', id, hole('<line-number>'), '--by', hole('<the-owner-himself>')], 'tick-retract': (id) => ['retract', id, hole('<tick-n>'), hole('<why>'), '--by', hole('<the-owner-himself>')], tip: (id) => ['evidence', id, '--ran', hole('<command>'), '--saw', hole('<what-it-printed>')],
 };
 const MOVE_SHAPE = idRe('^{id} →');
 // The first group is set for the lease's lines, the second for the path note's.
@@ -325,6 +325,8 @@ export function loopEvents(dir, profile, skipped, keys) {
     const unmarked = parsed.type === 'tip' && mark === null;
     const body = unmarked ? { type: 'other' } : parsed;
     if (skipped && unmarked) skipped.push({ n: n + 1, text: l, reason: 'a tip line without the tip mark before the separator: only the write of a row, a verdict, a merge or a close writes a tip, so this line is the tip of nothing' });
+    // The mark on any other line is read past, the line by its text: said, since no write of Jarl's puts it there.
+    if (skipped && mark !== null && parsed.type !== 'tip') skipped.push({ n: n + 1, text: l, reason: 'the tip mark on a line that is no tip line: only a tip line, written after a row, a verdict, a merge or a close, carries it, and this line is read by its text alone' });
     if (skipped && written !== null) { const why = unplaced(profile, written, text, body); if (why) skipped.push({ n: n + 1, text: l, reason: why }); }
     // A line the tool never writes with a strike-through: the reader takes it for a note, and a strike-through voids nothing.
     if (skipped && /^~~/.test(text)) skipped.push({ n: n + 1, text: l, reason: 'a struck-through line: the reader takes it for a note, and a strike-through retracts nothing (a verdict is retracted with retract <id> review, an evidence row with retract <id> <n>)' });

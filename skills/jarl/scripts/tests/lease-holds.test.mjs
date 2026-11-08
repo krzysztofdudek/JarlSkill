@@ -208,7 +208,7 @@ test('a handover needs its reason, a lease to replace and a change of holder', (
   jarl(root, 'set', '1', 'in-progress', 'A', '--branch', 'jarl/1-one', '--worker', 'wA');
   assert.match(refuses(root, 'set', '1', 'in-progress', 'same', '--branch', 'jarl/1-one', '--worker', 'wA', '--handover'), /names the lease 1 already has/);
   assert.match(refuses(root, 'set', '1', 'done', 'x', '--handover'), /--handover goes with in-progress only/);
-  assert.match(refuses(root, 'set', '1', 'in-progress', '--header', '--handover'), /takes no reason, lease flag, --handover or base/);
+  assert.match(refuses(root, 'set', '1', 'in-progress', '--header', '--handover'), /takes no reason, lease flag, --handover, --without-rows or base/);
   assert.match(refuses(root, 'field', '1', 'files', 'g.txt', '--handover'), /unknown flag --handover for field/);
 });
 

@@ -132,13 +132,13 @@ commands:
                                                  --tags, --repo and --only repeat, or take a comma list
   sources [<findings.json>...] [--source <report-dir>] per report: its findings, the issues filed from them and their
                                                  status; with a findings file, the findings nobody filed too
-  evidence <ids> "<text>" | --ran "<command>" --saw "<what-it-printed>" [--line <n>] | <id> --file <path> --slot <name> [--by who]
+  evidence <ids> "<text>" | --ran "<command>" --saw "<what-it-printed>" [--line <line-number>] | <id> --file <path> --slot <name> [--by who]
                                                  append a free-text note (under ### Notes), or one checkable row per --ran/--saw
                                                  pair (repeatable; under ### Proof, after the last row);
                                                  --line names the acceptance lines each row of the call proves, 1 for
                                                  the first (repeat it, or a comma list); the first such row raises
                                                  the record format to 3, and from then on done asks of every issue a
-                                                 row that names each of its acceptance lines, or a reason;
+                                                 row that names each of its acceptance lines, or set --without-rows;
                                                  --file --slot records one attachment as a Proof row: the slot, the path
                                                  under the loop root (relative, no .., no symlink), the file's sha256 and its
                                                  size; nothing is copied. The slot is one the profile's done gate requires of
@@ -182,7 +182,7 @@ commands:
                                                  count of the lines left out. A merger's brief is one for
                                                  the whole loop (references/merger.md), and a worker after a takeover
                                                  is given the rules of the takeover too
-  set <ids> <status> "<text>" [--branch <worker-branch>] [--worker <name>] [--model <model-id>] [--worktree <path>] [--handover] [--header] [--by who]
+  set <ids> <status> "<text>" [--branch <worker-branch>] [--worker <name>] [--model <model-id>] [--worktree <path>] [--handover] [--header] [--without-rows "<why-no-row-names-the-lines>"] [--by who]
                                                  (<ids> <status-in-the-log> --header rewrites the header fields the log
                                                  renders from the log, writes no log line and is never a move)
                                                  change status; writes the log line in the same move; in-progress
@@ -210,7 +210,8 @@ commands:
                                                  recorded (merged), and the owner's tick of every acceptance line only he
                                                  ticks (see tick); in a loop whose rows name acceptance lines (evidence
                                                  --line), done lists the lines no counted row names and closes the issue
-                                                 only with "<text>", the reason, written under Evidence beside them
+                                                 only with --without-rows, the reason no row names them, written under
+                                                 Evidence beside them: "<text>" is the move's reason, never theirs
   merged <ids> --sha <sha> [--ran "<command>" --saw "<what-it-printed>" | --red <id>] [--ci pending|green|red|none] [--repo <name-or-path>] [--keep] [--by who] | <ids> --ci <ci-state>
                                                  the merge as fields: Merged (sha, and where with --repo) and CI
                                                  (only when given; pending: a pushed commit whose CI will report;
@@ -294,7 +295,7 @@ commands:
                                                  worker: a tier up, another model or a changed approach. The limit is read from the
                                                  goal at each round and the rounds are counted from the last takeover, so a changed
                                                  limit takes effect at the next round
-  tick <id> <line> --by owner                    the owner's tick of an acceptance line only he ticks, by its number among
+  tick <id> <line-number> --by owner             the owner's tick of an acceptance line only he ticks, by its number among
                                                  the issue's acceptance lines: a line written "[owner] <line> · material:
                                                  <material> · check: <what-to-check>" (new and field refuse a
                                                  line so marked that names no material or nothing to check, and its first
@@ -643,7 +644,7 @@ export const COMMAND_FLAGS = {
   evidence: { ran: 'many', saw: 'many', line: 'many', file: 'value', slot: 'value', by: 'value' },
   retract: { by: 'value' }, field: { add: 'bool', remove: 'bool', clear: 'bool', by: 'value' }, split: { line: 'many', by: 'value' }, base: { by: 'value' },
   list: { status: 'value', kind: 'value', tag: 'value', prio: 'value', grep: 'value', match: 'many', all: 'bool' },
-  show: { full: 'bool' }, brief: { role: 'value', slice: 'value' }, set: { branch: 'value', worker: 'value', model: 'value', worktree: 'value', handover: 'bool', header: 'bool', by: 'value' },
+  show: { full: 'bool' }, brief: { role: 'value', slice: 'value' }, set: { branch: 'value', worker: 'value', model: 'value', worktree: 'value', handover: 'bool', header: 'bool', 'without-rows': 'value', by: 'value' },
   next: { limit: 'value', all: 'bool', as: 'value', slice: 'value' },
   review: { by: 'value', model: 'value', relayed: 'bool', bot: 'bool', outside: 'many', field: 'many' }, round: { findings: 'value', by: 'value' }, tick: { by: 'value' },
   models: { group: 'value', with: 'many', archives: 'bool' },
@@ -800,7 +801,7 @@ const ARG_HOLES = {
   ids: '<ids>', id: '<id>', title: '<title>', goal: '<goal>', files: '<findings.json>', 'import file': '<findings.json>', 'profile file': '<profile.json>',
   'retract entry': '<review-n-or-note-n>', 'retract text': '<why>', 'field name': '<part>', 'base name': '<name>', 'base branch': '<branch>',
   'set status': '<status>', 'set text': '<why>', 'review verdict': '<verdict>', 'review text': '<what-was-read-and-found>', 'round text': '<what-failed>',
-  'tick line': '<line>', 'answer id': '<question>', 'decide slug': '<slug>', 'decide text': '<a-ruling>', 'archive slug': '<slug>', 'mode mode': '<mode>',
+  'tick line': '<line-number>', 'answer id': '<question>', 'decide slug': '<slug>', 'decide text': '<a-ruling>', 'archive slug': '<slug>', 'mode mode': '<mode>',
   'extend part': '<section-or-field>', 'extend name': '<name>',
   text: '<text>',
 };
@@ -814,7 +815,8 @@ const FLAG_HOLES = {
   group: '<group>', with: '<loop-root>', base: '<base-branch>', 'stale-hours': '<hours>', sha: '<sha>', ci: '<ci-state>', red: '<another-issue>',
   target: '<what-would-get-weaker>', issue: '<id>', option: '<option>', 'ask option': '<label:effect>', 'applies-to': '<selectors>', until: '<date-or-id>', to: '<jarl-or-owner>', log: '<count>',
   ready: '<count>', summary: '<text>', next: '<text>', settles: '<ids>', 'waives-review': '<ids>', quote: '<his-own-words>', under: '<a-ruling-in-force>', supersedes: '<a-ruling-in-force>',
-  rule: '<rule-id>', area: '<type>', reach: '<number-of-files>', set: '<machine-line>', line: '<line=id>', 'evidence line': '<line>', outside: '<finding-outside-the-issue>', parent: '<id>', range: '<name>', values: '<items>', default: '<value>',
+  rule: '<rule-id>', area: '<type>', reach: '<number-of-files>', set: '<machine-line>', line: '<line=id>', 'evidence line': '<line-number>', outside: '<finding-outside-the-issue>', parent: '<id>', range: '<name>', values: '<items>', default: '<value>',
+  'without-rows': '<why-no-row-names-the-lines>',
 };
 const PART_HOLES = {
   title: '<title>', priority: '<prio>', tier: '<tier>', kind: '<kind>', tags: '<tag>', files: '<paths>', repo: '<name-or-path>', after: '<ids-it-waits-on>', parent: '<id>',

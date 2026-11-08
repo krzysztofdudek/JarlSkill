@@ -122,7 +122,7 @@ test('a tick counts for the line it was given on: a round spends it, and a line 
 test('tick takes the owner\'s word on an owner line whose material is there, once', () => {
   const root = signOffLoop();
   assert.match(refuses(root, 'tick', '1', '2'), /needs --by owner/);
-  assert.match(refuses(root, 'tick', '1', '2', '--by', 'jarl'), /^only the owner ticks an owner line \(got "jarl"\): he ticks it once he has reviewed its material, and nobody ticks it for him\njarl\.mjs tick "<id>" "<line>" --by "<the-owner-himself>"\n$/);
+  assert.match(refuses(root, 'tick', '1', '2', '--by', 'jarl'), /^only the owner ticks an owner line \(got "jarl"\): he ticks it once he has reviewed its material, and nobody ticks it for him\njarl\.mjs tick "<id>" "<line-number>" --by "<the-owner-himself>"\n$/);
   assert.match(refuses(root, 'tick', '1', '1', '--by', 'owner'), /acceptance line 1 of 1 is not marked as one only the owner ticks; its owner lines: 2/);
   assert.match(refuses(root, 'tick', '1', '3', '--by', 'owner'), /1 has 2 acceptance lines: there is no line 3; its owner lines: 2/);
   assert.match(refuses(root, 'tick', '2', '1', '--by', 'owner'), /2 has no acceptance line marked as one only the owner ticks/);
@@ -132,7 +132,7 @@ test('tick takes the owner\'s word on an owner line whose material is there, onc
   produce(root);
   jarl(root, 'tick', '1', '2', '--by', 'the Owner');
   assert.match(refuses(root, 'tick', '1', '2', '--by', 'owner'), /acceptance line 2 of 1 is ticked already, by owner at \d{4}-\d{2}-\d{2} \d{2}:\d{2}/);
-  assert.match(refuses(root, 'log', '1 tick · line 2 · by owner · [owner] x · material: y · check: z'), /reads as a tick line, .*jarl\.mjs tick "<id>" "<line>" --by "<the-owner-himself>"/);
+  assert.match(refuses(root, 'log', '1 tick · line 2 · by owner · [owner] x · material: y · check: z'), /reads as a tick line, .*jarl\.mjs tick "<id>" "<line-number>" --by "<the-owner-himself>"/);
 });
 
 test('retract tick-<n> takes back the owner\'s tick of one line, given by mistake, with who and why: done waits for his tick again, and every other record stands', () => {

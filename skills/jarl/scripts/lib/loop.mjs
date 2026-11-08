@@ -553,7 +553,7 @@ export function gateOf(loop, id) {
       trail.push({ n: e.n, at: e.at, verdict: 'retract', retracted: false });
       continue;
     }
-    if (e.type === 'retract-row') { retractedRows.push(e.row); continue; }
+    if (e.type === 'retract-row') { retractedRows.push(e); continue; }
     if (e.type === 'row') { const row = { ...e, retracted: false }; evidence.push(row); before = row; continue; }
     const w = e.type === 'other' ? WAIVER_NOTE.exec(e.text || '') : null;
     if (w && waivers.has(w[1]) && !waived.some((x) => x.ruling === w[1])) {
@@ -584,13 +584,14 @@ export function gateOf(loop, id) {
   // A retraction names a row by its file-wide ordinal (evidenceTable: the one numbering show prints), and the journal's
   // row lines are matched to the file's rows (alignRows), so journal lines that merged in another order cannot retract
   // the wrong row. A retraction that cannot be resolved to exactly one row is never ignored: it is returned, and done
-  // refuses while one stands, so a retracted row can never count again unseen.
+  // refuses while one stands, so a retracted row can never count again unseen. A retracted row keeps the log line of its
+  // first retraction (retractedAt), so a closed issue is read as it stood at its close.
   const unresolvedRetractions = [];
   if (retractedRows.length) {
     const rows = issue ? evidenceTable(issue.sections.evidence).rows : [];
     const aligned = alignRows(id, rows, evidence);
-    for (const n of retractedRows) {
-      if (aligned[n - 1]) aligned[n - 1].retracted = true;
+    for (const { row: n, n: at } of retractedRows) {
+      if (aligned[n - 1]) { aligned[n - 1].retracted = true; aligned[n - 1].retractedAt ??= at; }
       else if (evidence.length) unresolvedRetractions.push(n);
     }
   }

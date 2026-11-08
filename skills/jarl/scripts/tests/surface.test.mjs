@@ -183,6 +183,7 @@ const FLAG_MEANINGS = {
   all: ['every row, not only the first or the unfinished', ['list', 'next']], full: ['the whole issue file', ['show']],
   branch: ['a branch: the lease\'s, or the one measured', ['set', 'scope']], worker: ['the worker of a lease', ['set']], model: ['the model the agent was raised on', ['set', 'review']],
   worktree: ['the worktree a lease is checked against', ['set']], handover: ['a lease handed to a new worker', ['set']], header: ['the header rewritten from the log', ['set']],
+  'without-rows': ['the reason a close leaves acceptance lines no counted row names, apart from the reason of the move', ['set']],
   limit: ['how many ready issues', ['next']], as: ['the holder whose list is asked for', ['next', 'resume', 'status']], slice: ['a coordinator\'s slice', ['next', 'ask', 'resume', 'status', 'brief']],
   role: ['the role a brief is written for', ['brief']],
   relayed: ['a verdict recorded in the reviewer\'s name', ['review']], bot: ['a verdict recorded as a bot\'s', ['review']], outside: ['a finding outside the reviewed issue, filed as a new issue', ['review']], findings: ['how many findings a red round left', ['round']], with: ['another loop to read', ['models']], archives: ['this loop\'s archives read too', ['models']],

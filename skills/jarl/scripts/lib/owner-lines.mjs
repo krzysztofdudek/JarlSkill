@@ -73,6 +73,22 @@ export function unprovedLines(loop, issue, g = gateOf(loop, issue.id)) {
 }
 // The numbers of lines, as the views print them: "line 2, 3".
 export const linesText = (lines) => `line ${lines.map((l) => l.n).join(', ')}`;
+// The close the done gate takes of an issue: the status that closes it (the call's, else the profile's first that closes
+// the record), the move's reason, and, where acceptance lines `left` have no row naming them, the reason for those apart.
+export const closeForm = (profile, id, left = [], status = profile.with('closes-record')[0] ?? hole('<status>')) => jarlLine('set', id, status, '<why>', ...(left.length ? ['--without-rows', '<why-no-row-names-the-lines>'] : []));
+// A closed issue's acceptance lines no counted row names now, read against its last close, as { excused, lost }: excused,
+// the lines no row it counted named, which the close gave its reason for (done asks it); lost, the lines a row it counted
+// named, which none names now (that row was retracted after the close). Null where the rule did not hold at the close: in
+// a loop that has never named a line, and for an issue closed ahead of the loop's first row that names one.
+export function closedLines(loop, issue, g = gateOf(loop, issue.id)) {
+  if (loop.linesFrom === null) return null;
+  const close = (loop.eventsById.get(issue.id) || []).filter((e) => e.type === 'move' && loop.profile.is(e.to, 'closes-record')).pop();
+  if (!close || close.n < loop.linesFrom) return null;
+  const counted = g.rowLog.filter((r) => r.inWindow && r.n < close.n && !(r.retracted && r.retractedAt < close.n));
+  const named = new Set(counted.flatMap((r) => r.lines || []));
+  const now = unprovedLines(loop, issue, g);
+  return { excused: now.filter((l) => !named.has(l.n)), lost: now.filter((l) => named.has(l.n)) };
+}
 
 // A material written as a path (not a link, and with a directory in it or a file extension at its end) is looked for on
 // the disk; one named otherwise (a link, an artifact named in words) cannot be, and is there once the work is proven.
@@ -184,15 +200,15 @@ export function cmdTick(root, rawId, rawLine, flags = {}) {
   const loop = readLoop(jarlDir(root));
   const states = ownerLineStates(root, loop, issue);
   const lines = acceptanceLines(issue);
-  need(states.length, `${issue.id} has no acceptance line marked as one only the owner ticks (got line ${rawLine}) — mark one, ${OWNER_LINE_SHAPE}, among every line of the section, agreed with him`, () => ({ arg: 1, value: hole('<line>') }));
+  need(states.length, `${issue.id} has no acceptance line marked as one only the owner ticks (got line ${rawLine}) — mark one, ${OWNER_LINE_SHAPE}, among every line of the section, agreed with him`, () => ({ arg: 1, value: hole('<line-number>') }));
   const owners = `its owner lines: ${states.map((s) => s.n).join(', ')}`;
-  need(/^\d+$/.test(String(rawLine ?? '').trim()) && Number(rawLine) > 0, `tick takes the number of the acceptance line, counted from 1 (got "${rawLine}") — ${owners}`, () => ({ arg: 1, value: hole('<line>') }));
+  need(/^\d+$/.test(String(rawLine ?? '').trim()) && Number(rawLine) > 0, `tick takes the number of the acceptance line, counted from 1 (got "${rawLine}") — ${owners}`, () => ({ arg: 1, value: hole('<line-number>') }));
   const n = Number(rawLine);
-  need(n <= lines.length, `${issue.id} has ${lines.length} acceptance line${lines.length === 1 ? '' : 's'}: there is no line ${n}; ${owners}`, () => ({ arg: 1, value: hole('<line>') }));
+  need(n <= lines.length, `${issue.id} has ${lines.length} acceptance line${lines.length === 1 ? '' : 's'}: there is no line ${n}; ${owners}`, () => ({ arg: 1, value: hole('<line-number>') }));
   const s = states.find((x) => x.n === n);
   // Where the line named is no owner line, or one ticked: a placeholder for the owner lines not ticked yet.
   const open = states.filter((x) => !x.tick && !x.off).map((x) => x.n);
-  const openLine = () => ({ arg: 1, value: hole('<line>') });
+  const openLine = () => ({ arg: 1, value: hole('<line-number>') });
   need(s, `acceptance line ${n} of ${issue.id} is not marked as one only the owner ticks; ${owners}`, openLine);
   need(!loop.profile.is(issue.status, 'terminal'), `${issue.id} is ${issue.status}: nothing waits for the owner's tick until it is open again`, () => ({ first: ['jarl.mjs', 'set', issue.id, hole('<status>'), '<why>'] }));
   need(!s.off, `acceptance line ${n} of ${issue.id} cannot be ticked: ${s.why}; rewrite it without the [owner] mark: ${rewriteText(issue.id)}`, () => (rewrite(issue.id)));

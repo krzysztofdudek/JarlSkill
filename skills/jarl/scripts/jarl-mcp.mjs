@@ -188,7 +188,9 @@ function need(cond, msg) { if (!cond) throw invalid(msg); }
 // and the rest are text), and a retraction asked of evidence (retract's). The refusal names that field or tool, with the
 // form of the call written there, each value a placeholder: no value given is carried into a call composed for the caller,
 // but its root and json, as given, so the form filled reaches the loop the call named.
-const FORM_VALUES = { ids: '<ids>', id: '<id>', status: '<status>', text: '<text>', verdict: '<verdict>', slug: '<slug>', title: '<title>', goal: '<goal>', name: '<name>', entry: '<n-or-note-n>', line: '<line>', mode: '<mode>', branch: '<branch>', group: '<group>', gh: true };
+// A field's placeholder is its command's where one name means another value there ("<command> <field>"), else the field's.
+const FORM_VALUES = { ids: '<ids>', id: '<id>', status: '<status>', text: '<text>', verdict: '<verdict>', slug: '<slug>', title: '<title>', goal: '<goal>', name: '<name>', entry: '<n-or-note-n>', 'tick line': '<line-number>', 'evidence line': '<line-number>', 'split line': '<line=id>', mode: '<mode>', branch: '<branch>', group: '<group>', gh: true };
+export const formValue = (cmd, field) => FORM_VALUES[`${cmd} ${field}`] ?? FORM_VALUES[field] ?? '<value>';
 function needNoGoneField(cmd, fields, carried = {}) {
   const call = (tool, input) => `${toolName(tool)} ${JSON.stringify({ ...input, ...carried })}`;
   for (const name of Object.keys(fields)) {
@@ -200,8 +202,8 @@ function needNoGoneField(cmd, fields, carried = {}) {
     const field = to !== undefined ? to.replace(/^--/, '') : GONE_TEXT_NAMES[cmd] === name ? 'text' : null;
     if (field === null) continue;
     // The fields the tool requires, the author of a judgement among them.
-    const form = { ...Object.fromEntries((COMMAND_ARGS[cmd] || []).filter((a) => !/[?.]$/.test(a)).map((a) => [a, FORM_VALUES[a] ?? '<value>'])), ...(Object.hasOwn(AUTHOR_REQUIRED, cmd) ? { by: '<who>' } : {}) };
-    throw invalid(`${toolName(cmd)}: "${name}" is not a field of this tool — its value goes in "${field}": ${call(cmd, { ...form, [field]: FORM_VALUES[field] ?? '<value>' })}`, true);
+    const form = { ...Object.fromEntries((COMMAND_ARGS[cmd] || []).filter((a) => !/[?.]$/.test(a)).map((a) => [a, formValue(cmd, a)])), ...(Object.hasOwn(AUTHOR_REQUIRED, cmd) ? { by: '<who>' } : {}) };
+    throw invalid(`${toolName(cmd)}: "${name}" is not a field of this tool — its value goes in "${field}": ${call(cmd, { ...form, [field]: formValue(cmd, field) })}`, true);
   }
 }
 
@@ -209,7 +211,7 @@ function needNoGoneField(cmd, fields, carried = {}) {
 // gave. A root the refusal is about (not absolute, or a JARL_ROOT that is not) is its placeholder.
 function formOf(cmd, input, rootWrong) {
   const given = input !== null && typeof input === 'object' && !Array.isArray(input) ? input : {};
-  const required = Object.fromEntries((COMMAND_ARGS[cmd] || []).filter((a) => !/[?.]$/.test(a)).map((a) => [a, FORM_VALUES[a] ?? '<value>']));
+  const required = Object.fromEntries((COMMAND_ARGS[cmd] || []).filter((a) => !/[?.]$/.test(a)).map((a) => [a, formValue(cmd, a)]));
   const author = Object.hasOwn(AUTHOR_REQUIRED, cmd) ? { by: '<who>' } : {};
   const carried = {
     ...(typeof given.json === 'boolean' ? { json: given.json } : {}),
