@@ -2,7 +2,7 @@
 
 import { existsSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { PROMISE_KIND, fieldText, hole, jarlLine, need } from './base.mjs';
+import { PROMISE_KIND, fieldText, hole, jarlLine, need, refuse } from './base.mjs';
 import { needNoOwnersWords } from './owner.mjs';
 import { git } from './git.mjs';
 import { jarlDir, stamp } from './where.mjs';
@@ -11,7 +11,7 @@ import { cmpId, isBulk } from './ids.mjs';
 import { PARENT_FIELD, SLOT_NAME_RE, formatState, loadProfile } from './profile.mjs';
 import { appendLog, appendLogLines, firstLine, goalLines, readGoal } from './journal.mjs';
 import { outOfGit } from './loop-git.mjs';
-import { attachmentOf, journalById } from './log.mjs';
+import { attachmentOf, journalById, rowLinesText } from './log.mjs';
 import { acceptanceLineCount, alignRows, bodyText, evidenceNotes, evidenceParts, evidenceTable, loadIssues, mergedOf, noteText, parseIssue, placeEvidence, removeFields, reviewEntries, setSection, sharedMark, struckNote } from './issues.mjs';
 import { fileKeysOf, needFormat, repoNames, reposWhere, tipLinesOf, whereLines, whereOf } from './repositories.mjs';
 import { approveKind, awaitsMerge, carriesCode, inFlightMark, sentBack, unmergedCode, unmergedText, coordinatorOf, disagreementText, gateOf, gateState, headerReadNotes, readLoop, recordDisagreements, reviewSplit, sameSlice, scopedLoop, sinceText, sliceNamed, sliceOf, slicesOf, waiverVoid } from './loop.mjs';
@@ -41,17 +41,42 @@ export function cmdEvidence(root, rawIds, text, flags) {
     need(text, 'evidence requires a note or a row', () => ({ arg: 1, value: '<text>' }));
   }
   const issues = issuesFor(root, rawIds);
+  const proved = provedLines(flags, rows, issues);
+  // The first row that names a line raises the record format, before anything is written: a reader of the formats below
+  // it reads no row in the mark that holds the numbers.
+  if (proved.length) needFormat(root, 'proof-line');
+  const mark = rowLinesText(proved);
   // A row is one list item: the lines of a multi-line command or output after the first are indented under it.
   const indented = (v) => String(v).replace(/\r\n?/g, '\n').trim().split('\n').join('\n  ');
-  const added = rows ? rows.map((r) => `- **ran:** ${indented(r.ran)} · **saw:** ${indented(r.saw)}`).join('\n') : text;
+  const added = rows ? rows.map((r) => `- **ran${mark}:** ${indented(r.ran)} · **saw:** ${indented(r.saw)}`).join('\n') : text;
   for (const issue of issues) {
     const current = (issue.sections.evidence || '').trim();
     writeAtomic(issue.file, setSection(readText(issue.file), 'Evidence', rows ? placeEvidence(current, 'proof', added, '\n') : placeEvidence(current, 'note', noteText(added, current), '\n\n')));
   }
   // Each row line is followed by the tip of the issue's branch, so the gate knows which code the row was made on.
   const tips = rows ? tipLinesOf(root, issues) : () => [];
-  appendLogLines(root, issues.flatMap((issue) => (rows ? rows.flatMap((r) => [`${issue.id} evidence row · ${firstLine(r.ran, "the issue's Evidence section")}`, ...tips(issue)]) : [`${issue.id} evidence · ${firstLine(text, "the issue's Evidence section")}`])));
-  return oneOrMany(rawIds, issues.map((issue) => (rows ? { id: issue.id, rows } : { id: issue.id })));
+  appendLogLines(root, issues.flatMap((issue) => (rows ? rows.flatMap((r) => [`${issue.id} evidence row${mark} · ${firstLine(r.ran, "the issue's Evidence section")}`, ...tips(issue)]) : [`${issue.id} evidence · ${firstLine(text, "the issue's Evidence section")}`])));
+  return oneOrMany(rawIds, issues.map((issue) => (rows ? { id: issue.id, rows, ...(proved.length ? { lines: proved } : {}) } : { id: issue.id })));
+}
+
+// The acceptance lines the rows of one call prove (--line, repeated or as a comma list), each once and in order: every
+// row of the call names them all. Each is a whole number, 1 for the first acceptance line as tick counts them, of a line
+// every issue of the call has; a note proves no line. Rows recorded without --line name none.
+function provedLines(flags, rows, issues) {
+  if (!flags || flags.line === undefined) return [];
+  const nothing = issues.length > 1 ? ' — nothing was written' : '';
+  need(rows, '--line names the acceptance lines a --ran/--saw row proves, and a free-text note proves none: record the row, or leave --line out', () => ({ drop: '--line' }));
+  const given = [].concat(flags.line).flatMap((v) => String(v).split(',')).map((s) => s.trim()).filter(Boolean);
+  need(given.length, '--line needs the number of an acceptance line, 1 for the first', () => ({ flag: '--line', value: hole('<line>') }));
+  for (const v of given) need(/^\d{1,4}$/.test(v) && Number(v) >= 1, `--line takes the number of an acceptance line, 1 for the first, got "${v.slice(0, 20)}"`, () => ({ flag: '--line', value: hole('<line>') }));
+  const lines = [...new Set(given.map(Number))].sort((a, b) => a - b);
+  for (const issue of issues) {
+    const count = acceptanceLineCount(issue);
+    const over = lines.filter((n) => n > count);
+    if (!count) refuse(`${issue.id} has no acceptance line, so a row of it names none: leave --line out, or write the acceptance first, ${jarlLine('field', issue.id, 'Acceptance', '<line>')}${nothing}`, { drop: '--line' });
+    need(!over.length, `${issue.id} has ${count} acceptance line${count === 1 ? '' : 's'}: there is no line ${over.join(', ')}${nothing}`, () => ({ flag: '--line', value: hole('<line>') }));
+  }
+  return lines;
 }
 
 // A text a reviewer or a retracting hand gives must say something: at least two letters or digits (not "", "-", "x").

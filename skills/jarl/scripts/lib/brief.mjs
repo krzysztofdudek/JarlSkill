@@ -7,6 +7,7 @@
 import { IDENTICAL_OUTPUT_TAG, REVIEWER_KIND_SRC, fieldText, hole, jarlLine, meantToAlterNothing, need } from './base.mjs';
 import { jarlDir, today } from './where.mjs';
 import { firstLine } from './journal.mjs';
+import { rowLinesText } from './log.mjs';
 import { evidenceTable, issueNamed, reviewEntries } from './issues.mjs';
 import { gateOf, readLoop, sameSlice, sliceNamed, sliceOf } from './loop.mjs';
 import { takenOver } from './rounds.mjs';
@@ -172,7 +173,7 @@ function issueBrief(root, loop, rawId, role) {
   const moments = new Set([role === 'worker' ? 'start' : 'review', ...(rounds.length ? ['round'] : [])]);
   // The reader the rules are matched against, as next --as and resume --as match theirs: the role, the moment and the issue.
   const rules = rulesFor(root, loop, { roles, slice: null, moments, issues: [issue] }, today()).map(ruleOf);
-  const proof = evidenceTable(issue.sections.evidence).rows.filter((r) => !r.retracted).map(({ n, ran, saw }) => ({ n, ran, saw }));
+  const proof = evidenceTable(issue.sections.evidence).rows.filter((r) => !r.retracted).map(({ n, ran, saw, lines }) => ({ n, ran, saw, ...(lines.length ? { lines } : {}) }));
   const { profile } = loop;
   const notes = [];
   if (role === 'worker' && profile.is(issue.status, 'terminal')) notes.push(`${issue.id} is ${issue.status}: a worker starts on it once it is reopened — ${jarlLine('set', issue.id, profile.initial, hole('<why>'))}`);
@@ -186,7 +187,7 @@ function issueBrief(root, loop, rawId, role) {
       : `${meant}: its review may be a light one, and it checks that the comparison in its proof rows covers everything the change touched; the comparison never stands in for the review`);
   }
   const record = role === 'worker'
-    ? [{ what: 'proof, one row per check', command: jarlLine('evidence', issue.id, '--ran', hole('<command>'), '--saw', hole('<what-it-printed>'), '--by', hole('<who>')) },
+    ? [{ what: loop.linesFrom === null ? 'proof, one row per check' : 'proof, one row per check, naming the acceptance lines it proves', command: jarlLine('evidence', issue.id, '--ran', hole('<command>'), '--saw', hole('<what-it-printed>'), ...(loop.linesFrom === null ? [] : ['--line', hole('<line>')]), '--by', hole('<who>')) },
       { what: 'the changelog entry, for a change someone sees', command: jarlLine('field', issue.id, 'Changelog', hole('<changelog-entry>'), '--add', '--by', hole('<who>')) }]
     : [{ what: 'the verdict when a finding lies outside the issue, one --outside each (filed as a new issue, never a reason for changes)', command: jarlLine('review', issue.id, hole('<verdict>'), hole('<findings-with-a-severity>'), '--by', hole('<reviewer>'), '--model', hole('<model-id>'), '--outside', hole('<finding-outside-the-issue>')) },
       { what: 'the verdict, as the last step', command: jarlLine('review', issue.id, hole('<verdict>'), hole('<findings-with-a-severity>'), '--by', hole('<reviewer>'), '--model', hole('<model-id>')) }];
@@ -259,7 +260,7 @@ export function renderBrief(o) {
       const [first, ...rest] = f.text.split('\n');
       out.push(`- ${f.day ?? ''}${f.by ? ` · by ${f.by}${f.kind ? ` (${f.kind})` : ''}` : ''}${f.fileOnly ? ' · in the issue file only' : ''} — ${first}`, ...rest.map((l) => `  ${l}`));
     }
-    out.push('', `## Proof rows (${o.proof.length})`, ...(o.proof.length ? o.proof.map((r) => `- [${r.n}] ran: ${r.ran} · saw: ${r.saw}`) : ['- (none)']));
+    out.push('', `## Proof rows (${o.proof.length})`, ...(o.proof.length ? o.proof.map((r) => `- [${r.n}] ran${rowLinesText(r.lines)}: ${r.ran} · saw: ${r.saw}`) : ['- (none)']));
   }
   out.push('', '## The role', `${o.reference.file}, section "${o.reference.section}", in the jarl skill's directory: the role in full; this brief adds what the record holds.`);
   out.push('', '## Recording the result', ...o.record.map((r) => `- ${r.what}: ${r.command}`));

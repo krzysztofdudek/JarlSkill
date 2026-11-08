@@ -13,7 +13,7 @@ import { carriesCode, gateOf, readLoop, reviewerKind, unclearedText } from './lo
 import { SEVERITIES, loggedFinding, modelLines, modelRefusalOf, modelReviewForm, modelValue, reviewModelNotes, spellingNote } from './models.mjs';
 import { EVIDENCE_HOW, cmdNew, issuesFor, nothingWritten, oneOrMany, proofSince, refiled } from './commands.mjs';
 import { REVIEW_MIN_WORDS, needSaid, raisedText, retractedBy, struck } from './evidence.mjs';
-import { ownerLineWait } from './owner-lines.mjs';
+import { linesText, ownerLineWait, unprovedLines } from './owner-lines.mjs';
 import { resetCaches } from './tips.mjs';
 
 // ---- commands: review ---------------------------------------------------------------------------------
@@ -133,6 +133,7 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
     const said = [
       verdict === 'approve' && kinds[n] === 'coordinator' && carriesCode(issue) ? `${issue.id} carries code and ${by} is a coordinator — the fresh-review rule: this approve is recorded but does not clear it for done or the merge queue; a fresh reviewer's approve does` : null,
       flags.caller === 'cli' && verdict === 'approve' && proofSince(gateOf(loop, issue.id), issue) === 0 ? `${issue.id} holds no Proof row since the gate's window opened — done needs the worker's row, and the merger's check does not stand in for it: ${EVIDENCE_HOW(issue.id)}` : null,
+      flags.caller === 'cli' && verdict === 'approve' ? unprovedNote(loop, issue) : null,
       ...(lines && (lines.declared || rule !== 'agent') ? reviewModelNotes(issue, verdict, model, lines, loop.eventsById.get(issue.id) || [], rule) : []),
       flags.caller === 'cli' && model !== undefined ? spellingNote(loop, model) : null,
     ].filter(Boolean);
@@ -155,6 +156,13 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
     return text ? { text, cause: g.uncleared.cause } : null;
   };
   return oneOrMany(rawIds, issues.map((issue, n) => ({ id: issue.id, verdict, ...(by ? { by, kind: kinds[n] } : {}), ...(model !== undefined ? { model } : {}), ...(relayed ? { relayed } : {}), ...(batch ? { batch } : {}), severities, ...(filed.length ? { filed: filed.map((f) => f.id) } : {}), acceptance: (issue.sections.acceptance || '').trim(), ...(flags.caller === 'cli' ? { next: nextAfterVerdict(issue, verdict, kinds[n], loop && verdict === 'approve' ? ownerLineWait(root, loop, issue) : null, modelOf(issue), unclearedOf(issue)) } : {}), ...noteOf(issue, n) })));
+}
+
+// What an approve says of the acceptance lines no row names, in a loop that names them: done refuses the close without a
+// reason, so the note names the lines and the close that gives one. Null where every line is named, or the loop names none.
+function unprovedNote(loop, issue) {
+  const left = unprovedLines(loop, issue) || [];
+  return left.length ? `${issue.id}: no Proof row names acceptance ${linesText(left)}, and done closes it only with a reason given: ${jarlLine('set', issue.id, 'done', '<why>')}, or a row that names each, ${jarlLine('evidence', issue.id, '--ran', '<command>', '--saw', '<what-it-printed>', '--line', '<line>')}` : null;
 }
 
 // Whether the loop holds a batch id: it is in the format that holds one, or Jarl may raise it there.
