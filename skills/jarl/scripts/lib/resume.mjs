@@ -259,7 +259,7 @@ export function cmdReport(root, flags = {}) {
   const rows = issues.map((i) => {
     const m = mergedOf(i);
     const a = gateOf(loop, i.id).live;
-    return { id: i.id, title: i.title, status: i.status, kind: i.kind, priority: i.priority, tier: i.tier, tags: i.tags, repos: repoNames(root, i), branch: i.fields.branch || null, after: i.after, sources: i.sources, merged: m ? m.sha : null, ci: m ? m.ci : null, review: a ? { by: a.by, kind: a.kind, at: a.at } : null, ...(i.shared ? { shared: i.shared } : {}), ...(i.parent !== null ? { parent: i.parent } : {}) };
+    return { id: i.id, title: i.title, status: i.status, kind: i.kind, priority: i.priority, tier: i.tier, tags: i.tags, repos: repoNames(root, i), branch: i.fields.branch || null, after: i.after, sources: i.sources, merged: m ? m.sha : null, ci: m ? m.ci : null, review: a ? { by: a.by, kind: a.kind, at: a.at } : null, ...(i.shared ? { shared: i.shared } : {}), parent: i.parent };
   });
   const metrics = metricsOf(loop, Date.now());
   const closedGate = closedGateFlags(loop);

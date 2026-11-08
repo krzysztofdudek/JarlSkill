@@ -170,7 +170,7 @@ When the owner has handed the loop a mandate to decide on its own, or is away, h
 The loop neither waits for the owner nor guesses for them. Everything that is theirs goes through `ask`, and the work that does not depend on the answer goes on. The exact grammar in force is printed by `jarl --help`.
 
 - **A provisional decision** is a ruling plus a question that asks for the owner's word afterwards: `decide <slug> "<text>" --by jarl`, then `ask --kind ratify --issue <id> "<text>"`. It is never left in evidence prose. It blocks nothing: the work goes on, `next` and `done` ignore it, and it waits as long as the owner needs. It is listed in `status` (`to ratify N`, one line each) and under its own heading in `resume` until the owner answers. `answer` records the answer as a ruling and writes it into the issue's evidence. When the owner rejects the choice, file the undoing as a new issue.
-- **A question the jarl cannot settle** is `ask --kind stuck --issue <id> "<text>"`. It holds only that issue: `next` does not offer it while the question is open, and every other issue goes on.
+- **A question the jarl cannot settle** is `ask --kind stuck --issue <id> "<text>"`. It holds that issue and the sub-issues under it: `next` does not offer them while the question is open, and every other issue goes on.
 - **At every boot** read the questions and the ratify items `resume` prints first: the owner may have answered in the meantime, and an answer is a ruling in force from then on.
 
 ## Rulings about an area

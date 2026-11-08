@@ -294,7 +294,7 @@ export function schedulerNote(cmd) { return `scheduling is led by the composer: 
 // By default the issues ready to start and nothing else; --all adds the others, each row carrying its group:
 // ready, held-by-file (a file an in-progress or earlier-offered issue holds), waiting-after (After not settled, the
 // issue's own or that of an issue above it), waiting-sub (a parent with a sub-issue not settled), held-by-question (an
-// open stuck or stop question names the issue), promise or wait (an issue of that kind, which is never offered to a
+// open stuck or stop question names the issue or one above it), promise or wait (an issue of that kind, which is never offered to a
 // worker: next --as shows it on who holds it). A library caller reads the full list through nextRows and filters it itself.
 export const NEXT_GROUPS = ['ready', 'held-by-file', 'held-by-resource', 'waiting-after', 'waiting-sub', 'held-by-question', 'promise', 'wait'];
 export function cmdNext(root, flags) {
@@ -350,12 +350,14 @@ export function nextRows(root, flags = {}) {
   const inScope = slice === null ? () => true : (i) => sameSlice(sliceOf(i), slice);
   const groupOf = flags.perSlice ? (i) => (sliceOf(i) ?? '').toLowerCase() : () => '';
   // An open question of kind stuck (the default), stop or escalation that names an issue holds that issue back until it
-  // is answered: no worker is raised on an issue whose question waits on the owner or the jarl.
+  // is answered, and every issue under it in the tree: no worker is raised on work whose question waits on the owner or
+  // the jarl.
   const asked = new Map();
   for (const a of loadAsks(root)) {
     if (a.state !== 'open' || !a.issue || !['stuck', 'stop', 'escalation', null].includes(a.kind)) continue;
     asked.set(a.issue, [...(asked.get(a.issue) || []), a.id]);
   }
+  const questionsOn = (i) => [...new Set([i, ...(i.tree ? i.tree.ancestors : [])].flatMap((x) => asked.get(x.id) || []))].sort(cmpId);
   // Files are compared as (repository, path) pairs: the same path in two repositories never holds
   // an issue back, the same file in one repository always does, however its Repo path is spelled.
   const keysOf = (i) => fileKeysOf(root, i);
@@ -394,7 +396,8 @@ export function nextRows(root, flags = {}) {
     const base = { id: i.id, title: i.title, priority: i.priority, ...(i.files.length ? {} : { noFiles: true }), ...(i.shared ? { shared: i.shared } : {}) };
     if (after.length) { out.push({ ...base, group: 'waiting-after', after, waitsOn: [] }); continue; }
     if (subs.length) { out.push({ ...base, group: 'waiting-sub', subs, after: [], waitsOn: [] }); continue; }
-    if (asked.has(i.id)) { out.push({ ...base, group: 'held-by-question', questions: asked.get(i.id), waitsOn: [], after: [] }); continue; }
+    const questions = questionsOn(i);
+    if (questions.length) { out.push({ ...base, group: 'held-by-question', questions, waitsOn: [], after: [] }); continue; }
     // A promise or a wait is kept by who holds it, not worked on by a worker: never offered, and it takes no file.
     if (profile.keptKind(i.kind)) {
       out.push({ ...base, group: i.kind, waitsOn: [], after: [], ...(i.kind === PROMISE_KIND ? { by: fieldText(i.fields['found by']) || null } : { person: fieldText(i.fields.person) || null, checkWhen: fieldText(i.fields['check when']) || null }) });
