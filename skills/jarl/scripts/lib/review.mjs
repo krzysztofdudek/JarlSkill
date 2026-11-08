@@ -6,14 +6,15 @@ import { jarlDir, stamp } from './where.mjs';
 import { readText, writeAtomic } from './files.mjs';
 import { isBulk, newIssueKey } from './ids.mjs';
 import { appendLog, appendLogLines, firstLine } from './journal.mjs';
-import { acceptanceLineCount, bodyText, parseIssue, reviewEntries, setSection, unattributedRefusal } from './issues.mjs';
+import { bodyText, parseIssue, reviewEntries, setSection, unattributedRefusal } from './issues.mjs';
 import { needFormat, tipLinesOf } from './repositories.mjs';
 import { FORMAT_LINES, formatState, loadProfile, reviewerRule } from './profile.mjs';
 import { carriesCode, gateOf, readLoop, reviewerKind, unclearedText } from './loop.mjs';
 import { SEVERITIES, limitNote, loggedFinding, modelLines, modelRefusalOf, modelReviewForm, modelValue, reviewModelNotes, spellingNote } from './models.mjs';
-import { EVIDENCE_HOW, cmdNew, issuesFor, nextIssueNumbers, nothingWritten, oneOrMany, proofSince, refiled } from './commands.mjs';
+import { cmdNew, issuesFor, nextIssueNumbers, nothingWritten, oneOrMany, refiled } from './commands.mjs';
 import { REVIEW_MIN_WORDS, needSaid, raisedText, retractedBy, struck } from './evidence.mjs';
-import { closeForm, linesText, ownerLineWait, unprovedLines } from './owner-lines.mjs';
+import { closeForm, ownerLineWait } from './owner-lines.mjs';
+import { lineRowForm, lineStates, lineStateText, unprovedMechanical } from './lines.mjs';
 import { resetCaches } from './tips.mjs';
 
 // ---- commands: review ---------------------------------------------------------------------------------
@@ -138,8 +139,8 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
   const noteOf = (issue, n) => {
     const said = [
       verdict === 'approve' && kinds[n] === 'coordinator' && carriesCode(issue) ? `${issue.id} carries code and ${by} is a coordinator — the fresh-review rule: this approve is recorded but does not clear it for done or the merge queue; a fresh reviewer's approve does` : null,
-      flags.caller === 'cli' && verdict === 'approve' && proofSince(gateOf(loop, issue.id), issue) === 0 ? `${issue.id} holds no Proof row since the gate's window opened — done needs the worker's row, and the merger's check does not stand in for it: ${proofForm(loop, issue)}` : null,
       flags.caller === 'cli' && verdict === 'approve' ? unprovedNote(loop, issue) : null,
+      flags.caller === 'cli' && verdict === 'approve' && kinds[n] !== 'self' && gateOf(loop, issue.id).standingChanges ? `${issue.id}'s changes verdict stands until a round or a new commit, so this approve does not clear it yet: ${jarlLine('round', issue.id, '<what-failed>')}` : null,
       ...(lines && (lines.declared || rule !== 'agent') ? reviewModelNotes(loop, issue, verdict, model, lines, loop.eventsById.get(issue.id) || [], rule) : []),
       flags.caller === 'cli' && model !== undefined ? spellingNote(loop, model) : null,
       flags.caller === 'cli' && n === 0 ? limitNote(root, model) : null,
@@ -162,7 +163,7 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
     const text = g ? unclearedText(written, now, g) : null;
     return text ? { text, cause: g.uncleared.cause } : null;
   };
-  return oneOrMany(rawIds, issues.map((issue, n) => ({ id: issue.id, verdict, ...(by ? { by, kind: kinds[n] } : {}), ...(model !== undefined ? { model } : {}), ...(relayed ? { relayed } : {}), ...(batch ? { batch } : {}), ...(artifact !== undefined ? { artifact } : {}), severities, ...(filed.length ? { filed: filed.map((f) => f.id) } : {}), acceptance: (issue.sections.acceptance || '').trim(), ...(flags.caller === 'cli' ? { next: nextAfterVerdict(issue, verdict, kinds[n], loop && verdict === 'approve' ? ownerLineWait(root, loop, issue) : null, modelOf(issue), unclearedOf(issue), closeForm(loop ? loop.profile : loadProfile(root), issue.id, loop ? unprovedLines(loop, issue) || [] : [])) } : {}), ...noteOf(issue, n) })));
+  return oneOrMany(rawIds, issues.map((issue, n) => ({ id: issue.id, verdict, ...(by ? { by, kind: kinds[n] } : {}), ...(model !== undefined ? { model } : {}), ...(relayed ? { relayed } : {}), ...(batch ? { batch } : {}), ...(artifact !== undefined ? { artifact } : {}), severities, ...(filed.length ? { filed: filed.map((f) => f.id) } : {}), acceptance: (issue.sections.acceptance || '').trim(), ...(flags.caller === 'cli' ? { next: nextAfterVerdict(issue, verdict, kinds[n], loop && verdict === 'approve' ? ownerLineWait(root, loop, issue) : null, modelOf(issue), unclearedOf(issue), closeForm(loop ? loop.profile : loadProfile(root), issue.id)) } : {}), ...noteOf(issue, n) })));
 }
 
 // An --artifact value: the render or file a verdict judged, stored as given, trimmed of the plain spaces around it. The
@@ -257,16 +258,12 @@ function needBotFormat(root) {
   }
 }
 
-// The row an approve asks for: in a loop that names the lines a row proves, of an issue with lines to name, one that names them.
-const proofForm = (loop, issue) => (loop && loop.linesFrom !== null && acceptanceLineCount(issue) > 0
-  ? jarlLine('evidence', issue.id, '--ran', '<command>', '--saw', '<what-it-printed>', '--line', '<line-number>')
-  : EVIDENCE_HOW(issue.id));
-// What an approve says of the acceptance lines no row names, in a loop that names them: done refuses the close without a
-// reason for them, given apart from the move's own, so the note names the lines and the close that gives one. Null where
-// every line is named, or the loop names none.
+
+// What an approve says of the lines done still asks for: the mechanical lines whose rows or landing are not there. Null
+// where every such line is proved.
 function unprovedNote(loop, issue) {
-  const left = unprovedLines(loop, issue) || [];
-  return left.length ? `${issue.id}: no Proof row names acceptance ${linesText(left)}, and done closes it only with a reason for those lines, given apart from the reason of the move: ${closeForm(loop.profile, issue.id, left)}, or a row that names each, ${jarlLine('evidence', issue.id, '--ran', '<command>', '--saw', '<what-it-printed>', '--line', '<line-number>')}` : null;
+  const left = unprovedMechanical(lineStates(loop, issue, gateOf(loop, issue.id)));
+  return left.length ? `${issue.id}: done asks of each line what its method asks, and ${left.map(lineStateText).join('; ')}: ${lineRowForm(issue.id)}` : null;
 }
 
 // Whether the loop holds a batch id: it is in the format that holds one, or Jarl may raise it there.
@@ -325,15 +322,14 @@ function fileOutside(root, issues, by, o, flags, withModel, dry, number) {
 // form that carries the model, before any step that depends on done accepting it.
 // `uncleared` is why the approves the issue holds now do not clear it, other than the fresh-review rule: a bot the done
 // gate does not name, or the loop's own definition of an approved issue; an approve that clears it is then next.
-// `close` is the close the done gate takes (closeForm): the profile's closing status, and --without-rows while acceptance
-// lines have no row naming them in a loop that names them.
+// `close` is the close the done gate takes (closeForm): the profile's closing status.
 function nextAfterVerdict(issue, verdict, kind, wait = null, model = { rule: 'agent', refused: false }, uncleared, close) {
   if (verdict === 'changes') return `the jarl records the round — ${jarlLine('round', issue.id, '<text>')} — and a worker is raised again to fix it`;
   if (uncleared) return `${uncleared.text} — an approve that clears it is next — ${jarlLine('review', issue.id, '<verdict>', '--by', uncleared.cause === 'bot' ? '<a-fresh-reviewer>' : '<reviewer>', '<text>')}`;
   if (carriesCode(issue) && kind === 'coordinator') return `a fresh reviewer's approve is next — ${model.rule === 'agent' ? jarlLine('review', issue.id, '<verdict>', '--by', '<a-fresh-reviewer>', '<text>') : modelReviewForm(issue.id)} — then the merger lands it`;
   const after = carriesCode(issue)
-    ? `the merger merges the branch and records it with one call — ${jarlLine('merged', issue.id, '--sha', '<sha>', '--ran', '<command>', '--saw', '<what-it-printed>')} — then ${wait ? `${wait}, then ` : ''}${close}, which needs a Proof row from the worker (the merge check is the merger's and is no proof); a worker never sets done`
-    : `${wait ? `${wait}, then ` : ''}${close} once the worker's Proof rows are recorded; a worker never sets done`;
+    ? `the merger merges the branch and records it with one call — ${jarlLine('merged', issue.id, '--sha', '<sha>', '--ran', '<command>', '--saw', '<what-it-printed>')} — then ${wait ? `${wait}, then ` : ''}${close}, once every line has what its method asks (the merge check is the merger's and proves no line but one on the declared check); a worker never sets done`
+    : `${wait ? `${wait}, then ` : ''}${close} once every line has what its method asks; a worker never sets done`;
   if (model.refused) return `done refuses this approve for its model (done-gate "reviewer": "${model.rule}"), so an approve that names a model the rule accepts is next — ${modelReviewForm(issue.id)} — then ${after}`;
   return after;
 }

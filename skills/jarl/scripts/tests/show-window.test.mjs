@@ -14,7 +14,7 @@ const L = await import('../jarl-lib.mjs');
 
 const loop = () => makeLoop({ prefix: 'jarl-show-', goal: 'a goal', via: 'cli' });
 function started(root, title = 'thing to do') {
-  const id = JSON.parse(jarl(root, 'new', title, '--acceptance', 'it works', '--json')).id;
+  const id = JSON.parse(jarl(root, 'new', title, '--acceptance', '[read] it works', '--json')).id;
   jarl(root, 'set', id, 'in-progress', '--worker', 'w-one', '--branch', `jarl/${id}-x`);
   return id;
 }
@@ -24,13 +24,13 @@ function threeRounds() {
   const root = loop();
   const id = started(root, 'worked in rounds');
   jarl(root, 'evidence', id, 'a note before anything ran');
-  jarl(root, 'evidence', id, '--ran', 'run one', '--saw', 'saw one');
+  jarl(root, 'evidence', id, '--line', '1', '--ran', 'run one', '--saw', 'saw one');
   jarl(root, 'review', id, 'changes', '--by', 'rev-a', 'Important: first problem\nwith a second line');
   jarl(root, 'round', id, 'red one');
-  jarl(root, 'evidence', id, '--ran', 'run two', '--saw', 'saw two');
+  jarl(root, 'evidence', id, '--line', '1', '--ran', 'run two', '--saw', 'saw two');
   jarl(root, 'review', id, 'changes', '--by', 'rev-b', 'Important: second problem');
   jarl(root, 'round', id, 'red two');
-  jarl(root, 'evidence', id, '--ran', 'run three', '--saw', 'saw three');
+  jarl(root, 'evidence', id, '--line', '1', '--ran', 'run three', '--saw', 'saw three');
   jarl(root, 'review', id, 'changes', '--by', 'rev-c', 'Critical: third problem');
   jarl(root, 'round', id, 'red three');
   return { root, id };
@@ -38,12 +38,12 @@ function threeRounds() {
 
 test('show prints the gate window: current rows and verdicts, one line per earlier round, every unanswered changes in full, and the call for the rest', () => {
   const { root, id } = threeRounds();
-  jarl(root, 'evidence', id, '--ran', 'run four', '--saw', 'saw four');
+  jarl(root, 'evidence', id, '--line', '1', '--ran', 'run four', '--saw', 'saw four');
   jarl(root, 'review', id, 'approve', '--by', 'rev-d', 'Minor: a name. The rest reads right');
   const shown = jarl(root, 'show', id);
   assert.match(shown, /^# 1 · worked in rounds\n/);
-  assert.match(shown, /## Acceptance\nit works\n/);
-  for (const row of ['run one', 'run two', 'run three', 'run four']) assert.match(shown, new RegExp(`\\*\\*ran:\\*\\* ${row}`), 'every row since the start is shown');
+  assert.match(shown, /## Acceptance\n\[read\] it works\n/);
+  for (const row of ['run one', 'run two', 'run three', 'run four']) assert.match(shown, new RegExp(`\\*\\*ran(?: \\(line [0-9a-f, ]+\\))?:\\*\\* ${row}`), 'every row since the start is shown');
   assert.match(shown, /\*\*approve\*\* · by rev-d \(fresh\)/);
   assert.match(shown, /Minor: a name\. The rest reads right/, 'the current verdict is whole');
   assert.equal(shown.split('\n').filter((l) => l.startsWith('- earlier: ')).length, 0, 'every verdict since the last start is in full, whatever round it was made in');
@@ -72,22 +72,22 @@ test('show prints the gate window: current rows and verdicts, one line per earli
 test('show: rows before the last start are not shown, and the ordinals in the bounded view, --full and --json are the same and retract the right row', () => {
   const root = loop();
   const id = started(root, 'restarted');
-  jarl(root, 'evidence', id, '--ran', 'old one', '--saw', 'old result one', '--ran', 'old two', '--saw', 'old result two');
+  jarl(root, 'evidence', id, '--line', '1', '--ran', 'old one', '--saw', 'old result one', '--ran', 'old two', '--saw', 'old result two');
   jarl(root, 'set', id, 'deferred', 'waits for a decision');
   jarl(root, 'set', id, 'in-progress', '--worker', 'w-two', '--branch', 'jarl/1-x');
-  jarl(root, 'evidence', id, '--ran', 'new three', '--saw', 'new result three');
+  jarl(root, 'evidence', id, '--line', '1', '--ran', 'new three', '--saw', 'new result three');
   jarl(root, 'evidence', id, 'a note after the restart');
-  jarl(root, 'evidence', id, '--ran', 'new four', '--saw', 'new result four');
+  jarl(root, 'evidence', id, '--line', '1', '--ran', 'new four', '--saw', 'new result four');
 
   const bounded = jarl(root, 'show', id);
   assert.doesNotMatch(bounded, /old one|old two/);
   assert.match(bounded, /\(evidence rows 1-2 came before the last start or reopen and are not shown; rows 3-4 follow\)/);
-  assert.match(bounded, /^- \[3\] \*\*ran:\*\* new three · \*\*saw:\*\* new result three$/m);
-  assert.match(bounded, /^- \[4\] \*\*ran:\*\* new four · \*\*saw:\*\* new result four$/m);
+  assert.match(bounded, /^- \[3\] \*\*ran(?: \(line [0-9a-f, ]+\))?:\*\* new three · \*\*saw:\*\* new result three$/m);
+  assert.match(bounded, /^- \[4\] \*\*ran(?: \(line [0-9a-f, ]+\))?:\*\* new four · \*\*saw:\*\* new result four$/m);
   assert.match(bounded, /a note after the restart/);
   const full = jarl(root, 'show', id, '--full');
-  assert.match(full, /^- \[1\] \*\*ran:\*\* old one/m);
-  assert.match(full, /^- \[3\] \*\*ran:\*\* new three/m);
+  assert.match(full, /^- \[1\] \*\*ran(?: \(line [0-9a-f, ]+\))?:\*\* old one/m);
+  assert.match(full, /^- \[3\] \*\*ran(?: \(line [0-9a-f, ]+\))?:\*\* new three/m);
   assert.equal(full.replace(/^- \[\d+\] /gm, '- ').replace(/^\[note-\d+\] /gm, ''), readFileSync(L.findIssue(root, id).file, 'utf8').trim(), '--full is the file, with only the row and note numbers added');
   const json = JSON.parse(jarl(root, 'show', id, '--json'));
   assert.deepEqual(json.evidenceRows.map((r) => [r.n, r.ran]), [[1, 'old one'], [2, 'old two'], [3, 'new three'], [4, 'new four']]);
@@ -97,34 +97,34 @@ test('show: rows before the last start are not shown, and the ordinals in the bo
   // The number the bounded view printed names the row retracted.
   jarl(root, 'retract', id, '3', '--by', 'jarl', 'row three ran in the wrong place');
   const after = jarl(root, 'show', id);
-  assert.match(after, /^- \[3\] ~~\*\*ran:\*\* new three · \*\*saw:\*\* new result three~~$/m);
-  assert.match(after, /^- \[4\] \*\*ran:\*\* new four/m);
+  assert.match(after, /^- \[3\] ~~\*\*ran(?: \(line [0-9a-f, ]+\))?:\*\* new three · \*\*saw:\*\* new result three~~$/m);
+  assert.match(after, /^- \[4\] \*\*ran(?: \(line [0-9a-f, ]+\))?:\*\* new four/m);
   assert.deepEqual(JSON.parse(jarl(root, 'show', id, '--json')).evidenceRows.map((r) => [r.n, r.retracted]), [[1, false], [2, false], [3, true], [4, false]]);
   // Row 1, an earlier one, is named by its number from --full.
   jarl(root, 'retract', id, '1', '--by', 'jarl', 'row one belonged to another issue');
-  assert.match(file(root, id), /^- ~~\*\*ran:\*\* old one · \*\*saw:\*\* old result one~~$/m);
+  assert.match(file(root, id), /^- ~~\*\*ran(?: \(line [0-9a-f, ]+\))?:\*\* old one · \*\*saw:\*\* old result one~~$/m);
 });
 
 test('show leaves an issue the log does not match (written by hand) whole', () => {
   const root = loop();
-  const id = JSON.parse(jarl(root, 'new', 'by hand', '--json')).id;
-  jarl(root, 'evidence', id, '--ran', 'one', '--saw', 'result');
+  const id = JSON.parse(jarl(root, 'new', 'by hand', '--acceptance', '[read] it works', '--json')).id;
+  jarl(root, 'evidence', id, '--line', '1', '--ran', 'one', '--saw', 'result');
   jarl(root, 'set', id, 'in-progress', '--worker', 'w-one', '--branch', 'jarl/1-x');
-  jarl(root, 'evidence', id, '--ran', 'two', '--saw', 'result two');
+  jarl(root, 'evidence', id, '--line', '1', '--ran', 'two', '--saw', 'result two');
   jarl(root, 'review', id, 'approve', '--by', 'rev-a', 'read it all');
-  assert.doesNotMatch(jarl(root, 'show', id), /\*\*ran:\*\* one/, 'the log and the file agree: the row before the start is not shown');
+  assert.doesNotMatch(jarl(root, 'show', id), /\*\*ran(?: \(line [0-9a-f, ]+\))?:\*\* one/, 'the log and the file agree: the row before the start is not shown');
   // A row written into the file by hand: the file holds more than the log, so nothing is cut.
   const path = L.findIssue(root, id).file;
   writeFileSync(path, `${readFileSync(path, 'utf8').trimEnd()}\n- **ran:** by hand · **saw:** typed in\n`);
   const whole = jarl(root, 'show', id);
-  assert.match(whole, /- \[1\] \*\*ran:\*\* one/);
-  assert.match(whole, /- \[3\] \*\*ran:\*\* by hand/);
+  assert.match(whole, /- \[1\] \*\*ran(?: \(line [0-9a-f, ]+\))?:\*\* one/);
+  assert.match(whole, /- \[3\] \*\*ran(?: \(line [0-9a-f, ]+\))?:\*\* by hand/);
   assert.doesNotMatch(whole, /came before the last start/);
 });
 
 test('a long free-text evidence note is noted on stderr and still written whole; a short one and a row say nothing', () => {
   const root = loop();
-  const id = JSON.parse(jarl(root, 'new', 'long note', '--json')).id;
+  const id = JSON.parse(jarl(root, 'new', 'long note', '--acceptance', '[read] it works', '--json')).id;
   const run = (...args) => spawnJarl(root, args);
   const long = Array.from({ length: 40 }, (_, n) => `line ${n} of a long pasted output that nobody reads back`).join('\n');
   const r = run('evidence', id, long);
@@ -132,5 +132,5 @@ test('a long free-text evidence note is noted on stderr and still written whole;
   assert.match(r.stderr, /^note: that evidence note is long \(\d+ characters, 40 lines\) and was written whole/);
   assert.ok(file(root, id).includes('line 39 of a long pasted output'), 'nothing is cut');
   assert.equal(run('evidence', id, 'a short note').stderr, '');
-  assert.equal(run('evidence', id, '--ran', long, '--saw', 'ok').stderr, '', 'a row is the way to record a long output');
+  assert.equal(run('evidence', id, '--line', '1', '--ran', long, '--saw', 'ok').stderr, '', 'a row is the way to record a long output');
 });

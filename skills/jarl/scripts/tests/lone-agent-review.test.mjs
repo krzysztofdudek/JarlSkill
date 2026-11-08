@@ -13,13 +13,13 @@ const ASK = "jarl.mjs ask 'start a fresh session to review issues 1, 2'";
 // 1 and 2 carry code (a branch) and have proof with no verdict; 3 has no branch and proof with no verdict; 4 waits on 1.
 function loneLoop() {
   const root = loop();
-  jarl(root, 'new', 'first change', '--files', 'a.mjs');
-  jarl(root, 'new', 'second change', '--files', 'b.mjs');
-  jarl(root, 'new', 'a note', '--files', 'c.md');
-  jarl(root, 'new', 'after the first', '--after', '1', '--files', 'd.mjs');
+  jarl(root, 'new', 'first change', '--acceptance', '[read] it works', '--files', 'a.mjs');
+  jarl(root, 'new', 'second change', '--acceptance', '[read] it works', '--files', 'b.mjs');
+  jarl(root, 'new', 'a note', '--acceptance', '[read] it works', '--files', 'c.md');
+  jarl(root, 'new', 'after the first', '--acceptance', '[read] it works', '--after', '1', '--files', 'd.mjs');
   for (const id of ['1', '2']) jarl(root, 'set', id, 'in-progress', 'go', '--worker', 'me', '--branch', `jarl/${id}`);
   jarl(root, 'set', '3', 'in-progress', 'go', '--worker', 'me');
-  for (const id of ['1', '2', '3']) jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'green');
+  for (const id of ['1', '2', '3']) jarl(root, 'evidence', id, '--line', '1', '--ran', 'npm test', '--saw', 'green');
   return root;
 }
 
@@ -56,12 +56,12 @@ test('once the question for a fresh session is asked, the owner holds the ball a
 
 test('a question holds only the issues cited right after "issues", joined by commas, "and" or "&": no later number, version or sentence', () => {
   const root = loneLoop();
-  jarl(root, 'new', 'third change', '--files', 'e.mjs');
-  jarl(root, 'new', 'fourth change', '--files', 'f.mjs');
+  jarl(root, 'new', 'third change', '--acceptance', '[read] it works', '--files', 'e.mjs');
+  jarl(root, 'new', 'fourth change', '--acceptance', '[read] it works', '--files', 'f.mjs');
   jarl(root, 'set', '5', 'in-progress', 'go', '--worker', 'me', '--branch', 'jarl/5');
   jarl(root, 'set', '6', 'in-progress', 'go', '--worker', 'me', '--branch', 'jarl/6');
-  jarl(root, 'evidence', '5', '--ran', 'npm test', '--saw', 'green');
-  jarl(root, 'evidence', '6', '--ran', 'npm test', '--saw', 'green');
+  jarl(root, 'evidence', '5', '--line', '1', '--ran', 'npm test', '--saw', 'green');
+  jarl(root, 'evidence', '6', '--line', '1', '--ran', 'npm test', '--saw', 'green');
   const grouped = () => json(root, 'next', '--as', 'jarl', '--all').rows.filter((r) => r.ids).map((r) => r.ids);
   assert.deepEqual(grouped(), [['1', '2', '5', '6']]);
   jarl(root, 'ask', 'start a fresh session to review issues 1 and 2 before 5 lands. It waits on 6.3.0 and 6');
@@ -76,9 +76,9 @@ test('a question holds only the issues cited right after "issues", joined by com
 
 test('a question holds the one list right after "issues": a later issue, hash number, task or version is not asked about', () => {
   const root = loneLoop();
-  jarl(root, 'new', 'third change', '--files', 'e.mjs');
+  jarl(root, 'new', 'third change', '--acceptance', '[read] it works', '--files', 'e.mjs');
   jarl(root, 'set', '5', 'in-progress', 'go', '--worker', 'me', '--branch', 'jarl/5');
-  jarl(root, 'evidence', '5', '--ran', 'npm test', '--saw', 'green');
+  jarl(root, 'evidence', '5', '--line', '1', '--ran', 'npm test', '--saw', 'green');
   const grouped = () => json(root, 'next', '--as', 'jarl', '--all').rows.filter((r) => r.ids).map((r) => r.ids);
   const later = ['1 and 2 before issue 5 lands', '1, 2; #5 is next', '1, 2. Task 5 waits on them', '1, 2 (they hold up issue 5)', '1 & 2, then issues 5, 6.3.0'];
   for (const [n, tail] of later.entries()) {
@@ -90,10 +90,10 @@ test('a question holds the one list right after "issues": a later issue, hash nu
 
 test('a question about one issue reads "issue", and a question whose issues all have a verdict holds nothing', () => {
   const root = loop();
-  jarl(root, 'new', 'only change', '--files', 'a.mjs');
-  jarl(root, 'new', 'after it', '--after', '1', '--files', 'b.mjs');
+  jarl(root, 'new', 'only change', '--acceptance', '[read] it works', '--files', 'a.mjs');
+  jarl(root, 'new', 'after it', '--acceptance', '[read] it works', '--after', '1', '--files', 'b.mjs');
   jarl(root, 'set', '1', 'in-progress', 'go', '--worker', 'me', '--branch', 'jarl/1');
-  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'green');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'green');
   const row = json(root, 'next', '--as', 'jarl').rows[0];
   assert.ok(row.command.endsWith("jarl.mjs ask 'start a fresh session to review issue 1'"), row.command);
   assert.match(row.says, /raise a fresh reviewer for 1;/);
@@ -109,9 +109,9 @@ test('a question about one issue reads "issue", and a question whose issues all 
 test('a proof recorded after the question is asked is the jarl\'s again, and the answered question gives the ball back', () => {
   const root = loneLoop();
   jarl(root, 'ask', 'start a fresh session to review issues 1, 2');
-  jarl(root, 'new', 'third change', '--files', 'e.mjs');
+  jarl(root, 'new', 'third change', '--acceptance', '[read] it works', '--files', 'e.mjs');
   jarl(root, 'set', '5', 'in-progress', 'go', '--worker', 'me', '--branch', 'jarl/5');
-  jarl(root, 'evidence', '5', '--ran', 'npm test', '--saw', 'green');
+  jarl(root, 'evidence', '5', '--line', '1', '--ran', 'npm test', '--saw', 'green');
   assert.deepEqual(json(root, 'next', '--as', 'jarl', '--all').rows.filter((r) => r.ids).map((r) => r.ids), [['5']]);
   jarl(root, 'answer', '1', 'reviewed in a fresh session', '--by', 'owner');
   assert.deepEqual(json(root, 'next', '--as', 'jarl', '--all').rows.filter((r) => r.ids).map((r) => r.ids), [['1', '2', '5']]);
@@ -140,11 +140,11 @@ test('a list written without a space after the comma holds the same issues as on
 
 test('a line for several proofs names each issue with its title and its worker', () => {
   const root = loop();
-  jarl(root, 'new', 'first change', '--files', 'a.mjs');
-  jarl(root, 'new', 'second change', '--files', 'b.mjs');
+  jarl(root, 'new', 'first change', '--acceptance', '[read] it works', '--files', 'a.mjs');
+  jarl(root, 'new', 'second change', '--acceptance', '[read] it works', '--files', 'b.mjs');
   jarl(root, 'set', '1', 'in-progress', 'go', '--worker', 'me', '--branch', 'jarl/1');
   jarl(root, 'set', '2', 'in-progress', 'go', '--worker', 'you', '--branch', 'jarl/2');
-  for (const id of ['1', '2']) jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'green');
+  for (const id of ['1', '2']) jarl(root, 'evidence', id, '--line', '1', '--ran', 'npm test', '--saw', 'green');
   const row = json(root, 'next', '--as', 'jarl', '--all').rows.find((r) => r.ids);
   assert.deepEqual(row.issues, [{ id: '1', title: 'first change', doer: 'me' }, { id: '2', title: 'second change', doer: 'you' }]);
   assert.match(jarl(root, 'next', '--as', 'jarl', '--all'), /^- 1, 2: proof recorded, no verdict; raise one fresh reviewer per unit: 1 · 2; if you cannot raise agents, ask the owner to start a fresh session \(1 first change, worker me; 2 second change, worker you\) — /m);

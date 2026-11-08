@@ -148,7 +148,7 @@ test('a form holds every flag its command needs beside the ones the call gave, a
   // A row's --ran and --saw as one pair for each row the call gave, and no part that another stands in for: rows or a note,
   // an option or words, a value or --clear; goal with no --set is the goal read.
   const pairs = [
-    [['evidence', '1', '--ran', 'a', '--ran', 'b', '--saw', 'c'], 'jarl.mjs evidence "<ids>" --ran "<command>" --saw "<what-it-printed>" --ran "<command>" --saw "<what-it-printed>"'],
+    [['evidence', '1', '--line', '1', '--ran', 'a', '--ran', 'b', '--saw', 'c'], 'jarl.mjs evidence "<ids>" --line "<line-number>" --ran "<command>" --saw "<what-it-printed>" --ran "<command>" --saw "<what-it-printed>"'],
     [['merged', '1', '--sha', 'abc1234', '--ran', 'a', '--saw', 'b', '--saw', 'c'], 'jarl.mjs merged "<ids>" --sha "<sha>" --ran "<command>" --saw "<what-it-printed>" --ran "<command>" --saw "<what-it-printed>"'],
     [['evidence', '1', 'a note', '--ran', 'a', '--saw', 'b'], 'jarl.mjs evidence "<ids>" --ran "<command>" --saw "<what-it-printed>"'],
     [['goal', 'x'], 'jarl.mjs goal'],
@@ -167,7 +167,7 @@ test('a form holds every flag its command needs beside the ones the call gave, a
   const right = [
     [['review', '1', 'approve', 'read it all, fine', '--by', 'rev'], '--by'], [['retract', '1', '1', 'the row was wrong', '--by', 'jarl'], '--by'],
     [['decide', 's9', 'a ruling', '--by', 'jarl'], '--by'], [['answer', 'a-1', 'this way', '--by', 'owner'], '--by'], [['renumber', '4', '--key', key], '--key'],
-    [['merged', '1', '--sha', 'abc1234'], '--sha'], [['evidence', '1', '--ran', 'npm test', '--saw', 'ok'], '--saw'], [['evidence', '1', '--ran', 'npm test', '--saw', 'ok'], '--ran'],
+    [['merged', '1', '--sha', 'abc1234'], '--sha'], [['evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'ok'], '--saw'], [['evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'ok'], '--ran'],
     [['new', 't', '--tier', 'light', '--kind', 'wait', '--person', 'Dana', '--check-when', '2026-12-01'], '--check-when'],
     [['new', 't', '--tier', 'light', '--kind', 'wait', '--person', 'Dana', '--check-when', '2026-12-01'], '--kind'],
     [['decide', 's9', 'a ruling', '--by', 'jarl', '--area', 'module', '--reach', '3'], '--area'], [['ask', 'q?', '--kind', 'lower', '--target', 'the gate'], '--kind'],
@@ -184,10 +184,10 @@ test('a form holds every flag its command needs beside the ones the call gave, a
 
 test('done refused names the step its cause asks for, never an act of someone else: the proof, a verdict, the merge, the question to the owner, the log to repair', () => {
   const merging = { 'jarl-profile': 1, name: 'merging', statuses: L.BUILTIN_STATUSES, 'done-gate': { 'requires-merged': true } };
-  const proved = [['evidence', '3', '--ran', 'npm test', '--saw', 'all pass']];
+  const proved = [['evidence', '3', '--line', '1', '--ran', 'npm test', '--saw', 'all pass']];
   const approved = [...proved, ['review', '3', 'approve', '--by', 'rev-fresh', 'read the diff and the tests, all fine']];
   const cases = [
-    ['no proof', {}, "jarl.mjs evidence \"<id>\" --ran \"<command>\" --saw \"<what-it-printed>\""],
+    ['no proof and no approve on a read line', {}, "jarl.mjs review \"<ids>\" \"<verdict>\" \"<what-was-read-and-found>\" --by \"<a-fresh-reviewer>\""],
     ['no approve', { pre: proved }, "jarl.mjs review \"<ids>\" \"<verdict>\" \"<what-was-read-and-found>\" --by \"<a-fresh-reviewer>\""],
     ['an owner line not ticked', { pre: approved }, "jarl.mjs ask \"<question-for-the-owner>\" --issue \"<id>\""],
     ['no merge', { pre: approved, profile: merging }, "jarl.mjs merged \"<ids>\" --sha \"<sha>\""],
@@ -321,7 +321,7 @@ test('the registry holds one-token placeholders only, none of them a value a per
 test('a placeholder of the registry is refused as a value, a list item, a line of a list held one per line, or the value part of a value written in parts, with nothing written', () => {
   const holes = [
     ['review', '1', 'approve', '--by', '<reviewer>', 'read it all, fine'], ['retract', '1', '1', '--by', '<who>', 'the row was wrong'],
-    ['evidence', '1', '--ran', '<command>', '--saw', 'ok'], ['evidence', '1', '--ran', 'npm test', '--saw', '<what-it-printed>'],
+    ['evidence', '1', '--line', '1', '--ran', '<command>', '--saw', 'ok'], ['evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', '<what-it-printed>'],
     ['set', '3', 'in-progress', 'start', '--worker', 'w3', '--branch', '<worker-branch>'], ['field', '1', 'Title', '<title>'], ['new', '<title>', '--tier', 'light'],
     ['answer', 'a-1', '<text>', '--by', 'owner'], ['decide', 's9', '<text>', '--by', 'jarl'], ['decide', '<slug>', 'a ruling', '--by', 'jarl'], ['log', '<text>'],
     ['field', '1', 'Tags', 'a,<tag>'], ['new', 't', '--tier', 'light', '--after', '3,<id>'], ['answer', 'a-2', '--option', '<option>', '--by', 'owner'], ['goal', '--set', '<machine-line>'],
@@ -331,9 +331,9 @@ test('a placeholder of the registry is refused as a value, a list item, a line o
     ['new', 't', '--tier', 'light', '--source', '<report-dir#finding-id>'], ['new', 't', '--tier', 'light', '--source', 'research#<id>'], ['new', 't', '--tier', 'light', '--field', 'Area=<value>'],
     ['new', 't', '--tier', 'light', '--section', 'Design=<text>'], ['field', '1', 'Changelog', 'Added: <changelog-entry>'], ['new', 't', '--tier', 'light', '--changelog', 'Fixed: <text>'],
     ['decide', 's9', 'a ruling', '--by', 'jarl', '--applies-to', 'role <role>'], ['decide', 's9', 'a ruling', '--by', 'jarl', '--applies-to', 'loop and <selector>'],
-    ['field', '1', 'Tags', 'core,<tag>', '--remove'], ['field', '1', 'Source', 'r/x#<id>'], ['field', '1', 'Acceptance', 'a line\n<text>'],
+    ['field', '1', 'Tags', 'core,<tag>', '--remove'], ['field', '1', 'Source', 'r/x#<id>'], ['field', '1', 'Acceptance', '[read] a line\n<text>'],
     // The forms the reasons and the help quote, pasted with one value filled and the other left.
-    ['evidence', '1', '--ran', 'npm test', '--saw', '<what-it-printed>'], ['field', '1', 'Check when', '<date-or-event>'], ['merged', '1', '--sha', '<sha>'],
+    ['evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', '<what-it-printed>'], ['field', '1', 'Check when', '<date-or-event>'], ['merged', '1', '--sha', '<sha>'],
   ];
   for (const args of holes) {
     const dir = copy(PLAIN);
@@ -382,14 +382,14 @@ test('every global flag that takes a value is checked for a placeholder: --root 
 
 test('a value written in angle brackets that is no placeholder of the registry is a value, recorded as it was given', () => {
   const genuine = [
-    [['evidence', '1', '--ran', 'node a.mjs <in.txt', '--saw', 'Vec<T> is fine'], 'Vec<T> is fine'], [['field', '1', 'Title', 'the <b> tag is escaped'], 'the <b> tag is escaped'],
+    [['evidence', '1', '--line', '1', '--ran', 'node a.mjs <in.txt', '--saw', 'Vec<T> is fine'], 'Vec<T> is fine'], [['field', '1', 'Title', 'the <b> tag is escaped'], 'the <b> tag is escaped'],
     [['new', 'Map<K, V> leaks', '--tier', 'light'], 'Map<K, V> leaks'], [['decide', 's9', 'use <x> where it fits', '--by', 'jarl'], 'use <x> where it fits'], [['log', '<x> and more'], '<x> and more'],
     [['review', '1', 'approve', '--by', 'rev', '<html> renders, all fine'], '<html> renders, all fine'], [['new', 'Jarl: <b> handling', '--tier', 'light'], 'Jarl: <b> handling'],
-    [['field', '1', 'Where', 'the <tag> in a.mjs, line 3'], 'the <tag> in a.mjs, line 3'], [['evidence', '1', '--ran', 'npm test', '--saw', 'it printed <b>ok</b>'], 'it printed <b>ok</b>'],
+    [['field', '1', 'Where', 'the <tag> in a.mjs, line 3'], 'the <tag> in a.mjs, line 3'], [['evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'it printed <b>ok</b>'], 'it printed <b>ok</b>'],
     [['field', '1', 'Changelog', 'Fixed: a <b> tag is escaped'], 'Fixed: a <b> tag is escaped'], [['ask', 'q?', '--option', 'A: keep <b> as it is', '--option', 'B: drop it'], 'keep <b> as it is'],
-    [['goal', '--set', 'Check: node run.mjs <in.txt'], 'node run.mjs <in.txt'], [['evidence', '1', '--ran', 'curl x', '--saw', '<nil>'], '<nil>'], [['evidence', '1', '--ran', 'curl x', '--saw', '<none>'], '<none>'],
-    [['evidence', '1', '--ran', 'curl x', '--saw', '<Response [200]>'], '<Response [200]>'], [['new', '<Button />', '--tier', 'light'], '<Button />'], [['field', '1', 'Title', '<nil>'], '<nil>'],
-    [['log', '<none>'], '<none>'], [['new', 't', '--tier', 'light', '--acceptance', '<br>'], '<br>'], [['field', '1', 'What', '<class int>'], '<class int>'],
+    [['goal', '--set', 'Check: node run.mjs <in.txt'], 'node run.mjs <in.txt'], [['evidence', '1', '--line', '1', '--ran', 'curl x', '--saw', '<nil>'], '<nil>'], [['evidence', '1', '--line', '1', '--ran', 'curl x', '--saw', '<none>'], '<none>'],
+    [['evidence', '1', '--line', '1', '--ran', 'curl x', '--saw', '<Response [200]>'], '<Response [200]>'], [['new', '<Button />', '--tier', 'light'], '<Button />'], [['field', '1', 'Title', '<nil>'], '<nil>'],
+    [['log', '<none>'], '<none>'], [['new', 't', '--tier', 'light', '--acceptance', '[read] <br>'], '[read] <br>'], [['field', '1', 'What', '<class int>'], '<class int>'],
   ];
   for (const [args, text] of genuine) {
     const dir = copy(PLAIN);

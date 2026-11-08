@@ -22,7 +22,7 @@ const snapshot = (root) => [existsSync(profileFile(root)) ? readFileSync(profile
 
 test('extend section adds a section to a loop with no profile: the loop gets one with the built-in statuses, a log line, and verify is clean', () => {
   const root = makeLoop({ prefix: 'jarl-extend-', via: 'cli' });
-  jarl(root, 'new', 'filed before', '--acceptance', 'it holds');
+  jarl(root, 'new', 'filed before', '--acceptance', '[read] it holds');
   const before = issueText(root, '1');
   const r = jarlResult(root, ['extend', 'section', 'Risks', '--by', 'jarl']);
   assert.equal(r.stdout, 'profile extended: section Risks');
@@ -36,7 +36,7 @@ test('extend section adds a section to a loop with no profile: the loop gets one
   assert.equal(run(root, ['verify']).status, 0, run(root, ['verify']).stdout);
   jarl(root, 'field', '1', 'Risks', 'none known');
   assert.match(issueText(root, '1'), /^## Risks\nnone known\n/m);
-  jarl(root, 'new', 'filed after', '--section', 'Risks=a slow disk');
+  jarl(root, 'new', 'filed after', '--acceptance', '[read] it works', '--section', 'Risks=a slow disk');
   assert.match(issueText(root, '2'), /^## Risks\na slow disk\n/m);
   assert.deepEqual(JSON.parse(jarl(root, 'profile', '--json')).sections, ['Risks']);
   assert.equal(run(root, ['verify']).status, 0);
@@ -44,13 +44,13 @@ test('extend section adds a section to a loop with no profile: the loop gets one
 
 test('extend field adds a field with its values and default: a new issue takes the default, an issue already filed has none until field writes it', () => {
   const root = makeLoop({ prefix: 'jarl-extend-field-', via: 'cli' });
-  jarl(root, 'new', 'filed before');
+  jarl(root, 'new', 'filed before', '--acceptance', '[read] it works');
   const before = issueText(root, '1');
   assert.equal(jarl(root, 'extend', 'field', 'Area', '--values', 'ui,api', '--default', 'ui', '--by', 'jarl'), 'profile extended: field Area (one of ui, api, default ui)');
   assert.deepEqual(profileJson(root).fields, { Area: { enum: ['ui', 'api'], default: 'ui' } });
   assert.match(logText(root), /by jarl · profile extended · field Area: values ui, api; default ui$/m);
   assert.equal(issueText(root, '1'), before);
-  jarl(root, 'new', 'filed after');
+  jarl(root, 'new', 'filed after', '--acceptance', '[read] it works');
   assert.match(issueText(root, '2'), /^\*\*Area:\*\* ui$/m);
   jarl(root, 'field', '1', 'Area', 'api');
   assert.match(issueText(root, '1'), /^\*\*Area:\*\* api$/m);
@@ -62,7 +62,7 @@ test('extend field adds a field with its values and default: a new issue takes t
 
 test('extend refuses a part that is not a section or a field, a name the profile holds or Jarl reserves, and a field that does not check, with a form, writing nothing', () => {
   const root = makeLoop({ prefix: 'jarl-extend-refused-', via: 'cli' });
-  jarl(root, 'new', 'one');
+  jarl(root, 'new', 'one', '--acceptance', '[read] it works');
   jarl(root, 'extend', 'section', 'Risks');
   const held = snapshot(root);
   let said = refuses(root, 'extend', 'status', 'review');
@@ -142,7 +142,7 @@ test('the frozen readers read a loop whose profile extend wrote, and extend rais
 const FORMATS = [
   ['format 1 with no profile', () => { const root = makeLoop({ prefix: 'jarl-extend-f1-' }); fileAsBefore(root, 'filed by the first reader'); return root; }, undefined],
   ['format 2', () => { const root = makeLoop({ prefix: 'jarl-extend-f2-' }); fileAsFormatTwo(root, 'filed by the reader of formats 1 and 2'); return root; }, 2],
-  ['format 3', () => { const root = makeLoop({ prefix: 'jarl-extend-f3-', via: 'cli' }); jarl(root, 'new', 'filed with a key'); return root; }, 3],
+  ['format 3', () => { const root = makeLoop({ prefix: 'jarl-extend-f3-', via: 'cli' }); jarl(root, 'new', 'filed with a key', '--acceptance', '[read] it works'); return root; }, 3],
   ['format 1 with a profile of its own', () => {
     const file = join(mkdtempSync(join(tmpdir(), 'jarl-extend-own-')), 'profile.json');
     writeFileSync(file, JSON.stringify({ 'jarl-profile': 1, name: 'own', statuses: BUILTIN_STATUSES, sections: ['Plan'] }));
@@ -178,7 +178,7 @@ for (const [name, make, format] of FORMATS) {
 
 test('a profile that cannot be written leaves no log line, with --by and without', () => {
   const root = makeLoop({ prefix: 'jarl-extend-failed-', via: 'cli' });
-  jarl(root, 'new', 'one');
+  jarl(root, 'new', 'one', '--acceptance', '[read] it works');
   const held = snapshot(root);
   // The temporary file the profile is written through is taken by a directory, so the write fails.
   mkdirSync(join(root, '.jarl', `.profile.json.${process.pid}.tmp`));

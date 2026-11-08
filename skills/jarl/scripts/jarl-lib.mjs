@@ -30,11 +30,12 @@ export { TIPS_RECENT_MS, resetCaches, ciOf, cmdTips, renderTips } from './lib/ti
 export { PERMANENT_MARKER, editorOf, cmdInit, cmdExtend, hasLiveLoop, cmdArchive, claimFile, TEMPLATE_RE, templatesDir, readTemplate, TIER_CRITERIA, cmdNew, cmdRenumber, sourceList, waitingOn, waitsOf, cmdSplit, cmdBody, cmdSource, cmdAfter, cmdList, eachIssue, reasonWord, SET_CALLERS, setRouteOf, cmdField, cmdSetStatus, cmdSetField, cmdSet, doneRefusal, cmdMerged, shellWord, cmdTag, cmdPrio, cmdFiles, cmdRepo, workEvidence, needLifecycle } from './lib/commands.mjs';
 export { loadAsks, cmdAsk, RATIFY_WORDS, REJECT_WORDS, AMBIGUOUS_WORDS, cmdAnswer, cmdAnswerMany, recordTypeLog, recordRuleLog, cmdDecide, questionFor, issuesNaming, AREA_RE, RULE_RE, RATIFY_BATCH, ratificationBatch, PROMOTION_OPTIONS, promotionBatch, cmdDecisions, renderDecide, renderDecisions, handoffAge } from './lib/questions.mjs';
 export { cmdEvidence, issueView, workerEvidence, schedulerNote, NEXT_GROUPS, cmdNext, modelsTableBuilds, nextRowsBuilds, renderNext, nextRows, uncommittedLoopFiles, cmdStatus, STATUS_BY, IN_FLIGHT_MARKS, inFlightRows, parentChecks, cmdMode, cmdClose, closedGateFlags } from './lib/evidence.mjs';
+export { METHODS, LINE_FORM, readLine, lineDigest, needMarkedLines, lineStates, lineCounts, linesAtLease, atLeaseText, issueLinesAtLease } from './lib/lines.mjs';
 export { cmdQueue, renderQueue } from './lib/queue.mjs';
 export { OWNER_HOLDER, JARL_HOLDER, BALL_SHOWN, holderOf, ROW_SOURCES, ballRows, cmdNextAs, renderNextAs, askerSection } from './lib/ball.mjs';
 export { cmdReview, ARTIFACT_MOST, artifactValue } from './lib/review.mjs';
 export { BRIEF_ROLES, cmdBrief, renderBrief } from './lib/brief.mjs';
-export { OWNER_LINE_SHAPE, needOwnerLines, ownerLines, ownerLineStates, ownerLineRefusal, ownerLineNotes, cmdTick, cmdRetractTick } from './lib/owner-lines.mjs';
+export { OWNER_LINE_SHAPE, needOwnerLine, ownerLines, ownerLineStates, ownerLineRefusal, ownerLineNotes, cmdTick, cmdRetractTick } from './lib/owner-lines.mjs';
 export { cmdChangelog } from './lib/changelog.mjs';
 export { findingsOf, reportDirOf, cmdImport, cmdSources, renderStatus, renderImport, renderSources, renderList } from './lib/import.mjs';
 export { RESUME_LOG_LINES, RESUME_READY, cmdResume, renderResume, cmdHandoffRead, HANDOFF_TEXT, cmdHandoffWrite, cmdReport } from './lib/resume.mjs';

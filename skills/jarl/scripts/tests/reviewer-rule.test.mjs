@@ -24,14 +24,14 @@ function modelLoop(reviewer) {
   const root = makeLoop({ prefix: 'jarl-reviewer-rule-', via: 'cli', initFlags: flags });
   jarl(root, 'goal', '--set', 'Model (light): m-light');
   jarl(root, 'goal', '--set', 'Model (strong): m-strong');
-  jarl(root, 'new', 'a change', '--acceptance', 'it works');
-  jarl(root, 'new', 'a refactor', '--acceptance', 'the output is the same', '--tags', 'identical-output');
+  jarl(root, 'new', 'a change', '--acceptance', '[read] it works');
+  jarl(root, 'new', 'a refactor', '--acceptance', '[read] the output is the same', '--tags', 'identical-output');
   for (const id of ['1', '2']) {
     jarl(root, 'set', id, 'in-progress', '--worker', `w${id}`, '--model', 'm-strong', '--by', 'jarl');
-    jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'pass 4, fail 0', '--by', `w${id}`);
+    jarl(root, 'evidence', id, '--line', '1', '--ran', 'npm test', '--saw', 'pass 4, fail 0', '--by', `w${id}`);
   }
   // The change meant to alter nothing holds the row that names its comparison, which its light review depends on.
-  jarl(root, 'evidence', '2', '--ran', 'cmp before.txt after.txt', '--saw', 'cmp printed nothing, exit 0', '--by', 'w2');
+  jarl(root, 'evidence', '2', '--line', '1', '--ran', 'cmp before.txt after.txt', '--saw', 'cmp printed nothing, exit 0', '--by', 'w2');
   return root;
 }
 const approve = (root, id, model) => run(root, ['review', id, 'approve', '--by', `rev-${model}`, '--model', model, 'read the diff and the rows, nothing found']);
@@ -44,7 +44,7 @@ test('by default a separate agent clears: a same-model or lower-ranked approve i
   assert.match(jarl(root, 'set', '1', 'done', 'proof and approve', '--by', 'jarl'), /1 → done/);
   const below = approve(root, '2', 'm-light');
   assert.doesNotMatch(below.stderr, /done refuses/);
-  jarl(root, 'new', 'another change', '--acceptance', 'it works');
+  jarl(root, 'new', 'another change', '--acceptance', '[read] it works');
   jarl(root, 'set', '3', 'in-progress', '--worker', 'w3', '--model', 'm-strong', '--by', 'jarl');
   const low = approve(root, '3', 'm-light');
   assert.match(low.stderr, /3: m-light ranks below the worker's model \(m-strong\) — advice, not a gate: done accepts this approve/);
@@ -77,9 +77,9 @@ test('"model-rank": done refuses an approve ranked below the worker\'s model, ex
 // The same loop with the lease recording no model: the worker's model is unknown to the record.
 function unknownWorkerLoop(reviewer) {
   const root = modelLoop(reviewer);
-  jarl(root, 'new', 'a change leased with no model', '--acceptance', 'it works');
+  jarl(root, 'new', 'a change leased with no model', '--acceptance', '[read] it works');
   jarl(root, 'set', '3', 'in-progress', '--worker', 'w3', '--by', 'jarl');
-  jarl(root, 'evidence', '3', '--ran', 'npm test', '--saw', 'pass 4, fail 0', '--by', 'w3');
+  jarl(root, 'evidence', '3', '--line', '1', '--ran', 'npm test', '--saw', 'pass 4, fail 0', '--by', 'w3');
   return root;
 }
 
@@ -128,24 +128,24 @@ for (const [rule, own, label] of [['other-model', 'm-strong', 'the worker\'s own
       assert.equal(said.status, 0, said.stderr);
       const form = modelForm(root, '1');
       assert.match(form, /^jarl\.mjs review "<ids>" "<verdict>" "<what-was-read-and-found>" --by "<a-fresh-reviewer>" --model "<model-id>"$/);
-      assert.match(nextLine(said), /^done refuses this approve for its model \(done-gate "reviewer": "[a-z-]+"\), so an approve that names a model the rule accepts is next — jarl\.mjs review 1 "<verdict>" --by "<a-fresh-reviewer>" --model "<model-id>" "<text>" — then jarl\.mjs set 1 done "<why>" once the worker's Proof rows are recorded/, given.join(' '));
+      assert.match(nextLine(said), /^done refuses this approve for its model \(done-gate "reviewer": "[a-z-]+"\), so an approve that names a model the rule accepts is next — jarl\.mjs review 1 "<verdict>" --by "<a-fresh-reviewer>" --model "<model-id>" "<text>" — then jarl\.mjs set 1 done "<why>" once every line has what its method asks/, given.join(' '));
     }
   });
 
   test(`"${rule}": the line after an approve the rule accepts, and after any approve under the default rule, is the step that follows an approve`, () => {
     const root = modelLoop(rule);
     const accepted = run(root, ['review', '1', 'approve', '--by', 'rev-x', '--model', rule === 'other-model' ? 'm-light' : 'm-strong', 'read the diff and the rows, nothing found']);
-    assert.equal(nextLine(accepted), 'jarl.mjs set 1 done "<why>" once the worker\'s Proof rows are recorded; a worker never sets done');
+    assert.equal(nextLine(accepted), 'jarl.mjs set 1 done "<why>" once every line has what its method asks; a worker never sets done');
     const plain = modelLoop();
     const bare = run(plain, ['review', '1', 'approve', '--by', 'rev-x', 'read the diff and the rows, nothing found']);
-    assert.equal(nextLine(bare), 'jarl.mjs set 1 done "<why>" once the worker\'s Proof rows are recorded; a worker never sets done');
+    assert.equal(nextLine(bare), 'jarl.mjs set 1 done "<why>" once every line has what its method asks; a worker never sets done');
   });
 
   test(`"${rule}": on an issue that carries code the fresh reviewer's approve asked for after a coordinator's carries the model, and a refused fresh approve is followed by the form before the merge`, () => {
     const root = modelLoop(rule);
-    jarl(root, 'new', 'a change with code', '--acceptance', 'it works');
+    jarl(root, 'new', 'a change with code', '--acceptance', '[read] it works');
     jarl(root, 'set', '3', 'in-progress', '--worker', 'w3', '--model', 'm-strong', '--branch', 'jarl/3-code', '--by', 'jarl');
-    jarl(root, 'evidence', '3', '--ran', 'npm test', '--saw', 'pass 4, fail 0', '--by', 'w3');
+    jarl(root, 'evidence', '3', '--line', '1', '--ran', 'npm test', '--saw', 'pass 4, fail 0', '--by', 'w3');
     const coordinator = run(root, ['review', '3', 'approve', '--by', 'jarl', 'read the diff and the rows, nothing found']);
     assert.match(nextLine(coordinator), /^a fresh reviewer's approve is next — jarl\.mjs review 3 "<verdict>" --by "<a-fresh-reviewer>" --model "<model-id>" "<text>" — then the merger lands it$/);
     const fresh = run(root, ['review', '3', 'approve', '--by', 'rev-x', ...(rule === 'model-rank' ? ['--model', 'm-light'] : ['--model', 'm-strong']), 'read the diff and the rows, nothing found']);

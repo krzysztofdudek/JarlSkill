@@ -93,7 +93,7 @@ test('a ruling shown as made under another is marked when the one it names is su
 test('--under refuses a rule that has ended, by its date or by its issue closing, and leaves it out of the rulings it names', () => {
   const root = loop({ via: 'cli' });
   mandate(root);
-  jarl(root, 'new', 'the work the rule is for', '--acceptance', 'it works');
+  jarl(root, 'new', 'the work the rule is for', '--acceptance', '[read] it works');
   jarl(root, 'decide', 'issue-rule', 'Run the long check on this issue.', '--by', 'jarl', '--under', 'standing-mandate', '--applies-to', 'loop', '--until', '1');
   jarl(root, 'decide', 'live-rule', 'Run the short check everywhere.', '--by', 'jarl', '--under', 'standing-mandate', '--applies-to', 'loop');
   writeFileSync(join(root, '.jarl', 'decisions.md'), `${decisionsText(root)}\n## 2026-01-01 · dated-rule\nWritten by hand.\n\n**Applies to:** loop · until 2026-01-02\n**By:** jarl\n`);
@@ -139,7 +139,7 @@ test('the marker cannot be forged from the ruling text, which is indented, nor r
 test('a ruling that names the ruling it rests on can settle issues and is read as plain text by its closing block', () => {
   const root = loop({ via: 'cli' });
   mandate(root);
-  jarl(root, 'new', 'thing');
+  jarl(root, 'new', 'thing', '--acceptance', '[read] it works');
   jarl(root, 'decide', 'pick-a', 'Take option a.', '--by', 'jarl', '--under', 'standing-mandate', '--settles', '1');
   assert.match(jarl(root, 'show', '1'), /Ruling pick-a \(by jarl\): Take option a\./);
   assert.match(decisionsText(root), /Made under: standing-mandate\n\n\*\*Settles:\*\* 1\n\*\*By:\*\* jarl\n/);

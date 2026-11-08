@@ -20,14 +20,14 @@ const logText = (root) => scrubbed(readFileSync(join(root, '.jarl', 'log.md'), '
 const field = (root, id, name) => JSON.parse(jarl(root, 'show', id, '--json')).fields[name];
 // An issue in progress on a branch, with one proof row and one approve.
 function worked(root, title = 'thing to do') {
-  const id = R.newIssue(root, title, { acceptance: 'it works' }).id;
+  const id = R.newIssue(root, title, { acceptance: '[read] it works' }).id;
   jarl(root, 'set', id, 'in-progress', '--worker', 'w-one', '--branch', `jarl/${id}-x`);
-  jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'pass 5');
+  jarl(root, 'evidence', id, '--line', '1', '--ran', 'npm test', '--saw', 'pass 5');
   jarl(root, 'review', id, 'approve', '--by', 'rev-a', 'read the diff, nothing found');
   return id;
 }
 // Issues filed by the command line, numbered plain (1, 2, 3).
-function issues(root, n = 3) { for (let i = 1; i <= n; i += 1) jarl(root, 'new', `issue ${i}`); }
+function issues(root, n = 3) { for (let i = 1; i <= n; i += 1) jarl(root, 'new', `issue ${i}`, '--acceptance', '[read] it works'); }
 
 const PROFILE = { 'jarl-profile': 1, name: 'grammar', statuses: L.BUILTIN_STATUSES, fields: { Area: { enum: ['core', 'cli'], required: true }, Note: {} } };
 function fieldedLoop() {
@@ -35,7 +35,7 @@ function fieldedLoop() {
   const file = join(dir, 'profile.json');
   writeFileSync(file, JSON.stringify(PROFILE));
   const root = makeLoop({ prefix: 'jarl-grammar-fielded-', goal: 'a goal', via: 'cli', initFlags: ['--profile', file] });
-  for (const t of ['a', 'b', 'c']) jarl(root, 'new', t, '--field', 'Area=core');
+  for (const t of ['a', 'b', 'c']) jarl(root, 'new', t, '--acceptance', '[read] it works', '--field', 'Area=core');
   return root;
 }
 
@@ -61,7 +61,7 @@ test('retract takes back a verdict and an evidence row; the spellings through ev
     assert.equal(r.status, 0, r.stderr);
     assert.equal(r.stderr, '', 'the verb says nothing on stderr');
   }
-  assert.match(issueText(root, '1'), /~~\*\*ran:\*\*/);
+  assert.match(issueText(root, '1'), /~~\*\*ran(?: \(line [0-9a-f, ]+\))?:\*\*/);
   assert.match(issueText(root, '1'), /~~\*\*approve\*\*/);
 });
 

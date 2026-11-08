@@ -29,9 +29,9 @@ const loop = () => {
 };
 // An in-progress issue on a branch, worked by w1, with one evidence row — ready for done but for its review.
 function codeIssue(root, title = 'code', files = 'a.mjs') {
-  const id = FILED.exec(jarl(root, 'new', title, '--files', files).stdout)[1];
+  const id = FILED.exec(jarl(root, 'new', title, '--acceptance', '[read] it works', '--files', files).stdout)[1];
   jarl(root, 'set', id, 'in-progress', 'go', '--branch', `jarl/${id}-x`, '--worker', 'w1');
-  jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'pass 1');
+  jarl(root, 'evidence', id, '--line', '1', '--ran', 'npm test', '--saw', 'pass 1');
   return id;
 }
 
@@ -77,9 +77,9 @@ test('a code issue: a coordinator approve is recorded with a note, done refuses 
 
 test('an issue with no Branch and no Merged field is still cleared by the coordinator', () => {
   const root = loop();
-  const id = FILED.exec(jarl(root, 'new', 'a ruling').stdout)[1];
+  const id = FILED.exec(jarl(root, 'new', 'a ruling', '--acceptance', '[read] it works').stdout)[1];
   jarl(root, 'set', id, 'in-progress', 'go', '--worker', 'w1');
-  jarl(root, 'evidence', id, '--ran', 'read decisions.md', '--saw', 'ruling recorded');
+  jarl(root, 'evidence', id, '--line', '1', '--ran', 'read decisions.md', '--saw', 'ruling recorded');
   const r = jarl(root, 'review', id, 'approve', '--by', 'jarl', FINDINGS);
   assert.doesNotMatch(r.stderr, /fresh-review rule/);
   assert.match(jarl(root, 'set', id, 'done').stdout, /→ done/);
@@ -131,12 +131,12 @@ test('merged without a fresh approve is recorded and said loudly; with one, noth
 
 test('self spans a takeover: the worker before a hand-over is still self, not only the latest lease', () => {
   const root = loop();
-  const id = FILED.exec(jarl(root, 'new', 'takeover').stdout)[1];
+  const id = FILED.exec(jarl(root, 'new', 'takeover', '--acceptance', '[read] it works').stdout)[1];
   jarl(root, 'set', id, 'in-progress', 'go', '--branch', `jarl/${id}-x`, '--worker', 'w1');
   // A hand-over: re-leased to a different worker without ever leaving in-progress (a takeover after rounds
   // works the same way — the issue keeps its identity, only Worker changes).
   jarl(root, 'set', id, 'in-progress', 'handed over', '--worker', 'w2', '--handover');
-  jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'pass');
+  jarl(root, 'evidence', id, '--line', '1', '--ran', 'npm test', '--saw', 'pass');
   assert.match(refuses(root, 'review', id, 'approve', '--by', 'w1', FINDINGS), /self-approve/);
   assert.match(refuses(root, 'review', id, 'approve', '--by', 'W2', FINDINGS), /self-approve/);
   assert.match(jarl(root, 'review', id, 'approve', '--by', 'opus-reviewer-9', FINDINGS).stdout, /by opus-reviewer-9 \(fresh\)/);
@@ -144,12 +144,12 @@ test('self spans a takeover: the worker before a hand-over is still self, not on
 
 test('self spans a package: an issue folded into a branch with no --worker of its own inherits self from the branch\'s other issue', () => {
   const root = loop();
-  const a = FILED.exec(jarl(root, 'new', 'a').stdout)[1];
-  const b = FILED.exec(jarl(root, 'new', 'b').stdout)[1];
+  const a = FILED.exec(jarl(root, 'new', 'a', '--acceptance', '[read] it works').stdout)[1];
+  const b = FILED.exec(jarl(root, 'new', 'b', '--acceptance', '[read] it works').stdout)[1];
   jarl(root, 'set', a, 'in-progress', 'go', '--branch', 'jarl/pkg-x', '--worker', 'w1');
   // b joins the same branch later, recording only --branch — the package's one shared lease, not a fresh one.
   jarl(root, 'set', b, 'in-progress', 'joins the package', '--branch', 'jarl/pkg-x');
-  jarl(root, 'evidence', b, '--ran', 'npm test', '--saw', 'pass');
+  jarl(root, 'evidence', b, '--line', '1', '--ran', 'npm test', '--saw', 'pass');
   assert.match(refuses(root, 'review', b, 'approve', '--by', 'w1', FINDINGS), /self-approve/);
   assert.match(jarl(root, 'review', b, 'approve', '--by', 'opus-reviewer-9', FINDINGS).stdout, /by opus-reviewer-9 \(fresh\)/);
 });
@@ -190,7 +190,7 @@ test('the merge queue of resume: a fresh approve stays live in the queue after a
 function seedDone(n) {
   const root = loop();
   const dir = join(root, '.jarl', 'issues');
-  jarl(root, 'new', 'sample');
+  jarl(root, 'new', 'sample', '--acceptance', '[read] it works');
   const file = join(dir, readdirSync(dir)[0]);
   const template = readFileSync(file, 'utf8').replace(/^\*\*Status:\*\* .*$/m, '**Status:** done');
   writeFileSync(file, template);

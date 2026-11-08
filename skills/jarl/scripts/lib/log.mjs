@@ -147,18 +147,19 @@ function retractTarget(text) {
 const RETRACTED_BY = new RegExp(`^\\S+ (?:evidence retract · (?:row|note) \\d+|review retract) · by (.+?)(?: \\((?:${REVIEWER_KIND_SRC})\\))?(?= · |$)`);
 const retractedBy = (text) => RETRACTED_BY.exec(text)?.[1] ?? null;
 
-// The numbers of the acceptance lines a row names, as its mark writes them: "1, 3".
-export const LINES_SRC = '\\d+(?:, \\d+)*';
-export const lineNumbers = (text) => (text ? text.split(', ').map(Number) : []);
+// The digests of the acceptance lines a row names, as its mark writes them: "a1b2c3d4e5f6, 0f9e8d7c6b5a".
+export const LINES_SRC = '[0-9a-f]+(?:, [0-9a-f]+)*';
+export const lineDigests = (text) => (text ? text.split(', ') : []);
 // The mark a row that names `lines` adds after "ran" in the issue file and after "evidence row" in its log line: none for
 // a row that names no line.
 export const rowLinesText = (lines) => (lines && lines.length ? ` (line ${lines.join(', ')})` : '');
-// The head of a row's log line, `<id> evidence row (line 1, 3) · `, before the row's command: the number as the line
-// writes it, the head's length and the lines it names. No text of the command reaches the head. Null for any other line.
+// The head of a row's log line, `<id> evidence row (line a1b2c3d4e5f6) · `, before the row's command: the id as the line
+// writes it, the head's length and the digests of the lines it names. No text of the command reaches the head. Null for any
+// other line.
 const ROW_LINE_HEAD = new RegExp(`^(\\S+) evidence row(?: \\(line (${LINES_SRC})\\))? · `);
 export function rowLineHead(text) {
   const m = ROW_LINE_HEAD.exec(text);
-  return m ? { written: m[1], length: m[0].length, lines: lineNumbers(m[2]) } : null;
+  return m ? { written: m[1], length: m[0].length, lines: lineDigests(m[2]) } : null;
 }
 
 // The slot facts of an attachment row's command, `attach <slot> <path> sha256:<hex> size:<bytes>`, as { slot, path, sha256,
@@ -176,11 +177,17 @@ export function attachmentOf(ran) {
 // --by of the call (null when it named nobody). A value in the line holds no separator (the writer puts a stand-in for one),
 // so each segment is read by its place.
 const GREW_SEGMENT = /^grew after the lease: line (\d+(?:, \d+)*)$/;
+// A change of the acceptance logs what it held whole, as one JSON string (see wholeValue in the commands): `was` is that
+// text, '' for a section that held nothing, and null for a part whose line holds no whole text.
+const WHOLE_WAS = /^was ("(?:[^"\\]|\\.)*")$/;
 function bodyEvent(rest) {
   const parts = rest.split(' · ');
   const by = parts.length > 2 && /^by .+$/.test(parts[parts.length - 1]) ? parts.pop().slice(3) : null;
   const grew = parts.length > 2 ? GREW_SEGMENT.exec(parts[parts.length - 1]) : null;
-  return { type: 'body', part: parts[0], grew: grew ? grew[1].split(', ').map(Number) : null, by };
+  const whole = parts[0] === 'acceptance' ? WHOLE_WAS.exec(parts[1] ?? '') : null;
+  let was = parts[0] === 'acceptance' && parts[1] === 'was (none)' ? '' : null;
+  if (whole) { try { was = JSON.parse(whole[1]); } catch { was = null; } }
+  return { type: 'body', part: parts[0], grew: grew ? grew[1].split(', ').map(Number) : null, by, ...(parts[0] === 'acceptance' ? { was } : {}) };
 }
 // One log line as an event, without its place in the file. `from` is the status the issue was in before the line.
 export function parseEvent(id, text, profile, from = null) {
@@ -251,9 +258,9 @@ const LINE_CALLS = {
   filed: () => ['new', hole('<title>')], move: (ids) => ['set', ids, hole('<status>'), hole('<why>')], round: (id) => ['round', id, hole('<what-failed>')],
   verdict: (id) => ['review', id, hole('<verdict>'), hole('<findings-with-a-severity>'), '--by', hole('<reviewer>')],
   'retract-review': (id) => ['retract', id, 'review', hole('<why>'), '--by', hole('<who>')], 'retract-row': (id) => ['retract', id, hole('<n>'), hole('<why>'), '--by', hole('<who>')],
-  'retract-note': (id) => ['retract', id, hole('<n-or-note-n>'), hole('<why>'), '--by', hole('<who>')], row: (id) => ['evidence', id, '--ran', hole('<command>'), '--saw', hole('<what-it-printed>')],
+  'retract-note': (id) => ['retract', id, hole('<n-or-note-n>'), hole('<why>'), '--by', hole('<who>')], row: (id) => ['evidence', id, '--ran', hole('<command>'), '--saw', hole('<what-it-printed>'), '--line', hole('<line-number>'), '--by', hole('<who>')],
   merged: (id) => ['merged', id, '--sha', hole('<sha>')], ci: (id) => ['merged', id, '--ci', hole('<ci-state>')], body: (id) => ['field', id, hole('<part>'), hole('<value>')],
-  tick: (id) => ['tick', id, hole('<line-number>'), '--by', hole('<the-owner-himself>')], 'tick-retract': (id) => ['retract', id, hole('<tick-n>'), hole('<why>'), '--by', hole('<the-owner-himself>')], tip: (id) => ['evidence', id, '--ran', hole('<command>'), '--saw', hole('<what-it-printed>')],
+  tick: (id) => ['tick', id, hole('<line-number>'), '--by', hole('<the-owner-himself>')], 'tick-retract': (id) => ['retract', id, hole('<tick-n>'), hole('<why>'), '--by', hole('<the-owner-himself>')], tip: (id) => ['evidence', id, '--ran', hole('<command>'), '--saw', hole('<what-it-printed>'), '--line', hole('<line-number>'), '--by', hole('<who>')],
 };
 const MOVE_SHAPE = idRe('^{id} →');
 // The first group is set for the lease's lines, the second for the path note's.

@@ -21,15 +21,15 @@ const IMPORTANT = 'Important: the empty list is not handled';
 function stepsLoop() {
   const root = loop();
   const titles = ['ready one', 'with a worker', 'proof no verdict', 'changes asked', 'approved', 'merged'];
-  titles.forEach((t, n) => jarl(root, 'new', t, '--files', `f${n + 1}.mjs`));        // 1-6
-  jarl(root, 'new', 'waits on the ready one', '--after', '1', '--files', 'f7.mjs');   // 7
-  jarl(root, 'new', 'asked about', '--files', 'f8.mjs');                              // 8
-  jarl(root, 'new', 'waits on the asked one', '--after', '8', '--files', 'f9.mjs');   // 9
-  jarl(root, 'new', 'after the approved one', '--after', '5', '--files', 'f10.mjs');  // 10
-  jarl(root, 'new', 'also after the approved one', '--after', '5', '--files', 'f11.mjs'); // 11
-  jarl(root, 'new', 'after two', '--after', '1,5', '--files', 'f12.mjs');            // 12
+  titles.forEach((t, n) => jarl(root, 'new', t, '--acceptance', '[read] it works', '--files', `f${n + 1}.mjs`));        // 1-6
+  jarl(root, 'new', 'waits on the ready one', '--acceptance', '[read] it works', '--after', '1', '--files', 'f7.mjs');   // 7
+  jarl(root, 'new', 'asked about', '--acceptance', '[read] it works', '--files', 'f8.mjs');                              // 8
+  jarl(root, 'new', 'waits on the asked one', '--acceptance', '[read] it works', '--after', '8', '--files', 'f9.mjs');   // 9
+  jarl(root, 'new', 'after the approved one', '--acceptance', '[read] it works', '--after', '5', '--files', 'f10.mjs');  // 10
+  jarl(root, 'new', 'also after the approved one', '--acceptance', '[read] it works', '--after', '5', '--files', 'f11.mjs'); // 11
+  jarl(root, 'new', 'after two', '--acceptance', '[read] it works', '--after', '1,5', '--files', 'f12.mjs');            // 12
   for (const id of ['2', '3', '4', '5', '6']) jarl(root, 'set', id, 'in-progress', 'go', '--worker', `w${id}`, '--branch', `jarl/${id}`);
-  for (const id of ['3', '4', '5', '6']) jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'green');
+  for (const id of ['3', '4', '5', '6']) jarl(root, 'evidence', id, '--line', '1', '--ran', 'npm test', '--saw', 'green');
   jarl(root, 'review', '4', 'changes', '--by', 'rev', IMPORTANT);
   jarl(root, 'review', '5', 'approve', '--by', 'rev', FINDINGS);
   jarl(root, 'review', '6', 'approve', '--by', 'rev', FINDINGS);
@@ -50,7 +50,7 @@ test('next --as jarl lists each issue in play with the step it points to and the
   assert.match(text, /^On the jarl \(6\)$/m);
   assert.match(text, /^- 5 approved: approved, not merged; merge it \(worker w5\) — jarl\.mjs merged 5 --sha "<sha>" --ran "<command>" --saw "<what-it-printed>" · holds up 10, 11, 12$/m);
   assert.match(text, /^- 1 ready one: ready to start, raise a worker — jarl\.mjs set 1 in-progress --branch "<branch>" --worker "<name>" --model "<model-id>" · holds up 7, 12$/m);
-  assert.match(text, /^- 2 with a worker: with worker w2 since .*, no proof yet; the worker records it — jarl\.mjs evidence 2 --ran "<command>" --saw "<what-it-printed>"$/m);
+  assert.match(text, /^- 2 with a worker: with worker w2 since .*, no proof yet; the worker records it — jarl\.mjs evidence 2 --ran "<command>" --saw "<what-it-printed>" --line "<line-number>" --by "<who>"$/m);
   assert.match(text, /^- 3 proof no verdict: proof recorded, no verdict; raise a fresh reviewer for 3; if you cannot raise agents, ask the owner to start a fresh session \(worker w3\) — jarl\.mjs review 3 "<verdict>" --by "<reviewer>" "<text>", or jarl\.mjs ask 'start a fresh session to review issue 3'$/m);
   assert.match(text, /^- 4 changes asked: changes asked by its reviewer; send it back to a worker \(worker w4\) — jarl\.mjs round 4 "<text>"$/m);
   assert.match(text, /^- 6 merged: merged; close it \(worker w6\) — jarl\.mjs set 6 done "<text>"$/m);
@@ -59,7 +59,7 @@ test('next --as jarl lists each issue in play with the step it points to and the
   jarl(root, 'round', '4', 'the empty list');
   assert.equal(json(root, 'next', '--as', 'jarl', '--all').rows.find((r) => r.id === '4').what, 'worker');
   assert.match(jarl(root, 'next', '--as', 'jarl'), /^- 4 changes asked: with worker w4 since .*, sent back by a round, no new proof yet; the worker records it — jarl\.mjs evidence 4 /m);
-  jarl(root, 'evidence', '4', '--ran', 'npm test', '--saw', 'green again');
+  jarl(root, 'evidence', '4', '--line', '1', '--ran', 'npm test', '--saw', 'green again');
   const review = json(root, 'next', '--as', 'jarl', '--all').rows.find((r) => r.what === 'review');
   assert.deepEqual(review.ids, ['3', '4'], 'the two proofs of code with no verdict are one line');
 });
@@ -87,7 +87,7 @@ test('next --as owner lists the questions and the items to ratify, most held-up 
 
 test('next --as prints at most seven lines and counts the rest; --all prints every line', () => {
   const root = loop();
-  for (let n = 1; n <= 9; n += 1) jarl(root, 'new', `task ${n}`, '--files', `t${n}.mjs`);
+  for (let n = 1; n <= 9; n += 1) jarl(root, 'new', `task ${n}`, '--acceptance', '[read] it works', '--files', `t${n}.mjs`);
   const listOf = (t) => t.split('\n\nRules for ')[0];
   const text = jarl(root, 'next', '--as', 'jarl');
   assert.equal(listOf(text).split('\n').filter((l) => l.startsWith('- ')).length, 7);
@@ -107,13 +107,13 @@ test('the rows come from the profile\'s status flags, never from the names of th
     initial: 'todo',
   }));
   const root = loop(['--profile', file]);
-  jarl(root, 'new', 'to do', '--files', 'a.mjs');
-  jarl(root, 'new', 'being done', '--files', 'b.mjs');
-  jarl(root, 'new', 'approved plain', '--files', 'c.mjs');
+  jarl(root, 'new', 'to do', '--acceptance', '[read] it works', '--files', 'a.mjs');
+  jarl(root, 'new', 'being done', '--acceptance', '[read] it works', '--files', 'b.mjs');
+  jarl(root, 'new', 'approved plain', '--acceptance', '[read] it works', '--files', 'c.mjs');
   jarl(root, 'set', '2', 'doing', 'go', '--worker', 'w2', '--branch', 'jarl/2');
   jarl(root, 'set', '3', 'doing', 'go', '--worker', 'w3');
-  jarl(root, 'evidence', '2', '--ran', 'npm test', '--saw', 'green');
-  jarl(root, 'evidence', '3', '--ran', 'npm test', '--saw', 'green');
+  jarl(root, 'evidence', '2', '--line', '1', '--ran', 'npm test', '--saw', 'green');
+  jarl(root, 'evidence', '3', '--line', '1', '--ran', 'npm test', '--saw', 'green');
   jarl(root, 'review', '3', 'approve', '--by', 'rev', FINDINGS);
   const o = json(root, 'next', '--as', 'jarl');
   assert.deepEqual(o.rows.map((r) => [r.id, r.what]), [['1', 'ready'], ['2', 'review'], ['3', 'close']]);
@@ -124,9 +124,9 @@ test('the rows come from the profile\'s status flags, never from the names of th
 
 test('a ruling that settles issues none of which is live, and none finished on it, is the jarl\'s', () => {
   const root = loop();
-  jarl(root, 'new', 'folded away', '--files', 'a.mjs');      // 1
-  jarl(root, 'new', 'dropped on the ruling', '--files', 'b.mjs'); // 2
-  jarl(root, 'new', 'still open', '--files', 'c.mjs');       // 3
+  jarl(root, 'new', 'folded away', '--acceptance', '[read] it works', '--files', 'a.mjs');      // 1
+  jarl(root, 'new', 'dropped on the ruling', '--acceptance', '[read] it works', '--files', 'b.mjs'); // 2
+  jarl(root, 'new', 'still open', '--acceptance', '[read] it works', '--files', 'c.mjs');       // 3
   jarl(root, 'decide', 'keep-the-work', 'The work of 1 is kept.', '--settles', '1', '--by', 'coordinator');
   jarl(root, 'decide', 'drop-the-work', 'Issue 2 is not needed.', '--settles', '2', '--by', 'coordinator');
   jarl(root, 'decide', 'open-work', 'Issue 3 does it.', '--settles', '3', '--by', 'coordinator');
@@ -136,14 +136,14 @@ test('a ruling that settles issues none of which is live, and none finished on i
   assert.deepEqual(o.rows.filter((r) => r.what === 'ruling').map((r) => r.ruling), ['keep-the-work']);
   assert.match(jarl(root, 'next', '--as', 'jarl', '--all'), /^- keep-the-work: ruling in force; the work it settles has no live issue: 1 is dropped; file the work and settle it — jarl\.mjs new "<title>", then jarl\.mjs decide "<slug>" "<text>" --by jarl --supersedes keep-the-work --settles "<id>"$/m);
   // A ruling that supersedes it takes the line away.
-  jarl(root, 'new', 'the kept work', '--files', 'd.mjs');   // 4
+  jarl(root, 'new', 'the kept work', '--acceptance', '[read] it works', '--files', 'd.mjs');   // 4
   jarl(root, 'decide', 'keep-the-work-in-4', 'The work of 1 is done in 4.', '--supersedes', 'keep-the-work', '--settles', '4', '--by', 'coordinator');
   assert.deepEqual(json(root, 'next', '--as', 'jarl', '--all').rows.filter((r) => r.what === 'ruling'), []);
 });
 
 test('a ruling is cited by its whole name: a longer name that starts with it, or ends with it, cites another ruling', () => {
   const root = loop();
-  for (const n of ['a', 'b', 'c', 'd']) jarl(root, 'new', `work ${n}`, '--files', `${n}.mjs`);   // 1-4
+  for (const n of ['a', 'b', 'c', 'd']) jarl(root, 'new', `work ${n}`, '--acceptance', '[read] it works', '--files', `${n}.mjs`);   // 1-4
   jarl(root, 'decide', 'ask-01', 'Issue 1 is not needed.', '--settles', '1', '--by', 'coordinator');
   jarl(root, 'decide', 'ask-02', 'Issue 2 is not needed.', '--settles', '2', '--by', 'coordinator');
   jarl(root, 'decide', 'ask-03', 'Issue 3 is not needed.', '--settles', '3', '--by', 'coordinator');
@@ -167,7 +167,7 @@ test('resume and status say an issue a round sent back is back with its worker, 
   assert.match(inFlight(jarl(root, 'next', '--as', 'jarl', '--all'), '4'), /sent back by a round, no new proof yet; the worker records it/, 'the list says the same');
   assert.equal(json(root, 'status').inFlightRows.find((r) => r.id === '4').next, 'sent back by a round, no new proof yet — it is back with the worker, who records new rows');
   assert.equal(json(root, 'resume').inFlight.find((r) => r.id === '4').mark, 'rows-no-verdict', 'the mark names the rows and no verdict since the round');
-  jarl(root, 'evidence', '4', '--ran', 'npm test', '--saw', 'green again');
+  jarl(root, 'evidence', '4', '--line', '1', '--ran', 'npm test', '--saw', 'green again');
   assert.match(jarl(root, 'resume'), /^- 4 changes asked[^\n]*\n  → evidence rows recorded, no verdict since the last start or round — it waits for a reviewer$/m);
 });
 
@@ -219,8 +219,8 @@ test('a question of several lines is one row of resume\'s questions too, its lin
 test('in a loop with slices the jarl is the coordinator of the issues in play in no slice, so the coordinator rules reach it while one is there', () => {
   const root = loop();
   jarl(root, 'goal', '--set', 'Coordinators: odin');
-  jarl(root, 'new', 'in a slice', '--files', 'a.mjs', '--tags', 'slice:odin');
-  jarl(root, 'new', 'in no slice', '--files', 'b.mjs');
+  jarl(root, 'new', 'in a slice', '--acceptance', '[read] it works', '--files', 'a.mjs', '--tags', 'slice:odin');
+  jarl(root, 'new', 'in no slice', '--acceptance', '[read] it works', '--files', 'b.mjs');
   const slugs = (o) => o.rules.map((r) => r.slug);
   assert.deepEqual(slugs(json(root, 'next', '--as', 'jarl')), slugs(json(root, 'next', '--as', 'odin')), 'the jarl leases the issue in no slice under the rules odin leases its own under');
   assert.ok(slugs(json(root, 'next', '--as', 'jarl')).includes('jarl:coordinator-scope-holds'));
@@ -230,7 +230,7 @@ test('in a loop with slices the jarl is the coordinator of the issues in play in
 
 test('a named coordinator holds nothing while the loop has no slices, and an outside person holds nothing yet', () => {
   const root = loop();
-  jarl(root, 'new', 'ready', '--files', 'a.mjs');
+  jarl(root, 'new', 'ready', '--acceptance', '[read] it works', '--files', 'a.mjs');
   jarl(root, 'goal', '--set', 'Coordinators: Ada');
   const ada = jarl(root, 'next', '--as', 'Ada');
   assert.match(ada, /^On Ada \(0\)\n- \(nothing is on Ada\)\nwith no slice in the loop, what a coordinator holds is the jarl's: jarl\.mjs next --as jarl\n\nRules for Ada \(3\)\n- jarl:coordinator-escalates · role coordinator · references\/jarl\.md — /);
@@ -281,7 +281,7 @@ test('on a loop opened with a composer\'s profile, next --as lists only what is 
   writeFileSync(file, JSON.stringify(COMPOSER));
   const root = join(dir, 'composed');
   R.initLoop(root, 'the composed goal', { profile: file });
-  const filed = (t) => R.newIssue(root, t, { field: ['Node=core', 'Class=standard'] }).id;
+  const filed = (t) => R.newIssue(root, t, { acceptance: '[read] it works', field: ['Node=core', 'Class=standard'] }).id;
   const queued = filed('queued issue');
   const running = filed('running issue');
   const gone = filed('dropped issue');
@@ -310,11 +310,11 @@ const profileJson = (root) => JSON.parse(readFileSync(join(root, '.jarl', 'profi
 test('a promise is on whoever its Found by names until it is kept and closed, and next never offers it to a worker', () => {
   const root = loop();
   jarl(root, 'goal', '--set', 'Coordinators: Ada');
-  jarl(root, 'new', 'real work', '--files', 'a.mjs');                                                       // 1
+  jarl(root, 'new', 'real work', '--acceptance', '[read] it works', '--files', 'a.mjs');                                                       // 1
   jarl(root, 'new', 'run the bench again after the fix', '--kind', 'promise', '--files', 'bench.mjs');      // 2, the jarl's
   jarl(root, 'new', 'read the draft by Friday', '--kind', 'promise', '--found-by', 'owner');                // 3
   jarl(root, 'new', 'send the summary to the jarl', '--kind', 'promise', '--found-by', 'Ada');              // 4
-  jarl(root, 'new', 'after the bench', '--after', '2', '--files', 'c.mjs');                                // 5
+  jarl(root, 'new', 'after the bench', '--acceptance', '[read] it works', '--after', '2', '--files', 'c.mjs');                                // 5
   // next offers the work only; --all shows the promises in a group of their own, with who made each.
   assert.deepEqual(json(root, 'next').map((r) => r.id), ['1']);
   const all = jarl(root, 'next', '--all');
@@ -323,7 +323,7 @@ test('a promise is on whoever its Found by names until it is kept and closed, an
   // Each one is on its maker's list, with the command that moves it.
   const mine = json(root, 'next', '--as', 'jarl', '--all');
   assert.deepEqual(mine.rows.map((r) => [r.id, r.what]), [['2', 'promise'], ['1', 'ready']], 'the bench holds 5 up, so it comes first');
-  assert.match(jarl(root, 'next', '--as', 'jarl'), /^- 2 run the bench again after the fix: promised by the jarl; keep it, then record what was done — jarl\.mjs evidence 2 --ran "<command>" --saw "<what-it-printed>" · holds up 5$/m);
+  assert.match(jarl(root, 'next', '--as', 'jarl'), /^- 2 run the bench again after the fix: promised by the jarl; keep it, then record what was done — jarl\.mjs evidence 2 --ran "<command>" --saw "<what-it-printed>" --by "<who>" · holds up 5$/m);
   assert.match(jarl(root, 'next', '--as', 'jarl', '--all'), /^- 5 after the bench: waits on the jarl via 2$/m);
   assert.match(jarl(root, 'next', '--as', 'owner'), /^On the owner \(1\)\n- 3 read the draft by Friday: promised by the owner; keep it, then record what was done — jarl\.mjs evidence 3 /);
   assert.match(jarl(root, 'next', '--as', 'ada'), /^On Ada \(1\)\n- 4 send the summary to the jarl: promised by Ada; keep it, then record what was done — /);
@@ -335,10 +335,12 @@ test('a promise is on whoever its Found by names until it is kept and closed, an
   jarl(root, 'set', '4', 'done', 'the summary was sent');
   assert.equal(json(root, 'next', '--as', 'Ada').total, 0, 'a promise ends when its issue closes');
   // A promise given to a worker is worked as any issue, and its maker still holds each line.
+  jarl(root, 'field', '2', 'Acceptance', '[read] the bench runs');
   jarl(root, 'set', '2', 'in-progress', 'go', '--worker', 'w2', '--branch', 'jarl/2');
   assert.deepEqual(json(root, 'next', '--as', 'jarl', '--all').rows.filter((r) => r.id === '2').map((r) => [r.what, r.holder, r.doer]), [['worker', 'jarl', 'w2']]);
+  jarl(root, 'field', '3', 'Acceptance', '[read] it is read');
   jarl(root, 'set', '3', 'in-progress', 'go', '--worker', 'w3', '--branch', 'jarl/3');
-  jarl(root, 'evidence', '3', '--ran', 'npm test', '--saw', 'green');
+  jarl(root, 'evidence', '3', '--line', '1', '--ran', 'npm test', '--saw', 'green');
   const owners = json(root, 'next', '--as', 'owner').rows;
   assert.deepEqual(owners.map((r) => [r.id, r.what]), [['3', 'review']], 'a promise\'s proof of code is on its maker, not in the jarl\'s line of fresh reviews');
   assert.equal(json(root, 'next', '--as', 'jarl', '--all').rows.filter((r) => r.id === '3').length, 0);
@@ -347,7 +349,7 @@ test('a promise is on whoever its Found by names until it is kept and closed, an
 test('a wait is on its named outside person, with when to check, and what comes after it waits on that person; once it comes it is the jarl\'s to close', () => {
   const root = loop();
   jarl(root, 'new', 'the licence key from the vendor', '--kind', 'wait', '--person', 'Dana Smith', '--check-when', '2026-11-10');  // 1
-  jarl(root, 'new', 'install with the key', '--after', '1', '--files', 'install.mjs');                                            // 2
+  jarl(root, 'new', 'install with the key', '--acceptance', '[read] it works', '--after', '1', '--files', 'install.mjs');                                            // 2
   jarl(root, 'new', 'the legal sign-off', '--kind', 'wait', '--person', 'Lee', '--check-when', 'after the board meets');          // 3
   assert.match(readFileSync(join(root, '.jarl', 'issues', '1-the-licence-key-from-the-vendor.md'), 'utf8'), /^\*\*Found by:\*\* jarl\n\*\*Person:\*\* Dana Smith\n\*\*Check when:\*\* 2026-11-10\n/m);
   // Not offered to a worker, and on nobody's list but the person's.
@@ -358,7 +360,7 @@ test('a wait is on its named outside person, with when to check, and what comes 
   const dana = jarl(root, 'next', '--as', 'dana smith', '--all');
   assert.equal(dana, [
     'On Dana Smith (1)',
-    "- 1 the licence key from the vendor: waits on Dana Smith, check when 2026-11-10; when it comes, record it — jarl.mjs evidence 1 --ran \"<command>\" --saw \"<what-it-printed>\" · holds up 2",
+    "- 1 the licence key from the vendor: waits on Dana Smith, check when 2026-11-10; when it comes, record it — jarl.mjs evidence 1 --ran \"<command>\" --saw \"<what-it-printed>\" --by \"<who>\" · holds up 2",
     '',
     'Waiting on Dana Smith (1)',
     '- 2 install with the key: waits on Dana Smith via 1',
@@ -386,7 +388,7 @@ test('a wait names its person and when to check: new refuses one without them, f
   assert.match(refuses(root, 'new', 'the key', '--check-when', 'Friday'), /--check-when goes with --kind wait/);
   assert.match(refuses(root, 'new', 'the key', '--kind', 'wait', '--person', 'Dana · Lee', '--check-when', 'Friday'), /Person is one value — not a phrase with "·" in it/);
   assert.ok(!readdirSync(join(root, '.jarl', 'issues')).length, 'nothing was filed');
-  jarl(root, 'new', 'the key', '--files', 'a.mjs');                                                                   // 1
+  jarl(root, 'new', 'the key', '--acceptance', '[read] it works', '--files', 'a.mjs');                                                                   // 1
   assert.match(refuses(root, 'field', '1', 'Kind', 'wait'), /^1 becomes a wait only with the outside person it is held by and when to check it — first jarl\.mjs field "<ids>" Person "<name>" and jarl\.mjs field "<ids>" 'Check when' "<date-or-event>"\njarl\.mjs field "<ids>" Person "<name>"\njarl\.mjs field "<ids>" 'Check when' "<date-or-event>"\njarl\.mjs field "<ids>" Kind "<kind>"\n$/);
   jarl(root, 'field', '1', 'Person', 'Dana');
   jarl(root, 'field', '1', 'Check when', 'Friday');
@@ -404,9 +406,9 @@ test('a wait names its person and when to check: new refuses one without them, f
 
 test('of several issues, the refusal of a wait without its Person or of an emptied field of a wait names the issue in its reason and ends with the form, an id placeholder in place of the ids', () => {
   const root = loop();
-  jarl(root, 'new', 'not a wait', '--files', 'a.mjs');                                                                 // 1
+  jarl(root, 'new', 'not a wait', '--acceptance', '[read] it works', '--files', 'a.mjs');                                                                 // 1
   jarl(root, 'new', 'the key', '--kind', 'wait', '--person', 'Dana', '--check-when', 'Friday', '--files', 'b.mjs');     // 2
-  jarl(root, 'new', 'held by Lee', '--files', 'c.mjs');                                                                 // 3
+  jarl(root, 'new', 'held by Lee', '--acceptance', '[read] it works', '--files', 'c.mjs');                                                                 // 3
   jarl(root, 'field', '3', 'Person', 'Lee');
   jarl(root, 'field', '3', 'Check when', 'Monday');
   assert.match(refuses(root, 'field', '1,2', 'Check when', '--clear'), /^2 is a wait, held by its Person and checked when its Check when says: Check when is never empty on it — give it another kind first \(jarl\.mjs field "<ids>" Kind "<kind>"\)\njarl\.mjs field "<ids>" Kind "<kind>"\n$/);
@@ -461,8 +463,8 @@ test('a finding is never filed as a promise or a wait', () => {
 
 test('resume lists the open promises and waits on their own, with who holds each, and never as held by a file', () => {
   const root = loop();
-  jarl(root, 'new', 'real work', '--files', 'a.mjs');                                                                              // 1
-  jarl(root, 'new', 'same file', '--files', 'a.mjs');                                                                              // 2, held by 1
+  jarl(root, 'new', 'real work', '--acceptance', '[read] it works', '--files', 'a.mjs');                                                                              // 1
+  jarl(root, 'new', 'same file', '--acceptance', '[read] it works', '--files', 'a.mjs');                                                                              // 2, held by 1
   jarl(root, 'new', 'run the bench again', '--kind', 'promise', '--found-by', 'Ada');                                             // 3
   jarl(root, 'new', 'the licence key', '--kind', 'wait', '--person', 'Dana Smith', '--check-when', '2026-11-10');                // 4
   const text = jarl(root, 'resume');
@@ -507,7 +509,7 @@ test('a loop whose profile already declares a field Person or a kind wait reads 
   const other = loop();
   writeFileSync(join(other, '.jarl', 'profile.json'), JSON.stringify({ 'jarl-profile': 1, name: 'own-field', statuses: BUILTIN_STATUSES, fields: { Person: {} } }));
   assert.match(refuses(other, 'new', 'a promise', '--kind', 'promise'), /^--kind must be one of: bug, gap, cleanup, docs, test, research, process \(got "promise"\)\njarl\.mjs new "<title>" --kind "<kind>"\n$/);
-  jarl(other, 'new', 'work', '--files', 'a.mjs', '--field', 'Person=Dana');
+  jarl(other, 'new', 'work', '--acceptance', '[read] it works', '--files', 'a.mjs', '--field', 'Person=Dana');
   assert.deepEqual(json(other, 'next').map((r) => r.id), ['1']);
 });
 

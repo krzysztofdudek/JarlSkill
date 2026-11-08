@@ -236,7 +236,7 @@ test('the command line keeps every spelling it takes: one value, a comma list, r
   assert.equal(header(issueText(fx.root, 2), 'Tags'), 'x, y');
   jarl(fx.root, 'field', '3', 'After', '1-2');
   assert.equal(header(issueText(fx.root, 3), 'After'), '1, 2');
-  jarl(fx.root, 'new', 'd', '--tags', 'drift,processes', '--files', 'p.mjs,q.mjs', '--after', '1,3', '--source', 'core/r#a,core/r#b');
+  jarl(fx.root, 'new', 'd', '--acceptance', '[read] it works', '--tags', 'drift,processes', '--files', 'p.mjs,q.mjs', '--after', '1,3', '--source', 'core/r#a,core/r#b');
   const text = issueText(fx.root, 4);
   assert.equal(header(text, 'Tags'), 'drift, processes');
   assert.equal(header(text, 'Files'), 'p.mjs, q.mjs');

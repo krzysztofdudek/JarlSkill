@@ -18,7 +18,7 @@ const decisionsFile = (root) => readFileSync(join(root, '.jarl', 'decisions.md')
 
 test('decide --applies-to writes the scope as the first line of the ruling\'s closing block, and decisions shows it', () => {
   const root = loop();
-  jarl(root, 'new', 'ui work', '--tags', 'ui');
+  jarl(root, 'new', 'ui work', '--acceptance', '[read] it works', '--tags', 'ui');
   const out = jarl(root, 'decide', 'review-ui', 'Every ui change is shown in a screenshot.', '--applies-to', 'role reviewer and tag ui', '--until', '2999-12-31', '--settles', '1', '--by', 'coordinator');
   assert.match(out, /decided review-ui · by coordinator · applies to role reviewer and tag ui · until 2999-12-31/);
   assert.match(decisionsFile(root), /Every ui change is shown in a screenshot\.\n\n\*\*Applies to:\*\* role reviewer and tag ui · until 2999-12-31\n\*\*Settles:\*\* 1\n\*\*By:\*\* coordinator\n/);
@@ -42,7 +42,7 @@ test('decide --applies-to refuses a selector it does not know, a role or a momen
 
 test('a rule ends after its date, when its issue closes, or when a ruling supersedes it; decisions --live leaves an ended rule out', () => {
   const root = loop();
-  jarl(root, 'new', 'the work');
+  jarl(root, 'new', 'the work', '--acceptance', '[read] it works');
   jarl(root, 'decide', 'past', 'Old rule.', '--applies-to', 'loop', '--until', '2000-01-01', '--by', 'coordinator');
   jarl(root, 'decide', 'future', 'Standing rule.', '--applies-to', 'loop', '--until', '2999-01-01', '--by', 'coordinator');
   jarl(root, 'decide', 'while-1', 'Rule while the work is open.', '--applies-to', 'role worker', '--until', '1', '--by', 'coordinator');
@@ -81,9 +81,9 @@ const LONG = `Every report names the branch it was made on and the commit at its
 function rulesLoop() {
   const root = loop();
   jarl(root, 'goal', '--set', 'Coordinators: odin, frigg');
-  jarl(root, 'new', 'odin ui', '--tags', 'slice:odin,ui', '--files', 'a.mjs');       // 1
-  jarl(root, 'new', 'frigg work', '--tags', 'slice:frigg', '--files', 'b.mjs');      // 2
-  jarl(root, 'new', 'jarl ui', '--tags', 'ui', '--files', 'c.mjs');                  // 3
+  jarl(root, 'new', 'odin ui', '--acceptance', '[read] it works', '--tags', 'slice:odin,ui', '--files', 'a.mjs');       // 1
+  jarl(root, 'new', 'frigg work', '--acceptance', '[read] it works', '--tags', 'slice:frigg', '--files', 'b.mjs');      // 2
+  jarl(root, 'new', 'jarl ui', '--acceptance', '[read] it works', '--tags', 'ui', '--files', 'c.mjs');                  // 3
   jarl(root, 'decide', 'loop-rule', LONG, '--applies-to', 'loop', '--by', 'coordinator');
   jarl(root, 'decide', 'coordinators', 'Coordinators report in one line.', '--applies-to', 'role coordinator', '--by', 'coordinator');
   jarl(root, 'decide', 'odin-only', 'Odin keeps the ui screens together.', '--applies-to', 'slice odin', '--by', 'coordinator');
@@ -116,7 +116,7 @@ test('a worker holding a lease is given the rules of its role and of the issue i
   jarl(root, 'set', '2', 'in-progress', 'go', '--worker', 'w2', '--branch', 'jarl/2-work');
   assert.deepEqual(slugs(json(root, 'next', '--as', 'w3')), ['loop-rule', 'ui-workers', 'jarl:worker-only-the-issue']);
   assert.deepEqual(slugs(json(root, 'next', '--as', 'w2')), ['loop-rule', 'frigg-only', 'jarl:worker-only-the-issue'], 'a slice reaches the worker of an issue in it');
-  jarl(root, 'evidence', '3', '--ran', 'npm test', '--saw', 'pass 3');
+  jarl(root, 'evidence', '3', '--line', '1', '--ran', 'npm test', '--saw', 'pass 3');
   jarl(root, 'review', '3', 'approve', '--by', 'rev', FINDINGS);
   assert.deepEqual(slugs(json(root, 'next', '--as', 'jarl')), ['loop-rule', 'coordinators', 'at-merge', 'jarl:coordinator-escalates', 'jarl:coordinator-pull-push', 'jarl:coordinator-scope-holds']);
 });
@@ -152,8 +152,8 @@ test('every rule Jarl ships is quoted whole from the reference it names, and eac
 
 test('a reviewer of a light issue in a round is given the reviewer\'s rules of the round and of the light tier; a reviewer of a standard issue at its first review is not', () => {
   const root = loop();
-  jarl(root, 'new', 'light work', '--tier', 'light');
-  jarl(root, 'new', 'standard work', '--tier', 'standard');
+  jarl(root, 'new', 'light work', '--acceptance', '[read] it works', '--tier', 'light');
+  jarl(root, 'new', 'standard work', '--acceptance', '[read] it works', '--tier', 'standard');
   const loopRead = readLoop(join(root, '.jarl'));
   const reviewer = (id, moments) => ({ roles: new Set(['reviewer']), slice: null, moments: new Set(moments), issues: [loopRead.byId.get(id)] });
   const slugsOf = (reader) => rulesFor(root, loopRead, reader, '2026-11-04').map((r) => r.slug);
@@ -163,7 +163,7 @@ test('a reviewer of a light issue in a round is given the reviewer\'s rules of t
 
 test('a selector of files matches a path, a directory and a pattern; of a repository and a kind, the issue that names them', () => {
   const root = loop();
-  jarl(root, 'new', 'in lib', '--files', 'src/lib/a.mjs', '--kind', 'bug');
+  jarl(root, 'new', 'in lib', '--acceptance', '[read] it works', '--files', 'src/lib/a.mjs', '--kind', 'bug');
   const loopRead = readLoop(join(root, '.jarl'));
   const reader = { roles: new Set(['worker']), slice: null, moments: new Set(['start']), issues: [loopRead.byId.get('1')] };
   const holds = (scope) => ruleMatches(root, { selectors: parseScope(scope) }, reader);
@@ -180,7 +180,7 @@ test('a selector of files matches a path, a directory and a pattern; of a reposi
 
 test('an agent proposes a rule: the ball is on the jarl, or on the owner where the rule is his; accepted, it reaches every reader it matches', () => {
   const root = loop();
-  jarl(root, 'new', 'work', '--files', 'a.mjs');
+  jarl(root, 'new', 'work', '--acceptance', '[read] it works', '--files', 'a.mjs');
   jarl(root, 'set', '1', 'in-progress', 'go', '--worker', 'w1', '--branch', 'jarl/1-work');
   const asked = json(root, 'ask', 'A worker runs the linter before it reports.', '--kind', 'rule', '--applies-to', 'role worker', '--by', 'w1');
   assert.equal(asked.kind, 'rule');
@@ -215,7 +215,7 @@ test('an agent proposes a rule: the ball is on the jarl, or on the owner where t
 
 test('close offers each rule of the loop for promotion, on the owner, with four ways it goes on; Jarl\'s own rules and an ended rule are not offered', () => {
   const root = loop();
-  jarl(root, 'new', 'work');
+  jarl(root, 'new', 'work', '--acceptance', '[read] it works');
   jarl(root, 'decide', 'standing', 'Reports name their branch.', '--applies-to', 'loop', '--by', 'coordinator');
   jarl(root, 'decide', 'for-reviewers', 'Reviewers run the suite.', '--applies-to', 'role reviewer', '--by', 'coordinator');
   jarl(root, 'decide', 'old', 'Gone.', '--applies-to', 'loop', '--until', '2000-01-01', '--by', 'coordinator');
@@ -256,7 +256,7 @@ test('a loop whose composer keeps its format is offered no promotion, and says w
 
 test('a rule of two lines, written by decide or proposed and accepted, is printed whole in every view that prints rules', () => {
   const root = loop();
-  jarl(root, 'new', 'work');
+  jarl(root, 'new', 'work', '--acceptance', '[read] it works');
   jarl(root, 'set', '1', 'in-progress', 'go', '--worker', 'w1', '--branch', 'jarl/1-work');
   jarl(root, 'decide', 'two-lines', 'First line of the rule.\nSecond line of the rule.', '--applies-to', 'loop', '--by', 'coordinator');
   const asked = json(root, 'ask', 'First line of the proposal.\nSecond line of the proposal.', '--kind', 'rule', '--applies-to', 'loop');
@@ -271,7 +271,7 @@ test('a rule of two lines, written by decide or proposed and accepted, is printe
 
 test('in a loop with no slice the jarl is the one coordinator and is given the coordinator\'s rules; with a slice it is not', () => {
   const root = loop();
-  jarl(root, 'new', 'work');
+  jarl(root, 'new', 'work', '--acceptance', '[read] it works');
   const coordinatorRules = (o) => slugs(o).filter((s) => s.startsWith('jarl:coordinator-'));
   assert.deepEqual(coordinatorRules(json(root, 'next', '--as', 'jarl')), ['jarl:coordinator-escalates', 'jarl:coordinator-pull-push', 'jarl:coordinator-scope-holds']);
   jarl(root, 'goal', '--set', 'Coordinators: odin');

@@ -26,7 +26,7 @@ test('the hint for an empty Found by is the field call that writes it, and that 
   const { describeNew } = await import('../jarl-lib.mjs');
   const root = repo();
   jarl(root, 'init', 'goal');
-  const { file } = JSON.parse(jarl(root, 'new', 'bare', '--json'));
+  const { file } = JSON.parse(jarl(root, 'new', 'bare', '--acceptance', '[read] it works', '--json'));
   writeFileSync(file, readFileSync(file, 'utf8').replace(/^\*\*Found by:\*\*.*$/m, '**Found by:**'));
   const hint = describeNew(file).empty.find((e) => e.field === 'found by');
   assert.equal(hint.fill, "jarl.mjs field 1 'Found by' \"<who>\"");
@@ -38,7 +38,7 @@ test('init, new, list, show', () => {
   const root = repo();
   jarl(root, 'init', 'make the export command handle every fixture');
   assert.ok(existsSync(join(root, '.jarl', 'goal.md')));
-  const a = JSON.parse(jarl(root, 'new', 'parser refuses fixture three', '--kind', 'bug', '--prio', '1', '--tags', 'parser', '--files', 'src/parser.mjs', '--json'));
+  const a = JSON.parse(jarl(root, 'new', 'parser refuses fixture three', '--acceptance', '[read] it works', '--kind', 'bug', '--prio', '1', '--tags', 'parser', '--files', 'src/parser.mjs', '--json'));
   const b = JSON.parse(jarl(root, 'new', 'docs promise a flag that does not exist', '--kind', 'docs', '--json'));
   assert.equal(a.id, '1'); assert.equal(b.id, '2');
   const rows = JSON.parse(jarl(root, 'list', '--json'));
@@ -79,7 +79,7 @@ test('new refuses a text that holds a matched pair named after one of its own fi
   assert.match(refuses(root, 'new', 't', '--why', 'because <acceptance>\n- it works\n</acceptance>'), /the Why text holds an opening and a closing acceptance tag in angle brackets.*\(--acceptance\)/);
   assert.match(refuses(root, 'new', 't', '--what', 'fine', '--why', '<TAGS>a,b</Tags>'), /an opening and a closing tags tag in angle brackets/);
   assert.equal(readdirSync(join(root, '.jarl', 'issues')).length, 0, 'nothing was written');
-  jarl(root, 'new', 'ok', '--what', 'fine');
+  jarl(root, 'new', 'ok', '--acceptance', '[read] it works', '--what', 'fine');
   assert.match(refuses(root, 'field', '1', 'Why', '<files>a.mjs</files>'), /the Why text holds an opening and a closing files tag in angle brackets.*\(--files\)/);
   assert.match(refuses(root, 'field', '1', 'What', pair), /the What text holds an opening and a closing what tag/);
   assert.doesNotMatch(readFileSync(join(root, '.jarl', 'issues', '1-ok.md'), 'utf8'), /<files>/);
@@ -88,11 +88,11 @@ test('new refuses a text that holds a matched pair named after one of its own fi
 test('a lone tag, a pair in a code span and a pair in a fenced block are accepted, and so is the text of an issue heading', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
-  jarl(root, 'new', 'lone', '--what', 'a lone <why> and a closing </what> are text');
-  jarl(root, 'new', 'span', '--what', 'the tags `<why>` and `</why>` are named, or `<why>x</why>` whole');
-  jarl(root, 'new', 'fence', '--what', 'see:\n```\n<what>the thing</what>\n<why>because</why>\n```\nand\n~~~~\n<tags>a</tags>\n~~~~\nend');
+  jarl(root, 'new', 'lone', '--acceptance', '[read] it works', '--what', 'a lone <why> and a closing </what> are text');
+  jarl(root, 'new', 'span', '--acceptance', '[read] it works', '--what', 'the tags `<why>` and `</why>` are named, or `<why>x</why>` whole');
+  jarl(root, 'new', 'fence', '--acceptance', '[read] it works', '--what', 'see:\n```\n<what>the thing</what>\n<why>because</why>\n```\nand\n~~~~\n<tags>a</tags>\n~~~~\nend');
   const own = 'A caller whose tool call carried every field inside the What parameter got issues with no tags. The refusal must not catch a tag that is quoted, because this issue names such tags in code spans (`<what>`, `<why>`, `<prio>`); so only a matched opening and closing pair of a field name, outside code, is refused.';
-  jarl(root, 'new', 'own', '--what', own);
+  jarl(root, 'new', 'own', '--acceptance', '[read] it works', '--what', own);
   assert.equal(readdirSync(join(root, '.jarl', 'issues')).length, 4);
 });
 
@@ -105,7 +105,7 @@ test('the reply of new keeps its first line, then lists what was parsed and each
   for (const [field, command] of [['why', 'field 1 Why'], ['acceptance', 'field 1 Acceptance'], ['files', "field 1 Files \"<paths>\""], ['after', "field 1 After \"<ids-it-waits-on>\""], ['where', 'field 1 Where']]) {
     assert.ok(bare[2].includes(`${field} (jarl.mjs ${command}`), `${field} is named with ${command}`);
   }
-  const full = jarl(root, 'new', 'full', '--what', 'seven', '--why', 'yy', '--acceptance', 'a', '--acceptance', 'b', '--prio', '1', '--tags', 'x,y', '--files', 'a.mjs', '--where', 'here', '--after', '1').split('\n');
+  const full = jarl(root, 'new', 'full', '--what', 'seven', '--why', 'yy', '--acceptance', '[read] a', '--acceptance', '[read] b', '--prio', '1', '--tags', 'x,y', '--files', 'a.mjs', '--where', 'here', '--after', '1').split('\n');
   assert.match(full[1], /priority 1 · tier standard · kind bug · tags x,y · 2 acceptance lines · What 5 characters · Why 2 characters/);
   assert.equal(full.length, 2, 'nothing is left empty');
   const json = JSON.parse(jarl(root, 'new', 'j', '--json'));
@@ -120,12 +120,12 @@ test('new from a linked worktree of a committed loop is refused and names the ma
   const wt = `${root}-wt`;
   sh(root, 'git init -q -b feature && git config user.email t@t && git config user.name t && git config core.excludesFile /dev/null && echo a > a.txt && git add -A && git commit -qm base');
   jarl(root, 'init', 'goal', '--committed');
-  jarl(root, 'new', 'first');
+  jarl(root, 'new', 'first', '--acceptance', '[read] it works');
   sh(root, `git add -A && git commit -qm loop && git worktree add -q -b w1 ${wt}`);
   // The main checkout moves on by two issues; the worktree keeps the copy it was cut with.
-  jarl(root, 'new', 'second'); jarl(root, 'new', 'third');
+  jarl(root, 'new', 'second', '--acceptance', '[read] it works'); jarl(root, 'new', 'third');
   assert.deepEqual(readdirSync(join(wt, '.jarl', 'issues')), ['1-first.md']);
-  const r = run(wt, ['new', 'from the worktree']);
+  const r = run(wt, ['new', 'from the worktree', '--acceptance', '[read] it works']);
   assert.notEqual(r.status, 0);
   const said = r.stderr;
   assert.match(said, /is a linked worktree of .*, which holds this loop/);
@@ -135,13 +135,13 @@ test('new from a linked worktree of a committed loop is refused and names the ma
   // A worktree copy that holds a higher number (999 here) than the main checkout counts: the next number is 1000.
   const high = join(wt, '.jarl', 'issues', '999-high.md');
   writeFileSync(high, '# 999 · high\n\n**Status:** open\n**Kind:** task\n**Priority:** 2\n**Tier:** standard\n\n## What\nx\n');
-  const made = JSON.parse(jarl(root, 'new', 'after the high one', '--json'));
+  const made = JSON.parse(jarl(root, 'new', 'after the high one', '--acceptance', '[read] it works', '--json'));
   assert.equal(made.id, '1000');
   assert.match(made.file, /1000-after-the-high-one\.md$/);
   // Without the worktree's higher copy the main checkout files the next number as always.
   const plain = repo();
   jarl(plain, 'init', 'goal');
-  assert.equal(JSON.parse(jarl(plain, 'new', 'a', '--json')).id, '1');
+  assert.equal(JSON.parse(jarl(plain, 'new', 'a', '--acceptance', '[read] it works', '--json')).id, '1');
 });
 
 test('the main checkout is found through git by one helper: a linked worktree knows its main checkout and every copy of the loop', () => {
@@ -163,7 +163,7 @@ test('the main checkout is found through git by one helper: a linked worktree kn
 test('dropping an issue keeps the evidence already written, and the report prints only the reason', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
-  jarl(root, 'new', 'thing that goes away');
+  jarl(root, 'new', 'thing that goes away', '--acceptance', '[read] it works');
   jarl(root, 'evidence', '1', 'tried a fix, saw it hang');
   jarl(root, 'set', '1', 'dropped', 'the client said not now');
   const shown = jarl(root, 'show', '1');
@@ -173,7 +173,7 @@ test('dropping an issue keeps the evidence already written, and the report print
   assert.match(report, /## Dropped \(1\)\n- 1 thing that goes away — the client said not now/);
   assert.doesNotMatch(report, /tried a fix/, 'the report carries the reason, not the notes');
   // An issue with no evidence yet reads the same as before.
-  jarl(root, 'new', 'never started');
+  jarl(root, 'new', 'never started', '--acceptance', '[read] it works');
   jarl(root, 'set', '2', 'dropped', 'duplicate of 1');
   assert.match(jarl(root, 'report'), /- 2 never started — duplicate of 1/);
 });
@@ -181,9 +181,9 @@ test('dropping an issue keeps the evidence already written, and the report print
 test('deferred is its own status: it needs a reason, stays out of the default list, is counted apart and reported apart', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
-  jarl(root, 'new', 'waits for the client');
-  jarl(root, 'new', 'still to do');
-  jarl(root, 'new', 'gone for good');
+  jarl(root, 'new', 'waits for the client', '--acceptance', '[read] it works');
+  jarl(root, 'new', 'still to do', '--acceptance', '[read] it works');
+  jarl(root, 'new', 'gone for good', '--acceptance', '[read] it works');
   assert.match(refuses(root, 'set', '1', 'deferred'), /deferred needs a reason/);
   jarl(root, 'evidence', '1', 'half a fix on a branch');
   jarl(root, 'set', '1', 'deferred', 'the client wants to decide first');
@@ -229,7 +229,7 @@ const jarlIn = (cwd, ...args) => execFileSync(process.execPath, [SCRIPT, ...args
 test('a run in a worktree finds the loop in the main checkout by itself, and an explicit --root still wins', () => {
   const { main, wt, git } = gitRepoWithWorktree();
   jarl(main, 'init', 'goal');
-  jarl(main, 'new', 'thing to fix');
+  jarl(main, 'new', 'thing to fix', '--acceptance', '[read] it works');
   // No --root: the worktree has no .jarl/ of its own, the main checkout does.
   assert.match(jarlIn(wt, 'list'), /thing to fix/);
   assert.equal(JSON.parse(jarlIn(wt, 'show', '1', '--json')).title, 'thing to fix');
@@ -257,12 +257,12 @@ test('a directory or a file inside a repository names that repository, a stored 
   sh(hub, `${setup('main')} && echo notes > notes.md && git add -A && git commit -qm base`);
   sh(tool, `${setup('feature')} && echo 'x' > src/a.mjs && git add -A && git commit -qm base`);
   jarl(hub, 'init', 'goal');
-  jarl(hub, 'new', 'change a', '--files', 'src/a.mjs');
+  jarl(hub, 'new', 'change a', '--acceptance', '[read] it works', '--files', 'src/a.mjs');
   // A subdirectory or a file given for a repository is reduced to the repository's main checkout wherever a repository is
   // named, so its paths are never read from the wrong place.
   assert.equal(jarl(hub, 'field', '1', 'Repo', '../tool/src'), '1 Repo: tool');
   assert.equal(jarl(hub, 'field', '1', 'Repo', '../tool/src/a.mjs'), '1 Repo: tool');
-  jarl(hub, 'new', 'other', '--repo', '../tool/src');
+  jarl(hub, 'new', 'other', '--acceptance', '[read] it works', '--repo', '../tool/src');
   assert.match(jarl(hub, 'show', '2'), /^\*\*Repo:\*\* tool$/m);
   assert.deepEqual(JSON.parse(jarl(hub, 'branches', '--repo', '../tool/src', '--json')), []);
   assert.doesNotMatch(run(hub, ['scope', '1', '--branch', 'feature', '--repo', '../tool/src']).stderr, /not its root/);
@@ -291,15 +291,15 @@ test('the repository name in Files: --repo strips it like the field does, an inn
   jarl(hub, 'init', 'goal');
 
   // 1. `check --repo` on an issue with no Repo field strips the name as the field would: tool/src/a.mjs is src/a.mjs.
-  jarl(hub, 'new', 'change a', '--files', 'tool/src/a.mjs');
+  jarl(hub, 'new', 'change a', '--acceptance', '[read] it works', '--files', 'tool/src/a.mjs');
   const byRepoFlag = JSON.parse(jarl(hub, 'scope', '1', '--branch', 'jarl/1-a', '--repo', '../tool', '--json'));
   const scope = byRepoFlag.items.find((i) => i.name === 'diff inside declared files');
   assert.equal(scope.ok, true, scope.note);
 
   // 2. In a repository that has a directory of its own name, the prefix is required: `app/app/x.mjs` is app/x.mjs
   // inside the repository app, and `app/x.mjs` already IS that path, so the two meet in next instead of passing.
-  jarl(hub, 'new', 'first on app/x', '--files', 'app/app/x.mjs', '--repo', '../app');
-  jarl(hub, 'new', 'second on app/x', '--files', 'app/x.mjs', '--repo', '../app');
+  jarl(hub, 'new', 'first on app/x', '--acceptance', '[read] it works', '--files', 'app/app/x.mjs', '--repo', '../app');
+  jarl(hub, 'new', 'second on app/x', '--acceptance', '[read] it works', '--files', 'app/x.mjs', '--repo', '../app');
   jarl(hub, 'set', '2', 'in-progress', 'worker raised');
   const next = JSON.parse(jarl(hub, 'next', '--all', '--json'));
   assert.deepEqual(next.find((r) => r.id === '3').waitsOn, ['app/x.mjs'], 'the same file in one repository always holds an issue back');
@@ -309,11 +309,11 @@ test('the repository name in Files: --repo strips it like the field does, an inn
   const spellings = ['../link'];
   symlinkSync(tool, join(parent, 'link'), 'junction');   // a junction on Windows: no privilege needed
   if (existsSync(join(parent, 'TOOL'))) spellings.push('../TOOL');
-  jarl(hub, 'new', 'holds src/a.mjs', '--files', 'tool/src/b.mjs', '--repo', '../tool');
+  jarl(hub, 'new', 'holds src/a.mjs', '--acceptance', '[read] it works', '--files', 'tool/src/b.mjs', '--repo', '../tool');
   jarl(hub, 'set', '4', 'in-progress', 'worker raised');
   spellings.forEach((spelling, k) => {
     const id = String(5 + k);
-    jarl(hub, 'new', `spelled ${spelling}`, '--files', `${spelling.replace('../', '')}/src/b.mjs`, '--repo', spelling);
+    jarl(hub, 'new', `spelled ${spelling}`, '--acceptance', '[read] it works', '--files', `${spelling.replace('../', '')}/src/b.mjs`, '--repo', spelling);
     const row = JSON.parse(jarl(hub, 'next', '--all', '--json')).find((r) => r.id === id);
     assert.ok(row && row.waitsOn, `${spelling}: the same repository, so the same file, so it waits`);
   });
@@ -322,18 +322,19 @@ test('the repository name in Files: --repo strips it like the field does, an inn
 test('status moves only with a log line; done needs evidence; dropped needs a reason', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
-  jarl(root, 'new', 'thing');
-  assert.match(refuses(root, 'set', '1', 'done'), /no evidence yet/);
+  jarl(root, 'new', 'thing', '--acceptance', '[read] it works');
+  assert.match(refuses(root, 'set', '1', 'done'), /no approving review/);
   assert.match(refuses(root, 'set', '1', 'dropped'), /needs a reason/);
   // A reason of blanks is no reason: the refusal ends with the form that gives one, and the issue stays open.
   for (const blank of ['', ' ', '  \t ']) assert.equal(refuses(root, 'set', '1', 'dropped', blank).trim(), 'dropped needs a reason: jarl.mjs set "<id>" dropped "<text>"\njarl.mjs set "<ids>" "<status>" "<text>"');
   assert.match(refuses(root, 'set', '1', 'deferred', ' '), /^deferred needs a reason: /);
   assert.match(jarl(root, 'show', '1'), /open/);
   jarl(root, 'set', '1', 'in-progress', 'worker raised');
-  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', '12 pass, 0 fail');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', '12 pass, 0 fail');
   assert.match(refuses(root, 'set', '1', 'done'), /no approving review/);
   jarl(root, 'review', '1', 'changes', '--by', 'rev', 'Important: the new test never goes red');
   assert.match(refuses(root, 'set', '1', 'done'), /latest review is a changes verdict by rev of/);
+  jarl(root, 'round', '1', 'the new test now goes red');
   jarl(root, 'review', '1', 'approve', '--by', 'rev', 'read the diff; test red before, green after');
   jarl(root, 'set', '1', 'done');
   const log = readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
@@ -346,9 +347,9 @@ test('status moves only with a log line; done needs evidence; dropped needs a re
 test('tags, priority and next respect file overlap', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
-  jarl(root, 'new', 'one', '--files', 'a.mjs', '--prio', '3');
-  jarl(root, 'new', 'two', '--files', 'a.mjs,b.mjs', '--prio', '1');
-  jarl(root, 'new', 'three', '--files', 'c.mjs');
+  jarl(root, 'new', 'one', '--acceptance', '[read] it works', '--files', 'a.mjs', '--prio', '3');
+  jarl(root, 'new', 'two', '--acceptance', '[read] it works', '--files', 'a.mjs,b.mjs', '--prio', '1');
+  jarl(root, 'new', 'three', '--acceptance', '[read] it works', '--files', 'c.mjs');
   jarl(root, 'field', '1', 'Tags', '--add', 'parser,docs');
   jarl(root, 'field', '1', 'Tags', '--remove', 'parser');
   assert.match(jarl(root, 'show', '1'), /\*\*Tags:\*\* docs/);
@@ -365,7 +366,7 @@ test('decide refuses a duplicate slug; close refuses while open, removes when cl
   jarl(root, 'init', 'goal');
   jarl(root, 'decide', 'no-new-constants', 'every number needs an origin', '--by', 'coordinator');
   assert.match(refuses(root, 'decide', 'no-new-constants', 'again', '--by', 'coordinator'), /duplicate slug/);
-  jarl(root, 'new', 'thing');
+  jarl(root, 'new', 'thing', '--acceptance', '[read] it works');
   assert.match(refuses(root, 'close'), /still open/);
   jarl(root, 'set', '1', 'dropped', 'out of scope');
   assert.match(jarl(root, 'status'), /dropped 1/);
@@ -377,7 +378,7 @@ test('tier field, rounds and takeover, asks and answers, handoff, report', () =>
   const root = repo();
   jarl(root, 'init', 'goal');
   assert.match(refuses(root, 'new', 'x', '--tier', 'huge'), /--tier must be one of/);
-  jarl(root, 'new', 'hard thing', '--tier', 'strong', '--found-by', 'tester, running the suite');
+  jarl(root, 'new', 'hard thing', '--acceptance', '[read] it works', '--tier', 'strong', '--found-by', 'tester, running the suite');
   assert.match(jarl(root, 'show', '1'), /\*\*Tier:\*\* strong/);
   assert.match(jarl(root, 'round', '1', 'suite red'), /round 1: 1 of 3 before a takeover/);
   jarl(root, 'round', '1', 'still red');
@@ -410,7 +411,7 @@ test('check reads a worker branch: commits, declared files, removed tests, asser
   mkdirSync(join(root, 'src')); mkdirSync(join(root, 'tests'));
   sh(root, `echo 'export const a = 1;' > src/a.mjs && printf 'assert.equal(1,1);\\nassert.equal(2,2);\\n' > tests/a.test.mjs && git add -A && git commit -qm base`);
   jarl(root, 'init', 'goal', '--committed');
-  jarl(root, 'new', 'change a', '--files', 'src/a.mjs,tests/a.test.mjs');
+  jarl(root, 'new', 'change a', '--acceptance', '[read] it works', '--files', 'src/a.mjs,tests/a.test.mjs');
   sh(root, `git add -A && git commit -qm jarl && git checkout -qb jarl/1-change-a && echo 'export const a = 2;' > src/a.mjs && printf 'assert.equal(1,1);\\n' > tests/a.test.mjs && echo x > src/b.mjs && echo '- entry' >> CHANGELOG.md && echo 'export {};' > tests/new.test.mjs && git add -A && git commit -qm work && git checkout -q feature`);
   let out;
   try { jarl(root, 'scope', '1', '--branch', 'jarl/1-change-a', '--base', 'feature', '--json'); } catch (e) { out = JSON.parse(e.stdout); }
@@ -432,7 +433,7 @@ test('check matches a declared file relative to a subdirectory, not just the rep
   mkdirSync(join(root, 'skills', 'x'), { recursive: true });
   sh(root, `echo one > skills/x/SKILL.md && git add -A && git commit -qm base`);
   jarl(root, 'init', 'goal', '--committed');
-  jarl(root, 'new', 'change the skill body', '--files', 'SKILL.md');
+  jarl(root, 'new', 'change the skill body', '--acceptance', '[read] it works', '--files', 'SKILL.md');
   sh(root, `git add -A && git commit -qm jarl && git checkout -qb jarl/1-change-the-skill-body && echo two > skills/x/SKILL.md && git add -A && git commit -qm work && git checkout -q feature`);
   const out = JSON.parse(jarl(root, 'scope', '1', '--branch', 'jarl/1-change-the-skill-body', '--base', 'feature', '--json'));
   const byName = Object.fromEntries(out.items.map((i) => [i.name, i]));
@@ -458,43 +459,43 @@ function scopeFixture(declare) {
 const scopeNote = (root, ...args) => JSON.parse(withStderr(root, 'scope', ...args, '--branch', 'jarl/1-work', '--base', 'feature', '--json').stdout).items.find((i) => i.name === 'diff inside declared files');
 
 test('check on an issue with no declared files says so in one sentence and lists no file', () => {
-  const root = scopeFixture((r) => jarl(r, 'new', 'work'));
+  const root = scopeFixture((r) => jarl(r, 'new', 'work', '--acceptance', '[read] it works'));
   const scope = scopeNote(root, '1');
   assert.equal(scope.ok, true);
   assert.equal(scope.note, 'no files declared on the issue — nothing to bound the diff by');
 });
 
 test('check on a package keeps the declared files of one issue as the bounds, and names the issue that declares none', () => {
-  const root = scopeFixture((r) => { jarl(r, 'new', 'declared', '--files', 'src/deep/a.mjs'); jarl(r, 'new', 'undeclared'); jarl(r, 'set', '1-2', 'in-progress', 'raised', '--branch', 'jarl/1-work', '--worker', 'w1'); });
+  const root = scopeFixture((r) => { jarl(r, 'new', 'declared', '--acceptance', '[read] it works', '--files', 'src/deep/a.mjs'); jarl(r, 'new', 'undeclared', '--acceptance', '[read] it works'); jarl(r, 'set', '1-2', 'in-progress', 'raised', '--branch', 'jarl/1-work', '--worker', 'w1'); });
   const scope = scopeNote(root);
   assert.equal(scope.ok, false);
   assert.equal(scope.note, 'outside src/deep/a.mjs: other.txt, other/deep/q.mjs, src/b.mjs, vendor/src/deep/z.mjs (2 declares no files)');
 });
 
 test('check lets a declared directory cover everything under it and lists only files outside every declared place', () => {
-  const root = scopeFixture((r) => jarl(r, 'new', 'work', '--files', 'src/deep/'));
+  const root = scopeFixture((r) => jarl(r, 'new', 'work', '--acceptance', '[read] it works', '--files', 'src/deep/'));
   const scope = scopeNote(root, '1');
   assert.equal(scope.ok, false);
   assert.equal(scope.note, 'outside src/deep/: other.txt, other/deep/q.mjs, src/b.mjs, vendor/src/deep/z.mjs');
-  const whole = scopeNote(scopeFixture((r) => jarl(r, 'new', 'work', '--files', 'src, other, other.txt, vendor')), '1');
+  const whole = scopeNote(scopeFixture((r) => jarl(r, 'new', 'work', '--acceptance', '[read] it works', '--files', 'src, other, other.txt, vendor')), '1');
   assert.equal(whole.ok, true, whole.note);
 });
 
 test('check matches a declared directory only at the path it names, never a same-named directory deeper in the tree', () => {
-  const root = scopeFixture((r) => jarl(r, 'new', 'work', '--files', 'deep/'));
+  const root = scopeFixture((r) => jarl(r, 'new', 'work', '--acceptance', '[read] it works', '--files', 'deep/'));
   const scope = scopeNote(root, '1');
   assert.equal(scope.ok, false);
   assert.match(scope.note, /other\/deep\/q\.mjs/);
   assert.match(scope.note, /src\/deep\/a\.mjs/);
   assert.match(scope.note, /vendor\/src\/deep\/z\.mjs/);
-  const nested = scopeNote(scopeFixture((r) => jarl(r, 'new', 'work', '--files', 'src/deep')), '1');
+  const nested = scopeNote(scopeFixture((r) => jarl(r, 'new', 'work', '--acceptance', '[read] it works', '--files', 'src/deep')), '1');
   assert.doesNotMatch(nested.note, /src\/deep\/a\.mjs/);
   assert.match(nested.note, /vendor\/src\/deep\/z\.mjs/, 'a directory under another one is not the declared one');
 });
 
 // The bounds come from the declared files alone; this holds for the original reader too, so the test pins the property.
 test('check bounds the diff by the declared files, never by what the worker\'s commits touched', () => {
-  const root = scopeFixture((r) => jarl(r, 'new', 'work', '--files', 'src/deep/a.mjs'));
+  const root = scopeFixture((r) => jarl(r, 'new', 'work', '--acceptance', '[read] it works', '--files', 'src/deep/a.mjs'));
   const scope = scopeNote(root, '1');
   assert.equal(scope.ok, false);
   assert.equal(scope.note, 'outside src/deep/a.mjs: other.txt, other/deep/q.mjs, src/b.mjs, vendor/src/deep/z.mjs');
@@ -504,8 +505,8 @@ test('check bounds the diff by the declared files, never by what the worker\'s c
 test('a round after an approve spends the approve', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
-  jarl(root, 'new', 'thing');
-  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'suite green');
+  jarl(root, 'new', 'thing', '--acceptance', '[read] it works');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'suite green');
   jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
   jarl(root, 'round', '1', 'merger: suite red after merge');
   assert.match(refuses(root, 'set', '1', 'done'), /no approving review/);
@@ -532,10 +533,10 @@ test('branches lists a worktree branch a worker never renamed, marked unnamed', 
 test('evidence accepts free text or structured rows; rows are readable back', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
-  jarl(root, 'new', 'thing');
-  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', '12 pass, 0 fail');
-  jarl(root, 'evidence', '1', '--ran', 'node --test tests/a.test.mjs', '--saw', '3 pass');
-  assert.match(jarl(root, 'show', '1'), /\*\*ran:\*\* npm test · \*\*saw:\*\* 12 pass, 0 fail/);
+  jarl(root, 'new', 'thing', '--acceptance', '[read] it works');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', '12 pass, 0 fail');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'node --test tests/a.test.mjs', '--saw', '3 pass');
+  assert.match(jarl(root, 'show', '1'), /\*\*ran(?: \(line [0-9a-f, ]+\))?:\*\* npm test · \*\*saw:\*\* 12 pass, 0 fail/);
   assert.match(refuses(root, 'evidence', '1', '--ran', 'x'), /needs both --ran/);
   jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
   jarl(root, 'set', '1', 'done');
@@ -544,30 +545,30 @@ test('evidence accepts free text or structured rows; rows are readable back', ()
 test('free-text evidence appends, it never overwrites earlier evidence', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
-  jarl(root, 'new', 'thing');
+  jarl(root, 'new', 'thing', '--acceptance', '[read] it works');
   jarl(root, 'evidence', '1', 'first note');
   jarl(root, 'evidence', '1', 'second note');
   const shown = jarl(root, 'show', '1');
   assert.ok(shown.indexOf('first note') > -1 && shown.indexOf('first note') < shown.indexOf('second note'), 'both notes kept, in order');
-  jarl(root, 'new', 'merged thing');
-  jarl(root, 'evidence', '2', '--ran', 'npm test', '--saw', '12 pass');
+  jarl(root, 'new', 'merged thing', '--acceptance', '[read] it works');
+  jarl(root, 'evidence', '2', '--line', '1', '--ran', 'npm test', '--saw', '12 pass');
   jarl(root, 'evidence', '2', 'check green, merged abc1234');
   const merged = jarl(root, 'show', '2');
-  assert.match(merged, /\*\*ran:\*\* npm test · \*\*saw:\*\* 12 pass/, "the worker's row survives the merger's note");
+  assert.match(merged, /\*\*ran(?: \(line [0-9a-f, ]+\))?:\*\* npm test · \*\*saw:\*\* 12 pass/, "the worker's row survives the merger's note");
   assert.match(merged, /merged abc1234/);
 });
 
 test('repeated --ran/--saw in one call produce one row per pair, not a comma-joined mess', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
-  jarl(root, 'new', 'thing');
-  jarl(root, 'evidence', '1', '--ran', 'cmd one', '--saw', 'result one', '--ran', 'cmd two', '--saw', 'result two');
+  jarl(root, 'new', 'thing', '--acceptance', '[read] it works');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'cmd one', '--saw', 'result one', '--ran', 'cmd two', '--saw', 'result two');
   const shown = jarl(root, 'show', '1');
-  assert.match(shown, /^- \[1\] \*\*ran:\*\* cmd one · \*\*saw:\*\* result one$/m);
-  assert.match(shown, /^- \[2\] \*\*ran:\*\* cmd two · \*\*saw:\*\* result two$/m);
+  assert.match(shown, /^- \[1\] \*\*ran(?: \(line [0-9a-f, ]+\))?:\*\* cmd one · \*\*saw:\*\* result one$/m);
+  assert.match(shown, /^- \[2\] \*\*ran(?: \(line [0-9a-f, ]+\))?:\*\* cmd two · \*\*saw:\*\* result two$/m);
   const log = readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
-  assert.match(log, /1 evidence row · cmd one$/m);
-  assert.match(log, /1 evidence row · cmd two$/m);
+  assert.match(log, /1 evidence row(?: \(line [0-9a-f, ]+\))? · cmd one$/m);
+  assert.match(log, /1 evidence row(?: \(line [0-9a-f, ]+\))? · cmd two$/m);
   assert.match(refuses(root, 'evidence', '1', '--ran', 'a', '--ran', 'b', '--saw', 'only one'), /must repeat the same number of times/);
   assert.match(refuses(root, 'evidence', '1', '--ran', '--saw', 'x'), /needs both --ran/);
 });
@@ -578,8 +579,8 @@ test('init keeps the loop out of git by default: .jarl/.gitignore holds exactly 
   const { dir: root, g } = gitRepo();
   jarl(root, 'init', 'goal');
   assert.equal(readFileSync(join(root, '.jarl', '.gitignore'), 'utf8'), '*\n**/*\n');
-  jarl(root, 'new', 'thing', '--files', 'a.txt');
-  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', '1 pass');
+  jarl(root, 'new', 'thing', '--acceptance', '[read] it works', '--files', 'a.txt');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', '1 pass');
   jarl(root, 'evidence', '1', 'merged abc1234');
   assert.equal(g('status', '--porcelain'), '', 'git status shows nothing from .jarl/');
   assert.equal(g('status', '--porcelain', '--untracked-files=all'), '', 'not even file by file');
@@ -597,7 +598,7 @@ test('init --committed ignores only the lock and temporary files, and git sees t
   assert.match(readFileSync(join(before, '.jarl', 'goal.md'), 'utf8'), /goal first/);
   assert.match(refuses(gitRepo().dir, 'init', 'goal', '--committed=yes'), /--committed takes no value/);
   assert.equal(readFileSync(join(root, '.jarl', '.gitignore'), 'utf8'), JARL_GITIGNORE_COMMITTED);
-  jarl(root, 'new', 'thing');
+  jarl(root, 'new', 'thing', '--acceptance', '[read] it works');
   jarl(root, 'evidence', '1', 'note');
   const seen = g('status', '--porcelain', '--untracked-files=all');
   assert.match(seen, /^\?\? \.jarl\/goal\.md$/m);
@@ -617,7 +618,7 @@ test('init --permanent commits the loop and marks it as a record; close then kee
   assert.equal(existsSync(join(root, '.jarl', '.permanent')), true, 'the marker a later session reads to tell the mode');
   assert.equal(JSON.parse(jarl(repo(), 'init', '--permanent', 'goal', '--json')).permanent, true, 'the goal after --permanent is the goal');
   assert.match(refuses(repo(), 'init', 'goal', '--permanent=yes'), /--permanent takes no value/);
-  jarl(root, 'new', 'thing');
+  jarl(root, 'new', 'thing', '--acceptance', '[read] it works');
   assert.match(refuses(root, 'close'), /still open/, 'the open-issue refusal is unchanged in the permanent mode');
   jarl(root, 'set', '1', 'dropped', 'out of scope');
   jarl(root, 'close');
@@ -635,7 +636,7 @@ test('mode permanent turns an existing committed loop into a permanent record; a
   assert.equal(existsSync(join(root, '.jarl', '.permanent')), true);
   assert.equal(readFileSync(join(root, '.jarl', '.gitignore'), 'utf8'), JARL_GITIGNORE_COMMITTED, 'still committed, as it always was');
   assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /mode → permanent/);
-  jarl(root, 'new', 'thing');
+  jarl(root, 'new', 'thing', '--acceptance', '[read] it works');
   jarl(root, 'set', '1', 'dropped', 'out of scope');
   jarl(root, 'close');
   assert.equal(existsSync(join(root, '.jarl')), true, 'a loop switched to permanent keeps its directory on close, like one opened with init --permanent');
@@ -660,7 +661,7 @@ test('a branch loop, default or --committed, still removes the directory on clos
   for (const args of [[], ['--committed']]) {
     const root = repo();
     jarl(root, 'init', 'goal', ...args);
-    jarl(root, 'new', 'thing');
+    jarl(root, 'new', 'thing', '--acceptance', '[read] it works');
     jarl(root, 'set', '1', 'dropped', 'out of scope');
     jarl(root, 'close');
     assert.equal(existsSync(join(root, '.jarl')), false);
@@ -678,8 +679,8 @@ test('check, branches and handoff read the repository an issue names, not the lo
     sh(hub, `${setup('main')} && echo notes > notes.md && git add -A && git commit -qm base`);
     sh(tool, `${setup('feature')} && mkdir src tests && echo 'export const a = 1;' > src/a.mjs && printf 'assert.equal(1,1);\\n' > tests/a.test.mjs && git add -A && git commit -qm base`);
     jarl(hub, 'init', 'goal', ...(committed ? ['--committed'] : []));
-    jarl(hub, 'new', 'change a', '--files', 'src/a.mjs,tests/a.test.mjs', '--repo', '../tool');
-    jarl(hub, 'new', 'other', '--files', 'src/a.mjs');
+    jarl(hub, 'new', 'change a', '--acceptance', '[read] it works', '--files', 'src/a.mjs,tests/a.test.mjs', '--repo', '../tool');
+    jarl(hub, 'new', 'other', '--acceptance', '[read] it works', '--files', 'src/a.mjs');
     if (committed) sh(hub, 'git add -A && git commit -qm jarl');
     sh(tool, `git worktree add -q -b jarl/1-change-a ${parent}/wt-1 && cd ${parent}/wt-1 && echo 'export const a = 2;' > src/a.mjs && printf 'assert.equal(1,1);\\nassert.equal(2,2);\\n' > tests/a.test.mjs && git add -A && git commit -qm work`);
     const mode = committed ? 'committed' : 'default';
@@ -753,12 +754,12 @@ function reposBeside(...names) {
 test('next keeps the same path in two repositories apart and still holds a collision inside one', () => {
   const { hub } = reposBeside('tool', 'other', 'vendor/tool');
   jarl(hub, 'init', 'goal');
-  jarl(hub, 'new', 'in flight in tool', '--repo', '../tool', '--files', 'tool/CHANGELOG.md,tool/src/a.mjs');
-  jarl(hub, 'new', 'same changelog path, other repository', '--repo', '../other', '--files', 'other/CHANGELOG.md');
-  jarl(hub, 'new', 'same changelog path, a second repository also named tool', '--repo', '../vendor/tool', '--files', 'tool/CHANGELOG.md');
-  jarl(hub, 'new', 'same source file, same repository', '--repo', '../tool/', '--files', 'tool/src/a.mjs');
-  jarl(hub, 'new', 'the hub\'s own changelog', '--files', 'CHANGELOG.md');
-  jarl(hub, 'new', 'other repository again, behind the first one there', '--repo', '../other', '--files', 'other/CHANGELOG.md');
+  jarl(hub, 'new', 'in flight in tool', '--acceptance', '[read] it works', '--repo', '../tool', '--files', 'tool/CHANGELOG.md,tool/src/a.mjs');
+  jarl(hub, 'new', 'same changelog path, other repository', '--acceptance', '[read] it works', '--repo', '../other', '--files', 'other/CHANGELOG.md');
+  jarl(hub, 'new', 'same changelog path, a second repository also named tool', '--acceptance', '[read] it works', '--repo', '../vendor/tool', '--files', 'tool/CHANGELOG.md');
+  jarl(hub, 'new', 'same source file, same repository', '--acceptance', '[read] it works', '--repo', '../tool/', '--files', 'tool/src/a.mjs');
+  jarl(hub, 'new', 'the hub\'s own changelog', '--acceptance', '[read] it works', '--files', 'CHANGELOG.md');
+  jarl(hub, 'new', 'other repository again, behind the first one there', '--acceptance', '[read] it works', '--repo', '../other', '--files', 'other/CHANGELOG.md');
   jarl(hub, 'set', '1', 'in-progress', 'worker raised in tool');
   const rows = JSON.parse(jarl(hub, 'next', '--all', '--json'));
   assert.deepEqual(rows.filter((r) => r.ready).map((r) => r.id), ['2', '3', '5'], 'the same path in another repository never waits');
@@ -770,8 +771,8 @@ test('next keeps the same path in two repositories apart and still holds a colli
 test('check matches a changed file against the files an issue declares in its own repository', () => {
   const { parent, sh, hub, tool } = reposBeside('tool');
   jarl(hub, 'init', 'goal');
-  jarl(hub, 'new', 'change a in tool', '--repo', '../tool', '--files', 'tool/src/a.mjs');
-  jarl(hub, 'new', 'change b in tool', '--repo', '../tool', '--files', 'tool/src/b.mjs');
+  jarl(hub, 'new', 'change a in tool', '--acceptance', '[read] it works', '--repo', '../tool', '--files', 'tool/src/a.mjs');
+  jarl(hub, 'new', 'change b in tool', '--acceptance', '[read] it works', '--repo', '../tool', '--files', 'tool/src/b.mjs');
   sh(tool, `git worktree add -q -b jarl/1-change-a-in-tool ${parent}/wt-1 && cd ${parent}/wt-1 && echo 'export const a = 2;' > src/a.mjs && printf 'assert.equal(1,1);\\nassert.equal(2,2);\\n' > tests/a.test.mjs && echo '- a' >> CHANGELOG.md && git add -A && git commit -qm work`);
 
   const out = JSON.parse(jarl(hub, 'scope', '1', '--branch', 'jarl/1-change-a-in-tool', '--json'));
@@ -805,11 +806,12 @@ test('ask kinds are closed; lower needs a target', () => {
 test('review changes requires a Critical or Important finding; Minor alone is rejected', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
-  jarl(root, 'new', 'thing');
+  jarl(root, 'new', 'thing', '--acceptance', '[read] it works');
   assert.match(refuses(root, 'review', '1', 'changes', '--by', 'rev', 'looks a bit off'), /needs at least one finding ranked/);
   assert.match(refuses(root, 'review', '1', 'changes', '--by', 'rev', 'Minor: naming could be better'), /Minor alone goes to evidence/);
   jarl(root, 'review', '1', 'changes', '--by', 'rev', 'Important: the new test never goes red');
-  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'fixed');
+  jarl(root, 'round', '1', 'the test is fixed');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'fixed');
   jarl(root, 'review', '1', 'approve', '--by', 'rev', 'Minor: could still tidy the naming, but fine to land');
   jarl(root, 'set', '1', 'done');
 });
@@ -819,7 +821,7 @@ test('review changes requires a Critical or Important finding; Minor alone is re
 test('archive puts the loop away under .jarl/archive/<date>-<slug>/, and init opens a new one in the same mode', () => {
   const root = repo();
   jarl(root, 'init', 'first goal');
-  jarl(root, 'new', 'left unfinished');
+  jarl(root, 'new', 'left unfinished', '--acceptance', '[read] it works');
   assert.match(refuses(root, 'init', 'second goal'), /archive it first\njarl\.mjs archive "<slug>"\n$/);
 
   const out = JSON.parse(jarl(root, 'archive', 'first round', '--json'));
@@ -838,7 +840,7 @@ test('archive puts the loop away under .jarl/archive/<date>-<slug>/, and init op
   assert.match(refuses(root, 'archive', 'again'), /holds only earlier archives/);
 
   assert.match(jarl(root, 'init', 'second goal'), /kept out of git/);
-  assert.match(jarl(root, 'new', 'fresh work'), /filed 1/);
+  assert.match(jarl(root, 'new', 'fresh work', '--acceptance', '[read] it works'), /filed 1/);
   const status = jarl(root, 'status');
   assert.match(status, /^goal: second goal$/m);
   assert.match(status, /opened \d{4}-\d{2}-\d{2} \d{2}:\d{2} · last activity \d{4}-\d{2}-\d{2} \d{2}:\d{2} · 1 archived loop\(s\)/);
@@ -863,12 +865,12 @@ const jarlAsync = (root, ...args) => promisify(execFile)(process.execPath, [SCRI
 test('20 parallel evidence calls land 20 rows and 20 log lines; 10 parallel new calls get 10 distinct numbers', async () => {
   const root = repo();
   jarl(root, 'init', 'goal');
-  jarl(root, 'new', 'target');
-  await Promise.all(Array.from({ length: 20 }, (_, n) => jarlAsync(root, 'evidence', '1', '--ran', `w${n}`, '--saw', 'ok')));
+  jarl(root, 'new', 'target', '--acceptance', '[read] it works');
+  await Promise.all(Array.from({ length: 20 }, (_, n) => jarlAsync(root, 'evidence', '1', '--line', '1', '--ran', `w${n}`, '--saw', 'ok')));
   const shown = jarl(root, 'show', '1');
-  assert.equal((shown.match(/^- \[\d+\] \*\*ran:\*\* w\d+ · \*\*saw:\*\* ok$/gm) || []).length, 20);
+  assert.equal((shown.match(/^- \[\d+\] \*\*ran(?: \(line [0-9a-f, ]+\))?:\*\* w\d+ · \*\*saw:\*\* ok$/gm) || []).length, 20);
   const log = readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
-  assert.equal((log.match(/· 1 evidence row · w\d+$/gm) || []).length, 20);
+  assert.equal((log.match(/· 1 evidence row(?: \(line [0-9a-f, ]+\))? · w\d+$/gm) || []).length, 20);
   const filed = await Promise.all(Array.from({ length: 10 }, (_, n) => jarlAsync(root, 'new', `parallel ${n}`, '--json')));
   const ids = filed.map((r) => JSON.parse(r.stdout).id);
   assert.equal(new Set(ids).size, 10, `distinct ids, got ${ids.join(' ')}`);
@@ -881,7 +883,7 @@ test('20 parallel evidence calls land 20 rows and 20 log lines; 10 parallel new 
 test('a lock left by a process that is gone is broken; a live holder makes the caller fail loudly, writing nothing', async () => {
   const root = repo();
   jarl(root, 'init', 'goal');
-  jarl(root, 'new', 'target');
+  jarl(root, 'new', 'target', '--acceptance', '[read] it works');
   const lock = join(root, '.jarl', '.lock');
   const { hostname } = await import('node:os');
   // A pid that cannot be running (above the kernel's pid range).
@@ -906,11 +908,11 @@ test('a lock left by a process that is gone is broken; a live holder makes the c
 test('a value flag takes the next argument whatever it starts with; -- ends the flags; unknown flags are refused', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
-  jarl(root, 'new', 'target');
+  jarl(root, 'new', 'target', '--acceptance', '[read] it works');
   // --ran "--help" is a row, not a request for the usage text.
-  assert.equal(jarl(root, 'evidence', '1', '--ran', '--help', '--saw', 'usage'), '1 evidence row recorded');
-  jarl(root, 'evidence', '1', '--ran', 'yg check', '--saw', '--- FAIL: 3 pairs');
-  jarl(root, 'evidence', '1', '--ran=go test ./...', '--saw=ok=all');
+  assert.equal(jarl(root, 'evidence', '1', '--line', '1', '--ran', '--help', '--saw', 'usage'), '1 evidence row recorded for acceptance line 1');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'yg check', '--saw', '--- FAIL: 3 pairs');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran=go test ./...', '--saw=ok=all');
   const raw = (...args) => execFileSync(process.execPath, [SCRIPT, '--root', root, ...args], { encoding: 'utf8', timeout: SPAWN_TIMEOUT }).trim();
   raw('evidence', '1', '--', '--json prints ok');
   // A --root written after the bare -- is an argument, and a surplus one is refused rather than dropped; the reason says
@@ -921,15 +923,15 @@ test('a value flag takes the next argument whatever it starts with; -- ends the 
   assert.ok(after.trim().split('\n').at(-1).endsWith(" -- \"<ids>\" \"<text>\""), after);
   assert.match(refuses(root, 'set', '1', '2', 'done', 'why'), /set takes at most 3 arguments — unexpected: "why".*12,13/s);
   const shown = jarl(root, 'show', '1');
-  assert.match(shown, /^- \[1\] \*\*ran:\*\* --help · \*\*saw:\*\* usage$/m);
-  assert.match(shown, /^- \[2\] \*\*ran:\*\* yg check · \*\*saw:\*\* --- FAIL: 3 pairs$/m);
-  assert.match(shown, /^- \[3\] \*\*ran:\*\* go test \.\/\.\.\. · \*\*saw:\*\* ok=all$/m);
+  assert.match(shown, /^- \[1\] \*\*ran(?: \(line [0-9a-f, ]+\))?:\*\* --help · \*\*saw:\*\* usage$/m);
+  assert.match(shown, /^- \[2\] \*\*ran(?: \(line [0-9a-f, ]+\))?:\*\* yg check · \*\*saw:\*\* --- FAIL: 3 pairs$/m);
+  assert.match(shown, /^- \[3\] \*\*ran(?: \(line [0-9a-f, ]+\))?:\*\* go test \.\/\.\.\. · \*\*saw:\*\* ok=all$/m);
   assert.match(shown, /^\[note-1\] --json prints ok$/m);
   assert.match(raw('new', '--', '--json output drops key'), /^filed 2 /);
   // Refused loudly, naming what the command takes.
   assert.match(refuses(root, 'new', 'd', '--kidn', 'gap'), /unknown flag --kidn for new — it takes .*--kind/);
   assert.match(refuses(root, 'evidence', '1', '--json prints ok'), /^"--json prints ok" is a text, not a flag: a text that starts with -- goes after a bare --.*\njarl\.mjs evidence -- "<ids>" "<text>"\n$/s);
-  assert.throws(() => raw('evidence', '1', '--ran'), (e) => /--ran needs a value/.test(String(e.stderr)));
+  assert.throws(() => raw('evidence', '1', '--line', '1', '--ran'), (e) => /--ran needs a value/.test(String(e.stderr)));
   assert.match(refuses(root, 'new', 'x', '--kind', 'bug', '--kind', 'gap'), /--kind given twice/);
   assert.match(refuses(root, 'list', '--all=yes'), /--all takes no value/);
   assert.match(refuses(root, 'evidence', '1', 'note', '--ran', 'a', '--saw', 'b'), /not both/);
@@ -958,9 +960,9 @@ test('every flag the usage text names is one its command accepts', async () => {
 test('evidence, review, set and field take a comma list with ranges, all or nothing, one log line per issue', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
-  for (const t of ['a', 'b', 'c', 'd', 'e']) jarl(root, 'new', t);
+  for (const t of ['a', 'b', 'c', 'd', 'e']) jarl(root, 'new', t, '--acceptance', '[read] it works');
   // A four-issue package closes in four calls.
-  assert.equal(jarl(root, 'evidence', '1-3,5', '--ran', 'npm test', '--saw', 'pass 40'), '1 evidence row recorded\n2 evidence row recorded\n3 evidence row recorded\n5 evidence row recorded');
+  assert.equal(jarl(root, 'evidence', '1-3,5', '--line', '1', '--ran', 'npm test', '--saw', 'pass 40'), '1 evidence row recorded for acceptance line 1\n2 evidence row recorded for acceptance line 1\n3 evidence row recorded for acceptance line 1\n5 evidence row recorded for acceptance line 1');
   jarl(root, 'review', '1-3,5', 'approve', '--by', 'rev', 'read the diff, nothing found');
   jarl(root, 'evidence', '1,2,3,5', 'merged abc1234');
   assert.equal(jarl(root, 'set', '1-3,5', 'done', 'merged abc1234'), '1 → done\n2 → done\n3 → done\n5 → done');
@@ -982,16 +984,16 @@ test('evidence, review, set and field take a comma list with ranges, all or noth
 test('a bulk call with one bad id, or one issue failing its precondition, writes nothing at all', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
-  for (const t of ['a', 'b']) jarl(root, 'new', t);
+  for (const t of ['a', 'b']) jarl(root, 'new', t, '--acceptance', '[read] it works');
   const before = () => [readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), jarl(root, 'show', '1'), jarl(root, 'show', '2')].join('\n');
   const snap = before();
   assert.match(refuses(root, 'evidence', '1,2,9', 'note'), /no such issue: 9 \(asked for as 1,2,9\) — nothing was written/);
   assert.match(refuses(root, 'field', '1-3', 'Tags', '--add', 'x'), /no such issue: 3/);
   assert.match(refuses(root, 'set', '1,2', 'bogus'), /status must be one of/);
   // 1 is ready for done, 2 is not: neither moves.
-  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'proof');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'proof');
   jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
-  assert.match(refuses(root, 'set', '1,2', 'done'), /2 has no evidence yet.*nothing was written/s);
+  assert.match(refuses(root, 'set', '1,2', 'done'), /2 has no approving review.*nothing was written/s);
   assert.match(jarl(root, 'show', '1'), /^\*\*Status:\*\* open$/m);
   assert.match(refuses(root, 'field', '1,x', 'Priority', '1'), /not an issue id: "x"/);
   assert.match(refuses(root, 'field', '5-2', 'Priority', '1'), /runs backwards/);
@@ -1003,7 +1005,7 @@ test('a committed loop keeps the lock and temporary files out of git; a committe
   for (const mode of ['--committed', '--permanent']) {
     const { dir: root, g } = gitRepo();
     jarl(root, 'init', 'goal', mode);
-    jarl(root, 'new', 'thing');
+    jarl(root, 'new', 'thing', '--acceptance', '[read] it works');
     // What a `git add .jarl` sees in the middle of a call: the lock, a stale lock moved aside, temp files.
     writeFileSync(join(root, '.jarl', '.lock'), '1 host 2026-01-01\n');
     writeFileSync(join(root, '.jarl', '.lock.break'), '');
@@ -1018,7 +1020,7 @@ test('a committed loop keeps the lock and temporary files out of git; a committe
   const root = repo();
   jarl(root, 'init', 'goal', '--committed');
   rmSync(join(root, '.jarl', '.gitignore'));
-  jarl(root, 'new', 'thing');
+  jarl(root, 'new', 'thing', '--acceptance', '[read] it works');
   assert.equal(readFileSync(join(root, '.jarl', '.gitignore'), 'utf8'), JARL_GITIGNORE_COMMITTED);
   // The mode reads the same: still committed, so mode permanent works, and an archive keeps the mode.
   jarl(root, 'mode', 'permanent');
@@ -1028,7 +1030,7 @@ test('a committed loop keeps the lock and temporary files out of git; a committe
   // The default mode's file is still the ignore-everything one, and mode permanent still refuses it.
   const out = repo();
   jarl(out, 'init', 'goal');
-  jarl(out, 'new', 'thing');
+  jarl(out, 'new', 'thing', '--acceptance', '[read] it works');
   assert.equal(readFileSync(join(out, '.jarl', '.gitignore'), 'utf8'), '*\n**/*\n');
   assert.match(refuses(out, 'mode', 'permanent'), /out of git/);
 });
@@ -1036,14 +1038,14 @@ test('a committed loop keeps the lock and temporary files out of git; a committe
 test('many callers on a lock left by a dead process: one breaks it, none loses a row; an empty lock is broken after two seconds', async () => {
   const root = repo();
   jarl(root, 'init', 'goal');
-  jarl(root, 'new', 'target');
+  jarl(root, 'new', 'target', '--acceptance', '[read] it works');
   const { hostname } = await import('node:os');
   const { utimesSync, readdirSync } = await import('node:fs');
   const lock = join(root, '.jarl', '.lock');
   writeFileSync(lock, `99999999 ${hostname()} 2026-01-01T00:00:00.000Z\n`);
-  await Promise.all(Array.from({ length: 20 }, (_, n) => jarlAsync(root, 'evidence', '1', '--ran', `b${n}`, '--saw', 'ok')));
-  assert.equal((jarl(root, 'show', '1').match(/^- \[\d+\] \*\*ran:\*\* b\d+ · /gm) || []).length, 20);
-  assert.equal((readFileSync(join(root, '.jarl', 'log.md'), 'utf8').match(/· 1 evidence row · b\d+$/gm) || []).length, 20);
+  await Promise.all(Array.from({ length: 20 }, (_, n) => jarlAsync(root, 'evidence', '1', '--line', '1', '--ran', `b${n}`, '--saw', 'ok')));
+  assert.equal((jarl(root, 'show', '1').match(/^- \[\d+\] \*\*ran(?: \(line [0-9a-f, ]+\))?:\*\* b\d+ · /gm) || []).length, 20);
+  assert.equal((readFileSync(join(root, '.jarl', 'log.md'), 'utf8').match(/· 1 evidence row(?: \(line [0-9a-f, ]+\))? · b\d+$/gm) || []).length, 20);
   assert.deepEqual(readdirSync(join(root, '.jarl')).filter((f) => f.startsWith('.lock')), [], 'neither the lock nor the breaker lock is left');
   // A holder that died between creating the lock and writing its name: empty, and broken once two seconds old.
   writeFileSync(lock, '');
@@ -1086,7 +1088,7 @@ test('a command refused by the parser or its own checks does not backfill the ig
   assert.equal(existsSync(join(root, '.jarl', '.gitignore')), false, 'a command refused under the lock writes nothing');
   jarl(root, 'list');
   assert.equal(existsSync(join(root, '.jarl', '.gitignore')), false, 'a read takes no lock and writes nothing');
-  jarl(root, 'new', 'thing');
+  jarl(root, 'new', 'thing', '--acceptance', '[read] it works');
   assert.equal(readFileSync(join(root, '.jarl', '.gitignore'), 'utf8'), JARL_GITIGNORE_COMMITTED, 'the first write that lands backfills it');
 });
 
@@ -1096,10 +1098,10 @@ test('new writes the body at filing time, body replaces it later, and neither is
   const root = repo();
   jarl(root, 'init', 'goal');
   jarl(root, 'new', 'with a body', '--where', 'src/a.mjs:12', '--what', 'the parser drops the last row', '--why', 'exports lose data',
-    '--acceptance', 'npm test -- parser passes', '--acceptance', 'fixture 3 exports 10 rows');
+    '--acceptance', '[read] npm test -- parser passes', '--acceptance', '[read] fixture 3 exports 10 rows');
   const shown = jarl(root, 'show', '1');
   assert.match(shown, /^\*\*Where:\*\* src\/a\.mjs:12$/m);
-  assert.match(shown, /## What\nthe parser drops the last row\n\n## Why\nexports lose data\n\n## Acceptance\n- npm test -- parser passes\n- fixture 3 exports 10 rows\n\n## Evidence/);
+  assert.match(shown, /## What\nthe parser drops the last row\n\n## Why\nexports lose data\n\n## Acceptance\n- \[read\] npm test -- parser passes\n- \[read\] fixture 3 exports 10 rows\n\n## Evidence/);
   // A body line that looks like a heading stays inside its section.
   jarl(root, 'field', '1', 'What', 'line one\n## not a section');
   const issue = JSON.parse(jarl(root, 'show', '1', '--json'));
@@ -1119,18 +1121,20 @@ test('next and status flag work with no acceptance line, done says so on stderr,
   const root = repo();
   jarl(root, 'init', 'goal');
   jarl(root, 'new', 'no acceptance');
-  jarl(root, 'new', 'has acceptance', '--acceptance', 'a', '--acceptance', 'b');
+  jarl(root, 'new', 'has acceptance', '--acceptance', '[read] a', '--acceptance', '[read] b');
   const next = JSON.parse(jarl(root, 'next', '--json'));
   assert.equal(next[0].noAcceptance, true); assert.equal(next[1].noAcceptance, undefined);
   assert.match(jarl(root, 'next'), /1 {2}P2 {2}no acceptance {2}\(no acceptance yet\)/);
-  jarl(root, 'set', '1,2', 'in-progress', 'raised');
-  assert.match(jarl(root, 'status'), /in flight with no acceptance line: 1$/m);
-  assert.match(jarl(root, 'review', '2', 'approve', '--by', 'rev', FINDINGS), /2 review approve by rev \(fresh\) · acceptance: - a \/ - b/);
-  jarl(root, 'evidence', '2', '--ran', 'x', '--saw', 'y');
+  jarl(root, 'set', '2', 'in-progress', 'raised');
+  jarl(root, 'new', 'cleared', '--acceptance', '[read] c');
+  jarl(root, 'set', '3', 'in-progress', 'raised');
+  jarl(root, 'field', '3', 'Acceptance', '--clear');
+  assert.match(jarl(root, 'status'), /in flight with no acceptance line: 3$/m);
+  assert.match(jarl(root, 'review', '2', 'approve', '--by', 'rev', FINDINGS), /2 review approve by rev \(fresh\) · acceptance: - \[read\] a \/ - \[read\] b/);
   const r = execFileSync(process.execPath, [SCRIPT, 'set', '2', 'done', 'merged', '--root', root], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: SPAWN_TIMEOUT });
   assert.equal(r.trim(), '2 → done', 'stdout is unchanged');
-  const child = (() => { try { return sh(tmpdir(), `node ${SCRIPT} review 1 approve --by rev "${FINDINGS}" --root ${root} >/dev/null && node ${SCRIPT} evidence 1 --ran t --saw ok --root ${root} >/dev/null && node ${SCRIPT} set 1 done m --root ${root} 2>&1 >/dev/null`); } catch (e) { return String(e.stdout); } })();
-  assert.match(child, /note: 1 no acceptance line on file/, 'done is never refused for it, only noted');
+  jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
+  assert.match(refuses(root, 'set', '1', 'done', 'm'), /1 has no acceptance line, so there is nothing done can ask of it/, 'done refuses an issue with no line');
 });
 
 const FLAT = [
@@ -1162,7 +1166,7 @@ test('import files one issue per finding with a Source, never twice, and keeps E
   assert.equal(one.sections.evidence.trim(), '', 'nothing in Evidence: done still needs real evidence');
   // A re-run files nothing; a hand-filed issue with --source counts as filed too.
   assert.match(jarl(root, 'import', file, '--source', 'core/research/2026-09-25-jarl'), /filed 0 · already filed 2/);
-  jarl(root, 'new', 'by hand', '--source', 'core/research/2026-09-25-other#X-1');
+  jarl(root, 'new', 'by hand', '--acceptance', '[read] it works', '--source', 'core/research/2026-09-25-other#X-1');
   assert.match(refuses(root, 'new', 'bad', '--source', 'no-hash'), /a source is <report-dir#finding-id>/);
   // Flags override the mapping.
   const file2 = findingsDir([{ id: 'Q-1', title: 'q', priority: 'high' }]);
@@ -1227,8 +1231,8 @@ test('import, a dry run and sources take a findings file whose findings carry ke
 test('import --adopt links the issues that already name the finding, once, without filing a duplicate', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
-  jarl(root, 'new', 'Jarl: bodies (jarl-2-B2)');
-  jarl(root, 'new', 'minor package');
+  jarl(root, 'new', 'Jarl: bodies (jarl-2-B2)', '--acceptance', '[read] it works');
+  jarl(root, 'new', 'minor package', '--acceptance', '[read] it works');
   jarl(root, 'field', '2', 'What', 'covers jarl-2-B5 and jarl-9-Z9');
   const file = findingsDir([...FLAT, { id: 'jarl-9-Z9', title: 'z' }, { id: 'jarl-2-B20', title: 'no one names me' }]);
   assert.match(jarl(root, 'import', file, '--source', 'r'), /filed 1 · already filed 0 · named by an issue without Source 3/);
@@ -1241,7 +1245,7 @@ test('import --adopt links the issues that already name the finding, once, witho
 test('status prints an item to ratify on one row, however many lines its question has, as resume does', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
-  jarl(root, 'new', 'limit raised');
+  jarl(root, 'new', 'limit raised', '--acceptance', '[read] it works');
   jarl(root, 'set', '1', 'in-progress', 'w');
   jarl(root, 'ask', 'raised the prompt limit\nto 96000 under the mandate', '--kind', 'ratify', '--issue', '1');
   assert.match(jarl(root, 'status'), /^ratify a-1 \(issue 1\) · raised the prompt limit to 96000 under the mandate$/m);
@@ -1251,7 +1255,7 @@ test('status prints an item to ratify on one row, however many lines its questio
 test('ask --kind ratify blocks nothing, is listed in status and the handoff, and its answer lands on the issue', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
-  jarl(root, 'new', 'limit raised');
+  jarl(root, 'new', 'limit raised', '--acceptance', '[read] it works');
   jarl(root, 'set', '1', 'in-progress', 'w');
   assert.match(jarl(root, 'ask', 'raised the prompt limit to 96000 under the mandate', '--kind', 'ratify', '--issue', '1'), /filed a-1 for ratification · blocks nothing/);
   assert.match(refuses(root, 'ask', 'x', '--kind', 'ratify', '--issue', '9'), /no such issue: 9/);
@@ -1261,7 +1265,7 @@ test('ask --kind ratify blocks nothing, is listed in status and the handoff, and
   assert.match(jarl(root, 'resume'), /## Questions to the owner \(0\)\n- \(nothing\)\n\n## To ratify \(1\)\n- a-1 \(issue 1\) · raised/);
   // It holds nothing back: next, done.
   jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
-  jarl(root, 'evidence', '1', '--ran', 'check', '--saw', 'green');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'check', '--saw', 'green');
   jarl(root, 'set', '1', 'done', 'merged');
   jarl(root, 'answer', 'a-1', 'ratified', '--by', 'owner');
   assert.match(jarl(root, 'show', '1'), /Ruling ask-1 \(ratify, by owner\): ratified/);
@@ -1271,8 +1275,8 @@ test('ask --kind ratify blocks nothing, is listed in status and the handoff, and
 test('After holds an issue out of next and counts it as waiting; decide --settles writes the ruling into issues', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
-  for (const t of ['release', 'cleanup', 'profile', 'numbers']) jarl(root, 'new', t);
-  jarl(root, 'new', 'after the release', '--after', '1');
+  for (const t of ['release', 'cleanup', 'profile', 'numbers']) jarl(root, 'new', t, '--acceptance', '[read] it works');
+  jarl(root, 'new', 'after the release', '--acceptance', '[read] it works', '--after', '1');
   jarl(root, 'set', '2,3', 'in-progress', 'raised');
   jarl(root, 'field', '2', 'After', '1'); jarl(root, 'field', '3', 'After', '1');
   assert.match(jarl(root, 'status'), /open 2 · in flight 0 · waiting 3 ·/);
@@ -1316,7 +1320,7 @@ test('an issue file from before these fields reads and moves unchanged', () => {
 test('replacement patterns in user text are written as they are: $1, $&, $\' and $` never expand', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
-  jarl(root, 'new', 'dollars', '--what', 'w');
+  jarl(root, 'new', 'dollars', '--acceptance', '[read] it works', '--what', 'w');
   jarl(root, 'field', '1', 'Why', "use $' here and $` and $& and $1");
   jarl(root, 'evidence', '1', "saw $' and $1");
   jarl(root, 'evidence', '1', "then $& too");
@@ -1330,15 +1334,15 @@ test('replacement patterns in user text are written as they are: $1, $&, $\' and
 test('done: a ruling, a drop reason or a free-text note alone is not evidence; a proposal is not an acceptance line; fewer rows than lines is noted', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
-  jarl(root, 'new', 'settled', '--acceptance', 'npm test passes', '--acceptance', 'docs say so');
+  jarl(root, 'new', 'settled', '--acceptance', '[test] npm test passes', '--acceptance', '[read] docs say so');
   jarl(root, 'decide', 'rule', 'keep it', '--settles', '1', '--by', 'coordinator');
   jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
-  assert.match(refuses(root, 'set', '1', 'done', 'x'), /1 has no evidence yet/);
+  assert.match(refuses(root, 'set', '1', 'done', 'x'), /line 1 \[test\] unproved/, 'a ruling is no row');
   jarl(root, 'evidence', '1', 'merged abc');
-  assert.match(refuses(root, 'set', '1', 'done', 'x'), /1 has no evidence yet/, 'a note alone sits under Notes and is not evidence of the work');
-  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'pass');
-  const r = (() => { try { return sh(tmpdir(), `node ${SCRIPT} set 1 done m --root ${root} 2>&1`); } catch (e) { return String(e.stdout); } })();
-  assert.match(r, /note: 1 2 acceptance line\(s\), 1 --ran\/--saw row\(s\)/);
+  assert.match(refuses(root, 'set', '1', 'done', 'x'), /line 1 \[test\] unproved/, 'a note alone sits under Notes and is not evidence of the work');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'pass', '--by', 'one');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'pass', '--by', 'two');
+  assert.equal(run(root, ['set', '1', 'done', 'm']).status, 0, 'a read line asks for no row, and a test line for the two it holds');
   const file = findingsDir([{ id: 'jarl-3-X1', title: 'x', proposal: 'do it' }]);
   const o = JSON.parse(jarl(root, 'import', file, '--source', 'r', '--json'));
   const next = JSON.parse(jarl(root, 'next', '--json')).find((x) => x.id === o.filed[0].id);
@@ -1349,11 +1353,11 @@ test('done: a ruling, a drop reason or a free-text note alone is not evidence; a
 test('import never takes a short id, a header field or Evidence for a mention of the finding', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
-  jarl(root, 'new', 'unrelated F1 in a title', '--what', 'see F4 and C1 here');   // short ids in prose, no report named
-  jarl(root, 'new', 'another', '--prio', '2');                                    // **Priority:** 2
-  jarl(root, 'new', 'notes');
+  jarl(root, 'new', 'unrelated F1 in a title', '--acceptance', '[read] it works', '--what', 'see F4 and C1 here');   // short ids in prose, no report named
+  jarl(root, 'new', 'another', '--acceptance', '[read] it works', '--prio', '2');                                    // **Priority:** 2
+  jarl(root, 'new', 'notes', '--acceptance', '[read] it works');
   jarl(root, 'evidence', '3', 'also touches jarl-2-B2');                          // named only in Evidence
-  jarl(root, 'new', 'package', '--what', 'from report-x: F7 and C9');              // short id with its report named
+  jarl(root, 'new', 'package', '--acceptance', '[read] it works', '--what', 'from report-x: F7 and C9');              // short id with its report named
   const file = findingsDir([{ id: 'F1', title: 'a' }, { id: 'F4', title: 'b' }, { id: 'C1', title: 'c' }, { id: '2', title: 'd' }, { id: 'jarl-2-B2', title: 'e' }, { id: 'F7', title: 'f' }]);
   const o = JSON.parse(jarl(root, 'import', file, '--source', 'core/research/report-x', '--adopt', '--dry-run', '--json'));
   assert.deepEqual(o.adopted.map((a) => [a.finding, a.issue]), [['F7', '4']]);
@@ -1362,7 +1366,7 @@ test('import never takes a short id, a header field or Evidence for a mention of
   const angles = findingsDir([{ angle: 'First Hour', surviving: [{ id: 'prime-teaches-removed-verdict', title: 'p' }] }]);
   const a = JSON.parse(jarl(root, 'import', angles, '--source', 'r-angles', '--dry-run', '--json'));
   assert.equal(a.filed[0].finding, 'first-hour/prime-teaches-removed-verdict');
-  jarl(root, 'new', 'names it', '--what', 'first-hour/prime-teaches-removed-verdict');
+  jarl(root, 'new', 'names it', '--acceptance', '[read] it works', '--what', 'first-hour/prime-teaches-removed-verdict');
   const a2 = JSON.parse(jarl(root, 'import', angles, '--source', 'r-angles', '--dry-run', '--json'));
   assert.deepEqual(a2.mentioned.map((m) => m.issue), ['5']);
 });
@@ -1370,9 +1374,9 @@ test('import never takes a short id, a header field or Evidence for a mention of
 test('import adopts a package issue whose Evidence names the report and lists the ids; short ids and other lines never match there', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
-  jarl(root, 'new', 'minor package');
+  jarl(root, 'new', 'minor package', '--acceptance', '[read] it works');
   jarl(root, 'evidence', '1', 'Source: core/research/2026-09-25-x-audit/report.md §3, findings.json area a. Ids: area-a-01, area-a-02, F1');
-  jarl(root, 'new', 'other work');
+  jarl(root, 'new', 'other work', '--acceptance', '[read] it works');
   jarl(root, 'evidence', '2', 'touches area-a-03 as well');                                  // unique id, report not on the line
   jarl(root, 'evidence', '2', 'see core/research/2026-09-25-x-audit/report.md');
   const file = findingsDir([{ id: 'area-a-01', title: 'a' }, { id: 'area-a-02', title: 'b' }, { id: 'area-a-03', title: 'c' }, { id: 'F1', title: 'd' }]);
@@ -1399,7 +1403,7 @@ function editIssue(root, id, fn) {
 
 test('a worktree is looked up through git by the lease branch: locked, invisible, found without a stored path, and truly removed', () => {
   const { root, sh } = gitLoop();
-  for (const t of ['locked', 'invisible', 'removed', 'closed']) jarl(root, 'new', t, '--files', `${t}.txt`);
+  for (const t of ['locked', 'invisible', 'removed', 'closed']) jarl(root, 'new', t, '--acceptance', '[read] it works', '--files', `${t}.txt`);
   const away = join(root, '..', `${basename(root)}-away`);
   mkdirSync(away);
   // 1: locked with a reason, its directory not on this machine (a container's); the lease stores the path.
@@ -1424,7 +1428,7 @@ test('a worktree is looked up through git by the lease branch: locked, invisible
   sh(`git worktree add -q -b jarl/4-closed ${wt4} && git worktree lock --reason devcontainer ${wt4}`);
   renameSync(wt4, join(away, 'wt4'));
   jarl(root, 'review', '4', 'approve', '--by', 'rev', FINDINGS);
-  jarl(root, 'evidence', '4', '--ran', 'check', '--saw', 'green');
+  jarl(root, 'evidence', '4', '--line', '1', '--ran', 'check', '--saw', 'green');
   jarl(root, 'merged', '4', '--sha', sh('git rev-parse jarl/4-closed'), '--keep');
   jarl(root, 'set', '4', 'done', 'merged');
 
@@ -1451,9 +1455,9 @@ test('a worktree is looked up through git by the lease branch: locked, invisible
 
 test('a package is one lease on one branch: set records it, check --branch bounds the diff by the union, branches maps it', () => {
   const { root, sh } = gitLoop();
-  jarl(root, 'new', 'one', '--files', 'a.txt');
-  jarl(root, 'new', 'two', '--files', 'b.txt');
-  jarl(root, 'new', 'three', '--files', 'c.txt');
+  jarl(root, 'new', 'one', '--acceptance', '[read] it works', '--files', 'a.txt');
+  jarl(root, 'new', 'two', '--acceptance', '[read] it works', '--files', 'b.txt');
+  jarl(root, 'new', 'three', '--acceptance', '[read] it works', '--files', 'c.txt');
   const wt = join(root, '..', `${basename(root)}-wt`);
   assert.match(jarl(root, 'set', '1-2', 'in-progress', 'package raised', '--branch', 'jarl/1-pkg', '--worker', 'w1', '--worktree', wt), /^1 → in-progress · jarl\/1-pkg · w1\n2 → in-progress · jarl\/1-pkg · w1$/);
   const shown = jarl(root, 'show', '2');
@@ -1485,7 +1489,7 @@ test('a package is one lease on one branch: set records it, check --branch bound
 
 test('check --branch notes each added line that names a loop issue by its number, and no other line', () => {
   const { root, sh: git } = gitLoop();
-  for (const t of ['one', 'two', 'three']) jarl(root, 'new', t, '--files', 'a.txt');
+  for (const t of ['one', 'two', 'three']) jarl(root, 'new', t, '--acceptance', '[read] it works', '--files', 'a.txt');
   git('echo "old: see issue 1" > a.txt && git commit -qam base');
   git('git checkout -q -b feature');
   writeFileSync(join(root, 'a.txt'), 'keep\nsee issue 2 for it\nthe same as #3\nissue 9 is not ours\nyear 2026 and 2026-10-15\ntimeout 3 seconds\n');
@@ -1504,7 +1508,7 @@ test('check --branch notes each added line that names a loop issue by its number
 
 test('check --branch refuses a branch no issue holds, and says how many commits it carries and what to file', () => {
   const { root, sh: git } = gitLoop();
-  jarl(root, 'new', 'one', '--files', 'a.txt');
+  jarl(root, 'new', 'one', '--acceptance', '[read] it works', '--files', 'a.txt');
   git('git checkout -q -b feature && echo more >> a.txt && git commit -qam work && git checkout -q main');
   const msg = refuses(root, 'scope', '--branch', 'feature', '--base', 'main');
   assert.match(msg, /^no issue records branch feature: it carries 1 commit\(s\) beyond main and no issue holds it \(work without an issue\) — file the issue, then set it in-progress --branch feature\njarl\.mjs new "<what-the-branch-does>" --tier "<tier>"\njarl\.mjs set "<the-id-new-prints>" in-progress "<why>" --branch feature\njarl\.mjs scope --branch "<worker-branch>" --base "<base-branch>"\n$/);
@@ -1513,7 +1517,7 @@ test('check --branch refuses a branch no issue holds, and says how many commits 
 
 test('branches marks with NO ISSUE a branch with commits that no issue holds, and no leased, empty, base or release branch', () => {
   const { root, sh: git } = gitLoop();
-  jarl(root, 'new', 'one', '--files', 'a.txt');
+  jarl(root, 'new', 'one', '--acceptance', '[read] it works', '--files', 'a.txt');
   git('git checkout -q -b jarl/1-pkg && echo x >> a.txt && git commit -qam work && git checkout -q main');
   jarl(root, 'set', '1', 'in-progress', 'package raised', '--branch', 'jarl/1-pkg', '--worker', 'w1');
   git('git checkout -q -b jarl/9-orphan && echo y >> b.txt && git commit -qam orphan && git checkout -q main');
@@ -1532,7 +1536,7 @@ test('branches marks with NO ISSUE a branch with commits that no issue holds, an
 
 test('check --branch prints at most twenty issue notes and counts the rest', () => {
   const { root, sh: git } = gitLoop();
-  for (const t of ['one', 'two']) jarl(root, 'new', t, '--files', 'a.txt');
+  for (const t of ['one', 'two']) jarl(root, 'new', t, '--acceptance', '[read] it works', '--files', 'a.txt');
   git('git checkout -q -b feature');
   writeFileSync(join(root, 'a.txt'), Array.from({ length: 25 }, (_, i) => `line ${i} cites issue 2`).join('\n') + '\n');
   git('git commit -qam work');
@@ -1545,9 +1549,9 @@ test('check --branch prints at most twenty issue notes and counts the rest', () 
 
 test('stale leases are shown, never acted on: worktree gone, branch gone, idle', () => {
   const { root, sh } = gitLoop();
-  jarl(root, 'new', 'one', '--files', 'a.txt');
-  jarl(root, 'new', 'two', '--files', 'b.txt');
-  jarl(root, 'new', 'three', '--files', 'c.txt');
+  jarl(root, 'new', 'one', '--acceptance', '[read] it works', '--files', 'a.txt');
+  jarl(root, 'new', 'two', '--acceptance', '[read] it works', '--files', 'b.txt');
+  jarl(root, 'new', 'three', '--acceptance', '[read] it works', '--files', 'c.txt');
   const wt = join(root, '..', `${basename(root)}-wt`);
   jarl(root, 'set', '1', 'in-progress', 'w', '--branch', 'jarl/1-one', '--worker', 'w1', '--worktree', wt);
   sh(`git worktree add -q -b jarl/1-one ${wt} && cd ${wt} && echo A > a.txt && git commit -qam work`);
@@ -1581,8 +1585,8 @@ test('stale leases are shown, never acted on: worktree gone, branch gone, idle',
 
 test('merged records the sha and CI as fields; status counts CI pending; done notes it, never refuses; branches marks done → delete', () => {
   const { root, sh } = gitLoop();
-  jarl(root, 'new', 'one', '--files', 'a.txt', '--acceptance', 'a is A');
-  jarl(root, 'new', 'two', '--files', 'b.txt', '--acceptance', 'b is B');
+  jarl(root, 'new', 'one', '--files', 'a.txt', '--acceptance', '[read] a is A');
+  jarl(root, 'new', 'two', '--files', 'b.txt', '--acceptance', '[read] b is B');
   jarl(root, 'set', '1,2', 'in-progress', 'w', '--branch', 'jarl/1-pkg', '--worker', 'w1');
   sh('git checkout -q -b jarl/1-pkg && echo A > a.txt && echo B > b.txt && git commit -qam work && git checkout -q main && git merge -q --no-ff -m "merge 1-2" jarl/1-pkg');
   const sha = sh('git rev-parse --short HEAD');
@@ -1602,7 +1606,7 @@ test('merged records the sha and CI as fields; status counts CI pending; done no
   assert.match(withStderr(root, 'merged', '1', '--sha', 'deadbeef').stderr, /deadbeef is not a commit in/);
   jarl(root, 'merged', '1', '--sha', sha, '--ci', 'pending', '--keep');
   jarl(root, 'review', '1,2', 'approve', '--by', 'rev', FINDINGS);
-  jarl(root, 'evidence', '1,2', '--ran', 'check', '--saw', 'green');
+  jarl(root, 'evidence', '1,2', '--line', '1', '--ran', 'check', '--saw', 'green');
   const done = withStderr(root, 'set', '1,2', 'done', 'merged');
   assert.equal(done.status, 0);
   assert.match(done.stderr, new RegExp(`note: 1 merged ${sha}, CI pending`));
@@ -1633,11 +1637,11 @@ test('a committed loop names the loop files git has not committed in status, han
   assert.equal(JSON.parse(jarl(root, 'status', '--json')).uncommitted, 0);
 
   const dflt = gitLoop();
-  jarl(dflt.root, 'new', 'one');
+  jarl(dflt.root, 'new', 'one', '--acceptance', '[read] it works');
   assert.equal(JSON.parse(jarl(dflt.root, 'status', '--json')).uncommitted, null);
   const loose = repo();   // not a git repository at all
   jarl(loose, 'init', 'goal', '--committed');
-  jarl(loose, 'new', 'one');
+  jarl(loose, 'new', 'one', '--acceptance', '[read] it works');
   assert.equal(JSON.parse(jarl(loose, 'status', '--json')).uncommitted, null);
 });
 
@@ -1662,9 +1666,9 @@ test('issues and handoffs from before leases and merges read unchanged', () => {
 test('DONE → delete needs the branch tip in the base, or in every recorded merge, and a clean worktree; a number-only match trusts ancestry alone', () => {
   const { root, sh } = gitLoop();
   const mark = (branch) => JSON.parse(jarl(root, 'branches', '--json')).find((r) => r.branch === branch)?.done ?? null;
-  const close = (id) => { jarl(root, 'review', id, 'approve', '--by', 'rev', FINDINGS); jarl(root, 'evidence', id, '--ran', 'check', '--saw', 'green'); jarl(root, 'set', id, 'done', 'merged'); };
+  const close = (id) => { jarl(root, 'review', id, 'approve', '--by', 'rev', FINDINGS); jarl(root, 'evidence', id, '--line', '1', '--ran', 'check', '--saw', 'green'); jarl(root, 'set', id, 'done', 'merged'); };
   // Merged elsewhere (a release branch, not the base): the tip is in the recorded merge, so it can go.
-  jarl(root, 'new', 'elsewhere', '--files', 'a.txt');
+  jarl(root, 'new', 'elsewhere', '--acceptance', '[read] it works', '--files', 'a.txt');
   jarl(root, 'set', '1', 'in-progress', 'w', '--branch', 'jarl/1-else');
   sh('git checkout -q -b jarl/1-else && echo A > a.txt && git commit -qam w && git checkout -q -b rel main && git merge -q --no-ff -m m jarl/1-else && git checkout -q main');
   jarl(root, 'merged', '1', '--sha', sh('git rev-parse rel'));
@@ -1675,20 +1679,20 @@ test('DONE → delete needs the branch tip in the base, or in every recorded mer
   assert.equal(mark('jarl/1-else'), 'unverified');
   assert.match(jarl(root, 'branches'), /^jarl\/1-else → 1 .*DONE \(merged by record, branch not in base\) — verify$/m);
   // A squash merge, then an extra commit: never taken as merged.
-  jarl(root, 'new', 'squashed', '--files', 'b.txt');
+  jarl(root, 'new', 'squashed', '--acceptance', '[read] it works', '--files', 'b.txt');
   jarl(root, 'set', '2', 'in-progress', 'w', '--branch', 'jarl/2-sq');
   sh('git checkout -q -b jarl/2-sq && echo B > b.txt && git commit -qam w && git checkout -q main && git merge -q --squash jarl/2-sq && git commit -qm squash && git checkout -q jarl/2-sq && echo BB > b.txt && git commit -qam extra && git checkout -q main');
   jarl(root, 'merged', '2', '--sha', sh('git rev-parse HEAD'));
   close('2');
   assert.equal(mark('jarl/2-sq'), 'unverified');
   // An issue from before Branch, matched by the branch's number only: a recorded merge is not trusted there.
-  jarl(root, 'new', 'legacy', '--files', 'c.txt');
+  jarl(root, 'new', 'legacy', '--acceptance', '[read] it works', '--files', 'c.txt');
   sh('git checkout -q -b jarl/3-legacy && echo C > c.txt && git commit -qam w && git checkout -q -b rel3 main && git merge -q --no-ff -m m jarl/3-legacy && git checkout -q main');
   jarl(root, 'merged', '3', '--sha', sh('git rev-parse rel3'));
   close('3');
   assert.equal(mark('jarl/3-legacy'), null);
   // In the base, but its worktree holds uncommitted files.
-  jarl(root, 'new', 'dirty', '--files', 'd.txt');
+  jarl(root, 'new', 'dirty', '--acceptance', '[read] it works', '--files', 'd.txt');
   const wt = join(root, '..', `${basename(root)}-wt4`);
   jarl(root, 'set', '4', 'in-progress', 'w', '--branch', 'jarl/4-dirty', '--worktree', wt);
   sh(`git worktree add -q -b jarl/4-dirty ${wt} && cd ${wt} && echo D > d.txt && git add d.txt && git commit -qm w && echo scratch > notes.txt`);
@@ -1704,7 +1708,7 @@ test('DONE → delete needs the branch tip in the base, or in every recorded mer
 test('outside a git repository a Branch lease is not reported gone, and resume shows it with no tips', () => {
   const loose = repo();
   jarl(loose, 'init', 'goal');
-  jarl(loose, 'new', 'one');
+  jarl(loose, 'new', 'one', '--acceptance', '[read] it works');
   jarl(loose, 'set', '1', 'in-progress', 'w', '--branch', 'jarl/1-one');
   assert.deepEqual(JSON.parse(jarl(loose, 'status', '--json')).stale, []);
   const r = jarl(loose, 'resume');
@@ -1774,7 +1778,7 @@ test('answer takes a comma list of ratify items with one verdict, writes one rul
 test('decide --by owner with no question in the record prints a notice on stderr; --supersedes names the open issues that name the old ruling', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
-  jarl(root, 'new', 'rewrite the flag handling', '--what', 'Follows flag-rule as it stands.');
+  jarl(root, 'new', 'rewrite the flag handling', '--acceptance', '[read] it works', '--what', 'Follows flag-rule as it stands.');
   assert.match(run(root, ['decide', 'quiet-rule', 'Keep the default.', '--by', 'owner', '--quote', 'Keep it.']).stderr, /no question in the record/);
   assert.equal(run(root, ['decide', 'mandate-rule', 'Keep the default.', '--by', 'jarl']).stderr, '');
   jarl(root, 'decide', 'flag-rule', 'Keep the flag.', '--by', 'jarl');
@@ -1823,7 +1827,7 @@ test('questions with options and their answers read through the frozen reader: t
   assert.match(JSON.stringify(oldJarl(root, 'list', {}).value), /w-one/, 'the worker is parsed');
   assert.match(refuses(root, 'review', '001', 'approve', '--by', 'w-one', FINDINGS), /worker|own/i);
   jarl(root, 'review', '001', 'approve', '--by', 'rev', FINDINGS);
-  jarl(root, 'evidence', '001', '--ran', 'check', '--saw', 'green');
+  assert.equal(oldJarl(root, 'evidence', {}, ['001', null, { ran: 'check', saw: 'green' }]).ok, true);
   assert.deepEqual(oldJarl(root, 'set', {}, ['001', 'done', 'merged', {}]).error ?? null, null, 'done passes');
 });
 
@@ -1921,7 +1925,7 @@ test('an answer in the person\'s own words and a batch answer read through the f
   assert.deepEqual([counted.questions, counted.ratify], [1, 0], 'the open question is counted, the answered items are not');
   assert.match(refuses(root, 'review', '001', 'approve', '--by', 'w-one', FINDINGS), /worker|own/i);
   jarl(root, 'review', '001', 'approve', '--by', 'rev', FINDINGS);
-  jarl(root, 'evidence', '001', '--ran', 'check', '--saw', 'green');
+  assert.equal(oldJarl(root, 'evidence', {}, ['001', null, { ran: 'check', saw: 'green' }]).ok, true);
   assert.deepEqual(oldJarl(root, 'set', {}, ['001', 'done', 'merged', {}]).error ?? null, null, 'done passes');
 });
 
@@ -1960,7 +1964,7 @@ test('a Model line set through the command line reads through the frozen reader:
   assert.match(JSON.stringify(counted), /Ship it\./, 'the goal is read');
   assert.match(refuses(root, 'review', '001', 'approve', '--by', 'w-one', FINDINGS), /worker|own/i);
   jarl(root, 'review', '001', 'approve', '--by', 'rev', FINDINGS);
-  jarl(root, 'evidence', '001', '--ran', 'check', '--saw', 'green');
+  assert.equal(oldJarl(root, 'evidence', {}, ['001', null, { ran: 'check', saw: 'green' }]).ok, true);
   assert.deepEqual(oldJarl(root, 'set', {}, ['001', 'done', 'merged', {}]).error ?? null, null, 'done passes');
 });
 
@@ -2066,8 +2070,8 @@ test('the supersession notice finds a slug at the end of a sentence and does not
   const root = repo();
   jarl(root, 'init', 'goal');
   const ends = ['Obeys flag-rule.', 'Obeys flag-rule,', 'Obeys flag-rule;', 'Obeys flag-rule:', 'Obeys flag-rule!', 'Obeys flag-rule?', 'Obeys "flag-rule"', "Obeys 'flag-rule'", 'Obeys (flag-rule)'];
-  ends.forEach((what, n) => jarl(root, 'new', `issue ${n}`, '--what', what));
-  jarl(root, 'new', 'longer', '--what', 'Obeys flag-rule-two and flag-rule.v2 only.');
+  ends.forEach((what, n) => jarl(root, 'new', `issue ${n}`, '--acceptance', '[read] it works', '--what', what));
+  jarl(root, 'new', 'longer', '--acceptance', '[read] it works', '--what', 'Obeys flag-rule-two and flag-rule.v2 only.');
   jarl(root, 'decide', 'flag-rule', 'Keep the flag.', '--by', 'jarl');
   const r = run(root, ['decide', 'flag-rule-two', 'Keep the flag, now.', '--by', 'jarl', '--supersedes', 'flag-rule']);
   assert.match(r.stderr, /open issues name flag-rule: 1, 2, 3, 4, 5, 6, 7, 8, 9 — rewrite them to flag-rule-two/);
@@ -2088,7 +2092,7 @@ test('the log reader lists a line that reads as an event and does not parse, a l
   const lib = await import(LIB_URL);
   const root = repo();
   jarl(root, 'init', 'goal');
-  jarl(root, 'new', 'first');
+  jarl(root, 'new', 'first', '--acceptance', '[read] it works');
   const dir = join(root, '.jarl');
   const path = join(dir, 'log.md');
   const lines = [
@@ -2168,7 +2172,7 @@ const DATED = '- 2026-10-19 10:00 · ';
 test('verify on a clean loop prints clean, and exits 0', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
-  jarl(root, 'new', 'first', '--what', 'Does one thing.');
+  jarl(root, 'new', 'first', '--acceptance', '[read] it works', '--what', 'Does one thing.');
   const r = run(root, ['verify']);
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /^verify: clean/);
@@ -2178,7 +2182,7 @@ test('verify on a clean loop prints clean, and exits 0', () => {
 test('verify lists a log line that reads as an event and does not parse, with its line number, and exits 2', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
-  jarl(root, 'new', 'first');
+  jarl(root, 'new', 'first', '--acceptance', '[read] it works');
   appendLines(root, `${DATED}1 review nonsense here`);
   const r = run(root, ['verify']);
   assert.equal(r.status, 2);
@@ -2189,7 +2193,7 @@ test('verify lists a log line that reads as an event and does not parse, with it
 test('verify lists a struck-through log line, which the reader takes for a note and so retracts nothing', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
-  jarl(root, 'new', 'first');
+  jarl(root, 'new', 'first', '--acceptance', '[read] it works');
   appendLines(root, `${DATED}~~1 review approve · by rev (fresh) · x~~ — a mistake`);
   const r = run(root, ['verify']);
   assert.equal(r.status, 2);
@@ -2199,8 +2203,8 @@ test('verify lists a struck-through log line, which the reader takes for a note 
 test('verify lists a retraction that points at a row the log does not hold', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
-  jarl(root, 'new', 'first');
-  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'green');
+  jarl(root, 'new', 'first', '--acceptance', '[read] it works');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'green');
   jarl(root, 'retract', '1', '1', '--by', 'owner', 'the row is wrong');
   appendLines(root, `${DATED}1 evidence retract · row 9 · by owner · no such row`);
   const r = run(root, ['verify']);
@@ -2211,7 +2215,7 @@ test('verify lists a retraction that points at a row the log does not hold', () 
 test('verify lists a retraction of a "changes" verdict, which only an approve can be', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
-  jarl(root, 'new', 'first');
+  jarl(root, 'new', 'first', '--acceptance', '[read] it works');
   jarl(root, 'review', '1', 'changes', '--by', 'rv', 'Important: the reason is missing');
   appendLines(root, `${DATED}1 review retract · by owner (coordinator) · retracts the approve by rv (fresh) of 2026-10-19 · the reason`);
   const r = run(root, ['verify']);
@@ -2222,7 +2226,7 @@ test('verify lists a retraction of a "changes" verdict, which only an approve ca
 test('verify lists a verdict whose model mark does not parse, and not a word of the findings that reads as one', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
-  jarl(root, 'new', 'first');
+  jarl(root, 'new', 'first', '--acceptance', '[read] it works');
   appendLines(root, `${DATED}1 review approve · by rv (fresh) · model gpt-5`);
   appendLines(root, `${DATED}1 review changes · by rv2 (fresh) · Important: the text says · model is a word here`);
   const r = run(root, ['verify']);
@@ -2233,7 +2237,7 @@ test('verify lists a verdict whose model mark does not parse, and not a word of 
 test('verify lists a move whose lease fields do not parse', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
-  jarl(root, 'new', 'first');
+  jarl(root, 'new', 'first', '--acceptance', '[read] it works');
   appendLines(root, `${DATED}1 → in-progress · worker a, b`);
   assert.match(run(root, ['verify']).stdout, /the lease fields of the move do not parse/);
 });
@@ -2241,7 +2245,7 @@ test('verify lists a move whose lease fields do not parse', () => {
 test('verify lists a header that disagrees with the log, in the words the views use', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
-  jarl(root, 'new', 'first');
+  jarl(root, 'new', 'first', '--acceptance', '[read] it works');
   const file = issueFile(root, 1);
   writeFileSync(file, readFileSync(file, 'utf8').replace('**Status:** open', '**Status:** done'));
   const r = run(root, ['verify']);
@@ -2252,7 +2256,7 @@ test('verify lists a header that disagrees with the log, in the words the views 
 test('verify lists an After that names an issue the loop does not hold', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
-  jarl(root, 'new', 'first');
+  jarl(root, 'new', 'first', '--acceptance', '[read] it works');
   const file = issueFile(root, 1);
   writeFileSync(file, readFileSync(file, 'utf8').replace('**Status:** open', '**Status:** open\n**After:** 9'));
   assert.match(run(root, ['verify']).stdout, /issue 1: waits on issue 9 in its After field, which the loop does not hold/);
@@ -2261,7 +2265,7 @@ test('verify lists an After that names an issue the loop does not hold', () => {
 test('verify lists an issue file whose header does not parse, a Resources name that is not a word, and a file that is not an issue', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
-  jarl(root, 'new', 'first');
+  jarl(root, 'new', 'first', '--acceptance', '[read] it works');
   const file = issueFile(root, 1);
   writeFileSync(file, readFileSync(file, 'utf8').replace('**Status:** open', '**Status:** open\n**Resources:** gate, db server'));
   writeFileSync(join(ISSUES(root), '2-broken.md'), '# two broken title\n\n**Status:** open\n');
@@ -2282,8 +2286,8 @@ test('verify lists an id of 1000 or more in a loop whose record format was not r
 
 // Loops for the verify tests below, declared before the first of them so that any one of them runs alone.
 const plain = () => { const root = repo(); jarl(root, 'init', 'goal'); return root; };
-const issued = () => { const root = plain(); jarl(root, 'new', 'first', '--what', 'Does one thing.'); return root; };
-const retracted = (root) => { jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'green'); jarl(root, 'retract', '1', '1', '--by', 'owner', 'the row is wrong'); return root; };
+const issued = () => { const root = plain(); jarl(root, 'new', 'first', '--acceptance', '[read] it works', '--what', 'Does one thing.'); return root; };
+const retracted = (root) => { jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'green'); jarl(root, 'retract', '1', '1', '--by', 'owner', 'the row is wrong'); return root; };
 const withIssueFile = (root, name, text) => { mkdirSync(ISSUES(root), { recursive: true }); writeFileSync(join(ISSUES(root), name), text); return root; };
 const editIssue1 = (root, from, to) => { const f = issueFile(root, 1); writeFileSync(f, readFileSync(f, 'utf8').replace(from, to)); };
 const verifyOn = (root) => run(root, ['verify']);
@@ -2293,8 +2297,8 @@ test('verify lists an open issue that cites a ruling a later one supersedes, and
   jarl(root, 'init', 'goal');
   jarl(root, 'decide', 'rule-a', 'Keep a.', '--by', 'jarl');
   jarl(root, 'decide', 'rule-b', 'Keep b instead.', '--by', 'jarl', '--supersedes', 'rule-a');
-  jarl(root, 'new', 'open one', '--what', 'Obeys rule-a.');
-  jarl(root, 'new', 'other one', '--what', 'Obeys rule-a.');
+  jarl(root, 'new', 'open one', '--acceptance', '[read] it works', '--what', 'Obeys rule-a.');
+  jarl(root, 'new', 'other one', '--acceptance', '[read] it works', '--what', 'Obeys rule-a.');
   jarl(root, 'set', '2', 'dropped', 'not needed');
   const r = run(root, ['verify']);
   assert.equal(r.status, 2);
@@ -2313,7 +2317,7 @@ test('verify prints the findings of the log in file order, a retraction among th
 test('verify prints the findings of a check in full order, twenty at a time, and counts the rest', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
-  jarl(root, 'new', 'first');
+  jarl(root, 'new', 'first', '--acceptance', '[read] it works');
   appendLines(root, ...Array.from({ length: 23 }, (_, k) => `${DATED}1 review nonsense ${k}`));
   const out = run(root, ['verify']).stdout;
   assert.equal((out.match(/reads as a "review" line/g) || []).length, 20);
@@ -2324,7 +2328,7 @@ test('verify prints the findings of a check in full order, twenty at a time, and
 test('verify --json carries the findings, the notes and each check', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
-  jarl(root, 'new', 'first');
+  jarl(root, 'new', 'first', '--acceptance', '[read] it works');
   appendLines(root, `${DATED}1 review nonsense`);
   const out = JSON.parse(run(root, ['verify', '--json']).stdout);
   assert.equal(out.ok, false);
@@ -2336,7 +2340,7 @@ test('verify --json carries the findings, the notes and each check', () => {
 test('verify reads nothing it could write: the loop after it is byte for byte the loop before it, and it takes no lock', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
-  jarl(root, 'new', 'first');
+  jarl(root, 'new', 'first', '--acceptance', '[read] it works');
   appendLines(root, `${DATED}1 review nonsense`);
   const snapshot = (dir) => readdirSync(dir, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1))
     .flatMap((d) => (d.isDirectory() ? snapshot(join(dir, d.name)).map(([f, t]) => [`${d.name}/${f}`, t]) : [[d.name, readFileSync(join(dir, d.name), 'utf8')]]));
@@ -2371,7 +2375,7 @@ function loopWithSibling(name) {
   const parent = realpathSync(mkdtempSync(join(tmpdir(), 'jarl-verify-')));
   const hub = sibling(parent, 'hub');
   jarl(hub, 'init', 'goal');
-  jarl(hub, 'new', 'first');
+  jarl(hub, 'new', 'first', '--acceptance', '[read] it works');
   sibling(parent, name);
   jarl(hub, 'field', '1', 'Repo', name);
   return { parent, hub };
@@ -2518,7 +2522,7 @@ const ANOMALIES = [
   } },
   { name: 'an open issue that cites a superseded ruling', pattern: /cites the ruling rule-a in What, Why or Acceptance, and rule-b supersedes it/, make: (bad) => {
     const root = plain(); jarl(root, 'decide', 'rule-a', 'Keep a.', '--by', 'jarl'); jarl(root, 'decide', 'rule-b', 'Keep b instead.', '--by', 'jarl', '--supersedes', 'rule-a');
-    jarl(root, 'new', 'first', '--what', bad ? 'Obeys rule-a.' : 'Does one thing.'); return root;
+    jarl(root, 'new', 'first', '--acceptance', '[read] it works', '--what', bad ? 'Obeys rule-a.' : 'Does one thing.'); return root;
   } },
 ];
 for (const k of ANOMALIES) {
@@ -2537,7 +2541,7 @@ for (const k of ANOMALIES) {
 test('verify notes a repository whose origin differs from the declared one, and that is a note, not a finding', () => {
   const parent = realpathSync(mkdtempSync(join(tmpdir(), 'jarl-verify-')));
   const hub = sibling(parent, 'hub');
-  jarl(hub, 'init', 'goal'); jarl(hub, 'new', 'first');
+  jarl(hub, 'init', 'goal'); jarl(hub, 'new', 'first', '--acceptance', '[read] it works');
   const sib = sibling(parent, 'Sib');
   gitIn(sib, 'remote', 'add', 'origin', 'https://example.com/a/one.git');
   jarl(hub, 'field', '1', 'Repo', 'Sib');
@@ -2550,7 +2554,7 @@ test('verify notes a repository whose origin differs from the declared one, and 
 test('verify on a repository whose origin is the declared one has no note about origin', () => {
   const parent = realpathSync(mkdtempSync(join(tmpdir(), 'jarl-verify-')));
   const hub = sibling(parent, 'hub');
-  jarl(hub, 'init', 'goal'); jarl(hub, 'new', 'first');
+  jarl(hub, 'init', 'goal'); jarl(hub, 'new', 'first', '--acceptance', '[read] it works');
   const sib = sibling(parent, 'Sib');
   gitIn(sib, 'remote', 'add', 'origin', 'https://example.com/a/one.git');
   jarl(hub, 'field', '1', 'Repo', 'Sib');
@@ -2562,7 +2566,7 @@ test('verify on a repository whose origin is the declared one has no note about 
 test('verify lists a declaration made from a shallow checkout as unverified', () => {
   const parent = realpathSync(mkdtempSync(join(tmpdir(), 'jarl-verify-')));
   const hub = sibling(parent, 'hub');
-  jarl(hub, 'init', 'goal'); jarl(hub, 'new', 'first');
+  jarl(hub, 'init', 'goal'); jarl(hub, 'new', 'first', '--acceptance', '[read] it works');
   const src = sibling(parent, 'Src');
   gitIn(parent, 'clone', '-q', '--depth', '1', `file://${src}`, join(parent, 'Sib'));
   jarl(hub, 'field', '1', 'Repo', 'Sib');
@@ -2621,7 +2625,7 @@ test('goal lines set through the command line read through the frozen reader: th
   assert.match(JSON.stringify(oldJarl(root, 'status', {}).value), /Ship it\./, 'the goal is read');
   assert.match(refuses(root, 'review', '001', 'approve', '--by', 'w-one', FINDINGS), /worker|own/i);
   jarl(root, 'review', '001', 'approve', '--by', 'rev', FINDINGS);
-  jarl(root, 'evidence', '001', '--ran', 'check', '--saw', 'green');
+  assert.equal(oldJarl(root, 'evidence', {}, ['001', null, { ran: 'check', saw: 'green' }]).ok, true);
   assert.deepEqual(oldJarl(root, 'set', {}, ['001', 'done', 'merged', {}]).error ?? null, null, 'done passes');
 });
 
@@ -2633,7 +2637,7 @@ test('new files the first issue in a fresh clone of a committed loop that held n
   const copy = join(mkdtempSync(join(tmpdir(), 'jarl-clone-')), 'clone');
   execFileSync('git', ['clone', '-q', origin.dir, copy], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: SPAWN_TIMEOUT });
   assert.equal(existsSync(join(copy, '.jarl', 'issues')), false, 'git keeps no empty directory, so the clone has none');
-  const filed = JSON.parse(jarl(copy, 'new', 'first issue in the clone', '--json'));
+  const filed = JSON.parse(jarl(copy, 'new', 'first issue in the clone', '--acceptance', '[read] it works', '--json'));
   assert.equal(filed.id, '1');
   assert.equal(JSON.parse(jarl(copy, 'list', '--json')).length, 1);
 });

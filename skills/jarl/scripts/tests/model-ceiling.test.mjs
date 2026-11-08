@@ -30,7 +30,7 @@ function ceilingLoop({ reviewer, models } = {}) {
 }
 const leased = (root, id, model) => {
   jarl(root, 'set', id, 'in-progress', '--worker', `w${id}`, '--model', model);
-  jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'pass 4, fail 0');
+  jarl(root, 'evidence', id, '--line', '1', '--ran', 'npm test', '--saw', 'pass 4, fail 0');
 };
 
 test('the profile names a ceiling and barred models: shown by profile, and a model no Model line places is refused by the check', () => {
@@ -65,7 +65,7 @@ test('init with a profile that names models opens the loop and says the goal pla
 
 test('a lease and a verdict on a model the profile does not allow are recorded, with a note that refuses nothing', () => {
   const root = ceilingLoop({ models: { ceiling: 'm-std', barred: ['m-light2'] } });
-  jarl(root, 'new', 'a change', '--acceptance', 'it works');
+  jarl(root, 'new', 'a change', '--acceptance', '[read] it works');
   const lease = run(root, ['set', '1', 'in-progress', '--worker', 'w1', '--model', 'm-strong']);
   assert.equal(lease.status, 0, lease.stderr);
   assert.match(lease.stderr, /m-strong is above the profile's ceiling \(m-std\) — the record keeps the model as given and Jarl refuses nothing for it/);
@@ -76,7 +76,7 @@ test('a lease and a verdict on a model the profile does not allow are recorded, 
 
 test('the refusal of done says when the reviewer the rule needs is beyond the ceiling, and names the lighter worker', () => {
   const root = ceilingLoop({ reviewer: 'model-rank', models: { ceiling: 'm-std' } });
-  jarl(root, 'new', 'a change', '--acceptance', 'it works');
+  jarl(root, 'new', 'a change', '--acceptance', '[read] it works');
   leased(root, '1', 'm-strong');
   const note = run(root, ['review', '1', 'approve', '--by', 'rev-1', '--model', 'm-std', FOUND]);
   assert.match(note.stderr, /1: m-std ranks below the worker's model \(m-strong\) — a gate in this loop: done refuses this approve, .*; the reviewer the fresh-review rule needs for a worker on m-strong is beyond what the profile allows \(ceiling m-std\): a worker on m-std lets m-std review it/);
@@ -84,13 +84,13 @@ test('the refusal of done says when the reviewer the rule needs is beyond the ce
   assert.match(said, /^1's live approve is by rev-1 on m-std, which ranks below the worker's model \(m-strong\) — this loop's profile asks for a reviewer of a model ranked at least as the worker's \(done-gate "reviewer": "model-rank"\); the reviewer the fresh-review rule needs for a worker on m-strong is beyond what the profile allows \(ceiling m-std\): a worker on m-std lets m-std review it/);
   // Under "other-model", a ceiling that leaves only the worker's own model says no lighter worker makes the review possible.
   const one = ceilingLoop({ reviewer: 'other-model', models: { ceiling: 'm-light', barred: ['m-light2'] } });
-  jarl(one, 'new', 'a change', '--acceptance', 'it works');
+  jarl(one, 'new', 'a change', '--acceptance', '[read] it works');
   leased(one, '1', 'm-light');
   run(one, ['review', '1', 'approve', '--by', 'rev-1', '--model', 'm-light', FOUND]);
   assert.match(refuses(one, 'set', '1', 'done', 'approved', '--by', 'jarl'), /the model of its worker — .*; the reviewer the fresh-review rule needs for a worker on m-light is beyond what the profile allows \(ceiling m-light, barred m-light2\), and no lighter worker makes the review possible: the profile allows only m-light, and its models are the owner's to change/);
   // Where a model the profile allows meets the rule, the refusal is as it is without the key.
   const room = ceilingLoop({ reviewer: 'model-rank', models: { ceiling: 'm-strong' } });
-  jarl(room, 'new', 'a change', '--acceptance', 'it works');
+  jarl(room, 'new', 'a change', '--acceptance', '[read] it works');
   leased(room, '1', 'm-strong');
   run(room, ['review', '1', 'approve', '--by', 'rev-1', '--model', 'm-std', FOUND]);
   assert.doesNotMatch(refuses(room, 'set', '1', 'done', 'approved', '--by', 'jarl'), /beyond what the profile allows/);
@@ -98,9 +98,9 @@ test('the refusal of done says when the reviewer the rule needs is beyond the ce
 
 test('next shows the model the profile allows for each tier, and the lighter worker where the review would be beyond it', () => {
   const root = ceilingLoop({ models: { ceiling: 'm-std' } });
-  jarl(root, 'new', 'hard', '--tier', 'strong', '--acceptance', 'it works');
-  jarl(root, 'new', 'ordinary', '--tier', 'standard', '--acceptance', 'it works');
-  jarl(root, 'new', 'small', '--tier', 'light', '--acceptance', 'it works');
+  jarl(root, 'new', 'hard', '--tier', 'strong', '--acceptance', '[read] it works');
+  jarl(root, 'new', 'ordinary', '--tier', 'standard', '--acceptance', '[read] it works');
+  jarl(root, 'new', 'small', '--tier', 'light', '--acceptance', '[read] it works');
   const next = jarl(root, 'next');
   assert.match(next, /^1 {2}P2 {2}hard {2}\(no files declared\) {2}\[model m-std \(in place of m-strong, above the profile's ceiling \(m-std\)\) — the reviewer the fresh-review rule needs for a worker on m-std is beyond what the profile allows \(ceiling m-std\): a worker on m-light lets m-std review it\]$/m);
   assert.match(next, /^2 {2}P2 {2}ordinary {2}\(no files declared\) {2}\[model m-std — the reviewer the fresh-review rule needs for a worker on m-std is beyond what the profile allows \(ceiling m-std\): a worker on m-light lets m-std review it\]$/m);
@@ -110,7 +110,7 @@ test('next shows the model the profile allows for each tier, and the lighter wor
   assert.match(jarl(root, 'next'), /^2 {2}P2 {2}ordinary {2}\(no files declared\) {2}\[model m-std\]$/m);
   // Without the key, next shows the tier's default and nothing more.
   const plain = ceilingLoop();
-  jarl(plain, 'new', 'hard', '--tier', 'strong', '--acceptance', 'it works');
+  jarl(plain, 'new', 'hard', '--tier', 'strong', '--acceptance', '[read] it works');
   assert.match(jarl(plain, 'next'), /^1 {2}P2 {2}hard {2}\(no files declared\) {2}\[model m-strong\]$/m);
   assert.equal(JSON.parse(jarl(plain, 'profile', '--json')).models, undefined);
 });
@@ -119,7 +119,7 @@ test('next shows the model the profile allows for each tier, and the lighter wor
 // issue leased on `worker` and approved on `reviewer`.
 function seen(profile, worker, reviewer) {
   const root = ceilingLoop(profile);
-  jarl(root, 'new', 'hard', '--tier', 'strong', '--acceptance', 'it works');
+  jarl(root, 'new', 'hard', '--tier', 'strong', '--acceptance', '[read] it works');
   const next = jarl(root, 'next');
   leased(root, '1', worker);
   const note = run(root, ['review', '1', 'approve', '--by', 'rev-1', '--model', reviewer, FOUND]).stderr;
@@ -150,7 +150,7 @@ test('where the profile bars the model the rule needs, each rule says so and nam
   assert.match(barred.note, /m-light ranks below the worker's model \(m-std\) — advice, not a gate: .*; the reviewer the fresh-review rule needs for a worker on m-std is beyond what the profile allows \(barred m-strong\): a worker on m-light lets m-std review it/);
   // Under "other-model", where every model the profile allows held the lease, a lighter worker frees the strongest to review.
   const other = ceilingLoop({ reviewer: 'other-model', models: { barred: ['m-light2', 'm-strong'] } });
-  jarl(other, 'new', 'hard', '--tier', 'strong', '--acceptance', 'it works');
+  jarl(other, 'new', 'hard', '--tier', 'strong', '--acceptance', '[read] it works');
   leased(other, '1', 'm-light');
   jarl(other, 'set', '1', 'in-progress', 'taken over after two red rounds', '--worker', 'w2', '--model', 'm-std', '--handover');
   run(other, ['review', '1', 'approve', '--by', 'rev-1', '--model', 'm-std', FOUND]);
@@ -175,21 +175,21 @@ test('verify reports a model the profile names that no Model line places, as pro
 
 test('the takeover offers no tier above the profile\'s ceiling', () => {
   const root = ceilingLoop({ models: { ceiling: 'm-std' } });
-  jarl(root, 'new', 'ordinary', '--tier', 'standard', '--acceptance', 'it works');
+  jarl(root, 'new', 'ordinary', '--tier', 'standard', '--acceptance', '[read] it works');
   jarl(root, 'set', '1', 'in-progress', '--worker', 'w1', '--model', 'm-std');
   for (const n of [1, 2]) jarl(root, 'round', '1', `red ${n}`);
   const block = jarl(root, 'round', '1', 'red 3');
   assert.match(block, /the profile's ceiling \(m-std\) allows no tier above standard, so put it on a model other than m-std that the profile allows, or change the approach/);
   assert.doesNotMatch(block, /one tier up/);
   const light = ceilingLoop({ models: { ceiling: 'm-std' } });
-  jarl(light, 'new', 'small', '--tier', 'light', '--acceptance', 'it works');
+  jarl(light, 'new', 'small', '--tier', 'light', '--acceptance', '[read] it works');
   jarl(light, 'set', '1', 'in-progress', '--worker', 'w1', '--model', 'm-light');
   for (const n of [1, 2]) jarl(light, 'round', '1', `red ${n}`);
   assert.match(jarl(light, 'round', '1', 'red 3'), /raise it one tier up from light \(to standard\)/);
   // From the top tier, a ceiling below it is named; a ceiling at the top tier limits nothing.
   for (const [ceiling, said] of [['m-std', /the profile's ceiling \(m-std\) allows no tier above standard, so put it on a model other than m-strong that the profile allows/], ['m-strong', /strong is the top tier \(strong\), so put it on a model other than m-strong,/]]) {
     const top = ceilingLoop({ models: { ceiling } });
-    jarl(top, 'new', 'hard', '--tier', 'strong', '--acceptance', 'it works');
+    jarl(top, 'new', 'hard', '--tier', 'strong', '--acceptance', '[read] it works');
     jarl(top, 'set', '1', 'in-progress', '--worker', 'w1', '--model', 'm-strong');
     for (const n of [1, 2]) jarl(top, 'round', '1', `red ${n}`);
     assert.match(jarl(top, 'round', '1', 'red 3'), said);

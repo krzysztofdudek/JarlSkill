@@ -202,7 +202,7 @@ test('the review command writes each accepted value as given into the verdict li
   const root = makeLoop({ prefix: 'jarl-artifact-rule-', via: 'cli' });
   const id = fileAsBefore(root, 'a page change', { acceptance: 'the page renders' });
   jarl(root, 'set', id, 'in-progress', '--worker', 'w1');
-  jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'pass 3, fail 0');
+  jarl(root, 'evidence', id, '--line', '1', '--ran', 'npm test', '--saw', 'pass 3, fail 0');
   // Every file of the loop, by its path, with what it holds.
   const state = () => Object.fromEntries(readdirSync(join(root, '.jarl'), { recursive: true }).map(String).sort()
     .filter((f) => statSync(join(root, '.jarl', f)).isFile()).map((f) => [f, readFileSync(join(root, '.jarl', f), 'utf8')]));

@@ -9,19 +9,20 @@ import { jarl, spawnJarl, loop as makeLoop } from './helpers.mjs';
 const json = (root, ...args) => JSON.parse(jarl(root, ...args, '--json'));
 const loop = (n) => {
   const root = makeLoop({ prefix: 'jarl-closed-gate-', via: 'cli' });
-  for (let k = 1; k <= n; k += 1) jarl(root, 'new', `issue ${k}`, '--acceptance', 'it works');
+  for (let k = 1; k <= n; k += 1) jarl(root, 'new', `issue ${k}`, '--acceptance', '[read] it works');
   return root;
 };
-const row = (root, id) => jarl(root, 'evidence', String(id), '--ran', 'npm test', '--saw', 'pass');
+const row = (root, id) => jarl(root, 'evidence', String(id), '--line', '1', '--ran', 'npm test', '--saw', 'pass');
 const every = (root) => [jarl(root, 'status'), jarl(root, 'report'), jarl(root, 'resume')];
 const flagsOf = (root) => ({ status: json(root, 'status').closedGate, report: json(root, 'report').closedGate, resume: json(root, 'resume').status.closedGate });
 const files = (root) => Object.fromEntries(readdirSync(join(root, '.jarl'), { recursive: true }).filter((f) => /\.md$/.test(f)).map((f) => [f, readFileSync(join(root, '.jarl', f), 'utf8')]));
 
 test('a done issue whose approve and proof row were retracted is flagged by every view, with the command that repairs each', () => {
   const root = loop(1);
+  jarl(root, 'field', '1', 'Acceptance', '[test] it works');
   jarl(root, 'set', '1', 'in-progress', '--worker', 'w1');
   jarl(root, 'review', '1', 'approve', '--by', 'jarl', 'read the diff, nothing found');
-  row(root, 1);
+  for (const by of ['w1', 'rev']) jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'pass', '--by', by);
   jarl(root, 'set', '1', 'done');
   jarl(root, 'merged', '1', '--sha', 'abc1234');
   jarl(root, 'retract', '1', 'review', '--by', 'jarl', 'wrong diff was read');
@@ -30,7 +31,7 @@ test('a done issue whose approve and proof row were retracted is flagged by ever
     const lines = text.split('\n').filter((l) => !l.startsWith('#') && /\b1\b/.test(l) && /(^|\s)gate/.test(l));
     assert.equal(lines.length, 1, text);
     assert.match(lines[0], /approve was retracted/);
-    assert.match(lines[0], /proof row was retracted/);
+    assert.match(lines[0], /acceptance line 1 \[test\] unproved/);
     assert.match(lines[0], /review 1 approve/);
     assert.match(lines[0], /evidence 1 --ran/);
   }

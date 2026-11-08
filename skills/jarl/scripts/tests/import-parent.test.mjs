@@ -11,7 +11,7 @@ import { BAD, SOURCE, composed, findingsFile, good, imports, json, loop, refused
 
 test('--parent files every issue the import files under that parent, and moves nothing filed before', () => {
   const root = loop();
-  jarl(root, 'new', 'the parent', '--acceptance', 'all of them are fixed');
+  jarl(root, 'new', 'the parent', '--acceptance', '[read] all of them are fixed');
   const file = findingsFile([good(1), good(2), good(3)]);
   const out = JSON.parse(imports(root, file, '--parent', '1', '--json'));
   assert.deepEqual(out.filed.map((f) => f.id), ['2', '3', '4']);
@@ -30,7 +30,7 @@ test('--parent files every issue the import files under that parent, and moves n
 
 test('the library\'s import refuses an empty by with --parent before it files anything', () => {
   const root = loop();
-  jarl(root, 'new', 'the parent', '--acceptance', 'all of them are fixed');
+  jarl(root, 'new', 'the parent', '--acceptance', '[read] all of them are fixed');
   const before = snapshot(root);
   assert.throws(() => L.cmdImport(root, findingsFile([good(1), good(2)]), { source: SOURCE, parent: '1', by: '' }), /--by needs a name/);
   assert.deepEqual(snapshot(root), before, 'nothing was filed');
@@ -38,7 +38,7 @@ test('the library\'s import refuses an empty by with --parent before it files an
 
 test('--parent shows in the text of the import and in a dry run, which writes nothing', () => {
   const root = loop();
-  jarl(root, 'new', 'the parent');
+  jarl(root, 'new', 'the parent', '--acceptance', '[read] it works');
   const before = readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
   assert.match(imports(root, findingsFile([good(1)]), '--parent', '1', '--dry-run'), /^ext\/2026-11-06-atomic: 1 finding\(s\) · would file 1 · already filed 0 · under 1$/m);
   assert.equal(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), before);
@@ -48,8 +48,8 @@ test('--parent shows in the text of the import and in a dry run, which writes no
 
 test('--parent is refused, with nothing written, for a parent the loop does not hold, a finished one, or a word that is no number', () => {
   const root = loop();
-  jarl(root, 'new', 'the parent');
-  jarl(root, 'new', 'a dropped one');
+  jarl(root, 'new', 'the parent', '--acceptance', '[read] it works');
+  jarl(root, 'new', 'a dropped one', '--acceptance', '[read] it works');
   jarl(root, 'set', '2', 'dropped', 'not wanted');
   const file = findingsFile([good(1)]);
   assert.match(refusedImport(root, file, '--parent', '99'), /no such issue: 99[^\n]*\njarl\.mjs import "<findings\.json>" --source "?[^ \n]+"? --parent "<id>"\n$/);
@@ -60,7 +60,7 @@ test('--parent is refused, with nothing written, for a parent the loop does not 
 
 test('--parent with a finding the filing refuses files nothing, and the parent keeps no sub-issue', () => {
   const root = loop();
-  jarl(root, 'new', 'the parent');
+  jarl(root, 'new', 'the parent', '--acceptance', '[read] it works');
   refusedImport(root, findingsFile([good(1), BAD]), '--parent', '1');
   assert.equal(json(root, 'list', '--all').length, 1);
 });
@@ -75,7 +75,7 @@ test('--parent is refused where the profile declares a field Parent of its own, 
   // A loop already open keeps a field of that name; a new loop is refused it, so the profile is written into the open loop.
   const root = loop();
   writeFileSync(join(root, '.jarl', 'profile.json'), JSON.stringify({ 'jarl-profile': 1, name: 'own', statuses: BUILTIN_STATUSES, fields: { Parent: {} } }));
-  jarl(root, 'new', 'the parent');
+  jarl(root, 'new', 'the parent', '--acceptance', '[read] it works');
   const said = refusedImport(root, findingsFile([good(1)]), '--parent', '1');
   assert.match(said, /--parent files the Parent the tool keeps, and this loop's profile declares a field Parent of its own/);
   assert.match(said, /\njarl\.mjs import .* --field "<name=value>"\n$/);

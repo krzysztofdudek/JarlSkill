@@ -24,7 +24,7 @@ test('a loop whose files came back with CRLF (a Windows checkout with core.autoc
   const root = mkdtempSync(join(tmpdir(), 'jarl-crlf-loop-'));
   mkdirSync(join(root, '.git'));
   assert.equal(run(root, 'init', 'goal').status, 0);
-  assert.equal(run(root, 'new', 'a thing', '--files', 'a.mjs', '--acceptance', 'it works').status, 0);
+  assert.equal(run(root, 'new', 'a thing', '--files', 'a.mjs', '--acceptance', '[read] it works').status, 0);
   const dir = join(root, '.jarl', 'issues');
   const crlf = (f) => writeFileSync(f, readFileSync(f, 'utf8').replace(/\n/g, '\r\n'));
   for (const f of readdirSync(dir)) crlf(join(dir, f));
@@ -34,10 +34,10 @@ test('a loop whose files came back with CRLF (a Windows checkout with core.autoc
   assert.equal(shown.status, 'open');
   assert.deepEqual(shown.fields.files, 'a.mjs');
   assert.equal(run(root, 'set', '1', 'in-progress', 'go').status, 0);
-  assert.equal(run(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'pass').status, 0);
+  assert.equal(run(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'pass').status, 0);
   const again = JSON.parse(run(root, 'show', '1', '--json').stdout);
   assert.equal(again.status, 'in-progress');
-  assert.match(readFileSync(join(dir, readdirSync(dir)[0]), 'utf8'), /\*\*ran:\*\* npm test/);
+  assert.match(readFileSync(join(dir, readdirSync(dir)[0]), 'utf8'), /\*\*ran(?: \(line [0-9a-f, ]+\))?:\*\* npm test/);
   assert.match(run(root, 'status').stdout, /in flight 1/);
 });
 

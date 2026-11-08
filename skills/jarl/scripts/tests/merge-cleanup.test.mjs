@@ -35,7 +35,7 @@ function fixture({ merge = true, issues = 1, worktree = true } = {}) {
   git(repo, 'add', '-A');
   git(repo, 'commit', '-qm', 'base');
   jarl(repo, 'init', 'goal');
-  for (let k = 1; k <= issues; k += 1) jarl(repo, 'new', `issue ${k}`, '--acceptance', 'it works');
+  for (let k = 1; k <= issues; k += 1) jarl(repo, 'new', `issue ${k}`, '--acceptance', '[read] it works');
   const wt = join(parent, 'wt-1');
   if (worktree) git(repo, 'worktree', 'add', '-q', '-b', 'jarl/1-x', wt);
   else git(repo, 'branch', 'jarl/1-x');
@@ -274,7 +274,7 @@ test('a loop that lives inside the issue\'s worktree keeps it', () => {
   const inner = join(wt, 'loop');
   mkdirSync(inner);
   jarl(inner, 'init', 'inner goal');
-  jarl(inner, 'new', 'inner issue', '--acceptance', 'it works');
+  jarl(inner, 'new', 'inner issue', '--acceptance', '[read] it works');
   jarl(inner, 'set', '1', 'in-progress', 'start', '--branch', 'jarl/1-x', '--worker', 'w-one', '--worktree', wt);
   const out = jarl(inner, 'merged', '1', '--sha', sha, '--repo', repo);
   assert.match(out, /\nkept jarl\/1-x — the loop or this command lives in its worktree$/);
@@ -316,6 +316,6 @@ test('an issue with no recorded Branch is left alone, and a CI-only call cleans 
   jarl(repo, 'merged', '1', '--sha', sha, '--keep');
   assert.equal(jarl(repo, 'merged', '1', '--ci', 'green'), '1 merge · CI green');
   assert.equal(existsSync(wt), true);
-  jarl(repo, 'new', 'no branch', '--acceptance', 'it works');
+  jarl(repo, 'new', 'no branch', '--acceptance', '[read] it works');
   assert.equal(jarl(repo, 'merged', '2', '--sha', sha), `2 merged ${sha}`);
 });

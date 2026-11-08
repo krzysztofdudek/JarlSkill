@@ -132,7 +132,7 @@ function composed(extra = {}) {
   const file = join(mkdtempSync(join(tmpdir(), 'jarl-format-profile-')), 'profile.json');
   writeFileSync(file, JSON.stringify({ ...COMPOSED, ...extra }, null, 2));
   jarl(dir, 'init', 'a composed goal', '--profile', file);
-  R.newIssue(dir, 'first issue', { acceptance: 'it works' });
+  R.newIssue(dir, 'first issue', { acceptance: '[read] it works' });
   return dir;
 }
 

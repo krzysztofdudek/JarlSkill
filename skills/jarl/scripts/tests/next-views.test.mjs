@@ -20,11 +20,11 @@ const loop = () => makeLoop({ prefix: 'jarl-views-', via: 'cli', dotGit: false }
 
 function groupedLoop() {
   const root = loop();
-  jarl(root, 'new', 'running', '--files', 'a.mjs');          // 1, in progress, holds a.mjs
-  jarl(root, 'new', 'blocked by file', '--files', 'a.mjs');  // 2
-  jarl(root, 'new', 'ready one', '--files', 'b.mjs');        // 3
-  jarl(root, 'new', 'after the running one', '--files', 'c.mjs', '--after', '1'); // 4
-  jarl(root, 'new', 'asked about', '--files', 'd.mjs');      // 5
+  jarl(root, 'new', 'running', '--acceptance', '[read] it works', '--files', 'a.mjs');          // 1, in progress, holds a.mjs
+  jarl(root, 'new', 'blocked by file', '--acceptance', '[read] it works', '--files', 'a.mjs');  // 2
+  jarl(root, 'new', 'ready one', '--acceptance', '[read] it works', '--files', 'b.mjs');        // 3
+  jarl(root, 'new', 'after the running one', '--acceptance', '[read] it works', '--files', 'c.mjs', '--after', '1'); // 4
+  jarl(root, 'new', 'asked about', '--acceptance', '[read] it works', '--files', 'd.mjs');      // 5
   jarl(root, 'new', 'no files at all');                      // 6
   jarl(root, 'set', '1', 'in-progress', 'go', '--worker', 'w1');
   jarl(root, 'ask', 'which way?', '--kind', 'stuck', '--issue', '5');
@@ -60,7 +60,7 @@ test('next lists only the issues ready to start; --all adds the groups with head
 
 test('next says so when nothing is ready but something is held, and an answered question releases its issue', () => {
   const root = loop();
-  jarl(root, 'new', 'asked', '--files', 'a.mjs');
+  jarl(root, 'new', 'asked', '--acceptance', '[read] it works', '--files', 'a.mjs');
   jarl(root, 'ask', 'which?', '--kind', 'stop', '--issue', '1');
   assert.match(jarl(root, 'next'), /nothing is ready to start.*next --all/);
   jarl(root, 'answer', '1', 'this one', '--by', 'owner');
@@ -71,10 +71,10 @@ test('next says so when nothing is ready but something is held, and an answered 
 
 test('in-flight rows carry one derived fact, in status and resume, text and json; set ready names the view', () => {
   const root = loop();
-  for (const t of ['no rows', 'rows only', 'asked for changes', 'approved']) jarl(root, 'new', t, '--files', `${t.replace(/ /g, '-')}.mjs`);
-  jarl(root, 'new', 'waits', '--after', '1');
+  for (const t of ['no rows', 'rows only', 'asked for changes', 'approved']) jarl(root, 'new', t, '--acceptance', '[read] it works', '--files', `${t.replace(/ /g, '-')}.mjs`);
+  jarl(root, 'new', 'waits', '--acceptance', '[read] it works', '--after', '1');
   for (const id of ['1', '2', '3', '4', '5']) jarl(root, 'set', id, 'in-progress', 'go', '--worker', `w${id}`, '--branch', `jarl/${id}`);
-  for (const id of ['2', '3', '4']) jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'green');
+  for (const id of ['2', '3', '4']) jarl(root, 'evidence', id, '--line', '1', '--ran', 'npm test', '--saw', 'green');
   jarl(root, 'review', '3', 'changes', '--by', 'rev', 'Important: the edge case of an empty list is not handled');
   jarl(root, 'review', '4', 'approve', '--by', 'rev', FINDINGS);
   const st = JSON.parse(jarl(root, 'status', '--json'));
@@ -101,13 +101,13 @@ test('in-flight rows carry one derived fact, in status and resume, text and json
 
 test('a coordinator\'s approve on an issue that carries code is not "approved and queued"; a merged issue says what is left', () => {
   const root = loop();
-  jarl(root, 'new', 'code issue', '--files', 'a.mjs');
-  jarl(root, 'new', 'merged issue', '--files', 'b.mjs');
-  jarl(root, 'new', 'plain issue', '--files', 'c.mjs');
+  jarl(root, 'new', 'code issue', '--acceptance', '[read] it works', '--files', 'a.mjs');
+  jarl(root, 'new', 'merged issue', '--acceptance', '[read] it works', '--files', 'b.mjs');
+  jarl(root, 'new', 'plain issue', '--acceptance', '[read] it works', '--files', 'c.mjs');
   jarl(root, 'set', '1', 'in-progress', 'go', '--worker', 'w1', '--branch', 'jarl/1');
   jarl(root, 'set', '2', 'in-progress', 'go', '--worker', 'w2', '--branch', 'jarl/2');
   jarl(root, 'set', '3', 'in-progress', 'go', '--worker', 'w3');
-  for (const id of ['1', '2', '3']) jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'green');
+  for (const id of ['1', '2', '3']) jarl(root, 'evidence', id, '--line', '1', '--ran', 'npm test', '--saw', 'green');
   jarl(root, 'review', '1', 'approve', '--by', 'jarl', FINDINGS);
   jarl(root, 'review', '2', 'approve', '--by', 'rev', FINDINGS);
   jarl(root, 'merged', '2', '--sha', 'abc1234', '--ci', 'pending');
@@ -122,12 +122,12 @@ test('a coordinator\'s approve on an issue that carries code is not "approved an
 
 test('an approved issue that carries no code is not "queued for the merge": the merge queue lists nothing for it, and the view says so', () => {
   const root = loop();
-  jarl(root, 'new', 'plain issue', '--files', 'a.md');
-  jarl(root, 'new', 'code issue', '--files', 'b.mjs');
+  jarl(root, 'new', 'plain issue', '--acceptance', '[read] it works', '--files', 'a.md');
+  jarl(root, 'new', 'code issue', '--acceptance', '[read] it works', '--files', 'b.mjs');
   jarl(root, 'set', '1', 'in-progress', 'go', '--worker', 'w1');
   jarl(root, 'set', '2', 'in-progress', 'go', '--worker', 'w2', '--branch', 'jarl/2');
   for (const id of ['1', '2']) {
-    jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'green');
+    jarl(root, 'evidence', id, '--line', '1', '--ran', 'npm test', '--saw', 'green');
     jarl(root, 'review', id, 'approve', '--by', 'rev', FINDINGS);
   }
   const status = JSON.parse(jarl(root, 'status', '--json'));
@@ -143,13 +143,14 @@ test('an approved issue that carries no code is not "queued for the merge": the 
 
 test('status --tag scopes every section to the issues carrying the tag', () => {
   const root = loop();
-  jarl(root, 'new', 'alpha one', '--tags', 'alpha', '--files', 'a.mjs');
-  jarl(root, 'new', 'alpha two', '--tags', 'alpha', '--files', 'b.mjs', '--after', '1');
-  jarl(root, 'new', 'beta one', '--tags', 'beta', '--files', 'c.mjs');
-  jarl(root, 'new', 'beta two', '--tags', 'beta', '--files', 'd.mjs');
+  jarl(root, 'new', 'alpha one', '--acceptance', '[read] it works', '--tags', 'alpha', '--files', 'a.mjs');
+  jarl(root, 'new', 'alpha two', '--acceptance', '[read] it works', '--tags', 'alpha', '--files', 'b.mjs', '--after', '1');
+  jarl(root, 'new', 'beta one', '--acceptance', '[read] it works', '--tags', 'beta', '--files', 'c.mjs');
+  jarl(root, 'new', 'beta two', '--acceptance', '[read] it works', '--tags', 'beta', '--files', 'd.mjs');
   jarl(root, 'set', '1', 'in-progress', 'go', '--worker', 'w1', '--branch', 'jarl/1');
   jarl(root, 'set', '3', 'in-progress', 'go', '--worker', 'w3', '--branch', 'jarl/3');
   jarl(root, 'ask', 'which?', '--kind', 'stuck', '--issue', '4');
+  jarl(root, 'field', '1', 'Acceptance', '--clear'); jarl(root, 'field', '3', 'Acceptance', '--clear');
   const a = JSON.parse(jarl(root, 'status', '--tag', 'alpha', '--json'));
   const b = JSON.parse(jarl(root, 'status', '--tag', 'beta', '--json'));
   assert.deepEqual([a.open, a['in-progress']], [1, 1]);
@@ -179,10 +180,10 @@ test('status --tag scopes the stale leases and the merges waiting on CI too', ()
   writeFileSync(join(dir, 'a.mjs'), '1\n');
   git('add', '-A'); git('commit', '-qm', 'base');
   jarl(dir, 'init', 'goal');
-  jarl(dir, 'new', 'alpha running', '--tags', 'alpha');   // 1: its branch does not exist
-  jarl(dir, 'new', 'beta running', '--tags', 'beta');     // 2: nor does this one
-  jarl(dir, 'new', 'alpha merged', '--tags', 'alpha');    // 3
-  jarl(dir, 'new', 'beta merged', '--tags', 'beta');      // 4
+  jarl(dir, 'new', 'alpha running', '--acceptance', '[read] it works', '--tags', 'alpha');   // 1: its branch does not exist
+  jarl(dir, 'new', 'beta running', '--acceptance', '[read] it works', '--tags', 'beta');     // 2: nor does this one
+  jarl(dir, 'new', 'alpha merged', '--acceptance', '[read] it works', '--tags', 'alpha');    // 3
+  jarl(dir, 'new', 'beta merged', '--acceptance', '[read] it works', '--tags', 'beta');      // 4
   jarl(dir, 'set', '1', 'in-progress', 'go', '--worker', 'w1', '--branch', 'gone-alpha');
   jarl(dir, 'set', '2', 'in-progress', 'go', '--worker', 'w2', '--branch', 'gone-beta');
   jarl(dir, 'merged', '3', '--sha', 'abc1234', '--ci', 'pending');
@@ -213,10 +214,10 @@ function twoRepos() {
 
 test('a resource is held by an issue in progress; next never offers two issues that declare one, across repositories', () => {
   const hub = twoRepos();
-  jarl(hub, 'new', 'heavy run in tool', '--repo', './tool', '--files', 'tool/a.mjs');           // 1
-  jarl(hub, 'new', 'heavy run in lib', '--repo', './lib', '--files', 'lib/b.mjs');              // 2
-  jarl(hub, 'new', 'light work', '--repo', './lib', '--files', 'lib/c.mjs');                    // 3
-  jarl(hub, 'new', 'third heavy run', '--repo', './tool', '--files', 'tool/d.mjs');             // 4
+  jarl(hub, 'new', 'heavy run in tool', '--acceptance', '[read] it works', '--repo', './tool', '--files', 'tool/a.mjs');           // 1
+  jarl(hub, 'new', 'heavy run in lib', '--acceptance', '[read] it works', '--repo', './lib', '--files', 'lib/b.mjs');              // 2
+  jarl(hub, 'new', 'light work', '--acceptance', '[read] it works', '--repo', './lib', '--files', 'lib/c.mjs');                    // 3
+  jarl(hub, 'new', 'third heavy run', '--acceptance', '[read] it works', '--repo', './tool', '--files', 'tool/d.mjs');             // 4
   jarl(hub, 'field', '1', 'Resources', 'gate, Database');
   jarl(hub, 'field', '2', 'Resources', 'DataBase');
   jarl(hub, 'field', '4', 'Resources', 'gate');
@@ -243,7 +244,7 @@ test('an issue that declares a resource passes check on its real files; check, t
   writeFileSync(join(dir, 'a.mjs'), '1\n');
   git('add', '-A'); git('commit', '-qm', 'base');
   jarl(dir, 'init', 'goal');
-  jarl(dir, 'new', 'work', '--files', 'a.mjs');
+  jarl(dir, 'new', 'work', '--acceptance', '[read] it works', '--files', 'a.mjs');
   jarl(dir, 'field', '1', 'Resources', 'gate');
   jarl(dir, 'set', '1', 'in-progress', 'go', '--worker', 'w', '--branch', 'work');
   git('checkout', '-q', '-b', 'work');
@@ -279,6 +280,6 @@ test('Resources is a field the tool writes itself: a profile that declares a fie
   const hub = mkdtempSync(join(tmpdir(), 'jarl-res-hub-'));
   assert.match(refuses(hub, 'init', 'goal', '--profile', file), /field "Resources" is one the tool writes itself — a profile cannot declare it; rename the field in the profile, because the tool writes Resources itself/);
   jarl(hub, 'init', 'goal');
-  assert.match(jarl(hub, 'new', 'a', '--files', 'a.mjs'), /1/);
+  assert.match(jarl(hub, 'new', 'a', '--acceptance', '[read] it works', '--files', 'a.mjs'), /1/);
   assert.match(jarl(hub, 'field', '1', 'Resources', 'shared'), /1 Resources: shared/, 'the name has one meaning: the exclusive resources');
 });

@@ -15,10 +15,10 @@ const logOf = (root) => readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
 function loopWithSlips() {
   const root = loop();
   jarl(root, 'goal', '--set', 'Coordinators: odin');
-  for (const t of ['one', 'two']) jarl(root, 'new', t, '--acceptance', `${t} is done`);
+  for (const t of ['one', 'two']) jarl(root, 'new', t, '--acceptance', `[read] ${t} is done`);
   for (const id of ['1', '2']) {
     jarl(root, 'set', id, 'in-progress', 'start', '--worker', `w${id}`, '--by', 'jarl');
-    jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'ok');
+    jarl(root, 'evidence', id, '--line', '1', '--ran', 'npm test', '--saw', 'ok');
     jarl(root, 'review', id, 'approve', 'read the change and the test, both fine', '--by', 'rev-a');
   }
   jarl(root, 'set', '1', 'done', 'proved and approved', '--by', 'jarl');
@@ -56,11 +56,11 @@ test('a refused reopen or retraction writes nothing and is not counted', () => {
 
 test('a reopen or a retraction whose call named nobody is counted as unnamed, and a loop with neither says none', () => {
   const root = loop();
-  jarl(root, 'new', 'one', '--acceptance', 'one is done');
+  jarl(root, 'new', 'one', '--acceptance', '[read] one is done');
   assert.match(jarl(root, 'report', '--metrics'), /^reopened after done, per writer: none$/m);
   assert.match(jarl(root, 'report', '--metrics'), /^retracted, per writer: none$/m);
   jarl(root, 'set', '1', 'in-progress', 'start', '--worker', 'w1');
-  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'ok');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'ok');
   jarl(root, 'review', '1', 'approve', 'read the change and the test, both fine', '--by', 'rev-a');
   jarl(root, 'set', '1', 'done', 'proved and approved');
   jarl(root, 'set', '1', 'open', 'a case was missed');

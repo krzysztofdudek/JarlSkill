@@ -35,15 +35,15 @@ test('a named write puts its writer after the stamp of every line it writes, and
   assert.match(logOf(root), new RegExp(`^- ${STAMP} · nobody named$`, 'm'), 'an unnamed write names no writer');
   jarl(root, 'set', '1', 'in-progress', 'go', '--worker', 'w1', '--branch', 'jarl/1', '--by', 'odin');
   assert.equal(formatOf(root), 3);
-  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'green', '--by', 'w1');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'green', '--by', 'w1');
   jarl(root, 'round', '1', 'the empty case fails', '--by', 'odin');
   jarl(root, 'merged', '1', '--sha', 'abc1234', '--ci', 'green', '--by', 'the merger');
   jarl(root, 'ask', 'which way?', '--issue', '1', '--by', 'odin');
   jarl(root, 'goal', '--set', 'Coordinators: odin', '--by', 'the jarl');
-  jarl(root, 'new', 'two', '--files', 'b.mjs', '--by', 'odin');
+  jarl(root, 'new', 'two', '--acceptance', '[read] it works', '--files', 'b.mjs', '--by', 'odin');
   jarl(root, 'log', 'a named note', '--by', 'odin');
   const log = logOf(root);
-  for (const [who, line] of [['odin', '1 → in-progress · go · branch jarl/1 · worker w1'], ['w1', '1 evidence row · npm test'], ['odin', '1 round 1 (count 1 of 3) · '], ['the merger', '1 merged abc1234'], ['odin', 'asked a-1 (stuck) · which way?'], ['the jarl', 'goal line added · Coordinators: odin'], ['odin', 'filed 2 · two'], ['odin', 'a named note']]) {
+  for (const [who, line] of [['odin', '1 → in-progress · go · branch jarl/1 · worker w1'], ['w1', '1 evidence row'], ['odin', '1 round 1 (count 1 of 3) · '], ['the merger', '1 merged abc1234'], ['odin', 'asked a-1 (stuck) · which way?'], ['the jarl', 'goal line added · Coordinators: odin'], ['odin', 'filed 2 · two'], ['odin', 'a named note']]) {
     assert.match(log, new RegExp(`^- ${STAMP}(?: key \\S+)? by ${who} · ${line.replace(/[.*+?()[\]|\\]/g, '\\$&')}`, 'm'), line);
   }
   // The reader places every line, writer and all, and the views read the moves as before.
@@ -66,8 +66,8 @@ test('a note cannot pose as a writer, and a writer is one name', () => {
 
 test('a lease shows who wrote it, and an unnamed one shows as unnamed where the goal names coordinators', () => {
   const root = loop();
-  jarl(root, 'new', 'one', '--files', 'a.mjs');
-  jarl(root, 'new', 'two', '--files', 'b.mjs');
+  jarl(root, 'new', 'one', '--acceptance', '[read] it works', '--files', 'a.mjs');
+  jarl(root, 'new', 'two', '--acceptance', '[read] it works', '--files', 'b.mjs');
   jarl(root, 'set', '1', 'in-progress', 'go', '--worker', 'w1', '--branch', 'jarl/1');
   assert.equal(json(root, 'status').inFlightRows[0].leasedBy, undefined, 'no coordinators: an unnamed write is the jarl\'s, and nothing is said');
   assert.doesNotMatch(jarl(root, 'status'), /leased by/);
@@ -87,7 +87,7 @@ test('where a composer keeps the format, --by is refused with nothing written, a
   writeFileSync(file, JSON.stringify({ 'jarl-profile': 1, name: 'composed', statuses: L.BUILTIN_STATUSES, 'external-scheduler': 'the composer tick' }));
   assert.match(refuses(dir, 'init', 'a composed goal', '--profile', file, '--by', 'odin'), /the writer of a write \(--by\) needs record format 3, and this loop stays at format 1: its profile names an external scheduler \(the composer tick\)/);
   jarl(dir, 'init', 'a composed goal', '--profile', file);
-  jarl(dir, 'new', 'one', '--files', 'a.mjs');
+  jarl(dir, 'new', 'one', '--acceptance', '[read] it works', '--files', 'a.mjs');
   const log = logOf(dir);
   const issue = readFileSync(json(dir, 'show', '001').file, 'utf8');
   assert.match(refuses(dir, 'evidence', '001', 'a note', '--by', 'w1'), /the writer of a write \(--by\) needs record format 3, and this loop stays at format 1: its profile names an external scheduler \(the composer tick\), the composer that reads this record, so Jarl never raises its format; leave --by out there — nothing was written/);
@@ -109,7 +109,7 @@ test('the frozen reader of formats 1 and 2 reads a loop with no writer and refus
 
 test('verify finds a writer in a loop that is not in record format 3', () => {
   const root = loop();
-  jarl(root, 'new', 'one', '--files', 'a.mjs');
+  jarl(root, 'new', 'one', '--acceptance', '[read] it works', '--files', 'a.mjs');
   jarl(root, 'log', 'named', '--by', 'odin');
   writeFileSync(join(root, '.jarl', 'profile.json'), JSON.stringify({ 'jarl-profile': 1, format: 2 }));
   assert.match(run(root, ['verify']).stdout, /log\.md line \d+: "named" names its writer \(odin\), which is written in record format 3, and this loop is not in it/);

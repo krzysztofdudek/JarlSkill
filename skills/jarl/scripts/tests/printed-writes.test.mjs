@@ -21,10 +21,10 @@ function richLoop() {
   mkdirSync(join(root, 'renders'));
   writeFileSync(join(root, 'renders', 'cut.txt'), 'the cut\n');
   const titles = ['ready one', 'leased one', 'proof no verdict', 'changes asked', 'approved', 'merged, CI pending', 'a dropped one with a merge', 'owner line'];
-  titles.forEach((t, n) => jarl(root, 'new', t, '--files', `f${n + 1}.mjs`, '--acceptance', n === 7 ? OWNER_LINE : 'it works'));
-  jarl(root, 'new', 'waits on the ready one', '--after', '1', '--files', 'f9.mjs', '--what', 'relies on issue 5 for its data');
+  titles.forEach((t, n) => jarl(root, 'new', t, '--files', `f${n + 1}.mjs`, '--acceptance', n === 7 ? OWNER_LINE : '[read] it works'));
+  jarl(root, 'new', 'waits on the ready one', '--acceptance', '[read] it works', '--after', '1', '--files', 'f9.mjs', '--what', 'relies on issue 5 for its data');
   for (const id of ['2', '3', '4', '5', '6', '8']) jarl(root, 'set', id, 'in-progress', 'go', '--worker', `w${id}`, '--branch', `jarl/${id}`);
-  for (const id of ['3', '4', '5', '6', '8']) jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'green');
+  for (const id of ['3', '4', '5', '6', '8']) jarl(root, 'evidence', id, '--line', '1', '--ran', 'npm test', '--saw', 'green');
   jarl(root, 'review', '4', 'changes', '--by', 'rev', 'Important: the empty list is not handled');
   jarl(root, 'review', '5', 'approve', '--by', 'rev', FINDINGS);
   jarl(root, 'review', '6', 'approve', '--by', 'rev', FINDINGS);

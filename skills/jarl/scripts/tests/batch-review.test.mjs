@@ -27,7 +27,7 @@ function fourInFlight() {
   for (const t of ['first', 'second', 'third', 'fourth']) {
     const id = fileAsBefore(root, `${t} change`, { acceptance: 'it works' });
     jarl(root, 'set', id, 'in-progress', '--worker', `w-${t}`, '--branch', `jarl/${id}`);
-    jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'pass 3, fail 0');
+    jarl(root, 'evidence', id, '--line', '1', '--ran', 'npm test', '--saw', 'pass 3, fail 0');
   }
   return root;
 }
@@ -107,9 +107,9 @@ test('a loop whose profile names an external scheduler keeps its format: a verdi
   writeFileSync(file, JSON.stringify({ 'jarl-profile': 1, name: 'composed', statuses: BUILTIN_STATUSES, 'external-scheduler': 'the composer tick' }));
   jarl(dir, 'init', 'a mission', '--profile', file);
   for (const t of ['one', 'two']) {
-    const { id } = R.newIssue(dir, `${t} change`, { acceptance: 'it works' });
+    const { id } = R.newIssue(dir, `${t} change`, { acceptance: '[read] it works' });
     jarl(dir, 'set', id, 'in-progress', '--worker', `w-${t}`, '--branch', `jarl/${id}`);
-    jarl(dir, 'evidence', id, '--ran', 'npm test', '--saw', 'pass');
+    jarl(dir, 'evidence', id, '--line', '1', '--ran', 'npm test', '--saw', 'pass');
   }
   const before = readFileSync(marker(dir), 'utf8');
   jarl(dir, 'review', '001,002', 'approve', '--by', 'rev-a', FINDINGS);

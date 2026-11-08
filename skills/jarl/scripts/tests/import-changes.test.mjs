@@ -94,8 +94,9 @@ test('a finding of a done or a dropped issue is reported with the status of that
   const root = loop();
   importing(root, findingsFile(written([finding(), finding({ id: 'T-2', title: 'Print', claim: 'Users can print a report.' })])));
   jarl(root, 'set', '1', 'dropped', 'the ticket was withdrawn');
+  jarl(root, 'field', '2', 'Acceptance', '[read] it holds');
   jarl(root, 'set', '2', 'in-progress', 'go', '--worker', 'w2');
-  jarl(root, 'evidence', '2', '--ran', 'npm test', '--saw', 'all pass');
+  jarl(root, 'evidence', '2', '--line', '1', '--ran', 'npm test', '--saw', 'all pass');
   jarl(root, 'review', '2', 'approve', '--by', 'rev', 'read the diff, nothing found');
   jarl(root, 'set', '2', 'done', 'finished');
   const out = importing(root, findingsFile(written([finding({ claim: 'Nobody exports.' }), finding({ id: 'T-2', title: 'Print', claim: 'Users can print a report in colour.' })])));
@@ -116,7 +117,7 @@ test('a dry run and an import of part of the file report changes too, and write 
 
 test('an external requirement is a branch of the issue tree: the sub-issue of a requirement is reported on its own Source', () => {
   const root = loop();
-  jarl(root, 'new', 'the requirements of the tracker');
+  jarl(root, 'new', 'the requirements of the tracker', '--acceptance', '[read] it works');
   importing(root, findingsFile(written([finding()])));
   jarl(root, 'field', '2', 'Parent', '1');
   const out = importing(root, findingsFile(written([finding({ claim: 'Users can export a report as xlsx.' })])));
@@ -125,8 +126,8 @@ test('an external requirement is a branch of the issue tree: the sub-issue of a 
 
 test('an issue filed by hand under a Source, and one adopted into it, is never reported, whatever its What says', () => {
   const root = loop();
-  jarl(root, 'new', 'Export by hand', '--source', `${SOURCE}#T-1`, '--found-by', `research ${SOURCE}`, '--what', 'Our own account of the export, nothing like the finding.');
-  jarl(root, 'new', 'Print named by an issue', '--found-by', `research ${SOURCE}`, '--what', 'Covers T-2 of ext/2026-11-05-tickets in our words.');
+  jarl(root, 'new', 'Export by hand', '--acceptance', '[read] it works', '--source', `${SOURCE}#T-1`, '--found-by', `research ${SOURCE}`, '--what', 'Our own account of the export, nothing like the finding.');
+  jarl(root, 'new', 'Print named by an issue', '--acceptance', '[read] it works', '--found-by', `research ${SOURCE}`, '--what', 'Covers T-2 of ext/2026-11-05-tickets in our words.');
   const file = findingsFile(written([finding(), finding({ id: 'T-2', title: 'Print', claim: 'Users can print a report.' })]));
   assert.deepEqual(importing(root, file, '--adopt').changed, []);
   assert.deepEqual(importing(root, file).changed, []);
@@ -136,7 +137,7 @@ test('an issue filed by hand under a Source, and one adopted into it, is never r
 
 test('only an issue that reads as import filed it is compared: a hand-filed issue beside imported ones stays silent, an imported one is reported', () => {
   const root = loop();
-  jarl(root, 'new', 'Export by hand', '--source', `${SOURCE}#T-1`, '--found-by', `research ${SOURCE}`, '--what', 'Our own account of the export.');
+  jarl(root, 'new', 'Export by hand', '--acceptance', '[read] it works', '--source', `${SOURCE}#T-1`, '--found-by', `research ${SOURCE}`, '--what', 'Our own account of the export.');
   importing(root, findingsFile(written([finding({ id: 'T-2', title: 'Print', claim: 'Users can print a report.' })])));
   const changed = findingsFile(written([finding(), finding({ id: 'T-2', title: 'Print', claim: 'Users can print a report in colour.' })]));
   assert.deepEqual(importing(root, changed).changed.map((c) => [c.finding, c.issue]), [['T-2', '2']]);
@@ -147,9 +148,9 @@ test('only an issue that reads as import filed it is compared: a hand-filed issu
 // is written into the findings file, or writes one from a ruling and links it to the finding later.
 test('issues filed by hand with the Source and the Found by of an import stay silent on every run, and the imported ones beside them are compared', () => {
   const root = loop();
-  jarl(root, 'new', 'One format raise', '--source', `${SOURCE}#T-2`, '--found-by', 'research', '--what', 'Ruling one-raise: every change an older reader would misread rides one raise.', '--why', 'Several raises would make readers refuse loops they read today.');
-  jarl(root, 'new', 'Every issue carries a key', '--source', `${SOURCE}#T-3`, '--found-by', 'research', '--what', 'Report section 8: a log line names its issue by number alone.');
-  jarl(root, 'new', 'A proof with no verdict', '--source', `${SOURCE}#T-4`, '--found-by', 'review', '--what', 'Fresh review of the design: a proof with no verdict shows nowhere.');
+  jarl(root, 'new', 'One format raise', '--acceptance', '[read] it works', '--source', `${SOURCE}#T-2`, '--found-by', 'research', '--what', 'Ruling one-raise: every change an older reader would misread rides one raise.', '--why', 'Several raises would make readers refuse loops they read today.');
+  jarl(root, 'new', 'Every issue carries a key', '--acceptance', '[read] it works', '--source', `${SOURCE}#T-3`, '--found-by', 'research', '--what', 'Report section 8: a log line names its issue by number alone.');
+  jarl(root, 'new', 'A proof with no verdict', '--acceptance', '[read] it works', '--source', `${SOURCE}#T-4`, '--found-by', 'review', '--what', 'Fresh review of the design: a proof with no verdict shows nowhere.');
   const findings = (over = {}) => [
     finding({ claim: over.one ?? 'Users can export a report as csv.' }),
     finding({ id: 'T-2', title: 'Format raise', claim: over.two ?? 'Every model change rides one raise to format 3.', impact: 'Readers refuse loops.' }),
@@ -169,7 +170,7 @@ test('issues filed by hand with the Source and the Found by of an import stay si
 
 test('an issue filed by hand whose Source and What read as import writes them but whose Found by is another stays silent', () => {
   const root = loop();
-  jarl(root, 'new', 'Export', '--source', `${SOURCE}#T-1`, '--found-by', 'owner', '--what', 'Claim: Users export the report the way we put it.');
+  jarl(root, 'new', 'Export', '--acceptance', '[read] it works', '--source', `${SOURCE}#T-1`, '--found-by', 'owner', '--what', 'Claim: Users export the report the way we put it.');
   const file = findingsFile(written([finding()]));
   assert.deepEqual(importing(root, file).changed, []);
   assert.deepEqual(importing(root, file, '--found-by', 'research').changed, []);
@@ -249,7 +250,7 @@ function mergedCopies() {
   const imported = oldJarl(a, 'import', {}, [findingsFile(written([finding()])), { source: SOURCE }]);
   assert.equal(imported.ok, true, imported.error);
   const b = older();
-  assert.equal(oldJarl(b, 'new', {}, ['Print by hand', { source: `${SOURCE}#T-2`, 'found-by': `research ${SOURCE}`, what: 'Our own words about printing.' }]).ok, true);
+  assert.equal(oldJarl(b, 'new', {}, ['Print by hand', { acceptance: 'it works', source: `${SOURCE}#T-2`, 'found-by': `research ${SOURCE}`, what: 'Our own words about printing.' }]).ok, true);
   const [byHand] = readdirSync(join(b, '.jarl', 'issues'));
   writeFileSync(join(a, '.jarl', 'issues', byHand), readFileSync(join(b, '.jarl', 'issues', byHand), 'utf8'));
   writeFileSync(logFile(a), `${readFileSync(logFile(a), 'utf8')}${readFileSync(logFile(b), 'utf8').match(/^.*· filed 001 · .*\n/m)[0]}`);
@@ -302,7 +303,7 @@ test('a finding with neither a claim nor a truth is not compared, and the run sa
 
 test('every run with findings already filed says how many it compared, and names each reason it left one: no claim or truth, or no issue of this run\'s Found by', () => {
   const root = loop();
-  jarl(root, 'new', 'Print by hand', '--source', `${SOURCE}#T-2`, '--found-by', `research ${SOURCE}`, '--what', 'Our own words about printing.');
+  jarl(root, 'new', 'Print by hand', '--acceptance', '[read] it works', '--source', `${SOURCE}#T-2`, '--found-by', `research ${SOURCE}`, '--what', 'Our own words about printing.');
   const list = [finding(), finding({ id: 'T-2', title: 'Print', claim: 'Users can print a report.' }), evidenceOnly(3, 'Gap 3 as seen.')];
   importing(root, findingsFile(written(list)));
   const file = findingsFile(written(list));

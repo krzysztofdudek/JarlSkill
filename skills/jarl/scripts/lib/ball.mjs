@@ -65,7 +65,7 @@ function issueRows(ctx) {
     out.push({ what: 'ready', id: r.id, title: r.title, priority: r.priority, holder: holderOfId(r.id),
       says: 'ready to start, raise a worker', command: jarlLine('set', r.id, leaseStatus, ...(worksInPlace(profile, loop.byId.get(r.id)) ? [] : ['--branch', '<branch>']), '--worker', '<name>', '--model', '<model-id>') });
   }
-  const evidence = (id) => jarlLine('evidence', id, '--ran', '<command>', '--saw', '<what-it-printed>');
+  const evidence = (id) => jarlLine('evidence', id, '--ran', '<command>', '--saw', '<what-it-printed>', '--line', '<line-number>', '--by', '<who>');
   const verdict = (id) => jarlLine('review', id, '<verdict>', '--by', '<reviewer>', '<text>');
   const unclearedBy = new Map();
   // A wait has rows of its own (keptRows); a promise in a lease is worked as any issue, and its maker holds each line.
@@ -264,7 +264,7 @@ function keptRows(ctx) {
   const { loop, profile } = ctx;
   const closeStatus = statusWith(profile, 'closes-record', 'terminal');
   const verdict = (id) => jarlLine('review', id, '<verdict>', '--by', '<reviewer>', '<text>');
-  const evidence = (id) => jarlLine('evidence', id, '--ran', '<command>', '--saw', '<what-it-printed>');
+  const evidence = (id) => jarlLine('evidence', id, '--ran', '<command>', '--saw', '<what-it-printed>', '--by', '<who>');
   const out = [];
   const kept = loop.issues.filter((i) => profile.active(i.status) && !waitingOn(i, loop.byId, profile).length
     && (profile.keptKind(i.kind) === WAIT_KIND || (profile.keptKind(i.kind) === PROMISE_KIND && !profile.is(i.status, 'holds-claim'))));
@@ -306,7 +306,7 @@ function ownerLineRows(ctx) {
       } else if (!s.ready) {
         // Its material is produced in the lease, so the line is on whoever holds the lease's rows: the coordinator of the
         // issue's slice, the jarl with none.
-        out.push({ ...line, holder: sliceHolder(ctx.loop, i), says: `acceptance line ${s.n} is the owner's to tick once its material is there (${s.material}); ${s.why}`, command: jarlLine('evidence', id, '--ran', '<command>', '--saw', '<what-it-printed>') });
+        out.push({ ...line, holder: sliceHolder(ctx.loop, i), says: `acceptance line ${s.n} is the owner's to tick once its material is there (${s.material}); ${s.why}`, command: jarlLine('evidence', id, '--ran', '<command>', '--saw', '<what-it-printed>', '--line', '<line-number>', '--by', '<who>') });
       } else {
         out.push({ ...line, holder: OWNER_HOLDER, material: s.material, check: s.check, says: `acceptance line ${s.n} is yours to tick: review ${s.material}${s.at ? ` (in ${s.at})` : ''} and check ${s.check}`, command: jarlLine('tick', id, s.n, '--by', '<the-owner-himself>') });
       }

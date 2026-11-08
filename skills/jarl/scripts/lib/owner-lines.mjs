@@ -17,7 +17,7 @@ import { OWNER, needNoOwnersWords, rulingAuthor } from './owner.mjs';
 import { jarlDir, stamp } from './where.mjs';
 import { appendLogLines } from './journal.mjs';
 import { formatState } from './profile.mjs';
-import { acceptanceLines, evidenceRows, evidenceTable, findIssue } from './issues.mjs';
+import { acceptanceLines, evidenceRows, findIssue } from './issues.mjs';
 import { issueRepoPaths, needFormat, worktreeState } from './repositories.mjs';
 import { gateOf, gateWindow, readLoop, wholeOf } from './loop.mjs';
 
@@ -29,7 +29,7 @@ export const OWNER_LINE_SHAPE = '[owner] <line> · material: <material> · check
 
 // One acceptance line read as an owner line: null when it is not marked; else { what, material, check }, each null when
 // the line does not name it in the shape above.
-function ownerLineOf(text) {
+export function ownerLineOf(text) {
   if (!MARK.test(text)) return null;
   const parts = text.replace(MARK, '').split(' · ').map((p) => p.trim());
   const value = (p, key) => { const m = p === undefined ? null : PART(key).exec(p); const v = m ? m[1].trim() : ''; return v && !PLACEHOLDER.test(v) ? v : null; };
@@ -40,19 +40,13 @@ function ownerLineOf(text) {
 const whole = (o) => Boolean(o.what && o.material && o.check);
 // Where a marked line lacks a part: a placeholder for the line rewritten whole, with what it holds, as what the owner
 // reviews and checks is agreed with him and never written by Jarl.
-const ownerLineHole = () => hole('<owner-line>');
+const LINE_FORM_HOLE = hole('<test-check-compare-read-or-owner-line>');
 
-// The owner lines of an acceptance text that new and field are given: a marked line that does not name its material and
-// what to check is refused, naming the shape. True when the text holds an owner line, so the write raises the format.
-export function needOwnerLines(acceptance) {
-  let held = false;
-  for (const text of acceptanceLines({ sections: { acceptance } })) {
-    const o = ownerLineOf(text);
-    if (!o) continue;
-    need(whole(o), `acceptance line "${text}" is marked as one only the owner ticks, and it must name the material he reviews (a path, a link or an artifact) and what he checks: ${OWNER_LINE_SHAPE}`, () => ({ replace: text, value: ownerLineHole(text) }));
-    held = true;
-  }
-  return held;
+// One owner line given to new or field: a line marked so that does not name its material and what to check is refused,
+// naming the shape.
+export function needOwnerLine(text, ready) {
+  const o = ownerLineOf(text);
+  need(whole(o), `acceptance line "${text}" is marked as one only the owner ticks, and it must name the material he reviews (a path, a link or an artifact) and what he checks: ${OWNER_LINE_SHAPE}`, () => ready(LINE_FORM_HOLE));
 }
 
 // The owner lines of an issue, with their numbers among its acceptance lines.
@@ -60,35 +54,11 @@ export function ownerLines(issue) {
   return acceptanceLines(issue).map((text, i) => ({ n: i + 1, text, o: ownerLineOf(text) })).filter((l) => l.o).map(({ n, text, o }) => ({ n, text, ...o }));
 }
 
-// The acceptance lines of an issue that no row the done gate counts names, each { n, text }, or null in a loop that has
-// never named one (its first row with --line starts the rule, loop.linesFrom). A row with no --line names no line, and a
-// row keeps the numbers it named when the acceptance is rewritten after it; an issue with no acceptance line has none
-// to name, and a line only the owner ticks is proved by his tick. An issue the journal does not hold is read from its
-// file's rows.
-export function unprovedLines(loop, issue, g = gateOf(loop, issue.id)) {
-  if (loop.linesFrom === null) return null;
-  const rows = g.tracked ? g.rowLog.filter((r) => r.inWindow && !r.retracted) : evidenceTable(issue.sections.evidence).rows.filter((r) => !r.retracted);
-  const named = new Set(rows.flatMap((r) => r.lines || []));
-  return acceptanceLines(issue).map((text, k) => ({ n: k + 1, text })).filter((l) => !named.has(l.n) && !ownerLineOf(l.text));
-}
+// The close the done gate takes of an issue: the status that closes it (the call's, else the profile's first that closes
+// the record) and the move's reason.
+export const closeForm = (profile, id, status = profile.with('closes-record')[0] ?? hole('<status>')) => jarlLine('set', id, status, '<why>');
 // The numbers of lines, as the views print them: "line 2, 3".
 export const linesText = (lines) => `line ${lines.map((l) => l.n).join(', ')}`;
-// The close the done gate takes of an issue: the status that closes it (the call's, else the profile's first that closes
-// the record), the move's reason, and, where acceptance lines `left` have no row naming them, the reason for those apart.
-export const closeForm = (profile, id, left = [], status = profile.with('closes-record')[0] ?? hole('<status>')) => jarlLine('set', id, status, '<why>', ...(left.length ? ['--without-rows', '<why-no-row-names-the-lines>'] : []));
-// A closed issue's acceptance lines no counted row names now, read against its last close, as { excused, lost }: excused,
-// the lines no row it counted named, which the close gave its reason for (done asks it); lost, the lines a row it counted
-// named, which none names now (that row was retracted after the close). Null where the rule did not hold at the close: in
-// a loop that has never named a line, and for an issue closed ahead of the loop's first row that names one.
-export function closedLines(loop, issue, g = gateOf(loop, issue.id)) {
-  if (loop.linesFrom === null) return null;
-  const close = (loop.eventsById.get(issue.id) || []).filter((e) => e.type === 'move' && loop.profile.is(e.to, 'closes-record')).pop();
-  if (!close || close.n < loop.linesFrom) return null;
-  const counted = g.rowLog.filter((r) => r.inWindow && r.n < close.n && !(r.retracted && r.retractedAt < close.n));
-  const named = new Set(counted.flatMap((r) => r.lines || []));
-  const now = unprovedLines(loop, issue, g);
-  return { excused: now.filter((l) => !named.has(l.n)), lost: now.filter((l) => named.has(l.n)) };
-}
 
 // A material written as a path (not a link, and with a directory in it or a file extension at its end) is looked for on
 // the disk; one named otherwise (a link, an artifact named in words) cannot be, and is there once the work is proven.
@@ -213,7 +183,7 @@ export function cmdTick(root, rawId, rawLine, flags = {}) {
   need(!loop.profile.is(issue.status, 'terminal'), `${issue.id} is ${issue.status}: nothing waits for the owner's tick until it is open again`, () => ({ first: ['jarl.mjs', 'set', issue.id, hole('<status>'), '<why>'] }));
   need(!s.off, `acceptance line ${n} of ${issue.id} cannot be ticked: ${s.why}; rewrite it without the [owner] mark: ${rewriteText(issue.id)}`, () => (rewrite(issue.id)));
   need(!s.tick, `acceptance line ${n} of ${issue.id} is ticked already, by ${s.tick && s.tick.by} at ${s.tick && s.tick.at}; a tick given by mistake is taken back with ${jarlLine('retract', issue.id, `tick-${n}`, '<why>', '--by', OWNER_TICKS)}`, openLine);
-  need(s.ready, `the material of acceptance line ${n} of ${issue.id} is not there yet: ${s.why} — the owner ticks the line once he has reviewed it; nothing was written`, () => (['jarl.mjs', 'evidence', issue.id, '--ran', '<command>', '--saw', '<what-it-printed>']));
+  need(s.ready, `the material of acceptance line ${n} of ${issue.id} is not there yet: ${s.why} — the owner ticks the line once he has reviewed it; nothing was written`, () => (['jarl.mjs', 'evidence', issue.id, '--ran', '<command>', '--saw', '<what-it-printed>', '--line', '<line-number>', '--by', '<who>']));
   needFormat(root, 'owner-line');
   const at = stamp();
   appendLogLines(root, [`${issue.id} tick · line ${n} · by ${by} · ${s.text}`], at);

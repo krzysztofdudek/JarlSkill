@@ -30,7 +30,7 @@ function modelRepo(reviewer) {
 }
 // An issue leased on the strong model, on a branch one commit ahead of the base.
 function leased(dir, n) {
-  jarl(dir, 'new', `change ${n}`, '--acceptance', 'it works');
+  jarl(dir, 'new', `change ${n}`, '--acceptance', '[read] it works');
   jarl(dir, 'set', String(n), 'in-progress', 'go', '--branch', `jarl/${n}-change`, '--worker', `w${n}`, '--model', 'm-strong');
   const wt = mkdtempSync(join(tmpdir(), 'jarl-queue-wt-'));
   sh(dir, `git worktree add -q -b jarl/${n}-change ${wt} feature`);

@@ -22,7 +22,7 @@ import {
   issuesNaming, questionFor, cmdGoal, cmdGoalSet, cmdRepoBase, whereOf, cmdVerify, renderVerify, renderCheckNotes,
   renderProfile, renderResume, renderStatus, renderImport, renderSources, renderList, recordTypeLog, recordRuleLog,
   runDecisionsDriver, mergeFlags, describeNew, renderNewReply, issueView, workerEvidence, attachmentStates, evidenceTable, renderBranches, renderDecide, renderDecisions,
-  cmdExtend, needLoop, cmdNextAs, renderNextAs, askerSection, renderBrief, cmdTick, cmdRetractTick, withWriter, editorOf, needFormat, formatState, readProfileFile, FORMAT_LINES, cmdRenumber, cmdSplit,
+  cmdExtend, needLoop, cmdNextAs, renderNextAs, askerSection, renderBrief, cmdTick, cmdRetractTick, atLeaseText, issueLinesAtLease, withWriter, editorOf, needFormat, formatState, readProfileFile, FORMAT_LINES, cmdRenumber, cmdSplit,
   needKnownModels, cmdUse, renderUse, discoverLoop,
 } from './jarl-lib.mjs';
 import { writeAreaDecision, writeRuleRatification } from './yg-edge.mjs';
@@ -133,13 +133,14 @@ commands:
                                                  --tags, --repo and --only repeat, or take a comma list
   sources [<findings.json>...] [--source <report-dir>] per report: its findings, the issues filed from them and their
                                                  status; with a findings file, the findings nobody filed too
-  evidence <ids> "<text>" | --ran "<command>" --saw "<what-it-printed>" [--line <line-number>] | <id> --file <path> --slot <name> [--by who]
+  evidence <ids> "<text>" | --ran "<command>" --saw "<what-it-printed>" --line <line-number> [--by who] | <id> --file <path> --slot <name> [--by who]
                                                  append a free-text note (under ### Notes), or one checkable row per --ran/--saw
                                                  pair (repeatable; under ### Proof, after the last row);
                                                  --line names the acceptance lines each row of the call proves, 1 for
-                                                 the first (repeat it, or a comma list); the first such row raises
-                                                 the record format to 3, and from then on done asks of every issue a
-                                                 row that names each of its acceptance lines, or set --without-rows;
+                                                 the first (repeat it, or a comma list), and a row names at least one:
+                                                 the row stores a digest of the line's text, so it counts only while that
+                                                 text stands; --by names who ran it, and done asks of each line what its
+                                                 method asks (see set);
                                                  --file --slot records one attachment as a Proof row: the slot, the path
                                                  under the loop root (relative, no .., no symlink), the file's sha256 and its
                                                  size; nothing is copied. The slot is one the profile's done gate requires of
@@ -160,7 +161,7 @@ commands:
                                                  the issues not finished (open and in-progress) by default; --all for
                                                  every status; --match keeps those whose header field holds the value;
                                                  each sub-issue stands indented under its parent
-  show <id> [--full]                             print one issue as the done gate sees it: the header, What, Why,
+  show <id> [--full] [--at-lease]                print one issue as the done gate sees it: the header, What, Why,
                                                  Acceptance and Changelog, every Proof row (numbered [n]) and every
                                                  verdict in the done gate's window, Notes whole, every "changes" finding no later
                                                  approve answered, one line per round that came before; --full prints the whole
@@ -183,7 +184,7 @@ commands:
                                                  count of the lines left out. A merger's brief is one for
                                                  the whole loop (references/merger.md), and a worker after a takeover
                                                  is given the rules of the takeover too
-  set <ids> <status> "<text>" [--branch <worker-branch>] [--worker <name>] [--model <model-id>] [--worktree <path>] [--handover] [--header] [--without-rows "<why-no-row-names-the-lines>"] [--by who]
+  set <ids> <status> "<text>" [--branch <worker-branch>] [--worker <name>] [--model <model-id>] [--worktree <path>] [--handover] [--header] [--by who]
                                                  (<ids> <status-in-the-log> --header rewrites the header fields the log
                                                  renders from the log, writes no log line and is never a move)
                                                  change status; writes the log line in the same move; in-progress
@@ -204,15 +205,15 @@ commands:
                                                  lease's branch checked out, and the worktree of a lease is found through
                                                  its branch; leaving in-progress removes Worker, Model, Since (and a
                                                  Worktree field a lease holds) and keeps Branch; done notes a merge
-                                                 whose CI is not green yet; done needs, inside one window (rows after
-                                                 the last start, reopen or filing; approves after those or a red
-                                                 round), a --ran/--saw row — a free-text note never counts alone —
-                                                 and a live approve, on an issue whose lease records a Branch a merge
-                                                 recorded (merged), and the owner's tick of every acceptance line only he
-                                                 ticks (see tick); in a loop whose rows name acceptance lines (evidence
-                                                 --line), done lists the lines no counted row names and closes the issue
-                                                 only with --without-rows, the reason no row names them, written under
-                                                 Evidence beside them: "<text>" is the move's reason, never theirs
+                                                 whose CI is not green yet; done asks of each line what its method
+                                                 asks: for test, check and compare a row naming it by the holder of the
+                                                 lease and one by a name that has not held it, inside one window (rows
+                                                 after the last start, reopen or filing), the landing's check for a
+                                                 check on the declared command, and for compare two of the holder's rows
+                                                 with identical --saw; a live approve for read; the owner's tick for
+                                                 owner (see tick). A live approve (with no changes verdict standing, as a
+                                                 changes stands until a round or a new commit) and, on an issue whose
+                                                 lease records a Branch, a merge recorded (merged) are asked for too
   merged <ids> --sha <sha> [--ran "<command>" --saw "<what-it-printed>" | --red <id>] [--ci pending|green|red|none] [--repo <name-or-path>] [--keep] [--by who] | <ids> --ci <ci-state>
                                                  the merge as fields: Merged (sha, and where with --repo) and CI
                                                  (only when given; pending: a pushed commit whose CI will report;
@@ -678,7 +679,7 @@ export const COMMAND_FLAGS = {
   evidence: { ran: 'many', saw: 'many', line: 'many', file: 'value', slot: 'value', by: 'value' },
   retract: { by: 'value' }, field: { add: 'bool', remove: 'bool', clear: 'bool', by: 'value' }, split: { line: 'many', by: 'value' }, base: { by: 'value' },
   list: { status: 'value', kind: 'value', tag: 'value', prio: 'value', grep: 'value', match: 'many', all: 'bool' },
-  show: { full: 'bool' }, brief: { role: 'value', slice: 'value' }, set: { branch: 'value', worker: 'value', model: 'value', worktree: 'value', handover: 'bool', header: 'bool', 'without-rows': 'value', by: 'value' },
+  show: { full: 'bool', 'at-lease': 'bool' }, brief: { role: 'value', slice: 'value' }, set: { branch: 'value', worker: 'value', model: 'value', worktree: 'value', handover: 'bool', header: 'bool', by: 'value' },
   next: { limit: 'value', all: 'bool', as: 'value', slice: 'value' },
   review: { by: 'value', model: 'value', relayed: 'bool', bot: 'bool', outside: 'many', field: 'many', artifact: 'value' }, round: { findings: 'value', by: 'value' }, tick: { by: 'value' },
   models: { group: 'value', with: 'many', archives: 'bool' },
@@ -850,7 +851,6 @@ const FLAG_HOLES = {
   target: '<what-would-get-weaker>', issue: '<id>', option: '<option>', 'ask option': '<label:effect>', 'applies-to': '<selectors>', until: '<date-or-id>', to: '<jarl-or-owner>', log: '<count>',
   ready: '<count>', summary: '<text>', next: '<text>', settles: '<ids>', 'waives-review': '<ids>', quote: '<his-own-words>', under: '<a-ruling-in-force>', supersedes: '<a-ruling-in-force>',
   rule: '<rule-id>', area: '<type>', reach: '<number-of-files>', set: '<machine-line>', line: '<line=id>', 'evidence line': '<line-number>', outside: '<finding-outside-the-issue>', parent: '<id>', range: '<name>', values: '<items>', default: '<value>',
-  'without-rows': '<why-no-row-names-the-lines>',
 };
 const PART_HOLES = {
   title: '<title>', priority: '<prio>', tier: '<tier>', kind: '<kind>', tags: '<tag>', files: '<paths>', repo: '<name-or-path>', after: '<ids-it-waits-on>', parent: '<id>',
@@ -1501,7 +1501,7 @@ function dispatchCall(root, commandName, rest, flags) {
       case 'import': out = cmdImport(root, rest[0], flags); text = renderImport(out); break;
       case 'sources': out = cmdSources(root, rest, flags); text = renderSources(out); break;
       case 'list': out = cmdList(root, flags); text = renderList(out, R.loadProfile(root)); break;
-      case 'show': { const i = R.findIssue(root, rest[0]); need(i, `no such issue: ${rest[0]} — the issues: ${jarlLine('list', '--all')}`, { arg: 0, value: '<id>' }); const attachments = attachmentStates(root, i); out = { ...i, evidenceRows: evidenceTable(i.sections.evidence).rows.map(({ n, ran, saw, retracted, lines }) => ({ n, ran, saw, retracted, ...(lines.length ? { lines } : {}) })), where: whereOf(root, i), ...(attachments.length ? { attachments } : {}) }; if (!flags.full) { const read = workerEvidence(i.sections.evidence); if (read.retracted) out = { ...out, sections: { ...i.sections, evidence: read.text }, retractedNotes: read.retracted }; } text = issueView(root, i, { full: Boolean(flags.full) }); break; }
+      case 'show': { const i = R.findIssue(root, rest[0]); need(i, `no such issue: ${rest[0]} — the issues: ${jarlLine('list', '--all')}`, { arg: 0, value: '<id>' }); if (flags['at-lease']) { const { atLease } = issueLinesAtLease(root, rest[0]); out = { id: i.id, atLease }; text = atLeaseText(i, atLease); break; } const attachments = attachmentStates(root, i); out = { ...i, evidenceRows: evidenceTable(i.sections.evidence).rows.map(({ n, ran, saw, retracted, lines }) => ({ n, ran, saw, retracted, ...(lines.length ? { lines } : {}) })), where: whereOf(root, i), ...(attachments.length ? { attachments } : {}) }; if (!flags.full) { const read = workerEvidence(i.sections.evidence); if (read.retracted) out = { ...out, sections: { ...i.sections, evidence: read.text }, retractedNotes: read.retracted }; } text = issueView(root, i, { full: Boolean(flags.full) }); break; }
       case 'brief': out = R.briefData(root, rest[0], flags); text = renderBrief(out); break;
       case 'set':
         // A field is written by field, never by set: the refusal ends with the form of the call that writes it.

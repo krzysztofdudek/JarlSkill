@@ -60,6 +60,6 @@ export function composed() {
   const profile = join(mkdtempSync(join(tmpdir(), 'jarl-atomic-profile-')), 'profile.json');
   writeFileSync(profile, JSON.stringify({ 'jarl-profile': 1, name: 'composed', statuses: BUILTIN_STATUSES, 'external-scheduler': 'the composer tick' }));
   jarl(hub, 'init', 'a composed goal', '--profile', profile);
-  jarl(hub, 'new', 'an issue that names finding-1', '--what', 'it covers finding-1 of the report');
+  jarl(hub, 'new', 'an issue that names finding-1', '--acceptance', '[read] it works', '--what', 'it covers finding-1 of the report');
   return hub;
 }

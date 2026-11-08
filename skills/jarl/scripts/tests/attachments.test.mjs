@@ -40,9 +40,9 @@ const issueText = (root, id) => { const dir = join(root, '.jarl', 'issues'); ret
 function loopWith(kind = 'bug', profile = PROFILE) {
   const root = makeLoop({ prefix: 'jarl-attach-', via: 'cli' });
   writeProfile(root, profile);
-  jarl(root, 'new', 'a defect', '--kind', kind, '--acceptance', 'it works');
+  jarl(root, 'new', 'a defect', '--kind', kind, '--acceptance', '[read] it works');
   jarl(root, 'set', '1', 'in-progress', 'go', '--worker', 'w1');
-  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', '3 pass');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', '3 pass');
   jarl(root, 'review', '1', 'approve', '--by', 'rev-fresh', FINDINGS);
   return root;
 }
@@ -288,7 +288,7 @@ test('the profile key is checked: kinds, slot names, places, extensions, sizes a
 
 test('a profile without the key describes no slots, shows no attachment section and prints no extra check', () => {
   const root = makeLoop({ prefix: 'jarl-attach-', via: 'cli' });
-  jarl(root, 'new', 'a defect', '--kind', 'bug', '--acceptance', 'it works');
+  jarl(root, 'new', 'a defect', '--kind', 'bug', '--acceptance', '[read] it works');
   assert.deepEqual(Object.keys(JSON.parse(jarl(root, 'profile', '--json')).doneGate), ['approve', 'requires-merged']);
   assert.doesNotMatch(jarl(root, 'show', '1'), /Attachments/);
   assert.match(refuses(root, 'evidence', '1', '--file', 'x.png', '--slot', 'before'), /declares no slot/);
@@ -304,7 +304,7 @@ test('the profile is described with its slots, and profile prints them', () => {
 
 test('a reader that does not know the key refuses the profile loudly, and reads the same loop without it', () => {
   const root = makeLoop({ prefix: 'jarl-attach-', via: 'library' });
-  R.newIssue(root, 'a defect', { acceptance: 'it works' });
+  R.newIssue(root, 'a defect', { acceptance: '[read] it works' });
   writeProfile(root, { 'jarl-profile': 1, name: 'bugs', statuses: L.BUILTIN_STATUSES });
   assert.equal(oldJarl(root, 'list', {}).ok, true, 'before: the frozen reader reads the loop');
   writeProfile(root, PROFILE);
@@ -376,7 +376,7 @@ test('a row shaped as an attachment is refused by --ran in every spelling the lo
     assert.match(refuses(root, 'evidence', '1', '--ran', value, '--saw', 'ok'), /--file and --slot/, name);
   }
   assert.doesNotMatch(log(root), /evidence row · attach/);
-  assert.match(jarl(root, 'evidence', '1', '--ran', 'attach the probe', '--saw', 'ok'), /recorded/, 'a command that only starts with the word is a row');
+  assert.match(jarl(root, 'evidence', '1', '--line', '1', '--ran', 'attach the probe', '--saw', 'ok'), /recorded/, 'a command that only starts with the word is a row');
 });
 
 test('the log refuses a hand-written attachment row and names --file and --slot', () => {
@@ -417,7 +417,7 @@ test('a row recorded before the last start is outside the window: show and done 
   jarl(root, 'set', '1', 'in-progress', 'again', '--worker', 'w2');
   assert.match(jarl(root, 'show', '1'), /- before: not recorded in the gate's window \(a row from before the last start or reopen does not count\)/);
   assert.equal(JSON.parse(jarl(root, 'show', '1', '--json')).attachments[0].state, 'outside');
-  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', '3 pass');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', '3 pass');
   jarl(root, 'review', '1', 'approve', '--by', 'rev-fresh', FINDINGS);
   assert.match(refuses(root, 'set', '1', 'done'), /slot before: no file recorded inside the gate's window/);
 });

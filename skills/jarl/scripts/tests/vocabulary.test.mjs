@@ -17,8 +17,8 @@ test('resume\'s tips label a worker branch as a worker branch and the checkout b
   const { dir, g } = gitRepo({ prefix: 'jarl-vocab-tips-', branch: 'feature' });
   g('branch', 'jarl/2-a');
   R.initLoop(dir, 'goal');
-  R.newIssue(dir, 'first', { acceptance: 'it works' });
-  R.newIssue(dir, 'second', { acceptance: 'it works' });
+  R.newIssue(dir, 'first', { acceptance: '[read] it works' });
+  R.newIssue(dir, 'second', { acceptance: '[read] it works' });
   R.setStatus(dir, '2', 'in-progress', undefined, { branch: 'jarl/2-a', worker: 'w2' });
   const o = JSON.parse(run(dir, ['resume', '--gh', '--json'], { env: NO_GH }).stdout).tips;
   assert.deepEqual(o.repos[0].rows.map((r) => [r.role, r.branch]), [['worker', 'jarl/2-a'], ['feature', 'feature']]);
@@ -36,8 +36,8 @@ function transcript(flag) {
     statuses: { open: ['dispatchable'], running: [flag], done: ['settles-dependents', 'terminal', 'closes-record'], dropped: ['terminal', 'needs-reason'] },
   }));
   jarlResult(dir, ['init', 'goal', '--profile', file]);
-  jarlResult(dir, ['new', 'first']);
-  jarlResult(dir, ['new', 'second']);
+  jarlResult(dir, ['new', 'first', '--acceptance', '[read] it works']);
+  jarlResult(dir, ['new', 'second', '--acceptance', '[read] it works']);
   const set = jarlResult(dir, ['set', '2', 'running', '--branch', 'jarl/2-a', '--worker', 'w2']).stdout;
   const views = [['status'], ['next', '--all'], ['list', '--all'], ['show', '2'], ['resume']];
   const out = views.map((args) => jarlResult(dir, args).stdout);
@@ -65,7 +65,7 @@ test('a branch is measured by scope alone: check is refused with the scope call 
   g('add', '-A'); g('commit', '-qm', 'work');
   g('checkout', '-q', 'feature');
   R.initLoop(dir, 'goal');
-  R.newIssue(dir, 'first', { acceptance: 'it works' });
+  R.newIssue(dir, 'first', { acceptance: '[read] it works' });
   R.setStatus(dir, '1', 'in-progress', undefined, { branch: 'jarl/1-a', worker: 'w1' });
   const scope = run(dir, ['scope', '1', '--branch', 'jarl/1-a']);
   assert.equal(scope.stderr, '', 'scope says nothing on stderr');

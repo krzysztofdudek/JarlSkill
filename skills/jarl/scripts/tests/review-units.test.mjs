@@ -20,11 +20,11 @@ const RULE = 'One shared review covers only issues that are one contract or one 
 function inReview({ slice = false } = {}) {
   const root = makeLoop({ prefix: 'jarl-units-', via: 'cli', dotGit: false });
   if (slice) jarl(root, 'goal', '--set', 'Coordinators: odin');
-  for (let k = 1; k <= 8; k += 1) jarl(root, 'new', `change ${k}`, '--files', `f${k}.mjs`, '--acceptance', 'it works', ...(slice && k <= 6 ? ['--tags', 'slice:odin'] : []));
+  for (let k = 1; k <= 8; k += 1) jarl(root, 'new', `change ${k}`, '--files', `f${k}.mjs`, '--acceptance', '[read] it works', ...(slice && k <= 6 ? ['--tags', 'slice:odin'] : []));
   jarl(root, 'set', '1-6', 'in-progress', 'one package', '--worker', 'wa', '--branch', 'jarl/a');
   jarl(root, 'set', '7', 'in-progress', 'go', '--worker', 'wb', '--branch', 'jarl/b');
   jarl(root, 'set', '8', 'in-progress', 'go', '--worker', 'wc', '--branch', 'jarl/c');
-  for (let k = 1; k <= 8; k += 1) jarl(root, 'evidence', String(k), '--ran', 'npm test', '--saw', 'pass 3, fail 0');
+  for (let k = 1; k <= 8; k += 1) jarl(root, 'evidence', String(k), '--line', '1', '--ran', 'npm test', '--saw', 'pass 3, fail 0');
   return root;
 }
 const reviewRow = (o) => o.rows.find((r) => r.what === 'review' && r.ids);
@@ -80,10 +80,10 @@ test('the code a coordinator alone approved, and the issues no approve clears un
   const profile = join(mkdtempSync(join(tmpdir(), 'jarl-units-profile-')), 'profile.json');
   writeFileSync(profile, JSON.stringify({ 'jarl-profile': 1, statuses: BUILTIN_STATUSES, initial: 'open', 'done-gate': { clears: [['fresh', 'bot:coderabbit']] } }));
   const defined = makeLoop({ prefix: 'jarl-units-clears-', via: 'cli', dotGit: false, initFlags: ['--profile', profile] });
-  for (let k = 1; k <= 3; k += 1) jarl(defined, 'new', `change ${k}`, '--files', `f${k}.mjs`, '--acceptance', 'it works');
+  for (let k = 1; k <= 3; k += 1) jarl(defined, 'new', `change ${k}`, '--files', `f${k}.mjs`, '--acceptance', '[read] it works');
   jarl(defined, 'set', '1-2', 'in-progress', 'one package', '--worker', 'wa', '--branch', 'jarl/a');
   jarl(defined, 'set', '3', 'in-progress', 'go', '--worker', 'wb', '--branch', 'jarl/b');
-  for (let k = 1; k <= 3; k += 1) jarl(defined, 'evidence', String(k), '--ran', 'npm test', '--saw', 'pass 3, fail 0');
+  for (let k = 1; k <= 3; k += 1) jarl(defined, 'evidence', String(k), '--line', '1', '--ran', 'npm test', '--saw', 'pass 3, fail 0');
   jarl(defined, 'review', '1-3', 'approve', '--by', 'rev-a', 'read the diffs, nothing found');
   const notCleared = json(defined, 'next', '--as', 'jarl', '--all').rows.find((r) => r.what === 'review' && r.ids);
   assert.deepEqual(notCleared.units, [{ ids: ['1', '2'], shares: 'branch', on: 'jarl/a' }, { ids: ['3'] }]);
@@ -98,10 +98,10 @@ test('one branch name in two repositories is two units, each naming its reposito
   }
   const root = join(parent, 'hub');
   jarl(root, 'init', 'goal');
-  for (let k = 1; k <= 4; k += 1) jarl(root, 'new', `change ${k}`, '--files', `f${k}.mjs`, '--acceptance', 'it works', ...(k > 2 ? ['--repo', '../tool'] : []));
+  for (let k = 1; k <= 4; k += 1) jarl(root, 'new', `change ${k}`, '--files', `f${k}.mjs`, '--acceptance', '[read] it works', ...(k > 2 ? ['--repo', '../tool'] : []));
   jarl(root, 'set', '1-2', 'in-progress', 'one package', '--worker', 'wa', '--branch', 'jarl/x');
   jarl(root, 'set', '3-4', 'in-progress', 'one package', '--worker', 'wb', '--branch', 'jarl/x');
-  for (let k = 1; k <= 4; k += 1) jarl(root, 'evidence', String(k), '--ran', 'npm test', '--saw', 'pass 3, fail 0');
+  for (let k = 1; k <= 4; k += 1) jarl(root, 'evidence', String(k), '--line', '1', '--ran', 'npm test', '--saw', 'pass 3, fail 0');
   const row = reviewRow(json(root, 'next', '--as', 'jarl', '--all'));
   assert.deepEqual(row.units, [
     { ids: ['1', '2'], shares: 'branch', on: 'jarl/x', in: 'hub' },
@@ -112,9 +112,9 @@ test('one branch name in two repositories is two units, each naming its reposito
 
 test('one proof waiting alone keeps its line, with its own review command', () => {
   const root = makeLoop({ prefix: 'jarl-units-one-', via: 'cli', dotGit: false });
-  jarl(root, 'new', 'only change', '--files', 'a.mjs');
+  jarl(root, 'new', 'only change', '--acceptance', '[read] it works', '--files', 'a.mjs');
   jarl(root, 'set', '1', 'in-progress', 'go', '--worker', 'me', '--branch', 'jarl/1');
-  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'green');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'green');
   const row = reviewRow(json(root, 'next', '--as', 'jarl'));
   assert.deepEqual(row.units, [{ ids: ['1'] }]);
   assert.match(row.says, /^proof recorded, no verdict; raise a fresh reviewer for 1;/);

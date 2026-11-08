@@ -62,7 +62,7 @@ for (const [what, form] of FORMS) {
     const kept = join(root, '.jarl', 'profile.json');
     writeFileSync(kept, form(readFileSync(kept, 'utf8')));
     assert.equal(JSON.parse(jarl(root, 'profile', '--json')).name, 'marked');
-    assert.match(jarl(root, 'new', 'an issue'), /^filed 1/);
+    assert.match(jarl(root, 'new', 'an issue', '--acceptance', '[read] it works'), /^filed 1/);
   });
 
   test(`a goal that starts with ${what} is read`, () => {

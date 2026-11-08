@@ -25,7 +25,7 @@ function inFlight(prefix = 'jarl-artifact-', initFlags = []) {
   const root = makeLoop({ prefix, via: 'cli', initFlags });
   const id = fileAsBefore(root, 'a page change', { acceptance: 'the page renders' });
   jarl(root, 'set', id, 'in-progress', '--worker', 'w1');
-  jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'pass 3, fail 0');
+  jarl(root, 'evidence', id, '--line', '1', '--ran', 'npm test', '--saw', 'pass 3, fail 0');
   return { root, id };
 }
 

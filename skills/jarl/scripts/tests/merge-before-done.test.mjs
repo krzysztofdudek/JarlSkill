@@ -14,9 +14,9 @@ const json = (root, ...args) => JSON.parse(jarl(root, ...args, '--json'));
 const files = (root) => Object.fromEntries(readdirSync(join(root, '.jarl'), { recursive: true }).filter((f) => /\.md$/.test(f)).map((f) => [f, readFileSync(join(root, '.jarl', f), 'utf8')]));
 const ready = (root, { branch, dotGit = true } = {}) => {
   const root2 = root ?? makeLoop({ prefix: 'jarl-merge-before-done-', via: 'cli', dotGit });
-  jarl(root2, 'new', 'the fix', '--acceptance', 'it works');
+  jarl(root2, 'new', 'the fix', '--acceptance', '[read] it works');
   jarl(root2, 'set', '1', 'in-progress', '--worker', 'w1', ...(branch ? ['--branch', branch] : []), '--by', 'jarl');
-  jarl(root2, 'evidence', '1', '--ran', 'npm test', '--saw', '12 pass, 0 fail', '--by', 'w1');
+  jarl(root2, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', '12 pass, 0 fail', '--by', 'w1');
   return root2;
 };
 
@@ -58,10 +58,10 @@ test('a code issue with a branch in a loop with no repository is merged before i
 function codeIssue(initFlags = [], { approve = true } = {}) {
   const { dir: root, g } = gitRepo({ prefix: 'jarl-merge-now-', branch: 'main' });
   jarl(root, 'init', 'goal', ...initFlags);
-  jarl(root, 'new', 'the fix', '--acceptance', 'it works');
+  jarl(root, 'new', 'the fix', '--acceptance', '[read] it works');
   g('branch', 'jarl/1-fix');
   const work = (file) => { g('checkout', '-q', 'jarl/1-fix'); writeFileSync(join(root, file), `${file}\n`); g('add', file); g('commit', '-qm', file); g('checkout', '-q', 'main'); return g('rev-parse', 'jarl/1-fix').trim(); };
-  const proved = () => { jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', '12 pass, 0 fail'); if (approve) jarl(root, 'review', '1', 'approve', '--by', 'rev-fresh', 'read the diff and the test, nothing found'); };
+  const proved = () => { jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', '12 pass, 0 fail'); if (approve) jarl(root, 'review', '1', 'approve', '--by', 'rev-fresh', 'read the diff and the test, nothing found'); };
   const merge = () => { g('merge', '-q', '--no-ff', '-m', 'merge 1', 'jarl/1-fix'); const sha = g('rev-parse', 'HEAD').trim(); jarl(root, 'merged', '1', '--sha', sha, '--keep'); return sha; };
   work('one.txt');
   jarl(root, 'set', '1', 'in-progress', 'start', '--branch', 'jarl/1-fix', '--worker', 'w1');

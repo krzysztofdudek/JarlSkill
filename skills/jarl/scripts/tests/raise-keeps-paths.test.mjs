@@ -62,7 +62,7 @@ const CASES = {
     holds: /dropped: not needed/i,
   },
   'evidence of a row with --by': {
-    run: (root, id) => jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'pass 5', '--by', 'w-one'),
+    run: (root, id) => jarl(root, 'evidence', id, '--line', '1', '--ran', 'npm test', '--saw', 'pass 5', '--by', 'w-one'),
     holds: /npm test/,
   },
   'evidence of a note with --by': {
@@ -77,7 +77,7 @@ const CASES = {
   'round with --by': {
     before: (root, id) => {
       jarl(root, 'set', id, 'in-progress', '--worker', 'w-one', '--branch', `jarl/${id}-x`);
-      jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'pass 5');
+      jarl(root, 'evidence', id, '--line', '1', '--ran', 'npm test', '--saw', 'pass 5');
       jarl(root, 'review', id, 'changes', '--by', 'rev-a', 'Important: the second case is not tested at all here');
     },
     run: (root, id) => jarl(root, 'round', id, 'test the second case', '--by', 'jarl'),
@@ -85,7 +85,7 @@ const CASES = {
   'set done with --by, after a merge': {
     before: (root, id) => {
       jarl(root, 'set', id, 'in-progress', '--worker', 'w-one', '--branch', `jarl/${id}-x`);
-      jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'pass 5');
+      jarl(root, 'evidence', id, '--line', '1', '--ran', 'npm test', '--saw', 'pass 5');
       jarl(root, 'review', id, 'approve', '--by', 'rev-a', 'read the whole diff and found nothing');
       jarl(root, 'merged', id, '--sha', 'abc1234', '--ci', 'none');
     },
@@ -96,7 +96,7 @@ const CASES = {
     run: (root, id) => jarl(root, 'ask', 'which way is right here?', '--issue', id, '--by', 'w-one'),
   },
   'new with --by': {
-    run: (root) => jarl(root, 'new', 'third thing', '--by', 'jarl'),
+    run: (root) => jarl(root, 'new', 'third thing', '--acceptance', '[read] it works', '--by', 'jarl'),
   },
   'field Acceptance with an owner line': {
     run: (root, id) => jarl(root, 'field', id, 'Acceptance', '[owner] the page reads well · material: renders/page.txt · check: the opening'),
@@ -109,14 +109,14 @@ const CASES = {
   'a review by a bot': {
     before: (root, id) => {
       jarl(root, 'set', id, 'in-progress', '--worker', 'w-one', '--branch', `jarl/${id}-x`);
-      jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'pass 5');
+      jarl(root, 'evidence', id, '--line', '1', '--ran', 'npm test', '--saw', 'pass 5');
     },
     run: (root, id) => jarl(root, 'review', id, 'approve', '--by', 'bot-checker', '--bot', 'read the whole diff and found nothing'),
   },
   'a review of several issues': {
     before: (root, id, other) => {
       jarl(root, 'set', `${id},${other}`, 'in-progress', '--worker', 'w-one', '--branch', `jarl/${id}-x`);
-      jarl(root, 'evidence', `${id},${other}`, '--ran', 'npm test', '--saw', 'pass 5');
+      jarl(root, 'evidence', `${id},${other}`, '--line', '1', '--ran', 'npm test', '--saw', 'pass 5');
     },
     run: (root, id, other) => jarl(root, 'review', `${id},${other}`, 'approve', '--by', 'rev-a', 'read the whole diff of both and found nothing'),
   },
@@ -129,7 +129,7 @@ const CASES = {
     holds: /^\*\*Kind:\*\* promise$/m,
   },
   'new with --repo and --by': {
-    run: (root) => jarl(root, 'new', 'third thing', '--repo', './tool', '--by', 'jarl'),
+    run: (root) => jarl(root, 'new', 'third thing', '--acceptance', '[read] it works', '--repo', './tool', '--by', 'jarl'),
     files: 1,
   },
   'split with --by': {
@@ -163,7 +163,7 @@ const CASES = {
     files: 1,
   },
   'retract of an evidence row': {
-    before: (root, id) => jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'pass 5'),
+    before: (root, id) => jarl(root, 'evidence', id, '--line', '1', '--ran', 'npm test', '--saw', 'pass 5'),
     run: (root, id) => jarl(root, 'retract', id, '1', '--by', 'w-one', 'the run was on another branch'),
     holds: /~~/,
   },
@@ -175,7 +175,7 @@ const CASES = {
   'retract of an approve': {
     before: (root, id) => {
       jarl(root, 'set', id, 'in-progress', '--worker', 'w-one', '--branch', `jarl/${id}-x`);
-      jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'pass 5');
+      jarl(root, 'evidence', id, '--line', '1', '--ran', 'npm test', '--saw', 'pass 5');
       jarl(root, 'review', id, 'approve', '--by', 'rev-a', 'read the whole diff and found nothing');
     },
     run: (root, id) => jarl(root, 'retract', id, 'review', '--by', 'jarl', 'the approve was given on the wrong branch'),
@@ -185,7 +185,7 @@ const CASES = {
     acceptance: '[owner] the page reads well · material: the page as shown · check: the opening',
     before: (root, id) => {
       jarl(root, 'set', id, 'in-progress', '--worker', 'w-one', '--branch', `jarl/${id}-x`);
-      jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'pass 5');
+      jarl(root, 'evidence', id, '--line', '1', '--ran', 'npm test', '--saw', 'pass 5');
     },
     run: (root, id) => jarl(root, 'tick', id, '1', '--by', 'owner'),
   },

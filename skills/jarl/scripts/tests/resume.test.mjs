@@ -43,17 +43,17 @@ test('resume assembles every section live from the loop and the repositories its
   jarl(hub, 'decide', 'old-way', 'do it the old way', '--by', 'coordinator');
   jarl(hub, 'decide', 'new-way', 'do it the new way\nwith a second line', '--supersedes', 'old-way', '--by', 'coordinator');
   // In flight with a lease, in the tool repository, with a worker branch one commit ahead.
-  jarl(hub, 'new', 'in flight one', '--repo', '../tool', '--files', 'tool/src/a.mjs', '--acceptance', 'works');
+  jarl(hub, 'new', 'in flight one', '--repo', '../tool', '--files', 'tool/src/a.mjs', '--acceptance', '[read] works');
   jarl(hub, 'set', '1', 'in-progress', 'raised', '--branch', 'jarl/1-one', '--worker', 'w1');
   sh(tool, 'git checkout -q -b jarl/1-one && echo 2 > src/a.mjs && git commit -qam one && git checkout -q release');
   // Waiting on After, ready ones, a question, a ratify item.
-  jarl(hub, 'new', 'waits for one', '--after', '1');
-  jarl(hub, 'new', 'ready two', '--prio', '1', '--acceptance', 'x');
+  jarl(hub, 'new', 'waits for one', '--acceptance', '[read] it works', '--after', '1');
+  jarl(hub, 'new', 'ready two', '--prio', '1', '--acceptance', '[read] x');
   jarl(hub, 'new', 'ready three');
   jarl(hub, 'ask', 'which flag name?', '--issue', '3');
   jarl(hub, 'ask', 'kept the old default under the mandate', '--kind', 'ratify', '--issue', '1');
   // An approved branch waiting for the merger.
-  jarl(hub, 'new', 'queued five', '--repo', '../tool', '--files', 'tool/src/b.mjs');
+  jarl(hub, 'new', 'queued five', '--acceptance', '[read] it works', '--repo', '../tool', '--files', 'tool/src/b.mjs');
   jarl(hub, 'set', '5', 'in-progress', 'raised', '--branch', 'jarl/5-five', '--worker', 'w5');
   sh(tool, 'git checkout -q -b jarl/5-five && echo 2 > src/b.mjs && git commit -qam five && git checkout -q release');
   jarl(hub, 'review', '5', 'approve', '--by', 'rev', FINDINGS);
@@ -104,9 +104,9 @@ test('resume assembles every section live from the loop and the repositories its
 
   // The sections sum to the counts line. An issue in progress that waits on After is under Waiting, not In flight;
   // an open one whose file is taken by work in flight is Held, naming who holds it. In text and in JSON.
-  jarl(hub, 'new', 'eight');
+  jarl(hub, 'new', 'eight', '--acceptance', '[read] it works');
   jarl(hub, 'field', '5', 'After', '8');
-  jarl(hub, 'new', 'held nine', '--repo', '../tool', '--files', 'tool/src/a.mjs');
+  jarl(hub, 'new', 'held nine', '--acceptance', '[read] it works', '--repo', '../tool', '--files', 'tool/src/a.mjs');
   const w = jarl(hub, 'resume');
   const st = JSON.parse(jarl(hub, 'status', '--json'));
   assert.deepEqual([st.ready, st.inFlight, st.waiting], [6, 1, 2]);
@@ -133,7 +133,7 @@ test('resume assembles every section live from the loop and the repositories its
 
 test('resume in a git repository with no worker branches: Tips shows the feature branch and main, nothing else', () => {
   const { hub } = world();
-  jarl(hub, 'new', 'one');
+  jarl(hub, 'new', 'one', '--acceptance', '[read] it works');
   const t = jarl(hub, 'resume');
   assert.match(t, /## Tips \(CI not asked — --gh asks gh\)\n\[hub\] \S+\n {2}feature {2}main [0-9a-f]{12} {2}\(no upstream\) {2}not pushed\n\n## /);
   assert.doesNotMatch(t, /^ {2}worker /m);
@@ -157,7 +157,7 @@ test('an answered question is listed by its answer and then its question in deci
 test('commands run in one process read git afresh each time: a branch made between two of them is seen', async () => {
   const { dispatch } = await import(new URL('../jarl.mjs', import.meta.url).href);
   const { hub, tool } = world();
-  jarl(hub, 'new', 'one', '--repo', '../tool');
+  jarl(hub, 'new', 'one', '--acceptance', '[read] it works', '--repo', '../tool');
   jarl(hub, 'set', '1', 'in-progress', 'raised', '--branch', 'jarl/1-one', '--worker', 'w1');
   const lease = () => dispatch(hub, 'resume', [], {}).out.inFlight[0].stale;
   assert.deepEqual(lease(), ['branch gone: jarl/1-one']);
@@ -175,7 +175,7 @@ test('commands run in one process read git afresh each time: a branch made betwe
 
 test('handoff takes its flags, writes nothing, says so and exits 0; handoff read is resume plus the handoff file as history', () => {
   const { hub } = world();
-  jarl(hub, 'new', 'one');
+  jarl(hub, 'new', 'one', '--acceptance', '[read] it works');
   const before = snapshot(hub);
   const r = run(hub, ['handoff', 'write', '--summary', 'the plan', '--next', 'raise one']);
   assert.equal(r.status, 0, r.stderr);

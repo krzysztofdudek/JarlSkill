@@ -24,7 +24,7 @@ test('an ask with a kind that does not exist says the owner decides a ratify ite
 
 test('a close with open issues says the owner decides on them, and ends with the question to put to him', () => {
   const root = loop();
-  jarl(root, 'new', 'still open');
+  jarl(root, 'new', 'still open', '--acceptance', '[read] it works');
   assert.match(refuses(root, 'close'), /report them to the owner, who decides whether the loop closes with them \(close --force removes it with them\)\njarl\.mjs ask "<question-for-the-owner>"\n$/);
 });
 

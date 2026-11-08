@@ -19,6 +19,12 @@ export function declaredChecksByRepo(root) { return goalLines(readGoal(jarlDir(r
 // Every command the goal names, bare lines first.
 export function declaredChecks(root) { return goalLines(readGoal(jarlDir(root))).checks; }
 
+// The commands a repository's checks are: its own `Check (<name>)` lines, else the loop's `Check:` lines.
+export function declaredFor(loop, name) {
+  const d = loop.goalLines.checksByRepo;
+  return d.repos[name] && d.repos[name].length ? d.repos[name] : d.bare;
+}
+
 // The last merge an issue's events record, or null.
 function lastMerge(events) {
   let line = null;
@@ -37,9 +43,8 @@ export function checkState(loop) {
   const { root, issues } = loop;
   const declared = loop.goalLines.checksByRepo;
   const checks = loop.goalLines.checks;
-  const declaredFor = (name) => (declared.repos[name] && declared.repos[name].length ? declared.repos[name] : declared.bare);
   const byRepo = {};
-  const repo = (name) => (byRepo[name] = byRepo[name] || { repo: name, merges: 0, withCheck: 0, noCheck: 0, red: [], declared: declaredFor(name), landsOn: 'testimony' });
+  const repo = (name) => (byRepo[name] = byRepo[name] || { repo: name, merges: 0, withCheck: 0, noCheck: 0, red: [], declared: declaredFor(loop, name), landsOn: 'testimony' });
   for (const name of Object.keys(declared.repos)) repo(name);
   const total = { merges: 0, withCheck: 0, noCheck: 0, red: [] };
   for (const i of issues) {
@@ -64,7 +69,7 @@ export function checkState(loop) {
 }
 // Whether a merge line's check text names one of the declared commands: the text is the --ran commands of the call
 // joined by " ; " (see cmdMerged), compared with each declared command after trimming.
-function carriesDeclared(line, commands) {
+export function carriesDeclared(line, commands) {
   if (!line || !line.check || !commands.length) return false;
   const norm = (s) => fieldText(s).replace(/ +· +/g, ' - ').slice(0, 200);
   const wanted = commands.map(norm);

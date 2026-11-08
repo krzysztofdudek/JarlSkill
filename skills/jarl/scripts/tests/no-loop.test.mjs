@@ -126,7 +126,7 @@ test('a relative --repo that is no repository, under a root whose name holds a c
   jarl(dir, 'init', 'goal');
   mkdirSync(join(dir, 'inner'));
   for (const repo of ['./nope', './inner']) {
-    const r = spawnJarl(dir, ['new', 'one', '--repo', repo]);
+    const r = spawnJarl(dir, ['new', 'one', '--acceptance', '[read] it works', '--repo', repo]);
     assert.notEqual(r.status, 0, repo);
     const said = r.stderr.replace(/\n+$/, '').split('\n');
     assert.match(said[0], /^not a git repository: '.*\$\(touch made-by-paste\)[\\/](nope|inner)' /, repo);
