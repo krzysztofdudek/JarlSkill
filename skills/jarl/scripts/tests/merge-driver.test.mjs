@@ -70,7 +70,7 @@ function repo() {
   const dir = mkdtempSync(join(tmpdir(), 'jarl-merge-'));
   const g = (...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: SPAWN_TIMEOUT }).trim();
   g('init', '-q', '-b', 'main'); g('config', 'user.email', 't@t'); g('config', 'user.name', 't'); g('config', 'core.excludesFile', NO_EXCLUDES);
-  // A ruling names its author: the coordinator's, unless the call names one.
+  // The command line needs an author on a ruling: this helper names the coordinator when a call of the test names none.
   const jarl = (...args) => execFileSync(process.execPath, [SCRIPT, ...args, ...(args[0] === 'decide' && !args.includes('--by') ? ['--by', 'coordinator'] : []), '--root', dir], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: SPAWN_TIMEOUT }).trim();
   const commit = (m) => { g('add', '-A'); g('commit', '-qm', m); };
   const merge = (branch, settings = []) => spawnSync('git', [...settings, 'merge', '--no-edit', branch], { cwd: dir, encoding: 'utf8', timeout: SPAWN_TIMEOUT });

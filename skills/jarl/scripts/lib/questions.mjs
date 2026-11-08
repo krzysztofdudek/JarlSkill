@@ -315,8 +315,9 @@ function scopeOf(root, flags) {
 }
 
 // decide <slug> "<text>" [--by who] [--quote "<words>"] [--supersedes <slug>] [--settles <ids>]: the ruling, who ruled
-// (the caller, recorded as the coordinator, unless --by says otherwise: jarl for a choice the loop made under a
-// mandate, owner for the owner's own, which needs his words in --quote, kept on one line as the ruling's last paragraph),
+// (--by on the command line, which refuses a call without it; the library records the coordinator when a call names
+// nobody. jarl for a choice the loop made under a mandate, owner for the owner's own, which needs his words in --quote,
+// kept on one line as the ruling's last paragraph),
 // the ruling in force it rests on (--under, for a ruling by anyone but the owner, kept as the text's last paragraph
 // `Made under: <slug>`), the earlier ruling it replaces — marked **Superseded by:** in place, so a reader of the decisions, and decisions --live,
 // see it is not in force — and the issues it settles. Nothing in the loop names the owner: the name `owner` is his, and a
