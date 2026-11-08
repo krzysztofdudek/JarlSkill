@@ -148,6 +148,19 @@ export function lineStates(loop, issue, g = gateOf(loop, issue.id)) {
     return { ...base, state: missing.length ? 'unproved' : 'proved', missing: missing.length ? missing.join(', ') : null };
   });
 }
+// The numbers of the lines an issue's worker still owes a row for, before a review is offered: test and compare lines, and
+// check lines that state a command of their own: each needs a counted row naming it by a holder of the lease. A check
+// on the declared command is the landing's to prove, and a read line needs no row.
+export function workerRowsMissing(loop, issue, g = gateOf(loop, issue.id)) {
+  const holders = [...g.workers];
+  const heldBy = (name) => holders.some((w) => sameName(w, name));
+  const rows = countedRows(issue, g).filter((r) => r.by && (!holders.length || heldBy(r.by)));
+  return acceptanceLines(issue).flatMap((text, k) => {
+    const line = readLine(text);
+    const asked = line.method === 'test' || line.method === 'compare' || (line.method === 'check' && !onDeclared(loop, issue, line));
+    return asked && !rows.some((r) => r.lines.includes(lineDigest(text))) ? [k + 1] : [];
+  });
+}
 // The lines whose rows done still asks for: the mechanical lines the rows and the landing leave unproved.
 export const unprovedMechanical = (states) => states.filter((s) => MECHANICAL.has(s.method) && s.state === 'unproved');
 // One line's state as a line of text, the way show and the refusals say it.

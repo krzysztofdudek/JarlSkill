@@ -9,11 +9,11 @@ import { readText } from './files.mjs';
 import { ISSUE_FILE_RE, idKey, idRe, needsRaisedFormat, newIssueKey, newNumber } from './ids.mjs';
 import { FORMAT_LINES, formatState, loadProfile, numberWidth } from './profile.mjs';
 import { appendLogLines } from './journal.mjs';
-import { acceptanceHeading, acceptanceText, bodyText, changelogText, fieldValue, loadIssues, namedPairs, needNoFieldTags, parseIssue, renderIssue } from './issues.mjs';
+import { acceptanceHeading, acceptanceLines, acceptanceText, bodyText, changelogText, fieldValue, loadIssues, namedPairs, needNoFieldTags, parseIssue, renderIssue } from './issues.mjs';
 import { commitRepoNames, mainCheckoutOf, needFormat, needFormatHeld, repoList, reposNamed } from './repositories.mjs';
 import { IN_PLACE_TAG } from './gate.mjs';
 import { needOneSlice } from './slices.mjs';
-import { needMarkedLines } from './lines.mjs';
+import { needMarkedLines, readLine } from './lines.mjs';
 import { listAll, needLiveLoop } from './shared.mjs';
 import { claimFile, readTemplate } from './init.mjs';
 import { declaredRange, needRoomIn, nextIssueNumber, numberAfter, rangeAt, rangesOf } from './numbers.mjs';
@@ -191,6 +191,8 @@ export function cmdNew(root, title, rawFlags, from = {}) {
         priorityDefaulted ? defaultedNote('priority', priority, 'prio') : null,
         ...picked.map((p) => p.note && `note: ${p.note}`),
         ...unorderedNotes(root, profile, id),
+        !String(flags.why ?? '').trim() ? `note: no --why given, so the issue says nothing of why it matters — ${jarlLine('field', id, 'Why', hole('<text>'))}` : null,
+        tier === 'light' && acceptanceLines({ sections: { acceptance } }).some((l) => readLine(l).method === 'read') ? `note: ${id} is on tier light and has a [read] line, which only judgement proves: a light model cannot be trusted with it — ${jarlLine('field', id, 'Tier', hole('<tier>'))}` : null,
       ].filter(Boolean) : [];
       const note = notes.length ? { note: notes.join('\n') } : {};
       return { id, file, ...(rawFlags.template !== undefined ? { template: rawFlags.template } : {}), ...note };

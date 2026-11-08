@@ -63,13 +63,23 @@ function takeoverStanding(root, issue, entries) {
   let since = 0;
   let takeovers = 0;
   let rounds = 0;
+  let last = null;
   for (const e of entries) {
     if (e.type !== 'round') continue;
     rounds += 1;
     const tookOver = e.standing ? e.standing.takeover : (e.number ?? rounds) >= ROUNDS_BEFORE_TAKEOVER;
-    if (tookOver) { takeovers += 1; since = 0; } else since += 1;
+    if (tookOver) { takeovers += 1; since = 0; last = e.n; } else since += 1;
   }
-  return { limit, since, takeovers };
+  return { limit, since, takeovers, last };
+}
+
+// A takeover is due for an issue from the round that reached the limit until a lease is handed over after it: the round
+// reads the takeover it printed, and the handover is the takeover done (its reason is the worker's business, as a
+// takeover's brief is for any handover). `events` are the issue's events.
+export function takeoverDue(root, issue, events) {
+  const { last } = takeoverStanding(root, issue, events);
+  if (last === null) return false;
+  return !events.some((e) => e.type === 'move' && e.handover && e.n > last);
 }
 
 // A reason that names a takeover: takeover, take over, taken over, take-over, taking over, in any case.

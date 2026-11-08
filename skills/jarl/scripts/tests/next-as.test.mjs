@@ -43,7 +43,7 @@ test('next --as jarl lists each issue in play with the step it points to and the
   const root = stepsLoop();
   const o = json(root, 'next', '--as', 'jarl', '--all');
   assert.equal(o.as, 'jarl');
-  assert.deepEqual(o.rows.map((r) => [r.id, r.what]), [['5', 'merge'], ['1', 'ready'], ['2', 'worker'], ['3', 'review'], ['4', 'changes'], ['6', 'close']]);
+  assert.deepEqual(o.rows.map((r) => [r.id, r.what]), [['5', 'merge'], ['1', 'ready'], ['6', 'close'], ['3', 'review'], ['2', 'worker'], ['4', 'changes']]);
   assert.deepEqual(o.rows.find((r) => r.id === '5').holdsUp, ['10', '11', '12']);
   assert.equal(o.rows.find((r) => r.id === '2').doer, 'w2');
   const text = jarl(root, 'next', '--as', 'jarl');
@@ -116,7 +116,7 @@ test('the rows come from the profile\'s status flags, never from the names of th
   jarl(root, 'evidence', '3', '--line', '1', '--ran', 'npm test', '--saw', 'green');
   jarl(root, 'review', '3', 'approve', '--by', 'rev', FINDINGS);
   const o = json(root, 'next', '--as', 'jarl');
-  assert.deepEqual(o.rows.map((r) => [r.id, r.what]), [['1', 'ready'], ['2', 'review'], ['3', 'close']]);
+  assert.deepEqual(o.rows.map((r) => [r.id, r.what]), [['3', 'close'], ['2', 'review'], ['1', 'ready']]);
   const text = jarl(root, 'next', '--as', 'jarl');
   assert.match(text, /— jarl\.mjs set 1 doing --branch "<branch>" --worker "<name>" --model "<model-id>"$/m);
   assert.match(text, /^- 3 approved plain: approved; close it \(worker w3\) — jarl\.mjs set 3 shipped "<text>"$/m);

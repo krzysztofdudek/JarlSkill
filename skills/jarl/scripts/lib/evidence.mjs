@@ -14,7 +14,7 @@ import { outOfGit } from './loop-git.mjs';
 import { attachmentOf, journalById, rowLinesText } from './log.mjs';
 import { acceptanceLineCount, acceptanceLines, alignRows, bodyText, evidenceNotes, evidenceParts, evidenceTable, loadIssues, mergedOf, noteLogText, noteText, parseIssue, placeEvidence, removeFields, reviewEntries, setSection, sharedMark, struckNote } from './issues.mjs';
 import { fileKeysOf, needFormat, repoNames, reposWhere, tipLinesOf, whereLines, whereOf } from './repositories.mjs';
-import { approveKind, carriesCode, sentBack, unmergedCode, unmergedText, gateOf, gateState, reviewSplit, waiverVoid, worksInPlace } from './gate.mjs';
+import { approveKind, carriesCode, inFlightMark, sentBack, unmergedCode, unmergedText, gateOf, gateState, reviewSplit, waiverVoid, worksInPlace } from './gate.mjs';
 import { coordinatorOf, sameSlice, sliceNamed, sliceOf, slicesOf } from './slices.mjs';
 import { disagreementText, headerReadNotes, recordDisagreements } from './disagreements.mjs';
 import { readLoop, scopedLoop } from './loop.mjs';
@@ -506,6 +506,7 @@ function statusOf(root, loop, flags) {
   if (profile.scheduler) c.scheduler = profile.scheduler;
   c.noAcceptance = issues.filter((i) => profile.is(i.status, 'holds-claim') && !acceptanceLineCount(i)).map((i) => i.id);
   c.lines = lineCounts(loop, issues.filter((i) => i.status !== 'dropped'));
+  c.stages = stageCounts(loop, issues);
   const inScope = new Set(issues.map((i) => i.id));
   const asks = loop.asks.filter((a) => a.state === 'open' && (!scoped || (a.issue && inScope.has(a.issue)) || (slice !== null && sameSlice(a.slice ?? null, slice))));
   // A ratify item blocks nothing, so it is not counted among the questions the loop waits on.
@@ -574,6 +575,22 @@ function statusOf(root, loop, flags) {
   return c;
 }
 export const STATUS_BY = ['repo', 'tag', 'kind', 'prio'];
+
+// The stages of the work, in the order the work moves through them: where each issue stands, one count each. A status
+// outside the built-in five, of a loop's own profile, keeps a stage of its own name.
+const STAGES = ['open', 'in work', 'to examine', 'changes', 'to merge', 'merged', 'done', 'dropped', 'deferred'];
+const STAGE_OF_MARK = { 'no-rows': 'in work', 'rows-no-verdict': 'to examine', 'changes-requested': 'changes', approved: 'to merge', 'approved-not-fresh': 'to examine', 'approved-not-cleared': 'to examine', 'approved-model-refused': 'to examine', merged: 'merged', 'merged-ci': 'merged' };
+function stageCounts(loop, issues) {
+  const { profile } = loop;
+  const counts = Object.fromEntries(STAGES.map((s) => [s, 0]));
+  for (const i of issues) {
+    const stage = profile.is(i.status, 'holds-claim')
+      ? (sentBack(loop, i, inFlightMark(loop, i)) ? 'in work' : STAGE_OF_MARK[gatedMark(loop, i).mark])
+      : profile.is(i.status, 'dispatchable') ? 'open' : profile.is(i.status, 'closes-record') ? 'done' : i.status;
+    counts[stage] = (counts[stage] ?? 0) + 1;
+  }
+  return counts;
+}
 
 // What the record says about one in-flight issue, as one fact and the step it points to (never a status, never stored):
 // no evidence rows since the start; rows and no verdict since the last restart or round; changes requested; approved

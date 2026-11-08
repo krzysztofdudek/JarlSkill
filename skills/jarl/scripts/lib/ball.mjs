@@ -4,7 +4,7 @@
 import { PROMISE_KIND, WAIT_KIND, fieldText, jarlLine, need } from './base.mjs';
 import { cmpId, idKey, idsCited } from './ids.mjs';
 import { mergedOf } from './issues.mjs';
-import { carriesCode, holderKey, inFlightMark, leaseConflictOf, sameHolder, sentBack, statusWith, worksInPlace } from './gate.mjs';
+import { carriesCode, gateOf, holderKey, inFlightMark, leaseConflictOf, sameHolder, sentBack, statusWith, worksInPlace } from './gate.mjs';
 import { coordinatorOf, sameSlice, sliceOf } from './slices.mjs';
 import { readLoop } from './loop.mjs';
 import { gatedMark, modelReviewForm } from './models.mjs';
@@ -15,7 +15,9 @@ import { mergeAgainWhy, nextRows, schedulerNote } from './evidence.mjs';
 import { ownerLineStates } from './owner-lines.mjs';
 import { ruleLines, rulesFor } from './rules.mjs';
 import { jarlDir, today } from './where.mjs';
-import { ago, leaseLiveness, livenessOf, thresholdText } from './rounds.mjs';
+import { ago, leaseLiveness, livenessOf, takeoverDue, thresholdText } from './rounds.mjs';
+import { LINE_FORM, workerRowsMissing } from './lines.mjs';
+import { sameLease } from './leases.mjs';
 
 // The holders: the owner, the jarl, a named coordinator or a named outside person. A ready issue, a lease, a proof with no
 // verdict and a changes verdict are held by the coordinator whose slice the issue is in, and by the jarl for an issue in
@@ -63,10 +65,17 @@ function issueRows(ctx) {
   const leaseStatus = statusWith(profile, 'holds-claim');
   const closeStatus = statusWith(profile, 'closes-record', 'terminal');
   const out = [];
-  // Open and offered by next: ready to start. A parent offered there is in play below, for its check.
+  // Open and offered by next: ready to start, unless it holds no line, which leaves a worker nothing to prove: then the
+  // move is to write one. A parent offered there is in play below, for its check.
   for (const r of ctx.next.filter((x) => x.ready && !x.subs)) {
+    const i = loop.byId.get(r.id);
+    if (r.noAcceptance) {
+      out.push({ what: 'no-line', id: r.id, title: r.title, priority: r.priority, holder: holderOfId(r.id),
+        says: 'no acceptance line, so there is nothing a lease could prove: write its first line', command: jarlLine('field', r.id, 'Acceptance', LINE_FORM) });
+      continue;
+    }
     out.push({ what: 'ready', id: r.id, title: r.title, priority: r.priority, holder: holderOfId(r.id),
-      says: 'ready to start, raise a worker', command: jarlLine('set', r.id, leaseStatus, ...(worksInPlace(profile, loop.byId.get(r.id)) ? [] : ['--branch', '<branch>']), '--worker', '<name>', '--model', '<model-id>') });
+      says: 'ready to start, raise a worker', command: jarlLine('set', r.id, leaseStatus, ...(worksInPlace(profile, i) ? [] : ['--branch', '<branch>']), '--worker', '<name>', '--model', '<model-id>') });
   }
   const evidence = (id) => jarlLine('evidence', id, '--ran', '<command>', '--saw', '<what-it-printed>', '--line', '<line-number>', '--by', '<who>');
   const verdict = (id) => jarlLine('review', id, '<verdict>', '--by', '<reviewer>', '<text>');
@@ -95,6 +104,14 @@ function issueRows(ctx) {
     const withWorker = worker ? `with worker ${worker}` : 'in progress';
     const since = fieldText(i.fields.since) ? ` since ${fieldText(i.fields.since)}` : '';
     const lv = ctx.liveness(i);
+    if (profile.is(i.status, 'holds-claim') && !promise && takeoverDue(ctx.root, i, loop.eventsById.get(i.id) || [])) {
+      // The round that reached the limit said a takeover is due; it stands until a lease is handed over, whatever else the
+      // issue's record holds, so no compaction loses it.
+      const ids = leaseIds(loop, i);
+      out.push({ ...base, what: 'takeover', says: `the round limit is reached, so a takeover is due: raise a fresh worker, one tier up or on another model, or with a changed approach, and hand it the old diff to use or discard`,
+        command: jarlLine('set', ids.join(','), leaseStatus, '<why-the-worker-changed>', '--worker', '<the-new-worker>', '--model', '<model-id>', '--handover') });
+      continue;
+    }
     if ((mark === 'no-rows' || backAfterRound) && lv.idle) {
       // Idle past the threshold: a worker stuck on a prompt or a lock writes nothing, so the act is the holder's.
       out.push({ ...base, what: 'idle', idle: { ageMs: lv.ageMs, minutes: lv.minutes }, says: `${withWorker}${since}, no commit, row or log line for ${idleFor(lv)}: ask the worker whether it waits on a prompt or a lock, or hand the lease over`,
@@ -116,7 +133,14 @@ function issueRows(ctx) {
         command: merge ? jarlLine('merged', i.id, '--sha', '<sha>', '--ran', '<command>', '--saw', '<what-it-printed>') : jarlLine('set', i.id, closeStatus, '<text>') });
       continue;
     }
-    if (mark === 'rows-no-verdict' && carriesCode(i) && profile.keptKind(i.kind) !== PROMISE_KIND) continue;   // listed together below
+    if (mark === 'rows-no-verdict' && carriesCode(i) && profile.keptKind(i.kind) !== PROMISE_KIND) {
+      const gap = rowsGap(loop, i);
+      if (gap) {
+        const [own, lines] = gap.id === i.id ? ['its', gap.lines] : [`${gap.id}'s`, gap.lines];
+        out.push({ ...base, what: 'worker', says: `${withWorker}${since}, ${own} rows for ${lines.length === 1 ? 'line' : 'lines'} ${lines.join(', ')} are missing, and a review is offered for a whole branch once every issue on it has its worker's rows; the worker records them`, command: evidence(gap.id) });
+      }
+      continue;   // the branches with every row are listed together below
+    }
     if (mark === 'rows-no-verdict') {
       out.push({ ...base, what: 'review', ...(lv.idle ? { idle: { ageMs: lv.ageMs, minutes: lv.minutes } } : {}), says: `${checking(profile, i) ? 'checked against the whole' : 'proof recorded'}, no verdict${lv.idle ? ` for ${idleFor(lv)}` : ''}; raise a reviewer`, command: verdict(i.id) });
       continue;
@@ -180,7 +204,23 @@ const idleFor = (lv) => `${ago(lv.ageMs)} (threshold ${thresholdText(lv.minutes)
 function awaitingReview(loop, profile) {
   if (profile.doneGate.approve === 'none') return [];
   return loop.issues.filter((i) => inPlayForRows(profile, i) && !profile.keptKind(i.kind) && !waitingOn(i, loop.byId, profile).length && carriesCode(i)
-    && inFlightMark(loop, i) === 'rows-no-verdict' && !sentBack(loop, i, 'rows-no-verdict'));
+    && inFlightMark(loop, i) === 'rows-no-verdict' && !sentBack(loop, i, 'rows-no-verdict') && !rowsGap(loop, i));
+}
+// The issues of one lease, the given one among them, in the record's order.
+function leaseIds(loop, issue) {
+  const mates = loop.issues.filter((x) => x.id !== issue.id && sameLease(loop.profile, x, issue)).map((x) => x.id);
+  return [issue.id, ...mates].sort(cmpId);
+}
+// The first issue of `issue`'s lease whose worker still owes rows (see workerRowsMissing), and which lines: a review is
+// offered for a whole branch once none does. Null when none owes any, or when the issue carries no code.
+function rowsGap(loop, issue) {
+  if (!carriesCode(issue)) return null;
+  const onLease = leaseIds(loop, issue).map((id) => loop.byId.get(id)).filter((i) => inPlayForRows(loop.profile, i));
+  for (const i of onLease) {
+    const lines = workerRowsMissing(loop, i);
+    if (lines.length) return { id: i.id, lines };
+  }
+  return null;
 }
 
 // The proofs of code with no verdict, as one line: a fresh reviewer for all of them at once, or, where the jarl cannot
@@ -322,6 +362,7 @@ function ownerLineRows(ctx) {
 function questionRows(ctx) {
   return ctx.loop.asks.filter((a) => a.state === 'open').map((a) => {
     const ref = `a-${a.id}`;
+    const stuckTo = askHolder(ctx.loop, a);
     // An escalation goes up from a coordinator and is the jarl's: it names its slice or its issue.
     if (a.kind === 'escalation') return { what: 'escalation', ask: a.id, kind: a.kind, title: a.question, holder: JARL_HOLDER, ...(a.slice ? { slice: a.slice } : {}),
       says: `escalation${a.slice ? ` from slice:${a.slice}` : ''}${a.issue ? ` on issue ${a.issue}` : ''}`, command: jarlLine('answer', ref, '<text>', '--by', 'jarl') };
@@ -337,9 +378,23 @@ function questionRows(ctx) {
     // A question that asks for a fresh review holds the proofs it names, as far as they still await one.
     const keys = new Set(reviewAskKeys(ctx.loop, a.question));
     const reviewing = ctx.loop.issues.filter((i) => ctx.onOwner.has(i.id) && keys.has(idKey(i.id))).map((i) => i.id);
-    return { what: 'question', ask: a.id, kind: a.kind || 'stuck', title: a.question, holder: OWNER_HOLDER, ...(reviewing.length ? { reviewing } : {}),
-      says: `question (${a.kind || 'stuck'})${a.issue ? ` on issue ${a.issue}` : ''}${reviewing.length ? `, the fresh review of ${reviewing.join(', ')} waits on it` : keys.size ? ', no issue it names awaits a review now' : ''}`, command: jarlLine('answer', ref, '<text>', '--by', '<the-owner-himself>') };
+    return { what: 'question', ask: a.id, kind: a.kind || 'stuck', title: a.question, holder: stuckTo, ...(reviewing.length ? { reviewing } : {}),
+      says: `question (${a.kind || 'stuck'})${a.issue ? ` on issue ${a.issue}` : ''}${stuckTo !== OWNER_HOLDER ? ` from its worker` : ''}${reviewing.length ? `, the fresh review of ${reviewing.join(', ')} waits on it` : keys.size ? ', no issue it names awaits a review now' : ''}`, command: jarlLine('answer', ref, '<text>', '--by', stuckTo === OWNER_HOLDER ? '<the-owner-himself>' : stuckTo) };
   });
+}
+// Who answers a question: the kinds with a holder of their own are read where they are built. A stuck that names its issue
+// and was asked by a holder of that issue's lease is its director's, the coordinator of its slice or the jarl; asked by
+// the director itself, it is the owner's; asked by anyone else, or naming no issue, the owner's, as it has always been.
+function askHolder(loop, a) {
+  if (a.kind && a.kind !== 'stuck') return OWNER_HOLDER;
+  const issue = a.issue ? loop.byId.get(a.issue) : null;
+  if (!issue) return OWNER_HOLDER;
+  const asked = loop.events.find((e) => new RegExp(`^asked a-${a.id}\\b`).test(e.text));
+  const by = asked ? asked.writer : null;
+  if (!by) return OWNER_HOLDER;
+  const director = coordinatorOf(loop, issue);
+  if (sameHolder(by, director)) return OWNER_HOLDER;
+  return [...gateOf(loop, issue.id).workers].some((w) => sameHolder(w, by)) ? director : OWNER_HOLDER;
 }
 
 // The jarl's ruling rows: a ruling in force that names work (it settles issues) and settles no live issue: every issue
@@ -396,6 +451,9 @@ export const ROW_SOURCES = [issueRows, leaseConflictRows, keptRows, ownerLineRow
 // The rows a composer's scheduler owns: under an external scheduler Jarl lists only the others.
 const SCHEDULING = new Set([issueRows, leaseConflictRows]);
 
+// The kinds of move, from the end of the line back: close and CI, then the merge, then the verdict, then rework (what went
+// back), then a new start; every other row after those.
+const STAGE_ORDER = Object.freeze({ close: 0, ci: 0, merge: 1, review: 2, check: 2, changes: 3, worker: 3, takeover: 3, idle: 3, ready: 4, other: 5 });
 // Every row of the loop, ordered as one display (never a schedule): the owner's rows first, then the rows idle past the threshold, then by how many issues each
 // holds up directly, an item to ratify after a question (it blocks nothing), then by priority and number. A question of
 // kind stop holds up the whole loop.
@@ -437,7 +495,11 @@ export function ballRows(root, flags = {}) {
   const weight = (r) => (r.what === 'question' && r.kind === 'stop' ? Number.MAX_SAFE_INTEGER : r.holdsUp.length);
   // A row idle past the threshold goes before the others of its holder: a worker that waits on a prompt or a lock writes
   // nothing, so the list is where it is seen, and it must not fall past the seven lines shown.
+  // Among equals the end of the line comes first: what is nearest to landing frees the most, then what waits on a verdict,
+  // then what went back, then a new start; anything else keeps the old order after them.
+  const stage = (r) => STAGE_ORDER[r.what] ?? STAGE_ORDER.other;
   rows.sort((a, b) => (b.holder === OWNER_HOLDER) - (a.holder === OWNER_HOLDER) || Boolean(b.idle) - Boolean(a.idle) || weight(b) - weight(a)
+    || stage(a) - stage(b)
     || (a.what === 'ratify') - (b.what === 'ratify')
     || String(a.priority ?? '9').localeCompare(String(b.priority ?? '9')) || cmpRef(a, b));
   return { loop, rows, scheduled, waiting: waitingRows(loop, rows, ctx.next, ctx.onOwner) };
@@ -465,8 +527,10 @@ function waitingRows(loop, rows, next, onOwner) {
   const questionOf = new Map(next.filter((r) => r.group === 'held-by-question').map((r) => [r.id, r.questions]));
   // The holder of the questions that hold an issue: the owner while any of them is the owner's, the jarl when every one is
   // an escalation, which the jarl holds.
-  const kinds = new Map(loop.asks.map((a) => [a.id, a.kind]));
-  const questionHolder = (id) => (questionOf.get(id).every((q) => kinds.get(q) === 'escalation') ? JARL_HOLDER : OWNER_HOLDER);
+  const asksById = new Map(loop.asks.map((a) => [a.id, a]));
+  // The holder of a question that holds an issue back: the jarl for an escalation, its director for a worker's stuck.
+  const onHolder = (q) => { const a = asksById.get(q); return a.kind === 'escalation' ? JARL_HOLDER : askHolder(loop, a); };
+  const questionHolder = (id) => { const holders = [...new Set(questionOf.get(id).map(onHolder))]; return holders.includes(OWNER_HOLDER) || !holders.length ? OWNER_HOLDER : holders[0]; };
   const roots = (i, seen = new Set()) => {
     const out = [];
     for (const a of waitingOn(i, byId, profile)) {
@@ -511,7 +575,7 @@ function waitingRows(loop, rows, next, onOwner) {
 // says so. Under an external scheduler the rows of issues in play are the composer's, and the answer names its command
 // for them.
 // The moment of work each kind of row stands at: what a rule with a moment selector is read against.
-const MOMENT_OF = Object.freeze({ ready: 'start', worker: 'start', idle: 'start', check: 'done', review: 'review', changes: 'round', merge: 'merge', ci: 'merge', close: 'done', 'sign-off': 'done' });
+const MOMENT_OF = Object.freeze({ ready: 'start', worker: 'start', idle: 'start', 'no-line': 'filing', takeover: 'round', check: 'done', review: 'review', changes: 'round', merge: 'merge', ci: 'merge', close: 'done', 'sign-off': 'done' });
 // Who asks, as a rule reads a reader: its roles, its slice, the moments of work its list stands at and the issues it works
 // on. The jarl works on the issues in play in no slice and holds the filing and the close, and it is the coordinator of the
 // issues in play in no slice as well; a coordinator on the issues in
