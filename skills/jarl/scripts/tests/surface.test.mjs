@@ -284,7 +284,7 @@ test('a tool call writes its free text through the field text', () => {
   assert.match(R.findIssue(root, '2').sections.evidence, /Deferred: later/);
 });
 
-test('every write that records a judgement names its author: review, answer, decide, retract and tick refuse a call without --by, with the call that names one', () => {
+test('every write that records a judgement names its author: review, answer, decide, retract and tick refuse a call without --by, ending with the form of the call that names one', () => {
   const root = fieldedLoop();
   jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'ok');
   jarl(root, 'ask', 'which way?');
