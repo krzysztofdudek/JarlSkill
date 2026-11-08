@@ -102,6 +102,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Importing research findings now checks every finding before it writes anything. If one cannot be filed, the whole file is refused, the finding is named and the loop stays as it was. Before, the findings ahead of it were already filed, or an issue already adopted, and a loop that cannot take a repository name wrote a change and then said nothing was written.
 - A findings file, a profile or a goal saved by an editor that puts a byte order mark at the start, as Windows editors do, is now read like any other. Before, a findings file saved that way was refused as not JSON.
 - An answer to an item waiting for the owner's approval must start with a word that approves or rejects it, such as yes or reject. Any other answer is refused, so it is always clear what the owner decided.
+- Taking back a review, a test result or a note in a loop that an older Jarl wrote no longer undoes the update of that task's repository field. Before, that one task kept the old form while every other task was updated.
 
 ## [6.2.0] - 2026-10-19
 

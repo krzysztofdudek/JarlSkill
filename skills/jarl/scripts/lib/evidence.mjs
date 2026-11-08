@@ -64,6 +64,9 @@ function retractedBy(flags, what) {
   return fieldText(flags.by);
 }
 const struck = (line) => line.replace(/^- /, '- ~~');
+// The text a write that raised the format starts from: a raise from format 1 writes the Repo and Merged paths of every
+// issue file again, this one's too, so the file is read again after it; the sections the write replaces are untouched by it.
+const raisedText = (issue, text, raised) => (raised ? readText(issue.file) : text);
 // The waiver decide --waives-review writes into an issue's notes, as the file holds it: the ruling it names.
 const WAIVER_TEXT = /^(?:- )?Ruling (\S+) \(by owner\) waives the review\b/;
 
@@ -94,12 +97,12 @@ function retractEvidence(root, rawIds, reason, flags) {
   need(journalRows.length === 0 || alignRows(issue.id, table.rows, journalRows)[n - 1], `row ${n} of ${issue.id} matches no evidence line of the log, so its retraction could not be told from another row's; nothing was written; what the record holds: ${jarlLine('verify')}`, () => ({ replace: raw, value: '<a-row-the-log-matches>' }));
   // The first retraction of a loop raises the record format, before its line is written: a reader of format 1 does not
   // read a retraction and would go on counting the row, so it must refuse the loop instead.
-  needFormat(root, 'retraction');
+  const raised = needFormat(root, 'retraction');
   const lines = table.lines.slice();
   lines[row.start] = struck(lines[row.start]);
   lines[row.end] = `${lines[row.end].trimEnd()}~~`;
   const entry = `- **retracted:** row ${n} · by ${by} · ${stamp().slice(0, 10)}\n${bodyText(reason).split('\n').map((l) => (l ? `  ${l}` : '')).join('\n')}`;
-  writeAtomic(issue.file, setSection(text, 'Evidence', placeEvidence(lines.join('\n').trim(), 'note', entry, '\n')));
+  writeAtomic(issue.file, setSection(raisedText(issue, text, raised), 'Evidence', placeEvidence(lines.join('\n').trim(), 'note', entry, '\n')));
   appendLog(root, `${issue.id} evidence retract · row ${n} · by ${by} · ${firstLine(reason, "the issue's Evidence section")}`);
   return { id: issue.id, retracted: n, by };
 }
@@ -123,9 +126,9 @@ function retractNote(root, rawIds, reason, flags, n) {
   const live = table.notes.findLastIndex((x) => !x.retracted);
   need(!note.retracted, `note ${n} of ${issue.id} is retracted already${live === -1 ? ', as is every note it holds' : `; note ${live + 1} is not`}`, noteFirst);
   // The format is raised before the line is written, as a row's retraction does: a reader of format 1 would show the note.
-  needFormat(root, 'note-retraction');
+  const raised = needFormat(root, 'note-retraction');
   const entry = `- **retracted:** note ${n} · by ${by} · ${stamp().slice(0, 10)}\n${bodyText(reason).split('\n').map((l) => (l ? `  ${l}` : '')).join('\n')}`;
-  writeAtomic(issue.file, setSection(text, 'Evidence', placeEvidence(struckNote(table.lines, note).join('\n').trim(), 'note', entry, '\n')));
+  writeAtomic(issue.file, setSection(raisedText(issue, text, raised), 'Evidence', placeEvidence(struckNote(table.lines, note).join('\n').trim(), 'note', entry, '\n')));
   appendLog(root, `${issue.id} evidence retract · note ${n} · by ${by} · ${firstLine(reason, "the issue's Evidence section")}`);
   return { id: issue.id, retractedNote: n, by };
 }
@@ -709,4 +712,4 @@ export function closedGateFlags(loop) {
 }
 
 // Used by the other modules of the library, and not part of what jarl-lib.mjs exports.
-export { REVIEW_MIN_WORDS, modelText, needSaid, retractedBy, statusOf, struck };
+export { REVIEW_MIN_WORDS, modelText, needSaid, raisedText, retractedBy, statusOf, struck };

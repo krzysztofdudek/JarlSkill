@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { fileAsBefore, oldJarl } from './old-jarl.mjs';
-import { jarl, refuses, loop as makeLoop } from './helpers.mjs';
+import { SPAWN_TIMEOUT, jarl, refuses, loop as makeLoop } from './helpers.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 const L = await import('../jarl-lib.mjs');
@@ -190,6 +190,29 @@ test('the first retraction raises the format before its line is written; the pin
       assert.match(r.error, /written for record format 2, and this Jarl reads format 1/, command);
     }
     assert.match(jarl(root, 'list', '--all'), /thing to do/, 'this Jarl reads the same loop');
+  }
+});
+
+test('a retraction that raises a format-1 loop keeps the raise\'s ./ form of a bare Repo path in the issue it writes', () => {
+  for (const [what, retract] of [
+    ['a verdict', (root, id) => jarl(root, 'retract', id, 'review', '--by', 'jarl', 'the approve was a mistake')],
+    ['a row', (root, id) => jarl(root, 'retract', id, '1', '--by', 'jarl', 'the row was a mistake')],
+    ['a note', (root, id) => jarl(root, 'retract', id, 'note-1', '--by', 'jarl', 'the note was a mistake')],
+  ]) {
+    const root = loop();
+    mkdirSync(join(root, 'tool'));
+    execFileSync('git', ['init', '-q'], { cwd: join(root, 'tool'), stdio: 'ignore', timeout: SPAWN_TIMEOUT });
+    const id = fileAsBefore(root, 'thing to do', { acceptance: 'it works', repo: 'tool' });
+    const other = fileAsBefore(root, 'other thing', { acceptance: 'it works', repo: 'tool' });
+    jarl(root, 'evidence', id, 'a note');
+    jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'pass');
+    jarl(root, 'review', id, 'approve', '--by', 'rev-a', 'read it all');
+    assert.match(file(root, id), /^\*\*Repo:\*\* tool$/m, `${what}: the format-1 reader writes the path bare`);
+    retract(root, id);
+    assert.notEqual(existsSync(profileFile(root)) && JSON.parse(readFileSync(profileFile(root), 'utf8')).format, false, `${what}: the retraction raised the format`);
+    assert.match(file(root, other), /^\*\*Repo:\*\* \.\/tool$/m, `${what}: the raise wrote the other issue's path with ./`);
+    assert.match(file(root, id), /^\*\*Repo:\*\* \.\/tool$/m, `${what}: the retracted issue keeps the raise's ./ form`);
+    assert.match(file(root, id), /retracted|\*\*retract\*\*/, `${what}: and holds its retraction`);
   }
 });
 
