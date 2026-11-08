@@ -171,13 +171,16 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
 // variable of a shell ($HOME, %USERPROFILE%), an address with a scheme (file://, https://) or a path that climbs above
 // the root it is read from with .. is refused. A path is read against the root of the repository the work is
 // in, and a / or a \ both part its segments. It is one segment of the verdict line: no separator and no line break.
+// An address with a scheme (file://, https://), and a variable of a POSIX shell ($HOME, ${HOME}) or of cmd (%USERPROFILE%).
+const URL_SCHEME = /^[A-Za-z][A-Za-z0-9+.-]*:\/\//;
+const SHELL_VARIABLE = /\$\{?[A-Za-z_]|%[A-Za-z_][A-Za-z0-9_]*%/;
 function artifactValue(raw) {
   const p = typeof raw === 'string' ? raw.trim() : '';
   const form = () => ({ flag: '--artifact', value: hole('<path>') });
   need(p !== '', '--artifact needs a value — the path of the render or file the verdict judged, inside the repository the work is in', form);
   need(!/[\u0000-\u001f\u007f\u0085\u2028\u2029·]/.test(p), '--artifact is one path on one line, with no · in it', form);
-  need(!/^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(p), `--artifact names a path inside the repository the work is in, relative to its root, and ${echoWord(p)} is an address with a scheme, which names no path inside the repository (a file:// address names a place on one machine)`, form);
-  need(!/\$\{?[A-Za-z_]|%[A-Za-z_][A-Za-z0-9_]*%/.test(p), `--artifact names a path inside the repository the work is in, relative to its root, and ${echoWord(p)} holds a variable of a shell, which stands for a place on one machine`, form);
+  need(!URL_SCHEME.test(p), `--artifact names a path inside the repository the work is in, relative to its root, and ${echoWord(p)} is an address with a scheme, which names no path inside the repository (a file:// address names a place on one machine)`, form);
+  need(!SHELL_VARIABLE.test(p), `--artifact names a path inside the repository the work is in, relative to its root, and ${echoWord(p)} holds a variable of a shell, which stands for a place on one machine`, form);
   need(!isAbsolute(p) && !/^[\\/~]/.test(p) && !/^[A-Za-z]:/.test(p), `--artifact names a path inside the repository the work is in, relative to its root, and ${echoWord(p)} is a place on one machine, which the record never holds`, form);
   let depth = 0;
   for (const s of p.split(/[\\/]/)) {
