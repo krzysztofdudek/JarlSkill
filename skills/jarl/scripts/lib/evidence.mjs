@@ -568,6 +568,10 @@ export function mergeAgainWhy(loop, issue) {
   if (!u) return null;
   return u.why === 'tip' ? 'the branch has commits after its last merge' : 'its last merge was spent by a later start, reopen or red round';
 }
+// An approve refused for its model on an issue whose merge counts for its code as it is now: the merge queue has nothing
+// left to take, and only done refuses it.
+const MODEL_REFUSED_MERGED = 'approved and merged, and done refuses its approve for its model: it waits for an approve the reviewer rule accepts';
+const mergedFor = (loop, issue) => Boolean(mergedOf(issue)) && !mergeAgainWhy(loop, issue);
 const approvedStep = (loop, issue) => { const again = mergeAgainWhy(loop, issue); return again ? `approved, and ${again} — next the merger lands it again and records the merge, then set it done` : IN_FLIGHT_MARKS.approved; };
 const inFlightStep = (loop, mark, issue) => (mark === 'approved' && worksInPlace(loop.profile, issue) ? APPROVED_IN_PLACE : mark === 'approved' && !carriesCode(issue) ? APPROVED_NO_CODE : mark === 'approved' ? approvedStep(loop, issue) : sentBack(loop, issue, mark) ? SENT_BACK : IN_FLIGHT_MARKS[mark]);
 // The rows for the in-flight `issues` of a loop (its own issues, or the ones a view is scoped to). Where the mark ends in
@@ -579,7 +583,7 @@ export function inFlightRows(loop, issues) {
   return issues.filter((i) => profile.is(i.status, 'holds-claim') && !waitingOn(i, byId, profile).length).map((i) => {
     const { mark, missing } = gatedMark(loop, i);
     const wait = ENDS_DONE.has(mark) ? ownerLineWait(loop.root, loop, i) : null;
-    const step = missing ? `${IN_FLIGHT_MARKS[mark]} (${missing})` : inFlightStep(loop, mark, i);
+    const step = missing ? `${mergedFor(loop, i) ? MODEL_REFUSED_MERGED : IN_FLIGHT_MARKS[mark]} (${missing})` : inFlightStep(loop, mark, i);
     const next = wait ? step.replace(/set it done$/, `${wait}, then set it done`) : step;
     return { id: i.id, title: i.title, branch: i.fields.branch || null, worker: i.fields.worker || null, model: i.fields.model || null, since: i.fields.since || null, ...leaseWriter(loop, i), mark, next };
   });

@@ -228,6 +228,20 @@ test('on a loop that stays at its record format, the second finding outside the 
   assert.match(jarl(hub, 'review', '001', 'approve', 'read the diff and the test, it works', '--by', 'rev-a', '--outside', 'Minor: the first thing seen'), /filed outside the issue: 999/);
 });
 
+test('on a loop that stays at its record format, a finding outside the issue that takes a number the format cannot hold ends with the profile view its reason names and the call\'s own form', () => {
+  const hub = composed();
+  writeFileSync(join(hub, '.jarl', 'issues', '999-old-999.md'), L.renderIssue({ id: '999', title: 'old 999', kind: 'bug', priority: '2', tier: 'standard', tags: [], files: [], repo: '', foundBy: 'jarl' }));
+  jarl(hub, 'set', '001', 'in-progress', 'start', '--worker', 'w1');
+  jarl(hub, 'evidence', '001', '--ran', 'npm test', '--saw', 'tests 4, pass 4');
+  const before = snapshot(hub);
+  const said = refuses(hub, 'review', '001', 'approve', 'read the diff and the test, it works', '--by', 'rev-a', '--outside', 'Minor: the thing seen');
+  assert.match(said, /^the finding outside the issue "Minor: the thing seen" cannot be filed: issue number 1000 needs record format 2, .* until its profile says "format": 2 — nothing was written\n/);
+  const [view, form] = said.trim().split('\n').slice(-2);
+  assert.equal(view, 'jarl.mjs profile');
+  assert.equal(form, 'jarl.mjs review "<ids>" "<verdict>" "<what-was-read-and-found>" --by "<who>" --outside "<finding-outside-the-issue>"', 'the call\'s own form, every value a placeholder');
+  assert.deepEqual(snapshot(hub), before, 'the refused review left the loop as it found it');
+});
+
 test('a finding that holds a field\'s tag pair is refused with a reason that names the pair and the way review takes it', () => {
   const root = leased();
   const said = refuses(root, 'review', '1', 'approve', 'read the diff and the test, the export writes csv', '--by', 'rev-a', '--outside', 'Important: a <why>reason</why> sits in the text');

@@ -217,7 +217,10 @@ function fileOutside(root, issues, by, o, flags, withModel, dry, number) {
     // A field's tag pair in the finding: the filing's reason names a flag of new, which review does not take.
     const tag = /holds an opening and a closing (\w+) tag in angle brackets/.exec(e.reason);
     const why = tag ? `it holds an opening and a closing ${tag[1]} tag in angle brackets, which the text of an issue never holds: write the finding without the tag pair, or put the tags in backticks` : e.reason;
-    refuse(`the finding outside the issue "${shown}" cannot be filed: ${why}${/nothing was written/.test(why) ? '' : ' — nothing was written'}`, [...(kept ? fixes : [{ replace: String(o.given), value: hole('<finding-outside-the-issue>') }]), { flag: '--by', value: hole('<reviewer>') }, ...withModel]);
+    // A reason that names a view (the profile, for a line the loop's record format does not hold) ends with that view and
+    // the call's own form, as import does: no other text of the finding files it in this loop.
+    const view = fixes.find((f) => f && typeof f === 'object' && f.first);
+    refuse(`the finding outside the issue "${shown}" cannot be filed: ${why}${/nothing was written/.test(why) ? '' : ' — nothing was written'}`, view ? [{ first: view.first }, { retry: true }] : [...(kept ? fixes : [{ replace: String(o.given), value: hole('<finding-outside-the-issue>') }]), { flag: '--by', value: hole('<reviewer>') }, ...withModel]);
   }
   return null;
 }

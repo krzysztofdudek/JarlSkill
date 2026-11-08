@@ -118,16 +118,14 @@ function issueRows(ctx) {
       out.push({ ...base, what: 'review', ...(lv.idle ? { idle: { ageMs: lv.ageMs, minutes: lv.minutes } } : {}), says: `${checking(profile, i) ? 'checked against the whole' : 'proof recorded'}, no verdict${lv.idle ? ` for ${idleFor(lv)}` : ''}; raise a reviewer`, command: verdict(i.id) });
       continue;
     }
-    // Approves that do not clear: listed together per holder below, in the units of a shared review.
-    if (mark === 'approved-not-fresh' || mark === 'approved-not-cleared') {
+    // Approves that do not clear: listed together per holder below, in the units of a shared review. An approve the
+    // reviewer rule refuses for its model is one of them, the reading the merge queue and done take: it is not merged or
+    // closed on, and one alone says what is missing.
+    if (mark === 'approved-not-fresh' || mark === 'approved-not-cleared' || mark === 'approved-model-refused') {
       const key = `${mark}\n${holderKey(holder)}`;
-      if (!unclearedBy.has(key)) unclearedBy.set(key, { mark, holder, issues: [] });
+      if (!unclearedBy.has(key)) unclearedBy.set(key, { mark, holder, issues: [], missing: new Map() });
       unclearedBy.get(key).issues.push(i);
-      continue;
-    }
-    // The reading the merge queue and done take: an approve the reviewer rule refuses for its model is not merged or closed on.
-    if (mark === 'approved-model-refused') {
-      out.push({ ...base, what: 'review', says: `approved, and done refuses the approve for its model — ${missing}; raise a reviewer whose approve the rule accepts`, command: modelReviewForm(i.id) });
+      if (missing) unclearedBy.get(key).missing.set(i.id, missing);
       continue;
     }
     if (mark === 'changes-requested') {
@@ -153,7 +151,7 @@ function issueRows(ctx) {
     byHolder.set(h, [...(byHolder.get(h) || []), i]);
   }
   for (const [holder, todo] of byHolder) out.push(...reviewRow(ctx.root, todo, holder, verdict, ctx.liveness));
-  for (const { mark, holder, issues } of unclearedBy.values()) out.push(unclearedRow(ctx.root, issues, holder, mark, verdict));
+  for (const { mark, holder, issues, missing } of unclearedBy.values()) out.push(unclearedRow(ctx.root, issues, holder, mark, mark === 'approved-model-refused' ? modelReviewForm : verdict, missing));
   return out;
 }
 // The issues of one holder whose approves stand and do not clear them, one kind of cause at a time: one issue keeps its
@@ -161,11 +159,13 @@ function issueRows(ctx) {
 const UNCLEARED_SAYS = {
   'approved-not-fresh': ['approved by a coordinator only, and it carries code; raise a fresh reviewer', 'approved by a coordinator only, and they carry code; raise one fresh reviewer per unit'],
   'approved-not-cleared': ['approved, and no approve it holds clears it under the loop\'s done gate; raise a reviewer whose approve does', 'approved, and no approve they hold clears them under the loop\'s done gate; raise one reviewer whose approve does per unit'],
+  'approved-model-refused': [(missing) => `approved, and done refuses the approve for its model — ${missing}; raise a reviewer whose approve the rule accepts`, 'approved, and done refuses their approves for their model; raise one reviewer whose approve the rule accepts per unit'],
 };
-function unclearedRow(root, issues, holder, mark, verdict) {
+// `missing` holds, by id, what the reviewer rule finds missing in an approve it refuses for its model.
+function unclearedRow(root, issues, holder, mark, verdict, missing = new Map()) {
   const [one, many] = UNCLEARED_SAYS[mark];
   const worker = fieldText(issues[0].fields.worker) || null;
-  if (issues.length === 1) return { id: issues[0].id, title: issues[0].title, priority: issues[0].priority, holder, ...(worker ? { doer: worker } : {}), what: 'review', says: one, command: verdict(issues[0].id) };
+  if (issues.length === 1) return { id: issues[0].id, title: issues[0].title, priority: issues[0].priority, holder, ...(worker ? { doer: worker } : {}), what: 'review', says: typeof one === 'function' ? one(missing.get(issues[0].id)) : one, command: verdict(issues[0].id) };
   const units = reviewUnits(root, issues);
   return { what: 'review', id: issues[0].id, ids: issues.map((i) => i.id), units, title: '', priority: issues.map((i) => i.priority).filter((p) => p !== undefined).sort()[0], holder,
     says: `${many}: ${units.map(unitText).join(' · ')}`, command: verdict('<ids>') };

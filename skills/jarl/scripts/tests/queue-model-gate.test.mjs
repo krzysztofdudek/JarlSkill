@@ -87,6 +87,37 @@ for (const [rule, refusedModel] of [['other-model', 'm-strong'], ['model-rank', 
   });
 }
 
+test('approves refused for their model are one line cut into review units, as the other approves that do not clear are; one alone keeps its line', () => {
+  const dir = modelRepo('other-model');
+  for (const n of [1, 2]) leased(dir, n);
+  for (const n of [1, 2]) approve(dir, n, '--model', 'm-strong');
+  const rows = JSON.parse(jarl(dir, 'next', '--as', 'jarl', '--all', '--json')).rows.filter((r) => r.what === 'review');
+  assert.equal(rows.length, 1, JSON.stringify(rows));
+  assert.deepEqual(rows[0].ids, ['1', '2']);
+  assert.deepEqual(rows[0].units.map((u) => u.ids), [['1'], ['2']]);
+  assert.match(rows[0].says, /^approved, and done refuses their approves for their model; raise one reviewer whose approve the rule accepts per unit: /);
+  assert.equal(rows[0].command, 'jarl.mjs review "<ids>" "<verdict>" --by "<a-fresh-reviewer>" --model "<model-id>" "<text>"');
+  approve(dir, 2, '--model', 'm-light');
+  const alone = JSON.parse(jarl(dir, 'next', '--as', 'jarl', '--all', '--json')).rows.filter((r) => r.what === 'review');
+  assert.deepEqual(alone.map((r) => [r.id, r.ids]), [['1', undefined]]);
+  assert.match(alone[0].says, /^approved, and done refuses the approve for its model — 1's live approve is by rev-1 on m-strong, /);
+  assert.equal(alone[0].command, 'jarl.mjs review 1 "<verdict>" --by "<a-fresh-reviewer>" --model "<model-id>" "<text>"');
+});
+
+test('an issue already merged whose approve is refused for its model is said to wait for an approve done accepts, and not for the merge queue', () => {
+  const dir = modelRepo('other-model');
+  leased(dir, 1);
+  approve(dir, 1, '--model', 'm-strong');
+  const queued = () => JSON.parse(jarl(dir, 'status', '--json')).inFlightRows.find((r) => r.id === '1');
+  assert.match(queued().next, /^approved, and done refuses its approve for its model — neither the merge queue nor done accepts that: /, 'not merged: the queue does not take it either');
+  sh(dir, 'git merge -q --no-ff -m "merge 1" jarl/1-change');
+  jarl(dir, 'merged', '1', '--sha', sh(dir, 'git rev-parse HEAD'), '--keep');
+  const merged = queued();
+  assert.equal(merged.mark, 'approved-model-refused');
+  assert.match(merged.next, /^approved and merged, and done refuses its approve for its model: it waits for an approve the reviewer rule accepts \(1's live approve is by rev-1 on m-strong, /);
+  assert.doesNotMatch(merged.next, /merge queue/);
+});
+
 test('by default the model never holds a branch back in the queue', () => {
   const dir = modelRepo();
   leased(dir, 1);
