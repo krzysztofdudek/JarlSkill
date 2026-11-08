@@ -51,7 +51,7 @@ test('a code issue with a branch in a loop with no repository is merged before i
   assert.deepEqual(json(root, 'status').closedGate, []);
 });
 
-// ---- a merge counts for the code as it is now: one from before a reopen or a round, or of an older tip, does not ----
+// ---- a merge counts for the code as it is now: one from before a reopen or a round, or of a tip the branch has moved past, does not ----
 
 // A loop in a git repository on main whose first issue is leased on jarl/1-fix, with one commit, its row and a fresh approve.
 function codeIssue(initFlags = []) {
@@ -93,7 +93,7 @@ test('a code issue reopened after its merge and given a new commit is refused by
   assert.deepEqual(json(root, 'status').closedGate, []);
 });
 
-test('a merge of an older tip does not count once the branch has a newer commit: done names both tips', () => {
+test('a merge of a tip the branch has moved past does not count once the branch has a newer commit: done names both tips', () => {
   const { root, g, work, merge } = codeIssue();
   const merged = g('rev-parse', 'jarl/1-fix').trim();
   const first = merge();
