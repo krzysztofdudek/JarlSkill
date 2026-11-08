@@ -57,8 +57,11 @@ function lineRecord(e) {
   // A verdict's text as the log holds it, and with the lead-in a writer sets before a finding that opens like a mark taken
   // off, since not every writer sets it; a retraction's names the approve it takes away, then its reason.
   const readings = verdict ? [sameText(text), sameText(findingOfLog(text))] : [sameText(text)];
-  return { verdict: head[1], by: head[2] ?? null, kind: head[3] ?? null, day: e.at.slice(0, 10), model, relayed, batch, readings, text };
+  return { verdict: head[1], by: head[2] ?? null, kind: head[3] ?? null, day: e.at.slice(0, 10), model, relayed, batch, readings, ledIn: verdict && findingOfLog(text) !== text, text };
 }
+// A finding that opens with these words is given a lead-in on its log line by every writer that keeps a Reviews entry, so
+// the line of such an entry carries one: a line without it was written by a writer that keeps no entry.
+const ALWAYS_LED_IN = /^(?:model |relayed(?: ·|$))/i;
 // An entry's marks stand in its heading after the day; a retracted approve's heading is struck through, its closing mark
 // after the last of them.
 function entryRecord(lines, e) {
@@ -71,14 +74,16 @@ function entryRecord(lines, e) {
   return {
     verdict: e.verdict, by: e.by, kind: e.kind, day: e.day,
     model: / · model (.+?)(?= · |\s*$)/.exec(heading)?.[1] ?? null, relayed: / · relayed(?= · |\s*$)/.test(heading), batch: / · batch (\S+)/.exec(heading)?.[1] ?? null,
-    readings, text,
+    readings, ledIn: e.verdict !== 'retract' && ALWAYS_LED_IN.test(text), text,
   };
 }
-// Whether a review line and a Reviews entry can be one review: they agree on every field both record, and the entry's text
-// is one the line can be read as. The day alone agrees when one of the two records none, as an entry may not.
+// Whether a review line and a Reviews entry can be one review: they agree on every field both record, the line carries the
+// lead-in the entry's writer set, and the entry's text is one the line can be read as. The day alone agrees when one of the
+// two records none, as an entry may not.
 const SAME_FIELDS = Object.freeze(['verdict', 'by', 'kind', 'model', 'relayed', 'batch']);
 const oneReview = (line, entry) => SAME_FIELDS.every((f) => line[f] === entry[f])
   && (line.day === null || entry.day === null || line.day === entry.day)
+  && (!entry.ledIn || line.ledIn)
   && entry.readings.some((r) => line.readings.includes(r));
 
 // The pairings of n review lines with m entries over the pairs `fits` allows, each line and each entry in one pair at
@@ -105,27 +110,69 @@ function pairsInOrder(n, m, fits) {
   }
   return { most, sure };
 }
-// The same in any order: the most pairs by augmenting paths, and a pair of one such pairing is sure when, taken away, it
-// leaves fewer pairs possible.
-function pairsInAnyOrder(n, m, fits) {
-  const most = (allowed) => {
-    const entryAt = new Array(n).fill(-1);
-    const take = (j, seen) => {
-      for (let i = 0; i < n; i += 1) {
-        if (seen[i] || !allowed(i, j)) continue;
-        seen[i] = true;
-        if (entryAt[i] === -1 || take(entryAt[i], seen)) { entryAt[i] = j; return true; }
-      }
-      return false;
-    };
-    let size = 0;
-    for (let j = 0; j < m; j += 1) if (take(j, new Array(n).fill(false))) size += 1;
-    return { size, entryAt };
+// The same in any order: one pairing with the most pairs, by augmenting paths from a first pass that pairs each entry with
+// the first free line it fits, and the sure pairs read off that one pairing. A pair of it is left out of another pairing
+// with as many pairs exactly when swapping along a path or a cycle that alternates between pairs not taken and pairs taken
+// frees it: a path from a line no pair takes reaches its entry, a path from an entry no pair takes reaches its line, or a
+// cycle runs through it. Each line and entry is asked once whether they fit, and the rest walks the pairs that do.
+export function pairsInAnyOrder(n, m, fits) {
+  const linesOf = Array.from({ length: m }, (_, j) => Array.from({ length: n }, (_, i) => i).filter((i) => fits(i, j)));
+  const entryAt = new Array(n).fill(-1);
+  const lineAt = new Array(m).fill(-1);
+  const pair = (i, j) => { entryAt[i] = j; lineAt[j] = i; };
+  for (let j = 0; j < m; j += 1) { const i = linesOf[j].find((x) => entryAt[x] === -1); if (i !== undefined) pair(i, j); }
+  const take = (j, seen) => {
+    for (const i of linesOf[j]) {
+      if (seen[i]) continue;
+      seen[i] = true;
+      if (entryAt[i] === -1 || take(entryAt[i], seen)) { pair(i, j); return true; }
+    }
+    return false;
   };
-  const all = most(fits);
+  for (let j = 0; j < m; j += 1) if (lineAt[j] === -1) take(j, new Array(n).fill(false));
+  // The steps of an alternating walk, lines first (0..n-1), then entries (n..n+m-1): from a line to an entry it fits and is
+  // not paired with, from an entry to the line it is paired with; and the same steps the other way.
+  const ahead = Array.from({ length: n + m }, () => []);
+  const back = Array.from({ length: n + m }, () => []);
+  const step = (from, to) => { ahead[from].push(to); back[to].push(from); };
+  linesOf.forEach((ls, j) => { for (const i of ls) if (entryAt[i] !== j) step(i, n + j); if (lineAt[j] !== -1) step(n + j, lineAt[j]); });
+  const reached = (starts, steps) => {
+    const seen = new Array(n + m).fill(false);
+    const queue = [...starts];
+    for (const v of queue) seen[v] = true;
+    for (let q = 0; q < queue.length; q += 1) for (const w of steps[queue[q]]) if (!seen[w]) { seen[w] = true; queue.push(w); }
+    return seen;
+  };
+  const fromFreeLines = reached(entryAt.flatMap((j, i) => (j === -1 ? [i] : [])), ahead);
+  const fromFreeEntries = reached(lineAt.flatMap((i, j) => (i === -1 ? [n + j] : [])), back);
+  // The strongly connected parts of the walk (Tarjan's, kept on a stack of its own): a pair runs through a cycle exactly
+  // when its line and its entry are in one part.
+  const index = new Array(n + m).fill(-1);
+  const low = new Array(n + m).fill(0);
+  const part = new Array(n + m).fill(-1);
+  const open = [];
+  let count = 0;
+  let parts = 0;
+  for (let s = 0; s < n + m; s += 1) {
+    if (index[s] !== -1) continue;
+    const work = [[s, 0]];
+    index[s] = low[s] = count++; open.push(s);
+    while (work.length) {
+      const top = work[work.length - 1];
+      const v = top[0];
+      if (top[1] < ahead[v].length) {
+        const w = ahead[v][top[1]++];
+        if (index[w] === -1) { index[w] = low[w] = count++; open.push(w); work.push([w, 0]); } else if (part[w] === -1) low[v] = Math.min(low[v], index[w]);
+        continue;
+      }
+      work.pop();
+      if (work.length) { const u = work[work.length - 1][0]; low[u] = Math.min(low[u], low[v]); }
+      if (low[v] === index[v]) { let w; do { w = open.pop(); part[w] = parts; } while (w !== v); parts += 1; }
+    }
+  }
   const sure = new Map();
-  all.entryAt.forEach((j, i) => { if (j !== -1 && most((a, b) => fits(a, b) && !(a === i && b === j)).size < all.size) sure.set(i, j); });
-  return { most: all.size, sure };
+  entryAt.forEach((j, i) => { if (j !== -1 && !fromFreeLines[n + j] && !fromFreeEntries[i] && part[i] !== part[n + j]) sure.set(i, j); });
+  return { most: lineAt.filter((i) => i !== -1).length, sure };
 }
 
 // The findings of the reviews that sent the work back. The log is the record, which every writer keeps: each "changes"

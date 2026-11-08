@@ -12,6 +12,8 @@ import * as R from '../record.mjs';
 import { FINDINGS } from './findings.mjs';
 import { fileAsBefore, fileAsFormatTwo, formatTwoJarl, oldJarl } from './old-jarl.mjs';
 
+const { pairsInAnyOrder } = await import('../lib/brief.mjs');
+
 const loop = () => makeLoop({ prefix: 'jarl-brief-', via: 'cli', dotGit: false });
 const json = (root, ...args) => JSON.parse(jarl(root, ...args, '--json'));
 const slugs = (o) => o.rules.map((r) => r.slug);
@@ -472,8 +474,13 @@ const WHERE_WHOLE = "the issue's Reviews section";
 const logged = (t) => { const ls = t.split('\n'); return ls.length > 1 ? `${ls[0]} (+${ls.length - 1} more lines, whole text in ${WHERE_WHOLE})` : ls[0]; };
 const marksOf = (r) => `${r.model ? `model ${r.model} · ` : ''}${r.relayed ? 'relayed · ' : ''}${r.batch ? `batch ${r.batch} · ` : ''}`;
 const takenAway = (a) => `retracts the approve by ${a.by} (${a.kind}) of ${a.day}`;
-// A review's log line and its Reviews entry, as the review and retract commands write them; `at` is the line's time.
-const reviewLine = (id, key, r, at) => `- ${r.day} ${at} key ${key} · ${id} review ${r.verdict} · by ${r.by} (${r.kind}) · ${r.verdict === 'retract' ? `${takenAway(r.retracts)} · ` : marksOf(r)}${logged(r.text)}`;
+// What a review's log line holds after its marks: as the review and retract commands write it, a finding that opens like a
+// mark given the lead-in; or, from a writer that keeps only the log (logOnly) and sets no lead-in, the first line as given.
+const ledIn = (t) => (/^(?:findings: )*(?:model |relayed(?: ·|$)|batch )/i.test(t) ? `findings: ${t}` : t);
+const lineText = (r) => (r.verdict === 'retract' ? `${takenAway(r.retracts)} · ${logged(r.text)}` : r.logOnly ? r.text.split('\n')[0] : ledIn(logged(r.text)));
+// A review's log line and its Reviews entry, as the review and retract commands write them, or as a writer that keeps only
+// the log writes its line, with no key and no mark; `at` is the line's time.
+const reviewLine = (id, key, r, at) => `- ${r.day} ${at}${r.logOnly ? '' : ` key ${key}`} · ${id} review ${r.verdict} · by ${r.by} (${r.kind}) · ${r.verdict === 'retract' ? '' : marksOf(r)}${lineText(r)}`;
 const reviewEntry = (r) => {
   const heading = `- **${r.verdict}** · by ${r.by} (${r.kind}) · ${r.day}${r.model ? ` · model ${r.model}` : ''}${r.relayed ? ' · relayed' : ''}${r.batch ? ` · batch ${r.batch}` : ''}`;
   const body = r.verdict === 'retract' ? `${takenAway(r.retracts)}\n${r.text}` : r.text;
@@ -490,17 +497,23 @@ const LETTERS = {
   marks: { model: 'model-a', relayed: true, batch: true }, early: { day: DAYS[0] }, worded: { first: 'Important: another count is off.' },
   approve: { verdict: 'approve', by: 'rev2' }, approve1: { verdict: 'approve' }, retract: { verdict: 'retract', by: 'rev2' },
 };
-function reviewsOf(letters) {
+// The letters of the writers: this Jarl's verdict of two lines (same), of one line (one), and of one line opening like a
+// model mark (opens), and the same three from a writer that keeps only the log, beside a verdict with a model mark.
+const WRITER_LETTERS = {
+  same: {}, one: { one: true }, opens: { one: true, first: 'model big-model was asked.' }, model: { model: 'model-a' },
+  logOnly: { logOnly: true }, logOnlyOne: { logOnly: true, one: true }, logOnlyOpens: { logOnly: true, one: true, first: 'model big-model was asked.' },
+};
+function reviewsOf(letters, table = LETTERS) {
   const reviews = [];
   let late = false;
   for (const [k, letter] of letters.entries()) {
-    const l = LETTERS[letter];
+    const l = table[letter];
     const r = { verdict: 'changes', by: 'rev1', kind: 'fresh', model: null, relayed: false, batch: null, day: DAYS[1], ...l };
     if (r.day === DAYS[0] && late) return null;
     late = late || r.day === DAYS[1];
     if (r.batch) r.batch = `20261101T1000-${'abcd'[k]}aaa`;
     delete r.first;
-    r.text = r.verdict === 'retract' ? `the approve was given early ${k}.` : `${l.first ?? (r.verdict === 'approve' ? 'The count reads right.' : 'Important: the count is off.')}\nMinor: the second line of review ${k}.`;
+    r.text = r.verdict === 'retract' ? `the approve was given early ${k}.` : `${l.first ?? (r.verdict === 'approve' ? 'The count reads right.' : 'Important: the count is off.')}${l.one ? '' : `\nMinor: the second line of review ${k}.`}`;
     if (r.verdict === 'retract') {
       const a = [...reviews].reverse().find((x) => x.verdict === 'approve' && !x.struck);
       if (!a) return null;
@@ -513,8 +526,8 @@ function reviewsOf(letters) {
 }
 // Every pairing with the most pairs of the lines `L` and the entries `E` (each a review), as one line index or null per
 // entry, enumerated one by one, keeping both orders or in any order; `agree` is what the two record alike.
-const agree = (l, e) => ['verdict', 'by', 'kind', 'model', 'relayed', 'batch', 'day'].every((f) => l[f] === e[f]) && logged(l.text) === logged(e.text)
-  && (l.verdict !== 'retract' || takenAway(l.retracts) === takenAway(e.retracts));
+// A line agrees with an entry when it holds what the entry's own line holds: the entry's writer is this Jarl, which keeps it.
+const agree = (l, e) => ['verdict', 'by', 'kind', 'model', 'relayed', 'batch', 'day'].every((f) => l[f] === e[f]) && lineText(l) === lineText(e);
 const size = (p) => p.filter((i) => i !== null).length;
 function mostPairings(L, E, inOrder) {
   const all = [];
@@ -535,7 +548,7 @@ function expected(id, L, E) {
   const ordered = size(inOrder[0]) === E.filter((_, j) => fitting(j)).length;
   const pairings = ordered ? inOrder : mostPairings(L, E, false);
   const owner = E.map((_, j) => (new Set(pairings.map((p) => p[j])).size === 1 ? pairings[0][j] : null));
-  const findings = L.flatMap((l, i) => (l.verdict !== 'changes' ? [] : [[l.by, l.kind, l.day, owner.includes(i) ? E[owner.indexOf(i)].text : logged(l.text), false]]));
+  const findings = L.flatMap((l, i) => (l.verdict !== 'changes' ? [] : [[l.by, l.kind, l.day, owner.includes(i) ? E[owner.indexOf(i)].text : lineText(l), false]]));
   const left = E.map((e, j) => ({ e, j })).filter(({ e, j }) => e.verdict === 'changes' && owner[j] === null);
   // The note that two lines or two entries of one reviewer fit alike is true of every entry it counts.
   for (const { j } of left.filter(({ j }) => fitting(j))) {
@@ -545,7 +558,7 @@ function expected(id, L, E) {
   const alone = left.filter(({ j }) => !fitting(j)).length;
   // A finding given as its log line says the whole text is in the section when it has more than one line; the section holds
   // it only when an entry no line takes is one of its review.
-  const pointing = L.filter((l, i) => l.verdict === 'changes' && !owner.includes(i) && logged(l.text) !== l.text && !left.some(({ e }) => agree(l, e))).length;
+  const pointing = L.filter((l, i) => l.verdict === 'changes' && !owner.includes(i) && !l.logOnly && l.text.includes('\n') && !left.some(({ e }) => agree(l, e))).length;
   const notes = [];
   if (alone) notes.push(aloneNoteOf(alone, id));
   if (left.length - alone) notes.push(alikeNoteOf(left.length - alone, id));
@@ -567,6 +580,7 @@ test('the review lines and Reviews entries the oracle writes are the ones the re
   jarl(root, 'review', '1', 'changes', '--by', 'w1', 'Important: the worker found it.');
   jarl(root, 'review', '1', 'changes', '--by', 'botty', '--bot', 'Important: the bot found it.');
   jarl(root, 'review', '1,2', 'changes', '--by', 'rev1', '--model', 'model-b', '--relayed', 'Important: the count is off again.\nMinor: the second line.');
+  jarl(root, 'review', '1', 'changes', '--by', 'rev4', 'model big-model was asked. Important: the count is off.');
   const lines = readFileSync(join(root, '.jarl', 'log.md'), 'utf8').split('\n').filter((l) => / · 1 review /.test(l));
   const day = lines[0].slice(2, 12);
   const key = / key (\S+) · /.exec(lines[0])[1];
@@ -581,6 +595,7 @@ test('the review lines and Reviews entries the oracle writes are the ones the re
     { verdict: 'changes', by: 'w1', kind: 'self', text: 'Important: the worker found it.' },
     { verdict: 'changes', by: 'botty', kind: 'bot', text: 'Important: the bot found it.' },
     { verdict: 'changes', by: 'rev1', kind: 'fresh', model: 'model-b', relayed: true, batch: batches[6], text: 'Important: the count is off again.\nMinor: the second line.' },
+    { verdict: 'changes', by: 'rev4', kind: 'fresh', text: 'model big-model was asked. Important: the count is off.' },
   ].map((r) => ({ day, ...r }));
   assert.ok(batches[1] && batches[6], 'both verdicts on two issues carry a batch');
   assert.deepEqual(lines, reviews.map((r, k) => reviewLine('1', key, r, at(lines[k]))));
@@ -588,25 +603,29 @@ test('the review lines and Reviews entries the oracle writes are the ones the re
   assert.equal(section, reviews.map(reviewEntry).join('\n'));
 });
 
-test('every history of up to three reviews of one issue, and of four over approves, retractions and a model, with every subset of its entries lost or two of them swapped: an entry is a verdict\'s exactly when every pairing with the most pairs says so, and the notes say why the others are not', () => {
+const words = (alphabet, n) => (n === 0 ? [[]] : words(alphabet, n - 1).flatMap((w) => alphabet.map((a) => [...w, a])));
+// Each history of `sequences` over the letters of `table` written into one loop and briefed, against what the oracle says,
+// with the counts of the histories, of those where nothing tells two apart, of those with a finding given as its log line
+// the section holds no more of, and of those whose swapped entries no pairing in the log's order places.
+function checkHistories(sequences, table) {
   const root = loop();
   jarl(root, 'new', 'the work');
   const id = '1';
   const log = join(root, '.jarl', 'log.md');
   const [baseLog, baseFile] = [readFileSync(log, 'utf8'), readFileSync(issueFile(root), 'utf8')];
   const key = / key (\S+) · filed /.exec(baseLog)[1];
-  const words = (alphabet, n) => (n === 0 ? [[]] : words(alphabet, n - 1).flatMap((w) => alphabet.map((a) => [...w, a])));
-  const sequences = [1, 2, 3].flatMap((n) => words(Object.keys(LETTERS), n)).concat(words(['same', 'approve', 'retract', 'model'], 4));
   let histories = 0;
   let ambiguous = 0;
   let outOfOrder = 0;
   let pointing = 0;
   for (const letters of sequences) {
-    const L = reviewsOf(letters);
+    const L = reviewsOf(letters, table);
     if (!L) continue;
     writeFileSync(log, `${baseLog.replace(/\n*$/, '\n')}${L.map((r, k) => `${reviewLine(id, key, r, `10:0${k}`)}\n`).join('')}`);
-    // Every subset of the entries kept, in the log's order; with two or more kept, each pair of neighbours swapped too.
+    // Every subset of the entries kept, in the log's order; with two or more kept, each pair of neighbours swapped too. A
+    // writer that keeps only the log wrote no entry.
     for (let mask = 0; mask < 2 ** L.length; mask += 1) {
+      if (L.some((r, k) => r.logOnly && mask & (2 ** k))) continue;
       const kept = L.filter((_, k) => mask & (2 ** k));
       const orders = [kept, ...(letters.length < 4 ? kept.slice(1).map((_, k) => [...kept.slice(0, k), kept[k + 1], kept[k], ...kept.slice(k + 2)]) : [])];
       for (const [o, E] of orders.entries()) {
@@ -635,10 +654,108 @@ test('every history of up to three reviews of one issue, and of four over approv
       }
     }
   }
-  // The enumeration is fixed, so are its counts: every history, those where two lines or entries nothing tells apart
-  // leave an entry to no line, those with a finding given as its log line the section holds no more of, and those whose
-  // swapped entries no pairing in the log's order places.
-  assert.deepEqual({ histories, ambiguous, pointing, outOfOrder }, { histories: 34897, ambiguous: 2746, pointing: 22243, outOfOrder: 11411 });
+  return { histories, ambiguous, pointing, outOfOrder };
+}
+
+test('every history of up to three reviews of one issue, and of four over approves, retractions and a model, with every subset of its entries lost or two of them swapped: an entry is a verdict\'s exactly when every pairing with the most pairs says so, and the notes say why the others are not', () => {
+  const sequences = [1, 2, 3].flatMap((n) => words(Object.keys(LETTERS), n)).concat(words(['same', 'approve', 'retract', 'model'], 4));
+  // The enumeration is fixed, so are its counts.
+  assert.deepEqual(checkHistories(sequences, LETTERS), { histories: 34897, ambiguous: 2746, pointing: 22243, outOfOrder: 11411 });
+});
+
+test('every history of up to three verdicts of one reviewer on one day from this Jarl and from a writer that keeps only the log and sets no lead-in, of one line or two, opening like a model mark or not: an entry is a verdict\'s exactly when every pairing with the most pairs says so, the missing lead-in telling the two writers apart', () => {
+  const sequences = [1, 2, 3].flatMap((n) => words(Object.keys(WRITER_LETTERS), n));
+  assert.deepEqual(checkHistories(sequences, WRITER_LETTERS), { histories: 1943, ambiguous: 456, pointing: 610, outOfOrder: 324 });
+});
+
+// ---- the pairing in any order against its definition, and its cost ------------------------------------------------------
+//
+// The definition read literally: the most pairs by augmenting paths, and a pair of one such pairing sure when, taken away, it
+// leaves fewer pairs possible.
+function anyOrderByDefinition(n, m, fits) {
+  const most = (allowed) => {
+    const entryAt = new Array(n).fill(-1);
+    const take = (j, seen) => {
+      for (let i = 0; i < n; i += 1) {
+        if (seen[i] || !allowed(i, j)) continue;
+        seen[i] = true;
+        if (entryAt[i] === -1 || take(entryAt[i], seen)) { entryAt[i] = j; return true; }
+      }
+      return false;
+    };
+    let size = 0;
+    for (let j = 0; j < m; j += 1) if (take(j, new Array(n).fill(false))) size += 1;
+    return { size, entryAt };
+  };
+  const all = most(fits);
+  const sure = new Map();
+  all.entryAt.forEach((j, i) => { if (j !== -1 && most((a, b) => fits(a, b) && !(a === i && b === j)).size < all.size) sure.set(i, j); });
+  return { most: all.size, sure };
+}
+// A fixed sequence of numbers in [0, 1), the same on every run.
+const numbers = (seed) => () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
+
+test('the pairing in any order gives the most pairs and the sure pairs its definition gives, on every one of several thousand graphs of lines and entries', () => {
+  const next = numbers(20261108);
+  let graphs = 0;
+  for (let round = 0; round < 4000; round += 1) {
+    const n = 1 + Math.floor(next() * 9);
+    const m = 1 + Math.floor(next() * 9);
+    const density = [0.15, 0.3, 0.5, 0.8][round % 4];
+    const fit = Array.from({ length: n }, () => Array.from({ length: m }, () => next() < density));
+    const fits = (i, j) => fit[i][j];
+    const got = pairsInAnyOrder(n, m, fits);
+    const want = anyOrderByDefinition(n, m, fits);
+    assert.equal(got.most, want.most, JSON.stringify(fit));
+    // The sure pairs are those of every pairing with the most pairs, so the two agree on them whichever pairing each found.
+    assert.deepEqual([...got.sure].sort((a, b) => a[0] - b[0]), [...want.sure].sort((a, b) => a[0] - b[0]), JSON.stringify(fit));
+    graphs += 1;
+  }
+  assert.equal(graphs, 4000);
+});
+
+// Review lines of five reviewers taking turns, each reviewer's findings alike, so each line fits every entry of its reviewer;
+// the entries in another order than the lines, one in five lost.
+function turnsOfFive(n) {
+  const lineBy = Array.from({ length: n }, (_, i) => i % 5);
+  const entryBy = lineBy.filter((_, i) => i % 5 !== 3).reverse();
+  return { n, m: entryBy.length, fits: (i, j) => lineBy[i] === entryBy[j] };
+}
+
+test('the pairing in any order asks each line and entry once whether they fit, so on a history of 250 review lines it costs the product of the two lengths', () => {
+  const { n, m, fits } = turnsOfFive(250);
+  let asked = 0;
+  const got = pairsInAnyOrder(n, m, (i, j) => { asked += 1; return fits(i, j); });
+  assert.equal(got.most, m);
+  assert.equal(got.sure.size, 0, 'nothing tells one reviewer\'s alike findings apart');
+  assert.equal(asked, n * m);
+});
+
+test('a brief of an issue with 250 review lines whose Reviews section holds its entries in another order pairs each by what it records alone', () => {
+  const root = loop();
+  jarl(root, 'new', 'the work');
+  const log = join(root, '.jarl', 'log.md');
+  const [baseLog, baseFile] = [readFileSync(log, 'utf8'), readFileSync(issueFile(root), 'utf8')];
+  const key = / key (\S+) · filed /.exec(baseLog)[1];
+  const at = (k) => `${String(10 + Math.floor(k / 60)).padStart(2, '0')}:${String(k % 60).padStart(2, '0')}`;
+  const write = (reviews, entries) => {
+    writeFileSync(log, `${baseLog.replace(/\n*$/, '\n')}${reviews.map((r, k) => `${reviewLine('1', key, r, at(k))}\n`).join('')}`);
+    writeFileSync(issueFile(root), baseFile.replace('\n## Evidence', `\n## Reviews\n${entries.map(reviewEntry).join('\n')}\n\n## Evidence`));
+    return R.briefData(root, '1', { role: 'reviewer' });
+  };
+  const review = (k, text) => ({ verdict: 'changes', by: `rev${k % 5}`, kind: 'fresh', model: null, relayed: false, batch: null, day: DAYS[1], text });
+  // Each finding its own words: every entry is its own line's, the lost ones given as their log line.
+  const own = Array.from({ length: 250 }, (_, k) => review(k, `Important: finding ${k}.\nMinor: its second line.`));
+  const o = write(own, own.filter((_, k) => k % 5 !== 3).reverse());
+  assert.deepEqual(o.findings.map((f) => [f.text, f.fileOnly === true]), own.map((r, k) => [k % 5 === 3 ? lineText(r) : r.text, false]));
+  assert.deepEqual(reviewNotes(o), [pointerNoteOf(50, '1'), outOfOrderNote('1')]);
+  // Each reviewer's findings alike, as turnsOfFive: no entry is told apart, every line gives its log line, the entries follow;
+  // the reviewer whose entries were all lost points to a section that holds none of them.
+  const alikeTurns = Array.from({ length: 250 }, (_, k) => review(k, `Important: the count of rev${k % 5} is off.\nMinor: the second line of review ${k}.`));
+  const entries = alikeTurns.filter((_, k) => k % 5 !== 3).reverse();
+  const a = write(alikeTurns, entries);
+  assert.deepEqual(a.findings.map((f) => [f.text, f.fileOnly === true]), [...alikeTurns.map((r) => [lineText(r), false]), ...entries.map((e) => [e.text, true])]);
+  assert.deepEqual(reviewNotes(a), [alikeNoteOf(200, '1'), pointerNoteOf(50, '1'), outOfOrderNote('1')]);
 });
 
 // Findings that open with the lead-in a writer sets before a mark, or with a mark itself.
@@ -692,6 +809,24 @@ test('the same finding of one reviewer twice with no mark at all, from a writer 
   const o = findingsListed(root, id);
   assert.deepEqual(o.findings.map((f) => [f.by, f.text, f.fileOnly === true]), [['rev1', 'Important: the same text.', false], ['rev1', 'Important: the same text.', false], ['rev1', 'Important: the same text.', true]]);
   assert.deepEqual(reviewNotes(o), [`1 review(s) of the Reviews section of ${id} fit a verdict line of its log that another line or entry of the same reviewer fits as well, and nothing the two record tells which is whose: those verdicts are given as the log's lines, and the entries are listed after them, marked in the issue file only`]);
+});
+
+test('the same finding of one reviewer on one day opening like a model mark, from a writer that keeps only the log and sets no lead-in and then from one that keeps an entry: the missing lead-in tells the two apart, each verdict once, the entry the second\'s, no note', () => {
+  const later = { 'this Jarl': (root, id, text) => jarl(root, 'review', id, 'changes', '--by', 'rev1', text), 'the writer of record format 2': (root, id, text) => { const r = formatTwoJarl(root, 'review', {}, [id, 'changes', text, { by: 'rev1' }]); assert.equal(r.ok, true, r.error); } };
+  for (const text of ['model big-model was asked. Important: the count is off.', 'Model big-model is the cause. Important: the count is off.']) {
+    for (const [name, write] of Object.entries(later)) {
+      const root = loop();
+      const id = fileAsBefore(root, 'the work');
+      const first = oldJarl(root, 'review', {}, [id, 'changes', text, { by: 'rev1' }]);
+      assert.equal(first.ok, true, first.error);
+      write(root, id, text);
+      const lines = readFileSync(join(root, '.jarl', 'log.md'), 'utf8').split('\n').filter((l) => / review changes /.test(l));
+      assert.deepEqual(lines.map((l) => / · findings: /.test(l)), [false, true], `${name}: only the second line carries the lead-in`);
+      const o = findingsListed(root, id);
+      assert.deepEqual(o.findings.map((f) => [f.by, f.text, f.fileOnly === true]), [['rev1', text, false], ['rev1', text, false]], `${name}: ${text}`);
+      assert.deepEqual(reviewNotes(o), [], `${name}: ${text}`);
+    }
+  }
 });
 
 test('a Worktree field a lease wrote into the header is left out of the brief, as every line that names a place on this machine is', () => {
