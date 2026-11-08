@@ -291,7 +291,8 @@ test('the README\'s opening says what closes an issue as the done gate does, and
   assert.doesNotMatch(readme, /closes nothing without recorded evidence and a fresh reviewer/, 'an approval of a fresh reviewer is needed for code, not for every issue');
   const opening = readme.split('\n').filter((l) => l.includes('closes nothing without recorded evidence'));
   assert.equal(opening.length, 2, 'the picture\'s text and the opening line say it');
-  for (const l of opening) assert.match(l, /closes nothing without recorded evidence and an approval, from a fresh reviewer when the issue carries code, unless the loop's done gate asks no approve and a merge is enough\./);
+  for (const l of opening) assert.match(l, /closes nothing without recorded evidence and an approval, from a fresh reviewer when the issue carries code, unless the loop's done gate asks no approve and a merge is enough, or the owner waives the review\./);
+  assert.match(skillText('references/profile.md'), /The owner may close chosen issues without a review/, 'the waiver the opening names is described in the profile reference');
   const contract = readme.split('\n').find((l) => l.includes('record.mjs'));
   assert.ok(contract, 'the README names the record library');
   assert.equal(/under the contract `(jarl-record\/\d+)`/.exec(contract)?.[1], RECORD_API, 'the line names the contract the library holds as the current one');
