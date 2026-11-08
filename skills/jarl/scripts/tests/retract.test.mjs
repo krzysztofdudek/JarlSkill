@@ -385,6 +385,20 @@ test('a retracted note of one issue hides nothing of another issue\'s notes with
   assert.equal(two.shownCount, 0);
 });
 
+test('a retracted ruling note of several lines, written by decide or by an answer, hides its own line and nothing that starts like it', () => {
+  const root = loop();
+  const id = started(root);
+  jarl(root, 'decide', 'the-way', 'we go this way\nand not the other\n# a heading line', '--by', 'jarl', '--settles', id);
+  jarl(root, 'ask', 'which way now?', '--issue', id);
+  jarl(root, 'answer', 'a-1', 'this way\nfor now', '--by', 'jarl');
+  jarl(root, 'evidence', id, 'Ruling the-way (by jarl): we go this way');
+  jarl(root, 'retract', id, 'note-1', '--by', 'jarl', 'the ruling was written into the wrong issue');
+  jarl(root, 'retract', id, 'note-2', '--by', 'jarl', 'the answer was written into the wrong issue');
+  const v = seen(root, id);
+  assert.deepEqual(v.tail, [`${id} evidence · Ruling the-way (by jarl): we go this way`], 'the live note that starts like the ruling keeps its line');
+  assert.deepEqual([v.counted, v.said, v.shownCount], [2, 2, 2]);
+});
+
 test('a retracted note of several lines hides its own line and nothing that starts like it', () => {
   const root = loop();
   const id = started(root);

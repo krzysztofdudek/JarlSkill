@@ -174,11 +174,12 @@ export function renderResume(o, profile = DEFAULT_PROFILE, note = null, asked = 
     ...sec(`Waiting — After not settled (${o.waiting.filter((x) => !x.subs).length})`, o.waiting.filter((x) => !x.subs).map((x) => `- ${x.id} ${short(x.title)} (after ${x.after.join(', ')})${x.stale !== undefined ? ` · ${x.status === 'in-progress' ? 'in progress' : x.status}${lease(x) ? ` · ${lease(x)}` : ''}${x.stale.length ? ` · STALE: ${x.stale.join('; ')}` : ''}` : ''}`)),
     ...sec(`Waiting on their sub-issues (${o.waiting.filter((x) => x.subs).length})`, o.waiting.filter((x) => x.subs).map((x) => `- ${x.id} ${short(x.title)} (sub-issues ${x.subs.join(', ')} not closed)`)),
     ...sec(`Parents whose sub-issues are closed (${(o.parents || []).length})`, (o.parents || []).map((p) => `- ${p.id} ${short(p.title)} · sub-issues ${subsText(p.subs)}\n  → ${p.next}`)),
-    // One row per question: a question of several lines has its lines joined; the whole text stays in the question's record.
+    // One row per question, escalation, proposed rule and ratify item: a text of several lines has its lines joined; the
+    // whole text stays in its record.
     ...sec(`Questions to the owner (${o.questions.length})`, o.questions.map((a) => `- a-${a.id} (${a.kind || 'stuck'})${a.issue ? ` issue ${a.issue}` : ''} · ${fieldText(a.question)}`), '- (nothing)'),
-    ...sec(`Escalations to the jarl (${o.escalations.length})`, o.escalations.map((a) => `- a-${a.id}${a.slice ? ` slice:${a.slice}` : ''}${a.issue ? ` issue ${a.issue}` : ''} · ${a.question}`)),
-    ...sec(`Rules proposed (${o.proposed.length})`, o.proposed.map((a) => `- a-${a.id} to ${a.to || 'jarl'} · ${a.appliesTo ? `applies to ${a.appliesTo}` : 'offered for promotion'} · ${a.question}`)),
-    ...sec(`To ratify (${o.ratify.length})`, o.ratify.map((a) => `- a-${a.id}${a.issue ? ` (issue ${a.issue})` : ''} · ${a.question}`)),
+    ...sec(`Escalations to the jarl (${o.escalations.length})`, o.escalations.map((a) => `- a-${a.id}${a.slice ? ` slice:${a.slice}` : ''}${a.issue ? ` issue ${a.issue}` : ''} · ${fieldText(a.question)}`)),
+    ...sec(`Rules proposed (${o.proposed.length})`, o.proposed.map((a) => `- a-${a.id} to ${a.to || 'jarl'} · ${a.appliesTo ? `applies to ${a.appliesTo}` : 'offered for promotion'} · ${fieldText(a.question)}`)),
+    ...sec(`To ratify (${o.ratify.length})`, o.ratify.map((a) => `- a-${a.id}${a.issue ? ` (issue ${a.issue})` : ''} · ${fieldText(a.question)}`)),
     ...sec(`Held — files in flight (${o.held.length})`, o.held.map((x) => `- ${x.id}  P${x.priority}  ${short(x.title)} (${x.questions ? `open question ${x.questions.map((q) => `a-${q}`).join(', ')}` : `${[...x.files, ...(x.resources || []).map((n) => `resource ${n}`)].join(', ')} held by ${x.heldBy.join(', ')}${resourceAgeText(x)}`})`)),
     ...sec(`Promises and waits (${o.kept.length})`, o.kept.map((x) => `- ${x.id}  P${x.priority}  ${short(x.title)} (${x.kind === 'promise' ? `promised by ${x.by || 'nobody named'}` : x.came ? `came from ${x.person || 'nobody named'}, proof recorded; the jarl reviews and closes it` : `waits on ${x.person || 'nobody named'}, check when ${x.checkWhen || 'not said'}`})`)),
     ...(o.scheduler ? sec('Next ready and merge queue', [`- ${schedulerNote(o.scheduler)}`]) : [

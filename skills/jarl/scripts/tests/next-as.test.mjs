@@ -193,6 +193,20 @@ test('a question of several lines is one row of next --as, its lines joined, and
   assert.match(status, /\n\n## On the owner \(1\)\n- a-1 first line of the question second line that goes on third: /);
 });
 
+test('an escalation, a proposed rule and a ratify item of several lines are each one row of resume, its lines joined, and the text in --json is as asked', () => {
+  const root = loop();
+  jarl(root, 'goal', '--set', 'Coordinators: odin');
+  jarl(root, 'ask', 'the slice cannot go on\nbecause the base moved', '--kind', 'escalation', '--slice', 'odin');
+  jarl(root, 'ask', 'reviewers run the suite\nbefore they approve', '--kind', 'rule', '--applies-to', 'role reviewer');
+  jarl(root, 'ask', 'raised the limit to 20\nunder the mandate', '--kind', 'ratify');
+  const text = jarl(root, 'resume');
+  assert.match(text, /\n## Escalations to the jarl \(1\)\n- a-1 slice:odin · the slice cannot go on because the base moved\n\n/);
+  assert.match(text, /\n## Rules proposed \(1\)\n- a-2 to jarl · applies to role reviewer · reviewers run the suite before they approve\n\n/);
+  assert.match(text, /\n## To ratify \(1\)\n- a-3 · raised the limit to 20 under the mandate\n\n/);
+  const out = json(root, 'resume');
+  assert.deepEqual([out.escalations[0].question, out.proposed[0].question, out.ratify[0].question], ['the slice cannot go on\nbecause the base moved', 'reviewers run the suite\nbefore they approve', 'raised the limit to 20\nunder the mandate']);
+});
+
 test('a question of several lines is one row of resume\'s questions too, its lines joined, and its text in --json is the question as asked', () => {
   const root = loop();
   jarl(root, 'ask', 'first line of the question\nsecond line that goes on\nthird', '--kind', 'stuck');

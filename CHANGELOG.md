@@ -128,6 +128,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Changing a long Where of a task now keeps only the first 120 characters of the old text and of the new one, and the length of each, in the log, as a changed section does. Before, the whole text went into the log.
 - The advice given to a worker who takes a task over no longer lists the folder on another machine where the earlier worker had its working copy.
 - The resume now shows each open question to the owner on one line, even one written over several lines. The question itself is kept as it was asked.
+- The same holds for each choice waiting for the owner's approval in the resume: one line each, the text kept as it was written.
 
 ## [6.2.0] - 2026-10-19
 
