@@ -211,7 +211,7 @@ test('init says once, on the command line, that a goal naming no check lands on 
   assert.match(said.stderr, /note: the goal names no check .* lands on testimony alone, whatever its merges record, until the goal declares one/);
   const named = mkdtempSync(join(tmpdir(), 'jarl-mcheck-init-'));
   mkdirSync(join(named, '.git'));
-  assert.doesNotMatch(run(named, 'init', 'a goal\n\nCheck: npm test').stderr, /note:/);
+  assert.doesNotMatch(run(named, 'init', 'a goal\n\nCheck: npm test\nModel (strong): some-model').stderr, /note:/);
   const lib = mkdtempSync(join(tmpdir(), 'jarl-mcheck-init-'));
   mkdirSync(join(lib, '.git'));
   assert.equal(R.initLoop(lib, 'a library goal').note, undefined, 'a library caller is told nothing');

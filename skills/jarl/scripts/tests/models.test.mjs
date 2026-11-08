@@ -394,6 +394,21 @@ test('goal --set writes a takeover line for a kind the profile declares and refu
   assert.match(set('Takeover (docs): many').stderr, /whole number of rounds/);
 });
 
+test('init says once, on the command line, that a goal with no Model line places no model, with the form that adds one', () => {
+  const fresh = () => { const dir = mkdtempSync(join(tmpdir(), 'jarl-models-init-')); mkdirSync(join(dir, '.git')); return dir; };
+  const bare = fresh();
+  const said = cli(bare, 'init', 'a goal with no model');
+  assert.equal(said.status, 0, said.stderr);
+  assert.match(said.stderr, /^note: the goal declares no Model line \("Model \(<tier>\): <model-id>"\), so models places no model and ranks none until it does — add one for each tier: jarl\.mjs goal --set "<machine-line>" --root /m);
+  const named = fresh();
+  assert.doesNotMatch(cli(named, 'init', `a goal${LINES}`).stderr, /Model line/);
+  const lib = fresh();
+  assert.equal(R.initLoop(lib, 'a library goal').modelNote, undefined, 'a library caller is told nothing');
+  // The form it prints works: a line given through it is a Model line, and models then reads it.
+  assert.equal(cli(bare, 'goal', '--set', 'Model (strong): big-model').status, 0);
+  assert.doesNotMatch(cli(bare, 'models').stdout, /declares no Model/);
+});
+
 test('a limit lowered below the rounds already counted gives the takeover at the next round', () => {
   const { root, id } = leased(null, 'docs');
   assert.equal(R.addRound(root, id, 'red one').takeover, false);

@@ -62,7 +62,10 @@ export function cmdInit(root, goal, flags = {}) {
   appendLog(root, `opened · ${goal.trim()}${prof ? ` · profile ${prof.profile.name}` : ''}`);
   // Said once, on the command line: a goal that names no check lands its merges on testimony, whatever they record.
   const noCheck = flags.caller === 'cli' && declaredChecks(root).length === 0;
-  return { dir: jarlDir(root), committed, permanent, ...(prof ? { profile: prof.profile.name } : {}), ...(noCheck ? { note: 'the goal names no check (a "Check: <command>" line, or "Check (<name>): <command>" for one repository) — this loop lands on testimony alone, whatever its merges record, until the goal declares one' } : {}) };
+  // The same for the models: a goal with no Model line leaves every model unplaced, and `models` can rank nothing.
+  const noModels = flags.caller === 'cli' && !modelLines(root).declared;
+  return { dir: jarlDir(root), committed, permanent, ...(prof ? { profile: prof.profile.name } : {}),
+    ...(noModels ? { modelNote: `the goal declares no Model line ("Model (<tier>): <model-id>"), so models places no model and ranks none until it does — add one for each tier: ${jarlLine('goal', '--set', hole('<machine-line>'))}` } : {}), ...(noCheck ? { note: 'the goal names no check (a "Check: <command>" line, or "Check (<name>): <command>" for one repository) — this loop lands on testimony alone, whatever its merges record, until the goal declares one' } : {}) };
 }
 
 // A live loop is one with a goal; a .jarl/ holding only archive/ and the mode markers has none.
