@@ -9,7 +9,7 @@ import { modelLines, modelRefusalOf } from './models.mjs';
 import { baseOf, fileAt, isGitRepo, issueRepos, refsIn, repoFromInput } from './repositories.mjs';
 import { gateOf, readLoop } from './loop.mjs';
 import { issuesOnBranch, loopRepos } from './rounds.mjs';
-import { schedulerNote } from './evidence.mjs';
+import { mergeAgainWhy, schedulerNote } from './evidence.mjs';
 
 // ---- the merge queue: derived, never stored --------------------------------------------------------
 
@@ -20,7 +20,9 @@ import { schedulerNote } from './evidence.mjs';
 // not, so it is not merged yet. Rows are ordered by approval (the latest live approve on the branch, then the log's
 // order) and, per repository, cut into batches the way the merger's brief batches: a branch joins the current batch
 // while its declared files share none with it, and starts the next one otherwise. It computes, holds no lock and
-// writes nothing; it runs no check and refuses no merge — that is a composer's gate, never Jarl's.
+// writes nothing; it runs no check and refuses no merge — that is a composer's gate, never Jarl's. A branch its base
+// already holds is listed as well when a red round spent the merge recorded on it: that row is marked record only, since
+// its merge is recorded again and nothing lands.
 export function cmdQueue(root, flags = {}) {
   const profile = loadProfile(root);
   // Under an external scheduler the merge order is its own (and with approve: none no fresh approve would ever queue
@@ -62,7 +64,10 @@ export function cmdQueue(root, flags = {}) {
     for (const [branch, on] of branches) {
       const mb = git(repo, ['merge-base', base, branch]);
       const ahead = mb ? Number(git(repo, ['rev-list', '--count', `${mb}..${branch}`]) || 0) : null;
-      if (!ahead) continue;   // nothing its base lacks: merged already, or never worked on
+      // A branch the base holds whole has nothing to land: its approved issue is listed only when the merge recorded on it
+      // no longer counts (mergeAgainWhy says why), and then the row is record only.
+      const recordWhy = ahead === 0 ? on.map((i) => mergeAgainWhy(loop, i)).find(Boolean) : null;
+      if (!ahead && !recordWhy) continue;   // nothing its base lacks: merged already, or never worked on
       const others = issuesOnBranch(root, unsettled, real, branch).filter((i) => !on.includes(i));
       // The live approve, not simply the last one recorded: a later coordinator approve does not spend an
       // earlier, still-live fresh approve, so the row still credits the fresh reviewer who actually cleared it.
@@ -70,7 +75,7 @@ export function cmdQueue(root, flags = {}) {
       const last = approves.reduce((a, b) => (!a || b.n > a.n ? b : a), null);
       const files = [...new Set(on.concat(others).flatMap((i) => i.files.map((f) => { const at = fileAt(root, i, f); return canonical(at.repo) === real ? at.path : null; }).filter(Boolean)))];
       const unaccepted = on.filter((i) => refused.has(i.id));
-      rows.push({ branch, issues: on.map((i) => i.id), waitingReview: others.map((i) => i.id), ...(unaccepted.length ? { waitingModel: unaccepted.map((i) => ({ id: i.id, missing: refused.get(i.id) })) } : {}), ready: others.length === 0 && unaccepted.length === 0, ahead, approvedAt: last.at, by: last.by, files, n: last.n });
+      rows.push({ branch, issues: on.map((i) => i.id), waitingReview: others.map((i) => i.id), ...(unaccepted.length ? { waitingModel: unaccepted.map((i) => ({ id: i.id, missing: refused.get(i.id) })) } : {}), ready: others.length === 0 && unaccepted.length === 0, ahead, ...(recordWhy ? { recordOnly: true, recordWhy } : {}), approvedAt: last.at, by: last.by, files, n: last.n });
     }
     rows.sort((a, b) => a.n - b.n);
     // Batches: consecutive rows whose declared files do not meet. A row with no files declared rides alone —
@@ -96,7 +101,10 @@ export function renderQueue(o) {
     lines.push(`[${r.repo}] into ${r.base}`);
     if (!r.rows.length) lines.push('  (nothing approved waits to be merged)');
     r.rows.forEach((x, n) => {
-      lines.push(`  ${n + 1}. ${x.branch} → ${x.issues.join(', ')}  +${x.ahead}  approved ${x.approvedAt}${x.by ? ` by ${x.by}` : ''}  batch ${x.batch}${x.ready ? '' : `  (${[...(x.waitingReview.length ? [`waiting for review: ${x.waitingReview.join(', ')}`] : []), ...(x.waitingModel ? [`waiting for an approve the reviewer rule accepts: ${x.waitingModel.map((m) => m.missing).join('; ')}`] : [])].join('; ')})`}`);
+      // A row marked record only has nothing to land: its mark says why its merge is recorded again.
+      const waits = [...(x.waitingReview.length ? [`waiting for review: ${x.waitingReview.join(', ')}`] : []), ...(x.waitingModel ? [`waiting for an approve the reviewer rule accepts: ${x.waitingModel.map((m) => m.missing).join('; ')}`] : [])];
+      const marks = [...(x.recordOnly ? [`record only: the branch is in the base, and ${x.recordWhy}`] : []), ...(x.ready ? [] : waits)];
+      lines.push(`  ${n + 1}. ${x.branch} → ${x.issues.join(', ')}  +${x.ahead}  approved ${x.approvedAt}${x.by ? ` by ${x.by}` : ''}  batch ${x.batch}${marks.length ? `  (${marks.join('; ')})` : ''}`);
     });
   }
   return lines.join('\n') || '(nothing approved waits to be merged)';

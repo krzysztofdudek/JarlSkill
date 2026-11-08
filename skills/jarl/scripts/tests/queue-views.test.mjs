@@ -62,6 +62,26 @@ test('the merge queue of resume: approved, ahead of the base and not merged — 
   assert.deepEqual(JSON.parse(jarl(root, 'resume', '--json')).queue.repos[0].rows.map((r) => r.branch), ['jarl/1-first']);
 });
 
+test('the merge queue lists an approved branch the base already holds, marked record only, when a red round spent its merge', () => {
+  const root = repo();
+  jarl(root, 'new', 'first', '--files', 'src/a.mjs');
+  jarl(root, 'set', '1', 'in-progress', 'go', '--branch', 'jarl/1-first', '--worker', 'w1');
+  branchWith(root, 'jarl/1-first', 'src/a.mjs');
+  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'tests 4, pass 4');
+  jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
+  jarl(root, 'merged', '1', '--sha', execFileSync('git', ['rev-parse', 'jarl/1-first'], { cwd: root, encoding: 'utf8' }).trim(), '--keep');
+  jarl(root, 'round', '1', 'the check went red on the merge');
+  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'tests 4, pass 4');
+  jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
+  sh(root, 'git merge -q --no-ff jarl/1-first -m "merge 1"');
+  const rows = JSON.parse(jarl(root, 'resume', '--json')).queue.repos[0].rows;
+  assert.equal(rows.length, 1);
+  assert.deepEqual([rows[0].branch, rows[0].ahead, rows[0].recordOnly], ['jarl/1-first', 0, true]);
+  assert.equal(rows[0].recordWhy, 'its last merge was spent by a later start, reopen or red round');
+  const text = /## Merge queue\n([\s\S]*?)(?:\n\n|$)/.exec(jarl(root, 'resume'))[1];
+  assert.match(text, /1\. jarl\/1-first → 1  \+0  approved .* by rev  batch 1  \(record only: the branch is in the base, and its last merge was spent by a later start, reopen or red round\)/);
+});
+
 test('the merge queue of resume: a round spends the approve, overlapping files start a new batch, a package lists who still waits for review', () => {
   const root = repo();
   jarl(root, 'new', 'a', '--files', 'src/a.mjs');
