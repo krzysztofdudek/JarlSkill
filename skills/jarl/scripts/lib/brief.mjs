@@ -19,7 +19,7 @@ import { loopRepos, takenOver } from './rounds.mjs';
 import { findingOfLog, modelLinesIn } from './models.mjs';
 import { loopRules, ruleLines, rulesFor } from './rules.mjs';
 import { issueView } from './evidence.mjs';
-import { baseOf, isGitRepo, issueRepos, repoLabel, worktreeState } from './repositories.mjs';
+import { baseOf, isGitRepo, issueRepos, refsIn, repoLabel, worktreeState } from './repositories.mjs';
 import { cmpId } from './ids.mjs';
 import { sameLease } from './leases.mjs';
 
@@ -446,7 +446,8 @@ function mergerBrief(root, loop, slice, ctx) {
   return {
     role: 'merger', id: null, ids: [], slice: m ? m.slice : null, merger: m ? m.name : lines.merger, target: m ? integrationBranch(m.slice) : null,
     root: ctx.root, script: ctx.script, goal: goalParagraph(loop, ctx), committed: !outOfGit(root), repos, roles: ['merger'], moments: ['merge'],
-    doNot: DO_NOT.merger, rules, record, notes: [],
+    doNot: DO_NOT.merger, rules, record,
+    notes: m && repos.length && !repos.some((r) => refsIn(r.repo).has(integrationBranch(m.slice))) ? [`${integrationBranch(m.slice)} does not exist yet: until it is cut, the slice's approved work is the feature branch's merger's`] : [],
   };
 }
 
