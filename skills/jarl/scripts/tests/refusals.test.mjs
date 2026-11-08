@@ -548,7 +548,7 @@ test('the walk pastes every line into sh and zsh on macOS and Linux, and on Wind
 // ---- the sources -----------------------------------------------------------------------------------------------------
 
 const SOURCES = fileURLToPath(new URL('../', import.meta.url));
-const sourceFiles = () => ['jarl.mjs', 'record.mjs', ...readdirSync(join(SOURCES, 'lib')).filter((f) => f.endsWith('.mjs')).map((f) => `lib/${f}`)];
+const sourceFiles = () => ['jarl.mjs', 'jarl-usage.mjs', 'record.mjs', ...readdirSync(join(SOURCES, 'lib')).filter((f) => f.endsWith('.mjs')).map((f) => `lib/${f}`)];
 // The sources whose strings Jarl prints: the command line and the library, and the MCP server, whose own refusals of a
 // tool call's arguments are its own errors.
 const printingFiles = () => ['jarl-mcp.mjs', ...sourceFiles()];
