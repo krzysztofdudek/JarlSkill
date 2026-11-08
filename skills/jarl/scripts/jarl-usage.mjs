@@ -155,7 +155,9 @@ commands:
                                                  findings, and no other note. A merger's (--role merger; --slice for a
                                                  slice's own merger) is its whole procedure. With --slice alone, a
                                                  slice's coordinator: its issues in play, its rules, its reference and
-                                                 its commands
+                                                 its commands. Every part whole, except a finding the issue file has no
+                                                 entry for: it shows as the log's line holds it, its first line and a
+                                                 count of the lines left out
   set <ids> <status> "<text>" [--branch <worker-branch>] [--worker <name>] [--model <model-id>] [--worktree <path>] [--handover] [--header] [--by who]
                                                  (<ids> <status-in-the-log> --header rewrites the header fields the log
                                                  renders from the log, writes no log line and is never a move)
