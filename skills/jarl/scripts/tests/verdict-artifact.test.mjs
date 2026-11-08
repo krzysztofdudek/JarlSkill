@@ -60,7 +60,7 @@ test('a finding that opens like an artifact mark is kept as text', () => {
   assert.doesNotMatch(jarl(root, 'report', '--metrics'), /verdicts that name an artifact/);
 });
 
-test('an absolute path, a home path, a path that climbs out, and one with a separator or a line break are refused with nothing written', () => {
+test('an absolute path, a home path, an address with a scheme, a variable of a shell, a path that climbs out, and one with a separator or a line break are refused with nothing written', () => {
   const { root, id } = inFlight();
   const before = log(root);
   for (const [path, said] of [
@@ -68,6 +68,13 @@ test('an absolute path, a home path, a path that climbs out, and one with a sepa
     ['C:\\Users\\someone\\render.png', /is a place on one machine/],
     ['\\\\share\\render.png', /is a place on one machine/],
     ['~/render.png', /is a place on one machine/],
+    ['file:///home/u/x.png', /is an address with a scheme, which names no path inside the repository/],
+    ['file:///C:/Users/u/x.png', /is an address with a scheme/],
+    ['https://example.com/render.png', /is an address with a scheme/],
+    ['http://localhost:3000/render.png', /is an address with a scheme/],
+    ['$HOME/x.png', /holds a variable of a shell, which stands for a place on one machine/],
+    ['${HOME}/x.png', /holds a variable of a shell/],
+    ['%USERPROFILE%\\x.png', /holds a variable of a shell/],
     ['../other/render.png', /climbs out of it with \.\./],
     ['renders/../../render.png', /climbs out of it with \.\./],
     ['renders · home.png', /--artifact is one path on one line, with no · in it/],

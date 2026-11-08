@@ -265,9 +265,11 @@ commands:
   review <ids> <verdict> --by <reviewer> [--model <model-id>] [--relayed] [--bot] [--artifact <path>] [--outside "<finding-outside-the-issue>"]... [--field "<name=value>"]... "<text>"
                                                  the reviewer's verdict; --model is the model the reviewer was raised on
                                                  (stored as given); --artifact is the render or file the verdict judged,
-                                                 a path inside the repository the work is in (an absolute one, or one
-                                                 that climbs out with .., is refused), which show prints with the verdict
-                                                 and report counts; it gates nothing, and the first raises the record
+                                                 a path inside the repository the work is in, relative to its root: an
+                                                 absolute path, a home (~), a variable ($HOME, %USERPROFILE%), an address
+                                                 with a scheme (file://, https://) or a path that climbs out with .. is
+                                                 refused; show prints it with the verdict and report counts it; it
+                                                 gates nothing, and the first raises the record
                                                  format to 3; --relayed marks a verdict recorded by someone else in
                                                  the reviewer's name, for a reviewer that cannot be resumed to record its
                                                  own; --bot records it as the verdict of the bot --by names (the first

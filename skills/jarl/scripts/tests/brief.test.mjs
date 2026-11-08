@@ -445,12 +445,12 @@ test('entries the file holds in another order than the log\'s, as a merge resolv
 // entries swapped in the file stand for a file whose order a hand edit changed.
 const WHERE_WHOLE = "the issue's Reviews section";
 const logged = (t) => { const ls = t.split('\n'); return ls.length > 1 ? `${ls[0]} (+${ls.length - 1} more lines, whole text in ${WHERE_WHOLE})` : ls[0]; };
-const marksOf = (r) => `${r.model ? `model ${r.model} · ` : ''}${r.relayed ? 'relayed · ' : ''}${r.batch ? `batch ${r.batch} · ` : ''}`;
+const marksOf = (r) => `${r.model ? `model ${r.model} · ` : ''}${r.relayed ? 'relayed · ' : ''}${r.batch ? `batch ${r.batch} · ` : ''}${r.artifact ? `artifact ${r.artifact} · ` : ''}`;
 const takenAway = (a) => `retracts the approve by ${a.by} (${a.kind}) of ${a.day}`;
 // A review's log line and its Reviews entry, as the review and retract commands write them; `at` is the line's time.
 const reviewLine = (id, key, r, at) => `- ${r.day} ${at} key ${key} · ${id} review ${r.verdict} · by ${r.by} (${r.kind}) · ${r.verdict === 'retract' ? `${takenAway(r.retracts)} · ` : marksOf(r)}${logged(r.text)}`;
 const reviewEntry = (r) => {
-  const heading = `- **${r.verdict}** · by ${r.by} (${r.kind}) · ${r.day}${r.model ? ` · model ${r.model}` : ''}${r.relayed ? ' · relayed' : ''}${r.batch ? ` · batch ${r.batch}` : ''}`;
+  const heading = `- **${r.verdict}** · by ${r.by} (${r.kind}) · ${r.day}${r.model ? ` · model ${r.model}` : ''}${r.relayed ? ' · relayed' : ''}${r.batch ? ` · batch ${r.batch}` : ''}${r.artifact ? ` · artifact ${r.artifact}` : ''}`;
   const body = r.verdict === 'retract' ? `${takenAway(r.retracts)}\n${r.text}` : r.text;
   return `${r.struck ? `${heading.replace(/^- /, '- ~~')}~~` : heading}\n${body.split('\n').map((l) => `  ${l}`).join('\n')}`;
 };
@@ -461,8 +461,8 @@ const reviewEntry = (r) => {
 const DAYS = ['2026-11-01', '2026-11-02'];
 const LETTERS = {
   same: {}, other: { by: 'rev2' }, coordinator: { kind: 'coordinator' }, self: { kind: 'self' }, bot: { kind: 'bot' },
-  model: { model: 'model-a' }, model2: { model: 'model-b' }, relayed: { relayed: true }, batch: { batch: true },
-  marks: { model: 'model-a', relayed: true, batch: true }, early: { day: DAYS[0] }, worded: { first: 'Important: another count is off.' },
+  model: { model: 'model-a' }, model2: { model: 'model-b' }, relayed: { relayed: true }, batch: { batch: true }, artifact: { artifact: 'renders/a.png' }, artifact2: { artifact: 'renders/b.png' },
+  marks: { model: 'model-a', relayed: true, batch: true, artifact: 'renders/a.png' }, early: { day: DAYS[0] }, worded: { first: 'Important: another count is off.' },
   approve: { verdict: 'approve', by: 'rev2' }, approve1: { verdict: 'approve' }, retract: { verdict: 'retract', by: 'rev2' },
 };
 function reviewsOf(letters) {
@@ -470,7 +470,7 @@ function reviewsOf(letters) {
   let late = false;
   for (const [k, letter] of letters.entries()) {
     const l = LETTERS[letter];
-    const r = { verdict: 'changes', by: 'rev1', kind: 'fresh', model: null, relayed: false, batch: null, day: DAYS[1], ...l };
+    const r = { verdict: 'changes', by: 'rev1', kind: 'fresh', model: null, relayed: false, batch: null, artifact: null, day: DAYS[1], ...l };
     if (r.day === DAYS[0] && late) return null;
     late = late || r.day === DAYS[1];
     if (r.batch) r.batch = `20261101T1000-${'abcd'[k]}aaa`;
@@ -488,7 +488,7 @@ function reviewsOf(letters) {
 }
 // Every pairing with the most pairs of the lines `L` and the entries `E` (each a review), as one line index or null per
 // entry, enumerated one by one, keeping both orders or in any order; `agree` is what the two record alike.
-const agree = (l, e) => ['verdict', 'by', 'kind', 'model', 'relayed', 'batch', 'day'].every((f) => l[f] === e[f]) && logged(l.text) === logged(e.text)
+const agree = (l, e) => ['verdict', 'by', 'kind', 'model', 'relayed', 'batch', 'artifact', 'day'].every((f) => l[f] === e[f]) && logged(l.text) === logged(e.text)
   && (l.verdict !== 'retract' || takenAway(l.retracts) === takenAway(e.retracts));
 const size = (p) => p.filter((i) => i !== null).length;
 function mostPairings(L, E, inOrder) {
@@ -537,7 +537,7 @@ test('the review lines and Reviews entries the oracle writes are the ones the re
   jarl(root, 'retract', '1', 'review', 'the approve was given early.', '--by', 'rev3');
   jarl(root, 'review', '1', 'changes', '--by', 'w1', 'Important: the worker found it.');
   jarl(root, 'review', '1', 'changes', '--by', 'botty', '--bot', 'Important: the bot found it.');
-  jarl(root, 'review', '1,2', 'changes', '--by', 'rev1', '--model', 'model-b', '--relayed', 'Important: the count is off again.\nMinor: the second line.');
+  jarl(root, 'review', '1,2', 'changes', '--by', 'rev1', '--model', 'model-b', '--relayed', '--artifact', 'renders/home page.png', 'Important: the count is off again.\nMinor: the second line.');
   const lines = readFileSync(join(root, '.jarl', 'log.md'), 'utf8').split('\n').filter((l) => / · 1 review /.test(l));
   const day = lines[0].slice(2, 12);
   const key = / key (\S+) · /.exec(lines[0])[1];
@@ -551,7 +551,7 @@ test('the review lines and Reviews entries the oracle writes are the ones the re
     { verdict: 'retract', by: 'rev3', kind: 'fresh', retracts: boss, text: 'the approve was given early.' },
     { verdict: 'changes', by: 'w1', kind: 'self', text: 'Important: the worker found it.' },
     { verdict: 'changes', by: 'botty', kind: 'bot', text: 'Important: the bot found it.' },
-    { verdict: 'changes', by: 'rev1', kind: 'fresh', model: 'model-b', relayed: true, batch: batches[6], text: 'Important: the count is off again.\nMinor: the second line.' },
+    { verdict: 'changes', by: 'rev1', kind: 'fresh', model: 'model-b', relayed: true, batch: batches[6], artifact: 'renders/home page.png', text: 'Important: the count is off again.\nMinor: the second line.' },
   ].map((r) => ({ day, ...r }));
   assert.ok(batches[1] && batches[6], 'both verdicts on two issues carry a batch');
   assert.deepEqual(lines, reviews.map((r, k) => reviewLine('1', key, r, at(lines[k]))));
@@ -559,7 +559,7 @@ test('the review lines and Reviews entries the oracle writes are the ones the re
   assert.equal(section, reviews.map(reviewEntry).join('\n'));
 });
 
-test('every history of up to three reviews of one issue, and of four over approves, retractions and a model, with every subset of its entries lost or two of them swapped: an entry is a verdict\'s exactly when every pairing with the most pairs says so, and the notes say why the others are not', () => {
+test('every history of up to three reviews of one issue, and of four over approves, retractions, a model and an artifact, with every subset of its entries lost or two of them swapped: an entry is a verdict\'s exactly when every pairing with the most pairs says so, and the notes say why the others are not', () => {
   const root = loop();
   jarl(root, 'new', 'the work');
   const id = '1';
@@ -567,7 +567,7 @@ test('every history of up to three reviews of one issue, and of four over approv
   const [baseLog, baseFile] = [readFileSync(log, 'utf8'), readFileSync(issueFile(root), 'utf8')];
   const key = / key (\S+) · filed /.exec(baseLog)[1];
   const words = (alphabet, n) => (n === 0 ? [[]] : words(alphabet, n - 1).flatMap((w) => alphabet.map((a) => [...w, a])));
-  const sequences = [1, 2, 3].flatMap((n) => words(Object.keys(LETTERS), n)).concat(words(['same', 'approve', 'retract', 'model'], 4));
+  const sequences = [1, 2, 3].flatMap((n) => words(Object.keys(LETTERS), n)).concat(words(['same', 'approve', 'retract', 'model', 'artifact'], 4));
   let histories = 0;
   let ambiguous = 0;
   let outOfOrder = 0;
@@ -603,7 +603,7 @@ test('every history of up to three reviews of one issue, and of four over approv
   }
   // The enumeration is fixed, so are its counts: every history, those where two lines or entries nothing tells apart
   // leave an entry to no line, and those whose swapped entries no pairing in the log's order places.
-  assert.deepEqual({ histories, ambiguous, outOfOrder }, { histories: 34897, ambiguous: 2746, outOfOrder: 11411 });
+  assert.deepEqual({ histories, ambiguous, outOfOrder }, { histories: 54823, ambiguous: 4520, outOfOrder: 17339 });
 });
 
 // Findings that open with the lead-in a writer sets before a mark, or with a mark itself.
