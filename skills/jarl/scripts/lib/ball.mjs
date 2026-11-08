@@ -5,7 +5,7 @@ import { PROMISE_KIND, WAIT_KIND, fieldText, jarlLine, need, slugify } from './b
 import { cmpId, idKey, idsCited } from './ids.mjs';
 import { mergedOf } from './issues.mjs';
 import { carriesCode, gateOf, holderKey, inFlightMark, leaseConflictOf, sameHolder, sentBack, statusWith, worksInPlace } from './gate.mjs';
-import { coordinatorOf, integrationBranch, sameSlice, sliceMerger, sliceOf } from './slices.mjs';
+import { coordinatorOf, integrationBranch, sameSlice, sliceOf } from './slices.mjs';
 import { git } from './git.mjs';
 import { readLoop } from './loop.mjs';
 import { gatedMark, modelLines, modelReviewForm } from './models.mjs';

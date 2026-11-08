@@ -24,6 +24,12 @@ import { IN_FLIGHT_MARKS, closedGateFlags, leaseWriter, retractedNotesText, leas
 import { cmdQueue, renderQueue } from './queue.mjs';
 import { countsLine } from './import.mjs';
 
+// The questions a worker's stuck put on its director, each with whom it is on; next --as holds the same: a key only when any stands.
+function toDirectorKey(loop, asks) {
+  const onDirector = asks.filter((a) => (a.kind === 'stuck' || !a.kind) && askHolder(loop, a) !== OWNER_HOLDER);
+  return onDirector.length ? { toDirector: onDirector.map((a) => ({ ...a, holder: askHolder(loop, a) })) } : {};
+}
+
 // ---- resume: the state a session picks the loop up from, assembled live -------------------------------
 
 export const RESUME_LOG_LINES = 15;
@@ -180,7 +186,7 @@ export function renderResume(o, profile = DEFAULT_PROFILE, note = null, asked = 
     ...sec(`Parents whose sub-issues are closed (${(o.parents || []).length})`, (o.parents || []).map((p) => `- ${p.id} ${short(p.title)} · sub-issues ${subsText(p.subs)}\n  → ${p.next}`)),
     // One row per question, escalation, proposed rule and ratify item: a text of several lines has its lines joined; the
     // whole text stays in its record.
-    ...(o.toDirector.length ? sec(`Questions to the director (${o.toDirector.length})`, o.toDirector.map((a) => `- a-${a.id} (${a.kind || 'stuck'})${a.issue ? ` issue ${a.issue}` : ''} · on ${a.holder} · ${fieldText(a.question)}`), '- (nothing)') : []),
+    ...(o.toDirector ? sec(`Questions to the director (${o.toDirector.length})`, o.toDirector.map((a) => `- a-${a.id} (${a.kind || 'stuck'})${a.issue ? ` issue ${a.issue}` : ''} · on ${a.holder} · ${fieldText(a.question)}`), '- (nothing)') : []),
     ...sec(`Questions to the owner (${o.questions.length})`, o.questions.map((a) => `- a-${a.id} (${a.kind || 'stuck'})${a.issue ? ` issue ${a.issue}` : ''} · ${fieldText(a.question)}`), '- (nothing)'),
     ...sec(`Escalations to the jarl (${o.escalations.length})`, o.escalations.map((a) => `- a-${a.id}${a.slice ? ` slice:${a.slice}` : ''}${a.issue ? ` issue ${a.issue}` : ''} · ${fieldText(a.question)}`)),
     ...sec(`Rules proposed (${o.proposed.length})`, o.proposed.map((a) => `- a-${a.id} to ${a.to || 'jarl'} · ${a.appliesTo ? `applies to ${a.appliesTo}` : 'offered for promotion'} · ${fieldText(a.question)}`)),
