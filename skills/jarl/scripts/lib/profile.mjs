@@ -43,7 +43,13 @@ export const BUILTIN_STATUSES = {
 export const PROFILE_VERSION = 1;
 // The keys a profile file may hold. A key this list does not name is refused, so a profile written for a later
 // Jarl fails loudly here instead of being half-read.
-export const PROFILE_KEYS = ['jarl-profile', 'format', 'name', 'statuses', 'initial', 'fields', 'sections', 'acceptance-heading', 'external-scheduler', 'done-gate', 'lifecycle'];
+export const PROFILE_KEYS = ['jarl-profile', 'format', 'name', 'statuses', 'initial', 'fields', 'sections', 'acceptance-heading', 'external-scheduler', 'done-gate', 'lifecycle', 'models'];
+// The models a loop may use, the owner's lever for cost: "models": { "ceiling": "<model-id>", "barred": ["<model-id>", ...] }.
+// The ceiling is the strongest model the loop may use, read by its tier on the goal's Model lines, so every model of a
+// stronger tier is above it; a barred model is one the loop may not use at all, at any effort when its id names none.
+// Jarl reads no usage and no budget from the host: the profile says what the owner allows, and the advice keeps to it.
+const MODELS_KEYS = ['ceiling', 'barred'];
+const MODEL_ID_MAX = 120;
 export const PROFILE_FIELD_KEYS = ['enum', 'default', 'required'];
 // A status written as an object instead of a list of flags: { "flags": [...], "set-by": "record" | "any" }.
 export const PROFILE_STATUS_KEYS = ['flags', 'set-by'];
@@ -97,6 +103,7 @@ export const FORMAT_LINES = Object.freeze(Object.fromEntries([
     'proof-line': { what: 'the acceptance lines an evidence row proves', where: "the row in the issue's Proof and its log line, after the row's mark", misread: 'reads no row there, so done refuses an issue for want of the proof it holds' },
     'range-number': { what: 'a number from a range the goal declares', where: 'the name and the header of an issue file, and the Range line of the goal', misread: 'files its next issue above the numbers of the range, so the series the loop keeps apart are mixed' },
     'in-place': { what: 'the mark of an issue worked in place', where: "the tag in-place among the issue's Tags", misread: 'lets done pass with no commit of its files named' },
+    artifact: { what: 'the artifact a verdict judged', where: "the verdict line and the Reviews entry of the issue, after the reviewer's marks", misread: 'reads the artifact as the first words of the findings, so no verdict is counted as naming one' },
   }),
 ]));
 // The record format of a loop as the views say it: its format, the formats this Jarl reads, whether a write may raise it
@@ -348,8 +355,23 @@ export function validateProfile(json, where = 'the profile') {
       if (bad.length === before) lifecycle = Object.freeze({ close: l.close ?? 'any', archive: l.archive ?? 'any', command: l.command === undefined ? null : l.command.trim() });
     }
   }
+  // models: { "ceiling": "<model-id>", "barred": ["<model-id>", ...] }, each id one value as a Model line names it.
+  let models = null;
+  if (json.models !== undefined) {
+    const m = json.models;
+    const id = (v) => oneLine(v) && !v.includes('·') && !v.includes(',') && v.trim().length <= MODEL_ID_MAX;
+    if (!isObj(m)) say('"models" is an object: { "ceiling": "<model-id>", "barred": ["<model-id>", ...] }');
+    else {
+      const before = bad.length;
+      for (const k of Object.keys(m)) if (!MODELS_KEYS.includes(k)) say(`"models": unknown key "${k}" — it takes ${MODELS_KEYS.join(', ')}`);
+      if (m.ceiling === undefined && m.barred === undefined) say('"models" names a "ceiling", a "barred" list, or both');
+      if (m.ceiling !== undefined && !id(m.ceiling)) say(`"models": "ceiling" is one model id as a Model line of the goal names it (one line, no comma, at most ${MODEL_ID_MAX} characters)`);
+      if (m.barred !== undefined && (!Array.isArray(m.barred) || !m.barred.length || !m.barred.every(id))) say(`"models": "barred" is a non-empty list of model ids as the Model lines of the goal name them (each one line, no comma, at most ${MODEL_ID_MAX} characters)`);
+      if (bad.length === before) models = Object.freeze({ ceiling: m.ceiling === undefined ? null : m.ceiling.trim(), barred: Object.freeze([...new Set((m.barred || []).map((b) => b.trim()))]) });
+    }
+  }
   if (bad.length) refuse(`${where} is not a valid profile:\n- ${bad.join('\n- ')}`, ['jarl.mjs', 'profile', '<profile.json>']);
-  return makeProfile({ name: json.name || 'custom', statuses: statuses.map((s) => [s, [...flagsOf.get(s)]]), initial, fields, sections, acceptance, declared: true, setBy, scheduler, doneGate, lifecycle, format: json.format ?? RECORD_FORMAT });
+  return makeProfile({ name: json.name || 'custom', statuses: statuses.map((s) => [s, [...flagsOf.get(s)]]), initial, fields, sections, acceptance, declared: true, setBy, scheduler, doneGate, lifecycle, models, format: json.format ?? RECORD_FORMAT });
 }
 
 // The "requires-slots" and "slots" keys of a done gate, checked against the kinds the profile allows: every problem goes to
@@ -402,7 +424,7 @@ function validateSlots(g, kinds, say) {
 
 // The profile as the tool reads it: flags looked up by status, the values Kind and Tier may take and their defaults,
 // the declared fields in order.
-function makeProfile({ name, statuses, initial, fields = [], sections = [], acceptance = null, declared, setBy = new Map(), scheduler = null, doneGate = DEFAULT_DONE_GATE, lifecycle = DEFAULT_LIFECYCLE, format = RECORD_FORMAT }) {
+function makeProfile({ name, statuses, initial, fields = [], sections = [], acceptance = null, declared, setBy = new Map(), scheduler = null, doneGate = DEFAULT_DONE_GATE, lifecycle = DEFAULT_LIFECYCLE, models = null, format = RECORD_FORMAT }) {
   const flags = new Map(statuses.map(([s, f]) => [s, new Set(f)]));
   const kind = fields.find((f) => f.key === 'kind');
   const tier = fields.find((f) => f.key === 'tier');
@@ -422,6 +444,8 @@ function makeProfile({ name, statuses, initial, fields = [], sections = [], acce
     format, scheduler, doneGate,
     // Who may close and archive the loop ('any', or 'record': never jarl close / archive), and the composer's command.
     lifecycle,
+    // The models the loop may use: { ceiling, barred }, or null where the profile names none.
+    models,
     statuses: statuses.map(([s]) => s),
     kinds, kindDefault: kind && kind.default ? kind.default : kinds[0],
     // Whether the built-in promise and wait hold here, and the kept kind an issue's kind is (null for any other, and
@@ -527,6 +551,7 @@ export function describeProfile(p) {
     fields: p.declaredFields ? p.declaredFields.map((f) => ({ name: f.name, enum: f.enum, default: f.default, required: f.required })) : [],
     kinds: p.kinds, tiers: p.tiers, sections: p.sections, acceptanceHeading: p.acceptance || 'Acceptance',
     format: p.format, externalScheduler: p.scheduler, doneGate: { ...p.doneGate }, lifecycle: { ...p.lifecycle },
+    ...(p.models ? { models: { ceiling: p.models.ceiling, barred: [...p.models.barred] } } : {}),
   };
 }
 export function renderProfile(d) {
@@ -545,6 +570,7 @@ export function renderProfile(d) {
   }
   const kept = LIFECYCLE_OPS.filter((op) => d.lifecycle[op] === 'record');
   if (kept.length) lines.push(`lifecycle: ${kept.join(' and ')} by the record only, never jarl ${kept.join(' / ')}${d.lifecycle.command ? ` — ${d.lifecycle.command}` : ''}`);
+  if (d.models) lines.push(`models: ${[d.models.ceiling && `ceiling ${d.models.ceiling} (nothing of a stronger tier)`, d.models.barred.length && `barred ${d.models.barred.join(', ')}`].filter(Boolean).join(' · ')} — the owner's lever for cost; Jarl reads no usage or budget from the host`);
   const state = formatState({ format: d.format, scheduler: d.externalScheduler });
   lines.push(`record format: ${d.format} (this Jarl reads ${state.reads.join(', ')})`);
   if (formatOffText(state)) lines.push(formatOffText(state));

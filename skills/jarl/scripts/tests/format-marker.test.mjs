@@ -221,7 +221,7 @@ test('a loop whose profile names an external scheduler is never raised: a write 
   // The views say what is off.
   const state = R.recordFormat(root);
   assert.deepEqual(state, { format: 1, reads: [1, 2, 3], raises: false, off: Object.keys(L.FORMAT_LINES) });
-  const off = /record format 1: the profile names an external scheduler, so Jarl never raises it, and these lines are off in this loop until the profile says the format that holds them — a repository name \(format 2\), .*, the retraction of a verdict or an evidence row \(format 2\), an issue's key \(format 3\), .*, the retraction of a note \(format 3\), the tip of a branch after a row, a verdict, a merge or a close \(format 3\), the acceptance lines an evidence row proves \(format 3\), a number from a range the goal declares \(format 3\), the mark of an issue worked in place \(format 3\)$/m;
+  const off = /record format 1: the profile names an external scheduler, so Jarl never raises it, and these lines are off in this loop until the profile says the format that holds them — a repository name \(format 2\), .*, the retraction of a verdict or an evidence row \(format 2\), an issue's key \(format 3\), .*, the retraction of a note \(format 3\), the tip of a branch after a row, a verdict, a merge or a close \(format 3\), the acceptance lines an evidence row proves \(format 3\), a number from a range the goal declares \(format 3\), the mark of an issue worked in place \(format 3\), the artifact a verdict judged \(format 3\)$/m;
   assert.match(jarl(root, 'status'), off);
   assert.match(jarl(root, 'profile'), off);
   assert.match(jarl(root, 'verify'), new RegExp(`^note: ${off.source}`, 'm'));

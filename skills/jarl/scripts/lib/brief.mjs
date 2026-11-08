@@ -45,20 +45,22 @@ const LINE_HEAD = new RegExp(`^review (approve|changes|retract) · (?:by (.+?) \
 function lineRecord(e) {
   const said = e.text.slice(e.written.length + 1);
   const head = LINE_HEAD.exec(said);
-  if (!head) return { verdict: null, by: null, kind: null, day: e.at.slice(0, 10), model: null, relayed: false, batch: null, readings: [], text: said };
+  if (!head) return { verdict: null, by: null, kind: null, day: e.at.slice(0, 10), model: null, relayed: false, batch: null, artifact: null, readings: [], text: said };
   let text = said.slice(head[0].length);
   const verdict = e.type === 'verdict';
-  // A verdict's marks stand right after its reviewer, in a fixed order: the model, the relay mark, the batch.
+  // A verdict's marks stand right after its reviewer, in a fixed order: the model, the relay mark, the batch, the artifact.
   const model = verdict ? e.model ?? null : null;
   const relayed = verdict && Boolean(e.relayed);
   const batch = verdict ? e.batch ?? null : null;
+  const artifact = verdict ? e.artifact ?? null : null;
   if (model) text = text.slice(`model ${model} · `.length);
   if (relayed) text = text.slice('relayed · '.length);
   if (batch) text = text.slice(`batch ${batch} · `.length);
+  if (artifact) text = text.slice(`artifact ${artifact} · `.length);
   // A verdict's text as the log holds it, and with the lead-in a writer sets before a finding that opens like a mark taken
   // off, since not every writer sets it; a retraction's names the approve it takes away, then its reason.
   const readings = verdict ? [sameText(text), sameText(findingOfLog(text))] : [sameText(text)];
-  return { verdict: head[1], by: head[2] ?? null, kind: head[3] ?? null, day: e.at.slice(0, 10), model, relayed, batch, readings, ledIn: verdict && findingOfLog(text) !== text, text };
+  return { verdict: head[1], by: head[2] ?? null, kind: head[3] ?? null, day: e.at.slice(0, 10), model, relayed, batch, artifact, readings, ledIn: verdict && findingOfLog(text) !== text, text };
 }
 // A finding that opens with these words is given a lead-in on its log line by every writer that keeps a Reviews entry, so
 // the line of such an entry carries one: a line without it was written by a writer that keeps no entry.
@@ -75,13 +77,14 @@ function entryRecord(lines, e) {
   return {
     verdict: e.verdict, by: e.by, kind: e.kind, day: e.day,
     model: / · model (.+?)(?= · |\s*$)/.exec(heading)?.[1] ?? null, relayed: / · relayed(?= · |\s*$)/.test(heading), batch: / · batch (\S+)/.exec(heading)?.[1] ?? null,
+    artifact: e.verdict === 'retract' ? null : / · artifact ([^·\n]+?)\s*$/.exec(heading)?.[1] ?? null,
     readings, ledIn: e.verdict !== 'retract' && ALWAYS_LED_IN.test(text), text,
   };
 }
 // Whether a review line and a Reviews entry can be one review: they agree on every field both record, the line carries the
 // lead-in the entry's writer set, and the entry's text is one the line can be read as. The day alone agrees when one of the
 // two records none, as an entry may not.
-const SAME_FIELDS = Object.freeze(['verdict', 'by', 'kind', 'model', 'relayed', 'batch']);
+const SAME_FIELDS = Object.freeze(['verdict', 'by', 'kind', 'model', 'relayed', 'batch', 'artifact']);
 const oneReview = (line, entry) => SAME_FIELDS.every((f) => line[f] === entry[f])
   && (line.day === null || entry.day === null || line.day === entry.day)
   && (!entry.ledIn || line.ledIn)

@@ -263,7 +263,15 @@ export function metricsOf(loop, now) {
     noData: noData(!anyFoundBy || !closedAt.length, !anyFoundBy ? 'no issue records Found by, so no follow-up can be traced to what it follows' : closed.length ? 'no closed issue outside research has its close in the journal' : 'nothing closed yet'),
   };
 
-  return { check: checkState(loop), cycleTime, leadTime, rounds, reopenings, freshReviews, redCiAfterMerge, followUps, slips: slipsOf(loop), batches: batchesOf(loop) };
+  return { check: checkState(loop), cycleTime, leadTime, rounds, reopenings, freshReviews, redCiAfterMerge, followUps, slips: slipsOf(loop), batches: batchesOf(loop), ...artifactsOf(loop) };
+}
+
+// The verdicts that name the artifact they judged (review --artifact), as { n, approve, changes, issues }: how many, of
+// each verdict, and the issues they are on, in the order of the log. Only a loop that holds one carries the key.
+function artifactsOf(loop) {
+  const named = loop.events.filter((e) => e.type === 'verdict' && e.artifact && e.id !== null && loop.byId.has(e.id));
+  if (!named.length) return {};
+  return { artifacts: { n: named.length, approve: named.filter((e) => e.verdict === 'approve').length, changes: named.filter((e) => e.verdict === 'changes').length, issues: [...new Set(named.map((e) => e.id))] } };
 }
 
 // The batched reviews: each verdict given on several issues at once, by the batch id its lines carry, in the order of the
@@ -344,6 +352,7 @@ export function renderMetrics(m) {
     `fresh reviews of closed work: ${f.noData ? nd(f) : `${f.fresh} of ${f.recorded} with a recorded reviewer (${pct(f.share)}) · coordinator ${f.coordinator} · self ${f.self}${f.relayed || f.bot ? ` · relayed ${f.relayed} · bot ${f.bot}` : ''}${f.retracted ? ` · retracted ${f.retracted}` : ''}${f.unrecorded ? ` · no data for ${f.unrecorded} (approved before --by)` : ''}${f.code.recorded ? ` · carrying code: ${f.code.fresh} of ${f.code.recorded} (${pct(f.code.share)})` : ''}`}`,
     ...(Object.keys(f.reviewers).length ? [`fresh reviewers: ${Object.keys(f.reviewers).length}${Object.keys(f.reviewers).length > 5 ? ', most often' : ''} ${Object.entries(f.reviewers).slice(0, 5).map(([k, v]) => `${k} ${v}`).join(' · ')}`] : []),
     ...(m.batches && m.batches.n ? [batchesLine(m.batches)] : []),
+    ...(m.artifacts ? [`verdicts that name an artifact: ${m.artifacts.n} (approve ${m.artifacts.approve}, changes ${m.artifacts.changes}) on ${m.artifacts.issues.length} issue${m.artifacts.issues.length === 1 ? '' : 's'}: ${m.artifacts.issues.join(', ')}`] : []),
     `red CI after merge: ${m.redCiAfterMerge.noData ? nd(m.redCiAfterMerge) : `${m.redCiAfterMerge.red} of ${m.redCiAfterMerge.settled} settled (${pct(m.redCiAfterMerge.share)})${list(m.redCiAfterMerge.issues)}`}${m.redCiAfterMerge.pending.length ? ` · pending ${m.redCiAfterMerge.pending.length}` : ''}${m.redCiAfterMerge.none.length ? ` · no CI ${m.redCiAfterMerge.none.length}` : ''}`,
     `follow-ups within ${m.followUps.windowDays} days (Found by names the closed issue): ${m.followUps.noData ? nd(m.followUps) : `${m.followUps.withFollowUps} of ${m.followUps.n} closed${m.followUps.followUps.length ? `: ${m.followUps.followUps.map((x) => `${x.id} ← ${x.followUps.join(', ')}`).join('; ')}` : ''} · ${m.followUps.windowClosed ? `share ${m.followUps.windowClosedWithFollowUps} of ${m.followUps.windowClosed} whose ${m.followUps.windowDays} days have passed (${pct(m.followUps.share)})` : `share: no data (no close is ${m.followUps.windowDays} days old yet)`}${m.followUps.windowOpen ? ` · window still open for ${m.followUps.windowOpen}` : ''}`}`,
   ].join('\n');

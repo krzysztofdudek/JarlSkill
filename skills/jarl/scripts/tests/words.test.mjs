@@ -9,8 +9,9 @@ import { fileURLToPath } from 'node:url';
 
 const FILES = ['../jarl.mjs', '../jarl-lib.mjs', ...readdirSync(new URL('../lib/', import.meta.url)).filter((f) => f.endsWith('.mjs')).sort().map((f) => `../lib/${f}`), '../record.mjs', '../jarl-mcp.mjs', '../yg-edge.mjs'];
 const FORBIDDEN = /\b(wave|architect|node)/gi;
-// The runtime, and only as written here: the shebang, an import from a node: built-in module, and "Node 22+".
-const RUNTIME = [/^#!\/usr\/bin\/env node$/, /'node:[a-z_]+'/g, /\bNode 22\+/g];
+// The runtime, and only as written here: the shebang, an import from a node: built-in module, "Node 22+", and the
+// directory the runtime installs packages in, node_modules, which the walk for loops never enters.
+const RUNTIME = [/^#!\/usr\/bin\/env node$/, /'node:[a-z_]+'/g, /\bNode 22\+/g, /\bnode_modules\b/g];
 
 test('the word test: jarl.mjs, jarl-lib.mjs and the modules of lib/, record.mjs, jarl-mcp.mjs and yg-edge.mjs never use wave, architect or node, beyond the Node.js runtime', () => {
   for (const f of FILES) {
@@ -30,6 +31,8 @@ test('the word test catches what it guards against, and the allow-list stays tha
   assert.deepEqual(scrub("import { x } from 'node:fs';"), []);
   assert.deepEqual(scrub('#!/usr/bin/env node'), []);
   assert.deepEqual(scrub('// Zero dependencies, Node 22+.'), []);
+  assert.deepEqual(scrub("const NOT_WALKED = new Set(['node_modules', 'vendor']);"), []);
+  assert.deepEqual(scrub('a node_module, node_modules2 and nodes_modules'), ['node', 'node', 'node']);
   assert.deepEqual(scrub('const node = issue.fields.node;'), ['node', 'node']);
   assert.deepEqual(scrub('// the next wave closes'), ['wave']);
   assert.deepEqual(scrub('the architecture graph'), ['architect']);

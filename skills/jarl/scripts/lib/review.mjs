@@ -1,6 +1,6 @@
 // The review command.
 
-import { Refusal, fieldText, hole, jarlLine, need, refuse } from './base.mjs';
+import { Refusal, echoWord, fieldText, hole, jarlLine, need, refuse } from './base.mjs';
 import { needNoOwnersWords } from './owner.mjs';
 import { jarlDir, stamp } from './where.mjs';
 import { readText, writeAtomic } from './files.mjs';
@@ -10,7 +10,7 @@ import { bodyText, parseIssue, reviewEntries, setSection, unattributedRefusal } 
 import { needFormat, tipLinesOf } from './repositories.mjs';
 import { FORMAT_LINES, formatState, loadProfile, reviewerRule } from './profile.mjs';
 import { carriesCode, gateOf, readLoop, reviewerKind, unclearedText } from './loop.mjs';
-import { SEVERITIES, loggedFinding, modelLines, modelRefusalOf, modelReviewForm, modelValue, reviewModelNotes, spellingNote } from './models.mjs';
+import { SEVERITIES, limitNote, loggedFinding, modelLines, modelRefusalOf, modelReviewForm, modelValue, reviewModelNotes, spellingNote } from './models.mjs';
 import { EVIDENCE_HOW, cmdNew, issuesFor, nextIssueNumber, nothingWritten, oneOrMany, proofSince, refiled } from './commands.mjs';
 import { REVIEW_MIN_WORDS, needSaid, raisedText, retractedBy, struck } from './evidence.mjs';
 import { closeForm, linesText, ownerLineWait, unprovedLines } from './owner-lines.mjs';
@@ -73,6 +73,7 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
   }
   const by = flags.by !== undefined ? fieldText(flags.by) : null;
   const model = flags.model !== undefined ? modelValue(flags.model) : undefined;
+  const artifact = flags.artifact !== undefined ? artifactValue(flags.artifact) : undefined;
   need(flags.relayed === undefined || flags.relayed === true, '--relayed takes no value', () => ({ rename: '--relayed', to: hole('<no-flag-here>') }));
   const relayed = flags.relayed === true;
   need(flags.bot === undefined || flags.bot === true, '--bot takes no value', () => ({ rename: '--bot', to: hole('<no-flag-here>') }));
@@ -103,7 +104,10 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
   // reviewer recorded. Where a composer keeps the loop's format it is refused, with nothing written.
   const botRaised = kinds.includes('bot') ? needBotFormat(root) : false;
   const batch = issues.length > 1 && holdsBatches(root) ? newIssueKey(stamp()) : null;
-  const raised = (batch ? needFormat(root, 'batch') : false) || botRaised;
+  // The artifact a verdict judged is a line of record format 3 too: a reader of the formats below would read it as the
+  // first words of the findings. Only a verdict that names one raises the loop.
+  const artifactRaised = artifact !== undefined ? needFormat(root, 'artifact') : false;
+  const raised = (batch ? needFormat(root, 'batch') : false) || botRaised || artifactRaised;
   const filed = outside.map((o) => fileOutside(root, issues, by, o, flags, withModel, false));
   const recorded = filed.length ? `${String(findings).trim()}\n${filed.map((f) => `outside the issue, filed as ${f.id}: ${f.first}`).join('\n')}` : findings;
   // The whole findings go under the issue's ## Reviews (before Evidence, which stays last); the log keeps the verdict
@@ -112,12 +116,12 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
   for (const [n, issue] of issues.entries()) {
     const text = readText(issue.file);
     const current = (parseIssue(text, issue.file).sections.reviews || '').trim();
-    const entry = `- **${verdict}** · ${by ? `by ${by} (${kinds[n]}) · ` : ''}${day}${model !== undefined ? ` · model ${model}` : ''}${relayed ? ' · relayed' : ''}${batch ? ` · batch ${batch}` : ''}\n${bodyText(recorded).split('\n').map((l) => (l ? `  ${l}` : '')).join('\n')}`;
+    const entry = `- **${verdict}** · ${by ? `by ${by} (${kinds[n]}) · ` : ''}${day}${model !== undefined ? ` · model ${model}` : ''}${relayed ? ' · relayed' : ''}${batch ? ` · batch ${batch}` : ''}${artifact !== undefined ? ` · artifact ${artifact}` : ''}\n${bodyText(recorded).split('\n').map((l) => (l ? `  ${l}` : '')).join('\n')}`;
     writeAtomic(issue.file, setSection(text, 'Reviews', current ? `${current}\n${entry}` : entry));
   }
-  // The model, the relay mark and the batch come after the kind: a reader that parses only the name and the kind ignores
-  // what follows.
-  const marks = `${model !== undefined ? `model ${model} · ` : ''}${relayed ? 'relayed · ' : ''}${batch ? `batch ${batch} · ` : ''}`;
+  // The model, the relay mark, the batch and the artifact come after the kind: a reader that parses only the name and the
+  // kind ignores what follows.
+  const marks = `${model !== undefined ? `model ${model} · ` : ''}${relayed ? 'relayed · ' : ''}${batch ? `batch ${batch} · ` : ''}${artifact !== undefined ? `artifact ${artifact} · ` : ''}`;
   // Each verdict line is followed by the tip of the issue's branch: the code the verdict was given on. A filing or the batch
   // may have raised the loop's format, which writes a bare format-1 path with a leading ./ and reads a bare word as a name:
   // the issues are read again, and every lookup of a repository is made anew, so the tip is read where the Repo points now.
@@ -138,6 +142,7 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
       flags.caller === 'cli' && verdict === 'approve' ? unprovedNote(loop, issue) : null,
       ...(lines && (lines.declared || rule !== 'agent') ? reviewModelNotes(loop, issue, verdict, model, lines, loop.eventsById.get(issue.id) || [], rule) : []),
       flags.caller === 'cli' && model !== undefined ? spellingNote(loop, model) : null,
+      flags.caller === 'cli' && n === 0 ? limitNote(root, model) : null,
     ].filter(Boolean);
     return said.length ? { note: said.join('; ') } : {};
   };
@@ -157,8 +162,90 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
     const text = g ? unclearedText(written, now, g) : null;
     return text ? { text, cause: g.uncleared.cause } : null;
   };
-  return oneOrMany(rawIds, issues.map((issue, n) => ({ id: issue.id, verdict, ...(by ? { by, kind: kinds[n] } : {}), ...(model !== undefined ? { model } : {}), ...(relayed ? { relayed } : {}), ...(batch ? { batch } : {}), severities, ...(filed.length ? { filed: filed.map((f) => f.id) } : {}), acceptance: (issue.sections.acceptance || '').trim(), ...(flags.caller === 'cli' ? { next: nextAfterVerdict(issue, verdict, kinds[n], loop && verdict === 'approve' ? ownerLineWait(root, loop, issue) : null, modelOf(issue), unclearedOf(issue), closeForm(loop ? loop.profile : loadProfile(root), issue.id, loop ? unprovedLines(loop, issue) || [] : [])) } : {}), ...noteOf(issue, n) })));
+  return oneOrMany(rawIds, issues.map((issue, n) => ({ id: issue.id, verdict, ...(by ? { by, kind: kinds[n] } : {}), ...(model !== undefined ? { model } : {}), ...(relayed ? { relayed } : {}), ...(batch ? { batch } : {}), ...(artifact !== undefined ? { artifact } : {}), severities, ...(filed.length ? { filed: filed.map((f) => f.id) } : {}), acceptance: (issue.sections.acceptance || '').trim(), ...(flags.caller === 'cli' ? { next: nextAfterVerdict(issue, verdict, kinds[n], loop && verdict === 'approve' ? ownerLineWait(root, loop, issue) : null, modelOf(issue), unclearedOf(issue), closeForm(loop ? loop.profile : loadProfile(root), issue.id, loop ? unprovedLines(loop, issue) || [] : [])) } : {}), ...noteOf(issue, n) })));
 }
+
+// An --artifact value: the render or file a verdict judged, stored as given, trimmed of the plain spaces around it. The
+// record is public and read on other machines and platforms, so a value is accepted only when it is a plain relative path
+// inside the repository the work is in, and everything else is refused: one allowlist, which the help and the reviewer
+// reference state in the same words, so no spelling of a place on one machine has to be foreseen to be refused.
+// - The plain characters are letters and digits with their marks, spaces, . _ - + @ # , = ( ) [ ] and the separators / and
+//   \. A colon is not one, wherever it stands: it parts a scheme, a host and its port, a drive and a stream, and a name
+//   that holds one is not portable to Windows. A ~ is not one either: it is a home, or a short name of Windows (PROGRA~1).
+// - A $ stands only between two letters or digits, and a % neither first in a segment nor before two hex digits: inside a
+//   name (price$total.png, 50%.png) each is the name's own, while a variable, a command or an arithmetic of a shell that
+//   stands for a place opens a segment ($HOME, $(pwd), %TEMP%, %~dp0), and %2F is the encoded byte of an address.
+// - A letter, digit or mark outside ASCII is plain when it is not default-ignorable (invisible) and its NFKC form is
+//   letters, digits and marks alone: a full-width slash or dot is no letter, and the NFKC forms of ⒈ and ŀ hold a dot.
+//   The value reads the same after NFC, so a reader that normalizes it sees the same value (NFC turns U+0387 into the
+//   separator).
+// - No segment is empty or ends with a dot or a space, so neither . nor .. is one, save the ./ the value may open with: a
+//   .. after a link leaves the repository whatever stands before it, and Windows drops a trailing dot or space, so two
+//   values would name one file. No segment is a device name of Windows, the value never opens with a dash, which a tool
+//   reads as an option, and it holds at most ARTIFACT_MOST characters, so its log line stays a line.
+export const ARTIFACT_MOST = 260;
+const PLAIN_ASCII = /^[A-Za-z0-9 ._+@#,=()[\]-]$/;
+const ASCII_ALNUM = /^[A-Za-z0-9]$/;
+const LETTER_OR_DIGIT = /^[\p{L}\p{N}]$/u;
+const MARK = /^\p{M}$/u;
+const NFKC_PLAIN = /^[\p{L}\p{N}\p{M}]+$/u;
+const INVISIBLE = /^\p{Default_Ignorable_Code_Point}$/u;
+const HEX_PAIR = /^[0-9A-Fa-f]{2}/;
+const DEVICE = /^(?:CON|PRN|AUX|NUL|COM[0-9¹²³]|LPT[0-9¹²³])$/i;
+// What one character of a value is: a separator, a letter or digit, a mark, other plain punctuation, $ or %, or null
+// for a character that is never plain.
+function artifactChar(c) {
+  if (c === '/' || c === '\\') return 'separator';
+  if (c === '$' || c === '%') return c;
+  if (c.codePointAt(0) < 0x80) return PLAIN_ASCII.test(c) ? (ASCII_ALNUM.test(c) ? 'alnum' : 'punctuation') : null;
+  if (INVISIBLE.test(c) || !NFKC_PLAIN.test(c.normalize('NFKC'))) return null;
+  return LETTER_OR_DIGIT.test(c) ? 'alnum' : MARK.test(c) ? 'mark' : null;
+}
+// The first character of a value out of the rule, as { at, why }, or null.
+const CHAR_WHY = { ':': 'a colon parts a scheme, a host and its port, a drive or a stream', '~': 'a ~ is a home or a short name of Windows', '·': "it is the separator of the record's lines" };
+function unplainChar(chars) {
+  const kinds = chars.map(artifactChar);
+  for (const [i, kind] of kinds.entries()) {
+    const before = i > 0 ? kinds[i - 1] : null;
+    const after = i + 1 < kinds.length ? kinds[i + 1] : null;
+    if (kind === null) return { at: i, why: CHAR_WHY[chars[i]] || 'it is not one of the plain characters' };
+    if (kind === 'mark' && before !== 'alnum' && before !== 'mark') return { at: i, why: 'a mark stands only after a letter or digit' };
+    if (kind === '$' && (before !== 'alnum' || after !== 'alnum')) return { at: i, why: 'a $ stands only between two letters or digits' };
+    if (kind === '%' && (before === null || before === 'separator' || HEX_PAIR.test(chars.slice(i + 1, i + 3).join('')))) return { at: i, why: 'a % stands neither first in a segment nor before two hex digits' };
+  }
+  return null;
+}
+// The first segment of a value out of the rule, as { why }, or null: the first segment may be the . of an opening ./. A
+// value of one segment is named whole by the refusal, which the command line echoes quoted, so the segment is not echoed
+// again inside it.
+function unplainSegment(segments) {
+  const named = (s) => (segments.length > 1 ? `the segment ${echoWord(s)}` : 'one segment');
+  for (const [k, s] of segments.entries()) {
+    if (k === 0 && s === '.' && segments.length > 1) continue;
+    if (s === '') return { why: k === 0 ? 'opens with a separator, a root on one machine' : k === segments.length - 1 ? 'ends with a separator and names no file' : 'holds an empty segment' };
+    if (s === '..') return { why: 'climbs with ..' };
+    if (/[. ]$/.test(s)) return { why: `holds ${named(s)}, which ends with a dot or a space` };
+    if (DEVICE.test(s.split('.')[0].replace(/ +$/, ''))) return { why: `holds ${named(s)}, a device name of Windows` };
+  }
+  return null;
+}
+export function artifactValue(raw) {
+  const p = typeof raw === 'string' ? raw.replace(/^ +| +$/g, '') : '';
+  const form = () => ({ flag: '--artifact', value: hole('<path>') });
+  const rule = '--artifact is a relative path inside the repository the work is in, in plain characters (the help of review names them)';
+  need(p !== '', '--artifact needs a value — the path of the render or file the verdict judged, inside the repository the work is in', form);
+  const chars = [...p];
+  need(chars.length <= ARTIFACT_MOST, `${rule}, and the value holds ${chars.length} characters, more than ${ARTIFACT_MOST}`, form);
+  need(p.normalize('NFC') === p, `${rule}, and the value changes under Unicode normalization (NFC): write it composed`, form);
+  const bad = unplainChar(chars);
+  need(!bad, bad ? `${rule}, and the value holds ${codePoint(chars[bad.at])} at character ${bad.at + 1}: ${bad.why}` : '', form);
+  need(!p.startsWith('-'), `${rule}, and "${p}" opens with a dash, which a tool reads as an option`, form);
+  const segment = unplainSegment(p.split(/[\\/]/));
+  need(!segment, segment ? `${rule}, and "${p}" ${segment.why}` : '', form);
+  return p;
+}
+// A character as a refusal names it: its code point, and the character itself when it is printable ASCII.
+const codePoint = (c) => `U+${c.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}${/^[\x21-\x7e]$/.test(c) ? ` (${c})` : ''}`;
 
 // The record format a bot's verdict needs, raised before the verdict is written. Where a composer keeps the loop's format,
 // the refusal ends with the profile view, which shows the format the profile says, and then the call's own form: --bot

@@ -308,7 +308,13 @@ export const modelsTableBuilds = () => builds.modelsTable;
 export const nextRowsBuilds = () => builds.nextRows;
 
 // The model of a ready issue as next and resume show it: the default model of the issue's tier.
-const modelText = (m) => (m && m.default ? `  [model ${m.default}]` : '');
+// The model a ready issue would be raised on; where the profile's models keep it from the tier's default, that default
+// and why, and where its reviewer would be beyond what the profile allows, the lighter worker that makes the review possible.
+const modelText = (m) => {
+  if (!m || (!m.default && !m.over)) return '';
+  const what = m.default ? `model ${m.default}` : 'no model the profile allows at this tier or below';
+  return `  [${what}${m.over ? ` (in place of ${m.over}, ${m.why})` : ''}${m.review ? ` — ${m.review}` : ''}]`;
+};
 
 // What a held row says of the leases that hold its resources: how long ago each was last active (see leaseLiveness), and
 // whether that is past the threshold.
