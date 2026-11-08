@@ -78,6 +78,42 @@ test('merged notes a conflict marker and an oversized file that the recorded mer
   assert.match(jarl(root, 'show', '1'), new RegExp(`Merged:\\*\\* ${sha}`));
 });
 
+// git writes a path that holds a space with a tab after it, and one that holds a letter beyond ASCII in double quotes with
+// its bytes as octal escapes: the notes name the file as it is on disk all the same.
+test('scope and merged name a file whose path git quotes or ends with a tab, in the marker note and the large-file note', () => {
+  const { root, g, commit } = leased();
+  writeFileSync(join(root, 'ünï notes.txt'), `a\n${MARKERS}\n`);
+  writeFileSync(join(root, 'plain space.txt'), 'a\n=======\n');
+  writeFileSync(join(root, 'big ü.dump'), Buffer.alloc(LIMIT + 1));
+  commit('work');
+  const out = scoped(root);
+  assert.deepEqual(out.notes.map((n) => [n.kind, n.file, n.line ?? n.bytes]), [
+    ['conflict-marker', 'plain space.txt', 2],
+    ['conflict-marker', 'ünï notes.txt', 2],
+    ['conflict-marker', 'ünï notes.txt', 4],
+    ['conflict-marker', 'ünï notes.txt', 6],
+    ['large-file', 'big ü.dump', LIMIT + 1],
+  ]);
+  g('checkout', '-q', 'main');
+  g('-c', 'commit.gpgsign=false', 'merge', '-q', '--no-ff', '-m', 'merge 1', 'jarl/1-x');
+  const r = run(root, ['merged', '1', '--sha', g('rev-parse', 'HEAD').trim(), '--keep']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stderr, /^note: ünï notes\.txt:2 starts a conflict marker · <<<<<<< HEAD \(brought in by the merge\)$/m);
+  assert.match(r.stderr, /^note: plain space\.txt:2 starts a conflict marker · ======= \(brought in by the merge\)$/m);
+  assert.match(r.stderr, /^note: big ü\.dump is an added file of 67108865 bytes/m);
+  assert.doesNotMatch(r.stderr, /null/);
+});
+
+test('a path git quotes for a double quote, a backslash or a tab in it is named unquoted in the marker note', { skip: process.platform === 'win32' && 'a file name cannot hold a double quote, a backslash or a tab on Windows' }, () => {
+  const { root, commit } = leased();
+  const name = 'odd\t"name"\\x.txt';
+  writeFileSync(join(root, name), `a\n${MARKERS}\n`);
+  commit('work');
+  assert.deepEqual(scoped(root).notes.map((n) => [n.kind, n.file, n.line]), [
+    ['conflict-marker', name, 2], ['conflict-marker', name, 4], ['conflict-marker', name, 6],
+  ]);
+});
+
 test('merged says nothing about a merge that brought in no marker and no large file', () => {
   const { root, g, commit } = leased();
   writeFileSync(join(root, 'a.txt'), 'a\nplain\n');

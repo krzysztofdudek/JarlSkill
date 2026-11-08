@@ -4,9 +4,11 @@
 // to merge and closes on its proof and its approve.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readdirSync, readFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { jarl, refuses, loop as makeLoop } from './helpers.mjs';
+import { tmpdir } from 'node:os';
+import { gitRepo, jarl, refuses, loop as makeLoop } from './helpers.mjs';
+import { BUILTIN_STATUSES } from '../jarl-lib.mjs';
 
 const json = (root, ...args) => JSON.parse(jarl(root, ...args, '--json'));
 const files = (root) => Object.fromEntries(readdirSync(join(root, '.jarl'), { recursive: true }).filter((f) => /\.md$/.test(f)).map((f) => [f, readFileSync(join(root, '.jarl', f), 'utf8')]));
@@ -47,4 +49,103 @@ test('a code issue with a branch in a loop with no repository is merged before i
   jarl(root, 'merged', '1', '--sha', 'abc1234', '--by', 'jarl');
   jarl(root, 'set', '1', 'done', 'merged', '--by', 'jarl');
   assert.deepEqual(json(root, 'status').closedGate, []);
+});
+
+// ---- a merge counts for the code as it is now: one from before a reopen or a round, or of a tip the branch has moved past, does not ----
+
+// A loop in a git repository on main whose first issue is leased on jarl/1-fix, with one commit, its row and a fresh approve.
+function codeIssue(initFlags = []) {
+  const { dir: root, g } = gitRepo({ prefix: 'jarl-merge-now-', branch: 'main' });
+  jarl(root, 'init', 'goal', ...initFlags);
+  jarl(root, 'new', 'the fix', '--acceptance', 'it works');
+  g('branch', 'jarl/1-fix');
+  const work = (file) => { g('checkout', '-q', 'jarl/1-fix'); writeFileSync(join(root, file), `${file}\n`); g('add', file); g('commit', '-qm', file); g('checkout', '-q', 'main'); return g('rev-parse', 'jarl/1-fix').trim(); };
+  const proved = () => { jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', '12 pass, 0 fail'); jarl(root, 'review', '1', 'approve', '--by', 'rev-fresh', 'read the diff and the test, nothing found'); };
+  const merge = () => { g('merge', '-q', '--no-ff', '-m', 'merge 1', 'jarl/1-fix'); const sha = g('rev-parse', 'HEAD').trim(); jarl(root, 'merged', '1', '--sha', sha, '--keep'); return sha; };
+  work('one.txt');
+  jarl(root, 'set', '1', 'in-progress', 'start', '--branch', 'jarl/1-fix', '--worker', 'w1');
+  proved();
+  return { root, g, work, proved, merge };
+}
+
+test('a code issue merged once and never reopened closes on that merge, and status flags nothing', () => {
+  const { root, merge } = codeIssue();
+  merge();
+  assert.equal(jarl(root, 'set', '1', 'done', 'merged'), '1 → done');
+  assert.deepEqual(json(root, 'status').closedGate, []);
+});
+
+test('a code issue reopened after its merge and given a new commit is refused by done until the new tip\'s merge is recorded, with the form of merged', () => {
+  const { root, work, proved, merge } = codeIssue();
+  const first = merge();
+  jarl(root, 'set', '1', 'done', 'merged');
+  jarl(root, 'set', '1', 'open', 'the fix missed a case');
+  jarl(root, 'set', '1', 'in-progress', 'again', '--branch', 'jarl/1-fix', '--worker', 'w1');
+  work('two.txt');
+  proved();
+  const before = files(root);
+  const said = refuses(root, 'set', '1', 'done', 'all green');
+  assert.match(said, new RegExp(`^1 carries code \\(its lease records Branch jarl/1-fix\\) and its last merge, ${first} \\([^)]+\\), was recorded before its last start, reopen or red round, which spends a merge as it spends an approve — a code issue is merged before it is done`), said);
+  assert.match(said, /\njarl\.mjs merged "<ids>" --sha "<sha>"\n$/, said);
+  assert.deepEqual(files(root), before, 'a refused done writes nothing');
+  merge();
+  assert.equal(jarl(root, 'set', '1', 'done', 'merged again'), '1 → done');
+  assert.deepEqual(json(root, 'status').closedGate, []);
+});
+
+test('a merge of a tip the branch has moved past does not count once the branch has a newer commit: done names both tips', () => {
+  const { root, g, work, merge } = codeIssue();
+  const merged = g('rev-parse', 'jarl/1-fix').trim();
+  const first = merge();
+  const now = work('late.txt');
+  const said = refuses(root, 'set', '1', 'done', 'all green');
+  assert.match(said, new RegExp(`and its last merge, ${first} \\([^)]+\\), was recorded on tip ${merged.slice(0, 12)} and the branch is at ${now.slice(0, 12)}, so the commits after it are not merged — `), said);
+  merge();
+  assert.equal(jarl(root, 'set', '1', 'done', 'merged with the late commit'), '1 → done');
+});
+
+test('a red round after a merge spends it as it spends the approve', () => {
+  const { root, proved, merge } = codeIssue();
+  merge();
+  jarl(root, 'round', '1', 'the check went red on the merge');
+  proved();
+  assert.match(refuses(root, 'set', '1', 'done', 'all green'), /was recorded before its last start, reopen or red round/);
+  merge();
+  assert.equal(jarl(root, 'set', '1', 'done', 'merged again'), '1 → done');
+});
+
+test('a loop that closes only on a landed merge refuses a merge from before the reopen, though its commit is in the base', () => {
+  const profile = join(mkdtempSync(join(tmpdir(), 'jarl-merge-now-profile-')), 'profile.json');
+  writeFileSync(profile, JSON.stringify({ 'jarl-profile': 1, format: 1, name: 'landed-gate', statuses: BUILTIN_STATUSES, 'done-gate': { 'requires-merged': true } }));
+  const { root, work, proved, merge } = codeIssue(['--profile', profile]);
+  merge();
+  jarl(root, 'set', '1', 'done', 'merged');
+  jarl(root, 'set', '1', 'open', 'the fix missed a case');
+  jarl(root, 'set', '1', 'in-progress', 'again', '--branch', 'jarl/1-fix', '--worker', 'w1');
+  work('two.txt');
+  proved();
+  const said = refuses(root, 'set', '1', 'done', 'all green');
+  assert.match(said, /was recorded before its last start, reopen or red round/, said);
+  assert.match(said, /\njarl\.mjs merged "<ids>" --sha "<sha>"\n$/, said);
+  merge();
+  assert.equal(jarl(root, 'set', '1', 'done', 'merged again'), '1 → done');
+});
+
+test('status flags a code issue closed on a merge from before its reopen, naming the merge', () => {
+  const { root, work, proved, merge } = codeIssue();
+  const first = merge();
+  jarl(root, 'set', '1', 'done', 'merged');
+  jarl(root, 'set', '1', 'open', 'the fix missed a case');
+  jarl(root, 'set', '1', 'in-progress', 'again', '--branch', 'jarl/1-fix', '--worker', 'w1');
+  work('two.txt');
+  proved();
+  // Closed past the gate, as a hand edit or another tool can: the move line and the file's status.
+  const log = join(root, '.jarl', 'log.md');
+  const stamp = [...readFileSync(log, 'utf8').matchAll(/^- (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) · /gm)].pop()[1];
+  writeFileSync(log, `${readFileSync(log, 'utf8')}- ${stamp} · 1 → done · closed by hand\n`);
+  const file = join(root, '.jarl', 'issues', readdirSync(join(root, '.jarl', 'issues')).find((f) => f.startsWith('1-')));
+  writeFileSync(file, readFileSync(file, 'utf8').replace(/^\*\*Status:\*\* .*$/m, '**Status:** done'));
+  const flags = json(root, 'status').closedGate;
+  assert.equal(flags.length, 1, JSON.stringify(flags));
+  assert.match(flags[0].reason, new RegExp(`a code issue done, and its last merge, ${first} \\([^)]+\\), was recorded before its last start, reopen or red round`));
 });

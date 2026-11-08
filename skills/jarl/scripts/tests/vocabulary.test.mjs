@@ -116,6 +116,9 @@ test('the skill never says ticket, and names the command only as scope', () => {
   assert.deepEqual(hits(SKILL_LINES, /\bcheck (?:\[?<id>|--branch|--repo)|jarl_check/, SKILL_LABELS), []);
 });
 
+// Every term the glossary defines, in the order its table lists them.
+const TERMS = ['issue', 'loop', 'lease', 'package', 'round', 'evidence row', 'proof', 'note', 'verdict', 'standing', 'gate', 'merge record', 'ruling', 'question', 'type', 'profile', 'tier', 'model', 'mode', 'format', 'owner', 'jarl', 'worker', 'reviewer', 'merger', 'composer', 'scope', 'check'];
+
 test('the skill defines each glossary term once, in the one table of references/glossary.md, in one present-tense sentence', () => {
   const GLOSSARY = 'references/glossary.md';
   const rows = SKILL_ENTRIES.filter((e) => e.file === GLOSSARY).map((e) => /^\| `([^`]+)` \| (.+) \|$/.exec(e.text)).filter(Boolean);
@@ -134,9 +137,6 @@ test('the skill defines each glossary term once, in the one table of references/
     assert.deepEqual(hits(outside, re, outsideLabels), [], `${term} is defined outside the glossary`);
   }
 });
-
-// Every term the glossary defines, in the order its table lists them.
-const TERMS = ['issue', 'loop', 'lease', 'package', 'round', 'evidence row', 'proof', 'note', 'verdict', 'standing', 'gate', 'merge record', 'ruling', 'question', 'type', 'profile', 'tier', 'model', 'mode', 'format', 'owner', 'jarl', 'worker', 'reviewer', 'merger', 'composer', 'scope', 'check'];
 
 // A replacement of one word by another can leave the new word glued to the word after it. Every help line and every
 // tool description is read for the words the vocabulary defines, each followed by nothing but its own plural or

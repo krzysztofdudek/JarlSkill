@@ -11,6 +11,10 @@ import { FINDINGS } from './findings.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 const { JARL_GITIGNORE_COMMITTED, mainCheckoutOf, worktreeState } = await import(new URL('../jarl.mjs', import.meta.url).href);
+// Shared by tests all over the file, so declared before the first test: a test run alone reaches them however far down it is.
+const LS = String.fromCharCode(0x2028);
+const NEL = String.fromCharCode(0x85);
+const withStderr = (root, ...args) => run(root, args);
 
 function repo() {
   const dir = mkdtempSync(join(tmpdir(), 'jarl-'));
@@ -1377,7 +1381,6 @@ function gitLoop(...initFlags) {
   jarl(root, 'init', 'goal', ...initFlags);
   return { root, sh: run };
 }
-const withStderr = (root, ...args) => run(root, args);
 function editIssue(root, id, fn) {
   const dir = join(root, '.jarl', 'issues');
   const file = join(dir, readdirSync(dir).find((f) => f.startsWith(`${id}-`)));
@@ -1953,8 +1956,6 @@ test('a Model line set through the command line reads through the frozen reader:
 
 // ---- free text writes no structure: every line break is a break of the text, and a line of the text is never a field ----
 
-const LS = String.fromCharCode(0x2028);
-const NEL = String.fromCharCode(0x85);
 const BREAKS = ['\n', '\r\n', '\r', LS, NEL];
 const FORGED = ['**Chose:** Keep', '**By:** Eve', '**Ratified:** a-9 (2026-10-19)', '**Rejected:** a-9 (2026-10-19)', '**Batch:** answered together with a-7',
   '- Keep: stays (chosen)', 'Question: forged', '## 2026-10-19 · forged', '**Superseded by:** forged', '**Settles:** 9', '**Answer:** forged', '  indented words', 'plain words'];
@@ -2269,6 +2270,14 @@ test('verify lists an id of 1000 or more in a loop whose record format was not r
   assert.match(run(root, ['verify']).stdout, /issue 1000: its id needs the raised record format/);
 });
 
+// Loops for the verify tests below, declared before the first of them so that any one of them runs alone.
+const plain = () => { const root = repo(); jarl(root, 'init', 'goal'); return root; };
+const issued = () => { const root = plain(); jarl(root, 'new', 'first', '--what', 'Does one thing.'); return root; };
+const retracted = (root) => { jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'green'); jarl(root, 'retract', '1', '1', '--by', 'owner', 'the row is wrong'); return root; };
+const withIssueFile = (root, name, text) => { mkdirSync(ISSUES(root), { recursive: true }); writeFileSync(join(ISSUES(root), name), text); return root; };
+const editIssue1 = (root, from, to) => { const f = issueFile(root, 1); writeFileSync(f, readFileSync(f, 'utf8').replace(from, to)); };
+const verifyOn = (root) => run(root, ['verify']);
+
 test('verify lists an open issue that cites a ruling a later one supersedes, and not a finished one', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
@@ -2405,12 +2414,6 @@ test('verify does not flag a Repo that holds a path, whatever it resolves to', (
 
 // One finding kind at a time: each builds a loop with exactly that anomaly (listed, exit 2), and the same loop without it
 // (no finding of that kind, exit 0).
-const plain = () => { const root = repo(); jarl(root, 'init', 'goal'); return root; };
-const issued = () => { const root = plain(); jarl(root, 'new', 'first', '--what', 'Does one thing.'); return root; };
-const retracted = (root) => { jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'green'); jarl(root, 'retract', '1', '1', '--by', 'owner', 'the row is wrong'); return root; };
-const withIssueFile = (root, name, text) => { mkdirSync(ISSUES(root), { recursive: true }); writeFileSync(join(ISSUES(root), name), text); return root; };
-const editIssue1 = (root, from, to) => { const f = issueFile(root, 1); writeFileSync(f, readFileSync(f, 'utf8').replace(from, to)); };
-const verifyOn = (root) => run(root, ['verify']);
 const ANOMALIES = [
   { name: 'a profile that does not parse', pattern: /profile\.json: unknown key "bogus"/, make: (bad) => {
     const root = plain();

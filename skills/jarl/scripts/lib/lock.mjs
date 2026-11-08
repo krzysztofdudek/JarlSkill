@@ -3,7 +3,7 @@
 import { existsSync, realpathSync, statSync, openSync, closeSync, writeSync, unlinkSync } from 'node:fs';
 import { hostname } from 'node:os';
 import { join, resolve } from 'node:path';
-import { refuse } from './base.mjs';
+import { echoWord, refuse } from './base.mjs';
 import { jarlDir } from './where.mjs';
 import { RENAME_BUSY, readText, sleep, writeAtomic } from './files.mjs';
 import { JARL_GITIGNORE_COMMITTED, ensureLoopMerge } from './loop-git.mjs';
@@ -93,7 +93,7 @@ export function withLock(root, fn) {
       try { writeSync(fd, mine); } finally { closeSync(fd); }
       break;
     } catch (e) {
-      if (e.code === 'ENOENT') refuse(`no .jarl/ here any more — the loop was closed or archived while this command waited (${jarlDir(root)})`, ['jarl.mjs', 'init', '<goal>']);
+      if (e.code === 'ENOENT') refuse(`no .jarl/ here any more — the loop was closed or archived while this command waited (${echoWord(jarlDir(root))})`, ['jarl.mjs', 'init', '<goal>']);
       // Windows: a lock just released is "delete pending" while another process still has it open (a waiter reading
       // it), and creating it again is refused with EPERM until that handle closes — a busy lock, not an error.
       if (!(e.code === 'EEXIST' || (process.platform === 'win32' && RENAME_BUSY.has(e.code)))) throw e;

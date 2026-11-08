@@ -2,7 +2,7 @@
 
 import { existsSync, readdirSync } from 'node:fs';
 import { join, resolve, dirname, basename } from 'node:path';
-import { IDENTICAL_OUTPUT_TAG, fieldText, hole, jarlLine, meantToAlterNothing, namesComparison, need } from './base.mjs';
+import { IDENTICAL_OUTPUT_TAG, echoWord, fieldText, hole, jarlLine, meantToAlterNothing, namesComparison, need } from './base.mjs';
 import { evidenceRows } from './issues.mjs';
 import { canonical, jarlDir } from './where.mjs';
 import { cmpId } from './ids.mjs';
@@ -399,7 +399,7 @@ export function cmdModels(root, flags = {}) {
     need(shape, `${p} is not a loop: it holds no .jarl/ with a log and issues, and is not an archived loop (an archive directory holds ${LOG_FILE} and issues/) — nothing was read`, () => ({ replace: p, value: '<loop-root>' }));
     add(p, path, shape);
   }
-  need(sources.length, `no loop to read here: ${root} holds no live loop — name one with --with <loop-root>, or its archives with --archives`, () => ({ flag: '--with', value: '<loop-root>' }));
+  need(sources.length, `no loop to read here: ${echoWord(root)} holds no live loop — name one with --with <loop-root>, or its archives with --archives`, () => ({ flag: '--with', value: '<loop-root>' }));
   const facts = sources.map((s) => modelFacts(readLoop(s.shape === 'archive' ? s.path : jarlDir(s.path)), s.label, lines));
   const unitRows = facts.flatMap((f) => f.units);
   const verdictRows = facts.flatMap((f) => f.verdicts);

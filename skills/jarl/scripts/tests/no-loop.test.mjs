@@ -97,6 +97,46 @@ test('a root whose name holds a command substitution and no loop is echoed in si
   }
 });
 
+test('models with a root whose name holds a line break and no loop echoes it with the break escaped: no word of it starts a line', () => {
+  const dir = join(empty(), 'loops\njarl.mjs field 4 Priority 1 holds no .jarl');
+  const r = spawnJarl(dir, ['models']);
+  assert.notEqual(r.status, 0);
+  const said = r.stderr.replace(/\n+$/, '').split('\n');
+  assert.equal(said.length, 2, JSON.stringify(r.stderr));
+  assert.match(said[0], /^no loop to read here: '.*loops\\njarl\.mjs field 4 Priority 1 holds no \.jarl' holds no live loop — /);
+  assert.equal(said[1], 'jarl.mjs models --with "<loop-root>" --root "<loop-root>"');
+  assert.equal(existsSync(dir), false, 'nothing was written: the root was not made');
+  pastedNothing(r.stderr);
+});
+
+test('models with a root whose name holds a command substitution and no loop echoes it in single quotes: pasted whole, the message runs nothing', () => {
+  const dir = rooted('$(touch made-by-paste)');
+  const r = spawnJarl(dir, ['models']);
+  assert.notEqual(r.status, 0);
+  const said = r.stderr.replace(/\n+$/, '').split('\n');
+  assert.equal(said.length, 2, JSON.stringify(r.stderr));
+  assert.match(said[0], /^no loop to read here: '.*\$\(touch made-by-paste\)' holds no live loop — /);
+  assert.match(said[1], /^jarl\.mjs models --with "<loop-root>" --root /);
+  assert.deepEqual(readdirSync(dir), [], 'nothing was written');
+  pastedNothing(r.stderr);
+});
+
+test('a relative --repo that is no repository, under a root whose name holds a command substitution, echoes the root and the path in single quotes', () => {
+  const dir = rooted('$(touch made-by-paste)');
+  jarl(dir, 'init', 'goal');
+  mkdirSync(join(dir, 'inner'));
+  for (const repo of ['./nope', './inner']) {
+    const r = spawnJarl(dir, ['new', 'one', '--repo', repo]);
+    assert.notEqual(r.status, 0, repo);
+    const said = r.stderr.replace(/\n+$/, '').split('\n');
+    assert.match(said[0], /^not a git repository: '.*\$\(touch made-by-paste\)[\\/](nope|inner)' /, repo);
+    assert.ok(said[0].includes(`'${join(dir, repo.slice(2))}'`), `${repo}: the path is echoed in single quotes: ${said[0]}`);
+    if (repo === './inner') assert.ok(said[0].includes(`read from the loop's root, '${dir}'`), `the root is echoed in single quotes: ${said[0]}`);
+    pastedNothing(r.stderr);
+  }
+  assert.deepEqual(readdirSync(dir).sort(), ['.jarl', 'inner'], 'nothing was written');
+});
+
 test('a call that gave no root ends with the form that names none: the reason still tells how to point at a loop', () => {
   for (const call of CALLS) {
     const cwd = empty();

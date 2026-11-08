@@ -3,7 +3,7 @@
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, openSync, closeSync, writeSync, unlinkSync, linkSync } from 'node:fs';
 import { basename, join, resolve, relative, isAbsolute } from 'node:path';
-import { CI_STATES, LEASE_FIELDS, PRIORITIES, Refusal, TIERS, WAIT_KIND, afterView, fieldText, hole, jarlLine, need, noSeparators, refuse, shellWord, slugify, splitList } from './base.mjs';
+import { CI_STATES, LEASE_FIELDS, PRIORITIES, Refusal, TIERS, WAIT_KIND, afterView, echoWord, fieldText, hole, jarlLine, need, noSeparators, refuse, shellWord, slugify, splitList } from './base.mjs';
 import { needNoNewOwnersWords, needNoOwnersWords } from './owner.mjs';
 import { git, gitBytes, gitRun } from './git.mjs';
 import { canonical, issuesDir, jarlDir, normalPath, portablePath, stamp, today } from './where.mjs';
@@ -14,8 +14,8 @@ import { appendLog, appendLogLines, decisionsPath, goalPath, logPath } from './j
 import { JARL_GITIGNORE, JARL_GITIGNORE_COMMITTED, ensureLoopMerge, outOfGit } from './loop-git.mjs';
 import { HANDOVER_SEGMENT, journalById, mergeCheckText } from './log.mjs';
 import { FIELD_RE, PROPOSED, RENDERED_FIELDS, acceptanceHeading, acceptanceLineCount, acceptanceLines, acceptanceText, bodyText, changelogText, evidenceNotes, evidenceParts, evidenceRows, evidenceTable, fieldValue, findIssue, issueNamed, loadIssues, mergedOf, namedPairs, needNoFieldTags, noteText, parentCycle, parseIssue, placeEvidence, removeFields, removeFirstField, renderIssue, setField, setSection, unattributedRefusal, waitCycle } from './issues.mjs';
-import { branchTip, commitRepoNames, declaredBaseOf, defaultBase, fileKeysOf, isGitRepo, issueRepoPaths, issueRepoSlots, issueRepos, mainCheckoutOf, needFormat, needFormatHeld, needRightCheckouts, repoFromInput, repoLabel, repoList, reposNamed, tipLines, whyNotDeletable, worktreeState, worktreesOf } from './repositories.mjs';
-import { FIELD_NAMES, activeSlices, carriesCode, unmergedCode, gateOf, isSliceTag, leaseConflictOf, needOneSlice, readLoop, sinceText, sliceOf, unclearedText, unorderedNamings, unorderedText } from './loop.mjs';
+import { baseOf, branchTip, commitRepoNames, fileKeysOf, isGitRepo, issueRepoPaths, issueRepoSlots, issueRepos, mainCheckoutOf, needFormat, needFormatHeld, needRightCheckouts, repoFromInput, repoLabel, repoList, reposNamed, tipLines, whyNotDeletable, worktreeState, worktreesOf } from './repositories.mjs';
+import { FIELD_NAMES, activeSlices, carriesCode, unmergedCode, unmergedText, gateOf, isSliceTag, leaseConflictOf, needOneSlice, readLoop, sinceText, sliceOf, unclearedText, unorderedNamings, unorderedText } from './loop.mjs';
 import { declaredChecks, lastMerge } from './metrics.mjs';
 import { modelLines, modelRefusalOf, modelReviewForm, modelValue, modelOfferAtLease, spellingNote } from './models.mjs';
 import { slotRefusal } from './attachments.mjs';
@@ -252,7 +252,7 @@ export function cmdNew(root, title, rawFlags, from = {}) {
   // A linked worktree of a committed loop holds only the copy it was cut with, so a number taken there may already be used
   // in the main checkout: file from the main checkout.
   const placed = mainCheckoutOf(root);
-  need(!placed || !placed.linked || !existsSync(jarlDir(placed.mainRoot)), `${root} is a linked worktree of ${placed?.mainRoot}, which holds this loop: its copy here may lag, and the number would be used twice — file from the main checkout: pass --root ${placed?.mainRoot}`, () => ({ flag: '--root', value: placed?.mainRoot ?? '<the-main-checkout>' }));
+  need(!placed || !placed.linked || !existsSync(jarlDir(placed.mainRoot)), `${echoWord(root)} is a linked worktree of ${echoWord(placed?.mainRoot)}, which holds this loop: its copy here may lag, and the number would be used twice — file from the main checkout: pass --root ${echoWord(placed?.mainRoot)}`, () => ({ flag: '--root', value: placed?.mainRoot ?? '<the-main-checkout>' }));
   let flags = rawFlags;
   let fromTemplate = {};
   if (rawFlags.template !== undefined) {
@@ -1525,7 +1525,7 @@ function doneGateIn(root, loop, issue, base) {
     : `${issue.id} has no --ran/--saw evidence row recorded since ${sinceText(g.anchor)} (${g.anchor.at}) — a free-text note, or a row written before that (before a start or a reopen), is not proof of the work: ${how}${gap}` };
   const slots = slotRefusal(root, profile, issue, g);
   if (slots) return { cause: 'slots', text: slots };
-  if (profile.doneGate['requires-merged']) { const m = mergeRefusal(root, issue, base); if (m) return { cause: 'merge', text: m }; }
+  if (profile.doneGate['requires-merged']) { const m = mergeRefusal(root, issue, base, g); if (m) return { cause: 'merge', text: m }; }
   const owner = () => { const text = ownerLineRefusal(root, loop, issue); return text ? { cause: ownerLineRewrite(root, loop, issue) ? 'owner-rewrite' : 'owner', text } : null; };
   if (profile.doneGate.approve === 'none') return owner();
   const code = carriesCode(issue);
@@ -1548,27 +1548,36 @@ function doneGateIn(root, loop, issue, base) {
   if (byModel) return { cause: 'model', text: `${byModel}: ${modelReviewForm(issue.id)}` };
   // A code issue is merged before it is done, the order the approve's reply names and the rule status flags a closed
   // issue by; a profile that requires a landed merge has checked more than this above.
-  if (unmergedCode(issue, loop.eventsById.get(issue.id) || [])) return { cause: 'merge', text: `${issue.id} carries code (its lease records Branch ${fieldText(issue.fields.branch)}) and records no merge — a code issue is merged before it is done: the merger lands the branch and records it, ${jarlLine('merged', issue.id, '--sha', '<sha>')}, then done` };
+  const unmerged = unmergedRefusal(issue, g);
+  if (unmerged) return { cause: 'merge', text: unmerged };
   // Last, an acceptance line only the owner ticks: his look comes on top of the proof and the review, never instead.
   return owner();
 }
+// Why a code issue's code as it is now is not merged (see unmergedCode), as done says it, or null.
+function unmergedRefusal(issue, g) {
+  const u = unmergedCode(issue, g);
+  return u ? `${issue.id} carries code (its lease records Branch ${fieldText(issue.fields.branch)}) and ${unmergedText(u)} — a code issue is merged before it is done: the merger lands the branch and records it, ${jarlLine('merged', issue.id, '--sha', '<sha>')}, then done` : null;
+}
 
-// The done gate's requires-merged: the issue records a merge (merged --sha) and that commit is in the base — the branch
-// checked out where the merge was recorded (Merged's "in <repo>", else the issue's Repo, else the loop's own
-// repository), or the branch a library caller names as opts.base (a composer that lands into a branch nobody has
-// checked out, such as a team branch, names it). A sha the repository does not know, or one not reachable from the
-// base, is refused: a merge recorded is not a merge landed until the base holds it.
-function mergeRefusal(root, issue, base) {
+// The done gate's requires-merged: the issue records a merge (merged --sha) and that commit is in the base of the
+// repository where the merge was recorded (Merged's "in <repo>", else the issue's Repo, else the loop's own repository):
+// the base the merge note and the cleanup read too (see baseOf), or the branch a library caller names as opts.base (a
+// composer that lands into a branch nobody has checked out, such as a team branch, names it). A sha the repository does
+// not know, or one not reachable from the base, is refused: a merge recorded is not a merge landed until the base holds it.
+// A merge that does not count for the code as it is now (see unmergedCode) is refused before its commit is looked for.
+function mergeRefusal(root, issue, base, g) {
   const m = mergedOf(issue);
   const gate = 'this loop\'s profile closes an issue only on a landed merge (done-gate "requires-merged": true)';
   if (!m) return `${issue.id} records no merge — ${gate}: ${jarlLine('merged', issue.id, '--sha', '<sha>')} once it has landed`;
+  const spent = unmergedRefusal(issue, g);
+  if (spent) return spent;
   const repos = issueRepoPaths(root, issue, m.repo ? [m.repo] : undefined).filter(isGitRepo);
   if (!repos.length) return `${issue.id} records Merged ${m.sha}, but no repository it names is a git repository here — ${gate}, and the merge cannot be checked`;
-  const ref = base === undefined ? 'HEAD' : base;
+  const refOf = (r) => (base === undefined ? baseOf(root, r) : base);
   if (base !== undefined && repos.every((r) => git(r, ['rev-parse', '--verify', '--quiet', `${base}^{commit}`]) === null)) return `${issue.id}: the base ${base} is not a branch or commit in ${repos.join(' or ')} — ${gate}, and the merge cannot be checked`;
-  const landed = repos.some((r) => git(r, ['merge-base', '--is-ancestor', m.sha, ref]) !== null);
+  const landed = repos.some((r) => git(r, ['merge-base', '--is-ancestor', m.sha, refOf(r)]) !== null);
   if (landed) return null;
-  const where = repos.map((r) => `${base === undefined ? defaultBase(r) : base} in ${r}`).join(' or ');
+  const where = repos.map((r) => `${refOf(r)} in ${r}`).join(' or ');
   return `${issue.id} records Merged ${m.sha}, which is not in the base (${where}) — ${gate}; merge it, or record the sha that landed: ${jarlLine('merged', issue.id, '--sha', '<sha>')}`;
 }
 
@@ -1733,7 +1742,7 @@ function mergeContentNotes(root, issue, sha, repoPath) {
     if (holdsChangesOf(repo, tip, sha)) notes.push(`SQUASH OR REBASE MERGE — ${sha} does not contain the commits of ${branch} (tip ${tip.slice(0, 12)}), but holds every file the branch changed exactly as the branch has it, so the branch's work landed without its commits, and the cleanup keeps ${branch} because its tip is in no merge`);
     else notes.push(`MERGE WITHOUT THE BRANCH — ${sha} does not contain the tip of ${branch} (${tip.slice(0, 12)}) and does not hold the files the branch changed as the branch has them, so a check that ran on it did not run on the branch's work; the check runs on the merge result: merge the branch, check the result, and record that commit with ${record}`);
   }
-  const base = declaredBaseOf(root, repo) ?? defaultBase(repo);
+  const base = baseOf(root, repo);
   const baseTip = base !== branch ? git(repo, ['rev-parse', '--verify', '--quiet', `${base}^{commit}`]) : null;
   if (baseTip && !holds(sha, baseTip) && !holds(baseTip, sha)) notes.push(`MERGE WITHOUT THE BASE — ${sha} does not contain ${base} as it stands (${baseTip.slice(0, 12)}), so the check ran on a tree the base has moved past; the check runs on the merge result: merge the base into the result, check it again, and record that commit with ${record}`);
   return notes;
@@ -1923,7 +1932,7 @@ function cleanUpAfterMerge(root, issues, sha, repoPath, named = []) {
   const results = [];
   for (const { repo, branch, on } of groups.values()) {
     if (!isGitRepo(repo) || git(repo, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`]) === null) continue;
-    const base = defaultBase(repo);
+    const base = baseOf(root, repo);
     const result = { repo: repoLabel(repo), branch };
     const keep = (reason, extra = {}) => results.push({ ...result, ...extra, kept: reason });
     const unsafe = whyNotDeletable(root, repo, [...on.flatMap((i) => splitList(i.fields.repo)), ...named]);

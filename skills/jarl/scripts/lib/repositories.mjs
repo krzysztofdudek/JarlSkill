@@ -3,7 +3,7 @@
 
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve, dirname, basename, relative, isAbsolute } from 'node:path';
-import { afterView, fieldText, hole, jarlLine, need, noSeparators, refuse, splitList } from './base.mjs';
+import { afterView, echoWord, fieldText, hole, jarlLine, need, noSeparators, refuse, splitList } from './base.mjs';
 import { git } from './git.mjs';
 import { canonical, issuesDir, jarlDir, normalPath, portablePath } from './where.mjs';
 import { readText, writeAtomic } from './files.mjs';
@@ -65,7 +65,7 @@ export function repoOf(root, named) {
   const key = `${root}\n${loadProfile(root).format}\n${named}`;
   if (RESOLVED.has(key)) return RESOLVED.get(key);
   const { path: repo, name } = repoPlace(root, named);
-  need(isGitRepo(repo), name ? `${nameFix(root, name)} (${repo} is not a git repository)` : `not a git repository: ${repo} (a relative --repo or Repo path is read from the loop's root, ${root}): e.g. --repo <name-or-path>`, () => ({ replace: String(repo), value: '<name-or-path>' }));
+  need(isGitRepo(repo), name ? `${nameFix(root, name)} (${echoWord(repo)} is not a git repository)` : `not a git repository: ${echoWord(repo)} (a relative --repo or Repo path is read from the loop's root, ${echoWord(root)}): e.g. --repo <name-or-path>`, () => ({ replace: String(repo), value: '<name-or-path>' }));
   // A subdirectory of a repository is not the repository: the paths git reports are relative to its root, so a
   // declared file or a removed test would be read from the wrong place and go unseen.
   const top = git(repo, ['rev-parse', '--show-toplevel']);
@@ -387,11 +387,11 @@ export function repoFromInput(root, raw) {
   // there is refused, never read as the repository around it.
   let kind = null;
   try { const st = statSync(spelled); kind = st.isDirectory() ? 'dir' : st.isFile() ? 'file' : null; } catch { kind = null; }
-  need(kind !== null || word, `not a git repository: ${spelled} does not exist (--repo ${JSON.stringify(given)}) — give the repository's name, its checkout, a worktree of it or a file inside it`, () => ({ replace: String(given), value: '<name-or-path>' }));
+  need(kind !== null || word, `not a git repository: ${echoWord(spelled)} does not exist (--repo ${JSON.stringify(given)}) — give the repository's name, its checkout, a worktree of it or a file inside it`, () => ({ replace: String(given), value: '<name-or-path>' }));
   const isDir = kind === 'dir';
   const inside = isDir ? spelled : kind === 'file' ? dirname(spelled) : spelled;
   const underRoot = isGitRepo(resolve(root, given)) ? `; ./${given} is a repository under the loop's root — a path is written with a leading ./` : '';
-  need(isGitRepo(inside), word ? `${nameFix(root, given)} (${spelled} is not a git repository${underRoot}), or name another: e.g. --repo <name-or-path>` :`not a git repository: ${spelled} (a relative --repo or Repo path is read from the loop's root, ${root})`, () => ({ replace: String(given), value: '<name-or-path>' }));
+  need(isGitRepo(inside), word ? `${nameFix(root, given)} (${echoWord(spelled)} is not a git repository${underRoot}), or name another: e.g. --repo <name-or-path>` :`not a git repository: ${echoWord(spelled)} (a relative --repo or Repo path is read from the loop's root, ${echoWord(root)})`, () => ({ replace: String(given), value: '<name-or-path>' }));
   const main = (mainCheckoutOf(inside) || {}).main ?? null;
   need(main !== null, `${inside} is a bare repository: it has no working tree to act on`, () => ({ replace: String(given), value: '<name-or-path>' }));
   const candidates = [word ? given : null, isDir ? basename(spelled) : null, basename(main)];
@@ -514,6 +514,9 @@ export function declaredBaseOf(root, dir) {
   }
   return null;
 }
+// The one base a merge is judged against, by the merge note, the cleanup after it and the done gate alike: the declared
+// base (see declaredBaseOf), else the branch the checkout `dir` has open (HEAD where it has none open).
+export function baseOf(root, dir) { return declaredBaseOf(root, dir) ?? defaultBase(dir); }
 function writeDeclarations(root, entries) {
   writeAtomic(reposPath(root), `${REPOS_HEADER}${entries.map((e) => `- **${e.name}** · ${declarationText(e)}`).join('\n')}\n`);
 }

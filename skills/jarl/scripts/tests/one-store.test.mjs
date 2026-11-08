@@ -520,6 +520,7 @@ test('move lines in the shapes real loops hold read by position', () => {
 
 // ---- what is written into the lease reads back unchanged -----------------------------------------------------
 
+const fieldTextOf = (v) => String(v).replace(/\s+/g, ' ').trim();
 const NASTY = ['w1', 'w x', 'w,x', 'm,1', 'a b', 'a\nb', 'a · b', ' padded ', '(reason)', 'branch x', 'worker', 'ünï', 'q"q', "q'q", '**b**', 'jarl/1-a', 'a..b', 'a~b', 'a:b', 'a?b', 'a*b', 'a[b', 'a\\b', 'x.lock', '.hidden', 'a//b', '/a', 'a/', 'a.', '-a', '@', 'a@{b', 'm@high', 'a;b', 'a\tb'];
 for (const flag of ['worker', 'model', 'branch']) {
   test(`every ${flag} value the command accepts reads back identical from the log and from the header, and every one it refuses writes nothing`, () => {
@@ -548,7 +549,6 @@ for (const flag of ['worker', 'model', 'branch']) {
     assert.deepEqual(recordLines(jarl(root, 'status')), []);
   });
 }
-const fieldTextOf = (v) => String(v).replace(/\s+/g, ' ').trim();
 
 test('the refusals name the flag and the rule, and a worktree path that does not exist is accepted and stored nowhere', () => {
   const root = makeLoop();
