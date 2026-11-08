@@ -93,6 +93,8 @@ export const FORMAT_LINES = Object.freeze(Object.fromEntries([
     'rule-proposal': { what: 'a question of kind rule', where: 'the question, among the loop\'s questions', misread: 'reads a proposed rule as a question to the owner and its answer as a ruling with no scope' },
     'review-waiver': { what: "the owner's waiver of an issue's review", where: "the ruling's Waives review field and a note in each issue it names", misread: 'counts the closed issue as one with no approve recorded and says its gate does not hold' },
     'note-retraction': { what: 'the retraction of a note', where: "the log and the issue's notes, in the shape of a row's retraction", misread: 'counts the note as standing' },
+    'tip-mark': { what: 'the tip of a branch after a row, a verdict, a merge or a close', where: 'the log, with the tip mark before the separator', misread: 'takes the line for no line of the log, so it spends at a pause the rows and approves made on a tip that has not moved' },
+    'proof-line': { what: 'the acceptance lines an evidence row proves', where: "the row in the issue's Proof and its log line, after the row's mark", misread: 'reads no row there, so done refuses an issue for want of the proof it holds' },
     'range-number': { what: 'a number from a range the goal declares', where: 'the name and the header of an issue file, and the Range line of the goal', misread: 'files its next issue above the numbers of the range, so the series the loop keeps apart are mixed' },
     'in-place': { what: 'the mark of an issue worked in place', where: "the tag in-place among the issue's Tags", misread: 'lets done pass with no commit of its files named' },
   }),

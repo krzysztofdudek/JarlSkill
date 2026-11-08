@@ -41,24 +41,31 @@ export function writeWhole(path, text) {
 // Several lines in one write: a bulk command's lines land together or not at all. A command that writes the same
 // moment into a header field takes the stamp once and passes it as `at`, so the two cannot fall in two minutes.
 // An event is the line's text, or { text, key } for a line that names its issue's key itself (the filing, written before
-// the issue's file exists). A line about an issue whose file carries a key is written with that key, in its fixed place
-// right after the stamp and before the writer: `- <stamp> key <key> by <writer> · <text>`. No text reaches that place.
+// the issue's file exists), or a tip line as tipLine makes it. A line about an issue whose file carries a key is written
+// with that key, in its fixed place right after the stamp and before the writer: `- <stamp> key <key> by <writer> ·
+// <text>`. A tip line carries the tip mark after the key and before the writer. No text reaches either place.
 export function appendLogLines(root, events, at = stamp()) {
   const w = callWriter;
   if (w && !w.raised) { w.raise(root); w.raised = true; }
   const keyOf = lineKeys(root, events);
   appendAtomic(logPath(jarlDir(root)), '# Log\n\n', events.map((e) => {
     const text = oneLine(typeof e === 'string' ? e : e.text);
-    const key = typeof e === 'string' ? keyOf(text) : e.key ?? null;
-    return `- ${at}${key ? ` key ${key}` : ''}${w ? ` by ${w.name}` : ''} · ${text}\n`;
+    const key = typeof e === 'string' || e.key === undefined ? keyOf(text) : e.key;
+    return `- ${at}${key ? ` key ${key}` : ''}${typeof e !== 'string' && e.tip === true ? ` ${TIP_MARK}` : ''}${w ? ` by ${w.name}` : ''} · ${text}\n`;
   }).join(''));
 }
+// The tip mark: the word a tip line carries before the separator, where no text of a line reaches. Only the write of a
+// row, a verdict, a merge or a close puts it there, through tipLine, and a log command that writes `- <stamp> · <text>`
+// cannot, so the reader counts a tip line only with it. The loop holds it from record format 3 (FORMAT_LINES 'tip-mark').
+export const TIP_MARK = 'tip';
+// The tip line of an issue: the commit its branch points to in each repository of the issue, joined by commas.
+export const tipLine = (id, tip) => ({ text: `${id} tip ${tip}`, tip: true });
 // The key each line of `events` is about, read from its issue's file: a line that opens with an issue's number (after
 // "filed", for a filing) takes the key of the one issue file of that number, when that file carries one and the loop is
 // in the format that holds keys. A number two files carry names no one issue, and its line is written with no key.
 const LEADING_ISSUE = idRe('^(?:filed )?({id})\\b');
 function lineKeys(root, events) {
-  const wanted = new Set(events.filter((e) => typeof e === 'string').map((e) => LEADING_ISSUE.exec(oneLine(e))?.[1]).filter(Boolean).map(idKey));
+  const wanted = new Set(events.filter((e) => typeof e === 'string' || e.key === undefined).map((e) => LEADING_ISSUE.exec(oneLine(typeof e === 'string' ? e : e.text))?.[1]).filter(Boolean).map(idKey));
   const none = () => null;
   if (!wanted.size) return none;
   const dir = join(jarlDir(root), 'issues');
@@ -102,10 +109,20 @@ function oneLine(event) {
   return String(event).replace(/\r\n?/g, '\n').trim().split('\n').map((l) => l.trim()).filter(Boolean).join(' ⏎ ');
 }
 // The first line of a text, and when there are more, how many and where the whole is kept.
+const moreLines = (n, where) => ` (+${n} more lines, whole text in ${where})`;
 export function firstLine(text, where) {
   const lines = String(text).replace(/\r\n?/g, '\n').trim().split('\n');
   const first = lines[0].trim();
-  return lines.length > 1 ? `${first} (+${lines.length - 1} more lines, whole text in ${where})` : first;
+  return lines.length > 1 ? `${first}${moreLines(lines.length - 1, where)}` : first;
+}
+// What firstLine wrote can have been read from: the first line of a text of one line, the logged words whole; and, when
+// they end with the pointer firstLine adds, the first line of a text of more lines, the words before it. A text of one
+// line can end with the pointer's words itself, so both readings stand.
+export function firstLineReadings(logged, where) {
+  const text = String(logged);
+  const m = new RegExp(` \\(\\+([1-9]\\d*) more lines, whole text in ${String(where).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\)$`).exec(text);
+  const pointer = m && moreLines(Number(m[1]), where) === m[0];
+  return [{ first: text, more: false }, ...(pointer ? [{ first: text.slice(0, m.index), more: true }] : [])];
 }
 
 // A ruling's slug names it for good: letters, digits, and . _ - inside, at most 80 characters. It is compared

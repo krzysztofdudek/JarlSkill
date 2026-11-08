@@ -7,8 +7,8 @@ import { issuesDir, jarlDir } from './where.mjs';
 import { readText } from './files.mjs';
 import { ISSUE_FILE_RE, KEY_RE, cmpId, idKey, idRe, newNumber, writtenForms, writtenId } from './ids.mjs';
 import { loadProfile } from './profile.mjs';
-import { DECISION_HEAD, DECISION_META } from './journal.mjs';
-import { eventsById, issueState, loopEvents } from './log.mjs';
+import { DECISION_HEAD, DECISION_META, firstLine, firstLineReadings } from './journal.mjs';
+import { LINES_SRC, eventsById, issueState, lineNumbers, loopEvents, rowLineHead } from './log.mjs';
 
 // ---- issues ------------------------------------------------------------------------------------
 
@@ -544,21 +544,24 @@ export function mergedOf(issue) {
 // row keeps its number, so a number never moves), the lines it spans (start..end, a row is its first line and the
 // indented lines under it) and whether it is retracted (struck through: `- ~~**ran:** … **saw:** …~~`). The one
 // numbering: show prints it, retract takes it, the done gate counts by it.
-const ROW_START = /^- (~~)?\*\*ran:\*\*/;
+// A row that names the acceptance lines it proves (evidence --line) carries their numbers in its mark, where no text of
+// the row reaches: `- **ran (line 1, 3):** … · **saw:** …` (see rowLineHead for its log line).
+const ROW_START = new RegExp(`^- (~~)?\\*\\*ran(?: \\(line (${LINES_SRC})\\))?:\\*\\*`);
+const ROW_MARK = new RegExp(`^- (~~)?\\*\\*ran(?: \\(line ${LINES_SRC}\\))?:\\*\\*\\s*`);
 // Which journal line each file row wrote, by position in the file: a row's journal line keeps the first line of its
-// command (`<id> evidence row · <first line>`, with a pointer suffix when the command has more lines), so it matches
-// when that is the row's whole first line (a command of several lines) or is followed by the saw marker. Each journal
-// line is taken once, the earliest still free, so lines in another order, equal commands and commands that hold the
-// saw marker themselves all resolve; a row no journal line fits is null.
+// command (`<id> evidence row · <first line>`, with a pointer suffix when the command has more lines) and the lines the
+// row names, so it matches when those are the row's own and the command is the row's whole first line (a command of
+// several lines) or is followed by the saw marker. Each journal line is taken once, the earliest still free, so lines in
+// another order, equal commands and commands that hold the saw marker themselves all resolve; a row no journal line fits
+// is null.
 const MORE_LINES = / \(\+\d+ more lines, whole text in [^)]*\)$/;
 export function alignRows(id, rows, journalRows) {
-  const prefix = `${id} evidence row · `;
   const used = new Set();
   return rows.map((row) => {
     const hit = journalRows.find((j) => {
-      const own = j.written === undefined ? prefix : `${j.written} evidence row · `;
-      if (used.has(j) || !j.text.startsWith(own)) return false;
-      const l = j.text.slice(own.length).replace(MORE_LINES, '');
+      const head = rowLineHead(j.text);
+      if (used.has(j) || !head || head.written !== (j.written === undefined ? id : j.written) || head.lines.join() !== row.lines.join()) return false;
+      const l = j.text.slice(head.length).replace(MORE_LINES, '');
       return row.first === l || row.first.startsWith(`${l} · **saw:**`);
     });
     if (hit) used.add(hit);
@@ -574,19 +577,20 @@ export function evidenceTable(text) {
     let end = i;
     while (end + 1 < lines.length && /^ {2}\S/.test(lines[end + 1])) end += 1;
     const retracted = Boolean(s[1]);
-    let body = lines.slice(i, end + 1).map((l) => l.trim()).join(' ').replace(/^- (~~)?\*\*ran:\*\*\s*/, '');
+    let body = lines.slice(i, end + 1).map((l) => l.trim()).join(' ').replace(ROW_MARK, '');
     if (retracted) body = body.replace(/~~$/, '');
     const cut = body.indexOf(' · **saw:**');
     // The row's first physical line after the marker: what alignRows matches the journal's row line against.
-    const first = lines[i].replace(/^- (~~)?\*\*ran:\*\*\s*/, '').trim();
-    rows.push({ n: rows.length + 1, start: i, end, retracted, first, ran: (cut === -1 ? body : body.slice(0, cut)).trim(), saw: cut === -1 ? '' : body.slice(cut + ' · **saw:**'.length).trim() });
+    const first = lines[i].replace(ROW_MARK, '').trim();
+    rows.push({ n: rows.length + 1, start: i, end, retracted, first, lines: lineNumbers(s[2]), ran: (cut === -1 ? body : body.slice(0, cut)).trim(), saw: cut === -1 ? '' : body.slice(cut + ' · **saw:**'.length).trim() });
     i = end;
   }
   return { lines, rows };
 }
-// The rows that count as evidence: the ones with a --saw and not retracted.
+// The rows that count as evidence: the ones with a --saw and not retracted; a row that names acceptance lines carries
+// their numbers as lines.
 export function evidenceRows(issue) {
-  return evidenceTable(issue.sections.evidence).rows.filter((r) => !r.retracted && r.saw !== '').map((r) => ({ ran: r.ran, saw: r.saw }));
+  return evidenceTable(issue.sections.evidence).rows.filter((r) => !r.retracted && r.saw !== '').map((r) => ({ ran: r.ran, saw: r.saw, ...(r.lines.length ? { lines: r.lines } : {}) }));
 }
 
 // The free-text notes of an Evidence section, each with its ordinal n counted over the whole section (a retracted note
@@ -652,6 +656,34 @@ export function isUnsplit(section) {
 function noteText(value, current) {
   const text = isUnsplit(current) ? escapeMarkers(String(value).split('\n').map((l) => l.replace(/^(\s*)###(?=\s+(?:Proof|Notes)\s*$)/, '$1\\###')).join('\n')) : bodyText(value);
   return text.replace(/^(- )?~~/, '$1\\~~');
+}
+// A note's line in the log: its issue, then the first line of its text as given, and how many more lines it has.
+const NOTE_WHERE = "the issue's Evidence section";
+export const noteLogText = (id, text) => `${id} evidence · ${firstLine(text, NOTE_WHERE)}`;
+// The shapes a note's first line and its log line are written in, one per writer a loop holds notes of: escaped as noteText
+// escapes it, the log line giving the first line and how many more lines the note has (firstLine); with only a heading mark
+// escaped (every one in a section in parts, a sub-heading alone in one with none), the log line as firstLine gives it; and
+// the note as given, the log line its first line as given, with no pointer.
+const NOTE_SHAPES = Object.freeze([
+  { pointer: true, file: (first, section) => noteText(first, section) },
+  { pointer: true, file: (first, section) => (isUnsplit(section) ? first.replace(/^(\s*)###(?=\s+(?:Proof|Notes)\s*$)/, '$1\\###') : first.replace(/^(\s*)(#+)(?=\s|$)/, (_, sp, h) => `${sp}\\${h}`)) },
+  { pointer: false, file: (first) => first },
+]);
+// Whether a log line is the line of a note of the issue's Evidence `section`: in one of the shapes, a first line the log line
+// can have been written from (firstLineReadings, or the line itself where the shape has no pointer), written into the file,
+// is the note's whole first line, a retraction's strike taken off. The section's parts are those it had then, as no write
+// adds a sub-heading to a section that has none. Where the shape gives a pointer, a line without one is that of a note of
+// one line.
+export function noteLineFits(id, logged, lines, note, section) {
+  const prefix = `${id} evidence · `;
+  if (!logged.startsWith(prefix)) return false;
+  let first = lines[note.start];
+  if (note.retracted) first = first.replace(/^(- )?~~/, '$1');
+  if (note.retracted && note.start === note.end) first = first.replace(/~~\s*$/, '');
+  const lead = /^\s*/.exec(first)[0];
+  const said = logged.slice(prefix.length);
+  return NOTE_SHAPES.some((s) => (s.pointer ? firstLineReadings(said, NOTE_WHERE) : [{ first: said, more: true }])
+    .some((r) => (r.more || note.start === note.end) && s.file(`${lead}${r.first}`, section).split('\n')[0].trim() === first.trim()));
 }
 // The Evidence section with one entry written into its part. `kind` is 'proof' (rows, one per line) or 'note' (text); `sep`
 // is what separates a note from the text before it. A proof entry goes after the last row of the section, wherever that

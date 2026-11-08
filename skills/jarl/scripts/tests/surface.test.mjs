@@ -155,7 +155,8 @@ test('set takes statuses only: a field given to it is refused with the field cal
 
 test('base is the command that changes the base branch of a declared repository', () => {
   const root = makeLoop({ prefix: 'jarl-surface-base-', via: 'cli' });
-  assert.match(refuses(root, 'base', 'nothing-here', 'main'), /nothing-here is not declared in this loop/);
+  // A loop that declares no repository: the step that declares one first, then the call's own form, each with placeholders.
+  assert.match(refuses(root, 'base', 'nothing-here', 'main'), /^nothing-here is not declared in this loop; Jarl declares a repository the first time an issue names it \(jarl\.mjs field "<id>" Repo "<name-or-path>"\)\njarl\.mjs field "<id>" Repo "<name-or-path>"\njarl\.mjs base "<name>" "<branch>"\n$/);
   assert.match(refuses(root, 'base', 'nothing-here'), /^base requires its branch: the form below has a placeholder for each value\njarl\.mjs base "<name>" "<branch>"\n$/);
 });
 
@@ -176,8 +177,8 @@ const FLAG_MEANINGS = {
   only: ['the findings to file', ['import']], parent: ['the issue every issue a command files is put under', ['import']], adopt: ['a Source written onto an issue that names the finding', ['import']], 'dry-run': ['what would be filed, nothing written', ['import']],
   ran: ['a command that ran', ['evidence', 'merged']], saw: ['what the command printed', ['evidence', 'merged']], file: ['the file of an attachment', ['evidence']], slot: ['the slot of an attachment', ['evidence']],
   add: ['add to a part of the description', ['field']], remove: ['take items off a part of the description', ['field']], clear: ['empty a part of the description', ['field']],
-  line: ['an acceptance line of a parent and the issue it goes to', ['split']],
   values: ['the values a field added to the profile may take', ['extend']], default: ['the value a field added to the profile takes when none is given', ['extend']], required: ['a field added to the profile that every new issue must give', ['extend']],
+  line: ['an acceptance line, by its number: where split moves it, or what an evidence row proves', ['split', 'evidence']],
   status: ['the status the list keeps', ['list']], tag: ['the tag the view keeps', ['list', 'status']], grep: ['the text the list keeps', ['list']], match: ['a field value the list keeps', ['list']],
   all: ['every row, not only the first or the unfinished', ['list', 'next']], full: ['the whole issue file', ['show']],
   branch: ['a branch: the lease\'s, or the one measured', ['set', 'scope']], worker: ['the worker of a lease', ['set']], model: ['the model the agent was raised on', ['set', 'review']],

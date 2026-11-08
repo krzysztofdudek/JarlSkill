@@ -193,6 +193,15 @@ test('a question of several lines is one row of next --as, its lines joined, and
   assert.match(status, /\n\n## On the owner \(1\)\n- a-1 first line of the question second line that goes on third: /);
 });
 
+test('a question of several lines is one row of resume\'s questions too, its lines joined, and its text in --json is the question as asked', () => {
+  const root = loop();
+  jarl(root, 'ask', 'first line of the question\nsecond line that goes on\nthird', '--kind', 'stuck');
+  jarl(root, 'ask', 'one line', '--kind', 'charter');
+  const text = jarl(root, 'resume');
+  assert.match(text, /\n## Questions to the owner \(2\)\n- a-1 \(stuck\) · first line of the question second line that goes on third\n- a-2 \(charter\) · one line\n\n/);
+  assert.equal(json(root, 'resume').questions[0].question, 'first line of the question\nsecond line that goes on\nthird');
+});
+
 test('in a loop with slices the jarl is the coordinator of the issues in play in no slice, so the coordinator rules reach it while one is there', () => {
   const root = loop();
   jarl(root, 'goal', '--set', 'Coordinators: odin');
@@ -364,12 +373,12 @@ test('a wait names its person and when to check: new refuses one without them, f
   assert.match(refuses(root, 'new', 'the key', '--kind', 'wait', '--person', 'Dana · Lee', '--check-when', 'Friday'), /Person is one value — not a phrase with "·" in it/);
   assert.ok(!readdirSync(join(root, '.jarl', 'issues')).length, 'nothing was filed');
   jarl(root, 'new', 'the key', '--files', 'a.mjs');                                                                   // 1
-  assert.match(refuses(root, 'field', '1', 'Kind', 'wait'), /1 becomes a wait only with the outside person it is held by and when to check it — first jarl\.mjs field 1 Person "<name>" and jarl\.mjs field 1 'Check when' "<date-or-event>"/);
+  assert.match(refuses(root, 'field', '1', 'Kind', 'wait'), /^1 becomes a wait only with the outside person it is held by and when to check it — first jarl\.mjs field "<ids>" Person "<name>" and jarl\.mjs field "<ids>" 'Check when' "<date-or-event>"\njarl\.mjs field "<ids>" Person "<name>"\njarl\.mjs field "<ids>" 'Check when' "<date-or-event>"\njarl\.mjs field "<ids>" Kind "<kind>"\n$/);
   jarl(root, 'field', '1', 'Person', 'Dana');
   jarl(root, 'field', '1', 'Check when', 'Friday');
   jarl(root, 'field', '1', 'Kind', 'wait');
   assert.deepEqual(json(root, 'next', '--as', 'Dana').rows.map((r) => [r.id, r.what, r.checkWhen]), [['1', 'wait', 'Friday']]);
-  assert.match(refuses(root, 'field', '1', 'Person', '--clear'), /1 is a wait, held by its Person and checked when its Check when says: Person is never empty on it/);
+  assert.match(refuses(root, 'field', '1', 'Person', '--clear'), /^1 is a wait, held by its Person and checked when its Check when says: Person is never empty on it — give it another kind first \(jarl\.mjs field "<ids>" Kind "<kind>"\)\njarl\.mjs field "<ids>" Kind "<kind>"\n$/);
   jarl(root, 'field', '1', 'Person', 'Lee');
   assert.equal(json(root, 'next', '--as', 'Lee').total, 1, 'the wait moves with its Person');
   assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /1 field Person · Lee · was Dana/);
@@ -377,6 +386,18 @@ test('a wait names its person and when to check: new refuses one without them, f
   jarl(root, 'field', '1', 'Kind', 'gap');
   jarl(root, 'field', '1', 'Person', '--clear');
   assert.deepEqual(json(root, 'next').map((r) => r.id), ['1']);
+});
+
+test('of several issues, the refusal of a wait without its Person or of an emptied field of a wait names the issue in its reason and ends with the form, an id placeholder in place of the ids', () => {
+  const root = loop();
+  jarl(root, 'new', 'not a wait', '--files', 'a.mjs');                                                                 // 1
+  jarl(root, 'new', 'the key', '--kind', 'wait', '--person', 'Dana', '--check-when', 'Friday', '--files', 'b.mjs');     // 2
+  jarl(root, 'new', 'held by Lee', '--files', 'c.mjs');                                                                 // 3
+  jarl(root, 'field', '3', 'Person', 'Lee');
+  jarl(root, 'field', '3', 'Check when', 'Monday');
+  assert.match(refuses(root, 'field', '1,2', 'Check when', '--clear'), /^2 is a wait, held by its Person and checked when its Check when says: Check when is never empty on it — give it another kind first \(jarl\.mjs field "<ids>" Kind "<kind>"\)\njarl\.mjs field "<ids>" Kind "<kind>"\n$/);
+  assert.match(refuses(root, 'field', '3,1', 'Kind', 'wait'), /^1 becomes a wait only with the outside person it is held by and when to check it — first jarl\.mjs field "<ids>" Person "<name>" and jarl\.mjs field "<ids>" 'Check when' "<date-or-event>"\njarl\.mjs field "<ids>" Person "<name>"\njarl\.mjs field "<ids>" 'Check when' "<date-or-event>"\njarl\.mjs field "<ids>" Kind "<kind>"\n$/);
+  assert.deepEqual(json(root, 'show', '1').kind, 'bug', 'nothing was written');
 });
 
 test('filing a promise or a wait raises the loop to record format 3, and a loop a composer keeps refuses it with nothing written', () => {

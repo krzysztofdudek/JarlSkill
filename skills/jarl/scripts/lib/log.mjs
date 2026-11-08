@@ -8,7 +8,7 @@ import { jarlDir, plainRelative } from './where.mjs';
 import { readText, writeAtomic } from './files.mjs';
 import { ISSUE_FILE_RE, KEY_SRC, idKey, idRe, issueForms, writtenId } from './ids.mjs';
 import { PARENT_FIELD, SLOT_NAME_RE, loadProfile } from './profile.mjs';
-import { STAMP_SRC, appendLog, headerKey, logPath, oneLine } from './journal.mjs';
+import { STAMP_SRC, TIP_MARK, appendLog, headerKey, logPath, oneLine } from './journal.mjs';
 
 // ---- review and the done gate --------------------------------------------------------------------
 
@@ -32,7 +32,7 @@ import { STAMP_SRC, appendLog, headerKey, logPath, oneLine } from './journal.mjs
 //                  reached the limit and printed the takeover block. A writer that records no standing puts the separator
 //                  right after the number, so no text of its line can stand in the bracket. A round line without a standing
 //                  is read as the takeover its writer printed (see takeoverStanding)
-//   row            one --ran/--saw evidence row
+//   row            one --ran/--saw evidence row; lines, the numbers of the acceptance lines it names, on a row that names any
 //   verdict        a review: verdict (approve|changes), by, kind (as recorded), model, relayed, and batch, the id one verdict
 //                  given on several issues writes on each of its lines (null on a verdict on one issue)
 //   retract-row    a retracted evidence row: row, its number, and by, who retracted it (null when the line names nobody)
@@ -42,7 +42,8 @@ import { STAMP_SRC, appendLog, headerKey, logPath, oneLine } from './journal.mjs
 //   tip            the tip of the issue's branch when the line before it of the same issue (a row, a verdict, a merge, a
 //                  move that closes the record) was written: tip, the commit of the branch in each repository of the
 //                  issue, in order, joined by commas; the gate takes it only as the next line of the log after that line,
-//                  under its stamp, where the write that made the line puts it
+//                  under its stamp, where the write that made the line puts it. A line of the tip's text without the tip
+//                  mark before the separator, which only that write puts there, is no tip: it is read as a note
 //   ci             a CI state recorded alone: state
 //   body           a body change: part, the part changed; grew, the numbers of the lines a change of a leased issue's
 //                  acceptance grew it by (null for none); by, the author the line names (null for none)
@@ -59,7 +60,8 @@ import { STAMP_SRC, appendLog, headerKey, logPath, oneLine } from './journal.mjs
 // right after the stamp and before the writer: `- <stamp> key <key> by <writer> · <text>`. The key, not the number, says
 // which issue such a line is about: two issues that took one number in two copies of the loop keep their lines apart,
 // and an issue given another number keeps the lines written under its old one. A line with no key is read by its number.
-const LOG_LINE = new RegExp(`^- (${STAMP_SRC})(?: key (${KEY_SRC}))?(?: by ([^·\\n]+?))? · ([^\\n]*)$`);
+// A tip line carries the tip mark after the key and before the writer: `- <stamp> key <key> tip by <writer> · <text>`.
+const LOG_LINE = new RegExp(`^- (${STAMP_SRC})(?: key (${KEY_SRC}))?(?: (${TIP_MARK}))?(?: by ([^·\\n]+?))? · ([^\\n]*)$`);
 const LEADING_ID = idRe('^(?:filed )?({id})\\b');
 const RETRACT_ROW_LINE = idRe('^{id} evidence retract · row (\\d+)\\b');
 const RETRACT_NOTE_LINE = idRe('^{id} evidence retract · note (\\d+)\\b');
@@ -144,6 +146,20 @@ function retractTarget(text) {
 const RETRACTED_BY = new RegExp(`^\\S+ (?:evidence retract · (?:row|note) \\d+|review retract) · by (.+?)(?: \\((?:${REVIEWER_KIND_SRC})\\))?(?= · |$)`);
 const retractedBy = (text) => RETRACTED_BY.exec(text)?.[1] ?? null;
 
+// The numbers of the acceptance lines a row names, as its mark writes them: "1, 3".
+export const LINES_SRC = '\\d+(?:, \\d+)*';
+export const lineNumbers = (text) => (text ? text.split(', ').map(Number) : []);
+// The mark a row that names `lines` adds after "ran" in the issue file and after "evidence row" in its log line: none for
+// a row that names no line.
+export const rowLinesText = (lines) => (lines && lines.length ? ` (line ${lines.join(', ')})` : '');
+// The head of a row's log line, `<id> evidence row (line 1, 3) · `, before the row's command: the number as the line
+// writes it, the head's length and the lines it names. No text of the command reaches the head. Null for any other line.
+const ROW_LINE_HEAD = new RegExp(`^(\\S+) evidence row(?: \\(line (${LINES_SRC})\\))? · `);
+export function rowLineHead(text) {
+  const m = ROW_LINE_HEAD.exec(text);
+  return m ? { written: m[1], length: m[0].length, lines: lineNumbers(m[2]) } : null;
+}
+
 // The slot facts of an attachment row's command, `attach <slot> <path> sha256:<hex> size:<bytes>`, as { slot, path, sha256,
 // size }; null for any other command. The row's journal line and its line in the issue file hold the same command.
 export function attachmentOf(ran) {
@@ -202,9 +218,10 @@ function eventParser(profile) {
     if (rr) return { type: 'retract-row', row: Number(rr[1]), by: retractedBy(text) };
     const rn = RETRACT_NOTE_LINE.exec(text);
     if (rn) return { type: 'retract-note', note: Number(rn[1]), by: retractedBy(text) };
-    if (text.startsWith(`${id} evidence row · `)) {
-      const attach = attachmentOf(text.slice(`${id} evidence row · `.length));
-      return attach ? { type: 'row', attach } : { type: 'row' };
+    const row = rowLineHead(text);
+    if (row && row.written === id) {
+      const attach = attachmentOf(text.slice(row.length));
+      return { type: 'row', ...(attach ? { attach } : {}), ...(row.lines.length ? { lines: row.lines } : {}) };
     }
     if (text.startsWith(`${id} merged `)) {
       const line = mergeLineOf(id, text);
@@ -250,8 +267,9 @@ export function appendNote(root, event) {
   // The lines a lease and a repository given by its path write to remember what they said once: a note in their shape would open or close what they remember.
   const remembered = REMEMBERED_NOTE.exec(text);
   need(!remembered, `log writes a note, and "${text.length > 80 ? `${text.slice(0, 77)}...` : text}" has the shape of a line ${remembered?.[1] ? 'a lease' : 'a filing or a field call'} writes to remember what it said: ${remembered?.[1] ? lineWriter('move') : jarlLine('field', hole('<id>'), 'Repo', hole('<name-or-path>'))}`, () => (remembered?.[1] ? ['jarl.mjs', ...LINE_CALLS.move(hole('<ids>'))] : ['jarl.mjs', 'field', hole('<id>'), 'Repo', hole('<name-or-path>')]));
-  const type = id === null ? 'other' : parseEvent(id, text, loadProfile(root)).type;
-  need(type === 'other', `log writes a note, and "${text.length > 80 ? `${text.slice(0, 77)}...` : text}" reads as ${type === 'filed' ? 'a filing' : `a ${type.replace('-', ' ')} line`}, which the journal's own command writes with its checks: ${type === 'row' && attachmentOf(text.slice(`${id} evidence row · `.length)) ? jarlLine('evidence', '<id>', '--file', '<path>', '--slot', '<slot>') : lineWriter(type)}`, () => ['jarl.mjs', ...LINE_CALLS[type](hole('<id>'))]);
+  const read = id === null ? { type: 'other' } : parseEvent(id, text, loadProfile(root));
+  const { type } = read;
+  need(type === 'other', `log writes a note, and "${text.length > 80 ? `${text.slice(0, 77)}...` : text}" reads as ${type === 'filed' ? 'a filing' : `a ${type.replace('-', ' ')} line`}, which the journal's own command writes with its checks: ${type === 'row' && read.attach ? jarlLine('evidence', '<id>', '--file', '<path>', '--slot', '<slot>') : lineWriter(type)}`, () => ['jarl.mjs', ...LINE_CALLS[type](hole('<id>'))]);
   appendLog(root, event);
 }
 
@@ -267,8 +285,8 @@ export function mapMergeRepos(root, fn) {
   const held = issueForms(jarlDir(root));
   const next = log.split('\n').map((l) => {
     const m = LOG_LINE.exec(l);
-    const p = m && MERGE_REPO_PART.exec(m[4]);
-    return p && held.has(idKey(p[1])) && !p[3].includes(' · ') ?`- ${m[1]}${m[2] ? ` key ${m[2]}` : ''}${m[3] ? ` by ${m[3]}` : ''} · ${p[1]} merged ${p[2]} in ${fn(p[3])}${p[4]}` : l;
+    const p = m && MERGE_REPO_PART.exec(m[5]);
+    return p && held.has(idKey(p[1])) && !p[3].includes(' · ') ?`- ${m[1]}${m[2] ? ` key ${m[2]}` : ''}${m[3] ? ` ${m[3]}` : ''}${m[4] ? ` by ${m[4]}` : ''} · ${p[1]} merged ${p[2]} in ${fn(p[3])}${p[4]}` : l;
   }).join('\n');
   if (next !== log) writeAtomic(path, next);
 }
@@ -297,12 +315,16 @@ export function loopEvents(dir, profile, skipped, keys) {
       return;
     }
     // A line names its issue as it was written; the event carries the issue's own form, so it meets its issue's id.
-    const [, at, key = null, writer = null, text] = m;
+    const [, at, key = null, mark = null, writer = null, text] = m;
     const written = LEADING_ID.exec(text)?.[1] ?? null;
     const id = written === null ? null : (key !== null && keyed.has(key) ? keyed.get(key) : writtenId(written, forms));
     // The status a move comes from is the one the same issue's lines left: by its key where the line names one.
     const thread = key ?? id;
-    const body = id === null ? { type: 'other' } : parse(written, text, lastStatus.get(thread) ?? null);
+    const parsed = id === null ? { type: 'other' } : parse(written, text, lastStatus.get(thread) ?? null);
+    // A tip counts only with the tip mark: a line of its text without it is a note, whoever wrote it.
+    const unmarked = parsed.type === 'tip' && mark === null;
+    const body = unmarked ? { type: 'other' } : parsed;
+    if (skipped && unmarked) skipped.push({ n: n + 1, text: l, reason: 'a tip line without the tip mark before the separator: only the write of a row, a verdict, a merge or a close writes a tip, so this line is the tip of nothing' });
     if (skipped && written !== null) { const why = unplaced(profile, written, text, body); if (why) skipped.push({ n: n + 1, text: l, reason: why }); }
     // A line the tool never writes with a strike-through: the reader takes it for a note, and a strike-through voids nothing.
     if (skipped && /^~~/.test(text)) skipped.push({ n: n + 1, text: l, reason: 'a struck-through line: the reader takes it for a note, and a strike-through retracts nothing (a verdict is retracted with retract <id> review, an evidence row with retract <id> <n>)' });

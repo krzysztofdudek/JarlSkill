@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs';
 import { KEPT_KINDS, fieldText, hole, jarlLine, need } from './base.mjs';
 import { readText } from './files.mjs';
 import { DEFAULT_PROFILE, loadProfile } from './profile.mjs';
-import { evidenceNotes, mergedOf, sharedMark } from './issues.mjs';
+import { evidenceNotes, mergedOf, noteLineFits, sharedMark } from './issues.mjs';
 import { repoNames } from './repositories.mjs';
 import { closedGateLine, disagreementText, gateLine, inFlightMark, needLoop, gateOf, readLoop, reviewSplit, sameSlice, sliceNamed, sliceOf } from './loop.mjs';
 import { checkWaitingText, metricsOf, renderMetrics } from './metrics.mjs';
@@ -18,6 +18,7 @@ import { jarlDir, today } from './where.mjs';
 import { IN_FLIGHT_MARKS, closedGateFlags, leaseWriter, retractedNotesText, leasedByText, modelText, nextRows, resourceAgeText, schedulerNote, statusOf, subsText, uncommittedLoopFiles } from './evidence.mjs';
 import { cmdQueue, renderQueue } from './queue.mjs';
 import { countsLine } from './import.mjs';
+import { linesText, unprovedLines } from './owner-lines.mjs';
 
 // ---- resume: the state a session picks the loop up from, assembled live -------------------------------
 
@@ -34,36 +35,27 @@ function countFlag(flags, name, dflt) {
 
 // The lines of the log tail a worker does not read: the line of each retracted note, and the line that retracts a note,
 // which carries its reason (a reason often restates the note), with how many notes were retracted in the tail. A note's
-// own line is the issue's log line that repeats the note's whole first line, as the log writes it (a longer note adds
-// how many more lines it has). Notes of one issue with the same first line and their log lines are paired in order from
-// the newest, so only the line of the retracted note is hidden, never that of a live note that starts with the same words.
-const MORE_LINES = / \(\+\d+ more lines, whole text in the issue's Evidence section\)$/;
+// own line is the issue's log line the note was written with (noteLineFits: the line's words, escaped as the note was,
+// are the note's first line). Notes and lines are both written in order, so they are paired from the newest back: each
+// line with the newest note before the last one paired that it fits. Only the line of the retracted note is hidden, never
+// that of a live note with the same words, and a note no line wrote (one written by hand) takes no line.
 function retractedNoteEvents(loop, events) {
   const inTail = new Set(events);
   const gone = new Set();
   let own = 0;
   for (const issue of loop.issues) {
     if (issue.id === null) continue;
-    const { lines, notes } = evidenceNotes(issue.sections.evidence || '');
+    const section = issue.sections.evidence || '';
+    const { lines, notes } = evidenceNotes(section);
     if (!notes.some((m) => m.retracted)) continue;
-    const prefix = `${issue.id} evidence · `;
-    const written = new Map();
-    for (const e of loop.events) {
-      if (e.id !== issue.id || !e.text.startsWith(prefix)) continue;
-      const key = e.text.slice(prefix.length).replace(MORE_LINES, '').trim();
-      written.set(key, [...(written.get(key) || []), e]);
-    }
-    const byFirst = new Map();
-    for (const m of notes) {
-      const key = lines[m.start].replace(/^(- )?~~/, '').replace(/~~\s*$/, '').replace(/^\\~~/, '~~').trim();
-      byFirst.set(key, [...(byFirst.get(key) || []), m]);
-    }
-    for (const [key, same] of byFirst) {
-      const logged = written.get(key) || [];
-      for (let back = 1; back <= Math.min(same.length, logged.length); back += 1) {
-        const line = logged[logged.length - back];
-        if (same[same.length - back].retracted && inTail.has(line)) { gone.add(line); own += 1; }
-      }
+    const written = loop.events.filter((e) => e.id === issue.id && e.text.startsWith(`${issue.id} evidence · `));
+    let before = notes.length;
+    for (let k = written.length - 1; k >= 0 && before > 0; k -= 1) {
+      let at = before - 1;
+      while (at >= 0 && !noteLineFits(issue.id, written[k].text, lines, notes[at], section)) at -= 1;
+      if (at < 0) continue;
+      before = at;
+      if (notes[at].retracted && inTail.has(written[k])) { gone.add(written[k]); own += 1; }
     }
   }
   let retractions = 0;
@@ -182,7 +174,8 @@ export function renderResume(o, profile = DEFAULT_PROFILE, note = null, asked = 
     ...sec(`Waiting — After not settled (${o.waiting.filter((x) => !x.subs).length})`, o.waiting.filter((x) => !x.subs).map((x) => `- ${x.id} ${short(x.title)} (after ${x.after.join(', ')})${x.stale !== undefined ? ` · ${x.status === 'in-progress' ? 'in progress' : x.status}${lease(x) ? ` · ${lease(x)}` : ''}${x.stale.length ? ` · STALE: ${x.stale.join('; ')}` : ''}` : ''}`)),
     ...sec(`Waiting on their sub-issues (${o.waiting.filter((x) => x.subs).length})`, o.waiting.filter((x) => x.subs).map((x) => `- ${x.id} ${short(x.title)} (sub-issues ${x.subs.join(', ')} not closed)`)),
     ...sec(`Parents whose sub-issues are closed (${(o.parents || []).length})`, (o.parents || []).map((p) => `- ${p.id} ${short(p.title)} · sub-issues ${subsText(p.subs)}\n  → ${p.next}`)),
-    ...sec(`Questions to the owner (${o.questions.length})`, o.questions.map((a) => `- a-${a.id} (${a.kind || 'stuck'})${a.issue ? ` issue ${a.issue}` : ''} · ${a.question}`), '- (nothing)'),
+    // One row per question: a question of several lines has its lines joined; the whole text stays in the question's record.
+    ...sec(`Questions to the owner (${o.questions.length})`, o.questions.map((a) => `- a-${a.id} (${a.kind || 'stuck'})${a.issue ? ` issue ${a.issue}` : ''} · ${fieldText(a.question)}`), '- (nothing)'),
     ...sec(`Escalations to the jarl (${o.escalations.length})`, o.escalations.map((a) => `- a-${a.id}${a.slice ? ` slice:${a.slice}` : ''}${a.issue ? ` issue ${a.issue}` : ''} · ${a.question}`)),
     ...sec(`Rules proposed (${o.proposed.length})`, o.proposed.map((a) => `- a-${a.id} to ${a.to || 'jarl'} · ${a.appliesTo ? `applies to ${a.appliesTo}` : 'offered for promotion'} · ${a.question}`)),
     ...sec(`To ratify (${o.ratify.length})`, o.ratify.map((a) => `- a-${a.id}${a.issue ? ` (issue ${a.issue})` : ''} · ${a.question}`)),
@@ -250,7 +243,13 @@ export function cmdReport(root, flags = {}) {
   // An issue whose number another file carries too says so on its line, with the files of that number.
   // A sub-issue says whose it is, so the report reads as the tree it was.
   const mark = (i) => `${i.shared ? ` (${sharedMark(i.shared)})` : ''}${i.tree && i.tree.parent ? ` · sub-issue of ${i.tree.parent.id}` : ''}`;
-  const row = (i) => `- ${i.id} ${i.title}${mark(i)} (${i.kind})${mergedOf(i) ? ` · merged ${mergedOf(i).sha}${mergedOf(i).repo ? ` in ${mergedOf(i).repo}` : ''}` : ''}`;
+  // A done issue closed after the loop began to name the line a row proves, with acceptance lines no row names, says which.
+  const unnamed = (i) => {
+    const close = (loop.eventsById.get(i.id) || []).filter((e) => e.type === 'move' && profile.is(e.to, 'closes-record')).pop();
+    const left = close && loop.linesFrom !== null && close.n > loop.linesFrom ? unprovedLines(loop, i) : null;
+    return left && left.length ? ` · closed without a row naming acceptance ${linesText(left)}` : '';
+  };
+  const row = (i) => `- ${i.id} ${i.title}${mark(i)} (${i.kind})${mergedOf(i) ? ` · merged ${mergedOf(i).sha}${mergedOf(i).repo ? ` in ${mergedOf(i).repo}` : ''}` : ''}${unnamed(i)}`;
   const repos = Object.keys(byRepo).sort();
   const doneLines = repos.length > 1 ? repos.flatMap((r) => ['', `### ${r} (${byRepo[r].length})`, ...byRepo[r].map(row)]) : done.map(row);
   const split = reviewSplit(loop);
