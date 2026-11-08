@@ -423,7 +423,7 @@ function questionRows(ctx) {
   });
 }
 // Who answers a question: the kinds with a holder of their own are read where they are built. A stuck that names its issue
-// and was asked by a holder of that issue's lease is its director's, the coordinator of its slice or the jarl; asked by
+// whose asker holds that issue's lease is its director's, the coordinator of its slice or the jarl; asked by
 // the director itself, it is the owner's; asked by anyone else, or naming no issue, the owner's, as it has always been.
 function askHolder(loop, a) {
   if (a.kind && a.kind !== 'stuck') return OWNER_HOLDER;

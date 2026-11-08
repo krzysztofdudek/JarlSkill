@@ -491,7 +491,7 @@ export const COMMAND_SUMMARY = {
   base: 'Change the base branch a declared repository is held against, logging what it was.',
   list: 'List the issues, the unfinished ones by default, filtered by status, kind, tag, priority or a field.',
   show: 'Print one issue as the done gate sees it (its current window, rows numbered), or the whole file with --full.',
-  brief: 'The brief an issue\'s worker or reviewer, or a slice\'s coordinator, is raised with, assembled from the record: the issue as show prints it, the rules that reach that reader, the rounds so far and their findings, the proof rows, the role\'s reference and the commands that record the result.',
+  brief: 'The complete text a worker, examiner or merger of a lease, or a slice\'s coordinator, is raised with, assembled from the record.',
   set: 'Change the status of issues, with the reason logged.',
   merged: 'Record a merge (sha, repository, the check that decided it, CI state) on issues and remove their finished worktree and branch when that is safe, or move the CI state of issues already merged.',
   next: 'The open issues ready to start: no file shared with work in progress, every After issue settled, no open question on them, never a promise or a wait; all adds the held and waiting ones in groups; as lists what is on the owner, the jarl or a named person (a promise on its maker, a wait on its person), each line with its command.',

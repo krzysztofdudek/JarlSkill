@@ -273,7 +273,7 @@ test('a goal line Merger (<slice>): <name> is accepted and read: next --as and t
   const wt = mkdtempSync(join(tmpdir(), 'jarl-moves-wt-'));
   sh(dir, `git worktree add -q ${wt} jarl/slice-odin`);
   sh(wt, 'git merge -q --no-ff jarl/1-sliced -m merge');
-  jarl(dir, 'merged', '1', '--sha', shaOf((...a) => execFileSync('git', a, { cwd: wt, encoding: 'utf8' }), 'HEAD'), '--keep');
+  jarl(dir, 'merged', '1', '--sha', shaOf((...a) => execFileSync('git', a, { cwd: wt, encoding: 'utf8', timeout: 120_000 }), 'HEAD'), '--keep');
   assert.ok(!rows(dir, 'mimir').some((r) => r.what === 'merge'), 'nothing left for the slice merger');
   const integration = rows(dir, 'jarl').find((r) => r.integration);
   assert.ok(integration, 'the default merger gets the integration branch');

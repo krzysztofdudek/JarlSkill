@@ -290,7 +290,9 @@ export function issueView(root, issue, { full = false, places = true, omit = [] 
   const attachments = attachmentLines(root, loadProfile(root), issue);
   const shown = out.filter((l) => l !== null);
   if (full) return attachments.length ? `${shown.join('\n').replace(/\s+$/, '')}\n\n${attachments.join('\n')}\n` : shown.join('\n');
-  return `${shown.join('\n').replace(/\s+$/, '')}\n\n${attachments.length ? `${attachments.join('\n')}\n\n` : ''}The whole issue, with every earlier round and row: ${jarlLine('show', issue.id, '--full')}\n`;
+  // A view that leaves sections out is printed for one reader, and the pointer to the whole would hand them back.
+  const whole = omit.length ? '' : `\n\nThe whole issue, with every earlier round and row: ${jarlLine('show', issue.id, '--full')}`;
+  return `${shown.join('\n').replace(/\s+$/, '')}${attachments.length ? `\n\n${attachments.join('\n')}` : ''}${whole}\n`;
 }
 
 // The lines show prints under an issue's header about its place in the tree: the parent it is a sub-issue of, its own

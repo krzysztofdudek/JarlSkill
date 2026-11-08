@@ -4,7 +4,7 @@
 // rules that reach it, at most three "you do not" lines, each command with every value the record holds filled, and what
 // it reports. It writes nothing and holds no lock.
 
-import { resolve } from 'node:path';
+import { basename, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { IDENTICAL_OUTPUT_TAG, REVIEWER_KIND_SRC, fieldText, hole, jarlLine, meantToAlterNothing, need, printCommand } from './base.mjs';
 import { jarlDir, today } from './where.mjs';
@@ -22,8 +22,9 @@ import { baseOf, isGitRepo, issueRepos, repoLabel, worktreeState } from './repos
 import { cmpId } from './ids.mjs';
 import { sameLease } from './leases.mjs';
 
-// The tool the commands of a brief run: its own absolute path.
+// The tool the commands of a brief run: its own absolute path, under the runtime running it now.
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
+const RUNTIME = basename(process.execPath).replace(/\.exe$/i, '');
 
 // The roles a brief of the tool is written for, besides a coordinator's of its slice: a worker's and an examiner's of one
 // lease, a merger's of its target. A worker raised by a takeover is given the worker's brief, with the rules of the
@@ -313,7 +314,7 @@ function leaseWhere(root, loop, issues) {
   return { branch, worker: fieldText(first.fields.worker) || null, model: fieldText(first.fields.model) || null, inPlace, tier, repos };
 }
 
-const toolCommand = (ctx) => (...words) => printCommand(['node', SCRIPT, ...words, '--root', ctx.root], { globals: [] });
+const toolCommand = (ctx) => (...words) => printCommand([RUNTIME, SCRIPT, ...words, '--root', ctx.root], { globals: [] });
 
 // The commands a role uses, each with every value the record holds filled.
 function workerCommands(ctx, issues, lease) {
@@ -414,7 +415,7 @@ function issueBrief(root, loop, rawIds, role, ctx) {
 function mergerBrief(root, loop, slice, ctx) {
   const lines = loop.goalLines;
   const m = slice === undefined ? null : lines.mergers[fieldText(slice).toLowerCase()] ?? null;
-  need(slice === undefined || m !== null, `no slice ${fieldText(slice)} with a merger of its own on the goal's Merger lines: a Merger (<slice>) line names one — ${jarlLine('goal', '--set', hole('<machine-line>'))}`, () => ({ flag: '--slice', value: hole('<coordinator>') }));
+  need(slice === undefined || m !== null, `no slice ${fieldText(slice)} with a merger of its own on the goal's Merger lines: a Merger (<coordinator>) line names one — ${jarlLine('goal', '--set', hole('<machine-line>'))}`, () => ({ flag: '--slice', value: hole('<coordinator>') }));
   const repos = loopRepos(root, loop.issues).filter(isGitRepo).map((repo) => {
     const base = baseOf(root, repo);
     return { repo, label: repoLabel(repo), base, target: m ? integrationBranch(m.slice) : base };
@@ -493,7 +494,7 @@ const DO_NOT = Object.freeze({
   merger: ['edit code, or a conflict by picking a side', 'judge content or scope: a branch without a fresh approve waits, and that is not your call', 'override a red check'],
 });
 
-const FIRST_STEP = (lease) => (lease.inPlace ? 'You work in place: no branch or worktree of your own, only the files the issue declares, in the checkout of their repository.' : `First: in your worktree, \`git merge ${lease.repos[0]?.base ?? '<base>'}\`; \`git status\` must be clean afterwards, and if it is not, stop and report. A platform that gave you a branch of its own name: rename it (\`git branch -m ${lease.branch ?? '<branch>'}\`), never a second branch beside it.`);
+const FIRST_STEP = (lease) => (lease.inPlace ? 'You work in place: no branch or worktree of your own, only the files the issue declares, in the checkout of their repository.' : `First: in your worktree, \`git merge ${lease.repos[0]?.base ?? hole('<base-branch>')}\`; \`git status\` must be clean afterwards, and if it is not, stop and report. A platform that gave you a branch of its own name: rename it (\`git branch -m ${lease.branch ?? '<branch>'}\`), never a second branch beside it.`);
 
 // The role's text, built from the record and read by nothing else: each part once, as short as it can be said.
 function renderWorker(o, out) {
@@ -510,7 +511,7 @@ function renderWorker(o, out) {
     lease.inPlace ? 'No branch: you work in place.' : `Branch ${lease.branch ?? 'not leased yet'}.`,
     ...lease.repos.map((r) => `Repository ${r.label} (${r.repo}), base ${r.base}${lease.branch ? `, worktree ${r.worktree ?? 'not made yet'}` : ''}.`),
     ...(lease.repos.length ? [] : ['The loop is in no git repository here.']),
-    `Loop root: ${o.root}. Tool: node ${o.script} (every command below is written with both).`,
+    `Loop root: ${o.root}. Tool: ${RUNTIME} ${o.script} (every command below is written with both).`,
   ]);
   section(out, 'You do not', o.doNot.map((d) => `- ${d}`));
   section(out, 'How to work', [
@@ -537,7 +538,7 @@ function renderReviewer(o, out) {
     `Depth: ${depth.says}. Run at tier ${depth.tier} or above${depth.secondFamily ? `, on ${depth.secondFamily} where you can` : ''}.`,
     lease.inPlace ? 'No branch: the work is in the files the issue declares.' : `Branch ${lease.branch ?? 'none'}.`,
     ...lease.repos.map((r) => `Repository ${r.label} (${r.repo}), base ${r.base}${lease.branch ? `, worktree ${r.worktree ?? 'none here'}` : ''}.`),
-    `Loop root: ${o.root}. Tool: node ${o.script}. Read-only: never \`git checkout\` in the main checkout; reproduce with \`git show\` or \`git archive\` into a scratch directory.`,
+    `Loop root: ${o.root}. Tool: ${RUNTIME} ${o.script}. Read-only: never \`git checkout\` in the main checkout; reproduce with \`git show\` or \`git archive\` into a scratch directory.`,
   ]);
   section(out, 'You do not', o.doNot.map((d) => `- ${d}`));
   section(out, 'The six steps', [
@@ -588,13 +589,13 @@ function renderMerger(o, out) {
   section(out, 'Where you merge', [
     `You are ${o.merger ?? 'the merger'}. Your target: ${o.target ?? o.repos.map((r) => `${r.base} in ${r.label}`).join(', ') ?? 'the branch the loop lands on'}.`,
     ...o.repos.map((r) => `Repository ${r.label} (${r.repo}), base ${r.base}${o.target ? `, target ${r.target}` : ''}.`),
-    `Loop root: ${o.root}. Tool: node ${o.script} (every command below is written with both).`,
+    `Loop root: ${o.root}. Tool: ${RUNTIME} ${o.script} (every command below is written with both).`,
     'One writer per target branch: only you merge into it. You work in a worktree of your own on that branch and never share a checkout with another merger. You write the record through the tool, under its lock; only the holder of the main checkout commits `.jarl/`, so several mergers are not several committers there. If you do not hold the main checkout, you never commit `.jarl/`.',
   ]);
   section(out, 'You do not', o.doNot.map((d) => `- ${d}`));
   section(out, 'Each branch, serially', [
     '1. Read the scope and the diff. A branch without a fresh reviewer\'s approve waits; report it. In the default mode a diff that touches `.jarl/` is reported, not merged: git treats the ignored loop as expendable and a merge would overwrite it.',
-    `2. Merge with \`git <settings> merge --no-ff <branch>\`, the settings from the merge-driver command below, passed on every merge, never left to the clone's configuration; with \`--yg "<command>"\` to it when the repository has .yggdrasil/, and then \`yg log merge-resolve\` right after the merge. Into ${target}, in your own worktree.`,
+    `2. Merge into ${target}, in your own worktree: git, then the settings the merge-driver command below prints, then \`merge --no-ff\` and the branch. Pass the settings on every merge, never leave them to the clone's configuration. Where the repository has .yggdrasil/, add \`--yg "<command>"\` to the merge-driver call, and run \`yg log merge-resolve\` right after the merge.`,
     '3. A conflict the drivers stopped on (a ruling or log entry both sides changed): `git merge --abort` and report. Any other conflict: resolve only when one side is plainly a superset or the hunks are independent; otherwise abort and report the files.',
     '4. Branches sharing no file may be merged one after another and checked once as a batch; never batch two that touch one file.',
     '5. Run the repository\'s check on the merged result, in the foreground, with your tool\'s own timeout set for the whole run. Report after the check has finished, never before.',
@@ -609,7 +610,7 @@ function renderMerger(o, out) {
     'Nobody repairs the target branch directly. A defect found after a landing is a small issue whose Found by names the landed issue, with a check line, and it goes through the same chain.',
   ]);
   renderCommon(o, out);
-  section(out, 'What you report', 'One line per branch: merged <sha> | red: <what> | conflict: <files> | nothing to merge. Spawn no agents.');
+  section(out, 'What you report', 'One line per branch: merged <sha> | red: <what-is-red> | conflict: <paths> | nothing to merge. Spawn no agents.');
 }
 
 function renderCommon(o, out) {

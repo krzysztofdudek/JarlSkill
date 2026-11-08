@@ -325,7 +325,7 @@ test('new without --tier says on the command line which tier it used and the cri
   assert.match(w, /light: a check or test decides/);
   assert.match(w, /strong: unknown cause/);
   assert.equal(w.split('\n').filter((l) => l.includes('no --tier given')).length, 1, 'the tier note is one line');
-  assert.equal(notes(root, 'new', ['another thing'], { tier: 'strong', kind: 'bug', prio: '2' }), '');
+  assert.equal(notes(root, 'new', ['another thing'], { tier: 'strong', kind: 'bug', prio: '2', why: 'it matters' }), '');
   assert.equal(R.newIssue(root, 'third', { acceptance: '[read] it works', }).note, undefined);
   const real = cli(root, 'new', 'fourth thing');
   assert.equal(real.status, 0);
@@ -339,7 +339,7 @@ test('new without --kind or --prio says on the command line that each was defaul
   assert.match(w, /name it with --kind/);
   assert.match(w, /no --prio given, so priority 2 was recorded/);
   assert.match(w, /name it with --prio/);
-  assert.equal(notes(root, 'new', ['another film'], { tier: 'standard', kind: 'bug', prio: '1' }), '');
+  assert.equal(notes(root, 'new', ['another film'], { tier: 'standard', kind: 'bug', prio: '1', why: 'it matters' }), '');
   const real = cli(root, 'new', 'fourth film', '--tier', 'standard');
   assert.equal(real.status, 0);
   assert.match(real.stderr, /--kind/);

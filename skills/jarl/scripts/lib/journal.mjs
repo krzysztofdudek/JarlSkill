@@ -285,7 +285,7 @@ function rangeSpan(name, value) {
 }
 const rangesMeet = (a, b) => a.from <= b.to && b.from <= a.to;
 const rangeWords = (r) => `${r.name} (${r.from}-${r.to})`;
-const MERGER_REASON = 'a Merger line names one holder, the jarl or one coordinator of the Coordinators line: it is "Merger: <name>"; a slice may keep a merger of its own, any name, with "Merger (<slice>): <name>"';
+const MERGER_REASON = 'a Merger line names one holder, the jarl or one coordinator of the Coordinators line: it is "Merger: <name>"; a slice may keep a merger of its own, any name, with "Merger (<coordinator>): <name>"';
 // The red rounds after which an issue takes over are a whole number from 1 to this.
 const TAKEOVER_MAX = 99;
 const takeoverRounds = (value) => (/^\d+$/.test(value.trim()) && Number(value) >= 1 && Number(value) <= TAKEOVER_MAX ? Number(value) : null);

@@ -64,7 +64,7 @@ test('brief <id> is the worker\'s: the issue as show prints it, the rules that r
   assert.match(text, /\n\d+ ruling\(s\) in force in the loop: jarl\.mjs decisions --live\n/);
   assert.doesNotMatch(text, /Frigg asks|Reviewers run|Coordinators report|An ended rule|after a takeover|jarl:worker-only-the-issue/, 'the role\'s own shipped rule is said once, in the steps');
   assert.doesNotMatch(text, /references\/worker\.md/);
-  assert.match(text, /\n## Commands\n- proof of a line of 1, one row per run: node [^\n]*jarl\.mjs evidence 1 --ran "<command>" --saw "<what-it-printed>" --line "<line-number>" --by "<who>"\n- a note, the choice a line leaves open: [^\n]*\n- stuck: [^\n]*\n- the changelog entry, for a change someone sees: node [^\n]*jarl\.mjs field 1 Changelog "<changelog-entry>" --add --by "<who>"\n/);
+  assert.match(text, /\n## Commands\n- proof of a line of 1, one row per run: [^\n]*jarl\.mjs evidence 1 --ran "<command>" --saw "<what-it-printed>" --line "<line-number>" --by "<who>"\n- a note, the choice a line leaves open: [^\n]*\n- stuck: [^\n]*\n- the changelog entry, for a change someone sees: [^\n]*jarl\.mjs field 1 Changelog "<changelog-entry>" --add --by "<who>"\n/);
   // The worker of an issue in no slice gets no slice's rule, and the rule of a tag reaches it.
   assert.deepEqual(slugs(json(root, 'brief', '3')), ['loop-rule', 'ui-workers', 'jarl:worker-only-the-issue']);
   assert.deepEqual(slugs(json(root, 'brief', '2')), ['loop-rule', 'frigg-only', 'jarl:worker-only-the-issue']);
@@ -95,7 +95,7 @@ test('brief <id> --role reviewer carries the rules of the reviewer, of the round
   assert.match(text, /\n## Findings of the reviews that sent it back \(1\)\n- \d{4}-\d{2}-\d{2} · by rev1 \(fresh\) — Important: the count is off by one on the last page\.\n {2}Minor: the name/);
   assert.ok(text.includes('end of the finding.'));
   assert.match(text, /\n## Proof to re-run\n- 3 line 1 \[read\]|\n## Proof to re-run\n- \(no test, check or compare line\)/);
-  assert.match(text, /\n## Commands\n- [^\n]*\n- the verdict, as the last step \(with `--outside "<finding-outside-the-issue>"` for each finding outside the issue, filed as a new issue, never a reason for changes\): node [^\n]*jarl\.mjs review 3 "<verdict>" "<findings-with-a-severity>" --by "<reviewer>" --model "<model-id>"\n/);
+  assert.match(text, /\n## Commands\n- [^\n]*\n- the verdict, as the last step \(with `--outside "<finding-outside-the-issue>"` for each finding outside the issue, filed as a new issue, never a reason for changes\): [^\n]*jarl\.mjs review 3 "<verdict>" "<findings-with-a-severity>" --by "<reviewer>" --model "<model-id>"\n/);
   // A done issue keeps its reviewer's brief; its worker's says it starts once reopened.
   jarl(root, 'review', '3', 'approve', '--by', 'rev2', FINDINGS);
   jarl(root, 'merged', '3', '--sha', 'abc1234');
@@ -934,9 +934,9 @@ test('every command a brief prints runs as printed: it carries the loop root, th
   for (const args of [['brief', '1'], ['brief', '1', '--role', 'reviewer']]) {
     const said = posixForms(spawnJarl(dir, args).stdout);
     assert.doesNotMatch(said, /worktree of /, 'the issue as shown names no place: the brief says where work is, on its own lines');
-    assert.ok(said.includes(`Tool: node ${SCRIPT_PATH}`), `the tool's absolute path: ${SCRIPT_PATH}`);
+    assert.ok(said.split('\n').some((l) => l.includes('Tool: ') && l.includes(SCRIPT_PATH)), `the tool's absolute path: ${SCRIPT_PATH}`);
     const flag = ` --root ${shellWord(dir)}`;
-    const commands = said.split('\n').filter((l) => /jarl\.mjs \w/.test(l) && !/Tool: node/.test(l));
+    const commands = said.split('\n').filter((l) => /jarl\.mjs \w/.test(l) && !/Tool: /.test(l));
     assert.ok(commands.length >= 2);
     for (const l of commands) for (const m of l.matchAll(/jarl\.mjs \w[^—]*/g)) assert.ok(m[0].includes(flag), `the command carries --root: ${m[0]}`);
   }

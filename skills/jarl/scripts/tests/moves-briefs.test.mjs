@@ -55,7 +55,7 @@ test('brief <ids> prints the complete worker\'s text: role, goal, purpose, lines
   assert.equal(o.root, dir);
   assert.equal(o.script, SCRIPT);
   assert.ok(text.includes(`Loop root: ${dir}`));
-  assert.ok(text.includes(`Tool: node ${SCRIPT}`));
+  assert.match(text, new RegExp(`Tool: \\S+ ${SCRIPT.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
   assert.ok(o.rules.some((r) => r.slug === 'workers-note'));
   assert.equal(o.doNot.length, 3);
   assert.match(text, /^## You do not\n- widen the scope.*\n- weaken a test.*\n- approve anything/m);
