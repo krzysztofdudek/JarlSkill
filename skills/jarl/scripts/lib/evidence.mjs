@@ -421,12 +421,13 @@ export function nextRows(root, flags = {}) {
     // tree, is never offered, whatever its files; nor is a parent while a sub-issue of it is not settled.
     const { after, subs } = waitsOf(i, byId, profile);
     const base = { id: i.id, title: i.title, priority: i.priority, ...(i.files.length ? {} : { noFiles: true }), ...(i.shared ? { shared: i.shared } : {}) };
-    if (after.length) { out.push({ ...base, group: 'waiting-after', after, waitsOn: [] }); continue; }
-    // A parent waits on its open sub-issues, and a question holds it as well: a question on an issue holds every issue under
+    // A question holds the issue whatever else it waits on, its After included, so the question's own row knows what it
+    // holds up. A parent waits on its open sub-issues, and a question holds it as well: a question on an issue holds every issue under
     // it, so a parent in the middle of a tree is held by a question above it too. Each is a row of its own, the held row
     // first and the waiting row last, so the parent shows under both groups.
     const questions = questionsOn(i);
     if (questions.length) out.push({ ...base, group: 'held-by-question', questions, waitsOn: [], after: [] });
+    if (after.length) { out.push({ ...base, group: 'waiting-after', after, waitsOn: [] }); continue; }
     if (subs.length) out.push({ ...base, group: 'waiting-sub', subs, after: [], waitsOn: [] });
     if (subs.length || questions.length) continue;
     // A promise or a wait is kept by who holds it, not worked on by a worker: never offered, and it takes no file.

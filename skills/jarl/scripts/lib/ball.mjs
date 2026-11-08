@@ -5,10 +5,11 @@ import { PROMISE_KIND, WAIT_KIND, fieldText, jarlLine, need } from './base.mjs';
 import { cmpId, idKey, idsCited } from './ids.mjs';
 import { mergedOf } from './issues.mjs';
 import { carriesCode, gateOf, holderKey, inFlightMark, leaseConflictOf, sameHolder, sentBack, statusWith, worksInPlace } from './gate.mjs';
-import { coordinatorOf, sameSlice, sliceOf } from './slices.mjs';
+import { coordinatorOf, integrationBranch, sameSlice, sliceMerger, sliceOf } from './slices.mjs';
+import { git } from './git.mjs';
 import { readLoop } from './loop.mjs';
 import { gatedMark, modelReviewForm } from './models.mjs';
-import { issueRepos, repoLabel } from './repositories.mjs';
+import { baseOf, issueRepos, repoLabel } from './repositories.mjs';
 import { reasonWord } from './shared.mjs';
 import { waitingOn } from './after.mjs';
 import { mergeAgainWhy, nextRows, schedulerNote } from './evidence.mjs';
@@ -82,6 +83,8 @@ function issueRows(ctx) {
   const unclearedBy = new Map();
   // A wait has rows of its own (keptRows); a promise in a lease is worked as any issue, and its maker holds each line.
   for (const i of loop.issues.filter((x) => inPlayForRows(profile, x) && profile.keptKind(x.kind) !== WAIT_KIND && !waitingOn(x, loop.byId, profile).length)) {
+    // A question that holds the issue back holds it here too: the check of a parent waits for the answer, as next says.
+    if (checking(profile, i) && ctx.next.some((r) => r.id === i.id && r.group === 'held-by-question')) continue;
     const { mark, missing } = gatedMark(loop, i);
     const worker = fieldText(i.fields.worker) || null;
     const backAfterRound = sentBack(loop, i, mark);
@@ -100,7 +103,9 @@ function issueRows(ctx) {
     const base = { id: i.id, title: i.title, priority: i.priority, holder, ...(worker ? { doer: worker } : {}) };
     const onJarl = { ...base, holder: promise ? holder : JARL_HOLDER };
     // An approve not merged is on the one holder the goal's Merger line names, who raises the merger; with none, the jarl.
-    const onMerger = { ...base, holder: ctx.merger };
+    // A slice with a merger of its own: on that merger, which lands the slice's work on its integration branch.
+    const slicem = sliceMerger(loop.goalLines, i);
+    const onMerger = { ...base, holder: slicem ? holderOf(slicem.name) : ctx.merger, ...(slicem ? { target: integrationBranch(slicem.slice) } : {}) };
     const withWorker = worker ? `with worker ${worker}` : 'in progress';
     const since = fieldText(i.fields.since) ? ` since ${fieldText(i.fields.since)}` : '';
     const lv = ctx.liveness(i);
@@ -161,7 +166,8 @@ function issueRows(ctx) {
     }
     if (mark === 'approved' && carriesCode(i)) {
       const again = mergeAgainWhy(loop, i);
-      out.push({ ...onMerger, what: 'merge', says: again ? `approved, and ${again}; ${MERGE_AGAIN}` : 'approved, not merged; merge it', command: jarlLine('merged', i.id, '--sha', '<sha>', '--ran', '<command>', '--saw', '<what-it-printed>') });
+      const landed = !again && !mergedOf(i) && branchInItsTarget(ctx.root, loop, i);
+      out.push({ ...onMerger, what: 'merge', says: again ? `approved, and ${again}; ${MERGE_AGAIN}` : landed ? 'approved, and its branch is in its base already, with no merge on record; record the merge' : 'approved, not merged; merge it', command: jarlLine('merged', i.id, '--sha', '<sha>', '--ran', '<command>', '--saw', '<what-it-printed>') });
       continue;
     }
     if (mark === 'merged-ci') {
@@ -199,6 +205,20 @@ function unclearedRow(root, issues, holder, mark, verdict, missing = new Map()) 
 }
 // How long an idle lease or proof has had no sign of work, with the threshold it is past.
 const idleFor = (lv) => `${ago(lv.ageMs)} (threshold ${thresholdText(lv.minutes)})`;
+
+// Whether an approved issue's branch is held whole by the branch its merger lands on (the integration branch of its slice
+// where it has one, else the base), in every repository of the issue where the branch exists: the merge queue then lists
+// it as a merge to record, and nothing is left to land.
+function branchInItsTarget(root, loop, issue) {
+  const branch = fieldText(issue.fields.branch);
+  if (!branch) return false;
+  const m = sliceMerger(loop.goalLines, issue);
+  const repos = issueRepos(root, issue).filter((r) => git(r, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}^{commit}`]) !== null);
+  return repos.length > 0 && repos.every((r) => {
+    const into = m && git(r, ['rev-parse', '--verify', '--quiet', `refs/heads/${integrationBranch(m.slice)}^{commit}`]) !== null ? integrationBranch(m.slice) : baseOf(root, r);
+    return git(r, ['merge-base', '--is-ancestor', branch, into]) !== null;
+  });
+}
 
 // The issues in play whose code has proof and no verdict, and waits for a fresh reviewer.
 function awaitingReview(loop, profile) {
@@ -445,11 +465,34 @@ function leaseConflictRows(ctx) {
   return out;
 }
 
+// The integration branches that have work the feature branch lacks: each lands on it as a merge with its check, on the
+// default merger, like any landing (see the merge queue, which lists the same branches).
+function integrationRows(ctx) {
+  const { root, loop } = ctx;
+  const out = [];
+  for (const m of Object.values(loop.goalLines.mergers)) {
+    const branch = integrationBranch(m.slice);
+    const held = loop.issues.filter((i) => sameSlice(sliceOf(i), m.slice) && mergedOf(i));
+    const repos = [...new Set(held.flatMap((i) => issueRepos(root, i)))].filter((r) => git(r, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}^{commit}`]) !== null);
+    for (const repo of repos) {
+      const base = baseOf(root, repo);
+      const mb = git(repo, ['merge-base', base, branch]);
+      const ahead = mb ? Number(git(repo, ['rev-list', '--count', `${mb}..${branch}`]) || 0) : 0;
+      if (!ahead) continue;
+      const ids = held.filter((i) => git(repo, ['merge-base', '--is-ancestor', mergedOf(i).sha, base]) === null).map((i) => i.id);
+      if (!ids.length) continue;
+      out.push({ what: 'merge', integration: true, ids, id: ids[0], branch, title: '', priority: loop.byId.get(ids[0]).priority, holder: ctx.merger,
+        says: `the integration branch of the slice ${m.slice} has ${ahead} commit${ahead === 1 ? '' : 's'} ${base} lacks: merge it into ${base} and run its check, as any landing`, command: jarlLine('merged', ids.join(','), '--sha', '<sha>', '--ran', '<command>', '--saw', '<what-it-printed>') });
+    }
+  }
+  return out;
+}
+
 // The sources of the rows, in order. Each reads the record through the context and gives rows { what, holder, says,
 // command, and id, ask or ruling }; a kind of open thing the record learns to hold adds its own source here.
-export const ROW_SOURCES = [issueRows, leaseConflictRows, keptRows, ownerLineRows, questionRows, rulingRows];
+export const ROW_SOURCES = [issueRows, integrationRows, leaseConflictRows, keptRows, ownerLineRows, questionRows, rulingRows];
 // The rows a composer's scheduler owns: under an external scheduler Jarl lists only the others.
-const SCHEDULING = new Set([issueRows, leaseConflictRows]);
+const SCHEDULING = new Set([issueRows, integrationRows, leaseConflictRows]);
 
 // The kinds of move, from the end of the line back: close and CI, then the merge, then the verdict, then rework (what went
 // back), then a new start; every other row after those.

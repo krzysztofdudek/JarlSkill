@@ -57,8 +57,11 @@ test('the merge queue of resume: approved, ahead of the base and not merged — 
   const text = /## Merge queue\n([\s\S]*?)(?:\n\n|$)/.exec(jarl(root, 'resume'))[1];
   assert.match(text, /1\. jarl\/2-second → 2/);
   assert.doesNotMatch(text, /\b4\b/);
-  // Once merged into the base, a branch leaves the queue by itself.
+  // Merged into the base, a branch has nothing left to land: its row is the merge to record, until it is recorded.
   sh(root, 'git merge -q --no-ff jarl/2-second -m "merge 2"');
+  const after = JSON.parse(jarl(root, 'resume', '--json')).queue.repos[0].rows;
+  assert.deepEqual(after.map((r) => [r.branch, r.recordOnly === true]), [['jarl/2-second', true], ['jarl/1-first', false]]);
+  jarl(root, 'merged', '2', '--sha', execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8', timeout: SPAWN_TIMEOUT }).trim(), '--keep');
   assert.deepEqual(JSON.parse(jarl(root, 'resume', '--json')).queue.repos[0].rows.map((r) => r.branch), ['jarl/1-first']);
 });
 

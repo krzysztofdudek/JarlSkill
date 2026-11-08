@@ -7,6 +7,8 @@ import { branchGlobsFor } from './ids.mjs';
 import { loadProfile, reviewerRule } from './profile.mjs';
 import { modelLines, modelRefusalOf } from './models.mjs';
 import { baseOf, fileAt, isGitRepo, issueRepos, refsIn, repoFromInput } from './repositories.mjs';
+import { mergedOf } from './issues.mjs';
+import { integrationBranch, sameSlice, sliceMerger, sliceOf } from './slices.mjs';
 import { gateOf } from './gate.mjs';
 import { readLoop } from './loop.mjs';
 import { issuesOnBranch, loopRepos } from './rounds.mjs';
@@ -56,42 +58,84 @@ export function cmdQueue(root, flags = {}) {
       const found = (git(repo, ['branch', '--list', ...branchGlobsFor(i.id), '--format=%(refname:short)']) || '').split('\n').filter(Boolean);
       return found.length === 1 ? found[0] : null;
     };
-    const branches = new Map();
+    // Each approved issue goes to its merger's target: the integration branch of a slice with a merger of its own, once
+    // that branch exists, else the base. One writer per target branch: each target gets a queue of its own.
+    const mergerOf = (i) => { const m = sliceMerger(loop.goalLines, i); return m && exists(integrationBranch(m.slice)) ? m : null; };
+    const targets = new Map([[base, { base, slice: null, merger: null, branches: new Map() }]]);
     for (const i of approved.filter((x) => issueRepos(root, x).includes(real))) {
       const b = branchOf(i);
-      if (b && b !== base) branches.set(b, [...(branches.get(b) || []), i]);
+      const m = mergerOf(i);
+      const into = m ? integrationBranch(m.slice) : base;
+      if (!b || b === into) continue;
+      if (!targets.has(into)) targets.set(into, { base: into, slice: m.slice, merger: m.name, branches: new Map() });
+      const { branches } = targets.get(into);
+      branches.set(b, [...(branches.get(b) || []), i]);
     }
-    const rows = [];
-    for (const [branch, on] of branches) {
-      const mb = git(repo, ['merge-base', base, branch]);
-      const ahead = mb ? Number(git(repo, ['rev-list', '--count', `${mb}..${branch}`]) || 0) : null;
-      // A branch the base holds whole has nothing to land: its approved issue is listed only when the merge recorded on it
-      // does not count now (mergeAgainWhy says why), and then the row is record only.
-      const recordWhy = ahead === 0 ? on.map((i) => mergeAgainWhy(loop, i)).find(Boolean) : null;
-      if (!ahead && !recordWhy) continue;   // nothing its base lacks: merged already, or never worked on
-      const others = issuesOnBranch(root, unsettled, real, branch).filter((i) => !on.includes(i));
-      // The live approve, not simply the last one recorded: a later coordinator approve does not spend an
-      // earlier, still-live fresh approve, so the row still credits the fresh reviewer who actually cleared it.
-      const approves = on.map((i) => gate.get(i.id).live);
-      const last = approves.reduce((a, b) => (!a || b.n > a.n ? b : a), null);
-      const files = [...new Set(on.concat(others).flatMap((i) => i.files.map((f) => { const at = fileAt(root, i, f); return canonical(at.repo) === real ? at.path : null; }).filter(Boolean)))];
-      const unaccepted = on.filter((i) => refused.has(i.id));
-      rows.push({ branch, issues: on.map((i) => i.id), waitingReview: others.map((i) => i.id), ...(unaccepted.length ? { waitingModel: unaccepted.map((i) => ({ id: i.id, missing: refused.get(i.id) })) } : {}), ready: others.length === 0 && unaccepted.length === 0, ahead, ...(recordWhy ? { recordOnly: true, recordWhy } : {}), approvedAt: last.at, by: last.by, files, n: last.n });
+    for (const t of targets.values()) {
+      const rows = queueRows(root, loop, repo, real, t.base, t.branches, { unsettled, gate, refused });
+      if (t.base === base) rows.push(...integrationRows(root, loop, repo, base));
+      finishRows(rows);
+      if (t.base === base || rows.length) out.push({ repo: basename(real), path: repo, base: t.base, ...(t.merger ? { slice: t.slice, merger: t.merger } : {}), rows });
     }
-    rows.sort((a, b) => a.n - b.n);
-    // Batches: consecutive rows whose declared files do not meet. A row with no files declared rides alone —
-    // nothing says what it touches.
-    let batch = 0; let taken = null;
-    for (const r of rows) {
-      if (!taken || !r.files.length || r.files.some((f) => taken.has(f))) { batch += 1; taken = new Set(); }
-      r.files.forEach((f) => taken.add(f));
-      if (!r.files.length) taken = null;
-      r.batch = batch;
-      delete r.n;
-    }
-    out.push({ repo: basename(real), path: repo, base, rows });
   }
   return { repos: out };
+}
+
+// The rows of one target branch: the branches of `branches` (issues approved on each) with what the target lacks of them.
+function queueRows(root, loop, repo, real, base, branches, { unsettled, gate, refused }) {
+  const rows = [];
+  for (const [branch, on] of branches) {
+    const mb = git(repo, ['merge-base', base, branch]);
+    const ahead = mb ? Number(git(repo, ['rev-list', '--count', `${mb}..${branch}`]) || 0) : null;
+    // A branch the target holds whole has nothing to land: its approved issue is listed only when its merge is to be
+    // recorded, the one on record not counting now (mergeAgainWhy says why) or none being on record at all, and then the
+    // row is record only.
+    const unrecorded = ahead === 0 ? on.filter((i) => mergeAgainWhy(loop, i) || !mergedOf(i)) : [];
+    const recordWhy = unrecorded.length ? mergeAgainWhy(loop, unrecorded[0]) ?? 'no merge is on record for it' : null;
+    if (!ahead && !recordWhy) continue;   // nothing its target lacks: merged already, or never worked on
+    const listed = ahead === 0 ? unrecorded : on;
+    const others = issuesOnBranch(root, unsettled, real, branch).filter((i) => !on.includes(i));
+    // The live approve, not simply the last one recorded: a later coordinator approve does not spend an
+    // earlier, still-live fresh approve, so the row still credits the fresh reviewer who actually cleared it.
+    const approves = on.map((i) => gate.get(i.id).live);
+    const last = approves.reduce((a, b) => (!a || b.n > a.n ? b : a), null);
+    const files = [...new Set(on.concat(others).flatMap((i) => i.files.map((f) => { const at = fileAt(root, i, f); return canonical(at.repo) === real ? at.path : null; }).filter(Boolean)))];
+    const unaccepted = listed.filter((i) => refused.has(i.id));
+    rows.push({ branch, issues: listed.map((i) => i.id), waitingReview: others.map((i) => i.id), ...(unaccepted.length ? { waitingModel: unaccepted.map((i) => ({ id: i.id, missing: refused.get(i.id) })) } : {}), ready: others.length === 0 && unaccepted.length === 0, ahead, ...(recordWhy ? { recordOnly: true, recordWhy } : {}), approvedAt: last.at, by: last.by, files, n: last.n });
+  }
+  return rows;
+}
+
+// The integration branches of the slices that keep their own merger, as rows of the base's queue: each lands on the base as
+// a merge with its check, like any landing. A branch the base holds whole is left out; its issues are the slice's issues
+// merged there and not in the base yet.
+function integrationRows(root, loop, repo, base) {
+  const rows = [];
+  for (const m of Object.values(loop.goalLines.mergers)) {
+    const branch = integrationBranch(m.slice);
+    if (!refsIn(repo).has(branch)) continue;
+    const mb = git(repo, ['merge-base', base, branch]);
+    const ahead = mb ? Number(git(repo, ['rev-list', '--count', `${mb}..${branch}`]) || 0) : 0;
+    if (!ahead) continue;
+    const landed = (sha) => git(repo, ['merge-base', '--is-ancestor', sha, base]) !== null;
+    const issues = loop.issues.filter((i) => sameSlice(sliceOf(i), m.slice) && mergedOf(i) && !landed(mergedOf(i).sha)).map((i) => i.id);
+    rows.push({ branch, issues, integration: true, slice: m.slice, waitingReview: [], ready: true, ahead, files: [], n: Number.MAX_SAFE_INTEGER });
+  }
+  return rows;
+}
+
+// The rows of a target in the order of approval, integration branches last, and cut into batches: consecutive rows whose
+// declared files do not meet. A row with no files declared rides alone: nothing says what it touches.
+function finishRows(rows) {
+  rows.sort((a, b) => a.n - b.n);
+  let batch = 0; let taken = null;
+  for (const r of rows) {
+    if (!taken || !r.files.length || r.files.some((f) => taken.has(f))) { batch += 1; taken = new Set(); }
+    r.files.forEach((f) => taken.add(f));
+    if (!r.files.length) taken = null;
+    r.batch = batch;
+    delete r.n;
+  }
 }
 
 export function renderQueue(o) {
@@ -99,13 +143,14 @@ export function renderQueue(o) {
   const lines = [];
   for (const r of o.repos) {
     if (!r.rows.length && o.repos.length > 1) continue;
-    lines.push(`[${r.repo}] into ${r.base}`);
+    lines.push(`[${r.repo}] into ${r.base}${r.merger ? ` (merger ${r.merger})` : ''}`);
     if (!r.rows.length) lines.push('  (nothing approved waits to be merged)');
     r.rows.forEach((x, n) => {
       // A row marked record only has nothing to land: its mark says why its merge is recorded again.
       const waits = [...(x.waitingReview.length ? [`waiting for review: ${x.waitingReview.join(', ')}`] : []), ...(x.waitingModel ? [`waiting for an approve the reviewer rule accepts: ${x.waitingModel.map((m) => m.missing).join('; ')}`] : [])];
       const marks = [...(x.recordOnly ? [`record only: the branch is in the base, and ${x.recordWhy}`] : []), ...(x.ready ? [] : waits)];
-      lines.push(`  ${n + 1}. ${x.branch} → ${x.issues.join(', ')}  +${x.ahead}  approved ${x.approvedAt}${x.by ? ` by ${x.by}` : ''}  batch ${x.batch}${marks.length ? `  (${marks.join('; ')})` : ''}`);
+      const what = x.integration ? `the integration branch of the slice ${x.slice}` : `approved ${x.approvedAt}${x.by ? ` by ${x.by}` : ''}`;
+      lines.push(`  ${n + 1}. ${x.branch} → ${x.issues.join(', ')}  +${x.ahead}  ${what}  batch ${x.batch}${marks.length ? `  (${marks.join('; ')})` : ''}`);
     });
   }
   return lines.join('\n') || '(nothing approved waits to be merged)';

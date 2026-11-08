@@ -220,7 +220,8 @@ test('the four views agree: an approved branch its base already holds, with no m
 test('the four views agree: an open question on a parent whose sub-issues are all dropped holds it in every view', () => {
   const root = loop();
   jarl(root, 'new', 'the parent', '--tier', 'light', '--acceptance', '[read] the whole');
-  jarl(root, 'new', 'its child', '--tier', 'light', '--acceptance', '[test] a', '--parent', '1');
+  jarl(root, 'new', 'its child', '--tier', 'light', '--acceptance', '[test] a');
+  jarl(root, 'field', '2', 'Parent', '1');
   jarl(root, 'set', '2', 'dropped', 'not needed', '--by', 'jarl');
   jarl(root, 'ask', 'should this exist at all?', '--kind', 'stuck', '--issue', '1');
   assert.ok(nextGroups(root).some((r) => r.id === '1' && r.group === 'held-by-question'), 'next --all shows it held');
@@ -232,7 +233,8 @@ test('the four views agree: a parent with an After and an open question shows bo
   const root = loop();
   jarl(root, 'new', 'first', '--tier', 'light', '--acceptance', '[test] a', '--files', 'a.mjs');  // 1
   jarl(root, 'new', 'the parent', '--tier', 'light', '--acceptance', '[read] the whole', '--after', '1');  // 2
-  jarl(root, 'new', 'its child', '--tier', 'light', '--acceptance', '[test] a', '--parent', '2', '--files', 'b.mjs');  // 3
+  jarl(root, 'new', 'its child', '--tier', 'light', '--acceptance', '[test] a', '--files', 'b.mjs');  // 3
+  jarl(root, 'field', '3', 'Parent', '2');
   jarl(root, 'ask', 'do we still want this?', '--kind', 'stuck', '--issue', '2');
   const groups = nextGroups(root).filter((r) => r.id === '2').map((r) => r.group);
   assert.deepEqual(groups.sort(), ['held-by-question', 'waiting-after']);

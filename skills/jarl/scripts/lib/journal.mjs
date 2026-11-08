@@ -285,7 +285,7 @@ function rangeSpan(name, value) {
 }
 const rangesMeet = (a, b) => a.from <= b.to && b.from <= a.to;
 const rangeWords = (r) => `${r.name} (${r.from}-${r.to})`;
-const MERGER_REASON = 'a Merger line names one holder, the jarl or one coordinator of the Coordinators line: it is "Merger: <name>"';
+const MERGER_REASON = 'a Merger line names one holder, the jarl or one coordinator of the Coordinators line: it is "Merger: <name>"; a slice may keep a merger of its own, any name, with "Merger (<slice>): <name>"';
 // The red rounds after which an issue takes over are a whole number from 1 to this.
 const TAKEOVER_MAX = 99;
 const takeoverRounds = (value) => (/^\d+$/.test(value.trim()) && Number(value) >= 1 && Number(value) <= TAKEOVER_MAX ? Number(value) : null);
@@ -299,7 +299,7 @@ const LIVENESS_REASON = `a Liveness line is "Liveness: <minutes>", with a whole 
 // value is not a whole number of rounds, a Liveness line with a qualifier or a value that is not a whole number of minutes,
 // a Range line that does not parse, names a range declared above it or shares numbers with one.
 export function goalLines(text, skipped) {
-  const out = { goal: null, checks: [], checksByRepo: { bare: [], repos: {} }, models: [], coordinators: [], merger: null, takeovers: { bare: null, kinds: {} }, liveness: null, ranges: [] };
+  const out = { goal: null, checks: [], checksByRepo: { bare: [], repos: {} }, models: [], coordinators: [], merger: null, mergers: {}, takeovers: { bare: null, kinds: {} }, liveness: null, ranges: [] };
   if (text == null) return out;
   const lines = text.split('\n');
   out.goal = lines.slice(2).find((l) => l.trim()) || '';
@@ -312,8 +312,10 @@ export function goalLines(text, skipped) {
     const skip = (reason) => { if (skipped) skipped.push({ n: i + 1, text: line, reason }); };
     if (key === 'coordinators' && !m[2]) out.coordinators.push(...value.split(',').map((n) => fieldText(n)).filter(Boolean));
     else if (key === 'coordinators') skip('a Coordinators line takes no tier: it is "Coordinators: <name>[, <name>…]"');
-    // The one holder that raises the merger, one merge at a time across every slice: the jarl or one coordinator.
+    // The one holder that raises the merger of the work on the loop's feature branch, the jarl or one coordinator; a slice
+    // may name a merger of its own, which lands the slice's work on its integration branch.
     else if (key === 'merger' && !m[2] && !value.includes(',') && fieldText(value)) out.merger = fieldText(value);
+    else if (key === 'merger' && m[2] && qualifier && !value.includes(',') && fieldText(value)) out.mergers[qualifier.toLowerCase()] = { slice: qualifier, name: fieldText(value) };
     else if (key === 'merger') skip(MERGER_REASON);
     else if (key === 'model' && m[2]) {
       const models = value.split(',').map((s) => fieldText(s).replace(/^`(.*)`$/, '$1')).filter(Boolean);
@@ -409,7 +411,13 @@ export function cmdGoalSet(root, text) {
     need(qualifier !== null, `the profile declares no tier ${JSON.stringify(line.qualifier)}: its tiers are ${loadProfile(root).tiers.join(', ')}`, () => ({ flag: '--set', value: `Model (${hole('<tier>')}): ${line.value}` }));
   }
   need(line.key !== 'coordinators' || qualifier === null, 'a Coordinators line takes no qualifier: "Coordinators: <name>, …"', () => ({ flag: '--set', value: `Coordinators (${hole('<machine-line>')}): ${line.value}` }));
-  need(line.key !== 'merger' || (qualifier === null && !line.value.includes(',')), MERGER_REASON, () => ({ flag: '--set', value: `Merger: ${hole('<one-name>')}` }));
+  need(line.key !== 'merger' || !line.value.includes(','), MERGER_REASON, () => ({ flag: '--set', value: `Merger: ${hole('<one-name>')}` }));
+  if (line.key === 'merger' && qualifier !== null) {
+    const slices = goalLines(old).coordinators;
+    const known = slices.find((c) => c.toLowerCase() === qualifier.toLowerCase());
+    need(known !== undefined, `Merger (${qualifier}) names no slice of this loop: ${slices.length ? `its slices are ${slices.join(', ')}` : 'it has no Coordinators line'}`, () => ({ flag: '--set', value: `Merger (${hole('<coordinator>')}): ${line.value}` }));
+    qualifier = known;
+  }
   if (line.key === 'takeover' && qualifier !== null) {
     const kinds = loadProfile(root).kinds;
     qualifier = kinds.find((k) => k.toLowerCase() === qualifier.toLowerCase()) ?? null;

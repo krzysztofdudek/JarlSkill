@@ -58,6 +58,15 @@ export function coordinatorOf(loop, issue) {
   return loop.goalLines.coordinators.find((c) => sameSlice(c, slice)) ?? slice;
 }
 
+// The branch a slice with a merger of its own lands its work on, cut from the feature branch and merged back into it with
+// its check, as any landing.
+export const integrationBranch = (slice) => `jarl/slice-${slice}`;
+// The merger of an issue's slice as the goal names it, { slice, name }, or null when the slice has none of its own.
+export function sliceMerger(lines, issue) {
+  const slice = sliceOf(issue);
+  return slice === null ? null : lines.mergers[slice.toLowerCase()] ?? null;
+}
+
 // The same coordinator, in any case: slice:Odin and slice:odin are one slice.
 export const sameSlice = (a, b) => a !== null && b !== null && fieldText(a).toLowerCase() === fieldText(b).toLowerCase();
 
