@@ -7,13 +7,12 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } fro
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { FINDINGS } from './findings.mjs';
-import { jarl, refuses, MODELS_GOAL, loop as makeLoop } from './helpers.mjs';
+import { jarl, refuses, loop as makeLoop } from './helpers.mjs';
 import * as R from '../record.mjs';
 import { fileAsFormatTwo } from './old-jarl.mjs';
 import { BUILTIN_STATUSES } from '../jarl-lib.mjs';
 
-// The goal declares its models, so that leasing an agent here offers nothing more than the rows each test reads.
-const loop = (initFlags = []) => makeLoop({ prefix: 'jarl-as-', goal: MODELS_GOAL, via: 'cli', dotGit: false, initFlags });
+const loop = (initFlags = []) => makeLoop({ prefix: 'jarl-as-', via: 'cli', dotGit: false, initFlags });
 const json = (root, ...args) => JSON.parse(jarl(root, ...args, '--json'));
 const IMPORTANT = 'Important: the empty list is not handled';
 

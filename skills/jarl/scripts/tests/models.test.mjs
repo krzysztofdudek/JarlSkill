@@ -253,7 +253,7 @@ test('a library caller gets no note and its results do not change', () => {
 });
 
 test('a lease that names another spelling of a model the record holds says which spelling the record holds; the spelling the record holds, and a library call, say nothing', () => {
-  const root = loop();
+  const root = loop({ lines: true });
   const first = R.newIssue(root, 'first', { acceptance: 'it works' }).id;
   const second = R.newIssue(root, 'second', { acceptance: 'it works' }).id;
   const third = R.newIssue(root, 'third', { acceptance: 'it works' }).id;

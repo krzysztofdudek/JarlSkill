@@ -4,9 +4,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { FINDINGS } from './findings.mjs';
-import { jarl, MODELS_GOAL, loop as makeLoop } from './helpers.mjs';
+import { jarl, loop as makeLoop } from './helpers.mjs';
 
-const loop = () => makeLoop({ prefix: 'jarl-lone-', goal: MODELS_GOAL, via: 'cli', dotGit: false });
+const loop = () => makeLoop({ prefix: 'jarl-lone-', via: 'cli', dotGit: false });
 const json = (root, ...args) => JSON.parse(jarl(root, ...args, '--json'));
 const ASK = "jarl.mjs ask 'start a fresh session to review issues 1, 2'";
 

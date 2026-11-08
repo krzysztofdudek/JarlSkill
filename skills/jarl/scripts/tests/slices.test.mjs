@@ -132,7 +132,6 @@ test('status --slice and resume --slice are scoped to the slice, the way status 
 
 test('next --as <coordinator> holds its slice\'s ready issues, leases, proofs with no verdict and changes verdicts; the jarl keeps the issues in no slice and what follows an approve', () => {
   const root = twoSlices();
-  jarl(root, 'goal', '--set', 'Model (strong): big-model');
   jarl(root, 'new', 'odin proof', '--tags', 'slice:odin', '--files', 'd.mjs');     // 6
   jarl(root, 'new', 'odin changes', '--tags', 'slice:odin', '--files', 'e.mjs');   // 7
   jarl(root, 'new', 'thor approved', '--tags', 'slice:thor', '--files', 'f.mjs');  // 8

@@ -12,7 +12,7 @@ import { join } from 'node:path';
 import * as R from '../record.mjs';
 import * as L from '../jarl-lib.mjs';
 import * as W from '../lib/where.mjs';
-import { jarl, refuses, gitRepo, MODELS_GOAL, loop as makeLoop, SPAWN_TIMEOUT } from './helpers.mjs';
+import { jarl, refuses, gitRepo, loop as makeLoop, SPAWN_TIMEOUT } from './helpers.mjs';
 import { oldJarl, formatTwoJarl } from './old-jarl.mjs';
 import { FINDINGS } from './findings.mjs';
 
@@ -199,7 +199,7 @@ test('a branch that exists only as a fetched ref is not gone: the lease is aged 
 
 test('status --stale-hours moves the threshold of the asker\'s list as it moves the rest of the call', () => {
   const root = at(0, () => {
-    const r = makeLoop({ prefix: 'jarl-live-', goal: MODELS_GOAL, dotGit: false });
+    const r = makeLoop({ prefix: 'jarl-live-', dotGit: false });
     R.newIssue(r, 'one', { files: 'a.mjs', acceptance: 'a is done' });
     R.setStatus(r, '001', 'in-progress', 'w', { worker: 'w1' });
     return r;
@@ -213,7 +213,7 @@ test('status --stale-hours moves the threshold of the asker\'s list as it moves 
 
 test('a row idle past the threshold goes before the others of its holder, so it is among the seven lines shown', () => {
   const root = at(0, () => {
-    const r = makeLoop({ prefix: 'jarl-live-', goal: MODELS_GOAL, dotGit: false });
+    const r = makeLoop({ prefix: 'jarl-live-', dotGit: false });
     R.newIssue(r, 'the lease', { files: 'lease.mjs', acceptance: 'it is done', prio: '3' });
     R.setStatus(r, '001', 'in-progress', 'w', { worker: 'w1' });
     for (let n = 2; n <= 9; n += 1) R.newIssue(r, `ready ${n}`, { files: `f${n}.mjs`, acceptance: 'it is done', prio: '1' });
