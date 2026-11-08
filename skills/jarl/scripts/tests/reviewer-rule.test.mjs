@@ -128,17 +128,17 @@ for (const [rule, own, label] of [['other-model', 'm-strong', 'the worker\'s own
       assert.equal(said.status, 0, said.stderr);
       const form = modelForm(root, '1');
       assert.match(form, /^jarl\.mjs review "<ids>" "<verdict>" "<what-was-read-and-found>" --by "<a-fresh-reviewer>" --model "<model-id>"$/);
-      assert.match(nextLine(said), /^done refuses this approve for its model \(done-gate "reviewer": "[a-z-]+"\), so an approve that names a model the rule accepts is next — jarl\.mjs review 1 "<verdict>" --by "<a-fresh-reviewer>" --model "<model-id>" "<text>" — then jarl\.mjs set 1 done "<why>" once the worker's Proof rows are recorded/, given.join(' '));
+      assert.match(nextLine(said), /^done refuses this approve for its model \(done-gate "reviewer": "[a-z-]+"\), so an approve that names a model the rule accepts is next — jarl\.mjs review 1 "<verdict>" --by "<a-fresh-reviewer>" --model "<model-id>" "<text>" — then jarl\.mjs set 1 done "<why>" once every line has what its method asks/, given.join(' '));
     }
   });
 
   test(`"${rule}": the line after an approve the rule accepts, and after any approve under the default rule, is the step that follows an approve`, () => {
     const root = modelLoop(rule);
     const accepted = run(root, ['review', '1', 'approve', '--by', 'rev-x', '--model', rule === 'other-model' ? 'm-light' : 'm-strong', 'read the diff and the rows, nothing found']);
-    assert.equal(nextLine(accepted), 'jarl.mjs set 1 done "<why>" once the worker\'s Proof rows are recorded; a worker never sets done');
+    assert.equal(nextLine(accepted), 'jarl.mjs set 1 done "<why>" once every line has what its method asks; a worker never sets done');
     const plain = modelLoop();
     const bare = run(plain, ['review', '1', 'approve', '--by', 'rev-x', 'read the diff and the rows, nothing found']);
-    assert.equal(nextLine(bare), 'jarl.mjs set 1 done "<why>" once the worker\'s Proof rows are recorded; a worker never sets done');
+    assert.equal(nextLine(bare), 'jarl.mjs set 1 done "<why>" once every line has what its method asks; a worker never sets done');
   });
 
   test(`"${rule}": on an issue that carries code the fresh reviewer's approve asked for after a coordinator's carries the model, and a refused fresh approve is followed by the form before the merge`, () => {

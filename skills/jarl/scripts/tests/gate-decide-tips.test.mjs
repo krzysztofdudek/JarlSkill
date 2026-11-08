@@ -32,31 +32,34 @@ function reposBeside(...names) {
 
 test('done: evidence written before the issue went in progress is not proof; evidence after it is', () => {
   const root = loop();
-  jarl(root, 'new', 'thing', '--acceptance', '[read] it works');
+  jarl(root, 'new', 'thing', '--acceptance', '[test] it works');
   jarl(root, 'evidence', '1', 'Source: a research report, finding X');   // a note at filing time
-  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'a run from before the start');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'a run from before the start', '--by', 'w1');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'a run from before the start', '--by', 'fresh-opus');
   jarl(root, 'set', '1', 'in-progress', 'raised', '--worker', 'w1');
   jarl(root, 'review', '1', 'approve', '--by', 'fresh-opus', 'read the diff');
-  assert.match(refuses(root, 'set', '1', 'done', 'merged'), /1 has no --ran\/--saw evidence row recorded since it was moved → in-progress/);
-  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', '63 pass');
+  assert.match(refuses(root, 'set', '1', 'done', 'merged'), /rows count since it was moved → in-progress\): line 1 \[test\] unproved/);
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', '63 pass', '--by', 'w1');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', '63 pass', '--by', 'fresh-opus');
   assert.equal(jarl(root, 'set', '1', 'done', 'merged'), '1 → done');
 });
 
 test('done: a free-text note never closes an issue, even one that never went in progress; a --ran/--saw row after filing does', () => {
   const root = loop();
-  jarl(root, 'new', 'small', '--acceptance', '[read] it works');
+  jarl(root, 'new', 'small', '--acceptance', '[test] it works');
   jarl(root, 'evidence', '1', 'Source: finding X — written at filing time');
   jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
-  assert.match(refuses(root, 'set', '1', 'done', 'ok'), /1 has no evidence yet/, 'a note alone is Notes, and Notes is not evidence of the work');
+  assert.match(refuses(root, 'set', '1', 'done', 'ok'), /line 1 \[test\] unproved/, 'a note alone is Notes, and Notes is not evidence of the work');
   jarl(root, 'evidence', '1', 'more prose, still no row');
-  assert.match(refuses(root, 'set', '1', 'done', 'ok'), /no evidence yet/);
-  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', '12 pass');
+  assert.match(refuses(root, 'set', '1', 'done', 'ok'), /line 1 \[test\] unproved/);
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', '12 pass', '--by', 'one');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', '12 pass', '--by', 'two');
   assert.equal(jarl(root, 'set', '1', 'done', 'ok'), '1 → done');
 });
 
 test('review: an approve needs --by, a self-approve by the worker is refused, and --by is recorded with its kind', () => {
   const root = loop();
-  jarl(root, 'new', 'a', '--acceptance', '[read] it works'); jarl(root, 'new', 'b');
+  jarl(root, 'new', 'a', '--acceptance', '[read] it works'); jarl(root, 'new', 'b', '--acceptance', '[read] it works');
   jarl(root, 'set', '1,2', 'in-progress', 'pkg', '--worker', 'opus-worker-3', '--branch', 'jarl/1-pkg');
   assert.match(refuses(root, 'review', '1', 'approve', FINDINGS), /a verdict needs --by/);
   assert.match(refuses(root, 'review', '1-2', 'approve', '--by', 'Opus-Worker-3', FINDINGS), /1: an approve by Opus-Worker-3 is a self-approve \(opus-worker-3 is the issue's worker\).*nothing was written/);
@@ -66,7 +69,7 @@ test('review: an approve needs --by, a self-approve by the worker is refused, an
   // A changes verdict needs --by too, and may come from the worker: it is recorded, not refused.
   jarl(root, 'review', '1', 'changes', '--by', 'opus-worker-3', 'Important: a self-check found a hole');
   assert.match(refuses(root, 'review', '1', 'changes', 'Important: no reviewer named'), /a verdict needs --by/);
-  const next = (id) => `the merger merges the branch and records it with one call — jarl.mjs merged ${id} --sha "<sha>" --ran "<command>" --saw "<what-it-printed>" — then jarl.mjs set ${id} done "<why>", which needs a Proof row from the worker (the merge check is the merger's and is no proof); a worker never sets done`;
+  const next = (id) => `the merger merges the branch and records it with one call — jarl.mjs merged ${id} --sha "<sha>" --ran "<command>" --saw "<what-it-printed>" — then jarl.mjs set ${id} done "<why>", once every line has what its method asks (the merge check is the merger's and proves no line but one on the declared check); a worker never sets done`;
   assert.equal(jarl(root, 'review', '1,2', 'approve', '--by', 'fresh-opus', FINDINGS), `1 review approve by fresh-opus (fresh) · acceptance: (none on file) · next: ${next('1')}\n2 review approve by fresh-opus (fresh) · acceptance: (none on file) · next: ${next('2')}`);
   assert.match(log(), /1 review approve · by fresh-opus \(fresh\) · batch \S+ · read the diff, nothing found/, 'one verdict on two issues carries its batch id after the standing');
   assert.match(jarl(root, 'review', '2', 'approve', '--by', 'jarl', FINDINGS), /by jarl \(coordinator\)/);
@@ -78,15 +81,17 @@ test('review: an approve needs --by, a self-approve by the worker is refused, an
 
 test('done: a reopen spends the approve and the evidence before it; a round spends the approve', () => {
   const root = loop();
-  jarl(root, 'new', 'x', '--acceptance', '[read] it works');
-  jarl(root, 'set', '1', 'in-progress', 'go');
-  jarl(root, 'evidence', '1', '--line', '1', '--ran', 't', '--saw', 'ok');
+  jarl(root, 'new', 'x', '--acceptance', '[test] it works');
+  jarl(root, 'set', '1', 'in-progress', 'go', '--worker', 'w1');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 't', '--saw', 'ok', '--by', 'w1');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 't', '--saw', 'ok', '--by', 'r1');
   jarl(root, 'review', '1', 'approve', '--by', 'r1', FINDINGS);
   jarl(root, 'set', '1', 'done', 'merged');
   jarl(root, 'set', '1', 'open', 'reopened: the fix was incomplete');
   const r = refuses(root, 'set', '1', 'done', 'again');
-  assert.match(r, /no --ran\/--saw evidence row recorded since it was moved → open/);
-  jarl(root, 'evidence', '1', '--line', '1', '--ran', 't2', '--saw', 'ok');
+  assert.match(r, /rows count since it was moved → open\): line 1 \[test\] unproved/);
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 't2', '--saw', 'ok', '--by', 'w1');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 't2', '--saw', 'ok', '--by', 'r2');
   assert.match(refuses(root, 'set', '1', 'done', 'again'), /no approving review newer than its last round or reopen/);
   jarl(root, 'review', '1', 'approve', '--by', 'r2', FINDINGS);
   jarl(root, 'round', '1', 'red on CI');
@@ -116,14 +121,16 @@ test('done after an approve and a later changes verdict is refused naming that c
 
 test('done: in progress → deferred → in progress spends the approve and the rows before it, as a reopen does', () => {
   const root = loop();
-  jarl(root, 'new', 'z', '--acceptance', '[read] it works');
-  jarl(root, 'set', '1', 'in-progress', 'go');
-  jarl(root, 'evidence', '1', '--line', '1', '--ran', 't', '--saw', 'ok');
+  jarl(root, 'new', 'z', '--acceptance', '[test] it works');
+  jarl(root, 'set', '1', 'in-progress', 'go', '--worker', 'w1');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 't', '--saw', 'ok', '--by', 'w1');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 't', '--saw', 'ok', '--by', 'r');
   jarl(root, 'review', '1', 'approve', '--by', 'r', FINDINGS);
   jarl(root, 'set', '1', 'deferred', 'waits for the client');
-  jarl(root, 'set', '1', 'in-progress', 'back on');
-  assert.match(refuses(root, 'set', '1', 'done', 'x'), /no --ran\/--saw evidence row recorded since it was moved → in-progress/);
-  jarl(root, 'evidence', '1', '--line', '1', '--ran', 't2', '--saw', 'ok');
+  jarl(root, 'set', '1', 'in-progress', 'back on', '--worker', 'w1');
+  assert.match(refuses(root, 'set', '1', 'done', 'x'), /rows count since it was moved → in-progress\): line 1 \[test\] unproved/);
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 't2', '--saw', 'ok', '--by', 'w1');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 't2', '--saw', 'ok', '--by', 'r');
   assert.match(refuses(root, 'set', '1', 'done', 'x'), /no approving review/);
   jarl(root, 'review', '1', 'approve', '--by', 'r', `${FINDINGS} again`);
   assert.equal(jarl(root, 'set', '1', 'done', 'x'), '1 → done');
@@ -136,9 +143,7 @@ test('done: an issue the journal does not know (a hand-made file) needs a row in
   const f = readdirSync(dir).find((x) => x.startsWith('1-'));
   writeFileSync(join(dir, f.replace('1-', '2-')), readFileSync(join(dir, f), 'utf8').replace('# 1 ·', '# 2 ·').replace(/## Evidence\n/, '## Evidence\nold proof\n'));
   appendFileSync(join(root, '.jarl', 'log.md'), '- 2026-01-01 00:00 · 2 review approve · legacy approve\n');
-  assert.match(refuses(root, 'set', '2', 'done', 'legacy'), /2 has no --ran\/--saw evidence row — a free-text note alone/);
-  const f2 = join(dir, readdirSync(dir).find((x) => x.startsWith('2-')));
-  writeFileSync(f2, readFileSync(f2, 'utf8').replace('old proof', 'old proof\n- **ran:** npm test · **saw:** pass'));
+  // A read line needs an approve and no row, so the hand-made file closes on the approve its log holds.
   assert.equal(jarl(root, 'set', '2', 'done', 'legacy'), '2 → done');
   jarl(root, 'evidence', '1', '--line', '1', '--ran', 'x', '--saw', 'y');
   appendFileSync(join(root, '.jarl', 'log.md'), '- 2026-01-01 00:00 · 1 review approve · by w (self) · hand-written\n');

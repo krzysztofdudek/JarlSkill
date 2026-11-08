@@ -267,7 +267,7 @@ test('resume, status and review name the owner\'s tick as the step before done w
   produce(root);
   jarl(root, 'evidence', '1', '--line', '1', '--ran', 'render the cut', '--saw', 'renders/cut.txt written');
   const reply = jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
-  assert.match(reply, /next: the owner ticks acceptance line 2 with tick, once he has looked, then jarl\.mjs set 1 done "<why>" once the worker's Proof rows are recorded/);
+  assert.match(reply, /next: the owner ticks acceptance line 2 with tick, once he has looked, then jarl\.mjs set 1 done "<why>" once every line has what its method asks/);
   assert.doesNotMatch(reply, /jarl\.mjs tick|--by owner/, 'the reviewer is not the owner: no command of his tick is printed to him');
   assert.match(jarl(root, 'resume'), /^ {2}→ approved, and it carries no code, so no merge waits — next the owner ticks acceptance line 2 with tick, once he has looked, then set it done$/m);
   assert.match(jarl(root, 'status'), /^in flight 1 · approved, and it carries no code, so no merge waits — next the owner ticks acceptance line 2 with tick, once he has looked, then set it done$/m);

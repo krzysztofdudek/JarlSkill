@@ -616,7 +616,7 @@ function rowsLostNote(issue, was, now) {
   const after = new Set(acceptanceLines({ sections: { acceptance: String(now ?? '') } }).map(lineDigest));
   const named = new Set(evidenceTable(issue.sections.evidence).rows.filter((r) => !r.retracted).flatMap((r) => r.lines));
   const lost = [...before].filter((d) => !after.has(d) && named.has(d)).length;
-  return lost ? `note: ${issue.id} holds ${lost === 1 ? 'a row' : 'rows'} naming ${lost} acceptance line${lost === 1 ? '' : 's'} this change rewrote or removed: a row counts only for the text it named, so the new text needs its own proof: ${lineRowForm(issue.id)}` : null;
+  return lost ? `note: ${issue.id} holds rows naming ${lost} acceptance line${lost === 1 ? '' : 's'} this change rewrote or removed: a row counts only for the text it named, so the new text needs its own proof: ${lineRowForm(issue.id)}` : null;
 }
 // The note a change that grew a leased issue's scope prints, naming each line it grew by.
 function grewNote(issue, grew) {
@@ -677,10 +677,12 @@ export function cmdBody(root, rawId, flags, dry = false) {
   if (flags.why !== undefined) section('Why', 'why', grow('Why', bodyText(flags.why)));
   let grew = [];
   let rewrote = false;
+  let acceptanceNow = '';
   if (flags.acceptance !== undefined) {
     const heading = acceptanceHeading(issue, profile);
     const now = acceptanceText(append ? [...itemsOf(held(heading.toLowerCase())), ...[].concat(flags.acceptance)] : flags.acceptance);
     rewrote = String(held('acceptance')).trim() !== String(now).trim();
+    acceptanceNow = now;
     text = setSection(text, heading, now);
     grew = grownLines(profile, issue, held('acceptance'), now);
     lines.push(bodyLine(issue.id, 'acceptance', held('acceptance'), now, by, grew));
@@ -692,7 +694,7 @@ export function cmdBody(root, rawId, flags, dry = false) {
   // Said on the command line only: a rewritten What, Why or Acceptance that names issues nothing orders with this one.
   // A scope grown after the lease is said with the lines it grew by; a library caller reads them as grew.
   // A row keeps the numbers of the acceptance lines it named: a rewritten acceptance says so where rows name any.
-  const rowsNote = rewrote ? rowsLostNote(issue, held('acceptance'), issue.sections.acceptance ?? '') : null;
+  const rowsNote = rewrote ? rowsLostNote(issue, held('acceptance'), acceptanceNow) : null;
   const note = flags.caller === 'cli' ? [...(grew.length ? [grewNote(issue, grew)] : []), ...(rowsNote ? [rowsNote] : []), ...(['what', 'why', 'acceptance'].some((k) => named.includes(k)) ? unorderedNotes(root, profile, issue.id) : [])] : [];
   return { id: issue.id, set: named, ...(grew.length ? { grew } : {}), ...(note.length ? { note: note.join('\n') } : {}) };
 }

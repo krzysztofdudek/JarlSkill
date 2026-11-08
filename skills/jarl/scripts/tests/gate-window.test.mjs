@@ -20,13 +20,16 @@ const approve = (root, id) => jarl(root, 'review', String(id), 'approve', '--by'
 const gate = (root, id) => L.gateState(root, String(id));
 
 test('an issue closed, deferred and closed again is refused for the missing row after the reopen, and passes with one', () => {
-  const root = loop(2);
-  row(root, 2); approve(root, 2); jarl(root, 'set', '2', 'done');
+  const root = loop(1);
+  jarl(root, 'new', 'issue 2', '--acceptance', '[test] it works');
+  const rows = (saw) => { row(root, 2, saw); for (const by of ['w1', 'rev2']) jarl(root, 'evidence', '2', '--line', '1', '--ran', 'npm test', '--saw', saw, '--by', by); };
+  jarl(root, 'set', '2', 'in-progress', 'go', '--worker', 'w1');
+  rows('pass'); approve(root, 2); jarl(root, 'set', '2', 'done');
   jarl(root, 'set', '2', 'deferred', 'waits for the owner');
   approve(root, 2);
   const said = refuses(root, 'set', '2', 'done');
-  assert.match(said, /no --ran\/--saw evidence row recorded since it was moved → deferred/);
-  row(root, 2, 'pass again');
+  assert.match(said, /rows count since it was moved → deferred\): line 1 \[test\] unproved/);
+  rows('pass again');
   jarl(root, 'set', '2', 'done');
   assert.match(jarl(root, 'show', '2'), /Status:\*\* done/);
 });
@@ -122,7 +125,7 @@ test('a new commit on the branch after a pause spends the rows and the approve; 
   resume(root);
   commit('more');
   assert.deepEqual(fresh(), [0, false]);
-  assert.match(refuses(root, 'set', '1', 'done'), /no --ran\/--saw evidence row recorded since it was moved → in-progress/);
+  assert.match(refuses(root, 'set', '1', 'done'), /no approving review/);
   row(root, 1, 'pass on the new tip');
   jarl(root, 'review', '1', 'approve', '--by', 'rev2', 'read the new commit, nothing found');
   assert.deepEqual(fresh(), [1, true]);
@@ -183,7 +186,7 @@ test('a tip line is written by evidence, review and merged, right after their ow
   const raw = readFileSync(join(root, '.jarl', 'log.md'), 'utf8').split('\n');
   const lines = raw.map((l) => l.replace(/^- \S+ \S+(?: key \S+)?(?: tip)? · /, ''));
   const after = (re) => lines[lines.findIndex((l) => re.test(l)) + 1];
-  assert.equal(after(/^1 evidence row · /), `1 tip ${tip}`);
+  assert.equal(after(/^1 evidence row(?: \(line [0-9a-f]+\))? · /), `1 tip ${tip}`);
   assert.equal(after(/^1 review approve · /), `1 tip ${tip}`);
   for (const l of raw.filter((x) => / · 1 tip /.test(x))) assert.match(l, /^- \S+ \S+(?: key \S+)? tip · 1 tip [0-9a-f]+$/, 'every tip line carries the mark');
   assert.match(refuses(root, 'log', `1 tip ${tip}`), /reads as a tip line/);
@@ -194,8 +197,8 @@ test('verify names the tip mark on a line that is no tip line, and the reader re
   assert.equal(run(root, ['verify']).status, 0, 'tip lines that carry the mark are placed');
   const log = join(root, '.jarl', 'log.md');
   const lines = readFileSync(log, 'utf8').trimEnd().split('\n');
-  const at = lines.findIndex((l) => / · 1 evidence row · npm test$/.test(l));
-  lines[at] = lines[at].replace(/ · 1 evidence row · /, ' tip · 1 evidence row · ');
+  const at = lines.findIndex((l) => / · 1 evidence row(?: \(line [0-9a-f]+\))? · npm test$/.test(l));
+  lines[at] = lines[at].replace(/ · 1 evidence row/, ' tip · 1 evidence row');
   writeFileSync(log, `${lines.join('\n')}\n- 2026-11-08 12:00 tip · a note with the tip mark\n`);
   assert.deepEqual(fresh(), [1, true], 'the row with the mark is read as the row it is');
   const verified = run(root, ['verify']);
@@ -252,7 +255,7 @@ test('a tip line without the tip mark, written by the pinned frozen log command 
     assert.equal(oldJarl(root, 'log', {}, [`001 tip ${tip}`]).ok, true);
     const lines = readFileSync(join(root, '.jarl', 'log.md'), 'utf8').trim().split('\n').slice(-4);
     const stamps = lines.map((l) => /^- (\S+ \S+) · /.exec(l)?.[1]);
-    assert.match(lines[0], / · 001 evidence row · npm test$/);
+    assert.match(lines[0], / · 001 evidence row(?: \(line [0-9a-f]+\))? · npm test$/);
     assert.match(lines[2], / · 001 review approve · /);
     if (stamps[0] !== stamps[1] || stamps[2] !== stamps[3]) { if (attempt < 3) continue; assert.fail(`a minute turned between a line and its tip on every try: ${lines.join(' / ')}`); }
     assert.deepEqual([lines[1], lines[3]], [`- ${stamps[1]} · 001 tip ${tip}`, `- ${stamps[3]} · 001 tip ${tip}`], 'each line of the tip text right after its line, under its stamp, without the mark');
