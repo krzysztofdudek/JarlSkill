@@ -143,9 +143,9 @@ test('retract tick-<n> takes back the owner\'s tick of one line, given by mistak
   assert.match(refuses(root, 'tick', '1', '2', '--by', 'owner'), /is ticked already, by owner at .*; a tick given by mistake is taken back with jarl\.mjs retract 1 tick-2 "<why>" --by "<the-owner-himself>"/);
   const before = logText(root);
   for (const [args, why] of [
-    [['retract', '1', 'tick-2', 'a mistake'], /^retract of a tick needs --by owner.*\njarl\.mjs retract "<id>" "<review-n-or-note-n>" "<why>" --by "<the-owner-himself>"\n$/s],
-    [['retract', '1', 'tick-2', 'a mistake', '--by', 'jarl'], /^only the owner takes back his tick of an owner line \(got "jarl"\), as only he ticks it\njarl\.mjs retract "<id>" "<review-n-or-note-n>" "<why>" --by "<the-owner-himself>"\n$/],
-    [['retract', '1', 'tick-1', 'a mistake', '--by', 'owner'], /^acceptance line 1 of 1 is not marked as one only the owner ticks — the lines whose tick counts: 2\njarl\.mjs retract "<id>" "<review-n-or-note-n>" "<why>" --by "<who>"\n$/],
+    [['retract', '1', 'tick-2', 'a mistake'], /^retract of a tick needs --by owner.*\njarl\.mjs retract "<id>" "<tick-n>" "<why>" --by "<the-owner-himself>"\n$/s],
+    [['retract', '1', 'tick-2', 'a mistake', '--by', 'jarl'], /^only the owner takes back his tick of an owner line \(got "jarl"\), as only he ticks it\njarl\.mjs retract "<id>" "<tick-n>" "<why>" --by "<the-owner-himself>"\n$/],
+    [['retract', '1', 'tick-1', 'a mistake', '--by', 'owner'], /^acceptance line 1 of 1 is not marked as one only the owner ticks — the lines whose tick counts: 2\njarl\.mjs retract "<id>" "<tick-n>" "<why>" --by "<the-owner-himself>"\n$/],
     [['retract', '1', 'tick-0', 'a mistake', '--by', 'owner'], /retract takes the owner's tick of an acceptance line as tick-<n>, n its number counted from 1 \(got "tick-0"\)/],
     [['retract', '2', 'tick-1', 'a mistake', '--by', 'owner'], /acceptance line 1 of 2 is not marked as one only the owner ticks — no owner line of 2 has a tick that counts/],
     [['retract', '1', 'tick-x', 'a mistake', '--by', 'owner'], /retract takes review \(the newest approve\) or the number of an evidence row, note-<n> for a note, or tick-<n> for the owner's tick of acceptance line n, got "tick-x"/],
@@ -175,7 +175,36 @@ test('retract tick-<n> takes back the owner\'s tick of one line, given by mistak
   }
   jarl(root, 'tick', '1', '2', '--by', 'owner');
   jarl(root, 'set', '1', 'done', 'finished');
-  assert.match(refuses(root, 'retract', '1', 'tick-2', 'too late', '--by', 'owner'), /^1 is done: a tick it was closed on is taken back once it is open again\n/);
+  const closed = refuses(root, 'retract', '1', 'tick-2', 'too late', '--by', 'owner');
+  assert.match(closed, /^1 is done: opening it again spends every tick it was closed on; a tick he gives after that is taken back while the issue is open\n/);
+  assert.match(closed, /\njarl\.mjs set 1 "<status>" "<why>"\njarl\.mjs retract "<id>" "<tick-n>" "<why>" --by "<the-owner-himself>"\n$/, 'the step to reopen, then the form of the take-back');
+  // Opening it again spends the tick, as the refusal says: no tick is left to take back.
+  jarl(root, 'set', '1', 'in-progress', 'looking again');
+  assert.match(refuses(root, 'retract', '1', 'tick-2', 'too late', '--by', 'owner'), /^acceptance line 2 of 1 has no tick that counts: his tick of .* was spent when the work was sent back or started again/);
+});
+
+test('every refusal of a take-back of a tick ends with the form that names tick-<n> and the owner as its author', () => {
+  const root = signOffLoop();
+  produce(root);
+  proveAndApprove(root);
+  jarl(root, 'tick', '1', '2', '--by', 'owner');
+  const form = '\njarl\\.mjs retract "<id>" "<tick-n>" "<why>" --by "<the-owner-himself>"\\n$';
+  for (const [args, reason] of [
+    [['retract', '1', 'tick-2', 'a mistake'], /needs --by owner/],
+    [['retract', '1', 'tick-2', 'a mistake', '--by', 'jarl'], /only the owner takes back/],
+    [['retract', '1', 'tick-2', '--by', 'owner'], /requires its text/],
+    [['retract', '9', 'tick-2', 'a mistake', '--by', 'owner'], /no such issue: 9/],
+    [['retract', '1', 'tick-0', 'a mistake', '--by', 'owner'], /as tick-<n>/],
+    [['retract', '1', 'tick-1', 'a mistake', '--by', 'owner'], /is not marked as one only the owner ticks/],
+    [['retract', '1', 'tick-7', 'a mistake', '--by', 'owner'], /is not marked as one only the owner ticks/],
+  ]) {
+    const said = refuses(root, ...args);
+    assert.match(said, reason, args.join(' '));
+    assert.match(said, new RegExp(`${form}`), `${args.join(' ')}: the last line is the form that names tick-<n>`);
+    assert.doesNotMatch(said, /review-n-or-note-n/, args.join(' '));
+  }
+  jarl(root, 'retract', '1', 'tick-2', 'a mistake', '--by', 'owner');
+  assert.match(refuses(root, 'retract', '1', 'tick-2', 'again', '--by', 'owner'), new RegExp(`has no tick that counts[^\\n]*${form}`, 's'));
 });
 
 test('retract tick-<n> in a loop with no owner line is refused and raises nothing', () => {

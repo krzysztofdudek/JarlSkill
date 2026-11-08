@@ -852,9 +852,12 @@ function formOf(c, dashes) {
   const names = argumentNames(c.cmd);
   const rows = c.cmd === 'evidence' || c.cmd === 'merged' ? Math.max(...['ran', 'saw'].map((r) => c.flags.filter(([k]) => k === r).length)) : 0;
   const needs = formNeeds(c.cmd, new Set([...c.flags.map(([k]) => k), ...(rows ? ['ran', 'saw'] : [])]));
+  // A take-back of the owner's tick (the entry reads tick-...) has its own form: the entry is tick-<n>, the author the owner.
+  const tick = c.cmd === 'retract' && /^tick-/.test(String(c.args[1] ?? ''));
   const args = [];
   for (let i = 0; i < Math.min(needs.most, Math.max(needs.args, Math.min(c.args.length, names.length))); i += 1) {
     const v = c.args[i];
+    if (tick && i === 1) { args.push(hole('<tick-n>')); continue; }
     // A placeholder the shape put in stands, but the generic one, where the argument has its own.
     if (isPlaceholder(v) && v.trim() !== '<value>') args.push(v.trim());
     else if (c.cmd === 'field' && i === 1 && typeof v === 'string' && v.trim()) args.push(v.trim());
@@ -872,10 +875,10 @@ function formOf(c, dashes) {
     else if (rows && (k === 'ran' || k === 'saw')) { if (!seen.has('rows')) for (let n = 0; n < rows; n += 1) flags.push('--ran', valueHole(c.cmd, 'ran'), '--saw', valueHole(c.cmd, 'saw')); seen.add('rows'); }
     else if (k.startsWith('<')) flags.push(k, ...(typeof v === 'string' ? [hole('<value>')] : []));
     else if (v === true || flagsOf(c.cmd)[k] === 'bool') flags.push(`--${k}`);
-    else flags.push(`--${k}`, isPlaceholder(v) && v.trim() !== '<value>' ? v.trim() : valueHole(c.cmd, k));
+    else flags.push(`--${k}`, isPlaceholder(v) && v.trim() !== '<value>' ? v.trim() : tick && k === 'by' ? hole('<the-owner-himself>') : valueHole(c.cmd, k));
   }
   // Each flag the form needs that the call did not give, with the placeholder of its value.
-  flags.push(...needs.flags.flatMap((k) => [`--${k}`, valueHole(c.cmd, k)]));
+  flags.push(...needs.flags.flatMap((k) => [`--${k}`, tick && k === 'by' ? hole('<the-owner-himself>') : valueHole(c.cmd, k)]));
   return dashes ? ['jarl.mjs', c.cmd, ...flags, '--', ...args] : ['jarl.mjs', c.cmd, ...args, ...flags];
 }
 // The one way a refusal reaches whoever made the call: its reason, then its ready part, the last line (see lib/base.mjs,
