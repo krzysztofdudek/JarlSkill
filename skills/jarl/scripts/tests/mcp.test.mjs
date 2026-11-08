@@ -171,12 +171,12 @@ test('smoke: initialize, tools/list, status and a writing command on a temporary
 
     const opened = await s.call('jarl_init', { goal: 'make the export command handle every fixture', root });
     assert.equal(opened.isError, false, opened.content[0].text);
-    const filed = await s.call('jarl_new', { title: '--odd title', kind: 'bug', prio: '1', acceptance: ['one', '--two'], root, json: true });
+    const filed = await s.call('jarl_new', { title: '--odd title', kind: 'bug', prio: '1', acceptance: ['[read] one', '[read] --two'], root, json: true });
     assert.equal(filed.isError, false, filed.content[0].text);
     assert.equal(JSON.parse(filed.content[0].text).id, '1');
     const issue = readFileSync(join(root, '.jarl', 'issues', readdirSync(join(root, '.jarl', 'issues'))[0]), 'utf8');
     assert.match(issue, /^# 1 · --odd title/);
-    assert.match(issue, /- one\n- --two/);
+    assert.match(issue, /- \[read\] one\n- \[read\] --two/);
     assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /filed 1/);
 
     const status = await s.call('jarl_status', { root });
@@ -189,16 +189,17 @@ test('smoke: initialize, tools/list, status and a writing command on a temporary
     // A refusal is the CLI's exit 1: isError, with the text it would print, and nothing written.
     const refused = await s.call('jarl_set', { ids: '1', status: 'done', root });
     assert.equal(refused.isError, true);
-    assert.match(refused.content[0].text, /no evidence yet/);
+    assert.match(refused.content[0].text, /no approving review/);
     assert.match((await s.call('jarl_show', { id: '1', root })).content[0].text, /\*\*Status:\*\* open/);
 
     // The CLI's stderr notes come back as a second block.
-    await s.call('jarl_evidence', { ids: '1', ran: 'npm test', saw: 'ok', root });
+    await s.call('jarl_evidence', { ids: '1', ran: 'npm test', saw: 'ok', line: '1', root });
     await s.call('jarl_review', { ids: '1', verdict: 'approve', text: FINDINGS, by: 'jarl', root });
+    await s.call('jarl_merged', { ids: '1', sha: 'abc1234', ci: 'pending', root });
     const done = await s.call('jarl_set', { ids: '1', status: 'done', text: 'finished', root });
     assert.equal(done.isError, false, done.content[0].text);
     assert.match(done.content[0].text, /1 → done/);
-    assert.match(done.content[1]?.text || '', /^note: 1 /, 'two acceptance lines, one evidence row: the note the CLI prints on stderr');
+    assert.match(done.content[1]?.text || '', /^note: 1 /, 'a merge whose CI is pending: the note the CLI prints on stderr');
 
     // An invalid field is a protocol error, not a tool result.
     const bad = await s.request('tools/call', { name: 'jarl_set', arguments: { ids: '1', nope: true } });
@@ -369,8 +370,8 @@ test('with json: true, the answer is exactly one text block holding the JSON, wh
   assert.equal(named._meta, undefined);
 
   // A command that notes something on stderr (set's evidence note) still comes back as one block, the note in _meta.
-  mcp.callTool('jarl_new', { title: 't', root: a });
-  mcp.callTool('jarl_evidence', { ids: '1', ran: 'npm test', saw: 'ok', root: a });
+  mcp.callTool('jarl_new', { title: 't', acceptance: ['[read] x'], root: a });
+  mcp.callTool('jarl_merged', { ids: '1', sha: 'abc1234', ci: 'pending', root: a });
   mcp.callTool('jarl_review', { ids: '1', verdict: 'approve', text: FINDINGS, by: 'jarl', root: a });
   const withNote = mcp.callTool('jarl_set', { ids: '1', status: 'done', text: 'finished', root: a, json: true });
   assert.equal(withNote.isError, false, withNote.content[0].text);
@@ -493,10 +494,10 @@ test('a value of the wrong type is refused with a message naming the field and t
 
 test('jarl_field with add adds to the section the call names, and without it replaces that section', () => {
   const root = loopDir('jarl-mcp-append-');
-  mcp.callTool('jarl_new', { title: 'one', acceptance: ['first line'], root });
+  mcp.callTool('jarl_new', { title: 'one', acceptance: ['[read] first line'], root });
   const acceptanceOf = () => JSON.parse(mcp.callTool('jarl_show', { id: '1', json: true, root }).content[0].text).sections.acceptance.trim();
-  mcp.callTool('jarl_field', { ids: '1', name: 'Acceptance', value: 'second line', add: true, root });
-  assert.equal(acceptanceOf(), '- first line\n- second line');
-  mcp.callTool('jarl_field', { ids: '1', name: 'Acceptance', value: 'third line', root });
-  assert.equal(acceptanceOf(), 'third line', 'left out, add is false and the section is replaced');
+  mcp.callTool('jarl_field', { ids: '1', name: 'Acceptance', value: '[read] second line', add: true, root });
+  assert.equal(acceptanceOf(), '- [read] first line\n- [read] second line');
+  mcp.callTool('jarl_field', { ids: '1', name: 'Acceptance', value: '[read] third line', root });
+  assert.equal(acceptanceOf(), '[read] third line', 'left out, add is false and the section is replaced');
 });

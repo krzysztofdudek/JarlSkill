@@ -62,7 +62,7 @@ test('brief <id> is the worker\'s: the issue as show prints it, the rules that r
   assert.match(text, /\n- jarl:worker-only-the-issue [^\n]*\n7 ruling\(s\) in force in the loop: jarl\.mjs decisions --live\n/);
   assert.doesNotMatch(text, /Frigg asks|Reviewers run|Coordinators report|An ended rule|after a takeover/);
   assert.match(text, /\n## The role\nreferences\/worker\.md, section "The worker's brief", in the jarl skill's directory/);
-  assert.match(text, /\n## Recording the result\n- proof, one row per check: jarl\.mjs evidence 1 --ran "<command>" --saw "<what-it-printed>" --by "<who>"\n- the changelog entry, for a change someone sees: jarl\.mjs field 1 Changelog "<changelog-entry>" --add --by "<who>"$/);
+  assert.match(text, /\n## Recording the result\n- proof, one row per check: jarl\.mjs evidence 1 --ran "<command>" --saw "<what-it-printed>" --line "<line-number>" --by "<who>"\n- the changelog entry, for a change someone sees: jarl\.mjs field 1 Changelog "<changelog-entry>" --add --by "<who>"$/);
   // The worker of an issue in no slice gets no slice's rule, and the rule of a tag reaches it.
   assert.deepEqual(slugs(json(root, 'brief', '3')), ['loop-rule', 'ui-workers', 'jarl:worker-only-the-issue']);
   assert.deepEqual(slugs(json(root, 'brief', '2')), ['loop-rule', 'frigg-only', 'jarl:worker-only-the-issue']);
@@ -86,13 +86,13 @@ test('brief <id> --role reviewer carries the rules of the reviewer, of the round
   assert.equal(o.rounds.length, 1);
   assert.match(o.rounds[0].text, /^round 1 \(count 1 of 3\) · findings 2 · the count is off by one$/);
   assert.deepEqual(o.findings.map((f) => [f.by, f.kind, f.text]), [['rev1', 'fresh', finding]], 'the finding is whole');
-  assert.deepEqual(o.proof, [{ n: 1, ran: 'npm test', saw: 'tests 4, pass 3, fail 1' }, { n: 2, ran: 'npm test', saw: 'tests 4, pass 4, fail 0' }]);
+  assert.deepEqual(o.proof, [{ n: 1, ran: 'npm test', saw: 'tests 4, pass 3, fail 1', lines: ['1'] }, { n: 2, ran: 'npm test', saw: 'tests 4, pass 4, fail 0', lines: ['1'] }]);
   const text = jarl(root, 'brief', '3', '--role', 'reviewer');
   assert.match(text, /^The reviewer's brief for issue 3/);
   assert.match(text, /\n## Rounds so far \(1\)\n- \d{4}-\d{2}-\d{2} \d{2}:\d{2} · round 1 \(count 1 of 3\) · findings 2 · the count is off by one\n/);
   assert.match(text, /\n## Findings of the reviews that sent it back \(1\)\n- \d{4}-\d{2}-\d{2} · by rev1 \(fresh\) — Important: the count is off by one on the last page\.\n {2}Minor: the name/);
   assert.ok(text.includes('end of the finding.'));
-  assert.match(text, /\n## Proof rows \(2\)\n- \[1\] ran: npm test · saw: tests 4, pass 3, fail 1\n- \[2\] ran: npm test · saw: tests 4, pass 4, fail 0\n/);
+  assert.match(text, /\n## Proof rows \(2\)\n- \[1\] ran \(line 1\): npm test · saw: tests 4, pass 3, fail 1\n- \[2\] ran \(line 1\): npm test · saw: tests 4, pass 4, fail 0\n/);
   assert.match(text, /\n## Recording the result\n- the verdict when a finding lies outside the issue, one --outside each \(filed as a new issue, never a reason for changes\): jarl\.mjs review 3 "<verdict>" "<findings-with-a-severity>" --by "<reviewer>" --model "<model-id>" --outside "<finding-outside-the-issue>"\n- the verdict, as the last step: jarl\.mjs review 3 "<verdict>" "<findings-with-a-severity>" --by "<reviewer>" --model "<model-id>"$/);
   // A done issue keeps its reviewer's brief; its worker's says it starts once reopened.
   jarl(root, 'review', '3', 'approve', '--by', 'rev2', FINDINGS);

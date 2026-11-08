@@ -380,7 +380,7 @@ test('the free log refuses a line that reads as state, names the command that wr
     assert.throws(() => R.appendLog(root, line), new RegExp(`jarl\\.mjs ${command}`), line);
   }
   assert.equal(logLinesOf(root).length, before, 'nothing was written');
-  assert.match(refuses(root, 'set', '2', 'done'), /no evidence yet|has no --ran\/--saw/);
+  assert.match(refuses(root, 'set', '2', 'done'), /no approving review/);
 });
 
 test('the free log still writes a note about the loop or about an issue, and a composer\'s plain lines', () => {

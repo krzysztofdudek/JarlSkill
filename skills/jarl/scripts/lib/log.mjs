@@ -187,7 +187,7 @@ function bodyEvent(rest) {
   const whole = parts[0] === 'acceptance' ? WHOLE_WAS.exec(parts[1] ?? '') : null;
   let was = parts[0] === 'acceptance' && parts[1] === 'was (none)' ? '' : null;
   if (whole) { try { was = JSON.parse(whole[1]); } catch { was = null; } }
-  return { type: 'body', part: parts[0], grew: grew ? grew[1].split(', ').map(Number) : null, by, was };
+  return { type: 'body', part: parts[0], grew: grew ? grew[1].split(', ').map(Number) : null, by, ...(parts[0] === 'acceptance' ? { was } : {}) };
 }
 // One log line as an event, without its place in the file. `from` is the status the issue was in before the line.
 export function parseEvent(id, text, profile, from = null) {

@@ -78,7 +78,7 @@ test('close --batch files at most ten items, widest reach first, closes nothing,
   jarl(root, {}, 'decide', 'uncounted', 'No count given.', '--area', 'tx');
   jarl(root, {}, 'decide', 'plain', 'Not about an area.');
   jarl(root, {}, 'decide', 'old', 'Replaced before anyone saw it.', '--area', 'ty', '--reach', '99');
-  jarl(root, {}, 'decide', 'new', 'The replacement.', '--acceptance', '[read] it works', '--area', 'ty', '--reach', '99', '--supersedes', 'old');
+  jarl(root, {}, 'decide', 'new', 'The replacement.', '--area', 'ty', '--reach', '99', '--supersedes', 'old');
   const first = json(root, {}, 'close', '--batch');
   assert.equal(first.closed, false);
   assert.ok(existsSync(join(root, '.jarl')));
