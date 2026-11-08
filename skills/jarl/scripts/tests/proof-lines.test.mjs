@@ -333,6 +333,15 @@ test('an approve in a loop that names lines says which acceptance lines no row n
   assert.doesNotMatch(run(root, ['review', '1', 'approve', '--by', 'rev2', 'read the diff again, nothing found']).stderr, /no Proof row names/);
 });
 
+test('in a loop that names lines, the note after an approve of an issue with no row since the gate\'s window opened prints the row that names the lines', () => {
+  const root = formatOne(2);
+  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'pass 3', '--line', '1,2,3');
+  const said = run(root, ['review', '2', 'approve', '--by', 'rev1', 'read the diff, nothing found']);
+  assert.equal(said.status, 0, said.stderr);
+  assert.match(said.stderr, /002 holds no Proof row since the gate's window opened — done needs the worker's row, and the merger's check does not stand in for it: jarl\.mjs evidence 002 --ran "<command>" --saw "<what-it-printed>" --line "<line-number>";/);
+  assert.ok(printed(said.stderr).every((c) => !c.startsWith('jarl.mjs evidence') || c.includes('--line')), said.stderr);
+});
+
 test('a split that moves or renumbers an acceptance line a row of the parent names says so, as field does, and one that leaves those numbers as they were says nothing', () => {
   const root = formatOne(4);
   jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'pass 3', '--line', '1,3');
