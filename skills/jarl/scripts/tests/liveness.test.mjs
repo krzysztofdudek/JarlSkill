@@ -308,6 +308,22 @@ test('a lease that holds a live approve and waits for its merge is not idle for 
   });
 });
 
+test('an approved lease with no code has no merge to wait for: it is idle past the threshold, as a lease with no approve is', () => {
+  const root = at(0, () => {
+    const r = makeLoop({ prefix: 'jarl-live-nocode-', dotGit: false });
+    R.newIssue(r, 'a note', { acceptance: 'it reads well' });
+    R.setStatus(r, '001', 'in-progress', 'w', { worker: 'w1' });
+    R.addEvidence(r, '001', undefined, { ran: 'proofread', saw: 'reads well' });
+    R.review(r, '001', 'approve', FINDINGS, { by: 'rev' });
+    return r;
+  });
+  at(36, () => {
+    assert.deepEqual(R.statusData(root).stale.map((x) => x.id), ['001']);
+    assert.equal(R.statusData(root).liveness.leases.find((x) => x.id === '001').idle, true);
+    assert.match(resumeText(root), /^- 001 .*STALE: idle 36m/m);
+  });
+});
+
 // The command line, on the real clock: the lease's log lines are dated 45 minutes back, as a worker stuck on a prompt
 // leaves them, and resume, status and next --as name it at the default threshold.
 test('resume, status and next --as show a lease idle for 45 minutes at the default threshold', () => {
