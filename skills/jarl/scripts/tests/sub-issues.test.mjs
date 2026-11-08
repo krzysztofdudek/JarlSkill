@@ -164,6 +164,41 @@ test('next offers only issues with no open sub-issues, and an After on a parent 
   assert.ok(!ready().includes('5'), 'an issue that waits on the parent waits until the parent itself is closed');
 });
 
+test('a parent an open question names is held by it as well as waiting on its sub-issues, and shows under both groups', () => {
+  const root = exportLoop();
+  jarl(root, 'field', '2,3', 'Parent', '1');
+  jarl(root, 'ask', 'which export format comes first?', '--kind', 'stuck', '--issue', '1');
+  const parent = json(root, 'next', '--all').filter((r) => r.id === '1');
+  assert.deepEqual(parent.map((r) => r.group).sort(), ['held-by-question', 'waiting-sub']);
+  assert.deepEqual(parent.find((r) => r.group === 'held-by-question').questions.map(String), ['1']);
+  const text = jarl(root, 'next', '--all');
+  assert.match(text, /^Waiting on their sub-issues \(1\)\n1  P2  the export  \(sub-issues 2, 3 not closed\)$/m);
+  assert.match(text, /^Held by an open question \(3\)\n1  P2  the export  \(question a-1\)\n2  P2  the csv writer  \(question a-1\)\n3  P2  the json writer  \(question a-1\)$/m);
+  assert.ok(!json(root, 'next').some((r) => r.id === '1'), 'a parent held by a question is not offered');
+});
+
+test('a question on a parent holds every issue under it, a parent in the middle of a tree too: it shows under both groups, and each issue under the question is held by it', () => {
+  const root = loop();
+  jarl(root, 'new', 'the export', '--acceptance', 'it writes csv');
+  jarl(root, 'new', 'the writers', '--acceptance', 'both writers work');
+  jarl(root, 'new', 'the csv writer', '--files', 'src/csv.mjs');
+  jarl(root, 'new', 'the json writer', '--files', 'src/json.mjs');
+  jarl(root, 'field', '2', 'Parent', '1');
+  jarl(root, 'field', '3,4', 'Parent', '2');
+  jarl(root, 'ask', 'which writer comes first?', '--kind', 'stuck', '--issue', '1');
+  const rows = (id) => json(root, 'next', '--all').filter((r) => r.id === id);
+  assert.deepEqual(rows('1').map((r) => r.group).sort(), ['held-by-question', 'waiting-sub']);
+  assert.deepEqual(rows('2').map((r) => r.group).sort(), ['held-by-question', 'waiting-sub']);
+  assert.deepEqual(rows('3').map((r) => r.group), ['held-by-question']);
+  assert.deepEqual(rows('4').map((r) => r.group), ['held-by-question']);
+  for (const id of ['1', '2', '3', '4']) assert.deepEqual(rows(id).find((r) => r.group === 'held-by-question').questions.map(String), ['1']);
+  const text = jarl(root, 'next', '--all');
+  assert.match(text, /^Waiting on their sub-issues \(2\)\n1  P2  the export  \(sub-issues 2 not closed\)\n2  P2  the writers  \(sub-issues 3, 4 not closed\)$/m);
+  assert.match(text, /^Held by an open question \(4\)\n1  P2  the export  \(question a-1\)\n2  P2  the writers  \(question a-1\)\n3  P2  the csv writer  \(question a-1\)\n4  P2  the json writer  \(question a-1\)$/m);
+  assert.deepEqual(json(root, 'next').map((r) => r.id), [], 'nothing under the question is offered');
+  assert.match(jarl(root, 'next', '--as', 'owner'), /^- a-1\b.* · holds up 2, 3, 4$/m, 'the parent in the middle of the tree is counted');
+});
+
 test('a split moves each acceptance line to a named issue or keeps it on the parent, the issues become its sub-issues, and the log says what each held', () => {
   const root = exportLoop();
   const out = json(root, 'split', '1', '--line', '1=2', '--line', '2=3', '--line', '3=1', '--by', 'odin');

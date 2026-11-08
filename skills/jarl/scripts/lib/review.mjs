@@ -11,7 +11,7 @@ import { needFormat, tipLinesOf } from './repositories.mjs';
 import { FORMAT_LINES, formatState, loadProfile, reviewerRule } from './profile.mjs';
 import { carriesCode, gateOf, readLoop, reviewerKind, unclearedText } from './loop.mjs';
 import { SEVERITIES, limitNote, loggedFinding, modelLines, modelRefusalOf, modelReviewForm, modelValue, reviewModelNotes, spellingNote } from './models.mjs';
-import { EVIDENCE_HOW, cmdNew, issuesFor, nextIssueNumber, nothingWritten, oneOrMany, proofSince, refiled } from './commands.mjs';
+import { EVIDENCE_HOW, cmdNew, issuesFor, nextIssueNumbers, nothingWritten, oneOrMany, proofSince, refiled } from './commands.mjs';
 import { REVIEW_MIN_WORDS, needSaid, raisedText, retractedBy, struck } from './evidence.mjs';
 import { closeForm, linesText, ownerLineWait, unprovedLines } from './owner-lines.mjs';
 import { resetCaches } from './tips.mjs';
@@ -95,8 +95,8 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
   // of them writes nothing at all; then each is filed, as a new issue, and the verdict's entry names the issue it became
   // under the findings of the issue itself. They are filed in the order given, each taking the next number, so each is
   // checked with the number it would take: one the loop's record format cannot hold refuses the review before the first.
-  const first = outside.length ? nextIssueNumber(root) : 0;
-  outside.forEach((o, k) => fileOutside(root, issues, by, o, flags, withModel, true, first + k));
+  const numbers = outside.length ? nextIssueNumbers(root, outside.length) : [];
+  outside.forEach((o, k) => fileOutside(root, issues, by, o, flags, withModel, true, numbers[k]));
   // One verdict given on several issues is one review: each of its lines carries the same batch id. The id is a line of
   // record format 3, which a reader of the formats below would count as several reviews, so the first one raises the loop
   // once every check has passed; a loop whose format a composer keeps records the verdict without it.

@@ -1655,7 +1655,7 @@ function doneGateIn(root, loop, issue, base, withoutRows, status) {
   const { profile } = loop;
   const g = gateOf(loop, issue.id);
   // In a loop that names lines, the row asked for names the lines it proves.
-  const how = namesLines(loop, issue) ? jarlLine('evidence', issue.id, '--ran', '<command>', '--saw', '<what-it-printed>', '--line', '<line-number>') : EVIDENCE_HOW(issue.id);
+  const how = evidenceFormOf(loop, issue);
   // A merge that records its check does not stand in for the worker's row: said to whoever is refused, the merger included.
   const mergeLine = lastMerge(loop.eventsById.get(issue.id) || []);
   const gap = mergeLine && mergeLine.check ? ` — the merge records a check (${mergeLine.check}), but that check is the merger's and does not stand in for the worker's row: the row is the worker's proof of the work, so the worker records what the work's own check ran and printed, and nobody types the merge check into Proof in its place` : '';
@@ -1841,6 +1841,8 @@ function doneNote(issue, root, left = null) {
 // The Proof rows an issue holds inside the done gate's window: the --ran/--saw rows the worker wrote, not retracted.
 function proofSince(g, issue) { return g.tracked ? g.rowsSince : evidenceRows(issue).length; }
 const EVIDENCE_HOW = (id) => jarlLine('evidence', id, '--ran', '<command>', '--saw', '<what-it-printed>');
+// The form of the row an issue asks for: in a loop that names lines, the form names the acceptance line the row proves.
+const evidenceFormOf = (loop, issue) => (namesLines(loop, issue) ? jarlLine('evidence', issue.id, '--ran', '<command>', '--saw', '<what-it-printed>', '--line', '<line-number>') : EVIDENCE_HOW(issue.id));
 
 // What a merge refused for want of its --sha says next: the head of the branch the issue's lease records, or, where no
 // branch is recorded or it has no single head here, that there is none; the sha that landed is the caller's to give, so
@@ -1920,7 +1922,7 @@ export function cmdMerged(root, rawIds, flags) {
     const loop = readLoop(jarlDir(root));
     for (const issue of issues) {
       const g = gateOf(loop, issue.id);
-      if (proofSince(g, issue) === 0) notes.push(`NO PROOF FROM THE WORKER — ${issue.id} holds no Proof row since ${g.tracked ? sinceText(g.anchor) : 'it was filed'}; ${checkText ? 'the merge check is recorded in the merge record and is not proof' : 'the merge records no check, and a merge is not proof'}, so done refuses until the worker records it:${EVIDENCE_HOW(issue.id)}`);
+      if (proofSince(g, issue) === 0) notes.push(`NO PROOF FROM THE WORKER — ${issue.id} holds no Proof row since ${g.tracked ? sinceText(g.anchor) : 'it was filed'}; ${checkText ? 'the merge check is recorded in the merge record and is not proof' : 'the merge records no check, and a merge is not proof'}, so done refuses until the worker records it:${evidenceFormOf(loop, issue)}`);
     }
   }
   if (sha && loadProfile(root).doneGate.approve !== 'none') {

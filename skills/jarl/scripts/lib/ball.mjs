@@ -415,9 +415,15 @@ export function ballRows(root, flags = {}) {
   const active = loop.issues.filter((i) => profile.active(i.status));
   const dependents = new Map();
   for (const i of active) for (const a of waitingOn(i, loop.byId, profile)) dependents.set(a, [...(dependents.get(a) || []), i.id]);
-  // A question holds every issue it holds back: the one it names, and on a parent each issue under it.
+  // A question holds every issue it holds back: the one it names, and on a parent each issue under it. A parent that the
+  // question names and that waits on its sub-issues is shown as held, but the answer does not free it, so it is not counted.
+  const waitingParents = new Set(ctx.next.filter((x) => x.group === 'waiting-sub').map((x) => String(x.id)));
+  const namedIssue = new Map(loop.asks.map((a) => [String(a.id), a.issue === null || a.issue === undefined ? null : String(a.issue)]));
   const heldByQuestion = new Map();
-  for (const r of ctx.next.filter((x) => x.group === 'held-by-question')) for (const q of r.questions) heldByQuestion.set(q, [...(heldByQuestion.get(q) || []), r.id]);
+  for (const r of ctx.next.filter((x) => x.group === 'held-by-question')) for (const q of r.questions) {
+    if (String(r.id) === namedIssue.get(String(q)) && waitingParents.has(String(r.id))) continue;
+    heldByQuestion.set(q, [...(heldByQuestion.get(q) || []), r.id]);
+  }
   const upOf = (ids) => [...new Set(ids.flatMap((id) => dependents.get(id) || []))];
   for (const r of rows) {
     if (r.ids) r.holdsUp = upOf(r.ids);

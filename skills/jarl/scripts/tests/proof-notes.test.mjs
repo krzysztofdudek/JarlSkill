@@ -128,6 +128,18 @@ test('the NO PROOF note says what the merge recorded: a check, or none', () => {
   assert.doesNotMatch(bare.stderr + red.stderr, /merge check is recorded/);
 });
 
+test('the NO PROOF note of merged prints the evidence form with --line in a loop that names lines, and without it in a loop that does not', () => {
+  const root = approved(2);
+  const plain = run(root, ['merged', '1', '--sha', 'abc1234', '--keep']);
+  assert.match(plain.stderr, /NO PROOF FROM THE WORKER — 1 /);
+  assert.match(plain.stderr, /evidence 1 --ran "<command>" --saw "<what-it-printed>"/);
+  assert.doesNotMatch(plain.stderr, /evidence 1 --ran "<command>" --saw "<what-it-printed>" --line/);
+  jarl(root, 'evidence', '2', '--ran', 'npm test', '--saw', 'pass', '--line', '1');
+  const lined = run(root, ['merged', '1', '--sha', 'abc1234', '--keep']);
+  assert.match(lined.stderr, /NO PROOF FROM THE WORKER — 1 /);
+  assert.match(lined.stderr, /evidence 1 --ran "<command>" --saw "<what-it-printed>" --line "<line-number>"/);
+});
+
 test('a merge line from before the Merge check field existed is read for the field: no disagreement is printed when the header lacks it', () => {
   const root = approved();
   jarl(root, 'merged', '1', '--sha', 'abc1234', '--ran', 'npm test', '--saw', '3 pass', '--keep');

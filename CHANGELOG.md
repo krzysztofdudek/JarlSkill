@@ -133,6 +133,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The advice given to a worker who takes a task over no longer lists the folder on another machine where the earlier worker had its working copy.
 - The resume now shows each open question to the owner on one line, even one written over several lines. The question itself is kept as it was asked.
 - The resume also shows each choice waiting for the owner's approval on one line, even one written over several lines. The text itself is kept as it was written.
+- The status now shows each item to ratify on one line, even one written over several lines. The question itself is kept as it was asked.
 
 ## [6.2.0] - 2026-10-19
 

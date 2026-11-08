@@ -402,7 +402,7 @@ export function renderStatus(o, profile = DEFAULT_PROFILE) {
     ...(o.closedNoCheck && o.closedNoCheck.length ? [closedNoCheckText(o.closedNoCheck)] : []),
     ...(profile.with('closes-record').some((st) => countOf(o, st)) ? [gateLine(profile, o.reviews, 'done reviewed by')] : []),
     ...(o.uncommitted ? [`${o.uncommitted} loop file(s) not committed — commit .jarl/ in the loop's repository`] : []),
-    ...o.toRatify.map((a) => `ratify a-${a.id}${a.issue ? ` (issue ${a.issue})` : ''} · ${a.question}`),
+    ...o.toRatify.map((a) => `ratify a-${a.id}${a.issue ? ` (issue ${a.issue})` : ''} · ${fieldText(a.question)}`),
     ...(o.waitingIds.some((id) => !onSubs.has(id)) ? [`waiting (After not settled): ${o.waitingIds.filter((id) => !onSubs.has(id)).join(', ')}`] : []),
     ...(o.waitingOnSubs ? [`waiting on their sub-issues: ${o.waitingOnSubs.map((w) => `${w.id} (${w.subs.join(', ')})`).join(', ')}`] : []),
     ...(o.parents || []).map((p) => `parent ${p.id} · sub-issues ${subsText(p.subs)} · ${p.next}`),

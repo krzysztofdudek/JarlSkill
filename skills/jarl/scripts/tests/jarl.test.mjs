@@ -1238,6 +1238,16 @@ test('import --adopt links the issues that already name the finding, once, witho
   assert.match(jarl(root, 'import', file, '--source', 'r'), /filed 0 · already filed 4/);
 });
 
+test('status prints an item to ratify on one row, however many lines its question has, as resume does', () => {
+  const root = repo();
+  jarl(root, 'init', 'goal');
+  jarl(root, 'new', 'limit raised');
+  jarl(root, 'set', '1', 'in-progress', 'w');
+  jarl(root, 'ask', 'raised the prompt limit\nto 96000 under the mandate', '--kind', 'ratify', '--issue', '1');
+  assert.match(jarl(root, 'status'), /^ratify a-1 \(issue 1\) · raised the prompt limit to 96000 under the mandate$/m);
+  assert.match(jarl(root, 'resume'), /^- a-1 \(issue 1\) · raised the prompt limit to 96000 under the mandate$/m);
+});
+
 test('ask --kind ratify blocks nothing, is listed in status and the handoff, and its answer lands on the issue', () => {
   const root = repo();
   jarl(root, 'init', 'goal');

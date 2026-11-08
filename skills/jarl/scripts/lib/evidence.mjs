@@ -404,9 +404,13 @@ export function nextRows(root, flags = {}) {
     const { after, subs } = waitsOf(i, byId, profile);
     const base = { id: i.id, title: i.title, priority: i.priority, ...(i.files.length ? {} : { noFiles: true }), ...(i.shared ? { shared: i.shared } : {}) };
     if (after.length) { out.push({ ...base, group: 'waiting-after', after, waitsOn: [] }); continue; }
-    if (subs.length) { out.push({ ...base, group: 'waiting-sub', subs, after: [], waitsOn: [] }); continue; }
+    // A parent waits on its open sub-issues, and a question holds it as well: a question on an issue holds every issue under
+    // it, so a parent in the middle of a tree is held by a question above it too. Each is a row of its own, the held row
+    // first and the waiting row last, so the parent shows under both groups.
     const questions = questionsOn(i);
-    if (questions.length) { out.push({ ...base, group: 'held-by-question', questions, waitsOn: [], after: [] }); continue; }
+    if (questions.length) out.push({ ...base, group: 'held-by-question', questions, waitsOn: [], after: [] });
+    if (subs.length) out.push({ ...base, group: 'waiting-sub', subs, after: [], waitsOn: [] });
+    if (subs.length || questions.length) continue;
     // A promise or a wait is kept by who holds it, not worked on by a worker: never offered, and it takes no file.
     if (profile.keptKind(i.kind)) {
       out.push({ ...base, group: i.kind, waitsOn: [], after: [], ...(i.kind === PROMISE_KIND ? { by: fieldText(i.fields['found by']) || null } : { person: fieldText(i.fields.person) || null, checkWhen: fieldText(i.fields['check when']) || null }) });
