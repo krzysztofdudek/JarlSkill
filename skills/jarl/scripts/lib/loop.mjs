@@ -462,6 +462,8 @@ export function sinceText(anchor) {
   return `it was moved → ${anchor.what}`;
 }
 
+// A commit as a tip line holds it.
+const TIP_SHA = /^[0-9a-f]{7,64}$/;
 export function gateOf(loop, id) {
   const { profile, coordinators, bots } = loop;
   const events = loop.eventsById.get(id) || [];
@@ -488,6 +490,7 @@ export function gateOf(loop, id) {
   // tip shape written by itself (a note a log command with no refusal of it took, a line added later) is the tip of nothing.
   let before = null;
   let mergeTip = null;   // the tip the newest merge was recorded on
+  let mergeSha = null;   // the commit the newest merge names
   let closeTip = null;   // the tip recorded with the newest move, when that move closed the record
   const closedBy = (e) => e.type === 'move' && profile.is(e.to, 'closes-record');
   // The owner's waivers of this issue's review: the rulings waiverVoid finds nothing against. Each stands where decide
@@ -506,7 +509,7 @@ export function gateOf(loop, id) {
     }
     before = null;
     if (e.type === 'move') { closeTip = null; if (closedBy(e)) before = e; continue; }
-    if (e.type === 'merged') { before = e; mergeTip = null; continue; }
+    if (e.type === 'merged') { before = e; mergeTip = null; mergeSha = e.sha; continue; }
     if (e.type === 'verdict') {
       // The kind is the one recorded, or the one today's names give, whichever is stricter: a name the goal
       // declares as a coordinator after its approve was logged as fresh does not stay fresh, and a name that
@@ -615,6 +618,10 @@ export function gateOf(loop, id) {
     waived: live && live.kind === 'waived' ? live.ruling : null,
     live,
     workers: self,
+    // The tip a close of the issue records, read when asked: the one the gate judges it on now, or, where neither the
+    // branch nor its merge's tip line is there, the commit the newest merge names. A closed issue's gate is read against
+    // it, so a branch of the same name made again after the close changes nothing.
+    closingTip: () => now() || (mergeSha && TIP_SHA.test(mergeSha) ? mergeSha : null),
   };
 }
 

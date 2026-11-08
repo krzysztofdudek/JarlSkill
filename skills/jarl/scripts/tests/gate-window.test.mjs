@@ -242,6 +242,25 @@ test('a done issue is judged against the tip recorded when it closed: a later co
   }
 });
 
+test('a close after a merge that deleted the branch records the tip the merge was recorded on, so a branch of the same name made again later leaves the closed gate holding', () => {
+  const { root, g, commit } = leased();
+  jarl(root, 'set', '1', 'open', 'reordered'); resume(root);
+  const tip = g('rev-parse', 'jarl/1-x').trim();
+  g('merge', '-q', '--no-ff', 'jarl/1-x', '-m', 'merge the work');
+  const sha = g('rev-parse', 'main').trim();
+  jarl(root, 'merged', '1', '--sha', sha, '--ci', 'none');
+  assert.equal(g('branch', '--list', 'jarl/1-x').trim(), '', 'the merge without --keep deleted the branch');
+  assert.equal(jarl(root, 'set', '1', 'done'), '1 → done');
+  g('branch', 'jarl/1-x', 'main');
+  commit('again');
+  L.resetCaches();
+  assert.deepEqual(JSON.parse(jarl(root, 'status', '--json')).closedGate, [], 'with the branch made again on other work, the closed issue\'s gate holds');
+  assert.doesNotMatch(jarl(root, 'status'), /\b1\b.*(no --ran|spent)/, 'status flags nothing');
+  const log = readFileSync(join(root, '.jarl', 'log.md'), 'utf8').trim().split('\n');
+  const close = log.findLastIndex((l) => / · 1 → done$/.test(l));
+  assert.match(log[close + 1] ?? '(no line after the close)', new RegExp(` · 1 tip ${tip}$`), 'the close is followed by the tip the merge was recorded on');
+});
+
 // A copy of a real loop (the directory that holds its .jarl), named by JARL_LIVE_LOOP: the gate is replayed over it, and
 // every close that rests on a row from before a reopen is listed.
 const LIVE = process.env.JARL_LIVE_LOOP || '';

@@ -1091,10 +1091,13 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   const spelling = caller === 'cli' && model !== undefined ? spellingNote(readLoop(jarlDir(root)), model) : null;
   // The line goes first: a write that stops between the two leaves the journal, the record, ahead of the files, which the
   // views report, and never a file ahead of the record.
-  // A move that closes the record is followed by the tip of the issue's branch, the tip the close was judged on, so the
-  // gate of the closed issue is read against it whatever the branch does after.
+  // A move that closes the record is followed by the tip the close was judged on: the tip of the issue's branch, or, where
+  // the branch is gone (a merge's cleanup deletes it), the tip its merge was recorded on, else the commit the merge names.
+  // The gate of the closed issue is read against it whatever the branch does after, a branch of the same name made again included.
   const closes = profile.is(status, 'closes-record');
-  appendLogLines(root, issues.flatMap((issue) => [`${issue.id} → ${status}${reason ? ` · ${reason}` : ''}${leaseNote ? ` · ${leaseNote}` : ''}`, ...(closes ? tipLines(root, issue) : [])]), since);
+  const judged = closes ? readLoop(jarlDir(root)) : null;
+  const closeTip = (issue) => { const tip = gateOf(judged, issue.id).closingTip(); return tip ? [`${issue.id} tip ${tip}`] : []; };
+  appendLogLines(root, issues.flatMap((issue) => [`${issue.id} → ${status}${reason ? ` · ${reason}` : ''}${leaseNote ? ` · ${leaseNote}` : ''}`, ...(closes ? closeTip(issue) : [])]), since);
   for (const w of writes) writeAtomic(w.issue.file, w.edit(readText(w.issue.file)));
   // Said on the command line only, and only in a loop that declares model lines: a lease with no model (once per call).
   const leaseNoModel = caller === 'cli' && holds && model === undefined && modelLines(root).declared ? 'no --model on this lease — the loop declares its models, and a model that is not recorded can never be recovered' : null;
