@@ -23,7 +23,7 @@ import {
   renderProfile, renderResume, renderStatus, renderImport, renderSources, renderList, recordTypeLog, recordRuleLog,
   runDecisionsDriver, mergeFlags, describeNew, renderNewReply, issueView, workerEvidence, attachmentStates, evidenceTable, renderBranches, renderDecide, renderDecisions,
   cmdExtend, needLoop, cmdNextAs, renderNextAs, askerSection, renderBrief, cmdTick, cmdRetractTick, atLeaseText, issueLinesAtLease, withWriter, editorOf, needFormat, formatState, readProfileFile, FORMAT_LINES, cmdRenumber, cmdSplit,
-  needKnownModels, cmdUse, renderUse, discoverLoop,
+  needKnownModels, cmdUse, renderUse, discoverLoop, needRecordFormat,
 } from './jarl-lib.mjs';
 import { writeAreaDecision, writeRuleRatification } from './yg-edge.mjs';
 import { USAGE } from './jarl-usage.mjs';
@@ -849,6 +849,7 @@ export function dispatch(root, commandName, rest, flags) {
 const NEEDS_NO_LOOP = ['init'];
 function dispatchCall(root, commandName, rest, flags) {
   const cmd = commandName;
+  needRecordFormat(root);
   if (Object.hasOwn(REPLACED_COMMANDS, cmd)) replacedRefusal(cmd, rest);
   // A placeholder a refusal printed, pasted unfilled, is never recorded: every value the call takes is checked for one.
   // The reason names the placeholders a value holds, never the value, which may hold a line break or anything else.

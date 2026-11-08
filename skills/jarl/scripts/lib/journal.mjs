@@ -26,6 +26,25 @@ function parseStamp(s) {
   return m ? Date.parse(`${m[1]}T${m[2]}:00Z`) : null;
 }
 function goalPath(dir) { return join(dir, GOAL_FILE); }
+// The format of the record: one machine line of goal.md, written by init and by nothing else. A loop that holds exactly this
+// line is read; a loop with another number, with no such line or with two is refused before anything else is read. There
+// is one format, this one, and one way to it from the format before: an agent follows CONVERSION_FILE, in the skill.
+export const RECORD_FORMAT = 4;
+export const FORMAT_MARK = `Format: ${RECORD_FORMAT}`;
+export const CONVERSION_FILE = 'references/converting-from-6-2.md';
+const FORMAT_LINE_RE = /^Format:(.*)$/;
+const formatLinesOf = (text) => text.split(/\r?\n/).filter((l) => FORMAT_LINE_RE.test(l));
+// Whether a text holds a line a reader of the goal takes for the format line.
+export const holdsFormatLine = (text) => formatLinesOf(String(text ?? '')).length > 0;
+// The refusal of a loop in any other format. A place with no live loop has no format to refuse.
+export function needRecordFormat(root) {
+  const path = goalPath(jarlDir(root));
+  if (!existsSync(path)) return;
+  const lines = formatLinesOf(readText(path));
+  if (lines.length === 1 && lines[0].trimEnd() === FORMAT_MARK) return;
+  const held = lines.length === 0 ? `holds no "Format:" line` : lines.length > 1 ? `holds ${lines.length} "Format:" lines` : `says "${lines[0].trim()}"`;
+  refuse(`this loop's ${GOAL_FILE} ${held}, and this Jarl reads a loop whose ${GOAL_FILE} holds the one line "${FORMAT_MARK}" — nothing was read or written; an agent converts a loop of the format before by following ${CONVERSION_FILE}`, { external: `follow ${CONVERSION_FILE}, in the directory of the skill` });
+}
 function decisionsPath(dir) { return join(dir, DECISIONS_FILE); }
 function asksPath(dir) { return join(dir, ASKS_FILE); }
 export function appendLog(root, event) {

@@ -38,8 +38,8 @@ import * as L from './jarl-lib.mjs';
 export const RECORD_API = 'jarl-record/3';
 export const RECORD_APIS = Object.freeze(['jarl-record/1', 'jarl-record/2', RECORD_API]);
 
-const read = (fn) => { L.resetCaches(); return fn(); };
-const write = (root, fn) => { L.resetCaches(); return L.withLock(root, fn); };
+const read = (root, fn) => { L.resetCaches(); L.needRecordFormat(root); return fn(); };
+const write = (root, fn) => { L.resetCaches(); L.needRecordFormat(root); return L.withLock(root, fn); };
 
 // ---- the record format ----------------------------------------------------------------------------
 
@@ -57,7 +57,7 @@ export const RECORD_FORMATS = L.RECORD_FORMATS;
 export const FORMAT_LINES = L.FORMAT_LINES;
 // { format, reads, raises, off }: the loop's format, the formats this library reads, whether a write may raise the loop
 // (false under an external scheduler) and the names of the lines of FORMAT_LINES that are off in it.
-export function recordFormat(root) { return read(() => L.formatState(L.loadProfile(root))); }
+export function recordFormat(root) { return read(root, () => L.formatState(L.loadProfile(root))); }
 
 // ---- the loop: where it is, opening it, reading it ----------------------------------------------
 
@@ -71,15 +71,15 @@ export function initLoop(root, goal, opts = {}) { return write(root, () => L.cmd
 // The issues as the record has them: each one's status, lease (Branch, Worker, Model, Since), Merged and CI are what the
 // loop's journal says, which is what the operations below write beside every header field. A header edited by hand does
 // not change them; parseIssue reads a text alone and so reads the header.
-export function loadIssues(root) { return read(() => L.loadIssues(root)); }
+export function loadIssues(root) { return read(root, () => L.loadIssues(root)); }
 // The issue a number names, or null. It throws, naming the files, when two issue files carry that number: the journal
 // cannot tell their lines apart, so neither is the issue the number names. Two such issues each carry `shared`, the files
 // of their number, in loadIssues; no other issue has that key.
-export function findIssue(root, id) { return read(() => L.findIssue(root, id)); }
+export function findIssue(root, id) { return read(root, () => L.findIssue(root, id)); }
 // opts { live }: live leaves out the superseded rulings. A ruling made under one that does not hold carries why, as
 // underNotInForce.
-export function decisions(root, opts = {}) { return read(() => L.cmdDecisions(root, opts)); }
-export function loadAsks(root) { return read(() => L.loadAsks(root)); }
+export function decisions(root, opts = {}) { return read(root, () => L.cmdDecisions(root, opts)); }
+export function loadAsks(root) { return read(root, () => L.loadAsks(root)); }
 
 // ---- an issue as text -----------------------------------------------------------------------------
 
@@ -107,7 +107,7 @@ export const STATUS_FLAGS = L.STATUS_FLAGS;
 export const DEFAULT_PROFILE = L.DEFAULT_PROFILE;
 export function validateProfile(json, where) { return L.validateProfile(json, where); }
 export function readProfileFile(file) { return L.readProfileFile(file); }
-export function loadProfile(root) { return L.loadProfile(root); }
+export function loadProfile(root) { L.needRecordFormat(root); return L.loadProfile(root); }
 export function describeProfile(profile) { return L.describeProfile(profile); }
 
 // ---- one writer at a time -------------------------------------------------------------------------
@@ -212,10 +212,10 @@ export function appendLog(root, event) {
 // status --json: opts { 'stale-hours', by }. It carries `disagreements` (one entry per header that disagrees with the
 // journal, with the line that says how to settle it) when there are any, and resumeData the same; and `recordFormat`,
 // what recordFormat returns.
-export function statusData(root, opts = {}) { return read(() => L.cmdStatus(root, opts)); }
+export function statusData(root, opts = {}) { return read(root, () => L.cmdStatus(root, opts)); }
 // resume --json: opts { log, ready, ci }; ci asks gh for the CI of the tips, as the command line's --gh does, and gh is
 // taken as the same key.
-export function resumeData(root, opts = {}) { return read(() => L.cmdResume(root, opts)); }
+export function resumeData(root, opts = {}) { return read(root, () => L.cmdResume(root, opts)); }
 // brief --json: the brief of an issue's worker (opts { role: 'worker' }, the default) or reviewer (role 'reviewer'), or,
 // with id null and opts { slice }, of that slice's coordinator. It carries the role, the roles and moments the rules were
 // matched for and the rules that match (each { slug, scope, until, by, under, builtin, source, text }, and underNotInForce
@@ -225,4 +225,4 @@ export function resumeData(root, opts = {}) { return read(() => L.cmdResume(root
 // each with a placeholder for every value) and notes; an issue's brief also the issue as show prints it (show, without
 // the lines that name where things are on this machine), its rounds, the findings of the reviews that sent it back and its
 // proof rows ({ n, ran, saw }, and lines on a row that names acceptance lines), and a slice's its issues in play. Every part is whole: nothing is cut.
-export function briefData(root, id, opts = {}) { return read(() => L.cmdBrief(root, id, opts)); }
+export function briefData(root, id, opts = {}) { return read(root, () => L.cmdBrief(root, id, opts)); }

@@ -6,7 +6,7 @@ import { hole, jarlLine, need, refuse, slugify } from './base.mjs';
 import { issuesDir, jarlDir, today } from './where.mjs';
 import { readText, renameRetry, writeAtomic } from './files.mjs';
 import { loadProfile, profilePath, readProfileFile } from './profile.mjs';
-import { appendLog, decisionsPath, goalPath, logPath } from './journal.mjs';
+import { FORMAT_MARK, appendLog, decisionsPath, goalPath, holdsFormatLine, logPath } from './journal.mjs';
 import { JARL_GITIGNORE, JARL_GITIGNORE_COMMITTED, ensureLoopMerge, outOfGit } from './loop-git.mjs';
 import { FIELD_RE, loadIssues, parseIssue } from './issues.mjs';
 import { declaredChecks } from './metrics.mjs';
@@ -19,6 +19,7 @@ export function cmdInit(root, goal, flags = {}) {
   need(flags.committed === undefined || flags.committed === true, '--committed takes no value — put the goal first: init "<goal>" --committed', () => ({ rename: '--committed', to: hole('<no-flag-here>') }));
   need(flags.permanent === undefined || flags.permanent === true, '--permanent takes no value — put the goal first: init "<goal>" --permanent', () => ({ rename: '--permanent', to: hole('<no-flag-here>') }));
   need(goal, 'init requires "<goal>"', () => ({ arg: 0, value: '<goal>' }));
+  need(!holdsFormatLine(goal), `the goal holds a line that starts with "Format:", which reads as the record's format line, the one line of goal.md Jarl alone writes — say it another way`, () => ({ arg: 0, value: hole('<goal>') }));
   need(!hasLiveLoop(root), '.jarl/ already exists here with a live loop — resume it, or archive it first', ['jarl.mjs', 'archive', '<slug>']);
   // The profile is read and checked before anything is written: a bad one leaves no half-opened loop behind.
   const prof = flags.profile !== undefined ? readProfileFile(flags.profile) : null;
@@ -37,7 +38,7 @@ export function cmdInit(root, goal, flags = {}) {
   mkdirSync(issuesDir(root), { recursive: true });
   if (!archived) writeAtomic(join(jarlDir(root), '.gitignore'), committed ? JARL_GITIGNORE_COMMITTED : JARL_GITIGNORE);
   if (!archived && permanent) writeAtomic(join(jarlDir(root), '.permanent'), PERMANENT_MARKER);
-  writeAtomic(goalPath(jarlDir(root)), `# Goal\n\n${goal.trim()}\n\n## Assumptions\n\n## Rules that apply here\n`);
+  writeAtomic(goalPath(jarlDir(root)), `# Goal\n\n${goal.trim()}\n\n${FORMAT_MARK}\n\n## Assumptions\n\n## Rules that apply here\n`);
   writeAtomic(decisionsPath(jarlDir(root)), '# Decisions\n');
   writeAtomic(logPath(jarlDir(root)), '# Log\n\n');
   if (prof) writeAtomic(profilePath(root), `${JSON.stringify(prof.json, null, 2)}\n`);
