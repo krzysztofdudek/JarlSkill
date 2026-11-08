@@ -238,10 +238,12 @@ test('a closed issue is read against the line rule again: a line a counted row n
   jarl(root, 'retract', '1', '2', 'it ran on another branch', '--by', 'rev1');
   jarl(root, 'retract', '2', '1', 'it ran on another branch', '--by', 'rev1');
   const flagged = closedGate(root);
-  assert.deepEqual(flagged, [
-    { id: '001', reason: 'no counted row names acceptance line 2 now, and the close counted one and gave no reason for it', repair: 'jarl.mjs evidence 001 --ran "<command>" --saw "<what-it-printed>" --line "<line-number>"' },
-    { id: '002', reason: 'no counted row names acceptance line 1 now, and the close counted one and gave no reason for it', repair: 'jarl.mjs evidence 002 --ran "<command>" --saw "<what-it-printed>" --line "<line-number>"' },
+  // The repair is read from its start: it carries the call's --root, written as each platform writes it.
+  assert.deepEqual(flagged.map(({ id, reason }) => ({ id, reason })), [
+    { id: '001', reason: 'no counted row names acceptance line 2 now, and the close counted one and gave no reason for it' },
+    { id: '002', reason: 'no counted row names acceptance line 1 now, and the close counted one and gave no reason for it' },
   ]);
+  flagged.forEach((f) => assert.match(f.repair, new RegExp(`^jarl\\.mjs evidence ${f.id} --ran "<command>" --saw "<what-it-printed>" --line "<line-number>"`)));
   const report = jarl(root, 'report');
   assert.match(report, /^## Closed, gate does not hold \(2\)$/m);
   assert.match(report, /^- 001 export 1 \(\w+\)$/m, 'the line lost after the close is not one the close left without a row');
