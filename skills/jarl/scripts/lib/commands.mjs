@@ -14,7 +14,7 @@ import { appendLog, appendLogLines, decisionsPath, goalPath, logPath } from './j
 import { JARL_GITIGNORE, JARL_GITIGNORE_COMMITTED, ensureLoopMerge, outOfGit } from './loop-git.mjs';
 import { HANDOVER_SEGMENT, journalById, mergeCheckText } from './log.mjs';
 import { FIELD_RE, PROPOSED, RENDERED_FIELDS, acceptanceHeading, acceptanceLineCount, acceptanceLines, acceptanceText, bodyText, changelogText, evidenceNotes, evidenceParts, evidenceRows, evidenceTable, fieldValue, findIssue, issueNamed, loadIssues, mergedOf, namedPairs, needNoFieldTags, noteText, parentCycle, parseIssue, placeEvidence, removeFields, removeFirstField, renderIssue, setField, setSection, unattributedRefusal, waitCycle } from './issues.mjs';
-import { baseOf, branchTip, commitRepoNames, fileKeysOf, isGitRepo, issueRepoPaths, issueRepoSlots, issueRepos, mainCheckoutOf, needFormat, needFormatHeld, needRightCheckouts, repoFromInput, repoLabel, repoList, reposNamed, tipLines, whyNotDeletable, worktreeState, worktreesOf } from './repositories.mjs';
+import { baseOf, branchTip, commitRepoNames, fileKeysOf, isGitRepo, issueRepoPaths, issueRepoSlots, issueRepos, mainCheckoutOf, needFormat, needFormatHeld, needRightCheckouts, repoFromInput, repoLabel, repoList, reposNamed, tipLinesOf, whyNotDeletable, worktreeState, worktreesOf } from './repositories.mjs';
 import { FIELD_NAMES, activeSlices, carriesCode, unmergedCode, unmergedText, gateOf, isSliceTag, leaseConflictOf, needOneSlice, readLoop, sinceText, sliceOf, unclearedText, unorderedNamings, unorderedText } from './loop.mjs';
 import { declaredChecks, lastMerge } from './metrics.mjs';
 import { modelLines, modelRefusalOf, modelReviewForm, modelValue, modelOfferAtLease, spellingNote } from './models.mjs';
@@ -1106,8 +1106,8 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   // closed issue is read against it whatever the branch does after, a branch of the same name made again included.
   const closes = profile.is(status, 'closes-record');
   const judged = closes ? readLoop(jarlDir(root)) : null;
-  const closeTip = (issue) => { const tip = gateOf(judged, issue.id).closingTip(); return tip ? [`${issue.id} tip ${tip}`] : []; };
-  appendLogLines(root, issues.flatMap((issue) => [`${issue.id} → ${status}${reason ? ` · ${reason}` : ''}${leaseNote ? ` · ${leaseNote}` : ''}`, ...(closes ? closeTip(issue) : [])]), since);
+  const closeTip = closes ? tipLinesOf(root, issues, (issue) => gateOf(judged, issue.id).closingTip()) : () => [];
+  appendLogLines(root, issues.flatMap((issue) => [`${issue.id} → ${status}${reason ? ` · ${reason}` : ''}${leaseNote ? ` · ${leaseNote}` : ''}`, ...closeTip(issue)]), since);
   // The lines that remember the offer are written for every caller; its text is the command line's answer alone.
   const offered = holds && leaseNote ? modelOfferAtLease(root, model) : null;
   const modelOffer = caller === 'cli' ? offered : null;
@@ -1708,7 +1708,8 @@ export function cmdMerged(root, rawIds, flags) {
   if (pickedRepo) commitRepoNames(root, [pickedRepo]);
   // A merge line is followed by the tip of the branch that was merged: the cleanup may delete the branch, and the gate
   // then reads the tip from here.
-  appendLogLines(root, issues.flatMap((issue) => (sha ? [`${issue.id} merged ${sha}${named}`, ...tipLines(root, issue)] : [`${issue.id} CI ${ci}`])));
+  const tips = sha ? tipLinesOf(root, issues) : () => [];
+  appendLogLines(root, issues.flatMap((issue) => (sha ? [`${issue.id} merged ${sha}${named}`, ...tips(issue)] : [`${issue.id} CI ${ci}`])));
   for (const issue of issues) {
     let text = readText(issue.file);
     if (sha) {

@@ -8,7 +8,7 @@ import { jarlDir, plainRelative } from './where.mjs';
 import { readText, writeAtomic } from './files.mjs';
 import { ISSUE_FILE_RE, KEY_SRC, idKey, idRe, issueForms, writtenId } from './ids.mjs';
 import { PARENT_FIELD, SLOT_NAME_RE, loadProfile } from './profile.mjs';
-import { STAMP_SRC, appendLog, headerKey, logPath, oneLine } from './journal.mjs';
+import { STAMP_SRC, TIP_MARK, appendLog, headerKey, logPath, oneLine } from './journal.mjs';
 
 // ---- review and the done gate --------------------------------------------------------------------
 
@@ -42,7 +42,8 @@ import { STAMP_SRC, appendLog, headerKey, logPath, oneLine } from './journal.mjs
 //   tip            the tip of the issue's branch when the line before it of the same issue (a row, a verdict, a merge, a
 //                  move that closes the record) was written: tip, the commit of the branch in each repository of the
 //                  issue, in order, joined by commas; the gate takes it only as the next line of the log after that line,
-//                  under its stamp, where the write that made the line puts it
+//                  under its stamp, where the write that made the line puts it. A line of the tip's text without the tip
+//                  mark before the separator, which only that write puts there, is no tip: it is read as a note
 //   ci             a CI state recorded alone: state
 //   body           a body change: part, the part changed; grew, the numbers of the lines a change of a leased issue's
 //                  acceptance grew it by (null for none); by, the author the line names (null for none)
@@ -59,7 +60,8 @@ import { STAMP_SRC, appendLog, headerKey, logPath, oneLine } from './journal.mjs
 // right after the stamp and before the writer: `- <stamp> key <key> by <writer> · <text>`. The key, not the number, says
 // which issue such a line is about: two issues that took one number in two copies of the loop keep their lines apart,
 // and an issue given another number keeps the lines written under its old one. A line with no key is read by its number.
-const LOG_LINE = new RegExp(`^- (${STAMP_SRC})(?: key (${KEY_SRC}))?(?: by ([^·\\n]+?))? · ([^\\n]*)$`);
+// A tip line carries the tip mark after the key and before the writer: `- <stamp> key <key> tip by <writer> · <text>`.
+const LOG_LINE = new RegExp(`^- (${STAMP_SRC})(?: key (${KEY_SRC}))?(?: (${TIP_MARK}))?(?: by ([^·\\n]+?))? · ([^\\n]*)$`);
 const LEADING_ID = idRe('^(?:filed )?({id})\\b');
 const RETRACT_ROW_LINE = idRe('^{id} evidence retract · row (\\d+)\\b');
 const RETRACT_NOTE_LINE = idRe('^{id} evidence retract · note (\\d+)\\b');
@@ -267,8 +269,8 @@ export function mapMergeRepos(root, fn) {
   const held = issueForms(jarlDir(root));
   const next = log.split('\n').map((l) => {
     const m = LOG_LINE.exec(l);
-    const p = m && MERGE_REPO_PART.exec(m[4]);
-    return p && held.has(idKey(p[1])) && !p[3].includes(' · ') ?`- ${m[1]}${m[2] ? ` key ${m[2]}` : ''}${m[3] ? ` by ${m[3]}` : ''} · ${p[1]} merged ${p[2]} in ${fn(p[3])}${p[4]}` : l;
+    const p = m && MERGE_REPO_PART.exec(m[5]);
+    return p && held.has(idKey(p[1])) && !p[3].includes(' · ') ?`- ${m[1]}${m[2] ? ` key ${m[2]}` : ''}${m[3] ? ` ${m[3]}` : ''}${m[4] ? ` by ${m[4]}` : ''} · ${p[1]} merged ${p[2]} in ${fn(p[3])}${p[4]}` : l;
   }).join('\n');
   if (next !== log) writeAtomic(path, next);
 }
@@ -297,12 +299,16 @@ export function loopEvents(dir, profile, skipped, keys) {
       return;
     }
     // A line names its issue as it was written; the event carries the issue's own form, so it meets its issue's id.
-    const [, at, key = null, writer = null, text] = m;
+    const [, at, key = null, mark = null, writer = null, text] = m;
     const written = LEADING_ID.exec(text)?.[1] ?? null;
     const id = written === null ? null : (key !== null && keyed.has(key) ? keyed.get(key) : writtenId(written, forms));
     // The status a move comes from is the one the same issue's lines left: by its key where the line names one.
     const thread = key ?? id;
-    const body = id === null ? { type: 'other' } : parse(written, text, lastStatus.get(thread) ?? null);
+    const parsed = id === null ? { type: 'other' } : parse(written, text, lastStatus.get(thread) ?? null);
+    // A tip counts only with the tip mark: a line of its text without it is a note, whoever wrote it.
+    const unmarked = parsed.type === 'tip' && mark === null;
+    const body = unmarked ? { type: 'other' } : parsed;
+    if (skipped && unmarked) skipped.push({ n: n + 1, text: l, reason: 'a tip line without the tip mark before the separator: only the write of a row, a verdict, a merge or a close writes a tip, so this line is the tip of nothing' });
     if (skipped && written !== null) { const why = unplaced(profile, written, text, body); if (why) skipped.push({ n: n + 1, text: l, reason: why }); }
     // A line the tool never writes with a strike-through: the reader takes it for a note, and a strike-through voids nothing.
     if (skipped && /^~~/.test(text)) skipped.push({ n: n + 1, text: l, reason: 'a struck-through line: the reader takes it for a note, and a strike-through retracts nothing (a verdict is retracted with retract <id> review, an evidence row with retract <id> <n>)' });

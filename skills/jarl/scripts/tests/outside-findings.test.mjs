@@ -158,7 +158,8 @@ test('the issue a finding outside a format-1 loop files names the reviewed issue
 });
 
 // A format-1 loop as the frozen reader of format 1 files it: its issues name the checkout `tool` beside the loop's root bare, each leased
-// on a branch of its own with one commit past the base, and a proof row.
+// on a branch of its own with one commit past the base, and a proof row the frozen reader records, with no tip line (the
+// first tip line raises a loop to format 3).
 function formatOneLeased(titles) {
   const root = makeLoop({ prefix: 'jarl-outside-tip-', via: 'cli', dotGit: false });
   const tool = join(root, 'tool');
@@ -171,7 +172,7 @@ function formatOneLeased(titles) {
     const branch = `jarl/${id}-work`;
     g('checkout', '-q', '-b', branch, 'main'); writeFileSync(join(tool, `f${k}.txt`), `${k}\n`); g('add', '-A'); g('commit', '-qm', t); g('checkout', '-q', 'main');
     assert.equal(oldJarl(root, 'set', {}, [id, 'in-progress', null, { branch, worker: `w${k}` }]).ok, true);
-    jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'tests 4, pass 4');
+    assert.equal(oldJarl(root, 'evidence', {}, [id, null, { ran: 'npm test', saw: 'tests 4, pass 4' }]).ok, true);
     return id;
   });
   return { root, g, ids };
