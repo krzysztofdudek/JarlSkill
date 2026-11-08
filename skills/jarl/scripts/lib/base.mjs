@@ -102,10 +102,11 @@ export class Refusal extends Error {
 // exactly one of them (a whole value, a list item, a line of a list held one per line, or the value part of a value
 // written in parts), so a form pasted unfilled writes nothing, and any other value written in angle brackets (<nil>,
 // <none>, <Button />) is a value, recorded as given. What the placeholder stands for is said by the reason before it: the
-// values allowed, the ids the loop holds, the word that was wrong.
+// values allowed, the ids the loop holds, the word that was wrong. One placeholder means one thing: <line> is the text of
+// an acceptance line, <line-number> its number among the issue's acceptance lines.
 export const PLACEHOLDERS = Object.freeze([
   '<id>', '<ids>', '<ids-it-waits-on>', '<another-id>', '<another-issue>', '<ids-the-loop-holds>', '<ids-low-high>', '<a-smaller-range>', '<the-id-new-prints>',
-  '<the-id-ask-prints>', '<an-issue-next-offers>', '<question>', '<a-n>', '<n>', '<n-or-note-n>', '<review-n-or-note-n>', '<tick-n>', '<line>',
+  '<the-id-ask-prints>', '<an-issue-next-offers>', '<question>', '<a-n>', '<n>', '<n-or-note-n>', '<review-n-or-note-n>', '<tick-n>', '<line>', '<line-number>',
   '<text>', '<title>', '<the-title-filed-again>', '<goal>', '<slug>', '<a-new-slug>', '<a-ruling>', '<a-ruling-in-force>', '<value>',
   '<the-whole-new-value>', '<the-whole-section>', '<a-part-of-the-description>', '<part>', '<name=value>', '<field=value>', '<line=id>',
   '<changelog-entry>', '<owner-line>', '<items>', '<an-item-with-no-leading-dash>', '<an-item-without-quotes>', '<one-quoted-text>',

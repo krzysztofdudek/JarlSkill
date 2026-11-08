@@ -563,6 +563,11 @@ function grownLines(profile, issue, was, now) {
     return !left;
   });
 }
+// The numbers of the acceptance lines an issue's rows name, not retracted, in order.
+const linesRowsName = (issue) => [...new Set(evidenceTable(issue.sections.evidence).rows.filter((r) => !r.retracted).flatMap((r) => r.lines))].sort((a, b) => a - b);
+// The note a change of an issue's acceptance prints where its rows name lines whose number may have moved (`numbers`): a row
+// keeps the number it named, so show and brief print it as it was.
+const rowNumbersNote = (id, numbers) => `note: ${id}'s evidence rows name acceptance line ${numbers.join(', ')} by number, and a row keeps the number it named: check that each still names the line it proves, and record a row with --line for a line whose number moved`;
 // The note a change that grew a leased issue's scope prints, naming each line it grew by.
 function grewNote(issue, grew) {
   return `note: ${issue.id} is leased (${issue.status}), and its scope grew after the lease: ${grew.map((g) => `line ${g.n} "${g.text}"`).join('; ')} — an issue's scope does not grow once it is leased: a new ask is a new issue, ${jarlLine('new', hole('<title>'), '--acceptance', hole('<line>'))}`;
@@ -637,8 +642,8 @@ export function cmdBody(root, rawId, flags, dry = false) {
   // Said on the command line only: a rewritten What, Why or Acceptance that names issues nothing orders with this one.
   // A scope grown after the lease is said with the lines it grew by; a library caller reads them as grew.
   // A row keeps the numbers of the acceptance lines it named: a rewritten acceptance says so where rows name any.
-  const namedByRows = rewrote ? [...new Set(evidenceTable(issue.sections.evidence).rows.filter((r) => !r.retracted).flatMap((r) => r.lines))].sort((a, b) => a - b) : [];
-  const rowsNote = namedByRows.length ? `note: ${issue.id}'s evidence rows name acceptance line ${namedByRows.join(', ')} by number, and a row keeps the number it named: check that each still names the line it proves, and record a row with --line for a line whose number moved` : null;
+  const namedByRows = rewrote ? linesRowsName(issue) : [];
+  const rowsNote = namedByRows.length ? rowNumbersNote(issue.id, namedByRows) : null;
   const note = flags.caller === 'cli' ? [...(grew.length ? [grewNote(issue, grew)] : []), ...(rowsNote ? [rowsNote] : []), ...(['what', 'why', 'acceptance'].some((k) => named.includes(k)) ? unorderedNotes(root, profile, issue.id) : [])] : [];
   return { id: issue.id, set: named, ...(grew.length ? { grew } : {}), ...(note.length ? { note: note.join('\n') } : {}) };
 }
@@ -1476,10 +1481,16 @@ export function cmdSplit(root, rawId, flags = {}) {
     writeAtomic(w.issue.file, text);
   }
   const grown = writes.filter((w) => w.grew.length);
+  // A row keeps the numbers it named: the parent's rows that name a line the split moved away, or whose number the lines
+  // taken out before it changed, are said, as field says them. A sub-issue's lines are added after its own and keep theirs.
+  const keptOrder = lines.map((_, k) => k + 1).filter((n) => idKey(placed.get(n).to.id) === idKey(parent.id));
+  const renumbered = linesRowsName(parent).filter((n) => keptOrder.indexOf(n) + 1 !== n);
+  const notes = [...grown.map((w) => grewNote(w.issue, w.grew)), ...(renumbered.length ? [rowNumbersNote(parent.id, renumbered)] : [])];
   return {
     id: parent.id, subs: subs.map((s) => s.id),
     lines: [...placed.entries()].sort((a, b) => a[0] - b[0]).map(([n, p]) => ({ line: n, to: p.to.id, kept: idKey(p.to.id) === idKey(parent.id) })),
-    ...(grown.length ? { grew: grown.map((w) => ({ id: w.issue.id, lines: w.grew })), notes: grown.map((w) => grewNote(w.issue, w.grew)) } : {}),
+    ...(grown.length ? { grew: grown.map((w) => ({ id: w.issue.id, lines: w.grew })) } : {}),
+    ...(notes.length ? { notes } : {}),
   };
 }
 
@@ -1588,7 +1599,7 @@ function doneGateIn(root, loop, issue, base, withoutRows) {
 // The refusal of an issue whose acceptance lines `left` no row names, in a loop that names them: each line, then the row
 // that names one and the close that gives the reason it goes without, apart from the move's own.
 function unprovedRefusal(issue, left) {
-  return `${issue.id} has acceptance lines no Proof row names: ${left.map((l) => `line ${l.n} "${l.text}"`).join('; ')} — this loop names the line a row proves, and a row with no --line names none; the reason a move gives is the move's, and no reason for these lines: record a row that names each, ${jarlLine('evidence', issue.id, '--ran', '<command>', '--saw', '<what-it-printed>', '--line', '<line>')}, or close it without one and give the reason apart: ${jarlLine('set', issue.id, 'done', '<why>', '--without-rows', '<why-no-row-names-the-lines>')}`;
+  return `${issue.id} has acceptance lines no Proof row names: ${left.map((l) => `line ${l.n} "${l.text}"`).join('; ')} — this loop names the line a row proves, and a row with no --line names none; the reason a move gives is the move's, and no reason for these lines: record a row that names each, ${jarlLine('evidence', issue.id, '--ran', '<command>', '--saw', '<what-it-printed>', '--line', '<line-number>')}, or close it without one and give the reason apart: ${jarlLine('set', issue.id, 'done', '<why>', '--without-rows', '<why-no-row-names-the-lines>')}`;
 }
 // Why a code issue's code as it is now is not merged (see unmergedCode), as done says it, or null.
 function unmergedRefusal(issue, g) {

@@ -129,13 +129,13 @@ commands:
                                                  --tags, --repo and --only repeat, or take a comma list
   sources [<findings.json>...] [--source <report-dir>] per report: its findings, the issues filed from them and their
                                                  status; with a findings file, the findings nobody filed too
-  evidence <ids> "<text>" | --ran "<command>" --saw "<what-it-printed>" [--line <n>] | <id> --file <path> --slot <name> [--by who]
+  evidence <ids> "<text>" | --ran "<command>" --saw "<what-it-printed>" [--line <line-number>] | <id> --file <path> --slot <name> [--by who]
                                                  append a free-text note (under ### Notes), or one checkable row per --ran/--saw
                                                  pair (repeatable; under ### Proof, after the last row);
                                                  --line names the acceptance lines each row of the call proves, 1 for
                                                  the first (repeat it, or a comma list); the first such row raises
                                                  the record format to 3, and from then on done asks of every issue a
-                                                 row that names each of its acceptance lines, or a reason;
+                                                 row that names each of its acceptance lines, or set --without-rows;
                                                  --file --slot records one attachment as a Proof row: the slot, the path
                                                  under the loop root (relative, no .., no symlink), the file's sha256 and its
                                                  size; nothing is copied. The slot is one the profile's done gate requires of
@@ -292,7 +292,7 @@ commands:
                                                  worker: a tier up, another model or a changed approach. The limit is read from the
                                                  goal at each round and the rounds are counted from the last takeover, so a changed
                                                  limit takes effect at the next round
-  tick <id> <line> --by owner                    the owner's tick of an acceptance line only he ticks, by its number among
+  tick <id> <line-number> --by owner             the owner's tick of an acceptance line only he ticks, by its number among
                                                  the issue's acceptance lines: a line written "[owner] <line> · material:
                                                  <material> · check: <what-to-check>" (new and field refuse a
                                                  line so marked that names no material or nothing to check, and its first
@@ -788,7 +788,7 @@ const ARG_HOLES = {
   ids: '<ids>', id: '<id>', title: '<title>', goal: '<goal>', files: '<findings.json>', 'import file': '<findings.json>', 'profile file': '<profile.json>',
   'retract entry': '<review-n-or-note-n>', 'retract text': '<why>', 'field name': '<part>', 'base name': '<name>', 'base branch': '<branch>',
   'set status': '<status>', 'set text': '<why>', 'review verdict': '<verdict>', 'review text': '<what-was-read-and-found>', 'round text': '<what-failed>',
-  'tick line': '<line>', 'answer id': '<question>', 'decide slug': '<slug>', 'decide text': '<a-ruling>', 'archive slug': '<slug>', 'mode mode': '<mode>',
+  'tick line': '<line-number>', 'answer id': '<question>', 'decide slug': '<slug>', 'decide text': '<a-ruling>', 'archive slug': '<slug>', 'mode mode': '<mode>',
   text: '<text>',
 };
 const FLAG_HOLES = {
@@ -801,7 +801,7 @@ const FLAG_HOLES = {
   group: '<group>', with: '<loop-root>', base: '<base-branch>', 'stale-hours': '<hours>', sha: '<sha>', ci: '<ci-state>', red: '<another-issue>',
   target: '<what-would-get-weaker>', issue: '<id>', option: '<option>', 'ask option': '<label:effect>', 'applies-to': '<selectors>', until: '<date-or-id>', to: '<jarl-or-owner>', log: '<count>',
   ready: '<count>', summary: '<text>', next: '<text>', settles: '<ids>', 'waives-review': '<ids>', quote: '<his-own-words>', under: '<a-ruling-in-force>', supersedes: '<a-ruling-in-force>',
-  rule: '<rule-id>', area: '<type>', reach: '<number-of-files>', set: '<machine-line>', line: '<line=id>', 'evidence line': '<line>', outside: '<finding-outside-the-issue>', parent: '<id>',
+  rule: '<rule-id>', area: '<type>', reach: '<number-of-files>', set: '<machine-line>', line: '<line=id>', 'evidence line': '<line-number>', outside: '<finding-outside-the-issue>', parent: '<id>',
   'without-rows': '<why-no-row-names-the-lines>',
 };
 const PART_HOLES = {

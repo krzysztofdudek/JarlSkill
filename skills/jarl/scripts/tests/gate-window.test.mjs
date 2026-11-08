@@ -189,6 +189,20 @@ test('a tip line is written by evidence, review and merged, right after their ow
   assert.match(refuses(root, 'log', `1 tip ${tip}`), /reads as a tip line/);
 });
 
+test('verify names the tip mark on a line that is no tip line, and the reader reads such a line by its text as before', () => {
+  const { root, fresh } = leased();
+  assert.equal(run(root, ['verify']).status, 0, 'tip lines that carry the mark are placed');
+  const log = join(root, '.jarl', 'log.md');
+  const lines = readFileSync(log, 'utf8').trimEnd().split('\n');
+  const at = lines.findIndex((l) => / · 1 evidence row · npm test$/.test(l));
+  lines[at] = lines[at].replace(/ · 1 evidence row · /, ' tip · 1 evidence row · ');
+  writeFileSync(log, `${lines.join('\n')}\n- 2026-11-08 12:00 tip · a note with the tip mark\n`);
+  assert.deepEqual(fresh(), [1, true], 'the row with the mark is read as the row it is');
+  const verified = run(root, ['verify']);
+  assert.equal(verified.status, 2, verified.stdout);
+  assert.equal(verified.stdout.match(/the tip mark on a line that is no tip line/g)?.length, 2, `verify names each such line: ${verified.stdout}`);
+});
+
 test('the first tip line raises a loop of record format 1 to 3, and the pinned frozen readers of format 1 and of formats 1 and 2 refuse it with their own message; this Jarl keeps the row and the approve of the unchanged tip', () => {
   const { root, g } = leased({ library: true });
   assert.deepEqual(JSON.parse(readFileSync(join(root, '.jarl', 'profile.json'), 'utf8')), { 'jarl-profile': 1, format: 3 }, 'raised by the first tip');

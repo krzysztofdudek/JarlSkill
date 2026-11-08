@@ -188,7 +188,7 @@ function need(cond, msg) { if (!cond) throw invalid(msg); }
 // and the rest are text), and a retraction asked of evidence (retract's). The refusal names that field or tool, with the
 // form of the call written there, each value a placeholder: no value given is carried into a call composed for the caller,
 // but its root and json, as given, so the form filled reaches the loop the call named.
-const FORM_VALUES = { ids: '<ids>', id: '<id>', status: '<status>', text: '<text>', verdict: '<verdict>', slug: '<slug>', title: '<title>', goal: '<goal>', name: '<name>', entry: '<n-or-note-n>', line: '<line>', mode: '<mode>', branch: '<branch>', group: '<group>', gh: true };
+const FORM_VALUES = { ids: '<ids>', id: '<id>', status: '<status>', text: '<text>', verdict: '<verdict>', slug: '<slug>', title: '<title>', goal: '<goal>', name: '<name>', entry: '<n-or-note-n>', line: '<line-number>', mode: '<mode>', branch: '<branch>', group: '<group>', gh: true };
 function needNoGoneField(cmd, fields, carried = {}) {
   const call = (tool, input) => `${toolName(tool)} ${JSON.stringify({ ...input, ...carried })}`;
   for (const name of Object.keys(fields)) {

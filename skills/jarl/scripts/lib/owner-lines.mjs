@@ -197,15 +197,15 @@ export function cmdTick(root, rawId, rawLine, flags = {}) {
   const loop = readLoop(jarlDir(root));
   const states = ownerLineStates(root, loop, issue);
   const lines = acceptanceLines(issue);
-  need(states.length, `${issue.id} has no acceptance line marked as one only the owner ticks (got line ${rawLine}) — mark one, ${OWNER_LINE_SHAPE}, among every line of the section, agreed with him`, () => ({ arg: 1, value: hole('<line>') }));
+  need(states.length, `${issue.id} has no acceptance line marked as one only the owner ticks (got line ${rawLine}) — mark one, ${OWNER_LINE_SHAPE}, among every line of the section, agreed with him`, () => ({ arg: 1, value: hole('<line-number>') }));
   const owners = `its owner lines: ${states.map((s) => s.n).join(', ')}`;
-  need(/^\d+$/.test(String(rawLine ?? '').trim()) && Number(rawLine) > 0, `tick takes the number of the acceptance line, counted from 1 (got "${rawLine}") — ${owners}`, () => ({ arg: 1, value: hole('<line>') }));
+  need(/^\d+$/.test(String(rawLine ?? '').trim()) && Number(rawLine) > 0, `tick takes the number of the acceptance line, counted from 1 (got "${rawLine}") — ${owners}`, () => ({ arg: 1, value: hole('<line-number>') }));
   const n = Number(rawLine);
-  need(n <= lines.length, `${issue.id} has ${lines.length} acceptance line${lines.length === 1 ? '' : 's'}: there is no line ${n}; ${owners}`, () => ({ arg: 1, value: hole('<line>') }));
+  need(n <= lines.length, `${issue.id} has ${lines.length} acceptance line${lines.length === 1 ? '' : 's'}: there is no line ${n}; ${owners}`, () => ({ arg: 1, value: hole('<line-number>') }));
   const s = states.find((x) => x.n === n);
   // Where the line named is no owner line, or one ticked: a placeholder for the owner lines not ticked yet.
   const open = states.filter((x) => !x.tick && !x.off).map((x) => x.n);
-  const openLine = () => ({ arg: 1, value: hole('<line>') });
+  const openLine = () => ({ arg: 1, value: hole('<line-number>') });
   need(s, `acceptance line ${n} of ${issue.id} is not marked as one only the owner ticks; ${owners}`, openLine);
   need(!loop.profile.is(issue.status, 'terminal'), `${issue.id} is ${issue.status}: nothing waits for the owner's tick until it is open again`, () => ({ first: ['jarl.mjs', 'set', issue.id, hole('<status>'), '<why>'] }));
   need(!s.off, `acceptance line ${n} of ${issue.id} cannot be ticked: ${s.why}; rewrite it without the [owner] mark: ${rewriteText(issue.id)}`, () => (rewrite(issue.id)));

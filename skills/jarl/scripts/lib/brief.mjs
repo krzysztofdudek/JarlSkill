@@ -187,7 +187,7 @@ function issueBrief(root, loop, rawId, role) {
       : `${meant}: its review may be a light one, and it checks that the comparison in its proof rows covers everything the change touched; the comparison never stands in for the review`);
   }
   const record = role === 'worker'
-    ? [{ what: loop.linesFrom === null ? 'proof, one row per check' : 'proof, one row per check, naming the acceptance lines it proves', command: jarlLine('evidence', issue.id, '--ran', hole('<command>'), '--saw', hole('<what-it-printed>'), ...(loop.linesFrom === null ? [] : ['--line', hole('<line>')]), '--by', hole('<who>')) },
+    ? [{ what: loop.linesFrom === null ? 'proof, one row per check' : 'proof, one row per check, naming the acceptance lines it proves', command: jarlLine('evidence', issue.id, '--ran', hole('<command>'), '--saw', hole('<what-it-printed>'), ...(loop.linesFrom === null ? [] : ['--line', hole('<line-number>')]), '--by', hole('<who>')) },
       { what: 'the changelog entry, for a change someone sees', command: jarlLine('field', issue.id, 'Changelog', hole('<changelog-entry>'), '--add', '--by', hole('<who>')) }]
     : [{ what: 'the verdict when a finding lies outside the issue, one --outside each (filed as a new issue, never a reason for changes)', command: jarlLine('review', issue.id, hole('<verdict>'), hole('<findings-with-a-severity>'), '--by', hole('<reviewer>'), '--model', hole('<model-id>'), '--outside', hole('<finding-outside-the-issue>')) },
       { what: 'the verdict, as the last step', command: jarlLine('review', issue.id, hole('<verdict>'), hole('<findings-with-a-severity>'), '--by', hole('<reviewer>'), '--model', hole('<model-id>')) }];

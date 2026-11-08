@@ -59,7 +59,7 @@ test('a row names the acceptance lines it proves, by --line repeated or as a com
   assert.deepEqual(JSON.parse(jarl(root, 'show', '1', '--json')).evidenceRows.map((r) => r.lines ?? null), [[1, 3], [2], null]);
   assert.deepEqual(R.evidenceRows(R.findIssue(root, '1')), [{ ran: 'npm test', saw: 'pass 3', lines: [1, 3] }, { ran: 'npm run lint', saw: 'clean', lines: [2] }, { ran: 'node check.mjs', saw: 'ok' }]);
   assert.match(jarl(root, 'brief', '1'), /^- \[1\] ran \(line 1, 3\): npm test · saw: pass 3$/m, 'the brief prints them');
-  assert.match(jarl(root, 'brief', '1'), /evidence 001 --ran "<command>" --saw "<what-it-printed>" --line "<line>" --by "<who>"/, 'a worker of a loop that names lines is told to name them');
+  assert.match(jarl(root, 'brief', '1'), /evidence 001 --ran "<command>" --saw "<what-it-printed>" --line "<line-number>" --by "<who>"/, 'a worker of a loop that names lines is told to name them');
   const g = L.gateState(root, '1');
   assert.deepEqual(g.rowLog.map((r) => r.lines ?? null), [[1, 3], [2], null], 'the done gate reads them from the log');
   // A retraction matches a row that names lines to its own log line.
@@ -95,7 +95,7 @@ test('a --line the issue has no line for, a number that is no line, a --line on 
   const before = () => [log(root), existsSync(profileFile(root)), readFileSync(file(root, '1'), 'utf8'), readFileSync(file(root, '2'), 'utf8')];
   const was = before();
   const over = refuses(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'pass', '--line', '1,4');
-  assert.match(over, /^001 has 3 acceptance lines: there is no line 4\njarl\.mjs evidence "<ids>" --ran "<command>" --saw "<what-it-printed>" --line "<line>"\n$/);
+  assert.match(over, /^001 has 3 acceptance lines: there is no line 4\njarl\.mjs evidence "<ids>" --ran "<command>" --saw "<what-it-printed>" --line "<line-number>"\n$/);
   assert.match(refuses(root, 'evidence', '1,2', '--ran', 'npm test', '--saw', 'pass', '--line', '5'), /^001 has 3 acceptance lines: there is no line 5 — nothing was written\n/);
   for (const bad of ['0', 'two', '-1x']) assert.match(refuses(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'pass', `--line=${bad}`), /--line takes the number of an acceptance line, 1 for the first, got|an item cannot start with -/, bad);
   assert.match(refuses(root, 'evidence', '1', 'a note', '--line', '1'), /^--line names the acceptance lines a --ran\/--saw row proves, and a free-text note proves none: record the row, or leave --line out\njarl\.mjs evidence "<ids>" "<text>"\n$/);
@@ -115,7 +115,7 @@ test('a loop whose profile names an external scheduler refuses a row that names 
 });
 
 // What done says of 001 of a loop of two issues whose rows name its line 1 alone.
-const UNNAMED = '001 has acceptance lines no Proof row names: line 2 "the header row is kept"; line 3 "an empty table writes an empty file" — this loop names the line a row proves, and a row with no --line names none; the reason a move gives is the move\'s, and no reason for these lines: record a row that names each, jarl.mjs evidence 001 --ran "<command>" --saw "<what-it-printed>" --line "<line>", or close it without one and give the reason apart: jarl.mjs set 001 done "<why>" --without-rows "<why-no-row-names-the-lines>"';
+const UNNAMED = '001 has acceptance lines no Proof row names: line 2 "the header row is kept"; line 3 "an empty table writes an empty file" — this loop names the line a row proves, and a row with no --line names none; the reason a move gives is the move\'s, and no reason for these lines: record a row that names each, jarl.mjs evidence 001 --ran "<command>" --saw "<what-it-printed>" --line "<line-number>", or close it without one and give the reason apart: jarl.mjs set 001 done "<why>" --without-rows "<why-no-row-names-the-lines>"';
 
 test('in a loop that names lines, done lists each acceptance line no counted row names and refuses a close with no reason or with the reason of the move alone, ending with the form that gives the reason for those lines apart; with it, it closes and writes that reason beside the lines', () => {
   const root = formatOne(2);
@@ -239,8 +239,8 @@ test('a closed issue is read against the line rule again: a line a counted row n
   jarl(root, 'retract', '2', '1', 'it ran on another branch', '--by', 'rev1');
   const flagged = closedGate(root);
   assert.deepEqual(flagged, [
-    { id: '001', reason: 'no counted row names acceptance line 2 now, and the close counted one and gave no reason for it', repair: 'jarl.mjs evidence 001 --ran "<command>" --saw "<what-it-printed>" --line "<line>"' },
-    { id: '002', reason: 'no counted row names acceptance line 1 now, and the close counted one and gave no reason for it', repair: 'jarl.mjs evidence 002 --ran "<command>" --saw "<what-it-printed>" --line "<line>"' },
+    { id: '001', reason: 'no counted row names acceptance line 2 now, and the close counted one and gave no reason for it', repair: 'jarl.mjs evidence 001 --ran "<command>" --saw "<what-it-printed>" --line "<line-number>"' },
+    { id: '002', reason: 'no counted row names acceptance line 1 now, and the close counted one and gave no reason for it', repair: 'jarl.mjs evidence 002 --ran "<command>" --saw "<what-it-printed>" --line "<line-number>"' },
   ]);
   const report = jarl(root, 'report');
   assert.match(report, /^## Closed, gate does not hold \(2\)$/m);
@@ -326,7 +326,32 @@ test('an approve in a loop that names lines says which acceptance lines no row n
   jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'pass 3', '--line', '2');
   const said = run(root, ['review', '1', 'approve', '--by', 'rev1', 'read the diff, nothing found']);
   assert.equal(said.status, 0, said.stderr);
-  assert.match(said.stderr, /note: 001: no Proof row names acceptance line 1, 3, and done closes it only with a reason for those lines, given apart from the reason of the move: jarl\.mjs set 001 done "<why>" --without-rows "<why-no-row-names-the-lines>", or a row that names each, jarl\.mjs evidence 001 --ran "<command>" --saw "<what-it-printed>" --line "<line>"/);
+  assert.match(said.stderr, /note: 001: no Proof row names acceptance line 1, 3, and done closes it only with a reason for those lines, given apart from the reason of the move: jarl\.mjs set 001 done "<why>" --without-rows "<why-no-row-names-the-lines>", or a row that names each, jarl\.mjs evidence 001 --ran "<command>" --saw "<what-it-printed>" --line "<line-number>"/);
   jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'pass 3', '--line', '1,3');
   assert.doesNotMatch(run(root, ['review', '1', 'approve', '--by', 'rev2', 'read the diff again, nothing found']).stderr, /no Proof row names/);
+});
+
+test('a split that moves or renumbers an acceptance line a row of the parent names says so, as field does, and one that leaves those numbers as they were says nothing', () => {
+  const root = formatOne(4);
+  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'pass 3', '--line', '1,3');
+  const moved = run(root, ['split', '1', '--line', '1=1', '--line', '2=2', '--line', '3=1']);
+  assert.equal(moved.status, 0, moved.stderr);
+  assert.equal(moved.stderr, "note: 001's evidence rows name acceptance line 3 by number, and a row keeps the number it named: check that each still names the line it proves, and record a row with --line for a line whose number moved");
+  assert.deepEqual(JSON.parse(jarl(root, 'show', '1', '--json')).evidenceRows.map((r) => r.lines), [[1, 3]], 'the row keeps the numbers it named');
+  jarl(root, 'evidence', '3', '--ran', 'npm test', '--saw', 'pass 3', '--line', '1,2');
+  const kept = run(root, ['split', '3', '--line', '1=3', '--line', '2=3', '--line', '3=4']);
+  assert.equal(kept.status, 0, kept.stderr);
+  assert.doesNotMatch(kept.stderr, /keeps the number it named/, 'lines 1 and 2 keep their numbers');
+});
+
+test('the number of an acceptance line has a placeholder of its own, apart from the text of one: --line and tick print <line-number>, an acceptance line to write prints <line>', () => {
+  assert.ok(L.PLACEHOLDERS.includes('<line-number>') && L.PLACEHOLDERS.includes('<line>'), 'both are in the registry');
+  const root = formatOne();
+  fileAsBefore(root, 'no acceptance yet', {});
+  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'pass 3', '--line', '1');
+  assert.match(refuses(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'pass', '--line', '4'), /\njarl\.mjs evidence "<ids>" --ran "<command>" --saw "<what-it-printed>" --line "<line-number>"\n$/);
+  assert.match(refuses(root, 'evidence', '2', '--ran', 'npm test', '--saw', 'pass', '--line', '1'), /write the acceptance first, jarl\.mjs field 002 Acceptance "<line>"\n/);
+  assert.match(refuses(root, 'tick', '1', 'two', '--by', 'owner'), /\njarl\.mjs tick "<id>" "<line-number>"/);
+  assert.match(jarl(root, 'brief', '1'), /--line "<line-number>"/);
+  assert.match(refuses(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'pass', '--line', '<line-number>'), /placeholder/, 'pasted unfilled, it writes nothing');
 });

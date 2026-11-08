@@ -219,7 +219,7 @@ const STRUCTURAL = new Set([...['Title', 'Priority', 'Tier', 'Kind', 'Found by',
 const FILL = {
   '<id>': '1', '<ids>': '1', '<ids-it-waits-on>': '3', '<another-id>': '3', '<another-issue>': '3', '<ids-the-loop-holds>': '1', '<ids-low-high>': '1-2', '<a-smaller-range>': '1-2',
   '<the-id-new-prints>': '1', '<the-id-ask-prints>': 'a-1', '<an-issue-next-offers>': '1', '<question>': 'a-1', '<a-n>': 'a-1', '<n>': '1', '<n-or-note-n>': '1',
-  '<review-n-or-note-n>': '1', '<line>': '1', '<text>': 'a reason written in full', '<title>': 'a title', '<the-title-filed-again>': 'a title', '<goal>': 'a goal',
+  '<review-n-or-note-n>': '1', '<line>': '1', '<line-number>': '1', '<text>': 'a reason written in full', '<title>': 'a title', '<the-title-filed-again>': 'a title', '<goal>': 'a goal',
   '<slug>': 'a-new-slug', '<a-new-slug>': 'a-new-slug', '<a-ruling>': 'a ruling written in full', '<a-ruling-in-force>': 'taken', '<value>': 'a value',
   '<the-whole-new-value>': '2', '<the-whole-section>': 'a whole section', '<a-part-of-the-description>': 'What', '<part>': 'What', '<name=value>': 'Area=core',
   '<field=value>': 'Priority=2', '<changelog-entry>': 'Fixed: a thing', '<owner-line>': '[owner] it reads well · material: docs/x.md · check: it reads', '<items>': 'a',

@@ -50,12 +50,12 @@ The other references, each read when its subject comes up:
 | `split <id> --line <n>=<id>...` | shares a parent's acceptance lines out among its sub-issues; a line moved nowhere is refused |
 | `new "<title>" --kind promise` · `new "<title>" --kind wait --person "<name>" --check-when "<date-or-event>"` | records a promise, kept by whoever its Found by names, or a wait on a person outside the loop; `next` never offers either, `next --as` shows each on its holder until it closes |
 | `set <ids> in-progress "<text>" --branch <worker-branch> --worker <name> --model <model-id>` | leases issues before a worker is raised; with `--handover`, gives a leased issue to a new worker, `"<text>"` saying why |
-| `evidence <ids> --ran "<command>" --saw "<what-it-printed>" [--line <n>]` | records proof; `--line` names the acceptance lines a row proves, and once a loop names one, done asks a row for each line or `--without-rows "<why-no-row-names-the-lines>"`, never the move's reason |
+| `evidence <ids> --ran "<command>" --saw "<what-it-printed>" [--line <line-number>]` | records proof; `--line` names the acceptance lines a row proves, and once a loop names one, done asks a row for each line or `--without-rows "<why-no-row-names-the-lines>"`, never the move's reason |
 | `brief <id> [--role reviewer]` · `brief --slice <coordinator>` | the brief a worker, a reviewer or a coordinator is raised with, assembled from the record |
 | `review <ids> <verdict> --by <name> --model <model-id> "<text>"` | records a verdict |
 | `merged <ids> --sha <sha> --ran "<command>" --saw "<what-it-printed>"` | records a merge |
 | `set <ids> done "<text>"` | closes an issue: needs proof and a live approve, on a code issue its recorded merge, and the owner's tick of each line only he ticks |
-| `tick <id> <line> --by owner` | the owner's tick of an acceptance line written `[owner] … · material: … · check: …` |
+| `tick <id> <line-number> --by owner` | the owner's tick of an acceptance line written `[owner] … · material: … · check: …` |
 | `ask "<text>"` · `answer <id> "<text>" --by <who>` · `decide <slug> "<text>" --by <who>` | the owner's questions and the rulings |
 | `report` · `close` | what was done; ends the loop |
 
