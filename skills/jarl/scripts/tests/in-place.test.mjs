@@ -10,7 +10,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileAsBefore, formatTwoJarl } from './old-jarl.mjs';
-import { gitRepo, jarl, refuses, run } from './helpers.mjs';
+import { SPAWN_TIMEOUT, gitRepo, jarl, refuses, run } from './helpers.mjs';
 import { FINDINGS } from './findings.mjs';
 
 const lastLine = (text) => text.trim().split('\n').pop();
@@ -80,7 +80,7 @@ test('a commit of the file made before the lease closes nothing, with its edit l
   const { root, g } = placeLoop();
   writeFileSync(join(root, 'docs', 'guide.md'), '# Guide, as it was\n');
   g('add', 'docs/guide.md');
-  execFileSync('git', ['commit', '-qm', 'the old guide'], { cwd: root, env: { ...process.env, GIT_COMMITTER_DATE: '2001-01-01T00:00:00Z', GIT_AUTHOR_DATE: '2001-01-01T00:00:00Z' }, stdio: 'ignore' });
+  execFileSync('git', ['commit', '-qm', 'the old guide'], { cwd: root, env: { ...process.env, GIT_COMMITTER_DATE: '2001-01-01T00:00:00Z', GIT_AUTHOR_DATE: '2001-01-01T00:00:00Z' }, stdio: 'ignore', timeout: SPAWN_TIMEOUT });
   const old = g('rev-parse', '--short', 'HEAD').trim();
   jarl(root, 'new', 'rewrite the guide', '--tags', 'in-place', '--files', 'docs/guide.md', '--acceptance', 'it reads well');
   jarl(root, 'set', '1', 'in-progress', '--worker', 'w1', '--by', 'jarl');
@@ -99,7 +99,7 @@ test('a file the issue places in another repository is checked there: its change
   jarl(root, 'set', '1', 'in-progress', '--worker', 'w1', '--by', 'jarl');
   // The loop's own checkout holds a file of that name, committed: it is not the issue's.
   writeFileSync(join(root, 'docs', 'guide.md'), '# Not this one\n');
-  const g = (...a) => execFileSync('git', a, { cwd: root, encoding: 'utf8' });
+  const g = (...a) => execFileSync('git', a, { cwd: root, encoding: 'utf8', timeout: SPAWN_TIMEOUT });
   g('add', 'docs/guide.md'); g('commit', '-qm', 'a guide of the loop');
   const here = g('rev-parse', '--short', 'HEAD').trim();
   writeFileSync(join(other.dir, 'docs', 'guide.md'), '# Guide\n');
