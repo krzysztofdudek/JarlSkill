@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import { appendFileSync, cpSync, existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { EMPTY, PLAIN, ROOTED, ROOT_ARG, SHELLS, SIBLING, copy, formProblems, partsOf as partsOfRaw, printedCalls, run, runPrinted, snapshot } from './walk.mjs';
+import { EMPTY, PLAIN, ROOTED, ROOT_ARG, SHELLS, SIBLING, copy, drop, formProblems, partsOf as partsOfRaw, printedCalls, run, runPrinted, snapshot } from './walk.mjs';
 import { posixForms } from './helpers.mjs';
 
 const J = await import('../jarl.mjs');
@@ -68,6 +68,7 @@ function refusal(args, { loop = SIBLING, wrong = null, ...opts } = {}) {
   assert.notEqual(r.status, 0, `${args.join(' ')} is refused`);
   assert.equal(JSON.stringify(snapshot(dir)), before, `${args.join(' ')} writes nothing`);
   assert.deepEqual(formProblems(args, r.stderr, loop, opts, wrong), [], args.join(' '));
+  drop(dir);
   return { said: posixForms(r.stderr), ready: lastLine(r.stderr), ...partsOf(r.stderr) };
 }
 
@@ -341,6 +342,7 @@ test('a placeholder of the registry is refused as a value, a list item, a line o
     assert.notEqual(r.status, 0, args.join(' '));
     assert.match(r.stderr, /placeholder/, args.join(' '));
     assert.deepEqual(snapshot(dir), before, args.join(' '));
+    drop(dir);
   }
 });
 
@@ -360,6 +362,8 @@ test('every global flag that takes a value is checked for a placeholder: --root 
       assert.notEqual(set.status, 0);
       assert.match(set.stderr, /placeholder/);
       assert.deepEqual(snapshot(plain), before);
+      drop(empty);
+      drop(plain);
     }
   }
   // The form of init given --root with no value, pasted as printed, opens no loop in a directory named for its placeholder.
@@ -392,6 +396,7 @@ test('a value written in angle brackets that is no placeholder of the registry i
     const r = run(dir, args);
     assert.equal(r.status, 0, `${args.join(' ')}: ${r.stderr}`);
     assert.ok(Object.values(snapshot(dir)).some((t) => t.includes(text)), `${args.join(' ')}: ${text} is written as given`);
+    drop(dir);
   }
 });
 

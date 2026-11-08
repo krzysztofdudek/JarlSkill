@@ -6,7 +6,7 @@
 // placeholder (or, a view, reads) and writes nothing in any loop of the checkout; each carries the call's --root and
 // --json as they were given.
 import assert from 'node:assert/strict';
-import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, join, relative } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -100,7 +100,9 @@ export const ROOT_EMPTY = 'releases/r2';
 export const EMPTY = (() => { const dir = mkdtempSync(join(tmpdir(), 'jarl-refusals-empty-')); mkdirSync(join(dir, '.git')); return { dir, cwd: '' }; })();
 
 // A fresh copy of a checkout, with a profile written into its loop and the calls of `pre` run first: the directory a call
-// runs in. snapshot reads every loop of the copy, wherever in it the call runs.
+// runs in. snapshot reads every loop of the copy, wherever in it the call runs. A walk makes thousands of them, so each is
+// given back with drop as soon as its call is checked: a copy is never reused, and the folders alive at once are the few
+// one call holds.
 const TOPS = new Map();
 export function copy(loop, { profile, pre } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'jarl-refusals-call-'));
@@ -108,8 +110,17 @@ export function copy(loop, { profile, pre } = {}) {
   const cwd = join(dir, loop.cwd);
   TOPS.set(cwd, dir);
   if (profile) writeFileSync(join(cwd, '.jarl', 'profile.json'), JSON.stringify(profile, null, 2));
-  for (const a of pre || []) { const r = run(cwd, a); assert.equal(r.status, 0, `pre ${a.join(' ')}: ${r.stderr}`); }
+  for (const a of pre || []) {
+    const r = run(cwd, a);
+    if (r.status !== 0) { drop(cwd); assert.fail(`pre ${a.join(' ')}: ${r.stderr}`); }
+  }
   return cwd;
+}
+export function drop(cwd) {
+  const top = TOPS.get(cwd);
+  if (top === undefined) return;
+  TOPS.delete(cwd);
+  rmSync(top, { recursive: true, force: true, maxRetries: 3 });
 }
 export const run = (cwd, args) => spawnSync(process.execPath, [SCRIPT, ...args], { cwd, encoding: 'utf8', timeout: 60000 });
 
@@ -330,25 +341,29 @@ export function formProblems(args, said, loop, opts = {}, wrong = null) {
     if (form.some((w) => HOLE.test(w))) {
       const first = (t) => t.replace(/\n+$/, '').split('\n')[0];
       const tried = fillings(form);
-      const same = (words) => { const again = run(copy(loop, opts), words); return again.status !== 0 && first(again.stderr) === first(reason); };
+      const same = (words) => { const dir = copy(loop, opts); const again = run(dir, words); drop(dir); return again.status !== 0 && first(again.stderr) === first(reason); };
       if (tried.every(same)) problems.push(`filled, the form is refused again for the same reason: ${tried[0].map(shellQuote).join(' ')}`);
     }
   }
   // Pasted as printed into each shell, on a fresh copy: each command refused for its placeholder, and nothing written in
   // any loop; the whole message pasted creates no file and writes nothing either.
-  const before = JSON.stringify(snapshot(copy(loop, opts)));
+  const fresh = copy(loop, opts);
+  const before = JSON.stringify(snapshot(fresh));
+  drop(fresh);
   for (const sh of SHELLS) {
     for (const line of commands) {
       const dir = copy(loop, opts);
       const r = runPrinted(dir, line, sh);
       if (JSON.stringify(snapshot(dir)) !== before) problems.push(`pasted into ${sh}, it writes: ${line}`);
       if (HOLE.test(line) && (r.status === 0 || !/placeholder/.test(r.stderr))) problems.push(`pasted into ${sh}, it is not refused for its placeholder: ${line} — ${r.stderr.trim().split('\n')[0]}`);
+      drop(dir);
     }
     const dir = copy(loop, opts);
     const files = filesIn(dir);
     runPrinted(dir, said, sh);
     if (JSON.stringify(snapshot(dir)) !== before) problems.push(`the whole message pasted into ${sh} writes: ${lines.at(-1)}`);
     if (JSON.stringify(filesIn(dir)) !== JSON.stringify(files)) problems.push(`the whole message pasted into ${sh} makes a file (${filesIn(dir).filter((f) => !files.includes(f)).join(', ')}): ${reason.split('\n')[0].slice(0, 120)}`);
+    drop(dir);
   }
   return problems;
 }
@@ -367,9 +382,11 @@ export function walk(cases, loop, { mustRefuse }) {
     try { dir = copy(on, opts); } catch { continue; }
     const before = JSON.stringify(snapshot(dir));
     const r = run(dir, args);
+    const wrote = r.status !== 0 && JSON.stringify(snapshot(dir)) !== before;
+    drop(dir);
     if (r.status === 0) { if (mustRefuse) found.push(`${JSON.stringify(args)}: went through`); continue; }
     refused += 1;
-    if (JSON.stringify(snapshot(dir)) !== before) found.push(`${JSON.stringify(args)}: refused and wrote`);
+    if (wrote) found.push(`${JSON.stringify(args)}: refused and wrote`);
     for (const p of formProblems(args, r.stderr, on, opts, wrong)) found.push(`${JSON.stringify(args)}: ${p}`);
   }
   return { found, refused };
@@ -414,6 +431,7 @@ export function outputProblems(args, out, loop, opts = {}) {
         const outside = changedOutside(before, after, prefix);
         if (outside.length) problems.push(`pasted ${filledIn ? 'filled ' : ''}into ${sh}, it writes outside the loop the call named (${outside.join(', ')}): ${pasted}`);
         if (!filledIn && holed && (r.status === 0 || !/placeholder/.test(r.stderr) || JSON.stringify(after) !== JSON.stringify(before))) problems.push(`pasted into ${sh}, it is not refused for its placeholder: ${pasted} — ${r.stderr.trim().split('\n')[0]}`);
+        drop(dir);
       }
     }
   }
@@ -429,6 +447,7 @@ export function walkOutputs(cases, loop) {
     const opts = { pre, profile };
     const dir = copy(on, opts);
     const r = run(dir, args);
+    drop(dir);
     // verify and scope answer with exit 2 when they find something: that is their answer, printed whole.
     if (r.status !== 0 && !(r.status === 2 && ['verify', 'scope'].includes(J.callOfArgv(args.map(String)).cmd))) { found.push(`${JSON.stringify(args)}: did not go through: ${r.stderr.trim().split('\n')[0]}`); continue; }
     const checked = outputProblems(args, `${r.stdout}\n${r.stderr}`, on, opts);
