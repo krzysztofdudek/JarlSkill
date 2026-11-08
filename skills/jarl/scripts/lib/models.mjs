@@ -90,24 +90,30 @@ function limitsOf(profile, lines) {
     return ceilingRank >= 0 && lines.rank(model) > ceilingRank ? `above the profile's ceiling (${m.ceiling})` : null;
   };
   // The placed models it allows, the strongest tier first, each tier in the order of its lines.
-  const pool = [];
-  for (let k = lines.tiers.length - 1; k >= 0; k -= 1) for (const model of lines.byTier[lines.tiers[k]] || []) if (!why(model) && !pool.some((p) => modelKey(p.model) === modelKey(model))) pool.push({ model, rank: k });
-  const words = [m.ceiling !== null && `ceiling ${m.ceiling}`, m.barred.length && `barred ${m.barred.join(', ')}`].filter(Boolean).join(', ');
-  return { ...m, ceilingRank, why, pool, words };
+  // Every placed model, and those it allows, the strongest tier first, each tier in the order of its lines.
+  const placed = [];
+  for (let k = lines.tiers.length - 1; k >= 0; k -= 1) for (const model of lines.byTier[lines.tiers[k]] || []) if (!placed.some((p) => modelKey(p.model) === modelKey(model))) placed.push({ model, rank: k });
+  const pool = placed.filter((p) => !why(p.model));
+  const words = [ceilingRank >= 0 && `ceiling ${m.ceiling}`, m.barred.length && `barred ${m.barred.join(', ')}`].filter(Boolean).join(', ');
+  return { ...m, ceilingRank, why, placed, pool, words };
 }
-// Whether the reviewer the fresh-review rule needs for these workers is beyond what the profile allows: null when a model
-// it allows meets the rule (or the profile names no models, or the goal places none), else the pair that would make the
-// review possible: the strongest model the profile allows as the reviewer, and as the worker the strongest allowed model
-// ranked below it, else another allowed model of its rank. The rule is the loop's: "other-model" asks for a model no
-// worker was leased on, "model-rank" for one ranked at least as the worker's, and as advice ("agent") both.
+// Whether the profile is what keeps the reviewer the fresh-review rule needs for these workers out of reach: null when a
+// model it allows meets the rule, when no placed model would meet it either (the loop's lines are the limit then, and the
+// views say what they say without the key), or when the profile names no models; else the pair that would make the
+// review possible: the strongest model the profile allows as the reviewer, and as the worker the nearest allowed model
+// the rule lets that reviewer review (under "model-rank" another model of the reviewer's tier, else the reviewer's own;
+// otherwise the strongest allowed model other than the reviewer, of its tier or below). The rule is the loop's: "other-model" asks for a model no worker was leased on, "model-rank"
+// for one ranked at least as the worker's, and as advice ("agent") both.
 function reviewBeyond(limits, lines, workers, rule = 'agent') {
   if (!limits || !lines.declared || !workers.length) return null;
   const top = Math.max(...workers.map(lines.rank));
   const same = (model) => workers.some((w) => modelKey(w) === modelKey(model));
   const meets = (p) => (rule === 'model-rank' || !same(p.model)) && (rule === 'other-model' || p.rank >= top);
-  if (limits.pool.some(meets)) return null;
+  if (limits.pool.some(meets) || !limits.placed.some(meets)) return null;
   const reviewer = limits.pool[0] || null;
-  const worker = reviewer && (limits.pool.find((p) => p.rank < reviewer.rank) || limits.pool.find((p) => p.rank === reviewer.rank && modelKey(p.model) !== modelKey(reviewer.model)));
+  const other = (p) => modelKey(p.model) !== modelKey(reviewer.model);
+  const worker = !reviewer ? null : rule === 'model-rank' ? limits.pool.find((p) => p.rank === reviewer.rank && other(p)) || reviewer
+    : limits.pool.find((p) => other(p) && (rule === 'other-model' || p.rank <= reviewer.rank)) || null;
   return { workers, words: limits.words, reviewer: reviewer ? reviewer.model : null, worker: worker ? worker.model : null };
 }
 function beyondText(b) {
@@ -581,4 +587,4 @@ const SEVERITIES = ['Critical', 'Important', 'Minor'];
 const builds = { modelsTable: 0, nextRows: 0 };
 
 // Used by the other modules of the library, and not part of what jarl-lib.mjs exports.
-export { SEVERITIES, awaitsMerge, builds, ceilingTier, findingOfLog, gatedMark, limitNote, loggedFinding, modelRefusalOf, modelReviewForm, modelValue, needKnownModels, reviewModelNotes, spellingNote };
+export { SEVERITIES, awaitsMerge, builds, ceilingTier, findingOfLog, gatedMark, limitNote, loggedFinding, modelRefusalOf, modelReviewForm, modelValue, needKnownModels, reviewModelNotes, spellingNote, unknownModels };

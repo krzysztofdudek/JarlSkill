@@ -36,7 +36,7 @@ function takeoverAdvice(tiers, tier, held, n, takeovers, ceiling = null) {
   const model = held.length ? held.join(', ') : 'the one that failed';
   const unknown = held.length ? '' : ' (its lease did not record one)';
   const at = tiers.findIndex((t) => t.toLowerCase() === String(tier).toLowerCase());
-  const capped = ceiling !== null && at !== -1 && at + 1 < tiers.length && at + 1 > ceiling.at;
+  const capped = ceiling !== null && at !== -1 && at >= ceiling.at && (at + 1 < tiers.length || at > ceiling.at);
   const above = at === -1 || capped ? undefined : tiers[at + 1];
   const top = tiers[tiers.length - 1];
   const tried = held.length > 1 ? `it has failed ${times(n)} on the models that held it` : `the same model at the same tier has failed this ${times(n)}`;
@@ -44,7 +44,7 @@ function takeoverAdvice(tiers, tier, held, n, takeovers, ceiling = null) {
   if (takeovers > 1) return `${lead}put it on a model that has not held this issue (${held.length ? `it was held on ${model}` : 'its leases recorded no model'}), or change the approach — it has failed ${times(n)} since the last takeover, and an earlier takeover has not settled it.`;
   if (at === -1) return `${lead}${tier} is not a tier of this loop's profile (${tiers.join(', ')}), so put it on a model other than ${model}${unknown}, or change the approach — ${tried}.`;
   if (above) return `${lead}raise it one tier up from ${tier} (to ${above}), or put it on a model other than ${model}${unknown}, or change the approach — ${tried}.`;
-  if (capped) return `${lead}the profile's ceiling (${ceiling.ceiling}) allows no tier above ${tier}, so put it on a model other than ${model}${unknown} that the profile allows, or change the approach — ${tried}.`;
+  if (capped) return `${lead}the profile's ceiling (${ceiling.ceiling}) allows no tier above ${tiers[ceiling.at]}, so put it on a model other than ${model}${unknown} that the profile allows, or change the approach — ${tried}.`;
   return `${lead}${tier} is the top tier (${top}), so put it on a model other than ${model}${unknown}, or change the approach — ${tried}.`;
 }
 
