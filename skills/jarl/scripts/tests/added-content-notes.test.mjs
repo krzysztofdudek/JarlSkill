@@ -114,6 +114,18 @@ test('a path git quotes for a double quote, a backslash or a tab in it is named 
   ]);
 });
 
+test('the marker note names its file whatever prefixes the repository\'s git settings give a diff', () => {
+  for (const settings of [[['diff.noprefix', 'true']], [['diff.srcPrefix', 'ours/'], ['diff.dstPrefix', 'theirs/']], [['diff.mnemonicPrefix', 'true']], [['diff.noprefix', 'true'], ['diff.dstPrefix', 'theirs/']]]) {
+    const { root, g, commit } = leased();
+    for (const [key, value] of settings) g('config', key, value);
+    writeFileSync(join(root, 'a.txt'), `a\n${MARKERS}\n`);
+    commit('work');
+    const said = settings.map((s) => s.join('=')).join(' ');
+    assert.deepEqual(scoped(root).notes.map((n) => [n.kind, n.file, n.line]), [['conflict-marker', 'a.txt', 2], ['conflict-marker', 'a.txt', 4], ['conflict-marker', 'a.txt', 6]], said);
+    assert.match(run(root, ['scope', '1', '--branch', 'jarl/1-x', '--base', 'main']).stdout, /^note a\.txt:2 starts a conflict marker · <<<<<<< HEAD$/m, said);
+  }
+});
+
 test('merged says nothing about a merge that brought in no marker and no large file', () => {
   const { root, g, commit } = leased();
   writeFileSync(join(root, 'a.txt'), 'a\nplain\n');

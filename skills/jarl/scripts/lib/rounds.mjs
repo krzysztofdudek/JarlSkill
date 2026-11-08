@@ -148,7 +148,9 @@ const markerStart = (text) => (/^(<{7}|>{7})(?: |$)/.test(text) || /^={7}$/.test
 // count, a removed line or a file that grew never does. Each note is { kind, file, line, text, … } for a line, and
 // { kind: 'large-file', file, bytes } for a file.
 export function addedContentNotes(repo, range, { held = null } = {}) {
-  const diff = git(repo, ['diff', '--no-color', '--no-ext-diff', '-U0', range]) || '';
+  // The prefixes are git's defaults whatever the repository's or the machine's settings (diff.noprefix, diff.srcPrefix, diff.dstPrefix,
+  // diff.mnemonicPrefix): the header of each file is read as b/<path>.
+  const diff = git(repo, ['diff', '--no-color', '--no-ext-diff', '--src-prefix=a/', '--dst-prefix=b/', '-U0', range]) || '';
   const notes = [];
   let file = null;
   let line = 0;
