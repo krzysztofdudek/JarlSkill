@@ -110,6 +110,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - When a coordinator's part of the backlog is in progress, the tasks that belong to no part count as one more part. Starting work on any task that names neither its files nor its resources is then refused, as it is between two coordinators' parts.
 - A tool built on Jarl's record library can now name who changed a task's tags, priority, files or source, and the log shows that name.
 - Changing a long Where of a task now keeps only its first 120 characters and its length in the log, as a changed section does. Before, the whole old text went into the log.
+- The notes about a conflict marker or a mention of a task in a branch or a merge now name the file when its name holds a space, a letter beyond plain English or a quote. Before, such a note named no file.
 
 ## [6.2.0] - 2026-10-19
 

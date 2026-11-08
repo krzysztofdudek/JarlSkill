@@ -167,10 +167,27 @@ export function addedContentNotes(repo, range, { held = null } = {}) {
     }
     const hunk = /^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(text);
     if (hunk) { oldLeft = Number(hunk[1] ?? 1); line = Number(hunk[2]); newLeft = Number(hunk[3] ?? 1); }
-    else if (text.startsWith('+++ ')) file = text.startsWith('+++ b/') ? text.slice(6) : null;
+    else if (text.startsWith('+++ ')) file = headerPath(text.slice(4));
   }
   notes.push(...largeFileNotes(repo, range));
   return notes;
+}
+// The file a "+++ " header of a diff names after the change, or null for /dev/null. git writes a path that holds a space
+// with a tab after it, and a path that holds a double quote, a backslash, a control character or a byte over 0x7f (that
+// last under core.quotePath, its default) in double quotes, C-style: those bytes as \" \\ \t \n and the like, or as octal.
+const C_ESCAPES = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13 };
+function headerPath(header) {
+  let path = header.replace(/\t$/, '');
+  if (path.length > 1 && path.startsWith('"') && path.endsWith('"')) {
+    const bytes = [];
+    for (const [, octal, escaped, plain] of path.slice(1, -1).matchAll(/\\([0-7]{1,3})|\\(.)|([^\\]+)/gsu)) {
+      if (octal !== undefined) bytes.push(Number.parseInt(octal, 8));
+      else if (escaped !== undefined) bytes.push(...(Object.hasOwn(C_ESCAPES, escaped) ? [C_ESCAPES[escaped]] : Buffer.from(escaped, 'utf8')));
+      else bytes.push(...Buffer.from(plain, 'utf8'));
+    }
+    path = Buffer.from(bytes).toString('utf8');
+  }
+  return path.startsWith('b/') ? path.slice(2) : null;
 }
 // The files the diff of `range` adds that are over ATTACH_MAX_BYTES, as { kind: 'large-file', file, bytes }, read from the
 // blobs the diff names in one batch call.
