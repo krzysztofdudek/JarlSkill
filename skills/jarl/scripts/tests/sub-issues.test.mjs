@@ -206,12 +206,12 @@ test('a split moves each acceptance line to a named issue or keeps it on the par
   assert.deepEqual(out, { id: '1', subs: ['2', '3'], lines: [{ line: 1, to: '2', kept: false }, { line: 2, to: '3', kept: false }, { line: 3, to: '1', kept: true }] });
   assert.deepEqual(json(root, 'show', '1').sections.acceptance.trim(), '- [read] the docs describe both');
   assert.equal(json(root, 'show', '2').sections.acceptance.trim(), '[read] it writes csv');
-  assert.equal(json(root, 'show', '3').sections.acceptance.trim(), '- json is valid\n- it writes json', 'a moved line follows the lines the issue holds');
+  assert.equal(json(root, 'show', '3').sections.acceptance.trim(), '- [read] json is valid\n- [read] it writes json', 'a moved line follows the lines the issue holds');
   assert.deepEqual(['2', '3'].map((id) => json(root, 'show', id).parent), ['1', '1']);
   const log = logText(root);
   assert.match(log, /^- \S+ \S+ key \S+ · 2 field Parent · 1 · was \(none\) · by odin$/m);
-  assert.match(log, /^- \S+ \S+ key \S+ · 1 body · acceptance · was "- it writes csv" \(\d+ characters\) · by odin$/m);
-  assert.match(log, /^- \S+ \S+ key \S+ · 3 body · acceptance · was "json is valid" \(13 characters\) · by odin$/m);
+  assert.match(log, /^- \S+ \S+ key \S+ · 1 body · acceptance · was "- \[read\] it writes csv.*" · by odin$/m);
+  assert.match(log, /^- \S+ \S+ key \S+ · 3 body · acceptance · was "\[read\] json is valid" · by odin$/m);
   // A sub-issue can be split in turn: the tree goes deeper, and the ids stay flat numbers.
   jarl(root, 'new', 'the csv header', '--acceptance', '[read] it works');                                                                   // 4
   assert.equal(jarl(root, 'split', '2', '--line', '1=4'), '2 split: line 1 → 4 · sub-issues 4');

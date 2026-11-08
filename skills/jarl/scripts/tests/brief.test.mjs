@@ -62,7 +62,7 @@ test('brief <id> is the worker\'s: the issue as show prints it, the rules that r
   assert.match(text, /\n- jarl:worker-only-the-issue [^\n]*\n7 ruling\(s\) in force in the loop: jarl\.mjs decisions --live\n/);
   assert.doesNotMatch(text, /Frigg asks|Reviewers run|Coordinators report|An ended rule|after a takeover/);
   assert.match(text, /\n## The role\nreferences\/worker\.md, section "The worker's brief", in the jarl skill's directory/);
-  assert.match(text, /\n## Recording the result\n- proof, one row per check: jarl\.mjs evidence 1 --ran "<command>" --saw "<what-it-printed>" --line "<line-number>" --by "<who>"\n- the changelog entry, for a change someone sees: jarl\.mjs field 1 Changelog "<changelog-entry>" --add --by "<who>"$/);
+  assert.match(text, /\n## Recording the result\n- proof, one row per check, naming the acceptance lines it proves: jarl\.mjs evidence 1 --ran "<command>" --saw "<what-it-printed>" --line "<line-number>" --by "<who>"\n- the changelog entry, for a change someone sees: jarl\.mjs field 1 Changelog "<changelog-entry>" --add --by "<who>"$/);
   // The worker of an issue in no slice gets no slice's rule, and the rule of a tag reaches it.
   assert.deepEqual(slugs(json(root, 'brief', '3')), ['loop-rule', 'ui-workers', 'jarl:worker-only-the-issue']);
   assert.deepEqual(slugs(json(root, 'brief', '2')), ['loop-rule', 'frigg-only', 'jarl:worker-only-the-issue']);
