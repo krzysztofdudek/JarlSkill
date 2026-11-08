@@ -174,6 +174,14 @@ export function nextIssueNumber(root, range = null) {
   const held = [...(existsSync(dir) ? numbersIn(readdirSync(dir)) : []), ...numbersAcrossWorktrees(root), ...numbersAcrossRefs(root)];
   return numberAfter(held, rangesOf(root), range, 1);
 }
+// The numbers `count` filings outside every range take one after another in one act, each as new takes it: the next
+// free number, stepped past each declared range it falls in.
+export function nextIssueNumbers(root, count) {
+  const ranges = rangesOf(root);
+  const out = [];
+  for (let n = count > 0 ? nextIssueNumber(root) : 0; out.length < count; n = numberAfter([], ranges, null, n + 1)) out.push(n);
+  return out;
+}
 // The ranges of numbers the goal declares, each { name, from, to }.
 const rangesOf = (root) => goalLines(readGoal(jarlDir(root))).ranges;
 const rangeAt = (ranges, n) => ranges.find((r) => n >= r.from && n <= r.to) || null;
@@ -953,7 +961,7 @@ function notWrittenByField(profile, key) {
 }
 
 // extend section "<name>" | extend field "<name>" [--values <a,b>] [--default <value>] [--required]: the profile of a live
-// loop gains one section or one field, checked as profile <file> checks a profile file, with a log line written first. A
+// loop gains one section or one field, checked as profile <file> checks a profile file, with a log line after it. A
 // loop with no profile of its own gets one: the built-in statuses and the part, in the record format the loop is in. The
 // issues already filed are not rewritten: each carries the part once field writes it, and a new issue is filed with it (a
 // field's default, when it has one and none is given). Kind and Tier keep the values the loop was opened with. The profile
@@ -972,6 +980,9 @@ export function cmdExtend(root, part, name, flags = {}) {
   need(!['kind', 'tier'].includes(label.toLowerCase()), `${label} is built in, and its values are the ones the loop was opened with: extend adds a field of the loop's own`, () => ({ arg: 1, value: hole('<name>') }));
   const held = kind === 'section' ? sectionsOf(profile).some((s) => s.toLowerCase() === label.toLowerCase()) : profile.declaredFields.some((f) => f.key === label.toLowerCase());
   need(!held, `the profile already declares the ${kind} ${label}: ${jarlLine('profile')}`, () => ({ arg: 1, value: hole('<name>') }));
+  // A field and a section never share a name: the field command would not know which one it writes.
+  const other = kind === 'section' ? profile.declaredFields.find((f) => f.key === label.toLowerCase())?.name : sectionsOf(profile).find((s) => s.toLowerCase() === label.toLowerCase());
+  need(!other, `the profile already declares ${other} as a ${kind === 'section' ? 'field' : 'section'}, and a field and a section never share a name: ${jarlLine('profile')}`, () => ({ arg: 1, value: hole('<name>') }));
   const spec = kind === 'field' ? { ...(flags.values !== undefined ? { enum: splitList(flags.values) } : {}), ...(flags.default !== undefined ? { default: String(flags.default) } : {}), ...(flags.required === true ? { required: true } : {}) } : null;
   // The profile as it would be: checked whole before anything is written.
   const extended = () => {

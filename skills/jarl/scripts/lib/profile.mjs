@@ -106,6 +106,12 @@ export function formatState(profile) {
   const off = raises ? [] : Object.keys(FORMAT_LINES).filter((name) => FORMAT_LINES[name].format > profile.format);
   return { format: profile.format, reads: [...RECORD_FORMATS], raises, off };
 }
+// A loop whose profile names an external scheduler is never raised: the write that needs format `to` is refused.
+export function needRaisable(profile, to, what, ready = afterView(['jarl.mjs', 'profile'])) {
+  if (formatState(profile).raises) return;
+  const line = what || `a line of record format ${to}`;
+  refuse(`${line} needs record format ${to}, and this loop stays at format ${profile.format}: its profile names an external scheduler (${profile.scheduler}), the composer that reads this record, so Jarl never raises its format; ${line} is off in this loop until its profile says "format": ${to} — nothing was written`, ready);
+}
 // The line a view prints when lines of FORMAT_LINES are off in the loop, or null: each with the format that holds it.
 function formatOffText(state) {
   if (!state.off.length) return null;
@@ -488,7 +494,20 @@ export function readProfileFile(file, { argument = false } = {}) {
 }
 // What a profile to be opened, or a part to be added to a live loop's, declares of a name Jarl reserves, as one refusal, or null.
 function reservedProblem(profile) {
-  return reservedNamesProblem(profile) || keyFieldProblem(profile) || parentFieldProblem(profile) || sectionNamesProblem(profile);
+  return reservedNamesProblem(profile) || keyFieldProblem(profile) || parentFieldProblem(profile) || sectionNamesProblem(profile) || fieldNamesProblem(profile);
+}
+// The names a field of a profile may not take besides the tool's own header fields (TOOL_FIELDS): the issue's title and
+// the model of a lease, which field and set write under those names, and the parts of the description and of the history.
+const RESERVED_FIELD_NAMES = Object.freeze(['Title', 'Model', ...BUILTIN_SECTIONS, 'Notes', 'Reviews', 'Proof']);
+// What a profile file to be opened declares of a field under a name RESERVED_FIELD_NAMES holds, or of one name for a field
+// and a section, as a refusal, or null: the field command would not know which part it writes.
+function fieldNamesProblem(profile) {
+  const named = profile.declaredFields.filter((f) => RESERVED_FIELD_NAMES.some((r) => r.toLowerCase() === f.key)).map((f) => f.name);
+  const all = [...TOOL_FIELDS, ...RESERVED_FIELD_NAMES, KEY_FIELD, PARENT_FIELD, ...KEPT_FIELDS];
+  if (named.length) return `it declares the field ${named.join(' and ')}, which is the name of a part Jarl writes itself — the names a field may not take are ${all.join(', ')}; rename ${named.length === 1 ? 'it' : 'them'} in the profile`;
+  const sections = [...(profile.acceptance ? [profile.acceptance] : []), ...profile.sections].map((s) => s.toLowerCase());
+  const both = profile.declaredFields.filter((f) => sections.includes(f.key)).map((f) => f.name);
+  return both.length ? `it declares ${both.join(' and ')} as a field and as a section, so the field command could not tell which one it writes — a field and a section never share a name; rename one of them in the profile` : null;
 }
 // What a profile file to be opened declares of the names the built-in promise and wait use, as one refusal, or null: a
 // field named Person or Check when, and promise or wait among its own kinds. A loop already open with such a profile is

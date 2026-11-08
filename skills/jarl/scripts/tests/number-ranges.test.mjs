@@ -97,7 +97,14 @@ test('a loop that declares no range numbers as before and is never raised for it
   writeFileSync(file, JSON.stringify({ 'jarl-profile': 1, name: 'composed', statuses: BUILTIN_STATUSES, 'external-scheduler': 'the composer tick' }));
   jarl(dir, 'init', 'a composed goal', '--profile', file);
   assert.equal(filed(dir, 'first'), '001');
-  jarl(dir, 'goal', '--set', 'Range (film): 1000-1999');
+  // No number of a range can be filed there, so the goal declares none.
+  const goal = goalText(dir);
+  const refused = refuses(dir, 'goal', '--set', 'Range (film): 1000-1999');
+  assert.match(refused, /^a number from a range the goal declares needs record format 3, and this loop stays at format 1: its profile names an external scheduler \(the composer tick\)/);
+  assert.deepEqual(refused.trim().split('\n').slice(-2), ['jarl.mjs profile', 'jarl.mjs goal --set "<machine-line>"']);
+  assert.equal(goalText(dir), goal);
+  // A Range line written by hand moves nothing outside it, and still files no number of its own.
+  writeFileSync(join(dir, '.jarl', 'goal.md'), `${goal}Range (film): 1000-1999\n`);
   assert.equal(filed(dir, 'second'), '002', 'a declared range moves nothing outside it');
   const said = refuses(dir, 'new', 'a film', '--range', 'film');
   assert.match(said, /a number from a range the goal declares needs record format 3, and this loop stays at format 1/);

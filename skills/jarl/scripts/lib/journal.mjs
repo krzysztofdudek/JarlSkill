@@ -6,7 +6,7 @@ import { fieldText, hole, jarlLine, need, noSeparators, oneBreak, refuse, splitL
 import { issuesDir, jarlDir, stamp, today } from './where.mjs';
 import { appendAtomic, readText, writeAtomic } from './files.mjs';
 import { ISSUE_FILE_RE, KEY_RE, idKey, idRe, issueForms, writtenId } from './ids.mjs';
-import { FORMAT_LINES, loadProfile } from './profile.mjs';
+import { FORMAT_LINES, loadProfile, needRaisable } from './profile.mjs';
 import { OWNER, carryingOwnersWords, needNoOwnersWords, quoteLine, quoteOf, underLine, underOf } from './owner.mjs';
 
 // ---- journal and decisions ----------------------------------------------------------------------
@@ -431,6 +431,10 @@ export function cmdGoalSet(root, text) {
 function rangeLine(root, old, line, text) {
   const span = rangeSpan(line.qualifier, line.value);
   need(span, `${RANGE_REASON} (got "${String(text).trim()}")`, () => ({ flag: '--set', value: `Range (${hole('<name>')}): ${hole('<from-to>')}` }));
+  // A loop whose format a composer keeps can never file a number of a range, so it declares none.
+  const profile = loadProfile(root);
+  const rangeNumber = FORMAT_LINES['range-number'];
+  if (profile.format < rangeNumber.format) needRaisable(profile, rangeNumber.format, rangeNumber.what, [{ first: ['jarl.mjs', 'profile'] }, { retry: true }]);
   const declared = goalLines(old).ranges;
   const was = declared.find((r) => r.name.toLowerCase() === span.name.toLowerCase()) || null;
   const name = was ? was.name : span.name;
