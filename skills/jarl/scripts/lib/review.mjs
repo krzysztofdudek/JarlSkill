@@ -1,6 +1,5 @@
 // The review command.
 
-import { isAbsolute } from 'node:path';
 import { Refusal, echoWord, fieldText, hole, jarlLine, need, refuse } from './base.mjs';
 import { needNoOwnersWords } from './owner.mjs';
 import { jarlDir, stamp } from './where.mjs';
@@ -166,34 +165,87 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
   return oneOrMany(rawIds, issues.map((issue, n) => ({ id: issue.id, verdict, ...(by ? { by, kind: kinds[n] } : {}), ...(model !== undefined ? { model } : {}), ...(relayed ? { relayed } : {}), ...(batch ? { batch } : {}), ...(artifact !== undefined ? { artifact } : {}), severities, ...(filed.length ? { filed: filed.map((f) => f.id) } : {}), acceptance: (issue.sections.acceptance || '').trim(), ...(flags.caller === 'cli' ? { next: nextAfterVerdict(issue, verdict, kinds[n], loop && verdict === 'approve' ? ownerLineWait(root, loop, issue) : null, modelOf(issue), unclearedOf(issue)) } : {}), ...noteOf(issue, n) })));
 }
 
-// An --artifact value: the render or file a verdict judged, stored as given, trimmed. The record is read on other machines
-// and is public, so the value is a path inside the repository the work is in, relative to its root, and written with no
-// scheme: a value that opens with a scheme (two characters or more, then a colon, with or without slashes: file:, https:,
-// mailto:, data:), a host and a port (localhost:3000, or a host written in digits), a drive (C:, so a one-letter part before a colon
-// is a drive too), a root (/ or \, a share among them) or a home (~), a variable of a shell where one starts (at the start
-// of the value or of a segment: $HOME, %USERPROFILE%; ${ anywhere), or a path that climbs above its root with .. is
-// refused. A / or a \ both part its segments, so a $ or a % inside a name (price$total.png, 50%.png) is the name's. It is
-// one segment of the verdict line: no separator and no line break.
-const SCHEME = /^[A-Za-z][A-Za-z0-9+.-]+:/;
-const HOST_PORT = /^[A-Za-z0-9][A-Za-z0-9.-]*:\d+(?:[\\/]|$)/;
-const DRIVE = /^[A-Za-z]:/;
-const SHELL_VARIABLE = /(?:^|[\\/])(?:\$[A-Za-z_{]|%[A-Za-z_][A-Za-z0-9_]*%)|\$\{/;
-function artifactValue(raw) {
-  const p = typeof raw === 'string' ? raw.trim() : '';
-  const form = () => ({ flag: '--artifact', value: hole('<path>') });
-  const inside = '--artifact names a path inside the repository the work is in, relative to its root, written with no scheme';
-  need(p !== '', '--artifact needs a value — the path of the render or file the verdict judged, inside the repository the work is in', form);
-  need(!/[\u0000-\u001f\u007f\u0085\u2028\u2029·]/.test(p), '--artifact is one path on one line, with no · in it', form);
-  need(!SCHEME.test(p) && !HOST_PORT.test(p), `${inside}, and ${echoWord(p)} opens with a scheme or a host and a port, which names no path inside the repository`, form);
-  need(!SHELL_VARIABLE.test(p), `${inside}, and ${echoWord(p)} holds a variable of a shell, which stands for a place on one machine`, form);
-  need(!isAbsolute(p) && !/^[\\/~]/.test(p) && !DRIVE.test(p), `${inside}, and ${echoWord(p)} is a place on one machine, which the record never holds`, form);
-  let depth = 0;
-  for (const s of p.split(/[\\/]/)) {
-    if (s === '..') depth -= 1; else if (s !== '' && s !== '.') depth += 1;
-    need(depth >= 0, `${inside}, and ${echoWord(p)} climbs out of it with ..`, form);
+// An --artifact value: the render or file a verdict judged, stored as given, trimmed of the plain spaces around it. The
+// record is public and read on other machines and platforms, so a value is accepted only when it is a plain relative path
+// inside the repository the work is in, and everything else is refused: one allowlist, which the help and the reviewer
+// reference state in the same words, so no spelling of a place on one machine has to be foreseen to be refused.
+// - The plain characters are letters and digits with their marks, spaces, . _ - + @ # , = ( ) [ ] and the separators / and
+//   \. A colon is not one, wherever it stands: it parts a scheme, a host and its port, a drive and a stream, and a name
+//   that holds one is not portable to Windows. A ~ is not one either: it is a home, or a short name of Windows (PROGRA~1).
+// - A $ stands only between two letters or digits, and a % neither first in a segment nor before two hex digits: inside a
+//   name (price$total.png, 50%.png) each is the name's own, while a variable, a command or an arithmetic of a shell that
+//   stands for a place opens a segment ($HOME, $(pwd), %TEMP%, %~dp0), and %2F is the encoded byte of an address.
+// - A letter, digit or mark outside ASCII is plain when it is not default-ignorable (invisible) and its NFKC form is
+//   letters, digits and marks alone: a full-width slash or dot is no letter, and the NFKC forms of ⒈ and ŀ hold a dot.
+//   The value reads the same after NFC, so a reader that normalizes it sees the same value (NFC turns U+0387 into the
+//   separator).
+// - No segment is empty or ends with a dot or a space, so neither . nor .. is one, save the ./ the value may open with: a
+//   .. after a link leaves the repository whatever stands before it, and Windows drops a trailing dot or space, so two
+//   values would name one file. No segment is a device name of Windows, the value never opens with a dash, which a tool
+//   reads as an option, and it holds at most ARTIFACT_MOST characters, so its log line stays a line.
+export const ARTIFACT_MOST = 260;
+const PLAIN_ASCII = /^[A-Za-z0-9 ._+@#,=()[\]-]$/;
+const ASCII_ALNUM = /^[A-Za-z0-9]$/;
+const LETTER_OR_DIGIT = /^[\p{L}\p{N}]$/u;
+const MARK = /^\p{M}$/u;
+const NFKC_PLAIN = /^[\p{L}\p{N}\p{M}]+$/u;
+const INVISIBLE = /^\p{Default_Ignorable_Code_Point}$/u;
+const HEX_PAIR = /^[0-9A-Fa-f]{2}/;
+const DEVICE = /^(?:CON|PRN|AUX|NUL|COM[0-9¹²³]|LPT[0-9¹²³])$/i;
+// What one character of a value is: a separator, a letter or digit, a mark, other plain punctuation, $ or %, or null
+// for a character that is never plain.
+function artifactChar(c) {
+  if (c === '/' || c === '\\') return 'separator';
+  if (c === '$' || c === '%') return c;
+  if (c.codePointAt(0) < 0x80) return PLAIN_ASCII.test(c) ? (ASCII_ALNUM.test(c) ? 'alnum' : 'punctuation') : null;
+  if (INVISIBLE.test(c) || !NFKC_PLAIN.test(c.normalize('NFKC'))) return null;
+  return LETTER_OR_DIGIT.test(c) ? 'alnum' : MARK.test(c) ? 'mark' : null;
+}
+// The first character of a value out of the rule, as { at, why }, or null.
+const CHAR_WHY = { ':': 'a colon parts a scheme, a host and its port, a drive or a stream', '~': 'a ~ is a home or a short name of Windows', '·': "it is the separator of the record's lines" };
+function unplainChar(chars) {
+  const kinds = chars.map(artifactChar);
+  for (const [i, kind] of kinds.entries()) {
+    const before = i > 0 ? kinds[i - 1] : null;
+    const after = i + 1 < kinds.length ? kinds[i + 1] : null;
+    if (kind === null) return { at: i, why: CHAR_WHY[chars[i]] || 'it is not one of the plain characters' };
+    if (kind === 'mark' && before !== 'alnum' && before !== 'mark') return { at: i, why: 'a mark stands only after a letter or digit' };
+    if (kind === '$' && (before !== 'alnum' || after !== 'alnum')) return { at: i, why: 'a $ stands only between two letters or digits' };
+    if (kind === '%' && (before === null || before === 'separator' || HEX_PAIR.test(chars.slice(i + 1, i + 3).join('')))) return { at: i, why: 'a % stands neither first in a segment nor before two hex digits' };
   }
+  return null;
+}
+// The first segment of a value out of the rule, as { why }, or null: the first segment may be the . of an opening ./. A
+// value of one segment is named whole by the refusal, which the command line echoes quoted, so the segment is not echoed
+// again inside it.
+function unplainSegment(segments) {
+  const named = (s) => (segments.length > 1 ? `the segment ${echoWord(s)}` : 'one segment');
+  for (const [k, s] of segments.entries()) {
+    if (k === 0 && s === '.' && segments.length > 1) continue;
+    if (s === '') return { why: k === 0 ? 'opens with a separator, a root on one machine' : k === segments.length - 1 ? 'ends with a separator and names no file' : 'holds an empty segment' };
+    if (s === '..') return { why: 'climbs with ..' };
+    if (/[. ]$/.test(s)) return { why: `holds ${named(s)}, which ends with a dot or a space` };
+    if (DEVICE.test(s.split('.')[0].replace(/ +$/, ''))) return { why: `holds ${named(s)}, a device name of Windows` };
+  }
+  return null;
+}
+export function artifactValue(raw) {
+  const p = typeof raw === 'string' ? raw.replace(/^ +| +$/g, '') : '';
+  const form = () => ({ flag: '--artifact', value: hole('<path>') });
+  const rule = '--artifact is a relative path inside the repository the work is in, in plain characters (the help of review names them)';
+  need(p !== '', '--artifact needs a value — the path of the render or file the verdict judged, inside the repository the work is in', form);
+  const chars = [...p];
+  need(chars.length <= ARTIFACT_MOST, `${rule}, and the value holds ${chars.length} characters, more than ${ARTIFACT_MOST}`, form);
+  need(p.normalize('NFC') === p, `${rule}, and the value changes under Unicode normalization (NFC): write it composed`, form);
+  const bad = unplainChar(chars);
+  need(!bad, bad ? `${rule}, and the value holds ${codePoint(chars[bad.at])} at character ${bad.at + 1}: ${bad.why}` : '', form);
+  need(!p.startsWith('-'), `${rule}, and "${p}" opens with a dash, which a tool reads as an option`, form);
+  const segment = unplainSegment(p.split(/[\\/]/));
+  need(!segment, segment ? `${rule}, and "${p}" ${segment.why}` : '', form);
   return p;
 }
+// A character as a refusal names it: its code point, and the character itself when it is printable ASCII.
+const codePoint = (c) => `U+${c.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}${/^[\x21-\x7e]$/.test(c) ? ` (${c})` : ''}`;
 
 // The record format a bot's verdict needs, raised before the verdict is written. Where a composer keeps the loop's format,
 // the refusal ends with the profile view, which shows the format the profile says, and then the call's own form: --bot

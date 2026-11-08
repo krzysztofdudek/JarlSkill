@@ -32,7 +32,7 @@ export { loadAsks, cmdAsk, RATIFY_WORDS, REJECT_WORDS, AMBIGUOUS_WORDS, cmdAnswe
 export { cmdEvidence, issueView, workerEvidence, schedulerNote, NEXT_GROUPS, cmdNext, modelsTableBuilds, nextRowsBuilds, renderNext, nextRows, uncommittedLoopFiles, cmdStatus, STATUS_BY, IN_FLIGHT_MARKS, inFlightRows, parentChecks, cmdMode, cmdClose, closedGateFlags } from './lib/evidence.mjs';
 export { cmdQueue, renderQueue } from './lib/queue.mjs';
 export { OWNER_HOLDER, JARL_HOLDER, BALL_SHOWN, holderOf, ROW_SOURCES, ballRows, cmdNextAs, renderNextAs, askerSection } from './lib/ball.mjs';
-export { cmdReview } from './lib/review.mjs';
+export { cmdReview, ARTIFACT_MOST, artifactValue } from './lib/review.mjs';
 export { BRIEF_ROLES, cmdBrief, renderBrief } from './lib/brief.mjs';
 export { OWNER_LINE_SHAPE, needOwnerLines, ownerLines, ownerLineStates, ownerLineRefusal, ownerLineNotes, cmdTick, cmdRetractTick } from './lib/owner-lines.mjs';
 export { cmdChangelog } from './lib/changelog.mjs';

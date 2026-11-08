@@ -268,14 +268,22 @@ commands:
   review <ids> <verdict> --by <reviewer> [--model <model-id>] [--relayed] [--bot] [--artifact <path>] [--outside "<finding-outside-the-issue>"]... [--field "<name=value>"]... "<text>"
                                                  the reviewer's verdict; --model is the model the reviewer was raised on
                                                  (stored as given); --artifact is the render or file the verdict judged:
-                                                 the value is a path inside the repository the work is in, relative to
-                                                 its root, written with no scheme: a value that opens with a scheme
-                                                 (file:, https:, mailto:), a host and a port (localhost:3000), a drive
-                                                 (C:), a slash or a backslash, or a home (~), a variable of a shell where
-                                                 one starts ($HOME, %USERPROFILE%), or a path that climbs out with .. is
-                                                 refused; show prints it with the verdict and report counts it; it
-                                                 gates nothing, and the first raises the record
-                                                 format to 3; --relayed marks a verdict recorded by someone else in
+                                                 the value is a relative path inside the repository the work is in,
+                                                 written in plain characters: letters and digits with their marks, spaces
+                                                 and . _ - + @ # , = ( ) [ ], a $ only between two letters or digits, a %
+                                                 only where it is neither first in a segment nor before two hex digits,
+                                                 and / or \\ between segments; no segment is empty, ends with a dot or a
+                                                 space (but for the ./ the value may open with) or is a device name of
+                                                 Windows (CON, PRN, AUX, NUL, or COM or LPT with one of 0 to 9, ¹, ², ³,
+                                                 with any spaces and extension after it); the value never opens with a
+                                                 dash, holds at most 260 characters, reads the same after Unicode
+                                                 normalization (NFC) and holds no letter, digit or mark whose NFKC form
+                                                 holds anything but letters, digits and marks; any other character (a
+                                                 colon, a quote, a ~ or a !, a control, format or invisible character,
+                                                 another space) is refused; it is stored as given, trimmed of the spaces
+                                                 around it; show prints it with the verdict and report counts it; it
+                                                 gates nothing, and the first raises the record format to 3; --relayed
+                                                 marks a verdict recorded by someone else in
                                                  the reviewer's name, for a reviewer that cannot be resumed to record its
                                                  own; --bot records it as the verdict of the bot --by names (the first
                                                  raises the record format to 3); --outside (repeatable) is a finding outside the issue: each is

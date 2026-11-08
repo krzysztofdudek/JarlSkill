@@ -1,6 +1,7 @@
 // A verdict names the render or file it judged with review --artifact <path>: the path is stored as given, in the verdict
-// line after the reviewer's marks and in the Reviews entry, and show prints it with the verdict. A path that is absolute,
-// or that climbs out of the repository with .., is refused with nothing written: the record holds no place on one machine.
+// line after the reviewer's marks and in the Reviews entry, and show prints it with the verdict. A value that is not a
+// plain relative path inside the repository is refused with nothing written, its reason named: the record holds no place
+// on one machine (artifact-path.test.mjs proves the rule over a product of values).
 // The first verdict that names one raises the loop to record format 3, which both readers of the lower formats refuse; a
 // loop that names none is never raised, and a loop whose format a composer keeps refuses it with nothing written. report
 // counts the verdicts that name one. Nothing gates on it: done and the merge read the verdict as they read any other.
@@ -61,41 +62,47 @@ test('a finding that opens like an artifact mark is kept as text', () => {
   assert.doesNotMatch(jarl(root, 'report', '--metrics'), /verdicts that name an artifact/);
 });
 
-// The values --artifact refuses, each with the words of its reason: a place on one machine, an address or a host, a
-// variable of a shell where one starts, a path that climbs out, and what one segment of the line cannot hold.
-const PLACE = /is a place on one machine, which the record never holds/;
-const SCHEMED = /opens with a scheme or a host and a port, which names no path inside the repository/;
-const VARIABLE = /holds a variable of a shell, which stands for a place on one machine/;
-const CLIMBS = /climbs out of it with \.\./;
+// The values --artifact refuses, each with the words of its reason: a root, a colon (a scheme, a host and its port, a
+// drive), a home, a $ or a % where a shell expands it, a climb, and a character that is not plain.
+const RULE = /--artifact is a relative path inside the repository the work is in, in plain characters \(the help of review names them\), and /;
+const ROOT = /opens with a separator, a root on one machine/;
+const COLON = /holds U\+003A \(:\) at character \d+: a colon parts a scheme, a host and its port, a drive or a stream/;
+const HOME = /holds U\+007E \(~\) at character 1: a ~ is a home or a short name of Windows/;
+const DOLLAR = /holds U\+0024 \(\$\) at character \d+: a \$ stands only between two letters or digits/;
+const PERCENT = /holds U\+0025 \(%\) at character \d+: a % stands neither first in a segment nor before two hex digits/;
+const CLIMBS = /climbs with \.\./;
 const REFUSED = [
-  ['/home/someone/render.png', PLACE], ['/', PLACE], ['\\renders\\x.png', PLACE], ['\\\\share\\render.png', PLACE], ['//server/share/x.png', PLACE],
-  ['C:\\Users\\someone\\render.png', PLACE], ['C:/Users/u/x.png', PLACE], ['c:x.png', PLACE], ['a:b', PLACE],
-  ['~/render.png', PLACE], ['~someone/render.png', PLACE],
-  ['file:x.png', SCHEMED], ['file:/home/u/x.png', SCHEMED], ['file:/C:/Users/u/x.png', SCHEMED], ['file:C:/x.png', SCHEMED],
-  ['file://server/share/x.png', SCHEMED], ['file:///home/u/x.png', SCHEMED], ['FILE:///C:/Users/u/x.png', SCHEMED], ['File:////server/share/x.png', SCHEMED],
-  ['https://example.com/render.png', SCHEMED], ['HTTP://localhost:3000/render.png', SCHEMED], ['localhost:3000/x.png', SCHEMED], ['localhost:3000', SCHEMED],
-  ['127.0.0.1:8080/x.png', SCHEMED], ['mailto:x', SCHEMED], ['data:image/png;base64,AAAA', SCHEMED], ['javascript:x', SCHEMED], ['svn+ssh:host/x.png', SCHEMED],
-  ['$HOME/x.png', VARIABLE], ['${HOME}/x.png', VARIABLE], ['renders/$HOME/x.png', VARIABLE], ['renders\\$TMP\\x.png', VARIABLE], ['renders/a${X}.png', VARIABLE],
-  ['%USERPROFILE%\\x.png', VARIABLE], ['renders/%TEMP%/x.png', VARIABLE],
+  ['/home/someone/render.png', ROOT], ['/', ROOT], ['\\renders\\x.png', ROOT], ['\\\\share\\render.png', ROOT], ['//server/share/x.png', ROOT],
+  ['C:\\Users\\someone\\render.png', COLON], ['C:/Users/u/x.png', COLON], ['c:x.png', COLON], ['a:b', COLON],
+  ['~/render.png', HOME], ['~someone/render.png', HOME],
+  ['file:x.png', COLON], ['file:/home/u/x.png', COLON], ['file:/C:/Users/u/x.png', COLON], ['file:C:/x.png', COLON],
+  ['file://server/share/x.png', COLON], ['file:///home/u/x.png', COLON], ['FILE:///C:/Users/u/x.png', COLON], ['File:////server/share/x.png', COLON],
+  ['https://example.com/render.png', COLON], ['HTTP://localhost:3000/render.png', COLON], ['localhost:3000/x.png', COLON], ['localhost:3000', COLON],
+  ['127.0.0.1:8080/x.png', COLON], ['mailto:x', COLON], ['data:image/png;base64,AAAA', COLON], ['javascript:x', COLON], ['svn+ssh:host/x.png', COLON],
+  ['$HOME/x.png', DOLLAR], ['${HOME}/x.png', DOLLAR], ['renders/$HOME/x.png', DOLLAR], ['renders\\$TMP\\x.png', DOLLAR], ['renders/a${X}.png', DOLLAR],
+  ['%USERPROFILE%\\x.png', PERCENT], ['renders/%TEMP%/x.png', PERCENT],
   ['..', CLIMBS], ['../other/render.png', CLIMBS], ['renders/../../render.png', CLIMBS], ['renders\\..\\..\\x.png', CLIMBS],
-  ['renders · home.png', /--artifact is one path on one line, with no · in it/], ['renders/\nhome.png', /--artifact is one path on one line/], ['  ', /--artifact needs a value/],
+  ['a/../b', CLIMBS], ['renders/old/../home.png', CLIMBS],
+  ['renders · home.png', /holds U\+00B7 at character 9: it is the separator of the record's lines/], ['renders/\nhome.png', /holds U\+000A at character 9: it is not one of the plain characters/],
 ];
-// The values --artifact writes as given: a path inside the repository, a $ or a % inside a name, a .. that stays inside.
-const WRITTEN = ['renders/home page.png', './x', 'a/../b', 'renders\\x', 'renders/50%.png', 'price$total.png', 'a$b/c.png', 'renders/x%y%.png', 'renders/old/../home.png', 'v2.png'];
+// The values --artifact writes as given: a path inside the repository, a $ or a % inside a name.
+const WRITTEN = ['renders/home page.png', './x', 'renders\\x', 'renders/50%.png', 'price$total.png', 'a$b/c.png', 'renders/x%y%.png', 'v2.png'];
 
-test('an artifact value with a scheme or a host, a drive, a root, a home, a variable where one starts, a climb out, a separator or a line break is refused with nothing written', () => {
+test('an artifact value with a root, a colon, a home, a $ or a % where a shell expands it, a climb or a character that is not plain is refused with its reason and nothing written', () => {
   const { root, id } = inFlight();
   const before = log(root);
   for (const [path, said] of REFUSED) {
     const r = refuses(root, 'review', id, 'approve', '--by', 'rev-a', '--artifact', path, FINDINGS);
+    assert.match(r, RULE, path);
     assert.match(r, said, path);
     assert.match(r, /--artifact "<path>"\n$/, `the refusal ends with the form: ${path}`);
   }
+  assert.match(refuses(root, 'review', id, 'approve', '--by', 'rev-a', '--artifact', '  ', FINDINGS), /--artifact needs a value/);
   assert.equal(log(root), before, 'nothing was written');
   assert.equal(formatOf(root), 1);
 });
 
-test('a path inside the repository is written as given, a $ or a % inside a name and a .. that stays inside among them', () => {
+test('a path inside the repository is written as given, a $ or a % inside a name among them', () => {
   const { root, id } = inFlight();
   for (const path of WRITTEN) jarl(root, 'review', id, 'approve', '--by', 'rev-a', '--artifact', path, FINDINGS);
   const verdicts = loopEvents(join(root, '.jarl'), loadProfile(root)).filter((e) => e.type === 'verdict');
@@ -103,7 +110,7 @@ test('a path inside the repository is written as given, a $ or a % inside a name
 });
 
 test('the help and the reviewer reference state the rule of an artifact value in the same words', () => {
-  const sentence = (text) => /the value is a path inside the repository the work is in, [^;]*? is refused/i.exec(text.replace(/\s+/g, ' '))?.[0].toLowerCase();
+  const sentence = (text) => /the value is a relative path inside the repository the work is in, [\s\S]*? is refused/i.exec(text.replace(/`/g, '').replace(/\s+/g, ' '))?.[0].toLowerCase();
   const help = sentence(USAGE);
   assert.ok(help, 'the help states the rule');
   assert.equal(sentence(skillText('references/reviewer.md')), help);
