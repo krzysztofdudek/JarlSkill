@@ -108,7 +108,7 @@ const sameName = (a, b) => fieldText(a).toLowerCase() === fieldText(b).toLowerCa
 // The state of each acceptance line, computed from the gate: { n, text, digest, method, what, by, state, missing }, state
 // one of unproved, proved (test, check, compare), judged (read) or ticked (owner); missing says what the method still asks
 // for, null when nothing. The rows the method counts are the ones naming the line's digest inside the window; the holder
-// is any name that has held the issue's lease, and with no lease on record the other side is any second name.
+// is any name that has held the issue's lease, and with no lease on record one named row is what the method asks.
 export function lineStates(loop, issue, g = gateOf(loop, issue.id)) {
   const texts = acceptanceLines(issue);
   if (!texts.length) return [];
@@ -133,17 +133,17 @@ export function lineStates(loop, issue, g = gateOf(loop, issue.id)) {
     const named = naming.filter((r) => r.by);
     if (line.method === 'check' && onDeclared(loop, issue, line) && landedOn(loop, issue, g, line)) return { ...base, state: 'proved', missing: null };
     const missing = [];
-    const byHolder = named.filter((r) => (holders.length ? heldBy(r.by) : false));
-    // With no lease on record the row of the holder is the first named row, and the other side a row by a second name.
-    const notHolder = holders.length ? named.filter((r) => !heldBy(r.by)) : named.filter((r) => !sameName(r.by, named[0].by));
-    if (holders.length ? !byHolder.length : !named.length) missing.push('a counted row naming it by the holder of the lease');
-    if (!notHolder.length) missing.push('a counted row naming it by a name that has not held the lease');
+    const byHolder = named.filter((r) => heldBy(r.by));
+    if (holders.length) {
+      if (!byHolder.length) missing.push('a counted row naming it by the holder of the lease');
+      if (!named.some((r) => !heldBy(r.by))) missing.push('a counted row naming it by a name that has not held the lease');
+    } else if (!named.length) missing.push('a counted row by a named writer');
     if (line.method === 'compare') {
       const counts = new Map();
       for (const r of holders.length ? byHolder : named) counts.set(r.saw, (counts.get(r.saw) || 0) + 1);
-      if (![...counts.values()].some((c) => c >= 2)) missing.push('two rows by the holder with identical --saw');
+      if (![...counts.values()].some((c) => c >= 2)) missing.push(holders.length ? 'two rows by the holder with identical --saw' : 'two rows with identical --saw');
     }
-    if (line.method === 'check' && onDeclared(loop, issue, line) && !landedOn(loop, issue, g, line)) missing.push('or the landing on the declared check');
+    if (missing.length && line.method === 'check' && onDeclared(loop, issue, line)) missing.push('or the landing on the declared check');
     return { ...base, state: missing.length ? 'unproved' : 'proved', missing: missing.length ? missing.join(', ') : null };
   });
 }
