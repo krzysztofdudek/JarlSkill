@@ -254,9 +254,9 @@ test('resume stays fast on a loop of hundreds of issues naming another repositor
   // command share cannot slow the clock with it: the calibration is what resume has to do at the least, with plain node and
   // bare git: one git process for each that resume started, and a read and a pattern scan of every issue file and of the
   // log of the large loop. The calibration, resume on the large loop and resume on a loop a quarter the size are timed in
-  // turn, five rounds, and the least of each kept, so a busy machine slows all of them together. Resume measures about
-  // 1.3 calibrations, and 3 are allowed; linear growth is 4x for 4x the issues (resume measures about 3x) and a pass over
-  // every issue for each issue is 16x, and 7 are allowed.
+  // turn, five rounds, and the least of each kept, so a busy machine slows all of them together. Resume measures a little
+  // over one calibration, and three are allowed; linear growth is four times the work for four times the issues (resume
+  // measures under three times) and a pass over every issue for each issue is sixteen times, and seven are allowed.
   const issuesDir = join(large.hub, '.jarl', 'issues');
   const calibrate = () => {
     for (let k = 0; k < used; k += 1) execFileSync('git', ['--version'], { stdio: 'ignore', timeout: 120_000 });
