@@ -32,7 +32,7 @@ function cloneOf(dir) {
   return { dir: c, g };
 }
 function fileAndCommit(at, title) {
-  const out = json(at.dir, 'new', title, '--tier', 'light');
+  const out = json(at.dir, 'new', title, '--tier', 'light', '--acceptance', '[read] it works');
   at.g('add', '-A'); at.g('commit', '-qm', title);
   return out.id;
 }
@@ -213,7 +213,7 @@ const MARKER_LINE = /^(?:<{7}|={7}|>{7})/m;
 
 test('text that quotes a git conflict, written through new, body, a note and a reason, has each marker line escaped, reads back as written, and verify reads it as text', () => {
   const a = committedLoop();
-  assert.equal(json(a.dir, 'new', 'quotes a conflict', '--tier', 'light', '--what', QUOTED, '--why', 'quoted', '--acceptance', QUOTED).id, '2');
+  assert.equal(json(a.dir, 'new', 'quotes a conflict', '--tier', 'light', '--what', QUOTED, '--why', 'quoted').id, '2');
   jarl(a.dir, 'field', '1', 'Why', QUOTED);
   jarl(a.dir, 'field', '1', 'What', `the opening line\n${QUOTED}`, '--add');
   jarl(a.dir, 'evidence', '1', QUOTED);
@@ -222,7 +222,6 @@ test('text that quotes a git conflict, written through new, body, a note and a r
   const one = json(a.dir, 'show', '1');
   const two = json(a.dir, 'show', '2');
   assert.equal(two.sections.what.trim(), ESCAPED);
-  assert.equal(two.sections.acceptance.trim(), ESCAPED);
   assert.equal(one.sections.why.trim(), ESCAPED);
   assert.ok(one.sections.what.trim().endsWith(`the opening line\n${ESCAPED}`), one.sections.what);
   assert.ok(one.sections.evidence.includes(ESCAPED), one.sections.evidence);

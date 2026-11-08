@@ -15,7 +15,7 @@ const logOf = (root) => readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
 function loopWithSlips() {
   const root = loop();
   jarl(root, 'goal', '--set', 'Coordinators: odin');
-  for (const t of ['one', 'two']) jarl(root, 'new', t, '--acceptance', `${t} is done`);
+  for (const t of ['one', 'two']) jarl(root, 'new', t, '--acceptance', `[read] ${t} is done`);
   for (const id of ['1', '2']) {
     jarl(root, 'set', id, 'in-progress', 'start', '--worker', `w${id}`, '--by', 'jarl');
     jarl(root, 'evidence', id, '--line', '1', '--ran', 'npm test', '--saw', 'ok');

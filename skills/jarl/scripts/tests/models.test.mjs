@@ -39,7 +39,7 @@ function unit(root, { model, worker = 'w-x', reviewer = 'rev-big', reviewerModel
   const { id } = R.newIssue(root, `unit ${seq}`, { kind, tier, acceptance: '[read] it works', ...(repo ? { repo } : {}) });
   R.setStatus(root, id, 'in-progress', '', { branch: `jarl/${id}-x`, worker, ...(model ? { model } : {}) });
   R.addEvidence(root, id, undefined, { line: 1, ran: 'npm test', saw: 'pass 3' });
-  for (let k = 0; k < changes; k += 1) R.review(root, id, 'changes', 'Important: the case is not handled', { by: reviewer, ...(reviewerModel ? { model: reviewerModel } : {}) }); R.addRound(root, id, 'fixed');
+  for (let k = 0; k < changes; k += 1) { R.review(root, id, 'changes', 'Important: the case is not handled', { by: reviewer, ...(reviewerModel ? { model: reviewerModel } : {}) }); R.addRound(root, id, 'fixed'); }
   R.review(root, id, 'approve', 'read the diff, nothing found', { by: reviewer, ...(reviewerModel ? { model: reviewerModel } : {}) });
   R.recordMerged(root, id, { sha: 'abc1234' }); R.setStatus(root, id, 'done', 'merged', {});
   return id;
@@ -146,7 +146,7 @@ test('the frozen reader reads the lease line with the model before the worker, t
   // The frozen reader finds the worker of the lease, whatever the model before it says.
   assert.equal(OLD.findIssue(root, id).fields.worker, 'w-five');
   assert.throws(() => OLD.cmdReview(root, id, 'approve', 'Minor: nothing to add here', { by: 'w-five' }), /self-approve/, 'the self-approve is refused');
-  R.addEvidence(root, id, undefined, { line: 1, ran: 'npm test', saw: 'pass' });
+  assert.equal(oldJarl(root, 'evidence', {}, [id, null, { ran: 'npm test', saw: 'pass' }]).ok, true);
   R.review(root, id, 'approve', 'read the diff, found nothing', { by: 'rev-c', model: 'claude-opus-5-5', relayed: true });
   const gate = OLD.gateState(root, id);
   assert.equal(gate.approved, true);

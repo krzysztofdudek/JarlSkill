@@ -94,6 +94,7 @@ test('a finding of a done or a dropped issue is reported with the status of that
   const root = loop();
   importing(root, findingsFile(written([finding(), finding({ id: 'T-2', title: 'Print', claim: 'Users can print a report.' })])));
   jarl(root, 'set', '1', 'dropped', 'the ticket was withdrawn');
+  jarl(root, 'field', '2', 'Acceptance', '[read] it holds');
   jarl(root, 'set', '2', 'in-progress', 'go', '--worker', 'w2');
   jarl(root, 'evidence', '2', '--line', '1', '--ran', 'npm test', '--saw', 'all pass');
   jarl(root, 'review', '2', 'approve', '--by', 'rev', 'read the diff, nothing found');
@@ -249,7 +250,7 @@ function mergedCopies() {
   const imported = oldJarl(a, 'import', {}, [findingsFile(written([finding()])), { source: SOURCE }]);
   assert.equal(imported.ok, true, imported.error);
   const b = older();
-  assert.equal(oldJarl(b, 'new', {}, ['Print by hand', { source: `${SOURCE}#T-2`, 'found-by': `research ${SOURCE}`, what: 'Our own words about printing.' }]).ok, true);
+  assert.equal(oldJarl(b, 'new', {}, ['Print by hand', { acceptance: 'it works', source: `${SOURCE}#T-2`, 'found-by': `research ${SOURCE}`, what: 'Our own words about printing.' }]).ok, true);
   const [byHand] = readdirSync(join(b, '.jarl', 'issues'));
   writeFileSync(join(a, '.jarl', 'issues', byHand), readFileSync(join(b, '.jarl', 'issues', byHand), 'utf8'));
   writeFileSync(logFile(a), `${readFileSync(logFile(a), 'utf8')}${readFileSync(logFile(b), 'utf8').match(/^.*· filed 001 · .*\n/m)[0]}`);

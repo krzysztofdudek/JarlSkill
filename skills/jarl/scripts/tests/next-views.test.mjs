@@ -25,7 +25,7 @@ function groupedLoop() {
   jarl(root, 'new', 'ready one', '--acceptance', '[read] it works', '--files', 'b.mjs');        // 3
   jarl(root, 'new', 'after the running one', '--acceptance', '[read] it works', '--files', 'c.mjs', '--after', '1'); // 4
   jarl(root, 'new', 'asked about', '--acceptance', '[read] it works', '--files', 'd.mjs');      // 5
-  jarl(root, 'new', 'no files at all', '--acceptance', '[read] it works');                      // 6
+  jarl(root, 'new', 'no files at all');                      // 6
   jarl(root, 'set', '1', 'in-progress', 'go', '--worker', 'w1');
   jarl(root, 'ask', 'which way?', '--kind', 'stuck', '--issue', '5');
   return root;
@@ -150,6 +150,7 @@ test('status --tag scopes every section to the issues carrying the tag', () => {
   jarl(root, 'set', '1', 'in-progress', 'go', '--worker', 'w1', '--branch', 'jarl/1');
   jarl(root, 'set', '3', 'in-progress', 'go', '--worker', 'w3', '--branch', 'jarl/3');
   jarl(root, 'ask', 'which?', '--kind', 'stuck', '--issue', '4');
+  jarl(root, 'field', '1', 'Acceptance', '--clear'); jarl(root, 'field', '3', 'Acceptance', '--clear');
   const a = JSON.parse(jarl(root, 'status', '--tag', 'alpha', '--json'));
   const b = JSON.parse(jarl(root, 'status', '--tag', 'beta', '--json'));
   assert.deepEqual([a.open, a['in-progress']], [1, 1]);

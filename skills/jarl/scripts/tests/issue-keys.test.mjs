@@ -88,11 +88,11 @@ test('a loop filed before its raise keeps its unkeyed lines read by number, and 
   const root = mkdtempSync(join(tmpdir(), 'jarl-keys-old-'));
   mkdirSync(join(root, '.git'));
   assert.equal(oldJarl(root, 'init', {}, ['an older loop', {}]).ok, true);
-  assert.equal(oldJarl(root, 'new', {}, ['filed by an older Jarl', {}]).ok, true);
+  assert.equal(oldJarl(root, 'new', {}, ['filed by an older Jarl', { acceptance: 'it works',}]).ok, true);
   assert.equal(oldJarl(root, 'set', {}, ['001', 'in-progress', null, { branch: 'jarl/001-x', worker: 'w0' }]).ok, true);
   assert.equal(keyOf(root, '001'), null);
   jarl(root, 'evidence', '001', '--line', '1', '--ran', 'npm test', '--saw', 'green');
-  assert.match(logOf(root), new RegExp(`^- ${STAMP} · 001 evidence row · npm test`, 'm'), 'a write about an unkeyed issue names no key');
+  assert.match(logOf(root), new RegExp(`^- ${STAMP} · 001 evidence row(?: \\(line [0-9a-f]+\\))? · npm test`, 'm'), 'a write about an unkeyed issue names no key');
   assert.equal(json(root, 'profile').format, 1, 'and raises nothing');
   assert.equal(oldJarl(root, 'list', {}).ok, true, 'the frozen reader still reads it');
   jarl(root, 'new', 'filed now', '--acceptance', '[read] it works');
@@ -128,7 +128,7 @@ test('verify finds a key in a loop below format 3', () => {
   const root = mkdtempSync(join(tmpdir(), 'jarl-keys-low-'));
   mkdirSync(join(root, '.git'));
   assert.equal(oldJarl(root, 'init', {}, ['an older loop', {}]).ok, true);
-  assert.equal(oldJarl(root, 'new', {}, ['one', {}]).ok, true);
+  assert.equal(oldJarl(root, 'new', {}, ['one', { acceptance: 'it works',}]).ok, true);
   const f = join(root, '.jarl', 'issues', readdirSync(join(root, '.jarl', 'issues'))[0]);
   writeFileSync(f, readFileSync(f, 'utf8').replace(/(\*\*Status:\*\* open)/, '$1\n**Key:** 20260101T0000-abcd'));
   const r = run(root, ['verify']);

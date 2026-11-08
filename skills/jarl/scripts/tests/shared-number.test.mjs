@@ -97,7 +97,7 @@ test('while two files carry one number, every command that addresses it is refus
     ['round', '2', 'red'],
     ['field', '1', 'After', '2'],
     ['field', '2', 'After', '1'],
-    ['new', 'third', '--tier', 'light', '--after', '2'],
+    ['new', 'third', '--tier', 'light', '--after', '2', '--acceptance', '[read] it works'],
     ['ask', 'which one?', '--issue', '2'],
     ['changelog', '2'],
     ['merged', '2', '--sha', 'abc1234', '--ran', 'npm test', '--saw', 'all green'],

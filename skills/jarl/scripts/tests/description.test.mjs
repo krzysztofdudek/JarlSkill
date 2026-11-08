@@ -148,12 +148,12 @@ test('field logs the old value and who changed it on a list of ids, an added and
 
 test('field logs each section it replaces by the first line and the length of what the section held, and who changed it', () => {
   const root = profiledLoop();
-  for (const [part, value] of [['What', 'new what'], ['Why', 'new\nwhy'], ['Acceptance', 'line a\nline b'], ['Design', 'new design'], ['Changelog', 'Fixed: new entry']]) jarl(root, 'field', '1', part, value, '--by', 'w-two');
+  for (const [part, value] of [['What', 'new what'], ['Why', 'new\nwhy'], ['Acceptance', '[read] line a\n[read] line b'], ['Design', 'new design'], ['Changelog', 'Fixed: new entry']]) jarl(root, 'field', '1', part, value, '--by', 'w-two');
   const lines = logLines(root).filter((l) => l.startsWith('1 body · '));
   assert.deepEqual(lines, [
     '1 body · what · was "old what" (8 characters) · by w-two',
     '1 body · why · was "old why" (7 characters) · by w-two',
-    '1 body · acceptance · was "old line" (8 characters) · by w-two',
+    '1 body · acceptance · was "[read] old line" · by w-two',
     '1 body · Design · was "old design" (10 characters) · by w-two',
     '1 body · changelog · was "- Fixed: old entry" (18 characters) · by w-two',
   ]);
@@ -180,8 +180,8 @@ test('field --add adds to a section after what it holds, and logs the line a rep
   jarl(root, 'field', '1', 'Why', 'more why', '--add', '--by', 'w-two');
   assert.equal(lastLine(root), '1 body · why · was "old why" (7 characters) · by w-two');
   jarl(root, 'field', '1', 'Acceptance', '[read] line b', '--add');
-  assert.equal(R.findIssue(root, '1').sections.acceptance.trim(), '- old line\n- line b', 'the new line joins the list the section held');
-  assert.equal(lastLine(root), '1 body · acceptance · was "old line" (8 characters)');
+  assert.equal(R.findIssue(root, '1').sections.acceptance.trim(), '- [read] old line\n- [read] line b', 'the new line joins the list the section held');
+  assert.equal(lastLine(root), '1 body · acceptance · was "[read] old line"');
   jarl(root, 'field', '1', 'Changelog', 'Added: new entry', '--add');
   assert.equal(R.findIssue(root, '1').sections.changelog.trim(), '- Fixed: old entry\n- Added: new entry');
   assert.equal(lastLine(root), '1 body · changelog · was "- Fixed: old entry" (18 characters)');
@@ -247,7 +247,7 @@ test('a loop whose description was changed by every command is read by the pinne
   jarl(root, 'field', '001', 'Files', 'a.mjs');
   jarl(root, 'field', '001', 'Source', 'r/x#1');
   jarl(root, 'field', '001', 'After', '002');
-  for (const [part, value] of [['What', 'w'], ['Why', 'y'], ['Acceptance', 'a'], ['Where', 'here']]) jarl(root, 'field', '001', part, value);
+  for (const [part, value] of [['What', 'w'], ['Why', 'y'], ['Acceptance', '[read] a'], ['Where', 'here']]) jarl(root, 'field', '001', part, value);
   jarl(root, 'field', '001', 'Resources', 'gate');
   const list = oldJarl(root, 'list', { all: true });
   assert.equal(list.ok, true, list.error);

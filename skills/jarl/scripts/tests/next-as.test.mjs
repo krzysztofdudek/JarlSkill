@@ -323,20 +323,22 @@ test('a promise is on whoever its Found by names until it is kept and closed, an
   // Each one is on its maker's list, with the command that moves it.
   const mine = json(root, 'next', '--as', 'jarl', '--all');
   assert.deepEqual(mine.rows.map((r) => [r.id, r.what]), [['2', 'promise'], ['1', 'ready']], 'the bench holds 5 up, so it comes first');
-  assert.match(jarl(root, 'next', '--as', 'jarl'), /^- 2 run the bench again after the fix: promised by the jarl; keep it, then record what was done — jarl\.mjs evidence 2 --ran "<command>" --saw "<what-it-printed>" --line "<line-number>" --by "<who>" · holds up 5$/m);
+  assert.match(jarl(root, 'next', '--as', 'jarl'), /^- 2 run the bench again after the fix: promised by the jarl; keep it, then record what was done — jarl\.mjs evidence 2 --ran "<command>" --saw "<what-it-printed>" --by "<who>" · holds up 5$/m);
   assert.match(jarl(root, 'next', '--as', 'jarl', '--all'), /^- 5 after the bench: waits on the jarl via 2$/m);
   assert.match(jarl(root, 'next', '--as', 'owner'), /^On the owner \(1\)\n- 3 read the draft by Friday: promised by the owner; keep it, then record what was done — jarl\.mjs evidence 3 /);
   assert.match(jarl(root, 'next', '--as', 'ada'), /^On Ada \(1\)\n- 4 send the summary to the jarl: promised by Ada; keep it, then record what was done — /);
   // Kept: the proof waits for a verdict, then the close, and the promise stays on its maker throughout.
-  jarl(root, 'evidence', '4', '--line', '1', '--ran', 'sent the summary', '--saw', 'the jarl has it');
+  jarl(root, 'evidence', '4', '--ran', 'sent the summary', '--saw', 'the jarl has it');
   assert.match(jarl(root, 'next', '--as', 'Ada'), /^- 4 send the summary to the jarl: kept, proof recorded, no verdict; review it — jarl\.mjs review 4 "<verdict>" --by "<reviewer>" "<text>"$/m);
   jarl(root, 'review', '4', 'approve', '--by', 'jarl', FINDINGS);
   assert.match(jarl(root, 'next', '--as', 'Ada'), /^- 4 send the summary to the jarl: kept, approved; close it — jarl\.mjs set 4 done "<text>"$/m);
   jarl(root, 'set', '4', 'done', 'the summary was sent');
   assert.equal(json(root, 'next', '--as', 'Ada').total, 0, 'a promise ends when its issue closes');
   // A promise given to a worker is worked as any issue, and its maker still holds each line.
+  jarl(root, 'field', '2', 'Acceptance', '[read] the bench runs');
   jarl(root, 'set', '2', 'in-progress', 'go', '--worker', 'w2', '--branch', 'jarl/2');
   assert.deepEqual(json(root, 'next', '--as', 'jarl', '--all').rows.filter((r) => r.id === '2').map((r) => [r.what, r.holder, r.doer]), [['worker', 'jarl', 'w2']]);
+  jarl(root, 'field', '3', 'Acceptance', '[read] it is read');
   jarl(root, 'set', '3', 'in-progress', 'go', '--worker', 'w3', '--branch', 'jarl/3');
   jarl(root, 'evidence', '3', '--line', '1', '--ran', 'npm test', '--saw', 'green');
   const owners = json(root, 'next', '--as', 'owner').rows;
@@ -358,7 +360,7 @@ test('a wait is on its named outside person, with when to check, and what comes 
   const dana = jarl(root, 'next', '--as', 'dana smith', '--all');
   assert.equal(dana, [
     'On Dana Smith (1)',
-    "- 1 the licence key from the vendor: waits on Dana Smith, check when 2026-11-10; when it comes, record it — jarl.mjs evidence 1 --ran \"<command>\" --saw \"<what-it-printed>\" · holds up 2",
+    "- 1 the licence key from the vendor: waits on Dana Smith, check when 2026-11-10; when it comes, record it — jarl.mjs evidence 1 --ran \"<command>\" --saw \"<what-it-printed>\" --by \"<who>\" · holds up 2",
     '',
     'Waiting on Dana Smith (1)',
     '- 2 install with the key: waits on Dana Smith via 1',
@@ -369,7 +371,7 @@ test('a wait is on its named outside person, with when to check, and what comes 
   assert.match(jarl(root, 'next', '--as', 'Lee'), /^On Lee \(1\)\n- 3 the legal sign-off: waits on Lee, check when after the board meets; when it comes, record it — /);
   assert.equal(json(root, 'next', '--as', 'Dana').total, 0, 'another name is another person');
   // It came: the proof is recorded, and the wait leaves the person for the jarl, who reviews and closes it.
-  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'asked Dana for the key', '--saw', 'the key arrived by mail');
+  jarl(root, 'evidence', '1', '--ran', 'asked Dana for the key', '--saw', 'the key arrived by mail');
   assert.equal(json(root, 'next', '--as', 'Dana Smith').total, 0);
   assert.match(jarl(root, 'next', '--as', 'jarl'), /^- 1 the licence key from the vendor: it came, proof recorded, no verdict; review it — jarl\.mjs review 1 "<verdict>" --by "<reviewer>" "<text>" · holds up 2$/m);
   jarl(root, 'review', '1', 'approve', '--by', 'jarl', FINDINGS);
@@ -477,7 +479,7 @@ test('resume lists the open promises and waits on their own, with who holds each
   ]);
   assert.equal(o.held.length + o.kept.length + o.readyTotal, o.status.ready, 'ready, held and kept together are the open issues not waiting');
   // With its proof recorded, the wait is shown as come: the jarl reviews and closes it.
-  jarl(root, 'evidence', '4', '--line', '1', '--ran', 'asked Dana for the key', '--saw', 'the key arrived');
+  jarl(root, 'evidence', '4', '--ran', 'asked Dana for the key', '--saw', 'the key arrived');
   assert.match(jarl(root, 'resume'), /^- 4  P2  the licence key \(came from Dana Smith, proof recorded; the jarl reviews and closes it\)$/m);
   assert.equal(json(root, 'resume').kept.find((k) => k.id === '4').came, true);
 });

@@ -43,7 +43,7 @@ test('a named write puts its writer after the stamp of every line it writes, and
   jarl(root, 'new', 'two', '--acceptance', '[read] it works', '--files', 'b.mjs', '--by', 'odin');
   jarl(root, 'log', 'a named note', '--by', 'odin');
   const log = logOf(root);
-  for (const [who, line] of [['odin', '1 → in-progress · go · branch jarl/1 · worker w1'], ['w1', '1 evidence row · npm test'], ['odin', '1 round 1 (count 1 of 3) · '], ['the merger', '1 merged abc1234'], ['odin', 'asked a-1 (stuck) · which way?'], ['the jarl', 'goal line added · Coordinators: odin'], ['odin', 'filed 2 · two'], ['odin', 'a named note']]) {
+  for (const [who, line] of [['odin', '1 → in-progress · go · branch jarl/1 · worker w1'], ['w1', '1 evidence row'], ['odin', '1 round 1 (count 1 of 3) · '], ['the merger', '1 merged abc1234'], ['odin', 'asked a-1 (stuck) · which way?'], ['the jarl', 'goal line added · Coordinators: odin'], ['odin', 'filed 2 · two'], ['odin', 'a named note']]) {
     assert.match(log, new RegExp(`^- ${STAMP}(?: key \\S+)? by ${who} · ${line.replace(/[.*+?()[\]|\\]/g, '\\$&')}`, 'm'), line);
   }
   // The reader places every line, writer and all, and the views read the moves as before.

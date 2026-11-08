@@ -49,7 +49,7 @@ test('resume assembles every section live from the loop and the repositories its
   // Waiting on After, ready ones, a question, a ratify item.
   jarl(hub, 'new', 'waits for one', '--acceptance', '[read] it works', '--after', '1');
   jarl(hub, 'new', 'ready two', '--prio', '1', '--acceptance', '[read] x');
-  jarl(hub, 'new', 'ready three', '--acceptance', '[read] it works');
+  jarl(hub, 'new', 'ready three');
   jarl(hub, 'ask', 'which flag name?', '--issue', '3');
   jarl(hub, 'ask', 'kept the old default under the mandate', '--kind', 'ratify', '--issue', '1');
   // An approved branch waiting for the merger.
@@ -58,9 +58,9 @@ test('resume assembles every section live from the loop and the repositories its
   sh(tool, 'git checkout -q -b jarl/5-five && echo 2 > src/b.mjs && git commit -qam five && git checkout -q release');
   jarl(hub, 'review', '5', 'approve', '--by', 'rev', FINDINGS);
   // Merged with CI pending, and one with CI red.
-  jarl(hub, 'new', 'merged six', '--acceptance', '[read] it works', '--repo', '../tool');
+  jarl(hub, 'new', 'merged six', '--repo', '../tool');
   jarl(hub, 'merged', '6', '--sha', sh(tool, 'git rev-parse --short release'), '--ci', 'pending', '--repo', '../tool');
-  jarl(hub, 'new', 'merged seven', '--acceptance', '[read] it works', '--repo', '../tool');
+  jarl(hub, 'new', 'merged seven', '--repo', '../tool');
   jarl(hub, 'merged', '7', '--sha', sh(tool, 'git rev-parse --short release'), '--ci', 'red', '--repo', '../tool');
 
   const before = snapshot(hub);
