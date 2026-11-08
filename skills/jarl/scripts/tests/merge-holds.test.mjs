@@ -122,6 +122,23 @@ test('a declared base the repository does not hold falls back to the branch the 
   assert.doesNotMatch(said(hub, 'merged', '1', '--sha', sha, '--keep'), /MERGE WITHOUT/);
 });
 
+test('scope, branches and the merge queue of resume read the declared base, as the merge note does, whatever branch the main checkout has open', () => {
+  const { hub } = declaredBaseFixture();
+  const views = () => {
+    // A scope that finds no commit beyond its base exits with a failure, and still prints what it read.
+    const scope = JSON.parse(run(hub, ['scope', '1', '--branch', 'jarl/1-x', '--json']).stdout);
+    const row = JSON.parse(jarl(hub, 'branches', '--json')).find((b) => b.branch === 'jarl/1-x');
+    const queue = JSON.parse(jarl(hub, 'resume', '--json')).queue.repos.find((r) => r.repo === 'tool');
+    return { scope: [scope.base, scope.items.find((i) => i.name === 'commits beyond base').ok], ahead: row.ahead, queue: [queue.base, queue.rows.map((r) => r.branch)] };
+  };
+  jarl(hub, 'evidence', '1', '--ran', 'npm test', '--saw', 'all green');
+  jarl(hub, 'review', '1', 'approve', '--by', 'rev-fresh', 'read the diff, nothing found');
+  assert.deepEqual(views(), { scope: ['main', false], ahead: 0, queue: ['main', []] }, 'no base is declared: the open branch, which holds the merge, is the base');
+  jarl(hub, 'base', 'tool', 'release');
+  assert.deepEqual(views(), { scope: ['release', true], ahead: 1, queue: ['release', ['jarl/1-x']] }, 'the declared base does not hold the branch');
+  assert.equal(JSON.parse(run(hub, ['scope', '1', '--branch', 'jarl/1-x', '--base', 'main', '--json']).stdout).base, 'main', '--base still names the base of one call');
+});
+
 // A profile whose done gate closes an issue only on a merge that landed in the base, with the default approve.
 function landedGateProfile() {
   const file = join(mkdtempSync(join(tmpdir(), 'jarl-holds-profile-')), 'profile.json');

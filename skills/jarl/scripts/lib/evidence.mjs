@@ -560,7 +560,16 @@ const APPROVED_NO_CODE = 'approved, and it carries no code, so no merge waits �
 // An issue a round sent back whose worker has recorded no row since is the worker's again, not waiting for a reviewer.
 const SENT_BACK = 'sent back by a round, no new proof yet — it is back with the worker, who records new rows';
 const APPROVED_IN_PLACE = 'approved and worked in place, so no merge waits — next its files are committed, a row names the commit, and it is set done';
-const inFlightStep = (loop, mark, issue) => (mark === 'approved' && worksInPlace(loop.profile, issue) ? APPROVED_IN_PLACE : mark === 'approved' && !carriesCode(issue) ? APPROVED_NO_CODE : sentBack(loop, issue, mark) ? SENT_BACK : IN_FLIGHT_MARKS[mark]);
+// Why an issue's recorded merge does not count for its code as it is now (see unmergedCode), as the words after "and":
+// done refuses that merge, so the views ask for the merge again. Null when the issue records no merge, or one that counts.
+export function mergeAgainWhy(loop, issue) {
+  if (!mergedOf(issue)) return null;
+  const u = unmergedCode(issue, gateOf(loop, issue.id));
+  if (!u) return null;
+  return u.why === 'tip' ? 'the branch has commits after its last merge' : 'its last merge was spent by a later start, reopen or red round';
+}
+const approvedStep = (loop, issue) => { const again = mergeAgainWhy(loop, issue); return again ? `approved, and ${again} — next the merger lands it again and records the merge, then set it done` : IN_FLIGHT_MARKS.approved; };
+const inFlightStep = (loop, mark, issue) => (mark === 'approved' && worksInPlace(loop.profile, issue) ? APPROVED_IN_PLACE : mark === 'approved' && !carriesCode(issue) ? APPROVED_NO_CODE : mark === 'approved' ? approvedStep(loop, issue) : sentBack(loop, issue, mark) ? SENT_BACK : IN_FLIGHT_MARKS[mark]);
 // The rows for the in-flight `issues` of a loop (its own issues, or the ones a view is scoped to). Where the mark ends in
 // setting the issue done and an acceptance line only the owner ticks is not ticked, next says that tick comes first. An
 // approve the done gate refuses for its model is named with what is missing, in the gate's words.

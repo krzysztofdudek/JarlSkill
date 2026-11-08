@@ -754,8 +754,10 @@ export function inFlightMark(loop, issue) {
     // The same reading the done gate and the merge queue take: an issue that carries code is cleared by a fresh approve
     // only, and an approve the loop's definition of an approved issue does not accept clears nothing.
     if (!g.cleared) return g.uncleared.cause === 'coordinator' ? 'approved-not-fresh' : 'approved-not-cleared';
+    // A merge that does not count for the code as it is now (see unmergedCode) leaves it approved and not merged, as done
+    // reads it.
     const m = mergedOf(issue);
-    if (!m) return 'approved';
+    if (!m || unmergedCode(issue, g)) return 'approved';
     return m.ci === 'pending' || m.ci === 'red' ? 'merged-ci' : 'merged';
   }
   const verdicts = g.trail.filter((r) => r.inWindow && !r.retracted && (r.verdict === 'approve' || r.verdict === 'changes'));

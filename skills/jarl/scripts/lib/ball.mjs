@@ -8,7 +8,7 @@ import { carriesCode, coordinatorOf, holderKey, inFlightMark, leaseConflictOf, r
 import { gatedMark, modelReviewForm } from './models.mjs';
 import { issueRepos, repoLabel } from './repositories.mjs';
 import { reasonWord, waitingOn } from './commands.mjs';
-import { nextRows, schedulerNote } from './evidence.mjs';
+import { mergeAgainWhy, nextRows, schedulerNote } from './evidence.mjs';
 import { ownerLineStates } from './owner-lines.mjs';
 import { ruleLines, rulesFor } from './rules.mjs';
 import { jarlDir, today } from './where.mjs';
@@ -49,6 +49,8 @@ const sliceHolder = (loop, issue) => coordinatorOf(loop, issue);
 const isParent = (i) => Boolean(i.tree && i.tree.children.length);
 const checking = (profile, i) => isParent(i) && profile.is(i.status, 'dispatchable');
 const inPlayForRows = (profile, i) => profile.is(i.status, 'holds-claim') || checking(profile, i);
+// The step for an issue whose recorded merge done does not count for its code as it is now (see mergeAgainWhy).
+const MERGE_AGAIN = 'merge it again and record the merge';
 
 // The issue rows: what the record says about an issue in play, as the step it points to and who takes it. The worker of
 // a lease is the one who does the step, and the holder of its slice (the jarl, with none) still holds the line.
@@ -104,9 +106,10 @@ function issueRows(ctx) {
     const unticked = (ctx.ownerStates.get(i.id) || []).some((s) => !s.tick);
     if (mark === 'rows-no-verdict' && profile.doneGate.approve === 'none') {
       // A done gate that asks for no approve: the proof is enough, and the merge (when the gate asks for one) comes next.
-      const merge = profile.doneGate['requires-merged'] && !mergedOf(i);
+      const again = profile.doneGate['requires-merged'] ? mergeAgainWhy(loop, i) : null;
+      const merge = profile.doneGate['requires-merged'] && (!mergedOf(i) || Boolean(again));
       if (!merge && unticked) continue;
-      out.push({ ...(merge ? onMerger : onJarl), what: merge ? 'merge' : 'close', says: merge ? 'proof recorded, not merged; merge it' : 'proof recorded; close it',
+      out.push({ ...(merge ? onMerger : onJarl), what: merge ? 'merge' : 'close', says: again ? `proof recorded, and ${again}; ${MERGE_AGAIN}` : merge ? 'proof recorded, not merged; merge it' : 'proof recorded; close it',
         command: merge ? jarlLine('merged', i.id, '--sha', '<sha>', '--ran', '<command>', '--saw', '<what-it-printed>') : jarlLine('set', i.id, closeStatus, '<text>') });
       continue;
     }
@@ -132,7 +135,8 @@ function issueRows(ctx) {
       continue;
     }
     if (mark === 'approved' && carriesCode(i)) {
-      out.push({ ...onMerger, what: 'merge', says: 'approved, not merged; merge it', command: jarlLine('merged', i.id, '--sha', '<sha>', '--ran', '<command>', '--saw', '<what-it-printed>') });
+      const again = mergeAgainWhy(loop, i);
+      out.push({ ...onMerger, what: 'merge', says: again ? `approved, and ${again}; ${MERGE_AGAIN}` : 'approved, not merged; merge it', command: jarlLine('merged', i.id, '--sha', '<sha>', '--ran', '<command>', '--saw', '<what-it-printed>') });
       continue;
     }
     if (mark === 'merged-ci') {

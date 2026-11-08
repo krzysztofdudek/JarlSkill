@@ -6,7 +6,7 @@ import { canonical, jarlDir } from './where.mjs';
 import { branchGlobsFor } from './ids.mjs';
 import { loadProfile, reviewerRule } from './profile.mjs';
 import { modelLines, modelRefusalOf } from './models.mjs';
-import { defaultBase, fileAt, isGitRepo, issueRepos, refsIn, repoFromInput } from './repositories.mjs';
+import { baseOf, fileAt, isGitRepo, issueRepos, refsIn, repoFromInput } from './repositories.mjs';
 import { gateOf, readLoop } from './loop.mjs';
 import { issuesOnBranch, loopRepos } from './rounds.mjs';
 import { schedulerNote } from './evidence.mjs';
@@ -44,7 +44,7 @@ export function cmdQueue(root, flags = {}) {
   for (const repo of repos) {
     if (!isGitRepo(repo)) continue;
     const real = canonical(repo);
-    const base = flags.base || defaultBase(repo);
+    const base = flags.base || baseOf(root, repo);
     const exists = (b) => refsIn(repo).has(b);
     // The branch an approved issue is on: its Branch field, else — for an issue that records none — the one
     // jarl/NNN-* branch carrying its number.
