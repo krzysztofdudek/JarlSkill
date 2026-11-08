@@ -587,4 +587,4 @@ const SEVERITIES = ['Critical', 'Important', 'Minor'];
 const builds = { modelsTable: 0, nextRows: 0 };
 
 // Used by the other modules of the library, and not part of what jarl-lib.mjs exports.
-export { SEVERITIES, awaitsMerge, builds, ceilingTier, findingOfLog, gatedMark, limitNote, loggedFinding, modelRefusalOf, modelReviewForm, modelValue, needKnownModels, reviewModelNotes, spellingNote, unknownModels };
+export { modelLinesIn, SEVERITIES, awaitsMerge, builds, ceilingTier, findingOfLog, gatedMark, limitNote, loggedFinding, modelRefusalOf, modelReviewForm, modelValue, needKnownModels, reviewModelNotes, spellingNote, unknownModels };

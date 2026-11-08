@@ -1,14 +1,15 @@
 // What is on whom: every open thing of the loop has one holder who must move next, derived from the record and never
 // stored, and next --as <holder> lists what is on that one, each line with the command that moves it.
 
-import { PROMISE_KIND, WAIT_KIND, fieldText, jarlLine, need } from './base.mjs';
+import { PROMISE_KIND, WAIT_KIND, fieldText, jarlLine, need, slugify } from './base.mjs';
 import { cmpId, idKey, idsCited } from './ids.mjs';
 import { mergedOf } from './issues.mjs';
 import { carriesCode, gateOf, holderKey, inFlightMark, leaseConflictOf, sameHolder, sentBack, statusWith, worksInPlace } from './gate.mjs';
 import { coordinatorOf, integrationBranch, sameSlice, sliceMerger, sliceOf } from './slices.mjs';
 import { git } from './git.mjs';
 import { readLoop } from './loop.mjs';
-import { gatedMark, modelReviewForm } from './models.mjs';
+import { gatedMark, modelLines, modelReviewForm } from './models.mjs';
+import { examinerDepth } from './brief.mjs';
 import { baseOf, issueRepos, repoLabel } from './repositories.mjs';
 import { reasonWord } from './shared.mjs';
 import { waitingOn } from './after.mjs';
@@ -202,6 +203,25 @@ function unclearedRow(root, issues, holder, mark, verdict, missing = new Map()) 
   const units = reviewUnits(root, issues);
   return { what: 'review', id: issues[0].id, ids: issues.map((i) => i.id), units, title: '', priority: issues.map((i) => i.priority).filter((p) => p !== undefined).sort()[0], holder,
     says: `${many}: ${units.map(unitText).join(' · ')}`, command: verdict('<ids>') };
+}
+// What a host needs to carry a move that raises an agent, and no judgement: for each agent, its role, the default model for
+// the tier it needs, the branch it works on and the command that prints its brief. Moves that raise nobody have none.
+function raisesOf(loop, models, row) {
+  const { profile } = loop;
+  const byId = (ids) => ids.map((id) => loop.byId.get(id)).filter(Boolean);
+  const proposed = (i) => fieldText(i.fields.branch) || `jarl/${i.id}-${slugify(i.title)}`;
+  const worker = (i) => ({ role: 'worker', model: models.defaultOf(i.tier), branch: proposed(i), command: jarlLine('brief', i.id), ...(worksInPlace(profile, i) ? { inPlace: true } : {}) });
+  const reviewer = (ids) => { const issues = byId(ids); const tier = examinerDepth(loop, issues).tier; return { role: 'reviewer', model: models.defaultOf(tier), tier, branch: issues[0] ? proposed(issues[0]) : null, command: jarlLine('brief', ids.join(','), '--role', 'reviewer') }; };
+  const merger = (extra) => ({ role: 'merger', model: models.defaultOf('standard'), ...extra });
+  if ((row.what === 'ready' || row.what === 'takeover') && loop.byId.has(row.id)) return [worker(loop.byId.get(row.id))];
+  if (row.what === 'review') return (row.units ? row.units.map((u) => u.ids) : [row.ids ?? [row.id]]).map(reviewer);
+  if (row.what === 'merge' && row.integration) return [merger({ branch: row.branch, integration: true, command: jarlLine('brief', '--role', 'merger') })];
+  if (row.what === 'merge') {
+    const i = loop.byId.get(row.id);
+    const m = i ? sliceMerger(loop.goalLines, i) : null;
+    return [merger({ branch: i ? fieldText(i.fields.branch) || null : null, ...(m ? { target: integrationBranch(m.slice) } : {}), command: jarlLine('brief', '--role', 'merger', ...(m ? ['--slice', m.slice] : [])) })];
+  }
+  return [];
 }
 // How long an idle lease or proof has had no sign of work, with the threshold it is past.
 const idleFor = (lv) => `${ago(lv.ageMs)} (threshold ${thresholdText(lv.minutes)})`;
@@ -534,6 +554,11 @@ export function ballRows(root, flags = {}) {
     else if (r.id !== undefined) r.holdsUp = dependents.get(r.id) || [];
     else if (r.what === 'question' || r.what === 'escalation') r.holdsUp = [...new Set([...(heldByQuestion.get(r.ask) || []), ...upOf(r.reviewing || [])])];
     else r.holdsUp = [];
+  }
+  const models = modelLines(root);
+  for (const r of rows) {
+    const raises = raisesOf(loop, models, r);
+    if (raises.length) { r.raise = raises[0]; if (raises.length > 1) r.raises = raises; }
   }
   const weight = (r) => (r.what === 'question' && r.kind === 'stop' ? Number.MAX_SAFE_INTEGER : r.holdsUp.length);
   // A row idle past the threshold goes before the others of its holder: a worker that waits on a prompt or a lock writes

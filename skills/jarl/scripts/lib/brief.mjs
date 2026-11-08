@@ -1,35 +1,38 @@
-// brief: the text a role is raised with, assembled from the record when asked and never stored. For an issue's worker or
-// reviewer: the issue as show prints it, the rules that reach that reader, the rounds so far and the findings of the
-// reviews that sent the work back, the proof rows, the role's reference and the commands that record the result. For a
-// slice's coordinator: its issues in play, its rules, its reference and its commands. It writes nothing and holds no lock.
-// A brief adds what the record holds to the role's reference, and never replaces it.
+// brief: the text a role is raised with, assembled from the record when asked and never stored. A worker's or an examiner's
+// brief is for one lease, a merger's is for its target branch, and a coordinator's for its slice. Each holds what its reader
+// needs and reads nothing else for: the role, the goal, the purpose, the lines with their methods, where the work is, the
+// rules that reach it, at most three "you do not" lines, each command with every value the record holds filled, and what
+// it reports. It writes nothing and holds no lock.
 
-import { IDENTICAL_OUTPUT_TAG, REVIEWER_KIND_SRC, fieldText, hole, jarlLine, meantToAlterNothing, need } from './base.mjs';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { IDENTICAL_OUTPUT_TAG, REVIEWER_KIND_SRC, fieldText, hole, jarlLine, meantToAlterNothing, need, printCommand } from './base.mjs';
 import { jarlDir, today } from './where.mjs';
-import { firstLine, firstLineReadings } from './journal.mjs';
-import { rowLinesText } from './log.mjs';
-import { shownRowLines } from './lines.mjs';
-import { evidenceTable, issueNamed, reviewEntries } from './issues.mjs';
-import { gateOf } from './gate.mjs';
+import { firstLine, firstLineReadings, goalLineOf } from './journal.mjs';
+import { acceptanceLines, evidenceNotes, evidenceTable, issueNamed, reviewEntries } from './issues.mjs';
+import { countedRowsOf, lineChanges, lineStates, linesAtLease, readLine, shownRowLines } from './lines.mjs';
+import { gateOf, worksInPlace } from './gate.mjs';
 import { readLoop } from './loop.mjs';
-import { sameSlice, sliceNamed, sliceOf } from './slices.mjs';
-import { takenOver } from './rounds.mjs';
-import { findingOfLog } from './models.mjs';
+import { integrationBranch, sameSlice, sliceNamed, sliceOf } from './slices.mjs';
+import { loopRepos, takenOver } from './rounds.mjs';
+import { findingOfLog, modelLinesIn } from './models.mjs';
 import { loopRules, ruleLines, rulesFor } from './rules.mjs';
 import { issueView } from './evidence.mjs';
+import { baseOf, isGitRepo, issueRepos, repoLabel, worktreeState } from './repositories.mjs';
+import { cmpId } from './ids.mjs';
+import { sameLease } from './leases.mjs';
 
-// The roles an issue's brief is written for. A merger's brief is one for the whole loop, its branches the merge queue of
-// resume; a coordinator's is the brief of its slice; a worker raised by a takeover is given the worker's brief, with the
-// rules of the takeover too.
-export const BRIEF_ROLES = Object.freeze(['worker', 'reviewer']);
+// The tool the commands of a brief run: its own absolute path.
+const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
+
+// The roles a brief of the tool is written for, besides a coordinator's of its slice: a worker's and an examiner's of one
+// lease, a merger's of its target. A worker raised by a takeover is given the worker's brief, with the rules of the
+// takeover too.
+export const BRIEF_ROLES = Object.freeze(['worker', 'reviewer', 'merger']);
 // The moments a coordinator meets while it runs its slice: every moment of work but the close, which is the jarl's.
 const COORDINATOR_MOMENTS = Object.freeze(['filing', 'start', 'review', 'round', 'merge', 'done']);
-// Where each role's rules are written in full, inside the skill's directory.
-const REFERENCES = Object.freeze({
-  worker: { file: 'references/worker.md', section: "The worker's brief" },
-  reviewer: { file: 'references/reviewer.md', section: "The reviewer's brief" },
-  coordinator: { file: 'references/jarl.md', section: 'Coordinators: slices of the backlog' },
-});
+// Where a coordinator's rules are written in full, inside the skill's directory.
+const REFERENCES = Object.freeze({ coordinator: { file: 'references/jarl.md', section: 'Coordinators: slices of the backlog' } });
 
 // A rule as a brief carries it: what ruleLines prints it from, and no more.
 const ruleOf = (r) => ({ slug: r.slug, scope: r.scope, until: r.until ?? null, by: r.by ?? null, under: r.under ?? null, ...(r.underNotInForce ? { underNotInForce: r.underNotInForce } : {}), builtin: r.builtin === true, source: r.source ?? null, text: r.text });
@@ -219,39 +222,221 @@ function findingsOf(loop, issue, events, notes) {
   return [...found, ...left.map(({ k }) => ({ by: k.by, kind: k.kind, day: k.day, text: k.text, fileOnly: true }))];
 }
 
-function issueBrief(root, loop, rawId, role) {
-  const issue = issueNamed(loop.issues, rawId);
-  need(issue, `no such issue: ${rawId} — the issues: ${jarlLine('list', '--all')}`, () => ({ arg: 0, value: hole('<id>') }));
+// The issues a brief is for, as one lease: the ids named, and, when one is leased, every issue of its lease. Two leases, or
+// a lease beside work no lease holds, are refused: a brief is for one agent.
+function leaseIssues(loop, rawIds) {
+  const raw = String(rawIds).split(',').map((s) => s.trim()).filter(Boolean);
+  const named = raw.map((rawId) => {
+    const issue = issueNamed(loop.issues, rawId);
+    need(issue, `no such issue: ${rawId} — the issues: ${jarlLine('list', '--all')}`, () => ({ arg: 0, value: hole('<id>') }));
+    return issue;
+  });
+  const leased = (i) => loop.profile.is(i.status, 'holds-claim') && Boolean(fieldText(i.fields.worker) || fieldText(i.fields.branch));
+  const leases = named.filter(leased);
+  for (const i of leases) need(sameLease(loop.profile, i, leases[0]) || i === leases[0], `${named.map((x) => x.id).join(', ')} are not one lease: ${leases[0].id} holds ${leaseText(leases[0])}, and ${i.id} holds ${leaseText(i)} — a brief is for one agent on one lease`, () => ({ arg: 0, value: hole('<ids>') }));
+  if (leases.length && leases.length !== named.length) need(false, `${named.map((x) => x.id).join(', ')} are not one lease: ${named.find((x) => !leased(x)).id} holds none, and ${leases[0].id} holds ${leaseText(leases[0])} — a brief is for one agent on one lease`, () => ({ arg: 0, value: hole('<ids>') }));
+  const mates = leases.length ? loop.issues.filter((i) => !named.includes(i) && sameLease(loop.profile, i, leases[0])) : [];
+  return { issues: [...named, ...mates].sort((a, b) => cmpId(a.id, b.id)), added: mates };
+}
+const leaseText = (i) => [fieldText(i.fields.branch) && `branch ${fieldText(i.fields.branch)}`, fieldText(i.fields.worker) && `worker ${fieldText(i.fields.worker)}`].filter(Boolean).join(', ') || 'no lease';
+
+// How deep an examiner goes: computed from the lines of the lease, each row of the table the deeper of the lines as they
+// were at the lease and the lines as they are now, so editing a line never lightens a review. The rows, deepest last:
+// compare-only (every line a compare: a light model may do it), mechanical (test or check and no read or owner: at least
+// standard, not below the worker), judged (any read or owner: one tier above the worker, at least standard), strongest (an
+// issue on the top tier: the strongest tier, a second model family where the top tier's Model line names one).
+const DEPTH_ROWS = Object.freeze(['compare-only', 'mechanical', 'judged', 'strongest']);
+export function examinerDepth(loop, issues) {
+  const { tiers } = loop.profile;
+  const rank = (t) => Math.max(tiers.indexOf(t), 0);
+  const top = tiers.length - 1;
+  const standard = Math.max(tiers.indexOf('standard'), 0);
+  const workerRank = issues.reduce((m, i) => Math.max(m, rank(i.tier)), 0);
+  const rowOf = (lines) => {
+    if (issues.some((i) => rank(i.tier) === top)) return 'strongest';
+    const methods = lines.map((l) => readLine(l).method);
+    if (methods.length && methods.every((m) => m === 'compare')) return 'compare-only';
+    if (!methods.length || methods.some((m) => m === 'read' || m === 'owner')) return 'judged';
+    return 'mechanical';
+  };
+  const linesNow = issues.flatMap((i) => acceptanceLines(i));
+  const linesAtLeaseOf = issues.flatMap((i) => { const at = linesAtLease(loop, i); return at ? at.lines : acceptanceLines(i); });
+  const [rowNow, rowLease] = [rowOf(linesNow), rowOf(linesAtLeaseOf)];
+  const row = DEPTH_ROWS.indexOf(rowLease) > DEPTH_ROWS.indexOf(rowNow) ? rowLease : rowNow;
+  const tierRank = row === 'compare-only' ? 0 : row === 'mechanical' ? Math.max(standard, workerRank) : row === 'judged' ? Math.max(standard, Math.min(workerRank + 1, top)) : top;
+  const tier = tiers[tierRank];
+  const secondFamily = row === 'strongest' ? modelLinesIn(loop.goalLines, loop.profile).byTier[tier]?.[1] ?? null : null;
+  return { row, tier, secondFamily, atLease: rowLease, now: rowNow, worker: tiers[workerRank], says: depthWords(row, tier, tiers[workerRank], secondFamily) };
+}
+function depthWords(row, tier, worker, secondFamily) {
+  if (row === 'compare-only') return `every line is a compare line, so a ${tier} model is allowed: check that each comparison covers everything the change touched`;
+  if (row === 'mechanical') return `test or check lines and no read or owner line: at least ${tier}, never below the worker's tier (${worker})`;
+  if (row === 'judged') return `a read or owner line: one tier above the worker (${worker}), at least standard: ${tier}`;
+  return `an issue on the top tier: the strongest tier, ${tier}${secondFamily ? `, and a second model family (${secondFamily}) where the Model line has one` : ''}`;
+}
+
+// What an issue's text shows the role: the issue as show prints it, without the lines that name a place on this machine;
+// and for the examiner without its Evidence and Reviews, so neither the worker's words nor an earlier verdict reach it
+// except as the proof rows and the previous findings the brief prints on their own.
+function issueText(root, issue, role) {
+  const show = issueView(root, issue, { places: false, ...(role === 'reviewer' ? { omit: ['evidence', 'reviews'] } : {}) }).replace(/\s+$/, '');
+  const lines = acceptanceLines(issue);
+  return lines.length ? `${show}\n\nLines of ${issue.id}, by number:\n${lines.map((l, k) => `${k + 1}. ${l}`).join('\n')}` : show;
+}
+// The first paragraph of the goal: the text after its heading, up to the first blank line, a section or a machine line.
+function goalParagraph(loop) {
+  const lines = String(loop.goal ?? '').replace(/\r\n?/g, '\n').split('\n').slice(1);
+  const start = lines.findIndex((l) => l.trim() && !l.startsWith('#') && !goalLineOf(l));
+  if (start === -1) return loop.goalLines.goal ?? '';
+  const end = lines.slice(start).findIndex((l) => !l.trim() || l.startsWith('#') || goalLineOf(l));
+  return lines.slice(start, end === -1 ? undefined : start + end).join(' ').trim();
+}
+// The parent an issue is part of, with its purpose: its Why, or its What, or its title.
+function parentPurpose(issue) {
+  const p = issue.tree?.parent;
+  if (!p) return null;
+  const why = fieldText(p.sections?.why) || fieldText(p.sections?.what) || fieldText(p.title);
+  return { id: p.id, title: p.title, why };
+}
+
+// Where a lease works: its branch, worker and model from the record, and for each repository of its issues the base branch
+// and the worktree git lists for the branch.
+function leaseWhere(root, loop, issues) {
+  const first = issues[0];
+  const branch = fieldText(first.fields.branch) || null;
+  const inPlace = worksInPlace(loop.profile, first);
+  const tier = loop.profile.tiers.reduce((best, t) => (issues.some((i) => i.tier === t) ? t : best), first.tier);
+  const repos = [...new Set(issues.flatMap((i) => issueRepos(root, i)))].filter(isGitRepo).map((repo) => {
+    const wt = branch ? worktreeState(repo, branch, fieldText(first.fields.worktree)) : null;
+    return { repo, label: repoLabel(repo), base: baseOf(root, repo), worktree: wt && wt.state === 'here' ? wt.path : null };
+  });
+  return { branch, worker: fieldText(first.fields.worker) || null, model: fieldText(first.fields.model) || null, inPlace, tier, repos };
+}
+
+const toolCommand = (ctx) => (...words) => printCommand(['node', SCRIPT, ...words, '--root', ctx.root], { globals: [] });
+
+// The commands a role uses, each with every value the record holds filled.
+function workerCommands(ctx, issues, lease) {
+  const by = lease.worker ?? hole('<who>');
+  const tool = toolCommand(ctx);
+  const ids = issues.map((i) => i.id).join(',');
+  const issueWord = issues.length > 1 ? hole('<id>') : issues[0].id;
+  const proofs = issues.map((i) => ({ what: `proof of a line of ${i.id}, one row per run`, command: tool('evidence', i.id, '--ran', hole('<command>'), '--saw', hole('<what-it-printed>'), '--line', hole('<line-number>'), '--by', by) }));
+  return [...proofs,
+    { what: 'a note, the choice a line leaves open', command: tool('evidence', issueWord, hole('<text>'), '--by', by) },
+    { what: 'stuck: a line you cannot meet without weakening a protection (then stop)', command: tool('ask', hole('<text>'), '--kind', 'stuck', '--issue', issueWord, '--by', by) },
+    { what: 'the changelog entry, for a change someone sees', command: tool('field', ids, 'Changelog', hole('<changelog-entry>'), '--add', '--by', by) },
+  ];
+}
+function reviewerCommands(ctx, issues, lease) {
+  const tool = toolCommand(ctx);
+  const ids = issues.map((i) => i.id).join(',');
+  const verdict = tool('review', ids, hole('<verdict>'), hole('<findings-with-a-severity>'), '--by', hole('<reviewer>'), '--model', hole('<model-id>'));
+  const diffs = lease.branch ? lease.repos.map((r) => ({ what: `the diff in ${r.label}`, command: printCommand(['git', '-C', r.repo, 'diff', `${r.base}...${lease.branch}`], { globals: [] }) })) : [];
+  const each = issues.map((i) => ({ what: `a re-run of a line of ${i.id}`, command: tool('evidence', i.id, '--ran', hole('<command>'), '--saw', hole('<what-it-printed>'), '--line', hole('<line-number>'), '--by', hole('<reviewer>')) }));
+  return [...diffs, ...each,
+    { what: 'the verdict, as the last step (with `--outside "<finding-outside-the-issue>"` for each finding outside the issue, filed as a new issue, never a reason for changes)', command: verdict }];
+}
+
+function issueData(root, loop, issue, role) {
   const events = loop.eventsById.get(issue.id) || [];
   const rounds = events.filter((e) => e.type === 'round').map((e, n) => ({ round: n + 1, at: e.at, text: e.text.slice(e.written.length + 1) }));
-  // A takeover as the record names one: a lease handed to a new worker with a reason that names a takeover (see takenOver).
   const tookOver = takenOver(loop.profile, events);
-  const roles = new Set([role, ...(role === 'worker' && tookOver ? ['takeover'] : [])]);
-  const moments = new Set([role === 'worker' ? 'start' : 'review', ...(rounds.length ? ['round'] : [])]);
-  // The reader the rules are matched against, as next --as and resume --as match theirs: the role, the moment and the issue.
-  const rules = rulesFor(root, loop, { roles, slice: null, moments, issues: [issue] }, today()).map(ruleOf);
+  const lastLease = [...events].reverse().find((e) => e.type === 'move' && loop.profile.is(e.to, 'holds-claim'));
   const proof = evidenceTable(issue.sections.evidence).rows.filter((r) => !r.retracted).map(({ n, ran, saw, lines }) => ({ n, ran, saw, ...(lines.length ? { lines: shownRowLines(issue, lines) } : {}) }));
-  const { profile } = loop;
   const notes = [];
-  if (role === 'worker' && profile.is(issue.status, 'terminal')) notes.push(`${issue.id} is ${issue.status}: a worker starts on it once it is reopened — ${jarlLine('set', issue.id, profile.initial, hole('<why>'))}`);
+  if (role === 'worker' && loop.profile.is(issue.status, 'terminal')) notes.push(`${issue.id} is ${issue.status}: a worker starts on it once it is reopened — ${jarlLine('set', issue.id, loop.profile.initial, hole('<why>'))}`);
   const findings = findingsOf(loop, issue, events, notes);
   if (role === 'reviewer' && !proof.length) notes.push(`${issue.id} holds no proof row: a worker's missing rows are an Important finding`);
-  // A change meant to alter nothing: its worker records the comparison as a proof row, and its review may be light.
   if (meantToAlterNothing(issue)) {
     const meant = `${issue.id} is a change meant to alter nothing (tag ${IDENTICAL_OUTPUT_TAG})`;
     notes.push(role === 'worker'
       ? `${meant}: its comparison of the output before and after is a proof row, the command and what it printed — ${jarlLine('evidence', issue.id, '--ran', hole('<command>'), '--saw', hole('<what-it-printed>'), '--line', hole('<line-number>'), '--by', hole('<who>'))}`
       : `${meant}: its review may be a light one, and it checks that the comparison in its proof rows covers everything the change touched; the comparison never stands in for the review`);
   }
-  const record = role === 'worker'
-    ? [{ what: 'proof, one row per check, naming the acceptance lines it proves', command: jarlLine('evidence', issue.id, '--ran', hole('<command>'), '--saw', hole('<what-it-printed>'), '--line', hole('<line-number>'), '--by', hole('<who>')) },
-      { what: 'the changelog entry, for a change someone sees', command: jarlLine('field', issue.id, 'Changelog', hole('<changelog-entry>'), '--add', '--by', hole('<who>')) }]
-    : [{ what: 'the verdict when a finding lies outside the issue, one --outside each (filed as a new issue, never a reason for changes)', command: jarlLine('review', issue.id, hole('<verdict>'), hole('<findings-with-a-severity>'), '--by', hole('<reviewer>'), '--model', hole('<model-id>'), '--outside', hole('<finding-outside-the-issue>')) },
-      { what: 'the verdict, as the last step', command: jarlLine('review', issue.id, hole('<verdict>'), hole('<findings-with-a-severity>'), '--by', hole('<reviewer>'), '--model', hole('<model-id>')) }];
+  const data = {
+    id: issue.id, title: issue.title, status: issue.status, tier: issue.tier,
+    text: issueText(root, issue, role),
+    parent: parentPurpose(issue),
+    lines: acceptanceLines(issue).map((text, k) => ({ n: k + 1, method: readLine(text).method, text })),
+    takeover: tookOver || lastLease?.handover === true,
+    rounds, findings, proof, notes,
+  };
+  if (role === 'reviewer') {
+    data.lineChanges = lineChanges(loop, issue);
+    data.assumed = assumedNotes(issue);
+    data.reRun = proofToReRun(loop, issue);
+  }
+  return data;
+}
+// The notes of an issue that start with Assumed: and are not retracted: what the worker chose, which the examiner weighs.
+function assumedNotes(issue) {
+  const body = issue.sections.evidence || '';
+  const { lines, notes } = evidenceNotes(body);
+  return notes.filter((n) => !n.retracted).map((n) => lines.slice(n.start, n.end + 1).join(' ').replace(/^- /, '').trim()).filter((t) => /^assumed:/i.test(t));
+}
+// The proof of the mechanical lines as commands to re-run: every counted row of a test, check or compare line, by the holder
+// of the lease, with the number of the line and what it printed; a line with no such row says so.
+function proofToReRun(loop, issue) {
+  const states = lineStates(loop, issue).filter((s) => s.method === 'test' || s.method === 'check' || s.method === 'compare');
+  const rows = countedRowsOf(issue, loop);
+  return states.map((s) => ({ line: s.n, method: s.method, text: s.what, rows: rows.filter((r) => r.lines.includes(s.digest)).map((r) => ({ ran: r.ran, saw: r.saw, by: r.by })) }));
+}
+
+function issueBrief(root, loop, rawIds, role, ctx) {
+  const { issues, added } = leaseIssues(loop, rawIds);
+  const lease = leaseWhere(root, loop, issues);
+  const datas = issues.map((i) => issueData(root, loop, i, role));
+  const first = datas[0];
+  const rounds = datas.flatMap((d) => d.rounds);
+  const findings = datas.flatMap((d) => d.findings);
+  const proof = datas.flatMap((d) => d.proof);
+  const moments = new Set([role === 'worker' ? 'start' : 'review', ...(rounds.length ? ['round'] : [])]);
+  const roles = new Set([role, ...(role === 'worker' && datas.some((d) => d.takeover && takenOver(loop.profile, loop.eventsById.get(d.id) || [])) ? ['takeover'] : [])]);
+  const rules = rulesFor(root, loop, { roles, slice: null, moments, issues }, today()).map(ruleOf);
+  const notes = [...datas.flatMap((d) => d.notes), ...(added.length ? [`${added.map((i) => i.id).join(', ')} ${added.length === 1 ? 'is' : 'are'} on this lease too: the brief covers the whole lease`] : [])];
+  const depth = role === 'reviewer' ? examinerDepth(loop, issues) : null;
+  const record = role === 'worker' ? workerCommands(ctx, issues, lease) : reviewerCommands(ctx, issues, lease);
   return {
-    role, id: issue.id, title: issue.title, status: issue.status, roles: sorted(roles), moments: sorted(moments),
-    show: issueView(root, issue, { places: false }).replace(/\s+$/, ''),
-    rules, rounds, findings, proof, reference: REFERENCES[role], record, notes,
+    role, id: first.id, ids: datas.map((d) => d.id), title: first.title, status: first.status,
+    roles: sorted(roles), moments: sorted(moments),
+    goal: goalParagraph(loop), parents: datas.filter((d) => d.parent).map((d) => ({ id: d.id, parent: d.parent })),
+    root: ctx.root, script: ctx.script, lease, ...(depth ? { depth } : {}),
+    issues: datas.map(({ notes: _n, ...d }) => d),
+    show: datas.map((d) => d.text).join('\n\n'),
+    takeover: datas.some((d) => d.takeover),
+    doNot: DO_NOT[role],
+    rules, rounds, findings, proof, record, notes,
+  };
+}
+
+// The merger's brief: its target branch, each repository's checkout and queue, and the whole procedure of a landing.
+function mergerBrief(root, loop, slice, ctx) {
+  const lines = loop.goalLines;
+  const m = slice === undefined ? null : lines.mergers[fieldText(slice).toLowerCase()] ?? null;
+  need(slice === undefined || m !== null, `no slice ${fieldText(slice)} with a merger of its own on the goal's Merger lines: a Merger (<slice>) line names one — ${jarlLine('goal', '--set', hole('<machine-line>'))}`, () => ({ flag: '--slice', value: hole('<coordinator>') }));
+  const repos = loopRepos(root, loop.issues).filter(isGitRepo).map((repo) => {
+    const base = baseOf(root, repo);
+    return { repo, label: repoLabel(repo), base, target: m ? integrationBranch(m.slice) : base };
+  });
+  const rules = rulesFor(root, loop, { roles: new Set(['merger']), slice: null, moments: new Set(['merge']), issues: [] }, today()).map(ruleOf);
+  const tool = toolCommand(ctx);
+  const repoFlag = repos.length > 1 ? ['--repo', hole('<name-or-path>')] : [];
+  const record = [
+    { what: 'what waits for you, branch by branch', command: tool(...(m ? ['next', '--as', m.name, '--all'] : ['resume', ...repoFlag])) },
+    { what: 'the settings of the merge drivers', command: tool('merge-driver', 'flags') },
+    { what: 'what the branch may touch', command: tool('scope', hole('<id>'), '--branch', hole('<branch>')) },
+    { what: 'a green merge', command: tool('merged', hole('<ids>'), '--sha', hole('<sha>'), '--ran', hole('<command>'), '--saw', hole('<what-it-printed>'), ...repoFlag) },
+    { what: 'a red check, the work\'s fault', command: tool('round', hole('<id>'), hole('<text>')) },
+    { what: 'a red check, cause outside the branch', command: tool('new', hole('<what-is-red>'), '--tier', hole('<tier>')) },
+    { what: 'a landing on red, only on the jarl\'s ruling', command: tool('merged', hole('<ids>'), '--sha', hole('<sha>'), '--red', hole('<id>')) },
+    { what: 'closing each issue', command: tool('set', hole('<id>'), 'done', hole('<text>')) },
+    { what: 'its changelog entries', command: tool('changelog', hole('<ids>')) },
+  ];
+  return {
+    role: 'merger', id: null, ids: [], slice: m ? m.slice : null, merger: m ? m.name : lines.merger, target: m ? integrationBranch(m.slice) : null,
+    root: ctx.root, script: ctx.script, goal: goalParagraph(loop), repos, roles: ['merger'], moments: ['merge'],
+    doNot: DO_NOT.merger, rules, record, notes: [],
   };
 }
 
@@ -280,46 +465,178 @@ function rulingsOf(loop) {
   return { inForce: loop.decisions.filter((d) => !d.supersededBy && !ended.has(d.slug)).length, command: jarlLine('decisions', '--live') };
 }
 
-// brief <id> [--role worker|reviewer] | brief --slice <coordinator>: the data of the brief, what --json prints.
-export function cmdBrief(root, rawId, opts = {}) {
+// brief <ids> [--role worker|reviewer] | brief --slice <coordinator> | brief --role merger [--slice <slice>]: the data of
+// the brief, what --json prints.
+export function cmdBrief(root, rawIds, opts = {}) {
   const loop = readLoop(jarlDir(root));
-  if (opts.slice !== undefined) {
-    need(rawId === undefined || rawId === null, `brief --slice is the coordinator's brief and takes no id; an issue's brief is ${jarlLine('brief', hole('<id>'))}`, () => ({ truncate: 1 }));
+  const ctx = { root: resolve(root), script: SCRIPT };
+  const role = opts.role === undefined ? null : fieldText(opts.role).toLowerCase();
+  if (opts.slice !== undefined && role !== 'merger') {
+    need(rawIds === undefined || rawIds === null, `brief --slice is the coordinator's brief and takes no id; an issue's brief is ${jarlLine('brief', hole('<id>'))}`, () => ({ truncate: 1 }));
     need(opts.role === undefined, `--role names the role of an issue's brief; brief --slice is the coordinator's`, () => ({ drop: '--role' }));
     return { ...sliceBrief(root, loop, opts.slice), rulings: rulingsOf(loop) };
   }
-  need(rawId !== undefined && rawId !== null && String(rawId).trim(), `brief takes the id of an issue; a coordinator's brief is ${jarlLine('brief', '--slice', hole('<coordinator>'))}`, () => ({ arg: 0, value: hole('<id>') }));
-  const role = opts.role === undefined ? 'worker' : fieldText(opts.role).toLowerCase();
-  need(BRIEF_ROLES.includes(role), `--role is ${BRIEF_ROLES.join(' or ')} (got "${fieldText(opts.role)}"): a merger's brief is one for the whole loop (references/merger.md), its branches the merge queue of resume, and a coordinator's is ${jarlLine('brief', '--slice', hole('<coordinator>'))}`, () => ({ flag: '--role', value: hole('<role>') }));
-  return { ...issueBrief(root, loop, rawId, role), rulings: rulingsOf(loop) };
+  if (role === 'merger') {
+    need(rawIds === undefined || rawIds === null, `brief --role merger is the merger's and takes no id: the branches it takes are its queue, which the brief names`, () => ({ truncate: 1 }));
+    return { ...mergerBrief(root, loop, opts.slice, ctx), rulings: rulingsOf(loop) };
+  }
+  need(rawIds !== undefined && rawIds !== null && String(rawIds).trim(), `brief takes the id of an issue; a coordinator's brief is ${jarlLine('brief', '--slice', hole('<coordinator>'))}`, () => ({ arg: 0, value: hole('<id>') }));
+  const issueRole = role ?? 'worker';
+  need(BRIEF_ROLES.includes(issueRole), `--role is ${BRIEF_ROLES.join(', ')} (got "${fieldText(opts.role)}"): a coordinator's brief is ${jarlLine('brief', '--slice', hole('<coordinator>'))}, and a merger's takes no id`, () => ({ flag: '--role', value: hole('<role>') }));
+  return { ...issueBrief(root, loop, rawIds, issueRole, ctx), rulings: rulingsOf(loop) };
 }
 
-const ROLE_WORD = { worker: "worker's", reviewer: "reviewer's", coordinator: "coordinator's" };
+// At most three, and each a thing the role is most tempted to do.
+const DO_NOT = Object.freeze({
+  worker: ['widen the scope: anything else you see goes under "Found" in your report, never into the diff', 'weaken a test, a check, a guard or a hook: if a line seems to need that, record it with the stuck command and stop', 'approve anything: a fresh examiner does'],
+  reviewer: ['fix what you find', 'merge anything', 'set the scope'],
+  merger: ['edit code, or a conflict by picking a side', 'judge content or scope: a branch without a fresh approve waits, and that is not your call', 'override a red check'],
+});
+
+const FIRST_STEP = (lease) => (lease.inPlace ? 'You work in place: no branch or worktree of your own, only the files the issue declares, in the checkout of their repository.' : `First: in your worktree, \`git merge ${lease.repos[0]?.base ?? '<base>'}\`; \`git status\` must be clean afterwards, and if it is not, stop and report. A platform that gave you a branch of its own name: rename it (\`git branch -m ${lease.branch ?? '<branch>'}\`), never a second branch beside it.`);
+
+// The role's text, built from the record and read by nothing else: each part once, as short as it can be said.
+function renderWorker(o, out) {
+  const lease = o.lease;
+  out.push(`The worker's brief for ${o.ids.length > 1 ? `issues ${o.ids.join(', ')}` : `issue ${o.id}`}, assembled from the record. Read nothing else for this job.`);
+  out.push(...o.notes.map((n) => `note: ${n}`), '');
+  if (o.takeover) out.push('A takeover: another worker held this lease before you and may have left work behind. The tree may be dirty: keep what you can verify, discard the rest.', '');
+  section(out, 'The goal', o.goal);
+  for (const p of o.parents) section(out, `Why ${p.id} exists`, `${p.id} is part of ${p.parent.id} (${p.parent.title}): ${p.parent.why}`);
+  for (const issue of o.issues) out.push(issue.text, '');
+  roundsAndFindings(o, out);
+  section(out, 'Where you work', [
+    `You are ${lease.worker ?? 'the worker'}${lease.model ? ` on ${lease.model}` : ''}, tier ${lease.tier}${o.ids.length > 1 ? ' (the highest of this lease)' : ''}.`,
+    lease.inPlace ? 'No branch: you work in place.' : `Branch ${lease.branch ?? 'not leased yet'}.`,
+    ...lease.repos.map((r) => `Repository ${r.label} (${r.repo}), base ${r.base}${lease.branch ? `, worktree ${r.worktree ?? 'not made yet'}` : ''}.`),
+    ...(lease.repos.length ? [] : ['The loop is in no git repository here.']),
+    `Loop root: ${o.root}. Tool: node ${o.script} (every command below is written with both).`,
+  ]);
+  section(out, 'You do not', o.doNot.map((d) => `- ${d}`));
+  section(out, 'How to work', [
+    `1. ${FIRST_STEP(lease)}`,
+    '2. Work only inside the issue, by the repository\'s own rules too (its CLAUDE.md, AGENTS.md, hooks). No file you write carries a task number: only the commit subject names the issue.',
+    '3. Commit at the failing test and at the fix, one issue per commit, never amending, no agent trailer. Never push or touch another branch. To hold work aside copy it to a scratch directory: never `git stash`, whose list every worktree shares.',
+    '4. Prove each line by its method. [test]: a test red before the change and green after. [check]: its command, passing after it. [compare]: its command before and after, the outputs identical. Record each run with the proof command; never a row for a command you did not run. [read] and [owner] lines take no row.',
+    '5. Run the test files you touch, in the foreground, with your tool\'s own timeout set; the merger runs the whole check on the merged result. Never report "waiting for the test run".',
+    '6. A choice the lines leave open: make it and record it with the note command, the note starting `Assumed:`. A line you cannot meet without weakening something: the stuck command, then stop.',
+    '7. A refused call writes nothing and ends with the form to run: fill its placeholders. Spawn no agents.',
+  ]);
+  renderCommon(o, out);
+  section(out, 'What you report', 'In under 200 words, once the work is committed and your checks have finished: what changed, the commands and what they printed, every `Assumed:` note, "Found" (what you saw outside the issue), and your commits.');
+}
+
+function renderReviewer(o, out) {
+  const { lease, depth } = o;
+  out.push(`The examiner's brief for ${o.ids.length > 1 ? `issues ${o.ids.join(', ')}` : `issue ${o.id}`}, assembled from the record. Read nothing else for this job. You did not write this code: take no one's word for it.`);
+  out.push(...o.notes.map((n) => `note: ${n}`), '');
+  section(out, 'The goal', o.goal);
+  for (const p of o.parents) section(out, `Why ${p.id} exists`, `${p.id} is part of ${p.parent.id} (${p.parent.title}): ${p.parent.why}`);
+  for (const issue of o.issues) out.push(issue.text, '');
+  section(out, 'Where to look', [
+    `Depth: ${depth.says}. Run at tier ${depth.tier} or above${depth.secondFamily ? `, on ${depth.secondFamily} where you can` : ''}.`,
+    lease.inPlace ? 'No branch: the work is in the files the issue declares.' : `Branch ${lease.branch ?? 'none'}.`,
+    ...lease.repos.map((r) => `Repository ${r.label} (${r.repo}), base ${r.base}${lease.branch ? `, worktree ${r.worktree ?? 'none here'}` : ''}.`),
+    `Loop root: ${o.root}. Tool: node ${o.script}. Read-only: never \`git checkout\` in the main checkout; reproduce with \`git show\` or \`git archive\` into a scratch directory.`,
+  ]);
+  section(out, 'You do not', o.doNot.map((d) => `- ${d}`));
+  section(out, 'The six steps', [
+    '1. Read every change to the lines below: the worker\'s change is a finding, the director\'s is the new requirement.',
+    '2. Ask whether each method proves its line; a [test] must be able to fail for the right reason.',
+    '3. Run every [test], [check] and [compare] line again, at any tier, and record each --by your name.',
+    '4. Judge the [read] lines and quote them in the verdict.',
+    '5. Invent scenarios the lines do not name, at the edges of what the change does, and run them.',
+    '6. Check that nothing outside the issue moved and nothing protective was weakened.',
+  ]);
+  section(out, 'The verdict', 'Rank findings Critical, Important or Minor: Critical or Important is changes and a round, Minor alone is an approve. Record your own verdict last, with your name and model; your answer quotes the line review printed. Spawn nothing.');
+  const changes = o.issues.flatMap((i) => (i.lineChanges || []).map((c) => ({ ...c, id: i.id })));
+  section(out, 'Changes to the lines since the lease', changes.length ? changes.map(lineChangeText) : ['- (none)']);
+  section(out, 'Proof to re-run', proofLines(o));
+  const assumed = o.issues.flatMap((i) => (i.assumed || []).map((t) => `- ${i.id}: ${t}`));
+  if (assumed.length) section(out, 'What the worker assumed', assumed);
+  roundsAndFindings(o, out);
+  renderCommon(o, out);
+  section(out, 'What you report', 'Your verdict and its findings.');
+}
+
+// What went back: the rounds so far and the findings that sent the work back, once there are any, each whole.
+function roundsAndFindings(o, out) {
+  if (o.rounds.length) section(out, `Rounds so far (${o.rounds.length})`, o.rounds.map((r) => `- ${r.at} · ${r.text}`));
+  if (o.findings.length) {
+    section(out, `Findings of the reviews that sent it back (${o.findings.length})`, o.findings.flatMap((f) => {
+      const [first, ...rest] = f.text.split('\n');
+      return [`- ${f.day ?? ''}${f.by ? ` · by ${f.by}${f.kind ? ` (${f.kind})` : ''}` : ''}${f.fileOnly ? ' · in the issue file only' : ''} — ${first}`, ...rest.map((l) => `  ${l}`)];
+    }));
+  }
+}
+
+function lineChangeText(c) {
+  return `- ${c.id} · ${c.at}${c.by ? ` · by ${c.by}` : ' · by an unnamed writer'}${c.removed.length ? ` · was: ${c.removed.join(' | ')}` : ''}${c.added.length ? ` · now: ${c.added.join(' | ')}` : ''}`;
+}
+function proofLines(o) {
+  const out = o.issues.flatMap((i) => (i.reRun || []).map((r) => (r.rows.length
+    ? `- ${i.id} line ${r.line} [${r.method}]: re-run ${r.rows.map((x) => `${x.ran} (saw: ${x.saw}${x.by ? `, by ${x.by}` : ''})`).join(' · ')}`
+    : `- ${i.id} line ${r.line} [${r.method}]: no row names it: run it yourself; the worker's missing row is an Important finding`)));
+  return out.length ? out : ['- (no test, check or compare line)'];
+}
+
+function renderMerger(o, out) {
+  const target = o.target ?? 'the feature branch';
+  out.push(`The merger's brief${o.slice ? ` of the slice ${o.slice}` : ''}, assembled from the record; it writes nothing. This is all you need to read to do this job.`);
+  out.push(...o.notes.map((n) => `note: ${n}`), '');
+  section(out, 'The goal', o.goal);
+  section(out, 'Where you merge', [
+    `You are ${o.merger ?? 'the merger'}. Your target: ${o.target ?? o.repos.map((r) => `${r.base} in ${r.label}`).join(', ') ?? 'the branch the loop lands on'}.`,
+    ...o.repos.map((r) => `Repository ${r.label} (${r.repo}), base ${r.base}${o.target ? `, target ${r.target}` : ''}.`),
+    `Loop root: ${o.root}. Tool: node ${o.script} (every command below is written with both).`,
+    'One writer per target branch: only you merge into it. You work in a worktree of your own on that branch and never share a checkout with another merger. You write the record through the tool, under its lock; only the holder of the main checkout commits `.jarl/`, so several mergers are not several committers there. If you do not hold the main checkout, you never commit `.jarl/`.',
+  ]);
+  section(out, 'You do not', o.doNot.map((d) => `- ${d}`));
+  section(out, 'Each branch, serially', [
+    '1. Read the scope and the diff. A branch without a fresh reviewer\'s approve waits; report it. In the default mode a diff that touches `.jarl/` is reported, not merged: git treats the ignored loop as expendable and a merge would overwrite it.',
+    `2. Merge with \`git <settings> merge --no-ff <branch>\`, the settings from the merge-driver command below, passed on every merge, never left to the clone's configuration; with \`--yg "<command>"\` to it when the repository has .yggdrasil/, and then \`yg log merge-resolve\` right after the merge. Into ${target}, in your own worktree.`,
+    '3. A conflict the drivers stopped on (a ruling or log entry both sides changed): `git merge --abort` and report. Any other conflict: resolve only when one side is plainly a superset or the hunks are independent; otherwise abort and report the files.',
+    '4. Branches sharing no file may be merged one after another and checked once as a batch; never batch two that touch one file.',
+    '5. Run the repository\'s check on the merged result, in the foreground, with your tool\'s own timeout set for the whole run. Report after the check has finished, never before.',
+    '6. Green: the green-merge command, once for the issues on the branch, then close each issue, then `show` it and confirm it reads done: a write nobody read is worse than none. A note `NO PROOF FROM THE WORKER` means done waits for the worker\'s row. `MERGE WITHOUT THE BRANCH` or `WITHOUT THE BASE`: the check did not run on what landed, merge and check again. `APPROVED ON ANOTHER TIP`: report the two tips.',
+    '7. Changelog entries, once the batch is green: paste them under `[Unreleased]`, edited into the repository\'s register, committed as that file alone.',
+  ]);
+  section(out, 'A red check', [
+    'Roll back with `git reset --keep ORIG_HEAD`, never `--hard`, which throws away what others wrote meanwhile. Then one of three cases:',
+    '1. A batch went red: reset to before its first merge, and land the branches one at a time, so the branch that fails is found.',
+    '2. One branch\'s work fails it, alone or against the base as it stands, or two good branches break together: that branch (the later of the two) gets a round with what failed; it goes back to a worker, is rebuilt on what landed first, and is examined again before it lands.',
+    '3. The cause is outside the branch (the base is red without it): file the cause as its own issue, leave the branch approved in the queue; it lands on red only on the jarl\'s ruling.',
+    'Nobody repairs the target branch directly. A defect found after a landing is a small issue whose Found by names the landed issue, with a check line, and it goes through the same chain.',
+  ]);
+  renderCommon(o, out);
+  section(out, 'What you report', 'One line per branch: merged <sha> | red: <what> | conflict: <files> | nothing to merge. Spawn no agents.');
+}
+
+function renderCommon(o, out) {
+  // A role's own shipped rules are the steps above, said once there; what is listed here is what the loop's own rulings add.
+  const ofLoop = o.rules.filter((r) => !r.builtin);
+  section(out, 'Rules that reach you', ofLoop.length ? ofLoop.flatMap(ruleLines) : ['- (none of the loop\'s own)']);
+  if (o.rulings.inForce) out.push(`${o.rulings.inForce} ruling(s) in force in the loop: ${o.rulings.command}`, '');
+  section(out, 'Commands', o.record.map((r) => `- ${r.what}: ${r.command}`));
+}
+function section(out, title, body) { out.push(`## ${title}`, ...(Array.isArray(body) ? body : [body]), ''); }
+
 // The brief as text: what it is, its notes, then each part under a heading of its own, every part whole.
 export function renderBrief(o) {
   const out = [];
-  const reader = o.role === 'coordinator' ? `the coordinator of the slice ${o.slice}` : `the ${o.role} of ${o.id}`;
   if (o.role === 'coordinator') {
     out.push(`The coordinator's brief for the slice ${o.slice} (slice:${o.slice}), assembled from the record; it writes nothing.`);
     out.push(...o.notes.map((n) => `note: ${n}`), '');
     out.push(`## The issues of the slice in play (${o.issues.length})`);
     out.push(...(o.issues.length ? o.issues.map((i) => `- ${i.id} ${i.status}${i.worker ? ` · ${i.worker}` : ''} · ${i.title}${i.parent ? ` · sub-issue of ${i.parent}` : ''}`) : ['- (none)']));
-  } else {
-    out.push(`The ${ROLE_WORD[o.role]} brief for issue ${o.id}, assembled from the record; it writes nothing.`);
-    out.push(...o.notes.map((n) => `note: ${n}`), '', o.show);
+    out.push('', `## Rules for the coordinator of the slice ${o.slice} (${o.rules.length})`, ...(o.rules.length ? o.rules.flatMap(ruleLines) : ['- (none)']), `${o.rulings.inForce} ruling(s) in force in the loop: ${o.rulings.command}`);
+    out.push('', '## The role', `${o.reference.file}, section "${o.reference.section}", in the jarl skill's directory: the role in full; this brief adds what the record holds.`);
+    out.push('', '## Recording the result', ...o.record.map((r) => `- ${r.what}: ${r.command}`));
+    return out.join('\n');
   }
-  out.push('', `## Rules for ${reader} (${o.rules.length})`, ...(o.rules.length ? o.rules.flatMap(ruleLines) : ['- (none)']), `${o.rulings.inForce} ruling(s) in force in the loop: ${o.rulings.command}`);
-  if (o.role !== 'coordinator') {
-    out.push('', `## Rounds so far (${o.rounds.length})`, ...(o.rounds.length ? o.rounds.map((r) => `- ${r.at} · ${r.text}`) : ['- (none)']));
-    out.push('', `## Findings of the reviews that sent it back (${o.findings.length})`);
-    if (!o.findings.length) out.push('- (none)');
-    for (const f of o.findings) {
-      const [first, ...rest] = f.text.split('\n');
-      out.push(`- ${f.day ?? ''}${f.by ? ` · by ${f.by}${f.kind ? ` (${f.kind})` : ''}` : ''}${f.fileOnly ? ' · in the issue file only' : ''} — ${first}`, ...rest.map((l) => `  ${l}`));
-    }
-    out.push('', `## Proof rows (${o.proof.length})`, ...(o.proof.length ? o.proof.map((r) => `- [${r.n}] ran${rowLinesText(r.lines)}: ${r.ran} · saw: ${r.saw}`) : ['- (none)']));
-  }
-  out.push('', '## The role', `${o.reference.file}, section "${o.reference.section}", in the jarl skill's directory: the role in full; this brief adds what the record holds.`);
-  out.push('', '## Recording the result', ...o.record.map((r) => `- ${r.what}: ${r.command}`));
+  if (o.role === 'merger') renderMerger(o, out);
+  else if (o.role === 'reviewer') renderReviewer(o, out);
+  else renderWorker(o, out);
+  while (out.length && out[out.length - 1] === '') out.pop();
   return out.join('\n');
 }

@@ -148,6 +148,29 @@ export function lineStates(loop, issue, g = gateOf(loop, issue.id)) {
     return { ...base, state: missing.length ? 'unproved' : 'proved', missing: missing.length ? missing.join(', ') : null };
   });
 }
+// The rows counted for an issue's lines, with what they ran, so a brief can offer them to re-run.
+export function countedRowsOf(issue, loop) {
+  const g = gateOf(loop, issue.id);
+  const ran = new Map(evidenceTable(issue.sections.evidence).rows.map((r) => [`${r.saw}\n${r.lines.join()}`, r.ran]));
+  return countedRows(issue, g).map((r) => ({ ...r, ran: ran.get(`${r.saw}\n${r.lines.join()}`) ?? '' }));
+}
+// The changes of an issue's lines since its current lease started, as { at, by, removed, added }, each read from the old text the
+// log keeps whole; none for an issue no lease holds, or whose lines are as they were.
+export function lineChanges(loop, issue) {
+  const events = loop.eventsById.get(issue.id) || [];
+  const claim = (st) => loop.profile.is(st, 'holds-claim');
+  const start = [...events].reverse().find((e) => e.type === 'move' && claim(e.to) && (!claim(e.from) || e.handover));
+  if (!start) return [];
+  const changes = events.filter((e) => e.type === 'body' && e.part === 'acceptance' && e.n > start.n && e.was !== null);
+  const texts = changes.map((c) => acceptanceLines({ sections: { acceptance: c.was } }));
+  const sets = [...texts, acceptanceLines(issue)];
+  return changes.map((c, k) => {
+    const now = sets[k + 1];
+    const was = sets[k];
+    return { at: c.at, by: c.by ?? c.writer ?? null, removed: was.filter((l) => !now.includes(l)), added: now.filter((l) => !was.includes(l)) };
+  }).filter((c) => c.removed.length || c.added.length);
+}
+
 // The numbers of the lines an issue's worker still owes a row for, before a review is offered: test and compare lines, and
 // check lines that state a command of their own: each needs a counted row naming it by a holder of the lease. A check
 // on the declared command is the landing's to prove, and a read line needs no row.

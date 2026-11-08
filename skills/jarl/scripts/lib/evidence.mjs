@@ -211,7 +211,7 @@ export function workerEvidence(text) {
 // ordinal [n], counted over the whole section, the number retract takes; --full prints the file with them. With places
 // false the lines that name where a repository and the lease's worktree are on this machine, a Worktree field of the
 // header among them, are left out, for a text handed to an agent that may run on another one.
-export function issueView(root, issue, { full = false, places = true } = {}) {
+export function issueView(root, issue, { full = false, places = true, omit = [] } = {}) {
   const pieces = [];
   let cur = { name: null, lines: [] };
   const text = readText(issue.file);
@@ -254,6 +254,7 @@ export function issueView(root, issue, { full = false, places = true } = {}) {
       out.push(...head, ...notes, '');
       continue;
     }
+    if (omit.includes(p.name)) continue;
     if (p.name !== 'evidence' && p.name !== 'reviews') { out.push(...p.lines); continue; }
     const body = p.lines.slice(1);
     if (p.name === 'evidence') {
