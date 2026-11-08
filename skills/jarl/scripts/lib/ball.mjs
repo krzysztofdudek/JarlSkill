@@ -1,14 +1,13 @@
 // What is on whom: every open thing of the loop has one holder who must move next, derived from the record and never
 // stored, and next --as <holder> lists what is on that one, each line with the command that moves it.
 
-import { PROMISE_KIND, WAIT_KIND, fieldText, hole, jarlLine, need } from './base.mjs';
+import { PROMISE_KIND, WAIT_KIND, fieldText, jarlLine, need } from './base.mjs';
 import { cmpId, idKey, idsCited } from './ids.mjs';
 import { mergedOf } from './issues.mjs';
 import { carriesCode, coordinatorOf, inFlightMark, leaseConflictOf, readLoop, sameHolder, sameSlice, sentBack, sliceOf, statusWith } from './loop.mjs';
 import { reasonWord, waitingOn } from './commands.mjs';
 import { nextRows, schedulerNote } from './evidence.mjs';
 import { ownerLineStates } from './owner-lines.mjs';
-import { modelOfferStands } from './models.mjs';
 import { ruleLines, rulesFor } from './rules.mjs';
 import { jarlDir, today } from './where.mjs';
 import { ago, leaseLiveness, livenessOf, thresholdText } from './rounds.mjs';
@@ -307,14 +306,6 @@ function questionRows(ctx) {
   });
 }
 
-// The jarl's one row for the Model lines: an agent is leased and the goal declares none (see modelOfferStands).
-function modelOfferRows(ctx) {
-  if (!modelOfferStands(ctx.root)) return [];
-  return [{ what: 'models', topic: 'models', holder: JARL_HOLDER,
-    says: 'an agent is leased and the goal declares no Model line, so no model is placed and none ranked; add one line for each tier: Model (strong): <model-id> for the jarl, Model (standard): <model-id> for the coordinators',
-    command: jarlLine('goal', '--set', hole('<machine-line>')) }];
-}
-
 // The jarl's ruling rows: a ruling in force that names work (it settles issues) and settles no live issue: every issue
 // it names is finished without being done, and not on this ruling, or is not in the loop. A settled issue still open or
 // in progress has a holder of its own, and one done has done the work.
@@ -365,10 +356,9 @@ function leaseConflictRows(ctx) {
 
 // The sources of the rows, in order. Each reads the record through the context and gives rows { what, holder, says,
 // command, and id, ask or ruling }; a kind of open thing the record learns to hold adds its own source here.
-export const ROW_SOURCES = [issueRows, leaseConflictRows, keptRows, ownerLineRows, questionRows, modelOfferRows, rulingRows];
-// The rows a composer's scheduler owns: under an external scheduler Jarl lists only the others. The composer leases its
-// agents and places their models by its own tiers, so the offer of the Model lines is its own too.
-const SCHEDULING = new Set([issueRows, leaseConflictRows, modelOfferRows]);
+export const ROW_SOURCES = [issueRows, leaseConflictRows, keptRows, ownerLineRows, questionRows, rulingRows];
+// The rows a composer's scheduler owns: under an external scheduler Jarl lists only the others.
+const SCHEDULING = new Set([issueRows, leaseConflictRows]);
 
 // Every row of the loop, ordered as one display (never a schedule): the owner's rows first, then the rows idle past the threshold, then by how many issues each
 // holds up directly, an item to ratify after a question (it blocks nothing), then by priority and number. A question of
@@ -408,12 +398,12 @@ export function ballRows(root, flags = {}) {
     || String(a.priority ?? '9').localeCompare(String(b.priority ?? '9')) || cmpRef(a, b));
   return { loop, rows, scheduled, waiting: waitingRows(loop, rows, ctx.next, ctx.onOwner) };
 }
-const refOf = (r) => (r.ids ? r.ids.join(', ') : r.id !== undefined ? r.id : r.ask !== undefined ? `a-${r.ask}` : r.ruling ?? r.topic);
-// Issues before questions before the rest; issues and questions by number, rulings and topics by name.
+const refOf = (r) => (r.ids ? r.ids.join(', ') : r.id !== undefined ? r.id : r.ask !== undefined ? `a-${r.ask}` : r.ruling);
+// Issues before questions before rulings; issues and questions by number, rulings by name.
 function cmpRef(a, b) {
   const rank = (r) => (r.id !== undefined ? 0 : r.ask !== undefined ? 1 : 2);
   if (rank(a) !== rank(b)) return rank(a) - rank(b);
-  return rank(a) === 2 ? String(a.ruling ?? a.topic).localeCompare(String(b.ruling ?? b.topic)) : cmpId(String(a.id ?? a.ask), String(b.id ?? b.ask));
+  return rank(a) === 2 ? a.ruling.localeCompare(b.ruling) : cmpId(String(a.id ?? a.ask), String(b.id ?? b.ask));
 }
 
 // The issues that wait on another, each with whom it waits on through which issue: its After followed to the issues that
