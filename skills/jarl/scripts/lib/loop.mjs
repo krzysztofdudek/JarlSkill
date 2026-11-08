@@ -88,7 +88,7 @@ export function recordDisagreements(loop) {
     // A number the log cannot attribute is read from its header, so the header is never compared with the log; it is
     // checked against itself, which still catches a hand edit that contradicts the file.
     if (issue.byHeader) {
-      for (const what of headerContradictions(profile, issue)) out.push({ id, field: 'header', onFile: issue.status, record: null, line: `record: ${id} is read from its header (issues/${basename(issue.file)}), and the header contradicts itself: ${what}` });
+      for (const what of headerContradictions(profile, issue, loop.events)) out.push({ id, field: 'header', onFile: issue.status, record: null, line: `record: ${id} is read from its header (issues/${basename(issue.file)}), and the header contradicts itself: ${what}` });
       continue;
     }
     if (issue.onFile === null) {
@@ -106,15 +106,17 @@ export function recordDisagreements(loop) {
   }
   // A shared number's files are checked against themselves too: each is read from its own header while they share it.
   for (const s of shared) for (const issue of s.issues) {
-    for (const what of headerContradictions(profile, issue)) out.push({ id: s.id, field: 'header', onFile: issue.status, record: null, line: `record: ${s.id} is read from its header (issues/${basename(issue.file)}), and the header contradicts itself: ${what}` });
+    for (const what of headerContradictions(profile, issue, loop.events)) out.push({ id: s.id, field: 'header', onFile: issue.status, record: null, line: `record: ${s.id} is read from its header (issues/${basename(issue.file)}), and the header contradicts itself: ${what}` });
   }
   out.push(...unreadableMoves(loop));
   return out;
 }
 // What a header read as the record says against itself: a status the profile does not list, a lease that its status
 // does not hold or a status that holds one with no lease, a CI with no merge, and a closing status with no proof row
-// in the file's Evidence.
-function headerContradictions(profile, issue) {
+// in the file's Evidence, or one the log never moved the number into: Jarl refuses a close of a number the log cannot
+// attribute, so a closing status that no closing move of the number stands behind was written by hand. A close the log
+// holds under the number may be another file's; that the record cannot tell.
+function headerContradictions(profile, issue, events) {
   const out = [];
   const has = (k) => Boolean(fieldText(issue.fields[k]));
   const st = issue.status;
@@ -126,6 +128,7 @@ function headerContradictions(profile, issue) {
   }
   if (has('ci') && !has('merged')) out.push('it carries CI and no Merged');
   if (profile.is(st, 'closes-record') && evidenceRows(issue).length === 0) out.push(`its Status ${st} closes it, and its Evidence holds no --ran/--saw row`);
+  if (profile.is(st, 'closes-record') && !events.some((e) => e.id === issue.id && e.type === 'move' && profile.is(e.to, 'closes-record'))) out.push(`its Status ${st} closes it, and the log holds no move of ${issue.id} into a status that closes it: a number the log cannot attribute is never closed through Jarl`);
   return out;
 }
 // The issues read from their headers because the log files their number more than once, while one file carries it: one
